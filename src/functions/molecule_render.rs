@@ -13,11 +13,11 @@
 //! The layout is fully deterministic (no randomness), so the same molecule
 //! always renders identically.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::molecule_ast::{
   DrawMolecule, drawable_molecule, molecule_ast,
 };
-use crate::syntax::{Expr, unevaluated};
 
 /// `MoleculePlot[mol]` — the 2-D structure diagram as a `Graphics` object.
 /// The argument may be a `Molecule[…]` object or any specification a plain

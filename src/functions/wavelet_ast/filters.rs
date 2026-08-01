@@ -7,9 +7,9 @@
 //! dual lowpass the analysis filter; for orthogonal families they coincide.
 
 use super::data::{WaveletSpec, parse_discrete_wavelet};
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::gcd_i128;
-use crate::syntax::{Expr, expr_to_string, unevaluated};
 
 /// One filter as ascending (index, coefficient) pairs.
 pub type Filter = Vec<(i64, f64)>;

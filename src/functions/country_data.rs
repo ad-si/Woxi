@@ -13,8 +13,8 @@
 //! to match the Wolfram Knowledgebase to the last digit; they give Woxi a
 //! self-contained, reproducible country dataset.
 
-use crate::InterpreterError;
-use crate::syntax::{Expr, bool_expr, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 /// A single sovereign country: a canonical display name, its population in
 /// number of people, and alternate spellings/abbreviations that should

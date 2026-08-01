@@ -12,9 +12,9 @@
 //! Non-polynomial input (transcendental functions, complex rectangle bounds,
 //! Real-valued bounds) returns the call unevaluated.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::rat_reduce_bigint;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 

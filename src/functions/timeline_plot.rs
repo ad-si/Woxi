@@ -1,4 +1,5 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::interval_ast::is_interval;
 use crate::functions::math_ast::try_eval_to_f64;
@@ -6,7 +7,6 @@ use crate::functions::plot::{
   DEFAULT_HEIGHT, DEFAULT_WIDTH, PLOT_COLORS, RESOLUTION_SCALE,
   format_date_tick, generate_date_ticks, html_escape, parse_image_size,
 };
-use crate::syntax::{Expr, unevaluated};
 
 /// Default display width of a TimelinePlot in pixels.
 const DEFAULT_TLP_WIDTH: u32 = 360;

@@ -3,7 +3,6 @@ use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::rat_reduce;
-use crate::syntax::{BinaryOperator, unevaluated};
 
 /// AST-based Table: generate a table of values.
 /// Table[expr, {i, min, max}] -> {expr with i=min, ..., expr with i=max}

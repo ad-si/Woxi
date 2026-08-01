@@ -6,11 +6,9 @@
 //! Tanh -> -1 < y < 1, and 1/(1 + x^2) -> Inequality[0, Less, y,
 //! LessEqual, 1].
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::rat_reduce;
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, bool_expr, unevaluated,
-};
 
 pub fn function_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| unevaluated("FunctionRange", args);

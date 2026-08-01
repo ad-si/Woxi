@@ -1,6 +1,6 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::graphics::Color;
-use crate::syntax::{Expr, unevaluated};
 
 pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

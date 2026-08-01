@@ -6,8 +6,8 @@
 //! Riemann–Liouville is the constant: it differentiates `⌈α⌉` times first, so
 //! a constant vanishes for any positive order.
 
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 /// The same expression with its arithmetic written as calls, so one matcher
 /// covers both spellings the parser produces.

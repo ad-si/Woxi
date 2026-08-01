@@ -1,4 +1,5 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
@@ -9,7 +10,6 @@ use crate::functions::plot::{
   parse_image_size, parse_plot_legends, parse_plot_style,
 };
 use crate::functions::sound::audio_sample_rate;
-use crate::syntax::{Expr, unevaluated};
 
 /// One parsed data point: coordinates plus asymmetric x/y uncertainties.
 /// The uncertainties are (minus, plus) half-widths taken from

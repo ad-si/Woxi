@@ -6,8 +6,8 @@
 //! extraction like `req["Method"]`, `req[Method]`, or
 //! `req[{"Scheme", "Domain", Method}]`.
 
-use crate::InterpreterError;
-use crate::syntax::{Expr, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 /// The user agent wolframscript sends and reports for HTTP requests.
 const USER_AGENT: &str = "Wolfram HTTPClient 15.";

@@ -2,10 +2,8 @@
 //! format (header "8:"). Token bytes, varint lengths, and the choice of
 //! integer width all match wolframscript's output byte for byte.
 
-use crate::InterpreterError;
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
-};
+#[allow(unused_imports)]
+use super::*;
 
 // WXF token bytes.
 const T_FUNCTION: u8 = b'f'; // 102

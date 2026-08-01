@@ -5,11 +5,9 @@
 //! Exists[x, x^even == c] -> c >= 0 and ForAll[x, x^even + c > 0] ->
 //! c > 0 return their conditions.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::rat_reduce;
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
-};
 
 pub fn resolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| unevaluated("Resolve", args);

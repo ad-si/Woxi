@@ -5,8 +5,8 @@
 //! everything else (Total, Mean, arbitrary functions) applies on the
 //! way up to the results of the deeper levels.
 
-use crate::InterpreterError;
-use crate::syntax::Expr;
+#[allow(unused_imports)]
+use super::*;
 
 /// Inside a query a bare string names a key, so `GroupBy["a"]` groups by the
 /// value stored at "a" rather than applying the string as a function.

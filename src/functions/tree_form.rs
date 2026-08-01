@@ -1,7 +1,7 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::expr_form::{ExprForm, decompose_expr};
 use crate::functions::graphics::graphics_ast;
-use crate::syntax::{Expr, expr_to_output, expr_to_string, unevaluated};
 use std::collections::HashMap;
 
 /// A node in the expression tree

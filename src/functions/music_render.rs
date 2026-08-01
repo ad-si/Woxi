@@ -13,12 +13,13 @@
 //! so no font need be embedded or shaped by the host. The staff lines, stems,
 //! ledger lines and barlines are engraving rules, drawn directly as `<line>`s.
 
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::graphics::theme;
 use crate::functions::music_ast::{
   midi_to_pitch_name, pitch_name_to_midi, resolve_pitch_name,
 };
 use crate::functions::music_font::{self, glyph};
-use crate::syntax::Expr;
 
 // ── Staff geometry (internal user-space coordinates) ─────────────────────────
 

@@ -2,12 +2,12 @@
 //!
 //! Dot, Det, Inverse, Tr, IdentityMatrix, DiagonalMatrix, Cross, Eigenvalues, Fit.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::{
   expr_to_rational, gcd_i128, make_sqrt, rat_reduce, try_eval_to_f64,
 };
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 /// Transpose a matrix (Vec<Vec<Expr>>)
 fn transpose_matrix(m: &[Vec<Expr>]) -> Vec<Vec<Expr>> {
@@ -829,9 +829,9 @@ pub fn cauchy_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let Some((lhs, rhs)) = rule_parts(item) else {
         crate::emit_message(&format!(
           "CauchyMatrix::nonopt: Options expected (instead of {}) beyond position {} in {}. An option must be a rule or a list of rules.",
-          crate::syntax::expr_to_string(extra),
+          expr_to_string(extra),
           positional,
-          crate::syntax::expr_to_string(&unevaluated("CauchyMatrix", args))
+          expr_to_string(&unevaluated("CauchyMatrix", args))
         ));
         return unchanged();
       };
@@ -843,7 +843,7 @@ pub fn cauchy_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           other => {
             let shown = match other {
               Expr::String(s) => s.clone(),
-              e => crate::syntax::expr_to_string(e),
+              e => expr_to_string(e),
             };
             crate::emit_message(&format!(
               "CauchyMatrix::badts: {shown} is not a valid target structure."
@@ -854,8 +854,8 @@ pub fn cauchy_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         other => {
           crate::emit_message(&format!(
             "CauchyMatrix::optx: Unknown option {} in {}.",
-            crate::syntax::expr_to_string(other),
-            crate::syntax::expr_to_string(&unevaluated("CauchyMatrix", args))
+            expr_to_string(other),
+            expr_to_string(&unevaluated("CauchyMatrix", args))
           ));
           return unchanged();
         }
@@ -866,7 +866,7 @@ pub fn cauchy_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let cmat = |shown: &Expr| {
     crate::emit_message(&format!(
       "CauchyMatrix::cmat: A Cauchy matrix could not be constructed from {}.",
-      crate::syntax::expr_to_string(shown)
+      expr_to_string(shown)
     ));
   };
 
@@ -920,8 +920,8 @@ pub fn cauchy_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if is_zero_expr(&sum) {
         crate::emit_message(&format!(
           "CauchyMatrix::cmvecs: A Cauchy matrix could not be constructed from the vectors {} and {}.",
-          crate::syntax::expr_to_string(&Expr::List(x.clone().into())),
-          crate::syntax::expr_to_string(&Expr::List(y.clone().into()))
+          expr_to_string(&Expr::List(x.clone().into())),
+          expr_to_string(&Expr::List(y.clone().into()))
         ));
         return unchanged();
       }
@@ -1271,7 +1271,8 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(matsq_unevaluated("Det", args)),
   };
   let det = determinant(&matrix);
-  Ok(crate::functions::expand_and_combine(&det))
+  let r = crate::functions::expand_and_combine(&det);
+  Ok(simplify_expr(&r))
 }
 
 /// True for an exact rational scalar (Integer, BigInteger, or literal
@@ -1570,7 +1571,7 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Matches wolframscript: emit Inverse::sing and return unevaluated.
     crate::emit_message(&format!(
       "Inverse::sing: Matrix {} is singular.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated("Inverse", args));
   }
@@ -1716,7 +1717,7 @@ pub fn tr_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some(_) => {
         crate::emit_message(&format!(
           "Tr::intnz: Nonzero integer expected at position 3 in {}.",
-          crate::syntax::expr_to_string(&unevaluated())
+          expr_to_string(&unevaluated())
         ));
         return Ok(unevaluated());
       }
@@ -3400,7 +3401,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // through to the generic paths instead.
     if !scaled_roots
       .iter()
-      .any(|e| crate::syntax::expr_to_string(e).contains("Root["))
+      .any(|e| expr_to_string(e).contains("Root["))
     {
       // A positive scale preserves the magnitude order, so sorting the
       // scaled roots sorts the eigenvalues.
@@ -3660,7 +3661,6 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// its eigenvalues `{a - I*b, a + I*b}`. Returns `None` for any other
 /// shape (so the caller falls back to the generic path).
 fn symbolic_rotation_eigenvalues(matrix: &[Vec<Expr>]) -> Option<Vec<Expr>> {
-  use crate::syntax::expr_to_string;
   if matrix.len() != 2 || matrix[0].len() != 2 || matrix[1].len() != 2 {
     return None;
   }
@@ -4159,7 +4159,6 @@ pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn complex_2x2_eigenvectors(
   matrix: &[Vec<Expr>],
 ) -> Result<Option<Expr>, InterpreterError> {
-  use crate::syntax::expr_to_string;
   let (a, b) = (&matrix[0][0], &matrix[0][1]);
   let (c, d) = (&matrix[1][0], &matrix[1][1]);
   let eigen = eigenvalues_ast(&[matrix_to_expr(matrix.to_vec())])?;
@@ -5006,7 +5005,7 @@ pub fn rank_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "RankDecomposition::matrix: Argument {} at position 1 is not a \
          nonempty rectangular matrix.",
-        crate::syntax::expr_to_string(&args[0])
+        expr_to_string(&args[0])
       ));
       return Ok(unevaluated());
     }
@@ -5062,7 +5061,7 @@ pub fn drazin_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "DrazinInverse::matsq: Argument {} at position 1 is not a nonempty \
          square matrix.",
-        crate::syntax::expr_to_string(&args[0])
+        expr_to_string(&args[0])
       ));
       return Ok(unevaluated());
     }
@@ -7756,8 +7755,8 @@ pub fn cholesky_decomposition_ast(
       let Some((lhs, rhs)) = rule_parts(item) else {
         crate::emit_message(&format!(
           "CholeskyDecomposition::nonopt: Options expected (instead of {}) beyond position 1 in {}. An option must be a rule or a list of rules.",
-          crate::syntax::expr_to_string(extra),
-          crate::syntax::expr_to_string(&unevaluated())
+          expr_to_string(extra),
+          expr_to_string(&unevaluated())
         ));
         return Ok(unevaluated());
       };
@@ -7771,7 +7770,7 @@ pub fn cholesky_decomposition_ast(
             other => {
               let shown = match other {
                 Expr::String(s) => s.clone(),
-                e => crate::syntax::expr_to_string(e),
+                e => expr_to_string(e),
               };
               crate::emit_message(&format!(
                 "CholeskyDecomposition::badts: {shown} is not a valid target structure."
@@ -7783,8 +7782,8 @@ pub fn cholesky_decomposition_ast(
         other => {
           crate::emit_message(&format!(
             "CholeskyDecomposition::optx: Unknown option {} in {}.",
-            crate::syntax::expr_to_string(other),
-            crate::syntax::expr_to_string(&unevaluated())
+            expr_to_string(other),
+            expr_to_string(&unevaluated())
           ));
           return Ok(unevaluated());
         }
@@ -7797,7 +7796,7 @@ pub fn cholesky_decomposition_ast(
     None => {
       crate::emit_message(&format!(
         "CholeskyDecomposition::matsq: Argument {} at position 1 is not a nonempty square matrix.",
-        crate::syntax::expr_to_string(&args[0])
+        expr_to_string(&args[0])
       ));
       return Ok(unevaluated());
     }
@@ -7807,7 +7806,7 @@ pub fn cholesky_decomposition_ast(
   if n == 0 || matrix.iter().any(|row| row.len() != n) {
     crate::emit_message(&format!(
       "CholeskyDecomposition::matsq: Argument {} at position 1 is not a nonempty square matrix.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated());
   }
@@ -7854,7 +7853,7 @@ pub fn cholesky_decomposition_ast(
     {
       crate::emit_message(&format!(
         "CholeskyDecomposition::npdef: The matrix {} is not positive definite.",
-        crate::syntax::expr_to_string(&args[0])
+        expr_to_string(&args[0])
       ));
       return Ok(unevaluated());
     }
@@ -9453,9 +9452,7 @@ pub fn jordan_decomposition_ast(
     }
     Ok(result)
   };
-  let same = |x: &Expr, y: &Expr| {
-    crate::syntax::expr_to_string(x) == crate::syntax::expr_to_string(y)
-  };
+  let same = |x: &Expr, y: &Expr| expr_to_string(x) == expr_to_string(y);
   let zero = Expr::Integer(0);
   let one = Expr::Integer(1);
   let b_zero = same(&b, &zero);
@@ -9563,7 +9560,6 @@ pub fn jordan_decomposition_ast(
 ///   ordering there is undecoded), as do inexact matrices of size ≥ 3 with
 ///   repeated eigenvalues (the float eigensolver cannot separate clusters).
 pub fn jordan_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::syntax::expr_to_string;
   let unevaluated = || unevaluated("JordanReduce", args);
   if args.len() != 1 {
     return Ok(unevaluated());
@@ -10363,7 +10359,7 @@ fn emit_frobenius_nmod(matrix: &[Vec<Expr>], m: i128) {
   );
   crate::emit_message(&format!(
     "FrobeniusReduce::nmod: {} is not valid modulo {}.",
-    crate::syntax::expr_to_string(&display),
+    expr_to_string(&display),
     m
   ));
 }
@@ -10376,7 +10372,6 @@ fn emit_frobenius_nmod(matrix: &[Vec<Expr>], m: i128) {
 /// do entries whose denominators are not invertible). Inexact and
 /// symbolic matrices stay unevaluated.
 pub fn frobenius_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::syntax::expr_to_string;
   let unevaluated = || unevaluated("FrobeniusReduce", args);
   if args.is_empty() {
     return Ok(unevaluated());
@@ -10578,7 +10573,6 @@ fn sparse_array_literal(n: usize, nonzeros: &[(usize, usize, Expr)]) -> Expr {
 /// matrices stay unevaluated (wolframscript's float pivots carry
 /// LAPACK-internal rounding that is not reproducible here).
 pub fn ldl_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::syntax::expr_to_string;
   let unevaluated = || unevaluated("LDLDecomposition", args);
   if args.is_empty() {
     return Ok(unevaluated());
@@ -11255,7 +11249,7 @@ pub fn det_modulus_ast(
   if mat.len() != mat[0].len() {
     crate::emit_message(&format!(
       "Det::matsq: Argument {} at position 1 is not a nonempty square matrix.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(la_unevaluated("Det", args));
   }
@@ -11285,7 +11279,7 @@ pub fn inverse_modulus_ast(
     if la_is_prime(m) {
       crate::emit_message(&format!(
         "Inverse::sing: Matrix {} is singular.",
-        crate::syntax::expr_to_string(&la_matrix_expr(&reduced))
+        expr_to_string(&la_matrix_expr(&reduced))
       ));
     } else {
       crate::emit_message(&format!(
@@ -11333,7 +11327,7 @@ pub fn row_reduce_modulus_ast(
   if !la_is_prime(m) {
     crate::emit_message(&format!(
       "RowReduce::nmod: {} cannot be reduced in non-prime modulus {m}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(la_unevaluated("RowReduce", args));
   }

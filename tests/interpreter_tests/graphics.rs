@@ -276,6 +276,33 @@ mod graphics {
       ));
     }
 
+    /// `Polygon[outer -> holes]` draws the outer boundary with the hole
+    /// boundaries cut out, which SVG expresses as one path per boundary
+    /// filled with the even-odd rule.
+    #[test]
+    fn polygon_with_holes() {
+      let svg = export_svg(
+        "Graphics[Polygon[{{0, 0}, {4, 0}, {4, 4}, {0, 4}} -> \
+         {{{1, 1}, {3, 1}, {3, 3}, {1, 3}}}]]",
+      );
+      assert!(svg.contains("fill-rule=\"evenodd\""), "{svg}");
+      // Two subpaths: the outer square and the hole.
+      assert_eq!(svg.matches(" Z").count(), 2, "{svg}");
+      // A single hole may also be given unwrapped.
+      assert_eq!(
+        export_svg(
+          "Graphics[Polygon[{{0, 0}, {4, 0}, {4, 4}, {0, 4}} -> \
+           {{1, 1}, {3, 1}, {3, 3}, {1, 3}}]]"
+        ),
+        svg
+      );
+      // Without holes the plain <polygon> form is kept.
+      let solid =
+        export_svg("Graphics[Polygon[{{0, 0}, {4, 0}, {4, 4}, {0, 4}}]]");
+      assert!(solid.contains("<polygon"), "{solid}");
+      assert!(!solid.contains("evenodd"), "{solid}");
+    }
+
     #[test]
     fn arrow() {
       insta::assert_snapshot!(export_svg(
@@ -2122,6 +2149,91 @@ mod plot3d {
         scene(&format!("Rotate[{square}, 0., {{0,1,0}}, {{1,0,0}}]")),
         scene(square)
       );
+    }
+
+    /// `Polygon[outer -> holes]` cuts the hole boundaries out of the face.
+    /// The square annulus below tessellates into eight triangles (two per
+    /// side of the ring) instead of the two a solid square would give, and
+    /// only the ring's own eight edges are stroked.
+    #[test]
+    fn graphics3d_polygon_with_hole() {
+      let svg = export_svg(
+        "Graphics3D[Polygon[{{0,0,0},{4,0,0},{4,4,0},{0,4,0}} -> \
+         {{1,1,0},{3,1,0},{3,3,0},{1,3,0}}], Boxed -> False]",
+      );
+      assert_eq!(svg.matches("<polygon").count(), 8, "{svg}");
+      assert_eq!(svg.matches("<line").count(), 8, "{svg}");
+      // The documented nesting — a list of hole boundaries — describes the
+      // same face.
+      let nested = export_svg(
+        "Graphics3D[Polygon[{{0,0,0},{4,0,0},{4,4,0},{0,4,0}} -> \
+         {{{1,1,0},{3,1,0},{3,3,0},{1,3,0}}}], Boxed -> False]",
+      );
+      assert_eq!(nested, svg);
+      // Two holes leave twelve triangles and twelve stroked edges.
+      let two = export_svg(
+        "Graphics3D[Polygon[{{0,0,0},{10,0,0},{10,10,0},{0,10,0}} -> \
+         {{{1,1,0},{3,1,0},{3,3,0},{1,3,0}}, \
+          {{6,6,0},{8,6,0},{8,8,0},{6,8,0}}}], Boxed -> False]",
+      );
+      assert_eq!(two.matches("<line").count(), 12, "{two}");
+      // Without a hole the same outline is a plain quad again.
+      let solid = export_svg(
+        "Graphics3D[Polygon[{{0,0,0},{4,0,0},{4,4,0},{0,4,0}}], \
+         Boxed -> False]",
+      );
+      assert_eq!(solid.matches("<polygon").count(), 2, "{solid}");
+    }
+
+    /// A hole boundary rides along with the transforms wrapping its
+    /// polygon; if it did not, the face would come back solid.
+    #[test]
+    fn graphics3d_polygon_with_hole_transforms() {
+      let ring = "Polygon[{{0,0,0},{4,0,0},{4,4,0},{0,4,0}} -> \
+                  {{1,1,0},{3,1,0},{3,3,0},{1,3,0}}]";
+      let moved = export_svg(&format!(
+        "Graphics3D[Translate[Rotate[{ring}, Pi/5, {{0,0,1}}], {{1,2,3}}], \
+         Boxed -> False]"
+      ));
+      assert_eq!(moved.matches("<polygon").count(), 8, "{moved}");
+      assert_ne!(
+        moved,
+        export_svg(&format!("Graphics3D[{ring}, Boxed -> False]"))
+      );
+    }
+
+    /// A face built as `Polygon[outer -> holes]` in a Demonstration is
+    /// written `Polygon[Join[outer -> holes]]`; `Join` of a single
+    /// expression returns it unchanged, so the two must render alike.
+    #[test]
+    fn graphics3d_polygon_with_hole_through_join() {
+      let ring = "{{0,0,0},{4,0,0},{4,4,0},{0,4,0}} -> \
+                  {{1,1,0},{3,1,0},{3,3,0},{1,3,0}}";
+      assert_eq!(
+        export_svg(&format!("Graphics3D[Polygon[Join[{ring}]], Boxed->False]")),
+        export_svg(&format!("Graphics3D[Polygon[{ring}], Boxed->False]"))
+      );
+    }
+
+    /// `FaceForm[front, back]` colours the two sides of a face
+    /// differently: the upward-facing square below shows `front`, the
+    /// downward-facing one `back`.
+    #[test]
+    fn graphics3d_face_form_two_sided() {
+      let svg = export_svg(
+        "Graphics3D[{FaceForm[Blue, Yellow], \
+         Polygon[{{0,0,0},{1,0,0},{1,1,0},{0,1,0}}], \
+         Polygon[{{0,1,1},{1,1,1},{1,0,1},{0,0,1}}]}, Boxed -> False]",
+      );
+      assert!(svg.contains("fill=\"rgb(0,0,216)\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(216,216,0)\""), "{svg}");
+      // A one-argument FaceForm colours both sides the same.
+      let one = export_svg(
+        "Graphics3D[{FaceForm[Blue], \
+         Polygon[{{0,0,0},{1,0,0},{1,1,0},{0,1,0}}], \
+         Polygon[{{0,1,1},{1,1,1},{1,0,1},{0,0,1}}]}, Boxed -> False]",
+      );
+      assert!(!one.contains("fill=\"rgb(216,216,0)\""), "{one}");
     }
 
     // A scene with many spheres scales each sphere's tessellation with

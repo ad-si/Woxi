@@ -1,7 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, bool_expr, unevaluated};
 use std::cmp::Ordering;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

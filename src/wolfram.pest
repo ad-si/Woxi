@@ -34,8 +34,11 @@ PartIndexSuffix = { (PartOpen ~ PartIndex ~ ("," ~ PartIndex)* ~ PartClose)+ }
 // FunctionCall-based Part extraction is handled by FunctionCallExtended
 // List-based Part extraction is handled by ListExtended
 // A trailing `BracketArgs*` lets a Part result be applied as a function:
-// `a[[i]][x]` (e.g. extract a function from a list and call it).
-PartExtract = { (Slot | Identifier | UnsignedNumericValue | String) ~ (PartOpen ~ PartIndex ~ ("," ~ PartIndex)* ~ PartClose)+ ~ BracketArgs* }
+// `a[[i]][x]` (e.g. extract a function from a list and call it). A prime
+// between the two differentiates the extracted function first, the way it
+// does after a parenthesis: `solutions[[i]][[2]]'[t]` differentiates the
+// InterpolatingFunction an NDSolve rule was carrying.
+PartExtract = { (Slot | Identifier | UnsignedNumericValue | String) ~ (PartOpen ~ PartIndex ~ ("," ~ PartIndex)* ~ PartClose)+ ~ DerivativePrime? ~ BracketArgs* }
 
 // Optional inline whitespace, spelled out so the atomic numeric-literal
 // lookaheads below can see a `^` that is separated from its base by spaces

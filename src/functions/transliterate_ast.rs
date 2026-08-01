@@ -16,8 +16,8 @@
 //! 2-argument target-script forms are not supported yet; unsupported
 //! inputs are passed through / left unevaluated.
 
-use crate::InterpreterError;
-use crate::syntax::{Expr, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 /// Transliterate[s] or Transliterate[{s1, s2, ...}]
 pub fn transliterate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

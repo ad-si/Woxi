@@ -5,10 +5,10 @@
 //! uses for `GeoModel -> ITRF00` (its default). This reproduces `GeoDistance`,
 //! `GeoDirection` and `GeoDestination` to full machine precision.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::geographics::{position_to_latlon, positions_from_arg};
 use crate::functions::math_ast::rat_reduce;
-use crate::syntax::{Expr, UnaryOperator, unevaluated};
 use geographiclib_rs::{DirectGeodesic, Geodesic, InverseGeodesic};
 use std::sync::OnceLock;
 

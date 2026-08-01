@@ -2,7 +2,6 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{ComparisonOp, unevaluated};
 
 /// AST-based Map: apply function to each element of a list or association.
 /// Map[f, {a, b, c}] -> {f[a], f[b], f[c]}

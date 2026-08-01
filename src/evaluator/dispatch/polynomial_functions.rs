@@ -296,7 +296,7 @@ pub fn dispatch_polynomial_functions(
       // Catch "cannot evaluate numerically" errors and return unevaluated
       // with a FindRoot::nlnum warning (matches wolframscript).
       match crate::functions::polynomial_ast::find_root_ast(args) {
-        Err(crate::InterpreterError::EvaluationError(msg))
+        Err(InterpreterError::EvaluationError(msg))
           if msg.contains("cannot evaluate expression numerically") =>
         {
           crate::emit_message(

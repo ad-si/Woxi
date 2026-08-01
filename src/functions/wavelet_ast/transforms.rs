@@ -12,7 +12,8 @@
 
 use super::data::WaveletSpec;
 use super::filters::{Filter, WaveletFilters, highpass_from};
-use crate::syntax::Expr;
+#[allow(unused_imports)]
+use super::*;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Padding {

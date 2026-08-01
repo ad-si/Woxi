@@ -1,7 +1,7 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::rat_reduce;
-use crate::syntax::BinaryOperator;
-use crate::syntax::{Expr, ImageType, bool_expr, unevaluated};
+use crate::syntax::ImageType;
 use std::sync::Arc;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -800,8 +800,8 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
         }
         match image_type {
-          crate::syntax::ImageType::Bit => Expr::Integer(v.round() as i128),
-          crate::syntax::ImageType::Real32 => Expr::Real((v as f32) as f64),
+          ImageType::Bit => Expr::Integer(v.round() as i128),
+          ImageType::Real32 => Expr::Real((v as f32) as f64),
           _ => Expr::Real(v),
         }
       };
@@ -984,7 +984,7 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       image_type,
     } => {
       let ch = *channels as usize;
-      let is_real32 = matches!(image_type, crate::syntax::ImageType::Real32);
+      let is_real32 = matches!(image_type, ImageType::Real32);
       // For Real32 images, perform the negation in f32 so the result
       // matches wolframscript's f32 image arithmetic. Other types do
       // the subtraction in f64 directly.
@@ -1208,7 +1208,7 @@ pub fn binarize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         height: *height,
         channels: 1,
         data: Arc::new(new_data),
-        image_type: crate::syntax::ImageType::Bit,
+        image_type: ImageType::Bit,
       })
     }
     _ => Err(InterpreterError::EvaluationError(
@@ -1545,7 +1545,7 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // each pixel to its f32 representation before the computation and
   // again on the way out so the result matches wolframscript's f32
   // image arithmetic.
-  let is_real32 = matches!(image_type, crate::syntax::ImageType::Real32);
+  let is_real32 = matches!(image_type, ImageType::Real32);
   let snap = |v: f64| -> f64 { if is_real32 { (v as f32) as f64 } else { v } };
   let apply = |v: f64| -> f64 {
     let v = snap(v);
@@ -2139,7 +2139,7 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let corner: Vec<f64> = (0..ch).map(|c| data[c]).collect();
   // For Real32, allow one f32 ulp of tolerance against the corner.
-  let tol = if matches!(image_type, crate::syntax::ImageType::Real32) {
+  let tol = if matches!(image_type, ImageType::Real32) {
     f32::EPSILON as f64
   } else {
     0.0
@@ -2940,7 +2940,7 @@ pub fn image_apply_ast(
   // in f32 throughout; without the snap, a function like `#^2 &` would
   // square the f64 value and round differently on the way back into the
   // f32 buffer.
-  let is_real32 = matches!(image_type, crate::syntax::ImageType::Real32);
+  let is_real32 = matches!(image_type, ImageType::Real32);
   let snap = |v: f64| -> f64 { if is_real32 { (v as f32) as f64 } else { v } };
 
   if ch == 1 {
@@ -3505,7 +3505,7 @@ fn pointwise_image_op(
         name
       )));
     }
-    let is_r32 = matches!(t1, crate::syntax::ImageType::Real32);
+    let is_r32 = matches!(t1, ImageType::Real32);
     let new_data: Vec<f64> = data1
       .iter()
       .zip(data2.iter())
@@ -3532,7 +3532,7 @@ fn pointwise_image_op(
   } = &args[0]
     && let Some(s) = crate::functions::math_ast::try_eval_to_f64(&args[1])
   {
-    let is_r32 = matches!(image_type, crate::syntax::ImageType::Real32);
+    let is_r32 = matches!(image_type, ImageType::Real32);
     let new_data: Vec<f64> =
       data.iter().map(|&v| apply(v, s, is_r32)).collect();
     return Ok(Expr::Image {
@@ -3555,7 +3555,7 @@ fn pointwise_image_op(
   } = &args[1]
     && let Some(s) = crate::functions::math_ast::try_eval_to_f64(&args[0])
   {
-    let is_r32 = matches!(image_type, crate::syntax::ImageType::Real32);
+    let is_r32 = matches!(image_type, ImageType::Real32);
     let new_data: Vec<f64> =
       data.iter().map(|&v| apply(s, v, is_r32)).collect();
     return Ok(Expr::Image {
@@ -3739,7 +3739,7 @@ pub fn pixel_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   let ch = *channels as usize;
-  let is_real32 = matches!(image_type, crate::syntax::ImageType::Real32);
+  let is_real32 = matches!(image_type, ImageType::Real32);
   let to_value = |v: f64| -> Expr {
     if is_real32 {
       Expr::Real((v as f32) as f64)
@@ -4718,9 +4718,9 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // wolframscript hands back `"Real32"` pixels for every integer type.
   if let Some(mut filtered) = gaussian_filter_image(&args[0], axis, axis) {
     if let Expr::Image { image_type, .. } = &mut filtered
-      && *image_type != crate::syntax::ImageType::Real64
+      && *image_type != ImageType::Real64
     {
-      *image_type = crate::syntax::ImageType::Real32;
+      *image_type = ImageType::Real32;
     }
     return Ok(filtered);
   }
@@ -4746,13 +4746,13 @@ fn requantize_filtered(mut image: Expr) -> Expr {
     return image;
   };
   let levels = match image_type {
-    crate::syntax::ImageType::Byte => 255.0,
-    crate::syntax::ImageType::Bit16 => 65535.0,
-    crate::syntax::ImageType::Bit => {
-      *image_type = crate::syntax::ImageType::Real32;
+    ImageType::Byte => 255.0,
+    ImageType::Bit16 => 65535.0,
+    ImageType::Bit => {
+      *image_type = ImageType::Real32;
       return image;
     }
-    crate::syntax::ImageType::Real32 | crate::syntax::ImageType::Real64 => {
+    ImageType::Real32 | ImageType::Real64 => {
       return image;
     }
   };
@@ -4988,7 +4988,7 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       height,
       channels: 3,
       data: Arc::new(data),
-      image_type: crate::syntax::ImageType::Real64,
+      image_type: ImageType::Real64,
     });
   }
   let is_image = matches!(&args[0], Expr::Image { .. });
@@ -5085,7 +5085,7 @@ pub fn morphological_binarize_ast(
     height,
     channels: 1,
     data: Arc::new(out),
-    image_type: crate::syntax::ImageType::Bit,
+    image_type: ImageType::Bit,
   })
 }
 
@@ -5094,7 +5094,6 @@ pub fn morphological_binarize_ast(
 /// bottom edge, pixel centers at half-integers) with zero padding
 /// outside. Real32 images compute in f32, everything else in f64.
 pub fn image_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::syntax::ImageType;
   let unevaluated = || unevaluated("ImageValue", args);
   let Expr::Image {
     width,
@@ -5560,7 +5559,6 @@ pub fn morphological_components_ast(
 }
 
 pub fn filling_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::syntax::ImageType;
   let unevaluated = || unevaluated("FillingTransform", args);
   let Expr::Image {
     width,
@@ -5860,7 +5858,7 @@ pub fn distance_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       height,
       channels: 1,
       data: Arc::new(vec![1.0; n]),
-      image_type: crate::syntax::ImageType::Real32,
+      image_type: ImageType::Real32,
     });
   }
 
@@ -5888,7 +5886,7 @@ pub fn distance_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     height,
     channels: 1,
     data: Arc::new(cost),
-    image_type: crate::syntax::ImageType::Real32,
+    image_type: ImageType::Real32,
   })
 }
 
@@ -5911,7 +5909,6 @@ const COLOR_COMBINE_SPACES: &[(&str, usize)] = &[
 /// must match the combined total. The result type is the highest input
 /// type in the order Bit < Byte < Bit16 < Real32 < Real64.
 pub fn color_combine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::syntax::ImageType;
   let unevaluated = || unevaluated("ColorCombine", args);
 
   let color_space: Option<(&'static str, usize)> = if args.len() == 2 {
@@ -8461,7 +8458,7 @@ pub fn crossing_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         height: *height,
         channels: 1,
         data: std::sync::Arc::new(out),
-        image_type: crate::syntax::ImageType::Bit,
+        image_type: ImageType::Bit,
       })
     }
     // 1-D numeric list → binary SparseArray vector.

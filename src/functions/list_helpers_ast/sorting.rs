@@ -2,7 +2,6 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, UnaryOperator, bool_expr, unevaluated};
 
 /// Wolfram canonical ordering for expressions.
 /// For strings: case-insensitive first, then lowercase before uppercase for ties.

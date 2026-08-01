@@ -1,4 +1,5 @@
-use crate::syntax::{Expr, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 /// Infer the TypeSystem type for an expression.
 fn infer_type(expr: &Expr) -> Expr {
@@ -43,10 +44,8 @@ fn infer_list_type(items: &[Expr]) -> Expr {
   let types: Vec<Expr> = items.iter().map(infer_type).collect();
 
   // Check if all types are the same
-  let first_str = crate::syntax::expr_to_string(&types[0]);
-  let all_same = types
-    .iter()
-    .all(|t| crate::syntax::expr_to_string(t) == first_str);
+  let first_str = expr_to_string(&types[0]);
+  let all_same = types.iter().all(|t| expr_to_string(t) == first_str);
 
   if all_same {
     // Vector[type, count]
@@ -94,10 +93,8 @@ fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
     .collect();
 
   // Check if all value types are the same
-  let first_str = crate::syntax::expr_to_string(&value_types[0]);
-  let all_same = value_types
-    .iter()
-    .all(|t| crate::syntax::expr_to_string(t) == first_str);
+  let first_str = expr_to_string(&value_types[0]);
+  let all_same = value_types.iter().all(|t| expr_to_string(t) == first_str);
 
   if top_level && all_same {
     // Assoc[keyType, valueType, count]
@@ -209,7 +206,7 @@ fn dataset_passthrough_kind(name: &str) -> Option<bool> {
 pub fn dataset_passthrough(
   name: &str,
   args: &[Expr],
-) -> Result<Expr, crate::InterpreterError> {
+) -> Result<Expr, InterpreterError> {
   let unwrapped: Vec<Expr> = args
     .iter()
     .map(|a| dataset_contents(a).unwrap_or_else(|| a.clone()))
@@ -225,7 +222,7 @@ pub fn dataset_passthrough(
 pub fn dataset_query(
   func_args: &[Expr],
   args: &[Expr],
-) -> Result<Expr, crate::InterpreterError> {
+) -> Result<Expr, InterpreterError> {
   let data = &func_args[0];
 
   let unsupported = || {

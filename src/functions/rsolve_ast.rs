@@ -1,8 +1,6 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::{gcd_i128, lcm_i128};
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
-};
 
 /// RSolve[{recurrence, initial_conditions...}, a, n]
 /// RSolve[recurrence, a[n], n] — single equation, return rule for `a[n]`

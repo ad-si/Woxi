@@ -254,6 +254,7 @@ mod array_dot {
 }
 
 mod det {
+  use super::super::case_helpers::assert_case;
   use super::*;
 
   #[test]
@@ -329,6 +330,14 @@ mod det {
     assert_eq!(
       interpret("Det[HilbertMatrix[5]]").unwrap(),
       "1/266716800000"
+    );
+  }
+
+  #[test]
+  fn det_polynomial() {
+    assert_case(
+      r#"m = Table[1 / (i + j + 1), {i, 3}, {j, 3}]; Det[m - x IdentityMatrix[3]]"#,
+      r#"-((-1 + 4755*x - 255600*x^2 + 378000*x^3)/378000)"#,
     );
   }
 }

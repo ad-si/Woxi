@@ -2,7 +2,6 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{bool_expr, unevaluated};
 
 /// AST-based ArrayDepth: compute depth of nested lists.
 /// Returns the depth to which the expression forms a rectangular array.

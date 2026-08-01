@@ -1,11 +1,11 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   PLOT_COLORS, evaluate_at_xy, format_tick, nice_step, parse_image_size,
   substitute_var,
 };
-use crate::syntax::Expr;
 
 const DEFAULT_SIZE: u32 = 360;
 const GRID_N: usize = 50;
@@ -841,7 +841,9 @@ fn bounding_box_corners() -> [Point3D; 8] {
   ]
 }
 
-/// Draw 3D axis lines with ticks and labels
+/// Draw 3D axis lines with ticks and labels over the normalized cube the
+/// surface plots draw in. `AxesLabel` strings, when given, name the x, y
+/// and z axis in that order.
 fn draw_axes(
   svg: &mut String,
   camera: &Camera,
@@ -850,16 +852,51 @@ fn draw_axes(
   y_range: (f64, f64),
   z_range: (f64, f64),
 ) {
+  draw_axes_on_box(
+    svg,
+    camera,
+    to_svg,
+    &bounding_box_corners(),
+    x_range,
+    y_range,
+    z_range,
+    &[None, None, None],
+  );
+}
+
+/// Draw 3D axis lines with ticks and labels along the edges of `corners`,
+/// the box the scene is framed by. `corners` is ordered as
+/// `bounding_box_corners()` builds it: the four `z_min` corners first,
+/// each pair varying x fastest.
+#[allow(clippy::too_many_arguments)]
+fn draw_axes_on_box(
+  svg: &mut String,
+  camera: &Camera,
+  to_svg: &dyn Fn(f64, f64) -> (f64, f64),
+  corners: &[Point3D; 8],
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  z_range: (f64, f64),
+  axes_labels: &[Option<String>; 3],
+) {
   let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
   let axis_color = format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
   let font_size = 13;
 
-  // Find the bottom corner (z=-1) closest to the viewer (smallest depth)
-  let corners = bounding_box_corners();
+  // The box in scene coordinates. `mirror_*` flips a coordinate to the
+  // opposite face, which is how each axis edge finds its far end.
+  let (box_x_lo, box_x_hi) = (corners[0].x, corners[7].x);
+  let (box_y_lo, box_y_hi) = (corners[0].y, corners[7].y);
+  let (box_z_lo, box_z_hi) = (corners[0].z, corners[7].z);
+  let mirror_x = |x: f64| box_x_lo + box_x_hi - x;
+  let mirror_y = |y: f64| box_y_lo + box_y_hi - y;
+
+  // Find the bottom corner (z at the box floor) closest to the viewer
+  // (smallest depth)
   let mut min_depth_idx = 0;
   let mut min_depth = f64::INFINITY;
   for (idx, &corner) in corners.iter().enumerate() {
-    if corner.z > -Z_SCALE + 0.01 {
+    if corner.z > box_z_lo + (box_z_hi - box_z_lo) * 0.01 {
       continue;
     }
     let d = depth(corner, camera);
@@ -873,16 +910,16 @@ fn draw_axes(
 
   // The three axis edges from the closest corner.
   // Each entry: (endpoint, value_range, axis_goes_negative).
-  // When the axis direction goes from +1 to -1 in normalized space, the
-  // normalized origin represents val_max and we must flip the mapping.
+  // When the edge runs from the box's high face to its low one, the
+  // origin corner stands for val_max and the mapping has to be flipped.
   let x_end = Point3D {
-    x: -origin.x,
+    x: mirror_x(origin.x),
     y: origin.y,
     z: origin.z,
   };
   let y_end = Point3D {
     x: origin.x,
-    y: -origin.y,
+    y: mirror_y(origin.y),
     z: origin.z,
   };
   // Place the z-axis on the vertical edge that is most to the left or right
@@ -918,25 +955,27 @@ fn draw_axes(
   let z_end = Point3D {
     x: z_origin.x,
     y: z_origin.y,
-    z: Z_SCALE,
+    z: box_z_hi,
   };
 
   let axes: [(Point3D, Point3D, (f64, f64), bool); 3] = [
     (origin, x_end, x_range, origin.x > x_end.x),
     (origin, y_end, y_range, origin.y > y_end.y),
-    (z_origin, z_end, z_range, false), // z always goes from -Z_SCALE to +Z_SCALE
+    (z_origin, z_end, z_range, false), // z always runs from floor to ceiling
   ];
 
   // Project the box center so we can orient tick labels outward
   let box_center = Point3D {
-    x: 0.0,
-    y: 0.0,
-    z: 0.0,
+    x: (box_x_lo + box_x_hi) / 2.0,
+    y: (box_y_lo + box_y_hi) / 2.0,
+    z: (box_z_lo + box_z_hi) / 2.0,
   };
   let (cx, cy) =
     to_svg(project(box_center, camera).0, project(box_center, camera).1);
 
-  for &(axis_origin, end, (val_min, val_max), flipped) in &axes {
+  for (ai, &(axis_origin, end, (val_min, val_max), flipped)) in
+    axes.iter().enumerate()
+  {
     let (sx0, sy0) = to_svg(
       project(axis_origin, camera).0,
       project(axis_origin, camera).1,
@@ -949,14 +988,50 @@ fn draw_axes(
             sx0, sy0, sx1, sy1, axis_color
         ));
 
-    // Ticks
-    let step = nice_step(val_max - val_min, 4);
-    if step <= 0.0 {
-      continue;
+    // The axis label sits centred on the axis, clear of the tick labels
+    // already sitting there — where Wolfram puts it.
+    if let Some(label) = axes_labels[ai].as_deref().filter(|l| !l.is_empty()) {
+      let (dx, dy) = (sx1 - sx0, sy1 - sy0);
+      let len = (dx * dx + dy * dy).sqrt();
+      if len > 1.0 {
+        let (mid_x, mid_y) = ((sx0 + sx1) * 0.5, (sy0 + sy1) * 0.5);
+        let (perpx, perpy) = (-dy / len, dx / len);
+        let sign = if perpx * (cx - mid_x) + perpy * (cy - mid_y) > 0.0 {
+          -1.0
+        } else {
+          1.0
+        };
+        // How far the tick labels already reach, in the direction the
+        // axis label is being pushed: their own offset plus half of the
+        // widest one's box. Sideways of a vertical axis that is the text
+        // width, below a horizontal one it is the line height.
+        let tick_chars = tick_values(val_min, val_max)
+          .iter()
+          .map(|v| format_tick(*v).chars().count())
+          .max()
+          .unwrap_or(1) as f64;
+        let half_w = tick_chars * font_size as f64 * 0.3;
+        let half_h = font_size as f64 * 0.5;
+        // …plus half of the label's own box, so `offset` can centre it
+        // just past them.
+        let own_w = label_half_width(label, font_size);
+        let reach = TICK_LABEL_OFFSET
+          + (perpx * sign).abs() * (half_w + own_w)
+          + (perpy * sign).abs() * (half_h + half_h);
+        let offset = reach + font_size as f64 * 0.5;
+        svg.push_str(&format!(
+          "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"{}\" fill=\"{}\" text-anchor=\"middle\" dominant-baseline=\"middle\">{}</text>\n",
+          mid_x + perpx * offset * sign,
+          mid_y + perpy * offset * sign,
+          font_size,
+          axis_color,
+          label
+        ));
+      }
     }
-    let first_tick = (val_min / step).ceil() * step;
-    let mut tick_val = first_tick;
-    while tick_val <= val_max + step * 0.01 {
+
+    // Ticks
+    for tick_val in tick_values(val_min, val_max) {
       // Map tick_val to parameter t along the axis [origin → end]
       let t_raw = if (val_max - val_min).abs() < 1e-15 {
         0.5
@@ -1000,13 +1075,49 @@ fn draw_axes(
         let label = format_tick(tick_val);
         svg.push_str(&format!(
                     "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"{}\" fill=\"{}\" text-anchor=\"middle\" dominant-baseline=\"middle\">{}</text>\n",
-                    tx + perpx * 3.0 * sign, ty + perpy * 3.0 * sign, font_size, axis_color, label
+                    tx + perpx / 4.0 * TICK_LABEL_OFFSET * sign, ty + perpy / 4.0 * TICK_LABEL_OFFSET * sign, font_size, axis_color, label
                 ));
       }
-
-      tick_val += step;
     }
   }
+}
+
+/// How far from the axis line the tick labels are centred.
+const TICK_LABEL_OFFSET: f64 = 12.0;
+
+/// Half the width a text label takes at `font_size`, estimated from its
+/// character count — enough to keep labels from landing on each other.
+fn label_half_width(label: &str, font_size: i32) -> f64 {
+  markup_char_count(label) as f64 * font_size as f64 * 0.3
+}
+
+/// The margin a frame needs outside its box for `AxesLabel` text: the tick
+/// labels' own room plus the widest axis label. Capped at a fifth of the
+/// frame so a long label shrinks the plot rather than squeezing it away.
+fn axes_label_margin(axes_labels: &[Option<String>; 3], size: u32) -> f64 {
+  let font_size = 13;
+  let widest = axes_labels
+    .iter()
+    .flatten()
+    .map(|l| label_half_width(l, font_size) * 2.0)
+    .fold(0.0_f64, f64::max);
+  (25.0 + widest * 0.5).min(size as f64 / 5.0)
+}
+
+/// The tick positions along an axis spanning `val_min` to `val_max`, the
+/// same ones the tick marks are drawn at.
+fn tick_values(val_min: f64, val_max: f64) -> Vec<f64> {
+  let step = nice_step(val_max - val_min, 4);
+  if step <= 0.0 {
+    return Vec::new();
+  }
+  let mut ticks = Vec::new();
+  let mut tick_val = (val_min / step).ceil() * step;
+  while tick_val <= val_max + step * 0.01 {
+    ticks.push(tick_val);
+    tick_val += step;
+  }
+  ticks
 }
 
 // ── VectorPlot3D implementation ─────────────────────────────────────
@@ -1504,6 +1615,9 @@ fn parse_point3d_list(expr: &Expr) -> Option<Vec<Point3D>> {
 #[derive(Clone)]
 struct StyleState3D {
   color: Option<(u8, u8, u8)>,
+  /// `FaceForm[front, back]`: the colour of faces turned away from the
+  /// viewer. None means both sides use `color`.
+  back_color: Option<(u8, u8, u8)>,
   opacity: f64,
   /// Stroke width in pixels for Line3D primitives. None means default 1.5.
   thickness: Option<f64>,
@@ -1516,6 +1630,7 @@ impl Default for StyleState3D {
   fn default() -> Self {
     Self {
       color: None, // None means use default blue
+      back_color: None,
       opacity: 1.0,
       thickness: None,
       capped: true,
@@ -1537,6 +1652,9 @@ enum Primitive3D {
   },
   Polygon3D {
     points: Vec<Point3D>,
+    /// Boundaries cut out of the face (`Polygon[outer -> holes]`). Empty
+    /// for an ordinary polygon.
+    holes: Vec<Vec<Point3D>>,
     style: StyleState3D,
   },
   Line3D {
@@ -1581,9 +1699,34 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
     let g = (color.g.clamp(0.0, 1.0) * 255.0).round() as u8;
     let b = (color.b.clamp(0.0, 1.0) * 255.0).round() as u8;
     style.color = Some((r, g, b));
+    style.back_color = None;
     if color.a < 1.0 {
       style.opacity = color.a;
     }
+    return true;
+  }
+
+  // FaceForm[front] colours both sides; FaceForm[front, back] gives the
+  // side turned away from the viewer its own colour.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "FaceForm"
+    && !args.is_empty()
+  {
+    let mut front = StyleState3D::default();
+    if !apply_3d_directive(&args[0], &mut front) {
+      return true;
+    }
+    style.color = front.color;
+    style.opacity = front.opacity;
+    style.back_color = match args.get(1) {
+      Some(back) => {
+        let mut b = StyleState3D::default();
+        apply_3d_directive(back, &mut b)
+          .then_some(b.color)
+          .flatten()
+      }
+      None => None,
+    };
     return true;
   }
 
@@ -1862,8 +2005,12 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
         z: a.z.max(b.z),
       };
     }
-    Primitive3D::Polygon3D { points, .. }
-    | Primitive3D::Point3DPrim { points, .. }
+    Primitive3D::Polygon3D { points, holes, .. } => {
+      for p in points.iter_mut().chain(holes.iter_mut().flatten()) {
+        *p = xf.apply(*p);
+      }
+    }
+    Primitive3D::Point3DPrim { points, .. }
     | Primitive3D::Arrow3D { points, .. } => {
       for p in points {
         *p = xf.apply(*p);
@@ -2025,6 +2172,20 @@ fn collect_3d_primitives(
           if let Some(pts) = parse_point3d_list(&args[0]) {
             prims.push(Primitive3D::Polygon3D {
               points: pts,
+              holes: Vec::new(),
+              style: style.clone(),
+            });
+          } else if let Some((outer, holes)) =
+            crate::functions::polygon_holes::split_holes(
+              &args[0],
+              &parse_point3d_list,
+            )
+          {
+            // Polygon[outer -> holes]: a face with the hole boundaries
+            // cut out of it.
+            prims.push(Primitive3D::Polygon3D {
+              points: outer,
+              holes,
               style: style.clone(),
             });
           } else if let Expr::List(poly_exprs) = &args[0] {
@@ -2034,6 +2195,18 @@ fn collect_3d_primitives(
               if let Some(pts) = parse_point3d_list(poly) {
                 prims.push(Primitive3D::Polygon3D {
                   points: pts,
+                  holes: Vec::new(),
+                  style: style.clone(),
+                });
+              } else if let Some((outer, holes)) =
+                crate::functions::polygon_holes::split_holes(
+                  poly,
+                  &parse_point3d_list,
+                )
+              {
+                prims.push(Primitive3D::Polygon3D {
+                  points: outer,
+                  holes,
                   style: style.clone(),
                 });
               }
@@ -2651,6 +2824,113 @@ fn collect_raster3d(
   }
 }
 
+/// Tessellate a planar polygon with holes (`Polygon[outer -> holes]`).
+///
+/// The face is flattened onto its own plane, triangulated there, and the
+/// triangles are lifted back to 3D. The second result marks, per triangle,
+/// which of its three edges lie on the outer boundary or on a hole
+/// boundary — the rest are internal cuts that must not be stroked.
+fn tessellate_polygon_with_holes(
+  outer: &[Point3D],
+  holes: &[Vec<Point3D>],
+) -> (Vec<(Point3D, Point3D, Point3D)>, Vec<[bool; 3]>) {
+  use crate::functions::polygon_holes::triangulate_with_holes;
+
+  if outer.len() < 3 {
+    return (Vec::new(), Vec::new());
+  }
+  // Newell's method: a plane normal that is robust for non-planar input.
+  let mut n = Point3D {
+    x: 0.0,
+    y: 0.0,
+    z: 0.0,
+  };
+  for i in 0..outer.len() {
+    let a = outer[i];
+    let b = outer[(i + 1) % outer.len()];
+    n.x += (a.y - b.y) * (a.z + b.z);
+    n.y += (a.z - b.z) * (a.x + b.x);
+    n.z += (a.x - b.x) * (a.y + b.y);
+  }
+  let len = (n.x * n.x + n.y * n.y + n.z * n.z).sqrt();
+  if !len.is_finite() || len == 0.0 {
+    return (Vec::new(), Vec::new());
+  }
+  let n = Point3D {
+    x: n.x / len,
+    y: n.y / len,
+    z: n.z / len,
+  };
+  // Any vector not parallel to the normal yields an in-plane basis.
+  let helper = if n.x.abs() < 0.9 {
+    Point3D {
+      x: 1.0,
+      y: 0.0,
+      z: 0.0,
+    }
+  } else {
+    Point3D {
+      x: 0.0,
+      y: 1.0,
+      z: 0.0,
+    }
+  };
+  let cross = |a: Point3D, b: Point3D| Point3D {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  };
+  let u = cross(n, helper);
+  let ulen = (u.x * u.x + u.y * u.y + u.z * u.z).sqrt();
+  let u = Point3D {
+    x: u.x / ulen,
+    y: u.y / ulen,
+    z: u.z / ulen,
+  };
+  let v = cross(n, u);
+  let origin = outer[0];
+  let flatten = |p: &Point3D| {
+    let d = Point3D {
+      x: p.x - origin.x,
+      y: p.y - origin.y,
+      z: p.z - origin.z,
+    };
+    (
+      d.x * u.x + d.y * u.y + d.z * u.z,
+      d.x * v.x + d.y * v.y + d.z * v.z,
+    )
+  };
+
+  let mut verts3: Vec<Point3D> = outer.to_vec();
+  let outer_idx: Vec<usize> = (0..outer.len()).collect();
+  let mut hole_idx: Vec<Vec<usize>> = Vec::with_capacity(holes.len());
+  for hole in holes {
+    let start = verts3.len();
+    verts3.extend(hole.iter().copied());
+    hole_idx.push((start..verts3.len()).collect());
+  }
+  let verts2: Vec<(f64, f64)> = verts3.iter().map(flatten).collect();
+
+  let result = triangulate_with_holes(&verts2, &outer_idx, &hole_idx);
+  let tris = result
+    .triangles
+    .iter()
+    .map(|t| (verts3[t[0]], verts3[t[1]], verts3[t[2]]))
+    .collect();
+  let flags = result
+    .triangles
+    .iter()
+    .map(|t| {
+      [
+        result.is_boundary(t[0], t[1]),
+        result.is_boundary(t[1], t[2]),
+        result.is_boundary(t[2], t[0]),
+      ]
+    })
+    .collect();
+  (tris, flags)
+}
+
 /// Tessellate a cuboid into 12 triangles (2 per face).
 pub(crate) fn tessellate_cuboid(
   p_min: &Point3D,
@@ -3030,8 +3310,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut camera = Camera::default();
   // `PlotRange -> r` (a single number): the displayed region is the fixed
   // cube [-r, r]³, so the framing stays put while contents move (as in a
-  // Manipulate re-render).
-  let mut plot_range: Option<f64> = None;
+  // Manipulate re-render). `PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}`
+  // pins each axis separately.
+  let mut plot_range: Option<[(f64, f64); 3]> = None;
+  let mut show_axes = false;
+  let mut axes_labels: [Option<String>; 3] = [None, None, None];
   for opt in &args[1..] {
     let opt_eval = evaluate_expr_to_expr(opt).unwrap_or(opt.clone());
     if let Expr::Rule {
@@ -3088,12 +3371,36 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "PlotRange" => {
-          if let Some(r) = try_eval_to_f64(
-            &evaluate_expr_to_expr(replacement)
-              .unwrap_or_else(|_| replacement.as_ref().clone()),
-          ) && r > 0.0
-          {
-            plot_range = Some(r);
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          if let Some(r) = try_eval_to_f64(&value) {
+            if r > 0.0 {
+              plot_range = Some([(-r, r); 3]);
+            }
+          } else if let Some(ranges) = parse_axis_ranges(&value) {
+            plot_range = Some(ranges);
+          }
+        }
+        "Axes" => match replacement.as_ref() {
+          Expr::Identifier(s) if s == "False" => show_axes = false,
+          Expr::Identifier(s) if s == "True" => show_axes = true,
+          // `Axes -> {True, True, False}`: drawn as long as any is on.
+          Expr::List(items) => {
+            show_axes = items
+              .iter()
+              .any(|i| matches!(i, Expr::Identifier(s) if s == "True"));
+          }
+          _ => {}
+        },
+        "AxesLabel" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          let items: Vec<Expr> = match &value {
+            Expr::List(items) => items.to_vec(),
+            other => vec![other.clone()],
+          };
+          for (i, item) in items.iter().take(3).enumerate() {
+            axes_labels[i] = axis_label_markup(item);
           }
         }
         _ => {}
@@ -3152,6 +3459,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   for prim in &prims {
+    // Per-triangle edge flags for a polygon with holes; the ordinary
+    // hole-free cases derive theirs from the fan below.
+    let mut holed_boundaries: Vec<[bool; 3]> = Vec::new();
     let (tris, prim_style): (Vec<(Point3D, Point3D, Point3D)>, &StyleState3D) =
       match prim {
         Primitive3D::Sphere {
@@ -3183,7 +3493,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           radius,
           style,
         } => (tessellate_cone(p1, p2, *radius), style),
-        Primitive3D::Polygon3D { points, style } => {
+        Primitive3D::Polygon3D {
+          points,
+          holes,
+          style,
+        } if holes.is_empty() => {
           // Simple fan triangulation
           let t = if points.len() >= 3 {
             (1..points.len() - 1)
@@ -3194,12 +3508,22 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
           (t, style)
         }
+        Primitive3D::Polygon3D {
+          points,
+          holes,
+          style,
+        } => {
+          let (t, flags) = tessellate_polygon_with_holes(points, holes);
+          holed_boundaries = flags;
+          (t, style)
+        }
         Primitive3D::Surface3D { tris, style } => (tris.clone(), style),
         // Line and Point are handled separately below
         _ => (
           vec![],
           &StyleState3D {
             color: None,
+            back_color: None,
             opacity: 1.0,
             thickness: None,
             capped: true,
@@ -3207,24 +3531,43 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ),
       };
     let prim_color = prim_style.color.unwrap_or(base_color);
+    let prim_back_color = prim_style.back_color;
     let prim_opacity = prim_style.opacity;
+    // Direction from the scene towards the viewer; a face whose normal
+    // points along it shows its front side.
+    let view_dir = {
+      let (sa, ca) = camera.azimuth.sin_cos();
+      let (se, ce) = camera.elevation.sin_cos();
+      [ce * ca, ce * sa, se]
+    };
 
     // A polygon with more than three corners was fan-triangulated above:
     // every triangle keeps the polygon edge it sits on, but the cuts back
     // to the fan's first corner are internal and must not be stroked.
     let fan_corners = match prim {
-      Primitive3D::Polygon3D { points, .. } => points.len(),
+      Primitive3D::Polygon3D { points, holes, .. } if holes.is_empty() => {
+        points.len()
+      }
       _ => 0,
     };
     let tri_count = tris.len();
     for (i, (v0, v1, v2)) in tris.into_iter().enumerate() {
-      let boundary = if fan_corners > 3 {
+      let boundary = if let Some(flags) = holed_boundaries.get(i) {
+        *flags
+      } else if fan_corners > 3 {
         [i == 0, true, i + 1 == tri_count]
       } else {
         [true; 3]
       };
       let normal = triangle_normal(v0, v1, v2);
-      let color = apply_lighting(prim_color, normal);
+      let facing = normal[0] * view_dir[0]
+        + normal[1] * view_dir[1]
+        + normal[2] * view_dir[2];
+      let side_color = match prim_back_color {
+        Some(back) if facing < 0.0 => back,
+        _ => prim_color,
+      };
+      let color = apply_lighting(side_color, normal);
       let p0 = project(v0, &camera);
       let p1 = project(v1, &camera);
       let p2 = project(v2, &camera);
@@ -3427,15 +3770,15 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   z3_min -= pad_z;
   z3_max += pad_z;
 
-  // An explicit PlotRange pins the displayed region to [-r, r]³ regardless
-  // of the content's extent, keeping the framing stable across re-renders.
-  if let Some(r) = plot_range {
-    x3_min = -r;
-    x3_max = r;
-    y3_min = -r;
-    y3_max = r;
-    z3_min = -r;
-    z3_max = r;
+  // An explicit PlotRange pins the displayed region regardless of the
+  // content's extent, keeping the framing stable across re-renders.
+  if let Some([(xl, xh), (yl, yh), (zl, zh)]) = plot_range {
+    x3_min = xl;
+    x3_max = xh;
+    y3_min = yl;
+    y3_max = yh;
+    z3_min = zl;
+    z3_max = zh;
   }
 
   // Build box corners
@@ -3550,7 +3893,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let p_width = if p_width < 1e-15 { 1.0 } else { p_width };
   let p_height = if p_height < 1e-15 { 1.0 } else { p_height };
 
-  let margin = 10.0;
+  // Axes need room outside the box for their ticks, and more again for
+  // the axis labels sitting beyond those.
+  let margin = match (show_axes, axes_labels.iter().any(Option::is_some)) {
+    (true, true) => axes_label_margin(&axes_labels, svg_width.min(svg_height)),
+    (true, false) => 25.0,
+    (false, _) => 10.0,
+  };
   let draw_w = svg_width as f64 - 2.0 * margin;
   let draw_h = svg_height as f64 - 2.0 * margin;
   let scale = (draw_w / p_width).min(draw_h / p_height);
@@ -3841,8 +4190,81 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Axes (with their ticks and labels) go on top of the scene.
+  if show_axes {
+    draw_axes_on_box(
+      &mut svg,
+      &camera,
+      &to_svg,
+      &box_corners,
+      (x3_min, x3_max),
+      (y3_min, y3_max),
+      (z3_min, z3_max),
+      &axes_labels,
+    );
+  }
+
   svg.push_str("</svg>");
   Ok(crate::graphics3d_result_with_structure(svg, structure))
+}
+
+/// `PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}`: one explicit interval per
+/// axis. Anything else (a single interval, `Automatic`, …) is not this form.
+fn parse_axis_ranges(expr: &Expr) -> Option<[(f64, f64); 3]> {
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  if items.len() != 3 {
+    return None;
+  }
+  let mut ranges = [(0.0, 0.0); 3];
+  for (i, item) in items.iter().enumerate() {
+    let Expr::List(pair) = item else {
+      return None;
+    };
+    if pair.len() != 2 {
+      return None;
+    }
+    let lo = try_eval_to_f64(&evaluate_expr_to_expr(&pair[0]).ok()?)?;
+    let hi = try_eval_to_f64(&evaluate_expr_to_expr(&pair[1]).ok()?)?;
+    // A reversed or degenerate interval (or a NaN bound) is not a frame.
+    if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) {
+      return None;
+    }
+    ranges[i] = (lo, hi);
+  }
+  Some(ranges)
+}
+
+/// The SVG markup of one `AxesLabel` entry. `None` for `None` — the way an
+/// axis asks to stay unlabelled. Everything else is typeset by the shared
+/// label renderer, so a label written in the FrontEnd as linear syntax
+/// (`"\!\(\*FractionBox[\(d\[Theta]\), \(dt\)]\) (rad/s)"`) draws as the
+/// fraction it stands for.
+fn axis_label_markup(expr: &Expr) -> Option<String> {
+  match expr {
+    Expr::Identifier(s) if s == "None" => None,
+    _ => {
+      let markup = crate::functions::graphics::expr_to_svg_markup(expr);
+      (!markup.is_empty()).then_some(markup)
+    }
+  }
+}
+
+/// The characters an SVG markup fragment actually shows, for width
+/// estimation: everything outside its tags.
+fn markup_char_count(markup: &str) -> usize {
+  let mut count = 0;
+  let mut in_tag = false;
+  for c in markup.chars() {
+    match c {
+      '<' => in_tag = true,
+      '>' => in_tag = false,
+      _ if !in_tag => count += 1,
+      _ => {}
+    }
+  }
+  count.max(1)
 }
 
 /// Implementation of ListPlot3D[data, opts...].

@@ -3015,7 +3015,18 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       // A trailing call suffix applies the Part result: a[[i]][x] -> (a[[i]])[x].
       let mut result = base_expr;
       for p in inner {
-        if matches!(p.as_rule(), Rule::BracketArgs) {
+        if matches!(p.as_rule(), Rule::DerivativePrime) {
+          // `a[[i]]'` differentiates what the part extracted, and any
+          // bracket call after it applies the derivative: `a[[i]]'[t]`.
+          let order = p.as_str().chars().filter(|c| *c == '\'').count();
+          result = Expr::CurriedCall {
+            func: Box::new(Expr::FunctionCall {
+              name: "Derivative".to_string(),
+              args: vec![Expr::Integer(order as i128)].into(),
+            }),
+            args: vec![result],
+          };
+        } else if matches!(p.as_rule(), Rule::BracketArgs) {
           let args: Vec<Expr> = p
             .into_inner()
             .filter(|c| {

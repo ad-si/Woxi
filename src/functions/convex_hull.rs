@@ -1,6 +1,6 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::try_eval_to_f64;
-use crate::syntax::{Expr, unevaluated};
 
 /// `ConvexHullMesh[{{x, y}, ...}]` → `BoundaryMeshRegion` for a 2D point set.
 ///
