@@ -20,6 +20,10 @@ struct PolyhedronInfo {
   /// polar symmetry axis where there is one). Used both for the
   /// "VertexCoordinates" property and (numerically) for rendering.
   vertices_src: &'static str,
+  /// Faces as 1-based indices into `vertices_src`, in Wolfram's order and
+  /// winding, as WL source. Used both for the "FaceIndices" property and
+  /// for rendering the solid.
+  faces_src: &'static str,
 }
 
 static POLYHEDRA: &[PolyhedronInfo] = &[
@@ -32,12 +36,14 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "Sqrt[3]",
     circumradius: "Sqrt[3/8]",
     inradius: "1/(2*Sqrt[6])",
-    // Base triangle in the z = -Inradius plane, apex on the +z axis.
+    // Apex on the +z axis, then the base triangle in the
+    // z = -Inradius plane.
     vertices_src: "{\
+      {0, 0, Sqrt[2/3] - 1/(2*Sqrt[6])}, \
       {-1/(2*Sqrt[3]), -1/2, -1/(2*Sqrt[6])}, \
       {-1/(2*Sqrt[3]), 1/2, -1/(2*Sqrt[6])}, \
-      {1/Sqrt[3], 0, -1/(2*Sqrt[6])}, \
-      {0, 0, Sqrt[3/8]}}",
+      {1/Sqrt[3], 0, -1/(2*Sqrt[6])}}",
+    faces_src: "{{2, 3, 4}, {3, 2, 1}, {4, 1, 2}, {1, 4, 3}}",
   },
   PolyhedronInfo {
     name: "Cube",
@@ -53,6 +59,8 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       {-1/2, 1/2, -1/2}, {-1/2, 1/2, 1/2}, \
       {1/2, -1/2, -1/2}, {1/2, -1/2, 1/2}, \
       {1/2, 1/2, -1/2}, {1/2, 1/2, 1/2}}",
+    faces_src: "{{8, 4, 2, 6}, {8, 6, 5, 7}, {8, 7, 3, 4}, \
+      {4, 3, 1, 2}, {1, 3, 7, 5}, {2, 1, 5, 6}}",
   },
   PolyhedronInfo {
     name: "Octahedron",
@@ -64,9 +72,11 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     circumradius: "1/Sqrt[2]",
     inradius: "1/Sqrt[6]",
     vertices_src: "{\
-      {-1/Sqrt[2], 0, 0}, {1/Sqrt[2], 0, 0}, \
-      {0, -1/Sqrt[2], 0}, {0, 1/Sqrt[2], 0}, \
-      {0, 0, -1/Sqrt[2]}, {0, 0, 1/Sqrt[2]}}",
+      {-1/Sqrt[2], 0, 0}, {0, 1/Sqrt[2], 0}, \
+      {0, 0, -1/Sqrt[2]}, {0, 0, 1/Sqrt[2]}, \
+      {0, -1/Sqrt[2], 0}, {1/Sqrt[2], 0, 0}}",
+    faces_src: "{{4, 5, 6}, {4, 6, 2}, {4, 2, 1}, {4, 1, 5}, \
+      {5, 1, 3}, {5, 3, 6}, {3, 1, 2}, {6, 3, 2}}",
   },
   PolyhedronInfo {
     name: "Dodecahedron",
@@ -80,26 +90,30 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     // Two wide vertex rings around the equator (antipodal pairs first),
     // then the two rings of the top and bottom faces; z is the C5 axis.
     vertices_src: "{\
-      {-Sqrt[1 + 2/Sqrt[5]], 0, -Sqrt[1/8 - Sqrt[5]/40]}, \
-      {Sqrt[1 + 2/Sqrt[5]], 0, Sqrt[1/8 - Sqrt[5]/40]}, \
-      {-Sqrt[1/8 + Sqrt[5]/40], -(3 + Sqrt[5])/4, -Sqrt[1/8 - Sqrt[5]/40]}, \
-      {-Sqrt[1/8 + Sqrt[5]/40], (3 + Sqrt[5])/4, -Sqrt[1/8 - Sqrt[5]/40]}, \
-      {Sqrt[5/8 + 11*Sqrt[5]/40], -(1 + Sqrt[5])/4, -Sqrt[1/8 - Sqrt[5]/40]}, \
-      {Sqrt[5/8 + 11*Sqrt[5]/40], (1 + Sqrt[5])/4, -Sqrt[1/8 - Sqrt[5]/40]}, \
-      {-Sqrt[5/8 + 11*Sqrt[5]/40], -(1 + Sqrt[5])/4, Sqrt[1/8 - Sqrt[5]/40]}, \
-      {-Sqrt[5/8 + 11*Sqrt[5]/40], (1 + Sqrt[5])/4, Sqrt[1/8 - Sqrt[5]/40]}, \
-      {Sqrt[1/8 + Sqrt[5]/40], -(3 + Sqrt[5])/4, Sqrt[1/8 - Sqrt[5]/40]}, \
-      {Sqrt[1/8 + Sqrt[5]/40], (3 + Sqrt[5])/4, Sqrt[1/8 - Sqrt[5]/40]}, \
-      {-Sqrt[1/2 + Sqrt[5]/10], 0, -Sqrt[5/8 + 11*Sqrt[5]/40]}, \
-      {Sqrt[1/2 + Sqrt[5]/10], 0, Sqrt[5/8 + 11*Sqrt[5]/40]}, \
-      {-Sqrt[1/4 + Sqrt[5]/10], -1/2, Sqrt[5/8 + 11*Sqrt[5]/40]}, \
-      {-Sqrt[1/4 + Sqrt[5]/10], 1/2, Sqrt[5/8 + 11*Sqrt[5]/40]}, \
-      {Sqrt[1/4 + Sqrt[5]/10], -1/2, -Sqrt[5/8 + 11*Sqrt[5]/40]}, \
-      {Sqrt[1/4 + Sqrt[5]/10], 1/2, -Sqrt[5/8 + 11*Sqrt[5]/40]}, \
-      {-Sqrt[1/8 - Sqrt[5]/40], -(1 + Sqrt[5])/4, -Sqrt[5/8 + 11*Sqrt[5]/40]}, \
-      {-Sqrt[1/8 - Sqrt[5]/40], (1 + Sqrt[5])/4, -Sqrt[5/8 + 11*Sqrt[5]/40]}, \
-      {Sqrt[1/8 - Sqrt[5]/40], -(1 + Sqrt[5])/4, Sqrt[5/8 + 11*Sqrt[5]/40]}, \
-      {Sqrt[1/8 - Sqrt[5]/40], (1 + Sqrt[5])/4, Sqrt[5/8 + 11*Sqrt[5]/40]}}",
+      {-Sqrt[1 + 2/Sqrt[5]], 0, Sqrt[1/8 - Sqrt[5]/40]}, \
+      {Sqrt[1 + 2/Sqrt[5]], 0, -Sqrt[1/8 - Sqrt[5]/40]}, \
+      {-Sqrt[1/8 + Sqrt[5]/40], -(3 + Sqrt[5])/4, Sqrt[1/8 - Sqrt[5]/40]}, \
+      {-Sqrt[1/8 + Sqrt[5]/40], (3 + Sqrt[5])/4, Sqrt[1/8 - Sqrt[5]/40]}, \
+      {Sqrt[5/8 + 11*Sqrt[5]/40], -(1 + Sqrt[5])/4, Sqrt[1/8 - Sqrt[5]/40]}, \
+      {Sqrt[5/8 + 11*Sqrt[5]/40], (1 + Sqrt[5])/4, Sqrt[1/8 - Sqrt[5]/40]}, \
+      {-Sqrt[1/8 - Sqrt[5]/40], -(1 + Sqrt[5])/4, Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {-Sqrt[1/8 - Sqrt[5]/40], (1 + Sqrt[5])/4, Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {-Sqrt[1/4 + Sqrt[5]/10], -1/2, -Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {-Sqrt[1/4 + Sqrt[5]/10], 1/2, -Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {Sqrt[1/4 + Sqrt[5]/10], -1/2, Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {Sqrt[1/4 + Sqrt[5]/10], 1/2, Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {Sqrt[1/2 + Sqrt[5]/10], 0, -Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {-Sqrt[5/8 + 11*Sqrt[5]/40], -(1 + Sqrt[5])/4, -Sqrt[1/8 - Sqrt[5]/40]}, \
+      {-Sqrt[5/8 + 11*Sqrt[5]/40], (1 + Sqrt[5])/4, -Sqrt[1/8 - Sqrt[5]/40]}, \
+      {-Sqrt[1/2 + Sqrt[5]/10], 0, Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {Sqrt[1/8 - Sqrt[5]/40], -(1 + Sqrt[5])/4, -Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {Sqrt[1/8 - Sqrt[5]/40], (1 + Sqrt[5])/4, -Sqrt[5/8 + 11*Sqrt[5]/40]}, \
+      {Sqrt[1/8 + Sqrt[5]/40], -(3 + Sqrt[5])/4, -Sqrt[1/8 - Sqrt[5]/40]}, \
+      {Sqrt[1/8 + Sqrt[5]/40], (3 + Sqrt[5])/4, -Sqrt[1/8 - Sqrt[5]/40]}}",
+    faces_src: "{{15, 10, 9, 14, 1}, {2, 6, 12, 11, 5}, {5, 11, 7, 3, 19}, \
+      {11, 12, 8, 16, 7}, {12, 6, 20, 4, 8}, {6, 2, 13, 18, 20}, \
+      {2, 5, 19, 17, 13}, {4, 20, 18, 10, 15}, {18, 13, 17, 9, 10}, \
+      {17, 19, 3, 14, 9}, {3, 7, 16, 1, 14}, {16, 8, 4, 15, 1}}",
   },
   PolyhedronInfo {
     name: "Icosahedron",
@@ -125,6 +139,34 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       {-Sqrt[1/8 - Sqrt[5]/40], (1 + Sqrt[5])/4, -Sqrt[1/8 + Sqrt[5]/40]}, \
       {Sqrt[1/8 - Sqrt[5]/40], -(1 + Sqrt[5])/4, Sqrt[1/8 + Sqrt[5]/40]}, \
       {Sqrt[1/8 - Sqrt[5]/40], (1 + Sqrt[5])/4, Sqrt[1/8 + Sqrt[5]/40]}}",
+    faces_src: "{{2, 12, 8}, {2, 8, 7}, {2, 7, 11}, {2, 11, 4}, {2, 4, 12}, \
+      {5, 9, 1}, {6, 5, 1}, {10, 6, 1}, {3, 10, 1}, {9, 3, 1}, \
+      {12, 10, 8}, {8, 3, 7}, {7, 9, 11}, {11, 5, 4}, {4, 6, 12}, \
+      {5, 11, 9}, {6, 4, 5}, {10, 12, 6}, {3, 8, 10}, {9, 7, 3}}",
+  },
+  // The rhombic dodecahedron is the one Catalan solid here: its faces are
+  // rhombi, not regular polygons, so it has no circumradius (its vertices
+  // are not all the same distance from the center).
+  PolyhedronInfo {
+    name: "RhombicDodecahedron",
+    vertex_count: 14,
+    edge_count: 24,
+    face_count: 12,
+    volume: "16/(3*Sqrt[3])",
+    surface_area: "8*Sqrt[2]",
+    circumradius: "Missing[\"NotApplicable\"]",
+    inradius: "Sqrt[2/3]",
+    vertices_src: "{\
+      {-Sqrt[2/3], -Sqrt[2/3], 0}, {-Sqrt[2/3], 0, -1/Sqrt[3]}, \
+      {-Sqrt[2/3], 0, 1/Sqrt[3]}, {-Sqrt[2/3], Sqrt[2/3], 0}, \
+      {0, -Sqrt[2/3], -1/Sqrt[3]}, {0, -Sqrt[2/3], 1/Sqrt[3]}, \
+      {0, 0, -2/Sqrt[3]}, {0, 0, 2/Sqrt[3]}, \
+      {0, Sqrt[2/3], -1/Sqrt[3]}, {0, Sqrt[2/3], 1/Sqrt[3]}, \
+      {Sqrt[2/3], -Sqrt[2/3], 0}, {Sqrt[2/3], 0, -1/Sqrt[3]}, \
+      {Sqrt[2/3], 0, 1/Sqrt[3]}, {Sqrt[2/3], Sqrt[2/3], 0}}",
+    faces_src: "{{2, 1, 3, 4}, {1, 2, 7, 5}, {6, 8, 3, 1}, {2, 4, 9, 7}, \
+      {8, 10, 4, 3}, {11, 6, 1, 5}, {9, 4, 10, 14}, {5, 7, 12, 11}, \
+      {11, 13, 8, 6}, {7, 9, 14, 12}, {13, 14, 10, 8}, {14, 13, 11, 12}}",
   },
 ];
 
@@ -223,95 +265,44 @@ fn insphere(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
   })
 }
 
-/// Compute the faces of a convex polyhedron from its vertices: every plane
-/// through three vertices that has all remaining vertices strictly on one
-/// side is a supporting plane, and the vertices lying on it (ordered by
-/// angle around the face centroid) form a face.
-fn convex_faces(vertices: &[[f64; 3]]) -> Vec<Vec<usize>> {
-  const EPS: f64 = 1e-9;
-  let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-  let cross = |a: [f64; 3], b: [f64; 3]| {
-    [
-      a[1] * b[2] - a[2] * b[1],
-      a[2] * b[0] - a[0] * b[2],
-      a[0] * b[1] - a[1] * b[0],
-    ]
-  };
-  let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-  let norm = |a: [f64; 3]| dot(a, a).sqrt();
+/// The faces of a polyhedron as 1-based vertex index lists, in Wolfram's
+/// order and winding.
+fn face_indices(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
+  eval_wl(info.faces_src)
+}
 
-  let n = vertices.len();
-  let mut seen: std::collections::HashSet<Vec<usize>> =
-    std::collections::HashSet::new();
-  let mut faces: Vec<Vec<usize>> = Vec::new();
-  for i in 0..n {
-    for j in i + 1..n {
-      for k in j + 1..n {
-        let mut normal =
-          cross(sub(vertices[j], vertices[i]), sub(vertices[k], vertices[i]));
-        let len = norm(normal);
-        if len < EPS {
-          continue;
-        }
-        normal = [normal[0] / len, normal[1] / len, normal[2] / len];
-        let d = dot(normal, vertices[i]);
-        let mut above = false;
-        let mut below = false;
-        let mut on_plane = Vec::new();
-        for (idx, v) in vertices.iter().enumerate() {
-          let s = dot(normal, *v) - d;
-          if s > EPS {
-            above = true;
-          } else if s < -EPS {
-            below = true;
-          } else {
-            on_plane.push(idx);
-          }
-        }
-        if above && below {
-          continue;
-        }
-        // Orient the normal outward so face winding is consistent.
-        let outward = if above {
-          [-normal[0], -normal[1], -normal[2]]
-        } else {
-          normal
-        };
-        // Order face vertices by angle around the face centroid.
-        let centroid = on_plane.iter().fold([0.0; 3], |acc, &idx| {
-          [
-            acc[0] + vertices[idx][0] / on_plane.len() as f64,
-            acc[1] + vertices[idx][1] / on_plane.len() as f64,
-            acc[2] + vertices[idx][2] / on_plane.len() as f64,
-          ]
-        });
-        let x_axis = {
-          let v = sub(vertices[on_plane[0]], centroid);
-          let len = norm(v);
-          [v[0] / len, v[1] / len, v[2] / len]
-        };
-        let y_axis = cross(outward, x_axis);
-        let mut ordered = on_plane.clone();
-        ordered.sort_by(|&a, &b| {
-          let angle = |idx: usize| {
-            let v = sub(vertices[idx], centroid);
-            dot(v, y_axis).atan2(dot(v, x_axis))
-          };
-          angle(a)
-            .partial_cmp(&angle(b))
-            .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        // Many vertex triples describe the same plane; deduplicate faces
-        // by their sorted index set.
-        let mut key = ordered.clone();
-        key.sort_unstable();
-        if seen.insert(key) {
-          faces.push(ordered);
-        }
-      }
+/// The face index lists as plain `usize` rows, for rendering.
+fn numeric_faces(
+  info: &PolyhedronInfo,
+) -> Result<Vec<Vec<usize>>, InterpreterError> {
+  let evaluated = face_indices(info)?;
+  let Expr::List(rows) = &evaluated else {
+    return Err(InterpreterError::EvaluationError(format!(
+      "PolyhedronData: face data for {} did not evaluate to a list",
+      info.name
+    )));
+  };
+  let mut faces = Vec::with_capacity(rows.len());
+  for row in rows.iter() {
+    let Expr::List(items) = row else {
+      return Err(InterpreterError::EvaluationError(format!(
+        "PolyhedronData: face row for {} is not a list",
+        info.name
+      )));
+    };
+    let mut face = Vec::with_capacity(items.len());
+    for item in items.iter() {
+      let Expr::Integer(idx) = item else {
+        return Err(InterpreterError::EvaluationError(format!(
+          "PolyhedronData: face index for {} is not an integer",
+          info.name
+        )));
+      };
+      face.push(*idx as usize - 1);
     }
+    faces.push(face);
   }
-  faces
+  Ok(faces)
 }
 
 /// Build the Graphics3D expression for a polyhedron and evaluate it into
@@ -320,7 +311,7 @@ fn polyhedron_graphics(
   info: &PolyhedronInfo,
 ) -> Result<Expr, InterpreterError> {
   let vertices = numeric_vertices(info)?;
-  let faces = convex_faces(&vertices);
+  let faces = numeric_faces(info)?;
   let polygons: Vec<Expr> = faces
     .iter()
     .map(|face| {
@@ -362,6 +353,7 @@ static PROPERTIES: &[&str] = &[
   "EdgeCount",
   "EdgeIndices",
   "FaceCount",
+  "FaceIndices",
   "Inradius",
   "Insphere",
   "SurfaceArea",
@@ -437,6 +429,7 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Inradius" => eval_wl(info.inradius),
         "VertexCoordinates" => eval_wl(info.vertices_src),
         "EdgeIndices" => edge_indices(info),
+        "FaceIndices" => face_indices(info),
         "Insphere" => insphere(info),
         _ => unevaluated(),
       }

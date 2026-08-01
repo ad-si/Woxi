@@ -180,4 +180,6 @@ expression: "export_svg(\"ParametricPlot[{{Sin[t], Cos[t]}, {2 Sin[t], 2 Cos[t]}
 <line x1="710.0" y1="1600.0" x2="680.0" y2="1600.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="905.6" x2="680.0" y2="905.6" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="211.1" x2="680.0" y2="211.1" stroke="#666" stroke-width="10"/>
+<text x="3398.2" y="3180.0" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">2</text>
+<text x="670.0" y="211.1" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">2</text>
 </svg>

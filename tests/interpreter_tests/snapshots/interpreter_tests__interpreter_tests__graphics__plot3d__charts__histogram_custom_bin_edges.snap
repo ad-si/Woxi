@@ -200,4 +200,5 @@ expression: svg
 <line x1="710.0" y1="1083.3" x2="680.0" y2="1083.3" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="750.0" x2="680.0" y2="750.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="416.7" x2="680.0" y2="416.7" stroke="#666" stroke-width="10"/>
+<text x="3500.0" y="1830.0" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">6</text>
 </svg>

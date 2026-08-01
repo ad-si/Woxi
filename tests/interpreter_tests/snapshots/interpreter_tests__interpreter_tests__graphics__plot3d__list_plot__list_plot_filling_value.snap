@@ -145,4 +145,5 @@ expression: "export_svg(\"ListPlot[{1, 4, 9, 16}, Filling -> 5]\")"
 <line x1="710.0" y1="1281.5" x2="680.0" y2="1281.5" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="772.2" x2="680.0" y2="772.2" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="263.0" x2="680.0" y2="263.0" stroke="#666" stroke-width="10"/>
+<text x="3398.1" y="1830.0" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">4</text>
 </svg>

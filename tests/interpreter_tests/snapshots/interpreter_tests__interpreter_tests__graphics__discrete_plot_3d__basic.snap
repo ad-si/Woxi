@@ -311,8 +311,12 @@ expression: "export_svg(\"DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]\")"
 <line x1="25.0" y1="243.6" x2="25.0" y2="169.8" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="25.0" y1="243.6" x2="29.0" y2="243.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="13.0" y="243.6" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
+<line x1="25.0" y1="225.2" x2="29.0" y2="225.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="13.0" y="225.2" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">2.5</text>
 <line x1="25.0" y1="206.7" x2="29.0" y2="206.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="13.0" y="206.7" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">5</text>
+<line x1="25.0" y1="188.3" x2="29.0" y2="188.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="13.0" y="188.3" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">7.5</text>
 <line x1="25.0" y1="169.8" x2="29.0" y2="169.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="13.0" y="169.8" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">10</text>
 </svg>

@@ -9,50 +9,110 @@ expression: "export_svg(r#\"BarChart[{1, 2, 3, 4, 5}, ChartStyle -> {Red, Blue}]
 0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,2029 749,2029 "/>
-<text x="670" y="1854" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+<text x="670" y="1959" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1854 749,1854 "/>
-<text x="670" y="1679" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1959 749,1959 "/>
+<text x="670" y="1889" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1889 749,1889 "/>
+<text x="670" y="1819" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1819 749,1819 "/>
+<text x="670" y="1749" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1749 749,1749 "/>
+<text x="670" y="1679" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+1
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1679 749,1679 "/>
-<text x="670" y="1503" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+<text x="670" y="1609" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1503 749,1503 "/>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1609 749,1609 "/>
+<text x="670" y="1538" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1538 749,1538 "/>
+<text x="670" y="1468" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1468 749,1468 "/>
+<text x="670" y="1398" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1398 749,1398 "/>
 <text x="670" y="1328" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 2
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1328 749,1328 "/>
-<text x="670" y="1153" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+<text x="670" y="1258" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1153 749,1153 "/>
-<text x="670" y="977" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1258 749,1258 "/>
+<text x="670" y="1188" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1188 749,1188 "/>
+<text x="670" y="1118" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1118 749,1118 "/>
+<text x="670" y="1047" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1047 749,1047 "/>
+<text x="670" y="977" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+3
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,977 749,977 "/>
-<text x="670" y="802" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+<text x="670" y="907" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,802 749,802 "/>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,907 749,907 "/>
+<text x="670" y="837" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,837 749,837 "/>
+<text x="670" y="767" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,767 749,767 "/>
+<text x="670" y="697" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,697 749,697 "/>
 <text x="670" y="627" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 4
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,627 749,627 "/>
-<text x="670" y="451" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+<text x="670" y="556" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,451 749,451 "/>
-<text x="670" y="276" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,556 749,556 "/>
+<text x="670" y="486" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,486 749,486 "/>
+<text x="670" y="416" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,416 749,416 "/>
+<text x="670" y="346" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,346 749,346 "/>
+<text x="670" y="276" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+5
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,276 749,276 "/>
-<text x="670" y="100" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+<text x="670" y="206" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,100 749,100 "/>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,206 749,206 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,2030 3499,2030 "/>
 <rect x="804" y="1679" width="440" height="350" opacity="1" fill="#FF0000" stroke="#000000" stroke-width="10"><title>1</title></rect>
 <rect x="1354" y="1328" width="440" height="701" opacity="1" fill="#0000FF" stroke="#000000" stroke-width="10"><title>2</title></rect>
@@ -60,6 +120,9 @@ expression: "export_svg(r#\"BarChart[{1, 2, 3, 4, 5}, ChartStyle -> {Red, Blue}]
 <rect x="2454" y="627" width="440" height="1402" opacity="1" fill="#0000FF" stroke="#000000" stroke-width="10"><title>4</title></rect>
 <rect x="3004" y="276" width="440" height="1753" opacity="1" fill="#FF0000" stroke="#000000" stroke-width="10"><title>5</title></rect>
 <line x1="710.0" y1="2030.0" x2="680.0" y2="2030.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1679.1" x2="680.0" y2="1679.1" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="1328.2" x2="680.0" y2="1328.2" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="977.3" x2="680.0" y2="977.3" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="626.4" x2="680.0" y2="626.4" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="275.5" x2="680.0" y2="275.5" stroke="#666" stroke-width="10"/>
 </svg>

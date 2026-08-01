@@ -4004,4 +4004,30 @@ mod curried_and_head_patterns {
       "{1, 2, 4, 7, 5, 3, 6, 8, 9}"
     );
   }
+
+  /// Assigning to a *list* of downvalue patterns distributes the assignment,
+  /// with the right-hand side evaluated once against the symbolic argument —
+  /// the idiom the "Merging Schools of Fish" Demonstration builds its random
+  /// vector fields with. Each expectation matches wolframscript.
+  #[test]
+  fn set_distributes_over_a_list_of_patterns() {
+    assert_eq!(
+      interpret(
+        "{f1[t_], f2[t_]} = Table[Module[{c = k}, {c t, c + t}], {k, 2}]; \
+         {f1[3], f2[3]}"
+      )
+      .unwrap(),
+      "{{3, 4}, {6, 5}}"
+    );
+    // The same through a mapped function, where each element is built by its
+    // own Module.
+    assert_eq!(
+      interpret(
+        "{g1[x_], g2[x_]} = Module[{n}, Table[n = k; n x^n, {#}]] & /@ {2, 3}; \
+         {Length[g1[2]], Length[g2[2]]}"
+      )
+      .unwrap(),
+      "{2, 3}"
+    );
+  }
 }

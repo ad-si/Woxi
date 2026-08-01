@@ -85,7 +85,11 @@ pub fn dispatch_structural(
       }
       return Some(Ok(unevaluated("Rational", args)));
     }
-    "Module" => return Some(module_ast(args)),
+    // `DynamicModule` scopes its locals the way `Module` does. Wolfram
+    // keeps the wrapper around the result because the front end owns the
+    // local state; we hand back the body's value instead, so every
+    // display path (a Grid, a Graphics, a Column) renders it as itself.
+    "Module" | "DynamicModule" => return Some(module_ast(args)),
     "Block" => return Some(block_ast(args)),
     "Assuming" if args.len() == 2 => return Some(assuming_ast(args)),
     "With" if args.len() == 2 => return Some(with_ast(args)),

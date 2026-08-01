@@ -137,4 +137,6 @@ expression: "export_svg(\"ComplexListPlot[{1 + I, 2 - I, -1 + 2 I}, Joined -> Tr
 <line x1="710.0" y1="1179.6" x2="680.0" y2="1179.6" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="670.4" x2="680.0" y2="670.4" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="161.1" x2="680.0" y2="161.1" stroke="#666" stroke-width="10"/>
+<text x="3398.1" y="1830.0" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">2</text>
+<text x="670.0" y="161.1" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">2</text>
 </svg>

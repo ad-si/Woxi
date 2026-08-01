@@ -12,7 +12,7 @@ pub mod dispatch;
 pub(crate) mod function_application;
 pub mod functions;
 mod listable;
-mod part_extraction;
+pub(crate) mod part_extraction;
 mod pattern_functions;
 pub(crate) mod pattern_matching;
 mod scoping;

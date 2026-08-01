@@ -117,8 +117,8 @@ mod polyhedron_data_tests {
     assert_eq!(
       interpret(r#"PolyhedronData["Octahedron", "VertexCoordinates"]"#)
         .unwrap(),
-      "{{-(1/Sqrt[2]), 0, 0}, {1/Sqrt[2], 0, 0}, {0, -(1/Sqrt[2]), 0}, \
-       {0, 1/Sqrt[2], 0}, {0, 0, -(1/Sqrt[2])}, {0, 0, 1/Sqrt[2]}}"
+      "{{-(1/Sqrt[2]), 0, 0}, {0, 1/Sqrt[2], 0}, {0, 0, -(1/Sqrt[2])}, \
+       {0, 0, 1/Sqrt[2]}, {0, -(1/Sqrt[2]), 0}, {1/Sqrt[2], 0, 0}}"
     );
   }
 
@@ -216,8 +216,9 @@ mod polyhedron_data_tests {
   fn polyhedron_data_properties_include_data_properties() {
     assert_eq!(
       interpret(r#"PolyhedronData["Properties"]"#).unwrap(),
-      "{Circumradius, EdgeCount, EdgeIndices, FaceCount, Inradius, \
-       Insphere, SurfaceArea, VertexCoordinates, VertexCount, Volume}"
+      "{Circumradius, EdgeCount, EdgeIndices, FaceCount, FaceIndices, \
+       Inradius, Insphere, SurfaceArea, VertexCoordinates, VertexCount, \
+       Volume}"
     );
   }
 
@@ -258,6 +259,117 @@ mod polyhedron_data_tests {
     assert_eq!(
       interpret(r#"PolyhedronData["Cube", "NoSuchProperty"]"#).unwrap(),
       "PolyhedronData[Cube, NoSuchProperty]"
+    );
+  }
+  // Faces as 1-based vertex index lists, in Wolfram's order and winding.
+  #[test]
+  fn polyhedron_data_face_indices() {
+    assert_eq!(
+      interpret(r#"PolyhedronData["Tetrahedron", "FaceIndices"]"#).unwrap(),
+      "{{2, 3, 4}, {3, 2, 1}, {4, 1, 2}, {1, 4, 3}}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["Cube", "FaceIndices"]"#).unwrap(),
+      "{{8, 4, 2, 6}, {8, 6, 5, 7}, {8, 7, 3, 4}, {4, 3, 1, 2}, \
+       {1, 3, 7, 5}, {2, 1, 5, 6}}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["Octahedron", "FaceIndices"]"#).unwrap(),
+      "{{4, 5, 6}, {4, 6, 2}, {4, 2, 1}, {4, 1, 5}, {5, 1, 3}, {5, 3, 6}, \
+       {3, 1, 2}, {6, 3, 2}}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["RhombicDodecahedron", "FaceIndices"]"#)
+        .unwrap(),
+      "{{2, 1, 3, 4}, {1, 2, 7, 5}, {6, 8, 3, 1}, {2, 4, 9, 7}, \
+       {8, 10, 4, 3}, {11, 6, 1, 5}, {9, 4, 10, 14}, {5, 7, 12, 11}, \
+       {11, 13, 8, 6}, {7, 9, 14, 12}, {13, 14, 10, 8}, {14, 13, 11, 12}}"
+    );
+  }
+
+  // Every solid's face list has exactly FaceCount entries, and every index
+  // in it addresses one of the solid's vertices.
+  #[test]
+  fn polyhedron_data_face_indices_are_consistent() {
+    for name in [
+      "Tetrahedron",
+      "Cube",
+      "Octahedron",
+      "Dodecahedron",
+      "Icosahedron",
+      "RhombicDodecahedron",
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          r#"Length[PolyhedronData["{name}", "FaceIndices"]] ==
+             PolyhedronData["{name}", "FaceCount"]"#
+        ))
+        .unwrap(),
+        "True",
+        "solid: {name}"
+      );
+      assert_eq!(
+        interpret(&format!(
+          r#"Max[Flatten[PolyhedronData["{name}", "FaceIndices"]]] ==
+             PolyhedronData["{name}", "VertexCount"] &&
+           Min[Flatten[PolyhedronData["{name}", "FaceIndices"]]] == 1"#
+        ))
+        .unwrap(),
+        "True",
+        "solid: {name}"
+      );
+    }
+  }
+
+  // The rhombic dodecahedron is a Catalan solid: twelve rhombic faces, and
+  // no circumradius, because its two kinds of vertex sit at different
+  // distances from the center.
+  #[test]
+  fn polyhedron_data_rhombic_dodecahedron() {
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["RhombicDodecahedron", "VertexCount"],
+            PolyhedronData["RhombicDodecahedron", "EdgeCount"],
+            PolyhedronData["RhombicDodecahedron", "FaceCount"]}"#
+      )
+      .unwrap(),
+      "{14, 24, 12}"
+    );
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["RhombicDodecahedron", "Volume"],
+            PolyhedronData["RhombicDodecahedron", "SurfaceArea"],
+            PolyhedronData["RhombicDodecahedron", "Inradius"]}"#
+      )
+      .unwrap(),
+      "{16/(3*Sqrt[3]), 8*Sqrt[2], Sqrt[2/3]}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["RhombicDodecahedron", "Circumradius"]"#)
+        .unwrap(),
+      "Missing[NotApplicable]"
+    );
+    // Its faces are rhombi, so every face has four corners.
+    assert_eq!(
+      interpret(
+        r#"Union[Length /@ PolyhedronData["RhombicDodecahedron", "FaceIndices"]]"#
+      )
+      .unwrap(),
+      "{4}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["RhombicDodecahedron"]"#).unwrap(),
+      "-Graphics3D-"
+    );
+  }
+
+  // It joins the list of known entities.
+  #[test]
+  fn polyhedron_data_all_lists_every_entity() {
+    assert_eq!(
+      interpret("PolyhedronData[All]").unwrap(),
+      "{Cube, Dodecahedron, Icosahedron, Octahedron, RhombicDodecahedron, \
+       Tetrahedron}"
     );
   }
 }

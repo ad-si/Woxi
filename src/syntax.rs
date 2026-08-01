@@ -154,6 +154,10 @@ pub struct PlotSource {
   pub x_range: (f64, f64),
   pub y_range: (f64, f64),
   pub image_size: (u32, u32),
+  /// The option rules the plot was called with, verbatim. `Show` merges
+  /// them into the combined graphic the way Wolfram does — the result
+  /// keeps the options of the graphics it was given.
+  pub options: Vec<Expr>,
 }
 
 /// Filling specification for a plot series (used by `Show` when merging
@@ -360,6 +364,10 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "DoubleDownArrow" => Some("\u{21D3}"),
     "DoubleLeftRightArrow" => Some("\u{21D4}"),
     "DoubleUpDownArrow" => Some("\u{21D5}"),
+    "LeftTeeArrow" => Some("\u{21A4}"),
+    "RightTeeArrow" => Some("\u{21A6}"),
+    "UpTeeArrow" => Some("\u{21A5}"),
+    "DownTeeArrow" => Some("\u{21A7}"),
     "Rule" => Some("\u{F522}"),
     "RuleDelayed" => Some("\u{F51F}"),
     "DirectedEdge" => Some("\u{F3D5}"),
@@ -379,10 +387,24 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "Angle" => Some("\u{2220}"),
     "FilledSquare" => Some("\u{25A0}"),
     "EmptySquare" => Some("\u{25A1}"),
+    "FilledSmallSquare" => Some("\u{25FC}"),
+    "EmptySmallSquare" => Some("\u{25FB}"),
+    "FilledVerySmallSquare" => Some("\u{25AA}"),
+    "EmptyVerySmallSquare" => Some("\u{25AB}"),
     "FilledCircle" => Some("\u{25CF}"),
     "EmptyCircle" => Some("\u{25CB}"),
+    "FilledSmallCircle" => Some("\u{F750}"),
+    "EmptySmallCircle" => Some("\u{25E6}"),
     "FilledDiamond" => Some("\u{25C6}"),
     "EmptyDiamond" => Some("\u{25C7}"),
+    "FilledUpTriangle" => Some("\u{25B2}"),
+    "EmptyUpTriangle" => Some("\u{25B3}"),
+    "FilledDownTriangle" => Some("\u{25BC}"),
+    "EmptyDownTriangle" => Some("\u{25BD}"),
+    "FilledLeftTriangle" => Some("\u{25C0}"),
+    "FilledRightTriangle" => Some("\u{25B6}"),
+    "Placeholder" => Some("\u{F528}"),
+    "SelectionPlaceholder" => Some("\u{F527}"),
     // Braces/brackets
     "LeftAngleBracket" => Some("\u{27E8}"),
     "RightAngleBracket" => Some("\u{27E9}"),
@@ -404,8 +426,13 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "CloseCurlyQuote" => Some("\u{2019}"),
     "OpenCurlyDoubleQuote" => Some("\u{201C}"),
     "CloseCurlyDoubleQuote" => Some("\u{201D}"),
+    "Hyphen" => Some("\u{2010}"),
     "Dash" => Some("\u{2013}"),
     "LongDash" => Some("\u{2014}"),
+    "LeftGuillemet" => Some("\u{00AB}"),
+    "RightGuillemet" => Some("\u{00BB}"),
+    "Prime" => Some("\u{2032}"),
+    "DoublePrime" => Some("\u{2033}"),
     "Bullet" => Some("\u{2022}"),
     "Dagger" => Some("\u{2020}"),
     "DoubleDagger" => Some("\u{2021}"),
@@ -1797,6 +1824,34 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
   }
 }
 
+/// Multiply a decimal literal by `10^exponent` by moving its decimal point,
+/// keeping every digit the literal was written with. Used for the `*^` form
+/// of a precision-tagged real, where rounding through `f64` would throw away
+/// the extra digits the precision tag exists to carry.
+fn shift_decimal_point(literal: &str, exponent: i32) -> String {
+  if exponent == 0 {
+    return literal.to_string();
+  }
+  let (sign, digits) = match literal.strip_prefix('-') {
+    Some(rest) => ("-", rest),
+    None => ("", literal),
+  };
+  let (int_part, frac_part) = digits.split_once('.').unwrap_or((digits, ""));
+  let mut all: String = int_part.to_string();
+  all.push_str(frac_part);
+  // Where the point sits in `all` after the shift.
+  let point = int_part.len() as i32 + exponent;
+  let body = if point <= 0 {
+    format!("0.{}{all}", "0".repeat((-point) as usize))
+  } else if (point as usize) >= all.len() {
+    format!("{all}{}.", "0".repeat(point as usize - all.len()))
+  } else {
+    let (head, tail) = all.split_at(point as usize);
+    format!("{head}.{tail}")
+  };
+  format!("{sign}{body}")
+}
+
 fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
   match pair.as_rule() {
     Rule::Integer | Rule::UnsignedInteger => {
@@ -1946,6 +2001,15 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
     }
     Rule::PrecisionReal | Rule::UnsignedPrecisionReal => {
       let s = pair.as_str();
+      // A `*^` exponent may follow the precision tag (`1.5`*^-16`). It scales
+      // the value; the tag itself keeps its meaning, so an *accuracy* tag is
+      // applied to the scaled value (hence `1.5``20*^3` has precision
+      // 20 + log10(1500), not 20 + log10(1.5)).
+      let (s, exponent) = match s.split_once("*^") {
+        Some((mantissa, exp)) => (mantissa, exp.parse::<i32>().unwrap_or(0)),
+        None => (s, 0),
+      };
+      let scale = |v: f64| v * 10f64.powi(exponent);
       // Detect double-backtick (accuracy) form. Single-backtick is precision.
       let double = s.contains("``");
       let backtick_pos = s.find('`').unwrap();
@@ -1955,20 +2019,22 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       } else {
         &s[backtick_pos + 1..]
       };
+      // The scaled literal, as the digit string the BigFloat path stores.
+      let scaled_str = shift_decimal_point(value_str, exponent);
       // Integer-form `n`p` (no decimal point, with precision p) drops the
       // precision tag entirely and stays as an Integer (matches Wolfram:
       // `0`2 // Head` → Integer). The bare-backtick form `n`` still
       // promotes to Real to match Wolfram (`0` // Head` → Real).
       let int_form =
         !value_str.contains('.') && !prec_str.is_empty() && !double;
-      if int_form {
+      if int_form && exponent == 0 {
         let n: i128 = value_str.parse().unwrap_or(0);
         Expr::Integer(n)
       } else if prec_str.is_empty() {
         // Bare backtick = machine precision, just parse as Real
-        Expr::Real(value_str.parse().unwrap_or(0.0))
+        Expr::Real(scale(value_str.parse().unwrap_or(0.0)))
       } else {
-        let value_f64: f64 = value_str.parse().unwrap_or(0.0);
+        let value_f64: f64 = scale(value_str.parse().unwrap_or(0.0));
         if value_f64 == 0.0 {
           // For accuracy form `0.``α`, preserve the accuracy as a BigFloat
           // with value "0" and the parsed accuracy. The display path
@@ -1991,7 +2057,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
             raw_prec
           };
           let prec = prec.max(1.0);
-          Expr::BigFloat(value_str.to_string(), prec)
+          Expr::BigFloat(scaled_str, prec)
         }
       }
     }
@@ -2202,6 +2268,10 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
     Rule::NamedCharIdentifier => {
       let s = pair.as_str();
       named_char_to_expr(s)
+    }
+    // An omitted element or argument (`{a,,b}`, `f[a,]`) is `Null`.
+    Rule::OmittedArg | Rule::OmittedTrailingArg => {
+      Expr::Identifier("Null".to_string())
     }
     Rule::Identifier => {
       // Strip the default `Global`` context prefix so `Global`x` collapses

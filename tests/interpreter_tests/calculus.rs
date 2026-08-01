@@ -7156,6 +7156,46 @@ mod dsolve {
 mod ndsolve {
   use super::*;
 
+  /// An algebraic constraint that determines one unknown explicitly is
+  /// eliminated — the constraint is solved for it, substituted into the
+  /// remaining equations, and the unknown rebuilt from the solution
+  /// afterwards. This is the index-1 DAE a Lagrangian model writes when a
+  /// rigid link ties two coordinates together ("Dynamics of a Spring-
+  /// Pendulum System"). Values checked against wolframscript.
+  #[test]
+  fn algebraic_constraint_is_eliminated() {
+    let code = "sol = NDSolve[{x''[t] == -x[t] - v[t], v[t] == x[t]/2, \
+       x[0] == 1, x'[0] == 0}, {x, v}, {t, 0, 4}]; \
+       {Length[sol[[1]]], N[Round[x[3] /. sol[[1]], 0.0001]], \
+        N[Round[v[3] /. sol[[1]], 0.0001]]}";
+    // x'' = -3x/2 with x(0)=1, x'(0)=0 → x(3) = Cos[Sqrt[3/2] 3], v = x/2.
+    let expected = (1.5f64.sqrt() * 3.0).cos();
+    let result = interpret(code).unwrap();
+    let nums: Vec<f64> = result
+      .trim_matches(['{', '}'])
+      .split(", ")
+      .map(|s| s.parse().unwrap())
+      .collect();
+    assert_eq!(nums[0], 2.0, "both functions come back: {result}");
+    assert!((nums[1] - expected).abs() < 1e-3, "{result} vs {expected}");
+    assert!(
+      (nums[2] - expected / 2.0).abs() < 1e-3,
+      "the eliminated function is rebuilt from its constraint: {result}"
+    );
+  }
+
+  /// The solution rules come back in the order the functions were asked
+  /// for, even though an eliminated one is solved last.
+  #[test]
+  fn constraint_solution_keeps_the_requested_order() {
+    let result = interpret(
+      "sol = NDSolve[{x'[t] == 1, w[t] == 2 x[t], x[0] == 0}, {w, x}, \
+       {t, 0, 1}]; sol[[1]][[All, 1]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{w, x}");
+  }
+
   #[test]
   fn exponential_growth() {
     // NDSolve y'=y, y(0)=1, check y(0.5) ≈ E^0.5

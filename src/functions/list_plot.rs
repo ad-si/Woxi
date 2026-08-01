@@ -865,21 +865,29 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         // `{{left, right}, {bottom, top}}` form. Bottom/left reuse the
         // axes-label render path; top/right get their own frame edges.
         "FrameLabel" => {
-          let fl = crate::functions::plot::parse_frame_label(replacement);
-          opts.axes_label = Some((fl.bottom, fl.left));
-          if !fl.top.is_empty() {
-            opts.frame_label_top = Some(fl.top);
-          }
-          if !fl.right.is_empty() {
-            opts.frame_label_right = Some(fl.right);
-          }
+          crate::functions::plot::apply_frame_label_option(replacement, opts)
         }
-        "Frame" => {
-          if matches!(replacement,
-            Expr::Identifier(v) if v == "True" || v == "All")
-          {
-            opts.frame = true;
+        // `Ticks -> {xspec, yspec}` marks exactly the positions named,
+        // each optionally with its own `{pos, label}` text.
+        "Ticks" => match replacement {
+          Expr::Identifier(v) if v == "None" => opts.ticks = false,
+          Expr::Identifier(v) if v == "Automatic" || v == "All" => {
+            opts.ticks = true
           }
+          Expr::List(items) if items.len() == 2 => {
+            opts.ticks_x =
+              crate::functions::plot::parse_explicit_ticks(&items[0]);
+            opts.ticks_y =
+              crate::functions::plot::parse_explicit_ticks(&items[1]);
+          }
+          _ => {}
+        },
+        "Frame" => {
+          opts.frame = crate::functions::plot::parse_frame_option(replacement)
+        }
+        "ImagePadding" => {
+          opts.image_padding =
+            crate::functions::plot::parse_image_padding(replacement)
         }
         // "Fences" (capped error bars) is the default; "Bars" renders with
         // the same bar geometry. None hides the uncertainty intervals.
@@ -1272,6 +1280,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     !joined,
     opts.filling,
     opts.filling_style,
+    crate::functions::plot::explicit_options(args),
   );
   Ok(crate::graphics_result_with_source(svg, source))
 }
@@ -1358,6 +1367,7 @@ pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     !joined,
     opts.filling,
     opts.filling_style,
+    crate::functions::plot::explicit_options(args),
   );
   Ok(crate::graphics_result_with_source(svg, source))
 }
@@ -1411,7 +1421,20 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let svg =
     generate_svg_with_filling(&draw_series, x_range, y_range, &parsed.opts)?;
-  Ok(crate::graphics_result(svg))
+  // Carry the series so `Show` can merge this plot with others instead of
+  // treating it as an opaque rendering.
+  let source = build_plot_source(
+    &draw_series,
+    &parsed.opts.plot_style,
+    x_range,
+    y_range,
+    (parsed.opts.svg_width, parsed.opts.svg_height),
+    false,
+    parsed.opts.filling,
+    parsed.opts.filling_style,
+    crate::functions::plot::explicit_options(args),
+  );
+  Ok(crate::graphics_result_with_source(svg, source))
 }
 
 /// StackedListPlot[{list1, list2, ...}]: plot several datasets with their

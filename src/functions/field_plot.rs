@@ -55,6 +55,77 @@ fn evaluate_vector(
 }
 
 /// Parse ImageSize from options
+/// The `PlotLabel` of a field plot, rendered as SVG markup. Field plots draw
+/// their own axes, so the label is injected above the plot area rather than
+/// going through the line renderer's label pass.
+fn parse_field_plot_label(
+  args: &[Expr],
+  start: usize,
+) -> Option<(String, Option<f64>)> {
+  args[start..].iter().find_map(|opt| {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = opt
+    else {
+      return None;
+    };
+    if !matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotLabel") {
+      return None;
+    }
+    let value = evaluate_expr_to_expr(replacement)
+      .unwrap_or_else(|_| replacement.as_ref().clone());
+    // A size on the outermost `Style` is the label's font size, which the
+    // caller applies at render resolution; leaving it inside the markup
+    // would emit it in unscaled units and draw the label ten times too
+    // small.
+    let (inner, size) = peel_label_font_size(&value);
+    Some((crate::functions::graphics::expr_to_svg_markup(inner), size))
+  })
+}
+
+/// Split `Style[expr, …, n, …]` into its content and the font size `n`.
+fn peel_label_font_size(value: &Expr) -> (&Expr, Option<f64>) {
+  let Expr::FunctionCall { name, args } = value else {
+    return (value, None);
+  };
+  if !crate::functions::graphics::is_style_wrapper(name) || args.is_empty() {
+    return (value, None);
+  }
+  let size = args[1..].iter().find_map(|d| match d {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  });
+  match size {
+    Some(_) => (&args[0], size),
+    None => (value, None),
+  }
+}
+
+/// Draw a field plot's `PlotLabel`, centred above its plot area.
+fn inject_field_plot_label(
+  svg: &mut String,
+  area: &crate::functions::plot::PlotArea,
+  (label, size): &(String, Option<f64>),
+) {
+  if label.trim().is_empty() {
+    return;
+  }
+  let sf = f64::from(crate::functions::plot::RESOLUTION_SCALE);
+  let font = size.unwrap_or(14.0) * sf;
+  let cx = area.plot_x0 + area.plot_w / 2.0;
+  let y = (area.plot_y0 - sf * 8.0).max(font);
+  svg.push_str(&format!(
+    "<text x=\"{cx:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
+     font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"#333\">{label}</text>\n",
+  ));
+}
+
 fn parse_field_options(args: &[Expr], start: usize) -> (u32, u32, bool) {
   let mut svg_width = DEFAULT_WIDTH;
   let mut svg_height = DEFAULT_WIDTH; // Square default for field plots
@@ -96,9 +167,15 @@ struct DensityContourOptions {
   color_function: Option<String>,
   contours: ContourSpec,
   contour_shading: bool,
+  /// `Mesh -> n`: how many mesh lines each mesh function contributes.
+  mesh: Option<usize>,
+  /// `MeshFunctions -> {f1, …}`: the functions whose level curves the
+  /// mesh lines are. Empty means the coordinates themselves.
+  mesh_functions: Vec<Expr>,
 }
 
-/// Parse ImageSize, ColorFunction, Contours, and ContourShading options.
+/// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh and
+/// MeshFunctions options.
 fn parse_density_contour_options(
   args: &[Expr],
   start: usize,
@@ -107,6 +184,8 @@ fn parse_density_contour_options(
   let mut color_function = None;
   let mut contours = ContourSpec::Automatic;
   let mut contour_shading = true;
+  let mut mesh: Option<usize> = None;
+  let mut mesh_functions: Vec<Expr> = Vec::new();
   for opt in &args[start..] {
     if let Expr::Rule {
       pattern,
@@ -114,13 +193,20 @@ fn parse_density_contour_options(
     } = opt
       && let Expr::Identifier(name) = pattern.as_ref()
     {
+      // An option's value may still be the symbol it was written with
+      // (`Contours -> con` inside a Manipulate), so resolve it first.
+      let resolved = match replacement.as_ref() {
+        v @ (Expr::Integer(_) | Expr::Real(_) | Expr::List(_)) => v.clone(),
+        other => evaluate_expr_to_expr(other).unwrap_or_else(|_| other.clone()),
+      };
+      let replacement = &resolved;
       match name.as_str() {
         "ColorFunction" => {
-          if let Some(s) = color_function_scheme_name(replacement.as_ref()) {
+          if let Some(s) = color_function_scheme_name(replacement) {
             color_function = Some(s);
           }
         }
-        "Contours" => match replacement.as_ref() {
+        "Contours" => match replacement {
           Expr::Integer(n) if *n > 0 => {
             contours = ContourSpec::Count(*n as usize);
           }
@@ -139,10 +225,30 @@ fn parse_density_contour_options(
           }
           _ => {}
         },
+        // `ContourShading -> None` is the documented way to ask for
+        // contour lines with nothing filled in between; `False` is the
+        // older spelling.
         "ContourShading" => {
-          if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False")
+          if matches!(replacement, Expr::Identifier(v) if v == "False" || v == "None")
           {
             contour_shading = false;
+          }
+        }
+        // `Mesh -> n` draws n mesh lines per mesh function; `Mesh -> None`
+        // (the default) draws none.
+        "Mesh" => match replacement {
+          Expr::Integer(n) if *n >= 0 => mesh = Some(*n as usize),
+          Expr::Identifier(v) if v == "None" || v == "False" => mesh = None,
+          Expr::Identifier(v) if v == "All" || v == "Automatic" => {
+            mesh = Some(10)
+          }
+          _ => {}
+        },
+        // `MeshFunctions -> {f1, f2, …}`: the mesh lines are level curves
+        // of each function, the way the contours are of the plotted one.
+        "MeshFunctions" => {
+          if let Expr::List(items) = replacement {
+            mesh_functions = items.iter().cloned().collect();
           }
         }
         _ => {}
@@ -156,6 +262,8 @@ fn parse_density_contour_options(
     color_function,
     contours,
     contour_shading,
+    mesh,
+    mesh_functions,
   }
 }
 
@@ -700,6 +808,74 @@ fn chain_segments_scaled(
 
 /// Draw contour lines for the given levels as thin dark polylines.
 #[allow(clippy::too_many_arguments)]
+/// One mesh function's samples over the plot grid, with the levels its
+/// mesh lines are drawn at.
+struct MeshGrid {
+  grid: Vec<Vec<f64>>,
+  levels: Vec<f64>,
+}
+
+/// Sample a mesh function over the plot's grid and pick `count` evenly
+/// spaced levels across the values it takes — `MeshFunctions -> {10 #1 &}`
+/// with `Mesh -> 11` gives eleven lines of constant x.
+#[allow(clippy::too_many_arguments)]
+fn sample_mesh_grid(
+  f: &Expr,
+  xvar: &str,
+  yvar: &str,
+  x_min: f64,
+  x_max: f64,
+  y_min: f64,
+  y_max: f64,
+  count: usize,
+) -> Option<MeshGrid> {
+  let n = FIELD_GRID + 1;
+  let mut grid = vec![vec![f64::NAN; n]; n];
+  let (mut v_min, mut v_max) = (f64::INFINITY, f64::NEG_INFINITY);
+  for i in 0..n {
+    let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
+    for j in 0..n {
+      let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
+      // A mesh function is usually a pure function of the two
+      // coordinates (`10 #1 &`); a plain expression in x and y works too.
+      let v = mesh_function_value(f, xvar, yvar, x, y)?;
+      if v.is_finite() {
+        grid[i][j] = v;
+        v_min = v_min.min(v);
+        v_max = v_max.max(v);
+      }
+    }
+  }
+  if !v_min.is_finite() || !v_max.is_finite() || v_max <= v_min {
+    return None;
+  }
+  // `Mesh -> n` draws n lines *between* the edges of the value range.
+  let step = (v_max - v_min) / (count as f64 + 1.0);
+  let levels = (1..=count).map(|k| v_min + k as f64 * step).collect();
+  Some(MeshGrid { grid, levels })
+}
+
+/// Evaluate a mesh function at one grid point, whether it is written as a
+/// pure function of the coordinates or as an expression in them.
+fn mesh_function_value(
+  f: &Expr,
+  xvar: &str,
+  yvar: &str,
+  x: f64,
+  y: f64,
+) -> Option<f64> {
+  match f {
+    Expr::Function { .. } => {
+      let applied = Expr::CurriedCall {
+        func: Box::new(f.clone()),
+        args: vec![Expr::Real(x), Expr::Real(y)],
+      };
+      try_eval_to_f64(&evaluate_expr_to_expr(&applied).ok()?)
+    }
+    other => evaluate_at_xy(other, xvar, yvar, x, y),
+  }
+}
+
 fn render_contour_lines(
   svg: &mut String,
   grid: &[Vec<f64>],
@@ -710,7 +886,34 @@ fn render_contour_lines(
   cell_h: f64,
   render_width: u32,
 ) {
-  let stroke_w = render_width as f64 / 1000.0 * 2.5;
+  render_contour_lines_styled(
+    svg,
+    grid,
+    levels,
+    plot_x0,
+    plot_y0,
+    cell_w,
+    cell_h,
+    render_width,
+    "#404040",
+    2.5,
+  );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_contour_lines_styled(
+  svg: &mut String,
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  plot_x0: f64,
+  plot_y0: f64,
+  cell_w: f64,
+  cell_h: f64,
+  render_width: u32,
+  stroke: &str,
+  weight: f64,
+) {
+  let stroke_w = render_width as f64 / 1000.0 * weight;
   for &level in levels {
     let segments =
       marching_squares_segments(grid, level, plot_x0, plot_y0, cell_w, cell_h);
@@ -720,7 +923,7 @@ fn render_contour_lines(
         .map(|(x, y)| format!("{x:.1},{y:.1}"))
         .collect();
       svg.push_str(&format!(
-        "<polyline points=\"{}\" fill=\"none\" stroke=\"#404040\" stroke-width=\"{stroke_w:.1}\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n",
+        "<polyline points=\"{}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"{stroke_w:.1}\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n",
         points.join(" ")
       ));
     }
@@ -729,9 +932,16 @@ fn render_contour_lines(
 
 /// DensityPlot[f, {x, xmin, xmax}, {y, ymin, ymax}]
 pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let body = &args[0];
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "DensityPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "DensityPlot")?;
+  // `p = a x^2 + b x; RegionPlot[y > p, …]` — the head holds its arguments,
+  // so a body that names its function indirectly has to be evaluated once
+  // before the plot variables can be substituted into it.
+  let resolved = crate::functions::plot::resolve_indirect_plot_body(
+    &args[0],
+    &[xvar.as_str(), yvar.as_str()],
+  );
+  let body = resolved.as_ref().unwrap_or(&args[0]);
   let opts = parse_density_contour_options(args, 3);
 
   // Sample grid
@@ -819,7 +1029,22 @@ fn equation_zero_body(e: &Expr) -> Option<Expr> {
 }
 
 pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let body = &args[0];
+  // A body that names its function indirectly (`f = x^2 + y^2;
+  // ContourPlot[f, …]`) is evaluated once first — see
+  // `resolve_indirect_plot_body`.
+  let resolved = match (
+    parse_iterator(&args[1], "ContourPlot"),
+    parse_iterator(&args[2], "ContourPlot"),
+  ) {
+    (Ok((xvar, ..)), Ok((yvar, ..))) => {
+      crate::functions::plot::resolve_indirect_plot_body(
+        &args[0],
+        &[xvar.as_str(), yvar.as_str()],
+      )
+    }
+    _ => None,
+  };
+  let body = resolved.as_ref().unwrap_or(&args[0]);
   // `ContourPlot[lhs == rhs, …]` (or a list of equations) plots each
   // equation's implicit curve — the zero contour of `lhs - rhs` — with no
   // band shading, matching Wolfram.
@@ -868,11 +1093,79 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let levels = resolve_contour_levels(&opts.contours, v_min, v_max);
 
+  // Sample each mesh function over the same grid and pick its levels.
+  let mesh_grids: Vec<MeshGrid> = match opts.mesh {
+    Some(count) if count > 0 => {
+      let functions: Vec<Expr> = if opts.mesh_functions.is_empty() {
+        // The default mesh functions are the coordinates themselves.
+        vec![
+          Expr::Identifier(xvar.clone()),
+          Expr::Identifier(yvar.clone()),
+        ]
+      } else {
+        opts.mesh_functions.clone()
+      };
+      functions
+        .iter()
+        .filter_map(|f| {
+          sample_mesh_grid(f, &xvar, &yvar, x_min, x_max, y_min, y_max, count)
+        })
+        .collect()
+    }
+    _ => Vec::new(),
+  };
+
   // Data-space contour polylines for the symbolic `structure`, so
   // `ContourPlot[…][[1]]` yields primitives (with the ContourStyle
   // directives) that can be re-embedded in an outer `Graphics[…]` the way
   // Wolfram's GraphicsComplex form allows.
-  let mut structure_items: Vec<Expr> = contour_style_directives(args, 3);
+  let mut structure_items: Vec<Expr> = Vec::new();
+  // Mesh lines first, in their own list so their grey does not leak onto
+  // the contours drawn after them.
+  {
+    let span = (x_max - x_min).abs().max((y_max - y_min).abs());
+    let key_scale = if span > 0.0 { 4096.0 / span } else { 16.0 };
+    let step_x = (x_max - x_min) / FIELD_GRID as f64;
+    let step_y = (y_max - y_min) / FIELD_GRID as f64;
+    let mut mesh_items: Vec<Expr> = vec![
+      Expr::FunctionCall {
+        name: "GrayLevel".to_string(),
+        args: vec![Expr::Real(0.69)].into(),
+      },
+      Expr::FunctionCall {
+        name: "AbsoluteThickness".to_string(),
+        args: vec![Expr::Real(0.4)].into(),
+      },
+    ];
+    for mesh_grid in &mesh_grids {
+      for &level in &mesh_grid.levels {
+        let segments = marching_squares_segments(
+          &mesh_grid.grid,
+          level,
+          x_min,
+          y_max,
+          step_x,
+          -step_y,
+        );
+        for chain in chain_segments_scaled(&segments, key_scale) {
+          let points: Vec<Expr> = chain
+            .iter()
+            .map(|(x, y)| {
+              Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into())
+            })
+            .collect();
+          mesh_items.push(Expr::FunctionCall {
+            name: "Line".to_string(),
+            args: vec![Expr::List(points.into())].into(),
+          });
+        }
+      }
+    }
+    if mesh_items.len() > 2 {
+      structure_items.push(Expr::List(mesh_items.into()));
+    }
+  }
+  structure_items.extend(contour_style_directives(args, 3));
   {
     let step_x = (x_max - x_min) / FIELD_GRID as f64;
     let step_y = (y_max - y_min) / FIELD_GRID as f64;
@@ -897,9 +1190,14 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+  // The symbolic form keeps the call's options too, so `Show` merging
+  // these contour lines with other primitives still draws them on the
+  // axes and range the plot asked for.
+  let mut structure_args = vec![Expr::List(structure_items.into())];
+  structure_args.extend(crate::functions::plot::explicit_options(args));
   let structure = Expr::FunctionCall {
     name: "Graphics".to_string(),
-    args: vec![Expr::List(structure_items.into())].into(),
+    args: structure_args.into(),
   };
 
   // Use plotters for axes
@@ -931,6 +1229,23 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       cell_w,
       cell_h,
       opts.color_function.as_deref(),
+    );
+  }
+  // Mesh lines sit under the contours: they are the level curves of the
+  // mesh functions (the coordinates themselves by default), so the same
+  // marching squares draw them.
+  for mesh_grid in &mesh_grids {
+    render_contour_lines_styled(
+      &mut svg,
+      &mesh_grid.grid,
+      &mesh_grid.levels,
+      area.plot_x0,
+      area.plot_y0,
+      cell_w,
+      cell_h,
+      area.render_width,
+      "#b0b0b0",
+      0.4,
     );
   }
   render_contour_lines(
@@ -1102,6 +1417,7 @@ fn contour_plot_equations(
     x_range: (x_min, x_max),
     y_range: (y_min, y_max),
     image_size: (opts.svg_width, opts.svg_height),
+    options: crate::functions::plot::explicit_options(args),
   };
   let mut result = crate::graphics_result_with_source(svg, source);
   if let Expr::Graphics {
@@ -1115,23 +1431,44 @@ fn contour_plot_equations(
 
 /// RegionPlot[cond, {x, xmin, xmax}, {y, ymin, ymax}]
 pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let body = &args[0];
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "RegionPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "RegionPlot")?;
+  // `p = a x^2 + b x; RegionPlot[y > p, …]` — the head holds its arguments,
+  // so a body that names its function indirectly has to be evaluated once
+  // before the plot variables can be substituted into it.
+  let resolved = crate::functions::plot::resolve_indirect_plot_body(
+    &args[0],
+    &[xvar.as_str(), yvar.as_str()],
+  );
+  let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
+  let plot_label = parse_field_plot_label(args, 3);
 
-  // Use plotters for axes
-  let area = generate_axes_only(
+  // Use plotters for axes, reserving room above the frame for a PlotLabel.
+  let margins = plot_label.as_ref().map(|(_, size)| {
+    crate::functions::plot::MarginOverrides {
+      top_margin: ((size.unwrap_or(14.0) * 2.0).round() as u32)
+        * crate::functions::plot::RESOLUTION_SCALE,
+      x_label_area: 40 * crate::functions::plot::RESOLUTION_SCALE,
+      y_label_area: 65 * crate::functions::plot::RESOLUTION_SCALE,
+    }
+  });
+  let area = crate::functions::plot::generate_axes_only_opts(
     (x_min, x_max),
     (y_min, y_max),
     svg_width,
     svg_height,
     full_width,
+    None,
+    margins.as_ref(),
   )?;
 
-  let mut svg = area.svg;
+  let mut svg = area.svg.clone();
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
+  }
+  if let Some(label) = &plot_label {
+    inject_field_plot_label(&mut svg, &area, label);
   }
 
   let cell_w = area.plot_w / FIELD_GRID as f64;
@@ -1159,9 +1496,16 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// VectorPlot[{vx, vy}, {x, xmin, xmax}, {y, ymin, ymax}]
 pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let body = &args[0];
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "VectorPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "VectorPlot")?;
+  // `p = a x^2 + b x; RegionPlot[y > p, …]` — the head holds its arguments,
+  // so a body that names its function indirectly has to be evaluated once
+  // before the plot variables can be substituted into it.
+  let resolved = crate::functions::plot::resolve_indirect_plot_body(
+    &args[0],
+    &[xvar.as_str(), yvar.as_str()],
+  );
+  let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
 
   let x_step = (x_max - x_min) / VECTOR_GRID as f64;
@@ -1269,9 +1613,16 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// StreamPlot[{vx, vy}, {x, xmin, xmax}, {y, ymin, ymax}]
 /// Uses RK4 integration from seed points.
 pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let body = &args[0];
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "StreamPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "StreamPlot")?;
+  // `p = a x^2 + b x; RegionPlot[y > p, …]` — the head holds its arguments,
+  // so a body that names its function indirectly has to be evaluated once
+  // before the plot variables can be substituted into it.
+  let resolved = crate::functions::plot::resolve_indirect_plot_body(
+    &args[0],
+    &[xvar.as_str(), yvar.as_str()],
+  );
+  let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
 
   // Use plotters for axes
@@ -1374,9 +1725,16 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn stream_density_plot_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let body = &args[0];
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "StreamDensityPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "StreamDensityPlot")?;
+  // `p = a x^2 + b x; RegionPlot[y > p, …]` — the head holds its arguments,
+  // so a body that names its function indirectly has to be evaluated once
+  // before the plot variables can be substituted into it.
+  let resolved = crate::functions::plot::resolve_indirect_plot_body(
+    &args[0],
+    &[xvar.as_str(), yvar.as_str()],
+  );
+  let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
 
   let grid_n = 60;

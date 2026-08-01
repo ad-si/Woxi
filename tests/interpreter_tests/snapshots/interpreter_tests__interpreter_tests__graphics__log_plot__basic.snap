@@ -125,6 +125,7 @@ expression: "export_svg(\"LogPlot[Exp[x], {x, 0, 5}]\")"
 <line x1="2400.0" y1="1790.0" x2="2400.0" y2="1820.0" stroke="#666" stroke-width="10"/>
 <line x1="2950.0" y1="1790.0" x2="2950.0" y2="1820.0" stroke="#666" stroke-width="10"/>
 <line x1="3500.0" y1="1790.0" x2="3500.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<text x="3500.0" y="1830.0" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">5</text>
 <text x="670.2" y="1688.9" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145" fill="#666">1</text>
 <text x="670.2" y="985.3" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145" fill="#666">10</text>
 <text x="670.2" y="281.8" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145" fill="#666">10<tspan baseline-shift="super" font-size="102">2</tspan></text>

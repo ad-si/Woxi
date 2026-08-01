@@ -6,7 +6,7 @@ expression: "export_svg(\"ListContourPlot[{{0, 0, 1}, {1, 0, 0}, {0, 1, 0}, {1, 
 <rect x="0" y="0" width="3600" height="3600" opacity="1" fill="#FFFFFF" stroke="none"/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="749,100 749,3099 "/>
 <text x="670" y="3099" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-0
+0.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,3099 749,3099 "/>
 <text x="670" y="2950" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
@@ -86,12 +86,12 @@ expression: "export_svg(\"ListContourPlot[{{0, 0, 1}, {1, 0, 0}, {0, 1, 0}, {1, 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,250 749,250 "/>
 <text x="670" y="100" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-1
+1.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,100 749,100 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,3100 3499,3100 "/>
 <text x="750" y="3180" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-0
+0.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,3100 750,3140 "/>
 <text x="887" y="3180" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
@@ -171,7 +171,7 @@ expression: "export_svg(\"ListContourPlot[{{0, 0, 1}, {1, 0, 0}, {0, 1, 0}, {1, 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3361,3100 3361,3140 "/>
 <text x="3499" y="3180" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-1
+1.0
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3499,3100 3499,3140 "/>
 <line x1="750.0" y1="3140.0" x2="750.0" y2="3170.0" stroke="#666" stroke-width="10"/>

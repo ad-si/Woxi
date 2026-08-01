@@ -10068,3 +10068,135 @@ mod replace_after_applied_anonymous_function {
     assert_eq!(interpret(r"\[Sqrt](#) &[4] /. 2 -> 7").unwrap(), "7");
   }
 }
+
+/// A comma with nothing beside it stands for an omitted expression,
+/// which Wolfram reads as `Null` — hand-written Demonstration code does
+/// this to leave gaps in a table (`data = {d1, d2, , d4}`).
+mod omitted_arguments {
+  use super::*;
+
+  #[test]
+  fn an_omitted_list_element_is_null() {
+    let full =
+      |s: &str| interpret(&format!("ToString[FullForm[{s}]]")).unwrap();
+    assert_eq!(full("{a,,b}"), "List[a, Null, b]");
+    assert_eq!(full("{,a}"), "List[Null, a]");
+    assert_eq!(full("{a,}"), "List[a, Null]");
+    assert_eq!(full("{,}"), "List[Null, Null]");
+    assert_eq!(full("{a,b,,,}"), "List[a, b, Null, Null, Null]");
+    assert_eq!(interpret("Length[{a,b,,,}]").unwrap(), "5");
+  }
+
+  #[test]
+  fn an_omitted_argument_is_null() {
+    let full =
+      |s: &str| interpret(&format!("ToString[FullForm[{s}]]")).unwrap();
+    assert_eq!(full("f[a,,b]"), "f[a, Null, b]");
+    assert_eq!(full("f[,]"), "f[Null, Null]");
+    assert_eq!(full("f[a,]"), "f[a, Null]");
+  }
+
+  #[test]
+  fn a_missing_comma_is_still_no_element() {
+    // Omission takes a comma to be visible: an empty list stays empty,
+    // and a one-element list keeps its single element.
+    let full =
+      |s: &str| interpret(&format!("ToString[FullForm[{s}]]")).unwrap();
+    assert_eq!(full("{}"), "List[]");
+    assert_eq!(full("f[]"), "f[]");
+    assert_eq!(full("{a}"), "List[a]");
+    assert_eq!(interpret("Length[{}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn omitted_elements_nest() {
+    let full =
+      |s: &str| interpret(&format!("ToString[FullForm[{s}]]")).unwrap();
+    assert_eq!(full("{{1,2},{3,,4}}"), "List[List[1, 2], List[3, Null, 4]]");
+    assert_eq!(interpret("Head[Part[{a,,b}, 2]]").unwrap(), "Symbol");
+  }
+}
+
+/// `⟦…⟧` (and its `〚…〛` spelling) group like `[[…]]`, so the commas and
+/// semicolons inside a part specification belong to it, not to the
+/// surrounding argument list.
+mod unicode_part_brackets {
+  use super::*;
+
+  #[test]
+  fn part_commas_do_not_split_a_compound_argument() {
+    // The `,` of `⟦1,2⟧` used to end the lookahead that decides whether an
+    // argument is a CompoundExpression, so the `;` after it was never seen.
+    let code = "a = {{0, 0}, {0, 0}}; If[True, a⟦1, 2⟧++; x = 1]; a⟦1, 2⟧";
+    assert_eq!(interpret(code).unwrap(), "1");
+    assert_eq!(
+      interpret(&code.replace('\u{27E6}', "[[").replace('\u{27E7}', "]]"))
+        .unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn part_commas_do_not_split_a_rule_or_span_argument() {
+    assert_eq!(
+      interpret("a = {{1, 2}, {3, 4}}; f[a〚1, 2〛 -> 9]").unwrap(),
+      "f[2 -> 9]"
+    );
+    assert_eq!(
+      interpret("a = {{1, 2}, {3, 4}}; b = {5, 6, 7}; b[[a⟦1, 1⟧ ;; 3]]")
+        .unwrap(),
+      "{5, 6, 7}"
+    );
+  }
+
+  #[test]
+  fn nested_part_brackets_stay_balanced() {
+    assert_eq!(
+      interpret("a = {{1, 2}, {3, 4}}; If[True, a⟦a⟦1, 1⟧, 2⟧; y = 7]; y")
+        .unwrap(),
+      "7"
+    );
+  }
+}
+
+/// A precision-tagged real may carry a `*^` exponent after its tag —
+/// `1.5`*^-16` is how the Wolfram Language writes a tiny machine real in
+/// InputForm, and a Demonstration's coordinate list is full of them. Each
+/// expectation below matches wolframscript.
+mod precision_mark_with_exponent {
+  use super::*;
+
+  #[test]
+  fn machine_precision_mark_takes_an_exponent() {
+    assert_eq!(interpret("1.5`*^-16").unwrap(), "1.5*^-16");
+    assert_eq!(
+      interpret("-1.1102230246251565`*^-16").unwrap(),
+      "-1.1102230246251565*^-16"
+    );
+    // The exponent scales the value, so ordinary arithmetic sees it.
+    assert_eq!(interpret("1.5`*^3 + 1").unwrap(), "1501.");
+  }
+
+  #[test]
+  fn precision_and_accuracy_tags_take_an_exponent() {
+    // The precision tag itself is unchanged by the exponent...
+    assert_eq!(interpret("1.5`20*^3").unwrap(), "1500.`20.");
+    // ...while an accuracy tag applies to the scaled value, so the implied
+    // precision grows with it: 20 + Log10[1500].
+    assert_eq!(interpret("1.5``20*^3").unwrap(), "1500.`23.17609125905568");
+  }
+
+  #[test]
+  fn a_coordinate_list_of_tiny_reals_parses() {
+    // The shape that made the "Non Placet Net of a Dodecahedron"
+    // Demonstration fail to load: a long list ending in a replacement rule.
+    assert_eq!(
+      interpret(
+        "k = {{1.`, 0.`}, {-1.1102230246251565`*^-16, \
+         2.220446049250313`*^-16}} /. {x_, y_} -> {x, y, 0}; Length[k]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+}

@@ -80,16 +80,21 @@ UnsignedReal = @{
 // Double-backtick `n``a` is the accuracy form: n with accuracy a digits.
 // In Wolfram, `n``a` ≡ `n`(a + log10(|n|))` for n ≠ 0; for n == 0 it
 // produces a Real(0.) with the accuracy spec preserved on display.
+// A precision-tagged literal may still carry a `*^` exponent after the tag:
+// `1.5`*^-16` is how the Wolfram Language writes a tiny machine real in
+// InputForm, and Demonstrations' coordinate lists are full of them.
 UnsignedPrecisionReal = @{
     (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* | "." ~ ASCII_DIGIT+ | ASCII_DIGIT+)
     ~ ("``" | "`")
     ~ (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+)?
+    ~ ("*^" ~ ExponentSign? ~ ASCII_DIGIT+)?
 }
 PrecisionReal = @{
     ("-")?
     ~ (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* | "." ~ ASCII_DIGIT+ | ASCII_DIGIT+)
     ~ ("``" | "`")
     ~ (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+)?
+    ~ ("*^" ~ ExponentSign? ~ ASCII_DIGIT+)?
 }
 UnsignedConstant = { ("Pi" | "Degree" | "E") ~ !(ASCII_ALPHANUMERIC | "_") }
 // Base-prefix literal: base^^digits (e.g. 16^^FF, 2^^1010, 2^^1.01, 16^^FF.A)
@@ -698,7 +703,19 @@ ReplacementRule = { ConditionExpr ~ ("/;" ~ ConditionExpr)? ~ ("->" | "\u{2192}"
 ReplaceAllExpr = { Term ~ "/." ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }
 ReplaceRepeatedExpr = { Term ~ "//." ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }
 
-List = { "{" ~ (ListItem ~ ("," ~ ListItem)*)? ~ "}" }
+// An element or argument may be left out: `{a,,b}` is `{a, Null, b}` and
+// `f[a,,b]` is `f[a, Null, b]`. Both rules match nothing, and the
+// lookahead is what keeps them from doing so anywhere but at an item
+// boundary next to a comma — `{}` is the empty list, not `{Null}`. Only
+// the item *after* a comma may run up against the closing bracket
+// (`{a,}` is `{a, Null}`), so that case is a separate rule, used only
+// inside the repetition. The real item is always tried first, so an
+// ordinary call parses its arguments exactly once.
+OmittedArg = { &"," }
+OmittedTrailingArg = { &("}" | "]") }
+ListItemOrOmitted = _{ ListItem | OmittedArg }
+ListItemOrOmittedLast = _{ ListItem | OmittedArg | OmittedTrailingArg }
+List = { "{" ~ (ListItemOrOmitted ~ ("," ~ ListItemOrOmittedLast)*)? ~ "}" }
 // ListItem can be a ReplacementRule (with optional & suffix) or an Expression
 // ReplacementRule must be tried first because x_ -> y looks like Expression x_ followed by -> operator
 // RuleAnonymousFunction is merged with ReplacementRule to avoid parsing content twice.
@@ -716,17 +733,23 @@ NestedContent = _{ (
   | "{" ~ NestedContent ~ "}"
   | "[" ~ NestedContent ~ "]"
   | "(" ~ NestedContent ~ ")"
+  // The Unicode part brackets group the way `[[…]]` does, so the commas
+  // and semicolons inside them are skipped with them.
+  | "\u{27E6}" ~ NestedContent ~ "\u{27E7}"
+  | "\u{301A}" ~ NestedContent ~ "\u{301B}"
   | "\"" ~ (!("\"") ~ ANY)* ~ "\""
-  | !("<|" | "|>" | "{" | "}" | "[" | "]" | "(" | ")" | "\"") ~ ANY
+  | !("<|" | "|>" | "{" | "}" | "[" | "]" | "(" | ")" | "\u{27E6}" | "\u{27E7}" | "\u{301A}" | "\u{301B}" | "\"") ~ ANY
 )* }
 HasRuleOperator = _{ (
     "<|" ~ NestedContent ~ "|>"
   | "{" ~ NestedContent ~ "}"
   | "[" ~ NestedContent ~ "]"
   | "(" ~ NestedContent ~ ")"
+  | "\u{27E6}" ~ NestedContent ~ "\u{27E7}"
+  | "\u{301A}" ~ NestedContent ~ "\u{301B}"
   | "\"" ~ (!("\"") ~ ANY)* ~ "\""
   | "<->"                       // skip TwoWayRule (don't match its "->" substring as a rule operator)
-  | !("->" | "\u{2192}" | ":>" | "<|" | "|>" | "}" | "," | "]" | ")" | "\"") ~ ANY
+  | !("->" | "\u{2192}" | ":>" | "<|" | "|>" | "}" | "," | "]" | ")" | "\u{27E7}" | "\u{301B}" | "\"") ~ ANY
 )* ~ ("->" | "\u{2192}" | ":>") }
 // Scan forward looking for ;; (span separator) at the current nesting depth.
 // Used as a zero-width lookahead to avoid expensive SpanExpr backtracking.
@@ -738,9 +761,11 @@ HasSpanSep = _{ (
   | "{" ~ NestedContent ~ "}"
   | "[" ~ NestedContent ~ "]"
   | "(" ~ NestedContent ~ ")"
+  | "\u{27E6}" ~ NestedContent ~ "\u{27E7}"
+  | "\u{301A}" ~ NestedContent ~ "\u{301B}"
   | "\"" ~ (!("\"") ~ ANY)* ~ "\""
   | ";" ~ !";"                  // skip lone semicolons (not ;;)
-  | !(";" | "<|" | "|>" | "}" | "," | "]" | ")" | "\"") ~ ANY
+  | !(";" | "<|" | "|>" | "}" | "," | "]" | ")" | "\u{27E7}" | "\u{301B}" | "\"") ~ ANY
 )* ~ SpanSep }
 // Scan forward looking for ; (compound separator, not ;;) at the current nesting depth.
 // Used as a zero-width lookahead to avoid expensive CompoundExpression backtracking.
@@ -750,8 +775,10 @@ HasSemicolon = @{ (
   | "{" ~ NestedContent ~ "}"
   | "[" ~ NestedContent ~ "]"
   | "(" ~ NestedContent ~ ")"
+  | "\u{27E6}" ~ NestedContent ~ "\u{27E7}"
+  | "\u{301A}" ~ NestedContent ~ "\u{301B}"
   | "\"" ~ (!("\"") ~ ANY)* ~ "\""
-  | !(";" | "<|" | "|>" | "}" | "," | "]" | ")" | "\"") ~ ANY
+  | !(";" | "<|" | "|>" | "}" | "," | "]" | ")" | "\u{27E7}" | "\u{301B}" | "\"") ~ ANY
 )* ~ ";" ~ !";" }
 ListItem = _{ &HasRuleOperator ~ ListItemRule | &HasSemicolon ~ CompoundExpression | &HasSpanSep ~ SpanExpr | Expression }
 
@@ -782,7 +809,9 @@ AssociationExtended = {
 FunctionArgRule = { ReplacementRule ~ RuleAnonSuffix? ~ RuleReplaceSuffix* ~ ("//" ~ PostfixFunction)* }
 FunctionArg = _{ &HasRuleOperator ~ FunctionArgRule | &HasSemicolon ~ CompoundExpression | &HasSpanSep ~ SpanExpr | Expression }
 // BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
-BracketArgs = { "[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]" }
+FunctionArgOrOmitted = _{ FunctionArg | OmittedArg }
+FunctionArgOrOmittedLast = _{ FunctionArg | OmittedArg | OmittedTrailingArg }
+BracketArgs = { "[" ~ (FunctionArgOrOmitted ~ ("," ~ FunctionArgOrOmittedLast)*)? ~ "]" }
 FunctionCall = { (Identifier | NamedCharIdentifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+ ~ DerivativePrime? }
 
 // FunctionDefinition supports multiple pattern arguments: f[a_, b_] := ...

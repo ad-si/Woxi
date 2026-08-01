@@ -203,6 +203,9 @@ pub(crate) struct ChartOptions {
   pub chart_label_position: LabelPosition,
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
+  /// `FrameLabel -> {bottom, left}`: centred outside the plot area, where an
+  /// [`Self::axes_label`] sits at the far end of its axis.
+  pub frame_label: Option<(String, String)>,
   pub chart_style: Vec<Color>,
   /// Named color scheme (e.g. `"Pastel"`) given via `ChartStyle -> "name"`.
   /// Resolved to per-element colors once the element count is known.
@@ -247,6 +250,41 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     Expr::Identifier(s) => Some(s.clone()),
     Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
       Some(crate::syntax::expr_to_string(e))
+    }
+    // A styled label reads as its content — a Demonstration writes its
+    // frame labels as `Style["force (kN)", 12]`.
+    Expr::FunctionCall { name, args }
+      if (name == "Style" || name == "Text") && !args.is_empty() =>
+    {
+      expr_to_label(&args[0])
+    }
+    // A plot label is drawn as plain text, so `Subscript`/`Superscript`
+    // render through the Unicode script characters — the closest a text
+    // label gets to Wolfram's typeset form.
+    Expr::FunctionCall { name, args }
+      if (name == "Subscript" || name == "Superscript") && args.len() >= 2 =>
+    {
+      let base = expr_to_label(&args[0])?;
+      let scripts: String = args[1..]
+        .iter()
+        .filter_map(expr_to_label)
+        .map(|s| {
+          crate::functions::graphics::to_unicode_script_digits(
+            &s,
+            name == "Superscript",
+          )
+        })
+        .collect();
+      Some(format!("{base}{scripts}"))
+    }
+    // `Row[{…}]` joins its parts, with an optional separator.
+    Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let parts: Vec<String> = items.iter().filter_map(expr_to_label).collect();
+      let sep = args.get(1).and_then(expr_to_label).unwrap_or_default();
+      Some(parts.join(&sep))
     }
     _ => None,
   }
@@ -953,6 +991,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     chart_label_position: LabelPosition::Below,
     plot_label: None,
     axes_label: None,
+    frame_label: None,
     chart_style: Vec::new(),
     chart_style_scheme: None,
     chart_legends: Vec::new(),
@@ -1033,6 +1072,8 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             opts.plot_label = Some(sl);
           }
         }
+        // The two differ in placement: a `FrameLabel` sits centred outside
+        // the bottom/left edge, an `AxesLabel` at the far end of its axis.
         "AxesLabel" | "FrameLabel" => {
           let val = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.clone());
@@ -1041,7 +1082,11 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           {
             let x = expr_to_label(&items[0]).unwrap_or_default();
             let y = expr_to_label(&items[1]).unwrap_or_default();
-            opts.axes_label = Some((x, y));
+            if name == "FrameLabel" {
+              opts.frame_label = Some((x, y));
+            } else {
+              opts.axes_label = Some((x, y));
+            }
           }
         }
         "ChartLegends" => {
@@ -1190,6 +1235,10 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.plot_label.as_ref(),
     opts
       .axes_label
+      .as_ref()
+      .map(|(x, y)| (x.as_str(), y.as_str())),
+    opts
+      .frame_label
       .as_ref()
       .map(|(x, y)| (x.as_str(), y.as_str())),
     &opts.chart_style,
@@ -1553,6 +1602,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           z: (v0.z + v1.z + v2.z) / 3.0,
         };
         all_triangles.push(Triangle {
+          boundary: [true; 3],
           projected: [
             project(v0, &camera),
             project(v1, &camera),
@@ -1685,6 +1735,7 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             z: (v0.z + v1.z + v2.z) / 3.0,
           };
           all.push(Triangle {
+            boundary: [true; 3],
             projected: [
               project(v0, &camera),
               project(v1, &camera),
@@ -2119,8 +2170,14 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let s = RESOLUTION_SCALE as i32;
   let sf = RESOLUTION_SCALE as f64;
   let has_chart_labels = !opts.chart_labels.is_empty();
-  let has_x_axis_label =
-    opts.axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
+  // A `FrameLabel` takes room below/left; an `AxesLabel` sits at the far end
+  // of its axis, so it takes room above instead.
+  let has_x_frame_label = opts
+    .frame_label
+    .as_ref()
+    .is_some_and(|(x, _)| !x.is_empty());
+  let has_y_axes_label =
+    opts.axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
   let has_plot_label = opts
     .plot_label
     .as_ref()
@@ -2130,7 +2187,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     25 * s as u32
   } else {
     10 * s as u32
-  };
+  } + if has_y_axes_label { 18 * s as u32 } else { 0 };
   let has_rotated_labels =
     opts.chart_labels.iter().any(|l| l.rotation.abs() > 0.01);
   let label_extra = if has_rotated_labels {
@@ -2141,7 +2198,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     0.0
   };
   let bottom_extra =
-    label_extra + if has_x_axis_label { 16.0 * sf } else { 0.0 };
+    label_extra + if has_x_frame_label { 16.0 * sf } else { 0.0 };
   let x_label_area = 8 * RESOLUTION_SCALE + bottom_extra as u32;
   let y_label_area = 40 * RESOLUTION_SCALE;
 
@@ -2271,8 +2328,8 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // AxesLabel / FrameLabel: x-axis label centered below, y-axis label rotated on left
-  if let Some((x_label, y_label)) = &opts.axes_label {
+  // FrameLabel: x-axis label centered below, y-axis label rotated on left.
+  if let Some((x_label, y_label)) = &opts.frame_label {
     if !x_label.is_empty() {
       let cx = plot_x0 + plot_w / 2.0;
       let base_y = axis_y
@@ -2299,6 +2356,16 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
   }
+
+  // AxesLabel: at the far end of each axis.
+  labels_svg.push_str(&crate::functions::plot::axes_label_svg(
+    opts.axes_label.as_ref(),
+    (plot_x0, plot_y0, plot_w, plot_h),
+    (0.0, n as f64, v_min, v_max),
+    (true, true),
+    font_size,
+    chart_label_fill,
+  ));
 
   // PlotLabel: centered above the chart
   if let Some(sl) = &opts.plot_label

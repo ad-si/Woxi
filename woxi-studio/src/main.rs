@@ -6841,7 +6841,7 @@ Cell[BoxData[
       "the bracketed subscript must parse as Part: {code}"
     );
 
-    let widget = instantiate_stored_manipulate(&code)
+    let widget = instantiate_stored_manipulate(&code, "")
       .expect("the Manipulate must build a widget");
     assert!(
       widget.error.is_none(),
@@ -6891,7 +6891,7 @@ Cell[BoxData[
       {{b1, .1, \"damping factor 1\"}, 0, 10, .001, \
         ImageSize -> Tiny, Appearance -> \"Labeled\"}, \
       SaveDefinitions -> True]";
-    let state = instantiate_stored_manipulate(code)
+    let state = instantiate_stored_manipulate(code, "")
       .expect("the Lorentz Manipulate must build a widget");
     assert!(
       state.error.is_none(),
@@ -6955,7 +6955,7 @@ Cell[BoxData[
       {{pt2, {-0.083, 1.}}, {-1, -1}, {1, 1}, Locator}, \
       {{pt3, {0.98875, 0.25}}, {-1, -1}, {1, 1}, Locator}, \
       SaveDefinitions -> True]";
-    let state = instantiate_stored_manipulate(code)
+    let state = instantiate_stored_manipulate(code, "")
       .expect("the orthocenter Manipulate must build a widget");
     assert!(
       state.error.is_none(),
@@ -6988,7 +6988,7 @@ Cell[BoxData[
       {{li, {3, 1, 2}, \"\"}, \
         Button[\"Generate new list\", k = 0; li = {5, 4, 6}] &}, \
       SaveDefinitions -> True]";
-    let state = instantiate_stored_manipulate(code)
+    let state = instantiate_stored_manipulate(code, "")
       .expect("the quicksort Manipulate must build a widget");
     assert!(
       state.error.is_none(),
@@ -7039,7 +7039,7 @@ Cell[BoxData[
         Spacer[20], \
         Control@{{col, Red, \"color\"}, Red}}], \
       SaveDefinitions -> True]";
-    let state = instantiate_stored_manipulate(code)
+    let state = instantiate_stored_manipulate(code, "")
       .expect("the sphericon Manipulate must build a widget");
     assert!(
       state.error.is_none(),
@@ -7094,7 +7094,7 @@ Cell[BoxData[
     )
     .expect("the compiled helper must define");
 
-    let mut state = instantiate_stored_manipulate(code)
+    let mut state = instantiate_stored_manipulate(code, "")
       .expect("the Mandelbrot Manipulate must build a widget");
     assert!(
       state.error.is_none(),
@@ -7176,7 +7176,7 @@ Cell[BoxData["ImageDimensions[tex]"], "Input"]
         PlotLabel :> Which[t == 1100, \"Boats meet\", True, \"\"], \
         ImageSize -> 500]], \
       {{t, 0, \"time\"}, 0, 3300, 25}, AutorunSequencing -> {{1, 30}}]";
-    let mut state = instantiate_stored_manipulate(code)
+    let mut state = instantiate_stored_manipulate(code, "")
       .expect("the boats Manipulate must build a widget");
     assert!(
       state.error.is_none(),
@@ -7254,7 +7254,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       {{b, 4, \"critical region boundary\"}, 0, n, 1, \
        Appearance -> \"Labeled\"}, \
       TrackedSymbols -> Manipulate]";
-    let state = instantiate_stored_manipulate(code)
+    let state = instantiate_stored_manipulate(code, "")
       .expect("the binomial-power Manipulate must build a widget");
     assert!(
       state.error.is_none(),
@@ -7353,7 +7353,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       Initialization :> (nice[d_] := \
         If[Abs[d - Round[d]] < .001, Round[d], d]), \
       SaveDefinitions -> True]";
-    let mut state = instantiate_stored_manipulate(code)
+    let mut state = instantiate_stored_manipulate(code, "")
       .expect("the cubic-roots Manipulate must build a widget");
     assert!(
       state.error.is_none(),
@@ -7913,5 +7913,2641 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     let mut editor = blank_editor();
     evaluate_cell_statements(&mut editor, "10.^10", true, 1.0, &fontdb);
     assert!(editor.output_dark);
+  }
+
+  /// The full widget of the "Trigonometric Sums as Parametric Curves"
+  /// Demonstration: a setter bar over the four examples, six labeled
+  /// sliders (two of them labeled with a typeset subscript) and a
+  /// True/False setter, all drawn from definitions that sum to a
+  /// symbolic upper limit.
+  #[test]
+  fn trigonometric_sums_manipulate_builds_all_controls() {
+    for def in [
+      "x[t_,m_,1]:=Sum[(Sin[(n)^(2) t])/((n)^(2)), {n, 1, m}]",
+      "y[t_,m_,1]:=Sum[(Cos[(n)^(2) t])/((n)^(2)), {n, 1, m}]",
+      "x[t_,m_,2]:=Sum[((-1))^(n)(Sin[((-1))^(n) (n)^(2) t])/((n)^(2)), {n, 1, m}]",
+      "y[t_,m_,2]:=Sum[((-1))^(n)(Cos[((-1))^(n) (n)^(2) t])/((n)^(2)), {n, 1, m}]",
+      "x[t_,m_,3]:=0.4Sum[(Sin[((-1))^(n) n t])/(n), {n, 1, m}]",
+      "y[t_,m_,3]:=0.4Sum[(Cos[((-1))^(n) n t])/(n), {n, 1, m}]",
+      "x[t_,m_,4]:=0.4Sum[(Sin[ n t])/(n), {n, 1, m}]",
+      "y[t_,m_,4]:=0.4Sum[(Cos[ n t])/(n), {n, 1, m}]",
+      "p[  m_,example_, k_, optionen___ ] := ParametricPlot[ Evaluate[ {x[t, m,example], y[t, m,example]} ],{t, 0,2 Pi}, PlotPoints -> k , AspectRatio -> Automatic, Axes -> False, ImageSize -> {400, 400}, optionen ]",
+    ] {
+      woxi::interpret(def).unwrap();
+    }
+    let code = "Manipulate[p[  m,ex, k, PlotRange -> {{xmin, xmax}, {ymin, ymax}} , Frame -> frame ],\n\
+{{ex,1,\"example\"},{1,2,3,4}},\n\
+{{m,51,\"sum index\"},1,100,1, Appearance -> \"Labeled\",ImageSize->Tiny},\n\
+{{k,100,\"sample points\"},15,150,1, Appearance -> \"Labeled\",ImageSize->Tiny},\n\
+{{xmin,-1.3,\"\\!\\(\\*SubscriptBox[\\(x\\), \\(min\\)]\\)\"},-1.3,1,.01,Appearance -> \"Labeled\",ImageSize->Tiny},\n\
+{{xmax,1.3,\"\\!\\(\\*SubscriptBox[\\(x\\), \\(max\\)]\\)\"},0,1.3,.01,Appearance -> \"Labeled\",ImageSize->Tiny},\n\
+{{ymin,-1.3,\"\\!\\(\\*SubscriptBox[\\(y\\), \\(min\\)]\\)\"},-1.3,1,.01,Appearance -> \"Labeled\",ImageSize->Tiny},\n\
+{{ymax,1.7,\"\\!\\(\\*SubscriptBox[\\(y\\), \\(max\\)]\\)\"},-0.6,2.1,.01,Appearance -> \"Labeled\",ImageSize->Tiny},\n\
+{{frame, False, \"frame\"}, {True, False}},\n\
+TrackedSymbols->Manipulate,\n ControlPlacement -> Left,SaveDefinitions->True,AutorunSequencing->{1,4,5,6,7}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must produce the parametric curve"
+    );
+    let labels: Vec<&str> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { label, .. } => label.as_str(),
+        manipulate::ControlState::Discrete { label, .. } => label.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      labels,
+      [
+        "example",
+        "sum index",
+        "sample points",
+        "xₘᵢₙ",
+        "xₘₐₓ",
+        "yₘᵢₙ",
+        "yₘₐₓ",
+        "frame",
+      ]
+    );
+    match (&state.controls[0], &state.controls[1]) {
+      (
+        manipulate::ControlState::Discrete {
+          values,
+          current_index,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          min, max, current, ..
+        },
+      ) => {
+        assert_eq!(values, &["1", "2", "3", "4"]);
+        assert_eq!(*current_index, 0);
+        assert_eq!((*min, *max, *current), (1.0, 100.0, 51.0));
+      }
+      other => panic!("unexpected leading controls: {other:?}"),
+    }
+  }
+
+  /// End-to-end regression for the "Trigonometric Sums as Parametric
+  /// Curves" Demonstration. Its initialization cells write the partial
+  /// sums as typeset `∑` boxes, which have to come back as
+  /// `Sum[…, {n, 1, m}]`, and its plotting helper is declared with a
+  /// space before the closing bracket (`p[ m_, k_, opts___ ]`).
+  #[test]
+  fn trigonometric_sums_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData[{
+ RowBox[{
+  RowBox[{
+   RowBox[{"x", "[", RowBox[{"t_", ",", "m_"}], "]"}], ":=",
+   RowBox[{
+    UnderoverscriptBox["\[Sum]", RowBox[{"n", "=", "1"}], "m"],
+    FractionBox[
+     RowBox[{"Sin", "[", RowBox[{SuperscriptBox["n", "2"], " ", "t"}], "]"}],
+     SuperscriptBox["n", "2"]]}]}], ";"}], "\[IndentingNewLine]",
+ RowBox[{
+  RowBox[{
+   RowBox[{"y", "[", RowBox[{"t_", ",", "m_"}], "]"}], ":=",
+   RowBox[{
+    UnderoverscriptBox["\[Sum]", RowBox[{"n", "=", "1"}], "m"],
+    FractionBox[
+     RowBox[{"Cos", "[", RowBox[{SuperscriptBox["n", "2"], " ", "t"}], "]"}],
+     SuperscriptBox["n", "2"]]}]}], ";"}]}], "Input"],
+Cell[BoxData[
+ RowBox[{
+  RowBox[{
+   RowBox[{"p", "[", "  ",
+    RowBox[{"m_", ",", " ", "k_", ",", " ", "optionen___"}], " ", "]"}], " ",
+   ":=",
+   RowBox[{"ParametricPlot", "[",
+    RowBox[{
+     RowBox[{"Evaluate", "[",
+      RowBox[{"{",
+       RowBox[{
+        RowBox[{"x", "[", RowBox[{"t", ",", " ", "m"}], "]"}], ",",
+        RowBox[{"y", "[", RowBox[{"t", ",", " ", "m"}], "]"}]}], "}"}], "]"}],
+     ",", RowBox[{"{", RowBox[{"t", ",", "0", ",", RowBox[{"2", "\[Pi]"}]}], "}"}],
+     ",", RowBox[{"PlotPoints", "\[Rule]", "k"}],
+     ",", RowBox[{"AspectRatio", "\[Rule]", "Automatic"}],
+     ",", RowBox[{"Axes", "\[Rule]", "False"}], ",", "optionen"}], "]"}]}],
+  ";"}]], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"p", "[",
+    RowBox[{"m", ",", "k", ",",
+     RowBox[{"Frame", "\[Rule]", "frame"}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"m", ",", "5", ",", "\"\<sum index\>\""}], "}"}],
+     ",", "1", ",", "100", ",", "1"}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"k", ",", "40", ",", "\"\<sample points\>\""}], "}"}],
+     ",", "15", ",", "150", ",", "1"}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"frame", ",", "False", ",", "\"\<frame\>\""}], "}"}],
+     ",", RowBox[{"{", RowBox[{"True", ",", "False"}], "}"}]}], "}"}], ",",
+   RowBox[{"SaveDefinitions", "\[Rule]", "True"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 5}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+
+    // The typeset sums come back as evaluable `Sum[…]` calls.
+    let definitions = editors[0].content.text();
+    assert!(
+      definitions.contains("Sum[(Sin[(n)^(2) t])/((n)^(2)), {n, 1, m}]"),
+      "the ∑ box must become a Sum: {definitions}"
+    );
+
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the parametric curve must render, which needs both the ∑ definitions \
+       and the `p[ m_, … ]` helper (declared with a trailing space) to bind"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: m,
+          label: m_label,
+          current: m_now,
+          ..
+        },
+        manipulate::ControlState::Continuous { name: k, .. },
+        manipulate::ControlState::Discrete {
+          name: frame,
+          values,
+          ..
+        },
+      ] => {
+        assert_eq!(
+          (m.as_str(), m_label.as_str(), *m_now),
+          ("m", "sum index", 5.0)
+        );
+        assert_eq!(k, "k");
+        assert_eq!(frame, "frame");
+        assert_eq!(values, &["True".to_string(), "False".to_string()]);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+  /// End-to-end regression for the "Some Irreptiles of Order Greater
+  /// than 20" Demonstration. Its data table leaves gaps (`{d1, d2, ,
+  /// d4}` — an omitted element is `Null`), the FrontEnd hard-wrapped the
+  /// long box expressions mid-bracket, the labels carry `\[Hyphen]`, and
+  /// the tiles are drawn with `EdgeForm[If[outline, Thin, None]]`.
+  #[test]
+  fn irreptiles_notebook_opens_with_its_widget() {
+    let nb_src = "Notebook[{\n".to_string()
+      + r##"Cell[BoxData[
+ RowBox[{RowBox[{"data", "=",
+   RowBox[{"{", RowBox[{"7", ",", ",", "9"}], "}"}]}], ";"}]], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Graphics", "[",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{
+       RowBox[{"EdgeForm", "[",
+        RowBox[{"If", "[",
+         RowBox[{"outline", ",", "Thin", ",", "None"}], "]"}], "]"}], ",",
+       "Orange", ",",
+       RowBox[{"Polygon", "[",
+        RowBox[{"{",
+         RowBox[{
+          RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], ",",
+          RowBox[{"{",
+           RowBox[{
+            RowBox[{"data", "[",
+             RowBox[{"[", "1", "]"}], "]"}], ",", "0"}\
+], "}"}], ",",
+          RowBox[{"{", RowBox[{"1", ",", "1"}], "}"}]}], "}"}], "]"}], ",",
+       RowBox[{"Text", "[",
+        RowBox[{"\"\<irrep\[Hyphen]21\>\"", ",",
+         RowBox[{"{", RowBox[{"1", ",", "1"}], "}"}]}], "]"}]}], "}"}], ",",
+     RowBox[{"ImageSize", "\[Rule]", "200"}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"outline", ",", "True", ",", "\"\<outline\>\""}],
+      "}"}], ",",
+     RowBox[{"{", RowBox[{"True", ",", "False"}], "}"}]}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`outline$$ = True}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(&nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+
+    // The gap in the data table is `Null`, so the list still has three
+    // elements and `data[[1]]` is the 7.
+    let data_cell = editors[0].content.text();
+    assert_eq!(data_cell.trim(), "data={7,,9};");
+    assert_eq!(woxi::interpret("Length[{7,,9}]").unwrap(), "3");
+    // The wrapped box rejoined, so the Part access survived the line
+    // break, and the label's named character resolved.
+    let manipulate_cell = editors[1].content.text();
+    assert!(
+      manipulate_cell.contains("data[[1]]"),
+      "the wrapped Part box must rejoin: {manipulate_cell}"
+    );
+    assert!(
+      manipulate_cell.contains("irrep\u{2010}21"),
+      "\\[Hyphen] must resolve to its character: {manipulate_cell}"
+    );
+
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the tile must render, which needs `data` from the preceding cell"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name,
+          label,
+          values,
+          ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), label.as_str()), ("outline", "outline"));
+        assert_eq!(values, &["True".to_string(), "False".to_string()]);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// End-to-end regression for the "An Expanding Structure Based on the
+  /// Diamond Lattice" Demonstration: a `Graphics3D` scene assembled from
+  /// `PolyhedronData` face lists, with a `RadioButton` control over a
+  /// numeric range.
+  #[test]
+  fn diamond_lattice_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Graphics3D", "[",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{
+       RowBox[{"RGBColor", "[",
+        RowBox[{"1", ",", "0.5", ",", "0.5"}], "]"}], ",",
+       RowBox[{"Scale", "[",
+        RowBox[{
+         RowBox[{"GraphicsComplex", "[",
+          RowBox[{
+           RowBox[{"PolyhedronData", "[",
+            RowBox[{"\"\<Octahedron\>\"", ",", "\"\<VertexCoordinates\>\""}],
+            "]"}], ",",
+           RowBox[{"Polygon", "[",
+            RowBox[{"PolyhedronData", "[",
+             RowBox[{"\"\<Octahedron\>\"", ",", "\"\<FaceIndices\>\""}],
+             "]"}], "]"}]}], "]"}], ",",
+         RowBox[{"exp", " ",
+          RowBox[{"{", RowBox[{"1", ",", "1", ",", "1"}], "}"}]}], ",",
+         RowBox[{"{", RowBox[{"0", ",", "0", ",", "0"}], "}"}]}], "]"}]}],
+      "}"}], ",",
+     RowBox[{"Boxed", "\[Rule]", "False"}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"n", ",", "1", ",", "\"\<frequency\>\""}], "}"}],
+     ",", "1", ",", "2", ",", "1", ",", "RadioButton"}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"exp", ",", "1.8", ",", "\"\<expand\>\""}], "}"}],
+     ",", "1", ",", "2.6"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the octahedron must render, which needs PolyhedronData's face list"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name,
+          label,
+          values,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: exp, current, ..
+        },
+      ] => {
+        // `RadioButton` over `1, 2, 1` is a choice between 1 and 2, not a
+        // slider over the range.
+        assert_eq!((name.as_str(), label.as_str()), ("n", "frequency"));
+        assert_eq!(values, &["1".to_string(), "2".to_string()]);
+        assert_eq!((exp.as_str(), *current), ("exp", 1.8));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// End-to-end regression for the "Constant Price Elasticity of Demand"
+  /// Demonstration: a `Grid` of two `Show[Plot[…], Graphics[…]]` panels,
+  /// each drawn with the plot's own `PlotRange`, `PlotLabel` and
+  /// `AxesLabel`.
+  #[test]
+  fn price_elasticity_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Grid", "[",
+    RowBox[{"{",
+     RowBox[{"{",
+      RowBox[{"Show", "[",
+       RowBox[{
+        RowBox[{"Plot", "[",
+         RowBox[{
+          RowBox[{"A", " ",
+           SuperscriptBox["x", RowBox[{"1", "/", "\[Epsilon]"}]]}], ",",
+          RowBox[{"{", RowBox[{"x", ",", "0", ",", "10"}], "}"}], ",",
+          RowBox[{"PlotRange", "\[Rule]",
+           RowBox[{"{",
+            RowBox[{
+             RowBox[{"{", RowBox[{"0", ",", "10"}], "}"}], ",",
+             RowBox[{"{", RowBox[{"0", ",", "10"}], "}"}]}], "}"}]}], ",",
+          RowBox[{"AxesLabel", "\[Rule]",
+           RowBox[{"{",
+            RowBox[{
+             RowBox[{"Style", "[",
+              RowBox[{"\"\<Q\>\"", ",", "Blue", ",", "Italic"}], "]"}], ",",
+             RowBox[{"Style", "[",
+              RowBox[{"\"\<P\>\"", ",", "Blue", ",", "Italic"}], "]"}]}],
+            "}"}]}], ",",
+          RowBox[{"PlotLabel", "\[Rule]", "\"\<Demand\>\""}]}], "]"}], ",",
+        RowBox[{"Graphics", "[",
+         RowBox[{"{",
+          RowBox[{"PointSize", "[", "0.03", "]"}], ",",
+          RowBox[{"Point", "[",
+           RowBox[{"{", RowBox[{"2.5", ",", "price"}], "}"}], "]"}], "}"}],
+         "]"}]}], "]"}], "}"}], "}"}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"A", ",", "5", ",", "\"\<A\>\""}], "}"}], ",",
+     "0.2", ",", "20"}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"price", ",", "2", ",", "\"\<p\>\""}], "}"}], ",",
+     "0.5", ",", "10"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`A$$ = 5}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the Grid of plots must render as a picture, not as `-Graphics-` text"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: a,
+          current: a_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: p,
+          current: p_now,
+          ..
+        },
+      ] => {
+        assert_eq!((a.as_str(), *a_now), ("A", 5.0));
+        assert_eq!((p.as_str(), *p_now), ("price", 2.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// End-to-end regression for the "A Converging Geometric Series"
+  /// Demonstration: a `Grid` with a `NumberForm` caption above a row of
+  /// two pictures, the first assembled from rectangles `Sow`n in a loop.
+  #[test]
+  fn geometric_series_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Grid", "[",
+    RowBox[{"{",
+     RowBox[{
+      RowBox[{"{",
+       RowBox[{"Text", "@",
+        RowBox[{"Row", "[",
+         RowBox[{"{",
+          RowBox[{"\"\<area = \>\"", ",",
+           RowBox[{"NumberForm", "[",
+            RowBox[{
+             RowBox[{"N", "[",
+              RowBox[{"Sum", "[",
+               RowBox[{
+                SuperscriptBox[
+                 RowBox[{"(", RowBox[{"1", "/", "2"}], ")"}], "t"], ",",
+                RowBox[{"{", RowBox[{"t", ",", "1", ",", "n"}], "}"}]}],
+               "]"}], "]"}], ",",
+             RowBox[{"{", RowBox[{"7", ",", "9"}], "}"}]}], "]"}]}], "}"}],
+         "]"}]}], "}"}], ",",
+      RowBox[{"{",
+       RowBox[{"Graphics", "[",
+        RowBox[{
+         RowBox[{"{",
+          RowBox[{
+           RowBox[{"EdgeForm", "[", "Black", "]"}], ",",
+           RowBox[{"Hue", "[", "0.3", "]"}], ",",
+           RowBox[{"Rectangle", "[",
+            RowBox[{
+             RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], ",",
+             RowBox[{"{", RowBox[{"0.5", ",", "1"}], "}"}]}], "]"}]}], "}"}],
+         ",", RowBox[{"Axes", "\[Rule]", "True"}], ",",
+         RowBox[{"Ticks", "\[Rule]",
+          RowBox[{"{",
+           RowBox[{
+            RowBox[{"{", RowBox[{"0", ",", "1"}], "}"}], ",",
+            RowBox[{"{", "1", "}"}]}], "}"}]}], ",",
+         RowBox[{"ImageSize", "\[Rule]", "200"}]}], "]"}], "}"}]}], "}"}],
+    "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"n", ",", "3", ",", "\"\<n\>\""}], "}"}], ",", "1",
+     ",", "25", ",", "1"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 3}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the Grid must render as a picture: its caption and its rectangle"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          current,
+          min,
+          max,
+          ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), *current), ("n", 3.0));
+        assert_eq!((*min, *max), (1.0, 25.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// End-to-end regression for "The Mayan Calendar" Demonstration: a
+  /// wheel of `Disk` sectors whose teeth carry `Inset` pictures, with the
+  /// day name written as a `Row` separated by a `Spacer`.
+  #[test]
+  fn mayan_calendar_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Graphics", "[",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{
+       RowBox[{"Disk", "[",
+        RowBox[{
+         RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], ",", "1", ",",
+         RowBox[{"{", RowBox[{"0", ",", "\[Pi]"}], "}"}]}], "]"}], ",",
+       RowBox[{"Inset", "[",
+        RowBox[{
+         RowBox[{"Graphics", "[",
+          RowBox[{"{",
+           RowBox[{"Black", ",", RowBox[{"Disk", "[", "]"}]}], "}"}], "]"}],
+         ",", RowBox[{"{", RowBox[{"0.5", ",", "0"}], "}"}], ",", "Automatic",
+         ",", RowBox[{"{", RowBox[{"0.3", ",", "0.15"}], "}"}], ",",
+         RowBox[{"{",
+          RowBox[{"Automatic", ",", RowBox[{"{", RowBox[{"1", ",", "0"}], "}"}]}],
+          "}"}]}], "]"}], ",",
+       RowBox[{"Text", "[",
+        RowBox[{
+         RowBox[{"Style", "[",
+          RowBox[{
+           RowBox[{"Row", "[",
+            RowBox[{
+             RowBox[{"{",
+              RowBox[{RowBox[{"Mod", "[", RowBox[{"day", ",", "13", ",", "1"}], "]"}],
+               ",", "\"\<Imix\>\""}], "}"}], ",",
+             RowBox[{"Spacer", "[", "1", "]"}]}], "]"}], ",", "16", ",", "Red"}],
+          "]"}], ",", RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}]}], "]"}]}],
+      "}"}], ",",
+     RowBox[{"ImageSize", "\[Rule]", RowBox[{"{", RowBox[{"300", ",", "200"}], "}"}]}],
+     ",", RowBox[{"Background", "\[Rule]", "LightBlue"}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"day", ",", "1", ",", "\"\<day\>\""}], "}"}], ",",
+     "1", ",", "260", ",", "1"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`day$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    // The cell reads back as evaluable code, spacer and all.
+    let code = editors[0].content.text();
+    assert!(code.contains("Spacer[1]"), "{code}");
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the wheel must render, with the inset picture on its tooth"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name, label, max, ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), label.as_str()), ("day", "day"));
+        assert_eq!(*max, 260.0);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// End-to-end regression for "Inscribed Angles That Intercept the Same
+  /// Arc": a `DynamicModule` whose body computes into locals and ends in a
+  /// `Grid` of a readout layout above the drawing, driven by `Locator`
+  /// controls.
+  #[test]
+  fn inscribed_angles_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"DynamicModule", "[",
+    RowBox[{
+     RowBox[{"{", "an", "}"}], ",",
+     RowBox[{
+      RowBox[{"an", "=",
+       RowBox[{"Norm", "[", RowBox[{"pa", "-", "ac"}], "]"}]}], ";",
+      RowBox[{"Grid", "[",
+       RowBox[{"{",
+        RowBox[{
+         RowBox[{"{",
+          RowBox[{"Column", "[",
+           RowBox[{"{",
+            RowBox[{
+             RowBox[{"Grid", "[",
+              RowBox[{"{",
+               RowBox[{"{", RowBox[{"\"\<d\>\"", ",", "an"}], "}"}], "}"}],
+              "]"}]}], "}"}], "]"}], "}"}], ",",
+         RowBox[{"{",
+          RowBox[{"Graphics", "[",
+           RowBox[{
+            RowBox[{"{",
+             RowBox[{
+              RowBox[{"Circle", "[", "]"}], ",",
+              RowBox[{"Line", "[",
+               RowBox[{"{", RowBox[{"pa", ",", "ac"}], "}"}], "]"}]}], "}"}],
+            ",",
+            RowBox[{"ImageSize", "\[Rule]", "200"}]}], "]"}], "}"}]}], "}"}],
+       "]"}]}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"pa", ",",
+       RowBox[{"{", RowBox[{RowBox[{"-", "0.6"}], ",", "0.8"}], "}"}]}], "}"}],
+     ",", RowBox[{"{", RowBox[{RowBox[{"-", "1"}], ",", RowBox[{"-", "1"}]}], "}"}],
+     ",", RowBox[{"{", RowBox[{"1", ",", "1"}], "}"}], ",", "Locator", ",",
+     RowBox[{"Appearance", "\[Rule]", "None"}]}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"ac", ",",
+       RowBox[{"{", RowBox[{"0.82", ",", RowBox[{"-", "0.57"}]}], "}"}]}], "}"}],
+     ",", RowBox[{"{", RowBox[{RowBox[{"-", "1"}], ",", RowBox[{"-", "1"}]}], "}"}],
+     ",", RowBox[{"{", RowBox[{"1", ",", "1"}], "}"}], ",", "Locator", ",",
+     RowBox[{"Appearance", "\[Rule]", "None"}]}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`pa$$ = {-0.6, 0.8}}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the DynamicModule must display its Grid, not its own expression text"
+    );
+    // Both locators become draggable 2-D controls at their initial points.
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Slider2D {
+          name: pa,
+          x: pax,
+          y: pay,
+          ..
+        },
+        manipulate::ControlState::Slider2D {
+          name: ac, x: acx, ..
+        },
+      ] => {
+        assert_eq!((pa.as_str(), *pax, *pay), ("pa", -0.6, 0.8));
+        assert_eq!((ac.as_str(), *acx), ("ac", 0.82));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// End-to-end regression for "A Procedure to Compute the Digit Sequence
+  /// of a Square Root": a `Grid` whose caption typesets a radical and a
+  /// binary `BaseForm`, over a pair of `ArrayPlot`s.
+  #[test]
+  fn digit_sequence_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"digitPlot", "[", RowBox[{"num_", ",", "steps_"}], "]"}], ":=",
+  RowBox[{"Grid", "[",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"Text", "@",
+       RowBox[{"Style", "[",
+        RowBox[{RowBox[{"Sqrt", "[", "num", "]"}], ",", "18", ",", "Bold"}],
+        "]"}]}], "}"}], ",",
+     RowBox[{"{",
+      RowBox[{"Text", "@",
+       RowBox[{"BaseForm", "[",
+        RowBox[{
+         RowBox[{"N", "[",
+          RowBox[{RowBox[{"Sqrt", "[", "num", "]"}], ",", "20"}], "]"}], ",",
+         "2"}], "]"}]}], "}"}], ",",
+     RowBox[{"{",
+      RowBox[{"ArrayPlot", "[",
+       RowBox[{
+        RowBox[{"Table", "[",
+         RowBox[{
+          RowBox[{"Mod", "[", RowBox[{RowBox[{"i", " ", "j"}], ",", "2"}], "]"}],
+          ",", RowBox[{"{", RowBox[{"i", ",", "steps"}], "}"}], ",",
+          RowBox[{"{", RowBox[{"j", ",", "steps"}], "}"}]}], "]"}], ",",
+        RowBox[{"ImageSize", "\[Rule]",
+         RowBox[{"{", RowBox[{"120", ",", "120"}], "}"}]}]}], "]"}], "}"}]}],
+    "}"}], "]"}]}]], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"digitPlot", "[", RowBox[{"num", ",", "steps"}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"num", ",", "2", ",", "\"\<square root of:\>\""}], "}"}], ",",
+     RowBox[{"{", RowBox[{"2", ",", "3", ",", "5"}], "}"}]}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{RowBox[{"{", RowBox[{"steps", ",", "20"}], "}"}], ",", "10", ",",
+     "40", ",", "1"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`num$$ = 2}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the caption and both plots must draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name,
+          label,
+          values,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: steps,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), label.as_str()), ("num", "square root of:"));
+        assert_eq!(
+          values,
+          &["2".to_string(), "3".to_string(), "5".to_string()]
+        );
+        assert_eq!((steps.as_str(), *current), ("steps", 20.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// End-to-end regression for "A Solution of Euler's Type for an Exact
+  /// Differential Equation": a `Show` of a meshed `ContourPlot` under the
+  /// gradient arrows, driven by a locator the reader may add points to.
+  #[test]
+  fn exact_differential_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Show", "[",
+    RowBox[{
+     RowBox[{"ContourPlot", "[",
+      RowBox[{
+       RowBox[{
+        SuperscriptBox["x", "2"], "+",
+        RowBox[{"0.9", " ", SuperscriptBox["y", "2"]}]}], ",",
+       RowBox[{"{", RowBox[{"x", ",", RowBox[{"-", "1"}], ",", "1"}], "}"}],
+       ",", RowBox[{"{", RowBox[{"y", ",", RowBox[{"-", "1"}], ",", "1"}], "}"}],
+       ",", RowBox[{"Axes", "\[Rule]", "True"}], ",",
+       RowBox[{"ContourShading", "\[Rule]", "None"}], ",",
+       RowBox[{"Contours", "\[Rule]", "con"}], ",",
+       RowBox[{"Mesh", "\[Rule]", "step"}], ",",
+       RowBox[{"MeshFunctions", "\[Rule]",
+        RowBox[{"{",
+         RowBox[{
+          RowBox[{RowBox[{"10", " ", "#1"}], "&"}], ",",
+          RowBox[{RowBox[{"10", " ", "#2"}], "&"}]}], "}"}]}]}], "]"}], ",",
+     RowBox[{"Graphics", "[",
+      RowBox[{"{",
+       RowBox[{"Arrow", "[",
+        RowBox[{"{",
+         RowBox[{
+          RowBox[{"Last", "[", "pts", "]"}], ",",
+          RowBox[{
+           RowBox[{"Last", "[", "pts", "]"}], "+",
+           RowBox[{"{", RowBox[{"0.3", ",", "0.2"}], "}"}]}]}], "}"}], "]"}],
+       "}"}], "]"}], ",",
+     RowBox[{"PlotRange", "\[Rule]", "1"}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"pts", ",",
+       RowBox[{"{", RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], "}"}]}], "}"}],
+     ",", RowBox[{"{", RowBox[{RowBox[{"-", "1"}], ",", RowBox[{"-", "1"}]}], "}"}],
+     ",", RowBox[{"{", RowBox[{"1", ",", "1"}], "}"}], ",", "Locator", ",",
+     RowBox[{"LocatorAutoCreate", "\[Rule]",
+      RowBox[{"{", RowBox[{"1", ",", "\[Infinity]"}], "}"}]}]}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{RowBox[{"{", RowBox[{"con", ",", "1", ",", "\"\<contours\>\""}], "}"}],
+     ",", "0", ",", "30", ",", "1"}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{RowBox[{"{", RowBox[{"step", ",", "11", ",", "\"\<step\>\""}], "}"}],
+     ",", "1", ",", "11", ",", "2"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`con$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the contours, the mesh and the arrow must all draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Locator {
+          name,
+          points,
+          auto_create,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: con,
+          current: con_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: step,
+          current: step_now,
+          ..
+        },
+      ] => {
+        assert_eq!(
+          (name.as_str(), points.as_slice()),
+          ("pts", &[(0.0, 0.0)][..])
+        );
+        assert!(auto_create, "LocatorAutoCreate -> {{1, ∞}} allows adding");
+        assert_eq!((con.as_str(), *con_now), ("con", 1.0));
+        assert_eq!((step.as_str(), *step_now), ("step", 11.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// End-to-end regression for the "Balanced Ternary Notation"
+  /// Demonstration: a balance beam whose label is a `Section`-styled Row
+  /// of balanced-ternary digits, the negative ones written as an
+  /// underscored 1.
+  #[test]
+  fn balanced_ternary_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"btDigits", "[", "n_", "]"}], ":=",
+  RowBox[{"Row", "[",
+   RowBox[{
+    RowBox[{"IntegerDigits", "[",
+     RowBox[{"n", ",", "3"}], "]"}], "/.",
+    RowBox[{"{",
+     RowBox[{"2", "\[Rule]",
+      RowBox[{"UnderscriptBox", "[", RowBox[{"\"\<1\>\"", ",", "\"\<_\>\""}],
+       "]"}]}], "}"}]}], "]"}]}]], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Graphics", "[",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"Circle", "[",
+       RowBox[{RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], ",", "1"}], "]"}],
+      "}"}], ",",
+     RowBox[{"ImageSize", "\[Rule]",
+      RowBox[{"{", RowBox[{"200", ",", "120"}], "}"}]}], ",",
+     RowBox[{"PlotLabel", "\[Rule]",
+      RowBox[{"Style", "[",
+       RowBox[{
+        RowBox[{"Row", "[",
+         RowBox[{"{",
+          RowBox[{"n", ",", "\"\< = \>\"", ",",
+           RowBox[{"btDigits", "[", "n", "]"}]}], "}"}], "]"}], ",",
+        "\"\<Section\>\""}], "]"}]}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{RowBox[{"{", RowBox[{"n", ",", "61", ",", "\"\<weight\>\""}], "}"}],
+     ",", "1", ",", "121", ",", "1"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 61}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the graphic and its typeset label must draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          current,
+          max,
+          ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), label.as_str()), ("n", "weight"));
+        assert_eq!((*current, *max), (61.0, 121.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// End-to-end regression for the "Force to Overcome Vacuum Pull"
+  /// Demonstration: a `Column` of a diagram over two `Show[Plot[…],
+  /// Graphics[…]]` panels, each captioned with a styled `FrameLabel`.
+  #[test]
+  fn vacuum_pull_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Column", "[",
+    RowBox[{"{",
+     RowBox[{
+      RowBox[{"Graphics", "[",
+       RowBox[{
+        RowBox[{"{", RowBox[{"Circle", "[",
+          RowBox[{RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], ",", "d"}],
+          "]"}], "}"}], ",",
+        RowBox[{"ImageSize", "\[Rule]",
+         RowBox[{"{", RowBox[{"200", ",", "120"}], "}"}]}]}], "]"}], ",",
+      RowBox[{"Show", "[",
+       RowBox[{
+        RowBox[{"Plot", "[",
+         RowBox[{
+          RowBox[{"f", "[", RowBox[{"x", ",", "p"}], "]"}], ",",
+          RowBox[{"{", RowBox[{"x", ",", "0.", ",", "60."}], "}"}], ",",
+          RowBox[{"Frame", "\[Rule]", "True"}], ",",
+          RowBox[{"GridLines", "\[Rule]", "Automatic"}], ",",
+          RowBox[{"FrameLabel", "\[Rule]",
+           RowBox[{"{",
+            RowBox[{
+             RowBox[{"{",
+              RowBox[{
+               RowBox[{"Style", "[",
+                RowBox[{"\"\<force (kN)\>\"", ",", "12"}], "]"}], ",",
+               "None"}], "}"}], ",",
+             RowBox[{"{",
+              RowBox[{
+               RowBox[{"Style", "[",
+                RowBox[{"\"\<diameter (cm)\>\"", ",", "12"}], "]"}], ",",
+               "None"}], "}"}]}], "}"}]}], ",",
+          RowBox[{"ImageSize", "\[Rule]",
+           RowBox[{"{", RowBox[{"330", ",", "160"}], "}"}]}]}], "]"}], ",",
+        RowBox[{"Graphics", "[",
+         RowBox[{"{",
+          RowBox[{
+           RowBox[{"PointSize", "[", "0.04", "]"}], ",",
+           RowBox[{"Point", "[",
+            RowBox[{"{",
+             RowBox[{"d", ",", RowBox[{"f", "[", RowBox[{"d", ",", "p"}], "]"}]}],
+             "}"}], "]"}]}], "}"}], "]"}]}], "]"}]}], "}"}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"d", ",", "30.", ",", "\"\<diameter\>\""}], "}"}],
+     ",", "1.", ",", "60."}], "}"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"p", ",", "20.", ",", "\"\<pressure\>\""}], "}"}],
+     ",", "0.", ",", "100."}], "}"}], ",",
+   RowBox[{"Initialization", "\[RuleDelayed]",
+    RowBox[{"(",
+     RowBox[{
+      RowBox[{"f", "[",
+       RowBox[{"dd_", ",", "pp_"}], "]"}], ":=",
+      RowBox[{
+       RowBox[{"(", RowBox[{"100.", "-", "pp"}], ")"}], "*",
+       RowBox[{"Pi", "/", "8."}], "*",
+       SuperscriptBox[
+        RowBox[{"(", RowBox[{"dd", "/", "100."}], ")"}], "2"]}]}], ")"}]}]}],
+  "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`d$$ = 30.}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the column of diagram and captioned plot must draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: d,
+          current: d_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: p,
+          current: p_now,
+          ..
+        },
+      ] => {
+        assert_eq!((d.as_str(), *d_now), ("d", 30.0));
+        assert_eq!((p.as_str(), *p_now), ("p", 20.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// End-to-end regression for the "Goldbach Conjecture" Demonstration: a
+  /// `Column` of the decompositions over a `ListPlot` whose axes are
+  /// labelled with explicit ticks.
+  #[test]
+  fn goldbach_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Column", "[",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{
+       RowBox[{"Text", "@",
+        RowBox[{"Style", "[", RowBox[{"\"\<counts\>\"", ",", "Bold"}], "]"}]}],
+       ",",
+       RowBox[{"ListPlot", "[",
+        RowBox[{
+         RowBox[{"Table", "[",
+          RowBox[{
+           RowBox[{"Length", "[",
+            RowBox[{"Select", "[",
+             RowBox[{
+              RowBox[{"Range", "[", RowBox[{"2", ",", "k"}], "]"}], ",",
+              RowBox[{
+               RowBox[{
+                RowBox[{"PrimeQ", "[", "#", "]"}], "&&",
+                RowBox[{"PrimeQ", "[", RowBox[{"k", "-", "#"}], "]"}]}], "&"}]}],
+             "]"}], "]"}], ",",
+           RowBox[{"{", RowBox[{"k", ",", "4", ",", "m", ",", "2"}], "}"}]}],
+          "]"}], ",",
+         RowBox[{"PlotStyle", "\[Rule]",
+          RowBox[{"{",
+           RowBox[{
+            RowBox[{"PointSize", "[", "0.04", "]"}], ",",
+            RowBox[{"RGBColor", "[",
+             RowBox[{"1", ",", "0.47", ",", "0"}], "]"}]}], "}"}]}], ",",
+         RowBox[{"PlotRange", "\[Rule]", "All"}], ",",
+         RowBox[{"Ticks", "\[Rule]",
+          RowBox[{"{",
+           RowBox[{
+            RowBox[{"Transpose", "[",
+             RowBox[{"{",
+              RowBox[{
+               RowBox[{"Range", "[", "12", "]"}], ",",
+               RowBox[{"2", "+",
+                RowBox[{"2", " ", RowBox[{"Range", "[", "12", "]"}]}]}]}], "}"}],
+             "]"}], ",", RowBox[{"Range", "[", "6", "]"}]}], "}"}]}], ",",
+         RowBox[{"ImageSize", "\[Rule]",
+          RowBox[{"{", RowBox[{"370", ",", "280"}], "}"}]}]}], "]"}]}], "}"}],
+     ",", RowBox[{"Alignment", "\[Rule]", "Center"}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{", RowBox[{"m", ",", "26", ",", "\"\<maximum total\>\""}], "}"}],
+     ",", "4", ",", "60", ",", "2"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 26}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the heading and the plot beneath it must both draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          current,
+          step,
+          ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), label.as_str()), ("m", "maximum total"));
+        assert_eq!((*current, *step), (26.0, 2.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// End-to-end regression for the "Stochastic Model of Microbial Injury and
+  /// Mortality" Demonstration. Its `Manipulate` mutates a table in place
+  /// through `\[LeftDoubleBracket]…\[RightDoubleBracket]` part
+  /// specifications inside a compound `If` body, and draws a `Show` of two
+  /// framed plots — the notebook stores no output cell, so the widget is
+  /// built from the input the way evaluating the cell does.
+  #[test]
+  fn microbial_injury_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Module", "[",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"tns", ",", "p1", ",", "p2"}], "}"}], ",",
+     RowBox[{
+      RowBox[{"tns", "=",
+       RowBox[{"Table", "[",
+        RowBox[{
+         RowBox[{"{", RowBox[{"i", ",", "n0"}], "}"}], ",",
+         RowBox[{"{", RowBox[{"i", ",", "1", ",", "5"}], "}"}]}], "]"}]}], ";",
+      RowBox[{"Do", "[",
+       RowBox[{
+        RowBox[{"If", "[",
+         RowBox[{"True", ",",
+          RowBox[{
+           RowBox[{
+            RowBox[{"tns", "\[LeftDoubleBracket]",
+             RowBox[{"i", ",", "2"}], "\[RightDoubleBracket]"}], "--"}], ";",
+           RowBox[{"q", "=", "i"}]}]}], "]"}], ",",
+        RowBox[{"{", RowBox[{"i", ",", "2", ",", "5"}], "}"}]}], "]"}], ";",
+      RowBox[{"p1", "=",
+       RowBox[{"Plot", "[",
+        RowBox[{
+         RowBox[{"Exp", "[",
+          RowBox[{"-", RowBox[{"t", "/", "10"}]}], "]"}], ",",
+         RowBox[{"{", RowBox[{"t", ",", "0", ",", "20"}], "}"}], ",",
+         RowBox[{"PlotStyle", "\[Rule]",
+          RowBox[{"{", RowBox[{"Thick", ",", "Green"}], "}"}]}], ",",
+         RowBox[{"Frame", "\[Rule]", "True"}], ",",
+         RowBox[{"FrameLabel", "\[Rule]",
+          RowBox[{"{",
+           RowBox[{
+            RowBox[{"{",
+             RowBox[{
+              RowBox[{"Subscript", "[",
+               RowBox[{"\"\<P\>\"", ",", "\"\<inj\>\""}], "]"}], ",",
+              "\"\<\>\""}], "}"}], ",",
+            RowBox[{"{", RowBox[{"\"\<t\>\"", ",", "\"\<curve\>\""}], "}"}]}],
+           "}"}]}], ",",
+         RowBox[{"ImagePadding", "\[Rule]",
+          RowBox[{"{",
+           RowBox[{
+            RowBox[{"{", RowBox[{"45", ",", "10"}], "}"}], ",",
+            RowBox[{"{", RowBox[{"45", ",", "20"}], "}"}]}], "}"}]}], ",",
+         RowBox[{"ImageSize", "\[Rule]",
+          RowBox[{"{", RowBox[{"280", ",", "148"}], "}"}]}]}], "]"}]}], ";",
+      RowBox[{"p2", "=",
+       RowBox[{"ListPlot", "[",
+        RowBox[{"tns", ",",
+         RowBox[{"Joined", "\[Rule]", "True"}], ",",
+         RowBox[{"PlotStyle", "\[Rule]", "Red"}]}], "]"}]}], ";",
+      RowBox[{"Show", "[", RowBox[{"p1", ",", "p2"}], "]"}]}]}], "]"}], ",",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{"{",
+      RowBox[{"n0", ",", "100", ",", "\"\<initial count\>\""}], "}"}], ",",
+     "10", ",", "200", ",", "10"}], "}"}]}], "]"}]], "Input"]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let code = editors
+      .iter()
+      .map(|e| e.content.text())
+      .find(|t| t.starts_with("Manipulate["))
+      .expect("the Manipulate cell must load");
+    let widget = instantiate_stored_manipulate(&code, "")
+      .expect("the Manipulate must instantiate");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the merged plot must draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          current,
+          step,
+          ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), label.as_str()), ("n0", "initial count"));
+        assert_eq!((*current, *step), (100.0, 10.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// End-to-end regression for the "Sampling a Digital Signal"
+  /// Demonstration: a `Grid` of two `ListPlot`s with `Filling -> Axis` and
+  /// `ImagePadding`, driven by an `Initialization` block. The notebook stores
+  /// no output cell, so the widget is built from the input the way evaluating
+  /// the cell does.
+  #[test]
+  fn sampling_a_digital_signal_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", "\[IndentingNewLine]", 
+  RowBox[{
+   RowBox[{
+    RowBox[{"If", "[", 
+     RowBox[{
+      RowBox[{"k", ">", 
+       RowBox[{"50", " ", "L"}]}], ",", 
+      RowBox[{"k", "=", 
+       RowBox[{"50", " ", "L"}]}]}], "]"}], ";", "\[IndentingNewLine]", 
+    RowBox[{"Grid", "[", "\[IndentingNewLine]", 
+     RowBox[{"{", "\[IndentingNewLine]", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"ListPlot", "[", 
+         RowBox[{"tmp", ",", 
+          RowBox[{"Filling", " ", "\[Rule]", " ", "Axis"}], ",", 
+          RowBox[{"PlotMarkers", "\[Rule]", "Automatic"}], ",", 
+          RowBox[{"ImagePadding", " ", "\[Rule]", " ", "20"}], ",", 
+          RowBox[{"ImageSize", " ", "\[Rule]", " ", 
+           RowBox[{"{", 
+            RowBox[{"400", ",", "200"}], "}"}]}]}], "]"}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"ListPlot", "[", 
+         RowBox[{
+          RowBox[{"If", "[", 
+           RowBox[{
+            RowBox[{"sampler", " ", "\[Equal]", " ", "\"\<up\>\""}], ",", 
+            RowBox[{"f", "[", "L", "]"}], ",", 
+            RowBox[{"f1", "[", "L", "]"}]}], "]"}], ",", 
+          RowBox[{"Filling", " ", "\[Rule]", " ", "Axis"}], ",", 
+          RowBox[{"PlotRange", " ", "\[Rule]", " ", 
+           RowBox[{"{", 
+            RowBox[{
+             RowBox[{"{", 
+              RowBox[{"0", ",", "k"}], "}"}], ",", 
+             RowBox[{"{", 
+              RowBox[{
+               RowBox[{"-", "1"}], ",", "1"}], "}"}]}], "}"}]}], ",", 
+          RowBox[{"PlotMarkers", "\[Rule]", "Automatic"}], ",", 
+          RowBox[{"ImagePadding", " ", "\[Rule]", " ", "20"}], ",", 
+          RowBox[{"ImageSize", " ", "\[Rule]", " ", 
+           RowBox[{"{", 
+            RowBox[{"400", ",", "200"}], "}"}]}]}], "]"}], "}"}]}], 
+      "\[IndentingNewLine]", "}"}], "\[IndentingNewLine]", "]"}]}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"L", ",", "2", ",", "\"\<sampling by integer factor L\>\""}], 
+      "}"}], ",", "2", ",", "10", ",", "1", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"k", ",", "50", ",", "\"\<bottom plot range\>\""}], "}"}], ",", 
+     "1", ",", 
+     RowBox[{"50", " ", "L"}], ",", "1", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"sampler", ",", "\"\<up\>\""}], "}"}], ",", 
+     RowBox[{"{", 
+      RowBox[{"\"\<up\>\"", ",", "\"\<down\>\""}], "}"}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"TrackedSymbols", "\[Rule]", 
+    RowBox[{"{", 
+     RowBox[{"L", ",", "k", ",", "sampler"}], "}"}]}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"Initialization", " ", "\[RuleDelayed]", " ", 
+    RowBox[{"{", "\[IndentingNewLine]", 
+     RowBox[{
+      RowBox[{"tmp", " ", "=", " ", 
+       RowBox[{
+        RowBox[{"Table", "[", 
+         RowBox[{
+          RowBox[{"Sin", "[", "x", "]"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"x", ",", "0", ",", " ", 
+            RowBox[{"720", " ", "Degree"}], ",", " ", 
+            RowBox[{"15", " ", "Degree"}]}], "}"}]}], "]"}], "//", "N"}]}], 
+      ";", "\[IndentingNewLine]", 
+      RowBox[{
+       RowBox[{"f", "[", "L1_", "]"}], ":=", 
+       RowBox[{"Flatten", "[", 
+        RowBox[{"Riffle", "[", 
+         RowBox[{"tmp", ",", 
+          RowBox[{"{", 
+           RowBox[{"ConstantArray", "[", 
+            RowBox[{"0", ",", 
+             RowBox[{"L1", "-", "1"}]}], "]"}], "}"}]}], "]"}], "]"}]}], ";", 
+      "\[IndentingNewLine]", 
+      RowBox[{
+       RowBox[{"f1", "[", "L2_", "]"}], " ", ":=", " ", 
+       RowBox[{"tmp", "[", 
+        RowBox[{"[", 
+         RowBox[{"1", ";;", " ", ";;", "L2"}], "]"}], "]"}]}], ";"}], 
+     "\[IndentingNewLine]", "}"}]}]}], "\[IndentingNewLine]", "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`L$$ = 2, $CellContext`k$$ = 50, \
+$CellContext`sampler$$ = \"up\"}, \"\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "both stacked plots must draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: l,
+          label: l_label,
+          current: l_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: k,
+          current: k_now,
+          max: k_max,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: sampler,
+          values,
+          ..
+        },
+      ] => {
+        assert_eq!(
+          (l.as_str(), l_label.as_str(), *l_now),
+          ("L", "sampling by integer factor L", 2.0)
+        );
+        // `50 L` sizes the second slider from the first control's value.
+        assert_eq!((k.as_str(), *k_now, *k_max), ("k", 50.0, 100.0));
+        assert_eq!(sampler.as_str(), "sampler");
+        assert_eq!(values.len(), 2);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// End-to-end regression for "The Price of a Call Option on Electrical
+  /// Power": four `Initialization Code` cells define the option formula in
+  /// Unicode notation (`\[ExponentialE]`, `\[Sigma]`, `\[ScriptCapitalN]`),
+  /// and the `Manipulate` plots it with an `AxesLabel` and a dashed `Epilog`.
+  #[test]
+  fn call_option_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["d1[S_,K_,\[Sigma]_,\[Alpha]_,f_,T_,t_]:=With[{s=\[ExponentialE]^(f[#1])&},(\[ExponentialE]^(-\[Alpha] (T-t)) Log[S/s[t]]+(\[Sigma]^2 (1-\[ExponentialE]^(-2 \[Alpha] (T-t))))/(4 \[Alpha])+Log[s[T]/K])/Sqrt[(\[Sigma]^2 (1-\[ExponentialE]^(-2 \[Alpha] (T-t))))/(4 \[Alpha])]]"], "Input"],
+Cell[BoxData["d2[S_,K_,\[Sigma]_,\[Alpha]_,f_,T_,t_]:=With[{s=\[ExponentialE]^(f[#1])&},(\[ExponentialE]^(-\[Alpha] (T-t)) Log[S/s[t]]+Log[s[T]/K])/Sqrt[(\[Sigma]^2 (1-\[ExponentialE]^(-2 \[Alpha] (T-t))))/(4 \[Alpha])]]"], "Input"],
+Cell[BoxData["\[ScriptCapitalN][z_]:=(1+Erf[z/Sqrt[2]])/2"], "Input"],
+Cell[BoxData["callValue[S_,K_,\[Sigma]_,\[Alpha]_,f_,T_,t_,r_]:=With[{s=\[ExponentialE]^(f[#1])&},\[ExponentialE]^(-r (T-t)) (s[T] (S/s[t])^(\[ExponentialE]^(-\[Alpha] (T-t))) Exp[\[Sigma]^2/(4 \[Alpha]) (1-Exp[-2 \[Alpha] (T-t)])] \[ScriptCapitalN][d1[S,K,\[Sigma],\[Alpha],f,T,t]]-K \[ScriptCapitalN][d2[S,K,\[Sigma],\[Alpha],f,T,t]])]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", "\[IndentingNewLine]", 
+  RowBox[{
+   RowBox[{"Module", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"f", "=", 
+       RowBox[{
+        RowBox[{"a", "+", 
+         RowBox[{"b", " ", 
+          RowBox[{"Cos", "[", 
+           RowBox[{"#", " ", "730", 
+            RowBox[{"Pi", "/", "7"}]}], " ", "]"}]}]}], "&"}]}], "}"}], ",", 
+     "\[IndentingNewLine]", 
+     RowBox[{"Plot", "[", 
+      RowBox[{
+       RowBox[{"callValue", "[", 
+        RowBox[{
+        "s", ",", "1", ",", "\[Sigma]", ",", "\[Alpha]", ",", "f", ",", "1", 
+         ",", "t", ",", "r"}], "]"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"s", ",", "0.5", ",", "1.5"}], "}"}], ",", 
+       RowBox[{"PlotRange", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{"0.5", ",", "1.5"}], "}"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"0", ",", "v"}], "}"}]}], "}"}]}], ",", 
+       RowBox[{"AxesLabel", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{
+         "\"\<electrical power spot price\>\"", ",", "\"\<call value\>\""}], 
+         "}"}]}], ",", 
+       RowBox[{"Epilog", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{
+          RowBox[{"Dashing", "[", 
+           RowBox[{"{", "0.01", "}"}], "]"}], ",", 
+          RowBox[{"Line", "[", 
+           RowBox[{"{", 
+            RowBox[{
+             RowBox[{"{", 
+              RowBox[{"1", ",", "0"}], "}"}], ",", 
+             RowBox[{"{", 
+              RowBox[{"1", ",", "v"}], "}"}]}], "}"}], "]"}]}], "}"}]}], ",", 
+       
+       RowBox[{"ImageSize", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{"500", ",", "300"}], "}"}]}]}], "]"}]}], "]"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"\[Sigma]", ",", "0.7", ",", "\"\<volatility\>\""}], "}"}], ",",
+      "0.01", ",", "1", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"\[Alpha]", ",", "1", ",", "\"\<rate of mean reversion\>\""}], 
+      "}"}], ",", "0.01", ",", "2", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"t", ",", ".5", ",", "\"\<time\>\""}], "}"}], ",", "0", ",", 
+     RowBox[{"364", "/", "365"}], ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"r", ",", "0", ",", "\"\<interest rate\>\""}], "}"}], ",", "0", 
+     ",", "0.2", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"a", ",", "0.3", ",", "\"\<constant seasonal component\>\""}], 
+      "}"}], ",", "0", ",", "1", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"b", ",", "0.5", ",", "\"\<periodic seasonal component\>\""}], 
+      "}"}], ",", "0", ",", "1", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"v", ",", "2", ",", "\"\<vertical range\>\""}], "}"}], ",", 
+     "0.3", ",", "3", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"AutorunSequencing", "\[Rule]", 
+    RowBox[{"{", 
+     RowBox[{"1", ",", "3", ",", "5", ",", "7"}], "}"}]}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"SaveDefinitions", "\[Rule]", "True"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`\[Sigma]$$ = 0.7}, \"\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the option formula must evaluate: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the curve must draw");
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      names,
+      ["\u{3c3}", "\u{3b1}", "t", "r", "a", "b", "v"],
+      "one slider per parameter, Greek names included"
+    );
+  }
+
+  /// End-to-end regression for "Merging Schools of Fish": the swarms are
+  /// built by assigning to a *list* of downvalue patterns
+  /// (`{vectorField1[t_], vectorField2[t_]} = Table[…]`), then mapped through
+  /// `@@@`, `Transpose` and matrix dot products into 120 translucent
+  /// polygons. The notebook's 700-point fish outline is replaced here by a
+  /// triangle; everything else is its own code.
+  #[test]
+  fn merging_schools_of_fish_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["fish[mp_, size_] := Polygon[(mp + 6 size (# - {0.5, 0.5})) & /@ {{0.7, 0.5}, {0.3, 0.55}, {0.3, 0.45}}]"], "Input"],
+Cell[BoxData["{vectorField1[t_], vectorField2[t_]} = \nTable[\nModule[{φ = Sum[RandomReal[{-1, 1}] Sin[j t +2Pi RandomReal[]], {j, 6}]},\n              {{{Cos[φ], Sin[φ]}, {-Sin[φ], Cos[φ]}},\n              Table[ 2  Sum[RandomReal[{-1, 1}] Sin[j t ], {j, 6}], {2}]}\n            ],{2}];"], "Input"],
+Cell[BoxData["{internalRotationField1[t_], internalRotationField2[t_]} = \nModule[{φ},\nTable[φ = Sum[RandomReal[{-1, 1}] Sin[j t +2Pi RandomReal[]], {j, 6}];\n            {{Cos[φ], Sin[φ]}, {-Sin[φ], Cos[φ]}}, {#}]]& /@ {60, 60};"], "Input"],
+Cell[BoxData["{fishSwarm1Initial, fishSwarm2Initial} = \n               {RandomReal[{-1, 1}, {60, 2}], RandomReal[{-1, 1}, {60, 2}]} ;"], "Input"],
+Cell[BoxData["r0=0.1;"], "Input"],
+Cell[BoxData["swarm1Colors = Hue/@RandomReal[{-0.05, 0.05}, {60}];\nswarm2Colors = Hue/@RandomReal[0.7 + {-0.05, 0.05}, {60}];"], "Input"],
+Cell[BoxData["swarm1Sizes = r0 RandomReal[1 + {-0.2, 0.2}, {60}];\nswarm2Sizes = r0 RandomReal[1 + {-0.2, 0.2}, {60}];"], "Input"],
+Cell[BoxData["fishSwarm1[t_] :=\nModule[{ℛ, 𝒯,ℛis},\n             {ℛ, 𝒯}=vectorField1[t];\n             ℛis = internalRotationField1[t];\n             {Opacity[0.4+ 0.6 ArcTan[2t]/(Pi/2)],#}& /@\n             Transpose[{swarm1Colors, fish[#2, #1]& @@@\n              Transpose[{(1 + 4 Exp[-t])swarm1Sizes, (ℛ.#+ 0 𝒯)& /@\n            (#1.#2&@@@ Transpose[{ℛis, fishSwarm1Initial}])}]}]\n           \n         ]"], "Input"],
+Cell[BoxData["fishSwarm2[t_] :=\nModule[{ℛ, 𝒯,ℛis},\n             {ℛ, 𝒯}=vectorField2[t];\n             ℛis = internalRotationField2[t];\n             {Opacity[0.4+ 0.6 ArcTan[2t]/(Pi/2)],#}& /@\n             Transpose[{swarm2Colors, fish[#2, #1]& @@@\n              Transpose[{(1 + 4 Exp[-t])swarm2Sizes, (ℛ.#+ 𝒯)& /@\n            (#1.#2&@@@ Transpose[{ℛis, fishSwarm2Initial}])}]}]\n   ]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nGraphics[\nSeedRandom[1];\nRandomSample[ Join[fishSwarm1[t], fishSwarm2[t]]], PlotRange -> 4,ImageSize->{450,450}],\n{{t,0,\"time\"}, 0, 2},\nSaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`t$$ = 0}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the swarm definitions must evaluate: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the swarms must draw");
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          current,
+          min,
+          max,
+          ..
+        },
+      ] => {
+        assert_eq!((name.as_str(), label.as_str()), ("t", "time"));
+        assert_eq!((*current, *min, *max), (0.0, 0.0, 2.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+    // Both swarms reach the canvas: 60 fish each, drawn as polygons.
+    let svg = woxi::interpret_with_stdout(&format!("t = 0;\n{}", widget.body))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic");
+    assert_eq!(svg.matches("<polygon").count(), 120, "{svg}");
+  }
+
+  /// End-to-end regression for "Non Placet Net of a Dodecahedron". Its
+  /// coordinate tables are written with `*^` exponents on precision-tagged
+  /// reals (`-1.1102230246251565`*^-16`), and its four sliders fold the net
+  /// with the four-argument `Rotate[g, theta, axis, point]`.
+  #[test]
+  fn dodecahedron_net_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["grafikaN={Line[{{1.`,0.`},{1.3090169943749475`,0.9510565162951536`},{0.5`,1.538841768587627`},{-0.3090169943749475`,0.9510565162951539`},{-1.1102230246251565`*^-16,2.220446049250313`*^-16},{1.`,0.`}}],Line[{{1.`,0.`},{1.8090169943749475`,-0.5877852522924732`},{2.618033988749895`,-1.1102230246251565`*^-16},{2.3090169943749475`,0.9510565162951534`},{1.3090169943749475`,0.9510565162951535`},{1.`,0.`}}],Line[{{2.618033988749895`,-1.1102230246251565`*^-16},{3.618033988749895`,0.`},{3.9270509831248424`,0.9510565162951534`},{3.118033988749895`,1.5388417685876263`},{2.3090169943749475`,0.9510565162951536`},{2.618033988749895`,-1.1102230246251565`*^-16}}],Line[{{3.118033988749895`,1.5388417685876263`},{2.809016994374948`,2.4898982848827806`},{1.8090169943749475`,2.4898982848827806`},{1.4999999999999998`,1.538841768587627`},{2.309016994374947`,0.9510565162951532`},{3.118033988749895`,1.5388417685876263`}}],Line[{{3.118033988749895`,1.5388417685876263`},{4.118033988749896`,1.5388417685876252`},{4.427050983124844`,2.4898982848827798`},{3.6180339887498967`,3.077683537175253`},{2.809016994374948`,2.489898284882781`},{3.118033988749895`,1.5388417685876263`}}],Line[{{3.6180339887498967`,3.077683537175253`},{3.30901699437495`,4.028740053470408`},{2.30901699437495`,4.028740053470409`},{2.000000000000001`,3.077683537175256`},{2.8090169943749475`,2.489898284882781`},{3.6180339887498967`,3.077683537175253`}}],Line[{{0.5`,1.538841768587627`},{0.19098300562505233`,2.4898982848827806`},{-0.8090169943749477`,2.4898982848827815`},{-1.1180339887498951`,1.538841768587627`},{-0.3090169943749477`,0.9510565162951539`},{0.5`,1.538841768587627`}}],Line[{{-0.8090169943749477`,2.4898982848827815`},{-1.6180339887498958`,3.077683537175255`},{-2.427050983124844`,2.4898982848827815`},{-2.118033988749896`,1.5388417685876261`},{-1.118033988749895`,1.538841768587627`},{-0.8090169943749477`,2.4898982848827815`}}],Line[{{-2.427050983124844`,2.4898982848827815`},{-3.4270509831248464`,2.4898982848827815`},{-3.7360679774997942`,1.5388417685876252`},{-2.9270509831248446`,0.9510565162951512`},{-2.118033988749896`,1.5388417685876261`},{-2.427050983124844`,2.4898982848827815`}}],Line[{{-2.9270509831248446`,0.9510565162951512`},{-2.618033988749896`,-4.884981308350689`*^-15},{-1.6180339887498936`,-4.440892098500626`*^-15},{-1.3090169943749452`,0.951056516295152`},{-2.1180339887498953`,1.5388417685876261`},{-2.9270509831248446`,0.9510565162951512`}}],Line[{{-2.9270509831248446`,0.9510565162951512`},{-3.927050983124847`,0.9510565162951501`},{-4.236067977499795`,-5.773159728050814`*^-15},{-3.4270509831248455`,-0.5877852522924805`},{-2.6180339887498953`,-4.440892098500626`*^-15},{-2.9270509831248446`,0.9510565162951512`}}],Line[{{-3.4270509831248455`,-0.5877852522924805`},{-3.1180339887498967`,-1.5388417685876368`},{-2.118033988749893`,-1.5388417685876368`},{-1.8090169943749457`,-0.5877852522924796`},{-2.618033988749896`,-5.329070518200751`*^-15},{-3.4270509831248455`,-0.5877852522924805`}}]}/.{{x_,y_}->{x,y,0},Line->Polygon};"], "Input"],
+Cell[BoxData["koordinateN={{0,0},{1,0},{1.8090169943749475`,-0.5877852522924732`},{2.618033988749895`,-1.1102230246251565`*^-16},{3.618033988749895`,0.`},{3.9270509831248424`,0.9510565162951534`},{3.118033988749895`,1.5388417685876263`},{4.118033988749896`,1.5388417685876252`},{4.427050983124844`,2.4898982848827798`},{3.6180339887498967`,3.077683537175253`},{3.30901699437495`,4.028740053470408`},{2.30901699437495`,4.028740053470409`},{2.000000000000001`,3.077683537175256`},{2.809016994374948`,2.4898982848827806`},{1.8090169943749475`,2.4898982848827806`},{1.4999999999999998`,1.538841768587627`},{2.3090169943749475`,0.9510565162951534`},{1.3090169943749475`,0.9510565162951536`},{0.5`,1.538841768587627`},{0.19098300562505233`,2.4898982848827806`},{-0.8090169943749477`,2.4898982848827815`},{-1.6180339887498958`,3.077683537175255`},{-2.427050983124844`,2.4898982848827815`},{-3.4270509831248464`,2.4898982848827815`},{-3.7360679774997942`,1.5388417685876252`},{-2.9270509831248446`,0.9510565162951512`},{-3.927050983124847`,0.9510565162951501`},{-4.236067977499795`,-5.773159728050814`*^-15},{-3.4270509831248455`,-0.5877852522924805`},{-3.1180339887498967`,-1.5388417685876368`},{-2.118033988749893`,-1.5388417685876368`},{-1.8090169943749457`,-0.5877852522924796`},{-2.618033988749896`,-4.884981308350689`*^-15},{-1.6180339887498936`,-4.440892098500626`*^-15},{-1.3090169943749452`,0.951056516295152`},{-2.118033988749896`,1.5388417685876261`},{-1.1180339887498951`,1.538841768587627`},{-0.3090169943749475`,0.9510565162951539`}}/.{x_,y_}->{x,y,0};"], "Input"],
+Cell[BoxData["fi=ArcCos[1/Sqrt[5]]//N;"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Graphics3D[{Rotate[{grafikaN[[7]],Rotate[{grafikaN[[8]],Rotate[{grafikaN[[9]],Rotate[{grafikaN[[10]],Rotate[{grafikaN[[11]],Rotate[grafikaN[[12]],k3 fi,koordinateN[[33]]-koordinateN[[29]],koordinateN[[29]]]},k3 fi,koordinateN[[33]]-koordinateN[[26]],koordinateN[[26]]]},-k3 fi,koordinateN[[26]]-koordinateN[[36]],koordinateN[[36]]]},k3 fi,koordinateN[[36]]-koordinateN[[23]],koordinateN[[23]]]},k4 fi,koordinateN[[21]]-koordinateN[[37]],koordinateN[[37]]]},k5 fi,koordinateN[[38]]-koordinateN[[10]],koordinateN[[10]]],grafikaN[[1]],Rotate[{grafikaN[[2]],Rotate[{grafikaN[[3]],Rotate[{grafikaN[[4]],Rotate[{grafikaN[[5]],Rotate[grafikaN[[6]],k2 fi,koordinateN[[14]]-koordinateN[[10]],koordinateN[[10]]]},k2 fi,koordinateN[[14]]-koordinateN[[7]],koordinateN[[7]]]},k2 fi,koordinateN[[17]]-koordinateN[[7]],koordinateN[[7]]]},k2 fi,koordinateN[[17]]-koordinateN[[4]],koordinateN[[4]]]},-k2 fi,koordinateN[[2]]-koordinateN[[18]],koordinateN[[18]]]},ImageSize->{450,450},ViewAngle->20 Degree,SphericalRegion->True,Boxed->False,ViewPoint->0.5{1,1,6},PlotRange->5],\n{{k2,0,\"fold 1\"},-1,1,ImageSize->Tiny},\n{{k3,0,\"fold 2\"},-1,1,ImageSize->Tiny},\n{{k4,0,\"fold 3\"},-1,1,ImageSize->Tiny},\n{{k5,0,\"fold 4\"},-1,1,ImageSize->Tiny},ControlPlacement->Left,SaveDefinitions->True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`k2$$ = 0}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the coordinate tables must load: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the net must draw");
+    let folds: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { label, .. } => label.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(folds, ["fold 1", "fold 2", "fold 3", "fold 4"]);
+
+    // Folding actually moves the flaps: the twelve pentagons of the flat net
+    // are drawn somewhere else once a fold is applied.
+    let render = |k: &str| {
+      woxi::interpret_with_stdout(&format!(
+        "k2 = {k}; k3 = {k}; k4 = {k}; k5 = {k};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let flat = render("0");
+    let folded = render("0.4");
+    assert!(flat.contains("<polygon"), "{flat}");
+    assert_ne!(flat, folded, "the sliders must fold the net");
+  }
+
+  /// End-to-end regression for "Deciding Rain-Affected Cricket Matches: The
+  /// Duckworth-Lewis Method". Its controls live inside a `TabView`, and its
+  /// scoreboard is a `Grid` of `StyleForm` cells with `SpanFromLeft` spans
+  /// on a dark background. (The notebook's 18 KB of resource tables are
+  /// trimmed here; the structure is its own.)
+  #[test]
+  fn duckworth_lewis_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["runRate[s_, o_] := If[o == 0, 0., N[Round[s/o, 0.01]]];"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nGrid[{\n{StyleForm[\"This is a \"<>ToString[totalOvers]<>\" over match\",FontWeight->Bold,FontSize->16,FontColor->GrayLevel[1]],SpanFromLeft},\n{StyleForm[\"Team 1: \",FontWeight->Bold,FontSize->16,FontColor->GrayLevel[1]],StyleForm[ToString[team1Score]<>\" for \"<>ToString[team1Wickets],FontWeight->Bold,FontSize->16,FontColor->GrayLevel[1]]},\n{StyleForm[\"RR: \",FontWeight->Bold,FontSize->16,FontColor->GrayLevel[1]],StyleForm[ToString[runRate[team1Score,team1Overs]],FontWeight->Bold,FontSize->16,FontColor->GrayLevel[1]]}\n},Background->Black,Alignment->Left],\nColumn[{TabView[{\nStyle[\"The Match\",Bold]->Grid[{{Control[{{totalOvers,50,\"Overs per innings:\"},0,50,1,Appearance->\"Labeled\"}],SpanFromLeft},{Control[{{team1Score,0,\"Team 1:\"},0,400,1,Appearance->\"Labeled\"}],Control[{{team1Wickets,0,\"for\"},0,10,1,Appearance->\"Labeled\"}]}}],\nStyle[\"The Interruption\",Bold]->Column[{Control[{{team1Overs,25,\"Overs:\"},0,50,1,Appearance->\"Labeled\"}]}]}],\nControl[{{display,1,\"Display\"},{1->\"Scoreboard\",2->\"Resources\"}}]}],\nSaveDefinitions->True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`totalOvers$$ = 50}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the scoreboard must evaluate: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the scoreboard must draw");
+    // Every tab's controls are found, not just the one outside the TabView.
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      names,
+      [
+        "totalOvers",
+        "team1Score",
+        "team1Wickets",
+        "team1Overs",
+        "display"
+      ]
+    );
+
+    let svg = woxi::interpret_with_stdout(&format!(
+      "totalOvers = 50; team1Score = 120; team1Wickets = 3; \
+       team1Overs = 25; display = 1;\n{}",
+      widget.body
+    ))
+    .expect("the body must render")
+    .graphics
+    .expect("the body must produce a graphic");
+    // The StyleForm cells render their content, not their own source, and
+    // the SpanFromLeft placeholder draws nothing.
+    assert!(!svg.contains("StyleForm"), "{svg}");
+    assert!(!svg.contains("SpanFromLeft"), "{svg}");
+    assert!(svg.contains("This is a 50 over match"), "{svg}");
+    assert!(svg.contains(">120 for 3</text>"), "{svg}");
+    assert!(
+      svg.contains(">4.8</text>"),
+      "the run rate must compute: {svg}"
+    );
+  }
+
+  /// "Miscible Displacement of Oil in Heterogenous Porous Media" writes its
+  /// transport equation with the typeset partial-derivative operator
+  /// (`SubscriptBox["\\[PartialD]", …]`), which the notebook reader turns
+  /// into `D[…]`. Before that the cell did not parse at all, so none of its
+  /// controls were found.
+  ///
+  /// The body itself still needs a finite-element PDE solver — `NDSolve`
+  /// handles ODEs only and `NeumannValue` is unimplemented — so this checks
+  /// the cell loads and its controls are built, not that it draws.
+  #[test]
+  fn miscible_displacement_notebook_reads_its_partial_derivatives() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", 
+  RowBox[{
+   RowBox[{"Module", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{
+       RowBox[{"L", "=", "1"}], ",", 
+       RowBox[{"c0", "=", "0"}], ",", 
+       RowBox[{"s0", "=", "0"}], ",", 
+       RowBox[{"cin", "=", "1"}], ",", "sol", ",", "Ints", ",", "ptime", ",", 
+       "pspace"}], "}"}], ",", "\[IndentingNewLine]", "\[IndentingNewLine]", 
+     RowBox[{
+      RowBox[{"sol", "=", 
+       RowBox[{"NDSolve", "[", 
+        RowBox[{
+         RowBox[{"{", "\[IndentingNewLine]", 
+          RowBox[{
+           RowBox[{
+            RowBox[{
+             RowBox[{"\[ScriptCapitalD]", 
+              RowBox[{
+               SubscriptBox["\[PartialD]", 
+                RowBox[{"x", ",", "x"}]], 
+               RowBox[{"c", "[", 
+                RowBox[{"x", ",", "t"}], "]"}]}]}], "-", 
+             RowBox[{"u", 
+              RowBox[{
+               SubscriptBox["\[PartialD]", "x"], 
+               RowBox[{"c", "[", 
+                RowBox[{"x", ",", "t"}], "]"}]}]}], "-", 
+             RowBox[{
+              RowBox[{"(", 
+               RowBox[{"1", "-", "f"}], ")"}], 
+              RowBox[{
+               SubscriptBox["\[PartialD]", "t"], 
+               RowBox[{"c", "[", 
+                RowBox[{"x", ",", "t"}], "]"}]}]}], "-", 
+             RowBox[{"f", 
+              RowBox[{
+               SubscriptBox["\[PartialD]", "t"], 
+               RowBox[{"s", "[", 
+                RowBox[{"x", ",", "t"}], "]"}]}]}]}], "\[Equal]", 
+            "\[IndentingNewLine]", 
+            RowBox[{
+             RowBox[{"DirichletCondition", "[", 
+              RowBox[{
+               RowBox[{
+                RowBox[{"c", "[", 
+                 RowBox[{"x", ",", "t"}], "]"}], "\[Equal]", 
+                RowBox[{
+                 RowBox[{"(", 
+                  RowBox[{"1", "-", 
+                   RowBox[{"Exp", "[", 
+                    RowBox[{
+                    RowBox[{"-", "1000"}], "t"}], "]"}]}], ")"}], "cin"}]}], 
+               ",", 
+               RowBox[{"x", "\[Equal]", "0"}]}], "]"}], "+", 
+             RowBox[{"NeumannValue", "[", 
+              RowBox[{"0", ",", 
+               RowBox[{"x", "\[Equal]", "L"}]}], "]"}]}]}], ",", 
+           "\[IndentingNewLine]", 
+           RowBox[{
+            RowBox[{"c", "[", 
+             RowBox[{"x", ",", "0"}], "]"}], "\[Equal]", "c0"}], ",", 
+           "\[IndentingNewLine]", "\[IndentingNewLine]", 
+           RowBox[{
+            RowBox[{"f", 
+             RowBox[{
+              SubscriptBox["\[PartialD]", "t"], 
+              RowBox[{"s", "[", 
+               RowBox[{"x", ",", "t"}], "]"}]}]}], "\[Equal]", 
+            RowBox[{"k", 
+             RowBox[{"(", 
+              RowBox[{
+               RowBox[{"c", "[", 
+                RowBox[{"x", ",", "t"}], "]"}], "-", 
+               RowBox[{"s", "[", 
+                RowBox[{"x", ",", "t"}], "]"}]}], ")"}]}]}], ",", 
+           "\[IndentingNewLine]", 
+           RowBox[{
+            RowBox[{"s", "[", 
+             RowBox[{"x", ",", "0"}], "]"}], "\[Equal]", "s0"}]}], 
+          "\[IndentingNewLine]", "}"}], ",", "\[IndentingNewLine]", 
+         RowBox[{"{", 
+          RowBox[{"c", ",", "s"}], "}"}], ",", 
+         RowBox[{"{", 
+          RowBox[{"x", ",", "0", ",", "L"}], "}"}], ",", 
+         RowBox[{"{", 
+          RowBox[{"t", ",", "0", ",", "21"}], "}"}], ",", 
+         RowBox[{"Method", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{"\"\<MethodOfLines\>\"", ",", 
+            RowBox[{
+            "\"\<SpatialDiscretization\>\"", "\[Rule]", 
+             "\"\<FiniteElement\>\""}]}], "}"}]}]}], "]"}]}], ";", 
+      "\[IndentingNewLine]", "\[IndentingNewLine]", 
+      RowBox[{"Ints", "=", 
+       RowBox[{"Last", "[", 
+        RowBox[{
+         RowBox[{"(", 
+          RowBox[{"1", "/", "L"}], ")"}], 
+         RowBox[{"Quiet", "@", 
+          RowBox[{"NIntegrate", "[", 
+           RowBox[{
+            RowBox[{
+             RowBox[{"s", "[", 
+              RowBox[{"x", ",", "time"}], "]"}], "/.", "sol"}], ",", 
+            RowBox[{"{", 
+             RowBox[{"x", ",", 
+              SuperscriptBox["10", 
+               RowBox[{"-", "3"}]], ",", "L"}], "}"}]}], "]"}]}]}], "]"}]}], 
+      ";", "\[IndentingNewLine]", " ", "\[IndentingNewLine]", 
+      RowBox[{"ptime", "=", 
+       RowBox[{"Plot", "[", 
+        RowBox[{
+         RowBox[{
+          RowBox[{"c", "[", 
+           RowBox[{"L", ",", "t"}], "]"}], "/.", "sol"}], ",", 
+         RowBox[{"{", 
+          RowBox[{"t", ",", "0", ",", "time"}], "}"}], ",", 
+         RowBox[{"PlotStyle", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{"Black", ",", "Thick"}], "}"}]}], ",", 
+         RowBox[{"PlotRange", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"{", 
+             RowBox[{"0", ",", "time"}], "}"}], ",", 
+            RowBox[{"{", 
+             RowBox[{
+              RowBox[{"-", "0.001"}], ",", "1.001"}], "}"}]}], "}"}]}], ",", 
+         RowBox[{"Frame", "\[Rule]", "True"}], ",", 
+         RowBox[{"LabelStyle", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{"17", ",", "Black"}], "}"}]}], ",", 
+         RowBox[{"FrameLabel", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{
+           "\"\<time\>\"", ",", "\"\<fraction of solvent in effluent\>\""}], 
+           "}"}]}], ",", 
+         RowBox[{"ImageSize", "\[Rule]", 
+          RowBox[{"1.1", 
+           RowBox[{"{", 
+            RowBox[{"550", ",", "350"}], "}"}]}]}]}], "]"}]}], ";", 
+      "\[IndentingNewLine]", "\[IndentingNewLine]", 
+      RowBox[{"pspace", "=", 
+       RowBox[{"Plot", "[", "\[IndentingNewLine]", 
+        RowBox[{
+         RowBox[{
+          RowBox[{"1", "-", 
+           RowBox[{"s", "[", 
+            RowBox[{"x", ",", "time"}], "]"}]}], "/.", "sol"}], ",", 
+         RowBox[{"{", 
+          RowBox[{"x", ",", "0", ",", "L"}], "}"}], ",", 
+         RowBox[{"PlotStyle", "\[Rule]", "Black"}], ",", 
+         RowBox[{"PlotRange", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"{", 
+             RowBox[{"0", ",", " ", "1"}], "}"}], ",", 
+            RowBox[{"{", 
+             RowBox[{
+              RowBox[{"-", ".1"}], ",", "1.001"}], "}"}]}], "}"}]}], ",", 
+         RowBox[{"Frame", "\[Rule]", "True"}], ",", 
+         RowBox[{"LabelStyle", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{"17", ",", "Black"}], "}"}]}], ",", 
+         RowBox[{"ImageSize", "\[Rule]", 
+          RowBox[{"1.1", 
+           RowBox[{"{", 
+            RowBox[{"550", ",", "350"}], "}"}]}]}], ",", 
+         RowBox[{"FrameLabel", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"Row", "[", 
+             RowBox[{"{", 
+              RowBox[{"\"\<distance = \>\"", ",", " ", 
+               RowBox[{"Style", "[", 
+                RowBox[{"\"\<x\>\"", ",", "Italic"}], "]"}], ",", "\"\</\>\"",
+                ",", 
+               RowBox[{"Style", "[", 
+                RowBox[{"\"\<L\>\"", ",", "Italic"}], "]"}]}], "}"}], "]"}], 
+            ",", "\"\<fraction of oil in dead space\>\""}], "}"}]}], ",", 
+         RowBox[{"Filling", "\[Rule]", "Bottom"}], ",", "\[IndentingNewLine]", 
+         RowBox[{"Epilog", "\[Rule]", 
+          RowBox[{"Style", "[", 
+           RowBox[{
+            RowBox[{"Text", "[", 
+             RowBox[{
+              RowBox[{"Row", "[", 
+               RowBox[{"{", 
+                RowBox[{
+                "\"\<fraction of total oil in dead space = \>\"", " ", ",", 
+                 RowBox[{"Chop", "[", 
+                  RowBox[{
+                   RowBox[{"NumberForm", " ", "[", 
+                    RowBox[{
+                    RowBox[{"1", "-", "Ints"}], ",", "3"}], "]"}], ",", 
+                   SuperscriptBox["10", 
+                    RowBox[{"-", "3"}]]}], "]"}]}], "}"}], "]"}], ",", 
+              RowBox[{"{", " ", 
+               RowBox[{"0.5", ",", 
+                RowBox[{"-", "0.05"}]}], "}"}]}], "]"}], ",", "Black", ",", 
+            "17"}], "]"}]}]}], "]"}]}], ";", "\[IndentingNewLine]", 
+      "\[IndentingNewLine]", 
+      RowBox[{"Which", "[", 
+       RowBox[{
+        RowBox[{"g", "\[Equal]", "1"}], ",", "ptime", ",", 
+        RowBox[{"g", "==", "2"}], ",", "pspace"}], "]"}]}]}], "]"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"Grid", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"Control", "@", 
+         RowBox[{"{", 
+          RowBox[{
+           RowBox[{"{", " ", 
+            RowBox[{"g", ",", "1", ",", "\"\<\>\""}], "}"}], ",", 
+           RowBox[{"{", 
+            RowBox[{
+             RowBox[{"1", "\[Rule]", "\"\<time plot\>\""}], ",", 
+             RowBox[{"2", "\[Rule]", "\"\<space plot\>\""}]}], 
+            "\[IndentingNewLine]", "}"}], ",", "PopupMenu"}], "}"}]}], "}"}], 
+       ",", "\[IndentingNewLine]", 
+       RowBox[{"{", 
+        RowBox[{
+         RowBox[{"Control", "@", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"{", 
+             RowBox[{"time", ",", "6.0", ",", "\"\<time\>\""}], "}"}], ",", 
+            "0.1", ",", "20", ",", "0.1", ",", 
+            RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}], ",", 
+            RowBox[{"ImageSize", "\[Rule]", "Tiny"}]}], "}"}]}], ",", 
+         "\[IndentingNewLine]", 
+         RowBox[{"Control", "@", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"{", 
+             RowBox[{"k", ",", "0.05", ",", "\"\<rate constant\>\""}], "}"}], 
+            ",", "0.005", ",", "5.0", ",", "0.001", ",", 
+            RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}], ",", 
+            RowBox[{"ImageSize", "\[Rule]", "Tiny"}]}], "}"}]}]}], "}"}], ",",
+        "\[IndentingNewLine]", 
+       RowBox[{"{", 
+        RowBox[{
+         RowBox[{"Control", "@", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"{", 
+             RowBox[{
+             "\[ScriptCapitalD]", ",", "0.05", ",", "\"\<diffusivity\>\""}], 
+             "}"}], ",", "0.0005", ",", "0.1", ",", "0.0001", ",", 
+            RowBox[{"ImageSize", "\[Rule]", "Tiny"}], ",", 
+            RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}]}], 
+         ",", "\[IndentingNewLine]", 
+         RowBox[{"Control", "@", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"{", 
+             RowBox[{"f", ",", "0.25", ",", "\"\<dead space fraction\>\""}], 
+             "}"}], ",", "0.01", ",", "0.50", ",", "0.01", ",", 
+            RowBox[{"ImageSize", "\[Rule]", "Tiny"}], ",", 
+            RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}]}], 
+         ",", 
+         RowBox[{"Control", "@", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"{", 
+             RowBox[{"u", ",", "0.5", ",", "\"\<interstitial velocity\>\""}], 
+             "}"}], ",", "0.01", ",", "1.0", ",", "0.01", ",", 
+            RowBox[{"ImageSize", "\[Rule]", "Tiny"}], ",", 
+            RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}]}]}],
+         "}"}]}], "}"}], ",", 
+     RowBox[{"Alignment", "\[Rule]", "Left"}]}], "]"}], ",", 
+   RowBox[{"ControlPlacement", "\[Rule]", "Top"}]}], "]"}]], "Input"]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let cell = editors
+      .iter()
+      .map(|e| e.content.text())
+      .find(|t| t.starts_with("Manipulate["))
+      .expect("the Manipulate cell must load");
+    // The operator reads as a derivative of the expression that follows it,
+    // parenthesised so its coefficient stays a product.
+    assert!(
+      cell.contains("\u{1d49f}(D[c[x,t], x,x])-u(D[c[x,t], x])"),
+      "partial derivatives must read as D[…]: {cell}"
+    );
+    assert!(!cell.contains('\u{2202}'), "no bare operator left: {cell}");
+
+    let widget = instantiate_stored_manipulate(&cell, "")
+      .expect("the Manipulate must instantiate");
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["g", "time", "k", "\u{1d49f}", "f", "u"]);
+  }
+
+  /// End-to-end regression for "Plot a Quadratic Inequality": the region is
+  /// named indirectly through a `DynamicModule` local (`p = a x^2 + b x +
+  /// c`), which `RegionPlot` — holding its arguments — could not resolve, so
+  /// nothing was shaded.
+  #[test]
+  fn quadratic_inequality_notebook_shades_its_region() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", 
+  RowBox[{
+   RowBox[{"DynamicModule", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"p", "=", 
+       RowBox[{
+        RowBox[{"a", " ", 
+         RowBox[{"x", "^", "2"}]}], "+", 
+        RowBox[{"b", " ", "x"}], "+", "c"}]}], "}"}], ",", 
+     "\[IndentingNewLine]", 
+     RowBox[{"RegionPlot", "[", 
+      RowBox[{
+       RowBox[{"If", "[", 
+        RowBox[{
+         RowBox[{"ineq", "\[Equal]", "\"\<>\>\""}], ",", 
+         RowBox[{"y", ">", "p"}], ",", 
+         RowBox[{"y", "<", "p"}]}], "]"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"x", ",", 
+         RowBox[{"-", "10"}], ",", "10"}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"y", ",", 
+         RowBox[{"-", "10"}], ",", "10"}], "}"}], ",", 
+       RowBox[{"PlotLabel", "\[Rule]", 
+        RowBox[{"Style", "[", 
+         RowBox[{
+          RowBox[{"Row", "[", 
+           RowBox[{"{", 
+            RowBox[{
+             RowBox[{"Style", "[", 
+              RowBox[{"\"\<y\>\"", ",", "Italic"}], "]"}], ",", 
+             RowBox[{"If", "[", 
+              RowBox[{
+               RowBox[{"ineq", "\[Equal]", "\"\<>\>\""}], ",", "\"\< > \>\"", 
+               ",", "\"\< < \>\""}], "]"}], ",", 
+             RowBox[{"TraditionalForm", "[", "p", "]"}], ",", "\"\<\\n\>\""}],
+             "}"}], "]"}], ",", "14"}], "]"}]}], ",", " ", 
+       RowBox[{"ImageSize", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{"480", ",", " ", "360"}], "}"}]}], ",", 
+       RowBox[{"ImageMargins", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{"10", ",", "10"}], "}"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"0", ",", "0"}], "}"}]}], "}"}]}]}], "]"}]}], "]"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"a", ",", 
+       RowBox[{"-", "5"}], ",", "\"\<quadratic coefficient\>\""}], "}"}], ",", 
+     RowBox[{"-", "5"}], ",", "5", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"b", ",", 
+       RowBox[{"-", "5"}], ",", "\"\<linear coefficient\>\""}], "}"}], ",", 
+     RowBox[{"-", "5"}], ",", "5", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"c", ",", 
+       RowBox[{"-", "5"}], ",", "\"\<constant term\>\""}], "}"}], ",", 
+     RowBox[{"-", "5"}], ",", "5", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"ineq", ",", "\"\<>\>\"", ",", "\"\<choose inequality\>\""}], 
+      "}"}], ",", 
+     RowBox[{"{", 
+      RowBox[{"\"\<>\>\"", ",", "\"\<<\>\""}], "}"}]}], "}"}]}], 
+  "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = -5}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the region must evaluate: {:?}",
+      widget.error
+    );
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["a", "b", "c", "ineq"]);
+
+    let render = |ineq: &str| {
+      woxi::interpret_with_stdout(&format!(
+        "a = -5; b = -5; c = -5; ineq = \"{ineq}\";\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let above = render(">");
+    // The region is shaded, not an empty frame.
+    assert!(above.matches("<rect").count() > 100, "region not shaded");
+    // Flipping the inequality shades the complement.
+    assert_ne!(above, render("<"), "the inequality control must matter");
+  }
+
+  /// End-to-end regression for the "Dedekind Cut" Demonstration: circles at
+  /// every distinct rational `p/q < 1` for `p, q` up to a bound, coloured by
+  /// which side of the cut they fall on, over a disk at the cut radius.
+  ///
+  /// It already worked; this pins it. The rational set, the cut radius and
+  /// the rendered geometry all match wolframscript (checked at four control
+  /// settings, agreeing within 0.5% of the frame width).
+  #[test]
+  fn dedekind_cut_notebook_draws_its_circles() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", 
+  RowBox[{
+   RowBox[{"With", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"dat", "=", 
+       RowBox[{"Union", "[", 
+        RowBox[{"Select", "[", 
+         RowBox[{
+          RowBox[{"Flatten", "[", 
+           RowBox[{"Outer", "[", 
+            RowBox[{
+             RowBox[{
+              RowBox[{"Rational", "[", 
+               RowBox[{"#1", ",", "#2"}], "]"}], "&"}], ",", 
+             RowBox[{"Range", "[", "ra", "]"}], ",", 
+             RowBox[{"Range", "[", "ra", "]"}]}], "]"}], "]"}], ",", 
+          RowBox[{
+           RowBox[{"#", "<", "1"}], "&"}]}], "]"}], "]"}]}], "}"}], ",", 
+     RowBox[{"With", "[", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"cut", "=", 
+         RowBox[{"If", "[", 
+          RowBox[{"racu", ",", 
+           RowBox[{"dat", "[", 
+            RowBox[{"[", 
+             RowBox[{"1", "+", 
+              RowBox[{"Round", "[", 
+               RowBox[{"acut", 
+                RowBox[{"(", 
+                 RowBox[{
+                  RowBox[{"Length", "[", "dat", "]"}], "-", "1"}], ")"}]}], 
+               "]"}]}], "]"}], "]"}], ",", 
+           RowBox[{
+            RowBox[{"(", 
+             RowBox[{
+              RowBox[{"2", "^", 
+               RowBox[{"(", 
+                RowBox[{"1", "/", "2"}], ")"}]}], "/", "2"}], ")"}], 
+            "acut"}]}], "]"}]}], "}"}], ",", 
+       RowBox[{"Graphics", "[", 
+        RowBox[{
+         RowBox[{"{", 
+          RowBox[{
+           RowBox[{"If", "[", 
+            RowBox[{"fli", ",", "White", ",", 
+             RowBox[{"RGBColor", "[", 
+              RowBox[{"1", ",", ".71", ",", "0"}], "]"}]}], "]"}], ",", 
+           RowBox[{"Disk", "[", 
+            RowBox[{
+             RowBox[{"{", 
+              RowBox[{"0", ",", "0"}], "}"}], ",", "cut"}], "]"}], ",", 
+           RowBox[{
+            RowBox[{
+             RowBox[{"{", 
+              RowBox[{
+               RowBox[{"If", "[", 
+                RowBox[{
+                 RowBox[{"#", ">", "cut"}], ",", 
+                 RowBox[{"RGBColor", "[", 
+                  RowBox[{".67", ",", ".75", ",", ".15"}], "]"}], ",", 
+                 RowBox[{"If", "[", 
+                  RowBox[{
+                   RowBox[{"cut", "\[Equal]", "#"}], ",", "Red", ",", 
+                   RowBox[{"RGBColor", "[", 
+                    RowBox[{".12", ",", ".61", ",", ".78"}], "]"}]}], "]"}]}],
+                 "]"}], ",", 
+               RowBox[{"Circle", "[", 
+                RowBox[{
+                 RowBox[{"{", 
+                  RowBox[{"0", ",", "0"}], "}"}], ",", "#"}], "]"}]}], "}"}], 
+             "&"}], "/@", "dat"}]}], "}"}], ",", 
+         RowBox[{"PlotRange", "\[Rule]", "1"}], ",", 
+         RowBox[{"Background", "\[Rule]", 
+          RowBox[{"If", "[", 
+           RowBox[{"fli", ",", 
+            RowBox[{"RGBColor", "[", 
+             RowBox[{"1", ",", ".71", ",", "0"}], "]"}], ",", "White"}], 
+           "]"}]}], ",", 
+         RowBox[{"ImageSize", "\[Rule]", 
+          RowBox[{"{", 
+           RowBox[{"350", ",", "350"}], "}"}]}]}], "]"}]}], "]"}]}], "]"}], 
+   ",", "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"acut", ",", ".5", ",", "\"\<cut\>\""}], "}"}], ",", "0", ",", 
+     "1", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"racu", ",", "False", ",", "\"\<kind of cut\>\""}], "}"}], ",", 
+     
+     RowBox[{"{", 
+      RowBox[{
+       RowBox[{"False", "\[Rule]", "\"\<irrational\>\""}], ",", 
+       RowBox[{"True", "\[Rule]", "\"\<rational\>\""}]}], "}"}]}], "}"}], ",",
+    "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"fli", ",", "False", ",", "\"\<mark radii\>\""}], "}"}], ",", 
+     RowBox[{"{", 
+      RowBox[{
+       RowBox[{"False", "\[Rule]", "\"\<smaller than cut\>\""}], ",", 
+       RowBox[{"True", "\[Rule]", "\"\<larger than cut\>\""}]}], "}"}]}], 
+    "}"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{
+      "ra", ",", "6", ",", "\"\<range of numerator and denominator\>\""}], 
+      "}"}], ",", "2", ",", "16"}], "}"}], ",", 
+   RowBox[{"Alignment", "\[Rule]", "Center"}], ",", 
+   RowBox[{"AutorunSequencing", "\[Rule]", 
+    RowBox[{"{", 
+     RowBox[{"2", ",", "3", ",", "4"}], "}"}]}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`acut$$ = 0.5}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the cut must evaluate: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the circles must draw");
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["acut", "racu", "fli", "ra"]);
+
+    let render = |racu: &str, fli: &str, ra: u32| {
+      woxi::interpret_with_stdout(&format!(
+        "acut = 0.5; racu = {racu}; fli = {fli}; ra = {ra};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    // Eleven rationals below 1 with numerator and denominator up to 6, each
+    // a circle, plus the disk at the cut.
+    let plain = render("False", "False", 6);
+    assert_eq!(plain.matches("<ellipse").count(), 12, "{plain}");
+    // A rational cut lands on one of them, which turns red.
+    assert!(!plain.contains("rgb(255,0,0)"), "{plain}");
+    assert!(render("True", "False", 6).contains("rgb(255,0,0)"));
+    // `mark radii` swaps the background and the disk.
+    assert!(render("False", "True", 6).contains("fill=\"rgb(255,181,0)\""));
+  }
+
+  /// End-to-end regression for "Binomial Probability Distribution": a
+  /// stem plot of the binomial PDF, titled and with both axes labelled.
+  /// The unjoined `ListPlot` path drew no labels at all.
+  #[test]
+  fn binomial_distribution_notebook_labels_its_plot() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", "\[IndentingNewLine]", 
+  RowBox[{
+   RowBox[{"ListPlot", "[", 
+    RowBox[{
+     RowBox[{"Table", "[", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"k", ",", 
+         RowBox[{"PDF", "[", 
+          RowBox[{
+           RowBox[{"BinomialDistribution", "[", 
+            RowBox[{"NumTrials", ",", "ProbSuccess"}], "]"}], ",", "k"}], 
+          "]"}]}], "}"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"k", ",", "0", ",", "NumTrials"}], "}"}]}], "]"}], ",", 
+     RowBox[{"AxesOrigin", "\[Rule]", 
+      RowBox[{"{", 
+       RowBox[{"0", ",", "0"}], "}"}]}], ",", 
+     RowBox[{"Filling", "\[Rule]", "Axis"}], ",", 
+     RowBox[{"AxesLabel", "\[Rule]", 
+      RowBox[{"{", 
+       RowBox[{"x", ",", "\"\<\!\(\*SubscriptBox[\(f\), \(X\)]\)(x)\>\""}], 
+       "}"}]}], ",", 
+     RowBox[{"PlotRange", "\[Rule]", 
+      RowBox[{"{", 
+       RowBox[{"0", ",", "1"}], "}"}]}], ",", 
+     RowBox[{"ImageSize", "\[Rule]", 
+      RowBox[{"{", 
+       RowBox[{"500", ",", "300"}], "}"}]}], ",", " ", 
+     RowBox[{"PlotStyle", "\[Rule]", 
+      RowBox[{"{", 
+       RowBox[{"Blue", ",", 
+        RowBox[{"PointSize", "[", "Medium", "]"}]}], "}"}]}], ",", " ", 
+     RowBox[{"PlotLabel", "\[Rule]", 
+      RowBox[{"Style", "[", 
+       RowBox[{
+       "\"\<probability associated with each value of the random \
+variable\>\"", ",", "Purple", ",", "Bold", ",", "12"}], "]"}]}]}], "]"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"NumTrials", ",", "10", ",", "\"\<number of trials\>\""}], 
+      "}"}], ",", "1", ",", " ", "50", ",", "1", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{
+      "ProbSuccess", ",", ".25", ",", "\"\<probability of success\>\""}], 
+      "}"}], ",", "0.01", ",", "1", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}]}], "}"}]}], 
+  "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`NumTrials$$ = 10}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the distribution must evaluate: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the stems must draw");
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["NumTrials", "ProbSuccess"]);
+
+    let svg = woxi::interpret_with_stdout(&format!(
+      "NumTrials = 10; ProbSuccess = 0.25;\n{}",
+      widget.body
+    ))
+    .expect("the body must render")
+    .graphics
+    .expect("the body must produce a graphic");
+    // One point per k in 0..NumTrials.
+    assert_eq!(svg.matches("<circle").count(), 11, "{svg}");
+    // The title and both axis labels are drawn; the y label keeps the
+    // subscript its inline box spells out.
+    assert!(
+      svg.contains("probability associated with each value"),
+      "{svg}"
+    );
+    assert!(svg.contains(">x</text>"), "{svg}");
+    assert!(
+      svg.contains("baseline-shift=\"sub\""),
+      "the y label's subscript must typeset: {svg}"
+    );
+  }
+
+  /// End-to-end regression for "Dynamics of a Spring-Pendulum System". Four
+  /// of its parameters are held by `{{x, v}, None}` controls, its motion
+  /// comes from an `NDSolveValue` whose equations include an algebraic
+  /// constraint tying the string lengths together, and its spring is a
+  /// plotted sine curve reused as a shape through `First[Plot[…]]`.
+  /// (The notebook's energy gauge and its two extra panels are trimmed
+  /// here; the mechanics are its own.)
+  #[test]
+  fn spring_pendulum_notebook_solves_and_draws() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["coil[pt1:{x1_,y1_},pt2:{x2_,y2_},n_,a_,th_]:=Module[{s,al},s=EuclideanDistance[pt1,pt2];al=ArcTan@@(pt1-pt2);Translate[Rotate[Scale[First[Plot[a Sin[n t],{t,-Pi,Pi},PlotPoints->30,Axes->False]],{s/2/Pi,1}],al,{0,0}],pt1+-s/2{Cos[al],Sin[al]}]]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nModule[{g=9.81,sol,thsol,ysol,lsol},\nsol=NDSolveValue[{k s0+g m Cos[th[t]]+(-d+L) m (th'[t])^2+y[t] (-k+m (th'[t])^2)==m y''[t],\ng Sin[th[t]]+2. y'[t] th'[t]+l[t] th''[t]==0,\nl[t]+d-y[t]==L,\nth[0]==th0,th'[0]==0,y[0]==y0,y'[0]==0},{th,y,l},{t,0,tMax}];\n{thsol,ysol,lsol}=sol;\nGraphics[{AbsoluteThickness[2],\nLine[{lsol[time]{Sin[thsol[time]],-Cos[thsol[time]]},{0,0},{-1,0},{-1,ysol[time]}}],\nGray,Disk[lsol[time]{Sin[thsol[time]],-Cos[thsol[time]]},.1 m^(1/3)],\nBlue,coil[{-1.,-2},{-1,ysol[time]},12,.05,.35]},\nPlotRange->{{-1.5,1.5},{-2.05,.05}},ImageSize->300]],\n{{tMax,20},None},{{L,3.25,\"total string length\"},None},{{d,1,\"pivot spacing\"},None},\n{{s0,-1.125,\"spring stop\"},None},\n{{m,1,\"mass\"},.25,2.5,.001,Appearance->\"Labeled\"},\n{{th0,1.,\"initial angle\"},-1.25,1.25,.001,Appearance->\"Labeled\"},\n{{y0,-1.,\"spring start\"},-1.125,-.75,.001,Appearance->\"Labeled\"},\n{{k,150,\"spring constant\"},100,200,.1,Appearance->\"Labeled\"},\n{{time,0,\"time\"},0,tMax,.05,Appearance->\"Labeled\"},\nSaveDefinitions->True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the constrained system must solve: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the pendulum must draw");
+    // The four `None`-domain parameters are bound but get no widget row.
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["m", "th0", "y0", "k", "time"]);
+    let hidden: Vec<&str> =
+      widget.state.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(hidden, ["tMax", "L", "d", "s0"]);
+
+    let render = |time: &str| {
+      let bindings: String = widget
+        .state
+        .iter()
+        .map(|(n, v)| format!("{n} = {v};\n"))
+        .collect();
+      woxi::interpret_with_stdout(&format!(
+        "{bindings}m = 1; th0 = 1.; y0 = -1.; k = 150; time = {time};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let at0 = render("0");
+    // The string, the bob and the coil spring are all drawn.
+    assert!(at0.contains("<polyline") || at0.contains("<path"), "{at0}");
+    assert!(at0.contains("<ellipse") || at0.contains("<circle"), "{at0}");
+    // The system evolves: the picture at a later time differs.
+    assert_ne!(at0, render("3"), "the time control must move the pendulum");
+  }
+
+  /// End-to-end regression for "Nets for Regular Spherical Models": its
+  /// body is a `Pane` around either a 3D model or a 2D net template, and
+  /// the export path used to write the whole thing out as source rather
+  /// than unwrapping the Pane.
+  #[test]
+  fn spherical_nets_notebook_draws_through_its_pane() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["ort[v_]:=Normalize[v];\ngreatcirclearc[a_,b_]:=Module[{au=ort[a//N],n1,n2,t,alpha,lis,alp},n1=Cross[a,b];\nn2=ort[Cross[n1,a]];alpha=ArcCos[ort[a].ort[b]];alp=IntegerPart[45.*alpha];lis=Table[Cos[t/45.] au+Sin[t/45.] n2,{t,0,alp}];Join[lis,{Cos[alpha] au+Sin[alpha] n2}]];\nClosedLine[a_]:=Line[Append[a,First[a]]];\nRot[om_,al_][x_]:=(x.om)om+(x-(x.om)om)Cos[al]+Cross[om,x]Sin[al];\noposite[r1_,r2_]:=Norm[r1+r2]<0.001;\neliminateoposite[z_List]:=Module[{result={First[z]}},Do[notop=True;Do[If[oposite[z[[i]],result[[j]]],notop=False],{j,1,Length[result]}];If[notop,AppendTo[result,z[[i]]]],{i,2,Length[z]}];result];\neverag[z_List]:=Apply[Plus,z]/Length[z];\nsred[ver_,faces_]:=Map[everag,Map[ver[[#]]&,faces]];\nmidleedge[ver_,edges_]:=Map[everag,Map[ver[[#]]&,edges]];\nedg2=PolyhedronData[\"Dodecahedron\",\"EdgeIndices\"];\nfac2=PolyhedronData[\"Dodecahedron\",\"FaceIndices\"];\nve2=PolyhedronData[\"Dodecahedron\",\"VertexCoordinates\"]//N;\nmidleed2=Map[everag,Map[ve2[[#]]&,edg2]];\nmidleedge2=eliminateoposite[midleed2];\nsr2=sred[ve2,fac2];\nsred2=eliminateoposite[sr2];\nver2=eliminateoposite[ve2];\nort2=Normalize[Cross[ve2[[1]],sr2[[1]]]];\nikozanumer=Join[{Rot[{0,0,1},0]},Flatten[Table[Rot[Normalize[ver2[[i]]]//N,j 2 Pi/3//N],{j,1,2},{i,1,Length[ver2]}]],Flatten[Table[Rot[Normalize[sred2[[i]]]//N,j 2 Pi/5//N],{j,1,4},{i,1,Length[sred2]}]],Flatten[Table[Rot[Normalize[midleedge2[[i]]]//N,j  Pi//N],{j,1,1},{i,1,Length[midleedge2]}]]];\ndodecahedron=With[{solid=GraphicsComplex[PolyhedronData[\"Dodecahedron\",\"VertexCoordinates\"],Polygon[PolyhedronData[\"Dodecahedron\",\"FaceIndices\"]]]},{solid[[2,1]],Map[Normalize,solid[[1]]//N]}];\nmoeb1=Join[greatcirclearc[dodecahedron[[2,1]],Normalize[sr2[[1]]]],greatcirclearc[Normalize[sr2[[1]]],Normalize[midleed2[[1]]]],greatcirclearc[Normalize[midleed2[[1]]],dodecahedron[[2,1]]]];\nmoeb1SM={With[{up=greatcirclearc[dodecahedron[[2,1]],Normalize[sr2[[1]]]]},Join[Reverse[up],0.8 up]],With[{up=greatcirclearc[Normalize[sr2[[1]]],Normalize[midleed2[[1]]]]},Join[Reverse[up],0.8 up]],With[{up=greatcirclearc[Normalize[midleed2[[1]]],dodecahedron[[2,1]]]},Join[Reverse[up],0.8 up]]};\nhiI=ArcCos[dodecahedron[[2,1]].Normalize[sr2[[1]]]];\nfiI=ArcCos[Normalize[sr2[[1]]].Normalize[midleed2[[1]]]];\npsiI=ArcCos[Normalize[midleed2[[1]]].dodecahedron[[2,1]]];\ngrd2b=Table[Map[ikozanumer[[i]],moeb1SM,{2}],{i,1,Length[ikozanumer]}];\ntetrahedron=With[{solid=GraphicsComplex[PolyhedronData[\"Tetrahedron\",\"VertexCoordinates\"],Polygon[PolyhedronData[\"Tetrahedron\",\"FaceIndices\"]]]},{solid[[2,1]],Map[Normalize,solid[[1]]//N]}];\nmoebt={With[{up=greatcirclearc[Normalize[(tetrahedron[[2,2]]+tetrahedron[[2,3]]+tetrahedron[[2,4]])/3],tetrahedron[[2,2]]]},Join[Reverse[up],0.8 up]],With[{up=greatcirclearc[tetrahedron[[2,2]],Normalize[(tetrahedron[[2,2]]+tetrahedron[[2,3]])/2]]},Join[Reverse[up],0.8 up]],With[{up=greatcirclearc[Normalize[(tetrahedron[[2,2]]+tetrahedron[[2,3]])/2],Normalize[(tetrahedron[[2,2]]+tetrahedron[[2,3]]+tetrahedron[[2,4]])/3]]},Join[Reverse[up],0.8 up]]};\npsi3=ArcCos[tetrahedron[[2,2]].Normalize[(tetrahedron[[2,2]]+tetrahedron[[2,3]])/2]];\nfi3=ArcCos[Normalize[(tetrahedron[[2,2]]+tetrahedron[[2,3]])/2].Normalize[(tetrahedron[[2,2]]+tetrahedron[[2,3]]+tetrahedron[[2,4]])/3]];\nhi3=ArcCos[Normalize[(tetrahedron[[2,2]]+tetrahedron[[2,3]]+tetrahedron[[2,4]])/3].tetrahedron[[2,2]]];\nedg3=PolyhedronData[\"Tetrahedron\",\"EdgeIndices\"];\nfac3=PolyhedronData[\"Tetrahedron\",\"FaceIndices\"];\nve3=PolyhedronData[\"Tetrahedron\",\"VertexCoordinates\"]//N;\nmidleed3=Map[everag,Map[ve3[[#]]&,edg3]];\nmidleedge3=eliminateoposite[midleed3];\nsr3=sred[ve3,fac3];\nsred3=eliminateoposite[sr3];\nver3=eliminateoposite[ve3];\ntetrahedralnumer=Join[{Rot[{0,0,1},0]},Flatten[Table[Rot[Normalize[ver3[[i]]]//N,j 2 Pi/3//N],{j,1,2},{i,1,Length[ver3]}]],Flatten[Table[Rot[Normalize[midleedge3[[i]]]//N,j  Pi//N],{j,1,1},{i,1,Length[midleedge3]}]]];\ngrdt=Table[Map[tetrahedralnumer[[i]],moebt,{2}],{i,1,Length[tetrahedralnumer]}];\nthird[n_]:={Cos[Pi/n],Sin[Pi/n],0};\nmoebD[n_]:=Join[greatcirclearc[{0,0,1},{1,0,0}],greatcirclearc[{1,0,0},third[n]],greatcirclearc[third[n],{0,0,1}]];\ncube=With[{solid=GraphicsComplex[PolyhedronData[\"Cube\",\"VertexCoordinates\"],Polygon[PolyhedronData[\"Cube\",\"FaceIndices\"]]]},{solid[[2,1]],Map[Normalize,solid[[1]]//N]}];\nedg1=PolyhedronData[\"Cube\",\"EdgeIndices\"];\nfac1=PolyhedronData[\"Cube\",\"FaceIndices\"];\nve1=PolyhedronData[\"Cube\",\"VertexCoordinates\"]//N;\nmidleed1=Map[everag,Map[ve1[[#]]&,edg1]];\nmidleedge1=eliminateoposite[midleed1];\nsr1=sred[ve1,fac1];\nsred1=eliminateoposite[sr1];\nver1=eliminateoposite[ve1];\noctahedralnumer=Join[{Rot[{0,0,1},0]},Flatten[Table[Rot[Normalize[ver1[[i]]]//N,j 2 Pi/3//N],{j,1,2},{i,1,Length[ver1]}]],Flatten[Table[Rot[Normalize[sred1[[i]]]//N,j 2 Pi/4//N],{j,1,3},{i,1,Length[sred1]}]],Flatten[Table[Rot[Normalize[midleedge1[[i]]]//N,j  Pi//N],{j,1,1},{i,1,Length[midleedge1]}]]];\nmoebc={With[{up=greatcirclearc[cube[[2,2]],Normalize[cube[[2,2]]+cube[[2,8]]]]},Join[Reverse[up],0.8 up]],With[{up=greatcirclearc[Normalize[cube[[2,2]]+cube[[2,8]]],Normalize[cube[[2,2]]+cube[[2,4]]]]},Join[Reverse[up],0.8 up]],With[{up=greatcirclearc[Normalize[cube[[2,2]]+cube[[2,4]]],cube[[2,2]]]},Join[Reverse[up],0.8 up]]};\ngrdc=Table[Map[octahedralnumer[[i]],moebc,{2}],{i,1,Length[octahedralnumer]}];\ngrdcs={grdt,grdc,grd2b};\nhi1=ArcCos[Normalize[cube[[2,2]]].Normalize[cube[[2,2]]+cube[[2,8]]]];\nfi1=ArcCos[Normalize[cube[[2,2]]+cube[[2,8]]].Normalize[cube[[2,2]]+cube[[2,4]]]];\npsi1=ArcCos[Normalize[cube[[2,2]]+cube[[2,4]]].Normalize[cube[[2,2]]]];\ngraf31=Graphics[{With[{gr1={Circle[{0,0},1,{0,hi1+fi1+psi1}],Circle[{0,0},0.8,{0,hi1+fi1+psi1}],Line[{{0.8,0},{1,0}}],Line[{0.8{Cos[hi1],Sin[hi1]},{Cos[hi1],Sin[hi1]}}],Line[{0.8{Cos[hi1+fi1],Sin[hi1+fi1]},{Cos[hi1+fi1],Sin[hi1+fi1]}}],Line[{0.8{Cos[hi1+fi1+psi1],Sin[hi1+fi1+psi1]},{Cos[hi1+fi1+psi1],Sin[hi1+fi1+psi1]}}]}},{Rotate[gr1,(Pi-(hi1+fi1+psi1))/2,{0,0}],Translate[Rotate[gr1,Pi+(Pi-(hi1+fi1+psi1))/2,{0,0}],{0.8,1.}]}]},PlotRange->{{-1.,1.77},{-.1,1.1}}];\ngraf32=Graphics[{With[{gr1={Circle[{0,0},1,{0,4hi1}],Circle[{0,0},0.8,{0,4hi1}],Line[{{0.8,0},{1,0}}],Table[Line[{0.8{Cos[i hi1],Sin[i hi1]},{Cos[i hi1],Sin[i hi1]}}],{i,0,4}]}},{Rotate[gr1,(Pi-(4 hi1))/2,{0,0}],Translate[Rotate[gr1,Pi+(Pi-4(hi1))/2,{0,0}],{0.8,0.4}]}]},PlotRange->{{-1.1,1.88},{-.7.9,1.1}}];\ngraf33=Graphics[{With[{gr1={Circle[{0,0},1,{0,6fi1}],Circle[{0,0},0.8,{0,6fi1}],Line[{{0.8,0},{1,0}}],Table[Line[{0.8{Cos[i 2fi1],Sin[i 2fi1]},{Cos[i 2fi1],Sin[i 2fi1]}}],{i,0,3}]}},{Rotate[gr1,(Pi-(6 fi1))/2,{0,0}],Translate[Rotate[gr1,Pi+(Pi-6(fi1))/2,{0,0}],{0.6,0.}]}]},PlotRange->{{-1.1,1.7},{-1.1,1.1}}];\ngraf34=Graphics[{With[{gr1={Circle[{0,0},1,{0,8psi1}],Circle[{0,0},0.8,{0,8psi1}],Line[{{0.8,0},{1,0}}],Table[Line[{0.8{Cos[i 2 psi1],Sin[i 2psi1]},{Cos[i 2psi1],Sin[i 2psi1]}}],{i,0,4}]}},{Rotate[gr1,(Pi-(8 psi1))/2,{0,0}],Translate[Rotate[gr1,Pi+(Pi-8(psi1))/2,{0,0}],{0.7,0.}]}]},PlotRange->{{-1.1,1.8},{-1.1,1.1}}];\ngraf11=Graphics[With[{gr1={Circle[{0,0},1,{0,hi3+fi3+psi3}],Circle[{0,0},0.8,{0,hi3+fi3+psi3}],Line[{{0.8,0},{1,0}}],Line[{0.8{Cos[hi3],Sin[hi3]},{Cos[hi3],Sin[hi3]}}],Line[{0.8{Cos[hi3+fi3],Sin[hi3+fi3]},{Cos[hi3+fi3],Sin[hi3+fi3]}}],Line[{0.8{Cos[hi3+fi3+psi3],Sin[hi3+fi3+psi3]},{Cos[hi3+fi3+psi3],Sin[hi3+fi3+psi3]}}]}},{Rotate[gr1,(Pi-(hi3+fi3+psi3))/2,{0,0}],Translate[Rotate[gr1,Pi+(Pi-(hi3+fi3+psi3))/2,{0,0}],{0.8,0.7}]}],PlotRange->{{-1.1,1.85},{-0.4,1.1}}];\ngraf12=Graphics[With[{gr1={Circle[{0,0},1,{0,4hi3}],Circle[{0,0},0.8,{0,4hi3}],Line[{{0.8,0},{1,0}}],Table[Line[{0.8{Cos[i hi3],Sin[i hi3]},{Cos[i hi3],Sin[i hi3]}}],{i,0,4}]}},{Rotate[gr1,(Pi-(4 hi3))/2,{0,0}],Translate[Rotate[gr1,Pi+(Pi-4(hi3))/2,{0,0}],{0.55,-0.04}]}],PlotRange->{{-1.1,1.7},{-1.1,1.1}}];\ngraf13=Graphics[With[{gr1={Circle[{0,0},1,{0,6fi3}],Circle[{0,0},0.8,{0,6fi3}],Line[{{0.8,0},{1,0}}],Table[Line[{0.8{Cos[i 2fi3],Sin[i 2fi3]},{Cos[i 2fi3],Sin[i 2fi3]}}],{i,0,3}]}},{Rotate[gr1,(Pi-(6 fi3))/2,{0,0}],Translate[Rotate[gr1,Pi+(Pi-6(fi3))/2,{0,0}],{0.654,-0.27}]}],PlotRange->{{-1.1,1.8},{-1.3,1.1}}];\ngraf14=Graphics[With[{gr1={Circle[{0,0},1,{0,6psi3}],Circle[{0,0},0.8,{0,6psi3}],Line[{{0.8,0},{1,0}}],Table[Line[{0.8{Cos[i 2psi3],Sin[i 2psi3]},{Cos[i 2psi3],Sin[i 2psi3]}}],{i,0,3}]}},{Rotate[gr1,(Pi-(6 psi3))/2,{0,0}],Translate[Rotate[gr1,Pi+(Pi-6(psi3))/2,{0,0}],{0.654,-0.27}]}],PlotRange->{{-1.1,1.8},{-1.3,1.1}}];\ngraf21=Graphics[With[{gr1={Circle[{0,0},1,{0,hiI+fiI+psiI}],Circle[{0,0},0.8,{0,hiI+fiI+psiI}],Line[{{0.8,0},{1,0}}],Line[{0.8{Cos[hiI],Sin[hiI]},{Cos[hiI],Sin[hiI]}}],Line[{0.8{Cos[hiI+fiI],Sin[hiI+fiI]},{Cos[hiI+fiI],Sin[hiI+fiI]}}],Line[{0.8{Cos[hiI+fiI+psiI],Sin[hiI+fiI+psiI]},{Cos[hiI+fiI+psiI],Sin[hiI+fiI+psiI]}}]}},{Rotate[gr1,(Pi-(hiI+fiI+psiI))/2,{0,0}],Translate[Rotate[gr1,Pi+(Pi-(hiI+fiI+psiI))/2,{0,0}],{0.6,1.3}]}],PlotRange->{{-0.8,1.4},{0.23,1.1}}];\ngraf22=Graphics[{With[{gr1={Circle[{0,0},1,{0,4hiI}],Circle[{0,0},0.8,{0,4hiI}],Line[{{0.8,0},{1,0}}],Table[Line[{0.8{Cos[i hiI],Sin[i hiI]},{Cos[i hiI],Sin[i hiI]}}],{i,0,4}]}},{Rotate[gr1,(Pi-(4 hiI))/2,{0,0}],Translate[Rotate[gr1,Pi+(Pi-4(hiI))/2,{0,0}],{0.8,0.95}]}]},PlotRange->{{-1.,1.8},{-.1,1.08}}];\ngraf23=Graphics[With[{gr1={Circle[{0,0},1,{0,6fiI}],Circle[{0,0},0.8,{0,6fiI}],Line[{{0.8,0},{1,0}}],Table[Line[{0.8{Cos[i 2fiI],Sin[i 2fiI]},{Cos[i 2fiI],Sin[i 2fiI]}}],{i,0,3}]}},{Rotate[gr1,(Pi-(6 fiI))/2,{0,0}],Translate[Rotate[gr1,Pi+(Pi-6(fiI))/2,{0,0}],{0.9,.65}]}],PlotRange->{{-1.1,1.95},{-0.4,1.1}}];\ngraf24=Graphics[With[{gr1={Circle[{0,0},1,{0,10psiI}],Circle[{0,0},0.8,{0,10psiI}],Line[{{0.8,0},{1,0}}],Table[Line[{0.8{Cos[i 2psiI],Sin[i 2psiI]},{Cos[i 2psiI],Sin[i 2psiI]}}],{i,0,5}]}},{Rotate[gr1,(Pi-(10 psiI))/2,{0,0}],Translate[Rotate[gr1,Pi+(Pi-10(psiI))/2,{0,0}],{0.84,0.47}]}],PlotRange->{{-1.1,1.9},{-.6,1.08}}];\nnets={{graf11,graf12,graf13,graf14},{graf31,graf32,graf33,graf34},{graf21,graf22,graf23,graf24}};"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Pane[Switch[nt, 2, Show[nets[[fam, 1]], ImageSize -> 300], 1, Graphics3D[{Red, EdgeForm[], Map[Polygon, grdcs[[fam]]]}, Boxed -> False, PlotRange -> 1.2, ImageSize -> 300]], Alignment -> Center, ImageSize -> 320],\n{{fam, 1, \"family\"}, {1 -> \"tetrahedral\", 2 -> \"octahedral\", 3 -> \"icosahedral\"}},\n{{nt, 2, \"view\"}, {1 -> \"solid\", 2 -> \"nets templates\"}},\nSaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`fam$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the nets must build: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the net must draw");
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["fam", "nt"]);
+
+    let render = |fam: u32, nt: u32| {
+      woxi::interpret_with_stdout(&format!(
+        "fam = {fam}; nt = {nt};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    // The net template is drawn, not echoed as `Pane[GraphicsBox[]]`.
+    let net = render(1, 2);
+    assert!(!net.contains("GraphicsBox"), "{net}");
+    assert!(net.contains("<path") || net.contains("<polyline"), "{net}");
+    // Each family has its own net, and the solid view differs from it.
+    assert_ne!(net, render(3, 2), "the family control must matter");
+    assert_ne!(net, render(1, 1), "the view control must matter");
   }
 }

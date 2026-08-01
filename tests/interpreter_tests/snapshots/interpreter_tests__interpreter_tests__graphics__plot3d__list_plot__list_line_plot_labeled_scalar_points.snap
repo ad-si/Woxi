@@ -138,6 +138,7 @@ expression: "export_svg(r#\"ListLinePlot[{Labeled[1, \"start\"], 4, 9, Labeled[1
 <line x1="710.0" y1="1281.5" x2="680.0" y2="1281.5" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="772.2" x2="680.0" y2="772.2" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="263.0" x2="680.0" y2="263.0" stroke="#666" stroke-width="10"/>
+<text x="3398.1" y="1830.0" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">4</text>
 <text x="891.9" y="1608.9" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="160" fill="#333" text-anchor="start">start</text>
 <text x="3358.1" y="160.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="160" fill="#333" text-anchor="end">end</text>
 </svg>

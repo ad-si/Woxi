@@ -5938,6 +5938,42 @@ mod base_form {
     assert_eq!(interpret("BaseForm[-42, 2]").unwrap(), "BaseForm[-42, 2]");
   }
 
+  /// A real shows its base-`b` expansion to the precision it displays: a
+  /// machine real to the base-`b` equivalent of six decimal digits, an
+  /// arbitrary-precision one to its own precision. Trailing zeros go, so a
+  /// value that terminates in that base prints short.
+  #[test]
+  fn reals_show_their_digits_in_the_base() {
+    // The digit line, without the base subscript on the line below.
+    let digits = |code: &str| interpret(&format!("ToString[{code}]")).unwrap();
+    assert_eq!(digits("BaseForm[3.5, 2]").lines().next().unwrap(), "11.1");
+    assert_eq!(digits("BaseForm[12.25, 8]").lines().next().unwrap(), "14.2");
+    assert_eq!(
+      digits("BaseForm[255.75, 16]").lines().next().unwrap(),
+      "ff.c"
+    );
+    // 0.1 has no finite binary form: 20 significant bits, rounded.
+    assert_eq!(
+      digits("BaseForm[0.1, 2]").lines().next().unwrap(),
+      "0.00011001100110011001101"
+    );
+    // A tail of exactly half a unit in the last place rounds *down*.
+    assert_eq!(
+      digits("BaseForm[1.5, 3]").lines().next().unwrap(),
+      "1.111111111111"
+    );
+    // 20 decimal digits of precision → 66 binary digits, all exact.
+    assert_eq!(
+      digits("BaseForm[N[Sqrt[2], 20], 2]")
+        .lines()
+        .next()
+        .unwrap(),
+      "1.01101010000010011110011001100111111100111011110011001001000010001"
+    );
+    // The base still rides along on the line below.
+    assert_eq!(digits("BaseForm[3.5, 2]").lines().nth(1).unwrap(), "    2");
+  }
+
   #[test]
   fn base_36() {
     assert_eq!(interpret("BaseForm[35, 36]").unwrap(), "BaseForm[35, 36]");
