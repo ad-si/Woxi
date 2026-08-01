@@ -7384,6 +7384,89 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn axial_dispersion_manipulate_builds_widget() {
+    // End-to-end regression for the "Response of a Reactor with Axial
+    // Dispersion to a Pulse Input Tracer (E-Curve)" Demonstration: a
+    // ten-cell finite-difference discretization whose unknowns are
+    // `Subscript[c, i]`, driven by a tracer pulse only 10^-6 wide, with the
+    // package load in `Initialization` that the notebook asks for.
+    //
+    // The integration domain is the plotted `{t, 0, 5}` rather than the
+    // notebook's `{t, 0, 20}` — solving four times as far only makes the
+    // test slower, and the E-curve has decayed to nothing by t = 5 anyway.
+    // The numbers themselves are checked in the interpreter's NDSolve tests.
+    let code = "Manipulate[\n\
+      Module[{sol, plt, dz, n, t, c, eq, Z},\n\
+       dz = 1/Subscript[n, Z]; Subscript[n, Z] = 10;\n\
+       Subscript[c, 0][t_] := 0.01 If[0 <= t <= 10^-6, 10^6, 0];\n\
+       eq[1] = D[Subscript[c, 1][t], {t, 1}] == \
+         (Subscript[c, 0][t] - Subscript[c, 1][t])/dz \
+         - (Subscript[c, 1][t] - Subscript[c, 2][t])/(dz^2 Pe);\n\
+       Table[eq[i] = D[Subscript[c, i][t], {t, 1}] == \
+         (Subscript[c, i - 1][t] - Subscript[c, i][t])/dz \
+         + (Subscript[c, i - 1][t] - 2 Subscript[c, i][t] \
+         + Subscript[c, i + 1][t])/(dz^2 Pe), \
+         {i, 2, Subscript[n, Z] - 1}];\n\
+       eq[Subscript[n, Z]] = D[Subscript[c, Subscript[n, Z]][t], {t, 1}] == \
+         (Subscript[c, Subscript[n, Z] - 1][t] \
+         - Subscript[c, Subscript[n, Z]][t])/dz \
+         + (Subscript[c, Subscript[n, Z] - 1][t] \
+         - Subscript[c, Subscript[n, Z]][t])/(dz^2 Pe);\n\
+       sol = NDSolve[Join[Table[eq[i], {i, 1, Subscript[n, Z]}], \
+         Table[Subscript[c, i][0] == 0, {i, 1, Subscript[n, Z]}]], \
+         Table[Subscript[c, i], {i, 1, Subscript[n, Z]}], {t, 0, 5}, \
+         Method -> DifferentialEquations`NDSolveUtilities`StiffnessSwitching];\n\
+       plt = Plot[First[Subscript[c, Subscript[n, Z]][t] /. sol], {t, 0, 5}, \
+         PlotRange -> {0, 0.02}, PlotStyle -> Thickness[0.01], \
+         Frame -> True, ImageSize -> {500, 400}, \
+         FrameLabel -> {\"time\", \"concentration\"}]],\n\
+      {{Pe, 50, \"Péclet number\"}, 0.5, 100, 0.5, \
+       Appearance -> \"Labeled\"},\n\
+      SynchronousUpdating -> False,\n\
+      TrackedSymbols :> {Pe},\n\
+      Initialization :> \
+       (Get[\"DifferentialEquations`NDSolveUtilities`\"];)]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the axial-dispersion Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must produce the E-curve plot"
+    );
+
+    // One labeled Péclet-number slider.
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          label,
+          current,
+          min,
+          max,
+          ..
+        },
+      ] => {
+        assert_eq!(label, "Péclet number");
+        assert_eq!((*current, *min, *max), (50.0, 0.5, 100.0));
+      }
+      other => panic!("expected one continuous slider, got {other:?}"),
+    }
+
+    // A smaller Péclet number means more dispersion; the system re-solves.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 10.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn sliding_the_roots_of_cubics_manipulate_builds_widget() {
     // End-to-end regression for the "Sliding the Roots of Cubics"
     // Demonstration: three `Appearance -> "Labeled"` sliders drive an

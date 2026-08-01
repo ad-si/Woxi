@@ -77,3 +77,72 @@ pub fn strip_windows_verbatim_prefix(path: &str) -> Option<String> {
     _ => None,
   }
 }
+
+/// The top-level contexts of the packages that ship with the Wolfram
+/// Language, whose `Get`/`Needs` therefore always succeeds. Woxi has no
+/// package system — every built-in it implements lives in one namespace —
+/// so loading one of these has nothing to do and evaluates to `Null` the
+/// way it does in the Wolfram Language. A symbol the package would have
+/// defined and Woxi does not implement still reports itself, unevaluated,
+/// at the point it is used.
+const STANDARD_DISTRIBUTION_CONTEXTS: &[&str] = &[
+  "BarCharts",
+  "Calendar",
+  "Combinatorica",
+  "ComputationalGeometry",
+  "Developer",
+  "DifferentialEquations",
+  "ErrorBarPlots",
+  "FiniteFields",
+  "FourierSeries",
+  "FunctionApproximations",
+  "Geodesy",
+  "Graphics",
+  "GraphUtilities",
+  "HypothesisTesting",
+  "Internal",
+  "JLink",
+  "LinearAlgebra",
+  "MultivariateStatistics",
+  "Notation",
+  "NumericalCalculus",
+  "NumericalDifferentialEquationAnalysis",
+  "PhysicalConstants",
+  "PieCharts",
+  "PlotLegends",
+  "PolyhedronOperations",
+  "PrimalityProving",
+  "Quaternions",
+  "RegressionCommon",
+  "ResourceLocator",
+  "StatisticalPlots",
+  "Units",
+  "VariationalMethods",
+  "VectorAnalysis",
+  "WaveletScalogram",
+];
+
+/// Whether `name` is a context name — `Foo\`` or `Foo\`Bar\`` — belonging to
+/// a package that ships with the Wolfram Language. Only full context names
+/// qualify: `"Units.m"` is an ordinary file path and must still be read.
+pub fn is_standard_distribution_context(name: &str) -> bool {
+  let Some(body) = name.strip_suffix('`') else {
+    return false;
+  };
+  if body.is_empty() {
+    return false;
+  }
+  let mut segments = body.split('`');
+  let Some(top) = segments.next() else {
+    return false;
+  };
+  let is_symbol = |s: &str| {
+    !s.is_empty()
+      && s.starts_with(|c: char| c.is_ascii_alphabetic() || c == '$')
+      && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '$')
+  };
+  if !is_symbol(top) || !segments.all(is_symbol) {
+    return false;
+  }
+  STANDARD_DISTRIBUTION_CONTEXTS.contains(&top)
+}

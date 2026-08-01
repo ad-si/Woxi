@@ -4119,6 +4119,34 @@ mod needs_function {
   fn needs_attributes() {
     assert_eq!(interpret("Attributes[Needs]").unwrap(), "{Protected}");
   }
+
+  // A package that ships with the Wolfram Language always loads there, so
+  // it loads here too — as a no-op, since Woxi keeps every built-in it
+  // implements in one namespace. Demonstrations reach for these in their
+  // `Initialization` option (`Get["DifferentialEquations`NDSolveUtilities`"]`),
+  // where a `$Failed` would surface as a broken cell.
+  #[test]
+  fn standard_distribution_packages_load_as_no_ops() {
+    // `Null` prints nothing, which `interpret` reports as "\0".
+    assert_eq!(
+      interpret("Get[\"DifferentialEquations`NDSolveUtilities`\"]").unwrap(),
+      "\0"
+    );
+    assert_eq!(interpret("Needs[\"Combinatorica`\"]").unwrap(), "\0");
+    assert_eq!(interpret("Get[\"Units`\"]").unwrap(), "\0");
+  }
+
+  #[test]
+  fn an_unknown_package_still_fails() {
+    assert_eq!(interpret("Get[\"NoSuchPackageXyz`\"]").unwrap(), "$Failed");
+    assert_eq!(
+      interpret("Needs[\"NoSuchPackageXyz`\"]").unwrap(),
+      "$Failed"
+    );
+    // A file path that merely starts with a standard context name is read
+    // from disk as usual, so it fails when it does not exist.
+    assert_eq!(interpret("Get[\"Units.m\"]").unwrap(), "$Failed");
+  }
 }
 
 mod center_symbol {

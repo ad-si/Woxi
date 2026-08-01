@@ -247,17 +247,139 @@ pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let opts = &args[n_pos..];
   let event = parse_event_locator_option(opts);
 
+  // Unknowns written as compound expressions (`Subscript[c, 1]`) are keyed
+  // by a fresh symbol while integrating, then restored in the result.
+  let renames = compound_head_renamings(&args[1], &args[2]);
+  let positional: Vec<Expr> = if renames.is_empty() {
+    args[..3].to_vec()
+  } else {
+    args[..3]
+      .iter()
+      .map(|a| rename_compound_heads(a, &renames))
+      .collect()
+  };
+
   // Every shape — one equation or a coupled system, linear or not — goes
   // through the same integrator. A single scalar equation used to take a
   // separate path built on DSolve's *linear* term classifier, which
   // refused anything nonlinear in the dependent variable (the pendulum's
   // `Sin[θ[t]]`) even though nothing about integrating it numerically
   // needs the equation to be linear.
-  match ndsolve_system(&args[..3], event.as_ref()) {
-    Ok(Some(result)) => Ok(result),
+  match ndsolve_system(&positional, event.as_ref()) {
+    Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
     Ok(None) => Ok(unevaluated("NDSolve", args)),
     Err(e) => Err(e),
   }
+}
+
+/// Dependent functions of an `NDSolve` system need not be bare symbols:
+/// a spatially discretized transport equation is normally written
+/// `NDSolve[…, Table[Subscript[c, i], {i, 1, n}], {t, 0, tmax}]`, where every
+/// unknown is a `Subscript[…]` expression. The integrator keys each unknown
+/// by a symbol name, so every distinct compound head is rewritten to a fresh
+/// symbol before integrating and restored in the solution rules afterwards.
+///
+/// Returns the `(head expression, fresh symbol)` pairs, empty when every
+/// unknown already is a symbol.
+fn compound_head_renamings(vars: &Expr, domain: &Expr) -> Vec<(Expr, String)> {
+  let x_name = match domain {
+    Expr::List(items) => match items.first() {
+      Some(Expr::Identifier(x)) => x.clone(),
+      _ => return Vec::new(),
+    },
+    _ => return Vec::new(),
+  };
+  let entries: Vec<&Expr> = match vars {
+    Expr::List(items) => items.iter().collect(),
+    single => vec![single],
+  };
+  let mut renames: Vec<(Expr, String)> = Vec::new();
+  for entry in entries {
+    let head = match entry {
+      // `Subscript[c, 1][t]` — applied form of a compound head.
+      Expr::CurriedCall { func, args }
+        if args.len() == 1
+          && matches!(&args[0], Expr::Identifier(a) if *a == x_name) =>
+      {
+        func.as_ref().clone()
+      }
+      // `y[t]` — applied form of a plain symbol; nothing to rename.
+      Expr::FunctionCall { args, .. }
+        if args.len() == 1
+          && matches!(&args[0], Expr::Identifier(a) if *a == x_name) =>
+      {
+        continue;
+      }
+      // `Subscript[c, 1]` — bare compound head.
+      Expr::FunctionCall { .. } => entry.clone(),
+      // `y` — bare symbol.
+      _ => continue,
+    };
+    if matches!(head, Expr::Identifier(_)) {
+      continue;
+    }
+    let key = crate::syntax::expr_to_string(&head);
+    if renames
+      .iter()
+      .any(|(h, _)| crate::syntax::expr_to_string(h) == key)
+    {
+      continue;
+    }
+    let fresh = format!("NDSolve$fn${}", renames.len() + 1);
+    renames.push((head, fresh));
+  }
+  renames
+}
+
+/// Rewrite every occurrence of a compound head to its fresh symbol, turning
+/// `Subscript[c, 1][t]` into `NDSolve$fn$1[t]` and
+/// `Derivative[1][Subscript[c, 1]][t]` into `Derivative[1][NDSolve$fn$1][t]`.
+fn rename_compound_heads(expr: &Expr, renames: &[(Expr, String)]) -> Expr {
+  let key = crate::syntax::expr_to_string(expr);
+  for (head, fresh) in renames {
+    if crate::syntax::expr_to_string(head) == key {
+      return Expr::Identifier(fresh.clone());
+    }
+  }
+  let mapped = map_children(expr, &|c| rename_compound_heads(c, renames));
+  // `Subscript[c, 1][t]` is a curried call; once its head is a plain symbol
+  // it must print and match as the ordinary call `NDSolve$fn$1[t]`.
+  if let Expr::CurriedCall { func, args } = &mapped
+    && let Expr::Identifier(name) = func.as_ref()
+    && renames.iter().any(|(_, fresh)| fresh == name)
+  {
+    return Expr::FunctionCall {
+      name: name.clone(),
+      args: args.clone().into(),
+    };
+  }
+  mapped
+}
+
+/// The inverse of [`rename_compound_heads`], applied to the solution rules:
+/// `NDSolve$fn$1 -> InterpolatingFunction[…]` becomes
+/// `Subscript[c, 1] -> InterpolatingFunction[…]`.
+fn restore_compound_heads(expr: &Expr, renames: &[(Expr, String)]) -> Expr {
+  if renames.is_empty() {
+    return expr.clone();
+  }
+  if let Expr::Identifier(name) = expr
+    && let Some((head, _)) = renames.iter().find(|(_, fresh)| fresh == name)
+  {
+    return head.clone();
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && let Some((head, _)) = renames.iter().find(|(_, fresh)| fresh == name)
+  {
+    return Expr::CurriedCall {
+      func: Box::new(head.clone()),
+      args: args
+        .iter()
+        .map(|a| restore_compound_heads(a, renames))
+        .collect(),
+    };
+  }
+  map_children(expr, &|c| restore_compound_heads(c, renames))
 }
 
 // ─── The NDSolve integrator ────────────────────────────────────────────
@@ -873,8 +995,17 @@ fn integrate_leg(
   for i in 0..n_steps {
     let new_x = grid(i + 1);
     let h = new_x - x;
-    let Some(new_state) =
-      rk4_system_step(residuals, funcs, state_offset, &state, x, h)?
+    let mut refined: Vec<(f64, Vec<f64>)> = Vec::new();
+    let Some(new_state) = rk4_step_refined(
+      residuals,
+      funcs,
+      state_offset,
+      &state,
+      x,
+      h,
+      0,
+      &mut refined,
+    )?
     else {
       return Ok(None);
     };
@@ -933,9 +1064,113 @@ fn integrate_leg(
 
     state = new_state;
     x = new_x;
-    points.push((x, state.clone()));
+    points.append(&mut refined);
   }
   Ok(Some(points))
+}
+
+/// Local-error tolerances for the step-doubling refinement below. They are
+/// deliberately loose: RK4's local error at the nominal step size is orders
+/// of magnitude smaller for any smooth problem, so an ordinary integration
+/// never subdivides and keeps exactly the grid — and the values — the
+/// fixed-step integrator produced.
+const STEP_REFINE_RTOL: f64 = 1e-4;
+const STEP_REFINE_ATOL: f64 = 1e-8;
+
+/// How far one nominal step may be bisected. A tracer pulse 10^-6 wide in a
+/// domain of length 20 needs ~15 bisections of the 1/1000 nominal step to be
+/// seen at all, and another dozen for its edges to stop costing accuracy.
+const MAX_STEP_BISECTIONS: u32 = 32;
+
+/// Upper bound on the points one leg may accumulate, so a pathological
+/// right-hand side cannot make the refinement run away.
+const MAX_REFINED_POINTS: usize = 200_000;
+
+/// Take one nominal step, bisecting it when comparing a whole step against
+/// two half steps says the step is too coarse. A forcing term that is
+/// nonzero only on a very narrow interval — an injected tracer pulse, say —
+/// is otherwise integrated as though it lasted the whole step, which
+/// inflates the solution by the ratio of the two widths.
+///
+/// Every point the refinement visits is appended to `out`, so the
+/// interpolating solution resolves the feature too. Returns the state at
+/// `x + h`.
+#[allow(clippy::too_many_arguments)]
+fn rk4_step_refined(
+  residuals: &[NumFn],
+  funcs: &[SysFunc],
+  state_offset: &[usize],
+  state: &[f64],
+  x: f64,
+  h: f64,
+  depth: u32,
+  out: &mut Vec<(f64, Vec<f64>)>,
+) -> Result<Option<Vec<f64>>, InterpreterError> {
+  let Some(full) =
+    rk4_system_step(residuals, funcs, state_offset, state, x, h)?
+  else {
+    return Ok(None);
+  };
+  let accept = |s: Vec<f64>, out: &mut Vec<(f64, Vec<f64>)>| {
+    out.push((x + h, s.clone()));
+    Ok(Some(s))
+  };
+  if depth >= MAX_STEP_BISECTIONS || out.len() >= MAX_REFINED_POINTS {
+    return accept(full, out);
+  }
+
+  // Two half steps. If either fails the whole step stands — the coarse
+  // result is still the best available.
+  let half = h / 2.0;
+  // A half step too small to move `x` cannot be refined any further.
+  if x + half == x {
+    return accept(full, out);
+  }
+  let Some(mid) =
+    rk4_system_step(residuals, funcs, state_offset, state, x, half)?
+  else {
+    return accept(full, out);
+  };
+  let Some(two) =
+    rk4_system_step(residuals, funcs, state_offset, &mid, x + half, half)?
+  else {
+    return accept(full, out);
+  };
+
+  // A non-finite difference means the problem is singular here, not that a
+  // smaller step would help, so it counts as converged.
+  let converged = full.iter().zip(&two).all(|(a, b)| {
+    let diff = (a - b).abs();
+    let scale = STEP_REFINE_ATOL + STEP_REFINE_RTOL * a.abs().max(b.abs());
+    !diff.is_finite() || diff <= scale
+  });
+  if converged {
+    return accept(full, out);
+  }
+
+  let Some(mid) = rk4_step_refined(
+    residuals,
+    funcs,
+    state_offset,
+    state,
+    x,
+    half,
+    depth + 1,
+    out,
+  )?
+  else {
+    return Ok(None);
+  };
+  rk4_step_refined(
+    residuals,
+    funcs,
+    state_offset,
+    &mid,
+    x + half,
+    half,
+    depth + 1,
+    out,
+  )
 }
 
 /// One RK4 step of the first-order system equivalent. Returns `None`

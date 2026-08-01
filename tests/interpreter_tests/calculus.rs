@@ -7184,6 +7184,77 @@ mod ndsolve {
     );
   }
 
+  /// Unknowns need not be bare symbols: a transport equation discretized in
+  /// space is written with `Subscript[c, i]` for each cell, so the whole
+  /// system is `NDSolve[…, Table[Subscript[c, i], {i, 1, n}], …]`. Each
+  /// compound head is keyed by a fresh symbol while integrating and restored
+  /// in the solution rules.
+  #[test]
+  fn subscripted_unknowns_are_solved_and_restored() {
+    // Two well-mixed tanks exchanging content: c1' = c2 - c1, c2' = c1 - c2,
+    // so c1 + c2 is conserved and both relax to 1/2 as exp(-2t).
+    let system = "sol = NDSolve[{Subscript[c, 1]'[t] == Subscript[c, 2][t] \
+       - Subscript[c, 1][t], Subscript[c, 2]'[t] == Subscript[c, 1][t] \
+       - Subscript[c, 2][t], Subscript[c, 1][0] == 1, \
+       Subscript[c, 2][0] == 0}, {Subscript[c, 1], Subscript[c, 2]}, \
+       {t, 0, 5}]; ";
+    assert_eq!(
+      interpret(&format!("{system}sol[[1]][[All, 1]]")).unwrap(),
+      "{Subscript[c, 1], Subscript[c, 2]}",
+      "the compound heads come back verbatim"
+    );
+    let value: f64 = interpret(&format!(
+      "{system}First[Subscript[c, 1][t] /. sol] /. t -> 1.0"
+    ))
+    .unwrap()
+    .parse()
+    .expect("should be a number");
+    let expected = 0.5 * (1.0 + (-2.0f64).exp());
+    assert!(
+      (value - expected).abs() < 1e-6,
+      "expected {expected}, got {value}"
+    );
+  }
+
+  /// A forcing term that is nonzero only on a very narrow interval — an
+  /// injected tracer pulse — must not be integrated as though it lasted a
+  /// whole grid step, which would inflate the solution by the ratio of the
+  /// two widths. The step is bisected until the pulse is resolved.
+  #[test]
+  fn a_narrow_pulse_is_resolved() {
+    // y' = -y + 1000 * Boole[t <= 1/1000] over [0, 5]: the pulse injects
+    // exactly 1 unit, so y(t) = Exp[-t] to within the pulse width.
+    let code = "s = NDSolve[{y'[t] == -y[t] \
+       + 1000 If[0 <= t <= 1/1000, 1, 0], y[0] == 0}, y, {t, 0, 5}]; \
+       {(y /. s[[1]])[1.0], (y /. s[[1]])[3.0]}";
+    let result = interpret(code).unwrap();
+    let nums: Vec<f64> = result
+      .trim_matches(['{', '}'])
+      .split(", ")
+      .map(|s| s.parse().unwrap())
+      .collect();
+    for (value, t) in nums.iter().zip([1.0f64, 3.0]) {
+      let expected = (-t).exp();
+      assert!(
+        (value - expected).abs() < 1e-3 * expected,
+        "y({t}) should be about {expected}, got {value} (in {result})"
+      );
+    }
+  }
+
+  /// A smooth problem must not be refined at all: the fixed 1000-step grid
+  /// is already far more accurate than the refinement tolerance, so the
+  /// interpolating solution keeps exactly the points it always had.
+  #[test]
+  fn a_smooth_problem_keeps_the_nominal_grid() {
+    let result = interpret(
+      "s = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}]; \
+       Length[(y /. s[[1]])[[2]]]",
+    )
+    .unwrap();
+    assert_eq!(result, "1001");
+  }
+
   /// The solution rules come back in the order the functions were asked
   /// for, even though an eliminated one is solved last.
   #[test]

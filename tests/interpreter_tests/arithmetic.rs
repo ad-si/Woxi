@@ -261,6 +261,71 @@ mod arithmetic {
     }
   }
 
+  mod comparison_of_compound_heads {
+    use super::*;
+
+    // Regression: an expression whose head is itself an expression —
+    // `Subscript[c, 1][0]`, the shape a discretized PDE writes its unknowns
+    // in — used to be treated as free of symbols, so comparing it with a
+    // number collapsed to False instead of staying unevaluated.
+    #[test]
+    fn subscripted_function_value_stays_unevaluated() {
+      assert_eq!(
+        interpret("Subscript[c, 1][0] == 0").unwrap(),
+        "Subscript[c, 1][0] == 0"
+      );
+      assert_eq!(
+        interpret("Subscript[c, 1][t] != 0").unwrap(),
+        "Subscript[c, 1][t] != 0"
+      );
+    }
+
+    #[test]
+    fn curried_call_stays_unevaluated() {
+      assert_eq!(interpret("h[1][0] == 0").unwrap(), "h[1][0] == 0");
+      assert_eq!(interpret("f[a][b][c] == 2").unwrap(), "f[a][b][c] == 2");
+    }
+
+    // A pure function is an opaque object, never a number, so comparing one
+    // is unevaluated even though its body holds no free symbol.
+    #[test]
+    fn pure_function_stays_unevaluated() {
+      assert_eq!(interpret("(# &) == 0").unwrap(), "(#1 & ) == 0");
+    }
+
+    // Operands looser than `==` are parenthesized so the printed form
+    // re-parses to the same tree.
+    #[test]
+    fn looser_operands_are_parenthesized() {
+      assert_eq!(interpret("a == (b -> c)").unwrap(), "a == (b -> c)");
+      assert_eq!(interpret("a == (b :> c)").unwrap(), "a == (b :> c)");
+      assert_eq!(interpret("a == (b && c)").unwrap(), "a == (b && c)");
+      assert_eq!(interpret("a == (b || c)").unwrap(), "a == (b || c)");
+      assert_eq!(interpret("a == (b | c)").unwrap(), "a == (b | c)");
+      assert_eq!(
+        interpret("Hold[a == (b < c)]").unwrap(),
+        "Hold[a == (b < c)]"
+      );
+      assert_eq!(
+        interpret("Hold[a == (b = c)]").unwrap(),
+        "Hold[a == (b = c)]"
+      );
+    }
+
+    // Operands that bind tighter than `==` print bare.
+    #[test]
+    fn tighter_operands_print_bare() {
+      assert_eq!(interpret("a == (b + c)").unwrap(), "a == b + c");
+      assert_eq!(interpret("a == (b*c)").unwrap(), "a == b*c");
+      assert_eq!(interpret("a == b^c").unwrap(), "a == b^c");
+      assert_eq!(interpret("a == (b . c)").unwrap(), "a == b . c");
+      assert_eq!(
+        interpret("Hold[a == (f /@ b)]").unwrap(),
+        "Hold[a == f /@ b]"
+      );
+    }
+  }
+
   mod times_simplification {
     use super::*;
 

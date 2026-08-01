@@ -1693,8 +1693,15 @@ fn evaluate_function_call_ast_inner(
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
-  // Needs["pkg`"] returns $Failed (packages not supported in Woxi)
+  // Needs["pkg`"] returns $Failed (packages not supported in Woxi) — except
+  // for a package that ships with the Wolfram Language, which loads as a
+  // no-op because Woxi keeps every built-in in one namespace.
   if name == "Needs" && args.len() == 1 {
+    if let Expr::String(ctx) | Expr::Identifier(ctx) = &args[0]
+      && crate::utils::is_standard_distribution_context(ctx)
+    {
+      return Ok(Expr::Identifier("Null".to_string()));
+    }
     return Ok(Expr::Identifier("$Failed".to_string()));
   }
 

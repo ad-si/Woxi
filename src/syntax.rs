@@ -7027,6 +7027,19 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       "Dot" if args.len() == 2 => Some(40),
       "Plus" if args.len() >= 2 => Some(30),
       "Times" if args.len() >= 2 => Some(33),
+      // `=`, `:=`, `^=` and `^:=` print infix and bind looser than every
+      // operator shorthand except `;` and `&`.
+      "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed" if args.len() == 2 => {
+        Some(6)
+      }
+      // Heads that also print infix once evaluated (`a && b` keeps the head
+      // `And` but still renders with the operator).
+      "Or" if args.len() >= 2 => Some(15),
+      "And" if args.len() >= 2 => Some(18),
+      "Alternatives" if args.len() >= 2 => Some(27),
+      "Rule" | "RuleDelayed" if args.len() == 2 => Some(12),
+      "StringJoin" if args.len() >= 2 => Some(30),
+      "Power" if args.len() == 2 => Some(48),
       _ => None,
     },
     _ => None,
@@ -7042,6 +7055,16 @@ fn part_base_needs_parens(base: &Expr) -> bool {
   printed_infix_precedence(base).is_some()
     || matches!(base, Expr::Integer(n) if *n < 0)
     || matches!(base, Expr::Real(f) if *f < 0.0)
+}
+
+/// Whether an operand of an infix comparison (`==`, `<`, `=!=`, …) must be
+/// parenthesized so the printed form re-parses to the same tree. Comparison
+/// binds looser than `+`, `*`, `^`, `.`, `/@` and `@@`, so those print bare,
+/// while everything looser — `&&`, `||`, `|`, `->`, `/.`, `=`, `body &`,
+/// `;` and a nested comparison — needs parens: `a == (b < c)`, not
+/// `a == b < c`.
+fn comparison_operand_needs_parens(e: &Expr) -> bool {
+  printed_infix_precedence(e).is_some_and(|p| p < 30)
 }
 
 /// Render an application shorthand (`f /@ list`, `f @@ list`, `f @@@ list`)
@@ -10039,7 +10062,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             .iter()
             .map(|e| {
               let s = format_expr(e, form);
-              if prints_as_not(e) {
+              if prints_as_not(e) || comparison_operand_needs_parens(e) {
                 format!("({})", s)
               } else {
                 s
@@ -10078,6 +10101,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               | Expr::PatternOptional { .. }
               | Expr::PatternTest { .. }
           ) || prints_as_not(e)
+            || comparison_operand_needs_parens(e)
           {
             format!("({})", s)
           } else {

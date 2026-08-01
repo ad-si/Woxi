@@ -4048,6 +4048,39 @@ pub fn has_free_symbols(expr: &Expr) -> bool {
     Expr::Pattern { .. }
     | Expr::PatternOptional { .. }
     | Expr::PatternTest { .. } => true,
+    // Compound heads: `Subscript[c, 1][0]` is as symbolic as `f[0]`, so
+    // `Subscript[c, 1][0] == 0` must stay unevaluated rather than collapse
+    // to False. Both the head and the arguments can carry free symbols.
+    Expr::CurriedCall { func, args } => {
+      has_free_symbols(func) || args.iter().any(has_free_symbols)
+    }
+    Expr::Part { expr, index } => {
+      has_free_symbols(expr) || has_free_symbols(index)
+    }
+    Expr::CompoundExpr(items) => items.iter().any(has_free_symbols),
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => has_free_symbols(pattern) || has_free_symbols(replacement),
+    Expr::ReplaceAll { expr, rules }
+    | Expr::ReplaceRepeated { expr, rules } => {
+      has_free_symbols(expr) || has_free_symbols(rules)
+    }
+    Expr::Map { func, list }
+    | Expr::Apply { func, list }
+    | Expr::MapApply { func, list } => {
+      has_free_symbols(func) || has_free_symbols(list)
+    }
+    Expr::PrefixApply { func, arg } => {
+      has_free_symbols(func) || has_free_symbols(arg)
+    }
+    Expr::Postfix { expr, func } => {
+      has_free_symbols(expr) || has_free_symbols(func)
+    }
+    // A pure function is an opaque object, never a number: comparing one
+    // against anything else stays unevaluated in Wolfram even when its body
+    // is slot-only (`(# &) == 0`).
+    Expr::Function { .. } | Expr::NamedFunction { .. } => true,
     _ => false,
   }
 }

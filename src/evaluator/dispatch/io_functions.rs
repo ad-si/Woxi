@@ -536,6 +536,12 @@ pub fn dispatch_io_functions(
           return Some(Ok(unevaluated("Get", args)));
         }
       };
+      // A package that ships with the Wolfram Language loads as a no-op:
+      // Woxi keeps every built-in in one namespace, so there is nothing to
+      // read and nothing to define.
+      if crate::utils::is_standard_distribution_context(&filename) {
+        return Some(Ok(Expr::Identifier("Null".to_string())));
+      }
       let content = match std::fs::read_to_string(&filename) {
         Ok(c) => c,
         Err(_) => {
