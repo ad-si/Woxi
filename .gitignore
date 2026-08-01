@@ -4,12 +4,7 @@
 /.direnv
 /.env
 /.jupyterlite.doit.db
-/examples/*
-# The list of Demonstration notebooks Woxi Studio runs is documentation,
-# not one of the downloaded notebooks the rest of /examples holds.
-!/examples/WolframDemonstrationsProject/
-/examples/WolframDemonstrationsProject/*
-!/examples/WolframDemonstrationsProject/readme.md
+/examples
 /mathics
 /node_modules
 /target
