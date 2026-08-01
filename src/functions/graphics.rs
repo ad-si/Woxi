@@ -2364,11 +2364,7 @@ fn inset_primitives(
   let pos = args.get(1).and_then(expr_to_point).unwrap_or((0.0, 0.0));
   // `opos` names the point of the object that lands on `pos`, in the
   // object's own coordinates (Automatic = its centre).
-  let (ox, oy) = args
-    .get(2)
-    .and_then(expr_to_point)
-    .map(|(x, y)| (x, y))
-    .unwrap_or((cx, cy));
+  let (ox, oy) = args.get(2).and_then(expr_to_point).unwrap_or((cx, cy));
 
   let placed = inner
     .iter()
