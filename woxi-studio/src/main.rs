@@ -10551,6 +10551,364 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`fam$$ = 1}, \"\\[Ellipsis]\"]"], "O
     assert_ne!(net, render(1, 1), "the view control must matter");
   }
 
+  /// End-to-end regression for the "Chaos and Order in the Damped Forced
+  /// Pendulum in a Plane" Demonstration: it integrates the damped driven
+  /// pendulum `θ'' == -(g/l) Sin[θ] - γ θ' + a Cos[ω t]` from a grid of
+  /// initial conditions and draws every trajectory in (θ', t, θ) space.
+  ///
+  /// The notebook is trimmed the way `tests/notebooks` trims the others —
+  /// the author's comments are dropped and the published default of the
+  /// "number of trajectories" picklist is its first choice (1) instead of
+  /// 16, so the test integrates one trajectory rather than sixteen. Every
+  /// structure the Demonstration relies on is kept: the typeset second
+  /// derivative in the differential equation, the derivative of the
+  /// InterpolatingFunction a part-extracted solution rule carries, and the
+  /// `Show[Graphics3D[…], Axes -> True, PlotRange -> {…}, AxesLabel -> {…}]`
+  /// frame.
+  #[test]
+  fn damped_forced_pendulum_notebook_draws_its_trajectories() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell["Initialization Code", "Section"],
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"DFPPlot", "[", 
+   RowBox[{
+   "tmax_", ",", "ntray_", ",", "long_", ",", "mass_", ",", "grav_", ",", 
+    "resis_", ",", "f0ext_", ",", "wext_"}], "]"}], ":=", 
+  RowBox[{"Module", "[", 
+   RowBox[{
+    RowBox[{"{", 
+     RowBox[{
+      RowBox[{"tmaximun", "=", "tmax"}], ",", 
+      RowBox[{"ntrayec", "=", "ntray"}], ",", "n", ",", 
+      RowBox[{"g", "=", "grav"}], ",", 
+      RowBox[{"l", "=", "long"}], ",", 
+      RowBox[{"m", "=", "mass"}], ",", 
+      RowBox[{"b", "=", "resis"}], ",", 
+      RowBox[{"w", "=", "wext"}], ",", "w0", ",", "gamma", ",", "amp", ",", 
+      "\[Theta]", ",", "\[Theta]0min", ",", "\[Theta]0max", ",", "v0min", ",",
+       "v0max", ",", "\[Theta]aux", ",", "vaux", ",", "f", ",", "t", ",", "x",
+       ",", "i", ",", "j", ",", "solutions", ",", "trayec"}], "}"}], ",", 
+    RowBox[{
+     RowBox[{"n", "=", 
+      RowBox[{"Round", "[", 
+       RowBox[{"Sqrt", "[", "ntrayec", "]"}], "]"}]}], ";", 
+     RowBox[{"ntrayec", "=", 
+      RowBox[{"n", "^", "2"}]}], ";", RowBox[{"gamma", "=", 
+      RowBox[{"b", "/", "m"}]}], ";", RowBox[{"amp", " ", "=", 
+      RowBox[{"f0ext", "/", 
+       RowBox[{"(", 
+        RowBox[{"m", "*", "l"}], ")"}]}]}], ";", RowBox[{"\[Theta]0min", "=", 
+      RowBox[{"-", "0.15"}]}], ";", RowBox[{"\[Theta]0max", "=", "0.15"}], ";", RowBox[{"v0min", "=", 
+      RowBox[{"-", "0.15"}]}], ";", RowBox[{"v0max", "=", "0.15"}], ";", RowBox[{"\[Theta]aux", "=", 
+      RowBox[{
+       RowBox[{"(", 
+        RowBox[{"\[Theta]0max", "-", "\[Theta]0min"}], ")"}], "/", "n"}]}], 
+     ";", " ", 
+      RowBox[{"vaux", "=", 
+      RowBox[{
+       RowBox[{"(", 
+        RowBox[{"v0max", "-", "v0min"}], ")"}], "/", "n"}]}], ";", "   ", 
+      RowBox[{"solutions", "=", 
+      RowBox[{"{", "}"}]}], ";", RowBox[{"Do", "[", RowBox[{
+       RowBox[{"Do", "[", 
+        RowBox[{
+         RowBox[{"AppendTo", "[", 
+          RowBox[{"solutions", ",", 
+           RowBox[{"NDSolve", "[", 
+            RowBox[{
+             RowBox[{"{", 
+              RowBox[{
+               RowBox[{
+                RowBox[{
+                 SuperscriptBox[
+                  SuperscriptBox["\[Theta]", "\[Prime]",
+                   MultilineFunction->None], "\[Prime]",
+                  MultilineFunction->None], "[", "t", "]"}], "\[Equal]", 
+                RowBox[{
+                 RowBox[{
+                  RowBox[{"-", 
+                   RowBox[{"(", 
+                    RowBox[{"g", "/", "l"}], ")"}]}], " ", 
+                  RowBox[{"Sin", "[", 
+                   RowBox[{"\[Theta]", "[", "t", "]"}], "]"}]}], "-", 
+                 RowBox[{"gamma", "*", 
+                  RowBox[{
+                   SuperscriptBox["\[Theta]", "\[Prime]",
+                    MultilineFunction->None], "[", "t", "]"}]}], "+", 
+                 RowBox[{"amp", "*", 
+                  RowBox[{"Cos", "[", 
+                   RowBox[{"w", "*", "t"}], "]"}]}]}]}], ",", 
+               RowBox[{
+                RowBox[{"\[Theta]", "[", "0", "]"}], "\[Equal]", 
+                RowBox[{"\[Theta]0min", "+", 
+                 RowBox[{"\[Theta]aux", "*", "i"}]}]}], ",", 
+               RowBox[{
+                RowBox[{
+                 SuperscriptBox["\[Theta]", "\[Prime]",
+                  MultilineFunction->None], "[", "0", "]"}], "\[Equal]", 
+                RowBox[{"v0min", "+", 
+                 RowBox[{"vaux", "*", "j"}]}]}]}], "}"}], ",", "\[Theta]", 
+             ",", 
+             RowBox[{"{", 
+              RowBox[{"t", ",", "0", ",", "tmaximun"}], "}"}], ",", 
+             RowBox[{"MaxSteps", "\[Rule]", "20000"}]}], "]"}]}], "]"}], ",", 
+         RowBox[{"{", 
+          RowBox[{"i", ",", "1", ",", "n"}], "}"}]}], "]"}], ",", 
+       RowBox[{"{", 
+        RowBox[{"j", ",", "1", ",", "n"}], "}"}]}], "]"}], ";", RowBox[{"solutions", "=", 
+      RowBox[{"Flatten", "[", "solutions", "]"}]}], ";", 
+     RowBox[{"trayec", "=", 
+      RowBox[{"{", "}"}]}], ";", RowBox[{"Do", "[", RowBox[{
+       RowBox[{"AppendTo", "[", 
+        RowBox[{"trayec", ",", 
+         RowBox[{
+          RowBox[{"ParametricPlot3D", "[", 
+           RowBox[{
+            RowBox[{"Evaluate", "[", 
+             RowBox[{"{", 
+              RowBox[{
+               RowBox[{
+                RowBox[{
+                 RowBox[{
+                  RowBox[{"solutions", "[", 
+                   RowBox[{"[", "i", "]"}], "]"}], "[", 
+                  RowBox[{"[", "2", "]"}], "]"}], "'"}], "[", "t", "]"}], ",",
+                "t", ",", 
+               RowBox[{
+                RowBox[{
+                 RowBox[{"solutions", "[", 
+                  RowBox[{"[", "i", "]"}], "]"}], "[", 
+                 RowBox[{"[", "2", "]"}], "]"}], "[", "t", "]"}]}], "}"}], 
+             "]"}], ",", 
+            RowBox[{"{", 
+             RowBox[{"t", ",", "0", ",", "tmaximun"}], "}"}], ",", 
+            RowBox[{"PerformanceGoal", "\[Rule]", "\"\<Speed\>\""}], ",", 
+            RowBox[{"Axes", "\[Rule]", "False"}], ",", 
+            RowBox[{"PlotStyle", "\[Rule]", 
+             RowBox[{"Hue", "[", 
+              RowBox[{
+               RowBox[{"1", "-", 
+                RowBox[{"i", "/", "ntrayec"}]}], ",", "1", ",", "0.75"}], 
+              "]"}]}]}], "]"}], "\[LeftDoubleBracket]", "1", 
+          "\[RightDoubleBracket]"}]}], "]"}], ",", RowBox[{"{", 
+        RowBox[{"i", ",", "1", ",", "ntrayec"}], "}"}]}], "]"}], ";", 
+     RowBox[{"Show", "[", 
+      RowBox[{
+       RowBox[{"Graphics3D", "[", "trayec", "]"}], ",", 
+       RowBox[{"ViewPoint", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{"2.714", ",", " ", "1.876", ",", " ", "0.751"}], "}"}]}], 
+       ",", 
+       RowBox[{"Axes", "\[Rule]", "True"}], ",", 
+       RowBox[{"PlotRange", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"-", "7"}], ",", "7"}], "}"}], ",", 
+          RowBox[{"{", 
+           RowBox[{"0", ",", "25"}], "}"}], ",", 
+          RowBox[{"{", 
+           RowBox[{
+            RowBox[{"-", "20"}], ",", "20"}], "}"}]}], "}"}]}], ",", 
+       RowBox[{"Background", "\[Rule]", 
+        RowBox[{"GrayLevel", "[", "1", "]"}]}], ",", 
+       RowBox[{"AxesLabel", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{
+         "\"\<\!\(\*FractionBox[\(d\[InvisibleSpace]\[Theta]\), \(d\
+\[InvisibleSpace]t\)]\) (rad/s)\>\"", ",", " ", "\"\<t (s)\>\"", ",", " ", 
+          "\"\<\[Theta] (rad)\>\""}], "}"}]}], ",", 
+       RowBox[{"AspectRatio", "\[Rule]", "1"}], ",", 
+       RowBox[{"ImageSize", "\[Rule]", 
+        RowBox[{"{", 
+         RowBox[{"300", ",", "300"}], "}"}]}]}], "]"}]}]}], "]"}]}]], "Input"]
+}, Closed]],
+Cell[CellGroupData[{
+Cell["Manipulate", "Section"],
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", "\[IndentingNewLine]", 
+  RowBox[{
+   RowBox[{"DFPPlot", "[", 
+    RowBox[{
+    "time", ",", "ntrayec", ",", "length", ",", "mass", ",", "gravity", ",", 
+     "resis", ",", "fext", ",", "wext"}], "]"}], ",", "\[IndentingNewLine]", 
+   "\[IndentingNewLine]", 
+   RowBox[{"Style", "[", 
+    RowBox[{"\"\<parameters of the trajectories\>\"", ",", "Bold"}], "]"}], 
+   ",", "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"time", ",", "25", ",", "\"\<time (s)\>\""}], "}"}], ",", "1", 
+     ",", "25", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}], ",", 
+     RowBox[{"ImageSize", "\[Rule]", "Small"}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"ntrayec", ",", "1", ",", "\"\<number of trajectories\>\""}], 
+      "}"}], ",", 
+     RowBox[{"{", 
+      RowBox[{
+      "1", ",", "4", ",", "9", ",", "16", ",", "25", ",", "36", ",", "49", 
+       ",", "64"}], "}"}]}], "}"}], ",", "\[IndentingNewLine]", "Delimiter", 
+   ",", "\[IndentingNewLine]", 
+   RowBox[{"Style", "[", 
+    RowBox[{"\"\<parameters of the pendulum\>\"", ",", "Bold"}], "]"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"length", ",", "2", ",", "\"\<length ( m )\>\""}], "}"}], ",", 
+     "1", ",", "10", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}], ",", 
+     RowBox[{"ImageSize", "\[Rule]", "Small"}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"mass", ",", "1", ",", "\"\<mass ( kg )\>\""}], "}"}], ",", "1",
+      ",", "10", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}], ",", 
+     RowBox[{"ImageSize", "\[Rule]", "Small"}]}], "}"}], ",", 
+   "\[IndentingNewLine]", "Delimiter", ",", "\[IndentingNewLine]", 
+   RowBox[{"Style", "[", 
+    RowBox[{"\"\<acceleration due to gravity\>\"", ",", "Bold"}], "]"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{
+      "gravity", ",", "9.81", ",", 
+       "\"\<gravity ( m/\!\(\*SuperscriptBox[\(s\), \(2\)]\) )\>\""}], "}"}], 
+     ",", "0", ",", "12", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}], ",", 
+     RowBox[{"ImageSize", "\[Rule]", "Small"}]}], "}"}], ",", 
+   "\[IndentingNewLine]", "Delimiter", ",", "\[IndentingNewLine]", 
+   RowBox[{"Style", "[", 
+    RowBox[{"\"\<resistance of the fluid\>\"", ",", "Bold"}], "]"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"resis", ",", "1.11", ",", "\"\<resistance ( kg/s ) \>\""}], 
+      "}"}], ",", "0", ",", "10", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}], ",", 
+     RowBox[{"ImageSize", "\[Rule]", "Small"}]}], "}"}], ",", 
+   "\[IndentingNewLine]", "Delimiter", ",", "\[IndentingNewLine]", 
+   RowBox[{"Style", "[", 
+    RowBox[{"\"\<external force applied to pendulum\>\"", ",", "Bold"}], 
+    "]"}], ",", "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"fext", ",", "11.46", ",", "\"\<amplitude ( N ) \>\""}], "}"}], 
+     ",", "0", ",", "15", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}], ",", 
+     RowBox[{"ImageSize", "\[Rule]", "Small"}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"wext", ",", "1.48", ",", "\"\<frequency ( rad/s ) \>\""}], 
+      "}"}], ",", "0", ",", "4", ",", ".01", ",", 
+     RowBox[{"Appearance", "\[Rule]", "\"\<Labeled\>\""}], ",", 
+     RowBox[{"ImageSize", "\[Rule]", "Small"}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"ControlPlacement", "\[Rule]", "Left"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"SaveDefinitions", "\[Rule]", "True"}]}], "\[IndentingNewLine]", 
+  "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`time$$ = 25}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}, Closed]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the pendulum must integrate: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the trajectories must draw"
+    );
+
+    // Every control the Demonstration publishes, in order: five headings
+    // separated by delimiters, seven sliders and one picklist.
+    let labels: Vec<String> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, label, .. }
+        | manipulate::ControlState::Discrete { name, label, .. } => {
+          format!("{name}: {label}")
+        }
+        manipulate::ControlState::Heading { label, .. } => label.clone(),
+        manipulate::ControlState::Divider => "-".to_string(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      labels,
+      vec![
+        "parameters of the trajectories",
+        "time: time (s)",
+        "ntrayec: number of trajectories",
+        "-",
+        "parameters of the pendulum",
+        "length: length ( m )",
+        "mass: mass ( kg )",
+        "-",
+        "acceleration due to gravity",
+        // The unit's typeset exponent, not its box source.
+        "gravity: gravity ( m/s\u{b2} )",
+        "-",
+        "resistance of the fluid",
+        "resis: resistance ( kg/s ) ",
+        "-",
+        "external force applied to pendulum",
+        "fext: amplitude ( N ) ",
+        "wext: frequency ( rad/s ) ",
+      ]
+    );
+
+    let render = |time: f64| {
+      woxi::interpret_with_stdout(&format!(
+        "time = {time}; ntrayec = 1; length = 2; mass = 1; gravity = 9.81; \
+         resis = 1.11; fext = 11.46; wext = 1.48;\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let published = render(25.0);
+    // The frame the notebook asks for: `PlotRange -> {{-7, 7}, {0, 25},
+    // {-20, 20}}` with all three axes labelled.
+    for text in [">-5<", ">20<", ">-20<", "t (s)", "(rad/s)"] {
+      assert!(published.contains(text), "expected {text} in the frame");
+    }
+    // A trajectory is a long polyline of coloured segments, not a handful.
+    assert!(
+      published.matches("<line").count() > 500,
+      "expected a resolved trajectory, got {} segments",
+      published.matches("<line").count()
+    );
+    // Integrating over a shorter interval draws a different trajectory.
+    assert_ne!(render(5.0), published, "the time control must matter");
+  }
+
   /// End-to-end regression for the "Thermodynamic Consistency Test Based on
   /// Differential Residuals" Demonstration: four vapour-liquid equilibrium
   /// datasets, each shown as a pressure diagram, an x-y diagram, or the

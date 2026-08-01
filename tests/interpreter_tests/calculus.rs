@@ -7377,6 +7377,105 @@ mod ndsolve {
       val
     );
   }
+
+  #[test]
+  fn nonlinear_pendulum_equation() {
+    // Nothing about integrating an ODE numerically needs it to be linear
+    // in the dependent variable. The damped driven pendulum,
+    // `θ'' == -(g/l) Sin[θ] - γ θ' + a Cos[ω t]`, is the classic
+    // counter-example — `Sin[θ[t]]` used to make NDSolve give up with
+    // "DSolve: cannot classify term involving θ".
+    let result = interpret(
+      "s = NDSolve[{th''[t] == -4.905 Sin[th[t]] - 1.11 th'[t] \
+         + 5.73 Cos[1.48 t], th[0] == -0.075, th'[0] == -0.075}, \
+       th, {t, 0, 25}]; (th /. s[[1]])[10.0]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    // Reference: the same initial-value problem integrated with RK4 at
+    // 200x this step size.
+    assert!(
+      (val - -0.6704006).abs() < 1e-4,
+      "Expected -0.6704006, got {val}"
+    );
+  }
+
+  #[test]
+  fn nonlinear_first_order_equation() {
+    // y' = y², y(0) = 1 has the closed form 1/(1 - t).
+    let result = interpret(
+      "s = NDSolve[{y'[t] == y[t]^2, y[0] == 1}, y, {t, 0, 0.5}]; \
+       (y /. s[[1]])[0.4]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - 1.0 / 0.6).abs() < 1e-6, "Expected 1.6667, got {val}");
+  }
+
+  #[test]
+  fn domain_ends_exactly_where_asked() {
+    // Stepping by adding `h` a thousand times drifts off the end of the
+    // domain; the reported domain must still be the one asked for.
+    assert_eq!(
+      interpret("NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}]").unwrap(),
+      "{{y -> InterpolatingFunction[{{0., 5.}}, <>]}}"
+    );
+    assert_eq!(
+      interpret("NDSolve[{y'[t] == -y[t], y[1] == 1}, y, {t, 1, 3.5}]")
+        .unwrap(),
+      "{{y -> InterpolatingFunction[{{1., 3.5}}, <>]}}"
+    );
+  }
+
+  #[test]
+  fn solution_interpolates_between_grid_points() {
+    // NDSolve's InterpolatingFunction interpolates to third order, as the
+    // Wolfram Language's does, so reading the solution back off the grid
+    // keeps the accuracy the integration had. Linear interpolation would
+    // be out by ~1e-5 here, and its derivative by ~1e-3.
+    let value = interpret(
+      "s = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}]; \
+       (y /. s[[1]])[2.0023]",
+    )
+    .unwrap()
+    .parse::<f64>()
+    .expect("should be a number");
+    assert!(
+      (value - (-2.0023_f64).exp()).abs() < 1e-9,
+      "Expected {}, got {value}",
+      (-2.0023_f64).exp()
+    );
+    let slope = interpret(
+      "s = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}]; \
+       (y /. s[[1]])'[2.0023]",
+    )
+    .unwrap()
+    .parse::<f64>()
+    .expect("should be a number");
+    assert!(
+      (slope - -(-2.0023_f64).exp()).abs() < 1e-7,
+      "Expected {}, got {slope}",
+      -(-2.0023_f64).exp()
+    );
+  }
+
+  #[test]
+  fn derivative_of_a_part_extracted_solution() {
+    // `solutions[[i]][[2]]'[t]` — the prime differentiates the
+    // InterpolatingFunction the rule was carrying. It used to be a parse
+    // error ("expected SpanSep").
+    let result = interpret(
+      "s = Flatten[NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}]]; \
+       s[[1]][[2]]'[2.0]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!(
+      (val - -(-2.0_f64).exp()).abs() < 1e-6,
+      "Expected {}, got {val}",
+      -(-2.0_f64).exp()
+    );
+  }
 }
 
 mod sinh_cosh {
