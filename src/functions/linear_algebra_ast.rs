@@ -1271,7 +1271,8 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(matsq_unevaluated("Det", args)),
   };
   let det = determinant(&matrix);
-  Ok(crate::functions::expand_and_combine(&det))
+  let r = crate::functions::expand_and_combine(&det);
+  Ok(simplify_expr(&r))
 }
 
 /// True for an exact rational scalar (Integer, BigInteger, or literal
