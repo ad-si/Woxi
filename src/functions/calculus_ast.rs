@@ -21183,7 +21183,7 @@ fn factorial_power_series_at_zero(
   order: i128,
 ) -> Expr {
   let n_usize = n as usize;
-  let stirling = signed_stirling_first_row(n_usize);
+  let stirling = signed_stirling_numbers(n_usize);
   let (min_idx, max_idx) = if n == 0 {
     (0usize, 0usize)
   } else {
@@ -21321,17 +21321,15 @@ fn hyperfactorial_series_at_zero(var_name: &str, order: i128) -> Expr {
 
 /// Row `n` of the signed Stirling numbers of the first kind.
 /// `out[k] = s(n, k)`, satisfying x(x-1)...(x-n+1) = sum_k s(n, k) x^k.
-fn signed_stirling_first_row(n: usize) -> Vec<i128> {
-  // Start at row 0: s(0, 0) = 1, all other s(0, k) = 0.
+fn signed_stirling_numbers(n: usize) -> Vec<i128> {
   let mut row = vec![0i128; n + 1];
-  row[0] = 1;
+  row[0] = 1; // s(0,0) = 1
   let mut next = vec![0i128; n + 1];
-  // Build up row by row using s(m+1, k) = s(m, k-1) - m * s(m, k).
-  for m in 0..n {
-    for k in 0..=(m + 1) {
-      let from_left = if k > 0 { row[k - 1] } else { 0 };
-      let from_above = row[k];
-      next[k] = from_left - (m as i128) * from_above;
+  for i in 1..=n {
+    next[0] = 0; // s(i,0) = 0
+    for j in 1..=i {
+      // s(i,j) = s(i-1,j-1) - (i-1)*s(i-1,j) (signed Stirling S1).
+      next[j] = row[j - 1] - ((i - 1) as i128) * row[j];
     }
     (row, next) = (next, row);
   }
