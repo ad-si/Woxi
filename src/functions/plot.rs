@@ -8,6 +8,7 @@ use crate::functions::chart::{
 };
 use crate::functions::graphics::{Color as WoxiColor, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
+use crate::syntax::PlotMarker;
 
 pub(crate) const DEFAULT_WIDTH: u32 = 360;
 pub(crate) const DEFAULT_HEIGHT: u32 = 225;
@@ -1747,6 +1748,9 @@ pub(crate) struct PlotOptions {
   /// height is derived so the frame has this ratio, matching Wolfram. `None`
   /// keeps `svg_height` as given.
   pub aspect_ratio: Option<f64>,
+  /// `PlotMarkers -> …`: the glyph each series' points are drawn with,
+  /// cycled over the series. Empty = plain round points.
+  pub plot_markers: Vec<Option<PlotMarker>>,
 }
 
 impl Default for PlotOptions {
@@ -1791,6 +1795,7 @@ impl Default for PlotOptions {
       background: None,
       image_padding: None,
       aspect_ratio: None,
+      plot_markers: Vec::new(),
     }
   }
 }
@@ -2196,6 +2201,43 @@ pub(crate) fn plot_labels_svg(
   }
 
   labels_svg
+}
+
+/// Draw an `Epilog`'s primitives over a finished plot. Both renderers (the
+/// line one below and the scatter one) inject them the same way, so a plot
+/// keeps its epilog whichever of the two drew it.
+///
+/// `area` is the plotting area as `(x0, y0, width, height)` in render-space
+/// pixels and `ranges` the data extents it displays, as `(x_min, x_max,
+/// y_min, y_max)`.
+fn inject_epilog(
+  buf: &mut String,
+  opts: &PlotOptions,
+  area: (f64, f64, f64, f64),
+  ranges: (f64, f64, f64, f64),
+  scale: f64,
+) {
+  if opts.epilog.is_empty() {
+    return;
+  }
+  let (x0, y0, w, h) = area;
+  let (x_min, x_max, y_min, y_max) = ranges;
+  let area = crate::functions::plot_epilog::PlotArea {
+    x0,
+    y0,
+    w,
+    h,
+    x_min,
+    x_max,
+    y_min,
+    y_max,
+    scale,
+  };
+  let epilog_svg =
+    crate::functions::plot_epilog::render_epilog_svg(&opts.epilog, &area);
+  if let Some(pos) = buf.rfind("</svg>") {
+    buf.insert_str(pos, &epilog_svg);
+  }
 }
 
 fn generate_svg_with_options(
@@ -2819,6 +2861,44 @@ fn generate_svg_with_options(
                 InterpreterError::EvaluationError(format!("Plot: {e}"))
               })?;
           }
+
+          // `PlotMarkers` glyphs sit on the data points of a joined plot,
+          // over the line, exactly as the scatter renderer draws them.
+          if let Some(marker) = series_marker(&opts.plot_markers, series_idx) {
+            let marker_src: &[(f64, f64)] = opts
+              .data_points
+              .get(series_idx)
+              .map(|v| v.as_slice())
+              .unwrap_or(points);
+            let (mr, mg, mb) = marker.color.unwrap_or_else(|| {
+              let c = color.to_rgba();
+              (c.0, c.1, c.2)
+            });
+            let text_style = ("sans-serif", marker.size * RESOLUTION_SCALE as f64)
+              .into_font()
+              .color(&RGBColor(mr, mg, mb))
+              .pos(plotters::style::text_anchor::Pos::new(
+                plotters::style::text_anchor::HPos::Center,
+                plotters::style::text_anchor::VPos::Center,
+              ));
+            chart
+              .draw_series(
+                marker_src
+                  .iter()
+                  .copied()
+                  .filter(|(x, y)| x.is_finite() && y.is_finite())
+                  .map(|(x, y)| {
+                    plotters::element::Text::new(
+                      marker.glyph.clone(),
+                      (x, y),
+                      text_style.clone(),
+                    )
+                  }),
+              )
+              .map_err(|e| {
+                InterpreterError::EvaluationError(format!("Plot: {e}"))
+              })?;
+          }
         }
 
         root
@@ -2911,30 +2991,24 @@ fn generate_svg_with_options(
 
   // Draw Epilog primitives over the plotted data, using the same
   // data→pixel transform as the dash overlays above.
-  if !opts.epilog.is_empty() {
-    let area = crate::functions::plot_epilog::PlotArea {
-      x0: margin_left as f64 + y_label_area as f64,
-      y0: top_margin as f64,
-      w: render_width as f64
+  inject_epilog(
+    &mut buf,
+    opts,
+    (
+      margin_left as f64 + y_label_area as f64,
+      top_margin as f64,
+      render_width as f64
         - margin_left as f64
         - margin_right as f64
         - y_label_area as f64,
-      h: render_height as f64
+      render_height as f64
         - top_margin as f64
         - margin_bottom as f64
         - x_label_area as f64,
-      x_min,
-      x_max,
-      y_min,
-      y_max,
-      scale: sf,
-    };
-    let epilog_svg =
-      crate::functions::plot_epilog::render_epilog_svg(&opts.epilog, &area);
-    if let Some(pos) = buf.rfind("</svg>") {
-      buf.insert_str(pos, &epilog_svg);
-    }
-  }
+    ),
+    (x_min, x_max, y_min, y_max),
+    sf,
+  );
 
   // Extend labeled (major) ticks so they appear slightly longer than the
   // unlabeled minor ticks drawn by plotters. Only applies when ticks are
@@ -3342,6 +3416,7 @@ pub(crate) fn build_plot_source(
         filling: series_filling,
         fill_color,
         fill_opacity,
+        marker: None,
       }
     })
     .collect();
@@ -3693,13 +3768,42 @@ pub(crate) fn generate_scatter_svg_with_options(
         }
       }
 
-      chart
-        .draw_series(
-          finite_pts
-            .iter()
-            .map(|&(x, y)| Circle::new((x, y), marker_size, color.filled())),
-        )
-        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+      // `PlotMarkers` replaces the round dot with its glyph, drawn
+      // centred on the point at the size the marker spec asks for.
+      match series_marker(&opts.plot_markers, series_idx) {
+        Some(marker) => {
+          let (mr, mg, mb) = marker.color.unwrap_or((r, g, b));
+          let style = ("sans-serif", marker.size * sf)
+            .into_font()
+            .color(&RGBColor(mr, mg, mb))
+            .pos(plotters::style::text_anchor::Pos::new(
+              plotters::style::text_anchor::HPos::Center,
+              plotters::style::text_anchor::VPos::Center,
+            ));
+          chart
+            .draw_series(finite_pts.iter().map(|&(x, y)| {
+              plotters::element::Text::new(
+                marker.glyph.clone(),
+                (x, y),
+                style.clone(),
+              )
+            }))
+            .map_err(|e| {
+              InterpreterError::EvaluationError(format!("Plot: {e}"))
+            })?;
+        }
+        None => {
+          chart
+            .draw_series(
+              finite_pts.iter().map(|&(x, y)| {
+                Circle::new((x, y), marker_size, color.filled())
+              }),
+            )
+            .map_err(|e| {
+              InterpreterError::EvaluationError(format!("Plot: {e}"))
+            })?;
+        }
+      }
     }
 
     root
@@ -3721,6 +3825,15 @@ pub(crate) fn generate_scatter_svg_with_options(
   let plot_y0 = margin_top;
   let plot_w = render_width as f64 - margin_left - margin_right - y_label_area;
   let plot_h = render_height as f64 - margin_top - margin_bottom - x_label_area;
+
+  // Epilog primitives sit over the points, as in the line renderer.
+  inject_epilog(
+    &mut buf,
+    opts,
+    (plot_x0, plot_y0, plot_w, plot_h),
+    (x_min, x_max, y_min, y_max),
+    sf,
+  );
   {
     let x_major = nice_step(x_max - x_min, AXIS_TICK_TARGET);
     let y_major = nice_step(y_max - y_min, AXIS_TICK_TARGET);
@@ -3881,6 +3994,12 @@ pub(crate) fn render_merged_plot_source(
       ..SeriesStyle::default()
     })
     .collect();
+  // Markers travel with the series too, so a `Show` of a marked scatter
+  // plot keeps drawing the glyphs its `PlotMarkers` asked for.
+  opts.plot_markers = drawn.iter().map(|s| s.marker.clone()).collect();
+  if opts.plot_markers.iter().all(Option::is_none) {
+    opts.plot_markers.clear();
+  }
   opts.filling_rules = drawn
     .iter()
     .enumerate()
@@ -3971,6 +4090,33 @@ fn scatter_overlay_primitives(
           .into(),
       });
     }
+  }
+  // A `PlotMarkers` series draws its glyph at every point instead of a dot.
+  if let Some(marker) = &series.marker {
+    let mut styled = vec![Expr::String(marker.glyph.clone())];
+    if let Some((r, g, b)) = marker.color {
+      styled.push(Expr::FunctionCall {
+        name: "RGBColor".to_string(),
+        args: vec![
+          Expr::Real(r as f64 / 255.0),
+          Expr::Real(g as f64 / 255.0),
+          Expr::Real(b as f64 / 255.0),
+        ]
+        .into(),
+      });
+    }
+    styled.push(Expr::Real(marker.size));
+    let content = Expr::FunctionCall {
+      name: "Style".to_string(),
+      args: styled.into(),
+    };
+    for &(x, y) in &finite {
+      prims.push(Expr::FunctionCall {
+        name: "Text".to_string(),
+        args: vec![content.clone(), point((x, y))].into(),
+      });
+    }
+    return prims;
   }
   prims.push(Expr::FunctionCall {
     name: "AbsolutePointSize".to_string(),
@@ -5971,6 +6117,7 @@ pub(crate) fn histogram_plot_source(
       filling: crate::syntax::SeriesFilling::Axis,
       fill_color: None,
       fill_opacity: None,
+      marker: None,
     });
   }
 
@@ -6910,6 +7057,101 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
       }
     }
     _ => {}
+  }
+}
+
+/// The font size a `PlotMarkers` glyph is drawn at when the marker spec
+/// names none — the default graphics font size the Wolfram Language uses.
+const DEFAULT_MARKER_SIZE: f64 = 12.0;
+
+/// Read one `PlotMarkers` entry: a glyph, optionally wrapped in `Style`
+/// (which may carry a colour and a font size in any order) or paired with
+/// its size as `{marker, size}`. Anything else (a `Graphics` marker, say)
+/// gives `None`, which leaves that series on plain round points.
+fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
+  let val = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  match &val {
+    Expr::String(s) => Some(PlotMarker {
+      glyph: s.clone(),
+      size: DEFAULT_MARKER_SIZE,
+      color: None,
+    }),
+    // `Style[marker, directives…]` — a colour and/or a font size.
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      let mut marker = parse_one_marker(&args[0])?;
+      for directive in &args[1..] {
+        if let Some(c) = crate::functions::graphics::parse_color(directive) {
+          marker.color = Some((
+            (c.r * 255.0).round() as u8,
+            (c.g * 255.0).round() as u8,
+            (c.b * 255.0).round() as u8,
+          ));
+        } else if let Some(size) = try_eval_to_f64(directive) {
+          marker.size = size;
+        } else if let Expr::FunctionCall { name, args } = directive
+          && name == "FontSize"
+          && args.len() == 1
+          && let Some(size) = try_eval_to_f64(&args[0])
+        {
+          marker.size = size;
+        }
+      }
+      Some(marker)
+    }
+    // `{marker, size}` — the size is always the second element.
+    Expr::List(items) if items.len() == 2 => {
+      let size = try_eval_to_f64(&items[1])?;
+      let mut marker = parse_one_marker(&items[0])?;
+      marker.size = size;
+      Some(marker)
+    }
+    _ => None,
+  }
+}
+
+/// Parse a `PlotMarkers` option value into one marker per series. A single
+/// marker (or `{marker, size}` pair) applies to every series; a list of
+/// markers is cycled over the series, as the Wolfram Language does.
+pub(crate) fn parse_plot_markers(
+  replacement: &Expr,
+) -> Vec<Option<PlotMarker>> {
+  let val =
+    evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  // `{m1, m2, …}` is per-series unless it is the `{marker, size}` pair,
+  // which `parse_one_marker` recognises.
+  if let Expr::List(items) = &val
+    && parse_one_marker(&val).is_none()
+  {
+    return items.iter().map(parse_one_marker).collect();
+  }
+  match parse_one_marker(&val) {
+    Some(marker) => vec![Some(marker)],
+    None => Vec::new(),
+  }
+}
+
+/// The marker for series `idx`, cycling the list as the Wolfram Language
+/// does when there are fewer markers than series.
+pub(crate) fn series_marker(
+  markers: &[Option<PlotMarker>],
+  idx: usize,
+) -> Option<&PlotMarker> {
+  if markers.is_empty() {
+    return None;
+  }
+  markers[idx % markers.len()].as_ref()
+}
+
+/// Carry the parsed `PlotMarkers` into a plot's [`PlotSource`], so a
+/// `Show` that merges the plot keeps drawing the same glyphs.
+pub(crate) fn apply_markers_to_source(
+  source: &mut crate::syntax::PlotSource,
+  markers: &[Option<PlotMarker>],
+) {
+  for (i, series) in source.series.iter_mut().enumerate() {
+    series.marker = series_marker(markers, i).cloned();
   }
 }
 

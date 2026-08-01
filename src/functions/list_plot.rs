@@ -826,6 +826,24 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         "PlotStyle" => {
           opts.plot_style = parse_plot_style(replacement);
         }
+        // `PlotMarkers -> marker` draws that glyph at every data point
+        // instead of the default round dot, one marker per series.
+        "PlotMarkers" => {
+          opts.plot_markers =
+            crate::functions::plot::parse_plot_markers(replacement);
+        }
+        // Epilog primitives are read by the shared plot-option reader, so
+        // the list plots and `Plot` cannot drift on what they accept.
+        "Epilog" => {
+          let mut overrides =
+            crate::functions::plot::PlotRangeOverrides::default();
+          crate::functions::plot::apply_common_plot_option(
+            name,
+            replacement,
+            opts,
+            &mut overrides,
+          );
+        }
         // Labels that only appear on hover (Tooltip) or are switched off
         // (None) are not drawn on a static SVG.
         "LabelingFunction" => {
@@ -1271,7 +1289,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     generate_scatter_svg_with_options(&draw_series, x_range, y_range, opts)?
   };
 
-  let source = build_plot_source(
+  let mut source = build_plot_source(
     &draw_series,
     &opts.plot_style,
     x_range,
@@ -1281,6 +1299,10 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.filling,
     opts.filling_style,
     crate::functions::plot::explicit_options(args),
+  );
+  crate::functions::plot::apply_markers_to_source(
+    &mut source,
+    &opts.plot_markers,
   );
   Ok(crate::graphics_result_with_source(svg, source))
 }
@@ -1358,7 +1380,7 @@ pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     generate_scatter_svg_with_options(&all_series, x_range, y_range, opts)?
   };
 
-  let source = build_plot_source(
+  let mut source = build_plot_source(
     &all_series,
     &opts.plot_style,
     x_range,
@@ -1368,6 +1390,10 @@ pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.filling,
     opts.filling_style,
     crate::functions::plot::explicit_options(args),
+  );
+  crate::functions::plot::apply_markers_to_source(
+    &mut source,
+    &opts.plot_markers,
   );
   Ok(crate::graphics_result_with_source(svg, source))
 }
@@ -1423,7 +1449,7 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     generate_svg_with_filling(&draw_series, x_range, y_range, &parsed.opts)?;
   // Carry the series so `Show` can merge this plot with others instead of
   // treating it as an opaque rendering.
-  let source = build_plot_source(
+  let mut source = build_plot_source(
     &draw_series,
     &parsed.opts.plot_style,
     x_range,
@@ -1433,6 +1459,10 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     parsed.opts.filling,
     parsed.opts.filling_style,
     crate::functions::plot::explicit_options(args),
+  );
+  crate::functions::plot::apply_markers_to_source(
+    &mut source,
+    &parsed.opts.plot_markers,
   );
   Ok(crate::graphics_result_with_source(svg, source))
 }
