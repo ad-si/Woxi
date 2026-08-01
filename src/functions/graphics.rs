@@ -227,6 +227,22 @@ struct StyleState {
   font_weight: String,
   font_style: String,
   font_family: String, // empty string means SVG default
+  /// `Arrowheads[…]`: where the heads of the arrows that follow sit, how
+  /// big they are and — for a custom head — what to draw there. `None`
+  /// keeps Wolfram's default: one head at the tip.
+  arrowheads: Option<Vec<ArrowHead>>,
+}
+
+/// One entry of an `Arrowheads` specification.
+#[derive(Debug, Clone)]
+struct ArrowHead {
+  /// Head length as a fraction of the plot width. Negative points the head
+  /// backwards along the arrow, as Wolfram's negative sizes do.
+  size: f64,
+  /// Where the head sits on the arrow: 0 at the tail, 1 at the tip.
+  position: f64,
+  /// A custom head — the graphic drawn in place of the triangle.
+  graphic: Option<Expr>,
 }
 
 #[derive(Debug, Clone)]
@@ -385,7 +401,82 @@ impl Default for StyleState {
       font_weight: "normal".to_string(),
       font_style: "normal".to_string(),
       font_family: String::new(),
+      arrowheads: None,
     }
+  }
+}
+
+/// The named arrowhead sizes, as a fraction of the plot width — the same
+/// units an explicit numeric size is given in.
+fn named_arrowhead_size(name: &str) -> Option<f64> {
+  match name {
+    "Tiny" => Some(0.01),
+    "Small" => Some(0.02),
+    "Medium" => Some(0.04),
+    "Large" => Some(0.06),
+    _ => None,
+  }
+}
+
+/// An arrowhead size: a number, a named size, or either negated (a
+/// negative size points the head back down the arrow). `-Medium` reaches
+/// here as `Times[-1, Medium]`.
+fn arrowhead_size(expr: &Expr) -> Option<f64> {
+  if let Expr::Identifier(s) = expr {
+    return named_arrowhead_size(s);
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Times"
+    && args.len() == 2
+    && matches!(&args[0], Expr::Integer(-1))
+  {
+    return arrowhead_size(&args[1]).map(|v| -v);
+  }
+  expr_to_f64(expr)
+}
+
+/// Parse one entry of an `Arrowheads` list: a bare size, `{size, pos}`, or
+/// `{size, pos, graphic}`. `default_position` applies to a bare size.
+fn parse_arrowhead(spec: &Expr, default_position: f64) -> Option<ArrowHead> {
+  match spec {
+    Expr::List(items) if !items.is_empty() => Some(ArrowHead {
+      size: arrowhead_size(&items[0])?,
+      position: items
+        .get(1)
+        .and_then(expr_to_f64)
+        .unwrap_or(default_position),
+      graphic: items.get(2).cloned(),
+    }),
+    other => Some(ArrowHead {
+      size: arrowhead_size(other)?,
+      position: default_position,
+      graphic: None,
+    }),
+  }
+}
+
+/// Parse the argument of `Arrowheads[…]`. Entries that do not name their
+/// own position are spread evenly from tail to tip, so `Arrowheads[{-s, s}]`
+/// is the usual double-headed arrow. `None` removes the heads entirely.
+fn parse_arrowheads(spec: &Expr) -> Option<Vec<ArrowHead>> {
+  match spec {
+    Expr::Identifier(s) if s == "None" => Some(Vec::new()),
+    Expr::List(items) => {
+      let n = items.len();
+      items
+        .iter()
+        .enumerate()
+        .map(|(i, e)| {
+          let pos = if n <= 1 {
+            1.0
+          } else {
+            i as f64 / (n - 1) as f64
+          };
+          parse_arrowhead(e, pos)
+        })
+        .collect()
+    }
+    other => parse_arrowhead(other, 1.0).map(|h| vec![h]),
   }
 }
 
@@ -529,6 +620,10 @@ enum Primitive {
     text: String,
     x: f64,
     y: f64,
+    /// `Text[expr, pos, offset]`: which point of the label's own box sits
+    /// at `pos`, in units running from -1 (left/bottom) to 1 (right/top).
+    /// `(0, 0)` centres it, as Wolfram's default does.
+    offset: (f64, f64),
     style: StyleState,
   },
   BezierCurvePrim {
@@ -1001,6 +1096,13 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         if let Some(s) = expr_to_f64(&args[0]) {
           style.point_size = s;
         }
+        true
+      }
+      // `Arrowheads[…]` sets where the heads of the arrows that follow sit
+      // and how big they are; an entry may also carry its own graphic to
+      // draw there instead of a triangle.
+      "Arrowheads" if args.len() == 1 => {
+        style.arrowheads = parse_arrowheads(&args[0]);
         true
       }
       "Dashing" if !args.is_empty() => {
@@ -2079,12 +2181,65 @@ fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     } else {
       (0.0, 0.0)
     };
+    // A head that carries its own graphic (a label, a marker) is drawn as
+    // that graphic, centred on the point of the arrow it sits at — the
+    // renderer's triangle is only for the plain sizes.
+    for head in style.arrowheads.iter().flatten() {
+      let Some(graphic) = &head.graphic else {
+        continue;
+      };
+      let (x, y) = point_along_path(&pts, head.position);
+      let mut inner_style = style.clone();
+      inner_style.arrowheads = None;
+      let mut inner = Vec::new();
+      collect_primitives(
+        graphic,
+        &mut inner_style,
+        &mut inner,
+        &mut Vec::new(),
+      );
+      for p in &inner {
+        prims.push(translate_primitive(p, x, y));
+      }
+    }
     prims.push(Primitive::ArrowPrim {
       points: pts,
       setback,
       style: style.clone(),
     });
   }
+}
+
+/// The point a fraction `t` of the way along a polyline, measured by arc
+/// length. `t` outside `[0, 1]` clamps to the ends.
+fn point_along_path(pts: &[(f64, f64)], t: f64) -> (f64, f64) {
+  if pts.is_empty() {
+    return (0.0, 0.0);
+  }
+  let seg_len: Vec<f64> = pts
+    .windows(2)
+    .map(|w| ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt())
+    .collect();
+  let total: f64 = seg_len.iter().sum();
+  if total <= 0.0 {
+    return pts[0];
+  }
+  let mut want = t.clamp(0.0, 1.0) * total;
+  for (i, &len) in seg_len.iter().enumerate() {
+    if want <= len || i + 1 == seg_len.len() {
+      let f = if len > 0.0 {
+        (want / len).clamp(0.0, 1.0)
+      } else {
+        0.0
+      };
+      return (
+        pts[i].0 + f * (pts[i + 1].0 - pts[i].0),
+        pts[i].1 + f * (pts[i + 1].1 - pts[i].1),
+      );
+    }
+    want -= len;
+  }
+  pts[pts.len() - 1]
 }
 
 /// Render the text content of a `Text`/`Inset` label. Inside a graphic the
@@ -2275,13 +2430,41 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   } else {
     (0.0, 0.0)
   };
+  let offset = args.get(2).and_then(text_offset).unwrap_or((0.0, 0.0));
 
   prims.push(Primitive::TextPrim {
     text,
     x,
     y,
+    offset,
     style: local_style,
   });
+}
+
+/// The alignment offset of `Text[expr, pos, offset]` / `Inset[…]`: a pair
+/// running from -1 (left/bottom) to 1 (right/top), written either as
+/// numbers or with the alignment symbols `Left`/`Center`/`Right` and
+/// `Bottom`/`Center`/`Top`.
+fn text_offset(spec: &Expr) -> Option<(f64, f64)> {
+  fn component(e: &Expr, horizontal: bool) -> Option<f64> {
+    if let Expr::Identifier(s) = e {
+      return match (s.as_str(), horizontal) {
+        ("Left", true) | ("Bottom", false) => Some(-1.0),
+        ("Center", _) | ("Automatic", _) | ("Axis", _) | ("Baseline", _) => {
+          Some(0.0)
+        }
+        ("Right", true) | ("Top", false) => Some(1.0),
+        _ => None,
+      };
+    }
+    expr_to_f64(e)
+  }
+  match spec {
+    Expr::List(items) if items.len() == 2 => {
+      Some((component(&items[0], true)?, component(&items[1], false)?))
+    }
+    _ => None,
+  }
 }
 
 fn parse_bezier(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
@@ -2980,12 +3163,19 @@ fn rotate_primitive(
         style: style.clone(),
       }
     }
-    Primitive::TextPrim { text, x, y, style } => {
+    Primitive::TextPrim {
+      text,
+      x,
+      y,
+      offset,
+      style,
+    } => {
       let (nx, ny) = rp(*x, *y);
       Primitive::TextPrim {
         text: text.clone(),
         x: nx,
         y: ny,
+        offset: *offset,
         style: style.clone(),
       }
     }
@@ -3136,10 +3326,17 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       angle2: *angle2,
       style: style.clone(),
     },
-    Primitive::TextPrim { text, x, y, style } => Primitive::TextPrim {
+    Primitive::TextPrim {
+      text,
+      x,
+      y,
+      offset,
+      style,
+    } => Primitive::TextPrim {
       text: text.clone(),
       x: x + dx,
       y: y + dy,
+      offset: *offset,
       style: style.clone(),
     },
     Primitive::RasterPrim {
@@ -3332,12 +3529,19 @@ fn scale_primitive(
         style: style.clone(),
       }
     }
-    Primitive::TextPrim { text, x, y, style } => {
+    Primitive::TextPrim {
+      text,
+      x,
+      y,
+      offset,
+      style,
+    } => {
       let (nx, ny) = sp(*x, *y);
       Primitive::TextPrim {
         text: text.clone(),
         x: nx,
         y: ny,
+        offset: *offset,
         style: style.clone(),
       }
     }
@@ -4626,80 +4830,97 @@ fn render_primitive(
         dash,
       ));
 
-      // Draw arrowhead at the end
+      // Draw the arrowheads. Without an `Arrowheads` directive there is
+      // one at the tip, sized to the arrow; with one, there is a head at
+      // every position it names — except the ones carrying their own
+      // graphic, which `parse_arrow` already placed.
       if trimmed.len() >= 2 {
-        let n = trimmed.len();
-        let (x1, y1) = trimmed[n - 2];
-        let (x2, y2) = trimmed[n - 1];
-        let sx1 = coord_x(x1, bb, svg_w);
-        let sy1 = coord_y(y1, bb, svg_h);
-        let sx2 = coord_x(x2, bb, svg_w);
-        let sy2 = coord_y(y2, bb, svg_h);
+        // The path in screen pixels, with its cumulative arc length, so a
+        // head's position along the arrow resolves to a point and a
+        // direction there.
+        let screen: Vec<(f64, f64)> = trimmed
+          .iter()
+          .map(|&(x, y)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h)))
+          .collect();
+        let seg_len: Vec<f64> = screen
+          .windows(2)
+          .map(|w| {
+            ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt()
+          })
+          .collect();
+        let total_len_px: f64 = seg_len.iter().sum();
 
-        let dx = sx2 - sx1;
-        let dy = sy2 - sy1;
-        let len = (dx * dx + dy * dy).sqrt();
-        if len > 0.0 {
-          // Compute the path length AND bounding-box diagonal in SVG
-          // pixels so short edges and small self-loops (common in small
-          // or multi-component graphs) get proportionally smaller
-          // arrowheads instead of the absolute 9 px floor swallowing the
-          // whole shape. The path length captures straight-line edges,
-          // while the bbox diagonal captures curved shapes like self-
-          // loops whose total arc length is large but whose visual size
-          // (= loop diameter) is small.
-          let mut total_len_px = 0.0_f64;
-          let (mut min_x, mut max_x) = (f64::INFINITY, f64::NEG_INFINITY);
-          let (mut min_y, mut max_y) = (f64::INFINITY, f64::NEG_INFINITY);
-          for (i, w) in trimmed.windows(2).enumerate() {
-            let a = (coord_x(w[0].0, bb, svg_w), coord_y(w[0].1, bb, svg_h));
-            let b = (coord_x(w[1].0, bb, svg_w), coord_y(w[1].1, bb, svg_h));
-            total_len_px += ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
-            if i == 0 {
-              min_x = a.0.min(b.0);
-              max_x = a.0.max(b.0);
-              min_y = a.1.min(b.1);
-              max_y = a.1.max(b.1);
-            } else {
-              if b.0 < min_x {
-                min_x = b.0;
-              }
-              if b.0 > max_x {
-                max_x = b.0;
-              }
-              if b.1 < min_y {
-                min_y = b.1;
-              }
-              if b.1 > max_y {
-                max_y = b.1;
-              }
-            }
+        // The shape's bounding box, so a self-loop gets a head in
+        // proportion to the size it is drawn at rather than its arc length.
+        let (mut min_x, mut max_x) = (f64::INFINITY, f64::NEG_INFINITY);
+        let (mut min_y, mut max_y) = (f64::INFINITY, f64::NEG_INFINITY);
+        for &(x, y) in &screen {
+          min_x = min_x.min(x);
+          max_x = max_x.max(x);
+          min_y = min_y.min(y);
+          max_y = max_y.max(y);
+        }
+        let bbox_diag =
+          ((max_x - min_x).powi(2) + (max_y - min_y).powi(2)).sqrt();
+
+        // Three caps: 45 % of total path length (keeps straight arrows
+        // from being dominated), 40 % of the shape's bbox diagonal
+        // (keeps self-loops and curved arrows proportional to their
+        // visible size), and the usual default of max(sw*6, 9).
+        let default_head = ((sw * 6.0).max(9.0))
+          .min(total_len_px * 0.45)
+          .min(bbox_diag * 0.4)
+          .max(1.0);
+
+        // Where a head at fraction `t` sits, and the unit direction of the
+        // path there (pointing towards the tip).
+        let at = |t: f64| -> Option<((f64, f64), (f64, f64))> {
+          if total_len_px <= 0.0 {
+            return None;
           }
-          let bbox_w = max_x - min_x;
-          let bbox_h = max_y - min_y;
-          let bbox_diag = (bbox_w * bbox_w + bbox_h * bbox_h).sqrt();
+          let mut want = t.clamp(0.0, 1.0) * total_len_px;
+          for (i, &len) in seg_len.iter().enumerate() {
+            if (want <= len || i + 1 == seg_len.len()) && len > 0.0 {
+              let f = (want / len).clamp(0.0, 1.0);
+              let (ax, ay) = screen[i];
+              let (bx, by) = screen[i + 1];
+              return Some((
+                (ax + f * (bx - ax), ay + f * (by - ay)),
+                ((bx - ax) / len, (by - ay) / len),
+              ));
+            }
+            want -= len;
+          }
+          None
+        };
 
-          // Three caps: 45 % of total path length (keeps straight arrows
-          // from being dominated), 40 % of the shape's bbox diagonal
-          // (keeps self-loops and curved arrows proportional to their
-          // visible size), and the usual default of max(sw*6, 9).
-          let path_cap = total_len_px * 0.45;
-          let bbox_cap = bbox_diag * 0.4;
-          let default_head = (sw * 6.0).max(9.0);
-          let head_len = default_head.min(path_cap).min(bbox_cap).max(1.0);
+        // (position, head length in px, direction sign) for each head.
+        let heads: Vec<(f64, f64, f64)> = match &style.arrowheads {
+          None => vec![(1.0, default_head, 1.0)],
+          Some(specs) => specs
+            .iter()
+            .filter(|h| h.graphic.is_none())
+            .map(|h| {
+              // A size is a fraction of the plot width, as Wolfram's is,
+              // capped so a head never swallows the arrow it sits on.
+              let px = (h.size.abs() * svg_w).min(total_len_px * 0.45);
+              (h.position, px.max(1.0), h.size.signum())
+            })
+            .collect(),
+        };
+
+        for (t, head_len, dir) in heads {
+          let Some(((tip_x, tip_y), (ux, uy))) = at(t) else {
+            continue;
+          };
+          let (ux, uy) = (ux * dir, uy * dir);
           let head_half_w = head_len * 0.45;
-          let ux = dx / len;
-          let uy = dy / len;
           // Perpendicular
-          let px = -uy;
-          let py = ux;
-          // Arrowhead triangle vertices
-          let tip_x = sx2;
-          let tip_y = sy2;
-          let base_l_x = sx2 - ux * head_len + px * head_half_w;
-          let base_l_y = sy2 - uy * head_len + py * head_half_w;
-          let base_r_x = sx2 - ux * head_len - px * head_half_w;
-          let base_r_y = sy2 - uy * head_len - py * head_half_w;
+          let (px, py) = (-uy, ux);
+          let base_l_x = tip_x - ux * head_len + px * head_half_w;
+          let base_l_y = tip_y - uy * head_len + py * head_half_w;
+          let base_r_x = tip_x - ux * head_len - px * head_half_w;
+          let base_r_y = tip_y - uy * head_len - py * head_half_w;
           out.push_str(&format!(
             "<polygon points=\"{tip_x:.2},{tip_y:.2} {base_l_x:.2},{base_l_y:.2} {base_r_x:.2},{base_r_y:.2}\" fill=\"{}\"{}/>\n",
             color.to_svg_rgb(),
@@ -4709,12 +4930,28 @@ fn render_primitive(
       }
     }
     Primitive::TextPrim {
-      text, x, y, style, ..
+      text,
+      x,
+      y,
+      offset,
+      style,
     } => {
-      let sx = coord_x(*x, bb, svg_w);
-      let sy = coord_y(*y, bb, svg_h);
       let color = style.effective_color();
       let fs = style.font_size;
+      // The offset names which point of the label's box sits at the
+      // coordinate, so the box moves the other way: half its width per
+      // unit horizontally, half its height per unit vertically (and the
+      // vertical sign flips, SVG counting y downwards).
+      let longest = text
+        .split('\n')
+        .map(str::chars)
+        .map(Iterator::count)
+        .max()
+        .unwrap_or(0);
+      let text_w = longest as f64 * fs * 0.6;
+      let text_h = text.split('\n').count() as f64 * fs;
+      let sx = coord_x(*x, bb, svg_w) - offset.0 * text_w / 2.0;
+      let sy = coord_y(*y, bb, svg_h) + offset.1 * text_h / 2.0;
       let ff_attr = if style.font_family.is_empty() {
         String::new()
       } else {
@@ -5138,7 +5375,9 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::arrow_box(points, *setback));
       }
-      Primitive::TextPrim { text, x, y, style } => {
+      Primitive::TextPrim {
+        text, x, y, style, ..
+      } => {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::inset_box(text, *x, *y));
       }
@@ -7702,6 +7941,35 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       }
       // HoldForm[expr] → width of content
       "HoldForm" if args.len() == 1 => estimate_display_width(&args[0]),
+      // The presentation wrappers `expr_to_svg_markup` types out as their
+      // content only — measuring the `Head[…]` source instead would leave a
+      // Row cell several times too wide for the glyphs drawn in it.
+      "Text" | "TraditionalForm" | "DisplayForm" | "StandardForm"
+        if args.len() == 1 =>
+      {
+        estimate_display_width(&args[0])
+      }
+      // Subscript[base, i, …] / Superscript[base, e, …] typeset as shifted
+      // tspans at 70% size, the scripts comma-separated.
+      "Subscript" | "Superscript" if args.len() >= 2 => {
+        let scripts: f64 = args[1..].iter().map(estimate_display_width).sum();
+        let seps = (args.len() - 2) as f64;
+        estimate_display_width(&args[0]) + (scripts + seps) * 0.7
+      }
+      // Row[{a, b, …}] concatenates its parts, joined by the separator.
+      "Row" if !args.is_empty() => match &args[0] {
+        Expr::List(parts) => {
+          let sep = args.get(1).map_or(0.0, |s| match s {
+            Expr::FunctionCall { name, args: sargs } if name == "Spacer" => {
+              sargs.first().and_then(expr_to_f64).unwrap_or(1.0)
+            }
+            other => estimate_display_width(other),
+          });
+          let inner: f64 = parts.iter().map(estimate_display_width).sum();
+          inner + sep * parts.len().saturating_sub(1) as f64
+        }
+        other => estimate_display_width(other),
+      },
       // Tooltip[content, tip] → width of content (tip is hover-only)
       "Tooltip" if !args.is_empty() => estimate_display_width(&args[0]),
       // Number-display wrappers estimate the width of their *rendered* form

@@ -2023,6 +2023,7 @@ fn format_top_level_result(result_expr: syntax::Expr) -> String {
     // column with its embedded graphic). CLI mode keeps the symbolic
     // Pane[…] echo to match wolframscript.
     let result_expr = unwrap_pane_if_needed(result_expr);
+    let result_expr = render_labeled_if_needed(result_expr);
     let result_expr = render_dynamic_if_needed(result_expr);
     let result_expr = render_graphics_fc_if_needed(result_expr);
     let result_expr = render_color_if_needed(result_expr);
@@ -2766,6 +2767,17 @@ fn unwrap_pane_if_needed(expr: syntax::Expr) -> syntax::Expr {
       unwrap_pane_if_needed(args[0].clone())
     }
     other => other,
+  }
+}
+
+/// In visual (notebook) display mode, `Labeled[graphic, caption, pos]`
+/// displays as the two set beside each other. Without this a Manipulate
+/// body that captions its graphic would show only the textual echo of the
+/// call. (Grid, Column and Row have passes of their own, below.)
+fn render_labeled_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match evaluator::dispatch::io_functions::labeled_display_svg(&expr) {
+    Some(svg) => graphics_result(svg),
+    None => expr,
   }
 }
 

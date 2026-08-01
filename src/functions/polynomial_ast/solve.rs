@@ -66,6 +66,9 @@ fn strip_sqrt_square(expr: Expr) -> Expr {
 /// For quadratic polynomials, uses Kahan's numerically stable formula to
 /// match Wolfram's machine-precision output. For all other equations,
 /// solves symbolically first, then converts to numerical form via N[].
+///
+/// `NSolve[equation]` with the variable left out solves for whatever the
+/// equation contains, the way `Solve[equation]` does.
 pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let _head = IfunHead::new("NSolve");
   // Try numerically stable quadratic formula for degree-2 polynomials
@@ -2230,12 +2233,42 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // Otherwise keep the solution unless an inequality is definitely
           // violated.
           let ineq_false = |ineq: &Expr, replacement: &Expr| -> bool {
-            let subst =
-              crate::syntax::substitute_variable(ineq, &var_name, replacement);
-            matches!(
-              crate::evaluator::evaluate_expr_to_expr(&subst),
-              Ok(Expr::Identifier(ref s)) if s == "False"
-            )
+            let decide = |value: &Expr| -> Option<bool> {
+              let subst =
+                crate::syntax::substitute_variable(ineq, &var_name, value);
+              match crate::evaluator::evaluate_expr_to_expr(&subst) {
+                Ok(Expr::Identifier(ref s)) if s == "False" => Some(true),
+                Ok(Expr::Identifier(ref s)) if s == "True" => Some(false),
+                _ => None,
+              }
+            };
+            if let Some(verdict) = decide(replacement) {
+              return verdict;
+            }
+            // An exact root has no ordering the comparison operators can
+            // settle symbolically (`0 <= Root[…] <= 1` stays as written), so
+            // the bound is decided on the root's numeric value — which is
+            // what wolframscript reports for a constrained polynomial.
+            let numeric =
+              crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+                name: "N".to_string(),
+                args: vec![replacement.clone()].into(),
+              })
+              .unwrap_or_else(|_| replacement.clone());
+            if let Some(verdict) = decide(&numeric) {
+              return verdict;
+            }
+            // Nothing orders a complex number, so an ordering bound rules
+            // one out: `Solve[x^4 == 16 && x > 0, x]` keeps only the 2.
+            let is_ordering = matches!(ineq, Expr::Comparison { operators, .. }
+              if operators.iter().any(|o| matches!(o,
+                ComparisonOp::Less
+                  | ComparisonOp::LessEqual
+                  | ComparisonOp::Greater
+                  | ComparisonOp::GreaterEqual)));
+            is_ordering
+              && crate::functions::math_ast::try_extract_complex_float(&numeric)
+                .is_some_and(|(_re, im)| im.abs() > 1e-10)
           };
           let violated = matches!(sol, Expr::List(rules) if rules.iter().any(|rule| {
             matches!(rule, Expr::Rule { replacement, .. }
