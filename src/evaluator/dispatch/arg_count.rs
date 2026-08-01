@@ -994,7 +994,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Not" => Some((1, 1)),
     "NotElement" => Some((2, 2)),
     "NRoots" => Some((2, 2)),
-    "NSolve" => Some((2, 3)),
+    "NSolve" => Some((1, 3)),
     "NSolveValues" => Some((2, 3)),
     "NullSpace" => Some((1, 2)),
     "NumberQ" => Some((1, 1)),

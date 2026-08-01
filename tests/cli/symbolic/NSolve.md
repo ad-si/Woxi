@@ -21,3 +21,17 @@ A repeated root is listed once per multiplicity:
 $ wo 'NSolve[x^3 - 4. x^2 == 0, x]'
 {{x -> 0.}, {x -> 0.}, {x -> 4.}}
 ```
+
+The variable may be left out, as with `Solve`:
+
+```scrut
+$ wo 'NSolve[x^2 == 2]'
+{{x -> -1.4142135623730951}, {x -> 1.4142135623730951}}
+```
+
+Constraints narrow the answer to the root inside them:
+
+```scrut
+$ wo 'NSolve[1 == f^2 (3 - f) && 0 <= f <= 1]'
+{{f -> 0.6527036446661393}}
+```
