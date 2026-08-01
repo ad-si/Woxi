@@ -3,9 +3,6 @@ use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{gcd_i128, rat_reduce};
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, UnaryOperator, bool_expr, unevaluated,
-};
 
 /// Shared AllTrue/AnyTrue/NoneTrue implementation: apply the predicate
 /// to every element at exactly the requested level (default 1) and

@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator};
 
 /// Convert an Expr to a boolean value.
 /// Returns Some(true) for Identifier("True"), Some(false) for Identifier("False").

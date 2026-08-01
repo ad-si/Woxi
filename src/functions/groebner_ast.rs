@@ -7,9 +7,9 @@
 //! blowup or unrecognized (non-polynomial) input returns the call
 //! unevaluated.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::gcd_i128;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 use std::collections::BTreeMap;
 
 type Frac = (i128, i128);

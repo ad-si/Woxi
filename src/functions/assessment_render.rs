@@ -8,8 +8,10 @@
 //! static SVG so the object has a graphical form in `ExportString[…, "SVG"]`,
 //! raster/PDF export and the Playground.
 
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::graphics::{MONO_ADVANCE, svg_escape, theme};
-use crate::syntax::{Expr, ExprForm, format_expr};
+use crate::syntax::{ExprForm, format_expr};
 
 const FONT_SIZE: f64 = 14.0;
 const LINE_H: f64 = 20.0;

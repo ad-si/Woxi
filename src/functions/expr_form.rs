@@ -1,5 +1,6 @@
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::rat_reduce;
-use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 /// Result of decomposing an expression into its canonical form.
 pub enum ExprForm {

@@ -4,7 +4,9 @@
 //! round-trips and re-parsing that the original `list_helpers.rs` functions use.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
+};
 
 mod aggregation;
 mod combinatorics;

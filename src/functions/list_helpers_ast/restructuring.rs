@@ -2,7 +2,6 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::unevaluated;
 
 /// Extract key-value pair from a Rule expression for use in associations.
 fn extract_rule_pair(expr: &Expr) -> Option<(Expr, Expr)> {

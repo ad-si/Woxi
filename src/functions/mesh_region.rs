@@ -7,8 +7,8 @@
 //! per 2-cell, or the boundary loop of a boundary mesh — so exact
 //! coordinates keep exact answers.
 
-use crate::InterpreterError;
-use crate::syntax::{Expr, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 /// A parsed mesh: its coordinates and its cells by dimension.
 pub struct Mesh {

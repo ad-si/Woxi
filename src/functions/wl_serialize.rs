@@ -22,7 +22,8 @@
 //! `RasterBox[CompressedData["…"]]` and inline `Image[…]` literals; its
 //! elements are unsigned, unlike the sign-extended `n` token.
 
-use crate::syntax::Expr;
+#[allow(unused_imports)]
+use super::*;
 
 /// Decode a WL binary serialization payload (must start with `!boR`).
 /// Returns `None` when the data is not in this format or is malformed.

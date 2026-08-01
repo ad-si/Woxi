@@ -1,11 +1,11 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   PLOT_COLORS, evaluate_at_xy, format_tick, nice_step, parse_image_size,
   substitute_var,
 };
-use crate::syntax::Expr;
 
 const DEFAULT_SIZE: u32 = 360;
 const GRID_N: usize = 50;

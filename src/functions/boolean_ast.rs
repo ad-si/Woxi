@@ -2,13 +2,10 @@
 //!
 //! These functions work directly with `Expr` AST nodes.
 
-use std::collections::{BTreeMap, BTreeSet};
-
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, unevaluated,
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Helper to check if an Expr is True or False
 fn as_bool(expr: &Expr) -> Option<bool> {

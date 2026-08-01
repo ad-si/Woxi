@@ -2,8 +2,8 @@
 //! solids. All metric properties refer to unit edge length and are stored as
 //! exact Wolfram Language expressions so results stay symbolic.
 
-use crate::InterpreterError;
-use crate::syntax::{Expr, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 struct PolyhedronInfo {
   name: &'static str,

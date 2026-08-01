@@ -1,8 +1,8 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{PLOT_COLORS, RESOLUTION_SCALE, parse_image_size};
-use crate::syntax::Expr;
 
 /// Default side length (in user-space px) of the bounding box for the plot.
 const DEFAULT_TLP_SIZE: u32 = 360;

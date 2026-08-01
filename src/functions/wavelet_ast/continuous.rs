@@ -11,8 +11,8 @@
 //! w(u, s) = 1/Sqrt[s] Sum_k x_k Conjugate[psi]((k - u)/s), the same length
 //! as the data.
 
-use crate::InterpreterError;
-use crate::syntax::{Expr, expr_to_string, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 /// A continuous wavelet family used by ContinuousWaveletTransform,
 /// WaveletPsi, and WaveletPhi. Parameters are kept as expressions so the

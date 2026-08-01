@@ -19,9 +19,9 @@
 //! is never distorted. `ImageSize` (width) and `GeoRange` (`"World"`, `All`, or
 //! an explicit `{{latmin, latmax}, {lonmin, lonmax}}` window) are honored.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::graphics::{Color, expr_to_f64, parse_color};
-use crate::syntax::{Expr, unevaluated};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
