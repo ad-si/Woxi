@@ -22,9 +22,28 @@ let editorView = null
 const wolframLanguage = StreamLanguage.define(mathematica)
 const themeConfig = new Compartment()
 // Discrete Manipulate controls with at most this many choices render as a
-// segmented SetterBar (toggle buttons); larger sets use a dropdown. Mirrors
-// SETTER_BAR_MAX_CHOICES in woxi-studio.
-const SETTER_BAR_MAX_CHOICES = 6
+// segmented SetterBar (toggle buttons) whatever their labels look like; short
+// labels stretch that to SETTER_BAR_MAX_COMPACT_CHOICES, and anything longer
+// uses a dropdown. Mirrors rendersAsSetterBar in woxi-studio.
+const SETTER_BAR_MAX_CHOICES = 4
+const SETTER_BAR_MAX_COMPACT_CHOICES = 10
+const SETTER_BAR_COMPACT_LABEL_CHARS = 3
+
+// Whether a discrete control renders as a SetterBar rather than a dropdown.
+// Wolfram's Manipulate decides on the choice count and the label widths (four
+// phrases stay a bar; six single words become a dropdown), not on the total
+// width. An icon label counts as compact — it draws at a fixed 24px.
+function rendersAsSetterBar(labels, labelSvgs) {
+  if (labels.length <= SETTER_BAR_MAX_CHOICES) return true
+  return (
+    labels.length <= SETTER_BAR_MAX_COMPACT_CHOICES &&
+    labels.every(
+      (label, idx) =>
+        labelSvgs?.[idx] ||
+        [...String(label)].length <= SETTER_BAR_COMPACT_LABEL_CHARS,
+    )
+  )
+}
 // Auto-playing widgets (Animate / ListAnimate) advance their animation
 // control one step every ANIM_INTERVAL_MS. At ~60ms the default 100-step
 // continuous range sweeps in ~6s, matching Wolfram's leisurely Animate.
@@ -717,7 +736,7 @@ function renderManipulate(item) {
       const values = ctrl.values
       // `ControlType -> PopupMenu` always renders a dropdown, matching
       // Wolfram; a small anonymous set defaults to a SetterBar.
-      if (values.length <= SETTER_BAR_MAX_CHOICES && !ctrl.popup) {
+      if (rendersAsSetterBar(labels, ctrl.valueLabelSvgs) && !ctrl.popup) {
         // A small enumerated set renders as a segmented SetterBar: a row of
         // adjacent toggle buttons with the active choice highlighted, matching
         // Wolfram's SetterBar.
