@@ -1,13 +1,14 @@
-use plotters::prelude::*;
+use plotters::prelude::{Color, *};
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::chart::{
   ChartLabel, ChartOptions, LabelPosition, StyledLabel,
 };
 use crate::functions::graphics::{Color as WoxiColor, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
-use crate::syntax::{Expr, PlotMarker};
+use crate::syntax::PlotMarker;
 
 pub(crate) const DEFAULT_WIDTH: u32 = 360;
 pub(crate) const DEFAULT_HEIGHT: u32 = 225;
@@ -7794,7 +7795,6 @@ pub(crate) fn apply_common_plot_option(
 /// Build the compactifying substitution `Tan[Pi*inner/2]`, the bijection
 /// used to fold an infinite plot range into a finite display coordinate.
 fn tan_compactify(inner: Expr) -> Expr {
-  use crate::syntax::BinaryOperator;
   Expr::FunctionCall {
     name: "Tan".to_string(),
     args: vec![Expr::BinaryOp {
@@ -7824,7 +7824,6 @@ fn compactify_plot_range(
   raw_min: f64,
   raw_max: f64,
 ) -> Result<(f64, f64, Option<Expr>), InterpreterError> {
-  use crate::syntax::BinaryOperator;
   let min_inf = raw_min == f64::NEG_INFINITY;
   let max_inf = raw_max == f64::INFINITY;
   let u = || Expr::Identifier(var.to_string());

@@ -11,10 +11,9 @@
 //! unity e^(2 pi i r), printed exactly as wolframscript does
 //! (1, -1, I, -I, or E^((a*I)/b*Pi) forms on the principal branch).
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::{gcd_i128, rat_reduce, rat_reduce_bigint};
-use crate::syntax::Expr;
-use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 
 pub fn dirichlet_character_ast(
   args: &[Expr],

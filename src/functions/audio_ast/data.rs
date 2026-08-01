@@ -12,10 +12,10 @@
 //! audio is decoded when the file is a WAV, and `Sound`/`Play` expressions
 //! are synthesized through the `Play` sampler.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::sound;
-use crate::syntax::{Expr, unevaluated};
 
 /// In-memory view of an audio object: per-channel samples plus the sample
 /// rate in Hz. Channels are non-empty and equally long.
@@ -226,26 +226,26 @@ pub fn resample_to_len(xs: &[f64], new_len: usize) -> Vec<f64> {
 /// sample data; other audio formats (no decoder available) become
 /// file-backed `Audio[File["path"]]` objects, which visual hosts can still
 /// play.
-pub fn import_audio_file(path: &str) -> Result<Expr, crate::InterpreterError> {
+pub fn import_audio_file(path: &str) -> Result<Expr, InterpreterError> {
   let ext = std::path::Path::new(path)
     .extension()
     .map(|e| e.to_string_lossy().to_lowercase())
     .unwrap_or_default();
   if matches!(ext.as_str(), "wav" | "wave") {
     let bytes = std::fs::read(path).map_err(|e| {
-      crate::InterpreterError::EvaluationError(format!(
+      InterpreterError::EvaluationError(format!(
         "Import: cannot open \"{path}\": {e}"
       ))
     })?;
     if let Some(audio) = decode_wav(&bytes) {
       return Ok(make_audio(&audio));
     }
-    return Err(crate::InterpreterError::EvaluationError(format!(
+    return Err(InterpreterError::EvaluationError(format!(
       "Import: \"{path}\" is not a valid WAV file"
     )));
   }
   if !std::path::Path::new(path).exists() {
-    return Err(crate::InterpreterError::EvaluationError(format!(
+    return Err(InterpreterError::EvaluationError(format!(
       "Import: cannot open \"{path}\": file not found"
     )));
   }
@@ -350,7 +350,7 @@ fn decode_wav(bytes: &[u8]) -> Option<AudioData> {
 /// UnitConvert when a unit is given). Anything that is not a duration
 /// object emits Duration::durinv, like wolframscript; Video/DateInterval
 /// (valid objects Woxi cannot measure yet) stay silently unevaluated.
-pub fn duration_ast(args: &[Expr]) -> Result<Expr, crate::InterpreterError> {
+pub fn duration_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unev = || Ok(unevaluated("Duration", args));
   if args.is_empty() || args.len() > 2 {
     return unev();

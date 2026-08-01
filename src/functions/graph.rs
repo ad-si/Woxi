@@ -1,8 +1,6 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::graphics::{Color, graphics_ast, parse_color};
-use crate::syntax::{
-  BinaryOperator, Expr, bool_expr, expr_to_output, expr_to_string, unevaluated,
-};
 use petgraph::graph::{DiGraph, NodeIndex, UnGraph};
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;

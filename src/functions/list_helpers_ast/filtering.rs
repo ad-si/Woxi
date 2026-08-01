@@ -2,7 +2,6 @@
 use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
-use crate::syntax::{BinaryOperator, bool_expr, unevaluated};
 
 /// AST-based Select: filter elements where predicate returns True.
 /// Select[{a, b, c}, pred] -> elements where pred[elem] is True

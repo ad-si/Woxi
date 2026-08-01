@@ -3,11 +3,9 @@
 //! These functions work directly with `Expr` AST nodes for symbolic differentiation
 //! and integration.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::{gcd_i128, is_sqrt, make_sqrt, rat_reduce};
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
-};
 
 thread_local! {
   /// Active `NonConstants` context for `D`. Holds the symbol names that must be
@@ -362,9 +360,7 @@ fn differentiate_wrt_expr(
     });
   }
   // If the expression is structurally equal to the variable, derivative is 1
-  if crate::syntax::expr_to_string(expr)
-    == crate::syntax::expr_to_string(var_expr)
-  {
+  if expr_to_string(expr) == expr_to_string(var_expr) {
     return Ok(Expr::Integer(1));
   }
   // For products: use product rule
@@ -540,7 +536,6 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // case directly. A non-empty range is any range where lo and hi aren't
     // structurally identical (compared via their printed form).
     if is_constant_wrt(&args[0], &var_name) {
-      use crate::syntax::expr_to_string;
       let lo_ne_hi = expr_to_string(lo) != expr_to_string(hi);
       // -Infinity must be returned through the evaluator so it gets
       // canonicalised to the same form `DirectedInfinity[-1]` / unary-minus
@@ -993,12 +988,7 @@ fn try_horner_if_poly(expr: &Expr) -> Expr {
   match crate::functions::polynomial_ast::horner::horner_form_ast(
     std::slice::from_ref(expr),
   ) {
-    Ok(ref h)
-      if crate::syntax::expr_to_string(h)
-        != crate::syntax::expr_to_string(expr) =>
-    {
-      h.clone()
-    }
+    Ok(ref h) if expr_to_string(h) != expr_to_string(expr) => h.clone(),
     _ => expr.clone(),
   }
 }
@@ -6214,7 +6204,7 @@ fn try_integrate_derivative_product(
   let (n0, a0) = head_arg(factors[0])?;
   let (n1, a1) = head_arg(factors[1])?;
   // Both factors must share the same (linear) argument.
-  if crate::syntax::expr_to_string(&a0) != crate::syntax::expr_to_string(&a1) {
+  if expr_to_string(&a0) != expr_to_string(&a1) {
     return None;
   }
   let coeff = try_match_linear_arg(&a0, var)?;
@@ -7978,7 +7968,7 @@ fn is_exponential(expr: &Expr) -> bool {
 
 /// Compare two expressions by their string representation.
 pub(crate) fn expr_str_eq(a: &Expr, b: &Expr) -> bool {
-  crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+  expr_to_string(a) == expr_to_string(b)
 }
 
 /// Try to remove a specific factor from a product expression.
@@ -8853,7 +8843,6 @@ fn match_const_times_log_power(
   log_g: &Expr,
   var: &str,
 ) -> Option<(Expr, i128)> {
-  use crate::syntax::expr_to_string;
   let log_g_str = expr_to_string(log_g);
   let as_log_power = |e: &Expr| -> Option<i128> {
     if expr_to_string(e) == log_g_str {
@@ -12705,8 +12694,8 @@ fn conditions_are_complementary(a: &Expr, b: &Expr) -> bool {
     None => return false,
   };
   // Same variable on the left, same constant on the right.
-  if crate::syntax::expr_to_string(&la) != crate::syntax::expr_to_string(&lb)
-    || crate::syntax::expr_to_string(&ra) != crate::syntax::expr_to_string(&rb)
+  if expr_to_string(&la) != expr_to_string(&lb)
+    || expr_to_string(&ra) != expr_to_string(&rb)
   {
     return false;
   }
@@ -13333,8 +13322,8 @@ fn numerical_two_sided_limit(
         }
         _ => {
           // At least one side is infinite — check if they match symbolically
-          let a_str = crate::syntax::expr_to_string(&a);
-          let b_str = crate::syntax::expr_to_string(&b);
+          let a_str = expr_to_string(&a);
+          let b_str = expr_to_string(&b);
           if a_str == b_str {
             return Some(a);
           }
@@ -13911,9 +13900,7 @@ fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
           name: "FunctionExpand".to_string(),
           args: vec![args[0].clone()].into(),
         })?;
-      if crate::syntax::expr_to_string(&expanded)
-        != crate::syntax::expr_to_string(&args[0])
-      {
+      if expr_to_string(&expanded) != expr_to_string(&args[0]) {
         return limit_ast(&[expanded, args[1].clone()]);
       }
     }
@@ -18304,8 +18291,8 @@ pub fn wronskian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Apply trig identities (e.g. Sin[x]^2 + Cos[x]^2 → 1) to simplify the determinant
   let simplified =
     crate::functions::polynomial_ast::apply_trig_identities(&result);
-  let simplified_str = crate::syntax::expr_to_string(&simplified);
-  let result_str = crate::syntax::expr_to_string(&result);
+  let simplified_str = expr_to_string(&simplified);
+  let result_str = expr_to_string(&result);
   if simplified_str != result_str {
     crate::evaluator::evaluate_expr_to_expr(&simplified)
   } else {
@@ -18559,7 +18546,7 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = vars.len();
   let (rank, dims) = tensor_shape(&args[0]);
   let unevaluated = || unevaluated("Curl", args);
-  let field_str = crate::syntax::expr_to_string(&args[0]);
+  let field_str = expr_to_string(&args[0]);
   if rank == 1 {
     if dims[0] != n {
       crate::emit_message(&format!(
@@ -18578,7 +18565,7 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "Curl::ndimt: {} has dimensions {} and is therefore not a tensor in {}-dimensional space.",
         field_str,
-        crate::syntax::expr_to_string(&dims_list),
+        expr_to_string(&dims_list),
         n
       ));
       return Ok(unevaluated());
@@ -20470,7 +20457,7 @@ pub fn discrete_shift_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         crate::emit_message(&format!(
           "General::ivar: {} is not a valid variable.",
-          crate::syntax::expr_to_string(spec)
+          expr_to_string(spec)
         ));
         return unevaluated();
       }
@@ -20566,7 +20553,7 @@ pub fn discrete_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       SpecResult::Ivar(sp) => {
         crate::emit_message(&format!(
           "General::ivar: {} is not a valid variable.",
-          crate::syntax::expr_to_string(&sp)
+          expr_to_string(&sp)
         ));
         return unevaluated();
       }
@@ -20575,7 +20562,7 @@ pub fn discrete_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "DiscreteRatio::dvar: Ratio specifier {} does not have the form \
            {{variable, n}} or {{variable, n, h}}, where n is a non-negative \
            machine integer.",
-          crate::syntax::expr_to_string(&sp)
+          expr_to_string(&sp)
         ));
         return unevaluated();
       }
@@ -21183,7 +21170,7 @@ fn factorial_power_series_at_zero(
   order: i128,
 ) -> Expr {
   let n_usize = n as usize;
-  let stirling = signed_stirling_first_row(n_usize);
+  let stirling = signed_stirling_numbers(n_usize);
   let (min_idx, max_idx) = if n == 0 {
     (0usize, 0usize)
   } else {
@@ -21321,17 +21308,15 @@ fn hyperfactorial_series_at_zero(var_name: &str, order: i128) -> Expr {
 
 /// Row `n` of the signed Stirling numbers of the first kind.
 /// `out[k] = s(n, k)`, satisfying x(x-1)...(x-n+1) = sum_k s(n, k) x^k.
-fn signed_stirling_first_row(n: usize) -> Vec<i128> {
-  // Start at row 0: s(0, 0) = 1, all other s(0, k) = 0.
+fn signed_stirling_numbers(n: usize) -> Vec<i128> {
   let mut row = vec![0i128; n + 1];
-  row[0] = 1;
+  row[0] = 1; // s(0,0) = 1
   let mut next = vec![0i128; n + 1];
-  // Build up row by row using s(m+1, k) = s(m, k-1) - m * s(m, k).
-  for m in 0..n {
-    for k in 0..=(m + 1) {
-      let from_left = if k > 0 { row[k - 1] } else { 0 };
-      let from_above = row[k];
-      next[k] = from_left - (m as i128) * from_above;
+  for i in 1..=n {
+    next[0] = 0; // s(i,0) = 0
+    for j in 1..=i {
+      // s(i,j) = s(i-1,j-1) - (i-1)*s(i-1,j) (signed Stirling S1).
+      next[j] = row[j - 1] - ((i - 1) as i128) * row[j];
     }
     (row, next) = (next, row);
   }
@@ -21391,7 +21376,7 @@ fn series_at_infinity(
       // A coefficient list containing infinities means the expansion broke
       // down rather than converged.
       && !matches!(&sa[2], Expr::List(cs) if cs.iter().any(|c| {
-        let r = crate::syntax::expr_to_string(c);
+        let r = expr_to_string(c);
         r.contains("Infinity") || r.contains("Indeterminate")
       }))
     {

@@ -3,7 +3,6 @@ use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{gcd_i128, rat_reduce};
-use crate::syntax::{BinaryOperator, UnaryOperator, unevaluated};
 
 /// AnglePath[{θ1, θ2, ...}] - path with unit steps and cumulative turning angles.
 /// AnglePath[{{r1, θ1}, {r2, θ2}, ...}] - path with specified step lengths.

@@ -1,3 +1,6 @@
+use crate::InterpreterError;
+use crate::syntax::{Expr, unevaluated};
+
 pub mod data;
 pub mod edit;
 pub mod filters;

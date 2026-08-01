@@ -1,3 +1,9 @@
+use crate::InterpreterError;
+use crate::syntax::{
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, binop, bool_expr,
+  expr_to_output, expr_to_string, unevaluated,
+};
+
 // Functions are organized by categories
 pub mod assessment_ast;
 pub mod assessment_render;

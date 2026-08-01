@@ -1,11 +1,9 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{DEFAULT_HEIGHT, DEFAULT_WIDTH, parse_image_size};
-use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, bool_expr, expr_to_string,
-  unevaluated,
-};
+use crate::syntax::expr_to_output;
 
 /// Dash length for the "Small" named size in Dashing directives.
 /// This is the default dash segment length used by Dashed, Dotted, etc.
@@ -6869,8 +6867,6 @@ fn negated_markup_term(arg: &Expr) -> Option<String> {
 }
 
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
-  use crate::syntax::expr_to_output;
-
   // A unit-fraction power is a radical, not a superscript: `Sqrt[2]`
   // (which is `2^(1/2)`) typesets as √2 under its vinculum, and a cube
   // root carries its index in the hook.
@@ -7412,8 +7408,6 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 /// accounting for superscript sizing (exponents rendered at ~70% width).
 /// Recursively mirrors `expr_to_svg_markup` structure.
 pub fn estimate_display_width(expr: &Expr) -> f64 {
-  use crate::syntax::expr_to_output;
-
   if let Some((base, exp)) = as_power(expr) {
     let parens = if is_additive_expr(base) { 2.0 } else { 0.0 };
     return estimate_display_width(base)

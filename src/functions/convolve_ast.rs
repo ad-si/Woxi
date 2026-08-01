@@ -10,9 +10,9 @@
 //! Results are constructed to match wolframscript's printed forms
 //! (e.g. Sqrt[Pi/2]/E^(y^2/2), (y*UnitStep[y])/E^(2*y)).
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::rat_reduce;
-use crate::syntax::{BinaryOperator, Expr, UnaryOperator, unevaluated};
 
 type Frac = (i128, i128);
 

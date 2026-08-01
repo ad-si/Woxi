@@ -3,9 +3,8 @@
 //! Implements EntityStore, EntityRegister, EntityUnregister, EntityValue,
 //! EntityList, EntityProperties, EntityStores, EntityClassList, and Entity property access.
 
-use crate::InterpreterError;
-use crate::syntax::{Expr, expr_to_string, unevaluated};
-
+#[allow(unused_imports)]
+use super::*;
 use std::cell::RefCell;
 
 /// Registered entity stores: each store maps type_name -> EntityTypeData

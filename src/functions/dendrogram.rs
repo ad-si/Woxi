@@ -1,4 +1,5 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::list_helpers_ast::apply_func_to_two_args;
 use crate::functions::math_ast::try_eval_to_f64;
@@ -6,7 +7,6 @@ use crate::functions::plot::{
   DEFAULT_HEIGHT, DEFAULT_WIDTH, RESOLUTION_SCALE, html_escape,
   parse_image_size,
 };
-use crate::syntax::{Expr, unevaluated};
 
 /// Which side of the plot the root of the dendrogram points to.
 #[derive(Clone, Copy, PartialEq)]

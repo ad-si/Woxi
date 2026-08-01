@@ -15,10 +15,8 @@
 //! - globe coordinates → `GeoPosition[{lat, lon}]`
 //! - strings, external ids and monolingual texts → plain strings
 
-use crate::InterpreterError;
-#[cfg(not(target_arch = "wasm32"))]
-use crate::syntax::BinaryOperator;
-use crate::syntax::{Expr, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 /// `ExternalIdentifier[type, id]` / `ExternalIdentifier[type, id, assoc]` —
 /// inert symbolic construct; the arguments are kept exactly as given.
@@ -651,7 +649,6 @@ fn capitalize(word: &str) -> String {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
   use super::*;
-  use crate::syntax::expr_to_string;
 
   #[test]
   fn unit_names_pluralize_and_camel_case() {

@@ -7,9 +7,10 @@
 //! transform as the axis labels and dash overlays) and injected just
 //! before `</svg>`.
 
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::graphics::{Color, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
-use crate::syntax::Expr;
 
 /// The data→pixel mapping for the plotting area of a rendered plot.
 /// `x0`/`y0` are the top-left corner of the plotting area in render-space

@@ -7,12 +7,12 @@
 //! rebuilt into this canonical form by pairing the value path with the dates
 //! generated from the embedded date specification.
 
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::datetime_ast::{
   date_to_absolute_seconds, day_of_week, days_in_month,
   extract_date_components, weekday_index,
 };
-use crate::syntax::{Expr, unevaluated};
 
 fn as_f64(e: &Expr) -> Option<f64> {
   match e {

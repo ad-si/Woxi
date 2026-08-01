@@ -6,8 +6,8 @@
 use super::continuous::Cwd;
 use super::data::{Dwd, select_winds};
 use super::transforms::CoefArray;
-use crate::InterpreterError;
-use crate::syntax::{Expr, expr_to_string, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 fn call(name: &str, args: Vec<Expr>) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_function_call_ast(name, &args)

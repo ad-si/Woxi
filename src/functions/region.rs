@@ -11,9 +11,10 @@
 //! leave the `Region[…]` expression unevaluated, like other unsupported
 //! cases elsewhere in the interpreter.
 
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::graphics::Color;
 use crate::functions::math_ast::try_eval_to_f64;
-use crate::syntax::Expr;
 
 /// Default face color for 2-dimensional regions (the `MeshRegion` blue).
 fn area_color() -> Expr {

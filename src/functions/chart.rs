@@ -1,4 +1,5 @@
-use crate::InterpreterError;
+#[allow(unused_imports)]
+use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::graphics::{Color, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
@@ -7,7 +8,6 @@ use crate::functions::plot::{
   PLOT_COLORS, RESOLUTION_SCALE, generate_bar_svg, generate_histogram_svg,
   html_escape, parse_image_size, svg_header,
 };
-use crate::syntax::{Expr, unevaluated};
 
 /// Extract grouped values from the first argument.
 /// Returns a list of groups, where each group is a list of f64 values.

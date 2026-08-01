@@ -2,7 +2,8 @@
 //! into, `XMLObject["Document"][prolog, root, epilog]` with elements written
 //! as `XMLElement[name, {attributes}, {children}]`.
 
-use crate::syntax::Expr;
+#[allow(unused_imports)]
+use super::*;
 
 /// A parse failure, carrying the byte offset it happened at so the caller can
 /// report the line and character wolframscript names.

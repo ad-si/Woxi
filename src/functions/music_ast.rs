@@ -23,10 +23,9 @@
 //! all give `MusicPitch["G3"]`. The conversions use the standard convention
 //! where middle C is MIDI 60 / C4 and A4 (MIDI 69) is 440 Hz.
 
+#[allow(unused_imports)]
+use super::*;
 use crate::functions::math_ast::{make_rational, rat_reduce};
-use crate::syntax::{
-  BinaryOperator, Expr, UnaryOperator, bool_expr, unevaluated,
-};
 
 /// Heads that the Wolfram Language classifies as music objects — the "Music
 /// Events", "Music Properties", and "Music Containers" of the

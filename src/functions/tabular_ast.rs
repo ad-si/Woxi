@@ -1,4 +1,5 @@
-use crate::syntax::{Expr, unevaluated};
+#[allow(unused_imports)]
+use super::*;
 
 /// Create a Failure expression for Tabular/ToTabular errors.
 fn make_tabular_failure(
