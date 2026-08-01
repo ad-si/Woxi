@@ -3684,9 +3684,61 @@ const MANIPULATE_THROTTLE_MS: u64 = 16;
 const ANIM_INTERVAL_MS: u64 = 60;
 
 /// Maximum number of choices rendered as a segmented SetterBar (a row of
-/// toggle buttons). Discrete controls with more settings fall back to a
-/// dropdown so the control row can't grow unbounded.
-const SETTER_BAR_MAX_CHOICES: usize = 6;
+/// toggle buttons) whatever their labels look like. Wolfram picks a SetterBar
+/// for up to four choices even when each one is a phrase ("battle of the
+/// sexes"); past that the labels have to be short.
+const SETTER_BAR_MAX_CHOICES: usize = 4;
+
+/// Maximum number of *compact* choices — every label at most
+/// [`SETTER_BAR_COMPACT_LABEL_CHARS`] wide, i.e. numbers or single letters —
+/// still rendered as a SetterBar. A run of short buttons stays readable well
+/// past four, but not without bound.
+const SETTER_BAR_MAX_COMPACT_CHOICES: usize = 10;
+
+/// A choice label this short (in characters) keeps its button narrow enough
+/// to sit in a long SetterBar.
+const SETTER_BAR_COMPACT_LABEL_CHARS: usize = 3;
+
+/// Whether a discrete control's choices render as a segmented SetterBar (a row
+/// of toggle buttons) rather than a dropdown.
+///
+/// Wolfram's `Manipulate` picks between `SetterBar` and `PopupMenu` on its own
+/// whenever the spec doesn't say (`ControlType -> …` forces the choice, and is
+/// carried separately as `popup`). Sampling the Demonstrations that leave it
+/// automatic, the split follows the choice count and how wide the labels are —
+/// never the total width alone:
+///
+/// | choices | labels                              | Wolfram    |
+/// |---------|-------------------------------------|------------|
+/// | 4       | `4, 20, 100, 500`                   | SetterBar  |
+/// | 4       | `prisoners dilemma`, …              | SetterBar  |
+/// | 5       | `2, 3, 4, 5, 6`                     | SetterBar  |
+/// | 8       | `-3` … `4`                          | SetterBar  |
+/// | 5       | `u(y)`, `error in approximating …`  | PopupMenu  |
+/// | 6       | `triangle` … `octagon`              | PopupMenu  |
+/// | 17      | `Hue`, `BlueGreenYellow`, …         | PopupMenu  |
+/// | 33      | `-3` … `29`                         | PopupMenu  |
+///
+/// So four phrases stay a bar while six single words become a dropdown, even
+/// though the six are the narrower row — the count is what decides, and short
+/// labels buy a longer bar.
+///
+/// A choice whose label is a rendered icon counts as compact: it draws at a
+/// fixed 24px, narrower than a three-character button.
+fn renders_as_setter_bar(
+  value_labels: &[String],
+  value_label_svgs: &[Option<svg::Handle>],
+) -> bool {
+  let count = value_labels.len();
+  if count <= SETTER_BAR_MAX_CHOICES {
+    return true;
+  }
+  count <= SETTER_BAR_MAX_COMPACT_CHOICES
+    && value_labels.iter().enumerate().all(|(i, label)| {
+      value_label_svgs.get(i).is_some_and(Option::is_some)
+        || label.chars().count() <= SETTER_BAR_COMPACT_LABEL_CHARS
+    })
+}
 
 /// Whether an animation tick generated at `tick_at` should advance the
 /// animation, given when the previous advance finished. The animation timer
@@ -3833,16 +3885,16 @@ fn render_manipulate_widget<'a>(
           continue;
         }
         let count = value_labels.len();
-        // A small enumerated set renders as a segmented SetterBar (a row of
+        // A compact enumerated set renders as a segmented SetterBar (a row of
         // adjacent toggle buttons with the active choice highlighted), matching
-        // Wolfram's SetterBar; a larger set — or an explicit
-        // `ControlType -> PopupMenu` — renders a dropdown so the row can't
-        // grow unbounded. The button labels are the display labels
+        // Wolfram's SetterBar; a wider one — see `renders_as_setter_bar` — or
+        // an explicit `ControlType -> PopupMenu` renders a dropdown so the row
+        // can't grow unbounded. The button labels are the display labels
         // (rule right-hand sides); pressing one sends its label, which the
         // update handler maps back to an index. A disabled control drops its
         // press handlers so it can't be changed.
         let control: Element<Message> =
-          if count <= SETTER_BAR_MAX_CHOICES && !*popup {
+          if renders_as_setter_bar(value_labels, value_label_svgs) && !*popup {
             let mut bar = Row::new().spacing(0).align_y(Center);
             for (i, choice_label) in value_labels.iter().enumerate() {
               let is_selected = i == *current_index;
@@ -10907,6 +10959,499 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`time$$ = 25}, \"\\[Ellipsis]\"]"], 
     );
     // Integrating over a shorter interval draws a different trajectory.
     assert_ne!(render(5.0), published, "the time control must matter");
+  }
+
+  /// The SetterBar/PopupMenu split Wolfram's `Manipulate` makes on its own,
+  /// pinned to the Demonstrations it was read off (see
+  /// [`renders_as_setter_bar`]). The interesting pair is four phrases (a bar)
+  /// against six single words (a dropdown) — the narrower row is the dropdown,
+  /// so a width rule can't produce this and a count rule has to.
+  #[test]
+  fn setter_bar_is_chosen_the_way_wolfram_chooses_it() {
+    let bar = |labels: &[&str]| {
+      let labels: Vec<String> = labels.iter().map(|s| s.to_string()).collect();
+      let svgs = vec![None; labels.len()];
+      renders_as_setter_bar(&labels, &svgs)
+    };
+
+    // Up to four choices stay a bar however long the labels are.
+    assert!(bar(&["4", "20", "100", "500"]));
+    assert!(bar(&["3", "4", "5", "6"]));
+    assert!(bar(&["Poisson", "Gaussian", "gamma", "inverse Gaussian"]));
+    assert!(bar(&[
+      "prisoners dilemma",
+      "battle of the sexes",
+      "stag hunt",
+      "coordination",
+    ]));
+
+    // Past four, short labels keep the bar...
+    assert!(bar(&["2", "3", "4", "5", "6"]));
+    assert!(bar(&["-3", "-2", "-1", "1", "2", "3", "4"]));
+    assert!(bar(&["-3", "-2", "-1", "0", "1", "2", "3", "4"]));
+
+    // ...and wide ones don't.
+    assert!(!bar(&[
+      "u(y)",
+      "u'(y)",
+      "u''(y)",
+      "error in approximating u'(y)",
+      "error in approximating u''(y)",
+    ]));
+    assert!(!bar(&[
+      "triangle", "square", "pentagon", "hexagon", "heptagon", "octagon",
+    ]));
+    assert!(!bar(&[
+      "Hue",
+      "BlueGreenYellow",
+      "BrightBands",
+      "CMYKColors",
+      "DarkBands",
+      "GrayTones",
+      "GrayYellowTones",
+      "GreenPinkTones",
+      "NeonColors",
+      "Pastel",
+      "Rainbow",
+      "RedBlueTones",
+      "RedGreenSplit",
+      "SolarColors",
+      "SunsetColors",
+      "TemperatureMap",
+      "ThermometerColors",
+    ]));
+
+    // Short labels buy a longer bar, not an unbounded one: 33 integers are a
+    // dropdown even though every label is two or three characters.
+    let many: Vec<String> = (-3..30).map(|n| n.to_string()).collect();
+    assert!(!renders_as_setter_bar(&many, &vec![None; many.len()]));
+
+    // An icon label is compact whatever its bound value reads as — it draws at
+    // a fixed width, so a row of icons stays a bar.
+    let icons: Vec<String> = (1..=6).map(|n| format!("choice {n}")).collect();
+    assert!(!renders_as_setter_bar(&icons, &vec![None; icons.len()]));
+    let handles: Vec<Option<svg::Handle>> = icons
+      .iter()
+      .map(|_| Some(svg::Handle::from_memory(Vec::new())))
+      .collect();
+    assert!(renders_as_setter_bar(&icons, &handles));
+  }
+
+  /// End-to-end regression for the "Regular Polygon Rolling on a Catenary"
+  /// Demonstration: a `k`-gon rolls along a chain of catenary arches, its
+  /// centre tracing the straight line the arches are cut for, with optional
+  /// fans of earlier positions under constant angular and constant horizontal
+  /// velocity.
+  ///
+  /// The body already evaluated; what diverged was the `polygon` control,
+  /// which Woxi drew as a six-button SetterBar where Wolfram draws a dropdown.
+  /// Checked against wolframscript's own rendering of the notebook at four
+  /// control settings: the catenary/polygon/marker geometry agrees, and the
+  /// three boolean controls are checkboxes in both.
+  #[test]
+  fn rolling_polygon_on_catenary_notebook_rolls_its_polygon() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"positionoftangentang", "[", 
+   RowBox[{"a_", ",", "q_"}], "]"}], ":=", 
+  RowBox[{"2", " ", "a", " ", 
+   RowBox[{"ArcTanh", "[", 
+    RowBox[{"Tan", "[", 
+     FractionBox["q", "2"], "]"}], "]"}]}]}]], "Input",
+ InitializationCell->True],
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"aCatenary", "[", 
+   RowBox[{"t_", ",", "a_"}], "]"}], ":=", 
+  RowBox[{"a", " ", 
+   RowBox[{"Cosh", "[", 
+    RowBox[{"t", "/", "a"}], "]"}]}]}]], "Input",
+ InitializationCell->True],
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"regularpolygon", "[", 
+   RowBox[{"p_", ",", "w_", ",", "k_", ",", "R_"}], "]"}], ":=", 
+  RowBox[{"Polygon", "[", 
+   RowBox[{"Table", "[", 
+    RowBox[{
+     RowBox[{
+      RowBox[{"R", 
+       RowBox[{"{", 
+        RowBox[{
+         RowBox[{"Sin", "[", 
+          RowBox[{"v", "-", 
+           RowBox[{"w", " ", "2", 
+            RowBox[{"Pi", "/", 
+             RowBox[{"(", 
+              RowBox[{"2", "k"}], ")"}]}]}]}], "  ", "]"}], ",", 
+         RowBox[{"-", 
+          RowBox[{"Cos", "[", 
+           RowBox[{"v", "-", 
+            RowBox[{"w", " ", "2", 
+             RowBox[{"Pi", "/", 
+              RowBox[{"(", 
+               RowBox[{"2", "k"}], ")"}]}]}]}], "  ", "]"}]}]}], "}"}]}], "+",
+       "p"}], ",", 
+     RowBox[{"{", 
+      RowBox[{"v", ",", "0", ",", 
+       RowBox[{"2", "Pi"}], ",", 
+       RowBox[{"2", 
+        RowBox[{"Pi", "/", "k"}]}]}], "}"}]}], "]"}], "]"}]}]], "Input",
+ InitializationCell->True],
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"Manipulate", "[", 
+  RowBox[{
+   RowBox[{"With", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"R", "=", "1"}], "}"}], ",", 
+     RowBox[{"With", "[", 
+      RowBox[{
+       RowBox[{"{", 
+        RowBox[{"a", "=", 
+         RowBox[{"R", "*", " ", 
+          RowBox[{"Cos", "[", 
+           RowBox[{"Pi", "/", "k"}], "]"}]}]}], "}"}], ",", 
+       RowBox[{"With", "[", 
+        RowBox[{
+         RowBox[{"{", 
+          RowBox[{"tt", "=", 
+           RowBox[{"positionoftangentang", "[", 
+            RowBox[{"a", ",", 
+             RowBox[{
+              RowBox[{"(", 
+               RowBox[{"2", 
+                RowBox[{"Pi", "/", "k"}]}], ")"}], "/", "2"}]}], "]"}]}], 
+          "}"}], ",", 
+         RowBox[{"With", "[", 
+          RowBox[{
+           RowBox[{"{", 
+            RowBox[{"hh", "=", 
+             RowBox[{
+              RowBox[{"tt", "*", "w"}], "-", 
+              RowBox[{"tt", "*", 
+               RowBox[{"Mod", "[", 
+                RowBox[{"w", ",", "2"}], "]"}]}], "+", 
+              RowBox[{"positionoftangentang", "[", 
+               RowBox[{"a", ",", 
+                RowBox[{
+                 RowBox[{"-", 
+                  FractionBox["\[Pi]", "k"]}], "+", 
+                 FractionBox[
+                  RowBox[{"\[Pi]", "  ", 
+                   RowBox[{"Mod", "[", 
+                    RowBox[{"w", ",", "2"}], "]"}]}], "k"]}]}], "]"}]}]}], 
+            "}"}], ",", 
+           RowBox[{"Graphics", "[", 
+            RowBox[{
+             RowBox[{"Flatten", "[", 
+              RowBox[{"{", 
+               RowBox[{
+                RowBox[{"Table", "[", 
+                 RowBox[{
+                  RowBox[{"{", 
+                   RowBox[{"Black", ",", 
+                    RowBox[{"Line", "[", 
+                    RowBox[{"Table", "[", 
+                    RowBox[{
+                    RowBox[{"{", 
+                    RowBox[{
+                    RowBox[{"t", "+", 
+                    RowBox[{"2", "tt", "*", "per"}]}], ",", 
+                    RowBox[{"-", 
+                    RowBox[{"aCatenary", "[", 
+                    RowBox[{"t", ",", "a"}], "]"}]}]}], "}"}], ",", 
+                    RowBox[{"{", 
+                    RowBox[{"t", ",", 
+                    RowBox[{"-", "tt"}], ",", "tt", ",", 
+                    RowBox[{"tt", "/", "60"}]}], "}"}]}], "]"}], "]"}]}], 
+                   "}"}], ",", 
+                  RowBox[{"{", 
+                   RowBox[{"per", ",", 
+                    RowBox[{"-", "1"}], ",", "2"}], "}"}]}], "]"}], ",", 
+                "Gray", ",", 
+                RowBox[{"regularpolygon", "[", 
+                 RowBox[{
+                  RowBox[{"{", 
+                   RowBox[{
+                    RowBox[{"+", "hh"}], ",", "0"}], "}"}], ",", "w", ",", 
+                  "k", ",", "R"}], "]"}], ",", "Black", ",", 
+                RowBox[{"Line", "[", 
+                 RowBox[{"{", 
+                  RowBox[{
+                   RowBox[{"{", 
+                    RowBox[{
+                    RowBox[{
+                    RowBox[{"-", "tt"}], "-", 
+                    RowBox[{"2", "tt"}]}], ",", "0"}], "}"}], ",", 
+                   RowBox[{"{", 
+                    RowBox[{
+                    RowBox[{
+                    RowBox[{"4", "tt"}], "+", "tt"}], ",", "0"}], "}"}]}], 
+                  "}"}], "]"}], ",", 
+                RowBox[{"If", "[", 
+                 RowBox[{"shocon", ",", 
+                  RowBox[{"Table", "[", 
+                   RowBox[{
+                    RowBox[{"{", 
+                    RowBox[{
+                    RowBox[{"RGBColor", "[", 
+                    RowBox[{"1", ",", ".21", ",", "0"}], "]"}], ",", 
+                    RowBox[{"Line", "@@", 
+                    RowBox[{"regularpolygon", "[", 
+                    RowBox[{
+                    RowBox[{"{", 
+                    RowBox[{
+                    RowBox[{
+                    RowBox[{"t", "*", "tt"}], "+", "tt"}], ",", "0"}], "}"}], 
+                    ",", "t", ",", "k", ",", "R"}], "]"}]}], ",", 
+                    RowBox[{"Disk", "[", 
+                    RowBox[{
+                    RowBox[{"{", 
+                    RowBox[{
+                    RowBox[{
+                    RowBox[{"t", "*", "tt"}], "+", "tt"}], ",", "0"}], "}"}], 
+                    ",", ".02"}], "]"}]}], "}"}], ",", 
+                    RowBox[{"{", 
+                    RowBox[{"t", ",", 
+                    RowBox[{"-", "3"}], ",", "1", ",", 
+                    RowBox[{"1", "/", "8"}]}], "}"}]}], "]"}], ",", 
+                  RowBox[{"{", "}"}]}], "]"}], ",", "\[IndentingNewLine]", 
+                RowBox[{"If", "[", 
+                 RowBox[{"shofle", ",", 
+                  RowBox[{"Table", "[", 
+                   RowBox[{
+                    RowBox[{"With", "[", 
+                    RowBox[{
+                    RowBox[{"{", 
+                    RowBox[{"hhx", "=", 
+                    RowBox[{
+                    RowBox[{"tt", " ", "*", " ", "t"}], "-", 
+                    RowBox[{"tt", " ", 
+                    RowBox[{"Mod", "[", 
+                    RowBox[{"t", ",", "2"}], "]"}]}], "+", 
+                    RowBox[{"positionoftangentang", "[", 
+                    RowBox[{"a", ",", 
+                    RowBox[{
+                    RowBox[{"-", 
+                    FractionBox["\[Pi]", "k"]}], "+", 
+                    FractionBox[
+                    RowBox[{"\[Pi]", "  ", 
+                    RowBox[{"Mod", "[", 
+                    RowBox[{"t", ",", "2"}], "]"}]}], "k"]}]}], "]"}]}]}], 
+                    "}"}], ",", 
+                    RowBox[{"{", 
+                    RowBox[{
+                    RowBox[{"RGBColor", "[", 
+                    RowBox[{".11", ",", ".61", ",", ".79"}], "]"}], ",", 
+                    RowBox[{"Line", "@@", 
+                    RowBox[{"regularpolygon", "[", 
+                    RowBox[{
+                    RowBox[{"{", 
+                    RowBox[{"hhx", ",", "0"}], "}"}], ",", "t", ",", "k", ",",
+                     "R"}], "]"}]}], ",", 
+                    RowBox[{"Disk", "[", 
+                    RowBox[{
+                    RowBox[{"{", 
+                    RowBox[{"hhx", ",", "0"}], "}"}], ",", ".02"}], "]"}]}], 
+                    "}"}]}], "]"}], ",", 
+                    RowBox[{"{", 
+                    RowBox[{"t", ",", "1", ",", "5", ",", 
+                    RowBox[{"1", "/", "8"}]}], "}"}]}], "]"}], ",", 
+                  RowBox[{"{", "}"}]}], "]"}], ",", "White", ",", 
+                RowBox[{"Disk", "[", 
+                 RowBox[{
+                  RowBox[{"{", 
+                   RowBox[{
+                    RowBox[{"+", "hh"}], ",", "0"}], "}"}], ",", ".02"}], 
+                 "]"}]}], "}"}], "]"}], ",", 
+             RowBox[{"ImageSize", "\[Rule]", "500"}], ",", 
+             RowBox[{"PlotRange", "\[Rule]", 
+              RowBox[{"If", "[", 
+               RowBox[{"zoo", ",", 
+                RowBox[{"{", 
+                 RowBox[{
+                  RowBox[{
+                   RowBox[{"{", 
+                    RowBox[{
+                    RowBox[{"(", 
+                    RowBox[{
+                    RowBox[{"-", "2"}], "-", 
+                    RowBox[{"1", "/", "3"}]}], ")"}], ",", 
+                    RowBox[{
+                    RowBox[{"(", 
+                    RowBox[{"3", "+", 
+                    RowBox[{"1", "/", "2"}]}], ")"}], "/", "8"}]}], "}"}], 
+                   "+", 
+                   RowBox[{"(", 
+                    RowBox[{
+                    RowBox[{"w", "/", "2"}], "+", "1"}], ")"}]}], ",", 
+                  RowBox[{"{", 
+                   RowBox[{
+                    RowBox[{
+                    RowBox[{"-", "5"}], "/", "4"}], ",", ".1"}], "}"}]}], 
+                 "}"}], ",", 
+                RowBox[{"{", 
+                 RowBox[{
+                  RowBox[{"{", 
+                   RowBox[{
+                    RowBox[{
+                    RowBox[{"-", "2"}], "-", 
+                    RowBox[{"1", "/", "3"}]}], ",", 
+                    RowBox[{"3", "+", 
+                    RowBox[{"1", "/", "2"}]}]}], "}"}], ",", 
+                  RowBox[{"{", 
+                   RowBox[{
+                    RowBox[{
+                    RowBox[{"-", "5"}], "/", "4"}], ",", 
+                    RowBox[{"5", "/", "4"}]}], "}"}]}], "}"}]}], "]"}]}]}], 
+            "]"}]}], "]"}]}], "]"}]}], "]"}]}], "]"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"w", ",", "0", ",", "\"\<rotation of polygon\>\""}], "}"}], ",", 
+     RowBox[{"-", "1"}], ",", "5"}], "}"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"k", ",", "4", ",", "\"\<polygon\>\""}], "}"}], ",", 
+     RowBox[{"Thread", "[", 
+      RowBox[{"Rule", "[", 
+       RowBox[{
+        RowBox[{"Range", "[", 
+         RowBox[{"3", ",", "8"}], "]"}], ",", 
+        RowBox[{"{", 
+         RowBox[{
+         "\"\<triangle\>\"", ",", "\"\<square\>\"", ",", "\"\<pentagon\>\"", 
+          ",", "\"\<hexagon\>\"", ",", "\"\<heptagon\>\"", ",", 
+          "\"\<octagon\>\""}], "}"}]}], "]"}], "]"}]}], "}"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{
+      "shofle", ",", "False", ",", "\"\<constant angular velocity\>\""}], 
+      "}"}], ",", 
+     RowBox[{"{", 
+      RowBox[{"False", ",", "True"}], "}"}]}], "}"}], ",", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{
+      "shocon", ",", "False", ",", 
+       "\"\<constant angular and horizontal velocity\>\""}], "}"}], ",", 
+     RowBox[{"{", 
+      RowBox[{"False", ",", "True"}], "}"}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"{", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"zoo", ",", "False", ",", "\"\<zoom\>\""}], "}"}], ",", 
+     RowBox[{"{", 
+      RowBox[{"False", ",", "True"}], "}"}]}], "}"}], ",", 
+   "\[IndentingNewLine]", 
+   RowBox[{"SaveDefinitions", "\[Rule]", "True"}]}], "]"}]], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`w$$ = 0}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the body must evaluate: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the polygon must draw");
+
+    // The three initialization cells above the Manipulate define the helpers
+    // its body calls; without them the body can't evaluate at all.
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["w", "k", "shofle", "shocon", "zoo"]);
+
+    // `Thread[Rule[Range[3, 8], {"triangle", …}]]` builds the polygon choices,
+    // so the control binds 3..8 while showing the names. Six words is a
+    // dropdown, matching Wolfram.
+    match &widget.controls[1] {
+      manipulate::ControlState::Discrete {
+        values,
+        value_labels,
+        value_label_svgs,
+        current_index,
+        ..
+      } => {
+        assert_eq!(values, &["3", "4", "5", "6", "7", "8"]);
+        assert_eq!(
+          value_labels,
+          &[
+            "triangle", "square", "pentagon", "hexagon", "heptagon", "octagon",
+          ]
+        );
+        assert_eq!(*current_index, 1, "the square is the default");
+        assert!(
+          !renders_as_setter_bar(value_labels, value_label_svgs),
+          "Wolfram shows the polygon choices as a dropdown"
+        );
+      }
+      other => panic!("expected the polygon control, got {other:?}"),
+    }
+
+    // The `{False, True}` controls are boolean domains, which render as
+    // checkboxes rather than two-button setters.
+    for idx in [2, 3, 4] {
+      match &widget.controls[idx] {
+        manipulate::ControlState::Discrete { values, .. } => {
+          assert_eq!(values, &["False", "True"], "control {idx}");
+        }
+        other => panic!("expected a boolean control, got {other:?}"),
+      }
+    }
+
+    let render = |w: &str, k: u32, shofle: &str, shocon: &str, zoo: &str| {
+      woxi::interpret_with_stdout(&format!(
+        "w = {w}; k = {k}; shofle = {shofle}; shocon = {shocon}; zoo = {zoo};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+
+    // At rest: four catenary arches (`per` runs -1..2) plus the straight line
+    // the polygon rolls along, the polygon itself, and the white centre dot.
+    let square = render("0", 4, "False", "False", "False");
+    assert_eq!(square.matches("<polyline").count(), 5, "{square}");
+    assert_eq!(square.matches("<polygon").count(), 1, "{square}");
+    assert_eq!(square.matches("<ellipse").count(), 1, "{square}");
+    // The rolling polygon is grey and the centre dot white.
+    assert!(square.contains("fill=\"rgb(128,128,128)\""), "{square}");
+    assert!(square.contains("fill=\"rgb(255,255,255)\""), "{square}");
+
+    // Each overlay adds one outline and one marker per step of a 33-step
+    // table (`t` from -3 to 1, and 1 to 5, by 1/8), in its own colour.
+    let fans = render("2", 5, "True", "True", "False");
+    assert_eq!(fans.matches("<polyline").count(), 5 + 33 + 33, "{fans}");
+    assert_eq!(fans.matches("<ellipse").count(), 1 + 33 + 33, "{fans}");
+    assert!(fans.contains("rgb(255,54,0)"), "constant-velocity fan");
+    assert!(fans.contains("rgb(28,156,201)"), "angular-velocity fan");
+
+    // Each control changes the picture: a different polygon, a different
+    // rotation, and the zoom, which narrows the plot range around the polygon.
+    assert_ne!(square, render("0", 5, "False", "False", "False"));
+    assert_ne!(square, render("1", 4, "False", "False", "False"));
+    assert_ne!(square, render("0", 4, "False", "False", "True"));
   }
 
   /// End-to-end regression for the "Thermodynamic Consistency Test Based on
