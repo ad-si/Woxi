@@ -7384,6 +7384,83 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn diatomic_molecule_manipulate_builds_six_sliders() {
+    // End-to-end regression for "The Six Degrees of Freedom of a Diatomic
+    // Molecule": three translations, two rotations and the bond length drive
+    // a `Graphics3D` of two spheres joined by a zigzag spring. The `Table`
+    // that draws the spring reuses `x` as its own iterator, shadowing the
+    // Manipulate variable of the same name that positions the molecule.
+    let code = "Manipulate[\
+      Graphics3D[\
+       Translate[\
+        Rotate[Rotate[{Blue, Thickness[.003], \
+          Line[Table[{x r, 0, .25 (-1)^IntegerPart[4 x]}, {x, -1, 1, .25}]], \
+          Green, Sphere[-{1 r, 0, 0}, .35], Sphere[{1 r, 0, 0}, .35]}, \
+         θ, {0, 0, 1}], ϕ, {0, 1, 0}], {x, y, z}], \
+       PlotRange -> {{-2.5, 7.5}, {-3, 7.5}, {-2, 7.5}}, \
+       SphericalRegion -> True, ImageSize -> {400, 400}], \
+      {x, 0, 5, ImageSize -> Tiny}, \
+      {y, 0, 5, ImageSize -> Tiny}, \
+      {z, 0, 5, ImageSize -> Tiny}, \
+      {θ, 0, 2π, ImageSize -> Tiny}, \
+      {ϕ, 0, 2π, ImageSize -> Tiny}, \
+      {r, 0.6, 2, ImageSize -> Tiny}, \
+      ControlPlacement -> Left]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the diatomic-molecule Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must produce the molecule"
+    );
+
+    // Six sliders: the three positions, the two Euler angles and the bond
+    // length, each starting at the low end of its range.
+    let sliders: Vec<(&str, f64, f64, f64)> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous {
+          name,
+          current,
+          min,
+          max,
+          ..
+        } => (name.as_str(), *current, *min, *max),
+        other => panic!("expected a continuous slider, got {other:?}"),
+      })
+      .collect();
+    let tau = std::f64::consts::TAU;
+    assert_eq!(
+      sliders,
+      vec![
+        ("x", 0.0, 0.0, 5.0),
+        ("y", 0.0, 0.0, 5.0),
+        ("z", 0.0, 0.0, 5.0),
+        ("θ", 0.0, 0.0, tau),
+        ("ϕ", 0.0, 0.0, tau),
+        ("r", 0.6, 0.6, 2.0),
+      ]
+    );
+
+    // Translating and rotating the molecule re-renders it.
+    for (i, value) in [(0usize, 3.0), (3, 0.5), (5, 1.2)] {
+      if let manipulate::ControlState::Continuous { current, .. } =
+        &mut state.controls[i]
+      {
+        *current = value;
+      }
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn axial_dispersion_manipulate_builds_widget() {
     // End-to-end regression for the "Response of a Reactor with Axial
     // Dispersion to a Pulse Input Tracer (E-Curve)" Demonstration: a

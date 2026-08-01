@@ -7370,6 +7370,43 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       insta::assert_snapshot!(export_svg("Graphics3D[Sphere[]]"));
     }
 
+    // A sphere, cylinder, cone, tube or torus is a tessellation of a curved
+    // surface: none of its triangle edges is an outline, so none is stroked
+    // with the dark hairline that closes a seam between separate faces.
+    // Drawing them made a small sphere read as speckled rather than smooth.
+    #[test]
+    fn curved_surfaces_have_no_facet_edges() {
+      for code in [
+        "Graphics3D[Sphere[]]",
+        "Graphics3D[Cylinder[]]",
+        "Graphics3D[Cone[]]",
+        "Graphics3D[Tube[{{0, 0, 0}, {1, 1, 1}}]]",
+        "Graphics3D[Torus[]]",
+      ] {
+        let svg = export_svg(code);
+        assert!(
+          !svg.contains("stroke=\"#00000018\""),
+          "{code} must not stroke its facet edges"
+        );
+      }
+    }
+
+    // A face with a real outline still gets it: the hairline is what keeps
+    // neighbouring faces of a solid visually distinct.
+    #[test]
+    fn flat_faces_keep_their_outline() {
+      for code in [
+        "Graphics3D[Cuboid[{0, 0, 0}, {1, 1, 1}]]",
+        "Graphics3D[Polygon[{{0, 0, 0}, {0, 1, 1}, {1, 0, 0}}]]",
+      ] {
+        let svg = export_svg(code);
+        assert!(
+          svg.contains("stroke=\"#00000018\""),
+          "{code} must outline its faces"
+        );
+      }
+    }
+
     #[test]
     fn graphics3d_cuboid() {
       insta::assert_snapshot!(export_svg(

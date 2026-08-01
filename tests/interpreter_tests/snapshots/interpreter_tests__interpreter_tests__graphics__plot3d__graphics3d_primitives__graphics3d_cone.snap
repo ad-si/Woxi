@@ -84,35 +84,35 @@ expression: "export_svg(\"Graphics3D[Cone[{{0,0,0},{0,0,1}}, 0.5]]\")"
 <line x1="235.0" y1="320.9" x2="238.4" y2="317.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="109.2" y1="318.2" x2="115.3" y2="320.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="84.5" y1="298.8" x2="84.5" y2="287.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 195.1,195.1 178.5,194.0" fill="rgb(46,63,89)" stroke="#00000018" stroke-width="0.5"/>
-<polygon points="180.0,128.3 178.5,194.0 162.0,195.5" fill="rgb(47,65,91)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 195.1,195.1 178.5,194.0" fill="rgb(46,63,89)" stroke="rgb(46,63,89)" stroke-width="0.5"/>
+<polygon points="180.0,128.3 178.5,194.0 162.0,195.5" fill="rgb(47,65,91)" stroke="rgb(47,65,91)" stroke-width="0.5"/>
 <line x1="115.3" y1="320.1" x2="121.5" y2="322.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 210.7,198.6 195.1,195.1" fill="rgb(42,58,82)" stroke="#00000018" stroke-width="0.5"/>
-<polygon points="180.0,128.3 162.0,195.5 146.8,199.5" fill="rgb(46,64,89)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 210.7,198.6 195.1,195.1" fill="rgb(42,58,82)" stroke="rgb(42,58,82)" stroke-width="0.5"/>
+<polygon points="180.0,128.3 162.0,195.5 146.8,199.5" fill="rgb(46,64,89)" stroke="rgb(46,64,89)" stroke-width="0.5"/>
 <line x1="275.5" y1="197.7" x2="275.5" y2="186.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="231.6" y1="324.5" x2="235.0" y2="320.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="121.5" y1="322.1" x2="127.7" y2="324.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 224.2,204.4 210.7,198.6" fill="rgb(37,50,70)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 224.2,204.4 210.7,198.6" fill="rgb(37,50,70)" stroke="rgb(37,50,70)" stroke-width="0.5"/>
 <line x1="152.1" y1="78.2" x2="152.1" y2="66.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="127.7" y1="324.1" x2="133.9" y2="326.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="84.5" y1="287.4" x2="84.5" y2="276.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 146.8,199.5 133.7,205.7" fill="rgb(43,59,83)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 146.8,199.5 133.7,205.7" fill="rgb(43,59,83)" stroke="rgb(43,59,83)" stroke-width="0.5"/>
 <line x1="228.2" y1="328.2" x2="231.6" y2="324.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="133.9" y1="326.1" x2="140.0" y2="328.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="275.5" y1="186.3" x2="275.5" y2="174.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="140.0" y1="328.1" x2="146.2" y2="330.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 234.7,212.1 224.2,204.4" fill="rgb(37,50,71)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 234.7,212.1 224.2,204.4" fill="rgb(37,50,71)" stroke="rgb(37,50,71)" stroke-width="0.5"/>
 <line x1="224.8" y1="331.8" x2="228.2" y2="328.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 133.7,205.7 123.9,213.6" fill="rgb(38,52,72)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 133.7,205.7 123.9,213.6" fill="rgb(38,52,72)" stroke="rgb(38,52,72)" stroke-width="0.5"/>
 <line x1="146.2" y1="330.1" x2="152.4" y2="332.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="152.1" y1="66.9" x2="152.1" y2="55.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="84.5" y1="276.1" x2="84.5" y2="264.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="152.4" y1="332.1" x2="158.6" y2="334.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="221.5" y1="335.5" x2="224.8" y2="331.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="275.5" y1="174.9" x2="275.5" y2="163.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 241.4,221.1 234.7,212.1" fill="rgb(45,62,87)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 241.4,221.1 234.7,212.1" fill="rgb(45,62,87)" stroke="rgb(45,62,87)" stroke-width="0.5"/>
 <line x1="158.6" y1="334.1" x2="164.7" y2="336.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 123.9,213.6 117.8,222.8" fill="rgb(35,49,68)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 123.9,213.6 117.8,222.8" fill="rgb(35,49,68)" stroke="rgb(35,49,68)" stroke-width="0.5"/>
 <line x1="164.7" y1="336.1" x2="170.9" y2="338.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="152.1" y1="55.5" x2="152.1" y2="44.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="218.1" y1="339.1" x2="221.5" y2="335.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
@@ -121,8 +121,8 @@ expression: "export_svg(\"Graphics3D[Cone[{{0,0,0},{0,0,1}}, 0.5]]\")"
 <line x1="275.5" y1="163.5" x2="275.5" y2="152.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="214.7" y1="342.7" x2="218.1" y2="339.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="177.1" y1="340.0" x2="183.3" y2="342.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 244.0,230.8 241.4,221.1" fill="rgb(54,75,105)" stroke="#00000018" stroke-width="0.5"/>
-<polygon points="180.0,128.3 117.8,222.8 116.0,232.6" fill="rgb(44,60,84)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 244.0,230.8 241.4,221.1" fill="rgb(54,75,105)" stroke="rgb(54,75,105)" stroke-width="0.5"/>
+<polygon points="180.0,128.3 117.8,222.8 116.0,232.6" fill="rgb(44,60,84)" stroke="rgb(44,60,84)" stroke-width="0.5"/>
 <line x1="183.3" y1="342.0" x2="189.4" y2="344.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="152.1" y1="44.1" x2="152.1" y2="32.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="84.5" y1="253.3" x2="84.5" y2="242.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
@@ -130,41 +130,41 @@ expression: "export_svg(\"Graphics3D[Cone[{{0,0,0},{0,0,1}}, 0.5]]\")"
 <line x1="189.4" y1="344.0" x2="195.6" y2="346.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="275.5" y1="152.2" x2="275.5" y2="140.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="195.6" y1="346.0" x2="201.8" y2="348.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 242.2,240.6 244.0,230.8" fill="rgb(63,87,122)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 242.2,240.6 244.0,230.8" fill="rgb(63,87,122)" stroke="rgb(63,87,122)" stroke-width="0.5"/>
 <line x1="207.9" y1="350.0" x2="211.3" y2="346.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 116.0,232.6 118.6,242.3" fill="rgb(53,73,102)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 116.0,232.6 118.6,242.3" fill="rgb(53,73,102)" stroke="rgb(53,73,102)" stroke-width="0.5"/>
 <line x1="201.8" y1="348.0" x2="207.9" y2="350.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="152.1" y1="32.7" x2="152.1" y2="21.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="84.5" y1="242.0" x2="84.5" y2="230.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="275.5" y1="140.8" x2="275.5" y2="129.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="207.9" y1="350.0" x2="207.9" y2="338.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 236.1,249.8 242.2,240.6" fill="rgb(72,99,138)" stroke="#00000018" stroke-width="0.5"/>
-<polygon points="180.0,128.3 118.6,242.3 125.3,251.3" fill="rgb(62,85,120)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 236.1,249.8 242.2,240.6" fill="rgb(72,99,138)" stroke="rgb(72,99,138)" stroke-width="0.5"/>
+<polygon points="180.0,128.3 118.6,242.3 125.3,251.3" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
 <line x1="152.1" y1="21.4" x2="152.1" y2="10.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="84.5" y1="230.6" x2="84.5" y2="219.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="275.5" y1="129.4" x2="275.5" y2="118.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="207.9" y1="338.6" x2="207.9" y2="327.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="152.1" y1="10.0" x2="158.2" y2="12.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 226.3,257.7 236.1,249.8" fill="rgb(79,109,152)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 226.3,257.7 236.1,249.8" fill="rgb(79,109,152)" stroke="rgb(79,109,152)" stroke-width="0.5"/>
 <line x1="148.7" y1="13.6" x2="152.1" y2="10.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 125.3,251.3 135.8,258.9" fill="rgb(71,97,136)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 125.3,251.3 135.8,258.9" fill="rgb(71,97,136)" stroke="rgb(71,97,136)" stroke-width="0.5"/>
 <line x1="158.2" y1="12.0" x2="164.4" y2="14.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="84.5" y1="219.2" x2="84.5" y2="207.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="164.4" y1="14.0" x2="170.6" y2="16.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="145.3" y1="17.3" x2="148.7" y2="13.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 213.2,263.9 226.3,257.7" fill="rgb(85,116,163)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 213.2,263.9 226.3,257.7" fill="rgb(85,116,163)" stroke="rgb(85,116,163)" stroke-width="0.5"/>
 <line x1="275.5" y1="118.0" x2="275.5" y2="106.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="207.9" y1="327.3" x2="207.9" y2="315.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 135.8,258.9 149.3,264.8" fill="rgb(78,107,150)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 135.8,258.9 149.3,264.8" fill="rgb(78,107,150)" stroke="rgb(78,107,150)" stroke-width="0.5"/>
 <line x1="170.6" y1="16.0" x2="176.7" y2="18.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="176.7" y1="18.0" x2="182.9" y2="20.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="141.9" y1="20.9" x2="145.3" y2="17.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="84.5" y1="207.8" x2="84.5" y2="196.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 198.0,267.9 213.2,263.9" fill="rgb(88,121,169)" stroke="#00000018" stroke-width="0.5"/>
-<polygon points="180.0,128.3 149.3,264.8 164.9,268.3" fill="rgb(84,115,161)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 198.0,267.9 213.2,263.9" fill="rgb(88,121,169)" stroke="rgb(88,121,169)" stroke-width="0.5"/>
+<polygon points="180.0,128.3 149.3,264.8 164.9,268.3" fill="rgb(84,115,161)" stroke="rgb(84,115,161)" stroke-width="0.5"/>
 <line x1="182.9" y1="20.0" x2="189.1" y2="21.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="180.0,128.3 181.5,269.4 198.0,267.9" fill="rgb(89,122,171)" stroke="#00000018" stroke-width="0.5"/>
-<polygon points="180.0,128.3 164.9,268.3 181.5,269.4" fill="rgb(88,120,169)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,128.3 181.5,269.4 198.0,267.9" fill="rgb(89,122,171)" stroke="rgb(89,122,171)" stroke-width="0.5"/>
+<polygon points="180.0,128.3 164.9,268.3 181.5,269.4" fill="rgb(88,120,169)" stroke="rgb(88,120,169)" stroke-width="0.5"/>
 <line x1="275.5" y1="106.7" x2="275.5" y2="95.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="138.5" y1="24.5" x2="141.9" y2="20.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="207.9" y1="315.9" x2="207.9" y2="304.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>

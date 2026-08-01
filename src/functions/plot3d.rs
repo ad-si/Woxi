@@ -1682,10 +1682,12 @@ enum Primitive3D {
     style: StyleState3D,
   },
   /// A pre-tessellated triangle surface (Torus, FilledTorus, BSplineSurface,
-  /// Raster3D voxels, …).
+  /// Raster3D voxels, …). `smooth` marks the ones that approximate a curved
+  /// surface, whose triangle edges are internal cuts rather than outlines.
   Surface3D {
     tris: Vec<(Point3D, Point3D, Point3D)>,
     style: StyleState3D,
+    smooth: bool,
   },
 }
 
@@ -2465,6 +2467,7 @@ fn collect_3d_primitives(
               prims.push(Primitive3D::Surface3D {
                 tris,
                 style: style.clone(),
+                smooth: true,
               });
             }
           }
@@ -2495,6 +2498,7 @@ fn collect_3d_primitives(
           prims.push(Primitive3D::Surface3D {
             tris: tessellate_torus(&center, r1, r2),
             style: style.clone(),
+            smooth: true,
           });
         }
         "BSplineSurface" if !args.is_empty() => {
@@ -2502,6 +2506,7 @@ fn collect_3d_primitives(
             prims.push(Primitive3D::Surface3D {
               tris: tessellate_bspline_surface(&grid),
               style: style.clone(),
+              smooth: true,
             });
           }
         }
@@ -2818,6 +2823,7 @@ fn collect_raster3d(
         prims.push(Primitive3D::Surface3D {
           tris: tessellate_cuboid(&p_min, &p_max),
           style: voxel_style,
+          smooth: false,
         });
       }
     }
@@ -3517,7 +3523,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           holed_boundaries = flags;
           (t, style)
         }
-        Primitive3D::Surface3D { tris, style } => (tris.clone(), style),
+        Primitive3D::Surface3D { tris, style, .. } => (tris.clone(), style),
         // Line and Point are handled separately below
         _ => (
           vec![],
@@ -3550,9 +3556,24 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       _ => 0,
     };
+    // Triangles that approximate a curved surface have no outline edges at
+    // all: Wolfram draws no facet edges on a sphere, cylinder, cone, tube
+    // or torus. Every edge is an internal cut, so the hairline that closes
+    // the anti-aliasing seam between neighbours is drawn in the surface's
+    // own colour rather than the usual dark one — otherwise a small sphere
+    // reads as speckled instead of smooth.
+    let smooth_surface = matches!(
+      prim,
+      Primitive3D::Sphere { .. }
+        | Primitive3D::Cylinder { .. }
+        | Primitive3D::Cone { .. }
+        | Primitive3D::Surface3D { smooth: true, .. }
+    );
     let tri_count = tris.len();
     for (i, (v0, v1, v2)) in tris.into_iter().enumerate() {
-      let boundary = if let Some(flags) = holed_boundaries.get(i) {
+      let boundary = if smooth_surface {
+        [false; 3]
+      } else if let Some(flags) = holed_boundaries.get(i) {
         *flags
       } else if fan_corners > 3 {
         [i == 0, true, i + 1 == tri_count]
