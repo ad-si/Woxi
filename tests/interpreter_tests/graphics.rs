@@ -7370,6 +7370,141 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       insta::assert_snapshot!(export_svg("Graphics3D[Sphere[]]"));
     }
 
+    // A `Spacer[n]` *between* a row's items is blank horizontal space, the
+    // same as one used as the separator — the typeset row used to print it
+    // as the literal text "Spacer[50]".
+    #[test]
+    fn a_spacer_between_row_items_is_blank_space() {
+      let svg = export_svg("Row[{\"a\", Spacer[50], \"b\"}]");
+      assert!(
+        !svg.contains("Spacer"),
+        "the spacer must not be printed: {svg}"
+      );
+      let narrower = export_svg("Row[{\"a\", Spacer[5], \"b\"}]");
+      let width = |s: &str| {
+        s.split("width=\"")
+          .nth(1)
+          .and_then(|w| w.split('"').next())
+          .and_then(|w| w.parse::<f64>().ok())
+          .expect("svg width")
+      };
+      assert!(
+        width(&svg) > width(&narrower) + 40.0,
+        "a wider spacer must widen the row: {} vs {}",
+        width(&svg),
+        width(&narrower)
+      );
+    }
+
+    // A front end shows what a `Dynamic` holds, not the wrapper: the label
+    // of a `Labeled[…]` is the live value. (Script-mode *text* output keeps
+    // the wrapper, matching wolframscript — this is the picture path.)
+    #[test]
+    fn a_dynamic_label_shows_its_value() {
+      let svg = export_svg(
+        "v = {{1, 2}, {3, 4}}; \
+         Labeled[Graphics[{Disk[]}, ImageSize -> 100], \
+         Dynamic[Grid[{{\"A\", ToString[v[[1]]]}, \
+         {\"B\", ToString[v[[2]]]}}]], Right]",
+      );
+      assert!(
+        !svg.contains("Dynamic"),
+        "the wrapper must not be printed: {svg}"
+      );
+      assert!(
+        svg.contains("{1, 2}"),
+        "the label must show its value: {svg}"
+      );
+    }
+
+    // `LocatorPane[locators, body]` shows `body` with a marker on every
+    // locator. Wolfram's default marker is a small circle with a crosshair
+    // through it; a Demonstration that lets you drag the vertices of a shape
+    // relies on this to show where they are.
+    #[test]
+    fn locator_pane_draws_its_locators() {
+      let svg = export_svg(
+        "LocatorPane[{{0.3, 0.3}, {0.7, 0.7}}, \
+         Graphics[{Line[{{0.3, 0.3}, {0.7, 0.7}}]}, \
+         PlotRange -> {{0, 1}, {0, 1}}, ImageSize -> 200]]",
+      );
+      // One circle per locator (drawn as an `<ellipse>`), plus its two
+      // crosshair arms.
+      assert_eq!(
+        svg.matches("<ellipse").count(),
+        2,
+        "one marker circle per locator: {svg}"
+      );
+      // The body's own line is still drawn.
+      assert!(
+        svg.contains("<polyline") || svg.contains("<line"),
+        "the body graphic must still be drawn: {svg}"
+      );
+    }
+
+    // `Appearance -> {g1, g2, …}` gives one picture per locator, drawn about
+    // the origin, so each marker is that picture moved onto its point. This
+    // is how a Demonstration labels the vertices it lets you drag.
+    #[test]
+    fn locator_pane_honours_a_custom_appearance() {
+      let svg = export_svg(
+        "LocatorPane[{{0.3, 0.3}, {0.7, 0.7}}, \
+         Graphics[{}, PlotRange -> {{0, 1}, {0, 1}}, ImageSize -> 200], \
+         Appearance -> Table[Graphics[{{Red, PointSize -> 0.02, \
+         Point[{0, 0}]}, {Blue, Text[i, {0, 0}, {-1, -1}]}}], {i, 1, 2}]]",
+      );
+      for label in ["1", "2"] {
+        assert!(
+          svg.contains(&format!(">{label}</text>")),
+          "locator {label} must be labelled: {svg}"
+        );
+      }
+      assert!(
+        !svg.contains("<ellipse"),
+        "a custom appearance replaces the default crosshair: {svg}"
+      );
+      assert_eq!(
+        svg.matches("<circle").count(),
+        2,
+        "each marker draws its own point: {svg}"
+      );
+    }
+
+    // `Appearance -> None` asks for no marker at all.
+    #[test]
+    fn locator_pane_appearance_none_draws_nothing() {
+      let svg = export_svg(
+        "LocatorPane[{{0.5, 0.5}}, \
+         Graphics[{}, PlotRange -> {{0, 1}, {0, 1}}, ImageSize -> 200], \
+         Appearance -> None]",
+      );
+      assert!(!svg.contains("<ellipse"), "no marker was asked for: {svg}");
+    }
+
+    // A primitive whose argument is `Dynamic[…]` draws the value that
+    // argument has now — the shape a Demonstration's draggable points make.
+    // The content arrives unexpanded (`Dynamic` is HoldFirst), and without
+    // releasing it the primitive read as malformed and the whole picture
+    // came out as an error box.
+    #[test]
+    fn a_dynamic_primitive_argument_is_drawn() {
+      let dynamic = export_svg(
+        "pts = {{1, 3}, {6, 3}, {5, 1}}; \
+         Graphics[{Line[Dynamic[{pts[[1]], pts[[2]], pts[[3]]}]]}, \
+         PlotRange -> {{0, 7}, {0, 4}}]",
+      );
+      let plain = export_svg(
+        "pts = {{1, 3}, {6, 3}, {5, 1}}; \
+         Graphics[{Line[{pts[[1]], pts[[2]], pts[[3]]}]}, \
+         PlotRange -> {{0, 7}, {0, 4}}]",
+      );
+      assert_eq!(
+        dynamic.matches("<polyline").count() + dynamic.matches("<line").count(),
+        plain.matches("<polyline").count() + plain.matches("<line").count(),
+        "the dynamic line must draw like the plain one: {dynamic}"
+      );
+    }
+
     // A sphere, cylinder, cone, tube or torus is a tessellation of a curved
     // surface: none of its triangle edges is an outline, so none is stroked
     // with the dark hairline that closes a seam between separate faces.

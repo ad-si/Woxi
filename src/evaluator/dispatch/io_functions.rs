@@ -3902,10 +3902,14 @@ fn is_inline_graphic(expr: &Expr) -> bool {
 /// drawn rather than written out as source.
 const LAYOUT_HEADS: &[&str] = &["Grid", "Column", "Row", "Labeled"];
 
-/// True if `expr` is a picture, or a layout that has one somewhere inside.
-/// Only then does composing it beat the typeset-text fallback: a `Grid` of
-/// plain strings already lays out correctly as text.
-fn lays_out_a_graphic(expr: &Expr) -> bool {
+/// True if `expr` is a picture, or a layout or display wrapper — `Grid`,
+/// `Column`, `Row`, `Labeled`, `Pane`, `LocatorPane`, `Dynamic` — that has
+/// one somewhere inside. Only then does composing it through
+/// [`expr_to_svg`] beat the typeset-text fallback: a `Grid` of plain
+/// strings already lays out correctly as text. Kept apart from the
+/// "produces a graphic" head test so nothing tries to give a wrapper an
+/// `ImageSize` of its own.
+pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   if is_inline_graphic(expr) {
     return true;
   }
@@ -3925,8 +3929,174 @@ fn lays_out_a_graphic(expr: &Expr) -> bool {
     {
       args.iter().any(lays_out_a_graphic)
     }
+    // `LocatorPane[locators, body, …]` shows `body`; its own arm draws the
+    // locators onto it.
+    Expr::FunctionCall { name, args }
+      if name == "LocatorPane" && args.len() >= 2 =>
+    {
+      lays_out_a_graphic(&args[1])
+    }
+    // `Dynamic[graphic]` is a picture too — its arm shows what it holds.
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && args.len() == 1 =>
+    {
+      lays_out_a_graphic(&args[0])
+    }
     _ => false,
   }
+}
+
+/// The primitives a locator pane draws at one locator position.
+///
+/// `Appearance -> {g1, g2, …}` gives one picture per locator, each drawn
+/// about the origin, so the marker is that picture translated onto the
+/// point — this is how a Demonstration labels the vertices of a shape it
+/// lets you drag. A single picture is used for every locator, `None` draws
+/// nothing, and with no `Appearance` at all the Wolfram default is a small
+/// circle with a crosshair through it, sized here as a fraction of the plot
+/// range so it keeps its proportions whatever the scale.
+fn locator_marker(
+  appearance: Option<&Expr>,
+  index: usize,
+  point: &Expr,
+  span: f64,
+) -> Option<Expr> {
+  let translate = |prims: &Expr| Expr::FunctionCall {
+    name: "Translate".to_string(),
+    args: vec![prims.clone(), point.clone()].into(),
+  };
+  // The primitives of an `Appearance` picture: `Graphics[prims, opts…]`
+  // contributes `prims`; anything else is drawn as given.
+  let primitives = |g: &Expr| match g {
+    Expr::FunctionCall { name, args }
+      if name == "Graphics" && !args.is_empty() =>
+    {
+      args[0].clone()
+    }
+    other => other.clone(),
+  };
+  match appearance {
+    Some(Expr::Identifier(n)) if n == "None" => None,
+    Some(Expr::List(items)) if !items.is_empty() => {
+      Some(translate(&primitives(&items[index % items.len()])))
+    }
+    Some(single) => Some(translate(&primitives(single))),
+    None => {
+      let r = span * 0.015;
+      let arm = span * 0.03;
+      let offset = |dx: f64, dy: f64| Expr::List(vec![num(dx), num(dy)].into());
+      let line = |a: Expr, b: Expr| Expr::FunctionCall {
+        name: "Line".to_string(),
+        args: vec![Expr::List(vec![a, b].into())].into(),
+      };
+      Some(translate(&Expr::List(
+        vec![
+          Expr::FunctionCall {
+            name: "Circle".to_string(),
+            args: vec![offset(0.0, 0.0), num(r)].into(),
+          },
+          line(offset(-arm, 0.0), offset(arm, 0.0)),
+          line(offset(0.0, -arm), offset(0.0, arm)),
+        ]
+        .into(),
+      )))
+    }
+  }
+}
+
+/// A machine real as an expression, for the synthesized marker geometry.
+fn num(v: f64) -> Expr {
+  Expr::Real(v)
+}
+
+/// `LocatorPane[locators, body, …]` as the picture it displays: the body
+/// graphic with a marker drawn at every locator. Dragging a locator is a
+/// front-end affordance; what the picture itself carries is the markers, so
+/// this is what exporting or laying one out has to produce instead of the
+/// call written out as source. `None` when the arguments don't fit.
+fn locator_pane_graphic(args: &[Expr]) -> Option<Expr> {
+  if args.len() < 2 {
+    return None;
+  }
+  // The locators: `Dynamic[sym]` reads `sym`'s current value, anything else
+  // is the position (or list of positions) itself.
+  let positions = match &args[0] {
+    Expr::FunctionCall { name, args: inner }
+      if name == "Dynamic" && inner.len() == 1 =>
+    {
+      crate::evaluator::evaluate_expr_to_expr(&inner[0]).ok()?
+    }
+    other => crate::evaluator::evaluate_expr_to_expr(other).ok()?,
+  };
+  let is_point = |e: &Expr| {
+    matches!(e, Expr::List(c) if c.len() == 2
+      && c.iter().all(|v| crate::functions::math_ast::try_eval_to_f64(v).is_some()))
+  };
+  let points: Vec<Expr> = match &positions {
+    p if is_point(p) => vec![p.clone()],
+    Expr::List(items) if items.iter().all(is_point) => items.to_vec(),
+    _ => return None,
+  };
+
+  // The body must be a graphic; its options are kept so the pane inherits
+  // the plot range, axes and grid lines the body asked for.
+  let body = crate::evaluator::evaluate_expr_to_expr(&args[1]).ok()?;
+  let (body_prims, body_opts) = match &body {
+    Expr::FunctionCall { name, args }
+      if name == "Graphics" && !args.is_empty() =>
+    {
+      (args[0].clone(), args[1..].to_vec())
+    }
+    _ => return None,
+  };
+
+  // The default marker is sized against the plot range, so it stays a small
+  // fraction of the picture whatever the coordinates are.
+  let span = body_opts
+    .iter()
+    .find_map(|o| match o {
+      Expr::Rule { pattern, replacement }
+        if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "PlotRange") =>
+      {
+        match replacement.as_ref() {
+          Expr::List(axes) if axes.len() == 2 => {
+            let extent = |e: &Expr| match e {
+              Expr::List(b) if b.len() == 2 => {
+                let f = crate::functions::math_ast::try_eval_to_f64;
+                Some((f(&b[1])? - f(&b[0])?).abs())
+              }
+              _ => None,
+            };
+            Some(extent(&axes[0])?.max(extent(&axes[1])?))
+          }
+          _ => None,
+        }
+      }
+      _ => None,
+    })
+    .unwrap_or(1.0);
+
+  let appearance = args[2..].iter().find_map(|o| match o {
+    Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "Appearance") =>
+    {
+      crate::evaluator::evaluate_expr_to_expr(replacement).ok()
+    }
+    _ => None,
+  });
+
+  let mut prims = vec![body_prims];
+  for (i, point) in points.iter().enumerate() {
+    if let Some(marker) = locator_marker(appearance.as_ref(), i, point, span) {
+      prims.push(marker);
+    }
+  }
+  let mut graphics_args = vec![Expr::List(prims.into())];
+  graphics_args.extend(body_opts);
+  Some(Expr::FunctionCall {
+    name: "Graphics".to_string(),
+    args: graphics_args.into(),
+  })
 }
 
 /// A string shown through `Text` loses the quotation marks its own
@@ -4004,6 +4174,29 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // this, `Export[…, Pane[graphic]]` wrote the expression as text.)
     Expr::FunctionCall { name, args } if name == "Pane" && !args.is_empty() => {
       expr_to_svg(&args[0])
+    }
+    // `Dynamic[expr]` displays the value `expr` has now — a front end shows
+    // the content, never the wrapper. (Script-mode *text* output keeps the
+    // wrapper, matching wolframscript; this is the picture path, which is
+    // what a notebook shows.)
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic"
+        && args.len() == 1
+        && let Ok(value) =
+          crate::evaluator::evaluate_expr_to_expr(&args[0]) =>
+    {
+      expr_to_svg(&unquoted_display_string(&value))
+    }
+    // `LocatorPane[locators, body, …]` displays `body` with a marker on
+    // every locator.
+    Expr::FunctionCall { name, args }
+      if name == "LocatorPane"
+        && args.len() >= 2
+        && let Some(drawn) = locator_pane_graphic(args) =>
+    {
+      expr_to_svg(
+        &crate::evaluator::evaluate_expr_to_expr(&drawn).unwrap_or(drawn),
+      )
     }
     // Outside a `Graphics`, `Text[expr]` only asks for `expr` to be shown
     // in text rather than mathematical form — it contributes no box of its

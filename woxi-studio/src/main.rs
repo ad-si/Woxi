@@ -7384,6 +7384,99 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn integer_grid_triangle_manipulate_draws_its_locators() {
+    // End-to-end regression for "Area of a Triangle on an Integer Grid": a
+    // seeded random triangle is shown in a `LocatorPane` whose three
+    // vertices carry lettered markers, with the coordinates beside it (a
+    // `Dynamic` label) and the area below. Everything the widget draws sits
+    // inside display wrappers — `Column[Pane[Labeled[LocatorPane[…]]]]` —
+    // which used to print as a line of source text instead.
+    woxi::interpret(
+      "names1[fonts1_] := Style[#, fonts1] & /@ CharacterRange[\"A\", \"U\"]; \
+       names1A[fonts1_] := Table[Graphics[{{RGBColor[0.501961, 0, 0.25098], \
+         PointSize -> 0.02, Point[{0, 0}]}, {RGBColor[0, 0.501961, 1], \
+         Text[names1[fonts1][[i]], {0, 0}, {-1, -1}]}}], {i, 1, 20}]; \
+       RandomKsublist[set_, k_] := Module[{sub = {}, rest = set, new}, \
+         Do[new = rest[[RandomInteger[{1, Length[rest]}]]]; \
+            sub = AppendTo[sub, new]; rest = Complement[rest, {new}], {k}]; \
+         sub]; \
+       set2[n_] := Flatten[Table[{i, j}, {i, 0, n - 1}, {j, 0, n - 1}], 1];",
+    )
+    .unwrap();
+    let code = "Manipulate[\n\
+      SeedRandom[seed];\n\
+      With[{st = RandomKsublist[set2[9], 3]},\n\
+       DynamicModule[{nn = st},\n\
+        Column[{\n\
+         Pane[Labeled[\n\
+           LocatorPane[Dynamic[nn],\n\
+            Graphics[{Line[Dynamic@{nn[[1]], nn[[2]], nn[[3]], nn[[1]]}]},\n\
+             Axes -> True, PlotRange -> {{-1, 10}, {-1, 10}},\n\
+             GridLines -> If[!help, None, {Range[-10, 10], Range[-10, 10]}],\n\
+             GridLinesStyle -> Directive[RGBColor[1, 0.72549, 0.72549], Thin],\n\
+             ImageSize -> {450, 430}],\n\
+            {{-9, -9}, {9, 9}, {1, 1}}, Appearance -> names1A[14]],\n\
+           Dynamic[Text@Grid[Table[{names1[14][[i]], \"=\", \
+             StringReplace[ToString@nn[[i]], {\"{\" -> \"(\", \"}\" -> \")\"}]}, \
+             {i, 1, 3}]]], Right], {550, 450}],\n\
+         Text@Style[#, 14] &@Row[{Spacer[50], \"area of triangle ABC = \", \
+           FullSimplify@(Dynamic@Abs[Det[{(nn[[2]] - nn[[1]])/2, \
+             nn[[3]] - nn[[1]]}]]), \".\"}]}]]],\n\
+      Row[{Control@{{help, False, \"show grid lines\"}, {False, True}}, \
+        Spacer[20], \
+        Control@{{seed, 1, \"random seed\"}, 1, 100000, 1, \
+          Appearance -> \"Labeled\"}}],\n\
+      SaveDefinitions -> True, AutorunSequencing -> {1, 2}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the integer-grid Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the triangle and its locators"
+    );
+
+    // Both controls come out of the `Row[…]` they are wrapped in: the
+    // grid-lines checkbox and the random-seed slider.
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete { label, values, .. },
+        manipulate::ControlState::Continuous {
+          label: seed_label,
+          min,
+          max,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(label, "show grid lines");
+        assert_eq!(values, &["False".to_string(), "True".to_string()]);
+        assert_eq!(seed_label, "random seed");
+        assert_eq!((*current, *min, *max), (1.0, 1.0, 100000.0));
+      }
+      other => panic!("expected a checkbox and a slider, got {other:?}"),
+    }
+
+    // Turning the grid lines on and reseeding both re-render.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[1]
+    {
+      *current = 42.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn diatomic_molecule_manipulate_builds_six_sliders() {
     // End-to-end regression for "The Six Degrees of Freedom of a Diatomic
     // Molecule": three translations, two rotations and the bond length drive

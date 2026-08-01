@@ -1393,6 +1393,40 @@ fn collect_primitives(
       }
       *style = saved;
     }
+    // A primitive whose *argument* is `Dynamic[…]` draws the value that
+    // argument currently has: `Line[Dynamic[{p1, p2, p3}]]` is the shape a
+    // Demonstration's draggable vertices trace out, and a front end shows it
+    // as the line those points make. `Dynamic` is HoldFirst, so the content
+    // arrives unexpanded and has to be released here; without this the
+    // primitive reads as malformed and the whole picture becomes an error box.
+    Expr::FunctionCall { name, args }
+      if args.iter().any(|a| {
+        matches!(a, Expr::FunctionCall { name, args }
+          if name == "Dynamic" && args.len() == 1)
+      }) && !matches!(name.as_str(), "Dynamic" | "Style") =>
+    {
+      let released: Vec<Expr> = args
+        .iter()
+        .map(|a| match a {
+          Expr::FunctionCall { name, args: inner }
+            if name == "Dynamic" && inner.len() == 1 =>
+          {
+            crate::evaluator::evaluate_expr_to_expr(&inner[0])
+              .unwrap_or_else(|_| a.clone())
+          }
+          other => other.clone(),
+        })
+        .collect();
+      collect_primitives(
+        &Expr::FunctionCall {
+          name: name.clone(),
+          args: released.into(),
+        },
+        style,
+        prims,
+        errors,
+      );
+    }
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
         // Style directives are handled by apply_directive
@@ -9404,6 +9438,15 @@ fn grid_of_graphics_svgs(args: &[Expr]) -> Option<Vec<Vec<String>>> {
           let evaluated = evaluate_expr_to_expr(cell).ok()?;
           crate::evaluator::expr_to_svg(&evaluated)
         }
+        // A display wrapper that resolves to a picture (`Labeled[…]`,
+        // `Pane[…]`, `LocatorPane[…]`, `Dynamic[…]`) is drawn through the
+        // same path, which unwraps it. Without this the cell printed as
+        // source.
+        Expr::FunctionCall { .. }
+          if crate::evaluator::lays_out_a_graphic(cell) =>
+        {
+          crate::evaluator::expr_to_svg(cell)
+        }
         _ => return None,
       };
       if svg.is_empty() {
@@ -9593,6 +9636,11 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     // rendering path turns `Graphics[…]` into a rendered graphic, so ask
     // for its SVG directly.
     Expr::FunctionCall { name, .. } if is_graphics_producing_head(name) => {
+      crate::evaluator::expr_to_svg(cell)
+    }
+    // As above, a display wrapper that resolves to a picture is drawn
+    // rather than printed as source.
+    Expr::FunctionCall { .. } if crate::evaluator::lays_out_a_graphic(cell) => {
       crate::evaluator::expr_to_svg(cell)
     }
     // A cell may itself be a block layout, which the text pass cannot
@@ -12820,6 +12868,16 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       "Grid" => return grid_svg_with_gaps(&args, &[]).ok(),
       // A styled layout keeps its layout.
       "Style" | "StyleForm" => return nested_layout_svg(&args[0]),
+      // A display wrapper that resolves to a picture (`Labeled[…]`,
+      // `LocatorPane[…]`, `Dynamic[…]`) is drawn through the export path,
+      // which unwraps it. Without this a `Column` item holding one was
+      // written out as a line of source text.
+      _ if crate::evaluator::lays_out_a_graphic(expr) => {
+        let svg = crate::evaluator::expr_to_svg(expr);
+        if svg.starts_with("<svg") {
+          return Some(svg);
+        }
+      }
       _ => {}
     }
   }
@@ -13171,7 +13229,20 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
               height: h,
             }
           }
-          None => make_text_cell(&resolved),
+          // `Spacer[n]` between items is blank horizontal space, the same
+          // as in separator position — not something to print.
+          None => match crate::syntax::spacer_width_pts(&resolved) {
+            Some(width) => Cell::Text {
+              markup: String::new(),
+              width,
+              height: font_size + pad_y,
+              fill: theme().text_primary.to_string(),
+              size: font_size,
+              weight: "normal".to_string(),
+              slant: "normal".to_string(),
+            },
+            None => make_text_cell(&resolved),
+          },
         },
       }
     })
