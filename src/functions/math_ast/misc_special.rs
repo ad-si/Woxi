@@ -539,7 +539,7 @@ pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         wr -= step_re;
         wi -= step_im;
       }
-      return Ok(crate::functions::math_ast::build_complex_float_expr(wr, wi));
+      return Ok(build_complex_float_expr(wr, wi));
     }
     _ => {}
   }
@@ -1764,13 +1764,10 @@ fn weber_e_integer_closed_form(
       if p > 0 {
         // power_ast so an exact argument simplifies (e.g. 3^1 -> 3), letting
         // times_ast fold it into the coefficient (WeberE[2, 3] -> 2/Pi - ...).
-        factors.push(crate::functions::math_ast::power_ast(&[
-          z.clone(),
-          Expr::Integer(p),
-        ])?);
+        factors.push(power_ast(&[z.clone(), Expr::Integer(p)])?);
       }
       factors.push(pi_inv.clone());
-      terms.push(crate::functions::math_ast::times_ast(&factors)?);
+      terms.push(times_ast(&factors)?);
     }
   }
 
@@ -1779,16 +1776,12 @@ fn weber_e_integer_closed_form(
     name: "StruveH".to_string(),
     args: vec![Expr::Integer(m), z.clone()].into(),
   };
-  terms.push(crate::functions::math_ast::times_ast(&[
-    Expr::Integer(-1),
-    struve,
-  ])?);
+  terms.push(times_ast(&[Expr::Integer(-1), struve])?);
 
-  let mut result = crate::functions::math_ast::plus_ast(&terms)?;
+  let mut result = plus_ast(&terms)?;
   // Reflection: WeberE[-n, z] = (-1)^n WeberE[n, z]; only an odd |n| flips sign.
   if n < 0 && m % 2 == 1 {
-    result =
-      crate::functions::math_ast::times_ast(&[Expr::Integer(-1), result])?;
+    result = times_ast(&[Expr::Integer(-1), result])?;
   }
   Ok(result)
 }
@@ -2325,9 +2318,7 @@ pub fn norlund_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           None => return evaluate_norlund_symbolic(&poly, a_expr),
         };
       }
-      return Ok(crate::functions::math_ast::make_rational(
-        result_n, result_d,
-      ));
+      return Ok(make_rational(result_n, result_d));
     }
   }
 
@@ -2384,7 +2375,7 @@ fn evaluate_norlund_symbolic(
     if cn == 0 {
       continue;
     }
-    let coeff = crate::functions::math_ast::make_rational(cn, cd);
+    let coeff = make_rational(cn, cd);
     let term = if k == 0 {
       coeff
     } else {
@@ -3400,7 +3391,7 @@ pub fn real_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Determine the base. Default is 10. The base must be a real number > 1.
   let base: f64 = if args.len() == 2 {
-    match crate::functions::math_ast::try_eval_to_f64(&args[1]) {
+    match try_eval_to_f64(&args[1]) {
       Some(b) if b.is_finite() && b > 1.0 => b,
       _ => return Ok(unevaluated()),
     }
@@ -3422,7 +3413,7 @@ pub fn real_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  let magnitude = match crate::functions::math_ast::try_eval_to_f64(&abs_expr) {
+  let magnitude = match try_eval_to_f64(&abs_expr) {
     Some(m) if m.is_finite() && m > 0.0 => m,
     _ => return Ok(unevaluated()),
   };

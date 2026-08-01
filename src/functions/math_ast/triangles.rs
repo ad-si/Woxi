@@ -24,14 +24,14 @@ fn eval(e: Expr) -> Result<Expr, InterpreterError> {
 
 /// The numeric value of an angle argument, when it has one.
 fn angle_value(e: &Expr) -> Option<f64> {
-  let v = crate::functions::math_ast::try_eval_to_f64(e)?;
+  let v = try_eval_to_f64(e)?;
   v.is_finite().then_some(v)
 }
 
 /// A numeric side must be positive; a non-numeric side passes through
 /// (wolframscript computes `SASTriangle[x, Pi/2, 4]` symbolically).
 fn side_ok(e: &Expr) -> bool {
-  match crate::functions::math_ast::try_eval_to_f64(e) {
+  match try_eval_to_f64(e) {
     Some(v) => v.is_finite() && v > 0.0,
     None => true,
   }
@@ -423,7 +423,7 @@ pub fn triangle_measurement_ast(
     ],
   );
   let signed = eval(twice_signed_area.clone())?;
-  if crate::functions::math_ast::try_eval_to_f64(&signed) == Some(0.0) {
+  if try_eval_to_f64(&signed) == Some(0.0) {
     crate::emit_message(&format!(
       "TriangleMeasurement::invtri: {} expected to specify a nondegenerate triangle in the plane.",
       expr_to_output(&args[0])

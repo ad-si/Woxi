@@ -7,9 +7,8 @@
 //! cap breach returns None so the caller can fall back to other methods.
 
 use super::gf_factor::gf_factor_coeffs;
-use super::poly_div;
-use super::{deg, is_zero, trim};
-use crate::functions::math_ast::gcd_i128;
+#[allow(unused_imports)]
+use super::*;
 
 const PRIMES: [i128; 15] =
   [3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53];

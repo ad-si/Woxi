@@ -9,8 +9,6 @@
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr as eval_expr;
 use crate::evaluator::pattern_matching::expr_equal;
-use crate::functions::math_ast::contains_inexact_real as is_inexact;
-use crate::functions::math_ast::make_sqrt;
 
 /// R_C(x, y) — degenerate Carlson integral.
 fn carlson_rc(x: f64, y: f64) -> f64 {
@@ -472,12 +470,12 @@ fn carlson_ast(
   if args.len() != arity {
     return symbolic();
   }
-  if !args.iter().any(is_inexact) {
+  if !args.iter().any(contains_inexact_real) {
     return symbolic();
   }
   let mut vals = Vec::with_capacity(arity);
   for a in args {
-    match crate::functions::math_ast::expr_to_f64(a) {
+    match expr_to_f64(a) {
       Some(v) => vals.push(v),
       None => return symbolic(),
     }
@@ -490,7 +488,7 @@ fn carlson_ast(
 
 /// True when no argument is inexact, so exact reductions may apply.
 fn all_exact(args: &[Expr]) -> bool {
-  !args.iter().any(is_inexact)
+  !args.iter().any(contains_inexact_real)
 }
 
 pub fn carlson_rc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -514,16 +512,16 @@ pub fn carlson_rf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // nonzero imaginary part, use the complex duplication kernel (the real
   // kernel and `expr_to_f64` cannot handle complex arguments).
   if args.len() == 3
-    && args.iter().any(is_inexact)
+    && args.iter().any(contains_inexact_real)
     && let (Some(x), Some(y), Some(z)) = (
-      crate::functions::math_ast::try_extract_complex_f64(&args[0]),
-      crate::functions::math_ast::try_extract_complex_f64(&args[1]),
-      crate::functions::math_ast::try_extract_complex_f64(&args[2]),
+      try_extract_complex_f64(&args[0]),
+      try_extract_complex_f64(&args[1]),
+      try_extract_complex_f64(&args[2]),
     )
     && (x.1 != 0.0 || y.1 != 0.0 || z.1 != 0.0)
   {
     let (rr, ri) = carlson_rf_complex(x, y, z);
-    return Ok(crate::functions::math_ast::build_complex_float_expr(rr, ri));
+    return Ok(build_complex_float_expr(rr, ri));
   }
   carlson_ast("CarlsonRF", args, 3, |v| Some(carlson_rf(v[0], v[1], v[2])))
 }

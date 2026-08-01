@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::math_ast::gcd_i128;
 
 /// ToRadicals[expr] — convert Root objects to explicit radical expressions.
 pub fn to_radicals_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

@@ -181,7 +181,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // form (including negative rational coefficients, e.g. FresnelS[-x/2]) via the
   // shared helper; recursion evaluates special values such as
   // FresnelS[-Infinity] = -1/2.
-  if let Some(pos) = crate::functions::math_ast::strip_negation(&args[0]) {
+  if let Some(pos) = strip_negation(&args[0]) {
     let inner = fresnel_s_ast(&[pos])?;
     return crate::evaluator::evaluate_function_call_ast(
       "Times",
@@ -204,9 +204,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // FresnelS[0] = 0
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     // FresnelS[Infinity] = 1/2
-    Expr::Identifier(s) if s == "Infinity" => {
-      Ok(crate::functions::math_ast::make_rational(1, 2))
-    }
+    Expr::Identifier(s) if s == "Infinity" => Ok(make_rational(1, 2)),
     // FresnelS[ComplexInfinity] = Indeterminate
     Expr::Identifier(s) if s == "ComplexInfinity" => {
       Ok(Expr::Identifier("Indeterminate".to_string()))
@@ -232,7 +230,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } => {
       // Check for -Infinity first
       if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") {
-        return Ok(crate::functions::math_ast::make_rational(-1, 2));
+        return Ok(make_rational(-1, 2));
       }
       Ok(negate_fresnel_s(*operand.clone()))
     }
@@ -279,7 +277,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Check for -Infinity (Times[-1, Infinity] form)
     other => {
       if is_neg_infinity(other) {
-        return Ok(crate::functions::math_ast::make_rational(-1, 2));
+        return Ok(make_rational(-1, 2));
       }
       // Unevaluated
       Ok(unevaluated("FresnelS", args))
@@ -306,7 +304,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // FresnelC is odd: FresnelC[-x] = -FresnelC[x] (see fresnel_s_ast).
-  if let Some(pos) = crate::functions::math_ast::strip_negation(&args[0]) {
+  if let Some(pos) = strip_negation(&args[0]) {
     let inner = fresnel_c_ast(&[pos])?;
     return crate::evaluator::evaluate_function_call_ast(
       "Times",
@@ -329,9 +327,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // FresnelC[0] = 0
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     // FresnelC[Infinity] = 1/2
-    Expr::Identifier(s) if s == "Infinity" => {
-      Ok(crate::functions::math_ast::make_rational(1, 2))
-    }
+    Expr::Identifier(s) if s == "Infinity" => Ok(make_rational(1, 2)),
     // FresnelC[ComplexInfinity] = Indeterminate
     Expr::Identifier(s) if s == "ComplexInfinity" => {
       Ok(Expr::Identifier("Indeterminate".to_string()))
@@ -356,7 +352,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } => {
       // Check for -Infinity first
       if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") {
-        return Ok(crate::functions::math_ast::make_rational(-1, 2));
+        return Ok(make_rational(-1, 2));
       }
       Ok(negate_fresnel_c(*operand.clone()))
     }
@@ -402,7 +398,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Check for -Infinity (Times[-1, Infinity] form)
     other => {
       if is_neg_infinity(other) {
-        return Ok(crate::functions::math_ast::make_rational(-1, 2));
+        return Ok(make_rational(-1, 2));
       }
       // Unevaluated
       Ok(unevaluated("FresnelC", args))
@@ -615,11 +611,7 @@ pub fn sin_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // SinIntegral[Infinity] = Pi/2
     Expr::Identifier(s) if s == "Infinity" => Ok(Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![
-        crate::functions::math_ast::make_rational(1, 2),
-        Expr::Constant("Pi".to_string()),
-      ]
-      .into(),
+      args: vec![make_rational(1, 2), Expr::Constant("Pi".to_string())].into(),
     }),
     // Numeric evaluation
     Expr::Real(x) => Ok(Expr::Real(sin_integral_numeric(*x))),
@@ -629,11 +621,8 @@ pub fn sin_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // SinIntegral[-Infinity] = -Pi/2
         return Ok(Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![
-            crate::functions::math_ast::make_rational(-1, 2),
-            Expr::Constant("Pi".to_string()),
-          ]
-          .into(),
+          args: vec![make_rational(-1, 2), Expr::Constant("Pi".to_string())]
+            .into(),
         });
       }
       // Unevaluated
@@ -1122,7 +1111,7 @@ pub fn fresnel_fg_ast(
   if !matches!(&args[0], Expr::Real(_) | Expr::BigFloat(..)) {
     return unevaluated();
   }
-  let Some(x) = crate::functions::math_ast::try_eval_to_f64(&args[0]) else {
+  let Some(x) = try_eval_to_f64(&args[0]) else {
     return unevaluated();
   };
   Ok(Expr::Real(fresnel_fg_numeric(name == "FresnelF", x)))

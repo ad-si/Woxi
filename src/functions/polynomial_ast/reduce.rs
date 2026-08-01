@@ -3,7 +3,7 @@ use super::together::negate_expr;
 use super::*;
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
-use crate::functions::math_ast::{gcd_i128, make_sqrt};
+use crate::functions::math_ast::try_eval_to_f64;
 
 // ─── Reduce ──────────────────────────────────────────────────────────
 
@@ -124,7 +124,7 @@ fn tighten_integer_one_sided(result: &Expr, var: &str) -> Option<Expr> {
   if contains_inexact_literal(&operands[1]) {
     return None;
   }
-  let c = crate::functions::math_ast::try_eval_to_f64(&operands[1])?;
+  let c = try_eval_to_f64(&operands[1])?;
   let (bound, out_op) = match operators[0] {
     ComparisonOp::Greater => {
       ((c.floor() as i64) + 1, ComparisonOp::GreaterEqual)
@@ -171,8 +171,8 @@ fn enumerate_integer_interval(result: &Expr, var: &str) -> Option<Expr> {
   if !matches!(&args[2], Expr::Identifier(s) if s == var) {
     return None;
   }
-  let lo = crate::functions::math_ast::try_eval_to_f64(&args[0])?;
-  let hi = crate::functions::math_ast::try_eval_to_f64(&args[4])?;
+  let lo = try_eval_to_f64(&args[0])?;
+  let hi = try_eval_to_f64(&args[4])?;
   let op1 = match &args[1] {
     Expr::Identifier(s) => s.as_str(),
     _ => return None,
@@ -243,8 +243,8 @@ fn numeric_var_bounds(
     && args.len() == 5
     && is_var(&args[2])
   {
-    let lo = crate::functions::math_ast::try_eval_to_f64(&args[0])?;
-    let hi = crate::functions::math_ast::try_eval_to_f64(&args[4])?;
+    let lo = try_eval_to_f64(&args[0])?;
+    let hi = try_eval_to_f64(&args[4])?;
     let op1 = comparison_op_of(&args[1])?;
     let op2 = comparison_op_of(&args[3])?;
     return Some((lower_from(op1, lo), upper_from(op2, hi)));
@@ -279,7 +279,7 @@ fn numeric_var_bounds(
     let mut upper: Option<i64> = None;
     // Left neighbor: `o[k-1] op var`.
     if k > 0 {
-      let v = crate::functions::math_ast::try_eval_to_f64(&operands[k - 1])?;
+      let v = try_eval_to_f64(&operands[k - 1])?;
       match operators[k - 1] {
         ComparisonOp::Less | ComparisonOp::LessEqual => {
           lower = lower_from(operators[k - 1], v);
@@ -291,7 +291,7 @@ fn numeric_var_bounds(
     }
     // Right neighbor: `var op o[k+1]`.
     if k + 1 < operands.len() {
-      let v = crate::functions::math_ast::try_eval_to_f64(&operands[k + 1])?;
+      let v = try_eval_to_f64(&operands[k + 1])?;
       match operators[k] {
         ComparisonOp::Less | ComparisonOp::LessEqual => {
           upper = upper_from(operators[k], v);

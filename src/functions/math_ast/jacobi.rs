@@ -72,11 +72,7 @@ pub fn jacobi_amplitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // JacobiAmplitude[u, 0] = u (the modulus vanishes, so am collapses to u).
-  if let Some(result) =
-    crate::functions::math_ast::elliptic::elliptic_param_zero_reduces_to_first(
-      u, m,
-    )
-  {
+  if let Some(result) = elliptic_param_zero_reduces_to_first(u, m) {
     return Ok(result);
   }
 
@@ -123,11 +119,7 @@ pub fn jacobi_epsilon_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // JacobiEpsilon[u, 0] = u (the integrand dn^2 collapses to 1).
-  if let Some(result) =
-    crate::functions::math_ast::elliptic::elliptic_param_zero_reduces_to_first(
-      u, m,
-    )
-  {
+  if let Some(result) = elliptic_param_zero_reduces_to_first(u, m) {
     return Ok(result);
   }
 
@@ -145,9 +137,7 @@ pub fn jacobi_epsilon_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let (sn, cn, _) = jacobi_elliptic(u_f, m_f);
     let am = sn.atan2(cn);
-    return Ok(Expr::Real(
-      crate::functions::math_ast::elliptic::elliptic_e_incomplete(am, m_f),
-    ));
+    return Ok(Expr::Real(elliptic_e_incomplete(am, m_f)));
   }
 
   Ok(unevaluated("JacobiEpsilon", args))

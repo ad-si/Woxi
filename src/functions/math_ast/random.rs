@@ -606,7 +606,7 @@ fn quantity_span_seconds(expr: &Expr) -> Option<f64> {
   if name != "Quantity" || args.len() != 2 {
     return None;
   }
-  let value = crate::functions::math_ast::try_eval_to_f64(&args[0])?;
+  let value = try_eval_to_f64(&args[0])?;
   let unit = match &args[1] {
     Expr::String(s) => s.as_str(),
     Expr::Identifier(s) => s.as_str(),
@@ -642,7 +642,7 @@ fn time_object_span(expr: &Expr) -> Option<(f64, f64)> {
   }
   let mut secs = [0.0f64; 3];
   for (i, c) in comps.iter().enumerate() {
-    secs[i] = crate::functions::math_ast::try_eval_to_f64(c)?;
+    secs[i] = try_eval_to_f64(c)?;
   }
   let start = (secs[0] * 3600.0 + secs[1] * 60.0 + secs[2]).rem_euclid(86400.0);
   let granularity = match args.get(1) {
@@ -1752,11 +1752,11 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && name == "BernoulliGraphDistribution"
     && bargs.len() == 2
   {
-    let n = match crate::functions::math_ast::expr_to_i128(&bargs[0]) {
+    let n = match expr_to_i128(&bargs[0]) {
       Some(n) if n >= 0 => n as usize,
       _ => return Ok(unevaluated()),
     };
-    let p = match crate::functions::math_ast::try_eval_to_f64(&bargs[1]) {
+    let p = match try_eval_to_f64(&bargs[1]) {
       Some(p) if (0.0..=1.0).contains(&p) => p,
       _ => return Ok(unevaluated()),
     };
@@ -1792,10 +1792,7 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (n, m) = match positional[0] {
     Expr::List(items) if items.len() == 2 => {
-      match (
-        crate::functions::math_ast::expr_to_i128(&items[0]),
-        crate::functions::math_ast::expr_to_i128(&items[1]),
-      ) {
+      match (expr_to_i128(&items[0]), expr_to_i128(&items[1])) {
         (Some(n), Some(m)) if n >= 0 && m >= 0 => (n as usize, m as usize),
         _ => return Ok(unevaluated()),
       }
@@ -1811,7 +1808,7 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let k = match positional.len() {
     1 => None,
-    2 => match crate::functions::math_ast::expr_to_i128(positional[1]) {
+    2 => match expr_to_i128(positional[1]) {
       Some(k) if k >= 0 => Some(k as usize),
       _ => return Ok(unevaluated()),
     },

@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::calculus_ast::simplify;
-use crate::functions::math_ast::{gcd_i128, lcm_i128, rat_reduce};
+use crate::functions::math_ast::{divide_ast, times_ast};
 
 // ─── Factor ─────────────────────────────────────────────────────────
 
@@ -1460,7 +1460,7 @@ fn decompose_product(
       // base^exp
       if is_numeric_expr(left) {
         // numeric^exp: handle as coefficient
-        *numeric_coeff = crate::functions::math_ast::times_ast(&[
+        *numeric_coeff = times_ast(&[
           numeric_coeff.clone(),
           Expr::BinaryOp {
             op: BinaryOperator::Power,
@@ -1475,41 +1475,29 @@ fn decompose_product(
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       if is_numeric_expr(&args[0]) {
-        *numeric_coeff = crate::functions::math_ast::times_ast(&[
-          numeric_coeff.clone(),
-          expr.clone(),
-        ])
-        .unwrap_or(expr.clone());
+        *numeric_coeff = times_ast(&[numeric_coeff.clone(), expr.clone()])
+          .unwrap_or(expr.clone());
       } else {
         pairs.push(Expr::List(vec![args[0].clone(), args[1].clone()].into()));
       }
     }
     Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_) => {
-      *numeric_coeff = crate::functions::math_ast::times_ast(&[
-        numeric_coeff.clone(),
-        expr.clone(),
-      ])
-      .unwrap_or(expr.clone());
+      *numeric_coeff = times_ast(&[numeric_coeff.clone(), expr.clone()])
+        .unwrap_or(expr.clone());
     }
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {
-      *numeric_coeff = crate::functions::math_ast::times_ast(&[
-        numeric_coeff.clone(),
-        expr.clone(),
-      ])
-      .unwrap_or(expr.clone());
+      *numeric_coeff = times_ast(&[numeric_coeff.clone(), expr.clone()])
+        .unwrap_or(expr.clone());
     }
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
     } => {
       // -expr: multiply coeff by -1 and decompose inner
-      *numeric_coeff = crate::functions::math_ast::times_ast(&[
-        numeric_coeff.clone(),
-        Expr::Integer(-1),
-      ])
-      .unwrap_or(Expr::Integer(-1));
+      *numeric_coeff = times_ast(&[numeric_coeff.clone(), Expr::Integer(-1)])
+        .unwrap_or(Expr::Integer(-1));
       decompose_product(operand, pairs, numeric_coeff);
     }
     _ => {
@@ -3080,11 +3068,8 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
         if n % div == 0 {
           Expr::Integer(n / div)
         } else {
-          crate::functions::math_ast::divide_ast(&[
-            term.clone(),
-            Expr::Integer(div),
-          ])
-          .unwrap_or_else(|_| term.clone())
+          divide_ast(&[term.clone(), Expr::Integer(div)])
+            .unwrap_or_else(|_| term.clone())
         }
       }
       Expr::UnaryOp {
@@ -3092,11 +3077,12 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
         operand,
       } => {
         let inner = divide_term(operand, div);
-        crate::functions::math_ast::times_ast(&[Expr::Integer(-1), inner])
-          .unwrap_or_else(|_| Expr::UnaryOp {
+        times_ast(&[Expr::Integer(-1), inner]).unwrap_or_else(|_| {
+          Expr::UnaryOp {
             op: UnaryOperator::Minus,
             operand: Box::new(divide_term(operand, div)),
-          })
+          }
+        })
       }
       Expr::FunctionCall { name, args } if name == "Times" => {
         let mut new_args = Vec::with_capacity(args.len());
@@ -3119,14 +3105,10 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
           // No integer factor matched — prepend 1/div as a Rational.
           new_args.insert(0, crate::functions::math_ast::make_rational(1, div));
         }
-        crate::functions::math_ast::times_ast(&new_args)
-          .unwrap_or_else(|_| term.clone())
+        times_ast(&new_args).unwrap_or_else(|_| term.clone())
       }
-      _ => crate::functions::math_ast::divide_ast(&[
-        term.clone(),
-        Expr::Integer(div),
-      ])
-      .unwrap_or_else(|_| term.clone()),
+      _ => divide_ast(&[term.clone(), Expr::Integer(div)])
+        .unwrap_or_else(|_| term.clone()),
     }
   }
   let new_summands: Vec<Expr> = summands
@@ -3271,8 +3253,7 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else if fs.len() == 1 {
             fs.into_iter().next().unwrap()
           } else {
-            crate::functions::math_ast::times_ast(&fs)
-              .unwrap_or(Expr::Integer(1))
+            times_ast(&fs).unwrap_or(Expr::Integer(1))
           }
         };
         let non_var_part = combine(non_var_factors);
@@ -4610,7 +4591,6 @@ fn build_multivariate_result(
     // grouping and sign placement but doesn't match Wolfram's display
     // order; running through `times_ast` applies the canonical Times
     // sort that Times itself uses.
-    crate::functions::math_ast::times_ast(&result_factors)
-      .unwrap_or_else(|_| build_product(result_factors))
+    times_ast(&result_factors).unwrap_or_else(|_| build_product(result_factors))
   }
 }

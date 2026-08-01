@@ -446,18 +446,13 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       // numericizable (so N[FresnelF[1]] works).
       "FresnelF" | "FresnelG" if args.len() == 1 => {
         let x = try_eval_to_f64(&args[0])?;
-        Some(crate::functions::math_ast::integrals::fresnel_fg_numeric(
-          name == "FresnelF",
-          x,
-        ))
+        Some(fresnel_fg_numeric(name == "FresnelF", x))
       }
       // Champernowne constants: numeric (NumericQ True) but symbolic until
       // numericized.
       "ChampernowneNumber" if args.len() <= 1 => match args.first() {
-        None => Some(crate::functions::math_ast::champernowne_f64(10)),
-        Some(Expr::Integer(b)) if *b >= 2 => {
-          Some(crate::functions::math_ast::champernowne_f64(*b))
-        }
+        None => Some(champernowne_f64(10)),
+        Some(Expr::Integer(b)) if *b >= 2 => Some(champernowne_f64(*b)),
         _ => None,
       },
       // Stieltjes constants (machine-precision values from wolframscript)
@@ -524,25 +519,25 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "BesselI" if args.len() == 2 => {
         let n = try_eval_to_f64(&args[0])?;
         let z = try_eval_to_f64(&args[1])?;
-        let v = crate::functions::math_ast::bessel::bessel_i(n, z);
+        let v = bessel_i(n, z);
         v.is_finite().then_some(v)
       }
       "BesselJ" if args.len() == 2 => {
         let n = try_eval_to_f64(&args[0])?;
         let z = try_eval_to_f64(&args[1])?;
-        let v = crate::functions::math_ast::bessel::bessel_j(n, z);
+        let v = bessel_j(n, z);
         v.is_finite().then_some(v)
       }
       "BesselK" if args.len() == 2 => {
         let n = try_eval_to_f64(&args[0])?;
         let z = try_eval_to_f64(&args[1])?;
-        let v = crate::functions::math_ast::bessel::bessel_k(n, z);
+        let v = bessel_k(n, z);
         v.is_finite().then_some(v)
       }
       "BesselY" if args.len() == 2 => {
         let n = try_eval_to_f64(&args[0])?;
         let z = try_eval_to_f64(&args[1])?;
-        let v = crate::functions::math_ast::bessel::bessel_y(n, z);
+        let v = bessel_y(n, z);
         v.is_finite().then_some(v)
       }
       "Sqrt" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.sqrt()),
@@ -555,10 +550,10 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "Erfi" if args.len() == 1 => try_eval_to_f64(&args[0]).map(erfi_f64),
       "DawsonF" if args.len() == 1 => try_eval_to_f64(&args[0]).map(dawson_f64),
       "FresnelS" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(super::fresnel_s_numeric)
+        try_eval_to_f64(&args[0]).map(fresnel_s_numeric)
       }
       "FresnelC" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(super::fresnel_c_numeric)
+        try_eval_to_f64(&args[0]).map(fresnel_c_numeric)
       }
       "InverseErf" if args.len() == 1 => {
         try_eval_to_f64(&args[0]).and_then(|v| {

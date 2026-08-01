@@ -35,7 +35,7 @@ pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // any exact numeric (an integer, a Rational such as 1/2, or a constant
       // expression like Pi/4) — not only Integer/Real. `PolyLog[2., 1/2]` must
       // evaluate, matching wolframscript.
-      if let Some(zf) = crate::functions::math_ast::try_eval_to_f64(z_expr) {
+      if let Some(zf) = try_eval_to_f64(z_expr) {
         return Ok(Expr::Real(polylog_numeric(*sf, zf)));
       }
     }

@@ -29,13 +29,12 @@ pub fn airy_ai_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Complex floating-point argument: power series via complex arithmetic.
-  if let Some((re, im)) =
-    crate::functions::math_ast::try_extract_complex_float(&args[0])
+  if let Some((re, im)) = try_extract_complex_float(&args[0])
     && im != 0.0
     && contains_inexact_real(&args[0])
   {
     let (ar, ai) = airy_ai_complex(re, im);
-    return Ok(crate::functions::math_ast::build_complex_float_expr(ar, ai));
+    return Ok(build_complex_float_expr(ar, ai));
   }
 
   Ok(unevaluated("AiryAi", args))
@@ -72,8 +71,6 @@ fn airy_ai_complex(re: f64, im: f64) -> (f64, f64) {
   }
   (c1 * f.0 - c2 * g.0, c1 * f.1 - c2 * g.1)
 }
-
-use super::zeta_functions::cmul;
 
 /// Compute Ai(x) using the two power series
 /// Ai(x) = c1 * f(x) - c2 * g(x)
@@ -159,13 +156,12 @@ pub fn airy_bi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Complex floating-point argument: same power series, complex arithmetic.
-  if let Some((re, im)) =
-    crate::functions::math_ast::try_extract_complex_float(&args[0])
+  if let Some((re, im)) = try_extract_complex_float(&args[0])
     && im != 0.0
     && contains_inexact_real(&args[0])
   {
     let (br, bi) = airy_bi_complex(re, im);
-    return Ok(crate::functions::math_ast::build_complex_float_expr(br, bi));
+    return Ok(build_complex_float_expr(br, bi));
   }
 
   Ok(unevaluated("AiryBi", args))

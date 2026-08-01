@@ -95,14 +95,11 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Only evaluate numerically if the argument contains float components
       // (e.g., Zeta[0.5 + 3.0*I] evaluates, but Zeta[1/2 + 3*I] stays symbolic)
       if contains_float(&args[0])
-        && let Some((re, im)) =
-          crate::functions::math_ast::try_extract_complex_float(&args[0])
+        && let Some((re, im)) = try_extract_complex_float(&args[0])
       {
         if im != 0.0 {
           let (res_re, res_im) = zeta_numeric_complex(re, im);
-          return Ok(crate::functions::math_ast::build_complex_float_expr(
-            res_re, res_im,
-          ));
+          return Ok(build_complex_float_expr(res_re, res_im));
         } else {
           return Ok(Expr::Real(zeta_numeric(re)));
         }
@@ -372,8 +369,7 @@ fn hurwitz_zeta_ast_inner(
         }
         _ => {
           if contains_float(a_expr)
-            && let Some((re, _im)) =
-              crate::functions::math_ast::try_extract_complex_float(a_expr)
+            && let Some((re, _im)) = try_extract_complex_float(a_expr)
           {
             let result = hurwitz_zeta_numeric(s, re);
             return Ok(Expr::Real(result));
@@ -512,9 +508,7 @@ fn expr_to_f64(expr: &Expr) -> Option<f64> {
     }
     _ => {
       if contains_float(expr) {
-        if let Some((re, _im)) =
-          crate::functions::math_ast::try_extract_complex_float(expr)
-        {
+        if let Some((re, _im)) = try_extract_complex_float(expr) {
           Some(re)
         } else {
           None
@@ -1880,7 +1874,7 @@ fn ramanujan_tau_l_numeric(s: (f64, f64)) -> (f64, f64) {
   let twopi_pow = cpow((twopi, 0.0), (2.0 * s.0 - 12.0, 2.0 * s.1));
   let mut sum = (0.0_f64, 0.0_f64);
   for n in 1..500 {
-    let tau = crate::functions::math_ast::ramanujan_tau_compute(n) as f64;
+    let tau = ramanujan_tau_compute(n) as f64;
     let x = twopi * n as f64;
     // tau * n^{-s} * Gamma(s, x)
     let n_neg_s = cpow((n as f64, 0.0), (-s.0, -s.1));
@@ -1939,14 +1933,11 @@ pub fn ramanujan_tau_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(v.0));
   }
   // Complex machine argument (re + im I with at least one inexact part).
-  if let Some((re, im)) =
-    crate::functions::math_ast::try_extract_complex_float(&args[0])
+  if let Some((re, im)) = try_extract_complex_float(&args[0])
     && im != 0.0
   {
     let v = ramanujan_tau_l_numeric((re, im));
-    return Ok(crate::functions::math_ast::build_complex_float_expr(
-      v.0, v.1,
-    ));
+    return Ok(build_complex_float_expr(v.0, v.1));
   }
   Ok(unevaluated("RamanujanTauL", args))
 }
@@ -2080,7 +2071,7 @@ pub fn dirichlet_beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Exact integer argument.
-  if let Some(n) = crate::functions::math_ast::expr_to_i128(s) {
+  if let Some(n) = expr_to_i128(s) {
     // β(n) = EulerE[-n]/2 for n <= 0.
     if n <= 0 {
       let euler = crate::evaluator::evaluate_function_call_ast(

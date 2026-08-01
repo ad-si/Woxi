@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{
-  expr_to_f64, expr_to_i128, expr_to_rational, gcd_bigint, gcd_i128, is_sqrt,
+  expr_to_f64, expr_to_i128, expr_to_rational, gcd_bigint,
 };
 
 /// MinimalPolynomial[α, x] - Computes the minimal polynomial of an algebraic number α
