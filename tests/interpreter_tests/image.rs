@@ -7004,6 +7004,32 @@ mod image_filter_and_color_space {
 mod color_data_gradients {
   use super::*;
 
+  /// Indexed scheme 30, the muted earth tones a puzzle Demonstration paints
+  /// its board with. Like schemes 2 and 3 it is a fixed nine-colour palette
+  /// that cycles, index 0 landing on the last colour. Every value is
+  /// wolframscript's.
+  #[test]
+  fn color_data_indexed_scheme_30() {
+    clear_state();
+    assert_eq!(
+      woxi::interpret("ColorData[30, 5]").unwrap(),
+      "RGBColor[0.8705882352941177, 0.8901960784313725, 0.6784313725490196]"
+    );
+    assert_eq!(
+      woxi::interpret("Length[ColorData[30, \"ColorList\"]]").unwrap(),
+      "9"
+    );
+    // Past its end it wraps, and index 0 is the last colour.
+    for pair in [
+      "ColorData[30, 10] === ColorData[30, 1]",
+      "ColorData[30, 0] === ColorData[30, 9]",
+      "ColorData[2, 0] === ColorData[2, 9]",
+      "ColorData[3, 0] === ColorData[3, 10]",
+    ] {
+      assert_eq!(woxi::interpret(pair).unwrap(), "True", "{pair}");
+    }
+  }
+
   #[test]
   fn color_data_named_gradient_is_a_color_function() {
     clear_state();

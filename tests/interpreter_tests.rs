@@ -1824,7 +1824,10 @@ mod interpreter_tests {
       ("Interpretation[a, b]", "Interpretation[a, b]"),
       ("Invisible[x]", "Invisible[x]"),
       ("Subsuperscript[x, 1, 2]", "Subsuperscript[x, 1, 2]"),
-      ("Deploy[x]", "Deploy[x]"),
+      // Deploy only makes its content non-selectable, so a front end shows
+      // the content itself — as visual mode does here. The script-mode echo
+      // `Deploy[x]` is covered by deploy_stays_symbolic_in_text_mode.
+      ("Deploy[x]", "x"),
       ("MouseAppearance[a, b]", "MouseAppearance[a, b]"),
       ("Editable[x]", "Editable[x]"),
       ("Selectable[x]", "Selectable[x]"),

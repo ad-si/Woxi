@@ -742,6 +742,56 @@ mod graphics {
       ));
     }
 
+    /// Wolfram measures dash lengths two different ways: a named size is
+    /// absolute pixels — `Dashed` is 4 on / 4 off whatever the image size —
+    /// while a numeric `Dashing[{f, …}]` is a fraction of the image width.
+    /// Every value here is what wolframscript's own SVG export writes.
+    /// Scaling the named sizes by the data width instead left a dotted line
+    /// with a zero-length dash and a fraction-of-a-pixel gap: invisible.
+    #[test]
+    fn dash_lengths_follow_wolframs_two_measures() {
+      let dashes = |code: &str| -> Vec<String> {
+        export_svg(code)
+          .split("stroke-dasharray=\"")
+          .skip(1)
+          .filter_map(|s| s.split('"').next().map(str::to_string))
+          .collect()
+      };
+      let line = |dir: &str, size: u32| {
+        format!(
+          "Graphics[{{{dir}, Line[{{{{0, 0}}, {{10, 0}}}}]}}, \
+           PlotRange -> {{{{0, 10}}, {{-1, 1}}}}, ImageSize -> {size}]"
+        )
+      };
+      for size in [400, 800] {
+        assert_eq!(dashes(&line("Dashed", size)), ["4.0,4.0"], "at {size}");
+        assert_eq!(dashes(&line("Dotted", size)), ["1.0,4.0"], "at {size}");
+        assert_eq!(
+          dashes(&line("DotDashed", size)),
+          ["1.0,4.0,4.0,4.0"],
+          "at {size}"
+        );
+        assert_eq!(
+          dashes(&line("Dashing[{Tiny, Tiny}]", size)),
+          ["2.0,2.0"],
+          "at {size}"
+        );
+        assert_eq!(
+          dashes(&line("Dashing[{Medium, Medium}]", size)),
+          ["8.0,8.0"],
+          "at {size}"
+        );
+        assert_eq!(
+          dashes(&line("Dashing[{Large, Large}]", size)),
+          ["16.0,16.0"],
+          "at {size}"
+        );
+      }
+      // A numeric dash follows the image width: 5% of 400 is 20, of 800, 40.
+      assert_eq!(dashes(&line("Dashing[{0.05, 0.05}]", 400)), ["20.0,20.0"]);
+      assert_eq!(dashes(&line("Dashing[{0.05, 0.05}]", 800)), ["40.0,40.0"]);
+    }
+
     #[test]
     fn dashed_shorthand() {
       insta::assert_snapshot!(export_svg(
@@ -3612,6 +3662,118 @@ mod plot3d {
       assert_eq!(attr(&svg, "ab", "font-size"), "20");
       // A row with an unstyled part keeps the label's own size.
       assert_eq!(attr(&svg, "pq", "font-size"), "14");
+    }
+
+    /// A `Button` inside a picture draws as the button itself — a rounded
+    /// plate with the label centred — not as its own source text. Its
+    /// action is held, so building the picture must not run it: the six
+    /// pour buttons of a puzzle Demonstration would otherwise all fire
+    /// every time the board is drawn.
+    #[test]
+    fn a_button_in_a_picture_draws_as_a_plate() {
+      assert_eq!(
+        woxi::interpret("Attributes[Button]").unwrap(),
+        "{HoldRest, Protected, ReadProtected}"
+      );
+      assert_eq!(
+        woxi::interpret("q = 0; b = Button[\"GO\", q = 1]; q").unwrap(),
+        "0",
+        "displaying a button must not run its action"
+      );
+      let svg = export_svg(
+        r#"Graphics[{Inset[Button["RESET", q = 1], {0, 0}]},
+           PlotRange -> {{-1, 1}, {-1, 1}}, ImageSize -> 300]"#,
+      );
+      assert!(svg.contains(">RESET</text>"), "no button label: {svg}");
+      assert!(svg.contains("rx=\"4\""), "no rounded plate: {svg}");
+      assert!(!svg.contains("Button["), "drew the source text: {svg}");
+      assert_eq!(
+        woxi::interpret("q").unwrap(),
+        "0",
+        "drawing the button must not run its action either"
+      );
+    }
+
+    /// Wolfram keeps some of its operator glyphs in the private use area —
+    /// `\[Rule]` is U+F522 — and only its own fonts draw them, so a label
+    /// written with one came out as a blank box. The drawing substitutes
+    /// the nearest standard character; the string keeps its code point.
+    #[test]
+    fn private_use_glyphs_are_drawn_as_standard_characters() {
+      let svg = export_svg(
+        r#"Graphics[{Text["\[Rule]", {0, 0}], Text["\[UndirectedEdge]", {0, 1}]},
+           PlotRange -> {{-1, 1}, {-1, 2}}]"#,
+      );
+      assert!(
+        svg.contains(">\u{2192}</text>"),
+        "rule arrow not drawn: {svg}"
+      );
+      assert!(
+        svg.contains(">\u{2194}</text>"),
+        "edge glyph not drawn: {svg}"
+      );
+      assert!(
+        !svg.contains('\u{F522}'),
+        "private-use code point drawn: {svg}"
+      );
+      // The string itself is unchanged.
+      assert_eq!(
+        woxi::interpret(r#"ToCharacterCode["\[Rule]"]"#).unwrap(),
+        "{62754}"
+      );
+    }
+
+    /// A constant inside a larger label is typeset too: `Text[50 Degree]`
+    /// reads "50 °", the way Wolfram draws it, not "50 Degree".
+    #[test]
+    fn a_constant_inside_a_label_is_typeset() {
+      let svg = export_svg(
+        r#"Graphics[{Text[50 Degree, {0, 0}], Text[2 Pi x, {0, 1}],
+           Text["Degree here", {0, 2}], Text[Ice, {0, 3}]},
+           PlotRange -> {{-1, 1}, {-1, 4}}]"#,
+      );
+      assert!(svg.contains(">50 \u{B0}</text>"), "{svg}");
+      assert!(svg.contains(">2 \u{3C0} x</text>"), "{svg}");
+      // A string is left alone, and so is a symbol that merely contains a
+      // constant's name.
+      assert!(svg.contains(">Degree here</text>"), "{svg}");
+      assert!(svg.contains(">Ice</text>"), "{svg}");
+    }
+
+    /// A picture inside a display wrapper is drawn, not printed as source:
+    /// `Framed[Graphics[…]]` frames the picture, and `Deploy` — which only
+    /// makes its content non-selectable — passes it straight through.
+    #[test]
+    fn a_framed_or_deployed_picture_is_still_a_picture() {
+      let size = |code: &str| -> (u32, u32) {
+        let svg = export_svg(code);
+        let n = |attr: &str| -> u32 {
+          svg
+            .split(&format!("{attr}=\""))
+            .nth(1)
+            .and_then(|r| r.split('"').next())
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| panic!("no {attr} in {svg}"))
+        };
+        (n("width"), n("height"))
+      };
+      let plain = size("Graphics[{Circle[{0, 0}, 1]}, ImageSize -> 200]");
+      assert_eq!(plain, (200, 200));
+      // Deploy is transparent; Framed adds its border margin all round.
+      assert_eq!(
+        size("Deploy@Graphics[{Circle[{0, 0}, 1]}, ImageSize -> 200]"),
+        plain
+      );
+      let framed =
+        size("Framed@Graphics[{Circle[{0, 0}, 1]}, ImageSize -> 200]");
+      assert!(
+        framed.0 > plain.0 && framed.0 < plain.0 + 40 && framed.1 == framed.0,
+        "a framed picture keeps its shape, plus a margin: {framed:?}"
+      );
+      assert_eq!(
+        size("Deploy@Framed@Graphics[{Circle[{0, 0}, 1]}, ImageSize -> 200]"),
+        framed
+      );
     }
 
     /// Wolfram writes an `AxesLabel` at the end of its axis — the x label
@@ -15337,6 +15499,37 @@ mod manipulate {
         ("cc".to_string(), "5".to_string()),
         // An explicit initial value is used as given.
         ("dd".to_string(), "{2, 3}".to_string()),
+      ]
+    );
+  }
+
+  /// A bare `None` in the control-type slot after the bounds says the
+  /// variable has no widget — how a puzzle Demonstration declares the state
+  /// its buttons drive. It used to be read as a bound, so the variable
+  /// became a visible 2D slider seeded with the range's corner instead of
+  /// its own initial value.
+  #[test]
+  fn spec_trailing_none_is_a_hidden_state_variable() {
+    let expr = interpret_to_expr(
+      "Manipulate[{jar, n}, \
+       {{jar, {{0, 0}, {5, 50}}}, {-1, -5}, {16, 10}, None}, \
+       {{n, 0}, None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("hidden variables");
+    assert_eq!(
+      spec.state,
+      vec![
+        ("jar".to_string(), "{{0, 0}, {5, 50}}".to_string()),
+        ("n".to_string(), "0".to_string()),
+      ]
+    );
+    assert!(spec.controls.is_empty(), "no widget is drawn for either");
+    assert_eq!(
+      manipulate_initial_bindings(&spec),
+      vec![
+        ("jar".to_string(), "{{0, 0}, {5, 50}}".to_string()),
+        ("n".to_string(), "0".to_string()),
       ]
     );
   }

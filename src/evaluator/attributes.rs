@@ -282,6 +282,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
 
     // HoldRest + Protected
     "If" | "PatternTest" | "Save" => vec!["HoldRest", "Protected"],
+    // `Button[label, action]` holds its action: the action is what happens
+    // when the button is pressed, so merely building or displaying the
+    // button must not run it.
+    "Button" => vec!["HoldRest", "Protected", "ReadProtected"],
     "Rule" => vec!["Protected", "SequenceHold"],
     "RuleDelayed" => vec!["HoldRest", "Protected", "SequenceHold"],
 

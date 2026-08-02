@@ -2053,6 +2053,24 @@ struct DashedOverlay {
   points: Vec<(f64, f64)>,
 }
 
+/// One dash length, in the coordinate system its `<polyline>` is drawn in.
+///
+/// A negative length is absolute pixels (a named size — `Dashed` is 4 on / 4
+/// off whatever the image size); a positive one is a fraction of `reference`,
+/// the width Wolfram measures relative dashes against; zero is the dot
+/// Wolfram draws as one pixel. `px_per_unit` converts a pixel length into the
+/// target system (render space counts `RESOLUTION_SCALE` units per pixel).
+pub(crate) fn dash_len(d: f64, reference: f64, px_per_unit: f64) -> f64 {
+  let len = if d < 0.0 {
+    -d * px_per_unit
+  } else if d == 0.0 {
+    px_per_unit
+  } else {
+    d * reference
+  };
+  len.max(0.5)
+}
+
 /// Render collected dashed lines as single `<polyline stroke-dasharray>`
 /// elements, mapping data coordinates to render-space pixels with the same
 /// linear transform used for axis labels/ticks. Dash lengths use the
@@ -2064,6 +2082,7 @@ fn render_dash_overlays(
   plot_y0: f64,
   plot_w: f64,
   plot_h: f64,
+  render_w: f64,
   x_min: f64,
   x_max: f64,
   y_min: f64,
@@ -2091,7 +2110,9 @@ fn render_dash_overlays(
     let dash: Vec<String> = ov
       .dashes
       .iter()
-      .map(|d| format!("{:.1}", (d * plot_w).max(0.5)))
+      .map(|d| {
+        format!("{:.1}", dash_len(*d, render_w, RESOLUTION_SCALE as f64))
+      })
       .collect();
     let (r, g, b) = ov.color;
     svg.push_str(&format!(
@@ -3093,6 +3114,7 @@ fn generate_svg_with_options(
       plot_y0,
       plot_w,
       plot_h,
+      render_width as f64,
       x_min,
       x_max,
       y_min,
@@ -4066,6 +4088,7 @@ pub(crate) fn generate_scatter_svg_with_options(
       plot_y0,
       plot_w,
       plot_h,
+      render_width as f64,
       x_min,
       x_max,
       y_min,
@@ -6016,7 +6039,7 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
           if let Some(ref pattern) = dashing {
             let dash_vals: Vec<String> = pattern
               .iter()
-              .map(|d| format!("{:.1}", (d * dash_scale).max(0.5)))
+              .map(|d| format!("{:.1}", dash_len(*d, dash_scale, sf)))
               .collect();
             dash_attr =
               format!(" stroke-dasharray=\"{}\"", dash_vals.join(","));
@@ -6122,7 +6145,7 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
           if let Some(ref pattern) = dashing {
             let dash_vals: Vec<String> = pattern
               .iter()
-              .map(|d| format!("{:.1}", (d * dash_scale).max(0.5)))
+              .map(|d| format!("{:.1}", dash_len(*d, dash_scale, sf)))
               .collect();
             dash_attr =
               format!(" stroke-dasharray=\"{}\"", dash_vals.join(","));
@@ -7224,9 +7247,12 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
     Expr::Identifier(s) => match s.as_str() {
       "Thick" => style.thickness = Some(2.0),
       "Thin" => style.thickness = Some(0.5),
-      "Dashed" => style.dashing = Some(vec![0.01, 0.01]),
-      "Dotted" => style.dashing = Some(vec![0.0, 0.01]),
-      "DotDashed" => style.dashing = Some(vec![0.0, 0.01, 0.01, 0.01]),
+      // A named dash length is absolute pixels, not a fraction of the
+      // picture: `Dashed` is 4 on / 4 off whatever the image size. Negative
+      // marks absolute, as it does for thickness.
+      "Dashed" => style.dashing = Some(vec![-4.0, -4.0]),
+      "Dotted" => style.dashing = Some(vec![0.0, -4.0]),
+      "DotDashed" => style.dashing = Some(vec![0.0, -4.0, -4.0, -4.0]),
       _ => {}
     },
     Expr::FunctionCall { name, args } => match name.as_str() {
@@ -7266,10 +7292,10 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
             .iter()
             .filter_map(|e| match e {
               Expr::Identifier(s) => match s.as_str() {
-                "Tiny" => Some(0.005),
-                "Small" => Some(0.01),
-                "Medium" => Some(0.02),
-                "Large" => Some(0.04),
+                "Tiny" => Some(-2.0),
+                "Small" => Some(-4.0),
+                "Medium" => Some(-8.0),
+                "Large" => Some(-16.0),
                 _ => None,
               },
               _ => try_eval_to_f64(e),

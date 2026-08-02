@@ -7,16 +7,22 @@ use crate::syntax::expr_to_output;
 
 /// Dash length for the "Small" named size in Dashing directives.
 /// This is the default dash segment length used by Dashed, Dotted, etc.
-const SMALL_DASH: f64 = 0.01;
+/// `Small`, the default dash length, in pixels (`Dashed` is `4,4`).
+const SMALL_DASH_PX: f64 = 4.0;
 
 /// Convert a named size (Tiny, Small, Medium, Large) to a dash length.
+/// A named dash size. Wolfram's named sizes are *absolute* lengths — a
+/// `Dashed` line is 4 pixels on and 4 off whatever the image size, while a
+/// numeric `Dashing[{0.05, …}]` is a fraction of the image width. The two
+/// are told apart by sign, as `symbolic_thickness` already does: a negative
+/// length is absolute pixels. Measured from wolframscript's SVG export.
 fn dash_size_to_f64(expr: &Expr) -> Option<f64> {
   if let Expr::Identifier(s) = expr {
     match s.as_str() {
-      "Tiny" => Some(0.005),
-      "Small" => Some(SMALL_DASH),
-      "Medium" => Some(0.02),
-      "Large" => Some(0.04),
+      "Tiny" => Some(-2.0),
+      "Small" => Some(-SMALL_DASH_PX),
+      "Medium" => Some(-8.0),
+      "Large" => Some(-16.0),
       _ => None,
     }
   } else {
@@ -1286,17 +1292,18 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
     }
     // Dashed is equivalent to Dashing[{Small, Small}]
     Expr::Identifier(s) if s == "Dashed" => {
-      style.dashing = Some(vec![SMALL_DASH, SMALL_DASH]);
+      style.dashing = Some(vec![-SMALL_DASH_PX, -SMALL_DASH_PX]);
       true
     }
     // Dotted is equivalent to Dashing[{0, Small}]
     Expr::Identifier(s) if s == "Dotted" => {
-      style.dashing = Some(vec![0.0, SMALL_DASH]);
+      style.dashing = Some(vec![0.0, -SMALL_DASH_PX]);
       true
     }
     // DotDashed is equivalent to Dashing[{0, Small, Small, Small}]
     Expr::Identifier(s) if s == "DotDashed" => {
-      style.dashing = Some(vec![0.0, SMALL_DASH, SMALL_DASH, SMALL_DASH]);
+      style.dashing =
+        Some(vec![0.0, -SMALL_DASH_PX, -SMALL_DASH_PX, -SMALL_DASH_PX]);
       true
     }
     _ => false,
@@ -2564,13 +2571,59 @@ fn graphics_text_content(expr: &Expr) -> String {
       crate::functions::chart::expr_to_label(expr)
         .unwrap_or_else(|| crate::syntax::expr_to_string(expr))
     }
-    _ => match crate::functions::string_ast::to_string_ast(
-      std::slice::from_ref(expr),
-    ) {
-      Ok(Expr::String(ref s)) => s.clone(),
-      _ => crate::syntax::expr_to_string(expr),
-    },
+    _ => {
+      let text = match crate::functions::string_ast::to_string_ast(
+        std::slice::from_ref(expr),
+      ) {
+        Ok(Expr::String(ref s)) => s.clone(),
+        _ => crate::syntax::expr_to_string(expr),
+      };
+      typeset_constants_in_text(&text)
+    }
   }
+}
+
+/// Typeset the named constants inside a flattened label. A constant on its
+/// own is already drawn as its glyph; one inside a larger expression reaches
+/// here as its name, so `Text[50 Degree]` would read "50 Degree" where
+/// Wolfram draws "50 °". Only whole words are replaced, and only the
+/// protected constants of [`typeset_constant_glyph`] — no user symbol can
+/// carry one of those names.
+fn typeset_constants_in_text(text: &str) -> String {
+  const NAMES: [&str; 7] = [
+    "Infinity",
+    "Degree",
+    "EulerGamma",
+    "GoldenRatio",
+    "Pi",
+    "E",
+    "I",
+  ];
+  if !NAMES.iter().any(|n| text.contains(n)) {
+    return text.to_string();
+  }
+  let is_word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+  let bytes: Vec<char> = text.chars().collect();
+  let mut out = String::with_capacity(text.len());
+  let mut i = 0;
+  'outer: while i < bytes.len() {
+    if i == 0 || !is_word(bytes[i - 1]) {
+      for name in NAMES {
+        let n: Vec<char> = name.chars().collect();
+        if bytes[i..].starts_with(&n[..])
+          && bytes.get(i + n.len()).is_none_or(|c| !is_word(*c))
+          && let Some(glyph) = typeset_constant_glyph(name)
+        {
+          out.push_str(glyph);
+          i += n.len();
+          continue 'outer;
+        }
+      }
+    }
+    out.push(bytes[i]);
+    i += 1;
+  }
+  out
 }
 
 /// The blank a `Spacer[n]` stands for when a layout is flattened to text,
@@ -2594,6 +2647,31 @@ fn spacer_gap_text(expr: &Expr) -> Option<String> {
 ///
 /// `pos` defaults to the origin, `opos` (the point *of the object* that
 /// lands on `pos`) to its centre, and `size` to the object's own extent.
+/// The pixel size of the plate a `Button[label, …]` draws as: the label at
+/// the standard 14-point text metric, with Wolfram's padding around it.
+fn button_plate_size(label: &str) -> (f64, f64) {
+  const CHAR_W: f64 = 8.4;
+  const PAD_X: f64 = 12.0;
+  let w = label.chars().count() as f64 * CHAR_W + 2.0 * PAD_X;
+  (w.max(28.0), 26.0)
+}
+
+/// A `Button`'s plate, as a standalone SVG to be inset into a picture.
+fn button_plate_svg(label: &str) -> String {
+  let (w, h) = button_plate_size(label);
+  format!(
+    "<svg width=\"{w:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {w:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+     <rect x=\"0.5\" y=\"0.5\" width=\"{:.1}\" height=\"{:.1}\" rx=\"4\" ry=\"4\" fill=\"#FDFDFD\" stroke=\"#BFBFBF\" stroke-width=\"1\"/>\n\
+     <text x=\"{:.1}\" y=\"{:.1}\" font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"14\" fill=\"#000000\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n\
+     </svg>\n",
+    w - 1.0,
+    h - 1.0,
+    w / 2.0,
+    h / 2.0,
+    svg_escape(label)
+  )
+}
+
 fn inset_primitives(
   args: &[Expr],
   errors: &mut Vec<String>,
@@ -2647,6 +2725,25 @@ fn inset_primitives(
       w: dims.nat_w,
       h: dims.nat_h,
       scaled,
+    }]);
+  }
+  // `Inset[Button[label, action], pos]` — the control a puzzle
+  // Demonstration puts inside its picture. It draws as the button itself:
+  // a rounded white plate with a thin border and the label centred,
+  // sized to the label the way Wolfram sizes one.
+  if let Expr::FunctionCall { name, args: bargs } = &args[0]
+    && name == "Button"
+    && !bargs.is_empty()
+    && let Some((x, y)) = args.get(1).and_then(expr_to_point)
+  {
+    let label = graphics_text_content(&bargs[0]);
+    return Some(vec![Primitive::InsetGraphic {
+      svg: button_plate_svg(&label),
+      x,
+      y,
+      w: button_plate_size(&label).0,
+      h: button_plate_size(&label).1,
+      scaled: false,
     }]);
   }
   // The object: `Graphics[…]` (or its box form), a rendered graphic that
@@ -4277,11 +4374,23 @@ fn thickness_px(t: f64, bb: &BBox, svg_w: f64) -> f64 {
   }
 }
 
-fn dash_attr(dashing: &Option<Vec<f64>>, bb: &BBox, svg_w: f64) -> String {
+/// The `stroke-dasharray` for a dashing spec. Wolfram states dash lengths as
+/// fractions of the *image* width — `Dashing[{0.05, 0.05}]` on a 400-pixel
+/// picture is `20,20`, and `Dashed` (`Dashing[{Small, Small}]`, Small =
+/// 0.01) is `4,4`, both measured from wolframscript's own SVG export. A
+/// zero-length dash is drawn as one pixel, which is how Wolfram makes
+/// `Dotted` (`Dashing[{0, Small}]`) visible as `1,4`; scaling it by the
+/// data width instead left dotted lines invisible.
+fn dash_attr(dashing: &Option<Vec<f64>>, _bb: &BBox, svg_w: f64) -> String {
   if let Some(dashes) = dashing {
     let px: Vec<String> = dashes
       .iter()
-      .map(|d| format!("{:.1}", d / bb.width() * svg_w))
+      .map(|d| {
+        // Negative = absolute pixels (a named size); positive = a fraction
+        // of the image width; zero = the dot Wolfram draws as one pixel.
+        let px = if *d < 0.0 { -*d } else { *d * svg_w };
+        format!("{:.1}", if px <= 0.0 { 1.0 } else { px })
+      })
       .collect();
     format!(" stroke-dasharray=\"{}\"", px.join(","))
   } else {
@@ -4939,10 +5048,40 @@ pub(crate) fn machine_real_display_parts(f: f64) -> BigFloatDisplay {
 }
 
 pub(crate) fn svg_escape(s: &str) -> String {
+  let s = substitute_private_use_glyphs(s);
   s.replace('&', "&amp;")
     .replace('<', "&lt;")
     .replace('>', "&gt;")
     .replace('"', "&quot;")
+}
+
+/// Wolfram keeps several of its operator glyphs in the Unicode private use
+/// area — `\[Rule]` is U+F522, not the plain arrow — and only its own fonts
+/// draw them, so a label written with one comes out as a blank box
+/// everywhere else. Substitute the nearest standard character for drawing
+/// only: the string itself, and everything `ToCharacterCode` reports about
+/// it, keeps the code point Wolfram uses.
+fn substitute_private_use_glyphs(s: &str) -> std::borrow::Cow<'_, str> {
+  if !s.chars().any(|c| ('\u{E000}'..='\u{F8FF}').contains(&c)) {
+    return std::borrow::Cow::Borrowed(s);
+  }
+  std::borrow::Cow::Owned(
+    s.chars()
+      .map(|c| match c {
+        '\u{F522}' | '\u{F3D5}' => '\u{2192}', // Rule, DirectedEdge: →
+        '\u{F51F}' => '\u{29F4}',              // RuleDelayed: ⧴
+        '\u{F3D4}' => '\u{2194}',              // UndirectedEdge: ↔
+        '\u{F3D3}' => '\u{2223}',              // Conditioned: ∣
+        '\u{F3D2}' => '\u{223C}',              // Distributed: ∼
+        '\u{F3C4}' => '\u{2A2F}',              // Cross: ⨯
+        '\u{F3DA}' => '\u{2297}',              // TensorProduct: ⊗
+        '\u{F424}' => '\u{2270}',              // NotLessSlantEqual: ≰
+        '\u{F429}' => '\u{2271}',              // NotGreaterSlantEqual: ≱
+        '\u{F750}' => '\u{25CF}',              // FilledSmallCircle: ●
+        other => other,
+      })
+      .collect(),
+  )
 }
 
 fn render_primitive(
@@ -13893,6 +14032,9 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
       "Text" | "TraditionalForm" | "StandardForm" | "DisplayForm" => {
         args.len() == 1
       }
+      // `Deploy[expr]` only makes its content non-selectable; it draws
+      // exactly as the content does.
+      "Deploy" => args.len() == 1,
       "Item" | "Pane" => !args.is_empty(),
       _ => false,
     };
@@ -14635,6 +14777,22 @@ pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
     } else {
       (None, 0.0, 0.0)
     };
+
+  // A picture that has not been drawn yet — `Framed[Graphics[…]]`, where the
+  // `Graphics` is still a call because it only renders at the output stage —
+  // is drawn and framed, rather than printed as its own source text.
+  let (inner_svg, inner_w, inner_h) = match inner_svg {
+    None if crate::evaluator::lays_out_a_graphic(content) => {
+      let svg = crate::evaluator::expr_to_svg(content);
+      if svg.starts_with("<svg") {
+        let (w, h) = parse_svg_wh(&svg);
+        (Some(svg), w, h)
+      } else {
+        (None, 0.0, 0.0)
+      }
+    }
+    other => (other, inner_w, inner_h),
+  };
 
   if let Some(ref child_svg) = inner_svg {
     // Embed child SVG inside a frame
@@ -17687,8 +17845,13 @@ fn parse_manipulate_control(
   // `{{x, 1}, None}` states the control's domain as `None`, which is the
   // positional spelling of `ControlType -> None`: the variable is bound but
   // no widget is drawn (verified against wolframscript, which shows no
-  // slider for it).
-  let is_hidden = matches!(items.get(1), Some(Expr::Identifier(s)) if s == "None")
+  // slider for it). A bare `None` in the control-type slot after the bounds
+  // — `{{v, init}, {xmin, ymin}, {xmax, ymax}, None}`, how a puzzle
+  // Demonstration declares a state variable its buttons drive — says the
+  // same thing.
+  let is_hidden = items[1..]
+    .iter()
+    .any(|it| matches!(it, Expr::Identifier(s) if s == "None"))
     || items.iter().any(|it| {
       matches!(
         it,

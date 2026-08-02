@@ -2013,22 +2013,19 @@ mod tests {
     #[test]
     fn dashed_legend_swatch_matches_chart_dash_scale() {
       // The legend swatch's stroke-dasharray must use the same scale as the
-      // on-chart dashed line (a fraction `d` of the plotting-area width), not the
-      // old swatch-relative scale. For a default-size plot the plotting area is
-      // 3600 - 100 - 100 - 650 = 2750 viewBox units, so a `Dashed` pattern
-      // (d = 0.01) yields "27.5,27.5" — not the previous "100.0,100.0".
+      // on-chart dashed line. `Dashed` is an absolute 4 pixels on, 4 off
+      // (wolframscript's own SVG export says `4,4` at every image size), and
+      // the plot draws at RESOLUTION_SCALE = 10 units per pixel, so both the
+      // curve and its swatch read "40.0,40.0".
       let svg = woxi::interpret(
         r#"ExportString[ListLinePlot[{{1,2,3},{3,2,1}},
           PlotStyle -> {Black, Dashed}, PlotLegends -> {"A", "B"}], "SVG"]"#,
       )
       .expect("interpret should succeed");
-      assert!(
-        svg.contains("stroke-dasharray=\"27.5,27.5\""),
-        "legend dash scale should match the chart (27.5,27.5): {svg}"
-      );
-      assert!(
-        !svg.contains("stroke-dasharray=\"100.0,100.0\""),
-        "legend still using the old swatch-relative dash scale: {svg}"
+      assert_eq!(
+        svg.matches("stroke-dasharray=\"40.0,40.0\"").count(),
+        2,
+        "the curve and its legend swatch must share one dash scale: {svg}"
       );
     }
 

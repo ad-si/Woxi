@@ -299,4 +299,13 @@ mod column_visual_mode {
     // echoes verbatim.
     assert_eq!(interpret("Dynamic[1 + 1]").unwrap(), "Dynamic[1 + 1]");
   }
+
+  #[test]
+  fn deploy_stays_symbolic_in_text_mode() {
+    clear_state();
+    // A front end draws Deploy's content (it only makes it
+    // non-selectable), but script/CLI mode echoes the call verbatim, as
+    // wolframscript does.
+    assert_eq!(interpret("Deploy[1 + 1]").unwrap(), "Deploy[2]");
+  }
 }

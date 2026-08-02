@@ -87,7 +87,12 @@ impl EpilogStyle {
     if let Some(dashes) = &self.dashing {
       let parts: Vec<String> = dashes
         .iter()
-        .map(|d| format!("{:.1}", (d * area.w).max(0.5)))
+        .map(|d| {
+          format!(
+            "{:.1}",
+            crate::functions::plot::dash_len(*d, area.w, area.scale)
+          )
+        })
         .collect();
       s.push_str(&format!(" stroke-dasharray=\"{}\"", parts.join(",")));
     }

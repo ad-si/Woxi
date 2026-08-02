@@ -3923,9 +3923,14 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   }
   match expr {
     Expr::List(items) => items.iter().any(lays_out_a_graphic),
-    // `Pane` is transparent here: its own arm exports what it wraps.
+    // `Pane` and `Deploy` are transparent here: their own arms export what
+    // they wrap. A `Framed` picture is drawn and framed by its own
+    // renderer, so it counts as a picture too.
     Expr::FunctionCall { name, args }
-      if LAYOUT_HEADS.contains(&name.as_str()) || name == "Pane" =>
+      if LAYOUT_HEADS.contains(&name.as_str())
+        || name == "Pane"
+        || name == "Deploy"
+        || name == "Framed" =>
     {
       args.iter().any(lays_out_a_graphic)
     }
@@ -4240,7 +4245,10 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // FrontEnd displays the content, so exporting one exports what it
     // wraps. (The notebook display pipeline already unwraps it — without
     // this, `Export[…, Pane[graphic]]` wrote the expression as text.)
-    Expr::FunctionCall { name, args } if name == "Pane" && !args.is_empty() => {
+    // `Deploy` is the same: it only makes its content non-selectable.
+    Expr::FunctionCall { name, args }
+      if (name == "Pane" || name == "Deploy") && !args.is_empty() =>
+    {
       expr_to_svg(&args[0])
     }
     // `Item[expr, opts…]` is a layout cell; the options place it and what
