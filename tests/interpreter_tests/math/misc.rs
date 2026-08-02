@@ -2028,6 +2028,48 @@ mod radical_coefficient_merge {
     );
   }
 
+  // A square factor too large to reach by trial division still comes out, and
+  // `Sqrt` and the `c * Sqrt[r]` merge agree about it.
+  //
+  // Regression: the merge stopped looking for square factors at 100000 while
+  // `Sqrt` kept going, so `Sqrt[100003^2 * 115]/2` reduced one way, was
+  // rebuilt the other, and the two rewrote each other forever — halving a
+  // coefficient carrying a radical (a `Mean` of two such points) never
+  // returned.
+  #[test]
+  fn large_square_factors_come_out_of_a_radical() {
+    assert_eq!(
+      interpret("InputForm[Sqrt[1150069001035]]").unwrap(),
+      "InputForm[100003*Sqrt[115]]",
+      "1150069001035 == 100003^2 * 115"
+    );
+    // Halving a coefficient that carries the radical: the shape is already
+    // canonical, so only the coefficient changes.
+    assert_eq!(
+      interpret("InputForm[(100003*Sqrt[115])/2]").unwrap(),
+      "InputForm[(100003*Sqrt[115])/2]"
+    );
+    assert_eq!(
+      interpret("InputForm[Mean[{Sqrt[115]/7, Sqrt[115]/11}]]").unwrap(),
+      "InputForm[(9*Sqrt[115])/77]"
+    );
+    assert_eq!(
+      interpret("InputForm[Sqrt[1150069001035]/2]").unwrap(),
+      "InputForm[(100003*Sqrt[115])/2]"
+    );
+    // Two distinct large primes leave nothing square to take out.
+    assert_eq!(
+      interpret("InputForm[Sqrt[15485599740329]]").unwrap(),
+      "InputForm[Sqrt[15485599740329]]",
+      "15485599740329 == 999983 * 15485863, square-free"
+    );
+    // The same factorisation reaches the rational form.
+    assert_eq!(
+      interpret("InputForm[Sqrt[1150069001035/4]]").unwrap(),
+      "InputForm[(100003*Sqrt[115])/2]"
+    );
+  }
+
   // wolframscript pulls a positive numeric factor out of a product radicand
   // as its own radical, and only when the rest is NOT numeric.
   #[test]

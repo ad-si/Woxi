@@ -2,6 +2,24 @@
 
 # Unreleased
 
+- Fixes driven by a Wolfram Demonstration that draws a rational cyclic
+    polygon inside its circumcircle:
+    - `Sphere` and `Ball` draw in a two-dimensional `Graphics`: in the plane
+        a sphere is the circle bounding it and a ball the filled disk. Both
+        used to be dropped, and since `Circumsphere` returns a `Sphere`
+        whatever the dimension, a picture built around a circumcircle came
+        out with no circle at all. A list of centres draws one per point,
+        and `Ball[2]` is the unit disk at the origin.
+    - A `Style` around a label paints its `Background` behind the text —
+        `Style[Text[…], 12, Background -> White]` is what keeps a distance
+        label readable over the line it sits on. Only a `Background` written
+        on the `Text` itself was drawn before.
+    - A square factor too large to reach by trial division comes out of a
+        radical: `Sqrt[100003^2 * 115]` is `100003 Sqrt[115]`. `Sqrt` and the
+        `c Sqrt[r]` merge used to look for square factors to different
+        depths, so each rewrote what the other produced and halving such a
+        coefficient — the `Mean` of two points carrying a radical — never
+        returned.
 - Fixes driven by the "Selectivity in a Semibatch Reactor" Wolfram
     Demonstration:
     - `Text` inside a `Graphics3D` scene is drawn — a labelled 3D

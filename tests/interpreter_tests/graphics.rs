@@ -250,6 +250,85 @@ mod graphics {
       ));
     }
 
+    // A `Sphere` in the plane is the circle bounding it and a `Ball` the
+    // filled disk, so both draw in a two-dimensional `Graphics`. Regression:
+    // they were dropped, and a Demonstration that drew a circumcircle (which
+    // `Circumsphere` returns as a `Sphere` whatever the dimension) came out
+    // with no circle at all.
+    #[test]
+    fn sphere_in_2d_graphics_draws_a_circle() {
+      let svg = export_svg("Graphics[{Sphere[{1, 2}, 3]}]");
+      assert!(
+        svg.contains("<ellipse") && svg.contains("fill=\"none\""),
+        "planar Sphere should stroke a circle outline:\n{svg}"
+      );
+    }
+
+    #[test]
+    fn ball_in_2d_graphics_draws_a_filled_disk() {
+      let svg = export_svg("Graphics[{Ball[{1, 2}, 3]}]");
+      assert!(
+        svg.contains("<ellipse") && !svg.contains("fill=\"none\""),
+        "planar Ball should fill a disk:\n{svg}"
+      );
+    }
+
+    #[test]
+    fn sphere_defaults_to_unit_radius() {
+      insta::assert_snapshot!(export_svg("Graphics[{Sphere[{0, 0}]}]"));
+    }
+
+    // `Sphere[{p1, p2, …}, r]` is one sphere of radius `r` per centre.
+    #[test]
+    fn sphere_accepts_a_list_of_centers() {
+      let svg = export_svg("Graphics[{Sphere[{{0, 0}, {3, 0}, {6, 0}}, 1]}]");
+      assert_eq!(
+        svg.matches("<ellipse").count(),
+        3,
+        "one circle per centre:\n{svg}"
+      );
+    }
+
+    // `Ball[n]` / `Sphere[n]` is the unit ball/sphere at the origin in `n`
+    // dimensions; only the planar one has anything to draw here.
+    #[test]
+    fn ball_by_dimension_draws_only_in_the_plane() {
+      let planar = export_svg("Graphics[{Ball[2]}]");
+      assert!(planar.contains("<ellipse"), "Ball[2] is a disk:\n{planar}");
+      let solid = export_svg("Graphics[{Ball[3]}]");
+      assert!(
+        !solid.contains("<ellipse"),
+        "Ball[3] is not a planar region:\n{solid}"
+      );
+    }
+
+    // A three-dimensional centre belongs to a `Graphics3D` and contributes
+    // nothing to a flat picture — not even a plot range.
+    #[test]
+    fn sphere_with_3d_center_draws_nothing_in_2d() {
+      let svg = export_svg("Graphics[{Sphere[{1, 2, 3}, 1]}]");
+      assert!(
+        !svg.contains("<ellipse"),
+        "a 3D sphere has no planar drawing:\n{svg}"
+      );
+    }
+
+    // `Circumsphere` of three planar points returns `Sphere[centre, r]`, and
+    // that is what a Demonstration hands to `Graphics` to draw a circumcircle.
+    #[test]
+    fn circumsphere_of_planar_points_draws_the_circumcircle() {
+      let svg =
+        export_svg("Graphics[{Circumsphere[{{0, 0}, {4, 0}, {0, 3}}]}]");
+      // Centre {2, 3/2}, radius 5/2: a round circle filling the picture.
+      assert!(
+        svg.contains("<ellipse") && svg.contains("fill=\"none\""),
+        "circumcircle should be stroked:\n{svg}"
+      );
+      let rx = svg.split("rx=\"").nth(1).and_then(|s| s.split('"').next());
+      let ry = svg.split("ry=\"").nth(1).and_then(|s| s.split('"').next());
+      assert_eq!(rx, ry, "a circumcircle is round:\n{svg}");
+    }
+
     #[test]
     fn disk_sector_yin_yang() {
       insta::assert_snapshot!(export_svg(
@@ -829,6 +908,57 @@ mod graphics {
       ));
     }
 
+    /// A `Style` *around* the label carries `Background` just as one inside
+    /// it does: `Style[Text[…], 12, Background -> White]` paints a panel
+    /// behind the text, which is what hides the line a distance label sits
+    /// on. Regression: only a `Background` written on the `Text` itself (or
+    /// on a `Style` of its content) was drawn, so those labels came out with
+    /// the chord running through them.
+    #[test]
+    fn style_around_text_paints_its_background() {
+      let svg = export_svg(
+        "Graphics[{Line[{{0, 0}, {4, 4}}], \
+          Style[Text[\"abc\", {2, 2}], 12, Background -> White]}]",
+      );
+      let panel = svg
+        .lines()
+        .find(|l| l.starts_with("<rect"))
+        .unwrap_or_else(|| panic!("no background panel in {svg}"));
+      assert!(
+        panel.contains("fill=\"rgb(255,255,255)\""),
+        "the panel takes the background colour: {panel}"
+      );
+    }
+
+    /// The same background written on the `Text` still wins over the one the
+    /// surrounding `Style` supplies.
+    #[test]
+    fn text_background_option_beats_the_surrounding_style() {
+      let svg = export_svg(
+        "Graphics[{Style[Text[\"abc\", {0, 0}, Background -> Red], \
+          Background -> White]}]",
+      );
+      let panel = svg
+        .lines()
+        .find(|l| l.starts_with("<rect"))
+        .unwrap_or_else(|| panic!("no background panel in {svg}"));
+      assert!(
+        panel.contains("fill=\"rgb(255,0,0)\""),
+        "the label's own background wins: {panel}"
+      );
+    }
+
+    /// `Background` styles a label, not the primitives beside it — a shape
+    /// under the same `Style` keeps its own colour and grows no panel.
+    #[test]
+    fn style_background_does_not_paint_behind_shapes() {
+      let svg = export_svg(
+        "Graphics[{Style[{Red, Disk[{0, 0}, 1]}, Background -> White]}]",
+      );
+      assert!(!svg.contains("<rect"), "no panel behind a shape:\n{svg}");
+      assert!(svg.contains("rgb(255,0,0)"), "the disk stays red:\n{svg}");
+    }
+
     /// `Inset[graphic, pos, opos, size]` draws the picture inside this
     /// one — scaled into its box and moved to `pos` — instead of writing
     /// the object's text form. `{Automatic, dir}` turns it to face `dir`.
@@ -1091,6 +1221,57 @@ mod graphics {
           Text[\"Origin\", {0, -0.8}]
         }, ImageSize -> 400]"
       ));
+    }
+
+    /// The picture a Demonstration about cyclic polygons draws: the
+    /// circumcircle of the vertices (a `Sphere`, which is what
+    /// `Circumsphere` returns in the plane), every chord between them, each
+    /// chord's length written over it on a panel that hides the line, and a
+    /// subscripted name beside each vertex. Every one of those pieces went
+    /// missing or came out wrong at some point; this keeps the whole figure
+    /// together.
+    #[test]
+    fn labelled_cyclic_polygon_draws_circle_chords_and_masked_labels() {
+      let svg = export_svg(
+        "Show[{
+           Graphics[{Circumsphere[{{14, 0}, {0, 0}, {5, 12}}]}],
+           Graphics[{
+             Map[{Line[{{14, 0}, {0, 0}, {5, 12}}[[#]]],
+                  Style[Text[Apply[EuclideanDistance, \
+                              {{14, 0}, {0, 0}, {5, 12}}[[#]]], \
+                             Mean[{{14, 0}, {0, 0}, {5, 12}}[[#]]]], \
+                        12, Background -> White]} &, Subsets[Range[3], {2}]],
+             Table[{PointSize[0.015], \
+                    Point[{{14, 0}, {0, 0}, {5, 12}}[[n]]], \
+                    Text[Subscript[\"M\", n], \
+                         1.1 {{14, 0}, {0, 0}, {5, 12}}[[n]]]}, {n, 3}]}]},
+         ImageSize -> {400, 400}]",
+      );
+      assert_eq!(
+        svg.matches("<ellipse").count(),
+        1,
+        "the circumcircle is drawn once:\n{svg}"
+      );
+      assert_eq!(
+        svg.matches("<polyline").count(),
+        3,
+        "one chord per pair of vertices:\n{svg}"
+      );
+      assert_eq!(
+        svg.matches("fill=\"rgb(255,255,255)\"").count(),
+        3,
+        "each length sits on a panel that hides its chord:\n{svg}"
+      );
+      // 13 and 14 are exact; the third chord is Sqrt[194].
+      for length in ["13", "14"] {
+        assert!(
+          svg.contains(&format!(">{length}</text>")),
+          "chord length {length} missing:\n{svg}"
+        );
+      }
+      for name in ["M\u{2081}", "M\u{2082}", "M\u{2083}"] {
+        assert!(svg.contains(name), "vertex label {name} missing:\n{svg}");
+      }
     }
 
     #[test]
@@ -15161,6 +15342,59 @@ mod manipulate {
       &spec.controls[0],
       ManipulateControl::Discrete { popup: true, .. }
     ));
+  }
+
+  /// The control shape a Demonstration built around a cyclic polygon writes:
+  /// four stepped integer sliders with italic one-letter labels and a
+  /// fractional starting value, alongside options (`Appearance`, `ImageSize`,
+  /// `SaveDefinitions`, `ControlPlacement`) that name no variable and must
+  /// not become controls of their own.
+  #[test]
+  fn spec_labelled_stepped_sliders_beside_layout_options() {
+    let slider = |name: &str, initial: &str| {
+      format!(
+        "{{{{{name}, {initial}, Style[\"{name}\", Italic]}}, -10, 10, 1, \
+         Appearance -> \"Labeled\", ImageSize -> Small}}"
+      )
+    };
+    let expr = interpret_to_expr(&format!(
+      "Manipulate[x + y + z + k, {}, {}, {}, {}, \
+       SaveDefinitions -> True, ControlPlacement -> Left]",
+      slider("x", "1/2"),
+      slider("y", "1/2"),
+      slider("z", "1/2"),
+      slider("k", "1"),
+    ))
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.len(), 4, "options bind no variable");
+    let expected_initial = [0.5, 0.5, 0.5, 1.0];
+    for (control, (name, initial)) in spec
+      .controls
+      .iter()
+      .zip(["x", "y", "z", "k"].iter().zip(expected_initial))
+    {
+      match control {
+        ManipulateControl::Continuous {
+          name: got,
+          min,
+          max,
+          step,
+          initial: got_initial,
+          label,
+          label_runs,
+        } => {
+          assert_eq!(got, name);
+          assert_eq!((*min, *max), (-10.0, 10.0));
+          assert_eq!(*step, Some(1.0), "the slider steps by whole numbers");
+          assert_eq!(*got_initial, initial);
+          assert_eq!(label, name);
+          assert_eq!(label_runs.len(), 1);
+          assert!(label_runs[0].italic, "the variable is set in italics");
+        }
+        other => panic!("expected a continuous control, got {other:?}"),
+      }
+    }
   }
 
   /// `LocatorAutoCreate -> {min, max}` bounds how many points the user may

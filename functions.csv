@@ -282,7 +282,7 @@ RowBox,Represents a horizontal row of boxes for typesetting,✅,pure,3.0,277
 Round,Returns the nearest integer to a number,✅,pure,1.0,279
 Button,Interactive button element (stays symbolic in script mode),✅,unevaluated,6.0,280
 Gray,Named color evaluating to GrayLevel[0.5],✅,pure,5.1,281
-Sphere,3D sphere graphics primitive,✅,none,6.0,282
+Sphere,Sphere graphics primitive; a circle in two dimensions,✅,none,6.0,282
 Get,Reads and evaluates a file returning the last result,✅,effectful,1.0,283
 Quiet,Evaluate expression suppressing messages,✅,contextual,6.0,284
 Joined,Option for joining points in list plots,✅,none,6.0,285
