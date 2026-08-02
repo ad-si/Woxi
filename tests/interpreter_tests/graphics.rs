@@ -14066,6 +14066,50 @@ mod manipulate {
     }
   }
 
+  /// The Roots-of-the-Bernoulli-Polynomials Demonstration lays its two
+  /// controls out with `Row[{Control@{…}, Spacer[…], Control@{…}}]`: a
+  /// labelled slider and a `{True, False}` picker. Both must survive the
+  /// Row wrapper with their bounds, step and initial value intact.
+  #[test]
+  fn spec_row_of_labelled_slider_and_boolean_picker() {
+    let expr = interpret_to_expr(
+      "Manipulate[{n, flag}, \
+       Row[{Control@{{n, 20, \"roots\"}, 1, 60, 1, Appearance -> \"Labeled\"}, \
+       Spacer[25], Control@{flag, {True, False}}}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("row-wrapped controls");
+    let names: Vec<&str> = spec.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["n", "flag"]);
+    match &spec.controls[0] {
+      ManipulateControl::Continuous {
+        label,
+        min,
+        max,
+        step,
+        initial,
+        ..
+      } => {
+        assert_eq!(label, "roots");
+        assert_eq!((*min, *max), (1.0, 60.0));
+        assert_eq!(*step, Some(1.0));
+        assert_eq!(*initial, 20.0);
+      }
+      other => panic!("expected a continuous control, got {other:?}"),
+    }
+    match &spec.controls[1] {
+      ManipulateControl::Discrete {
+        values,
+        initial_index,
+        ..
+      } => {
+        assert_eq!(values.len(), 2);
+        assert_eq!(*initial_index, 0); // True
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
   /// A `Setter` / `Toggler` control type offers one widget per value, the
   /// way `SetterBar` and `RadioButton` already do. Before these were
   /// recognised as control-type names they were read as a *bound*, the
@@ -19769,6 +19813,61 @@ mod demonstration_plot_layout {
     assert!(
       svg.contains(">y\u{2032}(t)<"),
       "the left frame label needs its prime: {svg}"
+    );
+  }
+
+  /// The whole body of the Roots-of-the-Bernoulli-Polynomials
+  /// Demonstration: numericize a Bernoulli polynomial, solve it for its
+  /// complex roots, and scatter-plot them with a dashed red grid line on
+  /// the symmetry axis. Every step used to fail — `N` destroyed the
+  /// exponents, `Solve` rejected the list-valued equation, and the scatter
+  /// renderer ignored `GridLines` / `GridLinesStyle` / `Axes`.
+  #[test]
+  fn bernoulli_root_scatter_with_styled_grid_line() {
+    clear_state();
+    let svg = export_svg(
+      "Module[{sol}, \
+       sol = Solve[N[Table[BernoulliB[n, z], {n, 8, 8}] == 0, 10]]; \
+       ListPlot[{{Re@z, Im@z} /. sol}, PlotRange -> {{-12, 12}, {-8, 8}}, \
+       GridLines -> {{1/2}, None}, \
+       GridLinesStyle -> Directive[Red, Dashed], \
+       Axes -> True, ImageSize -> {550, 400}]]",
+    );
+    // All eight roots of B_8 are plotted.
+    assert_eq!(
+      svg.matches("<circle").count(),
+      8,
+      "every root should be drawn: {svg}"
+    );
+    // The symmetry axis at x = 1/2, red and dashed.
+    assert!(
+      svg.contains("stroke=\"rgb(255,0,0)\"")
+        && svg.contains("stroke-dasharray="),
+      "the x = 1/2 grid line should be red and dashed: {svg}"
+    );
+  }
+
+  /// The same body with the Demonstration's `axes` checkbox off: the plot
+  /// keeps its points but loses the axes, their ticks and their labels.
+  #[test]
+  fn bernoulli_root_scatter_without_axes() {
+    clear_state();
+    let svg = export_svg(
+      "Module[{sol}, \
+       sol = Solve[N[Table[BernoulliB[n, z], {n, 8, 8}] == 0, 10]]; \
+       ListPlot[{{Re@z, Im@z} /. sol}, PlotRange -> {{-12, 12}, {-8, 8}}, \
+       GridLines -> {{1/2}, None}, \
+       GridLinesStyle -> Directive[Red, Dashed], \
+       Axes -> False, ImageSize -> {550, 400}]]",
+    );
+    assert_eq!(svg.matches("<circle").count(), 8, "points dropped: {svg}");
+    assert!(
+      !svg.contains("<text"),
+      "Axes -> False should leave no tick labels: {svg}"
+    );
+    assert!(
+      svg.contains("stroke-dasharray="),
+      "the grid line is independent of the axes: {svg}"
     );
   }
 }

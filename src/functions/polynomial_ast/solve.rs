@@ -1550,10 +1550,12 @@ fn modular_solution_branches(
   Some(branches)
 }
 
-/// Thread an equality whose operands are all equal-length lists into the
-/// element-wise scalar equations (Wolfram's automatic listability of
-/// `Equal` inside Solve): `{a, b} == {c, d}` → `[a == c, b == d]`.
-/// Returns `None` when the expression is not such a list-valued equality.
+/// Thread an equality with at least one list operand into the element-wise
+/// scalar equations (Wolfram's automatic listability of `Equal` inside
+/// Solve): `{a, b} == {c, d}` → `[a == c, b == d]`. Scalar operands are
+/// broadcast across the list, so `{a, b} == 0` → `[a == 0, b == 0]` — the
+/// shape `Solve[N[Table[…] == 0, 10]]` produces. All list operands must
+/// have the same length. Returns `None` when no operand is a list.
 fn thread_list_equation(eq: &Expr) -> Option<Vec<Expr>> {
   let operands: Vec<&Expr> = match eq {
     Expr::Comparison {
@@ -1569,17 +1571,16 @@ fn thread_list_equation(eq: &Expr) -> Option<Vec<Expr>> {
     }
     _ => return None,
   };
-  let mut rows: Vec<Vec<Expr>> = Vec::with_capacity(operands.len());
+  // Length of the list operands; scalars broadcast to it.
   let mut len: Option<usize> = None;
   for op in &operands {
-    let Expr::List(items) = op else { return None };
-    let row = items.to_vec();
-    match len {
-      None => len = Some(row.len()),
-      Some(l) if l == row.len() => {}
-      _ => return None,
+    if let Expr::List(items) = op {
+      match len {
+        None => len = Some(items.len()),
+        Some(l) if l == items.len() => {}
+        _ => return None,
+      }
     }
-    rows.push(row);
   }
   let n = len?;
   if n == 0 {
@@ -1588,8 +1589,14 @@ fn thread_list_equation(eq: &Expr) -> Option<Vec<Expr>> {
   Some(
     (0..n)
       .map(|i| Expr::Comparison {
-        operands: rows.iter().map(|r| r[i].clone()).collect(),
-        operators: vec![ComparisonOp::Equal; rows.len() - 1],
+        operands: operands
+          .iter()
+          .map(|op| match op {
+            Expr::List(items) => items[i].clone(),
+            scalar => (*scalar).clone(),
+          })
+          .collect(),
+        operators: vec![ComparisonOp::Equal; operands.len() - 1],
       })
       .collect(),
   )
