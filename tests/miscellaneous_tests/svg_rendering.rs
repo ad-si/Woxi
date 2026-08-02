@@ -2651,6 +2651,96 @@ mod tests {
       );
     }
 
+    /// Width and height of everything drawn, in SVG user units, taken
+    /// from the coordinates of the rendered polygons.
+    fn ink_extent(svg: &str) -> (f64, f64) {
+      let (mut x0, mut x1, mut y0, mut y1) = (
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+      );
+      for chunk in svg.split("points=\"").skip(1) {
+        let points = chunk.split('"').next().unwrap_or("");
+        for pair in points.split_whitespace() {
+          let Some((x, y)) = pair.split_once(',') else {
+            continue;
+          };
+          let (Ok(x), Ok(y)) = (x.parse::<f64>(), y.parse::<f64>()) else {
+            continue;
+          };
+          x0 = x0.min(x);
+          x1 = x1.max(x);
+          y0 = y0.min(y);
+          y1 = y1.max(y);
+        }
+      }
+      assert!(x0.is_finite(), "nothing was drawn: {svg}");
+      (x1 - x0, y1 - y0)
+    }
+
+    #[test]
+    fn spherical_region_scales_by_the_enclosing_sphere() {
+      // `SphericalRegion -> True` fits the sphere that encloses the
+      // contents instead of their projected outline. A sphere is its own
+      // enclosing sphere, so it keeps its size either way.
+      let with = ink_extent(&svg_of(
+        "Graphics3D[Sphere[{0, 0, 0}, 1], SphericalRegion -> True, \
+         Boxed -> False, ImageSize -> 200]",
+      ));
+      let without = ink_extent(&svg_of(
+        "Graphics3D[Sphere[{0, 0, 0}, 1], Boxed -> False, ImageSize -> 200]",
+      ));
+      assert!(
+        (with.0 - without.0).abs() < 1.0,
+        "a sphere must not shrink: {with:?} vs {without:?}"
+      );
+
+      // A flat square, seen face on, fills the frame without the option
+      // and shrinks to its circumradius (a factor of √2) with it.
+      let flat = "Graphics3D[Polygon[{{-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, \
+                  {-1, 1, 0}}], Boxed -> False, ImageSize -> 200, \
+                  ViewPoint -> {0, 0, 3}";
+      let with =
+        ink_extent(&svg_of(&format!("{flat}, SphericalRegion -> True]")));
+      let without = ink_extent(&svg_of(&format!("{flat}]")));
+      let ratio = with.0 / without.0;
+      assert!(
+        (ratio - 1.0 / 2f64.sqrt()).abs() < 0.02,
+        "expected a 1/√2 shrink, got {ratio}: {with:?} vs {without:?}"
+      );
+    }
+
+    #[test]
+    fn spherical_region_holds_the_scale_across_views() {
+      // The point of the option: an animated or rotated scene keeps one
+      // scale, so the picture no longer breathes as the contents move.
+      // A long cuboid seen end on is foreshortened, and with the option
+      // it is drawn shorter rather than re-fitted to the frame.
+      let bar = "Graphics3D[Cuboid[{-2, -0.3, -0.3}, {2, 0.3, 0.3}], \
+                 Boxed -> False, ImageSize -> 200";
+      let front = ink_extent(&svg_of(&format!(
+        "{bar}, SphericalRegion -> True, ViewPoint -> {{0, -3, 0}}]"
+      )));
+      let oblique = ink_extent(&svg_of(&format!(
+        "{bar}, SphericalRegion -> True, ViewPoint -> {{-3, -3, 3}}]"
+      )));
+      assert!(
+        oblique.0 < front.0 * 0.9,
+        "the foreshortened view must draw shorter: {oblique:?} vs {front:?}"
+      );
+
+      // Without the option both views are re-fitted to the same width.
+      let front =
+        ink_extent(&svg_of(&format!("{bar}, ViewPoint -> {{0, -3, 0}}]")));
+      let oblique =
+        ink_extent(&svg_of(&format!("{bar}, ViewPoint -> {{-3, -3, 3}}]")));
+      assert!(
+        (oblique.0 - front.0).abs() < 2.0,
+        "both views must fill the frame: {oblique:?} vs {front:?}"
+      );
+    }
+
     #[test]
     fn raster3d_renders_voxels() {
       let svg =

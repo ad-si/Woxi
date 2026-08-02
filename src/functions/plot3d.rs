@@ -3762,6 +3762,72 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
   [(x3_min, x3_max), (y3_min, y3_max), (z3_min, z3_max)]
 }
 
+/// Radius of the sphere centred on `center` that encloses every primitive.
+///
+/// Wolfram's `SphericalRegion -> True` scales the picture so this sphere
+/// fits the display area. It is the sphere around the *contents*, not
+/// around their bounding box: a lone `Sphere[]` keeps its size (radius 1)
+/// instead of shrinking to the box's half-diagonal.
+fn enclosing_sphere_radius(prims: &[Primitive3D], center: Point3D) -> f64 {
+  let dist = |p: &Point3D| {
+    ((p.x - center.x).powi(2)
+      + (p.y - center.y).powi(2)
+      + (p.z - center.z).powi(2))
+    .sqrt()
+  };
+  let mut radius: f64 = 0.0;
+  for prim in prims {
+    match prim {
+      Primitive3D::Sphere {
+        center: c,
+        radius: r,
+        ..
+      } => radius = radius.max(dist(c) + r),
+      Primitive3D::Cylinder {
+        p1, p2, radius: r, ..
+      }
+      | Primitive3D::Cone {
+        p1, p2, radius: r, ..
+      } => {
+        for p in [p1, p2] {
+          radius = radius.max(dist(p) + r);
+        }
+      }
+      Primitive3D::Cuboid { p_min, p_max, .. } => {
+        for x in [p_min.x, p_max.x] {
+          for y in [p_min.y, p_max.y] {
+            for z in [p_min.z, p_max.z] {
+              radius = radius.max(dist(&Point3D { x, y, z }));
+            }
+          }
+        }
+      }
+      Primitive3D::Polygon3D { points, .. }
+      | Primitive3D::Point3DPrim { points, .. }
+      | Primitive3D::Arrow3D { points, .. } => {
+        for pt in points {
+          radius = radius.max(dist(pt));
+        }
+      }
+      Primitive3D::Line3D { segments, .. } => {
+        for seg in segments {
+          for pt in seg {
+            radius = radius.max(dist(pt));
+          }
+        }
+      }
+      Primitive3D::Surface3D { tris, .. } => {
+        for (a, b, c) in tris {
+          for pt in [a, b, c] {
+            radius = radius.max(dist(pt));
+          }
+        }
+      }
+    }
+  }
+  radius
+}
+
 /// Graphics3D[primitives, options...]
 pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let content = evaluate_expr_to_expr(&args[0])?;
@@ -3781,6 +3847,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `BoxRatios -> {rx, ry, rz}`; `None` is Wolfram's `Automatic`, where the
   // box simply has the proportions of the data.
   let mut box_ratios: Option<[f64; 3]> = None;
+  // `SphericalRegion -> True`: frame the picture by the sphere that
+  // encloses the contents instead of by their projected outline, so the
+  // scale stays put as the view turns or the contents move.
+  let mut spherical_region = false;
   let mut show_axes = false;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   for opt in &args[1..] {
@@ -3804,6 +3874,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Boxed" => match replacement.as_ref() {
           Expr::Identifier(s) if s == "False" => show_box = false,
           Expr::Identifier(s) if s == "True" => show_box = true,
+          _ => {}
+        },
+        "SphericalRegion" => match replacement.as_ref() {
+          Expr::Identifier(s) if s == "False" => spherical_region = false,
+          Expr::Identifier(s) if s == "True" => spherical_region = true,
           _ => {}
         },
         "Background" => {
@@ -4290,6 +4365,34 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     px_max = 1.0;
     py_min = -1.0;
     py_max = 1.0;
+  }
+
+  // `SphericalRegion -> True` fits the enclosing sphere of the contents
+  // (of the box, when `PlotRange` pins one) instead of their projected
+  // outline. The sphere projects to the same circle from every direction,
+  // so the scale no longer follows the view angle or a moving shape.
+  if spherical_region {
+    let center = Point3D {
+      x: (x3_min + x3_max) / 2.0,
+      y: (y3_min + y3_max) / 2.0,
+      z: (z3_min + z3_max) / 2.0,
+    };
+    let radius = if plot_range.is_some() {
+      ((x3_max - x3_min).powi(2)
+        + (y3_max - y3_min).powi(2)
+        + (z3_max - z3_min).powi(2))
+      .sqrt()
+        / 2.0
+    } else {
+      enclosing_sphere_radius(&prims, center)
+    };
+    if radius > 0.0 {
+      let (pcx, pcy) = project(center, &camera);
+      px_min = pcx - radius;
+      px_max = pcx + radius;
+      py_min = pcy - radius;
+      py_max = pcy + radius;
+    }
   }
 
   let p_width = px_max - px_min;

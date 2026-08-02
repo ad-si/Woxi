@@ -9,4 +9,14 @@ Graphics3D
 ```
 
 Options: `ImageSize`, `PlotRange`, `BoxRatios`, `Boxed`, `Axes`,
-`AxesLabel`, `Lighting`, `ViewPoint`, `ViewVertical`, `Background`.
+`AxesLabel`, `Lighting`, `ViewPoint`, `ViewVertical`, `Background`,
+`SphericalRegion`.
+
+`SphericalRegion -> True` scales the picture so the sphere enclosing the
+contents fits the display area, which keeps the scale fixed as the view
+turns or the contents move:
+
+```scrut
+$ wo 'Head[Graphics3D[Sphere[], SphericalRegion -> True]]'
+Graphics3D
+```
