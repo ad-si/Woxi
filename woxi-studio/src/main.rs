@@ -7384,6 +7384,83 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn freese_dissection_manipulate_moves_its_pieces() {
+    // End-to-end regression for "3D Freese's Dissection of a Regular
+    // Dodecagon into Two Squares": a slider slides and turns prisms cut
+    // from a dodecagon. The pieces ask for `EdgeForm[]`, and one of them is
+    // a concave nine-gon whose naive fan triangulation spiked outside its
+    // own outline.
+    woxi::interpret(
+      "ngon[n_] := Table[{Re[Exp[I 2 Pi i/n]], Im[Exp[I 2 Pi i/n]]}, \
+         {i, 0, n}] // N; \
+       prizma4[vec_][poli_] := Module[{n = Length[poli]}, \
+         {Join[{Reverse[Range[n]]}, {Range[n + 1, 2 n]}, \
+            Table[{i, Mod[i + 1, n, 1], Mod[i + 1, n, 1] + n, i + n}, \
+              {i, 1, n}]], \
+          Join[poli, Table[poli[[i]] + vec, {i, 1, n}]]}]; \
+       prizmB[vec_][tocke_] := \
+         With[{toc = (tocke /. {x_, y_} -> {x, y, 0})}, \
+           With[{tr = prizma4[vec][toc]}, Map[tr[[2, #]] &, tr[[1]]]]]; \
+       dod0[aa_] := {aa[[1]], aa[[2]], 0}; \
+       pts = ngon[12];",
+    )
+    .unwrap();
+    let code = "Manipulate[\
+      Graphics3D[{EdgeForm[], \
+        {Brown, Polygon[prizmB[{0, 0, 0.1}][\
+          {pts[[11]], pts[[12]], pts[[1]], pts[[2]], pts[[3]]}]]}, \
+        Translate[{Green, Polygon[prizmB[{0, 0, 0.1}][\
+          {pts[[4]], pts[[5]], pts[[6]], pts[[7]], pts[[8]]}]]}, \
+         k1 dod0@(pts[[1]] - pts[[4]])]}, \
+       PlotRange -> All, ImageSize -> {450, 450}, Boxed -> False], \
+      {{k1, 0, \"move\"}, 0, 1, 0.001, Appearance -> \"Labeled\"}, \
+      {{sph, False, \"show photo\"}, {True, False}}, \
+      SaveDefinitions -> True]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the dissection Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the assembled dodecagon"
+    );
+
+    // The move slider and the photo toggle.
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          label,
+          current,
+          min,
+          max,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          label: photo_label, ..
+        },
+      ] => {
+        assert_eq!(label, "move");
+        assert_eq!((*current, *min, *max), (0.0, 0.0, 1.0));
+        assert_eq!(photo_label, "show photo");
+      }
+      other => panic!("expected a slider and a toggle, got {other:?}"),
+    }
+
+    // Sliding the pieces all the way apart re-renders.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 1.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn points_connection_manipulate_draws_its_click_pane() {
     // End-to-end regression for "The 6x6 Points Connection Problem": the
     // puzzle is played by clicking a grid of points, so the whole widget

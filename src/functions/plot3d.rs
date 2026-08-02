@@ -1624,6 +1624,9 @@ struct StyleState3D {
   /// Whether an open surface's ends are closed off, as `CapForm` sets it.
   /// `CapForm[None]` leaves a `Tube` hollow; every other form caps it.
   capped: bool,
+  /// Whether a face is outlined. `EdgeForm[]` asks for no edge at all,
+  /// which is how a dissection shows its pieces as flat colour.
+  edges: bool,
 }
 
 impl Default for StyleState3D {
@@ -1634,6 +1637,7 @@ impl Default for StyleState3D {
       opacity: 1.0,
       thickness: None,
       capped: true,
+      edges: true,
     }
   }
 }
@@ -1769,6 +1773,13 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
       // ("Butt", "Square", "Round") closes them, as does the default.
       "CapForm" if args.len() == 1 => {
         style.capped = !matches!(&args[0], Expr::Identifier(s) if s == "None");
+        return true;
+      }
+      // `EdgeForm[]` (and `EdgeForm[None]`) asks for faces with no outline;
+      // any other form keeps the default edge.
+      "EdgeForm" => {
+        style.edges = !(args.is_empty()
+          || matches!(args.first(), Some(Expr::Identifier(s)) if s == "None"));
         return true;
       }
       "Thickness" if args.len() == 1 => {
@@ -2830,6 +2841,58 @@ fn collect_raster3d(
   }
 }
 
+/// Whether a polygon's corners all turn the same way, so a fan from the
+/// first one covers it. Measured about the polygon's own plane (Newell's
+/// normal, which is robust for slightly non-planar input); a straight
+/// corner turns neither way and says nothing either way.
+fn is_convex_polygon3d(points: &[Point3D]) -> bool {
+  let n = points.len();
+  if n < 4 {
+    return true;
+  }
+  let mut normal = [0.0f64; 3];
+  for i in 0..n {
+    let a = points[i];
+    let b = points[(i + 1) % n];
+    normal[0] += (a.y - b.y) * (a.z + b.z);
+    normal[1] += (a.z - b.z) * (a.x + b.x);
+    normal[2] += (a.x - b.x) * (a.y + b.y);
+  }
+  let scale =
+    (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2])
+      .sqrt();
+  if !scale.is_finite() || scale == 0.0 {
+    return true;
+  }
+  let mut sign = 0i8;
+  for i in 0..n {
+    let a = points[i];
+    let b = points[(i + 1) % n];
+    let c = points[(i + 2) % n];
+    let u = [b.x - a.x, b.y - a.y, b.z - a.z];
+    let v = [c.x - b.x, c.y - b.y, c.z - b.z];
+    let turn = (u[1] * v[2] - u[2] * v[1]) * normal[0]
+      + (u[2] * v[0] - u[0] * v[2]) * normal[1]
+      + (u[0] * v[1] - u[1] * v[0]) * normal[2];
+    // Scaled by the polygon's own size so the tolerance means the same
+    // thing whatever the coordinates are.
+    let this = if turn > 1e-9 * scale {
+      1
+    } else if turn < -1e-9 * scale {
+      -1
+    } else {
+      0
+    };
+    if this != 0 {
+      if sign != 0 && this != sign {
+        return false;
+      }
+      sign = this;
+    }
+  }
+  true
+}
+
 /// Tessellate a planar polygon with holes (`Polygon[outer -> holes]`).
 ///
 /// The face is flattened onto its own plane, triangulated there, and the
@@ -3529,13 +3592,20 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           holes,
           style,
         } if holes.is_empty() => {
-          // Simple fan triangulation
-          let t = if points.len() >= 3 {
+          // A fan from the first corner only covers a convex polygon; on a
+          // concave one its triangles spill outside the outline, which
+          // shows as spikes off the shape. A concave face goes through the
+          // same triangulator the holed case uses.
+          let t = if points.len() < 3 {
+            vec![]
+          } else if is_convex_polygon3d(points) {
             (1..points.len() - 1)
               .map(|i| (points[0], points[i], points[i + 1]))
               .collect()
           } else {
-            vec![]
+            let (t, flags) = tessellate_polygon_with_holes(points, &[]);
+            holed_boundaries = flags;
+            t
           };
           (t, style)
         }
@@ -3568,6 +3638,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             opacity: 1.0,
             thickness: None,
             capped: true,
+            edges: true,
           },
         ),
       };
@@ -3606,7 +3677,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
     let tri_count = tris.len();
     for (i, (v0, v1, v2)) in tris.into_iter().enumerate() {
-      let boundary = if smooth_surface {
+      // `EdgeForm[]` asks for faces with no outline, so every edge counts
+      // as an internal cut and is stroked in the face's own colour.
+      let boundary = if smooth_surface || !prim_style.edges {
         [false; 3]
       } else if let Some(flags) = holed_boundaries.get(i) {
         *flags

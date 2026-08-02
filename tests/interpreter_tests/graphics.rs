@@ -7747,6 +7747,68 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    // `EdgeForm[]` asks for faces with no outline at all — how a dissection
+    // shows its pieces as flat colour. wolframscript draws no near-black
+    // pixel for such a face; Woxi outlined it regardless.
+    #[test]
+    fn edge_form_none_suppresses_the_outline() {
+      let square = "Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}}]";
+      let outlined =
+        export_svg(&format!("Graphics3D[{{{square}}}, Boxed -> False]"));
+      let bare = export_svg(&format!(
+        "Graphics3D[{{EdgeForm[], {square}}}, Boxed -> False]"
+      ));
+      assert!(
+        outlined.contains("stroke=\"rgb(64,64,64)\""),
+        "a face is outlined by default: {outlined}"
+      );
+      assert!(
+        !bare.contains("stroke=\"rgb(64,64,64)\""),
+        "EdgeForm[] asks for no outline: {bare}"
+      );
+      // `EdgeForm[None]` says the same thing.
+      let none = export_svg(&format!(
+        "Graphics3D[{{EdgeForm[None], {square}}}, Boxed -> False]"
+      ));
+      assert!(!none.contains("stroke=\"rgb(64,64,64)\""), "{none}");
+    }
+
+    // A fan from the first corner only covers a convex polygon. On a
+    // concave one its triangles spill outside the outline — visible as
+    // spikes off the shape — and the spilt triangle winds the other way
+    // round. A correct triangulation gives every triangle the polygon's
+    // own winding.
+    #[test]
+    fn a_concave_polygon_triangulates_inside_its_outline() {
+      // A dart: the corner at {2, 1} is reflex, and a fan from {0, 0}
+      // covers the notch below it.
+      let svg = export_svg(
+        "Graphics3D[Polygon[{{0, 0, 0}, {2, 1, 0}, {4, 0, 0}, {2, 4, 0}}],          Boxed -> False, ViewPoint -> {0, 0, 5}]",
+      );
+      let signs: Vec<i8> = svg
+        .lines()
+        .filter(|l| l.starts_with("<polygon"))
+        .map(|l| {
+          let pts: Vec<f64> = l
+            .split("points=\"")
+            .nth(1)
+            .and_then(|p| p.split('"').next())
+            .expect("points")
+            .split([' ', ','])
+            .filter_map(|v| v.parse().ok())
+            .collect();
+          let area = (pts[2] - pts[0]) * (pts[5] - pts[1])
+            - (pts[3] - pts[1]) * (pts[4] - pts[0]);
+          if area > 0.0 { 1 } else { -1 }
+        })
+        .collect();
+      assert!(signs.len() >= 2, "the dart splits into triangles: {svg}");
+      assert!(
+        signs.iter().all(|s| *s == signs[0]),
+        "every triangle must wind the polygon's way: {signs:?} in {svg}"
+      );
+    }
+
     // Wolfram outlines a flat face in a solid `GrayLevel[0.25]` one pixel
     // wide (measured against wolframscript at 2x: a 2-pixel run of
     // rgb(64, 64, 64)). Woxi drew it at 9% black, which was all but
