@@ -11175,6 +11175,29 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  /// Every call creates a *new* directory. Regression: the name was fixed
+  /// per process, so a second call handed back the first one's directory —
+  /// deleting one then made the other's disappear underneath it.
+  #[test]
+  fn create_directory_no_args_is_a_fresh_directory_each_time() {
+    let first = interpret("CreateDirectory[]").unwrap();
+    let second = interpret("CreateDirectory[]").unwrap();
+    assert_ne!(first, second, "the same directory was handed out twice");
+    for dir in [&first, &second] {
+      assert!(std::path::Path::new(dir).is_dir(), "{dir} was not created");
+      std::fs::remove_dir_all(dir).ok();
+    }
+    // Deleting one leaves the other alone.
+    assert_eq!(
+      interpret(
+        "a = CreateDirectory[]; b = CreateDirectory[]; DeleteDirectory[a]; \
+         out = {DirectoryQ[a], DirectoryQ[b]}; DeleteDirectory[b]; out"
+      )
+      .unwrap(),
+      "{False, True}"
+    );
+  }
+
   #[test]
   fn create_directory_non_string() {
     assert_eq!(interpret("CreateDirectory[123]").unwrap(), "$Failed");

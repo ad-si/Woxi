@@ -2375,14 +2375,26 @@ fn graphics_text_content(expr: &Expr) -> String {
     {
       graphics_text_content(&args[0])
     }
-    // `TraditionalForm[expr]` / `StandardForm[expr]` ask for `expr` to be
-    // set in that form; inside a picture everything is typeset already, so
-    // the wrapper contributes no text of its own. Without this the box
-    // markup it serializes to leaked into the picture as literal source.
+    // `TraditionalForm[expr]` typesets `expr`, so the text it contributes
+    // is the flattened traditional-notation box tree — the same thing
+    // `expr_to_svg_markup` draws — rather than `expr`'s InputForm. Keeping
+    // the two in step is what makes the measured width match the drawing.
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      box_expr_to_plain(
+        &crate::evaluator::dispatch::complex_and_special::
+          expr_to_box_form_traditional(&args[0]),
+      )
+    }
+    // `StandardForm[expr]` / `OutputForm[expr]` ask for `expr` to be set in
+    // that form; inside a picture everything is typeset already, so the
+    // wrapper contributes no text of its own. Without this the box markup
+    // it serializes to leaked into the picture as literal source.
     Expr::FunctionCall { name, args }
       if matches!(
         name.as_str(),
-        "TraditionalForm" | "StandardForm" | "OutputForm" | "DisplayForm"
+        "StandardForm" | "OutputForm" | "DisplayForm"
       ) && args.len() == 1 =>
     {
       graphics_text_content(&args[0])
@@ -6516,8 +6528,10 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
   let ch = font_size * MONO_ADVANCE;
 
   match expr {
-    Expr::String(s) => BoxLayout::text(s, font_size),
-    Expr::Identifier(s) => BoxLayout::text(s, font_size),
+    Expr::String(s) => BoxLayout::text(strip_precision_marker(s), font_size),
+    Expr::Identifier(s) => {
+      BoxLayout::text(strip_precision_marker(s), font_size)
+    }
     Expr::Integer(n) => {
       BoxLayout::text(&group_digits_str(&n.to_string()), font_size)
     }
@@ -7911,10 +7925,17 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // hover in the Wolfram FrontEnd, which static SVG can't do)
         "Tooltip" if !args.is_empty() => expr_to_svg_markup(&args[0]),
 
+        // `TraditionalForm[expr]` asks for conventional mathematical
+        // notation, so typeset the expression instead of printing its
+        // InputForm: `Sum[…, {n, 0, ∞}]` becomes a ∑ with limits and
+        // `LegendreP[n, x]` becomes `Pₙ(x)`.
+        "TraditionalForm" if args.len() == 1 => boxes_to_svg(
+          &crate::evaluator::dispatch::complex_and_special::
+            expr_to_box_form_traditional(&args[0]),
+        ),
+
         // Presentation wrappers display their content only.
-        "Text" | "TraditionalForm" | "DisplayForm" | "StandardForm"
-          if args.len() == 1 =>
-        {
+        "Text" | "DisplayForm" | "StandardForm" if args.len() == 1 => {
           expr_to_svg_markup(&args[0])
         }
 
@@ -8391,12 +8412,30 @@ fn is_typeset_box_head(name: &str) -> bool {
   )
 }
 
+/// A box atom holding a machine-precision real carries the `` ` `` precision
+/// marker — `ToBoxes[1.5]` is the box string ``"1.5`"``. The marker is
+/// notation, not a glyph: the FrontEnd never draws it, so strip it before
+/// the number reaches a picture.
+fn strip_precision_marker(s: &str) -> &str {
+  match s.strip_suffix('`') {
+    Some(head)
+      if !head.is_empty()
+        && head
+          .chars()
+          .all(|c| c.is_ascii_digit() || c == '.' || c == '-') =>
+    {
+      head
+    }
+    _ => s,
+  }
+}
+
 pub fn boxes_to_svg(expr: &Expr) -> String {
   match expr {
     // Atoms: in box form, atoms are always Expr::String
-    Expr::String(s) => svg_escape(s),
+    Expr::String(s) => svg_escape(strip_precision_marker(s)),
     // Identifiers can appear for fallback cases
-    Expr::Identifier(s) => svg_escape(s),
+    Expr::Identifier(s) => svg_escape(strip_precision_marker(s)),
     Expr::Integer(n) => group_digits_svg(&n.to_string()),
     Expr::BigInteger(n) => group_digits_svg(&n.to_string()),
 
@@ -8878,7 +8917,9 @@ pub fn box_string_to_svg(s: &str) -> String {
 /// estimation (sub/superscripts contribute their content length).
 fn box_expr_to_plain(e: &Expr) -> String {
   match e {
-    Expr::String(s) | Expr::Identifier(s) => s.clone(),
+    Expr::String(s) | Expr::Identifier(s) => {
+      strip_precision_marker(s).to_string()
+    }
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),
     Expr::List(items) => items.iter().map(box_expr_to_plain).collect(),
@@ -9733,9 +9774,23 @@ pub struct GridStyle {
 
 /// `SpanFromLeft` in a `Grid` cell means "the cell to my left continues into
 /// this column": it draws nothing itself, and its neighbour is laid out
-/// across the merged span.
+/// across the merged span. `SpanFromBoth` continues a cell that spans both
+/// ways, so it is a left continuation too.
 fn is_span_from_left(cell: &Expr) -> bool {
-  matches!(cell, Expr::Identifier(s) if s == "SpanFromLeft")
+  matches!(cell, Expr::Identifier(s) if s == "SpanFromLeft" || s == "SpanFromBoth")
+}
+
+/// `SpanFromAbove` means "the cell above me continues into this row" — the
+/// vertical counterpart of `SpanFromLeft`, with `SpanFromBoth` marking the
+/// inside of a block that is merged in both directions.
+fn is_span_from_above(cell: &Expr) -> bool {
+  matches!(cell, Expr::Identifier(s) if s == "SpanFromAbove" || s == "SpanFromBoth")
+}
+
+/// A cell that only continues a merged one, in either direction: it holds no
+/// content of its own and so is skipped by every sizing and drawing pass.
+fn is_span_placeholder(cell: &Expr) -> bool {
+  is_span_from_left(cell) || is_span_from_above(cell)
 }
 
 /// How many columns the cell at `j` covers — itself plus every
@@ -9744,6 +9799,15 @@ fn span_width(row: &[Expr], j: usize) -> usize {
   1 + row[j + 1..]
     .iter()
     .take_while(|c| is_span_from_left(c))
+    .count()
+}
+
+/// How many rows the cell at `(i, j)` covers — itself plus every row below
+/// whose cell in that column continues it.
+fn span_height(rows: &[Vec<Expr>], i: usize, j: usize) -> usize {
+  1 + rows[i + 1..]
+    .iter()
+    .take_while(|row| row.get(j).is_some_and(is_span_from_above))
     .count()
 }
 
@@ -10416,7 +10480,7 @@ fn grid_svg_styled_internal(
   let mut spans: Vec<(usize, usize, f64)> = Vec::new();
   for row in &rows {
     for (j, cell) in row.iter().enumerate() {
-      if is_span_from_left(cell) {
+      if is_span_placeholder(cell) {
         continue;
       }
       let w = match grid_cell_graphic(cell) {
@@ -10470,45 +10534,59 @@ fn grid_svg_styled_internal(
     }
   }
 
-  // Compute per-row heights (taller for fractions or images)
-  let row_heights: Vec<f64> = rows
-    .iter()
-    .map(|row| {
-      let mut max_h = if row.iter().any(has_fraction) {
+  // Compute per-row heights (taller for fractions or images). Cells that
+  // span several rows are held back the way column spans are: the rows are
+  // sized by the ordinary cells first, and only what a span still needs is
+  // added afterwards, so one tall picture does not stretch a single row.
+  let mut row_spans: Vec<(usize, usize, f64)> = Vec::new();
+  let mut row_heights: Vec<f64> = Vec::with_capacity(num_rows);
+  for (i, row) in rows.iter().enumerate() {
+    let mut max_h = base_row_height;
+    for (j, cell) in row.iter().enumerate() {
+      if is_span_placeholder(cell) {
+        continue;
+      }
+      let mut cell_h = if has_fraction(cell) {
         frac_row_height
       } else {
         base_row_height
       };
       // A graphic cell keeps its own height.
-      for cell in row.iter() {
-        if let Some((_, _, nat_h)) = grid_cell_graphic(cell) {
-          max_h = max_h.max(nat_h + pad_y);
-        }
+      if let Some((_, _, nat_h)) = grid_cell_graphic(cell) {
+        cell_h = cell_h.max(nat_h + pad_y);
       }
-      // Check for Image cells — scale to fit column width, compute height
-      for (j, cell) in row.iter().enumerate() {
-        if let Some(img) = unwrap_to_image(cell)
-          && let Expr::Image {
-            width: iw,
-            height: ih,
-            ..
-          } = img
-        {
-          let col_w = if j < col_widths.len() {
-            col_widths[j] - pad_x
-          } else {
-            200.0
-          };
-          let scale = col_w / (*iw as f64);
-          let img_h = (*ih as f64) * scale + pad_y;
-          if img_h > max_h {
-            max_h = img_h;
-          }
-        }
+      // An Image cell is scaled to fit the column width, which fixes its height.
+      if let Some(img) = unwrap_to_image(cell)
+        && let Expr::Image {
+          width: iw,
+          height: ih,
+          ..
+        } = img
+      {
+        let col_w = if j < col_widths.len() {
+          col_widths[j] - pad_x
+        } else {
+          200.0
+        };
+        let scale = col_w / (*iw as f64);
+        cell_h = cell_h.max((*ih as f64) * scale + pad_y);
       }
-      max_h
-    })
-    .collect();
+      let span = span_height(&rows, i, j);
+      if span > 1 {
+        row_spans.push((i, span, cell_h));
+      } else {
+        max_h = max_h.max(cell_h);
+      }
+    }
+    row_heights.push(max_h);
+  }
+  for (i, span, h) in row_spans {
+    let end = (i + span).min(num_rows);
+    let have: f64 = row_heights[i..end].iter().sum();
+    if h > have && end > i {
+      row_heights[end - 1] += h - have;
+    }
+  }
 
   let grid_width: f64 = col_widths.iter().sum();
   let total_gap: f64 = group_gaps.len() as f64 * group_gap;
@@ -10748,9 +10826,9 @@ fn grid_svg_styled_internal(
   for (i, row) in rows.iter().enumerate() {
     let mut x_offset: f64 = paren_margin;
     for (j, cell) in row.iter().enumerate() {
-      // A `SpanFromLeft` placeholder draws nothing; the cell it continues
-      // was already laid out across this column.
-      if is_span_from_left(cell) {
+      // A span placeholder draws nothing; the cell it continues was already
+      // laid out across this column or row.
+      if is_span_placeholder(cell) {
         x_offset += col_widths[j];
         continue;
       }
@@ -10758,6 +10836,9 @@ fn grid_svg_styled_internal(
         let end = (j + span_width(row, j)).min(num_cols);
         col_widths[j..end].iter().sum()
       };
+      // A row-spanning cell is centred over all the rows it covers.
+      let last_row = (i + span_height(&rows, i, j)).min(num_rows) - 1;
+      let (cell_top, cell_bottom) = (visual_tops[i], visual_bottoms[last_row]);
       let col_align = col_alignments.get(j).copied().unwrap_or(alignment_h);
       // Decimal columns anchor each cell so its decimal point lands at a shared
       // `dot_x`; the whole number is start-anchored at `dot_x - int_width`.
@@ -10783,7 +10864,7 @@ fn grid_svg_styled_internal(
       };
       // Shift text down slightly to compensate for ascenders being taller
       // than descenders, which makes mathematical centering look top-heavy.
-      let cy = (visual_tops[i] + visual_bottoms[i]) / 2.0 - 1.0;
+      let cy = (cell_top + cell_bottom) / 2.0 - 1.0;
 
       // A graphic cell is drawn as a nested <svg> at its own size,
       // centred in the cell.
@@ -10791,8 +10872,8 @@ fn grid_svg_styled_internal(
         && let Some(parsed) = parse_svg_dimensions(&cell_svg)
       {
         let gx = x_offset + (col_w - nat_w) / 2.0;
-        let vis_h = visual_bottoms[i] - visual_tops[i];
-        let gy = visual_tops[i] + (vis_h - nat_h) / 2.0;
+        let vis_h = cell_bottom - cell_top;
+        let gy = cell_top + (vis_h - nat_h) / 2.0;
         svg.push_str(&format!(
           "<svg x=\"{gx:.1}\" y=\"{gy:.1}\" width=\"{nat_w:.1}\" height=\"{nat_h:.1}\" viewBox=\"{}\" preserveAspectRatio=\"xMidYMid meet\">\n{}</svg>\n",
           parsed.view_box, parsed.inner_content
@@ -10816,8 +10897,8 @@ fn grid_svg_styled_internal(
           let draw_w = avail_w;
           let draw_h = (*ih as f64) * scale;
           let ix = x_offset + pad_x / 2.0;
-          let vis_h = visual_bottoms[i] - visual_tops[i];
-          let iy = visual_tops[i] + (vis_h - draw_h) / 2.0;
+          let vis_h = cell_bottom - cell_top;
+          let iy = cell_top + (vis_h - draw_h) / 2.0;
 
           // Encode image as base64 PNG
           let dyn_img = crate::functions::image_ast::expr_to_dynamic_image(
@@ -10949,10 +11030,34 @@ fn grid_svg_styled_internal(
         } else {
           visual_tops[i]
         };
-        svg.push_str(&format!(
-          "<line x1=\"{paren_margin:.1}\" y1=\"{draw_y:.1}\" x2=\"{:.1}\" y2=\"{draw_y:.1}\" stroke=\"{stroke}\" stroke-width=\"1\"/>\n",
-          paren_margin + grid_width
-        ));
+        // A divider is interrupted wherever it would cut through a cell
+        // that spans across it (`SpanFromAbove`), so it is drawn per column
+        // and contiguous runs are merged back into one line.
+        let mut x_offset: f64 = paren_margin;
+        let mut run_start: Option<f64> = None;
+        for j in 0..num_cols {
+          let spanned = !is_border
+            && rows
+              .get(i)
+              .and_then(|row| row.get(j))
+              .is_some_and(is_span_from_above);
+          if spanned {
+            if let Some(x0) = run_start.take() {
+              svg.push_str(&format!(
+                "<line x1=\"{x0:.1}\" y1=\"{draw_y:.1}\" x2=\"{x_offset:.1}\" y2=\"{draw_y:.1}\" stroke=\"{stroke}\" stroke-width=\"1\"/>\n"
+              ));
+            }
+          } else if run_start.is_none() {
+            run_start = Some(x_offset);
+          }
+          x_offset += col_widths[j];
+        }
+        if let Some(x0) = run_start {
+          svg.push_str(&format!(
+            "<line x1=\"{x0:.1}\" y1=\"{draw_y:.1}\" x2=\"{:.1}\" y2=\"{draw_y:.1}\" stroke=\"{stroke}\" stroke-width=\"1\"/>\n",
+            paren_margin + grid_width
+          ));
+        }
       }
     }
   }
@@ -13750,8 +13855,14 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
         height,
       } => {
         let y_off = cell_top(*height);
+        // The child keeps its own coordinate space: a plot draws at a
+        // multiple of its display size, so the nested `<svg>` needs the
+        // child's viewBox or none of it lands inside the cell.
+        let view_box = parse_svg_dimensions(child)
+          .map(|p| p.view_box)
+          .unwrap_or_else(|| format!("0 0 {width} {height}"));
         svg.push_str(&format!(
-          "<svg x=\"{x:.1}\" y=\"{y_off:.1}\" width=\"{width:.1}\" height=\"{height:.1}\">\n"
+          "<svg x=\"{x:.1}\" y=\"{y_off:.1}\" width=\"{width:.1}\" height=\"{height:.1}\" viewBox=\"{view_box}\" preserveAspectRatio=\"xMidYMid meet\">\n"
         ));
         svg.push_str(strip_svg_wrapper(child));
         svg.push_str("</svg>\n");
@@ -16168,6 +16279,16 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       vec![LabelRun { text, italic }]
     }
   };
+  // `Derivative[n][f]` — a slider labelled `y'(0)` writes its `y'` this way.
+  // The primes are upright even when the function they mark is italic.
+  if let Some((func, order)) = as_derivative_of(expr) {
+    let mut runs = manipulate_label_runs(func, italic);
+    runs.push(LabelRun {
+      text: derivative_prime_marks(order),
+      italic: false,
+    });
+    return runs;
+  }
   match expr {
     Expr::FunctionCall { name, args } => match name.as_str() {
       // Style[expr, dir…] — render `expr`, turning italic on if any directive
@@ -16342,6 +16463,55 @@ fn is_italic_directive(dir: &Expr) -> bool {
 /// plain string is needed (JSON export, Unicode-script folding).
 fn flatten_label_runs(runs: &[LabelRun]) -> String {
   runs.iter().map(|r| r.text.as_str()).collect()
+}
+
+/// The mark the Wolfram Language typesets `Derivative[n][f]` with: a prime
+/// per order up to three (`y′`, `y″`, `y‴`) and a parenthesised superscript
+/// order beyond that (`y⁽⁴⁾`).
+pub(crate) fn derivative_prime_marks(order: u32) -> String {
+  match order {
+    0 => String::new(),
+    1 => "\u{2032}".to_string(),
+    2 => "\u{2033}".to_string(),
+    3 => "\u{2034}".to_string(),
+    n => to_unicode_script(&format!("({n})"), true),
+  }
+}
+
+/// Split a derivative application into the function it differentiates and
+/// the order. Covers both shapes the parser leaves behind: the curried
+/// `Derivative[n][f]` and the flattened `Derivative[n, f]` that
+/// `expr_to_output` prints back as `Derivative[n][f]`.
+pub(crate) fn as_derivative_of(expr: &Expr) -> Option<(&Expr, u32)> {
+  let (head, args): (&Expr, &[Expr]) = match expr {
+    Expr::CurriedCall { func, args } => (func.as_ref(), args),
+    Expr::FunctionCall { name, args } if name == "Derivative" => {
+      return match args.len() {
+        2 => order_of(&args[0]).map(|n| (&args[1], n)),
+        _ => None,
+      };
+    }
+    _ => return None,
+  };
+  if args.len() != 1 {
+    return None;
+  }
+  match head {
+    Expr::FunctionCall { name, args: hargs }
+      if name == "Derivative" && hargs.len() == 1 =>
+    {
+      order_of(&hargs[0]).map(|n| (&args[0], n))
+    }
+    _ => None,
+  }
+}
+
+/// The integer order of a `Derivative[n]` index.
+fn order_of(expr: &Expr) -> Option<u32> {
+  match expr {
+    Expr::Integer(n) if *n >= 0 => u32::try_from(*n).ok(),
+    _ => None,
+  }
 }
 
 /// Map the characters of `s` to their Unicode sub-/superscript form when a
@@ -18821,5 +18991,56 @@ mod manipulate_label_tests {
     );
     assert_eq!(runs(&row), vec![run("a", true), run("b", false)]);
     assert_eq!(flatten_label_runs(&runs(&row)), "ab");
+  }
+
+  /// `Derivative[n][f]` — a slider labelled `y'(0)` in a Demonstration.
+  fn derivative(order: i128, func: Expr) -> Expr {
+    Expr::CurriedCall {
+      func: Box::new(call("Derivative", vec![Expr::Integer(order)])),
+      args: vec![func],
+    }
+  }
+
+  #[test]
+  fn derivative_of_an_italic_style_primes_an_italic_base() {
+    let italic_y = call(
+      "Style",
+      vec![Expr::String("y".into()), Expr::Identifier("Italic".into())],
+    );
+    let label = call(
+      "Text",
+      vec![call(
+        "Row",
+        vec![Expr::List(
+          vec![derivative(1, italic_y), Expr::String("(0)".into())].into(),
+        )],
+      )],
+    );
+    assert_eq!(
+      runs(&label),
+      vec![run("y", true), run("\u{2032}", false), run("(0)", false),]
+    );
+    assert_eq!(flatten_label_runs(&runs(&label)), "y\u{2032}(0)");
+  }
+
+  #[test]
+  fn higher_derivative_orders_get_their_own_marks() {
+    let y = || Expr::Identifier("y".into());
+    let marks = |order| flatten_label_runs(&runs(&derivative(order, y())));
+    assert_eq!(marks(2), "y\u{2033}");
+    assert_eq!(marks(3), "y\u{2034}");
+    // Past three primes the order is written as a superscript in parens.
+    assert_eq!(marks(4), "y\u{207D}\u{2074}\u{207E}");
+  }
+
+  /// The evaluator hands back `Derivative[n][f]` flattened to
+  /// `Derivative[n, f]`; both shapes must label the same.
+  #[test]
+  fn flattened_derivative_labels_like_the_curried_one() {
+    let flat = call(
+      "Derivative",
+      vec![Expr::Integer(1), Expr::Identifier("y".into())],
+    );
+    assert_eq!(flatten_label_runs(&runs(&flat)), "y\u{2032}");
   }
 }

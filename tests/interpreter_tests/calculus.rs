@@ -6215,6 +6215,51 @@ mod dt {
     assert_eq!(interpret("Dt[x]").unwrap(), "Dt[x]");
     assert_eq!(interpret("Dt[c]").unwrap(), "Dt[c]");
   }
+
+  // `Dt[f, {x, n}]` is the n-fold total derivative. Rodrigues's formulas
+  // (Demonstrations on the special functions of quantum mechanics are
+  // written with them) use exactly this spelling.
+  #[test]
+  fn higher_order_with_integer_count() {
+    assert_eq!(interpret("Dt[x^3, {x, 0}]").unwrap(), "x^3");
+    assert_eq!(interpret("Dt[x^3, {x, 1}]").unwrap(), "3*x^2");
+    assert_eq!(interpret("Dt[x^2, {x, 2}]").unwrap(), "2");
+    assert_eq!(interpret("Dt[x^4, {x, 3}]").unwrap(), "24*x");
+    assert_eq!(interpret("Dt[Sin[x], {x, 2}]").unwrap(), "-Sin[x]");
+  }
+
+  // A dependent variable's own derivative grows another argument instead of
+  // nesting: Dt[Dt[y, x], x] is Dt[y, x, x].
+  #[test]
+  fn higher_order_carries_dependent_variables() {
+    assert_eq!(
+      interpret("Dt[x y, {x, 2}]").unwrap(),
+      "2*Dt[y, x] + x*Dt[y, x, x]"
+    );
+  }
+
+  // A symbolic order cannot be carried out, so the call is held.
+  #[test]
+  fn higher_order_with_symbolic_count_is_held() {
+    assert_eq!(
+      interpret("Dt[E^(-x^2), {x, n}]").unwrap(),
+      "Dt[E^(-x^2), {x, n}]"
+    );
+    assert_eq!(
+      interpret("Dt[(x^2 - 1)^n, {x, n}]").unwrap(),
+      "Dt[(-1 + x^2)^n, {x, n}]"
+    );
+  }
+
+  // Dt[f, x1, x2, …] differentiates against each variable in turn.
+  #[test]
+  fn multiple_variables() {
+    assert_eq!(interpret("Dt[x^3, x, x]").unwrap(), "6*x");
+    assert_eq!(
+      interpret("Dt[x y, x, y]").unwrap(),
+      "1 + Dt[x, y]*Dt[y, x] + x*Dt[y, x, y]"
+    );
+  }
 }
 
 mod minimize {
@@ -7265,6 +7310,53 @@ mod ndsolve {
     )
     .unwrap();
     assert_eq!(result, "{w, x}");
+  }
+
+  /// Substituting the solution rules into a derivative — `y'[t] /. sol`, how
+  /// a Demonstration plots a phase portrait — leaves
+  /// `Derivative[1][InterpolatingFunction[…]][t]`, which has to evaluate to
+  /// the slope, not stay a symbolic `Derivative[…]` echo.
+  #[test]
+  fn a_substituted_derivative_evaluates_numerically() {
+    // y' = y, y(0) = 1 → y(t) = y'(t) = E^t.
+    let result = interpret(
+      "sol = NDSolve[{y'[t] == y[t], y[0] == 1}, y, {t, 0, 1}]; \
+       {y[0.5], y'[0.5]} /. sol[[1]]",
+    )
+    .unwrap();
+    let nums: Vec<f64> = result
+      .trim_matches(['{', '}'])
+      .split(", ")
+      .map(|s| s.parse().expect("both entries are numbers"))
+      .collect();
+    let expected = std::f64::consts::E.powf(0.5);
+    for value in &nums {
+      assert!(
+        (value - expected).abs() < 1e-3,
+        "expected about {expected}, got {result}"
+      );
+    }
+  }
+
+  /// The same for a second derivative, and for the whole solution list
+  /// (`/. sol` rather than `/. sol[[1]]`).
+  #[test]
+  fn a_substituted_second_derivative_evaluates_numerically() {
+    // y'' = -y with y(0) = 0, y'(0) = 1 → y = Sin[t], y'' = -Sin[t].
+    let result = interpret(
+      "sol = NDSolve[{y''[t] == -y[t], y[0] == 0, y'[0] == 1}, y, \
+       {t, 0, 3}]; y''[1.0] /. sol",
+    )
+    .unwrap();
+    let value: f64 = result
+      .trim_matches(['{', '}'])
+      .parse()
+      .expect("a single numeric solution");
+    let expected = -1.0f64.sin();
+    assert!(
+      (value - expected).abs() < 1e-3,
+      "expected about {expected}, got {result}"
+    );
   }
 
   #[test]

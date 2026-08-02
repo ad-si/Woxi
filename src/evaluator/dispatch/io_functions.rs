@@ -4202,7 +4202,38 @@ pub(crate) fn labeled_display_svg(expr: &Expr) -> Option<String> {
   is_labeled.then(|| expr_to_svg(expr))
 }
 
+/// The picture behind a wrapper that only shows one once its content
+/// evaluates. `None` when it does not, which leaves the call to the arms
+/// below — a `Dynamic` whose body errors still prints as itself.
+fn evaluated_wrapper_svg(expr: &Expr) -> Option<String> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  match name.as_str() {
+    // `Dynamic[expr]` displays the value `expr` has now — a front end
+    // shows the content, never the wrapper. (Script-mode *text* output
+    // keeps the wrapper, matching wolframscript; this is the picture path,
+    // which is what a notebook shows.)
+    "Dynamic" if args.len() == 1 => {
+      let value = crate::evaluator::evaluate_expr_to_expr(&args[0]).ok()?;
+      Some(expr_to_svg(&unquoted_display_string(&value)))
+    }
+    // `LocatorPane[locators, body, …]` displays `body` with a marker on
+    // every locator.
+    "LocatorPane" if args.len() >= 2 => {
+      let drawn = locator_pane_graphic(args)?;
+      Some(expr_to_svg(
+        &crate::evaluator::evaluate_expr_to_expr(&drawn).unwrap_or(drawn),
+      ))
+    }
+    _ => None,
+  }
+}
+
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
+  if let Some(svg) = evaluated_wrapper_svg(expr) {
+    return svg;
+  }
   match expr {
     Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
     // `Pane[content, opts…]` only constrains its content's size; the
@@ -4211,29 +4242,6 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // this, `Export[…, Pane[graphic]]` wrote the expression as text.)
     Expr::FunctionCall { name, args } if name == "Pane" && !args.is_empty() => {
       expr_to_svg(&args[0])
-    }
-    // `Dynamic[expr]` displays the value `expr` has now — a front end shows
-    // the content, never the wrapper. (Script-mode *text* output keeps the
-    // wrapper, matching wolframscript; this is the picture path, which is
-    // what a notebook shows.)
-    Expr::FunctionCall { name, args }
-      if name == "Dynamic"
-        && args.len() == 1
-        && let Ok(value) =
-          crate::evaluator::evaluate_expr_to_expr(&args[0]) =>
-    {
-      expr_to_svg(&unquoted_display_string(&value))
-    }
-    // `LocatorPane[locators, body, …]` displays `body` with a marker on
-    // every locator.
-    Expr::FunctionCall { name, args }
-      if name == "LocatorPane"
-        && args.len() >= 2
-        && let Some(drawn) = locator_pane_graphic(args) =>
-    {
-      expr_to_svg(
-        &crate::evaluator::evaluate_expr_to_expr(&drawn).unwrap_or(drawn),
-      )
     }
     // `Item[expr, opts…]` is a layout cell; the options place it and what
     // it displays is `expr`.

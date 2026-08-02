@@ -4518,6 +4518,82 @@ fn tf_known_func(name: &str) -> Option<&'static str> {
   })
 }
 
+/// TraditionalForm data for a special function that is written with its
+/// order as a subscript and its remaining indices as a superscript:
+/// `BesselJ[n, x]` → `Jₙ(x)`, `LegendreP[n, m, x]` → `Pₙᵐ(x)`,
+/// `JacobiP[n, a, b, x]` → `Pₙ⁽ᵃ˒ᵇ⁾(x)`.
+///
+/// Returns the display letter plus, for the Hankel-style families whose
+/// superscript is part of the name rather than an argument, that fixed
+/// superscript. `arity` is the full argument count — the last argument is
+/// always the function's variable, every earlier one is an index.
+fn tf_indexed_special(
+  name: &str,
+  arity: usize,
+) -> Option<(&'static str, Option<&'static str>)> {
+  let entry: (&'static str, Option<&'static str>, &[usize]) = match name {
+    "BesselJ" => ("J", None, &[2]),
+    "BesselY" => ("Y", None, &[2]),
+    "BesselI" => ("I", None, &[2]),
+    "BesselK" => ("K", None, &[2]),
+    "HankelH1" => ("H", Some("(1)"), &[2]),
+    "HankelH2" => ("H", Some("(2)"), &[2]),
+    "SphericalBesselJ" => ("j", None, &[2]),
+    "SphericalBesselY" => ("y", None, &[2]),
+    "SphericalHankelH1" => ("h", Some("(1)"), &[2]),
+    "SphericalHankelH2" => ("h", Some("(2)"), &[2]),
+    "LegendreP" => ("P", None, &[2, 3]),
+    "LegendreQ" => ("Q", None, &[2, 3]),
+    "LaguerreL" => ("L", None, &[2, 3]),
+    "HermiteH" => ("H", None, &[2]),
+    "ChebyshevT" => ("T", None, &[2]),
+    "ChebyshevU" => ("U", None, &[2]),
+    "GegenbauerC" => ("C", None, &[3]),
+    "ZernikeR" => ("R", None, &[3]),
+    "JacobiP" => ("P", None, &[4]),
+    _ => return None,
+  };
+  entry.2.contains(&arity).then_some((entry.0, entry.1))
+}
+
+/// Build `letterₙ^sup(x)` for an indexed special function. All but the last
+/// argument are indices: the first becomes the subscript, any further ones
+/// the superscript (parenthesised and comma-separated when there is more
+/// than one, as in `Pₙ⁽ᵃ˒ᵇ⁾(x)`).
+fn tf_indexed_call(
+  letter: &str,
+  fixed_sup: Option<&str>,
+  args: &[Expr],
+) -> Expr {
+  let (indices, var) = args.split_at(args.len() - 1);
+  let sup = match fixed_sup {
+    Some(s) => Some(tf_string(s)),
+    None => match &indices[1..] {
+      [] => None,
+      [single] => Some(tf(single)),
+      many => {
+        let mut parts = vec![tf_string("(")];
+        for (i, a) in many.iter().enumerate() {
+          if i > 0 {
+            parts.push(tf_string(","));
+          }
+          parts.push(tf(a));
+        }
+        parts.push(tf_string(")"));
+        Some(tf_row(parts))
+      }
+    },
+  };
+  let head = match sup {
+    Some(sup) => tf_box(
+      "SubsuperscriptBox",
+      vec![tf_string(letter), tf(&indices[0]), sup],
+    ),
+    None => tf_box("SubscriptBox", vec![tf_string(letter), tf(&indices[0])]),
+  };
+  tf_row(vec![head, tf_string("("), tf(&var[0]), tf_string(")")])
+}
+
 /// True for a trig/hyperbolic function whose power is written on the name
 /// (`sin²(x)`) rather than around the whole call.
 fn tf_is_trig(name: &str) -> bool {
@@ -4869,45 +4945,59 @@ fn tf_integrate(args: &[Expr]) -> Expr {
 }
 
 /// Render `D[body, x]`, `D[body, {x, n}]`, `D[body, s1, s2, …]` as a
-/// Leibniz-style derivative `∂ⁿ/(∂x^a ∂y^b) body`.
-fn tf_derivative(args: &[Expr]) -> Expr {
-  // Parse each spec into (var, order).
-  let mut specs: Vec<(Expr, i128)> = Vec::new();
+/// Leibniz-style derivative `∂ⁿ/(∂x^a ∂y^b) body`. `head` names the function
+/// being typeset (for the fallback) and `glyph` is its differential sign:
+/// `∂` for the partial derivative `D`, `ⅆ` for the total derivative `Dt`.
+fn tf_derivative(head: &str, glyph: &str, args: &[Expr]) -> Expr {
+  // Parse each spec into (var, order). The order may be symbolic — the
+  // Rodrigues-formula spelling `Dt[f, {x, n}]` differentiates `n` times.
+  let is_one = |e: &Expr| matches!(e, Expr::Integer(1));
+  let mut specs: Vec<(Expr, Expr)> = Vec::new();
   for spec in &args[1..] {
     match spec {
       Expr::List(parts) if parts.len() == 2 => {
-        let order = match &parts[1] {
-          Expr::Integer(n) => *n,
-          _ => 1,
-        };
-        specs.push((parts[0].clone(), order));
+        specs.push((parts[0].clone(), parts[1].clone()));
       }
-      other => specs.push((other.clone(), 1)),
+      other => specs.push((other.clone(), Expr::Integer(1))),
     }
   }
   if specs.is_empty() {
-    return tf_generic_call("D", args);
+    return tf_generic_call(head, args);
   }
-  let total: i128 = specs.iter().map(|(_, n)| *n).sum();
-  let partial = "\u{2202}"; // ∂
-  let num = if total > 1 {
-    tf_box(
-      "SuperscriptBox",
-      vec![tf_string(partial), tf(&Expr::Integer(total))],
-    )
+  // The numerator order is the sum of the individual orders, added
+  // symbolically when any of them is not a literal integer.
+  let total = if let Some(sum) = specs
+    .iter()
+    .map(|(_, n)| match n {
+      Expr::Integer(i) => Some(*i),
+      _ => None,
+    })
+    .sum::<Option<i128>>()
+  {
+    Expr::Integer(sum)
   } else {
-    tf_string(partial)
+    specs
+      .iter()
+      .map(|(_, n)| n.clone())
+      .reduce(|acc, n| Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(acc),
+        right: Box::new(n),
+      })
+      .unwrap()
+  };
+  let num = if is_one(&total) {
+    tf_string(glyph)
+  } else {
+    tf_box("SuperscriptBox", vec![tf_string(glyph), tf(&total)])
   };
   let mut den_items: Vec<Expr> = Vec::new();
   for (var, order) in &specs {
-    den_items.push(tf_string(partial));
-    if *order > 1 {
-      den_items.push(tf_box(
-        "SuperscriptBox",
-        vec![tf(var), tf(&Expr::Integer(*order))],
-      ));
-    } else {
+    den_items.push(tf_string(glyph));
+    if is_one(order) {
       den_items.push(tf(var));
+    } else {
+      den_items.push(tf_box("SuperscriptBox", vec![tf(var), tf(order)]));
     }
   }
   let frac = tf_box("FractionBox", vec![num, tf_row(den_items)]);
@@ -4965,38 +5055,40 @@ fn tf_generic_call(name: &str, args: &[Expr]) -> Expr {
 /// Dispatch a function call to its TraditionalForm rendering.
 fn tf_call(name: &str, args: &[Expr]) -> Expr {
   match name {
-    "HoldForm" | "HoldComplete" | "Defer" | "Identity" if args.len() == 1 => {
+    // Wrappers that only hold or re-label their content: typeset what is
+    // inside them. `Style` keeps its directives outside the box tree — the
+    // enclosing cell/label already carries size and colour.
+    "HoldForm" | "HoldComplete" | "Defer" | "Identity" | "TraditionalForm"
+    | "StandardForm" | "DisplayForm" | "OutputForm" | "Text"
+      if args.len() == 1 =>
+    {
       tf(&args[0])
     }
-    // `Style[content, directives…]` selects an appearance, not a notation:
-    // the content is what is set. (`expr_to_box_form` does the same.)
     "Style" | "StyleForm" if !args.is_empty() => tf_display(&args[0]),
-    // `Row[{a, b, …}]` / `Row[{…}, sep]` sets its items side by side. A row
-    // *displays* its parts, so a string item contributes its text — that is
-    // what makes `Row[{Style["p", Italic], "(", x, ")"}]` read as `p(x)`.
-    "Row" if !args.is_empty() && matches!(&args[0], Expr::List(_)) => {
-      let Expr::List(items) = &args[0] else {
-        unreachable!()
+    // `Row[{a, b, …}]` concatenates its parts; `Row[{…}, sep]` joins them
+    // with the separator. A row *displays* its parts, so a string item
+    // contributes its text — that is what makes
+    // `Row[{Style["p", Italic], "(", x, ")"}]` read as `p(x)`.
+    "Row" if !args.is_empty() => {
+      let parts: Vec<Expr> = match &args[0] {
+        Expr::List(items) => items.to_vec(),
+        other => vec![other.clone()],
       };
       // A rule in separator position is an option, not a separator.
-      let separator = args
+      let sep = args
         .get(1)
         .filter(|a| !crate::syntax::is_rule_expr(a))
         .map(tf_display);
-      let mut parts: Vec<Expr> = Vec::with_capacity(items.len());
-      for (i, item) in items.iter().enumerate() {
+      let mut items: Vec<Expr> = Vec::with_capacity(parts.len() * 2);
+      for (i, p) in parts.iter().enumerate() {
         if i > 0
-          && let Some(sep) = &separator
+          && let Some(s) = &sep
         {
-          parts.push(sep.clone());
+          items.push(s.clone());
         }
-        parts.push(tf_display(item));
+        items.push(tf_display(p));
       }
-      if parts.is_empty() {
-        tf_string("")
-      } else {
-        tf_row(parts)
-      }
+      tf_row(items)
     }
     "Sqrt" if args.len() == 1 => tf_box("SqrtBox", vec![tf(&args[0])]),
     "Power" if args.len() == 2 => tf_power(&args[0], &args[1]),
@@ -5010,7 +5102,8 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     "Sum" if args.len() >= 2 => tf_big_operator("\u{2211}", args), // ∑
     "Product" if args.len() >= 2 => tf_big_operator("\u{220F}", args), // ∏
     "Integrate" if args.len() >= 2 => tf_integrate(args),
-    "D" if args.len() >= 2 => tf_derivative(args),
+    "D" if args.len() >= 2 => tf_derivative("D", "\u{2202}", args), // ∂
+    "Dt" if args.len() >= 2 => tf_derivative("Dt", "\u{2146}", args), // ⅆ
     "Abs" if args.len() == 1 => {
       tf_row(vec![tf_string("|"), tf(&args[0]), tf_string("|")])
     }
@@ -5082,20 +5175,15 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       };
       tf_row(vec![op, tf_thin_space(), body_box])
     }
-    // Bessel functions render with a subscript order: BesselJ[n, x] → Jₙ(x).
-    "BesselJ" | "BesselY" | "BesselI" | "BesselK" if args.len() == 2 => {
-      let letter = match name {
-        "BesselJ" => "J",
-        "BesselY" => "Y",
-        "BesselI" => "I",
-        _ => "K",
-      };
-      tf_row(vec![
-        tf_box("SubscriptBox", vec![tf_string(letter), tf(&args[0])]),
-        tf_string("("),
-        tf(&args[1]),
-        tf_string(")"),
-      ])
+    // Factorials are written postfix: Factorial[n] → n!, Factorial2[n] → n!!.
+    "Factorial" | "Factorial2" if args.len() == 1 => {
+      let bang = if name == "Factorial" { "!" } else { "!!" };
+      tf_row(vec![tf_factor_boxed(&args[0]), tf_string(bang)])
+    }
+    // Indexed special functions: Jₙ(x), Pₙᵐ(x), hₙ⁽¹⁾(x), …
+    _ if tf_indexed_special(name, args.len()).is_some() => {
+      let (letter, fixed_sup) = tf_indexed_special(name, args.len()).unwrap();
+      tf_indexed_call(letter, fixed_sup, args)
     }
     "Subscript" if args.len() >= 2 => {
       let sub = if args.len() == 2 {

@@ -221,12 +221,69 @@ pub fn extract_var_power_factor(
   None
 }
 
+/// Apply `Derivative[order][value][point]` for a `value` that is not a
+/// symbol: the `InterpolatingFunction` that `y'[t] /. NDSolve[…]` splices in,
+/// a pure function, or anything else whose derivative is itself applicable.
+/// Returns `None` when no applicable derivative can be formed, so the caller
+/// falls back to the symbolic paths.
+fn apply_derivative_of_value(
+  order: &Expr,
+  value: &Expr,
+  point: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let derivative = match evaluate_expr_to_expr(&Expr::CurriedCall {
+    func: Box::new(Expr::FunctionCall {
+      name: "Derivative".to_string(),
+      args: vec![order.clone()].into(),
+    }),
+    args: vec![value.clone()],
+  }) {
+    Ok(d) => d,
+    Err(e) => return Some(Err(e)),
+  };
+  // Only an applicable derivative is worth applying; anything else — above
+  // all the unevaluated `Derivative[order][value]` itself — would flatten
+  // straight back into this branch.
+  let applicable = matches!(
+    &derivative,
+    Expr::Function { .. } | Expr::NamedFunction { .. }
+  ) || matches!(
+    &derivative,
+    Expr::FunctionCall { name, .. } if name == "InterpolatingFunction"
+  );
+  if !applicable {
+    return None;
+  }
+  Some(evaluate_expr_to_expr(&Expr::CurriedCall {
+    func: Box::new(derivative),
+    args: vec![point.clone()],
+  }))
+}
+
 pub fn dispatch_calculus_functions(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
     "Derivative" if args.len() == 3 => {
+      // `Derivative[n][f][x]` reaches us flattened to `Derivative[n, f, x]`.
+      // When `f` is an applicable value rather than a symbol — most commonly
+      // an `InterpolatingFunction` substituted in by `y'[t] /. NDSolve[…]` —
+      // build `Derivative[n][f]` and apply the result to the point. A middle
+      // argument that is a number belongs to the multi-index form
+      // `Derivative[n1, n2][f]`, which flattens the same way and must not be
+      // read as a function to differentiate.
+      if matches!(
+        &args[1],
+        Expr::FunctionCall { .. }
+          | Expr::CurriedCall { .. }
+          | Expr::Function { .. }
+          | Expr::NamedFunction { .. }
+      ) && let Some(value) =
+        apply_derivative_of_value(&args[0], &args[1], &args[2])
+      {
+        return Some(value);
+      }
       if let (Expr::Integer(n), Expr::Identifier(func_name)) =
         (&args[0], &args[1])
       {
@@ -449,7 +506,7 @@ pub fn dispatch_calculus_functions(
         args,
       ));
     }
-    "Dt" if args.len() == 2 => {
+    "Dt" if args.len() >= 2 => {
       return Some(crate::functions::calculus_ast::dt_ast(args));
     }
     "Curl" if args.len() == 2 || args.len() == 3 => {

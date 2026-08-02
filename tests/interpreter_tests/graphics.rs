@@ -1321,6 +1321,53 @@ mod plot3d {
         "Plot3D[x^2 + y^2, {x, -2, 2}, {y, -2, 2}, PlotRange -> {0, 4}]"
       ));
     }
+
+    /// The largest magnitude among the axis tick labels — how far the box
+    /// reaches along its widest axis.
+    fn largest_tick(svg: &str) -> f64 {
+      svg
+        .split("</text>")
+        .filter_map(|t| t.rsplit('>').next())
+        .filter_map(|t| t.parse::<f64>().ok())
+        .fold(0.0_f64, |acc, v| acc.max(v.abs()))
+    }
+
+    /// `PlotRange -> {{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}` bounds all
+    /// three axes. Only the two-element (z-only) form used to be read, so
+    /// this full form was ignored: a surface that shoots off past the box
+    /// was drawn whole, and the vertical axis was labelled with the data's
+    /// own extent instead of the range asked for.
+    #[test]
+    fn plot_range_bounds_all_three_axes() {
+      let unbounded =
+        export_svg("Plot3D[1/(x y), {x, -3, 3}, {y, -3, 3}, Mesh -> None]");
+      assert!(
+        largest_tick(&unbounded) > 10.0,
+        "the unbounded surface reaches far past the domain: {unbounded}"
+      );
+      let bounded = export_svg(
+        "Plot3D[1/(x y), {x, -3, 3}, {y, -3, 3}, Mesh -> None, \
+         PlotRange -> {{-3, 3}, {-3, 3}, {-2, 2}}]",
+      );
+      assert!(
+        largest_tick(&bounded) <= 3.0,
+        "a tick runs past the range asked for: {bounded}"
+      );
+    }
+
+    /// The horizontal bounds of the full form narrow the plotted domain,
+    /// so a surface asked for over a wider iterator range is cropped.
+    #[test]
+    fn plot_range_crops_the_domain() {
+      let svg = export_svg(
+        "Plot3D[x + y, {x, -10, 10}, {y, -10, 10}, Mesh -> None, \
+         PlotRange -> {{-1, 1}, {-1, 1}, {-2, 2}}]",
+      );
+      assert!(
+        largest_tick(&svg) <= 2.0,
+        "the box must stop at the range asked for, not at the domain: {svg}"
+      );
+    }
   }
 
   mod errors {
@@ -2041,6 +2088,59 @@ mod plot3d {
       insta::assert_snapshot!(export_svg(
         "Graphics3D[Polygon[{{0,0,0}, {0,1,1}, {1,0,0}}]]"
       ));
+    }
+
+    /// `BoxRatios -> {rx, ry, rz}` sets the shape of the bounding box
+    /// independently of how far the data runs along each axis, so a scene
+    /// a hundred units tall over a ten-unit base draws as a cube rather
+    /// than a sliver. The ticks keep reporting the original coordinates.
+    #[test]
+    fn box_ratios_reshape_the_box_without_moving_the_ticks() {
+      let shape = "Polygon[{{0, 0, 0}, {10, 0, 0}, {10, 10, 100}, \
+         {0, 0, 100}}]";
+      let tall = export_svg(&format!("Graphics3D[{shape}, Axes -> True]"));
+      let cube = export_svg(&format!(
+        "Graphics3D[{shape}, Axes -> True, BoxRatios -> {{1, 1, 1}}]"
+      ));
+      // Both label the axes with the data's own values …
+      for svg in [&tall, &cube] {
+        assert!(svg.contains(">100</text>"), "{svg}");
+        assert!(svg.contains(">10</text>"), "{svg}");
+      }
+      // … but the drawn box is far less lopsided once the ratios apply.
+      let aspect = |svg: &str| -> f64 {
+        let ys: Vec<f64> = svg
+          .split("<polygon points=\"")
+          .skip(1)
+          .filter_map(|p| p.split('"').next())
+          .flat_map(|p| {
+            p.split_whitespace()
+              .filter_map(|c| c.split(',').nth(1)?.parse::<f64>().ok())
+              .collect::<Vec<_>>()
+          })
+          .collect();
+        let xs: Vec<f64> = svg
+          .split("<polygon points=\"")
+          .skip(1)
+          .filter_map(|p| p.split('"').next())
+          .flat_map(|p| {
+            p.split_whitespace()
+              .filter_map(|c| c.split(',').next()?.parse::<f64>().ok())
+              .collect::<Vec<_>>()
+          })
+          .collect();
+        let span = |v: &[f64]| {
+          v.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b))
+            - v.iter().fold(f64::INFINITY, |a, &b| a.min(b))
+        };
+        span(&ys) / span(&xs)
+      };
+      assert!(
+        aspect(&cube) < aspect(&tall),
+        "the box was not squatted: {} vs {}",
+        aspect(&cube),
+        aspect(&tall)
+      );
     }
 
     /// A face with more than three corners is fan-triangulated to render,
@@ -7689,6 +7789,39 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(!svg.contains("FormBox"), "no box markup: {svg}");
     }
 
+    // `TraditionalForm[expr]` inside a picture asks for conventional
+    // mathematical notation, so the label is set from that notation rather
+    // than from the expression's InputForm: a sum shows its ∑ with limits
+    // and a Legendre polynomial its `Pₙ(x)`. Demonstrations write their
+    // formulas as `Text[Style[Row[{TraditionalForm[…], …}], …]]`.
+    #[test]
+    fn traditional_form_typesets_inside_a_picture() {
+      let svg = export_svg(
+        "Graphics[{Text[Style[Row[{TraditionalForm[LegendreP[n, x]], \
+         \" = \", TraditionalForm[Sum[LegendreP[n, x] t^n, \
+         {n, 0, Infinity}]]}], 24], {0, 0}]}, \
+         PlotRange -> 1, ImageSize -> 300]",
+      );
+      for part in ["Pn(x) = ", "\u{2211}", "n=0", "\u{221E}"] {
+        assert!(svg.contains(part), "{part} must be set: {svg}");
+      }
+      assert!(!svg.contains("LegendreP"), "not the head name: {svg}");
+      assert!(!svg.contains("Sum["), "not InputForm: {svg}");
+      assert!(!svg.contains("Infinity"), "not the symbol name: {svg}");
+    }
+
+    // `Row[{…}]` inside a TraditionalForm concatenates its parts, so the
+    // implicit product `Row[{2, x, t}]` reads `2xt`, not `Row(…)`.
+    #[test]
+    fn traditional_form_typesets_a_row() {
+      let svg = export_svg(
+        "Graphics[{Text[TraditionalForm[(1 - Row[{2, x, t}] + t^2)], \
+         {0, 0}]}, PlotRange -> 1, ImageSize -> 300]",
+      );
+      assert!(svg.contains("2xt"), "the concatenated row: {svg}");
+      assert!(!svg.contains("Row"), "not the head name: {svg}");
+    }
+
     // `Inset[obj, pos]` draws a whole picture inside another one. A
     // picture that has already been rendered — a `Plot`, a `Show`, anything
     // whose symbolic content was not kept — is embedded as it is, at its
@@ -8991,6 +9124,58 @@ mod show {
     assert!(svg.contains("<path") || svg.contains("<polyline"), "{svg}");
   }
 
+  /// `Show` merges the primitives of the graphics it is given, so a
+  /// `Plot3D` surface has to be available as primitives too. Regression:
+  /// the surface existed only as a rendering, so showing one together with
+  /// a `Graphics3D` dropped it and left only the other graphic — the way a
+  /// Demonstration draws cutting planes through a plotted surface.
+  #[test]
+  fn show_keeps_a_plot3d_surface_beside_a_graphics3d() {
+    clear_state();
+    let plane = "Graphics3D[{Orange, \
+       Polygon[{{1, -3, -2}, {1, 3, -2}, {1, 3, 2}, {1, -3, 2}}]}]";
+    let surface = "Plot3D[Sin[x y], {x, -3, 3}, {y, -3, 3}]";
+    let merged = export_svg(&format!("Show[{{{surface}, {plane}}}]"));
+    let alone = export_svg(&format!("Show[{{{plane}}}, Axes -> True]"));
+    // The plane alone is a handful of polygons; with the surface merged in
+    // there are thousands.
+    let faces = |svg: &str| svg.matches("<polygon").count();
+    assert!(
+      faces(&merged) > faces(&alone) + 100,
+      "the surface is missing: {} vs {} faces",
+      faces(&merged),
+      faces(&alone)
+    );
+    // And the plane is still there — the surface did not replace it.
+    assert!(
+      merged.contains(&format!("fill=\"{}\"", orange_fill(&alone))),
+      "the plane is missing: {merged}"
+    );
+  }
+
+  /// The fill colour of the largest polygon in an SVG.
+  fn orange_fill(svg: &str) -> String {
+    svg
+      .split("<polygon ")
+      .skip(1)
+      .filter_map(|p| p.split("fill=\"").nth(1))
+      .filter_map(|p| p.split('"').next())
+      .find(|c| c.starts_with("rgb"))
+      .unwrap_or_default()
+      .to_string()
+  }
+
+  /// `First[Plot3D[…]]` is the surface itself, so a plotted surface can be
+  /// redrawn inside another graphic.
+  #[test]
+  fn first_of_a_plot3d_is_its_surface() {
+    clear_state();
+    assert_eq!(
+      interpret("Head[First[Plot3D[x y, {x, 0, 1}, {y, 0, 1}]]]").unwrap(),
+      "GraphicsComplex"
+    );
+  }
+
   #[test]
   fn show_two_graphics() {
     clear_state();
@@ -10072,6 +10257,108 @@ mod grid_frame_and_background {
       !svg.contains("y1=\"0\" x2=\"") || svg.matches("<line").count() > 4,
       "{svg}"
     );
+  }
+
+  /// `SpanFromAbove` is the vertical counterpart: the cell above continues
+  /// down into the row, so it draws nothing, its neighbour is centred over
+  /// both rows, and the divider between them is interrupted across that
+  /// column. Regression: the symbol's name was printed as the cell's text.
+  #[test]
+  fn span_from_above_merges_into_the_cell_above_it() {
+    let svg =
+      export_svg(r#"Grid[{{"a", "b"}, {SpanFromAbove, "c"}}, Frame -> All]"#);
+    assert!(
+      !svg.contains("SpanFromAbove"),
+      "the symbol must not print: {svg}"
+    );
+    let y_of = |label: &str| -> f64 {
+      svg
+        .split("<text ")
+        .find(|t| t.split_once('>').is_some_and(|(_, r)| r.starts_with(label)))
+        .and_then(|t| t.split("y=\"").nth(1))
+        .and_then(|v| v.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| panic!("{label} missing: {svg}"))
+    };
+    // "a" is centred across both rows, so it sits below "b" (which is
+    // centred in the first row alone) and above "c" (the second row).
+    assert!(
+      y_of("b") < y_of("a") && y_of("a") < y_of("c"),
+      "the spanning cell centres across both rows: {svg}"
+    );
+    // The inner divider only covers the second column: the first column's
+    // stretch of it would cut through the merged cell.
+    let inner: Vec<&str> = svg
+      .split("<line ")
+      .skip(1)
+      .filter(|l| {
+        let get = |k: &str| -> f64 {
+          l.split(k)
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap()
+        };
+        (get("y1=\"") - get("y2=\"")).abs() < 0.05 && get("y1=\"") > 0.5
+      })
+      .collect();
+    assert!(
+      inner.iter().any(|l| l.starts_with("x1=\"0.0\"")),
+      "the bottom border spans the whole grid: {svg}"
+    );
+    assert!(
+      inner.iter().any(|l| !l.starts_with("x1=\"0.0\"")),
+      "the divider between the rows starts past the merged cell: {svg}"
+    );
+  }
+
+  /// `SpanFromBoth` marks the inside of a block merged in both directions,
+  /// so a 2×2 block collapses to a single cell with no divider through it.
+  #[test]
+  fn span_from_both_merges_a_block_in_both_directions() {
+    let svg = export_svg(concat!(
+      r#"Grid[{{"x", SpanFromLeft}, {SpanFromAbove, SpanFromBoth}, "#,
+      r#"{"p", "q"}}, Frame -> All]"#
+    ));
+    for symbol in ["SpanFromLeft", "SpanFromAbove", "SpanFromBoth"] {
+      assert!(!svg.contains(symbol), "{symbol} must not print: {svg}");
+    }
+    // Only the outer frame plus the divider above the last row survive: the
+    // 2×2 block has no lines running through it, so the vertical divider
+    // starts where the block ends and the row divider inside it is gone.
+    assert_eq!(svg.matches("<text ").count(), 3, "one cell each: {svg}");
+    let lines: Vec<&str> = svg.split("<line ").skip(1).collect();
+    let attr = |l: &str, k: &str| -> f64 {
+      l.split(k)
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap()
+    };
+    // Three equal rows, so the merged block ends two thirds of the way down.
+    let height = lines.iter().map(|l| attr(l, "y2=\"")).fold(0.0, f64::max);
+    let width = lines.iter().map(|l| attr(l, "x2=\"")).fold(0.0, f64::max);
+    let block_bottom = height / 3.0 * 2.0;
+    for l in &lines {
+      let (x1, y1, y2) = (attr(l, "x1=\""), attr(l, "y1=\""), attr(l, "y2=\""));
+      if (y1 - y2).abs() < 0.05 {
+        assert!(
+          y1 < 0.05 || y1 > block_bottom - 0.05,
+          "a row divider cuts through the block: {l}"
+        );
+      } else if x1 > 0.05 && x1 < width - 0.05 {
+        assert!(
+          y1 > block_bottom - 0.05,
+          "a column divider cuts through the block: {l}"
+        );
+      }
+    }
   }
 
   /// A ragged row still sits on the grid's background for its full width,
@@ -19080,5 +19367,126 @@ mod list_plot_markers_and_epilog {
       .expect("the epilog text");
     assert!(text.contains("fill=\"rgb(255,0,0)\""), "{text}");
     assert!(text.contains("font-size=\"200\""), "{text}");
+  }
+}
+
+/// The layout a Demonstration builds its output with: a `Column` whose rows
+/// hold several plots side by side, each framed, squared and labelled as a
+/// function of the plot variable.
+mod demonstration_plot_layout {
+  use super::*;
+
+  /// A plot nested in a `Row` inside a `Column` draws in its own coordinate
+  /// space (a plot's internal units are a multiple of its display size), so
+  /// the cell it is embedded in has to carry the child's `viewBox` — without
+  /// it the whole curve lands outside the cell and the plot shows up blank.
+  #[test]
+  fn a_plot_nested_in_a_row_keeps_its_coordinate_space() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Column[{Row[{Graphics[{Blue, Rectangle[]}, ImageSize -> {80, 100}], \
+       Plot[Sin[x], {x, 0, 6}, ImageSize -> 120]}]}]",
+    )
+    .unwrap();
+    let svg = result.graphics.expect("a rendered column");
+    let nested: Vec<&str> = svg
+      .split("<svg ")
+      .skip(1)
+      .filter_map(|tag| tag.split_once('>').map(|(open, _)| open))
+      .collect();
+    assert!(
+      nested.len() >= 3,
+      "outer + row + two cells expected, got {}: {svg}",
+      nested.len()
+    );
+    assert!(
+      nested.iter().all(|open| open.contains("viewBox=")),
+      "every nested cell needs its own viewBox: {nested:?}"
+    );
+    // The curve itself has to be inside the plot's cell, i.e. the sampled
+    // polyline survives the nesting.
+    let longest = svg
+      .split("points=\"")
+      .skip(1)
+      .map(|s| s.split('"').next().unwrap_or("").len())
+      .max()
+      .unwrap_or(0);
+    assert!(longest > 200, "the nested curve must be drawn: {svg}");
+  }
+
+  /// `Frame -> True, Axes -> False` is the standard framed look: the ticks
+  /// move to the frame edges and keep their labels.
+  #[test]
+  fn a_framed_plot_labels_its_ticks_without_axes() {
+    clear_state();
+    let svg = export_svg(
+      "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, Frame -> True, \
+       Axes -> False, ImageSize -> 250]",
+    );
+    let labels: Vec<String> = svg
+      .split("<text ")
+      .skip(1)
+      .filter_map(|tag| tag.split_once('>'))
+      .filter_map(|(_, rest)| rest.split('<').next())
+      .map(|t| t.trim().to_string())
+      .filter(|t| !t.is_empty())
+      .collect();
+    for expected in ["-1.0", "-0.5", "0.0", "0.5"] {
+      // Both frame edges carry the set, so each label appears twice.
+      assert_eq!(
+        labels.iter().filter(|l| *l == expected).count(),
+        2,
+        "both framed axes must label their ticks, got {labels:?}"
+      );
+    }
+  }
+
+  /// With `ImagePadding` the padding is the whole margin, so an
+  /// `AspectRatio` fixes the image height directly: a square frame in a
+  /// 250-wide image makes a 250-tall image, not one sized by the default
+  /// ratio with the frame shrunk to fit.
+  #[test]
+  fn an_aspect_ratio_sizes_a_padded_image() {
+    clear_state();
+    let svg = export_svg(
+      "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, ImageSize -> 250, \
+       AspectRatio -> 1, ImagePadding -> 35]",
+    );
+    let header = svg.split_once('>').expect("an svg tag").0;
+    assert!(
+      header.contains("width=\"250\"") && header.contains("height=\"250\""),
+      "a square padded plot keeps its width: {header}"
+    );
+    // Half the ratio halves the height: 180 wide plot area + 70 padding.
+    let svg = export_svg(
+      "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, ImageSize -> 250, \
+       AspectRatio -> 1/2, ImagePadding -> 35]",
+    );
+    let header = svg.split_once('>').expect("an svg tag").0;
+    assert!(
+      header.contains("height=\"160\""),
+      "the plot area follows the ratio: {header}"
+    );
+  }
+
+  /// A label written as a function of the plot variable typesets the way a
+  /// graphic's labels do: `y[t]` reads `y(t)` and `y'[t]` reads `y′(t)`.
+  /// They used to be dropped entirely.
+  #[test]
+  fn function_labels_typeset_with_parentheses_and_primes() {
+    clear_state();
+    let svg = export_svg(
+      "Plot[Sin[x], {x, 0, 10}, AxesLabel -> {t, y[t]}, ImageSize -> 300]",
+    );
+    assert!(svg.contains(">y(t)<"), "the y axis label is missing: {svg}");
+    let svg = export_svg(
+      "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, Frame -> True, \
+       FrameLabel -> {y[t], y'[t]}, ImageSize -> 250]",
+    );
+    assert!(svg.contains(">y(t)<"), "the bottom frame label: {svg}");
+    assert!(
+      svg.contains(">y\u{2032}(t)<"),
+      "the left frame label needs its prime: {svg}"
+    );
   }
 }

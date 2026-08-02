@@ -18636,20 +18636,47 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Dt[expr, var] - Total derivative
+/// `Dt[expr, x]` — total derivative, plus the higher-order and
+/// multi-variable spellings `Dt[expr, {x, n}]` and `Dt[expr, x1, x2, …]`.
 pub fn dt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
-      "Dt expects exactly 2 arguments".into(),
+      "Dt expects at least 2 arguments".into(),
     ));
   }
+
+  // Dt[expr, x1, x2, …] — differentiate against each spec in turn.
+  if args.len() > 2 {
+    let inner = dt_ast(&[args[0].clone(), args[1].clone()])?;
+    let mut rest = vec![inner];
+    rest.extend_from_slice(&args[2..]);
+    return dt_ast(&rest);
+  }
+
+  // Dt[expr, {x, n}] — the n-fold total derivative with respect to `x`.
+  // Only a symbol with a non-negative integer order can be carried out;
+  // anything else (a symbolic order, as in `Dt[E^-x^2, {x, n}]`) stays
+  // unevaluated, exactly like wolframscript.
+  if let Expr::List(items) = &args[1] {
+    if items.len() == 2
+      && let Expr::Identifier(var) = &items[0]
+      && let Expr::Integer(order) = &items[1]
+      && *order >= 0
+    {
+      let mut result = args[0].clone();
+      for _ in 0..*order {
+        result = simplify(total_differentiate(&result, var)?);
+      }
+      return Ok(result);
+    }
+    return Ok(crate::syntax::unevaluated("Dt", args));
+  }
+
   let var = match &args[1] {
     Expr::Identifier(s) => s.clone(),
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Dt: second argument must be a variable".into(),
-      ));
-    }
+    // A non-symbol differentiation variable has no total derivative rule;
+    // hold the expression rather than erroring out.
+    _ => return Ok(crate::syntax::unevaluated("Dt", args)),
   };
   let result = total_differentiate(&args[0], &var)?;
   Ok(simplify(result))
@@ -18914,6 +18941,16 @@ fn total_differentiate(
     // Known function calls - chain rule
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
+        // An already-held derivative gains one more variable rather than
+        // nesting: Dt[Dt[y, x], x] is Dt[y, x, x].
+        "Dt" if args.len() >= 2 => {
+          let mut new_args = args.to_vec();
+          new_args.push(Expr::Identifier(var.to_string()));
+          Ok(Expr::FunctionCall {
+            name: "Dt".to_string(),
+            args: new_args.into(),
+          })
+        }
         "Sin" if args.len() == 1 => {
           let df = total_differentiate(&args[0], var)?;
           Ok(simplify(Expr::BinaryOp {

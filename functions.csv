@@ -480,7 +480,7 @@ CellularAutomaton,Generates a 1D or 2D cellular automaton evolution over chosen 
 Riffle,Inserts an element between each pair of elements,✅,pure,6.0,473
 Characters,Converts a string into a list of single-character strings,✅,pure,1.0,474
 GraphicsComplex,Indexed coordinate graphics container,✅,none,6.0,475
-Dt,Total derivative (two-arg) or total differential (one-arg) treating all variables as potentially dependent,✅,pure,1.0,476
+Dt,Total differential (one-arg) or total derivative treating all variables as potentially dependent; higher-order via {x n} and repeated variables,✅,pure,1.0,476
 EuclideanDistance,Euclidean distance between two vectors,✅,pure,6.0,477
 Subsets,Returns all subsets of a list,✅,pure,5.1,478
 SoundNote,Represents a musical note for sound generation,✅,pure,6.0,479
@@ -1671,7 +1671,7 @@ Mouseover,Mouseover display wrapper (stays symbolic),✅,unevaluated,6.0,1683
 AffineStateSpaceModel,Affine state-space model,,unevaluated,10.0,1687
 LogLikelihood,Log-likelihood of numeric observations under a distribution,✅,pure,8.0,1687
 RectangleChart,Rectangle chart,,unevaluated,7.0,1687
-SpanFromAbove,Span from above,,unevaluated,6.0,1687
+SpanFromAbove,Grid element that merges into the cell above it,✅,none,6.0,1687
 Cubics,Option for solving cubic equations using radical formulas,✅,pure,1.0,1688
 MinValue,Global symbolic minimum value of a function over variables with optional constraints and an optional Reals or Integers domain,✅,pure,7.0,1690
 Exit,Terminates the kernel session with optional exit code,✅,effectful,1.0,1692
@@ -2462,7 +2462,7 @@ SystemsModelStateFeedbackConnect,,🚫,,8.0,2491
 TraceScan,Apply a function as a side effect to each sub-expression during evaluation,✅,effectful,2.0,2491
 ImageType,Returns the data type of an image,✅,pure,7.0,2495
 ResetDirectory,resets the current directory to the previous one set by SetDirectory,✅,io,2.0,2495
-SpanFromBoth,,🚫,,6.0,2495
+SpanFromBoth,Grid element that merges into a block spanning both left and above,✅,none,6.0,2495
 AudioData,Samples of an audio object one list per channel optionally scaled onto an integer sample type,✅,pure,11.0,2503
 BinomialProcess,Binomial counting process with Binomial time slices,✅,unevaluated,9.0,2503
 ExponentialGeneratingFunction,Compute the exponential generating function of a sequence,✅,pure,7.0,2503

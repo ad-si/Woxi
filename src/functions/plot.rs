@@ -2252,6 +2252,14 @@ fn generate_svg_with_options(
   let mut svg_height = opts.svg_height;
   let full_width = opts.full_width;
   let (show_x_axis, show_y_axis) = opts.axes;
+  // A framed plot carries its ticks on the frame edges, so they are labelled
+  // whether or not the axes themselves are drawn — `Frame -> True, Axes ->
+  // False` is the standard framed look, and it used to come out bare.
+  let (tick_axis_x, tick_axis_y) = if opts.frame {
+    (true, true)
+  } else {
+    (show_x_axis, show_y_axis)
+  };
   let show_ticks = opts.ticks;
   let render_width = svg_width * RESOLUTION_SCALE;
   let mut render_height = svg_height * RESOLUTION_SCALE;
@@ -2301,26 +2309,26 @@ fn generate_svg_with_options(
 
   // Label areas and margins computed per-axis.
   // Setting a label area to 0 suppresses that axis line in plotters.
-  let bottom_extra = if show_x_axis && show_ticks && has_x_axis_label {
+  let bottom_extra = if tick_axis_x && show_ticks && has_x_axis_label {
     24.0 * sf
   } else {
     0.0
   };
-  let x_label_area: u32 = if !show_x_axis {
+  let x_label_area: u32 = if !tick_axis_x {
     0
   } else if !show_ticks {
     5 * RESOLUTION_SCALE
   } else {
     40 * RESOLUTION_SCALE + bottom_extra as u32
   };
-  let y_label_area: u32 = if !show_y_axis {
+  let y_label_area: u32 = if !tick_axis_y {
     0
   } else if !show_ticks {
     5 * RESOLUTION_SCALE
   } else {
     65 * RESOLUTION_SCALE
   };
-  let margin_left: u32 = if show_y_axis {
+  let margin_left: u32 = if tick_axis_y {
     10 * s as u32
   } else {
     5 * s as u32
@@ -2340,11 +2348,27 @@ fn generate_svg_with_options(
   } else {
     10 * s as u32
   };
-  let margin_bottom: u32 = if show_x_axis {
+  let margin_bottom: u32 = if tick_axis_x {
     10 * s as u32
   } else {
     5 * s as u32
   };
+
+  // With `ImagePadding` the padding *is* the margin, so an `AspectRatio`
+  // fixes the canvas height directly: the plot area spans the width the
+  // padding leaves, and the height follows from the ratio. Deriving it here,
+  // before the margins are computed, keeps the frame as wide as the image
+  // instead of shrinking it to fit a canvas sized by the default ratio.
+  if let Some(ar) = opts.aspect_ratio
+    && let Some([pad_left, pad_right, pad_bottom, pad_top]) = opts.image_padding
+  {
+    let plot_w = render_width as f64 - (pad_left + pad_right) * sf;
+    if plot_w > 0.0 && ar > 0.0 {
+      let target_render_h = plot_w * ar + (pad_bottom + pad_top) * sf;
+      svg_height = ((target_render_h / sf).round() as u32).max(1);
+      render_height = svg_height * RESOLUTION_SCALE;
+    }
+  }
 
   // `ImagePadding` replaces the automatic margins: the left/bottom padding
   // becomes the tick label areas (the axis labels are drawn inside them) and
@@ -2440,7 +2464,7 @@ fn generate_svg_with_options(
         // An axis given explicit ticks draws them itself, below.
         let has_explicit_x_ticks = opts.ticks_x.is_some();
         let has_explicit_y_ticks = opts.ticks_y.is_some();
-        if show_ticks && (show_x_axis || show_y_axis) {
+        if show_ticks && (tick_axis_x || tick_axis_y) {
           let xmaj = if date_axis {
             nice_date_step(x_max - x_min)
           } else {
@@ -2451,7 +2475,7 @@ fn generate_svg_with_options(
           y_major = ymaj;
           let x_minor = if date_axis { xmaj } else { xmaj / 5.0 };
           let y_minor = ymaj / 5.0;
-          x_labels_count = if !show_x_axis || date_axis || has_explicit_x_ticks
+          x_labels_count = if !tick_axis_x || date_axis || has_explicit_x_ticks
           {
             0
           } else if log_x {
@@ -2460,15 +2484,15 @@ fn generate_svg_with_options(
           } else {
             ((x_max - x_min) / x_minor).round() as usize + 1
           };
-          y_labels_count = if !show_y_axis || has_explicit_y_ticks {
+          y_labels_count = if !tick_axis_y || has_explicit_y_ticks {
             0
           } else if log_y {
             10
           } else {
             ((y_max - y_min) / y_minor).round() as usize + 1
           };
-          x_tick_size = if show_x_axis { tick } else { 0 };
-          y_tick_size = if show_y_axis { tick } else { 0 };
+          x_tick_size = if tick_axis_x { tick } else { 0 };
+          y_tick_size = if tick_axis_y { tick } else { 0 };
         } else {
           x_major = 1.0;
           y_major = 1.0;
@@ -3561,16 +3585,21 @@ pub(crate) fn generate_scatter_svg_with_options(
 
   // AspectRatio sizes the plotting area (the data frame), not the whole image.
   // Derive the total height so the frame has the requested height/width ratio.
-  // With `ImagePadding` the image size is fixed instead and the area is fitted
-  // inside the padding, below.
-  if let Some(ar) = opts.aspect_ratio
-    && opts.image_padding.is_none()
-  {
-    let plot_w =
-      render_width as f64 - margin_left - margin_right - y_label_area;
-    if plot_w > 0.0 {
-      let plot_h = plot_w * ar;
-      let target_render_h = plot_h + margin_top + margin_bottom + x_label_area;
+  // With `ImagePadding` the padding replaces the margins, so the area spans
+  // the width the padding leaves and the height follows from the ratio.
+  if let Some(ar) = opts.aspect_ratio {
+    let (plot_w, extra_h) = match opts.image_padding {
+      Some([pad_left, pad_right, pad_bottom, pad_top]) => (
+        render_width as f64 - (pad_left + pad_right) * sf,
+        (pad_bottom + pad_top) * sf,
+      ),
+      None => (
+        render_width as f64 - margin_left - margin_right - y_label_area,
+        margin_top + margin_bottom + x_label_area,
+      ),
+    };
+    if plot_w > 0.0 && ar > 0.0 {
+      let target_render_h = plot_w * ar + extra_h;
       svg_height = ((target_render_h / sf).round() as u32).max(1);
       render_height = svg_height * RESOLUTION_SCALE;
     }

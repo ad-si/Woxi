@@ -286,8 +286,66 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
       let sep = args.get(1).and_then(expr_to_label).unwrap_or_default();
       Some(parts.join(&sep))
     }
-    _ => None,
+    // A label written as a function of the plot's variable — a Demonstration
+    // writes `AxesLabel -> {t, y[t]}` and `FrameLabel -> {y[t], y'[t]}` —
+    // typesets the way a graphic's labels do, with the argument in
+    // parentheses and a derivative marked by primes: `y(t)`, `y′(t)`. Only an
+    // unknown head reads as an application; a built-in keeps whatever the
+    // branches above (or the caller) make of it.
+    _ => applied_label(e),
   }
+}
+
+/// A label for a function application of an unknown head: `y[t]` → `y(t)`,
+/// `y'[t]` → `y′(t)`, `y''` → `y″`. `None` for anything else, including
+/// applications of built-in functions, whose own formatting rules apply.
+fn applied_label(e: &Expr) -> Option<String> {
+  use crate::functions::graphics::{as_derivative_of, derivative_prime_marks};
+  // `Derivative[n][f]`, with or without an argument applied to it.
+  if let Some((func, order)) = as_derivative_of(e) {
+    return Some(format!(
+      "{}{}",
+      expr_to_label(func)?,
+      derivative_prime_marks(order)
+    ));
+  }
+  let (head_label, args): (String, &[Expr]) = match e {
+    // `Derivative[n][f][x]` reaches the evaluator flattened to
+    // `Derivative[n, f, x]`; its head is the curried derivative.
+    Expr::FunctionCall { name, args } if name == "Derivative" => {
+      let (order, rest) = args.split_first()?;
+      let (func, arg) = (rest.first()?, rest.get(1)?);
+      let derivative = Expr::CurriedCall {
+        func: Box::new(Expr::FunctionCall {
+          name: "Derivative".to_string(),
+          args: vec![order.clone()].into(),
+        }),
+        args: vec![func.clone()],
+      };
+      return Some(format!(
+        "{}({})",
+        applied_label(&derivative)?,
+        expr_to_label(arg)?
+      ));
+    }
+    Expr::CurriedCall { func, args } => (
+      applied_label(func).or_else(|| expr_to_label(func))?,
+      &args[..],
+    ),
+    Expr::FunctionCall { name, args }
+      if crate::evaluator::functions::get_builtin_function_info(name)
+        .is_none() =>
+    {
+      (name.clone(), &args[..])
+    }
+    _ => return None,
+  };
+  if args.is_empty() {
+    return None;
+  }
+  let parts: Vec<String> =
+    args.iter().map(expr_to_label).collect::<Option<Vec<_>>>()?;
+  Some(format!("{head_label}({})", parts.join(", ")))
 }
 
 /// Extract a chart label from an Expr, supporting Rotate[label, angle].
