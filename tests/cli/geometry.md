@@ -198,3 +198,43 @@ True
 $ wo 'ConvexPolyhedronQ[Prism[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {5, 0, 1}, {0, 1, 1}}]]'
 False
 ```
+
+## `PolyhedronData`
+
+Named polyhedra and their properties: the Platonic solids, plus the
+Archimedean solids with icosahedral symmetry and their Catalan duals.
+
+```scrut
+$ wo 'PolyhedronData["TruncatedIcosahedron", "FaceCount"]'
+32
+```
+
+The football: twelve pentagons and twenty hexagons.
+
+```scrut
+$ wo 'Tally[Length /@ PolyhedronData["TruncatedIcosahedron", "FaceIndices"]]'
+{{5, 12}, {6, 20}}
+```
+
+Metric properties stay exact:
+
+```scrut
+$ wo 'PolyhedronData["Icosidodecahedron", "Volume"]'
+(45 + 17*Sqrt[5])/6
+```
+
+An Archimedean solid has a circumsphere but no insphere, its dual the
+other way round:
+
+```scrut
+$ wo 'PolyhedronData["RhombicTriacontahedron", "Circumradius"]'
+Missing[NotApplicable]
+```
+
+`"Faces"` gives the corners and the faces that index into them, in one
+`GraphicsComplex`:
+
+```scrut
+$ wo 'Head[PolyhedronData["Icosahedron", "Faces"]]'
+GraphicsComplex
+```

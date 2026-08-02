@@ -15459,9 +15459,11 @@ mod manipulate {
     match &spec.controls[0] {
       ManipulateControl::Discrete { name, values, .. } => {
         assert_eq!(name, "g");
-        // The five Platonic solids plus the rhombic dodecahedron.
-        assert_eq!(values.len(), 6, "every known solid");
+        // The five Platonic solids, plus the Archimedean solids and
+        // their duals with icosahedral symmetry.
+        assert_eq!(values.len(), 15, "every known solid");
         assert!(values.contains(&"\"Cube\"".to_string()));
+        assert!(values.contains(&"\"TruncatedIcosahedron\"".to_string()));
       }
       _ => panic!("expected discrete control for g"),
     }

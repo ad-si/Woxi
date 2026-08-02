@@ -216,9 +216,9 @@ mod polyhedron_data_tests {
   fn polyhedron_data_properties_include_data_properties() {
     assert_eq!(
       interpret(r#"PolyhedronData["Properties"]"#).unwrap(),
-      "{Circumradius, EdgeCount, EdgeIndices, FaceCount, FaceIndices, \
-       Inradius, Insphere, SurfaceArea, VertexCoordinates, VertexCount, \
-       Volume}"
+      "{Circumradius, Classes, EdgeCount, EdgeIndices, FaceCount, \
+       FaceIndices, Faces, Inradius, Insphere, SurfaceArea, \
+       VertexCoordinates, VertexCount, Volume}"
     );
   }
 
@@ -368,8 +368,168 @@ mod polyhedron_data_tests {
   fn polyhedron_data_all_lists_every_entity() {
     assert_eq!(
       interpret("PolyhedronData[All]").unwrap(),
-      "{Cube, Dodecahedron, Icosahedron, Octahedron, RhombicDodecahedron, \
-       Tetrahedron}"
+      "{Cube, DeltoidalHexecontahedron, DisdyakisTriacontahedron, \
+       Dodecahedron, GreatRhombicosidodecahedron, Icosahedron, \
+       Icosidodecahedron, Octahedron, PentakisDodecahedron, \
+       RhombicDodecahedron, RhombicTriacontahedron, \
+       SmallRhombicosidodecahedron, Tetrahedron, TruncatedDodecahedron, \
+       TruncatedIcosahedron}"
+    );
+  }
+
+  // `"Faces"` is the vertex coordinates and the face index lists in one
+  // `GraphicsComplex`, which is how a scene picks a solid apart: `[[1]]`
+  // are the corners, `[[2, 1]]` the faces that index into them.
+  #[test]
+  fn polyhedron_data_faces_is_a_graphics_complex() {
+    assert_eq!(
+      interpret(r#"PolyhedronData["Cube", "Faces"]"#).unwrap(),
+      "GraphicsComplex[{{-1/2, -1/2, -1/2}, {-1/2, -1/2, 1/2}, \
+       {-1/2, 1/2, -1/2}, {-1/2, 1/2, 1/2}, {1/2, -1/2, -1/2}, \
+       {1/2, -1/2, 1/2}, {1/2, 1/2, -1/2}, {1/2, 1/2, 1/2}}, \
+       Polygon[{{8, 4, 2, 6}, {8, 6, 5, 7}, {8, 7, 3, 4}, {4, 3, 1, 2}, \
+       {1, 3, 7, 5}, {2, 1, 5, 6}}]]"
+    );
+    // The two parts agree with the properties they are built from, for
+    // every solid: the same corners (compared numerically, since the two
+    // radical forms need not print alike) and the same face indices.
+    assert_eq!(
+      interpret(
+        r#"Union @ Table[
+             {Max @ Abs @ Flatten[N[PolyhedronData[s, "Faces"][[1]]] -
+                N[PolyhedronData[s, "VertexCoordinates"]]] < 10^-10,
+              PolyhedronData[s, "Faces"][[2, 1]] ===
+                PolyhedronData[s, "FaceIndices"]},
+             {s, PolyhedronData[All]}]"#
+      )
+      .unwrap(),
+      "{{True, True}}"
+    );
+  }
+
+  // The Archimedean solids with icosahedral symmetry, and their Catalan
+  // duals — the shapes a polyhedral kaleidoscope is cut from.
+  #[test]
+  fn polyhedron_data_icosahedral_solids() {
+    assert_eq!(
+      interpret(
+        r#"Table[{PolyhedronData[s, "VertexCount"],
+                  PolyhedronData[s, "EdgeCount"],
+                  PolyhedronData[s, "FaceCount"]},
+             {s, {"Icosidodecahedron", "TruncatedIcosahedron",
+                  "GreatRhombicosidodecahedron", "RhombicTriacontahedron",
+                  "DisdyakisTriacontahedron"}}]"#
+      )
+      .unwrap(),
+      "{{30, 60, 32}, {60, 90, 32}, {120, 180, 62}, {32, 60, 30}, \
+       {62, 180, 120}}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["Icosidodecahedron", "Volume"]"#).unwrap(),
+      "(45 + 17*Sqrt[5])/6"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["TruncatedIcosahedron", "Circumradius"]"#)
+        .unwrap(),
+      "Sqrt[58 + 18*Sqrt[5]]/4"
+    );
+    // An Archimedean solid has a circumsphere but no insphere; its dual
+    // has it the other way round.
+    assert_eq!(
+      interpret(r#"PolyhedronData["TruncatedIcosahedron", "Inradius"]"#)
+        .unwrap(),
+      "Missing[NotApplicable]"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["RhombicTriacontahedron", "Circumradius"]"#)
+        .unwrap(),
+      "Missing[NotApplicable]"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["RhombicTriacontahedron", "Inradius"]"#)
+        .unwrap(),
+      "Sqrt[1 + 2/Sqrt[5]]"
+    );
+    // Face shapes: the truncated icosahedron is the football, twelve
+    // pentagons and twenty hexagons.
+    assert_eq!(
+      interpret(
+        r#"Tally[Length /@ PolyhedronData["TruncatedIcosahedron",
+             "FaceIndices"]]"#
+      )
+      .unwrap(),
+      "{{5, 12}, {6, 20}}"
+    );
+    // Every solid still draws.
+    assert_eq!(
+      interpret(r#"PolyhedronData["GreatRhombicosidodecahedron"]"#).unwrap(),
+      "-Graphics3D-"
+    );
+  }
+
+  // Edges come off the faces, not off the shortest vertex distances: the
+  // Catalan solids have two edge lengths, and taking only the shortest
+  // ones lost half of a deltoidal hexecontahedron's 120 edges.
+  #[test]
+  fn polyhedron_data_edges_cover_solids_with_two_edge_lengths() {
+    assert_eq!(
+      interpret(
+        r#"Union @ Table[
+             Length[PolyhedronData[s, "EdgeIndices"]] ==
+               PolyhedronData[s, "EdgeCount"],
+             {s, PolyhedronData[All]}]"#
+      )
+      .unwrap(),
+      "{True}"
+    );
+    // Euler's formula holds for all of them, so no face or edge is lost.
+    assert_eq!(
+      interpret(
+        r#"Union @ Table[
+             PolyhedronData[s, "VertexCount"] -
+               PolyhedronData[s, "EdgeCount"] +
+               PolyhedronData[s, "FaceCount"],
+             {s, PolyhedronData[All]}]"#
+      )
+      .unwrap(),
+      "{2}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Take[PolyhedronData["DeltoidalHexecontahedron", "EdgeIndices"], 4]"#
+      )
+      .unwrap(),
+      "{{1, 7}, {1, 9}, {1, 33}, {1, 47}}"
+    );
+  }
+
+  // `"Classes"` reports what a solid is; the classless `PolyhedronData[
+  // "Classes"]` call is the union over the entities.
+  #[test]
+  fn polyhedron_data_classes() {
+    assert_eq!(
+      interpret(r#"PolyhedronData["Icosidodecahedron", "Classes"]"#).unwrap(),
+      "{Amphichiral, Archimedean, Canonical, Convex, Equilateral, \
+       Quasiregular, Rigid, Rupert, Simple, Uniform}"
+    );
+    assert_eq!(
+      interpret(
+        r#"{MemberQ[PolyhedronData["Cube", "Classes"], "Platonic"],
+            MemberQ[PolyhedronData["RhombicTriacontahedron", "Classes"],
+              "Platonic"]}"#
+      )
+      .unwrap(),
+      "{True, False}"
+    );
+    // Every class a solid claims is in the overall list, and the list has
+    // no class no solid claims.
+    assert_eq!(
+      interpret(
+        r#"Sort[Union @@ Table[PolyhedronData[s, "Classes"],
+             {s, PolyhedronData[All]}]] === PolyhedronData["Classes"]"#
+      )
+      .unwrap(),
+      "True"
     );
   }
 }
