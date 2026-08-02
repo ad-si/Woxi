@@ -1821,7 +1821,8 @@ mod interpreter_tests {
     // A Graphics[...] argument held inside a symbolic wrapper (LocatorPane,
     // ClickPane) still summarizes to the -Graphics- placeholder in OutputForm,
     // matching wolframscript — the full Graphics expression is only shown by
-    // InputForm / FullForm.
+    // InputForm / FullForm. (A visual host renders the pane itself; this is
+    // the script-mode text form.)
     let cases = [
       (
         "LocatorPane[Dynamic[p], Graphics[Point[p]]]",
@@ -1830,8 +1831,11 @@ mod interpreter_tests {
       ("ClickPane[Graphics[{}], f]", "ClickPane[-Graphics-, f]"),
     ];
     for (input, expected) in cases {
-      let r = interpret_with_stdout(input).unwrap();
-      assert_eq!(r.result, expected, "result mismatch for {input}");
+      assert_eq!(
+        interpret(input).unwrap(),
+        expected,
+        "result mismatch for {input}"
+      );
     }
   }
 

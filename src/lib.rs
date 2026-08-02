@@ -2023,6 +2023,7 @@ fn format_top_level_result(result_expr: syntax::Expr) -> String {
     // column with its embedded graphic). CLI mode keeps the symbolic
     // Pane[…] echo to match wolframscript.
     let result_expr = unwrap_pane_if_needed(result_expr);
+    let result_expr = render_interactive_pane_if_needed(result_expr);
     let result_expr = render_labeled_if_needed(result_expr);
     let result_expr = render_dynamic_if_needed(result_expr);
     let result_expr = render_graphics_fc_if_needed(result_expr);
@@ -2770,6 +2771,25 @@ fn unwrap_pane_if_needed(expr: syntax::Expr) -> syntax::Expr {
   }
 }
 
+/// In visual (notebook) display mode, `ClickPane[expr, …]` and
+/// `LocatorPane[locators, body, …]` display the picture they wrap —
+/// clicking or dragging one is a front-end affordance that the picture
+/// itself does not carry. Without this a Manipulate body that *is* one of
+/// these panes showed only the textual echo of the call.
+fn render_interactive_pane_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  let is_pane = matches!(&expr, syntax::Expr::FunctionCall { name, args }
+    if (name == "ClickPane" || name == "LocatorPane") && args.len() >= 2);
+  if !is_pane {
+    return expr;
+  }
+  let svg = evaluator::dispatch::io_functions::expr_to_svg(&expr);
+  if svg.starts_with("<svg") {
+    graphics_result(svg)
+  } else {
+    expr
+  }
+}
+
 /// In visual (notebook) display mode, `Labeled[graphic, caption, pos]`
 /// displays as the two set beside each other. Without this a Manipulate
 /// body that captions its graphic would show only the textual echo of the
@@ -2791,6 +2811,7 @@ fn render_inline_display_wrapper(expr: syntax::Expr) -> syntax::Expr {
   // wrapper arguments, so we apply the relevant ones here for a single
   // sub-expression.
   let expr = unwrap_pane_if_needed(expr);
+  let expr = render_interactive_pane_if_needed(expr);
   let expr = render_dynamic_if_needed(expr);
   let expr = render_grid_if_needed(expr);
   let expr = render_dataset_if_needed(expr);

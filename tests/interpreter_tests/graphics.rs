@@ -7601,6 +7601,43 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // `ClickPane[expr, …]` shows `expr`. What it adds is a click handler,
+    // which the picture itself does not carry — this is how a Demonstration
+    // lets you draw on a grid. It used to export as the call written out.
+    #[test]
+    fn a_click_pane_shows_the_picture_it_wraps() {
+      let svg = export_svg(
+        "ClickPane[Graphics[{Line[{{0, 0}, {1, 1}}]},          PlotRange -> {{0, 2}, {0, 2}}, ImageSize -> 200], (Print[#] &)]",
+      );
+      assert!(
+        svg.contains("<polyline") || svg.contains("<line"),
+        "the wrapped graphic must be drawn: {svg}"
+      );
+      assert!(!svg.contains("ClickPane"), "not the source: {svg}");
+      // The three-argument form carries a coordinate range in the middle.
+      let ranged = export_svg(
+        "ClickPane[Graphics[{Disk[]}, ImageSize -> 100],          {{0, 0}, {1, 1}}, (Print[#] &)]",
+      );
+      assert!(!ranged.contains("ClickPane"), "not the source: {ranged}");
+    }
+
+    // A visual host shows the picture an interactive pane wraps even when
+    // the pane is the whole result — a Manipulate body that *is* a
+    // `ClickPane` rendered as a strip of source text.
+    #[test]
+    fn an_interactive_pane_result_renders_as_its_picture() {
+      for code in [
+        "ClickPane[Graphics[{Disk[]}, ImageSize -> 100], (Print[#] &)]",
+        "LocatorPane[{{0.5, 0.5}},          Graphics[{Disk[]}, PlotRange -> {{0, 1}, {0, 1}}, ImageSize -> 100]]",
+      ] {
+        let r = woxi::interpret_with_stdout(code).unwrap();
+        assert!(
+          r.graphics.is_some_and(|g| g.starts_with("<svg")),
+          "{code} must render as a picture"
+        );
+      }
+    }
+
     // `LocatorPane[locators, body]` shows `body` with a marker on every
     // locator. Wolfram's default marker is a small circle with a crosshair
     // through it; a Demonstration that lets you drag the vertices of a shape

@@ -7384,6 +7384,86 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn points_connection_manipulate_draws_its_click_pane() {
+    // End-to-end regression for "The 6x6 Points Connection Problem": the
+    // puzzle is played by clicking a grid of points, so the whole widget
+    // body is a `ClickPane`. It built its controls but drew nothing — a
+    // pane rendered as the textual echo of its own call.
+    woxi::interpret(
+      "lx = 6; ly = 6; rx = Range[lx]; ry = Range[ly]; dd = 1; \
+       grid = Tuples[{dd rx, dd ry}]; \
+       dist[{x1_, y1_}, {x2_, y2_}] := \
+         Sqrt[(x1 - x2)^2 + (y1 - y2)^2];",
+    )
+    .unwrap();
+    let code = "Manipulate[\n\
+      lp = Length[pts];\n\
+      ClickPane[\n\
+       Graphics[{Thickness[.02], Black, PointSize[pointsize], \
+         Point[Tuples[{dd rx, dd ry}]], \
+         Line[{{0, -2}, {8.1, -2}}], \
+         Table[Line[{{i, -2.5}, {i, -2}}], {i, 0, 8}], \
+         Table[Text[i, {i, -2.7}], {i, 0, 8}], \
+         Blue, Table[Point[pts[[i]]], {i, lp}], \
+         If[lp > 1, Table[Line[{pts[[i]], pts[[i + 1]]}], {i, lp - 1}], {}]}, \
+        ImageSize -> 350], \
+       (pts = AppendTo[pts, #]) &], \n\
+      {{ch, 1, \"challenge\"}, \
+       {1 -> \"any path\", 2 -> \"no point twice\"}, \
+       ControlType -> PopupMenu}, \
+      {{pointsize, .03, \"pointsize\"}, 0, .1, ControlType -> Slider}, \
+      {{pts, {}}, ControlType -> None}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the points-connection Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the click pane must draw the grid of points"
+    );
+
+    // The challenge picker and the point-size slider.
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          label,
+          value_labels,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          label: size_label,
+          current,
+          min,
+          max,
+          ..
+        },
+      ] => {
+        assert_eq!(label, "challenge");
+        assert_eq!(
+          value_labels,
+          &["any path".to_string(), "no point twice".to_string()]
+        );
+        assert_eq!(size_label, "pointsize");
+        assert_eq!((*current, *min, *max), (0.03, 0.0, 0.1));
+      }
+      other => panic!("expected a picker and a slider, got {other:?}"),
+    }
+
+    // Growing the points re-renders the pane.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[1]
+    {
+      *current = 0.08;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn solar_panel_manipulate_folds_its_array() {
     // End-to-end regression for "Solar Panel of NASA's Phoenix Mars
     // Lander": two sliders fold a fan of triangular panels around a shaft.

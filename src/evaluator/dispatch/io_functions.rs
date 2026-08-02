@@ -3936,6 +3936,13 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     {
       lays_out_a_graphic(&args[1])
     }
+    // `ClickPane[expr, …]` shows `expr`; clicking it is the affordance the
+    // handler is for, and contributes nothing to the picture.
+    Expr::FunctionCall { name, args }
+      if name == "ClickPane" && args.len() >= 2 =>
+    {
+      lays_out_a_graphic(&args[0])
+    }
     // `Dynamic[graphic]` is a picture too — its arm shows what it holds.
     Expr::FunctionCall { name, args }
       if name == "Dynamic" && args.len() == 1 =>
@@ -4196,6 +4203,17 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     {
       expr_to_svg(
         &crate::evaluator::evaluate_expr_to_expr(&drawn).unwrap_or(drawn),
+      )
+    }
+    // `ClickPane[expr, …]` displays `expr`. What it adds is a click
+    // handler, which the picture itself does not carry — this is how a
+    // Demonstration lets you draw on a grid.
+    Expr::FunctionCall { name, args }
+      if name == "ClickPane" && args.len() >= 2 =>
+    {
+      expr_to_svg(
+        &crate::evaluator::evaluate_expr_to_expr(&args[0])
+          .unwrap_or_else(|_| args[0].clone()),
       )
     }
     // Outside a `Graphics`, `Text[expr]` only asks for `expr` to be shown
