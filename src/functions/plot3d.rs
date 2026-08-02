@@ -313,8 +313,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let body = &args[0];
 
   // Parse iterators
-  let (xvar, x_min, x_max) = parse_iterator(&args[1], "first")?;
-  let (yvar, y_min, y_max) = parse_iterator(&args[2], "second")?;
+  let (xvar, mut x_min, mut x_max) = parse_iterator(&args[1], "first")?;
+  let (yvar, mut y_min, mut y_max) = parse_iterator(&args[2], "second")?;
 
   // Parse options
   let mut svg_width = DEFAULT_SIZE;
@@ -348,7 +348,24 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "PlotRange" => {
-          if let Expr::List(items) = replacement.as_ref()
+          // `PlotRange -> {zmin, zmax}` bounds the vertical axis only. The
+          // full form `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}` bounds
+          // all three; the horizontal bounds narrow the plotted domain, so
+          // a surface asked for over a wider iterator range is cropped to
+          // the box rather than drawn past it.
+          if let Some([xr, yr, zr]) = parse_axis_ranges(replacement) {
+            // An empty intersection would leave nothing to sample, so a
+            // box that misses the iterator range leaves the domain alone.
+            if x_min.max(xr.0) < x_max.min(xr.1)
+              && y_min.max(yr.0) < y_max.min(yr.1)
+            {
+              x_min = x_min.max(xr.0);
+              x_max = x_max.min(xr.1);
+              y_min = y_min.max(yr.0);
+              y_max = y_max.min(yr.1);
+            }
+            z_clip = Some(zr);
+          } else if let Expr::List(items) = replacement.as_ref()
             && items.len() == 2
           {
             let lo = try_eval_to_f64(&evaluate_expr_to_expr(&items[0])?);
@@ -420,6 +437,193 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Phase 2: Build triangles using the shared z range
   let mut all_triangles: Vec<Triangle> = Vec::new();
   let num_surfaces = grids.len();
+
+  // ── Symbolic structure: Graphics3D[GraphicsComplex[points, {…}]] ──
+  // `Show` merges the *primitives* of the graphics it is given, so a
+  // surface that exists only as a rendering is dropped when it is shown
+  // together with a `Graphics3D`. Emitting the sampled surface in world
+  // coordinates — coloured by height, the way the standalone render
+  // colours it — lets `Show[Plot3D[…], Graphics3D[…]]` draw both.
+  let structure = {
+    let complexes: Vec<Expr> = grids
+      .iter()
+      .enumerate()
+      .map(|(surface_idx, grid)| {
+        let mut index_of: Vec<Vec<Option<usize>>> =
+          vec![vec![None; GRID_N + 1]; GRID_N + 1];
+        let mut point_exprs: Vec<Expr> = Vec::new();
+        for (i, row) in grid.iter().enumerate() {
+          for (j, &z) in row.iter().enumerate() {
+            if !z.is_finite() {
+              continue;
+            }
+            index_of[i][j] = Some(point_exprs.len());
+            point_exprs.push(Expr::List(
+              vec![
+                Expr::Real(x_min + i as f64 * x_step),
+                Expr::Real(y_min + j as f64 * y_step),
+                Expr::Real(z.clamp(z_lo, z_hi)),
+              ]
+              .into(),
+            ));
+          }
+        }
+        let mut content: Vec<Expr> = Vec::new();
+        // The sampling quads are far finer than the mesh a surface shows,
+        // so their own outlines are suppressed and the mesh is drawn as
+        // lines below — otherwise a shown surface turns into a wireframe.
+        if !matches!(mesh_mode, MeshMode::All) {
+          content.push(Expr::FunctionCall {
+            name: "EdgeForm".to_string(),
+            args: Vec::new().into(),
+          });
+        }
+        for i in 0..GRID_N {
+          for j in 0..GRID_N {
+            let (Some(a), Some(b), Some(c), Some(d)) = (
+              index_of[i][j],
+              index_of[i + 1][j],
+              index_of[i + 1][j + 1],
+              index_of[i][j + 1],
+            ) else {
+              continue;
+            };
+            let avg_z_norm = [
+              grid[i][j],
+              grid[i + 1][j],
+              grid[i + 1][j + 1],
+              grid[i][j + 1],
+            ]
+            .iter()
+            .map(|z| (z.clamp(z_lo, z_hi) - z_lo) / z_range)
+            .sum::<f64>()
+              / 4.0;
+            let (cr, cg, cb) =
+              surface_height_color(avg_z_norm, surface_idx, num_surfaces);
+            // Colour and polygon travel in a sublist so the directive does
+            // not leak onto the quads drawn after it.
+            content.push(Expr::List(
+              vec![
+                Expr::FunctionCall {
+                  name: "RGBColor".to_string(),
+                  args: vec![
+                    Expr::Real(cr as f64 / 255.0),
+                    Expr::Real(cg as f64 / 255.0),
+                    Expr::Real(cb as f64 / 255.0),
+                  ]
+                  .into(),
+                },
+                Expr::FunctionCall {
+                  name: "Polygon".to_string(),
+                  args: vec![Expr::List(
+                    [a, b, c, d]
+                      .iter()
+                      .map(|&k| Expr::Integer(k as i128 + 1))
+                      .collect::<Vec<_>>()
+                      .into(),
+                  )]
+                  .into(),
+                },
+              ]
+              .into(),
+            ));
+          }
+        }
+        // The mesh, at the spacing the standalone render rules it with.
+        if matches!(mesh_mode, MeshMode::Default) {
+          let mut segments: Vec<Expr> = Vec::new();
+          let mut push_segment = |a: Option<usize>, b: Option<usize>| {
+            if let (Some(a), Some(b)) = (a, b) {
+              segments.push(Expr::List(
+                vec![
+                  Expr::Integer(a as i128 + 1),
+                  Expr::Integer(b as i128 + 1),
+                ]
+                .into(),
+              ));
+            }
+          };
+          for j in (0..=GRID_N).step_by(MESH_STEP) {
+            for i in 0..GRID_N {
+              push_segment(index_of[i][j], index_of[i + 1][j]);
+            }
+          }
+          for i in (0..=GRID_N).step_by(MESH_STEP) {
+            for j in 0..GRID_N {
+              push_segment(index_of[i][j], index_of[i][j + 1]);
+            }
+          }
+          if !segments.is_empty() {
+            content.push(Expr::List(
+              vec![
+                Expr::FunctionCall {
+                  name: "Opacity".to_string(),
+                  args: vec![Expr::Real(0.63)].into(),
+                },
+                Expr::FunctionCall {
+                  name: "RGBColor".to_string(),
+                  args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)]
+                    .into(),
+                },
+                Expr::FunctionCall {
+                  name: "AbsoluteThickness".to_string(),
+                  args: vec![Expr::Real(0.5)].into(),
+                },
+                Expr::FunctionCall {
+                  name: "Line".to_string(),
+                  args: vec![Expr::List(segments.into())].into(),
+                },
+              ]
+              .into(),
+            ));
+          }
+        }
+        Expr::FunctionCall {
+          name: "GraphicsComplex".to_string(),
+          args: vec![
+            Expr::List(point_exprs.into()),
+            Expr::List(content.into()),
+          ]
+          .into(),
+        }
+      })
+      .collect();
+    let content = if complexes.len() == 1 {
+      complexes.into_iter().next().expect("one complex")
+    } else {
+      Expr::List(complexes.into())
+    };
+    // `Plot3D` draws axes and squats its box where a bare `Graphics3D`
+    // does neither, so both defaults are spelled out: a surface shown
+    // inside another graphic keeps the shape it was drawn with.
+    let mut structure_args = vec![content];
+    structure_args.extend(args[3..].iter().cloned());
+    let names = |opt: &str| {
+      structure_args.iter().any(|o| {
+        matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt))
+      })
+    };
+    let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
+    if !names_axes {
+      structure_args.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier("Axes".to_string())),
+        replacement: Box::new(Expr::Identifier("True".to_string())),
+      });
+    }
+    if !names_ratios {
+      structure_args.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier("BoxRatios".to_string())),
+        replacement: Box::new(Expr::List(
+          vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
+        )),
+      });
+    }
+    Expr::FunctionCall {
+      name: "Graphics3D".to_string(),
+      args: structure_args.into(),
+    }
+  };
 
   for (surface_idx, grid) in grids.iter().enumerate() {
     for i in 0..GRID_N {
@@ -578,7 +782,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     show_axes,
   )?;
 
-  Ok(crate::graphics3d_result(svg))
+  Ok(crate::graphics3d_result_with_structure(svg, structure))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3387,6 +3591,177 @@ fn tessellate_cone(
   tris
 }
 
+/// The world-coordinate bounding box of a set of 3D primitives, as
+/// `[(xlo, xhi), (ylo, yhi), (zlo, zhi)]`. Infinite when there is nothing
+/// to bound.
+fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
+  let mut x3_min = f64::INFINITY;
+  let mut x3_max = f64::NEG_INFINITY;
+  let mut y3_min = f64::INFINITY;
+  let mut y3_max = f64::NEG_INFINITY;
+  let mut z3_min = f64::INFINITY;
+  let mut z3_max = f64::NEG_INFINITY;
+
+  let extend_3d = |pt: &Point3D,
+                   x3_min: &mut f64,
+                   x3_max: &mut f64,
+                   y3_min: &mut f64,
+                   y3_max: &mut f64,
+                   z3_min: &mut f64,
+                   z3_max: &mut f64| {
+    *x3_min = x3_min.min(pt.x);
+    *x3_max = x3_max.max(pt.x);
+    *y3_min = y3_min.min(pt.y);
+    *y3_max = y3_max.max(pt.y);
+    *z3_min = z3_min.min(pt.z);
+    *z3_max = z3_max.max(pt.z);
+  };
+
+  for prim in prims {
+    match prim {
+      Primitive3D::Sphere { center, radius, .. } => {
+        let r = *radius;
+        extend_3d(
+          &Point3D {
+            x: center.x - r,
+            y: center.y - r,
+            z: center.z - r,
+          },
+          &mut x3_min,
+          &mut x3_max,
+          &mut y3_min,
+          &mut y3_max,
+          &mut z3_min,
+          &mut z3_max,
+        );
+        extend_3d(
+          &Point3D {
+            x: center.x + r,
+            y: center.y + r,
+            z: center.z + r,
+          },
+          &mut x3_min,
+          &mut x3_max,
+          &mut y3_min,
+          &mut y3_max,
+          &mut z3_min,
+          &mut z3_max,
+        );
+      }
+      Primitive3D::Cuboid { p_min, p_max, .. } => {
+        extend_3d(
+          p_min,
+          &mut x3_min,
+          &mut x3_max,
+          &mut y3_min,
+          &mut y3_max,
+          &mut z3_min,
+          &mut z3_max,
+        );
+        extend_3d(
+          p_max,
+          &mut x3_min,
+          &mut x3_max,
+          &mut y3_min,
+          &mut y3_max,
+          &mut z3_min,
+          &mut z3_max,
+        );
+      }
+      Primitive3D::Cylinder { p1, p2, radius, .. }
+      | Primitive3D::Cone { p1, p2, radius, .. } => {
+        let r = *radius;
+        for p in [p1, p2] {
+          extend_3d(
+            &Point3D {
+              x: p.x - r,
+              y: p.y - r,
+              z: p.z - r,
+            },
+            &mut x3_min,
+            &mut x3_max,
+            &mut y3_min,
+            &mut y3_max,
+            &mut z3_min,
+            &mut z3_max,
+          );
+          extend_3d(
+            &Point3D {
+              x: p.x + r,
+              y: p.y + r,
+              z: p.z + r,
+            },
+            &mut x3_min,
+            &mut x3_max,
+            &mut y3_min,
+            &mut y3_max,
+            &mut z3_min,
+            &mut z3_max,
+          );
+        }
+      }
+      Primitive3D::Polygon3D { points, .. } => {
+        for pt in points {
+          extend_3d(
+            pt,
+            &mut x3_min,
+            &mut x3_max,
+            &mut y3_min,
+            &mut y3_max,
+            &mut z3_min,
+            &mut z3_max,
+          );
+        }
+      }
+      Primitive3D::Point3DPrim { points, .. }
+      | Primitive3D::Arrow3D { points, .. } => {
+        for pt in points {
+          extend_3d(
+            pt,
+            &mut x3_min,
+            &mut x3_max,
+            &mut y3_min,
+            &mut y3_max,
+            &mut z3_min,
+            &mut z3_max,
+          );
+        }
+      }
+      Primitive3D::Line3D { segments, .. } => {
+        for seg in segments {
+          for pt in seg {
+            extend_3d(
+              pt,
+              &mut x3_min,
+              &mut x3_max,
+              &mut y3_min,
+              &mut y3_max,
+              &mut z3_min,
+              &mut z3_max,
+            );
+          }
+        }
+      }
+      Primitive3D::Surface3D { tris, .. } => {
+        for (a, b, c) in tris {
+          for pt in [a, b, c] {
+            extend_3d(
+              pt,
+              &mut x3_min,
+              &mut x3_max,
+              &mut y3_min,
+              &mut y3_max,
+              &mut z3_min,
+              &mut z3_max,
+            );
+          }
+        }
+      }
+    }
+  }
+  [(x3_min, x3_max), (y3_min, y3_max), (z3_min, z3_max)]
+}
+
 /// Graphics3D[primitives, options...]
 pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let content = evaluate_expr_to_expr(&args[0])?;
@@ -3403,6 +3778,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Manipulate re-render). `PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}`
   // pins each axis separately.
   let mut plot_range: Option<[(f64, f64); 3]> = None;
+  // `BoxRatios -> {rx, ry, rz}`; `None` is Wolfram's `Automatic`, where the
+  // box simply has the proportions of the data.
+  let mut box_ratios: Option<[f64; 3]> = None;
   let mut show_axes = false;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   for opt in &args[1..] {
@@ -3471,6 +3849,19 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             plot_range = Some(ranges);
           }
         }
+        // `BoxRatios -> {rx, ry, rz}` fixes the *shape* of the bounding
+        // box regardless of how large the data is along each axis, which
+        // is what keeps a plot whose values run far wider than its domain
+        // (or the other way round) from drawing as a sliver.
+        "BoxRatios" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          if let Some(r) = eval_vec3(&value)
+            && r.iter().all(|v| *v > 0.0)
+          {
+            box_ratios = Some(r);
+          }
+        }
         "Axes" => match replacement.as_ref() {
           Expr::Identifier(s) if s == "False" => show_axes = false,
           Expr::Identifier(s) if s == "True" => show_axes = true,
@@ -3521,6 +3912,49 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(crate::graphics3d_result_with_structure(
       empty_svg, structure,
     ));
+  }
+
+  // `BoxRatios` asks for a box of a given shape, so each axis is scaled to
+  // bring the world coordinates into those proportions before anything is
+  // tessellated. The axes keep reporting the values before scaling —
+  // `axis_scale` divides them back out where they are drawn.
+  let mut axis_scale = [1.0_f64; 3];
+  if let Some(ratios) = box_ratios {
+    let bounds = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
+    let extents = [
+      bounds[0].1 - bounds[0].0,
+      bounds[1].1 - bounds[1].0,
+      bounds[2].1 - bounds[2].0,
+    ];
+    // Every axis is brought down to the tightest of the requested
+    // proportions, so honouring them never inflates the picture.
+    let unit = (0..3)
+      .filter(|&i| extents[i].is_finite() && extents[i] > 0.0)
+      .map(|i| extents[i] / ratios[i])
+      .fold(f64::INFINITY, f64::min);
+    if unit.is_finite() && unit > 0.0 {
+      for i in 0..3 {
+        if extents[i].is_finite() && extents[i] > 0.0 {
+          axis_scale[i] = ratios[i] * unit / extents[i];
+        }
+      }
+      let xf = Affine3 {
+        m: [
+          [axis_scale[0], 0.0, 0.0],
+          [0.0, axis_scale[1], 0.0],
+          [0.0, 0.0, axis_scale[2]],
+        ],
+        t: [0.0; 3],
+      };
+      for prim in &mut prims {
+        transform_primitive3d(prim, &xf);
+      }
+      if let Some(range) = plot_range.as_mut() {
+        for i in 0..3 {
+          range[i] = (range[i].0 * axis_scale[i], range[i].1 * axis_scale[i]);
+        }
+      }
+    }
   }
 
   // Tessellate all primitives into triangles
@@ -3723,170 +4157,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
 
   // Compute 3D bounding box of all primitives for the wireframe box
-  let mut x3_min = f64::INFINITY;
-  let mut x3_max = f64::NEG_INFINITY;
-  let mut y3_min = f64::INFINITY;
-  let mut y3_max = f64::NEG_INFINITY;
-  let mut z3_min = f64::INFINITY;
-  let mut z3_max = f64::NEG_INFINITY;
-
-  let extend_3d = |pt: &Point3D,
-                   x3_min: &mut f64,
-                   x3_max: &mut f64,
-                   y3_min: &mut f64,
-                   y3_max: &mut f64,
-                   z3_min: &mut f64,
-                   z3_max: &mut f64| {
-    *x3_min = x3_min.min(pt.x);
-    *x3_max = x3_max.max(pt.x);
-    *y3_min = y3_min.min(pt.y);
-    *y3_max = y3_max.max(pt.y);
-    *z3_min = z3_min.min(pt.z);
-    *z3_max = z3_max.max(pt.z);
-  };
-
-  for prim in &prims {
-    match prim {
-      Primitive3D::Sphere { center, radius, .. } => {
-        let r = *radius;
-        extend_3d(
-          &Point3D {
-            x: center.x - r,
-            y: center.y - r,
-            z: center.z - r,
-          },
-          &mut x3_min,
-          &mut x3_max,
-          &mut y3_min,
-          &mut y3_max,
-          &mut z3_min,
-          &mut z3_max,
-        );
-        extend_3d(
-          &Point3D {
-            x: center.x + r,
-            y: center.y + r,
-            z: center.z + r,
-          },
-          &mut x3_min,
-          &mut x3_max,
-          &mut y3_min,
-          &mut y3_max,
-          &mut z3_min,
-          &mut z3_max,
-        );
-      }
-      Primitive3D::Cuboid { p_min, p_max, .. } => {
-        extend_3d(
-          p_min,
-          &mut x3_min,
-          &mut x3_max,
-          &mut y3_min,
-          &mut y3_max,
-          &mut z3_min,
-          &mut z3_max,
-        );
-        extend_3d(
-          p_max,
-          &mut x3_min,
-          &mut x3_max,
-          &mut y3_min,
-          &mut y3_max,
-          &mut z3_min,
-          &mut z3_max,
-        );
-      }
-      Primitive3D::Cylinder { p1, p2, radius, .. }
-      | Primitive3D::Cone { p1, p2, radius, .. } => {
-        let r = *radius;
-        for p in [p1, p2] {
-          extend_3d(
-            &Point3D {
-              x: p.x - r,
-              y: p.y - r,
-              z: p.z - r,
-            },
-            &mut x3_min,
-            &mut x3_max,
-            &mut y3_min,
-            &mut y3_max,
-            &mut z3_min,
-            &mut z3_max,
-          );
-          extend_3d(
-            &Point3D {
-              x: p.x + r,
-              y: p.y + r,
-              z: p.z + r,
-            },
-            &mut x3_min,
-            &mut x3_max,
-            &mut y3_min,
-            &mut y3_max,
-            &mut z3_min,
-            &mut z3_max,
-          );
-        }
-      }
-      Primitive3D::Polygon3D { points, .. } => {
-        for pt in points {
-          extend_3d(
-            pt,
-            &mut x3_min,
-            &mut x3_max,
-            &mut y3_min,
-            &mut y3_max,
-            &mut z3_min,
-            &mut z3_max,
-          );
-        }
-      }
-      Primitive3D::Point3DPrim { points, .. }
-      | Primitive3D::Arrow3D { points, .. } => {
-        for pt in points {
-          extend_3d(
-            pt,
-            &mut x3_min,
-            &mut x3_max,
-            &mut y3_min,
-            &mut y3_max,
-            &mut z3_min,
-            &mut z3_max,
-          );
-        }
-      }
-      Primitive3D::Line3D { segments, .. } => {
-        for seg in segments {
-          for pt in seg {
-            extend_3d(
-              pt,
-              &mut x3_min,
-              &mut x3_max,
-              &mut y3_min,
-              &mut y3_max,
-              &mut z3_min,
-              &mut z3_max,
-            );
-          }
-        }
-      }
-      Primitive3D::Surface3D { tris, .. } => {
-        for (a, b, c) in tris {
-          for pt in [a, b, c] {
-            extend_3d(
-              pt,
-              &mut x3_min,
-              &mut x3_max,
-              &mut y3_min,
-              &mut y3_max,
-              &mut z3_min,
-              &mut z3_max,
-            );
-          }
-        }
-      }
-    }
-  }
+  let [
+    (mut x3_min, mut x3_max),
+    (mut y3_min, mut y3_max),
+    (mut z3_min, mut z3_max),
+  ] = primitives_bounds(&prims);
 
   // Add some padding to the 3D bounding box
   let pad_x = (x3_max - x3_min) * 0.05;
@@ -4321,14 +4596,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Axes (with their ticks and labels) go on top of the scene.
   if show_axes {
+    // The ticks report coordinates as they were given, so a box reshaped
+    // by `BoxRatios` still reads off the data's own values.
     draw_axes_on_box(
       &mut svg,
       &camera,
       &to_svg,
       &box_corners,
-      (x3_min, x3_max),
-      (y3_min, y3_max),
-      (z3_min, z3_max),
+      (x3_min / axis_scale[0], x3_max / axis_scale[0]),
+      (y3_min / axis_scale[1], y3_max / axis_scale[1]),
+      (z3_min / axis_scale[2], z3_max / axis_scale[2]),
       &axes_labels,
     );
   }
