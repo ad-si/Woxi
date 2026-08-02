@@ -7384,6 +7384,80 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn dijkstra_manipulate_builds_its_button_bar() {
+    // End-to-end regression for "Dijkstra's Algorithm": the graph is stepped
+    // through by buttons, and the starting vertex is picked from a
+    // `ButtonBar` whose buttons are built by a `Table` over labels the
+    // `Initialization` option defines. The bar contributed no controls at
+    // all, so there was no way to choose a starting vertex.
+    let code = "Manipulate[\
+      Column[{Text@Style[Row[{\"starting at vertex \", \
+         Style[vertNames[[initialVertex]], Italic]}], Bold, 20], \
+        Graphics[{Point /@ points, \
+          Text[Style[Row[{\"(\", vertLabels[[1]], \")\"}], 12], {1, 1}]}, \
+         ImageSize -> 200]}, Alignment -> Center], \
+      Button[\"start over\", vertLabels = Table[Infinity, {4}]], \
+      Delimiter, \"initial vertex\", \
+      ButtonBar[Flatten[Table[{With[{k = k}, \
+        vertNames[[k]] :> {initialVertex = k; \
+          vertLabels = ReplacePart[Table[Infinity, {4}], k -> 0]}]}, \
+        {k, 1, 4}]], ImageSize -> 25], \
+      {{initialVertex, 1}, ControlType -> None}, \
+      {{vertLabels, {0, Infinity, Infinity, Infinity}}, \
+        ControlType -> None}, \
+      Initialization :> (vertNames = {\"a\", \"b\", \"c\", \"d\"}; \
+        points = {{1, 1}, {2, 1}, {1, 2}, {2, 2}};), \
+      ControlPlacement -> Left]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Dijkstra Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the graph"
+    );
+
+    // The "start over" button, the heading, then one button per vertex out
+    // of the ButtonBar.
+    let labels: Vec<String> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Button { label, .. } => label.clone(),
+        manipulate::ControlState::Heading { label, .. } => {
+          format!("#{label}")
+        }
+        manipulate::ControlState::Divider => "|".to_string(),
+        other => panic!("unexpected control {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      labels,
+      vec!["start over", "|", "#initial vertex", "a", "b", "c", "d"]
+    );
+
+    // Pressing a vertex button runs its action and re-renders.
+    let vertex_c = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { label, action, .. }
+          if label == "c" =>
+        {
+          Some(action.clone())
+        }
+        _ => None,
+      })
+      .expect("a button for vertex c");
+    state.apply_button_action(&vertex_c);
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn vertex_distance_manipulate_builds_six_locators() {
     // End-to-end regression for "A Vertex Distance Relation for Two
     // Triangles": six draggable vertices drive two triangles, and a grid

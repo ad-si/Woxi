@@ -1263,6 +1263,32 @@ pub(crate) fn named_style_appearance(
   })
 }
 
+/// The glyph a mathematical constant is typeset with. Wolfram shows these
+/// wherever text is set rather than printed — `Infinity` inside a picture's
+/// `Text` is `∞`, not the word — while `Print` keeps the name. Arithmetic
+/// leaves a constant as either `Constant("Pi")` or `Identifier("Pi")`
+/// depending on which side of a product it started on, so callers must try
+/// both spellings.
+fn typeset_constant_glyph(name: &str) -> Option<&'static str> {
+  Some(match name {
+    "Infinity" => "\u{221E}",    // ∞
+    "Pi" => "\u{03C0}",          // π
+    "E" => "\u{2147}",           // ⅇ
+    "I" => "\u{2148}",           // ⅈ
+    "Degree" => "\u{00B0}",      // °
+    "EulerGamma" => "\u{03B3}",  // γ
+    "GoldenRatio" => "\u{03D5}", // ϕ
+    _ => return None,
+  })
+}
+
+/// Whether a Manipulate argument is a `ButtonBar[…]` — a row of buttons
+/// whose labels and actions are computed from a list.
+fn is_button_bar(spec: &Expr) -> bool {
+  matches!(spec, Expr::FunctionCall { name, args }
+    if name == "ButtonBar" && !args.is_empty())
+}
+
 /// A `Style[expr, …]` directive list in the order Wolfram applies it: a
 /// named style ("Label", "Section", …) supplies the base appearance and the
 /// explicit directives sit on top of it, whichever side of it they were
@@ -2301,6 +2327,15 @@ fn point_along_path(pts: &[(f64, f64)], t: f64) -> (f64, f64) {
 fn graphics_text_content(expr: &Expr) -> String {
   match expr {
     Expr::String(s) => s.clone(),
+    // Text inside a picture is typeset, not printed: a mathematical
+    // constant shows as its glyph there, the way it does in a notebook.
+    // (Script-mode output still writes the name, which is what
+    // wolframscript prints.)
+    Expr::Identifier(name) | Expr::Constant(name)
+      if typeset_constant_glyph(name).is_some() =>
+    {
+      typeset_constant_glyph(name).unwrap().to_string()
+    }
     Expr::FunctionCall { name, args }
       if is_style_wrapper(name) && !args.is_empty() =>
     {
@@ -12893,6 +12928,49 @@ fn resolve_display_item(expr: &Expr) -> Expr {
   current
 }
 
+/// Distribute a `Style[…]`'s directives over the items of the layout it
+/// wraps, so `Style[Row[{a, b}], Bold]` becomes `Row[{Style[a, Bold],
+/// Style[b, Bold]}]`. Only the item list is rewritten; a separator or
+/// option argument keeps its place. `None` when the wrapped expression is
+/// not a layout with a list of items.
+fn style_pushed_into_layout(inner: &Expr, directives: &[Expr]) -> Option<Expr> {
+  if directives.is_empty() {
+    return None;
+  }
+  let Expr::FunctionCall { name, args } = inner else {
+    return None;
+  };
+  if !matches!(name.as_str(), "Row" | "Column" | "Grid") || args.is_empty() {
+    return None;
+  }
+  let Expr::List(items) = &args[0] else {
+    return None;
+  };
+  let restyle = |e: &Expr| Expr::FunctionCall {
+    name: "Style".to_string(),
+    args: std::iter::once(e.clone())
+      .chain(directives.iter().cloned())
+      .collect::<Vec<_>>()
+      .into(),
+  };
+  // A `Grid`'s items are rows of cells; everything else is a flat list.
+  let styled: Vec<Expr> = items
+    .iter()
+    .map(|item| match item {
+      Expr::List(cells) if name == "Grid" => {
+        Expr::List(cells.iter().map(&restyle).collect())
+      }
+      other => restyle(other),
+    })
+    .collect();
+  let mut new_args = vec![Expr::List(styled.into())];
+  new_args.extend(args[1..].iter().cloned());
+  Some(Expr::FunctionCall {
+    name: name.clone(),
+    args: new_args.into(),
+  })
+}
+
 /// Render a resolved `Column`/`Row` item that is itself a layout construct
 /// (`Row[…]` / `Column[…]`) to a nested SVG, so mixed text/graphics rows
 /// compose instead of printing as raw InputForm text. `None` for other
@@ -12909,8 +12987,15 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // A `Grid` nested in a layout is laid out too, rather than printed
       // as its own expression text.
       "Grid" => return grid_svg_with_gaps(&args, &[]).ok(),
-      // A styled layout keeps its layout.
-      "Style" | "StyleForm" => return nested_layout_svg(&args[0]),
+      // A styled layout keeps its layout, and its style: `Style[Row[{…}],
+      // Bold, 20]` sets every item of the row, since a `Style` is inherited
+      // by what it wraps. Pushing the directives inwards is what lets the
+      // row renderer, which reads each item's own style, apply them.
+      "Style" | "StyleForm" => {
+        let inner = style_pushed_into_layout(&args[0], &args[1..])
+          .unwrap_or_else(|| args[0].clone());
+        return nested_layout_svg(&inner);
+      }
       // A display wrapper that resolves to a picture (`Labeled[…]`,
       // `LocatorPane[…]`, `Dynamic[…]`) is drawn through the export path,
       // which unwraps it. Without this a `Column` item holding one was
@@ -12986,11 +13071,12 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
   let font_size: f64 = 14.0;
   let pad_x: f64 = 12.0;
   let pad_y: f64 = 8.0;
-  let text_row_height = font_size + pad_y;
   let gap = spacing_ems * font_size;
 
   // An item is either a pre-rendered SVG (e.g. nested TableForm/Framed/Grid)
-  // or a plain expression rendered as a single text line.
+  // or a plain expression rendered as a single text line. A text item keeps
+  // the appearance its own `Style[…]` asks for — a `Column`'s heading is
+  // written `Style[…, Bold, 20]` and used to come out at the default size.
   enum Cell {
     Svg {
       svg: String,
@@ -13028,12 +13114,25 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
     })
     .collect();
 
+  // The appearance a text item's own `Style[…]` asks for; its size drives
+  // both the cell's width and the row's height.
+  fn text_style(
+    e: &Expr,
+    default_size: f64,
+  ) -> (&Expr, f64, &str, &str, Option<Color>) {
+    let (content, fs, fw, fst, color) = extract_cell_style(e);
+    (content, fs.unwrap_or(default_size), fw, fst, color)
+  }
+
   // Compute column width from widest item
   let col_width: f64 = cells
     .iter()
     .map(|c| match c {
       Cell::Svg { width, .. } => *width,
-      Cell::Text(e) => estimate_display_width(e) * char_width + pad_x,
+      Cell::Text(e) => {
+        let (content, fs, ..) = text_style(e, font_size);
+        estimate_display_width(content) * char_width * (fs / font_size) + pad_x
+      }
     })
     .fold(0.0_f64, f64::max);
 
@@ -13042,7 +13141,7 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
     .iter()
     .map(|c| match c {
       Cell::Svg { height, .. } => *height,
-      Cell::Text(_) => text_row_height,
+      Cell::Text(e) => text_style(e, font_size).1 + pad_y,
     })
     .collect();
 
@@ -13074,9 +13173,13 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
     match cell {
       Cell::Text(expr) => {
         let cy = y_cursor + h / 2.0;
+        let (content, fs, fw, fst, color) = text_style(expr, font_size);
+        let fill = color
+          .map(|c| c.to_svg_rgb())
+          .unwrap_or_else(|| text_fill.to_string());
         svg.push_str(&format!(
-          "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"{alignment}\" dominant-baseline=\"central\">{}</text>\n",
-          expr_to_svg_markup(expr)
+          "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\" fill=\"{fill}\" text-anchor=\"{alignment}\" dominant-baseline=\"central\">{}</text>\n",
+          expr_to_svg_markup(content)
         ));
       }
       Cell::Svg {
@@ -14174,7 +14277,13 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::FunctionCall { name, .. }
         if matches!(
           name.as_str(),
-          "Row" | "Column" | "Grid" | "Control" | "Button" | "Spacer"
+          "Row"
+            | "Column"
+            | "Grid"
+            | "Control"
+            | "Button"
+            | "ButtonBar"
+            | "Spacer"
         ) =>
       {
         out_args.push(spec.clone());
@@ -14689,6 +14798,28 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // while the specs are parsed, so those bounds resolve to their build-time
   // numbers regardless of declaration order.
   let initial_bindings = manipulate_initial_value_bindings(&arg_items);
+  // A `ButtonBar`'s buttons are computed — `ButtonBar[Table[…]]` builds one
+  // per vertex of a graph, labelling each from a list the `Initialization`
+  // option defines. Those definitions therefore have to exist before the
+  // control can be built at all, so run the initialization here rather than
+  // only in the frontend. Nothing else needs it, so nothing else pays for
+  // it.
+  if arg_items.iter().any(is_button_bar) {
+    for spec in &arg_items {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } = spec
+        && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
+      {
+        let _ = evaluate_expr_to_expr(replacement);
+      }
+    }
+  }
   for spec in &arg_items {
     // Options such as `Initialization :> …` or `TrackedSymbols :> …`
     // are not variable specs; extract what we understand and ignore
@@ -14757,6 +14888,42 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           action: crate::syntax::expr_to_input_form(&args[1]),
         });
         continue;
+      }
+      // `ButtonBar[{label :> action, …}, opts…]`: a row of pressable
+      // buttons, one per rule. The list is usually computed (a `Table` over
+      // the things being offered), so it is evaluated first; each rule then
+      // becomes its own button, keeping its action held.
+      Expr::FunctionCall { name, args }
+        if name == "ButtonBar" && !args.is_empty() =>
+      {
+        let entries =
+          evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone());
+        if let Expr::List(items) = &entries {
+          let mut any = false;
+          for item in items.iter() {
+            let (Expr::Rule {
+              pattern,
+              replacement,
+            }
+            | Expr::RuleDelayed {
+              pattern,
+              replacement,
+            }) = item
+            else {
+              continue;
+            };
+            let label_runs = manipulate_label_runs(pattern, false);
+            controls.push(ManipulateControl::Button {
+              label: flatten_label_runs(&label_runs),
+              label_runs,
+              action: crate::syntax::expr_to_input_form(replacement),
+            });
+            any = true;
+          }
+          if any {
+            continue;
+          }
+        }
       }
       // `Spacer[…]` is pure layout between grouped controls — skip it.
       Expr::FunctionCall { name, .. } if name == "Spacer" => continue,

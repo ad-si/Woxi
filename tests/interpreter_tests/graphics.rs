@@ -7370,6 +7370,70 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       insta::assert_snapshot!(export_svg("Graphics3D[Sphere[]]"));
     }
 
+    // Text inside a picture is typeset, not printed: a mathematical constant
+    // shows as its glyph, the way a notebook shows it. `Print` keeps the
+    // name, which is what wolframscript writes in script mode.
+    #[test]
+    fn a_constant_typesets_as_its_glyph_in_a_picture() {
+      let svg = export_svg(
+        "Graphics[{Text[Pi, {0, 0}], Text[Infinity, {0, 1}], \
+         Text[E, {0, 2}], Text[Degree, {0, 3}], \
+         Text[Row[{\"(\", Infinity, \")\"}], {1, 0}]}, \
+         PlotRange -> 4, ImageSize -> 200]",
+      );
+      for glyph in
+        ["\u{03C0}", "\u{221E}", "\u{2147}", "\u{00B0}", "(\u{221E})"]
+      {
+        assert!(svg.contains(glyph), "{glyph} must be typeset: {svg}");
+      }
+      assert!(!svg.contains(">Infinity<"), "not the name: {svg}");
+      // Script-mode text output is unchanged.
+      assert_eq!(
+        interpret("Row[{\"(\", Infinity, \")\"}]").unwrap(),
+        "(Infinity)"
+      );
+      assert_eq!(interpret("Pi").unwrap(), "Pi");
+    }
+
+    // A `Column`'s text item keeps the appearance its own `Style[…]` asks
+    // for; a heading written `Style[…, Bold, 20]` came out at the default
+    // size. A `Style` around a whole `Row` is inherited by its items.
+    #[test]
+    fn a_column_text_item_keeps_its_style() {
+      let attrs = |code: &str| -> Vec<String> {
+        export_svg(code)
+          .lines()
+          .filter(|l| l.contains("<text"))
+          .map(|l| {
+            let get = |k: &str| {
+              l.split(&format!("{k}=\""))
+                .nth(1)
+                .and_then(|v| v.split('"').next())
+                .unwrap_or("")
+                .to_string()
+            };
+            format!("{}/{}", get("font-size"), get("font-weight"))
+          })
+          .collect()
+      };
+      let picture = "Graphics[{Disk[]}, ImageSize -> {200, 200}]";
+      assert_eq!(
+        attrs(&format!(
+          "Column[{{Text@Style[\"hi\", Bold, 20], {picture}}}, \
+           Alignment -> Center]"
+        )),
+        vec!["20/bold".to_string()]
+      );
+      // The same, wrapped around a `Row` — every item is styled.
+      assert_eq!(
+        attrs(&format!(
+          "Column[{{Text@Style[Row[{{\"a\", \"b\"}}], Bold, 20], {picture}}}, \
+           Alignment -> Center]"
+        )),
+        vec!["20/bold".to_string(), "20/bold".to_string()]
+      );
+    }
+
     // A notebook stores a typeset formula as a linear-syntax span:
     // `\!\(TraditionalForm\`16\ \*SubscriptBox[\(S\), \(ABC\)]\)`. The form
     // name says how to read the rest and shows nothing itself, and `\ ` is
@@ -12973,6 +13037,38 @@ mod manipulate {
       }
       _ => panic!("expected continuous control"),
     }
+  }
+
+  // `ButtonBar[{label :> action, …}]` is a row of pressable buttons, one per
+  // rule. The list is normally computed — a `Table` over the things being
+  // offered — and its labels come from definitions the `Initialization`
+  // option makes, so that option runs before the controls are built.
+  #[test]
+  fn spec_button_bar_becomes_one_button_per_rule() {
+    let expr = interpret_to_expr(
+      "Manipulate[v, \
+       ButtonBar[Flatten[Table[{With[{k = k}, names[[k]] :> {v = k}]}, \
+         {k, 1, 3}]], ImageSize -> 25], \
+       {{v, 1}, ControlType -> None}, \
+       Initialization :> (names = {\"a\", \"b\", \"c\"};)]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let buttons: Vec<(&str, &str)> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Button { label, action, .. } => {
+          (label.as_str(), action.as_str())
+        }
+        other => panic!("expected a button, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      buttons,
+      vec![("a", "{v = 1}"), ("b", "{v = 2}"), ("c", "{v = 3}")],
+      "one button per rule, action held"
+    );
   }
 
   #[test]
