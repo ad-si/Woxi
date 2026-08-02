@@ -13186,6 +13186,47 @@ fn render_tabular_svg_grid(
 /// `Text[…]` wrapper, which displays as its content. Any graphics that the
 /// `Dynamic` evaluation captures are embedded in the surrounding layout, not
 /// standalone outputs, so they are dropped from the capture buffer.
+/// Peel the wrappers that say how to *set* what they hold rather than what
+/// to show: `Text[…]`, an `Item[…]` cell, and the form wrappers. They nest
+/// in any order — `Item[Text@TraditionalForm@Framed[…], …]` — so peel until
+/// what is left is the thing that actually draws.
+///
+/// A `TraditionalForm` around a picture or a layout only asks for its
+/// contents to be set traditionally, and the layout renderer takes it from
+/// there. Around an ordinary expression the form *is* what to show —
+/// `p(x) = 1 + x`, not `p(x) == 1 + x` — so the wrapper is put back, for
+/// the caller to typeset through the traditional box builder.
+pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
+  let mut current = expr.clone();
+  let mut traditional = false;
+  while let Expr::FunctionCall { name, args } = &current {
+    let pass_through = match name.as_str() {
+      "Text" | "TraditionalForm" | "StandardForm" | "DisplayForm" => {
+        args.len() == 1
+      }
+      "Item" => !args.is_empty(),
+      _ => false,
+    };
+    if !pass_through {
+      break;
+    }
+    traditional |= name == "TraditionalForm";
+    let inner = args[0].clone();
+    current = inner;
+  }
+  if traditional
+    && !crate::evaluator::lays_out_a_graphic(&current)
+    && !matches!(&current, Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Grid" | "Column" | "Row" | "Framed"))
+  {
+    current = Expr::FunctionCall {
+      name: "TraditionalForm".to_string(),
+      args: vec![current].into(),
+    };
+  }
+  current
+}
+
 fn resolve_display_item(expr: &Expr) -> Expr {
   let mut current = expr.clone();
   if let Expr::FunctionCall { name, args } = &current
@@ -13199,26 +13240,7 @@ fn resolve_display_item(expr: &Expr) -> Expr {
       current = inner;
     }
   }
-  // Wrappers that say how to *set* what they hold rather than what to
-  // show: `Text[…]`, an `Item[…]` cell, and the form wrappers. They nest
-  // in any order — `Item[Text@TraditionalForm@Framed[…], …]` — so peel
-  // until what is left is the thing that actually draws.
-  loop {
-    let Expr::FunctionCall { name, args } = &current else {
-      break;
-    };
-    let pass_through = match name.as_str() {
-      "Text" | "TraditionalForm" | "StandardForm" | "DisplayForm" => {
-        args.len() == 1
-      }
-      "Item" => !args.is_empty(),
-      _ => false,
-    };
-    if !pass_through {
-      break;
-    }
-    current = args[0].clone();
-  }
+  current = unwrap_display_wrappers(&current);
   // `InputForm[expr]` displays as the InputForm text of `expr`.
   if let Expr::FunctionCall { name, args } = &current
     && name == "InputForm"
@@ -13272,6 +13294,22 @@ fn style_pushed_into_layout(inner: &Expr, directives: &[Expr]) -> Option<Expr> {
   })
 }
 
+/// Typeset `expr` in TraditionalForm as a standalone SVG, through the same
+/// box builder and box layout the top-level display uses. `None` when the
+/// boxes lay out to nothing.
+pub fn form_box_svg(expr: &Expr) -> Option<String> {
+  let boxes =
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
+      expr,
+    );
+  let boxes = crate::strip_number_precision_markers(&boxes);
+  let layout = layout_box(&boxes, 14.0);
+  if layout.width <= 0.0 || layout.height <= 0.0 {
+    return None;
+  }
+  Some(layout_to_svg(&layout, theme().text_primary))
+}
+
 /// Render a resolved `Column`/`Row` item that is itself a layout construct
 /// (`Row[…]` / `Column[…]`) to a nested SVG, so mixed text/graphics rows
 /// compose instead of printing as raw InputForm text. `None` for other
@@ -13291,6 +13329,13 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // A `Framed[…]` box draws its border and its content; a `Column`
       // item that is one used to print as source.
       "Framed" if !args.is_empty() => return framed_to_svg(&args),
+      // `TraditionalForm[expr]` is typeset in conventional notation —
+      // `=` for `Equal`, `≤` for `LessEqual`, `sin(x)` for `Sin[x]`,
+      // stacked fractions — by the same box pipeline the top-level
+      // display uses.
+      "TraditionalForm" if args.len() == 1 => {
+        return form_box_svg(&args[0]);
+      }
       // A styled layout keeps its layout, and its style: `Style[Row[{…}],
       // Bold, 20]` sets every item of the row, since a `Style` is inherited
       // by what it wraps. Pushing the directives inwards is what lets the
@@ -14929,6 +14974,14 @@ pub struct ManipulateSpec {
   /// `Appearance -> None`: the widget shows no visible control rows (the
   /// animation just runs), matching Wolfram's control-free appearance.
   pub appearance_none: bool,
+  /// `TrackedSymbols :> {a, b}`: the only variables whose change re-runs the
+  /// body. A control outside the list still moves — it just does not
+  /// re-render until a tracked variable changes too (Descartes's Rule of
+  /// Signs tracks only the seed and the zoom, so picking a new polynomial
+  /// degree takes effect when the "new polynomial" button reseeds). `None`
+  /// means every variable is tracked, which is Wolfram's default and also
+  /// what `TrackedSymbols -> All` / `-> Manipulate` ask for.
+  pub tracked_symbols: Option<Vec<String>>,
 }
 
 /// Result of parsing a single list-shaped Manipulate argument.
@@ -15055,6 +15108,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // display); `ControlType -> None` bindings become live mutable state.
   let mut fixed: Vec<(String, String)> = Vec::new();
   let mut appearance_none = false;
+  let mut tracked_symbols: Option<Vec<String>> = None;
   // Compound (non-symbol) control variables such as `Subscript[signal, 1]`
   // cannot be bound by name; each is renamed to a synthesized plain symbol,
   // and every occurrence in the body (and related code fragments) is
@@ -15170,6 +15224,25 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "False")
       {
         animation_running = false;
+      }
+      // `TrackedSymbols :> {a, b}` narrows re-evaluation to those
+      // variables; a single symbol may be given bare. `All` / `Manipulate`
+      // (and anything else) keep the default of tracking everything.
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "TrackedSymbols")
+      {
+        tracked_symbols = match replacement.as_ref() {
+          Expr::List(items) => items
+            .iter()
+            .map(|it| match it {
+              Expr::Identifier(s) => Some(s.clone()),
+              _ => None,
+            })
+            .collect::<Option<Vec<_>>>(),
+          Expr::Identifier(s) if s != "All" && s != "Manipulate" => {
+            Some(vec![s.clone()])
+          }
+          _ => None,
+        };
       }
       continue;
     }
@@ -15425,6 +15498,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animated,
     animation_running,
     appearance_none,
+    tracked_symbols,
   })
 }
 
@@ -15852,6 +15926,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animated: true,
     animation_running: true,
     appearance_none: false,
+    tracked_symbols: None,
   })
 }
 
@@ -15926,6 +16001,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animated: true,
     animation_running: true,
     appearance_none: false,
+    tracked_symbols: None,
   })
 }
 
@@ -15999,6 +16075,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animated: false,
     animation_running: true,
     appearance_none: false,
+    tracked_symbols: None,
   })
 }
 
@@ -16048,6 +16125,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animated: false,
     animation_running: true,
     appearance_none: false,
+    tracked_symbols: None,
   })
 }
 
@@ -16106,6 +16184,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animated: animate.is_some(),
     animation_running: animate.unwrap_or(true),
     appearance_none: false,
+    tracked_symbols: None,
   })
 }
 
@@ -16653,8 +16732,24 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
       .unwrap_or(Expr::Identifier("Null".to_string()));
     if is_hidden {
       // A `ControlType -> None` variable stays a live, mutable binding so
-      // an interactive display can rewrite it.
-      let value = manipulate_value_to_input_form(&value_expr);
+      // an interactive display can rewrite it. Without an explicit initial
+      // (`{v, domain, ControlType -> None}` rather than `{{v, init}, …}`)
+      // the second element is the variable's *domain*, exactly as it is for
+      // a visible control: a list of choices, whose first entry is where the
+      // variable starts. Taking the list itself would bind one level too
+      // deep — `{aa, {{1, 1, 1, 1}}, ControlType -> None}` starts `aa` at
+      // `{1, 1, 1, 1}`, not at `{{1, 1, 1, 1}}`.
+      let value = match (&explicit_initial, &value_expr) {
+        (None, domain) => match crate::evaluator::evaluate_expr_to_expr(domain)
+        {
+          Ok(Expr::List(ref choices)) if !choices.is_empty() => {
+            crate::syntax::expr_to_input_form(&choices[0])
+          }
+          Ok(evaluated) => crate::syntax::expr_to_input_form(&evaluated),
+          Err(_) => crate::syntax::expr_to_input_form(domain),
+        },
+        _ => manipulate_value_to_input_form(&value_expr),
+      };
       return Some(ParsedControl::State { name, value });
     }
     // A Locator drives its variable interactively: a single `{x, y}` point
@@ -16750,11 +16845,16 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         | "Manipulator"
         | "InputField"
         | "PopupMenu"
+        | "Setter"
         | "SetterBar"
         | "RadioButton"
         | "RadioButtonBar"
+        | "Toggler"
         | "TogglerBar"
         | "Checkbox"
+        | "CheckboxBar"
+        | "Opener"
+        | "OpenerBar"
         | "ColorSlider"
         | "ColorSetter"
         | "IntervalSlider"
@@ -16946,7 +17046,9 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
     Some(
       "RadioButton"
         | "RadioButtonBar"
+        | "Setter"
         | "SetterBar"
+        | "Toggler"
         | "TogglerBar"
         | "PopupMenu"
     )
@@ -18036,9 +18138,21 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
     }
     None => String::new(),
   };
+  // Absent when every variable is tracked (the default), so a frontend that
+  // does not know the option keeps re-rendering on every change.
+  let tracked_json = match &spec.tracked_symbols {
+    Some(names) => {
+      let parts: Vec<String> = names
+        .iter()
+        .map(|n| format!(r#""{}""#, json_escape_manipulate(n)))
+        .collect();
+      format!(r#","trackedSymbols":[{}]"#, parts.join(","))
+    }
+    None => String::new(),
+  };
 
   format!(
-    r#""body":"{}","controls":[{}],"state":{{{}}},"displays":[{}]{}{}{}"#,
+    r#""body":"{}","controls":[{}],"state":{{{}}},"displays":[{}]{}{}{}{}"#,
     json_escape_manipulate(&spec.body_code),
     ctrl_parts.join(","),
     state_parts.join(","),
@@ -18046,6 +18160,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
     animated_json,
     appearance_json,
     animation_var_json,
+    tracked_json,
   )
 }
 

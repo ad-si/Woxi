@@ -58,6 +58,28 @@
 - `PlotLabel` works on plain `Graphics[…]` (rendered as a centered title),
     and labels may be arbitrary expressions such as
     `Row[{"center of mass: ", CM}]` on all plot types.
+- An operator that binds tighter than `Times` now reaches into an adjacent
+    implicit product: `2 Times @@ {3, 4}` is `2 (Times @@ {3, 4})` and
+    `a b . c` is `a (b . c)`, matching Wolfram. Previously the whole product
+    became one operand, so `lcm^n Times @@ Table[…]` applied the wrong head.
+- Manipulate improvements (driven by the "Descartes's Rule of Signs"
+    Wolfram Demonstration):
+    - `Setter`, `Toggler`, `CheckboxBar`, `Opener` and `OpenerBar` are
+        recognised as control types. A `Setter` spec used to be read as a
+        slider bound, and since one unparsable spec aborts the whole
+        extraction, the entire Manipulate fell back to a text echo.
+    - `{v, domain, ControlType -> None}` starts `v` at the first choice of
+        its domain rather than binding the choice list itself.
+    - `TrackedSymbols :> {…}` limits which controls re-run the body; the
+        others move without re-rendering, as in Wolfram.
+- Display of `Text[content]` in the visual hosts (Woxi Studio, the
+    Playground) shows the content, so a `Text@Pane[Column[{…}]]` body
+    renders the whole column instead of only the picture inside it.
+- `TraditionalForm` inside a layout is typeset in conventional notation
+    rather than being stripped to StandardForm markup: `Equal` reads `=`
+    (`≤`, `≥`, `≠` likewise), a `Row` of strings and `Style[…]`s is set as
+    the text it displays, and a term with a negative coefficient carries
+    its sign on the operator (`a - 130 x³`, not `a + -130 x³`).
 
 # 2026-07-16 - 0.2.0
 

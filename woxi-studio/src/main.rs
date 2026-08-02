@@ -1665,7 +1665,7 @@ impl WoxiStudio {
           && let manipulate::ControlState::Continuous { current, .. } = control
         {
           *current = value;
-          if state.request_reeval() {
+          if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
         }
@@ -1684,7 +1684,7 @@ impl WoxiStudio {
           && let Some(idx) = value_labels.iter().position(|v| *v == choice)
         {
           *current_index = idx;
-          if state.request_reeval() {
+          if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
         }
@@ -1698,7 +1698,7 @@ impl WoxiStudio {
           // Routes through the control's write-back callback (if any), so
           // e.g. Locator-promoted controls round/validate the candidate.
           state.slider2d_change(ctrl_idx, axis, value);
-          if state.request_reeval() {
+          if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
         }
@@ -1724,7 +1724,7 @@ impl WoxiStudio {
           } else {
             *high = value.max(*low);
           }
-          if state.request_reeval() {
+          if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
         }
@@ -1749,7 +1749,7 @@ impl WoxiStudio {
           } else {
             point.1 = value;
           }
-          if state.request_reeval() {
+          if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
         }
@@ -1771,7 +1771,7 @@ impl WoxiStudio {
         {
           // New points appear at the range centre, ready to drag.
           points.push(((*x_min + *x_max) / 2.0, (*y_min + *y_max) / 2.0));
-          if state.request_reeval() {
+          if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
         }
@@ -1786,7 +1786,7 @@ impl WoxiStudio {
           && point_idx < points.len()
         {
           points.remove(point_idx);
-          if state.request_reeval() {
+          if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
         }
@@ -6508,15 +6508,15 @@ mod tests {
     let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
 
     // First change schedules the timer; the rest only accumulate.
-    assert!(state.request_reeval(), "first change should arm the timer");
-    assert!(!state.request_reeval(), "second change must not re-arm");
-    assert!(!state.request_reeval(), "third change must not re-arm");
+    assert!(state.request_reeval(0), "first change should arm the timer");
+    assert!(!state.request_reeval(0), "second change must not re-arm");
+    assert!(!state.request_reeval(0), "third change must not re-arm");
 
     // Timer fires: the pending changes render and the flag clears, so the
     // next change arms a fresh timer.
     state.run_scheduled_reeval();
     assert!(
-      state.request_reeval(),
+      state.request_reeval(0),
       "a change after the timer fired should arm a new timer"
     );
 
@@ -6524,7 +6524,32 @@ mod tests {
     // clears the flag (so a later change can re-arm).
     state.run_scheduled_reeval();
     state.run_scheduled_reeval();
-    assert!(state.request_reeval(), "flag must clear on an empty fire");
+    assert!(state.request_reeval(0), "flag must clear on an empty fire");
+  }
+
+  #[test]
+  fn manipulate_untracked_control_does_not_reeval() {
+    // `TrackedSymbols :> {b}`: moving `a` changes its value but must not
+    // re-run the body — Wolfram leaves the rendering as it is until a
+    // tracked variable changes. Descartes's Rule of Signs relies on this:
+    // its degree setter would otherwise feed the body a polynomial degree
+    // that the (still stale) coefficient list cannot be dotted with.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[a + b, {a, 0, 10}, {b, 0, 10}, TrackedSymbols :> {b}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert_eq!(state.controls[0].name(), "a");
+    assert_eq!(state.controls[1].name(), "b");
+    assert!(!state.request_reeval(0), "untracked `a` must not re-render");
+    assert!(state.request_reeval(1), "tracked `b` must re-render");
+
+    // Without the option every control is tracked, as before.
+    let expr =
+      woxi::interpret_to_expr("Manipulate[a + b, {a, 0, 10}, {b, 0, 10}]")
+        .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(state.request_reeval(0), "default tracks every control");
   }
 
   #[test]
@@ -7265,6 +7290,95 @@ Cell[BoxData["ImageDimensions[tex]"], "Input"]
     }
     state.reevaluate();
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
+  fn setter_row_manipulate_renders_its_traditionalform_body() {
+    // End-to-end regression for the Demonstrations layout that pairs a
+    // `Setter` control and a `Button` inside a `Row[…]` with hidden
+    // `ControlType -> None` state, and whose body is
+    // `Text@Pane[Column[{TraditionalForm[…], Grid[…], Plot[…]}]]`.
+    // Every piece used to break the widget: `Setter` was read as a bound
+    // (so the whole Manipulate fell back to a text echo), the hidden
+    // variable bound its choice *list* instead of its first choice, and
+    // the `Text@Pane` body rendered only the plot buried inside it.
+    let code = "Manipulate[\
+        Text@Pane[Column[{\
+          TraditionalForm[Row[{Style[\"q\", Italic], \"(\", x, \")\"}] == \
+            Take[powers, deg + 1] . Reverse[coeffs]], \
+          Grid[{Reverse[Take[powers, deg + 1]], coeffs}, Frame -> All], \
+          Plot[Take[powers, deg + 1] . Reverse[coeffs], {x, -2, 2}, \
+            ImageSize -> {200, Automatic}]}, Alignment -> Center], \
+          ImageSize -> {400, 260}], \
+        {coeffs, {{1, 1, 1}}, ControlType -> None}, \
+        Row[{Control@{{deg, 2, \"degree\"}, Range[1, 4], Setter}, \
+          Spacer[10], \
+          Button[\"reset\", coeffs = {1, 1, 1}], \
+          Spacer[10], \
+          Control@{{scale, 1, \"scale\"}, Range[3]}}], \
+        TrackedSymbols :> {scale}, \
+        Initialization :> (powers = Table[x^i, {i, 0, 6}];)]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the setter-row Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must produce the column graphic"
+    );
+
+    // A setter, a button and a second setter, in display order.
+    let kinds: Vec<&str> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Discrete { label, .. } => label.as_str(),
+        manipulate::ControlState::Button { label, .. } => label.as_str(),
+        other => panic!("unexpected control {other:?}"),
+      })
+      .collect();
+    assert_eq!(kinds, vec!["degree", "reset", "scale"]);
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        values,
+        current_index,
+        ..
+      } => {
+        assert_eq!(values, &vec!["1", "2", "3", "4"]);
+        assert_eq!(*current_index, 1, "initial degree 2");
+      }
+      other => panic!("expected the degree setter, got {other:?}"),
+    }
+    // The hidden variable starts at the first choice of its domain.
+    assert_eq!(
+      state.state,
+      vec![("coeffs".to_string(), "{1, 1, 1}".to_string())]
+    );
+
+    // `TrackedSymbols :> {scale}`: the degree setter moves without
+    // re-rendering, the scale setter re-renders.
+    let mut state = state;
+    assert!(!state.request_reeval(0), "degree is not tracked");
+    assert!(state.request_reeval(2), "scale is tracked");
+    state.run_scheduled_reeval();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+
+    // The button writes the coefficient list back and re-renders.
+    let action = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("a button row");
+    state.apply_button_action(&action);
+    assert!(state.error.is_none(), "button failed: {:?}", state.error);
     assert!(state.graphics_handle.is_some());
   }
 

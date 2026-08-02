@@ -3479,6 +3479,63 @@ fn flatten_times_chain(expr: Expr) -> Vec<Expr> {
   out
 }
 
+/// Whether `op` binds tighter than `Times`, so that it has to reach into an
+/// adjacent implicit product rather than take the whole product as one
+/// operand. `NEGATE` (the synthetic unary minus) and the `~f~` tilde infix
+/// are excluded: both already bind around a whole product the way Wolfram
+/// reads them.
+fn splits_implicit_product(op: &str) -> bool {
+  if op == "NEGATE"
+    || (op.starts_with('~') && op.ends_with('~') && op.len() > 2)
+  {
+    return false;
+  }
+  operator_precedence(op) > operator_precedence("*")
+}
+
+/// An implicit product (`2 x`) is `Times` at ordinary multiplicative
+/// precedence, but the grammar hands it to the tree builder as a single
+/// term. When a neighbouring operator binds tighter than `Times` that
+/// operator must reach the adjacent *factor* — Wolfram reads
+/// `2 Times @@ {3, 4}` as `2 (Times @@ {3, 4})` and `a b . c` as
+/// `a (b . c)` — so split such a term into its factors joined by explicit
+/// `*` operators and let the precedence climb do the rest.
+fn split_implicit_products(
+  terms: &mut Vec<Expr>,
+  operators: &mut Vec<String>,
+  was_implicit: &[bool],
+) {
+  if !was_implicit.iter().any(|b| *b) {
+    return;
+  }
+  let mut new_terms: Vec<Expr> = Vec::with_capacity(terms.len());
+  let mut new_ops: Vec<String> = Vec::with_capacity(operators.len());
+  for (i, term) in std::mem::take(terms).into_iter().enumerate() {
+    if i > 0 {
+      new_ops.push(operators[i - 1].clone());
+    }
+    let touches_tighter_op = (i > 0
+      && splits_implicit_product(&operators[i - 1]))
+      || operators
+        .get(i)
+        .is_some_and(|op| splits_implicit_product(op));
+    if was_implicit.get(i).copied().unwrap_or(false) && touches_tighter_op {
+      let mut factors = flatten_times_chain(term).into_iter();
+      if let Some(first) = factors.next() {
+        new_terms.push(first);
+        for factor in factors {
+          new_ops.push("*".to_string());
+          new_terms.push(factor);
+        }
+      }
+    } else {
+      new_terms.push(term);
+    }
+  }
+  *terms = new_terms;
+  *operators = new_ops;
+}
+
 fn parse_list(pair: Pair<Rule>) -> Expr {
   let items: Vec<Expr> = pair
     .into_inner()
@@ -4354,6 +4411,7 @@ fn parse_expression_inner(
     &mut terms,
     &mut term_was_implicit_times,
   );
+  split_implicit_products(&mut terms, &mut operators, &term_was_implicit_times);
 
   let mut result = if terms.len() == 1 {
     terms.remove(0)

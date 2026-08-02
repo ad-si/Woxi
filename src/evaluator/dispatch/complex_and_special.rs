@@ -4461,6 +4461,15 @@ fn tf_parens(inner: Expr) -> Expr {
   tf_row(vec![tf_string("("), inner, tf_string(")")])
 }
 
+/// The boxes of an item that is *displayed* rather than printed: a string
+/// contributes its own text, without the quotes a literal would carry.
+fn tf_display(expr: &Expr) -> Expr {
+  match expr {
+    Expr::String(s) => tf_string(s),
+    other => tf(other),
+  }
+}
+
 /// Map a symbol/constant name to its TraditionalForm glyph. Greek letters
 /// entered as `\[Mu]` etc. already arrive as their Unicode character, so
 /// only the named mathematical constants need translating here.
@@ -4787,6 +4796,45 @@ fn tf_times(expr: &Expr) -> Expr {
   }
 }
 
+/// The positive counterpart of an additive term that carries its sign in a
+/// leading negative number — `-9`, `Times[-130, x^3]` — or `None` when the
+/// term is not negative. TraditionalForm puts such a sign on the `+`/`-`
+/// operator instead of on the number, so `a + Times[-130, x^3]` is set as
+/// `a - 130 x³`, never `a + -130 x³`.
+fn tf_negated_term(term: &Expr) -> Option<Expr> {
+  fn positive(e: &Expr) -> Option<Expr> {
+    match e {
+      Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+      Expr::Real(f) if *f < 0.0 => Some(Expr::Real(-f)),
+      Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus => {
+        Some(Expr::BigInteger(-n.clone()))
+      }
+      _ => None,
+    }
+  }
+  if let Some(pos) = positive(term) {
+    return Some(pos);
+  }
+  let mut factors = Vec::new();
+  tf_flatten_times(term, &mut factors);
+  if factors.len() < 2 {
+    return None;
+  }
+  let pos_first = positive(&factors[0])?;
+  // A coefficient of 1 left behind is implicit: `Times[-1, x]` is `-x`.
+  let rest = if matches!(pos_first, Expr::Integer(1)) {
+    factors[1..].to_vec()
+  } else {
+    std::iter::once(pos_first)
+      .chain(factors[1..].iter().cloned())
+      .collect()
+  };
+  Some(match rest.len() {
+    1 => rest.into_iter().next().unwrap(),
+    _ => unevaluated("Times", &rest),
+  })
+}
+
 /// TraditionalForm box of an additive expression.
 fn tf_plus(expr: &Expr) -> Expr {
   let mut terms = Vec::new();
@@ -4796,14 +4844,19 @@ fn tf_plus(expr: &Expr) -> Expr {
   }
   let mut items: Vec<Expr> = Vec::new();
   for (i, (neg, term)) in terms.iter().enumerate() {
+    // A term whose own leading number is negative contributes the sign.
+    let (neg, term) = match tf_negated_term(term) {
+      Some(positive) => (!*neg, positive),
+      None => (*neg, term.clone()),
+    };
     if i == 0 {
-      if *neg {
+      if neg {
         items.push(tf_string("-"));
       }
     } else {
-      items.push(tf_string(if *neg { "-" } else { "+" }));
+      items.push(tf_string(if neg { "-" } else { "+" }));
     }
-    items.push(tf(term));
+    items.push(tf(&term));
   }
   tf_row(items)
 }
@@ -5011,15 +5064,21 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     {
       tf(&args[0])
     }
-    "Style" if !args.is_empty() => tf(&args[0]),
+    "Style" | "StyleForm" if !args.is_empty() => tf_display(&args[0]),
     // `Row[{a, b, …}]` concatenates its parts; `Row[{…}, sep]` joins them
-    // with the separator.
+    // with the separator. A row *displays* its parts, so a string item
+    // contributes its text — that is what makes
+    // `Row[{Style["p", Italic], "(", x, ")"}]` read as `p(x)`.
     "Row" if !args.is_empty() => {
       let parts: Vec<Expr> = match &args[0] {
         Expr::List(items) => items.to_vec(),
         other => vec![other.clone()],
       };
-      let sep = args.get(1).map(tf);
+      // A rule in separator position is an option, not a separator.
+      let sep = args
+        .get(1)
+        .filter(|a| !crate::syntax::is_rule_expr(a))
+        .map(tf_display);
       let mut items: Vec<Expr> = Vec::with_capacity(parts.len() * 2);
       for (i, p) in parts.iter().enumerate() {
         if i > 0
@@ -5027,7 +5086,7 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         {
           items.push(s.clone());
         }
-        items.push(tf(p));
+        items.push(tf_display(p));
       }
       tf_row(items)
     }

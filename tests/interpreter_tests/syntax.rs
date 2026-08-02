@@ -494,6 +494,33 @@ mod operator_shorthand_parens {
     assert_eq!(interpret("Hold[f @@ a^2]").unwrap(), "Hold[f @@ a^2]");
   }
 
+  // An implicit product (`2 f`) is `Times` at multiplicative precedence, so
+  // an operator that binds tighter reaches its adjacent *factor*, not the
+  // whole product. Regression: `lcm^n Times @@ Table[…]` — the
+  // Demonstrations idiom for building a polynomial from its roots — parsed
+  // as `(lcm^n Times) @@ Table[…]`, which applies the wrong head and yields
+  // an unevaluable expression instead of the product.
+  #[test]
+  fn implicit_product_yields_to_tighter_operators() {
+    // Apply / MapApply / Map (precedence 620) over Times (400).
+    assert_eq!(interpret("2 Times @@ {3, 4}").unwrap(), "24");
+    assert_eq!(interpret("2 Plus @@ {3, 4}").unwrap(), "14");
+    // `3 (List @@@ {{1}})` is `3 {{1}}`, and Times threads over the list.
+    assert_eq!(interpret("3 List @@@ {{1}}").unwrap(), "{{3}}");
+    assert_eq!(interpret("2 f /@ {a, b}").unwrap(), "{2*f[a], 2*f[b]}");
+    // The product on the *right* of a tighter operator splits too:
+    // `(List @@ 2) x` is `2 x`, not `List @@ (2 x)`.
+    assert_eq!(interpret("List @@ 2 x").unwrap(), "2*x");
+    // Dot (490) over Times.
+    assert_eq!(interpret("2 {1, 2} . {3, 4}").unwrap(), "22");
+    assert_eq!(interpret("{1, 2} . {3, 4} 2").unwrap(), "22");
+    // Power (590) over Times: `2 x ^ 3` is `2 (x^3)`.
+    assert_eq!(interpret("2 x^3 /. x -> 2").unwrap(), "16");
+    // A product with no tighter neighbour is untouched.
+    assert_eq!(interpret("2 x + 1 /. x -> 3").unwrap(), "7");
+    assert_eq!(interpret("-2 x /. x -> 3").unwrap(), "-6");
+  }
+
   #[test]
   fn held_subtraction_keeps_additive_operand_parens() {
     // Subtraction is left-associative, so a parenthesized additive right
