@@ -16054,11 +16054,18 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // Demonstration — recurses on a symbolic depth that never reaches the
   // base case, and the widget never appears.
   if let Some(body) = args.first() {
+    // Quietly: this is a probe of the body's leading run only, so an
+    // assignment in it may well complain about a symbol that the full
+    // evaluation would have in hand (`ring = Table[…, {i, n}]` reports an
+    // iterator without bounds for an `n` that is not a control variable).
+    // Wolfram, which evaluates the whole body, says nothing.
+    crate::push_quiet();
     crate::with_scoped_globals(&initial_bindings, || {
       for stmt in leading_assignments(body) {
         let _ = evaluate_expr_to_expr(stmt);
       }
     });
+    crate::pop_quiet();
   }
   // A `ButtonBar`'s buttons are computed — `ButtonBar[Table[…]]` builds one
   // per vertex of a graph, labelling each from a list the `Initialization`

@@ -2935,6 +2935,106 @@ mod plot3d {
     }
   }
 
+  mod view_angle {
+    use super::*;
+
+    /// The on-screen extent of a projected line segment, in pixels.
+    fn drawn_extent(code: &str) -> (f64, f64) {
+      let svg = export_svg(code);
+      let (mut x0, mut x1, mut y0, mut y1) =
+        (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+      for pts in svg.split("points=\"").skip(1) {
+        let Some(pts) = pts.split('"').next() else {
+          continue;
+        };
+        for pair in pts.split_whitespace() {
+          let Some((x, y)) = pair.split_once(',') else {
+            continue;
+          };
+          if let (Ok(x), Ok(y)) = (x.parse::<f64>(), y.parse::<f64>()) {
+            x0 = x0.min(x);
+            x1 = x1.max(x);
+            y0 = y0.min(y);
+            y1 = y1.max(y);
+          }
+        }
+      }
+      assert!(x1 > x0, "nothing drawn by {code}");
+      (x1 - x0, y1 - y0)
+    }
+
+    /// An explicit `ViewAngle` fixes the field of view, so the picture is
+    /// scaled by the view volume instead of being stretched to fit its
+    /// contents: a world length `l` covers `(l / L) / (2 d tan(θ/2))` of
+    /// the frame, where `L` is the longest side of the displayed box and
+    /// `d` is `|ViewPoint|`. Every expectation is measured from
+    /// wolframscript's own rendering of the same scene.
+    #[test]
+    fn an_explicit_view_angle_sets_the_scale() {
+      let cube = |angle: &str, view: &str, range: &str| {
+        format!(
+          "Graphics3D[{{Cuboid[{{-1, -1, -1}}, {{1, 1, 1}}]}}, \
+           Boxed -> False, SphericalRegion -> True, ViewAngle -> {angle}, \
+           ViewPoint -> {view}, PlotRange -> {range}, ImageSize -> 400]"
+        )
+      };
+      let base = drawn_extent(&cube("0.045", "{7, 20, 0}", "9"));
+      // wolframscript draws this one 61 x 48 pixels (the trimmed export;
+      // the polygon stroke adds about a pixel each way).
+      assert!(
+        (base.0 - 60.0).abs() < 3.0 && (base.1 - 47.0).abs() < 3.0,
+        "expected about 60 x 47 px, got {base:?}"
+      );
+      // Twice the angle, or twice the distance, halves the picture.
+      for (angle, view) in [("0.09", "{7, 20, 0}"), ("0.045", "{14, 40, 0}")] {
+        let half = drawn_extent(&cube(angle, view, "9"));
+        assert!(
+          (half.0 - base.0 / 2.0).abs() < 2.0,
+          "{angle} at {view}: expected half of {base:?}, got {half:?}"
+        );
+      }
+      // A third of the plot range triples it: the range box is the unit
+      // Wolfram measures the view distance in.
+      let near = drawn_extent(&cube("0.045", "{7, 20, 0}", "3"));
+      assert!(
+        (near.0 - base.0 * 3.0).abs() < 4.0,
+        "expected three times {base:?}, got {near:?}"
+      );
+      // Without a ViewAngle the picture is still fitted to the frame, so
+      // moving the camera further away changes nothing — only an explicit
+      // field of view makes distance matter.
+      let fitted = |view: &str| {
+        drawn_extent(&format!(
+          "Graphics3D[{{Cuboid[{{-1, -1, -1}}, {{1, 1, 1}}]}}, \
+           Boxed -> False, SphericalRegion -> True, ViewPoint -> {view}, \
+           PlotRange -> 9, ImageSize -> 400]"
+        ))
+      };
+      assert_eq!(
+        fitted("{7, 20, 0}").0.round(),
+        fitted("{14, 40, 0}").0.round()
+      );
+    }
+
+    /// A Manipulate whose body opens with a run of assignments has them
+    /// run once to resolve any control bounds they define. That probe
+    /// happens before the control variables are bound, so it must stay
+    /// quiet: Wolfram, which has the variables in hand, reports nothing.
+    #[test]
+    fn the_leading_assignment_probe_is_quiet() {
+      let result = woxi::interpret_with_stdout(
+        "Manipulate[a = 2; ring = Table[i, {i, n}]; Length[ring], \
+         {{n, 0, \"count\"}, 0, 5, 1}]",
+      )
+      .unwrap();
+      assert!(
+        !result.warnings.iter().any(|w| w.contains("iterb")),
+        "the probe complained about an unbound control: {:?}",
+        result.warnings
+      );
+    }
+  }
+
   mod parametric_plot3d_curve {
     use super::*;
 

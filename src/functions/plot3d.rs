@@ -26,6 +26,12 @@ pub(crate) struct Camera {
   pub elevation: f64,
 }
 
+impl Camera {
+  /// Wolfram's default `ViewPoint`, in units of the longest side of the
+  /// displayed box.
+  pub(crate) const DEFAULT_VIEW_POINT: [f64; 3] = [1.3, -2.4, 2.0];
+}
+
 impl Default for Camera {
   fn default() -> Self {
     // Matches Mathematica's default ViewPoint {1.3, -2.4, 2.0}
@@ -3949,6 +3955,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // encloses the contents instead of by their projected outline, so the
   // scale stays put as the view turns or the contents move.
   let mut spherical_region = false;
+  // `ViewAngle -> θ`: the field of view of the camera, in radians. With one
+  // given the picture is no longer scaled to fit its contents — the view
+  // volume sets the scale, so a small object stays small. `view_distance`
+  // is `|ViewPoint|`, which Wolfram measures in units of the longest side
+  // of the displayed box.
+  let mut view_angle: Option<f64> = None;
+  let mut view_distance = {
+    let d = Camera::DEFAULT_VIEW_POINT;
+    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+  };
   let mut show_axes = false;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   for opt in &args[1..] {
@@ -4009,6 +4025,19 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               azimuth: vp[1].atan2(vp[0]),
               elevation: vp[2].atan2(vp[0].hypot(vp[1])),
             };
+            view_distance =
+              (vp[0] * vp[0] + vp[1] * vp[1] + vp[2] * vp[2]).sqrt();
+          }
+        }
+        // `ViewAngle -> θ` (radians, or a `Quantity`/`Degree` product).
+        "ViewAngle" => {
+          if let Some(a) = try_eval_to_f64(
+            &evaluate_expr_to_expr(replacement)
+              .unwrap_or_else(|_| replacement.as_ref().clone()),
+          ) && a > 0.0
+            && a < std::f64::consts::PI
+          {
+            view_angle = Some(a);
           }
         }
         "PlotRange" => {
@@ -4336,6 +4365,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (mut z3_min, mut z3_max),
   ] = primitives_bounds(&prims);
 
+  // The length Wolfram measures `ViewPoint` (and so `ViewAngle`) in: the
+  // longest side of the *displayed* box, before the framing padding below,
+  // which Wolfram does not apply to an automatic 3D range.
+  let mut view_box_side =
+    (x3_max - x3_min).max(y3_max - y3_min).max(z3_max - z3_min);
+
   // Add some padding to the 3D bounding box
   let pad_x = (x3_max - x3_min) * 0.05;
   let pad_y = (y3_max - y3_min) * 0.05;
@@ -4356,6 +4391,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     y3_max = yh;
     z3_min = zl;
     z3_max = zh;
+    view_box_side = (xh - xl).max(yh - yl).max(zh - zl);
   }
 
   // Build box corners
@@ -4514,11 +4550,38 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let draw_w = svg_width as f64 - 2.0 * margin;
   let draw_h = svg_height as f64 - 2.0 * margin;
-  let scale = (draw_w / p_width).min(draw_h / p_height);
+  let mut scale = (draw_w / p_width).min(draw_h / p_height);
   let cx = margin + draw_w / 2.0;
   let cy = margin + draw_h / 2.0;
-  let p_cx = (px_min + px_max) / 2.0;
-  let p_cy = (py_min + py_max) / 2.0;
+  let mut p_cx = (px_min + px_max) / 2.0;
+  let mut p_cy = (py_min + py_max) / 2.0;
+
+  // An explicit `ViewAngle` fixes the camera's field of view, so the scale
+  // comes from the view volume rather than from fitting the contents: the
+  // frame spans `2 · d · tan(θ/2)` in the units Wolfram measures `ViewPoint`
+  // in, which are those of the longest side of the displayed box. A small
+  // object then stays small instead of being blown up to fill the picture.
+  // Measured against wolframscript over a sweep of angles, distances and
+  // plot ranges: a world length `l` covers `(l / L) / (2 d tan(θ/2))` of
+  // the frame.
+  if let Some(theta) = view_angle {
+    let span = 2.0 * view_distance * (theta / 2.0).tan() * view_box_side;
+    if span > 0.0 && span.is_finite() {
+      scale = svg_width.min(svg_height) as f64 / span;
+      // The view centres on the middle of the displayed box, not on
+      // whatever part of it the contents happen to occupy.
+      let (bcx, bcy) = project(
+        Point3D {
+          x: (x3_min + x3_max) / 2.0,
+          y: (y3_min + y3_max) / 2.0,
+          z: (z3_min + z3_max) / 2.0,
+        },
+        &camera,
+      );
+      p_cx = bcx;
+      p_cy = bcy;
+    }
+  }
 
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
     (cx + (px - p_cx) * scale, cy - (py - p_cy) * scale)
