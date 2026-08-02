@@ -876,7 +876,7 @@ QPochhammer,q-Pochhammer symbol; finite QPochhammer[a;q;n]; infinite QPochhammer
 DictionaryLookup,Requires external services or GUI infrastructure,🚫,io,6.0,872
 EdgeStyle,Option for styling edges in graphs,✅,none,8.0,873
 FunctionExpand,Expands special functions into simpler forms,✅,pure,3.0,874
-BernoulliB,Returns the nth Bernoulli number,✅,pure,1.0,876
+BernoulliB,Returns the nth Bernoulli number (or the nth Bernoulli polynomial in x with the two-argument form),✅,pure,1.0,876
 Wronskian,Compute the Wronskian determinant of a list of functions,✅,pure,7.0,876
 PlanetData,,🚫,,10.0,877
 FunctionDomain,Find the domain of a function,✅,pure,10.0,878

@@ -4753,6 +4753,36 @@ mod solve {
     );
   }
 
+  /// A scalar side of a list equation broadcasts over the list, so
+  /// `{e1, e2} == 0` stands for `e1 == 0 && e2 == 0`. `Solve[Table[…] == 0]`
+  /// (the Roots-of-the-Bernoulli-Polynomials Demonstration) relies on it,
+  /// including in the one-argument form that auto-detects the variable.
+  #[test]
+  fn solve_broadcasts_scalar_across_list_equation() {
+    assert_eq!(
+      interpret("Solve[{x^2 - 1} == 0, x]").unwrap(),
+      "{{x -> -1}, {x -> 1}}"
+    );
+    // One-argument form: the variable comes from the threaded equations.
+    assert_eq!(
+      interpret("Solve[{x^2 - 1} == 0]").unwrap(),
+      "{{x -> -1}, {x -> 1}}"
+    );
+    // Several elements make a system, one equation per element.
+    assert_eq!(
+      interpret("Solve[{x - 1, y - 2} == 0, {x, y}]").unwrap(),
+      "{{x -> 1, y -> 2}}"
+    );
+    // The scalar can sit on the left just as well.
+    assert_eq!(interpret("Solve[0 == {x - 3}, x]").unwrap(), "{{x -> 3}}");
+    // Table[…] == 0 is the Demonstration's shape: a one-element list of a
+    // numericized polynomial, solved without naming the variable.
+    assert_eq!(
+      interpret("Solve[N[Table[BernoulliB[n, z], {n, 3, 3}] == 0]]").unwrap(),
+      "{{z -> 0.}, {z -> 0.5}, {z -> 1.}}"
+    );
+  }
+
   #[test]
   fn solve_pure_cubic_symbolic() {
     assert_eq!(

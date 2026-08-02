@@ -1365,6 +1365,7 @@ mod overflow_safety {
 
 mod cases {
   use super::super::super::case_helpers::assert_case;
+  use woxi::interpret;
 
   #[test]
   fn real_valued_number_q_1() {
@@ -1596,6 +1597,57 @@ mod cases {
       r#"3.1415926535897932384626433832795028842`20."#,
     );
   }
+
+  /// `N` leaves an exact rational exponent alone: `N[x^2]` is `x^2`, not
+  /// `x^2.`. Numericizing the exponent stops `Solve`/`NSolve` from
+  /// recognising `N[poly]` as a polynomial at all.
+  #[test]
+  fn n_keeps_exact_integer_exponents() {
+    assert_eq!(interpret("N[x^2]").unwrap(), "x^2");
+    assert_eq!(interpret("N[x^2/2]").unwrap(), "0.5*x^2");
+    assert_eq!(interpret("N[-x^3]").unwrap(), "-1.*x^3");
+    assert_eq!(interpret("N[x^-2]").unwrap(), "x^(-2)");
+    // A rational exponent is exact too, so Sqrt stays Sqrt.
+    assert_eq!(interpret("N[Sqrt[x]]").unwrap(), "Sqrt[x]");
+    assert_eq!(interpret("N[x^(1/2)]").unwrap(), "Sqrt[x]");
+    // The arbitrary-precision form keeps the exponent exact as well.
+    assert_eq!(interpret("N[x^2/2, 10]").unwrap(), "0.5`10.*x^2");
+    // A non-rational exponent is still numericized.
+    assert_eq!(interpret("N[x^Pi]").unwrap(), "x^3.141592653589793");
+  }
+
+  /// `N` maps over the operands of a comparison, so an equation picks up
+  /// inexact coefficients (`N[x == 1/3]` → `x == 0.333333`).
+  #[test]
+  fn n_threads_over_comparisons() {
+    assert_eq!(interpret("N[x == 1/3]").unwrap(), "x == 0.3333333333333333");
+    assert_eq!(interpret("N[x < 1/4]").unwrap(), "x < 0.25");
+    assert_eq!(interpret("N[x == 1/4, 5]").unwrap(), "x == 0.25`5.");
+    // An exact zero stays exact on either side, as in wolframscript.
+    assert_eq!(interpret("N[x == 0, 10]").unwrap(), "x == 0");
+    // A whole polynomial equation becomes inexact term by term while the
+    // exponents stay integral — the shape Solve needs.
+    assert_eq!(
+      interpret("N[x^2/2 + x/4 == 0]").unwrap(),
+      "0.25*x + 0.5*x^2 == 0."
+    );
+  }
+
+  /// `N[BernoulliB[n, z]]` must stay a polynomial in `z` so `Solve` can
+  /// find its roots numerically (the Roots-of-the-Bernoulli-Polynomials
+  /// Demonstration builds exactly this).
+  #[test]
+  fn n_of_polynomial_stays_solvable() {
+    assert_eq!(
+      interpret("N[BernoulliB[4, z]]").unwrap(),
+      "-0.03333333333333333 + z^2 - 2.*z^3 + z^4"
+    );
+    assert_eq!(
+      interpret("Solve[N[BernoulliB[3, z]] == 0, z]").unwrap(),
+      "{{z -> 0.}, {z -> 0.5}, {z -> 1.}}"
+    );
+  }
+
   #[test]
   fn number_form_1() {
     assert_case(

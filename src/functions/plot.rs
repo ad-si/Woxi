@@ -1692,6 +1692,9 @@ pub(crate) struct PlotOptions {
   pub grid_x_lines: Vec<GridLine>,
   /// Explicit horizontal grid lines. Replace automatic `grid_lines_y` lines.
   pub grid_y_lines: Vec<GridLine>,
+  /// `GridLinesStyle -> Directive[…]`: the default style for every grid line
+  /// that carries no style of its own. `None` = the built-in gray.
+  pub grid_lines_style: Option<SeriesStyle>,
   /// Use frame (left+bottom border) instead of axes
   pub frame: bool,
   /// `Evaluated -> True`: work the body out once, with the plot variable
@@ -1778,6 +1781,7 @@ impl Default for PlotOptions {
       grid_lines_x: false,
       grid_x_lines: Vec::new(),
       grid_y_lines: Vec::new(),
+      grid_lines_style: None,
       frame: false,
       evaluated: false,
       ticks_x: None,
@@ -2052,6 +2056,51 @@ fn render_dash_overlays(
 /// look of the solid grid lines (`rgb(102,102,102)` at 50% opacity over a white
 /// background), since dash overlays carry no opacity.
 const DEFAULT_GRID_DASH_RGB: (u8, u8, u8) = (179, 179, 179);
+
+/// Resolve one axis' grid-line positions into `(position, style)` pairs.
+///
+/// Explicit positions (with their optional per-line directives) take
+/// precedence over the evenly spaced automatic lines that `GridLines ->
+/// Automatic` draws at `step` intervals. Lines that carry no style of their
+/// own inherit `default_style` (the plot's `GridLinesStyle`).
+fn resolve_grid_lines(
+  explicit: &[GridLine],
+  automatic: bool,
+  min: f64,
+  max: f64,
+  step: f64,
+  default_style: Option<&SeriesStyle>,
+) -> Vec<(f64, SeriesStyle)> {
+  let inherit = |style: &SeriesStyle| -> SeriesStyle {
+    match default_style {
+      Some(d)
+        if style.color.is_none()
+          && style.thickness.is_none()
+          && style.dashing.is_none() =>
+      {
+        d.clone()
+      }
+      _ => style.clone(),
+    }
+  };
+  if !explicit.is_empty() {
+    return explicit
+      .iter()
+      .map(|g| (g.pos, inherit(&g.style)))
+      .collect();
+  }
+  if !automatic || step <= 0.0 || !step.is_finite() {
+    return Vec::new();
+  }
+  let style = inherit(&SeriesStyle::default());
+  let mut v = Vec::new();
+  let mut pos = (min / step).ceil() * step;
+  while pos <= max {
+    v.push((pos, style.clone()));
+    pos += step;
+  }
+  v
+}
 
 /// Resolve a grid line's style into rendering properties:
 /// `(optional rgb, stroke width in render units, optional dash fractions)`.
@@ -2566,24 +2615,14 @@ fn generate_svg_with_options(
         let grid_color = RGBColor(0x66, 0x66, 0x66).mix(0.5);
 
         // Horizontal (y) grid lines.
-        let y_grid: Vec<(f64, SeriesStyle)> = if !opts.grid_y_lines.is_empty() {
-          opts
-            .grid_y_lines
-            .iter()
-            .map(|g| (g.pos, g.style.clone()))
-            .collect()
-        } else if opts.grid_lines_y {
-          let grid_step = nice_step(y_max - y_min, AXIS_TICK_TARGET);
-          let mut v = Vec::new();
-          let mut gy = (y_min / grid_step).ceil() * grid_step;
-          while gy <= y_max {
-            v.push((gy, SeriesStyle::default()));
-            gy += grid_step;
-          }
-          v
-        } else {
-          Vec::new()
-        };
+        let y_grid = resolve_grid_lines(
+          &opts.grid_y_lines,
+          opts.grid_lines_y,
+          y_min,
+          y_max,
+          nice_step(y_max - y_min, AXIS_TICK_TARGET),
+          opts.grid_lines_style.as_ref(),
+        );
         if !log_y {
           let tol = (y_max - y_min).abs() * 1e-9;
           for (gy, style) in &y_grid {
@@ -2616,28 +2655,18 @@ fn generate_svg_with_options(
         }
 
         // Vertical (x) grid lines.
-        let x_grid: Vec<(f64, SeriesStyle)> = if !opts.grid_x_lines.is_empty() {
-          opts
-            .grid_x_lines
-            .iter()
-            .map(|g| (g.pos, g.style.clone()))
-            .collect()
-        } else if opts.grid_lines_x {
-          let grid_step = if date_axis {
+        let x_grid = resolve_grid_lines(
+          &opts.grid_x_lines,
+          opts.grid_lines_x,
+          x_min,
+          x_max,
+          if date_axis {
             nice_date_step(x_max - x_min)
           } else {
             nice_step(x_max - x_min, AXIS_TICK_TARGET)
-          };
-          let mut v = Vec::new();
-          let mut gx = (x_min / grid_step).ceil() * grid_step;
-          while gx <= x_max {
-            v.push((gx, SeriesStyle::default()));
-            gx += grid_step;
-          }
-          v
-        } else {
-          Vec::new()
-        };
+          },
+          opts.grid_lines_style.as_ref(),
+        );
         if !log_x {
           let tol = (x_max - x_min).abs() * 1e-9;
           for (gx, style) in &x_grid {
@@ -3646,6 +3675,10 @@ pub(crate) fn generate_scatter_svg_with_options(
   let (bg_color, dark_gray, light_gray, label_fill, title_default_fill) =
     plot_theme();
 
+  // Dashed grid lines can't be drawn through plotters, so they are collected
+  // here and emitted as `stroke-dasharray` polylines once the chart is done.
+  let mut dashed_overlays: Vec<DashedOverlay> = Vec::new();
+
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
@@ -3671,16 +3704,29 @@ pub(crate) fn generate_scatter_svg_with_options(
     let y_major = nice_step(y_max - y_min, AXIS_TICK_TARGET);
     let x_minor_step = x_major / 5.0;
     let y_minor_step = y_major / 5.0;
+    // `Axes -> False` hides the axis line, its ticks and its labels — as in
+    // the line renderer, a framed plot still labels its frame edges.
+    let (show_x_axis, show_y_axis) = opts.axes;
+    let (tick_axis_x, tick_axis_y) = if opts.frame {
+      (true, true)
+    } else {
+      (show_x_axis, show_y_axis)
+    };
     // An axis given explicit `Ticks` draws them itself, after the chart.
-    let x_tick_count = if opts.ticks_x.is_some() {
+    let x_tick_count = if opts.ticks_x.is_some() || !tick_axis_x {
       0
     } else {
       ((x_max - x_min) / x_minor_step).round() as usize + 1
     };
-    let y_tick_count = if opts.ticks_y.is_some() {
+    let y_tick_count = if opts.ticks_y.is_some() || !tick_axis_y {
       0
     } else {
       ((y_max - y_min) / y_minor_step).round() as usize + 1
+    };
+    let axis_style = if opts.frame || show_x_axis || show_y_axis {
+      dark_gray.stroke_width(RESOLUTION_SCALE)
+    } else {
+      ShapeStyle::from(&bg_color).stroke_width(0)
     };
 
     chart
@@ -3702,20 +3748,108 @@ pub(crate) fn generate_scatter_svg_with_options(
           String::new()
         }
       })
-      .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
+      .axis_style(axis_style)
       .label_style(
         ("sans-serif", RESOLUTION_SCALE as f64 * 18.0)
           .into_font()
           .color(&dark_gray),
       )
-      .set_tick_mark_size(LabelAreaPosition::Left, tick)
-      .set_tick_mark_size(LabelAreaPosition::Bottom, tick)
+      .set_tick_mark_size(
+        LabelAreaPosition::Left,
+        if tick_axis_y { tick } else { 0 },
+      )
+      .set_tick_mark_size(
+        LabelAreaPosition::Bottom,
+        if tick_axis_x { tick } else { 0 },
+      )
       .draw()
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
-    // Origin lines
+    // Grid lines, drawn before the points so they sit behind the data.
+    // Same rules as the line renderer: explicit positions beat the evenly
+    // spaced automatic ones, dashed lines are deferred to stroke-dasharray
+    // overlays emitted at the end.
+    {
+      let grid_color = RGBColor(0x66, 0x66, 0x66).mix(0.5);
+      let y_grid = resolve_grid_lines(
+        &opts.grid_y_lines,
+        opts.grid_lines_y,
+        y_min,
+        y_max,
+        y_major,
+        opts.grid_lines_style.as_ref(),
+      );
+      let y_tol = (y_max - y_min).abs() * 1e-9;
+      for (gy, style) in &y_grid {
+        if *gy < y_min - y_tol || *gy > y_max + y_tol {
+          continue;
+        }
+        let (rgb, stroke_w, dash) = grid_line_props(style);
+        if let Some(dashes) = dash {
+          dashed_overlays.push(DashedOverlay {
+            color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
+            stroke_w,
+            dashes,
+            points: vec![(x_min, *gy), (x_max, *gy)],
+          });
+          continue;
+        }
+        let shape = match rgb {
+          Some((r, g, b)) => RGBColor(r, g, b).stroke_width(stroke_w),
+          None => grid_color.stroke_width(stroke_w),
+        };
+        chart
+          .draw_series(std::iter::once(PathElement::new(
+            vec![(x_min, *gy), (x_max, *gy)],
+            shape,
+          )))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("Plot: {e}"))
+          })?;
+      }
+
+      let x_grid = resolve_grid_lines(
+        &opts.grid_x_lines,
+        opts.grid_lines_x,
+        x_min,
+        x_max,
+        x_major,
+        opts.grid_lines_style.as_ref(),
+      );
+      let x_tol = (x_max - x_min).abs() * 1e-9;
+      for (gx, style) in &x_grid {
+        if *gx < x_min - x_tol || *gx > x_max + x_tol {
+          continue;
+        }
+        let (rgb, stroke_w, dash) = grid_line_props(style);
+        if let Some(dashes) = dash {
+          dashed_overlays.push(DashedOverlay {
+            color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
+            stroke_w,
+            dashes,
+            points: vec![(*gx, y_min), (*gx, y_max)],
+          });
+          continue;
+        }
+        let shape = match rgb {
+          Some((r, g, b)) => RGBColor(r, g, b).stroke_width(stroke_w),
+          None => grid_color.stroke_width(stroke_w),
+        };
+        chart
+          .draw_series(std::iter::once(PathElement::new(
+            vec![(*gx, y_min), (*gx, y_max)],
+            shape,
+          )))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("Plot: {e}"))
+          })?;
+      }
+    }
+
+    // Origin lines — the axes drawn through zero. `Axes -> False` drops
+    // them along with the axis ticks and labels.
     let origin_line = light_gray.stroke_width(RESOLUTION_SCALE);
-    if y_min < 0.0 && y_max > 0.0 {
+    if show_x_axis && y_min < 0.0 && y_max > 0.0 {
       chart
         .draw_series(std::iter::once(PathElement::new(
           vec![(x_min, 0.0), (x_max, 0.0)],
@@ -3723,7 +3857,7 @@ pub(crate) fn generate_scatter_svg_with_options(
         )))
         .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
     }
-    if x_min < 0.0 && x_max > 0.0 {
+    if show_y_axis && x_min < 0.0 && x_max > 0.0 {
       chart
         .draw_series(std::iter::once(PathElement::new(
           vec![(0.0, y_min), (0.0, y_max)],
@@ -3858,6 +3992,24 @@ pub(crate) fn generate_scatter_svg_with_options(
   let plot_y0 = margin_top;
   let plot_w = render_width as f64 - margin_left - margin_right - y_label_area;
   let plot_h = render_height as f64 - margin_top - margin_bottom - x_label_area;
+
+  // Deferred dashed grid lines, as single stroke-dasharray polylines.
+  if !dashed_overlays.is_empty()
+    && let Some(pos) = buf.rfind("</svg>")
+  {
+    let overlay_svg = render_dash_overlays(
+      &dashed_overlays,
+      plot_x0,
+      plot_y0,
+      plot_w,
+      plot_h,
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+    );
+    buf.insert_str(pos, &overlay_svg);
+  }
 
   // Epilog primitives sit over the points, as in the line renderer.
   inject_epilog(
@@ -7356,6 +7508,44 @@ pub(crate) fn apply_grid_side(
   }
 }
 
+/// Parse an `Axes` option value into `(show_x, show_y)`. Accepts `True` /
+/// `False` and the per-axis `{xbool, ybool}` form; anything else (e.g.
+/// `Automatic`) leaves the current setting alone.
+pub(crate) fn parse_axes_option(value: &Expr) -> Option<(bool, bool)> {
+  let is_true = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
+  match value {
+    Expr::Identifier(s) if s == "True" => Some((true, true)),
+    Expr::Identifier(s) if s == "False" => Some((false, false)),
+    Expr::List(items) if items.len() == 2 => {
+      Some((is_true(&items[0]), is_true(&items[1])))
+    }
+    _ => None,
+  }
+}
+
+/// Parse a `GridLinesStyle` option value (`Directive[Red, Dashed]`, a bare
+/// color, `{Red, Thick}`, …) into the default style for the plot's grid
+/// lines. `Automatic` / `None` keep the built-in gray.
+pub(crate) fn parse_grid_lines_style(value: &Expr) -> Option<SeriesStyle> {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  if matches!(&val, Expr::Identifier(s) if s == "Automatic" || s == "None") {
+    return None;
+  }
+  let mut style = SeriesStyle::default();
+  match &val {
+    Expr::List(items) => {
+      for item in items.iter() {
+        apply_style_directive(item, &mut style);
+      }
+    }
+    other => apply_style_directive(other, &mut style),
+  }
+  (style.color.is_some()
+    || style.thickness.is_some()
+    || style.dashing.is_some())
+  .then_some(style)
+}
+
 /// Parse a PlotRange option value into (x_range, y_range) overrides.
 ///
 /// Supported forms:
@@ -7743,22 +7933,17 @@ pub(crate) fn apply_common_plot_option(
         &mut plot_opts.grid_y_lines,
       );
     }
+    "GridLinesStyle" => {
+      plot_opts.grid_lines_style = parse_grid_lines_style(replacement);
+    }
     "PlotRange" => {
       let (rx, ry) = parse_plot_range(replacement);
       overrides.x = rx;
       overrides.y = ry;
     }
     "Axes" => {
-      let parse_bool =
-        |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
-      match replacement {
-        Expr::Identifier(s) if s == "True" => plot_opts.axes = (true, true),
-        Expr::Identifier(s) if s == "False" => plot_opts.axes = (false, false),
-        // {xbool, ybool}: independent per-axis control
-        Expr::List(items) if items.len() == 2 => {
-          plot_opts.axes = (parse_bool(&items[0]), parse_bool(&items[1]));
-        }
-        _ => {}
+      if let Some(axes) = parse_axes_option(replacement) {
+        plot_opts.axes = axes;
       }
     }
     "AspectRatio" => {
@@ -8407,6 +8592,9 @@ fn log_scale_plot_ast(
             &mut plot_opts.grid_lines_y,
             &mut plot_opts.grid_y_lines,
           );
+        }
+        "GridLinesStyle" => {
+          plot_opts.grid_lines_style = parse_grid_lines_style(replacement);
         }
         "PlotRange" => {
           let (_rx, ry) = parse_plot_range(replacement);

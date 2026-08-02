@@ -2062,6 +2062,88 @@ mod tests {
       );
     }
 
+    /// A point (non-joined) `ListPlot` draws its grid lines too — the
+    /// scatter renderer used to ignore `GridLines` entirely.
+    #[test]
+    fn scatter_list_plot_draws_grid_lines() {
+      let plain = woxi::interpret(
+        r#"ExportString[ListPlot[{{0., 0.}, {1., 1.}}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      let gridded = woxi::interpret(
+        r#"ExportString[ListPlot[{{0., 0.}, {1., 1.}},
+          GridLines -> {{0.5}, None}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      let count = |svg: &str| {
+        svg
+          .lines()
+          .filter(|l| l.contains("opacity=\"0.5\"") && l.contains("<polyline"))
+          .count()
+      };
+      assert_eq!(
+        count(&gridded),
+        count(&plain) + 1,
+        "GridLines -> {{{{0.5}}, None}} should add exactly one grid line"
+      );
+    }
+
+    /// `GridLinesStyle` styles every grid line that has no directive of its
+    /// own, for both the line and the scatter renderer.
+    #[test]
+    fn grid_lines_style_applies_to_plot_grid() {
+      for code in [
+        r#"ExportString[ListPlot[{{0., 0.}, {1., 1.}},
+           GridLines -> {{0.5}, None},
+           GridLinesStyle -> Directive[Red, Dashed]], "SVG"]"#,
+        r#"ExportString[Plot[x, {x, 0, 1}, GridLines -> {{0.5}, None},
+           GridLinesStyle -> Directive[Red, Dashed]], "SVG"]"#,
+      ] {
+        let svg = woxi::interpret(code).expect("interpret should succeed");
+        assert!(
+          svg.contains("stroke=\"rgb(255,0,0)\"")
+            && svg.contains("stroke-dasharray="),
+          "grid line not styled red/dashed: {code}"
+        );
+      }
+      // A per-line directive still wins over the plot-wide default.
+      let svg = woxi::interpret(
+        r#"ExportString[ListPlot[{{0., 0.}, {1., 1.}},
+          GridLines -> {{{0.5, Blue}}, None},
+          GridLinesStyle -> Directive[Red, Dashed]], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(
+        svg.contains("stroke=\"#0000FF\"")
+          && !svg.contains("stroke=\"rgb(255,0,0)\""),
+        "per-line style should override GridLinesStyle: {svg}"
+      );
+    }
+
+    /// `Axes -> False` hides the axes of a `ListPlot`, which the scatter
+    /// renderer used to draw regardless.
+    #[test]
+    fn list_plot_honours_axes_option() {
+      let with_axes = woxi::interpret(
+        r#"ExportString[ListPlot[{{-1., -1.}, {1., 1.}}, Axes -> True], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      let without = woxi::interpret(
+        r#"ExportString[ListPlot[{{-1., -1.}, {1., 1.}}, Axes -> False], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(
+        with_axes.contains("<text"),
+        "axes should carry tick labels: {with_axes}"
+      );
+      assert!(
+        !without.contains("<text"),
+        "Axes -> False should drop the axes and their labels: {without}"
+      );
+      // The data points survive either way.
+      assert!(without.contains("<circle"), "points dropped: {without}");
+    }
+
     #[test]
     fn grid_lines_are_solid_single_polylines() {
       // Each grid line must be ONE solid polyline (WL grid lines are solid by
