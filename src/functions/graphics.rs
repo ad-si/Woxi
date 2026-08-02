@@ -5158,9 +5158,12 @@ fn render_primitive(
             .iter()
             .filter(|h| h.graphic.is_none())
             .map(|h| {
-              // A size is a fraction of the plot width, as Wolfram's is,
-              // capped so a head never swallows the arrow it sits on.
-              let px = (h.size.abs() * svg_w).min(total_len_px * 0.45);
+              // A size is a fraction of the plot width, as Wolfram's is —
+              // uncapped, because the whole point of naming it is to fix
+              // the head's size. A vector field draws hundreds of arrows
+              // barely longer than their heads, and Wolfram lets the head
+              // take up nearly all of each one.
+              let px = h.size.abs() * svg_w;
               (h.position, px.max(1.0), h.size.signum())
             })
             .collect(),
@@ -5732,6 +5735,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // When true, skip uniform scaling so x and y axes scale independently
   // (needed for plots where data aspect ≠ image aspect).
   let mut aspect_ratio_full = false;
+  // `ImagePadding -> {{left, right}, {bottom, top}}` (or a single number for
+  // all four sides): the room reserved around the drawing area, replacing the
+  // automatic margins that the frame and its tick labels would ask for.
+  let mut image_padding: Option<[f64; 4]> = None;
 
   for raw_opt in &args[1..] {
     let opt =
@@ -5842,6 +5849,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           {
             frame_ticks = false;
           }
+        }
+        "ImagePadding" => {
+          image_padding =
+            crate::functions::plot::parse_image_padding(replacement);
         }
         "GridLines" => match replacement {
           Expr::Identifier(s)
@@ -5998,6 +6009,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       20.0
     } else {
       0.0
+    };
+  // `ImagePadding` states the room around the drawing area outright, so it
+  // replaces the margins the frame and its labels would otherwise claim
+  // (Wolfram draws the tick labels inside that padding).
+  let (margin_left, margin_right, margin_bottom, margin_top) =
+    match image_padding {
+      Some([left, right, bottom, top]) => (left, right, bottom, top),
+      None => (margin_left, margin_right, margin_bottom, margin_top),
     };
   // The size asked for is the whole picture, so the drawing area is what
   // is left of it once the axes and their labels have taken their room.

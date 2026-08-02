@@ -2,6 +2,20 @@
 
 # Unreleased
 
+- Fixes driven by a Wolfram Demonstration that draws a complex function as
+    a colored vector field:
+    - `ColorData[name, "ColorFunction"]` gives the gradient's color
+        function, the same object `ColorData[name]` gives on its own. It
+        used to be reported as unimplemented, so every primitive colored
+        through it fell back to black. `ColorData[name, "Range"]` reads
+        the parameter interval alongside it.
+    - `Graphics[…, ImagePadding -> …]` honours the padding (it was only
+        read by the plot functions), so the drawing area sits where the
+        notebook puts it instead of at the automatic frame margins.
+    - A named `Arrowheads` size is a fraction of the plot width and
+        nothing else. It used to be capped at 45% of the arrow carrying
+        it, which shrank the heads of a dense vector field — where each
+        arrow is barely longer than its head — to unreadable specks.
 - Fixes driven by the "Mass with a Spring and a Rubber Band" Wolfram
     Demonstration:
     - Substituting an `NDSolve` solution into a derivative
