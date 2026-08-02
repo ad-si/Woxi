@@ -5545,6 +5545,59 @@ mod plot3d {
       ));
     }
 
+    /// The value of `Filling` may be computed rather than named — a
+    /// Demonstration switches its shading with
+    /// `Filling -> If[b === Axis, Axis, None]` — so it is read evaluated.
+    /// Taken unevaluated it matched no spelling and nothing was shaded.
+    #[test]
+    fn a_computed_filling_option_is_evaluated() {
+      let fills = |code: &str| export_svg(code).matches("<polygon").count();
+      assert_eq!(
+        fills(
+          "b = Axis; Plot[Sin[x], {x, 0, 5}, \
+           Filling -> If[b === Axis, Axis, None]]"
+        ),
+        1,
+        "a computed Axis must shade the curve"
+      );
+      assert_eq!(
+        fills(
+          "b = None; Plot[Sin[x], {x, 0, 5}, \
+           Filling -> If[b === Axis, Axis, None]]"
+        ),
+        0,
+        "a computed None must not"
+      );
+      // The same through the rule form and on a list plot.
+      assert_eq!(
+        fills("k = 1; ListLinePlot[{1, 4, 2}, Filling -> {k -> Axis}]"),
+        1
+      );
+    }
+
+    /// `Show` merging several filled plots keeps each one's own
+    /// `FillingStyle`: three normal curves shaded in three colours stay
+    /// three colours, where the first plot's style used to be applied to
+    /// all of them.
+    #[test]
+    fn each_merged_plot_keeps_its_own_filling_style() {
+      let svg = export_svg(
+        "Show[\
+           Plot[2 x, {x, 0, 1}, Filling -> Axis, \
+             FillingStyle -> Opacity[0.25, Blue]], \
+           Plot[x, {x, 0, 1}, Filling -> Axis, \
+             FillingStyle -> Opacity[0.25, Red]]]",
+      );
+      let fills: Vec<&str> = svg
+        .split("<polygon")
+        .skip(1)
+        .filter_map(|p| p.split("fill=\"").nth(1))
+        .filter_map(|p| p.split('"').next())
+        .collect();
+      assert_eq!(fills.len(), 2, "one fill per curve: {svg}");
+      assert_ne!(fills[0], fills[1], "both fills came out the same colour");
+    }
+
     #[test]
     fn list_line_plot_filling_bottom() {
       insta::assert_snapshot!(export_svg(

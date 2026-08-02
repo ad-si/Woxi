@@ -1487,11 +1487,31 @@ pub(crate) fn parse_filling_rules(
 /// list `{i -> spec, …}` (stored in `filling_rules`) or a global mode
 /// (stored in `filling`).
 pub(crate) fn apply_filling_option(replacement: &Expr, opts: &mut PlotOptions) {
-  if let Some(rules) = parse_filling_rules(replacement) {
+  // The value may be computed rather than named — a Demonstration switches
+  // its shading with `Filling -> If[b === Axis, Axis, None]` — so read it
+  // evaluated. Every spelling it can produce is a symbol, a number or a
+  // list of rules, all of which evaluate to themselves.
+  let value =
+    evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  if let Some(rules) = parse_filling_rules(&value) {
     opts.filling_rules = rules;
   } else {
-    opts.filling = parse_filling(replacement);
+    opts.filling = parse_filling(&value);
   }
+}
+
+/// The `FillingStyle` that applies to series `idx`: its own when `Show`
+/// merged several plots, else the one style the plot was given.
+pub(crate) fn series_filling_style(
+  opts: &PlotOptions,
+  idx: usize,
+) -> Option<FillStyle> {
+  opts
+    .filling_styles
+    .get(idx)
+    .copied()
+    .flatten()
+    .or(opts.filling_style)
 }
 
 /// Effective fill target for series `idx`: its entry in the rule list when
@@ -1722,6 +1742,10 @@ pub(crate) struct PlotOptions {
   /// every filled series). `None` keeps the default appearance (series
   /// color at 0.2 opacity).
   pub filling_style: Option<FillStyle>,
+  /// Per-series `FillingStyle`, as `Show` collects it from the plots it
+  /// merges: each curve keeps the fill its own plot asked for. Empty means
+  /// the single `filling_style` applies to every series.
+  pub filling_styles: Vec<Option<FillStyle>>,
   pub mesh: Mesh,
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
@@ -1825,6 +1849,7 @@ impl Default for PlotOptions {
       filling: Filling::None,
       filling_rules: Vec::new(),
       filling_style: None,
+      filling_styles: Vec::new(),
       mesh: Mesh::None,
       plot_label: None,
       axes_label: None,
@@ -2869,7 +2894,8 @@ fn generate_svg_with_options(
                 })?;
             }
           } else {
-            let paint = fill_paint(opts.filling_style, (r, g, b));
+            let paint =
+              fill_paint(series_filling_style(opts, series_idx), (r, g, b));
             match series_fill_target(opts, series_idx) {
               FillTarget::Level(level) => {
                 if let Some(ref_y) = level.reference_y(y_min, y_max) {
@@ -3966,8 +3992,9 @@ pub(crate) fn generate_scatter_svg_with_options(
       // level for Axis/Bottom/Top/value, or — for `Filling -> {i -> {j}}` —
       // the other series, linearly interpolated at this point's x so
       // irregularly spaced datasets fill correctly.
-      let stem_style = fill_paint(opts.filling_style, (r, g, b))
-        .stroke_width(RESOLUTION_SCALE);
+      let stem_style =
+        fill_paint(series_filling_style(opts, series_idx), (r, g, b))
+          .stroke_width(RESOLUTION_SCALE);
       let stem_targets: Vec<((f64, f64), f64)> =
         match series_fill_target(opts, series_idx) {
           FillTarget::Level(level) => level
@@ -4279,15 +4306,22 @@ pub(crate) fn render_merged_plot_source(
       series_filling_to_filling(s.filling).map(|f| (i, FillTarget::Level(f)))
     })
     .collect();
-  if opts.filling_style.is_none()
-    && let Some(s) = drawn
-      .iter()
-      .find(|s| s.fill_color.is_some() || s.fill_opacity.is_some())
-  {
-    opts.filling_style = Some(FillStyle {
-      color: s.fill_color,
-      opacity: s.fill_opacity,
-    });
+  // Each merged plot keeps the fill it asked for: three normal curves
+  // filled to the axis in three colours stay three colours, rather than all
+  // taking the first plot's.
+  opts.filling_styles = drawn
+    .iter()
+    .map(|s| {
+      (s.fill_color.is_some() || s.fill_opacity.is_some()).then_some(
+        FillStyle {
+          color: s.fill_color,
+          opacity: s.fill_opacity,
+        },
+      )
+    })
+    .collect();
+  if opts.filling_styles.iter().all(Option::is_none) {
+    opts.filling_styles.clear();
   }
   opts.epilog.extend(
     source
