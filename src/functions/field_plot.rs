@@ -2511,6 +2511,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut color_rules: Vec<(f64, GfxColor)> = Vec::new();
   let mut mesh = false;
   let mut color_function: Option<String> = None;
+  let mut frame_labels = crate::functions::plot::FrameLabels::default();
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -2549,6 +2550,11 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if let Some(s) = color_function_scheme_name(replacement.as_ref()) {
             color_function = Some(s);
           }
+        }
+        // An array plot is drawn inside a frame, so it takes the same
+        // `FrameLabel` a framed plot does — on any of the four edges.
+        "FrameLabel" => {
+          frame_labels = crate::functions::plot::parse_frame_label(replacement);
         }
         _ => {}
       }
@@ -2743,7 +2749,76 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
   );
 
+  let buf = frame_labelled_svg(&buf, svg_width, svg_height, &frame_labels);
+
   Ok(crate::graphics_result(buf))
+}
+
+/// Put a plot's `FrameLabel` text around an already-rendered picture.
+///
+/// The picture keeps its size and is inset into a larger canvas with just
+/// enough room on each labelled edge for one line of text. Left and right
+/// labels are rotated to run along their edge, the way Wolfram sets them:
+/// counter-clockwise on the left, clockwise on the right, so each reads
+/// from the outside in. Returns `svg` unchanged when there is no label.
+fn frame_labelled_svg(
+  svg: &str,
+  width: u32,
+  height: u32,
+  labels: &crate::functions::plot::FrameLabels,
+) -> String {
+  let edges = [&labels.bottom, &labels.left, &labels.top, &labels.right];
+  if edges.iter().all(|e| e.is_empty()) {
+    return svg.to_string();
+  }
+  let font_size = 14.0_f64;
+  let gutter = font_size * 1.6;
+  let pad = |present: bool| if present { gutter } else { 0.0 };
+  let (ml, mr) = (pad(!labels.left.is_empty()), pad(!labels.right.is_empty()));
+  let (mt, mb) = (pad(!labels.top.is_empty()), pad(!labels.bottom.is_empty()));
+  let (w, h) = (width as f64, height as f64);
+  let (total_w, total_h) = (w + ml + mr, h + mt + mb);
+  let fill = crate::functions::graphics::theme().text_primary;
+  let text = |x: f64, y: f64, rot: f64, label: &str| {
+    let transform = if rot == 0.0 {
+      String::new()
+    } else {
+      format!(" transform=\"rotate({rot},{x:.1},{y:.1})\"")
+    };
+    format!(
+      "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
+       dominant-baseline=\"central\" font-family=\"sans-serif\" \
+       font-size=\"{font_size:.0}\" fill=\"{fill}\"{transform}>{}</text>\n",
+      crate::functions::graphics::box_string_to_svg(label)
+    )
+  };
+  let mut out = format!(
+    "<svg width=\"{total_w:.0}\" height=\"{total_h:.0}\" \
+     viewBox=\"0 0 {total_w:.0} {total_h:.0}\" \
+     xmlns=\"http://www.w3.org/2000/svg\">\n"
+  );
+  // The picture itself, shifted into the space the labels leave.
+  out.push_str(&format!(
+    "<svg x=\"{ml:.1}\" y=\"{mt:.1}\" width=\"{w:.0}\" height=\"{h:.0}\" \
+     overflow=\"visible\">\n"
+  ));
+  out.push_str(svg.trim());
+  out.push_str("\n</svg>\n");
+  let (cx, cy) = (ml + w / 2.0, mt + h / 2.0);
+  if !labels.top.is_empty() {
+    out.push_str(&text(cx, mt / 2.0, 0.0, &labels.top));
+  }
+  if !labels.bottom.is_empty() {
+    out.push_str(&text(cx, mt + h + mb / 2.0, 0.0, &labels.bottom));
+  }
+  if !labels.left.is_empty() {
+    out.push_str(&text(ml / 2.0, cy, -90.0, &labels.left));
+  }
+  if !labels.right.is_empty() {
+    out.push_str(&text(ml + w + mr / 2.0, cy, 90.0, &labels.right));
+  }
+  out.push_str("</svg>\n");
+  out
 }
 
 /// MatrixPlot[matrix] - like ArrayPlot with automatic color scaling

@@ -2,6 +2,27 @@
 
 # Unreleased
 
+- Fixes driven by a Wolfram Demonstration that runs a cellular automaton
+    over a dendrite and compares it with the linear case:
+    - A layout that holds pictures — `Grid[{{plot1, plot2}, …}]`, a
+        `Column` of them, a `Pane` around either — is composed into the one
+        picture a notebook shows. The visual hosts (Playground, Woxi Studio)
+        only ever reported the *last* graphic drawn while the layout was
+        evaluated, so a Manipulate body that arranges several plots in a
+        grid displayed a single one of them and dropped the rest.
+    - A `Grid`'s columns line up when its rows hold different things: the
+        caption under a picture is centred on that picture instead of
+        being packed against the left edge of the grid.
+    - `LayeredGraphPlot` and `TreePlot` draw the layered embedding they
+        name, rather than the circular one every graph got. Vertices are
+        placed by distance from a root, and the second argument (`Left`,
+        `Right`, `Top`, `Bottom`) says which edge the roots go on.
+    - `DirectedEdges -> False` draws a graph's edges as plain lines
+        instead of arrows, and `ImageSize` sizes a graph plot — a
+        Demonstration asking for a wide, short strip used to get the
+        360-point default square.
+    - `ArrayPlot` draws its `FrameLabel`, on any of the four edges, with
+        the left and right labels rotated onto theirs.
 - Fixes driven by the "Selectivity in a Semibatch Reactor" Wolfram
     Demonstration:
     - `Text` inside a `Graphics3D` scene is drawn — a labelled 3D

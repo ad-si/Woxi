@@ -12524,11 +12524,50 @@ fn compute_grid_layout(
     }
   }
 
-  // Per-cell layout: keep natural aspect ratios, vertically center
-  // shorter cells within their row.
+  // Scaled per-cell dimensions (enforce a minimum so pathological
+  // zero-sized inputs don't vanish entirely).
+  let scaled_rows: Vec<Vec<(f64, f64)>> = parsed_rows
+    .iter()
+    .map(|row| {
+      row
+        .iter()
+        .map(|(_, _, nw, nh)| ((nw * scale).max(1.0), (nh * scale).max(1.0)))
+        .collect()
+    })
+    .collect();
+
+  // A column is as wide as its widest cell, in every row — that is what
+  // makes a `Grid`'s columns line up when the rows hold different things
+  // (a picture in one row, a caption under it in the next). Rows of
+  // uniform cells, the `GraphicsGrid` case, are unaffected.
+  let mut col_w: Vec<f64> = vec![0.0; max_cols];
+  for row in &scaled_rows {
+    for (j, (w, _)) in row.iter().enumerate() {
+      col_w[j] = col_w[j].max(*w);
+    }
+  }
+
+  // Horizontal gap: `Scaled` is resolved against the average cell width
+  // over the whole grid, so every row uses the same column pitch.
+  let cell_count = scaled_rows.iter().map(Vec::len).sum::<usize>().max(1);
+  let avg_cell_w: f64 =
+    scaled_rows.iter().flatten().map(|(w, _)| *w).sum::<f64>()
+      / cell_count as f64;
+  let h_gap = opts.h_spacing.to_px(avg_cell_w);
+  let col_x: Vec<f64> = col_w
+    .iter()
+    .scan(0.0_f64, |x, w| {
+      let here = *x;
+      *x += w + h_gap;
+      Some(here)
+    })
+    .collect();
+
+  // Per-cell layout: keep natural aspect ratios, centre each cell in its
+  // column and vertically centre shorter cells within their row.
   let mut row_layouts: Vec<GridRowLayout> = Vec::new();
 
-  for parsed_row in &parsed_rows {
+  for (parsed_row, cell_dims) in parsed_rows.iter().zip(scaled_rows.iter()) {
     if parsed_row.is_empty() {
       row_layouts.push(GridRowLayout {
         cells: Vec::new(),
@@ -12537,29 +12576,18 @@ fn compute_grid_layout(
       continue;
     }
 
-    // Scaled per-cell dimensions (enforce a minimum so pathological
-    // zero-sized inputs don't vanish entirely).
-    let cell_dims: Vec<(f64, f64)> = parsed_row
-      .iter()
-      .map(|(_, _, nw, nh)| ((nw * scale).max(1.0), (nh * scale).max(1.0)))
-      .collect();
-
     let row_h = cell_dims
       .iter()
       .map(|(_, h)| *h)
       .fold(0.0_f64, f64::max)
       .max(10.0);
 
-    // Horizontal gap: Scaled is resolved against the average cell width.
-    let avg_cell_w: f64 =
-      cell_dims.iter().map(|(w, _)| *w).sum::<f64>() / cell_dims.len() as f64;
-    let h_gap = opts.h_spacing.to_px(avg_cell_w);
-
-    let mut x = 0.0_f64;
     let mut cells = Vec::with_capacity(parsed_row.len());
-    for ((vb, inner, _, _), (cw, ch)) in parsed_row.iter().zip(cell_dims.iter())
+    for (j, ((vb, inner, _, _), (cw, ch))) in
+      parsed_row.iter().zip(cell_dims.iter()).enumerate()
     {
       let y_off = ((row_h - ch) / 2.0).max(0.0);
+      let x = col_x[j] + (col_w[j] - cw) / 2.0;
       cells.push(LayoutCell {
         x,
         y_off,
@@ -12568,16 +12596,17 @@ fn compute_grid_layout(
         view_box: vb.clone(),
         inner: inner.clone(),
       });
-      x += cw + h_gap;
     }
 
     row_layouts.push(GridRowLayout { cells, row_h });
   }
 
-  // Compute total dimensions.
-  let total_width = row_layouts
+  // Compute total dimensions. The grid is as wide as its columns, which
+  // a row that stops short of the last column does not shorten.
+  let total_width = col_x
     .iter()
-    .map(|r| r.cells.last().map_or(0.0, |c: &LayoutCell| c.x + c.w))
+    .zip(col_w.iter())
+    .map(|(x, w)| x + w)
     .fold(0.0_f64, f64::max);
   let v_gap = if !row_layouts.is_empty() {
     let avg_h = row_layouts.iter().map(|r| r.row_h).sum::<f64>()
