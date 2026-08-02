@@ -8232,6 +8232,117 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn orthic_triangle_manipulate_builds_widget() {
+    // End-to-end regression for the "Three Concyclic Sets of Points
+    // Associated with the Orthic Triangle" Demonstration: three Locator
+    // controls drive a Module whose whole geometry is computed inside an
+    // `If[nonDegenerate, …]` and then drawn by an `If[nonDegenerate,
+    // Unevaluated[Sequence[…]], {}]` inside the Graphics primitive list.
+    //
+    // Two things used to break it: the `Unevaluated[Sequence[…]]` returned by
+    // the `If` was not spliced (so the primitives referenced unbound Module
+    // locals), and the round-off stripping rule `Complex[a_, b_] /; Abs[b] <
+    // 10^-4 :> a` never matched, so an intersection came back complex.
+    let code = "Manipulate[\n\
+      Module[{ok, ah, bh, ch, icd, iab, h},\n\
+       ok = area[pt1, pt2, pt3] > 10^-4;\n\
+       If[ok,\n\
+        ah = foot[pt1, pt2, pt3];\n\
+        bh = foot[pt2, pt1, pt3];\n\
+        ch = foot[pt3, pt1, pt2];\n\
+        icd = incircle[ah, bh, ch];\n\
+        iab = If[icd =!= {}, cut[ah, bh, Sequence @@ icd], {}];\n\
+        h = meet[pt1, ah, pt2, bh]];\n\
+       Graphics[{PointSize[.02], Thickness[.01], RGBColor[1, .26, 0],\n\
+        Line[{pt1, pt2, pt3, pt1}],\n\
+        If[ok, Unevaluated[Sequence[\n\
+          RGBColor[.79, .71, .26],\n\
+          Line /@ Transpose[{{pt1, pt2, pt3}, {ah, bh, ch}}],\n\
+          RGBColor[1, .71, 0], Line[{ah, bh, ch, ah}],\n\
+          RGBColor[.45, .7, .55], If[icd =!= {}, Circle @@ icd, {}],\n\
+          RGBColor[.48, .11, .56],\n\
+          Point[DeleteCases[{h, ah, bh, ch, iab}, {}]],\n\
+          Black, Text[Style[\"H\", 20], h + {0, .4}]]], {}]},\n\
+        ImageSize -> {450, 400}, PlotRange -> {{-4.1, 4.1}, {-4.1, 4.5}}]],\n\
+      {{pt1, {-3.74, -3.61}}, {-4, -4}, {4, 4}, Locator},\n\
+      {{pt2, {-0.62, 3.87}}, {-4, -4}, {4, 4}, Locator},\n\
+      {{pt3, {4., -0.42}}, {-4, -4}, {4, 4}, Locator},\n\
+      Initialization :> (\n\
+       area[p_, q_, r_] := \
+         Sqrt[#(# - EuclideanDistance[p, q]) (# - EuclideanDistance[q, r]) \
+           (# - EuclideanDistance[p, r])] &[\
+         (EuclideanDistance[p, q] + EuclideanDistance[q, r] \
+           + EuclideanDistance[p, r])/2] \
+         /. Complex[a_, b_] /; Max[Abs@a, Abs@b] < 10^-4 -> 0;\n\
+       meet[p1_, p2_, p3_, p4_] := Block[{x, y},\n\
+        {x, y} /. NSolve[{(y - p1[[2]]) (p2[[1]] - p1[[1]]) == \
+           (p2[[2]] - p1[[2]]) (x - p1[[1]]),\n\
+          (y - p3[[2]]) (p4[[1]] - p3[[1]]) == \
+           (p4[[2]] - p3[[2]]) (x - p3[[1]])}, {x, y}][[1]]];\n\
+       foot[pt_, pt1_, pt2_] := Block[{x, y},\n\
+        {x, y} /. NSolve[{(pt2[[1]] - pt1[[1]]) (y - pt1[[2]]) == \
+           (pt2[[2]] - pt1[[2]]) (x - pt1[[1]]),\n\
+          (pt2[[2]] - pt1[[2]]) (y - pt[[2]]) == \
+           (pt1[[1]] - pt2[[1]]) (x - pt[[1]])}, {x, y}][[1]]];\n\
+       incircle[pA_, pB_, pC_] := Module[{a, b, c, s},\n\
+        a = EuclideanDistance[pB, pC]; b = EuclideanDistance[pA, pC];\n\
+        c = EuclideanDistance[pA, pB]; s = (a + b + c)/2;\n\
+        {(a pA + b pB + c pC)/(a + b + c), \
+          Sqrt[(s - a) (s - b) (s - c)/s]}];\n\
+       cut[p1_, p2_, cen_, rad_] := Block[{x, y},\n\
+        {x, y} /. Quiet[NSolve[{(y - p1[[2]]) (p2[[1]] - p1[[1]]) == \
+           (p2[[2]] - p1[[2]]) (x - p1[[1]]),\n\
+          (x - cen[[1]])^2 + (y - cen[[2]])^2 == rad^2}, {x, y}] \
+         /. {Complex[a_, b_] /; Abs[b] < 10^-4 :> a}][[1]]];)]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the orthic-triangle Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must produce the figure"
+    );
+
+    // Three 2D locators, each ranged over the {-4, -4}..{4, 4} square.
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Slider2D {
+          name: n1, x: x1, ..
+        },
+        manipulate::ControlState::Slider2D { name: n2, .. },
+        manipulate::ControlState::Slider2D {
+          name: n3,
+          x_min,
+          x_max,
+          ..
+        },
+      ] => {
+        assert_eq!(
+          (n1.as_str(), n2.as_str(), n3.as_str()),
+          ("pt1", "pt2", "pt3")
+        );
+        assert!((*x1 - -3.74).abs() < 1e-9);
+        assert_eq!((*x_min, *x_max), (-4.0, 4.0));
+      }
+      other => panic!("expected three 2D locators, got {other:?}"),
+    }
+
+    // Dragging one vertex re-solves the whole construction.
+    if let manipulate::ControlState::Slider2D { x, y, .. } =
+      &mut state.controls[0]
+    {
+      *x = -3.0;
+      *y = -2.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn sliding_the_roots_of_cubics_manipulate_builds_widget() {
     // End-to-end regression for the "Sliding the Roots of Cubics"
     // Demonstration: three `Appearance -> "Labeled"` sliders drive an

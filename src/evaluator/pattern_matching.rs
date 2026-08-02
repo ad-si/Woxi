@@ -3495,6 +3495,19 @@ fn match_pattern_impl(
   {
     return match_pattern_impl(&canon, pattern);
   }
+  // `Complex[re_, im_]` is the structural pattern for a complex *atom*, which
+  // Woxi stores as `a + b I` rather than a `Complex[…]` call — so canonicalize
+  // the subject before matching. Needed for guarded rules such as
+  // `Complex[a_, b_] /; Abs[b] < 10^-4 :> a`, which strip round-off imaginary
+  // parts from a numeric solve.
+  if let Expr::FunctionCall { name, args } = pattern
+    && name == "Complex"
+    && args.len() == 2
+    && !matches!(expr, Expr::FunctionCall { name: en, .. } if en == "Complex")
+    && let Some(canon) = complex_atom_canonical(expr)
+  {
+    return match_pattern_impl(&canon, pattern);
+  }
   // Rule/RuleDelayed have dedicated AST variants; canonicalize both sides
   // to FunctionCall form so structural patterns like `_ -> _` match rule
   // expressions.
@@ -4276,6 +4289,26 @@ fn directed_infinity_canonical(expr: &Expr) -> Option<Expr> {
     }
     _ => None,
   }
+}
+
+/// Rewrite a complex number to its `Complex[re, im]` FunctionCall form, the
+/// shape a structural `Complex[…]` pattern matches against. Returns None for
+/// anything without a nonzero imaginary part.
+fn complex_atom_canonical(expr: &Expr) -> Option<Expr> {
+  if !crate::functions::predicate_ast::is_complex_number(expr) {
+    return None;
+  }
+  let part = |head: &str| {
+    evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: head.to_string(),
+      args: vec![expr.clone()].into(),
+    })
+    .ok()
+  };
+  Some(Expr::FunctionCall {
+    name: "Complex".to_string(),
+    args: vec![part("Re")?, part("Im")?].into(),
+  })
 }
 
 pub fn get_expr_head(expr: &Expr) -> String {

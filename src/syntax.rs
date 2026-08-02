@@ -5044,8 +5044,11 @@ fn operator_precedence(op: &str) -> u8 {
     "/:" => 3, // TagSet/TagSetDelayed (lower than assignment so RHS includes :=)
     "=" | ":=" | "=." => 6, // Assignment / Unset
     "^=" | "^:=" => 6, // UpSet/UpSetDelayed (same as assignment)
-    "/;" => 9, // Condition (higher than assignment, lower than Rule)
-    "->" | "\u{2192}" | ":>" => 12, // Rule/RuleDelayed (lower than boolean operators)
+    // Condition binds *tighter* than Rule/RuleDelayed in Wolfram (130 vs 120),
+    // so `lhs /; test :> rhs` is `RuleDelayed[Condition[lhs, test], rhs]` and
+    // `lhs :> rhs /; test` is `RuleDelayed[lhs, Condition[rhs, test]]`.
+    "/;" => 12,
+    "->" | "\u{2192}" | ":>" => 11, // Rule/RuleDelayed (lower than boolean operators)
     "||" => 15,                     // Or
     "&&" => 18,                     // And
     "\\[And]" | "\u{2227}" => 18,   // \[And] (same as &&)
@@ -5062,7 +5065,7 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[UndirectedEdge]" | "\u{F3D4}" => 21, // UndirectedEdge (same level as comparisons)
     "<->" => 21, // TwoWayRule (same level as comparisons, tighter than Rule)
     "\\[Distributed]" | "\u{F3D2}" => 21, // Distributed (same level as comparisons)
-    "\\[Conditioned]" | "\u{F3D3}" => 12, // Conditioned (looser than ||, like ;)
+    "\\[Conditioned]" | "\u{F3D3}" => 10, // Conditioned (looser than Rule)
     // Cross and TensorProduct bind tighter than Dot in Wolfram
     // (Precedence 500 and 495 vs Dot's 490): a.b\[Cross]c is a.(b\[Cross]c).
     "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 42, // Cross (above TensorProduct)

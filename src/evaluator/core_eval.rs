@@ -154,20 +154,43 @@ fn evaluate_args_with_hold(
   } else if hold_first && !args.is_empty() {
     let mut result = vec![process_held(&args[0])?];
     for arg in &args[1..] {
-      result.push(evaluate_expr_to_expr(arg)?);
+      result.push(evaluate_argument(arg)?);
     }
     Ok(maybe_splice(result))
   } else if hold_rest && !args.is_empty() {
-    let mut result = vec![evaluate_expr_to_expr(&args[0])?];
+    let mut result = vec![evaluate_argument(&args[0])?];
     for arg in &args[1..] {
       result.push(process_held(arg)?);
     }
     Ok(maybe_splice(result))
   } else {
-    args
-      .iter()
-      .map(evaluate_expr_to_expr)
-      .collect::<Result<_, _>>()
+    args.iter().map(evaluate_argument).collect::<Result<_, _>>()
+  }
+}
+
+/// Evaluate one non-held argument, honouring the rule that an `Unevaluated`
+/// wrapper *produced by* the evaluation is stripped and its content evaluated.
+///
+/// Wolfram keeps the wrapper only when `Unevaluated[…]` is written literally in
+/// the argument list (`{0, Unevaluated[1 + 1], 9}` stays as-is), but strips it
+/// as soon as it comes back out of a function: `If`, `Which`, `Switch`,
+/// `Module` and ordinary downvalues all give `{0, 1, 5, 9}` for
+/// `{0, If[True, Unevaluated[Sequence[1, 2 + 3]], {}], 9}`. That makes
+/// `Unevaluated[Sequence[…]]` the idiomatic way to splice a variable number of
+/// items into a list — common in Demonstrations, where a conditional adds
+/// several graphics primitives at once.
+fn evaluate_argument(arg: &Expr) -> Result<Expr, InterpreterError> {
+  let evaluated = evaluate_expr_to_expr(arg)?;
+  if matches!(arg, Expr::FunctionCall { name, .. } if name == "Unevaluated") {
+    return Ok(evaluated);
+  }
+  match &evaluated {
+    Expr::FunctionCall { name, args }
+      if name == "Unevaluated" && args.len() == 1 =>
+    {
+      evaluate_expr_to_expr(&args[0])
+    }
+    _ => Ok(evaluated),
   }
 }
 
@@ -917,7 +940,7 @@ pub fn evaluate_expr_to_expr_inner(
       // element evaluation, so the cheap check is sufficient.
       let len_before = crate::FUNC_DEFS.with(|m| m.borrow().len());
       for item in items {
-        let val = evaluate_expr_to_expr(item)?;
+        let val = evaluate_argument(item)?;
         if matches!(&val, Expr::Identifier(s) if s == "Nothing") {
           continue;
         }

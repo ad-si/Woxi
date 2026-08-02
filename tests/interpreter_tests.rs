@@ -1492,6 +1492,143 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn condition_binds_tighter_than_rule() {
+    // Wolfram gives Condition precedence 130 and Rule/RuleDelayed 120, so a
+    // guard written left of the arrow belongs to the *pattern*:
+    // `lhs /; test :> rhs` is RuleDelayed[Condition[lhs, test], rhs].
+    // Woxi used to parse it the other way round, which made the whole
+    // expression an invalid rule (ReplaceAll::reps).
+    clear_state();
+    assert_eq!(interpret("Head[x_ /; y :> z]").unwrap(), "RuleDelayed");
+    assert_eq!(interpret("Head[x_ /; y -> z]").unwrap(), "Rule");
+    assert_eq!(
+      interpret("Head[Hold[x_ /; y :> z][[1, 1]]]").unwrap(),
+      "Condition"
+    );
+    assert_eq!(
+      interpret("{5, 20} /. x_Integer /; x < 10 :> aa").unwrap(),
+      "{aa, 20}"
+    );
+    assert_eq!(
+      interpret("{5, 20} /. x_Integer /; x < 10 -> aa").unwrap(),
+      "{aa, 20}"
+    );
+  }
+
+  #[test]
+  fn condition_stays_looser_than_its_neighbours() {
+    // The precedence move must not disturb the operators on either side:
+    // a guard still absorbs a whole comparison / boolean test on its right,
+    // and a definition's RHS still absorbs the guard.
+    clear_state();
+    assert_eq!(
+      interpret("{1, 5} /. x_ /; x > 2 && x < 9 :> big").unwrap(),
+      "{1, big}"
+    );
+    assert_eq!(
+      interpret("f[x_] := 1 /; x > 0; {f[2], f[-2]}").unwrap(),
+      "{1, f[-2]}"
+    );
+  }
+
+  #[test]
+  fn complex_pattern_matches_under_a_guard() {
+    // `Complex[re_, im_]` is the structural pattern for a complex atom.
+    // Woxi stores complex numbers as `a + b I`, so the subject has to be
+    // canonicalized before matching — otherwise the guarded form
+    // (used to strip round-off imaginary parts from numeric solves) fails
+    // while the bare form succeeds.
+    clear_state();
+    assert_eq!(
+      interpret("MatchQ[0.5 + 2. I, Complex[a_, b_] /; True]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "{0.5 + 3.8*^-8 I} /. Complex[a_, b_] /; Abs[b] < 10^(-4) :> a"
+      )
+      .unwrap(),
+      "{0.5}"
+    );
+    assert_eq!(
+      interpret("{2 + 3 I} /. Complex[a_, b_] :> {a, b}").unwrap(),
+      "{{2, 3}}"
+    );
+    assert_eq!(
+      interpret("Cases[{1, 2 + I, 3.}, Complex[a_, b_] /; b > 0 :> a]")
+        .unwrap(),
+      "{2}"
+    );
+    // A real number has no imaginary part and must not match.
+    assert_eq!(interpret("MatchQ[2.5, Complex[a_, b_]]").unwrap(), "False");
+    assert_eq!(interpret("MatchQ[3, Complex[a_, b_]]").unwrap(), "False");
+  }
+
+  #[test]
+  fn returned_unevaluated_sequence_splices_into_the_caller() {
+    // Wolfram keeps an `Unevaluated[…]` wrapper only when it is written
+    // literally in an argument list; as soon as it comes *back out* of a
+    // function the wrapper is stripped and its content evaluated. That makes
+    // `If[test, Unevaluated[Sequence[…]], {}]` the idiomatic way to splice a
+    // variable number of items into a list.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Module[{a, c}, c = True; If[c, a = 5]; \
+         {0, If[c, Unevaluated[Sequence[1, a, a + 1]], {}], 9}]"
+      )
+      .unwrap(),
+      "{0, 1, 5, 6, 9}"
+    );
+    assert_eq!(
+      interpret("{0, If[True, Unevaluated[Sequence[]], {}], 9}").unwrap(),
+      "{0, 9}"
+    );
+    assert_eq!(
+      interpret("g[x_] := Unevaluated[Sequence[1, x + 1]]; {0, g[5], 9}")
+        .unwrap(),
+      "{0, 1, 6, 9}"
+    );
+    assert_eq!(
+      interpret("f[0, If[True, Unevaluated[Sequence[1, 2 + 3]]], 9]").unwrap(),
+      "f[0, 1, 5, 9]"
+    );
+    assert_eq!(
+      interpret("{0, Which[True, Unevaluated[Sequence[1, 2 + 3]]], 9}")
+        .unwrap(),
+      "{0, 1, 5, 9}"
+    );
+    assert_eq!(
+      interpret("{0, Module[{q = 4}, Unevaluated[Sequence[1, q + 1]]], 9}")
+        .unwrap(),
+      "{0, 1, 5, 9}"
+    );
+    assert_eq!(
+      interpret("h[x_] := Unevaluated[x + 1]; {0, h[5], 9}").unwrap(),
+      "{0, 6, 9}"
+    );
+  }
+
+  #[test]
+  fn literal_unevaluated_argument_keeps_its_wrapper() {
+    // The counterpart to the rule above: written literally, the wrapper
+    // survives and the Sequence does *not* splice — Length stays 3.
+    clear_state();
+    assert_eq!(
+      interpret("{0, Unevaluated[1 + 1], 9}").unwrap(),
+      "{0, Unevaluated[1 + 1], 9}"
+    );
+    assert_eq!(
+      interpret("{0, Unevaluated[Sequence[1, 2 + 3]], 9}").unwrap(),
+      "{0, Unevaluated[Sequence[1, 2 + 3]], 9}"
+    );
+    assert_eq!(
+      interpret("Length[{0, Unevaluated[Sequence[1, 2, 3]], 9}]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
   fn test_nested_comment() {
     clear_state();
     assert_eq!(
