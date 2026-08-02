@@ -2071,7 +2071,7 @@ mod plot3d {
       let svg = export_svg(
         "Graphics3D[Polygon[{{0,0,0}, {1,0,0}, {0,1,0}}], Boxed -> False]",
       );
-      assert!(svg.contains("stroke=\"#00000018\""), "{svg}");
+      assert!(svg.contains("stroke=\"rgb(64,64,64)\""), "{svg}");
       assert_eq!(svg.lines().filter(|l| l.starts_with("<line")).count(), 0);
     }
 
@@ -7704,8 +7704,80 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ] {
         let svg = export_svg(code);
         assert!(
-          !svg.contains("stroke=\"#00000018\""),
+          !svg.contains("stroke=\"rgb(64,64,64)\""),
           "{code} must not stroke its facet edges"
+        );
+      }
+    }
+
+    // Wolfram outlines a flat face in a solid `GrayLevel[0.25]` one pixel
+    // wide (measured against wolframscript at 2x: a 2-pixel run of
+    // rgb(64, 64, 64)). Woxi drew it at 9% black, which was all but
+    // invisible — the panels of a solar array read as one blob.
+    #[test]
+    fn a_face_outline_is_wolframs_grey() {
+      let svg = export_svg(
+        "Graphics3D[Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}],          Boxed -> False]",
+      );
+      assert!(
+        svg.contains("stroke=\"rgb(64,64,64)\" stroke-width=\"1\""),
+        "the outline is solid grey, a pixel wide: {svg}"
+      );
+    }
+
+    // Only the box's own edges are outlined. Each face is drawn as two
+    // triangles, and the diagonal they share is an internal cut — at 9%
+    // black it never showed, but a solid outline would have drawn a cross
+    // through every face.
+    #[test]
+    fn a_cuboid_outlines_its_edges_but_not_its_diagonals() {
+      let svg =
+        export_svg("Graphics3D[Cuboid[{0,0,0}, {1,1,1}], Boxed -> False]");
+      // A cube has 12 edges. Each is shared by two faces and so is stroked
+      // by both — they land on top of each other, so what shows is the 12
+      // edges and nothing across a face.
+      let mut segments: Vec<String> = svg
+        .lines()
+        .filter(|l| l.starts_with("<line"))
+        .map(|l| {
+          let mut ends: Vec<String> = ["x1", "y1", "x2", "y2"]
+            .iter()
+            .map(|k| {
+              l.split(&format!("{k}=\""))
+                .nth(1)
+                .and_then(|v| v.split('"').next())
+                .unwrap_or("")
+                .to_string()
+            })
+            .collect();
+          // Order-independent: the same edge from either face matches.
+          let (a, b) = (ends[..2].join(","), ends[2..].join(","));
+          ends = vec![a, b];
+          ends.sort();
+          ends.join("-")
+        })
+        .collect();
+      segments.sort();
+      segments.dedup();
+      assert_eq!(
+        segments.len(),
+        12,
+        "one stroked line per box edge, none across a face: {svg}"
+      );
+      // Every face triangle strokes itself, so the split is invisible.
+      for tri in svg.lines().filter(|l| l.starts_with("<polygon")) {
+        let get = |k: &str| {
+          tri
+            .split(&format!("{k}=\""))
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+        };
+        assert_eq!(
+          get("fill"),
+          get("stroke"),
+          "internal seam must be invisible: {tri}"
         );
       }
     }
@@ -7720,7 +7792,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ] {
         let svg = export_svg(code);
         assert!(
-          svg.contains("stroke=\"#00000018\""),
+          svg.contains("stroke=\"rgb(64,64,64)\""),
           "{code} must outline its faces"
         );
       }

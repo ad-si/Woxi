@@ -130,7 +130,7 @@ expression: "export_svg(\"Graphics3D[Polygon[{{0,0,0}, {1,0,0}, {0,1,0}}]]\")"
 <line x1="313.9" y1="189.5" x2="319.9" y2="183.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="28.0" y1="189.9" x2="34.1" y2="183.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="28.0" y1="189.9" x2="34.1" y2="183.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
-<polygon points="25.5,206.6 225.2,271.0 134.8,89.0" fill="rgb(80,109,153)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="25.5,206.6 225.2,271.0 134.8,89.0" fill="rgb(80,109,153)" stroke="rgb(64,64,64)" stroke-width="1"/>
 <line x1="307.9" y1="196.0" x2="313.9" y2="189.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="307.9" y1="196.0" x2="313.9" y2="189.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>
 <line x1="22.0" y1="196.4" x2="28.0" y2="189.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round" opacity="0.4"/>

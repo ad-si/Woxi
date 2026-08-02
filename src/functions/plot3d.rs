@@ -3008,6 +3008,27 @@ pub(crate) fn tessellate_cuboid(
   ]
 }
 
+/// Which edges of a box triangle are edges of the box itself. Two corners of
+/// an axis-aligned box are joined by an edge exactly when they differ in one
+/// coordinate; the rest are diagonals across a face, internal cuts of the
+/// two triangles it is split into. Only the box's own edges are outlined,
+/// the way Wolfram draws a `Cuboid`.
+fn box_edge_flags(tri: &(Point3D, Point3D, Point3D)) -> [bool; 3] {
+  let corners = [tri.0, tri.1, tri.2];
+  let is_edge = |a: Point3D, b: Point3D| {
+    let differs = [(a.x, b.x), (a.y, b.y), (a.z, b.z)]
+      .into_iter()
+      .filter(|(p, q)| (p - q).abs() > 1e-12)
+      .count();
+    differs == 1
+  };
+  [
+    is_edge(corners[0], corners[1]),
+    is_edge(corners[1], corners[2]),
+    is_edge(corners[2], corners[0]),
+  ]
+}
+
 /// Tessellate a cylinder along its axis.
 fn tessellate_cylinder(
   p1: &Point3D,
@@ -3486,7 +3507,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           p_min,
           p_max,
           style,
-        } => (tessellate_cuboid(p_min, p_max), style),
+        } => {
+          let tris = tessellate_cuboid(p_min, p_max);
+          holed_boundaries = tris.iter().map(box_edge_flags).collect();
+          (tris, style)
+        }
         Primitive3D::Cylinder {
           p1,
           p2,
@@ -3523,7 +3548,17 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           holed_boundaries = flags;
           (t, style)
         }
-        Primitive3D::Surface3D { tris, style, .. } => (tris.clone(), style),
+        Primitive3D::Surface3D {
+          tris,
+          style,
+          smooth,
+        } => {
+          // A Raster3D voxel is a box, so only its own edges are outlined.
+          if !*smooth {
+            holed_boundaries = tris.iter().map(box_edge_flags).collect();
+          }
+          (tris.clone(), style)
+        }
         // Line and Point are handled separately below
         _ => (
           vec![],
@@ -4103,7 +4138,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // colour instead, so the face reads as one flat surface.
       if tri.boundary == [true; 3] {
         svg.push_str(&format!(
-          "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"#00000018\" stroke-width=\"0.5\"{}/>\n",
+          "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"rgb(64,64,64)\" stroke-width=\"1\"{}/>\n",
           x0, y0, x1, y1, x2, y2, r, g, b, opacity_attr
         ));
       } else {
@@ -4119,7 +4154,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (ax, ay) = corners[e];
           let (bx, by) = corners[(e + 1) % 3];
           svg.push_str(&format!(
-            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"#00000018\" stroke-width=\"0.5\"{}/>\n",
+            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"rgb(64,64,64)\" stroke-width=\"1\"{}/>\n",
             opacity_attr
           ));
         }

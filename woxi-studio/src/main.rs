@@ -7384,6 +7384,81 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn solar_panel_manipulate_folds_its_array() {
+    // End-to-end regression for "Solar Panel of NASA's Phoenix Mars
+    // Lander": two sliders fold a fan of triangular panels around a shaft.
+    // Every panel is a flat `Polygon`, and the outline between them is what
+    // makes the array read as separate panels rather than one disc.
+    let code = "Manipulate[\n\
+      z = Sin[Pi/n];\n\
+      vO = {0, 0, 0}; vA = {0, -1, 0};\n\
+      vB = {Sin[a 2 Pi/n], -Cos[a 2 Pi/n], 0};\n\
+      vC = {Sin[a 2 Pi/n]/2, (-1 - Cos[a 2 Pi/n])/2, -z + a z};\n\
+      OAC = Polygon[{vO, vA, vC}]; OCB = Polygon[{vO, vC, vB}];\n\
+      full = {Specularity[0.7], RGBColor[1, 0.8, 0.2], \
+        Table[Rotate[{OAC, OCB}, i a 2 Pi/n, {0, 0, 1}], {i, n}]};\n\
+      shaft = Cylinder[{{0, 0, 0.1}, {0, 0, -1}}, .06];\n\
+      hub = {RGBColor[0.4, 0.8, 0.9], \
+        Cylinder[{{0, 0, 0.06}, {0, 0, -0.04}}, 0.1]};\n\
+      Graphics3D[{full, shaft, hub}, ImageSize -> {380, 380}, \
+        SphericalRegion -> True, Boxed -> False, \
+        PlotRange -> {{-1, 1}, {-1, 1}, {-1, .2}}], \
+      {{a, .9, \"deploy\"}, 0.02, 1}, \
+      {{n, 12, \"number of segments\"}, 3, 20, 1}, \
+      TrackedSymbols -> Manipulate]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the solar-panel Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the panel array"
+    );
+
+    // The deployment angle and the panel count.
+    let sliders: Vec<(&str, f64, f64, f64, f64)> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous {
+          label,
+          current,
+          min,
+          max,
+          step,
+          ..
+        } => (label.as_str(), *current, *min, *max, *step),
+        other => panic!("expected a continuous slider, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(sliders[0].0, "deploy");
+    assert_eq!((sliders[0].1, sliders[0].2, sliders[0].3), (0.9, 0.02, 1.0));
+    assert_eq!(sliders[1].0, "number of segments");
+    assert_eq!(
+      (sliders[1].1, sliders[1].2, sliders[1].3, sliders[1].4),
+      (12.0, 3.0, 20.0, 1.0)
+    );
+
+    // Folding the array right down to three segments still renders.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 0.02;
+    }
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[1]
+    {
+      *current = 3.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn dijkstra_manipulate_builds_its_button_bar() {
     // End-to-end regression for "Dijkstra's Algorithm": the graph is stepped
     // through by buttons, and the starting vertex is picked from a
