@@ -102,6 +102,9 @@ state: extra display arguments such as a trailing
 `Dynamic[Panel[Grid[… Checkbox …]]]` are rendered as interactive
 widgets, and toggling a checkbox writes back into that state and
 re-renders both the display and the body.
+A control keeps the typesetting its label was written with:
+`Style["t", Italic]` stays italic, `Subscript[Style["k", Italic], 1]`
+reads `k₁`, and a derivative such as `Style["y", Italic]'` reads `y′`.
 
 Output text is rendered in a read-only text editor, so it can be
 selected and copied with the mouse.
