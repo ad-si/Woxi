@@ -9138,22 +9138,39 @@ fn evaluate_function_call_ast_inner(
   // CreateDirectory[] — create a temporary directory
   if name == "CreateDirectory" {
     if args.is_empty() {
-      // Create a temporary directory
-      match std::env::temp_dir()
-        .to_str()
-        .map(|t| format!("{}/woxi_{}", t, std::process::id()))
-      {
-        Some(tmp_path) => match std::fs::create_dir_all(&tmp_path) {
-          Ok(()) => return Ok(Expr::String(tmp_path)),
-          Err(e) => {
-            crate::emit_message(&format!("CreateDirectory::failed: {}", e));
-            return Ok(Expr::Identifier("$Failed".to_string()));
+      // Create a temporary directory. Every call makes a *new* one, as
+      // Wolfram does: handing the same path back twice lets one caller
+      // delete the directory another is still using — the failure that
+      // showed up as `DirectoryQ[CreateDirectory[]]` reporting False.
+      static NEXT_TEMP_DIR: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+      let mut last_err = None;
+      for _ in 0..1000 {
+        let n =
+          NEXT_TEMP_DIR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+          "woxi_{}_{}",
+          std::process::id(),
+          n
+        ));
+        // `create_dir` fails rather than reusing an existing directory, so
+        // a name left behind by an earlier run is skipped instead of shared.
+        match std::fs::create_dir(&path) {
+          Ok(()) => {
+            return Ok(Expr::String(path.to_string_lossy().into_owned()));
           }
-        },
-        None => {
-          return Ok(Expr::Identifier("$Failed".to_string()));
+          Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+          Err(e) => {
+            last_err = Some(e);
+            break;
+          }
         }
       }
+      let message = last_err
+        .map(|e| e.to_string())
+        .unwrap_or_else(|| "no free directory name".to_string());
+      crate::emit_message(&format!("CreateDirectory::failed: {message}"));
+      return Ok(Expr::Identifier("$Failed".to_string()));
     }
     if args.len() == 1 {
       if let Expr::String(path) = &args[0] {
