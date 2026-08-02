@@ -9814,14 +9814,26 @@ fn evaluate_function_call_ast_inner(
       None
     };
     let t_for_formula = date_diff_periods.as_ref().unwrap_or(t);
-    let t_is_usable = matches!(
-      t_for_formula,
-      Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_)
-    ) || matches!(
-      t_for_formula,
-      Expr::FunctionCall { name, .. } if name == "Rational"
+    // `s (1 + i)^t` needs none of its three parts to be a number: a
+    // symbolic sum, rate or time all carry straight into the formula, so
+    // `TimeValue[amount, rate, t]` is a function of `t` that can be
+    // plotted or solved. Only the forms with a life of their own are held
+    // back: an `Annuity`/`AnnuityDue` sum (its own blocks below) and a
+    // date pair that did not convert to a period count.
+    // The sums with a life of their own — an annuity's or a cashflow's
+    // value is not the lump-sum formula — are handled by their own blocks.
+    let s_is_special = matches!(
+      s,
+      Expr::FunctionCall { name, .. }
+        if name == "Annuity" || name == "AnnuityDue" || name == "Cashflow"
     );
-    if s_scalar && i_scalar && t_is_usable {
+    let t_is_usable = !matches!(t_for_formula, Expr::List(_));
+    // A list rate is a term structure — period-rate pairs or a yield
+    // curve — with its own blocks further down, not something to raise to
+    // the power of the term.
+    let i_is_curve = matches!(i, Expr::List(_));
+    let _ = (s_scalar, i_scalar);
+    if !s_is_special && !i_is_curve && t_is_usable {
       let value = Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![

@@ -14245,6 +14245,10 @@ pub(crate) struct NumberFormOptions {
   /// `SignPadding` — True puts the sign before the padding, False (the
   /// default) keeps it next to the digits.
   sign_padding: bool,
+  /// `ExponentFunction -> (Null &)` — an exponent function that returns
+  /// `Null` for every exponent means "never use scientific notation", so
+  /// the number is written out in full.
+  suppress_exponent: bool,
 }
 
 /// Parse the `NumberForm`-family options out of a display-form argument list.
@@ -14252,6 +14256,34 @@ pub(crate) struct NumberFormOptions {
 /// with spaces, `NumberForm` does not pad it at all, and `AccountingForm`
 /// pads neither side (so `AccountingForm[12.345, {5, 2}]` is "12.35", not
 /// "12.35" padded out to the field).
+/// Whether an `ExponentFunction` option maps every exponent to `Null` —
+/// Wolfram's way of asking for a number to be written out rather than put
+/// in scientific notation. Probed at two exponents, which tells a
+/// constant `(Null &)` apart from a function that picks one.
+fn exponent_function_suppresses(args: &[Expr]) -> bool {
+  let Some(f) = args.iter().find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s)
+      if s == "ExponentFunction") =>
+    {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  }) else {
+    return false;
+  };
+  [0i128, 12].iter().all(|&e| {
+    crate::functions::list_helpers_ast::apply_func_ast(f, &Expr::Integer(e))
+      .ok()
+      .map(|applied| {
+        crate::evaluator::evaluate_expr_to_expr(&applied).unwrap_or(applied)
+      })
+      .is_some_and(|v| matches!(&v, Expr::Identifier(s) if s == "Null"))
+  })
+}
+
 pub(crate) fn number_form_options(
   head: &str,
   args: &[Expr],
@@ -14265,6 +14297,7 @@ pub(crate) fn number_form_options(
     rpad: if head == "AccountingForm" { "" } else { "0" }.to_string(),
     signs: None,
     sign_padding: false,
+    suppress_exponent: exponent_function_suppresses(args),
   };
   let text = |e: &Expr| match e {
     Expr::String(s) => Some(s.clone()),
@@ -14385,7 +14418,7 @@ fn number_form_family_scalar(
   let (body, exp) = match (fixed, spec) {
     (Some((_, f)), _) => (number_form_fixed_to_string(&magnitude, f)?, None),
     (None, Some(Expr::Integer(n))) => {
-      if head == "AccountingForm" {
+      if head == "AccountingForm" || opts.suppress_exponent {
         // AccountingForm never switches to scientific notation.
         (number_form_to_string(&magnitude, *n as i64)?, None)
       } else {
@@ -14394,7 +14427,7 @@ fn number_form_family_scalar(
       }
     }
     (None, None) => {
-      if head == "AccountingForm" {
+      if head == "AccountingForm" || opts.suppress_exponent {
         match &magnitude {
           Expr::Integer(i) => (i.to_string(), None),
           Expr::Real(f) => (decimal_form_default(*f), None),
@@ -14557,11 +14590,19 @@ pub(crate) fn number_form_family_to_string(
   if positional.is_empty() || positional.len() > 2 {
     return None;
   }
+  // A `NumberFormat`, or an `ExponentFunction` that actually chooses an
+  // exponent, is rendered by the dedicated custom-format path. One that
+  // only suppresses the exponent is handled here, since everything else
+  // about the number is formatted as usual.
   let has_custom_format = inner.iter().any(|a| {
     matches!(a, Expr::Rule { pattern, .. }
       if matches!(pattern.as_ref(), Expr::Identifier(s)
-        if s == "ExponentFunction" || s == "NumberFormat"))
-  });
+        if s == "NumberFormat"))
+  }) || (inner.iter().any(|a| {
+    matches!(a, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(s)
+        if s == "ExponentFunction"))
+  }) && !exponent_function_suppresses(inner));
   if has_custom_format {
     return None;
   }

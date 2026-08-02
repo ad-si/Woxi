@@ -3859,6 +3859,49 @@ mod number_form {
     );
   }
 
+  // `ExponentFunction -> (Null &)` is Wolfram's way of saying "never use
+  // scientific notation": the number is written out in full, with the
+  // rest of the formatting (the `{n, f}` spec, `DigitBlock`) unchanged.
+  // Regression: the option threw the spec away, so a Demonstration's
+  // money captions came out as one significant figure.
+  #[test]
+  fn to_string_number_form_null_exponent_function() {
+    let null_fn = "ExponentFunction -> (Null &)";
+    assert_eq!(
+      interpret(&format!(
+        "ToString[NumberForm[48153.52875, {{16, 2}}, DigitBlock -> 3, \
+         {null_fn}]]"
+      ))
+      .unwrap(),
+      "48,153.53"
+    );
+    assert_eq!(
+      interpret(&format!("ToString[NumberForm[4.0, {{16, 7}}, {null_fn}]]"))
+        .unwrap(),
+      "4.0000000"
+    );
+    // A number big enough to go scientific is written out instead.
+    assert_eq!(
+      interpret(&format!("ToString[NumberForm[1.234*10^12, 5, {null_fn}]]"))
+        .unwrap(),
+      "1234000000000."
+    );
+    assert_eq!(
+      interpret(&format!(
+        "ToString[NumberForm[1.234*10^12, {{16, 2}}, DigitBlock -> 3, \
+         {null_fn}]]"
+      ))
+      .unwrap(),
+      "1,234,000,000,000.00"
+    );
+    // Without the option nothing changes.
+    assert_eq!(
+      interpret("ToString[NumberForm[48153.52875, {16, 2}, DigitBlock -> 3]]")
+        .unwrap(),
+      "48,153.53"
+    );
+  }
+
   // ToString[NumberForm[x, n, NumberPadding -> {p1, p2}]] left-pads the
   // rendered number (sign and decimal point included) with p1 to n+1 digit
   // positions.

@@ -277,6 +277,31 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
         .collect();
       Some(format!("{base}{scripts}"))
     }
+    // A number written through one of the formatting wrappers reads as
+    // the text that wrapper produces — a Demonstration labels its plot
+    // with `NumberForm[value, {16, 2}, DigitBlock -> 3]`, and dropping it
+    // would leave the caption with a currency sign and no amount.
+    Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "NumberForm"
+          | "ScientificForm"
+          | "EngineeringForm"
+          | "AccountingForm"
+          | "PaddedForm"
+      ) =>
+    {
+      match crate::functions::string_ast::to_string_ast(std::slice::from_ref(e))
+      {
+        Ok(Expr::String(ref rendered)) => Some(rendered.clone()),
+        _ => None,
+      }
+    }
+    // `Spacer[n]` is a gap, not something to print.
+    Expr::FunctionCall { name, args } if name == "Spacer" => {
+      let width = args.first().and_then(try_eval_to_f64).unwrap_or(1.0);
+      Some(" ".repeat((width.max(0.0).round() as usize).max(1)))
+    }
     // `Row[{…}]` joins its parts, with an optional separator.
     Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
       let Expr::List(items) = &args[0] else {

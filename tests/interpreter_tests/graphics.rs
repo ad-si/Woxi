@@ -2524,6 +2524,26 @@ mod plot3d {
       );
     }
 
+    /// A plot label made of a `Row` draws the numbers it names and the
+    /// gaps it asks for: a `NumberForm` reads as the text it formats to,
+    /// and a `Spacer` as space rather than as its own source.
+    #[test]
+    fn plot_label_row_draws_number_forms_and_spacers() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, PlotLabel -> Row[{\"gross: $\", \
+         NumberForm[48153.52875, {16, 2}, DigitBlock -> 3, \
+         ExponentFunction -> (Null &)], Spacer[5], \"per year\"}]]",
+      );
+      assert!(
+        svg.contains("gross: $48,153.53"),
+        "the amount must be drawn: {svg}"
+      );
+      assert!(
+        !svg.contains("Spacer["),
+        "the spacer must not print itself: {svg}"
+      );
+    }
+
     /// `Evaluated -> True` works the body out once, with the plot
     /// variable still symbolic, instead of at every sample point. A fit
     /// only makes sense that way: substituting a number for the variable
@@ -14520,6 +14540,38 @@ mod manipulate {
       })
       .collect();
     assert_eq!(names, ["a", "b", "c", "d", "e"]);
+  }
+
+  /// A `PaneSelector[{value -> content, …}, selector]` shows one pane at a
+  /// time in Wolfram; its panes hold controls just as a `TabView`'s tabs
+  /// do, so they are found the same way. A variable declared in more than
+  /// one pane — the usual pattern, one pane per range — is registered
+  /// once. Regression: an investment Demonstration hid three of its
+  /// fifteen controls in two PaneSelectors, and the body then failed on
+  /// the unbound names.
+  #[test]
+  fn spec_pane_selector_grouped_controls_flatten() {
+    let expr = interpret_to_expr(
+      "Manipulate[x, \
+       Row[{Control[{{mode, 1, \"mode\"}, {1, 2}}], \
+            PaneSelector[{1 -> Control[{{n, 4., \"n\"}, 1., 10.}], \
+                          2 -> Control[{{n, 4., \"n\"}, 1., 365.}]}, mode]}], \
+       PaneSelector[{False -> Control[{{flag, False, \"f\"}, {True, False}}], \
+                     True -> Column[{Control[{{flag, False, \"f\"}, {True, False}}], \
+                                     Control[{{amt, 1., \"a\"}, 0., 9.}]}]}, flag]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Continuous { name, .. }
+        | ManipulateControl::Discrete { name, .. } => Some(name.as_str()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(names, ["mode", "n", "flag", "amt"]);
   }
 
   /// The Wolfram Demonstrations layout pattern: controls grouped inside

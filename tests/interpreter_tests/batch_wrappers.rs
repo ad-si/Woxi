@@ -35,6 +35,32 @@ mod batch_unevaluated_wrappers {
     let val: f64 = result.parse().unwrap();
     assert!((val - 1157.6250000000002).abs() < 1e-9, "got {}", val);
   }
+  // `s (1 + i)^t` holds symbolically too, so a growth curve can be
+  // plotted or solved. Regression: any non-numeric part left the whole
+  // call unevaluated, and a Demonstration plotting an investment against
+  // time got a blank picture.
+  #[test]
+  fn time_value_is_symbolic_in_every_argument() {
+    assert_eq!(interpret("TimeValue[s, i, t]").unwrap(), "(1 + i)^t*s");
+    assert_eq!(
+      interpret("TimeValue[1000, 0.05, t]").unwrap(),
+      "1000*1.05^t"
+    );
+    assert_eq!(
+      interpret("TimeValue[1000, i, 5]").unwrap(),
+      "1000*(1 + i)^5"
+    );
+    assert_eq!(
+      interpret("TimeValue[s, 0.05, 3]").unwrap(),
+      "1.1576250000000001*s"
+    );
+    // An annuity keeps its own formula rather than being grown as a sum.
+    assert_eq!(
+      interpret("Round[TimeValue[Annuity[100, 10], 0.05, 0], 10^-4]").unwrap(),
+      "1544347/2000"
+    );
+  }
+
   #[test]
   fn time_value_present_value() {
     // Negative t for present value: 1000 / 1.05^3.

@@ -2407,14 +2407,18 @@ fn graphics_text_content(expr: &Expr) -> String {
       let Some(Expr::List(items)) = args.first() else {
         unreachable!()
       };
-      let parts: Vec<String> =
-        items.iter().map(graphics_text_content).collect();
+      // A `Spacer[n]` among the items is a gap, not something to print.
+      let parts: Vec<String> = items
+        .iter()
+        .map(|item| match spacer_gap_text(item) {
+          Some(gap) => gap,
+          None => graphics_text_content(item),
+        })
+        .collect();
       match args.get(1) {
         // `Spacer[n]` separates with a gap rather than printing itself.
-        Some(Expr::FunctionCall { name, args: sargs }) if name == "Spacer" => {
-          let ems = sargs.first().and_then(expr_to_f64).unwrap_or(1.0);
-          let gap = " ".repeat((ems.max(0.0).round() as usize).max(1));
-          parts.join(&gap)
+        Some(sep) if spacer_gap_text(sep).is_some() => {
+          parts.join(&spacer_gap_text(sep).unwrap_or_default())
         }
         Some(sep) => parts.join(&graphics_text_content(sep)),
         None => parts.concat(),
@@ -2427,6 +2431,20 @@ fn graphics_text_content(expr: &Expr) -> String {
       _ => crate::syntax::expr_to_string(expr),
     },
   }
+}
+
+/// The blank a `Spacer[n]` stands for when a layout is flattened to text,
+/// `None` for anything else. Used both for a spacer among a `Row`'s items
+/// and for one given as its separator, so the two agree.
+fn spacer_gap_text(expr: &Expr) -> Option<String> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Spacer" {
+    return None;
+  }
+  let width = args.first().and_then(expr_to_f64).unwrap_or(1.0);
+  Some(" ".repeat((width.max(0.0).round() as usize).max(1)))
 }
 
 /// The primitives an `Inset[obj, pos, opos, size, dirs]` contributes when
@@ -7975,6 +7993,13 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             expr_to_svg_markup(&args[0]),
             scripts
           )
+        }
+
+        // `Spacer[n]` is a gap n ems wide, wherever it appears — among a
+        // `Row`'s items as readily as as its separator.
+        "Spacer" => {
+          let ems = args.first().and_then(expr_to_f64).unwrap_or(1.0);
+          format!("<tspan style=\"letter-spacing:{ems:.2}em\"> </tspan>")
         }
 
         // Row[{a, b, …}] concatenates its parts; Row[{…}, sep] joins
@@ -15719,8 +15744,10 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   let Expr::FunctionCall { name, args } = spec else {
     return None;
   };
-  if !matches!(name.as_str(), "Row" | "Column" | "Grid" | "TabView")
-    || args.is_empty()
+  if !matches!(
+    name.as_str(),
+    "Row" | "Column" | "Grid" | "TabView" | "PaneSelector"
+  ) || args.is_empty()
   {
     return None;
   }
@@ -15732,12 +15759,15 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   };
   let mut out = Vec::new();
   for item in items.iter() {
-    // A `TabView` lists its tabs as `label -> content`; only the content
-    // holds controls. (Woxi's control panel is one flat list, so the tabs
-    // themselves are not reproduced — every tab's controls are shown.)
+    // A `TabView` lists its tabs as `label -> content`, and a
+    // `PaneSelector` its panes as `value -> content`; only the content
+    // holds controls. (Woxi's control panel is one flat list, so neither
+    // the tabs nor the panes are reproduced — every one's controls are
+    // shown, and a variable declared in more than one pane is registered
+    // once, from the first pane that declares it.)
     let item = match (name.as_str(), item) {
       (
-        "TabView",
+        "TabView" | "PaneSelector",
         Expr::Rule { replacement, .. } | Expr::RuleDelayed { replacement, .. },
       ) => replacement.as_ref(),
       _ => item,
