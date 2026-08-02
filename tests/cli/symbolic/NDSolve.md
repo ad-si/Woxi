@@ -22,3 +22,11 @@ differentiated:
 $ wo "s = Flatten[NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}]]; s[[1]][[2]]'[2.0]"
 -0.1353352846442526
 ```
+
+Substituting the solution into a derivative works the same way, which is how
+a function and its slope are sampled together (for a phase portrait, say):
+
+```scrut
+$ wo "s = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}]; {y[2.0], y'[2.0]} /. First[s]"
+{0.1353352832380283, -0.1353352846442526}
+```

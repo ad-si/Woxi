@@ -7312,6 +7312,53 @@ mod ndsolve {
     assert_eq!(result, "{w, x}");
   }
 
+  /// Substituting the solution rules into a derivative — `y'[t] /. sol`, how
+  /// a Demonstration plots a phase portrait — leaves
+  /// `Derivative[1][InterpolatingFunction[…]][t]`, which has to evaluate to
+  /// the slope, not stay a symbolic `Derivative[…]` echo.
+  #[test]
+  fn a_substituted_derivative_evaluates_numerically() {
+    // y' = y, y(0) = 1 → y(t) = y'(t) = E^t.
+    let result = interpret(
+      "sol = NDSolve[{y'[t] == y[t], y[0] == 1}, y, {t, 0, 1}]; \
+       {y[0.5], y'[0.5]} /. sol[[1]]",
+    )
+    .unwrap();
+    let nums: Vec<f64> = result
+      .trim_matches(['{', '}'])
+      .split(", ")
+      .map(|s| s.parse().expect("both entries are numbers"))
+      .collect();
+    let expected = std::f64::consts::E.powf(0.5);
+    for value in &nums {
+      assert!(
+        (value - expected).abs() < 1e-3,
+        "expected about {expected}, got {result}"
+      );
+    }
+  }
+
+  /// The same for a second derivative, and for the whole solution list
+  /// (`/. sol` rather than `/. sol[[1]]`).
+  #[test]
+  fn a_substituted_second_derivative_evaluates_numerically() {
+    // y'' = -y with y(0) = 0, y'(0) = 1 → y = Sin[t], y'' = -Sin[t].
+    let result = interpret(
+      "sol = NDSolve[{y''[t] == -y[t], y[0] == 0, y'[0] == 1}, y, \
+       {t, 0, 3}]; y''[1.0] /. sol",
+    )
+    .unwrap();
+    let value: f64 = result
+      .trim_matches(['{', '}'])
+      .parse()
+      .expect("a single numeric solution");
+    let expected = -1.0f64.sin();
+    assert!(
+      (value - expected).abs() < 1e-3,
+      "expected about {expected}, got {result}"
+    );
+  }
+
   #[test]
   fn exponential_growth() {
     // NDSolve y'=y, y(0)=1, check y(0.5) ≈ E^0.5

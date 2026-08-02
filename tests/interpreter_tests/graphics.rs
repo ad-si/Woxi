@@ -19160,3 +19160,124 @@ mod list_plot_markers_and_epilog {
     assert!(text.contains("font-size=\"200\""), "{text}");
   }
 }
+
+/// The layout a Demonstration builds its output with: a `Column` whose rows
+/// hold several plots side by side, each framed, squared and labelled as a
+/// function of the plot variable.
+mod demonstration_plot_layout {
+  use super::*;
+
+  /// A plot nested in a `Row` inside a `Column` draws in its own coordinate
+  /// space (a plot's internal units are a multiple of its display size), so
+  /// the cell it is embedded in has to carry the child's `viewBox` — without
+  /// it the whole curve lands outside the cell and the plot shows up blank.
+  #[test]
+  fn a_plot_nested_in_a_row_keeps_its_coordinate_space() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Column[{Row[{Graphics[{Blue, Rectangle[]}, ImageSize -> {80, 100}], \
+       Plot[Sin[x], {x, 0, 6}, ImageSize -> 120]}]}]",
+    )
+    .unwrap();
+    let svg = result.graphics.expect("a rendered column");
+    let nested: Vec<&str> = svg
+      .split("<svg ")
+      .skip(1)
+      .filter_map(|tag| tag.split_once('>').map(|(open, _)| open))
+      .collect();
+    assert!(
+      nested.len() >= 3,
+      "outer + row + two cells expected, got {}: {svg}",
+      nested.len()
+    );
+    assert!(
+      nested.iter().all(|open| open.contains("viewBox=")),
+      "every nested cell needs its own viewBox: {nested:?}"
+    );
+    // The curve itself has to be inside the plot's cell, i.e. the sampled
+    // polyline survives the nesting.
+    let longest = svg
+      .split("points=\"")
+      .skip(1)
+      .map(|s| s.split('"').next().unwrap_or("").len())
+      .max()
+      .unwrap_or(0);
+    assert!(longest > 200, "the nested curve must be drawn: {svg}");
+  }
+
+  /// `Frame -> True, Axes -> False` is the standard framed look: the ticks
+  /// move to the frame edges and keep their labels.
+  #[test]
+  fn a_framed_plot_labels_its_ticks_without_axes() {
+    clear_state();
+    let svg = export_svg(
+      "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, Frame -> True, \
+       Axes -> False, ImageSize -> 250]",
+    );
+    let labels: Vec<String> = svg
+      .split("<text ")
+      .skip(1)
+      .filter_map(|tag| tag.split_once('>'))
+      .filter_map(|(_, rest)| rest.split('<').next())
+      .map(|t| t.trim().to_string())
+      .filter(|t| !t.is_empty())
+      .collect();
+    for expected in ["-1.0", "-0.5", "0.0", "0.5"] {
+      // Both frame edges carry the set, so each label appears twice.
+      assert_eq!(
+        labels.iter().filter(|l| *l == expected).count(),
+        2,
+        "both framed axes must label their ticks, got {labels:?}"
+      );
+    }
+  }
+
+  /// With `ImagePadding` the padding is the whole margin, so an
+  /// `AspectRatio` fixes the image height directly: a square frame in a
+  /// 250-wide image makes a 250-tall image, not one sized by the default
+  /// ratio with the frame shrunk to fit.
+  #[test]
+  fn an_aspect_ratio_sizes_a_padded_image() {
+    clear_state();
+    let svg = export_svg(
+      "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, ImageSize -> 250, \
+       AspectRatio -> 1, ImagePadding -> 35]",
+    );
+    let header = svg.split_once('>').expect("an svg tag").0;
+    assert!(
+      header.contains("width=\"250\"") && header.contains("height=\"250\""),
+      "a square padded plot keeps its width: {header}"
+    );
+    // Half the ratio halves the height: 180 wide plot area + 70 padding.
+    let svg = export_svg(
+      "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, ImageSize -> 250, \
+       AspectRatio -> 1/2, ImagePadding -> 35]",
+    );
+    let header = svg.split_once('>').expect("an svg tag").0;
+    assert!(
+      header.contains("height=\"160\""),
+      "the plot area follows the ratio: {header}"
+    );
+  }
+
+  /// A label written as a function of the plot variable typesets the way a
+  /// graphic's labels do: `y[t]` reads `y(t)` and `y'[t]` reads `y′(t)`.
+  /// They used to be dropped entirely.
+  #[test]
+  fn function_labels_typeset_with_parentheses_and_primes() {
+    clear_state();
+    let svg = export_svg(
+      "Plot[Sin[x], {x, 0, 10}, AxesLabel -> {t, y[t]}, ImageSize -> 300]",
+    );
+    assert!(svg.contains(">y(t)<"), "the y axis label is missing: {svg}");
+    let svg = export_svg(
+      "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, Frame -> True, \
+       FrameLabel -> {y[t], y'[t]}, ImageSize -> 250]",
+    );
+    assert!(svg.contains(">y(t)<"), "the bottom frame label: {svg}");
+    assert!(
+      svg.contains(">y\u{2032}(t)<"),
+      "the left frame label needs its prime: {svg}"
+    );
+  }
+}

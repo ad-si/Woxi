@@ -13810,8 +13810,14 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
         height,
       } => {
         let y_off = cell_top(*height);
+        // The child keeps its own coordinate space: a plot draws at a
+        // multiple of its display size, so the nested `<svg>` needs the
+        // child's viewBox or none of it lands inside the cell.
+        let view_box = parse_svg_dimensions(child)
+          .map(|p| p.view_box)
+          .unwrap_or_else(|| format!("0 0 {width} {height}"));
         svg.push_str(&format!(
-          "<svg x=\"{x:.1}\" y=\"{y_off:.1}\" width=\"{width:.1}\" height=\"{height:.1}\">\n"
+          "<svg x=\"{x:.1}\" y=\"{y_off:.1}\" width=\"{width:.1}\" height=\"{height:.1}\" viewBox=\"{view_box}\" preserveAspectRatio=\"xMidYMid meet\">\n"
         ));
         svg.push_str(strip_svg_wrapper(child));
         svg.push_str("</svg>\n");
@@ -16194,6 +16200,16 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       vec![LabelRun { text, italic }]
     }
   };
+  // `Derivative[n][f]` — a slider labelled `y'(0)` writes its `y'` this way.
+  // The primes are upright even when the function they mark is italic.
+  if let Some((func, order)) = as_derivative_of(expr) {
+    let mut runs = manipulate_label_runs(func, italic);
+    runs.push(LabelRun {
+      text: derivative_prime_marks(order),
+      italic: false,
+    });
+    return runs;
+  }
   match expr {
     Expr::FunctionCall { name, args } => match name.as_str() {
       // Style[expr, dir…] — render `expr`, turning italic on if any directive
@@ -16368,6 +16384,55 @@ fn is_italic_directive(dir: &Expr) -> bool {
 /// plain string is needed (JSON export, Unicode-script folding).
 fn flatten_label_runs(runs: &[LabelRun]) -> String {
   runs.iter().map(|r| r.text.as_str()).collect()
+}
+
+/// The mark the Wolfram Language typesets `Derivative[n][f]` with: a prime
+/// per order up to three (`y′`, `y″`, `y‴`) and a parenthesised superscript
+/// order beyond that (`y⁽⁴⁾`).
+pub(crate) fn derivative_prime_marks(order: u32) -> String {
+  match order {
+    0 => String::new(),
+    1 => "\u{2032}".to_string(),
+    2 => "\u{2033}".to_string(),
+    3 => "\u{2034}".to_string(),
+    n => to_unicode_script(&format!("({n})"), true),
+  }
+}
+
+/// Split a derivative application into the function it differentiates and
+/// the order. Covers both shapes the parser leaves behind: the curried
+/// `Derivative[n][f]` and the flattened `Derivative[n, f]` that
+/// `expr_to_output` prints back as `Derivative[n][f]`.
+pub(crate) fn as_derivative_of(expr: &Expr) -> Option<(&Expr, u32)> {
+  let (head, args): (&Expr, &[Expr]) = match expr {
+    Expr::CurriedCall { func, args } => (func.as_ref(), args),
+    Expr::FunctionCall { name, args } if name == "Derivative" => {
+      return match args.len() {
+        2 => order_of(&args[0]).map(|n| (&args[1], n)),
+        _ => None,
+      };
+    }
+    _ => return None,
+  };
+  if args.len() != 1 {
+    return None;
+  }
+  match head {
+    Expr::FunctionCall { name, args: hargs }
+      if name == "Derivative" && hargs.len() == 1 =>
+    {
+      order_of(&hargs[0]).map(|n| (&args[0], n))
+    }
+    _ => None,
+  }
+}
+
+/// The integer order of a `Derivative[n]` index.
+fn order_of(expr: &Expr) -> Option<u32> {
+  match expr {
+    Expr::Integer(n) if *n >= 0 => u32::try_from(*n).ok(),
+    _ => None,
+  }
 }
 
 /// Map the characters of `s` to their Unicode sub-/superscript form when a
@@ -18811,5 +18876,56 @@ mod manipulate_label_tests {
     );
     assert_eq!(runs(&row), vec![run("a", true), run("b", false)]);
     assert_eq!(flatten_label_runs(&runs(&row)), "ab");
+  }
+
+  /// `Derivative[n][f]` — a slider labelled `y'(0)` in a Demonstration.
+  fn derivative(order: i128, func: Expr) -> Expr {
+    Expr::CurriedCall {
+      func: Box::new(call("Derivative", vec![Expr::Integer(order)])),
+      args: vec![func],
+    }
+  }
+
+  #[test]
+  fn derivative_of_an_italic_style_primes_an_italic_base() {
+    let italic_y = call(
+      "Style",
+      vec![Expr::String("y".into()), Expr::Identifier("Italic".into())],
+    );
+    let label = call(
+      "Text",
+      vec![call(
+        "Row",
+        vec![Expr::List(
+          vec![derivative(1, italic_y), Expr::String("(0)".into())].into(),
+        )],
+      )],
+    );
+    assert_eq!(
+      runs(&label),
+      vec![run("y", true), run("\u{2032}", false), run("(0)", false),]
+    );
+    assert_eq!(flatten_label_runs(&runs(&label)), "y\u{2032}(0)");
+  }
+
+  #[test]
+  fn higher_derivative_orders_get_their_own_marks() {
+    let y = || Expr::Identifier("y".into());
+    let marks = |order| flatten_label_runs(&runs(&derivative(order, y())));
+    assert_eq!(marks(2), "y\u{2033}");
+    assert_eq!(marks(3), "y\u{2034}");
+    // Past three primes the order is written as a superscript in parens.
+    assert_eq!(marks(4), "y\u{207D}\u{2074}\u{207E}");
+  }
+
+  /// The evaluator hands back `Derivative[n][f]` flattened to
+  /// `Derivative[n, f]`; both shapes must label the same.
+  #[test]
+  fn flattened_derivative_labels_like_the_curried_one() {
+    let flat = call(
+      "Derivative",
+      vec![Expr::Integer(1), Expr::Identifier("y".into())],
+    );
+    assert_eq!(flatten_label_runs(&runs(&flat)), "y\u{2032}");
   }
 }

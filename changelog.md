@@ -2,6 +2,22 @@
 
 # Unreleased
 
+- Fixes driven by the "Mass with a Spring and a Rubber Band" Wolfram
+    Demonstration:
+    - Substituting an `NDSolve` solution into a derivative
+        (`y'[t] /. sol`) evaluates numerically instead of echoing a
+        `Derivative[…]` expression, so a phase portrait of a numeric
+        solution can be plotted.
+    - A plot nested in a `Row` inside a `Column` keeps its own coordinate
+        space and is drawn (it used to render blank).
+    - `Frame -> True` labels its frame ticks even with `Axes -> False`.
+    - `AspectRatio` together with `ImagePadding` sizes the image so the
+        plot area spans the full width, instead of shrinking it into a
+        canvas sized by the default ratio.
+    - Labels written as a function of the plot variable typeset the way
+        Wolfram draws them — `AxesLabel -> {t, y[t]}` reads `y(t)` and a
+        derivative reads `y′(t)`, where both used to be dropped — and a
+        `Manipulate` control labelled `Style["y", Italic]'` shows `y′`.
 - Symbol names may contain `$` anywhere (`a$b`, `signal$1`), matching Wolfram.
 - `PlotRange` bounds given in reversed order (e.g. `{3, -3}`) normalize to
     the same plot as the sorted form, matching Wolfram.
