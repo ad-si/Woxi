@@ -7370,6 +7370,93 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       insta::assert_snapshot!(export_svg("Graphics3D[Sphere[]]"));
     }
 
+    // A notebook stores a typeset formula as a linear-syntax span:
+    // `\!\(TraditionalForm\`16\ \*SubscriptBox[\(S\), \(ABC\)]\)`. The form
+    // name says how to read the rest and shows nothing itself, and `\ ` is
+    // an escaped space — both used to leak into the picture as literal text.
+    #[test]
+    fn a_linear_syntax_span_typesets_its_content() {
+      let svg = export_svg(
+        "Grid[{{\"\\!\\(TraditionalForm\\`16\\\\ \
+         \\*SubscriptBox[\\(S\\), \\(ABC\\)]\\\\ \
+         \\*SubscriptBox[\\(S\\), \\(DEF\\)]\\)\", \"formula\"}}, \
+         Frame -> All]",
+      );
+      assert!(
+        !svg.contains("TraditionalForm"),
+        "the form name is not shown: {svg}"
+      );
+      assert!(!svg.contains('\\'), "no escapes leak through: {svg}");
+      for part in ["16", "ABC", "DEF"] {
+        assert!(svg.contains(part), "{part} must be typeset: {svg}");
+      }
+    }
+
+    // Such a string is measured by what it displays, not by the markup it is
+    // written with — otherwise the grid column holding it comes out several
+    // times too wide.
+    #[test]
+    fn a_linear_syntax_cell_is_measured_by_what_it_shows() {
+      let width = |code: &str| -> f64 {
+        export_svg(code)
+          .split("width=\"")
+          .nth(1)
+          .and_then(|w| w.split('"').next())
+          .and_then(|w| w.parse().ok())
+          .expect("svg width")
+      };
+      let boxed = width(
+        "Grid[{{\"\\!\\(TraditionalForm\\`16\\\\ \
+         \\*SubscriptBox[\\(S\\), \\(ABC\\)]\\)\"}}, Frame -> All]",
+      );
+      let plain = width("Grid[{{\"16 SABC\"}}, Frame -> All]");
+      assert!(
+        (boxed - plain).abs() < plain * 0.5,
+        "the box cell ({boxed}) must measure like the text it shows ({plain})"
+      );
+    }
+
+    // A named style supplies the base appearance and the explicit directives
+    // sit on top of it, whichever side of it they were written:
+    // `Style["A", 20, "Label"]` is 20-point text, not the 9-point the
+    // "Label" stylesheet entry gives on its own.
+    #[test]
+    fn an_explicit_font_size_outranks_a_named_style() {
+      let sizes = |code: &str| -> Vec<String> {
+        export_svg(code)
+          .match_indices("font-size=\"")
+          .filter_map(|(i, _)| {
+            export_svg(code)[i + 11..]
+              .split('"')
+              .next()
+              .map(str::to_string)
+          })
+          .collect()
+      };
+      assert_eq!(
+        sizes(
+          "Graphics[{Text[Style[\"A\", 20, \"Label\"], {0, 0}]}, \
+           PlotRange -> 3, ImageSize -> 300]"
+        ),
+        vec!["20".to_string()]
+      );
+      assert_eq!(
+        sizes(
+          "Graphics[{Text[Style[\"A\", \"Label\", 20], {0, 0}]}, \
+           PlotRange -> 3, ImageSize -> 300]"
+        ),
+        vec!["20".to_string()]
+      );
+      // On its own the named style still sets the size.
+      assert_eq!(
+        sizes(
+          "Graphics[{Text[Style[\"A\", \"Label\"], {0, 0}]}, \
+           PlotRange -> 3, ImageSize -> 300]"
+        ),
+        vec!["9".to_string()]
+      );
+    }
+
     // `Column[{picture, legend}, Center]` centres the narrow legend under
     // the wide picture; the generic layout composition packed every row to
     // the left regardless of the alignment asked for.

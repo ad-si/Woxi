@@ -1263,6 +1263,21 @@ pub(crate) fn named_style_appearance(
   })
 }
 
+/// A `Style[expr, …]` directive list in the order Wolfram applies it: a
+/// named style ("Label", "Section", …) supplies the base appearance and the
+/// explicit directives sit on top of it, whichever side of it they were
+/// written. `Style["A", 20, "Label"]` is 20-point text, not the 9-point the
+/// "Label" stylesheet entry gives on its own.
+pub(crate) fn style_directives_in_application_order(
+  directives: &[Expr],
+) -> Vec<&Expr> {
+  let (named, explicit): (Vec<&Expr>, Vec<&Expr>) =
+    directives.iter().partition(
+      |d| matches!(d, Expr::String(s) if named_style_appearance(s).is_some()),
+    );
+  named.into_iter().chain(explicit).collect()
+}
+
 fn apply_text_style_directive(d: &Expr, style: &mut StyleState) -> bool {
   match d {
     Expr::Identifier(s) if s == "Bold" => {
@@ -1433,7 +1448,7 @@ fn collect_primitives(
         "Style" if args.len() >= 2 => {
           let saved = style.clone();
           // Apply directives (everything after first arg)
-          for directive in &args[1..] {
+          for directive in style_directives_in_application_order(&args[1..]) {
             apply_directive(directive, style);
             apply_text_style_directive(directive, style);
           }
@@ -2449,7 +2464,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     Expr::FunctionCall { name, args: sargs }
       if is_style_wrapper(name) && !sargs.is_empty() =>
     {
-      for d in &sargs[1..] {
+      for d in style_directives_in_application_order(&sargs[1..]) {
         apply_directive(d, &mut local_style);
         apply_text_style_directive(d, &mut local_style);
       }
@@ -7783,6 +7798,14 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
 
   match expr {
     // Atoms
+    // A string carrying inline linear syntax
+    // (`\!\(\*SubscriptBox[\(S\), \(ABC\)]\)`) displays as the typeset
+    // formula, which is far shorter than the markup it is written with —
+    // measure what will actually be seen, or a grid column holding one
+    // comes out several times too wide.
+    Expr::String(s) if s.contains(crate::functions::string_ast::BOX_START) => {
+      box_string_visible_len(s) as f64
+    }
     Expr::String(s) => s.len() as f64,
     Expr::Identifier(s) => s.len() as f64,
     Expr::BigFloat(digits, prec) => {
@@ -8554,10 +8577,30 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
 fn parse_box_units(cs: &[char]) -> Vec<Expr> {
   let mut res: Vec<Expr> = Vec::new();
   let mut plain = String::new();
-  let mut i = 0;
+  // A linear-syntax group may open with the form it is typeset in —
+  // `\!\(TraditionalForm\`16 …\)`. The name says how to read the rest and
+  // shows nothing itself. (`\`` inside a string parses to its own marker,
+  // U+F7CD, so it cannot be confused with a literal backtick.)
+  let mut i = match cs.iter().position(|c| *c == '\u{f7cd}') {
+    Some(tick)
+      if tick > 0
+        && cs[..tick].iter().collect::<String>().ends_with("Form")
+        && cs[..tick].iter().all(|c| c.is_ascii_alphanumeric()) =>
+    {
+      tick + 1
+    }
+    _ => 0,
+  };
   while i < cs.len() {
     if cs[i] == '\\' && i + 1 < cs.len() {
       match cs[i + 1] {
+        // An escaped space is a space: linear syntax writes the gaps in a
+        // formula that way, since a bare space would be ignored.
+        ' ' => {
+          plain.push(' ');
+          i += 2;
+          continue;
+        }
         '*' => {
           if !plain.is_empty() {
             res.push(Expr::String(std::mem::take(&mut plain)));
@@ -13185,7 +13228,7 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
       && is_style_wrapper(name)
       && !sargs.is_empty()
     {
-      for d in &sargs[1..] {
+      for d in style_directives_in_application_order(&sargs[1..]) {
         if let Some(c) = parse_color(d) {
           color = Some(c);
         } else {

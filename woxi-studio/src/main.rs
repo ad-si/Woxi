@@ -7384,6 +7384,84 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn vertex_distance_manipulate_builds_six_locators() {
+    // End-to-end regression for "A Vertex Distance Relation for Two
+    // Triangles": six draggable vertices drive two triangles, and a grid
+    // above them shows both sides of the identity being illustrated. Its
+    // header is a typeset linear-syntax label and the two sides are
+    // multiplied with `×` — the named character, which used to be a parse
+    // error that killed the whole cell.
+    let code = "Manipulate[Module[{ABC, DEF}, \
+      ABC = Abs[Det[Append[#, 1] & /@ {AA, BB, CC}]/2]; \
+      DEF = Abs[Det[Append[#, 1] & /@ {DD, EE, FF}]/2]; \
+      Column[{\
+        Text@Grid[{{\"\\!\\(TraditionalForm\\`16\\\\ \
+          \\*SubscriptBox[\\(S\\), \\(ABC\\)]\\)\", \"formula\"}, \
+          {16 × ABC × DEF, 16 × ABC × DEF}}, Frame -> All, \
+          ItemSize -> {8}], \
+        Graphics[{Style[Triangle[{AA, BB, CC}], Opacity[.2], \
+            EdgeForm[{Thick, Blue}]], \
+          Style[Triangle[{DD, EE, FF}], Opacity[.2], \
+            EdgeForm[{Thick, Red}]], \
+          Text[Style[\"A\", 20, \"Label\"], AA + {0, .3}]}, \
+          ImageSize -> 1.125 {450, 375}, PlotRange -> 4.5]}, \
+        Alignment -> {Center, Top}]], \
+      {{AA, {2, -1}}, {-4, -4}, {4, 4}, Locator}, \
+      {{BB, {1, 2}}, {-4, -4}, {4, 4}, Locator}, \
+      {{CC, {0, 0}}, {-4, -4}, {4, 4}, Locator}, \
+      {{DD, {3.955, 1.}}, {-4, -4}, {4, 4}, Locator}, \
+      {{EE, {-2.98, -2.56}}, {-4, -4}, {4, 4}, Locator}, \
+      {{FF, {-1.545, 3.9}}, {-4, -4}, {4, 4}, Locator}, \
+      TrackedSymbols :> {AA, BB, CC, DD, EE, FF}\
+      (*, SynchronousUpdating -> False*)]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the vertex-distance Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw both triangles"
+    );
+
+    // Six draggable vertices, each a 2D locator over the same square.
+    let locators: Vec<(&str, f64, f64)> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Slider2D { name, x, y, .. } => {
+          (name.as_str(), *x, *y)
+        }
+        other => panic!("expected a locator, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      locators,
+      vec![
+        ("AA", 2.0, -1.0),
+        ("BB", 1.0, 2.0),
+        ("CC", 0.0, 0.0),
+        ("DD", 3.955, 1.0),
+        ("EE", -2.98, -2.56),
+        ("FF", -1.545, 3.9),
+      ]
+    );
+
+    // Dragging a vertex re-solves the areas and re-renders.
+    if let manipulate::ControlState::Slider2D { x, y, .. } =
+      &mut state.controls[0]
+    {
+      *x = -1.5;
+      *y = 3.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn constraint_tiling_manipulate_switches_net_and_solid() {
     // End-to-end regression for "Constraint Tiling on a Truncated
     // Icosahedron": a setter bar picks one of six constraint sets and a

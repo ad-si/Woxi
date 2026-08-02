@@ -2577,6 +2577,48 @@ mod circle_dot {
   }
 }
 
+mod times_and_divide_characters {
+  use super::*;
+
+  // `\[Times]` (×) and `\[Divide]` (÷) are the named-character spellings of
+  // `*` and `/`, not symbols of their own. A notebook's typeset formula uses
+  // them where it would otherwise show a bare space, and the character form
+  // used to be a parse error that killed the whole cell.
+  #[test]
+  fn times_character_multiplies() {
+    assert_eq!(interpret(r#"16 \[Times] 2 \[Times] 3"#).unwrap(), "96");
+    assert_eq!(interpret("16 × 2 × 3").unwrap(), "96");
+    assert_eq!(interpret("a × b").unwrap(), "a*b");
+    // It is `Times`, so it prints and structures as `*`.
+    assert_eq!(
+      interpret(r#"ToString[Hold[a \[Times] b], InputForm]"#).unwrap(),
+      "Hold[a*b]"
+    );
+    assert_eq!(interpret("Head[a × b]").unwrap(), "Times");
+  }
+
+  #[test]
+  fn divide_character_divides() {
+    assert_eq!(interpret(r#"2 \[Divide] 4"#).unwrap(), "1/2");
+    assert_eq!(interpret("2 ÷ 4").unwrap(), "1/2");
+    assert_eq!(
+      interpret(r#"ToString[Hold[a \[Divide] b], InputForm]"#).unwrap(),
+      "Hold[a/b]"
+    );
+  }
+
+  // Both bind at the level `*` and `/` do — tighter than `+`, looser than
+  // `^` — and leave the other named characters alone.
+  #[test]
+  fn they_bind_like_times_and_divide() {
+    assert_eq!(interpret("2 + 3 × 4").unwrap(), "14");
+    assert_eq!(interpret("2 × 3 ^ 2").unwrap(), "18");
+    assert_eq!(interpret("8 ÷ 2 + 1").unwrap(), "5");
+    // CenterDot is a distinct operator and keeps its own meaning.
+    assert_eq!(interpret("a · b").unwrap(), "a \u{00B7} b");
+  }
+}
+
 mod ring_operators {
   use super::*;
 

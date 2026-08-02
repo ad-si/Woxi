@@ -5083,6 +5083,10 @@ fn operator_precedence(op: &str) -> u8 {
     "|" => 27, // Alternatives (higher than StringExpression, Or, And, Rule)
     "+" | "-" => 30, // Plus/Minus
     "*" | "/" => 33, // Times/Divide
+    // `\[Times]` (×) and `\[Divide]` (÷) are the named infix spellings of
+    // `*` and `/`, so they bind at the same level.
+    "\\[Times]" | "\u{00D7}" => 33,
+    "\\[Divide]" | "\u{00F7}" => 33,
     "<>" => 30, // StringJoin (same level as Plus)
     // Symbolic ring operators, ordered to match wolframscript:
     // Dot > CircleTimes > CenterDot > Times > … > CirclePlus > Plus.
@@ -5244,6 +5248,19 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     },
     "*" => Expr::BinaryOp {
       op: BinaryOperator::Times,
+      left: Box::new(left.clone()),
+      right: Box::new(right.clone()),
+    },
+    // `a × b` and `a ÷ b` are `Times`/`Divide` written with their named
+    // characters; a Demonstration's typeset formula uses them where it
+    // would otherwise show a bare space.
+    "\\[Times]" | "\u{00D7}" => Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(left.clone()),
+      right: Box::new(right.clone()),
+    },
+    "\\[Divide]" | "\u{00F7}" => Expr::BinaryOp {
+      op: BinaryOperator::Divide,
       left: Box::new(left.clone()),
       right: Box::new(right.clone()),
     },
