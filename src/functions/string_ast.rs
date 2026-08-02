@@ -14612,6 +14612,26 @@ pub(crate) fn number_form_family_to_string(
   if let Some(rendered) = number_form_family_scalar(head, value, spec, &opts) {
     return Some(rendered);
   }
+
+  // A complex number is formatted part by part, with the sign of the
+  // imaginary part written as the operator joining them:
+  // `PaddedForm[0.35355 + 0.35355 I, {4, 3}]` is " 0.354 +  0.354 I".
+  if let Some((re, im)) =
+    crate::functions::math_ast::try_extract_complex_float(value)
+    && im != 0.0
+    && !matches!(value, Expr::Integer(_) | Expr::Real(_))
+  {
+    let part = |v: f64| {
+      number_form_family_scalar(head, &Expr::Real(v), spec, &opts)
+        .unwrap_or_else(|| crate::syntax::format_real(v))
+    };
+    return Some(format!(
+      "{} {} {} I",
+      part(re),
+      if im < 0.0 { "-" } else { "+" },
+      part(im.abs())
+    ));
+  }
   // Anything that is not a machine number renders as itself: wolframscript
   // shows `NumberForm[Pi, 5]` as "Pi" and `NumberForm[3/4]` as the 2D
   // fraction, dropping the wrapper.

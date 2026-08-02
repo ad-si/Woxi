@@ -4016,6 +4016,31 @@ fn num(v: f64) -> Expr {
   Expr::Real(v)
 }
 
+/// Where a locator pane's locators currently are. `Dynamic[sym]` reads
+/// `sym`, and so does the two-argument `Dynamic[sym, setter]` — the setter
+/// is what runs when a locator is dragged and says nothing about where it
+/// is now. A Demonstration often writes the whole thing as
+/// `pt = …; Dynamic[pt, setter]`, computing the position from its sliders
+/// first, so a leading statement is evaluated for that effect before the
+/// last one is read.
+fn locator_positions(arg: &Expr) -> Option<Expr> {
+  match arg {
+    Expr::CompoundExpr(items) => {
+      let (last, leading) = items.split_last()?;
+      for item in leading {
+        let _ = crate::evaluator::evaluate_expr_to_expr(item);
+      }
+      locator_positions(last)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      crate::evaluator::evaluate_expr_to_expr(&args[0]).ok()
+    }
+    other => crate::evaluator::evaluate_expr_to_expr(other).ok(),
+  }
+}
+
 /// `LocatorPane[locators, body, …]` as the picture it displays: the body
 /// graphic with a marker drawn at every locator. Dragging a locator is a
 /// front-end affordance; what the picture itself carries is the markers, so
@@ -4025,16 +4050,7 @@ fn locator_pane_graphic(args: &[Expr]) -> Option<Expr> {
   if args.len() < 2 {
     return None;
   }
-  // The locators: `Dynamic[sym]` reads `sym`'s current value, anything else
-  // is the position (or list of positions) itself.
-  let positions = match &args[0] {
-    Expr::FunctionCall { name, args: inner }
-      if name == "Dynamic" && inner.len() == 1 =>
-    {
-      crate::evaluator::evaluate_expr_to_expr(&inner[0]).ok()?
-    }
-    other => crate::evaluator::evaluate_expr_to_expr(other).ok()?,
-  };
+  let positions = locator_positions(&args[0])?;
   let is_point = |e: &Expr| {
     matches!(e, Expr::List(c) if c.len() == 2
       && c.iter().all(|v| crate::functions::math_ast::try_eval_to_f64(v).is_some()))
@@ -4046,8 +4062,18 @@ fn locator_pane_graphic(args: &[Expr]) -> Option<Expr> {
   };
 
   // The body must be a graphic; its options are kept so the pane inherits
-  // the plot range, axes and grid lines the body asked for.
-  let body = crate::evaluator::evaluate_expr_to_expr(&args[1]).ok()?;
+  // the plot range, axes and grid lines the body asked for. A pane whose
+  // picture depends on the locators is written `Dynamic@Graphics[…]`, and
+  // `Dynamic` is HoldFirst, so what it holds is released here.
+  let held = match &args[1] {
+    Expr::FunctionCall { name, args: inner }
+      if name == "Dynamic" && !inner.is_empty() =>
+    {
+      &inner[0]
+    }
+    other => other,
+  };
+  let body = crate::evaluator::evaluate_expr_to_expr(held).ok()?;
   let (body_prims, body_opts) = match &body {
     Expr::FunctionCall { name, args }
       if name == "Graphics" && !args.is_empty() =>

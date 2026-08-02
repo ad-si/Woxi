@@ -7601,6 +7601,78 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // A locator pane's position may be written any of the ways a
+    // Demonstration writes it: the two-argument `Dynamic[sym, setter]`
+    // (the setter says what happens on a drag, not where the locator is),
+    // and `pt = …; Dynamic[pt, setter]`, which computes the position from
+    // the sliders first. A pane whose picture follows the locators is
+    // written `Dynamic@Graphics[…]`, which is HoldFirst.
+    #[test]
+    fn a_locator_pane_reads_every_form_of_its_position() {
+      let body = "Graphics[{Disk[]}, PlotRange -> {{0, 1}, {0, 1}},                   ImageSize -> 150]";
+      for locators in [
+        "Dynamic[p]",
+        "Dynamic[p, (p = #) &]",
+        "p = {0.5, 0.5}; Dynamic[p]",
+        "p = {0.5, 0.5}; Dynamic[p, (p = #) &]",
+      ] {
+        let svg = export_svg(&format!(
+          "p = {{0.5, 0.5}}; LocatorPane[{locators}, {body}]"
+        ));
+        assert!(
+          svg.contains("<ellipse"),
+          "{locators} must place a marker: {svg}"
+        );
+      }
+      // The body may be `Dynamic`-wrapped.
+      let svg = export_svg(&format!(
+        "p = {{0.5, 0.5}}; LocatorPane[Dynamic[p], Dynamic@{body}]"
+      ));
+      assert!(svg.contains("<ellipse"), "dynamic body must draw: {svg}");
+    }
+
+    // `Background -> colour` on a graphics `Text` paints a panel behind the
+    // label, which is what keeps a value readable over whatever it sits on.
+    #[test]
+    fn a_text_background_paints_a_panel() {
+      let plain = export_svg(
+        "Graphics[{Circle[], Text[\"hi\", {0, 0}]}, PlotRange -> 1]",
+      );
+      let backed = export_svg(
+        "Graphics[{Circle[], Text[\"hi\", {0, 0}, {0, 0}, \
+         Background -> White]}, PlotRange -> 1]",
+      );
+      let rects = |s: &str| s.matches("<rect").count();
+      assert_eq!(
+        rects(&backed),
+        rects(&plain) + 1,
+        "the background adds one panel: {backed}"
+      );
+      assert!(
+        backed.contains("fill=\"rgb(255,255,255)\""),
+        "painted in the colour asked for: {backed}"
+      );
+      // It is also read off the `Style` the label is wrapped in.
+      let styled = export_svg(
+        "Graphics[{Circle[], Text[Style[\"hi\", Background -> White], \
+         {0, 0}]}, PlotRange -> 1]",
+      );
+      assert_eq!(rects(&styled), rects(&plain) + 1, "{styled}");
+    }
+
+    // Text inside a picture is typeset, so a form wrapper contributes no
+    // text of its own — `TraditionalForm[x]` shows `x`. It used to leak the
+    // box markup the wrapper serializes to.
+    #[test]
+    fn a_form_wrapper_shows_what_it_holds() {
+      let svg = export_svg(
+        "Graphics[{Text[Style[TraditionalForm[1.23456], 20], {0, 0}]}, \
+         PlotRange -> 1, ImageSize -> 200]",
+      );
+      assert!(svg.contains(">1.23456<"), "the number itself: {svg}");
+      assert!(!svg.contains("FormBox"), "no box markup: {svg}");
+    }
+
     // `ClickPane[expr, …]` shows `expr`. What it adds is a click handler,
     // which the picture itself does not carry — this is how a Demonstration
     // lets you draw on a grid. It used to export as the call written out.

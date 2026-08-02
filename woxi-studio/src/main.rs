@@ -7384,6 +7384,73 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn argand_diagram_manipulate_draws_its_locator_pane() {
+    // End-to-end regression for "Argand Diagram": a locator on the complex
+    // plane is driven by modulus and argument sliders, so its position is
+    // computed first and handed to a two-argument `Dynamic`, and the
+    // picture that follows it is `Dynamic`-wrapped. The pane drew nothing
+    // but a strip of its own source.
+    let code = "Manipulate[LocatorPane[\
+      pt = {r Cos[θ], r Sin[θ]}; \
+      Dynamic[pt, (r = Norm[#]; θ = ArcCos[#[[1]]/r];) &], \
+      Dynamic@Graphics[{Circle[], \
+        {RGBColor[.24, .39, .77], \
+         Line[r {{0, 0}, {Cos[θ], 0}, {Cos[θ], Sin[θ]}, {0, 0}}], \
+         RGBColor[1, .47, 0], Dashing[{.02}], Circle[{0, 0}, r]}, \
+        Text[Style[TraditionalForm[\
+          PaddedForm[Chop[r (Cos[θ] + I Sin[θ])], {4, 3}]], 14], \
+         {1.2, 1.2}, {0, 0}, Background -> White]}, \
+       ImageSize -> {500, 400}, PlotRange -> {2 {-1, 1}, 2 {-1, 1}}], \
+      Appearance -> Graphics[{PointSize[.03], RGBColor[1, .47, 0], \
+        Point[{0, 0}]}]], \
+      {{pt, {.5, .5}}, {-1, -1}, {1, 1}, ControlType -> None}, \
+      {{θ, π/4., \"argument\"}, 0., 2 π, Appearance -> \"Labeled\"}, \
+      {{r, .5, \"modulus\"}, 0., Norm[{2, 2}], \
+       Appearance -> \"Labeled\"}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Argand Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the locator pane must draw the diagram"
+    );
+
+    // The argument and modulus sliders (the locator itself is
+    // `ControlType -> None`, driven by them).
+    let sliders: Vec<(&str, f64, f64)> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous {
+          label,
+          current,
+          max,
+          ..
+        } => (label.as_str(), *current, *max),
+        other => panic!("expected a continuous slider, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(sliders[0].0, "argument");
+    assert!((sliders[0].2 - std::f64::consts::TAU).abs() < 1e-9);
+    assert_eq!(sliders[1].0, "modulus");
+    assert_eq!(sliders[1].1, 0.5);
+
+    // Turning the argument all the way round re-renders.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = std::f64::consts::PI;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn freese_dissection_manipulate_moves_its_pieces() {
     // End-to-end regression for "3D Freese's Dissection of a Regular
     // Dodecagon into Two Squares": a slider slides and turns prisms cut

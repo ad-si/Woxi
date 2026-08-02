@@ -624,6 +624,9 @@ enum Primitive {
     /// at `pos`, in units running from -1 (left/bottom) to 1 (right/top).
     /// `(0, 0)` centres it, as Wolfram's default does.
     offset: (f64, f64),
+    /// `Background -> colour`: a panel painted behind the label, so it
+    /// stays readable over whatever it is placed on.
+    background: Option<Color>,
     style: StyleState,
   },
   BezierCurvePrim {
@@ -2341,6 +2344,18 @@ fn graphics_text_content(expr: &Expr) -> String {
     {
       graphics_text_content(&args[0])
     }
+    // `TraditionalForm[expr]` / `StandardForm[expr]` ask for `expr` to be
+    // set in that form; inside a picture everything is typeset already, so
+    // the wrapper contributes no text of its own. Without this the box
+    // markup it serializes to leaked into the picture as literal source.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "TraditionalForm" | "StandardForm" | "OutputForm" | "DisplayForm"
+      ) && args.len() == 1 =>
+    {
+      graphics_text_content(&args[0])
+    }
     Expr::FunctionCall { name, args }
       if name == "Row"
         && !args.is_empty()
@@ -2515,12 +2530,36 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     (0.0, 0.0)
   };
   let offset = args.get(2).and_then(text_offset).unwrap_or((0.0, 0.0));
+  // `Background -> colour`, written either as a trailing option of the
+  // `Text` or as a directive of the `Style` it wraps.
+  let background_of = |opts: &[Expr]| {
+    opts.iter().find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Background") => {
+        parse_color(replacement)
+      }
+      _ => None,
+    })
+  };
+  let style_opts: &[Expr] = match &args[0] {
+    Expr::FunctionCall { name, args: sargs }
+      if is_style_wrapper(name) && !sargs.is_empty() =>
+    {
+      &sargs[1..]
+    }
+    _ => &[],
+  };
+  let background =
+    background_of(&args[1..]).or_else(|| background_of(style_opts));
 
   prims.push(Primitive::TextPrim {
     text,
     x,
     y,
     offset,
+    background,
     style: local_style,
   });
 }
@@ -3252,6 +3291,7 @@ fn rotate_primitive(
       x,
       y,
       offset,
+      background,
       style,
     } => {
       let (nx, ny) = rp(*x, *y);
@@ -3260,6 +3300,7 @@ fn rotate_primitive(
         x: nx,
         y: ny,
         offset: *offset,
+        background: *background,
         style: style.clone(),
       }
     }
@@ -3415,12 +3456,14 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       x,
       y,
       offset,
+      background,
       style,
     } => Primitive::TextPrim {
       text: text.clone(),
       x: x + dx,
       y: y + dy,
       offset: *offset,
+      background: *background,
       style: style.clone(),
     },
     Primitive::RasterPrim {
@@ -3618,6 +3661,7 @@ fn scale_primitive(
       x,
       y,
       offset,
+      background,
       style,
     } => {
       let (nx, ny) = sp(*x, *y);
@@ -3626,6 +3670,7 @@ fn scale_primitive(
         x: nx,
         y: ny,
         offset: *offset,
+        background: *background,
         style: style.clone(),
       }
     }
@@ -5018,6 +5063,7 @@ fn render_primitive(
       x,
       y,
       offset,
+      background,
       style,
     } => {
       let color = style.effective_color();
@@ -5036,6 +5082,17 @@ fn render_primitive(
       let text_h = text.split('\n').count() as f64 * fs;
       let sx = coord_x(*x, bb, svg_w) - offset.0 * text_w / 2.0;
       let sy = coord_y(*y, bb, svg_h) + offset.1 * text_h / 2.0;
+      // `Background -> colour` paints a panel behind the label, which is
+      // what keeps a value readable over whatever it is placed on.
+      if let Some(bg) = background {
+        out.push_str(&format!(
+          "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{text_w:.2}\" height=\"{text_h:.2}\" fill=\"{}\"{}/>\n",
+          sx - text_w / 2.0,
+          sy - text_h / 2.0,
+          bg.to_svg_rgb(),
+          bg.opacity_attr(),
+        ));
+      }
       let ff_attr = if style.font_family.is_empty() {
         String::new()
       } else {

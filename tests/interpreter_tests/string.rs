@@ -12307,6 +12307,31 @@ mod padded_form {
     assert_eq!(interpret("ToString[PaddedForm[-7, 4]]").unwrap(), "   -7");
   }
 
+  // A complex number is formatted part by part, with the sign of the
+  // imaginary part written as the operator joining them — the padding then
+  // lines the two magnitudes up. The whole complex used to pass through
+  // unformatted.
+  #[test]
+  fn a_complex_is_formatted_part_by_part() {
+    assert_eq!(
+      interpret("ToString[PaddedForm[0.35355 + 0.35355 I, {4, 3}]]").unwrap(),
+      " 0.354 +  0.354 I"
+    );
+    assert_eq!(
+      interpret("ToString[PaddedForm[-0.5 - 0.25 I, {4, 3}]]").unwrap(),
+      "-0.500 -  0.250 I"
+    );
+    assert_eq!(
+      interpret("ToString[NumberForm[1.23456 + 2.5 I, 3]]").unwrap(),
+      "1.23 + 2.5 I"
+    );
+    // A real is unaffected.
+    assert_eq!(
+      interpret("ToString[PaddedForm[1.23456, {4, 3}]]").unwrap(),
+      " 1.235"
+    );
+  }
+
   #[test]
   fn list_spec_rounds_and_pads() {
     assert_eq!(
