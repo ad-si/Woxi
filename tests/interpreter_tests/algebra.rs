@@ -7792,6 +7792,64 @@ mod find_root {
   }
 
   #[test]
+  fn non_smooth_function_falls_back_to_numeric_derivative() {
+    // Differentiating a non-smooth function leaves `Derivative[1, 0][Max][…]`
+    // standing, so the symbolic derivative never reduces to a number. That is
+    // no worse than having no symbolic derivative at all: the iteration falls
+    // back to a difference quotient and still converges. Regression: the
+    // unusable derivative propagated its error out of the Newton loop, so the
+    // call emitted FindRoot::nlnum and returned unevaluated.
+    assert_eq!(
+      interpret("FindRoot[Max[x, 2 x] - 6, {x, 1}]").unwrap(),
+      "{x -> 3.}"
+    );
+  }
+
+  #[test]
+  fn non_smooth_function_reports_no_internal_messages() {
+    use woxi::interpret_with_stdout;
+    // The failed symbolic-derivative attempt is internal bookkeeping —
+    // differentiating a user function at an already-substituted point makes
+    // `D` complain about a numeric "variable". None of that reaches the user
+    // (wolframscript reports nothing either).
+    let result = interpret_with_stdout(
+      "netthrust[v_] := Max[Map[# v &, {1, 2}]] - 6; \
+       FindRoot[netthrust[u], {u, 1}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "{u -> 3.}");
+    assert!(
+      result.warnings.is_empty(),
+      "unexpected messages: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn piecewise_guarded_interpolation() {
+    use woxi::interpret_with_stdout;
+    // The shape a Demonstration uses to solve for a vehicle's top speed: a
+    // tabulated curve wrapped in a `Piecewise` range guard, maximised over a
+    // set of gear ratios, minus a drag term. Neither the `Piecewise` nor the
+    // `Max` survives symbolic differentiation, so the whole solve rides on the
+    // numeric-derivative fallback.
+    let result = interpret_with_stdout(
+      "torque = Interpolation[{{0, 0}, {50, 100}, {100, 60}, {150, 0}}, \
+                              InterpolationOrder -> 1]; \
+       gear[w_] := Piecewise[{{torque[w], 0 <= w <= 150}}, 0]; \
+       thrust[v_] := Max[Map[gear[# v] &, {1, 2}]] - v^2/40; \
+       FindRoot[thrust[v], {v, 60}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "{v -> 60.52450587883597}");
+    assert!(
+      result.warnings.is_empty(),
+      "unexpected messages: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
   fn quadratic_larger_start() {
     assert_eq!(
       interpret("FindRoot[x^2 - 10^5 x + 1 == 0, {x, 10^6}]").unwrap(),

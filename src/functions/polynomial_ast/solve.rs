@@ -5228,9 +5228,19 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       converged = true;
       break;
     }
-    // Compute derivative: symbolic if available, else numerical
-    let fpx = if let Some(ref d) = deriv_expr {
-      find_root_eval_at(d, &var, x)?
+    // Compute derivative: symbolic if available, else numerical. A symbolic
+    // derivative that does not reduce to a number *at this iterate* is no
+    // better than having none — differentiating a non-smooth function leaves
+    // heads like `Derivative[1, 0][Max][…]` standing, and a `Piecewise`
+    // branch outside its condition gives `Indeterminate`. Wolfram falls back
+    // to a difference quotient there rather than giving up on the solve, so
+    // an unusable symbolic derivative drops through to the numerical branch.
+    let symbolic_fpx = deriv_expr
+      .as_ref()
+      .and_then(|d| quietly(|| find_root_eval_at(d, &var, x)).ok())
+      .filter(|v| v.is_finite());
+    let fpx = if let Some(fpx) = symbolic_fpx {
+      fpx
     } else {
       // 4th-order central difference for high-precision derivative
       let h = x.abs().max(1.0) * 1e-4;
@@ -5641,6 +5651,23 @@ fn find_root_eval_at(
   }
 }
 
+/// Run `probe` with every message it emits discarded.
+///
+/// FindRoot's symbolic derivative is speculative: when it does not reduce to a
+/// number the iteration falls back to a difference quotient, so whatever the
+/// attempt complained about on the way (`D::ivar` from differentiating a
+/// user function at an already-substituted point, a division by zero in a
+/// branch that is never used, …) is internal bookkeeping. wolframscript
+/// reports none of it, so neither does Woxi.
+fn quietly<T>(probe: impl FnOnce() -> T) -> T {
+  let snapshot = crate::snapshot_warnings();
+  crate::push_quiet();
+  let result = probe();
+  crate::pop_quiet();
+  crate::restore_warnings(snapshot);
+  result
+}
+
 /// Parse a number from an expression for FindRoot starting point.
 fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
   match expr {
@@ -5824,7 +5851,9 @@ fn find_root_multivariate(
     for (i, row) in jac.iter().enumerate() {
       for (j, dij) in row.iter().enumerate() {
         let entry = match dij {
-          Some(d) => find_root_eval_multivar(d, &vars, &x).ok(),
+          Some(d) => quietly(|| find_root_eval_multivar(d, &vars, &x))
+            .ok()
+            .filter(|v| v.is_finite()),
           None => None,
         };
         jm[i][j] = match entry {

@@ -96,7 +96,11 @@ control binds its variable to a draggable point (or list of points),
 rendered as one X/Y slider pair per point; `LocatorAutoCreate -> True`
 additionally offers adding and removing points.  Discrete choices whose
 rule label is a graphic (`"+" -> myIcon[2]`) show the rendered icon in
-the SetterBar.  A
+the SetterBar.  Controls may be grouped in a `Row[…]`, `Column[…]`, or
+`Grid[…]` argument, and a `ControlType -> …` given to the `Manipulate`
+itself types every control that does not pick one (a list value,
+`ControlType -> {Slider, PopupMenu}`, assigns one type per control in
+spec order).  A
 `ControlType -> None` variable has no slider but stays live, mutable
 state: extra display arguments such as a trailing
 `Dynamic[Panel[Grid[… Checkbox …]]]` are rendered as interactive

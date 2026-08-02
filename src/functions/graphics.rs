@@ -15253,6 +15253,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }
     })
     .collect();
+  // A `ControlType -> …` given to the Manipulate itself sets the type of every
+  // control that does not choose one; push it into the specs now that they are
+  // flattened, so they parse through the single per-spec path below.
+  let arg_items = apply_global_control_type(arg_items);
   // A control's bounds may reference *other* control variables — Kepler's
   // Second Law bounds its time sliders by the orbital period (`{{t, 0, …},
   // 0, P, .01}` with `{{P, 20, …}, .1, 50, .01}` further down). Collect
@@ -15598,6 +15602,117 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     appearance_none,
     tracked_symbols,
   })
+}
+
+/// Whether `s` names one of Wolfram's control types, i.e. a value
+/// `ControlType -> …` accepts (which a variable spec may also carry as a bare
+/// marker, as in `{u, {1, 2, 3}, SetterBar}`).
+fn is_control_type_name(s: &str) -> bool {
+  matches!(
+    s,
+    "Locator"
+      | "Slider"
+      | "Slider2D"
+      | "VerticalSlider"
+      | "Manipulator"
+      | "InputField"
+      | "PopupMenu"
+      | "Setter"
+      | "SetterBar"
+      | "RadioButton"
+      | "RadioButtonBar"
+      | "Toggler"
+      | "TogglerBar"
+      | "Checkbox"
+      | "CheckboxBar"
+      | "Opener"
+      | "OpenerBar"
+      | "ColorSlider"
+      | "ColorSetter"
+      | "IntervalSlider"
+      | "Animator"
+      | "Trigger"
+      | "Automatic"
+  )
+}
+
+/// Whether a variable spec picks its own control type, either as a
+/// `ControlType -> …` option or as a bare marker after the head.
+fn spec_declares_control_type(items: &[Expr]) -> bool {
+  items.iter().any(is_control_type_rule)
+    || items
+      .iter()
+      .skip(1)
+      .any(|it| matches!(it, Expr::Identifier(s) if is_control_type_name(s)))
+}
+
+/// Push a Manipulate-level `ControlType -> …` option down into the variable
+/// specs, which is where the control type is read from.
+///
+/// `Manipulate[body, {u, …}, {v, …}, ControlType -> PopupMenu]` gives *every*
+/// control that does not choose a type of its own a popup menu — the
+/// Demonstrations idiom for laying controls out in a `Grid[…]` and then
+/// setting their type once. A list value assigns one type per control, in the
+/// order the specs appear (`ControlType -> {Slider, PopupMenu}`); controls
+/// past the end of the list keep their default. `Automatic` means "decide as
+/// usual", so it is left off entirely.
+fn apply_global_control_type(items: Vec<Expr>) -> Vec<Expr> {
+  let global = items.iter().find_map(|it| {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = it
+    else {
+      return None;
+    };
+    matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType")
+      .then(|| replacement.as_ref().clone())
+  });
+  let Some(global) = global else {
+    return items;
+  };
+  let per_spec = match &global {
+    Expr::List(types) => Some(types.to_vec()),
+    Expr::Identifier(_) => None,
+    // Anything else is not a control type at all — leave the specs alone.
+    _ => return items,
+  };
+  let mut spec_index = 0usize;
+  items
+    .into_iter()
+    .map(|item| {
+      let Expr::List(spec) = &item else {
+        return item;
+      };
+      let index = spec_index;
+      spec_index += 1;
+      let control_type = match &per_spec {
+        Some(types) => match types.get(index) {
+          Some(t) => t.clone(),
+          None => return item,
+        },
+        None => global.clone(),
+      };
+      if !matches!(&control_type, Expr::Identifier(s) if is_control_type_name(s) && s != "Automatic")
+        || spec_declares_control_type(spec)
+      {
+        return item;
+      }
+      let extended: Vec<Expr> = spec
+        .iter()
+        .cloned()
+        .chain(std::iter::once(Expr::Rule {
+          pattern: Box::new(Expr::Identifier("ControlType".to_string())),
+          replacement: Box::new(control_type),
+        }))
+        .collect();
+      Expr::List(extended.into())
+    })
+    .collect()
 }
 
 /// Whether a control-spec item is a `ControlType -> …` option rule.
@@ -16938,34 +17053,6 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
   // selects a compound control. The control type may also appear as a bare
   // identifier in the spec (`{u, {1, 2, 3}, SetterBar}`). The bounds are
   // the non-option, non-control-type items after the head.
-  let is_control_type_name = |s: &str| {
-    matches!(
-      s,
-      "Locator"
-        | "Slider"
-        | "Slider2D"
-        | "VerticalSlider"
-        | "Manipulator"
-        | "InputField"
-        | "PopupMenu"
-        | "Setter"
-        | "SetterBar"
-        | "RadioButton"
-        | "RadioButtonBar"
-        | "Toggler"
-        | "TogglerBar"
-        | "Checkbox"
-        | "CheckboxBar"
-        | "Opener"
-        | "OpenerBar"
-        | "ColorSlider"
-        | "ColorSetter"
-        | "IntervalSlider"
-        | "Animator"
-        | "Trigger"
-        | "Automatic"
-    )
-  };
   let control_type = items
     .iter()
     .find_map(|it| match it {

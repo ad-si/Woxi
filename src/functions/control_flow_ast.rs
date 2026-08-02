@@ -63,10 +63,18 @@ pub fn piecewise_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Force evaluation of the first argument so a stored variable holding a
-  // pair list (or `Piecewise[Table[…]]` with FunctionCall instead of
-  // PrefixApply head) resolves to the underlying List before we inspect it.
-  let evaluated_first = evaluate_expr_to_expr(&args[0])?;
+  // `Piecewise` holds its arguments: the value of a piece whose condition is
+  // False must never be evaluated, so that a guard like
+  // `Piecewise[{{f[x], 0 <= x <= xmax}}, 0]` protects `f` from being called
+  // out of range at all (the loop below evaluates each value only once its
+  // condition has selected the piece). A first argument that is *already* a
+  // list of pairs is therefore walked as written; only an indirect one (a
+  // symbol holding the list, `Piecewise[Table[…]]`, …) is evaluated first to
+  // get at the pairs.
+  let evaluated_first = match &args[0] {
+    Expr::List(_) => args[0].clone(),
+    other => evaluate_expr_to_expr(other)?,
+  };
   let pairs = match &evaluated_first {
     Expr::List(items) => items.clone(),
     _ => {
@@ -91,6 +99,17 @@ pub fn piecewise_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut true_default: Option<Expr> = None;
 
   for pair in pairs {
+    // A piece given indirectly (a symbol holding `{value, condition}`)
+    // resolves here; a literal pair keeps its value held until its condition
+    // selects it.
+    let resolved;
+    let pair = match pair {
+      Expr::List(items) if items.len() == 2 => pair,
+      other => {
+        resolved = evaluate_expr_to_expr(other)?;
+        &resolved
+      }
+    };
     match pair {
       Expr::List(items) if items.len() == 2 => {
         let cond = evaluate_expr_to_expr(&items[1])?;

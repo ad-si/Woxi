@@ -6939,6 +6939,96 @@ Cell[BoxData[
   }
 
   #[test]
+  fn grid_laid_out_controls_take_the_manipulate_level_control_type() {
+    // End-to-end for the Demonstrations control-panel shape: the controls sit
+    // in a `Grid[…]` and the panel picks their type once, for all of them.
+    // Both would otherwise fall to their automatic type — a SetterBar, which
+    // for choices this long is unreadably wide — and the body's range guard
+    // has to keep the tabulated curve inside its own data range.
+    let nb_src = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"curve", "=", RowBox[{"Interpolation", "[",
+   RowBox[{
+    RowBox[{"{", RowBox[{
+      RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], ",",
+      RowBox[{"{", RowBox[{"1", ",", "2"}], "}"}], ",",
+      RowBox[{"{", RowBox[{"2", ",", "0"}], "}"}]}], "}"}], ",",
+    RowBox[{"InterpolationOrder", "\[Rule]", "1"}]}], "]"}]}], ";",
+  RowBox[{RowBox[{"guarded", "[", "w_", "]"}], ":=",
+   RowBox[{"Piecewise", "[",
+    RowBox[{
+     RowBox[{"{", RowBox[{"{",
+       RowBox[{RowBox[{"curve", "[", "w", "]"}], ",",
+        RowBox[{"0", "\[LessEqual]", "w", "\[LessEqual]", "2"}]}], "}"}], "}"}],
+     ",", "0"}], "]"}]}]}]], "Input"],
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Plot", "[",
+    RowBox[{
+     RowBox[{"scale", " ",
+      RowBox[{"guarded", "[", RowBox[{"t", "+", "shift"}], "]"}]}], ",",
+     RowBox[{"{", RowBox[{"t", ",", "0", ",", "2"}], "}"}]}], "]"}], ",",
+   RowBox[{"Grid", "[",
+    RowBox[{"{", RowBox[{"{",
+      RowBox[{
+       RowBox[{"Control", "[",
+        RowBox[{"{",
+         RowBox[{
+          RowBox[{"{", RowBox[{"scale", ",", "1", ",", "\"\<vertical scale\>\""}], "}"}],
+          ",", RowBox[{"{", RowBox[{"1", ",", "2", ",", "3"}], "}"}]}], "}"}], "]"}],
+       ",",
+       RowBox[{"Control", "[",
+        RowBox[{"{",
+         RowBox[{
+          RowBox[{"{", RowBox[{"shift", ",", "0", ",", "\"\<horizontal shift\>\""}], "}"}],
+          ",", RowBox[{"Range", "[", RowBox[{"0", ",", "1", ",", "0.5"}], "]"}]}], "}"}], "]"}]}],
+      "}"}], "}"}], "]"}], ",",
+   RowBox[{"ControlType", "\[Rule]", "PopupMenu"}], ",",
+   RowBox[{"SaveDefinitions", "\[Rule]", "True"}]}], "]"}]], "Input"]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let definitions = editors[0].content.text();
+    woxi::interpret(&definitions).expect("the definitions must evaluate");
+
+    let widget = instantiate_stored_manipulate(&editors[1].content.text(), "")
+      .expect("the Manipulate must build a widget");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the guarded plot must render"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name: first,
+          popup: first_popup,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: second,
+          popup: second_popup,
+          ..
+        },
+      ] => {
+        assert_eq!(first, "scale");
+        assert_eq!(second, "shift");
+        assert!(
+          *first_popup && *second_popup,
+          "the panel's ControlType must reach both controls"
+        );
+      }
+      other => panic!("expected two discrete controls, got {other:?}"),
+    }
+  }
+
+  #[test]
   fn lorentz_oscillator_manipulate_labels_its_frequency_axis() {
     // End-to-end regression for the "Lorentz Oscillator Model for Optical
     // Constants" Demonstration: ten sliders separated by blank annotation
