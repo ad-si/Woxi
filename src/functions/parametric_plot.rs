@@ -260,6 +260,15 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Compute ranges (explicit PlotRange components override the data extents)
   let (data_x, data_y) = compute_data_ranges(&all_points);
+  // A `PlotStyle` list applied to a single curve is one combined directive
+  // set, not a per-curve cycle: `ParametricPlot[c, …, PlotStyle -> {Thick,
+  // Red}]` draws one thick red curve.
+  if all_points.len() == 1 {
+    plot_opts.plot_style =
+      crate::functions::plot::collapse_style_for_single_series(
+        &plot_opts.plot_style,
+      );
+  }
   let data_y = adjust_y_range_for_filling_opts(&plot_opts, data_y);
   let (x_range, y_range) =
     apply_ranges_and_aspect(&mut plot_opts, &overrides, data_x, data_y);

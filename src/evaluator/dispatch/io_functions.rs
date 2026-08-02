@@ -3936,6 +3936,10 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     {
       lays_out_a_graphic(&args[1])
     }
+    // `Item[expr, opts…]` is a layout cell: what it displays is `expr`.
+    Expr::FunctionCall { name, args } if name == "Item" && !args.is_empty() => {
+      lays_out_a_graphic(&args[0])
+    }
     // `ClickPane[expr, …]` shows `expr`; clicking it is the affordance the
     // handler is for, and contributes nothing to the picture.
     Expr::FunctionCall { name, args }
@@ -4230,6 +4234,11 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       expr_to_svg(
         &crate::evaluator::evaluate_expr_to_expr(&drawn).unwrap_or(drawn),
       )
+    }
+    // `Item[expr, opts…]` is a layout cell; the options place it and what
+    // it displays is `expr`.
+    Expr::FunctionCall { name, args } if name == "Item" && !args.is_empty() => {
+      expr_to_svg(&args[0])
     }
     // `ClickPane[expr, …]` displays `expr`. What it adds is a click
     // handler, which the picture itself does not carry — this is how a

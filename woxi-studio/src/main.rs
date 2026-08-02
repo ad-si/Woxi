@@ -7384,6 +7384,70 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn parametric_curves_manipulate_lays_out_its_plots() {
+    // End-to-end regression for "Parametric Curves in 2D": four plots are
+    // `Inset` into one picture, and the `t` slider is bounded by symbols
+    // the body assigns before anything else. The widget did not build at
+    // all, and once it did the insets drew as the words "-Graphics-".
+    let code = "Manipulate[\n\
+      tmin = 0; tmax = 2 Pi;\n\
+      Column[{\n\
+        Item[Text@TraditionalForm@Framed[Style[Row[{\"x = \", r[t][[1]]}], 20], \
+          FrameStyle -> Red], Alignment -> {Center, Top}],\n\
+        Graphics[{\n\
+          Inset[Show[ParametricPlot[r[t], {t, tmin, tmax}, \
+             PlotStyle -> Lighter[Gray, 0.3]], \
+            Graphics[{PointSize[Medium], Point[r[tm]]}], \
+            ImageSize -> {216, 216}, PlotRange -> {{-1, 1}, {-1, 1}}], \
+           {-80, 60}],\n\
+          Inset[Plot[r[t][[2]], {t, tmin, tmax}, PlotStyle -> Purple, \
+            ImageSize -> {Automatic, 216}], {60, 60}]}, \
+         PlotRange -> {{-150, 150}, {-100, 120}}, ImageSize -> 550, \
+         Axes -> False]}, Spacings -> -0.5],\n\
+      {{tm, 0, Style[\"t\", Italic]}, tmin, tmax, ControlPlacement -> Top, \
+       Appearance -> \"Labeled\"},\n\
+      {{r, {Cos[3 #], Sin[#]} &, \"\"}, \
+       {({Cos[3 #], Sin[#]} &) -> \"a\", ({Cos[#], Sin[#]} &) -> \"b\"}, \
+       ControlType -> SetterBar},\n\
+      TrackedSymbols -> Manipulate]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the parametric-curves Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the inset plots must draw");
+
+    // The `t` slider takes its bounds from the body, and the curve picker
+    // offers both choices.
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          label, min, max, ..
+        },
+        manipulate::ControlState::Discrete { values, .. },
+      ] => {
+        assert_eq!(label, "t");
+        assert_eq!(*min, 0.0);
+        assert!((*max - std::f64::consts::TAU).abs() < 1e-9);
+        assert_eq!(values.len(), 2, "one choice per curve");
+      }
+      other => panic!("expected a slider and a picker, got {other:?}"),
+    }
+
+    // Tracing the curve re-renders.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 2.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn argand_diagram_manipulate_draws_its_locator_pane() {
     // End-to-end regression for "Argand Diagram": a locator on the complex
     // plane is driven by modulus and argument sliders, so its position is

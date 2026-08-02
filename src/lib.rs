@@ -2771,6 +2771,30 @@ fn unwrap_pane_if_needed(expr: syntax::Expr) -> syntax::Expr {
   }
 }
 
+/// Wrappers that say how to *set* what they hold rather than what to show:
+/// `Text[expr]`, `Item[expr, opts…]` and the form wrappers. A display pass
+/// has to see through them to reach the thing that actually draws — a
+/// `Framed[…]` inside a `Text@TraditionalForm@…` is still a framed box.
+fn unwrap_display_pass_through(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if args.len() == 1
+        && matches!(
+          name.as_str(),
+          "Text" | "TraditionalForm" | "StandardForm" | "DisplayForm"
+        ) =>
+    {
+      unwrap_display_pass_through(args[0].clone())
+    }
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Item" && !args.is_empty() =>
+    {
+      unwrap_display_pass_through(args[0].clone())
+    }
+    _ => expr,
+  }
+}
+
 /// In visual (notebook) display mode, `ClickPane[expr, …]` and
 /// `LocatorPane[locators, body, …]` display the picture they wrap —
 /// clicking or dragging one is a front-end affordance that the picture
@@ -2810,6 +2834,7 @@ fn render_inline_display_wrapper(expr: syntax::Expr) -> syntax::Expr {
   // The top-level pipeline transformations don't recurse into nested
   // wrapper arguments, so we apply the relevant ones here for a single
   // sub-expression.
+  let expr = unwrap_display_pass_through(expr);
   let expr = unwrap_pane_if_needed(expr);
   let expr = render_interactive_pane_if_needed(expr);
   let expr = render_dynamic_if_needed(expr);

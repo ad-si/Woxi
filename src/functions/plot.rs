@@ -6911,34 +6911,31 @@ pub(crate) fn parse_image_size(
       let h = (w as f64 * aspect).round() as u32;
       Some((w, h, false))
     }
+    // `{w, h}` fixes both dimensions; `Automatic` in either slot leaves
+    // that one to follow from the other and the default aspect, which is
+    // how a Demonstration sizes a row of plots by height alone.
     Expr::List(items) if items.len() == 2 => {
-      let w = match &items[0] {
-        Expr::Integer(n) if *n > 0 => *n as u32,
-        Expr::BigInteger(n) => {
-          use num_traits::ToPrimitive;
-          let v = n.to_u32()?;
-          if v == 0 {
-            return None;
+      let dim = |e: &Expr| -> Option<Option<u32>> {
+        match e {
+          Expr::Identifier(n) if n == "Automatic" => Some(None),
+          Expr::Integer(n) if *n > 0 => Some(Some(*n as u32)),
+          Expr::BigInteger(n) => {
+            use num_traits::ToPrimitive;
+            let v = n.to_u32()?;
+            (v > 0).then_some(Some(v))
           }
-          v
+          Expr::Real(f) if *f > 0.0 => Some(Some(f.round() as u32)),
+          _ => None,
         }
-        Expr::Real(f) if *f > 0.0 => f.round() as u32,
-        _ => return None,
       };
-      let h = match &items[1] {
-        Expr::Integer(n) if *n > 0 => *n as u32,
-        Expr::BigInteger(n) => {
-          use num_traits::ToPrimitive;
-          let v = n.to_u32()?;
-          if v == 0 {
-            return None;
-          }
-          v
+      match (dim(&items[0])?, dim(&items[1])?) {
+        (Some(w), Some(h)) => Some((w, h, false)),
+        (Some(w), None) => Some((w, (w as f64 * aspect).round() as u32, false)),
+        (None, Some(h)) => {
+          Some((((h as f64) / aspect).round() as u32, h, false))
         }
-        Expr::Real(f) if *f > 0.0 => f.round() as u32,
-        _ => return None,
-      };
-      Some((w, h, false))
+        (None, None) => Some((def_w, def_h, false)),
+      }
     }
     Expr::Identifier(name) => {
       let base_w = match name.as_str() {

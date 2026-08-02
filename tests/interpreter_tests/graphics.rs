@@ -2855,7 +2855,23 @@ mod plot3d {
           .and_then(|v| v.parse::<f64>().ok())
           .unwrap_or_else(|| panic!("no {name} in {line}"))
       };
-      assert!(attr(&q, "x") > 300.0, "x label not at the axis end: {q}");
+      // Measured against the drawing area itself — the axis runs to its
+      // right edge, and the label starts past that. (`ImageSize` is the
+      // whole picture, so the drawing area is smaller than the size asked
+      // for by however much the axes take.)
+      let axis_right = svg
+        .lines()
+        .filter(|l| l.starts_with("<line") || l.starts_with("<polyline"))
+        .flat_map(|l| {
+          l.split(['"', ' ', ','])
+            .filter_map(|v| v.parse::<f64>().ok())
+            .collect::<Vec<_>>()
+        })
+        .fold(0.0_f64, f64::max);
+      assert!(
+        attr(&q, "x") >= axis_right,
+        "x label not at the axis end ({axis_right}): {q}"
+      );
       assert!(attr(&p, "y") < 0.0, "y label not above the axis: {p}");
       // `AxesLabel -> None` draws neither.
       let svg = export_svg(
@@ -7671,6 +7687,86 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       assert!(svg.contains(">1.23456<"), "the number itself: {svg}");
       assert!(!svg.contains("FormBox"), "no box markup: {svg}");
+    }
+
+    // `Inset[obj, pos]` draws a whole picture inside another one. A
+    // picture that has already been rendered — a `Plot`, a `Show`, anything
+    // whose symbolic content was not kept — is embedded as it is, at its
+    // own size, since an inset keeps the size it would have on its own.
+    #[test]
+    fn an_inset_embeds_a_rendered_picture() {
+      let svg = export_svg(
+        "Graphics[{Inset[Plot[Sin[x], {x, 0, 6}, ImageSize -> 120], \
+         {0, 0}]}, PlotRange -> {{-1, 1}, {-1, 1}}]",
+      );
+      assert!(
+        svg.matches("<svg").count() >= 2,
+        "the inset is embedded whole: {svg}"
+      );
+      assert!(svg.contains("<polyline"), "its curve draws: {svg}");
+      assert!(!svg.contains("-Graphics-"), "not the placeholder: {svg}");
+    }
+
+    // `ImageSize` is the whole picture, axes and labels included — not the
+    // drawing area with the axes added around it.
+    #[test]
+    fn image_size_is_the_whole_picture() {
+      let size = |code: &str| {
+        let svg = export_svg(code);
+        let get = |k: &str| {
+          svg
+            .split(&format!("{k}=\""))
+            .nth(1)
+            .and_then(|v| v.split('"').next())
+            .and_then(|v| v.parse::<u32>().ok())
+            .expect("dimension")
+        };
+        (get("width"), get("height"))
+      };
+      assert_eq!(
+        size("Graphics[{Disk[]}, Axes -> True, ImageSize -> {216, 216}]"),
+        (216, 216),
+        "the axes live inside the size asked for"
+      );
+      assert_eq!(
+        size("Graphics[{Disk[]}, ImageSize -> {216, 216}]"),
+        (216, 216)
+      );
+      // `Automatic` in either slot follows from the other.
+      assert_eq!(
+        size("Graphics[{Disk[]}, ImageSize -> {216, Automatic}]").0,
+        216
+      );
+      assert_eq!(
+        size("Graphics[{Disk[]}, ImageSize -> {Automatic, 216}]").1,
+        216
+      );
+      // A `Show` that merges a plot keeps both dimensions it was given.
+      assert_eq!(
+        size(
+          "Show[Plot[Sin[x], {x, 0, 6}], Graphics[{Disk[{3, 0}, 0.2]}], \
+           ImageSize -> {216, 216}]"
+        ),
+        (216, 216)
+      );
+    }
+
+    // Wrappers that say how to *set* what they hold rather than what to
+    // show nest in any order, and a display pass has to see through all of
+    // them to reach the thing that draws.
+    #[test]
+    fn nested_display_wrappers_are_seen_through() {
+      let svg = export_svg(
+        "Column[{Item[Text@TraditionalForm@Framed[Style[\"hi\", 20]], \
+         Alignment -> Center], Graphics[{Disk[]}, ImageSize -> 100]}, \
+         Spacings -> 0]",
+      );
+      assert!(!svg.contains("Framed["), "the frame draws: {svg}");
+      assert!(
+        !svg.contains("Item["),
+        "the cell wrapper is not shown: {svg}"
+      );
+      assert!(svg.contains(">hi<"), "the content shows: {svg}");
     }
 
     // `ClickPane[expr, …]` shows `expr`. What it adds is a click handler,

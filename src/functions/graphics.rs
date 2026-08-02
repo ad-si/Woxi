@@ -633,6 +633,16 @@ enum Primitive {
     points: Vec<(f64, f64)>,
     style: StyleState,
   },
+  /// A whole rendered picture placed inside this one by `Inset[obj, pos]`.
+  /// The anchor is in data coordinates; the size is the object's own, in
+  /// pixels, since an inset keeps its natural size whatever the plot range.
+  InsetGraphic {
+    svg: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+  },
   RasterPrim {
     /// rows x cols grid of RGBA colors (row 0 = bottom in Wolfram coords)
     data: Vec<Vec<Color>>,
@@ -681,7 +691,9 @@ impl Primitive {
       | Primitive::TextPrim { style, .. }
       | Primitive::BezierCurvePrim { style, .. }
       | Primitive::HalfPlanePrim { style, .. } => Some(style),
-      Primitive::RasterPrim { .. } | Primitive::MarkerPrim { .. } => None,
+      Primitive::RasterPrim { .. }
+      | Primitive::MarkerPrim { .. }
+      | Primitive::InsetGraphic { .. } => None,
     }
   }
 }
@@ -1283,6 +1295,25 @@ fn typeset_constant_glyph(name: &str) -> Option<&'static str> {
     "GoldenRatio" => "\u{03D5}", // ϕ
     _ => return None,
   })
+}
+
+/// The run of plain assignments a Manipulate body opens with. A body that
+/// sets up its own bounds does so first (`tmin = 0; tmax = 2 Pi; …`), and
+/// stopping at the first statement that is not a `Set` keeps this to
+/// definitions — no plotting, no side effects beyond the names themselves.
+fn leading_assignments(body: &Expr) -> Vec<&Expr> {
+  let statements: &[Expr] = match body {
+    Expr::CompoundExpr(items) => items,
+    _ => return Vec::new(),
+  };
+  statements
+    .iter()
+    .take_while(|stmt| {
+      matches!(stmt, Expr::FunctionCall { name, args }
+        if name == "Set" && args.len() == 2
+          && matches!(&args[0], Expr::Identifier(_)))
+    })
+    .collect()
 }
 
 /// Whether a Manipulate argument is a `ButtonBar[…]` — a row of buttons
@@ -2397,6 +2428,27 @@ fn inset_primitives(
   args: &[Expr],
   errors: &mut Vec<String>,
 ) -> Option<Vec<Primitive>> {
+  // A graphic that has already been rendered — a `Plot`, a `Show`, any
+  // picture whose symbolic content was not kept — is embedded whole, at
+  // its own size. That is what an inset is: the object keeps the size it
+  // would have on its own, wherever the plot range puts its anchor.
+  if let Expr::Graphics {
+    svg,
+    is_3d: false,
+    structure: None,
+    ..
+  } = &args[0]
+    && let Some(dims) = parse_svg_dimensions(svg)
+    && let Some((x, y)) = args.get(1).and_then(expr_to_point)
+  {
+    return Some(vec![Primitive::InsetGraphic {
+      svg: svg.clone(),
+      x,
+      y,
+      w: dims.nat_w,
+      h: dims.nat_h,
+    }]);
+  }
   // The object: `Graphics[…]` (or its box form), a rendered graphic that
   // kept its symbolic content, or a bare `Raster`/`Image`.
   let content: Expr = match &args[0] {
@@ -3121,6 +3173,9 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
       bb.include_point(*x_min, *y_min);
       bb.include_point(*x_max, *y_max);
     }
+    // An inset keeps its own pixel size, so it anchors the range at its
+    // position and nothing more.
+    Primitive::InsetGraphic { x, y, .. } => bb.include_point(*x, *y),
     // An unbounded fill only anchors the plot range at its defining
     // points; the fill itself extends past whatever range results.
     Primitive::HalfPlanePrim { p, v, w, .. } => {
@@ -3164,6 +3219,17 @@ fn rotate_primitive(
   // Rotate a direction vector (no translation).
   let rv = |x: f64, y: f64| (x * cos - y * sin, x * sin + y * cos);
   match prim {
+    // An inset keeps its own orientation and size; only its anchor moves.
+    Primitive::InsetGraphic { svg, x, y, w, h } => {
+      let (nx, ny) = rp(*x, *y);
+      Primitive::InsetGraphic {
+        svg: svg.clone(),
+        x: nx,
+        y: ny,
+        w: *w,
+        h: *h,
+      }
+    }
     Primitive::PointSingle { x, y, style } => {
       let (nx, ny) = rp(*x, *y);
       Primitive::PointSingle {
@@ -3350,6 +3416,13 @@ fn rotate_primitive(
 fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
   let tp = |x: f64, y: f64| (x + dx, y + dy);
   match prim {
+    Primitive::InsetGraphic { svg, x, y, w, h } => Primitive::InsetGraphic {
+      svg: svg.clone(),
+      x: x + dx,
+      y: y + dy,
+      w: *w,
+      h: *h,
+    },
     Primitive::PointSingle { x, y, style } => Primitive::PointSingle {
       x: x + dx,
       y: y + dy,
@@ -3537,6 +3610,16 @@ fn scale_primitive(
     }
   };
   match prim {
+    Primitive::InsetGraphic { svg, x, y, w, h } => {
+      let (nx, ny) = sp(*x, *y);
+      Primitive::InsetGraphic {
+        svg: svg.clone(),
+        x: nx,
+        y: ny,
+        w: *w,
+        h: *h,
+      }
+    }
     Primitive::PointSingle { x, y, style } => {
       let (nx, ny) = sp(*x, *y);
       Primitive::PointSingle {
@@ -4543,6 +4626,21 @@ fn render_primitive(
   out: &mut String,
 ) {
   match prim {
+    // The inset is embedded whole, at its own size, centred on its anchor.
+    Primitive::InsetGraphic { svg, x, y, w, h } => {
+      let cx = coord_x(*x, bb, svg_w);
+      let cy = coord_y(*y, bb, svg_h);
+      let view_box = parse_svg_dimensions(svg)
+        .map(|p| p.view_box)
+        .unwrap_or_else(|| format!("0 0 {w} {h}"));
+      out.push_str(&format!(
+        "<svg x=\"{:.2}\" y=\"{:.2}\" width=\"{w:.2}\" height=\"{h:.2}\" viewBox=\"{view_box}\" preserveAspectRatio=\"xMidYMid meet\">\n",
+        cx - w / 2.0,
+        cy - h / 2.0
+      ));
+      out.push_str(strip_svg_wrapper(svg));
+      out.push_str("</svg>\n");
+    }
     Primitive::PointSingle { x, y, style } => {
       let cx = coord_x(*x, bb, svg_w);
       let cy = coord_y(*y, bb, svg_h);
@@ -5529,6 +5627,9 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
       Primitive::RasterPrim { .. } => {
         // RasterBox is not yet supported in .nb export; skip
       }
+      Primitive::InsetGraphic { .. } => {
+        // An embedded rendering has no fixed-coordinate box form; skip
+      }
       Primitive::HalfPlanePrim { .. } => {
         // Unbounded fills have no fixed-coordinate box form; skip
       }
@@ -5550,6 +5651,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let content = evaluate_expr_to_expr(&args[0])?;
 
   // Parse options
+  // Whether an `ImageSize` was asked for. Wolfram's is the whole picture,
+  // axes and labels included, so the margins come out of it rather than
+  // being added around it.
+  let mut explicit_size = false;
   let mut svg_width: u32 = 360;
   let mut svg_height: u32 = 225;
   let mut explicit_height = false;
@@ -5585,9 +5690,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let replacement = &*replacement;
       match name {
         "ImageSize" => {
-          // Check if {w, h} form was used (explicit height)
+          explicit_size = true;
+          // A height was named only when the `{w, h}` form gives a number
+          // for it; `{w, Automatic}` still follows the data aspect.
           if let Expr::List(items) = replacement
             && items.len() == 2
+            && !matches!(&items[1], Expr::Identifier(n) if n == "Automatic")
           {
             explicit_height = true;
           }
@@ -5841,6 +5949,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       0.0
     };
+  // The size asked for is the whole picture, so the drawing area is what
+  // is left of it once the axes and their labels have taken their room.
+  let (svg_w, svg_h) = if explicit_size {
+    (
+      (svg_w - margin_left - margin_right).max(1.0),
+      (svg_h - margin_bottom - margin_top).max(1.0),
+    )
+  } else {
+    (svg_w, svg_h)
+  };
   let total_width = svg_w + margin_left + margin_right;
   let total_height = svg_h + margin_bottom + margin_top;
 
@@ -9455,7 +9573,14 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           replacement: Box::new(bool_expr(true)),
         });
       }
-      if !has_option(&merged_options, "AspectRatio") {
+      // An `ImageSize -> {w, h}` already fixes the height, so the plot
+      // aspect must not be filled in over it.
+      let sized_both_ways = merged_options.iter().any(|o| {
+        matches!(o, Expr::Rule { pattern, replacement }
+          if option_name(pattern) == Some("ImageSize")
+            && matches!(replacement.as_ref(), Expr::List(v) if v.len() == 2))
+      });
+      if !has_option(&merged_options, "AspectRatio") && !sized_both_ways {
         merged_options.push(Expr::Rule {
           pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
           replacement: Box::new(Expr::Real(1.0 / 1.618_033_988_749_895)),
@@ -12969,10 +13094,24 @@ fn resolve_display_item(expr: &Expr) -> Expr {
       current = inner;
     }
   }
-  if let Expr::FunctionCall { name, args } = &current
-    && name == "Text"
-    && args.len() == 1
-  {
+  // Wrappers that say how to *set* what they hold rather than what to
+  // show: `Text[…]`, an `Item[…]` cell, and the form wrappers. They nest
+  // in any order — `Item[Text@TraditionalForm@Framed[…], …]` — so peel
+  // until what is left is the thing that actually draws.
+  loop {
+    let Expr::FunctionCall { name, args } = &current else {
+      break;
+    };
+    let pass_through = match name.as_str() {
+      "Text" | "TraditionalForm" | "StandardForm" | "DisplayForm" => {
+        args.len() == 1
+      }
+      "Item" => !args.is_empty(),
+      _ => false,
+    };
+    if !pass_through {
+      break;
+    }
     current = args[0].clone();
   }
   // `InputForm[expr]` displays as the InputForm text of `expr`.
@@ -13044,6 +13183,9 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // A `Grid` nested in a layout is laid out too, rather than printed
       // as its own expression text.
       "Grid" => return grid_svg_with_gaps(&args, &[]).ok(),
+      // A `Framed[…]` box draws its border and its content; a `Column`
+      // item that is one used to print as source.
+      "Framed" if !args.is_empty() => return framed_to_svg(&args),
       // A styled layout keeps its layout, and its style: `Style[Row[{…}],
       // Bold, 20]` sets every item of the row, since a `Style` is inherited
       // by what it wraps. Pushing the directives inwards is what lets the
@@ -14855,6 +14997,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // while the specs are parsed, so those bounds resolve to their build-time
   // numbers regardless of declaration order.
   let initial_bindings = manipulate_initial_value_bindings(&arg_items);
+  // A slider's bounds may be symbols the body assigns before doing
+  // anything else — `Manipulate[tmin = 0; tmax = 2 Pi; …, {{t, 0}, tmin,
+  // tmax}]`. Wolfram evaluates the body before laying the controls out, so
+  // those names are bound by the time the slider is built. Running the
+  // leading run of plain assignments is enough to resolve them, and cannot
+  // do anything the body would not have done anyway.
+  if let Some(body) = args.first() {
+    for stmt in leading_assignments(body) {
+      let _ = evaluate_expr_to_expr(stmt);
+    }
+  }
   // A `ButtonBar`'s buttons are computed — `ButtonBar[Table[…]]` builds one
   // per vertex of a graph, labelling each from a list the `Initialization`
   // option defines. Those definitions therefore have to exist before the
