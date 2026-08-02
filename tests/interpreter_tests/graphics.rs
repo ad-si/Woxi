@@ -2524,6 +2524,30 @@ mod plot3d {
       );
     }
 
+    /// `Evaluated -> True` works the body out once, with the plot
+    /// variable still symbolic, instead of at every sample point. A fit
+    /// only makes sense that way: substituting a number for the variable
+    /// first leaves nothing to fit against.
+    #[test]
+    fn plot_evaluated_true_works_the_body_out_once() {
+      let data = "Table[{x, 2. x + 1}, {x, 0, 1, 0.1}]";
+      let body =
+        format!("Normal[NonlinearModelFit[{data}, a t + b, {{a, b}}, t]]");
+      let svg =
+        export_svg(&format!("Plot[{body}, {{t, 0, 1}}, Evaluated -> True]"));
+      assert!(
+        svg.contains("<polyline"),
+        "the fitted line must draw: {svg}"
+      );
+      // Without the option the body is re-evaluated per sample point, with
+      // the plot variable replaced by a number — nothing to draw.
+      let plain = export_svg(&format!("Plot[{body}, {{t, 0, 1}}]"));
+      assert!(
+        !plain.contains("<polyline"),
+        "without the option there is nothing to sample: {plain}"
+      );
+    }
+
     #[test]
     fn plot_piecewise_prefix_apply() {
       // Piecewise @ {{...}} should produce a valid plot (not empty)

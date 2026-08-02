@@ -3830,6 +3830,57 @@ mod nonlinear_model_fit {
       "4"
     );
   }
+
+  // `Weights -> {w₁, …}` counts each point wᵢ times in the sum of squares.
+  // Verified against wolframscript, which fits `1.096091205211726 +
+  // 2.000977198697068 x` to this data with the second point weighted 100×.
+  #[test]
+  fn weights_option_reweights_the_points() {
+    assert_eq!(
+      interpret(
+        "Round[{a, b} /. NonlinearModelFit[{{0, 1.0}, {1, 3.1}, {2, 4.8}, \
+         {3, 7.2}}, a x + b, {a, b}, x, Weights -> {1, 100, 1, 1}][\
+         \"BestFitParameters\"], 10^-6]"
+      )
+      .unwrap(),
+      "{2000977/1000000, 1096091/1000000}"
+    );
+    // Without the weights the ordinary least-squares line is a different one.
+    assert_eq!(
+      interpret(
+        "Round[{a, b} /. NonlinearModelFit[{{0, 1.0}, {1, 3.1}, {2, 4.8}, \
+         {3, 7.2}}, a x + b, {a, b}, x][\"BestFitParameters\"], 10^-6]"
+      )
+      .unwrap(),
+      "{203/100, 49/50}"
+    );
+  }
+
+  // A model given as `{model, cons…}` is fitted subject to those
+  // constraints, and the fitted expression is the model alone — the
+  // constraints are not part of it.
+  #[test]
+  fn constraints_bound_the_parameters() {
+    let fit = "NonlinearModelFit[Table[{x, 55 Sin[2 Pi x + 1.] + 40}, \
+               {x, 0, 1, 0.05}], {a Sin[2 Pi y + b] + c, 20 < a < 30, \
+               0 < b < 2 Pi}, {a, b, c}, y]";
+    // `a` is pinned to its ceiling: the data wants 55, the constraint
+    // allows at most 30.
+    assert_eq!(
+      interpret(&format!("Round[a /. {fit}[\"BestFitParameters\"], 10^-4]"))
+        .unwrap(),
+      "30"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "With[{{v = b /. {fit}[\"BestFitParameters\"]}}, 0 <= v <= 2 Pi]"
+      ))
+      .unwrap(),
+      "True"
+    );
+    // The fitted function is the model, with no constraint left in it.
+    assert_eq!(interpret(&format!("Head[Normal[{fit}]]")).unwrap(), "Plus");
+  }
 }
 
 mod translation_transform {

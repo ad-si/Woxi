@@ -908,7 +908,7 @@ pub fn dispatch_linear_algebra_functions(
     "FindFit" if args.len() == 4 => {
       return Some(crate::functions::linear_algebra_ast::find_fit_ast(args));
     }
-    "NonlinearModelFit" if args.len() == 4 => {
+    "NonlinearModelFit" if args.len() >= 4 => {
       return Some(
         crate::functions::linear_algebra_ast::nonlinear_model_fit_ast(args),
       );

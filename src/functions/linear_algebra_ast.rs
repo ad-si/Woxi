@@ -6286,6 +6286,111 @@ fn build_root_from_coeffs(coeffs: &[i128], x: f64) -> Option<Expr> {
 
 // ─── FindFit ──────────────────────────────────────────────────────────
 
+/// Split a model specification into the model and any constraints given
+/// beside it: Wolfram writes a constrained fit as
+/// `{model, cons₁, cons₂, …}`, e.g. `{a Sin[x + b], 50 < a < 60}`.
+pub(crate) fn split_fit_model_spec(spec: &Expr) -> (Expr, Vec<Expr>) {
+  match spec {
+    // A bare list of two or more items is only a constrained model when
+    // what follows the model reads as a condition; a `{f1, f2}` list of
+    // basis functions (Fit's spelling) has no comparisons in it.
+    Expr::List(items)
+      if items.len() >= 2 && items[1..].iter().all(is_fit_constraint) =>
+    {
+      (items[0].clone(), items[1..].to_vec())
+    }
+    other => (other.clone(), Vec::new()),
+  }
+}
+
+/// Whether an expression is a comparison, i.e. a constraint rather than
+/// another piece of the model.
+fn is_fit_constraint(expr: &Expr) -> bool {
+  match expr {
+    Expr::Comparison { .. } => true,
+    Expr::FunctionCall { name, .. } => matches!(
+      name.as_str(),
+      "Less" | "LessEqual" | "Greater" | "GreaterEqual" | "Inequality"
+    ),
+    _ => false,
+  }
+}
+
+/// Box bounds `(low, high)` per parameter, read off the constraints. A
+/// constraint that does not bound a single parameter by a number is left
+/// out — those the fit simply does not enforce.
+fn fit_parameter_bounds(
+  constraints: &[Expr],
+  param_names: &[String],
+) -> Vec<(f64, f64)> {
+  let mut bounds: Vec<(f64, f64)> =
+    vec![(f64::NEG_INFINITY, f64::INFINITY); param_names.len()];
+  // One `lhs op rhs` link of a comparison chain, with `op` reading left to
+  // right ("<" means lhs < rhs).
+  let mut apply = |lhs: &Expr, op: &str, rhs: &Expr| {
+    let param_index = |e: &Expr| match e {
+      Expr::Identifier(n) => param_names.iter().position(|p| p == n),
+      _ => None,
+    };
+    let number = |e: &Expr| try_eval_to_f64(e);
+    // `param op value` bounds the parameter from above for `<`/`<=`;
+    // `value op param` bounds it from below.
+    let (idx, value, upper) = match (param_index(lhs), number(rhs)) {
+      (Some(i), Some(v)) => (i, v, matches!(op, "Less" | "LessEqual")),
+      _ => match (number(lhs), param_index(rhs)) {
+        (Some(v), Some(i)) => (i, v, matches!(op, "Greater" | "GreaterEqual")),
+        _ => return,
+      },
+    };
+    if upper {
+      bounds[idx].1 = bounds[idx].1.min(value);
+    } else {
+      bounds[idx].0 = bounds[idx].0.max(value);
+    }
+  };
+  for constraint in constraints {
+    // A parsed chain is a `Comparison`; the same thing written as a call
+    // (`Less[50, a, 60]`) is a `FunctionCall`. Both are read through the
+    // one decomposition Wolfram's structural operations use.
+    let owned;
+    let (name, args) = match constraint {
+      Expr::Comparison {
+        operands,
+        operators,
+      } => {
+        owned = crate::syntax::comparison_head_and_args(operands, operators);
+        (owned.0.clone(), owned.1.clone())
+      }
+      Expr::FunctionCall { name, args } => {
+        (name.clone(), args.iter().cloned().collect::<Vec<_>>())
+      }
+      _ => continue,
+    };
+    let args = &args[..];
+    match name.as_str() {
+      // `Inequality[a, op, b, op, c]` — the general chained form, walked
+      // as (operand, op, operand, op, operand, …).
+      "Inequality" => {
+        let mut i = 0;
+        while i + 2 < args.len() {
+          if let Expr::Identifier(op) = &args[i + 1] {
+            apply(&args[i], op, &args[i + 2]);
+          }
+          i += 2;
+        }
+      }
+      // `Less[a, b, c]` is `a < b < c`: every neighbouring pair links.
+      "Less" | "LessEqual" | "Greater" | "GreaterEqual" => {
+        for pair in args.windows(2) {
+          apply(&pair[0], &name, &pair[1]);
+        }
+      }
+      _ => {}
+    }
+  }
+  bounds
+}
+
 /// FindFit[data, model, params, var]
 /// Finds parameter values that minimize the sum of squared residuals.
 /// Returns {param1 -> val1, param2 -> val2, ...}.
@@ -6295,7 +6400,28 @@ pub fn find_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "FindFit expects exactly 4 arguments: data, model, params, var".into(),
     ));
   }
+  let (model, constraints) = split_fit_model_spec(&args[1]);
+  find_fit_weighted(&args[0], &model, &constraints, &args[2], &args[3], None)
+}
 
+/// The fitting core: least squares by Gauss-Newton, optionally weighted
+/// (each residual scaled by `sqrt(w)`, as `NonlinearModelFit`'s `Weights`
+/// asks for) and optionally confined to the box the constraints describe.
+pub(crate) fn find_fit_weighted(
+  data_expr: &Expr,
+  model: &Expr,
+  constraints: &[Expr],
+  params_expr: &Expr,
+  var_expr: &Expr,
+  weights: Option<&[f64]>,
+) -> Result<Expr, InterpreterError> {
+  let args = [
+    data_expr.clone(),
+    model.clone(),
+    params_expr.clone(),
+    var_expr.clone(),
+  ];
+  let args = &args[..];
   let data_expr = &args[0];
   let model = &args[1];
   let params_expr = &args[2];
@@ -6370,6 +6496,26 @@ pub fn find_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n_data = x_vals.len();
   let n_params = param_names.len();
 
+  // `Weights -> {w₁, …}` scales each residual by `sqrt(wᵢ)`, so a point
+  // counts `wᵢ` times in the sum of squares.
+  let scale: Vec<f64> = match weights {
+    Some(w) if w.len() == n_data => {
+      w.iter().map(|v| v.max(0.0).sqrt()).collect()
+    }
+    _ => vec![1.0; n_data],
+  };
+  // Constraints confine the parameters to a box, which the iteration
+  // stays inside by projecting each step back into it.
+  let bounds = fit_parameter_bounds(constraints, &param_names);
+  let clamp = |values: &mut [f64]| {
+    for (v, &(lo, hi)) in values.iter_mut().zip(bounds.iter()) {
+      if lo.is_finite() || hi.is_finite() {
+        *v = v.clamp(lo, hi);
+      }
+    }
+  };
+  clamp(&mut param_values);
+
   // Gauss-Newton iteration
   let max_iter = 100;
   let tol = 1e-12;
@@ -6397,7 +6543,7 @@ pub fn find_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(ref e) => try_eval_to_f64(e).unwrap_or(f64::NAN),
         Err(_) => f64::NAN,
       };
-      residuals[i] = y_vals[i] - val;
+      residuals[i] = (y_vals[i] - val) * scale[i];
 
       // Compute Jacobian by finite differences
       let h = 1e-8;
@@ -6422,23 +6568,53 @@ pub fn find_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Err(_) => f64::NAN,
         };
 
-        jacobian[i][j] = (val_h - val) / h;
+        jacobian[i][j] = (val_h - val) / h * scale[i];
         param_values[j] = orig;
       }
     }
 
     // Solve J^T J delta = J^T r using QR on J
-    let delta = match solve_least_squares_qr(&jacobian, &residuals) {
+    let mut delta = match solve_least_squares_qr(&jacobian, &residuals) {
       Ok(d) => d,
       Err(_) => break,
     };
 
-    // Update parameters
-    let mut max_change = 0.0f64;
+    // A parameter the step would push out of its box is held at that
+    // bound and the others re-fitted around it (an active set). Clamping
+    // alone would leave the rest at whatever the unconstrained step
+    // wanted, which is not the constrained best fit.
+    let pinned: Vec<bool> = (0..n_params)
+      .map(|j| {
+        let (lo, hi) = bounds[j];
+        (param_values[j] <= lo && delta[j] < 0.0)
+          || (param_values[j] >= hi && delta[j] > 0.0)
+      })
+      .collect();
+    if pinned.iter().any(|&p| p) && !pinned.iter().all(|&p| p) {
+      let free: Vec<usize> = (0..n_params).filter(|&j| !pinned[j]).collect();
+      let reduced: Vec<Vec<f64>> = jacobian
+        .iter()
+        .map(|row| free.iter().map(|&j| row[j]).collect())
+        .collect();
+      if let Ok(d) = solve_least_squares_qr(&reduced, &residuals) {
+        delta = vec![0.0; n_params];
+        for (k, &j) in free.iter().enumerate() {
+          delta[j] = d[k];
+        }
+      }
+    }
+
+    // Update parameters, keeping them inside the constraint box.
+    let before = param_values.clone();
     for j in 0..n_params {
       param_values[j] += delta[j];
-      max_change = max_change.max(delta[j].abs());
     }
+    clamp(&mut param_values);
+    let max_change = param_values
+      .iter()
+      .zip(before.iter())
+      .map(|(a, b)| (a - b).abs())
+      .fold(0.0f64, f64::max);
 
     if max_change < tol {
       break;
@@ -7063,14 +7239,40 @@ pub fn nonlinear_model_fit_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let uneval = || Ok(unevaluated("NonlinearModelFit", args));
-  if args.len() != 4 {
+  if args.len() < 4 {
     return uneval();
   }
-  let (data, model, params, var) = (&args[0], &args[1], &args[2], &args[3]);
+  let (data, spec, params, var) = (&args[0], &args[1], &args[2], &args[3]);
+  // A constrained model is written `{model, cons…}`; the fitted function
+  // that comes back is the model alone.
+  let (model, constraints) = split_fit_model_spec(spec);
+  let model = &model;
+
+  // `Weights -> {w₁, …}` weights the data points; the other options are
+  // accepted and ignored (they only steer how the minimum is sought).
+  let mut weights: Option<Vec<f64>> = None;
+  for opt in &args[4..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Weights")
+      && let Ok(evaluated) = evaluate_expr_to_expr(replacement)
+      && let Expr::List(items) = &evaluated
+    {
+      weights = items.iter().map(try_eval_to_f64).collect();
+    }
+  }
 
   // Fit the parameters. FindFit returns `{a -> v, b -> v}` (rules) on success.
-  let param_rules =
-    find_fit_ast(&[data.clone(), model.clone(), params.clone(), var.clone()])?;
+  let param_rules = find_fit_weighted(
+    data,
+    model,
+    &constraints,
+    params,
+    var,
+    weights.as_deref(),
+  )?;
   let Expr::List(rules) = &param_rules else {
     return uneval();
   };

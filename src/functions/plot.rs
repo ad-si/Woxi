@@ -1694,6 +1694,9 @@ pub(crate) struct PlotOptions {
   pub grid_y_lines: Vec<GridLine>,
   /// Use frame (left+bottom border) instead of axes
   pub frame: bool,
+  /// `Evaluated -> True`: work the body out once, with the plot variable
+  /// symbolic, rather than re-evaluating it at every sample point.
+  pub evaluated: bool,
   /// Labels on the bottom and left frame edges (`FrameLabel`). These sit
   /// centred outside the plot area, unlike an [`Self::axes_label`], which
   /// Wolfram writes at the far end of its axis.
@@ -1776,6 +1779,7 @@ impl Default for PlotOptions {
       grid_x_lines: Vec::new(),
       grid_y_lines: Vec::new(),
       frame: false,
+      evaluated: false,
       ticks_x: None,
       ticks_y: None,
       frame_label_bottom: None,
@@ -7784,6 +7788,10 @@ pub(crate) fn apply_common_plot_option(
       plot_opts.background = parse_background_option(replacement);
     }
     "Frame" => plot_opts.frame = parse_frame_option(replacement),
+    "Evaluated" => {
+      plot_opts.evaluated =
+        matches!(replacement, Expr::Identifier(v) if v == "True");
+    }
     "ImagePadding" => {
       plot_opts.image_padding = parse_image_padding(replacement);
     }
@@ -8120,6 +8128,19 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // assigned symbols expand to their definitions (and reveal the variable)
   // before sampling. Bodies that already mention the variable are left
   // untouched, so ordinary plots are unaffected.
+  // `Evaluated -> True` asks for the body to be worked out once, with the
+  // plot variable still symbolic, instead of at every sample point. It is
+  // how a body that only makes sense symbolically gets plotted at all —
+  // `Plot[Normal[NonlinearModelFit[data, …, y]], {y, 0, 1}]` would
+  // otherwise re-fit with a number in place of `y` at every point.
+  let evaluated_storage;
+  let body: &Expr = if plot_opts.evaluated {
+    evaluated_storage = eval_body_var_symbolic(body, &var_name);
+    &evaluated_storage
+  } else {
+    body
+  };
+
   let resolved_storage;
   let body: &Expr = if expr_mentions_var(body, &var_name) {
     body

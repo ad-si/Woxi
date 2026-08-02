@@ -512,7 +512,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FiniteAbelianGroupCount" => Some((1, 1)),
     "FiniteGroupCount" => Some((1, 1)),
     "FindFit" => Some((4, 4)),
-    "NonlinearModelFit" => Some((4, 4)),
+    "NonlinearModelFit" => Some((4, usize::MAX)),
     "FindInstance" => Some((2, 4)),
     "FindIntegerNullVector" => Some((1, 2)),
     "FindLinearRecurrence" => Some((1, 1)),

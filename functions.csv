@@ -6291,3 +6291,4 @@ CardinalBSplineBasis,Centered cardinal B-spline basis function of a given degree
 PropertyValue,Value a property carries for a vertex or an edge of a graph,✅,pure,8.0,
 PropertyList,Annotations a graph offers,✅,pure,8.0,
 SetProperty,Graph with an annotation set for one of its vertices or edges,✅,pure,8.0,
+Evaluated,Option for whether to evaluate a plot's function once symbolically,✅,pure,6.0,
