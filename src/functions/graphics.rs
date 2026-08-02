@@ -5662,6 +5662,26 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Remaining args are options as Rule expressions
   let content = evaluate_expr_to_expr(&args[0])?;
 
+  // `Graphics[g]` where `g` is itself a finished picture — a plot, or
+  // another `Graphics` — is just `g`: the wrapper adds nothing and the
+  // inner picture keeps its own options (in Wolfram an outer `Frame ->
+  // True` on such a wrapper has no effect). Demonstrations write
+  // `Graphics[ContourPlot[…]]` when collecting layers for a later `Show`,
+  // and the plot would otherwise be dropped for not being a primitive.
+  match &content {
+    Expr::Graphics { is_3d: false, .. } => return Ok(content),
+    // An inner `Graphics[…]` call is still a call at this point (it only
+    // renders at the output stage), so render that one instead of taking
+    // its primitives and losing its own options.
+    Expr::FunctionCall { name, args: inner }
+      if name == "Graphics" && !inner.is_empty() =>
+    {
+      let inner: Vec<Expr> = inner.iter().cloned().collect();
+      return graphics_ast(&inner);
+    }
+    _ => {}
+  }
+
   // Parse options
   // Whether an `ImageSize` was asked for. Wolfram's is the whole picture,
   // axes and labels included, so the margins come out of it rather than
@@ -9234,6 +9254,22 @@ pub(crate) fn mesh_region_to_graphics_prims(
 /// combining their primitives and options. Arguments are kept unevaluated
 /// (Show is in the held-args list) so Graphics[...] expressions arrive as
 /// FunctionCall nodes rather than being rendered to `-Graphics-`.
+/// Whether a `Graphics[…]` argument is a finished picture rather than a
+/// list of primitives — an already-rendered graphic, another `Graphics`,
+/// or a call (a plot) that evaluates to one.
+fn wraps_rendered_graphic(content: &Expr) -> bool {
+  match content {
+    Expr::Graphics { .. } => true,
+    Expr::FunctionCall { name, .. } if name == "Graphics" => true,
+    // Lists, primitives and directives are content, not pictures; only a
+    // call worth evaluating can turn out to be one.
+    Expr::FunctionCall { .. } => {
+      matches!(evaluate_expr_to_expr(content), Ok(Expr::Graphics { .. }))
+    }
+    _ => false,
+  }
+}
+
 pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut merged_primitives: Vec<Expr> = Vec::new();
   let mut merged_options: Vec<Expr> = Vec::new();
@@ -9308,6 +9344,24 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // If the arg is not already a Graphics/Graphics3D expression,
     // try evaluating it (e.g. it could be a variable or function call)
     let expr_owned = match &arg {
+      // A `Graphics[…]` call stays symbolic so its primitives can merge
+      // with the other arguments' — unless it wraps a finished picture
+      // (`Graphics[ContourPlot[…]]`), in which case its content is no
+      // primitive at all and the wrapper has to be rendered to get the
+      // picture it stands for.
+      Expr::FunctionCall { name, args: gargs }
+        if (name == "Graphics" || name == "Graphics3D")
+          && !gargs.is_empty()
+          && wraps_rendered_graphic(&gargs[0]) =>
+      {
+        let gargs: Vec<Expr> = gargs.iter().cloned().collect();
+        if name == "Graphics" {
+          graphics_ast(&gargs).unwrap_or_else(|_| arg.clone())
+        } else {
+          crate::functions::plot3d::graphics3d_ast(&gargs)
+            .unwrap_or_else(|_| arg.clone())
+        }
+      }
       Expr::FunctionCall { name, .. }
         if name == "Graphics" || name == "Graphics3D" =>
       {

@@ -131,6 +131,17 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::Rng;
 
+  // RandomReal[dist] / RandomReal[dist, n] samples from a continuous
+  // distribution, exactly like RandomVariate (e.g. `RandomReal[
+  // UniformDistribution[{-2, 2}], 10]`). Delegate to RandomVariate so
+  // every distribution it supports works here too — the same delegation
+  // `RandomInteger` makes for the discrete ones.
+  if let Some(Expr::FunctionCall { name, .. }) = args.first()
+    && name.ends_with("Distribution")
+  {
+    return random_variate_ast(args);
+  }
+
   match args.len() {
     0 => Ok(Expr::Real(crate::with_rng(|rng| rng.gen_range(0.0..1.0)))),
     1 => match &args[0] {

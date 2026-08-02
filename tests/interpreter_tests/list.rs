@@ -5773,6 +5773,37 @@ mod random_real {
     assert!((0.0..1.0).contains(&result));
   }
 
+  // Regression: `RandomReal[UniformDistribution[{a, b}], n]` used to fail
+  // with "invalid range". A distribution argument samples from it, the
+  // way `RandomVariate` (and `RandomInteger` for the discrete ones) does.
+  #[test]
+  fn distribution_sampling() {
+    assert_eq!(
+      interpret("Length[RandomReal[UniformDistribution[{-2, 3}], 50]]")
+        .unwrap(),
+      "50"
+    );
+    assert_eq!(
+      interpret(
+        "AllTrue[RandomReal[UniformDistribution[{-2, 3}], 200], \
+         -2 <= # <= 3 &]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // A single draw is one real, not a list.
+    assert_eq!(
+      interpret("Head[RandomReal[UniformDistribution[{-2, 3}]]]").unwrap(),
+      "Real"
+    );
+    // Any distribution `RandomVariate` knows, including array dimensions.
+    assert_eq!(
+      interpret("Dimensions[RandomReal[NormalDistribution[0, 1], {2, 3}]]")
+        .unwrap(),
+      "{2, 3}"
+    );
+  }
+
   #[test]
   fn with_max() {
     let result: f64 = interpret("RandomReal[5]").unwrap().parse().unwrap();

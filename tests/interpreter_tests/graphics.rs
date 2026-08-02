@@ -2921,6 +2921,24 @@ mod plot3d {
       assert!(svg.contains("<circle"), "the merged point must draw: {svg}");
     }
 
+    /// A frame carries its own ticks, so `Axes -> False` beside
+    /// `Frame -> True` hides the interior axes without taking the tick
+    /// marks and their labels with them. Regression: a `Show` that
+    /// re-rendered such a plot (any option of its own forces one) came
+    /// back as a bare box with no scale on it.
+    #[test]
+    fn a_frame_keeps_its_ticks_without_axes() {
+      let ticks = |code: &str| export_svg(code).matches("<text").count();
+      let framed =
+        "ListPlot[{1, 3, 2}, Axes -> False, Frame -> True, Joined -> True]";
+      assert!(ticks(framed) > 10, "the frame must be scaled");
+      assert_eq!(
+        ticks(&format!("Show[{framed}, ImageSize -> {{360, 360}}]")),
+        ticks(framed),
+        "re-rendering through Show must keep them"
+      );
+    }
+
     /// Wolfram writes an `AxesLabel` at the end of its axis — the x label
     /// past the right edge, the y label above the top — and a `Style`
     /// around it carries its colour and slant into the label.
@@ -7354,6 +7372,38 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains(">1</text>"), "axis ticks expected: {svg}");
     }
 
+    /// A shaded contour plot keeps its shading when `Show` merges it with
+    /// other graphics — the bands travel with the plot's symbolic form, so
+    /// the merged picture is not reduced to bare contour lines. A
+    /// Demonstration collects its layers as `Graphics[ContourPlot[…]]`,
+    /// which is a transparent wrapper around the finished plot.
+    #[test]
+    fn show_keeps_contour_shading_when_merging() {
+      let overlay = "Graphics[{Red, Disk[{0, 0}, 0.2]}]";
+      let plot = "ContourPlot[x^2 + y^2, {x, -2, 2}, {y, -2, 2}]";
+      for merged in [
+        format!("Show[{plot}, {overlay}]"),
+        format!("Show[{{{plot}, {overlay}}}]"),
+        format!("Show[Graphics[{plot}], {overlay}]"),
+      ] {
+        let svg = export_svg(&merged);
+        // The bands are hundreds of filled polygons; the bare contour
+        // lines alone would be a handful of polylines.
+        assert!(
+          svg.matches("<polygon").count() > 100,
+          "the shading must survive the merge in {merged}"
+        );
+        assert!(
+          svg.contains("rgb(255,0,0)"),
+          "the overlay must draw in {merged}"
+        );
+        assert!(
+          svg.contains(">2</text>"),
+          "the plot's frame ticks must draw in {merged}"
+        );
+      }
+    }
+
     /// ContourShading -> False suppresses the band fills.
     #[test]
     fn contour_shading_false_has_no_bands() {
@@ -11003,6 +11053,27 @@ mod show_function {
     // Show[Plot[...]] should pass the rendered graphics through
     let result = interpret("Show[Plot[Sin[x], {x, 0, 2 Pi}]]").unwrap();
     assert_eq!(result, "-Graphics-");
+  }
+
+  /// `Graphics[g]` where `g` is a finished picture is just `g`: the
+  /// wrapper adds nothing and the inner picture keeps its own options.
+  /// Regression: the plot was taken for a primitive and dropped, leaving
+  /// an empty canvas.
+  #[test]
+  fn graphics_around_a_picture_is_transparent() {
+    for inner in [
+      "Plot[Sin[x], {x, 0, 5}]",
+      "ListPlot[{1, 3, 2}]",
+      "ContourPlot[x y, {x, 0, 1}, {y, 0, 1}]",
+    ] {
+      let wrapped = export_svg(&format!("Graphics[{inner}]"));
+      let bare = export_svg(inner);
+      assert_eq!(wrapped, bare, "Graphics[{inner}] must render as {inner}");
+    }
+    // The inner graphic's own options survive too — an outer wrapper does
+    // not get to restyle it.
+    let framed = export_svg("Graphics[Graphics[{Disk[]}, Frame -> True]]");
+    assert_eq!(framed, export_svg("Graphics[{Disk[]}, Frame -> True]"));
   }
 
   #[test]

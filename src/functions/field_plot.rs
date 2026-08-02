@@ -517,40 +517,34 @@ fn clip_polygon(poly: &[PtV], level: f64, keep_above: bool) -> Vec<PtV> {
 /// follow the interpolated contour, so band boundaries are smooth.
 /// grid is grid[col][row] with row 0 at the bottom.
 #[allow(clippy::too_many_arguments)]
-fn render_contour_bands(
-  svg: &mut String,
-  grid: &[Vec<f64>],
-  levels: &[f64],
-  v_min: f64,
-  v_max: f64,
-  plot_x0: f64,
-  plot_y0: f64,
-  cell_w: f64,
-  cell_h: f64,
-  color_function: Option<&str>,
-) {
+/// One shaded region of a contour plot, in *cell-index* space: `x` counts
+/// sample columns and `y` sample rows, counting up. Both the SVG renderer
+/// and the symbolic `structure` map these through their own affine
+/// transform, so the two always agree on where a band lies.
+struct BandRegion {
+  /// Which band, as an index into the bounds (`v_min`, levels…, `v_max`).
+  band: usize,
+  /// Corners in order. A run of whole cells is its four corners.
+  points: Vec<(f64, f64)>,
+  /// Whether those corners are an axis-aligned rectangle (a run of cells
+  /// no level crosses), which the SVG renderer draws as one `<rect>`.
+  is_rect: bool,
+}
+
+/// The shaded bands of a contour plot: runs of cells that lie wholly in
+/// one band, and the cells a level crosses clipped to each band it meets.
+fn contour_band_regions(grid: &[Vec<f64>], levels: &[f64]) -> Vec<BandRegion> {
   let cols = grid.len();
   if cols < 2 {
-    return;
+    return Vec::new();
   }
   let rows = grid[0].len();
   if rows < 2 {
-    return;
+    return Vec::new();
   }
   let n_ci = cols - 1;
   let n_cj = rows - 1;
 
-  let mut bounds = Vec::with_capacity(levels.len() + 2);
-  bounds.push(v_min);
-  bounds.extend_from_slice(levels);
-  bounds.push(v_max);
-
-  let band_fill = |b: usize| -> String {
-    let mid = 0.5 * (bounds[b] + bounds[b + 1]);
-    let (r, g, bl) =
-      scaled_color(scale_value(mid, v_min, v_max), color_function);
-    format!("rgb({r},{g},{bl})")
-  };
   // Index of the band containing value v.
   let band_of = |v: f64| -> usize {
     match levels.iter().position(|&l| v < l) {
@@ -558,23 +552,21 @@ fn render_contour_bands(
       None => levels.len(),
     }
   };
-  // A stroke in the fill color prevents antialiasing seams between
-  // adjacent fills (1px at display size; band boundaries are covered by
-  // the contour lines drawn on top).
-  let seam = RESOLUTION_SCALE as f64;
 
+  let mut regions: Vec<BandRegion> = Vec::new();
   for j in 0..n_cj {
     // Merge consecutive same-band cells in this row into one rectangle.
     let mut run: Option<(usize, usize, usize)> = None; // (band, i_start, i_end)
-    let row_top = plot_y0 + (n_cj - 1 - j) as f64 * cell_h;
-    let flush = |svg: &mut String, run: &mut Option<(usize, usize, usize)>| {
+    let flush = |regions: &mut Vec<BandRegion>,
+                 run: &mut Option<(usize, usize, usize)>| {
       if let Some((b, s, e)) = run.take() {
-        let sx = plot_x0 + s as f64 * cell_w;
-        let w = (e - s) as f64 * cell_w;
-        let fill = band_fill(b);
-        svg.push_str(&format!(
-          "<rect x=\"{sx:.1}\" y=\"{row_top:.1}\" width=\"{w:.1}\" height=\"{cell_h:.1}\" fill=\"{fill}\" stroke=\"{fill}\" stroke-width=\"{seam:.1}\"/>\n"
-        ));
+        let (x0, x1) = (s as f64, e as f64);
+        let (y0, y1) = (j as f64, j as f64 + 1.0);
+        regions.push(BandRegion {
+          band: b,
+          points: vec![(x0, y0), (x1, y0), (x1, y1), (x0, y1)],
+          is_rect: true,
+        });
       }
     };
     for i in 0..n_ci {
@@ -587,7 +579,7 @@ fn render_contour_bands(
         || !v01.is_finite()
         || !v11.is_finite()
       {
-        flush(svg, &mut run);
+        flush(&mut regions, &mut run);
         continue;
       }
       let cmin = v00.min(v10).min(v01).min(v11);
@@ -600,21 +592,19 @@ fn render_contour_bands(
           other => {
             if other.is_some() {
               let mut prev = other;
-              flush(svg, &mut prev);
+              flush(&mut regions, &mut prev);
             }
             Some((b_lo, i, i + 1))
           }
         };
         continue;
       }
-      flush(svg, &mut run);
-      let px = |fx: f64| plot_x0 + (i as f64 + fx) * cell_w;
-      let py = |fy: f64| plot_y0 + (n_cj as f64 - (j as f64 + fy)) * cell_h;
+      flush(&mut regions, &mut run);
       let base: [PtV; 4] = [
-        ((px(0.0), py(0.0)), v00),
-        ((px(1.0), py(0.0)), v10),
-        ((px(1.0), py(1.0)), v11),
-        ((px(0.0), py(1.0)), v01),
+        ((i as f64, j as f64), v00),
+        ((i as f64 + 1.0, j as f64), v10),
+        ((i as f64 + 1.0, j as f64 + 1.0), v11),
+        ((i as f64, j as f64 + 1.0), v01),
       ];
       for b in b_lo..=b_hi {
         let mut poly: Vec<PtV> = base.to_vec();
@@ -627,22 +617,152 @@ fn render_contour_bands(
         if poly.len() < 3 {
           continue;
         }
-        let fill = band_fill(b);
-        let mut d = String::new();
-        for (k, ((x, y), _)) in poly.iter().enumerate() {
-          d.push_str(&format!(
-            "{}{x:.1} {y:.1}",
-            if k == 0 { "M" } else { "L" }
-          ));
-        }
-        d.push('Z');
-        svg.push_str(&format!(
-          "<path d=\"{d}\" fill=\"{fill}\" stroke=\"{fill}\" stroke-width=\"{seam:.1}\" stroke-linejoin=\"round\"/>\n"
-        ));
+        regions.push(BandRegion {
+          band: b,
+          points: poly.iter().map(|&(p, _)| p).collect(),
+          is_rect: false,
+        });
       }
     }
-    flush(svg, &mut run);
+    flush(&mut regions, &mut run);
   }
+  regions
+}
+
+/// The colour of band `b`, from the value at its middle.
+fn band_color(
+  band: usize,
+  levels: &[f64],
+  v_min: f64,
+  v_max: f64,
+  color_function: Option<&str>,
+) -> (u8, u8, u8) {
+  let mut bounds = Vec::with_capacity(levels.len() + 2);
+  bounds.push(v_min);
+  bounds.extend_from_slice(levels);
+  bounds.push(v_max);
+  let mid = 0.5 * (bounds[band] + bounds[band + 1]);
+  scaled_color(scale_value(mid, v_min, v_max), color_function)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_contour_bands(
+  svg: &mut String,
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  v_min: f64,
+  v_max: f64,
+  plot_x0: f64,
+  plot_y0: f64,
+  cell_w: f64,
+  cell_h: f64,
+  color_function: Option<&str>,
+) {
+  let Some(rows) = grid.first().map(|c| c.len()) else {
+    return;
+  };
+  if rows < 2 {
+    return;
+  }
+  let n_cj = (rows - 1) as f64;
+  // A stroke in the fill color prevents antialiasing seams between
+  // adjacent fills (1px at display size; band boundaries are covered by
+  // the contour lines drawn on top).
+  let seam = RESOLUTION_SCALE as f64;
+
+  for region in contour_band_regions(grid, levels) {
+    let (r, g, b) =
+      band_color(region.band, levels, v_min, v_max, color_function);
+    let fill = format!("rgb({r},{g},{b})");
+    let device = |(fx, fy): (f64, f64)| {
+      (plot_x0 + fx * cell_w, plot_y0 + (n_cj - fy) * cell_h)
+    };
+    if region.is_rect {
+      let (sx, y1) = device(region.points[0]);
+      let (ex, y0) = device(region.points[2]);
+      svg.push_str(&format!(
+        "<rect x=\"{sx:.1}\" y=\"{y0:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"{fill}\" stroke=\"{fill}\" stroke-width=\"{seam:.1}\"/>\n",
+        ex - sx,
+        y1 - y0
+      ));
+      continue;
+    }
+    let mut d = String::new();
+    for (k, &pt) in region.points.iter().enumerate() {
+      let (x, y) = device(pt);
+      d.push_str(&format!("{}{x:.1} {y:.1}", if k == 0 { "M" } else { "L" }));
+    }
+    d.push('Z');
+    svg.push_str(&format!(
+      "<path d=\"{d}\" fill=\"{fill}\" stroke=\"{fill}\" stroke-width=\"{seam:.1}\" stroke-linejoin=\"round\"/>\n"
+    ));
+  }
+}
+
+/// The shaded bands as symbolic primitives in data coordinates, so a
+/// `Show` that merges the plot with other graphics still draws the
+/// shading rather than the bare contour lines.
+fn contour_band_primitives(
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  v_min: f64,
+  v_max: f64,
+  x_min: f64,
+  x_max: f64,
+  y_min: f64,
+  y_max: f64,
+  color_function: Option<&str>,
+) -> Vec<Expr> {
+  let cols = grid.len();
+  let rows = grid.first().map(|c| c.len()).unwrap_or(0);
+  if cols < 2 || rows < 2 {
+    return Vec::new();
+  }
+  let step_x = (x_max - x_min) / (cols - 1) as f64;
+  let step_y = (y_max - y_min) / (rows - 1) as f64;
+  let mut items: Vec<Expr> = Vec::new();
+  let mut last_color: Option<(u8, u8, u8)> = None;
+  for region in contour_band_regions(grid, levels) {
+    let color = band_color(region.band, levels, v_min, v_max, color_function);
+    if last_color != Some(color) {
+      let rgb = Expr::FunctionCall {
+        name: "RGBColor".to_string(),
+        args: vec![
+          Expr::Real(color.0 as f64 / 255.0),
+          Expr::Real(color.1 as f64 / 255.0),
+          Expr::Real(color.2 as f64 / 255.0),
+        ]
+        .into(),
+      };
+      // Edged in its own colour, so neighbouring bands meet without an
+      // antialiasing seam — the same trick the SVG renderer plays with a
+      // stroke in the fill colour.
+      items.push(Expr::FunctionCall {
+        name: "EdgeForm".to_string(),
+        args: vec![rgb.clone()].into(),
+      });
+      items.push(rgb);
+      last_color = Some(color);
+    }
+    let points: Vec<Expr> = region
+      .points
+      .iter()
+      .map(|&(fx, fy)| {
+        Expr::List(
+          vec![
+            Expr::Real(x_min + fx * step_x),
+            Expr::Real(y_min + fy * step_y),
+          ]
+          .into(),
+        )
+      })
+      .collect();
+    items.push(Expr::FunctionCall {
+      name: "Polygon".to_string(),
+      args: vec![Expr::List(points.into())].into(),
+    });
+  }
+  items
 }
 
 /// Compute marching-squares contour segments for one level.
@@ -1120,7 +1240,25 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // directives) that can be re-embedded in an outer `Graphics[…]` the way
   // Wolfram's GraphicsComplex form allows.
   let mut structure_items: Vec<Expr> = Vec::new();
-  // Mesh lines first, in their own list so their grey does not leak onto
+  // The shaded bands go underneath, in their own list so their colours do
+  // not leak onto the mesh and contour lines drawn over them.
+  if opts.contour_shading {
+    let bands = contour_band_primitives(
+      &grid,
+      &levels,
+      v_min,
+      v_max,
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      opts.color_function.as_deref(),
+    );
+    if !bands.is_empty() {
+      structure_items.push(Expr::List(bands.into()));
+    }
+  }
+  // Mesh lines next, in their own list so their grey does not leak onto
   // the contours drawn after them.
   {
     let span = (x_max - x_min).abs().max((y_max - y_min).abs());
@@ -1192,9 +1330,21 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // The symbolic form keeps the call's options too, so `Show` merging
   // these contour lines with other primitives still draws them on the
-  // axes and range the plot asked for.
+  // axes and range the plot asked for. A contour plot is framed by
+  // default, so the merged picture has to be framed as well unless the
+  // call turned it off.
   let mut structure_args = vec![Expr::List(structure_items.into())];
-  structure_args.extend(crate::functions::plot::explicit_options(args));
+  let explicit = crate::functions::plot::explicit_options(args);
+  if !explicit.iter().any(|o| {
+    crate::functions::graphics::option_name_value(o).map(|(n, _)| n)
+      == Some("Frame")
+  }) {
+    structure_args.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("Frame".to_string())),
+      replacement: Box::new(Expr::Identifier("True".to_string())),
+    });
+  }
+  structure_args.extend(explicit);
   let structure = Expr::FunctionCall {
     name: "Graphics".to_string(),
     args: structure_args.into(),
