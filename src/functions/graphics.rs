@@ -10241,7 +10241,6 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
   gs
 }
 
-/// Check if a cell is or contains an Expr::Image (unwrapping Style).
 /// The rendered SVG of a grid cell that is a graphic, and its natural
 /// size. `Grid` lays such a cell out as a picture instead of printing the
 /// expression's text form.
@@ -10284,6 +10283,51 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
   Some((svg, parsed.nat_w, parsed.nat_h))
 }
 
+/// The per-position half of a `Spacings` spec: `{i1 -> s1, i2 -> s2, …}`
+/// names the gap at individual positions, while a plain `{s1, s2, …}` gives
+/// them in order from the first. The result is indexed by position - 1, with
+/// `None` wherever the spec says nothing and the default gap applies.
+fn parse_position_spacings(spec: &Expr) -> Vec<Option<f64>> {
+  let Expr::List(items) = spec else {
+    return Vec::new();
+  };
+  let value = |e: &Expr| match e {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  };
+  let mut out: Vec<Option<f64>> = Vec::new();
+  let mut put = |index: usize, v: f64| {
+    if out.len() <= index {
+      out.resize(index + 1, None);
+    }
+    out[index] = Some(v);
+  };
+  for (i, item) in items.iter().enumerate() {
+    match item {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => {
+        // Positions are 1-based, and a spec may name them out of order.
+        if let (Expr::Integer(pos), Some(v)) =
+          (pattern.as_ref(), value(replacement))
+          && *pos >= 1
+        {
+          put(*pos as usize - 1, v);
+        }
+      }
+      other => {
+        if let Some(v) = value(other) {
+          put(i, v);
+        }
+      }
+    }
+  }
+  out
+}
+
+/// Check if a cell is or contains an Expr::Image (unwrapping Style).
 fn unwrap_to_image(cell: &Expr) -> Option<&Expr> {
   match cell {
     Expr::Image { .. } => Some(cell),
@@ -10406,6 +10450,18 @@ fn grid_svg_styled_internal(
     }
   };
 
+  // A cell may arrive inside a wrapper that only says how to set it —
+  // `Pane[…]` reserving an area, an `Item[…]` cell, `Text[…]` choosing a
+  // font. What the cell *shows* is what they hold, so peel them before
+  // any sizing or drawing pass: otherwise the cell printed as source
+  // (`Pane[Grid[…]]`), which is how a Demonstration's readout panel used
+  // to render.
+  for row in &mut rows {
+    for cell in row.iter_mut() {
+      *cell = unwrap_display_wrappers(cell);
+    }
+  }
+
   // Parse options from remaining args
   let mut frame_outer = false; // Frame -> True: outer border only
   let mut frame_all = false; // Frame -> All: all gridlines
@@ -10414,11 +10470,22 @@ fn grid_svg_styled_internal(
   let mut col_headings: Vec<Expr> = Vec::new();
   let mut spacings_h: Option<f64> = None; // horizontal spacing override
   let mut spacings_v: Option<f64> = None; // vertical spacing override
+  // `Spacings -> {{i -> s, …}, …}` sets the gap at individual column
+  // positions: position `i` is the gap to the left of column `i`, and
+  // position `ncols + 1` the margin after the last column. Positions left
+  // out keep the default gap.
+  let mut col_spacings: Vec<Option<f64>> = Vec::new();
   // TableForm's TableSpacing maps directly to pixels (see the option below).
   let mut table_pad_x: Option<f64> = None; // per-cell horizontal padding (px)
   let mut table_row_gap: Option<f64> = None; // gap between rows (px)
   let mut dividers_col = false; // vertical divider lines between columns
   let mut dividers_row = false; // horizontal divider lines between rows
+  // `Dividers -> All` rules *every* position, the outer edges included, so
+  // a grid drawn that way is a closed box; `Dividers -> Center` rules only
+  // the boundaries between cells. These flags record which of the two was
+  // asked for, per direction.
+  let mut dividers_col_border = false; // left/right edges from `All`
+  let mut dividers_row_border = false; // top/bottom edges from `All`
   // Per-position divider specs: Some(color) = draw with color, None = don't draw
   // These use the same repeating-list pattern as backgrounds
   let mut col_dividers: Vec<Option<Color>> = Vec::new(); // vertical lines (ncols+1 positions)
@@ -10472,6 +10539,8 @@ fn grid_svg_styled_internal(
           Expr::Identifier(val) if val == "All" || val == "True" => {
             dividers_col = true;
             dividers_row = true;
+            dividers_col_border = true;
+            dividers_row_border = true;
           }
           Expr::Identifier(val) if val == "Center" => {
             dividers_col = true;
@@ -10483,6 +10552,17 @@ fn grid_svg_styled_internal(
             for (idx, spec) in items.iter().enumerate() {
               match spec {
                 Expr::Identifier(v) if v == "All" || v == "True" => {
+                  if idx == 0 {
+                    dividers_col = true;
+                    dividers_col_border = true;
+                  } else {
+                    dividers_row = true;
+                    dividers_row_border = true;
+                  }
+                }
+                // `Center` rules the boundaries between cells only, so it
+                // leaves the outer edges of the grid open.
+                Expr::Identifier(v) if v == "Center" => {
                   if idx == 0 {
                     dividers_col = true;
                   } else {
@@ -10645,6 +10725,10 @@ fn grid_svg_styled_internal(
                 match &items[0] {
                   Expr::Integer(n) => spacings_h = Some(*n as f64),
                   Expr::Real(f) => spacings_h = Some(*f),
+                  // A list gives the gap at each position individually.
+                  Expr::List(_) => {
+                    col_spacings = parse_position_spacings(&items[0]);
+                  }
                   _ => {}
                 }
               }
@@ -10771,6 +10855,45 @@ fn grid_svg_styled_internal(
   let base_row_height = font_size + pad_y;
   let frac_row_height = font_size + pad_y + 10.0; // taller for stacked fractions
 
+  // The padding a column carries on each side. A gap between two columns is
+  // one gap, so it is shared half-and-half by the columns it separates,
+  // while the gaps at the two ends belong entirely to the first and last
+  // column. Positions the spec leaves out fall back to the uniform layout:
+  // `pad_x` between columns and `pad_x / 2` at each end, i.e. `pad_x` per
+  // column however the grid is spaced.
+  let (col_pad_left, col_pad_right): (Vec<f64>, Vec<f64>) = {
+    let spacing_at = |position: usize| -> Option<f64> {
+      col_spacings
+        .get(position - 1)
+        .copied()
+        .flatten()
+        .map(|ems| ems * char_width)
+    };
+    let inner_gap = |position: usize| spacing_at(position).unwrap_or(pad_x);
+    let edge_gap =
+      |position: usize| spacing_at(position).unwrap_or(pad_x / 2.0);
+    let mut left = Vec::with_capacity(num_cols);
+    let mut right = Vec::with_capacity(num_cols);
+    for j in 0..num_cols {
+      // Column `j` (0-based) sits between positions `j + 1` and `j + 2`.
+      left.push(if j == 0 {
+        edge_gap(1)
+      } else {
+        inner_gap(j + 1) / 2.0
+      });
+      right.push(if j + 1 == num_cols {
+        edge_gap(num_cols + 1)
+      } else {
+        inner_gap(j + 2) / 2.0
+      });
+    }
+    (left, right)
+  };
+  let col_pad = |j: usize| -> f64 {
+    col_pad_left.get(j).copied().unwrap_or(pad_x / 2.0)
+      + col_pad_right.get(j).copied().unwrap_or(pad_x / 2.0)
+  };
+
   let mut col_widths: Vec<f64> = vec![0.0; num_cols];
   // Cells that span several columns are held back: their columns are sized
   // by the ordinary cells first, and only what a span still needs is added
@@ -10782,8 +10905,8 @@ fn grid_svg_styled_internal(
         continue;
       }
       let w = match grid_cell_graphic(cell) {
-        Some((_, nat_w, _)) => nat_w + pad_x,
-        None => estimate_display_width(cell) * char_width + pad_x,
+        Some((_, nat_w, _)) => nat_w + col_pad(j),
+        None => estimate_display_width(cell) * char_width + col_pad(j),
       };
       let cols = span_width(row, j);
       if cols > 1 {
@@ -10828,7 +10951,7 @@ fn grid_svg_styled_internal(
     .collect();
   for (j, dims) in col_decimal_dims.iter().enumerate() {
     if let Some((max_int, max_frac)) = dims {
-      col_widths[j] = (max_int + max_frac) * char_width + pad_x;
+      col_widths[j] = (max_int + max_frac) * char_width + col_pad(j);
     }
   }
 
@@ -10862,7 +10985,7 @@ fn grid_svg_styled_internal(
         } = img
       {
         let col_w = if j < col_widths.len() {
-          col_widths[j] - pad_x
+          col_widths[j] - col_pad(j)
         } else {
           200.0
         };
@@ -10982,7 +11105,11 @@ fn grid_svg_styled_internal(
   let total_width: f64 = grid_width + 2.0 * paren_margin;
 
   // Build SVG — add padding when frame borders are drawn so strokes aren't clipped
-  let has_frame = frame_all || frame_outer || has_per_pos_dividers;
+  let has_frame = frame_all
+    || frame_outer
+    || has_per_pos_dividers
+    || dividers_col_border
+    || dividers_row_border;
   let frame_pad: f64 = if has_frame { 0.5 } else { 0.0 };
   let svg_w = (total_width + 2.0 * frame_pad).ceil() as u32;
   let svg_h = (total_height + 2.0 * frame_pad).ceil() as u32;
@@ -11028,6 +11155,10 @@ fn grid_svg_styled_internal(
 
   // Precompute divider/frame drawing flags (needed for visual bounds below)
   let draw_outer = frame_all || frame_outer;
+  // `Dividers -> All` closes the grid on that axis: the top/bottom (or
+  // left/right) edge is ruled as well as the boundaries between cells.
+  let draw_outer_h = draw_outer || dividers_row_border;
+  let draw_outer_v = draw_outer || dividers_col_border;
   let draw_inner_h = frame_all || dividers_row;
   let draw_inner_v = frame_all || dividers_col;
   let has_row_div = !row_dividers.is_empty();
@@ -11147,16 +11278,23 @@ fn grid_svg_styled_internal(
           .copied()
           .flatten()
           .unwrap_or((0.0, 0.0));
-        let dot_x = x_offset + pad_x / 2.0 + max_int * char_width;
+        let dot_x = x_offset + col_pad_left[j] + max_int * char_width;
         match decimal_split_width(cell) {
           Some((iw, _)) => ("start", dot_x - iw * char_width),
           None => ("middle", x_offset + col_w / 2.0),
         }
       } else {
+        let span_end = (j + span_width(row, j)).min(num_cols) - 1;
         let cx = match col_align {
-          "start" => x_offset + pad_x / 2.0,
-          "end" => x_offset + col_w - pad_x / 2.0,
-          _ => x_offset + col_w / 2.0,
+          "start" => x_offset + col_pad_left[j],
+          "end" => x_offset + col_w - col_pad_right[span_end],
+          // Centred on the cell's own area, which is the column run minus
+          // the gaps on its two outer sides — the same as the middle of the
+          // run whenever those gaps are equal.
+          _ => {
+            let (l, r) = (col_pad_left[j], col_pad_right[span_end]);
+            x_offset + l + (col_w - l - r) / 2.0
+          }
         };
         (col_align, cx)
       };
@@ -11190,11 +11328,11 @@ fn grid_svg_styled_internal(
           ..
         } = img
         {
-          let avail_w = col_w - pad_x;
+          let avail_w = col_w - col_pad(j);
           let scale = avail_w / (*iw as f64);
           let draw_w = avail_w;
           let draw_h = (*ih as f64) * scale;
-          let ix = x_offset + pad_x / 2.0;
+          let ix = x_offset + col_pad_left[j];
           let vis_h = cell_bottom - cell_top;
           let iy = cell_top + (vis_h - draw_h) / 2.0;
 
@@ -11309,12 +11447,12 @@ fn grid_svg_styled_internal(
       let (should_draw, stroke) = if has_row_div {
         if let Some(Some(color)) = row_dividers.get(i) {
           (true, color.to_svg_rgb())
-        } else if is_border && draw_outer {
+        } else if is_border && draw_outer_h {
           (true, default_stroke.clone())
         } else {
           (false, String::new())
         }
-      } else if (is_border && draw_outer) || (!is_border && draw_inner_h) {
+      } else if (is_border && draw_outer_h) || (!is_border && draw_inner_h) {
         (true, default_stroke.clone())
       } else {
         (false, String::new())
@@ -11367,12 +11505,12 @@ fn grid_svg_styled_internal(
       let (should_draw, stroke) = if has_col_div {
         if let Some(Some(color)) = col_dividers.get(j) {
           (true, color.to_svg_rgb())
-        } else if is_border && draw_outer {
+        } else if is_border && draw_outer_v {
           (true, default_stroke.clone())
         } else {
           (false, String::new())
         }
-      } else if (is_border && draw_outer) || (!is_border && draw_inner_v) {
+      } else if (is_border && draw_outer_v) || (!is_border && draw_inner_v) {
         (true, default_stroke.clone())
       } else {
         (false, String::new())
@@ -13513,9 +13651,12 @@ fn render_tabular_svg_grid(
 /// `Dynamic` evaluation captures are embedded in the surrounding layout, not
 /// standalone outputs, so they are dropped from the capture buffer.
 /// Peel the wrappers that say how to *set* what they hold rather than what
-/// to show: `Text[…]`, an `Item[…]` cell, and the form wrappers. They nest
-/// in any order — `Item[Text@TraditionalForm@Framed[…], …]` — so peel until
-/// what is left is the thing that actually draws.
+/// to show: `Text[…]`, an `Item[…]` cell, a `Pane[…]` box, and the form
+/// wrappers. They nest in any order — `Item[Text@TraditionalForm@Framed[…],
+/// …]` — so peel until what is left is the thing that actually draws.
+/// `Pane[content, opts…]` only reserves an area for `content`; what is
+/// shown is `content`, so a display pass has to reach through it (a grid
+/// cell holding one used to print as `Pane[…]` source).
 ///
 /// A `TraditionalForm` around a picture or a layout only asks for its
 /// contents to be set traditionally, and the layout renderer takes it from
@@ -13530,7 +13671,7 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
       "Text" | "TraditionalForm" | "StandardForm" | "DisplayForm" => {
         args.len() == 1
       }
-      "Item" => !args.is_empty(),
+      "Item" | "Pane" => !args.is_empty(),
       _ => false,
     };
     if !pass_through {
