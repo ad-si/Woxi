@@ -2782,6 +2782,105 @@ mod tests {
       assert!(boxes.contains('\u{2202}'), "∂ glyph present: {boxes}");
     }
 
+    // The order of a higher-order derivative belongs in the display, both
+    // when it is a literal and when it is a symbol: `∂ⁿ/∂xⁿ`.
+    #[test]
+    fn derivative_order_appears_in_the_fraction() {
+      let boxes = tf("D[f, {x, 3}]");
+      assert!(boxes.contains("\"3\""), "the order 3 is shown: {boxes}");
+      let boxes = tf("D[f, {x, n}]");
+      assert!(boxes.contains("\"n\""), "a symbolic order too: {boxes}");
+    }
+
+    // Dt is the *total* derivative, so it is set with ⅆ rather than ∂ —
+    // Rodrigues's formulas read `ⅆⁿ/ⅆxⁿ (x²-1)ⁿ`.
+    #[test]
+    fn total_derivative_uses_the_differential_d() {
+      let boxes = tf("Dt[(x^2 - 1)^n, {x, n}]");
+      assert!(boxes.contains("FractionBox"), "ⅆ/ⅆ fraction: {boxes}");
+      assert!(boxes.contains('\u{2146}'), "ⅆ glyph present: {boxes}");
+      assert!(!boxes.contains('\u{2202}'), "not the partial ∂: {boxes}");
+      assert!(!boxes.contains("\"Dt\""), "no literal Dt head: {boxes}");
+    }
+
+    // Classical special functions carry their order as a subscript and
+    // any further index as a superscript.
+    #[test]
+    fn special_functions_use_indexed_notation() {
+      for (code, letter) in [
+        ("BesselJ[n, x]", "J"),
+        ("SphericalBesselJ[n, x]", "j"),
+        ("LegendreP[n, x]", "P"),
+        ("LaguerreL[n, x]", "L"),
+        ("HermiteH[n, x]", "H"),
+        ("ChebyshevT[n, x]", "T"),
+        ("ChebyshevU[n, x]", "U"),
+      ] {
+        let boxes = tf(code);
+        assert!(
+          boxes.contains("SubscriptBox"),
+          "{code} takes a subscript order: {boxes}"
+        );
+        assert!(
+          boxes.contains(&format!("\"{letter}\"")),
+          "{code} is written with {letter}: {boxes}"
+        );
+      }
+    }
+
+    #[test]
+    fn special_function_degree_becomes_a_superscript() {
+      // Pₙᵐ(x), Lₙᵐ(x), Cₙᵐ(x) — the second index rides above the first.
+      for code in [
+        "LegendreP[n, m, x]",
+        "LaguerreL[n, m, x]",
+        "GegenbauerC[n, m, x]",
+      ] {
+        let boxes = tf(code);
+        assert!(
+          boxes.contains("SubsuperscriptBox"),
+          "{code} needs both scripts: {boxes}"
+        );
+      }
+      // JacobiP has two of them, written as a parenthesised pair.
+      let boxes = tf("JacobiP[n, a, b, x]");
+      assert!(boxes.contains("SubsuperscriptBox"), "{boxes}");
+      assert!(
+        boxes.contains("\"a\"") && boxes.contains("\"b\""),
+        "{boxes}"
+      );
+      // The Hankel families carry a fixed superscript from their name.
+      assert!(tf("SphericalHankelH1[n, x]").contains("\"(1)\""));
+      assert!(tf("HankelH2[n, x]").contains("\"(2)\""));
+    }
+
+    #[test]
+    fn factorial_is_written_postfix() {
+      let boxes = tf("n!");
+      assert!(boxes.contains("\"!\""), "postfix bang: {boxes}");
+      assert!(!boxes.contains("Factorial"), "no head name: {boxes}");
+      // A compound argument keeps its parentheses: (n+1)!
+      let boxes = tf("(n + 1)!");
+      assert!(boxes.contains("\"(\""), "argument parenthesised: {boxes}");
+    }
+
+    // `Row[{…}]` is a display wrapper: it concatenates its parts, so the
+    // implicit product `Row[{2, x, t}]` sets as `2xt`.
+    #[test]
+    fn row_concatenates_its_parts() {
+      let boxes = tf("Row[{2, x, t}]");
+      assert!(!boxes.contains("\"Row\""), "no head name: {boxes}");
+      for part in ["\"2\"", "\"x\"", "\"t\""] {
+        assert!(boxes.contains(part), "{part} kept: {boxes}");
+      }
+      // With a separator argument the separator goes between the parts.
+      let boxes = tf("Row[{a, b}, \" + \"]");
+      let sep = boxes.find(" + ").expect("separator kept");
+      let a = boxes.find("\"a\"").expect("first part");
+      let b = boxes.find("\"b\"").expect("second part");
+      assert!(a < sep && sep < b, "separator sits between: {boxes}");
+    }
+
     #[test]
     fn determinant_uses_bars_and_grid() {
       let boxes = tf("Det[{{a, b}, {c, d}}]");

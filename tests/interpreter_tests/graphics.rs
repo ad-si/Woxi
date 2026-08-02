@@ -7689,6 +7689,39 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(!svg.contains("FormBox"), "no box markup: {svg}");
     }
 
+    // `TraditionalForm[expr]` inside a picture asks for conventional
+    // mathematical notation, so the label is set from that notation rather
+    // than from the expression's InputForm: a sum shows its ∑ with limits
+    // and a Legendre polynomial its `Pₙ(x)`. Demonstrations write their
+    // formulas as `Text[Style[Row[{TraditionalForm[…], …}], …]]`.
+    #[test]
+    fn traditional_form_typesets_inside_a_picture() {
+      let svg = export_svg(
+        "Graphics[{Text[Style[Row[{TraditionalForm[LegendreP[n, x]], \
+         \" = \", TraditionalForm[Sum[LegendreP[n, x] t^n, \
+         {n, 0, Infinity}]]}], 24], {0, 0}]}, \
+         PlotRange -> 1, ImageSize -> 300]",
+      );
+      for part in ["Pn(x) = ", "\u{2211}", "n=0", "\u{221E}"] {
+        assert!(svg.contains(part), "{part} must be set: {svg}");
+      }
+      assert!(!svg.contains("LegendreP"), "not the head name: {svg}");
+      assert!(!svg.contains("Sum["), "not InputForm: {svg}");
+      assert!(!svg.contains("Infinity"), "not the symbol name: {svg}");
+    }
+
+    // `Row[{…}]` inside a TraditionalForm concatenates its parts, so the
+    // implicit product `Row[{2, x, t}]` reads `2xt`, not `Row(…)`.
+    #[test]
+    fn traditional_form_typesets_a_row() {
+      let svg = export_svg(
+        "Graphics[{Text[TraditionalForm[(1 - Row[{2, x, t}] + t^2)], \
+         {0, 0}]}, PlotRange -> 1, ImageSize -> 300]",
+      );
+      assert!(svg.contains("2xt"), "the concatenated row: {svg}");
+      assert!(!svg.contains("Row"), "not the head name: {svg}");
+    }
+
     // `Inset[obj, pos]` draws a whole picture inside another one. A
     // picture that has already been rendered — a `Plot`, a `Show`, anything
     // whose symbolic content was not kept — is embedded as it is, at its
