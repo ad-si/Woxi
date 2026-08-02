@@ -8240,6 +8240,95 @@ mod pane_wrapper_display {
     assert!(svg.contains("<svg x="), "expected embedded graphic");
   }
 
+  // `Text[content]` is a font wrapper, not a thing to show: the standard
+  // Demonstrations body `Text@Pane[Column[{…}]]` has to reach the column
+  // underneath. Without this the whole body echoed as text and only the
+  // plot inside it (captured on its own while evaluating) was drawn.
+  #[test]
+  fn text_of_pane_of_column_renders_in_visual_mode() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Text@Pane[Column[{\"caption\", \
+         Graphics[{Disk[]}, ImageSize -> {60, 60}]}, Alignment -> Center], \
+         Alignment -> Center]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.expect("text/pane content should render");
+    assert!(
+      svg.contains("caption"),
+      "expected the caption row in: {svg}"
+    );
+    assert!(svg.contains("<svg x="), "expected embedded graphic");
+  }
+
+  // A `TraditionalForm` item inside a layout is typeset in conventional
+  // notation — `=` for `Equal`, and a `Row` of strings/`Style`s set as the
+  // text it displays — instead of being stripped down to the StandardForm
+  // markup (`p(x) == …` with quoted string parts).
+  #[test]
+  fn traditionalform_column_item_uses_traditional_notation() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Column[{TraditionalForm[\
+         Row[{Style[\"p\", Italic], \"(\", x, \")\"}] == 1 + x^2], \
+         Graphics[{Disk[]}, ImageSize -> {60, 60}]}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("column should render");
+    for part in ["p", "(", "x", ")", "=", "1"] {
+      assert!(
+        svg.contains(&format!(">{part}<")),
+        "missing `{part}`: {svg}"
+      );
+    }
+    assert!(!svg.contains("=="), "TraditionalForm shows `=`, not `==`");
+    assert!(!svg.contains("&quot;"), "Row items display unquoted: {svg}");
+    assert!(!svg.contains(">Row<"), "Row must be laid out, not printed");
+  }
+
+  // A term whose leading number is negative carries its sign on the
+  // operator: `a - 130 x^3`, never `a + -130 x^3`.
+  #[test]
+  fn traditionalform_negative_terms_use_a_minus_sign() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Column[{TraditionalForm[{1, x, x^2, x^3} . {-9, 24, 77, -130}], \
+        TraditionalForm[a - x], TraditionalForm[b - 2.5 y], \
+        Graphics[{Disk[]}, ImageSize -> {60, 60}]}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("column should render");
+    let text: String = svg
+      .split("</text>")
+      .filter_map(|chunk| chunk.rsplit_once('>').map(|(_, t)| t.to_string()))
+      .collect();
+    assert!(!text.contains("+-"), "no `+ -` term should survive: {text}");
+    assert!(text.contains("-130"), "negated coefficient: {text}");
+    // `Times[-1, x]` drops the implicit coefficient: `a - x`.
+    assert!(!text.contains("-1x"), "`-1 x` must print as `- x`: {text}");
+    assert!(text.contains("-2.5"), "negated real coefficient: {text}");
+  }
+
+  // The relational operators all take their traditional glyphs.
+  #[test]
+  fn traditionalform_column_item_relational_glyphs() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Column[{TraditionalForm[a <= b], TraditionalForm[c >= d], \
+        TraditionalForm[e != f], \
+        Graphics[{Disk[]}, ImageSize -> {60, 60}]}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("column should render");
+    for glyph in ['\u{2264}', '\u{2265}', '\u{2260}'] {
+      assert!(svg.contains(glyph), "missing `{glyph}` in: {svg}");
+    }
+  }
+
   // The CLI (plain `interpret`, matching wolframscript) keeps the
   // symbolic echo — the unwrap is a visual-host affordance only.
   #[test]
@@ -8248,6 +8337,10 @@ mod pane_wrapper_display {
     assert_eq!(
       interpret("Pane[Column[{1, 2}], ImageSize -> 500]").unwrap(),
       "Pane[Column[{1, 2}], ImageSize -> 500]"
+    );
+    assert_eq!(
+      interpret("Text[Pane[Column[{1, 2}]]]").unwrap(),
+      "Text[Pane[Column[{1, 2}]]]"
     );
   }
 }
@@ -13569,6 +13662,122 @@ mod manipulate {
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
+  }
+
+  /// A `Setter` / `Toggler` control type offers one widget per value, the
+  /// way `SetterBar` and `RadioButton` already do. Before these were
+  /// recognised as control-type names they were read as a *bound*, the
+  /// spec failed to parse, and — because one unparsable spec aborts the
+  /// whole extraction — the entire Manipulate fell back to a text echo.
+  #[test]
+  fn spec_setter_and_toggler_control_types() {
+    for control_type in ["Setter", "Toggler"] {
+      let expr = interpret_to_expr(&format!(
+        "Manipulate[n, Control@{{{{n, 3, \"degree\"}}, Range[1, 7], \
+         {control_type}}}]"
+      ))
+      .unwrap();
+      let spec =
+        extract_manipulate_spec(&expr).expect("{control_type} control spec");
+      match &spec.controls[0] {
+        ManipulateControl::Discrete {
+          name,
+          values,
+          initial_index,
+          label,
+          popup,
+          ..
+        } => {
+          assert_eq!(name, "n");
+          assert_eq!(label, "degree");
+          assert_eq!(values, &["1", "2", "3", "4", "5", "6", "7"]);
+          assert_eq!(*initial_index, 2); // initial value 3
+          assert!(!*popup, "{control_type} is not a dropdown");
+        }
+        other => panic!("expected a discrete control, got {other:?}"),
+      }
+    }
+  }
+
+  /// `Setter` also enumerates a numeric range into one choice per value,
+  /// like the other per-value control types.
+  #[test]
+  fn spec_setter_enumerates_numeric_range() {
+    let expr =
+      interpret_to_expr("Manipulate[n, {{n, 1}, 1, 4, 1, Setter}]").unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("setter range spec");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete { values, .. } => {
+        assert_eq!(values, &["1", "2", "3", "4"]);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// `{v, domain, ControlType -> None}` states the variable's *domain*, not
+  /// its value: a list of choices starts the variable at the first one. It
+  /// used to bind the whole list, so `{aa, {{1, 1, 1, 1}}, ControlType ->
+  /// None}` started `aa` one level too deep.
+  #[test]
+  fn spec_hidden_variable_starts_at_first_choice() {
+    let expr = interpret_to_expr(
+      "Manipulate[aa, {aa, {{1, 1, 1, 1}}, ControlType -> None}, \
+       {bb, {7, 8, 9}, ControlType -> None}, \
+       Control@{cc, RandomInteger[{5, 5}], ControlType -> None}, \
+       {{dd, {2, 3}}, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("hidden variables");
+    assert_eq!(
+      spec.state,
+      vec![
+        ("aa".to_string(), "{1, 1, 1, 1}".to_string()),
+        ("bb".to_string(), "7".to_string()),
+        // A non-list domain is the initial value itself, evaluated once.
+        ("cc".to_string(), "5".to_string()),
+        // An explicit initial value is used as given.
+        ("dd".to_string(), "{2, 3}".to_string()),
+      ]
+    );
+  }
+
+  /// `TrackedSymbols :> {…}` narrows which variables re-run the body; the
+  /// other spellings (`All`, `Manipulate`, absent) track everything.
+  #[test]
+  fn spec_tracked_symbols() {
+    let tracked = |code: &str| {
+      let expr = interpret_to_expr(code).unwrap();
+      extract_manipulate_spec(&expr)
+        .expect("well-formed Manipulate")
+        .tracked_symbols
+    };
+    assert_eq!(
+      tracked("Manipulate[a + b, {a, 0, 1}, {b, 0, 1}, TrackedSymbols :> {b}]"),
+      Some(vec!["b".to_string()])
+    );
+    assert_eq!(
+      tracked("Manipulate[a + b, {a, 0, 1}, {b, 0, 1}, TrackedSymbols -> b]"),
+      Some(vec!["b".to_string()])
+    );
+    assert_eq!(
+      tracked("Manipulate[a + b, {a, 0, 1}, {b, 0, 1}, TrackedSymbols :> All]"),
+      None
+    );
+    assert_eq!(
+      tracked(
+        "Manipulate[a + b, {a, 0, 1}, {b, 0, 1}, \
+         TrackedSymbols -> Manipulate]"
+      ),
+      None
+    );
+    assert_eq!(tracked("Manipulate[a, {a, 0, 1}]"), None);
+    let expr = interpret_to_expr(
+      "Manipulate[a + b, {a, 0, 1}, {b, 0, 1}, TrackedSymbols :> {b}]",
+    )
+    .unwrap();
+    let json =
+      manipulate_spec_to_json(&extract_manipulate_spec(&expr).unwrap());
+    assert!(json.contains(r#""trackedSymbols":["b"]"#), "{json}");
   }
 
   /// End-to-end regression for the animated `I^t` ParametricPlot widget:

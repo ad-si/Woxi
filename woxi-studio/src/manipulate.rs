@@ -277,6 +277,10 @@ pub struct ManipulateState {
   /// `Appearance -> None`: hide the control rows (the animation just runs);
   /// the play/pause toggle stays visible for animated widgets.
   pub appearance_none: bool,
+  /// `TrackedSymbols :> {…}`: the variables whose change re-runs the body.
+  /// A control bound to any other variable still moves, but the rendering
+  /// waits for a tracked variable to change. `None` tracks everything.
+  tracked_symbols: Option<Vec<String>>,
   /// The variable a `ControlType -> Trigger`/`Animator` spec animates.
   /// `advance_animation` targets this control instead of defaulting to the
   /// first continuous one.
@@ -350,6 +354,7 @@ impl ManipulateState {
       // unless the spec was built paused (`AnimationRunning -> False`).
       playing: spec.animated && spec.animation_running,
       appearance_none: spec.appearance_none,
+      tracked_symbols: spec.tracked_symbols,
       animation_var: spec.animation_var,
       dynamic_bounds: spec.dynamic_bounds,
       control_enabled,
@@ -479,6 +484,25 @@ impl ManipulateState {
     }
   }
 
+  /// Whether moving the control at `ctrl_idx` re-runs the body. With
+  /// `TrackedSymbols :> {…}` only the listed variables do: Wolfram leaves
+  /// the rendering as it is until one of them changes, so a control outside
+  /// the list moves without re-rendering (and cannot show the body a
+  /// half-updated set of values).
+  fn control_is_tracked(&self, ctrl_idx: usize) -> bool {
+    let Some(tracked) = &self.tracked_symbols else {
+      return true;
+    };
+    match self.controls.get(ctrl_idx) {
+      // A row that binds no variable (a button, a heading) is not a
+      // variable change; its own handler decides whether to re-render.
+      Some(control) if control.binds_variable() => {
+        tracked.iter().any(|n| n == control.name())
+      }
+      _ => true,
+    }
+  }
+
   /// Register a control change and report whether the caller must arm a
   /// throttle timer. Re-evaluating the body on *every* slider mouse-move tick
   /// blocks the UI thread and makes the graphic stutter/flicker while
@@ -488,7 +512,10 @@ impl ManipulateState {
   /// caller should spawn one.
   ///
   /// [`run_scheduled_reeval`]: Self::run_scheduled_reeval
-  pub fn request_reeval(&mut self) -> bool {
+  pub fn request_reeval(&mut self, ctrl_idx: usize) -> bool {
+    if !self.control_is_tracked(ctrl_idx) {
+      return false;
+    }
     self.reeval_pending = self.reeval_pending.wrapping_add(1);
     if self.reeval_scheduled {
       false
