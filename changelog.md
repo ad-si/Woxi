@@ -2,6 +2,23 @@
 
 # Unreleased
 
+- Fixes driven by the "Illustrative Performance Characteristics of Modern
+    Motorcycles" Wolfram Demonstration:
+    - `Piecewise` holds its pieces, so the value of a piece whose condition
+        is `False` is never evaluated. This is what makes the construct a
+        guard: `Piecewise[{{f[w], 0 <= w <= wmax}}, 0]` no longer calls `f`
+        out of range, and the messages that call emitted are gone.
+    - `FindRoot` falls back to a difference quotient when the symbolic
+        derivative does not reduce to a number at the current iterate —
+        differentiating a non-smooth function leaves `Derivative[1, 0][Max][…]`
+        standing. It used to give up with `FindRoot::nlnum` and return
+        unevaluated. Messages emitted by the discarded attempt (`D::ivar`
+        and friends) no longer reach the user.
+    - A `ControlType -> …` given to the `Manipulate` itself types every
+        control that does not pick one, and a list value assigns one type per
+        control in spec order. The Demonstrations idiom — controls laid out in
+        a `Grid[…]`, typed once for the whole panel — now renders the dropdowns
+        the author asked for instead of over-wide SetterBars.
 - Fixes driven by a Wolfram Demonstration that draws a complex function as
     a colored vector field:
     - `ColorData[name, "ColorFunction"]` gives the gradient's color

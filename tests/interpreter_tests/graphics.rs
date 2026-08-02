@@ -14695,6 +14695,88 @@ mod manipulate {
     );
   }
 
+  /// `ControlType -> …` given to the *Manipulate itself* sets the type of
+  /// every control that does not choose one. Regression: the Demonstrations
+  /// layout idiom — controls arranged in a `Grid[…]` and then typed once for
+  /// the whole panel — left every control on its automatic type, so long
+  /// choice labels rendered as an unreadably wide SetterBar instead of the
+  /// dropdown the author asked for.
+  #[test]
+  fn spec_manipulate_level_control_type_applies_to_every_control() {
+    let expr = interpret_to_expr(
+      "Manipulate[{style, size}, \
+       Grid[{{Control[{{style, \"cruiser\", \"style\"}, \
+                       {\"sport bike\", \"cruiser\", \"sport tourer\"}}], \
+              Control[{{size, 80, \"size\"}, Range[40, 140, 20]}]}}, \
+            Spacings -> {2, 0.5}], \
+       ControlType -> PopupMenu, SaveDefinitions -> True]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.len(), 2);
+    for control in &spec.controls {
+      match control {
+        ManipulateControl::Discrete { name, popup, .. } => {
+          assert!(*popup, "{name} should render as a dropdown");
+        }
+        other => panic!("expected discrete control, got {other:?}"),
+      }
+    }
+  }
+
+  /// A list value assigns one control type per spec, in the order the specs
+  /// appear; a spec past the end of the list keeps its default.
+  #[test]
+  fn spec_manipulate_level_control_type_list_applies_positionally() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b, c}, {a, {1, 2, 3}}, {b, {4, 5, 6}}, {c, {7, 8, 9}}, \
+       ControlType -> {SetterBar, PopupMenu}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let popups: Vec<bool> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Discrete { popup, .. } => *popup,
+        other => panic!("expected discrete control, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(popups, [false, true, false]);
+  }
+
+  /// A spec that names its own control type keeps it — the Manipulate-level
+  /// option only fills in the ones that stay silent. `Automatic` means "decide
+  /// as usual", so it changes nothing either.
+  #[test]
+  fn spec_own_control_type_wins_over_manipulate_level_one() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b}, {a, {1, 2, 3}, SetterBar}, {b, {4, 5, 6}}, \
+       ControlType -> PopupMenu]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let popups: Vec<bool> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Discrete { popup, .. } => *popup,
+        other => panic!("expected discrete control, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(popups, [false, true]);
+
+    let expr = interpret_to_expr(
+      "Manipulate[a, {a, {1, 2, 3}}, ControlType -> Automatic]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert!(matches!(
+      &spec.controls[0],
+      ManipulateControl::Discrete { popup: false, .. }
+    ));
+  }
+
   /// A body wrapped in `Dynamic[…]` evaluates as its first argument — the
   /// wrapper only adds FrontEnd tracking hints.
   #[test]

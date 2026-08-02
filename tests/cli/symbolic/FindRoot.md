@@ -50,3 +50,12 @@ $ wo 'FindRoot[x^2 + 1, {x, 1}]'
 FindRoot::jsing: Encountered a singular Jacobian at the point {x} = {0.}. Try perturbing the initial point(s).
 {x -> 0.}
 ```
+
+The derivative is taken symbolically where that works.  A non-smooth function
+has none — differentiating `Max` leaves `Derivative[1, 0][Max][…]` standing —
+so the iteration falls back to a difference quotient and still converges:
+
+```scrut
+$ wo 'FindRoot[Max[x, 2 x] - 6, {x, 1}]'
+{x -> 3.}
+```
