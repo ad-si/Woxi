@@ -3511,6 +3511,27 @@ mod plot3d {
       assert!(!svg.contains("rotate("), "an AxesLabel is upright");
     }
 
+    /// `Tooltip[label, hint]` prints as its first argument — the hint only
+    /// shows on hover — so an axis label written that way must still be
+    /// drawn. It used to disappear entirely, leaving the plot of the
+    /// cube-emptying Demonstration with an unlabelled y axis.
+    #[test]
+    fn axes_label_through_a_tooltip_still_prints() {
+      for wrapper in [
+        r#"Tooltip["YY", "hint"]"#,
+        r#"Annotation["YY", "meta"]"#,
+        r#"Tooltip[Row[{Style["Y", Italic], "Y"}], "hint"]"#,
+      ] {
+        let svg = export_svg(&format!(
+          "ListPlot[{{1, 2, 3}}, Joined -> True, \
+           AxesLabel -> {{\"XX\", {wrapper}}}]"
+        ));
+        assert!(svg.contains(">XX</text>"), "{wrapper}: {svg}");
+        assert!(svg.contains(">YY</text>"), "{wrapper}: {svg}");
+        assert!(!svg.contains("hint"), "the hint is not drawn: {svg}");
+      }
+    }
+
     /// The Wolfram Language writes an `AxesLabel` at the *end* of its axis:
     /// the x label just past the right edge and level with the axis, the y
     /// label above the top of the vertical axis, upright. A `FrameLabel` is
@@ -14492,6 +14513,37 @@ mod manipulate {
     }
   }
 
+  /// The variable spec is held (so the symbol survives) while the choice
+  /// list arrives evaluated, so an initial value written as an expression —
+  /// `{{fac, 10^6, "…"}, {1, 10, 10^6}}`, the sine-floor factor of the
+  /// cube-emptying Demonstration — has to be evaluated before it can be
+  /// matched. It used to fall back to the first choice, starting the widget
+  /// on the wrong value.
+  #[test]
+  fn spec_discrete_initial_value_is_evaluated_before_matching() {
+    let expr = interpret_to_expr(
+      "Manipulate[fac, {{fac, 10^6, \"factor\"}, \
+       {1, 2, 10, 20, 100, 10^3, 10^6}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete {
+        values,
+        initial_index,
+        ..
+      } => {
+        assert_eq!(values, &["1", "2", "10", "20", "100", "1000", "1000000"]);
+        assert_eq!(*initial_index, 6, "10^6 is the last choice, not the first");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+    assert_eq!(
+      manipulate_initial_bindings(&spec),
+      vec![("fac".to_string(), "1000000".to_string())]
+    );
+  }
+
   /// `Setter` also enumerates a numeric range into one choice per value,
   /// like the other per-value control types.
   #[test]
@@ -14562,6 +14614,26 @@ mod manipulate {
          TrackedSymbols -> Manipulate]"
       ),
       None
+    );
+    // `TrackedSymbols -> True` (and the other blanket spellings) also mean
+    // "track everything" — reading `True` as a variable name would leave
+    // every control untracked and freeze the display.
+    for blanket in ["True", "Full", "Automatic"] {
+      assert_eq!(
+        tracked(&format!(
+          "Manipulate[a + b, {{a, 0, 1}}, {{b, 0, 1}}, \
+           TrackedSymbols -> {blanket}]"
+        )),
+        None,
+        "TrackedSymbols -> {blanket} must track everything"
+      );
+    }
+    // `TrackedSymbols -> None` tracks nothing at all.
+    assert_eq!(
+      tracked(
+        "Manipulate[a + b, {a, 0, 1}, {b, 0, 1}, TrackedSymbols -> None]"
+      ),
+      Some(vec![])
     );
     assert_eq!(tracked("Manipulate[a, {a, 0, 1}]"), None);
     let expr = interpret_to_expr(

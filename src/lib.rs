@@ -4536,6 +4536,11 @@ pub fn interpret_to_expr(
   };
   // Treat the modifier-letter circumflex `ˆ` (U+02C6) as the Power operator.
   let normalized = normalize_circumflex_operator(&normalized);
+  // End a statement at a top-level newline, the way `interpret` does:
+  // without this a definition cell reading `f[x_] := x + 1⏎g[y_] := f[y]`
+  // parses as one statement with an implicit multiplication across the
+  // line break, and only the first symbol ends up defined.
+  let normalized = insert_statement_separators(normalized.trim());
 
   let mut pairs = parse(&normalized).map_err(|e| {
     InterpreterError::EvaluationError(format!("Parse error: {}", e))

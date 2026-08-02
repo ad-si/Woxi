@@ -15345,6 +15345,12 @@ enum ParsedControl {
   },
 }
 
+/// Whether a bare `TrackedSymbols -> sym` value asks for the default of
+/// tracking every variable rather than naming a single tracked variable.
+fn is_track_everything_symbol(sym: &str) -> bool {
+  matches!(sym, "All" | "Full" | "Manipulate" | "Automatic" | "True")
+}
+
 /// Attempt to extract a `ManipulateSpec` from a held `Manipulate[…]` or
 /// `Animate[…]` expression. `Animate` shares `Manipulate`'s argument shape
 /// (a body followed by `{u, umin, umax}`-style control specs) but auto-plays,
@@ -15556,8 +15562,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         animation_running = false;
       }
       // `TrackedSymbols :> {a, b}` narrows re-evaluation to those
-      // variables; a single symbol may be given bare. `All` / `Manipulate`
-      // (and anything else) keep the default of tracking everything.
+      // variables; a single symbol may be given bare. `All` / `Full` /
+      // `Automatic` / `True` / `Manipulate` (and anything else) keep the
+      // default of tracking everything — a bare `True` in particular must
+      // not be mistaken for a variable named `True`, which would leave
+      // every control untracked and the display frozen.
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "TrackedSymbols")
       {
         tracked_symbols = match replacement.as_ref() {
@@ -15568,7 +15577,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
               _ => None,
             })
             .collect::<Option<Vec<_>>>(),
-          Expr::Identifier(s) if s != "All" && s != "Manipulate" => {
+          // `TrackedSymbols -> None`: no variable re-runs the body.
+          Expr::Identifier(s) if s == "None" => Some(Vec::new()),
+          Expr::Identifier(s) if !is_track_everything_symbol(s) => {
             Some(vec![s.clone()])
           }
           _ => None,
@@ -17557,7 +17568,20 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
       let initial_index = match explicit_initial {
         Some(init) => {
           let init_code = crate::syntax::expr_to_input_form(&init);
-          values.iter().position(|v| *v == init_code).unwrap_or(0)
+          values
+            .iter()
+            .position(|v| *v == init_code)
+            .or_else(|| {
+              // The variable spec is held (so the symbol survives) while the
+              // choice list arrives evaluated, so an initial value written as
+              // an expression — `{{fac, 10^6, …}, {1, 10, 10^6}}` — only
+              // matches once it is evaluated too.
+              let evaluated =
+                crate::evaluator::evaluate_expr_to_expr(&init).ok()?;
+              let code = crate::syntax::expr_to_input_form(&evaluated);
+              values.iter().position(|v| *v == code)
+            })
+            .unwrap_or(0)
         }
         None => 0,
       };
