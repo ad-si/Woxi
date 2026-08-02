@@ -124,6 +124,43 @@ pub(crate) fn render_epilog_svg(prims: &[Expr], area: &PlotArea) -> String {
   out
 }
 
+/// A position written either as `{x, y}` or as `Scaled[{sx, sy}]` — the
+/// fraction-of-plot-range form a Demonstration pins its captions and insets
+/// with, so they stay put however the curves move. Both come back in data
+/// coordinates. `ImageScaled` measures the same fractions against the image
+/// rather than the plot range; over the plotting area the two coincide.
+fn anchor2(expr: &Expr, area: &PlotArea) -> Option<(f64, f64)> {
+  if let Expr::FunctionCall { name, args } = expr
+    && (name == "Scaled" || name == "ImageScaled")
+    && args.len() == 1
+    && let Some((sx, sy)) = point2(&args[0])
+  {
+    return Some((
+      area.x_min + sx * (area.x_max - area.x_min),
+      area.y_min + sy * (area.y_max - area.y_min),
+    ));
+  }
+  point2(expr)
+}
+
+/// The value of option `key` among a primitive's trailing `opt -> value`
+/// arguments.
+fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
+  opts.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == key) => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })
+}
+
 /// Try to interpret an expression as a `{x, y}` coordinate pair.
 fn point2(expr: &Expr) -> Option<(f64, f64)> {
   if let Expr::List(items) = expr
@@ -343,15 +380,28 @@ fn render_item(
         }
       }
       "Text" if args.len() >= 2 => {
-        if let Some((x, y)) = point2(&args[1]) {
+        if let Some((x, y)) = anchor2(&args[1], area) {
+          // `Framed[content, opts…]` boxes the label: a panel behind it and
+          // a border around it, both drawn before the text so the text sits
+          // on top. Peeling it off first leaves the `Style[…]` it usually
+          // wraps on the ordinary path.
+          let (body, frame_opts, is_framed) = match &args[0] {
+            Expr::FunctionCall { name, args: fargs }
+              if name == "Framed" && !fargs.is_empty() =>
+            {
+              (&fargs[0], &fargs[1..], true)
+            }
+            other => (other, &[] as &[Expr], false),
+          };
           // `Style[…]` around the content sets the text's own size and
           // colour; without one the epilog's directives still apply.
-          let styled = crate::functions::chart::parse_styled_label(&args[0]);
-          let label = styled
-            .as_ref()
-            .map(|s| s.text.clone())
-            .or_else(|| crate::functions::chart::expr_to_label(&args[0]))
-            .unwrap_or_else(|| crate::syntax::expr_to_output(&args[0]));
+          let styled = crate::functions::chart::parse_styled_label(body);
+          // A label carrying structure (`Subscript[N, D]`) is typeset into
+          // SVG markup; a plain one goes through the same path, which
+          // escapes it.
+          let label = styled.as_ref().map(|s| s.svg()).unwrap_or_else(|| {
+            svg_escape_text(&crate::syntax::expr_to_output(body))
+          });
           let font_size =
             styled.as_ref().and_then(|s| s.font_size).unwrap_or(13.0)
               * area.scale;
@@ -359,14 +409,59 @@ fn render_item(
             Some(c) => format!("fill=\"{}\"", c.to_svg_rgb()),
             None => style.fill_attrs(),
           };
+          let (px, py) = (area.px(x), area.py(y));
+          if is_framed {
+            let text_w =
+              styled.as_ref().map(|s| s.text.chars().count()).unwrap_or(0)
+                as f64
+                * font_size
+                * 0.6;
+            let background = option_value(frame_opts, "Background")
+              .and_then(parse_color)
+              .map(|c| c.to_svg_rgb())
+              .unwrap_or_else(|| "none".to_string());
+            // Wolfram draws the box with a thin border unless the label
+            // asks for none; `FrameStyle -> colour` recolours it.
+            let stroke = match option_value(frame_opts, "FrameStyle") {
+              Some(Expr::Identifier(s)) if s == "None" => String::new(),
+              Some(spec) => format!(
+                " stroke=\"{}\"",
+                parse_color(spec)
+                  .unwrap_or(Color::new(0.0, 0.0, 0.0))
+                  .to_svg_rgb()
+              ),
+              None => " stroke=\"rgb(0,0,0)\"".to_string(),
+            };
+            out.push_str(&format!(
+              "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{text_w:.1}\" height=\"{font_size:.1}\" fill=\"{background}\"{stroke}/>\n",
+              px - text_w / 2.0,
+              py - font_size / 2.0,
+            ));
+          }
           out.push_str(&format!(
-            "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
+            "<text x=\"{px:.1}\" y=\"{py:.1}\" text-anchor=\"middle\" \
              dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-             font-size=\"{:.0}\" {fill}>{}</text>\n",
-            area.px(x),
-            area.py(y),
-            font_size,
-            svg_escape_text(&label),
+             font-size=\"{font_size:.0}\" {fill}>{label}</text>\n",
+          ));
+        }
+      }
+      // `Inset[picture, pos]` drops a whole other picture — often a little
+      // 3D schematic of what the curves describe — onto the plot at its own
+      // natural size.
+      "Inset" if !args.is_empty() => {
+        let anchor = args.get(1).and_then(|p| anchor2(p, area)).unwrap_or((
+          (area.x_min + area.x_max) / 2.0,
+          (area.y_min + area.y_max) / 2.0,
+        ));
+        let svg = crate::evaluator::expr_to_svg(&args[0]);
+        if let Some((w, h)) = crate::functions::graphics::svg_natural_size(&svg)
+        {
+          out.push_str(&crate::functions::graphics::embed_svg_centered(
+            &svg,
+            area.px(anchor.0),
+            area.py(anchor.1),
+            w * area.scale,
+            h * area.scale,
           ));
         }
       }

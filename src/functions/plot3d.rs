@@ -1889,6 +1889,23 @@ enum Primitive3D {
     radius: f64,
     style: StyleState3D,
   },
+  /// `Text[expr, {x, y, z}, offset]`: a label pinned to a point of the
+  /// scene. Text does not turn with the camera — it is drawn flat, facing
+  /// the viewer, at the projection of its point, which is what makes a
+  /// labelled 3D schematic readable from any view.
+  Text3D {
+    /// The label as SVG `<text>` content (already typeset and escaped).
+    label: String,
+    pos: Point3D,
+    /// Which point of the label's own box sits at `pos`, from -1
+    /// (left/bottom) to 1 (right/top). `(0, 0)` centres it.
+    offset: (f64, f64),
+    font_size: f64,
+    /// Character count of the visible text, for placing the box an
+    /// `offset` displaces.
+    width_chars: usize,
+    style: StyleState3D,
+  },
   /// A pre-tessellated triangle surface (Torus, FilledTorus, BSplineSurface,
   /// Raster3D voxels, …). `smooth` marks the ones that approximate a curved
   /// surface, whose triangle edges are internal cuts rather than outlines.
@@ -2233,6 +2250,9 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
         *p = xf.apply(*p);
       }
     }
+    Primitive3D::Text3D { pos, .. } => {
+      *pos = xf.apply(*pos);
+    }
     Primitive3D::Line3D { segments, .. } => {
       for seg in segments {
         for p in seg {
@@ -2303,6 +2323,31 @@ fn resolve_complex_indices(expr: &Expr, points: &[Expr]) -> Expr {
         .into(),
     },
     other => other.clone(),
+  }
+}
+
+/// The alignment offset of `Text[expr, pos, offset]`: a pair running from
+/// -1 (left/bottom) to 1 (right/top), written either as numbers or with the
+/// alignment symbols.
+fn parse_text3d_offset(spec: &Expr) -> Option<(f64, f64)> {
+  fn component(e: &Expr, horizontal: bool) -> Option<f64> {
+    if let Expr::Identifier(s) = e {
+      return match (s.as_str(), horizontal) {
+        ("Left", true) | ("Bottom", false) => Some(-1.0),
+        ("Center", _) | ("Automatic", _) | ("Axis", _) | ("Baseline", _) => {
+          Some(0.0)
+        }
+        ("Right", true) | ("Top", false) => Some(1.0),
+        _ => None,
+      };
+    }
+    crate::functions::math_ast::expr_to_f64(e)
+  }
+  match spec {
+    Expr::List(items) if items.len() == 2 => {
+      Some((component(&items[0], true)?, component(&items[1], false)?))
+    }
+    _ => None,
   }
 }
 
@@ -2470,6 +2515,45 @@ fn collect_3d_primitives(
               points: pts,
               style: style.clone(),
             });
+          }
+        }
+        // `Text[expr, {x, y, z}]` (optionally with an alignment offset)
+        // labels a point of the scene. The label is typeset by the same
+        // helper the 2D pictures and plot labels use, so `Subscript[N, B]`
+        // reads the same wherever it is written.
+        "Text" if args.len() >= 2 => {
+          if let Some(pos) = parse_point3d(&args[1]) {
+            let styled = crate::functions::chart::parse_styled_label(&args[0]);
+            let (label, width_chars, font_size, color) = match styled {
+              Some(s) => (
+                s.svg(),
+                s.text.chars().count(),
+                s.font_size.unwrap_or(12.0),
+                s.color,
+              ),
+              None => (String::new(), 0, 12.0, None),
+            };
+            if !label.is_empty() {
+              let mut text_style = style.clone();
+              if let Some(c) = color {
+                text_style.color = Some((
+                  (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+                  (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+                  (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+                ));
+              }
+              prims.push(Primitive3D::Text3D {
+                label,
+                pos,
+                offset: args
+                  .get(2)
+                  .and_then(parse_text3d_offset)
+                  .unwrap_or((0.0, 0.0)),
+                font_size,
+                width_chars,
+                style: text_style,
+              });
+            }
           }
         }
         "Cylinder" => {
@@ -3713,6 +3797,17 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
           );
         }
       }
+      Primitive3D::Text3D { pos, .. } => {
+        extend_3d(
+          pos,
+          &mut x3_min,
+          &mut x3_max,
+          &mut y3_min,
+          &mut y3_max,
+          &mut z3_min,
+          &mut z3_max,
+        );
+      }
       Primitive3D::Point3DPrim { points, .. }
       | Primitive3D::Arrow3D { points, .. } => {
         for pt in points {
@@ -3801,6 +3896,9 @@ fn enclosing_sphere_radius(prims: &[Primitive3D], center: Point3D) -> f64 {
             }
           }
         }
+      }
+      Primitive3D::Text3D { pos, .. } => {
+        radius = radius.max(dist(pos));
       }
       Primitive3D::Polygon3D { points, .. }
       | Primitive3D::Point3DPrim { points, .. }
@@ -4333,6 +4431,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
       }
+      Primitive3D::Text3D { pos, .. } => {
+        let (px, py) = project(*pos, &camera);
+        px_min = px_min.min(px);
+        px_max = px_max.max(px);
+        py_min = py_min.min(py);
+        py_max = py_max.max(py);
+      }
       Primitive3D::Point3DPrim { points, .. }
       | Primitive3D::Arrow3D { points, .. } => {
         for pt in points {
@@ -4622,6 +4727,34 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // triangles above so surfaces occlude them correctly)
   for prim in &prims {
     match prim {
+      Primitive3D::Text3D {
+        label,
+        pos,
+        offset,
+        font_size,
+        width_chars,
+        style,
+      } => {
+        let fill_color = if let Some((r, g, b)) = style.color {
+          format!("rgb({r},{g},{b})")
+        } else {
+          default_prim_color.to_string()
+        };
+        let (px, py) = project(*pos, &camera);
+        let (sx, sy) = to_svg(px, py);
+        // The offset names which point of the label's box sits at the
+        // projected point, so the box moves the other way — half its width
+        // per unit across, half its height per unit up (and the vertical
+        // sign flips, SVG counting y downwards).
+        let text_w = *width_chars as f64 * font_size * 0.6;
+        let x = sx - offset.0 * text_w / 2.0;
+        let y = sy + offset.1 * font_size / 2.0;
+        svg.push_str(&format!(
+          "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
+           dominant-baseline=\"middle\" font-family=\"sans-serif\" \
+           font-size=\"{font_size:.1}\" fill=\"{fill_color}\">{label}</text>\n",
+        ));
+      }
       Primitive3D::Point3DPrim { points, style } => {
         let fill_color = if let Some((r, g, b)) = style.color {
           format!("rgb({r},{g},{b})")

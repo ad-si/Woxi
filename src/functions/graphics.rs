@@ -627,6 +627,12 @@ enum Primitive {
     /// `Background -> colour`: a panel painted behind the label, so it
     /// stays readable over whatever it is placed on.
     background: Option<Color>,
+    /// `Framed[…]`: the colour of the border drawn around the label, or
+    /// `None` for an unframed one (including `FrameStyle -> None`).
+    frame: Option<Color>,
+    /// `x`/`y` are `Scaled[…]` fractions of the plot range, resolved when
+    /// the range is known — see [`resolve_anchor`].
+    scaled: bool,
     style: StyleState,
   },
   BezierCurvePrim {
@@ -642,6 +648,9 @@ enum Primitive {
     y: f64,
     w: f64,
     h: f64,
+    /// `x`/`y` are `Scaled[…]` fractions of the plot range, resolved when
+    /// the range is known — see [`resolve_anchor`].
+    scaled: bool,
   },
   RasterPrim {
     /// rows x cols grid of RGBA colors (row 0 = bottom in Wolfram coords)
@@ -713,6 +722,40 @@ fn expr_to_point(expr: &Expr) -> Option<(f64, f64)> {
     return Some((x, y));
   }
   None
+}
+
+/// Where a `Text`/`Inset` anchor sits, as `(x, y, scaled)`. With `scaled`
+/// set, `x`/`y` are fractions of the final plot range rather than
+/// coordinates in it: `Scaled[{0.9, 0.775}]` pins a label near the top
+/// right whatever the data turns out to span. Such an anchor cannot be
+/// resolved while primitives are collected — the range it refers to is only
+/// known once every other primitive has been seen — so the flag travels
+/// with the primitive and [`resolve_anchor`] applies it at render time.
+///
+/// `ImageScaled` measures the same fractions against the image rather than
+/// the plot range; for a picture whose image *is* its plot range the two
+/// coincide, so both read as scaled here.
+fn expr_to_anchor(expr: &Expr) -> Option<(f64, f64, bool)> {
+  if let Expr::FunctionCall { name, args } = expr
+    && (name == "Scaled" || name == "ImageScaled")
+    && args.len() == 1
+    && let Some((x, y)) = expr_to_point(&args[0])
+  {
+    return Some((x, y, true));
+  }
+  expr_to_point(expr).map(|(x, y)| (x, y, false))
+}
+
+/// A primitive's anchor in data coordinates, turning a scaled fraction into
+/// the point of the plot range it names.
+fn resolve_anchor(x: f64, y: f64, scaled: bool, bb: &BBox) -> (f64, f64) {
+  if !scaled {
+    return (x, y);
+  }
+  (
+    bb.x_min + x * (bb.x_max - bb.x_min),
+    bb.y_min + y * (bb.y_max - bb.y_min),
+  )
 }
 
 fn expr_to_point_list(expr: &Expr) -> Option<Vec<(f64, f64)>> {
@@ -2424,6 +2467,17 @@ fn graphics_text_content(expr: &Expr) -> String {
         None => parts.concat(),
       }
     }
+    // `Subscript`/`Superscript` typeset as scripts, not as the two-line
+    // OutputForm box `ToString` would give: a label reading `N` over ` D`
+    // is not what the picture is meant to show. `expr_to_label` already
+    // folds them into the Unicode script characters for plot labels, so a
+    // `Text` label written the same way reads the same way.
+    Expr::FunctionCall { name, args }
+      if (name == "Subscript" || name == "Superscript") && args.len() >= 2 =>
+    {
+      crate::functions::chart::expr_to_label(expr)
+        .unwrap_or_else(|| crate::syntax::expr_to_string(expr))
+    }
     _ => match crate::functions::string_ast::to_string_ast(
       std::slice::from_ref(expr),
     ) {
@@ -2462,14 +2516,43 @@ fn inset_primitives(
   // picture whose symbolic content was not kept — is embedded whole, at
   // its own size. That is what an inset is: the object keeps the size it
   // would have on its own, wherever the plot range puts its anchor.
-  if let Expr::Graphics {
-    svg,
-    is_3d: false,
-    structure: None,
-    ..
-  } = &args[0]
+  //
+  // A three-dimensional object goes the same way: its projection is fixed
+  // by its own `ViewPoint`, so there is nothing to re-project into this
+  // picture's coordinates. `Graphics3D[…]` that has not been rendered yet
+  // is rendered here first (a Demonstration builds its little inset scene
+  // inside the body and insets the variable), which is also what keeps it
+  // from falling through to the text path and printing `-Graphics3D-`.
+  let anchor = args.get(1).and_then(expr_to_anchor);
+  let rendered;
+  let embedded = match &args[0] {
+    Expr::Graphics {
+      svg,
+      structure: None,
+      ..
+    } => Some(svg),
+    Expr::Graphics {
+      svg, is_3d: true, ..
+    } => Some(svg),
+    // A picture given symbolically normally has its primitives folded into
+    // this one (below), which is what lets it share the coordinate system.
+    // That cannot be done from a `Scaled` anchor — the range it names is
+    // only known once every primitive is in — so such an inset is rendered
+    // to its own picture and embedded whole instead.
+    call @ Expr::FunctionCall { name, .. }
+      if name == "Graphics3D"
+        || name == "Graphics3DBox"
+        || (anchor.is_some_and(|(_, _, scaled)| scaled)
+          && (name == "Graphics" || name == "GraphicsBox")) =>
+    {
+      rendered = crate::evaluator::expr_to_svg(call);
+      (!rendered.is_empty()).then_some(&rendered)
+    }
+    _ => None,
+  };
+  if let Some(svg) = embedded
     && let Some(dims) = parse_svg_dimensions(svg)
-    && let Some((x, y)) = args.get(1).and_then(expr_to_point)
+    && let Some((x, y, scaled)) = anchor
   {
     return Some(vec![Primitive::InsetGraphic {
       svg: svg.clone(),
@@ -2477,6 +2560,7 @@ fn inset_primitives(
       y,
       w: dims.nat_w,
       h: dims.nat_h,
+      scaled,
     }]);
   }
   // The object: `Graphics[…]` (or its box form), a rendered graphic that
@@ -2589,10 +2673,21 @@ fn inset_primitives(
 fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // Text[str, {x, y}] or Text[Style[str, ...], {x, y}]
   let mut local_style = style.clone();
+  // `Framed[content, opts…]` boxes the label: a border around it and, with
+  // `Background -> colour`, a panel behind it. Peel it off first so the
+  // `Style` directives it usually wraps still reach the primitive.
+  let (framed_body, frame_opts) = match &args[0] {
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Framed" && !fargs.is_empty() =>
+    {
+      (&fargs[0], &fargs[1..])
+    }
+    other => (other, &[] as &[Expr]),
+  };
   // A top-level `Style[content, dirs…]` carries text directives (font size,
   // weight, color) that apply to the whole label; peel it off and apply them
   // to the primitive, then render the inner content.
-  let content = match &args[0] {
+  let content = match framed_body {
     Expr::FunctionCall { name, args: sargs }
       if is_style_wrapper(name) && !sargs.is_empty() =>
     {
@@ -2606,26 +2701,32 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   };
   let text = graphics_text_content(content);
 
-  let (x, y) = if args.len() >= 2 {
-    expr_to_point(&args[1]).unwrap_or((0.0, 0.0))
+  let (x, y, scaled) = if args.len() >= 2 {
+    expr_to_anchor(&args[1]).unwrap_or((0.0, 0.0, false))
   } else {
-    (0.0, 0.0)
+    (0.0, 0.0, false)
   };
   let offset = args.get(2).and_then(text_offset).unwrap_or((0.0, 0.0));
   // `Background -> colour`, written either as a trailing option of the
   // `Text` or as a directive of the `Style` it wraps.
-  let background_of = |opts: &[Expr]| {
+  fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
     opts.iter().find_map(|o| match o {
       Expr::Rule {
         pattern,
         replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Background") => {
-        parse_color(replacement)
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == key) => {
+        Some(replacement.as_ref())
       }
       _ => None,
     })
-  };
-  let style_opts: &[Expr] = match &args[0] {
+  }
+  let background_of =
+    |opts: &[Expr]| option_value(opts, "Background").and_then(parse_color);
+  let style_opts: &[Expr] = match framed_body {
     Expr::FunctionCall { name, args: sargs }
       if is_style_wrapper(name) && !sargs.is_empty() =>
     {
@@ -2633,8 +2734,24 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     }
     _ => &[],
   };
-  let background =
-    background_of(&args[1..]).or_else(|| background_of(style_opts));
+  let background = background_of(frame_opts)
+    .or_else(|| background_of(&args[1..]))
+    .or_else(|| background_of(style_opts));
+  // Wolfram draws a `Framed` box with a thin border unless the label asks
+  // for none; an explicit `FrameStyle -> colour` recolours it.
+  let is_framed = matches!(
+    &args[0],
+    Expr::FunctionCall { name, args: fargs } if name == "Framed" && !fargs.is_empty()
+  );
+  let frame = if is_framed {
+    match option_value(frame_opts, "FrameStyle") {
+      Some(Expr::Identifier(s)) if s == "None" => None,
+      Some(spec) => parse_color(spec).or(Some(Color::new(0.0, 0.0, 0.0))),
+      None => Some(Color::new(0.0, 0.0, 0.0)),
+    }
+  } else {
+    None
+  };
 
   prims.push(Primitive::TextPrim {
     text,
@@ -2642,6 +2759,8 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     y,
     offset,
     background,
+    frame,
+    scaled,
     style: local_style,
   });
 }
@@ -3250,14 +3369,24 @@ fn rotate_primitive(
   let rv = |x: f64, y: f64| (x * cos - y * sin, x * sin + y * cos);
   match prim {
     // An inset keeps its own orientation and size; only its anchor moves.
-    Primitive::InsetGraphic { svg, x, y, w, h } => {
-      let (nx, ny) = rp(*x, *y);
+    Primitive::InsetGraphic {
+      svg,
+      x,
+      y,
+      w,
+      h,
+      scaled,
+    } => {
+      // A scaled anchor names a place in the finished frame, not a point in
+      // the data, so a transform of the coordinates leaves it where it is.
+      let (nx, ny) = if *scaled { (*x, *y) } else { rp(*x, *y) };
       Primitive::InsetGraphic {
         svg: svg.clone(),
         x: nx,
         y: ny,
         w: *w,
         h: *h,
+        scaled: *scaled,
       }
     }
     Primitive::PointSingle { x, y, style } => {
@@ -3388,15 +3517,19 @@ fn rotate_primitive(
       y,
       offset,
       background,
+      frame,
+      scaled,
       style,
     } => {
-      let (nx, ny) = rp(*x, *y);
+      let (nx, ny) = if *scaled { (*x, *y) } else { rp(*x, *y) };
       Primitive::TextPrim {
         text: text.clone(),
         x: nx,
         y: ny,
         offset: *offset,
         background: *background,
+        frame: *frame,
+        scaled: *scaled,
         style: style.clone(),
       }
     }
@@ -3446,12 +3579,20 @@ fn rotate_primitive(
 fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
   let tp = |x: f64, y: f64| (x + dx, y + dy);
   match prim {
-    Primitive::InsetGraphic { svg, x, y, w, h } => Primitive::InsetGraphic {
+    Primitive::InsetGraphic {
+      svg,
+      x,
+      y,
+      w,
+      h,
+      scaled,
+    } => Primitive::InsetGraphic {
       svg: svg.clone(),
-      x: x + dx,
-      y: y + dy,
+      x: if *scaled { *x } else { x + dx },
+      y: if *scaled { *y } else { y + dy },
       w: *w,
       h: *h,
+      scaled: *scaled,
     },
     Primitive::PointSingle { x, y, style } => Primitive::PointSingle {
       x: x + dx,
@@ -3560,13 +3701,17 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       y,
       offset,
       background,
+      frame,
+      scaled,
       style,
     } => Primitive::TextPrim {
       text: text.clone(),
-      x: x + dx,
-      y: y + dy,
+      x: if *scaled { *x } else { x + dx },
+      y: if *scaled { *y } else { y + dy },
       offset: *offset,
       background: *background,
+      frame: *frame,
+      scaled: *scaled,
       style: style.clone(),
     },
     Primitive::RasterPrim {
@@ -3640,14 +3785,22 @@ fn scale_primitive(
     }
   };
   match prim {
-    Primitive::InsetGraphic { svg, x, y, w, h } => {
-      let (nx, ny) = sp(*x, *y);
+    Primitive::InsetGraphic {
+      svg,
+      x,
+      y,
+      w,
+      h,
+      scaled,
+    } => {
+      let (nx, ny) = if *scaled { (*x, *y) } else { sp(*x, *y) };
       Primitive::InsetGraphic {
         svg: svg.clone(),
         x: nx,
         y: ny,
         w: *w,
         h: *h,
+        scaled: *scaled,
       }
     }
     Primitive::PointSingle { x, y, style } => {
@@ -3775,15 +3928,19 @@ fn scale_primitive(
       y,
       offset,
       background,
+      frame,
+      scaled,
       style,
     } => {
-      let (nx, ny) = sp(*x, *y);
+      let (nx, ny) = if *scaled { (*x, *y) } else { sp(*x, *y) };
       Primitive::TextPrim {
         text: text.clone(),
         x: nx,
         y: ny,
         offset: *offset,
         background: *background,
+        frame: *frame,
+        scaled: *scaled,
         style: style.clone(),
       }
     }
@@ -4657,19 +4814,22 @@ fn render_primitive(
 ) {
   match prim {
     // The inset is embedded whole, at its own size, centred on its anchor.
-    Primitive::InsetGraphic { svg, x, y, w, h } => {
-      let cx = coord_x(*x, bb, svg_w);
-      let cy = coord_y(*y, bb, svg_h);
-      let view_box = parse_svg_dimensions(svg)
-        .map(|p| p.view_box)
-        .unwrap_or_else(|| format!("0 0 {w} {h}"));
-      out.push_str(&format!(
-        "<svg x=\"{:.2}\" y=\"{:.2}\" width=\"{w:.2}\" height=\"{h:.2}\" viewBox=\"{view_box}\" preserveAspectRatio=\"xMidYMid meet\">\n",
-        cx - w / 2.0,
-        cy - h / 2.0
+    Primitive::InsetGraphic {
+      svg,
+      x,
+      y,
+      w,
+      h,
+      scaled,
+    } => {
+      let (ax, ay) = resolve_anchor(*x, *y, *scaled, bb);
+      out.push_str(&embed_svg_centered(
+        svg,
+        coord_x(ax, bb, svg_w),
+        coord_y(ay, bb, svg_h),
+        *w,
+        *h,
       ));
-      out.push_str(strip_svg_wrapper(svg));
-      out.push_str("</svg>\n");
     }
     Primitive::PointSingle { x, y, style } => {
       let cx = coord_x(*x, bb, svg_w);
@@ -5195,6 +5355,8 @@ fn render_primitive(
       y,
       offset,
       background,
+      frame,
+      scaled,
       style,
     } => {
       let color = style.effective_color();
@@ -5211,17 +5373,25 @@ fn render_primitive(
         .unwrap_or(0);
       let text_w = longest as f64 * fs * 0.6;
       let text_h = text.split('\n').count() as f64 * fs;
-      let sx = coord_x(*x, bb, svg_w) - offset.0 * text_w / 2.0;
-      let sy = coord_y(*y, bb, svg_h) + offset.1 * text_h / 2.0;
+      let (ax, ay) = resolve_anchor(*x, *y, *scaled, bb);
+      let sx = coord_x(ax, bb, svg_w) - offset.0 * text_w / 2.0;
+      let sy = coord_y(ay, bb, svg_h) + offset.1 * text_h / 2.0;
       // `Background -> colour` paints a panel behind the label, which is
-      // what keeps a value readable over whatever it is placed on.
-      if let Some(bg) = background {
+      // what keeps a value readable over whatever it is placed on; a
+      // `Framed` label additionally gets the border drawn around it.
+      if background.is_some() || frame.is_some() {
+        let (fill, fill_opacity) = match background {
+          Some(bg) => (bg.to_svg_rgb(), bg.opacity_attr()),
+          None => ("none".to_string(), String::new()),
+        };
+        let stroke = match frame {
+          Some(fc) => format!(" stroke=\"{}\"", fc.to_svg_rgb()),
+          None => String::new(),
+        };
         out.push_str(&format!(
-          "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{text_w:.2}\" height=\"{text_h:.2}\" fill=\"{}\"{}/>\n",
+          "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{text_w:.2}\" height=\"{text_h:.2}\" fill=\"{fill}\"{fill_opacity}{stroke}/>\n",
           sx - text_w / 2.0,
           sy - text_h / 2.0,
-          bg.to_svg_rgb(),
-          bg.opacity_attr(),
         ));
       }
       let ff_attr = if style.font_family.is_empty() {
@@ -5739,6 +5909,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // all four sides): the room reserved around the drawing area, replacing the
   // automatic margins that the frame and its tick labels would ask for.
   let mut image_padding: Option<[f64; 4]> = None;
+  // `Prolog -> …` / `Epilog -> …`: extra primitives drawn under and over
+  // the picture's own content. Neither takes part in the plot range, so
+  // they are collected only once the range is settled.
+  let mut prolog: Option<Expr> = None;
+  let mut epilog: Option<Expr> = None;
 
   for raw_opt in &args[1..] {
     let opt =
@@ -5770,6 +5945,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             plot_range_y = yr;
           }
         }
+        "Prolog" => prolog = Some(replacement.clone()),
+        "Epilog" => epilog = Some(replacement.clone()),
         "PlotLabel" => {
           // Any expression can label the plot (`Row[…]`, a string, a
           // symbol). It is typeset like the rest of the graphic, so machine
@@ -5931,6 +6108,29 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((lo, hi)) = plot_range_y {
     bb.y_min = lo;
     bb.y_max = hi;
+  }
+
+  // The plot range is settled, so the Prolog's and Epilog's own primitives
+  // can join now — under and over the content respectively — without
+  // having stretched the range they are placed against.
+  if let Some(under) = &prolog {
+    let mut under_prims = Vec::new();
+    collect_primitives(
+      under,
+      &mut StyleState::default(),
+      &mut under_prims,
+      &mut errors,
+    );
+    under_prims.append(&mut primitives);
+    primitives = under_prims;
+  }
+  if let Some(over) = &epilog {
+    collect_primitives(
+      over,
+      &mut StyleState::default(),
+      &mut primitives,
+      &mut errors,
+    );
   }
 
   // Adjust aspect ratio to match data unless explicitly set via ImageSize -> {w, h}
@@ -11838,6 +12038,34 @@ fn parse_svg_numeric_attr(svg: &str, attr: &str) -> Option<f64> {
   raw[..numeric_end].parse().ok()
 }
 
+/// The natural display size of a rendered picture, in pixels. That is the
+/// size an inset of it keeps whatever the enclosing plot range turns out to
+/// be, so it is what a caller needs before embedding one.
+pub(crate) fn svg_natural_size(svg: &str) -> Option<(f64, f64)> {
+  parse_svg_dimensions(svg).map(|p| (p.nat_w, p.nat_h))
+}
+
+/// An already-rendered picture nested inside another one: a `<svg>` element
+/// of `w`×`h` pixels centred on (`cx`, `cy`) in the enclosing picture's
+/// pixel coordinates, drawing the original through its own viewBox.
+pub(crate) fn embed_svg_centered(
+  svg: &str,
+  cx: f64,
+  cy: f64,
+  w: f64,
+  h: f64,
+) -> String {
+  let view_box = parse_svg_dimensions(svg)
+    .map(|p| p.view_box)
+    .unwrap_or_else(|| format!("0 0 {w} {h}"));
+  format!(
+    "<svg x=\"{:.2}\" y=\"{:.2}\" width=\"{w:.2}\" height=\"{h:.2}\" viewBox=\"{view_box}\" preserveAspectRatio=\"xMidYMid meet\">\n{}</svg>\n",
+    cx - w / 2.0,
+    cy - h / 2.0,
+    strip_svg_wrapper(svg),
+  )
+}
+
 /// Parse width, height, and viewBox from an SVG string
 fn parse_svg_dimensions(svg: &str) -> Option<ParsedSvg> {
   // Extract the viewBox attribute; an SVG without one (e.g. the base64-PNG
@@ -15423,6 +15651,20 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }
       // `Spacer[…]` is pure layout between grouped controls — skip it.
       Expr::FunctionCall { name, .. } if name == "Spacer" => continue,
+      // The span markers of a `Grid` control panel say that the cell to
+      // their left (or above) stretches into this slot. Once the grid has
+      // been flattened into a list of control rows they mark nothing at
+      // all, so they are dropped rather than mistaken for display
+      // elements — which would put a literal `SpanFromLeft` under the
+      // widget, one per marker.
+      Expr::Identifier(s)
+        if matches!(
+          s.as_str(),
+          "SpanFromLeft" | "SpanFromAbove" | "SpanFromBoth" | "Null"
+        ) =>
+      {
+        continue;
+      }
       _ => {}
     }
     // Only list-shaped arguments are control specs (layout containers of
@@ -16487,6 +16729,26 @@ fn locator_range(
 /// individual runs, giving e.g. `Text[Subscript[Style["m", Italic], 1]]` →
 /// an italic `m` followed by an upright `₁`, and `Style["t", Italic]` → an
 /// italic `t`. `italic` is the style inherited from an enclosing `Style`.
+/// The items a `Row`/`Column` lays out. Written literally they are already a
+/// list; a Demonstration more often computes them — `Row[Flatten[{" ",
+/// Riffle[Subscript[Style["N", Italic], #] & /@ {"D", "U"}, " and "], " "}]]`
+/// builds a setter's caption that way — so a non-literal argument is
+/// evaluated first. Anything that does not come back as a list (a symbol
+/// with no value, say) yields `None`, leaving the label on the OutputForm
+/// path rather than printing the source of the computation.
+fn layout_parts(arg: Option<&Expr>) -> Option<Vec<Expr>> {
+  match arg? {
+    Expr::List(parts) => Some(parts.to_vec()),
+    other => match evaluate_expr_to_expr(other) {
+      Ok(ref evaluated) => match evaluated {
+        Expr::List(parts) => Some(parts.to_vec()),
+        _ => None,
+      },
+      Err(_) => None,
+    },
+  }
+}
+
 fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
   let output_run = |italic: bool| {
     let text =
@@ -16529,8 +16791,8 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
         .map(|a| manipulate_label_runs(a, italic))
         .unwrap_or_default(),
       // Row[{a, b, …}] — concatenate the (recursively rendered) parts.
-      "Row" => match args.first() {
-        Some(Expr::List(parts)) => parts
+      "Row" => match layout_parts(args.first()) {
+        Some(parts) => parts
           .iter()
           .flat_map(|p| manipulate_label_runs(p, italic))
           .collect(),
@@ -16538,8 +16800,8 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       },
       // Column[{a, b, …}] — the same, but one part per line. Demonstrations
       // label a hypothesis-test setter with a two-line column.
-      "Column" => match args.first() {
-        Some(Expr::List(parts)) => parts
+      "Column" => match layout_parts(args.first()) {
+        Some(parts) => parts
           .iter()
           .enumerate()
           .flat_map(|(i, p)| {
