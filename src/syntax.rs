@@ -197,6 +197,10 @@ pub struct PlotSeriesData {
   pub fill_opacity: Option<f64>,
   /// `PlotMarkers` glyph for this series (`None` = plain round points).
   pub marker: Option<PlotMarker>,
+  /// Line weight in display pixels from `PlotStyle` (`Thick`, `Thickness[…]`,
+  /// …); `None` = the 1.5px default. Travels with the series so a curve keeps
+  /// its weight when `Show` merges it into another graphic.
+  pub thickness: Option<f64>,
 }
 
 /// Convert a Wolfram named character name (e.g. "Pi", "Alpha", "Sum") to its

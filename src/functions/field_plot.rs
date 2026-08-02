@@ -1529,6 +1529,7 @@ fn contour_plot_equations(
           fill_color: None,
           fill_opacity: None,
           marker: None,
+          thickness: None,
         });
       }
     }

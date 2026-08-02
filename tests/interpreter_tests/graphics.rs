@@ -2918,6 +2918,56 @@ mod plot3d {
       );
     }
 
+    /// A range with coinciding endpoints has nothing to sample: Wolfram
+    /// reports `head::plld` and hands the call back unevaluated. Woxi used
+    /// to draw an empty picture instead — which a Demonstration hits as
+    /// soon as an animation slider reaches the start of its own range.
+    #[test]
+    fn a_degenerate_plot_range_is_refused() {
+      for (code, head, var, range) in [
+        ("Plot[x, {x, 1, 1}]", "Plot", "x", "{x, 1, 1}"),
+        (
+          "ParametricPlot[{u, u^2}, {u, 0.01, 0.01}]",
+          "ParametricPlot",
+          "u",
+          "{u, 0.01, 0.01}",
+        ),
+        (
+          "ContourPlot[x + y, {x, 1, 1}, {y, 0, 1}]",
+          "ContourPlot",
+          "x",
+          "{x, 1, 1}",
+        ),
+        (
+          "Plot3D[x + y, {x, 0, 1}, {y, 2, 2}]",
+          "Plot3D",
+          "y",
+          "{y, 2, 2}",
+        ),
+      ] {
+        let result = woxi::interpret_with_stdout(code).unwrap();
+        assert_eq!(
+          woxi::interpret(&format!("Head[{code}]")).unwrap(),
+          head,
+          "{code} must stay unevaluated"
+        );
+        let expected = format!(
+          "{head}::plld: Endpoints for {var} in {range} must have distinct \
+           machine-precision numerical values."
+        );
+        assert!(
+          result.warnings.iter().any(|w| w.contains(&expected)),
+          "{code}: expected {expected:?}, got {:?}",
+          result.warnings
+        );
+      }
+      // A reversed range is fine — it samples backwards.
+      assert_eq!(
+        woxi::interpret("Head[ParametricPlot[{u, u^2}, {u, 1, 0}]]").unwrap(),
+        "Graphics"
+      );
+    }
+
     #[test]
     fn plot_singularity_reasonable_y_range() {
       // Plot[1/x, {x, -3, 3}] has a singularity at x=0.
@@ -5685,6 +5735,98 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(
         svg.contains(">3</text>") && svg.contains(">-1</text>"),
         "Show cropped the control polygon out of the merged PlotRange"
+      );
+    }
+
+    /// Two iterators make `ParametricPlot` draw a *region* — the image of
+    /// the parameter rectangle — instead of a curve. The second iterator
+    /// used to be mistaken for an option, leaving the second parameter
+    /// symbolic and the picture empty.
+    #[test]
+    fn parametric_plot_two_parameters_draws_the_image_region() {
+      // The unit square maps to the square [0,2]x[0,2] under {u+v, u+v'}.
+      let svg = export_svg(
+        "ParametricPlot[{u + v, u - v}, {u, 0, 1}, {v, 0, 1}, \
+         AspectRatio -> Automatic]",
+      );
+      let quads = svg.matches("<polygon").count();
+      assert!(
+        quads > 100,
+        "the region is a filled mesh, got {quads} quads"
+      );
+      // Filled translucently in the default plot colour, with the image of
+      // the parameter rectangle's boundary stroked on top.
+      assert!(svg.contains("fill-opacity=\"0.3\""), "{svg}");
+      assert!(svg.contains("<polyline"), "no boundary curve: {svg}");
+      // The image spans x in [0, 2] and y in [-1, 1]: both axes must be
+      // labelled out that far, and no further.
+      for tick in ["2", "-1", "1"] {
+        assert!(
+          svg.contains(&format!(">{tick}</text>")),
+          "missing tick {tick}: {svg}"
+        );
+      }
+      assert!(!svg.contains(">3</text>"), "range too wide: {svg}");
+      assert!(!svg.contains("NaN"), "{svg}");
+    }
+
+    /// A region merges into a composite figure like any other layer: the
+    /// two-link mechanism Demonstration shows its arm, its trajectory and
+    /// its reachable area together. The region used to be dropped for
+    /// carrying neither plot data nor primitives.
+    #[test]
+    fn show_merges_a_parametric_region() {
+      let svg = export_svg(
+        "Show[{Graphics[{Line[{{0, 0}, {1, 1}}]}], \
+         ParametricPlot[{u + v, u - v}, {u, 0, 1}, {v, 0, 1}]}]",
+      );
+      assert!(
+        svg.matches("<polygon").count() > 100,
+        "Show dropped the region: {svg}"
+      );
+    }
+
+    /// `PlotStyle` travels with the curve into a `Show`: colour *and*
+    /// weight. Both used to be reset to the plot defaults on merge, so a
+    /// Demonstration's thick red trajectory came out a thin blue one.
+    #[test]
+    fn show_keeps_the_plot_style_of_a_merged_curve() {
+      let svg = export_svg(
+        "Show[{ParametricPlot[{u, u^2}, {u, 0, 2}, \
+         PlotStyle -> {Thick, Red}], Graphics[{Line[{{0, 0}, {1, 1}}]}]}]",
+      );
+      let curve = svg
+        .lines()
+        .find(|l| l.contains("stroke=\"rgb(255,0,0)\""))
+        .unwrap_or_else(|| panic!("the merged curve is not red: {svg}"));
+      let width: f64 = curve
+        .split("stroke-width=\"")
+        .nth(1)
+        .and_then(|r| r.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| panic!("no stroke width: {curve}"));
+      assert!(width > 1.5, "Thick was lost on merge: {curve}");
+    }
+
+    /// `Show` stacks its arguments in the order given — the last one on
+    /// top. A translucent region given last has to cover the curve given
+    /// before it, so plot layers cannot all be lifted above the primitive
+    /// ones.
+    #[test]
+    fn show_stacks_layers_in_argument_order() {
+      let svg = export_svg(
+        "Show[{ParametricPlot[{u, u}, {u, 0, 1}, PlotStyle -> Red], \
+         Graphics[{Blue, Polygon[{{0, 0}, {1, 0}, {1, 1}}]}]}]",
+      );
+      let curve = svg.find("stroke=\"rgb(255,0,0)\"");
+      let region = svg.find("fill=\"rgb(0,0,255)\"");
+      assert!(
+        curve.is_some() && region.is_some(),
+        "both layers must be drawn: {svg}"
+      );
+      assert!(
+        curve < region,
+        "the polygon given last must be drawn last: {svg}"
       );
     }
 

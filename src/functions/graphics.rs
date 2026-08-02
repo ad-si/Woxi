@@ -9522,6 +9522,15 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut rendered_graphics: Vec<Expr> = Vec::new();
   // Plot source data for re-rendering via plotters
   let mut plot_sources: Vec<crate::syntax::PlotSource> = Vec::new();
+  // The layers in the order `Show` was given them, so a mixture of plots
+  // and primitive graphics stacks the way Wolfram stacks it — the last
+  // argument on top. Each entry indexes either `merged_primitives` or
+  // `plot_sources`.
+  enum Layer {
+    Prims(usize),
+    Source(usize),
+  }
+  let mut layers: Vec<Layer> = Vec::new();
   // Whether the first graphic argument was a plot (carried a PlotSource).
   // Wolfram takes the merged result's options from the first graphic, so
   // plot defaults (axes, 1/GoldenRatio aspect) apply only in that case.
@@ -9627,10 +9636,16 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         graphic_count += 1;
         first_graphic_is_plot.get_or_insert(false);
         if !gargs.is_empty() {
+          layers.push(Layer::Prims(merged_primitives.len()));
           merged_primitives.push(gargs[0].clone());
         }
-        for opt in gargs.iter().skip(1) {
-          merge_option(&mut merged_options, opt);
+        // Wolfram gives the combined graphic the options of the *first*
+        // graphic only: an `AxesLabel` that just one of the later layers
+        // carries does not label the merged picture.
+        if graphic_count == 1 {
+          for opt in gargs.iter().skip(1) {
+            merge_option(&mut merged_options, opt);
+          }
         }
       }
       Expr::FunctionCall { name, args: gargs }
@@ -9641,6 +9656,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(graphics_prims) =
           mesh_region_to_graphics_prims(&gargs[0], &gargs[1])
         {
+          layers.push(Layer::Prims(merged_primitives.len()));
           merged_primitives.push(Expr::List(graphics_prims.into()));
         }
       }
@@ -9649,10 +9665,13 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         first_graphic_is_plot.get_or_insert(false);
         is_3d = true;
         if !gargs.is_empty() {
+          layers.push(Layer::Prims(merged_primitives.len()));
           merged_primitives.push(gargs[0].clone());
         }
-        for opt in gargs.iter().skip(1) {
-          merge_option(&mut merged_options, opt);
+        if graphic_count == 1 {
+          for opt in gargs.iter().skip(1) {
+            merge_option(&mut merged_options, opt);
+          }
         }
       }
       Expr::Graphics {
@@ -9680,15 +9699,18 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           && (sname == "Graphics" || sname == "Graphics3D")
           && !sargs.is_empty()
         {
+          layers.push(Layer::Prims(merged_primitives.len()));
           merged_primitives.push(sargs[0].clone());
-          for opt in sargs.iter().skip(1) {
-            merge_option(&mut merged_options, opt);
+          if graphic_count == 1 {
+            for opt in sargs.iter().skip(1) {
+              merge_option(&mut merged_options, opt);
+            }
           }
         } else if let Some(src) = source {
-          // Wolfram keeps the options of the graphics it is given, the
-          // first one winning; an option given to `Show` itself still
+          // Wolfram gives the merged graphic the options of the first
+          // graphic it was given; an option given to `Show` itself still
           // overrides them (applied after the walk).
-          for opt in &src.options {
+          for opt in src.options.iter().filter(|_| graphic_count == 1) {
             let name = option_name_value(opt).map(|(n, _)| n);
             if name.is_some()
               && !inherited_options.iter().any(|existing| {
@@ -9698,6 +9720,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               inherited_options.push(opt.clone());
             }
           }
+          layers.push(Layer::Source(plot_sources.len()));
           plot_sources.push(src.as_ref().clone());
         } else {
           // No source data — collect as opaque pre-rendered graphic
@@ -9777,6 +9800,9 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Convert plot source series to Line/Point primitives so they can be
   // merged with the other Graphics primitives via graphics_ast.
   if !plot_sources.is_empty() {
+    // One primitive list per plot source, kept aside so the layers can be
+    // stacked back in the order `Show` was given them.
+    let mut source_prims: Vec<Expr> = Vec::with_capacity(plot_sources.len());
     for ps in &plot_sources {
       let mut series_prims: Vec<Expr> = Vec::new();
       for sd in &ps.series {
@@ -9862,7 +9888,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           series_prims.push(Expr::FunctionCall {
             name: "AbsoluteThickness".to_string(),
-            args: vec![Expr::Real(1.5)].into(),
+            args: vec![Expr::Real(sd.thickness.unwrap_or(1.5))].into(),
           });
           let segments =
             crate::functions::plot::split_into_segments(&sd.points);
@@ -9882,7 +9908,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
       }
-      merged_primitives.push(Expr::List(series_prims.into()));
+      source_prims.push(Expr::List(series_prims.into()));
 
       // Deliberately do NOT force a PlotRange from the plot source here: the
       // series are emitted as real Line/Point primitives, so the renderer's
@@ -9890,6 +9916,33 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // range would crop any other Graphics primitives that extend beyond it
       // (e.g. a control polygon), whereas Wolfram shows the union of all
       // primitives. Leaving PlotRange unset yields that union.
+    }
+
+    // Stack the layers in argument order: a translucent region given last
+    // covers the curve given before it, as it does in Wolfram. (Without a
+    // complete record of the order — a layer kind that did not register —
+    // fall back to primitives first, curves on top.)
+    let base_prims = std::mem::take(&mut merged_primitives);
+    let ordered_covers_all = layers
+      .iter()
+      .filter(|l| matches!(l, Layer::Prims(_)))
+      .count()
+      == base_prims.len()
+      && layers
+        .iter()
+        .filter(|l| matches!(l, Layer::Source(_)))
+        .count()
+        == source_prims.len();
+    if ordered_covers_all {
+      for layer in &layers {
+        merged_primitives.push(match layer {
+          Layer::Prims(i) => base_prims[*i].clone(),
+          Layer::Source(i) => source_prims[*i].clone(),
+        });
+      }
+    } else {
+      merged_primitives = base_prims;
+      merged_primitives.extend(source_prims);
     }
 
     // Defaults inherited from the plots when the *first* graphic was a plot

@@ -141,6 +141,42 @@ pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
 
 /// Evaluate the function body at a given x value
 /// Parse a plot iterator specification `{var, min, max}`.
+/// Whether a plot iterator names the same point twice (`{x, 1, 1}`).
+/// Wolfram will not sample such a range: it reports `head::plld` and leaves
+/// the call unevaluated, so every plot head refuses it the same way through
+/// this one check. A reversed range (`{x, 1, 0}`) is fine and samples
+/// backwards.
+pub(crate) fn degenerate_iterator(head: &str, spec: &Expr) -> bool {
+  let Expr::List(items) = spec else {
+    return false;
+  };
+  if items.len() != 3 {
+    return false;
+  }
+  let Expr::Identifier(var) = &items[0] else {
+    return false;
+  };
+  let (Ok(lo), Ok(hi)) = (
+    evaluate_expr_to_expr(&items[1]),
+    evaluate_expr_to_expr(&items[2]),
+  ) else {
+    return false;
+  };
+  let (Some(a), Some(b)) = (try_eval_to_f64(&lo), try_eval_to_f64(&hi)) else {
+    return false;
+  };
+  if a != b {
+    return false;
+  }
+  crate::emit_message(&format!(
+    "{head}::plld: Endpoints for {var} in {{{var}, {}, {}}} must have \
+     distinct machine-precision numerical values.",
+    crate::syntax::expr_to_input_form(&lo),
+    crate::syntax::expr_to_input_form(&hi),
+  ));
+  true
+}
+
 pub(crate) fn parse_iterator(
   spec: &Expr,
   label: &str,
@@ -3466,6 +3502,11 @@ pub(crate) fn build_plot_source(
     .enumerate()
     .map(|(i, points)| {
       let color = series_color(plot_style, i);
+      let thickness = if plot_style.is_empty() {
+        None
+      } else {
+        plot_style[i % plot_style.len()].thickness
+      };
       crate::syntax::PlotSeriesData {
         points: points.clone(),
         color,
@@ -3474,6 +3515,7 @@ pub(crate) fn build_plot_source(
         fill_color,
         fill_opacity,
         marker: None,
+        thickness,
       }
     })
     .collect();
@@ -4176,6 +4218,7 @@ pub(crate) fn render_merged_plot_source(
         s.color.1 as f64 / 255.0,
         s.color.2 as f64 / 255.0,
       )),
+      thickness: s.thickness,
       ..SeriesStyle::default()
     })
     .collect();
@@ -6303,6 +6346,7 @@ pub(crate) fn histogram_plot_source(
       fill_color: None,
       fill_opacity: None,
       marker: None,
+      thickness: None,
     });
   }
 
