@@ -528,6 +528,105 @@ mod graphics {
       assert_eq!(result.result, "PolarCurve[1 - Cos[t], {t, 0, a}]");
       assert!(result.graphics.is_none());
     }
+
+    /// `Scaled[{sx, sy}]` places a primitive by fraction of the plot
+    /// range rather than in the coordinates of the data, so a caption
+    /// pinned near a corner stays there whatever the data spans. The
+    /// fractions used to be unreadable, dropping every such label onto
+    /// the origin.
+    #[test]
+    fn scaled_positions_are_fractions_of_the_plot_range() {
+      let label_x = |code: &str| -> f64 {
+        let svg = export_svg(code);
+        svg
+          .split("<text ")
+          .nth(1)
+          .and_then(|t| t.split_once("x=\""))
+          .and_then(|(_, r)| r.split_once('"'))
+          .and_then(|(v, _)| v.parse().ok())
+          .expect("a positioned label")
+      };
+      // A tenth across a 360 px wide picture, whatever the data range.
+      for range in ["{{0, 10}, {0, 10}}", "{{-100, 100}, {-100, 100}}"] {
+        let x = label_x(&format!(
+          "Graphics[{{Text[\"hi\", Scaled[{{0.1, 0.9}}]]}}, \
+           PlotRange -> {range}]"
+        ));
+        assert!(
+          (x - 36.0).abs() < 1.0,
+          "a tenth across the picture, got {x} for {range}"
+        );
+      }
+    }
+
+    /// `Graphics` takes `Prolog` and `Epilog` too: extra primitives drawn
+    /// under and over its content. Neither stretches the plot range — a
+    /// point far outside it is clipped away rather than rescaling the
+    /// picture around it. Both used to be ignored entirely.
+    #[test]
+    fn a_graphics_prolog_draws_under_and_an_epilog_over() {
+      let svg = export_svg(
+        "Graphics[{Circle[]}, Prolog -> {Blue, Disk[{0, 0}, 0.5]}, \
+         Epilog -> {Red, Disk[{0, 0}, 0.2]}]",
+      );
+      let order: Vec<&str> = svg
+        .match_indices("fill=\"rgb(")
+        .map(|(i, _)| &svg[i + 10..i + 17])
+        .collect();
+      assert_eq!(
+        order,
+        vec!["0,0,255", "255,0,0"],
+        "the prolog is drawn first and the epilog last: {svg}"
+      );
+      // A far-away epilog point does not widen the range the circle set.
+      let circle = |svg: &str| -> String {
+        svg
+          .split_once("<ellipse")
+          .and_then(|(_, r)| r.split_once("/>"))
+          .expect("the circle")
+          .0
+          .to_string()
+      };
+      assert_eq!(
+        circle(&export_svg("Graphics[{Circle[]}]")),
+        circle(&export_svg(
+          "Graphics[{Circle[]}, Epilog -> Point[{100, 100}]]"
+        )),
+        "an epilog must not take part in the plot range"
+      );
+    }
+
+    /// `Inset[Graphics3D[…], pos]` embeds a whole three-dimensional
+    /// picture in a flat one, at its own size — a Demonstration puts a
+    /// little schematic of its apparatus in the corner that way. It used
+    /// to fall through to the text path and print `-Graphics3D-`.
+    #[test]
+    fn a_three_dimensional_inset_is_embedded_whole() {
+      let svg = export_svg(
+        "Graphics[{Circle[]}, Epilog -> Inset[Graphics3D[{Cuboid[]}, \
+         Boxed -> False, ImageSize -> {40, 60}], Scaled[{0.75, 0.25}]]]",
+      );
+      assert!(
+        !svg.contains("-Graphics3D-"),
+        "the inset must be drawn, not named: {svg}"
+      );
+      let nested = svg
+        .split("<svg ")
+        .nth(2)
+        .and_then(|s| s.split_once('>'))
+        .expect("a nested picture")
+        .0
+        .to_string();
+      assert!(
+        nested.contains("width=\"40.00\"")
+          && nested.contains("height=\"60.00\""),
+        "an inset keeps its own size: {nested}"
+      );
+      assert!(
+        nested.contains("x=\"250.00\"") && nested.contains("y=\"240.00\""),
+        "and sits at the scaled anchor: {nested}"
+      );
+    }
   }
 
   mod styles {
@@ -836,6 +935,63 @@ mod graphics {
         "Text[Style[\"Strahl\", 11, Italic, Blue], {10, 0.7}]",
         "}]"
       )));
+    }
+
+    /// `Subscript`/`Superscript` inside a `Text` typeset as scripts, the
+    /// same way a plot label does. They used to fall through to the
+    /// two-line OutputForm box, which put the base on one line and the
+    /// script on the next.
+    #[test]
+    fn text_typesets_subscripts_and_superscripts() {
+      let svg = export_svg(
+        "Graphics[{Text[Subscript[\"N\", \"D\"], {0, 0}], \
+         Text[Superscript[\"x\", 2], {1, 0}]}]",
+      );
+      assert!(svg.contains(">ND<"), "the subscripted label: {svg}");
+      assert!(svg.contains(">x\u{00B2}<"), "the exponent label: {svg}");
+      assert!(
+        !svg.contains("Subscript["),
+        "no label may print its own source: {svg}"
+      );
+    }
+
+    /// `Framed[…]` around a label draws a box: a border, and a panel when
+    /// the label asks for a `Background`. `FrameStyle -> None` keeps the
+    /// panel but drops the border.
+    #[test]
+    fn a_framed_label_draws_its_box() {
+      let svg = export_svg("Graphics[{Text[Framed[\"hi\"], {0, 0}]}]");
+      assert!(
+        !svg.contains("Framed["),
+        "the frame must be drawn, not printed: {svg}"
+      );
+      let rect = svg
+        .split("<rect ")
+        .nth(1)
+        .and_then(|r| r.split_once("/>"))
+        .expect("a frame rectangle")
+        .0
+        .to_string();
+      assert!(
+        rect.contains("fill=\"none\"")
+          && rect.contains("stroke=\"rgb(0,0,0)\""),
+        "an unadorned frame is a bare border: {rect}"
+      );
+      let svg = export_svg(
+        "Graphics[{Text[Framed[\"hi\", Background -> Yellow, \
+         FrameStyle -> None], {0, 0}]}]",
+      );
+      let rect = svg
+        .split("<rect ")
+        .nth(1)
+        .and_then(|r| r.split_once("/>"))
+        .expect("a frame rectangle")
+        .0
+        .to_string();
+      assert!(
+        rect.contains("fill=\"rgb(255,255,0)\"") && !rect.contains("stroke="),
+        "FrameStyle -> None leaves only the panel: {rect}"
+      );
     }
   }
 
@@ -2090,6 +2246,64 @@ mod plot3d {
       ));
     }
 
+    /// `Text[expr, {x, y, z}]` labels a point of a 3D scene, drawn flat at
+    /// the projection of its point. It used to be dropped entirely, so a
+    /// labelled schematic arrived with no lettering at all.
+    #[test]
+    fn text_labels_a_point_of_the_scene() {
+      let svg = export_svg(
+        "Graphics3D[{Cylinder[{{0, 0, 0}, {0, 0, 1}}, 0.5], \
+         Text[Style[Subscript[Style[\"N\", Italic], \"B\"], 18], \
+         {0, 0, 1.4}]}, Boxed -> False, ViewPoint -> Front]",
+      );
+      let text = svg
+        .split("<text ")
+        .nth(1)
+        .and_then(|t| t.split_once("</text>"))
+        .expect("a text label")
+        .0
+        .to_string();
+      assert!(
+        text.contains("font-size=\"18.0\""),
+        "the Style font size applies: {text}"
+      );
+      assert!(
+        text.contains("<tspan font-style=\"italic\">N</tspan>"),
+        "the base is italic: {text}"
+      );
+      assert!(
+        text.contains("baseline-shift=\"sub\""),
+        "the script is set as a subscript: {text}"
+      );
+    }
+
+    /// A label's alignment offset moves the label's own box, not the point
+    /// it names: `{0, -1.5}` puts the text above its anchor.
+    #[test]
+    fn a_text_offset_moves_the_label_off_its_point() {
+      let text_y = |code: &str| -> f64 {
+        let svg = export_svg(code);
+        svg
+          .split("<text ")
+          .nth(1)
+          .and_then(|t| t.split_once("y=\""))
+          .and_then(|(_, r)| r.split_once('"'))
+          .and_then(|(v, _)| v.parse().ok())
+          .expect("a positioned label")
+      };
+      let centred = text_y(
+        "Graphics3D[{Sphere[], Text[\"A\", {0, 0, 1}]}, Boxed -> False]",
+      );
+      let above = text_y(
+        "Graphics3D[{Sphere[], Text[\"A\", {0, 0, 1}, {0, -1.5}]}, \
+         Boxed -> False]",
+      );
+      assert!(
+        above < centred,
+        "a negative vertical offset lifts the label: {above} vs {centred}"
+      );
+    }
+
     /// `BoxRatios -> {rx, ry, rz}` sets the shape of the bounding box
     /// independently of how far the data runs along each axis, so a scene
     /// a hundred units tall over a ten-unit base draws as a cube rather
@@ -2626,6 +2840,67 @@ mod plot3d {
       assert!(svg.contains(">peak</text>"), "missing Epilog text");
       assert!(svg.contains("<ellipse"), "missing Epilog disk");
       assert!(svg.contains("<polygon"), "missing Epilog arrowhead");
+    }
+
+    /// An Epilog label may be typeset (`Subscript`) and boxed
+    /// (`Framed[…, Background -> …]`) — a Demonstration marks each curve
+    /// that way. Both used to print as their own source over the plot.
+    #[test]
+    fn plot_epilog_framed_and_typeset_labels() {
+      let svg = export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, Epilog -> \
+         Text[Framed[Style[Subscript[\"N\", \"D\"], 20, Blue], \
+         Background -> White, FrameStyle -> None], {Pi, 0}]]",
+      );
+      assert!(
+        !svg.contains("Framed[") && !svg.contains("Subscript["),
+        "no label may print its own source: {svg}"
+      );
+      assert!(
+        svg.contains("baseline-shift=\"sub\""),
+        "the label typesets its subscript: {svg}"
+      );
+      assert!(
+        svg.contains("fill=\"rgb(255,255,255)\""),
+        "the frame's Background paints a panel: {svg}"
+      );
+    }
+
+    /// An Epilog may pin its overlay with `Scaled[{sx, sy}]` — a fraction
+    /// of the plot range — and may inset a whole other picture, which
+    /// keeps its own size. Neither used to draw anything.
+    #[test]
+    fn plot_epilog_scaled_anchors_and_insets() {
+      let svg = export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, ImageSize -> 400, Epilog -> \
+         {Text[\"corner\", Scaled[{0.5, 0.5}]], \
+          Inset[Graphics[{Disk[]}, ImageSize -> {30, 30}], \
+          Scaled[{0.25, 0.75}]]}]",
+      );
+      let label = svg
+        .split("<text ")
+        .find(|t| t.contains(">corner<"))
+        .expect("the scaled label");
+      let x: f64 = label
+        .split_once("x=\"")
+        .and_then(|(_, r)| r.split_once('"'))
+        .and_then(|(v, _)| v.parse().ok())
+        .expect("a positioned label");
+      let y: f64 = label
+        .split_once("y=\"")
+        .and_then(|(_, r)| r.split_once('"'))
+        .and_then(|(v, _)| v.parse().ok())
+        .expect("a positioned label");
+      // Half across and half up the plotting area, whose extent the
+      // surrounding margins make smaller than the whole image.
+      assert!(
+        x > 0.0 && y > 0.0,
+        "the scaled label lands inside the picture: {label}"
+      );
+      assert!(
+        svg.matches("<svg ").count() >= 2,
+        "the inset is embedded as its own picture: {svg}"
+      );
     }
 
     #[test]
@@ -14105,6 +14380,78 @@ mod manipulate {
       } => {
         assert_eq!(values.len(), 2);
         assert_eq!(*initial_index, 0); // True
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A control panel laid out as a `Grid` marks its stretched cells with
+  /// `SpanFromLeft` / `SpanFromAbove`. Once the grid is flattened into
+  /// control rows those markers name nothing, so they are dropped — they
+  /// used to be mistaken for extra display elements and rendered as a
+  /// literal `SpanFromLeft` under the widget, one per marker.
+  #[test]
+  fn spec_grid_span_markers_are_not_displays() {
+    let expr = interpret_to_expr(
+      "Manipulate[a + b, Grid[{{Control[{{a, 1}, 0, 10}], SpanFromLeft}, \
+       {Control[{{b, 2}, 0, 10}], SpanFromLeft, SpanFromLeft}}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a grid control panel");
+    let names: Vec<&str> = spec.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["a", "b"]);
+    assert!(
+      spec.displays.is_empty(),
+      "span markers are layout, not displays: {:?}",
+      spec.displays
+    );
+  }
+
+  /// The two halves of a `Grid` control panel meet here: its span markers
+  /// are dropped, and a Manipulate-level `ControlType -> {…}` assigns one
+  /// type per *control*. A marker must therefore not consume a slot of
+  /// that list, or every control after the first would be typed by its
+  /// neighbour's entry.
+  #[test]
+  fn spec_grid_span_markers_do_not_shift_global_control_types() {
+    let expr = interpret_to_expr(
+      "Manipulate[a + b, Grid[{{Control[{a, {1, 2, 3}}], SpanFromLeft}, \
+       {Control[{b, {4, 5, 6}}], SpanFromLeft}}], \
+       ControlType -> {Setter, PopupMenu}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a grid control panel");
+    let popups: Vec<(&str, bool)> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Discrete { name, popup, .. } => {
+          (name.as_str(), *popup)
+        }
+        other => panic!("expected a discrete control, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(popups, vec![("a", false), ("b", true)]);
+  }
+
+  /// A setter's choice labels are often *computed* — `Row[Flatten[{…,
+  /// Riffle[…], …}]]` builds the caption from a list of subscripted
+  /// symbols. The list is evaluated before the label is typeset, so the
+  /// button reads `ND and NU` instead of showing the source of the
+  /// computation.
+  #[test]
+  fn spec_computed_row_labels_are_evaluated() {
+    let expr = interpret_to_expr(
+      "Manipulate[k, {{k, 1}, {1 -> Row[Flatten[{\" \", \
+       Riffle[Subscript[Style[\"N\", Italic], #] & /@ {\"D\", \"U\"}, \
+       \" and \"], \" \"}]], 2 -> \"plain\"}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a setter spec");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels[0], " ND and NU ");
+        assert_eq!(value_labels[1], "plain");
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }

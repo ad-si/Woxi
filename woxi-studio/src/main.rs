@@ -6527,6 +6527,29 @@ mod tests {
     assert!(state.request_reeval(0), "flag must clear on an empty fire");
   }
 
+  /// A control panel written as a `Grid` — the Demonstrations layout for a
+  /// widget whose rows are not all one control wide — builds exactly the
+  /// control rows the grid names. Its `SpanFromLeft` cell markers used to
+  /// survive as display elements, so the widget grew a row of literal
+  /// `SpanFromLeft` text under the sliders.
+  #[test]
+  fn manipulate_grid_panel_has_no_span_marker_rows() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Plot[Sin[a x], {x, 0, b}], \
+       Grid[{{Control[{{a, 1, \"rate\"}, 1, 5}], SpanFromLeft}, \
+       {\"extent:\", Control[{{b, 6}, 1, 10}], SpanFromLeft}}]]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["a", "", "b"], "heading row binds no variable");
+    assert!(
+      state.displays.is_empty(),
+      "span markers are layout, not displays: {:?}",
+      state.displays
+    );
+  }
+
   #[test]
   fn manipulate_untracked_control_does_not_reeval() {
     // `TrackedSymbols :> {b}`: moving `a` changes its value but must not

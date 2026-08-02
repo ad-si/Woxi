@@ -2,6 +2,33 @@
 
 # Unreleased
 
+- Fixes driven by the "Selectivity in a Semibatch Reactor" Wolfram
+    Demonstration:
+    - `Text` inside a `Graphics3D` scene is drawn — a labelled 3D
+        schematic used to arrive with no lettering at all. It honours the
+        `Style` size and colour, typesets `Subscript`/`Superscript`, and
+        respects the alignment offset of `Text[expr, pos, offset]`.
+    - `Scaled[{sx, sy}]` places a `Text` or `Inset` by fraction of the
+        plot range, in `Graphics` and in a plot's `Epilog` alike. The
+        fractions used to be unreadable, dropping every such label onto
+        the origin.
+    - `Inset[Graphics3D[…], pos]` embeds a three-dimensional picture in a
+        flat one at its own size, instead of printing `-Graphics3D-`.
+    - `Framed[…]` around a label draws its box — a border, and a panel
+        when a `Background` is given — rather than printing its own
+        source over the picture. `FrameStyle -> None` keeps the panel and
+        drops the border.
+    - `Subscript`/`Superscript` in a `Text` label typeset as scripts
+        instead of falling through to the two-line `OutputForm` box.
+    - `Graphics` accepts `Prolog` and `Epilog`, drawn under and over its
+        content and taking no part in the plot range.
+    - A `Manipulate` control panel written as a `Grid` drops its
+        `SpanFromLeft` / `SpanFromAbove` cell markers; they used to
+        survive as display elements and appear as literal text under the
+        widget, one row per marker.
+    - A control label computed with `Row[Flatten[{…, Riffle[…], …}]]` is
+        evaluated before it is typeset, so the button shows the caption
+        rather than the source of the computation.
 - Fixes driven by the "Illustrative Performance Characteristics of Modern
     Motorcycles" Wolfram Demonstration:
     - `Piecewise` holds its pieces, so the value of a piece whose condition
