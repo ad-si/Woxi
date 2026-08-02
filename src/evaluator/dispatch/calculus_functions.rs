@@ -449,7 +449,7 @@ pub fn dispatch_calculus_functions(
         args,
       ));
     }
-    "Dt" if args.len() == 2 => {
+    "Dt" if args.len() >= 2 => {
       return Some(crate::functions::calculus_ast::dt_ast(args));
     }
     "Curl" if args.len() == 2 || args.len() == 3 => {

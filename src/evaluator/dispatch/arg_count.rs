@@ -414,7 +414,9 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Drop" => Some((1, 3)),
     "DSolve" => Some((3, 3)),
     "DSolveValue" => Some((3, 3)),
-    "Dt" => Some((1, 2)),
+    // Dt[f], Dt[f, x], Dt[f, {x, n}] and the multiple total derivative
+    // Dt[f, x1, x2, …] — any number of differentiation specs is allowed.
+    "Dt" => Some((1, usize::MAX)),
     "DuplicateFreeQ" => Some((1, 2)),
     "Echo" => Some((1, 3)),
     "EdgeDetect" => Some((1, 3)),

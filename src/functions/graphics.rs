@@ -2375,14 +2375,26 @@ fn graphics_text_content(expr: &Expr) -> String {
     {
       graphics_text_content(&args[0])
     }
-    // `TraditionalForm[expr]` / `StandardForm[expr]` ask for `expr` to be
-    // set in that form; inside a picture everything is typeset already, so
-    // the wrapper contributes no text of its own. Without this the box
-    // markup it serializes to leaked into the picture as literal source.
+    // `TraditionalForm[expr]` typesets `expr`, so the text it contributes
+    // is the flattened traditional-notation box tree — the same thing
+    // `expr_to_svg_markup` draws — rather than `expr`'s InputForm. Keeping
+    // the two in step is what makes the measured width match the drawing.
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      box_expr_to_plain(
+        &crate::evaluator::dispatch::complex_and_special::
+          expr_to_box_form_traditional(&args[0]),
+      )
+    }
+    // `StandardForm[expr]` / `OutputForm[expr]` ask for `expr` to be set in
+    // that form; inside a picture everything is typeset already, so the
+    // wrapper contributes no text of its own. Without this the box markup
+    // it serializes to leaked into the picture as literal source.
     Expr::FunctionCall { name, args }
       if matches!(
         name.as_str(),
-        "TraditionalForm" | "StandardForm" | "OutputForm" | "DisplayForm"
+        "StandardForm" | "OutputForm" | "DisplayForm"
       ) && args.len() == 1 =>
     {
       graphics_text_content(&args[0])
@@ -6516,8 +6528,10 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
   let ch = font_size * MONO_ADVANCE;
 
   match expr {
-    Expr::String(s) => BoxLayout::text(s, font_size),
-    Expr::Identifier(s) => BoxLayout::text(s, font_size),
+    Expr::String(s) => BoxLayout::text(strip_precision_marker(s), font_size),
+    Expr::Identifier(s) => {
+      BoxLayout::text(strip_precision_marker(s), font_size)
+    }
     Expr::Integer(n) => {
       BoxLayout::text(&group_digits_str(&n.to_string()), font_size)
     }
@@ -7911,10 +7925,17 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // hover in the Wolfram FrontEnd, which static SVG can't do)
         "Tooltip" if !args.is_empty() => expr_to_svg_markup(&args[0]),
 
+        // `TraditionalForm[expr]` asks for conventional mathematical
+        // notation, so typeset the expression instead of printing its
+        // InputForm: `Sum[…, {n, 0, ∞}]` becomes a ∑ with limits and
+        // `LegendreP[n, x]` becomes `Pₙ(x)`.
+        "TraditionalForm" if args.len() == 1 => boxes_to_svg(
+          &crate::evaluator::dispatch::complex_and_special::
+            expr_to_box_form_traditional(&args[0]),
+        ),
+
         // Presentation wrappers display their content only.
-        "Text" | "TraditionalForm" | "DisplayForm" | "StandardForm"
-          if args.len() == 1 =>
-        {
+        "Text" | "DisplayForm" | "StandardForm" if args.len() == 1 => {
           expr_to_svg_markup(&args[0])
         }
 
@@ -8391,12 +8412,30 @@ fn is_typeset_box_head(name: &str) -> bool {
   )
 }
 
+/// A box atom holding a machine-precision real carries the `` ` `` precision
+/// marker — `ToBoxes[1.5]` is the box string ``"1.5`"``. The marker is
+/// notation, not a glyph: the FrontEnd never draws it, so strip it before
+/// the number reaches a picture.
+fn strip_precision_marker(s: &str) -> &str {
+  match s.strip_suffix('`') {
+    Some(head)
+      if !head.is_empty()
+        && head
+          .chars()
+          .all(|c| c.is_ascii_digit() || c == '.' || c == '-') =>
+    {
+      head
+    }
+    _ => s,
+  }
+}
+
 pub fn boxes_to_svg(expr: &Expr) -> String {
   match expr {
     // Atoms: in box form, atoms are always Expr::String
-    Expr::String(s) => svg_escape(s),
+    Expr::String(s) => svg_escape(strip_precision_marker(s)),
     // Identifiers can appear for fallback cases
-    Expr::Identifier(s) => svg_escape(s),
+    Expr::Identifier(s) => svg_escape(strip_precision_marker(s)),
     Expr::Integer(n) => group_digits_svg(&n.to_string()),
     Expr::BigInteger(n) => group_digits_svg(&n.to_string()),
 
@@ -8878,7 +8917,9 @@ pub fn box_string_to_svg(s: &str) -> String {
 /// estimation (sub/superscripts contribute their content length).
 fn box_expr_to_plain(e: &Expr) -> String {
   match e {
-    Expr::String(s) | Expr::Identifier(s) => s.clone(),
+    Expr::String(s) | Expr::Identifier(s) => {
+      strip_precision_marker(s).to_string()
+    }
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),
     Expr::List(items) => items.iter().map(box_expr_to_plain).collect(),
