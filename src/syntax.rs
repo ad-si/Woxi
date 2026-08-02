@@ -366,6 +366,21 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "NotEqual" => Some("\u{2260}"),
     "LessEqual" => Some("\u{2264}"),
     "GreaterEqual" => Some("\u{2265}"),
+    // The slanted comparison family. `\[LessSlantEqual]` is the glyph a
+    // Demonstration writes its ≤ relation with; the negated pair lives in
+    // Wolfram's private use area, like the other negated operators.
+    "LessSlantEqual" => Some("\u{2A7D}"),
+    "GreaterSlantEqual" => Some("\u{2A7E}"),
+    "NotLessSlantEqual" => Some("\u{F424}"),
+    "NotGreaterSlantEqual" => Some("\u{F429}"),
+    "LessFullEqual" => Some("\u{2266}"),
+    "GreaterFullEqual" => Some("\u{2267}"),
+    "NotLessEqual" => Some("\u{2270}"),
+    "NotGreaterEqual" => Some("\u{2271}"),
+    "LessTilde" => Some("\u{2272}"),
+    "GreaterTilde" => Some("\u{2273}"),
+    "LessEqualGreater" => Some("\u{22DA}"),
+    "GreaterEqualLess" => Some("\u{22DB}"),
     "Proportional" => Some("\u{221D}"),
     "Congruent" => Some("\u{2261}"),
     "Tilde" => Some("\u{223C}"),

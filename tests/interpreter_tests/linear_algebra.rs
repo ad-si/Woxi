@@ -5957,6 +5957,36 @@ mod cases {
       r#"(1 + I)/Sqrt[2]"#,
     );
   }
+  /// A machine-real vector is scaled as `v/norm`, which is a multiply by
+  /// the reciprocal — dividing instead moves the last bit of every
+  /// component. A component that lands on a whole number stays a real.
+  #[test]
+  fn normalize_machine_reals_scale_by_the_reciprocal() {
+    assert_case(r#"Normalize[{3., 4.}]"#, r#"{0.6000000000000001, 0.8}"#);
+    assert_case(r#"Normalize[{4., -3.}]"#, r#"{0.8, -0.6000000000000001}"#);
+    assert_case(r#"Normalize[{3., 4.}/7]"#, r#"{0.6, 0.8}"#);
+    assert_case(
+      r#"Normalize[{0.1, 0.7, -0.3}]"#,
+      r#"{0.13018891098082386, 0.9113223768657669, -0.3905667329424716}"#,
+    );
+    // Not `{-1, 0}`: normalizing machine reals gives machine reals.
+    assert_case(r#"Normalize[{-2.5, 0.}]"#, r#"{-1., 0.}"#);
+  }
+
+  /// `Divide` of an inexact complex is one IEEE division per component,
+  /// not the reciprocal multiply the infix `/` performs.
+  #[test]
+  fn divide_of_an_inexact_complex_is_component_wise() {
+    assert_case(r#"Divide[3. + 4. I, 5.]"#, r#"0.6 + 0.8*I"#);
+    assert_case(r#"Divide[3. + 4. I, 5]"#, r#"0.6 + 0.8*I"#);
+    assert_case(r#"Divide[3 + 4 I, 5.]"#, r#"0.6 + 0.8*I"#);
+    assert_case(r#"Normalize[3. + 4. I]"#, r#"0.6 + 0.8*I"#);
+    // The infix form is `Times[a, Power[b, -1]]`, which rounds differently.
+    assert_case(r#"(3. + 4. I)/5."#, r#"0.6000000000000001 + 0.8*I"#);
+    // Exact operands stay exact.
+    assert_case(r#"Divide[3 + 4 I, 5]"#, r#"3/5 + (4*I)/5"#);
+  }
+
   #[test]
   fn projection_1() {
     assert_case(r#"Projection[{5, 6, 7}, {1, 0, 0}]"#, r#"{5, 0, 0}"#);

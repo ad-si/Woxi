@@ -3308,6 +3308,43 @@ mod plot3d {
       );
     }
 
+    /// A `Text` label written as a `Row` of styled parts — the `f(x)` a
+    /// Demonstration writes beside a point — takes the font directives its
+    /// parts agree on. It used to be drawn at the default size, noticeably
+    /// smaller than the single-`Style` labels around it.
+    #[test]
+    fn graphics_text_row_takes_the_font_its_parts_agree_on() {
+      let attr = |svg: &str, label: &str, name: &str| -> String {
+        svg
+          .lines()
+          .find(|l| l.ends_with(&format!(">{label}</text>")))
+          .unwrap_or_else(|| panic!("no {label} label in {svg}"))
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .unwrap_or("")
+          .to_string()
+      };
+      let svg = export_svg(
+        r#"Graphics[{Text[Row[{Style["f", Italic, 20], Style["(", 20],
+             Style["x", Italic, 20], Style[")", 20]}], {0.5, 0.5}],
+           Text[Row[{Style["a", 20], Style["b", 20]}], {0.2, 0.8}],
+           Text[Row[{"p", Style["q", 20]}], {0.8, 0.8}],
+           Text[Style["z", Italic, 20], {0.5, 0.2}]}]"#,
+      );
+      // Every part asks for 20 point, so the label is a 20-point label —
+      // the same size as the plain `Style` label beside it.
+      assert_eq!(attr(&svg, "f(x)", "font-size"), "20");
+      assert_eq!(attr(&svg, "z", "font-size"), "20");
+      // The parts disagree on slant (an italic letter, an upright bracket),
+      // so the label keeps its own upright setting.
+      assert_eq!(attr(&svg, "f(x)", "font-style"), "normal");
+      // Parts that agree on slant do carry it.
+      assert_eq!(attr(&svg, "ab", "font-size"), "20");
+      // A row with an unstyled part keeps the label's own size.
+      assert_eq!(attr(&svg, "pq", "font-size"), "14");
+    }
+
     /// Wolfram writes an `AxesLabel` at the end of its axis — the x label
     /// past the right edge, the y label above the top — and a `Style`
     /// around it carries its colour and slant into the label.

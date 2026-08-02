@@ -2875,9 +2875,14 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::List(result.into()));
       }
 
-      // Float path
+      // Float path. Wolfram scales the vector as `v/norm`, which is a
+      // multiply by the reciprocal — the last bit of each component follows
+      // from that order, so dividing instead moves it (`Normalize[{3., 4.}]`
+      // is `{0.6000000000000001, 0.8}`, not `{0.6, 0.8}`). A component that
+      // lands on a whole number stays a machine real.
+      let inv = 1.0 / norm;
       let result: Vec<Expr> =
-        vals.iter().map(|x| num_to_expr(x / norm)).collect();
+        vals.iter().map(|x| Expr::Real(x * inv)).collect();
       Ok(Expr::List(result.into()))
     }
     _ => {

@@ -1231,6 +1231,39 @@ mod string_replace {
     );
   }
 
+  /// The slanted comparison family. A Demonstration labels its relation
+  /// with `\[LessSlantEqual]`, which used to survive as the literal escape
+  /// text because the name was missing from the character table. The
+  /// negated pair lives in Wolfram's private use area.
+  #[test]
+  fn slanted_comparison_named_characters() {
+    for (name, code) in [
+      ("LessSlantEqual", 0x2A7D),
+      ("GreaterSlantEqual", 0x2A7E),
+      ("NotLessSlantEqual", 0xF424),
+      ("NotGreaterSlantEqual", 0xF429),
+      ("LessFullEqual", 0x2266),
+      ("GreaterFullEqual", 0x2267),
+      ("NotLessEqual", 0x2270),
+      ("NotGreaterEqual", 0x2271),
+      ("LessTilde", 0x2272),
+      ("GreaterTilde", 0x2273),
+      ("LessEqualGreater", 0x22DA),
+      ("GreaterEqualLess", 0x22DB),
+    ] {
+      assert_eq!(
+        interpret(&format!(r#"ToCharacterCode["\[{name}]"]"#)).unwrap(),
+        format!("{{{code}}}"),
+        "wrong code point for \\[{name}]"
+      );
+      assert_eq!(
+        interpret(&format!(r#""a \[{name}] b""#)).unwrap(),
+        format!("a {} b", char::from_u32(code).unwrap()),
+        "\\[{name}] did not decode in a string"
+      );
+    }
+  }
+
   #[test]
   fn named_pattern_rule_valued_rhs() {
     // The RHS of a `:>` rule may itself be a rule (w -> d); the named

@@ -2670,6 +2670,56 @@ fn inset_primitives(
   Some(placed)
 }
 
+/// Fold the font directives of a `Row[{Style[…], …}]` label into the
+/// label's own style, but only the ones every part agrees on. See the call
+/// site in [`parse_text`].
+fn apply_agreed_row_part_styles(content: &Expr, style: &mut StyleState) {
+  let Expr::FunctionCall { name, args } = content else {
+    return;
+  };
+  if name != "Row" || args.is_empty() {
+    return;
+  }
+  let Expr::List(items) = &args[0] else {
+    return;
+  };
+  if items.is_empty() {
+    return;
+  }
+  let mut parts = Vec::with_capacity(items.len());
+  for item in items {
+    let Expr::FunctionCall {
+      name: iname,
+      args: sargs,
+    } = item
+    else {
+      return; // an unstyled part keeps the label's own setting
+    };
+    if !is_style_wrapper(iname) || sargs.is_empty() {
+      return;
+    }
+    let mut st = style.clone();
+    for d in style_directives_in_application_order(&sargs[1..]) {
+      apply_directive(d, &mut st);
+      apply_text_style_directive(d, &mut st);
+    }
+    parts.push(st);
+  }
+  let first = &parts[0];
+  if parts.iter().all(|p| p.font_size == first.font_size) {
+    style.font_size = first.font_size;
+  }
+  if parts.iter().all(|p| p.font_weight == first.font_weight) {
+    style.font_weight = first.font_weight.clone();
+  }
+  if parts.iter().all(|p| p.font_style == first.font_style) {
+    style.font_style = first.font_style.clone();
+  }
+  if parts.iter().all(|p| p.color == first.color) {
+    style.color = first.color;
+  }
+}
+
 fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // Text[str, {x, y}] or Text[Style[str, ...], {x, y}]
   let mut local_style = style.clone();
@@ -2699,6 +2749,14 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     }
     other => other,
   };
+  // A label written as a `Row` of styled parts — the `f(x)` a
+  // Demonstration writes beside a point — carries its font directives on
+  // the parts rather than on the label itself. The label is drawn as one
+  // run, so take the directives every part agrees on: a row whose parts
+  // all ask for 20 point is a 20-point label, while parts that disagree
+  // (an italic letter next to an upright bracket) leave the label's own
+  // setting alone.
+  apply_agreed_row_part_styles(content, &mut local_style);
   let text = graphics_text_content(content);
 
   let (x, y, scaled) = if args.len() >= 2 {
