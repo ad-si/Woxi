@@ -856,8 +856,10 @@ fn evaluate_function_call_ast_inner(
           for (bind_name, bind_val) in &structural_bindings {
             all_bindings.push((bind_name.as_str(), bind_val));
           }
-          let substituted_cond =
-            crate::syntax::substitute_variables(cond_expr, &all_bindings);
+          let substituted_cond = crate::syntax::substitute_pattern_bindings(
+            cond_expr,
+            &all_bindings,
+          );
           match evaluate_expr_to_expr(&substituted_cond) {
             Ok(Expr::Identifier(ref s)) if s == "True" => {}
             _ => {
@@ -880,7 +882,7 @@ fn evaluate_function_call_ast_inner(
           for (bind_name, bind_val) in &structural_bindings {
             all_bindings.push((bind_name.as_str(), bind_val));
           }
-          crate::syntax::substitute_variables(body_expr, &all_bindings)
+          crate::syntax::substitute_pattern_bindings(body_expr, &all_bindings)
         };
         // Push option context if this overload uses OptionsPattern
         let inline_opts = inline_opts_overloads
@@ -1137,8 +1139,10 @@ fn evaluate_function_call_ast_inner(
           for (bind_name, bind_val) in &structural_bindings {
             all_bindings.push((bind_name.as_str(), bind_val));
           }
-          let substituted_cond =
-            crate::syntax::substitute_variables(cond_expr, &all_bindings);
+          let substituted_cond = crate::syntax::substitute_pattern_bindings(
+            cond_expr,
+            &all_bindings,
+          );
           // Evaluate the condition - it must return True. A `?test` whose
           // test is a pure function can be stored as a FunctionCall whose
           // head is the function's *string form* (e.g. `#1 > 0 & [arg]`),
@@ -1180,7 +1184,7 @@ fn evaluate_function_call_ast_inner(
           for (bind_name, bind_val) in &structural_bindings {
             all_bindings.push((bind_name.as_str(), bind_val));
           }
-          crate::syntax::substitute_variables(body_expr, &all_bindings)
+          crate::syntax::substitute_pattern_bindings(body_expr, &all_bindings)
         };
         // Push option context if this overload uses OptionsPattern
         let inline_opts2 = inline_opts_overloads

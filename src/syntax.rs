@@ -12795,7 +12795,7 @@ fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
 /// substitution: before substituting `value` into a body that binds a
 /// parameter P, we need to know whether P appears as a name somewhere in
 /// `value` — if so, the binding must first be alpha-renamed.
-fn collect_identifier_names(
+pub fn collect_identifier_names(
   expr: &Expr,
   out: &mut std::collections::HashSet<String>,
 ) {
@@ -13288,6 +13288,106 @@ fn rename_pattern_parts(
 /// variables in a single pass so that substituted values cannot be
 /// accidentally captured by later substitutions.
 pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
+  substitute_variables_impl(expr, bindings, false)
+}
+
+/// Substitute pattern-matched bindings into a *template*: the right-hand side
+/// of a `:=` definition or of a `:>` rule.
+///
+/// Same as [`substitute_variables`], except that a `Function` parameter which
+/// is itself one of the bound names counts as a template slot rather than as a
+/// binder. `g[f_, s_] := Function[s, f]` called as `g[expr, s]` therefore
+/// yields `Function[s, expr]`, so the `s` inside `expr` really is the pure
+/// function's argument. Parameters that are *not* bound still shadow, and are
+/// still alpha-renamed when an incoming value would otherwise be captured.
+pub fn substitute_pattern_bindings(
+  expr: &Expr,
+  bindings: &[(&str, &Expr)],
+) -> Expr {
+  substitute_variables_impl(expr, bindings, true)
+}
+
+/// Work out a pure function's parameter list while substituting into it.
+///
+/// Returns the parameter names to use, the bindings that still reach the body,
+/// and the body with any capture-avoiding renames already applied. `None` means
+/// nothing reaches the body, so the function is left exactly as it was.
+///
+/// Two rules decide each parameter's fate:
+///   * In template mode a parameter that is itself a bound name is a slot the
+///     caller filled in, so it becomes that binding's symbol and its binding
+///     keeps reaching the body.
+///   * A parameter that stays a binder shadows its own binding, and is renamed
+///     to `name$` when an incoming value mentions it — Wolfram's alpha-renaming,
+///     e.g. `Function[{x}, Function[{y}, f[x, y]]][y]` ⇒ `Function[{y$}, f[y, y$]]`.
+fn resolve_function_params<'a>(
+  params: &[String],
+  body: &Expr,
+  bindings: &[(&'a str, &'a Expr)],
+  template: bool,
+) -> Option<(Vec<String>, Vec<(&'a str, &'a Expr)>, Expr)> {
+  if bindings.is_empty() {
+    return None;
+  }
+  // Parameter names the caller supplied (template mode only). A non-symbol
+  // value can't name a parameter, so such a parameter keeps binding.
+  let supplied: Vec<Option<String>> = params
+    .iter()
+    .map(|p| {
+      if !template {
+        return None;
+      }
+      bindings
+        .iter()
+        .find(|(var_name, _)| var_name == p)
+        .and_then(|(_, value)| match value {
+          Expr::Identifier(n) => Some(n.clone()),
+          _ => None,
+        })
+    })
+    .collect();
+  let filtered: Vec<(&'a str, &'a Expr)> = bindings
+    .iter()
+    .filter(|&&(var_name, _)| {
+      !params
+        .iter()
+        .zip(&supplied)
+        .any(|(p, s)| s.is_none() && p == var_name)
+    })
+    .copied()
+    .collect();
+  if filtered.is_empty() {
+    return None;
+  }
+  let mut value_names = std::collections::HashSet::new();
+  for (_, value) in &filtered {
+    collect_identifier_names(value, &mut value_names);
+  }
+  let mut new_params = Vec::with_capacity(params.len());
+  let mut new_body = body.clone();
+  for (param, supplied_name) in params.iter().zip(&supplied) {
+    match supplied_name {
+      Some(name) => new_params.push(name.clone()),
+      None if value_names.contains(param) => {
+        let fresh = format!("{}$", param);
+        new_body = substitute_variable(
+          &new_body,
+          param,
+          &Expr::Identifier(fresh.clone()),
+        );
+        new_params.push(fresh);
+      }
+      None => new_params.push(param.clone()),
+    }
+  }
+  Some((new_params, filtered, new_body))
+}
+
+fn substitute_variables_impl(
+  expr: &Expr,
+  bindings: &[(&str, &Expr)],
+  template: bool,
+) -> Expr {
   if bindings.is_empty() {
     return expr.clone();
   }
@@ -13303,7 +13403,7 @@ pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
     Expr::List(items) => Expr::List(
       items
         .iter()
-        .map(|e| substitute_variables(e, bindings))
+        .map(|e| substitute_variables_impl(e, bindings, template))
         .collect(),
     ),
     Expr::FunctionCall { name, args } => {
@@ -13331,35 +13431,13 @@ pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
           _ => None,
         };
         if let Some(params) = param_names {
-          // Drop shadowed bindings.
-          let filtered: Vec<(&str, &Expr)> = bindings
-            .iter()
-            .filter(|&&(var_name, _)| !params.contains(&var_name.to_string()))
-            .copied()
-            .collect();
-          if filtered.is_empty() {
+          let Some((new_params, filtered, new_body)) =
+            resolve_function_params(&params, body_arg, bindings, template)
+          else {
             return expr.clone();
-          }
-          let mut value_names = std::collections::HashSet::new();
-          for (_, value) in &filtered {
-            collect_identifier_names(value, &mut value_names);
-          }
-          let mut new_params = Vec::with_capacity(params.len());
-          let mut new_body = body_arg.clone();
-          for p in &params {
-            if value_names.contains(p) {
-              let fresh = format!("{}$", p);
-              new_body = substitute_variable(
-                &new_body,
-                p,
-                &Expr::Identifier(fresh.clone()),
-              );
-              new_params.push(fresh);
-            } else {
-              new_params.push(p.clone());
-            }
-          }
-          let substituted_body = substitute_variables(&new_body, &filtered);
+          };
+          let substituted_body =
+            substitute_variables_impl(&new_body, &filtered, template);
           let new_params_arg = if matches!(params_arg, Expr::List(_)) {
             Expr::List(new_params.into_iter().map(Expr::Identifier).collect())
           } else {
@@ -13374,7 +13452,7 @@ pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
       }
       let new_args: Vec<Expr> = args
         .iter()
-        .map(|e| substitute_variables(e, bindings))
+        .map(|e| substitute_variables_impl(e, bindings, template))
         .collect();
       // Check if the function name itself is being substituted
       for &(var_name, value) in bindings {
@@ -13392,12 +13470,12 @@ pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
     }
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
       op: *op,
-      left: Box::new(substitute_variables(left, bindings)),
-      right: Box::new(substitute_variables(right, bindings)),
+      left: Box::new(substitute_variables_impl(left, bindings, template)),
+      right: Box::new(substitute_variables_impl(right, bindings, template)),
     },
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
-      operand: Box::new(substitute_variables(operand, bindings)),
+      operand: Box::new(substitute_variables_impl(operand, bindings, template)),
     },
     Expr::Comparison {
       operands,
@@ -13405,14 +13483,14 @@ pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
     } => Expr::Comparison {
       operands: operands
         .iter()
-        .map(|e| substitute_variables(e, bindings))
+        .map(|e| substitute_variables_impl(e, bindings, template))
         .collect(),
       operators: operators.clone(),
     },
     Expr::CompoundExpr(exprs) => Expr::CompoundExpr(
       exprs
         .iter()
-        .map(|e| substitute_variables(e, bindings))
+        .map(|e| substitute_variables_impl(e, bindings, template))
         .collect(),
     ),
     Expr::Association(items) => Expr::Association(
@@ -13420,8 +13498,8 @@ pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
         .iter()
         .map(|(k, v)| {
           (
-            substitute_variables(k, bindings),
-            substitute_variables(v, bindings),
+            substitute_variables_impl(k, bindings, template),
+            substitute_variables_impl(v, bindings, template),
           )
         })
         .collect(),
@@ -13430,97 +13508,73 @@ pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
       pattern,
       replacement,
     } => Expr::Rule {
-      pattern: Box::new(substitute_variables(pattern, bindings)),
-      replacement: Box::new(substitute_variables(replacement, bindings)),
+      pattern: Box::new(substitute_variables_impl(pattern, bindings, template)),
+      replacement: Box::new(substitute_variables_impl(
+        replacement,
+        bindings,
+        template,
+      )),
     },
     Expr::RuleDelayed {
       pattern,
       replacement,
     } => Expr::RuleDelayed {
-      pattern: Box::new(substitute_variables(pattern, bindings)),
-      replacement: Box::new(substitute_variables(replacement, bindings)),
+      pattern: Box::new(substitute_variables_impl(pattern, bindings, template)),
+      replacement: Box::new(substitute_variables_impl(
+        replacement,
+        bindings,
+        template,
+      )),
     },
     Expr::ReplaceAll { expr: e, rules } => Expr::ReplaceAll {
-      expr: Box::new(substitute_variables(e, bindings)),
-      rules: Box::new(substitute_variables(rules, bindings)),
+      expr: Box::new(substitute_variables_impl(e, bindings, template)),
+      rules: Box::new(substitute_variables_impl(rules, bindings, template)),
     },
     Expr::ReplaceRepeated { expr: e, rules } => Expr::ReplaceRepeated {
-      expr: Box::new(substitute_variables(e, bindings)),
-      rules: Box::new(substitute_variables(rules, bindings)),
+      expr: Box::new(substitute_variables_impl(e, bindings, template)),
+      rules: Box::new(substitute_variables_impl(rules, bindings, template)),
     },
     Expr::Map { func, list } => Expr::Map {
-      func: Box::new(substitute_variables(func, bindings)),
-      list: Box::new(substitute_variables(list, bindings)),
+      func: Box::new(substitute_variables_impl(func, bindings, template)),
+      list: Box::new(substitute_variables_impl(list, bindings, template)),
     },
     Expr::Apply { func, list } => Expr::Apply {
-      func: Box::new(substitute_variables(func, bindings)),
-      list: Box::new(substitute_variables(list, bindings)),
+      func: Box::new(substitute_variables_impl(func, bindings, template)),
+      list: Box::new(substitute_variables_impl(list, bindings, template)),
     },
     Expr::MapApply { func, list } => Expr::MapApply {
-      func: Box::new(substitute_variables(func, bindings)),
-      list: Box::new(substitute_variables(list, bindings)),
+      func: Box::new(substitute_variables_impl(func, bindings, template)),
+      list: Box::new(substitute_variables_impl(list, bindings, template)),
     },
     Expr::PrefixApply { func, arg } => Expr::PrefixApply {
-      func: Box::new(substitute_variables(func, bindings)),
-      arg: Box::new(substitute_variables(arg, bindings)),
+      func: Box::new(substitute_variables_impl(func, bindings, template)),
+      arg: Box::new(substitute_variables_impl(arg, bindings, template)),
     },
     Expr::Postfix { expr: e, func } => Expr::Postfix {
-      expr: Box::new(substitute_variables(e, bindings)),
-      func: Box::new(substitute_variables(func, bindings)),
+      expr: Box::new(substitute_variables_impl(e, bindings, template)),
+      func: Box::new(substitute_variables_impl(func, bindings, template)),
     },
     Expr::Part { expr: e, index } => Expr::Part {
-      expr: Box::new(substitute_variables(e, bindings)),
-      index: Box::new(substitute_variables(index, bindings)),
+      expr: Box::new(substitute_variables_impl(e, bindings, template)),
+      index: Box::new(substitute_variables_impl(index, bindings, template)),
     },
     Expr::Function { body } => Expr::Function {
-      body: Box::new(substitute_variables(body, bindings)),
+      body: Box::new(substitute_variables_impl(body, bindings, template)),
     },
     Expr::NamedFunction {
       params,
       body,
       bracketed,
-    } => {
-      // Filter out bindings that are shadowed by the function's own parameters
-      let filtered: Vec<(&str, &Expr)> = bindings
-        .iter()
-        .filter(|&&(var_name, _)| !params.contains(&var_name.to_string()))
-        .copied()
-        .collect();
-      if filtered.is_empty() {
-        expr.clone()
-      } else {
-        // Capture-avoiding substitution: if any of this Function's params
-        // appears as an identifier in one of the incoming binding values,
-        // rename the param to a fresh `name$` first so the new reference
-        // isn't captured. Matches Wolfram's alpha-renaming:
-        // `Function[{x}, Function[{y}, f[x,y]]][y]` ⇒
-        // `Function[{y$}, f[y, y$]]`.
-        let mut value_names = std::collections::HashSet::new();
-        for (_, value) in &filtered {
-          collect_identifier_names(value, &mut value_names);
-        }
-        let mut new_params = Vec::with_capacity(params.len());
-        let mut new_body = (**body).clone();
-        for param in params {
-          if value_names.contains(param) {
-            let fresh = format!("{}$", param);
-            new_body = substitute_variable(
-              &new_body,
-              param,
-              &Expr::Identifier(fresh.clone()),
-            );
-            new_params.push(fresh);
-          } else {
-            new_params.push(param.clone());
-          }
-        }
-        Expr::NamedFunction {
-          params: new_params,
-          body: Box::new(substitute_variables(&new_body, &filtered)),
-          bracketed: *bracketed,
-        }
-      }
-    }
+    } => match resolve_function_params(params, body, bindings, template) {
+      None => expr.clone(),
+      Some((new_params, filtered, new_body)) => Expr::NamedFunction {
+        params: new_params,
+        body: Box::new(substitute_variables_impl(
+          &new_body, &filtered, template,
+        )),
+        bracketed: *bracketed,
+      },
+    },
     Expr::PatternOptional {
       name,
       head,
@@ -13530,7 +13584,7 @@ pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
       head: head.clone(),
       default: default
         .as_ref()
-        .map(|d| Box::new(substitute_variables(d, bindings))),
+        .map(|d| Box::new(substitute_variables_impl(d, bindings, template))),
     },
     Expr::PatternTest {
       name,
@@ -13541,13 +13595,13 @@ pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
       name: name.clone(),
       head: head.clone(),
       blank_type: *blank_type,
-      test: Box::new(substitute_variables(test, bindings)),
+      test: Box::new(substitute_variables_impl(test, bindings, template)),
     },
     Expr::CurriedCall { func, args } => Expr::CurriedCall {
-      func: Box::new(substitute_variables(func, bindings)),
+      func: Box::new(substitute_variables_impl(func, bindings, template)),
       args: args
         .iter()
-        .map(|e| substitute_variables(e, bindings))
+        .map(|e| substitute_variables_impl(e, bindings, template))
         .collect(),
     },
     // Atoms that don't contain the variable

@@ -1026,6 +1026,40 @@ mod graphics {
       ));
     }
 
+    // `PlotRange -> All` shows every sampled value. The automatic range drops
+    // extreme values as outliers, which for a steep curve cut the top off and
+    // let it run out of the frame.
+    #[test]
+    fn plot_range_all_keeps_the_whole_curve() {
+      let tick_labels = |code: &str| -> Vec<f64> {
+        export_svg(code)
+          .split("<text ")
+          .skip(1)
+          .filter_map(|t| t.split_once('>'))
+          .filter_map(|(_, r)| r.split_once("</text>"))
+          .filter_map(|(v, _)| v.trim().parse::<f64>().ok())
+          .collect()
+      };
+      // E^10 is about 22026.
+      let all = tick_labels("Plot[E^x, {x, 0, 10}, PlotRange -> All]");
+      assert!(
+        all.iter().any(|&v| v >= 20000.0),
+        "PlotRange -> All must reach the curve's maximum, ticks: {all:?}"
+      );
+      let automatic = tick_labels("Plot[E^x, {x, 0, 10}]");
+      assert!(
+        !automatic.iter().any(|&v| v >= 20000.0),
+        "the automatic range still trims outliers, ticks: {automatic:?}"
+      );
+      // An explicit range still wins over All in the y slot.
+      let explicit =
+        tick_labels("Plot[E^x, {x, 0, 10}, PlotRange -> {{0, 10}, {0, 5}}]");
+      assert!(
+        !explicit.iter().any(|&v| v > 10.0),
+        "an explicit range is respected, ticks: {explicit:?}"
+      );
+    }
+
     #[test]
     fn plot_range_reversed_bounds_normalize() {
       // Wolfram normalizes a reversed range: `PlotRange -> {3, -3}` plots
@@ -2946,6 +2980,60 @@ mod plot3d {
       assert!(
         y_min >= -20.0,
         "y-axis min tick {y_min} is too extreme; singularity should be clipped"
+      );
+    }
+
+    // End-to-end shape of a Demonstration that checks a numerical Laplace
+    // inversion against the closed form: a helper builds `Function[s, F]` from
+    // its arguments and contracts the transform sampled at quadrature nodes
+    // against their weights, the result is frozen into a definition with `=`
+    // (so the body is one expression in `t`), and both curves are plotted on
+    // top of each other. Every step of that chain used to fail somewhere.
+    #[test]
+    fn numerical_laplace_inversion_overlays_closed_form() {
+      let svg = export_svg(
+        "invert[bigf_, s_, t_] := Module[{nodes, weights}, \
+           nodes = x /. NSolve[HypergeometricPFQ[{-6, 6}, {}, x], x]; \
+           weights = Map[-# ((11)/HypergeometricPFQ[{-5, 5}, {}, #])^2/6 &, \
+             nodes]; \
+           (weights . Function[s, bigf][1/nodes/t])/t]; \
+         approx[t_] = invert[1/Sqrt[1 + s^2], s, t]; \
+         Plot[{Chop[approx[t]], \
+               InverseLaplaceTransform[1/Sqrt[1 + s^2], s, t]}, \
+           {t, 1, 6}, PlotStyle -> {{Red, Thick}, {Blue, Dashed, Thick}}]",
+      );
+      // Both curves are drawn: the quadrature in red, the exact BesselJ in
+      // blue. A complex-valued quadrature (unmatched conjugate roots) or an
+      // inverse transform left unevaluated at a number drops one of them.
+      assert!(
+        svg.contains("#FF0000"),
+        "the numerical inversion must be drawn: {svg}"
+      );
+      assert!(
+        svg.contains("rgb(0,0,255)"),
+        "the closed form must be drawn: {svg}"
+      );
+    }
+
+    // The same quadrature, checked numerically rather than through a picture:
+    // a 6-node Salzer rule reproduces BesselJ[0, t] to a few digits, and the
+    // result is real — the conjugate pairs cancel exactly.
+    #[test]
+    fn numerical_laplace_inversion_matches_bessel() {
+      let value = interpret(
+        "invert[bigf_, s_, t_] := Module[{nodes, weights}, \
+           nodes = x /. NSolve[HypergeometricPFQ[{-6, 6}, {}, x], x]; \
+           weights = Map[-# ((11)/HypergeometricPFQ[{-5, 5}, {}, #])^2/6 &, \
+             nodes]; \
+           (weights . Function[s, bigf][1/nodes/t])/t]; \
+         Chop[invert[1/Sqrt[1 + s^2], s, 2.]]",
+      )
+      .unwrap();
+      let value: f64 = value.parse().expect("a real number, got {value}");
+      let exact: f64 = interpret("BesselJ[0, 2.]").unwrap().parse().unwrap();
+      assert!(
+        (value - exact).abs() < 1e-4,
+        "6-node Salzer rule gave {value}, BesselJ[0, 2.] is {exact}"
       );
     }
   }
