@@ -12034,6 +12034,90 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`time$$ = 25}, \"\\[Ellipsis]\"]"], 
     assert_ne!(render(5.0), published, "the time control must matter");
   }
 
+  /// End-to-end regression for a Demonstration that draws a vector field:
+  /// a grid of short arrows, each coloured by looking its value up in a
+  /// named gradient through `ColorData[scheme, "ColorFunction"]`, inside a
+  /// `Graphics` whose margins come from `ImagePadding`. All three used to
+  /// fail together — the colour lookup was unimplemented so every arrow
+  /// came out black, the padding was ignored, and the arrowheads were
+  /// shrunk to fit shafts barely longer than themselves.
+  #[test]
+  fn vector_field_manipulate_colours_its_arrows() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}, {x, -r, r, 2 r/n}, {y, -r, r, 2 r/n}]; Graphics[{Arrowheads[1./(2 n)], Map[{ColorData[scheme, \"ColorFunction\"][Norm[#[[2]]]/(Sqrt[2] r)], Arrow[{#[[1]], #[[1]] + s #[[2]]/Max[Norm[#[[2]]], 0.001]}]} &, pts, {2}]}, PlotRange -> All, Frame -> True, ImageSize -> {320, 300}, ImagePadding -> {{25, 25}, {25, 25}}]], {{scheme, \"RedBlueTones\", \"colors\"}, {\"RedBlueTones\", \"Rainbow\", \"SunsetColors\"}}, {{r, 3, \"domain size\"}, 1, 6}, {{n, 8, \"resolution\"}, 4, 12, 1}]"], "Input"]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let code = editors
+      .iter()
+      .map(|e| e.content.text())
+      .find(|t| t.starts_with("Manipulate["))
+      .expect("the Manipulate cell must load");
+    let widget = instantiate_stored_manipulate(&code, "")
+      .expect("the Manipulate must instantiate");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the field must draw");
+    // One discrete gradient chooser and two sliders.
+    assert_eq!(widget.controls.len(), 3, "{:?}", widget.controls);
+
+    let svg = woxi::interpret_with_stdout(&format!(
+      "scheme = \"RedBlueTones\"; r = 3; n = 8;\n{}",
+      widget.body
+    ))
+    .expect("the body must render")
+    .graphics
+    .expect("the body must produce a graphic");
+    // `ImagePadding -> {{25, 25}, {25, 25}}` puts the drawing area 25px in
+    // from the top left, leaving 320-50 by 300-50 for the frame.
+    assert!(
+      svg.contains("translate(25,25)"),
+      "the padding must place the drawing area: {svg:.400}"
+    );
+    // Each arrow is coloured from the gradient, so the fill colours are
+    // many and none of them is the default black.
+    let fills: std::collections::BTreeSet<&str> = svg
+      .split("<polygon")
+      .skip(1)
+      .filter_map(|tag| tag.split_once("fill=\""))
+      .filter_map(|(_, rest)| rest.split('"').next())
+      .collect();
+    assert!(
+      fills.len() > 5,
+      "the gradient must colour the arrows, got {fills:?}"
+    );
+    assert!(
+      !fills.contains("rgb(0,0,0)"),
+      "no arrow falls back to black: {fills:?}"
+    );
+    // `Arrowheads[1./(2 n)]` asks for heads a sixteenth of the plot wide;
+    // they are drawn at that size even though each arrow is barely longer.
+    let head_len = svg
+      .split("<polygon points=\"")
+      .nth(1)
+      .and_then(|tag| tag.split('"').next())
+      .map(|points| {
+        let pts: Vec<(f64, f64)> = points
+          .split_whitespace()
+          .filter_map(|p| p.split_once(','))
+          .filter_map(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)))
+          .collect();
+        let (tip, a, b) = (pts[0], pts[1], pts[2]);
+        let mid = ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0);
+        ((tip.0 - mid.0).powi(2) + (tip.1 - mid.1).powi(2)).sqrt()
+      })
+      .expect("an arrowhead must be drawn");
+    // The drawing area is 320 less the 25px padding either side.
+    let expected = (320.0 - 50.0) / 16.0;
+    assert!(
+      (head_len - expected).abs() < 2.0,
+      "a 1/16 head spans {expected}px, got {head_len}"
+    );
+  }
+
   /// The SetterBar/PopupMenu split Wolfram's `Manipulate` makes on its own,
   /// pinned to the Demonstrations it was read off (see
   /// [`renders_as_setter_bar`]). The interesting pair is four phrases (a bar)

@@ -19069,6 +19069,48 @@ mod color_data_gradients {
     );
   }
 
+  /// `ColorData[name, "ColorFunction"]` is the same color function
+  /// `ColorData[name]` gives on its own — the property form a
+  /// Demonstration reaches for when it applies the result straight away.
+  #[test]
+  fn gradient_color_function_property() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorData[\"RedBlueTones\", \"ColorFunction\"]").unwrap(),
+      "ColorDataFunction[RedBlueTones, Gradients, {0, 1}, \
+       Blend[\"RedBlueTones\", #1] & ]"
+    );
+    // Applying it samples the gradient, exactly as ColorData[name] does.
+    assert_eq!(
+      interpret(
+        "ColorData[\"Rainbow\", \"ColorFunction\"][0.5] === \
+         ColorData[\"Rainbow\"][0.5]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // Every listed gradient answers the property, not just one.
+    assert_eq!(
+      interpret(
+        "AllTrue[ColorData[\"Gradients\"], \
+         Head[ColorData[#, \"ColorFunction\"]] === ColorDataFunction &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  /// `ColorData[name, "Range"]` is the parameter interval the gradient
+  /// covers: the built-in gradients all run over {0, 1}.
+  #[test]
+  fn gradient_range_property() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorData[\"Rainbow\", \"Range\"]").unwrap(),
+      "{0, 1}"
+    );
+  }
+
   #[test]
   fn show_passes_an_image_through() {
     clear_state();
@@ -19248,6 +19290,54 @@ mod arrowheads_render {
       (x - width / 2.0).abs() < width * 0.15,
       "the label belongs at the midpoint, got {x} of {width}"
     );
+  }
+
+  /// A named head size is a fraction of the plot width and nothing else,
+  /// even when that makes the head as long as the arrow carrying it. A
+  /// vector field (the Pólya-plot idiom: hundreds of short arrows under
+  /// `Arrowheads[1./(2 pp)]`) is drawn almost entirely out of heads, and
+  /// shrinking them to fit their shafts loses the field's direction cues.
+  #[test]
+  fn a_named_size_is_a_fraction_of_the_plot_width() {
+    clear_state();
+    // Two arrows an eighth of the plot wide, with heads asked to be a
+    // tenth of it — longer than 45% of the shaft they sit on.
+    let svg = export_svg(
+      "Graphics[{Arrowheads[0.1], Arrow[{{0, 0}, {1, 0}}], \
+       Arrow[{{0, 8}, {1, 8}}]}, PlotRange -> {{0, 8}, {0, 8}}, \
+       ImageSize -> 400]",
+    );
+    let head_len = |points: &str| -> f64 {
+      let pts: Vec<(f64, f64)> = points
+        .split_whitespace()
+        .filter_map(|p| p.split_once(','))
+        .filter_map(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)))
+        .collect();
+      // Tip first, then the two base corners: the head's length is the
+      // tip's distance from the midpoint of the base.
+      let (tip, a, b) = (pts[0], pts[1], pts[2]);
+      let mid = ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0);
+      ((tip.0 - mid.0).powi(2) + (tip.1 - mid.1).powi(2)).sqrt()
+    };
+    let lengths: Vec<f64> = svg
+      .split("<polygon points=\"")
+      .skip(1)
+      .filter_map(|tag| tag.split('"').next())
+      .map(head_len)
+      .collect();
+    assert_eq!(lengths.len(), 2, "one head per arrow: {svg:.600}");
+    let plot_width: f64 = svg
+      .split("width=\"")
+      .nth(1)
+      .and_then(|t| t.split('"').next())
+      .and_then(|n| n.parse().ok())
+      .expect("the SVG must carry a width");
+    for len in lengths {
+      assert!(
+        (len - plot_width * 0.1).abs() < plot_width * 0.02,
+        "a 0.1 head spans a tenth of the {plot_width}px plot, got {len}"
+      );
+    }
   }
 }
 
@@ -19615,6 +19705,49 @@ mod demonstration_plot_layout {
     assert!(
       header.contains("height=\"160\""),
       "the plot area follows the ratio: {header}"
+    );
+  }
+
+  /// `Graphics` honours `ImagePadding` too, not just the plot functions:
+  /// the padding replaces the gutters the frame and its tick labels would
+  /// otherwise claim, so the drawing area sits exactly where it says.
+  #[test]
+  fn image_padding_places_a_graphics_drawing_area() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics[{Line[{{0, 0}, {1, 1}}]}, Frame -> True, \
+       ImageSize -> {200, 200}, ImagePadding -> {{25, 25}, {25, 25}}]",
+    );
+    assert!(
+      svg.contains("translate(25,25)"),
+      "the drawing area starts at the named padding: {svg:.400}"
+    );
+    // 200 wide less 25 either side, and the same vertically.
+    assert!(
+      svg.contains("width=\"150.00\" height=\"150.00\""),
+      "the padding leaves a 150x150 frame: {svg:.600}"
+    );
+    // An uneven spec puts a different amount on each side.
+    let svg = export_svg(
+      "Graphics[{Line[{{0, 0}, {1, 1}}]}, Frame -> True, \
+       ImageSize -> {200, 200}, ImagePadding -> {{40, 10}, {30, 20}}]",
+    );
+    assert!(
+      svg.contains("translate(40,20)"),
+      "left padding offsets across, top padding down: {svg:.400}"
+    );
+    assert!(
+      svg.contains("width=\"150.00\" height=\"150.00\""),
+      "200 less 40+10 across and 30+20 down: {svg:.600}"
+    );
+    // A bare number pads all four sides alike.
+    let svg = export_svg(
+      "Graphics[{Line[{{0, 0}, {1, 1}}]}, Frame -> True, \
+       ImageSize -> {200, 200}, ImagePadding -> 30]",
+    );
+    assert!(
+      svg.contains("translate(30,30)"),
+      "a single padding applies to every side: {svg:.400}"
     );
   }
 
