@@ -7043,7 +7043,127 @@ fn aberth_complex_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
       break;
     }
   }
+  polish_and_pair_roots(coeffs, &mut zs);
   zs
+}
+
+/// Shared final step of the numeric polynomial root finders: Newton-polish
+/// every root, snap fp noise to exact zeros and turn near-conjugate pairs into
+/// exact mirrors of each other.
+///
+/// Both root finders (Durand-Kerner in `polynomial_ast::solve` and Aberth
+/// here) end with this so `NRoots`, `NSolve` and `N[Root[…]]` report the same
+/// digits for the same polynomial. Exact conjugate pairs matter beyond
+/// cosmetics: a quadrature that sums a conjugate-symmetric set of terms then
+/// cancels its imaginary part exactly instead of leaving a residue that
+/// `Chop` cannot remove.
+///
+/// `coeffs[i]` is the coefficient of `x^i`.
+pub fn polish_and_pair_roots(coeffs: &[f64], roots: &mut [(f64, f64)]) {
+  let n = coeffs.len().saturating_sub(1);
+  if n == 0 || coeffs[n].abs() < 1e-300 {
+    return;
+  }
+  // Monic form: divide by the leading coefficient so the residual |p(z)|
+  // compared across iterates is on a fixed scale.
+  let lc = coeffs[n];
+  let monic: Vec<f64> = coeffs.iter().map(|c| c / lc).collect();
+
+  // Horner with FMA — more accurate near a root, which lets the polish step
+  // tell the correctly-rounded f64 from its neighbour.
+  let eval_p = |zr: f64, zi: f64| -> (f64, f64) {
+    let mut re = monic[n];
+    let mut im = 0.0;
+    for k in (0..n).rev() {
+      let neg_im: f64 = -im;
+      let nr = re.mul_add(zr, neg_im.mul_add(zi, monic[k]));
+      let ni = re.mul_add(zi, im * zr);
+      re = nr;
+      im = ni;
+    }
+    (re, im)
+  };
+  let eval_dp = |zr: f64, zi: f64| -> (f64, f64) {
+    let mut re = (n as f64) * monic[n];
+    let mut im = 0.0;
+    for k in (1..n).rev() {
+      let nr = re * zr - im * zi + (k as f64) * monic[k];
+      let ni = re * zi + im * zr;
+      re = nr;
+      im = ni;
+    }
+    (re, im)
+  };
+
+  // Newton steps, keeping the iterate with the smallest |p(z)|: near the root
+  // Newton may oscillate between two adjacent f64 values (both equally good).
+  for slot in roots.iter_mut() {
+    let (mut zr, mut zi) = *slot;
+    let (mut best_zr, mut best_zi) = (zr, zi);
+    let (pr0, pi0) = eval_p(zr, zi);
+    let mut best_err = pr0.hypot(pi0);
+    for _ in 0..30 {
+      let (pr, pi) = eval_p(zr, zi);
+      let (dr, di) = eval_dp(zr, zi);
+      let denom = dr * dr + di * di;
+      if denom < 1e-300 {
+        break;
+      }
+      zr -= (pr * dr + pi * di) / denom;
+      zi -= (pi * dr - pr * di) / denom;
+      let (npr, npi) = eval_p(zr, zi);
+      let err = npr.hypot(npi);
+      if err < best_err {
+        best_err = err;
+        best_zr = zr;
+        best_zi = zi;
+      }
+      if err == 0.0 {
+        break;
+      }
+    }
+    *slot = (best_zr, best_zi);
+  }
+
+  // Snap to real / round trailing fp noise.
+  for (r, i) in roots.iter_mut() {
+    let mag = r.hypot(*i).max(1.0);
+    if i.abs() < 1e-12 * mag {
+      *i = 0.0;
+    }
+    if r.abs() < 1e-12 * mag {
+      *r = 0.0;
+    }
+  }
+
+  // Match conjugate pairs: two roots sharing a real part and carrying opposite
+  // imaginary parts (within tolerance) become exact mirrors. Each root joins at
+  // most one pair, and two real roots are never paired with each other — for
+  // real coefficients a genuine pair always has a non-zero imaginary part.
+  let snap_eps = 1e-9;
+  let mut paired = vec![false; roots.len()];
+  for k in 0..roots.len() {
+    if paired[k] || roots[k].1 == 0.0 {
+      continue;
+    }
+    for j in (k + 1)..roots.len() {
+      if paired[j] || roots[j].1 == 0.0 {
+        continue;
+      }
+      if (roots[k].0 - roots[j].0).abs() < snap_eps
+        && (roots[k].1 + roots[j].1).abs() < snap_eps
+      {
+        let avg = (roots[k].0 + roots[j].0) / 2.0;
+        let mag = (roots[k].1.abs() + roots[j].1.abs()) / 2.0;
+        let k_negative = roots[k].1 < 0.0;
+        roots[k] = (avg, if k_negative { -mag } else { mag });
+        roots[j] = (avg, if k_negative { mag } else { -mag });
+        paired[k] = true;
+        paired[j] = true;
+        break;
+      }
+    }
+  }
 }
 
 /// Horner-style polynomial evaluation at a complex point `z = zr + i*zi`.

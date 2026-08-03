@@ -254,7 +254,7 @@ AirportData,,🚫,,10.0,246
 GridLinesStyle,Option for specifying the style of grid lines in graphics,✅,none,6.0,247
 In,Returns a previous input expression,✅,pure,1.0,248
 Det,Computes the determinant of a matrix,✅,pure,1.0,251
-NSolve,Solves equations numerically (a x^n + c uses the same root finder as NRoots so conjugate pairs agree bit for bit),✅,pure,2.0,252
+NSolve,Solves equations numerically — a bare polynomial means poly == 0 and every root path ends in the same polish step as NRoots so conjugate pairs agree bit for bit,✅,pure,2.0,252
 Cross,Computes the generalized cross product of n-1 vectors of length n,✅,pure,3.0,253
 PDF,Probability density function,✅,pure,6.0,254
 TableForm,Formats data as a table,✅,pure,1.0,255
@@ -598,7 +598,7 @@ GraphData,,🚫,,6.0,580
 LightBlue,Named light color evaluating to RGBColor[0.87 0.94 1],✅,pure,6.0,581
 FileNameJoin,Join file path components,✅,pure,7.0,582
 ToFileName,Join directory path components into a file name string,✅,pure,1.0,
-InverseLaplaceTransform,Compute the inverse Laplace transform,✅,none,4.0,583
+InverseLaplaceTransform,Compute the inverse Laplace transform — the third argument may be an expression or a number naming the point it is taken at,✅,none,4.0,583
 InverseFunction,Represents the inverse of a function or geometric transform,✅,pure,2.0,584
 Residue,Computes the residue of an expression at a point,✅,pure,2.0,585
 PieChart,Creates a pie chart from data,✅,pure,7.0,586
