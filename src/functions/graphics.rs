@@ -16,6 +16,33 @@ const SMALL_DASH_PX: f64 = 4.0;
 /// numeric `Dashing[{0.05, …}]` is a fraction of the image width. The two
 /// are told apart by sign, as `symbolic_thickness` already does: a negative
 /// length is absolute pixels. Measured from wolframscript's SVG export.
+/// The radius in pixels of a point drawn at `point_size`: a fraction of the
+/// image width, or — stored negative — an absolute size in printer's points
+/// (`AbsolutePointSize[6]` is a 6-pixel dot at every image size, measured
+/// from wolframscript's own SVG export).
+fn point_radius(point_size: f64, svg_w: f64) -> f64 {
+  if point_size < 0.0 {
+    -point_size * 0.5
+  } else {
+    point_size * svg_w * 0.5
+  }
+}
+
+/// A named point size. `Small`/`Medium`/… name absolute sizes, like the
+/// named dash lengths do.
+fn symbolic_point_size(expr: &Expr) -> Option<f64> {
+  let Expr::Identifier(s) = expr else {
+    return None;
+  };
+  match s.as_str() {
+    "Tiny" => Some(-1.0),
+    "Small" => Some(-2.0),
+    "Medium" => Some(-4.5),
+    "Large" => Some(-7.0),
+    _ => None,
+  }
+}
+
 fn dash_size_to_f64(expr: &Expr) -> Option<f64> {
   if let Expr::Identifier(s) = expr {
     match s.as_str() {
@@ -1163,8 +1190,21 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         true
       }
       "PointSize" if args.len() == 1 => {
-        if let Some(s) = expr_to_f64(&args[0]) {
+        if let Some(s) = symbolic_point_size(&args[0]) {
           style.point_size = s;
+        } else if let Some(s) = expr_to_f64(&args[0]) {
+          style.point_size = s;
+        }
+        true
+      }
+      // `AbsolutePointSize[n]` is n printer's points across whatever the
+      // image size, where `PointSize` is a fraction of the width. Stored
+      // negative, as absolute thickness and dash lengths already are.
+      "AbsolutePointSize" if args.len() == 1 => {
+        if let Some(s) = symbolic_point_size(&args[0]) {
+          style.point_size = s;
+        } else if let Some(s) = expr_to_f64(&args[0]) {
+          style.point_size = -s;
         }
         true
       }
@@ -5113,7 +5153,7 @@ fn render_primitive(
     Primitive::PointSingle { x, y, style } => {
       let cx = coord_x(*x, bb, svg_w);
       let cy = coord_y(*y, bb, svg_h);
-      let r = style.point_size * svg_w * 0.5;
+      let r = point_radius(style.point_size, svg_w);
       let color = style.effective_color();
       if let Some(ref halo) = style.halo {
         out.push_str(&format!(
@@ -5130,7 +5170,7 @@ fn render_primitive(
       ));
     }
     Primitive::PointMulti { points, style } => {
-      let r = style.point_size * svg_w * 0.5;
+      let r = point_radius(style.point_size, svg_w);
       let color = style.effective_color();
       for &(x, y) in points {
         let cx = coord_x(x, bb, svg_w);
@@ -13078,6 +13118,7 @@ fn compute_grid_layout(
     .zip(col_w.iter())
     .map(|(x, w)| x + w)
     .fold(0.0_f64, f64::max);
+
   let v_gap = if !row_layouts.is_empty() {
     let avg_h = row_layouts.iter().map(|r| r.row_h).sum::<f64>()
       / row_layouts.len().max(1) as f64;
@@ -15870,6 +15911,15 @@ enum ParsedControl {
   /// passed live in the binding set so an interactive display element (a
   /// `Checkbox`, `Setter`, …) can write back into it.
   State { name: String, value: String },
+  /// A multiple-choice control (`ControlType -> CheckboxBar`/`TogglerBar`):
+  /// the variable binds the *list* of chosen values, and the bar is carried
+  /// as a display element — the same widget an in-body
+  /// `TogglerBar[Dynamic[v], …]` produces, which every frontend draws.
+  StateWithDisplay {
+    name: String,
+    value: String,
+    display: String,
+  },
   /// A custom control — `{{u, uinit, ulbl}, func}`, where `func` builds the
   /// widget. Both parts are needed: the widget row *and* a mutable binding
   /// for `u`, since the widget's action writes back into it.
@@ -16295,6 +16345,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           renames.push((orig_form.clone(), synth.clone()));
         }
         fixed.push((name, value));
+      }
+      ParsedControl::StateWithDisplay {
+        name,
+        value,
+        display,
+      } => {
+        if let Some((_, orig_form, synth)) = &rename {
+          renames.push((orig_form.clone(), synth.clone()));
+        }
+        state.push((name, value));
+        displays.push(display);
       }
       ParsedControl::State { name, value } => {
         if let Some((_, orig_form, synth)) = &rename {
@@ -17272,6 +17333,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
       // nothing to display on its own — fall back to the plain output path.
       ParsedControl::Fixed { .. }
       | ParsedControl::State { .. }
+      | ParsedControl::StateWithDisplay { .. }
       | ParsedControl::StateWithControl { .. } => return None,
     };
   // Display the bound variable so the control's effect is visible.
@@ -18173,6 +18235,32 @@ fn parse_manipulate_control(
         | "PopupMenu"
     )
   );
+
+  // A bar of checkboxes (or of togglers) picks *several* of its choices at
+  // once: the variable binds the list of them, so the widget is the
+  // multiple-choice bar rather than a one-of picker.
+  if matches!(control_type.as_deref(), Some("CheckboxBar" | "TogglerBar"))
+    && bounds.len() == 1
+    && let Some(choices) = match bounds[0] {
+      l @ Expr::List(_) => Some(l.clone()),
+      other => crate::evaluator::evaluate_expr_to_expr(other).ok(),
+    }
+    && matches!(choices, Expr::List(_))
+  {
+    let value = match &explicit_initial {
+      Some(init) => manipulate_value_to_input_form(init),
+      None => "{}".to_string(),
+    };
+    let display = format!(
+      "TogglerBar[Dynamic[{name}], {}]",
+      crate::syntax::expr_to_input_form(&choices)
+    );
+    return Some(ParsedControl::StateWithDisplay {
+      name,
+      value,
+      display,
+    });
+  }
   {
     let value_items: Option<Vec<Expr>> = if bounds.len() == 1 {
       match bounds[0] {

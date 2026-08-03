@@ -3727,6 +3727,83 @@ mod plot3d {
       );
     }
 
+    /// `AbsolutePointSize[n]` is n printer's points across whatever the
+    /// image size, where `PointSize[f]` is a fraction of the width. It used
+    /// to be ignored, so every such dot came out at the default size.
+    /// Sizes measured from wolframscript's own SVG export.
+    #[test]
+    fn absolute_point_size_is_measured_in_pixels() {
+      let radius = |code: &str| -> f64 {
+        let svg = export_svg(code);
+        svg
+          .split("r=\"")
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .and_then(|v| v.parse().ok())
+          .unwrap_or_else(|| panic!("no point in {svg}"))
+      };
+      let dot = |size: &str, image: u32| {
+        format!(
+          "Graphics[{{{size}, Point[{{0, 0}}]}}, PlotRange -> 1, \
+           ImageSize -> {image}]"
+        )
+      };
+      for (n, r) in [(3.0, 1.5), (6.0, 3.0), (12.0, 6.0)] {
+        assert_eq!(radius(&dot(&format!("AbsolutePointSize[{n}]"), 200)), r);
+      }
+      // Absolute means absolute: the same dot at twice the image size.
+      assert_eq!(radius(&dot("AbsolutePointSize[6]", 400)), 3.0);
+      // A fraction still follows the width.
+      assert_eq!(radius(&dot("PointSize[0.05]", 200)), 5.0);
+      assert_eq!(radius(&dot("PointSize[0.05]", 400)), 10.0);
+      // The named sizes are absolute too: 1, 2, 4.5 and 7 pixels across.
+      for (name, r) in [
+        ("Tiny", 0.5),
+        ("Small", 1.0),
+        ("Medium", 2.25),
+        ("Large", 3.5),
+      ] {
+        assert_eq!(
+          radius(&dot(&format!("PointSize[{name}]"), 200)),
+          r,
+          "PointSize[{name}]"
+        );
+      }
+    }
+
+    /// A `Grid` of pictures centres a narrow row in the widest one, which
+    /// is what Wolfram's default `Alignment` does — a small diagram stacked
+    /// over a wide plot sits over its middle, not against the left edge.
+    #[test]
+    fn a_grid_centres_a_narrow_row_of_graphics() {
+      let svg = export_svg(
+        "Grid[{{Graphics[{Disk[]}, ImageSize -> 60]}, \
+         {Graphics[{Rectangle[]}, ImageSize -> 200]}}]",
+      );
+      // Each cell is placed as a nested <svg x=… width=…>.
+      let cells: Vec<(f64, f64)> = svg
+        .split("<svg x=\"")
+        .skip(1)
+        .filter_map(|c| {
+          let x = c.split('"').next()?.parse().ok()?;
+          let w = c
+            .split("width=\"")
+            .nth(1)?
+            .split('"')
+            .next()?
+            .parse()
+            .ok()?;
+          Some((x, w))
+        })
+        .collect();
+      assert_eq!(cells.len(), 2, "one cell per row: {svg}");
+      let centre = |(x, w): (f64, f64)| x + w / 2.0;
+      assert!(
+        (centre(cells[0]) - centre(cells[1])).abs() < 1.0,
+        "the rows are not on the same centre line: {cells:?}"
+      );
+    }
+
     /// A `Text` label written as a `Row` of styled parts — the `f(x)` a
     /// Demonstration writes beside a point — takes the font directives its
     /// parts agree on. It used to be drawn at the default size, noticeably
@@ -15654,6 +15731,51 @@ mod manipulate {
         ("dd".to_string(), "{2, 3}".to_string()),
       ]
     );
+  }
+
+  /// `ControlType -> CheckboxBar` (and `TogglerBar`) picks several of its
+  /// choices at once: the variable binds the *list* of them, and the bar
+  /// itself is carried as a display element. Read as a one-of picker it
+  /// bound a single symbol, so a body testing `MemberQ[v, choice]` saw
+  /// nothing selected.
+  #[test]
+  fn spec_checkbox_bar_binds_the_list_of_choices() {
+    let expr = interpret_to_expr(
+      "Manipulate[picks, \
+       {{picks, {pcos, psin}, \"\"}, \
+        {psin -> \" draw sine\", pcos -> \" draw cosine\", \
+         ptan -> \" draw tangent\"}, ControlType -> CheckboxBar}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("checkbox bar");
+    assert_eq!(
+      spec.state,
+      vec![("picks".to_string(), "{pcos, psin}".to_string())],
+      "the variable binds the list it starts with"
+    );
+    assert!(
+      spec.controls.is_empty(),
+      "the bar is a display, not a one-of control row: {:?}",
+      spec.controls
+    );
+    assert_eq!(spec.displays.len(), 1);
+    assert!(
+      spec.displays[0].starts_with("TogglerBar[Dynamic[picks]"),
+      "{}",
+      spec.displays[0]
+    );
+    // The bar knows which choices are on, and each carries the write-back
+    // that adds or removes its value.
+    let bindings = manipulate_initial_bindings(&spec);
+    let json = woxi::with_scoped_globals(&bindings, || {
+      woxi::functions::graphics::render_manipulate_display(
+        &spec.displays[0],
+        &[],
+      )
+    });
+    assert_eq!(json.matches("\"selected\":true").count(), 2, "{json}");
+    assert_eq!(json.matches("\"selected\":false").count(), 1, "{json}");
+    assert!(json.contains("MemberQ[picks, psin]"), "{json}");
   }
 
   /// A bare `None` in the control-type slot after the bounds says the
