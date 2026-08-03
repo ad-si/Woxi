@@ -8754,14 +8754,22 @@ mod solve_modulus {
     );
   }
 
-  // Reduce still ignores Modulus for a multivariate *nonlinear* system, so
-  // rather than pass its rational answer off as a modular one, the call is
-  // refused.
+  // A system of equations — a `{eq, …}` list or an `eq && …` conjunction —
+  // is enumerated over the residues just like a single equation.
   #[test]
-  fn multivariate_nonlinear_stays_unevaluated() {
+  fn multivariate_nonlinear_system() {
     assert_eq!(
       interpret("Solve[{x^2 == 2, y == x}, {x, y}, Modulus -> 7]").unwrap(),
-      "Solve[{x^2 == 2, y == x}, {x, y}, Modulus -> 7]"
+      "{{x -> 3, y -> 3}, {x -> 4, y -> 4}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 == 2 && y == x, {x, y}, Modulus -> 7]").unwrap(),
+      "{{x -> 3, y -> 3}, {x -> 4, y -> 4}}"
+    );
+    // No residue pair satisfies both equations.
+    assert_eq!(
+      interpret("Solve[{x^2 == 3, y == x}, {x, y}, Modulus -> 7]").unwrap(),
+      "{}"
     );
   }
 }

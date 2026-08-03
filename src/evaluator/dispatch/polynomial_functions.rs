@@ -834,6 +834,51 @@ pub fn dispatch_polynomial_functions(
 }
 
 /// Closed-form solver for `Op[{f, cons}, {v1, v2}]` where:
+/// Flatten the first argument of a modular `Reduce` into the `(lhs, rhs)`
+/// pairs that all have to hold: a single `lhs == rhs`, a `{eq, …}` list, or an
+/// `eq && …` conjunction (nested in any combination). `None` for anything the
+/// residue enumeration cannot decide (an Or, an inequality, a bare symbol).
+fn modulus_equation_system(expr: &Expr) -> Option<Vec<(Expr, Expr)>> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
+      Some(vec![(args[0].clone(), args[1].clone())])
+    }
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && matches!(operators[0], ComparisonOp::Equal) =>
+    {
+      Some(vec![(operands[0].clone(), operands[1].clone())])
+    }
+    Expr::List(items) => {
+      let mut all = Vec::with_capacity(items.len());
+      for item in items.iter() {
+        all.extend(modulus_equation_system(item)?);
+      }
+      (!all.is_empty()).then_some(all)
+    }
+    Expr::FunctionCall { name, args } if name == "And" && !args.is_empty() => {
+      let mut all = Vec::with_capacity(args.len());
+      for arg in args.iter() {
+        all.extend(modulus_equation_system(arg)?);
+      }
+      Some(all)
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::And,
+      left,
+      right,
+    } => {
+      let mut all = modulus_equation_system(left)?;
+      all.extend(modulus_equation_system(right)?);
+      Some(all)
+    }
+    _ => None,
+  }
+}
+
 /// `Reduce[equation, vars, Modulus -> n]` — enumerate all integer
 /// solutions in `[0, n)^k`. The third argument must be a `Modulus -> n`
 /// Rule with a positive integer modulus; otherwise returns None and the
@@ -876,23 +921,10 @@ fn try_reduce_modulus(expr: &Expr, vars: &Expr, opt: &Expr) -> Option<Expr> {
     return None;
   }
 
-  // The equation must be `lhs == rhs` (Equal). Anything else (And, Or,
-  // inequality) is left for the generic reducer.
-  let (lhs, rhs) = match expr {
-    Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
-      (args[0].clone(), args[1].clone())
-    }
-    Expr::Comparison {
-      operands,
-      operators,
-    } if operands.len() == 2
-      && operators.len() == 1
-      && matches!(operators[0], ComparisonOp::Equal) =>
-    {
-      (operands[0].clone(), operands[1].clone())
-    }
-    _ => return None,
-  };
+  // A system is a `{eq1, eq2, …}` list or an `eq1 && eq2` conjunction; every
+  // equation has to hold at once. Anything else (Or, an inequality) is left
+  // for the generic reducer.
+  let equations = modulus_equation_system(expr)?;
 
   // Iterate over all assignments in [0, n)^k.
   let n = modulus as usize;
@@ -900,30 +932,35 @@ fn try_reduce_modulus(expr: &Expr, vars: &Expr, opt: &Expr) -> Option<Expr> {
   let mut indices = vec![0usize; k];
   let mut solutions: Vec<Vec<i128>> = Vec::new();
   loop {
-    // Substitute each variable with its current integer value.
-    let mut sub_lhs = lhs.clone();
-    let mut sub_rhs = rhs.clone();
-    for (i, name) in var_names.iter().enumerate() {
-      sub_lhs = crate::syntax::substitute_variable(
-        &sub_lhs,
-        name,
-        &Expr::Integer(indices[i] as i128),
-      );
-      sub_rhs = crate::syntax::substitute_variable(
-        &sub_rhs,
-        name,
-        &Expr::Integer(indices[i] as i128),
-      );
+    let mut all_hold = true;
+    for (lhs, rhs) in &equations {
+      // Substitute each variable with its current integer value.
+      let mut sub_lhs = lhs.clone();
+      let mut sub_rhs = rhs.clone();
+      for (i, name) in var_names.iter().enumerate() {
+        sub_lhs = crate::syntax::substitute_variable(
+          &sub_lhs,
+          name,
+          &Expr::Integer(indices[i] as i128),
+        );
+        sub_rhs = crate::syntax::substitute_variable(
+          &sub_rhs,
+          name,
+          &Expr::Integer(indices[i] as i128),
+        );
+      }
+      // Evaluate both sides; require integer results so we can take them mod n.
+      let l_eval = crate::evaluator::evaluate_expr_to_expr(&sub_lhs).ok()?;
+      let r_eval = crate::evaluator::evaluate_expr_to_expr(&sub_rhs).ok()?;
+      let (Expr::Integer(li), Expr::Integer(ri)) = (&l_eval, &r_eval) else {
+        return None;
+      };
+      if li.rem_euclid(modulus) != ri.rem_euclid(modulus) {
+        all_hold = false;
+        break;
+      }
     }
-    // Evaluate both sides; require integer results so we can take them mod n.
-    let l_eval = crate::evaluator::evaluate_expr_to_expr(&sub_lhs).ok()?;
-    let r_eval = crate::evaluator::evaluate_expr_to_expr(&sub_rhs).ok()?;
-    let (Expr::Integer(li), Expr::Integer(ri)) = (&l_eval, &r_eval) else {
-      return None;
-    };
-    let l_mod = li.rem_euclid(modulus);
-    let r_mod = ri.rem_euclid(modulus);
-    if l_mod == r_mod {
+    if all_hold {
       solutions.push(indices.iter().map(|&x| x as i128).collect());
     }
     // Increment counters like an odometer: the LAST variable changes
