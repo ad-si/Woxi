@@ -63,6 +63,93 @@ fn strip_sqrt_square(expr: Expr) -> Expr {
 
 // ─── NSolve ─────────────────────────────────────────────────────────
 
+/// True when `expr` already states a (possibly quantified) condition, i.e. it
+/// is an equation, an inequality, a logical combination of those, or a literal
+/// truth value. Anything else is a bare expression that `NSolve` reads as
+/// `expr == 0`.
+fn is_relational_expr(expr: &Expr) -> bool {
+  match expr {
+    Expr::Comparison { .. } => true,
+    Expr::BinaryOp {
+      op: BinaryOperator::And | BinaryOperator::Or,
+      ..
+    } => true,
+    Expr::UnaryOp {
+      op: UnaryOperator::Not,
+      ..
+    } => true,
+    Expr::Identifier(s) | Expr::Constant(s) => s == "True" || s == "False",
+    Expr::FunctionCall { name, .. } => matches!(
+      name.as_str(),
+      "Equal"
+        | "Unequal"
+        | "Less"
+        | "LessEqual"
+        | "Greater"
+        | "GreaterEqual"
+        | "Inequality"
+        | "And"
+        | "Or"
+        | "Not"
+        | "Xor"
+        | "Nand"
+        | "Nor"
+        | "Implies"
+        | "Element"
+        | "ForAll"
+        | "Exists"
+    ),
+    _ => false,
+  }
+}
+
+/// `NSolve` accepts a bare polynomial where an equation is expected:
+/// `NSolve[poly, x]` means `NSolve[poly == 0, x]`. A list threads
+/// element-wise, so `NSolve[{p, q}, {x, y}]` is `NSolve[{p == 0, q == 0}, …]`
+/// and a mixed list keeps the parts that already are equations.
+///
+/// Returns `None` when nothing needs rewriting, so the common path stays
+/// allocation-free.
+fn equations_from_bare_polynomials(expr: &Expr) -> Option<Expr> {
+  let eq_zero = |e: &Expr| Expr::Comparison {
+    operands: vec![e.clone(), Expr::Integer(0)],
+    operators: vec![ComparisonOp::Equal],
+  };
+  match expr {
+    Expr::List(items) => {
+      if items.iter().all(is_relational_expr) {
+        return None;
+      }
+      Some(Expr::List(
+        items
+          .iter()
+          .map(|it| {
+            if is_relational_expr(it) {
+              it.clone()
+            } else {
+              eq_zero(it)
+            }
+          })
+          .collect(),
+      ))
+    }
+    _ if is_relational_expr(expr) => None,
+    _ => Some(eq_zero(expr)),
+  }
+}
+
+/// True when the optional third argument of `NSolve` is a working-precision
+/// specification (`NSolve[eqns, vars, prec]`) rather than a solution domain
+/// like `Reals`. The precision only controls how many digits the roots carry,
+/// so the solving path itself ignores it.
+fn is_precision_spec(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_) => true,
+    Expr::Identifier(s) | Expr::Constant(s) => s == "MachinePrecision",
+    _ => false,
+  }
+}
+
 /// NSolve[equation, var] — solve an equation numerically.
 ///
 /// For quadratic polynomials, uses Kahan's numerically stable formula to
@@ -73,6 +160,27 @@ fn strip_sqrt_square(expr: Expr) -> Expr {
 /// equation contains, the way `Solve[equation]` does.
 pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let _head = IfunHead::new("NSolve");
+  // `NSolve[poly, x]` is `NSolve[poly == 0, x]`, and a trailing precision
+  // argument is not a domain — normalize both away before solving.
+  let normalized_owned: Vec<Expr>;
+  let args = {
+    let rewritten_first =
+      args.first().and_then(equations_from_bare_polynomials);
+    let drop_precision = args.len() == 3 && is_precision_spec(&args[2]);
+    if rewritten_first.is_some() || drop_precision {
+      let mut new_args = args.to_vec();
+      if let Some(first) = rewritten_first {
+        new_args[0] = first;
+      }
+      if drop_precision {
+        new_args.truncate(2);
+      }
+      normalized_owned = new_args;
+      normalized_owned.as_slice()
+    } else {
+      args
+    }
+  };
   // Try numerically stable quadratic formula for degree-2 polynomials
   if let Some(result) = try_nsolve_quadratic(args) {
     return result;
@@ -782,22 +890,6 @@ fn durand_kerner_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
     (re, im)
   };
 
-  // Evaluate derivative p'(z) for complex z.
-  let eval_dp = |zr: f64, zi: f64| -> (f64, f64) {
-    if n == 0 {
-      return (0.0, 0.0);
-    }
-    let mut re = (n as f64) * monic[n];
-    let mut im = 0.0;
-    for k in (1..n).rev() {
-      let nr = re * zr - im * zi + (k as f64) * monic[k];
-      let ni = re * zi + im * zr;
-      re = nr;
-      im = ni;
-    }
-    (re, im)
-  };
-
   // Initialise n distinct roots on a circle.
   // Use complex base 0.4 + 0.9i as in classic Durand-Kerner.
   let base_r = 0.4_f64;
@@ -862,73 +954,7 @@ fn durand_kerner_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
     }
   }
 
-  // Polish each root with Newton steps. Track the iterate with the smallest
-  // |p(z)| since near the root Newton may oscillate between two adjacent
-  // f64 values (both equally good). Pick the best one.
-  for k in 0..roots.len() {
-    let (mut zr, mut zi) = roots[k];
-    let (mut best_zr, mut best_zi) = (zr, zi);
-    let (pr0, pi0) = eval_p(zr, zi);
-    let mut best_err = pr0.hypot(pi0);
-    for _ in 0..30 {
-      let (pr, pi) = eval_p(zr, zi);
-      let (dr, di) = eval_dp(zr, zi);
-      let denom = dr * dr + di * di;
-      if denom < 1e-300 {
-        break;
-      }
-      let qr = (pr * dr + pi * di) / denom;
-      let qi = (pi * dr - pr * di) / denom;
-      let new_r = zr - qr;
-      let new_i = zi - qi;
-      zr = new_r;
-      zi = new_i;
-      let (npr, npi) = eval_p(zr, zi);
-      let err = npr.hypot(npi);
-      if err < best_err {
-        best_err = err;
-        best_zr = zr;
-        best_zi = zi;
-      }
-      if err == 0.0 {
-        break;
-      }
-    }
-    roots[k] = (best_zr, best_zi);
-  }
-
-  // Snap to real / round trailing fp noise.
-  for (r, i) in roots.iter_mut() {
-    let mag = r.hypot(*i).max(1.0);
-    if i.abs() < 1e-12 * mag {
-      *i = 0.0;
-    }
-    if r.abs() < 1e-12 * mag {
-      *r = 0.0;
-    }
-  }
-  // Match conjugate pairs: when two roots have the same real part (within
-  // tolerance) and opposite signs of imag part, make their imag exactly +/-.
-  let snap_eps = 1e-9;
-  for k in 0..roots.len() {
-    for j in (k + 1)..roots.len() {
-      if (roots[k].0 - roots[j].0).abs() < snap_eps
-        && (roots[k].1 + roots[j].1).abs() < snap_eps
-      {
-        let avg = ((roots[k].0) + (roots[j].0)) / 2.0;
-        let mag = (roots[k].1.abs() + roots[j].1.abs()) / 2.0;
-        roots[k].0 = avg;
-        roots[j].0 = avg;
-        if roots[k].1 < 0.0 {
-          roots[k].1 = -mag;
-          roots[j].1 = mag;
-        } else {
-          roots[k].1 = mag;
-          roots[j].1 = -mag;
-        }
-      }
-    }
-  }
+  crate::functions::math_ast::polish_and_pair_roots(coeffs, &mut roots);
   roots
 }
 

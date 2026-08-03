@@ -128,6 +128,14 @@ fn sample_whole_rows(
   rows
 }
 
+/// Whether an argument is an iterator (`{v, vmin, vmax}`) rather than an
+/// option rule — what tells a second parameter apart from the trailing
+/// options of a one-parameter plot.
+fn is_iterator_spec(arg: &Expr) -> bool {
+  matches!(arg, Expr::List(items)
+    if items.len() == 3 && matches!(items[0], Expr::Identifier(_)))
+}
+
 /// ParametricPlot[{fx[t], fy[t]}, {t, tmin, tmax}]
 pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
@@ -138,6 +146,12 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let body = &args[0];
   let iter_spec = &args[1];
+
+  // Two iterators make the plot a *region*: the image of the parameter
+  // rectangle under `{fx, fy}`, not a curve.
+  if args.len() > 2 && is_iterator_spec(&args[2]) {
+    return parametric_region_ast(body, iter_spec, &args[2], &args[3..]);
+  }
 
   let (mut plot_opts, overrides) = parse_options(&args[2..]);
 
@@ -277,10 +291,12 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     generate_svg_with_filling(&all_points, x_range, y_range, &plot_opts)?;
 
   // Attach the sampled curves as a PlotSource so `Show` can merge this plot
-  // with other graphics (re-rendering the curves as Line primitives).
+  // with other graphics (re-rendering the curves as Line primitives). The
+  // style goes with them: a curve merged by `Show` keeps the colour and
+  // weight `PlotStyle` gave it, as it does when drawn on its own.
   let source = build_plot_source(
     &all_points,
-    &[],
+    &plot_opts.plot_style,
     x_range,
     y_range,
     (plot_opts.svg_width, plot_opts.svg_height),
@@ -290,6 +306,188 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::plot::explicit_options(args),
   );
   Ok(crate::graphics_result_with_source(svg, source))
+}
+
+/// Samples per parameter direction for a two-parameter (region) plot.
+/// Wolfram starts from a coarse grid and refines it adaptively; sampling a
+/// finer uniform grid gets to the same smooth boundary without the
+/// refinement machinery.
+const REGION_GRID: usize = 33;
+
+/// Evaluate a `{fx, fy}` body at one point of the parameter rectangle.
+fn evaluate_at_uv(
+  body: &Expr,
+  uvar: &str,
+  u: f64,
+  vvar: &str,
+  v: f64,
+) -> Option<(f64, f64)> {
+  let sub = substitute_var(body, uvar, &Expr::Real(u));
+  let sub = substitute_var(&sub, vvar, &Expr::Real(v));
+  match evaluate_expr_to_expr(&sub).ok()? {
+    Expr::List(ref items) if items.len() == 2 => {
+      Some((try_eval_to_f64(&items[0])?, try_eval_to_f64(&items[1])?))
+    }
+    _ => None,
+  }
+}
+
+/// `ParametricPlot[{fx, fy}, {u, umin, umax}, {v, vmin, vmax}]` — the image
+/// of the parameter rectangle, drawn the way Wolfram draws it: the quads of
+/// the sampled grid filled at 30% opacity in the plot colour, with the image
+/// of the rectangle's boundary stroked on top.
+///
+/// The picture is assembled as a `Graphics[…]` of primitives rather than
+/// rendered directly, so it carries a structure that `Show` can merge with
+/// the other layers of a composite figure.
+fn parametric_region_ast(
+  body: &Expr,
+  u_spec: &Expr,
+  v_spec: &Expr,
+  opt_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let (uvar, u_min, u_max) = parse_iterator(u_spec, "ParametricPlot")?;
+  let (vvar, v_min, v_max) = parse_iterator(v_spec, "ParametricPlot")?;
+  let (plot_opts, _) = parse_options(opt_args);
+
+  // An explicit `PlotPoints` sets the grid; the option's plot default is a
+  // curve-sample count, so it cannot be used as the grid size directly.
+  let grid = opt_args
+    .iter()
+    .find_map(|opt| {
+      let (name, value) = crate::functions::graphics::option_name_value(opt)?;
+      match (name, &*value) {
+        ("PlotPoints", Expr::Integer(n)) if *n >= 2 => Some(*n as usize),
+        _ => None,
+      }
+    })
+    .unwrap_or(REGION_GRID);
+
+  let du = (u_max - u_min) / (grid - 1) as f64;
+  let dv = (v_max - v_min) / (grid - 1) as f64;
+  let mut points: Vec<Vec<Option<(f64, f64)>>> = Vec::with_capacity(grid);
+  for i in 0..grid {
+    let u = u_min + i as f64 * du;
+    let mut row = Vec::with_capacity(grid);
+    for j in 0..grid {
+      let v = v_min + j as f64 * dv;
+      row.push(evaluate_at_uv(body, &uvar, u, &vvar, v));
+    }
+    points.push(row);
+  }
+
+  let pt_expr =
+    |(x, y): (f64, f64)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+
+  // One quad per grid cell; a cell with a point the body could not be
+  // evaluated at (a singularity, a complex value) is left out.
+  let mut quads = Vec::new();
+  for i in 0..grid - 1 {
+    for j in 0..grid - 1 {
+      let corners = [
+        points[i][j],
+        points[i + 1][j],
+        points[i + 1][j + 1],
+        points[i][j + 1],
+      ];
+      if corners
+        .iter()
+        .any(|c| c.is_none_or(|(x, y)| !x.is_finite() || !y.is_finite()))
+      {
+        continue;
+      }
+      quads.push(Expr::FunctionCall {
+        name: "Polygon".to_string(),
+        args: vec![Expr::List(
+          corners.iter().map(|c| pt_expr(c.unwrap())).collect(),
+        )]
+        .into(),
+      });
+    }
+  }
+  if quads.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "ParametricPlot: the body evaluates to no points over that region".into(),
+    ));
+  }
+
+  // The boundary of the picture is the image of the parameter rectangle's
+  // boundary, walked once counter-clockwise.
+  let last = grid - 1;
+  let mut border_idx: Vec<(usize, usize)> = Vec::with_capacity(4 * grid);
+  border_idx.extend((0..grid).map(|j| (0, j)));
+  border_idx.extend((1..grid).map(|i| (i, last)));
+  border_idx.extend((0..last).rev().map(|j| (last, j)));
+  border_idx.extend((0..last).rev().map(|i| (i, 0)));
+  let border: Vec<Expr> = border_idx
+    .iter()
+    .filter_map(|&(i, j)| points[i][j])
+    .filter(|(x, y)| x.is_finite() && y.is_finite())
+    .map(pt_expr)
+    .collect();
+
+  let (r, g, b) = plot_opts
+    .plot_style
+    .first()
+    .and_then(|s| s.color.as_ref())
+    .map(|c| (c.r, c.g, c.b))
+    .unwrap_or((0.24, 0.6, 0.8));
+  let color = Expr::FunctionCall {
+    name: "RGBColor".to_string(),
+    args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
+  };
+  let opacity = Expr::FunctionCall {
+    name: "Opacity".to_string(),
+    args: vec![Expr::Real(0.3)].into(),
+  };
+  let no_edges = Expr::FunctionCall {
+    name: "EdgeForm".to_string(),
+    args: vec![].into(),
+  };
+
+  let mut face_group = vec![no_edges, color.clone(), opacity];
+  face_group.append(&mut quads);
+  let mut items = vec![Expr::List(face_group.into())];
+  if border.len() > 1 {
+    items.push(Expr::List(
+      vec![
+        color,
+        Expr::FunctionCall {
+          name: "AbsoluteThickness".to_string(),
+          args: vec![Expr::Real(2.0)].into(),
+        },
+        Expr::FunctionCall {
+          name: "Line".to_string(),
+          args: vec![Expr::List(border.into())].into(),
+        },
+      ]
+      .into(),
+    ));
+  }
+
+  // Wolfram draws a ParametricPlot with axes and equally scaled ones; the
+  // caller's own options come last so they win.
+  let mut graphics_args = vec![Expr::List(items.into())];
+  graphics_args.push(Expr::Rule {
+    pattern: Box::new(Expr::Identifier("Axes".to_string())),
+    replacement: Box::new(Expr::Identifier("True".to_string())),
+  });
+  graphics_args.push(Expr::Rule {
+    pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
+    replacement: Box::new(Expr::Identifier("Automatic".to_string())),
+  });
+  graphics_args.extend(opt_args.iter().cloned());
+  let mut result = crate::functions::graphics::graphics_ast(&graphics_args)?;
+  // Keep the primitives on the rendering so `Show` can draw the region
+  // together with the other layers of a composite figure instead of
+  // dropping it for having no plot data.
+  if let Expr::Graphics { structure, .. } = &mut result {
+    *structure = Some(Box::new(Expr::FunctionCall {
+      name: "Graphics".to_string(),
+      args: graphics_args.into(),
+    }));
+  }
+  Ok(result)
 }
 
 /// PolarPlot[r[theta], {theta, tmin, tmax}]
@@ -341,10 +539,12 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     generate_svg_with_filling(&all_points, x_range, y_range, &plot_opts)?;
 
   // Attach the sampled curves as a PlotSource so `Show` can merge this plot
-  // with other graphics (re-rendering the curves as Line primitives).
+  // with other graphics (re-rendering the curves as Line primitives). The
+  // style goes with them: a curve merged by `Show` keeps the colour and
+  // weight `PlotStyle` gave it, as it does when drawn on its own.
   let source = build_plot_source(
     &all_points,
-    &[],
+    &plot_opts.plot_style,
     x_range,
     y_range,
     (plot_opts.svg_width, plot_opts.svg_height),

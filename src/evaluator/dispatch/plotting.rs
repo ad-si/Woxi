@@ -15,10 +15,44 @@ fn quiet_plot(
   result
 }
 
+/// The plot heads that refuse an iterator whose endpoints coincide. Wolfram
+/// reports `head::plld` for each of these and leaves the call unevaluated.
+/// `DensityPlot` is left out on purpose: it reports the message under its
+/// internal context name (`Visualization`Core`DensityPlot::plld`), which is
+/// not a name Woxi can produce.
+const PLLD_HEADS: &[&str] = &[
+  "Plot",
+  "ParametricPlot",
+  "PolarPlot",
+  "Plot3D",
+  "ParametricPlot3D",
+  "ContourPlot",
+  "ContourPlot3D",
+  "RegionPlot",
+  "VectorPlot",
+  "StreamPlot",
+  "StreamDensityPlot",
+];
+
 pub fn dispatch_plotting(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  // A range like `{x, 1, 1}` has nothing to sample. The check sits here,
+  // ahead of `quiet_plot`, because the plot bodies run with messages
+  // suppressed — and in one place, so every plot head refuses alike.
+  if PLLD_HEADS.contains(&name)
+    && args.len() >= 2
+    && args
+      .iter()
+      .skip(1)
+      .any(|a| crate::functions::plot::degenerate_iterator(name, a))
+  {
+    return Some(Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    }));
+  }
   match name {
     #[cfg(not(target_arch = "wasm32"))]
     "Run" if args.len() == 1 => {

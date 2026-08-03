@@ -211,6 +211,45 @@ mod function_head {
     );
   }
 
+  // A definition's right-hand side is a template: a `Function` parameter that
+  // is itself a pattern variable is a slot the caller fills, not a binder. So
+  // `Function[s, f]` really does bind the `s` inside the expression passed as
+  // `f` — the idiom numerical-inversion code uses to turn `F(s)` into a
+  // function of `s`. Previously the parameter was alpha-renamed to `s$` and
+  // the body's `s` stayed free, so the function ignored its argument.
+  #[test]
+  fn definition_rhs_function_param_is_a_template_slot() {
+    assert_eq!(
+      interpret("qa[f_, s_] := Function[s, f]; qa[1/(1 + s^2), s]").unwrap(),
+      "Function[s, (1 + s^2)^(-1)]"
+    );
+    assert_eq!(
+      interpret("qb[f_, s_, v_] := Function[s, f][v]; qb[s^2, s, 3]").unwrap(),
+      "9"
+    );
+    // The caller may name the parameter something else entirely.
+    assert_eq!(
+      interpret("qc[f_, s_] := Function[s, f]; qc[u^2, u][4]").unwrap(),
+      "16"
+    );
+    // A delayed rule's right-hand side is the same kind of template.
+    assert_eq!(
+      interpret("qd[s^2, s] /. qd[f_, s_] :> Function[s, f][5]").unwrap(),
+      "25"
+    );
+  }
+
+  // Capture avoidance still applies to a parameter the caller did *not*
+  // supply: an incoming value mentioning `y` must not be captured by a
+  // literal `Function[y, …]` in the template.
+  #[test]
+  fn definition_rhs_alpha_renames_unsupplied_params() {
+    assert_eq!(
+      interpret("h[a_] := Function[y, a + y]; h[y]").unwrap(),
+      "Function[y$, y + y$]"
+    );
+  }
+
   // Two-stage application with the same name in inner and outer scopes
   // — the inner param (bare) gets renamed on the first step so the second
   // step doesn't see capture. Result is `x^y`, not `y^y`.

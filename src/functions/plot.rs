@@ -141,6 +141,42 @@ pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
 
 /// Evaluate the function body at a given x value
 /// Parse a plot iterator specification `{var, min, max}`.
+/// Whether a plot iterator names the same point twice (`{x, 1, 1}`).
+/// Wolfram will not sample such a range: it reports `head::plld` and leaves
+/// the call unevaluated, so every plot head refuses it the same way through
+/// this one check. A reversed range (`{x, 1, 0}`) is fine and samples
+/// backwards.
+pub(crate) fn degenerate_iterator(head: &str, spec: &Expr) -> bool {
+  let Expr::List(items) = spec else {
+    return false;
+  };
+  if items.len() != 3 {
+    return false;
+  }
+  let Expr::Identifier(var) = &items[0] else {
+    return false;
+  };
+  let (Ok(lo), Ok(hi)) = (
+    evaluate_expr_to_expr(&items[1]),
+    evaluate_expr_to_expr(&items[2]),
+  ) else {
+    return false;
+  };
+  let (Some(a), Some(b)) = (try_eval_to_f64(&lo), try_eval_to_f64(&hi)) else {
+    return false;
+  };
+  if a != b {
+    return false;
+  }
+  crate::emit_message(&format!(
+    "{head}::plld: Endpoints for {var} in {{{var}, {}, {}}} must have \
+     distinct machine-precision numerical values.",
+    crate::syntax::expr_to_input_form(&lo),
+    crate::syntax::expr_to_input_form(&hi),
+  ));
+  true
+}
+
 pub(crate) fn parse_iterator(
   spec: &Expr,
   label: &str,
@@ -313,14 +349,31 @@ fn adaptive_sample(
   points
 }
 
-/// Compute a robust y-range by excluding extreme outliers.
-/// Uses IQR-based outlier removal on uniformly-spaced x samples
-/// to avoid bias from adaptive refinement near singularities.
-fn robust_y_range(
+/// True when a `PlotRange` value asks for the whole y extent: `All` itself, or
+/// `All` in the y slot of `{xrange, All}`.
+pub(crate) fn plot_range_requests_all_y(value: &Expr) -> bool {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  let is_all = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All");
+  match &val {
+    e if is_all(e) => true,
+    Expr::List(items) if items.len() == 2 => is_all(&items[1]),
+    _ => false,
+  }
+}
+
+/// Compute the y-range from uniformly-spaced x samples — uniform rather than
+/// the adaptively refined plot points so a singularity can't bias the
+/// distribution.
+///
+/// `keep_outliers` is `PlotRange -> All`: report the whole extent. Otherwise
+/// extreme values are excluded by an IQR fence, which is what keeps a pole
+/// from flattening the rest of the curve into the axis.
+fn sampled_y_range(
   bodies: &[&Expr],
   var_name: &str,
   x_min: f64,
   x_max: f64,
+  keep_outliers: bool,
 ) -> (f64, f64) {
   // Evaluate at uniformly-spaced x values to get an unbiased y distribution
   let n_uniform = 200;
@@ -344,6 +397,10 @@ fn robust_y_range(
   let n = ys.len();
   if n == 1 {
     return (ys[0], ys[0]);
+  }
+
+  if keep_outliers {
+    return (ys[0], ys[n - 1]);
   }
 
   let q1 = ys[n / 4];
@@ -3466,6 +3523,11 @@ pub(crate) fn build_plot_source(
     .enumerate()
     .map(|(i, points)| {
       let color = series_color(plot_style, i);
+      let thickness = if plot_style.is_empty() {
+        None
+      } else {
+        plot_style[i % plot_style.len()].thickness
+      };
       crate::syntax::PlotSeriesData {
         points: points.clone(),
         color,
@@ -3474,6 +3536,7 @@ pub(crate) fn build_plot_source(
         fill_color,
         fill_opacity,
         marker: None,
+        thickness,
       }
     })
     .collect();
@@ -4176,6 +4239,7 @@ pub(crate) fn render_merged_plot_source(
         s.color.1 as f64 / 255.0,
         s.color.2 as f64 / 255.0,
       )),
+      thickness: s.thickness,
       ..SeriesStyle::default()
     })
     .collect();
@@ -6303,6 +6367,7 @@ pub(crate) fn histogram_plot_source(
       fill_color: None,
       fill_opacity: None,
       marker: None,
+      thickness: None,
     });
   }
 
@@ -7868,6 +7933,9 @@ pub(crate) fn parse_background_option(expr: &Expr) -> Option<RGBColor> {
 pub(crate) struct PlotRangeOverrides {
   pub x: Option<(f64, f64)>,
   pub y: Option<(f64, f64)>,
+  /// `PlotRange -> All` on the y axis: show every sampled value instead of
+  /// the automatic range, which drops extreme outliers.
+  pub y_all: bool,
   pub aspect_ratio: Option<f64>,
 }
 
@@ -7940,6 +8008,7 @@ pub(crate) fn apply_common_plot_option(
       let (rx, ry) = parse_plot_range(replacement);
       overrides.x = rx;
       overrides.y = ry;
+      overrides.y_all = plot_range_requests_all_y(replacement);
     }
     "Axes" => {
       if let Some(axes) = parse_axes_option(replacement) {
@@ -8243,6 +8312,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   let (plot_range_x, plot_range_y) = (overrides.x, overrides.y);
+  let plot_range_y_all = overrides.y_all;
 
   // Apply AspectRatio to the plotting area (not the whole image); the total
   // height is derived in generate_svg_with_options once margins are known.
@@ -8421,9 +8491,10 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       collapse_style_for_single_series(&plot_opts.plot_style);
   }
 
-  // Compute Y range using robust outlier exclusion on uniform samples
+  // Compute Y range using robust outlier exclusion on uniform samples —
+  // unless `PlotRange -> All` asked for every sampled value to be shown.
   let (y_data_min, y_data_max) =
-    robust_y_range(&bodies, &var_name, x_min, x_max);
+    sampled_y_range(&bodies, &var_name, x_min, x_max, plot_range_y_all);
 
   // Check if we have any plottable data
   let has_finite = all_points

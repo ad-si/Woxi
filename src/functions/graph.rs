@@ -222,6 +222,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut vertex_shape: Option<String> = None;
   let mut vertex_size_scale: f64 = 1.0;
   let mut plot_label: Option<Expr> = None;
+  let mut layered: Option<LayerDirection> = None;
+  let mut draw_directed = true;
+  let mut image_size: Option<Expr> = None;
 
   for opt in options {
     if let Expr::Rule {
@@ -277,6 +280,25 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             plot_label = Some((**replacement).clone());
           }
         }
+        // `GraphLayout -> "LayeredDigraphEmbedding"` (optionally with an
+        // `"Orientation"` sub-option) stacks the vertices in layers by
+        // distance from a root instead of spreading them on a circle.
+        // This is the embedding `LayeredGraphPlot` / `TreePlot` ask for.
+        "GraphLayout" => {
+          layered = parse_layered_layout(replacement);
+        }
+        // `DirectedEdges -> False` says how the edges are *drawn*: as
+        // plain lines rather than arrows. The underlying edges keep their
+        // direction, which is what the layering reads.
+        "DirectedEdges" => {
+          if matches!(replacement.as_ref(), Expr::Identifier(s) if s == "False")
+          {
+            draw_directed = false;
+          }
+        }
+        "ImageSize" => {
+          image_size = Some((**replacement).clone());
+        }
         _ => {}
       }
     }
@@ -285,11 +307,15 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build petgraph for rendering
   let (graph, _index_map) = build_render_graph(&vertices, &raw_edges);
 
-  // Compute vertex positions. For a single weakly-connected component we
-  // keep the simple circular embedding; for multi-component graphs each
-  // component is laid out independently (force-directed when large enough)
-  // and the components are packed into a grid so clusters are visible.
-  let positions: Vec<(f64, f64)> = compute_layout(&graph);
+  // Compute vertex positions. A layered embedding was asked for by name;
+  // otherwise, for a single weakly-connected component we keep the simple
+  // circular embedding, and for multi-component graphs each component is
+  // laid out independently (force-directed when large enough) and the
+  // components are packed into a grid so clusters are visible.
+  let positions: Vec<(f64, f64)> = match layered {
+    Some(dir) => layered_layout(&graph, dir),
+    None => compute_layout(&graph),
+  };
 
   // Compute base radius for vertices. Kept deliberately small so labels
   // and edges remain legible; a border is drawn around each vertex so the
@@ -355,6 +381,13 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       primitives.push(default_applied_edge_color.to_expr());
     }
+
+    // `DirectedEdges -> False` draws every edge as a plain line, however
+    // the edge was given.
+    let edge_data = &RenderEdgeData {
+      directed: edge_data.directed && draw_directed,
+      ..edge_data.clone()
+    };
 
     if si == di {
       // Self-loop: circular arc that starts and ends exactly on the
@@ -710,12 +743,225 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let content = Expr::List(primitives.into());
+  // A graph is drawn at Wolfram's 360-point default unless the caller
+  // sized it — `LayeredGraphPlot[…, ImageSize -> {200, 50}]` asks for a
+  // wide, short strip and has to get one.
   let image_size_opt = Expr::Rule {
     pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
-    replacement: Box::new(Expr::Integer(360)),
+    replacement: Box::new(image_size.unwrap_or(Expr::Integer(360))),
   };
 
-  graphics_ast(&[content, image_size_opt])
+  let mut graphics_args = vec![content, image_size_opt];
+  if let Some(range) = flat_axis_plot_range(&positions, vertex_radius) {
+    graphics_args.push(range);
+  }
+  graphics_ast(&graphics_args)
+}
+
+/// A `PlotRange` that keeps a layout which is flat on one axis — a chain
+/// of vertices laid out in a straight line — from being drawn as an
+/// extremely thin strip in which the vertex dots swell to fill the image.
+/// The flat axis is opened up to a fixed fraction of the other one, about
+/// the layout's centre. `None` when both axes already have extent.
+fn flat_axis_plot_range(
+  positions: &[(f64, f64)],
+  vertex_radius: f64,
+) -> Option<Expr> {
+  /// The narrowest an axis may be, as a fraction of the wider one.
+  const MIN_ASPECT: f64 = 1.0 / 3.0;
+  let (mut x0, mut x1) = (f64::INFINITY, f64::NEG_INFINITY);
+  let (mut y0, mut y1) = (f64::INFINITY, f64::NEG_INFINITY);
+  for &(x, y) in positions {
+    x0 = x0.min(x - vertex_radius);
+    x1 = x1.max(x + vertex_radius);
+    y0 = y0.min(y - vertex_radius);
+    y1 = y1.max(y + vertex_radius);
+  }
+  if !x0.is_finite() || !y0.is_finite() {
+    return None;
+  }
+  let (w, h) = (x1 - x0, y1 - y0);
+  let widen = |lo: f64, hi: f64, want: f64| {
+    let mid = (lo + hi) / 2.0;
+    (mid - want / 2.0, mid + want / 2.0)
+  };
+  let ((x0, x1), (y0, y1)) = if w < h * MIN_ASPECT {
+    (widen(x0, x1, h * MIN_ASPECT), (y0, y1))
+  } else if h < w * MIN_ASPECT {
+    ((x0, x1), widen(y0, y1, w * MIN_ASPECT))
+  } else {
+    return None;
+  };
+  let pair =
+    |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+  Some(Expr::Rule {
+    pattern: Box::new(Expr::Identifier("PlotRange".to_string())),
+    replacement: Box::new(Expr::List(vec![pair(x0, x1), pair(y0, y1)].into())),
+  })
+}
+
+/// Where the roots of a layered embedding sit; the layers grow away from
+/// that edge. This is the second argument of `LayeredGraphPlot[g, pos]`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum LayerDirection {
+  Top,
+  Bottom,
+  Left,
+  Right,
+}
+
+/// Read a `GraphLayout` option value, returning the layer direction when
+/// it names a layered embedding. Both the bare string form
+/// (`"LayeredDigraphEmbedding"`) and the sub-option form
+/// (`{"LayeredEmbedding", "Orientation" -> Left}`) are accepted; without an
+/// orientation the roots go on top, as they do in Wolfram.
+fn parse_layered_layout(value: &Expr) -> Option<LayerDirection> {
+  let named = |s: &str| s.starts_with("Layered");
+  match value {
+    Expr::String(s) if named(s) => Some(LayerDirection::Top),
+    Expr::List(items) => {
+      let is_layered = items
+        .iter()
+        .any(|e| matches!(e, Expr::String(s) if named(s)));
+      if !is_layered {
+        return None;
+      }
+      let dir = items.iter().find_map(|e| match e {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::String(s) if s == "Orientation") => {
+          layer_direction(replacement)
+        }
+        _ => None,
+      });
+      Some(dir.unwrap_or(LayerDirection::Top))
+    }
+    _ => None,
+  }
+}
+
+impl LayerDirection {
+  /// The Wolfram symbol this direction is written as.
+  pub(crate) fn symbol(self) -> &'static str {
+    match self {
+      LayerDirection::Top => "Top",
+      LayerDirection::Bottom => "Bottom",
+      LayerDirection::Left => "Left",
+      LayerDirection::Right => "Right",
+    }
+  }
+}
+
+/// The symbol naming an edge of the plot, as `LayeredGraphPlot`'s second
+/// argument gives it.
+pub(crate) fn layer_direction(expr: &Expr) -> Option<LayerDirection> {
+  match expr {
+    Expr::Identifier(s) => match s.as_str() {
+      "Top" => Some(LayerDirection::Top),
+      "Bottom" => Some(LayerDirection::Bottom),
+      "Left" => Some(LayerDirection::Left),
+      "Right" => Some(LayerDirection::Right),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// Layered ("hierarchical") vertex positions: every vertex sits one layer
+/// further from a root than the parent that first reached it, and the
+/// vertices of a layer are spread evenly across it. Roots are the vertices
+/// nothing points at; a graph that has none (a pure cycle) starts from its
+/// first vertex so every vertex still gets a layer.
+///
+/// Layers are one unit apart and so are the vertices within a layer, which
+/// keeps a chain a straight line of evenly spaced dots — the shape
+/// `LayeredGraphPlot` draws for a path graph.
+fn layered_layout(
+  graph: &DiGraph<usize, RenderEdgeData>,
+  dir: LayerDirection,
+) -> Vec<(f64, f64)> {
+  let n = graph.node_count();
+  if n == 0 {
+    return vec![];
+  }
+
+  let mut successors: Vec<Vec<usize>> = vec![Vec::new(); n];
+  let mut in_degree: Vec<usize> = vec![0; n];
+  for edge in graph.edge_references() {
+    let (s, d) = (edge.source().index(), edge.target().index());
+    if s == d {
+      continue;
+    }
+    successors[s].push(d);
+    in_degree[d] += 1;
+  }
+  for succ in &mut successors {
+    succ.sort_unstable();
+    succ.dedup();
+  }
+
+  // Breadth-first from every root, in vertex order, so the layering is
+  // deterministic. A vertex keeps the first (shallowest) layer it is
+  // reached at.
+  let mut layer: Vec<Option<usize>> = vec![None; n];
+  let mut order: Vec<Vec<usize>> = Vec::new();
+  let push = |layer: &mut Vec<Option<usize>>,
+              order: &mut Vec<Vec<usize>>,
+              v: usize,
+              l: usize| {
+    layer[v] = Some(l);
+    while order.len() <= l {
+      order.push(Vec::new());
+    }
+    order[l].push(v);
+  };
+  let roots: Vec<usize> = (0..n).filter(|&v| in_degree[v] == 0).collect();
+  let starts = if roots.is_empty() { vec![0] } else { roots };
+  let mut queue: std::collections::VecDeque<usize> =
+    std::collections::VecDeque::new();
+  for &r in &starts {
+    push(&mut layer, &mut order, r, 0);
+    queue.push_back(r);
+  }
+  while let Some(v) = queue.pop_front() {
+    let l = layer[v].unwrap_or(0);
+    for &w in &successors[v] {
+      if layer[w].is_none() {
+        push(&mut layer, &mut order, w, l + 1);
+        queue.push_back(w);
+      }
+    }
+  }
+  // Any vertex left unreached (an isolated cycle in another component)
+  // joins the first layer so nothing is dropped.
+  for v in 0..n {
+    if layer[v].is_none() {
+      push(&mut layer, &mut order, v, 0);
+    }
+  }
+
+  // `along` runs across a layer, `depth` from one layer to the next; both
+  // are centred on the origin before being mapped onto the axes.
+  let depth_span = (order.len() as f64 - 1.0).max(0.0);
+  let mut positions = vec![(0.0, 0.0); n];
+  for (l, members) in order.iter().enumerate() {
+    let span = members.len() as f64 - 1.0;
+    for (k, &v) in members.iter().enumerate() {
+      let along = k as f64 - span / 2.0;
+      let depth = l as f64 - depth_span / 2.0;
+      positions[v] = match dir {
+        LayerDirection::Top => (along, -depth),
+        LayerDirection::Bottom => (along, depth),
+        LayerDirection::Left => (depth, -along),
+        LayerDirection::Right => (-depth, -along),
+      };
+    }
+  }
+  positions
+    .into_iter()
+    .map(|(x, y)| (snap_coord(x), snap_coord(y)))
+    .collect()
 }
 
 /// Compute vertex positions for the rendered graph.

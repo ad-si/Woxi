@@ -3137,6 +3137,32 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
   }
 }
 
+/// Render a layout wrapper that has a picture inside it — `Grid`, `Column`,
+/// `Row`, `Labeled`, `Pane` and the panes built on them — as the single
+/// composed picture a notebook shows, rather than leaving the caller to
+/// pick one of the captured sub-pictures.
+///
+/// `None` for anything that is not such a layout, for a layout with no
+/// picture in it (a `Grid` of strings already lays out correctly as
+/// typeset text), and for a picture that is *already* one graphic —
+/// re-rendering that would only round-trip what was captured.
+fn composed_layout_svg(expr: &syntax::Expr) -> Option<String> {
+  let syntax::Expr::FunctionCall { name, .. } = expr else {
+    return None;
+  };
+  if !matches!(
+    name.as_str(),
+    "Grid" | "Column" | "Row" | "Labeled" | "Pane" | "Item" | "ClickPane"
+  ) {
+    return None;
+  }
+  if !evaluator::lays_out_a_graphic(expr) {
+    return None;
+  }
+  let svg = evaluator::expr_to_svg(expr);
+  svg.starts_with("<svg").then_some(svg)
+}
+
 /// If the result is a list (1D, 2D, or 3D) of `-Graphics-` items,
 /// or a `TableForm` wrapping such a list, combine captured SVGs into a grid.
 fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
@@ -3147,6 +3173,17 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
   let all_svgs = get_all_captured_graphics();
   if all_svgs.is_empty() {
     return expr;
+  }
+
+  // A layout that holds pictures — `Grid[{{plot1, plot2}, …}]`, a `Column`
+  // of them, a `Pane` around either — is one picture in a notebook, laid
+  // out cell by cell. Without this the captured-graphics buffer only ever
+  // reports its *last* entry, so a Manipulate body that arranges several
+  // plots in a grid (the standard Demonstrations panel) showed a single
+  // one of them and dropped the rest.
+  if let Some(composed) = composed_layout_svg(inner) {
+    clear_captured_graphics();
+    return graphics_result(composed);
   }
 
   // 1D list of Graphics
@@ -4514,6 +4551,11 @@ pub fn interpret_to_expr(
   };
   // Treat the modifier-letter circumflex `ˆ` (U+02C6) as the Power operator.
   let normalized = normalize_circumflex_operator(&normalized);
+  // End a statement at a top-level newline, the way `interpret` does:
+  // without this a definition cell reading `f[x_] := x + 1⏎g[y_] := f[y]`
+  // parses as one statement with an implicit multiplication across the
+  // line break, and only the first symbol ends up defined.
+  let normalized = insert_statement_separators(normalized.trim());
 
   let mut pairs = parse(&normalized).map_err(|e| {
     InterpreterError::EvaluationError(format!("Parse error: {}", e))
