@@ -12325,12 +12325,13 @@ pub fn string_to_expr(s: &str) -> Result<Expr, crate::InterpreterError> {
     .next()
     .ok_or(crate::InterpreterError::EmptyInput)?;
 
+  // Any statement node, not just `Expression`: a span (`1 ;; 4`), a
+  // definition or an upvalue is a statement of its own, and returning the
+  // unparsed text for one meant evaluating it re-parsed to the same `Raw`
+  // and spun forever.
   for node in program.into_inner() {
-    match node.as_rule() {
-      Rule::Expression => {
-        return Ok(pair_to_expr(node));
-      }
-      _ => continue,
+    if crate::is_statement_rule(node.as_rule()) {
+      return Ok(pair_to_expr(node));
     }
   }
 

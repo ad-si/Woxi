@@ -3854,6 +3854,12 @@ pub fn evaluate_expr_to_expr_inner(
     Expr::Raw(s) => {
       // Fallback: parse and evaluate the raw string
       let parsed = string_to_expr(s)?;
+      // A shape the parser hands back unparsed comes back as the very same
+      // `Raw`; handing that to the trampoline again spins forever. Leave it
+      // alone instead — the caller sees the text it gave.
+      if matches!(&parsed, Expr::Raw(again) if again == s) {
+        return Ok(expr.clone());
+      }
       Err(InterpreterError::TailCall(Box::new(parsed)))
     }
     Expr::Image { .. } => Ok(expr.clone()),

@@ -114,3 +114,28 @@ fn an_upvalue_condition_sees_the_pattern_variables() {
   assert_eq!(run(&format!("{d}fJ[tagI[9, 4]]")), "5");
   assert_eq!(run(&format!("{d}fJ[tagI[9, z]]")), "fJ[tagI[9, z]]");
 }
+
+/// `ToExpression` reads a whole statement, not only an `Expression` node. A
+/// span, a definition or an upvalue used to come back as its own unparsed
+/// text, which re-parsed to the same text and never terminated.
+#[test]
+fn to_expression_reads_every_kind_of_statement() {
+  assert_eq!(
+    woxi::interpret(r#"ToExpression["1 ;; 4"]"#).unwrap(),
+    "Span[1, 4]"
+  );
+  assert_eq!(
+    woxi::interpret(r#"ToExpression["2 ;; 8 ;; 2"]"#).unwrap(),
+    "Span[2, 8, 2]"
+  );
+  assert_eq!(
+    woxi::interpret(r#"Take[{1, 2, 3, 4, 5}, ToExpression["2 ;; 4"]]"#)
+      .unwrap(),
+    "{2, 3, 4}"
+  );
+  assert_eq!(
+    woxi::interpret(r#"ToExpression["tagQ /: fR[tagQ] := 1"]; fR[tagQ]"#)
+      .unwrap(),
+    "1"
+  );
+}
