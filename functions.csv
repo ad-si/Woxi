@@ -16,11 +16,14 @@ SetDelayed,Defines a delayed assignment that evaluates the RHS each time,✅,sta
 Pi,Represents the ratio of circumference to diameter,✅,pure,1.0,16
 E,Represents the base of the natural logarithm,✅,pure,1.0,42
 Degree,Represents the number of radians in one degree,✅,pure,1.0,150
+I,Represents the square root of -1,✅,pure,1.0,
 GoldenRatio,The golden ratio constant; approximately 1.6180340,✅,pure,1.0,469
 EulerGamma,The Euler-Mascheroni constant; approximately 0.5772157,✅,pure,1.0,868
 Catalan,The Catalan constant; approximately 0.9159655,✅,pure,1.0,1836
 Slot,Represents the nth argument (#n) or named association key (#name) in a pure function,✅,pure,1.0,17
 Sqrt,Returns the square root of a number,✅,pure,1.0,18
+Exp,Returns the exponential function e^x,✅,pure,1.0,52
+Log,Returns the natural logarithm of a number,✅,pure,1.0,58
 Function,Represents a pure function,✅,pure,1.0,19
 ReplaceAll,Applies replacement rules to an expression,✅,pure,1.0,20
 Plot,Plots a function over a range,✅,effectful,1.0,21
@@ -40,6 +43,9 @@ None,Symbol representing no value or absence of an option,✅,pure,1.0,23
 All,Symbol used as an option value meaning all elements or the entire range,✅,pure,1.0,40
 RGBColor,Specifies a color by RGB values,✅,pure,1.0,24
 Derivative,Represents the derivative of a function,✅,pure,1.0,26
+D,Computes the partial derivative of an expression,✅,pure,1.0,36
+Integrate,Computes the definite or indefinite integral of an expression; a logarithmic antiderivative keeps the power its terms share out front,✅,pure,1.0,54
+Dt,Total differential (one-arg) or total derivative treating all variables as potentially dependent; higher-order via {x n} and repeated variables,✅,pure,1.0,476
 True,Boolean constant representing logical truth,✅,pure,1.0,27
 False,Boolean constant representing logical falsehood,✅,pure,1.0,38
 Map,Applies a function to each element of a list or to each argument of any other head,✅,pure,1.0,28
@@ -49,7 +55,6 @@ Table,Generates a list by evaluating an expression,✅,pure,1.0,32
 Directive,Combines graphics directives,✅,pure,6.0,33
 If,Checks if a condition is true and returns one of two values,✅,pure,1.0,34
 RuleDelayed,Represents a delayed transformation rule lhs :> rhs where rhs is held unevaluated,✅,pure,1.0,35
-D,Computes the derivative of an expression,✅,pure,1.0,36
 Opacity,Specifies opacity for graphics,✅,pure,6.0,37
 PlotRange,Option specifying the range of values to include in a plot,✅,pure,1.0,39
 Less,Checks if one value is less than another,✅,pure,1.0,41
@@ -60,27 +65,65 @@ FinancialData,,🚫,,6.0,43
 Length,Returns the number of elements in a list,✅,pure,1.0,44
 PlotStyle,Option specifying the style of lines and points in a plot,✅,pure,1.0,45
 GrayLevel,Specifies a gray color level,✅,pure,1.0,46
+Black,Named color evaluating to GrayLevel[0],✅,pure,5.1,113
+White,Named color evaluating to GrayLevel[1],✅,pure,5.1,163
+Gray,Named color evaluating to GrayLevel[0.5],✅,pure,5.1,281
+LightGray,Named color evaluating to GrayLevel[0.85],✅,pure,6.0,633
 Quantity,Represents a physical quantity with a unit (a compound unit prints as a quotient when it has negative exponents); ToString spells the unit out and TextString abbreviates it,✅,pure,9.0,47
 N,Gives the numerical value of an expression,✅,pure,1.0,49
 And,Checks if all conditions are true,✅,pure,1.0,50
 Or,Checks if at least one condition is true,✅,pure,1.0,136
 Not,Logical negation of an expression — written with the ! operator and bracketed inside anything that binds tighter than it,✅,pure,1.0,139
+Xor,Logical XOR (true when an odd number of args are true),✅,pure,1.0,1197
+Implies,Logical implication,✅,pure,1.0,868
+LogicalExpand,Expand logical expression to disjunctive normal form,✅,pure,1.0,1501
 Dot,Computes the dot product or matrix multiplication,✅,pure,1.0,51
-Exp,Returns the exponential function e^x,✅,pure,1.0,52
 MatrixForm,Displays a matrix or list in a two-dimensional grid format,✅,pure,1.0,53
-Integrate,Computes the definite or indefinite integral of an expression; a logarithmic antiderivative keeps the power its terms share out front,✅,pure,1.0,54
 Print,Outputs a string to the console,✅,effectful,1.0,55
-Log,Returns the natural logarithm of a number,✅,pure,1.0,58
 Line,Represents a line graphics primitive,✅,pure,1.0,59
 Apply,Applies a function to the elements of an expression by replacing its head (a compound head like g[x] counts as the head),✅,pure,1.0,60
 Style,Applies styling to an expression for display,✅,pure,6.0,61
 Solve,Solves an equation or system of equations (unknowns may be applied functions like y[x] treated as generalized variables; x^n == c is solved in radicals times the n-th roots of unity; Modulus solves over the integers mod n and MaxRoots caps the solution count),✅,pure,1.0,62
+Reduce,Reduces equations and inequalities to canonical disjunctive form; over the Integers domain a bounded two-sided interval is enumerated as a disjunction of the contained integers (filtered by extra constraints such as Mod[x n]==k or x!=v) and a one-sided bound is tightened to the nearest integer with an Element membership conjunct,✅,pure,1.0,213
+Eliminate,Eliminates variables from a system of equations,✅,pure,1.0,891
 Out,Gives the expression on the nth output line in an interactive session,✅,contextual,1.0,63
-Abs,Returns the absolute value of a number,✅,pure,1.0,64
+In,Returns a previous input expression,✅,contextual,1.0,248
+Abs,Returns the absolute value of a complex number,✅,pure,1.0,64
+Re,Returns the real part of a complex number,✅,pure,1.0,129
+Im,Returns the imaginary part of a complex number,✅,pure,1.0,143
+Arg,Returns the argument (phase angle) of a complex number,✅,pure,1.0,135
+Conjugate,Returns the complex conjugate of a complex number,✅,pure,1.0,293
 Red,Named color evaluating to RGBColor[1 0 0],✅,pure,5.1,65
+Blue,Named color evaluating to RGBColor[0 0 1],✅,pure,5.1,90
+Green,Named color evaluating to RGBColor[0 1 0],✅,pure,5.1,119
+Orange,Named color evaluating to RGBColor[1 0.5 0],✅,pure,5.1,234
+Yellow,Named color evaluating to RGBColor[1 1 0],✅,pure,5.1,240
+Pink,Named color evaluating to RGBColor[1 0.5 0.5],✅,pure,5.1,306
+Purple,Named color evaluating to RGBColor[0.5 0 0.5],✅,pure,5.1,314
+Magenta,Named color evaluating to RGBColor[1 0 1],✅,pure,5.1,432
+Brown,Named color evaluating to RGBColor[0.6 0.4 0.2],✅,pure,5.1,497
+Cyan,Named color evaluating to RGBColor[0 1 1],✅,pure,5.1,507
+LightBlue,Named color evaluating to RGBColor[0.87 0.94 1],✅,pure,6.0,581
+LightRed,Named color evaluating to RGBColor[1 0.85 0.85],✅,pure,6.0,973
+LightGreen,Named color evaluating to RGBColor[0.88 1 0.88],✅,pure,6.0,1140
+LightYellow,Named color evaluating to RGBColor[1 1 0.85],✅,pure,6.0,1188
+LightOrange,Named color evaluating to RGBColor[1 0.9 0.8],✅,pure,6.0,1551
+LightPurple,Named color evaluating to RGBColor[0.94 0.88 0.94],✅,pure,6.0,1838
+LightPink,Named color evaluating to RGBColor[1 0.85 0.85],✅,pure,6.0,1944
+LightBrown,Named color evaluating to RGBColor[0.94 0.91 0.88],✅,pure,6.0,2205
+LightCyan,Named color evaluating to RGBColor[0.9 1 1],✅,pure,6.0,2871
+LightMagenta,Named color evaluating to RGBColor[1 0.9 1],✅,pure,6.0,3176
 Condition,Represents a pattern with a condition test (pattern /; test),✅,pure,1.0,66
 Range,Generates a sequence of numbers,✅,pure,1.0,67
 Simplify,Performs algebraic simplification of expressions,✅,pure,1.0,68
+Expand,Expands products and positive integer powers of sums,✅,pure,1.0,154
+ExpandAll,Expands all products and powers in an expression,✅,pure,1.0,700
+Factor,Factors a polynomial over the integers,✅,pure,1.0,307
+FactorTerms,Pulls out the greatest common numerical factor from terms,✅,pure,1.0,1817
+Collect,Collects terms with the same powers of a variable,✅,pure,1.0,339
+Together,Puts terms over a common denominator,✅,pure,1.0,455
+Apart,Decomposes a rational expression into partial fractions,✅,pure,1.0,683
+Cancel,Cancels common factors in a rational expression,✅,pure,1.0,1229
 CityData,,🚫,,6.0,69
 ImageSize,Option specifying the display size of graphics and other objects,✅,none,3.0,70
 AxesLabel,Option specifying labels for the axes of a plot,✅,pure,1.0,71
@@ -90,10 +133,16 @@ Module,Scopes local variables with unique names,✅,pure,2.0,74
 Show,Combines multiple graphics objects into a single display,✅,pure,1.0,75
 Entity,Symbolic representation of a real-world entity,✅,pure,10.0,76
 Sum,Computes a sum over one or more ranges — accepts trailing options and gives a divergent sum a value under Regularization -> Dirichlet or Abel,✅,pure,1.0,77
+Product,Computes the product of an expression over one or more ranges — accepts trailing options,✅,pure,1.0,376
 HoldComplete,Holds arguments completely unevaluated,✅,pure,3.0,78
 Word,Symbol representing a word in string patterns,✅,none,2.0,79
 First,Returns the first element of a list or the given default which is only evaluated when used,✅,pure,1.0,80
+Last,Returns the last element of a list or the given default which is only evaluated when used,✅,pure,1.0,140
+Take,Returns the first n elements of a list (the one-argument form takes nothing and returns the expression),✅,pure,1.0,231
+Rest,Returns the list without its first element,✅,pure,1.0,289
+Drop,Returns the list without its first n elements (the one-argument form drops nothing and returns the expression),✅,pure,1.0,318
 Clear,Clears values and definitions of symbols but preserves attributes,✅,stateful,1.0,82
+ClearAll,Clears all values and definitions for symbols,✅,stateful,1.0,133
 Flatten,Flattens nested lists,✅,pure,1.0,83
 Element,Test or assert membership of an expression in a mathematical domain,✅,pure,4.0,84
 Thickness,Sets relative line thickness in graphics,✅,pure,1.0,85
@@ -101,7 +150,6 @@ Evaluate,Forces evaluation of an expression,✅,pure,2.0,86
 Row,Displays elements in a row,✅,pure,6.0,87
 DSolve,Solves ordinary differential equations symbolically (an equation with no derivative reduces to Solve for the dependent function),✅,pure,2.0,88
 Disk,Represents a filled disk or sector graphics primitive,✅,pure,2.0,89
-Blue,Named color evaluating to RGBColor[0 0 1],✅,pure,5.1,90
 PatternTest,Tests whether a pattern matches using a predicate function (pattern?test),✅,pure,1.0,91
 WordData,,🚫,,6.0,92
 ListPlot,Plots data as a scatter plot,✅,pure,1.0,93
@@ -122,15 +170,15 @@ Background,Option specifying the background color or style,✅,none,2.0,108
 Span,Extract a span of elements using ;; notation in Part,✅,pure,6.0,109
 MessageName,Accesses a message associated with a symbol (sym::tag),✅,pure,1.0,111
 Thick,Graphics directive equivalent to AbsoluteThickness[2],✅,none,6.0,112
-Black,Named color evaluating to GrayLevel[0],✅,pure,5.1,113
 FullSimplify,Performs aggressive algebraic simplification including factoring and trig identities,✅,pure,1.0,114
 Plot3D,Creates a three-dimensional surface plot of a function,✅,pure,1.0,115
 Axes,Option specifying whether axes should be drawn in a plot,✅,pure,1.0,116
 Rectangle,Represents a rectangle graphics primitive,✅,pure,1.0,117
 ParametricPlot,Creates a parametric plot,✅,pure,1.0,118
-Green,Named color evaluating to RGBColor[0 1 0],✅,pure,5.1,119
 EdgeForm,Specifies edge styling for filled graphics,✅,pure,1.0,120
 Floor,Returns the largest integer less than or equal to a number,✅,pure,1.0,121
+Ceiling,Returns the smallest integer greater than or equal to a number,✅,pure,1.0,395
+Round,Returns the nearest integer to a number,✅,pure,1.0,279
 Text,Represents a text graphics primitive,✅,pure,1.0,122
 PointSize,Specifies point size in graphics,✅,pure,1.0,123
 AxesStyle,Option specifying the style of plot axes,✅,none,2.0,124
@@ -138,20 +186,21 @@ AspectRatio,Option specifying the height-to-width ratio for a plot,✅,pure,1.0,
 BlankSequence,Pattern object matching one or more expressions (__),✅,pure,1.0,126
 StringJoin,Concatenates strings,✅,pure,1.0,127
 Factorial,Returns the factorial n! = Gamma[n+1] for integers and non-integers,✅,pure,1.0,128
-Re,Returns the real part of a complex number,✅,pure,1.0,129
 Gamma,Returns the gamma function value,✅,pure,1.0,130
 Integer,Head type for integer numbers,✅,pure,1.0,131
+Rational,Head type for rational numbers,✅,pure,1.0,206
+Real,Head type for real (floating-point) numbers,✅,pure,1.0,263
+Complex,Head type for complex numbers,✅,pure,1.0,541
+String,Head type for string values,✅,pure,1.0,182
+Number,Head type for numbers,✅,pure,1.0,731
 RandomReal,Generates a pseudorandom real number,✅,contextual,6.0,132
-ClearAll,Clears all values and definitions for symbols,✅,stateful,1.0,133
 Mod,Returns the remainder on division (m - n Floor[m/n]; Gaussian integers use m - n Round[m/n]; an infinite divisor takes nothing away),✅,pure,1.0,134
-Arg,Returns the argument (phase angle) of a complex number,✅,pure,1.0,135
 BaseStyle,Option specifying the base style for elements in a graphic or other output,✅,none,6.0,137
 Dynamic,Dynamic display wrapper (shows the current value in visual mode; stays symbolic in script mode),✅,unevaluated,6.0,138
-Last,Returns the last element of a list or the given default which is only evaluated when used,✅,pure,1.0,140
 AdministrativeDivisionData,,🚫,,10.0,141
 Increment,Increments a variable by 1 and returns the old value,✅,stateful,1.0,142
-Im,Returns the imaginary part of a complex number,✅,pure,1.0,143
 Max,Returns the maximum value from a set of arguments or a list,✅,pure,1.0,144
+Min,Returns the minimum value from a set of arguments or a list,✅,pure,1.0,180
 Hue,Specifies a color by hue saturation and brightness,✅,pure,2.0,145
 For,Executes a loop with initialization and increment,✅,pure,1.0,146
 Do,Evaluates an expression repeatedly,✅,pure,1.0,147
@@ -159,7 +208,6 @@ ToString,Converts an expression to a string,✅,pure,1.0,148
 Select,Picks elements of a list that satisfy a criterion,✅,pure,1.0,149
 Total,Sums the elements of a list down to a level spec — AllowedHeads -> All descends through any non-atomic head not just List,✅,pure,5.0,151
 ColorFunction,Option specifying the color function for visualization,✅,none,2.0,152
-Expand,Expands products and positive integer powers of sums,✅,pure,1.0,154
 ContourPlot,Creates a contour plot of a function,✅,pure,1.0,155
 RandomInteger,Generate random integers — RandomInteger[n] draws from 0 through n so a negative n draws downwards,✅,contextual,6.0,156
 NDSolve,Solves ordinary differential equations numerically (including coupled systems compound unknowns and EventLocator events),✅,contextual,2.0,157
@@ -168,7 +216,6 @@ Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6.
 Limit,Computes the limit of an expression,✅,pure,1.0,160
 CountryData,Returns properties (e.g. Population) for countries from a bundled static dataset,✅,pure,6.0,161
 Sequence,Represents a sequence of arguments that are automatically spliced into any function,✅,pure,3.0,162
-White,Named color evaluating to GrayLevel[1],✅,pure,5.1,163
 Optional,Represents a pattern with an optional default value — present arguments fill the slots from the left,✅,pure,1.0,164
 Mesh,Option for mesh lines in plots,✅,pure,1.0,165
 AxesOrigin,Option specifying the origin point for plot axes,✅,none,2.0,166
@@ -185,9 +232,7 @@ NIntegrate,Computes a numerical integral by tanh-sinh quadrature — which handl
 Dashed,Shorthand for Dashing[{Small Small}] line style,✅,pure,6.0,177
 Import,"Imports data from a file (images CSV XLSX TXT PPM/PGM/PBM/PNM WAV and other audio; CERN ROOT incl. TH1/TH2 histograms and TTree branch data via element paths; CSV/TSV row/column subsets via {""Data"" rowspec colspec} position specs); an .xml file reads into symbolic XML",✅,effectful,4.0,178
 Thread,Threads a function over corresponding list elements,✅,pure,1.0,179
-Min,Returns the minimum value from a set of arguments or a list,✅,pure,1.0,180
 Arrow,Represents an arrow graphics primitive,✅,pure,6.0,181
-String,Head type for string values,✅,pure,1.0,182
 Scaled,Represents a scaled position or size,✅,pure,1.0,183
 Arrowheads,Specifies arrowhead sizes and styles,✅,pure,6.0,184
 Association,Key-value data structure with <| |> syntax,✅,pure,10.0,185
@@ -210,14 +255,12 @@ Filling,Option for filling areas under curves in plots,✅,pure,6.0,202
 MatchQ,Tests if an expression matches a pattern,✅,pure,1.0,203
 Reverse,Returns a list with elements in reverse order,✅,pure,1.0,204
 UnsameQ,Tests if expressions are not identical,✅,pure,2.0,205
-Rational,Head type for rational numbers,✅,pure,1.0,206
 Bold,Style directive for bold text,✅,pure,6.0,207
 Normal,Converts a special form to a normal expression optionally restricted to objects of a given head,✅,pure,1.0,208
 Hyperlink,Represents a clickable hyperlink to a URI with an optional display label,✅,pure,6.0,209
 ParametricPlot3D,3D parametric plot,✅,none,2.0,210
 GridLines,Option specifying grid lines in a plot,✅,none,2.0,211
 Method,Option symbol for specifying computational methods,✅,pure,4.0,212
-Reduce,Reduces equations and inequalities to canonical disjunctive form; over the Integers domain a bounded two-sided interval is enumerated as a disjunction of the contained integers (filtered by extra constraints such as Mod[x n]==k or x!=v) and a one-sided bound is tightened to the nearest integer with an Element membership conjunct,✅,pure,1.0,213
 Inverse,Computes the inverse of a matrix,✅,pure,1.0,214
 SplineClosed,Option for closing B-spline curves,✅,pure,7.0,215
 SlotSequence,Represents a sequence of arguments in a pure function,✅,pure,1.0,216
@@ -235,16 +278,13 @@ Replace,Applies transformation rules to an expression,✅,pure,1.0,227
 Mean,Calculates the arithmetic mean (average) of a list,✅,pure,5.0,228
 Head,Returns the head of an expression,✅,pure,1.0,229
 AppendTo,Appends an element to a list stored in a variable; a target without a value reports ::rvalue,✅,stateful,1.0,230
-Take,Returns the first n elements of a list (the one-argument form takes nothing and returns the expression),✅,pure,1.0,231
 Options,Returns the options associated with a symbol — the built-in defaults of the core symbolic and numeric functions or a list set with Options[f] = … or SetOptions,✅,pure,1.0,232
 Array,Generates a list by applying a function to successive indices,✅,pure,1.0,233
-Orange,Named color evaluating to RGBColor[1 0.5 0],✅,pure,5.1,234
 RightArrow,Typesetting arrow symbol,🚫,none,3.0,235
 Interval,Represents a closed real interval with auto-merged sub-intervals,✅,pure,3.0,236
 Offset,Represents a position offset by a specified number of printers points,✅,pure,3.0,237
 ReplaceRepeated,Applies replacement rules repeatedly until fixed point or the MaxIterations bound,✅,pure,1.0,238
 Piecewise,Represents a piecewise function; the pieces are held so the value of a piece whose condition is False is never evaluated,✅,pure,5.1,239
-Yellow,Named color evaluating to RGBColor[1 1 0],✅,pure,5.1,240
 Left,Symbol for left alignment,✅,pure,1.0,241
 ConstantArray,Creates an array of repeated elements,✅,pure,6.0,242
 Epilog,Option specifying graphics primitives drawn after the main plot,✅,none,2.0,243
@@ -252,7 +292,6 @@ MemberQ,Checks if a list contains a value,✅,pure,1.0,244
 NormalDistribution,Represents a normal (Gaussian) probability distribution,✅,pure,6.0,245
 AirportData,,🚫,,10.0,246
 GridLinesStyle,Option for specifying the style of grid lines in graphics,✅,none,6.0,247
-In,Returns a previous input expression,✅,pure,1.0,248
 Det,Computes the determinant of a matrix,✅,pure,1.0,251
 NSolve,Solves equations numerically — a bare polynomial means poly == 0 and every root path ends in the same polish step as NRoots so conjugate pairs agree bit for bit,✅,pure,2.0,252
 Cross,Computes the generalized cross product of n-1 vectors of length n,✅,pure,3.0,253
@@ -264,7 +303,6 @@ Blend,Blend colors together using linear interpolation; also samples named Color
 Tooltip,Tooltip display wrapper (stays symbolic in script mode),✅,unevaluated,6.0,260
 Spacings,Spacing specification for grids and layouts,✅,none,6.0,261
 Assumptions,Specify assumptions for symbolic computation,✅,none,3.0,262
-Real,Head type for real (floating-point) numbers,✅,pure,1.0,263
 Ticks,Option for tick marks on plot axes,✅,pure,1.0,264
 MapThread,Applies a function to corresponding elements of multiple lists,✅,pure,2.0,265
 Smaller,Font size directive for making text smaller,✅,none,6.0,266
@@ -279,9 +317,7 @@ Pochhammer,Returns the Pochhammer symbol (rising factorial),✅,pure,1.0,274
 Eigenvalues,Computes the eigenvalues of a matrix; the two-arg form takes the k largest-magnitude eigenvalues,✅,pure,1.0,275
 Timing,Returns the CPU time taken to evaluate an expression,✅,contextual,1.0,276
 RowBox,Represents a horizontal row of boxes for typesetting,✅,pure,3.0,277
-Round,Returns the nearest integer to a number,✅,pure,1.0,279
 Button,Interactive button element (stays symbolic in script mode),✅,unevaluated,6.0,280
-Gray,Named color evaluating to GrayLevel[0.5],✅,pure,5.1,281
 Sphere,Sphere graphics primitive; a circle in two dimensions,✅,none,6.0,282
 Get,Reads and evaluates a file returning the last result,✅,effectful,1.0,283
 Quiet,Evaluate expression suppressing messages,✅,contextual,6.0,284
@@ -289,11 +325,9 @@ Joined,Option for joining points in list plots,✅,none,6.0,285
 FreeQ,Tests if expression is free of a specified form,✅,pure,1.0,286
 Medium,Medium size specification,✅,none,6.0,287
 Dimensions,Dimensions of a nested list optionally capped at n levels or Infinity,✅,pure,1.0,288
-Rest,Returns the list without its first element,✅,pure,1.0,289
 NonCommutativeMultiply,Non-commutative multiplication operator,✅,pure,1.0,290
 Axis,Filling reference for plots,✅,none,3.0,291
 Superscript,Inert superscript display form,✅,pure,1.0,292
-Conjugate,Returns the complex conjugate,✅,pure,1.0,293
 Full,Full-size image specification,✅,none,6.0,294
 IdentityMatrix,Creates an identity matrix of given size,✅,pure,1.0,295
 IntegerDigits,Returns list of digits of an integer,✅,pure,2.0,296
@@ -305,18 +339,14 @@ Cylinder,3D cylinder graphics primitive,✅,none,6.0,302
 Graph,Yields a graph with vertices and edges rendered as SVG,✅,effectful,8.0,303
 Tiny,Tiny size specification,✅,none,6.0,304
 OptionsPattern,Pattern object that matches any sequence of options in function definitions,✅,pure,6.0,305
-Pink,Named color evaluating to RGBColor[1 0.5 0.5],✅,pure,5.1,306
-Factor,Factors a polynomial over the integers,✅,pure,1.0,307
 Prime,Returns the nth prime number,✅,pure,1.0,308
 ComplexExpand,Expands expressions assuming variables are real,✅,pure,2.0,309
 Inherited,Symbol indicating a setting should be inherited from a higher level,✅,pure,6.0,310
 HoldForm,Holds an expression unevaluated for display,✅,pure,1.0,311
 Darker,Makes a color darker,✅,pure,6.0,312
 Sign,Returns the sign of a number,✅,pure,1.0,313
-Purple,Named color evaluating to RGBColor[0.5 0 0.5],✅,pure,5.1,314
 Rotate,Rotates a graphics object,✅,pure,6.0,315
 TraditionalForm,Displays expressions in traditional mathematical notation,✅,pure,3.0,317
-Drop,Returns the list without its first n elements (the one-argument form drops nothing and returns the expression),✅,pure,1.0,318
 IntegerQ,Tests if the expression evaluates to an integer,✅,pure,1.0,319
 Information,Displays information about a symbol,✅,pure,1.0,320
 ToExpression,Converts a string to an evaluated expression; definitions in the string take effect,✅,pure,1.0,321
@@ -337,7 +367,6 @@ SparseArray,"Creates a sparse array representation that stays sparse under arith
 NumberForm,Displays a number with specified formatting; ToString renders x to n significant figures or with {n;f} to exactly f decimal places (the single-argument form uses the 6-significant-figure default; reals with exponent >= 6 or <= -6 switch to 2D scientific notation) and supports DigitBlock/NumberSeparator digit grouping and NumberPadding field padding,✅,pure,1.0,336
 FrameTicks,Option specifying tick marks on the frame of a plot,✅,none,2.0,337
 RandomChoice,Random selection with replacement,✅,contextual,6.0,338
-Collect,Collects terms with the same powers of a variable,✅,pure,1.0,339
 NumberQ,Checks if a value is a number,✅,pure,1.0,340
 DateObject,Represents a date or date-time object keeping only the components its granularity names,✅,pure,10.0,341
 EntityValue,Retrieves property values from entities in the Wolfram Knowledgebase,✅,effectful,10.0,342
@@ -376,10 +405,12 @@ EntityProperty,Represents a property of an entity class,✅,pure,10.0,366
 Tuples,Generates all tuples of elements from a list,✅,pure,5.1,367
 Small,Small size specification,✅,none,6.0,368
 Coefficient,Extracts the coefficient of a term in a polynomial,✅,pure,1.0,369
+Exponent,Returns the maximum power of a variable in a polynomial,✅,pure,1.0,829
+Denominator,Returns the denominator of a rational expression,✅,pure,1.0,512
+Numerator,Returns the numerator of a rational expression,✅,pure,1.0,628
 NestList,Returns the list of intermediate results from Nest,✅,pure,1.0,371
 DeleteDuplicates,Removes duplicate elements from a list (or pairs with duplicate values from an association),✅,pure,7.0,373
 DisplayFunction,Option controlling display output,✅,pure,1.0,375
-Product,Computes the product of an expression over one or more ranges — accepts trailing options,✅,pure,1.0,376
 FontWeight,Option for specifying font weight (Bold etc),✅,pure,3.0,377
 Right,Symbol for right alignment,✅,pure,1.0,378
 Most,Returns the list without its last element,✅,pure,5.0,379
@@ -400,7 +431,6 @@ Placed,Inert positional wrapper for label and legend placement (used with ChartL
 AbsolutePointSize,Graphics primitive for setting point size in absolute units,✅,none,2.0,392
 Compile,Compiles a function for numerical evaluation,✅,pure,2.0,393
 Bottom,Symbol for bottom alignment,✅,pure,1.0,394
-Ceiling,Returns the smallest integer greater than or equal to a number,✅,pure,1.0,395
 Root,Represents the k-th root of a polynomial (an explicit value only when the polynomial factors over the rationals into pieces of degree at most 2),✅,pure,3.0,396
 Labeled,Wrapper that attaches a label to an expression for display,✅,pure,6.0,397
 UnitSystem,Option for specifying the unit system for computations,✅,pure,10.0,398
@@ -437,7 +467,6 @@ RepeatedNull,Pattern that matches zero or more repetitions,✅,pure,1.0,428
 Interleaving,Option for specifying channel interleaving in images,✅,pure,7.0,429
 CDF,Cumulative distribution function for a distribution,✅,pure,6.0,430
 TagSetDelayed,Defines a delayed upvalue assignment associated with a tag symbol,✅,stateful,1.0,431
-Magenta,Named color evaluating to RGBColor[1 0 1],✅,pure,5.1,432
 Boole,Converts True to 1 and False to 0,✅,pure,5.1,433
 Outer,Generalized outer product over any number of nonatomic arguments sharing one head,✅,pure,1.0,434
 InterpolationOrder,Option for specifying the order of interpolation,✅,pure,3.0,435
@@ -460,10 +489,10 @@ Nest,Applies a function n times to an expression,✅,pure,1.0,451
 Assuming,Evaluate expression under given assumptions,✅,pure,5.0,452
 VertexLabels,Option for specifying labels on graph vertices,✅,pure,8.0,453
 UpSet,Assign upvalues to symbols appearing in the LHS,✅,side_effect,1.0,454
-Together,Puts terms over a common denominator,✅,pure,1.0,455
 StringTake,Returns a substring of a string; a list of integers that cannot be a span is read as separate specifications,✅,pure,2.0,456
 ImageData,Extracts pixel data from an image as nested lists,✅,pure,7.0,457
 LaplaceTransform,Compute the Laplace transform of an expression,✅,none,4.0,458
+InverseLaplaceTransform,Compute the inverse Laplace transform — the third argument may be an expression or a number naming the point it is taken at,✅,none,4.0,583
 PlotTheme,Option for specifying the visual theme for plots,✅,pure,10.0,459
 Grad,Compute the gradient of a scalar or array field (derivative axis is innermost),✅,pure,9.0,461
 RawBoxes,Wrapper for raw box expressions in typesetting,✅,pure,6.0,461
@@ -480,7 +509,6 @@ CellularAutomaton,Generates a 1D or 2D cellular automaton evolution over chosen 
 Riffle,Inserts an element between each pair of elements,✅,pure,6.0,473
 Characters,Converts a string into a list of single-character strings,✅,pure,1.0,474
 GraphicsComplex,Indexed coordinate graphics container,✅,none,6.0,475
-Dt,Total differential (one-arg) or total derivative treating all variables as potentially dependent; higher-order via {x n} and repeated variables,✅,pure,1.0,476
 EuclideanDistance,Euclidean distance between two vectors,✅,pure,6.0,477
 Subsets,Returns all subsets of a list,✅,pure,5.1,478
 SoundNote,Represents a musical note for sound generation,✅,pure,6.0,479
@@ -501,7 +529,6 @@ DiagonalMatrix,Creates a diagonal matrix from a list,✅,pure,1.0,493
 GraphicsRow,Arranges graphics in a horizontal row,✅,pure,6.0,494
 TrackedSymbols,Option for specifying which symbols trigger dynamic updates,✅,pure,6.0,495
 NonlinearModelFit,Fits a nonlinear model to data and returns a FittedModel object,✅,pure,7.0,496
-Brown,Named color evaluating to RGBColor[0.6 0.4 0.2],✅,pure,5.1,497
 MapAt,Applies a function at one or more positions where position 0 addresses the head; each level may be an index All or a span,✅,pure,1.0,498
 IntegerPart,Returns the integer part of a number (truncation towards zero),✅,pure,3.0,499
 PlotMarkers,Option for specifying markers on plot points,✅,pure,6.0,500
@@ -511,13 +538,11 @@ GenomeData,,🚫,,7.0,503
 ArrayFlatten,Flatten a matrix of sub-matrices into a single matrix with an optional block rank r,✅,pure,6.0,504
 Tr,Computes the trace of a matrix or array with an optional combiner function and index level (sum of main-diagonal entries by default),✅,pure,4.0,505
 MeshFunctions,Option for specifying mesh line functions in plots,✅,pure,6.0,506
-Cyan,Named color evaluating to RGBColor[0 1 1],✅,pure,5.1,507
 DateListPlot,Plots data with date-valued x-axis,✅,pure,6.0,508
 Baseline,Option for specifying baseline alignment,✅,pure,3.0,509
 EvenQ,Checks if a number is even,✅,pure,1.0,510
 OddQ,Checks if a number is odd,✅,pure,1.0,635
 Lighting,Option for 3D lighting,✅,pure,1.0,511
-Denominator,Returns the denominator of a rational expression,✅,pure,1.0,512
 CoefficientList,Returns the list of coefficients of a polynomial,✅,pure,1.0,513
 Remove,Removes a symbol (no-op in Woxi),✅,effectful,1.0,514
 LegendreP,Legendre polynomial of the first kind,✅,pure,1.0,515
@@ -545,7 +570,6 @@ Decrement,Decrements a variable by 1 and returns the old value,✅,stateful,1.0,
 Rationalize,Converts a real number to a nearby rational,✅,pure,1.0,537
 Rasterize,Converts expression to raster image,✅,pure,6.0,539
 FrameTicksStyle,Option for specifying the style of frame ticks,✅,pure,6.0,540
-Complex,Head type for complex numbers,✅,pure,1.0,541
 Delete,Deletes an element at a given position,✅,pure,2.0,542
 JacobiDN,Jacobi elliptic function dn,✅,pure,1.0,543
 JacobiSN,Jacobi elliptic function sn,✅,pure,1.0,544
@@ -595,10 +619,8 @@ Minimize,Global symbolic minimization of a function over variables with optional
 Begin,Begins a private context (no-op in Woxi),✅,effectful,1.0,578
 RepeatedTiming,Time expression evaluation with repeated sampling,✅,effectful,10.1,579
 GraphData,,🚫,,6.0,580
-LightBlue,Named light color evaluating to RGBColor[0.87 0.94 1],✅,pure,6.0,581
 FileNameJoin,Join file path components,✅,pure,7.0,582
 ToFileName,Join directory path components into a file name string,✅,pure,1.0,
-InverseLaplaceTransform,Compute the inverse Laplace transform — the third argument may be an expression or a number naming the point it is taken at,✅,none,4.0,583
 InverseFunction,Represents the inverse of a function or geometric transform,✅,pure,2.0,584
 Residue,Computes the residue of an expression at a point,✅,pure,2.0,585
 PieChart,Creates a pie chart from data,✅,pure,7.0,586
@@ -638,17 +660,18 @@ DiracDelta,Dirac delta generalized function,✅,pure,4.0,624
 KroneckerProduct,Kronecker (tensor) product of vectors and matrices,✅,pure,6.0,625
 ScriptMinSize,Minimum size for sub/superscripts,✅,none,3.0,626
 DownValues,Returns the downvalues of a symbol,✅,pure,2.0,627
-Numerator,Returns the numerator of a rational expression,✅,pure,1.0,628
 Sound,Represents a sound object,✅,none,2.0,629
 Binarize,Converts an image to black and white using a threshold,✅,pure,7.0,630
 ImageScaled,Coordinates scaled to image dimensions,✅,none,6.0,631
 DirichletCondition,Dirichlet boundary condition for PDEs,✅,none,10.0,632
-LightGray,Named light color evaluating to GrayLevel[0.85],✅,pure,6.0,633
 ChartStyle,Style specification for chart elements,✅,pure,7.0,634
 SelectionMove,Move the selection in a notebook,✅,none,3.0,636
 RotateLeft,Rotates list elements to the left,✅,pure,1.0,637
 PadRight,Pads a list on the right to a given length or nested shape with a cyclically tiled padding array,✅,pure,4.0,638
-FourierTransform,computes the symbolic Fourier transform of an expression,✅,pure,4.0,639
+Fourier,Discrete Fourier transform of a list,✅,pure,1.0,712
+InverseFourier,Inverse discrete Fourier transform of a list,✅,pure,1.0,1260
+FourierTransform,Computes the symbolic Fourier transform of an expression,✅,pure,4.0,639
+InverseFourierTransform,Computes the symbolic inverse Fourier transform of an expression,✅,pure,4.0,1124
 PowerExpand,Expands powers and logarithms assuming positive reals,✅,pure,2.0,640
 Fit,Performs a least-squares fit of data to a linear combination of basis functions — a design matrix without full column rank gives the minimum-norm solution,✅,pure,1.0,641
 Input,Reads user input (inert in Woxi),✅,effectful,1.0,642
@@ -690,7 +713,6 @@ ListQ,Tests if expression is a list,✅,pure,2.0,679
 SeriesCoefficient,Extract the nth coefficient from a power series,✅,pure,3.0,680
 BoxData,,🚫,,8.0,681
 FilterRules,Filters a list of rules by allowed keys,✅,pure,6.0,682
-Apart,Decomposes a rational expression into partial fractions,✅,pure,1.0,683
 Attributes,Returns the attributes of a symbol or of each symbol in a list,✅,pure,1.0,684
 CellBaseline,Option for cell baseline alignment,✅,none,3.0,685
 AnimationRunning,Option controlling whether an animation is running,✅,none,6.0,686
@@ -704,9 +726,9 @@ ContourShading,Option specifying shading between contour lines,✅,none,2.0,693
 ListPointPlot3D,3D scatter plot of points,✅,pure,6.0,694
 RSolve,Solve recurrence equations,✅,pure,5.0,695
 Off,Turns off messages (no-op in Woxi),✅,effectful,1.0,697
+On,Turns on messages (no-op in Woxi),✅,effectful,1.0,1095
 Delimiter,Separator element in menus and palettes,✅,none,6.0,698
 VertexColors,Option for specifying vertex colors in graphics,✅,none,6.0,699
-ExpandAll,Expands all products and powers in an expression,✅,pure,1.0,700
 Default,Default value for optional arguments — an optional slot whose function has no Default does not match at all,✅,pure,1.0,701
 Beta,Euler beta function and incomplete beta Beta[z a b]; exact (BigInt) for integer half-integer and rational args via rising factorials and Gamma half-integer forms; numeric for inexact args,✅,pure,1.0,702
 HeavisideTheta,Heaviside step function,✅,pure,6.0,705
@@ -716,7 +738,6 @@ FileNames,Lists file names matching a pattern,✅,effectful,2.0,707
 DateList,Converts to date list,✅,pure,6.0,709
 RegularPolygon,Regular polygon graphics primitive,✅,none,10.2,710
 DSolveValue,Solve a differential equation and return the solution value,✅,pure,10.0,711
-Fourier,Discrete Fourier transform of a list,✅,pure,1.0,712
 VertexCoordinates,Option for vertex coordinates in graphs,✅,none,8.0,713
 ConditionalExpression,Represents an expression valid under a condition,✅,pure,8.0,715
 SetDirectory,Sets the current working directory,✅,effectful,2.0,715
@@ -735,7 +756,6 @@ LogIntegral,Logarithmic integral function Li(x) = Ei(ln(x)),✅,pure,1.0,727
 Pause,Pauses evaluation for a specified number of seconds,✅,effectful,2.0,728
 BinomialDistribution,Binomial probability distribution,✅,none,6.0,729
 Checkbox,Interactive checkbox control,✅,none,6.0,730
-Number,Head type for numbers,✅,pure,1.0,731
 Band,Specify a band of a matrix,✅,none,6.0,732
 QuantityMagnitude,Returns the magnitude of a quantity,✅,pure,9.0,733
 HermiteH,Physicist's Hermite polynomial H_n(x),✅,pure,1.0,734
@@ -831,7 +851,6 @@ Heads,Option for including heads in operations,✅,none,2.0,824
 AutorunSequencing,Option controlling autorun sequence of manipulate,✅,none,6.0,826
 ToLowerCase,Converts a string to lowercase,✅,pure,2.0,827
 ListLogPlot,Plots data with logarithmic y-axis,✅,pure,6.0,828
-Exponent,Returns the maximum power of a variable in a polynomial,✅,pure,1.0,829
 WolframLanguageData,,🚫,,10.2,830
 Query,Successive-level queries over lists and associations,✅,pure,10.0,831
 DatePlus,Adds a time increment to a date,✅,pure,6.0,832
@@ -869,7 +888,6 @@ Trace,Returns a minimal evaluation trace as a two-element list,✅,pure,2.0,863
 StreamPoints,Option for number of stream lines in StreamPlot,✅,none,7.0,864
 AssociationThread,Association from a list of keys and a matching list of values or one shared value,✅,pure,10.0,865
 RealDigits,Returns the digits of a real number,✅,pure,2.0,866
-Implies,Logical implication,✅,pure,1.0,868
 DigitCharacter,Represents a digit character in string patterns,✅,pure,5.1,870
 FixedPoint,Applies a function repeatedly until the result no longer changes,✅,pure,1.0,870
 QPochhammer,q-Pochhammer symbol; finite QPochhammer[a;q;n]; infinite QPochhammer[a;q]; Euler function QPochhammer[q],✅,pure,7.0,871
@@ -892,7 +910,6 @@ AbsoluteOptions,,🚫,,4.0,888
 GraphLayout,,🚫,,8.0,888
 Names,Lists symbol names matching a string pattern with wildcards,✅,pure,1.0,889
 RotateLabel,,🚫,,2.0,890
-Eliminate,Eliminates variables from a system of equations,✅,pure,1.0,891
 TimeZone,,🚫,,2.0,892
 InfiniteLine,Geometric primitive representing an infinite line,✅,none,10.0,893
 GegenbauerC,Gegenbauer (ultraspherical) polynomial C_n^lambda(x); two-arg form GegenbauerC[n;x] is the renormalized (2/n) ChebyshevT[n;x],✅,pure,1.0,894
@@ -971,7 +988,6 @@ VertexStyle,,🚫,,8.0,969
 OverHat,Display form with a hat accent,✅,none,6.0,970
 ListLogLogPlot,Plots data with logarithmic x and y axes,✅,pure,6.0,971
 SetAccuracy,Set every numeric leaf of an expression to a fixed accuracy (precision = accuracy + Log10[|x|] per leaf),✅,pure,2.0,972
-LightRed,Named light color evaluating to RGBColor[1 0.85 0.85],✅,pure,6.0,973
 NotebookWrite,Requires external services or GUI infrastructure,🚫,io,3.0,974
 ByteCount,Count bytes used internally to store an expression,✅,pure,1.0,975
 Ramp,Returns the ramp function (max of 0 and x),✅,pure,11.0,976
@@ -1090,7 +1106,6 @@ ImageAdd,Adds pixel values of two images pointwise,✅,pure,7.0,1091
 OwnValues,Returns the own values of a symbol,✅,pure,2.0,1092
 EstimatedDistribution,,🚫,,8.0,1093
 SplineWeights,,🚫,,7.0,1094
-On,Turns on messages (no-op in Woxi),✅,effectful,1.0,1095
 Histogram3D,,🚫,,7.0,1096
 ImageCrop,Trims uniform borders or crops an image to a given size and side,✅,pure,7.0,1097
 StringTrim,Removes whitespace from the beginning and end of a string,✅,pure,7.0,1098
@@ -1119,7 +1134,6 @@ PositionIndex,Maps each distinct value to the positions or keys where it occurs,
 AnimationRate,,🚫,,6.0,1122
 HoldAllComplete,Attribute that prevents all evaluation,✅,1,3.0,1122
 Blur,Applies Gaussian blur to an image,✅,pure,7.0,1124
-InverseFourierTransform,computes the symbolic inverse Fourier transform,✅,pure,4.0,1124
 CirclePoints,Gives equally spaced points on a circle,✅,pure,10.1,1126
 NetChain,,🚫,,11.0,1126
 FiniteGroupData,,🚫,,7.0,1127
@@ -1134,7 +1148,6 @@ SwatchLegend,Inert legend description with color swatches consumed by Legended (
 TreeForm,Display an expression as a tree structure,✅,pure,1.0,1138
 UpdateInterval,,🚫,,6.0,1138
 EmpiricalDistribution,Empirical distribution from data (exact weights via DataDistribution),✅,pure,8.0,1139
-LightGreen,Named light color evaluating to RGBColor[0.88 1 0.88],✅,pure,6.0,1140
 NotebookSelection,,🚫,,3.0,1141
 CellTags,,🚫,,3.0,1142
 FractionBox,Low-level box construct for fraction display,✅,pure,3.0,1143
@@ -1182,7 +1195,6 @@ ImagePad,Pads an image on each side with a constant fill or edge extension,✅,p
 ChiSquareDistribution,Represents a chi-square distribution,✅,1,6.0,1186
 ListInterpolation,Creates interpolation from uniformly spaced data (2-D coordinates may be given as separate arguments or as one list),✅,pure,3.0,1186
 FindShortestPath,Find a shortest weighted path between two vertices of a graph,✅,pure,8.0,1187
-LightYellow,Named light color evaluating to RGBColor[1 1 0.85],✅,pure,6.0,1188
 SetSystemOptions,,🚫,,6.0,1189
 GeoRange,,🚫,,10.0,1190
 Orthogonalize,Orthonormalizes a set of vectors via Gram-Schmidt,✅,pure,6.0,1191
@@ -1191,7 +1203,6 @@ FresnelS,Returns the Fresnel sine integral,✅,pure,3.0,1193
 CometData,,🚫,,10.0,1195
 HighlightImage,,🚫,,9.0,1195
 Subgraph,Induced subgraph on given vertices (keeps the given vertex order),✅,pure,8.0,1197
-Xor,Logical XOR (true when an odd number of args are true),✅,pure,1.0,1197
 FindClusters,Partitions data into clusters,✅,unevaluated,6.0,1198
 OpenWrite,Opens a file for writing,✅,effectful,1.0,1199
 SmoothHistogram,,🚫,,8.0,1200
@@ -1222,7 +1233,6 @@ VertexCount,Returns the number of vertices in a graph (optionally matching a pat
 LetterCharacter,String pattern for letter characters,✅,1,5.1,1226
 FormatType,Option for output format type,✅,pure,1.0,1227
 BitXor,Returns the bitwise XOR of integers,✅,pure,4.0,1228
-Cancel,Cancels common factors in a rational expression,✅,pure,1.0,1229
 AiryAi,Airy function of the first kind Ai(x),✅,pure,1.0,1230
 ParametricNDSolve,,🚫,,9.0,1231
 AllTrue,Checks if all elements in a list are true,✅,pure,10.0,1232
@@ -1253,7 +1263,6 @@ OutputResponse,,🚫,,8.0,1257
 RandomComplex,Gives a pseudorandom complex number in a rectangular region,✅,effectful,6.0,1258
 Random,Legacy pseudorandom generator (wraps RandomReal/RandomInteger/RandomComplex),✅,effectful,1.0,1258
 Hypergeometric0F1,Confluent hypergeometric limit function,✅,pure,1.0,1259
-InverseFourier,Inverse discrete Fourier transform of a list,✅,pure,1.0,1260
 Longest,Pattern wrapper that tries the longest match first; transparent around anything that is not a sequence,✅,pure,6.0,1261
 BetaRegularized,Regularized incomplete beta function I_z(a b),✅,pure,2.0,1263
 Gather,Groups identical elements together (optional custom equivalence test),✅,pure,7.0,1264
@@ -1490,7 +1499,6 @@ LengthWhile,Returns the length of the longest initial run satisfying a test,✅,
 RasterSize,Option for raster resolution,✅,pure,6.0,1499
 TransformedField,Transform vector or scalar field,✅,pure,9.0,1499
 Conditioned,Symbolic conditional wrapper,✅,pure,8.0,1501
-LogicalExpand,Expand logical expression to disjunctive normal form,✅,pure,1.0,1501
 GeoProjection,Geographic projection specification,✅,pure,10.0,1503
 SoundVolume,Sound volume specification,✅,pure,6.0,1503
 GradientFilter,Image gradient filter,✅,pure,7.0,1507
@@ -1538,7 +1546,6 @@ VerticalSlider,Vertical slider control,✅,pure,6.0,1547
 MaxPlotPoints,Maximum number of plot points option,✅,pure,5.1,1548
 LaunchKernels,Launch parallel computation kernels,✅,pure,7.0,1549
 PermutationCycles,Cycle decomposition of a permutation,✅,pure,8.0,1550
-LightOrange,Named light color evaluating to RGBColor[1 0.9 0.8],✅,pure,6.0,1551
 AnimationRepetitions,Animation repetition option,✅,pure,6.0,1552
 ARMAProcess,Autoregressive moving average process,✅,pure,9.0,1553
 DivideBy,Divides a variable by a value,✅,stateful,1.0,1555
@@ -1798,7 +1805,6 @@ FindCycle,Find cycles in a graph or list of edges returning each cycle as a list
 TimeSeriesForecast,Time series forecast,,unevaluated,9.0,1815
 WordFrequencyData,,🚫,,10.4,1815
 CharacteristicFunction,Characteristic function E[e^(itX)] of a probability distribution,✅,pure,6.0,1817
-FactorTerms,Pulls out the greatest common numerical factor from terms,✅,pure,1.0,1817
 DiscreteVariables,Discrete variables option,,unevaluated,9.0,1819
 PermutationReplace,Replaces each point in an expression by its image under a permutation or list of permutations,✅,pure,8.0,1819
 Standardize,Standardizes data by subtracting the mean and dividing by the standard deviation,✅,pure,7.0,1822
@@ -1817,7 +1823,6 @@ RandomPermutation,Random permutation of n points returned as a Cycles object,✅
 TooltipDelay,Tooltip delay option,,unevaluated,7.0,1833
 FactorialMoment,Computes the r-th factorial moment of data or a distribution (mean of falling factorials),✅,pure,8.0,1836
 WatershedComponents,Watershed components,,unevaluated,8.0,1836
-LightPurple,Named light color evaluating to RGBColor[0.94 0.88 0.94],✅,pure,6.0,1838
 ViewCenter,View center option,,unevaluated,2.0,1838
 FileType,Returns the type of a file (File Directory or None),✅,filesystem,2.0,1842
 FourierSinSeries,Fourier sine series,,unevaluated,7.0,1842
@@ -1929,7 +1934,6 @@ TensorRank,Gives the rank (number of indices) of a tensor,✅,pure,9.0,1938
 SymmetricMatrixQ,Tests whether a matrix is symmetric,✅,pure,7.0,1940
 VectorSizes,Internal developer function for vector size handling,🚫,,12.1,1940
 Install,WSTP link installation for external programs,🚫,,2.0,1941
-LightPink,Named light color evaluating to RGBColor[1 0.85 0.85],✅,pure,6.0,1944
 SquareFreeQ,Tests if a polynomial or integer is square-free,✅,pure,6.0,1944
 UnitTriangle,Unit triangle function (1-|x| for |x| <= 1),✅,pure,7.0,1944
 MessageDialog,GUI dialog for displaying messages,🚫,,6.0,1946
@@ -2184,7 +2188,6 @@ PlotLayout,Option specifying the layout arrangement of multiple plots,✅,pure,8
 ReflectionMatrix,Gives the reflection matrix for a normal vector,✅,None,6.0,2203
 TTest,Performs a Student t-test for statistical hypothesis testing,🚫,None,8.0,2203
 ImageFilter,Applies a filter function to the range-r neighbourhood of every pixel in each channel — the edges are repeated so every window is the full square,✅,pure,7.0,2205
-LightBrown,Named light color evaluating to RGBColor[0.94 0.91 0.88],✅,pure,6.0,2205
 DropoutLayer,Represents a dropout layer in a neural network,🚫,None,11.0,2208
 RegionQ,Geometric region predicate,✅,pure,10.0,2208
 ShearingTransform,Shear transformation by an angle along a direction relative to a normal optionally centred at a point,✅,pure,6.0,2208
@@ -2829,7 +2832,6 @@ ThermometerGauge,,🚫,,9.0,2867
 TransformationClass,,🚫,,10.0,2867
 UndirectedGraphQ,True if all edges are undirected,✅,1,8.0,2867
 WordDefinition,,🚫,,10.3,2867
-LightCyan,Named light color evaluating to RGBColor[0.9 1 1],✅,pure,6.0,2871
 QGamma,q-analog of the gamma function,✅,pure,7.0,2871
 SiegelTheta,,🚫,,6.0,2871
 VertexEccentricity,Maximum distance from a vertex,✅,1,8.0,2871
@@ -3118,7 +3120,6 @@ FactorialMomentGeneratingFunction,Expected value E[t^X] of a distribution (MGF a
 HadamardMatrix,Hadamard matrix of size n,✅,none,9.0,3176
 KeyIntersection,Restricts each association to the keys common to all,✅,pure,10.0,3176
 LeftRightArrow,,,,3.0,3176
-LightMagenta,Named light color evaluating to RGBColor[1 0.9 1],✅,pure,6.0,3176
 MellinTransform,Table-driven Mellin transform for classical integrands with shift and substitution rules,✅,pure,11.0,3176
 MeshCellCentroid,,🚫,,10.0,3176
 PermutationLength,Number of non-fixed points in a permutation,✅,1,8.0,3176
