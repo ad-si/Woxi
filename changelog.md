@@ -41,6 +41,24 @@
         groups its columns with wide and tight gaps came out evenly and
         far too widely spaced. A plain `{s1, s2, …}` names the positions
         in order, and positions left out keep the default gap.
+- Manipulate improvements (driven by the "Recursive Exercises" Wolfram
+    Demonstrations, which nest circles inside circles):
+    - The leading assignments a body makes before anything else are
+        evaluated with the control variables at their initial values, the
+        way Wolfram evaluates the body before laying the controls out.
+        A body opening with `u = {…, ss[-1., 1., n, dc]}`, where `ss`
+        recurses down to a literal-`1` base case, used to recurse on a
+        symbolic depth that never reached the base case, so extraction
+        never returned and no widget appeared at all.
+    - A choice list built from another control's variable
+        (`Range[1, If[flat, 3, 6], 1]`) is re-resolved against the live
+        bindings, so a level setter offering six levels flat narrows to
+        three in 3D. A selected value the narrowed list no longer offers
+        falls back to the last one it does, and the body is rendered again
+        for it. Previously the list was fixed at build time.
+    - `ControlType -> Slider` over a choice list renders a slider that
+        steps through the choices, matching Wolfram; a twenty-entry
+        colour-scheme list used to become a dropdown.
 - Fixes driven by a Wolfram Demonstration that runs a cellular automaton
     over a dendrite and compares it with the linear case:
     - A layout that holds pictures — `Grid[{{plot1, plot2}, …}]`, a

@@ -100,7 +100,11 @@ the SetterBar.  Controls may be grouped in a `Row[…]`, `Column[…]`, or
 `Grid[…]` argument, and a `ControlType -> …` given to the `Manipulate`
 itself types every control that does not pick one (a list value,
 `ControlType -> {Slider, PopupMenu}`, assigns one type per control in
-spec order).  A
+spec order).  `ControlType -> Slider` over a choice list draws a slider
+that steps through the choices rather than a dropdown.  A choice list
+built from another control's variable (`Range[1, If[flat, 3, 6], 1]`)
+is rebuilt whenever that control moves, and a selected value the
+narrowed list no longer offers falls back to the last one it does.  A
 `ControlType -> None` variable has no slider but stays live, mutable
 state: extra display arguments such as a trailing
 `Dynamic[Panel[Grid[… Checkbox …]]]` are rendered as interactive

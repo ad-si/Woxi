@@ -3844,6 +3844,7 @@ fn render_manipulate_widget<'a>(
         value_label_svgs,
         current_index,
         popup,
+        slider: as_slider,
       } => {
         let label_widget = manipulate_label_widget(
           label_runs,
@@ -3852,6 +3853,33 @@ fn render_manipulate_widget<'a>(
           label_col_width,
           enabled,
         );
+        // `ControlType -> Slider` over a discrete domain: a slider that
+        // steps through the choices by index, which is how Wolfram draws a
+        // twenty-entry colour-scheme picker. Dragging sends the choice at
+        // the new index, so the update handler needs no special case.
+        if *as_slider && value_labels.len() > 1 {
+          let last = value_labels.len() - 1;
+          let choices = value_labels.clone();
+          let mut s =
+            slider(0..=last as u32, *current_index as u32, move |i| {
+              match choices.get(i as usize) {
+                Some(choice) if enabled => Message::ManipulateDiscreteChanged(
+                  cell_idx,
+                  ctrl_idx,
+                  choice.clone(),
+                ),
+                _ => Message::Noop,
+              }
+            })
+            .step(1u32)
+            .width(Fill);
+          if !enabled {
+            s = s.style(disabled_slider_style);
+          }
+          let control_row = row![label_widget, s].align_y(Center).spacing(8);
+          controls_col = controls_col.push(control_row);
+          continue;
+        }
         // A boolean domain — `{v, {True, False}}` in either order — renders
         // as a checkbox, matching the Wolfram FrontEnd (which shows a
         // checkbox rather than a two-button setter for True/False).
@@ -7320,6 +7348,150 @@ Cell[BoxData[
       })
       .collect();
     assert_eq!(names, vec!["n", "nt"]);
+  }
+
+  /// End-to-end regression for the shape the "Recursive Exercises"
+  /// Demonstrations share: a recursive family of nested `Disk`s whose
+  /// level setter offers fewer levels once the 3D view is on, a colour
+  /// index picked by a slider over a twenty-entry list, and two controls
+  /// greyed out while the 3D view is showing.
+  ///
+  /// Both control shapes were wrong before: the level setter kept all six
+  /// choices in 3D (its list was resolved once, at build time), and the
+  /// twenty-entry colour list became a dropdown because nothing carried
+  /// the `ControlType -> Slider` request through to the widget.
+  #[test]
+  fn nested_disks_manipulate_follows_its_dependent_controls() {
+    woxi::interpret(
+      "ring[c_, r_] := {White, Disk[c, r]}\n\
+       nest[a_, b_, 1, _] := ring[{(a + b)/2, 0}, (b - a)/2]\n\
+       nest[a_, b_, k_, sch_] := {ring[{(a + b)/2, 0}, (b - a)/2], \
+         nest[a, (a + b)/2, k - 1, sch], nest[(a + b)/2, b, k - 1, sch], \
+         ColorData[sch, \"ColorList\"][[9 - k]], \
+         Disk[{(a + b)/2, (b - a)/3}, (b - a)/6], \
+         Disk[{(a + b)/2, -(b - a)/3}, (b - a)/6]}",
+    )
+    .expect("the recursive helpers must define");
+
+    let code = "Manipulate[\
+      shapes = {ring[{0, 0}, 1], nest[-1., 1., lvl, sch]}; \
+      edge = If[wide, 0.01, 0.002]; \
+      If[solid, \
+        Graphics3D[{EdgeForm[Thickness[edge]], Opacity[0.5], \
+          (shapes /. Disk[{px_, py_}, pr_] :> Sphere[{px, py, 0}, pr])}, \
+         Boxed -> False, ViewPoint -> {0, 0, 1}], \
+        Graphics[{EdgeForm[Thickness[edge]], shapes}, PlotRange -> All]], \
+      {{lvl, 2, \"level\"}, Range[1, If[solid, 3, 6], 1], \
+        ControlType -> Setter}, \
+      {{solid, False, \"3D version\"}, {True, False}, Enabled -> (lvl < 4)}, \
+      {{wide, False, \"thick\"}, {True, False}, Enabled -> !solid}, \
+      {{sch, 1, \"disks color\"}, Range[20], ControlType -> Slider, \
+        Enabled -> !solid}, \
+      SaveDefinitions -> True, TrackedSymbols -> Manipulate]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the nested-disks Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the disks must render");
+
+    let discrete =
+      |state: &manipulate::ManipulateState, idx: usize| match &state.controls
+        [idx]
+      {
+        manipulate::ControlState::Discrete {
+          values,
+          current_index,
+          slider,
+          ..
+        } => (values.clone(), *current_index, *slider),
+        other => panic!("expected a discrete control, got {other:?}"),
+      };
+
+    // Flat: six levels, and the colour picker asks for a slider rather
+    // than the dropdown twenty choices would otherwise get.
+    assert_eq!(discrete(&state, 0).0.len(), 6);
+    assert_eq!(discrete(&state, 0).1, 1, "level starts at 2");
+    let (colours, colour_index, colour_slider) = discrete(&state, 3);
+    assert_eq!(colours.len(), 20);
+    assert_eq!(colour_index, 0);
+    assert!(colour_slider, "ControlType -> Slider must reach the widget");
+    assert_eq!(
+      state.control_is_enabled,
+      vec![true, true, true, true],
+      "nothing is greyed out while the flat view is showing"
+    );
+
+    // Switching to 3D narrows the level setter to three choices, keeps the
+    // selected level (2 is still offered), and greys out the two controls
+    // whose `Enabled` conditions read the 3D flag.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[1]
+    {
+      *current_index = 0; // True
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "3D render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "the spheres must render");
+    assert_eq!(discrete(&state, 0).0, vec!["1", "2", "3"]);
+    assert_eq!(discrete(&state, 0).1, 1, "level 2 survives the narrowing");
+    assert_eq!(
+      state.control_is_enabled,
+      vec![true, true, false, false],
+      "thickness and colour are disabled in 3D"
+    );
+
+    // Switching back restores all six levels.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[1]
+    {
+      *current_index = 1; // False
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "flat re-render failed: {:?}",
+      state.error
+    );
+    assert_eq!(discrete(&state, 0).0.len(), 6);
+  }
+
+  /// A selected choice that the narrowed list no longer offers falls back
+  /// to the last one it does, and the body is rendered again for it — so
+  /// the graphic on screen always matches the control below it.
+  #[test]
+  fn narrowed_choice_list_clamps_a_dropped_selection() {
+    let code = "Manipulate[k, \
+      {{k, 5, \"k\"}, Range[1, If[few, 2, 5], 1], ControlType -> Setter}, \
+      {{few, False, \"few\"}, {True, False}}]";
+    let mut state =
+      instantiate_stored_manipulate(code, "").expect("the widget must build");
+    assert_eq!(state.text_output.as_deref(), Some("5"));
+
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[1]
+    {
+      *current_index = 0; // few = True
+    }
+    state.reevaluate();
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        values,
+        current_index,
+        ..
+      } => {
+        assert_eq!(values, &["1", "2"]);
+        assert_eq!(*current_index, 1, "5 is gone, so the last choice wins");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("2"),
+      "the output follows the value the control settled on"
+    );
   }
 
   #[test]

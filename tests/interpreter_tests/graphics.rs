@@ -15155,6 +15155,119 @@ mod manipulate {
     }
   }
 
+  /// The leading assignments a Manipulate body makes before anything else
+  /// are evaluated with the control variables at their initial values, the
+  /// way Wolfram evaluates the body before laying the controls out. A
+  /// nested-circles Demonstration opens its body with `u = {…, ss[-1., 1.,
+  /// n, dc]}`, where `ss` recurses down to a literal-`1` base case: with
+  /// `n` left symbolic that recursion branches without ever reaching the
+  /// base case, so extraction never returned and no widget appeared.
+  #[test]
+  fn spec_leading_assignments_see_the_initial_control_values() {
+    woxi::interpret(
+      "depth[0] := {}\n\
+       depth[k_] := {k, depth[k - 1], depth[k - 1]}",
+    )
+    .unwrap();
+    let expr = interpret_to_expr(
+      "Manipulate[tree = depth[n]; Length[Flatten[tree]], \
+       {{n, 3, \"depth\"}, Range[1, 5], ControlType -> Setter}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.len(), 1);
+    // The assignment ran at `n = 3`, so the helper terminated and left the
+    // depth-3 tree behind for the body to reuse.
+    assert_eq!(woxi::interpret("Length[Flatten[tree]]").unwrap(), "7");
+  }
+
+  /// `ControlType -> Slider` over a *choice list* keeps the choices but
+  /// asks for a slider that steps through them by index — how Wolfram
+  /// draws a twenty-entry colour-scheme picker. Without the flag the
+  /// frontends fell back to a dropdown, since twenty entries are far too
+  /// many for a setter bar.
+  #[test]
+  fn spec_slider_control_type_over_a_choice_list() {
+    let expr = interpret_to_expr(
+      "Manipulate[c, {{c, 1, \"scheme\"}, Range[20], ControlType -> Slider}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("slider over choices");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete {
+        values,
+        slider,
+        popup,
+        ..
+      } => {
+        assert_eq!(values.len(), 20);
+        assert!(*slider, "ControlType -> Slider asks for a slider");
+        assert!(!*popup);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+    assert!(manipulate_spec_to_json(&spec).contains(r#""slider":true"#));
+
+    // A choice list with no such option keeps its default rendering.
+    let expr = interpret_to_expr("Manipulate[c, {{c, 1}, Range[20]}]").unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("plain choice list");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete { slider, .. } => assert!(!*slider),
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+    assert!(!manipulate_spec_to_json(&spec).contains("slider"));
+  }
+
+  /// A choice list built from another control's variable (`Range[1,
+  /// If[flat, 3, 6], 1]`) is only valid for that variable's current value,
+  /// so its code is kept for the frontend to re-resolve — the same way a
+  /// continuous bound that follows another control is. A list that merely
+  /// needs evaluating (`Range[20]`) is static and carries no code.
+  #[test]
+  fn spec_choice_list_following_another_control() {
+    let expr = interpret_to_expr(
+      "Manipulate[{n, flat}, \
+       {{n, 2, \"level\"}, Range[1, If[flat, 3, 6], 1], \
+        ControlType -> Setter}, \
+       {{flat, False, \"flat\"}, {True, False}}, \
+       {{c, 1, \"scheme\"}, Range[20]}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("dynamic choice list");
+    assert_eq!(
+      spec.dynamic_values,
+      vec![("n".to_string(), "Range[1, If[flat, 3, 6], 1]".to_string())],
+      "only the list that mentions another control is dynamic"
+    );
+    // At build time `flat` is False, so the setter offers all six levels.
+    match &spec.controls[0] {
+      ManipulateControl::Discrete { values, .. } => {
+        assert_eq!(values, &["1", "2", "3", "4", "5", "6"]);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+    // Re-resolving against the 3D binding narrows it to three.
+    let (values, labels, svgs) = woxi::with_scoped_globals(
+      &[("flat".to_string(), "True".to_string())],
+      || {
+        woxi::functions::graphics::manipulate_eval_values_code(
+          "Range[1, If[flat, 3, 6], 1]",
+        )
+      },
+    )
+    .expect("the narrowed list must resolve");
+    assert_eq!(values, vec!["1", "2", "3"]);
+    assert_eq!(labels, vec!["1", "2", "3"]);
+    assert_eq!(svgs, vec![None, None, None]);
+
+    // The code rides along in the JSON the Playground consumes.
+    let json = manipulate_spec_to_json(&spec);
+    assert!(
+      json.contains(r#""valuesCode":"Range[1, If[flat, 3, 6], 1]""#),
+      "got: {json}"
+    );
+  }
+
   /// The variable spec is held (so the symbol survives) while the choice
   /// list arrives evaluated, so an initial value written as an expression —
   /// `{{fac, 10^6, "…"}, {1, 10, 10^6}}`, the sine-floor factor of the
