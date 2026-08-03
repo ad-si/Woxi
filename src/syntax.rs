@@ -7179,6 +7179,10 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       "And" if args.len() >= 2 => Some(18),
       "Alternatives" if args.len() >= 2 => Some(27),
       "Rule" | "RuleDelayed" if args.len() == 2 => Some(12),
+      // `/;` and `:` print infix and sit just above `->`, so both need
+      // parens inside anything tighter: `a == (x_ /; y)`, `a == (b:c)`.
+      "Condition" if args.len() == 2 => Some(13),
+      "Pattern" if args.len() == 2 => Some(14),
       "StringJoin" if args.len() >= 2 => Some(30),
       "Power" if args.len() == 2 => Some(48),
       _ => None,
@@ -7204,8 +7208,20 @@ fn part_base_needs_parens(base: &Expr) -> bool {
 /// while everything looser — `&&`, `||`, `|`, `->`, `/.`, `=`, `body &`,
 /// `;` and a nested comparison — needs parens: `a == (b < c)`, not
 /// `a == b < c`.
+/// A bare pattern also gets parens, matching wolframscript's `(a_) != (b_)`,
+/// and so does anything printing with a leading `!`.
+///
+/// This is the single place the rule lives: both InputForm renderers
+/// (`format_expr` and `expr_to_input_form`) call it for every operand, chained
+/// comparisons included (`Hold[(a_) == (b_) == (c_)]`).
 fn comparison_operand_needs_parens(e: &Expr) -> bool {
-  printed_infix_precedence(e).is_some_and(|p| p < 30)
+  matches!(
+    e,
+    Expr::Pattern { .. }
+      | Expr::PatternOptional { .. }
+      | Expr::PatternTest { .. }
+  ) || prints_as_not(e)
+    || printed_infix_precedence(e).is_some_and(|p| p < 30)
 }
 
 /// Render an application shorthand (`f /@ list`, `f @@ list`, `f @@@ list`)
@@ -10203,7 +10219,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             .iter()
             .map(|e| {
               let s = format_expr(e, form);
-              if prints_as_not(e) || comparison_operand_needs_parens(e) {
+              if comparison_operand_needs_parens(e) {
                 format!("({})", s)
               } else {
                 s
@@ -10232,18 +10248,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           format!("Inequality[{}]", parts.join(", "))
         }
       } else {
-        // Patterns need parenthesisation in comparison output to match
-        // wolframscript: `(a_) != (b_)` instead of `a_ != b_`.
         let fmt_operand = |e: &Expr| -> String {
           let s = format_expr(e, form);
-          if matches!(
-            e,
-            Expr::Pattern { .. }
-              | Expr::PatternOptional { .. }
-              | Expr::PatternTest { .. }
-          ) || prints_as_not(e)
-            || comparison_operand_needs_parens(e)
-          {
+          if comparison_operand_needs_parens(e) {
             format!("({})", s)
           } else {
             s
@@ -11758,7 +11765,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
           .iter()
           .map(|e| {
             let s = expr_to_input_form(e);
-            if prints_as_not(e) {
+            if comparison_operand_needs_parens(e) {
               format!("({})", s)
             } else {
               s
@@ -11806,13 +11813,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       };
       let fmt_operand = |e: &Expr| -> String {
         let s = expr_to_input_form(e);
-        if matches!(
-          e,
-          Expr::Pattern { .. }
-            | Expr::PatternOptional { .. }
-            | Expr::PatternTest { .. }
-        ) || prints_as_not(e)
-        {
+        if comparison_operand_needs_parens(e) {
           format!("({})", s)
         } else {
           s

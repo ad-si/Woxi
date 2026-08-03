@@ -310,6 +310,37 @@ mod arithmetic {
         interpret("Hold[a == (b = c)]").unwrap(),
         "Hold[a == (b = c)]"
       );
+      assert_eq!(interpret("Hold[a == (b:c)]").unwrap(), "Hold[a == (b:c)]");
+      assert_eq!(
+        interpret("Hold[a == (x_ /; y)]").unwrap(),
+        "Hold[a == (x_ /; y)]"
+      );
+    }
+
+    // The same rule holds for the InputForm string, which used to come from a
+    // second renderer that had drifted and printed every operand bare.
+    #[test]
+    fn to_string_input_form_parenthesizes_the_same_way() {
+      for (code, expected) in [
+        ("a == (b -> c)", "a == (b -> c)"),
+        ("a == (b :> c)", "a == (b :> c)"),
+        ("a == (b && c)", "a == (b && c)"),
+        ("a == (b || c)", "a == (b || c)"),
+        ("a == (b | c)", "a == (b | c)"),
+        ("(# &) == 0", "(#1 & ) == 0"),
+        ("Hold[a == (b < c)]", "Hold[a == (b < c)]"),
+        ("Hold[a == (b = c)]", "Hold[a == (b = c)]"),
+        ("Hold[a_ == b_ == c_]", "Hold[(a_) == (b_) == (c_)]"),
+        // Operands that bind tighter than `==` still print bare.
+        ("Hold[a == b + c]", "Hold[a == b + c]"),
+        ("Hold[a == f /@ b]", "Hold[a == f /@ b]"),
+      ] {
+        assert_eq!(
+          interpret(&format!("ToString[({code}), InputForm]")).unwrap(),
+          expected,
+          "{code}"
+        );
+      }
     }
 
     // Operands that bind tighter than `==` print bare.
