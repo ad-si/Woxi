@@ -9119,6 +9119,49 @@ mod pane_wrapper_display {
     }
   }
 
+  // A `Pane` is transparent wherever it appears, not only at the top of a
+  // body: a Demonstration lays its readout out as `Grid[{{Pane[…]},
+  // {Graphics[…]}}]`, and the pane's cell has to show what it holds.
+  // Regression: the cell printed the `Pane[…]` call as source text, which
+  // stretched the grid to the width of that source.
+  #[test]
+  fn pane_in_a_grid_cell_shows_its_content() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Grid[{{Pane[Grid[{{\"p\", \"=\", 12}}], ImageSize -> {200, 40}, \
+         Alignment -> {Center, Center}]}, \
+        {Graphics[{Disk[]}, ImageSize -> {200, 100}]}}, \
+       Alignment -> {Center, Top}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("the grid should render");
+    assert!(!svg.contains("Pane["), "the wrapper must not print: {svg}");
+    for part in ["p", "=", "12"] {
+      assert!(
+        svg.contains(&format!(">{part}<")),
+        "missing `{part}`: {svg}"
+      );
+    }
+    assert!(svg.contains("<ellipse"), "the picture row draws: {svg}");
+  }
+
+  // `Item[…]` and `Text[…]` cells are the same kind of wrapper — they say
+  // how to set a cell, not what it shows.
+  #[test]
+  fn item_and_text_grid_cells_show_their_content() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Grid[{{Item[\"a\", Alignment -> Left], Text[\"b\"]}}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("the grid should render");
+    assert!(!svg.contains("Item["), "the wrapper must not print: {svg}");
+    assert!(!svg.contains("Text["), "the wrapper must not print: {svg}");
+    assert!(svg.contains(">a<") && svg.contains(">b<"), "{svg}");
+  }
+
   // The CLI (plain `interpret`, matching wolframscript) keeps the
   // symbolic echo — the unwrap is a visual-host affordance only.
   #[test]
@@ -10853,6 +10896,157 @@ mod plot_grid {
 
 mod grid_frame_and_background {
   use super::*;
+
+  /// Every `<line>` of an SVG, as `(x1, y1, x2, y2)`.
+  fn grid_lines(svg: &str) -> Vec<(f64, f64, f64, f64)> {
+    svg
+      .lines()
+      .filter(|l| l.starts_with("<line "))
+      .map(|l| {
+        let coord = |name: &str| -> f64 {
+          l.split(&format!("{name}=\""))
+            .nth(1)
+            .and_then(|t| t.split('"').next())
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(f64::NAN)
+        };
+        (coord("x1"), coord("y1"), coord("x2"), coord("y2"))
+      })
+      .collect()
+  }
+
+  /// `Dividers -> All` rules every position, the outer edges included, so
+  /// the grid is drawn as a closed box: a two-by-two grid gets three
+  /// horizontal and three vertical lines. Regression: only the boundaries
+  /// between cells were ruled, leaving the box open on all four sides.
+  #[test]
+  fn dividers_all_closes_the_grid() {
+    let svg = export_svg(r#"Grid[{{"a", "b"}, {"c", "d"}}, Dividers -> All]"#);
+    let lines = grid_lines(&svg);
+    let horizontal: Vec<_> = lines.iter().filter(|l| l.1 == l.3).collect();
+    let vertical: Vec<_> = lines.iter().filter(|l| l.0 == l.2).collect();
+    assert_eq!(horizontal.len(), 3, "top, middle and bottom: {svg}");
+    assert_eq!(vertical.len(), 3, "left, middle and right: {svg}");
+    // The outer ones sit on the edges of the grid.
+    assert!(horizontal.iter().any(|l| l.1 == 0.0), "top edge: {svg}");
+    assert!(vertical.iter().any(|l| l.0 == 0.0), "left edge: {svg}");
+  }
+
+  /// `Dividers -> Center` rules only the boundaries *between* cells, so the
+  /// same grid keeps its outer edges open.
+  #[test]
+  fn dividers_center_leaves_the_edges_open() {
+    let svg =
+      export_svg(r#"Grid[{{"a", "b"}, {"c", "d"}}, Dividers -> Center]"#);
+    let lines = grid_lines(&svg);
+    assert_eq!(lines.len(), 2, "one horizontal and one vertical: {svg}");
+    assert!(lines.iter().all(|l| l.0 != 0.0 || l.1 != 0.0), "{svg}");
+  }
+
+  /// The two directions are set independently: `{None, All}` closes the
+  /// grid top and bottom without ruling any column boundary.
+  #[test]
+  fn dividers_all_applies_per_direction() {
+    let svg =
+      export_svg(r#"Grid[{{"a", "b"}, {"c", "d"}}, Dividers -> {None, All}]"#);
+    let lines = grid_lines(&svg);
+    assert!(lines.iter().all(|l| l.1 == l.3), "no vertical rules: {svg}");
+    assert_eq!(lines.len(), 3, "top, middle and bottom: {svg}");
+  }
+
+  /// A single-row grid ruled with `All` is still a closed box — the top and
+  /// bottom edges are the only horizontal positions it has.
+  #[test]
+  fn dividers_all_rules_a_single_row_grid() {
+    let svg = export_svg(r#"Grid[{{"a", "b"}}, Dividers -> All]"#);
+    let horizontal =
+      grid_lines(&svg).into_iter().filter(|l| l.1 == l.3).count();
+    assert_eq!(horizontal, 2, "top and bottom: {svg}");
+  }
+
+  /// The x of each `<text>` in an SVG, in document order.
+  fn text_xs(svg: &str) -> Vec<f64> {
+    svg
+      .lines()
+      .filter(|l| l.starts_with("<text "))
+      .filter_map(|l| {
+        l.split("x=\"")
+          .nth(1)
+          .and_then(|t| t.split('"').next())
+          .and_then(|v| v.parse().ok())
+      })
+      .collect()
+  }
+
+  /// `Spacings -> {{i -> s, …}, …}` sets the gap at individual column
+  /// positions: position `i` is the gap to the left of column `i`. A
+  /// Demonstration uses this to group a readout — a wide gap where the
+  /// dividers fall, tight ones inside each group. Regression: a list-valued
+  /// horizontal spec was dropped and every column got the default gap.
+  #[test]
+  fn spacings_set_individual_column_positions() {
+    let tight = export_svg(
+      r#"Grid[{{"a", "b", "c"}}, Spacings -> {{1 -> 0.2, 2 -> 0.2, 3 -> 0.2, 4 -> 0.2}, Automatic}]"#,
+    );
+    let wide = export_svg(
+      r#"Grid[{{"a", "b", "c"}}, Spacings -> {{1 -> 0.2, 2 -> 3, 3 -> 0.2, 4 -> 0.2}, Automatic}]"#,
+    );
+    let (tight_xs, wide_xs) = (text_xs(&tight), text_xs(&wide));
+    assert_eq!(tight_xs.len(), 3, "{tight}");
+    assert_eq!(wide_xs.len(), 3, "{wide}");
+    // Widening position 2 only pushes `b` (and everything after it) right.
+    assert_eq!(tight_xs[0], wide_xs[0], "column 1 is unmoved");
+    assert!(
+      wide_xs[1] - tight_xs[1] > 20.0,
+      "the gap before column 2 grew: {tight_xs:?} vs {wide_xs:?}"
+    );
+    // Coordinates are written to one decimal, so allow a rounding step.
+    assert!(
+      (wide_xs[2] - tight_xs[2] - (wide_xs[1] - tight_xs[1])).abs() < 0.2,
+      "the later columns shift by the same amount: {tight_xs:?} vs {wide_xs:?}"
+    );
+  }
+
+  /// A plain list of values names the positions in order, and positions the
+  /// spec leaves out keep the default gap — so a spec that stops short only
+  /// changes the columns it reaches.
+  #[test]
+  fn spacings_list_fills_positions_in_order() {
+    let default = export_svg(r#"Grid[{{"a", "b", "c"}}]"#);
+    let partial = export_svg(
+      r#"Grid[{{"a", "b", "c"}}, Spacings -> {{0.2, 0.2}, Automatic}]"#,
+    );
+    let (default_xs, partial_xs) = (text_xs(&default), text_xs(&partial));
+    // Positions 1 and 2 are tightened, so the first two columns move left.
+    assert!(
+      partial_xs[0] < default_xs[0],
+      "{default_xs:?} {partial_xs:?}"
+    );
+    assert!(
+      partial_xs[1] < default_xs[1],
+      "{default_xs:?} {partial_xs:?}"
+    );
+    // Position 3 was never named, so the gap between the last two columns
+    // is the default one — the pitch across it is unchanged.
+    assert!(
+      ((partial_xs[2] - partial_xs[1]) - (default_xs[2] - default_xs[1])).abs()
+        < 0.2,
+      "the unnamed gap is unchanged: {default_xs:?} vs {partial_xs:?}"
+    );
+  }
+
+  /// Without a per-position spec the layout is unchanged: a uniform
+  /// `Spacings -> h` still spaces every column equally.
+  #[test]
+  fn uniform_spacings_keeps_columns_evenly_spaced() {
+    let svg = export_svg(r#"Grid[{{"a", "b", "c"}}, Spacings -> 2]"#);
+    let xs = text_xs(&svg);
+    assert_eq!(xs.len(), 3, "{svg}");
+    assert!(
+      ((xs[1] - xs[0]) - (xs[2] - xs[1])).abs() < 0.01,
+      "equal column pitch: {xs:?}"
+    );
+  }
 
   /// `StyleForm` is the older spelling of `Style`; the front end renders
   /// them identically, so a cell written with the long option names shows
