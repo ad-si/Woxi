@@ -49,6 +49,9 @@ pub enum ControlState {
     /// `ControlType -> PopupMenu`: always render a dropdown, even when the
     /// choice count is small enough for a SetterBar.
     popup: bool,
+    /// `ControlType -> Slider`: render a slider stepping through the
+    /// choices by index rather than a setter bar or dropdown.
+    slider: bool,
   },
   /// A 2D slider binding its variable to a `{x, y}` pair.
   Slider2D {
@@ -290,6 +293,10 @@ pub struct ManipulateState {
   /// bindings on every re-evaluation so a slider range can follow another
   /// control (Kepler's time sliders are bounded by the orbital period `P`).
   dynamic_bounds: Vec<(String, Option<String>, Option<String>)>,
+  /// Per-control choice lists that follow another control's variable
+  /// (InputForm code), re-resolved on every change the way
+  /// `dynamic_bounds` are.
+  dynamic_values: Vec<(String, String)>,
   /// Per-control `Enabled` condition (InputForm code), parallel to `controls`.
   /// `None` means the control has no condition and is always enabled.
   control_enabled: Vec<Option<String>>,
@@ -357,6 +364,7 @@ impl ManipulateState {
       tracked_symbols: spec.tracked_symbols,
       animation_var: spec.animation_var,
       dynamic_bounds: spec.dynamic_bounds,
+      dynamic_values: spec.dynamic_values,
       control_enabled,
       control_is_enabled,
       reeval_pending: 0,
@@ -596,6 +604,18 @@ impl ManipulateState {
   ///
   /// [`from_expr`]: Self::from_expr
   pub fn reevaluate(&mut self) {
+    self.reevaluate_inner(true);
+  }
+
+  /// The body of [`reevaluate`]. `allow_retry` guards the single re-run
+  /// that a re-resolved choice list can trigger: when the new list drops
+  /// the selected value, the output just rendered was for a value the
+  /// control no longer offers, so it is rendered once more for the value
+  /// the control settled on. The re-run cannot cascade — it resolves the
+  /// same lists against bindings that already satisfy them.
+  ///
+  /// [`reevaluate`]: Self::reevaluate
+  fn reevaluate_inner(&mut self, allow_retry: bool) {
     let bindings = self.bindings();
     let code = self.body.clone();
 
@@ -606,7 +626,8 @@ impl ManipulateState {
     let displays = self.displays.clone();
     let control_enabled = self.control_enabled.clone();
     let dynamic_bounds = self.dynamic_bounds.clone();
-    let (render, display_trees, enabled, resolved_bounds) =
+    let dynamic_values = self.dynamic_values.clone();
+    let (render, display_trees, enabled, resolved_bounds, resolved_values) =
       woxi::with_scoped_globals(&bindings, || {
         let trees: Vec<_> = displays
           .iter()
@@ -633,11 +654,32 @@ impl ManipulateState {
             (name.clone(), eval(min_code), eval(max_code))
           })
           .collect();
-        (woxi::interpret_with_stdout(&code), trees, enabled, resolved)
+        // Likewise for choice lists built from another control's variable
+        // (a level setter offering fewer levels in 3D).
+        let values: Vec<(String, _)> = dynamic_values
+          .iter()
+          .filter_map(|(name, values_code)| {
+            woxi::functions::graphics::manipulate_eval_values_code(values_code)
+              .map(|cols| (name.clone(), cols))
+          })
+          .collect();
+        (
+          woxi::interpret_with_stdout(&code),
+          trees,
+          enabled,
+          resolved,
+          values,
+        )
       });
     self.display_trees = display_trees;
     self.control_is_enabled = enabled;
     self.apply_dynamic_bounds(&resolved_bounds);
+    // A re-resolved choice list may drop the value the body was just
+    // rendered for; render again for the value the control settled on.
+    if self.apply_dynamic_values(&resolved_values) && allow_retry {
+      self.reevaluate_inner(false);
+      return;
+    }
 
     // Double-buffer the render: build the new SVG handle in a local and only
     // swap the cached field once the replacement is ready, rather than nulling
@@ -722,6 +764,50 @@ impl ManipulateState {
       *current = current.clamp(*min, *max);
     }
   }
+
+  /// Replace each named discrete control's choices with the freshly
+  /// resolved list, so a setter bar follows the control it references (a
+  /// level setter drops from six choices to three once the 3D view is on).
+  /// The selected value is kept when it survives into the new list;
+  /// otherwise the selection clamps to the last remaining choice, which is
+  /// what Wolfram shows when the current level falls off the end.
+  fn apply_dynamic_values(
+    &mut self,
+    resolved: &[(String, (Vec<String>, Vec<String>, Vec<Option<String>>))],
+  ) -> bool {
+    let mut selection_moved = false;
+    for (name, (new_values, new_labels, new_svgs)) in resolved {
+      let Some(ControlState::Discrete {
+        values,
+        value_labels,
+        value_label_svgs,
+        current_index,
+        ..
+      }) = self.controls.iter_mut().find(
+        |c| matches!(c, ControlState::Discrete { name: n, .. } if n == name),
+      )
+      else {
+        continue;
+      };
+      if values == new_values {
+        continue;
+      }
+      let selected = values.get(*current_index).cloned();
+      values.clone_from(new_values);
+      value_labels.clone_from(new_labels);
+      *value_label_svgs = new_svgs
+        .iter()
+        .map(|s| {
+          s.as_ref()
+            .map(|svg| svg::Handle::from_memory(svg.as_bytes().to_vec()))
+        })
+        .collect();
+      let kept = selected.and_then(|v| values.iter().position(|nv| *nv == v));
+      *current_index = kept.unwrap_or_else(|| values.len().saturating_sub(1));
+      selection_moved |= kept.is_none();
+    }
+    selection_moved
+  }
 }
 
 fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
@@ -761,6 +847,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         value_label_svgs,
         initial_index,
         popup,
+        slider,
       } => ControlState::Discrete {
         name: name.clone(),
         label: label.clone(),
@@ -776,6 +863,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           .collect(),
         current_index: *initial_index,
         popup: *popup,
+        slider: *slider,
       },
       ManipulateControl::Slider2D {
         name,

@@ -14893,6 +14893,10 @@ pub enum ManipulateControl {
     /// `ControlType -> PopupMenu`: always render a dropdown, even when the
     /// choice count is small enough for a SetterBar.
     popup: bool,
+    /// `ControlType -> Slider`: render a slider that steps through the
+    /// choices by index, the way Wolfram draws a slider over a discrete
+    /// domain. Without it a twenty-entry list would become a dropdown.
+    slider: bool,
   },
   /// A 2D control (`ControlType -> Slider2D`, or a 2D range spec
   /// `{u, {xmin, ymin}, {xmax, ymax}}`). Binds its variable to a 2-vector
@@ -15035,6 +15039,13 @@ pub struct ManipulateSpec {
   /// these code fragments against the live bindings after every change and
   /// updates the slider range to follow. A `None` side is static.
   pub dynamic_bounds: Vec<(String, Option<String>, Option<String>)>,
+  /// Discrete-control choice lists that reference other control variables,
+  /// as `(control name, values code)`. A Demonstration whose level setter
+  /// reads `Range[1, If[flat, 3, 6], 1]` offers six levels flat and three
+  /// in 3D, so the choices stored on the control are only the ones the
+  /// initial values produce — the frontend re-evaluates this code fragment
+  /// against the live bindings after every change and rebuilds the choices.
+  pub dynamic_values: Vec<(String, String)>,
   /// The variable animated by a `ControlType -> Trigger`/`Animator` control
   /// spec. Wolfram renders those as play buttons that sweep the variable
   /// over its range; the widget's animation targets this variable instead
@@ -15078,6 +15089,9 @@ enum ParsedControl {
     enabled: Option<String>,
     min_code: Option<String>,
     max_code: Option<String>,
+    /// A discrete choice list that references other control variables
+    /// (re-resolved live by the frontend, like `min_code`/`max_code`).
+    values_code: Option<String>,
     animate: Option<bool>,
   },
   /// A `Locator` control with no widget. It contributes a fixed `name =
@@ -15140,6 +15154,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     mut initialization,
     mut control_enabled,
     mut dynamic_bounds,
+    mut dynamic_values,
     mut animation_var,
   ) = match inner {
     Some(inner) => {
@@ -15153,6 +15168,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         inner.initialization,
         inner.control_enabled,
         inner.dynamic_bounds,
+        inner.dynamic_values,
         inner.animation_var,
       )
     }
@@ -15172,6 +15188,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         Vec::new(),
         body_displays,
         None,
+        Vec::new(),
         Vec::new(),
         Vec::new(),
         None,
@@ -15241,16 +15258,29 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // while the specs are parsed, so those bounds resolve to their build-time
   // numbers regardless of declaration order.
   let initial_bindings = manipulate_initial_value_bindings(&arg_items);
+  // The same names, as the set a control's choice list is checked against
+  // to tell a static list from one that follows another control.
+  let sibling_names: Vec<String> =
+    initial_bindings.iter().map(|(n, _)| n.clone()).collect();
   // A slider's bounds may be symbols the body assigns before doing
   // anything else — `Manipulate[tmin = 0; tmax = 2 Pi; …, {{t, 0}, tmin,
   // tmax}]`. Wolfram evaluates the body before laying the controls out, so
   // those names are bound by the time the slider is built. Running the
   // leading run of plain assignments is enough to resolve them, and cannot
   // do anything the body would not have done anyway.
+  //
+  // The control variables are installed while those assignments run, since
+  // Wolfram evaluates the body at their initial values. Without them a
+  // leading assignment that calls a recursive helper on a control variable
+  // — `u = {…, ss[-1., 1., n, dc]}` in front of a nested-circles
+  // Demonstration — recurses on a symbolic depth that never reaches the
+  // base case, and the widget never appears.
   if let Some(body) = args.first() {
-    for stmt in leading_assignments(body) {
-      let _ = evaluate_expr_to_expr(stmt);
-    }
+    crate::with_scoped_globals(&initial_bindings, || {
+      for stmt in leading_assignments(body) {
+        let _ = evaluate_expr_to_expr(stmt);
+      }
+    });
   }
   // A `ButtonBar`'s buttons are computed — `ButtonBar[Table[…]]` builds one
   // per vertex of a graph, labelling each from a list the `Initialization`
@@ -15413,7 +15443,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     }
     let (spec, rename) = rewrite_compound_control_var(spec);
     let parsed = crate::with_scoped_globals(&initial_bindings, || {
-      parse_manipulate_control(&spec)
+      parse_manipulate_control(&spec, &sibling_names)
     })?;
     match parsed {
       ParsedControl::Visible {
@@ -15421,6 +15451,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         enabled,
         min_code,
         max_code,
+        values_code,
         animate,
       } => {
         if let Some((orig, orig_form, synth)) = &rename {
@@ -15449,6 +15480,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         }
         if min_code.is_some() || max_code.is_some() {
           dynamic_bounds.push((c.name().to_string(), min_code, max_code));
+        }
+        if let Some(code) = values_code {
+          dynamic_values.push((c.name().to_string(), code));
         }
         controls.push(c);
       }
@@ -15481,7 +15515,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             control: mut c,
             enabled: enabled2,
             ..
-          }) = parse_manipulate_control(&Expr::List(promoted.into()))
+          }) = parse_manipulate_control(&Expr::List(promoted.into()), &[])
           {
             if let ManipulateControl::Slider2D { write_callback, .. } = &mut c {
               write_callback.clone_from(callback);
@@ -15551,6 +15585,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         rewrite(code);
       }
     }
+    for (_, code) in &mut dynamic_values {
+      rewrite(code);
+    }
     for (_, value) in fixed.iter_mut().chain(state.iter_mut()) {
       rewrite(value);
     }
@@ -15573,6 +15610,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization,
     control_enabled,
     dynamic_bounds,
+    dynamic_values,
     animation_var,
     animated,
     animation_running,
@@ -15841,6 +15879,75 @@ pub fn manipulate_eval_bound_code(code: &str) -> Option<f64> {
   crate::functions::math_ast::try_eval_to_f64(&expr).filter(|v| v.is_finite())
 }
 
+/// Whether `expr` mentions any of `names` as a symbol. Used to tell a
+/// choice list that merely needs evaluating (`Range[20]`) from one that
+/// follows another control (`Range[1, If[flat, 3, 6], 1]`) and so has to be
+/// rebuilt on every change.
+fn expr_references_any(expr: &Expr, names: &[String]) -> bool {
+  names
+    .iter()
+    .any(|n| crate::functions::plot::expr_mentions_var(expr, n))
+}
+
+/// Split a discrete control's choice list into the three parallel columns
+/// the frontends consume: the value bound to the variable, its display
+/// label, and (for a rule label that is itself a graphic) a rendered icon.
+///
+/// A choice may be given as a rule `value -> "label"` (e.g. a SetterBar
+/// spec `{True -> "Yin-Yang", False -> "alternate image"}`). In that case
+/// the left side is the value bound to the variable and the right side is
+/// only the display label, so the binding never sees the whole rule.
+fn discrete_choice_columns(
+  items: &[Expr],
+) -> (Vec<String>, Vec<String>, Vec<Option<String>>) {
+  let mut values = Vec::with_capacity(items.len());
+  let mut labels = Vec::with_capacity(items.len());
+  let mut svgs = Vec::with_capacity(items.len());
+  for item in items {
+    match discrete_choice_rule(item) {
+      Some((value, label)) => {
+        values.push(crate::syntax::expr_to_input_form(value));
+        // A rule label that is itself a graphic (the crosshair icons of
+        // the Demonstrations site) renders as an SVG icon; its text column
+        // falls back to the bound value so a non-graphical frontend still
+        // shows something short and meaningful.
+        let svg = discrete_choice_label_svg(label);
+        labels.push(if svg.is_some() {
+          discrete_choice_label(value)
+        } else {
+          discrete_choice_label(label)
+        });
+        svgs.push(svg);
+      }
+      None => {
+        values.push(crate::syntax::expr_to_input_form(item));
+        labels.push(discrete_choice_label(item));
+        svgs.push(None);
+      }
+    }
+  }
+  (values, labels, svgs)
+}
+
+/// Re-resolve a discrete control's choice-list code against the
+/// interpreter's current globals (installed by the caller via
+/// `with_scoped_globals`), returning the same three columns
+/// [`discrete_choice_columns`] builds. `None` when the code no longer
+/// evaluates to a non-empty list, in which case the control keeps the
+/// choices it already has.
+pub fn manipulate_eval_values_code(
+  code: &str,
+) -> Option<(Vec<String>, Vec<String>, Vec<Option<String>>)> {
+  let expr = crate::interpret_to_expr(code).ok()?;
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
+  let items = match &evaluated {
+    Expr::List(items) => items,
+    _ => return None,
+  };
+  let columns = discrete_choice_columns(items);
+  (!columns.0.is_empty()).then_some(columns)
+}
+
 /// Synthesize a plain symbol name for a compound (non-Identifier) control
 /// variable. `Subscript[signal, 1]` → `signal$1`; any other compound head
 /// sanitizes its whole InputForm, mapping non-symbol characters to `$`.
@@ -16006,6 +16113,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization: None,
     control_enabled: Vec::new(),
     dynamic_bounds: Vec::new(),
+    dynamic_values: Vec::new(),
     animation_var: None,
     animated: true,
     animation_running: true,
@@ -16081,6 +16189,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization: None,
     control_enabled: Vec::new(),
     dynamic_bounds: Vec::new(),
+    dynamic_values: Vec::new(),
     animation_var: None,
     animated: true,
     animation_running: true,
@@ -16155,6 +16264,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization: None,
     control_enabled: Vec::new(),
     dynamic_bounds: Vec::new(),
+    dynamic_values: Vec::new(),
     animation_var: None,
     animated: false,
     animation_running: true,
@@ -16205,6 +16315,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization: None,
     control_enabled: Vec::new(),
     dynamic_bounds: Vec::new(),
+    dynamic_values: Vec::new(),
     animation_var: None,
     animated: false,
     animation_running: true,
@@ -16234,19 +16345,20 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
   if !matches!(&args[0], Expr::List(items) if !items.is_empty()) {
     return None;
   }
-  let (control, enabled, animate) = match parse_manipulate_control(&args[0])? {
-    ParsedControl::Visible {
-      control,
-      enabled,
-      animate,
-      ..
-    } => (control, enabled, animate),
-    // A hidden control (`ControlType -> None` / Locator) has no widget and
-    // nothing to display on its own — fall back to the plain output path.
-    ParsedControl::Fixed { .. }
-    | ParsedControl::State { .. }
-    | ParsedControl::StateWithControl { .. } => return None,
-  };
+  let (control, enabled, animate) =
+    match parse_manipulate_control(&args[0], &[])? {
+      ParsedControl::Visible {
+        control,
+        enabled,
+        animate,
+        ..
+      } => (control, enabled, animate),
+      // A hidden control (`ControlType -> None` / Locator) has no widget and
+      // nothing to display on its own — fall back to the plain output path.
+      ParsedControl::Fixed { .. }
+      | ParsedControl::State { .. }
+      | ParsedControl::StateWithControl { .. } => return None,
+    };
   // Display the bound variable so the control's effect is visible.
   let body_code = control.name().to_string();
   let control_enabled = match enabled {
@@ -16264,6 +16376,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     initialization: None,
     control_enabled,
     dynamic_bounds: Vec::new(),
+    dynamic_values: Vec::new(),
     animation_var,
     animated: animate.is_some(),
     animation_running: animate.unwrap_or(true),
@@ -16715,8 +16828,14 @@ fn unicode_script_char(c: char, superscript: bool) -> Option<char> {
   Some(mapped)
 }
 
-/// Parse a single variable-spec list into a `ParsedControl`.
-fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
+/// Parse a single variable-spec list into a `ParsedControl`. `siblings`
+/// names the Manipulate's other control variables, so a choice list built
+/// from one of them can be marked for live re-resolution; pass an empty
+/// slice for a standalone `Control[…]`, which has no siblings.
+fn parse_manipulate_control(
+  spec: &Expr,
+  siblings: &[String],
+) -> Option<ParsedControl> {
   let items = match spec {
     Expr::List(items) => items,
     _ => return None,
@@ -16889,6 +17008,7 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         enabled,
         min_code: None,
         max_code: None,
+        values_code: None,
         animate: None,
       });
     }
@@ -16908,6 +17028,7 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         enabled,
         min_code: None,
         max_code: None,
+        values_code: None,
         animate: None,
       });
     }
@@ -17032,6 +17153,7 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         enabled,
         min_code: None,
         max_code: None,
+        values_code: None,
         animate: Some(running),
       });
     }
@@ -17077,6 +17199,7 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
       enabled,
       min_code: None,
       max_code: None,
+      values_code: None,
       animate: None,
     });
   }
@@ -17112,6 +17235,7 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
       enabled,
       min_code: None,
       max_code: None,
+      values_code: None,
       animate: None,
     });
   }
@@ -17152,37 +17276,8 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
       None
     };
     if let Some(value_items) = value_items {
-      // A choice may be given as a rule `value -> "label"` (e.g. a SetterBar
-      // spec `{True -> "Yin-Yang", False -> "alternate image"}`). In that
-      // case the left side is the value bound to the variable and the right
-      // side is only the display label. Split the two so the binding sees the
-      // real value, not the whole rule.
-      let mut values = Vec::with_capacity(value_items.len());
-      let mut value_labels = Vec::with_capacity(value_items.len());
-      let mut value_label_svgs = Vec::with_capacity(value_items.len());
-      for item in value_items.iter() {
-        match discrete_choice_rule(item) {
-          Some((value, label)) => {
-            values.push(crate::syntax::expr_to_input_form(value));
-            // A rule label that is itself a graphic (the crosshair icons
-            // of the Demonstrations site) renders as an SVG icon; its text
-            // column falls back to the bound value so a non-graphical
-            // frontend still shows something short and meaningful.
-            let svg = discrete_choice_label_svg(label);
-            value_labels.push(if svg.is_some() {
-              discrete_choice_label(value)
-            } else {
-              discrete_choice_label(label)
-            });
-            value_label_svgs.push(svg);
-          }
-          None => {
-            values.push(crate::syntax::expr_to_input_form(item));
-            value_labels.push(discrete_choice_label(item));
-            value_label_svgs.push(None);
-          }
-        }
-      }
+      let (values, value_labels, value_label_svgs) =
+        discrete_choice_columns(&value_items);
       if values.is_empty() {
         return None;
       }
@@ -17193,6 +17288,13 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
         }
         None => 0,
       };
+      // A choice list built from another control's variable (`Range[1,
+      // If[flat, 3, 6], 1]`) only holds for that variable's current value;
+      // keep its code so the frontend can rebuild the choices whenever the
+      // other control moves.
+      let values_code = (bounds.len() == 1
+        && expr_references_any(bounds[0], siblings))
+      .then(|| crate::syntax::expr_to_input_form(bounds[0]));
       return Some(ParsedControl::Visible {
         control: ManipulateControl::Discrete {
           name,
@@ -17203,10 +17305,15 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
           label,
           label_runs,
           popup: control_type.as_deref() == Some("PopupMenu"),
+          slider: matches!(
+            control_type.as_deref(),
+            Some("Slider" | "VerticalSlider" | "Manipulator")
+          ),
         },
         enabled,
         min_code: None,
         max_code: None,
+        values_code,
         animate: None,
       });
     }
@@ -17343,6 +17450,7 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
     enabled,
     min_code,
     max_code,
+    values_code: None,
     animate,
   })
 }
@@ -17981,6 +18089,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         label,
         label_runs,
         popup,
+        slider,
       } => {
         let value_parts: Vec<String> = values
           .iter()
@@ -17991,6 +18100,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           .map(|v| format!(r#""{}""#, json_escape_manipulate(v)))
           .collect();
         let popup_json = if *popup { r#","popup":true"# } else { "" };
+        let slider_json = if *slider { r#","slider":true"# } else { "" };
         // Icon labels (rule right sides that are graphics) ride along as
         // rendered SVG, parallel to `values`; omitted when all-text.
         let svg_json = if value_label_svgs.iter().any(Option::is_some) {
@@ -18008,7 +18118,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           String::new()
         };
         ctrl_parts.push(format!(
-          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}}}"#,
+          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
           label_runs_to_json(label_runs),
@@ -18016,6 +18126,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           label_parts.join(","),
           initial_index,
           popup_json,
+          slider_json,
           svg_json,
         ));
       }
@@ -18178,6 +18289,17 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           json_escape_manipulate(code)
         ));
       }
+      part.truncate(part.len() - 1);
+      part.push_str(&field);
+      part.push('}');
+    }
+    // A choice list that follows another control rides along the same way.
+    if let Some((_, code)) =
+      spec.dynamic_values.iter().find(|(n, _)| n == c.name())
+      && part.ends_with('}')
+    {
+      let field =
+        format!(r#","valuesCode":"{}""#, json_escape_manipulate(code));
       part.truncate(part.len() - 1);
       part.push_str(&field);
       part.push('}');
