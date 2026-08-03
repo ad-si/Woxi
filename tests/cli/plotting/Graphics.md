@@ -10,6 +10,29 @@ $ wo 'Head[Graphics[{Red, Disk[]}]]'
 Graphics
 ```
 
+`Sphere` and `Ball` are drawn here too — in the plane a sphere is the circle
+bounding it and a ball the filled disk. That is how the circumcircle of
+three points reaches a picture, since `Circumsphere` returns a `Sphere`
+whatever the dimension:
+
+```scrut
+$ wo 'Circumsphere[{{0, 0}, {4, 0}, {0, 3}}]'
+Sphere[{2, 3/2}, 5/2]
+```
+
+```scrut
+$ wo 'StringCount[ExportString[Graphics[{Circumsphere[{{0, 0}, {4, 0}, {0, 3}}]}], "SVG"], "<ellipse"]'
+1
+```
+
+A `Style` around a label paints its `Background` behind the text, which is
+how a label stays readable over whatever it is placed on:
+
+```scrut
+$ wo 'StringContainsQ[ExportString[Graphics[{Line[{{0, 0}, {4, 4}}], Style[Text["8", {2, 2}], Background -> White]}], "SVG"], "<rect"]'
+True
+```
+
 ### Options
 
 - **`ImageSize`**, **`PlotRange`**, **`AspectRatio`**, **`Axes`**,

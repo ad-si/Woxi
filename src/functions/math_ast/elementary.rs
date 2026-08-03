@@ -765,49 +765,6 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("Sign", args))
 }
 
-/// Extract the largest easily-found perfect-square factor from a non-negative
-/// BigInt: returns `(outside, inside)` with `n == outside^2 * inside`, so
-/// `Sqrt[n] = outside * Sqrt[inside]`. Square factors from primes below a
-/// bound are pulled out by trial division; a leftover whole-square cofactor
-/// (e.g. a large prime squared) is caught by a final `isqrt` check. A cofactor
-/// that is square-free over the bound but not itself a perfect square stays
-/// in `inside` (matching wolframscript, which also can't factor large semiprimes
-/// cheaply).
-fn extract_square_factor_big(n: &BigInt) -> (BigInt, BigInt) {
-  let zero = BigInt::from(0);
-  let one = BigInt::from(1);
-  let mut outside = BigInt::from(1);
-  let mut inside = n.clone();
-  const BOUND: u64 = 100_000;
-  let mut factor: u64 = 2;
-  while factor <= BOUND {
-    let fbig = BigInt::from(factor);
-    if &fbig * &fbig > inside {
-      break;
-    }
-    let mut count: u64 = 0;
-    while &inside % &fbig == zero {
-      inside /= &fbig;
-      count += 1;
-    }
-    if count >= 2 {
-      outside *= fbig.pow((count / 2) as u32);
-    }
-    if count % 2 == 1 {
-      inside *= &fbig;
-    }
-    factor += 1;
-  }
-  if inside > one {
-    let r = inside.sqrt();
-    if &r * &r == inside {
-      outside *= &r;
-      inside = BigInt::from(1);
-    }
-  }
-  (outside, inside)
-}
-
 /// Sqrt[x] - Square root
 pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -918,36 +875,11 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if &r * &r == bn {
         return Ok(bigint_to_expr(r));
       }
-      // Partial extraction (e.g. Sqrt[12] = 2*Sqrt[3]) runs in u64, so only
-      // when n fits u64 — casting a larger i128 to u64 would truncate.
-      if *n <= u64::MAX as i128 {
-        let mut outside = 1u64;
-        let mut inside = *n as u64;
-        let mut factor = 2u64;
-        while factor * factor <= inside {
-          while inside.is_multiple_of(factor * factor) {
-            outside *= factor;
-            inside /= factor * factor;
-          }
-          factor += 1;
-        }
-        if outside > 1 && inside > 1 {
-          return Ok(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              Expr::Integer(outside as i128),
-              make_sqrt(Expr::Integer(inside as i128)),
-            ]
-            .into(),
-          });
-        }
-      } else {
-        // Larger than u64: extract square factors in BigInt.
-        let (outside, inside) = extract_square_factor_big(&bn);
-        if outside > BigInt::from(1) {
-          let sqrt_part = make_sqrt(bigint_to_expr(inside));
-          return times_ast(&[bigint_to_expr(outside), sqrt_part]);
-        }
+      // Partial extraction, e.g. Sqrt[12] = 2*Sqrt[3].
+      let (outside, inside) = extract_square_factor_big(&bn);
+      if outside > BigInt::from(1) {
+        let sqrt_part = make_sqrt(bigint_to_expr(inside));
+        return times_ast(&[bigint_to_expr(outside), sqrt_part]);
       }
       // Not a perfect square, return symbolic
       Ok(make_sqrt(args[0].clone()))
@@ -970,69 +902,11 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall { name, args: rargs }
       if name == "Rational" && rargs.len() == 2 =>
     {
-      // Only the u64 fast path here; a numerator/denominator that fits i128 but
-      // exceeds u64 (e.g. 7*10^30) would truncate on `as u64`, so it falls
-      // through to the BigInt path below.
-      if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1])
-        && *n >= 0
-        && *d > 0
-        && *n <= u64::MAX as i128
-        && *d <= u64::MAX as i128
-      {
-        // Extract perfect square factors from numerator and denominator
-        let extract_square_factor = |val: u64| -> (u64, u64) {
-          let mut outside = 1u64;
-          let mut inside = val;
-          let mut factor = 2u64;
-          while factor * factor <= inside {
-            while inside.is_multiple_of(factor * factor) {
-              outside *= factor;
-              inside /= factor * factor;
-            }
-            factor += 1;
-          }
-          (outside, inside)
-        };
-        let (n_out, n_in) = extract_square_factor(*n as u64);
-        let (d_out, d_in) = extract_square_factor(*d as u64);
-        // Result: (n_out / d_out) * Sqrt[n_in / d_in]
-        if n_in == 1 && d_in == 1 {
-          // Perfect square: just a rational
-          return Ok(make_rational(n_out as i128, d_out as i128));
-        }
-        if d_in == 1 {
-          // Result: (n_out / d_out) * Sqrt[n_in]
-          let sqrt_part = make_sqrt(Expr::Integer(n_in as i128));
-          if n_out == 1 && d_out == 1 {
-            return Ok(sqrt_part);
-          }
-          let coeff = make_rational(n_out as i128, d_out as i128);
-          return times_ast(&[coeff, sqrt_part]);
-        } else if n_in == 1 {
-          // Result: (n_out / d_out) * Power[d_in, -1/2].
-          // Use Power[d, -1/2] (Wolfram's normal form for Sqrt[1/d])
-          // rather than BinaryOp Divide, so structural equality with
-          // 1/Sqrt[d] (which evaluates to Power[d, -1/2]) holds.
-          let power =
-            power_ast(&[Expr::Integer(d_in as i128), make_rational(-1, 2)])?;
-          if n_out == 1 && d_out == 1 {
-            return Ok(power);
-          }
-          let coeff = make_rational(n_out as i128, d_out as i128);
-          return times_ast(&[coeff, power]);
-        } else {
-          // General case: (n_out / d_out) * Sqrt[n_in / d_in]
-          let sqrt_part = make_sqrt(make_rational(n_in as i128, d_in as i128));
-          if n_out == 1 && d_out == 1 {
-            return Ok(sqrt_part);
-          }
-          let coeff = make_rational(n_out as i128, d_out as i128);
-          return times_ast(&[coeff, sqrt_part]);
-        }
-      }
-      // BigInt fallback for rational arguments whose numerator/denominator is a
-      // BigInteger or exceeds u64 (e.g. Sqrt[2744*10^90/729] = 14*10^45/27 *
-      // Sqrt[14], reached via Skewness/Correlation of large-integer lists).
+      // Numerator and denominator each give up their square factor, leaving
+      // `(n_out / d_out) * Sqrt[n_in / d_in]`. Everything runs in BigInt, so a
+      // numerator past i128 (e.g. Sqrt[2744*10^90/729] = 14*10^45/27 *
+      // Sqrt[14], reached via Skewness/Correlation of large-integer lists) is
+      // handled by the same code as a small one.
       let to_big = |e: &Expr| -> Option<BigInt> {
         match e {
           Expr::Integer(v) if *v >= 0 => Some(BigInt::from(*v)),

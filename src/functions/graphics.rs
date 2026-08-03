@@ -227,6 +227,11 @@ struct StyleState {
   font_weight: String,
   font_style: String,
   font_family: String, // empty string means SVG default
+  /// `Background -> colour` carried by a `Style` around a label, as in
+  /// `Style[Text[…], Background -> White]`. It paints the panel behind the
+  /// text — the same panel `Text[…, Background -> colour]` asks for — and
+  /// means nothing to the other primitives, which never read it.
+  text_background: Option<Color>,
   /// `Arrowheads[…]`: where the heads of the arrows that follow sit, how
   /// big they are and — for a custom head — what to draw there. `None`
   /// keeps Wolfram's default: one head at the tip.
@@ -401,6 +406,7 @@ impl Default for StyleState {
       font_weight: "normal".to_string(),
       font_style: "normal".to_string(),
       font_family: String::new(),
+      text_background: None,
       arrowheads: None,
     }
   }
@@ -1445,6 +1451,13 @@ fn apply_text_style_rule(
       }
       false
     }
+    "Background" => match parse_background(replacement) {
+      Some(color) => {
+        style.text_background = Some(color);
+        true
+      }
+      None => false,
+    },
     "FontFamily" => match replacement {
       Expr::String(s) => {
         style.font_family = s.clone();
@@ -1579,6 +1592,9 @@ fn collect_primitives(
         }
         "Disk" => {
           parse_disk(args, style, prims);
+        }
+        "Sphere" | "Ball" => {
+          parse_sphere(name == "Ball", args, style, prims);
         }
         "Rectangle" => {
           parse_rectangle(args, style, prims);
@@ -2056,6 +2072,76 @@ fn parse_disk(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     rx,
     ry,
     style: style.clone(),
+  });
+}
+
+/// `Sphere[…]` and `Ball[…]` inside a two-dimensional `Graphics`. The region
+/// functions hand back spheres and balls whatever the dimension —
+/// `Circumsphere` of three points in the plane is a `Sphere` — and in the
+/// plane a sphere is the circle bounding it and a ball the filled disk, so
+/// each draws as its planar namesake. A centre with any other number of
+/// coordinates belongs to a `Graphics3D` and draws nothing here.
+fn parse_sphere(
+  filled: bool,
+  args: &[Expr],
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+) {
+  // `Sphere[n]` / `Ball[n]` is the unit sphere/ball at the origin in `n`
+  // dimensions; only the planar one has anything to draw.
+  if let [Expr::Integer(dimension)] = args {
+    if *dimension == 2 {
+      emit_sphere(filled, (0.0, 0.0), 1.0, style, prims);
+    }
+    return;
+  }
+  let Some(radius) = (match args.get(1) {
+    Some(r) => expr_to_f64(r),
+    None => Some(1.0),
+  }) else {
+    return;
+  };
+  // One centre, or a list of them — `Sphere[{p1, p2}, r]` draws one sphere
+  // of radius `r` around each point.
+  let centers: Vec<(f64, f64)> = match args.first() {
+    Some(Expr::List(items))
+      if !items.is_empty()
+        && items.iter().all(|i| matches!(i, Expr::List(_))) =>
+    {
+      items.iter().filter_map(expr_to_point).collect()
+    }
+    Some(single) => expr_to_point(single).into_iter().collect(),
+    None => Vec::new(),
+  };
+  for center in centers {
+    emit_sphere(filled, center, radius, style, prims);
+  }
+}
+
+fn emit_sphere(
+  filled: bool,
+  (cx, cy): (f64, f64),
+  r: f64,
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+) {
+  prims.push(if filled {
+    Primitive::Disk {
+      cx,
+      cy,
+      rx: r,
+      ry: r,
+      style: style.clone(),
+    }
+  } else {
+    Primitive::CircleArc {
+      cx,
+      cy,
+      rx: r,
+      ry: r,
+      angles: None,
+      style: style.clone(),
+    }
   });
 }
 
@@ -2784,17 +2870,13 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   }
   let background_of =
     |opts: &[Expr]| option_value(opts, "Background").and_then(parse_color);
-  let style_opts: &[Expr] = match framed_body {
-    Expr::FunctionCall { name, args: sargs }
-      if is_style_wrapper(name) && !sargs.is_empty() =>
-    {
-      &sargs[1..]
-    }
-    _ => &[],
-  };
+  // A `Style` the label is written inside — around the `Text` or around its
+  // content — leaves its background in the style state, which is how
+  // `Style[Text[…], Background -> White]` keeps a distance label legible over
+  // the line it sits on.
   let background = background_of(frame_opts)
     .or_else(|| background_of(&args[1..]))
-    .or_else(|| background_of(style_opts));
+    .or(local_style.text_background);
   // Wolfram draws a `Framed` box with a thin border unless the label asks
   // for none; an explicit `FrameStyle -> colour` recolours it.
   let is_framed = matches!(

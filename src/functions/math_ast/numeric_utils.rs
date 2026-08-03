@@ -895,40 +895,91 @@ pub fn rat_reduce_bigint(n: &BigInt, d: &BigInt) -> (BigInt, BigInt) {
   if d.is_negative() { (-n, -d) } else { (n, d) }
 }
 
-/// Extract the largest easily-found perfect-square factor from a positive
-/// i128: returns `(outside, inside)` with `n == outside^2 * inside`, so
-/// `Sqrt[n] = outside * Sqrt[inside]`. Square factors of primes below a
-/// bound come out by trial division; a leftover whole-square cofactor
-/// (e.g. a large prime squared) is caught by a final integer-sqrt check.
-/// A cofactor that is square-free over the bound but not a perfect square
-/// stays in `inside` (matching wolframscript, which also can't factor
-/// large semiprimes cheaply).
-pub fn extract_square_factor_i128(n: i128) -> (i128, i128) {
-  let mut outside: i128 = 1;
-  let mut inside = n.max(1);
-  let mut f: i128 = 2;
-  while f <= 100_000 && f.saturating_mul(f) <= inside {
-    let mut count = 0u32;
-    while inside % f == 0 {
-      inside /= f;
+/// Primes up to here are stripped by trial division before anything more
+/// expensive is tried.
+const SQUARE_FACTOR_TRIAL_BOUND: u64 = 100_000;
+
+/// Past this size the leftover cofactor is left inside the radical rather
+/// than handed to the general factoriser: the work Pollard's rho needs grows
+/// as the fourth root of the number, so a bound keeps a stray big radicand
+/// from stalling an evaluation.
+const SQUARE_FACTOR_FACTORISE_BITS: u64 = 80;
+
+/// Extract the largest perfect-square factor from a positive integer:
+/// returns `(outside, inside)` with `n == outside^2 * inside`, so
+/// `Sqrt[n] = outside * Sqrt[inside]`. Small primes come out by trial
+/// division, and whatever survives is factored properly, so a square factor
+/// too large to reach by trial division (`100003^2 * 115` →
+/// `100003 * Sqrt[115]`) still comes out. Only a cofactor past
+/// [`SQUARE_FACTOR_FACTORISE_BITS`] stays in `inside` unexamined.
+///
+/// This is the one place a radical is reduced. Every caller — `Sqrt` of an
+/// integer, of a rational, and the `c * Sqrt[r]` merge in `times_ast` —
+/// goes through it, so they always agree on how far a radical reduces.
+/// While they disagreed the merge rewrote a radical that `Sqrt` promptly
+/// reduced further, and the two rewrote each other forever.
+pub fn extract_square_factor_big(n: &BigInt) -> (BigInt, BigInt) {
+  let one = BigInt::from(1);
+  if n <= &one {
+    return (one, n.clone());
+  }
+  let mut outside = BigInt::from(1);
+  let mut inside = BigInt::from(1);
+  let mut rest = n.clone();
+
+  let mut f: u64 = 2;
+  while f <= SQUARE_FACTOR_TRIAL_BOUND {
+    let fb = BigInt::from(f);
+    if &fb * &fb > rest {
+      break;
+    }
+    let mut count: u32 = 0;
+    while (&rest % &fb).is_zero() {
+      rest /= &fb;
       count += 1;
     }
     if count >= 2 {
-      outside *= f.pow(count / 2);
+      outside *= fb.pow(count / 2);
     }
     if count % 2 == 1 {
-      inside *= f;
+      inside *= &fb;
     }
     f += 1;
   }
-  if inside > 1 {
-    let r = (inside as u128).isqrt() as i128;
-    if r.saturating_mul(r) == inside {
+
+  if rest > one {
+    let r = rest.sqrt();
+    if &r * &r == rest {
       outside *= r;
-      inside = 1;
+    } else if rest.bits() <= SQUARE_FACTOR_FACTORISE_BITS {
+      let Some(rest_uint) = rest.to_biguint() else {
+        return (outside, inside * rest);
+      };
+      for (prime, exponent) in num_prime::nt_funcs::factorize(rest_uint) {
+        let prime = BigInt::from(prime);
+        if exponent >= 2 {
+          outside *= prime.pow(exponent as u32 / 2);
+        }
+        if exponent % 2 == 1 {
+          inside *= &prime;
+        }
+      }
+    } else {
+      inside *= rest;
     }
   }
   (outside, inside)
+}
+
+/// [`extract_square_factor_big`] for an i128 radicand. Non-positive input
+/// has no square factor to give, so it reports `(1, 1)`.
+pub fn extract_square_factor_i128(n: i128) -> (i128, i128) {
+  let (outside, inside) = extract_square_factor_big(&BigInt::from(n.max(1)));
+  // Both factors divide `n`, so both fit wherever `n` did.
+  (
+    i128::try_from(&outside).unwrap_or(1),
+    i128::try_from(&inside).unwrap_or(n.max(1)),
+  )
 }
 
 /// Create a rational or integer result from numerator/denominator
