@@ -552,7 +552,13 @@ function shellQuoteForExec(s: string): string {
 }
 
 function main() {
+  // A whole run takes hours, so `WX_ONLY` narrows it to the test files whose
+  // path contains any of the given substrings — enough to re-verify one fix:
+  //   WX_ONLY=interpreter_tests/calculus.rs,interpreter_tests/algebra.rs \
+  //     npx tsx tests/wolframscript/verify_unit_tests.ts
+  const only = (process.env.WX_ONLY ?? "").split(",").filter(Boolean);
   const testFiles = listRustFiles(join(ROOT, "tests"))
+    .filter((f) => only.length === 0 || only.some((o) => f.includes(o)))
     .filter((f) => {
       const content = readFileSync(f, "utf-8");
       return content.includes("#[test]") && content.includes("interpret(");
@@ -1510,6 +1516,93 @@ function main() {
     // Woxi returns a machine 0. Reproducing it needs precision/accuracy
     // tracking through the Gamma-ratio path from a machine-real input.
     "PascalBinomial[6.0, -2]",
+
+    // ── Inexact-zero imaginary parts ────────────────────────────────────────
+    // Wolfram keeps a machine-zero imaginary part visible (`1.6487… + 0.*I`,
+    // `Im[…] -> 0.`); Woxi collapses `x + 0.*I` to the real `x`, so the
+    // imaginary part comes back as exact 0. This is the complex-float
+    // representation rabbit hole documented at `times_ast` in arithmetic.rs:
+    // the non-folding of `scalar * (0. + c*I)` is deliberate (it keeps the
+    // `c*I` monomial mergeable inside an enclosing Plus) and every attempt to
+    // make `N[I]` inexact regressed `N[2 + 3 I]`, `N[Sin[I]]` and `N[2 I]`.
+    "E^(0.5 + 0.*I)",
+    "2.^(0.5 + 0.*I)",
+    "Im[Total[x /. NSolve[x^10 - 3 x + 1 == 0, x]]]",
+
+    // Last-ULP float differences where Woxi lands on the exact value and
+    // Wolfram's numeric path does not: the cubic Bernoulli root is exactly 1/2
+    // (Wolfram reports 0.5000000000000001) and Sqrt[2] rounds to
+    // 1.4142135623730951 (Wolfram's companion-matrix eigenvalue gives
+    // 1.414213562373095). Same story as the existing NSolve cubic skip.
+    "Solve[N[Table[BernoulliB[n, z], {n, 3, 3}] == 0]]",
+    "Solve[N[BernoulliB[3, z]] == 0, z]",
+    "NSolve[x^2 == 2]",
+    // Sharpen: last-ULP differences in the unsharp-mask convolution
+    // (1.7058721780776978 vs 1.7058720588684082).
+    "ImageData[Sharpen[Image[{{1., 0., 0., 0., 0., 0.}}], 10]]",
+    // ComplexExpand: canonical Plus ordering — Woxi puts the real part first
+    // ((2*Sqrt[2])/3 + I/3), Wolfram the imaginary one (I/3 + (2*Sqrt[2])/3).
+    // Same core ordering gap as the `Log[E^(a + 3 I)]` entry above.
+    "ComplexExpand[E^(I*ArcSin[1/3])]",
+
+    // PermutationMatrix returns a StructuredArray in Wolfram
+    // (`PermutationMatrix[StructuredArray`StructuredData[…]]`); Woxi returns
+    // the dense matrix, exactly as for Symmetrize / CrossMatrix above.
+    "PermutationMatrix[{2, 1}]",
+
+    // NDSolve results that are *printed* rather than sampled: Wolfram shows
+    // its internal solver state (the {5, 7, 1, {52}, …} header, the adaptive
+    // step grid and a Developer`PackedArrayForm coefficient block) where Woxi
+    // carries a plain sample table on a fixed grid. Same reason as the
+    // `NDSolve[{y'[x] == y[x], …}]` entries above; the tests that sample the
+    // solution do conform.
+    "NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}]",
+    "NDSolve[{y'[t] == -y[t], y[1] == 1}, y, {t, 1, 3.5}]",
+
+    // DynamicModule: Wolfram keeps the wrapper around the evaluated body
+    // (`DynamicModule[{x = 2}, 4, DynamicModuleValues :> {}]`) because the
+    // front end owns the local state between redraws. Woxi hands back the
+    // body's value so a Grid or a Graphics inside one displays as itself —
+    // a deliberate choice, documented at the `dynamic_module_scoping` tests.
+    "DynamicModule[{x = 2}, x^2]",
+    "DynamicModule[{a}, a = 3; a + 1]",
+    "x = 1; DynamicModule[{x = 5}, x] + x",
+    "f[] := x; DynamicModule[{x = 3}, f[]]",
+
+    // 3D plot internals: Wolfram wraps the surface in per-function layers of
+    // lists and directives — Plot3D gives `{{GraphicsComplex[…], {}}}`,
+    // SphericalPlot3D a two-element list of those, ParametricPlot3D neither —
+    // with no rule that carries across the family. Woxi stores every 3D plot
+    // as a plain `Graphics3D[GraphicsComplex[…]]` so `First[plot]` is the
+    // surface itself and can be redrawn inside another graphic.
+    "Head[SphericalPlot3D[1, {t, 0, Pi}, {p, 0, 2 Pi}][[1]]]",
+    "Head[First[Plot3D[x y, {x, 0, 1}, {y, 0, 1}]]]",
+
+    // PolyhedronData: the vertex coordinates are value-identical but written
+    // with a different radical nesting (Woxi `Sqrt[5/8 + Sqrt[5]/8]`, Wolfram
+    // `5/Sqrt[50 - 10*Sqrt[5]]`) — the same folding difference as the
+    // `PolyhedronData["Icosahedron", "Volume"]` entry above. The property and
+    // solid catalogues are the subset Woxi implements against Wolfram's full
+    // curated database, like `ElementData["Properties"]`.
+    "PolyhedronData[\"Icosahedron\", \"VertexCoordinates\"]",
+    "PolyhedronData[\"Properties\"]",
+    "PolyhedronData[All]",
+
+    // CSV import has no stable reference: an earlier `ImportString["", "Table"]`
+    // in the same wolframscript session swaps the converter for the rest of it.
+    // Cold, `"HeaderLines" -> 1` is ignored and "true"/"false" become booleans;
+    // once a "Table" import has run, the header line is dropped and the
+    // booleans stay strings. Reproduce with
+    //   wolframscript -code 'Quiet[ImportString["", "Table"]];
+    //     Print[ToString[{ImportString["a,b\n1,2", "CSV", "HeaderLines" -> 1],
+    //       ImportString["true,false", "CSV"]}, InputForm]]'
+    // against the same line without the warm-up. Woxi implements the
+    // cold-kernel behaviour, which is what these expressions see on their own;
+    // the io.rs cases only differ once ~20 earlier cases share the batch.
+    // Same "no single stable reference" situation as Attributes[ParallelDo].
+    "ToString[ImportString[\"a,b\\n1,2\", \"CSV\", \"HeaderLines\" -> 1], InputForm]",
+    "ToString[ImportString[\"true,false\", \"CSV\"], InputForm]",
+    "ToString[ImportString[\"True,FALSE,tRue,yes\", \"CSV\"], InputForm]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).
