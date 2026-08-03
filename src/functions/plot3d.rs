@@ -72,6 +72,16 @@ const MESH_STEP: usize = 3;
 /// Orthographic projection from a camera at spherical (azimuth, elevation).
 /// Returns (screen_x, screen_y) in projected coordinates.
 pub(crate) fn project(p: Point3D, cam: &Camera) -> (f64, f64) {
+  // Straight down (or up) the z axis the screen basis is degenerate — the
+  // vertical `{0, 0, 1}` the camera is levelled against points at the
+  // viewer — so Wolfram falls back to the plain top view: x to the right
+  // and y up, mirrored when the view is from below. Without this the
+  // picture came out turned a quarter turn from Wolfram's.
+  if (cam.elevation.abs() - std::f64::consts::FRAC_PI_2).abs() < 1e-9 {
+    let up = if cam.elevation > 0.0 { 1.0 } else { -1.0 };
+    return (p.x, p.y * up);
+  }
+
   let (sa, ca) = cam.azimuth.sin_cos();
   let (se, ce) = cam.elevation.sin_cos();
 

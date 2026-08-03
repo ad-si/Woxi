@@ -2851,6 +2851,88 @@ mod plot3d {
       );
     }
 
+    /// Straight down the z axis the screen basis is degenerate — the
+    /// vertical the camera levels against points at the viewer — and
+    /// Wolfram falls back to the plain top view: x to the right, y up,
+    /// mirrored when looking from below. Woxi's spherical formula turned
+    /// the picture a quarter turn instead, so a lattice laid out in rows
+    /// came out in columns.
+    #[test]
+    fn a_top_view_keeps_x_to_the_right_and_y_up() {
+      // A bar three long in x and one in y, plus one two long in y.
+      let bars = |view: &str| {
+        format!(
+          "Graphics3D[{{Red, Cuboid[{{0, 0, -0.1}}, {{3, 1, 0.1}}], \
+           Blue, Cuboid[{{0, 0, -0.1}}, {{1, 2, 0.1}}]}}, Boxed -> False, \
+           ViewPoint -> {view}, PlotRange -> {{{{-1, 4}}, {{-1, 3}}, \
+           {{-1, 1}}}}, ImageSize -> 300]"
+        )
+      };
+      // The screen extent of the polygons whose fill leans to one channel
+      // (the lighting model darkens them, so the exact colour varies).
+      let extent = |svg: &str, red_bar: bool| -> (f64, f64, f64, f64) {
+        let (mut x0, mut x1, mut y0, mut y1) =
+          (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+        for poly in svg.split("<polygon points=\"").skip(1) {
+          let Some((coords, rest)) = poly.split_once('"') else {
+            continue;
+          };
+          let channels: Vec<u32> = rest
+            .split("fill=\"rgb(")
+            .nth(1)
+            .and_then(|c| c.split(')').next())
+            .map(|c| {
+              c.split(',').filter_map(|v| v.trim().parse().ok()).collect()
+            })
+            .unwrap_or_default();
+          if channels.len() != 3 {
+            continue;
+          }
+          let leans_red = channels[0] > channels[2];
+          if leans_red != red_bar {
+            continue;
+          }
+          for pair in coords.split_whitespace() {
+            if let Some((x, y)) = pair.split_once(',')
+              && let (Ok(x), Ok(y)) = (x.parse::<f64>(), y.parse::<f64>())
+            {
+              x0 = x0.min(x);
+              x1 = x1.max(x);
+              y0 = y0.min(y);
+              y1 = y1.max(y);
+            }
+          }
+        }
+        (x0, x1, y0, y1)
+      };
+      let top = export_svg(&bars("{0, 0, 10}"));
+      let red = extent(&top, true);
+      let blue = extent(&top, false);
+      // The x-long bar is wide and short; the y-long bar is narrow and tall.
+      assert!(
+        red.1 - red.0 > 2.5 * (red.3 - red.2),
+        "the x bar is not lying across the picture: {red:?}"
+      );
+      assert!(
+        blue.3 - blue.2 > 1.5 * (blue.1 - blue.0),
+        "the y bar is not standing up: {blue:?}"
+      );
+      // y up: the y-long bar reaches above the x-long one (smaller screen y).
+      assert!(blue.2 < red.2, "y does not point up: {blue:?} {red:?}");
+      // From below the picture is mirrored, so it reaches below instead.
+      let bottom = export_svg(&bars("{0, 0, -10}"));
+      let red_b = extent(&bottom, true);
+      let blue_b = extent(&bottom, false);
+      assert!(
+        red_b.1 - red_b.0 > 2.5 * (red_b.3 - red_b.2),
+        "the x bar still lies across from below: {red_b:?}"
+      );
+      assert!(
+        blue_b.3 > red_b.3,
+        "y does not point down from below: {blue_b:?} {red_b:?}"
+      );
+    }
+
     // A numeric PlotRange pins the frame: with PlotRange -> 10 a unit
     // sphere occupies a small part of the drawing, so its projected
     // extent must be far smaller than with the fitted default.
