@@ -20,6 +20,27 @@
         depths, so each rewrote what the other produced and halving such a
         coefficient — the `Mean` of two points carrying a radical — never
         returned.
+- Fixes driven by the plane-geometry Wolfram Demonstrations that stack a
+    numeric readout over a drawing:
+    - A `Pane[…]` grid cell shows what it holds. `Pane` only reserves an
+        area for its content, so a body laid out as
+        `Grid[{{Pane[…]}, {Graphics[…]}}]` used to print the whole
+        `Pane[…]` call as source text in place of the readout — and
+        stretch the grid to the width of that source. `Item[…]` and
+        `Text[…]` cells are peeled the same way, through the one helper
+        every display pass already shares.
+    - `Dividers -> All` rules every position of a grid, the outer edges
+        included, so the grid is drawn as a closed box. Only the
+        boundaries *between* cells were ruled before, which is what
+        `Dividers -> Center` means; the two now differ, and either can be
+        set per direction as `Dividers -> {colspec, rowspec}`.
+    - `Spacings -> {{i -> s, …}, …}` sets the gap at individual column
+        positions — position `i` is the gap to the left of column `i`, and
+        position `ncols + 1` the margin after the last column. A
+        list-valued horizontal spec used to be dropped, so a readout that
+        groups its columns with wide and tight gaps came out evenly and
+        far too widely spaced. A plain `{s1, s2, …}` names the positions
+        in order, and positions left out keep the default gap.
 - Fixes driven by a Wolfram Demonstration that runs a cellular automaton
     over a dendrite and compares it with the linear case:
     - A layout that holds pictures — `Grid[{{plot1, plot2}, …}]`, a
