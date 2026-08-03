@@ -5957,30 +5957,163 @@ fn optimizer_is_feasible(result: &Expr, constraints: &[Expr]) -> bool {
   let Some(Expr::List(rules)) = pair.get(1) else {
     return false;
   };
-  constraints.iter().all(|constraint| {
-    let mut substituted = constraint.clone();
-    for rule in rules.iter() {
-      let (Expr::Rule {
+  let point: Vec<(String, Expr)> = rules
+    .iter()
+    .filter_map(|rule| match rule {
+      Expr::Rule {
         pattern,
         replacement,
       }
       | Expr::RuleDelayed {
         pattern,
         replacement,
-      }) = rule
-      else {
-        return false;
-      };
-      if let Expr::Identifier(var) = pattern.as_ref() {
-        substituted =
-          crate::syntax::substitute_variable(&substituted, var, replacement);
-      }
+      } => match pattern.as_ref() {
+        Expr::Identifier(var) => {
+          Some((var.clone(), replacement.as_ref().clone()))
+        }
+        _ => None,
+      },
+      _ => None,
+    })
+    .collect();
+  if point.len() != rules.len() {
+    return false;
+  }
+  point_satisfies(&point, constraints)
+}
+
+/// True when every constraint evaluates to `True` at the `var -> value` point.
+fn point_satisfies(point: &[(String, Expr)], constraints: &[Expr]) -> bool {
+  constraints.iter().all(|constraint| {
+    let mut substituted = constraint.clone();
+    for (var, value) in point {
+      substituted =
+        crate::syntax::substitute_variable(&substituted, var, value);
     }
     matches!(
       crate::evaluator::evaluate_expr_to_expr(&substituted),
       Ok(Expr::Identifier(ref s)) if s == "True"
     )
   })
+}
+
+/// The real relaxation of an `Integers`-domain problem often lands just outside
+/// the feasible integer set: `Maximize[{x, x < 3}, x, Integers]` relaxes to
+/// `x -> 3`, which the strict `<` excludes, while wolframscript answers
+/// `{2, {x -> 2}}`. Search the integer points within one step of the relaxation
+/// optimum and keep the best feasible one.
+///
+/// The window is deliberately tiny (one integer either side of the relaxation
+/// value, at most four variables), so this can only ever refine an answer the
+/// relaxation already located — it never goes hunting for an optimum somewhere
+/// else, and returns `None` when nothing nearby is feasible.
+fn snap_relaxation_to_integers(
+  relaxation: &Expr,
+  objective: &Expr,
+  constraints: &[Expr],
+  maximize: bool,
+) -> Option<Expr> {
+  let Expr::List(pair) = relaxation else {
+    return None;
+  };
+  if pair.len() != 2 {
+    return None;
+  }
+  let Expr::List(rules) = &pair[1] else {
+    return None;
+  };
+  if rules.is_empty() || rules.len() > 4 {
+    return None;
+  }
+
+  // Each optimizer must be a finite real number to bracket it with integers.
+  let mut ranges: Vec<(String, Vec<i64>)> = Vec::with_capacity(rules.len());
+  for rule in rules.iter() {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = rule
+    else {
+      return None;
+    };
+    let Expr::Identifier(var) = pattern.as_ref() else {
+      return None;
+    };
+    let value = crate::functions::math_ast::try_eval_to_f64(replacement)?;
+    if !value.is_finite() || value.abs() > 1e12 {
+      return None;
+    }
+    let lo = value.floor() as i64 - 1;
+    let hi = value.ceil() as i64 + 1;
+    ranges.push((var.clone(), (lo..=hi).collect()));
+  }
+
+  // Cartesian product of the per-variable windows (at most 4^4 points).
+  let mut points: Vec<Vec<(String, Expr)>> = vec![Vec::new()];
+  for (var, candidates) in &ranges {
+    points = points
+      .iter()
+      .flat_map(|prefix| {
+        candidates.iter().map(move |c| {
+          let mut next = prefix.clone();
+          next.push((var.clone(), Expr::Integer(*c as i128)));
+          next
+        })
+      })
+      .collect();
+  }
+
+  let mut best: Option<(f64, Expr, Vec<(String, Expr)>)> = None;
+  for point in points {
+    if !point_satisfies(&point, constraints) {
+      continue;
+    }
+    let mut value = objective.clone();
+    for (var, v) in &point {
+      value = crate::syntax::substitute_variable(&value, var, v);
+    }
+    let Ok(value) = crate::evaluator::evaluate_expr_to_expr(&value) else {
+      continue;
+    };
+    let Some(numeric) = crate::functions::math_ast::try_eval_to_f64(&value)
+    else {
+      continue;
+    };
+    let better = match &best {
+      None => true,
+      Some((current, _, _)) => {
+        if maximize {
+          numeric > *current
+        } else {
+          numeric < *current
+        }
+      }
+    };
+    if better {
+      best = Some((numeric, value, point));
+    }
+  }
+
+  let (_, value, point) = best?;
+  Some(Expr::List(
+    vec![
+      value,
+      Expr::List(
+        point
+          .into_iter()
+          .map(|(var, v)| Expr::Rule {
+            pattern: Box::new(Expr::Identifier(var)),
+            replacement: Box::new(v),
+          })
+          .collect(),
+      ),
+    ]
+    .into(),
+  ))
 }
 
 /// True when every optimizer in a `{value, {var -> a, …}}` result is an integer,
@@ -6028,17 +6161,49 @@ pub fn minimize_ast(
   if args.len() == 3
     && matches!(&args[2], Expr::Identifier(d) if d == "Integers")
   {
-    let constrained = minimize_ast_inner(args, maximize)?;
+    // Both attempts below are probes, and a probe's complaint only belongs in
+    // the output when its answer is the one handed back — "the maximum is not
+    // attained" describes a relaxation Woxi may well discard. So each runs
+    // quietly and its messages are replayed only on acceptance.
+    let probe =
+      |probe_args: &[Expr]| -> Result<(Expr, Vec<String>), InterpreterError> {
+        let before = crate::snapshot_warnings();
+        let seen = before.messages().len();
+        crate::push_quiet();
+        let result = minimize_ast_inner(probe_args, maximize);
+        crate::pop_quiet();
+        let raised = crate::snapshot_warnings().messages()[seen..].to_vec();
+        crate::restore_warnings(before);
+        result.map(|value| (value, raised))
+      };
+    let replay = |messages: Vec<String>| {
+      for message in messages {
+        crate::emit_message(&message);
+      }
+    };
+
+    let (constrained, messages) = probe(args)?;
     if matches!(&constrained, Expr::List(pair) if pair.len() == 2) {
+      replay(messages);
       return Ok(constrained);
     }
-    let over_reals = minimize_ast_inner(&args[..2], maximize)?;
-    let (_, constraints) = minimize_parse_objective(&args[0]);
+    let (over_reals, messages) = probe(&args[..2])?;
+    let (objective, constraints) = minimize_parse_objective(&args[0]);
     if optimizer_is_integral(&over_reals)
       && optimizer_is_feasible(&over_reals, &constraints)
     {
+      replay(messages);
       return Ok(over_reals);
     }
+    if let Some(snapped) = snap_relaxation_to_integers(
+      &over_reals,
+      &objective,
+      &constraints,
+      maximize,
+    ) {
+      return Ok(snapped);
+    }
+    replay(messages);
     return Ok(unevaluated(func_name, args));
   }
   minimize_ast_inner(args, maximize)

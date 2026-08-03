@@ -6720,14 +6720,21 @@ mod minimize {
 
   // A real optimum sitting on an excluded boundary is not a solution over the
   // integers — Maximize[{x, x < 3}, x] reports the boundary point {3, {x -> 3}},
-  // which x < 3 rules out — so the call is left alone rather than answered with
-  // it. wolframscript searches inward and gets {2, {x -> 2}}; that needs real
-  // integer optimization.
+  // which x < 3 rules out — so the search steps inward to the nearest feasible
+  // integer point.
   #[test]
-  fn integers_domain_refuses_an_infeasible_boundary_optimum() {
+  fn integers_domain_steps_in_from_an_infeasible_boundary_optimum() {
     assert_eq!(
       interpret("Maximize[{x, x < 3}, x, Integers]").unwrap(),
-      "Maximize[{x, x < 3}, x, Integers]"
+      "{2, {x -> 2}}"
+    );
+    assert_eq!(
+      interpret("Minimize[{x, x > 3}, x, Integers]").unwrap(),
+      "{4, {x -> 4}}"
+    );
+    assert_eq!(
+      interpret("Maximize[{x + y, x < 3 && y < 2}, {x, y}, Integers]").unwrap(),
+      "{3, {x -> 2, y -> 1}}"
     );
     // Without the domain the boundary point is what wolframscript reports too.
     assert_eq!(
