@@ -1397,7 +1397,7 @@ DialogReturn,Return from a dialog,🚫,io,6.0,1401
 Skewness,Computes the skewness of a list or distribution,✅,pure,6.0,1402
 Speak,Text-to-speech output,🚫,io,7.0,1405
 StreamColorFunction,Color function for stream plots,🚫,pure,7.0,1405
-TreePlot,Plot a tree graph,🚫,pure,6.0,1405
+TreePlot,Draws a tree in layers by distance from its roots,✅,pure,6.0,1405
 Audio,Audio object from sample data or files (symbolic in the CLI; visual hosts render a graphical audio player),✅,unevaluated,11.0,1406
 ColorSeparate,Separate color channels of an image,✅,io,7.0,1409
 LogisticSigmoid,Returns the logistic sigmoid function value,✅,pure,10.0,1409
@@ -1517,7 +1517,7 @@ DedekindEta,Dedekind eta modular function,✅,pure,3.0,1525
 LineIndent,Line indentation option,✅,pure,3.0,1526
 FindDistributionParameters,Estimate distribution parameters,✅,pure,8.0,1528
 NetEncoder,Neural network encoder,✅,pure,11.0,1528
-LayeredGraphPlot,Layered graph plot,✅,pure,6.0,1529
+LayeredGraphPlot,Draws a graph in layers by distance from its roots,✅,pure,6.0,1529
 AssociationMap,Maps a function over an association; supports the operator form AssociationMap[f][data],✅,pure,10.0,1530
 Covariance,Covariance of two lists; of a single vector gives its variance; of a single matrix gives the covariance matrix of its columns; of two matrices gives their cross-covariance matrix,✅,pure,6.0,1534
 MinimalBy,Returns elements that minimize a criterion,✅,pure,10.0,1534
