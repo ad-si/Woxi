@@ -6229,13 +6229,27 @@ mod dt {
   }
 
   // A dependent variable's own derivative grows another argument instead of
-  // nesting: Dt[Dt[y, x], x] is Dt[y, x, x].
+  // nesting, and the arguments come back in canonical shape: repeats fold
+  // into `{x, n}` and the variables are sorted.
   #[test]
   fn higher_order_carries_dependent_variables() {
     assert_eq!(
       interpret("Dt[x y, {x, 2}]").unwrap(),
-      "2*Dt[y, x] + x*Dt[y, x, x]"
+      "2*Dt[y, x] + x*Dt[y, {x, 2}]"
     );
+    assert_eq!(interpret("Dt[Dt[y, x], x]").unwrap(), "Dt[y, {x, 2}]");
+    assert_eq!(interpret("Dt[y, x, x, x]").unwrap(), "Dt[y, {x, 3}]");
+    assert_eq!(interpret("Dt[Dt[y, x], w]").unwrap(), "Dt[y, w, x]");
+    assert_eq!(interpret("Dt[y, x, z, x]").unwrap(), "Dt[y, {x, 2}, z]");
+  }
+
+  // A held total derivative does not depend on the symbol it differentiates,
+  // so differentiating it by that symbol again gives 0.
+  #[test]
+  fn held_derivative_of_its_own_symbol_is_zero() {
+    assert_eq!(interpret("Dt[Dt[y, x], y]").unwrap(), "0");
+    assert_eq!(interpret("Dt[Dt[x, y], x]").unwrap(), "0");
+    assert_eq!(interpret("Dt[Dt[z, x], y]").unwrap(), "Dt[z, x, y]");
   }
 
   // A symbolic order cannot be carried out, so the call is held.
@@ -6255,10 +6269,7 @@ mod dt {
   #[test]
   fn multiple_variables() {
     assert_eq!(interpret("Dt[x^3, x, x]").unwrap(), "6*x");
-    assert_eq!(
-      interpret("Dt[x y, x, y]").unwrap(),
-      "1 + Dt[x, y]*Dt[y, x] + x*Dt[y, x, y]"
-    );
+    assert_eq!(interpret("Dt[x y, x, y]").unwrap(), "1 + Dt[x, y]*Dt[y, x]");
   }
 }
 

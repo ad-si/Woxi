@@ -18682,6 +18682,56 @@ pub fn dt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(simplify(result))
 }
 
+/// Rebuild a held `Dt[expr, spec…]` with its differentiation variables in
+/// wolframscript's canonical shape: sorted by name, repeats folded into the
+/// `{x, n}` order spec. `Dt[y, x, w, x]` prints as `Dt[y, w, {x, 2}]`.
+///
+/// Anything that is not a plain symbol or a `{symbol, integer}` spec (a
+/// symbolic order, say) is left exactly where it is — the canonical order is
+/// only known for the specs Woxi can read.
+fn canonical_dt(args: Vec<Expr>) -> Expr {
+  let mut specs: Vec<(String, i128)> = Vec::with_capacity(args.len() - 1);
+  for spec in &args[1..] {
+    match spec {
+      Expr::Identifier(v) => specs.push((v.clone(), 1)),
+      Expr::List(items)
+        if items.len() == 2
+          && matches!(&items[0], Expr::Identifier(_))
+          && matches!(&items[1], Expr::Integer(n) if *n >= 1) =>
+      {
+        let Expr::Identifier(v) = &items[0] else {
+          unreachable!()
+        };
+        let Expr::Integer(n) = &items[1] else {
+          unreachable!()
+        };
+        specs.push((v.clone(), *n));
+      }
+      _ => return crate::syntax::unevaluated("Dt", &args),
+    }
+  }
+
+  specs.sort_by(|a, b| a.0.cmp(&b.0));
+  let mut merged: Vec<(String, i128)> = Vec::with_capacity(specs.len());
+  for (var, order) in specs {
+    match merged.last_mut() {
+      Some(last) if last.0 == var => last.1 += order,
+      _ => merged.push((var, order)),
+    }
+  }
+
+  let mut new_args = Vec::with_capacity(merged.len() + 1);
+  new_args.push(args[0].clone());
+  for (var, order) in merged {
+    new_args.push(if order == 1 {
+      Expr::Identifier(var)
+    } else {
+      Expr::List(vec![Expr::Identifier(var), Expr::Integer(order)].into())
+    });
+  }
+  crate::syntax::unevaluated("Dt", &new_args)
+}
+
 /// Check if an expression is a true constant (number or named constant).
 /// Unlike is_constant_wrt, this does NOT consider other variables as constant.
 fn is_true_constant(expr: &Expr) -> bool {
@@ -18942,14 +18992,16 @@ fn total_differentiate(
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
         // An already-held derivative gains one more variable rather than
-        // nesting: Dt[Dt[y, x], x] is Dt[y, x, x].
+        // nesting: Dt[Dt[y, x], x] is Dt[y, {x, 2}].
         "Dt" if args.len() >= 2 => {
+          // A held total derivative is independent of the symbol it
+          // differentiates, so Dt[Dt[y, x], y] is 0 (as is Dt[Dt[x, y], x]).
+          if matches!(&args[0], Expr::Identifier(s) if s == var) {
+            return Ok(Expr::Integer(0));
+          }
           let mut new_args = args.to_vec();
           new_args.push(Expr::Identifier(var.to_string()));
-          Ok(Expr::FunctionCall {
-            name: "Dt".to_string(),
-            args: new_args.into(),
-          })
+          Ok(canonical_dt(new_args))
         }
         "Sin" if args.len() == 1 => {
           let df = total_differentiate(&args[0], var)?;
