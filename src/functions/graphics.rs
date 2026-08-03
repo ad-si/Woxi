@@ -1374,6 +1374,42 @@ pub(crate) fn named_style_appearance(
   })
 }
 
+/// The point size a named font size stands for. `Tiny`, `Small`, `Medium`
+/// and `Large` are absolute in Wolfram's default stylesheet; `Larger` and
+/// `Smaller` scale whatever size is in force. Measured from wolframscript's
+/// own rendering of `Text[Style["z", …]]` against numeric sizes.
+pub(crate) fn named_font_size(name: &str, current: f64) -> Option<f64> {
+  Some(match name {
+    "Tiny" => 6.0,
+    "Small" => 9.0,
+    "Medium" => 12.0,
+    "Large" => 24.0,
+    "Larger" => current * 1.25,
+    "Smaller" => current * 0.8,
+    _ => return None,
+  })
+}
+
+/// Whether a `Style` directive sets the font's face — its weight or slant.
+/// These are the ones a `Text[…]` wrapper resets rather than inherits.
+fn is_font_face_directive(d: &Expr) -> bool {
+  match d {
+    Expr::Identifier(s) => {
+      matches!(s.as_str(), "Bold" | "Italic" | "Plain" | "Underlined")
+    }
+    Expr::Rule {
+      pattern,
+      replacement: _,
+    } => matches!(pattern.as_ref(), Expr::Identifier(k)
+      if matches!(k.as_str(), "FontWeight" | "FontSlant" | "FontVariations")),
+    Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
+      matches!(&args[0], Expr::Identifier(k)
+        if matches!(k.as_str(), "FontWeight" | "FontSlant" | "FontVariations"))
+    }
+    _ => false,
+  }
+}
+
 /// The glyph a mathematical constant is typeset with. Wolfram shows these
 /// wherever text is set rather than printed — `Infinity` inside a picture's
 /// `Text` is `∞`, not the word — while `Print` keeps the name. Arithmetic
@@ -1449,6 +1485,13 @@ fn apply_text_style_directive(d: &Expr, style: &mut StyleState) -> bool {
       style.font_style = "normal".to_string();
       true
     }
+    // `Style[expr, Large]` — a named size, the same way a number is one.
+    Expr::Identifier(s) | Expr::Constant(s)
+      if named_font_size(s, style.font_size).is_some() =>
+    {
+      style.font_size = named_font_size(s, style.font_size).unwrap();
+      true
+    }
     Expr::Integer(n) => {
       style.font_size = *n as f64;
       true
@@ -1493,6 +1536,13 @@ fn apply_text_style_rule(
   match key {
     "FontSize" => {
       if let Some(sz) = expr_to_f64(replacement) {
+        style.font_size = sz;
+        return true;
+      }
+      // `FontSize -> Large` names its size instead of giving a number.
+      if let Expr::Identifier(s) | Expr::Constant(s) = replacement
+        && let Some(sz) = named_font_size(s, style.font_size)
+      {
         style.font_size = sz;
         return true;
       }
@@ -6499,17 +6549,28 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     frame_label.as_ref().is_some_and(|(b, _)| !b.is_empty());
   let has_left_caption =
     frame_label.as_ref().is_some_and(|(_, l)| !l.is_empty());
-  let margin_left: f64 = if frame_gutter || axes.1 {
+  // An axis whose range spans zero is drawn through the middle of the
+  // picture and carries its tick labels there too, so it needs no gutter
+  // beside the drawing area — only the small padding Wolfram leaves all
+  // round. Reserving the full gutter for one pushed the drawing hard
+  // against the opposite edge and clipped whatever sat at the far side.
+  let y_axis_interior = axes.1 && bb.x_min <= 0.0 && 0.0 <= bb.x_max;
+  let x_axis_interior = axes.0 && bb.y_min <= 0.0 && 0.0 <= bb.y_max;
+  let margin_left: f64 = if frame_gutter || (axes.1 && !y_axis_interior) {
     50.0
   } else if frame {
     10.0
+  } else if y_axis_interior {
+    6.0
   } else {
     0.0
   } + if has_left_caption { 20.0 } else { 0.0 };
-  let margin_bottom: f64 = if frame_gutter || axes.0 {
+  let margin_bottom: f64 = if frame_gutter || (axes.0 && !x_axis_interior) {
     25.0
   } else if frame {
     10.0
+  } else if x_axis_interior {
+    6.0
   } else {
     0.0
   } + if has_bottom_caption { 20.0 } else { 0.0 };
@@ -6519,8 +6580,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
   let has_y_axis_label =
     axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
-  let margin_right: f64 =
-    if frame { 10.0 } else { 0.0 } + if has_x_axis_label { 24.0 } else { 0.0 };
+  let margin_right: f64 = if frame {
+    10.0
+  } else if y_axis_interior {
+    // Balance the padding an interior y axis leaves on the left, so the
+    // drawing area sits centred instead of running off the right edge.
+    6.0
+  } else {
+    0.0
+  } + if has_x_axis_label { 24.0 } else { 0.0 };
   let label_strip: f64 = if plot_label.is_some() { 26.0 } else { 0.0 };
   let margin_top: f64 = if frame { 10.0 } else { 0.0 }
     + label_strip
@@ -8486,7 +8554,22 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // directives ask for (a label reads `Style["P", Blue, Italic]`).
         "Style" if !args.is_empty() => {
           let content = expr_to_svg_markup(&args[0]);
-          let attrs = style_directives_to_svg_attrs(&args[1..]);
+          // `Text[…]` sets its content in the graphic's own text style, so
+          // the weight and slant it would inherit are reset: Wolfram draws
+          // `Style[Text["a"], Bold]` plain, while the colour and size still
+          // reach through. A `Style` written inside the `Text` still applies.
+          let directives: Vec<Expr> = if matches!(&args[0],
+            Expr::FunctionCall { name, args: ta } if name == "Text" && ta.len() == 1)
+          {
+            args[1..]
+              .iter()
+              .filter(|d| !is_font_face_directive(d))
+              .cloned()
+              .collect()
+          } else {
+            args[1..].to_vec()
+          };
+          let attrs = style_directives_to_svg_attrs(&directives);
           if attrs.is_empty() {
             content
           } else {

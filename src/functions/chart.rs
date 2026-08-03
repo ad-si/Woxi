@@ -106,8 +106,44 @@ fn svg_markup_visible_text(markup: &str) -> String {
     .replace("&amp;", "&")
 }
 
+/// The content of a one-argument `Text[…]`, the formatting head a label is
+/// often wrapped in. Two or more arguments is the graphics primitive
+/// (`Text[expr, position]`), which is not a label.
+fn text_wrapper_content(expr: &Expr) -> Option<&Expr> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      Some(&args[0])
+    }
+    _ => None,
+  }
+}
+
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
 pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
+  // `Text[…]` sets its content in the graphic's own text style, so the font
+  // weight and slant it inherits are reset — `Style[Text["a"], Bold]` is not
+  // bold in Wolfram, while the colour and size still reach through. A
+  // `Style` inside the `Text` applies as written.
+  if let Some(inner) = text_wrapper_content(expr) {
+    return parse_styled_label(inner);
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Style"
+    && !args.is_empty()
+    && let Some(inner) = text_wrapper_content(&args[0])
+  {
+    let mut restyled: Vec<Expr> = vec![inner.clone()];
+    restyled.extend(args[1..].iter().cloned());
+    let outer = Expr::FunctionCall {
+      name: "Style".to_string(),
+      args: restyled.into(),
+    };
+    let inner_label = parse_styled_label(inner)?;
+    let mut label = parse_styled_label(&outer)?;
+    label.bold = inner_label.bold;
+    label.italic = inner_label.italic;
+    return Some(label);
+  }
   match expr {
     Expr::String(s) => Some(StyledLabel {
       text: s.clone(),

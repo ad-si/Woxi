@@ -21730,3 +21730,116 @@ mod demonstration_plot_layout {
     );
   }
 }
+
+/// Wolfram reserves room beside a picture only where the tick labels fall
+/// outside the drawing area. An axis that crosses the middle carries them
+/// inside it, so the full gutter is wrong there — it pushed the drawing off
+/// the right edge and clipped whatever sat at the far side.
+#[test]
+fn an_axis_through_the_middle_needs_no_gutter() {
+  let centred = export_svg(
+    "Graphics[{Point[{0, 0}]}, Axes -> True, \
+     PlotRange -> {{-3, 3}, {-3, 3}}, ImageSize -> {400, 400}]",
+  );
+  assert!(
+    centred.contains("translate(6,"),
+    "axes through the middle keep the small padding: {centred}"
+  );
+  // With the range wholly positive the y axis sits at the left edge and its
+  // labels need the full gutter.
+  let left_edge = export_svg(
+    "Graphics[{Point[{2, 2}]}, Axes -> True, \
+     PlotRange -> {{1, 3}, {1, 3}}, ImageSize -> {400, 400}]",
+  );
+  assert!(
+    left_edge.contains("translate(50,"),
+    "an axis at the edge still gets its gutter: {left_edge}"
+  );
+}
+
+/// `Style[expr, Large]` names a font size the way a number gives one.
+/// Wolfram's default stylesheet: Tiny 6, Small 9, Medium 12, Large 24.
+#[test]
+fn named_font_sizes_in_a_style() {
+  for (name, size) in [
+    ("Tiny", "6"),
+    ("Small", "9"),
+    ("Medium", "12"),
+    ("Large", "24"),
+  ] {
+    let svg = export_svg(&format!(
+      "Graphics[{{Text[Style[\"z\", {name}], {{0, 0}}]}}, ImageSize -> 200]"
+    ));
+    assert!(
+      svg.contains(&format!("font-size=\"{size}\"")),
+      "Style[\"z\", {name}] should set font-size {size}: {svg}"
+    );
+  }
+  // Relative ones scale whatever size is in force.
+  let larger = export_svg(
+    "Graphics[{Text[Style[\"z\", Larger], {0, 0}]}, ImageSize -> 200]",
+  );
+  let plain = export_svg("Graphics[{Text[\"z\", {0, 0}]}, ImageSize -> 200]");
+  assert!(
+    !larger.contains("font-size=\"14\"") && plain.contains("font-size=\"14\""),
+    "Larger should grow the inherited size: {larger}"
+  );
+}
+
+/// `Text[…]` sets its content in the graphic's own text style, so the weight
+/// and slant it would inherit are reset — Wolfram draws `Style[Text["a"],
+/// Bold]` plain — while the colour and size still reach through. A `Style`
+/// written inside the `Text` applies as written.
+#[test]
+fn a_text_wrapper_resets_the_font_face() {
+  let bold_outside = export_svg(
+    "Plot[0, {x, 0, 1}, PlotLabel -> Style[Text[\"abc\"], Bold], \
+     ImageSize -> 200]",
+  );
+  assert!(
+    !bold_outside.contains("font-weight=\"bold\""),
+    "Text resets the inherited weight: {bold_outside}"
+  );
+  let italic_outside = export_svg(
+    "Plot[0, {x, 0, 1}, PlotLabel -> Style[Text[\"abc\"], Italic], \
+     ImageSize -> 200]",
+  );
+  assert!(
+    !italic_outside.contains("font-style=\"italic\""),
+    "Text resets the inherited slant: {italic_outside}"
+  );
+  // Without the wrapper the directive applies, and colour and size reach
+  // through the wrapper either way.
+  let bold_direct = export_svg(
+    "Plot[0, {x, 0, 1}, PlotLabel -> Style[\"abc\", Bold], ImageSize -> 200]",
+  );
+  assert!(
+    bold_direct.contains("font-weight=\"bold\""),
+    "a bare Style is still bold: {bold_direct}"
+  );
+  let coloured = export_svg(
+    "Plot[0, {x, 0, 1}, PlotLabel -> Style[Text[\"abc\"], Red, 24], \
+     ImageSize -> 200]",
+  );
+  let label_font = |svg: &str| -> f64 {
+    let at = svg.find(">abc<").expect("the label is drawn");
+    let tag = &svg[..at];
+    let key = tag.rfind("font-size=\"").expect("the label carries a size");
+    let rest = &tag[key + 11..];
+    rest[..rest.find('"').unwrap()].parse().unwrap()
+  };
+  assert!(
+    coloured.contains("rgb(255,0,0)")
+      && label_font(&coloured) > label_font(&bold_direct),
+    "colour and size reach through Text: {coloured}"
+  );
+  // A Style inside the Text applies as written.
+  let bold_inside = export_svg(
+    "Plot[0, {x, 0, 1}, PlotLabel -> Text[Style[\"abc\", Bold]], \
+     ImageSize -> 200]",
+  );
+  assert!(
+    bold_inside.contains("font-weight=\"bold\"") && bold_inside.contains("abc"),
+    "an inner Style still applies: {bold_inside}"
+  );
+}

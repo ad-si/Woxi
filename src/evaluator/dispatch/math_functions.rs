@@ -6482,8 +6482,24 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
     | Expr::BigFloat(_, _)
     | Expr::Identifier(_)
     | Expr::Constant(_) => Some((expr.clone(), Expr::Integer(0))),
+    // Any other expression that is numeric and evaluates to a finite real —
+    // `ArcTan[2/3]`, `Log[3]`, `ArcSin[1/2]` — is its own real part. Without
+    // this `E^(I ArcTan[2/3])` stayed unexpanded (and so did `Re` of it)
+    // while `E^(I Sqrt[2])`, a `Power` handled above, expanded. A complex
+    // numeric argument has no f64 here, so it still falls through.
+    other if is_finite_real_value(other) => {
+      Some((other.clone(), Expr::Integer(0)))
+    }
     _ => None,
   }
+}
+
+/// True when `expr` is a number in the `NumericQ` sense whose value is a
+/// finite real. Complex-valued expressions have no `f64` and give `false`.
+fn is_finite_real_value(expr: &Expr) -> bool {
+  crate::functions::predicate_ast::is_numeric_q(expr)
+    && crate::functions::math_ast::try_eval_to_f64(expr)
+      .is_some_and(f64::is_finite)
 }
 
 /// Decompose `base^exp` into real and imaginary parts when base = a + b*I and

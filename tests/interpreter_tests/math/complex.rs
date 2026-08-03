@@ -495,6 +495,30 @@ mod re_tests {
     );
   }
 
+  /// A real-valued function call is its own real part, so an exponential
+  /// whose imaginary exponent is one of them splits. Without this
+  /// `E^(I ArcTan[2/3])` stayed unexpanded while `E^(I Sqrt[2])` — a
+  /// `Power`, recognised by a different branch — expanded.
+  #[test]
+  fn a_function_valued_real_exponent_splits() {
+    assert_eq!(
+      interpret("Re[E^(I*ArcTan[2/3]/3)]").unwrap(),
+      "Cos[ArcTan[2/3]/3]"
+    );
+    assert_eq!(
+      interpret("Im[E^(I*ArcTan[2/3]/3)]").unwrap(),
+      "Sin[ArcTan[2/3]/3]"
+    );
+    assert_eq!(interpret("Re[E^(I*Log[3])]").unwrap(), "Cos[Log[3]]");
+    assert_eq!(interpret("Re[E^(I*E)]").unwrap(), "Cos[E]");
+    assert_eq!(
+      interpret("ComplexExpand[E^(I*ArcSin[1/3])]").unwrap(),
+      "(2*Sqrt[2])/3 + I/3"
+    );
+    // A complex-valued argument has no real value and still stays put.
+    assert_eq!(interpret("Re[E^(I*x)]").unwrap(), "Re[E^(I*x)]");
+  }
+
   #[test]
   fn re_i() {
     assert_eq!(interpret("Re[I]").unwrap(), "0");
