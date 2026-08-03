@@ -57,6 +57,31 @@ const SCHEME_3: [(f64, f64, f64); 10] = [
   (231.0 / 255.0, 7.0 / 255.0, 33.0 / 255.0),
 ];
 
+/// The color function of a named gradient, echoed in wolframscript's
+/// structured form
+///   `ColorDataFunction[scheme, "Gradients", {0, 1}, Blend[scheme, #1] &]`.
+/// Both `ColorData["scheme"]` and `ColorData["scheme", "ColorFunction"]`
+/// give it; applying it blends the stored control points at the parameter
+/// (see `apply_curried_call`).
+fn gradient_color_function(scheme: &str) -> Expr {
+  let blend = Expr::Function {
+    body: Box::new(Expr::FunctionCall {
+      name: "Blend".to_string(),
+      args: vec![Expr::String(scheme.to_string()), Expr::Slot(1)].into(),
+    }),
+  };
+  Expr::FunctionCall {
+    name: "ColorDataFunction".to_string(),
+    args: vec![
+      Expr::String(scheme.to_string()),
+      Expr::String("Gradients".to_string()),
+      Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
+      blend,
+    ]
+    .into(),
+  }
+}
+
 /// A horizontal gradient strip rendered as an Image — what
 /// `ColorData[name, "Image"]` returns, shown as the swatch in gradient
 /// pickers (e.g. a Manipulate color-scheme dropdown).
@@ -739,6 +764,20 @@ pub fn dispatch_image_functions(
         if matches!(&args[1], Expr::String(p) if p == "Image") {
           return Some(Ok(gradient_strip_image(controls)));
         }
+        // ColorData[name, "ColorFunction"]: the gradient's color function,
+        // the same object `ColorData[name]` gives on its own. Demonstrations
+        // reach for the property form when the result is applied straight
+        // away, as in `ColorData[name, "ColorFunction"][t]`.
+        if matches!(&args[1], Expr::String(p) if p == "ColorFunction") {
+          return Some(Ok(gradient_color_function(scheme)));
+        }
+        // ColorData[name, "Range"]: the parameter interval the gradient is
+        // defined over — always {0, 1} for the built-in gradients.
+        if matches!(&args[1], Expr::String(p) if p == "Range") {
+          return Some(Ok(Expr::List(
+            vec![Expr::Integer(0), Expr::Integer(1)].into(),
+          )));
+        }
         if !matches!(&args[1], Expr::String(_))
           && let Some(t) = crate::functions::math_ast::try_eval_to_f64(&args[1])
         {
@@ -861,22 +900,7 @@ pub fn dispatch_image_functions(
       if let Expr::String(scheme) = &args[0]
         && crate::functions::chart::named_color_scheme(scheme).is_some()
       {
-        let blend = Expr::Function {
-          body: Box::new(Expr::FunctionCall {
-            name: "Blend".to_string(),
-            args: vec![Expr::String(scheme.clone()), Expr::Slot(1)].into(),
-          }),
-        };
-        return Some(Ok(Expr::FunctionCall {
-          name: "ColorDataFunction".to_string(),
-          args: vec![
-            Expr::String(scheme.clone()),
-            Expr::String("Gradients".to_string()),
-            Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
-            blend,
-          ]
-          .into(),
-        }));
+        return Some(Ok(gradient_color_function(scheme)));
       }
     }
     "ImageCompose" if args.len() == 2 => {

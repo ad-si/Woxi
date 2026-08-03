@@ -20,6 +20,85 @@
     - `ControlType -> Slider` over a choice list renders a slider that
         steps through the choices, matching Wolfram; a twenty-entry
         colour-scheme list used to become a dropdown.
+- Fixes driven by a Wolfram Demonstration that runs a cellular automaton
+    over a dendrite and compares it with the linear case:
+    - A layout that holds pictures — `Grid[{{plot1, plot2}, …}]`, a
+        `Column` of them, a `Pane` around either — is composed into the one
+        picture a notebook shows. The visual hosts (Playground, Woxi Studio)
+        only ever reported the *last* graphic drawn while the layout was
+        evaluated, so a Manipulate body that arranges several plots in a
+        grid displayed a single one of them and dropped the rest.
+    - A `Grid`'s columns line up when its rows hold different things: the
+        caption under a picture is centred on that picture instead of
+        being packed against the left edge of the grid.
+    - `LayeredGraphPlot` and `TreePlot` draw the layered embedding they
+        name, rather than the circular one every graph got. Vertices are
+        placed by distance from a root, and the second argument (`Left`,
+        `Right`, `Top`, `Bottom`) says which edge the roots go on.
+    - `DirectedEdges -> False` draws a graph's edges as plain lines
+        instead of arrows, and `ImageSize` sizes a graph plot — a
+        Demonstration asking for a wide, short strip used to get the
+        360-point default square.
+    - `ArrayPlot` draws its `FrameLabel`, on any of the four edges, with
+        the left and right labels rotated onto theirs.
+- Fixes driven by the "Selectivity in a Semibatch Reactor" Wolfram
+    Demonstration:
+    - `Text` inside a `Graphics3D` scene is drawn — a labelled 3D
+        schematic used to arrive with no lettering at all. It honours the
+        `Style` size and colour, typesets `Subscript`/`Superscript`, and
+        respects the alignment offset of `Text[expr, pos, offset]`.
+    - `Scaled[{sx, sy}]` places a `Text` or `Inset` by fraction of the
+        plot range, in `Graphics` and in a plot's `Epilog` alike. The
+        fractions used to be unreadable, dropping every such label onto
+        the origin.
+    - `Inset[Graphics3D[…], pos]` embeds a three-dimensional picture in a
+        flat one at its own size, instead of printing `-Graphics3D-`.
+    - `Framed[…]` around a label draws its box — a border, and a panel
+        when a `Background` is given — rather than printing its own
+        source over the picture. `FrameStyle -> None` keeps the panel and
+        drops the border.
+    - `Subscript`/`Superscript` in a `Text` label typeset as scripts
+        instead of falling through to the two-line `OutputForm` box.
+    - `Graphics` accepts `Prolog` and `Epilog`, drawn under and over its
+        content and taking no part in the plot range.
+    - A `Manipulate` control panel written as a `Grid` drops its
+        `SpanFromLeft` / `SpanFromAbove` cell markers; they used to
+        survive as display elements and appear as literal text under the
+        widget, one row per marker.
+    - A control label computed with `Row[Flatten[{…, Riffle[…], …}]]` is
+        evaluated before it is typeset, so the button shows the caption
+        rather than the source of the computation.
+- Fixes driven by the "Illustrative Performance Characteristics of Modern
+    Motorcycles" Wolfram Demonstration:
+    - `Piecewise` holds its pieces, so the value of a piece whose condition
+        is `False` is never evaluated. This is what makes the construct a
+        guard: `Piecewise[{{f[w], 0 <= w <= wmax}}, 0]` no longer calls `f`
+        out of range, and the messages that call emitted are gone.
+    - `FindRoot` falls back to a difference quotient when the symbolic
+        derivative does not reduce to a number at the current iterate —
+        differentiating a non-smooth function leaves `Derivative[1, 0][Max][…]`
+        standing. It used to give up with `FindRoot::nlnum` and return
+        unevaluated. Messages emitted by the discarded attempt (`D::ivar`
+        and friends) no longer reach the user.
+    - A `ControlType -> …` given to the `Manipulate` itself types every
+        control that does not pick one, and a list value assigns one type per
+        control in spec order. The Demonstrations idiom — controls laid out in
+        a `Grid[…]`, typed once for the whole panel — now renders the dropdowns
+        the author asked for instead of over-wide SetterBars.
+- Fixes driven by a Wolfram Demonstration that draws a complex function as
+    a colored vector field:
+    - `ColorData[name, "ColorFunction"]` gives the gradient's color
+        function, the same object `ColorData[name]` gives on its own. It
+        used to be reported as unimplemented, so every primitive colored
+        through it fell back to black. `ColorData[name, "Range"]` reads
+        the parameter interval alongside it.
+    - `Graphics[…, ImagePadding -> …]` honours the padding (it was only
+        read by the plot functions), so the drawing area sits where the
+        notebook puts it instead of at the automatic frame margins.
+    - A named `Arrowheads` size is a fraction of the plot width and
+        nothing else. It used to be capped at 45% of the arrow carrying
+        it, which shrank the heads of a dense vector field — where each
+        arrow is barely longer than its head — to unreadable specks.
 - Fixes driven by the "Mass with a Spring and a Rubber Band" Wolfram
     Demonstration:
     - Substituting an `NDSolve` solution into a derivative

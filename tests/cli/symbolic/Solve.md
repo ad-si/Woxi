@@ -156,3 +156,19 @@ $ wo 'Solve[x^4 == 16 && x > 0, x]'
 $ wo 'Solve[1 == f^2 (3 - f) && 0 <= f <= 1, f]'
 {{f -> Root[1 - 3*#1^2 + #1^3 & , 2, 0]}}
 ```
+
+An equation with a list on one side threads over that list, so a scalar on
+the other side is compared against every element:
+
+```scrut
+$ wo 'Solve[{x - 1, y - 2} == 0, {x, y}]'
+{{x -> 1, y -> 2}}
+```
+
+That makes `Solve[Table[…] == 0]` work, with the variable inferred from the
+equations:
+
+```scrut
+$ wo 'Solve[Table[BernoulliB[n, z], {n, 3, 3}] == 0]'
+{{z -> 0}, {z -> 1/2}, {z -> 1}}
+```

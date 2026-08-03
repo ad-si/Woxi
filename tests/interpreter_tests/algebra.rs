@@ -4753,6 +4753,36 @@ mod solve {
     );
   }
 
+  /// A scalar side of a list equation broadcasts over the list, so
+  /// `{e1, e2} == 0` stands for `e1 == 0 && e2 == 0`. `Solve[Table[…] == 0]`
+  /// (the Roots-of-the-Bernoulli-Polynomials Demonstration) relies on it,
+  /// including in the one-argument form that auto-detects the variable.
+  #[test]
+  fn solve_broadcasts_scalar_across_list_equation() {
+    assert_eq!(
+      interpret("Solve[{x^2 - 1} == 0, x]").unwrap(),
+      "{{x -> -1}, {x -> 1}}"
+    );
+    // One-argument form: the variable comes from the threaded equations.
+    assert_eq!(
+      interpret("Solve[{x^2 - 1} == 0]").unwrap(),
+      "{{x -> -1}, {x -> 1}}"
+    );
+    // Several elements make a system, one equation per element.
+    assert_eq!(
+      interpret("Solve[{x - 1, y - 2} == 0, {x, y}]").unwrap(),
+      "{{x -> 1, y -> 2}}"
+    );
+    // The scalar can sit on the left just as well.
+    assert_eq!(interpret("Solve[0 == {x - 3}, x]").unwrap(), "{{x -> 3}}");
+    // Table[…] == 0 is the Demonstration's shape: a one-element list of a
+    // numericized polynomial, solved without naming the variable.
+    assert_eq!(
+      interpret("Solve[N[Table[BernoulliB[n, z], {n, 3, 3}] == 0]]").unwrap(),
+      "{{z -> 0.}, {z -> 0.5}, {z -> 1.}}"
+    );
+  }
+
   #[test]
   fn solve_pure_cubic_symbolic() {
     assert_eq!(
@@ -7264,6 +7294,78 @@ mod nsolve {
       "5"
     );
   }
+
+  // A bare polynomial in place of an equation means `poly == 0`. Previously
+  // this fell through to Solve and only produced a Solve::naqs message.
+  #[test]
+  fn bare_polynomial_means_equal_zero() {
+    assert_eq!(
+      interpret("NSolve[x^2 - 1, x]").unwrap(),
+      interpret("NSolve[x^2 - 1 == 0, x]").unwrap()
+    );
+    assert_eq!(
+      interpret("NSolve[x^3 - 2 x + 1, x]").unwrap(),
+      interpret("NSolve[x^3 - 2 x + 1 == 0, x]").unwrap()
+    );
+    // No message is emitted for the accepted form.
+    assert_eq!(interpret("NSolve[x^2 - 1, x]; $MessageList").unwrap(), "{}");
+    // A list of bare polynomials is a system of equations.
+    assert_eq!(
+      interpret("NSolve[{x + y - 3, x - y - 1}, {x, y}]").unwrap(),
+      "{{x -> 2., y -> 1.}}"
+    );
+    // Mixed lists keep the parts that already are equations.
+    assert_eq!(
+      interpret("NSolve[{x + y - 3, x - y == 1}, {x, y}]").unwrap(),
+      "{{x -> 2., y -> 1.}}"
+    );
+  }
+
+  // The optional third argument may be a working precision rather than a
+  // domain; it must not be mistaken for one.
+  #[test]
+  fn precision_third_argument() {
+    for spec in ["MachinePrecision", "20"] {
+      assert_eq!(
+        interpret(&format!("NSolve[x^2 - 2 == 0, x, {spec}]")).unwrap(),
+        interpret("NSolve[x^2 - 2 == 0, x]").unwrap()
+      );
+      // The complex roots survive — a precision is not a `Reals` domain.
+      assert_eq!(
+        interpret(&format!("Length[NSolve[x^2 + 1 == 0, x, {spec}]]")).unwrap(),
+        "2"
+      );
+    }
+  }
+
+  // Every numeric root finder ends in the same polish-and-pair step, so
+  // NSolve, NRoots and N[Root[…]] report identical digits and conjugate pairs
+  // come out exactly mirrored.
+  #[test]
+  fn conjugate_pairs_are_exact_mirrors() {
+    // Sum of all roots equals -a[n-1]/a[n] exactly when the pairs mirror.
+    assert_eq!(
+      interpret("Im[Total[x /. NSolve[x^10 - 3 x + 1 == 0, x]]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "(x /. NSolve[x^10 - 3 x + 1 == 0, x]) == \
+         (x /. NSolve[x^10 - 3 x + 1, x])"
+      )
+      .unwrap(),
+      "True"
+    );
+    // NRoots agrees digit for digit with NSolve.
+    assert_eq!(
+      interpret(
+        "(x /. NSolve[x^10 - 3 x + 1 == 0, x]) == \
+         (x /. {ToRules[NRoots[x^10 - 3 x + 1 == 0, x]]})"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 // NSolveValues is the numeric analogue of SolveValues: it returns the variable
@@ -7759,6 +7861,64 @@ mod find_root {
   #[test]
   fn trivial() {
     assert_eq!(interpret("FindRoot[x, {x, 5}]").unwrap(), "{x -> 0.}");
+  }
+
+  #[test]
+  fn non_smooth_function_falls_back_to_numeric_derivative() {
+    // Differentiating a non-smooth function leaves `Derivative[1, 0][Max][…]`
+    // standing, so the symbolic derivative never reduces to a number. That is
+    // no worse than having no symbolic derivative at all: the iteration falls
+    // back to a difference quotient and still converges. Regression: the
+    // unusable derivative propagated its error out of the Newton loop, so the
+    // call emitted FindRoot::nlnum and returned unevaluated.
+    assert_eq!(
+      interpret("FindRoot[Max[x, 2 x] - 6, {x, 1}]").unwrap(),
+      "{x -> 3.}"
+    );
+  }
+
+  #[test]
+  fn non_smooth_function_reports_no_internal_messages() {
+    use woxi::interpret_with_stdout;
+    // The failed symbolic-derivative attempt is internal bookkeeping —
+    // differentiating a user function at an already-substituted point makes
+    // `D` complain about a numeric "variable". None of that reaches the user
+    // (wolframscript reports nothing either).
+    let result = interpret_with_stdout(
+      "netthrust[v_] := Max[Map[# v &, {1, 2}]] - 6; \
+       FindRoot[netthrust[u], {u, 1}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "{u -> 3.}");
+    assert!(
+      result.warnings.is_empty(),
+      "unexpected messages: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn piecewise_guarded_interpolation() {
+    use woxi::interpret_with_stdout;
+    // The shape a Demonstration uses to solve for a vehicle's top speed: a
+    // tabulated curve wrapped in a `Piecewise` range guard, maximised over a
+    // set of gear ratios, minus a drag term. Neither the `Piecewise` nor the
+    // `Max` survives symbolic differentiation, so the whole solve rides on the
+    // numeric-derivative fallback.
+    let result = interpret_with_stdout(
+      "torque = Interpolation[{{0, 0}, {50, 100}, {100, 60}, {150, 0}}, \
+                              InterpolationOrder -> 1]; \
+       gear[w_] := Piecewise[{{torque[w], 0 <= w <= 150}}, 0]; \
+       thrust[v_] := Max[Map[gear[# v] &, {1, 2}]] - v^2/40; \
+       FindRoot[thrust[v], {v, 60}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "{v -> 60.52450587883597}");
+    assert!(
+      result.warnings.is_empty(),
+      "unexpected messages: {:?}",
+      result.warnings
+    );
   }
 
   #[test]

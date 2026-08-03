@@ -2376,6 +2376,60 @@ mod piecewise {
   }
 
   #[test]
+  fn unreachable_piece_value_is_never_evaluated() {
+    // Piecewise holds its pieces: the value of a piece whose condition is
+    // False is never touched, which is what makes the idiom a *guard* —
+    // `1/x` must not be evaluated at `x = 0`. Regression: the pair list was
+    // evaluated up front, so every guarded value ran anyway and emitted the
+    // messages the guard exists to prevent.
+    let result =
+      interpret_with_stdout("Piecewise[{{1/x, x != 0}}, 0] /. x -> 0").unwrap();
+    assert_eq!(result.result, "0");
+    assert!(
+      result.warnings.is_empty(),
+      "unexpected messages: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn range_guard_keeps_interpolation_in_bounds() {
+    // The Demonstrations shape of the same guard: a tabulated curve queried
+    // only inside its own data range. Outside it the piece drops, so no
+    // extrapolation warning is emitted.
+    let result = interpret_with_stdout(
+      "f = Interpolation[{{0, 0}, {1, 2}, {2, 0}}, InterpolationOrder -> 1]; \
+       g[w_] := Piecewise[{{f[w], 0 <= w <= 2}}, 0]; \
+       {g[1], g[5]}",
+    )
+    .unwrap();
+    assert_eq!(result.result, "{2, 0}");
+    assert!(
+      result.warnings.is_empty(),
+      "unexpected messages: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn indirect_pieces_still_resolve() {
+    // A first argument that is not already a list of pairs — a symbol holding
+    // one, or a `Table` that builds one — is evaluated to get at the pieces.
+    assert_eq!(
+      interpret("pairs = {{1, False}, {2, True}}; Piecewise[pairs]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Piecewise[Table[{i, i > 2}, {i, 1, 3}]]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("pair = {7, True}; Piecewise[{pair}]").unwrap(),
+      "7"
+    );
+  }
+
+  #[test]
   fn true_after_symbolic_becomes_default() {
     // A True condition after symbolic ones makes its value the new
     // default and drops everything behind it

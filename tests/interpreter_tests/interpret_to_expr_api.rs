@@ -25,6 +25,20 @@ fn a_definition_with_a_pattern_is_not_skipped() {
   assert_eq!(run("g[x__] := {x}; g[1, 2]"), "{1, 2}");
 }
 
+/// A newline ends a statement here just as it does in `interpret`. Without
+/// that, a definition cell written one definition per line — the shape of a
+/// Wolfram Demonstration's initialization code — parsed as a single
+/// statement glued together by implicit multiplication, and every definition
+/// but the first was lost.
+#[test]
+fn a_newline_separates_statements() {
+  assert_eq!(run("aa[x_] := x + 1\nbb[y_] := aa[y] * 2\nbb[3]"), "8");
+  assert_eq!(run("p = 1\nq = p + 1\n{p, q}"), "{1, 2}");
+  // A statement that is merely *spread* over several lines still parses as
+  // one: the break falls inside brackets, not at the top level.
+  assert_eq!(run("Total[{1, 2,\n 3}]"), "6");
+}
+
 #[test]
 fn a_single_expression_still_works() {
   assert_eq!(run("1 + 1"), "2");

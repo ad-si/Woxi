@@ -8662,6 +8662,35 @@ fn divide_two_head(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
 /// `Divide[number, Real]` as a single IEEE division, or None when the
 /// operands don't qualify for the direct machine path.
 fn direct_real_divide(a: &Expr, b: &Expr) -> Option<Expr> {
+  // An inexact complex numerator divides component-wise, one IEEE division
+  // each: `Divide[3. + 4. I, 5.]` is `0.6 + 0.8 I`, where the reciprocal
+  // multiply the general path takes would make the real part
+  // `0.6000000000000001`. An exact numerator over an exact denominator
+  // stays exact (`(3 + 4 I)/5` is `3/5 + 4/5 I`), so this only applies
+  // once either side carries a machine real.
+  let denom = match b {
+    Expr::Real(y) if *y != 0.0 => Some(*y),
+    Expr::Integer(n) if *n != 0 => Some(*n as f64),
+    _ => None,
+  };
+  if let Some(y) = denom
+    && (contains_real(a) || matches!(b, Expr::Real(_)))
+    && let Some((re, im)) =
+      crate::functions::list_helpers_ast::expr_to_complex_parts(a)
+    && im != 0.0
+    && re.is_finite()
+    && im.is_finite()
+  {
+    return Some(Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(Expr::Real(re / y)),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Real(im / y)),
+        right: Box::new(Expr::Identifier("I".to_string())),
+      }),
+    });
+  }
   let Expr::Real(y) = b else { return None };
   if *y == 0.0 {
     return None;

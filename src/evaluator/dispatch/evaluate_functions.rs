@@ -856,8 +856,10 @@ fn evaluate_function_call_ast_inner(
           for (bind_name, bind_val) in &structural_bindings {
             all_bindings.push((bind_name.as_str(), bind_val));
           }
-          let substituted_cond =
-            crate::syntax::substitute_variables(cond_expr, &all_bindings);
+          let substituted_cond = crate::syntax::substitute_pattern_bindings(
+            cond_expr,
+            &all_bindings,
+          );
           match evaluate_expr_to_expr(&substituted_cond) {
             Ok(Expr::Identifier(ref s)) if s == "True" => {}
             _ => {
@@ -880,7 +882,7 @@ fn evaluate_function_call_ast_inner(
           for (bind_name, bind_val) in &structural_bindings {
             all_bindings.push((bind_name.as_str(), bind_val));
           }
-          crate::syntax::substitute_variables(body_expr, &all_bindings)
+          crate::syntax::substitute_pattern_bindings(body_expr, &all_bindings)
         };
         // Push option context if this overload uses OptionsPattern
         let inline_opts = inline_opts_overloads
@@ -1137,8 +1139,10 @@ fn evaluate_function_call_ast_inner(
           for (bind_name, bind_val) in &structural_bindings {
             all_bindings.push((bind_name.as_str(), bind_val));
           }
-          let substituted_cond =
-            crate::syntax::substitute_variables(cond_expr, &all_bindings);
+          let substituted_cond = crate::syntax::substitute_pattern_bindings(
+            cond_expr,
+            &all_bindings,
+          );
           // Evaluate the condition - it must return True. A `?test` whose
           // test is a pure function can be stored as a FunctionCall whose
           // head is the function's *string form* (e.g. `#1 > 0 & [arg]`),
@@ -1180,7 +1184,7 @@ fn evaluate_function_call_ast_inner(
           for (bind_name, bind_val) in &structural_bindings {
             all_bindings.push((bind_name.as_str(), bind_val));
           }
-          crate::syntax::substitute_variables(body_expr, &all_bindings)
+          crate::syntax::substitute_pattern_bindings(body_expr, &all_bindings)
         };
         // Push option context if this overload uses OptionsPattern
         let inline_opts2 = inline_opts_overloads
@@ -4006,18 +4010,51 @@ fn evaluate_function_call_ast_inner(
       _ => false,
     };
     if looks_like_graph_input {
+      // `LayeredGraphPlot[g, pos, opts…]` / `TreePlot[g, pos, opts…]`:
+      // the positional argument says which edge of the plot the roots go
+      // on. It is not an option, so it is taken off here and turned into
+      // the layered embedding the renderer understands.
+      let layered = matches!(name, "LayeredGraphPlot" | "TreePlot");
+      let root_pos = args[1..]
+        .iter()
+        .find(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+        .and_then(crate::functions::graph::layer_direction);
+      let mut forwarded: Vec<Expr> = vec![args[0].clone()];
+      forwarded.extend(
+        args[1..]
+          .iter()
+          .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+          .cloned(),
+      );
+      if layered {
+        let mut spec =
+          vec![Expr::String("LayeredDigraphEmbedding".to_string())];
+        if let Some(dir) = root_pos {
+          spec.push(Expr::Rule {
+            pattern: Box::new(Expr::String("Orientation".to_string())),
+            replacement: Box::new(Expr::Identifier(dir.symbol().to_string())),
+          });
+        }
+        forwarded.push(Expr::Rule {
+          pattern: Box::new(Expr::Identifier("GraphLayout".to_string())),
+          replacement: Box::new(Expr::List(spec.into())),
+        });
+      }
       let graph_expr = if let Expr::FunctionCall {
         name: gn,
         args: gargs,
       } = &args[0]
         && gn == "Graph"
       {
+        // The plot's own options apply on top of the graph's.
+        let mut merged: Vec<Expr> = gargs.iter().cloned().collect();
+        merged.extend(forwarded[1..].iter().cloned());
         Expr::FunctionCall {
           name: "Graph".to_string(),
-          args: gargs.clone(),
+          args: merged.into(),
         }
       } else {
-        unevaluated("Graph", args)
+        unevaluated("Graph", &forwarded)
       };
       // Evaluate the embedded Graph so any rules/edges are normalised
       // into the canonical {vertex_list, edge_list, opts…} form, then

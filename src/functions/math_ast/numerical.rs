@@ -88,6 +88,39 @@ fn n_eval_arbitrary_precision_form(
   n_eval_arbitrary(expr, precision)
 }
 
+/// Does `N` leave the right operand of `op` exact?
+///
+/// Wolfram's `N` never numericizes an exact rational exponent: `N[x^2]` stays
+/// `x^2` (not `x^2.`) and `N[Sqrt[x]]` stays `Sqrt[x]`. Keeping the exponent
+/// exact is what lets `Solve`/`NSolve` still recognise `N[poly]` as a
+/// polynomial — `N[BernoulliB[20, z]] == 0` is solvable only because the
+/// `z^20` term keeps its integer exponent. A non-rational exponent is still
+/// numericized (`N[x^Pi]` → `x^3.14159…`).
+fn keeps_exact_exponent(op: BinaryOperator, exponent: &Expr) -> bool {
+  op == BinaryOperator::Power && is_exact_rational(exponent)
+}
+
+/// Is this an exact rational literal (integer, big integer, `p/q`, or a
+/// negation of one)?
+fn is_exact_rational(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_) | Expr::BigInteger(_) => true,
+    Expr::FunctionCall { name, args } if name == "Rational" => {
+      args.len() == 2 && args.iter().all(is_exact_rational)
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_exact_rational(operand),
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => is_exact_rational(left) && is_exact_rational(right),
+    _ => false,
+  }
+}
+
 /// Recursively convert an expression to numeric (Real) form
 pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
@@ -211,10 +244,15 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       if let Some(v) = try_eval_to_f64(expr) {
         return Ok(Expr::Real(v));
       }
+      let new_right = if keeps_exact_exponent(*op, right) {
+        (**right).clone()
+      } else {
+        n_eval(right)?
+      };
       let new_expr = Expr::BinaryOp {
         op: *op,
         left: Box::new(n_eval(left)?),
-        right: Box::new(n_eval(right)?),
+        right: Box::new(new_right),
       };
       // Re-evaluate to allow numeric simplification (e.g. complex powers)
       let result = match crate::evaluator::evaluate_expr_to_expr(&new_expr) {
@@ -271,6 +309,24 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       pattern: pattern.clone(),
       replacement: Box::new(n_eval(replacement)?),
     }),
+    // Comparison (`==`, `<`, …): N maps over the operands, so
+    // `N[x == 1/3]` → `x == 0.333333`. Solve/NSolve rely on this to see
+    // the inexact coefficients of `N[eqn]`.
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let new_operands: Result<Vec<Expr>, _> =
+        operands.iter().map(n_eval).collect();
+      let new_expr = Expr::Comparison {
+        operands: new_operands?,
+        operators: operators.clone(),
+      };
+      Ok(match crate::evaluator::evaluate_expr_to_expr(&new_expr) {
+        Ok(result) => result,
+        Err(_) => new_expr,
+      })
+    }
     Expr::Identifier(_) | Expr::Constant(_) => {
       if let Some(v) = try_eval_to_f64(expr) {
         return Ok(Expr::Real(v));
@@ -1146,6 +1202,22 @@ fn n_eval_arbitrary_partial(
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
 ) -> Result<Expr, InterpreterError> {
+  // An exact zero stays exact under `N[expr, p]` (Head Integer, Precision
+  // Infinity), just like at the top level — `N[x == 0, 10]` is `x == 0`.
+  if matches!(expr, Expr::Integer(0))
+    || matches!(expr, Expr::BigInteger(n) if n.sign() == num_bigint::Sign::NoSign)
+  {
+    return Ok(Expr::Integer(0));
+  }
+  // Lists are handled element-wise so nested lists (e.g. inside an
+  // equation) pick up the precision tag too.
+  if let Expr::List(items) = expr {
+    let results: Result<Vec<Expr>, _> = items
+      .iter()
+      .map(|e| n_eval_arbitrary_partial(e, precision, bits, rm, cc))
+      .collect();
+    return Ok(Expr::List(results?.into()));
+  }
   // A machine-precision Real already carries the maximum information
   // an f64 can hold — N cannot recover more digits from it, so leave
   // it alone (matches wolframscript: `N[F[1.2, 2/9], $MachinePrecision]`
@@ -1217,11 +1289,30 @@ fn n_eval_arbitrary_partial(
     }
     Expr::BinaryOp { op, left, right } => {
       let l = n_eval_arbitrary_partial(left, precision, bits, rm, cc)?;
-      let r = n_eval_arbitrary_partial(right, precision, bits, rm, cc)?;
+      let r = if keeps_exact_exponent(*op, right) {
+        (**right).clone()
+      } else {
+        n_eval_arbitrary_partial(right, precision, bits, rm, cc)?
+      };
       Ok(Expr::BinaryOp {
         op: *op,
         left: Box::new(l),
         right: Box::new(r),
+      })
+    }
+    // Comparison chains: N maps over the operands (`N[x == 1/3, 5]` →
+    // `x == 0.33333`).
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let new_operands: Result<Vec<Expr>, _> = operands
+        .iter()
+        .map(|o| n_eval_arbitrary_partial(o, precision, bits, rm, cc))
+        .collect();
+      Ok(Expr::Comparison {
+        operands: new_operands?,
+        operators: operators.clone(),
       })
     }
     Expr::UnaryOp { op, operand } => {
@@ -2784,9 +2875,14 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::List(result.into()));
       }
 
-      // Float path
+      // Float path. Wolfram scales the vector as `v/norm`, which is a
+      // multiply by the reciprocal — the last bit of each component follows
+      // from that order, so dividing instead moves it (`Normalize[{3., 4.}]`
+      // is `{0.6000000000000001, 0.8}`, not `{0.6, 0.8}`). A component that
+      // lands on a whole number stays a machine real.
+      let inv = 1.0 / norm;
       let result: Vec<Expr> =
-        vals.iter().map(|x| num_to_expr(x / norm)).collect();
+        vals.iter().map(|x| Expr::Real(x * inv)).collect();
       Ok(Expr::List(result.into()))
     }
     _ => {
@@ -6947,7 +7043,127 @@ fn aberth_complex_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
       break;
     }
   }
+  polish_and_pair_roots(coeffs, &mut zs);
   zs
+}
+
+/// Shared final step of the numeric polynomial root finders: Newton-polish
+/// every root, snap fp noise to exact zeros and turn near-conjugate pairs into
+/// exact mirrors of each other.
+///
+/// Both root finders (Durand-Kerner in `polynomial_ast::solve` and Aberth
+/// here) end with this so `NRoots`, `NSolve` and `N[Root[…]]` report the same
+/// digits for the same polynomial. Exact conjugate pairs matter beyond
+/// cosmetics: a quadrature that sums a conjugate-symmetric set of terms then
+/// cancels its imaginary part exactly instead of leaving a residue that
+/// `Chop` cannot remove.
+///
+/// `coeffs[i]` is the coefficient of `x^i`.
+pub fn polish_and_pair_roots(coeffs: &[f64], roots: &mut [(f64, f64)]) {
+  let n = coeffs.len().saturating_sub(1);
+  if n == 0 || coeffs[n].abs() < 1e-300 {
+    return;
+  }
+  // Monic form: divide by the leading coefficient so the residual |p(z)|
+  // compared across iterates is on a fixed scale.
+  let lc = coeffs[n];
+  let monic: Vec<f64> = coeffs.iter().map(|c| c / lc).collect();
+
+  // Horner with FMA — more accurate near a root, which lets the polish step
+  // tell the correctly-rounded f64 from its neighbour.
+  let eval_p = |zr: f64, zi: f64| -> (f64, f64) {
+    let mut re = monic[n];
+    let mut im = 0.0;
+    for k in (0..n).rev() {
+      let neg_im: f64 = -im;
+      let nr = re.mul_add(zr, neg_im.mul_add(zi, monic[k]));
+      let ni = re.mul_add(zi, im * zr);
+      re = nr;
+      im = ni;
+    }
+    (re, im)
+  };
+  let eval_dp = |zr: f64, zi: f64| -> (f64, f64) {
+    let mut re = (n as f64) * monic[n];
+    let mut im = 0.0;
+    for k in (1..n).rev() {
+      let nr = re * zr - im * zi + (k as f64) * monic[k];
+      let ni = re * zi + im * zr;
+      re = nr;
+      im = ni;
+    }
+    (re, im)
+  };
+
+  // Newton steps, keeping the iterate with the smallest |p(z)|: near the root
+  // Newton may oscillate between two adjacent f64 values (both equally good).
+  for slot in roots.iter_mut() {
+    let (mut zr, mut zi) = *slot;
+    let (mut best_zr, mut best_zi) = (zr, zi);
+    let (pr0, pi0) = eval_p(zr, zi);
+    let mut best_err = pr0.hypot(pi0);
+    for _ in 0..30 {
+      let (pr, pi) = eval_p(zr, zi);
+      let (dr, di) = eval_dp(zr, zi);
+      let denom = dr * dr + di * di;
+      if denom < 1e-300 {
+        break;
+      }
+      zr -= (pr * dr + pi * di) / denom;
+      zi -= (pi * dr - pr * di) / denom;
+      let (npr, npi) = eval_p(zr, zi);
+      let err = npr.hypot(npi);
+      if err < best_err {
+        best_err = err;
+        best_zr = zr;
+        best_zi = zi;
+      }
+      if err == 0.0 {
+        break;
+      }
+    }
+    *slot = (best_zr, best_zi);
+  }
+
+  // Snap to real / round trailing fp noise.
+  for (r, i) in roots.iter_mut() {
+    let mag = r.hypot(*i).max(1.0);
+    if i.abs() < 1e-12 * mag {
+      *i = 0.0;
+    }
+    if r.abs() < 1e-12 * mag {
+      *r = 0.0;
+    }
+  }
+
+  // Match conjugate pairs: two roots sharing a real part and carrying opposite
+  // imaginary parts (within tolerance) become exact mirrors. Each root joins at
+  // most one pair, and two real roots are never paired with each other — for
+  // real coefficients a genuine pair always has a non-zero imaginary part.
+  let snap_eps = 1e-9;
+  let mut paired = vec![false; roots.len()];
+  for k in 0..roots.len() {
+    if paired[k] || roots[k].1 == 0.0 {
+      continue;
+    }
+    for j in (k + 1)..roots.len() {
+      if paired[j] || roots[j].1 == 0.0 {
+        continue;
+      }
+      if (roots[k].0 - roots[j].0).abs() < snap_eps
+        && (roots[k].1 + roots[j].1).abs() < snap_eps
+      {
+        let avg = (roots[k].0 + roots[j].0) / 2.0;
+        let mag = (roots[k].1.abs() + roots[j].1.abs()) / 2.0;
+        let k_negative = roots[k].1 < 0.0;
+        roots[k] = (avg, if k_negative { -mag } else { mag });
+        roots[j] = (avg, if k_negative { mag } else { -mag });
+        paired[k] = true;
+        paired[j] = true;
+        break;
+      }
+    }
+  }
 }
 
 /// Horner-style polynomial evaluation at a complex point `z = zr + i*zi`.

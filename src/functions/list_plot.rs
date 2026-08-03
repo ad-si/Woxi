@@ -903,6 +903,13 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         "Frame" => {
           opts.frame = crate::functions::plot::parse_frame_option(replacement)
         }
+        "Axes" => {
+          if let Some(axes) =
+            crate::functions::plot::parse_axes_option(replacement)
+          {
+            opts.axes = axes;
+          }
+        }
         "ImagePadding" => {
           opts.image_padding =
             crate::functions::plot::parse_image_padding(replacement)
@@ -950,6 +957,10 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             &mut opts.grid_lines_y,
             &mut opts.grid_y_lines,
           );
+        }
+        "GridLinesStyle" => {
+          opts.grid_lines_style =
+            crate::functions::plot::parse_grid_lines_style(replacement);
         }
         _ => {}
       }

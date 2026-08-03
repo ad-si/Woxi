@@ -2062,6 +2062,88 @@ mod tests {
       );
     }
 
+    /// A point (non-joined) `ListPlot` draws its grid lines too — the
+    /// scatter renderer used to ignore `GridLines` entirely.
+    #[test]
+    fn scatter_list_plot_draws_grid_lines() {
+      let plain = woxi::interpret(
+        r#"ExportString[ListPlot[{{0., 0.}, {1., 1.}}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      let gridded = woxi::interpret(
+        r#"ExportString[ListPlot[{{0., 0.}, {1., 1.}},
+          GridLines -> {{0.5}, None}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      let count = |svg: &str| {
+        svg
+          .lines()
+          .filter(|l| l.contains("opacity=\"0.5\"") && l.contains("<polyline"))
+          .count()
+      };
+      assert_eq!(
+        count(&gridded),
+        count(&plain) + 1,
+        "GridLines -> {{{{0.5}}, None}} should add exactly one grid line"
+      );
+    }
+
+    /// `GridLinesStyle` styles every grid line that has no directive of its
+    /// own, for both the line and the scatter renderer.
+    #[test]
+    fn grid_lines_style_applies_to_plot_grid() {
+      for code in [
+        r#"ExportString[ListPlot[{{0., 0.}, {1., 1.}},
+           GridLines -> {{0.5}, None},
+           GridLinesStyle -> Directive[Red, Dashed]], "SVG"]"#,
+        r#"ExportString[Plot[x, {x, 0, 1}, GridLines -> {{0.5}, None},
+           GridLinesStyle -> Directive[Red, Dashed]], "SVG"]"#,
+      ] {
+        let svg = woxi::interpret(code).expect("interpret should succeed");
+        assert!(
+          svg.contains("stroke=\"rgb(255,0,0)\"")
+            && svg.contains("stroke-dasharray="),
+          "grid line not styled red/dashed: {code}"
+        );
+      }
+      // A per-line directive still wins over the plot-wide default.
+      let svg = woxi::interpret(
+        r#"ExportString[ListPlot[{{0., 0.}, {1., 1.}},
+          GridLines -> {{{0.5, Blue}}, None},
+          GridLinesStyle -> Directive[Red, Dashed]], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(
+        svg.contains("stroke=\"#0000FF\"")
+          && !svg.contains("stroke=\"rgb(255,0,0)\""),
+        "per-line style should override GridLinesStyle: {svg}"
+      );
+    }
+
+    /// `Axes -> False` hides the axes of a `ListPlot`, which the scatter
+    /// renderer used to draw regardless.
+    #[test]
+    fn list_plot_honours_axes_option() {
+      let with_axes = woxi::interpret(
+        r#"ExportString[ListPlot[{{-1., -1.}, {1., 1.}}, Axes -> True], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      let without = woxi::interpret(
+        r#"ExportString[ListPlot[{{-1., -1.}, {1., 1.}}, Axes -> False], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(
+        with_axes.contains("<text"),
+        "axes should carry tick labels: {with_axes}"
+      );
+      assert!(
+        !without.contains("<text"),
+        "Axes -> False should drop the axes and their labels: {without}"
+      );
+      // The data points survive either way.
+      assert!(without.contains("<circle"), "points dropped: {without}");
+    }
+
     #[test]
     fn grid_lines_are_solid_single_polylines() {
       // Each grid line must be ONE solid polyline (WL grid lines are solid by
@@ -3095,6 +3177,264 @@ mod tests {
     fn estimate_width_unwraps_three_arg_tagbox_and_formbox() {
       let w = estimate_box_display_width(&wrapped_atom());
       assert_eq!(w, 1.0, "width is that of the wrapped content");
+    }
+  }
+
+  // ── Layered graph plots, framed array plots and aligned grids ──
+  //
+  // The shape a Demonstrations panel is built from: several pictures and
+  // their captions arranged in one `Grid`, inside a `Pane`.
+  mod demonstration_panel {
+    /// The rendered SVG of `expr`, with the embedded font payload removed.
+    fn svg_of(expr: &str) -> String {
+      let code = format!("ExportString[{expr}, \"SVG\"]");
+      let svg = woxi::interpret(&code).expect("interpret should succeed");
+      assert!(svg.starts_with("<svg"), "expected an SVG for {expr}: {svg}");
+      match (svg.find("<defs>"), svg.find("</defs>")) {
+        (Some(a), Some(b)) => format!("{}{}", &svg[..a], &svg[b + 7..]),
+        _ => svg,
+      }
+    }
+
+    /// Every vertex-dot centre in `svg`, in document order.
+    fn circle_centres(svg: &str) -> Vec<(f64, f64)> {
+      svg
+        .split("<ellipse ")
+        .skip(1)
+        .filter_map(|tag| {
+          let attr = |name: &str| -> Option<f64> {
+            let at = tag.find(&format!("{name}=\""))? + name.len() + 2;
+            tag[at..].split('"').next()?.parse().ok()
+          };
+          Some((attr("cx")?, attr("cy")?))
+        })
+        .collect()
+    }
+
+    /// A path graph laid out in layers with the roots on the left is a
+    /// straight horizontal line of vertices: every vertex is its own
+    /// layer, so they share a y and step evenly along x. The circular
+    /// embedding this used to fall back to put them on a ring instead.
+    #[test]
+    fn layered_graph_plot_lays_a_chain_out_in_a_line() {
+      let svg =
+        svg_of(r#"LayeredGraphPlot[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 5}, Left]"#);
+      let centres = circle_centres(&svg);
+      assert_eq!(centres.len(), 5, "one vertex circle each: {svg}");
+      let y0 = centres[0].1;
+      assert!(
+        centres.iter().all(|(_, y)| (y - y0).abs() < 1.0),
+        "a chain lies on one row: {centres:?}"
+      );
+      let mut xs: Vec<f64> = centres.iter().map(|(x, _)| *x).collect();
+      xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+      let step = xs[1] - xs[0];
+      assert!(step > 1.0, "vertices are spread apart: {xs:?}");
+      for pair in xs.windows(2) {
+        assert!(
+          (pair[1] - pair[0] - step).abs() < 1.0,
+          "layers are evenly spaced: {xs:?}"
+        );
+      }
+    }
+
+    /// Roots go on the edge the second argument names, and the layers grow
+    /// away from it: `Top` stacks the chain vertically instead.
+    #[test]
+    fn layered_graph_plot_honours_the_root_position() {
+      let svg = svg_of(r#"LayeredGraphPlot[{1 -> 2, 2 -> 3, 3 -> 4}, Top]"#);
+      let centres = circle_centres(&svg);
+      assert_eq!(centres.len(), 4);
+      let x0 = centres[0].0;
+      assert!(
+        centres.iter().all(|(x, _)| (x - x0).abs() < 1.0),
+        "with the roots on top the chain runs down one column: {centres:?}"
+      );
+    }
+
+    /// A branch gets a layer of its own: the two vertices that share a
+    /// parent sit at the same distance from the root but on different rows.
+    #[test]
+    fn layered_graph_plot_splits_a_branch_across_rows() {
+      let svg = svg_of(r#"LayeredGraphPlot[{1 -> 2, 2 -> 3, 2 -> 4}, Left]"#);
+      let centres = circle_centres(&svg);
+      assert_eq!(centres.len(), 4);
+      let mut by_x = centres.clone();
+      by_x.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+      // The two children share the last layer, so they share an x and
+      // straddle the row their parent sits on.
+      let (last_x, prev_x) = (by_x[3].0, by_x[1].0);
+      assert!((by_x[2].0 - last_x).abs() < 1.0, "one layer: {by_x:?}");
+      assert!(prev_x < last_x, "the branch is further from the root");
+      assert!(
+        (by_x[2].1 - by_x[3].1).abs() > 1.0,
+        "the two children are on different rows: {by_x:?}"
+      );
+    }
+
+    /// `DirectedEdges -> False` draws the edges as plain lines. The arrow
+    /// heads are filled polygons, so their absence is the test.
+    #[test]
+    fn directed_edges_false_drops_the_arrow_heads() {
+      let arrows = svg_of(r#"LayeredGraphPlot[{1 -> 2, 2 -> 3}, Left]"#);
+      assert!(arrows.contains("<polygon"), "arrow heads by default");
+      let plain = svg_of(
+        r#"LayeredGraphPlot[{1 -> 2, 2 -> 3}, Left, DirectedEdges -> False]"#,
+      );
+      assert!(
+        !plain.contains("<polygon"),
+        "DirectedEdges -> False leaves only lines: {plain}"
+      );
+      assert!(plain.contains("<polyline"), "the edges are still drawn");
+    }
+
+    /// A graph plot is sized by its `ImageSize`, so a Demonstration can ask
+    /// for a wide, short strip.
+    #[test]
+    fn graph_plot_honours_image_size() {
+      let svg = svg_of(
+        r#"LayeredGraphPlot[{1 -> 2, 2 -> 3}, Left, ImageSize -> {200, 50}]"#,
+      );
+      assert!(
+        svg.starts_with(r#"<svg width="200""#),
+        "ImageSize -> {{200, 50}} sets the width: {}",
+        &svg[..80.min(svg.len())]
+      );
+      let default = svg_of(r#"LayeredGraphPlot[{1 -> 2, 2 -> 3}, Left]"#);
+      assert!(
+        default.starts_with(r#"<svg width="360""#),
+        "without one the Wolfram default still applies: {}",
+        &default[..80.min(default.len())]
+      );
+    }
+
+    /// `ArrayPlot` sits in a frame, so it takes a `FrameLabel` on any of
+    /// the four edges. Left and right labels run along their edge.
+    #[test]
+    fn array_plot_draws_its_frame_labels() {
+      let svg = svg_of(
+        r#"ArrayPlot[{{0, 1}, {1, 0}},
+           FrameLabel -> {{"lft", "rgt"}, {"btm", "top"}}]"#,
+      );
+      for label in ["lft", "rgt", "btm", "top"] {
+        assert!(svg.contains(label), "{label} should be drawn: {svg}");
+      }
+      assert!(
+        svg.contains("rotate(-90") && svg.contains("rotate(90"),
+        "the side labels are rotated onto their edges: {svg}"
+      );
+    }
+
+    /// Only the labelled edges take room: an unlabelled array plot keeps
+    /// its size exactly.
+    #[test]
+    fn array_plot_without_frame_labels_is_unpadded() {
+      let plain = svg_of(r#"ArrayPlot[{{0, 1}, {1, 0}}]"#);
+      let labelled = svg_of(
+        r#"ArrayPlot[{{0, 1}, {1, 0}}, FrameLabel -> {{"", ""}, {"", "top"}}]"#,
+      );
+      let width = |svg: &str| -> u32 {
+        svg
+          .split("width=\"")
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap()
+      };
+      let height = |svg: &str| -> u32 {
+        svg
+          .split("height=\"")
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap()
+      };
+      assert_eq!(width(&plain), width(&labelled), "a top label adds no width");
+      assert!(
+        height(&labelled) > height(&plain),
+        "a top label adds height: {} vs {}",
+        height(&labelled),
+        height(&plain)
+      );
+    }
+
+    /// A `Grid` whose rows hold different things still lines its columns
+    /// up: the caption under a picture is centred on that picture, not
+    /// packed against the left edge.
+    #[test]
+    fn grid_columns_line_up_across_mixed_rows() {
+      let svg = svg_of(
+        r#"Grid[{{Graphics[{Disk[]}], Graphics[{Disk[]}]},
+                 {Text["aa"], Text["bb"]}}]"#,
+      );
+      // Each cell is a nested <svg x=… width=…>; a cell is centred in its
+      // column, so it is the centres that have to agree.
+      let centres: Vec<f64> = svg
+        .split("<svg x=\"")
+        .skip(1)
+        .filter_map(|t| {
+          let x: f64 = t.split('"').next()?.parse().ok()?;
+          let w: f64 = t
+            .split("width=\"")
+            .nth(1)?
+            .split('"')
+            .next()?
+            .parse()
+            .ok()?;
+          Some(x + w / 2.0)
+        })
+        .collect();
+      assert_eq!(centres.len(), 4, "four cells: {svg}");
+      assert!(
+        (centres[0] - centres[2]).abs() < 1.0,
+        "the caption is centred on the picture above it: {centres:?}"
+      );
+      assert!(
+        (centres[1] - centres[3]).abs() < 1.0,
+        "and so is the second column's: {centres:?}"
+      );
+    }
+
+    /// A layout that holds pictures is one picture: the notebook hosts
+    /// (Playground, Woxi Studio) get the whole panel composed, not just
+    /// the last plot that happened to be drawn while evaluating it.
+    #[test]
+    fn a_pane_of_a_grid_of_plots_renders_as_one_graphic() {
+      let result = woxi::interpret_with_stdout(
+        r#"Pane[Grid[{{ArrayPlot[{{0, 1}, {1, 0}}], ArrayPlot[{{1, 0}, {0, 1}}]},
+                      {Text["left"], Text["right"]}}], {500, 375}]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the panel is a graphic");
+      assert!(svg.starts_with("<svg"), "composed SVG: {svg}");
+      for label in ["left", "right"] {
+        assert!(svg.contains(label), "{label} is part of the panel");
+      }
+      assert!(
+        svg.matches("<svg x=").count() >= 4,
+        "every cell of the grid is placed: {svg}"
+      );
+    }
+
+    /// A layout of plain text is left to the text renderer — composing it
+    /// as a picture would be a regression, not an improvement.
+    #[test]
+    fn a_pane_without_pictures_is_not_composed() {
+      let result = woxi::interpret_with_stdout(
+        r#"Pane[Grid[{{1, 2}, {3, 4}}], {200, 100}]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(
+        result.graphics.is_none(),
+        "a text-only layout composes no picture: {:?}",
+        result.graphics
+      );
     }
   }
 

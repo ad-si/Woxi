@@ -8755,6 +8755,37 @@ mod part_multi_index {
     );
   }
 
+  /// A chain of integer positions into a stored table reads the one cell it
+  /// names, without copying the table: `m[[i]][[j]]` and `m[[i, j]]` behave
+  /// alike, negative positions count from the end, and a position outside
+  /// the table still leaves the expression unevaluated with its message.
+  #[test]
+  fn part_integer_chain_reads_one_cell() {
+    assert_eq!(
+      interpret(
+        "m = {{1, 2, 3}, {4, 5, 6}}; \
+         {m[[1]][[2]], m[[2, 3]], m[[-1]][[-1]], m[[-2]][[1]], m[[0]]}"
+      )
+      .unwrap(),
+      "{2, 6, 6, 1, List}"
+    );
+    // Reading leaves the table itself untouched.
+    assert_eq!(
+      interpret("m = {{1, 2}, {3, 4}}; m[[1]][[2]]; m").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+    // Reading one cell of a wide table is not proportional to its width:
+    // it used to copy the whole table on every read.
+    assert_eq!(
+      interpret(
+        "big = Table[i*1000 + j, {i, 1, 3}, {j, 1, 2000}]; \
+         Total[Table[big[[2]][[j]], {j, 1, 2000}]]"
+      )
+      .unwrap(),
+      "6001000"
+    );
+  }
+
   #[test]
   fn part_all_from_list_of_rules() {
     // Extracting second element from each rule in a list

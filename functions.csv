@@ -226,9 +226,9 @@ Position,Finds all positions of a pattern in a list,✅,pure,1.0,218
 Union,Returns sorted union of lists or a key-merge of associations,✅,pure,1.0,219
 While,Evaluates an expression repeatedly while a condition is true,✅,pure,1.0,220
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2.0,221
-FindRoot,Numerically finds a root of an equation using a damped Newton iteration — honours MaxIterations and reports non-convergence or a singular derivative (WorkingPrecision and the accuracy goals are accepted but ignored),✅,pure,1.0,222
+FindRoot,Numerically finds a root of an equation using a damped Newton iteration — the derivative is symbolic where that reduces to a number and a difference quotient otherwise; honours MaxIterations and reports non-convergence or a singular derivative (WorkingPrecision and the accuracy goals are accepted but ignored),✅,pure,1.0,222
 Image,Constructs an image from pixel data,✅,pure,7.0,223
-ColorData,"Named color data: the categories; the CSS colours of the ""HTML"" scheme; the colors of indexed schemes 1 (generated) 2 3 and 97; named gradients give a ColorDataFunction sampling the scheme (e.g. ColorData[""TemperatureMap""][0.5]), sample directly via ColorData[name, t], and render ""Image"" swatches (Rainbow-family control points sampled from Wolfram; the remaining gradients are approximations)",✅,pure,6.0,224
+ColorData,"Named color data: the categories; the CSS colours of the ""HTML"" scheme; the colors of indexed schemes 1 (generated) 2 3 and 97; named gradients give a ColorDataFunction sampling the scheme (e.g. ColorData[""TemperatureMap""][0.5]), sample directly via ColorData[name, t], read the ""ColorFunction"" and ""Range"" properties, and render ""Image"" swatches (Rainbow-family control points sampled from Wolfram; the remaining gradients are approximations)",✅,pure,6.0,224
 Binomial,Returns the binomial coefficient,✅,pure,1.0,225
 Which,Evaluates conditions and returns the value for the first true one,✅,pure,1.0,226
 Replace,Applies transformation rules to an expression,✅,pure,1.0,227
@@ -243,7 +243,7 @@ RightArrow,Typesetting arrow symbol,🚫,none,3.0,235
 Interval,Represents a closed real interval with auto-merged sub-intervals,✅,pure,3.0,236
 Offset,Represents a position offset by a specified number of printers points,✅,pure,3.0,237
 ReplaceRepeated,Applies replacement rules repeatedly until fixed point or the MaxIterations bound,✅,pure,1.0,238
-Piecewise,Represents a piecewise function,✅,pure,5.1,239
+Piecewise,Represents a piecewise function; the pieces are held so the value of a piece whose condition is False is never evaluated,✅,pure,5.1,239
 Yellow,Named color evaluating to RGBColor[1 1 0],✅,pure,5.1,240
 Left,Symbol for left alignment,✅,pure,1.0,241
 ConstantArray,Creates an array of repeated elements,✅,pure,6.0,242
@@ -254,7 +254,7 @@ AirportData,,🚫,,10.0,246
 GridLinesStyle,Option for specifying the style of grid lines in graphics,✅,none,6.0,247
 In,Returns a previous input expression,✅,pure,1.0,248
 Det,Computes the determinant of a matrix,✅,pure,1.0,251
-NSolve,Solves equations numerically (a x^n + c uses the same root finder as NRoots so conjugate pairs agree bit for bit),✅,pure,2.0,252
+NSolve,Solves equations numerically — a bare polynomial means poly == 0 and every root path ends in the same polish step as NRoots so conjugate pairs agree bit for bit,✅,pure,2.0,252
 Cross,Computes the generalized cross product of n-1 vectors of length n,✅,pure,3.0,253
 PDF,Probability density function,✅,pure,6.0,254
 TableForm,Formats data as a table,✅,pure,1.0,255
@@ -598,7 +598,7 @@ GraphData,,🚫,,6.0,580
 LightBlue,Named light color evaluating to RGBColor[0.87 0.94 1],✅,pure,6.0,581
 FileNameJoin,Join file path components,✅,pure,7.0,582
 ToFileName,Join directory path components into a file name string,✅,pure,1.0,
-InverseLaplaceTransform,Compute the inverse Laplace transform,✅,none,4.0,583
+InverseLaplaceTransform,Compute the inverse Laplace transform — the third argument may be an expression or a number naming the point it is taken at,✅,none,4.0,583
 InverseFunction,Represents the inverse of a function or geometric transform,✅,pure,2.0,584
 Residue,Computes the residue of an expression at a point,✅,pure,2.0,585
 PieChart,Creates a pie chart from data,✅,pure,7.0,586
@@ -876,7 +876,7 @@ QPochhammer,q-Pochhammer symbol; finite QPochhammer[a;q;n]; infinite QPochhammer
 DictionaryLookup,Requires external services or GUI infrastructure,🚫,io,6.0,872
 EdgeStyle,Option for styling edges in graphs,✅,none,8.0,873
 FunctionExpand,Expands special functions into simpler forms,✅,pure,3.0,874
-BernoulliB,Returns the nth Bernoulli number,✅,pure,1.0,876
+BernoulliB,Returns the nth Bernoulli number (or the nth Bernoulli polynomial in x with the two-argument form),✅,pure,1.0,876
 Wronskian,Compute the Wronskian determinant of a list of functions,✅,pure,7.0,876
 PlanetData,,🚫,,10.0,877
 FunctionDomain,Find the domain of a function,✅,pure,10.0,878
@@ -1397,7 +1397,7 @@ DialogReturn,Return from a dialog,🚫,io,6.0,1401
 Skewness,Computes the skewness of a list or distribution,✅,pure,6.0,1402
 Speak,Text-to-speech output,🚫,io,7.0,1405
 StreamColorFunction,Color function for stream plots,🚫,pure,7.0,1405
-TreePlot,Plot a tree graph,🚫,pure,6.0,1405
+TreePlot,Draws a tree in layers by distance from its roots,✅,pure,6.0,1405
 Audio,Audio object from sample data or files (symbolic in the CLI; visual hosts render a graphical audio player),✅,unevaluated,11.0,1406
 ColorSeparate,Separate color channels of an image,✅,io,7.0,1409
 LogisticSigmoid,Returns the logistic sigmoid function value,✅,pure,10.0,1409
@@ -1517,7 +1517,7 @@ DedekindEta,Dedekind eta modular function,✅,pure,3.0,1525
 LineIndent,Line indentation option,✅,pure,3.0,1526
 FindDistributionParameters,Estimate distribution parameters,✅,pure,8.0,1528
 NetEncoder,Neural network encoder,✅,pure,11.0,1528
-LayeredGraphPlot,Layered graph plot,✅,pure,6.0,1529
+LayeredGraphPlot,Draws a graph in layers by distance from its roots,✅,pure,6.0,1529
 AssociationMap,Maps a function over an association; supports the operator form AssociationMap[f][data],✅,pure,10.0,1530
 Covariance,Covariance of two lists; of a single vector gives its variance; of a single matrix gives the covariance matrix of its columns; of two matrices gives their cross-covariance matrix,✅,pure,6.0,1534
 MinimalBy,Returns elements that minimize a criterion,✅,pure,10.0,1534

@@ -1615,13 +1615,39 @@ fn inverse_laplace_transform(
       });
     }
   };
+  let unevaluated = || Expr::FunctionCall {
+    name: "InverseLaplaceTransform".to_string(),
+    args: vec![expr.clone(), s_expr.clone(), t_expr.clone()].into(),
+  };
   let t = match t_expr {
     Expr::Identifier(name) => name.as_str(),
+    // A third argument that is not a plain symbol names the point (or the
+    // expression) the inverse transform is taken at: transform to a fresh
+    // variable, then substitute. `…[1/(s + 1), s, 2 u]` is `E^(-2 u)`, and a
+    // number there samples the inverse transform at that number.
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "InverseLaplaceTransform".to_string(),
-        args: vec![expr.clone(), s_expr.clone(), t_expr.clone()].into(),
-      });
+      let mut used = std::collections::HashSet::new();
+      crate::syntax::collect_identifier_names(expr, &mut used);
+      crate::syntax::collect_identifier_names(s_expr, &mut used);
+      crate::syntax::collect_identifier_names(t_expr, &mut used);
+      let mut dummy = "t$".to_string();
+      let mut suffix = 0;
+      while used.contains(&dummy) {
+        suffix += 1;
+        dummy = format!("t${suffix}");
+      }
+      let transformed = inverse_laplace_transform(
+        expr,
+        s_expr,
+        &Expr::Identifier(dummy.clone()),
+      )?;
+      if matches!(&transformed, Expr::FunctionCall { name, .. } if name == "InverseLaplaceTransform")
+      {
+        return Ok(unevaluated());
+      }
+      let substituted =
+        crate::syntax::substitute_variable(&transformed, &dummy, t_expr);
+      return crate::evaluator::evaluate_expr_to_expr(&substituted);
     }
   };
 
@@ -1978,6 +2004,29 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
         });
       }
 
+      // L^-1[(s^2 + a^2)^(-1/2)] = BesselJ[0, a*t], and the hyperbolic
+      // counterpart L^-1[(s^2 - a^2)^(-1/2)] = BesselI[0, a*t] (a negative
+      // constant term).
+      if is_rational_literal(fargs[1], -1, 2)
+        && let Some(a_squared) = extract_s_squared_plus_const(fargs[0], s)
+      {
+        let (a, func) = match negative_const_magnitude(&a_squared) {
+          Some(c) => (sqrt_of_expr(&c), "BesselI"),
+          None => (sqrt_of_expr(&a_squared), "BesselJ"),
+        };
+        return Some(Expr::FunctionCall {
+          name: func.to_string(),
+          args: vec![
+            Expr::Integer(0),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![a, Expr::Identifier(t.to_string())].into(),
+            },
+          ]
+          .into(),
+        });
+      }
+
       // L^-1[(s - a)^(-1)] = E^(a*t) or L^-1[(s + a)^(-1)] = E^(-a*t)
       if let Expr::Integer(-1) = fargs[1] {
         // Check if fargs[0] is (s + something) or (s - something)
@@ -2212,6 +2261,26 @@ fn sqrt_of_expr(expr: &Expr) -> Expr {
 }
 
 /// Check if expr is s^2 + c where c doesn't depend on s. Returns c.
+/// True when `expr` is the exact rational literal `num/den`, in either the
+/// evaluated `Rational[num, den]` form or the parsed `num/den` division.
+fn is_rational_literal(expr: &Expr, num: i128, den: i128) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      matches!((&args[0], &args[1]), (Expr::Integer(p), Expr::Integer(q)) if *p == num && *q == den)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      matches!((left.as_ref(), right.as_ref()), (Expr::Integer(p), Expr::Integer(q)) if *p == num && *q == den)
+    }
+    _ => false,
+  }
+}
+
 fn extract_s_squared_plus_const(expr: &Expr, s: &str) -> Option<Expr> {
   if let Some((fname, fargs)) = as_func_args(expr)
     && fname == "Plus"

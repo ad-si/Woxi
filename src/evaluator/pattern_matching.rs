@@ -4426,7 +4426,8 @@ pub fn apply_bindings(
     }
     filtered_refs.push((name.as_str(), value));
   }
-  let result = crate::syntax::substitute_variables(replacement, &filtered_refs);
+  let result =
+    crate::syntax::substitute_pattern_bindings(replacement, &filtered_refs);
   if has_opts {
     crate::OPTION_VALUE_CONTEXT.with(|ctx| {
       ctx.borrow_mut().push((String::new(), opt_pairs));
@@ -4528,14 +4529,14 @@ fn apply_replace_all_multi_ast_impl(
       // LHS Condition test: substitute, evaluate, skip the rule if False.
       if let Some(test) = lhs_extra_cond {
         let substituted =
-          crate::syntax::substitute_variables(test, &binding_refs);
+          crate::syntax::substitute_pattern_bindings(test, &binding_refs);
         match evaluate_expr_to_expr(&substituted) {
           Ok(t) if matches!(&t, Expr::Identifier(s) if s == "True") => {}
           _ => continue,
         }
       }
       let result =
-        crate::syntax::substitute_variables(replacement, &binding_refs);
+        crate::syntax::substitute_pattern_bindings(replacement, &binding_refs);
       // Inside a Hold-like context the substituted RHS stays unevaluated.
       let evaluated = if held {
         result

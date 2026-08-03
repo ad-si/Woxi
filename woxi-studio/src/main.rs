@@ -6555,6 +6555,29 @@ mod tests {
     assert!(state.request_reeval(0), "flag must clear on an empty fire");
   }
 
+  /// A control panel written as a `Grid` — the Demonstrations layout for a
+  /// widget whose rows are not all one control wide — builds exactly the
+  /// control rows the grid names. Its `SpanFromLeft` cell markers used to
+  /// survive as display elements, so the widget grew a row of literal
+  /// `SpanFromLeft` text under the sliders.
+  #[test]
+  fn manipulate_grid_panel_has_no_span_marker_rows() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Plot[Sin[a x], {x, 0, b}], \
+       Grid[{{Control[{{a, 1, \"rate\"}, 1, 5}], SpanFromLeft}, \
+       {\"extent:\", Control[{{b, 6}, 1, 10}], SpanFromLeft}}]]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["a", "", "b"], "heading row binds no variable");
+    assert!(
+      state.displays.is_empty(),
+      "span markers are layout, not displays: {:?}",
+      state.displays
+    );
+  }
+
   #[test]
   fn manipulate_untracked_control_does_not_reeval() {
     // `TrackedSymbols :> {b}`: moving `a` changes its value but must not
@@ -6963,6 +6986,96 @@ Cell[BoxData[
         assert_eq!((*x, *y), (0.0, 0.0));
       }
       other => panic!("expected one locator control, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn grid_laid_out_controls_take_the_manipulate_level_control_type() {
+    // End-to-end for the Demonstrations control-panel shape: the controls sit
+    // in a `Grid[…]` and the panel picks their type once, for all of them.
+    // Both would otherwise fall to their automatic type — a SetterBar, which
+    // for choices this long is unreadably wide — and the body's range guard
+    // has to keep the tabulated curve inside its own data range.
+    let nb_src = r##"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"curve", "=", RowBox[{"Interpolation", "[",
+   RowBox[{
+    RowBox[{"{", RowBox[{
+      RowBox[{"{", RowBox[{"0", ",", "0"}], "}"}], ",",
+      RowBox[{"{", RowBox[{"1", ",", "2"}], "}"}], ",",
+      RowBox[{"{", RowBox[{"2", ",", "0"}], "}"}]}], "}"}], ",",
+    RowBox[{"InterpolationOrder", "\[Rule]", "1"}]}], "]"}]}], ";",
+  RowBox[{RowBox[{"guarded", "[", "w_", "]"}], ":=",
+   RowBox[{"Piecewise", "[",
+    RowBox[{
+     RowBox[{"{", RowBox[{"{",
+       RowBox[{RowBox[{"curve", "[", "w", "]"}], ",",
+        RowBox[{"0", "\[LessEqual]", "w", "\[LessEqual]", "2"}]}], "}"}], "}"}],
+     ",", "0"}], "]"}]}]}]], "Input"],
+Cell[BoxData[
+ RowBox[{"Manipulate", "[",
+  RowBox[{
+   RowBox[{"Plot", "[",
+    RowBox[{
+     RowBox[{"scale", " ",
+      RowBox[{"guarded", "[", RowBox[{"t", "+", "shift"}], "]"}]}], ",",
+     RowBox[{"{", RowBox[{"t", ",", "0", ",", "2"}], "}"}]}], "]"}], ",",
+   RowBox[{"Grid", "[",
+    RowBox[{"{", RowBox[{"{",
+      RowBox[{
+       RowBox[{"Control", "[",
+        RowBox[{"{",
+         RowBox[{
+          RowBox[{"{", RowBox[{"scale", ",", "1", ",", "\"\<vertical scale\>\""}], "}"}],
+          ",", RowBox[{"{", RowBox[{"1", ",", "2", ",", "3"}], "}"}]}], "}"}], "]"}],
+       ",",
+       RowBox[{"Control", "[",
+        RowBox[{"{",
+         RowBox[{
+          RowBox[{"{", RowBox[{"shift", ",", "0", ",", "\"\<horizontal shift\>\""}], "}"}],
+          ",", RowBox[{"Range", "[", RowBox[{"0", ",", "1", ",", "0.5"}], "]"}]}], "}"}], "]"}]}],
+      "}"}], "}"}], "]"}], ",",
+   RowBox[{"ControlType", "\[Rule]", "PopupMenu"}], ",",
+   RowBox[{"SaveDefinitions", "\[Rule]", "True"}]}], "]"}]], "Input"]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let definitions = editors[0].content.text();
+    woxi::interpret(&definitions).expect("the definitions must evaluate");
+
+    let widget = instantiate_stored_manipulate(&editors[1].content.text(), "")
+      .expect("the Manipulate must build a widget");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the guarded plot must render"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name: first,
+          popup: first_popup,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: second,
+          popup: second_popup,
+          ..
+        },
+      ] => {
+        assert_eq!(first, "scale");
+        assert_eq!(second, "shift");
+        assert!(
+          *first_popup && *second_popup,
+          "the panel's ControlType must reach both controls"
+        );
+      }
+      other => panic!("expected two discrete controls, got {other:?}"),
     }
   }
 
@@ -12204,6 +12317,90 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`time$$ = 25}, \"\\[Ellipsis]\"]"], 
     );
     // Integrating over a shorter interval draws a different trajectory.
     assert_ne!(render(5.0), published, "the time control must matter");
+  }
+
+  /// End-to-end regression for a Demonstration that draws a vector field:
+  /// a grid of short arrows, each coloured by looking its value up in a
+  /// named gradient through `ColorData[scheme, "ColorFunction"]`, inside a
+  /// `Graphics` whose margins come from `ImagePadding`. All three used to
+  /// fail together — the colour lookup was unimplemented so every arrow
+  /// came out black, the padding was ignored, and the arrowheads were
+  /// shrunk to fit shafts barely longer than themselves.
+  #[test]
+  fn vector_field_manipulate_colours_its_arrows() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}, {x, -r, r, 2 r/n}, {y, -r, r, 2 r/n}]; Graphics[{Arrowheads[1./(2 n)], Map[{ColorData[scheme, \"ColorFunction\"][Norm[#[[2]]]/(Sqrt[2] r)], Arrow[{#[[1]], #[[1]] + s #[[2]]/Max[Norm[#[[2]]], 0.001]}]} &, pts, {2}]}, PlotRange -> All, Frame -> True, ImageSize -> {320, 300}, ImagePadding -> {{25, 25}, {25, 25}}]], {{scheme, \"RedBlueTones\", \"colors\"}, {\"RedBlueTones\", \"Rainbow\", \"SunsetColors\"}}, {{r, 3, \"domain size\"}, 1, 6}, {{n, 8, \"resolution\"}, 4, 12, 1}]"], "Input"]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let code = editors
+      .iter()
+      .map(|e| e.content.text())
+      .find(|t| t.starts_with("Manipulate["))
+      .expect("the Manipulate cell must load");
+    let widget = instantiate_stored_manipulate(&code, "")
+      .expect("the Manipulate must instantiate");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the field must draw");
+    // One discrete gradient chooser and two sliders.
+    assert_eq!(widget.controls.len(), 3, "{:?}", widget.controls);
+
+    let svg = woxi::interpret_with_stdout(&format!(
+      "scheme = \"RedBlueTones\"; r = 3; n = 8;\n{}",
+      widget.body
+    ))
+    .expect("the body must render")
+    .graphics
+    .expect("the body must produce a graphic");
+    // `ImagePadding -> {{25, 25}, {25, 25}}` puts the drawing area 25px in
+    // from the top left, leaving 320-50 by 300-50 for the frame.
+    assert!(
+      svg.contains("translate(25,25)"),
+      "the padding must place the drawing area: {svg:.400}"
+    );
+    // Each arrow is coloured from the gradient, so the fill colours are
+    // many and none of them is the default black.
+    let fills: std::collections::BTreeSet<&str> = svg
+      .split("<polygon")
+      .skip(1)
+      .filter_map(|tag| tag.split_once("fill=\""))
+      .filter_map(|(_, rest)| rest.split('"').next())
+      .collect();
+    assert!(
+      fills.len() > 5,
+      "the gradient must colour the arrows, got {fills:?}"
+    );
+    assert!(
+      !fills.contains("rgb(0,0,0)"),
+      "no arrow falls back to black: {fills:?}"
+    );
+    // `Arrowheads[1./(2 n)]` asks for heads a sixteenth of the plot wide;
+    // they are drawn at that size even though each arrow is barely longer.
+    let head_len = svg
+      .split("<polygon points=\"")
+      .nth(1)
+      .and_then(|tag| tag.split('"').next())
+      .map(|points| {
+        let pts: Vec<(f64, f64)> = points
+          .split_whitespace()
+          .filter_map(|p| p.split_once(','))
+          .filter_map(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)))
+          .collect();
+        let (tip, a, b) = (pts[0], pts[1], pts[2]);
+        let mid = ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0);
+        ((tip.0 - mid.0).powi(2) + (tip.1 - mid.1).powi(2)).sqrt()
+      })
+      .expect("an arrowhead must be drawn");
+    // The drawing area is 320 less the 25px padding either side.
+    let expected = (320.0 - 50.0) / 16.0;
+    assert!(
+      (head_len - expected).abs() < 2.0,
+      "a 1/16 head spans {expected}px, got {head_len}"
+    );
   }
 
   /// The SetterBar/PopupMenu split Wolfram's `Manipulate` makes on its own,
