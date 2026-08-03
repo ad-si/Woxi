@@ -8811,6 +8811,60 @@ mod recurrence_table {
     );
   }
 
+  /// A coupled system: each function has its own recurrence, and the table
+  /// lists one tuple per step. A Demonstration iterates a two-variable
+  /// orbit-fractal this way; the whole form used to come back unevaluated.
+  #[test]
+  fn coupled_system() {
+    assert_eq!(
+      interpret(
+        "RecurrenceTable[{a[i + 1] == a[i] + b[i], b[i + 1] == a[i], \
+         a[1] == 1, b[1] == 1}, {a, b}, {i, 1, 8}]"
+      )
+      .unwrap(),
+      "{{1, 1}, {2, 1}, {3, 2}, {5, 3}, {8, 5}, {13, 8}, {21, 13}, {34, 21}}"
+    );
+    // Both sides of `b[i + 1] == a[i]` look like a step of some function,
+    // so the equation belongs to the side that steps furthest forward.
+    assert_eq!(
+      interpret(
+        "RecurrenceTable[{u[k + 1] == 2 u[k] - v[k], v[k + 1] == u[k], \
+         u[1] == 3, v[1] == 1}, {u, v}, {k, 1, 5}]"
+      )
+      .unwrap(),
+      "{{3, 1}, {5, 3}, {7, 5}, {9, 7}, {11, 9}}"
+    );
+    // A single function named in a list still tabulates as tuples.
+    assert_eq!(
+      interpret(
+        "RecurrenceTable[{p[i + 1] == p[i]/2, p[1] == 1.}, {p}, {i, 1, 4}]"
+      )
+      .unwrap(),
+      "{{1.}, {0.5}, {0.25}, {0.125}}"
+    );
+  }
+
+  /// A window that starts after the initial conditions is reached by
+  /// stepping through the values in between: they carry the recurrence.
+  #[test]
+  fn window_after_the_initial_conditions() {
+    assert_eq!(
+      interpret(
+        "RecurrenceTable[{q[i + 1] == q[i] + 1, q[1] == 0}, q, {i, 3, 6}]"
+      )
+      .unwrap(),
+      "{2, 3, 4, 5}"
+    );
+    assert_eq!(
+      interpret(
+        "RecurrenceTable[{a[i + 1] == a[i] + b[i], b[i + 1] == a[i], \
+         a[1] == 1, b[1] == 1}, {a, b}, {i, 3, 6}]"
+      )
+      .unwrap(),
+      "{{3, 2}, {5, 3}, {8, 5}, {13, 8}}"
+    );
+  }
+
   #[test]
   fn unevaluated_bad_args() {
     assert_eq!(

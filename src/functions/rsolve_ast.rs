@@ -1814,19 +1814,33 @@ fn build_solution(
   }
 }
 
-/// RecurrenceTable[{recurrence, initial_conditions...}, a, {n, nmin, nmax}]
-/// Iteratively evaluate a recurrence relation.
+/// `RecurrenceTable[{recurrence, initial conditions…}, a, {n, nmin, nmax}]`,
+/// and the coupled form `RecurrenceTable[{…}, {x, y, …}, {n, …}]` where each
+/// function has its own recurrence and the table lists one tuple per step.
+/// Iteratively evaluates the relations.
 pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("RecurrenceTable", args);
   if args.len() != 3 {
     return Ok(unevaluated());
   }
 
-  // Extract function name (e.g. "a")
-  let func_name = match &args[1] {
-    Expr::Identifier(name) => name.clone(),
+  // The functions being tabulated: one symbol, or a list of them for a
+  // system whose equations refer to each other.
+  let func_names: Vec<String> = match &args[1] {
+    Expr::Identifier(name) => vec![name.clone()],
+    Expr::List(items) if !items.is_empty() => {
+      let mut names = Vec::with_capacity(items.len());
+      for item in items {
+        match item {
+          Expr::Identifier(name) => names.push(name.clone()),
+          _ => return Ok(unevaluated()),
+        }
+      }
+      names
+    }
     _ => return Ok(unevaluated()),
   };
+  let is_system = matches!(&args[1], Expr::List(_));
 
   // Extract the range spec: {n, nmax} (nmin defaults to 1) or {n, nmin, nmax}.
   let (var_name, nmin, nmax) = match &args[2] {
@@ -1837,8 +1851,8 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       let ints: Vec<i128> = items[1..]
         .iter()
-        .filter_map(|e| match e {
-          Expr::Integer(n) => Some(*n),
+        .filter_map(|e| match crate::evaluator::evaluate_expr_to_expr(e) {
+          Ok(Expr::Integer(n)) => Some(n),
           _ => None,
         })
         .collect();
@@ -1860,9 +1874,11 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(unevaluated()),
   };
 
-  // Separate initial conditions from the recurrence
-  let mut recurrence_eq: Option<(Expr, Expr)> = None;
-  let mut initial_conditions: std::collections::HashMap<i128, Expr> =
+  // Sort the equations into one recurrence per function and the initial
+  // values they start from, both keyed by function name.
+  let mut recurrences: std::collections::HashMap<String, (i128, Expr)> =
+    std::collections::HashMap::new();
+  let mut values: std::collections::HashMap<(String, i128), Expr> =
     std::collections::HashMap::new();
 
   for eq in &equations {
@@ -1871,78 +1887,88 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => return Ok(unevaluated()),
     };
 
-    // Check if this is an initial condition: a[integer] == value
-    if let Some((name, idx)) = extract_func_at_integer(&lhs)
-      && name == func_name
-    {
-      let val = crate::evaluator::evaluate_expr_to_expr(&rhs)?;
-      initial_conditions.insert(idx, val);
-      continue;
-    }
-    if let Some((name, idx)) = extract_func_at_integer(&rhs)
-      && name == func_name
-    {
-      let val = crate::evaluator::evaluate_expr_to_expr(&lhs)?;
-      initial_conditions.insert(idx, val);
+    // An initial condition: f[integer] == value, either way round.
+    let initial = extract_func_at_integer(&lhs)
+      .filter(|(name, _)| func_names.contains(name))
+      .map(|(name, idx)| (name, idx, rhs.clone()))
+      .or_else(|| {
+        extract_func_at_integer(&rhs)
+          .filter(|(name, _)| func_names.contains(name))
+          .map(|(name, idx)| (name, idx, lhs.clone()))
+      });
+    if let Some((name, idx, val)) = initial {
+      let val = crate::evaluator::evaluate_expr_to_expr(&val)?;
+      values.insert((name, idx), val);
       continue;
     }
 
-    // This is the recurrence relation
-    if recurrence_eq.is_some() {
+    // Otherwise a recurrence: the side that is a bare f[var + k] names the
+    // function it defines, and the other side is the expression for it.
+    // Both sides can look like one — `b[i + 1] == a[i]` — so the equation
+    // defines whichever side steps furthest forward, the left one on a tie.
+    let solved = func_names
+      .iter()
+      .flat_map(|name| {
+        [
+          extract_single_func_offset(&lhs, name, &var_name)
+            .map(|off| (name.clone(), off, rhs.clone(), 0u8)),
+          extract_single_func_offset(&rhs, name, &var_name)
+            .map(|off| (name.clone(), off, lhs.clone(), 1u8)),
+        ]
+      })
+      .flatten()
+      .max_by_key(|(_, off, _, side)| (*off, std::cmp::Reverse(*side)));
+    let Some((name, offset, expr, _)) = solved else {
+      return Ok(unevaluated());
+    };
+    if recurrences.insert(name, (offset, expr)).is_some() {
       return Ok(unevaluated());
     }
-    recurrence_eq = Some((lhs, rhs));
   }
 
-  let (rec_lhs, rec_rhs) = match recurrence_eq {
-    Some(r) => r,
-    None => return Ok(unevaluated()),
-  };
-
-  // Determine which side has the "highest" a[n+k] to solve for
-  // Normalize: solve for a[n+k] on the LHS, expression on the RHS
-  // Find the highest-offset term on LHS that is just a[n+offset]
-  let (target_offset, solve_expr) = if let Some(offset) =
-    extract_single_func_offset(&rec_lhs, &func_name, &var_name)
-  {
-    // LHS is a[n+offset], RHS is the expression
-    (offset, rec_rhs)
-  } else if let Some(offset) =
-    extract_single_func_offset(&rec_rhs, &func_name, &var_name)
-  {
-    // RHS is a[n+offset], LHS is the expression
-    (offset, rec_lhs)
-  } else {
+  if recurrences.len() != func_names.len() {
     return Ok(unevaluated());
-  };
+  }
 
-  // Now iterate: for each n from nmin to nmax, compute a[n]
+  // Step through the range, computing every function at each index. A
+  // system's equations refer to the previous step, so one pass in the
+  // declared order resolves them. The walk starts at the earliest initial
+  // condition even when the table asked for a later window, since the
+  // steps in between are what carries the recurrence forward.
+  let start = values
+    .keys()
+    .map(|(_, idx)| *idx)
+    .min()
+    .map_or(nmin, |first| first.min(nmin));
   let mut results = Vec::new();
-  let mut values = initial_conditions;
-
-  for n in nmin..=nmax {
-    if values.contains_key(&n) {
-      results.push(values[&n].clone());
+  for n in start..=nmax {
+    let mut row = Vec::with_capacity(func_names.len());
+    for name in &func_names {
+      if let Some(known) = values.get(&(name.clone(), n)) {
+        row.push(known.clone());
+        continue;
+      }
+      // The recurrence gives f[var + offset]; at var = n - offset it gives
+      // f[n].
+      let (offset, solve_expr) = &recurrences[name];
+      let substituted = crate::syntax::substitute_variable(
+        solve_expr,
+        &var_name,
+        &Expr::Integer(n - offset),
+      );
+      let resolved = substitute_func_values(&substituted, &func_names, &values);
+      let val = crate::evaluator::evaluate_expr_to_expr(&resolved)?;
+      values.insert((name.clone(), n), val.clone());
+      row.push(val);
+    }
+    if n < nmin {
       continue;
     }
-
-    // We need to compute a[n]. The recurrence says:
-    // a[var + target_offset] = solve_expr
-    // So when var = n - target_offset, we get a[n] = solve_expr(var = n - target_offset)
-    let var_val = n - target_offset;
-
-    // Substitute var_name = var_val in solve_expr
-    let substituted = crate::syntax::substitute_variable(
-      &solve_expr,
-      &var_name,
-      &Expr::Integer(var_val),
-    );
-
-    // Now substitute all a[k] references with known values
-    let resolved = substitute_func_values(&substituted, &func_name, &values);
-    let val = crate::evaluator::evaluate_expr_to_expr(&resolved)?;
-    values.insert(n, val.clone());
-    results.push(val);
+    results.push(if is_system {
+      Expr::List(row.into())
+    } else {
+      row.into_iter().next().unwrap_or(Expr::Integer(0))
+    });
   }
 
   Ok(Expr::List(results.into()))
@@ -1965,21 +1991,22 @@ fn extract_single_func_offset(
   }
 }
 
-/// Substitute all occurrences of func_name[integer] with known values
+/// Substitute every `f[integer]` of the tabulated functions with the value
+/// already computed for it.
 fn substitute_func_values(
   expr: &Expr,
-  func_name: &str,
-  values: &std::collections::HashMap<i128, Expr>,
+  func_names: &[String],
+  values: &std::collections::HashMap<(String, i128), Expr>,
 ) -> Expr {
   match expr {
     Expr::FunctionCall { name, args }
-      if name == func_name && args.len() == 1 =>
+      if func_names.contains(name) && args.len() == 1 =>
     {
       // Try to evaluate the argument to an integer
       let evaled_arg = crate::evaluator::evaluate_expr_to_expr(&args[0])
         .unwrap_or(args[0].clone());
       if let Expr::Integer(n) = &evaled_arg
-        && let Some(val) = values.get(n)
+        && let Some(val) = values.get(&(name.clone(), *n))
       {
         return val.clone();
       }
@@ -1988,7 +2015,7 @@ fn substitute_func_values(
         name: name.clone(),
         args: args
           .iter()
-          .map(|a| substitute_func_values(a, func_name, values))
+          .map(|a| substitute_func_values(a, func_names, values))
           .collect(),
       }
     }
@@ -1996,23 +2023,23 @@ fn substitute_func_values(
       name: name.clone(),
       args: args
         .iter()
-        .map(|a| substitute_func_values(a, func_name, values))
+        .map(|a| substitute_func_values(a, func_names, values))
         .collect(),
     },
     Expr::List(items) => Expr::List(
       items
         .iter()
-        .map(|a| substitute_func_values(a, func_name, values))
+        .map(|a| substitute_func_values(a, func_names, values))
         .collect(),
     ),
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
       op: *op,
-      left: Box::new(substitute_func_values(left, func_name, values)),
-      right: Box::new(substitute_func_values(right, func_name, values)),
+      left: Box::new(substitute_func_values(left, func_names, values)),
+      right: Box::new(substitute_func_values(right, func_names, values)),
     },
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
-      operand: Box::new(substitute_func_values(operand, func_name, values)),
+      operand: Box::new(substitute_func_values(operand, func_names, values)),
     },
     _ => expr.clone(),
   }
