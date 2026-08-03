@@ -7191,6 +7191,76 @@ Cell[BoxData[
   }
 
   #[test]
+  fn locator_manipulate_lays_out_a_paned_readout_over_a_picture() {
+    // End-to-end regression for the plane-geometry Demonstrations that stack
+    // a numeric readout over the drawing: the body is a one-column `Grid`
+    // whose first cell is a `Pane[Style[Grid[…], …], ImageSize -> …]` and
+    // whose second is the `Graphics`. The pane's cell used to print the
+    // `Pane[…]` call as source text, which both hid the readout and stretched
+    // the widget to the width of that source.
+    let code = "Manipulate[\
+      Grid[{{Pane[Style[Grid[{{\"d\", \"\\[TildeTilde]\", \
+          NumberForm[EuclideanDistance[pt1, pt2], {5, 2}]}}, \
+          Dividers -> {{True, False, False, True}, All}, \
+          Spacings -> {{1 -> 1.3, 2 -> 0.3, 3 -> 0.3, 4 -> 1.3}, Automatic}], \
+          12, \"Label\"], \
+        ImageSize -> {200, 40}, Alignment -> {Center, Center}]}, \
+       {Graphics[{Line[{pt1, pt2}]}, ImageSize -> {200, 160}, \
+          PlotRange -> {{-1, 1}, {-1, 1}}]}}, \
+       ItemSize -> {Automatic, {2, 5}}, Alignment -> {Center, Top}], \
+      {{pt1, {-0.5, -0.5}}, {-1, -1}, {1, 1}, Locator}, \
+      {{pt2, {0.5, 0.5}}, {-1, -1}, {1, 1}, Locator}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the paned-readout Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the body must render");
+    assert_eq!(state.controls.len(), 2);
+    assert!(
+      state
+        .controls
+        .iter()
+        .all(|c| matches!(c, manipulate::ControlState::Slider2D { .. }))
+    );
+
+    // Re-render through the widget's own bindings to inspect the SVG the
+    // handle was built from: the readout shows its numbers, ruled into a
+    // closed box, and the picture is drawn below it.
+    let bindings: Vec<(String, String)> = state
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .collect();
+    let svg = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("the body must evaluate")
+    .graphics
+    .expect("the body must render a graphic");
+    assert!(!svg.contains("Pane["), "the wrapper must not print: {svg}");
+    assert!(svg.contains(">1.41<"), "the readout value: {svg}");
+    assert!(svg.contains("<polyline"), "the drawn segment: {svg}");
+    // `Dividers -> {…, All}` closes the readout top and bottom.
+    let horizontal = svg
+      .lines()
+      .filter(|l| l.starts_with("<line "))
+      .filter(|l| {
+        let v = |n: &str| {
+          l.split(&format!("{n}=\""))
+            .nth(1)
+            .map(|t| t.split('"').next().unwrap_or_default().to_string())
+        };
+        v("y1").is_some() && v("y1") == v("y2")
+      })
+      .count();
+    assert_eq!(horizontal, 2, "readout ruled top and bottom: {svg}");
+  }
+
+  #[test]
   fn quicksort_manipulate_builds_all_four_controls() {
     // End-to-end regression for the "Quicksort versus Selection Sort"
     // Demonstration. Its fourth control is a custom one — `{{li, init, ""},
