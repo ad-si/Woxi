@@ -250,7 +250,7 @@ pub(crate) fn named_color(name: &str) -> Option<Color> {
 struct StyleState {
   color: Color,
   opacity: f64,
-  thickness: f64,  // fraction of plot width, default ~0.004
+  thickness: f64, // fraction of plot width; negative = absolute pixels
   point_size: f64, // fraction of plot width, default ~0.012
   dashing: Option<Vec<f64>>, // dash lengths in coordinate-space fractions
   edge_form: Option<EdgeForm>,
@@ -429,7 +429,11 @@ impl Default for StyleState {
     Self {
       color: BLACK,
       opacity: 1.0,
-      thickness: 0.004,
+      // Wolfram strokes an undirected primitive 1 pixel wide whatever the
+      // image size — measured from wolframscript at four sizes — so the
+      // default is absolute (the negative encoding), not a fraction of the
+      // width the way an explicit `Thickness` is.
+      thickness: -1.0,
       point_size: 0.012,
       dashing: None,
       edge_form: None,
@@ -4460,7 +4464,13 @@ fn thickness_px(t: f64, bb: &BBox, svg_w: f64) -> f64 {
     // Absolute thickness (stored as negative)
     -t
   } else {
-    t * svg_w / bb.width() * bb.width().max(bb.height())
+    // A `Thickness` is a fraction of the *image* width, the same measure a
+    // `Dashing` length uses — `Thickness[0.05]` on a 200-pixel picture is
+    // 10 px whether the picture is taller or wider than it is broad
+    // (measured from wolframscript in both aspects). Scaling it by the data
+    // range's taller side made a portrait picture's lines twice too heavy.
+    let _ = bb;
+    t * svg_w
   }
 }
 
@@ -5649,11 +5659,17 @@ fn render_primitive(
         let bbox_diag =
           ((max_x - min_x).powi(2) + (max_y - min_y).powi(2)).sqrt();
 
-        // Three caps: 45 % of total path length (keeps straight arrows
-        // from being dominated), 40 % of the shape's bbox diagonal
-        // (keeps self-loops and curved arrows proportional to their
-        // visible size), and the usual default of max(sw*6, 9).
-        let default_head = ((sw * 6.0).max(9.0))
+        // Wolfram's `Arrowheads[Automatic]` is a head 4 % of the plot's
+        // width long, the same measure an explicit size gives — every
+        // arrow in a picture carries the same head, however short it is
+        // and however thick its shaft. Measured from wolframscript against
+        // `Arrowheads[0.1]` in frames of two different aspects.
+        //
+        // Two caps remain, for shapes a fixed head would swallow: 45 % of
+        // the path length, and 40 % of the shape's bounding-box diagonal
+        // (which keeps a self-loop's head in proportion to its visible
+        // size rather than its arc length).
+        let default_head = (svg_w * 0.04)
           .min(total_len_px * 0.45)
           .min(bbox_diag * 0.4)
           .max(1.0);
@@ -5703,7 +5719,10 @@ fn render_primitive(
             continue;
           };
           let (ux, uy) = (ux * dir, uy * dir);
-          let head_half_w = head_len * 0.45;
+          // Wolfram's head is a good deal narrower than it is long: its
+          // corners sit 0.28 of the length either side of the shaft
+          // (measured across sizes and frames from wolframscript).
+          let head_half_w = head_len * 0.28;
           // Perpendicular
           let (px, py) = (-uy, ux);
           let base_l_x = tip_x - ux * head_len + px * head_half_w;
@@ -6080,7 +6099,7 @@ impl Default for BoxStyleTracker {
     Self {
       current_color: (0.0, 0.0, 0.0), // Black
       current_opacity: 1.0,
-      current_thickness: 0.004,
+      current_thickness: -1.0,
     }
   }
 }

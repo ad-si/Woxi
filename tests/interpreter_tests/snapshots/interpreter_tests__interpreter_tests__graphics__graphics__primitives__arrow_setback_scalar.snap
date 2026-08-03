@@ -3,6 +3,6 @@ source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"Graphics[{Arrow[{{0, 0}, {2, 0}}, 0.5]}]\")"
 ---
 <svg width="360" height="167" viewBox="0 0 360 167" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-<polyline points="96.67,83.50 263.33,83.50" fill="none" stroke="rgb(0,0,0)" stroke-width="1.44" stroke-linejoin="round" stroke-linecap="butt"/>
-<polygon points="263.33,83.50 254.33,87.55 254.33,79.45" fill="rgb(0,0,0)"/>
+<polyline points="96.67,83.50 263.33,83.50" fill="none" stroke="rgb(0,0,0)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
+<polygon points="263.33,83.50 248.93,87.53 248.93,79.47" fill="rgb(0,0,0)"/>
 </svg>

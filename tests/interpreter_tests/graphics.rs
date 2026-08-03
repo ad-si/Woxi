@@ -21843,3 +21843,104 @@ fn a_text_wrapper_resets_the_font_face() {
     "an inner Style still applies: {bold_inside}"
   );
 }
+
+/// `Arrowheads[Automatic]` — what an `Arrow` without a directive gets — is a
+/// head 4 % of the plot's width long, the same measure an explicit size
+/// gives. Every arrow in a picture carries the same head, however short it
+/// is and however thick its shaft; the old rule grew the head with the
+/// stroke and shrank it for short arrows.
+#[test]
+fn the_default_arrowhead_is_four_percent_of_the_width() {
+  // The head is drawn as a triangle: tip, then the two base corners.
+  let head_length = |svg: &str| -> f64 {
+    let at = svg
+      .find("<polygon points=\"")
+      .expect("an arrowhead is drawn");
+    let rest = &svg[at + 17..];
+    let pts = &rest[..rest.find('"').unwrap()];
+    let xy: Vec<(f64, f64)> = pts
+      .split_whitespace()
+      .map(|p| {
+        let (x, y) = p.split_once(',').unwrap();
+        (x.parse().unwrap(), y.parse().unwrap())
+      })
+      .collect();
+    let (tx, ty) = xy[0];
+    let (bx, by) = ((xy[1].0 + xy[2].0) / 2.0, (xy[1].1 + xy[2].1) / 2.0);
+    ((tx - bx).powi(2) + (ty - by).powi(2)).sqrt()
+  };
+  let plain = export_svg(
+    "Graphics[{Arrow[{{5, 1}, {5, 9}}]}, \
+     PlotRange -> {{0, 10}, {0, 10}}, ImageSize -> 400]",
+  );
+  assert!(
+    (head_length(&plain) - 16.0).abs() < 0.5,
+    "0.04 of a 400-wide plot is a 16 px head: {}",
+    head_length(&plain)
+  );
+  // A thick shaft does not enlarge the head.
+  let thick = export_svg(
+    "Graphics[{Thick, Arrow[{{5, 1}, {5, 9}}]}, \
+     PlotRange -> {{0, 10}, {0, 10}}, ImageSize -> 400]",
+  );
+  assert!(
+    (head_length(&thick) - head_length(&plain)).abs() < 0.01,
+    "the head is independent of the stroke: {} vs {}",
+    head_length(&thick),
+    head_length(&plain)
+  );
+  // A short arrow carries the same head as a long one, as long as the head
+  // still fits inside it.
+  let short = export_svg(
+    "Graphics[{Arrow[{{5, 4}, {5, 6}}]}, \
+     PlotRange -> {{0, 10}, {0, 10}}, ImageSize -> 400]",
+  );
+  assert!(
+    (head_length(&short) - head_length(&plain)).abs() < 0.01,
+    "a short arrow keeps the same head: {}",
+    head_length(&short)
+  );
+  // An explicit size still measures against the width.
+  let explicit = export_svg(
+    "Graphics[{Arrowheads[0.1], Arrow[{{5, 1}, {5, 9}}]}, \
+     PlotRange -> {{0, 10}, {0, 10}}, ImageSize -> 400]",
+  );
+  assert!(
+    (head_length(&explicit) - 40.0).abs() < 0.5,
+    "0.1 of a 400-wide plot is a 40 px head: {}",
+    head_length(&explicit)
+  );
+}
+
+/// An undirected primitive is stroked 1 pixel wide whatever the image size —
+/// Wolfram's default is absolute, not a fraction of the picture's width.
+#[test]
+fn the_default_stroke_is_one_pixel_at_every_size() {
+  for size in ["100", "200", "400", "800"] {
+    let svg = export_svg(&format!(
+      "Graphics[{{Line[{{{{1, 1}}, {{1, 5}}}}]}}, \
+       PlotRange -> {{{{0, 3}}, {{0, 6}}}}, ImageSize -> {size}]"
+    ));
+    assert!(
+      svg.contains("stroke-width=\"1.00\""),
+      "ImageSize {size} should still stroke 1 px: {svg}"
+    );
+  }
+  // `Thick` and an explicit `Thickness` still say what they mean.
+  let thick = export_svg(
+    "Graphics[{Thick, Line[{{1, 1}, {1, 5}}]}, \
+     PlotRange -> {{0, 3}, {0, 6}}, ImageSize -> 200]",
+  );
+  assert!(
+    thick.contains("stroke-width=\"2.00\""),
+    "Thick is 2 px: {thick}"
+  );
+  let relative = export_svg(
+    "Graphics[{Thickness[0.05], Line[{{1, 1}, {1, 5}}]}, \
+     PlotRange -> {{0, 3}, {0, 6}}, ImageSize -> 200]",
+  );
+  assert!(
+    relative.contains("stroke-width=\"10.00\""),
+    "Thickness is a fraction of the width: {relative}"
+  );
+}
