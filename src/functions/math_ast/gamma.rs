@@ -1120,11 +1120,7 @@ fn incomplete_beta_ast(
       left: Box::new(x),
       right: Box::new(y),
     };
-    let power = |x: Expr, y: Expr| Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(x),
-      right: Box::new(y),
-    };
+    let pow2 = |x: Expr, y: Expr| pow2(x, y);
     let divide = |x: Expr, y: Expr| Expr::BinaryOp {
       op: BinaryOperator::Divide,
       left: Box::new(x),
@@ -1133,14 +1129,14 @@ fn incomplete_beta_ast(
     if matches!(a, Expr::Integer(1)) {
       let num = minus(
         Expr::Integer(1),
-        power(minus(Expr::Integer(1), z.clone()), b.clone()),
+        pow2(minus(Expr::Integer(1), z.clone()), b.clone()),
       );
       return crate::evaluator::evaluate_expr_to_expr(&divide(num, b.clone()));
     }
     if matches!(b, Expr::Integer(1)) {
       let num = minus(
-        power(z.clone(), a.clone()),
-        power(Expr::Integer(0), a.clone()),
+        pow2(z.clone(), a.clone()),
+        pow2(Expr::Integer(0), a.clone()),
       );
       return crate::evaluator::evaluate_expr_to_expr(&divide(num, a.clone()));
     }
