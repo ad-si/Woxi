@@ -11365,12 +11365,6 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     {
       crate::functions::string_ast::expr_to_fortran(&args[0])
     }
-    // Unevaluated: InputForm strips the wrapper, showing just the inner expression
-    Expr::FunctionCall { name, args }
-      if name == "Unevaluated" && args.len() == 1 =>
-    {
-      expr_to_input_form(&args[0])
-    }
     // StringSkeleton[n]: InputForm shows n<<>> (content before <<>>)
     Expr::FunctionCall { name, args }
       if name == "StringSkeleton" && args.len() == 1 =>

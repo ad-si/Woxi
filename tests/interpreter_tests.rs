@@ -1626,6 +1626,16 @@ mod interpreter_tests {
       interpret("Length[{0, Unevaluated[Sequence[1, 2, 3]], 9}]").unwrap(),
       "3"
     );
+    // InputForm shows the wrapper too — only a *direct* argument loses it,
+    // and that happens in the evaluator, not the renderer.
+    assert_eq!(
+      interpret("ToString[{0, Unevaluated[1 + 1], 9}, InputForm]").unwrap(),
+      "{0, Unevaluated[1 + 1], 9}"
+    );
+    assert_eq!(
+      interpret("ToString[Unevaluated[1 + 1], InputForm]").unwrap(),
+      "1 + 1"
+    );
   }
 
   #[test]

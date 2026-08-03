@@ -4825,6 +4825,16 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // ToString holds nothing, so an `Unevaluated[…]` written as its own argument
+  // loses the wrapper and only the content is printed: `ToString[Unevaluated[
+  // 1 + 1], InputForm]` is "1 + 1". A wrapper further in (`{0, Unevaluated[
+  // 1 + 1], 9}`) is part of the expression and prints as itself.
+  let args: Vec<Expr> =
+    std::iter::once(crate::evaluator::strip_unevaluated(&args[0]))
+      .chain(args[1..].iter().cloned())
+      .collect();
+  let args = &args[..];
+
   // The optional second argument must be a format symbol (InputForm,
   // OutputForm, TeXForm, …), never a number. wolframscript rejects e.g.
   // ToString[255, 2] with ToString::fmtval and returns the call unevaluated,
