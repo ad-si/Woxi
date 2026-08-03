@@ -96,35 +96,62 @@ const SCHEME_30: [(f64, f64, f64); 9] = [
   (132.0 / 255.0, 130.0 / 255.0, 131.0 / 255.0),
 ];
 
-/// A horizontal gradient strip rendered as an Image — what
-/// `ColorData[name, "Image"]` returns, shown as the swatch in gradient
-/// pickers (e.g. a Manipulate color-scheme dropdown).
+/// A horizontal gradient strip — what `ColorData[name, "Image"]` returns,
+/// shown as the swatch in gradient pickers (e.g. a Manipulate color-scheme
+/// dropdown). Despite the property name, wolframscript hands back a
+/// `Graphics[{Raster[…]}, …]` rather than an `Image`: a single row of 101
+/// samples over the unit square, drawn at a 1/8 aspect ratio.
 fn gradient_strip_image(controls: &[(f64, f64, f64)]) -> Expr {
-  const W: u32 = 300;
-  const H: u32 = 30;
-  let mut data = Vec::with_capacity((W * H * 3) as usize);
-  let row: Vec<(f64, f64, f64)> = (0..W)
+  const SAMPLES: usize = 101;
+  let row: Vec<Expr> = (0..SAMPLES)
     .map(|x| {
-      crate::functions::chart::gradient_color_at(
+      let (r, g, b) = crate::functions::chart::gradient_color_at(
         controls,
-        x as f64 / (W - 1) as f64,
-      )
+        x as f64 / (SAMPLES - 1) as f64,
+      );
+      Expr::List(vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into())
     })
     .collect();
-  for _ in 0..H {
-    for &(r, g, b) in &row {
-      data.push(r);
-      data.push(g);
-      data.push(b);
-    }
-  }
-  Expr::Image {
-    width: W,
-    height: H,
-    channels: 3,
-    data: std::sync::Arc::new(data),
-    image_type: crate::syntax::ImageType::Real32,
-    color_space: None,
+  let unit_corner = |a: i128, b: i128| {
+    Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())
+  };
+  let raster = Expr::FunctionCall {
+    name: "Raster".to_string(),
+    args: vec![
+      Expr::List(vec![Expr::List(row.into())].into()),
+      Expr::List(vec![unit_corner(0, 0), unit_corner(1, 1)].into()),
+    ]
+    .into(),
+  };
+  let option = |name: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(name.to_string())),
+    replacement: Box::new(value),
+  };
+  Expr::FunctionCall {
+    name: "Graphics".to_string(),
+    args: vec![
+      Expr::List(vec![raster].into()),
+      Expr::List(
+        vec![
+          option("ImageSize", Expr::Integer(250)),
+          option("ContentSelectable", Expr::Identifier("False".to_string())),
+          option(
+            "AspectRatio",
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(Expr::Integer(1)),
+              right: Box::new(Expr::Integer(8)),
+            },
+          ),
+          option(
+            "PlotRange",
+            Expr::List(vec![unit_corner(0, 1), unit_corner(0, 1)].into()),
+          ),
+        ]
+        .into(),
+      ),
+    ]
+    .into(),
   }
 }
 

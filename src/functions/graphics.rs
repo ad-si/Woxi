@@ -6235,7 +6235,35 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
 
 // ── Entry point ──────────────────────────────────────────────────────────
 
+/// Splice an option *list* in the option slots into individual rules.
+/// `Graphics[prims, {ImageSize -> 100, Frame -> True}]` is the shape the
+/// Wolfram front end stores a picture in — and what `ColorData[name, "Image"]`
+/// hands back — and it means exactly the same as the flat
+/// `Graphics[prims, ImageSize -> 100, Frame -> True]`.
+///
+/// Only a list made up entirely of rules is spliced, so a list of primitives
+/// that follows the content is left where it is.
+pub fn splice_option_lists(args: &[Expr]) -> Vec<Expr> {
+  let mut out = Vec::with_capacity(args.len());
+  for (i, arg) in args.iter().enumerate() {
+    match arg {
+      Expr::List(items)
+        if i > 0
+          && !items.is_empty()
+          && items.iter().all(|item| {
+            matches!(item, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+          }) =>
+      {
+        out.extend(items.iter().cloned());
+      }
+      _ => out.push(arg.clone()),
+    }
+  }
+  out
+}
+
 pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let args = &splice_option_lists(args)[..];
   // First arg is the content (primitives + directives)
   // Evaluate it so that Table/Map/etc. produce concrete lists
   // Remaining args are options as Rule expressions
@@ -6293,6 +6321,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // When true, skip uniform scaling so x and y axes scale independently
   // (needed for plots where data aspect ≠ image aspect).
   let mut aspect_ratio_full = false;
+  // `AspectRatio -> r`: height/width of the drawing, applied after the option
+  // list is read so it does not depend on where `ImageSize` sits in it.
+  let mut aspect_ratio: Option<f64> = None;
   // `ImagePadding -> {{left, right}, {bottom, top}}` (or a single number for
   // all four sides): the room reserved around the drawing area, replacing the
   // automatic margins that the frame and its tick labels would ask for.
@@ -6453,14 +6484,25 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else if let Some(r) = expr_to_f64(replacement)
             && r > 0.0
           {
-            svg_height = (svg_width as f64 * r).round() as u32;
-            explicit_height = true;
+            aspect_ratio = Some(r);
             aspect_ratio_full = true;
           }
         }
         _ => {}
       }
     }
+  }
+
+  // The height an `AspectRatio` asks for follows from the *final* width, so it
+  // is worked out once the whole option list has been read: options mean the
+  // same thing in either order, and `Graphics[…, AspectRatio -> 1/8,
+  // ImageSize -> 100]` draws the same strip as with the two swapped. An
+  // `ImageSize -> {w, h}` names the height outright and keeps it.
+  if let Some(r) = aspect_ratio
+    && !explicit_height
+  {
+    svg_height = ((svg_width as f64 * r).round() as u32).max(1);
+    explicit_height = true;
   }
 
   // Collect primitives

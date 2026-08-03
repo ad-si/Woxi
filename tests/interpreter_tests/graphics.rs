@@ -20965,10 +20965,23 @@ mod color_data_gradients {
   #[test]
   fn gradient_image_property() {
     clear_state();
-    // ColorData[name, "Image"] is a raster swatch of the gradient.
+    // Despite the property name, ColorData[name, "Image"] is a Graphics
+    // holding a one-row Raster swatch of the gradient, not an Image.
     assert_eq!(
       interpret("Head[ColorData[\"Rainbow\", \"Image\"]]").unwrap(),
-      "Image"
+      "Graphics"
+    );
+    // 101 samples across the unit square, drawn at a 1/8 aspect ratio.
+    assert_eq!(
+      interpret("Dimensions[ColorData[\"Rainbow\", \"Image\"][[1, 1, 1]]]")
+        .unwrap(),
+      "{1, 101, 3}"
+    );
+    assert_eq!(
+      interpret("ToString[ColorData[\"Rainbow\", \"Image\"][[2]], InputForm]")
+        .unwrap(),
+      "{ImageSize -> 250, ContentSelectable -> False, AspectRatio -> 1/8, \
+       PlotRange -> {{0, 1}, {0, 1}}}"
     );
   }
 
@@ -21015,17 +21028,45 @@ mod color_data_gradients {
   }
 
   #[test]
-  fn show_passes_an_image_through() {
+  fn show_resizes_the_swatch() {
     clear_state();
-    // Show[image, ImageSize -> …] displays the image: the raster passes
-    // through unchanged (the Demonstrations gradient-swatch idiom).
-    assert_eq!(
+    // Show[swatch, ImageSize -> …] redraws the strip at the asked-for width,
+    // keeping its 1/8 aspect ratio (the Demonstrations gradient-swatch idiom).
+    let svg = interpret(
+      "ExportString[Show[ColorData[\"Rainbow\", \"Image\"], \
+       ImageSize -> 100], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("width=\"100\" height=\"13\""),
+      "resized swatch: {svg}"
+    );
+  }
+
+  // An `AspectRatio` means the same wherever it sits in the option list.
+  #[test]
+  fn aspect_ratio_is_order_independent() {
+    clear_state();
+    for code in [
+      "ExportString[Graphics[{Disk[]}, ImageSize -> 100, \
+       AspectRatio -> 1/8], \"SVG\"]",
+      "ExportString[Graphics[{Disk[]}, AspectRatio -> 1/8, \
+       ImageSize -> 100], \"SVG\"]",
+      // The front end's own shape: the options as a list in the second slot.
+      "ExportString[Graphics[{Disk[]}, {AspectRatio -> 1/8, \
+       ImageSize -> 100}], \"SVG\"]",
+    ] {
+      let svg = interpret(code).unwrap();
+      assert!(svg.contains("width=\"100\" height=\"13\""), "{code}: {svg}");
+    }
+    // An explicit `ImageSize -> {w, h}` names the height and keeps it.
+    assert!(
       interpret(
-        "ImageDimensions[Show[ColorData[\"Rainbow\", \"Image\"], \
-         ImageSize -> 100]]"
+        "ExportString[Graphics[{Disk[]}, ImageSize -> {100, 80}, \
+         AspectRatio -> 1/8], \"SVG\"]"
       )
-      .unwrap(),
-      "{300, 30}"
+      .unwrap()
+      .contains("width=\"100\" height=\"80\"")
     );
   }
 }

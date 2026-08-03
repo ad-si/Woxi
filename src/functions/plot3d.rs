@@ -3944,6 +3944,7 @@ fn enclosing_sphere_radius(prims: &[Primitive3D], center: Point3D) -> f64 {
 
 /// Graphics3D[primitives, options...]
 pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let args = &crate::functions::graphics::splice_option_lists(args)[..];
   let content = evaluate_expr_to_expr(&args[0])?;
 
   // Parse options
