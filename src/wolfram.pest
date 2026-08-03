@@ -28,7 +28,12 @@ PartOpen  = _{ "[[" | "\u{27E6}" | "\u{301A}" }
 PartClose = _{ "]]" | "\u{27E7}" | "\u{301B}" }
 
 // Part extraction suffix: [[expr, ...]] or 〚expr, ...〛 for indexing
-PartIndexSuffix = { (PartOpen ~ PartIndex ~ ("," ~ PartIndex)* ~ PartClose)+ }
+// One bracket group is its own node so the AST can tell `m[[a, b]]` (one
+// group, two specs — the second applies inside each part the first picks)
+// from `m[[a]][[b]]` (two groups, applied one after the other). Flattening
+// every group's specs into one list made those two the same expression.
+PartIndexGroup = { PartOpen ~ PartIndex ~ ("," ~ PartIndex)* ~ PartClose }
+PartIndexSuffix = { PartIndexGroup+ }
 
 // PartExtract for non-FunctionCall bases only (Slot, Identifier, number)
 // FunctionCall-based Part extraction is handled by FunctionCallExtended
@@ -38,7 +43,7 @@ PartIndexSuffix = { (PartOpen ~ PartIndex ~ ("," ~ PartIndex)* ~ PartClose)+ }
 // between the two differentiates the extracted function first, the way it
 // does after a parenthesis: `solutions[[i]][[2]]'[t]` differentiates the
 // InterpolatingFunction an NDSolve rule was carrying.
-PartExtract = { (Slot | Identifier | UnsignedNumericValue | String) ~ (PartOpen ~ PartIndex ~ ("," ~ PartIndex)* ~ PartClose)+ ~ DerivativePrime? ~ BracketArgs* }
+PartExtract = { (Slot | Identifier | UnsignedNumericValue | String) ~ PartIndexGroup+ ~ DerivativePrime? ~ BracketArgs* }
 
 // Optional inline whitespace, spelled out so the atomic numeric-literal
 // lookaheads below can see a `^` that is separated from its base by spaces

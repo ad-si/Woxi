@@ -1036,12 +1036,29 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
 
   // Handle Part assignment: var[[indices]] = value
   if let Expr::Part { .. } = lhs {
-    // Flatten nested Part to get base variable and list of indices
+    // Flatten nested Part to get base variable and list of indices. A
+    // bracket group followed by another parses as the `Part[base, …]` call
+    // form (see `apply_part_group`), so `m[[1]][[2]] = v` reaches here with
+    // a call at its base; the two readings agree for the single positions
+    // an assignment target names, so walk through it as well.
     let mut indices = Vec::new();
     let mut current = lhs;
-    while let Expr::Part { expr, index } = current {
-      indices.push(index.as_ref().clone());
-      current = expr.as_ref();
+    loop {
+      match current {
+        Expr::Part { expr, index } => {
+          indices.push(index.as_ref().clone());
+          current = expr.as_ref();
+        }
+        Expr::FunctionCall { name, args }
+          if name == "Part" && args.len() >= 2 =>
+        {
+          for idx in args[1..].iter().rev() {
+            indices.push(idx.clone());
+          }
+          current = &args[0];
+        }
+        _ => break,
+      }
     }
     indices.reverse();
 

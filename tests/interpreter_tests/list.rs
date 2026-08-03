@@ -20593,3 +20593,79 @@ mod nearest_rejects_unusable_data {
     );
   }
 }
+
+/// `m[[a]][[b]]` and `m[[a, b]]` are different expressions. One bracket group
+/// naming two specs picks with the second *inside* what the first picked —
+/// `m[[All, 2]]` is the second element of every row. Two groups apply one
+/// after the other: `m[[All]][[2]]` is the second row. Both parsed to the
+/// same thing before, so every chained part took the first meaning, and a
+/// list of row indices followed by another group read parts of the rows.
+mod part_bracket_groups {
+  use woxi::interpret;
+
+  const M: &str = "m = {{1, 2}, {3, 4}, {5, 6}}; ";
+
+  #[test]
+  fn a_list_of_positions_then_another_group() {
+    assert_eq!(
+      interpret(&format!("{M}m[[{{1, 3}}]][[2]]")).unwrap(),
+      "{5, 6}"
+    );
+    assert_eq!(
+      interpret(&format!("{M}m[[{{1, 3}}, 2]]")).unwrap(),
+      "{2, 6}"
+    );
+    assert_eq!(
+      interpret(&format!("{M}m[[{{1, 3}}]][[{{1, 2}}]]")).unwrap(),
+      "{{1, 2}, {5, 6}}"
+    );
+  }
+
+  #[test]
+  fn all_then_another_group() {
+    assert_eq!(interpret(&format!("{M}m[[All]][[2]]")).unwrap(), "{3, 4}");
+    assert_eq!(interpret(&format!("{M}m[[All, 2]]")).unwrap(), "{2, 4, 6}");
+  }
+
+  #[test]
+  fn a_span_then_another_group() {
+    assert_eq!(
+      interpret(&format!("{M}m[[1 ;; 2]][[2]]")).unwrap(),
+      "{3, 4}"
+    );
+    assert_eq!(interpret(&format!("{M}m[[1 ;; 2, 2]]")).unwrap(), "{2, 4}");
+  }
+
+  /// For single positions the two readings agree, and both still assign.
+  #[test]
+  fn single_positions_read_the_same_either_way() {
+    assert_eq!(interpret(&format!("{M}m[[2]][[1]]")).unwrap(), "3");
+    assert_eq!(interpret(&format!("{M}m[[2, 1]]")).unwrap(), "3");
+    assert_eq!(
+      interpret("x = {{1, 2}, {3, 4}}; x[[1]][[2]] = 9; x").unwrap(),
+      "{{1, 9}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret("x = {{1, 2}, {3, 4}}; x[[1, 2]] = 9; x").unwrap(),
+      "{{1, 9}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret("x = {{1, 2}, {3, 4}}; x[[2]][[1]] += 5; x").unwrap(),
+      "{{1, 2}, {8, 4}}"
+    );
+  }
+
+  /// The shape a Demonstration hit: a star-polygon ordering picks the
+  /// vertices, and each is then read out of the reordered list.
+  #[test]
+  fn a_reordered_list_read_element_by_element() {
+    assert_eq!(
+      interpret(
+        "v = {{0, 1}, {1, 0}, {0, -1}, {-1, 0}}; \
+         Table[v[[{1, 3, 2, 4}]][[i]], {i, 1, 4}]"
+      )
+      .unwrap(),
+      "{{0, 1}, {0, -1}, {1, 0}, {-1, 0}}"
+    );
+  }
+}

@@ -1392,6 +1392,49 @@ use crate::Rule;
 use pest::iterators::Pair;
 
 /// Extract the exponent expression from an `ImplicitPowerSuffix` pair.
+/// Apply one `[[…]]` bracket group to a base expression, as one of a run of
+/// groups. Within a group the specs nest as `Expr::Part`s, which is what the
+/// evaluator reads as "each spec picks inside what the one before it picked"
+/// — `m[[All, 2]]` is the second element of every row.
+///
+/// A group that is *followed* by another is emitted in the `Part[base, …]`
+/// call form instead. That form evaluates to a value before the next group
+/// sees it, which is the other reading: `m[[{1, 3}]][[2]]` is the second of
+/// the two rows picked, not the second element of each. Both shapes parsed
+/// the same before, so a chain of groups quietly took the first meaning.
+fn apply_part_group(base: Expr, group: Pair<Rule>, is_last: bool) -> Expr {
+  let specs: Vec<Expr> = group.into_inner().map(pair_to_expr).collect();
+  if specs.is_empty() {
+    return base;
+  }
+  if is_last {
+    return specs.into_iter().fold(base, |acc, idx| Expr::Part {
+      expr: Box::new(acc),
+      index: Box::new(idx),
+    });
+  }
+  let mut args = vec![base];
+  args.extend(specs);
+  Expr::FunctionCall {
+    name: "Part".to_string(),
+    args: args.into(),
+  }
+}
+
+/// Apply every bracket group of a `PartIndexSuffix`, in order.
+fn apply_part_index_suffix(base: Expr, suffix: Pair<Rule>) -> Expr {
+  apply_part_groups(base, suffix.into_inner().collect())
+}
+
+/// Apply a run of `PartIndexGroup` pairs to a base expression.
+fn apply_part_groups(base: Expr, groups: Vec<Pair<Rule>>) -> Expr {
+  let last = groups.len();
+  groups
+    .into_iter()
+    .enumerate()
+    .fold(base, |acc, (i, g)| apply_part_group(acc, g, i + 1 == last))
+}
+
 /// Handles `^expr`, `^-expr`, and forms with a `PartIndexSuffix` after the
 /// term (e.g. `^m[[1]]` → `Part[m, 1]`, `^-m[[1]]` → `-Part[m, 1]`).
 fn implicit_power_exponent(pair: Pair<Rule>) -> Expr {
@@ -1403,12 +1446,7 @@ fn implicit_power_exponent(pair: Pair<Rule>) -> Expr {
       let mut base = pair_to_expr(neg_inners[0].clone());
       for p in neg_inners.iter().skip(1) {
         if p.as_rule() == Rule::PartIndexSuffix {
-          for idx_pair in p.clone().into_inner() {
-            base = Expr::Part {
-              expr: Box::new(base),
-              index: Box::new(pair_to_expr(idx_pair)),
-            };
-          }
+          base = apply_part_index_suffix(base, p.clone());
         }
       }
       Expr::UnaryOp {
@@ -1420,12 +1458,7 @@ fn implicit_power_exponent(pair: Pair<Rule>) -> Expr {
   };
   for p in inners.iter().skip(1) {
     if p.as_rule() == Rule::PartIndexSuffix {
-      for idx_pair in p.clone().into_inner() {
-        expr = Expr::Part {
-          expr: Box::new(expr),
-          index: Box::new(pair_to_expr(idx_pair)),
-        };
-      }
+      expr = apply_part_index_suffix(expr, p.clone());
     } else if p.as_rule() == Rule::FactorialSuffix {
       // `a^b!` parses as `a^(b!)` because Factorial binds tighter than Power.
       let func_name = if p.as_str() == "!!" {
@@ -3096,7 +3129,15 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       let base_expr = pair_to_expr(inner.next().unwrap());
       // Chain multiple indices as nested Part: a[[1,2,3]] -> Part[Part[Part[a,1],2],3].
       // A trailing call suffix applies the Part result: a[[i]][x] -> (a[[i]])[x].
-      let mut result = base_expr;
+      // The `[[…]]` groups come first; a derivative or call suffix applies
+      // to what they extracted, so collect them before anything else.
+      let inner: Vec<_> = inner.collect();
+      let pending_groups: Vec<Pair<Rule>> = inner
+        .iter()
+        .filter(|p| matches!(p.as_rule(), Rule::PartIndexGroup))
+        .cloned()
+        .collect();
+      let mut result = apply_part_groups(base_expr, pending_groups);
       for p in inner {
         if matches!(p.as_rule(), Rule::DerivativePrime) {
           // `a[[i]]'` differentiates what the part extracted, and any
@@ -3121,12 +3162,6 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
             func: Box::new(result),
             args,
           };
-        } else {
-          let index = pair_to_expr(p);
-          result = Expr::Part {
-            expr: Box::new(result),
-            index: Box::new(index),
-          };
         }
       }
       result
@@ -3141,12 +3176,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       for suffix in &inners[2..] {
         match suffix.as_rule() {
           Rule::PartIndexSuffix => {
-            for idx_pair in suffix.clone().into_inner() {
-              operand = Expr::Part {
-                expr: Box::new(operand),
-                index: Box::new(pair_to_expr(idx_pair)),
-              };
-            }
+            operand = apply_part_index_suffix(operand, suffix.clone());
           }
           Rule::ImplicitPowerSuffix => {
             operand = Expr::BinaryOp {
@@ -3335,15 +3365,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         if inners[i].as_rule() == Rule::PartIndexSuffix {
           // Part suffix follows the previous factor: x[[i]] -> Part[x, i]
           if let Some(base) = factors.pop() {
-            let mut result = base;
-            for idx_pair in inners[i].clone().into_inner() {
-              let index = pair_to_expr(idx_pair);
-              result = Expr::Part {
-                expr: Box::new(result),
-                index: Box::new(index),
-              };
-            }
-            factors.push(result);
+            factors.push(apply_part_index_suffix(base, inners[i].clone()));
           }
         } else if inners[i].as_rule() == Rule::ImplicitPowerSuffix {
           // Power suffix follows the previous factor
@@ -3635,19 +3657,10 @@ fn parse_list_extended(pair: Pair<Rule>) -> Expr {
 
   if has_part_index {
     // List[[...]]: PartExtract with List base
-    let part_indices: Vec<Expr> = inner_pairs
+    inner_pairs
       .iter()
       .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
-      .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
-      .collect();
-    let mut result = list_expr;
-    for idx in &part_indices {
-      result = Expr::Part {
-        expr: Box::new(result),
-        index: Box::new(idx.clone()),
-      };
-    }
-    result
+      .fold(list_expr, |acc, p| apply_part_index_suffix(acc, p.clone()))
   } else if has_list_call {
     // List[...]: ListCall
     let suffix_pair = inner_pairs
@@ -3746,10 +3759,10 @@ fn parse_function_call_extended(pair: Pair<Rule>) -> Expr {
     .any(|p| matches!(p.as_rule(), Rule::ImplicitPowerSuffix));
 
   // Extract part indices if present
-  let part_indices: Vec<Expr> = inner_pairs
+  let part_suffixes: Vec<Pair<Rule>> = inner_pairs
     .iter()
     .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
-    .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
+    .cloned()
     .collect();
 
   // Build the base function call expression
@@ -3909,13 +3922,9 @@ fn parse_function_call_extended(pair: Pair<Rule>) -> Expr {
 
   if has_part_index && has_implicit_suffix {
     // PartExtract with implicit multiplication: f[x][[i]]^2 y
-    let mut result = base_func;
-    for idx in &part_indices {
-      result = Expr::Part {
-        expr: Box::new(result),
-        index: Box::new(idx.clone()),
-      };
-    }
+    let mut result = part_suffixes
+      .iter()
+      .fold(base_func, |acc, p| apply_part_index_suffix(acc, p.clone()));
     if has_implicit_power {
       let exponent = implicit_power_exponent(
         inner_pairs
@@ -3938,14 +3947,9 @@ fn parse_function_call_extended(pair: Pair<Rule>) -> Expr {
     fold_implicit_times(result, factors)
   } else if has_part_index {
     // Plain PartExtract: f[x][[i]]
-    let mut result = base_func;
-    for idx in &part_indices {
-      result = Expr::Part {
-        expr: Box::new(result),
-        index: Box::new(idx.clone()),
-      };
-    }
-    result
+    part_suffixes
+      .iter()
+      .fold(base_func, |acc, p| apply_part_index_suffix(acc, p.clone()))
   } else if has_implicit_suffix {
     // Implicit multiplication after function call: f[x] g[y] or f[x]^2 y
     let mut result = base_func;
@@ -4965,19 +4969,14 @@ fn parse_association_extended(pair: Pair<Rule>) -> Expr {
     result
   } else {
     // <|...|>[[index]] -> Part[assoc, index]
-    let part_indices: Vec<Expr> = inner_pairs
+    let part_suffixes: Vec<Pair<Rule>> = inner_pairs
       .iter()
       .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
-      .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
+      .cloned()
       .collect();
-    let mut result = base_expr;
-    for idx in &part_indices {
-      result = Expr::Part {
-        expr: Box::new(result),
-        index: Box::new(idx.clone()),
-      };
-    }
-    result
+    part_suffixes
+      .iter()
+      .fold(base_expr, |acc, p| apply_part_index_suffix(acc, p.clone()))
   }
 }
 
@@ -5131,19 +5130,14 @@ fn parse_paren_extended(pair: Pair<Rule>) -> Expr {
     result
   } else {
     // (expr)[[index]] -> Part[expr, index]
-    let part_indices: Vec<Expr> = inner_pairs
+    let part_suffixes: Vec<Pair<Rule>> = inner_pairs
       .iter()
       .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
-      .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
+      .cloned()
       .collect();
-    let mut result = base_expr;
-    for idx in &part_indices {
-      result = Expr::Part {
-        expr: Box::new(result),
-        index: Box::new(idx.clone()),
-      };
-    }
-    result
+    part_suffixes
+      .iter()
+      .fold(base_expr, |acc, p| apply_part_index_suffix(acc, p.clone()))
   }
 }
 
