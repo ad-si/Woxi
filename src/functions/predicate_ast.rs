@@ -580,10 +580,15 @@ pub fn is_numeric_q(expr: &Expr) -> bool {
           | "E"
           | "Degree"
           | "GoldenRatio"
+          | "GoldenAngle"
           | "EulerGamma"
           | "Catalan"
           | "Khinchin"
           | "Glaisher"
+          // `MachinePrecision` carries a number too (about 15.95): a
+          // distribution written by hand tests its precision argument with
+          // `?Positive`, which needs it to read as numeric.
+          | "MachinePrecision"
       ) {
         return true;
       }

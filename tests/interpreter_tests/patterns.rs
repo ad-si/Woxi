@@ -576,6 +576,40 @@ mod pattern_matching {
   mod pattern_test {
     use super::*;
 
+    /// The brackets in `(x_)?test` only group — it is the same pattern as
+    /// `x_?test`, and a Demonstration writes its argument tests that way.
+    /// The form did not parse at all, so a whole initialization cell was
+    /// lost. (The bracketed side is a *pattern*, not any expression:
+    /// letting it be one makes every parenthesized group try this branch,
+    /// and a deeply nested one then runs the parser out of its budget.)
+    #[test]
+    fn parenthesized_pattern_test() {
+      assert_eq!(interpret("MatchQ[3, (_)?Positive]").unwrap(), "True");
+      assert_eq!(interpret("MatchQ[-3, (_)?Positive]").unwrap(), "False");
+      assert_eq!(
+        interpret("Cases[{1, -2, 3, -4}, (_)?Positive]").unwrap(),
+        "{1, 3}"
+      );
+      // As the argument of a definition, named and with a head.
+      assert_eq!(
+        interpret("f[(r_)?Positive] := r; {f[2], f[-2]}").unwrap(),
+        "{2, f[-2]}"
+      );
+      assert_eq!(
+        interpret(
+          "g[(x_)?NumericQ, (y_)?Positive] := x + y; {g[1, 2], g[a, 2]}"
+        )
+        .unwrap(),
+        "{3, g[a, 2]}"
+      );
+      assert_eq!(
+        interpret("k[(r_Integer)?Positive] := r; {k[2], k[2.5]}").unwrap(),
+        "{2, k[2.5]}"
+      );
+      // Nested brackets still parse as themselves.
+      assert_eq!(interpret("(((((((((1)))))))))").unwrap(), "1");
+    }
+
     #[test]
     fn pattern_test_matches() {
       assert_eq!(interpret("4 /. x_?EvenQ :> \"even\"").unwrap(), "even");

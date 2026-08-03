@@ -78,3 +78,39 @@ fn the_program_entry_points_agree() {
     );
   }
 }
+
+/// An upvalue statement (`tag /: lhs := rhs`) has its own parse rule. Through
+/// this entry point it used to fall back to an unparsed `Expr::Raw`, which
+/// re-parsed to the very same `Raw` and spun forever.
+#[test]
+fn an_upvalue_definition_terminates_and_is_installed() {
+  assert_eq!(run("tagA /: fB[tagA[x_]] := x + 1\nfB[tagA[7]]"), "8");
+  // The tag only takes over calls it appears in.
+  assert_eq!(run("tagA /: fB[tagA[x_]] := x + 1\nfB[3]"), "fB[3]");
+  // The evaluated (`=`) and the removing (`=.`) forms parse here too.
+  assert_eq!(run("tagC /: fD[tagC] = 1 + 1\nfD[tagC]"), "2");
+  assert_eq!(
+    run("tagE /: fF[tagE[x_]] := x\ntagE /: fF[tagE[x_]] =.\nfF[tagE[5]]"),
+    "fF[tagE[5]]"
+  );
+}
+
+/// A `/;` condition on an upvalue names the pattern variables of the
+/// destructured argument. Those get rewritten to positions of the matched
+/// argument in the body, and the condition needs the same rewrite — without it
+/// the test looked at a free symbol and no call ever matched.
+#[test]
+fn an_upvalue_condition_sees_the_pattern_variables() {
+  assert_eq!(
+    run("tagG /: fH[tagG[x_]] := x + 1 /; x > 2\nfH[tagG[7]]"),
+    "8"
+  );
+  assert_eq!(
+    run("tagG /: fH[tagG[x_]] := x + 1 /; x > 2\nfH[tagG[1]]"),
+    "fH[tagG[1]]"
+  );
+  // Several variables, and a condition that reads them all.
+  let d = "tagI /: fJ[tagI[a_, b_]] := a - b /; VectorQ[{a, b}, NumericQ]\n";
+  assert_eq!(run(&format!("{d}fJ[tagI[9, 4]]")), "5");
+  assert_eq!(run(&format!("{d}fJ[tagI[9, z]]")), "fJ[tagI[9, z]]");
+}

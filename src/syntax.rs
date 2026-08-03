@@ -1846,6 +1846,23 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         _ => Expr::Identifier("Null".to_string()),
       }
     }
+    // `tag /: lhs := rhs` and friends parse as their own rules, handled at
+    // the top level on the pest pair. Reaching `pair_to_expr` instead (a
+    // notebook cell evaluated through `interpret_to_expr`, `ToExpression`,
+    // …) used to fall back to `Expr::Raw`, which re-parsed to the same
+    // `Raw` and looped forever. Give it the call form it means.
+    Rule::TagSetDelayed | Rule::TagSet | Rule::TagUnset => {
+      let name = match pair.as_rule() {
+        Rule::TagSetDelayed => "TagSetDelayed",
+        Rule::TagSet => "TagSet",
+        _ => "TagUnset",
+      };
+      let args: Vec<Expr> = pair.into_inner().map(pair_to_expr).collect();
+      Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.into(),
+      }
+    }
     Rule::List => parse_list(pair),
     Rule::ListExtended => parse_list_extended(pair),
     Rule::FunctionCallExtended => parse_function_call_extended(pair),
@@ -2851,6 +2868,39 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       //       PatternTestLhsBare in this case.
       let full = pair.as_str();
       let inner_pairs: Vec<_> = pair.into_inner().collect();
+      // (c) parenthesized form: `(r_)?Positive`, which is the same pattern
+      //     as `r_?Positive` — the brackets only group.
+      if matches!(
+        inner_pairs.first().map(|p| p.as_rule()),
+        Some(Rule::PatternTestLhsParen)
+      ) {
+        let mut iter = inner_pairs.into_iter();
+        let lhs = pair_to_expr(
+          iter
+            .next()
+            .unwrap()
+            .into_inner()
+            .next()
+            .expect("parenthesized left side"),
+        );
+        let test = pair_to_expr(iter.next().unwrap());
+        return match &lhs {
+          Expr::Pattern {
+            name,
+            head,
+            blank_type,
+          } => Expr::PatternTest {
+            name: name.clone(),
+            head: head.clone(),
+            blank_type: *blank_type,
+            test: Box::new(test),
+          },
+          _ => Expr::FunctionCall {
+            name: "PatternTest".to_string(),
+            args: vec![lhs, test].into(),
+          },
+        };
+      }
       if matches!(
         inner_pairs.first().map(|p| p.as_rule()),
         Some(Rule::PatternTestLhsBare)

@@ -131,6 +131,15 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::Rng;
 
+  // `RandomReal` takes options — `WorkingPrecision -> p` above all — after
+  // its range and dimensions. (`RandomInteger` does not: wolframscript
+  // reports `RandomInteger::argb` for a third argument.) The precision only
+  // changes how many digits are asked for, and Woxi samples machine reals,
+  // so the option is read and dropped.
+  let (args, working_precision) = split_random_options(args);
+  let args = args.as_slice();
+  let _ = working_precision;
+
   // RandomReal[dist] / RandomReal[dist, n] samples from a continuous
   // distribution, exactly like RandomVariate (e.g. `RandomReal[
   // UniformDistribution[{-2, 2}], 10]`). Delegate to RandomVariate so
@@ -140,6 +149,29 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && name.ends_with("Distribution")
   {
     return random_variate_ast(args);
+  }
+
+  // A distribution of the caller's own: Wolfram draws from anything that
+  // defines `Random`DistributionVector[dist, n, precision]`, which is how a
+  // Demonstration adds a distribution of its own without touching the
+  // built-in list. `RandomReal[dist]` is one draw — the first row of a
+  // vector of length one, so a distribution over points gives a point.
+  if let Some(dist @ Expr::FunctionCall { name, .. }) = args.first()
+    && !name.ends_with("Distribution")
+    && args.len() <= 2
+    && let Some(count) = match args.get(1) {
+      None => Some(None),
+      Some(Expr::Integer(n)) if *n >= 0 => Some(Some(*n)),
+      Some(_) => None,
+    }
+    && let Some(drawn) = distribution_vector_draw(dist, count.unwrap_or(1))
+  {
+    return Ok(match (count, &drawn) {
+      (None, Expr::List(rows)) => {
+        rows.first().cloned().unwrap_or(Expr::List(vec![].into()))
+      }
+      _ => drawn,
+    });
   }
 
   match args.len() {
@@ -158,19 +190,26 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })))
       }
       Expr::List(items) if items.len() == 2 => {
-        let min = expr_to_num(&items[0]).ok_or_else(|| {
+        let min = try_eval_to_f64(&items[0]).ok_or_else(|| {
           InterpreterError::EvaluationError("RandomReal: invalid min".into())
         })?;
-        let max = expr_to_num(&items[1]).ok_or_else(|| {
+        let max = try_eval_to_f64(&items[1]).ok_or_else(|| {
           InterpreterError::EvaluationError("RandomReal: invalid max".into())
         })?;
         Ok(Expr::Real(crate::with_rng(|rng| {
           min + rng.gen_range(0.0..1.0) * (max - min)
         })))
       }
-      _ => Err(InterpreterError::EvaluationError(
-        "RandomReal: invalid argument".into(),
-      )),
+      // Any numeric bound, not just a literal: `RandomReal[2 Pi]` draws
+      // from 0 to 2π.
+      other => match try_eval_to_f64(other) {
+        Some(max) => Ok(Expr::Real(crate::with_rng(|rng| {
+          rng.gen_range(0.0..1.0) * max
+        }))),
+        None => Err(InterpreterError::EvaluationError(
+          "RandomReal: invalid argument".into(),
+        )),
+      },
     },
     2 => {
       // RandomReal[range, n] or RandomReal[range, {n}] or RandomReal[range, {n, m, ...}]
@@ -195,19 +234,22 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Integer(m) => (0.0, *m as f64),
         Expr::Real(m) => (0.0, *m),
         Expr::List(items) if items.len() == 2 => {
-          let lo = expr_to_num(&items[0]).ok_or_else(|| {
+          let lo = try_eval_to_f64(&items[0]).ok_or_else(|| {
             InterpreterError::EvaluationError("RandomReal: invalid min".into())
           })?;
-          let hi = expr_to_num(&items[1]).ok_or_else(|| {
+          let hi = try_eval_to_f64(&items[1]).ok_or_else(|| {
             InterpreterError::EvaluationError("RandomReal: invalid max".into())
           })?;
           (lo, hi)
         }
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "RandomReal: invalid range".into(),
-          ));
-        }
+        other => match try_eval_to_f64(other) {
+          Some(max) => (0.0, max),
+          None => {
+            return Err(InterpreterError::EvaluationError(
+              "RandomReal: invalid range".into(),
+            ));
+          }
+        },
       };
 
       fn make_random_array(dims: &[usize], min: f64, max: f64) -> Expr {
@@ -233,6 +275,55 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => Err(InterpreterError::EvaluationError(
       "RandomReal expects 0, 1, or 2 arguments".into(),
     )),
+  }
+}
+
+/// Split trailing option rules off a random-number call, returning the
+/// positional arguments and the `WorkingPrecision` value if one was given.
+fn split_random_options(args: &[Expr]) -> (Vec<Expr>, Option<Expr>) {
+  let mut positional = Vec::with_capacity(args.len());
+  let mut precision = None;
+  for arg in args {
+    match arg {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => {
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "WorkingPrecision")
+        {
+          precision = Some(replacement.as_ref().clone());
+        }
+      }
+      other => positional.push(other.clone()),
+    }
+  }
+  (positional, precision)
+}
+
+/// Draw `n` values from a distribution the user defined by giving
+/// `Random`DistributionVector[dist, n, precision]` a rule of its own.
+/// `None` when there is no such definition, or it did not produce a list of
+/// the length asked for.
+fn distribution_vector_draw(dist: &Expr, n: i128) -> Option<Expr> {
+  let call = Expr::FunctionCall {
+    name: "Random`DistributionVector".to_string(),
+    args: vec![
+      dist.clone(),
+      Expr::Integer(n),
+      Expr::Identifier("MachinePrecision".to_string()),
+    ]
+    .into(),
+  };
+  match crate::evaluator::evaluate_expr_to_expr(&call) {
+    Ok(result) => match &result {
+      Expr::List(items) if items.len() == n as usize => Some(result),
+      _ => None,
+    },
+    Err(_) => None,
   }
 }
 

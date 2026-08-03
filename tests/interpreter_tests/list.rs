@@ -5773,6 +5773,86 @@ mod random_real {
     assert!((0.0..1.0).contains(&result));
   }
 
+  /// `RandomReal` takes options after its range and dimensions —
+  /// `WorkingPrecision` above all — where `RandomInteger` does not
+  /// (wolframscript reports `RandomInteger::argb` for a third argument).
+  #[test]
+  fn options_after_the_dimensions() {
+    assert_eq!(
+      interpret("Length[RandomReal[{0, 1}, 4, WorkingPrecision -> 20]]")
+        .unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret(
+        "Dimensions[RandomReal[{0, 1}, {2, 3}, \
+         WorkingPrecision -> MachinePrecision]]"
+      )
+      .unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(
+      interpret("Head[RandomReal[1, WorkingPrecision -> MachinePrecision]]")
+        .unwrap(),
+      "Real"
+    );
+  }
+
+  /// Any numeric bound, not only a literal: a distribution written by hand
+  /// draws its angle from `RandomReal[2 Pi, n]`.
+  #[test]
+  fn a_symbolic_numeric_bound() {
+    assert_eq!(interpret("Head[RandomReal[2 Pi]]").unwrap(), "Real");
+    assert_eq!(interpret("Length[RandomReal[2 Pi, 3]]").unwrap(), "3");
+    assert_eq!(interpret("Length[RandomReal[{0, Pi}, 3]]").unwrap(), "3");
+    assert_eq!(interpret("Head[RandomReal[Sqrt[2]]]").unwrap(), "Real");
+    assert_eq!(
+      interpret("AllTrue[RandomReal[2 Pi, 50], 0 <= # <= 2 Pi &]").unwrap(),
+      "True"
+    );
+  }
+
+  /// A distribution of the caller's own: Wolfram draws from anything that
+  /// defines `Random`DistributionVector[dist, n, precision]`, which is how
+  /// a Demonstration adds a distribution without touching the built-in
+  /// list. `RandomReal[dist]` is one draw, so a distribution over points
+  /// gives a point.
+  #[test]
+  fn a_distribution_defined_by_the_caller() {
+    let setup = "Disk2D /: Random`DistributionVector[Disk2D[(r_)?Positive], \
+       n_Integer, (p_)?Positive] := \
+       r Sqrt[RandomReal[1, n, WorkingPrecision -> p]] \
+       Transpose[({Cos[#1], Sin[#1]} &)[\
+         RandomReal[2 Pi, n, WorkingPrecision -> p]]]; ";
+    assert_eq!(
+      interpret(&format!("{setup} Dimensions[RandomReal[Disk2D[1], 5]]"))
+        .unwrap(),
+      "{5, 2}"
+    );
+    assert_eq!(
+      interpret(&format!("{setup} Length[RandomReal[Disk2D[1]]]")).unwrap(),
+      "2",
+      "a single draw is one point, not a list of one"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "{setup} AllTrue[RandomReal[Disk2D[1], 30], Norm[#] <= 1 &]"
+      ))
+      .unwrap(),
+      "True"
+    );
+    // A one-dimensional one gives plain numbers.
+    let scalar = "Shifted /: Random`DistributionVector[Shifted[a_, b_], \
+       n_Integer, p_?Positive] := RandomReal[{a, b}, n] + 100; ";
+    assert_eq!(
+      interpret(&format!(
+        "{scalar} AllTrue[RandomReal[Shifted[0, 1], 20], 100 <= # <= 101 &]"
+      ))
+      .unwrap(),
+      "True"
+    );
+  }
+
   // Regression: `RandomReal[UniformDistribution[{a, b}], n]` used to fail
   // with "invalid range". A distribution argument samples from it, the
   // way `RandomVariate` (and `RandomInteger` for the discrete ones) does.

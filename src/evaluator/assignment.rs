@@ -3138,6 +3138,11 @@ pub fn tag_set_delayed_ast(
     std::collections::HashMap::new();
   // Extra conditions for repeated pattern variables
   let mut extra_conditions: Vec<Expr> = Vec::new();
+  // Rewrites applied to the body when a destructured argument's pattern
+  // variables become `Part[_upN, j]`. A `/;` condition names the same
+  // variables, so it needs the same rewrites — without them the condition
+  // tests a free symbol and the definition never matches.
+  let mut inner_substitutions: Vec<(String, Expr)> = Vec::new();
 
   for (i, arg) in lhs_args.iter().enumerate() {
     let arg = unwrap_longest_shortest(arg);
@@ -3191,6 +3196,7 @@ pub fn tag_set_delayed_ast(
               &pat_name,
               &part_expr,
             );
+            inner_substitutions.push((pat_name, part_expr));
           }
         }
 
@@ -3256,6 +3262,11 @@ pub fn tag_set_delayed_ast(
 
   // Attach any conditions from the LHS (/;) or body to condition slots
   for extra_cond in lhs_condition.into_iter().chain(body_condition.as_ref()) {
+    let extra_cond = &inner_substitutions
+      .iter()
+      .fold(extra_cond.clone(), |acc, (name, part)| {
+        crate::syntax::substitute_variable(&acc, name, part)
+      });
     let mut attached = false;
     for c in conditions.iter_mut() {
       if c.is_none() {

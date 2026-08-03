@@ -9538,6 +9538,17 @@ mod champernowne_number_tests {
   // predicates and comparisons.
   #[test]
   fn symbolic_and_numeric_status() {
+    // `MachinePrecision` carries a number too (about 15.95), so the
+    // numeric predicates answer for it — a distribution written by hand
+    // tests its precision argument with `?Positive`.
+    assert_eq!(interpret("NumericQ[MachinePrecision]").unwrap(), "True");
+    assert_eq!(interpret("Positive[MachinePrecision]").unwrap(), "True");
+    assert_eq!(
+      interpret("N[MachinePrecision]").unwrap(),
+      "15.954589770191003"
+    );
+    // Infinity still is not numeric.
+    assert_eq!(interpret("NumericQ[Infinity]").unwrap(), "False");
     assert_eq!(
       interpret("ChampernowneNumber[]").unwrap(),
       "ChampernowneNumber[]"

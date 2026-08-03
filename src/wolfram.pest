@@ -627,8 +627,15 @@ ExpressionNoImplicit = {
 PatternTestFunc = _{ Identifier | "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" }
 PatternTest = {
     PatternName? ~ PatternBlanks ~ PatternTestHead? ~ "?" ~ PatternTestFunc
+  | PatternTestLhsParen ~ "?" ~ !"?" ~ PatternTestFunc ~ BracketArgs*
   | PatternTestLhsBare ~ "?" ~ !"?" ~ PatternTestFunc ~ BracketArgs*
 }
+// A parenthesized left side — `(r_)?Positive` is the same pattern as
+// `r_?Positive`, and a Demonstration writes its argument tests that way.
+// Only a *pattern* may be bracketed here: letting it be any expression
+// makes every parenthesized group try this branch, and a deeply nested one
+// then runs the parser out of its call budget.
+PatternTestLhsParen = { "(" ~ (PatternWithHead | PatternSimple) ~ ")" }
 // LHS for the bare-infix form: an Identifier that does NOT end with an
 // underscore — `!"_"` after Identifier ensures the pattern branch above
 // keeps ownership of cases like `x_?test`.

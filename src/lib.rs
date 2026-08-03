@@ -4797,6 +4797,39 @@ fn store_function_definition(
         let full_str = item.as_str();
         let mut pat_inner = item.into_inner();
         let first = pat_inner.next().unwrap();
+        // `(x_)?test` — the brackets only group, so read the pattern they
+        // hold and treat it as if it had been written without them.
+        if first.as_rule() == Rule::PatternTestLhsParen {
+          let inner = first
+            .into_inner()
+            .next()
+            .map(syntax::pair_to_expr)
+            .unwrap_or(syntax::Expr::Identifier(String::new()));
+          let test_expr = syntax::pair_to_expr(pat_inner.next().unwrap());
+          let (param_name, head, bt) = match &inner {
+            syntax::Expr::Pattern {
+              name,
+              head,
+              blank_type,
+            } => (name.clone(), head.clone(), *blank_type),
+            _ => (format!("__pt{}", params.len()), None, 1u8),
+          };
+          let param_name = if param_name.is_empty() {
+            format!("__pt{}", params.len())
+          } else {
+            param_name
+          };
+          conditions.push(Some(syntax::Expr::FunctionCall {
+            name: syntax::expr_to_string(&test_expr),
+            args: vec![syntax::Expr::Identifier(param_name.clone())].into(),
+          }));
+          params.push(param_name);
+          defaults.push(None);
+          heads.push(head);
+          blank_types.push(bt);
+          has_any_condition = true;
+          continue;
+        }
         let (param_name, remaining) = if first.as_rule() == Rule::PatternName {
           (first.as_str().to_owned(), pat_inner.next().unwrap())
         } else {
