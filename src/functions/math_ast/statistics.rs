@@ -658,6 +658,13 @@ fn mixture_variance(dargs: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
 }
 
 pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(dist) = args.first()
+    && crate::functions::math_ast::distributions::reject_bad_distribution_params(
+      dist,
+    )
+  {
+    return Ok(unevaluated("Mean", args));
+  }
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Mean expects exactly 1 argument".into(),
@@ -1097,6 +1104,13 @@ fn is_inexact_number(e: &Expr) -> bool {
 }
 
 pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(dist) = args.first()
+    && crate::functions::math_ast::distributions::reject_bad_distribution_params(
+      dist,
+    )
+  {
+    return Ok(unevaluated("Variance", args));
+  }
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Variance expects exactly 1 argument".into(),
@@ -4189,6 +4203,13 @@ pub fn rational_ceil(num: i128, den: i128) -> i128 {
 /// Quantile[list, q] - the q-th quantile of the list
 /// Quantile[list, {q1, q2, ...}] - multiple quantiles
 pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(dist) = args.first()
+    && crate::functions::math_ast::distributions::reject_bad_distribution_params(
+      dist,
+    )
+  {
+    return Ok(unevaluated("Quantile", args));
+  }
   if args.len() != 2 && args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
       "Quantile expects 2 or 3 arguments".into(),

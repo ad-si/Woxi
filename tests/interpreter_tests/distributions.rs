@@ -780,6 +780,89 @@ mod censored_distribution {
   }
 }
 
+mod out_of_range_parameters {
+  use super::*;
+
+  /// A distribution whose scale or shape is not strictly positive is
+  /// refused where it would be *used*: Wolfram reports `<Dist>::posprm`
+  /// naming the first offending parameter and leaves the call unevaluated.
+  /// Woxi used to compute with it — `PDF[NormalDistribution[0, -1], 0.3]`
+  /// came back as a negative probability density.
+  #[test]
+  fn using_one_reports_posprm_and_stays_unevaluated() {
+    for (code, dist, value, position) in [
+      (
+        "PDF[NormalDistribution[0, -1], 0.3]",
+        "NormalDistribution[0, -1]",
+        "-1",
+        2,
+      ),
+      (
+        "CDF[GammaDistribution[-1, 2], 0.3]",
+        "GammaDistribution[-1, 2]",
+        "-1",
+        1,
+      ),
+      (
+        "Quantile[BetaDistribution[4, -1], 0.5]",
+        "BetaDistribution[4, -1]",
+        "-1",
+        2,
+      ),
+      (
+        "Mean[WeibullDistribution[1, -2]]",
+        "WeibullDistribution[1, -2]",
+        "-2",
+        2,
+      ),
+      (
+        "Variance[ChiSquareDistribution[-1]]",
+        "ChiSquareDistribution[-1]",
+        "-1",
+        1,
+      ),
+      // Zero is not positive either.
+      (
+        "PDF[ExponentialDistribution[0], 1]",
+        "ExponentialDistribution[0]",
+        "0",
+        1,
+      ),
+    ] {
+      let result = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(result.result, code, "{code} must stay unevaluated");
+      let head = dist.split('[').next().unwrap();
+      let expected = format!(
+        "{head}::posprm: Parameter {value} at position {position} in {dist} \
+         is expected to be positive."
+      );
+      assert!(
+        result.warnings.iter().any(|w| w.contains(&expected)),
+        "{code}: expected {expected:?}, got {:?}",
+        result.warnings
+      );
+    }
+  }
+
+  /// Valid parameters are untouched, and a symbolic one says nothing either
+  /// way — only a value known to be non-positive is refused.
+  #[test]
+  fn valid_and_symbolic_parameters_are_left_alone() {
+    assert_eq!(interpret("Mean[NormalDistribution[3, 2]]").unwrap(), "3");
+    assert_eq!(
+      interpret("PDF[ExponentialDistribution[2], 0]").unwrap(),
+      "2"
+    );
+    let symbolic =
+      woxi::interpret_with_stdout("Mean[NormalDistribution[0, s]]").unwrap();
+    assert!(
+      !symbolic.warnings.iter().any(|w| w.contains("posprm")),
+      "a symbolic parameter must not be refused: {:?}",
+      symbolic.warnings
+    );
+  }
+}
+
 mod distribution_parameter_q {
   use super::*;
 

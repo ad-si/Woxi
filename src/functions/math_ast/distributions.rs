@@ -119,7 +119,62 @@ pub fn erlang_gamma_dargs(
 
 /// PDF[dist, x] - Probability density function
 /// PDF[dist] - Pure function form (returns unevaluated for now)
+/// The 1-based argument positions a distribution requires to be strictly
+/// positive. Read off wolframscript, which reports `<Dist>::posprm` naming
+/// the first offending one and refuses to compute with it.
+fn positive_param_positions(name: &str) -> &'static [usize] {
+  match name {
+    "BetaDistribution" | "GammaDistribution" | "WeibullDistribution" => &[1, 2],
+    "NormalDistribution" | "LogNormalDistribution" | "CauchyDistribution" => {
+      &[2]
+    }
+    "ExponentialDistribution"
+    | "PoissonDistribution"
+    | "ChiSquareDistribution"
+    | "StudentTDistribution"
+    | "RayleighDistribution" => &[1],
+    _ => &[],
+  }
+}
+
+/// Report and refuse a distribution whose parameters are out of range, the
+/// way Wolfram does: a scale or shape that is not strictly positive gets a
+/// `<Dist>::posprm` message naming the first offending parameter, and the
+/// call that would have used it stays unevaluated. Returns `true` when the
+/// caller should hand back its own arguments unevaluated.
+pub(crate) fn reject_bad_distribution_params(dist: &Expr) -> bool {
+  let Expr::FunctionCall { name, args } = dist else {
+    return false;
+  };
+  for &pos in positive_param_positions(name) {
+    let Some(arg) = args.get(pos - 1) else {
+      continue;
+    };
+    // Only a value that is *known* to be non-positive is refused; a
+    // symbolic parameter says nothing either way.
+    let Some(v) = crate::functions::math_ast::try_eval_to_f64(arg) else {
+      continue;
+    };
+    if v > 0.0 {
+      continue;
+    }
+    crate::emit_message(&format!(
+      "{name}::posprm: Parameter {} at position {pos} in {} is expected to \
+       be positive.",
+      crate::syntax::expr_to_string(arg),
+      crate::syntax::expr_to_string(dist),
+    ));
+    return true;
+  }
+  false
+}
+
 pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(dist) = args.first()
+    && reject_bad_distribution_params(dist)
+  {
+    return Ok(unevaluated("PDF", args));
+  }
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
       "PDF expects 1 or 2 arguments".into(),
@@ -1753,6 +1808,11 @@ fn is_multivariate_distribution(name: &str) -> bool {
 }
 
 pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(dist) = args.first()
+    && reject_bad_distribution_params(dist)
+  {
+    return Ok(unevaluated("CDF", args));
+  }
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
       "CDF expects 1 or 2 arguments".into(),

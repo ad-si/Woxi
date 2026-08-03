@@ -1184,6 +1184,13 @@ pub fn random_permutation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// RandomVariate[dist] or RandomVariate[dist, n]
 /// Supports UniformDistribution[{min, max}] and NormalDistribution[mu, sigma]
 pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(dist) = args.first()
+    && crate::functions::math_ast::distributions::reject_bad_distribution_params(
+      dist,
+    )
+  {
+    return Ok(unevaluated("RandomVariate", args));
+  }
   use rand::Rng;
   use rand_distr::{Distribution, Normal};
 
