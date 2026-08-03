@@ -7294,6 +7294,78 @@ mod nsolve {
       "5"
     );
   }
+
+  // A bare polynomial in place of an equation means `poly == 0`. Previously
+  // this fell through to Solve and only produced a Solve::naqs message.
+  #[test]
+  fn bare_polynomial_means_equal_zero() {
+    assert_eq!(
+      interpret("NSolve[x^2 - 1, x]").unwrap(),
+      interpret("NSolve[x^2 - 1 == 0, x]").unwrap()
+    );
+    assert_eq!(
+      interpret("NSolve[x^3 - 2 x + 1, x]").unwrap(),
+      interpret("NSolve[x^3 - 2 x + 1 == 0, x]").unwrap()
+    );
+    // No message is emitted for the accepted form.
+    assert_eq!(interpret("NSolve[x^2 - 1, x]; $MessageList").unwrap(), "{}");
+    // A list of bare polynomials is a system of equations.
+    assert_eq!(
+      interpret("NSolve[{x + y - 3, x - y - 1}, {x, y}]").unwrap(),
+      "{{x -> 2., y -> 1.}}"
+    );
+    // Mixed lists keep the parts that already are equations.
+    assert_eq!(
+      interpret("NSolve[{x + y - 3, x - y == 1}, {x, y}]").unwrap(),
+      "{{x -> 2., y -> 1.}}"
+    );
+  }
+
+  // The optional third argument may be a working precision rather than a
+  // domain; it must not be mistaken for one.
+  #[test]
+  fn precision_third_argument() {
+    for spec in ["MachinePrecision", "20"] {
+      assert_eq!(
+        interpret(&format!("NSolve[x^2 - 2 == 0, x, {spec}]")).unwrap(),
+        interpret("NSolve[x^2 - 2 == 0, x]").unwrap()
+      );
+      // The complex roots survive — a precision is not a `Reals` domain.
+      assert_eq!(
+        interpret(&format!("Length[NSolve[x^2 + 1 == 0, x, {spec}]]")).unwrap(),
+        "2"
+      );
+    }
+  }
+
+  // Every numeric root finder ends in the same polish-and-pair step, so
+  // NSolve, NRoots and N[Root[…]] report identical digits and conjugate pairs
+  // come out exactly mirrored.
+  #[test]
+  fn conjugate_pairs_are_exact_mirrors() {
+    // Sum of all roots equals -a[n-1]/a[n] exactly when the pairs mirror.
+    assert_eq!(
+      interpret("Im[Total[x /. NSolve[x^10 - 3 x + 1 == 0, x]]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "(x /. NSolve[x^10 - 3 x + 1 == 0, x]) == \
+         (x /. NSolve[x^10 - 3 x + 1, x])"
+      )
+      .unwrap(),
+      "True"
+    );
+    // NRoots agrees digit for digit with NSolve.
+    assert_eq!(
+      interpret(
+        "(x /. NSolve[x^10 - 3 x + 1 == 0, x]) == \
+         (x /. {ToRules[NRoots[x^10 - 3 x + 1 == 0, x]]})"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 // NSolveValues is the numeric analogue of SolveValues: it returns the variable

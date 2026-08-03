@@ -252,9 +252,16 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
       Some(crate::syntax::expr_to_string(e))
     }
     // A styled label reads as its content — a Demonstration writes its
-    // frame labels as `Style["force (kN)", 12]`.
+    // frame labels as `Style["force (kN)", 12]`. The same holds for the
+    // hover wrappers: `Tooltip[label, hint]` and `Annotation[label, …]`
+    // print as `label`, with the second argument only shown on hover, so a
+    // label written that way must not vanish from the axis.
     Expr::FunctionCall { name, args }
-      if (name == "Style" || name == "Text") && !args.is_empty() =>
+      if (name == "Style"
+        || name == "Text"
+        || name == "Tooltip"
+        || name == "Annotation")
+        && !args.is_empty() =>
     {
       expr_to_label(&args[0])
     }

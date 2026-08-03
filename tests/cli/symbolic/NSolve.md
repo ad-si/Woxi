@@ -7,6 +7,13 @@ $ wo 'NSolve[x^2 - 2 == 0, x]'
 {{x -> -1.4142135623730951}, {x -> 1.414213562373095}}
 ```
 
+A bare polynomial stands for the equation `poly == 0`:
+
+```scrut
+$ wo 'NSolve[x^2 - 2, x]'
+{{x -> -1.4142135623730951}, {x -> 1.414213562373095}}
+```
+
 A cubic with machine-real coefficients has one real root and a conjugate
 pair:
 

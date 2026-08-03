@@ -11,6 +11,8 @@ Graphics
 
 - **`PlotRange`** — y-axis range as `{ymin, ymax}` or full
   `{{xmin, xmax}, {ymin, ymax}}`; also `All` or `Automatic`.
+  `Automatic` leaves out extreme outliers so a pole can't flatten the rest
+  of the curve; `All` shows every sampled value.
 - **`PlotStyle`** — one directive (`Red`, `Dashed`, `Thickness[0.01]`)
   or a list applied per curve.
 - **`AxesLabel`** — `{xLabel, yLabel}`.
@@ -56,5 +58,13 @@ neighbouring ticks apart:
 
 ```scrut
 $ wo 'StringContainsQ[ExportString[Plot[x, {x, 0, 0.001}], "SVG"], "0.0002"]'
+True
+```
+
+`PlotRange -> All` keeps a steep curve inside the frame — here the top tick
+reaches E^10, which the automatic range trims away:
+
+```scrut
+$ wo 'StringContainsQ[ExportString[Plot[E^x, {x, 0, 10}, PlotRange -> All], "SVG"], "20000"]'
 True
 ```

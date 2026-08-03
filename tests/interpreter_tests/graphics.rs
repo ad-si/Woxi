@@ -1156,6 +1156,40 @@ mod graphics {
       ));
     }
 
+    // `PlotRange -> All` shows every sampled value. The automatic range drops
+    // extreme values as outliers, which for a steep curve cut the top off and
+    // let it run out of the frame.
+    #[test]
+    fn plot_range_all_keeps_the_whole_curve() {
+      let tick_labels = |code: &str| -> Vec<f64> {
+        export_svg(code)
+          .split("<text ")
+          .skip(1)
+          .filter_map(|t| t.split_once('>'))
+          .filter_map(|(_, r)| r.split_once("</text>"))
+          .filter_map(|(v, _)| v.trim().parse::<f64>().ok())
+          .collect()
+      };
+      // E^10 is about 22026.
+      let all = tick_labels("Plot[E^x, {x, 0, 10}, PlotRange -> All]");
+      assert!(
+        all.iter().any(|&v| v >= 20000.0),
+        "PlotRange -> All must reach the curve's maximum, ticks: {all:?}"
+      );
+      let automatic = tick_labels("Plot[E^x, {x, 0, 10}]");
+      assert!(
+        !automatic.iter().any(|&v| v >= 20000.0),
+        "the automatic range still trims outliers, ticks: {automatic:?}"
+      );
+      // An explicit range still wins over All in the y slot.
+      let explicit =
+        tick_labels("Plot[E^x, {x, 0, 10}, PlotRange -> {{0, 10}, {0, 5}}]");
+      assert!(
+        !explicit.iter().any(|&v| v > 10.0),
+        "an explicit range is respected, ticks: {explicit:?}"
+      );
+    }
+
     #[test]
     fn plot_range_reversed_bounds_normalize() {
       // Wolfram normalizes a reversed range: `PlotRange -> {3, -3}` plots
@@ -3099,6 +3133,56 @@ mod plot3d {
       );
     }
 
+    /// A range with coinciding endpoints has nothing to sample: Wolfram
+    /// reports `head::plld` and hands the call back unevaluated. Woxi used
+    /// to draw an empty picture instead — which a Demonstration hits as
+    /// soon as an animation slider reaches the start of its own range.
+    #[test]
+    fn a_degenerate_plot_range_is_refused() {
+      for (code, head, var, range) in [
+        ("Plot[x, {x, 1, 1}]", "Plot", "x", "{x, 1, 1}"),
+        (
+          "ParametricPlot[{u, u^2}, {u, 0.01, 0.01}]",
+          "ParametricPlot",
+          "u",
+          "{u, 0.01, 0.01}",
+        ),
+        (
+          "ContourPlot[x + y, {x, 1, 1}, {y, 0, 1}]",
+          "ContourPlot",
+          "x",
+          "{x, 1, 1}",
+        ),
+        (
+          "Plot3D[x + y, {x, 0, 1}, {y, 2, 2}]",
+          "Plot3D",
+          "y",
+          "{y, 2, 2}",
+        ),
+      ] {
+        let result = woxi::interpret_with_stdout(code).unwrap();
+        assert_eq!(
+          woxi::interpret(&format!("Head[{code}]")).unwrap(),
+          head,
+          "{code} must stay unevaluated"
+        );
+        let expected = format!(
+          "{head}::plld: Endpoints for {var} in {range} must have distinct \
+           machine-precision numerical values."
+        );
+        assert!(
+          result.warnings.iter().any(|w| w.contains(&expected)),
+          "{code}: expected {expected:?}, got {:?}",
+          result.warnings
+        );
+      }
+      // A reversed range is fine — it samples backwards.
+      assert_eq!(
+        woxi::interpret("Head[ParametricPlot[{u, u^2}, {u, 1, 0}]]").unwrap(),
+        "Graphics"
+      );
+    }
+
     #[test]
     fn plot_singularity_reasonable_y_range() {
       // Plot[1/x, {x, -3, 3}] has a singularity at x=0.
@@ -3127,6 +3211,60 @@ mod plot3d {
       assert!(
         y_min >= -20.0,
         "y-axis min tick {y_min} is too extreme; singularity should be clipped"
+      );
+    }
+
+    // End-to-end shape of a Demonstration that checks a numerical Laplace
+    // inversion against the closed form: a helper builds `Function[s, F]` from
+    // its arguments and contracts the transform sampled at quadrature nodes
+    // against their weights, the result is frozen into a definition with `=`
+    // (so the body is one expression in `t`), and both curves are plotted on
+    // top of each other. Every step of that chain used to fail somewhere.
+    #[test]
+    fn numerical_laplace_inversion_overlays_closed_form() {
+      let svg = export_svg(
+        "invert[bigf_, s_, t_] := Module[{nodes, weights}, \
+           nodes = x /. NSolve[HypergeometricPFQ[{-6, 6}, {}, x], x]; \
+           weights = Map[-# ((11)/HypergeometricPFQ[{-5, 5}, {}, #])^2/6 &, \
+             nodes]; \
+           (weights . Function[s, bigf][1/nodes/t])/t]; \
+         approx[t_] = invert[1/Sqrt[1 + s^2], s, t]; \
+         Plot[{Chop[approx[t]], \
+               InverseLaplaceTransform[1/Sqrt[1 + s^2], s, t]}, \
+           {t, 1, 6}, PlotStyle -> {{Red, Thick}, {Blue, Dashed, Thick}}]",
+      );
+      // Both curves are drawn: the quadrature in red, the exact BesselJ in
+      // blue. A complex-valued quadrature (unmatched conjugate roots) or an
+      // inverse transform left unevaluated at a number drops one of them.
+      assert!(
+        svg.contains("#FF0000"),
+        "the numerical inversion must be drawn: {svg}"
+      );
+      assert!(
+        svg.contains("rgb(0,0,255)"),
+        "the closed form must be drawn: {svg}"
+      );
+    }
+
+    // The same quadrature, checked numerically rather than through a picture:
+    // a 6-node Salzer rule reproduces BesselJ[0, t] to a few digits, and the
+    // result is real — the conjugate pairs cancel exactly.
+    #[test]
+    fn numerical_laplace_inversion_matches_bessel() {
+      let value = interpret(
+        "invert[bigf_, s_, t_] := Module[{nodes, weights}, \
+           nodes = x /. NSolve[HypergeometricPFQ[{-6, 6}, {}, x], x]; \
+           weights = Map[-# ((11)/HypergeometricPFQ[{-5, 5}, {}, #])^2/6 &, \
+             nodes]; \
+           (weights . Function[s, bigf][1/nodes/t])/t]; \
+         Chop[invert[1/Sqrt[1 + s^2], s, 2.]]",
+      )
+      .unwrap();
+      let value: f64 = value.parse().expect("a real number, got {value}");
+      let exact: f64 = interpret("BesselJ[0, 2.]").unwrap().parse().unwrap();
+      assert!(
+        (value - exact).abs() < 1e-4,
+        "6-node Salzer rule gave {value}, BesselJ[0, 2.] is {exact}"
       );
     }
   }
@@ -3439,6 +3577,43 @@ mod plot3d {
       );
     }
 
+    /// A `Text` label written as a `Row` of styled parts — the `f(x)` a
+    /// Demonstration writes beside a point — takes the font directives its
+    /// parts agree on. It used to be drawn at the default size, noticeably
+    /// smaller than the single-`Style` labels around it.
+    #[test]
+    fn graphics_text_row_takes_the_font_its_parts_agree_on() {
+      let attr = |svg: &str, label: &str, name: &str| -> String {
+        svg
+          .lines()
+          .find(|l| l.ends_with(&format!(">{label}</text>")))
+          .unwrap_or_else(|| panic!("no {label} label in {svg}"))
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .unwrap_or("")
+          .to_string()
+      };
+      let svg = export_svg(
+        r#"Graphics[{Text[Row[{Style["f", Italic, 20], Style["(", 20],
+             Style["x", Italic, 20], Style[")", 20]}], {0.5, 0.5}],
+           Text[Row[{Style["a", 20], Style["b", 20]}], {0.2, 0.8}],
+           Text[Row[{"p", Style["q", 20]}], {0.8, 0.8}],
+           Text[Style["z", Italic, 20], {0.5, 0.2}]}]"#,
+      );
+      // Every part asks for 20 point, so the label is a 20-point label —
+      // the same size as the plain `Style` label beside it.
+      assert_eq!(attr(&svg, "f(x)", "font-size"), "20");
+      assert_eq!(attr(&svg, "z", "font-size"), "20");
+      // The parts disagree on slant (an italic letter, an upright bracket),
+      // so the label keeps its own upright setting.
+      assert_eq!(attr(&svg, "f(x)", "font-style"), "normal");
+      // Parts that agree on slant do carry it.
+      assert_eq!(attr(&svg, "ab", "font-size"), "20");
+      // A row with an unstyled part keeps the label's own size.
+      assert_eq!(attr(&svg, "pq", "font-size"), "14");
+    }
+
     /// Wolfram writes an `AxesLabel` at the end of its axis — the x label
     /// past the right edge, the y label above the top — and a `Style`
     /// around it carries its colour and slant into the label.
@@ -3690,6 +3865,27 @@ mod plot3d {
         "the title stacks above the y label"
       );
       assert!(!svg.contains("rotate("), "an AxesLabel is upright");
+    }
+
+    /// `Tooltip[label, hint]` prints as its first argument — the hint only
+    /// shows on hover — so an axis label written that way must still be
+    /// drawn. It used to disappear entirely, leaving the plot of the
+    /// cube-emptying Demonstration with an unlabelled y axis.
+    #[test]
+    fn axes_label_through_a_tooltip_still_prints() {
+      for wrapper in [
+        r#"Tooltip["YY", "hint"]"#,
+        r#"Annotation["YY", "meta"]"#,
+        r#"Tooltip[Row[{Style["Y", Italic], "Y"}], "hint"]"#,
+      ] {
+        let svg = export_svg(&format!(
+          "ListPlot[{{1, 2, 3}}, Joined -> True, \
+           AxesLabel -> {{\"XX\", {wrapper}}}]"
+        ));
+        assert!(svg.contains(">XX</text>"), "{wrapper}: {svg}");
+        assert!(svg.contains(">YY</text>"), "{wrapper}: {svg}");
+        assert!(!svg.contains("hint"), "the hint is not drawn: {svg}");
+      }
     }
 
     /// The Wolfram Language writes an `AxesLabel` at the *end* of its axis:
@@ -5845,6 +6041,98 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(
         svg.contains(">3</text>") && svg.contains(">-1</text>"),
         "Show cropped the control polygon out of the merged PlotRange"
+      );
+    }
+
+    /// Two iterators make `ParametricPlot` draw a *region* — the image of
+    /// the parameter rectangle — instead of a curve. The second iterator
+    /// used to be mistaken for an option, leaving the second parameter
+    /// symbolic and the picture empty.
+    #[test]
+    fn parametric_plot_two_parameters_draws_the_image_region() {
+      // The unit square maps to the square [0,2]x[0,2] under {u+v, u+v'}.
+      let svg = export_svg(
+        "ParametricPlot[{u + v, u - v}, {u, 0, 1}, {v, 0, 1}, \
+         AspectRatio -> Automatic]",
+      );
+      let quads = svg.matches("<polygon").count();
+      assert!(
+        quads > 100,
+        "the region is a filled mesh, got {quads} quads"
+      );
+      // Filled translucently in the default plot colour, with the image of
+      // the parameter rectangle's boundary stroked on top.
+      assert!(svg.contains("fill-opacity=\"0.3\""), "{svg}");
+      assert!(svg.contains("<polyline"), "no boundary curve: {svg}");
+      // The image spans x in [0, 2] and y in [-1, 1]: both axes must be
+      // labelled out that far, and no further.
+      for tick in ["2", "-1", "1"] {
+        assert!(
+          svg.contains(&format!(">{tick}</text>")),
+          "missing tick {tick}: {svg}"
+        );
+      }
+      assert!(!svg.contains(">3</text>"), "range too wide: {svg}");
+      assert!(!svg.contains("NaN"), "{svg}");
+    }
+
+    /// A region merges into a composite figure like any other layer: the
+    /// two-link mechanism Demonstration shows its arm, its trajectory and
+    /// its reachable area together. The region used to be dropped for
+    /// carrying neither plot data nor primitives.
+    #[test]
+    fn show_merges_a_parametric_region() {
+      let svg = export_svg(
+        "Show[{Graphics[{Line[{{0, 0}, {1, 1}}]}], \
+         ParametricPlot[{u + v, u - v}, {u, 0, 1}, {v, 0, 1}]}]",
+      );
+      assert!(
+        svg.matches("<polygon").count() > 100,
+        "Show dropped the region: {svg}"
+      );
+    }
+
+    /// `PlotStyle` travels with the curve into a `Show`: colour *and*
+    /// weight. Both used to be reset to the plot defaults on merge, so a
+    /// Demonstration's thick red trajectory came out a thin blue one.
+    #[test]
+    fn show_keeps_the_plot_style_of_a_merged_curve() {
+      let svg = export_svg(
+        "Show[{ParametricPlot[{u, u^2}, {u, 0, 2}, \
+         PlotStyle -> {Thick, Red}], Graphics[{Line[{{0, 0}, {1, 1}}]}]}]",
+      );
+      let curve = svg
+        .lines()
+        .find(|l| l.contains("stroke=\"rgb(255,0,0)\""))
+        .unwrap_or_else(|| panic!("the merged curve is not red: {svg}"));
+      let width: f64 = curve
+        .split("stroke-width=\"")
+        .nth(1)
+        .and_then(|r| r.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| panic!("no stroke width: {curve}"));
+      assert!(width > 1.5, "Thick was lost on merge: {curve}");
+    }
+
+    /// `Show` stacks its arguments in the order given — the last one on
+    /// top. A translucent region given last has to cover the curve given
+    /// before it, so plot layers cannot all be lifted above the primitive
+    /// ones.
+    #[test]
+    fn show_stacks_layers_in_argument_order() {
+      let svg = export_svg(
+        "Show[{ParametricPlot[{u, u}, {u, 0, 1}, PlotStyle -> Red], \
+         Graphics[{Blue, Polygon[{{0, 0}, {1, 0}, {1, 1}}]}]}]",
+      );
+      let curve = svg.find("stroke=\"rgb(255,0,0)\"");
+      let region = svg.find("fill=\"rgb(0,0,255)\"");
+      assert!(
+        curve.is_some() && region.is_some(),
+        "both layers must be drawn: {svg}"
+      );
+      assert!(
+        curve < region,
+        "the polygon given last must be drawn last: {svg}"
       );
     }
 
@@ -14673,6 +14961,37 @@ mod manipulate {
     }
   }
 
+  /// The variable spec is held (so the symbol survives) while the choice
+  /// list arrives evaluated, so an initial value written as an expression —
+  /// `{{fac, 10^6, "…"}, {1, 10, 10^6}}`, the sine-floor factor of the
+  /// cube-emptying Demonstration — has to be evaluated before it can be
+  /// matched. It used to fall back to the first choice, starting the widget
+  /// on the wrong value.
+  #[test]
+  fn spec_discrete_initial_value_is_evaluated_before_matching() {
+    let expr = interpret_to_expr(
+      "Manipulate[fac, {{fac, 10^6, \"factor\"}, \
+       {1, 2, 10, 20, 100, 10^3, 10^6}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete {
+        values,
+        initial_index,
+        ..
+      } => {
+        assert_eq!(values, &["1", "2", "10", "20", "100", "1000", "1000000"]);
+        assert_eq!(*initial_index, 6, "10^6 is the last choice, not the first");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+    assert_eq!(
+      manipulate_initial_bindings(&spec),
+      vec![("fac".to_string(), "1000000".to_string())]
+    );
+  }
+
   /// `Setter` also enumerates a numeric range into one choice per value,
   /// like the other per-value control types.
   #[test]
@@ -14743,6 +15062,26 @@ mod manipulate {
          TrackedSymbols -> Manipulate]"
       ),
       None
+    );
+    // `TrackedSymbols -> True` (and the other blanket spellings) also mean
+    // "track everything" — reading `True` as a variable name would leave
+    // every control untracked and freeze the display.
+    for blanket in ["True", "Full", "Automatic"] {
+      assert_eq!(
+        tracked(&format!(
+          "Manipulate[a + b, {{a, 0, 1}}, {{b, 0, 1}}, \
+           TrackedSymbols -> {blanket}]"
+        )),
+        None,
+        "TrackedSymbols -> {blanket} must track everything"
+      );
+    }
+    // `TrackedSymbols -> None` tracks nothing at all.
+    assert_eq!(
+      tracked(
+        "Manipulate[a + b, {a, 0, 1}, {b, 0, 1}, TrackedSymbols -> None]"
+      ),
+      Some(vec![])
     );
     assert_eq!(tracked("Manipulate[a, {a, 0, 1}]"), None);
     let expr = interpret_to_expr(

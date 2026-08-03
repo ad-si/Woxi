@@ -3656,6 +3656,47 @@ pub fn evaluate_expr_to_expr_inner(
               || matches!(idx, Expr::FunctionCall { name, .. } if name == "Span")))
       });
 
+      // Fast path for a chain of integer positions into a variable's stored
+      // list — `m[[i]][[j]]` and `m[[i, j]]` alike. `eval_part_base` below
+      // clones the whole stored value, so reading one cell of a table cost
+      // a copy of the entire table: a Demonstration stepping through a
+      // 7x3900 population history spent seconds per frame on those copies.
+      // Walking the stored value in place and cloning only the element
+      // found makes the read independent of the table's size.
+      if let Expr::Identifier(var_name) = base_expr
+        && indices.iter().all(|i| matches!(i, Expr::Integer(_)))
+      {
+        let elem = ENV.with(|env| -> Option<Expr> {
+          let env = env.borrow();
+          let Some(StoredValue::ExprVal(stored)) = env.get(var_name) else {
+            return None;
+          };
+          let mut current = stored;
+          for idx in &indices {
+            let Expr::List(items) = current else {
+              return None;
+            };
+            let Expr::Integer(i) = idx else {
+              return None;
+            };
+            let len = items.len() as i128;
+            let pos = if *i > 0 && *i <= len {
+              (*i as usize) - 1
+            } else if *i < 0 && len + *i >= 0 {
+              (len + *i) as usize
+            } else {
+              return None;
+            };
+            current = &items[pos];
+          }
+          Some(current.clone())
+        });
+        if let Some(v) = elem {
+          PART_DEPTH.with(|d| *d.borrow_mut() -= 1);
+          return Ok(v);
+        }
+      }
+
       // Set when a multi-index extraction reaches an atom with indices left
       // over — the spec is deeper than the object (Part::partd), as opposed
       // to an out-of-bounds index (Part::partw, already emitted).

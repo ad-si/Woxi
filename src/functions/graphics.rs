@@ -2756,6 +2756,56 @@ fn inset_primitives(
   Some(placed)
 }
 
+/// Fold the font directives of a `Row[{Style[…], …}]` label into the
+/// label's own style, but only the ones every part agrees on. See the call
+/// site in [`parse_text`].
+fn apply_agreed_row_part_styles(content: &Expr, style: &mut StyleState) {
+  let Expr::FunctionCall { name, args } = content else {
+    return;
+  };
+  if name != "Row" || args.is_empty() {
+    return;
+  }
+  let Expr::List(items) = &args[0] else {
+    return;
+  };
+  if items.is_empty() {
+    return;
+  }
+  let mut parts = Vec::with_capacity(items.len());
+  for item in items {
+    let Expr::FunctionCall {
+      name: iname,
+      args: sargs,
+    } = item
+    else {
+      return; // an unstyled part keeps the label's own setting
+    };
+    if !is_style_wrapper(iname) || sargs.is_empty() {
+      return;
+    }
+    let mut st = style.clone();
+    for d in style_directives_in_application_order(&sargs[1..]) {
+      apply_directive(d, &mut st);
+      apply_text_style_directive(d, &mut st);
+    }
+    parts.push(st);
+  }
+  let first = &parts[0];
+  if parts.iter().all(|p| p.font_size == first.font_size) {
+    style.font_size = first.font_size;
+  }
+  if parts.iter().all(|p| p.font_weight == first.font_weight) {
+    style.font_weight = first.font_weight.clone();
+  }
+  if parts.iter().all(|p| p.font_style == first.font_style) {
+    style.font_style = first.font_style.clone();
+  }
+  if parts.iter().all(|p| p.color == first.color) {
+    style.color = first.color;
+  }
+}
+
 fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // Text[str, {x, y}] or Text[Style[str, ...], {x, y}]
   let mut local_style = style.clone();
@@ -2785,6 +2835,14 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     }
     other => other,
   };
+  // A label written as a `Row` of styled parts — the `f(x)` a
+  // Demonstration writes beside a point — carries its font directives on
+  // the parts rather than on the label itself. The label is drawn as one
+  // run, so take the directives every part agrees on: a row whose parts
+  // all ask for 20 point is a 20-point label, while parts that disagree
+  // (an italic letter next to an upright bracket) leave the label's own
+  // setting alone.
+  apply_agreed_row_part_styles(content, &mut local_style);
   let text = graphics_text_content(content);
 
   let (x, y, scaled) = if args.len() >= 2 {
@@ -9604,6 +9662,15 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut rendered_graphics: Vec<Expr> = Vec::new();
   // Plot source data for re-rendering via plotters
   let mut plot_sources: Vec<crate::syntax::PlotSource> = Vec::new();
+  // The layers in the order `Show` was given them, so a mixture of plots
+  // and primitive graphics stacks the way Wolfram stacks it — the last
+  // argument on top. Each entry indexes either `merged_primitives` or
+  // `plot_sources`.
+  enum Layer {
+    Prims(usize),
+    Source(usize),
+  }
+  let mut layers: Vec<Layer> = Vec::new();
   // Whether the first graphic argument was a plot (carried a PlotSource).
   // Wolfram takes the merged result's options from the first graphic, so
   // plot defaults (axes, 1/GoldenRatio aspect) apply only in that case.
@@ -9709,10 +9776,16 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         graphic_count += 1;
         first_graphic_is_plot.get_or_insert(false);
         if !gargs.is_empty() {
+          layers.push(Layer::Prims(merged_primitives.len()));
           merged_primitives.push(gargs[0].clone());
         }
-        for opt in gargs.iter().skip(1) {
-          merge_option(&mut merged_options, opt);
+        // Wolfram gives the combined graphic the options of the *first*
+        // graphic only: an `AxesLabel` that just one of the later layers
+        // carries does not label the merged picture.
+        if graphic_count == 1 {
+          for opt in gargs.iter().skip(1) {
+            merge_option(&mut merged_options, opt);
+          }
         }
       }
       Expr::FunctionCall { name, args: gargs }
@@ -9723,6 +9796,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(graphics_prims) =
           mesh_region_to_graphics_prims(&gargs[0], &gargs[1])
         {
+          layers.push(Layer::Prims(merged_primitives.len()));
           merged_primitives.push(Expr::List(graphics_prims.into()));
         }
       }
@@ -9731,10 +9805,13 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         first_graphic_is_plot.get_or_insert(false);
         is_3d = true;
         if !gargs.is_empty() {
+          layers.push(Layer::Prims(merged_primitives.len()));
           merged_primitives.push(gargs[0].clone());
         }
-        for opt in gargs.iter().skip(1) {
-          merge_option(&mut merged_options, opt);
+        if graphic_count == 1 {
+          for opt in gargs.iter().skip(1) {
+            merge_option(&mut merged_options, opt);
+          }
         }
       }
       Expr::Graphics {
@@ -9762,15 +9839,18 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           && (sname == "Graphics" || sname == "Graphics3D")
           && !sargs.is_empty()
         {
+          layers.push(Layer::Prims(merged_primitives.len()));
           merged_primitives.push(sargs[0].clone());
-          for opt in sargs.iter().skip(1) {
-            merge_option(&mut merged_options, opt);
+          if graphic_count == 1 {
+            for opt in sargs.iter().skip(1) {
+              merge_option(&mut merged_options, opt);
+            }
           }
         } else if let Some(src) = source {
-          // Wolfram keeps the options of the graphics it is given, the
-          // first one winning; an option given to `Show` itself still
+          // Wolfram gives the merged graphic the options of the first
+          // graphic it was given; an option given to `Show` itself still
           // overrides them (applied after the walk).
-          for opt in &src.options {
+          for opt in src.options.iter().filter(|_| graphic_count == 1) {
             let name = option_name_value(opt).map(|(n, _)| n);
             if name.is_some()
               && !inherited_options.iter().any(|existing| {
@@ -9780,6 +9860,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               inherited_options.push(opt.clone());
             }
           }
+          layers.push(Layer::Source(plot_sources.len()));
           plot_sources.push(src.as_ref().clone());
         } else {
           // No source data — collect as opaque pre-rendered graphic
@@ -9859,6 +9940,9 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Convert plot source series to Line/Point primitives so they can be
   // merged with the other Graphics primitives via graphics_ast.
   if !plot_sources.is_empty() {
+    // One primitive list per plot source, kept aside so the layers can be
+    // stacked back in the order `Show` was given them.
+    let mut source_prims: Vec<Expr> = Vec::with_capacity(plot_sources.len());
     for ps in &plot_sources {
       let mut series_prims: Vec<Expr> = Vec::new();
       for sd in &ps.series {
@@ -9944,7 +10028,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           series_prims.push(Expr::FunctionCall {
             name: "AbsoluteThickness".to_string(),
-            args: vec![Expr::Real(1.5)].into(),
+            args: vec![Expr::Real(sd.thickness.unwrap_or(1.5))].into(),
           });
           let segments =
             crate::functions::plot::split_into_segments(&sd.points);
@@ -9964,7 +10048,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
       }
-      merged_primitives.push(Expr::List(series_prims.into()));
+      source_prims.push(Expr::List(series_prims.into()));
 
       // Deliberately do NOT force a PlotRange from the plot source here: the
       // series are emitted as real Line/Point primitives, so the renderer's
@@ -9972,6 +10056,33 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // range would crop any other Graphics primitives that extend beyond it
       // (e.g. a control polygon), whereas Wolfram shows the union of all
       // primitives. Leaving PlotRange unset yields that union.
+    }
+
+    // Stack the layers in argument order: a translucent region given last
+    // covers the curve given before it, as it does in Wolfram. (Without a
+    // complete record of the order — a layer kind that did not register —
+    // fall back to primitives first, curves on top.)
+    let base_prims = std::mem::take(&mut merged_primitives);
+    let ordered_covers_all = layers
+      .iter()
+      .filter(|l| matches!(l, Layer::Prims(_)))
+      .count()
+      == base_prims.len()
+      && layers
+        .iter()
+        .filter(|l| matches!(l, Layer::Source(_)))
+        .count()
+        == source_prims.len();
+    if ordered_covers_all {
+      for layer in &layers {
+        merged_primitives.push(match layer {
+          Layer::Prims(i) => base_prims[*i].clone(),
+          Layer::Source(i) => source_prims[*i].clone(),
+        });
+      }
+    } else {
+      merged_primitives = base_prims;
+      merged_primitives.extend(source_prims);
     }
 
     // Defaults inherited from the plots when the *first* graphic was a plot
@@ -12606,11 +12717,50 @@ fn compute_grid_layout(
     }
   }
 
-  // Per-cell layout: keep natural aspect ratios, vertically center
-  // shorter cells within their row.
+  // Scaled per-cell dimensions (enforce a minimum so pathological
+  // zero-sized inputs don't vanish entirely).
+  let scaled_rows: Vec<Vec<(f64, f64)>> = parsed_rows
+    .iter()
+    .map(|row| {
+      row
+        .iter()
+        .map(|(_, _, nw, nh)| ((nw * scale).max(1.0), (nh * scale).max(1.0)))
+        .collect()
+    })
+    .collect();
+
+  // A column is as wide as its widest cell, in every row — that is what
+  // makes a `Grid`'s columns line up when the rows hold different things
+  // (a picture in one row, a caption under it in the next). Rows of
+  // uniform cells, the `GraphicsGrid` case, are unaffected.
+  let mut col_w: Vec<f64> = vec![0.0; max_cols];
+  for row in &scaled_rows {
+    for (j, (w, _)) in row.iter().enumerate() {
+      col_w[j] = col_w[j].max(*w);
+    }
+  }
+
+  // Horizontal gap: `Scaled` is resolved against the average cell width
+  // over the whole grid, so every row uses the same column pitch.
+  let cell_count = scaled_rows.iter().map(Vec::len).sum::<usize>().max(1);
+  let avg_cell_w: f64 =
+    scaled_rows.iter().flatten().map(|(w, _)| *w).sum::<f64>()
+      / cell_count as f64;
+  let h_gap = opts.h_spacing.to_px(avg_cell_w);
+  let col_x: Vec<f64> = col_w
+    .iter()
+    .scan(0.0_f64, |x, w| {
+      let here = *x;
+      *x += w + h_gap;
+      Some(here)
+    })
+    .collect();
+
+  // Per-cell layout: keep natural aspect ratios, centre each cell in its
+  // column and vertically centre shorter cells within their row.
   let mut row_layouts: Vec<GridRowLayout> = Vec::new();
 
-  for parsed_row in &parsed_rows {
+  for (parsed_row, cell_dims) in parsed_rows.iter().zip(scaled_rows.iter()) {
     if parsed_row.is_empty() {
       row_layouts.push(GridRowLayout {
         cells: Vec::new(),
@@ -12619,29 +12769,18 @@ fn compute_grid_layout(
       continue;
     }
 
-    // Scaled per-cell dimensions (enforce a minimum so pathological
-    // zero-sized inputs don't vanish entirely).
-    let cell_dims: Vec<(f64, f64)> = parsed_row
-      .iter()
-      .map(|(_, _, nw, nh)| ((nw * scale).max(1.0), (nh * scale).max(1.0)))
-      .collect();
-
     let row_h = cell_dims
       .iter()
       .map(|(_, h)| *h)
       .fold(0.0_f64, f64::max)
       .max(10.0);
 
-    // Horizontal gap: Scaled is resolved against the average cell width.
-    let avg_cell_w: f64 =
-      cell_dims.iter().map(|(w, _)| *w).sum::<f64>() / cell_dims.len() as f64;
-    let h_gap = opts.h_spacing.to_px(avg_cell_w);
-
-    let mut x = 0.0_f64;
     let mut cells = Vec::with_capacity(parsed_row.len());
-    for ((vb, inner, _, _), (cw, ch)) in parsed_row.iter().zip(cell_dims.iter())
+    for (j, ((vb, inner, _, _), (cw, ch))) in
+      parsed_row.iter().zip(cell_dims.iter()).enumerate()
     {
       let y_off = ((row_h - ch) / 2.0).max(0.0);
+      let x = col_x[j] + (col_w[j] - cw) / 2.0;
       cells.push(LayoutCell {
         x,
         y_off,
@@ -12650,16 +12789,17 @@ fn compute_grid_layout(
         view_box: vb.clone(),
         inner: inner.clone(),
       });
-      x += cw + h_gap;
     }
 
     row_layouts.push(GridRowLayout { cells, row_h });
   }
 
-  // Compute total dimensions.
-  let total_width = row_layouts
+  // Compute total dimensions. The grid is as wide as its columns, which
+  // a row that stops short of the last column does not shorten.
+  let total_width = col_x
     .iter()
-    .map(|r| r.cells.last().map_or(0.0, |c: &LayoutCell| c.x + c.w))
+    .zip(col_w.iter())
+    .map(|(x, w)| x + w)
     .fold(0.0_f64, f64::max);
   let v_gap = if !row_layouts.is_empty() {
     let avg_h = row_layouts.iter().map(|r| r.row_h).sum::<f64>()
@@ -15427,6 +15567,12 @@ enum ParsedControl {
   },
 }
 
+/// Whether a bare `TrackedSymbols -> sym` value asks for the default of
+/// tracking every variable rather than naming a single tracked variable.
+fn is_track_everything_symbol(sym: &str) -> bool {
+  matches!(sym, "All" | "Full" | "Manipulate" | "Automatic" | "True")
+}
+
 /// Attempt to extract a `ManipulateSpec` from a held `Manipulate[…]` or
 /// `Animate[…]` expression. `Animate` shares `Manipulate`'s argument shape
 /// (a body followed by `{u, umin, umax}`-style control specs) but auto-plays,
@@ -15638,8 +15784,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         animation_running = false;
       }
       // `TrackedSymbols :> {a, b}` narrows re-evaluation to those
-      // variables; a single symbol may be given bare. `All` / `Manipulate`
-      // (and anything else) keep the default of tracking everything.
+      // variables; a single symbol may be given bare. `All` / `Full` /
+      // `Automatic` / `True` / `Manipulate` (and anything else) keep the
+      // default of tracking everything — a bare `True` in particular must
+      // not be mistaken for a variable named `True`, which would leave
+      // every control untracked and the display frozen.
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "TrackedSymbols")
       {
         tracked_symbols = match replacement.as_ref() {
@@ -15650,7 +15799,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
               _ => None,
             })
             .collect::<Option<Vec<_>>>(),
-          Expr::Identifier(s) if s != "All" && s != "Manipulate" => {
+          // `TrackedSymbols -> None`: no variable re-runs the body.
+          Expr::Identifier(s) if s == "None" => Some(Vec::new()),
+          Expr::Identifier(s) if !is_track_everything_symbol(s) => {
             Some(vec![s.clone()])
           }
           _ => None,
@@ -17639,7 +17790,20 @@ fn parse_manipulate_control(spec: &Expr) -> Option<ParsedControl> {
       let initial_index = match explicit_initial {
         Some(init) => {
           let init_code = crate::syntax::expr_to_input_form(&init);
-          values.iter().position(|v| *v == init_code).unwrap_or(0)
+          values
+            .iter()
+            .position(|v| *v == init_code)
+            .or_else(|| {
+              // The variable spec is held (so the symbol survives) while the
+              // choice list arrives evaluated, so an initial value written as
+              // an expression — `{{fac, 10^6, …}, {1, 10, 10^6}}` — only
+              // matches once it is evaluated too.
+              let evaluated =
+                crate::evaluator::evaluate_expr_to_expr(&init).ok()?;
+              let code = crate::syntax::expr_to_input_form(&evaluated);
+              values.iter().position(|v| *v == code)
+            })
+            .unwrap_or(0)
         }
         None => 0,
       };

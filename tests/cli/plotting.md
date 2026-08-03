@@ -69,6 +69,7 @@ SVG images.
 - [`GraphicsGrid`](plotting/GraphicsGrid.md)
 - [`GraphicsRow`](plotting/GraphicsRow.md)
 - [`KochCurve`](plotting/KochCurve.md)
+- [`LayeredGraphPlot`](plotting/LayeredGraphPlot.md)
 - [`ListContourPlot`](plotting/ListContourPlot.md)
 - [`ListDensityPlot`](plotting/ListDensityPlot.md)
 - [`ListLogLinearPlot`](plotting/ListLogLinearPlot.md)

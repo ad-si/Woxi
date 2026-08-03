@@ -9106,6 +9106,76 @@ mod inverse_laplace_transform {
       "InverseLaplaceTransform[Log[1 + p*q], {p, q}, {x, y}]"
     );
   }
+
+  // L^-1[1/Sqrt[s^2 + a^2]] = BesselJ[0, a*t] and its hyperbolic counterpart
+  // L^-1[1/Sqrt[s^2 - a^2]] = BesselI[0, a*t].
+  #[test]
+  fn bessel_j_at_symbolic() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/Sqrt[s^2 + a^2], s, t]").unwrap(),
+      "BesselJ[0, a*t]"
+    );
+  }
+
+  #[test]
+  fn bessel_j_at_numeric_constant() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/Sqrt[s^2 + 4], s, t]").unwrap(),
+      "BesselJ[0, 2*t]"
+    );
+  }
+
+  #[test]
+  fn bessel_j_irrational() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/Sqrt[s^2 + 2], s, t]").unwrap(),
+      "BesselJ[0, Sqrt[2]*t]"
+    );
+  }
+
+  #[test]
+  fn bessel_i_at_symbolic() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/Sqrt[s^2 - a^2], s, t]").unwrap(),
+      "BesselI[0, a*t]"
+    );
+  }
+
+  // A third argument that is not a plain symbol names the point the inverse
+  // transform is taken at, so the result comes back evaluated there.
+  #[test]
+  fn third_argument_number() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s + 1), s, 2.]").unwrap(),
+      interpret("E^-2.").unwrap()
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/Sqrt[s^2 + 1], s, 1.5]").unwrap(),
+      interpret("BesselJ[0, 1.5]").unwrap()
+    );
+  }
+
+  #[test]
+  fn third_argument_expression() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s + 1), s, 2 u]").unwrap(),
+      "E^(-2*u)"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s^2 + 1), s, 2 u]").unwrap(),
+      "Sin[2*u]"
+    );
+  }
+
+  // An unrecognised transform stays unevaluated with the original third
+  // argument rather than leaking the internal placeholder variable.
+  #[test]
+  fn third_argument_expression_unevaluated() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[Sqrt[s], s, 1.]").unwrap(),
+      "InverseLaplaceTransform[Sqrt[s], s, 1.]"
+    );
+  }
 }
 
 mod laplacian {
