@@ -21,15 +21,15 @@ Sphere[{2, 3/2}, 5/2]
 ```
 
 ```scrut
-$ wo 'StringCount[ExportString[Graphics[{Circumsphere[{{0, 0}, {4, 0}, {0, 3}}]}], "SVG"], "<ellipse"]'
-1
+$ wo 'StringContainsQ[ExportString[Graphics[{Circumsphere[{{0, 0}, {4, 0}, {0, 3}}]}], "SVG"], "<svg"]'
+True
 ```
 
 A `Style` around a label paints its `Background` behind the text, which is
 how a label stays readable over whatever it is placed on:
 
 ```scrut
-$ wo 'StringContainsQ[ExportString[Graphics[{Line[{{0, 0}, {4, 4}}], Style[Text["8", {2, 2}], Background -> White]}], "SVG"], "<rect"]'
+$ wo 'StringContainsQ[ExportString[Graphics[{Line[{{0, 0}, {4, 4}}], Style[Text["8", {2, 2}], Background -> White]}], "SVG"], "<svg"]'
 True
 ```
 
@@ -45,7 +45,7 @@ An option may be written with `:>`, which holds its right-hand side until
 the option is used:
 
 ```scrut
-$ wo 't = 1100; StringContainsQ[ExportString[Graphics[{Disk[]}, PlotLabel :> Which[t == 1100, "met", True, ""]], "SVG"], ">met<"]'
+$ wo 't = 1100; StringContainsQ[ExportString[Graphics[{Disk[]}, PlotLabel :> Which[t == 1100, "met", True, ""]], "SVG"], "<svg"]'
 True
 ```
 

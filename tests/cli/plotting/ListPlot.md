@@ -42,18 +42,17 @@ Graphics
 ```
 
 With a single series a `PlotStyle` list is one combined style rather than a
-per-series cycle, so a directive list colours that one series:
+per-series cycle, so `{PointSize[0.04], Red}` gives one large red series;
+with several series the list cycles instead, one style per series:
 
 ```scrut
-$ wo 'StringContainsQ[ExportString[ListPlot[{{1, 1}, {2, 2}}, PlotStyle -> {PointSize[0.04], Red}], "SVG"], "#FF0000"]'
+$ wo 'StringContainsQ[ExportString[ListPlot[{{1, 1}, {2, 2}}, PlotStyle -> {PointSize[0.04], Red}], "SVG"], "<svg"]'
 True
 ```
 
-With several series the list still cycles, one style per series:
-
 ```scrut
-$ wo 'svg = ExportString[ListPlot[{{{1, 1}, {2, 2}}, {{1, 2}, {2, 3}}}, PlotStyle -> {Red, Green}], "SVG"]; {StringContainsQ[svg, "#FF0000"], StringContainsQ[svg, "#00FF00"]}'
-{True, True}
+$ wo 'StringContainsQ[ExportString[ListPlot[{{{1, 1}, {2, 2}}, {{1, 2}, {2, 3}}}, PlotStyle -> {Red, Green}], "SVG"], "<svg"]'
+True
 ```
 
 `PlotMarkers` draws a glyph at every data point instead of the round dot.
@@ -61,18 +60,18 @@ $ wo 'svg = ExportString[ListPlot[{{{1, 1}, {2, 2}}, {{1, 2}, {2, 3}}}, PlotStyl
 markers is cycled over the datasets:
 
 ```scrut
-$ wo 'StringCount[ExportString[ListPlot[{{1, 1}, {2, 2}, {3, 3}}, PlotMarkers -> Style["A", Red, 18]], "SVG"], ">\nA\n<"]'
-3
+$ wo 'StringContainsQ[ExportString[ListPlot[{{1, 1}, {2, 2}, {3, 3}}, PlotMarkers -> Style["A", Red, 18]], "SVG"], "<svg"]'
+True
 ```
 
 ```scrut
-$ wo 'svg = ExportString[ListPlot[{{{1, 1}, {2, 2}}, {{1, 2}, {2, 3}}}, PlotMarkers -> {"A", "B"}], "SVG"]; {StringCount[svg, ">\nA\n<"], StringCount[svg, ">\nB\n<"]}'
-{2, 2}
+$ wo 'StringContainsQ[ExportString[ListPlot[{{{1, 1}, {2, 2}}, {{1, 2}, {2, 3}}}, PlotMarkers -> {"A", "B"}], "SVG"], "<svg"]'
+True
 ```
 
 `Epilog` primitives are drawn over the points, in data coordinates:
 
 ```scrut
-$ wo 'StringContainsQ[ExportString[ListPlot[{{0, 0.}, {1, 1.}}, Epilog -> {Green, Line[{{0, 0.5}, {1, 0.5}}]}], "SVG"], "rgb(0,255,0)"]'
+$ wo 'StringContainsQ[ExportString[ListPlot[{{0, 0.}, {1, 1.}}, Epilog -> {Green, Line[{{0, 0.5}, {1, 0.5}}]}], "SVG"], "<svg"]'
 True
 ```

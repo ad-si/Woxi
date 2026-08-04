@@ -4218,6 +4218,11 @@ mod plot3d {
         ticks("Plot[x, {x, 0, 100}]"),
         ["0", "20", "40", "60", "80", "100"]
       );
+      // Small values keep enough decimals to tell neighbours apart.
+      assert_eq!(
+        ticks("Plot[x, {x, 0, 0.001}]"),
+        ["0.0000", "0.0002", "0.0004", "0.0006", "0.0008", "0.0010"]
+      );
     }
 
     // A tick that is an integer within float noise is that integer, not a
