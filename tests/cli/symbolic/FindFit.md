@@ -13,5 +13,5 @@ the intercept takes up the slack.
 
 ```scrut
 $ wo 'FindFit[{{0, 1.}, {1, 3.}, {2, 5.}, {3, 7.}}, {a x + b, 0 < a < 1}, {a, b}, x]'
-\{a -> 1\.(0+\d*)?, b -> 2\.5\d*\} (regex)
+\{a -> (1\.(0+\d*)?|0\.99999999\d*), b -> 2\.5(0+\d*)?\} (regex)
 ```

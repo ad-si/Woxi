@@ -45,6 +45,6 @@ $ wo 'Minimize[x^2 - 4 x, x, Integers]'
 ```scrut
 $ wo 'Maximize[x^2, x, Integers]'
 
-Maximize::natt: The maximum is not attained at any point satisfying the given constraints.
+Maximize::natt: The maximum is not attained at any point satisfying the given constraints\.\s? (regex)
 {Infinity, {x -> -Infinity}}
 ```

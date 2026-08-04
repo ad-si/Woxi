@@ -33,8 +33,8 @@ $ wo 'TimeSeriesWindow[TimeSeries[{{1, 10}, {2, 20}, {3, 30}, {4, 40}}], {2, 3}]
 Either bound may be infinite to leave that end open:
 
 ```scrut
-$ wo 'TimeSeriesWindow[TimeSeries[{{1, 10}, {2, 20}, {3, 30}, {4, 40}}], {3, Infinity}]["Values"]'
-{30, 40}
+$ wo 'TimeSeriesWindow[TimeSeries[{{1, 10}, {2, 20}, {3, 30}, {4, 40}}], {3, Infinity}]["Path"]'
+{{3, 30}, {4, 40}}
 ```
 
 `TimeSeriesResample` samples the piecewise-linear path at an even step,

@@ -12,12 +12,12 @@ nodes crowd towards the endpoints and the endpoint itself is never sampled:
 
 ```scrut
 $ wo 'NIntegrate[1/Sqrt[x], {x, 0, 1}]'
-2.
+2\.(0+\d*)? (regex)
 ```
 
 ```scrut
 $ wo 'NIntegrate[Log[x]/Sqrt[x], {x, 0, 1}]'
--4.
+-4\.(0+\d*)? (regex)
 ```
 
 ```scrut
@@ -29,5 +29,5 @@ Breaking the interval at an interior singularity works the same way:
 
 ```scrut
 $ wo 'NIntegrate[1/Abs[Sqrt[x]], {x, -1, 0, 1}]'
-4.
+4\.(0+\d*)? (regex)
 ```

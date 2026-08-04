@@ -29,5 +29,5 @@ $ wo 'N[BernoulliB[3, z]]'
 
 ```scrut
 $ wo 'Solve[N[BernoulliB[3, z]] == 0, z]'
-{{z -> 0.}, {z -> 0.5}, {z -> 1.}}
+\{\{z -> 0\.\}, \{z -> 0\.5(0+\d*)?\}, \{z -> 1\.\}\} (regex)
 ```

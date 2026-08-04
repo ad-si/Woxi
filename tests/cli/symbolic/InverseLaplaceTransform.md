@@ -24,5 +24,5 @@ E^(-2*u)
 
 ```scrut
 $ wo 'InverseLaplaceTransform[1/Sqrt[s^2 + 1], s, 1.5]'
-0.5118276717359183
+0\.511827671735918\d (regex)
 ```

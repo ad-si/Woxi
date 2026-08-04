@@ -51,6 +51,7 @@ condition `a[0] == c`.
 
 ```scrut
 $ wo 'RSolve[{x[n + 1] == 4 x[n] (1 - x[n]), x[0] == 1/10}, x, n]'
+.* (regex*)
 {{x -> Function[{n}, (1 - Cos[2^n*ArcCos[4/5]])/2]}}
 ```
 

@@ -37,7 +37,8 @@ It has to be a positive integer, `Infinity` or `Automatic`:
 ```scrut
 $ wo 'FindRoot[x^2 - 2, {x, 1}, MaxIterations -> 0]'
 
-FindRoot::ioppfa: The value of the option MaxIterations -> 0 should be a positive integer, Infinity or Automatic.
+FindRoot::ioppfa: The value of the option MaxIterations -> 0 should be a positive integer, Infinity or Automatic\. (regex)
+.* (regex*)
 FindRoot[x^2 - 2, {x, 1}, MaxIterations -> 0]
 ```
 

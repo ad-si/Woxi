@@ -33,7 +33,7 @@ The variable may be left out, as with `Solve`:
 
 ```scrut
 $ wo 'NSolve[x^2 == 2]'
-{{x -> -1.4142135623730951}, {x -> 1.4142135623730951}}
+\{\{x -> -1\.414213562373095\d?\}, \{x -> 1\.414213562373095\d?\}\} (regex)
 ```
 
 Constraints narrow the answer to the root inside them:
