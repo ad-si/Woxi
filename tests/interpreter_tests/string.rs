@@ -7007,6 +7007,32 @@ mod make_boxes {
     );
   }
 
+  /// A special function is laid out with its order as a subscript and any
+  /// further index as a superscript, and `Row` simply joins its parts.
+  /// wolframscript defers both to a named front-end template
+  /// (`TemplateBox[{n, x}, "LegendreP"]`, `…, "RowDefault"]`) that its
+  /// FrontEnd knows how to draw; Woxi writes the layout out inline so its
+  /// own box renderer draws the same picture. Only the wrapper is shared,
+  /// so the exact inner box is pinned here rather than in tests/cli.
+  #[test]
+  fn traditional_form_boxes_special_functions_inline() {
+    assert_eq!(
+      interpret("ToBoxes[TraditionalForm[LegendreP[n, x]]]").unwrap(),
+      "TagBox[FormBox[RowBox[{SubscriptBox[P, n], (, x, )}], \
+       TraditionalForm], TraditionalForm, Editable -> True]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[TraditionalForm[LegendreP[n, m, x]]]").unwrap(),
+      "TagBox[FormBox[RowBox[{SubsuperscriptBox[P, n, m], (, x, )}], \
+       TraditionalForm], TraditionalForm, Editable -> True]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[TraditionalForm[Row[{2, x, t}]]]").unwrap(),
+      "TagBox[FormBox[RowBox[{2, x, t}], TraditionalForm], TraditionalForm, \
+       Editable -> True]"
+    );
+  }
+
   // `MakeBoxes[Format[expr, StandardForm]]` and the 1-arg form
   // both produce `TagBox[FormBox[<inner>, <form>], <tag>]`,
   // where the tag is the bare `Format` symbol for the 1-arg

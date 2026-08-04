@@ -1603,6 +1603,19 @@ function main() {
     "ToString[ImportString[\"a,b\\n1,2\", \"CSV\", \"HeaderLines\" -> 1], InputForm]",
     "ToString[ImportString[\"true,false\", \"CSV\"], InputForm]",
     "ToString[ImportString[\"True,FALSE,tRue,yes\", \"CSV\"], InputForm]",
+
+    // TraditionalForm boxes: Wolfram hands a special function or a Row to a
+    // named FrontEnd template (`TemplateBox[{n, x}, "LegendreP"]`,
+    // `TemplateBox[{2, x, t}, "RowDefault"]`) that knows how to draw it.
+    // Woxi has no FrontEnd behind it, so `tf()` writes the same layout out
+    // inline as Sub/SubsuperscriptBox rows its own box renderer can draw.
+    // The picture and the TagBox/FormBox wrapper agree; only the inner box
+    // representation differs — same class as the MakeBoxes number-form
+    // entries above. See the `traditional_form_boxes_special_functions_inline`
+    // test and tests/cli/math/utility/TraditionalForm.md.
+    "ToBoxes[TraditionalForm[LegendreP[n, x]]]",
+    "ToBoxes[TraditionalForm[LegendreP[n, m, x]]]",
+    "ToBoxes[TraditionalForm[Row[{2, x, t}]]]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).
