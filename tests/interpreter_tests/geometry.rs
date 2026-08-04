@@ -44,6 +44,75 @@ mod area {
     );
   }
 
+  /// A `Polygon` may hold several paths, and `outer -> holes` cuts the
+  /// hole boundaries out of the face — in the plane and on a plane in
+  /// space alike.
+  #[test]
+  fn polygon_paths_and_holes() {
+    assert_eq!(
+      interpret(
+        "Area[Polygon[{{{0, 0}, {1, 0}, {0, 1}}, {{1, 1}, {2, 1}, \
+                 {1, 2}}}]]"
+      )
+      .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "Area[Polygon[{{0, 0}, {4, 0}, {4, 4}, {0, 4}} -> {{{1, 1}, {3, 1}, \
+         {3, 3}, {1, 3}}}]]"
+      )
+      .unwrap(),
+      "12"
+    );
+    // A single hole may be given without the enclosing list.
+    assert_eq!(
+      interpret(
+        "Area[Polygon[{{0, 0}, {4, 0}, {4, 4}, {0, 4}} -> {{1, 1}, {3, 1}, \
+         {3, 3}, {1, 3}}]]"
+      )
+      .unwrap(),
+      "12"
+    );
+    assert_eq!(
+      interpret("Area[Polygon[{{0, 0, 0}, {4, 0, 0}, {4, 4, 0}, {0, 4, 0}}]]")
+        .unwrap(),
+      "16"
+    );
+    assert_eq!(
+      interpret(
+        "Area[Polygon[{{0, 0, 0}, {4, 0, 0}, {4, 4, 0}, {0, 4, 0}} -> \
+         {{1, 1, 0}, {3, 1, 0}, {3, 3, 0}, {1, 3, 0}}]]"
+      )
+      .unwrap(),
+      "12"
+    );
+    // A path that degenerates to a segment, a point or a straight run
+    // spans no area: the region drops below dimension 2, which has no
+    // area rather than an area of zero.
+    assert_eq!(
+      interpret("Area[Polygon[{{0, 0}, {1, 0}}]]").unwrap(),
+      "Undefined"
+    );
+    assert_eq!(
+      interpret("Area[Polygon[{{0, 0}, {1, 0}, {2, 0}}]]").unwrap(),
+      "Undefined"
+    );
+    // A degenerate hole cuts nothing out.
+    assert_eq!(
+      interpret(
+        "Area[Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}} -> {{0, 0}, {1, 0}}]]"
+      )
+      .unwrap(),
+      "1"
+    );
+    // A tilted face is measured in its own plane.
+    assert_eq!(
+      interpret("Area[Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 1, 1}}]]").unwrap(),
+      "1/Sqrt[2]"
+    );
+  }
+
   #[test]
   fn circle_undefined() {
     assert_eq!(interpret("Area[Circle[]]").unwrap(), "Undefined");

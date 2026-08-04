@@ -11021,13 +11021,39 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           args: vec![expr.clone()].into(),
         })
       }
-      // Polygon[{{x1,y1},{x2,y2},...}] — Shoelace formula
+      // Polygon[path], Polygon[{path, …}] and Polygon[outer -> holes],
+      // in the plane or on a plane in space: the paths add up and the
+      // holes are cut out of them.
       "Polygon" => {
         if args.len() == 1
-          && let Expr::List(pts) = &args[0]
-          && pts.len() >= 3
+          && let Some((outer, holes)) = polygon_paths(&args[0])
         {
-          return compute_polygon_area(pts);
+          let sum = |terms: Vec<Expr>| -> Result<Expr, InterpreterError> {
+            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: terms.into(),
+            })
+          };
+          let filled =
+            sum(outer.iter().map(|p| polygon_path_area_expr(p)).collect())?;
+          // A path that degenerates to a segment or a point (or to several
+          // of them) spans nothing: the region is below dimension 2, which
+          // has no area at all rather than an area of zero.
+          if matches!(&filled, Expr::Integer(0))
+            || matches!(&filled, Expr::Real(v) if *v == 0.0)
+          {
+            return Ok(Expr::Identifier("Undefined".to_string()));
+          }
+          // Holes that degenerate the same way simply cut nothing out.
+          let mut terms = vec![filled];
+          for path in &holes {
+            terms.push(Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), polygon_path_area_expr(path)]
+                .into(),
+            });
+          }
+          return sum(terms);
         }
         Ok(Expr::FunctionCall {
           name: "Area".to_string(),
@@ -11305,70 +11331,143 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Compute the area of a polygon using the Shoelace formula.
-fn compute_polygon_area(pts: &[Expr]) -> Result<Expr, InterpreterError> {
-  // Extract 2D coordinates
-  let coords: Vec<(&Expr, &Expr)> = pts
-    .iter()
-    .filter_map(|p| {
-      if let Expr::List(xy) = p
-        && xy.len() == 2
-      {
-        return Some((&xy[0], &xy[1]));
-      }
-      None
-    })
-    .collect();
+/// A point given as a coordinate list of 2 or 3 scalars. A nested list is
+/// not a point, which is what keeps a three-point path from being read as
+/// a single 3-D point.
+fn as_polygon_point(expr: &Expr) -> Option<&[Expr]> {
+  match expr {
+    Expr::List(coords)
+      if (coords.len() == 2 || coords.len() == 3)
+        && !coords.iter().any(|c| matches!(c, Expr::List(_))) =>
+    {
+      Some(coords)
+    }
+    _ => None,
+  }
+}
 
-  if coords.len() != pts.len() {
-    return Ok(Expr::FunctionCall {
-      name: "Area".to_string(),
+/// One closed path: a non-empty run of points, all of the same dimension.
+/// Fewer than three of them span no area, which is a case of its own rather
+/// than a parse failure — see `compute_area`.
+fn as_polygon_path(expr: &Expr) -> Option<Vec<Expr>> {
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  if items.is_empty() {
+    return None;
+  }
+  let dims: Vec<usize> = items
+    .iter()
+    .map(|p| as_polygon_point(p).map(<[Expr]>::len))
+    .collect::<Option<_>>()?;
+  dims.iter().all(|d| *d == dims[0]).then(|| items.to_vec())
+}
+
+/// The paths of a `Polygon` argument: either a single path or a list of
+/// them.
+fn as_polygon_paths(expr: &Expr) -> Option<Vec<Vec<Expr>>> {
+  if let Some(single) = as_polygon_path(expr) {
+    return Some(vec![single]);
+  }
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  if items.is_empty() {
+    return None;
+  }
+  items
+    .iter()
+    .map(as_polygon_path)
+    .collect::<Option<Vec<_>>>()
+}
+
+/// Split a `Polygon` argument into its filled paths and its holes.
+/// `Polygon[outer -> holes]` cuts the hole boundaries out of the face;
+/// the holes may be written as one path or as a list of them.
+#[allow(clippy::type_complexity)]
+fn polygon_paths(arg: &Expr) -> Option<(Vec<Vec<Expr>>, Vec<Vec<Expr>>)> {
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = arg
+  {
+    let outer = as_polygon_paths(pattern)?;
+    let holes = as_polygon_paths(replacement)?;
+    return Some((outer, holes));
+  }
+  Some((as_polygon_paths(arg)?, Vec::new()))
+}
+
+/// The unsigned area of one closed path: half the magnitude of the summed
+/// cross products of consecutive vertices. In the plane that is the
+/// Shoelace formula; in space it measures the planar face the path spans.
+fn polygon_path_area_expr(path: &[Expr]) -> Expr {
+  if path.len() < 3 {
+    return Expr::Integer(0);
+  }
+  let half = Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+  };
+  let coord = |p: &Expr, i: usize| -> Expr {
+    match p {
+      Expr::List(c) => c[i].clone(),
+      _ => Expr::Integer(0),
+    }
+  };
+  let dim = match &path[0] {
+    Expr::List(c) => c.len(),
+    _ => 2,
+  };
+  // The k-th component of the summed cross product, over the coordinate
+  // pair (a, b): sum_i (p_i[a] p_{i+1}[b] - p_{i+1}[a] p_i[b]).
+  let component = |a: usize, b: usize| -> Expr {
+    let mut terms = Vec::new();
+    for i in 0..path.len() {
+      let j = (i + 1) % path.len();
+      terms.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![coord(&path[i], a), coord(&path[j], b)].into(),
+      });
+      terms.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), coord(&path[j], a), coord(&path[i], b)]
+          .into(),
+      });
+    }
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    }
+  };
+  let magnitude = if dim == 2 {
+    Expr::FunctionCall {
+      name: "Abs".to_string(),
+      args: vec![component(0, 1)].into(),
+    }
+  } else {
+    let square = |e: Expr| Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![e, Expr::Integer(2)].into(),
+    };
+    Expr::FunctionCall {
+      name: "Sqrt".to_string(),
       args: vec![Expr::FunctionCall {
-        name: "Polygon".to_string(),
-        args: vec![Expr::List(pts.to_vec().into())].into(),
+        name: "Plus".to_string(),
+        args: vec![
+          square(component(1, 2)),
+          square(component(2, 0)),
+          square(component(0, 1)),
+        ]
+        .into(),
       }]
       .into(),
-    });
-  }
-
-  let n = coords.len();
-  // Shoelace: 2*A = sum_{i=0}^{n-1} (x_i * y_{i+1} - x_{i+1} * y_i)
-  let mut sum_terms = Vec::new();
-  for i in 0..n {
-    let j = (i + 1) % n;
-    // x_i * y_j
-    sum_terms.push(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![coords[i].0.clone(), coords[j].1.clone()].into(),
-    });
-    // -x_j * y_i
-    sum_terms.push(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), coords[j].0.clone(), coords[i].1.clone()]
-        .into(),
-    });
-  }
-
-  let area_expr = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      },
-      Expr::FunctionCall {
-        name: "Abs".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: sum_terms.into(),
-        }]
-        .into(),
-      },
-    ]
-    .into(),
+    }
   };
-
-  crate::evaluator::evaluate_expr_to_expr(&area_expr)
+  Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![half, magnitude].into(),
+  }
 }
 
 /// Compute the centroid of a geometric region.

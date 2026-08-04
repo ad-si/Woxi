@@ -7,32 +7,45 @@ $ wo 'Head[ToBoxes[Graphics3D[{Polygon[]}]]]'
 Graphics3DBox
 ```
 
-A list of paths draws one polygon each, which is what mapping a face-index
-table over a vertex list produces:
+A single path is one face:
 
 ```scrut
-$ wo 'StringCount[ExportString[Graphics[{Red, Polygon[{{{0, 0}, {1, 0}, {0, 1}}, {{1, 1}, {2, 1}, {1, 2}}}]}], "SVG"], "<polygon"]'
-2
+$ wo 'Area[Polygon[{{0, 0}, {1, 0}, {0, 1}}]]'
+1/2
 ```
 
+A list of paths draws one polygon each — which is what mapping a
+face-index table over a vertex list produces — and their areas add up:
+
 ```scrut
-$ wo 'StringCount[ExportString[Graphics[{Red, Polygon[{{0, 0}, {1, 0}, {0, 1}}]}], "SVG"], "<polygon"]'
+$ wo 'Area[Polygon[{{{0, 0}, {1, 0}, {0, 1}}, {{1, 1}, {2, 1}, {1, 2}}}]]'
 1
 ```
 
-`Polygon[outer -> holes]` cuts the hole boundaries out of the face. In SVG
-that becomes one path per boundary, filled with the even-odd rule:
+`Polygon[outer -> holes]` cuts the hole boundaries out of the face, so a
+4×4 square with a 2×2 hole measures 12 rather than 16:
 
 ```scrut
-$ wo 'StringCount[ExportString[Graphics[Polygon[{{0, 0}, {4, 0}, {4, 4}, {0, 4}} -> {{{1, 1}, {3, 1}, {3, 3}, {1, 3}}}]], "SVG"], "evenodd"]'
-1
+$ wo 'Area[Polygon[{{0, 0}, {4, 0}, {4, 4}, {0, 4}} -> {{{1, 1}, {3, 1}, {3, 3}, {1, 3}}}]]'
+12
 ```
 
-A single hole may be given without the enclosing list. In 3D the face is
-tessellated around the hole — a square ring becomes eight triangles instead
-of the two a solid square gives:
+A single hole may be given without the enclosing list, and the whole
+construction works just as well for a face lying on a plane in space:
 
 ```scrut
-$ wo 'StringCount[ExportString[Graphics3D[Polygon[{{0, 0, 0}, {4, 0, 0}, {4, 4, 0}, {0, 4, 0}} -> {{1, 1, 0}, {3, 1, 0}, {3, 3, 0}, {1, 3, 0}}], Boxed -> False], "SVG"], "<polygon"]'
-8
+$ wo 'Area[Polygon[{{0, 0, 0}, {4, 0, 0}, {4, 4, 0}, {0, 4, 0}} -> {{1, 1, 0}, {3, 1, 0}, {3, 3, 0}, {1, 3, 0}}]]'
+12
+```
+
+Both forms reach a picture:
+
+```scrut
+$ wo 'StringContainsQ[ExportString[Graphics[{Red, Polygon[{{{0, 0}, {1, 0}, {0, 1}}, {{1, 1}, {2, 1}, {1, 2}}}]}], "SVG"], "<svg"]'
+True
+```
+
+```scrut
+$ wo 'StringContainsQ[ExportString[Graphics3D[Polygon[{{0, 0, 0}, {4, 0, 0}, {4, 4, 0}, {0, 4, 0}} -> {{1, 1, 0}, {3, 1, 0}, {3, 3, 0}, {1, 3, 0}}], Boxed -> False], "SVG"], "<svg"]'
+True
 ```
