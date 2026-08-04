@@ -6363,6 +6363,20 @@ fn is_quantity_exp_atom(expr: &Expr) -> bool {
 fn quantity_unit_to_string(unit: &Expr) -> String {
   match unit {
     Expr::Identifier(s) | Expr::String(s) => s.clone(),
+    // MixedUnit[{…}] carries the per-part units of a MixedMagnitude; each
+    // one is a unit name and displays unquoted like any other.
+    Expr::FunctionCall { name, args }
+      if name == "MixedUnit"
+        && args.len() == 1
+        && matches!(&args[0], Expr::List(_)) =>
+    {
+      let Expr::List(parts) = &args[0] else {
+        unreachable!()
+      };
+      let names: Vec<String> =
+        parts.iter().map(quantity_unit_to_string).collect();
+      format!("MixedUnit[{{{}}}]", names.join(", "))
+    }
     // Sqrt (Power[x, 1/2]) → Sqrt[base_str]
     expr if crate::functions::is_sqrt(expr).is_some() => {
       let sqrt_arg = crate::functions::is_sqrt(expr).unwrap();
@@ -7435,7 +7449,21 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // Special case: Quantity[n, unit] — unit shown as quoted string(s)
       if name == "Quantity" && args.len() == 2 {
         let mag_str = fmt(&args[0]);
-        let unit_str = quantity_unit_to_string(&args[1]);
+        // A MixedUnit[{…}] holds one unit name per magnitude part. Only
+        // OutputForm drops their quotes, like it does for any other
+        // string; InputForm writes them out.
+        let is_mixed_unit = matches!(
+          &args[1],
+          Expr::FunctionCall { name, args }
+            if name == "MixedUnit"
+              && args.len() == 1
+              && matches!(&args[0], Expr::List(_))
+        );
+        let unit_str = if is_mixed_unit && !is_output {
+          expr_to_input_form(&args[1])
+        } else {
+          quantity_unit_to_string(&args[1])
+        };
         return format!("Quantity[{}, {}]", mag_str, unit_str);
       }
       // OutputForm-only: FullForm, CForm, TeXForm, FortranForm wrap inner in output form

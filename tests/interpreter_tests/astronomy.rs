@@ -121,7 +121,8 @@ mod positions {
          DateObject[{2024, 6, 21, 18, 0, 0}]]"
       )
       .unwrap(),
-      "{Quantity[184.04, AngularDegrees], Quantity[73.29, AngularDegrees]}"
+      "{Quantity[184.03630805505907, AngularDegrees], \
+       Quantity[73.29603980924757, AngularDegrees]}"
     );
   }
 
@@ -136,7 +137,8 @@ mod positions {
          CelestialSystem -> \"Equatorial\"]"
       )
       .unwrap(),
-      "{Quantity[0.34, AngularDegrees], Quantity[0.15, AngularDegrees]}"
+      "{Quantity[0.02278659255310904, HoursOfRightAscension], \
+       Quantity[0.14579656380289838, AngularDegrees]}"
     );
   }
 
@@ -147,7 +149,8 @@ mod positions {
         "SunPosition[{52.52, 13.405}, DateObject[{2024, 12, 21, 12, 0, 0}]]"
       )
       .unwrap(),
-      "{Quantity[193.01, AngularDegrees], Quantity[13.09, AngularDegrees]}"
+      "{Quantity[193.00948969195917, AngularDegrees], \
+       Quantity[13.155723958468354, AngularDegrees]}"
     );
   }
 
@@ -159,7 +162,8 @@ mod positions {
          DateObject[{2024, 6, 21, 6, 0, 0}]]"
       )
       .unwrap(),
-      "{Quantity[191.86, AngularDegrees], Quantity[21.16, AngularDegrees]}"
+      "{Quantity[191.86509647088556, AngularDegrees], \
+       Quantity[20.317781062057147, AngularDegrees]}"
     );
   }
 
@@ -171,7 +175,8 @@ mod positions {
          0}], CelestialSystem -> \"Equatorial\"]"
       )
       .unwrap(),
-      "{Quantity[159.12, AngularDegrees], Quantity[12.63, AngularDegrees]}"
+      "{Quantity[10.661265955494441, HoursOfRightAscension], \
+       Quantity[12.728319567993056, AngularDegrees]}"
     );
   }
 }
@@ -190,8 +195,8 @@ mod sidereal_time {
       )
       .unwrap(),
       "Quantity[MixedMagnitude[{13, 10, 46.1306}], \
-       MixedUnit[{\"HoursOfRightAscension\", \"MinutesOfRightAscension\", \
-       \"SecondsOfRightAscension\"}]]"
+       MixedUnit[{HoursOfRightAscension, MinutesOfRightAscension, \
+       SecondsOfRightAscension}]]"
     );
   }
 
@@ -204,8 +209,8 @@ mod sidereal_time {
       )
       .unwrap(),
       "Quantity[MixedMagnitude[{6, 8, 43.7647}], \
-       MixedUnit[{\"HoursOfRightAscension\", \"MinutesOfRightAscension\", \
-       \"SecondsOfRightAscension\"}]]"
+       MixedUnit[{HoursOfRightAscension, MinutesOfRightAscension, \
+       SecondsOfRightAscension}]]"
     );
   }
 }
@@ -221,7 +226,7 @@ mod rise_set {
         "Sunrise[GeoPosition[{52.52, 13.405}], DateObject[{2024, 6, 21}]]"
       )
       .unwrap(),
-      "DateObject[{2024, 6, 21, 2, 43}, Minute, Gregorian, 0.]"
+      "DateObject[{2024, 6, 21, 2, 43, 11.247}, Instant, Gregorian, 0.]"
     );
   }
 
@@ -233,7 +238,7 @@ mod rise_set {
         "Sunset[GeoPosition[{52.52, 13.405}], DateObject[{2024, 6, 21}]]"
       )
       .unwrap(),
-      "DateObject[{2024, 6, 21, 19, 33}, Minute, Gregorian, 0.]"
+      "DateObject[{2024, 6, 21, 19, 33, 23.726}, Instant, Gregorian, 0.]"
     );
   }
 
@@ -243,7 +248,7 @@ mod rise_set {
     assert_eq!(
       interpret("Sunrise[GeoPosition[{52.52, 13.405}], {2024, 12, 21}]")
         .unwrap(),
-      "DateObject[{2024, 12, 21, 7, 15}, Minute, Gregorian, 0.]"
+      "DateObject[{2024, 12, 21, 7, 15, 9.207}, Instant, Gregorian, 0.]"
     );
   }
 
@@ -253,7 +258,7 @@ mod rise_set {
     // solar noon (12:07 UTC at longitude 0)
     assert_eq!(
       interpret("Sunset[{0, 0}, {2024, 3, 20}]").unwrap(),
-      "DateObject[{2024, 3, 20, 18, 11}, Minute, Gregorian, 0.]"
+      "DateObject[{2024, 3, 20, 18, 10, 34.488}, Instant, Gregorian, 0.]"
     );
   }
 

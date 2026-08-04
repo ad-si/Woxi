@@ -26,6 +26,15 @@ use crate::functions::datetime_ast::{
 
 const DEG: f64 = std::f64::consts::PI / 180.0;
 
+/// One astronomical unit in kilometres (IAU 2012).
+const AU_KM: f64 = 149_597_870.7;
+
+/// Earth's equatorial radius in kilometres (IAU 1976), and the
+/// polar/equatorial axis ratio used for the observer's geocentric
+/// coordinates (Meeus ch. 11).
+const EARTH_RADIUS_KM: f64 = 6378.14;
+const EARTH_FLATTENING_RATIO: f64 = 0.99664719;
+
 fn sin_d(x: f64) -> f64 {
   (x * DEG).sin()
 }
@@ -440,6 +449,21 @@ fn moon_ra_dec(jde: f64) -> (f64, f64) {
   ecliptic_to_equatorial(lambda, beta, eps)
 }
 
+/// Apparent (α, δ) in degrees plus the geocentric distance in km — the
+/// extra datum the topocentric correction needs.
+fn moon_ra_dec_dist(jde: f64) -> (f64, f64, f64) {
+  let (ra, dec) = moon_ra_dec(jde);
+  let (_, _, delta) = moon_coordinates(jde);
+  (ra, dec, delta)
+}
+
+/// Same for the Sun, whose distance comes back in astronomical units.
+fn sun_ra_dec_dist(jde: f64) -> (f64, f64, f64) {
+  let (ra, dec) = sun_ra_dec(jde);
+  let (_, _, r_au) = sun_coordinates(jde);
+  (ra, dec, r_au * AU_KM)
+}
+
 /// Ecliptic (λ, β) → equatorial (α, δ), all in degrees.
 fn ecliptic_to_equatorial(lambda: f64, beta: f64, eps: f64) -> (f64, f64) {
   let ra = f64::atan2(
@@ -471,6 +495,45 @@ fn apparent_gst_deg(jd_ut: f64) -> f64 {
   let (dpsi, deps) = nutation(t);
   let eps = mean_obliquity(t) + deps;
   norm360(gmst_deg(jd_ut) + dpsi * cos_d(eps))
+}
+
+/// Atmospheric refraction in degrees to add to a true altitude to get
+/// the apparent one (Meeus 16.4, standard 1010 mbar / 10 °C air). The
+/// formula only means anything for a body at or above the horizon.
+fn refraction_deg(true_altitude: f64) -> f64 {
+  if true_altitude < -1.0 {
+    return 0.0;
+  }
+  let arcminutes = 1.02
+    / (true_altitude + 10.3 / (true_altitude + 5.11))
+      .to_radians()
+      .tan();
+  arcminutes / 60.0
+}
+
+/// Geocentric (α, δ) → topocentric, as seen from sea level at
+/// (lat, lon) at UTC Julian date `jd_ut` (Meeus 40.6). `distance_km` is
+/// the body's geocentric distance; the shift is about a degree for the
+/// Moon and nine arcseconds for the Sun.
+fn topocentric_ra_dec(
+  ra: f64,
+  dec: f64,
+  distance_km: f64,
+  lat: f64,
+  lon: f64,
+  jd_ut: f64,
+) -> (f64, f64) {
+  let u = (EARTH_FLATTENING_RATIO * (lat * DEG).tan()).atan() / DEG;
+  let rho_sin_phi = EARTH_FLATTENING_RATIO * sin_d(u);
+  let rho_cos_phi = cos_d(u);
+  let sin_pi = EARTH_RADIUS_KM / distance_km;
+  let h = apparent_gst_deg(jd_ut) + lon - ra; // local hour angle
+  let denom = cos_d(dec) - rho_cos_phi * sin_pi * cos_d(h);
+  let delta_ra = f64::atan2(-rho_cos_phi * sin_pi * sin_d(h), denom) / DEG;
+  let dec_topo =
+    f64::atan2((sin_d(dec) - rho_sin_phi * sin_pi) * cos_d(delta_ra), denom)
+      / DEG;
+  (norm360(ra + delta_ra), dec_topo)
 }
 
 /// Equatorial (α, δ) → horizontal (azimuth from North through East,
@@ -1012,33 +1075,6 @@ fn parse_location_date(args: &[Expr]) -> Option<((f64, f64), f64)> {
 
 // ─── Result builders ────────────────────────────────────────────────
 
-/// DateObject[{y, m, d, h, min}, "Minute", "Gregorian", 0.] for a UTC
-/// Julian date, rounded to the nearest minute.
-fn date_object_minute(jd: f64) -> Expr {
-  let abs = jd_to_abs_seconds(jd);
-  let rounded = (abs / 60.0).round() * 60.0;
-  let (y, m, d, h, min, _) = absolute_seconds_to_date(rounded);
-  Expr::FunctionCall {
-    name: "DateObject".to_string(),
-    args: vec![
-      Expr::List(
-        vec![
-          Expr::Integer(y as i128),
-          Expr::Integer(m as i128),
-          Expr::Integer(d as i128),
-          Expr::Integer(h as i128),
-          Expr::Integer(min as i128),
-        ]
-        .into(),
-      ),
-      Expr::String("Minute".to_string()),
-      Expr::String("Gregorian".to_string()),
-      Expr::Real(0.0),
-    ]
-    .into(),
-  }
-}
-
 /// DateObject[{y, m, d, h, min, s}, "Instant", "Gregorian", 0.] for a
 /// UTC Julian date, with Real seconds.
 fn date_object_instant(jd: f64) -> Expr {
@@ -1069,13 +1105,21 @@ fn date_object_instant(jd: f64) -> Expr {
 }
 
 fn angle_quantity(deg: f64) -> Expr {
-  // SunPosition/MoonPosition report hundredths of a degree.
-  let rounded = (deg * 100.0).round() / 100.0;
+  Expr::FunctionCall {
+    name: "Quantity".to_string(),
+    args: vec![Expr::Real(deg), Expr::String("AngularDegrees".to_string())]
+      .into(),
+  }
+}
+
+/// Right ascension is reported in hours, not degrees — the same unit
+/// `SiderealTime` uses.
+fn right_ascension_quantity(hours: f64) -> Expr {
   Expr::FunctionCall {
     name: "Quantity".to_string(),
     args: vec![
-      Expr::Real(rounded),
-      Expr::String("AngularDegrees".to_string()),
+      Expr::Real(hours),
+      Expr::String("HoursOfRightAscension".to_string()),
     ]
     .into(),
   }
@@ -1266,33 +1310,46 @@ fn split_celestial_options(args: &[Expr]) -> (Vec<Expr>, String) {
 
 fn body_position_ast(
   name: &str,
-  ra_dec: fn(f64) -> (f64, f64),
+  ra_dec_dist: fn(f64) -> (f64, f64, f64),
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let (positional, system) = split_celestial_options(args);
   let Some(((lat, lon), jd)) = parse_location_date(&positional) else {
     return unevaluated(name, args);
   };
-  let (ra, dec) = ra_dec(jd_utc_to_jde(jd));
-  let (a, b) = match system.as_str() {
-    "Equatorial" => (ra, dec),
-    "Horizon" => equatorial_to_horizontal(ra, dec, lat, lon, jd),
-    _ => return unevaluated(name, args),
-  };
-  Ok(Expr::List(
-    vec![angle_quantity(a), angle_quantity(b)].into(),
-  ))
+  let (ra_geo, dec_geo, distance) = ra_dec_dist(jd_utc_to_jde(jd));
+  // Both systems are reported as seen from the observer, so the Moon's
+  // ~1° parallax shows up in its right ascension as well as its altitude.
+  let (ra, dec) = topocentric_ra_dec(ra_geo, dec_geo, distance, lat, lon, jd);
+  match system.as_str() {
+    "Equatorial" => Ok(Expr::List(
+      vec![right_ascension_quantity(ra / 15.0), angle_quantity(dec)].into(),
+    )),
+    "Horizon" => {
+      let (az, alt) = equatorial_to_horizontal(ra, dec, lat, lon, jd);
+      // The altitude is the apparent one: what an observer sees through
+      // the atmosphere, lifted above the geometric altitude by refraction.
+      Ok(Expr::List(
+        vec![
+          angle_quantity(az),
+          angle_quantity(alt + refraction_deg(alt)),
+        ]
+        .into(),
+      ))
+    }
+    _ => unevaluated(name, args),
+  }
 }
 
 /// SunPosition[loc?, date?] — azimuth/altitude of the Sun (or
 /// RA/declination with CelestialSystem -> "Equatorial").
 pub fn sun_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  body_position_ast("SunPosition", sun_ra_dec, args)
+  body_position_ast("SunPosition", sun_ra_dec_dist, args)
 }
 
 /// MoonPosition[loc?, date?] — azimuth/altitude of the Moon.
 pub fn moon_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  body_position_ast("MoonPosition", moon_ra_dec, args)
+  body_position_ast("MoonPosition", moon_ra_dec_dist, args)
 }
 
 // ─── SiderealTime ───────────────────────────────────────────────────
@@ -1368,7 +1425,7 @@ fn sun_event_ast(
   if explicit_date {
     // The event on the given UTC calendar day
     match sun_rise_set(jd, lat, lon) {
-      Some((r, s)) => Ok(date_object_minute(if rise { r } else { s })),
+      Some((r, s)) => Ok(date_object_instant(if rise { r } else { s })),
       None => Ok(Expr::FunctionCall {
         name: "Missing".to_string(),
         args: vec![Expr::String("NotApplicable".to_string())].into(),
@@ -1381,7 +1438,7 @@ fn sun_event_ast(
       if let Some((r, s)) = sun_rise_set(jd + day as f64, lat, lon) {
         let event = if rise { r } else { s };
         if event > jd {
-          return Ok(date_object_minute(event));
+          return Ok(date_object_instant(event));
         }
         // Event already passed today; check the next day.
         continue;
@@ -1395,7 +1452,7 @@ fn sun_event_ast(
 }
 
 /// Sunrise[loc?, date?] — with a date, the sunrise of that day; without,
-/// the next sunrise. Minute-granular DateObject in UTC.
+/// the next sunrise, as a UTC instant.
 pub fn sunrise_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   sun_event_ast("Sunrise", true, args)
 }
