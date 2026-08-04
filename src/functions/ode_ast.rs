@@ -3644,18 +3644,6 @@ fn is_exact_number(e: &Expr) -> bool {
   }
 }
 
-/// Convert a whole-number `Real` to an `Integer` (the grid coordinates of an
-/// implicit-grid interpolation are integers in wolframscript even though they
-/// are stored as reals); other values pass through unchanged.
-fn whole_real_to_int(e: &Expr) -> Expr {
-  match e {
-    Expr::Real(f) if f.fract() == 0.0 && f.abs() < 9e15 => {
-      Expr::Integer(*f as i128)
-    }
-    other => other.clone(),
-  }
-}
-
 /// Answer an `InterpolatingFunction[…]["property"]` query from the stored
 /// `{x, y}` grid data. Returns `None` for unrecognized properties so the call
 /// stays unevaluated.
@@ -3674,7 +3662,7 @@ fn interpolating_function_property(
     if let Expr::List(pair) = p
       && pair.len() == 2
     {
-      xs.push(whole_real_to_int(&pair[0]));
+      xs.push(pair[0].clone());
       ys.push(pair[1].clone());
     } else {
       return None;
