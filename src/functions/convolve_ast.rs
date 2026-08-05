@@ -76,16 +76,6 @@ pub fn convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Times".to_string(),
     args: factors.into(),
   };
-  let div = |n: Expr, d: Expr| Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(n),
-    right: Box::new(d),
-  };
-  let pow = |b: Expr, e: Expr| Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(b),
-    right: Box::new(e),
-  };
   let e_sym = || Expr::Identifier("E".to_string());
 
   // UnitStep[x] ⊛ UnitStep[x] → y*UnitStep[y]
@@ -102,16 +92,17 @@ pub fn convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let q = frac(a.0 * b.0 * s.1, a.1 * b.1 * s.0); // a*b/(a + b)
     let sqrt_part = Expr::FunctionCall {
       name: "Sqrt".to_string(),
-      args: vec![div(Expr::Constant("Pi".to_string()), frac_to_expr(s))].into(),
+      args: vec![div2(Expr::Constant("Pi".to_string()), frac_to_expr(s))]
+        .into(),
     };
-    let y_sq = pow(y.clone(), Expr::Integer(2));
+    let y_sq = pow2(y.clone(), Expr::Integer(2));
     let exponent = match q {
       (1, 1) => y_sq,
-      (1, r) => div(y_sq, Expr::Integer(r)),
+      (1, r) => div2(y_sq, Expr::Integer(r)),
       (p, 1) => times(vec![Expr::Integer(p), y_sq]),
-      (p, r) => div(times(vec![Expr::Integer(p), y_sq]), Expr::Integer(r)),
+      (p, r) => div2(times(vec![Expr::Integer(p), y_sq]), Expr::Integer(r)),
     };
-    return Ok(div(sqrt_part, pow(e_sym(), exponent)));
+    return Ok(div2(sqrt_part, pow2(e_sym(), exponent)));
   }
 
   // E^(-a x) UnitStep[x] ⊛ (same a) → (y*UnitStep[y])/E^(a y)
@@ -123,11 +114,13 @@ pub fn convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let rate_term = match a {
       (1, 1) => y.clone(),
       (p, 1) => times(vec![Expr::Integer(p), y.clone()]),
-      (p, r) => div(times(vec![Expr::Integer(p), y.clone()]), Expr::Integer(r)),
+      (p, r) => {
+        div2(times(vec![Expr::Integer(p), y.clone()]), Expr::Integer(r))
+      }
     };
-    return Ok(div(
+    return Ok(div2(
       times(vec![y.clone(), unit_step_y()]),
-      pow(e_sym(), rate_term),
+      pow2(e_sym(), rate_term),
     ));
   }
 
