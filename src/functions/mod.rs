@@ -29,6 +29,7 @@ pub mod dendrogram;
 pub mod dirichlet_ast;
 pub mod element_data;
 pub mod entity_ast;
+pub mod example_data;
 pub mod expr_form;
 pub mod field_plot;
 pub mod function_range_ast;

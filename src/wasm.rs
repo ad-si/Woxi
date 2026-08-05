@@ -552,14 +552,28 @@ pub fn evaluate_manipulate_full(
       let _ = crate::interpret(m);
     }
     // Read back the mutated variables so the frontend can track them.
-    let updated: Vec<(String, String)> = mutated_vars
-      .iter()
-      .filter_map(|v| {
-        crate::interpret_to_expr(v)
-          .ok()
-          .map(|e| (v.clone(), crate::syntax::expr_to_input_form(&e)))
-      })
-      .collect();
+    let read_back = |v: &String| {
+      crate::interpret_to_expr(v)
+        .ok()
+        .map(|e| (v.clone(), crate::syntax::expr_to_input_form(&e)))
+    };
+    let mut updated: Vec<(String, String)> =
+      mutated_vars.iter().filter_map(read_back).collect();
+    // A mutation need not be a plain assignment — a caption `Button[…]`
+    // sends its whole held action (e.g. `If[n == 1, n = 6, n--]`), whose
+    // target no assignment-shaped scan can name. Anything the action
+    // actually changed is caught here by comparing each binding against
+    // the value it was installed with.
+    for (name, before) in &bindings {
+      if updated.iter().any(|(n, _)| n == name) {
+        continue;
+      }
+      if let Some((_, after)) = read_back(name)
+        && after != *before
+      {
+        updated.push((name.clone(), after));
+      }
+    }
 
     // Body output — the globals are in scope, so the body string carries no
     // matrix literal.

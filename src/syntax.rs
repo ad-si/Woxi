@@ -7205,6 +7205,36 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
   }
 }
 
+/// Whether the body of `body &` has to print parenthesized.
+///
+/// `&` binds tighter than `;` and than every assignment operator, so a body
+/// that prints as one of those re-parses the wrong way when printed bare:
+/// `(a; b) &` would print as `a; b & ` and read back as
+/// `CompoundExpression[a, b &]`, and `(a = 1) &` as `Set[a, 1 &]`. Both
+/// change what the expression means — badly so when the body assigns a
+/// slot-carrying value, which is how a Demonstration's `Initialization`
+/// builds its lookup tables.
+fn function_body_needs_parens(body: &Expr) -> bool {
+  match body {
+    Expr::CompoundExpr(_) => true,
+    Expr::FunctionCall { name, args } => {
+      args.len() == 2
+        && matches!(
+          name.as_str(),
+          "Set"
+            | "SetDelayed"
+            | "UpSet"
+            | "UpSetDelayed"
+            | "AddTo"
+            | "SubtractFrom"
+            | "TimesBy"
+            | "DivideBy"
+        )
+    }
+    _ => false,
+  }
+}
+
 /// Whether a `Part` base must be parenthesized so `base[[i]]` re-parses to
 /// the same tree. `[[…]]` binds tighter than every infix operator, so any
 /// base that prints with a top-level operator (`a /. b`, `a + b`, `x &`, …)
@@ -10470,7 +10500,16 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
     }
     Expr::Function { body } => {
       // Wolfram shows anonymous functions with trailing space: "f & " (not "f &")
-      format!("{} & ", format_expr(body, ExprForm::Input))
+      // A body that prints with an operator binding looser than `&` — i.e.
+      // a `;` compound — has to be parenthesized, or `(a; b) &` would print
+      // as `a; b & ` and re-parse as `CompoundExpression[a, b &]`, which is
+      // a different (and, once slots are involved, badly broken) tree.
+      let body_str = format_expr(body, ExprForm::Input);
+      if function_body_needs_parens(body) {
+        format!("({}) & ", body_str)
+      } else {
+        format!("{} & ", body_str)
+      }
     }
     Expr::NamedFunction {
       params,

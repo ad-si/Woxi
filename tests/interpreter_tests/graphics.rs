@@ -15216,11 +15216,11 @@ mod manipulate {
   // ── Spec extraction / Block substitution (used by Playground / Studio) ──
 
   use woxi::functions::graphics::{
-    ManipulateControl, extract_animator_spec, extract_click_pane_spec,
-    extract_control_spec, extract_list_animate_spec, extract_locator_pane_spec,
-    extract_manipulate_spec, manipulate_block_code, manipulate_enabled_states,
-    manipulate_initial_bindings, manipulate_spec_to_json,
-    parse_manipulate_bindings,
+    DisplayNode, ManipulateControl, extract_animator_spec,
+    extract_click_pane_spec, extract_control_spec, extract_list_animate_spec,
+    extract_locator_pane_spec, extract_manipulate_spec, manipulate_block_code,
+    manipulate_enabled_states, manipulate_initial_bindings,
+    manipulate_spec_to_json, parse_manipulate_bindings,
   };
   use woxi::interpret_to_expr;
 
@@ -16250,12 +16250,12 @@ mod manipulate {
     let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
     let json = manipulate_spec_to_json(&spec);
     assert!(
-      json.contains(r#""labelRuns":[{"text":"t","italic":true}]"#),
+      json.contains(r#""labelRuns":[{"text":"t","italic":true,"bold":false}]"#),
       "missing italic run for t in: {json}"
     );
     assert!(
       json.contains(
-        r#""labelRuns":[{"text":"m","italic":true},{"text":"₁","italic":false}]"#
+        r#""labelRuns":[{"text":"m","italic":true,"bold":false},{"text":"₁","italic":false,"bold":false}]"#
       ),
       "missing styled runs for m in: {json}"
     );
@@ -17661,6 +17661,143 @@ mod manipulate {
       result.graphics.is_some(),
       "ArrayPlot should render; got {:?}",
       result.result
+    );
+  }
+
+  // ── Buttons, spacers and styled prose in a Dynamic caption ──
+
+  /// A Demonstration-style caption: two stepping buttons, spacers and a
+  /// styled read-out of the current value, all inside `Dynamic[…]`.
+  const CAPTION_EXAMPLE: &str = "Manipulate[n^2, \
+    {{n, 1}, {1, 2, 3}, ControlType -> None}, \
+    Dynamic[Column[{Row[{Button[\"back\", If[n == 1, n = 3, n--]], \
+    Spacer[10], Button[\"next\", If[n == 3, n = 1, n++]], Spacer[10], \
+    \"step \", Style[n, Bold, Red]}]}]]]";
+
+  fn caption_tree(bindings: &[(String, String)]) -> DisplayNode {
+    use woxi::functions::graphics::build_manipulate_display;
+    let expr = interpret_to_expr(CAPTION_EXAMPLE).unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    assert_eq!(spec.displays.len(), 1, "one trailing display element");
+    build_manipulate_display(&spec.displays[0], bindings)
+  }
+
+  /// The nodes of a caption tree in reading order.
+  fn flatten(node: &DisplayNode, out: &mut Vec<DisplayNode>) {
+    match node {
+      DisplayNode::Column(cs) | DisplayNode::Row(cs) => {
+        for c in cs {
+          flatten(c, out);
+        }
+      }
+      DisplayNode::Panel(c) => flatten(c, out),
+      other => out.push(other.clone()),
+    }
+  }
+
+  #[test]
+  fn display_button_carries_its_held_action() {
+    let tree = caption_tree(&[("n".to_string(), "1".to_string())]);
+    let mut nodes = Vec::new();
+    flatten(&tree, &mut nodes);
+    let actions: Vec<String> = nodes
+      .iter()
+      .filter_map(|n| match n {
+        DisplayNode::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      actions,
+      vec![
+        "If[n == 1, n = 3, n--]".to_string(),
+        "If[n == 3, n = 1, n++]".to_string(),
+      ],
+      "the action must stay unevaluated until the button is pressed"
+    );
+  }
+
+  #[test]
+  fn display_button_label_is_rendered_text() {
+    let tree = caption_tree(&[("n".to_string(), "1".to_string())]);
+    let mut nodes = Vec::new();
+    flatten(&tree, &mut nodes);
+    let DisplayNode::Button { label, .. } = &nodes[0] else {
+      panic!("first node should be a button, got {:?}", nodes[0]);
+    };
+    let DisplayNode::Text { runs } = label.as_ref() else {
+      panic!("button label should be text, got {label:?}");
+    };
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].text, "back");
+  }
+
+  #[test]
+  fn display_spacer_keeps_its_width() {
+    let tree = caption_tree(&[("n".to_string(), "1".to_string())]);
+    let mut nodes = Vec::new();
+    flatten(&tree, &mut nodes);
+    let widths: Vec<f64> = nodes
+      .iter()
+      .filter_map(|n| match n {
+        DisplayNode::Spacer { width } => Some(*width),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(widths, vec![10.0, 10.0]);
+  }
+
+  #[test]
+  fn display_style_renders_as_styled_text() {
+    // `Style[n, Bold, Red]` shows the *value* of n, bold and red — not the
+    // literal `Style[…]` source.
+    let tree = caption_tree(&[("n".to_string(), "2".to_string())]);
+    let mut nodes = Vec::new();
+    flatten(&tree, &mut nodes);
+    let DisplayNode::Text { runs } = nodes.last().unwrap() else {
+      panic!("last node should be styled text, got {:?}", nodes.last());
+    };
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].text, "2");
+    assert!(runs[0].bold);
+    assert_eq!(runs[0].color, Some((1.0, 0.0, 0.0)));
+  }
+
+  #[test]
+  fn display_button_action_updates_the_bound_variable() {
+    // Pressing "next" runs the held action against the live bindings, which
+    // is how a caption button steps the widget.
+    use woxi::functions::graphics::apply_manipulate_button_action;
+    let bindings = vec![("n".to_string(), "3".to_string())];
+    let updated =
+      apply_manipulate_button_action(&bindings, "If[n == 3, n = 1, n++]");
+    assert_eq!(updated, vec![("n".to_string(), "1".to_string())]);
+    let updated = apply_manipulate_button_action(
+      &[("n".to_string(), "1".to_string())],
+      "If[n == 3, n = 1, n++]",
+    );
+    assert_eq!(updated, vec![("n".to_string(), "2".to_string())]);
+  }
+
+  #[test]
+  fn display_json_exposes_buttons_spacers_and_styled_runs() {
+    // The Playground consumes the same tree as JSON.
+    use woxi::functions::graphics::render_manipulate_display;
+    let expr = interpret_to_expr(CAPTION_EXAMPLE).unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    let json = render_manipulate_display(
+      &spec.displays[0],
+      &[("n".to_string(), "2".to_string())],
+    );
+    assert!(json.contains(r#""kind":"button""#), "json: {json}");
+    assert!(
+      json.contains(r#""kind":"spacer","width":10"#),
+      "json: {json}"
+    );
+    assert!(json.contains(r#""kind":"text""#), "json: {json}");
+    assert!(
+      json.contains(r#""bold":true,"color":"rgb(255,0,0)""#),
+      "json: {json}"
     );
   }
 
