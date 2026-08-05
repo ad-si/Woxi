@@ -4573,7 +4573,7 @@ fn decimal_string_to_base_string(
 /// arbitrary-precision one the equivalent of its own precision. Trailing
 /// zeros are dropped, so a value that terminates in that base prints
 /// short (`3.5` in base 2 is `11.1`).
-pub(crate) fn real_to_base_string(
+fn real_to_base_string(
   x: f64,
   base: i128,
   decimal_digits: f64,
@@ -14773,7 +14773,7 @@ fn apply_mantissa_options(mantissa: &str, opts: &NumberFormOptions) -> String {
 /// width n + 2. None for non-numeric values or malformed specs.
 /// The left NumberPadding string of a display-form argument list: the first
 /// element of a `NumberPadding -> {p1, p2}` rule, or " " when absent.
-pub fn number_padding_left(args: &[Expr]) -> String {
+fn number_padding_left(args: &[Expr]) -> String {
   for a in args {
     if let Expr::Rule {
       pattern,
@@ -14794,7 +14794,7 @@ pub fn number_padding_left(args: &[Expr]) -> String {
 /// the fractional part past the value's significant digits, so an explicit ""
 /// suppresses trailing zeros (e.g. `PaddedForm[1.5, {4, 2}, NumberPadding ->
 /// {"0", ""}]` -> "001.5" rather than "001.50").
-pub fn number_padding_right(args: &[Expr]) -> String {
+fn number_padding_right(args: &[Expr]) -> String {
   for a in args {
     if let Expr::Rule {
       pattern,
@@ -14832,7 +14832,7 @@ fn pad_integer_body(body: &str, n: usize, lpad: &str) -> String {
 /// the decimal integer field. Returns `(padded_digits, base)`; None when the
 /// value is not an integer BaseForm or the spec is malformed. A `{n, f}` spec
 /// pads to its integer part (integers ignore the fractional spec).
-pub fn padded_base_form_digits(
+fn padded_base_form_digits(
   value: &Expr,
   spec: &Expr,
   lpad: &str,

@@ -6289,7 +6289,7 @@ fn build_root_from_coeffs(coeffs: &[i128], x: f64) -> Option<Expr> {
 /// Split a model specification into the model and any constraints given
 /// beside it: Wolfram writes a constrained fit as
 /// `{model, cons₁, cons₂, …}`, e.g. `{a Sin[x + b], 50 < a < 60}`.
-pub(crate) fn split_fit_model_spec(spec: &Expr) -> (Expr, Vec<Expr>) {
+fn split_fit_model_spec(spec: &Expr) -> (Expr, Vec<Expr>) {
   match spec {
     // A bare list of two or more items is only a constrained model when
     // what follows the model reads as a condition; a `{f1, f2}` list of
@@ -6407,7 +6407,7 @@ pub fn find_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// The fitting core: least squares by Gauss-Newton, optionally weighted
 /// (each residual scaled by `sqrt(w)`, as `NonlinearModelFit`'s `Weights`
 /// asks for) and optionally confined to the box the constraints describe.
-pub(crate) fn find_fit_weighted(
+fn find_fit_weighted(
   data_expr: &Expr,
   model: &Expr,
   constraints: &[Expr],

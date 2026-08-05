@@ -17109,7 +17109,7 @@ fn pareto4_mean_variance(
 
 /// The `{lo, hi}` bounds and base distribution of a
 /// `TruncatedDistribution[{lo, hi}, dist]`.
-pub fn truncated_parts(dist: &Expr) -> Option<(Expr, Expr, Expr)> {
+fn truncated_parts(dist: &Expr) -> Option<(Expr, Expr, Expr)> {
   let Expr::FunctionCall { name, args } = dist else {
     return None;
   };
@@ -17291,7 +17291,7 @@ pub fn truncated_distribution_value(
 
 /// The `{lo, hi}` bounds and base distribution of a
 /// `CensoredDistribution[{lo, hi}, dist]`.
-pub fn censored_parts(dist: &Expr) -> Option<(Expr, Expr, Expr)> {
+fn censored_parts(dist: &Expr) -> Option<(Expr, Expr, Expr)> {
   let Expr::FunctionCall { name, args } = dist else {
     return None;
   };

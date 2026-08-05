@@ -109,7 +109,7 @@ fn contains_inner_fraction(e: &Expr) -> bool {
   }
 }
 
-pub fn cancel_expr(expr: &Expr) -> Expr {
+fn cancel_expr(expr: &Expr) -> Expr {
   cancel_expr_impl(expr, true)
 }
 

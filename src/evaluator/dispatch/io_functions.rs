@@ -4938,7 +4938,7 @@ font-style: normal; src: url(\"{data_url}\") format(\"truetype\"); }}\n"
 /// embedded face from the attribute. Both paths therefore converge on
 /// Atkinson. The Mono face is embedded only when the document actually uses
 /// monospace text, to avoid bloating graphics that don't.
-pub(crate) fn embed_used_fonts(svg: &str) -> String {
+fn embed_used_fonts(svg: &str) -> String {
   // Only SVG documents that actually draw text need embedded fonts.
   if !svg.contains("<svg") || !svg.contains("<text") {
     return svg.to_string();

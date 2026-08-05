@@ -1363,9 +1363,7 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
 /// The font size and colour a named style carries in Wolfram's default
 /// stylesheet — `Style[expr, "Section"]` is large and orange, `"Label"`
 /// small and black. Measured from wolframscript's own rendering.
-pub(crate) fn named_style_appearance(
-  name: &str,
-) -> Option<(f64, Option<(u8, u8, u8)>)> {
+fn named_style_appearance(name: &str) -> Option<(f64, Option<(u8, u8, u8)>)> {
   Some(match name {
     "Title" => (44.0, Some((204, 12, 2))),
     "Subtitle" => (24.0, Some((89, 89, 89))),
@@ -1382,7 +1380,7 @@ pub(crate) fn named_style_appearance(
 /// and `Large` are absolute in Wolfram's default stylesheet; `Larger` and
 /// `Smaller` scale whatever size is in force. Measured from wolframscript's
 /// own rendering of `Text[Style["z", …]]` against numeric sizes.
-pub(crate) fn named_font_size(name: &str, current: f64) -> Option<f64> {
+fn named_font_size(name: &str, current: f64) -> Option<f64> {
   Some(match name {
     "Tiny" => 6.0,
     "Small" => 9.0,
@@ -1464,9 +1462,7 @@ fn is_button_bar(spec: &Expr) -> bool {
 /// explicit directives sit on top of it, whichever side of it they were
 /// written. `Style["A", 20, "Label"]` is 20-point text, not the 9-point the
 /// "Label" stylesheet entry gives on its own.
-pub(crate) fn style_directives_in_application_order(
-  directives: &[Expr],
-) -> Vec<&Expr> {
+fn style_directives_in_application_order(directives: &[Expr]) -> Vec<&Expr> {
   let (named, explicit): (Vec<&Expr>, Vec<&Expr>) =
     directives.iter().partition(
       |d| matches!(d, Expr::String(s) if named_style_appearance(s).is_some()),
@@ -14313,7 +14309,7 @@ fn style_pushed_into_layout(inner: &Expr, directives: &[Expr]) -> Option<Expr> {
 /// Typeset `expr` in TraditionalForm as a standalone SVG, through the same
 /// box builder and box layout the top-level display uses. `None` when the
 /// boxes lay out to nothing.
-pub fn form_box_svg(expr: &Expr) -> Option<String> {
+fn form_box_svg(expr: &Expr) -> Option<String> {
   let boxes =
     crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
       expr,
