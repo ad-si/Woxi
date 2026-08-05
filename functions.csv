@@ -1079,7 +1079,7 @@ LCM,Returns the least common multiple of integers and rationals (and Gaussian in
 Predict,,🚫,,10.0,1081
 RomanNumeral,Converts an integer to a Roman numeral string,✅,pure,10.2,1082
 FourierTrigSeries,,🚫,,7.0,1085
-LabelingFunction,,🚫,,7.0,1085
+LabelingFunction,Option specifying how chart and plot elements are labeled,✅,pure,7.0,1085
 MaxMemoryUsed,Peak memory usage in the current session,✅,pure,1.0,1085
 TextData,,🚫,,8.0,1086
 Classify,,🚫,,10.0,1087

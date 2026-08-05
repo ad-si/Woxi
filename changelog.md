@@ -2,6 +2,34 @@
 
 # Unreleased
 
+- Fixes driven by a Wolfram Demonstration that plots the concentrations of
+    a catalysed reaction and breaks them down in an inset pie chart:
+    - `PieChart` honours `LabelingFunction -> f`, labelling every wedge with
+        `f[value]`. A `Placed[label, position]` result picks the radius the
+        text sits at — `"RadialInner"` and `"RadialOuter"` hug the hub or the
+        rim, and `"RadialCallout"` puts the label outside the pie on a leader
+        line, with the wedges giving up the room the text needs. The option
+        used to be ignored, so a pie labelled only through it came out bare.
+        A structured label such as `Row[{NumberForm[100 #, 2], "%"}, " "]`
+        now typesets the way every other chart label does, so the number
+        forms inside it are applied.
+    - An axis label written through a typesetting wrapper still prints:
+        `AxesLabel -> TraditionalForm /@ {t, y}` used to leave *both* axes
+        unlabelled. A list is a label in its own right too, typeset as the
+        list itself, and a wide one over an axis near the left edge slides
+        right instead of running off the image.
+    - Either half of an `Inset` anchor may be symbolic: `{0.8, Center}`
+        means four-fifths along the x axis and halfway up the y one.
+        An unresolved half used to drop the whole position, which parked
+        the inset in the middle of the plot.
+    - A notebook's prose renders a script written over a base
+        (`OverscriptBox`) — a rate constant over a reaction arrow, or an
+        accent such as `OverHat`, which reads as the accented letter. The
+        case was missing entirely, so the raw box source was left in the
+        cell. The long arrows those constants sit on (`\[LongRightArrow]`,
+        `\[DoubleLongLeftRightArrow]` and the rest of the family, plus
+        `\[Equilibrium]`) are named characters now, rather than printing as
+        their own names.
 - Fixes driven by a Wolfram Demonstration that draws a rational cyclic
     polygon inside its circumcircle:
     - `Sphere` and `Ball` draw in a two-dimensional `Graphics`: in the plane
