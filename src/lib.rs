@@ -4938,10 +4938,18 @@ fn store_function_definition(
       // unconditional rule would wrongly delete the guarded rule. In Wolfram,
       // `f[a_,b_] := f[b,a] /; a>b` and `f[a_,b_] := …` are distinct
       // DownValues and both are retained.
+      let new_repeats =
+        evaluator::pattern_matching::repeated_param_pairs(&params);
       entry.retain(|(p, conds, d, h, bt, body)| {
         p.len() != arity
           || bt != &blank_types
           || h != &heads
+          // Repeated pattern variables are part of the pattern, not just a
+          // naming choice: `f[i_, i_]` constrains its two slots to be equal
+          // while `f[j_, k_]` does not, so they are distinct DownValues and
+          // neither redefines the other.
+          || evaluator::pattern_matching::repeated_param_pairs(p)
+            != new_repeats
           // Optional (defaulted) positions distinguish overloads: `f[x_, y_]`
           // and `f[x_, y_:0]` are separate DownValues, so keep an existing rule
           // whose optional-arg pattern differs from the new one's.
