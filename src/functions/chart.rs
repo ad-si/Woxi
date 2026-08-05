@@ -84,6 +84,74 @@ impl StyledLabel {
       crate::functions::graphics::box_string_to_svg(&self.text)
     })
   }
+
+  /// The label as SVG `<text>` content for a picture drawn at `scale`
+  /// render units per nominal point.
+  ///
+  /// A `Style[…, 16]` inside the label typesets to `font-size="16"` in
+  /// nominal points, but the plot renderers draw into a viewBox blown up
+  /// by `RESOLUTION_SCALE`; left alone, the styled run comes out a
+  /// fraction of the size it asked for (in a 3000-unit-wide plot, a
+  /// 16-unit glyph is invisible). Relative sizes — the `70%` of a
+  /// sub/superscript tspan — already follow whatever they inherit.
+  pub(crate) fn svg_scaled(&self, scale: f64) -> String {
+    scale_markup_lengths(&self.svg(), scale)
+  }
+}
+
+/// Multiply the absolute lengths in SVG markup — `font-size="N"` and the
+/// `letter-spacing:Npx` a `Spacer` becomes — by `scale`, leaving relative
+/// ones (`70%`, `1.2em`) as they are.
+fn scale_markup_lengths(markup: &str, scale: f64) -> String {
+  if scale == 1.0 {
+    return markup.to_string();
+  }
+  let mut out = markup.to_string();
+  for (attr, terminator, unit) in
+    [("font-size=\"", '"', ""), ("letter-spacing:", 'p', "px")]
+  {
+    out = scale_lengths_after(&out, attr, terminator, unit, scale);
+  }
+  out
+}
+
+/// Rewrite every `{prefix}{number}` in `markup` — the number running up to
+/// `terminator` — with the number multiplied by `scale`, re-emitting `unit`
+/// after it. A run whose value is not a plain number is left alone.
+fn scale_lengths_after(
+  markup: &str,
+  prefix: &str,
+  terminator: char,
+  unit: &str,
+  scale: f64,
+) -> String {
+  if !markup.contains(prefix) {
+    return markup.to_string();
+  }
+  let mut out = String::with_capacity(markup.len());
+  let mut rest = markup;
+  while let Some(pos) = rest.find(prefix) {
+    let (head, tail) = rest.split_at(pos + prefix.len());
+    out.push_str(head);
+    let Some(end) = tail.find(terminator) else {
+      out.push_str(tail);
+      return out;
+    };
+    let (value, tail) = tail.split_at(end);
+    match value.parse::<f64>() {
+      Ok(len) => {
+        out.push_str(&format!("{:.0}{unit}", len * scale));
+        // The unit was re-emitted, so skip the copy still in `tail`.
+        rest = &tail[unit.len()..];
+      }
+      Err(_) => {
+        out.push_str(value);
+        rest = tail;
+      }
+    }
+  }
+  out.push_str(rest);
+  out
 }
 
 /// The visible text of SVG markup: tags dropped, entities decoded. Used so a
@@ -1729,6 +1797,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         all_triangles.push(Triangle {
           boundary: [true; 3],
+          edge_color: None,
           projected: [
             project(v0, &camera),
             project(v1, &camera),
@@ -1862,6 +1931,7 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
           all.push(Triangle {
             boundary: [true; 3],
+            edge_color: None,
             projected: [
               project(v0, &camera),
               project(v1, &camera),
@@ -2516,7 +2586,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
          fill=\"{fill}\"{style_attrs}>{}</text>\n",
-      sl.svg()
+      sl.svg_scaled(sf)
     ));
   }
 
