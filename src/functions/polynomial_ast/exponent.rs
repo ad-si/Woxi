@@ -6,7 +6,7 @@ use crate::functions::calculus_ast::is_constant_wrt;
 
 /// A simple rational number (numerator, denominator) with denominator > 0.
 #[derive(Clone, Copy, Debug)]
-pub struct Rat {
+struct Rat {
   n: i128,
   d: i128,
 }
@@ -48,11 +48,11 @@ impl Rat {
   }
 
   /// Returns the integer value if this rational is a whole number.
-  pub fn as_int(self) -> Option<i128> {
+  fn as_int(self) -> Option<i128> {
     if self.d == 1 { Some(self.n) } else { None }
   }
 
-  pub fn to_expr(self) -> Expr {
+  fn to_expr(self) -> Expr {
     if self.d == 1 {
       Expr::Integer(self.n)
     } else {
@@ -367,7 +367,7 @@ fn build_max_expr(mut exprs: Vec<Expr>) -> Expr {
 }
 
 /// Find the maximum power of `var` in `expr`.  Returns None for non-polynomial forms.
-pub fn max_power(expr: &Expr, var: &str) -> Option<Rat> {
+fn max_power(expr: &Expr, var: &str) -> Option<Rat> {
   match expr {
     Expr::Integer(_)
     | Expr::BigInteger(_)
@@ -570,7 +570,7 @@ fn collect_powers(expr: &Expr, var: &str) -> Option<Vec<Rat>> {
 }
 
 /// Find the minimum power of `var` in `expr`.
-pub fn min_power(expr: &Expr, var: &str) -> Option<Rat> {
+fn min_power(expr: &Expr, var: &str) -> Option<Rat> {
   match expr {
     Expr::Integer(_)
     | Expr::BigInteger(_)

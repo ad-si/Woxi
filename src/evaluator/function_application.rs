@@ -909,7 +909,7 @@ fn operator_form_accepts_subject(name: &str, subject: &Expr) -> bool {
 /// subject *first* once applied: `f[spec][expr]` is `f[expr, spec]`
 /// (`Select[EvenQ][list]` → `Select[list, EvenQ]`). Both application paths
 /// consult this one list so they cannot drift apart.
-pub fn is_subject_first_operator(name: &str) -> bool {
+fn is_subject_first_operator(name: &str) -> bool {
   matches!(
     name,
     "ReplaceAll"
