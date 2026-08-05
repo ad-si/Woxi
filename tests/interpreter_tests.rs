@@ -631,6 +631,65 @@ mod interpreter_tests {
     assert!(svg.contains("Coin"));
   }
 
+  /// The picture a cell shows is the one its value *is*, not the last one
+  /// drawn while getting there. A Manipulate body that builds several plots
+  /// and then picks one — the standard Demonstrations "which view?" control
+  /// — used to display whichever plot was assigned last.
+  #[test]
+  fn test_displayed_graphic_is_the_result_not_the_last_drawn() {
+    clear_state();
+    // `p1` is a plot 320 wide, `p2` one 480 wide; the body returns `p1`.
+    let r = interpret_with_stdout(
+      "Module[{p1, p2, which}, \
+       which = 1; \
+       p1 = Plot[Sin[x], {x, 0, 4}, ImageSize -> 320]; \
+       p2 = Plot[Cos[x], {x, 0, 4}, ImageSize -> 480]; \
+       Switch[which, 1, p1, 2, p2]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(
+      svg.starts_with("<svg width=\"320\""),
+      "expected the picked plot (320 wide), got: {}",
+      &svg[..svg.len().min(80)]
+    );
+    // …and picking the other branch shows the other plot.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Module[{p1, p2, which}, \
+       which = 2; \
+       p1 = Plot[Sin[x], {x, 0, 4}, ImageSize -> 320]; \
+       p2 = Plot[Cos[x], {x, 0, 4}, ImageSize -> 480]; \
+       Switch[which, 1, p1, 2, p2]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(
+      svg.starts_with("<svg width=\"480\""),
+      "expected the picked plot (480 wide), got: {}",
+      &svg[..svg.len().min(80)]
+    );
+  }
+
+  /// The same holds across the statements of one cell: the value of the
+  /// last statement is what gets displayed.
+  #[test]
+  fn test_displayed_graphic_is_the_last_statements_value() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "p1 = Plot[Sin[x], {x, 0, 4}, ImageSize -> 320];\n\
+       p2 = Plot[Cos[x], {x, 0, 4}, ImageSize -> 480];\n\
+       p1",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(
+      svg.starts_with("<svg width=\"320\""),
+      "expected the referenced plot (320 wide), got: {}",
+      &svg[..svg.len().min(80)]
+    );
+  }
+
   #[test]
   fn test_export_graphic_does_not_render_inline() {
     // Exporting a graphic (e.g. BarChart) to a file writes the file and

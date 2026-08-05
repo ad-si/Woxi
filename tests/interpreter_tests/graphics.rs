@@ -8269,6 +8269,98 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `ContourStyle` colours and thickens the contour lines. Both the
+    /// function form and the equation form draw through it — the equation
+    /// form is how a Demonstration draws a stability boundary.
+    #[test]
+    fn contour_plot_honors_contour_style() {
+      for expr in [
+        "ContourPlot[x + y, {x, 0, 4}, {y, 0, 4}, ContourShading -> False, \
+         ContourStyle -> {Thick, Blue}]",
+        "ContourPlot[y == x, {x, 0, 4}, {y, 0, 4}, \
+         ContourStyle -> {Thick, Blue}]",
+      ] {
+        let svg = export_svg(expr);
+        assert!(
+          svg.contains("stroke=\"rgb(0,0,255)\""),
+          "ContourStyle colour missing from {expr}"
+        );
+        // `Thick` is 2 display pixels; the default contour line is thinner
+        // than one, so the styled stroke must be clearly wider.
+        let widths: Vec<f64> = svg
+          .split("stroke-width=\"")
+          .skip(1)
+          .filter_map(|s| s.split('"').next()?.parse().ok())
+          .collect();
+        assert!(
+          widths.iter().any(|w| *w >= 19.0),
+          "expected a Thick contour stroke in {expr}, widths: {widths:?}"
+        );
+      }
+    }
+
+    /// The default contour line keeps its thin dark-grey look when no
+    /// `ContourStyle` is given.
+    #[test]
+    fn contour_plot_default_line_style_unchanged() {
+      let svg = export_svg("ContourPlot[y == x, {x, 0, 4}, {y, 0, 4}]");
+      assert!(
+        svg.contains("stroke=\"#404040\" stroke-width=\"9.0\""),
+        "default contour stroke changed"
+      );
+    }
+
+    /// `FrameLabel` and `Epilog` reach a contour plot the same way they
+    /// reach a function plot: the labels sit outside the frame and the
+    /// epilog primitives are drawn over the curves in data coordinates.
+    #[test]
+    fn contour_plot_honors_frame_label_and_epilog() {
+      let svg = export_svg(
+        "ContourPlot[y == x, {x, 0, 4}, {y, 0, 4}, \
+         FrameLabel -> {\"across\", \"up\"}, \
+         Epilog -> {Text[\"here\", {2, 3}], Red, PointSize[0.05], \
+         Point[{1, 1}]}]",
+      );
+      for text in [">across</text>", ">up</text>", ">here</text>"] {
+        assert!(svg.contains(text), "missing {text} in:\n{svg}");
+      }
+      assert!(
+        svg.contains("<circle") && svg.contains("rgb(255,0,0)"),
+        "expected the red Epilog point"
+      );
+    }
+
+    /// A `DensityPlot` takes the same labels and epilog — the option
+    /// parsing is shared across the whole density/contour family.
+    #[test]
+    fn density_plot_honors_frame_label_and_epilog() {
+      let svg = export_svg(
+        "DensityPlot[x + y, {x, 0, 4}, {y, 0, 4}, \
+         FrameLabel -> {\"across\", \"up\"}, Epilog -> {Text[\"here\", {2, 3}]}]",
+      );
+      for text in [">across</text>", ">up</text>", ">here</text>"] {
+        assert!(svg.contains(text), "missing {text} in a DensityPlot");
+      }
+    }
+
+    /// `ImageSize -> n {1, 1}` — a plot holds its arguments, so the option
+    /// value arrives unevaluated and has to be evaluated before it can be
+    /// read as the square size it describes.
+    #[test]
+    fn image_size_product_gives_a_square_picture() {
+      for expr in [
+        "Plot[Sin[x], {x, 0, 4}, ImageSize -> 400 {1, 1}]",
+        "ContourPlot[y == x, {x, 0, 4}, {y, 0, 4}, ImageSize -> 400 {1, 1}]",
+      ] {
+        let svg = export_svg(expr);
+        assert!(
+          svg.starts_with("<svg width=\"400\" height=\"400\""),
+          "expected a 400x400 picture for {expr}, got: {}",
+          &svg[..svg.len().min(80)]
+        );
+      }
+    }
+
     /// A pre-rendered equation ContourPlot must merge with other graphics
     /// inside Show — the curve is carried along as plot-source line series.
     #[test]
