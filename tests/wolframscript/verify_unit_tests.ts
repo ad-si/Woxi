@@ -13,7 +13,7 @@ import {
   readdirSync,
   statSync,
 } from "fs";
-import { execSync } from "child_process";
+import { execSync, spawnSync } from "child_process";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -493,6 +493,24 @@ const APPROX_MATCH = new Set([
 ]);
 
 /**
+ * stderr of the most recent wolframscript batch. Kept so a failing batch can
+ * still report what wolframscript complained about (license flakes, hard
+ * kernel errors) even though stderr is no longer forwarded to our terminal.
+ */
+let lastWolframStderr = "";
+
+/** Keep a stderr dump readable: qhull alone emits ~50 lines per degenerate hull. */
+function truncateStderr(stderr: string, maxLines = 40): string {
+  const lines = stderr.trimEnd().split("\n");
+  return lines.length <= maxLines
+    ? lines.join("\n")
+    : [
+        ...lines.slice(0, maxLines),
+        `… (${lines.length - maxLines} more stderr lines omitted)`,
+      ].join("\n");
+}
+
+/**
  * Run one batch of test cases through wolframscript.
  * Returns the raw output string, or throws on failure.
  */
@@ -501,16 +519,33 @@ function runWolframBatch(
   timeoutMs = 300_000
 ): string {
   const wolframProgram = buildWolframScript(batch);
-  try {
-    return execSync(`wolframscript -charset UTF8 -code ${shellQuoteForExec(wolframProgram)}`, {
+  // spawnSync (rather than execSync) so wolframscript's stderr is captured
+  // instead of forwarded straight to our own stderr. Wolfram's bundled
+  // libraries write diagnostics there that are not test failures — e.g. qhull's
+  // multi-page "Initial simplex is flat" report for degenerate ConvexHullMesh /
+  // DelaunayMesh inputs — and they would otherwise bury the progress output.
+  // The captured text is still reported whenever a batch actually fails.
+  const res = spawnSync(
+    `wolframscript -charset UTF8 -code ${shellQuoteForExec(wolframProgram)}`,
+    {
+      shell: true,
       encoding: "utf-8",
       timeout: timeoutMs,
       maxBuffer: 10 * 1024 * 1024,
       killSignal: "SIGKILL", // SIGTERM is ignored by wolframscript during computation
-    });
-  } catch (err: any) {
-    throw new Error(err.stderr || err.message || "wolframscript batch failed");
+    }
+  );
+  lastWolframStderr = res.stderr ?? "";
+  if (res.error) {
+    throw new Error(res.error.message || "wolframscript batch failed");
   }
+  if (res.signal || res.status !== 0) {
+    throw new Error(
+      lastWolframStderr.trim() ||
+        `wolframscript exited with ${res.signal ?? res.status}`
+    );
+  }
+  return res.stdout ?? "";
 }
 
 /**
@@ -1742,6 +1777,15 @@ function main() {
       );
       if (!batchCrashed && output.trim()) {
         console.error(`wolframscript output:\n${output}`);
+      }
+      // stderr is captured rather than forwarded (see runWolframBatch), so echo
+      // it here — it carries the license/activation flake messages and kernel
+      // errors that explain a batch without a DONE sentinel.
+      if (
+        lastWolframStderr.trim() &&
+        !crashErr.includes(lastWolframStderr.trim())
+      ) {
+        console.error(`wolframscript stderr:\n${truncateStderr(lastWolframStderr)}`);
       }
 
       // Bisect to distinguish a genuine hang from a wolframscript cold-start
