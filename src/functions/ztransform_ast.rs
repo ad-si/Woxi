@@ -121,11 +121,11 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       plus(vec![a.clone(), times(vec![Expr::Integer(-1), z.clone()])]);
     return Ok(match k {
       // -(z/(a - z))
-      0 => negate(div2(z.clone(), a_minus_z)),
+      0 => neg1(div2(z.clone(), a_minus_z)),
       // (a*z)/(a - z)^2
       1 => div2(times(vec![a.clone(), z.clone()]), power(a_minus_z, 2)),
       // -((a*z*(a + z))/(a - z)^3)
-      2 => negate(div2(
+      2 => neg1(div2(
         times(vec![a.clone(), z.clone(), plus(vec![a.clone(), z.clone()])]),
         power(a_minus_z, 3),
       )),
@@ -401,13 +401,6 @@ fn times(factors: Vec<Expr>) -> Expr {
 
 fn power(base: Expr, exp: i128) -> Expr {
   pow2(base, Expr::Integer(exp))
-}
-
-fn negate(e: Expr) -> Expr {
-  Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(e),
-  }
 }
 
 fn func(name: &str, arg: Expr) -> Expr {
@@ -789,7 +782,7 @@ pub fn inverse_z_transform_ast(
         1 => rest.into_iter().next().unwrap(),
         _ => times(rest),
       };
-      return Ok(if sign == -1 { negate(w) } else { w });
+      return Ok(if sign == -1 { neg1(w) } else { w });
     }
   }
 
@@ -943,7 +936,7 @@ fn format_inverse_result(
         (1, 1, _) => n_pow(j),
         (_, 1, 0) => pow2(Expr::Integer(p), n.clone()),
         (_, 1, _) => times(vec![pow2(Expr::Integer(p), n.clone()), n_pow(j)]),
-        (1, _, 0) => pow2(Expr::Integer(q), negate(n.clone())),
+        (1, _, 0) => pow2(Expr::Integer(q), neg1(n.clone())),
         (1, _, _) => div2(n_pow(j), pow2(Expr::Integer(q), n.clone())),
         _ => return Ok(None),
       }));

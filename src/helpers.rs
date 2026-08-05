@@ -1,4 +1,11 @@
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+
+pub fn neg1(e: Expr) -> Expr {
+  Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand: Box::new(e),
+  }
+}
 
 pub fn pow2(b: Expr, e: Expr) -> Expr {
   Expr::BinaryOp {
