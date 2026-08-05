@@ -3743,6 +3743,84 @@ mod plot3d {
       assert!(ticks.contains(&"three".to_string()), "{ticks:?}");
     }
 
+    /// A tick given as a bare position is labelled with that *expression*
+    /// typeset, not with its decimal expansion — a Demonstration divides a
+    /// wave's axis with `Ticks -> {{0, Pi/2, Pi, 3 Pi/2, 2 Pi}, …}` and
+    /// expects to read the multiples of π back. A literal number still
+    /// labels itself.
+    #[test]
+    fn a_symbolic_tick_position_labels_itself() {
+      let labels = |code: &str| {
+        export_svg(code)
+          .lines()
+          .filter(|l| l.starts_with("<text"))
+          .filter_map(|l| {
+            let after = l.split_once('>')?.1;
+            Some(after.split_once("</text>")?.0.to_string())
+          })
+          .collect::<Vec<_>>()
+      };
+      let ticks = labels(
+        "Plot[Sin[x], {x, 0, 2 Pi}, \
+         Ticks -> {{0, Pi/2, Pi, 3 Pi/2, 2 Pi}, {-1, 0, 1}}]",
+      );
+      for expected in
+        ["0", "\u{03C0}/2", "\u{03C0}", "3 \u{03C0}/2", "2 \u{03C0}"]
+      {
+        assert!(
+          ticks.contains(&expected.to_string()),
+          "missing tick {expected:?} in {ticks:?}"
+        );
+      }
+      // No tick reads as the number π/2 works out to.
+      assert!(
+        !ticks.iter().any(|t| t.starts_with("1.57")),
+        "a symbolic tick must not be labelled by value: {ticks:?}"
+      );
+      // Literal positions keep labelling themselves.
+      for expected in ["-1", "1"] {
+        assert!(ticks.contains(&expected.to_string()), "{ticks:?}");
+      }
+      // A position that has to be worked out (a symbol standing for the
+      // list, a `Table`) still labels by value.
+      let computed =
+        labels("Plot[x, {x, 0, 4}, Ticks -> {Table[n, {n, 1, 3}], None}]");
+      for expected in ["1", "2", "3"] {
+        assert!(computed.contains(&expected.to_string()), "{computed:?}");
+      }
+      // An axis carrying explicit ticks marks only what it names: the
+      // automatic majors used to leave unlabelled stubs between them.
+      let svg = export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, \
+         Ticks -> {{0, Pi/2, Pi, 3 Pi/2, 2 Pi}, {-1, 0, 1}}]",
+      );
+      let attr = |line: &str, name: &str| -> Option<f64> {
+        line
+          .split_once(&format!("{name}=\""))?
+          .1
+          .split_once('"')?
+          .0
+          .parse()
+          .ok()
+      };
+      let label_xs: Vec<f64> = svg
+        .lines()
+        .filter(|l| l.starts_with("<text") && l.contains(r#"anchor="middle""#))
+        .filter_map(|l| attr(l, "x"))
+        .collect();
+      assert_eq!(label_xs.len(), 5, "{svg}");
+      for mark in svg
+        .lines()
+        .filter(|l| l.starts_with("<line") && attr(l, "x1") == attr(l, "x2"))
+        .filter_map(|l| attr(l, "x1"))
+      {
+        assert!(
+          label_xs.iter().any(|x| (x - mark).abs() < 1.0),
+          "tick mark at {mark} carries no label: {label_xs:?}"
+        );
+      }
+    }
+
     /// `Plot` reads `FrameLabel`, in both the `{bottom, left}` and the
     /// nested four-edge form, and a caption may be styled.
     #[test]
@@ -5737,6 +5815,32 @@ mod plot3d {
         fills("k = 1; ListLinePlot[{1, 4, 2}, Filling -> {k -> Axis}]"),
         1
       );
+    }
+
+    /// Per-series `Filling` rules may be grouped in sub-lists — a
+    /// Demonstration shades three pairs of curves with
+    /// `Filling -> {{1 -> {2}}, {3 -> 0}, {4 -> {5}}}` — which fills the
+    /// same way the flat list does. Grouped this way the whole spec used to
+    /// match no spelling at all and nothing was shaded.
+    #[test]
+    fn grouped_filling_rules_fill_like_a_flat_list() {
+      let fills = |code: &str| export_svg(code).matches("<polygon").count();
+      let curves = "Plot[{Sin[x], 2 Sin[x], 3 Sin[x], 4 Sin[x], 5 Sin[x]}, \
+                    {x, 0, 2 Pi}, PlotRange -> All";
+      let flat = fills(&format!(
+        "{curves}, Filling -> {{1 -> {{2}}, 3 -> 0, 4 -> {{5}}}}]"
+      ));
+      assert_eq!(flat, 3, "three rules must shade three regions");
+      assert_eq!(
+        fills(&format!(
+          "{curves}, Filling -> {{{{1 -> {{2}}}}, {{3 -> 0}}, {{4 -> {{5}}}}}}]"
+        )),
+        flat,
+        "grouping the rules must not change what is shaded"
+      );
+      // A grouped list that holds anything but rules is still not a rule
+      // list, and falls back to the whole-plot reading (here: no fill).
+      assert_eq!(fills(&format!("{curves}, Filling -> {{{{1, 2}}}}]")), 0);
     }
 
     /// `Show` merging several filled plots keeps each one's own

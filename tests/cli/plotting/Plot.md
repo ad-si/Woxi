@@ -69,3 +69,20 @@ tick reaches `E^10`, which the automatic range trims away:
 $ wo 'StringContainsQ[ExportString[Plot[E^x, {x, 0, 10}, PlotRange -> All], "SVG"], "<svg"]'
 True
 ```
+
+A tick given as a bare position is labelled with that expression rather
+than with its decimal expansion, so an axis divided into multiples of π
+reads back as multiples of π:
+
+```scrut
+$ wo 'StringContainsQ[ExportString[Plot[Sin[x], {x, 0, 2 Pi}, Ticks -> {{0, Pi/2, Pi, 3 Pi/2, 2 Pi}, Automatic}], "SVG"], "<svg"]'
+True
+```
+
+`Filling` rules may be grouped in sub-lists — `{{1 -> {2}}, {3 -> 0}}`
+shades the same regions as the flat `{1 -> {2}, 3 -> 0}`:
+
+```scrut
+$ wo 'StringContainsQ[ExportString[Plot[{Sin[x], 2 Sin[x], 3 Sin[x]}, {x, 0, 2 Pi}, Filling -> {{1 -> {2}}, {3 -> 0}}], "SVG"], "<svg"]'
+True
+```
