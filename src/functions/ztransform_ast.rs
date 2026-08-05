@@ -41,7 +41,7 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Integer(1) => z.clone(),
       c => times(vec![c.clone(), z.clone()]),
     };
-    return Ok(divide(num, plus(vec![Expr::Integer(-1), z.clone()])));
+    return Ok(div2(num, plus(vec![Expr::Integer(-1), z.clone()])));
   }
 
   // UnitStep[n] = 1 for n >= 0, so Z{UnitStep[n]} = z/(-1 + z).
@@ -49,7 +49,7 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if name == "UnitStep" && fargs.len() == 1
       && matches!(&fargs[0], Expr::Identifier(v) if *v == n_var))
   {
-    return Ok(divide(z.clone(), plus(vec![Expr::Integer(-1), z.clone()])));
+    return Ok(div2(z.clone(), plus(vec![Expr::Integer(-1), z.clone()])));
   }
 
   // Sin[a n] and Cos[a n] with a free of n and z:
@@ -76,7 +76,7 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         plus(vec![z.clone(), times(vec![Expr::Integer(-1), cos_a])]),
       ])
     };
-    return Ok(divide(num, den));
+    return Ok(div2(num, den));
   }
 
   // Decompose the product into c * n^k * a^n (* 1/n!)
@@ -104,7 +104,7 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![z.clone(), Expr::Integer(-1)].into(),
       }
     } else {
-      divide(Expr::Integer(p), z.clone())
+      div2(Expr::Integer(p), z.clone())
     };
     return Ok(Expr::FunctionCall {
       name: "Power".to_string(),
@@ -121,11 +121,11 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       plus(vec![a.clone(), times(vec![Expr::Integer(-1), z.clone()])]);
     return Ok(match k {
       // -(z/(a - z))
-      0 => negate(divide(z.clone(), a_minus_z)),
+      0 => negate(div2(z.clone(), a_minus_z)),
       // (a*z)/(a - z)^2
-      1 => divide(times(vec![a.clone(), z.clone()]), power(a_minus_z, 2)),
+      1 => div2(times(vec![a.clone(), z.clone()]), power(a_minus_z, 2)),
       // -((a*z*(a + z))/(a - z)^3)
-      2 => negate(divide(
+      2 => negate(div2(
         times(vec![a.clone(), z.clone(), plus(vec![a.clone(), z.clone()])]),
         power(a_minus_z, 3),
       )),
@@ -202,7 +202,7 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let den = if k == 0 { base } else { power(base, k + 1) };
 
-  Ok(divide(num, den))
+  Ok(div2(num, den))
 }
 
 #[derive(Default)]
@@ -399,20 +399,8 @@ fn times(factors: Vec<Expr>) -> Expr {
   }
 }
 
-fn divide(num: Expr, den: Expr) -> Expr {
-  Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(num),
-    right: Box::new(den),
-  }
-}
-
 fn power(base: Expr, exp: i128) -> Expr {
-  Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(base),
-    right: Box::new(Expr::Integer(exp)),
-  }
+  pow2(base, Expr::Integer(exp))
 }
 
 fn negate(e: Expr) -> Expr {
@@ -612,11 +600,7 @@ fn split_fraction(expr: &Expr) -> (i128, Expr, Expr) {
           den.push(if e == -1 {
             base
           } else {
-            Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(base),
-              right: Box::new(Expr::Integer(-e)),
-            }
+            pow2(base, Expr::Integer(-e))
           });
           continue;
         }
@@ -698,19 +682,8 @@ pub fn inverse_z_transform_ast(
       _ => None,
     };
     return Ok(match c {
-      Some(1) => Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(factorial_n),
-        right: Box::new(Expr::Integer(-1)),
-      },
-      Some(c) => divide(
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::Integer(c)),
-          right: Box::new(n.clone()),
-        },
-        factorial_n,
-      ),
+      Some(1) => pow2(factorial_n, Expr::Integer(-1)),
+      Some(c) => div2(pow2(Expr::Integer(c), n.clone()), factorial_n),
       None => unevaluated(args),
     });
   }
@@ -752,11 +725,7 @@ pub fn inverse_z_transform_ast(
       sign
     };
     sign = norm_sign;
-    let a_pow_n = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(a.clone()),
-      right: Box::new(n.clone()),
-    };
+    let a_pow_n = pow2(a.clone(), n.clone());
     let factors = times_factors(&num);
     let fstr: Vec<String> =
       factors.iter().map(crate::syntax::expr_to_string).collect();
@@ -789,14 +758,7 @@ pub fn inverse_z_transform_ast(
         ])),
       ])
     {
-      return Ok(times(vec![
-        a_pow_n,
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(n.clone()),
-          right: Box::new(Expr::Integer(2)),
-        },
-      ]));
+      return Ok(times(vec![a_pow_n, pow2(n.clone(), Expr::Integer(2))]));
     }
     return Ok(unevaluated(args));
   }
@@ -965,14 +927,9 @@ fn format_inverse_result(
     return Ok(Some(Expr::Integer(0)));
   }
 
-  let power = |b: Expr, e: Expr| Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(b),
-    right: Box::new(e),
-  };
   let n_pow = |j: usize| match j {
     1 => n.clone(),
-    _ => power(n.clone(), Expr::Integer(j as i128)),
+    _ => pow2(n.clone(), Expr::Integer(j as i128)),
   };
 
   // Single monomial d_J * n^J * r^n
@@ -984,10 +941,10 @@ fn format_inverse_result(
       return Ok(Some(match (p, q, j) {
         (1, 1, 0) => Expr::Integer(1),
         (1, 1, _) => n_pow(j),
-        (_, 1, 0) => power(Expr::Integer(p), n.clone()),
-        (_, 1, _) => times(vec![power(Expr::Integer(p), n.clone()), n_pow(j)]),
-        (1, _, 0) => power(Expr::Integer(q), negate(n.clone())),
-        (1, _, _) => divide(n_pow(j), power(Expr::Integer(q), n.clone())),
+        (_, 1, 0) => pow2(Expr::Integer(p), n.clone()),
+        (_, 1, _) => times(vec![pow2(Expr::Integer(p), n.clone()), n_pow(j)]),
+        (1, _, 0) => pow2(Expr::Integer(q), negate(n.clone())),
+        (1, _, _) => div2(n_pow(j), pow2(Expr::Integer(q), n.clone())),
         _ => return Ok(None),
       }));
     }
@@ -1029,7 +986,7 @@ fn format_inverse_result(
         factors.push(plus(vec![Expr::Integer(-i), n.clone()]));
       }
       factors.push(n.clone());
-      return Ok(Some(divide(times(factors), Expr::Integer(fact))));
+      return Ok(Some(div2(times(factors), Expr::Integer(fact))));
     }
   }
 
@@ -1135,16 +1092,7 @@ pub fn fourier_coefficient_ast(
     name: "Times".to_string(),
     args: fs.into(),
   };
-  let div = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(a),
-    right: Box::new(b),
-  };
-  let pow = |b: Expr, e: i128| Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(b),
-    right: Box::new(Expr::Integer(e)),
-  };
+  let pow = |b: Expr, e: i128| pow2(b, Expr::Integer(e));
   let i_unit = || Expr::Identifier("I".to_string());
   let pi = || Expr::Constant("Pi".to_string());
 
@@ -1178,8 +1126,8 @@ pub fn fourier_coefficient_ast(
         // Pi^2/3-style quotient (or c*Pi^2 for integer multiples)
         match scaled {
           (p, 1) => times(vec![Expr::Integer(p), pow(pi(), 2)]),
-          (1, q) => div(pow(pi(), 2), Expr::Integer(q)),
-          (p, q) => div(
+          (1, q) => div2(pow(pi(), 2), Expr::Integer(q)),
+          (p, q) => div2(
             times(vec![Expr::Integer(p), pow(pi(), 2)]),
             Expr::Integer(q),
           ),
@@ -1203,29 +1151,25 @@ pub fn fourier_coefficient_ast(
       (0, _) => None,
       (1, 1) => Some(i_unit()),
       (p, 1) => Some(times(vec![Expr::Integer(p), i_unit()])),
-      (p, q) => Some(div(
+      (p, q) => Some(div2(
         times(vec![Expr::Integer(p), i_unit()]),
         Expr::Integer(q),
       )),
     }
   };
-  let m1n = || Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(Expr::Integer(-1)),
-    right: Box::new(n_arg.clone()),
-  };
+  let m1n = || pow2(Expr::Integer(-1), n_arg.clone());
   let n_expr = || n_arg.clone();
 
   let mut general_terms: Vec<Expr> = Vec::new();
   // t: (c1*I*(-1)^n)/n
   if let Some(ci) = coeff_i(c1) {
-    general_terms.push(div(times(vec![ci, m1n()]), n_expr()));
+    general_terms.push(div2(times(vec![ci, m1n()]), n_expr()));
   }
   // t^2: (2*c2*(-1)^n)/n^2
   if c2.0 != 0 {
     let f = frac(2 * c2.0, c2.1);
     let lead = frac_expr(f);
-    general_terms.push(div(times(vec![lead, m1n()]), pow(n_expr(), 2)));
+    general_terms.push(div2(times(vec![lead, m1n()]), pow(n_expr(), 2)));
   }
   // t^3: (c3*I*(-1)^n*(-6 + n^2*Pi^2))/n^3
   if let Some(ci) = coeff_i(c3) {
@@ -1237,7 +1181,7 @@ pub fn fourier_coefficient_ast(
       ]
       .into(),
     };
-    general_terms.push(div(times(vec![ci, m1n(), bracket]), pow(n_expr(), 3)));
+    general_terms.push(div2(times(vec![ci, m1n(), bracket]), pow(n_expr(), 3)));
   }
   let general = match general_terms.len() {
     0 => Expr::Integer(0),
@@ -1325,23 +1269,10 @@ pub fn fourier_sin_cos_coefficient_ast(
     name: "Plus".to_string(),
     args: ts.into(),
   };
-  let div = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(a),
-    right: Box::new(b),
-  };
-  let pow = |b: Expr, e: i128| Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(b),
-    right: Box::new(Expr::Integer(e)),
-  };
+  let pow = |b: Expr, e: i128| pow2(b, Expr::Integer(e));
   let pi = || Expr::Constant("Pi".to_string());
   let n_e = || n_arg.clone();
-  let m1 = || Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(Expr::Integer(-1)),
-    right: Box::new(n_arg.clone()),
-  };
+  let m1 = || pow2(Expr::Integer(-1), n_arg.clone());
   let scaled = |base: i128| -> Expr {
     let f = frac(base * c.0, c.1);
     if f.1 == 1 {
@@ -1367,8 +1298,8 @@ pub fn fourier_sin_cos_coefficient_ast(
     let value = match k {
       0 => scaled(2),
       1 => times(vec![scaled(1), pi()]),
-      2 => div(times(vec![scaled(2), pow(pi(), 2)]), Expr::Integer(3)),
-      3 => div(times(vec![scaled(1), pow(pi(), 3)]), Expr::Integer(2)),
+      2 => div2(times(vec![scaled(2), pow(pi(), 2)]), Expr::Integer(3)),
+      3 => div2(times(vec![scaled(1), pow(pi(), 3)]), Expr::Integer(2)),
       _ => return Ok(unevaluated(args)),
     };
     return crate::evaluator::evaluate_expr_to_expr(&value);
@@ -1377,19 +1308,19 @@ pub fn fourier_sin_cos_coefficient_ast(
   let general: Expr = if sine {
     match k {
       // (-2*(-1 + (-1)^n))/(n*Pi)
-      0 => div(
+      0 => div2(
         times(vec![scaled(-2), plus(vec![Expr::Integer(-1), m1()])]),
         times(vec![n_e(), pi()]),
       ),
       // (-2*(-1)^n)/n
-      1 => div(times(vec![scaled(-2), m1()]), n_e()),
+      1 => div2(times(vec![scaled(-2), m1()]), n_e()),
       // (-2*(2 - 2*(-1)^n + (-1)^n*n^2*Pi^2))/(n^3*Pi)
-      2 => div(
+      2 => div2(
         times(vec![scaled(-2), bracket2()]),
         times(vec![pow(n_e(), 3), pi()]),
       ),
       // (-2*(-1)^n*(-6 + n^2*Pi^2))/n^3
-      3 => div(
+      3 => div2(
         times(vec![
           scaled(-2),
           m1(),
@@ -1413,14 +1344,14 @@ pub fn fourier_sin_cos_coefficient_ast(
         },
       ]),
       // (2*(-1 + (-1)^n))/(n^2*Pi)
-      1 => div(
+      1 => div2(
         times(vec![scaled(2), plus(vec![Expr::Integer(-1), m1()])]),
         times(vec![pow(n_e(), 2), pi()]),
       ),
       // (4*(-1)^n)/n^2
-      2 => div(times(vec![scaled(4), m1()]), pow(n_e(), 2)),
+      2 => div2(times(vec![scaled(4), m1()]), pow(n_e(), 2)),
       // (6*(2 - 2*(-1)^n + (-1)^n*n^2*Pi^2))/(n^4*Pi)
-      3 => div(
+      3 => div2(
         times(vec![scaled(6), bracket2()]),
         times(vec![pow(n_e(), 4), pi()]),
       ),

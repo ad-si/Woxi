@@ -1629,11 +1629,7 @@ fn eval_divide(a: &Expr, b: &Expr) -> Expr {
     _ => {
       match crate::functions::math_ast::divide_ast(&[a.clone(), b.clone()]) {
         Ok(r) => r,
-        Err(_) => Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(a.clone()),
-          right: Box::new(b.clone()),
-        },
+        Err(_) => div2(a.clone(), b.clone()),
       }
     }
   }
@@ -2356,11 +2352,7 @@ pub fn projection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let apply = crate::evaluator::function_application::apply_curried_call;
     let fvu = apply(f, &[v.clone(), u])?;
     let fvv = apply(f, &[v.clone(), v.clone()])?;
-    let scalar = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(fvu),
-      right: Box::new(fvv),
-    };
+    let scalar = div2(fvu, fvv);
     let result = Expr::BinaryOp {
       op: BinaryOperator::Times,
       left: Box::new(scalar),
@@ -2392,11 +2384,7 @@ pub fn projection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Dot".to_string(),
       args: vec![conj_v, v.clone()].into(),
     };
-    let scalar = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(dot_cv_u),
-      right: Box::new(dot_cv_v),
-    };
+    let scalar = div2(dot_cv_u, dot_cv_v);
     let result = Expr::BinaryOp {
       op: BinaryOperator::Times,
       left: Box::new(scalar),
@@ -3201,11 +3189,10 @@ fn divide_exact_root(root: &Expr, d: i128) -> Option<Expr> {
       })
       .ok()
     }
-    _ => crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(root.clone()),
-      right: Box::new(Expr::Integer(d)),
-    })
+    _ => crate::evaluator::evaluate_expr_to_expr(&div2(
+      root.clone(),
+      Expr::Integer(d),
+    ))
     .ok(),
   }
 }
@@ -3280,11 +3267,7 @@ fn quadratic_eigenvalues(b_coeff: i128, c_coeff: i128) -> Vec<Expr> {
       return vec![with_real(re, imag_term(oc)), with_real(re, imag_term(-oc))];
     }
     // Otherwise keep the quotient form (3 + I*Sqrt[11])/2
-    let halved = |num: Expr| Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(num),
-      right: Box::new(Expr::Integer(2)),
-    };
+    let halved = |num: Expr| div2(num, Expr::Integer(2));
     return vec![
       halved(with_real(neg_b, imag_term(outer))),
       halved(with_real(neg_b, imag_term(-outer))),
@@ -8070,11 +8053,7 @@ pub fn cholesky_decomposition_ast(
         let prod = eval_mul(&conj(&u[k][j])?, &u[k][i]);
         numer = eval_sub(&numer, &prod);
       }
-      let entry = eval_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(numer),
-        right: Box::new(diag.clone()),
-      })?;
+      let entry = eval_expr(&div2(numer, diag.clone()))?;
       u[j][i] = entry;
     }
   }
@@ -8203,11 +8182,7 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Q[i] = u[i] / norm
     let mut qi = Vec::with_capacity(n);
     for k in 0..n {
-      qi.push(eval_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(u[i][k].clone()),
-        right: Box::new(norm.clone()),
-      })?);
+      qi.push(eval_expr(&div2(u[i][k].clone(), norm.clone()))?);
     }
     q.push(qi);
 
@@ -8221,16 +8196,8 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for j in (i + 1)..m {
       let unum = dot(&u[i], &u[j])?;
       // R[i][j] = q_i·u_j = (u_i·u_j)/‖u_i‖ — one exact division.
-      r_entries[i][j] = eval_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(unum.clone()),
-        right: Box::new(norm.clone()),
-      })?;
-      let coeff = eval_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(unum),
-        right: Box::new(norm_sq.clone()),
-      })?;
+      r_entries[i][j] = eval_expr(&div2(unum.clone(), norm.clone()))?;
+      let coeff = eval_expr(&div2(unum, norm_sq.clone()))?;
       for k in 0..n {
         u[j][k] = eval_expr(&Expr::BinaryOp {
           op: BinaryOperator::Minus,
@@ -9661,11 +9628,6 @@ pub fn jordan_decomposition_ast(
   let c_zero = same(&c, &zero);
   let repeated = same(&l1, &l2);
 
-  let div = |n: Expr, dn: Expr| Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(n),
-    right: Box::new(dn),
-  };
   let sub = |x: Expr, y: Expr| Expr::FunctionCall {
     name: "Plus".to_string(),
     args: vec![
@@ -9710,12 +9672,12 @@ pub fn jordan_decomposition_ast(
   if !repeated {
     let s = if !c_zero {
       // ((λ - d)/c, 1) for both eigenvalues
-      let x1 = ev(div(sub(l1.clone(), d.clone()), c.clone()))?;
-      let x2 = ev(div(sub(l2.clone(), d.clone()), c.clone()))?;
+      let x1 = ev(div2(sub(l1.clone(), d.clone()), c.clone()))?;
+      let x2 = ev(div2(sub(l2.clone(), d.clone()), c.clone()))?;
       matrix((x1, one.clone()), (x2, one.clone()))
     } else {
       // Upper triangular: (1, 0) for λ = a, (b/(d - a), 1) for λ = d
-      let vd = (ev(div(b.clone(), sub(d.clone(), a.clone())))?, one.clone());
+      let vd = (ev(div2(b.clone(), sub(d.clone(), a.clone())))?, one.clone());
       let va = (one.clone(), zero.clone());
       let (col1, col2) = if same(&l1, &a) { (va, vd) } else { (vd, va) };
       matrix(col1, col2)
@@ -9733,17 +9695,17 @@ pub fn jordan_decomposition_ast(
     .into(),
   );
   let s = if !c_zero {
-    let v1 = ev(div(sub(lam.clone(), d.clone()), c.clone()))?;
+    let v1 = ev(div2(sub(lam.clone(), d.clone()), c.clone()))?;
     let a_minus_lam = ev(sub(a.clone(), lam.clone()))?;
     let w1 = if same(&a_minus_lam, &zero) {
-      ev(div(one.clone(), c.clone()))?
+      ev(div2(one.clone(), c.clone()))?
     } else {
-      ev(div(v1.clone(), a_minus_lam))?
+      ev(div2(v1.clone(), a_minus_lam))?
     };
     matrix((v1, one.clone()), (w1, zero.clone()))
   } else {
     // Upper triangular defective: v = (1, 0), w = (0, 1/b)
-    let w2 = ev(div(one.clone(), b.clone()))?;
+    let w2 = ev(div2(one.clone(), b.clone()))?;
     matrix((one.clone(), zero.clone()), (zero.clone(), w2))
   };
   Ok(Expr::List(vec![s, j].into()))
@@ -11042,11 +11004,7 @@ pub fn coordinate_transform_ast(
     name: head.to_string(),
     args: fargs.into(),
   };
-  let sq = |e: &Expr| Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(e.clone()),
-    right: Box::new(Expr::Integer(2)),
-  };
+  let sq = |e: &Expr| pow2(e.clone(), Expr::Integer(2));
   let norm = |coords: &[&Expr]| {
     call(
       "Sqrt",
