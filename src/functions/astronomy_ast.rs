@@ -35,11 +35,19 @@ const AU_KM: f64 = 149_597_870.7;
 const EARTH_RADIUS_KM: f64 = 6378.14;
 const EARTH_FLATTENING_RATIO: f64 = 0.99664719;
 
+// Every transcendental below goes through `libm` rather than the `f64`
+// methods: the platform libms round the last ULP differently (macOS vs
+// glibc vs MSVC), which moved the final digit of an altitude or an
+// eclipse time depending on where the tests ran. libm is pure Rust and
+// therefore bit-identical everywhere, including wasm32.
 fn sin_d(x: f64) -> f64 {
-  (x * DEG).sin()
+  libm::sin(x * DEG)
 }
 fn cos_d(x: f64) -> f64 {
-  (x * DEG).cos()
+  libm::cos(x * DEG)
+}
+fn tan_d(x: f64) -> f64 {
+  libm::tan(x * DEG)
 }
 
 /// Reduce an angle in degrees to [0, 360).
@@ -231,8 +239,9 @@ fn sun_ra_dec(jde: f64) -> (f64, f64) {
   // Apparent positions use the true obliquity; the 0.00256 cos Ω term of
   // Meeus 25.8 is folded into deps well enough at this accuracy.
   let eps = mean_obliquity(t) + deps;
-  let ra = norm360(f64::atan2(cos_d(eps) * sin_d(lambda), cos_d(lambda)) / DEG);
-  let dec = (sin_d(eps) * sin_d(lambda)).asin() / DEG;
+  let ra =
+    norm360(libm::atan2(cos_d(eps) * sin_d(lambda), cos_d(lambda)) / DEG);
+  let dec = libm::asin(sin_d(eps) * sin_d(lambda)) / DEG;
   (ra, dec)
 }
 
@@ -466,14 +475,13 @@ fn sun_ra_dec_dist(jde: f64) -> (f64, f64, f64) {
 
 /// Ecliptic (λ, β) → equatorial (α, δ), all in degrees.
 fn ecliptic_to_equatorial(lambda: f64, beta: f64, eps: f64) -> (f64, f64) {
-  let ra = f64::atan2(
-    sin_d(lambda) * cos_d(eps) - (beta * DEG).tan() * sin_d(eps),
+  let ra = libm::atan2(
+    sin_d(lambda) * cos_d(eps) - tan_d(beta) * sin_d(eps),
     cos_d(lambda),
   ) / DEG;
-  let dec = (sin_d(beta) * cos_d(eps)
-    + cos_d(beta) * sin_d(eps) * sin_d(lambda))
-  .asin()
-    / DEG;
+  let dec = libm::asin(
+    sin_d(beta) * cos_d(eps) + cos_d(beta) * sin_d(eps) * sin_d(lambda),
+  ) / DEG;
   (norm360(ra), dec)
 }
 
@@ -504,10 +512,7 @@ fn refraction_deg(true_altitude: f64) -> f64 {
   if true_altitude < -1.0 {
     return 0.0;
   }
-  let arcminutes = 1.02
-    / (true_altitude + 10.3 / (true_altitude + 5.11))
-      .to_radians()
-      .tan();
+  let arcminutes = 1.02 / tan_d(true_altitude + 10.3 / (true_altitude + 5.11));
   arcminutes / 60.0
 }
 
@@ -523,15 +528,15 @@ fn topocentric_ra_dec(
   lon: f64,
   jd_ut: f64,
 ) -> (f64, f64) {
-  let u = (EARTH_FLATTENING_RATIO * (lat * DEG).tan()).atan() / DEG;
+  let u = libm::atan(EARTH_FLATTENING_RATIO * tan_d(lat)) / DEG;
   let rho_sin_phi = EARTH_FLATTENING_RATIO * sin_d(u);
   let rho_cos_phi = cos_d(u);
   let sin_pi = EARTH_RADIUS_KM / distance_km;
   let h = apparent_gst_deg(jd_ut) + lon - ra; // local hour angle
   let denom = cos_d(dec) - rho_cos_phi * sin_pi * cos_d(h);
-  let delta_ra = f64::atan2(-rho_cos_phi * sin_pi * sin_d(h), denom) / DEG;
+  let delta_ra = libm::atan2(-rho_cos_phi * sin_pi * sin_d(h), denom) / DEG;
   let dec_topo =
-    f64::atan2((sin_d(dec) - rho_sin_phi * sin_pi) * cos_d(delta_ra), denom)
+    libm::atan2((sin_d(dec) - rho_sin_phi * sin_pi) * cos_d(delta_ra), denom)
       / DEG;
   (norm360(ra + delta_ra), dec_topo)
 }
@@ -549,13 +554,13 @@ fn equatorial_to_horizontal(
   let lst = apparent_gst_deg(jd_ut) + lon;
   let h = lst - ra; // local hour angle
   let alt =
-    (sin_d(lat) * sin_d(dec) + cos_d(lat) * cos_d(dec) * cos_d(h)).asin() / DEG;
+    libm::asin(sin_d(lat) * sin_d(dec) + cos_d(lat) * cos_d(dec) * cos_d(h))
+      / DEG;
   // Meeus measures azimuth from South; add 180° for the from-North
   // convention used by SunPosition.
-  let az_south = f64::atan2(
-    sin_d(h),
-    cos_d(h) * sin_d(lat) - (dec * DEG).tan() * cos_d(lat),
-  ) / DEG;
+  let az_south =
+    libm::atan2(sin_d(h), cos_d(h) * sin_d(lat) - tan_d(dec) * cos_d(lat))
+      / DEG;
   (norm360(az_south + 180.0), alt)
 }
 
@@ -743,10 +748,10 @@ fn moon_illumination(jde: f64) -> (f64, f64) {
 
   // Geocentric elongation (Meeus 48.2)
   let cos_psi = cos_d(beta_m) * cos_d(lambda_m - lambda_s);
-  let psi = cos_psi.clamp(-1.0, 1.0).acos();
+  let psi = libm::acos(cos_psi.clamp(-1.0, 1.0));
   // Phase angle (48.3)
-  let i = f64::atan2(r * psi.sin(), delta - r * psi.cos());
-  let frac = (1.0 + i.cos()) / 2.0;
+  let i = libm::atan2(r * libm::sin(psi), delta - r * libm::cos(psi));
+  let frac = (1.0 + libm::cos(i)) / 2.0;
   (frac, norm360(lambda_m - lambda_s))
 }
 
@@ -921,7 +926,7 @@ fn sun_rise_set(jd_day: f64, lat: f64, lon: f64) -> Option<(f64, f64)> {
   if !(-1.0..=1.0).contains(&cos_h) {
     return None;
   }
-  let big_h0 = cos_h.acos() / DEG;
+  let big_h0 = libm::acos(cos_h) / DEG;
 
   // Meeus uses west longitudes positive; ours are east-positive.
   let mut m0 = (ra_0 - lon - theta0) / 360.0;
@@ -960,10 +965,9 @@ fn sun_rise_set(jd_day: f64, lat: f64, lon: f64) -> Option<(f64, f64)> {
       let dec = interp(dec_m, dec_0, dec_p, n);
       let h = norm360(theta + lon - ra); // local hour angle
       let h_signed = if h > 180.0 { h - 360.0 } else { h };
-      let alt = (sin_d(lat) * sin_d(dec)
-        + cos_d(lat) * cos_d(dec) * cos_d(h_signed))
-      .asin()
-        / DEG;
+      let alt = libm::asin(
+        sin_d(lat) * sin_d(dec) + cos_d(lat) * cos_d(dec) * cos_d(h_signed),
+      ) / DEG;
       let dm = (alt - h0) / (360.0 * cos_d(dec) * cos_d(lat) * sin_d(h_signed));
       *m += dm;
     }

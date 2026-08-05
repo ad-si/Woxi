@@ -3,6 +3,12 @@ use super::*;
 // Astronomical computations are checked against dates with well-known
 // ephemeris values (eclipses, phases, solstice positions). All results
 // follow Woxi's datetime convention: UTC instants, TimeZone 0.
+//
+// The full-precision literals below are exact for every platform because
+// the ephemerides go through `libm` rather than the platform's own
+// transcendentals — the macOS/glibc/MSVC ULP differences used to move the
+// last digit of an altitude, so the same assert passed locally and failed
+// on CI (see the comment above `sin_d` in src/functions/astronomy_ast.rs).
 
 mod moon_phase {
   use super::*;
@@ -13,7 +19,7 @@ mod moon_phase {
     // moon (Jan 25)
     assert_eq!(
       interpret("MoonPhase[DateObject[{2024, 1, 20, 12, 0, 0}]]").unwrap(),
-      "0.7431388863547352"
+      "0.7431388863547354"
     );
   }
 
@@ -121,7 +127,7 @@ mod positions {
          DateObject[{2024, 6, 21, 18, 0, 0}]]"
       )
       .unwrap(),
-      "{Quantity[184.03630805505907, AngularDegrees], \
+      "{Quantity[184.03630805505904, AngularDegrees], \
        Quantity[73.29603980924757, AngularDegrees]}"
     );
   }
@@ -138,7 +144,7 @@ mod positions {
       )
       .unwrap(),
       "{Quantity[0.02278659255310904, HoursOfRightAscension], \
-       Quantity[0.14579656380289838, AngularDegrees]}"
+       Quantity[0.1457965638028984, AngularDegrees]}"
     );
   }
 
@@ -150,7 +156,7 @@ mod positions {
       )
       .unwrap(),
       "{Quantity[193.00948969195917, AngularDegrees], \
-       Quantity[13.155723958468354, AngularDegrees]}"
+       Quantity[13.155723958468359, AngularDegrees]}"
     );
   }
 
@@ -162,8 +168,8 @@ mod positions {
          DateObject[{2024, 6, 21, 6, 0, 0}]]"
       )
       .unwrap(),
-      "{Quantity[191.86509647088556, AngularDegrees], \
-       Quantity[20.317781062057147, AngularDegrees]}"
+      "{Quantity[191.86509647088562, AngularDegrees], \
+       Quantity[20.31778106205714, AngularDegrees]}"
     );
   }
 

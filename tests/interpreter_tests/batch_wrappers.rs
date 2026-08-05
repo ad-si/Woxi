@@ -11193,12 +11193,20 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn create_directory_no_args() {
     let result = interpret("CreateDirectory[]").unwrap();
-    // Should return a string path (temp directory)
+    // Should return the path of a freshly created temp directory. The
+    // separator is platform-specific (`\` on Windows), so check the file
+    // name rather than a slash-prefixed substring.
+    let path = std::path::Path::new(&result);
     assert!(
-      result.contains("/woxi_"),
-      "Expected a path, got: {}",
+      path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.starts_with("woxi_")),
+      "Expected a woxi_* temp path, got: {}",
       result
     );
+    assert!(path.is_dir(), "Expected an existing directory: {}", result);
+    let _ = std::fs::remove_dir_all(path);
   }
 
   /// Every call creates a *new* directory. Regression: the name was fixed
