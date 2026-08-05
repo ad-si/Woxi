@@ -4373,3 +4373,138 @@ mod whitespace_around_definition_parameters {
     assert_eq!(interpret("wsg[x__ ] := {x}; wsg[1, 2]").unwrap(), "{1, 2}");
   }
 }
+
+mod repeated_pattern_variable_in_definition {
+  use super::*;
+
+  // A pattern variable used twice on the left of a definition constrains the
+  // arguments to be identical — `f[1, 2]` must not match `f[i_, i_]`.
+
+  #[test]
+  fn a_repeated_variable_only_matches_equal_arguments() {
+    assert_eq!(
+      interpret("rpa[x_, x_] := x^2; {rpa[3, 3], rpa[3, 4]}").unwrap(),
+      "{9, rpa[3, 4]}"
+    );
+  }
+
+  #[test]
+  fn a_looser_rule_still_covers_the_unequal_case() {
+    // Both rules are kept; the repeated-variable one is more specific and is
+    // tried first, so the diagonal and off-diagonal calls pick different rules.
+    assert_eq!(
+      interpret(
+        "rpb[i_, i_] := \"diag\"; rpb[j_, k_] := \"off\"; \
+         {rpb[1, 1], rpb[1, 2], rpb[2, 1]}"
+      )
+      .unwrap(),
+      "{diag, off, off}"
+    );
+  }
+
+  #[test]
+  fn a_literal_definition_still_wins_over_the_repeated_variable() {
+    // The Chebyshev differentiation-matrix idiom: literal corner entries, a
+    // diagonal rule, and an off-diagonal rule.
+    assert_eq!(
+      interpret(
+        "rpc[0, 0] = \"corner\"; rpc[i_, i_] := \"diag\"; \
+         rpc[j_, k_] := \"off\"; Table[rpc[i, j], {i, 0, 2}, {j, 0, 2}]"
+      )
+      .unwrap(),
+      "{{corner, off, off}, {off, diag, off}, {off, off, diag}}"
+    );
+  }
+
+  #[test]
+  fn the_constraint_holds_for_definitions_made_inside_module() {
+    assert_eq!(
+      interpret(
+        "Module[{rpd}, rpd[i_, i_] := \"diag\"; rpd[j_, k_] := \"off\"; \
+         {rpd[1, 1], rpd[1, 2]}]"
+      )
+      .unwrap(),
+      "{diag, off}"
+    );
+  }
+
+  #[test]
+  fn the_constraint_compares_expressions_not_just_numbers() {
+    assert_eq!(
+      interpret("rpe[x_, x_] := \"same\"; {rpe[a, a], rpe[a, b]}").unwrap(),
+      "{same, rpe[a, b]}"
+    );
+    assert_eq!(
+      interpret(
+        "rpf[x_, x_] := \"same\"; {rpf[{1, 2}, {1, 2}], rpf[{1}, {2}]}"
+      )
+      .unwrap(),
+      "{same, rpf[{1}, {2}]}"
+    );
+  }
+
+  #[test]
+  fn a_head_constraint_still_applies_to_every_occurrence() {
+    assert_eq!(
+      interpret(
+        "rpg[x_Integer, x_Integer] := \"int\"; \
+         {rpg[2, 2], rpg[2, 3], rpg[2.5, 2.5]}"
+      )
+      .unwrap(),
+      "{int, rpg[2, 3], rpg[2.5, 2.5]}"
+    );
+  }
+
+  #[test]
+  fn a_pattern_test_survives_on_the_repeated_slot() {
+    assert_eq!(
+      interpret(
+        "rph[x_?IntegerQ, x_?IntegerQ] := \"int\"; \
+         {rph[2, 2], rph[2, 3], rph[2.5, 2.5]}"
+      )
+      .unwrap(),
+      "{int, rph[2, 3], rph[2.5, 2.5]}"
+    );
+  }
+
+  #[test]
+  fn three_occurrences_all_have_to_agree() {
+    assert_eq!(
+      interpret(
+        "rpi[x_, x_, x_] := \"all\"; {rpi[1, 1, 1], rpi[1, 1, 2], rpi[1, 2, 1]}"
+      )
+      .unwrap(),
+      "{all, rpi[1, 1, 2], rpi[1, 2, 1]}"
+    );
+  }
+
+  #[test]
+  fn only_the_repeated_variable_is_constrained() {
+    assert_eq!(
+      interpret("rpj[x_, x_, y_] := {x, y}; {rpj[1, 1, 2], rpj[1, 2, 3]}")
+        .unwrap(),
+      "{{1, 2}, rpj[1, 2, 3]}"
+    );
+  }
+
+  #[test]
+  fn a_repeated_variable_inside_a_list_pattern_is_constrained_too() {
+    assert_eq!(
+      interpret("rpk[{a_, a_}] := \"pair\"; {rpk[{1, 1}], rpk[{1, 2}]}")
+        .unwrap(),
+      "{pair, rpk[{1, 2}]}"
+    );
+  }
+
+  #[test]
+  fn the_stored_definition_reads_back_as_written() {
+    assert_eq!(
+      interpret("rpl[i_, i_] := \"diag\"; DownValues[rpl]").unwrap(),
+      "{HoldPattern[rpl[i_, i_]] :> diag}"
+    );
+    assert_eq!(
+      interpret("rpm[{a_, a_}] := \"pair\"; DownValues[rpm]").unwrap(),
+      "{HoldPattern[rpm[{a_, a_}]] :> pair}"
+    );
+  }
+}

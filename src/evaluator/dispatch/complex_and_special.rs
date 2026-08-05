@@ -16357,15 +16357,17 @@ pub fn definition_text(sym: &str) -> Option<String> {
         ));
       } else {
         // Reconstruct f[x_, y_Integer] := body
-        let params_str: Vec<String> = params
-          .iter()
-          .enumerate()
-          .map(|(i, p)| {
-            if let Some(head) = heads.get(i).and_then(|h| h.as_ref()) {
-              format!("{}_{}", p, head)
-            } else {
-              format!("{}_", p)
-            }
+        let params_str: Vec<String> = (0..params.len())
+          .map(|i| {
+            expr_to_string(
+              &crate::evaluator::assignment::downvalue_param_pattern(
+                params,
+                conds,
+                heads,
+                blank_types,
+                i,
+              ),
+            )
           })
           .collect();
         lines.push(format!(
