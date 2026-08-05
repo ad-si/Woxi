@@ -438,6 +438,32 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "FilledRightTriangle" => Some("\u{25B6}"),
     "Placeholder" => Some("\u{F528}"),
     "SelectionPlaceholder" => Some("\u{F527}"),
+    // Pictographs and signs. Demonstrations reach for these inside prose
+    // and control labels — a setter caption reading "…\[LongDash]\
+    // \[WarningSign] slow!" must draw the sign, not the escape.
+    "WarningSign" => Some("\u{26A0}"),
+    "Checkmark" => Some("\u{2713}"),
+    "WatchIcon" => Some("\u{231A}"),
+    "FivePointedStar" => Some("\u{2605}"),
+    "SixPointedStar" => Some("\u{2736}"),
+    "Female" => Some("\u{2640}"),
+    "Male" => Some("\u{2642}"),
+    // Musical accidentals
+    "Sharp" => Some("\u{266F}"),
+    "Flat" => Some("\u{266D}"),
+    "Natural" => Some("\u{266E}"),
+    // Astronomical symbols (the Sun and the planets, U+2609 and
+    // U+263F-U+2647)
+    "Sun" => Some("\u{2609}"),
+    "Mercury" => Some("\u{263F}"),
+    "Venus" => Some("\u{2640}"),
+    "Earth" => Some("\u{2641}"),
+    "Mars" => Some("\u{2642}"),
+    "Jupiter" => Some("\u{2643}"),
+    "Saturn" => Some("\u{2644}"),
+    "Uranus" => Some("\u{2645}"),
+    "Neptune" => Some("\u{2646}"),
+    "Pluto" => Some("\u{2647}"),
     // Braces/brackets
     "LeftAngleBracket" => Some("\u{27E8}"),
     "RightAngleBracket" => Some("\u{27E9}"),

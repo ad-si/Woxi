@@ -17627,6 +17627,20 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
     });
     return runs;
   }
+  // A square root — the notebook's `\[Sqrt]…` radical, which survives as the
+  // `Sqrt` head inside a held expression and normalizes to `x^(1/2)`
+  // elsewhere. Either spelling sets as the radical sign over its radicand, so
+  // the widget reads `√(eᶻ+1)` rather than the source of a head or of a
+  // fractional exponent. Checked before the structural match so both
+  // spellings reach here.
+  if let Some(radicand) = radical_radicand(expr) {
+    let mut runs = vec![LabelRun {
+      text: "\u{221A}".to_string(),
+      italic: false,
+    }];
+    runs.extend(grouped_label_runs(radicand, italic));
+    return runs;
+  }
   match expr {
     Expr::FunctionCall { name, args } => match name.as_str() {
       // Style[expr, dir…] — render `expr`, turning italic on if any directive
@@ -17683,6 +17697,16 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // `m/\!\(\*SuperscriptBox[\(s\), \(2\)]\)`, and it must show as
       // `m/s²`, not `m/s^2`.
       "Power" if args.len() == 2 => script_runs(args, italic, true),
+      // The evaluated shapes of the same arithmetic the `BinaryOp` arms
+      // below handle: a quotient of typeset pieces reaches here as
+      // `Times[a, b^-1]`. Only worth recursing into when there is something
+      // to typeset — see `contains_presentation_head`.
+      "Times" if contains_presentation_head(expr) => {
+        product_label_runs(args, italic)
+      }
+      "Plus" if contains_presentation_head(expr) => {
+        joined_label_runs(args, " + ", false, italic)
+      }
       _ => output_run(italic),
     },
     Expr::BinaryOp {
@@ -17694,6 +17718,33 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       italic,
       true,
     ),
+    // Arithmetic joining typeset label pieces — a Demonstrations setter
+    // writes a quotient of two typeset rows as `Row[…]/Row[…]`. Recurse into
+    // the operands so their `Row`/`Style`/`Superscript` structure keeps
+    // rendering as styled runs; OutputForm would print the operands' source
+    // next to the operator. Operands with nothing to typeset stay on the
+    // OutputForm path, which already knows this arithmetic's precedence and
+    // sign conventions.
+    Expr::BinaryOp { op, left, right }
+      if arithmetic_label_operator(*op).is_some()
+        && contains_presentation_head(expr) =>
+    {
+      let (text, group) = arithmetic_label_operator(*op).unwrap_or_default();
+      let side = |e: &Expr| {
+        if group {
+          grouped_label_runs(e, italic)
+        } else {
+          manipulate_label_runs(e, italic)
+        }
+      };
+      let mut runs = side(left);
+      runs.push(LabelRun {
+        text: text.to_string(),
+        italic: false,
+      });
+      runs.extend(side(right));
+      runs
+    }
     // A label written in the notebook FrontEnd carries its typeset bits as
     // inline linear syntax inside the string: `"value to test against
     // \!\(\*SubscriptBox[\(p\), \(0\)]\)"`. Render each box segment as the
@@ -17703,6 +17754,215 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       inline_box_label_runs(s, italic).unwrap_or_else(|| output_run(italic))
     }
     _ => output_run(italic),
+  }
+}
+
+/// The radicand of a square root written either way: as the `Sqrt[x]` head
+/// (which is what survives inside a held expression, e.g. the body of a
+/// `Manipulate`) or as the `x^(1/2)` power it normalizes to elsewhere.
+fn radical_radicand(expr: &Expr) -> Option<&Expr> {
+  /// Is this exponent the rational 1/2 — `Rational[1, 2]` or the
+  /// `Divide`/`Times` shapes an unevaluated `1/2` can take?
+  fn is_one_half(exponent: &Expr) -> bool {
+    match exponent {
+      Expr::FunctionCall { name, args } if name == "Rational" => {
+        matches!(
+          (args.first(), args.get(1)),
+          (Some(Expr::Integer(1)), Some(Expr::Integer(2)))
+        )
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        matches!(left.as_ref(), Expr::Integer(1))
+          && matches!(right.as_ref(), Expr::Integer(2))
+      }
+      _ => false,
+    }
+  }
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      args.first()
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 && is_one_half(&args[1]) =>
+    {
+      args.first()
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } if is_one_half(right) => Some(left),
+    _ => None,
+  }
+}
+
+/// The base of a reciprocal factor — `x^-1`, which is how a quotient's
+/// denominator reaches a `Times`.
+fn reciprocal_base(expr: &Expr) -> Option<&Expr> {
+  // A denominator's exponent reaches here as the literal `-1` or, in an
+  // unevaluated expression, as a negated `1`.
+  let is_minus_one = |e: &Expr| {
+    matches!(e, Expr::Integer(-1))
+      || matches!(e, Expr::UnaryOp { op: crate::syntax::UnaryOperator::Minus, operand }
+        if matches!(operand.as_ref(), Expr::Integer(1)))
+  };
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 && is_minus_one(&args[1]) =>
+    {
+      args.first()
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } if is_minus_one(right) => Some(left),
+    _ => None,
+  }
+}
+
+/// Runs for a `Times[…]` of typeset pieces. Reciprocal factors are the
+/// quotient's denominator, so `Row[…] Row[…]^-1` — what `Row[…]/Row[…]`
+/// evaluates to — sets as a quotient rather than as a product with a
+/// negative exponent.
+fn product_label_runs(factors: &[Expr], italic: bool) -> Vec<LabelRun> {
+  let (denominators, numerators): (Vec<&Expr>, Vec<&Expr>) =
+    factors.iter().partition(|f| reciprocal_base(f).is_some());
+  let numerators: Vec<Expr> = numerators.into_iter().cloned().collect();
+  let mut runs = joined_label_runs(&numerators, "*", true, italic);
+  if denominators.is_empty() {
+    return runs;
+  }
+  let denominators: Vec<Expr> = denominators
+    .into_iter()
+    .filter_map(|f| reciprocal_base(f).cloned())
+    .collect();
+  runs.push(LabelRun {
+    text: "/".to_string(),
+    italic: false,
+  });
+  runs.extend(joined_label_runs(&denominators, "*", true, italic));
+  runs
+}
+
+/// Runs for a list of label pieces joined by an operator, each piece
+/// parenthesized when `group` is set and the piece is compound.
+fn joined_label_runs(
+  parts: &[Expr],
+  separator: &str,
+  group: bool,
+  italic: bool,
+) -> Vec<LabelRun> {
+  let mut runs = Vec::new();
+  for (i, part) in parts.iter().enumerate() {
+    if i > 0 {
+      runs.push(LabelRun {
+        text: separator.to_string(),
+        italic: false,
+      });
+    }
+    if group {
+      runs.extend(grouped_label_runs(part, italic));
+    } else {
+      runs.extend(manipulate_label_runs(part, italic));
+    }
+  }
+  runs
+}
+
+/// Whether a label expression contains something only the structural
+/// renderer sets properly — a layout, a style, or a script. Arithmetic over
+/// pieces that have none of these gains nothing from recursing, so it stays
+/// on the OutputForm path that already handles precedence and signs.
+fn contains_presentation_head(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Row"
+          | "Column"
+          | "Grid"
+          | "Style"
+          | "StyleForm"
+          | "Text"
+          | "Tooltip"
+          | "DisplayForm"
+          | "TraditionalForm"
+          | "Subscript"
+          | "Superscript"
+          | "Subsuperscript"
+      ) || args.iter().any(contains_presentation_head)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_presentation_head(left) || contains_presentation_head(right)
+    }
+    Expr::List(items) => items.iter().any(contains_presentation_head),
+    _ => false,
+  }
+}
+
+/// How an arithmetic operator joining two label pieces is written, and
+/// whether its operands bind tightly enough to need parentheses when they
+/// are compound. The spellings match the OutputForm renderer this falls
+/// back to, so a label reads the same whichever path builds it.
+fn arithmetic_label_operator(
+  op: crate::syntax::BinaryOperator,
+) -> Option<(&'static str, bool)> {
+  use crate::syntax::BinaryOperator as Op;
+  Some(match op {
+    Op::Plus => (" + ", false),
+    Op::Minus => (" - ", false),
+    Op::Times => ("*", true),
+    Op::Divide => ("/", true),
+    _ => return None,
+  })
+}
+
+/// Label runs for a piece sitting under a radical or on one side of a
+/// product or quotient, parenthesized when it is a compound piece so the
+/// grouping stays unambiguous: `√(eᶻ+1)`, not `√eᶻ+1`.
+fn grouped_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
+  let runs = manipulate_label_runs(expr, italic);
+  if !label_is_compound(expr) {
+    return runs;
+  }
+  let mut grouped = vec![LabelRun {
+    text: "(".to_string(),
+    italic: false,
+  }];
+  grouped.extend(runs);
+  grouped.push(LabelRun {
+    text: ")".to_string(),
+    italic: false,
+  });
+  grouped
+}
+
+/// Whether a label piece sets more than one term, so that using it as a
+/// radicand or a factor needs parentheses around it.
+fn label_is_compound(expr: &Expr) -> bool {
+  // A radical brackets its own radicand, however it is spelled.
+  if radical_radicand(expr).is_some() {
+    return false;
+  }
+  match expr {
+    Expr::BinaryOp { op, .. } => arithmetic_label_operator(*op).is_some(),
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      // Presentation wrappers group exactly what they wrap.
+      "Style" | "StyleForm" | "Text" | "DisplayForm" | "TraditionalForm"
+      | "Tooltip" => args.first().is_some_and(label_is_compound),
+      // A layout of several items reads as several terms.
+      "Row" | "Column" => {
+        matches!(args.first(), Some(Expr::List(parts)) if parts.len() > 1)
+      }
+      "Plus" | "Subtract" | "Times" | "Divide" => args.len() > 1,
+      _ => false,
+    },
+    _ => false,
   }
 }
 

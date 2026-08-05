@@ -1405,6 +1405,27 @@ mod to_character_code {
     );
   }
 
+  /// Wolfram's pictograph, accidental and astronomical named characters are
+  /// single characters, not the escapes they are written with. A
+  /// Demonstration that warns about a slow option writes `\[WarningSign]`
+  /// into its label, and it has to reach the widget as the sign.
+  #[test]
+  fn pictograph_and_astronomical_named_chars() {
+    assert_eq!(
+      interpret(r#"ToCharacterCode["\[WarningSign]\[Checkmark]"]"#).unwrap(),
+      "{9888, 10003}"
+    );
+    assert_eq!(
+      interpret(r#"ToCharacterCode["\[Sharp]\[Flat]\[Natural]"]"#).unwrap(),
+      "{9839, 9837, 9838}"
+    );
+    assert_eq!(
+      interpret(r#"ToCharacterCode["\[Sun]\[Venus]\[Earth]\[Mars]"]"#).unwrap(),
+      "{9737, 9792, 9793, 9794}"
+    );
+    assert_eq!(interpret(r#"StringLength["\[WarningSign]"]"#).unwrap(), "1");
+  }
+
   // With an explicit "UTF8" encoding, multi-byte characters are returned
   // as their underlying byte sequence (two bytes for ä).
   #[test]
