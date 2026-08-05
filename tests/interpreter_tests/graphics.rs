@@ -3776,6 +3776,41 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// Every label of a tick set carries the decimals its spacing needs, so
+    /// a framed `Graphics` stepping by 0.5 reads `-1.0, -0.5, 0.0, …` —
+    /// the same as the plot renderer, and as wolframscript.
+    #[test]
+    fn a_graphics_frame_labels_its_ticks_to_a_common_precision() {
+      let svg = export_svg(
+        "Graphics[{Circle[{0, 0}, 1]}, Frame -> True, \
+         PlotRange -> {{-1, 1}, {-1, 1}}]",
+      );
+      for label in ["-1.0", "-0.5", "0.0", "0.5", "1.0"] {
+        assert!(svg.contains(&format!(">{label}</text>")), "{svg}");
+      }
+      // Integer-spaced ticks keep their plain form.
+      let svg = export_svg(
+        "Graphics[{Circle[{0, 0}, 3]}, Frame -> True, \
+         PlotRange -> {{-3, 3}, {-3, 3}}]",
+      );
+      assert!(svg.contains(">2</text>"), "{svg}");
+    }
+
+    /// `FrameLabel -> {{left, right}, {bottom, top}}` captions all four
+    /// edges of a `Graphics` frame. Regression: the graphics renderer read
+    /// only the bottom and left entries, so the top caption a merged
+    /// `Show` inherited never drew.
+    #[test]
+    fn graphics_frame_label_captions_all_four_edges() {
+      let svg = export_svg(
+        "Graphics[{Circle[{0, 0}, 1]}, Frame -> True, \
+         FrameLabel -> {{\"cl\", \"cr\"}, {\"cb\", \"ct\"}}]",
+      );
+      for caption in ["cl", "cr", "cb", "ct"] {
+        assert!(svg.contains(&format!(">{caption}</text>")), "{svg}");
+      }
+    }
+
     /// A `Graphics` frame carries the same captions, so a plot merged into
     /// a `Show` with other primitives keeps them.
     #[test]
@@ -6544,14 +6579,15 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains("fill-opacity=\"0.3\""), "{svg}");
       assert!(svg.contains("<polyline"), "no boundary curve: {svg}");
       // The image spans x in [0, 2] and y in [-1, 1]: both axes must be
-      // labelled out that far, and no further.
-      for tick in ["2", "-1", "1"] {
+      // labelled out that far, and no further. The 0.5-spaced ticks all
+      // carry one decimal, the way Wolfram labels a tick set.
+      for tick in ["2.0", "-1.0", "1.0"] {
         assert!(
           svg.contains(&format!(">{tick}</text>")),
           "missing tick {tick}: {svg}"
         );
       }
-      assert!(!svg.contains(">3</text>"), "range too wide: {svg}");
+      assert!(!svg.contains(">3.0</text>"), "range too wide: {svg}");
       assert!(!svg.contains("NaN"), "{svg}");
     }
 
@@ -6591,6 +6627,89 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| panic!("no stroke width: {curve}"));
       assert!(width > 1.5, "Thick was lost on merge: {curve}");
+    }
+
+    /// `ParametricPlot` defaults to `AspectRatio -> Automatic` and takes
+    /// its shape from the data, so a unit circle comes out round. `Show`
+    /// takes the merged picture's options from the first graphic, which
+    /// means that shape has to survive the merge instead of being replaced
+    /// by the 1/GoldenRatio of `Plot`.
+    #[test]
+    fn show_keeps_the_shape_a_parametric_plot_drew_itself_in() {
+      let svg = export_svg(
+        "Show[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+           PlotRange -> {{-1.1, 1.1}, {-1.1, 1.1}}, Frame -> True], \
+         Graphics[{PointSize[0.03], Point[{0, 0}]}], ImageSize -> 200]",
+      );
+      let attr = |name: &str| -> f64 {
+        svg
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|s| s.parse().ok())
+          .unwrap_or_else(|| panic!("no {name} on the svg: {svg}"))
+      };
+      assert_eq!(
+        (attr("width"), attr("height")),
+        (200.0, 200.0),
+        "a square PlotRange must stay square through Show: {svg}"
+      );
+    }
+
+    /// A framed plot draws no interior axes, and merging other graphics
+    /// into it with `Show` must not add a set. Regression: `Show` filled in
+    /// `Axes -> True` for every leading plot, so a framed one came back
+    /// with a second, duplicated scale through the middle.
+    #[test]
+    fn show_adds_no_interior_axes_to_a_framed_plot() {
+      let svg = export_svg(
+        "Show[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+           PlotRange -> {{-1.1, 1.1}, {-1.1, 1.1}}, Frame -> True], \
+         Graphics[{PointSize[0.03], Point[{0, 0}]}]]",
+      );
+      assert_eq!(
+        svg.matches(">0.5</text>").count(),
+        2,
+        "the frame labels 0.5 once per axis and nothing else does: {svg}"
+      );
+    }
+
+    /// A `Graphics` expression stays an expression in Wolfram, so a picture
+    /// held in a variable can be layered by a later `Show`. Regression: the
+    /// rendering kept only its SVG, and `Show` silently dropped it.
+    #[test]
+    fn a_rendered_graphic_can_be_layered_by_a_later_show() {
+      let svg = export_svg(
+        "g = Graphics[{Blue, Disk[{0, 0}, 0.5]}, \
+           PlotRange -> {{-1, 1}, {-1, 1}}]; \
+         Show[Graphics[{Red, Circle[{0, 0}, 1]}], g]",
+      );
+      assert!(
+        svg.contains("rgb(255,0,0)"),
+        "the outer circle must draw: {svg}"
+      );
+      assert!(
+        svg.contains("rgb(0,0,255)"),
+        "the graphic held in `g` must draw too: {svg}"
+      );
+    }
+
+    /// The same holds for a picture that is itself a `Show`: the layers it
+    /// merged have to be visible when it is shown again inside another one.
+    #[test]
+    fn a_show_result_can_be_layered_by_another_show() {
+      let svg = export_svg(
+        "inner = Show[Graphics[{Blue, Circle[{0, 0}, 0.5]}, \
+             PlotRange -> {{-1, 1}, {-1, 1}}], \
+           ListPlot[{{{-0.9, -0.9}, {0.9, 0.9}}}, Joined -> True, \
+             PlotStyle -> {{Green}}]]; \
+         Show[Graphics[{Red, Circle[{0, 0}, 1]}], inner]",
+      );
+      // The outer circle, the inner one, and the line the inner `Show`
+      // merged from a plot.
+      for color in ["rgb(255,0,0)", "rgb(0,0,255)", "rgb(0,255,0)"] {
+        assert!(svg.contains(color), "{color} must draw: {svg}");
+      }
     }
 
     /// `Show` stacks its arguments in the order given — the last one on
@@ -8635,8 +8754,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       assert!(svg.contains("<polyline"), "the contour must survive: {svg}");
       assert!(svg.contains("<polygon"), "the arrow head must draw: {svg}");
-      // The plot's own options come along, so the axes are drawn.
-      assert!(svg.contains(">1</text>"), "axis ticks expected: {svg}");
+      // The plot's own options come along, so the axes are drawn. The
+      // 0.5-spaced ticks are labelled to a common precision, as Wolfram
+      // labels them.
+      assert!(svg.contains(">1.0</text>"), "axis ticks expected: {svg}");
     }
 
     /// A shaded contour plot keeps its shading when `Show` merges it with
@@ -11426,6 +11547,20 @@ mod graphics_grid {
     .unwrap();
     let svg = result.graphics.unwrap();
     assert!(svg.contains(">area = 0.875000000</text>"), "{svg}");
+  }
+
+  /// `Row` joins its parts with the strings it was given, gaps included:
+  /// a `"  "` separator draws as two spaces. SVG collapses runs of
+  /// whitespace, so the cell has to ask it not to.
+  #[test]
+  fn grid_cell_keeps_the_spaces_a_row_was_given() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{Text@Row[{\"a\", \"  \", \"b\"}]}}]")
+        .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">a  b</text>"), "{svg}");
+    assert!(svg.contains("xml:space=\"preserve\""), "{svg}");
   }
 
   /// A grid whose cells are all graphics lays the pictures out, rather
