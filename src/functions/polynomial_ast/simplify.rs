@@ -1092,11 +1092,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       if let Some(val) = neg_one_integer_power(&refined_exp, info) {
         return val;
       }
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Integer(-1)),
-        right: Box::new(refined_exp),
-      }
+      pow2(Expr::Integer(-1), refined_exp)
     }
     Expr::FunctionCall { name, args }
       if name == "Power"
@@ -1125,11 +1121,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       if is_known_positive(&refined_exp, info) {
         return Expr::Integer(0);
       }
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Integer(0)),
-        right: Box::new(refined_exp),
-      }
+      pow2(Expr::Integer(0), refined_exp)
     }
     Expr::FunctionCall { name, args }
       if name == "Power"
@@ -1162,21 +1154,16 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
         && is_known_real(&args[0], info)
       {
         return refine_expr(
-          &Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(args[0].clone()),
-            right: Box::new(Expr::Integer(*n)),
-          },
+          &pow2(args[0].clone(), Expr::Integer(*n)),
           info,
           assumption,
         );
       }
       // Sign of the Abs argument is unknown: refine children only.
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(refine_expr(left, info, assumption)),
-        right: Box::new(refine_expr(right, info, assumption)),
-      }
+      pow2(
+        refine_expr(left, info, assumption),
+        refine_expr(right, info, assumption),
+      )
     }
 
     // (var^n)^(1/m) → var^(n/m) when var >= 0 and n divisible by m
@@ -1245,11 +1232,10 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
         return result;
       }
       // Recurse
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(refine_expr(outer_base, info, assumption)),
-        right: Box::new(refine_expr(outer_exp, info, assumption)),
-      }
+      pow2(
+        refine_expr(outer_base, info, assumption),
+        refine_expr(outer_exp, info, assumption),
+      )
     }
 
     // Abs[var] → var when var > 0, -var when var < 0
@@ -1436,13 +1422,8 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       if let Some((non_pi_part, k_expr)) = split_integer_pi_part(&args[0], info)
       {
         // (-1)^k, collapsed to ±1 when the parity of k is known.
-        let sign = neg_one_integer_power(&k_expr, info).unwrap_or_else(|| {
-          Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(Expr::Integer(-1)),
-            right: Box::new(k_expr),
-          }
-        });
+        let sign = neg_one_integer_power(&k_expr, info)
+          .unwrap_or_else(|| pow2(Expr::Integer(-1), k_expr));
         // Cos[x + k*Pi] = (-1)^k * Cos[x]; drop the Cos[0] = 1 factor.
         if matches!(&non_pi_part, Expr::Integer(0)) {
           return sign;
@@ -1730,11 +1711,10 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       {
         return result;
       }
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(refine_expr(outer_base, info, assumption)),
-        right: Box::new(refine_expr(outer_exp, info, assumption)),
-      }
+      pow2(
+        refine_expr(outer_base, info, assumption),
+        refine_expr(outer_exp, info, assumption),
+      )
     }
 
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
@@ -1784,11 +1764,7 @@ fn make_power_or_identity(base: &Expr, exp: i128) -> Expr {
   if exp == 1 {
     base.clone()
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(base.clone()),
-      right: Box::new(Expr::Integer(exp)),
-    }
+    pow2(base.clone(), Expr::Integer(exp))
   }
 }
 
@@ -5279,11 +5255,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
               let mono = if -k == 1 {
                 Expr::Identifier(var)
               } else {
-                Expr::BinaryOp {
-                  op: BinaryOperator::Power,
-                  left: Box::new(Expr::Identifier(var)),
-                  right: Box::new(Expr::Integer(-k)),
-                }
+                pow2(Expr::Identifier(var), Expr::Integer(-k))
               };
               best = if unit_cofactors && g_num > 1 {
                 // |num| > 1 shows in the numerator/denominator products
@@ -5311,11 +5283,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
                   args: vec![
                     make_rational(-1, g_den),
                     inner,
-                    Expr::BinaryOp {
-                      op: BinaryOperator::Power,
-                      left: Box::new(mono),
-                      right: Box::new(Expr::Integer(-1)),
-                    },
+                    pow2(mono, Expr::Integer(-1)),
                   ]
                   .into(),
                 }
@@ -6862,11 +6830,10 @@ fn simplify_collected_coefficients(
     let var_part: Option<Expr> = match power {
       0 => None,
       1 => Some(Expr::Identifier(var.to_string())),
-      _ => Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Identifier(var.to_string())),
-        right: Box::new(Expr::Integer(power)),
-      }),
+      _ => Some(pow2(
+        Expr::Identifier(var.to_string()),
+        Expr::Integer(power),
+      )),
     };
     let new_term = match (simplified_coeff, var_part) {
       (c, None) => c,
@@ -6975,11 +6942,7 @@ fn simplify_expr_inner(expr: &Expr) -> Expr {
     } => {
       let base = simplify_expr(left);
       let exp = simplify_expr(right);
-      simplify(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(base),
-        right: Box::new(exp),
-      })
+      simplify(pow2(base, exp))
     }
 
     Expr::BinaryOp {
@@ -7080,11 +7043,7 @@ fn simplify_expr_inner(expr: &Expr) -> Expr {
       "Power" if args.len() == 2 => {
         let base = simplify_expr(&args[0]);
         let exp = simplify_expr(&args[1]);
-        simplify(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(base),
-          right: Box::new(exp),
-        })
+        simplify(pow2(base, exp))
       }
       "Rational" if args.len() == 2 => expr.clone(),
       "ConditionalExpression" if args.len() == 2 => {
@@ -7530,11 +7489,7 @@ fn match_trig_squared(expr: &Expr) -> Option<(&str, Expr)> {
 fn simplify_product(a: &Expr, b: &Expr) -> Expr {
   // x * x → x^2
   if expr_to_string(a) == expr_to_string(b) {
-    return Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(a.clone()),
-      right: Box::new(Expr::Integer(2)),
-    };
+    return pow2(a.clone(), Expr::Integer(2));
   }
 
   // x^a * x^b → x^(a+b)
@@ -7559,11 +7514,7 @@ fn simplify_product(a: &Expr, b: &Expr) -> Expr {
     {
       return p;
     }
-    return simplify(Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(base_a),
-      right: Box::new(new_exp),
-    });
+    return simplify(pow2(base_a, new_exp));
   }
 
   simplify(Expr::BinaryOp {
@@ -8712,11 +8663,10 @@ fn simplify_quotient_select(
     let var_pow = if chosen.den_mono == 1 {
       Expr::Identifier(var.clone())
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Identifier(var.clone())),
-        right: Box::new(Expr::Integer(chosen.den_mono)),
-      }
+      pow2(
+        Expr::Identifier(var.clone()),
+        Expr::Integer(chosen.den_mono),
+      )
     };
     let mut factors: Vec<Expr> = Vec::new();
     if chosen.den_content > 1 {
@@ -8759,11 +8709,7 @@ fn simplify_quotient_select(
       let var_pow = if den_mono_exp == 1 {
         Expr::Identifier(var.clone())
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::Identifier(var.clone())),
-          right: Box::new(Expr::Integer(den_mono_exp)),
-        }
+        pow2(Expr::Identifier(var.clone()), Expr::Integer(den_mono_exp))
       };
       return Some((
         Expr::FunctionCall {
@@ -8771,11 +8717,7 @@ fn simplify_quotient_select(
           args: vec![
             make_rational(-1, den_mono_coeff),
             num_expr,
-            Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(var_pow),
-              right: Box::new(Expr::Integer(-1)),
-            },
+            pow2(var_pow, Expr::Integer(-1)),
           ]
           .into(),
         },
@@ -8811,14 +8753,7 @@ fn simplify_quotient_select(
         true,
       ));
     }
-    return Some((
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(den_expr),
-        right: Box::new(Expr::Integer(-1)),
-      },
-      false,
-    ));
+    return Some((pow2(den_expr, Expr::Integer(-1)), false));
   }
   Some((
     Expr::BinaryOp {
@@ -8835,11 +8770,7 @@ fn term_from_coeff(c: i128, e: i128, var: &str) -> Expr {
   let mono = match e {
     0 => return Expr::Integer(c),
     1 => Expr::Identifier(var.to_string()),
-    _ => Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::Identifier(var.to_string())),
-      right: Box::new(Expr::Integer(e)),
-    },
+    _ => pow2(Expr::Identifier(var.to_string()), Expr::Integer(e)),
   };
   if c == 1 {
     mono
@@ -9335,11 +9266,10 @@ pub fn coeffs_to_expr(coeffs: &[i128], var: &str) -> Expr {
     } else if i == 1 {
       Some(Expr::Identifier(var.to_string()))
     } else {
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Identifier(var.to_string())),
-        right: Box::new(Expr::Integer(i as i128)),
-      })
+      Some(pow2(
+        Expr::Identifier(var.to_string()),
+        Expr::Integer(i as i128),
+      ))
     };
 
     let term = match (c, var_part) {
@@ -9589,11 +9519,7 @@ fn simplify_abs_products(expr: &Expr) -> Expr {
   // Build inner expression: multiply numerators with Power[denominator, -1]
   let mut inner_parts = vec![inner_num];
   for d in abs_denominators {
-    inner_parts.push(Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(d),
-      right: Box::new(Expr::Integer(-1)),
-    });
+    inner_parts.push(pow2(d, Expr::Integer(-1)));
   }
   let inner = build_product(inner_parts);
 
@@ -10397,17 +10323,10 @@ fn factor_common_power_base(terms: &[Expr]) -> Option<Expr> {
           } else if sn == 1 && sd == 1 {
             new_factors.push(candidate.base.clone());
           } else if sd == 1 {
-            new_factors.push(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(candidate.base.clone()),
-              right: Box::new(Expr::Integer(sn)),
-            });
+            new_factors.push(pow2(candidate.base.clone(), Expr::Integer(sn)));
           } else {
-            new_factors.push(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(candidate.base.clone()),
-              right: Box::new(make_rational(sn, sd)),
-            });
+            new_factors
+              .push(pow2(candidate.base.clone(), make_rational(sn, sd)));
           }
         } else {
           new_factors.push(f.clone());
@@ -10426,17 +10345,9 @@ fn factor_common_power_base(terms: &[Expr]) -> Option<Expr> {
     let min_power = if min_n == 1 && min_d == 1 {
       candidate.base.clone()
     } else if min_d == 1 {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(candidate.base.clone()),
-        right: Box::new(Expr::Integer(min_n)),
-      }
+      pow2(candidate.base.clone(), Expr::Integer(min_n))
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(candidate.base.clone()),
-        right: Box::new(make_rational(min_n, min_d)),
-      }
+      pow2(candidate.base.clone(), make_rational(min_n, min_d))
     };
     let inner_sum = build_sum(new_terms);
     // Evaluate the inner sum to simplify
@@ -11009,11 +10920,7 @@ fn build_outer_result(
     let outer_sin = if min_sin == 1 {
       sin_expr.clone()
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(sin_expr.clone()),
-        right: Box::new(Expr::Integer(min_sin)),
-      }
+      pow2(sin_expr.clone(), Expr::Integer(min_sin))
     };
     factors.push(outer_sin);
   }
@@ -11022,11 +10929,7 @@ fn build_outer_result(
     let outer_cos = if min_cos == 1 {
       cos_expr.clone()
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(cos_expr.clone()),
-        right: Box::new(Expr::Integer(min_cos)),
-      }
+      pow2(cos_expr.clone(), Expr::Integer(min_cos))
     };
     factors.push(outer_cos);
   }

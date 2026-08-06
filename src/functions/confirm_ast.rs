@@ -322,7 +322,7 @@ fn is_exception_tag(e: &Expr) -> bool {
 }
 
 /// True for an already-canonical `Exception[{tags…}, <|…|>]`.
-pub fn is_canonical_exception(e: &Expr) -> bool {
+fn is_canonical_exception(e: &Expr) -> bool {
   matches!(e, Expr::FunctionCall { name, args }
     if name == "Exception"
       && args.len() == 2

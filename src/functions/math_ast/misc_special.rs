@@ -1064,72 +1064,71 @@ fn struve_half_integer_closed_form(
     name: name.to_string(),
     args: vec![e].into(),
   };
-  let i = Expr::Integer;
+  let int = Expr::Integer;
   let plus = |a, b| binop(B::Plus, a, b);
   let minus = |a, b| binop(B::Minus, a, b);
   let times = |a, b| binop(B::Times, a, b);
-  let div = |a, b| binop(B::Divide, a, b);
-  let neg = |a| binop(B::Times, i(-1), a);
+  let neg = |a| binop(B::Times, int(-1), a);
   let pi = || Expr::Constant("Pi".to_string());
   let sqrt = |e: Expr| call1("Sqrt", e);
   let z = || z.clone();
   let sqrt_z = || sqrt(z());
-  let sqrt_2pi = || sqrt(times(i(2), pi())); // Sqrt[2 Pi]
-  let sqrt_2_over_pi = || sqrt(div(i(2), pi())); // Sqrt[2/Pi]
-  let sqrt_pi_over_2 = || sqrt(div(pi(), i(2))); // Sqrt[Pi/2]
+  let sqrt_2pi = || sqrt(times(int(2), pi())); // Sqrt[2 Pi]
+  let sqrt_2_over_pi = || sqrt(div2(int(2), pi())); // Sqrt[2/Pi]
+  let sqrt_pi_over_2 = || sqrt(div2(pi(), int(2))); // Sqrt[Pi/2]
   // c(z), s(z): Cos/Sin for H, Cosh/Sinh for L.
   let cz = || call1(if is_l { "Cosh" } else { "Cos" }, z());
   let sz = || call1(if is_l { "Sinh" } else { "Sin" }, z());
   // z^(3/2)
-  let z_32 = || binop(B::Power, z(), make_rational(3, 2));
+  let z_32 = || pow2(z(), make_rational(3, 2));
 
   let expr = match two_nu {
     1 => {
       // +-Sqrt[2 Pi]/(Pi Sqrt[z]) -/+ Sqrt[2/Pi] c[z]/Sqrt[z]
-      let a = div(sqrt_2pi(), times(pi(), sqrt_z()));
-      let b = div(times(sqrt_2_over_pi(), cz()), sqrt_z());
+      let a = div2(sqrt_2pi(), times(pi(), sqrt_z()));
+      let b = div2(times(sqrt_2_over_pi(), cz()), sqrt_z());
       if is_l { plus(neg(a), b) } else { minus(a, b) }
     }
     -1 => {
       // Sqrt[2/Pi] s[z]/Sqrt[z]
-      div(times(sqrt_2_over_pi(), sz()), sqrt_z())
+      div2(times(sqrt_2_over_pi(), sz()), sqrt_z())
     }
     3 if !is_l => {
       // (Sqrt[2 Pi]/z^(3/2) + Sqrt[Pi/2] Sqrt[z])/Pi
       //   + Sqrt[2/Pi] (-(Cos[z]/z) - Sin[z])/Sqrt[z]
-      let a = div(
-        plus(div(sqrt_2pi(), z_32()), times(sqrt_pi_over_2(), sqrt_z())),
+      let a = div2(
+        plus(div2(sqrt_2pi(), z_32()), times(sqrt_pi_over_2(), sqrt_z())),
         pi(),
       );
-      let inner = minus(neg(div(cz(), z())), sz());
-      let b = div(times(sqrt_2_over_pi(), inner), sqrt_z());
+      let inner = minus(neg(div2(cz(), z())), sz());
+      let b = div2(times(sqrt_2_over_pi(), inner), sqrt_z());
       plus(a, b)
     }
     3 => {
       // L: -((-(Sqrt[2 Pi]/z^(3/2)) + Sqrt[Pi/2] Sqrt[z])/Pi)
       //      + ((-2 Cosh[z])/z + 2 Sinh[z])/(Sqrt[2 Pi] Sqrt[z])
-      let a = neg(div(
+      let a = neg(div2(
         plus(
-          neg(div(sqrt_2pi(), z_32())),
+          neg(div2(sqrt_2pi(), z_32())),
           times(sqrt_pi_over_2(), sqrt_z()),
         ),
         pi(),
       ));
-      let b = div(
-        plus(div(times(i(-2), cz()), z()), times(i(2), sz())),
+      let b = div2(
+        plus(div2(times(int(-2), cz()), z()), times(int(2), sz())),
         times(sqrt_2pi(), sqrt_z()),
       );
       plus(a, b)
     }
     -3 if !is_l => {
       // -((Sqrt[2/Pi] (-Cos[z] + Sin[z]/z))/Sqrt[z])
-      let inner = plus(neg(cz()), div(sz(), z()));
-      neg(div(times(sqrt_2_over_pi(), inner), sqrt_z()))
+      let inner = plus(neg(cz()), div2(sz(), z()));
+      neg(div2(times(sqrt_2_over_pi(), inner), sqrt_z()))
     }
     -3 => {
       // (2 Cosh[z] - (2 Sinh[z])/z)/(Sqrt[2 Pi] Sqrt[z])
-      let num = minus(times(i(2), cz()), div(times(i(2), sz()), z()));
-      div(num, times(sqrt_2pi(), sqrt_z()))
+      let num = minus(times(int(2), cz()), div2(times(int(2), sz()), z()));
+      div2(num, times(sqrt_2pi(), sqrt_z()))
     }
     _ => return None,
   };
@@ -1747,7 +1746,7 @@ fn weber_e_integer_closed_form(
     r
   };
   let pi = Expr::Constant("Pi".to_string());
-  let pi_inv = binop(BinaryOperator::Power, pi, Expr::Integer(-1));
+  let pi_inv = pow2(pi, Expr::Integer(-1));
 
   // Polynomial terms: c_k * z^(m-2k-1) / Pi with
   //   c_k = (2k)! (m-k)! 2^(m-2k+1) / [ (2(m-k))! k! ].
@@ -1794,7 +1793,7 @@ fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
     name: "Sin".to_string(),
     args: vec![nu_pi.clone()].into(),
   };
-  binop(BinaryOperator::Divide, sin_nu_pi, nu_pi)
+  div2(sin_nu_pi, nu_pi)
 }
 
 /// WeberE[ν, 0] closed form: (1 - Cos[ν*Pi]) / (ν*Pi).
@@ -1806,7 +1805,7 @@ fn weber_e_at_zero_symbolic(nu: &Expr) -> Expr {
     args: vec![nu_pi.clone()].into(),
   };
   let one_minus_cos = binop(BinaryOperator::Minus, Expr::Integer(1), cos_nu_pi);
-  binop(BinaryOperator::Divide, one_minus_cos, nu_pi)
+  div2(one_minus_cos, nu_pi)
 }
 
 /// Compute WeberE[nu, z] numerically using Gauss-Legendre quadrature.
@@ -2544,7 +2543,7 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![one_minus_y, args[2].clone()].into(),
     };
     let denom = binop(BinaryOperator::Times, factor_x, factor_y);
-    let result = binop(BinaryOperator::Divide, one, denom);
+    let result = div2(one, denom);
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
