@@ -1639,6 +1639,19 @@ function main() {
     "ToString[ImportString[\"true,false\", \"CSV\"], InputForm]",
     "ToString[ImportString[\"True,FALSE,tRue,yes\", \"CSV\"], InputForm]",
 
+    // `"ColumnTypes"` of a labelled table whose text does not end in a newline:
+    // Wolfram reports the last column as "String" no matter what is in it,
+    // while the same import reads that field as a number. Reproduce with
+    //   wolframscript -code 'ToString[{ImportString["a,b,c\n1,2,3", "CSV"],
+    //     ImportString["a,b,c\n1,2,3", {"CSV", "ColumnTypes"}],
+    //     ImportString["a,b,c\n1,2,3\n", {"CSV", "ColumnTypes"}]}, InputForm]'
+    // -> the data is `{{"a","b","c"},{1,2,3}}`, the types are
+    // `<|"a" -> "Integer64", "b" -> "Integer64", "c" -> "String"|>` without the
+    // trailing newline and all "Integer64" with it. The unterminated last field
+    // is the only difference, so this is Wolfram contradicting itself rather
+    // than a type rule; Woxi types the column from the value it imported.
+    "ToString[ImportString[\"a,b,c\\n1,2,3\", {\"CSV\", \"ColumnTypes\"}], InputForm]",
+
     // TraditionalForm boxes: Wolfram hands a special function or a Row to a
     // named FrontEnd template (`TemplateBox[{n, x}, "LegendreP"]`,
     // `TemplateBox[{2, x, t}, "RowDefault"]`) that knows how to draw it.
