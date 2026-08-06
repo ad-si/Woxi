@@ -8394,6 +8394,15 @@ mod csv_header_inference {
       ),
       // With labels they come keyed by them.
       (
+        r#"ToString[ImportString["a,b,c\n1,2,3\n", {"CSV", "ColumnTypes"}], InputForm]"#,
+        r#"<|"a" -> "Integer64", "b" -> "Integer64", "c" -> "Integer64"|>"#,
+      ),
+      // A missing final newline changes nothing about the types. Wolfram
+      // types the last column of a labelled table as "String" whenever the
+      // text does not end in a newline, even though the very same import
+      // reads that field as an integer -- see EXACT_EXPR_SKIP in
+      // tests/wolframscript/verify_unit_tests.ts.
+      (
         r#"ToString[ImportString["a,b,c\n1,2,3", {"CSV", "ColumnTypes"}], InputForm]"#,
         r#"<|"a" -> "Integer64", "b" -> "Integer64", "c" -> "Integer64"|>"#,
       ),

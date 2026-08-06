@@ -137,7 +137,7 @@ $ wo 'ToString[ImportString["1,2\n3,4", {"CSV", "RowCount"}], InputForm]'
 Column types are keyed by the labels when there are any:
 
 ```scrut
-$ wo 'ToString[ImportString["a,b,c\n1,2,3", {"CSV", "ColumnTypes"}], InputForm]'
+$ wo 'ToString[ImportString["a,b,c\n1,2,3\n", {"CSV", "ColumnTypes"}], InputForm]'
 <|"a" -> "Integer64", "b" -> "Integer64", "c" -> "Integer64"|>
 ```
 
