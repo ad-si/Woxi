@@ -4077,7 +4077,7 @@ pub fn minkowski_question_mark_ast(
     reduce(&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1)
   };
   // sign * 2^e as a fraction (e may be negative)
-  let pow2 = |sign: i64, e: i128| -> (BigInt, BigInt) {
+  let exp2 = |sign: i64, e: i128| -> (BigInt, BigInt) {
     if e >= 0 {
       (BigInt::from(sign) << (e as u64), BigInt::from(1))
     } else {
@@ -4091,7 +4091,7 @@ pub fn minkowski_question_mark_ast(
   let mut sign: i64 = 1; // (-1)^(k+1)
   for a in &prefix[1..] {
     s += a;
-    total = add(&total, &pow2(sign, 1 - s));
+    total = add(&total, &exp2(sign, 1 - s));
     sign = -sign;
   }
 
@@ -4103,11 +4103,11 @@ pub fn minkowski_question_mark_ast(
     let mut cycle_sign = sign;
     for p in &period {
       q_sum += p;
-      t = add(&t, &pow2(cycle_sign, 1 - s - q_sum));
+      t = add(&t, &exp2(cycle_sign, 1 - s - q_sum));
       cycle_sign = -cycle_sign;
     }
     let r_sign: i64 = if period.len() % 2 == 0 { 1 } else { -1 };
-    let r = pow2(r_sign, -q_sum);
+    let r = exp2(r_sign, -q_sum);
     let one_minus_r = add(&(BigInt::from(1), BigInt::from(1)), &(-r.0, r.1));
     // tail = t / (1 - r)
     let tail = reduce(&t.0 * &one_minus_r.1, &t.1 * &one_minus_r.0);
