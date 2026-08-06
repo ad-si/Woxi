@@ -90,6 +90,8 @@ pub mod unicode_casefold_data;
 pub mod voronoi;
 pub mod wavelet_ast;
 pub mod wikidata_ast;
+#[cfg(target_os = "windows")]
+pub mod windows;
 pub mod wl_serialize;
 pub mod wxf_ast;
 #[cfg(not(target_arch = "wasm32"))]
@@ -118,3 +120,5 @@ pub use quantity_ast::*;
 pub use scoping::*;
 pub use string_ast::*;
 pub use turing_machine_ast::*;
+#[cfg(target_os = "windows")]
+pub use windows::*;
