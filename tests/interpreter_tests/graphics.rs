@@ -7025,8 +7025,14 @@ ParametricPlot[f[t], {t, 0, 1}]]",
                        "RadialCallout"] &)]"#,
       );
       // `NumberForm[25., 2]` keeps the point a machine real is written with.
-      assert!(svg.contains(">25. %</text>"), "missing 25. % label in {svg}");
-      assert!(svg.contains(">75. %</text>"), "missing 75. % label in {svg}");
+      assert!(
+        svg.contains(">25. %</text>"),
+        "missing 25. % label in {svg}"
+      );
+      assert!(
+        svg.contains(">75. %</text>"),
+        "missing 75. % label in {svg}"
+      );
       assert_eq!(
         svg.matches("<line").count(),
         2,
