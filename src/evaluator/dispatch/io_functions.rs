@@ -7,7 +7,10 @@ use std::collections::HashMap;
 #[derive(Clone, Debug)]
 enum StreamKind {
   StringStream(String), // content of the string
-  FileStream(String),   // file path
+  // Only the native build opens files: `OpenRead`/`OpenWrite`/`OpenAppend`
+  // are compiled out on wasm, where there is no local filesystem.
+  #[cfg(not(target_arch = "wasm32"))]
+  FileStream(String), // file path
 }
 
 #[derive(Clone, Debug)]
@@ -62,6 +65,7 @@ fn get_stream_content(id: usize) -> Option<(String, usize)> {
     registry.get(&id).map(|s| {
       let content = match &s.kind {
         StreamKind::StringStream(text) => text.clone(),
+        #[cfg(not(target_arch = "wasm32"))]
         StreamKind::FileStream(path) => {
           std::fs::read_to_string(path).unwrap_or_default()
         }
@@ -2151,11 +2155,13 @@ pub fn dispatch_io_functions(
           match close_stream(id) {
             // Close[FileStream] returns the file path as a String;
             // Close[StringToStream[…]] returns the symbol `String`.
-            Some((name, StreamKind::StringStream(_))) => {
-              let _ = name;
+            Some((_, StreamKind::StringStream(_))) => {
               return Some(Ok(Expr::Identifier("String".to_string())));
             }
-            Some((name, _)) => return Some(Ok(Expr::String(name))),
+            #[cfg(not(target_arch = "wasm32"))]
+            Some((name, StreamKind::FileStream(_))) => {
+              return Some(Ok(Expr::String(name)));
+            }
             None => {
               let stream_str = crate::syntax::expr_to_string(&args[0]);
               crate::emit_message(&format!("{} is not open.", stream_str));
@@ -5082,6 +5088,7 @@ fn svg_to_pdf_bytes(svg_str: &str) -> Result<Vec<u8>, InterpreterError> {
 /// it in place — so repeated reads yield the separated fields while a
 /// following plain read still sees the separator. Returns `None` at the end of
 /// the input, which `ReadString` reports as `EndOfFile`.
+#[cfg(not(target_arch = "wasm32"))]
 fn read_string_chunk(
   rest: &str,
   terminator: Option<&str>,
@@ -5113,6 +5120,7 @@ pub(crate) fn readlist_inputstream(
       if let Some(stream) = registry.get(&stream_id) {
         match &stream.kind {
           StreamKind::StringStream(text) => Ok(text.clone()),
+          #[cfg(not(target_arch = "wasm32"))]
           StreamKind::FileStream(path) => std::fs::read_to_string(path)
             .map_err(|_| {
               InterpreterError::EvaluationError(format!(
