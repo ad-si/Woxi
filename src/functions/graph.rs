@@ -334,9 +334,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     raw_edges
       .iter()
-      .map(|e| {
-        apply_style_rule(e, &edge_style_rules, same_edge)
-      })
+      .map(|e| apply_style_rule(e, &edge_style_rules, same_edge))
       .collect()
   };
 
