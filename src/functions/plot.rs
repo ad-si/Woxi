@@ -2224,12 +2224,13 @@ fn grid_line_props(
 /// Draw a plot's labels — `FrameLabel` on all four edges, `AxesLabel` at the
 /// ends of the axes, and the `PlotLabel` above them — into `labels_svg`.
 ///
-/// Shared by the line and scatter renderers: both draw their own axes and
-/// then inject text, and the placement rules are the same for either.
+/// Shared by the line and scatter renderers and by the density/contour
+/// family in `field_plot`: each draws its own axes and then injects text,
+/// and the placement rules are the same for all of them.
 /// `area` is the plotting rectangle `(x0, y0, w, h)` and `range` the data
 /// range `(x_min, x_max, y_min, y_max)` it maps, both in render units.
 #[allow(clippy::too_many_arguments)]
-fn plot_labels_svg(
+pub(crate) fn plot_labels_svg(
   opts: &PlotOptions,
   (plot_x0, margin_top, plot_w, plot_h): (f64, f64, f64, f64),
   (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
