@@ -1,5 +1,33 @@
 # Changelog
 
+# Unreleased
+
+- Fixes driven by a Wolfram Demonstration that solves a pair of coupled
+    reaction equations and switches between three views of the result:
+    - The picture a cell shows is the one its value *is*, not the last one
+        drawn on the way there. A body that builds several plots and then
+        picks one — `p1 = Plot[…]; p2 = ContourPlot[…]; Switch[view, 1, p1,
+        2, p2]`, the standard Demonstrations "which view?" control — was
+        displayed as whichever plot happened to be assigned last, because
+        the visual hosts (Playground, Woxi Studio, the Jupyter kernel) read
+        back the last graphic captured while evaluating.
+    - `ContourStyle` draws the contour lines: `ContourStyle -> {Thick,
+        Blue}` gives a thick blue curve instead of the default thin dark
+        grey one. The option was read only into the plot's symbolic form,
+        so the picture ignored it. It reaches the equation form
+        (`ContourPlot[lhs == rhs, …]`) too, and travels with the curve so a
+        `Show` merge keeps it.
+    - `FrameLabel` and `Epilog` reach the density and contour plots, the
+        way they already reached the function plots: the labels are written
+        outside the frame (with room reserved for them) and the epilog
+        primitives are drawn over the finished picture in data coordinates.
+        A stability diagram marking the current parameters with a red
+        `Point` came out as a bare unlabelled curve.
+    - `ImageSize -> 400 {1, 1}` sizes a plot. A plot holds its arguments,
+        so the option value arrived as an unevaluated product and was
+        dropped, leaving the default width; it is now evaluated to the
+        `{400, 400}` it describes.
+
 # 2026-08-06 - 0.3.0
 
 Between 0.2.0 and 0.3.0 the focus moved from growing the function library
@@ -207,31 +235,6 @@ described in detail in the last section.
 
 ## Demonstration-driven fixes in detail
 
-- Fixes driven by a Wolfram Demonstration that solves a pair of coupled
-    reaction equations and switches between three views of the result:
-    - The picture a cell shows is the one its value *is*, not the last one
-        drawn on the way there. A body that builds several plots and then
-        picks one — `p1 = Plot[…]; p2 = ContourPlot[…]; Switch[view, 1, p1,
-        2, p2]`, the standard Demonstrations "which view?" control — was
-        displayed as whichever plot happened to be assigned last, because
-        the visual hosts (Playground, Woxi Studio, the Jupyter kernel) read
-        back the last graphic captured while evaluating.
-    - `ContourStyle` draws the contour lines: `ContourStyle -> {Thick,
-        Blue}` gives a thick blue curve instead of the default thin dark
-        grey one. The option was read only into the plot's symbolic form,
-        so the picture ignored it. It reaches the equation form
-        (`ContourPlot[lhs == rhs, …]`) too, and travels with the curve so a
-        `Show` merge keeps it.
-    - `FrameLabel` and `Epilog` reach the density and contour plots, the
-        way they already reached the function plots: the labels are written
-        outside the frame (with room reserved for them) and the epilog
-        primitives are drawn over the finished picture in data coordinates.
-        A stability diagram marking the current parameters with a red
-        `Point` came out as a bare unlabelled curve.
-    - `ImageSize -> 400 {1, 1}` sizes a plot. A plot holds its arguments,
-        so the option value arrived as an unevaluated product and was
-        dropped, leaving the default width; it is now evaluated to the
-        `{400, 400}` it describes.
 - Fixes driven by a Wolfram Demonstration that draws a rational cyclic
     polygon inside its circumcircle:
     - `Sphere` and `Ball` draw in a two-dimensional `Graphics`: in the plane
