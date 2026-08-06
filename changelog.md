@@ -1,6 +1,211 @@
 # Changelog
 
-# Unreleased
+# 2026-08-06 - 0.3.0
+
+Between 0.2.0 and 0.3.0 the focus moved from growing the function library
+to running real notebooks: Woxi Studio executes complete Wolfram
+Demonstrations end to end, the plotters draw what wolframscript draws, and
+hundreds of conformance and robustness fixes — many found by differential
+fuzzing against wolframscript — closed gaps between the two engines.
+Windows became a supported platform with prebuilt binaries. The list only
+includes the most prominent changes; the Demonstration-driven fixes are
+described in detail in the last section.
+
+## Woxi Studio & Wolfram Demonstrations
+
+- Woxi Studio opens and runs complete Wolfram Demonstration notebooks end
+    to end — including definition notebooks and notebooks with embedded
+    raster photos — and re-instantiates stored `Manipulate` widgets when a
+    notebook is reopened. Demonstrations such as Kepler's Second Law,
+    Parabolic Mirror, Doyle Spirals, Dedekind Cut, Damped Forced Pendulum
+    and Merging Schools of Fish serve as end-to-end tests.
+- `Manipulate` covers the Demonstrations control vocabulary: interactive
+    `Locator`s (with `LocatorAutoCreate`), `Trigger`, `Button`,
+    `ButtonBar`, `SetterBar`, `PopupMenu`, `Checkbox`/`CheckboxBar`,
+    `Toggler`, `Opener`/`OpenerBar`, controls nested in `TabView`,
+    `PaneSelector` or `Grid` layouts, per-control `ControlType` lists,
+    dynamic control bounds, controls depending on other controls,
+    `TrackedSymbols`, `Animate` bodies and `AnimationRunning`.
+- Typeset notebook input is read back as code: inline box syntax, typeset
+    `Sum`/`Product` boxes, the partial-derivative operator, `Part` written
+    as a bracketed subscript, the radical prefix operators, and the `×`
+    and `÷` characters.
+
+## Plotting & graphics
+
+- List plots grew `Around` error bars, `IntervalMarkers -> "Bands"`,
+    `Callout` and `Labeled` wrappers, `PlotMarkers`, `Epilog`, `Filling`
+    (including between datasets), `FillingStyle`, `DataRange`,
+    `InterpolationOrder`, `Mesh -> Full`, `PlotLayout`, association keys
+    as point labels, and `TimeSeries` input; `ComplexListPlot` and
+    `ListLinePlot3D` are new.
+- `Plot` supports `Background`, `Evaluated`, `EvaluationMonitor` and
+    `Infinity` endpoints; automatic ticks match Wolfram's algorithm, tick
+    labels switch to scientific notation outside `[10^-5, 10^6)`, frames
+    take `FrameLabel` captions and `AxesLabel` sits at the end of its
+    axis. Contour and density plots fix the marching-squares case table,
+    draw their mesh, and keep their shading through `Show`.
+- Graphics primitives and options: polygons with holes (and their
+    measures), `Arrowheads`, `Tube`, `CapForm`, `Text` offsets,
+    `Translate` and `Scale` in SVG export, `Framed`/`Highlighted`
+    rendering, and `AspectRatio` applied to the plotting area rather than
+    the whole image.
+- Graphics3D draws curved surfaces without facet edges, triangulates
+    concave polygons, honours `EdgeForm[]`, `SphericalRegion` and
+    `ViewAngle`, and outlines flat faces the way Wolfram does.
+    `PolyhedronData` gained face lists with Wolfram's vertex order and
+    the icosahedral Archimedean solids.
+- Exported SVG embeds the fonts it uses, renders `TableForm`/`MatrixForm`
+    and the display-form wrappers as grids, and shows machine reals at
+    six significant figures.
+
+## Calculus, algebra & equation solving
+
+- `Integrate` learned the antiderivatives of the error, Fresnel, inverse
+    hyperbolic and exponential-integral families, `Sin`/`Cos[x^2]` to
+    Fresnel integrals, `Exp[a x^2]` to `Erfi`, `1/Log[x]` to
+    `LogIntegral`, trigonometric integrals over a linear term to
+    `Si`/`Ci`, `u = x^n` substitution, Euler's log-trig definite
+    integrals and `Abs` of a linear argument. `NIntegrate` handles
+    endpoint singularities, multi-segment ranges and iterated
+    multi-dimensional integrals (`NSum`/`NProduct` likewise).
+- Differentiation covers `Piecewise`, `HeavisideTheta` (to `DiracDelta`,
+    with its scaling law), `KroneckerDelta`, `Floor`/`Ceiling`, argument
+    derivatives of the Bessel and Hankel functions, `PolyLog`,
+    `ExpIntegralE`, the Airy primes and the incomplete elliptic
+    integrals, plus the fractional `CaputoD`.
+- `Series` expands `Gamma` at its pole, `Zeta` at 1 (Laurent) and
+    algebraic expressions at `Infinity`; limits are decided from the
+    leading exponent at infinity, and `MaxLimit`/`MinLimit` handle
+    bounded trigonometric oscillations.
+- Solving: `x^n == c` in radicals, polynomials with machine-real
+    coefficients, systems over a modulus, `Modulus` and `MaxRoots`
+    options, `NSolve` domain argument, `NSolveValues`, `SolveValues`
+    result shaping, and `Reduce` over higher-degree polynomial
+    inequalities. `DSolve` handles non-constant forcing and orders its
+    fundamental pairs; `NDSolve` solves systems and constrained ODEs;
+    `RSolve` solves the logistic map at `r = 4` and golden-ratio
+    recurrences in the Fibonacci/Lucas basis.
+- Optimization: `LinearProgramming` (exact simplex solver with variable
+    bounds), constrained `FindMinimum`/`FindMaximum`/`NArgMin`/`NArgMax`,
+    the domain argument, `NonlinearModelFit`, constrained and weighted
+    `Fit`, and the minimum-norm fit for rank-deficient designs.
+- Structural algebra: `RootReduce` and `RootApproximant`, `Root` objects
+    treated as the numbers they are, polynomial reduction modulo
+    polynomials, hyperbolic support in `TrigReduce`/`TrigFactor`, and
+    many canonical-ordering fixes so sums, products and radicals print
+    exactly as wolframscript prints them.
+
+## Special functions, statistics & number theory
+
+- Symbolic reductions for the hypergeometric families (`0F1`, `1F1`,
+    `HypergeometricU`, `HypergeometricPFQ` Bessel forms), `PolyLog`,
+    `LerchPhi`, the incomplete `Beta` and `Gamma` functions,
+    `GegenbauerC[n, 1/2, x]`, parity of `Gudermannian`, `Haversine`,
+    `Sinc`, `Erf` and the Fresnel functions, hyperbolic
+    imaginary-period shifts, and exact values of the Carlson elliptic
+    integrals. Factorial Taylor sums fold to `Sin`/`Cos`/`Sinh`/`Cosh`,
+    `Sum[1/n^s]` gives `Zeta[s]`, and sums of `HarmonicNumber` give
+    hyperharmonic closed forms.
+- Numeric evaluation of the Coulomb wavefunctions at nonzero `eta`,
+    `CarlsonRF` at complex arguments, two-argument `Erf`, `PolyLog` with
+    real order, and inverse trigonometric functions at complex floats.
+- Astronomy: `SunPosition`, `MoonPosition`, `MoonPhase`, eclipses and
+    related functions compute from platform-independent ephemerides, as
+    an observer on the ground sees them.
+- Distributions: `SkewNormalDistribution`; `CDF`/`Quantile`/`Median` for
+    the discrete families (`NegativeBinomial`, `Pascal`, `BetaBinomial`,
+    `Zipf`, `Benford`, …); skewness, kurtosis, raw moments,
+    characteristic functions and MGFs for many more; moments of
+    `TruncatedDistribution` and `CensoredDistribution`; `RandomVariate`
+    sampling for `BinomialDistribution` and hand-written distributions;
+    and parameter-range validation instead of silent nonsense.
+
+## Lists, arrays & structured data
+
+- `SparseArray` behaves like the array it stores: arithmetic stays
+    sparse, `Part` reaches into higher ranks, the structural list
+    operations densify transparently, and the array predicates and grid
+    queries see through it.
+- `Dataset` answers queries through the `Query` engine instead of a few
+    fixed shapes, and the statistics functions see through it.
+    `TimeSeries` can be transformed, combined, resampled, windowed and
+    rescaled; `MovingMap` supports padded and time-windowed forms.
+- List operations rounded out: `Periodic`/`Reflected`/`Cyclic` padding
+    (with nested padding arrays), two-dimensional `ListConvolve` and
+    `ListCorrelate` with generalized operations, `MapAt` with `All` and
+    `Span`, ordering functions in `SortBy`/`KeySort`, nested `GroupBy`
+    classifiers, rule-based `StringSplit`/`SequenceSplit`, and the
+    structured matrices (`CauchyMatrix`, `BlockDiagonalMatrix`,
+    `CompanionMatrix`) plus `Symmetrize`/`SymmetrizedArray` and
+    `TensorExpand`.
+
+## Strings, dates, import & export
+
+- XML imports to symbolic XML (namespaces included) and writes back out
+    the way wolframscript does; CSV fixes cell quoting, empty fields and
+    header inference; JSON export fails cleanly on unrepresentable
+    values; `URLBuild`, `URLQueryEncode`/`URLQueryDecode`, `TextCases`
+    for words and sentences, `CharacterName` and `CharacterNormalize`
+    are new.
+- Dates: `MaxDate`/`MinDate`, ISO and week-based date elements, exact
+    rational `DateDifference` sub-day units, month rollover in
+    `AbsoluteTime`, and `DateObject` granularity truncation.
+- Output forms: `TeXForm` sets matrices as LaTeX arrays and matches
+    wolframscript, `CForm`/`FortranForm` fix their operators and
+    numbers, and the `NumberForm` display family shares one
+    option-aware renderer (`NumberSigns`, `ExponentFunction`,
+    `NumberPadding`, decimal-point alignment, `BaseForm` inner values).
+- Patterns: `Verbatim` heads, `Longest`/`Shortest`/
+    `OrderlessPatternSequence`, `Overlaps -> All` reporting every match
+    at every start, string-pattern back-references, and implicitly named
+    blanks in `StringSplit`.
+
+## Images & audio
+
+- Image processing: `ImagePad`, `ImageCrop`, `ImageFilter`,
+    `MeanFilter`, `ImageDifference`, `ImageMeasurements`,
+    `MorphologicalComponents`, `ComponentMeasurements`,
+    `DeleteSmallComponents` and `MaxDetect`/`MinDetect` on matrices;
+    `Blur` is the `GaussianFilter` it claims to be, `Sharpen` sharpens
+    by Wolfram's amount, and `EdgeDetect` runs on the gradient Woxi
+    already had.
+- Audio: the accessors, `AudioNormalize`/`AudioReverse`/`AudioPad`, and
+    `ListPlay` with playback in the Playground and Woxi Studio.
+
+## Robustness & conformance
+
+- Several rounds of differential fuzzing against wolframscript fixed
+    dozens of silent divergences in arithmetic, ordering, `Simplify`,
+    `Together` and friends.
+- Edge cases that used to abort the evaluator or panic now return the
+    message Wolfram reports: `FactorInteger` near `2^64`, degenerate
+    random specifications, empty-list arguments, invalid permutation
+    lists, out-of-range arguments and bad string positions across many
+    heads.
+- Evaluation-semantics fixes: the builtin attribute table, `Switch`
+    pattern evaluation, `Return` no longer escaping `Table`/`Map`/
+    `Select`, `Sequence` through postfix application, `Unevaluated`
+    wrappers, chained `ReplaceAll`, `Condition` precedence, postfix `++`
+    binding, and a parser call-limit fix for deeply nested brackets.
+- `Enclose` and the `Confirm` family, `Success` and the `Failure`
+    object family, and `$MessageList` (preserved around `Quiet`) are
+    implemented.
+
+## Platform, performance & tooling
+
+- Windows is a supported platform: the unit tests pass and run in CI,
+    and the nightly builds produce Windows binaries of both `woxi` and
+    Woxi Studio.
+- Prebuilt binaries for Linux, macOS and Windows are attached to every
+    GitHub release, with a checksum file.
+- The browser (WASM) build supports `Export`, including PNG/JPEG plot
+    export via host rasterization.
+- CI checks formatting and clippy (the codebase is clippy-clean outside
+    three allowed lints), debug builds use `opt-level = 1`, and the
+    crate metadata was fixed for crates.io publishing.
+
+## Demonstration-driven fixes in detail
 
 - Fixes driven by a Wolfram Demonstration whose setter names each of ten
     conformal maps by its formula:
