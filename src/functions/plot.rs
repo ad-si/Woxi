@@ -351,7 +351,7 @@ fn adaptive_sample(
 
 /// True when a `PlotRange` value asks for the whole y extent: `All` itself, or
 /// `All` in the y slot of `{xrange, All}`.
-pub(crate) fn plot_range_requests_all_y(value: &Expr) -> bool {
+fn plot_range_requests_all_y(value: &Expr) -> bool {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   let is_all = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All");
   match &val {
@@ -885,7 +885,7 @@ pub(crate) fn axes_label_svg(
 /// decimals — the number the step itself needs — so an axis stepping by 0.5
 /// reads `-1.0, -0.5, 0.0, 0.5, 1.0`, not `-1, -0.5, 0, 0.5, 1`, while one
 /// stepping by 2 reads `0, 2, 4`.
-pub(crate) fn format_tick_with_step(v: f64, step: f64) -> String {
+fn format_tick_with_step(v: f64, step: f64) -> String {
   let decimals = tick_step_decimals(step);
   if decimals == 0 {
     return format_tick(v);
@@ -1440,9 +1440,7 @@ pub(crate) enum FillTarget {
 /// rendered yet), or a constant level (`Axis`, `Bottom`, `Top`, a number).
 /// Returns `None` when `replacement` is not a list of rules keyed by
 /// 1-based series indices, so the caller can fall back to `parse_filling`.
-pub(crate) fn parse_filling_rules(
-  replacement: &Expr,
-) -> Option<Vec<(usize, FillTarget)>> {
+fn parse_filling_rules(replacement: &Expr) -> Option<Vec<(usize, FillTarget)>> {
   let Expr::List(items) = replacement else {
     return None;
   };
@@ -1502,10 +1500,7 @@ pub(crate) fn apply_filling_option(replacement: &Expr, opts: &mut PlotOptions) {
 
 /// The `FillingStyle` that applies to series `idx`: its own when `Show`
 /// merged several plots, else the one style the plot was given.
-pub(crate) fn series_filling_style(
-  opts: &PlotOptions,
-  idx: usize,
-) -> Option<FillStyle> {
+fn series_filling_style(opts: &PlotOptions, idx: usize) -> Option<FillStyle> {
   opts
     .filling_styles
     .get(idx)
@@ -1517,7 +1512,7 @@ pub(crate) fn series_filling_style(
 /// Effective fill target for series `idx`: its entry in the rule list when
 /// `Filling -> {i -> spec, …}` was given (series without a rule stay
 /// unfilled), otherwise the global filling mode.
-pub(crate) fn series_fill_target(opts: &PlotOptions, idx: usize) -> FillTarget {
+fn series_fill_target(opts: &PlotOptions, idx: usize) -> FillTarget {
   if opts.filling_rules.is_empty() {
     FillTarget::Level(opts.filling)
   } else {
@@ -1533,7 +1528,7 @@ pub(crate) fn series_fill_target(opts: &PlotOptions, idx: usize) -> FillTarget {
 /// Linearly interpolate a polyline (in data order) at `x`. Returns `None`
 /// when `x` lies outside every segment's x-span, so filling between series
 /// with different x-domains stops at the overlap.
-pub(crate) fn interp_polyline_y(points: &[(f64, f64)], x: f64) -> Option<f64> {
+fn interp_polyline_y(points: &[(f64, f64)], x: f64) -> Option<f64> {
   for w in points.windows(2) {
     let (x0, y0) = w[0];
     let (x1, y1) = w[1];
@@ -1554,7 +1549,7 @@ pub(crate) fn interp_polyline_y(points: &[(f64, f64)], x: f64) -> Option<f64> {
 /// Polygon between two polylines over the overlap of their x-domains: the
 /// source curve forms the top boundary and the reversed target curve the
 /// bottom, both clipped (with interpolated endpoints) to the overlap.
-pub(crate) fn fill_between_polygon(
+fn fill_between_polygon(
   source: &[(f64, f64)],
   target: &[(f64, f64)],
 ) -> Option<Vec<(f64, f64)>> {
@@ -1607,7 +1602,7 @@ pub(crate) fn fill_between_polygon(
 }
 
 /// Parse a `Filling` option value from an expression.
-pub(crate) fn parse_filling(replacement: &Expr) -> Filling {
+fn parse_filling(replacement: &Expr) -> Filling {
   match replacement {
     Expr::Identifier(v) if v == "Axis" => Filling::Axis,
     Expr::Identifier(v) if v == "Automatic" => Filling::Axis,
@@ -1629,7 +1624,7 @@ pub(crate) fn parse_filling(replacement: &Expr) -> Filling {
 /// Adjust y-range so the fill reference level is included.
 /// For `Axis`, ensures y=0 is in range. For `Value(v)`, ensures v is in range.
 /// `Bottom`/`Top`/`None` don't need adjustment (they use the range edges).
-pub(crate) fn adjust_y_range_for_filling(
+fn adjust_y_range_for_filling(
   filling: Filling,
   y_range: (f64, f64),
 ) -> (f64, f64) {
@@ -2234,7 +2229,7 @@ fn grid_line_props(
 /// `area` is the plotting rectangle `(x0, y0, w, h)` and `range` the data
 /// range `(x_min, x_max, y_min, y_max)` it maps, both in render units.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn plot_labels_svg(
+fn plot_labels_svg(
   opts: &PlotOptions,
   (plot_x0, margin_top, plot_w, plot_h): (f64, f64, f64, f64),
   (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
@@ -7453,7 +7448,7 @@ pub(crate) fn parse_plot_markers(
 
 /// The marker for series `idx`, cycling the list as the Wolfram Language
 /// does when there are fewer markers than series.
-pub(crate) fn series_marker(
+fn series_marker(
   markers: &[Option<PlotMarker>],
   idx: usize,
 ) -> Option<&PlotMarker> {
@@ -7822,7 +7817,7 @@ pub(crate) const AXIS_TICK_TARGET: usize = 6;
 /// than 20 px at the left — which is what keeps the tick labels of e.g.
 /// `ListPlot[…, ImageSize -> {400, 200}, ImagePadding -> 20]` from being
 /// clipped.
-pub(crate) fn padded_margins(
+fn padded_margins(
   [left, right, bottom, top]: [f64; 4],
   (render_width, render_height): (u32, u32),
   aspect_ratio: Option<f64>,
@@ -8278,7 +8273,7 @@ fn eval_body_var_symbolic(body: &Expr, var: &str) -> Expr {
 }
 
 /// As [`eval_body_var_symbolic`], for a body in several plot variables.
-pub(crate) fn eval_body_vars_symbolic(body: &Expr, vars: &[&str]) -> Expr {
+fn eval_body_vars_symbolic(body: &Expr, vars: &[&str]) -> Expr {
   let saved: Vec<(&str, Option<crate::StoredValue>)> = vars
     .iter()
     .map(|v| (*v, crate::ENV.with(|e| e.borrow_mut().remove(*v))))
