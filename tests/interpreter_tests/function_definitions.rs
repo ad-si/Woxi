@@ -4031,3 +4031,131 @@ mod curried_and_head_patterns {
     );
   }
 }
+
+/// Non-linear (repeated-variable) definition patterns such as `f[i_, i_]`.
+/// The repeated name is an equality constraint between the two slots, so the
+/// rule only fires when both arguments agree, it is strictly more specific
+/// than the same shape with distinct names, and it is a *different*
+/// DownValue — defining one must not delete the other. All expectations
+/// match wolframscript.
+mod repeated_pattern_variables {
+  use super::*;
+
+  #[test]
+  fn repeated_variable_requires_equal_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"f[i_, i_] := "same"; {f[1, 1], f[1, 2]}"#).unwrap(),
+      "{same, f[1, 2]}"
+    );
+    // Non-numeric and structured arguments compare the same way.
+    clear_state();
+    assert_eq!(
+      interpret(r#"g[x_, x_] := "same"; {g[a, a], g[a, b]}"#).unwrap(),
+      "{same, g[a, b]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"h[x_, x_] := "same"; {h[{1, 2}, {1, 2}], h[{1, 2}, {1, 3}]}"#
+      )
+      .unwrap(),
+      "{same, h[{1, 2}, {1, 3}]}"
+    );
+  }
+
+  /// A repeat among three slots constrains only the repeated pair.
+  #[test]
+  fn repeated_variable_among_several_slots() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"k[a_, a_, c_] := "rep"; {k[1, 1, 9], k[1, 2, 9]}"#).unwrap(),
+      "{rep, k[1, 2, 9]}"
+    );
+    // Three-way repeat: all three must agree.
+    clear_state();
+    assert_eq!(
+      interpret(r#"m[a_, a_, a_] := "all"; {m[2, 2, 2], m[2, 2, 3]}"#).unwrap(),
+      "{all, m[2, 2, 3]}"
+    );
+  }
+
+  /// The non-linear rule and the linear rule of the same shape are distinct
+  /// DownValues; neither redefinition deletes the other, and the non-linear
+  /// one is tried first regardless of the order they were entered in.
+  #[test]
+  fn repeated_and_distinct_variable_rules_coexist() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "p[i_, i_] := \"same\"; p[j_, k_] := \"diff\"; \
+         {p[1, 1], p[1, 2], Length[DownValues[p]]}"
+      )
+      .unwrap(),
+      "{same, diff, 2}"
+    );
+    // Entered the other way round, specificity still puts `q[i_, i_]` first.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "q[j_, k_] := \"diff\"; q[i_, i_] := \"same\"; \
+         {q[1, 1], q[1, 2], Length[DownValues[q]]}"
+      )
+      .unwrap(),
+      "{same, diff, 2}"
+    );
+  }
+
+  /// Renaming the pattern variables of an otherwise identical rule *does*
+  /// redefine it — only the repeat structure makes two rules distinct.
+  #[test]
+  fn alpha_renamed_linear_rule_still_replaces() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "r[j_, k_] := \"first\"; r[p_, q_] := \"second\"; \
+         {r[1, 2], Length[DownValues[r]]}"
+      )
+      .unwrap(),
+      "{second, 1}"
+    );
+  }
+
+  /// A literal-argument definition still outranks a repeated-variable rule
+  /// covering the same slots, and the repeated rule outranks the fully
+  /// general one — the layering a differentiation-matrix definition relies
+  /// on, including when the head is a `Module` local.
+  #[test]
+  fn literal_then_repeated_then_general_layering() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "d[0, 0] = 99; d[i_, i_] := 10 i; d[j_, k_] := 0; \
+         Table[d[i, j], {i, 0, 2}, {j, 0, 2}]"
+      )
+      .unwrap(),
+      "{{99, 0, 0}, {0, 10, 0}, {0, 0, 20}}"
+    );
+    // Same layering on a Module-local symbol, where the head is renamed.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Module[{d}, d[0, 0] = 99; d[i_, i_] := 10 i; d[j_, k_] := 0; \
+         Table[d[i, j], {i, 0, 2}, {j, 0, 2}]]"
+      )
+      .unwrap(),
+      "{{99, 0, 0}, {0, 10, 0}, {0, 0, 20}}"
+    );
+  }
+
+  /// Repeated variables constrain sequence patterns the same way.
+  #[test]
+  fn repeated_sequence_variable() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"s[a__, a__] := "dup"; {s[1, 2, 1, 2], s[1, 2, 3, 4]}"#)
+        .unwrap(),
+      "{dup, s[1, 2, 3, 4]}"
+    );
+  }
+}

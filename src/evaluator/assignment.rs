@@ -386,6 +386,22 @@ pub fn rule_dominates(
       strictly_tighter = true;
     }
   }
+  // Repeated pattern variables are an equality constraint between positions,
+  // so a non-linear rule (`f[i_, i_]`) matches a strict subset of the linear
+  // rule with the same shape (`f[j_, k_]`) and must be tried first. Every pair
+  // `b` forces equal, `a` must force equal too.
+  let a_pairs =
+    crate::evaluator::pattern_matching::repeated_param_pairs(a_params);
+  let b_pairs =
+    crate::evaluator::pattern_matching::repeated_param_pairs(b_params);
+  for pair in &b_pairs {
+    if !a_pairs.contains(pair) {
+      return false;
+    }
+  }
+  if a_pairs.iter().any(|p| !b_pairs.contains(p)) {
+    strictly_tighter = true;
+  }
   // Every guard of `b` must also guard `a`, else `a` accepts inputs `b` rejects.
   // Compare guards by their string form (Expr has no PartialEq).
   let a_guard_strs: Vec<String> =
