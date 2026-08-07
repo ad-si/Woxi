@@ -2131,6 +2131,7 @@ mod interpreter_tests {
   mod distributions;
   mod element_data;
   mod entity;
+  mod example_data;
   mod function_application;
   mod function_definitions;
   mod functions;

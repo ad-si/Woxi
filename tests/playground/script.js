@@ -611,6 +611,42 @@ function renderManipulate(item) {
         }
         return btn
       }
+      case "button": {
+        // A caption button (`Button["→", n++]`): its held action is sent as
+        // a write-back and the caption is rebuilt so it shows the new value.
+        const btn = document.createElement("button")
+        btn.type = "button"
+        btn.className = "manipulate-display-button"
+        if (node.label) btn.appendChild(renderDisplayTree(node.label))
+        if (node.action) {
+          btn.addEventListener("click", () => {
+            widget.structureDirty = true
+            requestUpdate([node.action])
+          })
+        }
+        return btn
+      }
+      case "spacer": {
+        const span = document.createElement("span")
+        span.className = "manipulate-display-spacer"
+        span.style.display = "inline-block"
+        span.style.width = `${node.width || 0}px`
+        return span
+      }
+      case "text": {
+        // Styled prose (`Style["…", Bold, Red]`) inside a caption.
+        const span = document.createElement("span")
+        span.className = "manipulate-display-text"
+        for (const run of node.runs || []) {
+          const s = document.createElement("span")
+          s.textContent = run.text
+          if (run.italic) s.style.fontStyle = "italic"
+          if (run.bold) s.style.fontWeight = "bold"
+          if (run.color) s.style.color = run.color
+          span.appendChild(s)
+        }
+        return span
+      }
       case "static": {
         const div = document.createElement("div")
         if (node.svg) {
