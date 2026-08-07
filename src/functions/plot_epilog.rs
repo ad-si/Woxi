@@ -145,7 +145,34 @@ fn anchor2(expr: &Expr, area: &PlotArea) -> Option<(f64, f64)> {
       area.y_min + sy * (area.y_max - area.y_min),
     ));
   }
-  point2(expr)
+  if let Expr::List(items) = expr
+    && items.len() == 2
+  {
+    return Some((
+      anchor_component(&items[0], area.x_min, area.x_max)?,
+      anchor_component(&items[1], area.y_min, area.y_max)?,
+    ));
+  }
+  None
+}
+
+/// One coordinate of an anchor position. Wolfram lets either component be
+/// symbolic — a Demonstration pins an inset with `{0.8, Center}` to mean
+/// "four-fifths along, halfway up" — so a side name resolves against that
+/// axis' own range.
+fn anchor_component(expr: &Expr, min: f64, max: f64) -> Option<f64> {
+  if let Expr::Identifier(name) = expr {
+    return match name.as_str() {
+      "Left" | "Bottom" => Some(min),
+      "Right" | "Top" => Some(max),
+      "Center" => Some((min + max) / 2.0),
+      // The axis of the *other* coordinate: zero when it is in range, and
+      // the nearer edge otherwise, which is where Wolfram draws it.
+      "Axis" => Some(0.0_f64.clamp(min, max)),
+      _ => None,
+    };
+  }
+  try_eval_to_f64(expr)
 }
 
 /// The value of option `key` among a primitive's trailing `opt -> value`
