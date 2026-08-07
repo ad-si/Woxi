@@ -207,6 +207,19 @@ described in detail in the last section.
 
 ## Demonstration-driven fixes in detail
 
+- Fixes driven by a Wolfram Demonstration that approximates derivatives on
+    Chebyshev–Gauss–Lobatto points:
+    - A pattern variable repeated on the left of a definition constrains the
+        arguments to be equal: `f[i_, i_] := …` no longer matches `f[1, 2]`.
+        The repeat used to be ignored, so a definition pair spelling out a
+        matrix's diagonal and off-diagonal entries collapsed onto whichever
+        rule came last — and a diagonal formula applied off the diagonal
+        divided by zero. The constraint holds for a repeat inside a list
+        pattern (`f[{a_, a_}]`) too, and alongside head constraints and
+        `?test`s on the repeated slots.
+    - `DownValues` and `Definition` print a nested argument pattern as it was
+        written: `f[g[x_]] := x` used to read back as `f[__sp0_]`, exposing
+        the placeholder such a slot is lowered to.
 - Fixes driven by a Wolfram Demonstration that draws a rational cyclic
     polygon inside its circumcircle:
     - `Sphere` and `Ball` draw in a two-dimensional `Graphics`: in the plane

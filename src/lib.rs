@@ -4918,6 +4918,18 @@ fn store_function_definition(
     raw_body_expr
   };
 
+  // A pattern variable repeated across the argument list (`f[i_, i_] := …`)
+  // constrains the arguments to be identical; lower it before the definition
+  // is filed so dispatch enforces it.
+  evaluator::assignment::constrain_repeated_params(
+    &mut params,
+    &mut conditions,
+    &heads,
+    &blank_types,
+  );
+  let has_any_condition =
+    has_any_condition || conditions.iter().any(|c| c.is_some());
+
   FUNC_DEFS.with(|m| {
     let mut defs = m.borrow_mut();
     let entry = defs.entry(func_name).or_insert_with(Vec::new);
