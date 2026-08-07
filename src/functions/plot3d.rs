@@ -52,6 +52,11 @@ pub(crate) struct Triangle {
   /// outline edges are stroked, so a face with more than three corners
   /// does not show the diagonals it was split along.
   pub boundary: [bool; 3],
+  /// The colour `EdgeForm[colour]` asked outline edges to be drawn in.
+  /// `None` keeps the renderer's default dark grey. An explicit colour is
+  /// also drawn at full opacity, so an outline stays visible around a
+  /// transparent face.
+  pub edge_color: Option<(u8, u8, u8)>,
 }
 
 struct MeshLine {
@@ -696,6 +701,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
           all_triangles.push(Triangle {
             boundary: [true; 3],
+            edge_color: None,
             projected: [p0, p1, p2],
             depth: depth(center, &camera),
             color,
@@ -745,6 +751,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
           all_triangles.push(Triangle {
             boundary: [true; 3],
+            edge_color: None,
             projected: [p0, p1, p2],
             depth: depth(center, &camera),
             color,
@@ -1847,6 +1854,12 @@ struct StyleState3D {
   /// Whether a face is outlined. `EdgeForm[]` asks for no edge at all,
   /// which is how a dissection shows its pieces as flat colour.
   edges: bool,
+  /// The colour `EdgeForm[colour]` asks outlines to be drawn in. `None`
+  /// leaves them the renderer's default dark grey. An explicit colour also
+  /// makes the outline opaque and is what turns a curved primitive's
+  /// silhouette on: `{Opacity[0], EdgeForm[Black], Cylinder[…]}` is the
+  /// Demonstrations idiom for an unfilled circle in space.
+  edge_color: Option<(u8, u8, u8)>,
 }
 
 impl Default for StyleState3D {
@@ -1858,6 +1871,7 @@ impl Default for StyleState3D {
       thickness: None,
       capped: true,
       edges: true,
+      edge_color: None,
     }
   }
 }
@@ -2013,10 +2027,28 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         return true;
       }
       // `EdgeForm[]` (and `EdgeForm[None]`) asks for faces with no outline;
-      // any other form keeps the default edge.
+      // any other form keeps the default edge. A colour directive among the
+      // arguments — `EdgeForm[Black]`, `EdgeForm[{Thick, Red}]` — also sets
+      // the outline's colour.
       "EdgeForm" => {
         style.edges = !(args.is_empty()
           || matches!(args.first(), Some(Expr::Identifier(s)) if s == "None"));
+        style.edge_color = None;
+        if style.edges {
+          let flat = match args.first() {
+            Some(Expr::List(items)) => items.to_vec(),
+            _ => args.to_vec(),
+          };
+          for a in &flat {
+            if let Some(c) = parse_color(a) {
+              style.edge_color = Some((
+                (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+                (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+                (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+              ));
+            }
+          }
+        }
         return true;
       }
       "Thickness" if args.len() == 1 => {
@@ -2091,6 +2123,32 @@ impl Affine3 {
       - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
       + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
     det.abs().cbrt()
+  }
+
+  /// Does the linear part stretch every direction by the same factor?
+  ///
+  /// A similarity (rotation and/or uniform scaling) maps a sphere to a
+  /// sphere, so `Sphere`/`Cylinder`/`Cone` primitives can keep their
+  /// analytic form and just take a scaled radius. An anisotropic
+  /// `Scale[g, {sx, sy, sz}]` does not — it turns a sphere into an
+  /// ellipsoid — so those primitives have to be tessellated first and the
+  /// transform applied to their vertices (see `transform_primitive3d`).
+  fn is_similarity(&self) -> bool {
+    // MᵀM is a multiple of the identity exactly when the columns are
+    // mutually orthogonal and share one length.
+    let col = |j: usize| [self.m[0][j], self.m[1][j], self.m[2][j]];
+    let dot =
+      |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let (c0, c1, c2) = (col(0), col(1), col(2));
+    let n0 = dot(c0, c0);
+    let n1 = dot(c1, c1);
+    let n2 = dot(c2, c2);
+    let tol = 1e-9 * n0.max(n1).max(n2).max(1.0);
+    (n0 - n1).abs() <= tol
+      && (n1 - n2).abs() <= tol
+      && dot(c0, c1).abs() <= tol
+      && dot(c1, c2).abs() <= tol
+      && dot(c0, c2).abs() <= tol
   }
 
   fn translation(v: [f64; 3]) -> Self {
@@ -2174,7 +2232,16 @@ fn eval_vec3(expr: &Expr) -> Option<[f64; 3]> {
 /// Build the transform list for a `Translate`/`Rotate`/`Scale` wrapper from
 /// its arguments (past the wrapped graphics). `Translate` with a list of
 /// offset vectors produces one transform per copy; the others produce one.
-fn parse_3d_transforms(name: &str, args: &[Expr]) -> Option<Vec<Affine3>> {
+///
+/// `content_center` is the centre of the wrapped graphics' bounding box:
+/// `Scale[g, s]` without an explicit centre scales *about that point*, not
+/// about the origin, so `Scale[Sphere[{1.4, 0, 0}], 0.07]` leaves the
+/// sphere where it is and only shrinks it.
+fn parse_3d_transforms(
+  name: &str,
+  args: &[Expr],
+  content_center: [f64; 3],
+) -> Option<Vec<Affine3>> {
   match name {
     "Translate" if args.len() == 1 => {
       // Either a single {dx, dy, dz} or a list of offset vectors.
@@ -2224,8 +2291,63 @@ fn parse_3d_transforms(name: &str, args: &[Expr]) -> Option<Vec<Affine3>> {
         let s = try_eval_to_f64(&evaluate_expr_to_expr(&args[0]).ok()?)?;
         [s, s, s]
       };
-      let center = args.get(1).and_then(eval_vec3).unwrap_or([0.0; 3]);
+      let center = args.get(1).and_then(eval_vec3).unwrap_or(content_center);
       Some(vec![Affine3::scaling(factors, center)])
+    }
+    _ => None,
+  }
+}
+
+/// Centre of the bounding box of already-collected primitives, the point
+/// `Scale[g, s]` scales about when no centre is given. An empty collection
+/// has no box, so it falls back to the origin.
+fn content_center(prims: &[Primitive3D]) -> [f64; 3] {
+  if prims.is_empty() {
+    return [0.0; 3];
+  }
+  let [(x0, x1), (y0, y1), (z0, z1)] = primitives_bounds(prims);
+  let mid = |lo: f64, hi: f64| {
+    if lo.is_finite() && hi.is_finite() {
+      (lo + hi) / 2.0
+    } else {
+      0.0
+    }
+  };
+  [mid(x0, x1), mid(y0, y1), mid(z0, z1)]
+}
+
+/// The style attached to a collected primitive.
+fn primitive_style(prim: &Primitive3D) -> &StyleState3D {
+  match prim {
+    Primitive3D::Sphere { style, .. }
+    | Primitive3D::Cuboid { style, .. }
+    | Primitive3D::Polygon3D { style, .. }
+    | Primitive3D::Line3D { style, .. }
+    | Primitive3D::Point3DPrim { style, .. }
+    | Primitive3D::Arrow3D { style, .. }
+    | Primitive3D::Cylinder { style, .. }
+    | Primitive3D::Cone { style, .. }
+    | Primitive3D::Text3D { style, .. }
+    | Primitive3D::Surface3D { style, .. } => style,
+  }
+}
+
+/// Triangles for the curved primitives that an anisotropic transform turns
+/// into a shape they cannot represent. Returns `None` for primitives whose
+/// vertices already carry their whole geometry (polygons, lines, …) — those
+/// transform exactly, point by point.
+fn tessellate_for_transform(
+  prim: &Primitive3D,
+) -> Option<Vec<(Point3D, Point3D, Point3D)>> {
+  match prim {
+    Primitive3D::Sphere { center, radius, .. } => {
+      Some(tessellate_sphere(center, *radius, (16, 24)))
+    }
+    Primitive3D::Cylinder { p1, p2, radius, .. } => {
+      Some(tessellate_cylinder(p1, p2, *radius))
+    }
+    Primitive3D::Cone { p1, p2, radius, .. } => {
+      Some(tessellate_cone(p1, p2, *radius))
     }
     _ => None,
   }
@@ -2234,6 +2356,25 @@ fn parse_3d_transforms(name: &str, args: &[Expr]) -> Option<Vec<Affine3>> {
 /// Apply an affine transform to a collected primitive in place.
 fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
   let scale = xf.length_scale();
+  // An anisotropic transform bends a sphere into an ellipsoid and a
+  // cylinder/cone into an elliptic one — shapes the analytic primitives
+  // cannot express. Tessellate first, then transform the vertices, and
+  // keep the result marked `smooth` so it still shades as a curved
+  // surface rather than growing facet outlines.
+  if !xf.is_similarity()
+    && let Some(tris) = tessellate_for_transform(prim)
+  {
+    let style = primitive_style(prim).clone();
+    *prim = Primitive3D::Surface3D {
+      tris: tris
+        .into_iter()
+        .map(|(a, b, c)| (xf.apply(a), xf.apply(b), xf.apply(c)))
+        .collect(),
+      style,
+      smooth: true,
+    };
+    return;
+  }
   match prim {
     Primitive3D::Sphere { center, radius, .. } => {
       *center = xf.apply(*center);
@@ -2846,7 +2987,7 @@ fn collect_3d_primitives(
           let saved = style.clone();
           collect_3d_primitives(&args[0], style, &mut sub);
           *style = saved;
-          match parse_3d_transforms(name, &args[1..]) {
+          match parse_3d_transforms(name, &args[1..], content_center(&sub)) {
             Some(transforms) => {
               for xf in &transforms {
                 for prim in &sub {
@@ -3691,6 +3832,29 @@ fn tessellate_cone(
   tris
 }
 
+/// Which triangle edges of a tessellated cylinder lie on one of its two end
+/// circles. `tessellate_cylinder` emits a quad per segment as the triangles
+/// `(a, b, c)` and `(a, c, d)`, with `a`/`d` on the first circle and `b`/`c`
+/// on the second — so the rim edges are `b→c` and `d→a`.
+fn cylinder_edge_flags(tri_count: usize) -> Vec<[bool; 3]> {
+  (0..tri_count)
+    .map(|i| {
+      if i % 2 == 0 {
+        [false, true, false]
+      } else {
+        [false, false, true]
+      }
+    })
+    .collect()
+}
+
+/// Which triangle edges of a tessellated cone lie on its base circle.
+/// `tessellate_cone` emits one triangle `(tip, b1, b2)` per segment, so the
+/// rim edge is always `b1→b2`.
+fn cone_edge_flags(tri_count: usize) -> Vec<[bool; 3]> {
+  vec![[false, true, false]; tri_count]
+}
+
 /// The world-coordinate bounding box of a set of 3D primitives, as
 /// `[(xlo, xhi), (ylo, yhi), (zlo, zhi)]`. Infinite when there is nothing
 /// to bound.
@@ -4222,18 +4386,36 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           holed_boundaries = tris.iter().map(box_edge_flags).collect();
           (tris, style)
         }
+        // A cylinder/cone is tessellated as a ring of quads split into two
+        // triangles each; the quad's ends lie on the two end circles. With
+        // an explicit `EdgeForm[colour]` those end circles are drawn — a
+        // flat cylinder is how a Demonstration draws a circle in space —
+        // while the longitudinal cuts stay internal, as on any smooth
+        // surface.
         Primitive3D::Cylinder {
           p1,
           p2,
           radius,
           style,
-        } => (tessellate_cylinder(p1, p2, *radius), style),
+        } => {
+          let tris = tessellate_cylinder(p1, p2, *radius);
+          if style.edge_color.is_some() {
+            holed_boundaries = cylinder_edge_flags(tris.len());
+          }
+          (tris, style)
+        }
         Primitive3D::Cone {
           p1,
           p2,
           radius,
           style,
-        } => (tessellate_cone(p1, p2, *radius), style),
+        } => {
+          let tris = tessellate_cone(p1, p2, *radius);
+          if style.edge_color.is_some() {
+            holed_boundaries = cone_edge_flags(tris.len());
+          }
+          (tris, style)
+        }
         Primitive3D::Polygon3D {
           points,
           holes,
@@ -4286,6 +4468,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             thickness: None,
             capped: true,
             edges: true,
+            edge_color: None,
           },
         ),
       };
@@ -4325,16 +4508,23 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let tri_count = tris.len();
     for (i, (v0, v1, v2)) in tris.into_iter().enumerate() {
       // `EdgeForm[]` asks for faces with no outline, so every edge counts
-      // as an internal cut and is stroked in the face's own colour.
-      let boundary = if smooth_surface || !prim_style.edges {
-        [false; 3]
-      } else if let Some(flags) = holed_boundaries.get(i) {
-        *flags
-      } else if fan_corners > 3 {
-        [i == 0, true, i + 1 == tri_count]
-      } else {
-        [true; 3]
-      };
+      // as an internal cut and is stroked in the face's own colour. A
+      // curved primitive that was given an explicit edge colour keeps the
+      // silhouette flags computed above — its facet cuts stay internal,
+      // but its end circles are drawn.
+      let outlined_smooth = smooth_surface
+        && prim_style.edge_color.is_some()
+        && !holed_boundaries.is_empty();
+      let boundary =
+        if !prim_style.edges || (smooth_surface && !outlined_smooth) {
+          [false; 3]
+        } else if let Some(flags) = holed_boundaries.get(i) {
+          *flags
+        } else if fan_corners > 3 {
+          [i == 0, true, i + 1 == tri_count]
+        } else {
+          [true; 3]
+        };
       let normal = triangle_normal(v0, v1, v2);
       let facing = normal[0] * view_dir[0]
         + normal[1] * view_dir[1]
@@ -4354,6 +4544,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       all_triangles.push(Triangle {
         boundary,
+        edge_color: prim_style.edge_color,
         projected: [p0, p1, p2],
         depth: depth(center, &camera),
         color,
@@ -4762,13 +4953,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         String::new()
       };
+      // The outline colour: the default dark grey unless `EdgeForm[colour]`
+      // named one. A named colour is also drawn opaque, so the outline of a
+      // transparent face still shows — that is what makes
+      // `{Opacity[0], EdgeForm[Black], Cylinder[…]}` an unfilled circle.
+      let (edge_stroke, edge_opacity_attr) = match tri.edge_color {
+        Some((er, eg, eb)) => (format!("rgb({er},{eg},{eb})"), String::new()),
+        None => ("rgb(64,64,64)".to_string(), opacity_attr.clone()),
+      };
       // The hairline stroke closes the anti-aliasing seam between
       // neighbouring triangles. Where the seam is an internal cut of a
       // fan-triangulated polygon it is stroked in the triangle's own
       // colour instead, so the face reads as one flat surface.
       if tri.boundary == [true; 3] {
         svg.push_str(&format!(
-          "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"rgb(64,64,64)\" stroke-width=\"1\"{}/>\n",
+          "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"{edge_stroke}\" stroke-width=\"1\"{}/>\n",
           x0, y0, x1, y1, x2, y2, r, g, b, opacity_attr
         ));
       } else {
@@ -4784,8 +4983,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (ax, ay) = corners[e];
           let (bx, by) = corners[(e + 1) % 3];
           svg.push_str(&format!(
-            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"rgb(64,64,64)\" stroke-width=\"1\"{}/>\n",
-            opacity_attr
+            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"1\"{edge_opacity_attr}/>\n",
           ));
         }
       }
@@ -5246,6 +5444,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
         all_triangles.push(Triangle {
           boundary: [true; 3],
+          edge_color: None,
           projected: [p0, p1, p2],
           depth: depth(center, &camera),
           color,
@@ -5290,6 +5489,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
         all_triangles.push(Triangle {
           boundary: [true; 3],
+          edge_color: None,
           projected: [p0, p1, p2],
           depth: depth(center, &camera),
           color,
@@ -5656,6 +5856,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
         all_triangles.push(Triangle {
           boundary: [true; 3],
+          edge_color: None,
           projected: [proj0, proj1, proj2],
           depth: depth(center, &camera),
           color,
@@ -5686,6 +5887,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
         all_triangles.push(Triangle {
           boundary: [true; 3],
+          edge_color: None,
           projected: [proj0, proj1, proj2],
           depth: depth(center, &camera),
           color,
@@ -6033,6 +6235,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             };
             all_triangles.push(Triangle {
               boundary: [true; 3],
+              edge_color: None,
               projected: [p0, p1, p2],
               depth: depth(center, &camera),
               color,
@@ -6054,6 +6257,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             };
             all_triangles.push(Triangle {
               boundary: [true; 3],
+              edge_color: None,
               projected: [p0, p2, p3],
               depth: depth(center, &camera),
               color,
@@ -7375,6 +7579,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     all_triangles.push(Triangle {
       boundary: [true; 3],
+      edge_color: None,
       projected: [pa, pb, pc],
       depth: depth(center, &camera),
       color,
@@ -7552,6 +7757,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         all_triangles.push(Triangle {
           boundary: [true; 3],
+          edge_color: None,
           projected: [p0, p1, p2],
           color,
           depth: depth(center, &camera),
@@ -7598,6 +7804,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         all_triangles.push(Triangle {
           boundary: [true; 3],
+          edge_color: None,
           projected: [p0, p1, p2],
           color,
           depth: depth(center, &camera),
@@ -8043,6 +8250,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
           all_triangles.push(Triangle {
             boundary: [true; 3],
+            edge_color: None,
             projected: [
               project(v0, &camera),
               project(v1, &camera),
@@ -8070,6 +8278,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
           all_triangles.push(Triangle {
             boundary: [true; 3],
+            edge_color: None,
             projected: [
               project(v0, &camera),
               project(v1, &camera),

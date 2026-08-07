@@ -585,6 +585,17 @@ fn extract_typeset_box(s: &str) -> Option<String> {
           "'".repeat(prime_marks(&args[1]).unwrap())
         )
       }
+      // A script hung on `\[InvisiblePrefixScriptBase]` is a *prefix*
+      // script — `\!\(\*SuperscriptBox[\(\[InvisiblePrefixScriptBase]\),
+      // \(1\)]\)Σ` typesets as `¹Σ`. The base is empty, so the
+      // exponentiation form would both fail to parse (`()^(1)`) and, once
+      // evaluated, drop the script entirely (`x^1` is `x`). `Superscript`
+      // stays unevaluated and keeps it.
+      "SuperscriptBox"
+        if args.len() == 2 && conv(&args[0]).trim().is_empty() =>
+      {
+        format!("Superscript[\"\", {}]", conv(&args[1]))
+      }
       // `SuperscriptBox[a, b]` → `(a)^(b)`.
       "SuperscriptBox" if args.len() == 2 => {
         format!("({})^({})", conv(&args[0]), conv(&args[1]))
@@ -595,9 +606,15 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // `SubscriptBox["c", RowBox[{"⟦", "1", "⟧"}]]` means `c[[1]]`.
       "SubscriptBox" if args.len() == 2 => {
         let sub = conv(&args[1]);
+        let base = conv(&args[0]);
         match part_spec_inside_double_brackets(&sub) {
-          Some(spec) => format_part_access(&conv(&args[0]), spec),
-          None => format!("Subscript[{}, {}]", conv(&args[0]), sub),
+          Some(spec) => format_part_access(&base, spec),
+          // Prefix subscript, as above — keep an explicit empty string so
+          // the result still parses.
+          None if base.trim().is_empty() => {
+            format!("Subscript[\"\", {sub}]")
+          }
+          None => format!("Subscript[{base}, {sub}]"),
         }
       }
       // `SubsuperscriptBox[a, b, c]` → `Subscript[a, b]^c`.
@@ -1252,8 +1269,17 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     "And" => Some("&&"),
     "Or" => Some("||"),
     "Cross" => Some("\\[Cross]"),
-    "NoBreak" | "InvisibleSpace" | "InvisibleComma" | "ImplicitPlus"
-    | "AutoSpace" | "ZeroWidthSpace" | "NonBreakingSpace" => Some(""),
+    "NoBreak"
+    | "InvisibleSpace"
+    | "InvisibleComma"
+    | "ImplicitPlus"
+    | "AutoSpace"
+    | "ZeroWidthSpace"
+    | "NonBreakingSpace"
+    | "InvisiblePrefixScriptBase"
+    | "InvisiblePostfixScriptBase"
+    | "RawEscape"
+    | "RawBackspace" => Some(""),
     // Typographic spacing characters separate tokens in typeset code
     // (e.g. `"/.", "\[VeryThinSpace]", "sol"`). Emit a plain ASCII space
     // so the reconstructed code carries no invisible Unicode.
@@ -1339,6 +1365,13 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
           // multiplication sign is what a text cell means (`40 × 40`).
           if !code && name == "Cross" {
             result.push('\u{00D7}');
+            continue;
+          }
+          // The non-printing raw control characters set no type: a
+          // Demonstration's caption opens its inline formula with a
+          // `\[RawEscape]`, which must leave nothing behind rather than
+          // print its own name or a control byte.
+          if !code && matches!(name.as_str(), "RawEscape" | "RawBackspace") {
             continue;
           }
           match crate::syntax::named_char_to_unicode(&name) {
@@ -3331,6 +3364,50 @@ Cell["Chapter 2", "Chapter"]
       SuperscriptBox["\[Phi]", "\[Prime]",
        MultilineFunction->None], "[", "0", "]"}]]"#;
     assert_eq!(extract_cell_content(s), "ϕ'[0]");
+  }
+
+  /// `\[RawEscape]` names the ASCII escape character. It sets no type, so a
+  /// caption that opens an inline formula with one reads as the formula
+  /// alone. Regression: the name was printed verbatim into the cell.
+  #[test]
+  fn test_extract_cell_content_raw_escape_sets_no_type() {
+    let s = r#"TextData[{
+ "\[RawEscape]",
+ Cell[BoxData[FormBox[RowBox[{"E", "(", "R", ")"}], TraditionalForm]],
+  "InlineMath"],
+ "."
+}]"#;
+    assert_eq!(extract_cell_content(s), "E(R).");
+  }
+
+  /// A script hung on `\[InvisiblePrefixScriptBase]` is a *prefix* script:
+  /// the FrontEnd writes the term symbol `¹Σ` as a superscript on that
+  /// invisible placeholder. Exponentiation would be wrong twice over — the
+  /// empty base leaves `()^(1)`, which does not parse, and `x^1` evaluates
+  /// away the script — so the box becomes a `Superscript`, which does not
+  /// evaluate. From the "Bohr's Model for the Hydrogen Molecule"
+  /// Demonstration's state picker.
+  #[test]
+  fn test_extract_cell_content_invisible_prefix_script_base() {
+    assert_eq!(
+      extract_cell_content(
+        r#"BoxData[SuperscriptBox["\[InvisiblePrefixScriptBase]", "1"]]"#
+      ),
+      "Superscript[\"\", 1]"
+    );
+    assert_eq!(
+      extract_cell_content(
+        r#"BoxData[SubscriptBox["\[InvisiblePrefixScriptBase]", "u"]]"#
+      ),
+      "Subscript[\"\", u]"
+    );
+    // The placeholder carries no glyph of its own wherever it turns up.
+    assert_eq!(
+      extract_cell_content(
+        r#"BoxData[RowBox[{"\[InvisiblePrefixScriptBase]", "x"}]]"#
+      ),
+      "x"
+    );
   }
 
   #[test]

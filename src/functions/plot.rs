@@ -2347,7 +2347,7 @@ fn plot_labels_svg(
       "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
          fill=\"{fill}\"{style_attrs}>{}</text>\n",
-      sl.svg()
+      sl.svg_scaled(sf)
     ));
   }
 
@@ -4875,7 +4875,7 @@ pub(crate) fn generate_bar_svg(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
            fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg()
+        sl.svg_scaled(sf)
       ));
     }
 
@@ -5224,7 +5224,7 @@ pub(crate) fn generate_horizontal_bar_svg(
     svg.push_str(&format!(
       "<text x=\"{cx:.2}\" y=\"{ty:.2}\" text-anchor=\"middle\" \
        font-family=\"sans-serif\" font-size=\"{fs:.0}\" fill=\"{fill}\"{style_attrs}>{}</text>\n",
-      sl.svg()
+      sl.svg_scaled(sf)
     ));
   }
 
@@ -5775,7 +5775,7 @@ pub(crate) fn generate_bubble_chart_svg(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
            fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg()
+        sl.svg_scaled(sf)
       ));
     }
 
@@ -6758,7 +6758,7 @@ pub(crate) fn generate_histogram_svg(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
            fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg()
+        sl.svg_scaled(sf)
       ));
     }
 
