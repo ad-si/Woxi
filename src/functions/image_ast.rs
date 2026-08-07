@@ -1591,6 +1591,78 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// HistogramTransform[img] — histogram equalization: pixel values are
+/// replaced by their empirical cumulative distribution, so the resulting
+/// histogram is as flat as the (discrete) data allows. Wolfram documents
+/// this as `HistogramTransform[img, UniformDistribution[{0, 1}]]` and, for
+/// a multichannel image, as operating separately on each channel; both are
+/// what happens here.
+///
+/// The map is the textbook one,
+/// `(cdf[v] - cdf[min]) / (1 - cdf[min])`, which pins the darkest value to
+/// 0 and the brightest to 1. An already-uniform ramp is therefore left
+/// alone, and a constant channel — an opaque alpha channel, say, where the
+/// denominator vanishes — passes through untouched.
+///
+/// Only the one-argument form is implemented; a second argument (a
+/// distribution or reference image) is left unevaluated.
+pub fn histogram_transform_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let Expr::Image {
+    color_space,
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  else {
+    crate::emit_message(&format!(
+      "HistogramTransform::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated("HistogramTransform", args));
+  };
+  if args.len() != 1 {
+    return Ok(unevaluated("HistogramTransform", args));
+  }
+
+  let ch = *channels as usize;
+  let pixels = (*width as usize) * (*height as usize);
+  if pixels == 0 || ch == 0 {
+    return Ok(args[0].clone());
+  }
+  let mut new_data = data.as_ref().clone();
+  for c_idx in 0..ch {
+    let mut sorted: Vec<f64> =
+      (0..pixels).map(|i| data[i * ch + c_idx]).collect();
+    sorted
+      .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n = sorted.len() as f64;
+    // cdf[min] is the share of pixels sitting at the channel minimum.
+    let min = sorted[0];
+    let at_min = sorted.partition_point(|&v| v <= min) as f64 / n;
+    let span = 1.0 - at_min;
+    if span <= 0.0 {
+      continue; // constant channel: nothing to spread out
+    }
+    for i in 0..pixels {
+      let v = data[i * ch + c_idx];
+      let cdf = sorted.partition_point(|&s| s <= v) as f64 / n;
+      new_data[i * ch + c_idx] = ((cdf - at_min) / span).clamp(0.0, 1.0);
+    }
+  }
+  Ok(Expr::Image {
+    color_space: *color_space,
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: Arc::new(new_data),
+    image_type: *image_type,
+  })
+}
+
 /// ImageReflect[img] / ImageReflect[img, side] / ImageReflect[img, s1 -> s2].
 /// Default: vertical (top↔bottom) flip. Horizontal / vertical sides reflect
 /// across the perpendicular axis; rules between perpendicular sides do the
@@ -3344,6 +3416,48 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ))
           }
         }
+        // "HSB" and "CMYK" are per-pixel recodings of the RGB triple, so
+        // they share `rgb_to_hsv` / `rgb_to_cmyk` with the color-directive
+        // branch above. A grayscale source is read as the RGB gray it
+        // stands for; an alpha channel rides along unchanged, matching
+        // Wolfram's HSBA/CMYKA images.
+        "HSB" | "Hue" | "CMYK" => {
+          if ch != 1 && ch != 3 && ch != 4 {
+            return Err(InterpreterError::EvaluationError(
+              "ColorConvert: unsupported channel count".into(),
+            ));
+          }
+          let has_alpha = ch == 4;
+          let out_ch = if target_space == "CMYK" { 4 } else { 3 };
+          let total = out_ch + usize::from(has_alpha);
+          let mut new_data = Vec::with_capacity(w * h * total);
+          for i in 0..(w * h) {
+            let base = i * ch;
+            let (r, g, b) = if ch == 1 {
+              (data[base], data[base], data[base])
+            } else {
+              (data[base], data[base + 1], data[base + 2])
+            };
+            if target_space == "CMYK" {
+              let (c, m, y, k) = rgb_to_cmyk(r, g, b);
+              new_data.extend_from_slice(&[c, m, y, k]);
+            } else {
+              let (hue, s, v) = rgb_to_hsv(r, g, b);
+              new_data.extend_from_slice(&[hue, s, v]);
+            }
+            if has_alpha {
+              new_data.push(data[base + 3]);
+            }
+          }
+          Ok(Expr::Image {
+            color_space: tag,
+            width: *width,
+            height: *height,
+            channels: total as u8,
+            data: Arc::new(new_data),
+            image_type: *image_type,
+          })
+        }
         _ => Err(InterpreterError::EvaluationError(format!(
           "ColorConvert: unsupported color space \"{}\"",
           target_space
@@ -4553,16 +4667,82 @@ fn aggregating_filter_ast(
   Ok(unevaluated(filter_name, args))
 }
 
+/// ImageCorrelate[img, kernel] — 2D correlation per channel: each output
+/// pixel is the kernel's dot product with the neighborhood *in the same
+/// orientation*, so the impulse response is the kernel reversed.
+/// Everything but that orientation — boundary handling, kernel centering,
+/// channels and image type — is shared with `ImageConvolve` through
+/// [`spatial_filter_ast`].
+pub fn image_correlate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ImageCorrelate expects exactly 2 arguments".into(),
+    ));
+  }
+  spatial_filter_ast("ImageCorrelate", args, &args[1])
+}
+
 /// ImageConvolve[img, kernel] — 2D convolution per channel with
-/// replicated boundary. The kernel's center is at floor(rows/2,
-/// cols/2). Channels and image_type are preserved. Output values
-/// are not clamped.
+/// replicated boundary. Convolution reflects the kernel through its
+/// center before the dot product (so the impulse response *is* the
+/// kernel, matching `ListConvolve` against `ListCorrelate`); the
+/// filtering itself is [`spatial_filter_ast`], shared with
+/// `ImageCorrelate`. A symmetric kernel — `GaussianMatrix`, `BoxMatrix`,
+/// `DiskMatrix` — makes the two identical.
 pub fn image_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "ImageConvolve expects exactly 2 arguments".into(),
     ));
   }
+  // A kernel that isn't a rectangular numeric matrix can't be reflected;
+  // hand it to the filter unchanged so it reports/echoes it the same way
+  // ImageCorrelate would.
+  let kernel = reverse_kernel(&args[1]).unwrap_or_else(|| args[1].clone());
+  spatial_filter_ast("ImageConvolve", args, &kernel)
+}
+
+/// Reflect a rank-2 kernel through its center (reverse both the row order
+/// and each row's column order). `None` for anything that is not a
+/// rectangular matrix — the entries themselves are left alone, so a kernel
+/// written with rationals (`BoxMatrix[1]/9`) reflects like any other and
+/// non-numeric entries are still rejected downstream, by the filter.
+fn reverse_kernel(kernel: &Expr) -> Option<Expr> {
+  let Expr::List(rows) = kernel else {
+    return None;
+  };
+  let Some(Expr::List(first)) = rows.first() else {
+    return None;
+  };
+  let cols = first.len();
+  let mut out: Vec<Expr> = Vec::with_capacity(rows.len());
+  for row in rows.iter().rev() {
+    let Expr::List(items) = row else {
+      return None;
+    };
+    if items.len() != cols {
+      return None;
+    }
+    out.push(Expr::List(items.iter().rev().cloned().collect()));
+  }
+  Some(Expr::List(out.into()))
+}
+
+/// The kernel filtering shared by `ImageCorrelate` and `ImageConvolve`:
+/// per channel, each output pixel is the dot product of `kernel` with the
+/// surrounding neighborhood, with the boundary extended by replication.
+/// The kernel's center sits at floor(rows/2), floor(cols/2). Channels and
+/// image_type are preserved and output values are not clamped.
+///
+/// `head` and `args` are the *caller's* head and arguments, used for
+/// messages and for echoing an unevaluated call; `kernel` is the matrix to
+/// filter with, which convolution passes reflected (see
+/// [`image_convolve_ast`]).
+fn spatial_filter_ast(
+  head: &str,
+  args: &[Expr],
+  kernel_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
   let Expr::Image {
     color_space: _,
     width,
@@ -4573,15 +4753,15 @@ pub fn image_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
   else {
     crate::emit_message(&format!(
-      "ImageConvolve::imginv: Expecting an image or graphics instead of {}.",
+      "{head}::imginv: Expecting an image or graphics instead of {}.",
       crate::syntax::expr_to_string(&args[0])
     ));
-    return Ok(unevaluated("ImageConvolve", args));
+    return Ok(unevaluated(head, args));
   };
 
   // Parse the kernel: a 1D or 2D nested list of numbers.
-  let Expr::List(rows) = &args[1] else {
-    return Ok(unevaluated("ImageConvolve", args));
+  let Expr::List(rows) = kernel_expr else {
+    return Ok(unevaluated(head, args));
   };
   if rows.is_empty() {
     return Ok(args[0].clone());
@@ -4597,10 +4777,10 @@ pub fn image_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut kernel = Vec::with_capacity(krows * kcols);
   for row in rows.iter() {
     let Expr::List(items) = row else {
-      return Ok(unevaluated("ImageConvolve", args));
+      return Ok(unevaluated(head, args));
     };
     if items.len() != kcols {
-      return Ok(unevaluated("ImageConvolve", args));
+      return Ok(unevaluated(head, args));
     }
     for v in items.iter() {
       kernel.push(expr_to_f64(v)?);
@@ -4999,6 +5179,115 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   Ok(unevaluated("Colorize", args))
+}
+
+/// Pruning[img] / Pruning[img, n] — remove the outermost branches of the
+/// thin objects in an image by setting their pixels to black. One pass
+/// deletes every *endpoint*: a foreground pixel with exactly one
+/// 8-connected foreground neighbor. Repeating the pass `n` times therefore
+/// eats back every branch that is at most `n` pixels long, which is
+/// Wolfram's `Pruning[image, n]`; `Pruning[image]` is `n = 1`, and
+/// `Pruning[image, Infinity]` repeats until nothing more falls away.
+///
+/// A pixel with no foreground neighbor at all is an isolated point, not a
+/// branch tip, and survives. Surviving pixels keep their original value,
+/// so grayscale detail is preserved and only the pruned pixels go to 0;
+/// each channel of a multichannel image is pruned on its own. Pixels
+/// beyond the border count as background (`Padding -> 0`, the default).
+pub fn pruning_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("Pruning", args);
+  let Expr::Image {
+    color_space,
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  else {
+    crate::emit_message(&format!(
+      "Pruning::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  };
+  if args.len() > 2 {
+    return Ok(unevaluated());
+  }
+  // The branch-length limit: a non-negative integer, or Infinity for
+  // "until stable". Anything else is reported the way Wolfram reports a
+  // bad level specification and left unevaluated.
+  let passes: usize = match args.get(1) {
+    None => 1,
+    Some(Expr::Identifier(name)) if name == "Infinity" => usize::MAX,
+    Some(Expr::Integer(n)) if *n >= 0 => *n as usize,
+    Some(other) => {
+      crate::emit_message(&format!(
+        "Pruning::intnm: Non-negative machine-sized integer expected at position 2 in Pruning[{}, {}].",
+        crate::syntax::expr_to_string(&args[0]),
+        crate::syntax::expr_to_string(other)
+      ));
+      return Ok(unevaluated());
+    }
+  };
+
+  let w = *width as usize;
+  let h = *height as usize;
+  let ch = *channels as usize;
+  if w == 0 || h == 0 || ch == 0 || passes == 0 {
+    return Ok(args[0].clone());
+  }
+  let mut new_data = data.as_ref().clone();
+  for c_idx in 0..ch {
+    // `alive[y * w + x]` tracks whether the pixel is still foreground.
+    let mut alive: Vec<bool> = (0..w * h)
+      .map(|i| new_data[i * ch + c_idx] != 0.0)
+      .collect();
+    for _ in 0..passes {
+      let mut doomed: Vec<usize> = Vec::new();
+      for y in 0..h {
+        for x in 0..w {
+          if !alive[y * w + x] {
+            continue;
+          }
+          let mut neighbors = 0;
+          for dy in -1i64..=1 {
+            for dx in -1i64..=1 {
+              if dy == 0 && dx == 0 {
+                continue;
+              }
+              let ny = y as i64 + dy;
+              let nx = x as i64 + dx;
+              if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
+                continue; // outside the border is background
+              }
+              if alive[ny as usize * w + nx as usize] {
+                neighbors += 1;
+              }
+            }
+          }
+          if neighbors == 1 {
+            doomed.push(y * w + x);
+          }
+        }
+      }
+      if doomed.is_empty() {
+        break; // stable; further passes would change nothing
+      }
+      for &i in &doomed {
+        alive[i] = false;
+        new_data[i * ch + c_idx] = 0.0;
+      }
+    }
+  }
+  Ok(Expr::Image {
+    color_space: *color_space,
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: Arc::new(new_data),
+    image_type: *image_type,
+  })
 }
 
 /// MorphologicalBinarize[img, {t1, t2}] / [img, t] — hysteresis
@@ -8069,18 +8358,65 @@ fn srgb_to_linear(c: f64) -> f64 {
   }
 }
 
+/// Linear-light sRGB → CIE XYZ under a D50 illuminant. The coefficients
+/// match Wolfram's internal sRGB → D50 conversion (Bradford chromatic
+/// adaptation), so `ColorConvert[Red, "XYZ"]` lines up to f64 precision.
+const LINEAR_RGB_TO_XYZ_D50: [[f64; 3]; 3] = [
+  [
+    0.43602191242669813,
+    0.38510884137388846,
+    0.14308124062061284,
+  ],
+  [0.22247517260243593, 0.7169066111623497, 0.06061821623521406],
+  [
+    0.013928134067434789,
+    0.09710156693979348,
+    0.7141585835116003,
+  ],
+];
+
 /// Convert linear-light sRGB `(r, g, b)` (each in `[0, 1]`) to CIE XYZ
-/// under a D50 illuminant. The matrix coefficients match Wolfram's
-/// internal sRGB → D50 conversion (Bradford chromatic adaptation), so
-/// `ColorConvert[Red, "XYZ"]` lines up to f64 precision.
+/// under a D50 illuminant.
 fn linear_rgb_to_xyz_d50(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
-  let x =
-    0.43602191242669813 * r + 0.38510884137388846 * g + 0.14308124062061284 * b;
-  let y =
-    0.22247517260243593 * r + 0.7169066111623497 * g + 0.06061821623521406 * b;
-  let z =
-    0.013928134067434789 * r + 0.09710156693979348 * g + 0.7141585835116003 * b;
-  (x, y, z)
+  mat3_apply(&LINEAR_RGB_TO_XYZ_D50, (r, g, b))
+}
+
+/// Multiply the column vector `v` by the 3×3 matrix `m`.
+fn mat3_apply(m: &[[f64; 3]; 3], v: (f64, f64, f64)) -> (f64, f64, f64) {
+  let (a, b, c) = v;
+  (
+    m[0][0] * a + m[0][1] * b + m[0][2] * c,
+    m[1][0] * a + m[1][1] * b + m[1][2] * c,
+    m[2][0] * a + m[2][1] * b + m[2][2] * c,
+  )
+}
+
+/// Invert a 3×3 matrix by cofactors. Every matrix inverted here is a
+/// fixed, well-conditioned color-space matrix, so a singular input can
+/// only mean a typo in a constant — hence the panic rather than an
+/// `Option` the callers would have to thread through.
+fn mat3_inverse(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+  let c = |r: usize, k: usize| -> f64 {
+    let rows: Vec<usize> = (0..3).filter(|&i| i != r).collect();
+    let cols: Vec<usize> = (0..3).filter(|&i| i != k).collect();
+    let minor = m[rows[0]][cols[0]] * m[rows[1]][cols[1]]
+      - m[rows[0]][cols[1]] * m[rows[1]][cols[0]];
+    if (r + k).is_multiple_of(2) {
+      minor
+    } else {
+      -minor
+    }
+  };
+  let det = m[0][0] * c(0, 0) + m[0][1] * c(0, 1) + m[0][2] * c(0, 2);
+  assert!(det != 0.0, "singular color-space matrix");
+  // The inverse is the transposed cofactor matrix over the determinant.
+  let mut out = [[0.0; 3]; 3];
+  for (r, row) in out.iter_mut().enumerate() {
+    for (k, cell) in row.iter_mut().enumerate() {
+      *cell = c(k, r) / det;
+    }
+  }
+  out
 }
 
 /// Apply the LAB f-function: cube root above the linear-region cutoff,
@@ -8124,6 +8460,129 @@ fn srgb_to_lab(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
 fn color_to_lab(expr: &Expr) -> Option<(f64, f64, f64)> {
   let color = crate::functions::graphics::parse_color(expr)?;
   Some(srgb_to_lab(color.r, color.g, color.b))
+}
+
+/// Convert a linear-light sRGB component back to its gamma-encoded value —
+/// the inverse of [`srgb_to_linear`].
+fn linear_to_srgb(c: f64) -> f64 {
+  if c <= 0.0031308 {
+    c * 12.92
+  } else {
+    1.055 * c.powf(1.0 / 2.4) - 0.055
+  }
+}
+
+/// The Bradford cone-response matrix, XYZ → LMS. Chromatic adaptation
+/// scales each LMS component independently, which is what makes a
+/// reference color map onto a target one without wrecking the rest of the
+/// palette.
+const XYZ_TO_LMS_BRADFORD: [[f64; 3]; 3] = [
+  [0.8951, 0.2664, -0.1614],
+  [-0.7502, 1.7135, 0.0367],
+  [0.0389, -0.0685, 1.0296],
+];
+
+/// sRGB `(r, g, b)` in `[0, 1]` → Bradford LMS cone responses.
+fn srgb_to_lms(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+  let xyz = linear_rgb_to_xyz_d50(
+    srgb_to_linear(r),
+    srgb_to_linear(g),
+    srgb_to_linear(b),
+  );
+  mat3_apply(&XYZ_TO_LMS_BRADFORD, xyz)
+}
+
+/// ColorBalance[img, ref] / ColorBalance[img, ref -> target] /
+/// ColorBalance[img, ref, target] — white balancing by von Kries
+/// chromatic adaptation, Wolfram's default `Method -> "LMSScaling"`.
+///
+/// Every pixel is taken into Bradford LMS cone space, each of the three
+/// cone responses is scaled by `target / ref` in that same space, and the
+/// result comes back to sRGB clipped to `[0, 1]`. The reference color
+/// therefore lands exactly on the target — plain `ColorBalance[img, col]`
+/// maps `col` to white, so an image shot under a green cast comes back
+/// neutral (and a neutral image comes back magenta).
+///
+/// A single-channel image carries no color to rebalance and is returned
+/// unchanged; an alpha channel rides along untouched. The automatic
+/// `ColorBalance[img]` form, which has to *estimate* the reference from
+/// the image, is not implemented and stays unevaluated.
+pub fn color_balance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("ColorBalance", args);
+  let Expr::Image {
+    color_space,
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  else {
+    crate::emit_message(&format!(
+      "ColorBalance::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  };
+
+  // Resolve the reference → target pair from the three accepted spellings.
+  let white = Expr::FunctionCall {
+    name: "RGBColor".to_string(),
+    args: vec![Expr::Integer(1), Expr::Integer(1), Expr::Integer(1)].into(),
+  };
+  let (source_expr, target_expr) = match args.len() {
+    2 => match &args[1] {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref().clone(), replacement.as_ref().clone()),
+      other => (other.clone(), white),
+    },
+    3 => (args[1].clone(), args[2].clone()),
+    _ => return Ok(unevaluated()),
+  };
+  let (Some(source), Some(target)) = (
+    crate::functions::graphics::parse_color(&source_expr),
+    crate::functions::graphics::parse_color(&target_expr),
+  ) else {
+    return Ok(unevaluated());
+  };
+
+  let (sl, sm, ss) = srgb_to_lms(source.r, source.g, source.b);
+  let (tl, tm, ts) = srgb_to_lms(target.r, target.g, target.b);
+  // A reference with no response in some cone (black, say) gives no
+  // finite gain, so there is nothing to adapt to.
+  if sl <= 0.0 || sm <= 0.0 || ss <= 0.0 {
+    return Ok(unevaluated());
+  }
+  let gains = (tl / sl, tm / sm, ts / ss);
+
+  let ch = *channels as usize;
+  if ch < 3 {
+    return Ok(args[0].clone()); // no color to rebalance
+  }
+  let lms_to_xyz = mat3_inverse(&XYZ_TO_LMS_BRADFORD);
+  let xyz_to_linear_rgb = mat3_inverse(&LINEAR_RGB_TO_XYZ_D50);
+  let mut new_data = data.as_ref().clone();
+  for i in 0..(*width as usize * *height as usize) {
+    let base = i * ch;
+    let (l, m, s) =
+      srgb_to_lms(new_data[base], new_data[base + 1], new_data[base + 2]);
+    let adapted = (l * gains.0, m * gains.1, s * gains.2);
+    let (r, g, b) =
+      mat3_apply(&xyz_to_linear_rgb, mat3_apply(&lms_to_xyz, adapted));
+    new_data[base] = linear_to_srgb(r).clamp(0.0, 1.0);
+    new_data[base + 1] = linear_to_srgb(g).clamp(0.0, 1.0);
+    new_data[base + 2] = linear_to_srgb(b).clamp(0.0, 1.0);
+  }
+  Ok(Expr::Image {
+    color_space: *color_space,
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: Arc::new(new_data),
+    image_type: *image_type,
+  })
 }
 
 /// ColorDistance[c1, c2] — Euclidean distance between two colors in

@@ -2084,7 +2084,7 @@ MomentGeneratingFunction,Moment-generating function E[e^(tX)] of a probability d
 StringPartition,Partition a string into substrings of a given length,✅,pure,10.1,2097
 TimeUsed,Total CPU time (user+system) used by the current process in seconds,✅,nondeterministic,1.0,2097
 HTTPRequest,Symbolic HTTP request object,✅,pure,11.0,2100
-ImageConvolve,Convolve image with kernel,✅,,7.0,2100
+ImageConvolve,Convolve image with kernel,✅,pure,7.0,2100
 SemanticImport,Import with semantic interpretation,🚫,,10.0,2100
 AudioPlot,Plot the waveform of an Audio or Sound object,✅,pure,11.0,2102
 FlipView,Flippable view control (stays symbolic in script mode),✅,unevaluated,6.0,2102
@@ -2317,7 +2317,7 @@ FinancialIndicator,financial data,🚫,None,8.0,2338
 FourierCosCoefficient,Half-range Fourier cosine coefficient of polynomials,✅,pure,7.0,2338
 SequenceHold,Attribute that prevents Sequence objects in a function's arguments from being flattened/spliced,✅,None,3.0,2338
 BoundaryMesh,mesh generation,🚫,None,10.0,2344
-ImageCorrelate,image processing,🚫,None,7.0,2344
+ImageCorrelate,Correlate image with kernel,✅,pure,7.0,2344
 ParameterEstimator,statistical estimation,🚫,None,8.0,2344
 TransformationMatrix,Gives the homogeneous matrix of a transformation function,✅,pure,6.0,2344
 VectorAspectRatio,visualization option,🚫,None,12.1,2344
@@ -2782,7 +2782,7 @@ FindEulerianCycle,Find an Eulerian cycle traversing every edge once,✅,pure,8.0
 GaborWavelet,Gabor wavelet of a given frequency (continuous complex family),✅,pure,8.0,2816
 MultivariateHypergeometricDistribution,,🚫,,8.0,2816
 PolarAxesOrigin,Option for the origin of polar axes in polar plots,✅,pure,7.0,2816
-HistogramTransform,,🚫,,9.0,2821
+HistogramTransform,Equalize the histogram of an image,✅,pure,9.0,2821
 Image3DSlices,,🚫,,9.0,2821
 ImageDistance,,🚫,,9.0,2821
 Modal,,🚫,,6.0,2821
@@ -2791,7 +2791,7 @@ AlphabeticSort,Sorts strings in case-insensitive alphabetical order,✅,pure,10.
 AlternatingGroup,Symbolic alternating group A_n of degree n; stays unevaluated and is consumed by GroupOrder/GroupGenerators/GroupElements,✅,unevaluated,8.0,2828
 BoundedRegionQ,,🚫,,10.0,2828
 CloudObjects,,🚫,,10.0,2828
-Pruning,,🚫,,8.0,2828
+Pruning,Remove the outermost branches of thin objects in an image,✅,pure,8.0,2828
 SignPadding,Option for the NumberForm family: True puts the sign before the field padding; False (the default) keeps it next to the digits,✅,pure,2.0,2828
 TransposeLayer,,🚫,,11.1,2828
 ContainsOnly,Tests if a list contains only specified elements,✅,pure,10.2,2837
@@ -3542,7 +3542,7 @@ BlackmanWindow,Blackman window with the rounded coefficients {21 25 4}/50 on [-1
 BoundaryMeshRegionQ,Tests whether an expression is a valid BoundaryMeshRegion object,✅,pure,10.0,3636
 ButtonSource,,🚫,,3.0,3636
 CalloutStyle,,🚫,,11.0,3636
-ColorBalance,,🚫,,10.2,3636
+ColorBalance,White-balance an image against a reference color,✅,pure,10.2,3636
 CompoundPoissonDistribution,Poisson-compounded sum distribution,✅,pure,9.0,3636
 DoubleLeftRightArrow,,,,3.0,3636
 EvaluationData,,🚫,,10.0,3636

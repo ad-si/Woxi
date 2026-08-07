@@ -681,6 +681,13 @@ function main() {
                             // Woxi exposes the underlying {vertices, polygons} data.
     /\bGridGraph\[/,        // Internal Graph representation differs (edge list vs SparseArray)
     /\bImageConvolve\[/,    // Last-ULP floating-point differences between filter algorithms
+    /\bImageCorrelate\[/,   // Shares ImageConvolve's filter, so the same last-ULP differences
+    /\bColorBalance\[/,     // Woxi implements the documented "LMSScaling" (von Kries/Bradford)
+                            // adaptation; Wolfram's reference white and matrix variant are
+                            // internal, so the channel values agree in shape, not bit-for-bit.
+    /\bHistogramTransform\[/, // Woxi maps the empirical CDF directly; Wolfram bins integer
+                            // images into an internal fixed-level histogram first, so the
+                            // equalized values differ by the binning.
     /\bDominantColors\[/,   // Implementation-specific color algorithm: Woxi uses a GrayLevel
                             // ramp on single-channel inputs, Wolfram hashes labels into RGB.
     /\bCenteredInterval\[/, // Internal representation differs: Woxi stores {value, radius}
