@@ -16,6 +16,11 @@ use crate::functions::plot::{
 const FIELD_GRID: usize = 100;
 const VECTOR_GRID: usize = 15;
 
+/// Default look of a contour line, used unless `ContourStyle` says otherwise.
+/// The weight is scaled by `render_width / 1000` when it is emitted.
+const CONTOUR_LINE_COLOR: &str = "#404040";
+const CONTOUR_LINE_WEIGHT: f64 = 2.5;
+
 /// Evaluate a boolean condition at (x, y) - returns true/false
 fn evaluate_condition(
   body: &Expr,
@@ -172,10 +177,18 @@ struct DensityContourOptions {
   /// `MeshFunctions -> {f1, …}`: the functions whose level curves the
   /// mesh lines are. Empty means the coordinates themselves.
   mesh_functions: Vec<Expr>,
+  /// `ContourStyle -> {Thick, Blue}`: how the contour lines are drawn.
+  /// `None` keeps the default thin dark-grey line.
+  contour_style: Option<crate::functions::plot::SeriesStyle>,
+  /// `FrameLabel -> {bottom, left}`: the labels along the frame edges.
+  frame_labels: crate::functions::plot::FrameLabels,
+  /// `Epilog -> {…}`: graphics primitives drawn over the finished plot,
+  /// in data coordinates.
+  epilog: Vec<Expr>,
 }
 
-/// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh and
-/// MeshFunctions options.
+/// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh,
+/// MeshFunctions, ContourStyle, FrameLabel and Epilog options.
 fn parse_density_contour_options(
   args: &[Expr],
   start: usize,
@@ -186,6 +199,9 @@ fn parse_density_contour_options(
   let mut contour_shading = true;
   let mut mesh: Option<usize> = None;
   let mut mesh_functions: Vec<Expr> = Vec::new();
+  let mut contour_style = None;
+  let mut frame_labels = crate::functions::plot::FrameLabels::default();
+  let mut epilog: Vec<Expr> = Vec::new();
   for opt in &args[start..] {
     if let Expr::Rule {
       pattern,
@@ -251,6 +267,25 @@ fn parse_density_contour_options(
             mesh_functions = items.iter().cloned().collect();
           }
         }
+        "ContourStyle" => {
+          contour_style =
+            crate::functions::plot::parse_style_directives(replacement);
+        }
+        "FrameLabel" => {
+          frame_labels = crate::functions::plot::parse_frame_label(replacement);
+        }
+        // Evaluate now so primitives inside (e.g. `Point[{a, b}]` marking a
+        // Manipulate's current parameters) resolve to numeric coordinates
+        // while the surrounding variable bindings are still live.
+        "Epilog" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
+          epilog = match val {
+            Expr::List(ref items) => items.to_vec(),
+            Expr::Identifier(ref s) if s == "None" => Vec::new(),
+            other => vec![other],
+          };
+        }
         _ => {}
       }
     }
@@ -264,7 +299,115 @@ fn parse_density_contour_options(
     contour_shading,
     mesh,
     mesh_functions,
+    contour_style,
+    frame_labels,
+    epilog,
   }
+}
+
+impl DensityContourOptions {
+  /// Whether a `FrameLabel` was given for the bottom or the left edge —
+  /// the two that need room reserved outside the plotting area.
+  fn has_outer_frame_labels(&self) -> bool {
+    !self.frame_labels.bottom.is_empty() || !self.frame_labels.left.is_empty()
+  }
+
+  /// The stroke colour and weight for contour lines: whatever
+  /// `ContourStyle` asked for, otherwise the default thin dark grey.
+  ///
+  /// `render_contour_lines_styled` scales its weight by
+  /// `render_width / 1000`, so a thickness given in display pixels
+  /// converts by the picture's own width.
+  fn contour_stroke(&self) -> (String, f64) {
+    let style = match &self.contour_style {
+      Some(s) => s,
+      None => return (CONTOUR_LINE_COLOR.to_string(), CONTOUR_LINE_WEIGHT),
+    };
+    let color = style
+      .color
+      .map(|c| c.to_svg_rgb())
+      .unwrap_or_else(|| CONTOUR_LINE_COLOR.to_string());
+    let weight = match style.thickness {
+      Some(t) if self.svg_width > 0 => t * 1000.0 / self.svg_width as f64,
+      _ => CONTOUR_LINE_WEIGHT,
+    };
+    (color, weight)
+  }
+}
+
+/// Axes for a field plot, with room reserved outside the plotting area for
+/// whatever `FrameLabel` asks to be written there.
+fn field_plot_axes(
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  opts: &DensityContourOptions,
+) -> Result<crate::functions::plot::PlotArea, InterpreterError> {
+  let margins = opts.has_outer_frame_labels().then_some({
+    crate::functions::plot::MarginOverrides {
+      top_margin: 10 * RESOLUTION_SCALE,
+      x_label_area: (40 + 24) * RESOLUTION_SCALE,
+      y_label_area: (65 + 20) * RESOLUTION_SCALE,
+    }
+  });
+  crate::functions::plot::generate_axes_only_opts(
+    x_range,
+    y_range,
+    opts.svg_width,
+    opts.svg_height,
+    opts.full_width,
+    None,
+    margins.as_ref(),
+  )
+}
+
+/// Draw a field plot's `Epilog` primitives and `FrameLabel` text over the
+/// finished picture. Called with the closing `</svg>` already stripped, so
+/// the fragments land on top of everything drawn before them.
+fn push_field_plot_overlays(
+  svg: &mut String,
+  area: &crate::functions::plot::PlotArea,
+  opts: &DensityContourOptions,
+) {
+  if !opts.epilog.is_empty() {
+    let epilog_area = crate::functions::plot_epilog::PlotArea {
+      x0: area.plot_x0,
+      y0: area.plot_y0,
+      w: area.plot_w,
+      h: area.plot_h,
+      x_min: area.x_min,
+      x_max: area.x_max,
+      y_min: area.y_min,
+      y_max: area.y_max,
+      scale: RESOLUTION_SCALE as f64,
+    };
+    svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
+      &opts.epilog,
+      &epilog_area,
+    ));
+  }
+  if opts.frame_labels.bottom.is_empty()
+    && opts.frame_labels.left.is_empty()
+    && opts.frame_labels.top.is_empty()
+    && opts.frame_labels.right.is_empty()
+  {
+    return;
+  }
+  let (.., label_fill, title_fill) = plot_theme();
+  let mut plot_opts = crate::functions::plot::PlotOptions::default();
+  let non_empty = |s: &String| (!s.is_empty()).then(|| s.clone());
+  plot_opts.frame_label_bottom = non_empty(&opts.frame_labels.bottom);
+  plot_opts.frame_label_left = non_empty(&opts.frame_labels.left);
+  plot_opts.frame_label_top = non_empty(&opts.frame_labels.top);
+  plot_opts.frame_label_right = non_empty(&opts.frame_labels.right);
+  svg.push_str(&crate::functions::plot::plot_labels_svg(
+    &plot_opts,
+    (area.plot_x0, area.plot_y0, area.plot_w, area.plot_h),
+    (area.x_min, area.x_max, area.y_min, area.y_max),
+    0.0,
+    RESOLUTION_SCALE as f64,
+    label_fill,
+    title_fill,
+  ));
 }
 
 /// Map value to a blue-white-red color
@@ -996,30 +1139,6 @@ fn mesh_function_value(
   }
 }
 
-fn render_contour_lines(
-  svg: &mut String,
-  grid: &[Vec<f64>],
-  levels: &[f64],
-  plot_x0: f64,
-  plot_y0: f64,
-  cell_w: f64,
-  cell_h: f64,
-  render_width: u32,
-) {
-  render_contour_lines_styled(
-    svg,
-    grid,
-    levels,
-    plot_x0,
-    plot_y0,
-    cell_w,
-    cell_h,
-    render_width,
-    "#404040",
-    2.5,
-  );
-}
-
 #[allow(clippy::too_many_arguments)]
 fn render_contour_lines_styled(
   svg: &mut String,
@@ -1084,15 +1203,11 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Use plotters for axes, then overlay the density image
-  let area = generate_axes_only(
-    (x_min, x_max),
-    (y_min, y_max),
-    opts.svg_width,
-    opts.svg_height,
-    opts.full_width,
-  )?;
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;
 
-  let mut svg = area.svg;
+  // Taken out of `area` so the geometry stays available for the overlays
+  // appended once the plot's own content is drawn.
+  let mut svg = std::mem::take(&mut area.svg);
   // Remove closing </svg> to append custom elements
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
@@ -1116,6 +1231,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.plot_w,
     area.plot_h,
   );
+  push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
@@ -1351,15 +1467,11 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Use plotters for axes
-  let area = generate_axes_only(
-    (x_min, x_max),
-    (y_min, y_max),
-    opts.svg_width,
-    opts.svg_height,
-    opts.full_width,
-  )?;
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;
 
-  let mut svg = area.svg;
+  // Taken out of `area` so the geometry stays available for the overlays
+  // appended once the plot's own content is drawn.
+  let mut svg = std::mem::take(&mut area.svg);
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
   }
@@ -1398,7 +1510,8 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       0.4,
     );
   }
-  render_contour_lines(
+  let (contour_color, contour_weight) = opts.contour_stroke();
+  render_contour_lines_styled(
     &mut svg,
     &grid,
     &levels,
@@ -1407,6 +1520,8 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     cell_w,
     cell_h,
     area.render_width,
+    &contour_color,
+    contour_weight,
   );
   push_frame(
     &mut svg,
@@ -1415,6 +1530,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.plot_w,
     area.plot_h,
   );
+  push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result_with_structure(svg, structure))
@@ -1456,21 +1572,31 @@ fn contour_plot_equations(
   let opts = parse_density_contour_options(args, 3);
 
   let n = FIELD_GRID + 1;
-  let area = generate_axes_only(
-    (x_min, x_max),
-    (y_min, y_max),
-    opts.svg_width,
-    opts.svg_height,
-    opts.full_width,
-  )?;
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;
 
-  let mut svg = area.svg;
+  // Taken out of `area` so the geometry stays available for the overlays
+  // appended once the plot's own content is drawn.
+  let mut svg = std::mem::take(&mut area.svg);
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
   }
 
   let cell_w = area.plot_w / FIELD_GRID as f64;
   let cell_h = area.plot_h / FIELD_GRID as f64;
+  let (contour_color, contour_weight) = opts.contour_stroke();
+  let series_color = opts
+    .contour_style
+    .as_ref()
+    .and_then(|s| s.color)
+    .map(|c| {
+      (
+        (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+      )
+    })
+    .unwrap_or((0x40, 0x40, 0x40));
+  let series_thickness = opts.contour_style.as_ref().and_then(|s| s.thickness);
 
   // Alongside the standalone SVG, collect every contour chain in *data*
   // coordinates as a line series, so `Show[{ContourPlot[…], Graphics[…]}]`
@@ -1497,7 +1623,7 @@ fn contour_plot_equations(
     if !any_finite {
       continue;
     }
-    render_contour_lines(
+    render_contour_lines_styled(
       &mut svg,
       &grid,
       &[0.0],
@@ -1506,6 +1632,8 @@ fn contour_plot_equations(
       cell_w,
       cell_h,
       area.render_width,
+      &contour_color,
+      contour_weight,
     );
     let scaled_cell = 1000.0 / FIELD_GRID as f64;
     let segments =
@@ -1521,15 +1649,18 @@ fn contour_plot_equations(
         })
         .collect();
       if points.len() >= 2 {
+        // The curve carries its `ContourStyle` into the series too, so a
+        // `Show[{ContourPlot[…], …}]` re-render keeps the colour and weight
+        // the standalone picture was drawn with.
         series.push(crate::syntax::PlotSeriesData {
           points,
-          color: (0x40, 0x40, 0x40),
+          color: series_color,
           is_scatter: false,
           filling: crate::syntax::SeriesFilling::None,
           fill_color: None,
           fill_opacity: None,
           marker: None,
-          thickness: None,
+          thickness: series_thickness,
         });
       }
     }
@@ -1542,6 +1673,7 @@ fn contour_plot_equations(
     area.plot_w,
     area.plot_h,
   );
+  push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
   // Alongside the plot source (for `Show`), remember the symbolic form of
@@ -2036,15 +2168,11 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let area = generate_axes_only(
-    (x_min, x_max),
-    (y_min, y_max),
-    opts.svg_width,
-    opts.svg_height,
-    opts.full_width,
-  )?;
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;
 
-  let mut svg = area.svg;
+  // Taken out of `area` so the geometry stays available for the overlays
+  // appended once the plot's own content is drawn.
+  let mut svg = std::mem::take(&mut area.svg);
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
   }
@@ -2075,6 +2203,7 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.plot_w,
     area.plot_h,
   );
+  push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
@@ -2315,15 +2444,11 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let area = generate_axes_only(
-    (x_min, x_max),
-    (y_min, y_max),
-    opts.svg_width,
-    opts.svg_height,
-    opts.full_width,
-  )?;
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;
 
-  let mut svg = area.svg;
+  // Taken out of `area` so the geometry stays available for the overlays
+  // appended once the plot's own content is drawn.
+  let mut svg = std::mem::take(&mut area.svg);
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
   }
@@ -2350,7 +2475,8 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       opts.color_function.as_deref(),
     );
   }
-  render_contour_lines(
+  let (contour_color, contour_weight) = opts.contour_stroke();
+  render_contour_lines_styled(
     &mut svg,
     &grid,
     &levels,
@@ -2359,6 +2485,8 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     cell_w,
     cell_h,
     area.render_width,
+    &contour_color,
+    contour_weight,
   );
   push_frame(
     &mut svg,
@@ -2367,6 +2495,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.plot_w,
     area.plot_h,
   );
+  push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
