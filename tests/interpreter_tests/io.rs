@@ -5323,7 +5323,7 @@ mod set_directory {
     // to flaky CI failures (observed in interpreter_tests::io and
     // interpreter_tests::image::image_io).
     let before = std::env::current_dir().unwrap();
-    let tmp = temp_file("");
+    let tmp = temp_dir();
     let result = interpret(&format!(
       r#"Block[{{}}, SetDirectory["{tmp}"]; d = Directory[]; ResetDirectory[]; d]"#
     ))
