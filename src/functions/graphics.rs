@@ -8211,6 +8211,14 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
     // (`"area = 0.68 \!\(\*SuperscriptBox[\(AU\), \(2\)]\)"`); those typeset
     // into sub/superscript tspans. For ordinary text this is a plain escape.
     Expr::String(s) => box_string_to_svg(s),
+    // A mathematical constant is set as its glyph wherever an expression is
+    // typeset — `π`, not the word — the same way a `Text` label sets it.
+    // Arithmetic leaves a constant as either spelling, so both are matched.
+    Expr::Identifier(name) | Expr::Constant(name)
+      if typeset_constant_glyph(name).is_some() =>
+    {
+      typeset_constant_glyph(name).unwrap().to_string()
+    }
     Expr::Identifier(s) => svg_escape(s),
     Expr::BigFloat(digits, prec) => {
       // Graphical output shows `prec` significant digits with ×10^exp for large/small numbers
