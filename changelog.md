@@ -1,5 +1,25 @@
 # Changelog
 
+# Unreleased
+
+- Fixes driven by a Wolfram Demonstration whose setter names each of ten
+    conformal maps by its formula:
+    - `\[WarningSign]` and its neighbours in Wolfram's pictograph block are
+        characters like any other. A label warning that a choice is slow used
+        to carry the escape through to the widget, so the button read
+        `sn(z) (elliptical pairs—\[WarningSign] slow!)`. Added alongside the
+        musical accidentals (`\[Sharp]`, `\[Flat]`, `\[Natural]`) and the
+        astronomical symbols for the Sun and the planets.
+    - A square root in a control label sets as the radical sign over its
+        radicand — `√(eᶻ+1)`, not the source of the `Sqrt` head nor of the
+        `x^(1/2)` power it normalizes to. Both spellings reach the radical
+        now; a compound radicand is parenthesized, a single one is not.
+    - Arithmetic joining typeset label pieces recurses into its operands, so
+        a quotient of two `Row`s renders as the rows it lays out rather than
+        printing their source next to a slash. Operands with nothing to
+        typeset stay on the OutputForm path, which already knows this
+        arithmetic's precedence and sign conventions.
+
 # 2026-08-06 - 0.3.0
 
 Between 0.2.0 and 0.3.0 the focus moved from growing the function library
