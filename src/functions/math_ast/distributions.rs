@@ -41,19 +41,12 @@ fn pi() -> Expr {
   Expr::Constant("Pi".to_string())
 }
 
-fn neg(a: Expr) -> Expr {
-  Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(a),
-  }
-}
-
 fn infinity() -> Expr {
   Expr::Identifier("Infinity".to_string())
 }
 
 fn neg_infinity() -> Expr {
-  neg(infinity())
+  neg1(infinity())
 }
 
 fn indeterminate() -> Expr {
@@ -2037,7 +2030,7 @@ fn cdf_exponential(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
   let lambda = dargs[0].clone();
 
-  let value = eval(minus(int(1), pow2(e(), times(neg(lambda), x.clone()))))?;
+  let value = eval(minus(int(1), pow2(e(), times(neg1(lambda), x.clone()))))?;
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
 
   eval(piecewise(vec![(value, cond)], int(0)))
@@ -2234,7 +2227,7 @@ fn pdf_gamma(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // x^(alpha-1)
   let x_part = pow2(x.clone(), minus(alpha.clone(), int(1)));
   // E^(-x/beta)
-  let exp_part = pow2(e(), neg(div2(x.clone(), beta.clone())));
+  let exp_part = pow2(e(), neg1(div2(x.clone(), beta.clone())));
   // beta^alpha * Gamma[alpha]
   let denom = times(pow2(beta, alpha.clone()), call("Gamma", vec![alpha]));
   let value = eval(div2(times(x_part, exp_part), denom))?;
@@ -2404,9 +2397,9 @@ fn pdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
   let xb = div2(shifted, b.clone());
   // ((x-c)/b)^(-1 - a)
-  let xb_part = pow2(xb.clone(), neg(plus(int(1), a.clone())));
+  let xb_part = pow2(xb.clone(), neg1(plus(int(1), a.clone())));
   // E^((x-c)/b)^(-a)
-  let exp_part = pow2(e(), pow2(xb, neg(a.clone())));
+  let exp_part = pow2(e(), pow2(xb, neg1(a.clone())));
   let value = eval(div2(times(a, xb_part), times(b, exp_part)))?;
   let cond = comparison(x, ComparisonOp::Greater, threshold);
   eval(piecewise(vec![(value, cond)], int(0)))
@@ -2429,7 +2422,7 @@ fn cdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     (x.clone(), int(0))
   };
 
-  let value = pow2(e(), neg(pow2(div2(shifted, b), neg(a))));
+  let value = pow2(e(), neg1(pow2(div2(shifted, b), neg1(a))));
   let value = eval(value)?;
   let cond = comparison(x, ComparisonOp::Greater, threshold);
   eval(piecewise(vec![(value, cond)], int(0)))
@@ -2450,7 +2443,7 @@ fn pdf_extreme_value(
 
   let ab = div2(minus(a.clone(), x), b.clone());
   // E^(-E^((a-x)/b) + (a-x)/b)
-  let exp_arg = plus(neg(pow2(e(), ab.clone())), ab);
+  let exp_arg = plus(neg1(pow2(e(), ab.clone())), ab);
   let exp_arg_eval = eval(exp_arg)?;
   eval(div2(pow2(e(), exp_arg_eval), b))
 }
@@ -2469,7 +2462,7 @@ fn cdf_extreme_value(
   let b = dargs[1].clone();
 
   let ab = div2(minus(a, x), b);
-  eval(pow2(e(), neg(pow2(e(), ab))))
+  eval(pow2(e(), neg1(pow2(e(), ab))))
 }
 
 // PDF[GompertzMakehamDistribution[l, x0], x] = Piecewise[{{E^(l*x + (1 - E^(l*x))*x0)*l*x0, x >= 0}}, 0]
@@ -5982,7 +5975,7 @@ fn cdf_lognormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
   // Erfc[-(Log[x] - mu) / (Sqrt[2] * sigma)] / 2
   let log_x = call("Log", vec![x.clone()]);
-  let arg = neg(div2(minus(log_x, mu), times(sqrt(int(2)), sigma)));
+  let arg = neg1(div2(minus(log_x, mu), times(sqrt(int(2)), sigma)));
   let cdf_val = div2(call("Erfc", vec![arg]), int(2));
 
   // Piecewise[{{cdf_val, x > 0}}, 0]
@@ -6207,7 +6200,7 @@ fn pdf_pareto(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // a * k^a * x^(-1-a)
   let pdf_val = times(
     times(a.clone(), pow2(k.clone(), a.clone())),
-    pow2(x.clone(), neg(plus(int(1), a))),
+    pow2(x.clone(), neg1(plus(int(1), a))),
   );
   let cond = comparison(x, ComparisonOp::GreaterEqual, k);
   eval(piecewise(vec![(pdf_val, cond)], int(0)))
@@ -6303,7 +6296,7 @@ fn cdf_weibull(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
 
   let xb = div2(xv, b);
-  let cdf_val = minus(int(1), pow2(e(), neg(pow2(xb, a))));
+  let cdf_val = minus(int(1), pow2(e(), neg1(pow2(xb, a))));
 
   eval(piecewise(vec![(cdf_val, cond)], int(0)))
 }
@@ -6389,7 +6382,7 @@ fn pdf_laplace(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let b = dargs[1].clone();
   let abs_diff = call("Abs", vec![minus(x, mu)]);
   let pdf_val =
-    div2(pow2(e(), neg(div2(abs_diff, b.clone()))), times(int(2), b));
+    div2(pow2(e(), neg1(div2(abs_diff, b.clone()))), times(int(2), b));
   eval(pdf_val)
 }
 
@@ -6404,7 +6397,7 @@ fn cdf_laplace(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let b = dargs[1].clone();
   let diff = minus(x.clone(), mu.clone());
   let low_val = div2(pow2(e(), div2(diff.clone(), b.clone())), int(2));
-  let high_val = minus(int(1), div2(pow2(e(), neg(div2(diff, b))), int(2)));
+  let high_val = minus(int(1), div2(pow2(e(), neg1(div2(diff, b))), int(2)));
   let cond = comparison(x, ComparisonOp::Less, mu);
   eval(piecewise(vec![(low_val, cond)], high_val))
 }
@@ -6420,7 +6413,7 @@ fn pdf_rayleigh(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let s2 = pow2(sigma, int(2));
   let pdf_val = times(
     div2(x.clone(), s2.clone()),
-    pow2(e(), neg(div2(pow2(x.clone(), int(2)), times(int(2), s2)))),
+    pow2(e(), neg1(div2(pow2(x.clone(), int(2)), times(int(2), s2)))),
   );
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(pdf_val, cond)], int(0)))
@@ -6437,7 +6430,7 @@ fn cdf_rayleigh(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let s2 = pow2(sigma, int(2));
   let cdf_val = minus(
     int(1),
-    pow2(e(), neg(div2(pow2(x.clone(), int(2)), times(int(2), s2)))),
+    pow2(e(), neg1(div2(pow2(x.clone(), int(2)), times(int(2), s2)))),
   );
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(cdf_val, cond)], int(0)))
@@ -10795,7 +10788,7 @@ fn pdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let sigma = dargs[4].clone();
 
   // (-mu + x): Wolfram canonical ordering
-  let neg_mu_plus_x = plus(neg(mu.clone()), x.clone());
+  let neg_mu_plus_x = plus(neg1(mu.clone()), x.clone());
 
   match type_str.as_str() {
     "SN" => {
@@ -10857,7 +10850,7 @@ fn pdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       // PDF = (delta*sigma) / (E^(z^2/2) * Sqrt[2*Pi] * (mu+sigma-x) * (-mu+x))
       // where z = gamma + delta*Log[(-mu+x)/(mu+sigma-x)], for mu < x < mu+sigma
       let mu_plus_sigma_minus_x =
-        plus(plus(mu.clone(), sigma.clone()), neg(x.clone()));
+        plus(plus(mu.clone(), sigma.clone()), neg1(x.clone()));
       let log_arg = div2(neg_mu_plus_x.clone(), mu_plus_sigma_minus_x.clone());
       let log_t = call("Log", vec![log_arg]);
       let z = plus(gamma, times(delta.clone(), log_t));
@@ -10916,7 +10909,7 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let sigma = dargs[4].clone();
 
   // t = (-mu + x) / sigma (canonical ordering)
-  let neg_mu_plus_x = plus(neg(mu.clone()), x.clone());
+  let neg_mu_plus_x = plus(neg1(mu.clone()), x.clone());
   let t = div2(neg_mu_plus_x.clone(), sigma.clone());
 
   // CDF = Erfc[(-gamma - delta*h(t)) / Sqrt[2]] / 2
@@ -10927,7 +10920,7 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     "SU" => call("ArcSinh", vec![t.clone()]),
     "SB" => {
       let mu_plus_sigma_minus_x =
-        plus(plus(mu.clone(), sigma.clone()), neg(x.clone()));
+        plus(plus(mu.clone(), sigma.clone()), neg1(x.clone()));
       call("Log", vec![div2(neg_mu_plus_x, mu_plus_sigma_minus_x)])
     }
     _ => {
@@ -10938,8 +10931,8 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
 
   // Distribute negative sign: (-gamma - delta*h) / Sqrt[2]
-  let neg_gamma = neg(gamma.clone());
-  let neg_delta_h = neg(times(delta.clone(), h_of_t.clone()));
+  let neg_gamma = neg1(gamma.clone());
+  let neg_delta_h = neg1(times(delta.clone(), h_of_t.clone()));
   let erfc_arg = div2(plus(neg_gamma, neg_delta_h), sqrt(int(2)));
   let cdf_val = div2(call("Erfc", vec![erfc_arg]), int(2));
 
@@ -11774,12 +11767,12 @@ fn pdf_multinormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   for i in 0..k {
     let sq = square(centered(i)?);
     let term = if variances[i] == 1 {
-      neg(sq)
+      neg1(sq)
     } else if !first_scaled_seen {
       first_scaled_seen = true;
       times(make_rational(-1, variances[i]), sq)
     } else {
-      neg(div2(sq, int(variances[i])))
+      neg1(div2(sq, int(variances[i])))
     };
     terms.push(term);
   }
@@ -12426,13 +12419,13 @@ fn pdf_product_distribution(
           first_scaled_seen = true;
           times(make_rational(-1, 2), sq)
         } else {
-          neg(div2(sq, int(2)))
+          neg1(div2(sq, int(2)))
         });
       }
       Comp::Exponential(l) => {
         rate_product *= l;
         terms.push(if *l == 1 {
-          neg(v.clone())
+          neg1(v.clone())
         } else {
           times(int(-l), v.clone())
         });
@@ -12618,7 +12611,7 @@ fn coeff_power_term(num: i128, den: i128, base: &Expr, i: i128) -> Expr {
   }
   // Pull the sign out so Plus prints "- (3*x)/2" instead of "+ (-3*x)/2"
   if num < 0 {
-    return neg(coeff_power_term(-num, den, base, i));
+    return neg1(coeff_power_term(-num, den, base, i));
   }
   if num == 1 && den == 1 {
     pow(i)
@@ -13988,7 +13981,7 @@ fn cdf_min_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     let u = ms_u(&a, &b, &g, at);
     one_minus(pow2(
       e(),
-      neg(pow2(
+      neg1(pow2(
         u,
         call("Times", vec![int(-1), pow2(g.clone(), int(-1))]),
       )),
@@ -14241,7 +14234,7 @@ fn pdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
         e(),
         call(
           "Plus",
-          vec![neg(pow2(e(), z)), call("Times", vec![int(-1), neg_za])],
+          vec![neg1(pow2(e(), z)), call("Times", vec![int(-1), neg_za])],
         ),
       ),
       b.clone(),
@@ -14281,7 +14274,7 @@ fn pdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       // Exponent -E^z + z with z = (a - x)/b shared between both
       // terms, matching wolframscript's folded print
       let z = eval(msx_z(&a, &b, &x))?;
-      let body = pow2(e(), call("Plus", vec![neg(pow2(e(), z.clone())), z]));
+      let body = pow2(e(), call("Plus", vec![neg1(pow2(e(), z.clone())), z]));
       let b_is_one = matches!(&b, Expr::Integer(1));
       Ok(if b_is_one {
         body
@@ -14338,12 +14331,12 @@ fn cdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
   let (a, b, g) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
   let gumbel =
-    |at: &Expr| -> Expr { pow2(e(), neg(pow2(e(), msx_z(&a, &b, at)))) };
+    |at: &Expr| -> Expr { pow2(e(), neg1(pow2(e(), msx_z(&a, &b, at)))) };
   let general = |at: &Expr| -> Expr {
     let u = msx_u(&a, &b, &g, at);
     pow2(
       e(),
-      neg(pow2(
+      neg1(pow2(
         u,
         call("Times", vec![int(-1), pow2(g.clone(), int(-1))]),
       )),
@@ -14363,7 +14356,7 @@ fn cdf_max_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       // Raw with the inner argument evaluated; an outer eval would
       // hoist E^(-x) into 1/E^x
       let z = eval(msx_z(&a, &b, &x))?;
-      Ok(pow2(e(), neg(pow2(e(), z))))
+      Ok(pow2(e(), neg1(pow2(e(), z))))
     }
     Some(gv) => {
       if numeric_x {
@@ -14935,7 +14928,7 @@ fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
           times(int(2), pow2(s.clone(), int(2))),
         ))?,
       );
-      let term1 = neg(maxwell_term(sq, sp, at.clone(), e_part));
+      let term1 = neg1(maxwell_term(sq, sp, at.clone(), e_part));
       let erf = call(
         "Erf",
         vec![eval(div2(
@@ -15380,18 +15373,17 @@ fn cdf_wigner_semicircle(
       "Plus",
       vec![
         call("Rational", vec![int(1), int(2)]),
-        Expr::BinaryOp {
-          op: BinaryOperator::Divide,
+        div2(
           // Wolfram puts the Sqrt factor first when the shifted
           // variable leads with a number ((-3 + x)), and last when it
           // is bare x or leads with a symbol ((-a + x))
-          left: Box::new(if ms_numeric(&a).is_some_and(|v| v != 0.0) {
+          if ms_numeric(&a).is_some_and(|v| v != 0.0) {
             call("Times", vec![sqrt_part, d])
           } else {
             call("Times", vec![d, sqrt_part])
-          }),
-          right: Box::new(denom),
-        },
+          },
+          denom,
+        ),
         div2(call("ArcSin", vec![arcsin_arg]), pi()),
       ],
     ))
@@ -16134,7 +16126,7 @@ fn pdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
     let z = z_of(at)?;
-    let exponent = call("Plus", vec![neg(pow2(e(), z.clone())), z]);
+    let exponent = call("Plus", vec![neg1(pow2(e(), z.clone())), z]);
     let body = pow2(e(), exponent);
     Ok(if matches!(&b, Expr::Integer(1)) {
       body
@@ -16175,7 +16167,7 @@ fn cdf_gumbel(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       "Plus",
       vec![
         int(1),
-        call("Times", vec![int(-1), pow2(e(), neg(pow2(e(), z)))]),
+        call("Times", vec![int(-1), pow2(e(), neg1(pow2(e(), z)))]),
       ],
     ))
   };
@@ -16229,10 +16221,10 @@ fn pdf_skew_normal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     _ => return Ok(uneval(dargs, x)),
   };
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
-    let xm = plus(neg(m.clone()), at.clone());
+    let xm = plus(neg1(m.clone()), at.clone());
     let sqrt2 = sqrt(int(2));
     let erfc_arg =
-      neg(div2(times(a.clone(), xm.clone()), times(sqrt2, s.clone())));
+      neg1(div2(times(a.clone(), xm.clone()), times(sqrt2, s.clone())));
     let num = call("Erfc", vec![erfc_arg]);
     let gauss = pow2(
       e(),

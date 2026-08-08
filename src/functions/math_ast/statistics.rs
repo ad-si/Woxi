@@ -2275,14 +2275,13 @@ fn symbolic_covariance(
       );
       terms.push(binop(B::Times, coeff, conj(y)));
     }
-    Expr::BinaryOp {
-      op: B::Divide,
-      left: Box::new(Expr::FunctionCall {
+    div2(
+      Expr::FunctionCall {
         name: "Plus".to_string(),
         args: terms.into(),
-      }),
-      right: Box::new(Expr::Integer((n * (n - 1)) as i128)),
-    }
+      },
+      Expr::Integer((n * (n - 1)) as i128),
+    )
   };
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
@@ -2977,14 +2976,13 @@ pub fn blomqvist_beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Infinity::indet messages and Indeterminate (the Divide head would
     // emit Divide::indet instead).
     if exact || a * b == 0 {
-      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(num)),
-        right: Box::new(Expr::FunctionCall {
+      crate::evaluator::evaluate_expr_to_expr(&div2(
+        Expr::Integer(num),
+        Expr::FunctionCall {
           name: "Sqrt".to_string(),
           args: vec![Expr::Integer(a * b)].into(),
-        }),
-      })
+        },
+      ))
     } else {
       Ok(Expr::Real(num as f64 / ((a * b) as f64).sqrt()))
     }
@@ -3558,14 +3556,13 @@ fn distribution_moment(
     let neg_mean_pow = if n - k == 0 {
       Expr::Integer(1)
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::FunctionCall {
+      pow2(
+        Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![Expr::Integer(-1), mean.clone()].into(),
-        }),
-        right: Box::new(Expr::Integer(n - k)),
-      }
+        },
+        Expr::Integer(n - k),
+      )
     };
     terms.push(Expr::FunctionCall {
       name: "Times".to_string(),
@@ -4588,10 +4585,7 @@ fn factorial_moment_of_distribution(
       // Each (i - n) flips a sign relative to the falling factorial n(n-1)...,
       // so (r-1) such factors contribute (-1)^(r-1).
       Some(if (r - 1).rem_euclid(2) == 1 {
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(product),
-        }
+        neg1(product)
       } else {
         product
       })
@@ -6946,14 +6940,13 @@ pub fn absolute_correlation_function_ast(
         )
       })
       .collect();
-    crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(Expr::FunctionCall {
+    crate::evaluator::evaluate_expr_to_expr(&div2(
+      Expr::FunctionCall {
         name: "Plus".to_string(),
         args: terms.into(),
-      }),
-      right: Box::new(Expr::Integer(n as i128)),
-    })
+      },
+      Expr::Integer(n as i128),
+    ))
   };
   let lags: Vec<i128> = match &args[1] {
     Expr::Integer(h) => vec![*h],
@@ -7060,14 +7053,13 @@ fn process_covariance(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
     }
     // Stationary Ornstein-Uhlenbeck: s^2 E^(-th |t1 - t2|) / (2 th).
     ("OrnsteinUhlenbeckProcess", [_, sp, th]) => {
-      let decay = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Constant("E".to_string())),
-        right: Box::new(times2(
+      let decay = pow2(
+        Expr::Constant("E".to_string()),
+        times2(
           th.clone(),
           call("Abs", vec![plus2(t1.clone(), neg(t2.clone()))]),
-        )),
-      };
+        ),
+      );
       Some(div2(
         sq(sp),
         times2(times2(Expr::Integer(2), decay), th.clone()),
@@ -7078,14 +7070,13 @@ fn process_covariance(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
       if p1.len() == 2 && p2.len() == 2 =>
     {
       let (ta, tb) = (&p1[0], &p2[0]);
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(times2(
+      Some(div2(
+        times2(
           times2(sq(sp), plus2(tb.clone(), neg(max))),
           plus2(neg(ta.clone()), min),
-        )),
-        right: Box::new(plus2(neg(ta.clone()), tb.clone())),
-      })
+        ),
+        plus2(neg(ta.clone()), tb.clone()),
+      ))
     }
     // Geometric Brownian motion:
     // x0^2 E^(m (t1 + t2)) (E^(s^2 Min) - 1).
@@ -7630,10 +7621,6 @@ pub fn characteristic_function_ast(
     name: name.to_string(),
     args: fargs.into(),
   };
-  let neg = |e: Expr| Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(e),
-  };
   // E^(I*t) and E^(I*c*t)
   let e_it = |factors: Vec<Expr>| {
     let mut f = vec![i_unit()];
@@ -7682,7 +7669,7 @@ pub fn characteristic_function_ast(
           "Plus",
           vec![
             call("Times", vec![i_unit(), m.clone(), t.clone()]),
-            neg(div2(
+            neg1(div2(
               call(
                 "Times",
                 vec![
@@ -7857,10 +7844,10 @@ pub fn characteristic_function_ast(
           "Plus",
           vec![
             Expr::Integer(1),
-            neg(call("Times", vec![i_unit(), b.clone(), t.clone()])),
+            neg1(call("Times", vec![i_unit(), b.clone(), t.clone()])),
           ],
         ),
-        neg(a.clone()),
+        neg1(a.clone()),
       ),
       true,
     )),
@@ -7870,7 +7857,7 @@ pub fn characteristic_function_ast(
         call(
           "Times",
           vec![
-            neg(i_unit()),
+            neg1(i_unit()),
             call("Plus", vec![Expr::Integer(-1), e_it(vec![])]),
           ],
         ),
@@ -7886,14 +7873,14 @@ pub fn characteristic_function_ast(
           call(
             "Times",
             vec![
-              neg(i_unit()),
+              neg1(i_unit()),
               call(
                 "Plus",
-                vec![neg(e_it(vec![a.clone()])), e_it(vec![b.clone()])],
+                vec![neg1(e_it(vec![a.clone()])), e_it(vec![b.clone()])],
               ),
             ],
           ),
-          call("Times", vec![call("Plus", vec![neg(a), b]), t.clone()]),
+          call("Times", vec![call("Plus", vec![neg1(a), b]), t.clone()]),
         ),
         true,
       ))
@@ -7911,7 +7898,7 @@ pub fn characteristic_function_ast(
           ),
         )
       };
-      let diff = call("Plus", vec![e_half(&a), neg(e_half(&b))]);
+      let diff = call("Plus", vec![e_half(&a), neg1(e_half(&b))]);
       let num = call(
         "Times",
         vec![Expr::Integer(-4), pow2(diff, Expr::Integer(2))],
@@ -7920,7 +7907,7 @@ pub fn characteristic_function_ast(
         "Times",
         vec![
           pow2(
-            call("Plus", vec![a.clone(), neg(b.clone())]),
+            call("Plus", vec![a.clone(), neg1(b.clone())]),
             Expr::Integer(2),
           ),
           pow2(t.clone(), Expr::Integer(2)),
@@ -7940,7 +7927,7 @@ pub fn characteristic_function_ast(
             call("Times", vec![Expr::Integer(-2), i_unit(), t.clone()]),
           ],
         ),
-        div2(neg(k.clone()), Expr::Integer(2)),
+        div2(neg1(k.clone()), Expr::Integer(2)),
       ),
       false,
     )),
@@ -8069,10 +8056,6 @@ pub fn moment_generating_function_ast(
   let call = |name: &str, fargs: Vec<Expr>| Expr::FunctionCall {
     name: name.to_string(),
     args: fargs.into(),
-  };
-  let neg = |e: Expr| Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(e),
   };
   // E^t and E^(c*t)
   let e_t = |factors: Vec<Expr>| {
@@ -8253,10 +8236,10 @@ pub fn moment_generating_function_ast(
           "Plus",
           vec![
             Expr::Integer(1),
-            neg(call("Times", vec![b.clone(), t.clone()])),
+            neg1(call("Times", vec![b.clone(), t.clone()])),
           ],
         ),
-        neg(a.clone()),
+        neg1(a.clone()),
       ),
       true,
     )),
@@ -8292,9 +8275,9 @@ pub fn moment_generating_function_ast(
         div2(
           call(
             "Plus",
-            vec![neg(e_t(vec![a.clone()])), e_t(vec![b.clone()])],
+            vec![neg1(e_t(vec![a.clone()])), e_t(vec![b.clone()])],
           ),
-          call("Times", vec![call("Plus", vec![neg(a), b]), t.clone()]),
+          call("Times", vec![call("Plus", vec![neg1(a), b]), t.clone()]),
         ),
         true,
       ))
@@ -8308,7 +8291,7 @@ pub fn moment_generating_function_ast(
           div2(call("Times", vec![v.clone(), t.clone()]), Expr::Integer(2)),
         )
       };
-      let diff = call("Plus", vec![e_half(&a), neg(e_half(&b))]);
+      let diff = call("Plus", vec![e_half(&a), neg1(e_half(&b))]);
       let num = call(
         "Times",
         vec![Expr::Integer(4), pow2(diff, Expr::Integer(2))],
@@ -8317,7 +8300,7 @@ pub fn moment_generating_function_ast(
         "Times",
         vec![
           pow2(
-            call("Plus", vec![a.clone(), neg(b.clone())]),
+            call("Plus", vec![a.clone(), neg1(b.clone())]),
             Expr::Integer(2),
           ),
           pow2(t.clone(), Expr::Integer(2)),
@@ -8335,7 +8318,7 @@ pub fn moment_generating_function_ast(
             call("Times", vec![Expr::Integer(-2), t.clone()]),
           ],
         ),
-        div2(neg(k.clone()), Expr::Integer(2)),
+        div2(neg1(k.clone()), Expr::Integer(2)),
       ),
       false,
     )),
@@ -8364,7 +8347,7 @@ pub fn moment_generating_function_ast(
           "Plus",
           vec![
             Expr::Integer(1),
-            neg(call(
+            neg1(call(
               "Times",
               vec![
                 pow2(b.clone(), Expr::Integer(2)),
@@ -8450,13 +8433,10 @@ fn cgf_term(f: &Expr) -> Expr {
       operand,
     } = exp
     {
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![(**operand).clone(), log(base.clone())].into(),
-        }),
-      }
+      neg1(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![(**operand).clone(), log(base.clone())].into(),
+      })
     } else {
       Expr::FunctionCall {
         name: "Times".to_string(),
@@ -8491,10 +8471,6 @@ pub fn cumulant_generating_function_ast(
     name: name.to_string(),
     args: fargs.into(),
   };
-  let neg = |e: Expr| Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(e),
-  };
   let log = |e: Expr| Expr::FunctionCall {
     name: "Log".to_string(),
     args: vec![e].into(),
@@ -8523,15 +8499,15 @@ pub fn cumulant_generating_function_ast(
     ("GeometricDistribution", [p]) => Some(call(
       "Plus",
       vec![
-        neg(t.clone()),
-        neg(log(call(
+        neg1(t.clone()),
+        neg1(log(call(
           "Plus",
           vec![
             Expr::Integer(1),
-            neg(div2(
+            neg1(div2(
               call(
                 "Plus",
-                vec![Expr::Integer(1), neg(pow2(e_sym(), neg(t.clone())))],
+                vec![Expr::Integer(1), neg1(pow2(e_sym(), neg1(t.clone())))],
               ),
               p.clone(),
             )),
@@ -8542,7 +8518,7 @@ pub fn cumulant_generating_function_ast(
     // a*t + Log[(-1 + E^((-a + b)*t))/((-a + b)*t)]
     ("UniformDistribution", [Expr::List(bounds)]) if bounds.len() == 2 => {
       let (a, b) = (bounds[0].clone(), bounds[1].clone());
-      let span = || call("Plus", vec![neg(a.clone()), b.clone()]);
+      let span = || call("Plus", vec![neg1(a.clone()), b.clone()]);
       let span_t = || call("Times", vec![span(), t.clone()]);
       Some(call(
         "Plus",
@@ -8591,7 +8567,7 @@ pub fn cumulant_generating_function_ast(
       right,
     } = &mgf
   {
-    call("Plus", vec![cgf_term(left), neg(cgf_term(right))])
+    call("Plus", vec![cgf_term(left), neg1(cgf_term(right))])
   } else {
     cgf_term(&mgf)
   };
@@ -8633,18 +8609,17 @@ pub fn factorial_moment_generating_function_ast(
       args: f.into(),
     };
     let sq = |e: Expr| pow2(e, Expr::Integer(2));
-    return Ok(Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::Identifier("E".to_string())),
-      right: Box::new(Expr::FunctionCall {
+    return Ok(pow2(
+      Expr::Identifier("E".to_string()),
+      Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![
           times(vec![m, log_t.clone()]),
           div2(times(vec![sq(sd), sq(log_t)]), Expr::Integer(2)),
         ]
         .into(),
-      }),
-    });
+      },
+    ));
   }
   let mgf = moment_generating_function_ast(&[args[0].clone(), log_t])?;
   if matches!(&mgf, Expr::FunctionCall { name, .. }
@@ -8703,9 +8678,8 @@ pub fn central_moment_generating_function_ast(
       args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
     };
     let t = args[1].clone();
-    let expr = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(Expr::FunctionCall {
+    let expr = div2(
+      Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![
           times(vec![
@@ -8715,8 +8689,8 @@ pub fn central_moment_generating_function_ast(
           e_pow(times(vec![b.clone(), t.clone()])),
         ]
         .into(),
-      }),
-      right: Box::new(times(vec![
+      },
+      times(vec![
         Expr::FunctionCall {
           name: "Plus".to_string(),
           args: vec![times(vec![Expr::Integer(-1), a.clone()]), b.clone()]
@@ -8731,8 +8705,8 @@ pub fn central_moment_generating_function_ast(
           t.clone(),
         ])),
         t,
-      ])),
-    };
+      ]),
+    );
     return if symbolic {
       Ok(expr)
     } else {
