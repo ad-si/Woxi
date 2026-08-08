@@ -169,7 +169,8 @@ mod tests {
 
     #[test]
     fn local_svg_imports_as_graphics() {
-      let path = std::env::temp_dir().join("woxi_import_test.svg");
+      let tmp = std::env::temp_dir().join("woxi_import_test.svg");
+      let path = tmp.display().to_string().replace("\\", "/");
       std::fs::write(
         &path,
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\">\
@@ -177,7 +178,7 @@ mod tests {
       )
       .unwrap();
       assert_eq!(
-        interpret(&format!("Import[\"{}\"]", path.display())).unwrap(),
+        interpret(&format!("Import[\"{}\"]", path)).unwrap(),
         "-Graphics-"
       );
       std::fs::remove_file(&path).ok();
