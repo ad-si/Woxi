@@ -2,6 +2,7 @@
 use super::*;
 use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
+use std::cell::RefCell;
 
 fn nth_prime(n: i128) -> i128 {
   if n == 0 {
@@ -5857,16 +5858,69 @@ pub fn partitions_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Compute p(n) using dynamic programming
-fn partitions_p(n: usize) -> BigInt {
-  let mut dp = vec![BigInt::from(0); n + 1];
-  dp[0] = BigInt::from(1);
-  for k in 1..=n {
-    for j in k..=n {
-      dp[j] = &dp[j] + &dp[j - k];
+thread_local! {
+  static PARTITIONS_PQ: RefCell<PartitionsPQ> = RefCell::new(PartitionsPQ::new());
+}
+
+// cache of p(n), q(n)
+struct PartitionsPQ {
+  p: Vec<BigInt>,
+  q: Vec<BigInt>,
+}
+
+impl PartitionsPQ {
+  fn new() -> Self {
+    Self {
+      p: vec![BigInt::from(1)],
+      q: vec![BigInt::from(1)],
     }
   }
-  dp[n].clone()
+
+  fn get_p(&mut self, n: usize) -> BigInt {
+    let m = self.p.len();
+    for i in m..=n {
+      // Compute using Euler's pentagonal number theorem
+      // p(n) = Sum_{k=1}^{\inf} (-1)^{k+1} (p(n-k(3k-1)/2) + p(n-k(3k+1)/2))
+      let mut sum = BigInt::from(0);
+      let mut idx1 = i as isize;
+      for k in 1..=i as isize {
+        idx1 -= 3 * k - 2;
+        if idx1 < 0 {
+          break;
+        }
+
+        let mut val = self.p[idx1 as usize].clone();
+        let idx2 = idx1 - k;
+        if idx2 >= 0 {
+          val = &val + &self.p[idx2 as usize];
+        }
+
+        if k % 2 == 0 { sum -= val } else { sum += val }
+      }
+      self.p.push(sum);
+    }
+    self.p[n].clone()
+  }
+
+  fn get_q(&mut self, n: usize) -> BigInt {
+    let m = self.q.len();
+    for i in m..=n {
+      // q(n) = p(n) - Sum_{k=1}^{Floor[n/2]} p(k)q(n-2k)
+      let mut sum = self.get_p(i);
+      for k in 1..=(i / 2) {
+        sum -= &self.p[k] * &self.q[i - 2 * k];
+      }
+      self.q.push(sum);
+    }
+    self.q[n].clone()
+  }
+}
+
+fn partitions_p(n: usize) -> BigInt {
+  PARTITIONS_PQ.with(|cache| {
+    let mut cache = cache.borrow_mut();
+    cache.get_p(n).clone()
+  })
 }
 
 /// PartitionsQ[n] - Number of partitions of n into distinct parts
@@ -5995,15 +6049,10 @@ fn agm(mut a: f64, mut b: f64) -> f64 {
 /// Compute q(n) - number of partitions into distinct parts using DP
 /// Uses generating function: prod_{k=1}^{n} (1 + x^k)
 fn partitions_q(n: usize) -> BigInt {
-  let mut dp = vec![BigInt::from(0); n + 1];
-  dp[0] = BigInt::from(1);
-  for k in 1..=n {
-    // Process in reverse to ensure each part k is used at most once
-    for j in (k..=n).rev() {
-      dp[j] = &dp[j] + &dp[j - k];
-    }
-  }
-  dp[n].clone()
+  PARTITIONS_PQ.with(|cache| {
+    let mut cache = cache.borrow_mut();
+    cache.get_q(n).clone()
+  })
 }
 
 /// PrimeOmega[n] - number of prime factors with multiplicity
