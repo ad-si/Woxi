@@ -39,19 +39,8 @@ fn plus(ts: Vec<Expr>) -> Expr {
   }
 }
 
-fn neg(e: Expr) -> Expr {
-  Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(e),
-  }
-}
-
 fn div(a: Expr, b: i128) -> Expr {
-  Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(a),
-    right: Box::new(Expr::Integer(b)),
-  }
+  div2(a, Expr::Integer(b))
 }
 
 /// Half-angle term `e/2`, printed as `e/2` (Wolfram's distributed form,
@@ -67,7 +56,7 @@ fn half_sum(p: &Expr, q: &Expr) -> Expr {
 
 /// `p/2 - q/2`.
 fn half_diff(p: &Expr, q: &Expr) -> Expr {
-  plus(vec![half(p), neg(half(q))])
+  plus(vec![half(p), neg1(half(q))])
 }
 
 fn square(e: Expr) -> Expr {
@@ -118,7 +107,7 @@ fn sin_pm(v: &Expr, plus_quarter: bool) -> (Expr, i32) {
     terms.push(if plus_quarter {
       pi_quarter()
     } else {
-      neg(pi_quarter())
+      neg1(pi_quarter())
     });
     (trig_call("Sin", plus(terms)), 1)
   } else if plus_quarter {
@@ -127,7 +116,7 @@ fn sin_pm(v: &Expr, plus_quarter: bool) -> (Expr, i32) {
   } else {
     // Sin[v - Pi/4] == -Sin[Pi/4 - v]
     (
-      trig_call("Sin", plus(vec![pi_quarter(), neg(v.clone())])),
+      trig_call("Sin", plus(vec![pi_quarter(), neg1(v.clone())])),
       -1,
     )
   }
@@ -139,7 +128,7 @@ fn sqrt2_sin(u: &Expr, plus_quarter: bool, sign: i32) -> Expr {
   let (factor, fsign) = sin_pm(u, plus_quarter);
   let product = times(vec![sqrt2(), factor]);
   if sign * fsign < 0 {
-    neg(product)
+    neg1(product)
   } else {
     product
   }

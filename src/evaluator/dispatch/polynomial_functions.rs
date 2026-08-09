@@ -795,11 +795,7 @@ pub fn dispatch_polynomial_functions(
               let factor = match exp {
                 Expr::Integer(0) => continue,
                 Expr::Integer(1) => Expr::Identifier(var.clone()),
-                _ => Expr::BinaryOp {
-                  op: BinaryOperator::Power,
-                  left: Box::new(Expr::Identifier(var.clone())),
-                  right: Box::new(exp.clone()),
-                },
+                _ => pow2(Expr::Identifier(var.clone()), exp.clone()),
               };
               term = Expr::BinaryOp {
                 op: BinaryOperator::Times,
@@ -1437,13 +1433,7 @@ fn try_constrained_linear_disk_symbolic(
       right: Box::new(y),
     })
   };
-  let div = |x: Expr, y: Expr| -> Expr {
-    eval(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(x),
-      right: Box::new(y),
-    })
-  };
+  let div = |x: Expr, y: Expr| -> Expr { eval(div2(x, y)) };
   let neg = |x: Expr| -> Expr {
     eval(Expr::BinaryOp {
       op: BinaryOperator::Minus,

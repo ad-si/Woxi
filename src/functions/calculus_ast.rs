@@ -541,10 +541,9 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // canonicalised to the same form `DirectedInfinity[-1]` / unary-minus
       // that the REPL displays as `-Infinity`.
       let return_neg_infinity = || -> Result<Expr, InterpreterError> {
-        crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(Expr::Identifier("Infinity".to_string())),
-        })
+        crate::evaluator::evaluate_expr_to_expr(&neg1(Expr::Identifier(
+          "Infinity".to_string(),
+        )))
       };
       match &args[0] {
         Expr::Identifier(s) if s == "Infinity" && lo_ne_hi => {
@@ -2395,10 +2394,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
     Expr::UnaryOp { op, operand } => {
       if matches!(op, UnaryOperator::Minus) {
         let d = differentiate(operand, var)?;
-        Ok(Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(d),
-        })
+        Ok(neg1(d))
       } else {
         Ok(Expr::FunctionCall {
           name: "D".to_string(),
@@ -2700,13 +2696,10 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let df = differentiate(&args[0], var)?;
           Ok(simplify(Expr::BinaryOp {
             op: BinaryOperator::Times,
-            left: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(Expr::FunctionCall {
-                name: "Sin".to_string(),
-                args: args.clone(),
-              }),
-            }),
+            left: Box::new(neg1(Expr::FunctionCall {
+              name: "Sin".to_string(),
+              args: args.clone(),
+            })),
             right: Box::new(df),
           }))
         }
@@ -2794,20 +2787,17 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let df = differentiate(&args[0], var)?;
           Ok(simplify(Expr::BinaryOp {
             op: BinaryOperator::Times,
-            left: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(Expr::FunctionCall {
-                  name: "Csc".to_string(),
-                  args: args.clone(),
-                }),
-                right: Box::new(Expr::FunctionCall {
-                  name: "Cot".to_string(),
-                  args: args.clone(),
-                }),
+            left: Box::new(neg1(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(Expr::FunctionCall {
+                name: "Csc".to_string(),
+                args: args.clone(),
               }),
-            }),
+              right: Box::new(Expr::FunctionCall {
+                name: "Cot".to_string(),
+                args: args.clone(),
+              }),
+            })),
             right: Box::new(df),
           }))
         }
@@ -2816,17 +2806,14 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let df = differentiate(&args[0], var)?;
           Ok(simplify(Expr::BinaryOp {
             op: BinaryOperator::Times,
-            left: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(Expr::FunctionCall {
-                  name: "Csc".to_string(),
-                  args: args.clone(),
-                }),
-                right: Box::new(Expr::Integer(2)),
+            left: Box::new(neg1(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(Expr::FunctionCall {
+                name: "Csc".to_string(),
+                args: args.clone(),
               }),
-            }),
+              right: Box::new(Expr::Integer(2)),
+            })),
             right: Box::new(df),
           }))
         }
@@ -2875,20 +2862,17 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let df = differentiate(&args[0], var)?;
           Ok(simplify(Expr::BinaryOp {
             op: BinaryOperator::Times,
-            left: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(Expr::FunctionCall {
-                  name: "Sech".to_string(),
-                  args: args.clone(),
-                }),
-                right: Box::new(Expr::FunctionCall {
-                  name: "Tanh".to_string(),
-                  args: args.clone(),
-                }),
+            left: Box::new(neg1(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(Expr::FunctionCall {
+                name: "Sech".to_string(),
+                args: args.clone(),
               }),
-            }),
+              right: Box::new(Expr::FunctionCall {
+                name: "Tanh".to_string(),
+                args: args.clone(),
+              }),
+            })),
             right: Box::new(df),
           }))
         }
@@ -2897,20 +2881,17 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let df = differentiate(&args[0], var)?;
           Ok(simplify(Expr::BinaryOp {
             op: BinaryOperator::Times,
-            left: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(Expr::FunctionCall {
-                  name: "Coth".to_string(),
-                  args: args.clone(),
-                }),
-                right: Box::new(Expr::FunctionCall {
-                  name: "Csch".to_string(),
-                  args: args.clone(),
-                }),
+            left: Box::new(neg1(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(Expr::FunctionCall {
+                name: "Coth".to_string(),
+                args: args.clone(),
               }),
-            }),
+              right: Box::new(Expr::FunctionCall {
+                name: "Csch".to_string(),
+                args: args.clone(),
+              }),
+            })),
             right: Box::new(df),
           }))
         }
@@ -2919,17 +2900,14 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let df = differentiate(&args[0], var)?;
           Ok(simplify(Expr::BinaryOp {
             op: BinaryOperator::Times,
-            left: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(Expr::FunctionCall {
-                  name: "Csch".to_string(),
-                  args: args.clone(),
-                }),
-                right: Box::new(Expr::Integer(2)),
+            left: Box::new(neg1(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(Expr::FunctionCall {
+                name: "Csch".to_string(),
+                args: args.clone(),
               }),
-            }),
+              right: Box::new(Expr::Integer(2)),
+            })),
             right: Box::new(df),
           }))
         }
@@ -2939,10 +2917,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let one_minus_f_sq = Expr::BinaryOp {
             op: BinaryOperator::Plus,
             left: Box::new(Expr::Integer(1)),
-            right: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(pow2(args[0].clone(), Expr::Integer(2))),
-            }),
+            right: Box::new(neg1(pow2(args[0].clone(), Expr::Integer(2)))),
           };
           let sqrt_expr = make_sqrt(one_minus_f_sq);
           Ok(simplify(Expr::BinaryOp {
@@ -2960,18 +2935,12 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let one_minus_f_sq = Expr::BinaryOp {
             op: BinaryOperator::Plus,
             left: Box::new(Expr::Integer(1)),
-            right: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(pow2(args[0].clone(), Expr::Integer(2))),
-            }),
+            right: Box::new(neg1(pow2(args[0].clone(), Expr::Integer(2)))),
           };
           let sqrt_expr = make_sqrt(one_minus_f_sq);
           Ok(simplify(Expr::BinaryOp {
             op: BinaryOperator::Times,
-            left: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(df),
-            }),
+            left: Box::new(neg1(df)),
             right: Box::new(Expr::FunctionCall {
               name: "Power".to_string(),
               args: vec![sqrt_expr, Expr::Integer(-1)].into(),
@@ -2999,10 +2968,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           // partial wrt first arg: -v / (u^2 + v^2)
           let d_first = Expr::BinaryOp {
             op: BinaryOperator::Times,
-            left: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(v),
-            }),
+            left: Box::new(neg1(v)),
             right: Box::new(inv_denom.clone()),
           };
           // partial wrt second arg: u / (u^2 + v^2)
@@ -3056,10 +3022,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           };
           Ok(simplify(Expr::BinaryOp {
             op: BinaryOperator::Times,
-            left: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(df),
-            }),
+            left: Box::new(neg1(df)),
             right: Box::new(Expr::FunctionCall {
               name: "Power".to_string(),
               args: vec![one_plus_f_sq, Expr::Integer(-1)].into(),
@@ -3121,10 +3084,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let one_minus_f_sq = Expr::BinaryOp {
             op: BinaryOperator::Plus,
             left: Box::new(Expr::Integer(1)),
-            right: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(pow2(args[0].clone(), Expr::Integer(2))),
-            }),
+            right: Box::new(neg1(pow2(args[0].clone(), Expr::Integer(2)))),
           };
           Ok(simplify(Expr::BinaryOp {
             op: BinaryOperator::Times,
@@ -3141,10 +3101,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let one_minus_f_sq = Expr::BinaryOp {
             op: BinaryOperator::Plus,
             left: Box::new(Expr::Integer(1)),
-            right: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(pow2(args[0].clone(), Expr::Integer(2))),
-            }),
+            right: Box::new(neg1(pow2(args[0].clone(), Expr::Integer(2)))),
           };
           Ok(simplify(Expr::BinaryOp {
             op: BinaryOperator::Times,
@@ -3969,10 +3926,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let g = if name == "InverseErf" {
             core
           } else {
-            Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(core),
-            }
+            neg1(core)
           };
           Ok(if matches!(dz, Expr::Integer(1)) {
             simplify(g)
@@ -4068,23 +4022,14 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }),
           };
           // E^(-z)
-          let exp_neg_z = Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(Expr::Constant("E".to_string())),
-            right: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(z.clone()),
-            }),
-          };
+          let exp_neg_z =
+            pow2(Expr::Constant("E".to_string()), neg1(z.clone()));
           // -z^(a-1) E^(-z), times z' (chain rule).
-          let core = Expr::UnaryOp {
-            op: UnaryOperator::Minus,
-            operand: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(z_pow),
-              right: Box::new(exp_neg_z),
-            }),
-          };
+          let core = neg1(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(z_pow),
+            right: Box::new(exp_neg_z),
+          });
           let full = if matches!(dz, Expr::Integer(1)) {
             core
           } else {
@@ -4316,14 +4261,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             return Ok(Expr::Integer(0));
           }
           let z_sq = pow2(args[0].clone(), Expr::Integer(2));
-          let exp_neg_z2 = Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(Expr::Constant("E".to_string())),
-            right: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(z_sq),
-            }),
-          };
+          let exp_neg_z2 = pow2(Expr::Constant("E".to_string()), neg1(z_sq));
           let two_over_sqrt_pi = div2(
             Expr::Integer(2),
             make_sqrt(Expr::Constant("Pi".to_string())),
@@ -4350,17 +4288,8 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             return Ok(Expr::Integer(0));
           }
           let z_sq = pow2(args[0].clone(), Expr::Integer(2));
-          let neg_exp_neg_z2 = Expr::UnaryOp {
-            op: UnaryOperator::Minus,
-            operand: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(Expr::Constant("E".to_string())),
-              right: Box::new(Expr::UnaryOp {
-                op: UnaryOperator::Minus,
-                operand: Box::new(z_sq),
-              }),
-            }),
-          };
+          let neg_exp_neg_z2 =
+            neg1(pow2(Expr::Constant("E".to_string()), neg1(z_sq)));
           let two_over_sqrt_pi = div2(
             Expr::Integer(2),
             make_sqrt(Expr::Constant("Pi".to_string())),
@@ -4488,10 +4417,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                   right: Box::new(da),
                 })
               };
-              terms.push(Expr::UnaryOp {
-                op: UnaryOperator::Minus,
-                operand: Box::new(term),
-              });
+              terms.push(neg1(term));
             }
 
             if terms.is_empty() {
@@ -4956,23 +4882,13 @@ fn make_divided(expr: Expr, divisor: Expr) -> Expr {
 /// For integer divisors, produces `Rational[-1, n] * expr` to match Wolfram output.
 fn make_neg_divided(expr: Expr, divisor: Expr) -> Expr {
   match &divisor {
-    Expr::Integer(1) => Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(expr),
-    },
+    Expr::Integer(1) => neg1(expr),
     Expr::Integer(n) => Expr::BinaryOp {
       op: BinaryOperator::Times,
       left: Box::new(crate::functions::math_ast::make_rational(-1, *n)),
       right: Box::new(expr),
     },
-    _ => Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(expr),
-      }),
-      right: Box::new(divisor),
-    },
+    _ => div2(neg1(expr), divisor),
   }
 }
 
@@ -5941,10 +5857,7 @@ fn arcsin_arccos_linear_antideriv(
   let sqrt_over_p = if p == 1 {
     sqrt_expr
   } else if p == -1 {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(sqrt_expr),
-    }
+    neg1(sqrt_expr)
   } else {
     div2(sqrt_expr, Expr::Integer(p))
   };
@@ -6340,10 +6253,7 @@ fn make_fraction_term(num: i128, den: i128, expr: Expr) -> Expr {
     if num == 1 {
       expr
     } else if num == -1 {
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(expr),
-      }
+      neg1(expr)
     } else {
       Expr::BinaryOp {
         op: BinaryOperator::Times,
@@ -6355,24 +6265,17 @@ fn make_fraction_term(num: i128, den: i128, expr: Expr) -> Expr {
     div2(expr, Expr::Integer(den))
   } else if num == -1 {
     // -(expr/den) so plus_ast displays as "- expr/den"
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(div2(expr, Expr::Integer(den))),
-    }
+    neg1(div2(expr, Expr::Integer(den)))
   } else if num < 0 {
     // -(|num|*expr/den) so plus_ast displays as "- num*expr/den"
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(-num)),
-          right: Box::new(expr),
-        }),
-        right: Box::new(Expr::Integer(den)),
-      }),
-    }
+    neg1(div2(
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(-num)),
+        right: Box::new(expr),
+      },
+      Expr::Integer(den),
+    ))
   } else {
     Expr::BinaryOp {
       op: BinaryOperator::Divide,
@@ -6391,10 +6294,7 @@ fn make_fraction_term_expr(num: i128, den_expr: Expr, expr: Expr) -> Expr {
   let num_expr = if num == 1 {
     expr
   } else if num == -1 {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(expr),
-    }
+    neg1(expr)
   } else {
     Expr::BinaryOp {
       op: BinaryOperator::Times,
@@ -6646,10 +6546,7 @@ fn try_integrate_inverse_sqrt(base: &Expr, var: &str) -> Option<Expr> {
 
   if b_val < 0.0 {
     // ∫ (a - |b|*x^2)^(-1/2) dx = (1/sqrt(|b|)) * ArcSin[x * sqrt(|b|/a)]
-    let abs_b = simplify(Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(b.clone()),
-    });
+    let abs_b = simplify(neg1(b.clone()));
     let ratio = simplify(div2(abs_b.clone(), a.clone()));
     let sqrt_ratio = simplify(Expr::FunctionCall {
       name: "Sqrt".to_string(),
@@ -6753,10 +6650,7 @@ fn sqrt_quadratic_antiderivative(base: &Expr, var: &str) -> Option<Expr> {
   };
   // |b| for the b < 0 branch (ArcSin needs the positive coefficient).
   let abs_b = if b_neg {
-    simplify(Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(b.clone()),
-    })
+    simplify(neg1(b.clone()))
   } else {
     b.clone()
   };
@@ -7009,10 +6903,7 @@ fn try_integrate_rational(
       if an == 1 {
         log_expr
       } else if an == -1 {
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(log_expr),
-        }
+        neg1(log_expr)
       } else {
         Expr::BinaryOp {
           op: BinaryOperator::Times,
@@ -7034,14 +6925,7 @@ fn try_integrate_rational(
           right: Box::new(log_expr.clone()),
         }
       };
-      if an < 0 {
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(frac_expr),
-        }
-      } else {
-        frac_expr
-      }
+      if an < 0 { neg1(frac_expr) } else { frac_expr }
     };
 
     log_terms.push(term);
@@ -7600,14 +7484,7 @@ fn build_arctan_term(
     }
   };
 
-  if coeff_num < 0 {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(term),
-    }
-  } else {
-    term
-  }
+  if coeff_num < 0 { neg1(term) } else { term }
 }
 
 /// Build (num/den) * expr, handling sign and simplifications.
@@ -7635,10 +7512,7 @@ fn build_coeff_times_expr(num: i128, den: i128, expr: Expr) -> Expr {
   };
 
   if num < 0 {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(unsigned_term),
-    }
+    neg1(unsigned_term)
   } else {
     unsigned_term
   }
@@ -8062,11 +7936,7 @@ fn try_u_substitution_binary(
     };
     // For Sin, the antiderivative is -Cos, so flip the ratio sign
     let ratio = if outer_fn == "Sin" {
-      crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(ratio),
-      })
-      .ok()?
+      crate::evaluator::evaluate_expr_to_expr(&neg1(ratio)).ok()?
     } else {
       ratio
     };
@@ -9568,11 +9438,8 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               name: head.to_string(),
               args: vec![a].into(),
             };
-            let neg = |e: Expr| Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(Expr::Integer(-1)),
-              right: Box::new(e),
-            };
+            let neg =
+              |e: Expr| binop(BinaryOperator::Times, Expr::Integer(-1), e);
             let correction = match name.as_str() {
               "SinIntegral" => call("Cos", x.clone()),
               "CosIntegral" => neg(call("Sin", x.clone())),
@@ -9964,10 +9831,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             let x = Expr::Identifier(var.to_string());
             return Some(Expr::BinaryOp {
               op: BinaryOperator::Plus,
-              left: Box::new(Expr::UnaryOp {
-                op: UnaryOperator::Minus,
-                operand: Box::new(x.clone()),
-              }),
+              left: Box::new(neg1(x.clone())),
               right: Box::new(Expr::BinaryOp {
                 op: BinaryOperator::Times,
                 left: Box::new(x),
@@ -10304,10 +10168,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
     Expr::UnaryOp { op, operand } => {
       if matches!(op, UnaryOperator::Minus) {
         let int = integrate(operand, var)?;
-        Some(Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(int),
-        })
+        Some(neg1(int))
       } else {
         None
       }
@@ -10359,10 +10220,7 @@ pub fn simplify(mut expr: Expr) -> Expr {
         }
         // 0 - x = -x  (general)
         (B::Minus, Expr::Integer(0), _) => {
-          return Expr::UnaryOp {
-            op: UnaryOperator::Minus,
-            operand: Box::new(right),
-          };
+          return neg1(right);
         }
         // x / 1 = x
         (B::Divide, _, Expr::Integer(1)) => return left,
@@ -11733,10 +11591,7 @@ fn limit_at_infinity(
     return Ok(if s >= 0 {
       Expr::Identifier("Infinity".to_string())
     } else {
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(Expr::Identifier("Infinity".to_string())),
-      }
+      neg1(Expr::Identifier("Infinity".to_string()))
     });
   }
 
@@ -11788,10 +11643,7 @@ fn limit_at_infinity(
     }
     // Both diverging to -infinity
     if f1 < -1e5 && f2 < f1 {
-      return Ok(Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(Expr::Identifier("Infinity".to_string())),
-      });
+      return Ok(neg1(Expr::Identifier("Infinity".to_string())));
     }
     // Approaching zero: both values small and getting smaller
     if f2.abs() < 1e-4 && f2.abs() < f1.abs() {
@@ -11853,10 +11705,7 @@ fn limit_at_infinity(
         if (f2 - val).abs() < 1e-3 {
           if denom == 1 {
             if numer == -1 {
-              return Ok(Expr::UnaryOp {
-                op: UnaryOperator::Minus,
-                operand: Box::new(Expr::Constant("Pi".to_string())),
-              });
+              return Ok(neg1(Expr::Constant("Pi".to_string())));
             }
             return Ok(Expr::BinaryOp {
               op: BinaryOperator::Times,
@@ -11986,10 +11835,7 @@ fn exp_growth_limit_at_infinity(
     return Some(if f2 > 0.0 {
       Expr::Identifier("Infinity".to_string())
     } else {
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(Expr::Identifier("Infinity".to_string())),
-      }
+      neg1(Expr::Identifier("Infinity".to_string()))
     });
   }
   // Approaching zero — both probes tiny and shrinking (the relative-agreement
@@ -12481,10 +12327,7 @@ fn piecewise_condition_bounds(
 fn negate_bound(c: &Expr) -> Expr {
   match c {
     Expr::Integer(n) => Expr::Integer(-n),
-    _ => Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(c.clone()),
-    },
+    _ => neg1(c.clone()),
   }
 }
 
@@ -12831,10 +12674,7 @@ fn numerical_one_sided_limit(
     if sign_positive {
       return Some(Expr::Identifier("Infinity".to_string()));
     } else {
-      return Some(Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(Expr::Identifier("Infinity".to_string())),
-      });
+      return Some(neg1(Expr::Identifier("Infinity".to_string())));
     }
   }
 
@@ -12849,10 +12689,7 @@ fn numerical_one_sided_limit(
       if all_positive {
         return Some(Expr::Identifier("Infinity".to_string()));
       } else {
-        return Some(Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(Expr::Identifier("Infinity".to_string())),
-        });
+        return Some(neg1(Expr::Identifier("Infinity".to_string())));
       }
     }
   }
@@ -13710,10 +13547,7 @@ fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(if c > 0.0 {
         Expr::Identifier("Infinity".to_string())
       } else {
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(Expr::Identifier("Infinity".to_string())),
-        }
+        neg1(Expr::Identifier("Infinity".to_string()))
       });
     }
   }
@@ -18503,10 +18337,7 @@ fn total_differentiate(
     Expr::UnaryOp { op, operand } => {
       if matches!(op, UnaryOperator::Minus) {
         let d = total_differentiate(operand, var)?;
-        Ok(Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(d),
-        })
+        Ok(neg1(d))
       } else {
         Ok(Expr::FunctionCall {
           name: "Dt".to_string(),
@@ -18545,13 +18376,10 @@ fn total_differentiate(
           let df = total_differentiate(&args[0], var)?;
           Ok(simplify(Expr::BinaryOp {
             op: B::Times,
-            left: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(Expr::FunctionCall {
-                name: "Sin".to_string(),
-                args: args.clone(),
-              }),
-            }),
+            left: Box::new(neg1(Expr::FunctionCall {
+              name: "Sin".to_string(),
+              args: args.clone(),
+            })),
             right: Box::new(df),
           }))
         }
@@ -19325,11 +19153,7 @@ pub fn frenet_serret_system_ast(
         right: Box::new(r2[0].clone()),
       }),
     };
-    let denom = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(speed_sq),
-      right: Box::new(div2(Expr::Integer(3), Expr::Integer(2))),
-    };
+    let denom = pow2(speed_sq, div2(Expr::Integer(3), Expr::Integer(2)));
     let kappa = eval(&div2(numerator, denom))?;
 
     // N = {-T2, T1} (rotate tangent 90° counterclockwise)
@@ -19392,11 +19216,7 @@ pub fn frenet_serret_system_ast(
     let norm_cross = make_sqrt(norm_cross_sq.clone());
 
     // κ = ||cross|| / ||r'||^3 = norm_cross / speed_sq^(3/2)
-    let speed_cubed = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(speed_sq),
-      right: Box::new(div2(Expr::Integer(3), Expr::Integer(2))),
-    };
+    let speed_cubed = pow2(speed_sq, div2(Expr::Integer(3), Expr::Integer(2)));
     let kappa = eval(&div2(norm_cross.clone(), speed_cubed))?;
 
     // τ = (r' × r'') · r''' / ||r' × r''||^2
@@ -19940,10 +19760,7 @@ fn try_trig_delta(expr: &Expr, var: &str, step: &Expr) -> Option<Expr> {
   let pi_term = if fn_name == "Sin" {
     Expr::Constant("Pi".to_string())
   } else {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(Expr::Constant("Pi".to_string())),
-    }
+    neg1(Expr::Constant("Pi".to_string()))
   };
   // Build (2*half_delta + Pi) / 2  for the constant part, but use direct
   // (step + Pi) / 2 to get a cleaner fraction when possible.
