@@ -8446,7 +8446,6 @@ mod cases {
       r#"x"#,
     );
   }
-  #[cfg(unix)]
   #[test]
   fn head_4() {
     // The mathics original (`S> $ParentProcessID = ...`) accepts any
@@ -9217,7 +9216,6 @@ mod cases {
   fn byte_ordering() {
     assert_case(r#"ByteOrdering"#, r#"ByteOrdering"#);
   }
-  #[cfg(unix)]
   #[test]
   fn head_23() {
     assert_case(
