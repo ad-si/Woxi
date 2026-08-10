@@ -532,13 +532,13 @@ pub fn regularly_sampled_q_ast(
   let times: Option<Vec<f64>> = pairs.iter().map(|(t, _)| to_time(t)).collect();
   let Some(times) = times else { return echo() };
   if times.len() < 3 {
-    return Ok(crate::syntax::bool_expr(true));
+    return Ok(bool_expr(true));
   }
   let step = times[1] - times[0];
   let even = times
     .windows(2)
     .all(|w| (w[1] - w[0] - step).abs() <= 1e-9 * step.abs().max(1.0));
-  Ok(crate::syntax::bool_expr(even))
+  Ok(bool_expr(even))
 }
 
 /// `TimeSeriesInsert[ts, {t, v}]` — add a point, keeping the path sorted.

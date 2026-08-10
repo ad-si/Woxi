@@ -15147,23 +15147,9 @@ pub fn replace_identifier_in_expr(
   }
 }
 
-/// Build the boolean symbol `True` or `False`.
-pub fn bool_expr(b: bool) -> Expr {
-  Expr::Identifier(if b { "True" } else { "False" }.to_string())
-}
-
 pub fn unevaluated(name: &str, args: &[Expr]) -> Expr {
   Expr::FunctionCall {
     name: name.to_string(),
     args: args.to_vec().into(),
-  }
-}
-
-/// Helper to build a binary operation expression
-pub fn binop(op: BinaryOperator, a: Expr, b: Expr) -> Expr {
-  Expr::BinaryOp {
-    op,
-    left: Box::new(a),
-    right: Box::new(b),
   }
 }

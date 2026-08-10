@@ -537,7 +537,7 @@ pub fn audio_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let is_audio = matches!(&args[0], Expr::FunctionCall { name, .. }
     if name == "Audio")
     && parse_audio(&args[0]).is_some();
-  Ok(crate::syntax::bool_expr(is_audio))
+  Ok(bool_expr(is_audio))
 }
 
 /// `AudioChannels[audio]` — how many channels it carries.

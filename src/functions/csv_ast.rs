@@ -99,8 +99,8 @@ fn auto_convert(s: &str) -> Expr {
   // The three conventional spellings of a boolean field become True/False;
   // anything else (`tRue`) stays the text it was written as.
   match trimmed {
-    "true" | "True" | "TRUE" => return crate::syntax::bool_expr(true),
-    "false" | "False" | "FALSE" => return crate::syntax::bool_expr(false),
+    "true" | "True" | "TRUE" => return bool_expr(true),
+    "false" | "False" | "FALSE" => return bool_expr(false),
     _ => {}
   }
 

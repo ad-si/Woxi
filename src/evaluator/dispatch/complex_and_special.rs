@@ -1397,7 +1397,7 @@ pub fn dispatch_complex_and_special(
       if args.len() == 1
         && crate::functions::mesh_region::is_mesh_region(&args[0]) =>
     {
-      return Some(Ok(crate::syntax::bool_expr(true)));
+      return Some(Ok(bool_expr(true)));
     }
     "RegionBounds"
       if args.len() == 1
