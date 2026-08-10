@@ -478,6 +478,14 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "SpanFromLeft" => Some(""),
     "SpanFromAbove" => Some(""),
     "SpanFromBoth" => Some(""),
+    // The `\[Raw…]` family names the ASCII control characters, so that a
+    // notebook can write one without embedding an untypeable byte.
+    "RawEscape" => Some("\u{001B}"),
+    "RawTab" => Some("\t"),
+    "RawReturn" => Some("\r"),
+    "RawNewline" => Some("\n"),
+    "RawBackspace" => Some("\u{0008}"),
+    "RawSpace" => Some(" "),
     // Miscellaneous
     "Null" => Some(""),
     "InvisibleSpace" => Some("\u{200B}"),
@@ -492,6 +500,11 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "InvisibleTimes" => Some("\u{2062}"),
     "InvisibleComma" => Some("\u{2063}"),
     "InvisibleApplication" => Some("\u{2061}"),
+    // Placeholders the FrontEnd hangs a *prefix* or *postfix* script on, so
+    // that `\!\(\*SuperscriptBox[\(\[InvisiblePrefixScriptBase]\), \(1\)]\)Σ`
+    // typesets as `¹Σ`. They carry no glyph of their own — anything else
+    // would print the placeholder's name into the label.
+    "InvisiblePrefixScriptBase" | "InvisiblePostfixScriptBase" => Some(""),
     // Accented Latin letters (Latin-1 supplement). Wolfram names them by
     // base letter + diacritic, e.g. `\[CCedilla]` is ç, `\[ODoubleDot]` is
     // ö. Needed so imported text (e.g. "Curaçao") compares equal to source

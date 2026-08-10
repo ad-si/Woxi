@@ -8755,11 +8755,13 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           )
         }
 
-        // `Spacer[n]` is a gap n ems wide, wherever it appears — among a
-        // `Row`'s items as readily as as its separator.
+        // `Spacer[n]` is a gap n printer's points wide, wherever it
+        // appears — among a `Row`'s items as readily as as its separator.
+        // The width is absolute, not relative to the font: `Spacer[25]`
+        // is the same gap next to 8-point text as next to 30-point text.
         "Spacer" => {
-          let ems = args.first().and_then(expr_to_f64).unwrap_or(1.0);
-          format!("<tspan style=\"letter-spacing:{ems:.2}em\"> </tspan>")
+          let pts = args.first().and_then(expr_to_f64).unwrap_or(1.0);
+          format!("<tspan style=\"letter-spacing:{pts:.2}px\"> </tspan>")
         }
 
         // Row[{a, b, …}] concatenates its parts; Row[{…}, sep] joins
@@ -8774,9 +8776,9 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
                 Expr::FunctionCall { name, args: sargs }
                   if name == "Spacer" =>
                 {
-                  let ems = sargs.first().and_then(expr_to_f64).unwrap_or(1.0);
+                  let pts = sargs.first().and_then(expr_to_f64).unwrap_or(1.0);
                   format!(
-                    "<tspan style=\"letter-spacing:{ems:.2}em\"> </tspan>"
+                    "<tspan style=\"letter-spacing:{pts:.2}px\"> </tspan>"
                   )
                 }
                 other => expr_to_svg_markup(other),

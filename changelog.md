@@ -2,6 +2,35 @@
 
 # Unreleased
 
+- Fixes driven by a Wolfram Demonstration that draws a diatomic molecule as
+    a three-dimensional schematic beside an energy plot:
+    - `Scale[g, s]` in a `Graphics3D` scales about the centre of `g`'s
+        bounding box, the way the two-dimensional renderer already did.
+        Scaling about the origin dragged everything towards it, so two
+        nuclei a bond length apart collapsed into one blob.
+    - `Scale[g, {sx, sy, sz}]` with unequal factors bends a `Sphere`,
+        `Cylinder` or `Cone` into the ellipsoidal shape it asks for. The
+        radius used to take one averaged factor, which left a sphere a
+        sphere.
+    - `EdgeForm[colour]` outlines a face in that colour, and outlines a
+        curved primitive's end circles rather than nothing at all —
+        `{Opacity[0], EdgeForm[Black], Cylinder[…]}` is how a Demonstration
+        draws an unfilled circle in space. Such an outline also stays
+        opaque around a transparent face.
+    - A `Style[…, size]` inside a plot label is sized in printer's points
+        and a `Spacer[n]` is a gap of `n` of them, both scaled to the
+        picture. The sizes used to be emitted verbatim into a viewBox
+        twenty times larger, which left a styled run invisible and a spacer
+        sized off the font instead of the page.
+    - `\[InvisiblePrefixScriptBase]` and `\[InvisiblePostfixScriptBase]`
+        set no type, and a script hung on one is a prefix script:
+        `\!\(\*SuperscriptBox[\(\[InvisiblePrefixScriptBase]\), \(1\)]\)Σ`
+        reads as `¹Σ`. The placeholder used to print its own name, and the
+        script was read as an exponentiation — so `x^1` evaluated it away.
+    - The `\[Raw…]` characters name the ASCII control codes, and the
+        non-printing ones set no type in a notebook cell. A caption that
+        opens an inline formula with a `\[RawEscape]` used to show the name.
+
 - Fixes driven by a Wolfram Demonstration that solves a pair of coupled
     reaction equations and switches between three views of the result:
     - The picture a cell shows is the one its value *is*, not the last one
