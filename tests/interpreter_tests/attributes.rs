@@ -422,6 +422,145 @@ mod protect_unprotect {
     );
   }
 
+  // Regression tests for https://github.com/ad-si/Woxi/issues/396 —
+  // `C` is the generated-parameter symbol of DSolve / RSolve / Reduce /
+  // Solve (`C[1]`, `C[2]`, …) and therefore a Protected built-in.
+  #[test]
+  fn c_has_builtin_attributes() {
+    clear_state();
+    assert_eq!(
+      interpret("Attributes[C]").unwrap(),
+      "{NHoldAll, Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn set_c_is_rejected() {
+    clear_state();
+    let result = interpret_with_stdout("C = 12").unwrap();
+    assert_eq!(result.result, "12");
+    assert!(
+      result.warnings[0].contains("Set::wrsym: Symbol C is Protected."),
+      "unexpected warnings: {:?}",
+      result.warnings
+    );
+    // The assignment must not have taken effect.
+    assert_eq!(interpret("C").unwrap(), "C");
+  }
+
+  #[test]
+  fn set_delayed_c_is_rejected() {
+    clear_state();
+    let result = interpret_with_stdout("C := 12").unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result.warnings[0].contains("SetDelayed::wrsym: Symbol C is Protected."),
+      "unexpected warnings: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn unprotect_c_allows_assignment() {
+    clear_state();
+    assert_eq!(interpret("Unprotect[C]; C = 12; C").unwrap(), "12");
+  }
+
+  #[test]
+  fn c_stays_inert_as_generated_parameter() {
+    clear_state();
+    let result = interpret_with_stdout("C[1] + C[2]").unwrap();
+    assert_eq!(result.result, "C[1] + C[2]");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+  }
+
+  #[test]
+  fn set_delayed_protected_constant_returns_failed() {
+    // `Pi := 12` takes the same OwnValue path as `C := 12`; wolframscript
+    // returns `$Failed` from a rejected SetDelayed (Set returns its RHS).
+    clear_state();
+    let result = interpret_with_stdout("Pi := 12").unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result.warnings[0].contains("SetDelayed::wrsym: Symbol Pi is Protected."),
+      "unexpected warnings: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn set_downvalue_on_protected_builtin_is_rejected() {
+    clear_state();
+    let result = interpret_with_stdout("Sin[1] = 5").unwrap();
+    assert_eq!(result.result, "5");
+    assert!(
+      result.warnings[0]
+        .contains("Set::write: Tag Sin in Sin[1] is Protected."),
+      "unexpected warnings: {:?}",
+      result.warnings
+    );
+    assert_eq!(interpret("Sin[1] // N").unwrap(), "0.8414709848078965");
+  }
+
+  #[test]
+  fn set_downvalue_on_user_protected_symbol_is_rejected() {
+    clear_state();
+    let result = interpret_with_stdout("Protect[bar]; bar[1] = 3").unwrap();
+    assert_eq!(result.result, "3");
+    assert!(
+      result.warnings[0]
+        .contains("Set::write: Tag bar in bar[1] is Protected."),
+      "unexpected warnings: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn set_delayed_downvalue_on_user_protected_symbol_is_rejected() {
+    clear_state();
+    let result = interpret_with_stdout("Protect[bar]; bar[2] := 4").unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result.warnings[0]
+        .contains("SetDelayed::write: Tag bar in bar[2] is Protected."),
+      "unexpected warnings: {:?}",
+      result.warnings
+    );
+    assert_eq!(interpret("DownValues[bar]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn clear_protected_symbol_keeps_definitions() {
+    clear_state();
+    let result =
+      interpret_with_stdout("foo = 1; Protect[foo]; Clear[foo]; foo").unwrap();
+    assert_eq!(result.result, "1");
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("Clear::wrsym: Symbol foo is Protected.")),
+      "unexpected warnings: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn clear_all_protected_builtin_keeps_attributes() {
+    clear_state();
+    let result =
+      interpret_with_stdout("ClearAll[Sin]; Attributes[Sin]").unwrap();
+    assert_eq!(result.result, "{Listable, NumericFunction, Protected}");
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("ClearAll::wrsym: Symbol Sin is Protected.")),
+      "unexpected warnings: {:?}",
+      result.warnings
+    );
+  }
+
   #[test]
   fn unprotect_blocked_by_locked() {
     clear_state();

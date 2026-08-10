@@ -1059,6 +1059,56 @@ fn normalize_symbol_lhs(lhs: &Expr) -> Expr {
   lhs.clone()
 }
 
+/// Heads whose `head[sym, …] = value` assignment is redirected into a
+/// per-symbol storage slot (NValues, Messages, Format rules, Options, …).
+/// wolframscript permits these even though the head itself is Protected,
+/// so the Protected check must skip them.
+fn is_value_redirect_head(name: &str) -> bool {
+  matches!(
+    name,
+    "Attributes"
+      | "Default"
+      | "DefaultValues"
+      | "DownValues"
+      | "Format"
+      | "MessageName"
+      | "Messages"
+      | "N"
+      // `NumericQ[a] = True` declares `a` numeric — wolframscript accepts
+      // it even though NumericQ is Protected.
+      | "NumericQ"
+      | "NValues"
+      | "Options"
+      | "OwnValues"
+      | "SubValues"
+      | "SyntaxInformation"
+      | "UpValues"
+  )
+}
+
+/// True when `name` carries a Protected attribute that has not been lifted by
+/// `Unprotect`, for the purpose of guarding a `head[…] = rhs` definition.
+fn is_downvalue_head_protected(name: &str) -> bool {
+  if is_value_redirect_head(name) {
+    return false;
+  }
+  let was_unprotected = crate::FUNC_ATTRS_REMOVED.with(|m| {
+    m.borrow()
+      .get(name)
+      .is_some_and(|attrs| attrs.iter().any(|a| a == "Protected"))
+  });
+  if was_unprotected {
+    return false;
+  }
+  crate::evaluator::attributes::get_builtin_attributes(name)
+    .contains(&"Protected")
+    || crate::FUNC_ATTRS.with(|m| {
+      m.borrow()
+        .get(name)
+        .is_some_and(|attrs| attrs.iter().any(|a| a == "Protected"))
+    })
+}
+
 pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   let lhs = &normalize_symbol_lhs(lhs);
   // Unwrap Condition on LHS: f[x_] /; test = body is parsed as
@@ -1618,17 +1668,14 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     let func_name = &resolve_func_name(func_name);
     let rhs_value = evaluate_expr_to_expr(rhs)?;
 
-    // Check user-defined Protected attribute for DownValues
-    // (builtin Protected is not checked for DownValues, matching wolframscript behavior)
-    let is_user_protected = crate::FUNC_ATTRS.with(|m| {
-      m.borrow()
-        .get(func_name.as_str())
-        .is_some_and(|attrs| attrs.contains(&"Protected".to_string()))
-    });
-    if is_user_protected {
+    // A DownValue may not be attached to a Protected head — wolframscript
+    // emits `Set::write` (naming the tag and the whole left-hand side) and
+    // returns the right-hand side without storing anything.
+    if is_downvalue_head_protected(func_name) {
       crate::emit_message(&format!(
-        "Set::wrsym: Symbol {} is Protected.",
-        func_name
+        "Set::write: Tag {} in {} is Protected.",
+        func_name,
+        crate::syntax::expr_to_string(lhs)
       ));
       return Ok(rhs_value);
     }
@@ -2147,46 +2194,20 @@ pub fn set_delayed_ast(
   {
     // Resolve Module-scoped unique symbols (e.g. f → f$1)
     let func_name = &resolve_func_name(func_name);
-    // Check user-defined Protected attribute for DownValues, and
-    // also the built-in Protected attribute for system symbols
-    // like `Sin`, `Plus`, etc. wolframscript emits
-    // `SetDelayed::write` (not `::wrsym`) and returns `$Failed`
-    // for protected built-ins. Special case: `N[sym, …] := body`
-    // stores an NValue on `sym`, so allow even though `N` is
-    // Protected.
-    let is_user_protected = crate::FUNC_ATTRS.with(|m| {
-      m.borrow()
-        .get(func_name.as_str())
-        .is_some_and(|attrs| attrs.contains(&"Protected".to_string()))
-    });
-    // Heads with a redirected per-symbol storage mechanism —
-    // wolframscript permits these even though the head is
-    // Protected (NValues, Messages, Format rules, etc.).
-    let is_n_value_assignment = matches!(
-      func_name.as_str(),
-      "N" | "MessageName" | "Format" | "Default" | "Options"
-    );
-    let was_unprotected = crate::FUNC_ATTRS_REMOVED.with(|m| {
-      m.borrow()
-        .get(func_name.as_str())
-        .is_some_and(|attrs| attrs.contains(&"Protected".to_string()))
-    });
-    let is_builtin_protected = !is_n_value_assignment
-      && !was_unprotected
-      && crate::evaluator::attributes::get_builtin_attributes(func_name)
-        .contains(&"Protected");
-    if is_user_protected || is_builtin_protected {
-      let (msg_tag, ret) = if is_builtin_protected && !is_user_protected {
-        ("SetDelayed::write", Expr::Identifier("$Failed".to_string()))
-      } else {
-        ("SetDelayed::wrsym", Expr::Identifier("Null".to_string()))
-      };
+    // A DownValue may not be attached to a Protected head, whether the
+    // attribute is built in (`Sin`, `C`, …) or was set by `Protect`.
+    // wolframscript emits `SetDelayed::write` (not `::wrsym`) naming the
+    // tag and the whole left-hand side, and returns `$Failed`.
+    // Heads with a redirected per-symbol storage mechanism (NValues,
+    // Messages, Format rules, …) are exempt — see
+    // `is_value_redirect_head`.
+    if is_downvalue_head_protected(func_name) {
       let lhs_str = crate::syntax::expr_to_string(lhs);
       crate::emit_message(&format!(
-        "{}: Tag {} in {} is Protected.",
-        msg_tag, func_name, lhs_str
+        "SetDelayed::write: Tag {} in {} is Protected.",
+        func_name, lhs_str
       ));
-      return Ok(ret);
+      return Ok(Expr::Identifier("$Failed".to_string()));
     }
 
     let mut params = Vec::new();
@@ -2576,13 +2597,17 @@ pub fn set_delayed_ast(
   }
 
   // Handle simple identifier assignment: a := expr (OwnValues)
-  if let Expr::Identifier(var_name) = lhs {
+  // Constants like Pi/E parse as `Expr::Constant` but are assignment
+  // targets just like identifiers (subject to the Protected check).
+  if let Expr::Identifier(var_name) | Expr::Constant(var_name) = lhs {
     if is_symbol_protected(var_name) {
       crate::emit_message(&format!(
         "SetDelayed::wrsym: Symbol {} is Protected.",
         var_name
       ));
-      return Ok(Expr::Identifier("Null".to_string()));
+      // wolframscript returns `$Failed` (not `Null`) from a rejected
+      // `SetDelayed`, unlike `Set`, which returns its right-hand side.
+      return Ok(Expr::Identifier("$Failed".to_string()));
     }
     // If a `/; cond` clause was stripped from the LHS (or RHS), wrap the
     // body in `Condition[body, cond]` so the lookup can re-check the

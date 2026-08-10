@@ -149,6 +149,7 @@ Thickness,Sets relative line thickness in graphics,✅,pure,1.0,85
 Evaluate,Forces evaluation of an expression,✅,pure,2.0,86
 Row,Displays elements in a row,✅,pure,6.0,87
 DSolve,Solves ordinary differential equations symbolically (an equation with no derivative reduces to Solve for the dependent function),✅,pure,2.0,88
+C,Default generated parameter C[n] of DSolve RSolve Reduce and Solve,✅,pure,2.0,
 Disk,Represents a filled disk or sector graphics primitive,✅,pure,2.0,89
 PatternTest,Tests whether a pattern matches using a predicate function (pattern?test),✅,pure,1.0,91
 WordData,,🚫,,6.0,92

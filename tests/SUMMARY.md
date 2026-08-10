@@ -1266,6 +1266,7 @@
     - [`ArcCurvature`](symbolic/ArcCurvature.md)
     - [`AsymptoticIntegrate`](symbolic/AsymptoticIntegrate.md)
     - [`AsymptoticSolve`](symbolic/AsymptoticSolve.md)
+    - [`C`](symbolic/C.md)
     - [`CoefficientArrays`](symbolic/CoefficientArrays.md)
     - [`CoefficientRules`](symbolic/CoefficientRules.md)
     - [`Curl`](symbolic/Curl.md)

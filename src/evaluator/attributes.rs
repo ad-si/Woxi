@@ -687,7 +687,12 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     }
 
     // NHoldAll + Protected + ReadProtected
-    "InverseFunction" => vec!["NHoldAll", "Protected", "ReadProtected"],
+    // `C` is the default generated-parameter symbol of DSolve, RSolve,
+    // Reduce, Solve, … (`C[1]`, `C[2]`, …), so it is a protected built-in
+    // even though it is a bare single letter.
+    "C" | "InverseFunction" => {
+      vec!["NHoldAll", "Protected", "ReadProtected"]
+    }
     "PrintTemporary" => vec!["Protected", "ReadProtected"],
 
     // Protected + ReadProtected (additional)
@@ -931,6 +936,15 @@ pub fn dispatch_attributes(
       for arg in args {
         match arg {
           Expr::Identifier(sym) | Expr::Constant(sym) => {
+            // A Protected symbol keeps its definitions; wolframscript
+            // reports `Clear::wrsym` and moves on to the next argument.
+            if crate::evaluator::pattern_matching::is_symbol_protected(sym) {
+              crate::emit_message(&format!(
+                "Clear::wrsym: Symbol {} is Protected.",
+                sym
+              ));
+              continue;
+            }
             ENV.with(|e| e.borrow_mut().remove(sym));
             crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
             crate::MEMO_VALUES.with(|m| m.borrow_mut().remove(sym));
@@ -1015,7 +1029,17 @@ pub fn dispatch_attributes(
       };
       for arg in args {
         match arg {
-          Expr::Identifier(sym) | Expr::Constant(sym) => clear_one(sym),
+          Expr::Identifier(sym) | Expr::Constant(sym) => {
+            // Same Protected guard as `Clear`, with the `ClearAll` tag.
+            if crate::evaluator::pattern_matching::is_symbol_protected(sym) {
+              crate::emit_message(&format!(
+                "ClearAll::wrsym: Symbol {} is Protected.",
+                sym
+              ));
+              continue;
+            }
+            clear_one(sym)
+          }
           Expr::String(pattern) => {
             for sym in matching_user_symbols(pattern) {
               clear_one(&sym);
