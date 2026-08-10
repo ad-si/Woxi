@@ -4597,7 +4597,16 @@ fn parse_tick_spec(expr: &Expr) -> TickSpec {
           Expr::List(pair) if pair.len() >= 2 => {
             Some((expr_to_f64(&pair[0])?, Some(expr_to_svg_markup(&pair[1]))))
           }
-          other => Some((expr_to_f64(other)?, None)),
+          // A bare position is labelled with the expression standing at
+          // it, so `Ticks -> {{-Pi, 0, Pi}, …}` reads "-π", "0", "π"
+          // rather than the numeric value it evaluates to.
+          other => {
+            let pos = expr_to_f64(other)?;
+            Some((
+              pos,
+              Some(crate::functions::plot::bare_tick_label(other, pos)),
+            ))
+          }
         })
         .collect(),
     ),

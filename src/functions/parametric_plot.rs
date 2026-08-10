@@ -1,5 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
+use std::cmp::Ordering;
+
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
@@ -90,6 +92,178 @@ enum CurveSrc<'a> {
   Whole(&'a Expr),
 }
 
+/// Whether a list node can be read as a curve or as a grouping of curves.
+/// Wolfram lets the curve specification be nested to any depth — the
+/// grouping only steers styling — so `{{fx, fy}, …}` and
+/// `{{{fx, fy}, …}}` both denote the same set of curves.
+fn is_curve_or_group(expr: &Expr) -> bool {
+  match expr {
+    // A pair is either a curve `{fx, fy}` or a group of two curves;
+    // `collect_curves` decides which when it descends.
+    Expr::List(items) if items.len() == 2 => true,
+    Expr::List(items) if !items.is_empty() => {
+      items.iter().all(is_curve_or_group)
+    }
+    _ => false,
+  }
+}
+
+/// Flatten a (possibly nested) curve specification into individual curves,
+/// appending them to `out`. Returns whether the shape was understood.
+fn collect_curves<'a>(expr: &'a Expr, out: &mut Vec<CurveSrc<'a>>) -> bool {
+  let Expr::List(items) = expr else {
+    return false;
+  };
+  if items.is_empty() {
+    return false;
+  }
+  // Every element being curve-shaped makes this a grouping level — which
+  // is how the ambiguous `{{a, b}, {c, d}}` resolves to two curves.
+  if items.iter().all(is_curve_or_group) {
+    return items.iter().all(|item| collect_curves(item, out));
+  }
+  if items.len() == 2 {
+    out.push(CurveSrc::Pair(&items[0], &items[1]));
+    return true;
+  }
+  false
+}
+
+/// Bisection passes used to smooth out an under-resolved curve. Each pass
+/// halves the flagged intervals, so six passes shrink a step by 64×.
+const MAX_REFINEMENT_DEPTH: usize = 6;
+
+/// One sampled parameter value together with the coordinate pair of every
+/// curve there (`None` when the body did not evaluate to coordinates).
+type Sample = (f64, Option<Vec<(f64, f64)>>);
+
+/// Whether the middle of a sampled triple is far enough off the straight
+/// line between its neighbours that the interval needs more points. The
+/// measure is the deviation relative to the neighbours' separation, so it
+/// is independent of the coordinate scale.
+fn needs_refinement(a: &Sample, b: &Sample, c: &Sample) -> bool {
+  let (Some(ra), Some(rb), Some(rc)) = (&a.1, &b.1, &c.1) else {
+    // A gap in the samples is a discontinuity (or a domain boundary);
+    // refining pins down where it actually starts.
+    return true;
+  };
+  if ra.len() != rb.len() || rb.len() != rc.len() {
+    return true;
+  }
+  let span = c.0 - a.0;
+  if span == 0.0 {
+    return false;
+  }
+  let u = (b.0 - a.0) / span;
+  ra.iter().zip(rb).zip(rc).any(|((p0, p1), p2)| {
+    if !p0.0.is_finite()
+      || !p0.1.is_finite()
+      || !p1.0.is_finite()
+      || !p1.1.is_finite()
+      || !p2.0.is_finite()
+      || !p2.1.is_finite()
+    {
+      return true;
+    }
+    let interp = (p0.0 + (p2.0 - p0.0) * u, p0.1 + (p2.1 - p0.1) * u);
+    let deviation = (p1.0 - interp.0).hypot(p1.1 - interp.1);
+    let separation = (p2.0 - p0.0).hypot(p2.1 - p0.1).max(1e-10);
+    deviation / separation > 0.05
+  })
+}
+
+/// Adaptively sample a parametric curve: lay down a uniform grid, then
+/// bisect the intervals where the polyline visibly departs from the curve.
+/// A uniform grid alone leaves a curve polygonal whenever the part that
+/// bends is a small slice of the parameter range (e.g. `{t, -1000, 1000}`
+/// for a curve shaped near `t == 0`), which is why Wolfram refines instead
+/// of sampling a fixed grid.
+fn adaptive_samples<F>(
+  sample: F,
+  t_min: f64,
+  t_max: f64,
+  initial_n: usize,
+  max_total: usize,
+) -> Vec<Sample>
+where
+  F: Fn(f64) -> Option<Vec<(f64, f64)>>,
+{
+  let initial_n = initial_n.max(2);
+  let step = (t_max - t_min) / (initial_n - 1) as f64;
+  let mut samples: Vec<Sample> = (0..initial_n)
+    .map(|i| {
+      let t = t_min + i as f64 * step;
+      (t, sample(t))
+    })
+    .collect();
+
+  let min_span = (t_max - t_min).abs() * 1e-10;
+  for _ in 0..MAX_REFINEMENT_DEPTH {
+    if samples.len() >= max_total {
+      break;
+    }
+    let budget = max_total - samples.len();
+    let mut added: Vec<Sample> = Vec::new();
+    for triple in samples.windows(3) {
+      if added.len() >= budget {
+        break;
+      }
+      if (triple[2].0 - triple[0].0).abs() < min_span {
+        continue;
+      }
+      if !needs_refinement(&triple[0], &triple[1], &triple[2]) {
+        continue;
+      }
+      for (left, right) in [(&triple[0], &triple[1]), (&triple[1], &triple[2])]
+      {
+        let mid = (left.0 + right.0) / 2.0;
+        // Neighbouring triples share an interval, so the same midpoint
+        // comes up twice; skipping it saves evaluating the body again.
+        if mid > left.0
+          && mid < right.0
+          && added.last().is_none_or(|last| last.0 != mid)
+        {
+          added.push((mid, sample(mid)));
+        }
+      }
+    }
+    if added.is_empty() {
+      break;
+    }
+    samples.extend(added);
+    samples.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
+    samples.dedup_by(|a, b| a.0 == b.0);
+  }
+
+  samples
+}
+
+/// Split the per-parameter samples into one point series per curve, keeping
+/// a gap (as a non-finite point) wherever the body did not evaluate.
+fn samples_to_series(samples: Vec<Sample>) -> Vec<Vec<(f64, f64)>> {
+  // The curve count comes from the first sample that evaluated.
+  let n_curves = samples
+    .iter()
+    .find_map(|(_, row)| row.as_ref().map(|r| r.len()))
+    .unwrap_or(1);
+  let mut series = vec![Vec::with_capacity(samples.len()); n_curves];
+  for (_, row) in samples {
+    match row {
+      Some(r) if r.len() == n_curves => {
+        for (curve, point) in series.iter_mut().zip(r) {
+          curve.push(point);
+        }
+      }
+      _ => {
+        for curve in series.iter_mut() {
+          curve.push((f64::NAN, f64::NAN));
+        }
+      }
+    }
+  }
+  series
+}
+
 /// Sample a whole-expression curve at parameter `t`. The evaluated body may
 /// be a single coordinate pair (one curve) or a list of coordinate pairs
 /// (one sample per curve, e.g. `ReIm[{c1, c2, c3}]`); either way one row of
@@ -158,118 +332,81 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse iterator: {t, tmin, tmax}
   let (var_name, t_min, t_max) = parse_iterator(iter_spec, "ParametricPlot")?;
 
-  // Collect curve bodies. Wolfram accepts either a single curve
-  // `{fx, fy}` or any number of curves `{{fx1,fy1}, {fx2,fy2}, …}`.
-  // The previous form-check required `items.len() == 2`, which
-  // rejected 3+ curves; relax it to inspect the *inner* shape so
-  // arbitrarily many curves work (regression for mathics doc-044
-  // `ParametricPlot[{{Sin[u], Cos[u]}, {0.6 Sin[u], 0.6 Cos[u]},
-  // {0.2 Sin[u], 0.2 Cos[u]}}, {u, 0, 2 Pi}, …]`).
-  let curves: Vec<CurveSrc> = match body {
-    Expr::List(items) if !items.is_empty() => {
-      // If every item is a 2-element list, treat as multi-curve.
-      let all_pairs = items
-        .iter()
-        .all(|i| matches!(i, Expr::List(inner) if inner.len() == 2));
-      if all_pairs && items.len() != 2 {
-        // Clearly multi-curve (3+ curves).
-        items
-          .iter()
-          .filter_map(|item| {
-            if let Expr::List(pair) = item
-              && pair.len() == 2
-            {
-              return Some(CurveSrc::Pair(&pair[0], &pair[1]));
-            }
-            None
-          })
-          .collect()
-      } else if items.len() == 2 {
-        if matches!(&items[0], Expr::List(inner) if inner.len() == 2)
-          && matches!(&items[1], Expr::List(inner) if inner.len() == 2)
-        {
-          // Ambiguous-looking `{{a,b}, {c,d}}` resolves to two curves.
-          items
-            .iter()
-            .filter_map(|item| {
-              if let Expr::List(pair) = item
-                && pair.len() == 2
-              {
-                return Some(CurveSrc::Pair(&pair[0], &pair[1]));
-              }
-              None
-            })
-            .collect()
-        } else {
-          // Single curve: {fx, fy}
-          vec![CurveSrc::Pair(&items[0], &items[1])]
-        }
-      } else {
-        return Err(InterpreterError::EvaluationError(
-          "ParametricPlot: first argument must be {fx, fy}".into(),
-        ));
-      }
+  // Collect curve bodies. Wolfram accepts a single curve `{fx, fy}` or
+  // any number of curves nested to any depth, e.g.
+  // `{{fx1,fy1}, {fx2,fy2}, …}` and `{Table[{fx, fy}, {i, …}]}` — the
+  // extra grouping levels only matter for styling, so they are flattened
+  // away here.
+  let mut syntactic = Vec::new();
+  let is_list_body = matches!(body, Expr::List(_));
+  let syntactic_ok = is_list_body && collect_curves(body, &mut syntactic);
+
+  // The first argument is held, so a generated specification such as
+  // `{Table[{fx, fy}, {i, …}]}` only takes curve shape once evaluated.
+  // Evaluate it (the plot variable stays symbolic) and retry, matching
+  // Wolfram, which samples the held body rather than requiring
+  // `Evaluate[…]` around it.
+  let evaluated_body: Option<Expr> = if is_list_body && !syntactic_ok {
+    evaluate_expr_to_expr(body).ok()
+  } else {
+    None
+  };
+
+  let curves: Vec<CurveSrc> = if syntactic_ok {
+    syntactic
+  } else if is_list_body {
+    let mut collected = Vec::new();
+    let ok = evaluated_body
+      .as_ref()
+      .is_some_and(|ev| collect_curves(ev, &mut collected));
+    if !ok {
+      return Err(InterpreterError::EvaluationError(
+        "ParametricPlot: first argument must be {fx, fy}".into(),
+      ));
     }
+    collected
+  } else {
     // A non-list body (e.g. `f[t]` or `BSplineFunction[…][t]`) is a curve
     // whose coordinate pair only materialises once `t` is numeric; sample
     // the whole expression instead of decomposing it into components.
-    _ => vec![CurveSrc::Whole(body)],
+    vec![CurveSrc::Whole(body)]
   };
 
   // Sample at least NUM_SAMPLES points; an explicit larger PlotPoints
   // raises the resolution. (Wolfram refines a coarse PlotPoints setting
   // adaptively, so a smaller explicit value must not reduce smoothness.)
+  // The uniform grid is the starting point; intervals where it would
+  // render the curve as a polygon get bisected on top of it.
   let num_samples = plot_opts.plot_points.max(NUM_SAMPLES);
-  let step = (t_max - t_min) / (num_samples - 1) as f64;
+  let max_total = num_samples.saturating_mul(2);
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(curves.len());
 
   for curve in &curves {
-    match curve {
-      CurveSrc::Pair(fx, fy) => {
-        let mut points = Vec::with_capacity(num_samples);
-        for i in 0..num_samples {
-          let t = t_min + i as f64 * step;
-          let pt = match (
-            evaluate_at_point(fx, &var_name, t),
-            evaluate_at_point(fy, &var_name, t),
-          ) {
-            (Some(x), Some(y)) => Some((x, y)),
-            _ => None,
-          };
-          points.push(pt.unwrap_or((f64::NAN, f64::NAN)));
-        }
-        all_points.push(points);
-      }
-      CurveSrc::Whole(b) => {
-        // The whole body is evaluated once per sample; each sample may
-        // yield one coordinate pair or one pair per curve (e.g.
-        // `ReIm[{c1, c2, c3}]`). The curve count comes from the first
-        // sample that evaluates successfully.
-        let rows: Vec<Option<Vec<(f64, f64)>>> = (0..num_samples)
-          .map(|i| sample_whole_rows(b, &var_name, t_min + i as f64 * step))
-          .collect();
-        let n_curves = rows
-          .iter()
-          .find_map(|r| r.as_ref().map(|v| v.len()))
-          .unwrap_or(1);
-        let mut pts = vec![Vec::with_capacity(num_samples); n_curves];
-        for row in rows {
-          match row {
-            Some(r) if r.len() == n_curves => {
-              for (k, p) in r.into_iter().enumerate() {
-                pts[k].push(p);
-              }
-            }
-            _ => {
-              for series in pts.iter_mut() {
-                series.push((f64::NAN, f64::NAN));
-              }
-            }
-          }
-        }
-        all_points.extend(pts);
-      }
-    }
+    // Each sample yields one coordinate pair, or one pair per curve when
+    // the whole body is sampled (e.g. `ReIm[{c1, c2, c3}]`).
+    let samples = match curve {
+      CurveSrc::Pair(fx, fy) => adaptive_samples(
+        |t| match (
+          evaluate_at_point(fx, &var_name, t),
+          evaluate_at_point(fy, &var_name, t),
+        ) {
+          (Some(x), Some(y)) => Some(vec![(x, y)]),
+          _ => None,
+        },
+        t_min,
+        t_max,
+        num_samples,
+        max_total,
+      ),
+      CurveSrc::Whole(b) => adaptive_samples(
+        |t| sample_whole_rows(b, &var_name, t),
+        t_min,
+        t_max,
+        num_samples,
+        max_total,
+      ),
+    };
+    all_points.extend(samples_to_series(samples));
   }
 
   // Compute ranges (explicit PlotRange components override the data extents)

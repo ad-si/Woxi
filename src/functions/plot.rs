@@ -7831,7 +7831,7 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
 /// *expression*, typeset — `Ticks -> {{0, Pi/2, Pi, 3 Pi/2, 2 Pi}, …}` reads
 /// "0", "π/2", "π", "3π/2", "2π" — so only a literal number is labelled by
 /// its value; anything symbolic is set the way the expression is written.
-fn bare_tick_label(e: &Expr, pos: f64) -> String {
+pub(crate) fn bare_tick_label(e: &Expr, pos: f64) -> String {
   fn is_literal_number(e: &Expr) -> bool {
     match e {
       Expr::Integer(_)
@@ -8338,6 +8338,21 @@ fn eval_body_var_symbolic(body: &Expr, var: &str) -> Expr {
   eval_body_vars_symbolic(body, &[var])
 }
 
+/// Expand a held generator such as `Table[f[i, x], {i, …}]` into the list of
+/// curves it produces. The plot body is held, so such a generator only takes
+/// list shape once evaluated; Wolfram plots one curve per element of the
+/// result. Returns `None` when the body is already a list or does not
+/// generate one, leaving plain `Plot[f[x], …]` untouched.
+fn expand_generated_bodies(body: &Expr, var: &str) -> Option<Expr> {
+  if matches!(body, Expr::List(_)) {
+    return None;
+  }
+  match eval_body_var_symbolic(body, var) {
+    evaluated @ Expr::List(_) => Some(evaluated),
+    _ => None,
+  }
+}
+
 /// As [`eval_body_var_symbolic`], for a body in several plot variables.
 fn eval_body_vars_symbolic(body: &Expr, vars: &[&str]) -> Expr {
   let saved: Vec<(&str, Option<crate::StoredValue>)> = vars
@@ -8548,6 +8563,18 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // list inside it (e.g. `Highlighted[{Sin[x], Cos[x]}, …]`) is split into
   // individual curves below rather than sampled as one non-numeric expression.
   let body = peel_plot_wrappers(body);
+
+  // `Plot[Table[f[i, x], {i, …}], …]` names its curves only after the
+  // generator runs; expand it so each element becomes its own curve
+  // instead of being sampled as one expression yielding a list.
+  let generated_storage;
+  let body: &Expr = match expand_generated_bodies(body, &var_name) {
+    Some(expanded) => {
+      generated_storage = expanded;
+      &generated_storage
+    }
+    None => body,
+  };
 
   // Collect function bodies: a single function or a (possibly nested) list of
   // functions. Wolfram flattens nested lists into individual curves, so
@@ -8882,10 +8909,17 @@ fn log_scale_plot_ast(
     ));
   }
 
+  // A held generator such as `Table[f[i, x], {i, …}]` only takes list
+  // shape once evaluated; Wolfram plots one curve per element of the
+  // resulting list, so evaluate a non-list body (the plot variable stays
+  // symbolic) and use the list when there is one. Bodies that stay
+  // scalar keep their held form, so plain `Plot[f[x], …]` is unaffected.
+  let expanded_body = expand_generated_bodies(body, &var_name);
+
   // Collect function bodies
-  let bodies: Vec<&Expr> = match body {
+  let bodies: Vec<&Expr> = match expanded_body.as_ref().unwrap_or(body) {
     Expr::List(items) => items.iter().collect(),
-    _ => vec![body],
+    scalar => vec![scalar],
   };
 
   if (legends_automatic || legends_expressions)
