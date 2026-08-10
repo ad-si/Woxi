@@ -218,6 +218,12 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let options = &args[2..];
   let mut vertex_style: Option<Vec<Expr>> = None;
   let mut edge_style: Option<Color> = None;
+  // Per-part overrides from the rule form of the style options
+  // (`VertexStyle -> {v -> Red, …}`, `EdgeStyle -> {u <-> v -> Red, …}`).
+  // They are applied by wrapping the affected vertex/edge in `Style[…]`
+  // below, which is the same path a hand-written `Style[v, Red]` takes.
+  let mut vertex_style_rules: Vec<(Expr, Expr)> = Vec::new();
+  let mut edge_style_rules: Vec<(Expr, Expr)> = Vec::new();
   let mut vertex_labels = false;
   let mut vertex_shape: Option<String> = None;
   let mut vertex_size_scale: f64 = 1.0;
@@ -235,10 +241,18 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       match oname.as_str() {
         "VertexStyle" => {
-          vertex_style = Some(collect_directives(replacement));
+          let (rules, directives) = split_style_rules(replacement);
+          vertex_style_rules.extend(rules);
+          if !directives.is_empty() {
+            vertex_style = Some(directives);
+          }
         }
         "EdgeStyle" => {
-          edge_style = parse_color(replacement);
+          let (rules, directives) = split_style_rules(replacement);
+          edge_style_rules.extend(rules);
+          if !directives.is_empty() {
+            edge_style = directives.iter().find_map(parse_color);
+          }
         }
         "VertexLabels" => {
           if let Expr::String(s) = replacement.as_ref()
@@ -303,6 +317,26 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+
+  // Fold the rule form of VertexStyle / EdgeStyle into `Style[…]`
+  // wrappers so the renderer only ever has to look at one place for a
+  // per-part style. A rule wins over a wrapper already on the part.
+  let vertices: Vec<Expr> = if vertex_style_rules.is_empty() {
+    vertices.to_vec()
+  } else {
+    vertices
+      .iter()
+      .map(|v| apply_style_rule(v, &vertex_style_rules, vertex_matches_rule))
+      .collect()
+  };
+  let raw_edges: Vec<Expr> = if edge_style_rules.is_empty() {
+    raw_edges.to_vec()
+  } else {
+    raw_edges
+      .iter()
+      .map(|e| apply_style_rule(e, &edge_style_rules, same_edge))
+      .collect()
+  };
 
   // Build petgraph for rendering
   let (graph, _index_map) = build_render_graph(&vertices, &raw_edges);
@@ -2909,6 +2943,58 @@ fn collect_directives(expr: &Expr) -> Vec<Expr> {
   }
 }
 
+/// Split a `VertexStyle` / `EdgeStyle` value into its per-part rules and
+/// the directives that apply to every part.
+///
+/// Wolfram accepts a bare directive (`VertexStyle -> Red`), a list of
+/// per-part rules (`VertexStyle -> {1 -> Red, 2 -> Blue}`), and a mix of
+/// the two (`VertexStyle -> {Red, 1 -> Blue}`, where the plain directive
+/// is the default and the rules override it for the parts they name).
+fn split_style_rules(expr: &Expr) -> (Vec<(Expr, Expr)>, Vec<Expr>) {
+  let items: Vec<Expr> = match expr {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  let mut rules = Vec::new();
+  let mut directives = Vec::new();
+  for item in items {
+    match &item {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => rules.push(((**pattern).clone(), (**replacement).clone())),
+      other => directives.extend(collect_directives(other)),
+    }
+  }
+  (rules, directives)
+}
+
+/// Whether a vertex expression is the one a `VertexStyle` rule names.
+/// Any `Style[…]` wrapper already on the vertex is looked through.
+fn vertex_matches_rule(vertex: &Expr, target: &Expr) -> bool {
+  expr_to_string(unwrap_vertex_style(vertex).0)
+    == expr_to_string(unwrap_vertex_style(target).0)
+}
+
+/// Wrap `part` in `Style[part, directives…]` when one of the `rules`
+/// names it. The first matching rule wins, as in Wolfram.
+fn apply_style_rule(
+  part: &Expr,
+  rules: &[(Expr, Expr)],
+  matches: fn(&Expr, &Expr) -> bool,
+) -> Expr {
+  let Some((_, style)) = rules.iter().find(|(target, _)| matches(part, target))
+  else {
+    return part.clone();
+  };
+  let mut args = vec![part.clone()];
+  args.extend(collect_directives(style));
+  Expr::FunctionCall {
+    name: "Style".to_string(),
+    args: args.into(),
+  }
+}
+
 fn parse_vertex_style(
   directives: &Option<Vec<Expr>>,
 ) -> (Option<Color>, Option<Expr>) {
@@ -5003,6 +5089,152 @@ pub fn find_clique_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect::<Vec<_>>()
       .into(),
   ))
+}
+
+// ---------------------------------------------------------------------------
+// HighlightGraph
+// ---------------------------------------------------------------------------
+
+/// Flatten a `HighlightGraph` highlight specification into `(part, style)`
+/// pairs. A specification is any of
+///
+/// - a single vertex or edge,
+/// - a list of specifications (nested arbitrarily deep),
+/// - `Style[spec, directives…]`, which overrides the inherited style,
+/// - a `Graph[…]`, standing for all of its vertices and edges.
+///
+/// `style` is the style in force for that part: the innermost `Style`
+/// wrapper seen on the way down, or `inherited` when there was none.
+fn collect_highlight_items(
+  spec: &Expr,
+  inherited: &Expr,
+  out: &mut Vec<(Expr, Expr)>,
+) {
+  match spec {
+    Expr::List(items) => {
+      for item in items.iter() {
+        collect_highlight_items(item, inherited, out);
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Style" && args.len() >= 2 => {
+      let style = if args.len() == 2 {
+        args[1].clone()
+      } else {
+        Expr::FunctionCall {
+          name: "Directive".to_string(),
+          args: args[1..].to_vec().into(),
+        }
+      };
+      collect_highlight_items(&args[0], &style, out);
+    }
+    // A subgraph highlights every one of its vertices and edges.
+    Expr::FunctionCall { name, args } if name == "Graph" && args.len() >= 2 => {
+      for part in [&args[0], &args[1]] {
+        if let Expr::List(items) = part {
+          for item in items.iter() {
+            out.push((item.clone(), inherited.clone()));
+          }
+        }
+      }
+    }
+    other => out.push((other.clone(), inherited.clone())),
+  }
+}
+
+/// HighlightGraph[g, spec, opts…] — `g` with the vertices and edges named
+/// by `spec` drawn in the highlight style (red by default; `Style[part,
+/// directives…]` inside `spec` picks a different one per part).
+///
+/// The highlight is expressed as `VertexStyle` / `EdgeStyle` rules on the
+/// returned graph, so `VertexList`, `EdgeList` and friends still see the
+/// plain parts and a highlight can be layered on top of styles the graph
+/// already carries. Parts that are not in `g` are ignored, as in
+/// wolframscript. Trailing options (`ImageSize`, …) are appended to the
+/// graph's own options and so win over them. `GraphHighlightStyle`, which
+/// only selects among Wolfram's built-in highlight looks, is accepted and
+/// passed through without changing the rendering.
+pub fn highlight_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("HighlightGraph", args);
+  if args.len() < 2 {
+    return Ok(unevaluated());
+  }
+  let Some((vertices, edges, options)) = graph_parts(&args[0]) else {
+    return Ok(unevaluated());
+  };
+
+  let default_style = Expr::Identifier("Red".to_string());
+  let mut items: Vec<(Expr, Expr)> = Vec::new();
+  collect_highlight_items(&args[1], &default_style, &mut items);
+
+  // Sort each highlighted part into a VertexStyle or an EdgeStyle rule.
+  // A part that names neither a vertex nor an edge of `g` is dropped.
+  let mut vertex_rules: Vec<Expr> = Vec::new();
+  let mut edge_rules: Vec<Expr> = Vec::new();
+  for (part, style) in items {
+    let rule = |target: Expr| Expr::Rule {
+      pattern: Box::new(target),
+      replacement: Box::new(style.clone()),
+    };
+    if vertices.iter().any(|v| vertex_matches_rule(v, &part)) {
+      vertex_rules.push(rule(part));
+    } else if edges.iter().any(|e| same_edge(e, &part)) {
+      edge_rules.push(rule(part));
+    }
+  }
+
+  // Merge with any style the graph already carries: existing values come
+  // first so the highlight rules override them for the parts they name.
+  let mut merged: Vec<Expr> = Vec::new();
+  for (name, rules) in
+    [("VertexStyle", vertex_rules), ("EdgeStyle", edge_rules)]
+  {
+    if rules.is_empty() {
+      continue;
+    }
+    let mut value: Vec<Expr> = match graph_option(&options, name) {
+      Some(Expr::List(ref existing)) => existing.to_vec(),
+      Some(existing) => vec![existing],
+      None => Vec::new(),
+    };
+    value.extend(rules);
+    merged.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier(name.to_string())),
+      replacement: Box::new(Expr::List(value.into())),
+    });
+  }
+
+  let merged_names: Vec<&str> = merged
+    .iter()
+    .filter_map(|o| match o {
+      Expr::Rule { pattern, .. } => match pattern.as_ref() {
+        Expr::Identifier(s) => Some(s.as_str()),
+        _ => None,
+      },
+      _ => None,
+    })
+    .collect();
+
+  let mut graph_args =
+    vec![Expr::List(vertices.into()), Expr::List(edges.into())];
+  graph_args.extend(
+    options
+      .iter()
+      .filter(|o| match o {
+        Expr::Rule { pattern, .. } => match pattern.as_ref() {
+          Expr::Identifier(s) => !merged_names.contains(&s.as_str()),
+          _ => true,
+        },
+        _ => true,
+      })
+      .cloned(),
+  );
+  graph_args.extend(merged);
+  graph_args.extend(args[2..].iter().cloned());
+
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: graph_args.into(),
+  })
 }
 
 // ---------------------------------------------------------------------------

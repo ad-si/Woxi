@@ -122,32 +122,74 @@ fn promote_lists_for_substitution(values: &mut [Expr]) {
   }
 }
 
+/// Whether assigning `candidate` to parameter `param_idx` agrees with what an
+/// earlier slot of the same pattern-variable name already consumed. A
+/// non-linear pattern like `f[a__, a__]` repeats a name across slots, and the
+/// repeated slots must receive the same arguments — so a split that breaks the
+/// repeat is rejected here and the caller backtracks to the next one.
+fn repeat_ok(
+  params: &[String],
+  assigned: &[Vec<Expr>],
+  param_idx: usize,
+  candidate: &[Expr],
+) -> bool {
+  let Some(name) = params.get(param_idx) else {
+    return true;
+  };
+  if name.is_empty() || name.starts_with('_') {
+    return true;
+  }
+  for (i, prev) in assigned.iter().enumerate() {
+    if params.get(i).map(String::as_str) != Some(name.as_str()) {
+      continue;
+    }
+    if prev.len() != candidate.len()
+      || !prev
+        .iter()
+        .zip(candidate)
+        .all(|(a, b)| crate::evaluator::pattern_matching::expr_equal(a, b))
+    {
+      return false;
+    }
+  }
+  true
+}
+
 /// Distribute function call args to params using backtracking,
 /// handling BlankSequence/BlankNullSequence params that consume variable numbers of args.
+/// `assigned` carries the args already given to params `0..param_idx` so a
+/// repeated pattern variable can reject (and backtrack past) a split that
+/// gives its slots different arguments.
 fn distribute_args_to_params(
   args: &[Expr],
+  params: &[String],
   blank_types: &[u8],
   param_heads: &[Option<String>],
   param_defaults: &[Option<Expr>],
   param_idx: usize,
+  assigned: &[Vec<Expr>],
 ) -> Option<Vec<Vec<Expr>>> {
   stacker::maybe_grow(2 * 1024 * 1024, 4 * 1024 * 1024, || {
     distribute_args_to_params_impl(
       args,
+      params,
       blank_types,
       param_heads,
       param_defaults,
       param_idx,
+      assigned,
     )
   })
 }
 
 fn distribute_args_to_params_impl(
   args: &[Expr],
+  params: &[String],
   blank_types: &[u8],
   param_heads: &[Option<String>],
   param_defaults: &[Option<Expr>],
   param_idx: usize,
+  assigned: &[Vec<Expr>],
 ) -> Option<Vec<Vec<Expr>>> {
   if param_idx >= blank_types.len() {
     return if args.is_empty() { Some(vec![]) } else { None };
@@ -188,12 +230,19 @@ fn distribute_args_to_params_impl(
       {
         continue;
       }
+      if !repeat_ok(params, assigned, param_idx, seq_args) {
+        continue;
+      }
+      let mut next_assigned = assigned.to_vec();
+      next_assigned.push(seq_args.to_vec());
       if let Some(mut rest) = distribute_args_to_params(
         &args[count..],
+        params,
         blank_types,
         param_heads,
         param_defaults,
         param_idx + 1,
+        &next_assigned,
       ) {
         rest.insert(0, seq_args.to_vec());
         return Some(rest);
@@ -204,17 +253,21 @@ fn distribute_args_to_params_impl(
     // Regular param: consume 0 or 1 args
     if args.is_empty() {
       // Try using default
-      if param_defaults[param_idx].is_some()
-        && let Some(mut rest) = distribute_args_to_params(
+      if param_defaults[param_idx].is_some() {
+        let mut next_assigned = assigned.to_vec();
+        next_assigned.push(vec![]);
+        if let Some(mut rest) = distribute_args_to_params(
           args,
+          params,
           blank_types,
           param_heads,
           param_defaults,
           param_idx + 1,
-        )
-      {
-        rest.insert(0, vec![]);
-        return Some(rest);
+          &next_assigned,
+        ) {
+          rest.insert(0, vec![]);
+          return Some(rest);
+        }
       }
       return None;
     }
@@ -224,14 +277,22 @@ fn distribute_args_to_params_impl(
     {
       return None;
     }
+    let taken = vec![args[0].clone()];
+    if !repeat_ok(params, assigned, param_idx, &taken) {
+      return None;
+    }
+    let mut next_assigned = assigned.to_vec();
+    next_assigned.push(taken.clone());
     if let Some(mut rest) = distribute_args_to_params(
       &args[1..],
+      params,
       blank_types,
       param_heads,
       param_defaults,
       param_idx + 1,
+      &next_assigned,
     ) {
-      rest.insert(0, vec![args[0].clone()]);
+      rest.insert(0, taken);
       return Some(rest);
     }
     None
@@ -700,10 +761,12 @@ fn evaluate_function_call_ast_inner(
         // Distribute args to params using backtracking for sequence patterns
         let distribution = distribute_args_to_params(
           args,
+          params,
           blank_types,
           param_heads,
           param_defaults,
           0,
+          &[],
         );
         let mut effective_args = match distribution {
           Some(dist) => {
@@ -766,6 +829,15 @@ fn evaluate_function_call_ast_inner(
           }
           None => continue,
         };
+
+        // A non-linear pattern (`f[i_, i_]`) only matches when its repeated
+        // slots receive the same argument.
+        if !crate::evaluator::pattern_matching::repeated_params_agree(
+          params,
+          &effective_args,
+        ) {
+          continue;
+        }
 
         // Check conditions
         let mut conditions_met = true;
@@ -1045,6 +1117,15 @@ fn evaluate_function_call_ast_inner(
           }
           effective
         };
+
+        // A non-linear pattern (`f[i_, i_]`) only matches when its repeated
+        // slots receive the same argument.
+        if !crate::evaluator::pattern_matching::repeated_params_agree(
+          params,
+          &effective_args,
+        ) {
+          continue;
+        }
 
         // Check all conditions (if any) by substituting params with args and evaluating
         let mut conditions_met = true;
@@ -5856,6 +5937,14 @@ fn evaluate_function_call_ast_inner(
 
   if name == "Subgraph" && args.len() == 2 {
     return crate::functions::graph::subgraph_ast(args);
+  }
+
+  if name == "HighlightGraph" && args.len() >= 2 {
+    return crate::functions::graph::highlight_graph_ast(args);
+  }
+
+  if name == "ExampleData" && args.len() <= 2 {
+    return crate::functions::example_data::example_data_ast(args);
   }
 
   if name == "LineGraph" && args.len() == 1 {

@@ -386,6 +386,22 @@ pub fn rule_dominates(
       strictly_tighter = true;
     }
   }
+  // Repeated pattern variables are an equality constraint between positions,
+  // so a non-linear rule (`f[i_, i_]`) matches a strict subset of the linear
+  // rule with the same shape (`f[j_, k_]`) and must be tried first. Every pair
+  // `b` forces equal, `a` must force equal too.
+  let a_pairs =
+    crate::evaluator::pattern_matching::repeated_param_pairs(a_params);
+  let b_pairs =
+    crate::evaluator::pattern_matching::repeated_param_pairs(b_params);
+  for pair in &b_pairs {
+    if !a_pairs.contains(pair) {
+      return false;
+    }
+  }
+  if a_pairs.iter().any(|p| !b_pairs.contains(p)) {
+    strictly_tighter = true;
+  }
   // Every guard of `b` must also guard `a`, else `a` accepts inputs `b` rejects.
   // Compare guards by their string form (Expr has no PartialEq).
   let a_guard_strs: Vec<String> =
@@ -489,6 +505,77 @@ fn collect_binary_children(
       parts
     }
     _ => vec![expr.clone()],
+  }
+}
+
+/// Whether `name` is a synthetic parameter slot invented while lowering a
+/// definition (list destructuring, structural patterns, options, pattern
+/// tests, upvalue/downvalue placeholders) rather than a pattern variable the
+/// user wrote. Synthetic names already carry their slot index, so they never
+/// repeat and must never be mistaken for a repeated pattern variable.
+fn is_synthetic_param(name: &str) -> bool {
+  name.is_empty()
+    || name.starts_with("_lp")
+    || name.starts_with("__sp")
+    || name.starts_with("__opts")
+    || name.starts_with("__pt")
+    || name.starts_with("_dv")
+    || name.starts_with("_up")
+}
+
+/// Constrain a definition whose argument list repeats a pattern variable
+/// (`f[i_, i_] := …`). Wolfram reads the repeat as a constraint — every
+/// occurrence has to bind the *same* expression, so `f[1, 2]` does not match
+/// `f[i_, i_]` at all — but dispatch binds parameters positionally, which on
+/// its own just lets the later slot shadow the earlier one.
+///
+/// Rather than re-implement the equality test, the repeated slots are re-keyed
+/// to synthetic `__sp…` parameters carrying a `__StructuralPattern__`
+/// condition. Dispatch already runs those through the canonical pattern
+/// matcher and drops the rule when the bindings it produces disagree with the
+/// positional ones — which is exactly the repeated-variable check.
+///
+/// The first occurrence keeps the user's name, so the body still sees the
+/// bound value. Must run before a body-level `/;` guard is parked in the first
+/// free condition slot, since it claims the repeated slots' condition slots.
+pub fn constrain_repeated_params(
+  params: &mut [String],
+  conditions: &mut [Option<Expr>],
+  heads: &[Option<String>],
+  blank_types: &[u8],
+) {
+  let mut seen: Vec<String> = Vec::new();
+  for i in 0..params.len() {
+    let name = params[i].clone();
+    if is_synthetic_param(&name) {
+      continue;
+    }
+    if !seen.contains(&name) {
+      seen.push(name);
+      continue;
+    }
+    // A repeated slot only ever holds a structural-pattern condition of its
+    // own (a `?test`); reuse that pattern so the test survives, otherwise
+    // rebuild the plain `name_`/`name_Head` pattern from the slot.
+    let pattern = match conditions.get(i).and_then(|c| c.as_ref()) {
+      Some(Expr::FunctionCall {
+        name: marker,
+        args: marker_args,
+      }) if marker == "__StructuralPattern__" && marker_args.len() == 2 => {
+        marker_args[1].clone()
+      }
+      _ => Expr::Pattern {
+        name,
+        head: heads.get(i).cloned().flatten(),
+        blank_type: blank_types.get(i).copied().unwrap_or(1),
+      },
+    };
+    let synthetic = format!("__sp{}", i);
+    conditions[i] = Some(Expr::FunctionCall {
+      name: "__StructuralPattern__".to_string(),
+      args: vec![Expr::Identifier(synthetic.clone()), pattern].into(),
+    });
+    params[i] = synthetic;
   }
 }
 
@@ -1592,6 +1679,13 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       defaults.push(None);
     }
 
+    constrain_repeated_params(
+      &mut params,
+      &mut conditions,
+      &heads,
+      &blank_types,
+    );
+
     // Check if all args are literal (non-pattern) — if so, insert at beginning
     // for priority over general patterns (matching Mathematica specificity ordering)
     let has_literal_conditions =
@@ -2370,6 +2464,13 @@ pub fn set_delayed_ast(
     let final_body = apply_list_substitutions(body);
     let body_condition_sub = body_condition.map(apply_list_substitutions);
 
+    constrain_repeated_params(
+      &mut params,
+      &mut conditions,
+      &heads,
+      &blank_types,
+    );
+
     // If there's a body-level condition (from /;), attach it to a condition slot
     if let Some(body_cond) = body_condition_sub.as_ref() {
       let mut attached = false;
@@ -2660,6 +2761,10 @@ fn build_list_pattern_match(
       args: vec![list_element_accessor(&base, eidx, false), pat.clone()].into(),
     });
   }
+  let mut bindings = Vec::new();
+  collect_list_pattern_bindings(patterns, &base, &mut bindings);
+  let (repeat_guards, bindings) = list_pattern_repeat_guards(bindings);
+  rule_conds.extend(repeat_guards);
   let combined = if rule_conds.len() == 1 {
     rule_conds.pop().unwrap()
   } else {
@@ -2668,9 +2773,33 @@ fn build_list_pattern_match(
       args: rule_conds.into(),
     }
   };
-  let mut bindings = Vec::new();
-  collect_list_pattern_bindings(patterns, &base, &mut bindings);
   (combined, bindings)
+}
+
+/// The `SameQ` guards implied by a pattern variable that a list pattern binds
+/// more than once (`f[{a_, a_}] := …`): every occurrence has to see the same
+/// element, so `f[{1, 2}]` must not match. The per-element `MatchQ` guards
+/// above check each element in isolation and cannot express that.
+///
+/// Returns one guard per repeated occurrence, comparing its element accessor
+/// against the first occurrence's, plus the deduplicated bindings (the body
+/// reads each name from the position it was first bound at).
+fn list_pattern_repeat_guards(
+  bindings: Vec<(String, Expr)>,
+) -> (Vec<Expr>, Vec<(String, Expr)>) {
+  let mut guards = Vec::new();
+  let mut first: Vec<(String, Expr)> = Vec::new();
+  for (name, accessor) in bindings {
+    if let Some((_, prev)) = first.iter().find(|(n, _)| n == &name) {
+      guards.push(Expr::Comparison {
+        operands: vec![prev.clone(), accessor],
+        operators: vec![ComparisonOp::SameQ],
+      });
+    } else {
+      first.push((name, accessor));
+    }
+  }
+  (guards, first)
 }
 
 /// Replace every subexpression structurally equal to `from` with `to`. Used to
@@ -2833,6 +2962,19 @@ fn reconstruct_list_param(
           elem_pats.push((*idx as usize, args[1].clone()));
         }
       }
+      // A repeated-variable guard (`Part[lp, i] === Part[lp, j]`, emitted for
+      // `f[{a_, a_}]`) is already implied by the reconstructed surface
+      // pattern, which shows the same name twice — displaying it as well
+      // would print a redundant `/; a === a`.
+      Expr::Comparison {
+        operands,
+        operators,
+      } if operators.iter().any(|o| matches!(o, ComparisonOp::SameQ))
+        && operands.iter().all(|o| {
+          matches!(o, Expr::FunctionCall { name: pn, args: pargs }
+            if pn == "Part"
+              && matches!(pargs.first(), Some(Expr::Identifier(id)) if id == param))
+        }) => {}
       other => guards.push(other.clone()),
     }
   }
@@ -2881,6 +3023,44 @@ fn reconstruct_list_param(
   (Expr::List(elems.into()), part_names, guards)
 }
 
+/// The surface pattern that argument slot `i` of a stored rule was written as,
+/// for `DownValues` / `Definition` display.
+///
+/// A slot whose pattern could not be expressed as a plain named blank — a
+/// nested pattern (`f[g[x_]]`), or the second occurrence of a repeated
+/// variable (`f[i_, i_]`) — is lowered to a synthetic `__sp…` parameter that
+/// keeps the original pattern inside a `__StructuralPattern__` condition.
+/// Reading it back from there prints what the user wrote instead of the
+/// internal placeholder.
+pub fn downvalue_param_pattern(
+  params: &[String],
+  conditions: &[Option<Expr>],
+  heads: &[Option<String>],
+  blank_types: &[u8],
+  i: usize,
+) -> Expr {
+  let name = params.get(i).cloned().unwrap_or_default();
+  if name.starts_with("__sp")
+    && let Some(pattern) = conditions.iter().flatten().find_map(|c| match c {
+      Expr::FunctionCall { name: marker, args }
+        if marker == "__StructuralPattern__"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Identifier(p) if *p == name) =>
+      {
+        Some(args[1].clone())
+      }
+      _ => None,
+    })
+  {
+    return pattern;
+  }
+  Expr::Pattern {
+    name,
+    head: heads.get(i).and_then(|h| h.clone()),
+    blank_type: blank_types.get(i).copied().unwrap_or(1),
+  }
+}
+
 /// Rebuild a displayable DownValue (pattern args + body) for a stored rule that
 /// uses one or more lowered list-pattern parameters (`_lp{i}`), turning them
 /// back into surface `{…}` patterns and un-substituting the `Part[_lp, i]`
@@ -2921,11 +3101,13 @@ pub fn reconstruct_list_downvalue(
     {
       pattern_args.push(lit.clone());
     } else {
-      pattern_args.push(Expr::Pattern {
-        name: p.clone(),
-        head: heads.get(i).and_then(|h| h.clone()),
-        blank_type: blank_types.get(i).copied().unwrap_or(1),
-      });
+      pattern_args.push(downvalue_param_pattern(
+        params,
+        conditions,
+        heads,
+        blank_types,
+        i,
+      ));
     }
   }
   let final_body = if guards.is_empty() {

@@ -3743,6 +3743,84 @@ mod plot3d {
       assert!(ticks.contains(&"three".to_string()), "{ticks:?}");
     }
 
+    /// A tick given as a bare position is labelled with that *expression*
+    /// typeset, not with its decimal expansion — a Demonstration divides a
+    /// wave's axis with `Ticks -> {{0, Pi/2, Pi, 3 Pi/2, 2 Pi}, …}` and
+    /// expects to read the multiples of π back. A literal number still
+    /// labels itself.
+    #[test]
+    fn a_symbolic_tick_position_labels_itself() {
+      let labels = |code: &str| {
+        export_svg(code)
+          .lines()
+          .filter(|l| l.starts_with("<text"))
+          .filter_map(|l| {
+            let after = l.split_once('>')?.1;
+            Some(after.split_once("</text>")?.0.to_string())
+          })
+          .collect::<Vec<_>>()
+      };
+      let ticks = labels(
+        "Plot[Sin[x], {x, 0, 2 Pi}, \
+         Ticks -> {{0, Pi/2, Pi, 3 Pi/2, 2 Pi}, {-1, 0, 1}}]",
+      );
+      for expected in
+        ["0", "\u{03C0}/2", "\u{03C0}", "3 \u{03C0}/2", "2 \u{03C0}"]
+      {
+        assert!(
+          ticks.contains(&expected.to_string()),
+          "missing tick {expected:?} in {ticks:?}"
+        );
+      }
+      // No tick reads as the number π/2 works out to.
+      assert!(
+        !ticks.iter().any(|t| t.starts_with("1.57")),
+        "a symbolic tick must not be labelled by value: {ticks:?}"
+      );
+      // Literal positions keep labelling themselves.
+      for expected in ["-1", "1"] {
+        assert!(ticks.contains(&expected.to_string()), "{ticks:?}");
+      }
+      // A position that has to be worked out (a symbol standing for the
+      // list, a `Table`) still labels by value.
+      let computed =
+        labels("Plot[x, {x, 0, 4}, Ticks -> {Table[n, {n, 1, 3}], None}]");
+      for expected in ["1", "2", "3"] {
+        assert!(computed.contains(&expected.to_string()), "{computed:?}");
+      }
+      // An axis carrying explicit ticks marks only what it names: the
+      // automatic majors used to leave unlabelled stubs between them.
+      let svg = export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, \
+         Ticks -> {{0, Pi/2, Pi, 3 Pi/2, 2 Pi}, {-1, 0, 1}}]",
+      );
+      let attr = |line: &str, name: &str| -> Option<f64> {
+        line
+          .split_once(&format!("{name}=\""))?
+          .1
+          .split_once('"')?
+          .0
+          .parse()
+          .ok()
+      };
+      let label_xs: Vec<f64> = svg
+        .lines()
+        .filter(|l| l.starts_with("<text") && l.contains(r#"anchor="middle""#))
+        .filter_map(|l| attr(l, "x"))
+        .collect();
+      assert_eq!(label_xs.len(), 5, "{svg}");
+      for mark in svg
+        .lines()
+        .filter(|l| l.starts_with("<line") && attr(l, "x1") == attr(l, "x2"))
+        .filter_map(|l| attr(l, "x1"))
+      {
+        assert!(
+          label_xs.iter().any(|x| (x - mark).abs() < 1.0),
+          "tick mark at {mark} carries no label: {label_xs:?}"
+        );
+      }
+    }
+
     /// `Plot` reads `FrameLabel`, in both the `{bottom, left}` and the
     /// nested four-edge form, and a caption may be styled.
     #[test]
@@ -3774,6 +3852,41 @@ mod plot3d {
       );
       styled.sort();
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
+    }
+
+    /// Every label of a tick set carries the decimals its spacing needs, so
+    /// a framed `Graphics` stepping by 0.5 reads `-1.0, -0.5, 0.0, …` —
+    /// the same as the plot renderer, and as wolframscript.
+    #[test]
+    fn a_graphics_frame_labels_its_ticks_to_a_common_precision() {
+      let svg = export_svg(
+        "Graphics[{Circle[{0, 0}, 1]}, Frame -> True, \
+         PlotRange -> {{-1, 1}, {-1, 1}}]",
+      );
+      for label in ["-1.0", "-0.5", "0.0", "0.5", "1.0"] {
+        assert!(svg.contains(&format!(">{label}</text>")), "{svg}");
+      }
+      // Integer-spaced ticks keep their plain form.
+      let svg = export_svg(
+        "Graphics[{Circle[{0, 0}, 3]}, Frame -> True, \
+         PlotRange -> {{-3, 3}, {-3, 3}}]",
+      );
+      assert!(svg.contains(">2</text>"), "{svg}");
+    }
+
+    /// `FrameLabel -> {{left, right}, {bottom, top}}` captions all four
+    /// edges of a `Graphics` frame. Regression: the graphics renderer read
+    /// only the bottom and left entries, so the top caption a merged
+    /// `Show` inherited never drew.
+    #[test]
+    fn graphics_frame_label_captions_all_four_edges() {
+      let svg = export_svg(
+        "Graphics[{Circle[{0, 0}, 1]}, Frame -> True, \
+         FrameLabel -> {{\"cl\", \"cr\"}, {\"cb\", \"ct\"}}]",
+      );
+      for caption in ["cl", "cr", "cb", "ct"] {
+        assert!(svg.contains(&format!(">{caption}</text>")), "{svg}");
+      }
     }
 
     /// A `Graphics` frame carries the same captions, so a plot merged into
@@ -5739,6 +5852,32 @@ mod plot3d {
       );
     }
 
+    /// Per-series `Filling` rules may be grouped in sub-lists — a
+    /// Demonstration shades three pairs of curves with
+    /// `Filling -> {{1 -> {2}}, {3 -> 0}, {4 -> {5}}}` — which fills the
+    /// same way the flat list does. Grouped this way the whole spec used to
+    /// match no spelling at all and nothing was shaded.
+    #[test]
+    fn grouped_filling_rules_fill_like_a_flat_list() {
+      let fills = |code: &str| export_svg(code).matches("<polygon").count();
+      let curves = "Plot[{Sin[x], 2 Sin[x], 3 Sin[x], 4 Sin[x], 5 Sin[x]}, \
+                    {x, 0, 2 Pi}, PlotRange -> All";
+      let flat = fills(&format!(
+        "{curves}, Filling -> {{1 -> {{2}}, 3 -> 0, 4 -> {{5}}}}]"
+      ));
+      assert_eq!(flat, 3, "three rules must shade three regions");
+      assert_eq!(
+        fills(&format!(
+          "{curves}, Filling -> {{{{1 -> {{2}}}}, {{3 -> 0}}, {{4 -> {{5}}}}}}]"
+        )),
+        flat,
+        "grouping the rules must not change what is shaded"
+      );
+      // A grouped list that holds anything but rules is still not a rule
+      // list, and falls back to the whole-plot reading (here: no fill).
+      assert_eq!(fills(&format!("{curves}, Filling -> {{{{1, 2}}}}]")), 0);
+    }
+
     /// `Show` merging several filled plots keeps each one's own
     /// `FillingStyle`: three normal curves shaded in three colours stay
     /// three colours, where the first plot's style used to be applied to
@@ -6544,14 +6683,15 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains("fill-opacity=\"0.3\""), "{svg}");
       assert!(svg.contains("<polyline"), "no boundary curve: {svg}");
       // The image spans x in [0, 2] and y in [-1, 1]: both axes must be
-      // labelled out that far, and no further.
-      for tick in ["2", "-1", "1"] {
+      // labelled out that far, and no further. The 0.5-spaced ticks all
+      // carry one decimal, the way Wolfram labels a tick set.
+      for tick in ["2.0", "-1.0", "1.0"] {
         assert!(
           svg.contains(&format!(">{tick}</text>")),
           "missing tick {tick}: {svg}"
         );
       }
-      assert!(!svg.contains(">3</text>"), "range too wide: {svg}");
+      assert!(!svg.contains(">3.0</text>"), "range too wide: {svg}");
       assert!(!svg.contains("NaN"), "{svg}");
     }
 
@@ -6591,6 +6731,89 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| panic!("no stroke width: {curve}"));
       assert!(width > 1.5, "Thick was lost on merge: {curve}");
+    }
+
+    /// `ParametricPlot` defaults to `AspectRatio -> Automatic` and takes
+    /// its shape from the data, so a unit circle comes out round. `Show`
+    /// takes the merged picture's options from the first graphic, which
+    /// means that shape has to survive the merge instead of being replaced
+    /// by the 1/GoldenRatio of `Plot`.
+    #[test]
+    fn show_keeps_the_shape_a_parametric_plot_drew_itself_in() {
+      let svg = export_svg(
+        "Show[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+           PlotRange -> {{-1.1, 1.1}, {-1.1, 1.1}}, Frame -> True], \
+         Graphics[{PointSize[0.03], Point[{0, 0}]}], ImageSize -> 200]",
+      );
+      let attr = |name: &str| -> f64 {
+        svg
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|s| s.parse().ok())
+          .unwrap_or_else(|| panic!("no {name} on the svg: {svg}"))
+      };
+      assert_eq!(
+        (attr("width"), attr("height")),
+        (200.0, 200.0),
+        "a square PlotRange must stay square through Show: {svg}"
+      );
+    }
+
+    /// A framed plot draws no interior axes, and merging other graphics
+    /// into it with `Show` must not add a set. Regression: `Show` filled in
+    /// `Axes -> True` for every leading plot, so a framed one came back
+    /// with a second, duplicated scale through the middle.
+    #[test]
+    fn show_adds_no_interior_axes_to_a_framed_plot() {
+      let svg = export_svg(
+        "Show[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+           PlotRange -> {{-1.1, 1.1}, {-1.1, 1.1}}, Frame -> True], \
+         Graphics[{PointSize[0.03], Point[{0, 0}]}]]",
+      );
+      assert_eq!(
+        svg.matches(">0.5</text>").count(),
+        2,
+        "the frame labels 0.5 once per axis and nothing else does: {svg}"
+      );
+    }
+
+    /// A `Graphics` expression stays an expression in Wolfram, so a picture
+    /// held in a variable can be layered by a later `Show`. Regression: the
+    /// rendering kept only its SVG, and `Show` silently dropped it.
+    #[test]
+    fn a_rendered_graphic_can_be_layered_by_a_later_show() {
+      let svg = export_svg(
+        "g = Graphics[{Blue, Disk[{0, 0}, 0.5]}, \
+           PlotRange -> {{-1, 1}, {-1, 1}}]; \
+         Show[Graphics[{Red, Circle[{0, 0}, 1]}], g]",
+      );
+      assert!(
+        svg.contains("rgb(255,0,0)"),
+        "the outer circle must draw: {svg}"
+      );
+      assert!(
+        svg.contains("rgb(0,0,255)"),
+        "the graphic held in `g` must draw too: {svg}"
+      );
+    }
+
+    /// The same holds for a picture that is itself a `Show`: the layers it
+    /// merged have to be visible when it is shown again inside another one.
+    #[test]
+    fn a_show_result_can_be_layered_by_another_show() {
+      let svg = export_svg(
+        "inner = Show[Graphics[{Blue, Circle[{0, 0}, 0.5]}, \
+             PlotRange -> {{-1, 1}, {-1, 1}}], \
+           ListPlot[{{{-0.9, -0.9}, {0.9, 0.9}}}, Joined -> True, \
+             PlotStyle -> {{Green}}]]; \
+         Show[Graphics[{Red, Circle[{0, 0}, 1]}], inner]",
+      );
+      // The outer circle, the inner one, and the line the inner `Show`
+      // merged from a plot.
+      for color in ["rgb(255,0,0)", "rgb(0,0,255)", "rgb(0,255,0)"] {
+        assert!(svg.contains(color), "{color} must draw: {svg}");
+      }
     }
 
     /// `Show` stacks its arguments in the order given — the last one on
@@ -8269,6 +8492,98 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `ContourStyle` colours and thickens the contour lines. Both the
+    /// function form and the equation form draw through it — the equation
+    /// form is how a Demonstration draws a stability boundary.
+    #[test]
+    fn contour_plot_honors_contour_style() {
+      for expr in [
+        "ContourPlot[x + y, {x, 0, 4}, {y, 0, 4}, ContourShading -> False, \
+         ContourStyle -> {Thick, Blue}]",
+        "ContourPlot[y == x, {x, 0, 4}, {y, 0, 4}, \
+         ContourStyle -> {Thick, Blue}]",
+      ] {
+        let svg = export_svg(expr);
+        assert!(
+          svg.contains("stroke=\"rgb(0,0,255)\""),
+          "ContourStyle colour missing from {expr}"
+        );
+        // `Thick` is 2 display pixels; the default contour line is thinner
+        // than one, so the styled stroke must be clearly wider.
+        let widths: Vec<f64> = svg
+          .split("stroke-width=\"")
+          .skip(1)
+          .filter_map(|s| s.split('"').next()?.parse().ok())
+          .collect();
+        assert!(
+          widths.iter().any(|w| *w >= 19.0),
+          "expected a Thick contour stroke in {expr}, widths: {widths:?}"
+        );
+      }
+    }
+
+    /// The default contour line keeps its thin dark-grey look when no
+    /// `ContourStyle` is given.
+    #[test]
+    fn contour_plot_default_line_style_unchanged() {
+      let svg = export_svg("ContourPlot[y == x, {x, 0, 4}, {y, 0, 4}]");
+      assert!(
+        svg.contains("stroke=\"#404040\" stroke-width=\"9.0\""),
+        "default contour stroke changed"
+      );
+    }
+
+    /// `FrameLabel` and `Epilog` reach a contour plot the same way they
+    /// reach a function plot: the labels sit outside the frame and the
+    /// epilog primitives are drawn over the curves in data coordinates.
+    #[test]
+    fn contour_plot_honors_frame_label_and_epilog() {
+      let svg = export_svg(
+        "ContourPlot[y == x, {x, 0, 4}, {y, 0, 4}, \
+         FrameLabel -> {\"across\", \"up\"}, \
+         Epilog -> {Text[\"here\", {2, 3}], Red, PointSize[0.05], \
+         Point[{1, 1}]}]",
+      );
+      for text in [">across</text>", ">up</text>", ">here</text>"] {
+        assert!(svg.contains(text), "missing {text} in:\n{svg}");
+      }
+      assert!(
+        svg.contains("<circle") && svg.contains("rgb(255,0,0)"),
+        "expected the red Epilog point"
+      );
+    }
+
+    /// A `DensityPlot` takes the same labels and epilog — the option
+    /// parsing is shared across the whole density/contour family.
+    #[test]
+    fn density_plot_honors_frame_label_and_epilog() {
+      let svg = export_svg(
+        "DensityPlot[x + y, {x, 0, 4}, {y, 0, 4}, \
+         FrameLabel -> {\"across\", \"up\"}, Epilog -> {Text[\"here\", {2, 3}]}]",
+      );
+      for text in [">across</text>", ">up</text>", ">here</text>"] {
+        assert!(svg.contains(text), "missing {text} in a DensityPlot");
+      }
+    }
+
+    /// `ImageSize -> n {1, 1}` — a plot holds its arguments, so the option
+    /// value arrives unevaluated and has to be evaluated before it can be
+    /// read as the square size it describes.
+    #[test]
+    fn image_size_product_gives_a_square_picture() {
+      for expr in [
+        "Plot[Sin[x], {x, 0, 4}, ImageSize -> 400 {1, 1}]",
+        "ContourPlot[y == x, {x, 0, 4}, {y, 0, 4}, ImageSize -> 400 {1, 1}]",
+      ] {
+        let svg = export_svg(expr);
+        assert!(
+          svg.starts_with("<svg width=\"400\" height=\"400\""),
+          "expected a 400x400 picture for {expr}, got: {}",
+          &svg[..svg.len().min(80)]
+        );
+      }
+    }
+
     /// A pre-rendered equation ContourPlot must merge with other graphics
     /// inside Show — the curve is carried along as plot-source line series.
     #[test]
@@ -8635,8 +8950,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       assert!(svg.contains("<polyline"), "the contour must survive: {svg}");
       assert!(svg.contains("<polygon"), "the arrow head must draw: {svg}");
-      // The plot's own options come along, so the axes are drawn.
-      assert!(svg.contains(">1</text>"), "axis ticks expected: {svg}");
+      // The plot's own options come along, so the axes are drawn. The
+      // 0.5-spaced ticks are labelled to a common precision, as Wolfram
+      // labels them.
+      assert!(svg.contains(">1.0</text>"), "axis ticks expected: {svg}");
     }
 
     /// A shaded contour plot keeps its shading when `Show` merges it with
@@ -11426,6 +11743,20 @@ mod graphics_grid {
     .unwrap();
     let svg = result.graphics.unwrap();
     assert!(svg.contains(">area = 0.875000000</text>"), "{svg}");
+  }
+
+  /// `Row` joins its parts with the strings it was given, gaps included:
+  /// a `"  "` separator draws as two spaces. SVG collapses runs of
+  /// whitespace, so the cell has to ask it not to.
+  #[test]
+  fn grid_cell_keeps_the_spaces_a_row_was_given() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{Text@Row[{\"a\", \"  \", \"b\"}]}}]")
+        .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">a  b</text>"), "{svg}");
+    assert!(svg.contains("xml:space=\"preserve\""), "{svg}");
   }
 
   /// A grid whose cells are all graphics lays the pictures out, rather
@@ -15216,11 +15547,11 @@ mod manipulate {
   // ── Spec extraction / Block substitution (used by Playground / Studio) ──
 
   use woxi::functions::graphics::{
-    ManipulateControl, extract_animator_spec, extract_click_pane_spec,
-    extract_control_spec, extract_list_animate_spec, extract_locator_pane_spec,
-    extract_manipulate_spec, manipulate_block_code, manipulate_enabled_states,
-    manipulate_initial_bindings, manipulate_spec_to_json,
-    parse_manipulate_bindings,
+    DisplayNode, ManipulateControl, extract_animator_spec,
+    extract_click_pane_spec, extract_control_spec, extract_list_animate_spec,
+    extract_locator_pane_spec, extract_manipulate_spec, manipulate_block_code,
+    manipulate_enabled_states, manipulate_initial_bindings,
+    manipulate_spec_to_json, parse_manipulate_bindings,
   };
   use woxi::interpret_to_expr;
 
@@ -16334,12 +16665,12 @@ mod manipulate {
     let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
     let json = manipulate_spec_to_json(&spec);
     assert!(
-      json.contains(r#""labelRuns":[{"text":"t","italic":true}]"#),
+      json.contains(r#""labelRuns":[{"text":"t","italic":true,"bold":false}]"#),
       "missing italic run for t in: {json}"
     );
     assert!(
       json.contains(
-        r#""labelRuns":[{"text":"m","italic":true},{"text":"₁","italic":false}]"#
+        r#""labelRuns":[{"text":"m","italic":true,"bold":false},{"text":"₁","italic":false,"bold":false}]"#
       ),
       "missing styled runs for m in: {json}"
     );
@@ -17745,6 +18076,143 @@ mod manipulate {
       result.graphics.is_some(),
       "ArrayPlot should render; got {:?}",
       result.result
+    );
+  }
+
+  // ── Buttons, spacers and styled prose in a Dynamic caption ──
+
+  /// A Demonstration-style caption: two stepping buttons, spacers and a
+  /// styled read-out of the current value, all inside `Dynamic[…]`.
+  const CAPTION_EXAMPLE: &str = "Manipulate[n^2, \
+    {{n, 1}, {1, 2, 3}, ControlType -> None}, \
+    Dynamic[Column[{Row[{Button[\"back\", If[n == 1, n = 3, n--]], \
+    Spacer[10], Button[\"next\", If[n == 3, n = 1, n++]], Spacer[10], \
+    \"step \", Style[n, Bold, Red]}]}]]]";
+
+  fn caption_tree(bindings: &[(String, String)]) -> DisplayNode {
+    use woxi::functions::graphics::build_manipulate_display;
+    let expr = interpret_to_expr(CAPTION_EXAMPLE).unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    assert_eq!(spec.displays.len(), 1, "one trailing display element");
+    build_manipulate_display(&spec.displays[0], bindings)
+  }
+
+  /// The nodes of a caption tree in reading order.
+  fn flatten(node: &DisplayNode, out: &mut Vec<DisplayNode>) {
+    match node {
+      DisplayNode::Column(cs) | DisplayNode::Row(cs) => {
+        for c in cs {
+          flatten(c, out);
+        }
+      }
+      DisplayNode::Panel(c) => flatten(c, out),
+      other => out.push(other.clone()),
+    }
+  }
+
+  #[test]
+  fn display_button_carries_its_held_action() {
+    let tree = caption_tree(&[("n".to_string(), "1".to_string())]);
+    let mut nodes = Vec::new();
+    flatten(&tree, &mut nodes);
+    let actions: Vec<String> = nodes
+      .iter()
+      .filter_map(|n| match n {
+        DisplayNode::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      actions,
+      vec![
+        "If[n == 1, n = 3, n--]".to_string(),
+        "If[n == 3, n = 1, n++]".to_string(),
+      ],
+      "the action must stay unevaluated until the button is pressed"
+    );
+  }
+
+  #[test]
+  fn display_button_label_is_rendered_text() {
+    let tree = caption_tree(&[("n".to_string(), "1".to_string())]);
+    let mut nodes = Vec::new();
+    flatten(&tree, &mut nodes);
+    let DisplayNode::Button { label, .. } = &nodes[0] else {
+      panic!("first node should be a button, got {:?}", nodes[0]);
+    };
+    let DisplayNode::Text { runs } = label.as_ref() else {
+      panic!("button label should be text, got {label:?}");
+    };
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].text, "back");
+  }
+
+  #[test]
+  fn display_spacer_keeps_its_width() {
+    let tree = caption_tree(&[("n".to_string(), "1".to_string())]);
+    let mut nodes = Vec::new();
+    flatten(&tree, &mut nodes);
+    let widths: Vec<f64> = nodes
+      .iter()
+      .filter_map(|n| match n {
+        DisplayNode::Spacer { width } => Some(*width),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(widths, vec![10.0, 10.0]);
+  }
+
+  #[test]
+  fn display_style_renders_as_styled_text() {
+    // `Style[n, Bold, Red]` shows the *value* of n, bold and red — not the
+    // literal `Style[…]` source.
+    let tree = caption_tree(&[("n".to_string(), "2".to_string())]);
+    let mut nodes = Vec::new();
+    flatten(&tree, &mut nodes);
+    let DisplayNode::Text { runs } = nodes.last().unwrap() else {
+      panic!("last node should be styled text, got {:?}", nodes.last());
+    };
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].text, "2");
+    assert!(runs[0].bold);
+    assert_eq!(runs[0].color, Some((1.0, 0.0, 0.0)));
+  }
+
+  #[test]
+  fn display_button_action_updates_the_bound_variable() {
+    // Pressing "next" runs the held action against the live bindings, which
+    // is how a caption button steps the widget.
+    use woxi::functions::graphics::apply_manipulate_button_action;
+    let bindings = vec![("n".to_string(), "3".to_string())];
+    let updated =
+      apply_manipulate_button_action(&bindings, "If[n == 3, n = 1, n++]");
+    assert_eq!(updated, vec![("n".to_string(), "1".to_string())]);
+    let updated = apply_manipulate_button_action(
+      &[("n".to_string(), "1".to_string())],
+      "If[n == 3, n = 1, n++]",
+    );
+    assert_eq!(updated, vec![("n".to_string(), "2".to_string())]);
+  }
+
+  #[test]
+  fn display_json_exposes_buttons_spacers_and_styled_runs() {
+    // The Playground consumes the same tree as JSON.
+    use woxi::functions::graphics::render_manipulate_display;
+    let expr = interpret_to_expr(CAPTION_EXAMPLE).unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    let json = render_manipulate_display(
+      &spec.displays[0],
+      &[("n".to_string(), "2".to_string())],
+    );
+    assert!(json.contains(r#""kind":"button""#), "json: {json}");
+    assert!(
+      json.contains(r#""kind":"spacer","width":10"#),
+      "json: {json}"
+    );
+    assert!(json.contains(r#""kind":"text""#), "json: {json}");
+    assert!(
+      json.contains(r#""bold":true,"color":"rgb(255,0,0)""#),
+      "json: {json}"
     );
   }
 

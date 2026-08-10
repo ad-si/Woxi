@@ -1,5 +1,5 @@
 use crate::InterpreterError;
-use crate::helpers::{div2, pow2};
+use crate::helpers::{div2, neg1, pow2};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, binop, bool_expr,
   expr_to_output, expr_to_string, unevaluated,
@@ -30,6 +30,7 @@ pub mod dendrogram;
 pub mod dirichlet_ast;
 pub mod element_data;
 pub mod entity_ast;
+pub mod example_data;
 pub mod expr_form;
 pub mod field_plot;
 pub mod function_range_ast;
@@ -90,6 +91,8 @@ pub mod unicode_casefold_data;
 pub mod voronoi;
 pub mod wavelet_ast;
 pub mod wikidata_ast;
+#[cfg(target_os = "windows")]
+pub mod windows;
 pub mod wl_serialize;
 pub mod wxf_ast;
 #[cfg(not(target_arch = "wasm32"))]
@@ -118,3 +121,5 @@ pub use quantity_ast::*;
 pub use scoping::*;
 pub use string_ast::*;
 pub use turing_machine_ast::*;
+#[cfg(target_os = "windows")]
+pub use windows::*;

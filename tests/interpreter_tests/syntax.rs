@@ -550,6 +550,19 @@ mod operator_shorthand_parens {
       "a - (b + c)",
       "a - (b - c)",
       "(#1 - (2*#1/10 + 2))/2 & ",
+      // `&` binds tighter than `;` and than `=`, so a compound or
+      // assignment body must keep its parentheses. Regression: the
+      // Demonstrations idiom `Map[(u = f[#]; g[u]) &, names]` printed as
+      // `Map[u = f[#1]; g[u] & , names]`, which re-parses as
+      // `CompoundExpression[Set[u, f[#1]], Function[g[u]]]` — the slot is
+      // never substituted and every list entry comes back symbolic.
+      "(u = #1^2; {u, u + 1}) & ",
+      "(a = 1) & ",
+      "(a += 1) & ",
+      "Map[(u = #1^2; u + 1) & , x]",
+      // A body that binds tighter than `&` still prints bare.
+      "a -> #1 & ",
+      "a /. b & ",
     ] {
       let full = interpret(&format!("FullForm[Hold[{src}]]")).unwrap();
       let printed =
@@ -8446,7 +8459,6 @@ mod cases {
       r#"x"#,
     );
   }
-  #[cfg(unix)]
   #[test]
   fn head_4() {
     // The mathics original (`S> $ParentProcessID = ...`) accepts any
@@ -9217,7 +9229,6 @@ mod cases {
   fn byte_ordering() {
     assert_case(r#"ByteOrdering"#, r#"ByteOrdering"#);
   }
-  #[cfg(unix)]
   #[test]
   fn head_23() {
     assert_case(

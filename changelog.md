@@ -2,6 +2,31 @@
 
 # Unreleased
 
+- Fixes driven by a Wolfram Demonstration that solves a pair of coupled
+    reaction equations and switches between three views of the result:
+    - The picture a cell shows is the one its value *is*, not the last one
+        drawn on the way there. A body that builds several plots and then
+        picks one — `p1 = Plot[…]; p2 = ContourPlot[…]; Switch[view, 1, p1,
+        2, p2]`, the standard Demonstrations "which view?" control — was
+        displayed as whichever plot happened to be assigned last, because
+        the visual hosts (Playground, Woxi Studio, the Jupyter kernel) read
+        back the last graphic captured while evaluating.
+    - `ContourStyle` draws the contour lines: `ContourStyle -> {Thick,
+        Blue}` gives a thick blue curve instead of the default thin dark
+        grey one. The option was read only into the plot's symbolic form,
+        so the picture ignored it. It reaches the equation form
+        (`ContourPlot[lhs == rhs, …]`) too, and travels with the curve so a
+        `Show` merge keeps it.
+    - `FrameLabel` and `Epilog` reach the density and contour plots, the
+        way they already reached the function plots: the labels are written
+        outside the frame (with room reserved for them) and the epilog
+        primitives are drawn over the finished picture in data coordinates.
+        A stability diagram marking the current parameters with a red
+        `Point` came out as a bare unlabelled curve.
+    - `ImageSize -> 400 {1, 1}` sizes a plot. A plot holds its arguments,
+        so the option value arrived as an unevaluated product and was
+        dropped, leaving the default width; it is now evaluated to the
+        `{400, 400}` it describes.
 - Fixes driven by a Wolfram Demonstration whose setter names each of ten
     conformal maps by its formula:
     - `\[WarningSign]` and its neighbours in Wolfram's pictograph block are
@@ -227,6 +252,19 @@ described in detail in the last section.
 
 ## Demonstration-driven fixes in detail
 
+- Fixes driven by a Wolfram Demonstration that approximates derivatives on
+    Chebyshev–Gauss–Lobatto points:
+    - A pattern variable repeated on the left of a definition constrains the
+        arguments to be equal: `f[i_, i_] := …` no longer matches `f[1, 2]`.
+        The repeat used to be ignored, so a definition pair spelling out a
+        matrix's diagonal and off-diagonal entries collapsed onto whichever
+        rule came last — and a diagonal formula applied off the diagonal
+        divided by zero. The constraint holds for a repeat inside a list
+        pattern (`f[{a_, a_}]`) too, and alongside head constraints and
+        `?test`s on the repeated slots.
+    - `DownValues` and `Definition` print a nested argument pattern as it was
+        written: `f[g[x_]] := x` used to read back as `f[__sp0_]`, exposing
+        the placeholder such a slot is lowered to.
 - Fixes driven by a Wolfram Demonstration that draws a rational cyclic
     polygon inside its circumcircle:
     - `Sphere` and `Ball` draw in a two-dimensional `Graphics`: in the plane
