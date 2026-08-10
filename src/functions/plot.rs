@@ -885,7 +885,7 @@ pub(crate) fn axes_label_svg(
 /// decimals — the number the step itself needs — so an axis stepping by 0.5
 /// reads `-1.0, -0.5, 0.0, 0.5, 1.0`, not `-1, -0.5, 0, 0.5, 1`, while one
 /// stepping by 2 reads `0, 2, 4`.
-fn format_tick_with_step(v: f64, step: f64) -> String {
+pub(crate) fn format_tick_with_step(v: f64, step: f64) -> String {
   let decimals = tick_step_decimals(step);
   if decimals == 0 {
     return format_tick(v);

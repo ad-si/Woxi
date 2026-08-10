@@ -4511,6 +4511,27 @@ fn format_tick_value(v: f64) -> String {
   s
 }
 
+/// The spacing of a tick sequence, or `None` when there are too few ticks
+/// to tell. Every label of a set carries the decimals the spacing needs,
+/// so this is what decides whether an axis reads `-1.0, -0.5, 0.0` or
+/// `-1, -0.5, 0`.
+fn tick_sequence_step(values: &[f64]) -> Option<f64> {
+  let step = values
+    .windows(2)
+    .map(|w| (w[1] - w[0]).abs())
+    .fold(f64::INFINITY, f64::min);
+  (step.is_finite() && step > 0.0).then_some(step)
+}
+
+/// Label one tick of a `step`-spaced set, the way the plot renderer does:
+/// all the labels of a set get the same number of decimals.
+fn format_tick_in_sequence(v: f64, step: Option<f64>) -> String {
+  match step {
+    Some(step) => crate::functions::plot::format_tick_with_step(v, step),
+    None => format_tick_value(v),
+  }
+}
+
 fn nice_tick_step(min: f64, max: f64, target_count: usize) -> f64 {
   let range = (max - min).abs();
   if !range.is_finite() || range <= 0.0 {
@@ -4637,7 +4658,10 @@ fn render_axes(
     svg.push_str(&format!(
       "<line x1=\"0.00\" y1=\"{axis_y_px:.2}\" x2=\"{svg_w:.2}\" y2=\"{axis_y_px:.2}\" stroke=\"{axis_stroke}\" stroke-width=\"1\"/>\n"
     ));
-    for (t, tick_label) in axis_ticks(ticks.0, bb.x_min, bb.x_max) {
+    let entries = axis_ticks(ticks.0, bb.x_min, bb.x_max);
+    let step =
+      tick_sequence_step(&entries.iter().map(|(t, _)| *t).collect::<Vec<_>>());
+    for (t, tick_label) in entries {
       let x = coord_x(t, bb, svg_w);
       if !x.is_finite() {
         continue;
@@ -4647,9 +4671,10 @@ fn render_axes(
         axis_y_px - 4.0,
         axis_y_px + 4.0
       ));
-      let label =
-        tick_label.unwrap_or_else(|| svg_escape(&format_tick_value(t)));
-      if axes.1 && label == "0" {
+      let label = tick_label
+        .unwrap_or_else(|| svg_escape(&format_tick_in_sequence(t, step)));
+      // The two axes cross at the origin, so only one of them labels it.
+      if axes.1 && t.abs() < step.unwrap_or(1.0) * 1e-6 {
         continue;
       }
       svg.push_str(&format!(
@@ -4663,7 +4688,10 @@ fn render_axes(
     svg.push_str(&format!(
       "<line x1=\"{axis_x_px:.2}\" y1=\"0.00\" x2=\"{axis_x_px:.2}\" y2=\"{svg_h:.2}\" stroke=\"{axis_stroke}\" stroke-width=\"1\"/>\n"
     ));
-    for (t, tick_label) in axis_ticks(ticks.1, bb.y_min, bb.y_max) {
+    let entries = axis_ticks(ticks.1, bb.y_min, bb.y_max);
+    let step =
+      tick_sequence_step(&entries.iter().map(|(t, _)| *t).collect::<Vec<_>>());
+    for (t, tick_label) in entries {
       let y = coord_y(t, bb, svg_h);
       if !y.is_finite() {
         continue;
@@ -4673,9 +4701,9 @@ fn render_axes(
         axis_x_px - 4.0,
         axis_x_px + 4.0
       ));
-      let label =
-        tick_label.unwrap_or_else(|| svg_escape(&format_tick_value(t)));
-      if axes.0 && label == "0" {
+      let label = tick_label
+        .unwrap_or_else(|| svg_escape(&format_tick_in_sequence(t, step)));
+      if axes.0 && t.abs() < step.unwrap_or(1.0) * 1e-6 {
         continue;
       }
       svg.push_str(&format!(
@@ -4728,6 +4756,8 @@ fn render_frame(
 
   let x_ticks = generate_ticks(bb.x_min, bb.x_max, 6);
   let y_ticks = generate_ticks(bb.y_min, bb.y_max, 6);
+  let x_step = tick_sequence_step(&x_ticks);
+  let y_step = tick_sequence_step(&y_ticks);
 
   // Bottom edge: ticks + labels
   for &t_val in &x_ticks {
@@ -4741,7 +4771,7 @@ fn render_frame(
       svg_h - 5.0
     ));
     // Label below the bottom edge
-    let label = format_tick_value(t_val);
+    let label = format_tick_in_sequence(t_val, x_step);
     svg.push_str(&format!(
       "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"hanging\">{}</text>\n",
       svg_h + 4.0,
@@ -4773,7 +4803,7 @@ fn render_frame(
       5.0
     ));
     // Label to the left of the frame
-    let label = format_tick_value(t_val);
+    let label = format_tick_in_sequence(t_val, y_step);
     svg.push_str(&format!(
       "<text x=\"{:.2}\" y=\"{y:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"end\" dominant-baseline=\"middle\">{}</text>\n",
       -4.0,
@@ -6301,8 +6331,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `AxesLabel -> {xlabel, ylabel}`, already typeset as SVG markup.
   let mut axes_label: Option<(String, String)> = None;
   // `FrameLabel -> {bottom, left}` (or the nested four-edge form), as SVG
-  // markup: the captions that sit outside the frame.
-  let mut frame_label: Option<(String, String)> = None;
+  // markup: the captions that sit outside the frame, in the order
+  // bottom, left, top, right.
+  let mut frame_label: Option<(String, String, String, String)> = None;
   // `Ticks -> {xspec, yspec}`: which tick marks each axis carries.
   let mut ticks_x = TickSpec::Automatic;
   let mut ticks_y = TickSpec::Automatic;
@@ -6421,8 +6452,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // captions the frame edges.
         "FrameLabel" => {
           let fl = crate::functions::plot::parse_frame_label(replacement);
-          if !fl.bottom.is_empty() || !fl.left.is_empty() {
-            frame_label = Some((svg_escape(&fl.bottom), svg_escape(&fl.left)));
+          if !fl.bottom.is_empty()
+            || !fl.left.is_empty()
+            || !fl.top.is_empty()
+            || !fl.right.is_empty()
+          {
+            frame_label = Some((
+              svg_escape(&fl.bottom),
+              svg_escape(&fl.left),
+              svg_escape(&fl.top),
+              svg_escape(&fl.right),
+            ));
           }
         }
         "Frame" => {
@@ -6603,9 +6643,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Without tick labels the frame needs no gutter, just room for its stroke.
   let frame_gutter = frame && frame_ticks;
   let has_bottom_caption =
-    frame_label.as_ref().is_some_and(|(b, _)| !b.is_empty());
+    frame_label.as_ref().is_some_and(|(b, ..)| !b.is_empty());
   let has_left_caption =
-    frame_label.as_ref().is_some_and(|(_, l)| !l.is_empty());
+    frame_label.as_ref().is_some_and(|(_, l, ..)| !l.is_empty());
+  let has_top_caption = frame_label
+    .as_ref()
+    .is_some_and(|(_, _, t, _)| !t.is_empty());
+  let has_right_caption = frame_label
+    .as_ref()
+    .is_some_and(|(_, _, _, r)| !r.is_empty());
   // An axis whose range spans zero is drawn through the middle of the
   // picture and carries its tick labels there too, so it needs no gutter
   // beside the drawing area — only the small padding Wolfram leaves all
@@ -6645,7 +6691,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     6.0
   } else {
     0.0
-  } + if has_x_axis_label { 24.0 } else { 0.0 };
+  } + if has_x_axis_label { 24.0 } else { 0.0 }
+    + if has_right_caption { 20.0 } else { 0.0 };
   let label_strip: f64 = if plot_label.is_some() { 26.0 } else { 0.0 };
   let margin_top: f64 = if frame { 10.0 } else { 0.0 }
     + label_strip
@@ -6653,7 +6700,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       20.0
     } else {
       0.0
-    };
+    }
+    + if has_top_caption { 20.0 } else { 0.0 };
   // `ImagePadding` states the room around the drawing area outright, so it
   // replaces the margins the frame and its labels would otherwise claim
   // (Wolfram draws the tick labels inside that padding).
@@ -6801,9 +6849,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     render_frame(&mut svg, &bb, svg_w, svg_h, frame_ticks);
   }
 
-  // Frame captions: the bottom one centred under the axis labels, the
-  // left one rotated along the edge.
-  if let Some((bottom, left)) = &frame_label {
+  // Frame captions: the bottom/top ones centred outside their edge, the
+  // left/right ones rotated along theirs.
+  if let Some((bottom, left, top, right)) = &frame_label {
     if !bottom.is_empty() {
       svg.push_str(&format!(
         "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"12\" font-family=\"sans-serif\" text-anchor=\"middle\">{bottom}</text>\n",
@@ -6820,6 +6868,22 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         theme().tick_label_fill,
       ));
     }
+    if !top.is_empty() {
+      svg.push_str(&format!(
+        "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"12\" font-family=\"sans-serif\" text-anchor=\"middle\">{top}</text>\n",
+        svg_w / 2.0,
+        -(margin_top - 12.0),
+        theme().tick_label_fill,
+      ));
+    }
+    if !right.is_empty() {
+      let rx = svg_w + margin_right - 12.0;
+      let ry = svg_h / 2.0;
+      svg.push_str(&format!(
+        "<text x=\"{rx:.1}\" y=\"{ry:.1}\" fill=\"{}\" font-size=\"12\" font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(90,{rx:.1},{ry:.1})\">{right}</text>\n",
+        theme().tick_label_fill,
+      ));
+    }
   }
 
   if has_margin {
@@ -6833,7 +6897,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let graphicsbox = gbox::graphics_box(&box_elements);
   crate::capture_graphicsbox(&graphicsbox);
 
-  Ok(crate::graphics_result(svg))
+  // Keep the symbolic `Graphics[prims, opts…]` alongside the rendering.
+  // In Wolfram a `Graphics` expression stays an expression, so a picture
+  // held in a variable can be layered by a later `Show` — without this the
+  // primitives are gone and `Show[…, g, …]` silently drops `g`.
+  let structure = Expr::FunctionCall {
+    name: "Graphics".to_string(),
+    args: std::iter::once(content)
+      .chain(args[1..].iter().cloned())
+      .collect(),
+  };
+  Ok(crate::graphics_result_with_structure(svg, structure))
 }
 
 // ── Grid SVG rendering ──────────────────────────────────────────────────
@@ -10414,19 +10488,28 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // Defaults inherited from the plots when the *first* graphic was a plot
     // (Wolfram takes the result's options from the first graphic): axes on,
-    // and the plot AspectRatio of 1/GoldenRatio. Explicit options passed to
-    // Show (already collected in `merged_options`) win — without the
-    // AspectRatio default a wide PlotRange collapses the render to a
-    // sliver, since the graphics renderer otherwise derives the height
-    // from the data aspect. When a raw Graphics comes first, its uniform
-    // scaling stays in charge (circles must render round).
+    // and that plot's own shape. Explicit options passed to Show (already
+    // collected in `merged_options`) win — without the AspectRatio default
+    // a wide PlotRange collapses the render to a sliver, since the graphics
+    // renderer otherwise derives the height from the data aspect. When a
+    // raw Graphics comes first, its uniform scaling stays in charge
+    // (circles must render round).
     let has_option = |opts: &[Expr], name: &str| {
       opts.iter().any(|o| {
         matches!(o, Expr::Rule { pattern, .. } if option_name(pattern) == Some(name))
       })
     };
     if first_graphic_is_plot == Some(true) {
-      if !has_option(&merged_options, "Axes") {
+      // A framed plot draws no interior axes, so the merged graphic must
+      // not grow a set of them either: `Show[ParametricPlot[…, Frame ->
+      // True], …]` keeps the frame it was given and nothing more.
+      let framed = merged_options.iter().any(|o| {
+        matches!(o, Expr::Rule { pattern, replacement }
+          if option_name(pattern) == Some("Frame")
+            && !matches!(replacement.as_ref(),
+              Expr::Identifier(s) if s == "False" || s == "None"))
+      });
+      if !has_option(&merged_options, "Axes") && !framed {
         merged_options.push(Expr::Rule {
           pattern: Box::new(Expr::Identifier("Axes".to_string())),
           replacement: Box::new(bool_expr(true)),
@@ -10440,9 +10523,19 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             && matches!(replacement.as_ref(), Expr::List(v) if v.len() == 2))
       });
       if !has_option(&merged_options, "AspectRatio") && !sized_both_ways {
+        // The shape the leading plot drew itself in. `Plot`/`ListPlot`
+        // default to 1/GoldenRatio, but `ParametricPlot` and friends
+        // default to `AspectRatio -> Automatic` and size themselves from
+        // the data, so a circle stays a circle once `Show` layers other
+        // graphics on top of one.
+        let aspect = plot_sources
+          .first()
+          .map(|ps| ps.image_size.1 as f64 / ps.image_size.0 as f64)
+          .filter(|r| r.is_finite() && *r > 0.0)
+          .unwrap_or(1.0 / 1.618_033_988_749_895);
         merged_options.push(Expr::Rule {
           pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
-          replacement: Box::new(Expr::Real(1.0 / 1.618_033_988_749_895)),
+          replacement: Box::new(Expr::Real(aspect)),
         });
       }
     }
@@ -11931,9 +12024,17 @@ fn grid_svg_styled_internal(
         } else {
           theme().text_primary.to_string()
         };
+        let markup = expr_to_svg_markup(text_content);
+        // `Row[{…, "  ", …}]` spaces its parts with the string it was
+        // given, and Wolfram draws every one of those spaces. SVG collapses
+        // runs of whitespace unless the element asks it not to.
+        let space_attr = if markup.contains("  ") {
+          " xml:space=\"preserve\""
+        } else {
+          ""
+        };
         let text_elem = format!(
-          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"sans-serif\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{anchor}\" dominant-baseline=\"central\">{}</text>\n",
-          expr_to_svg_markup(text_content)
+          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"sans-serif\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",
         );
         if let Some(href) = link_href {
           svg.push_str(&format!(
