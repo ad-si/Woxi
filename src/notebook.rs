@@ -1176,28 +1176,46 @@ fn render_boxes_text(s: &str) -> String {
   // operator: `∑_(n=1)^m`. Multi-token limits get parentheses so the
   // sum's range stays legible, and a big operator keeps a space to its
   // body, which follows it in the enclosing row.
+  fn group_limit(limit: &str) -> String {
+    if limit.chars().all(|c| c.is_alphanumeric() || c == '.') {
+      limit.to_string()
+    } else {
+      format!("({limit})")
+    }
+  }
   if let Some(args) = positional_box_args("UnderoverscriptBox", s)
     .filter(|a| a.len() == 3)
     .or_else(|| {
       positional_box_args("UnderscriptBox", s).filter(|a| a.len() == 2)
     })
   {
-    fn group(limit: &str) -> String {
-      if limit.chars().all(|c| c.is_alphanumeric() || c == '.') {
-        limit.to_string()
-      } else {
-        format!("({limit})")
-      }
-    }
     let mut out = format!(
       "{}_{}",
       render_boxes_text(&args[0]),
-      group(&render_boxes_text(&args[1]))
+      group_limit(&render_boxes_text(&args[1]))
     );
     if let Some(over) = args.get(2) {
       out.push('^');
-      out.push_str(&group(&render_boxes_text(over)));
+      out.push_str(&group_limit(&render_boxes_text(over)));
     }
+    if big_operator_head(&args[0]).is_some() {
+      out.push(' ');
+    }
+    return out;
+  }
+  // A script above the base with nothing below it — a rate constant over a
+  // reaction arrow (`⟶^(k₂ᵃ)`), or a hat/bar over a variable.
+  if let Some(args) =
+    positional_box_args("OverscriptBox", s).filter(|a| a.len() == 2)
+  {
+    let base = render_boxes_text(&args[0]);
+    let over = render_boxes_text(&args[1]);
+    // A diacritic (combining or spacing accent) sits directly on the base
+    // rather than reading as an exponent: `OverscriptBox["x", "^"]` → `x̂`.
+    if let Some(combining) = combining_accent(&over) {
+      return format!("{base}{combining}");
+    }
+    let mut out = format!("{base}^{}", group_limit(&over));
     if big_operator_head(&args[0]).is_some() {
       out.push(' ');
     }
@@ -1231,6 +1249,22 @@ fn render_boxes_text(s: &str) -> String {
 
   // Anything else falls back to the evaluable-InputForm extractor.
   extract_cell_content(s)
+}
+
+/// The Unicode combining mark for an accent placed over a base by an
+/// `OverscriptBox` — `OverHat[x]`, `OverBar[x]`, `OverVector[x]` and friends
+/// all typeset that way. `None` for anything that reads as a script rather
+/// than a diacritic (a rate constant over a reaction arrow, say).
+fn combining_accent(over: &str) -> Option<&'static str> {
+  match over.trim() {
+    "^" | "\\[Hat]" | "\u{F759}" => Some("\u{0302}"),
+    "~" | "\\[Tilde]" | "\u{223C}" => Some("\u{0303}"),
+    "." => Some("\u{0307}"),
+    ".." => Some("\u{0308}"),
+    "_" | "\\[Macron]" | "\u{00AF}" => Some("\u{0304}"),
+    "\\[RightVector]" | "\u{21C0}" => Some("\u{20D7}"),
+    _ => None,
+  }
 }
 
 /// Map Wolfram named operator characters to their InputForm ASCII
@@ -3855,6 +3889,64 @@ Cell[TextData[{
     match &parsed.cells[0] {
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "Sums like ∑_(n=1)^m sin[t]/n² are curves.");
+      }
+      _ => panic!("Expected single cell"),
+    }
+  }
+
+  /// A reaction scheme sets its rate constants over the arrows: an
+  /// `OverscriptBox` when only one constant is written, an
+  /// `UnderoverscriptBox` when the reverse rate is written under it. Both
+  /// have to reach the prose as text, and so do the long arrows they sit
+  /// on — a missing case used to leave the raw box source in the cell.
+  #[test]
+  fn test_overscript_boxes_render_as_display_text() {
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ Cell[BoxData[
+  FormBox[
+   RowBox[{"X",
+    UnderoverscriptBox["\[DoubleLongLeftRightArrow]",
+     SubsuperscriptBox["k", "1", "d"],
+     SubsuperscriptBox["k", "1", "a"]], "Y",
+    FormBox[
+     OverscriptBox["\[LongRightArrow]",
+      SubsuperscriptBox["k", "2", "a"]],
+     TraditionalForm], "Z"}],
+   TraditionalForm]], "InlineMath"],
+ " is the scheme."
+}], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(
+          cell.content,
+          "X⟺_(k_1^d)^(k_1^a)Y⟶^(k_2^a)Z is the scheme."
+        );
+      }
+      _ => panic!("Expected single cell"),
+    }
+  }
+
+  /// An accent over a base is a diacritic rather than a script: `OverHat`,
+  /// `OverBar` and `OverVector` all typeset as an `OverscriptBox` and read
+  /// as the accented letter.
+  #[test]
+  fn test_overscript_accents_render_as_diacritics() {
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ Cell[BoxData[
+  FormBox[
+   RowBox[{OverscriptBox["x", "^"], "+", OverscriptBox["y", "_"], "+",
+    OverscriptBox["z", "\[RightVector]"]}],
+   TraditionalForm]], "InlineMath"]
+}], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.content, "x\u{0302}+y\u{0304}+z\u{20D7}");
       }
       _ => panic!("Expected single cell"),
     }

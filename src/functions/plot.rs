@@ -868,8 +868,18 @@ pub(crate) fn axes_label_svg(
     ));
   }
   if show_y_axis && !y_label.is_empty() {
+    // Centred over the top of the y axis, but never so far left that the
+    // label runs off the image — a wide one (`{a, b, c, d}`) over an axis
+    // that sits near the left edge slides right until it fits, the way
+    // Wolfram keeps an axis label inside the graphic.
+    let half_width = crate::functions::graphics::box_string_visible_len(y_label)
+      as f64
+      * font_size
+      * 0.55
+      / 2.0;
+    let lx = axis_x.max(half_width + font_size * 0.2);
     svg.push_str(&format!(
-      "<text x=\"{axis_x:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
+      "<text x=\"{lx:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
        font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
        fill=\"{label_fill}\">{}</text>\n",
       y0 - font_size * 0.6,

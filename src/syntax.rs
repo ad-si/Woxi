@@ -397,6 +397,16 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "DoubleDownArrow" => Some("\u{21D3}"),
     "DoubleLeftRightArrow" => Some("\u{21D4}"),
     "DoubleUpDownArrow" => Some("\u{21D5}"),
+    // Long arrows — the reaction arrows a chemistry Demonstration writes
+    // between reactants and products.
+    "LongLeftArrow" => Some("\u{27F5}"),
+    "LongRightArrow" => Some("\u{27F6}"),
+    "LongLeftRightArrow" => Some("\u{27F7}"),
+    "DoubleLongLeftArrow" => Some("\u{27F8}"),
+    "DoubleLongRightArrow" => Some("\u{27F9}"),
+    "DoubleLongLeftRightArrow" => Some("\u{27FA}"),
+    "Equilibrium" => Some("\u{21CC}"),
+    "ReverseEquilibrium" => Some("\u{21CB}"),
     "LeftTeeArrow" => Some("\u{21A4}"),
     "RightTeeArrow" => Some("\u{21A6}"),
     "UpTeeArrow" => Some("\u{21A5}"),

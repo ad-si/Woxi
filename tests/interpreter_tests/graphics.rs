@@ -706,6 +706,48 @@ mod graphics {
         "and sits at the scaled anchor: {nested}"
       );
     }
+
+    /// Either half of an anchor may be symbolic: a Demonstration pins its
+    /// inset with `{0.8, Center}` — four-fifths along the x axis, halfway
+    /// up the y one. An unresolved half used to drop the whole position and
+    /// centre the inset in the plot.
+    #[test]
+    fn an_inset_anchor_takes_symbolic_coordinates() {
+      let anchor = |pos: &str| -> (f64, f64) {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 10}}, PlotRange -> {{{{0, 10}}, {{0, 10}}}}, \
+           Epilog -> Inset[Graphics[{{Disk[]}}, ImageSize -> {{20, 20}}], \
+           {pos}]]"
+        ));
+        let nested = svg
+          .split("<svg ")
+          .nth(2)
+          .and_then(|s| s.split_once('>'))
+          .unwrap_or_else(|| panic!("no inset for {pos}: {svg}"))
+          .0
+          .to_string();
+        let attr = |name: &str| -> f64 {
+          nested
+            .split(&format!("{name}=\""))
+            .nth(1)
+            .and_then(|v| v.split('"').next())
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| panic!("no {name} in {nested}"))
+        };
+        (attr("x"), attr("y"))
+      };
+      // `Center` in either slot is the midpoint of that axis' range, so
+      // `{0.8, Center}` lands where the fully numeric `{0.8, 5}` does — and
+      // well left of the plot's own centre.
+      assert_eq!(anchor("{0.8, Center}"), anchor("{0.8, 5}"));
+      assert!(
+        anchor("{0.8, Center}").0 < anchor("{5, Center}").0,
+        "the x half must still be read as 0.8"
+      );
+      // The side names resolve to the ends of their own axis.
+      assert_eq!(anchor("{Left, Bottom}"), anchor("{0, 0}"));
+      assert_eq!(anchor("{Right, Top}"), anchor("{10, 10}"));
+    }
   }
 
   mod styles {
@@ -4586,6 +4628,81 @@ mod plot3d {
       }
     }
 
+    /// A typesetting wrapper picks how a label is set, not what it says, so
+    /// an axis label written through one still prints. A Demonstration
+    /// writes `AxesLabel -> TraditionalForm /@ {t, y}`, which used to leave
+    /// both axes unlabelled.
+    #[test]
+    fn axes_label_through_a_typeset_form_still_prints() {
+      for form in [
+        "TraditionalForm",
+        "StandardForm",
+        "TextForm",
+        "DisplayForm",
+        "HoldForm",
+      ] {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 1}}, AxesLabel -> {form} /@ {{\"XX\", \"YY\"}}]"
+        ));
+        assert!(svg.contains(">XX</text>"), "{form}: {svg}");
+        assert!(svg.contains(">YY</text>"), "{form}: {svg}");
+      }
+    }
+
+    /// A list is a perfectly good label — it is typeset as the list itself,
+    /// which is how a Demonstration names the four curves it draws on one
+    /// axis.
+    #[test]
+    fn axes_label_given_a_list_prints_the_list() {
+      let svg = export_svg(
+        r#"Plot[x, {x, 0, 1},
+             AxesLabel -> {"t", {Style[a, Blue], Style[b, Green]}}]"#,
+      );
+      assert!(svg.contains(">t</text>"), "{svg}");
+      assert!(svg.contains(">{a, b}</text>"), "{svg}");
+    }
+
+    /// A wide y label centred on an axis that sits near the left edge would
+    /// run off the image, so it slides right until it fits.
+    #[test]
+    fn wide_axes_label_stays_inside_the_image() {
+      let y_label_x = |label: &str, starts_with: &str| -> f64 {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 1}}, AxesLabel -> {{\"t\", {label}}}]"
+        ));
+        let tag = svg
+          .split("<text ")
+          .find(|t| {
+            t.split_once('>')
+              .is_some_and(|(_, rest)| rest.starts_with(starts_with))
+          })
+          .unwrap_or_else(|| panic!("y label missing: {svg}"));
+        assert!(
+          tag.contains("text-anchor=\"middle\""),
+          "y label stays centred: {tag}"
+        );
+        tag
+          .split("x=\"")
+          .nth(1)
+          .and_then(|v| v.split('"').next())
+          .and_then(|v| v.parse().ok())
+          .unwrap()
+      };
+      let narrow = y_label_x("\"y\"", "y<");
+      let wide = y_label_x("{aaa, bbb, ccc, ddd, eee}", "{aaa,");
+      // The narrow label fits centred on the axis; the wide one has to slide
+      // right so its left half stays on the canvas. At 14 px over a 25
+      // character label that is well past 900 render units.
+      assert!(
+        wide > narrow,
+        "wide y label must slide right: {wide} vs {narrow}"
+      );
+      assert!(
+        wide > 900.0,
+        "wide y label must clear the left edge: {wide}"
+      );
+    }
+
     /// The Wolfram Language writes an `AxesLabel` at the *end* of its axis:
     /// the x label just past the right edge and level with the axis, the y
     /// label above the top of the vertical axis, upright. A `FrameLabel` is
@@ -7258,6 +7375,82 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     #[test]
     fn pie_chart_single_slice() {
       insta::assert_snapshot!(export_svg("PieChart[{100}]"));
+    }
+
+    #[test]
+    fn pie_chart_labeling_function() {
+      // `LabelingFunction -> f` labels every slice with `f[value]`; a bare
+      // function centres the label in its wedge.
+      let svg = export_svg("PieChart[{1, 2, 3}, LabelingFunction -> (# &)]");
+      for v in &["1", "2", "3"] {
+        assert!(
+          svg.contains(&format!(">{v}</text>")),
+          "missing slice label {v} in {svg}"
+        );
+      }
+      assert_eq!(
+        svg.matches("<line").count(),
+        0,
+        "a centred label needs no leader line"
+      );
+    }
+
+    #[test]
+    fn pie_chart_labeling_function_percentages() {
+      // The percentage form a Demonstration writes: the number form inside
+      // the `Row` is applied, and `"RadialCallout"` puts the text outside
+      // the pie on a leader line, anchored away from the centre.
+      let svg = export_svg(
+        r#"PieChart[{0.25, 0.75},
+             LabelingFunction ->
+               (Placed[Row[{NumberForm[100 #, 2], "%"}, " "],
+                       "RadialCallout"] &)]"#,
+      );
+      // `NumberForm[25., 2]` keeps the point a machine real is written with.
+      assert!(
+        svg.contains(">25. %</text>"),
+        "missing 25. % label in {svg}"
+      );
+      assert!(
+        svg.contains(">75. %</text>"),
+        "missing 75. % label in {svg}"
+      );
+      assert_eq!(
+        svg.matches("<line").count(),
+        2,
+        "each callout draws one leader line"
+      );
+      assert!(svg.contains("text-anchor=\"start\""));
+      assert!(svg.contains("text-anchor=\"end\""));
+    }
+
+    #[test]
+    fn pie_chart_labeling_function_radial_positions() {
+      // `"RadialInner"` hugs the hub and `"RadialOuter"` the rim, so the
+      // same label sits at different radii for the same slice.
+      let radius = |pos: &str| -> f64 {
+        let svg = export_svg(&format!(
+          "PieChart[{{1, 1, 1, 1}}, LabelingFunction -> (Placed[#, \"{pos}\"] &)]"
+        ));
+        // The first slice starts at the negative x axis, so its label sits
+        // left of and above the centre of the 360x360 frame.
+        let x: f64 = svg
+          .split("<text x=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|s| s.parse().ok())
+          .unwrap_or_else(|| panic!("no label in {svg}"));
+        180.0 - x
+      };
+      let (inner, center, outer) = (
+        radius("RadialInner"),
+        radius("RadialCenter"),
+        radius("RadialOuter"),
+      );
+      assert!(
+        inner < center && center < outer,
+        "expected inner < center < outer, got {inner} {center} {outer}"
+      );
     }
 
     #[test]
