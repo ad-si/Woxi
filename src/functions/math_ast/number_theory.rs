@@ -5917,10 +5917,7 @@ impl PartitionsPQ {
 }
 
 fn partitions_p(n: usize) -> BigInt {
-  PARTITIONS_PQ.with(|cache| {
-    let mut cache = cache.borrow_mut();
-    cache.get_p(n).clone()
-  })
+  PARTITIONS_PQ.with(|cache| cache.borrow_mut().get_p(n))
 }
 
 /// PartitionsQ[n] - Number of partitions of n into distinct parts
@@ -6046,13 +6043,9 @@ fn agm(mut a: f64, mut b: f64) -> f64 {
   (a + b) / 2.0
 }
 
-/// Compute q(n) - number of partitions into distinct parts using DP
-/// Uses generating function: prod_{k=1}^{n} (1 + x^k)
+/// Compute q(n) - number of partitions into distinct parts
 fn partitions_q(n: usize) -> BigInt {
-  PARTITIONS_PQ.with(|cache| {
-    let mut cache = cache.borrow_mut();
-    cache.get_q(n).clone()
-  })
+  PARTITIONS_PQ.with(|cache| cache.borrow_mut().get_q(n))
 }
 
 /// PrimeOmega[n] - number of prime factors with multiplicity
