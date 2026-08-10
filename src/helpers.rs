@@ -7,18 +7,24 @@ pub fn neg1(e: Expr) -> Expr {
   }
 }
 
-pub fn pow2(b: Expr, e: Expr) -> Expr {
+/// Helper to build a binary operation expression
+pub fn binop(op: BinaryOperator, a: Expr, b: Expr) -> Expr {
   Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(b),
-    right: Box::new(e),
-  }
-}
-
-pub fn div2(a: Expr, b: Expr) -> Expr {
-  Expr::BinaryOp {
-    op: BinaryOperator::Divide,
+    op,
     left: Box::new(a),
     right: Box::new(b),
   }
+}
+
+pub fn pow2(b: Expr, e: Expr) -> Expr {
+  binop(BinaryOperator::Power, b, e)
+}
+
+pub fn div2(a: Expr, b: Expr) -> Expr {
+  binop(BinaryOperator::Divide, a, b)
+}
+
+/// Build the boolean symbol `True` or `False`.
+pub fn bool_expr(b: bool) -> Expr {
+  Expr::Identifier(if b { "True" } else { "False" }.to_string())
 }

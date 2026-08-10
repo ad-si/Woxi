@@ -435,10 +435,10 @@ pub fn mesh_member(mesh: &Mesh, point: &Expr) -> Option<Expr> {
     )
     .ok()?;
     if matches!(&inside, Expr::Identifier(s) if s == "True") {
-      return Some(crate::syntax::bool_expr(true));
+      return Some(bool_expr(true));
     }
   }
-  Some(crate::syntax::bool_expr(false))
+  Some(bool_expr(false))
 }
 
 /// `MeshCoordinates`, `MeshCells`, `MeshPrimitives` and `MeshCellCount`.

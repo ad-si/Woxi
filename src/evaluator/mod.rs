@@ -1,7 +1,7 @@
-use crate::helpers::{div2, pow2};
+use crate::helpers::{binop, bool_expr, div2, pow2};
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, binop, bool_expr,
-  expr_to_string, unevaluated,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+  unevaluated,
 };
 use crate::{ENV, InterpreterError, PART_DEPTH, StoredValue, interpret};
 
