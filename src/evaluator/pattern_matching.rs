@@ -62,6 +62,58 @@ fn bindings_compatible_with_context(bindings: &[(String, Expr)]) -> bool {
   })
 }
 
+/// Whether a stored parameter name is a real pattern variable rather than one
+/// of the synthetic slots the assignment machinery introduces (list-pattern
+/// `_lp…`, structural-pattern `__sp…`, `__opts…`, upvalue `_up…`, and the
+/// empty guard-only slots). Only real variables carry the repeated-name
+/// constraint of a non-linear pattern.
+fn is_named_pattern_param(name: &str) -> bool {
+  !name.is_empty() && !name.starts_with('_')
+}
+
+/// Enforce the equality constraint of a non-linear pattern such as
+/// `f[i_, i_]`: every position sharing a pattern-variable name must receive
+/// the same argument. Wolfram only fires such a definition when the repeated
+/// slots agree, so `f[1, 2]` must not match `f[i_, i_]`.
+///
+/// `params` and `args` are positional; trailing guard-only slots in `params`
+/// (which have no argument) are ignored.
+pub(crate) fn repeated_params_agree(params: &[String], args: &[Expr]) -> bool {
+  let mut seen: Vec<(&str, &Expr)> = Vec::new();
+  for (name, arg) in params.iter().zip(args.iter()) {
+    if !is_named_pattern_param(name) {
+      continue;
+    }
+    match seen.iter().find(|(n, _)| *n == name.as_str()) {
+      Some((_, first)) => {
+        if !expr_equal(first, arg) {
+          return false;
+        }
+      }
+      None => seen.push((name.as_str(), arg)),
+    }
+  }
+  true
+}
+
+/// The set of position pairs a rule forces to be equal, as index pairs
+/// `(i, j)` with `i < j` sharing a pattern-variable name. Used to order
+/// non-linear definitions ahead of the structurally identical linear ones.
+pub(crate) fn repeated_param_pairs(params: &[String]) -> Vec<(usize, usize)> {
+  let mut pairs = Vec::new();
+  for i in 0..params.len() {
+    if !is_named_pattern_param(&params[i]) {
+      continue;
+    }
+    for j in (i + 1)..params.len() {
+      if params[i] == params[j] {
+        pairs.push((i, j));
+      }
+    }
+  }
+  pairs
+}
+
 /// Merge new bindings into existing bindings, checking for consistency.
 /// If a variable name already has a binding, the new value must be
 /// structurally equal. Returns false if there is a conflict.
