@@ -84,6 +84,74 @@ impl StyledLabel {
       crate::functions::graphics::box_string_to_svg(&self.text)
     })
   }
+
+  /// The label as SVG `<text>` content for a picture drawn at `scale`
+  /// render units per nominal point.
+  ///
+  /// A `Style[…, 16]` inside the label typesets to `font-size="16"` in
+  /// nominal points, but the plot renderers draw into a viewBox blown up
+  /// by `RESOLUTION_SCALE`; left alone, the styled run comes out a
+  /// fraction of the size it asked for (in a 3000-unit-wide plot, a
+  /// 16-unit glyph is invisible). Relative sizes — the `70%` of a
+  /// sub/superscript tspan — already follow whatever they inherit.
+  pub(crate) fn svg_scaled(&self, scale: f64) -> String {
+    scale_markup_lengths(&self.svg(), scale)
+  }
+}
+
+/// Multiply the absolute lengths in SVG markup — `font-size="N"` and the
+/// `letter-spacing:Npx` a `Spacer` becomes — by `scale`, leaving relative
+/// ones (`70%`, `1.2em`) as they are.
+fn scale_markup_lengths(markup: &str, scale: f64) -> String {
+  if scale == 1.0 {
+    return markup.to_string();
+  }
+  let mut out = markup.to_string();
+  for (attr, terminator, unit) in
+    [("font-size=\"", '"', ""), ("letter-spacing:", 'p', "px")]
+  {
+    out = scale_lengths_after(&out, attr, terminator, unit, scale);
+  }
+  out
+}
+
+/// Rewrite every `{prefix}{number}` in `markup` — the number running up to
+/// `terminator` — with the number multiplied by `scale`, re-emitting `unit`
+/// after it. A run whose value is not a plain number is left alone.
+fn scale_lengths_after(
+  markup: &str,
+  prefix: &str,
+  terminator: char,
+  unit: &str,
+  scale: f64,
+) -> String {
+  if !markup.contains(prefix) {
+    return markup.to_string();
+  }
+  let mut out = String::with_capacity(markup.len());
+  let mut rest = markup;
+  while let Some(pos) = rest.find(prefix) {
+    let (head, tail) = rest.split_at(pos + prefix.len());
+    out.push_str(head);
+    let Some(end) = tail.find(terminator) else {
+      out.push_str(tail);
+      return out;
+    };
+    let (value, tail) = tail.split_at(end);
+    match value.parse::<f64>() {
+      Ok(len) => {
+        out.push_str(&format!("{:.0}{unit}", len * scale));
+        // The unit was re-emitted, so skip the copy still in `tail`.
+        rest = &tail[unit.len()..];
+      }
+      Err(_) => {
+        out.push_str(value);
+        rest = tail;
+      }
+    }
+  }
+  out.push_str(rest);
+  out
 }
 
 /// The visible text of SVG markup: tags dropped, entities decoded. Used so a
@@ -301,6 +369,31 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     {
       expr_to_label(&args[0])
     }
+    // A typesetting wrapper only chooses how its content is set, not what
+    // it says — a Demonstration writes `AxesLabel -> TraditionalForm /@ {t,
+    // y}`, and dropping the wrapper would leave both axes unlabelled.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "TraditionalForm"
+          | "StandardForm"
+          | "DisplayForm"
+          | "TextForm"
+          | "HoldForm"
+          | "Defer"
+      ) && args.len() == 1 =>
+    {
+      expr_to_label(&args[0])
+    }
+    // A list label is typeset as the list itself: `AxesLabel -> {t, {a, b}}`
+    // labels the vertical axis `{a, b}`.
+    Expr::List(items) => {
+      let parts: Vec<String> = items
+        .iter()
+        .map(expr_to_label)
+        .collect::<Option<Vec<_>>>()?;
+      Some(format!("{{{}}}", parts.join(", ")))
+    }
     // A plot label is drawn as plain text, so `Subscript`/`Superscript`
     // render through the Unicode script characters — the closest a text
     // label gets to Wolfram's typeset form.
@@ -432,6 +525,12 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
       text,
       rotation: angle,
     });
+  }
+  // A sublist inside `ChartLabels` names a whole level of the chart (group
+  // labels, then bar labels), not one label — so it is not a label of its
+  // own the way a list-valued `AxesLabel` is.
+  if matches!(e, Expr::List(_)) {
+    return None;
   }
   // Plain label
   expr_to_label(e).map(ChartLabel::plain)
@@ -1378,34 +1477,60 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Apply a `LabelingFunction` to a single bar value, returning the display
 /// string. Handles bare functions (`Round[#, 0.01] &`) and the `Placed[expr,
-/// position]` wrapper (the position only affects placement, which the caller
-/// fixes at the bar end, so only `expr` matters here).
+/// position]` wrapper (the position only affects placement, which a bar
+/// chart fixes at the bar end, so only `expr` matters here).
 fn apply_labeling_function(func: &Expr, value: f64) -> Option<String> {
+  labeling_function_label(func, value).map(|(text, _)| text)
+}
+
+/// Apply a `LabelingFunction` to a single value, returning the display string
+/// together with the placement named by a `Placed[expr, position]` result
+/// (`None` when the function returns a bare expression). The position is a
+/// string for the named chart placements (`"RadialCallout"`) and a symbol
+/// name for the symbolic ones (`Center`, `Above`).
+fn labeling_function_label(
+  func: &Expr,
+  value: f64,
+) -> Option<(String, Option<String>)> {
   let call = Expr::CurriedCall {
     func: Box::new(func.clone()),
     args: vec![Expr::Real(value)],
   };
   let result = evaluate_expr_to_expr(&call).ok()?;
-  let inner = match &result {
+  let (inner, placement) = match &result {
     Expr::FunctionCall { name, args }
       if name == "Placed" && !args.is_empty() =>
     {
-      &args[0]
+      let pos = match args.get(1) {
+        Some(Expr::String(s)) => Some(s.clone()),
+        Some(Expr::Identifier(s)) => Some(s.clone()),
+        _ => None,
+      };
+      (&args[0], pos)
     }
-    other => other,
+    other => (other, None),
   };
-  match inner {
-    Expr::String(s) => Some(s.clone()),
+  let text = match inner {
+    Expr::String(s) => s.clone(),
     // Bar values are carried as f64, so integer data arrives as e.g. `10904.0`.
     // wolframscript labels it `10904` (no trailing dot), so render an
     // integer-valued real as an integer.
     Expr::Real(r) if (r - r.round()).abs() < 1e-10 && r.abs() < 9.0e15 => {
-      Some(format!("{}", *r as i64))
+      format!("{}", *r as i64)
+    }
+    // A structured label — `Row[{NumberForm[100 #, 2], "%"}, " "]` is how a
+    // Demonstration writes a percentage — typesets the same way every other
+    // chart label does, so the number forms inside it are applied.
+    Expr::FunctionCall { .. } | Expr::CurriedCall { .. } => {
+      expr_to_label(inner).unwrap_or_else(|| {
+        crate::functions::string_ast::to_string_default_form(inner)
+      })
     }
     // Charts typeset labels in OutputForm: machine-real noise like
     // `0.47000000000000003` must render as `0.47`, matching wolframscript.
-    _ => Some(crate::functions::string_ast::to_string_default_form(inner)),
-  }
+    _ => crate::functions::string_ast::to_string_default_form(inner),
+  };
+  Some((text, placement))
 }
 
 /// Extract pie-chart rows. A flat list `{v1, v2, ...}` becomes a single
@@ -1495,9 +1620,34 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let h = svg_height as f64;
   let cx = w / 2.0;
   let cy = h / 2.0;
+
+  // `LabelingFunction -> f` labels every slice with `f[value]`. The result
+  // may be wrapped in `Placed[…, position]`, which decides how far out along
+  // the slice's mid-angle the text sits.
+  let slice_labels: Vec<Vec<Option<(String, Option<String>)>>> =
+    match &opts.labeling_function {
+      Some(func) => rows
+        .iter()
+        .map(|row| {
+          row
+            .iter()
+            .map(|&v| labeling_function_label(func, v))
+            .collect()
+        })
+        .collect(),
+      None => Vec::new(),
+    };
+  // Callout labels sit outside the pie, so the wedges give up the room the
+  // text needs — the same trade wolframscript makes.
+  let has_callout = slice_labels
+    .iter()
+    .flatten()
+    .flatten()
+    .any(|(_, pos)| pos.as_deref().is_some_and(|p| p.ends_with("Callout")));
   // wolframscript leaves a margin of ~1/6 of the half-frame around the pie,
   // so the radius is ~0.82 of the half-frame (147 on a 360x360 frame).
-  let radius = (w.min(h) / 2.0) * (147.0 / 180.0);
+  let radius =
+    (w.min(h) / 2.0) * (147.0 / 180.0) * if has_callout { 0.72 } else { 1.0 };
 
   let mut svg = svg_header(svg_width, svg_height, full_width);
   // Label text is collected separately so it draws on top of every wedge.
@@ -1599,6 +1749,23 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
 
+      // Draw the LabelingFunction text, positioned by its `Placed` spec.
+      if let Some((text, placement)) = slice_labels
+        .get(ring_idx)
+        .and_then(|row| row.get(i))
+        .and_then(Option::as_ref)
+        && !text.is_empty()
+      {
+        let mid_angle = start_angle + sweep / 2.0;
+        labels_svg.push_str(&pie_slice_label_svg(
+          text,
+          placement.as_deref(),
+          (cx, cy),
+          (r_in, r_out),
+          mid_angle,
+        ));
+      }
+
       start_angle = end_angle;
     }
   }
@@ -1606,6 +1773,72 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   svg.push_str(&labels_svg);
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
+}
+
+/// SVG for one pie-slice label, placed along the slice's mid-angle according
+/// to its `Placed` position. The radial positions name a fraction of the
+/// slice's own band (`"RadialInner"` hugs the inner edge, `"RadialOuter"` the
+/// outer one); the callout positions put the text outside the pie and draw a
+/// leader line out to it.
+fn pie_slice_label_svg(
+  text: &str,
+  placement: Option<&str>,
+  (cx, cy): (f64, f64),
+  (r_in, r_out): (f64, f64),
+  mid_angle: f64,
+) -> String {
+  // Where along the slice's radial band the text sits. A solid wedge has no
+  // inner edge, so its band starts at the centre and the centred label pulls
+  // in to 0.6 of the radius — far enough out that neighbouring labels don't
+  // collide at the hub.
+  let band = |f: f64| {
+    if r_in <= 1e-9 {
+      r_out * f
+    } else {
+      r_in + (r_out - r_in) * f
+    }
+  };
+  let callout = placement.is_some_and(|p| p.ends_with("Callout"));
+  let r_label = match placement {
+    Some("RadialInner") => band(0.25),
+    Some("RadialOuter") => band(0.85),
+    _ if callout => r_out * 1.06,
+    // "RadialCenter" and every other placement centre the label in its band.
+    _ => {
+      if r_in <= 1e-9 {
+        r_out * 0.6
+      } else {
+        (r_in + r_out) / 2.0
+      }
+    }
+  };
+  let (dx, dy) = (mid_angle.cos(), mid_angle.sin());
+  let lx = cx + r_label * dx;
+  let ly = cy + r_label * dy;
+  // A callout's text grows away from the pie, so it anchors on the side
+  // facing the centre; an inside label is centred on its point.
+  let anchor = if !callout {
+    "middle"
+  } else if dx >= 0.0 {
+    "start"
+  } else {
+    "end"
+  };
+  let mut out = String::new();
+  if callout {
+    let (x1, y1) = (cx + r_out * dx, cy + r_out * dy);
+    out.push_str(&format!(
+      "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{lx:.2}\" y2=\"{ly:.2}\" \
+       stroke=\"black\" stroke-width=\"0.5\"/>\n"
+    ));
+  }
+  out.push_str(&format!(
+    "<text x=\"{lx:.2}\" y=\"{ly:.2}\" text-anchor=\"{anchor}\" \
+     dominant-baseline=\"central\" font-family=\"sans-serif\" \
+     font-size=\"12\" fill=\"black\">{}</text>\n",
+    crate::functions::graphics::box_string_to_svg(text)
+  ));
+  out
 }
 
 /// BarChart3D[{v1, v2, ...}] or BarChart3D[{{v1, v2}, {v3, v4}, ...}]
@@ -1729,6 +1962,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         all_triangles.push(Triangle {
           boundary: [true; 3],
+          edge_color: None,
           projected: [
             project(v0, &camera),
             project(v1, &camera),
@@ -1862,6 +2096,7 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
           all.push(Triangle {
             boundary: [true; 3],
+            edge_color: None,
             projected: [
               project(v0, &camera),
               project(v1, &camera),
@@ -2516,7 +2751,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
          fill=\"{fill}\"{style_attrs}>{}</text>\n",
-      sl.svg()
+      sl.svg_scaled(sf)
     ));
   }
 

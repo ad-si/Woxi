@@ -1396,6 +1396,27 @@ mod to_character_code {
     );
   }
 
+  /// `\[InvisiblePrefixScriptBase]` and `\[InvisiblePostfixScriptBase]` are
+  /// the placeholders the FrontEnd hangs a prefix or postfix script on
+  /// (`\!\(\*SuperscriptBox[\(\[InvisiblePrefixScriptBase]\), \(1\)]\)Σ`
+  /// is `¹Σ`). They have no glyph, so they contribute nothing to the text
+  /// they appear in. Regression: unrecognised, they printed their own
+  /// names into a Demonstration's control labels.
+  #[test]
+  fn invisible_script_base_chars_are_empty() {
+    assert_eq!(
+      interpret(
+        r#""\[InvisiblePrefixScriptBase]\[CapitalSigma]\[InvisiblePostfixScriptBase]""#
+      )
+      .unwrap(),
+      "Σ"
+    );
+    assert_eq!(
+      interpret(r#"StringLength["\[InvisiblePrefixScriptBase]x"]"#).unwrap(),
+      "1"
+    );
+  }
+
   #[test]
   fn greek_named_chars() {
     // \[Alpha]\[Beta]\[Gamma] → Unicode code points 945, 946, 947.

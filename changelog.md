@@ -2,6 +2,35 @@
 
 # Unreleased
 
+- Fixes driven by a Wolfram Demonstration that draws a diatomic molecule as
+    a three-dimensional schematic beside an energy plot:
+    - `Scale[g, s]` in a `Graphics3D` scales about the centre of `g`'s
+        bounding box, the way the two-dimensional renderer already did.
+        Scaling about the origin dragged everything towards it, so two
+        nuclei a bond length apart collapsed into one blob.
+    - `Scale[g, {sx, sy, sz}]` with unequal factors bends a `Sphere`,
+        `Cylinder` or `Cone` into the ellipsoidal shape it asks for. The
+        radius used to take one averaged factor, which left a sphere a
+        sphere.
+    - `EdgeForm[colour]` outlines a face in that colour, and outlines a
+        curved primitive's end circles rather than nothing at all —
+        `{Opacity[0], EdgeForm[Black], Cylinder[…]}` is how a Demonstration
+        draws an unfilled circle in space. Such an outline also stays
+        opaque around a transparent face.
+    - A `Style[…, size]` inside a plot label is sized in printer's points
+        and a `Spacer[n]` is a gap of `n` of them, both scaled to the
+        picture. The sizes used to be emitted verbatim into a viewBox
+        twenty times larger, which left a styled run invisible and a spacer
+        sized off the font instead of the page.
+    - `\[InvisiblePrefixScriptBase]` and `\[InvisiblePostfixScriptBase]`
+        set no type, and a script hung on one is a prefix script:
+        `\!\(\*SuperscriptBox[\(\[InvisiblePrefixScriptBase]\), \(1\)]\)Σ`
+        reads as `¹Σ`. The placeholder used to print its own name, and the
+        script was read as an exponentiation — so `x^1` evaluated it away.
+    - The `\[Raw…]` characters name the ASCII control codes, and the
+        non-printing ones set no type in a notebook cell. A caption that
+        opens an inline formula with a `\[RawEscape]` used to show the name.
+
 - Fixes driven by a Wolfram Demonstration that solves a pair of coupled
     reaction equations and switches between three views of the result:
     - The picture a cell shows is the one its value *is*, not the last one
@@ -27,6 +56,34 @@
         so the option value arrived as an unevaluated product and was
         dropped, leaving the default width; it is now evaluated to the
         `{400, 400}` it describes.
+- Fixes driven by a Wolfram Demonstration that plots the concentrations of
+    a catalysed reaction and breaks them down in an inset pie chart:
+    - `PieChart` honours `LabelingFunction -> f`, labelling every wedge with
+        `f[value]`. A `Placed[label, position]` result picks the radius the
+        text sits at — `"RadialInner"` and `"RadialOuter"` hug the hub or the
+        rim, and `"RadialCallout"` puts the label outside the pie on a leader
+        line, with the wedges giving up the room the text needs. The option
+        used to be ignored, so a pie labelled only through it came out bare.
+        A structured label such as `Row[{NumberForm[100 #, 2], "%"}, " "]`
+        now typesets the way every other chart label does, so the number
+        forms inside it are applied.
+    - An axis label written through a typesetting wrapper still prints:
+        `AxesLabel -> TraditionalForm /@ {t, y}` used to leave *both* axes
+        unlabelled. A list is a label in its own right too, typeset as the
+        list itself, and a wide one over an axis near the left edge slides
+        right instead of running off the image.
+    - Either half of an `Inset` anchor may be symbolic: `{0.8, Center}`
+        means four-fifths along the x axis and halfway up the y one.
+        An unresolved half used to drop the whole position, which parked
+        the inset in the middle of the plot.
+    - A notebook's prose renders a script written over a base
+        (`OverscriptBox`) — a rate constant over a reaction arrow, or an
+        accent such as `OverHat`, which reads as the accented letter. The
+        case was missing entirely, so the raw box source was left in the
+        cell. The long arrows those constants sit on (`\[LongRightArrow]`,
+        `\[DoubleLongLeftRightArrow]` and the rest of the family, plus
+        `\[Equilibrium]`) are named characters now, rather than printing as
+        their own names.
 - Fixes driven by a Wolfram Demonstration whose setter names each of ten
     conformal maps by its formula:
     - `\[WarningSign]` and its neighbours in Wolfram's pictograph block are

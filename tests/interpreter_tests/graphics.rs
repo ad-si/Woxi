@@ -706,6 +706,48 @@ mod graphics {
         "and sits at the scaled anchor: {nested}"
       );
     }
+
+    /// Either half of an anchor may be symbolic: a Demonstration pins its
+    /// inset with `{0.8, Center}` — four-fifths along the x axis, halfway
+    /// up the y one. An unresolved half used to drop the whole position and
+    /// centre the inset in the plot.
+    #[test]
+    fn an_inset_anchor_takes_symbolic_coordinates() {
+      let anchor = |pos: &str| -> (f64, f64) {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 10}}, PlotRange -> {{{{0, 10}}, {{0, 10}}}}, \
+           Epilog -> Inset[Graphics[{{Disk[]}}, ImageSize -> {{20, 20}}], \
+           {pos}]]"
+        ));
+        let nested = svg
+          .split("<svg ")
+          .nth(2)
+          .and_then(|s| s.split_once('>'))
+          .unwrap_or_else(|| panic!("no inset for {pos}: {svg}"))
+          .0
+          .to_string();
+        let attr = |name: &str| -> f64 {
+          nested
+            .split(&format!("{name}=\""))
+            .nth(1)
+            .and_then(|v| v.split('"').next())
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| panic!("no {name} in {nested}"))
+        };
+        (attr("x"), attr("y"))
+      };
+      // `Center` in either slot is the midpoint of that axis' range, so
+      // `{0.8, Center}` lands where the fully numeric `{0.8, 5}` does — and
+      // well left of the plot's own centre.
+      assert_eq!(anchor("{0.8, Center}"), anchor("{0.8, 5}"));
+      assert!(
+        anchor("{0.8, Center}").0 < anchor("{5, Center}").0,
+        "the x half must still be read as 0.8"
+      );
+      // The side names resolve to the ends of their own axis.
+      assert_eq!(anchor("{Left, Bottom}"), anchor("{0, 0}"));
+      assert_eq!(anchor("{Right, Top}"), anchor("{10, 10}"));
+    }
   }
 
   mod styles {
@@ -2703,6 +2745,116 @@ mod plot3d {
       );
     }
 
+    /// `Scale[g, s]` without a centre scales `g` about the centre of its
+    /// own bounding box, so the content stays where it is and only changes
+    /// size. Regression: the 3D path scaled about the origin, which
+    /// dragged everything towards it — two protons a bond length apart
+    /// collapsed into one blob.
+    #[test]
+    fn graphics3d_scale_is_about_the_content_centre() {
+      // The marker at -2 fixes the framing so both scenes are drawn to the
+      // same scale; the sphere at +2 is the one being shrunk.
+      let scene = |body: &str| {
+        export_svg(&format!(
+          "Graphics3D[{{Sphere[{{-2,0,0}}, 0.2], {body}}}, Boxed -> False]"
+        ))
+      };
+      assert_eq!(
+        scene("Scale[Sphere[{2,0,0}, 1], 1/2]"),
+        scene("Sphere[{2,0,0}, 0.5]"),
+        "a uniform Scale only changes the radius, not the position"
+      );
+      // An explicit centre is still honoured: about the origin the sphere
+      // moves to x = 1.
+      assert_eq!(
+        scene("Scale[Sphere[{2,0,0}, 1], 1/2, {0,0,0}]"),
+        scene("Sphere[{1,0,0}, 0.5]"),
+        "an explicit Scale centre overrides the content centre"
+      );
+    }
+
+    /// `Scale[g, {sx, sy, sz}]` with unequal factors turns a sphere into an
+    /// ellipsoid — the shape a Demonstration draws a diatomic molecule's
+    /// electron cloud with. Regression: the radius was scaled by one
+    /// averaged factor, so the sphere stayed a sphere.
+    #[test]
+    fn graphics3d_anisotropic_scale_makes_an_ellipsoid() {
+      // Extent of the drawn geometry on screen, as (width, height).
+      let extent = |code: &str| -> (f64, f64) {
+        let svg = export_svg(code);
+        let mut xs: Vec<f64> = Vec::new();
+        let mut ys: Vec<f64> = Vec::new();
+        for chunk in svg.split("points=\"").skip(1) {
+          let pts = chunk.split('"').next().unwrap_or_default();
+          for pair in pts.split_whitespace() {
+            if let Some((x, y)) = pair.split_once(',')
+              && let (Ok(x), Ok(y)) = (x.parse::<f64>(), y.parse::<f64>())
+            {
+              xs.push(x);
+              ys.push(y);
+            }
+          }
+        }
+        let span = |v: &[f64]| {
+          v.iter().cloned().fold(f64::MIN, f64::max)
+            - v.iter().cloned().fold(f64::MAX, f64::min)
+        };
+        (span(&xs), span(&ys))
+      };
+      // Seen from the front, the screen axes are y (across) and z (up), so
+      // halving z must halve the drawn height while the width stays.
+      let (w0, h0) = extent(
+        "Graphics3D[Sphere[], Boxed -> False, \
+         ViewPoint -> Front]",
+      );
+      let (w1, h1) = extent(
+        "Graphics3D[Scale[Sphere[], {1, 1, 1/2}], \
+         Boxed -> False, ViewPoint -> Front]",
+      );
+      assert!(
+        (w0 / h0 - 1.0).abs() < 0.05,
+        "a sphere is drawn round: {w0} x {h0}"
+      );
+      assert!(
+        (w1 / h1 - 2.0).abs() < 0.05,
+        "flattening z halves the height: {w1} x {h1}"
+      );
+    }
+
+    /// `EdgeForm[colour]` outlines a face in that colour. On a cylinder
+    /// only the two end circles are outlines — the cuts along its length
+    /// are internal — which is how `{Opacity[0], EdgeForm[Black],
+    /// Cylinder[…]}` draws an unfilled circle in space (a Demonstration's
+    /// electron orbit). Regression: curved primitives dropped every edge,
+    /// so the circle was invisible.
+    #[test]
+    fn graphics3d_edge_form_colour_outlines_a_cylinder() {
+      let svg = export_svg(
+        "Graphics3D[{Opacity[0], EdgeForm[Black], \
+         Cylinder[{{0,0,0},{0,0,0.001}}, 0.5]}, Boxed -> False]",
+      );
+      let outlines: Vec<&str> =
+        svg.lines().filter(|l| l.starts_with("<line")).collect();
+      assert!(
+        !outlines.is_empty(),
+        "the rim must be stroked, got no lines: {svg}"
+      );
+      assert!(
+        outlines.iter().all(|l| l.contains("stroke=\"rgb(0,0,0)\"")),
+        "the rim takes the EdgeForm colour: {outlines:?}"
+      );
+      assert!(
+        outlines.iter().all(|l| !l.contains("opacity=")),
+        "an outline stays opaque around a transparent face: {outlines:?}"
+      );
+      // Without an edge colour a cylinder is still drawn smooth, with no
+      // facet outlines at all.
+      let plain = export_svg(
+        "Graphics3D[Cylinder[{{0,0,0},{0,0,0.001}}, 0.5], Boxed -> False]",
+      );
+      assert_eq!(plain.lines().filter(|l| l.starts_with("<line")).count(), 0);
+    }
+
     /// `Rotate[g, theta, w, p]` turns `g` about the axis `w` through the
     /// point `p` — the four-argument 3D form. Regression: only the
     /// three-argument form was recognised, so a net whose flaps fold about
@@ -3202,6 +3354,55 @@ mod plot3d {
       assert!(
         !svg.contains("Spacer["),
         "the spacer must not print itself: {svg}"
+      );
+    }
+
+    /// A `Style[…, size]` inside a plot label asks for a size in printer's
+    /// points, and a `Spacer[n]` for a gap of `n` of them. The plot is
+    /// drawn into a viewBox blown up by the renderer's resolution scale, so
+    /// both have to be scaled to match. Regression: they were emitted
+    /// verbatim, which left a `Style[…, 16]` run a twentieth of the size it
+    /// asked for — invisible next to the surrounding text — and the spacer
+    /// sized off the font instead of the page.
+    #[test]
+    fn plot_label_style_size_and_spacer_scale_with_the_picture() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, \
+         PlotLabel -> Text[Row[{Style[\"exact\", 16], Spacer[25], \
+         Style[\"model\", 16]}]]]",
+      );
+      let label = svg
+        .split("<text ")
+        .find(|t| t.contains("exact"))
+        .expect("the plot label");
+      // The label's own <text> element sizes the surrounding run; the
+      // styled runs must be in the same units, not twenty times smaller.
+      let outer: f64 = label
+        .split_once("font-size=\"")
+        .and_then(|(_, r)| r.split_once('"'))
+        .and_then(|(v, _)| v.parse().ok())
+        .expect("the label font size");
+      let styled: f64 = label
+        .rsplit_once("font-size=\"")
+        .and_then(|(_, r)| r.split_once('"'))
+        .and_then(|(v, _)| v.parse().ok())
+        .expect("the styled run's font size");
+      assert!(
+        styled > outer / 2.0,
+        "a 16-point run must stay legible beside a {outer}-unit label, \
+         got {styled}: {label}"
+      );
+      // `Spacer[25]` is 25 points of gap, so it scales with the picture
+      // rather than with whatever font size it lands next to.
+      let spacing: f64 = label
+        .split_once("letter-spacing:")
+        .and_then(|(_, r)| r.split_once("px"))
+        .and_then(|(v, _)| v.parse().ok())
+        .expect("the spacer gap");
+      assert!(
+        (spacing - styled * 25.0 / 16.0).abs() < 1.0,
+        "a Spacer[25] beside 16-point text is 25/16 of its size, \
+         got {spacing} against {styled}: {label}"
       );
     }
 
@@ -4425,6 +4626,81 @@ mod plot3d {
         assert!(svg.contains(">YY</text>"), "{wrapper}: {svg}");
         assert!(!svg.contains("hint"), "the hint is not drawn: {svg}");
       }
+    }
+
+    /// A typesetting wrapper picks how a label is set, not what it says, so
+    /// an axis label written through one still prints. A Demonstration
+    /// writes `AxesLabel -> TraditionalForm /@ {t, y}`, which used to leave
+    /// both axes unlabelled.
+    #[test]
+    fn axes_label_through_a_typeset_form_still_prints() {
+      for form in [
+        "TraditionalForm",
+        "StandardForm",
+        "TextForm",
+        "DisplayForm",
+        "HoldForm",
+      ] {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 1}}, AxesLabel -> {form} /@ {{\"XX\", \"YY\"}}]"
+        ));
+        assert!(svg.contains(">XX</text>"), "{form}: {svg}");
+        assert!(svg.contains(">YY</text>"), "{form}: {svg}");
+      }
+    }
+
+    /// A list is a perfectly good label — it is typeset as the list itself,
+    /// which is how a Demonstration names the four curves it draws on one
+    /// axis.
+    #[test]
+    fn axes_label_given_a_list_prints_the_list() {
+      let svg = export_svg(
+        r#"Plot[x, {x, 0, 1},
+             AxesLabel -> {"t", {Style[a, Blue], Style[b, Green]}}]"#,
+      );
+      assert!(svg.contains(">t</text>"), "{svg}");
+      assert!(svg.contains(">{a, b}</text>"), "{svg}");
+    }
+
+    /// A wide y label centred on an axis that sits near the left edge would
+    /// run off the image, so it slides right until it fits.
+    #[test]
+    fn wide_axes_label_stays_inside_the_image() {
+      let y_label_x = |label: &str, starts_with: &str| -> f64 {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 1}}, AxesLabel -> {{\"t\", {label}}}]"
+        ));
+        let tag = svg
+          .split("<text ")
+          .find(|t| {
+            t.split_once('>')
+              .is_some_and(|(_, rest)| rest.starts_with(starts_with))
+          })
+          .unwrap_or_else(|| panic!("y label missing: {svg}"));
+        assert!(
+          tag.contains("text-anchor=\"middle\""),
+          "y label stays centred: {tag}"
+        );
+        tag
+          .split("x=\"")
+          .nth(1)
+          .and_then(|v| v.split('"').next())
+          .and_then(|v| v.parse().ok())
+          .unwrap()
+      };
+      let narrow = y_label_x("\"y\"", "y<");
+      let wide = y_label_x("{aaa, bbb, ccc, ddd, eee}", "{aaa,");
+      // The narrow label fits centred on the axis; the wide one has to slide
+      // right so its left half stays on the canvas. At 14 px over a 25
+      // character label that is well past 900 render units.
+      assert!(
+        wide > narrow,
+        "wide y label must slide right: {wide} vs {narrow}"
+      );
+      assert!(
+        wide > 900.0,
+        "wide y label must clear the left edge: {wide}"
+      );
     }
 
     /// The Wolfram Language writes an `AxesLabel` at the *end* of its axis:
@@ -7099,6 +7375,82 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     #[test]
     fn pie_chart_single_slice() {
       insta::assert_snapshot!(export_svg("PieChart[{100}]"));
+    }
+
+    #[test]
+    fn pie_chart_labeling_function() {
+      // `LabelingFunction -> f` labels every slice with `f[value]`; a bare
+      // function centres the label in its wedge.
+      let svg = export_svg("PieChart[{1, 2, 3}, LabelingFunction -> (# &)]");
+      for v in &["1", "2", "3"] {
+        assert!(
+          svg.contains(&format!(">{v}</text>")),
+          "missing slice label {v} in {svg}"
+        );
+      }
+      assert_eq!(
+        svg.matches("<line").count(),
+        0,
+        "a centred label needs no leader line"
+      );
+    }
+
+    #[test]
+    fn pie_chart_labeling_function_percentages() {
+      // The percentage form a Demonstration writes: the number form inside
+      // the `Row` is applied, and `"RadialCallout"` puts the text outside
+      // the pie on a leader line, anchored away from the centre.
+      let svg = export_svg(
+        r#"PieChart[{0.25, 0.75},
+             LabelingFunction ->
+               (Placed[Row[{NumberForm[100 #, 2], "%"}, " "],
+                       "RadialCallout"] &)]"#,
+      );
+      // `NumberForm[25., 2]` keeps the point a machine real is written with.
+      assert!(
+        svg.contains(">25. %</text>"),
+        "missing 25. % label in {svg}"
+      );
+      assert!(
+        svg.contains(">75. %</text>"),
+        "missing 75. % label in {svg}"
+      );
+      assert_eq!(
+        svg.matches("<line").count(),
+        2,
+        "each callout draws one leader line"
+      );
+      assert!(svg.contains("text-anchor=\"start\""));
+      assert!(svg.contains("text-anchor=\"end\""));
+    }
+
+    #[test]
+    fn pie_chart_labeling_function_radial_positions() {
+      // `"RadialInner"` hugs the hub and `"RadialOuter"` the rim, so the
+      // same label sits at different radii for the same slice.
+      let radius = |pos: &str| -> f64 {
+        let svg = export_svg(&format!(
+          "PieChart[{{1, 1, 1, 1}}, LabelingFunction -> (Placed[#, \"{pos}\"] &)]"
+        ));
+        // The first slice starts at the negative x axis, so its label sits
+        // left of and above the centre of the 360x360 frame.
+        let x: f64 = svg
+          .split("<text x=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|s| s.parse().ok())
+          .unwrap_or_else(|| panic!("no label in {svg}"));
+        180.0 - x
+      };
+      let (inner, center, outer) = (
+        radius("RadialInner"),
+        radius("RadialCenter"),
+        radius("RadialOuter"),
+      );
+      assert!(
+        inner < center && center < outer,
+        "expected inner < center < outer, got {inner} {center} {outer}"
+      );
     }
 
     #[test]
@@ -15925,6 +16277,37 @@ mod manipulate {
       ManipulateControl::Discrete { value_labels, .. } => {
         assert_eq!(value_labels[0], " ND and NU ");
         assert_eq!(value_labels[1], "plain");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A choice label written in the FrontEnd carries its prefix scripts as
+  /// linear syntax hung on `\[InvisiblePrefixScriptBase]`: a molecular term
+  /// symbol reads `¹Σ`, not `InvisiblePrefixScriptBaseΣ`. Regression: the
+  /// placeholder printed its own name, and the superscript `1` vanished
+  /// because the box was read as the exponentiation `x^1`. From the state
+  /// picker of the "Bohr's Model for the Hydrogen Molecule" Demonstration.
+  #[test]
+  fn spec_prefix_script_labels_typeset_as_unicode() {
+    let sup = |n: &str| {
+      format!(
+        "\\!\\(\\*SuperscriptBox[\\(\\[InvisiblePrefixScriptBase]\\), \
+         \\({n}\\)]\\)\\[CapitalSigma]"
+      )
+    };
+    let expr = interpret_to_expr(&format!(
+      "Manipulate[s, {{{{s, -1}}, {{-1 -> Subscript[\"{}\", \"g\"], \
+       1 -> Subscript[\"{}\", \"u\"]}}}}]",
+      sup("1"),
+      sup("3")
+    ))
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a setter spec");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels[0], "¹Σg");
+        assert_eq!(value_labels[1], "³Σᵤ");
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }

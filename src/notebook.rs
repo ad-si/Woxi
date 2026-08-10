@@ -585,6 +585,17 @@ fn extract_typeset_box(s: &str) -> Option<String> {
           "'".repeat(prime_marks(&args[1]).unwrap())
         )
       }
+      // A script hung on `\[InvisiblePrefixScriptBase]` is a *prefix*
+      // script — `\!\(\*SuperscriptBox[\(\[InvisiblePrefixScriptBase]\),
+      // \(1\)]\)Σ` typesets as `¹Σ`. The base is empty, so the
+      // exponentiation form would both fail to parse (`()^(1)`) and, once
+      // evaluated, drop the script entirely (`x^1` is `x`). `Superscript`
+      // stays unevaluated and keeps it.
+      "SuperscriptBox"
+        if args.len() == 2 && conv(&args[0]).trim().is_empty() =>
+      {
+        format!("Superscript[\"\", {}]", conv(&args[1]))
+      }
       // `SuperscriptBox[a, b]` → `(a)^(b)`.
       "SuperscriptBox" if args.len() == 2 => {
         format!("({})^({})", conv(&args[0]), conv(&args[1]))
@@ -595,9 +606,15 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // `SubscriptBox["c", RowBox[{"⟦", "1", "⟧"}]]` means `c[[1]]`.
       "SubscriptBox" if args.len() == 2 => {
         let sub = conv(&args[1]);
+        let base = conv(&args[0]);
         match part_spec_inside_double_brackets(&sub) {
-          Some(spec) => format_part_access(&conv(&args[0]), spec),
-          None => format!("Subscript[{}, {}]", conv(&args[0]), sub),
+          Some(spec) => format_part_access(&base, spec),
+          // Prefix subscript, as above — keep an explicit empty string so
+          // the result still parses.
+          None if base.trim().is_empty() => {
+            format!("Subscript[\"\", {sub}]")
+          }
+          None => format!("Subscript[{base}, {sub}]"),
         }
       }
       // `SubsuperscriptBox[a, b, c]` → `Subscript[a, b]^c`.
@@ -1159,28 +1176,46 @@ fn render_boxes_text(s: &str) -> String {
   // operator: `∑_(n=1)^m`. Multi-token limits get parentheses so the
   // sum's range stays legible, and a big operator keeps a space to its
   // body, which follows it in the enclosing row.
+  fn group_limit(limit: &str) -> String {
+    if limit.chars().all(|c| c.is_alphanumeric() || c == '.') {
+      limit.to_string()
+    } else {
+      format!("({limit})")
+    }
+  }
   if let Some(args) = positional_box_args("UnderoverscriptBox", s)
     .filter(|a| a.len() == 3)
     .or_else(|| {
       positional_box_args("UnderscriptBox", s).filter(|a| a.len() == 2)
     })
   {
-    fn group(limit: &str) -> String {
-      if limit.chars().all(|c| c.is_alphanumeric() || c == '.') {
-        limit.to_string()
-      } else {
-        format!("({limit})")
-      }
-    }
     let mut out = format!(
       "{}_{}",
       render_boxes_text(&args[0]),
-      group(&render_boxes_text(&args[1]))
+      group_limit(&render_boxes_text(&args[1]))
     );
     if let Some(over) = args.get(2) {
       out.push('^');
-      out.push_str(&group(&render_boxes_text(over)));
+      out.push_str(&group_limit(&render_boxes_text(over)));
     }
+    if big_operator_head(&args[0]).is_some() {
+      out.push(' ');
+    }
+    return out;
+  }
+  // A script above the base with nothing below it — a rate constant over a
+  // reaction arrow (`⟶^(k₂ᵃ)`), or a hat/bar over a variable.
+  if let Some(args) =
+    positional_box_args("OverscriptBox", s).filter(|a| a.len() == 2)
+  {
+    let base = render_boxes_text(&args[0]);
+    let over = render_boxes_text(&args[1]);
+    // A diacritic (combining or spacing accent) sits directly on the base
+    // rather than reading as an exponent: `OverscriptBox["x", "^"]` → `x̂`.
+    if let Some(combining) = combining_accent(&over) {
+      return format!("{base}{combining}");
+    }
+    let mut out = format!("{base}^{}", group_limit(&over));
     if big_operator_head(&args[0]).is_some() {
       out.push(' ');
     }
@@ -1214,6 +1249,22 @@ fn render_boxes_text(s: &str) -> String {
 
   // Anything else falls back to the evaluable-InputForm extractor.
   extract_cell_content(s)
+}
+
+/// The Unicode combining mark for an accent placed over a base by an
+/// `OverscriptBox` — `OverHat[x]`, `OverBar[x]`, `OverVector[x]` and friends
+/// all typeset that way. `None` for anything that reads as a script rather
+/// than a diacritic (a rate constant over a reaction arrow, say).
+fn combining_accent(over: &str) -> Option<&'static str> {
+  match over.trim() {
+    "^" | "\\[Hat]" | "\u{F759}" => Some("\u{0302}"),
+    "~" | "\\[Tilde]" | "\u{223C}" => Some("\u{0303}"),
+    "." => Some("\u{0307}"),
+    ".." => Some("\u{0308}"),
+    "_" | "\\[Macron]" | "\u{00AF}" => Some("\u{0304}"),
+    "\\[RightVector]" | "\u{21C0}" => Some("\u{20D7}"),
+    _ => None,
+  }
 }
 
 /// Map Wolfram named operator characters to their InputForm ASCII
@@ -1252,8 +1303,17 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     "And" => Some("&&"),
     "Or" => Some("||"),
     "Cross" => Some("\\[Cross]"),
-    "NoBreak" | "InvisibleSpace" | "InvisibleComma" | "ImplicitPlus"
-    | "AutoSpace" | "ZeroWidthSpace" | "NonBreakingSpace" => Some(""),
+    "NoBreak"
+    | "InvisibleSpace"
+    | "InvisibleComma"
+    | "ImplicitPlus"
+    | "AutoSpace"
+    | "ZeroWidthSpace"
+    | "NonBreakingSpace"
+    | "InvisiblePrefixScriptBase"
+    | "InvisiblePostfixScriptBase"
+    | "RawEscape"
+    | "RawBackspace" => Some(""),
     // Typographic spacing characters separate tokens in typeset code
     // (e.g. `"/.", "\[VeryThinSpace]", "sol"`). Emit a plain ASCII space
     // so the reconstructed code carries no invisible Unicode.
@@ -1339,6 +1399,13 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
           // multiplication sign is what a text cell means (`40 × 40`).
           if !code && name == "Cross" {
             result.push('\u{00D7}');
+            continue;
+          }
+          // The non-printing raw control characters set no type: a
+          // Demonstration's caption opens its inline formula with a
+          // `\[RawEscape]`, which must leave nothing behind rather than
+          // print its own name or a control byte.
+          if !code && matches!(name.as_str(), "RawEscape" | "RawBackspace") {
             continue;
           }
           match crate::syntax::named_char_to_unicode(&name) {
@@ -3333,6 +3400,50 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "ϕ'[0]");
   }
 
+  /// `\[RawEscape]` names the ASCII escape character. It sets no type, so a
+  /// caption that opens an inline formula with one reads as the formula
+  /// alone. Regression: the name was printed verbatim into the cell.
+  #[test]
+  fn test_extract_cell_content_raw_escape_sets_no_type() {
+    let s = r#"TextData[{
+ "\[RawEscape]",
+ Cell[BoxData[FormBox[RowBox[{"E", "(", "R", ")"}], TraditionalForm]],
+  "InlineMath"],
+ "."
+}]"#;
+    assert_eq!(extract_cell_content(s), "E(R).");
+  }
+
+  /// A script hung on `\[InvisiblePrefixScriptBase]` is a *prefix* script:
+  /// the FrontEnd writes the term symbol `¹Σ` as a superscript on that
+  /// invisible placeholder. Exponentiation would be wrong twice over — the
+  /// empty base leaves `()^(1)`, which does not parse, and `x^1` evaluates
+  /// away the script — so the box becomes a `Superscript`, which does not
+  /// evaluate. From the "Bohr's Model for the Hydrogen Molecule"
+  /// Demonstration's state picker.
+  #[test]
+  fn test_extract_cell_content_invisible_prefix_script_base() {
+    assert_eq!(
+      extract_cell_content(
+        r#"BoxData[SuperscriptBox["\[InvisiblePrefixScriptBase]", "1"]]"#
+      ),
+      "Superscript[\"\", 1]"
+    );
+    assert_eq!(
+      extract_cell_content(
+        r#"BoxData[SubscriptBox["\[InvisiblePrefixScriptBase]", "u"]]"#
+      ),
+      "Subscript[\"\", u]"
+    );
+    // The placeholder carries no glyph of its own wherever it turns up.
+    assert_eq!(
+      extract_cell_content(
+        r#"BoxData[RowBox[{"\[InvisiblePrefixScriptBase]", "x"}]]"#
+      ),
+      "x"
+    );
+  }
+
   #[test]
   fn test_extract_cell_content_superscript_with_option() {
     // A plain power whose box carries a display option must still convert.
@@ -3778,6 +3889,64 @@ Cell[TextData[{
     match &parsed.cells[0] {
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "Sums like ∑_(n=1)^m sin[t]/n² are curves.");
+      }
+      _ => panic!("Expected single cell"),
+    }
+  }
+
+  /// A reaction scheme sets its rate constants over the arrows: an
+  /// `OverscriptBox` when only one constant is written, an
+  /// `UnderoverscriptBox` when the reverse rate is written under it. Both
+  /// have to reach the prose as text, and so do the long arrows they sit
+  /// on — a missing case used to leave the raw box source in the cell.
+  #[test]
+  fn test_overscript_boxes_render_as_display_text() {
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ Cell[BoxData[
+  FormBox[
+   RowBox[{"X",
+    UnderoverscriptBox["\[DoubleLongLeftRightArrow]",
+     SubsuperscriptBox["k", "1", "d"],
+     SubsuperscriptBox["k", "1", "a"]], "Y",
+    FormBox[
+     OverscriptBox["\[LongRightArrow]",
+      SubsuperscriptBox["k", "2", "a"]],
+     TraditionalForm], "Z"}],
+   TraditionalForm]], "InlineMath"],
+ " is the scheme."
+}], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(
+          cell.content,
+          "X⟺_(k_1^d)^(k_1^a)Y⟶^(k_2^a)Z is the scheme."
+        );
+      }
+      _ => panic!("Expected single cell"),
+    }
+  }
+
+  /// An accent over a base is a diacritic rather than a script: `OverHat`,
+  /// `OverBar` and `OverVector` all typeset as an `OverscriptBox` and read
+  /// as the accented letter.
+  #[test]
+  fn test_overscript_accents_render_as_diacritics() {
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ Cell[BoxData[
+  FormBox[
+   RowBox[{OverscriptBox["x", "^"], "+", OverscriptBox["y", "_"], "+",
+    OverscriptBox["z", "\[RightVector]"]}],
+   TraditionalForm]], "InlineMath"]
+}], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.content, "x\u{0302}+y\u{0304}+z\u{20D7}");
       }
       _ => panic!("Expected single cell"),
     }
