@@ -16313,6 +16313,90 @@ mod manipulate {
     }
   }
 
+  /// A choice label built from a radical — the Demonstrations way of naming
+  /// a conformal map `\[Sqrt](e^z + 1)` — typesets the radical sign over
+  /// its radicand. `Sqrt` used to miss the structural label renderer, so the
+  /// setter button showed the head's source (`Sqrt[Superscript[e, z]+1]`)
+  /// instead of the formula.
+  #[test]
+  fn spec_radical_choice_labels_typeset_the_radical_sign() {
+    let expr = interpret_to_expr(
+      "Manipulate[k, {{k, 1}, {1 -> Row[{Sqrt[Row[{Style[Superscript[\"e\", \
+       \"z\"], Italic], \"+1\"}]], \" (ovals)\"}], \
+       2 -> Row[{Sqrt[\"x\"], \" (plain)\"}]}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a setter spec");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        // A compound radicand is parenthesized; a single one is not.
+        assert_eq!(value_labels[0], "\u{221A}(e\u{1DBB}+1) (ovals)");
+        assert_eq!(value_labels[1], "\u{221A}x (plain)");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+
+    // The same choice list inside the `Row[{Control[…], …}]` panel a
+    // Demonstration lays its setters out with. A held spec keeps the `Sqrt`
+    // head rather than normalizing it to the `x^(1/2)` power above, and both
+    // spellings have to reach the radical.
+    let expr = interpret_to_expr(
+      "Manipulate[k, Row[{Control[{{k, 1, \"f = \"}, \
+       {1 -> Row[{Sqrt[Row[{Style[Superscript[\"e\", \"z\"], Italic], \
+       \"+1\"}]], \" (ovals)\"}]}}], Spacer[30]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a control-panel spec");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels[0], "\u{221A}(e\u{1DBB}+1) (ovals)");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// Arithmetic joining typeset label pieces recurses into its operands, so
+  /// a quotient of two `Row`s renders as the rows it lays out rather than as
+  /// the source of the operands next to a slash.
+  #[test]
+  fn spec_quotient_choice_labels_render_their_rows() {
+    let expr = interpret_to_expr(
+      "Manipulate[k, {{k, 1}, {1 -> Row[{Style[\"a\", Italic], \"1\"}] / \
+       Row[{Style[\"b\", Italic], \"2\"}], \
+       2 -> Row[{Subscript[\"m\", 1], \"+\"}] + \"rest\"}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a setter spec");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        // Both quotient operands are compound, so both are parenthesized;
+        // a sum needs no parentheses around its terms.
+        assert_eq!(value_labels[0], "(a1)/(b2)");
+        assert_eq!(value_labels[1], "m\u{2081}+ + rest");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// `\[WarningSign]` and its neighbours in Wolfram's pictograph block are
+  /// characters like any other: a control label that warns a choice is slow
+  /// draws the sign, not the escape it was written with.
+  #[test]
+  fn spec_pictograph_named_characters_reach_labels() {
+    let expr = interpret_to_expr(
+      "Manipulate[k, {{k, 1}, {1 -> \"sn(z) \\[LongDash]\\[WarningSign] \
+       slow!\", 2 -> \"fast\"}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a setter spec");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels[0], "sn(z) \u{2014}\u{26A0} slow!");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
   /// A `Setter` / `Toggler` control type offers one widget per value, the
   /// way `SetterBar` and `RadioButton` already do. Before these were
   /// recognised as control-type names they were read as a *bound*, the
