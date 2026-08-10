@@ -13152,4 +13152,74 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl1$$ = 1}, \"\\[Ellipsis]\"]"], 
     assert_ne!(pressure, render(3, 1), "the mixture control must matter");
     assert_ne!(pressure, xy, "the view control must matter");
   }
+
+  /// The Demonstrations shape that offers several views of one computation:
+  /// the body builds every plot, then a setter bar picks which to show. The
+  /// widget must display the *picked* view — it used to show whichever plot
+  /// the body drew last, so the setter looked like it did nothing. The
+  /// stability-diagram view also exercises `ContourStyle`, `FrameLabel` and
+  /// `Epilog` on a `ContourPlot`, and `ImageSize -> n {1, 1}`.
+  #[test]
+  fn view_switching_manipulate_shows_the_picked_view() {
+    let code = "Manipulate[\n\
+      Module[{p1, p2, p3},\n\
+       p1 = Plot[Sin[k x], {x, 0, 10}, Frame -> True, \
+         ImageSize -> 300 {1, 1}];\n\
+       p2 = ParametricPlot[{Cos[k t], Sin[t]}, {t, 0, 2 Pi}, Frame -> True, \
+         ImageSize -> 320 {1, 1}];\n\
+       p3 = ContourPlot[y == k x, {x, 0, 4}, {y, 0, 4}, \
+         ContourStyle -> {Thick, Blue}, ImageSize -> 340 {1, 1}, \
+         FrameLabel -> {\"rate\", \"level\"}, \
+         Epilog -> {Text[\"here\", {2, 3}], Red, PointSize[0.05], \
+         Point[{k, 2}]}];\n\
+       Switch[view, 1, p1, 2, p2, 3, p3]],\n\
+      {{k, 1, \"rate\"}, 1, 3, 0.1, Appearance -> \"Labeled\"},\n\
+      {{view, 1, \"\"}, {1 -> \"curve\", 2 -> \"phase\", 3 -> \"diagram\"}},\n\
+      TrackedSymbols :> {k, view},\n\
+      SynchronousUpdating -> False]";
+    let widget = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must instantiate");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "a view must draw");
+    let names: Vec<&str> = widget.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["k", "view"]);
+
+    let render = |view: u32| {
+      woxi::interpret_with_stdout(&format!(
+        "k = 1; view = {view};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+
+    // Each view sizes its own picture, so the width names which one showed.
+    for (view, width) in [(1, "300"), (2, "320"), (3, "340")] {
+      let svg = render(view);
+      assert!(
+        svg.starts_with(&format!("<svg width=\"{width}\"")),
+        "view {view} must show its own plot, got: {}",
+        &svg[..svg.len().min(80)]
+      );
+    }
+
+    // The diagram view draws through all three of its options.
+    let diagram = render(3);
+    assert!(
+      diagram.contains("stroke=\"rgb(0,0,255)\""),
+      "ContourStyle must colour the boundary"
+    );
+    for text in [">rate</text>", ">level</text>", ">here</text>"] {
+      assert!(diagram.contains(text), "missing {text} in the diagram view");
+    }
+    assert!(
+      diagram.contains("rgb(255,0,0)"),
+      "the Epilog marker must be drawn"
+    );
+  }
 }

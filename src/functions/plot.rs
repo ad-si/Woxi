@@ -2224,12 +2224,13 @@ fn grid_line_props(
 /// Draw a plot's labels — `FrameLabel` on all four edges, `AxesLabel` at the
 /// ends of the axes, and the `PlotLabel` above them — into `labels_svg`.
 ///
-/// Shared by the line and scatter renderers: both draw their own axes and
-/// then inject text, and the placement rules are the same for either.
+/// Shared by the line and scatter renderers and by the density/contour
+/// family in `field_plot`: each draws its own axes and then injects text,
+/// and the placement rules are the same for all of them.
 /// `area` is the plotting rectangle `(x0, y0, w, h)` and `range` the data
 /// range `(x_min, x_max, y_min, y_max)` it maps, both in render units.
 #[allow(clippy::too_many_arguments)]
-fn plot_labels_svg(
+pub(crate) fn plot_labels_svg(
   opts: &PlotOptions,
   (plot_x0, margin_top, plot_w, plot_h): (f64, f64, f64, f64),
   (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
@@ -7192,6 +7193,18 @@ pub(crate) fn parse_image_size(
   def_w: u32,
   def_h: u32,
 ) -> Option<(u32, u32, bool)> {
+  // A plot holds its arguments, so an option value that is still an
+  // arithmetic expression never reached the evaluator: `ImageSize ->
+  // 400 {1, 1}` — the way a Demonstration asks for a square picture —
+  // arrives as `Times[400, {1, 1}]`. Evaluate it once so the shapes below
+  // see the `{400, 400}` they understand.
+  let evaluated = match value {
+    Expr::BinaryOp { .. } | Expr::FunctionCall { .. } => {
+      evaluate_expr_to_expr(value).ok()
+    }
+    _ => None,
+  };
+  let value = evaluated.as_ref().unwrap_or(value);
   let aspect = def_h as f64 / def_w as f64;
   match value {
     Expr::Integer(n) if *n > 0 => {
@@ -7643,10 +7656,12 @@ pub(crate) fn parse_axes_option(value: &Expr) -> Option<(bool, bool)> {
   }
 }
 
-/// Parse a `GridLinesStyle` option value (`Directive[Red, Dashed]`, a bare
-/// color, `{Red, Thick}`, …) into the default style for the plot's grid
-/// lines. `Automatic` / `None` keep the built-in gray.
-pub(crate) fn parse_grid_lines_style(value: &Expr) -> Option<SeriesStyle> {
+/// Parse a style option's value — `Directive[Red, Dashed]`, a bare color,
+/// `{Thick, Blue}`, … — into the style it describes. `Automatic` / `None`,
+/// and any value that sets nothing, come back as `None` so the caller keeps
+/// its built-in look. Shared by `GridLinesStyle`, `ContourStyle` and the
+/// other single-style options.
+pub(crate) fn parse_style_directives(value: &Expr) -> Option<SeriesStyle> {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   if matches!(&val, Expr::Identifier(s) if s == "Automatic" || s == "None") {
     return None;
@@ -8057,7 +8072,7 @@ pub(crate) fn apply_common_plot_option(
       );
     }
     "GridLinesStyle" => {
-      plot_opts.grid_lines_style = parse_grid_lines_style(replacement);
+      plot_opts.grid_lines_style = parse_style_directives(replacement);
     }
     "PlotRange" => {
       let (rx, ry) = parse_plot_range(replacement);
@@ -8720,7 +8735,7 @@ fn log_scale_plot_ast(
           );
         }
         "GridLinesStyle" => {
-          plot_opts.grid_lines_style = parse_grid_lines_style(replacement);
+          plot_opts.grid_lines_style = parse_style_directives(replacement);
         }
         "PlotRange" => {
           let (_rx, ry) = parse_plot_range(replacement);
