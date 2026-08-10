@@ -2717,15 +2717,130 @@ fn collect_list_pattern_bindings(
     let (_, _, bt) = extract_pattern_info(pat);
     let is_trailing_seq = idx + 1 == n && bt >= 2;
     let accessor = list_element_accessor(base, idx, is_trailing_seq);
-    if let Expr::List(inner) = pat
-      && !is_trailing_seq
-    {
-      collect_list_pattern_bindings(inner, &accessor, out);
+    if is_trailing_seq {
+      let (name, _, _) = extract_pattern_info(pat);
+      if !name.is_empty() {
+        out.push((name, accessor));
+      }
       continue;
     }
-    let (name, _, _) = extract_pattern_info(pat);
-    if !name.is_empty() {
-      out.push((name, accessor));
+    collect_element_bindings(pat, &accessor, out);
+  }
+}
+
+/// The pattern-language heads that describe *how* to match rather than *what*
+/// shape to match. Their arguments do not sit at fixed positions of the matched
+/// expression, so `collect_element_bindings` must not index into them.
+fn is_pattern_construct_head(name: &str) -> bool {
+  matches!(
+    name,
+    "Blank"
+      | "BlankSequence"
+      | "BlankNullSequence"
+      | "PatternSequence"
+      | "PatternTest"
+      | "Optional"
+      | "Alternatives"
+      | "Except"
+      | "Repeated"
+      | "RepeatedNull"
+      | "Longest"
+      | "Shortest"
+      | "Verbatim"
+      | "OptionsPattern"
+      | "KeyValuePattern"
+  )
+}
+
+/// Bindings contributed by the element pattern `pat`, whose matched value is
+/// reached by `accessor`. Recurses through nested list patterns *and* through
+/// constructor patterns (`f[p1, p2, …]`), so `g[{h[a_, b_]}] := …` binds `a`
+/// and `b` the same way `g[{{a_, b_}}] := …` does.
+fn collect_element_bindings(
+  pat: &Expr,
+  accessor: &Expr,
+  out: &mut Vec<(String, Expr)>,
+) {
+  match pat {
+    Expr::List(inner) => collect_list_pattern_bindings(inner, accessor, out),
+    Expr::FunctionCall { name, args }
+      if name == "Pattern" && args.len() == 2 =>
+    {
+      // `x : sub` — bind `x` to the whole element, then keep destructuring
+      // `sub` at the same position.
+      if let Expr::Identifier(n) = &args[0] {
+        out.push((n.clone(), accessor.clone()));
+      }
+      collect_element_bindings(&args[1], accessor, out);
+    }
+    // `sub /; test` and `HoldPattern[sub]` wrap without moving the position.
+    Expr::FunctionCall { name, args }
+      if (name == "Condition" || name == "HoldPattern") && !args.is_empty() =>
+    {
+      collect_element_bindings(&args[0], accessor, out);
+    }
+    // A constructor pattern: argument `j` of the pattern lines up with part
+    // `j` of the matched expression. The element's `MatchQ` guard has already
+    // established that the shapes agree by the time the body reads these.
+    Expr::FunctionCall { name, args } if !is_pattern_construct_head(name) => {
+      let n = args.len();
+      // A sequence pattern (`__`/`___`) absorbs an unknown number of
+      // arguments: everything before it still counts from the front, and
+      // everything after it counts from the back. With more than one
+      // sequence no position is pinned down at all, so nothing is bound.
+      let seqs: Vec<usize> = args
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| extract_pattern_info(a).2 >= 2)
+        .map(|(j, _)| j)
+        .collect();
+      if seqs.len() > 1 {
+        return;
+      }
+      let seq = seqs.first().copied();
+      for (j, arg) in args.iter().enumerate() {
+        let index = match seq {
+          Some(k) if j == k => {
+            // The sequence variable itself spans a run of arguments. Only a
+            // trailing one has a form the body can read back — the tail of
+            // the expression, spliced in as a `Sequence`.
+            if k + 1 == n {
+              let (seq_name, _, _) = extract_pattern_info(arg);
+              if !seq_name.is_empty() {
+                out.push((
+                  seq_name,
+                  Expr::FunctionCall {
+                    name: "Apply".to_string(),
+                    args: vec![
+                      Expr::Identifier("Sequence".to_string()),
+                      Expr::FunctionCall {
+                        name: "Drop".to_string(),
+                        args: vec![accessor.clone(), Expr::Integer(k as i128)]
+                          .into(),
+                      },
+                    ]
+                    .into(),
+                  },
+                ));
+              }
+            }
+            continue;
+          }
+          Some(k) if j > k => -((n - j) as i128),
+          _ => (j + 1) as i128,
+        };
+        let arg_accessor = Expr::FunctionCall {
+          name: "Part".to_string(),
+          args: vec![accessor.clone(), Expr::Integer(index)].into(),
+        };
+        collect_element_bindings(arg, &arg_accessor, out);
+      }
+    }
+    _ => {
+      let (name, _, _) = extract_pattern_info(pat);
+      if !name.is_empty() {
+        out.push((name, accessor.clone()));
+      }
     }
   }
 }
@@ -2917,6 +3032,49 @@ fn map_part_names(pat: &Expr, path: &Expr, out: &mut Vec<(Expr, String)>) {
     Expr::List(inner) => {
       for (j, ip) in inner.iter().enumerate() {
         map_part_names(ip, &part(path, j + 1), out);
+      }
+    }
+    // Mirrors `collect_element_bindings`: names bound inside a constructor
+    // sub-pattern are read from `Part[…, j]`, so the display has to map those
+    // accessors back too.
+    Expr::FunctionCall { name, args }
+      if name == "Pattern" && args.len() == 2 =>
+    {
+      if let Expr::Identifier(n) = &args[0] {
+        out.push((path.clone(), n.clone()));
+      }
+      map_part_names(&args[1], path, out);
+    }
+    Expr::FunctionCall { name, args }
+      if (name == "Condition" || name == "HoldPattern") && !args.is_empty() =>
+    {
+      map_part_names(&args[0], path, out);
+    }
+    Expr::FunctionCall { name, args } if !is_pattern_construct_head(name) => {
+      let n = args.len();
+      let seqs: Vec<usize> = args
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| extract_pattern_info(a).2 >= 2)
+        .map(|(j, _)| j)
+        .collect();
+      if seqs.len() > 1 {
+        return;
+      }
+      let seq = seqs.first().copied();
+      for (j, ip) in args.iter().enumerate() {
+        match seq {
+          Some(k) if j == k => continue,
+          Some(k) if j > k => {
+            let neg = Expr::FunctionCall {
+              name: "Part".to_string(),
+              args: vec![path.clone(), Expr::Integer(-((n - j) as i128))]
+                .into(),
+            };
+            map_part_names(ip, &neg, out);
+          }
+          _ => map_part_names(ip, &part(path, j + 1), out),
+        }
       }
     }
     _ => {}

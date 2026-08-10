@@ -9091,6 +9091,59 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    // Part 1 of a field plot is its graphics content, so a Demonstration can
+    // lift the field into a `Graphics[{Opacity[…], StreamPlot[…][[1]]}]` of
+    // its own instead of showing the plot on its own.
+    #[test]
+    fn stream_plot_part_one_yields_line_primitives() {
+      assert_eq!(
+        interpret(
+          "Head[StreamPlot[{1, x}, {x, -1, 1}, {y, -1, 1}][[1, 1, 2]]]"
+        )
+        .unwrap(),
+        "Line"
+      );
+      assert_eq!(
+        interpret(
+          "Head[Graphics[{Opacity[0.1], \
+             StreamPlot[{1, x}, {x, -1, 1}, {y, -1, 1}][[1]]}]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+    }
+
+    #[test]
+    fn vector_plot_part_one_yields_arrow_primitives() {
+      assert_eq!(
+        interpret(
+          "Head[VectorPlot[{1, x}, {x, -1, 1}, {y, -1, 1}][[1, 1, 2]]]"
+        )
+        .unwrap(),
+        "Arrow"
+      );
+    }
+
+    // The tick at the very edge of the plot range used to be centred on the
+    // boundary, so half of `-1.0` fell outside the picture and it read as
+    // `1.0`. It now sits far enough inside to stay whole.
+    #[test]
+    fn an_edge_tick_label_is_not_cut_off() {
+      let svg = export_svg(
+        "Graphics[{Circle[{0, 0}, 0.1]}, Axes -> True, \
+         PlotRange -> {{-1, 3}, {-2, 2}}, ImageSize -> {400, 400}]",
+      );
+      let x: f64 = svg
+        .split("</text>")
+        .find(|chunk| chunk.ends_with(">-1.0"))
+        .and_then(|chunk| chunk.rsplit("<text x=\"").next())
+        .and_then(|rest| rest.split('"').next())
+        .expect("an x tick labelled -1.0")
+        .parse()
+        .expect("a numeric x attribute");
+      assert!(x > 0.0, "the -1.0 label starts at x={x}, still clipped");
+    }
+
     #[test]
     fn stream_density_plot_basic() {
       insta::assert_snapshot!(export_svg(
@@ -16030,6 +16083,35 @@ mod manipulate {
         assert_eq!((*x_min, *y_min), (0.0, 0.0));
         assert_eq!((*x_max, *y_max), (1.0, 1.0));
         assert_eq!((*x_initial, *y_initial), (0.5, 0.5));
+      }
+      _ => panic!("expected 2D control"),
+    }
+  }
+
+  // A Locator's corner bounds are often written in terms of *other* control
+  // variables, which are only bound once the whole Manipulate is in scope.
+  #[test]
+  fn spec_locator_bounds_may_name_other_control_variables() {
+    let expr = interpret_to_expr(
+      "Manipulate[pt, \
+       {{pt, {0.2, 1}}, {xr[[1]], yr[[1]]}, {xr[[2]], yr[[2]]}, Locator}, \
+       {{xr, {-1, 3}}, ControlType -> None}, \
+       {{yr, {-2, 2}}, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D {
+        name,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } => {
+        assert_eq!(name, "pt");
+        assert_eq!((*x_min, *x_max), (-1.0, 3.0));
+        assert_eq!((*y_min, *y_max), (-2.0, 2.0));
       }
       _ => panic!("expected 2D control"),
     }

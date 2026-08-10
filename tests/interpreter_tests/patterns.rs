@@ -4508,3 +4508,89 @@ mod repeated_pattern_variable_in_definition {
     );
   }
 }
+
+/// A list pattern whose elements are themselves *calls* (`f[{g[a_, b_]}] :=
+/// …`) has to bind the names inside those calls, exactly as it does for a
+/// nested list (`f[{{a_, b_}}] := …`). Only the list case used to recurse, so
+/// the inner names stayed symbolic in the body.
+mod call_patterns_nested_in_a_list_pattern {
+  use super::*;
+
+  #[test]
+  fn a_call_element_binds_its_arguments() {
+    assert_eq!(
+      interpret("cn1[{foo[a_, b_]}] := {a, b}; cn1[{foo[1, 2]}]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn binding_works_beside_a_plain_element() {
+    assert_eq!(
+      interpret("cn2[{x_, foo[a_]}] := {x, a}; cn2[{9, foo[8]}]").unwrap(),
+      "{9, 8}"
+    );
+  }
+
+  #[test]
+  fn the_element_still_has_to_match() {
+    assert_eq!(
+      interpret("cn3[{foo[a_]}] := a; cn3[{bar[1]}]").unwrap(),
+      "cn3[{bar[1]}]"
+    );
+  }
+
+  #[test]
+  fn nesting_goes_through_lists_and_calls_alike() {
+    assert_eq!(
+      interpret("cn4[{{foo[{a_, b_}]}}] := {a, b}; cn4[{{foo[{1, 2}]}}]")
+        .unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn a_trailing_argument_sequence_leaves_earlier_arguments_bindable() {
+    assert_eq!(
+      interpret("cn5[{foo[{a_, b_}, ___]}] := {a, b}; cn5[{foo[{1, 2}, 9]}]")
+        .unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn a_named_call_element_binds_both_the_whole_and_its_parts() {
+    assert_eq!(
+      interpret("cn6[{p : foo[a_, b_]}] := {p, a, b}; cn6[{foo[1, 2]}]")
+        .unwrap(),
+      "{foo[1, 2], 1, 2}"
+    );
+  }
+
+  #[test]
+  fn an_argument_after_a_sequence_is_not_bound_to_the_wrong_part() {
+    // `foo[__, z_]` cannot say where `z` lands, so the definition simply
+    // does not apply rather than reading an arbitrary argument.
+    assert_eq!(
+      interpret("cn7[{foo[__, z_]}] := z; cn7[{foo[1, 2, 3]}]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn a_trailing_argument_sequence_binds_the_tail() {
+    assert_eq!(
+      interpret("cn9[{foo[a_, s__]}] := {a, {s}}; cn9[{foo[1, 2, 3]}]")
+        .unwrap(),
+      "{1, {2, 3}}"
+    );
+  }
+
+  #[test]
+  fn the_stored_definition_reads_back_as_written() {
+    assert_eq!(
+      interpret("cn8[{foo[a_, b_]}] := a + b; DownValues[cn8]").unwrap(),
+      "{HoldPattern[cn8[{foo[a_, b_]}]] :> a + b}"
+    );
+  }
+}
