@@ -7114,3 +7114,416 @@ mod color_data_gradients {
     );
   }
 }
+
+/// The image-processing functions the Wolfram Demonstrations Project reaches
+/// for when it wants to show off a filter menu: correlation and convolution,
+/// HSB/CMYK recoding, histogram equalization, morphological pruning and
+/// white balancing.
+mod demonstration_image_filters {
+  use super::*;
+
+  /// The result of `code`, written the way `InputForm` writes it.
+  fn form(code: &str) -> String {
+    interpret(&format!("ToString[{code}, InputForm]")).unwrap()
+  }
+
+  /// A single lit pixel: filtering it prints the kernel, which is the one
+  /// input that tells correlation and convolution apart.
+  const IMPULSE: &str = "Image[{{0., 0., 1., 0., 0.}}]";
+
+  // Convolution reflects the kernel, so an impulse comes back as the kernel
+  // itself — the same relationship ListConvolve has to ListCorrelate.
+  #[test]
+  fn convolving_an_impulse_replays_the_kernel() {
+    clear_state();
+    assert_eq!(
+      form(&format!(
+        "ImageData[ImageConvolve[{IMPULSE}, {{{{1, 10, 100}}}}]]"
+      )),
+      "{{0., 1., 10., 100., 0.}}"
+    );
+  }
+
+  // Correlation does not reflect it, so the impulse response is reversed.
+  #[test]
+  fn correlating_an_impulse_reverses_the_kernel() {
+    clear_state();
+    assert_eq!(
+      form(&format!(
+        "ImageData[ImageCorrelate[{IMPULSE}, {{{{1, 10, 100}}}}]]"
+      )),
+      "{{0., 100., 10., 1., 0.}}"
+    );
+  }
+
+  // Kernel entries are reflected whatever they are written as, so a
+  // kernel of rationals — `BoxMatrix[1]/9` is the usual way to spell a box
+  // blur — is not quietly left unreflected.
+  #[test]
+  fn a_rational_kernel_is_reflected_too() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "Round[111 ImageData[ImageConvolve[{IMPULSE}, {{{{1, 10, 100}}}}/111]]]"
+      ))
+      .unwrap(),
+      "{{0, 1, 10, 100, 0}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "Round[111 ImageData[ImageCorrelate[{IMPULSE}, {{{{1, 10, 100}}}}/111]]]"
+      ))
+      .unwrap(),
+      "{{0, 100, 10, 1, 0}}"
+    );
+  }
+
+  // A kernel that is its own reflection makes the two operations the same,
+  // which is why `ImageCorrelate[img, GaussianMatrix[r]]` and the
+  // corresponding convolution agree.
+  #[test]
+  fn a_symmetric_kernel_makes_them_agree() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "ImageData[ImageCorrelate[{IMPULSE}, GaussianMatrix[2]]] == \
+         ImageData[ImageConvolve[{IMPULSE}, GaussianMatrix[2]]]"
+      ))
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Correlation keeps the image's shape, channel count and type.
+  #[test]
+  fn correlate_preserves_the_image_shape() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageCorrelate[Image[{{{1., 0., 0.}, \
+                 {0., 1., 0.}}}], {{1}}]]"
+      )
+      .unwrap(),
+      "{2, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageChannels[ImageCorrelate[Image[{{{1., 0., 0.}}}], {{1}}]]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("ImageType[ImageCorrelate[Image[{{0.1, 0.5}}], {{1}}]]")
+        .unwrap(),
+      "Real32"
+    );
+  }
+
+  // A first argument that is not an image is reported and echoed.
+  #[test]
+  fn correlate_reports_a_non_image() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageCorrelate[5, {{1}}]").unwrap(),
+      "ImageCorrelate[5, {{1}}]"
+    );
+  }
+
+  // ColorConvert to "HSB" recodes each RGB triple as hue/saturation/
+  // brightness: red is hue 0, green is hue 1/3, both fully saturated.
+  #[test]
+  fn color_convert_to_hsb_recodes_each_pixel() {
+    clear_state();
+    assert_eq!(
+      form(
+        "ImageData[ColorConvert[Image[{{{1., 0., 0.}, {0., 1., 0.}}}], \"HSB\"]]"
+      ),
+      "{{{0., 1., 1.}, {0.3333333432674408, 1., 1.}}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageColorSpace[ColorConvert[Image[{{{1., 0., 0.}}}], \"HSB\"]]"
+      )
+      .unwrap(),
+      "HSB"
+    );
+  }
+
+  // A grayscale source is read as the gray RGB it stands for, so the
+  // converted image gains the extra channels.
+  #[test]
+  fn color_convert_widens_grayscale_to_hsb_and_cmyk() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageChannels[ColorConvert[Image[{{0.5}}], \"HSB\"]]")
+        .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("ImageChannels[ColorConvert[Image[{{0.5}}], \"CMYK\"]]")
+        .unwrap(),
+      "4"
+    );
+    assert_eq!(
+      form("ImageData[ColorConvert[Image[{{{1., 0., 0.}}}], \"CMYK\"]]"),
+      "{{{0., 1., 1., 0.}}}"
+    );
+  }
+
+  // An alpha channel is not a color channel: it rides along unchanged, so
+  // an RGBA image converts to a four-component HSBA one.
+  #[test]
+  fn color_convert_carries_alpha_through() {
+    clear_state();
+    assert_eq!(
+      form("ImageData[ColorConvert[Image[{{{1., 0., 0., 0.25}}}], \"HSB\"]]"),
+      "{{{0., 1., 1., 0.25}}}"
+    );
+  }
+
+  // HistogramTransform spreads the pixel values over the whole range: four
+  // dark values become an even ramp from 0 to 1.
+  #[test]
+  fn histogram_transform_flattens_the_histogram() {
+    clear_state();
+    assert_eq!(
+      form("ImageData[HistogramTransform[Image[{{0., 0.1, 0.2, 0.3}}]]]"),
+      "{{0., 0.3333333432674408, 0.6666666865348816, 1.}}"
+    );
+  }
+
+  // An already-flat histogram is a fixed point of the transform.
+  #[test]
+  fn histogram_transform_leaves_a_uniform_ramp_alone() {
+    clear_state();
+    assert_eq!(
+      form("ImageData[HistogramTransform[Image[{{0., 0.25, 0.5, 0.75, 1.}}]]]"),
+      "{{0., 0.25, 0.5, 0.75, 1.}}"
+    );
+  }
+
+  // Each channel is equalized on its own, so the same value can land
+  // differently in different channels.
+  #[test]
+  fn histogram_transform_works_per_channel() {
+    clear_state();
+    assert_eq!(
+      form(
+        "ImageData[HistogramTransform[\
+         Image[{{{0., 0.5, 1.}, {0.5, 1., 0.}}}]]]"
+      ),
+      "{{{0., 0., 1.}, {1., 1., 0.}}}"
+    );
+  }
+
+  // A constant channel has nothing to spread out and passes through
+  // untouched rather than dividing by zero.
+  #[test]
+  fn histogram_transform_keeps_a_constant_channel() {
+    clear_state();
+    assert_eq!(
+      form("ImageData[HistogramTransform[Image[{{0.4, 0.4}}]]]"),
+      "{{0.4000000059604645, 0.4000000059604645}}"
+    );
+  }
+
+  #[test]
+  fn histogram_transform_reports_a_non_image() {
+    clear_state();
+    assert_eq!(
+      interpret("HistogramTransform[5]").unwrap(),
+      "HistogramTransform[5]"
+    );
+  }
+
+  /// A five-pixel bar with a one-pixel spur growing out of its middle.
+  const BAR: &str = "Image[{{0, 0, 1, 0, 0}, {1, 1, 1, 1, 1}}]";
+
+  // One pass deletes every endpoint — here the two ends of the bar. The
+  // spur has three neighbors below it, so it is a junction, not a tip.
+  #[test]
+  fn pruning_removes_branch_endpoints() {
+    clear_state();
+    assert_eq!(
+      form(&format!("ImageData[Pruning[{BAR}]]")),
+      "{{0., 0., 1., 0., 0.}, {0., 1., 1., 1., 0.}}"
+    );
+  }
+
+  /// The same bar carrying a three-pixel spur, long enough that the number
+  /// of passes shows.
+  const SPUR: &str = "Image[{{0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}, \
+                      {0, 0, 1, 0, 0}, {1, 1, 1, 1, 1}}]";
+
+  // n passes eat back branches up to n pixels long, one pixel of spur per
+  // pass.
+  #[test]
+  fn pruning_takes_a_branch_length() {
+    clear_state();
+    assert_eq!(
+      form(&format!("ImageData[Pruning[{SPUR}, 1]]")),
+      "{{0., 0., 0., 0., 0.}, {0., 0., 1., 0., 0.}, \
+       {0., 0., 1., 0., 0.}, {0., 1., 1., 1., 0.}}"
+        .replace("       ", "")
+    );
+    assert_eq!(
+      form(&format!("ImageData[Pruning[{SPUR}, 2]]")),
+      "{{0., 0., 0., 0., 0.}, {0., 0., 0., 0., 0.}, \
+       {0., 0., 1., 0., 0.}, {0., 1., 1., 1., 0.}}"
+        .replace("       ", "")
+    );
+    // No second argument means a single pass…
+    assert_eq!(
+      form(&format!("ImageData[Pruning[{SPUR}]]")),
+      form(&format!("ImageData[Pruning[{SPUR}, 1]]"))
+    );
+    // …and n = 0 is the identity.
+    assert_eq!(
+      form(&format!("ImageData[Pruning[{BAR}, 0]]")),
+      "{{0., 0., 1., 0., 0.}, {1., 1., 1., 1., 1.}}"
+    );
+  }
+
+  // Infinity prunes until nothing more falls away. What is left here is a
+  // three-pixel bar under the spur, where every pixel has two or more
+  // neighbors.
+  #[test]
+  fn pruning_to_infinity_stops_when_stable() {
+    clear_state();
+    assert_eq!(
+      form(
+        "ImageData[Pruning[Image[{{0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}, \
+         {1, 1, 1, 1, 1}}], Infinity]]"
+      ),
+      "{{0., 0., 0., 0., 0.}, {0., 0., 1., 0., 0.}, \
+       {0., 1., 1., 1., 0.}}"
+        .replace("       ", "")
+    );
+  }
+
+  // An isolated pixel has no neighbors at all, so it is a point rather
+  // than the tip of a branch and survives pruning.
+  #[test]
+  fn pruning_keeps_isolated_points() {
+    clear_state();
+    assert_eq!(
+      form("ImageData[Pruning[Image[{{1, 0}, {0, 0}}]]]"),
+      "{{1., 0.}, {0., 0.}}"
+    );
+  }
+
+  // Surviving pixels keep their gray value; only the pruned ones go black.
+  #[test]
+  fn pruning_preserves_gray_values() {
+    clear_state();
+    assert_eq!(
+      form("ImageData[Pruning[Image[{{0.4, 0.6, 0.8}}]]]"),
+      "{{0., 0.6000000238418579, 0.}}"
+    );
+  }
+
+  #[test]
+  fn pruning_reports_a_bad_branch_length() {
+    clear_state();
+    assert_eq!(
+      interpret("Pruning[Image[{{1, 0}}], -1]").unwrap(),
+      "Pruning[-Image-, -1]"
+    );
+  }
+
+  // ColorBalance maps its reference color onto white exactly — that is the
+  // whole point of white balancing.
+  #[test]
+  fn color_balance_maps_the_reference_to_white() {
+    clear_state();
+    assert_eq!(
+      form("ImageData[ColorBalance[Image[{{{0., 1., 0.}}}], Green]]"),
+      "{{{1., 1., 1.}}}"
+    );
+  }
+
+  // Balancing against white is the identity: the gains are all 1.
+  #[test]
+  fn color_balance_against_white_changes_nothing() {
+    clear_state();
+    assert_eq!(
+      form("ImageData[ColorBalance[Image[{{{0.2, 0.4, 0.6}}}], White]]"),
+      "{{{0.20000000298023224, 0.4000000059604645, 0.6000000238418579}}}"
+    );
+  }
+
+  // Correcting for a green cast pushes neutral gray towards magenta,
+  // because the green channel is the one being scaled down relative to the
+  // others.
+  #[test]
+  fn color_balance_tints_a_neutral_image() {
+    clear_state();
+    let out = interpret(
+      "ImageData[ColorBalance[Image[{{{0.5, 0.5, 0.5}}}], Green]][[1, 1]]",
+    )
+    .unwrap();
+    let channels: Vec<f64> = out
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(", ")
+      .map(|s| s.parse().expect("channel value"))
+      .collect();
+    assert_eq!(channels.len(), 3);
+    assert!(channels[1] < channels[0], "green below red: {channels:?}");
+    assert!(channels[0] < channels[2], "red below blue: {channels:?}");
+  }
+
+  // The rule form sends the reference to a target other than white.
+  #[test]
+  fn color_balance_takes_a_target_color() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Round[10 ImageData[ColorBalance[Image[{{{0., 1., 0.}}}], \
+         Green -> Red]]]"
+      )
+      .unwrap(),
+      "{{{10, 0, 0}}}"
+    );
+    // The two-color spelling means the same thing.
+    assert_eq!(
+      interpret(
+        "ImageData[ColorBalance[Image[{{{0., 1., 0.}}}], Green, Red]] == \
+         ImageData[ColorBalance[Image[{{{0., 1., 0.}}}], Green -> Red]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // A single-channel image has no color to rebalance and comes back as it
+  // went in.
+  #[test]
+  fn color_balance_leaves_grayscale_alone() {
+    clear_state();
+    assert_eq!(
+      form("ImageData[ColorBalance[Image[{{0.3, 0.7}}], Green]]"),
+      "{{0.30000001192092896, 0.699999988079071}}"
+    );
+  }
+
+  // A reference with no cone response at all gives no finite gain, so the
+  // call stays put rather than producing infinities.
+  #[test]
+  fn color_balance_declines_a_black_reference() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorBalance[Image[{{{0.5, 0.5, 0.5}}}], Black]").unwrap(),
+      "ColorBalance[-Image-, GrayLevel[0]]"
+    );
+  }
+
+  #[test]
+  fn color_balance_reports_a_non_image() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorBalance[5, Green]").unwrap(),
+      "ColorBalance[5, RGBColor[0, 1, 0]]"
+    );
+  }
+}
