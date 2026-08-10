@@ -418,9 +418,18 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         .collect::<Vec<_>>()
         .into(),
     )),
-    #[cfg(unix)]
     "$ParentProcessID" => {
-      Some(Expr::Integer(unsafe { libc::getppid() } as i128))
+      #[allow(unused)]
+      let mut ppid = -1i128;
+      #[cfg(unix)]
+      {
+        ppid = unsafe { libc::getppid() } as i128;
+      }
+      #[cfg(windows)]
+      {
+        ppid = crate::functions::windows::getppid() as i128;
+      }
+      Some(Expr::Integer(ppid))
     }
     #[cfg(unix)]
     "$MachineName" => {

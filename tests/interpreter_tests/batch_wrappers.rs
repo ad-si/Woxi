@@ -1,13 +1,5 @@
 use super::*;
 
-fn temp_path() -> String {
-  let mut tmp = std::env::temp_dir().display().to_string();
-  if tmp.ends_with(std::path::MAIN_SEPARATOR) {
-    tmp.pop();
-  }
-  tmp
-}
-
 mod batch_unevaluated_wrappers {
   use super::*;
 
@@ -1577,7 +1569,7 @@ mod batch_unevaluated_wrappers_2 {
 
   #[test]
   fn directory_q_true() {
-    let tmp = temp_path();
+    let tmp = temp_dir();
     assert_eq!(
       interpret(&format!(r#"DirectoryQ["{tmp}"]"#)).unwrap(),
       "True"
@@ -1605,7 +1597,7 @@ mod batch_unevaluated_wrappers_2 {
 
   #[test]
   fn file_type_directory() {
-    let tmp = temp_path();
+    let tmp = temp_dir();
     assert_eq!(
       interpret(&format!(r#"FileType["{tmp}"]"#)).unwrap(),
       "Directory"
@@ -10655,7 +10647,7 @@ mod batch_unevaluated_wrappers_2 {
   // ResetDirectory
   #[test]
   fn reset_directory_restores_previous() {
-    let tmp = temp_path();
+    let tmp = temp_dir();
     let result = interpret(
       &format!("old = Directory[]; SetDirectory[\"{tmp}\"]; ResetDirectory[]; Directory[] == old"
     ))
@@ -10664,7 +10656,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn reset_directory_returns_restored_dir() {
-    let tmp = temp_path();
+    let tmp = temp_dir();
     let result = interpret(
       &format!("old = Directory[]; SetDirectory[\"{tmp}\"]; restored = ResetDirectory[]; restored == old"
     ))
@@ -11193,12 +11185,20 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn create_directory_no_args() {
     let result = interpret("CreateDirectory[]").unwrap();
-    // Should return a string path (temp directory)
+    // Should return the path of a freshly created temp directory. The
+    // separator is platform-specific (`\` on Windows), so check the file
+    // name rather than a slash-prefixed substring.
+    let path = std::path::Path::new(&result);
     assert!(
-      result.contains("/woxi_"),
-      "Expected a path, got: {}",
+      path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.starts_with("woxi_")),
+      "Expected a woxi_* temp path, got: {}",
       result
     );
+    assert!(path.is_dir(), "Expected an existing directory: {}", result);
+    let _ = std::fs::remove_dir_all(path);
   }
 
   /// Every call creates a *new* directory. Regression: the name was fixed

@@ -39,19 +39,8 @@ fn plus(ts: Vec<Expr>) -> Expr {
   }
 }
 
-fn neg(e: Expr) -> Expr {
-  Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(e),
-  }
-}
-
 fn div(a: Expr, b: i128) -> Expr {
-  Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(a),
-    right: Box::new(Expr::Integer(b)),
-  }
+  div2(a, Expr::Integer(b))
 }
 
 /// Half-angle term `e/2`, printed as `e/2` (Wolfram's distributed form,
@@ -67,15 +56,11 @@ fn half_sum(p: &Expr, q: &Expr) -> Expr {
 
 /// `p/2 - q/2`.
 fn half_diff(p: &Expr, q: &Expr) -> Expr {
-  plus(vec![half(p), neg(half(q))])
+  plus(vec![half(p), neg1(half(q))])
 }
 
-fn pow2(e: Expr) -> Expr {
-  Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(e),
-    right: Box::new(Expr::Integer(2)),
-  }
+fn square(e: Expr) -> Expr {
+  pow2(e, Expr::Integer(2))
 }
 
 fn sqrt2() -> Expr {
@@ -122,7 +107,7 @@ fn sin_pm(v: &Expr, plus_quarter: bool) -> (Expr, i32) {
     terms.push(if plus_quarter {
       pi_quarter()
     } else {
-      neg(pi_quarter())
+      neg1(pi_quarter())
     });
     (trig_call("Sin", plus(terms)), 1)
   } else if plus_quarter {
@@ -131,7 +116,7 @@ fn sin_pm(v: &Expr, plus_quarter: bool) -> (Expr, i32) {
   } else {
     // Sin[v - Pi/4] == -Sin[Pi/4 - v]
     (
-      trig_call("Sin", plus(vec![pi_quarter(), neg(v.clone())])),
+      trig_call("Sin", plus(vec![pi_quarter(), neg1(v.clone())])),
       -1,
     )
   }
@@ -143,7 +128,7 @@ fn sqrt2_sin(u: &Expr, plus_quarter: bool, sign: i32) -> Expr {
   let (factor, fsign) = sin_pm(u, plus_quarter);
   let product = times(vec![sqrt2(), factor]);
   if sign * fsign < 0 {
-    neg(product)
+    neg1(product)
   } else {
     product
   }
@@ -152,7 +137,7 @@ fn sqrt2_sin(u: &Expr, plus_quarter: bool, sign: i32) -> Expr {
 /// 2*Sin[h +- Pi/4]^2 (the square absorbs any pulled-out sign).
 fn two_sin_sq(h: &Expr, plus_quarter: bool) -> Expr {
   let (factor, _) = sin_pm(h, plus_quarter);
-  times(vec![Expr::Integer(2), pow2(factor)])
+  times(vec![Expr::Integer(2), square(factor)])
 }
 
 /// sign*2*Sin[u - Pi/4]*Sin[u + Pi/4] in canonical form (the Cos[2u]
@@ -261,7 +246,7 @@ fn factor(expr: &Expr) -> Option<Expr> {
         two_sin_sq(&h, true)
       } else {
         // 2*Cos[h]^2
-        times(vec![Expr::Integer(2), pow2(trig_call("Cos", h))])
+        times(vec![Expr::Integer(2), square(trig_call("Cos", h))])
       });
     }
     if let Some(inner) = negated(b)
@@ -273,7 +258,7 @@ fn factor(expr: &Expr) -> Option<Expr> {
         two_sin_sq(&h, false)
       } else {
         // 2*Sin[h]^2
-        times(vec![Expr::Integer(2), pow2(trig_call("Sin", h))])
+        times(vec![Expr::Integer(2), square(trig_call("Sin", h))])
       });
     }
   }
@@ -390,9 +375,9 @@ fn factor(expr: &Expr) -> Option<Expr> {
   if let Some((k, u)) = const_and_cosh(a, b).or_else(|| const_and_cosh(b, a)) {
     let h = halved(&u).unwrap_or_else(|| div(u.clone(), 2));
     return Some(if k == 1 {
-      times(vec![Expr::Integer(2), pow2(trig_call("Cosh", h))])
+      times(vec![Expr::Integer(2), square(trig_call("Cosh", h))])
     } else {
-      times(vec![Expr::Integer(2), pow2(trig_call("Sinh", h))])
+      times(vec![Expr::Integer(2), square(trig_call("Sinh", h))])
     });
   }
 

@@ -1017,7 +1017,7 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-pub fn extract_f64(expr: &Expr) -> Option<f64> {
+fn extract_f64(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),
     Expr::Real(f) => Some(*f),

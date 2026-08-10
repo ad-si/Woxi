@@ -631,6 +631,65 @@ mod interpreter_tests {
     assert!(svg.contains("Coin"));
   }
 
+  /// The picture a cell shows is the one its value *is*, not the last one
+  /// drawn while getting there. A Manipulate body that builds several plots
+  /// and then picks one — the standard Demonstrations "which view?" control
+  /// — used to display whichever plot was assigned last.
+  #[test]
+  fn test_displayed_graphic_is_the_result_not_the_last_drawn() {
+    clear_state();
+    // `p1` is a plot 320 wide, `p2` one 480 wide; the body returns `p1`.
+    let r = interpret_with_stdout(
+      "Module[{p1, p2, which}, \
+       which = 1; \
+       p1 = Plot[Sin[x], {x, 0, 4}, ImageSize -> 320]; \
+       p2 = Plot[Cos[x], {x, 0, 4}, ImageSize -> 480]; \
+       Switch[which, 1, p1, 2, p2]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(
+      svg.starts_with("<svg width=\"320\""),
+      "expected the picked plot (320 wide), got: {}",
+      &svg[..svg.len().min(80)]
+    );
+    // …and picking the other branch shows the other plot.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Module[{p1, p2, which}, \
+       which = 2; \
+       p1 = Plot[Sin[x], {x, 0, 4}, ImageSize -> 320]; \
+       p2 = Plot[Cos[x], {x, 0, 4}, ImageSize -> 480]; \
+       Switch[which, 1, p1, 2, p2]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(
+      svg.starts_with("<svg width=\"480\""),
+      "expected the picked plot (480 wide), got: {}",
+      &svg[..svg.len().min(80)]
+    );
+  }
+
+  /// The same holds across the statements of one cell: the value of the
+  /// last statement is what gets displayed.
+  #[test]
+  fn test_displayed_graphic_is_the_last_statements_value() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "p1 = Plot[Sin[x], {x, 0, 4}, ImageSize -> 320];\n\
+       p2 = Plot[Cos[x], {x, 0, 4}, ImageSize -> 480];\n\
+       p1",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(
+      svg.starts_with("<svg width=\"320\""),
+      "expected the referenced plot (320 wide), got: {}",
+      &svg[..svg.len().min(80)]
+    );
+  }
+
   #[test]
   fn test_export_graphic_does_not_render_inline() {
     // Exporting a graphic (e.g. BarChart) to a file writes the file and
@@ -639,13 +698,11 @@ mod interpreter_tests {
     // second argument populates the capture buffer, so Export has to drop that
     // entry.
     clear_state();
-    let path = std::env::temp_dir().join("woxi_test_export_barchart.svg");
-    let code = format!(
-      "Export[\"{}\", BarChart[{{5, 8, 3, 9, 6, 4, 7}}]]",
-      path.display()
-    );
+    let path = temp_file("woxi_test_export_barchart.svg");
+    let code =
+      format!("Export[\"{}\", BarChart[{{5, 8, 3, 9, 6, 4, 7}}]]", path);
     let r = interpret_with_stdout(&code).unwrap();
-    assert_eq!(r.result, path.display().to_string());
+    assert_eq!(r.result, path);
     assert!(
       r.graphics.is_none(),
       "Export should not surface inline graphics, got:\n{:?}",
@@ -1067,13 +1124,12 @@ mod interpreter_tests {
       .sound
       .unwrap();
     let bytes = decode_wav_bytes(&wav);
-    let path = std::env::temp_dir().join("woxi_test_audio_file.wav");
+    let path = temp_file("woxi_test_audio_file.wav");
     std::fs::write(&path, &bytes).unwrap();
 
     clear_state();
     let r =
-      interpret_with_stdout(&format!("Audio[File[\"{}\"]]", path.display()))
-        .unwrap();
+      interpret_with_stdout(&format!("Audio[File[\"{}\"]]", path)).unwrap();
     assert_eq!(r.result, "-Audio-");
     let audio = r.sound.expect("file-backed Audio should produce audio");
     assert_eq!(audio.mime, "audio/wav");
@@ -1092,12 +1148,11 @@ mod interpreter_tests {
       .sound
       .unwrap();
     let bytes = decode_wav_bytes(&wav);
-    let path = std::env::temp_dir().join("woxi_test_audio_str.wav");
+    let path = temp_file("woxi_test_audio_str.wav");
     std::fs::write(&path, &bytes).unwrap();
 
     clear_state();
-    let r =
-      interpret_with_stdout(&format!("Audio[\"{}\"]", path.display())).unwrap();
+    let r = interpret_with_stdout(&format!("Audio[\"{}\"]", path)).unwrap();
     assert_eq!(r.result, "-Audio-");
     let audio = r.sound.expect("file-backed Audio should produce audio");
     assert_eq!(audio.label.as_deref(), Some("woxi_test_audio_str.wav"));
@@ -1111,14 +1166,14 @@ mod interpreter_tests {
     // the raster pixels as a base64-encoded PNG <image> element, rather than
     // erroring because the image crate has no SVG raster encoder.
     clear_state();
-    let path = std::env::temp_dir().join("woxi_test_export_image.svg");
+    let path = temp_file("woxi_test_export_image.svg");
     let _ = std::fs::remove_file(&path);
     let code = format!(
       "Export[\"{}\", Image[ConstantArray[{{0, 1, 0.5}}, {{4, 4}}]]]",
-      path.display()
+      path
     );
     // Export returns the filename it wrote to.
-    assert_eq!(interpret(&code).unwrap(), path.display().to_string());
+    assert_eq!(interpret(&code).unwrap(), path);
 
     let svg = std::fs::read_to_string(&path).unwrap();
     // Matches wolframscript, which opens the file with the XML declaration.
@@ -2098,6 +2153,14 @@ mod interpreter_tests {
     path.replace("\\", "/")
   }
 
+  fn temp_dir() -> String {
+    let mut tmp = std::env::temp_dir().display().to_string();
+    if tmp.ends_with(std::path::MAIN_SEPARATOR) {
+      tmp.pop();
+    }
+    unixify(tmp)
+  }
+
   /// A scratch path inside the platform temp directory. Never hardcode
   /// `/tmp/...` in a test — it does not exist on Windows, where the
   /// nightly CI runs the full unit suite.
@@ -2131,6 +2194,7 @@ mod interpreter_tests {
   mod distributions;
   mod element_data;
   mod entity;
+  mod example_data;
   mod function_application;
   mod function_definitions;
   mod functions;

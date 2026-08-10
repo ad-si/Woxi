@@ -5323,7 +5323,7 @@ mod set_directory {
     // to flaky CI failures (observed in interpreter_tests::io and
     // interpreter_tests::image::image_io).
     let before = std::env::current_dir().unwrap();
-    let tmp = temp_file("");
+    let tmp = temp_dir();
     let result = interpret(&format!(
       r#"Block[{{}}, SetDirectory["{tmp}"]; d = Directory[]; ResetDirectory[]; d]"#
     ))
@@ -8393,6 +8393,15 @@ mod csv_header_inference {
         r#"{"Null", "Null"}"#,
       ),
       // With labels they come keyed by them.
+      (
+        r#"ToString[ImportString["a,b,c\n1,2,3\n", {"CSV", "ColumnTypes"}], InputForm]"#,
+        r#"<|"a" -> "Integer64", "b" -> "Integer64", "c" -> "Integer64"|>"#,
+      ),
+      // A missing final newline changes nothing about the types. Wolfram
+      // types the last column of a labelled table as "String" whenever the
+      // text does not end in a newline, even though the very same import
+      // reads that field as an integer -- see EXACT_EXPR_SKIP in
+      // tests/wolframscript/verify_unit_tests.ts.
       (
         r#"ToString[ImportString["a,b,c\n1,2,3", {"CSV", "ColumnTypes"}], InputForm]"#,
         r#"<|"a" -> "Integer64", "b" -> "Integer64", "c" -> "Integer64"|>"#,

@@ -627,6 +627,15 @@ pub fn dispatch_image_functions(
     "ImageAdjust" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::image_adjust_ast(args));
     }
+    "HistogramTransform" if !args.is_empty() => {
+      return Some(crate::functions::image_ast::histogram_transform_ast(args));
+    }
+    "Pruning" if !args.is_empty() => {
+      return Some(crate::functions::image_ast::pruning_ast(args));
+    }
+    "ColorBalance" if !args.is_empty() => {
+      return Some(crate::functions::image_ast::color_balance_ast(args));
+    }
     "ImageReflect" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::image_reflect_ast(args));
     }
@@ -703,6 +712,9 @@ pub fn dispatch_image_functions(
     }
     "ImageConvolve" if args.len() == 2 => {
       return Some(crate::functions::image_ast::image_convolve_ast(args));
+    }
+    "ImageCorrelate" if args.len() == 2 => {
+      return Some(crate::functions::image_ast::image_correlate_ast(args));
     }
     "MedianFilter" if args.len() == 2 => {
       return Some(crate::functions::image_ast::median_filter_ast(args));

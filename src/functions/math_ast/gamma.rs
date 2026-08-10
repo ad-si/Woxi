@@ -23,11 +23,7 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         denom *= BigInt::from(a - i);
       }
       let denom_expr = bigint_to_expr(denom);
-      let result = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(denom_expr),
-      };
+      let result = div2(Expr::Integer(1), denom_expr);
       return crate::evaluator::evaluate_expr_to_expr(&result);
     }
     let mut result = BigInt::from(1);
@@ -113,11 +109,7 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           right: Box::new(f),
         })
         .unwrap();
-      let result = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(denom),
-      };
+      let result = div2(Expr::Integer(1), denom);
       crate::evaluator::evaluate_expr_to_expr(&result)
     } else {
       Ok(unevaluated("Pochhammer", args))
@@ -143,11 +135,7 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         left: Box::new(args[0].clone()),
         right: Box::new(args[1].clone()),
       };
-      let ratio = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(gamma(sum)),
-        right: Box::new(gamma(args[0].clone())),
-      };
+      let ratio = div2(gamma(sum), gamma(args[0].clone()));
       return crate::evaluator::evaluate_expr_to_expr(&ratio);
     }
     // Numeric evaluation: Pochhammer[a, n] = Gamma[a + n] / Gamma[a]
@@ -1120,29 +1108,19 @@ fn incomplete_beta_ast(
       left: Box::new(x),
       right: Box::new(y),
     };
-    let power = |x: Expr, y: Expr| Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(x),
-      right: Box::new(y),
-    };
-    let divide = |x: Expr, y: Expr| Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(x),
-      right: Box::new(y),
-    };
     if matches!(a, Expr::Integer(1)) {
       let num = minus(
         Expr::Integer(1),
-        power(minus(Expr::Integer(1), z.clone()), b.clone()),
+        pow2(minus(Expr::Integer(1), z.clone()), b.clone()),
       );
-      return crate::evaluator::evaluate_expr_to_expr(&divide(num, b.clone()));
+      return crate::evaluator::evaluate_expr_to_expr(&div2(num, b.clone()));
     }
     if matches!(b, Expr::Integer(1)) {
       let num = minus(
-        power(z.clone(), a.clone()),
-        power(Expr::Integer(0), a.clone()),
+        pow2(z.clone(), a.clone()),
+        pow2(Expr::Integer(0), a.clone()),
       );
-      return crate::evaluator::evaluate_expr_to_expr(&divide(num, a.clone()));
+      return crate::evaluator::evaluate_expr_to_expr(&div2(num, a.clone()));
     }
   }
   let b_whole: Option<i128> = match b {

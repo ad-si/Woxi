@@ -3705,6 +3705,195 @@ mod subgraph {
   }
 }
 
+mod highlight_graph {
+  use super::*;
+
+  const G: &str = "Graph[{1 <-> 2, 2 <-> 3, 3 <-> 1}]";
+
+  #[test]
+  fn returns_a_graph_with_the_same_parts() {
+    // Highlighting styles the picture; it must not change the graph.
+    assert_eq!(
+      interpret(&format!("HighlightGraph[{G}, {{1}}]")).unwrap(),
+      "Graph[<3>, <3>]"
+    );
+    assert_eq!(
+      interpret(&format!("VertexList[HighlightGraph[{G}, {{1, 2}}]]")).unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "ToString[EdgeList[HighlightGraph[{G}, {{1 <-> 2}}]], InputForm]"
+      ))
+      .unwrap(),
+      "{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 1]}"
+    );
+  }
+
+  #[test]
+  fn highlights_vertices_in_red_by_default() {
+    let svg = interpret(&format!(
+      "ExportString[HighlightGraph[{G}, {{1}}], \"SVG\"]"
+    ))
+    .unwrap();
+    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1);
+    // The other two vertices keep the default blue.
+    assert_eq!(svg.matches("fill=\"rgb(66,116,183)\"").count(), 2);
+  }
+
+  #[test]
+  fn highlights_edges_in_red_by_default() {
+    let svg = interpret(&format!(
+      "ExportString[HighlightGraph[{G}, {{1 <-> 2}}], \"SVG\"]"
+    ))
+    .unwrap();
+    assert_eq!(svg.matches("stroke=\"rgb(255,0,0)\"").count(), 1);
+    assert_eq!(svg.matches("stroke=\"rgb(153,153,153)\"").count(), 2);
+  }
+
+  #[test]
+  fn a_bare_part_needs_no_list() {
+    let svg =
+      interpret(&format!("ExportString[HighlightGraph[{G}, 2], \"SVG\"]"))
+        .unwrap();
+    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1);
+  }
+
+  #[test]
+  fn style_wrapper_picks_the_highlight_color() {
+    let svg = interpret(&format!(
+      "ExportString[HighlightGraph[{G}, {{Style[1, Green], Style[2, Blue]}}], \
+       \"SVG\"]"
+    ))
+    .unwrap();
+    assert!(svg.contains("fill=\"rgb(0,255,0)\""));
+    assert!(svg.contains("fill=\"rgb(0,0,255)\""));
+  }
+
+  #[test]
+  fn a_color_function_may_supply_the_style() {
+    // The idiom used by Wolfram demonstrations: one Style per vertex, its
+    // color read out of a named gradient.
+    let svg = interpret(
+      "g = Graph[{1 <-> 2, 2 <-> 3}]; \
+       ExportString[HighlightGraph[g, \
+       Table[Style[VertexList[g][[i]], ColorData[\"DarkRainbow\"][i/3]], \
+       {i, VertexCount[g]}]], \"SVG\"]",
+    )
+    .unwrap();
+    // Every vertex gets its own color, so the default blue is gone.
+    assert!(!svg.contains("fill=\"rgb(66,116,183)\""));
+  }
+
+  #[test]
+  fn a_subgraph_highlights_all_of_its_parts() {
+    let svg = interpret(&format!(
+      "ExportString[HighlightGraph[{G}, Subgraph[{G}, {{1, 2}}]], \"SVG\"]"
+    ))
+    .unwrap();
+    // Vertices 1 and 2 plus the edge between them.
+    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 2);
+    assert_eq!(svg.matches("stroke=\"rgb(255,0,0)\"").count(), 1);
+  }
+
+  #[test]
+  fn parts_not_in_the_graph_are_ignored() {
+    let svg = interpret(&format!(
+      "ExportString[HighlightGraph[{G}, {{99, 1}}], \"SVG\"]"
+    ))
+    .unwrap();
+    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1);
+  }
+
+  #[test]
+  fn trailing_options_reach_the_graph() {
+    let svg = interpret(&format!(
+      "ExportString[HighlightGraph[{G}, {{1}}, VertexLabels -> \"Name\"], \
+       \"SVG\"]"
+    ))
+    .unwrap();
+    assert!(svg.contains(">1</text>"));
+  }
+
+  #[test]
+  fn the_highlight_wins_over_the_graphs_own_style() {
+    let svg = interpret(
+      "ExportString[HighlightGraph[Graph[{1 <-> 2, 2 <-> 3}, \
+       VertexStyle -> Orange], {2}], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1);
+    // The un-highlighted vertices keep the graph's own orange.
+    assert_eq!(svg.matches("fill=\"rgb(255,128,0)\"").count(), 2);
+  }
+
+  #[test]
+  fn non_graph_first_argument_stays_unevaluated() {
+    assert_eq!(
+      interpret("HighlightGraph[x, {1}]").unwrap(),
+      "HighlightGraph[x, {1}]"
+    );
+  }
+}
+
+mod graph_style_rules {
+  use super::*;
+
+  #[test]
+  fn vertex_style_accepts_per_vertex_rules() {
+    let svg = interpret(
+      "ExportString[Graph[{1 <-> 2, 2 <-> 3}, \
+       VertexStyle -> {1 -> Red, 3 -> Green}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""));
+    assert!(svg.contains("fill=\"rgb(0,255,0)\""));
+    // Vertex 2 is not named by a rule and keeps the default blue.
+    assert_eq!(svg.matches("fill=\"rgb(66,116,183)\"").count(), 1);
+  }
+
+  #[test]
+  fn vertex_style_rules_override_a_default_directive() {
+    let svg = interpret(
+      "ExportString[Graph[{1 <-> 2, 2 <-> 3}, \
+       VertexStyle -> {Yellow, 1 -> Red}], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1);
+    assert_eq!(svg.matches("fill=\"rgb(255,255,0)\"").count(), 2);
+  }
+
+  #[test]
+  fn edge_style_accepts_per_edge_rules() {
+    let svg = interpret(
+      "ExportString[Graph[{1 <-> 2, 2 <-> 3}, \
+       EdgeStyle -> {1 <-> 2 -> Red}], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(svg.matches("stroke=\"rgb(255,0,0)\"").count(), 1);
+    assert_eq!(svg.matches("stroke=\"rgb(153,153,153)\"").count(), 1);
+  }
+
+  #[test]
+  fn an_undirected_style_rule_matches_either_orientation() {
+    let svg = interpret(
+      "ExportString[Graph[{1 <-> 2, 2 <-> 3}, \
+       EdgeStyle -> {2 <-> 1 -> Red}], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(svg.matches("stroke=\"rgb(255,0,0)\"").count(), 1);
+  }
+
+  #[test]
+  fn a_plain_directive_still_styles_every_part() {
+    let svg = interpret(
+      "ExportString[Graph[{1 <-> 2, 2 <-> 3}, VertexStyle -> Green], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(svg.matches("fill=\"rgb(0,255,0)\"").count(), 3);
+  }
+}
+
 mod line_graph {
   use super::*;
 

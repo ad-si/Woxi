@@ -742,6 +742,22 @@ pre.output-box {
   color: #fff;
 }
 
+/* A caption `Button[label, action]`: pressing it runs the held action. */
+.manipulate-display-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border: 1px solid var(--border-color, #bbb);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.manipulate-display-button:hover {
+  background: var(--border-color, #eee);
+}
+
 .status {
   position: fixed;
   top: 1rem;

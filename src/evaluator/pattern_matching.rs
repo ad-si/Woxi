@@ -3154,7 +3154,7 @@ fn match_args_with_sequences(
 ///
 /// `x : PatternSequence[…]`, which binds the whole sequence to a name, keeps
 /// its `Pattern[…]` wrapper and is left alone.
-pub fn canonicalize_pattern(pattern: &Expr) -> Expr {
+fn canonicalize_pattern(pattern: &Expr) -> Expr {
   // Splice PatternSequence[…] elements of an argument list into it.
   fn splice(items: &[Expr]) -> Vec<Expr> {
     let mut out = Vec::with_capacity(items.len());
@@ -3281,7 +3281,7 @@ fn needs_canonicalization(pattern: &Expr) -> bool {
 }
 
 /// `canonicalize_pattern`, skipped when there is nothing to rewrite.
-pub fn canonical_pattern(pattern: &Expr) -> std::borrow::Cow<'_, Expr> {
+fn canonical_pattern(pattern: &Expr) -> std::borrow::Cow<'_, Expr> {
   if needs_canonicalization(pattern) {
     std::borrow::Cow::Owned(canonicalize_pattern(pattern))
   } else {

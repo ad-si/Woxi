@@ -326,14 +326,10 @@ fn solve_logistic_map(
         name: "C".to_string(),
         args: vec![Expr::Integer(1)].into(),
       };
-      let pow2 = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Integer(2)),
-        right: Box::new(n_var),
-      };
+      let exp2 = pow2(Expr::Integer(2), n_var);
       let body = times(
         crate::functions::math_ast::make_rational(-1, 2),
-        cos(times(pow2, c1)),
+        cos(times(exp2, c1)),
       );
       Some(Expr::BinaryOp {
         op: BinaryOperator::Plus,
@@ -366,18 +362,14 @@ fn solve_logistic_map(
           right: Box::new(n_var.clone()),
         }
       };
-      let pow2 = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Integer(2)),
-        right: Box::new(exponent),
-      };
+      let exp2 = pow2(Expr::Integer(2), exponent);
       // (1 - Cos[2^(n-k0)*theta]) / 2
       let numerator = Expr::BinaryOp {
         op: BinaryOperator::Plus,
         left: Box::new(Expr::Integer(1)),
         right: Box::new(Expr::UnaryOp {
           op: UnaryOperator::Minus,
-          operand: Box::new(cos(times(pow2, theta))),
+          operand: Box::new(cos(times(exp2, theta))),
         }),
       };
       Some(Expr::BinaryOp {
@@ -1132,11 +1124,7 @@ fn build_first_order_with_ic(
       right: Box::new(n_var),
     }
   };
-  let power = Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(Expr::Integer(rn)),
-    right: Box::new(exponent),
-  };
+  let power = pow2(Expr::Integer(rn), exponent);
   let result = if v == 1 {
     power
   } else if v == -1 {
@@ -1216,11 +1204,7 @@ fn build_partial_solution(
     if r == 1 {
       Expr::Integer(1)
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Integer(r)),
-        right: Box::new(n_var.clone()),
-      }
+      pow2(Expr::Integer(r), n_var.clone())
     }
   }
 
@@ -1314,21 +1298,16 @@ fn build_general_solution(
       } else {
         Expr::Identifier(var_name.to_string())
       };
-      factors.push(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(root_expr),
-        right: Box::new(exponent),
-      });
+      factors.push(pow2(root_expr, exponent));
     }
     if mult_index >= 1 {
       factors.push(if mult_index == 1 {
         Expr::Identifier(var_name.to_string())
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::Identifier(var_name.to_string())),
-          right: Box::new(Expr::Integer(mult_index as i128)),
-        }
+        pow2(
+          Expr::Identifier(var_name.to_string()),
+          Expr::Integer(mult_index as i128),
+        )
       });
     }
     factors.push(const_expr);
@@ -1747,21 +1726,16 @@ fn build_solution(
       } else {
         crate::functions::math_ast::make_rational(rn, rd)
       };
-      factors.push(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(root_expr),
-        right: Box::new(Expr::Identifier(var_name.to_string())),
-      });
+      factors.push(pow2(root_expr, Expr::Identifier(var_name.to_string())));
     }
     if mult_index >= 1 {
       factors.push(if mult_index == 1 {
         Expr::Identifier(var_name.to_string())
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::Identifier(var_name.to_string())),
-          right: Box::new(Expr::Integer(mult_index as i128)),
-        }
+        pow2(
+          Expr::Identifier(var_name.to_string()),
+          Expr::Integer(mult_index as i128),
+        )
       });
     }
 

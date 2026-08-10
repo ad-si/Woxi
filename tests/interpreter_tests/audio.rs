@@ -639,14 +639,13 @@ fn web_audio_search_fails_without_service() {
 
 #[test]
 fn wav_export_import_round_trip() {
-  let path = std::env::temp_dir().join("woxi_roundtrip.wav");
-  let path_str = path.display().to_string();
+  let path = temp_file("woxi_roundtrip.wav");
   // Export 4 samples at 8 kHz, re-import, and measure: 16-bit
   // quantization keeps values within 1/32768 of the originals.
   let code = format!(
-    "Export[\"{path_str}\", Audio[{{0., 0.5, -0.5, 1.}}, \
+    "Export[\"{path}\", Audio[{{0., 0.5, -0.5, 1.}}, \
      SampleRate -> 8000], \"WAV\"]; \
-     a = Import[\"{path_str}\"]; \
+     a = Import[\"{path}\"]; \
      {{AudioMeasurements[a, \"Duration\"], \
      Round[AudioMeasurements[a, \"Max\"], 0.001], \
      Round[AudioMeasurements[a, \"Min\"], 0.001]}}"
@@ -660,12 +659,11 @@ fn wav_export_import_round_trip() {
 
 #[test]
 fn audio_from_wav_file_measurable() {
-  let path = std::env::temp_dir().join("woxi_file_backed.wav");
-  let path_str = path.display().to_string();
+  let path = temp_file("woxi_file_backed.wav");
   let code = format!(
-    "Export[\"{path_str}\", Audio[{{0.25, 0.25}}, SampleRate -> 4000], \
+    "Export[\"{path}\", Audio[{{0.25, 0.25}}, SampleRate -> 4000], \
      \"WAV\"]; \
-     AudioMeasurements[Audio[File[\"{path_str}\"]], \"Duration\"]"
+     AudioMeasurements[Audio[File[\"{path}\"]], \"Duration\"]"
   );
   assert_eq!(interpret(&code).unwrap(), "Quantity[0.0005, Seconds]");
   std::fs::remove_file(&path).ok();
