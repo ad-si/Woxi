@@ -322,6 +322,9 @@ enum Message {
   /// A checkbox in a Manipulate display element was toggled.
   /// (cell_idx, write-back assignment, e.g. `data[[3, 5]] = 1`)
   ManipulateDisplayToggled(usize, String),
+  /// A `Button[…]` inside a Manipulate display was pressed: run its held
+  /// action against the widget's bindings.
+  ManipulateDisplayAction(usize, String),
   /// The throttle timer for a Manipulate cell fired; re-evaluate the body
   /// with the latest control values if any change is still pending.
   /// (cell_idx)
@@ -1798,6 +1801,15 @@ impl WoxiStudio {
           && let Some(state) = editor.manipulate_state.as_mut()
         {
           state.apply_display_mutation(&mutation);
+        }
+        Task::none()
+      }
+
+      Message::ManipulateDisplayAction(cell_idx, action) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+        {
+          state.apply_button_action(&action);
         }
         Task::none()
       }
@@ -4404,6 +4416,41 @@ fn render_display_node<'a>(
         })
         .on_press(Message::ManipulateDisplayToggled(cell_idx, mutation))
         .into()
+    }
+    DisplayNode::Button { label, action } => {
+      // A caption button (`Button["→", n++]`): pressing it runs the held
+      // action against the widget's live bindings and re-renders.
+      button(render_display_node(cell_idx, label))
+        .padding([2, 10])
+        .on_press(Message::ManipulateDisplayAction(cell_idx, action.clone()))
+        .into()
+    }
+    DisplayNode::Spacer { width } => {
+      space::Space::new().width(*width as f32).into()
+    }
+    DisplayNode::Text { runs } => {
+      let spans: Vec<iced::widget::text::Span<Message>> = runs
+        .iter()
+        .map(|run| {
+          let mut font = Font::MONOSPACE;
+          if run.italic {
+            font.style = iced::font::Style::Italic;
+          }
+          if run.bold {
+            font.weight = iced::font::Weight::Bold;
+          }
+          let mut span = iced::widget::span(run.text.clone()).font(font);
+          if let Some((r, g, b)) = run.color {
+            span = span.color(Color::from_rgb(r, g, b));
+          }
+          span
+        })
+        .collect();
+      if spans.is_empty() {
+        text("").size(12).into()
+      } else {
+        rich_text(spans).size(12).into()
+      }
     }
     DisplayNode::Static {
       svg: svg_src,
@@ -9056,6 +9103,161 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     );
   }
 
+  /// Collect `(action, label)` of every Button in a display tree.
+  fn collect_display_buttons(
+    trees: &[woxi::functions::graphics::DisplayNode],
+  ) -> Vec<(String, String)> {
+    use woxi::functions::graphics::DisplayNode;
+    fn label_of(node: &DisplayNode) -> String {
+      match node {
+        DisplayNode::Text { runs } => {
+          runs.iter().map(|r| r.text.as_str()).collect()
+        }
+        DisplayNode::Static { text, .. } => text.clone(),
+        _ => String::new(),
+      }
+    }
+    fn walk(node: &DisplayNode, out: &mut Vec<(String, String)>) {
+      match node {
+        DisplayNode::Button { label, action } => {
+          out.push((action.clone(), label_of(label)))
+        }
+        DisplayNode::Panel(child)
+        | DisplayNode::Toggler { label: child, .. } => walk(child, out),
+        DisplayNode::Grid(rows) => {
+          for row in rows {
+            for cell in row {
+              walk(cell, out);
+            }
+          }
+        }
+        DisplayNode::Column(children) | DisplayNode::Row(children) => {
+          for c in children {
+            walk(c, out);
+          }
+        }
+        _ => {}
+      }
+    }
+    let mut out = Vec::new();
+    for t in trees {
+      walk(t, &mut out);
+    }
+    out
+  }
+
+  /// All the text a display tree shows, in reading order.
+  fn display_text(trees: &[woxi::functions::graphics::DisplayNode]) -> String {
+    use woxi::functions::graphics::DisplayNode;
+    fn walk(node: &DisplayNode, out: &mut String) {
+      match node {
+        DisplayNode::Text { runs } => {
+          for r in runs {
+            out.push_str(&r.text);
+          }
+        }
+        DisplayNode::Static { text, .. } => out.push_str(text),
+        DisplayNode::Panel(child)
+        | DisplayNode::Toggler { label: child, .. } => walk(child, out),
+        DisplayNode::Button { label, .. } => walk(label, out),
+        DisplayNode::Grid(rows) => {
+          for row in rows {
+            for cell in row {
+              walk(cell, out);
+            }
+          }
+        }
+        DisplayNode::Column(children) | DisplayNode::Row(children) => {
+          for c in children {
+            walk(c, out);
+          }
+        }
+        _ => {}
+      }
+    }
+    let mut out = String::new();
+    for t in trees {
+      walk(t, &mut out);
+    }
+    out
+  }
+
+  /// A Demonstration built the way the Wolfram Demonstrations Project
+  /// builds a browse-a-dataset widget: `Initialization` tabulates the
+  /// datasets, the body highlights the current one, and a `Dynamic[…]`
+  /// caption of buttons — not a slider — steps through them.
+  const BROWSE_NETWORKS: &str = "Manipulate[\
+    net = names[[k]]; {nv, ne} = sizes[[k]]; \
+    g = ExampleData[{\"NetworkGraph\", net}]; \
+    HighlightGraph[g, VertexList[g][[1 ;; 3]]], \
+    {{k, 1}, {1, 2}, ControlType -> None}, \
+    {{net, \"\"}, ControlType -> None}, \
+    {{nv, 0}, ControlType -> None}, \
+    {{ne, 0}, ControlType -> None}, \
+    Dynamic[Row[{Button[\"prev\", If[k == 1, k = 2, k--]], Spacer[10], \
+    Button[\"next\", If[k == 2, k = 1, k++]], Spacer[10], \
+    \"showing \", Style[net, Bold, Red], \" with \", nv, \" vertices and \", \
+    ne, \" edges\"}]], \
+    Initialization :> (names = {\"ZacharysKarateClub\", \
+    \"DolphinSocialNetwork\"}; \
+    sizes = Map[(u = ExampleData[{\"NetworkGraph\", #}]; \
+    {VertexCount[u], EdgeCount[u]}) &, names];)]";
+
+  #[test]
+  fn demonstration_browse_widget_renders_and_steps() {
+    let expr = woxi::interpret_to_expr(BROWSE_NETWORKS).unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+
+    // The body renders the highlighted graph.
+    assert!(state.error.is_none(), "render failed: {:?}", state.error);
+    assert!(
+      state.graphics_handle.is_some(),
+      "the graph should render; text output was {:?}",
+      state.text_output
+    );
+
+    // The caption reports what the body just computed, not the initial
+    // placeholder values.
+    let caption = display_text(&state.display_trees);
+    assert!(
+      caption.contains("ZacharysKarateClub")
+        && caption.contains("34")
+        && caption.contains("78"),
+      "caption should describe the first network: {caption}"
+    );
+
+    // Two caption buttons, each carrying its held action.
+    let buttons = collect_display_buttons(&state.display_trees);
+    assert_eq!(
+      buttons,
+      vec![
+        ("If[k == 1, k = 2, k--]".to_string(), "prev".to_string()),
+        ("If[k == 2, k = 1, k++]".to_string(), "next".to_string()),
+      ]
+    );
+
+    // Pressing "next" steps to the second dataset and re-renders.
+    let next = buttons[1].0.clone();
+    state.apply_button_action(&next);
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+    let caption = display_text(&state.display_trees);
+    assert!(
+      caption.contains("DolphinSocialNetwork")
+        && caption.contains("62")
+        && caption.contains("159"),
+      "caption should follow the button press: {caption}"
+    );
+
+    // Pressing "next" again wraps back round to the first dataset.
+    state.apply_button_action(&next);
+    let caption = display_text(&state.display_trees);
+    assert!(
+      caption.contains("ZacharysKarateClub"),
+      "the last dataset should wrap round: {caption}"
+    );
+  }
+
   /// Collect `(mutation, selected)` of every Toggler in a display tree.
   fn collect_togglers(
     trees: &[woxi::functions::graphics::DisplayNode],
@@ -9079,7 +9281,11 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
             walk(c, out);
           }
         }
-        DisplayNode::Checkbox { .. } | DisplayNode::Static { .. } => {}
+        DisplayNode::Button { label, .. } => walk(label, out),
+        DisplayNode::Checkbox { .. }
+        | DisplayNode::Spacer { .. }
+        | DisplayNode::Text { .. }
+        | DisplayNode::Static { .. } => {}
       }
     }
     let mut out = Vec::new();
