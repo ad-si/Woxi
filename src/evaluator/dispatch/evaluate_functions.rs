@@ -155,6 +155,44 @@ fn repeat_ok(
   true
 }
 
+/// The pattern-variable names the argument splitter must treat as repeated.
+///
+/// `constrain_repeated_params` stores every slot after the first occurrence of
+/// a name under a synthetic `__sp<i>` name and moves the original pattern into
+/// a `__StructuralPattern__` condition, so `f[a__, a__]` is stored as params
+/// `["a", "__sp1"]`. Recover the original name from that condition — otherwise
+/// the splitter cannot see the repeat and may commit to a split (`a → 1`,
+/// `__sp1 → 2, 1, 2`) that the later structural check rejects outright instead
+/// of backtracking to the split that honors it (`a → 1, 2` twice).
+fn repeat_check_names(
+  params: &[String],
+  conditions: &[Option<Expr>],
+) -> Vec<String> {
+  fn pattern_name(pat: &Expr) -> Option<&str> {
+    match pat {
+      Expr::Pattern { name, .. } | Expr::PatternTest { name, .. } => {
+        Some(name.as_str())
+      }
+      _ => None,
+    }
+  }
+  params
+    .iter()
+    .enumerate()
+    .map(|(i, param)| {
+      let recovered = match conditions.get(i).and_then(|c| c.as_ref()) {
+        Some(Expr::FunctionCall { name, args })
+          if name == "__StructuralPattern__" && args.len() == 2 =>
+        {
+          pattern_name(&args[1])
+        }
+        _ => None,
+      };
+      recovered.unwrap_or(param.as_str()).to_string()
+    })
+    .collect()
+}
+
 /// Distribute function call args to params using backtracking,
 /// handling BlankSequence/BlankNullSequence params that consume variable numbers of args.
 /// `assigned` carries the args already given to params `0..param_idx` so a
@@ -759,9 +797,10 @@ fn evaluate_function_call_ast_inner(
         }
 
         // Distribute args to params using backtracking for sequence patterns
+        let repeat_names = repeat_check_names(params, conditions);
         let distribution = distribute_args_to_params(
           args,
-          params,
+          &repeat_names,
           blank_types,
           param_heads,
           param_defaults,

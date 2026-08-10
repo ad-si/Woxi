@@ -4158,4 +4158,31 @@ mod repeated_pattern_variables {
       "{dup, s[1, 2, 3, 4]}"
     );
   }
+
+  /// The argument splitter has to backtrack to the split that honors the
+  /// repeat: the first candidate (`a → 1`, rest → `2, 1, 2`) breaks it, and
+  /// only `a → 1, 2` twice matches. Regression test — the repeated slot is
+  /// stored under a synthetic name, which used to hide the repeat from the
+  /// splitter so every multi-element sequence repeat failed to match.
+  #[test]
+  fn repeated_sequence_variable_backtracks_over_splits() {
+    clear_state();
+    assert_eq!(
+      interpret("s[a__, a__] := {a}; {s[1, 1], s[1, 2, 1, 2], s[1, 1, 1, 1]}")
+        .unwrap(),
+      "{{1}, {1, 2}, {1, 1}}"
+    );
+  }
+
+  /// A repeated sequence variable may consume a different number of
+  /// arguments per call, so the split is chosen per call site.
+  #[test]
+  fn repeated_sequence_variable_with_trailing_pattern() {
+    clear_state();
+    assert_eq!(
+      interpret("s[a__, a__, b_] := {a, b}; {s[1, 2, 1, 2, 9], s[1, 2, 3, 9]}")
+        .unwrap(),
+      "{{1, 2, 9}, s[1, 2, 3, 9]}"
+    );
+  }
 }
