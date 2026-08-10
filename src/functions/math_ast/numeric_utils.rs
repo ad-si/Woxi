@@ -120,7 +120,7 @@ fn wolfram_pow_chain<T: Copy>(
 /// to do — is a ULP off on more than half of all inputs; the scaled fused form
 /// reproduces wolframscript on every sampled case, including denormal and
 /// near-overflow magnitudes where the unscaled form loses bits outright.
-pub fn complex_reciprocal(c: f64, d: f64) -> (f64, f64) {
+fn complex_reciprocal(c: f64, d: f64) -> (f64, f64) {
   let m = c.abs().max(d.abs());
   if !m.is_finite() || m == 0.0 {
     let den = c.mul_add(c, d * d);

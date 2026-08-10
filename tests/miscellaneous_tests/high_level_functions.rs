@@ -3,6 +3,11 @@ use woxi::interpret;
 mod high_level_functions {
   use super::*;
 
+  fn temp_file(file: &str) -> String {
+    let tmp = std::env::temp_dir().join(file);
+    tmp.display().to_string().replace("\\", "/")
+  }
+
   mod entropy_tests {
     use super::*;
 
@@ -1829,36 +1834,33 @@ mod high_level_functions {
 
     #[test]
     fn test_save_to_file() {
-      let tmp = std::env::temp_dir().join("woxi_save_test.wl");
-      let path = tmp.display().to_string();
+      let path = temp_file("woxi_save_test.wl");
       let result = interpret(&format!(r#"a = 5; Save["{path}", a]"#)).unwrap();
       assert_eq!(result, "\0");
-      let content = std::fs::read_to_string(&tmp).unwrap();
+      let content = std::fs::read_to_string(&path).unwrap();
       assert!(content.contains("a = 5"));
-      std::fs::remove_file(&tmp).ok();
+      std::fs::remove_file(&path).ok();
     }
 
     #[test]
     fn test_save_roundtrip() {
-      let tmp = std::env::temp_dir().join("woxi_save_rt.wl");
-      let path = tmp.display().to_string();
+      let path = temp_file("woxi_save_rt.wl");
       let result = interpret(&format!(
         r#"f[x_] := x + 1; Save["{path}", f]; Clear[f]; Get["{path}"]; f[3]"#
       ))
       .unwrap();
       assert_eq!(result, "4");
-      std::fs::remove_file(&tmp).ok();
+      std::fs::remove_file(&path).ok();
     }
 
     #[test]
     fn test_save_multiple_to_file() {
-      let tmp = std::env::temp_dir().join("woxi_save_multi.wl");
-      let path = tmp.display().to_string();
+      let path = temp_file("woxi_save_multi.wl");
       let result = interpret(&format!(
         r#"f[x_] := x^2; a = 10; Save["{path}", {{f, a}}]; Clear[f]; Clear[a]; Get["{path}"]; {{f[3], a}}"#
       )).unwrap();
       assert_eq!(result, "{9, 10}");
-      std::fs::remove_file(&tmp).ok();
+      std::fs::remove_file(&path).ok();
     }
 
     #[test]
@@ -1878,11 +1880,10 @@ mod high_level_functions {
 
     #[test]
     fn test_save_returns_null() {
-      let tmp = std::env::temp_dir().join("woxi_save_null.wl");
-      let path = tmp.display().to_string();
+      let path = temp_file("woxi_save_null.wl");
       let result = interpret(&format!(r#"a = 5; Save["{path}", a]"#)).unwrap();
       assert_eq!(result, "\0");
-      std::fs::remove_file(&tmp).ok();
+      std::fs::remove_file(&path).ok();
     }
 
     #[test]
@@ -4593,52 +4594,48 @@ mod high_level_functions {
 
     #[test]
     fn test_export_pdf_creates_valid_file() {
-      let tmp = std::env::temp_dir().join("woxi_test_export.pdf");
-      let path = tmp.display().to_string();
+      let path = temp_file("woxi_test_export.pdf");
       let result =
         interpret(&format!("Export[\"{path}\", (x^2 + 3)/7, \"PDF\"]"))
           .unwrap();
       assert_eq!(result, path);
-      let bytes = std::fs::read(&tmp).unwrap();
+      let bytes = std::fs::read(&path).unwrap();
       assert!(bytes.starts_with(b"%PDF"), "File should be a valid PDF");
-      std::fs::remove_file(&tmp).ok();
+      std::fs::remove_file(&path).ok();
     }
 
     #[test]
     fn test_export_pdf_by_extension() {
-      let tmp = std::env::temp_dir().join("woxi_test_ext.pdf");
-      let path = tmp.display().to_string();
+      let path = temp_file("woxi_test_ext.pdf");
       let result = interpret(&format!("Export[\"{path}\", x + 1]")).unwrap();
       assert_eq!(result, path);
-      let bytes = std::fs::read(&tmp).unwrap();
+      let bytes = std::fs::read(&path).unwrap();
       assert!(bytes.starts_with(b"%PDF"), "File should be a valid PDF");
-      std::fs::remove_file(&tmp).ok();
+      std::fs::remove_file(&path).ok();
     }
 
     #[test]
     fn test_export_pdf_integer() {
-      let tmp = std::env::temp_dir().join("woxi_test_int.pdf");
-      let path = tmp.display().to_string();
+      let path = temp_file("woxi_test_int.pdf");
       let result =
         interpret(&format!("Export[\"{path}\", 42, \"PDF\"]")).unwrap();
       assert_eq!(result, path);
-      let bytes = std::fs::read(&tmp).unwrap();
+      let bytes = std::fs::read(&path).unwrap();
       assert!(bytes.starts_with(b"%PDF"));
       assert!(bytes.len() > 100, "PDF should have substantial content");
-      std::fs::remove_file(&tmp).ok();
+      std::fs::remove_file(&path).ok();
     }
 
     #[test]
     fn test_export_pdf_symbolic_expression() {
-      let tmp = std::env::temp_dir().join("woxi_test_sym.pdf");
-      let path = tmp.display().to_string();
+      let path = temp_file("woxi_test_sym.pdf");
       let result =
         interpret(&format!("Export[\"{path}\", Sin[x] + Cos[y], \"PDF\"]"))
           .unwrap();
       assert_eq!(result, path);
-      let bytes = std::fs::read(&tmp).unwrap();
+      let bytes = std::fs::read(&path).unwrap();
       assert!(bytes.starts_with(b"%PDF"));
-      std::fs::remove_file(&tmp).ok();
+      std::fs::remove_file(&path).ok();
     }
   }
 
@@ -4671,17 +4668,16 @@ mod high_level_functions {
 
     #[test]
     fn test_export_traditional_form_math_svg_file() {
-      let tmp = std::env::temp_dir().join("woxi_test_math_basel_sum.svg");
-      let path = tmp.display().to_string();
+      let path = temp_file("woxi_test_math_basel_sum.svg");
       let result = interpret(&format!(
         "Export[\"{path}\", TraditionalForm[HoldForm[Sum[1/n^2, \
          {{n, 1, Infinity}}] == Pi^2/6]]]"
       ))
       .unwrap();
       assert_eq!(result, path);
-      let svg = std::fs::read_to_string(&tmp).unwrap();
+      let svg = std::fs::read_to_string(&path).unwrap();
       assert_basel_svg(&svg);
-      std::fs::remove_file(&tmp).ok();
+      std::fs::remove_file(&path).ok();
     }
 
     #[test]
@@ -4704,7 +4700,7 @@ mod high_level_functions {
 
     /// Assert the file at `tmp` is a mono 16-bit PCM WAV at the given
     /// sample rate and return the number of sample frames.
-    fn assert_wav(tmp: &std::path::Path, expected_rate: u32) -> u32 {
+    fn assert_wav(tmp: &String, expected_rate: u32) -> u32 {
       let bytes = std::fs::read(tmp).unwrap();
       assert!(bytes.starts_with(b"RIFF"), "missing RIFF header");
       assert_eq!(&bytes[8..12], b"WAVE", "missing WAVE tag");
@@ -4718,26 +4714,24 @@ mod high_level_functions {
     #[test]
     fn test_export_wav_play() {
       // wolframscript writes 16-bit mono PCM at Play's 8000 Hz default.
-      let tmp = std::env::temp_dir().join("woxi_test_play.wav");
-      let path = tmp.display().to_string();
+      let path = temp_file("woxi_test_play.wav");
       let result = interpret(&format!(
         "Export[\"{path}\", Play[Sin[440 2 Pi t], {{t, 0, 1}}]]"
       ))
       .unwrap();
       assert_eq!(result, path);
-      let frames = assert_wav(&tmp, 8000);
+      let frames = assert_wav(&path, 8000);
       assert_eq!(frames, 8000, "1 second at 8000 Hz");
       // First PCM samples, byte-verified against wolframscript's export
       // (samples start at t = 1/8000, positive amplitudes scale by 32767).
-      let bytes = std::fs::read(&tmp).unwrap();
+      let bytes = std::fs::read(&path).unwrap();
       assert_eq!(&bytes[44..48], &[0x5b, 0x2b, 0x96, 0x51]);
-      std::fs::remove_file(&tmp).ok();
+      std::fs::remove_file(&path).ok();
     }
 
     #[test]
     fn test_export_wav_sound() {
-      let tmp = std::env::temp_dir().join("woxi_test_sound.wav");
-      let path = tmp.display().to_string();
+      let path = temp_file("woxi_test_sound.wav");
       let result = interpret(&format!(
         "Export[\"{path}\", Sound[{{Play[Sin[220 2 Pi t], {{t, 0, 1}}], \
          Play[Sin[330 2 Pi t], {{t, 0, 1}}]}}]]"
@@ -4745,15 +4739,14 @@ mod high_level_functions {
       .unwrap();
       assert_eq!(result, path);
       // Two 1-second segments are concatenated.
-      let frames = assert_wav(&tmp, 8000);
+      let frames = assert_wav(&path, 8000);
       assert_eq!(frames, 16000, "2 seconds at 8000 Hz");
-      std::fs::remove_file(&tmp).ok();
+      std::fs::remove_file(&path).ok();
     }
 
     #[test]
     fn test_export_wav_audio_samples() {
-      let tmp = std::env::temp_dir().join("woxi_test_audio_samples.wav");
-      let path = tmp.display().to_string();
+      let path = temp_file("woxi_test_audio_samples.wav");
       // 800 samples keep the symbolic Table cheap enough for debug-build CI
       // (8000 samples exceeded nextest's 20s timeout on the runner).
       let result = interpret(&format!(
@@ -4762,9 +4755,9 @@ mod high_level_functions {
       ))
       .unwrap();
       assert_eq!(result, path);
-      let frames = assert_wav(&tmp, 8000);
+      let frames = assert_wav(&path, 8000);
       assert_eq!(frames, 800, "0.1 seconds at 8000 Hz");
-      std::fs::remove_file(&tmp).ok();
+      std::fs::remove_file(&path).ok();
     }
 
     #[test]
@@ -4788,46 +4781,43 @@ mod high_level_functions {
       // below is verified against wolframscript's WAV export of the same call:
       //   {0.1, 0.2, 0.3, -0.1} -> {~0, 0.5, 0.99999, -1.} -> PCM
       //   0x0000, 0x4000, 0x7FFF, 0x8000.
-      let tmp = std::env::temp_dir().join("woxi_test_list_play.wav");
-      let path = tmp.display().to_string();
+      let path = temp_file("woxi_test_list_play.wav");
       let result = interpret(&format!(
         "Export[\"{path}\", ListPlay[{{0.1, 0.2, 0.3, -0.1}}]]"
       ))
       .unwrap();
       assert_eq!(result, path);
-      let frames = assert_wav(&tmp, 8000);
+      let frames = assert_wav(&path, 8000);
       assert_eq!(frames, 4, "four samples");
-      let bytes = std::fs::read(&tmp).unwrap();
+      let bytes = std::fs::read(&path).unwrap();
       assert_eq!(&bytes[44..52], &[0, 0, 0, 64, 255, 127, 0, 128]);
-      std::fs::remove_file(&tmp).ok();
+      std::fs::remove_file(&path).ok();
     }
 
     #[test]
     fn test_export_wav_list_play_sample_rate() {
       // The SampleRate option flows into the sampled sound.
-      let tmp = std::env::temp_dir().join("woxi_test_list_play_rate.wav");
-      let path = tmp.display().to_string();
+      let path = temp_file("woxi_test_list_play_rate.wav");
       let result = interpret(&format!(
         "Export[\"{path}\", ListPlay[{{0.5, -0.5}}, SampleRate -> 44100]]"
       ))
       .unwrap();
       assert_eq!(result, path);
-      assert_wav(&tmp, 44100);
-      std::fs::remove_file(&tmp).ok();
+      assert_wav(&path, 44100);
+      std::fs::remove_file(&path).ok();
     }
 
     #[test]
     fn test_export_wav_explicit_format() {
       // The format can be given explicitly instead of via the extension.
-      let tmp = std::env::temp_dir().join("woxi_test_explicit_wav.bin");
-      let path = tmp.display().to_string();
+      let path = temp_file("woxi_test_explicit_wav.bin");
       let result = interpret(&format!(
         "Export[\"{path}\", Play[Sin[440 2 Pi t], {{t, 0, 1}}], \"WAV\"]"
       ))
       .unwrap();
       assert_eq!(result, path);
-      assert_wav(&tmp, 8000);
-      std::fs::remove_file(&tmp).ok();
+      assert_wav(&path, 8000);
+      std::fs::remove_file(&path).ok();
     }
   }
 
@@ -5132,15 +5122,13 @@ mod high_level_functions {
   }
 
   mod import_ppm_tests {
+    use super::temp_file;
     use std::io::Write;
     use woxi::interpret_with_stdout;
 
-    fn write_tmp(name: &str, bytes: &[u8]) -> std::path::PathBuf {
-      let path = std::env::temp_dir().join(format!(
-        "woxi_ppm_test_{}_{}",
-        std::process::id(),
-        name
-      ));
+    fn write_tmp(name: &str, bytes: &[u8]) -> String {
+      let path =
+        temp_file(&format!("woxi_ppm_test_{}_{}", std::process::id(), name));
       let mut f = std::fs::File::create(&path).unwrap();
       f.write_all(bytes).unwrap();
       path
@@ -5152,7 +5140,7 @@ mod high_level_functions {
       // prints `Import::fmterr: Cannot import data as PPM format.` and
       // returns `$Failed`. Woxi must match.
       let path = write_tmp("invalid.ppm", b"image");
-      let code = format!(r#"Import["{}","PPM"]"#, path.to_string_lossy());
+      let code = format!(r#"Import["{}","PPM"]"#, path);
       let r = interpret_with_stdout(&code).unwrap();
       assert_eq!(r.result, "$Failed");
       assert!(
@@ -5166,12 +5154,12 @@ mod high_level_functions {
 
     #[test]
     fn test_import_ppm_missing_file_emits_nffil() {
-      let path = std::env::temp_dir().join(format!(
+      let path = temp_file(&format!(
         "woxi_ppm_does_not_exist_{}.ppm",
         std::process::id()
       ));
       let _ = std::fs::remove_file(&path);
-      let code = format!(r#"Import["{}","PPM"]"#, path.to_string_lossy());
+      let code = format!(r#"Import["{}","PPM"]"#, path);
       let r = interpret_with_stdout(&code).unwrap();
       assert_eq!(r.result, "$Failed");
       assert!(
@@ -5186,7 +5174,7 @@ mod high_level_functions {
       // No explicit format argument; .ppm extension alone must trigger
       // the Netpbm path so the error message still appears.
       let path = write_tmp("invalid_ext.ppm", b"not a ppm");
-      let code = format!(r#"Import["{}"]"#, path.to_string_lossy());
+      let code = format!(r#"Import["{}"]"#, path);
       let r = interpret_with_stdout(&code).unwrap();
       assert_eq!(r.result, "$Failed");
       assert!(
@@ -5200,11 +5188,12 @@ mod high_level_functions {
   }
 
   mod file_template_tests {
+    use super::temp_file;
     use std::io::Write;
     use woxi::{interpret, interpret_with_stdout};
 
-    fn write_tmp(name: &str, contents: &str) -> std::path::PathBuf {
-      let path = std::env::temp_dir().join(format!(
+    fn write_tmp(name: &str, contents: &str) -> String {
+      let path = temp_file(&format!(
         "woxi_filetemplate_{}_{}",
         std::process::id(),
         name
@@ -5219,7 +5208,7 @@ mod high_level_functions {
       // FileTemplate reads the file and produces a TemplateObject whose
       // rendered form matches wolframscript exactly.
       let path = write_tmp("object.txt", "Hello `name`, welcome to `place`!");
-      let code = format!(r#"FileTemplate["{}"]"#, path.to_string_lossy());
+      let code = format!(r#"FileTemplate["{}"]"#, path);
       assert_eq!(
         interpret(&code).unwrap(),
         "TemplateObject[{Hello , TemplateSlot[name], , welcome to , \
@@ -5232,7 +5221,7 @@ mod high_level_functions {
     #[test]
     fn test_file_template_head_is_template_object() {
       let path = write_tmp("head.txt", "x = `x`");
-      let code = format!(r#"Head[FileTemplate["{}"]]"#, path.to_string_lossy());
+      let code = format!(r#"Head[FileTemplate["{}"]]"#, path);
       assert_eq!(interpret(&code).unwrap(), "TemplateObject");
       let _ = std::fs::remove_file(&path);
     }
@@ -5240,7 +5229,7 @@ mod high_level_functions {
     #[test]
     fn test_file_template_numbered_slots() {
       let path = write_tmp("numbered.txt", "a `1` b `2`");
-      let code = format!(r#"FileTemplate["{}"]"#, path.to_string_lossy());
+      let code = format!(r#"FileTemplate["{}"]"#, path);
       assert_eq!(
         interpret(&code).unwrap(),
         "TemplateObject[{a , TemplateSlot[1],  b , TemplateSlot[2]}, \
@@ -5253,7 +5242,7 @@ mod high_level_functions {
     #[test]
     fn test_file_template_no_slots() {
       let path = write_tmp("plain.txt", "plain text");
-      let code = format!(r#"FileTemplate["{}"]"#, path.to_string_lossy());
+      let code = format!(r#"FileTemplate["{}"]"#, path);
       assert_eq!(
         interpret(&code).unwrap(),
         "TemplateObject[{plain text}, CombinerFunction -> StringJoin, \
@@ -5267,7 +5256,7 @@ mod high_level_functions {
       let path = write_tmp("apply.txt", "Hello `name`, welcome to `place`!");
       let code = format!(
         r#"TemplateApply[FileTemplate["{}"], <|"name" -> "Bob", "place" -> "Earth"|>]"#,
-        path.to_string_lossy()
+        path
       );
       assert_eq!(interpret(&code).unwrap(), "Hello Bob, welcome to Earth!");
       let _ = std::fs::remove_file(&path);
@@ -5276,10 +5265,8 @@ mod high_level_functions {
     #[test]
     fn test_template_apply_on_file_template_numbered_list() {
       let path = write_tmp("applynum.txt", "a `1` b `2`");
-      let code = format!(
-        r#"TemplateApply[FileTemplate["{}"], {{"X", "Y"}}]"#,
-        path.to_string_lossy()
-      );
+      let code =
+        format!(r#"TemplateApply[FileTemplate["{}"], {{"X", "Y"}}]"#, path);
       assert_eq!(interpret(&code).unwrap(), "a X b Y");
       let _ = std::fs::remove_file(&path);
     }
@@ -5287,20 +5274,19 @@ mod high_level_functions {
     #[test]
     fn test_file_template_with_file_wrapper() {
       let path = write_tmp("wrapper.txt", "v = `v`");
-      let code =
-        format!(r#"Head[FileTemplate[File["{}"]]]"#, path.to_string_lossy());
+      let code = format!(r#"Head[FileTemplate[File["{}"]]]"#, path);
       assert_eq!(interpret(&code).unwrap(), "TemplateObject");
       let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn test_file_template_missing_file_fails() {
-      let path = std::env::temp_dir().join(format!(
+      let path = temp_file(&format!(
         "woxi_filetemplate_missing_{}.txt",
         std::process::id()
       ));
       let _ = std::fs::remove_file(&path);
-      let code = format!(r#"FileTemplate["{}"]"#, path.to_string_lossy());
+      let code = format!(r#"FileTemplate["{}"]"#, path);
       let r = interpret_with_stdout(&code).unwrap();
       assert_eq!(r.result, "$Failed");
       assert!(
@@ -5312,6 +5298,7 @@ mod high_level_functions {
   }
 
   mod xml_template_tests {
+    use super::temp_file;
     use std::io::Write;
     use woxi::{interpret, interpret_with_stdout};
 
@@ -5378,24 +5365,23 @@ mod high_level_functions {
 
     #[test]
     fn test_xml_template_from_file() {
-      let path = std::env::temp_dir()
-        .join(format!("woxi_xmltemplate_{}.xml", std::process::id()));
+      let path =
+        temp_file(&format!("woxi_xmltemplate_{}.xml", std::process::id()));
       let mut f = std::fs::File::create(&path).unwrap();
       f.write_all(b"Hello `name`").unwrap();
-      let code =
-        format!(r#"Head[XMLTemplate[File["{}"]]]"#, path.to_string_lossy());
+      let code = format!(r#"Head[XMLTemplate[File["{}"]]]"#, path);
       assert_eq!(interpret(&code).unwrap(), "TemplateObject");
       let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn test_xml_template_missing_file_fails() {
-      let path = std::env::temp_dir().join(format!(
+      let path = temp_file(&format!(
         "woxi_xmltemplate_missing_{}.xml",
         std::process::id()
       ));
       let _ = std::fs::remove_file(&path);
-      let code = format!(r#"XMLTemplate[File["{}"]]"#, path.to_string_lossy());
+      let code = format!(r#"XMLTemplate[File["{}"]]"#, path);
       let r = interpret_with_stdout(&code).unwrap();
       assert_eq!(r.result, "$Failed");
       assert!(

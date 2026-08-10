@@ -1,3 +1,4 @@
+use crate::helpers::{div2, pow2};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, binop, bool_expr,
   expr_to_string, unevaluated,

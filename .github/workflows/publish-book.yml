@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+  # Lets a stuck or outage-lost run be retriggered by hand
+  workflow_dispatch:
 
 permissions:
   contents: read

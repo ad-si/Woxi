@@ -5858,6 +5858,14 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::graph::subgraph_ast(args);
   }
 
+  if name == "HighlightGraph" && args.len() >= 2 {
+    return crate::functions::graph::highlight_graph_ast(args);
+  }
+
+  if name == "ExampleData" && args.len() <= 2 {
+    return crate::functions::example_data::example_data_ast(args);
+  }
+
   if name == "LineGraph" && args.len() == 1 {
     return crate::functions::graph::line_graph_ast(args);
   }

@@ -10,6 +10,7 @@ use thiserror::Error;
 pub mod evaluator;
 pub mod expr_list;
 pub mod functions;
+pub mod helpers;
 pub mod notebook;
 pub mod syntax;
 pub mod utils;
@@ -902,6 +903,24 @@ pub fn graphics3d_result_with_structure(
 /// Gets the last captured graphics content (backward compatible)
 pub fn get_captured_graphics() -> Option<String> {
   CAPTURED_GRAPHICS.with(|buffer| buffer.borrow().last().cloned())
+}
+
+/// Make `expr`'s own picture the one visual hosts read back, when the value
+/// a cell displays is a graphic.
+///
+/// Hosts (playground, woxi-studio, the Jupyter kernel) take the *last*
+/// entry of the capture buffer, which is the last picture drawn while
+/// evaluating — not necessarily the one the cell evaluates to. A body that
+/// builds several plots and then picks one,
+/// `p1 = Plot[…]; p2 = ContourPlot[…]; Switch[which, 1, p1, 2, p2]`, drew
+/// `p2` last, so the chosen `p1` was displayed as `p2`. Re-capturing the
+/// result's SVG puts the picked picture back at the end of the buffer.
+fn promote_result_graphics(expr: &syntax::Expr) {
+  if let syntax::Expr::Graphics { svg, .. } = expr
+    && get_captured_graphics().as_deref() != Some(svg.as_str())
+  {
+    capture_graphics(svg);
+  }
 }
 
 /// Number of entries currently in the captured-graphics buffer. Paired with
@@ -1924,7 +1943,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       Some("\0".to_string())
     }
     Some(StmtOutcome::Display(result_expr)) => {
-      Some(format_top_level_result(result_expr))
+      Some(format_top_level_result(result_expr, depth))
     }
   };
 
@@ -1951,7 +1970,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
 /// render passes (Image/Graphics/Dataset/... wrappers), SVG typesetting for
 /// visual hosts, `%` history, and the final text formatting. Returns the
 /// output string ("\0" for Null, i.e. suppressed display).
-fn format_top_level_result(result_expr: syntax::Expr) -> String {
+///
+/// `depth` is the `interpret` nesting level; only the outermost call decides
+/// which picture the cell shows (see `promote_result_graphics`).
+fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
   // If the result is an Image, render it as a PNG <img> tag
   let result_expr = render_image_if_needed(result_expr);
   // Render unevaluated Graphics[{...}] FunctionCalls to SVG (e.g.
@@ -2059,6 +2081,11 @@ fn format_top_level_result(result_expr: syntax::Expr) -> String {
     }
     _ => result_expr,
   };
+  // The picture a cell shows is the one its value *is*, not the last one
+  // drawn on the way there.
+  if depth == 0 {
+    promote_result_graphics(&result_expr);
+  }
   // Generate SVG rendering of the result for playground display
   generate_output_svg(&result_expr);
   // Stash the top-level Expr so `%` / `Out[]` in a subsequent
@@ -4916,6 +4943,18 @@ fn store_function_definition(
   } else {
     raw_body_expr
   };
+
+  // A pattern variable repeated across the argument list (`f[i_, i_] := …`)
+  // constrains the arguments to be identical; lower it before the definition
+  // is filed so dispatch enforces it.
+  evaluator::assignment::constrain_repeated_params(
+    &mut params,
+    &mut conditions,
+    &heads,
+    &blank_types,
+  );
+  let has_any_condition =
+    has_any_condition || conditions.iter().any(|c| c.is_some());
 
   FUNC_DEFS.with(|m| {
     let mut defs = m.borrow_mut();

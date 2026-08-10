@@ -1363,9 +1363,7 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
 /// The font size and colour a named style carries in Wolfram's default
 /// stylesheet — `Style[expr, "Section"]` is large and orange, `"Label"`
 /// small and black. Measured from wolframscript's own rendering.
-pub(crate) fn named_style_appearance(
-  name: &str,
-) -> Option<(f64, Option<(u8, u8, u8)>)> {
+fn named_style_appearance(name: &str) -> Option<(f64, Option<(u8, u8, u8)>)> {
   Some(match name {
     "Title" => (44.0, Some((204, 12, 2))),
     "Subtitle" => (24.0, Some((89, 89, 89))),
@@ -1382,7 +1380,7 @@ pub(crate) fn named_style_appearance(
 /// and `Large` are absolute in Wolfram's default stylesheet; `Larger` and
 /// `Smaller` scale whatever size is in force. Measured from wolframscript's
 /// own rendering of `Text[Style["z", …]]` against numeric sizes.
-pub(crate) fn named_font_size(name: &str, current: f64) -> Option<f64> {
+fn named_font_size(name: &str, current: f64) -> Option<f64> {
   Some(match name {
     "Tiny" => 6.0,
     "Small" => 9.0,
@@ -1464,9 +1462,7 @@ fn is_button_bar(spec: &Expr) -> bool {
 /// explicit directives sit on top of it, whichever side of it they were
 /// written. `Style["A", 20, "Label"]` is 20-point text, not the 9-point the
 /// "Label" stylesheet entry gives on its own.
-pub(crate) fn style_directives_in_application_order(
-  directives: &[Expr],
-) -> Vec<&Expr> {
+fn style_directives_in_application_order(directives: &[Expr]) -> Vec<&Expr> {
   let (named, explicit): (Vec<&Expr>, Vec<&Expr>) =
     directives.iter().partition(
       |d| matches!(d, Expr::String(s) if named_style_appearance(s).is_some()),
@@ -14313,7 +14309,7 @@ fn style_pushed_into_layout(inner: &Expr, directives: &[Expr]) -> Option<Expr> {
 /// Typeset `expr` in TraditionalForm as a standalone SVG, through the same
 /// box builder and box layout the top-level display uses. `None` when the
 /// boxes lay out to nothing.
-pub fn form_box_svg(expr: &Expr) -> Option<String> {
+fn form_box_svg(expr: &Expr) -> Option<String> {
   let boxes =
     crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
       expr,
@@ -15794,12 +15790,15 @@ pub fn control_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// A styled run of a control label. A label is a sequence of these so the
 /// UI can render `Style["t", Italic]` as an italic `t` while leaving the
-/// rest upright. Only italic is tracked — the styling Wolfram labels use in
-/// practice for slider captions.
-#[derive(Debug, Clone, PartialEq)]
+/// rest upright. Italic, bold and color are tracked — the styling Wolfram
+/// labels and Demonstration captions use in practice.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct LabelRun {
   pub text: String,
   pub italic: bool,
+  pub bold: bool,
+  /// The run's color as `(r, g, b)` in 0..1, when `Style` gave it one.
+  pub color: Option<(f32, f32, f32)>,
 }
 
 /// A single control inside a Manipulate expression.
@@ -17223,6 +17222,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     label_runs: vec![LabelRun {
       text: "i".to_string(),
       italic: false,
+      ..Default::default()
     }],
   };
   Some(ManipulateSpec {
@@ -17299,6 +17299,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     label_runs: vec![LabelRun {
       text: var.clone(),
       italic: false,
+      ..Default::default()
     }],
   };
   Some(ManipulateSpec {
@@ -17614,7 +17615,11 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
     if text.is_empty() {
       vec![]
     } else {
-      vec![LabelRun { text, italic }]
+      vec![LabelRun {
+        text,
+        italic,
+        ..Default::default()
+      }]
     }
   };
   // `Derivative[n][f]` — a slider labelled `y'(0)` writes its `y'` this way.
@@ -17624,19 +17629,35 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
     runs.push(LabelRun {
       text: derivative_prime_marks(order),
       italic: false,
+      ..Default::default()
     });
     return runs;
   }
   match expr {
     Expr::FunctionCall { name, args } => match name.as_str() {
       // Style[expr, dir…] — render `expr`, turning italic on if any directive
-      // asks for it (bare `Italic` or `FontSlant -> "Italic"`).
+      // asks for it (bare `Italic` or `FontSlant -> "Italic"`), and applying
+      // any bold/color directive to the runs it produces. A nested `Style`
+      // has already set its own color by then and keeps it.
       "Style" | "StyleForm" => {
         let styled = italic || args.iter().skip(1).any(is_italic_directive);
-        args
+        let bold = args.iter().skip(1).any(is_bold_directive);
+        let color = args
+          .iter()
+          .skip(1)
+          .find_map(parse_color)
+          .map(|c| (c.r as f32, c.g as f32, c.b as f32));
+        let mut runs = args
           .first()
           .map(|a| manipulate_label_runs(a, styled))
-          .unwrap_or_default()
+          .unwrap_or_default();
+        for run in &mut runs {
+          run.bold |= bold;
+          if run.color.is_none() {
+            run.color = color;
+          }
+        }
+        runs
       }
       // Presentation wrappers whose content may nest styling/subscripts —
       // recurse rather than defer to OutputForm. `Tooltip[label, tip]`
@@ -17668,6 +17689,7 @@ fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
               runs.push(LabelRun {
                 text: "\n".to_string(),
                 italic,
+                ..Default::default()
               });
             }
             runs.extend(manipulate_label_runs(p, italic));
@@ -17722,6 +17744,7 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
       runs.push(LabelRun {
         text: seg.text,
         italic,
+        ..Default::default()
       });
       continue;
     }
@@ -17734,6 +17757,7 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
       None => runs.push(LabelRun {
         text: seg.text,
         italic,
+        ..Default::default()
       }),
       Some(box_runs) => runs.extend(box_runs),
     }
@@ -17768,6 +17792,7 @@ fn script_runs(
     runs.push(LabelRun {
       text: script,
       italic: false,
+      ..Default::default()
     });
   }
   runs
@@ -17775,6 +17800,30 @@ fn script_runs(
 
 /// True when a `Style` directive requests italic: bare `Italic` or
 /// `FontSlant -> "Italic" | Italic`.
+/// True when a `Style` directive requests bold: bare `Bold` or
+/// `FontWeight -> "Bold"`.
+fn is_bold_directive(dir: &Expr) -> bool {
+  match dir {
+    Expr::Identifier(s) => s == "Bold",
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      matches!(pattern.as_ref(), Expr::Identifier(s) if s == "FontWeight")
+        && match replacement.as_ref() {
+          Expr::String(s) => s == "Bold",
+          Expr::Identifier(s) => s == "Bold",
+          _ => false,
+        }
+    }
+    _ => false,
+  }
+}
+
 fn is_italic_directive(dir: &Expr) -> bool {
   match dir {
     Expr::Identifier(s) => s == "Italic",
@@ -17990,6 +18039,7 @@ fn parse_manipulate_control(
     vec![LabelRun {
       text: s,
       italic: false,
+      ..Default::default()
     }]
   };
   let (name, explicit_initial, label_runs) = match &items[0] {
@@ -19100,6 +19150,27 @@ pub fn apply_manipulate_button_action(
   }
 }
 
+/// Read the current value of each named Manipulate variable, as InputForm.
+///
+/// Called inside the scope the body was just evaluated in, so it reports
+/// what the body left behind: a Manipulate body is free to assign to the
+/// widget's own variables (`{v, e} = ve[[n]]`), and those assignments are
+/// part of the widget's state in Wolfram, not throwaway locals. Names that
+/// no longer have a value are skipped.
+pub fn read_manipulate_state(names: &[String]) -> Vec<(String, String)> {
+  names
+    .iter()
+    .filter_map(|name| {
+      let value = crate::interpret_to_expr(name).ok()?;
+      // An unset symbol evaluates to itself; there is nothing to record.
+      if matches!(&value, Expr::Identifier(s) if s == name) {
+        return None;
+      }
+      Some((name.clone(), crate::syntax::expr_to_input_form(&value)))
+    })
+    .collect()
+}
+
 /// The distinct target variables of a set of write-back assignments, in first-
 /// seen order. Used to read back the mutated state values after applying the
 /// assignments to the (globally-installed) bindings.
@@ -19196,10 +19267,21 @@ fn label_runs_to_json(runs: &[LabelRun]) -> String {
   let parts: Vec<String> = runs
     .iter()
     .map(|r| {
+      let color = match r.color {
+        Some((cr, cg, cb)) => format!(
+          r#","color":"rgb({},{},{})""#,
+          (cr.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (cg.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (cb.clamp(0.0, 1.0) * 255.0).round() as u8,
+        ),
+        None => String::new(),
+      };
       format!(
-        r#"{{"text":"{}","italic":{}}}"#,
+        r#"{{"text":"{}","italic":{},"bold":{}{}}}"#,
         json_escape_manipulate(&r.text),
         r.italic,
+        r.bold,
+        color,
       )
     })
     .collect();
@@ -19558,6 +19640,19 @@ pub enum DisplayNode {
     mutation: String,
     selected: bool,
   },
+  /// A `Button[label, action]`: pressing it evaluates `action` (InputForm)
+  /// against the live bindings, exactly like a `Button` written as a
+  /// Manipulate control argument. Demonstrations use these inside a
+  /// `Dynamic[…]` caption to step a variable (`n++`, `n = 1`, …).
+  Button {
+    label: Box<DisplayNode>,
+    action: String,
+  },
+  /// A `Spacer[w]`: `w` printer's points of horizontal space.
+  Spacer { width: f64 },
+  /// A text leaf with its styled runs, so `Style["…", Bold, Red]` renders
+  /// bold and red rather than as the literal `Style[…]` source.
+  Text { runs: Vec<LabelRun> },
   /// Any unrecognized leaf, rendered to SVG (graphics) or text.
   Static { svg: Option<String>, text: String },
 }
@@ -19689,6 +19784,19 @@ fn display_expr_to_node(
         DisplayNode::Row(list_children(&args[0], bindings, probes, ons))
       }
       "Checkbox" => checkbox_node(args, probes, ons),
+      // `Button[label, action]` — the action is held, so its source is
+      // taken verbatim and evaluated only when the button is pressed.
+      "Button" if args.len() >= 2 => DisplayNode::Button {
+        label: Box::new(display_expr_to_node(&args[0], bindings, probes, ons)),
+        action: crate::syntax::expr_to_input_form(&args[1]),
+      },
+      "Spacer" if !args.is_empty() => DisplayNode::Spacer {
+        width: spacer_width(&args[0]),
+      },
+      // A styled caption fragment: rendered as rich text, not as source.
+      "Style" | "StyleForm" if !args.is_empty() => {
+        styled_text_node(expr, bindings)
+      }
       // `TogglerBar[Dynamic[var], {v1 -> label1, …}]`: a row of toggle
       // buttons; clicking one adds/removes its value from the list `var`.
       "TogglerBar" if args.len() >= 2 => {
@@ -19703,7 +19811,33 @@ fn display_expr_to_node(
     Expr::List(_) => {
       DisplayNode::Column(list_children(expr, bindings, probes, ons))
     }
+    // Literal prose in a caption row.
+    Expr::String(_) => styled_text_node(expr, bindings),
     _ => static_leaf_node(expr, bindings),
+  }
+}
+
+/// `Spacer[w]` / `Spacer[{w, h}]` — the horizontal size it reserves, in
+/// printer's points. Anything unreadable falls back to Wolfram's default.
+fn spacer_width(arg: &Expr) -> f64 {
+  match arg {
+    Expr::List(items) if !items.is_empty() => {
+      expr_to_f64(&items[0]).unwrap_or(0.0)
+    }
+    other => expr_to_f64(other).unwrap_or(0.0),
+  }
+}
+
+/// A text leaf rendered through the label machinery, so `Style[…, Bold,
+/// Red]` keeps its styling and a variable inside it shows its current
+/// value. Falls back to the generic leaf when the fragment does not
+/// evaluate (e.g. it is really a graphic).
+fn styled_text_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
+  match eval_display_in_scope(expr, bindings) {
+    Some(evaluated) => DisplayNode::Text {
+      runs: manipulate_label_runs(&evaluated, false),
+    },
+    None => static_leaf_node(expr, bindings),
   }
 }
 
@@ -19864,7 +19998,7 @@ fn assign_checkbox_state(
         assign_checkbox_state(c, flags, idx);
       }
     }
-    DisplayNode::Toggler { label, .. } => {
+    DisplayNode::Toggler { label, .. } | DisplayNode::Button { label, .. } => {
       assign_checkbox_state(label, flags, idx)
     }
     DisplayNode::Checkbox { checked, .. } => {
@@ -19873,7 +20007,9 @@ fn assign_checkbox_state(
       }
       *idx += 1;
     }
-    DisplayNode::Static { .. } => {}
+    DisplayNode::Spacer { .. }
+    | DisplayNode::Text { .. }
+    | DisplayNode::Static { .. } => {}
   }
 }
 
@@ -19966,6 +20102,17 @@ fn display_node_to_json(node: &DisplayNode) -> String {
       json_escape_manipulate(mutation),
       selected,
     ),
+    DisplayNode::Button { label, action } => format!(
+      r#"{{"kind":"button","label":{},"action":"{}"}}"#,
+      display_node_to_json(label),
+      json_escape_manipulate(action),
+    ),
+    DisplayNode::Spacer { width } => {
+      format!(r#"{{"kind":"spacer","width":{width}}}"#)
+    }
+    DisplayNode::Text { runs } => {
+      format!(r#"{{"kind":"text","runs":{}}}"#, label_runs_to_json(runs))
+    }
     DisplayNode::Static { svg, text } => match svg {
       Some(svg) => format!(
         r#"{{"kind":"static","svg":"{}"}}"#,
@@ -20287,6 +20434,7 @@ mod manipulate_label_tests {
     LabelRun {
       text: text.to_string(),
       italic,
+      ..Default::default()
     }
   }
 

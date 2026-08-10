@@ -13,7 +13,7 @@ import {
   readdirSync,
   statSync,
 } from "fs";
-import { execSync } from "child_process";
+import { execSync, spawnSync } from "child_process";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -493,6 +493,24 @@ const APPROX_MATCH = new Set([
 ]);
 
 /**
+ * stderr of the most recent wolframscript batch. Kept so a failing batch can
+ * still report what wolframscript complained about (license flakes, hard
+ * kernel errors) even though stderr is no longer forwarded to our terminal.
+ */
+let lastWolframStderr = "";
+
+/** Keep a stderr dump readable: qhull alone emits ~50 lines per degenerate hull. */
+function truncateStderr(stderr: string, maxLines = 40): string {
+  const lines = stderr.trimEnd().split("\n");
+  return lines.length <= maxLines
+    ? lines.join("\n")
+    : [
+        ...lines.slice(0, maxLines),
+        `… (${lines.length - maxLines} more stderr lines omitted)`,
+      ].join("\n");
+}
+
+/**
  * Run one batch of test cases through wolframscript.
  * Returns the raw output string, or throws on failure.
  */
@@ -501,16 +519,33 @@ function runWolframBatch(
   timeoutMs = 300_000
 ): string {
   const wolframProgram = buildWolframScript(batch);
-  try {
-    return execSync(`wolframscript -charset UTF8 -code ${shellQuoteForExec(wolframProgram)}`, {
+  // spawnSync (rather than execSync) so wolframscript's stderr is captured
+  // instead of forwarded straight to our own stderr. Wolfram's bundled
+  // libraries write diagnostics there that are not test failures — e.g. qhull's
+  // multi-page "Initial simplex is flat" report for degenerate ConvexHullMesh /
+  // DelaunayMesh inputs — and they would otherwise bury the progress output.
+  // The captured text is still reported whenever a batch actually fails.
+  const res = spawnSync(
+    `wolframscript -charset UTF8 -code ${shellQuoteForExec(wolframProgram)}`,
+    {
+      shell: true,
       encoding: "utf-8",
       timeout: timeoutMs,
       maxBuffer: 10 * 1024 * 1024,
       killSignal: "SIGKILL", // SIGTERM is ignored by wolframscript during computation
-    });
-  } catch (err: any) {
-    throw new Error(err.stderr || err.message || "wolframscript batch failed");
+    }
+  );
+  lastWolframStderr = res.stderr ?? "";
+  if (res.error) {
+    throw new Error(res.error.message || "wolframscript batch failed");
   }
+  if (res.signal || res.status !== 0) {
+    throw new Error(
+      lastWolframStderr.trim() ||
+        `wolframscript exited with ${res.signal ?? res.status}`
+    );
+  }
+  return res.stdout ?? "";
 }
 
 /**
@@ -646,6 +681,13 @@ function main() {
                             // Woxi exposes the underlying {vertices, polygons} data.
     /\bGridGraph\[/,        // Internal Graph representation differs (edge list vs SparseArray)
     /\bImageConvolve\[/,    // Last-ULP floating-point differences between filter algorithms
+    /\bImageCorrelate\[/,   // Shares ImageConvolve's filter, so the same last-ULP differences
+    /\bColorBalance\[/,     // Woxi implements the documented "LMSScaling" (von Kries/Bradford)
+                            // adaptation; Wolfram's reference white and matrix variant are
+                            // internal, so the channel values agree in shape, not bit-for-bit.
+    /\bHistogramTransform\[/, // Woxi maps the empirical CDF directly; Wolfram bins integer
+                            // images into an internal fixed-level histogram first, so the
+                            // equalized values differ by the binning.
     /\bDominantColors\[/,   // Implementation-specific color algorithm: Woxi uses a GrayLevel
                             // ramp on single-channel inputs, Wolfram hashes labels into RGB.
     /\bCenteredInterval\[/, // Internal representation differs: Woxi stores {value, radius}
@@ -1604,6 +1646,19 @@ function main() {
     "ToString[ImportString[\"true,false\", \"CSV\"], InputForm]",
     "ToString[ImportString[\"True,FALSE,tRue,yes\", \"CSV\"], InputForm]",
 
+    // `"ColumnTypes"` of a labelled table whose text does not end in a newline:
+    // Wolfram reports the last column as "String" no matter what is in it,
+    // while the same import reads that field as a number. Reproduce with
+    //   wolframscript -code 'ToString[{ImportString["a,b,c\n1,2,3", "CSV"],
+    //     ImportString["a,b,c\n1,2,3", {"CSV", "ColumnTypes"}],
+    //     ImportString["a,b,c\n1,2,3\n", {"CSV", "ColumnTypes"}]}, InputForm]'
+    // -> the data is `{{"a","b","c"},{1,2,3}}`, the types are
+    // `<|"a" -> "Integer64", "b" -> "Integer64", "c" -> "String"|>` without the
+    // trailing newline and all "Integer64" with it. The unterminated last field
+    // is the only difference, so this is Wolfram contradicting itself rather
+    // than a type rule; Woxi types the column from the value it imported.
+    "ToString[ImportString[\"a,b,c\\n1,2,3\", {\"CSV\", \"ColumnTypes\"}], InputForm]",
+
     // TraditionalForm boxes: Wolfram hands a special function or a Row to a
     // named FrontEnd template (`TemplateBox[{n, x}, "LegendreP"]`,
     // `TemplateBox[{2, x, t}, "RowDefault"]`) that knows how to draw it.
@@ -1742,6 +1797,15 @@ function main() {
       );
       if (!batchCrashed && output.trim()) {
         console.error(`wolframscript output:\n${output}`);
+      }
+      // stderr is captured rather than forwarded (see runWolframBatch), so echo
+      // it here — it carries the license/activation flake messages and kernel
+      // errors that explain a batch without a DONE sentinel.
+      if (
+        lastWolframStderr.trim() &&
+        !crashErr.includes(lastWolframStderr.trim())
+      ) {
+        console.error(`wolframscript stderr:\n${truncateStderr(lastWolframStderr)}`);
       }
 
       // Bisect to distinguish a genuine hang from a wolframscript cold-start

@@ -12,7 +12,7 @@ use woxi::functions::graphics::{
   DisplayNode, LabelRun, ManipulateControl, ManipulateSpec,
   apply_manipulate_mutations, build_manipulate_display, extract_animator_spec,
   extract_click_pane_spec, extract_control_spec, extract_list_animate_spec,
-  extract_locator_pane_spec, extract_manipulate_spec,
+  extract_locator_pane_spec, extract_manipulate_spec, read_manipulate_state,
 };
 use woxi::syntax::Expr;
 
@@ -627,50 +627,65 @@ impl ManipulateState {
     let control_enabled = self.control_enabled.clone();
     let dynamic_bounds = self.dynamic_bounds.clone();
     let dynamic_values = self.dynamic_values.clone();
-    let (render, display_trees, enabled, resolved_bounds, resolved_values) =
-      woxi::with_scoped_globals(&bindings, || {
-        let trees: Vec<_> = displays
-          .iter()
-          .map(|d| build_manipulate_display(d, &[]))
-          .collect();
-        let enabled: Vec<bool> = control_enabled
-          .iter()
-          .map(|c| match c {
-            Some(cond) => {
-              woxi::functions::graphics::manipulate_condition_enabled(cond)
-            }
-            None => true,
-          })
-          .collect();
-        // Re-resolve bounds that follow another control's variable (e.g. a
-        // time slider capped by the orbital period) against these bindings.
-        let resolved: Vec<(String, Option<f64>, Option<f64>)> = dynamic_bounds
-          .iter()
-          .map(|(name, min_code, max_code)| {
-            let eval = |c: &Option<String>| {
-              c.as_deref()
-                .and_then(woxi::functions::graphics::manipulate_eval_bound_code)
-            };
-            (name.clone(), eval(min_code), eval(max_code))
-          })
-          .collect();
-        // Likewise for choice lists built from another control's variable
-        // (a level setter offering fewer levels in 3D).
-        let values: Vec<(String, _)> = dynamic_values
-          .iter()
-          .filter_map(|(name, values_code)| {
-            woxi::functions::graphics::manipulate_eval_values_code(values_code)
-              .map(|cols| (name.clone(), cols))
-          })
-          .collect();
-        (
-          woxi::interpret_with_stdout(&code),
-          trees,
-          enabled,
-          resolved,
-          values,
-        )
-      });
+    let state_names: Vec<String> =
+      self.state.iter().map(|(n, _)| n.clone()).collect();
+    let (
+      render,
+      updated_state,
+      display_trees,
+      enabled,
+      resolved_bounds,
+      resolved_values,
+    ) = woxi::with_scoped_globals(&bindings, || {
+      // The body runs *before* the captions are built: a Manipulate body
+      // may assign to the widget's own variables (`{v, e} = ve[[n]]`),
+      // and a `Dynamic[…]` caption showing them must display what this
+      // frame computed, not the previous frame's values.
+      let render = woxi::interpret_with_stdout(&code);
+      let updated_state = read_manipulate_state(&state_names);
+      let trees: Vec<_> = displays
+        .iter()
+        .map(|d| build_manipulate_display(d, &[]))
+        .collect();
+      let enabled: Vec<bool> = control_enabled
+        .iter()
+        .map(|c| match c {
+          Some(cond) => {
+            woxi::functions::graphics::manipulate_condition_enabled(cond)
+          }
+          None => true,
+        })
+        .collect();
+      // Re-resolve bounds that follow another control's variable (e.g. a
+      // time slider capped by the orbital period) against these bindings.
+      let resolved: Vec<(String, Option<f64>, Option<f64>)> = dynamic_bounds
+        .iter()
+        .map(|(name, min_code, max_code)| {
+          let eval = |c: &Option<String>| {
+            c.as_deref()
+              .and_then(woxi::functions::graphics::manipulate_eval_bound_code)
+          };
+          (name.clone(), eval(min_code), eval(max_code))
+        })
+        .collect();
+      // Likewise for choice lists built from another control's variable
+      // (a level setter offering fewer levels in 3D).
+      let values: Vec<(String, _)> = dynamic_values
+        .iter()
+        .filter_map(|(name, values_code)| {
+          woxi::functions::graphics::manipulate_eval_values_code(values_code)
+            .map(|cols| (name.clone(), cols))
+        })
+        .collect();
+      (render, updated_state, trees, enabled, resolved, values)
+    });
+    // Keep the body's writes to the widget's own variables, so the next
+    // frame (and any caption) builds on them.
+    for (name, value) in updated_state {
+      if let Some(slot) = self.state.iter_mut().find(|(n, _)| *n == name) {
+        slot.1 = value;
+      }
+    }
     self.display_trees = display_trees;
     self.control_is_enabled = enabled;
     self.apply_dynamic_bounds(&resolved_bounds);

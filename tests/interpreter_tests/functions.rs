@@ -3011,7 +3011,7 @@ mod file_exists_q {
 
   #[test]
   fn existing_path() {
-    let path = temp_file("");
+    let path = temp_dir();
     assert_eq!(
       interpret(&format!("FileExistsQ[\"{path}\"]")).unwrap(),
       "True"

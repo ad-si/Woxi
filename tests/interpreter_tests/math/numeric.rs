@@ -767,7 +767,6 @@ mod precision {
     assert_eq!(interpret("Head[$ProcessID] == Integer").unwrap(), "True");
   }
 
-  #[cfg(unix)]
   #[test]
   fn parent_process_id_head_is_integer() {
     assert_eq!(

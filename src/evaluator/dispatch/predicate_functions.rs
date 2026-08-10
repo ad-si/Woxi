@@ -1151,10 +1151,8 @@ pub fn dispatch_predicate_functions(
                 body,
               )
               .unwrap_or_else(|| {
-                let args: Vec<Expr> = params
-                  .iter()
-                  .enumerate()
-                  .map(|(i, p)| {
+                let args: Vec<Expr> = (0..params.len())
+                  .map(|i| {
                     // Check if this param has a literal-match condition (SameQ)
                     if let Some(Some(Expr::Comparison {
                       operands,
@@ -1167,11 +1165,13 @@ pub fn dispatch_predicate_functions(
                     {
                       return literal_val.clone();
                     }
-                    Expr::Pattern {
-                      name: p.clone(),
-                      head: heads.get(i).and_then(|h| h.clone()),
-                      blank_type: blank_types.get(i).copied().unwrap_or(1),
-                    }
+                    crate::evaluator::assignment::downvalue_param_pattern(
+                      params,
+                      conds,
+                      heads,
+                      blank_types,
+                      i,
+                    )
                   })
                   .collect();
                 (args, body.clone())
