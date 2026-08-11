@@ -270,11 +270,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if matches!(a, Expr::Integer(1)) {
       let g0 = gamma_incomplete_upper(a, z0)?;
       let g1 = gamma_incomplete_upper(a, z1)?;
-      return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(g0),
-        right: Box::new(g1),
-      });
+      return crate::evaluator::evaluate_expr_to_expr(&minus2(g0, g1));
     }
     // Numeric when any argument is an inexact (machine) real. Otherwise
     // Wolfram keeps the symbolic Gamma[a, z0, z1] form (it does NOT expand
@@ -285,11 +281,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if has_real {
       let g0 = gamma_incomplete_upper(a, z0)?;
       let g1 = gamma_incomplete_upper(a, z1)?;
-      return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(g0),
-        right: Box::new(g1),
-      });
+      return crate::evaluator::evaluate_expr_to_expr(&minus2(g0, g1));
     }
     return Ok(unevaluated("Gamma", args));
   }
@@ -1103,20 +1095,15 @@ fn incomplete_beta_ast(
   //   Beta[z, a, 1] = (z^a - 0^a)/a   (the lower-limit boundary term 0^a is
   //                                    kept symbolic, matching wolframscript).
   if !z_is_numeric {
-    let minus = |x: Expr, y: Expr| Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(x),
-      right: Box::new(y),
-    };
     if matches!(a, Expr::Integer(1)) {
-      let num = minus(
+      let num = minus2(
         Expr::Integer(1),
-        pow2(minus(Expr::Integer(1), z.clone()), b.clone()),
+        pow2(minus2(Expr::Integer(1), z.clone()), b.clone()),
       );
       return crate::evaluator::evaluate_expr_to_expr(&div2(num, b.clone()));
     }
     if matches!(b, Expr::Integer(1)) {
-      let num = minus(
+      let num = minus2(
         pow2(z.clone(), a.clone()),
         pow2(Expr::Integer(0), a.clone()),
       );
@@ -2298,10 +2285,7 @@ pub fn log_barnes_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(unevaluated(args));
   }
-  let neg_infinity = || Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(Expr::Identifier("Infinity".to_string())),
-  };
+  let neg_infinity = || neg1(Expr::Identifier("Infinity".to_string()));
   match &args[0] {
     Expr::Integer(n) => {
       if *n <= 0 {

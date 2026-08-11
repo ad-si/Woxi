@@ -1066,7 +1066,6 @@ fn struve_half_integer_closed_form(
   };
   let int = Expr::Integer;
   let plus = |a, b| binop(B::Plus, a, b);
-  let minus = |a, b| binop(B::Minus, a, b);
   let times = |a, b| binop(B::Times, a, b);
   let neg = |a| binop(B::Times, int(-1), a);
   let pi = || Expr::Constant("Pi".to_string());
@@ -1087,7 +1086,7 @@ fn struve_half_integer_closed_form(
       // +-Sqrt[2 Pi]/(Pi Sqrt[z]) -/+ Sqrt[2/Pi] c[z]/Sqrt[z]
       let a = div2(sqrt_2pi(), times(pi(), sqrt_z()));
       let b = div2(times(sqrt_2_over_pi(), cz()), sqrt_z());
-      if is_l { plus(neg(a), b) } else { minus(a, b) }
+      if is_l { plus(neg(a), b) } else { minus2(a, b) }
     }
     -1 => {
       // Sqrt[2/Pi] s[z]/Sqrt[z]
@@ -1100,7 +1099,7 @@ fn struve_half_integer_closed_form(
         plus(div2(sqrt_2pi(), z_32()), times(sqrt_pi_over_2(), sqrt_z())),
         pi(),
       );
-      let inner = minus(neg(div2(cz(), z())), sz());
+      let inner = minus2(neg(div2(cz(), z())), sz());
       let b = div2(times(sqrt_2_over_pi(), inner), sqrt_z());
       plus(a, b)
     }
@@ -1127,7 +1126,7 @@ fn struve_half_integer_closed_form(
     }
     -3 => {
       // (2 Cosh[z] - (2 Sinh[z])/z)/(Sqrt[2 Pi] Sqrt[z])
-      let num = minus(times(int(2), cz()), div2(times(int(2), sz()), z()));
+      let num = minus2(times(int(2), cz()), div2(times(int(2), sz()), z()));
       div2(num, times(sqrt_2pi(), sqrt_z()))
     }
     _ => return None,
@@ -1804,7 +1803,7 @@ fn weber_e_at_zero_symbolic(nu: &Expr) -> Expr {
     name: "Cos".to_string(),
     args: vec![nu_pi.clone()].into(),
   };
-  let one_minus_cos = binop(BinaryOperator::Minus, Expr::Integer(1), cos_nu_pi);
+  let one_minus_cos = minus2(Expr::Integer(1), cos_nu_pi);
   div2(one_minus_cos, nu_pi)
 }
 
@@ -2530,10 +2529,8 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Symbolic reduction: F1(a, b1, b2; a; x, y) = 1 / ((1-x)^b1 * (1-y)^b2)
   if exprs_structurally_equal(&args[0], &args[3]) {
     let one = Expr::Integer(1);
-    let one_minus_x =
-      binop(BinaryOperator::Minus, one.clone(), args[4].clone());
-    let one_minus_y =
-      binop(BinaryOperator::Minus, one.clone(), args[5].clone());
+    let one_minus_x = minus2(one.clone(), args[4].clone());
+    let one_minus_y = minus2(one.clone(), args[5].clone());
     let factor_x = Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![one_minus_x, args[1].clone()].into(),
@@ -3406,10 +3403,7 @@ pub fn real_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&abs_expr, Expr::Integer(0))
     || matches!(&abs_expr, Expr::Real(f) if *f == 0.0)
   {
-    return Ok(Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(Expr::Identifier("Infinity".to_string())),
-    });
+    return Ok(neg1(Expr::Identifier("Infinity".to_string())));
   }
 
   let magnitude = match try_eval_to_f64(&abs_expr) {
