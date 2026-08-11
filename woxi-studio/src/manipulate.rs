@@ -246,6 +246,11 @@ impl ControlState {
   }
 }
 
+/// A discrete control's freshly resolved choice list, as
+/// `(control name, (values, labels, rendered labels))`.
+type ResolvedChoices =
+  (String, (Vec<String>, Vec<String>, Vec<Option<String>>));
+
 /// Full state for a Manipulate cell: the held body plus its rendered
 /// output.
 #[derive(Debug, Clone)]
@@ -786,10 +791,7 @@ impl ManipulateState {
   /// The selected value is kept when it survives into the new list;
   /// otherwise the selection clamps to the last remaining choice, which is
   /// what Wolfram shows when the current level falls off the end.
-  fn apply_dynamic_values(
-    &mut self,
-    resolved: &[(String, (Vec<String>, Vec<String>, Vec<Option<String>>))],
-  ) -> bool {
+  fn apply_dynamic_values(&mut self, resolved: &[ResolvedChoices]) -> bool {
     let mut selection_moved = false;
     for (name, (new_values, new_labels, new_svgs)) in resolved {
       let Some(ControlState::Discrete {

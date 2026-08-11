@@ -224,11 +224,18 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // below, which is the same path a hand-written `Style[v, Red]` takes.
   let mut vertex_style_rules: Vec<(Expr, Expr)> = Vec::new();
   let mut edge_style_rules: Vec<(Expr, Expr)> = Vec::new();
+  // `EdgeShapeFunction -> …`: the shape every edge is drawn with, plus
+  // the per-edge overrides of the rule-list form.
+  let mut edge_shape: Option<EdgeShape> = None;
+  let mut edge_shape_rules: Vec<(Expr, EdgeShape)> = Vec::new();
   let mut vertex_labels = false;
   let mut vertex_shape: Option<String> = None;
   let mut vertex_size_scale: f64 = 1.0;
   let mut plot_label: Option<Expr> = None;
   let mut layered: Option<LayerDirection> = None;
+  // `GraphLayout -> "CircularEmbedding"` puts every vertex on one circle,
+  // also for graphs that fall apart into several components.
+  let mut circular = false;
   let mut draw_directed = true;
   let mut image_size: Option<Expr> = None;
 
@@ -300,6 +307,17 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // This is the embedding `LayeredGraphPlot` / `TreePlot` ask for.
         "GraphLayout" => {
           layered = parse_layered_layout(replacement);
+          circular = layered.is_none() && layout_is_circular(replacement);
+        }
+        // `EdgeShapeFunction -> f` hands the drawing of each edge to `f`,
+        // which is applied as `f[{pt, …}, edge]` and returns the graphics
+        // to use in place of the default line or arrow.
+        "EdgeShapeFunction" => {
+          let (shape, rules) = parse_edge_shape(replacement);
+          if let Some(shape) = shape {
+            edge_shape = Some(shape);
+          }
+          edge_shape_rules.extend(rules);
         }
         // `DirectedEdges -> False` says how the edges are *drawn*: as
         // plain lines rather than arrows. The underlying edges keep their
@@ -348,6 +366,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // components are packed into a grid so clusters are visible.
   let positions: Vec<(f64, f64)> = match layered {
     Some(dir) => layered_layout(&graph, dir),
+    None if circular && n > 2 => circular_layout(n),
     None => compute_layout(&graph),
   };
 
@@ -423,6 +442,14 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ..edge_data.clone()
     };
 
+    // The path the edge is drawn along, from one vertex boundary to the
+    // other. A shape function is handed exactly these points.
+    let shape_pts: Vec<(f64, f64)>;
+    // The points the default rendering uses. They differ from `shape_pts`
+    // only for the undirected straight edge, which has always been drawn
+    // from centre to centre.
+    let default_pts: Vec<(f64, f64)>;
+
     if si == di {
       // Self-loop: circular arc that starts and ends exactly on the
       // vertex boundary.  The loop bulges upward (+y in data coords).
@@ -457,25 +484,13 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let angle = start_angle + t * (end_angle - start_angle);
         if k == 0 || k == segments {
           // Snap first/last point exactly onto vertex boundary
-          let (px, py) = attach(angle);
-          pts.push(Expr::List(vec![Expr::Real(px), Expr::Real(py)].into()));
+          pts.push(attach(angle));
         } else {
-          let px = cx + loop_r * angle.cos();
-          let py = cy + loop_r * angle.sin();
-          pts.push(Expr::List(vec![Expr::Real(px), Expr::Real(py)].into()));
+          pts.push((cx + loop_r * angle.cos(), cy + loop_r * angle.sin()));
         }
       }
-      if edge_data.directed {
-        primitives.push(Expr::FunctionCall {
-          name: "Arrow".to_string(),
-          args: vec![Expr::List(pts.into())].into(),
-        });
-      } else {
-        primitives.push(Expr::FunctionCall {
-          name: "Line".to_string(),
-          args: vec![Expr::List(pts.into())].into(),
-        });
-      }
+      shape_pts = pts.clone();
+      default_pts = pts;
     } else {
       // Determine this edge's position within its parallel group.
       // A group of size 1 → straight edge (current behavior).
@@ -510,40 +525,21 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       if total == 1 || offset_mag.abs() < 1e-9 {
         // Straight edge — unchanged behavior.
-        if edge_data.directed {
-          let dx = x2 - x1;
-          let dy = y2 - y1;
-          let len = (dx * dx + dy * dy).sqrt();
-          let ux = dx / len;
-          let uy = dy / len;
-          let sx = x1 + ux * vertex_radius;
-          let sy = y1 + uy * vertex_radius;
-          let ex = x2 - ux * vertex_radius;
-          let ey = y2 - uy * vertex_radius;
-          primitives.push(Expr::FunctionCall {
-            name: "Arrow".to_string(),
-            args: vec![Expr::List(
-              vec![
-                Expr::List(vec![Expr::Real(sx), Expr::Real(sy)].into()),
-                Expr::List(vec![Expr::Real(ex), Expr::Real(ey)].into()),
-              ]
-              .into(),
-            )]
-            .into(),
-          });
+        let dx = x2 - x1;
+        let dy = y2 - y1;
+        let len = (dx * dx + dy * dy).sqrt().max(1e-9);
+        let ux = dx / len;
+        let uy = dy / len;
+        let sx = x1 + ux * vertex_radius;
+        let sy = y1 + uy * vertex_radius;
+        let ex = x2 - ux * vertex_radius;
+        let ey = y2 - uy * vertex_radius;
+        shape_pts = vec![(sx, sy), (ex, ey)];
+        default_pts = if edge_data.directed {
+          shape_pts.clone()
         } else {
-          primitives.push(Expr::FunctionCall {
-            name: "Line".to_string(),
-            args: vec![Expr::List(
-              vec![
-                Expr::List(vec![Expr::Real(x1), Expr::Real(y1)].into()),
-                Expr::List(vec![Expr::Real(x2), Expr::Real(y2)].into()),
-              ]
-              .into(),
-            )]
-            .into(),
-          });
-        }
+          vec![(x1, y1), (x2, y2)]
+        };
       } else {
         // Curved edge: quadratic Bézier through a perpendicular-offset
         // control point. The same perp axis is used regardless of which
@@ -572,21 +568,63 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let omt = 1.0 - t;
           let bx = omt * omt * sx + 2.0 * omt * t * ctrl_x + t * t * ex;
           let by = omt * omt * sy + 2.0 * omt * t * ctrl_y + t * t * ey;
-          pts.push(Expr::List(vec![Expr::Real(bx), Expr::Real(by)].into()));
+          pts.push((bx, by));
         }
+        shape_pts = pts.clone();
+        default_pts = pts;
+      }
+    }
 
-        if edge_data.directed {
-          primitives.push(Expr::FunctionCall {
-            name: "Arrow".to_string(),
-            args: vec![Expr::List(pts.into())].into(),
-          });
+    // Hand the path over to the shape function this edge was given, and
+    // fall back to the plain line/arrow when it has none.
+    let shape = if edge_shape.is_some() || !edge_shape_rules.is_empty() {
+      let named = |idx: petgraph::graph::NodeIndex| {
+        unwrap_vertex_style(&vertices[graph[idx]]).0.clone()
+      };
+      let edge_expr = Expr::FunctionCall {
+        name: if edge_ref.weight().directed {
+          "DirectedEdge".to_string()
         } else {
-          primitives.push(Expr::FunctionCall {
-            name: "Line".to_string(),
-            args: vec![Expr::List(pts.into())].into(),
-          });
+          "UndirectedEdge".to_string()
+        },
+        args: vec![named(edge_ref.source()), named(edge_ref.target())].into(),
+      };
+      let matched = edge_shape_rules
+        .iter()
+        .find(|(target, _)| same_edge(&edge_expr, target))
+        .map(|(_, shape)| shape);
+      matched
+        .or(edge_shape.as_ref())
+        .map(|shape| (shape.clone(), edge_expr))
+    } else {
+      None
+    };
+
+    match shape {
+      Some((EdgeShape::Hidden, _)) => {}
+      Some((EdgeShape::Named(name), _)) => match name.as_str() {
+        "Line" | "UndirectedLine" => {
+          primitives.push(line_or_arrow(false, &shape_pts));
+        }
+        "Arrow" | "DirectedLine" => {
+          primitives.push(line_or_arrow(true, &shape_pts));
+        }
+        _ => primitives.push(line_or_arrow(edge_data.directed, &default_pts)),
+      },
+      Some((EdgeShape::Func(f), edge_expr)) => {
+        let pts_expr = points_expr(&shape_pts);
+        match crate::functions::list_helpers_ast::apply_func_to_two_args(
+          &f, &pts_expr, &edge_expr,
+        ) {
+          // The result is wrapped in a list so that any directives it
+          // sets stay scoped to this edge.
+          Ok(drawn) => primitives.push(Expr::List(vec![drawn].into())),
+          Err(_) => {
+            primitives.push(line_or_arrow(edge_data.directed, &default_pts))
+          }
         }
       }
+      None => primitives.push(line_or_arrow(edge_data.directed, &default_pts)),
     }
 
     // Edge label
@@ -872,6 +910,93 @@ fn parse_layered_layout(value: &Expr) -> Option<LayerDirection> {
       Some(dir.unwrap_or(LayerDirection::Top))
     }
     _ => None,
+  }
+}
+
+/// A list of `{x, y}` pairs, as the graphics primitives and the shape
+/// functions take them.
+fn points_expr(pts: &[(f64, f64)]) -> Expr {
+  Expr::List(
+    pts
+      .iter()
+      .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+      .collect::<Vec<_>>()
+      .into(),
+  )
+}
+
+/// `Arrow[pts]` or `Line[pts]` — how an edge is drawn when no shape
+/// function takes over.
+fn line_or_arrow(directed: bool, pts: &[(f64, f64)]) -> Expr {
+  Expr::FunctionCall {
+    name: if directed { "Arrow" } else { "Line" }.to_string(),
+    args: vec![points_expr(pts)].into(),
+  }
+}
+
+/// Whether a layout option value asks for the vertices to sit on one
+/// circle. The value is either the name on its own or the name at the
+/// head of a list that carries sub-options.
+fn layout_is_circular(value: &Expr) -> bool {
+  match value {
+    Expr::String(s) => s == "CircularEmbedding",
+    Expr::List(items) => items.iter().any(layout_is_circular),
+    _ => false,
+  }
+}
+
+/// How an edge is drawn, as `EdgeShapeFunction -> …` asks for it.
+#[derive(Clone, Debug)]
+enum EdgeShape {
+  /// `EdgeShapeFunction -> None` — the edge is not drawn at all.
+  Hidden,
+  /// A named shape such as `"Line"` or `"Arrow"`.
+  Named(String),
+  /// A function applied as `f[{pt, …}, edge]` whose result is used as
+  /// the graphics for that edge.
+  Func(Expr),
+}
+
+/// Read an `EdgeShapeFunction -> …` value into the shape used for every
+/// edge plus the per-edge overrides of the rule-list form
+/// `{DirectedEdge[u, v] -> f, …}`.
+fn parse_edge_shape(
+  value: &Expr,
+) -> (Option<EdgeShape>, Vec<(Expr, EdgeShape)>) {
+  if let Expr::List(items) = value
+    && !items.is_empty()
+    && items.iter().all(|item| {
+      matches!(item, Expr::Rule { pattern, .. }
+        if edge_endpoints(pattern).is_some())
+    })
+  {
+    let rules = items
+      .iter()
+      .filter_map(|item| match item {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => Some(((**pattern).clone(), edge_shape_value(replacement))),
+        _ => None,
+      })
+      .collect();
+    return (None, rules);
+  }
+  (Some(edge_shape_value(value)), Vec::new())
+}
+
+/// A single `EdgeShapeFunction` value: `None`, a shape name (optionally
+/// heading a list of sub-options), or a function.
+fn edge_shape_value(value: &Expr) -> EdgeShape {
+  match value {
+    Expr::Identifier(s) if s == "None" => EdgeShape::Hidden,
+    Expr::String(s) => EdgeShape::Named(s.clone()),
+    // `{"CurvedArc", "Curvature" -> 2}` — the name plus its settings.
+    Expr::List(items) => match items.first() {
+      Some(Expr::String(s)) => EdgeShape::Named(s.clone()),
+      _ => EdgeShape::Func(value.clone()),
+    },
+    other => EdgeShape::Func(other.clone()),
   }
 }
 
