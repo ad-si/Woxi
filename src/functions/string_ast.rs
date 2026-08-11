@@ -5465,6 +5465,25 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let s = crate::syntax::expr_to_output_form_2d(&formatted);
         return Ok(Expr::String(s));
       }
+      "TraditionalForm" => {
+        // Typeset into TraditionalForm boxes and lay them out as 2D text:
+        // `Sin[x]` reads `sin(x)`, `HoldForm[f][HoldForm[x]]` reads `f(x)`,
+        // and a quotient still spans three lines the way OutputForm's
+        // fraction does. Demonstrations build their plot labels this way,
+        // pasting the pieces together with `StringJoin`.
+        let formatted =
+          crate::evaluator::dispatch::complex_and_special::apply_format_recursively(
+            &args[0],
+            "TraditionalForm",
+          );
+        let boxes =
+          crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
+            &formatted,
+          );
+        return Ok(Expr::String(crate::syntax::boxes_to_output_form_2d(
+          &boxes,
+        )));
+      }
       "StandardForm" => {
         // Build the box AST via MakeBoxes (which dispatches user-defined
         // Format / MakeBoxes rules), then encode it using Wolfram's

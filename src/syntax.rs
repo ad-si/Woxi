@@ -3090,8 +3090,8 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       }
       result
     }
-    Rule::NumericCall => {
-      // 1[2, 3] → CurriedCall with the numeric literal as the func (matches
+    Rule::NumericCall | Rule::StringCall => {
+      // 1[2, 3] / "s"[x] → CurriedCall with the literal as the func (matches
       // the structure of `(1)[2, 3]`).
       let inner_pairs: Vec<_> = pair.into_inner().collect();
       let head_expr = pair_to_expr(inner_pairs[0].clone());
@@ -13926,6 +13926,44 @@ impl TextBox {
     let baseline = num.height();
     Self { lines, baseline }
   }
+
+  /// Place a script below and to the right of the base — the mirror of
+  /// [`superscript`](Self::superscript), used by `SubscriptBox`.
+  fn subscript(base: &Self, sub: &Self) -> Self {
+    let mut base = base.clone();
+    let mut sub = sub.clone();
+    base.normalize();
+    sub.normalize();
+
+    let bw = base.width();
+    let sw = sub.width();
+    let mut lines = Vec::with_capacity(base.height() + sub.height());
+    for l in &base.lines {
+      lines.push(format!("{}{}", l, " ".repeat(sw)));
+    }
+    for l in &sub.lines {
+      lines.push(format!("{}{}", " ".repeat(bw), l));
+    }
+    Self {
+      baseline: base.baseline,
+      lines,
+    }
+  }
+
+  /// Stack boxes vertically, left-aligned, keeping the first row's baseline.
+  fn vstack(parts: &[Self]) -> Self {
+    let mut lines = Vec::new();
+    let baseline = parts.first().map(|p| p.baseline).unwrap_or(0);
+    for part in parts {
+      let mut p = part.clone();
+      p.normalize();
+      lines.extend(p.lines);
+    }
+    if lines.is_empty() {
+      return Self::atom("");
+    }
+    Self { lines, baseline }
+  }
 }
 
 /// Renders to the final string. Trailing whitespace is stripped per line
@@ -14653,6 +14691,111 @@ fn render_times_textbox(args: &[Expr]) -> TextBox {
 pub fn expr_to_output_form_2d(expr: &Expr) -> String {
   let tb = expr_to_textbox(expr);
   tb.to_string()
+}
+
+/// Render a box tree (`RowBox`, `FractionBox`, `SuperscriptBox`, …) as the
+/// same 2D text `expr_to_output_form_2d` produces for ordinary expressions.
+/// `ToString[expr, TraditionalForm]` goes through here: the typesetter turns
+/// the expression into boxes and this lays them out, so a fraction still
+/// spans three lines while `Sin[x]` reads `sin(x)`.
+pub fn boxes_to_output_form_2d(expr: &Expr) -> String {
+  boxes_to_textbox(expr).to_string()
+}
+
+fn boxes_to_textbox(expr: &Expr) -> TextBox {
+  let items = |arg: &Expr| -> Vec<Expr> {
+    match arg {
+      Expr::List(items) => items.to_vec(),
+      other => vec![other.clone()],
+    }
+  };
+  match expr {
+    // Box atoms carry their text as strings, displayed unquoted.
+    Expr::String(s) => TextBox::atom(s),
+    Expr::FunctionCall { name, args } => match (name.as_str(), args.len()) {
+      ("RowBox", 1) => {
+        let parts: Vec<TextBox> =
+          items(&args[0]).iter().map(boxes_to_textbox).collect();
+        TextBox::hconcat(&parts)
+      }
+      ("SuperscriptBox", 2) => TextBox::superscript(
+        &boxes_to_textbox(&args[0]),
+        &boxes_to_textbox(&args[1]),
+      ),
+      ("SubscriptBox", 2) => TextBox::subscript(
+        &boxes_to_textbox(&args[0]),
+        &boxes_to_textbox(&args[1]),
+      ),
+      ("SubsuperscriptBox", 3) => TextBox::superscript(
+        &TextBox::subscript(
+          &boxes_to_textbox(&args[0]),
+          &boxes_to_textbox(&args[1]),
+        ),
+        &boxes_to_textbox(&args[2]),
+      ),
+      ("FractionBox", 2) => TextBox::fraction(
+        &boxes_to_textbox(&args[0]),
+        &boxes_to_textbox(&args[1]),
+      ),
+      ("SqrtBox", 1) => TextBox::hconcat(&[
+        TextBox::atom("\u{221A}"),
+        boxes_to_textbox(&args[0]),
+      ]),
+      ("RadicalBox", 2) => TextBox::hconcat(&[
+        TextBox::superscript(
+          &TextBox::atom("\u{221A}"),
+          &boxes_to_textbox(&args[1]),
+        ),
+        boxes_to_textbox(&args[0]),
+      ]),
+      // Over/under scripts stack their script on the far side of the base
+      // (`lim` with its variable beneath, `∑` with its bounds).
+      ("OverscriptBox", 2) => TextBox::vstack(&[
+        boxes_to_textbox(&args[1]),
+        boxes_to_textbox(&args[0]),
+      ]),
+      ("UnderscriptBox", 2) => TextBox::vstack(&[
+        boxes_to_textbox(&args[0]),
+        boxes_to_textbox(&args[1]),
+      ]),
+      ("UnderoverscriptBox", 3) => TextBox::vstack(&[
+        boxes_to_textbox(&args[2]),
+        boxes_to_textbox(&args[0]),
+        boxes_to_textbox(&args[1]),
+      ]),
+      // A grid lays its rows out one per line, columns separated by two
+      // spaces — the spacing `TableForm` uses.
+      ("GridBox", n) if n >= 1 => {
+        let rows: Vec<TextBox> = items(&args[0])
+          .iter()
+          .map(|row| {
+            let cells: Vec<TextBox> = items(row)
+              .iter()
+              .enumerate()
+              .flat_map(|(i, cell)| {
+                let mut out = Vec::new();
+                if i > 0 {
+                  out.push(TextBox::atom("  "));
+                }
+                out.push(boxes_to_textbox(cell));
+                out
+              })
+              .collect();
+            TextBox::hconcat(&cells)
+          })
+          .collect();
+        TextBox::vstack(&rows)
+      }
+      // Wrappers that only decorate what they hold.
+      (
+        "StyleBox" | "TagBox" | "InterpretationBox" | "FormBox"
+        | "AdjustmentBox" | "FrameBox" | "BoxData" | "TooltipBox",
+        n,
+      ) if n >= 1 => boxes_to_textbox(&args[0]),
+      _ => expr_to_textbox(expr),
+    },
+    other => expr_to_textbox(other),
+  }
 }
 
 /// Compose a message line around an expression rendered in 2D OutputForm,

@@ -3993,6 +3993,32 @@ mod curried_and_head_patterns {
   }
 
   #[test]
+  fn string_head_application_parses() {
+    // A string literal used as a head stays unevaluated, exactly like the
+    // numeric-head form above. A Demonstration writes its inverse-function
+    // label this way, applying a box-notation superscript string to the
+    // variable, so the whole surrounding expression has to parse.
+    assert_eq!(interpret("\"f\"[x]").unwrap(), "\"f\"[x]");
+    assert_eq!(interpret("Head[\"f\"[x]]").unwrap(), "\"f\"");
+    assert_eq!(interpret("{a, \"f\"[x]}").unwrap(), "{a, \"f\"[x]}");
+  }
+
+  #[test]
+  fn string_head_application_in_implicit_product() {
+    // `g "f"[x]` is `g * ("f"[x])` — the string-headed call is one factor of
+    // an implicit product, not a syntax error.
+    assert_eq!(
+      interpret("Head[g \"f\"[x]]").unwrap(),
+      "Times",
+      "the product of a symbol and a string-headed call"
+    );
+    // The same nested inside a larger call, which is where a failure used to
+    // send the parser into exponential backtracking rather than a clean
+    // rejection.
+    assert_eq!(interpret("Length[Hold[g \"f\"[x], 1, 2]]").unwrap(), "3");
+  }
+
+  #[test]
   fn head_pattern_with_integer_head() {
     // Head pattern matching descends into an integer-headed expression.
     assert_eq!(
