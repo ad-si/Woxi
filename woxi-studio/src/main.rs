@@ -3871,6 +3871,7 @@ fn render_manipulate_widget<'a>(
         value_label_svgs,
         current_index,
         popup,
+        setter_bar: force_setter_bar,
         slider: as_slider,
       } => {
         let label_widget = manipulate_label_widget(
@@ -3944,59 +3945,62 @@ fn render_manipulate_widget<'a>(
         // adjacent toggle buttons with the active choice highlighted), matching
         // Wolfram's SetterBar; a wider one — see `renders_as_setter_bar` — or
         // an explicit `ControlType -> PopupMenu` renders a dropdown so the row
-        // can't grow unbounded. The button labels are the display labels
-        // (rule right-hand sides); pressing one sends its label, which the
-        // update handler maps back to an index. A disabled control drops its
-        // press handlers so it can't be changed.
-        let control: Element<Message> =
-          if renders_as_setter_bar(value_labels, value_label_svgs) && !*popup {
-            let mut bar = Row::new().spacing(0).align_y(Center);
-            for (i, choice_label) in value_labels.iter().enumerate() {
-              let is_selected = i == *current_index;
-              let choice = choice_label.clone();
-              // A choice whose rule label is a graphic (`"+" -> myIcon[2]`)
-              // shows the rendered icon; text choices show their label.
-              let btn_content: Element<Message> =
-                match value_label_svgs.get(i).and_then(|s| s.as_ref()) {
-                  Some(icon) => svg::Svg::new(icon.clone())
-                    .width(iced::Length::Fixed(24.0))
-                    .height(iced::Length::Fixed(14.0))
-                    .into(),
-                  None => text(choice_label.clone()).size(12).into(),
-                };
-              let mut btn = button(btn_content).padding([3, 10]).style(
-                move |theme: &Theme, status| {
-                  setter_button_style(
-                    theme,
-                    status,
-                    is_selected,
-                    i,
-                    count,
-                    enabled,
-                  )
-                },
-              );
-              if enabled {
-                btn = btn.on_press(Message::ManipulateDiscreteChanged(
-                  cell_idx, ctrl_idx, choice,
-                ));
-              }
-              bar = bar.push(btn);
+        // can't grow unbounded. `renders_as_setter_bar` only decides for a
+        // spec that stays silent: an explicit `ControlType -> SetterBar` gets
+        // its bar however long the choice list is. The button labels are the
+        // display labels (rule right-hand sides); pressing one sends its
+        // label, which the update handler maps back to an index. A disabled
+        // control drops its press handlers so it can't be changed.
+        let control: Element<Message> = if *force_setter_bar
+          || (renders_as_setter_bar(value_labels, value_label_svgs) && !*popup)
+        {
+          let mut bar = Row::new().spacing(0).align_y(Center);
+          for (i, choice_label) in value_labels.iter().enumerate() {
+            let is_selected = i == *current_index;
+            let choice = choice_label.clone();
+            // A choice whose rule label is a graphic (`"+" -> myIcon[2]`)
+            // shows the rendered icon; text choices show their label.
+            let btn_content: Element<Message> =
+              match value_label_svgs.get(i).and_then(|s| s.as_ref()) {
+                Some(icon) => svg::Svg::new(icon.clone())
+                  .width(iced::Length::Fixed(24.0))
+                  .height(iced::Length::Fixed(14.0))
+                  .into(),
+                None => text(choice_label.clone()).size(12).into(),
+              };
+            let mut btn = button(btn_content).padding([3, 10]).style(
+              move |theme: &Theme, status| {
+                setter_button_style(
+                  theme,
+                  status,
+                  is_selected,
+                  i,
+                  count,
+                  enabled,
+                )
+              },
+            );
+            if enabled {
+              btn = btn.on_press(Message::ManipulateDiscreteChanged(
+                cell_idx, ctrl_idx, choice,
+              ));
             }
-            bar.into()
-          } else {
-            let selected = value_labels.get(*current_index).cloned();
-            let on_select = move |choice: String| {
-              if enabled {
-                Message::ManipulateDiscreteChanged(cell_idx, ctrl_idx, choice)
-              } else {
-                Message::Noop
-              }
-            };
-            pick_list(value_labels.clone(), selected, on_select)
-              .width(iced::Length::Shrink)
-              .into()
+            bar = bar.push(btn);
+          }
+          bar.into()
+        } else {
+          let selected = value_labels.get(*current_index).cloned();
+          let on_select = move |choice: String| {
+            if enabled {
+              Message::ManipulateDiscreteChanged(cell_idx, ctrl_idx, choice)
+            } else {
+              Message::Noop
+            }
           };
+          pick_list(value_labels.clone(), selected, on_select)
+            .width(iced::Length::Shrink)
+            .into()
+        };
         let control_row =
           row![label_widget, control].align_y(Center).spacing(8);
         controls_col = controls_col.push(control_row);
@@ -6992,6 +6996,108 @@ Cell[BoxData["standalone output"], "Output"]
     )
     .unwrap();
     assert_eq!(state.text_output.as_deref(), Some("41"));
+  }
+
+  /// A published Demonstration lays its panel out itself — the controls
+  /// arrive wrapped in `Control[…]` inside a `Column[…]` alongside a
+  /// `Button[…]` — and writes every non-ASCII character as a `\:HHHH`
+  /// escape. Three things used to go wrong on such a notebook:
+  ///
+  /// - the escapes stayed literal in the held expression, so a glyph picker
+  ///   offered `\:03b1` … `\:03bc` instead of α … μ;
+  /// - the body `Style[Column[…], size, Hue[…]]` fell back to the plain
+  ///   text echo of the column instead of drawing it at the asked-for size
+  ///   and colour;
+  /// - an explicit `ControlType -> SetterBar` was ignored once the choice
+  ///   list grew past what the automatic split puts in a bar.
+  #[test]
+  fn demonstration_panel_with_escaped_glyphs_opens_live() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Style[Column[{glyph,
+    If[names, Identity, Invisible]@Switch[glyph,
+      \"\\:03b1\", \"alpha\", \"\\:03b2\", \"beta\", \"\\:03b3\", \"gamma\", glyph, \"\"],
+    \"\"}, Alignment -> Center], size, Hue[tone]],
+ Column[{
+   Control[{{glyph, \"pick a letter\"},
+     {\"\\:03b1\", \"\\:03b2\", \"\\:03b3\", \"\\:03b4\", \"\\:03b5\", \"\\:03b6\",
+      \"\\:03b7\", \"\\:03b8\", \"\\:03b9\", \"\\:03ba\", \"\\:03bb\", \"\\:03bc\"},
+     ControlType -> SetterBar}],
+   Row[{Button[\"say it\", spoken = glyph]}],
+   Control[{{size, 40}, 20, 80, Appearance -> \"Labeled\"}],
+   Control[{tone, 0, 1}],
+   Control[{{names, False}, {True, False}}]}],
+ ContentSize -> {400, 200}, Alignment -> Center]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`glyph$$ = \"pick a letter\"}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    // The styled column is drawn, not echoed as `Column[{…}, Alignment -> …]`.
+    assert!(
+      widget.graphics_handle.is_some() && widget.text_output.is_none(),
+      "the styled column must draw: {:?}",
+      widget.text_output
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name: glyph,
+          values,
+          value_labels,
+          setter_bar,
+          popup,
+          ..
+        },
+        manipulate::ControlState::Button { label, action, .. },
+        manipulate::ControlState::Continuous {
+          name: size,
+          min: size_min,
+          max: size_max,
+          current: size_now,
+          ..
+        },
+        manipulate::ControlState::Continuous { name: tone, .. },
+        manipulate::ControlState::Discrete {
+          name: names,
+          values: name_values,
+          ..
+        },
+      ] => {
+        assert_eq!(glyph, "glyph");
+        // The `\:HHHH` escapes expand, in the bound values and the labels.
+        assert_eq!(value_labels[..3], ["α", "β", "γ"]);
+        assert_eq!(values[0], "\"α\"");
+        // Twelve choices are past the automatic bar/dropdown split, so only
+        // the explicit `ControlType -> SetterBar` keeps this a bar.
+        assert!(*setter_bar && !*popup);
+        assert!(
+          !renders_as_setter_bar(value_labels, &[]),
+          "the choice list must be long enough that only the explicit \
+           ControlType keeps it a bar"
+        );
+        assert_eq!(label, "say it");
+        assert_eq!(action, "spoken = glyph");
+        assert_eq!(
+          (size.as_str(), *size_min, *size_max, *size_now),
+          ("size", 20.0, 80.0, 40.0)
+        );
+        assert_eq!(tone, "tone");
+        assert_eq!(names, "names");
+        assert_eq!(name_values, &["True".to_string(), "False".to_string()]);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
   }
 
   /// A stored Manipulate whose body calls helpers from earlier Input
