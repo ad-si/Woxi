@@ -172,3 +172,45 @@ equations:
 $ wo 'Solve[Table[BernoulliB[n, z], {n, 3, 3}] == 0]'
 {{z -> 0}, {z -> 1/2}, {z -> 1}}
 ```
+
+A system of polynomial equations is solved by eliminating one variable at a
+time. Two circles meet in the two points on the line through their
+intersections:
+
+```scrut
+$ wo 'Solve[{x^2 + y^2 == 1, (x - 1)^2 + (y - 1)^2 == 1}, {x, y}]'
+{{x -> 0, y -> 1}, {x -> 1, y -> 0}}
+```
+
+Circles that only touch meet in one point, which counts twice, and circles
+too far apart to meet at all still meet over the complex numbers:
+
+```scrut
+$ wo 'Solve[{x^2 + y^2 == 1, (x - 2)^2 + y^2 == 1}, {x, y}]'
+{{x -> 1, y -> 0}, {x -> 1, y -> 0}}
+```
+
+```scrut
+$ wo 'Solve[{x^2 + y^2 == 1, (x - 5)^2 + y^2 == 1}, {x, y}]'
+{{x -> 5/2, y -> -1/2*I*Sqrt[21]}, {x -> 5/2, y -> I/2*Sqrt[21]}}
+```
+
+An equation carrying a root of the unknown is raised to that root's index,
+and the answers that only solve the raised equation are dropped again:
+
+```scrut
+$ wo 'Solve[Sqrt[x] == x, x]'
+{{x -> 0}, {x -> 1}}
+```
+
+```scrut
+$ wo 'Solve[Sqrt[2 x + 3] == x, x]'
+{{x -> 3}}
+```
+
+`Sqrt` is the principal root, so it never equals a negative number:
+
+```scrut
+$ wo 'Solve[Sqrt[x] == -1, x]'
+{}
+```

@@ -139,9 +139,12 @@ pub fn resultant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Compute symbolic determinant
   let det = symbolic_determinant(&matrix);
 
-  // Simplify the result
-  let simplified = crate::evaluator::evaluate_expr_to_expr(&det)?;
-  Ok(simplified)
+  // The determinant is built as a sum of products of the entries, which
+  // leaves it in the nested form those products happen to have. The
+  // resultant is a polynomial in the coefficients and is reported as one,
+  // so multiply the products out and collect like powers.
+  let expanded = expand_and_combine(&det);
+  crate::evaluator::evaluate_expr_to_expr(&expanded)
 }
 
 /// Reduce all integer coefficients of `expr` modulo `p` (via PolynomialMod),

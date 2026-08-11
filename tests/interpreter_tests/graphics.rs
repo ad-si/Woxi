@@ -2539,6 +2539,91 @@ mod plot3d {
       insta::assert_snapshot!(export_svg("Graphics3D[Sphere[]]"));
     }
 
+    /// The red component of every shaded facet's fill, so a test can talk
+    /// about how dark or bright a surface came out. Only `<polygon>` fills
+    /// count — the white background `<rect>` is not part of the shading.
+    fn fill_reds(svg: &str) -> Vec<u32> {
+      svg
+        .split("<polygon ")
+        .skip(1)
+        .filter_map(|tag| {
+          let tag = tag.split('>').next()?;
+          tag
+            .split("fill=\"rgb(")
+            .nth(1)?
+            .split(',')
+            .next()?
+            .parse()
+            .ok()
+        })
+        .collect()
+    }
+
+    /// `Specularity[colour, n]` describes a surface's *highlight*, not its
+    /// body colour: a sphere given `{GrayLevel[.25], Specularity[White, 10]}`
+    /// (the Kepler's-conjecture cannonball stack) stays dark grey and gains a
+    /// bright spot, rather than being repainted white by the directive's own
+    /// colour.
+    #[test]
+    fn specularity_adds_a_highlight_without_repainting_the_surface() {
+      let plain =
+        export_svg("Graphics3D[{GrayLevel[.25], Sphere[]}, Boxed -> False]");
+      let shiny = export_svg(
+        "Graphics3D[{GrayLevel[.25], Specularity[White, 10], Sphere[]}, \
+         Boxed -> False]",
+      );
+      let darkest = |svg: &str| fill_reds(svg).into_iter().min().unwrap_or(0);
+      let brightest = |svg: &str| fill_reds(svg).into_iter().max().unwrap_or(0);
+      // The unlit side keeps the surface's own dark grey either way.
+      assert_eq!(
+        darkest(&plain),
+        darkest(&shiny),
+        "the highlight must not lighten the surface's own colour"
+      );
+      // A matte dark sphere never approaches white; a shiny one does.
+      assert!(
+        brightest(&plain) < 128,
+        "matte GrayLevel[.25] sphere should stay dark, got {}",
+        brightest(&plain)
+      );
+      assert!(
+        brightest(&shiny) > 250,
+        "Specularity[White, …] should add a near-white highlight, got {}",
+        brightest(&shiny)
+      );
+    }
+
+    /// A larger `Specularity` exponent concentrates the highlight, so fewer
+    /// facets are lit by it.
+    #[test]
+    fn specularity_exponent_tightens_the_highlight() {
+      let lit_facets = |exponent: &str| {
+        let svg = export_svg(&format!(
+          "Graphics3D[{{GrayLevel[.25], Specularity[White, {exponent}], \
+           Sphere[]}}, Boxed -> False]"
+        ));
+        fill_reds(&svg).into_iter().filter(|r| *r > 200).count()
+      };
+      assert!(
+        lit_facets("40") < lit_facets("4"),
+        "a higher exponent should light fewer facets"
+      );
+    }
+
+    /// `Specularity` means nothing in 2D, but it must still be consumed
+    /// there: its colour used to leak through as the fill of the primitives
+    /// that followed.
+    #[test]
+    fn specularity_is_inert_in_2d() {
+      let svg = export_svg(
+        "Graphics[{GrayLevel[.25], Specularity[White, 10], Disk[]}]",
+      );
+      assert!(
+        svg.contains("fill=\"rgb(64,64,64)\""),
+        "the disk keeps GrayLevel[.25]: {svg}"
+      );
+    }
+
     #[test]
     fn graphics3d_arrow_with_background() {
       insta::assert_snapshot!(export_svg(
@@ -7427,6 +7512,149 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// `Ticks` positions given as bare expressions are labelled with the
     /// expression, not its numeric value — through `Show`, which re-renders
     /// the plot as graphics, just as in the plot itself.
+    #[test]
+    fn show_draws_a_variable_holding_graphics_wrapping_a_plot() {
+      // The Demonstrations idiom `g = Graphics[Plot[…]]; Show[g, …]`: the
+      // wrapper reaches `Show` already evaluated, and its finished picture
+      // must be shown rather than merged as if it were a drawing primitive
+      // — which drew nothing at all.
+      let svg = export_svg(
+        "g1 = Graphics[Plot[Sin[x], {x, -7, 7}]]; \
+         g2 = Graphics[Plot[Cos[x], {x, -7, 7}]]; \
+         Show[g1, {}, g2]",
+      );
+      assert!(
+        svg.matches("<polyline").count() > 1,
+        "expected both curves, got: {svg}"
+      );
+      // The same graphic on its own is drawn too.
+      let single =
+        export_svg("g = Graphics[Plot[Sin[x], {x, -7, 7}]]; Show[g]");
+      assert!(
+        single.contains("<polyline"),
+        "expected the curve, got: {single}"
+      );
+    }
+
+    #[test]
+    fn geometric_transformation_maps_its_content() {
+      // `GeometricTransformation[g, t]` draws `g` mapped through the affine
+      // transform. Every case is checked against the same 4-by-4 window, so
+      // the origin sits at (180, 180) and one unit is 45 SVG units across
+      // (y grows downwards).
+      let at = |body: &str| {
+        let svg = export_svg(&format!(
+          "Graphics[{body}, PlotRange -> {{{{-4, 4}}, {{-4, 4}}}}]"
+        ));
+        svg
+          .split("points=\"")
+          .nth(1)
+          .map(|s| s.split('"').next().unwrap_or_default().to_string())
+          .unwrap_or_default()
+      };
+      // Reflection in the line y = x maps (2, 0) to (0, 2).
+      assert_eq!(
+        at(
+          "GeometricTransformation[Line[{{0, 0}, {2, 0}}], \
+            ReflectionTransform[{-1, 1}]]"
+        ),
+        "180.00,180.00 180.00,90.00"
+      );
+      // A quarter turn maps (1, 0) to (0, 1).
+      assert_eq!(
+        at(
+          "GeometricTransformation[Line[{{0, 0}, {1, 0}}], \
+            RotationTransform[Pi/2]]"
+        ),
+        "180.00,180.00 180.00,135.00"
+      );
+      // An explicit `{matrix, vector}` pair, here a shear taking (0, 1) to
+      // (1, 1), then shifted by {1, 0}.
+      assert_eq!(
+        at(
+          "GeometricTransformation[Line[{{0, 0}, {0, 1}}], \
+            {{{1, 1}, {0, 1}}, {1, 0}}]"
+        ),
+        "225.00,180.00 270.00,135.00"
+      );
+      // A list of transforms draws one copy each.
+      let svg = export_svg(
+        "Graphics[GeometricTransformation[Line[{{0, 0}, {1, 0}}], \
+         {TranslationTransform[{0, 1}], TranslationTransform[{0, 2}]}]]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 2);
+    }
+
+    #[test]
+    fn a_plots_curve_is_reachable_by_a_structural_rule() {
+      // Wolfram keeps a plot's curve as `Line` primitives, so a rule naming
+      // one rewrites the picture — the Demonstrations idiom for drawing a
+      // function's inverse, mirroring the curve about `y = x`. The wrapper
+      // form `Graphics[Plot[…]]` behaves the same, since it *is* the picture
+      // it wraps.
+      for target in [
+        "Plot[Sin[x], {x, 0, 3}]",
+        "Graphics[Plot[Sin[x], {x, 0, 3}]]",
+      ] {
+        let svg = export_svg(&format!(
+          "{target} /. L_Line :> {{Red, \
+           GeometricTransformation[L, ReflectionTransform[{{-1, 1}}]]}}"
+        ));
+        assert!(
+          svg.contains("stroke=\"rgb(255,0,0)\""),
+          "the rule should have recoloured the curve of {target}: {svg}"
+        );
+      }
+      // A rule that matches nothing leaves the plot exactly as it was.
+      let untouched = export_svg("Plot[Sin[x], {x, 0, 3}] /. zzz -> 1");
+      let original = export_svg("Plot[Sin[x], {x, 0, 3}]");
+      assert_eq!(untouched, original);
+    }
+
+    #[test]
+    fn ticks_may_name_the_x_axis_alone() {
+      // `Ticks -> {xspec}` states the x ticks and leaves the y axis to its
+      // default, the short form a Demonstration uses to put a trigonometric
+      // plot on multiples of π.
+      let svg = export_svg(
+        "Plot[Sin[x], {x, -7, 7}, Ticks -> {Range[-2 Pi, 2 Pi, Pi]}]",
+      );
+      assert!(svg.contains(">π<"), "expected a π tick label, got: {svg}");
+      assert!(
+        !svg.contains(">-2.5<"),
+        "the default numeric x ticks should be gone"
+      );
+    }
+
+    #[test]
+    fn plot_label_grid_stacks_one_row_per_line() {
+      // A `Grid`/`Column` title stacks, rather than printing the source of
+      // the call: a Demonstration titles its plot with the parent function
+      // above and the transformed one below.
+      let svg = export_svg(
+        "Plot[Sin[x], {x, 0, 1}, \
+         PlotLabel -> Grid[{{\"first row\"}, {\"second row\"}}]]",
+      );
+      assert!(
+        !svg.contains("Grid["),
+        "the grid should be laid out, not printed: {svg}"
+      );
+      assert!(svg.contains(">first row<"), "got: {svg}");
+      // The further rows sit on their own lines, centred under the first.
+      assert!(
+        svg.contains("<tspan") && svg.contains("second row</tspan>"),
+        "expected the second row on its own line: {svg}"
+      );
+      // `Column` stacks the same way.
+      let column = export_svg(
+        "Plot[Sin[x], {x, 0, 1}, PlotLabel -> Column[{\"top\", \"bottom\"}]]",
+      );
+      assert!(
+        column.contains("bottom</tspan>"),
+        "expected a stacked Column title: {column}"
+      );
+    }
+
     #[test]
     fn show_keeps_symbolic_tick_labels() {
       let svg = export_svg(
@@ -13853,7 +14081,7 @@ mod named_colors {
   fn named_color_user_override() {
     // User can assign to a named color variable
     woxi::clear_state();
-    interpret("Red = 42").unwrap();
+    interpret("Unprotect[Red]; Red = 42").unwrap();
     assert_eq!(interpret("Red").unwrap(), "42");
     woxi::clear_state();
   }
@@ -17761,6 +17989,96 @@ mod manipulate {
     ));
   }
 
+  /// A `PaneSelector[{v -> controls, …}, sel]` argument is the Demonstrations
+  /// way of giving each mode its own control panel. It is a valid Manipulate
+  /// argument, so it must not emit `Manipulate::vsform` either.
+  #[test]
+  fn pane_selector_controls_are_not_vsform() {
+    let res = woxi::interpret_with_stdout(
+      "Manipulate[{q, a}, Control[{{q, 1}, {1, 2}, Setter}], \
+       PaneSelector[{1 -> Control[{{a, 5}, 0, 10}], 2 -> \" \"}, q]]",
+    )
+    .unwrap();
+    assert!(
+      !res.warnings.iter().any(|w| w.contains("vsform")),
+      "unexpected vsform message: {:?}",
+      res.warnings
+    );
+  }
+
+  /// Each `PaneSelector` pane's controls are collected into the one flat
+  /// control panel, but they carry the condition under which their pane is
+  /// on screen so a frontend can show one panel at a time. A variable used
+  /// by more than one pane is visible in all of them.
+  #[test]
+  fn pane_selector_controls_carry_pane_visibility() {
+    let expr = interpret_to_expr(
+      "Manipulate[{q, a, b}, Control[{{q, 1}, {1, 2, 3}, Setter}], \
+       PaneSelector[{1 -> Control[{{a, 5}, 0, 10}], \
+       2 -> Column[{Control[{{a, 5}, 0, 10}], Control[{{b, 1}, 0, 2}]}], \
+       3 -> \" \"}, q]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    // The placeholder pane holds no control, so it leaves no row behind:
+    // the panel is the selector plus the two pane variables.
+    let names: Vec<&str> = spec.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["q", "a", "b"]);
+    assert_eq!(
+      spec.control_visible,
+      vec![
+        ("a".to_string(), "(q) == (1) || (q) == (2)".to_string()),
+        ("b".to_string(), "(q) == (2)".to_string()),
+      ]
+    );
+    // The selector itself sits outside every pane and is always shown.
+    assert!(!spec.control_visible.iter().any(|(n, _)| n == "q"));
+
+    // Resolve the conditions the way a frontend does, for each mode.
+    let conditions: Vec<Option<String>> = spec
+      .controls
+      .iter()
+      .map(|c| {
+        spec
+          .control_visible
+          .iter()
+          .find(|(n, _)| n == c.name())
+          .map(|(_, cond)| cond.clone())
+      })
+      .collect();
+    let shown = |q: &str| {
+      manipulate_enabled_states(
+        &conditions,
+        &[("q".to_string(), q.to_string())],
+      )
+    };
+    assert_eq!(shown("1"), vec![true, true, false]);
+    assert_eq!(shown("2"), vec![true, true, true]);
+    assert_eq!(shown("3"), vec![true, false, false]);
+  }
+
+  #[test]
+  fn spec_json_includes_visible_when() {
+    let expr = interpret_to_expr(
+      "Manipulate[{q, a}, Control[{{q, 1}, {1, 2}, Setter}], \
+       PaneSelector[{1 -> Control[{{a, 5}, 0, 10}], 2 -> \" \"}, q]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    let json = manipulate_spec_to_json(&spec);
+    assert!(
+      json.contains(r#""visibleWhen":"(q) == (1)""#),
+      "json: {json}"
+    );
+    // The selector belongs to no pane and carries no condition.
+    let q_obj = json.split(r#""name":"q""#).nth(1).unwrap_or("");
+    let q_obj = q_obj.split('}').next().unwrap_or("");
+    assert!(
+      !q_obj.contains("visibleWhen"),
+      "a control outside every pane should have no visibleWhen: {q_obj}"
+    );
+  }
+
   /// `Row[…]`-grouped controls are valid Manipulate arguments and must not
   /// emit `Manipulate::vsform`.
   #[test]
@@ -18073,6 +18391,88 @@ mod manipulate {
       result.warnings.iter().all(|w| !w.contains("vsform")),
       "unexpected vsform warnings: {:?}",
       result.warnings
+    );
+  }
+
+  #[test]
+  fn spec_text_argument_is_an_annotation_row() {
+    // `Text[Row[…]]` between the controls is a static label, exactly like
+    // `Style[…]` — Wolfram tags it ThisIsNotAControl rather than reporting a
+    // malformed variable specification. Demonstrations head their slider
+    // block with the formula the sliders parameterize.
+    let expr = interpret_to_expr(
+      "Manipulate[a x, \
+       Text[Row[{Style[\"g\", Italic], \"(\", Style[\"x\", Italic], \")\"}]], \
+       {{a, 1}, 0, 2}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    match &spec.controls[0] {
+      ManipulateControl::Heading { label, label_runs } => {
+        assert_eq!(label, "g(x)");
+        // The italic runs of the formula survive into the rendered row.
+        assert!(label_runs.iter().any(|r| r.italic && r.text == "g"));
+      }
+      other => panic!("expected an annotation row, got {other:?}"),
+    }
+    assert!(matches!(
+      &spec.controls[1],
+      ManipulateControl::Continuous { name, .. } if name == "a"
+    ));
+  }
+
+  #[test]
+  fn spec_text_argument_emits_no_vsform_message() {
+    let result = woxi::interpret_with_stdout(
+      "Manipulate[a, Text[Row[{\"g\", \"(x)\"}]], {a, 0, 1}];",
+    )
+    .unwrap();
+    assert!(
+      result.warnings.iter().all(|w| !w.contains("vsform")),
+      "unexpected vsform warnings: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn spec_choice_list_computed_by_the_body() {
+    // A popup whose choices are a symbol the *body* fills in. Wolfram runs
+    // the body once before laying the controls out, so the choices are in
+    // hand by then; the hidden `ControlType -> None` state variable only
+    // declares the symbol, starting empty.
+    let expr = interpret_to_expr(
+      "Manipulate[choices = {1 -> \"one\", 2 -> \"two\", 3 -> \"three\"}; k, \
+       {{k, 2, \"\"}, choices, ControlType -> PopupMenu}, \
+       {{choices, {}}, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete {
+        name,
+        values,
+        value_labels,
+        initial_index,
+        popup,
+        ..
+      } => {
+        assert_eq!(name, "k");
+        assert_eq!(values, &["1", "2", "3"]);
+        assert_eq!(value_labels, &["one", "two", "three"]);
+        assert_eq!(*initial_index, 1, "the spec starts the popup at 2");
+        assert!(popup, "ControlType -> PopupMenu renders a dropdown");
+      }
+      other => panic!("expected a popup control, got {other:?}"),
+    }
+    // The choices follow the sibling variable, so the frontend rebuilds them
+    // whenever the body reassigns it.
+    assert!(
+      spec
+        .dynamic_values
+        .iter()
+        .any(|(n, code)| n == "k" && code == "choices"),
+      "popup choices track the variable that holds them: {:?}",
+      spec.dynamic_values
     );
   }
 

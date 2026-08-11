@@ -308,6 +308,14 @@ pub struct ManipulateState {
   /// re-evaluation from `control_enabled` against the live bindings. Parallel
   /// to `controls`; a control indexes in with its position.
   pub control_is_enabled: Vec<bool>,
+  /// Per-control visibility condition (InputForm code), parallel to
+  /// `controls`. A control that belongs to a `PaneSelector` pane is on
+  /// screen only while the selector holds that pane's value. `None` means
+  /// the control belongs to no pane and is always shown.
+  control_visible: Vec<Option<String>>,
+  /// Whether each control is currently on screen, recomputed on every
+  /// re-evaluation from `control_visible` against the live bindings.
+  pub control_is_visible: Vec<bool>,
   /// Generation of the most recent control change. Bumped on every
   /// slider/picklist move so the throttled re-evaluation can tell whether a
   /// newer change has superseded a queued one.
@@ -350,6 +358,18 @@ impl ManipulateState {
       })
       .collect();
     let control_is_enabled = vec![true; controls.len()];
+    // …and with the pane it belongs to, for a `PaneSelector` control panel.
+    let control_visible: Vec<Option<String>> = controls
+      .iter()
+      .map(|c| {
+        spec
+          .control_visible
+          .iter()
+          .find(|(n, _)| n == c.name())
+          .map(|(_, cond)| cond.clone())
+      })
+      .collect();
+    let control_is_visible = vec![true; controls.len()];
     let mut state = ManipulateState {
       body: spec.body_code,
       initialization: spec.initialization,
@@ -371,6 +391,8 @@ impl ManipulateState {
       dynamic_values: spec.dynamic_values,
       control_enabled,
       control_is_enabled,
+      control_visible,
+      control_is_visible,
       reeval_pending: 0,
       reeval_applied: 0,
       reeval_scheduled: false,
@@ -629,6 +651,7 @@ impl ManipulateState {
     // (empty local bindings → no matrix re-embed).
     let displays = self.displays.clone();
     let control_enabled = self.control_enabled.clone();
+    let control_visible = self.control_visible.clone();
     let dynamic_bounds = self.dynamic_bounds.clone();
     let dynamic_values = self.dynamic_values.clone();
     let state_names: Vec<String> =
@@ -638,6 +661,7 @@ impl ManipulateState {
       updated_state,
       display_trees,
       enabled,
+      visible,
       resolved_bounds,
       resolved_values,
     ) = woxi::with_scoped_globals(&bindings, || {
@@ -652,6 +676,16 @@ impl ManipulateState {
         .map(|d| build_manipulate_display(d, &[]))
         .collect();
       let enabled: Vec<bool> = control_enabled
+        .iter()
+        .map(|c| match c {
+          Some(cond) => {
+            woxi::functions::graphics::manipulate_condition_enabled(cond)
+          }
+          None => true,
+        })
+        .collect();
+      // Which `PaneSelector` pane is on screen, resolved the same way.
+      let visible: Vec<bool> = control_visible
         .iter()
         .map(|c| match c {
           Some(cond) => {
@@ -681,7 +715,15 @@ impl ManipulateState {
             .map(|cols| (name.clone(), cols))
         })
         .collect();
-      (render, updated_state, trees, enabled, resolved, values)
+      (
+        render,
+        updated_state,
+        trees,
+        enabled,
+        visible,
+        resolved,
+        values,
+      )
     });
     // Keep the body's writes to the widget's own variables, so the next
     // frame (and any caption) builds on them.
@@ -692,6 +734,7 @@ impl ManipulateState {
     }
     self.display_trees = display_trees;
     self.control_is_enabled = enabled;
+    self.control_is_visible = visible;
     self.apply_dynamic_bounds(&resolved_bounds);
     // A re-resolved choice list may drop the value the body was just
     // rendered for; render again for the value the control settled on.

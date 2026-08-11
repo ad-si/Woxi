@@ -111,9 +111,16 @@ Constant = { ("-")? ~ ("Pi" | "Degree" | "E") ~ !(ASCII_ALPHANUMERIC | "_") }
 NumericValue = { BasePrefix | PrecisionReal | Real | IntegerScientific | Integer | Constant }
 UnsignedNumericValue = { BasePrefix | UnsignedPrecisionReal | UnsignedReal | UnsignedIntegerScientific | UnsignedInteger | UnsignedConstant }
 
+// Wolfram's own script alphabet (`\[ScriptCapitalD]`, `\[ScriptX]`) lives in
+// the private use area, so Unicode files those characters under `Co` rather
+// than `L` — but they name symbols like any other letter, and a notebook
+// writes them as the bare character. The letters Unicode does have (ℬ, ℯ, ℓ,
+// …) are ordinary `LETTER`s and need no help.
+PrivateUseLetter = _{ '\u{F6B2}'..'\u{F6CB}' | '\u{F770}'..'\u{F789}' }
+
 // PatternName is an identifier that will be followed by _ in a Pattern
 // It must start with a letter and can contain letters, digits, but NOT trailing underscores
-PatternName = @{ (ASCII_ALPHA | LETTER) ~ (ASCII_ALPHANUMERIC | LETTER)* }
+PatternName = @{ (ASCII_ALPHA | LETTER | PrivateUseLetter) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter)* }
 // NamedCharIdentifier: named character sequences like \[Phi], \[Alpha], etc.
 // Matches \[Name] syntax or direct Unicode chars for common symbols
 // Excludes operator named chars (\[Element], \[NotElement], \[ReverseElement], \[DirectedEdge], \[UndirectedEdge])
@@ -125,15 +132,15 @@ NamedCharBase = _{ !("\\[Sqrt]" | "\\[CubeRoot]" | "\\[Element]" | "\\[NotElemen
 // is parsed via the `Identifier` rule below). Matches wolframscript's
 // identifier-character semantics where named characters act like
 // identifier-character literals.
-NamedCharIdentifier = @{ NamedCharBase ~ (NamedCharBase | ASCII_ALPHANUMERIC | LETTER | "_")* }
+NamedCharIdentifier = @{ NamedCharBase ~ (NamedCharBase | ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_")* }
 // Identifiers may carry a context prefix using backticks, e.g. `Global`x` or
 // `Foo`Bar`x`. A leading backtick ` `x` ` is shorthand for the current
 // context (Global by default). Each segment after a backtick must begin
 // with a letter/_/$ so numeric precision tags like `1`30`/`Pi`30` aren't
 // accidentally absorbed.
 Identifier = @{
-  ("`" ~ (ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_" | "$" | NamedCharBase)*)*)
-  | ((ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_" | "$" | NamedCharBase)*)*)
+  ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)*)*)
+  | ((ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)*)*)
 }
 String = @{ "\"" ~ ("\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ !"\\" ~ ANY) | ("\\" ~ ANY))* ~ "\"" }
 
@@ -156,6 +163,11 @@ ListCall = { List ~ BracketArgs+ }
 // `1[2, 3]` (an expression with an integer head, used for labelled trees).
 // Restricted to numeric literals (not Constants) and mirrors `(1)[2, 3]`.
 NumericCall = { (Real | IntegerScientific | Integer) ~ BracketArgs+ }
+// StringCall handles a string literal used as a function head, e.g.
+// `"f"[x]`, which stays unevaluated just like `1[2, 3]`. Typeset labels
+// built by hand use it to apply a box-notation string to an argument:
+// `"\!\(\*SuperscriptBox[\(f\), \(-1\)]\)"[x]`.
+StringCall = { String ~ BracketArgs+ }
 // ListExtended merges List, ListCall, and List-based PartExtract into a single
 // rule to avoid exponential backtracking. Parses List ONCE, then checks for
 // optional Part or Call suffixes.
@@ -203,7 +215,7 @@ Operator = @{
   | "\\[Distributed]" | "\u{F3D2}" // Named character operator: Distributed
   | "\\[Conditioned]" | "\u{F3D3}" // Named character operator: Conditioned
   | "\\[Function]" | "\u{F4A1}" | "|->" // Function-arrow operator: x \[Function] body / x |-> body → Function[x, body]
-  | "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" // Cross product operator: a ⨯ b → Cross[a, b]
+  | "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}" // Cross product operator: a ⨯ b → Cross[a, b]
   | "\\[TensorProduct]" | "\u{F3DA}" // TensorProduct operator: a ⊗ b → TensorProduct[a, b]
   | "\\[CircleTimes]" | "\u{2297}" // CircleTimes operator: a ⊗ b → CircleTimes[a, b]
   | "\\[CirclePlus]" | "\u{2295}" // CirclePlus operator: a ⊕ b → CirclePlus[a, b]
@@ -526,6 +538,7 @@ Term = _{
   | Decrement
   | PartExtract
   | Constant
+  | StringCall
   | String
   | ListExtended
   | DerivativeNumeric
@@ -576,6 +589,7 @@ SimpleTerm = _{
   | Slot
   | OutShortcut
   | List
+  | StringCall
   | String
   | "(" ~ (&HasSpanSep ~ SpanExpr | Expression) ~ ")"
 }
@@ -595,6 +609,7 @@ TermNoImplicit = _{
   | Decrement
   | PartExtract
   | Constant
+  | StringCall
   | String
   | ListExtended
   | DerivativeNumeric
@@ -658,7 +673,7 @@ ConditionOp = @{
   | "\\[ReverseElement]" | "\u{220B}"   // Named character operator: ReverseElement (∋)
   | "\\[Element]" | "\u{2208}"          // Named character operator: Element (∈)
   | "\\[Distributed]" | "\u{F3D2}"      // Named character operator: Distributed
-  | "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" // Cross product (⨯)
+  | "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}" // Cross product (⨯)
   | "\\[Cap]" | "\u{2322}"        // Cap (⌢)
   | "\\[Cup]" | "\u{2323}"        // Cup (⌣)
   | "\\[DoubleRightTee]" | "\u{22A8}" // DoubleRightTee (⊨)

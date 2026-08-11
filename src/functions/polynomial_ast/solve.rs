@@ -2081,6 +2081,11 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(result) = solve_linear_symbolic(eqs, &var_names) {
         return Ok(result);
       }
+      // Nonlinear polynomial systems are eliminated with resultants, which
+      // keeps every intermediate a polynomial.
+      if let Some(result) = try_solve_polynomial_system(eqs, &var_names) {
+        return Ok(result);
+      }
       // High-degree coupled systems (e.g. a quintic in x plus a quintic
       // in y with x-dependent coefficients) blow up in the
       // Reduce-based path because Woxi has no multivariate Root form.
@@ -2481,6 +2486,12 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Pi*C[1], Element[C[1], Integers]]}` for Tan/Cot.
   if let Some(result) = try_solve_trig_eq(&args[0], var) {
     return Ok(result);
+  }
+
+  // Equations carrying a root of the unknown: raise them away and keep the
+  // roots that survive the original equation.
+  if let Some(result) = try_solve_radical_equation(&poly, &args[0], var) {
+    return result;
   }
 
   // Expand and collect polynomial coefficients
@@ -3215,6 +3226,452 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(unevaluated("Solve", args))
     }
   }
+}
+
+/// Solve a system of polynomial equations by eliminating one variable at a
+/// time.
+///
+/// Solving one equation for one variable and substituting — what the generic
+/// `Reduce` path does — introduces a radical as soon as that equation is
+/// quadratic in the variable, and the radical then has to be eliminated all
+/// over again from the equations it was substituted into. Combining whole
+/// equations instead keeps every intermediate a polynomial, so the system
+/// loses a variable and stays a polynomial system.
+///
+/// Returns `None` for anything this cannot settle — a non-polynomial or
+/// parameterised equation, a system that stays underdetermined, a polynomial
+/// Woxi cannot solve in radicals — which leaves the caller on its previous
+/// path.
+fn try_solve_polynomial_system(eqs: &[Expr], vars: &[String]) -> Option<Expr> {
+  // One variable is the ordinary single-equation case, and a system with
+  // fewer equations than variables is underdetermined.
+  if vars.len() < 2 || eqs.len() < vars.len() || vars.len() > MAX_SYSTEM_VARS {
+    return None;
+  }
+  let mut polys = Vec::with_capacity(eqs.len());
+  for eq in eqs {
+    let (lhs, rhs, op) =
+      crate::functions::polynomial_ast::reduce::extract_comparison(eq)?;
+    if !matches!(op, crate::functions::polynomial_ast::reduce::CompOp::Equal) {
+      return None;
+    }
+    let poly = expand_and_combine(&Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left: Box::new(lhs),
+      right: Box::new(rhs),
+    });
+    // Every symbol has to be one of the unknowns: a free parameter leaves
+    // the solutions symbolic, and a symbolic solution cannot be checked
+    // against the equations it did not come from.
+    let mut free = Vec::new();
+    collect_solve_vars(&poly, &mut free);
+    if free.iter().any(|f| !vars.contains(f)) {
+      return None;
+    }
+    if !vars
+      .iter()
+      .all(|v| crate::functions::polynomial_ast::is_polynomial(&poly, v))
+    {
+      return None;
+    }
+    polys.push(poly);
+  }
+
+  let solutions = poly_system_solutions(&polys, vars)?;
+  if solutions.is_empty() {
+    return Some(Expr::List(Vec::new().into()));
+  }
+  let mut wrapped: Vec<Expr> = solutions
+    .into_iter()
+    .map(|values| {
+      Expr::List(
+        vars
+          .iter()
+          .zip(values)
+          .map(|(v, value)| Expr::Rule {
+            pattern: Box::new(Expr::Identifier(v.clone())),
+            replacement: Box::new(value),
+          })
+          .collect(),
+      )
+    })
+    .collect();
+  // Real solutions come before complex ones, as everywhere else in Solve.
+  wrapped.sort_by_key(|sol| if contains_complex(sol) { 1 } else { 0 });
+  Some(Expr::List(wrapped.into()))
+}
+
+/// More variables than this and the eliminations multiply out of hand.
+const MAX_SYSTEM_VARS: usize = 4;
+
+/// The largest Sylvester matrix an elimination step is allowed to build.
+/// Two cubics already produce a degree-9 polynomial in the variable that
+/// survives, which is past what Solve reports in radicals anyway.
+const MAX_SYLVESTER_SIZE: i128 = 8;
+
+/// Values for `vars`, in order, at every common root of `polys`.
+///
+/// `var` (the last one) is eliminated first: the equations containing it are
+/// divided into one another until only one still does, and what falls out
+/// are equations in the remaining variables. Those are solved by recursion,
+/// and each of their solutions is put back into the original equations,
+/// which then only leave `var` to solve for.
+fn poly_system_solutions(
+  polys: &[Expr],
+  vars: &[String],
+) -> Option<Vec<Vec<Expr>>> {
+  let (var, outer_vars) = vars.split_last()?;
+
+  // Eliminate `var` down to a single equation. Every step replaces the
+  // higher-degree of two equations with one of strictly lower degree in
+  // `var`, so this terminates.
+  let mut working: Vec<Expr> = polys.to_vec();
+  loop {
+    let mut in_var: Vec<usize> = (0..working.len())
+      .filter(|i| max_power_int(&working[*i], var).unwrap_or(0) > 0)
+      .collect();
+    if in_var.len() < 2 {
+      break;
+    }
+    in_var.sort_by_key(|i| max_power_int(&working[*i], var).unwrap_or(0));
+    let divisor = in_var[0];
+    let dividend = in_var[1];
+    working[dividend] =
+      eliminate_var(&working[dividend], &working[divisor], var)?;
+  }
+
+  let mut solved_for_var: Option<&Expr> = None;
+  let mut reduced: Vec<Expr> = Vec::new();
+  for poly in &working {
+    if max_power_int(poly, var).unwrap_or(0) > 0 {
+      solved_for_var = Some(poly);
+    } else if !is_zero_expr(poly) {
+      reduced.push(poly.clone());
+    }
+  }
+  // Nothing left to pin `var` down: the system is underdetermined.
+  let solved_for_var = solved_for_var?;
+
+  if outer_vars.is_empty() {
+    // A leftover equation in no variable at all is either the trivial
+    // `0 == 0`, already dropped, or a contradiction.
+    if reduced.iter().any(|p| !is_zero_expr(p)) {
+      return Some(Vec::new());
+    }
+    let mut result: Vec<Vec<Expr>> = Vec::new();
+    for value in roots_of_last_variable(polys, solved_for_var, var)? {
+      for _ in 0..root_multiplicity(polys, &value, var) {
+        result.push(vec![value.clone()]);
+      }
+    }
+    return Some(result);
+  }
+
+  if reduced.is_empty() {
+    return None;
+  }
+  let outer_solutions = poly_system_solutions(&reduced, outer_vars)?;
+
+  let mut result: Vec<Vec<Expr>> = Vec::new();
+  let mut index = 0;
+  while index < outer_solutions.len() {
+    // Solutions repeat in the reduced system when several points of the
+    // full system share those outer values, and also when the point they
+    // share counts more than once.
+    let outer = &outer_solutions[index];
+    let mut outer_multiplicity = 0;
+    while index < outer_solutions.len()
+      && solution_values_equal(outer, &outer_solutions[index])
+    {
+      outer_multiplicity += 1;
+      index += 1;
+    }
+
+    let substituted: Vec<Expr> = polys
+      .iter()
+      .map(|p| substitute_values(p, outer_vars, outer))
+      .collect();
+    let pivot = substituted
+      .iter()
+      .filter(|p| max_power_int(p, var).unwrap_or(0) > 0)
+      .min_by_key(|p| max_power_int(p, var).unwrap_or(i128::MAX))?;
+    for value in roots_of_last_variable(&substituted, pivot, var)? {
+      for _ in
+        0..outer_multiplicity * root_multiplicity(&substituted, &value, var)
+      {
+        let mut full = outer.clone();
+        full.push(value.clone());
+        result.push(full);
+      }
+    }
+  }
+  Some(result)
+}
+
+/// How often the solution at `value` counts.
+///
+/// A curve can meet the line the other variables were fixed to twice over
+/// while still crossing the other curve just once — the circle `x^2 + y^2
+/// == 1` touches `x == 1` twice, but meets `(x - 1)^2 + (y - 1)^2 == 1`
+/// transversally there. So the count is the smallest multiplicity `value`
+/// has among the equations, not the one the equation solved for it happens
+/// to report.
+fn root_multiplicity(polys: &[Expr], value: &Expr, var: &str) -> usize {
+  let mut multiplicity = usize::MAX;
+  for poly in polys {
+    if max_power_int(poly, var).unwrap_or(0) <= 0 {
+      continue;
+    }
+    let Some(roots) = univariate_roots(poly, var) else {
+      continue;
+    };
+    let count = roots.iter().filter(|r| values_equal(r, value)).count();
+    if count > 0 {
+      multiplicity = multiplicity.min(count);
+    }
+  }
+  if multiplicity == usize::MAX {
+    1
+  } else {
+    multiplicity
+  }
+}
+
+/// The distinct roots of `pivot` in `var` that satisfy every polynomial in
+/// `polys`. How often each counts is `root_multiplicity`'s business.
+fn roots_of_last_variable(
+  polys: &[Expr],
+  pivot: &Expr,
+  var: &str,
+) -> Option<Vec<Expr>> {
+  let vars = [var.to_string()];
+  let mut roots: Vec<Expr> = Vec::new();
+  for value in univariate_roots(pivot, var)? {
+    if roots.iter().any(|kept| values_equal(kept, &value)) {
+      continue;
+    }
+    if polys
+      .iter()
+      .all(|p| poly_vanishes_at(p, &vars, std::slice::from_ref(&value)))
+    {
+      roots.push(value);
+    }
+  }
+  Some(roots)
+}
+
+/// Combine `dividend` and `divisor` into an equation of strictly lower
+/// degree in `var` that every common root of the two still satisfies.
+///
+/// Polynomial division does it whenever the divisor's leading coefficient is
+/// a number, and then the step is reversible — no root is gained or lost,
+/// and the remainder of two circles is the line through their intersections,
+/// which is far better conditioned than anything built from their squares.
+/// A leading coefficient that itself depends on the other variables would
+/// need dividing through by an expression that may vanish, so those go to
+/// the resultant instead, which eliminates `var` outright.
+fn eliminate_var(dividend: &Expr, divisor: &Expr, var: &str) -> Option<Expr> {
+  let var_expr = Expr::Identifier(var.to_string());
+  if leading_coefficient_is_numeric(divisor, var) {
+    let remainder =
+      crate::functions::polynomial_ast::polynomial_remainder_ast(&[
+        dividend.clone(),
+        divisor.clone(),
+        var_expr,
+      ])
+      .ok()?;
+    return Some(drop_rounding_noise(&expand_and_combine(&remainder)));
+  }
+  let dividend_degree = max_power_int(dividend, var)?;
+  let divisor_degree = max_power_int(divisor, var)?;
+  if dividend_degree + divisor_degree > MAX_SYLVESTER_SIZE {
+    return None;
+  }
+  let eliminated = crate::functions::polynomial_ast::resultant_ast(&[
+    dividend.clone(),
+    divisor.clone(),
+    var_expr,
+  ])
+  .ok()?;
+  let eliminated = drop_rounding_noise(&expand_and_combine(&eliminated));
+  // A resultant that vanishes identically means the two equations share a
+  // whole curve, so the system is not zero-dimensional.
+  if is_zero_expr(&eliminated) {
+    return None;
+  }
+  Some(eliminated)
+}
+
+/// Drop the terms of an eliminated equation that are made of nothing but
+/// rounding error.
+///
+/// Terms that cancel exactly in exact arithmetic only cancel to within a
+/// rounding error in inexact arithmetic, and what is left behind claims the
+/// eliminated variable is still there — with a coefficient small enough that
+/// dividing by it swamps the equation in noise. A term more than twelve
+/// orders of magnitude below the largest one in the same equation is that
+/// leftover, not a coefficient anybody wrote. Exact equations are left
+/// alone: nothing there is approximate.
+fn drop_rounding_noise(poly: &Expr) -> Expr {
+  if !contains_inexact_number(poly) {
+    return poly.clone();
+  }
+  let terms = collect_additive_terms(poly);
+  let magnitudes: Vec<f64> = terms.iter().map(term_magnitude).collect();
+  let largest = magnitudes.iter().copied().fold(0.0, f64::max);
+  if largest == 0.0 {
+    return poly.clone();
+  }
+  let kept: Vec<Expr> = terms
+    .iter()
+    .zip(&magnitudes)
+    .filter(|(_, magnitude)| **magnitude > 1e-12 * largest)
+    .map(|(term, _)| term.clone())
+    .collect();
+  if kept.len() == terms.len() {
+    return poly.clone();
+  }
+  if kept.is_empty() {
+    return Expr::Integer(0);
+  }
+  expand_and_combine(&build_sum(kept))
+}
+
+/// The size of a term's numeric part, taking anything symbolic as a factor
+/// of one.
+fn term_magnitude(term: &Expr) -> f64 {
+  let mut magnitude = 1.0;
+  for factor in collect_multiplicative_factors(term) {
+    if let Some((re, im)) = try_extract_complex_f64(&factor) {
+      magnitude *= re.hypot(im);
+    }
+  }
+  magnitude
+}
+
+/// Whether any number in `expr` is a machine-precision one.
+fn contains_inexact_number(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) => true,
+    Expr::List(items) => items.iter().any(contains_inexact_number),
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_inexact_number),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_inexact_number(left) || contains_inexact_number(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_inexact_number(operand),
+    _ => false,
+  }
+}
+
+/// Whether the coefficient of the highest power of `var` in `poly` is a
+/// number other than zero.
+fn leading_coefficient_is_numeric(poly: &Expr, var: &str) -> bool {
+  let Some(degree) = max_power_int(poly, var) else {
+    return false;
+  };
+  let Ok(leading) = crate::functions::polynomial_ast::coefficient_ast(&[
+    poly.clone(),
+    Expr::Identifier(var.to_string()),
+    Expr::Integer(degree),
+  ]) else {
+    return false;
+  };
+  let Ok(leading) = crate::evaluator::evaluate_expr_to_expr(&leading) else {
+    return false;
+  };
+  match try_extract_complex_f64(&leading) {
+    Some((re, im)) => re != 0.0 || im != 0.0,
+    None => false,
+  }
+}
+
+/// The roots of `poly` (as `poly == 0`) in `var`, with multiplicity, or
+/// `None` when Solve cannot report them explicitly.
+fn univariate_roots(poly: &Expr, var: &str) -> Option<Vec<Expr>> {
+  let equation = Expr::Comparison {
+    operands: vec![poly.clone(), Expr::Integer(0)],
+    operators: vec![ComparisonOp::Equal],
+  };
+  let solved =
+    solve_ast(&[equation, Expr::Identifier(var.to_string())]).ok()?;
+  let Expr::List(ref solutions) = solved else {
+    return None;
+  };
+  let mut roots = Vec::with_capacity(solutions.len());
+  for solution in solutions.iter() {
+    let Expr::List(rules) = solution else {
+      return None;
+    };
+    let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
+      return None;
+    };
+    // A root reported as an unsolved `Root[…]` object is no use for
+    // substituting back into the remaining equations.
+    if expr_to_string(replacement).contains("Root[") {
+      return None;
+    }
+    roots.push(replacement.as_ref().clone());
+  }
+  Some(roots)
+}
+
+/// Substitute `values` for `vars` in `expr` and evaluate.
+fn substitute_values(expr: &Expr, vars: &[String], values: &[Expr]) -> Expr {
+  let mut substituted = expr.clone();
+  for (var, value) in vars.iter().zip(values) {
+    substituted = crate::syntax::substitute_variable(&substituted, var, value);
+  }
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&substituted)
+    .unwrap_or(substituted);
+  expand_and_combine(&evaluated)
+}
+
+/// Whether `poly` is zero once `values` are substituted for `vars`.
+///
+/// An exact substitution may leave a root such as `Sqrt[7]/2` in a form that
+/// does not collapse to a literal zero, and an inexact one never lands on
+/// zero exactly, so the residual is weighed against the size of the terms it
+/// cancelled between.
+fn poly_vanishes_at(poly: &Expr, vars: &[String], values: &[Expr]) -> bool {
+  let substituted = substitute_values(poly, vars, values);
+  if is_zero_expr(&substituted) {
+    return true;
+  }
+  let Some((re, im)) = try_extract_complex_f64(&substituted) else {
+    return false;
+  };
+  let mut scale: f64 = 1.0;
+  for term in collect_additive_terms(&substituted) {
+    if let Some((tre, tim)) = try_extract_complex_f64(&term) {
+      scale += tre.hypot(tim);
+    }
+  }
+  re.hypot(im) <= 1e-9 * scale
+}
+
+/// Whether `expr` is the literal zero left by a cancellation.
+fn is_zero_expr(expr: &Expr) -> bool {
+  matches!(expr, Expr::Integer(0)) || matches!(expr, Expr::Real(r) if *r == 0.0)
+}
+
+/// Whether two values name the same number — structurally, or numerically
+/// for the inexact ones that never match structurally.
+fn values_equal(a: &Expr, b: &Expr) -> bool {
+  if expr_to_string(a) == expr_to_string(b) {
+    return true;
+  }
+  let (Some((are, aim)), Some((bre, bim))) =
+    (try_extract_complex_f64(a), try_extract_complex_f64(b))
+  else {
+    return false;
+  };
+  let scale = 1.0 + are.hypot(aim).max(bre.hypot(bim));
+  (are - bre).hypot(aim - bim) <= 1e-9 * scale
+}
+
+/// Whether two solutions assign the same values to every variable.
+fn solution_values_equal(a: &[Expr], b: &[Expr]) -> bool {
+  a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| values_equal(x, y))
 }
 
 /// Highest power of `var` in `eq` (treated as `lhs - rhs`). Returns
@@ -4034,7 +4491,7 @@ fn try_solve_inverse_function(
       let inverse_exp = Expr::BinaryOp {
         op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(1)),
-        right: Box::new(exp),
+        right: Box::new(exp.clone()),
       };
       let inverse_rhs = Expr::BinaryOp {
         op: BinaryOperator::Power,
@@ -4047,7 +4504,15 @@ fn try_solve_inverse_function(
         operands: vec![base, simplified_rhs],
         operators: vec![ComparisonOp::Equal],
       };
-      return Some(solve_ast(&[new_eq, Expr::Identifier(var.to_string())]));
+      let solved = solve_ast(&[new_eq, Expr::Identifier(var.to_string())]);
+      // An even root takes only its principal value, so undoing it can
+      // produce an answer the equation itself does not have.
+      return Some(match rational_parts(&exp) {
+        Some((_, denominator)) if denominator % 2 == 0 => {
+          keep_solutions_satisfying(solved, eq, var)
+        }
+        _ => solved,
+      });
     }
     if !is_constant_wrt(&exp, var) && is_constant_wrt(&base, var) {
       // b^x == val (bare-var exponent, constant base): the full complex
@@ -4265,10 +4730,243 @@ fn try_solve_inverse_function(
     };
 
     // Recursively solve the resulting equation
-    Some(solve_ast(&[new_eq, Expr::Identifier(var.to_string())]))
+    let solved = solve_ast(&[new_eq, Expr::Identifier(var.to_string())]);
+    // `Sqrt` is never negative, so squaring the equation away can produce
+    // an answer the equation itself does not have.
+    Some(if name == "Sqrt" {
+      keep_solutions_satisfying(solved, eq, var)
+    } else {
+      solved
+    })
   } else {
     None
   }
+}
+
+/// Drop the solutions that do not satisfy `equation`. A solution that
+/// cannot be checked is kept: it would have to be dropped on a suspicion.
+fn keep_solutions_satisfying(
+  solved: Result<Expr, InterpreterError>,
+  equation: &Expr,
+  var: &str,
+) -> Result<Expr, InterpreterError> {
+  let solved = solved?;
+  let Expr::List(ref solutions) = solved else {
+    return Ok(solved);
+  };
+  let mut kept: Vec<Expr> = Vec::new();
+  for solution in solutions.iter() {
+    let value = match solution {
+      Expr::List(rules) => match rules.as_slice() {
+        [Expr::Rule { replacement, .. }] => Some(replacement.as_ref()),
+        _ => None,
+      },
+      _ => None,
+    };
+    if value.and_then(|value| equation_holds_at(equation, var, value))
+      != Some(false)
+    {
+      kept.push(solution.clone());
+    }
+  }
+  Ok(Expr::List(kept.into()))
+}
+
+/// Solve an equation that takes a root of the unknown.
+///
+/// One radical term is put on its own and both sides are raised to that
+/// root's index, which clears it; what is left is solved as usual and each
+/// answer is put back into the equation it came from. That last step is not
+/// a formality — raising to a power throws away which branch of the root was
+/// meant, so `Sqrt[2 x + 3] == x` picks up an `x == -1` that solves the
+/// squared equation and not the original one. Anything that cannot be
+/// checked that way is left to the caller rather than reported on trust.
+fn try_solve_radical_equation(
+  poly: &Expr,
+  equation: &Expr,
+  var: &str,
+) -> Option<Result<Expr, InterpreterError>> {
+  if has_inequality(equation) {
+    return None;
+  }
+  let (_, _, CompOp::Equal) =
+    crate::functions::polynomial_ast::reduce::extract_comparison(equation)?
+  else {
+    return None;
+  };
+  let terms = collect_additive_terms(&expand_and_combine(poly));
+  let radical_terms = terms
+    .iter()
+    .filter(|term| radical_index(term, var).is_some())
+    .count();
+  if radical_terms == 0 || terms.len() < 2 {
+    return None;
+  }
+  let isolated = terms
+    .iter()
+    .position(|term| radical_index(term, var).is_some())?;
+  let index = radical_index(&terms[isolated], var)?;
+  if index > MAX_RADICAL_INDEX {
+    return None;
+  }
+
+  let rest = build_sum(
+    terms
+      .iter()
+      .enumerate()
+      .filter(|(position, _)| *position != isolated)
+      .map(|(_, term)| negate_expr(term))
+      .collect(),
+  );
+  let raise = |base: &Expr| {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(base.clone()),
+      right: Box::new(Expr::Integer(index)),
+    })
+    .ok()
+  };
+  let cleared = expand_and_combine(&Expr::BinaryOp {
+    op: BinaryOperator::Minus,
+    left: Box::new(raise(&terms[isolated])?),
+    right: Box::new(raise(&rest)?),
+  });
+  // Raising has to leave fewer roots behind than it found, or the equation
+  // would come straight back here and never settle.
+  let left_over = collect_additive_terms(&cleared)
+    .iter()
+    .filter(|term| radical_index(term, var).is_some())
+    .count();
+  if left_over >= radical_terms {
+    return None;
+  }
+
+  let cleared_equation = Expr::Comparison {
+    operands: vec![cleared, Expr::Integer(0)],
+    operators: vec![ComparisonOp::Equal],
+  };
+  let solved =
+    solve_ast(&[cleared_equation, Expr::Identifier(var.to_string())]).ok()?;
+  let Expr::List(ref candidates) = solved else {
+    return None;
+  };
+  let mut kept: Vec<Expr> = Vec::new();
+  for candidate in candidates.iter() {
+    let Expr::List(rules) = candidate else {
+      return None;
+    };
+    let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
+      return None;
+    };
+    if equation_holds_at(equation, var, replacement)? {
+      kept.push(candidate.clone());
+    }
+  }
+  Some(Ok(Expr::List(kept.into())))
+}
+
+/// Roots beyond this index are left alone: raising to them makes a
+/// polynomial no solver reports in radicals anyway.
+const MAX_RADICAL_INDEX: i128 = 4;
+
+/// The index of the root `term` takes of the unknown — 2 for a square root,
+/// 3 for a cube root — or `None` for a term that takes none. A term under
+/// several roots at once reports the index that clears all of them.
+fn radical_index(term: &Expr, var: &str) -> Option<i128> {
+  let root_here = |expr: &Expr| -> Option<i128> {
+    if let Some(inner) = is_sqrt(expr) {
+      return (!is_constant_wrt(inner, var)).then_some(2);
+    }
+    let (base, exponent) = extract_base_and_exp(expr);
+    if is_constant_wrt(&base, var) {
+      return None;
+    }
+    match rational_parts(&exponent) {
+      Some((_, denominator)) if denominator > 1 => Some(denominator),
+      _ => None,
+    }
+  };
+  fn walk(
+    expr: &Expr,
+    root_here: &dyn Fn(&Expr) -> Option<i128>,
+    index: &mut Option<i128>,
+  ) {
+    if let Some(root) = root_here(expr) {
+      *index = Some(match *index {
+        None => root,
+        Some(current) => lcm_i128(current, root),
+      });
+    }
+    match expr {
+      Expr::BinaryOp { left, right, .. } => {
+        walk(left, root_here, index);
+        walk(right, root_here, index);
+      }
+      Expr::UnaryOp { operand, .. } => walk(operand, root_here, index),
+      Expr::FunctionCall { args, .. } => {
+        for arg in args.iter() {
+          walk(arg, root_here, index);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut index = None;
+  walk(term, &root_here, &mut index);
+  index
+}
+
+/// An exponent written as a ratio of two integers, however it is spelled.
+fn rational_parts(exponent: &Expr) -> Option<(i128, i128)> {
+  match exponent {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(numerator), Expr::Integer(denominator)) => {
+          Some((*numerator, *denominator))
+        }
+        _ => None,
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => match (left.as_ref(), right.as_ref()) {
+      (Expr::Integer(numerator), Expr::Integer(denominator)) => {
+        Some((*numerator, *denominator))
+      }
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// Whether `equation` holds with `value` put in for `var`, or `None` when
+/// that cannot be decided.
+fn equation_holds_at(equation: &Expr, var: &str, value: &Expr) -> Option<bool> {
+  let (lhs, rhs, CompOp::Equal) =
+    crate::functions::polynomial_ast::reduce::extract_comparison(equation)?
+  else {
+    return None;
+  };
+  let at_value = |side: &Expr| {
+    let substituted = crate::syntax::substitute_variable(side, var, value);
+    quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)).ok()
+  };
+  let left = at_value(&lhs)?;
+  let right = at_value(&rhs)?;
+  if expr_to_string(&left) == expr_to_string(&right) {
+    return Some(true);
+  }
+  // An exact root only cancels to a literal zero once it is worked out, and
+  // an inexact one never quite does, so the two sides are compared as
+  // numbers against the size of what they are made of.
+  let (left_re, left_im) = try_extract_complex_f64(&left)?;
+  let (right_re, right_im) = try_extract_complex_f64(&right)?;
+  let scale = 1.0 + left_re.hypot(left_im).max(right_re.hypot(right_im));
+  Some((left_re - right_re).hypot(left_im - right_im) <= 1e-9 * scale)
 }
 
 /// Try to solve a non-polynomial equation by factoring out common

@@ -12,6 +12,9 @@
 //! Only `"NetworkGraph"` is bundled so far, and only with the classic
 //! networks listed in `resources/network_graphs.txt.gz`; a type or name
 //! that is not bundled stays unevaluated rather than returning wrong data.
+//! The bundled networks are assembled from the publications they come from
+//! and carry the names Wolfram's catalogue lists them under, so a script
+//! that asks for one of them by name gets the same data from either engine.
 
 use std::sync::LazyLock;
 
@@ -94,8 +97,20 @@ static NETWORK_GRAPHS: LazyLock<Vec<NetworkGraph>> = LazyLock::new(|| {
   out
 });
 
+/// A second spelling Wolfram resolves to a catalogue name, so that a script
+/// written against either one runs: `ExampleData[{"NetworkGraph",
+/// "ZacharysKarateClub"}]` and `…"ZacharyKarateClub"…` are the same network.
+const NETWORK_GRAPH_ALIASES: &[(&str, &str)] = &[
+  ("ZacharysKarateClub", "ZacharyKarateClub"),
+  ("BooksAboutUSPolitics", "USPoliticsBooks"),
+];
+
 /// The dataset named by `name`, if it is bundled.
 fn network_graph(name: &str) -> Option<&'static NetworkGraph> {
+  let name = NETWORK_GRAPH_ALIASES
+    .iter()
+    .find(|(alias, _)| *alias == name)
+    .map_or(name, |(_, catalogue)| *catalogue);
   NETWORK_GRAPHS.iter().find(|g| g.name == name)
 }
 

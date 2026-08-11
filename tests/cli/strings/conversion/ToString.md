@@ -31,3 +31,19 @@ point (zero-padded).
 $ wo 'ToString[NumberForm[3.0, {5, 2}]]'
 3.00
 ```
+
+A second argument names the form to render in. `TraditionalForm` typesets:
+a known function takes its roman name and round brackets.
+
+```scrut
+$ wo 'ToString[Sin[x], TraditionalForm]'
+sin(x)
+```
+
+`HoldForm` keeps a symbol from evaluating while still displaying it, so a
+label can name a function and apply it without computing anything.
+
+```scrut
+$ wo 'ToString[HoldForm[g][HoldForm[x]], TraditionalForm]'
+g(x)
+```
