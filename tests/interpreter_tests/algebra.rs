@@ -4694,6 +4694,104 @@ mod solve {
     );
   }
 
+  // Two conics are intersected by dividing one equation into the other,
+  // which for two circles leaves the line through their intersections.
+  #[test]
+  fn two_circles_meeting_twice() {
+    assert_eq!(
+      interpret("Solve[{x^2 + y^2 == 1, (x - 1)^2 + (y - 1)^2 == 1}, {x, y}]")
+        .unwrap(),
+      "{{x -> 0, y -> 1}, {x -> 1, y -> 0}}"
+    );
+    // The conjunction spelling of the same system.
+    assert_eq!(
+      interpret("Solve[x^2 + y^2 == 1 && (x - 1)^2 + (y - 1)^2 == 1, {x, y}]")
+        .unwrap(),
+      "{{x -> 0, y -> 1}, {x -> 1, y -> 0}}"
+    );
+  }
+
+  // Both intersections share an x coordinate, so eliminating y leaves a
+  // squared factor rather than two separate roots.
+  #[test]
+  fn two_circles_meeting_above_each_other() {
+    assert_eq!(
+      interpret("Solve[{(x + 1)^2 + y^2 == 2, (x - 1)^2 + y^2 == 2}, {x, y}]")
+        .unwrap(),
+      "{{x -> 0, y -> -1}, {x -> 0, y -> 1}}"
+    );
+    assert_eq!(
+      interpret("Solve[{x^2 + y^2 == 4, (x - 3)^2 + y^2 == 4}, {x, y}]")
+        .unwrap(),
+      "{{x -> 3/2, y -> -1/2*Sqrt[7]}, {x -> 3/2, y -> Sqrt[7]/2}}"
+    );
+  }
+
+  // Touching circles meet in one point, which counts twice.
+  #[test]
+  fn two_circles_touching() {
+    assert_eq!(
+      interpret("Solve[{x^2 + y^2 == 1, (x - 2)^2 + y^2 == 1}, {x, y}]")
+        .unwrap(),
+      "{{x -> 1, y -> 0}, {x -> 1, y -> 0}}"
+    );
+  }
+
+  // Circles too far apart to meet still meet over the complex numbers.
+  #[test]
+  fn two_circles_meeting_nowhere_real() {
+    assert_eq!(
+      interpret("Solve[{x^2 + y^2 == 1, (x - 5)^2 + y^2 == 1}, {x, y}]")
+        .unwrap(),
+      "{{x -> 5/2, y -> -1/2*I*Sqrt[21]}, {x -> 5/2, y -> I/2*Sqrt[21]}}"
+    );
+  }
+
+  // Inexact coefficients are what a Demonstration computing intersections
+  // from a slider position hands the solver.
+  #[test]
+  fn two_circles_with_inexact_coefficients() {
+    assert_eq!(
+      interpret("Solve[{x^2 + y^2 == 1., x^2 + (y - 1.)^2 == 0.49}, {x, y}]")
+        .unwrap(),
+      "{{x -> -0.6557247898318318, y -> 0.755}, \
+       {x -> 0.6557247898318318, y -> 0.755}}"
+    );
+    // Two equal circles whose intersections sit above each other: the
+    // squared factor this leaves is what a floating-point elimination has
+    // to get through without turning a double root into a complex pair.
+    assert_eq!(
+      interpret(
+        "Solve[{(x - 2.)^2 + y^2 == 2., (x - 4.)^2 + y^2 == 2.}, {x, y}]"
+      )
+      .unwrap(),
+      "{{x -> 3., y -> -1.}, {x -> 3., y -> 1.}}"
+    );
+  }
+
+  // A sphere cut by two planes, which needs two eliminations in a row.
+  #[test]
+  fn nonlinear_system_in_three_variables() {
+    assert_eq!(
+      interpret(
+        "Solve[{x + y + z == 6, x^2 + y^2 + z^2 == 14, x - y == 1}, \
+         {x, y, z}]"
+      )
+      .unwrap(),
+      "{{x -> 2, y -> 1, z -> 3}, {x -> 3, y -> 2, z -> 1}}"
+    );
+  }
+
+  // A circle and a parabola touching: the tangency counts twice even
+  // though each equation on its own has a simple root there.
+  #[test]
+  fn parabolas_touching() {
+    assert_eq!(
+      interpret("Solve[{y == x^2, y == 2 x^2}, {x, y}]").unwrap(),
+      "{{x -> 0, y -> 0}, {x -> 0, y -> 0}}"
+    );
+  }
+
   #[test]
   fn linear_system_with_and_in_list() {
     // Solve[{eq1 && eq2}, {x, y}] should behave like
@@ -4866,6 +4964,59 @@ mod solve {
       interpret("Solve[Sqrt[x + 1] == 4, x]").unwrap(),
       "{{x -> 15}}"
     );
+  }
+
+  // A root of the unknown on both sides is squared away, and the roots that
+  // only solve the squared equation are dropped again.
+  #[test]
+  fn solve_sqrt_equation_with_unknown_on_both_sides() {
+    assert_eq!(
+      interpret("Solve[Sqrt[x] == x, x]").unwrap(),
+      "{{x -> 0}, {x -> 1}}"
+    );
+    // Squaring turns this into x^2 - 2 x - 3 == 0, whose root -1 solves the
+    // squared equation and not this one.
+    assert_eq!(
+      interpret("Solve[Sqrt[2 x + 3] == x, x]").unwrap(),
+      "{{x -> 3}}"
+    );
+    assert_eq!(
+      interpret("Solve[x + Sqrt[x] == 6, x]").unwrap(),
+      "{{x -> 4}}"
+    );
+    assert_eq!(
+      interpret("Solve[Sqrt[1 - x^2] == 1 - x, x]").unwrap(),
+      "{{x -> 0}, {x -> 1}}"
+    );
+    assert_eq!(
+      interpret("Solve[Sqrt[1 - x^2] == x + 1, x]").unwrap(),
+      "{{x -> -1}, {x -> 0}}"
+    );
+    assert_eq!(
+      interpret("Solve[Sqrt[4 - x^2] == x - 2, x]").unwrap(),
+      "{{x -> 2}}"
+    );
+  }
+
+  // Two roots take two squarings, one after the other.
+  #[test]
+  fn solve_equation_with_two_square_roots() {
+    assert_eq!(
+      interpret("Solve[Sqrt[x + 5] - Sqrt[x] == 1, x]").unwrap(),
+      "{{x -> 4}}"
+    );
+    assert_eq!(
+      interpret("Solve[Sqrt[x] == Sqrt[3 x - 2], x]").unwrap(),
+      "{{x -> 1}}"
+    );
+  }
+
+  // `Sqrt` is the principal root, so it never equals a negative number —
+  // squaring the equation away must not invent the root that would.
+  #[test]
+  fn solve_sqrt_equal_to_a_negative_number() {
+    assert_eq!(interpret("Solve[Sqrt[x] == -1, x]").unwrap(), "{}");
+    assert_eq!(interpret("Solve[Sqrt[x - 3] == -2, x]").unwrap(), "{}");
   }
 
   // Abs[f(x)] == c → f == c ∪ f == -c.
