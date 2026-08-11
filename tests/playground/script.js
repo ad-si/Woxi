@@ -337,6 +337,7 @@ function renderOutputItems(items) {
   // results arriving from the worker are ignored.
   manipulateRequests.clear()
   enabledRequests.clear()
+  visibleRequests.clear()
   // Halt any running animation timers whose widgets are about to be replaced.
   stopAllAnimators()
 
@@ -362,6 +363,11 @@ const manipulateRequests = new Map()
 // In-flight `evaluate_manipulate_enabled` requests, keyed by request id, so a
 // result can be routed back to the widget whose controls it re-gates.
 const enabledRequests = new Map()
+// The same, for the requests that decide which `PaneSelector` pane's controls
+// are on screen. Both use the same worker call — one evaluates `Enabled`
+// conditions, the other pane conditions — so the reply carries whichever list
+// its request id was registered under.
+const visibleRequests = new Map()
 let manipulateRequestCounter = 0
 
 function renderManipulate(item) {
@@ -437,6 +443,11 @@ function renderManipulate(item) {
     // `apply(on)` greys the control's DOM in or out. Re-evaluated on every
     // binding change so a control can disable itself for the current state.
     enabledControls: [],
+    // Controls belonging to a `PaneSelector` pane: `{condition, apply}` in
+    // control order, where `condition` decides whether that pane is the one
+    // on screen and `apply(on)` shows or hides the control's row. Controls
+    // outside any pane are not listed and are always shown.
+    visibleControls: [],
     // Continuous-slider drivers an Animate/ListAnimate animator can advance.
     animatables: [],
   }
@@ -494,21 +505,27 @@ function renderManipulate(item) {
     dispatchUpdate(bindings)
   }
 
-  // Re-evaluate every gated control's `Enabled` condition for the current
-  // bindings and grey the affected controls in or out. A no-op when no control
-  // has a condition.
-  function refreshEnabled(bindings) {
+  // Re-evaluate a list of gated controls' conditions for the current bindings
+  // and apply the resulting flags. A no-op when no control has a condition.
+  function refreshGated(controls, requests, bindings) {
     if (!worker) return
-    const conditions = widget.enabledControls.map((c) => c.condition)
+    const conditions = controls.map((c) => c.condition)
     if (conditions.every((c) => !c)) return
     const requestId = ++manipulateRequestCounter
-    enabledRequests.set(requestId, widget)
+    requests.set(requestId, widget)
     worker.postMessage({
       type: "evaluate_manipulate_enabled",
       requestId,
       conditions,
       bindings: bindings || buildBindings(),
     })
+  }
+
+  // Grey the controls an `Enabled -> Dynamic[…]` option has switched off in
+  // or out; show only the controls of the `PaneSelector` pane in force.
+  function refreshEnabled(bindings) {
+    refreshGated(widget.enabledControls, enabledRequests, bindings)
+    refreshGated(widget.visibleControls, visibleRequests, bindings)
   }
   widget.refreshEnabled = refreshEnabled
 
@@ -1066,6 +1083,19 @@ function renderManipulate(item) {
       })
     }
 
+    // A control that came from a `PaneSelector` pane is only on screen while
+    // the selector holds that pane's value. Every control kind builds a `row`,
+    // so the pane gate is registered once here rather than per kind.
+    if (ctrl.visibleWhen) {
+      widget.visibleControls.push({
+        condition: ctrl.visibleWhen,
+        apply: (on) => {
+          // Rows are `display: contents` in the control grid, so clearing the
+          // inline style is what puts one back rather than setting a value.
+          row.style.display = on ? "" : "none"
+        },
+      })
+    }
     controlsEl.appendChild(row)
   }
 
@@ -1252,8 +1282,13 @@ function initWorker() {
       // persisted when the "result" message first arrived.
     }
     else if (type === "manipulate_enabled_result") {
-      const widget = enabledRequests.get(e.data.requestId)
+      // The request id says which gate this reply answers: the `Enabled`
+      // conditions or the `PaneSelector` pane conditions.
+      const enabledWidget = enabledRequests.get(e.data.requestId)
+      const visibleWidget = visibleRequests.get(e.data.requestId)
       enabledRequests.delete(e.data.requestId)
+      visibleRequests.delete(e.data.requestId)
+      const widget = enabledWidget || visibleWidget
       if (!widget || !success) return
       let flags
       try {
@@ -1262,8 +1297,11 @@ function initWorker() {
         return
       }
       if (!Array.isArray(flags)) return
-      widget.enabledControls.forEach((c, i) => {
-        // Absent/undefined flag fails open (enabled).
+      const gated = enabledWidget
+        ? widget.enabledControls
+        : widget.visibleControls
+      gated.forEach((c, i) => {
+        // Absent/undefined flag fails open (enabled / on screen).
         c.apply(flags[i] !== false)
       })
     }

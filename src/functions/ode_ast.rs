@@ -1696,11 +1696,7 @@ fn normalize_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
       let lhs = &operands[0];
       let rhs = &operands[1];
       // lhs - rhs
-      Ok(Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(lhs.clone()),
-        right: Box::new(rhs.clone()),
-      })
+      Ok(minus2(lhs.clone(), rhs.clone()))
     }
     _ => Err(InterpreterError::EvaluationError(
       "DSolve expects an equation (lhs == rhs)".into(),
@@ -2327,11 +2323,10 @@ fn variation_of_parameters(
   let g = negate_expr(forcing);
   let a2 = f64_to_nice_expr(coeffs[2]);
   let integrate_with = |y: &Expr| -> Option<Expr> {
-    let integrand = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(times(y.clone(), g.clone())),
-      right: Box::new(mul(a2.clone(), wronskian.clone())),
-    };
+    let integrand = div2(
+      times(y.clone(), g.clone()),
+      mul(a2.clone(), wronskian.clone()),
+    );
     // Canonicalize first so the integrator sees simplified products
     // (e.g. Cos[x]*Tan[x] -> Sin[x]).
     let integrand =
@@ -2624,11 +2619,7 @@ fn build_homogeneous_solution(
           let x_power = if k == 1 {
             x.clone()
           } else {
-            Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(x.clone()),
-              right: Box::new(Expr::Integer(k as i128)),
-            }
+            pow2(x.clone(), Expr::Integer(k as i128))
           };
           term = Expr::BinaryOp {
             op: BinaryOperator::Times,
@@ -2730,11 +2721,7 @@ fn make_exp_term(r: f64, x_name: &str) -> Expr {
       right: Box::new(x),
     }
   };
-  Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(Expr::Constant("E".to_string())),
-    right: Box::new(exponent),
-  }
+  pow2(Expr::Constant("E".to_string()), exponent)
 }
 
 /// Create Cos[β*x] or Sin[β*x] expression
@@ -2770,11 +2757,7 @@ fn f64_to_nice_expr(f: f64) -> Expr {
       if dd == 1 {
         return Expr::Integer(nn);
       }
-      return Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(nn)),
-        right: Box::new(Expr::Integer(dd)),
-      };
+      return div2(Expr::Integer(nn), Expr::Integer(dd));
     }
   }
   // Try sqrt expressions: check if f^2 is a nice rational
@@ -2789,11 +2772,7 @@ fn f64_to_nice_expr(f: f64) -> Expr {
         if d == 1 {
           return make_sqrt(Expr::Integer(n));
         }
-        return Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(make_sqrt(Expr::Integer(n))),
-          right: Box::new(make_sqrt(Expr::Integer(d))),
-        };
+        return div2(make_sqrt(Expr::Integer(n)), make_sqrt(Expr::Integer(d)));
       }
     }
   }
@@ -2850,16 +2829,9 @@ fn solve_first_order_linear(
 
   // Normalize: y' + P(x)*y = Q(x)
   // P(x) = a0/a1, Q(x) = -forcing/a1
-  let p_expr = crate::functions::calculus_ast::simplify(Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(a0),
-    right: Box::new(a1.clone()),
-  });
-  let q_expr = crate::functions::calculus_ast::simplify(Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(negate_expr(&forcing)),
-    right: Box::new(a1),
-  });
+  let p_expr = crate::functions::calculus_ast::simplify(div2(a0, a1.clone()));
+  let q_expr =
+    crate::functions::calculus_ast::simplify(div2(negate_expr(&forcing), a1));
 
   // Check for special cases
 
@@ -2903,11 +2875,7 @@ fn solve_first_order_linear(
     Expr::Identifier(x_name.to_string()),
   ])?;
 
-  let mu = Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(Expr::Constant("E".to_string())),
-    right: Box::new(p_integral.clone()),
-  };
+  let mu = pow2(Expr::Constant("E".to_string()), p_integral.clone());
 
   let mu_q = crate::functions::calculus_ast::simplify(Expr::BinaryOp {
     op: BinaryOperator::Times,
@@ -2922,11 +2890,7 @@ fn solve_first_order_linear(
 
   // y = E^(-∫P dx) * (∫(μ*Q)dx + C[1])
   let neg_p_integral = negate_expr(&p_integral);
-  let inv_mu = Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(Expr::Constant("E".to_string())),
-    right: Box::new(neg_p_integral),
-  };
+  let inv_mu = pow2(Expr::Constant("E".to_string()), neg_p_integral);
 
   // Distribute the integrating factor over the particular part and the
   // constant separately, matching wolframscript's form, e.g.
@@ -2955,21 +2919,14 @@ fn make_exp_term_expr(coeff: &Expr, x_name: &str) -> Expr {
   let x = Expr::Identifier(x_name.to_string());
   let exponent = match coeff {
     Expr::Integer(1) => x,
-    Expr::Integer(-1) => Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(x),
-    },
+    Expr::Integer(-1) => neg1(x),
     _ => Expr::BinaryOp {
       op: BinaryOperator::Times,
       left: Box::new(coeff.clone()),
       right: Box::new(x),
     },
   };
-  Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(Expr::Constant("E".to_string())),
-    right: Box::new(exponent),
-  }
+  pow2(Expr::Constant("E".to_string()), exponent)
 }
 
 // ─── Particular Solution (Undetermined Coefficients) ───────────────────
@@ -4114,11 +4071,7 @@ fn lagrange_polynomial(
     ys.push(pair[1].clone());
   }
 
-  let minus = |a: &Expr, b: &Expr| Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Minus,
-    left: Box::new(a.clone()),
-    right: Box::new(b.clone()),
-  };
+  let minus = |a: &Expr, b: &Expr| minus2(a.clone(), b.clone());
   let m = xs.len();
   let mut terms: Vec<Expr> = Vec::with_capacity(m);
   for i in 0..m {
@@ -4282,11 +4235,7 @@ fn try_linear_first_order_pde_body(
         right: Box::new(n_var(xn)),
       }
     };
-    Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::Constant("E".to_string())),
-      right: Box::new(exponent),
-    }
+    pow2(Expr::Constant("E".to_string()), exponent)
   };
   // Argument to C[1]: y - b*x  (or just y when b == 0).
   let c1_arg = if b == 0 {
@@ -4555,11 +4504,7 @@ fn try_euler_pde_body(
       right: Box::new(log_x),
     }
   };
-  let y_over_x = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(n_var(yn)),
-    right: Box::new(n_var(xn)),
-  };
+  let y_over_x = div2(n_var(yn), n_var(xn));
   let c1_applied = Expr::CurriedCall {
     func: Box::new(Expr::FunctionCall {
       name: "C".to_string(),

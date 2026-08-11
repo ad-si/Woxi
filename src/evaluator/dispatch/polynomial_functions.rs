@@ -1419,13 +1419,7 @@ fn try_constrained_linear_disk_symbolic(
       right: Box::new(y),
     })
   };
-  let minus = |x: Expr, y: Expr| -> Expr {
-    eval(Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(x),
-      right: Box::new(y),
-    })
-  };
+  let minus = |x: Expr, y: Expr| -> Expr { eval(minus2(x, y)) };
   let times = |x: Expr, y: Expr| -> Expr {
     eval(Expr::BinaryOp {
       op: BinaryOperator::Times,
@@ -1434,13 +1428,7 @@ fn try_constrained_linear_disk_symbolic(
     })
   };
   let div = |x: Expr, y: Expr| -> Expr { eval(div2(x, y)) };
-  let neg = |x: Expr| -> Expr {
-    eval(Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(Expr::Integer(0)),
-      right: Box::new(x),
-    })
-  };
+  let neg = |x: Expr| -> Expr { eval(minus2(Expr::Integer(0), x)) };
   let square = |x: Expr| -> Expr { times(x.clone(), x) };
   let sqrt_e = |e: Expr| -> Expr {
     eval(Expr::FunctionCall {

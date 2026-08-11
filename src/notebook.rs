@@ -333,13 +333,29 @@ fn is_cell_open_false(s: &str) -> bool {
   s == "CellOpen->False"
 }
 
+/// Is there nothing left to draw once the characters that have no glyph are
+/// taken out? The script-base placeholders (`\[InvisiblePrefixScriptBase]`)
+/// are such characters, and a box built on one is a *prefix* script whose
+/// base is empty.
+fn draws_nothing(s: &str) -> bool {
+  crate::syntax::substitute_private_use_glyphs(s)
+    .trim()
+    .is_empty()
+}
+
 /// The part specification inside a `⟦…⟧` group, or None when `s` is an
 /// ordinary subscript. The double-bracket characters are what
 /// `\[LeftDoubleBracket]` / `\[RightDoubleBracket]` unescape to.
 fn part_spec_inside_double_brackets(s: &str) -> Option<&str> {
-  s.trim()
-    .strip_prefix('\u{27E6}')?
-    .strip_suffix('\u{27E7}')
+  let s = s.trim();
+  // Wolfram writes `〚…〛` (U+301A/U+301B); the mathematical white square
+  // brackets `⟦…⟧` are the same thing in notebooks written elsewhere.
+  s.strip_prefix('\u{301A}')
+    .and_then(|inner| inner.strip_suffix('\u{301B}'))
+    .or_else(|| {
+      s.strip_prefix('\u{27E6}')
+        .and_then(|inner| inner.strip_suffix('\u{27E7}'))
+    })
     .map(str::trim)
 }
 
@@ -464,9 +480,77 @@ fn prime_marks(s: &str) -> Option<usize> {
   Some(count)
 }
 
+/// The plain text a display-only box shows, or `None` when the box is not
+/// simple display text.
+///
+/// Styling wrappers (`StyleBox`, `TagBox`, …) are unwrapped down to the
+/// string literal they decorate. Box expressions nest string literals one
+/// level deeper than ordinary arguments — the FrontEnd writes the displayed
+/// string `label` as `"\"label\""` — so every quoting layer is stripped.
+fn display_text(s: &str) -> Option<String> {
+  let s = s.trim();
+  for head in ["StyleBox", "TagBox", "FormBox", "AdjustmentBox", "FrameBox"] {
+    if let Some(rest) = s.strip_prefix(&format!("{head}[")) {
+      let (inner, _) = find_matching_bracket(rest).ok()?;
+      let first = split_top_level_commas(inner).into_iter().next()?;
+      return display_text(first);
+    }
+  }
+  if !(s.starts_with('"') && s.ends_with('"') && s.len() >= 2) {
+    return None;
+  }
+  let mut text = s.to_string();
+  while text.starts_with('"') && text.ends_with('"') && text.len() >= 2 {
+    text = extract_string_content(&text);
+  }
+  Some(text)
+}
+
+/// Render a `CheckboxBox[value, {off, on}]` as a glyph.
+///
+/// `args` are the box's positional arguments. When `with_label` is set and
+/// the `on` alternative is a string, it is appended as the checkbox's label
+/// (`CheckboxBox[False, {False, "Mathematics"}]` → `☐ Mathematics`). Rows
+/// that carry their own label text pass `false` so the label is not
+/// repeated.
+fn render_checkbox(args: &[String], with_label: bool) -> String {
+  let value = args.first().map(|a| a.trim()).unwrap_or("");
+  let mut checked = value == "True";
+  let mut label = None;
+  if let Some(alts) = args.get(1) {
+    let alts = alts.trim();
+    if let Some(inner) =
+      alts.strip_prefix('{').and_then(|a| a.strip_suffix('}'))
+    {
+      let alt_parts = split_top_level_commas(inner);
+      let off = alt_parts.first().map(|p| p.trim());
+      if let Some(on) = alt_parts.get(1).map(|p| p.trim()) {
+        // With degenerate alternatives ({False, False}) fall back to
+        // the truthiness of the value itself.
+        if off != Some(on) {
+          checked = value == on;
+        }
+        if with_label
+          && on.starts_with('"')
+          && on.ends_with('"')
+          && on.len() >= 2
+        {
+          label = Some(extract_string_content(on));
+        }
+      }
+    }
+  }
+  let mark = if checked { "\u{2611}" } else { "\u{2610}" };
+  match label {
+    Some(l) => format!("{mark} {l}"),
+    None => mark.to_string(),
+  }
+}
+
 /// Recognise the typeset box heads that the FrontEnd uses to pretty-print
 /// expressions (`FractionBox`, `SuperscriptBox`, `SqrtBox`, `TagBox`,
 /// `GridBox`, …) and convert them back into evaluable InputForm text.
+///
 /// Returns `None` if `s` does not start with one of those heads.
 fn extract_typeset_box(s: &str) -> Option<String> {
   fn split_args(head: &str, s: &str) -> Option<Vec<String>> {
@@ -517,6 +601,55 @@ fn extract_typeset_box(s: &str) -> Option<String> {
         // Unescape any remaining `\"` pairs.
         let unit_name = unit_name.replace("\\\"", "");
         return Some(format!("Quantity[{number}, \"{unit_name}\"]"));
+      }
+    }
+    // `TemplateBox[{parts…}, "RowDefault"]` is the box form of
+    // `Row[{parts…}]` — the FrontEnd lays the parts out side by side.
+    // Demonstration metadata cells pair a checkbox with its caption this way
+    // (`{CheckboxBox[…], " ", StyleBox["\"Supported in cloud\""]}`), so the
+    // generic "first element only" fallback below would drop the caption and
+    // leave a bare glyph. Only rows whose non-checkbox parts are plain
+    // display text are joined: the category picker wraps its captions in
+    // collapsible `PaneSelectorBox` chrome instead, which has no useful flat
+    // rendering, so those keep falling back to the first element.
+    if tag == "RowDefault" {
+      let first = args[0].trim();
+      let first_inner = first
+        .strip_prefix('{')
+        .and_then(|s| s.strip_suffix('}'))
+        .unwrap_or(first);
+      let parts = split_top_level_commas(first_inner);
+      // Render every non-checkbox part as display text; bail out as soon as
+      // one has no such rendering.
+      let captions: Option<Vec<Option<String>>> = parts
+        .iter()
+        .map(|part| {
+          let part = part.trim();
+          if part.starts_with("CheckboxBox[") {
+            Some(None)
+          } else {
+            display_text(part).map(Some)
+          }
+        })
+        .collect();
+      if let Some(captions) = captions
+        && captions
+          .iter()
+          .any(|c| c.as_ref().is_some_and(|t| !t.trim().is_empty()))
+      {
+        // The row supplies the caption, so a checkbox contributes only its
+        // glyph — its `on` alternative would just repeat the caption.
+        let mut out = String::new();
+        for (part, caption) in parts.iter().zip(&captions) {
+          match caption {
+            Some(text) => out.push_str(text),
+            None => out.push_str(&render_checkbox(
+              &split_args("CheckboxBox", part.trim()).unwrap_or_default(),
+              false,
+            )),
+          }
+        }
+        return Some(out.trim().to_string());
       }
     }
     // Fallback: first positional argument is the displayed value.
@@ -591,9 +724,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // exponentiation form would both fail to parse (`()^(1)`) and, once
       // evaluated, drop the script entirely (`x^1` is `x`). `Superscript`
       // stays unevaluated and keeps it.
-      "SuperscriptBox"
-        if args.len() == 2 && conv(&args[0]).trim().is_empty() =>
-      {
+      "SuperscriptBox" if args.len() == 2 && draws_nothing(&conv(&args[0])) => {
         format!("Superscript[\"\", {}]", conv(&args[1]))
       }
       // `SuperscriptBox[a, b]` → `(a)^(b)`.
@@ -611,7 +742,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
           Some(spec) => format_part_access(&base, spec),
           // Prefix subscript, as above — keep an explicit empty string so
           // the result still parses.
-          None if base.trim().is_empty() => {
+          None if draws_nothing(&base) => {
             format!("Subscript[\"\", {sub}]")
           }
           None => format!("Subscript[{base}, {sub}]"),
@@ -654,35 +785,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // render a checkbox glyph, labelled with the `on` alternative when
       // it is a string (`CheckboxBox[False, {False, "Mathematics"}]` →
       // `☐ Mathematics`).
-      "CheckboxBox" if !args.is_empty() => {
-        let value = args[0].trim();
-        let mut checked = value == "True";
-        let mut label = None;
-        if let Some(alts) = args.get(1) {
-          let alts = alts.trim();
-          if let Some(inner) =
-            alts.strip_prefix('{').and_then(|a| a.strip_suffix('}'))
-          {
-            let alt_parts = split_top_level_commas(inner);
-            let off = alt_parts.first().map(|p| p.trim());
-            if let Some(on) = alt_parts.get(1).map(|p| p.trim()) {
-              // With degenerate alternatives ({False, False}) fall back to
-              // the truthiness of the value itself.
-              if off != Some(on) {
-                checked = value == on;
-              }
-              if on.starts_with('"') && on.ends_with('"') && on.len() >= 2 {
-                label = Some(extract_string_content(on));
-              }
-            }
-          }
-        }
-        let mark = if checked { "\u{2611}" } else { "\u{2610}" };
-        match label {
-          Some(l) => format!("{mark} {l}"),
-          None => mark.to_string(),
-        }
-      }
+      "CheckboxBox" if !args.is_empty() => render_checkbox(&args, true),
       // `GridBox[{{r11, r12, …}, {r21, …}, …}, opts…]` → the raw rows as a
       // list literal. The rows themselves may contain box expressions, so
       // recurse into each cell.
@@ -1343,8 +1446,15 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     | "NonBreakingSpace"
     | "InvisiblePrefixScriptBase"
     | "InvisiblePostfixScriptBase"
+    | "Null"
+    | "SpanFromLeft"
+    | "SpanFromAbove"
+    | "SpanFromBoth"
     | "RawEscape"
     | "RawBackspace" => Some(""),
+    // The FrontEnd's own newline (U+F3A3) separates statements in a typeset
+    // cell; the reconstructed code needs a plain line break.
+    "IndentingNewLine" => Some("\n"),
     // Typographic spacing characters separate tokens in typeset code
     // (e.g. `"/.", "\[VeryThinSpace]", "sol"`). Emit a plain ASCII space
     // so the reconstructed code carries no invisible Unicode.
@@ -1426,8 +1536,10 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
             continue;
           }
           // Prose display: `\[Cross]` canonically maps to a private-use
-          // codepoint (U+F3C4) with no glyph in normal fonts; the visible
-          // multiplication sign is what a text cell means (`40 × 40`).
+          // codepoint (U+F4A0) with no glyph in normal fonts; the visible
+          // multiplication sign is what a text cell means (`40 × 40`), which
+          // is a narrower reading than the vector-product ⨯ every other
+          // private-use glyph substitution settles on.
           if !code && name == "Cross" {
             result.push('\u{00D7}');
             continue;
@@ -1440,6 +1552,10 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
             continue;
           }
           match crate::syntax::named_char_to_unicode(&name) {
+            // Prose is text to be *drawn*, so the private-use code points
+            // Wolfram stores give way to the glyphs a normal font has.
+            Some(uni) if !code => result
+              .push_str(&crate::syntax::substitute_private_use_glyphs(uni)),
             Some(uni) => result.push_str(uni),
             None => result.push_str(&format!("\\[{name}]")),
           }
@@ -2345,11 +2461,60 @@ fn parse_raw_array_u8(raw: &[u8]) -> Option<(u32, u32, u8, &[u8])> {
   Some((height, width, channels, pixels))
 }
 
+/// Collect the checkbox entries of an already-extracted grid, i.e. the
+/// nested list of `☐ label` / `☑ label` strings `extract_cell_content`
+/// leaves behind for a `GridBox` of checkboxes. Entries are appended in
+/// source order as `[ ] label` / `[x] label`; anything that is not a
+/// checkbox glyph is skipped (the trailing `""` padding cells of a ragged
+/// category grid, for instance).
+fn collect_checkbox_glyphs(s: &str, out: &mut Vec<String>) {
+  let t = s.trim();
+  if let Some(inner) = t.strip_prefix('{').and_then(|r| r.strip_suffix('}')) {
+    let mut grew = false;
+    for part in split_top_level_commas(inner) {
+      let part = part.trim();
+      let is_entry = part.starts_with('{')
+        || part.starts_with('\u{2610}')
+        || part.starts_with('\u{2611}');
+      if !is_entry {
+        // The labels are unquoted, so one containing a comma ("Systems,
+        // Models & Methods") was split by the enclosing list — stitch the
+        // fragment back onto the entry it came from.
+        if grew && let Some(last) = out.last_mut() {
+          last.push_str(", ");
+          last.push_str(part.trim_matches('"').trim());
+        }
+        continue;
+      }
+      let before = out.len();
+      collect_checkbox_glyphs(part, out);
+      grew = out.len() > before;
+    }
+    return;
+  }
+  let t = t.trim_matches('"').trim();
+  if let Some(label) = t.strip_prefix('\u{2611}') {
+    out.push(format!("[x] {}", label.trim()).trim_end().to_string());
+  } else if let Some(label) = t.strip_prefix('\u{2610}') {
+    out.push(format!("[ ] {}", label.trim()).trim_end().to_string());
+  }
+}
+
 /// Render a stored `CheckboxBox[…]` output (the Demonstrations category /
 /// compatibility pickers) as plain text: one `[x] label` / `[ ] label`
-/// entry per checkbox, in source order. Returns `None` when the content
-/// holds no CheckboxBox.
+/// entry per checkbox, in source order. Accepts both the raw box text and
+/// the glyph grid `extract_cell_content` produces from it. Returns `None`
+/// when the content holds no checkbox.
 pub fn stored_output_checkbox_text(content: &str) -> Option<String> {
+  if !content.contains("CheckboxBox[") {
+    let mut lines = Vec::new();
+    collect_checkbox_glyphs(content, &mut lines);
+    return if lines.is_empty() {
+      None
+    } else {
+      Some(lines.join("\n"))
+    };
+  }
   let mut lines = Vec::new();
   let mut rest = content;
   while let Some(idx) = rest.find("CheckboxBox[") {
@@ -3379,6 +3544,53 @@ Cell["Chapter 2", "Chapter"]
       "[ ] Mathematics\n[x] Life Sciences\n[ ]"
     );
     assert!(stored_output_checkbox_text("{1, 2}").is_none());
+  }
+
+  #[test]
+  fn test_stored_output_checkbox_text_reads_extracted_glyph_grid() {
+    // `parse_notebook` already turns the checkbox boxes into glyphs, so the
+    // Studio only ever sees the extracted grid — it must render from that
+    // form too, rather than falling back to showing the raw braces.
+    let content = "{{{{\u{2610} Mathematics}, {\u{2611} Life Sciences}}, \
+       {{\u{2610} Systems, Models & Methods}, {\"\"}}}}";
+    assert_eq!(
+      stored_output_checkbox_text(content).unwrap(),
+      "[ ] Mathematics\n[x] Life Sciences\n[ ] Systems, Models & Methods"
+    );
+    // A lone unlabelled checkbox (the compatibility pickers) still renders.
+    assert_eq!(
+      stored_output_checkbox_text("{{{{\u{2611}}}}}").unwrap(),
+      "[x]"
+    );
+    assert!(stored_output_checkbox_text("{{1, 2}, {3, 4}}").is_none());
+  }
+
+  #[test]
+  fn test_extract_cell_content_row_default_checkbox_caption() {
+    // Demonstrations compatibility pickers put the caption next to the
+    // checkbox in a `RowDefault` row, and leave the checkbox's own
+    // alternatives degenerate — the caption must not be dropped.
+    assert_eq!(
+      extract_cell_content(
+        r#"BoxData[TemplateBox[{CheckboxBox[True, {False, False}], "\" \"", StyleBox["\"Supported in cloud\"", FontSize -> 12, StripOnInput -> False]}, "RowDefault"]]"#
+      ),
+      "\u{2611} Supported in cloud"
+    );
+    // When the row *and* the checkbox carry the label, it appears once.
+    assert_eq!(
+      extract_cell_content(
+        r#"BoxData[TemplateBox[{CheckboxBox[False, {False, "Triangles"}], "\" \"", StyleBox["\"Triangles\"", FontSize -> 12]}, "RowDefault"]]"#
+      ),
+      "\u{2610} Triangles"
+    );
+    // A row whose caption is wrapped in collapsible chrome has no flat
+    // rendering; fall back to the leading element (the labelled checkbox).
+    assert_eq!(
+      extract_cell_content(
+        r#"BoxData[TemplateBox[{CheckboxBox[False, {False, "Mathematics"}], "\" \"", StyleBox[DynamicModuleBox[{Typeset`var$$ = False}, PaneSelectorBox[{False -> "\"Mathematics\""}, Dynamic[Typeset`var$$]]]]}, "RowDefault"]]"#
+      ),
+      "\u{2610} Mathematics"
+    );
   }
 
   #[test]

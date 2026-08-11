@@ -170,17 +170,22 @@ fn height_color(z_norm: f64) -> (u8, u8, u8) {
   }
 }
 
+/// The scene's single light, pointing from the surface towards the lamp
+/// (upper-left-front), normalized.
+fn light_direction() -> [f64; 3] {
+  let lx = 0.4_f64;
+  let ly = -0.5_f64;
+  let lz = 0.76_f64;
+  let len = (lx * lx + ly * ly + lz * lz).sqrt();
+  [lx / len, ly / len, lz / len]
+}
+
 /// Apply diffuse + ambient lighting
 pub(crate) fn apply_lighting(
   color: (u8, u8, u8),
   normal: [f64; 3],
 ) -> (u8, u8, u8) {
-  // Light direction: upper-left-front (normalized)
-  let lx = 0.4_f64;
-  let ly = -0.5_f64;
-  let lz = 0.76_f64;
-  let len = (lx * lx + ly * ly + lz * lz).sqrt();
-  let light = [lx / len, ly / len, lz / len];
+  let light = light_direction();
 
   let dot = normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2];
   let diffuse = dot.abs(); // use abs to light both sides
@@ -192,6 +197,50 @@ pub(crate) fn apply_lighting(
   let g = (color.1 as f64 * intensity).round() as u8;
   let b = (color.2 as f64 * intensity).round() as u8;
   (r, g, b)
+}
+
+/// Diffuse + ambient lighting with the highlight a `Specularity` directive
+/// asks for laid over it. `view_dir` points from the scene towards the
+/// viewer, so the highlight sits where the light reflects into the camera —
+/// which is what makes `Specularity[White, 10]` read as a glossy sphere
+/// rather than just a brighter one.
+pub(crate) fn apply_lighting_specular(
+  color: (u8, u8, u8),
+  normal: [f64; 3],
+  specular: Option<((u8, u8, u8), f64)>,
+  view_dir: [f64; 3],
+) -> (u8, u8, u8) {
+  let base = apply_lighting(color, normal);
+  let Some((hi, exponent)) = specular else {
+    return base;
+  };
+  let light = light_direction();
+  // Blinn-Phong: the highlight peaks where the surface normal bisects the
+  // directions to the lamp and to the viewer.
+  let half = {
+    let h = [
+      light[0] + view_dir[0],
+      light[1] + view_dir[1],
+      light[2] + view_dir[2],
+    ];
+    let len = (h[0] * h[0] + h[1] * h[1] + h[2] * h[2]).sqrt();
+    if len < 1e-12 {
+      return base;
+    }
+    [h[0] / len, h[1] / len, h[2] / len]
+  };
+  // `abs`, matching the two-sided diffuse term above: a tessellated sphere
+  // hands back outward and inward normals depending on winding.
+  let cos = (normal[0] * half[0] + normal[1] * half[1] + normal[2] * half[2])
+    .abs()
+    .clamp(0.0, 1.0);
+  let strength = cos.powf(exponent);
+  let mix = |b: u8, h: u8| {
+    (b as f64 + (h as f64 / 255.0) * strength * 255.0)
+      .round()
+      .min(255.0) as u8
+  };
+  (mix(base.0, hi.0), mix(base.1, hi.1), mix(base.2, hi.2))
 }
 
 fn parse_iterator(
@@ -1864,6 +1913,10 @@ struct StyleState3D {
   /// silhouette on: `{Opacity[0], EdgeForm[Black], Cylinder[…]}` is the
   /// Demonstrations idiom for an unfilled circle in space.
   edge_color: Option<(u8, u8, u8)>,
+  /// `Specularity[colour, exponent]`: the highlight a shiny surface throws
+  /// back at the viewer, as `(colour, exponent)`. `None` is the default
+  /// matte surface. A larger exponent tightens the highlight.
+  specular: Option<((u8, u8, u8), f64)>,
 }
 
 impl Default for StyleState3D {
@@ -1876,6 +1929,7 @@ impl Default for StyleState3D {
       capped: true,
       edges: true,
       edge_color: None,
+      specular: None,
     }
   }
 }
@@ -2024,6 +2078,17 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         }
         return true;
       }
+      // `Specularity[colour]` / `Specularity[colour, exponent]` makes the
+      // surfaces that follow shiny. It never repaints them: the colour it
+      // carries is the *highlight's*, so it must be consumed here rather
+      // than fall through to the generic recursion, which would pick the
+      // colour up and use it as the face colour (a Demonstration's
+      // `{GrayLevel[.25], Specularity[White, 10], Sphere[…]}` would render
+      // white instead of dark grey).
+      "Specularity" if !args.is_empty() => {
+        style.specular = parse_specularity(args);
+        return true;
+      }
       // CapForm[None] leaves an open surface's ends open; every named form
       // ("Butt", "Square", "Round") closes them, as does the default.
       "CapForm" if args.len() == 1 => {
@@ -2091,6 +2156,38 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
   }
 
   false
+}
+
+/// Read a `Specularity[…]` argument list into `(highlight colour, exponent)`.
+/// The reflectance may be a colour (`Specularity[White, 10]`) or a plain
+/// number standing for that grey level (`Specularity[.5]`); the exponent
+/// defaults to Wolfram's `1`. A reflectance of zero (black) means a matte
+/// surface, i.e. no highlight at all.
+fn parse_specularity(args: &[Expr]) -> Option<((u8, u8, u8), f64)> {
+  use crate::functions::graphics::parse_color;
+  use crate::functions::math_ast::expr_to_f64;
+
+  let color = match parse_color(&args[0]) {
+    Some(c) => c,
+    None => {
+      let g = expr_to_f64(&args[0])?;
+      crate::functions::graphics::Color::new(g, g, g)
+    }
+  };
+  let rgb = (
+    (color.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+    (color.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+    (color.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+  );
+  if rgb == (0, 0, 0) {
+    return None;
+  }
+  let exponent = args
+    .get(1)
+    .and_then(expr_to_f64)
+    .filter(|n| *n > 0.0)
+    .unwrap_or(1.0);
+  Some((rgb, exponent))
 }
 
 /// Collect 3D primitives from an expression.
@@ -4558,6 +4655,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             capped: true,
             edges: true,
             edge_color: None,
+            specular: None,
           },
         ),
       };
@@ -4622,7 +4720,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(back) if facing < 0.0 => back,
         _ => prim_color,
       };
-      let color = apply_lighting(side_color, normal);
+      let color = apply_lighting_specular(
+        side_color,
+        normal,
+        prim_style.specular,
+        view_dir,
+      );
       let p0 = project(v0, &camera);
       let p1 = project(v1, &camera);
       let p2 = project(v2, &camera);

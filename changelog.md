@@ -34,6 +34,31 @@
         style's. Both were emitted, putting two `font-size` attributes on
         one SVG element.
 
+- Fixes driven by a Wolfram Demonstration that constructs the centre of a
+    circle with compasses alone, each step drawing the circle through two
+    points that two earlier circles cross at:
+    - A system of polynomial equations is solved by eliminating one
+        variable at a time, dividing one equation into another for as long
+        as the divisor's leading coefficient is a number and falling back
+        to a resultant when it is not. Solving one equation for one
+        variable and substituting — what the solver used to do — turns a
+        quadratic into a radical that then has to be eliminated all over
+        again, and that step dropped solutions: two circles crossing twice
+        reported one of the two crossings twice over, and with the inexact
+        coordinates a slider produces the whole system came back
+        unsolved. Touching circles still report the point they share
+        twice, since it counts twice.
+    - `Resultant` multiplies its result out, rather than reporting the
+        products the Sylvester determinant is assembled from.
+    - An equation carrying a root of the unknown — `Sqrt[2 x + 3] == x`,
+        `Sqrt[x + 5] - Sqrt[x] == 1` — is solved by putting one root on its
+        own, raising both sides to its index, and keeping the answers that
+        survive the original equation. Such an equation used to be read as
+        if the root were not there, which answered `Sqrt[2 x + 3] == x`
+        with `x == 0`. Undoing a square root likewise keeps only the
+        answers that survive, so `Sqrt[x] == -1`, which nothing solves,
+        no longer reports `x == 1`.
+
 - Fixes driven by a Wolfram Demonstration that draws a diatomic molecule as
     a three-dimensional schematic beside an energy plot:
     - `Scale[g, s]` in a `Graphics3D` scales about the centre of `g`'s

@@ -1,5 +1,5 @@
 use crate::InterpreterError;
-use crate::helpers::{binop, bool_expr, div2, neg1, pow2};
+use crate::helpers::{binop, bool_expr, div2, minus2, neg1, pow2};
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_output,
   expr_to_string, unevaluated,

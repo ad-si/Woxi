@@ -174,7 +174,7 @@ fn collect_poly_vars(
 }
 
 /// Recursively check whether an expression is a polynomial in `var`.
-fn is_polynomial(expr: &Expr, var: &str) -> bool {
+pub(crate) fn is_polynomial(expr: &Expr, var: &str) -> bool {
   match expr {
     Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) => true,
     Expr::Identifier(_) => true, // either it IS the variable or a constant symbol – both ok

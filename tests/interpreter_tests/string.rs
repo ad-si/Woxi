@@ -1399,21 +1399,22 @@ mod to_character_code {
   /// `\[InvisiblePrefixScriptBase]` and `\[InvisiblePostfixScriptBase]` are
   /// the placeholders the FrontEnd hangs a prefix or postfix script on
   /// (`\!\(\*SuperscriptBox[\(\[InvisiblePrefixScriptBase]\), \(1\)]\)Σ`
-  /// is `¹Σ`). They have no glyph, so they contribute nothing to the text
-  /// they appear in. Regression: unrecognised, they printed their own
-  /// names into a Demonstration's control labels.
+  /// is `¹Σ`). They draw no glyph, but they are characters like any other:
+  /// they live at U+F3B3 / U+F3B4 and `StringLength` counts them.
+  /// Regression: unrecognised, they printed their own names into a
+  /// Demonstration's control labels.
   #[test]
-  fn invisible_script_base_chars_are_empty() {
+  fn invisible_script_base_chars_are_private_use_characters() {
     assert_eq!(
       interpret(
-        r#""\[InvisiblePrefixScriptBase]\[CapitalSigma]\[InvisiblePostfixScriptBase]""#
+        r#"ToCharacterCode["\[InvisiblePrefixScriptBase]\[CapitalSigma]\[InvisiblePostfixScriptBase]"]"#
       )
       .unwrap(),
-      "Σ"
+      "{62387, 931, 62388}"
     );
     assert_eq!(
       interpret(r#"StringLength["\[InvisiblePrefixScriptBase]x"]"#).unwrap(),
-      "1"
+      "2"
     );
   }
 
@@ -1429,12 +1430,15 @@ mod to_character_code {
   /// Wolfram's pictograph, accidental and astronomical named characters are
   /// single characters, not the escapes they are written with. A
   /// Demonstration that warns about a slow option writes `\[WarningSign]`
-  /// into its label, and it has to reach the widget as the sign.
+  /// into its label, and it has to reach the widget as the sign. Several of
+  /// them are private-use characters rather than the standard Unicode
+  /// look-alike: `\[WarningSign]` is U+F725, not U+26A0 (⚠), and
+  /// `\[Earth]` is U+F3DF, not U+2641 (♁).
   #[test]
   fn pictograph_and_astronomical_named_chars() {
     assert_eq!(
       interpret(r#"ToCharacterCode["\[WarningSign]\[Checkmark]"]"#).unwrap(),
-      "{9888, 10003}"
+      "{63269, 10003}"
     );
     assert_eq!(
       interpret(r#"ToCharacterCode["\[Sharp]\[Flat]\[Natural]"]"#).unwrap(),
@@ -1442,9 +1446,82 @@ mod to_character_code {
     );
     assert_eq!(
       interpret(r#"ToCharacterCode["\[Sun]\[Venus]\[Earth]\[Mars]"]"#).unwrap(),
-      "{9737, 9792, 9793, 9794}"
+      "{9737, 9792, 62431, 9794}"
+    );
+    // `\[Uranus]` is the astronomical ⛢ (U+26E2), not the astrological ♅.
+    assert_eq!(
+      interpret(r#"ToCharacterCode["\[Mercury]\[Jupiter]\[Uranus]"]"#).unwrap(),
+      "{9791, 9795, 9954}"
     );
     assert_eq!(interpret(r#"StringLength["\[WarningSign]"]"#).unwrap(), "1");
+  }
+
+  /// The script alphabet lives in Wolfram's private use area, except for the
+  /// letters Unicode already has among the letterlike symbols (ℬ, ℯ, ℓ, …).
+  /// It is *not* the Mathematical Alphanumeric Symbols block.
+  #[test]
+  fn script_letters_are_wolframs_own_alphabet() {
+    assert_eq!(
+      interpret(r#"ToCharacterCode["\[ScriptCapitalA]\[ScriptCapitalB]"]"#)
+        .unwrap(),
+      "{63344, 8492}"
+    );
+    assert_eq!(
+      interpret(r#"ToCharacterCode["\[ScriptX]\[ScriptL]"]"#).unwrap(),
+      "{63177, 8467}"
+    );
+  }
+
+  /// The typeset operators and the letterlike constants keep the private-use
+  /// code points Wolfram stores them at, so a string built from them
+  /// compares equal to the same string written in a notebook.
+  #[test]
+  fn typeset_operator_named_chars_are_private_use() {
+    assert_eq!(
+      interpret(r#"ToCharacterCode["\[Equal]\[Rule]\[Cross]"]"#).unwrap(),
+      "{62513, 62754, 62624}"
+    );
+    assert_eq!(
+      interpret(
+        r#"ToCharacterCode["\[ExponentialE]\[ImaginaryI]\[ImaginaryJ]\[DifferentialD]"]"#
+      )
+      .unwrap(),
+      "{63309, 63310, 63311, 63308}"
+    );
+    // The double brackets are the ones `ToBoxes` writes a `Part` with.
+    assert_eq!(
+      interpret(
+        r#"ToCharacterCode["\[LeftDoubleBracket]\[RightDoubleBracket]"]"#
+      )
+      .unwrap(),
+      "{12314, 12315}"
+    );
+    assert_eq!(
+      interpret(
+        r#"ToCharacterCode["\[LeftAngleBracket]\[RightAngleBracket]"]"#
+      )
+      .unwrap(),
+      "{9001, 9002}"
+    );
+  }
+
+  /// A name Wolfram has no character for is not invented: the escape stays
+  /// in the string as the characters it is written with. `\[Tab]`,
+  /// `\[Male]`, `\[Female]` and `\[Registered]` are such names — the
+  /// characters they look like are `\[RawTab]`, `\[Mars]`, `\[Venus]` and
+  /// `\[RegisteredTrademark]`.
+  #[test]
+  fn unknown_named_chars_stay_literal() {
+    assert_eq!(
+      interpret(r#"ToCharacterCode["\[Tab]"]"#).unwrap(),
+      "{92, 91, 84, 97, 98, 93}"
+    );
+    assert_eq!(interpret(r#"StringLength["\[Male]"]"#).unwrap(), "7");
+    assert_eq!(
+      interpret(r#"ToCharacterCode["\[RawTab]\[RegisteredTrademark]"]"#)
+        .unwrap(),
+      "{9, 174}"
+    );
   }
 
   // With an explicit "UTF8" encoding, multi-byte characters are returned
@@ -4646,6 +4723,51 @@ mod string_form {
     );
     // A genuine format symbol still works.
     assert_eq!(interpret("ToString[255, InputForm]").unwrap(), "255");
+  }
+
+  // `ToString[expr, TraditionalForm]` typesets rather than prints: a known
+  // function takes its roman name and round brackets, a `HoldForm`-headed
+  // application shows as the head applied to its argument, and a quotient
+  // still spans three lines the way OutputForm's fraction does.
+  // Demonstrations paste such pieces together with `StringJoin` to build
+  // their plot labels.
+  #[test]
+  fn to_string_traditional_form_typesets_functions() {
+    assert_eq!(
+      interpret("ToString[Sin[x], TraditionalForm]").unwrap(),
+      "sin(x)"
+    );
+    assert_eq!(
+      interpret("ToString[HoldForm[g][HoldForm[x]], TraditionalForm]").unwrap(),
+      "g(x)"
+    );
+    // A `Style` wrapper only colours the result; the text is what it holds.
+    assert_eq!(
+      interpret(
+        "ToString[Style[HoldForm[f][HoldForm[x]], Red], TraditionalForm]"
+      )
+      .unwrap(),
+      "f(x)"
+    );
+    // A string displays unquoted, so joined label pieces read as prose.
+    assert_eq!(
+      interpret("ToString[\" = \", TraditionalForm]").unwrap(),
+      " = "
+    );
+  }
+
+  #[test]
+  fn to_string_traditional_form_stacks_quotients() {
+    assert_eq!(
+      interpret("ToString[a/b, TraditionalForm]").unwrap(),
+      "a\n-\nb"
+    );
+    // The evaluated `Times[a, Power[b, -1]]` shape sets as a fraction too,
+    // rather than as a factor with a negative exponent.
+    assert_eq!(
+      interpret("ToString[Sin[x]/2, TraditionalForm]").unwrap(),
+      "sin(x)\n------\n  2"
+    );
   }
 
   #[test]
