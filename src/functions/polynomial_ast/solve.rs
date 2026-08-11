@@ -3228,17 +3228,15 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Solve a system of polynomial equations by eliminating variables with
-/// resultants.
+/// Solve a system of polynomial equations by eliminating one variable at a
+/// time.
 ///
 /// Solving one equation for one variable and substituting — what the generic
 /// `Reduce` path does — introduces a radical as soon as that equation is
 /// quadratic in the variable, and the radical then has to be eliminated all
-/// over again from the equations it was substituted into. Elimination by
-/// resultant keeps every intermediate a polynomial: `Resultant[p, q, v]`
-/// vanishes exactly at those values of the remaining variables for which `p`
-/// and `q` have a common root in `v`, so the system loses a variable and
-/// stays a polynomial system.
+/// over again from the equations it was substituted into. Combining whole
+/// equations instead keeps every intermediate a polynomial, so the system
+/// loses a variable and stays a polynomial system.
 ///
 /// Returns `None` for anything this cannot settle — a non-polynomial or
 /// parameterised equation, a system that stays underdetermined, a polynomial
@@ -4774,13 +4772,6 @@ fn keep_solutions_satisfying(
   Ok(Expr::List(kept.into()))
 }
 
-/// Try to solve a non-polynomial equation by factoring out common
-/// sub-expressions with fractional exponents.
-///
-/// For example: `2*k*q*(a²+x²)^(3/2) - 6*k*q*x²*(a²+x²)^(1/2) == 0`
-/// - Common base: `(a²+x²)`, min exponent: `1/2`
-/// - After factoring out `(a²+x²)^(1/2)`: `2*k*q*(a²+x²) - 6*k*q*x²`
-/// - Solve the remaining polynomial: `x = ±a/Sqrt[2]`
 /// Solve an equation that takes a root of the unknown.
 ///
 /// One radical term is put on its own and both sides are raised to that
@@ -4978,6 +4969,13 @@ fn equation_holds_at(equation: &Expr, var: &str, value: &Expr) -> Option<bool> {
   Some((left_re - right_re).hypot(left_im - right_im) <= 1e-9 * scale)
 }
 
+/// Try to solve a non-polynomial equation by factoring out common
+/// sub-expressions with fractional exponents.
+///
+/// For example: `2*k*q*(a²+x²)^(3/2) - 6*k*q*x²*(a²+x²)^(1/2) == 0`
+/// - Common base: `(a²+x²)`, min exponent: `1/2`
+/// - After factoring out `(a²+x²)^(1/2)`: `2*k*q*(a²+x²) - 6*k*q*x²`
+/// - Solve the remaining polynomial: `x = ±a/Sqrt[2]`
 fn try_solve_factoring_powers(
   expanded: &Expr,
   var: &str,
