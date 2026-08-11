@@ -8927,6 +8927,70 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn compass_construction_manipulate_builds_widget() {
+    // End-to-end regression for a Demonstration that constructs with
+    // compasses alone: the initialization crosses two circles through
+    // `Solve`, a setter bar steps through the construction, and the body
+    // picks that step's graphics out of the list the function returns.
+    let code = "Manipulate[\
+      Graphics[steps[t, r][[step]], PlotRange -> 2, ImageSize -> {300, 300}], \
+      {{t, Pi/2, \"turn\"}, 0, 2 Pi}, \
+      {{r, 0.7, \"reach\"}, 0.5, 1.2, Appearance -> \"Labeled\"}, \
+      Control[{{step, 2, \"step\"}, {1, 2}}], \
+      TrackedSymbols :> {t, r, step}, \
+      Initialization :> (steps[t_, r_] := \
+        Module[{p, sol, x, y, hits}, \
+          p = {Cos[t], Sin[t]}; \
+          sol = Quiet[Solve[x^2 + y^2 == 1 && \
+            (x - p[[1]])^2 + (y - p[[2]])^2 == r^2, {x, y}]]; \
+          hits = {{x, y} /. sol[[1]], {x, y} /. sol[[2]]}; \
+          {{Circle[], Circle[p, r]}, \
+           {Circle[], Circle[p, r], PointSize[0.03], \
+            Point[hits[[1]]], Point[hits[[2]]]}}]), \
+      SaveDefinitions -> True]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the compass-construction Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the construction"
+    );
+
+    // Two sliders and the setter bar the construction steps through.
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous { label: turn, .. },
+        manipulate::ControlState::Continuous { label: reach, .. },
+        manipulate::ControlState::Discrete {
+          values,
+          current_index,
+          ..
+        },
+      ] => {
+        assert_eq!((turn.as_str(), reach.as_str()), ("turn", "reach"));
+        assert_eq!(values, &vec!["1".to_string(), "2".to_string()]);
+        assert_eq!(*current_index, 1);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    // Turning the point re-crosses the circles rather than leaving the
+    // intersections unsolved, which would draw no points at all.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 2.5;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn oscilloscope_manipulate_builds_full_widget() {
     // End-to-end regression for the "Oscilloscope with Two Signal Inputs"
     // Demonstration: the loaded Input cell must build a live widget with
