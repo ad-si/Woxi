@@ -163,6 +163,11 @@ ListCall = { List ~ BracketArgs+ }
 // `1[2, 3]` (an expression with an integer head, used for labelled trees).
 // Restricted to numeric literals (not Constants) and mirrors `(1)[2, 3]`.
 NumericCall = { (Real | IntegerScientific | Integer) ~ BracketArgs+ }
+// StringCall handles a string literal used as a function head, e.g.
+// `"f"[x]`, which stays unevaluated just like `1[2, 3]`. Typeset labels
+// built by hand use it to apply a box-notation string to an argument:
+// `"\!\(\*SuperscriptBox[\(f\), \(-1\)]\)"[x]`.
+StringCall = { String ~ BracketArgs+ }
 // ListExtended merges List, ListCall, and List-based PartExtract into a single
 // rule to avoid exponential backtracking. Parses List ONCE, then checks for
 // optional Part or Call suffixes.
@@ -533,6 +538,7 @@ Term = _{
   | Decrement
   | PartExtract
   | Constant
+  | StringCall
   | String
   | ListExtended
   | DerivativeNumeric
@@ -583,6 +589,7 @@ SimpleTerm = _{
   | Slot
   | OutShortcut
   | List
+  | StringCall
   | String
   | "(" ~ (&HasSpanSep ~ SpanExpr | Expression) ~ ")"
 }
@@ -602,6 +609,7 @@ TermNoImplicit = _{
   | Decrement
   | PartExtract
   | Constant
+  | StringCall
   | String
   | ListExtended
   | DerivativeNumeric

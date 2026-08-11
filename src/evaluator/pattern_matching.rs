@@ -2258,6 +2258,26 @@ pub fn apply_replace_all_ast(
     rules
   };
 
+  // `Graphics[Plot[…]]` — the wrapper a Demonstration writes when it
+  // collects layers for a later `Show` — *is* the picture it wraps, but it
+  // only becomes one when rendered. Render it first, so a rule naming one of
+  // the picture's primitives reaches them rather than the unevaluated call.
+  if let Expr::FunctionCall { name, args: gargs } = expr
+    && (name == "Graphics" || name == "Graphics3D")
+    && gargs.len() == 1
+    && crate::functions::graphics::wraps_rendered_graphic(&gargs[0])
+  {
+    let gargs: Vec<Expr> = gargs.iter().cloned().collect();
+    let rendered = if name == "Graphics" {
+      crate::functions::graphics::graphics_ast(&gargs)
+    } else {
+      crate::functions::plot3d::graphics3d_ast(&gargs)
+    };
+    if let Ok(rendered @ Expr::Graphics { .. }) = rendered {
+      return apply_replace_all_ast(&rendered, rules);
+    }
+  }
+
   // A rendered graphic is opaque to pattern replacement except for its
   // remembered symbolic `structure`: Wolfram's `plot /. Tooltip[x_, ___] :> x`
   // rewrites the graphic's content in place. The rendering (SVG) is kept;
@@ -2272,6 +2292,53 @@ pub fn apply_replace_all_ast(
     structure,
   } = expr
   {
+    // A plot remembers its curve as sampled series rather than as symbolic
+    // primitives, so a rule naming one of those primitives — the
+    // Demonstrations idiom `plot /. L_Line :> {Red,
+    // GeometricTransformation[L, …]}`, which mirrors a curve about a line —
+    // would find nothing to match. Expand the series into the primitives the
+    // plot stands for and rewrite those. A wrapper that only remembers the
+    // picture it holds (`Graphics[Plot[…]]`) is redrawn from its rewritten
+    // structure for the same reason.
+    //
+    // Only a rule that actually changed something replaces the picture:
+    // everything else keeps the original rendering, so an unrelated rule
+    // cannot quietly turn a plot into a bag of primitives.
+    let symbolic = match (structure, source) {
+      (Some(s), _) => Some(s.as_ref().clone()),
+      (None, Some(source)) => Some(Expr::FunctionCall {
+        name: if *is_3d { "Graphics3D" } else { "Graphics" }.to_string(),
+        args: std::iter::once(Expr::List(
+          crate::functions::graphics::plot_source_primitives(source).into(),
+        ))
+        .chain(source.options.iter().cloned())
+        .collect::<Vec<_>>()
+        .into(),
+      }),
+      (None, None) => None,
+    };
+    if let Some(symbolic) = symbolic {
+      let replaced = apply_replace_all_ast(&symbolic, rules)?;
+      // Compared through `Debug`, not InputForm: a nested rendering prints
+      // as the placeholder `-Graphics-` either way, so InputForm cannot
+      // tell a rewritten inner picture from the original one.
+      if format!("{replaced:?}") != format!("{symbolic:?}")
+        && let Expr::FunctionCall { name, args } = &replaced
+        && (name == "Graphics" || name == "Graphics3D")
+      {
+        // `Graphics[…]` stays symbolic under ordinary evaluation, so the
+        // renderer is called outright.
+        let args: Vec<Expr> = args.iter().cloned().collect();
+        let rendered = if name == "Graphics" {
+          crate::functions::graphics::graphics_ast(&args)
+        } else {
+          crate::functions::plot3d::graphics3d_ast(&args)
+        };
+        if let Ok(rendered @ Expr::Graphics { .. }) = rendered {
+          return Ok(rendered);
+        }
+      }
+    }
     let new_structure = match structure {
       Some(s) => Some(Box::new(apply_replace_all_ast(s, rules)?)),
       None => None,

@@ -5,6 +5,7 @@ normalised to `##` in this file.
 
 - [`Dot`](linear_algebra/Dot.md)
 - [`Det`](linear_algebra/Det.md)
+- [`GeometricTransformation`](linear_algebra/GeometricTransformation.md)
 - [`Inverse`](linear_algebra/Inverse.md)
 - [`Tr`](linear_algebra/Tr.md)
 - [`IdentityMatrix`](linear_algebra/IdentityMatrix.md)

@@ -1868,6 +1868,27 @@ fn collect_primitives(
             None => prims.extend(inner),
           }
         }
+        // `GeometricTransformation[g, t]` draws `g` mapped through the
+        // affine transform `t` — a `{matrix, vector}` pair, a bare matrix,
+        // a `TransformationFunction[…]`, or a list of any of those (one
+        // copy per transform). A Demonstration mirrors a curve about the
+        // line `y = x` this way to draw a function's inverse.
+        "GeometricTransformation" if args.len() == 2 => {
+          let mut inner_style = style.clone();
+          let mut inner = Vec::new();
+          collect_primitives(&args[0], &mut inner_style, &mut inner, errors);
+          let transforms = parse_affine_transforms(&args[1]);
+          if transforms.is_empty() {
+            // Nothing numeric to map through: draw the content as it is.
+            prims.extend(inner);
+          } else {
+            for (m, v) in &transforms {
+              for p in &inner {
+                prims.push(affine_primitive(p, *m, *v));
+              }
+            }
+          }
+        }
 
         // `Dynamic[expr]` displays as the current value of `expr`: release
         // the hold and render the result (Dynamic is HoldFirst, so the
@@ -3683,6 +3704,94 @@ fn rotate_point(
 /// A circular disk/arc keeps its radius and only moves its center. An
 /// elliptical disk (rx != ry) cannot be represented tilted in this model, so
 /// its axes are kept axis-aligned as a best-effort approximation.
+/// The affine transforms a `GeometricTransformation` second argument names,
+/// each as a `({{a, b}, {c, d}}, {e, f})` pair mapping `p` to `m.p + v`.
+/// Accepts the `{matrix, vector}` pair Wolfram normalizes a
+/// `TransformationFunction` to, a bare matrix (no translation), the
+/// homogeneous `TransformationFunction[…]` itself, and a list of any of
+/// those — a list draws one transformed copy per entry. Empty when nothing
+/// numeric can be read out.
+fn parse_affine_transforms(expr: &Expr) -> Vec<([[f64; 2]; 2], (f64, f64))> {
+  // {{a, b}, {c, d}} — a 2×2 linear map.
+  fn matrix2(expr: &Expr) -> Option<[[f64; 2]; 2]> {
+    let Expr::List(rows) = expr else { return None };
+    if rows.len() != 2 {
+      return None;
+    }
+    let r0 = expr_to_point(&rows[0])?;
+    let r1 = expr_to_point(&rows[1])?;
+    Some([[r0.0, r0.1], [r1.0, r1.1]])
+  }
+  // The 3×3 homogeneous matrix a TransformationFunction carries.
+  fn homogeneous(expr: &Expr) -> Option<([[f64; 2]; 2], (f64, f64))> {
+    let Expr::List(rows) = expr else { return None };
+    if rows.len() != 3 {
+      return None;
+    }
+    let mut m = [[0.0; 2]; 2];
+    let mut v = [0.0; 2];
+    for (i, row) in rows.iter().take(2).enumerate() {
+      let Expr::List(cells) = row else { return None };
+      if cells.len() != 3 {
+        return None;
+      }
+      m[i][0] = expr_to_f64(&cells[0])?;
+      m[i][1] = expr_to_f64(&cells[1])?;
+      v[i] = expr_to_f64(&cells[2])?;
+    }
+    Some((m, (v[0], v[1])))
+  }
+  fn single(expr: &Expr) -> Option<([[f64; 2]; 2], (f64, f64))> {
+    if let Expr::FunctionCall { name, args } = expr
+      && name == "TransformationFunction"
+      && args.len() == 1
+    {
+      return homogeneous(&args[0]);
+    }
+    if let Expr::List(items) = expr
+      && items.len() == 2
+      && let Some(m) = matrix2(&items[0])
+      && let Some(v) = expr_to_point(&items[1])
+    {
+      return Some((m, v));
+    }
+    matrix2(expr).map(|m| (m, (0.0, 0.0)))
+  }
+  if let Some(one) = single(expr) {
+    return vec![one];
+  }
+  match expr {
+    Expr::List(items) => items.iter().filter_map(single).collect(),
+    _ => Vec::new(),
+  }
+}
+
+/// Map a primitive through the affine transform `p ↦ m.p + v`.
+///
+/// The matrix is factored (a closed-form 2×2 SVD) into
+/// `rotate(φ) ∘ scale(sx, sy) ∘ rotate(θ)`, so the transform is carried out
+/// by the same primitive-level rotate/scale/translate the explicit
+/// `Rotate`/`Scale`/`Translate` directives use — including their handling of
+/// the shapes an affine map does not leave in its own family (a circle
+/// becoming an ellipse, an arc reversing sweep under a reflection).
+fn affine_primitive(
+  prim: &Primitive,
+  m: [[f64; 2]; 2],
+  v: (f64, f64),
+) -> Primitive {
+  let (a, b, c, d) = (m[0][0], m[0][1], m[1][0], m[1][1]);
+  let (e, f, g, h) =
+    ((a + d) / 2.0, (a - d) / 2.0, (c + b) / 2.0, (c - b) / 2.0);
+  let (q, r) = ((e * e + h * h).sqrt(), (f * f + g * g).sqrt());
+  let (sx, sy) = (q + r, q - r);
+  let (a1, a2) = (g.atan2(f), h.atan2(e));
+  let (theta, phi) = ((a2 - a1) / 2.0, (a2 + a1) / 2.0);
+  let rotated = rotate_primitive(prim, 0.0, 0.0, theta);
+  let scaled = scale_primitive(&rotated, 0.0, 0.0, sx, sy);
+  let rotated = rotate_primitive(&scaled, 0.0, 0.0, phi);
+  translate_primitive(&rotated, v.0, v.1)
+}
+
 fn rotate_primitive(
   prim: &Primitive,
   cx: f64,
@@ -6336,7 +6445,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_range_x: Option<(f64, f64)> = None;
   let mut plot_range_y: Option<(f64, f64)> = None;
   let mut background: Option<Color> = None;
-  let mut plot_label: Option<String> = None;
+  let mut plot_label: Option<Vec<String>> = None;
   // `AxesLabel -> {xlabel, ylabel}`, already typeset as SVG markup.
   let mut axes_label: Option<(String, String)> = None;
   // `FrameLabel -> {bottom, left}` (or the nested four-edge form), as SVG
@@ -6411,9 +6520,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           match replacement {
             Expr::Identifier(s) if s == "None" => {}
             other => {
-              let markup = expr_to_svg_markup(other);
-              if !markup.is_empty() {
-                plot_label = Some(markup);
+              let lines = expr_to_svg_markup_lines(other);
+              if lines.iter().any(|l| !l.is_empty()) {
+                plot_label = Some(lines);
               }
             }
           }
@@ -6437,9 +6546,13 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ticks_x = TickSpec::Automatic;
             ticks_y = TickSpec::Automatic;
           }
-          Expr::List(items) if items.len() == 2 => {
+          // `Ticks -> {xspec}` states the x ticks only; the y axis keeps
+          // its default.
+          Expr::List(items) if (1..=2).contains(&items.len()) => {
             ticks_x = parse_tick_spec(&items[0]);
-            ticks_y = parse_tick_spec(&items[1]);
+            if let Some(y) = items.get(1) {
+              ticks_y = parse_tick_spec(y);
+            }
           }
           _ => {}
         },
@@ -6702,7 +6815,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     0.0
   } + if has_x_axis_label { 24.0 } else { 0.0 }
     + if has_right_caption { 20.0 } else { 0.0 };
-  let label_strip: f64 = if plot_label.is_some() { 26.0 } else { 0.0 };
+  // A multi-line title (a `Grid`/`Column` label) claims one further line
+  // height per extra row on top of the single-line strip.
+  let label_strip: f64 = match &plot_label {
+    Some(lines) => 26.0 + 18.0 * (lines.len().saturating_sub(1)) as f64,
+    None => 0.0,
+  };
   let margin_top: f64 = if frame { 10.0 } else { 0.0 }
     + label_strip
     + if has_y_axis_label && label_strip == 0.0 {
@@ -6775,12 +6893,20 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // PlotLabel: centered above the drawing area, in the reserved strip. It
   // arrives already typeset as SVG markup (sub/superscript tspans included).
-  if let Some(label) = &plot_label {
+  if let Some(lines) = &plot_label {
     let cx = margin_left + svg_w / 2.0;
     svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"16\" fill=\"#333333\">{label}</text>\n",
+       font-family=\"sans-serif\" font-size=\"16\" fill=\"#333333\">",
     ));
+    for (i, line) in lines.iter().enumerate() {
+      if i == 0 {
+        svg.push_str(line);
+      } else {
+        svg.push_str(&format!("<tspan x=\"{cx:.1}\" dy=\"18\">{line}</tspan>"));
+      }
+    }
+    svg.push_str("</text>\n");
   }
 
   // Offset the drawing area so axes/frame labels fit in the margins
@@ -8254,6 +8380,45 @@ fn negated_markup_term(arg: &Expr) -> Option<String> {
   let mut factors = vec![positive];
   factors.extend(rest.iter().cloned());
   Some(expr_to_svg_markup(&unevaluated("Times", &factors)))
+}
+
+/// Typeset a label that may occupy several lines, one entry per line.
+/// `Grid[{{a}, {b}}]` and `Column[{a, b}]` stack their items — Demonstrations
+/// build multi-line plot titles that way — and any line that itself carries
+/// newlines (the 2D text `ToString[…, TraditionalForm]` returns) splits
+/// further. Everything else is a single line.
+pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
+  let rows: Vec<String> = match expr {
+    Expr::FunctionCall { name, args } if name == "Grid" && !args.is_empty() => {
+      match &args[0] {
+        Expr::List(rows) => rows
+          .iter()
+          .map(|row| match row {
+            Expr::List(cells) => cells
+              .iter()
+              .map(expr_to_svg_markup)
+              .collect::<Vec<_>>()
+              .join(" "),
+            cell => expr_to_svg_markup(cell),
+          })
+          .collect(),
+        other => vec![expr_to_svg_markup(other)],
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Column" && !args.is_empty() =>
+    {
+      match &args[0] {
+        Expr::List(items) => items.iter().map(expr_to_svg_markup).collect(),
+        other => vec![expr_to_svg_markup(other)],
+      }
+    }
+    other => vec![expr_to_svg_markup(other)],
+  };
+  rows
+    .iter()
+    .flat_map(|line| line.split('\n').map(str::to_string).collect::<Vec<_>>())
+    .collect()
 }
 
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
@@ -10054,7 +10219,7 @@ pub(crate) fn mesh_region_to_graphics_prims(
 /// Whether a `Graphics[…]` argument is a finished picture rather than a
 /// list of primitives — an already-rendered graphic, another `Graphics`,
 /// or a call (a plot) that evaluates to one.
-fn wraps_rendered_graphic(content: &Expr) -> bool {
+pub fn wraps_rendered_graphic(content: &Expr) -> bool {
   match content {
     Expr::Graphics { .. } => true,
     Expr::FunctionCall { name, .. } if name == "Graphics" => true,
@@ -10065,6 +10230,112 @@ fn wraps_rendered_graphic(content: &Expr) -> bool {
     }
     _ => false,
   }
+}
+
+/// The drawing primitives a rendered plot's sampled series stand for —
+/// filled regions, the series colour and thickness, and the `Line` /
+/// `Point` the samples make up. `Show` merges these with the primitives of
+/// the graphics it is layering, and a structural rule (`plot /. L_Line :>
+/// …`) matches against them, which is what makes a plot's curve reachable
+/// by pattern replacement at all.
+pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
+  let mut series_prims: Vec<Expr> = Vec::new();
+  for sd in &ps.series {
+    // Filled region (Filling -> …) as a Polygon underneath the curve,
+    // wrapped in its own list so the fill color/opacity directives
+    // don't leak onto the line drawn after it. FillingStyle appearance
+    // travels on the series (fill_color/fill_opacity); the defaults
+    // match the standalone plot render (series color at 0.2 opacity).
+    if !sd.is_scatter
+      && let Some(ref_y) = sd.filling.reference_y(ps.y_range.0, ps.y_range.1)
+    {
+      let (fr, fg, fb) = sd.fill_color.unwrap_or(sd.color);
+      let mut fill_prims: Vec<Expr> = vec![
+        Expr::FunctionCall {
+          name: "Opacity".to_string(),
+          args: vec![Expr::Real(sd.fill_opacity.unwrap_or(0.2))].into(),
+        },
+        Expr::FunctionCall {
+          name: "RGBColor".to_string(),
+          args: vec![
+            Expr::Real(fr as f64 / 255.0),
+            Expr::Real(fg as f64 / 255.0),
+            Expr::Real(fb as f64 / 255.0),
+          ]
+          .into(),
+        },
+      ];
+      for seg in &crate::functions::plot::split_into_segments(&sd.points) {
+        if seg.len() < 2 {
+          continue;
+        }
+        let mut coords: Vec<Expr> = seg
+          .iter()
+          .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+          .collect();
+        let (x_last, _) = seg[seg.len() - 1];
+        let (x_first, _) = seg[0];
+        coords.push(Expr::List(
+          vec![Expr::Real(x_last), Expr::Real(ref_y)].into(),
+        ));
+        coords.push(Expr::List(
+          vec![Expr::Real(x_first), Expr::Real(ref_y)].into(),
+        ));
+        fill_prims.push(Expr::FunctionCall {
+          name: "Polygon".to_string(),
+          args: vec![Expr::List(coords.into())].into(),
+        });
+      }
+      series_prims.push(Expr::List(fill_prims.into()));
+    }
+    // Color directive
+    series_prims.push(Expr::FunctionCall {
+      name: "RGBColor".to_string(),
+      args: vec![
+        Expr::Real(sd.color.0 as f64 / 255.0),
+        Expr::Real(sd.color.1 as f64 / 255.0),
+        Expr::Real(sd.color.2 as f64 / 255.0),
+      ]
+      .into(),
+    });
+    if sd.is_scatter {
+      series_prims.push(Expr::FunctionCall {
+        name: "PointSize".to_string(),
+        args: vec![Expr::Real(0.012)].into(),
+      });
+      let coords: Vec<Expr> = sd
+        .points
+        .iter()
+        .filter(|(_, y)| y.is_finite())
+        .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+        .collect();
+      if !coords.is_empty() {
+        series_prims.push(Expr::FunctionCall {
+          name: "Point".to_string(),
+          args: vec![Expr::List(coords.into())].into(),
+        });
+      }
+    } else {
+      series_prims.push(Expr::FunctionCall {
+        name: "AbsoluteThickness".to_string(),
+        args: vec![Expr::Real(sd.thickness.unwrap_or(1.5))].into(),
+      });
+      let segments = crate::functions::plot::split_into_segments(&sd.points);
+      for seg in &segments {
+        let coords: Vec<Expr> = seg
+          .iter()
+          .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+          .collect();
+        if coords.len() >= 2 {
+          series_prims.push(Expr::FunctionCall {
+            name: "Line".to_string(),
+            args: vec![Expr::List(coords.into())].into(),
+          });
+        }
+      }
+    }
+  }
+  series_prims
 }
 
 pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -10175,6 +10446,27 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Expr::Rule { .. } | Expr::RuleDelayed { .. } => arg.clone(),
       _ => evaluate_expr_to_expr(&arg).unwrap_or_else(|_| arg.clone()),
+    };
+    // The same wrapper can arrive through a *variable* — the Demonstrations
+    // idiom `g1 = Graphics[Plot[…]]; Show[g1, …]` — in which case only the
+    // evaluated value has the shape, and the arm above never saw it. Render
+    // it here as well, or its finished picture would be merged as if it
+    // were a drawing primitive and nothing would come out.
+    let expr_owned = match &expr_owned {
+      Expr::FunctionCall { name, args: gargs }
+        if (name == "Graphics" || name == "Graphics3D")
+          && !gargs.is_empty()
+          && wraps_rendered_graphic(&gargs[0]) =>
+      {
+        let gargs: Vec<Expr> = gargs.iter().cloned().collect();
+        if name == "Graphics" {
+          graphics_ast(&gargs).unwrap_or_else(|_| expr_owned.clone())
+        } else {
+          crate::functions::plot3d::graphics3d_ast(&gargs)
+            .unwrap_or_else(|_| expr_owned.clone())
+        }
+      }
+      _ => expr_owned,
     };
     if let Expr::List(items) = &expr_owned {
       let items: Vec<Expr> = items.iter().cloned().collect();
@@ -10357,111 +10649,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // stacked back in the order `Show` was given them.
     let mut source_prims: Vec<Expr> = Vec::with_capacity(plot_sources.len());
     for ps in &plot_sources {
-      let mut series_prims: Vec<Expr> = Vec::new();
-      for sd in &ps.series {
-        // Filled region (Filling -> …) as a Polygon underneath the curve,
-        // wrapped in its own list so the fill color/opacity directives
-        // don't leak onto the line drawn after it. FillingStyle appearance
-        // travels on the series (fill_color/fill_opacity); the defaults
-        // match the standalone plot render (series color at 0.2 opacity).
-        if !sd.is_scatter
-          && let Some(ref_y) =
-            sd.filling.reference_y(ps.y_range.0, ps.y_range.1)
-        {
-          let (fr, fg, fb) = sd.fill_color.unwrap_or(sd.color);
-          let mut fill_prims: Vec<Expr> = vec![
-            Expr::FunctionCall {
-              name: "Opacity".to_string(),
-              args: vec![Expr::Real(sd.fill_opacity.unwrap_or(0.2))].into(),
-            },
-            Expr::FunctionCall {
-              name: "RGBColor".to_string(),
-              args: vec![
-                Expr::Real(fr as f64 / 255.0),
-                Expr::Real(fg as f64 / 255.0),
-                Expr::Real(fb as f64 / 255.0),
-              ]
-              .into(),
-            },
-          ];
-          for seg in &crate::functions::plot::split_into_segments(&sd.points) {
-            if seg.len() < 2 {
-              continue;
-            }
-            let mut coords: Vec<Expr> = seg
-              .iter()
-              .map(|&(x, y)| {
-                Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
-              })
-              .collect();
-            let (x_last, _) = seg[seg.len() - 1];
-            let (x_first, _) = seg[0];
-            coords.push(Expr::List(
-              vec![Expr::Real(x_last), Expr::Real(ref_y)].into(),
-            ));
-            coords.push(Expr::List(
-              vec![Expr::Real(x_first), Expr::Real(ref_y)].into(),
-            ));
-            fill_prims.push(Expr::FunctionCall {
-              name: "Polygon".to_string(),
-              args: vec![Expr::List(coords.into())].into(),
-            });
-          }
-          series_prims.push(Expr::List(fill_prims.into()));
-        }
-        // Color directive
-        series_prims.push(Expr::FunctionCall {
-          name: "RGBColor".to_string(),
-          args: vec![
-            Expr::Real(sd.color.0 as f64 / 255.0),
-            Expr::Real(sd.color.1 as f64 / 255.0),
-            Expr::Real(sd.color.2 as f64 / 255.0),
-          ]
-          .into(),
-        });
-        if sd.is_scatter {
-          series_prims.push(Expr::FunctionCall {
-            name: "PointSize".to_string(),
-            args: vec![Expr::Real(0.012)].into(),
-          });
-          let coords: Vec<Expr> = sd
-            .points
-            .iter()
-            .filter(|(_, y)| y.is_finite())
-            .map(|&(x, y)| {
-              Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
-            })
-            .collect();
-          if !coords.is_empty() {
-            series_prims.push(Expr::FunctionCall {
-              name: "Point".to_string(),
-              args: vec![Expr::List(coords.into())].into(),
-            });
-          }
-        } else {
-          series_prims.push(Expr::FunctionCall {
-            name: "AbsoluteThickness".to_string(),
-            args: vec![Expr::Real(sd.thickness.unwrap_or(1.5))].into(),
-          });
-          let segments =
-            crate::functions::plot::split_into_segments(&sd.points);
-          for seg in &segments {
-            let coords: Vec<Expr> = seg
-              .iter()
-              .map(|&(x, y)| {
-                Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
-              })
-              .collect();
-            if coords.len() >= 2 {
-              series_prims.push(Expr::FunctionCall {
-                name: "Line".to_string(),
-                args: vec![Expr::List(coords.into())].into(),
-              });
-            }
-          }
-        }
-      }
-      source_prims.push(Expr::List(series_prims.into()));
+      source_prims.push(Expr::List(plot_source_primitives(ps).into()));
 
       // Deliberately do NOT force a PlotRange from the plot source here: the
       // series are emitted as real Line/Point primitives, so the renderer's
@@ -10739,6 +10927,14 @@ fn span_height(rows: &[Vec<Expr>], i: usize, j: usize) -> usize {
 /// interpreted at display time), so every display path treats them alike.
 pub(crate) fn is_style_wrapper(name: &str) -> bool {
   name == "Style" || name == "StyleForm"
+}
+
+/// Heads that a `Manipulate` argument may carry while still being a static
+/// annotation row rather than a variable specification: a styled or plain
+/// text label sitting between the controls, which Wolfram tags
+/// ``Manipulate`Dump`ThisIsNotAControl`` instead of reporting as malformed.
+pub(crate) fn is_manipulate_annotation_head(name: &str) -> bool {
+  is_style_wrapper(name) || name == "Text"
 }
 
 /// Extract style info from a Style[content, directives...] cell.
@@ -15768,13 +15964,15 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::FunctionCall { name, .. } if name == "Dynamic" => {
         out_args.push(spec.clone());
       }
-      // `Delimiter`, a bare string, and `Style[…]` are static annotation
-      // rows between controls (Wolfram tags them
+      // `Delimiter`, a bare string, `Style[…]` and `Text[…]` are static
+      // annotation rows between controls (Wolfram tags them
       // Manipulate`Dump`ThisIsNotAControl), not malformed variable specs —
       // they pass through with no message, matching wolframscript.
       Expr::Identifier(s) if s == "Delimiter" => out_args.push(spec.clone()),
       Expr::String(_) => out_args.push(spec.clone()),
-      Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
+      Expr::FunctionCall { name, .. }
+        if is_manipulate_annotation_head(name) =>
+      {
         out_args.push(spec.clone());
       }
       // Control objects and layout containers grouping them — `Control[…]`,
@@ -16365,6 +16563,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // to tell a static list from one that follows another control.
   let sibling_names: Vec<String> =
     initial_bindings.iter().map(|(n, _)| n.clone()).collect();
+  // Filled in on demand by the spec loop below, when a spec only parses
+  // once the body has run (see the retry there).
+  let mut post_body_bindings: Option<Vec<(String, String)>> = None;
   // A slider's bounds may be symbols the body assigns before doing
   // anything else — `Manipulate[tmin = 0; tmax = 2 Pi; …, {{t, 0}, tmin,
   // tmax}]`. Wolfram evaluates the body before laying the controls out, so
@@ -16470,9 +16671,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }
       continue;
     }
-    // `Delimiter` and string / `Style[…]` arguments are static annotation
-    // rows between controls (Wolfram's `ThisIsNotAControl`), keeping their
-    // position among the control rows.
+    // `Delimiter` and string / `Style[…]` / `Text[…]` arguments are static
+    // annotation rows between controls (Wolfram's `ThisIsNotAControl`),
+    // keeping their position among the control rows.
     match spec {
       Expr::Identifier(s) if s == "Delimiter" => {
         controls.push(ManipulateControl::Divider);
@@ -16486,7 +16687,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         });
         continue;
       }
-      Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
+      Expr::FunctionCall { name, .. }
+        if is_manipulate_annotation_head(name) =>
+      {
         let label_runs = manipulate_label_runs(spec, false);
         controls.push(ManipulateControl::Heading {
           label: flatten_label_runs(&label_runs),
@@ -16571,9 +16774,30 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       continue;
     }
     let (spec, rename) = rewrite_compound_control_var(spec);
-    let parsed = crate::with_scoped_globals(&initial_bindings, || {
+    let parsed = match crate::with_scoped_globals(&initial_bindings, || {
       parse_manipulate_control(&spec, &sibling_names)
-    })?;
+    }) {
+      Some(parsed) => parsed,
+      None => {
+        // Wolfram evaluates the body once before laying the controls out, so
+        // a control whose choice list is a symbol the *body* fills in —
+        // `{{k, 9, " "}, choices, ControlType -> PopupMenu}` next to a
+        // `{{choices, {}}, ControlType -> None}` state variable — already has
+        // its choices in hand by then. The leading-assignment probe above
+        // only reaches assignments the body opens with, so retry against the
+        // bindings a full body run leaves behind. That run is expensive, so
+        // it happens lazily: only after a spec has actually failed, and only
+        // once per Manipulate.
+        let after_body = post_body_bindings
+          .get_or_insert_with(|| {
+            manipulate_post_body_bindings(args.first(), &initial_bindings)
+          })
+          .clone();
+        crate::with_scoped_globals(&after_body, || {
+          parse_manipulate_control(&spec, &sibling_names)
+        })?
+      }
+    };
     match parsed {
       ParsedControl::Visible {
         control: mut c,
@@ -17103,6 +17327,38 @@ fn manipulate_initial_value_bindings(specs: &[Expr]) -> Vec<(String, String)> {
       }
     })
     .collect()
+}
+
+/// Re-read a Manipulate's control/state variables after evaluating its body
+/// once, the way Wolfram initializes a `Manipulate` before laying out its
+/// controls. Only the variables that already have an initial binding are
+/// reported, each replaced by whatever the body left it holding, so the
+/// result can stand in for `initial` wholesale. A variable the body does not
+/// touch keeps its initial value, and a body that fails contributes nothing.
+fn manipulate_post_body_bindings(
+  body: Option<&Expr>,
+  initial: &[(String, String)],
+) -> Vec<(String, String)> {
+  let mut out = initial.to_vec();
+  let Some(body) = body else { return out };
+  let body = unwrap_dynamic_body(body);
+  // The body is being run outside its own controls' feedback loop, so any
+  // complaint it makes here would be a duplicate of one the frontend
+  // reports when it evaluates the body for real.
+  crate::push_quiet();
+  crate::with_scoped_globals(initial, || {
+    let _ = evaluate_expr_to_expr(body);
+    for (name, value) in out.iter_mut() {
+      let symbol = Expr::Identifier(name.clone());
+      if let Ok(evaluated) = evaluate_expr_to_expr(&symbol)
+        && !matches!(&evaluated, Expr::Identifier(s) if s == name)
+      {
+        *value = crate::syntax::expr_to_input_form(&evaluated);
+      }
+    }
+  });
+  crate::pop_quiet();
+  out
 }
 
 /// Evaluate a Manipulate bound expression to a number. A literal (`2 Pi`)

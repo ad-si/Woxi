@@ -892,11 +892,12 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           Expr::Identifier(v) if v == "Automatic" || v == "All" => {
             opts.ticks = true
           }
-          Expr::List(items) if items.len() == 2 => {
+          Expr::List(items) if (1..=2).contains(&items.len()) => {
             opts.ticks_x =
               crate::functions::plot::parse_explicit_ticks(&items[0]);
-            opts.ticks_y =
-              crate::functions::plot::parse_explicit_ticks(&items[1]);
+            if let Some(y) = items.get(1) {
+              opts.ticks_y = crate::functions::plot::parse_explicit_ticks(y);
+            }
           }
           _ => {}
         },

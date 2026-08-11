@@ -4725,6 +4725,51 @@ mod string_form {
     assert_eq!(interpret("ToString[255, InputForm]").unwrap(), "255");
   }
 
+  // `ToString[expr, TraditionalForm]` typesets rather than prints: a known
+  // function takes its roman name and round brackets, a `HoldForm`-headed
+  // application shows as the head applied to its argument, and a quotient
+  // still spans three lines the way OutputForm's fraction does.
+  // Demonstrations paste such pieces together with `StringJoin` to build
+  // their plot labels.
+  #[test]
+  fn to_string_traditional_form_typesets_functions() {
+    assert_eq!(
+      interpret("ToString[Sin[x], TraditionalForm]").unwrap(),
+      "sin(x)"
+    );
+    assert_eq!(
+      interpret("ToString[HoldForm[g][HoldForm[x]], TraditionalForm]").unwrap(),
+      "g(x)"
+    );
+    // A `Style` wrapper only colours the result; the text is what it holds.
+    assert_eq!(
+      interpret(
+        "ToString[Style[HoldForm[f][HoldForm[x]], Red], TraditionalForm]"
+      )
+      .unwrap(),
+      "f(x)"
+    );
+    // A string displays unquoted, so joined label pieces read as prose.
+    assert_eq!(
+      interpret("ToString[\" = \", TraditionalForm]").unwrap(),
+      " = "
+    );
+  }
+
+  #[test]
+  fn to_string_traditional_form_stacks_quotients() {
+    assert_eq!(
+      interpret("ToString[a/b, TraditionalForm]").unwrap(),
+      "a\n-\nb"
+    );
+    // The evaluated `Times[a, Power[b, -1]]` shape sets as a fraction too,
+    // rather than as a factor with a negative exponent.
+    assert_eq!(
+      interpret("ToString[Sin[x]/2, TraditionalForm]").unwrap(),
+      "sin(x)\n------\n  2"
+    );
+  }
+
   #[test]
   fn to_string_table_form_matrix() {
     assert_eq!(

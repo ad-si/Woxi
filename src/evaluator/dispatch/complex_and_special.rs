@@ -4765,7 +4765,56 @@ fn tf_fraction(num: &Expr, den: &Expr) -> Expr {
   tf_box("FractionBox", vec![tf(num), tf(den)])
 }
 
+/// The positive-power form of a factor that belongs under the fraction bar —
+/// `b^-1` is `b`, `b^-2` is `b²`, and the `Rational[p, q]` coefficient an
+/// evaluated quotient carries contributes `q`. `None` for every other factor,
+/// which stays in the numerator.
+fn tf_reciprocal_factor(expr: &Expr) -> Option<Expr> {
+  let power = |base: &Expr, exp: &Expr| -> Option<Expr> {
+    let negated = match exp {
+      Expr::Integer(n) if *n < 0 => Expr::Integer(-n),
+      Expr::Real(f) if *f < 0.0 => Expr::Real(-f),
+      Expr::FunctionCall { name, args }
+        if name == "Rational"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Integer(p) if *p < 0) =>
+      {
+        let Expr::Integer(p) = &args[0] else {
+          return None;
+        };
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(-p), args[1].clone()].into(),
+        }
+      }
+      _ => return None,
+    };
+    // `b^-1` is just `b` under the bar; anything else keeps its exponent.
+    if matches!(negated, Expr::Integer(1)) {
+      Some(base.clone())
+    } else {
+      Some(Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![base.clone(), negated].into(),
+      })
+    }
+  };
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      power(&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => power(left, right),
+    _ => None,
+  }
+}
+
 /// TraditionalForm box of a product (already flattened factor list).
+/// Reciprocal factors are gathered under a fraction bar, so the evaluated
+/// `Times[a, Power[b, -1]]` sets as `a/b` rather than `a b⁻¹`.
 fn tf_times(expr: &Expr) -> Expr {
   let mut factors = Vec::new();
   tf_flatten_times(expr, &mut factors);
@@ -4781,14 +4830,46 @@ fn tf_times(expr: &Expr) -> Expr {
       factors[0] = Expr::Integer(-*n);
     }
   }
-  let mut items: Vec<Expr> = Vec::new();
-  for (i, f) in factors.iter().enumerate() {
-    if i > 0 {
-      items.push(tf_thin_space());
+  // A `Rational[p, q]` coefficient splits across the bar: `p` above, `q`
+  // below. It is always the leading factor of an evaluated product.
+  let mut numerators: Vec<Expr> = Vec::new();
+  let mut denominators: Vec<Expr> = Vec::new();
+  for f in &factors {
+    if let Expr::FunctionCall { name, args } = f
+      && name == "Rational"
+      && args.len() == 2
+    {
+      if !matches!(&args[0], Expr::Integer(1)) {
+        numerators.push(args[0].clone());
+      }
+      denominators.push(args[1].clone());
+      continue;
     }
-    items.push(tf_factor_boxed(f));
+    match tf_reciprocal_factor(f) {
+      Some(den) => denominators.push(den),
+      None => numerators.push(f.clone()),
+    }
   }
-  let body = tf_row(items);
+  let row_of = |parts: &[Expr]| -> Expr {
+    let mut items: Vec<Expr> = Vec::new();
+    for (i, f) in parts.iter().enumerate() {
+      if i > 0 {
+        items.push(tf_thin_space());
+      }
+      items.push(tf_factor_boxed(f));
+    }
+    tf_row(items)
+  };
+  let body = if denominators.is_empty() {
+    row_of(&numerators)
+  } else {
+    let num = if numerators.is_empty() {
+      tf_string("1")
+    } else {
+      row_of(&numerators)
+    };
+    tf_box("FractionBox", vec![num, row_of(&denominators)])
+  };
   if negative {
     tf_row(vec![tf_string("-"), body])
   } else {
@@ -5225,7 +5306,25 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
 fn tf(expr: &Expr) -> Expr {
   match expr {
     Expr::Identifier(s) | Expr::Constant(s) => tf_string(&tf_symbol(s)),
+    // TraditionalForm *displays* a string, so it contributes its text
+    // without the quotes InputForm would show.
+    Expr::String(s) => tf_string(s),
     Expr::FunctionCall { name, args } => tf_call(name, args),
+    // A computed head — `HoldForm[f][x]`, which is how a Demonstration
+    // writes a function name it wants displayed but not applied. The head
+    // typesets as itself and the arguments follow in round brackets, the
+    // same shape an unknown named head gets.
+    Expr::CurriedCall { func, args } => {
+      let mut parts = vec![tf(func), tf_string("(")];
+      for (i, a) in args.iter().enumerate() {
+        if i > 0 {
+          parts.push(tf_string(","));
+        }
+        parts.push(tf(a));
+      }
+      parts.push(tf_string(")"));
+      tf_row(parts)
+    }
     Expr::List(items) => {
       if tf_is_matrix(items) {
         tf_row(vec![tf_string("("), tf_matrix_grid(items), tf_string(")")])
