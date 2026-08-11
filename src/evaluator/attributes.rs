@@ -1082,7 +1082,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // protects every `System`` symbol except those in `UNPROTECTED_BUILTINS`.
     // Unknown symbols have no attributes.
     _ => {
-      if crate::evaluator::get_builtin_function_info(name).is_some()
+      if crate::evaluator::is_builtin_symbol(name)
         && !is_unprotected_builtin(name)
       {
         vec!["Protected"]

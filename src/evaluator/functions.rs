@@ -30,6 +30,31 @@ pub fn is_known_wolfram_function(name: &str) -> bool {
   KNOWN_WOLFRAM_FUNCTIONS.contains(name)
 }
 
+/// Every symbol name in functions.csv, regardless of whether Woxi implements
+/// it or whether its row carries a description. `BUILTIN_FUNCTION_INFO` skips
+/// rows without a description or effect level, which is the wrong question to
+/// ask about a symbol's attributes.
+static ALL_BUILTIN_NAMES: LazyLock<HashSet<&'static str>> =
+  LazyLock::new(|| {
+    FUNCTIONS_CSV
+      .lines()
+      .skip(1)
+      .filter_map(|line| {
+        let name = line.split(',').next()?.trim();
+        if name.is_empty() || name == "-----" {
+          None
+        } else {
+          Some(name)
+        }
+      })
+      .collect()
+  });
+
+/// True if `name` is a `System`` symbol, i.e. listed in functions.csv.
+pub fn is_builtin_symbol(name: &str) -> bool {
+  ALL_BUILTIN_NAMES.contains(name)
+}
+
 /// Information about a built-in Wolfram Language function.
 pub struct BuiltinFunctionInfo {
   pub description: &'static str,

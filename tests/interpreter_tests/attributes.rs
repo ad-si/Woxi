@@ -2108,6 +2108,29 @@ mod default_protection {
   }
 
   #[test]
+  fn builtins_whose_csv_row_has_no_description_are_protected_too() {
+    // Whether functions.csv carries a description for a symbol says nothing
+    // about its protection, so the fallback keys off the name alone.
+    for name in ["GraphLayout", "EdgeWeight"] {
+      assert_eq!(
+        interpret(&format!("Attributes[{name}]")).unwrap(),
+        "{Protected}",
+        "{name}"
+      );
+    }
+    clear_state();
+    let out = interpret_with_stdout("CityData = 1").unwrap();
+    assert!(
+      out
+        .warnings
+        .iter()
+        .any(|w| w == "Set::wrsym: Symbol CityData is Protected."),
+      "got {out:?}"
+    );
+    clear_state();
+  }
+
+  #[test]
   fn assert_matches_wolframscript() {
     // Assert is HoldAllComplete and unprotected, unlike the neighbouring
     // HoldAll builtins it used to be grouped with.
