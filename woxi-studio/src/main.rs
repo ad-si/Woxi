@@ -6970,6 +6970,125 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"…\"]"], "Output"]
   }
 
   #[test]
+  fn demonstration_compatibility_checkboxes_render_as_a_card() {
+    // The metadata cells at the end of every Demonstration submission
+    // notebook pair a checkbox with a caption in a `RowDefault` row. They
+    // must open as a rendered checkbox card rather than as the raw nested
+    // braces the box extraction leaves behind.
+    let nb_src = r#"Notebook[{
+Cell[BoxData[TagBox[GridBox[{{TagBox[GridBox[{{TemplateBox[{CheckboxBox[True, {False, False}], "\" \"", StyleBox["\"Supported in cloud\"", FontSize -> 12]}, "RowDefault"]}}], "Column"]}}], "Grid"]], "Output"]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let cell = match &nb.cells[0] {
+      CellEntry::Single(c) => c.clone(),
+      _ => panic!("expected a single cell"),
+    };
+    assert_eq!(cell.content, "{{{{\u{2611} Supported in cloud}}}}");
+    let editor = stored_output_editor(&cell)
+      .expect("a checkbox grid must render as a stored graphic");
+    assert!(editor.stored_graphic);
+    let svg = editor.graphics_svg.expect("the card is an SVG");
+    assert!(
+      svg.contains("Supported in cloud"),
+      "the caption must survive into the card: {svg}"
+    );
+    assert!(
+      svg.contains("[x]"),
+      "the checkbox must show as ticked: {svg}"
+    );
+  }
+
+  #[test]
+  fn hinged_dissection_notebook_opens_with_its_widget() {
+    // End-to-end regression for the shape of Demonstration that animates a
+    // hinged dissection: an initialization cell defines the pieces and a
+    // `helper[k_, opts___]` wrapper that forwards its options to
+    // `Graphics`, and the Manipulate swings each piece with `Rotate` about
+    // its own hinge, driven by a labelled slider.
+    let nb_src = r#"Notebook[{
+Cell[BoxData["squareA = Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}];\nsquareB = Polygon[{{1, 0}, {2, 0}, {2, 1}, {1, 1}}];\nswing[k_, opts___] := Graphics[{RGBColor[1, 0, 0], squareA, RGBColor[0, 0, 1], Rotate[squareB, k Pi/2, {1, 0}]}, opts]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[swing[k, PlotRange -> {{-1.5, 2.5}, {-1.5, 2.5}}, ImageSize -> {300, 300}], {{k, 0, \"swing\"}, 0, 1}, SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 0.}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+
+    // `SaveDefinitions -> True` is a Manipulate option, not a control.
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name, "k");
+        assert_eq!(label, "swing");
+        assert_eq!((*min, *max, *current), (0.0, 1.0, 0.0));
+      }
+      other => panic!("expected one labelled slider, got {other:?}"),
+    }
+
+    // The iced handle doesn't expose its bytes, so re-render the body
+    // through the widget's own bindings to inspect the SVG.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let code = match w.initialization.as_deref() {
+        Some(init) => format!("{init}; {}", w.body),
+        None => w.body.clone(),
+      };
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&code)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the pieces must render")
+    };
+
+    // The helper's `opts___` reaches Graphics, so ImageSize is honoured.
+    assert!(widget.graphics_handle.is_some());
+    let unswung = render(&widget);
+    assert!(
+      unswung.contains("width=\"300\"") && unswung.contains("height=\"300\""),
+      "ImageSize must pass through opts___: {unswung}"
+    );
+
+    // Swinging the hinge through a quarter turn moves the blue square: its
+    // far edge rotates from x = 2 up to y = 1 above the hinge at {1, 0}.
+    match &mut widget.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 1.0,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    assert!(widget.graphics_handle.is_some());
+    assert_ne!(
+      unswung,
+      render(&widget),
+      "Rotate about the hinge must change the rendered geometry"
+    );
+  }
+
+  #[test]
   fn two_circular_windows_notebook_opens_with_its_widget() {
     // End-to-end regression for the "Two Circular Windows" Demonstration.
     // Its cell stores `c[[1]]` as a bracketed subscript box, and the body
