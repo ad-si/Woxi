@@ -13829,7 +13829,7 @@ mod named_colors {
   fn named_color_user_override() {
     // User can assign to a named color variable
     woxi::clear_state();
-    interpret("Red = 42").unwrap();
+    interpret("Unprotect[Red]; Red = 42").unwrap();
     assert_eq!(interpret("Red").unwrap(), "42");
     woxi::clear_state();
   }
