@@ -333,13 +333,29 @@ fn is_cell_open_false(s: &str) -> bool {
   s == "CellOpen->False"
 }
 
+/// Is there nothing left to draw once the characters that have no glyph are
+/// taken out? The script-base placeholders (`\[InvisiblePrefixScriptBase]`)
+/// are such characters, and a box built on one is a *prefix* script whose
+/// base is empty.
+fn draws_nothing(s: &str) -> bool {
+  crate::syntax::substitute_private_use_glyphs(s)
+    .trim()
+    .is_empty()
+}
+
 /// The part specification inside a `⟦…⟧` group, or None when `s` is an
 /// ordinary subscript. The double-bracket characters are what
 /// `\[LeftDoubleBracket]` / `\[RightDoubleBracket]` unescape to.
 fn part_spec_inside_double_brackets(s: &str) -> Option<&str> {
-  s.trim()
-    .strip_prefix('\u{27E6}')?
-    .strip_suffix('\u{27E7}')
+  let s = s.trim();
+  // Wolfram writes `〚…〛` (U+301A/U+301B); the mathematical white square
+  // brackets `⟦…⟧` are the same thing in notebooks written elsewhere.
+  s.strip_prefix('\u{301A}')
+    .and_then(|inner| inner.strip_suffix('\u{301B}'))
+    .or_else(|| {
+      s.strip_prefix('\u{27E6}')
+        .and_then(|inner| inner.strip_suffix('\u{27E7}'))
+    })
     .map(str::trim)
 }
 
@@ -591,9 +607,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // exponentiation form would both fail to parse (`()^(1)`) and, once
       // evaluated, drop the script entirely (`x^1` is `x`). `Superscript`
       // stays unevaluated and keeps it.
-      "SuperscriptBox"
-        if args.len() == 2 && conv(&args[0]).trim().is_empty() =>
-      {
+      "SuperscriptBox" if args.len() == 2 && draws_nothing(&conv(&args[0])) => {
         format!("Superscript[\"\", {}]", conv(&args[1]))
       }
       // `SuperscriptBox[a, b]` → `(a)^(b)`.
@@ -611,7 +625,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
           Some(spec) => format_part_access(&base, spec),
           // Prefix subscript, as above — keep an explicit empty string so
           // the result still parses.
-          None if base.trim().is_empty() => {
+          None if draws_nothing(&base) => {
             format!("Subscript[\"\", {sub}]")
           }
           None => format!("Subscript[{base}, {sub}]"),
@@ -1312,8 +1326,15 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     | "NonBreakingSpace"
     | "InvisiblePrefixScriptBase"
     | "InvisiblePostfixScriptBase"
+    | "Null"
+    | "SpanFromLeft"
+    | "SpanFromAbove"
+    | "SpanFromBoth"
     | "RawEscape"
     | "RawBackspace" => Some(""),
+    // The FrontEnd's own newline (U+F3A3) separates statements in a typeset
+    // cell; the reconstructed code needs a plain line break.
+    "IndentingNewLine" => Some("\n"),
     // Typographic spacing characters separate tokens in typeset code
     // (e.g. `"/.", "\[VeryThinSpace]", "sol"`). Emit a plain ASCII space
     // so the reconstructed code carries no invisible Unicode.
@@ -1395,8 +1416,10 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
             continue;
           }
           // Prose display: `\[Cross]` canonically maps to a private-use
-          // codepoint (U+F3C4) with no glyph in normal fonts; the visible
-          // multiplication sign is what a text cell means (`40 × 40`).
+          // codepoint (U+F4A0) with no glyph in normal fonts; the visible
+          // multiplication sign is what a text cell means (`40 × 40`), which
+          // is a narrower reading than the vector-product ⨯ every other
+          // private-use glyph substitution settles on.
           if !code && name == "Cross" {
             result.push('\u{00D7}');
             continue;
@@ -1409,6 +1432,10 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
             continue;
           }
           match crate::syntax::named_char_to_unicode(&name) {
+            // Prose is text to be *drawn*, so the private-use code points
+            // Wolfram stores give way to the glyphs a normal font has.
+            Some(uni) if !code => result
+              .push_str(&crate::syntax::substitute_private_use_glyphs(uni)),
             Some(uni) => result.push_str(uni),
             None => result.push_str(&format!("\\[{name}]")),
           }

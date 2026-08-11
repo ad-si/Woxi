@@ -11684,9 +11684,11 @@ Cell[BoxData[
       .find(|t| t.starts_with("Manipulate["))
       .expect("the Manipulate cell must load");
     // The operator reads as a derivative of the expression that follows it,
-    // parenthesised so its coefficient stays a product.
+    // parenthesised so its coefficient stays a product. The diffusivity is
+    // the symbol `\[ScriptCapitalD]`, which is Wolfram's private-use script
+    // capital D (U+F773).
     assert!(
-      cell.contains("\u{1d49f}(D[c[x,t], x,x])-u(D[c[x,t], x])"),
+      cell.contains("\u{F773}(D[c[x,t], x,x])-u(D[c[x,t], x])"),
       "partial derivatives must read as D[…]: {cell}"
     );
     assert!(!cell.contains('\u{2202}'), "no bare operator left: {cell}");
@@ -11702,7 +11704,7 @@ Cell[BoxData[
         other => panic!("unexpected control: {other:?}"),
       })
       .collect();
-    assert_eq!(names, ["g", "time", "k", "\u{1d49f}", "f", "u"]);
+    assert_eq!(names, ["g", "time", "k", "\u{F773}", "f", "u"]);
   }
 
   /// End-to-end regression for "Plot a Quadratic Inequality": the region is

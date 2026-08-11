@@ -5212,40 +5212,11 @@ pub(crate) fn machine_real_display_parts(f: f64) -> BigFloatDisplay {
 }
 
 pub(crate) fn svg_escape(s: &str) -> String {
-  let s = substitute_private_use_glyphs(s);
+  let s = crate::syntax::substitute_private_use_glyphs(s);
   s.replace('&', "&amp;")
     .replace('<', "&lt;")
     .replace('>', "&gt;")
     .replace('"', "&quot;")
-}
-
-/// Wolfram keeps several of its operator glyphs in the Unicode private use
-/// area — `\[Rule]` is U+F522, not the plain arrow — and only its own fonts
-/// draw them, so a label written with one comes out as a blank box
-/// everywhere else. Substitute the nearest standard character for drawing
-/// only: the string itself, and everything `ToCharacterCode` reports about
-/// it, keeps the code point Wolfram uses.
-fn substitute_private_use_glyphs(s: &str) -> std::borrow::Cow<'_, str> {
-  if !s.chars().any(|c| ('\u{E000}'..='\u{F8FF}').contains(&c)) {
-    return std::borrow::Cow::Borrowed(s);
-  }
-  std::borrow::Cow::Owned(
-    s.chars()
-      .map(|c| match c {
-        '\u{F522}' | '\u{F3D5}' => '\u{2192}', // Rule, DirectedEdge: →
-        '\u{F51F}' => '\u{29F4}',              // RuleDelayed: ⧴
-        '\u{F3D4}' => '\u{2194}',              // UndirectedEdge: ↔
-        '\u{F3D3}' => '\u{2223}',              // Conditioned: ∣
-        '\u{F3D2}' => '\u{223C}',              // Distributed: ∼
-        '\u{F3C4}' => '\u{2A2F}',              // Cross: ⨯
-        '\u{F3DA}' => '\u{2297}',              // TensorProduct: ⊗
-        '\u{F424}' => '\u{2270}',              // NotLessSlantEqual: ≰
-        '\u{F429}' => '\u{2271}',              // NotGreaterSlantEqual: ≱
-        '\u{F750}' => '\u{25CF}',              // FilledSmallCircle: ●
-        other => other,
-      })
-      .collect(),
-  )
 }
 
 fn render_primitive(
@@ -17770,6 +17741,22 @@ fn layout_parts(arg: Option<&Expr>) -> Option<Vec<Expr>> {
 }
 
 fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
+  let mut runs = manipulate_label_runs_inner(expr, italic);
+  // A label is text a widget draws, so the private-use code points Wolfram
+  // stores its characters as (`\[WarningSign]` is U+F725) give way to the
+  // glyphs a normal font has. Idempotent, so the recursive calls inside
+  // `manipulate_label_runs_inner` may pass through here too.
+  for run in &mut runs {
+    if let std::borrow::Cow::Owned(text) =
+      crate::syntax::substitute_private_use_glyphs(&run.text)
+    {
+      run.text = text;
+    }
+  }
+  runs
+}
+
+fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
   let output_run = |italic: bool| {
     let text =
       crate::syntax::format_expr(expr, crate::syntax::ExprForm::Output);
@@ -19155,7 +19142,11 @@ fn discrete_choice_rule(item: &Expr) -> Option<(&Expr, &Expr)> {
 /// anything that renders empty falls back to its InputForm.
 fn discrete_choice_label(expr: &Expr) -> String {
   match expr {
-    Expr::String(s) => s.clone(),
+    // The label is drawn, so it shows glyphs rather than the private-use
+    // code points the string itself keeps.
+    Expr::String(s) => {
+      crate::syntax::substitute_private_use_glyphs(s).into_owned()
+    }
     other => {
       let flat = flatten_label_runs(&manipulate_label_runs(other, false));
       if flat.is_empty() {

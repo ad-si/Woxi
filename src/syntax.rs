@@ -205,13 +205,22 @@ pub struct PlotSeriesData {
 
 /// Convert a Wolfram named character name (e.g. "Pi", "Alpha", "Sum") to its
 /// Unicode string. Returns None if the name is not recognized.
+///
+/// The code point returned is the one Wolfram itself stores, which for a
+/// large part of the table is a *private-use* character rather than the
+/// standard Unicode look-alike: `\[WarningSign]` is U+F725, not U+26A0, and
+/// `ToCharacterCode` has to report exactly that. Only Wolfram's own fonts
+/// draw those code points, so text that gets *drawn* runs through
+/// [`substitute_private_use_glyphs`] first; the string itself keeps the
+/// canonical code point.
 pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
   match name {
     // Constants / special identifiers (render as Unicode in strings)
-    "ExponentialE" => Some("\u{212F}"),
+    "ExponentialE" => Some("\u{F74D}"),
     "Degree" => Some("\u{00B0}"),
     "Infinity" => Some("\u{221E}"),
-    "ImaginaryI" | "ImaginaryJ" => Some("\u{2148}"),
+    "ImaginaryI" => Some("\u{F74E}"),
+    "ImaginaryJ" => Some("\u{F74F}"),
     // Lowercase Greek (Pi handled here too)
     "Alpha" => Some("\u{03B1}"),
     "Beta" => Some("\u{03B2}"),
@@ -272,58 +281,62 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     // Script (calligraphic) letters. The letters whose script forms
     // predate the Mathematical Alphanumeric Symbols block live in
     // Letterlike Symbols (U+2100–214F) instead of U+1D49C–1D4CF.
-    "ScriptCapitalA" => Some("\u{1D49C}"),
+    // Script letters. Wolfram keeps its own script alphabet in the private
+    // use area (U+F770… and U+F6B2…) and only falls back to the standard
+    // letterlike symbols where Unicode has one (ℬ, ℯ, ℓ, …) — the
+    // Mathematical Alphanumeric Symbols block is *not* what it stores.
+    "ScriptCapitalA" => Some("\u{F770}"),
     "ScriptCapitalB" => Some("\u{212C}"),
-    "ScriptCapitalC" => Some("\u{1D49E}"),
-    "ScriptCapitalD" => Some("\u{1D49F}"),
+    "ScriptCapitalC" => Some("\u{F772}"),
+    "ScriptCapitalD" => Some("\u{F773}"),
     "ScriptCapitalE" => Some("\u{2130}"),
     "ScriptCapitalF" => Some("\u{2131}"),
-    "ScriptCapitalG" => Some("\u{1D4A2}"),
+    "ScriptCapitalG" => Some("\u{F776}"),
     "ScriptCapitalH" => Some("\u{210B}"),
     "ScriptCapitalI" => Some("\u{2110}"),
-    "ScriptCapitalJ" => Some("\u{1D4A5}"),
-    "ScriptCapitalK" => Some("\u{1D4A6}"),
+    "ScriptCapitalJ" => Some("\u{F779}"),
+    "ScriptCapitalK" => Some("\u{F77A}"),
     "ScriptCapitalL" => Some("\u{2112}"),
     "ScriptCapitalM" => Some("\u{2133}"),
-    "ScriptCapitalN" => Some("\u{1D4A9}"),
-    "ScriptCapitalO" => Some("\u{1D4AA}"),
-    "ScriptCapitalP" => Some("\u{1D4AB}"),
-    "ScriptCapitalQ" => Some("\u{1D4AC}"),
+    "ScriptCapitalN" => Some("\u{F77D}"),
+    "ScriptCapitalO" => Some("\u{F77E}"),
+    "ScriptCapitalP" => Some("\u{F77F}"),
+    "ScriptCapitalQ" => Some("\u{F780}"),
     "ScriptCapitalR" => Some("\u{211B}"),
-    "ScriptCapitalS" => Some("\u{1D4AE}"),
-    "ScriptCapitalT" => Some("\u{1D4AF}"),
-    "ScriptCapitalU" => Some("\u{1D4B0}"),
-    "ScriptCapitalV" => Some("\u{1D4B1}"),
-    "ScriptCapitalW" => Some("\u{1D4B2}"),
-    "ScriptCapitalX" => Some("\u{1D4B3}"),
-    "ScriptCapitalY" => Some("\u{1D4B4}"),
-    "ScriptCapitalZ" => Some("\u{1D4B5}"),
-    "ScriptA" => Some("\u{1D4B6}"),
-    "ScriptB" => Some("\u{1D4B7}"),
-    "ScriptC" => Some("\u{1D4B8}"),
-    "ScriptD" => Some("\u{1D4B9}"),
+    "ScriptCapitalS" => Some("\u{F782}"),
+    "ScriptCapitalT" => Some("\u{F783}"),
+    "ScriptCapitalU" => Some("\u{F784}"),
+    "ScriptCapitalV" => Some("\u{F785}"),
+    "ScriptCapitalW" => Some("\u{F786}"),
+    "ScriptCapitalX" => Some("\u{F787}"),
+    "ScriptCapitalY" => Some("\u{F788}"),
+    "ScriptCapitalZ" => Some("\u{F789}"),
+    "ScriptA" => Some("\u{F6B2}"),
+    "ScriptB" => Some("\u{F6B3}"),
+    "ScriptC" => Some("\u{F6B4}"),
+    "ScriptD" => Some("\u{F6B5}"),
     "ScriptE" => Some("\u{212F}"),
-    "ScriptF" => Some("\u{1D4BB}"),
+    "ScriptF" => Some("\u{F6B7}"),
     "ScriptG" => Some("\u{210A}"),
-    "ScriptH" => Some("\u{1D4BD}"),
-    "ScriptI" => Some("\u{1D4BE}"),
-    "ScriptJ" => Some("\u{1D4BF}"),
-    "ScriptK" => Some("\u{1D4C0}"),
-    "ScriptL" => Some("\u{1D4C1}"),
-    "ScriptM" => Some("\u{1D4C2}"),
-    "ScriptN" => Some("\u{1D4C3}"),
+    "ScriptH" => Some("\u{F6B9}"),
+    "ScriptI" => Some("\u{F6BA}"),
+    "ScriptJ" => Some("\u{F6BB}"),
+    "ScriptK" => Some("\u{F6BC}"),
+    "ScriptL" => Some("\u{2113}"),
+    "ScriptM" => Some("\u{F6BE}"),
+    "ScriptN" => Some("\u{F6BF}"),
     "ScriptO" => Some("\u{2134}"),
-    "ScriptP" => Some("\u{1D4C5}"),
-    "ScriptQ" => Some("\u{1D4C6}"),
-    "ScriptR" => Some("\u{1D4C7}"),
-    "ScriptS" => Some("\u{1D4C8}"),
-    "ScriptT" => Some("\u{1D4C9}"),
-    "ScriptU" => Some("\u{1D4CA}"),
-    "ScriptV" => Some("\u{1D4CB}"),
-    "ScriptW" => Some("\u{1D4CC}"),
-    "ScriptX" => Some("\u{1D4CD}"),
-    "ScriptY" => Some("\u{1D4CE}"),
-    "ScriptZ" => Some("\u{1D4CF}"),
+    "ScriptP" => Some("\u{F6C1}"),
+    "ScriptQ" => Some("\u{F6C2}"),
+    "ScriptR" => Some("\u{F6C3}"),
+    "ScriptS" => Some("\u{F6C4}"),
+    "ScriptT" => Some("\u{F6C5}"),
+    "ScriptU" => Some("\u{F6C6}"),
+    "ScriptV" => Some("\u{F6C7}"),
+    "ScriptW" => Some("\u{F6C8}"),
+    "ScriptX" => Some("\u{F6C9}"),
+    "ScriptY" => Some("\u{F6CA}"),
+    "ScriptZ" => Some("\u{F6CB}"),
     // Common symbols
     "Euro" => Some("\u{20AC}"),
     "Micro" => Some("\u{00B5}"),
@@ -335,8 +348,8 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "Integral" => Some("\u{222B}"),
     "PartialD" => Some("\u{2202}"),
     "Del" => Some("\u{2207}"),
-    "DifferentialD" => Some("\u{2146}"),
-    "CapitalDifferentialD" => Some("\u{2145}"),
+    "DifferentialD" => Some("\u{F74C}"),
+    "CapitalDifferentialD" => Some("\u{F74B}"),
     "Sqrt" => Some("\u{221A}"),
     "CubeRoot" => Some("\u{221B}"),
     "Not" => Some("\u{00AC}"),
@@ -362,7 +375,9 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "MinusPlus" => Some("\u{2213}"),
     "Times" => Some("\u{00D7}"),
     "Divide" => Some("\u{00F7}"),
-    "Equal" => Some("\u{003D}"),
+    // `\[Equal]` is the typeset `==`; it has its own private-use code point
+    // rather than reusing the ASCII `=` (which is `Set`).
+    "Equal" => Some("\u{F431}"),
     "NotEqual" => Some("\u{2260}"),
     "LessEqual" => Some("\u{2264}"),
     "GreaterEqual" => Some("\u{2265}"),
@@ -417,7 +432,7 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "UndirectedEdge" => Some("\u{F3D4}"),
     "Distributed" => Some("\u{F3D2}"),
     "Conditioned" => Some("\u{F3D3}"),
-    "Cross" => Some("\u{F3C4}"),
+    "Cross" => Some("\u{F4A0}"),
     "TensorProduct" => Some("\u{F3DA}"),
     // Dots
     "Ellipsis" => Some("\u{2026}"),
@@ -451,45 +466,45 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     // Pictographs and signs. Demonstrations reach for these inside prose
     // and control labels — a setter caption reading "…\[LongDash]\
     // \[WarningSign] slow!" must draw the sign, not the escape.
-    "WarningSign" => Some("\u{26A0}"),
+    "WarningSign" => Some("\u{F725}"),
     "Checkmark" => Some("\u{2713}"),
     "WatchIcon" => Some("\u{231A}"),
     "FivePointedStar" => Some("\u{2605}"),
     "SixPointedStar" => Some("\u{2736}"),
-    "Female" => Some("\u{2640}"),
-    "Male" => Some("\u{2642}"),
     // Musical accidentals
     "Sharp" => Some("\u{266F}"),
     "Flat" => Some("\u{266D}"),
     "Natural" => Some("\u{266E}"),
     // Astronomical symbols (the Sun and the planets, U+2609 and
-    // U+263F-U+2647)
+    // U+263F-U+2647). Wolfram departs from that block twice: `\[Earth]` is a
+    // private-use glyph and `\[Uranus]` is the astronomical ⛢ rather than the
+    // astrological ♅.
     "Sun" => Some("\u{2609}"),
     "Mercury" => Some("\u{263F}"),
     "Venus" => Some("\u{2640}"),
-    "Earth" => Some("\u{2641}"),
+    "Earth" => Some("\u{F3DF}"),
     "Mars" => Some("\u{2642}"),
     "Jupiter" => Some("\u{2643}"),
     "Saturn" => Some("\u{2644}"),
-    "Uranus" => Some("\u{2645}"),
+    "Uranus" => Some("\u{26E2}"),
     "Neptune" => Some("\u{2646}"),
     "Pluto" => Some("\u{2647}"),
     // Braces/brackets
-    "LeftAngleBracket" => Some("\u{27E8}"),
-    "RightAngleBracket" => Some("\u{27E9}"),
+    "LeftAngleBracket" => Some("\u{2329}"),
+    "RightAngleBracket" => Some("\u{232A}"),
     "LeftCeiling" => Some("\u{2308}"),
     "RightCeiling" => Some("\u{2309}"),
     "LeftFloor" => Some("\u{230A}"),
     "RightFloor" => Some("\u{230B}"),
-    "LeftDoubleBracket" => Some("\u{27E6}"),
-    "RightDoubleBracket" => Some("\u{27E7}"),
-    // Whitespace control characters (Wolfram treats these as the raw chars)
+    "LeftDoubleBracket" => Some("\u{301A}"),
+    "RightDoubleBracket" => Some("\u{301B}"),
+    // Whitespace control characters (Wolfram treats these as the raw chars).
+    // `\[IndentingNewLine]` is the FrontEnd's own newline, so it carries a
+    // private-use code point instead of U+000A.
     "NewLine" => Some("\n"),
-    "IndentingNewLine" => Some("\n"),
-    "CarriageReturn" => Some("\r"),
+    "IndentingNewLine" => Some("\u{F3A3}"),
     "LineSeparator" => Some("\u{2028}"),
     "ParagraphSeparator" => Some("\u{2029}"),
-    "Tab" => Some("\t"),
     // Typographic punctuation
     "OpenCurlyQuote" => Some("\u{2018}"),
     "CloseCurlyQuote" => Some("\u{2019}"),
@@ -508,39 +523,40 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "Section" => Some("\u{00A7}"),
     "Paragraph" => Some("\u{00B6}"),
     "Copyright" => Some("\u{00A9}"),
-    "Registered" => Some("\u{00AE}"),
+    "RegisteredTrademark" => Some("\u{00AE}"),
     "Trademark" => Some("\u{2122}"),
     "Continuation" => Some("\u{F3B1}"),
-    "SpanFromLeft" => Some(""),
-    "SpanFromAbove" => Some(""),
-    "SpanFromBoth" => Some(""),
+    // The span characters fill the cells a `Grid` entry reaches over. They
+    // draw nothing, but they are characters: `StringLength` counts them.
+    "SpanFromLeft" => Some("\u{F3BA}"),
+    "SpanFromAbove" => Some("\u{F3BB}"),
+    "SpanFromBoth" => Some("\u{F3BC}"),
     // The `\[Raw…]` family names the ASCII control characters, so that a
     // notebook can write one without embedding an untypeable byte.
     "RawEscape" => Some("\u{001B}"),
     "RawTab" => Some("\t"),
     "RawReturn" => Some("\r"),
-    "RawNewline" => Some("\n"),
-    "RawBackspace" => Some("\u{0008}"),
     "RawSpace" => Some(" "),
     // Miscellaneous
-    "Null" => Some(""),
-    "InvisibleSpace" => Some("\u{200B}"),
+    "Null" => Some("\u{F3A0}"),
+    "InvisibleSpace" => Some("\u{F360}"),
     "ThinSpace" => Some("\u{2009}"),
     "MediumSpace" => Some("\u{205F}"),
     "ThickSpace" => Some("\u{2005}"),
     "VeryThinSpace" => Some("\u{200A}"),
-    "NegativeVeryThinSpace"
-    | "NegativeThinSpace"
-    | "NegativeMediumSpace"
-    | "NegativeThickSpace" => Some(""),
+    "NegativeVeryThinSpace" => Some("\u{F380}"),
+    "NegativeThinSpace" => Some("\u{F382}"),
+    "NegativeMediumSpace" => Some("\u{F383}"),
+    "NegativeThickSpace" => Some("\u{F384}"),
     "InvisibleTimes" => Some("\u{2062}"),
-    "InvisibleComma" => Some("\u{2063}"),
-    "InvisibleApplication" => Some("\u{2061}"),
+    "InvisibleComma" => Some("\u{F765}"),
+    "InvisibleApplication" => Some("\u{F76D}"),
     // Placeholders the FrontEnd hangs a *prefix* or *postfix* script on, so
     // that `\!\(\*SuperscriptBox[\(\[InvisiblePrefixScriptBase]\), \(1\)]\)Σ`
-    // typesets as `¹Σ`. They carry no glyph of their own — anything else
-    // would print the placeholder's name into the label.
-    "InvisiblePrefixScriptBase" | "InvisiblePostfixScriptBase" => Some(""),
+    // typesets as `¹Σ`. They carry no glyph of their own, but they are
+    // characters that `StringLength` counts — only drawing drops them.
+    "InvisiblePrefixScriptBase" => Some("\u{F3B3}"),
+    "InvisiblePostfixScriptBase" => Some("\u{F3B4}"),
     // Accented Latin letters (Latin-1 supplement). Wolfram names them by
     // base letter + diacritic, e.g. `\[CCedilla]` is ç, `\[ODoubleDot]` is
     // ö. Needed so imported text (e.g. "Curaçao") compares equal to source
@@ -608,6 +624,96 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "CapitalYAcute" => Some("\u{00DD}"),
     "CapitalThorn" => Some("\u{00DE}"),
     _ => None,
+  }
+}
+
+/// Wolfram keeps a large part of its character set in the Unicode private use
+/// area — `\[Rule]` is U+F522, `\[WarningSign]` is U+F725 — and only its own
+/// fonts draw those code points, so a label written with one comes out as a
+/// blank box everywhere else. Substitute the nearest standard character for
+/// *drawing* only: the string itself, and everything `ToCharacterCode`
+/// reports about it, keeps the code point Wolfram uses.
+///
+/// The characters that draw nothing at all in Wolfram (the invisible
+/// operators, the script-base placeholders, the `Grid` span fillers)
+/// substitute to the empty string, so they leave no artefact behind.
+pub fn substitute_private_use_glyphs(s: &str) -> std::borrow::Cow<'_, str> {
+  if !s.chars().any(|c| ('\u{E000}'..='\u{F8FF}').contains(&c)) {
+    return std::borrow::Cow::Borrowed(s);
+  }
+  let mut out = String::with_capacity(s.len());
+  for c in s.chars() {
+    match private_use_glyph(c) {
+      Some(sub) => out.push_str(sub),
+      None => match script_letter_glyph(c) {
+        Some(letter) => out.push(letter),
+        None => out.push(c),
+      },
+    }
+  }
+  std::borrow::Cow::Owned(out)
+}
+
+/// The visible stand-in for a single private-use character, or `None` to
+/// leave it alone. See [`substitute_private_use_glyphs`].
+fn private_use_glyph(c: char) -> Option<&'static str> {
+  Some(match c {
+    '\u{F522}' | '\u{F3D5}' => "\u{2192}", // Rule, DirectedEdge: →
+    '\u{F51F}' => "\u{29F4}",              // RuleDelayed: ⧴
+    '\u{F3D4}' => "\u{2194}",              // UndirectedEdge: ↔
+    '\u{F3D3}' => "\u{2223}",              // Conditioned: ∣
+    '\u{F3D2}' => "\u{223C}",              // Distributed: ∼
+    '\u{F4A0}' | '\u{F3C4}' => "\u{2A2F}", // Cross: ⨯
+    '\u{F3DA}' => "\u{2297}",              // TensorProduct: ⊗
+    '\u{F424}' => "\u{2270}",              // NotLessSlantEqual: ≰
+    '\u{F429}' => "\u{2271}",              // NotGreaterSlantEqual: ≱
+    '\u{F750}' => "\u{25CF}",              // FilledSmallCircle: ●
+    '\u{F725}' => "\u{26A0}",              // WarningSign: ⚠
+    '\u{F3DF}' => "\u{2641}",              // Earth: ♁
+    '\u{F431}' => "=",                     // Equal
+    '\u{F74B}' => "\u{2145}",              // CapitalDifferentialD: ⅅ
+    '\u{F74C}' => "\u{2146}",              // DifferentialD: ⅆ
+    '\u{F74D}' => "\u{212F}",              // ExponentialE: ℯ
+    '\u{F74E}' => "\u{2148}",              // ImaginaryI: ⅈ
+    '\u{F74F}' => "\u{2149}",              // ImaginaryJ: ⅉ
+    '\u{F3A3}' => "\n",                    // IndentingNewLine
+    // Characters with no glyph of their own.
+    '\u{F360}'                            // InvisibleSpace
+    | '\u{F380}' | '\u{F382}' | '\u{F383}' | '\u{F384}' // negative spaces
+    | '\u{F765}'                          // InvisibleComma
+    | '\u{F76D}'                          // InvisibleApplication
+    | '\u{F3A0}'                          // Null
+    | '\u{F3B3}' | '\u{F3B4}'             // Invisible…ScriptBase
+    | '\u{F3BA}' | '\u{F3BB}' | '\u{F3BC}' => "", // SpanFrom…
+    _ => return None,
+  })
+}
+
+/// The Mathematical Alphanumeric Symbols letter for one of Wolfram's
+/// private-use script letters (`\[ScriptCapitalD]` is U+F773, not U+1D49F).
+/// Both alphabets are contiguous, except that Unicode leaves the slots of
+/// the script letters that already exist as letterlike symbols unassigned.
+fn script_letter_glyph(c: char) -> Option<char> {
+  const CAPITAL_GAPS: [(u32, char); 8] = [
+    (1, 'ℬ'),
+    (4, 'ℰ'),
+    (5, 'ℱ'),
+    (7, 'ℋ'),
+    (8, 'ℐ'),
+    (11, 'ℒ'),
+    (12, 'ℳ'),
+    (17, 'ℛ'),
+  ];
+  const SMALL_GAPS: [(u32, char); 4] =
+    [(4, 'ℯ'), (6, 'ℊ'), (11, 'ℓ'), (14, 'ℴ')];
+  let (offset, gaps, block) = match c {
+    '\u{F770}'..='\u{F789}' => (c as u32 - 0xF770, &CAPITAL_GAPS[..], 0x1D49C),
+    '\u{F6B2}'..='\u{F6CB}' => (c as u32 - 0xF6B2, &SMALL_GAPS[..], 0x1D4B6),
+    _ => return None,
+  };
+  match gaps.iter().find(|(gap, _)| *gap == offset) {
+    Some((_, letter)) => Some(*letter),
+    None => char::from_u32(block + offset),
   }
 }
 
@@ -763,12 +869,34 @@ fn named_char_to_expr(s: &str) -> Expr {
     "UndirectedEdge" => "\u{F3D4}",
     "Distributed" => "\u{F3D2}",
     "Conditioned" => "\u{F3D3}",
-    "Cross" => "\u{F3C4}",
+    "Cross" => "\u{F4A0}",
     "TensorProduct" => "\u{F3DA}",
-    // Unknown: keep original name as identifier
-    _ => return Expr::Identifier(name.to_string()),
+    // Any other named character that is a *letter* spells a symbol with
+    // that letter, exactly as a Greek one does: `\[AAcute]` is the symbol
+    // `á` and `\[ScriptX]` is the symbol Wolfram writes with its own script
+    // x. Characters that are not letters (`\[Sum]`, `\[NewLine]`) are
+    // operators or spacing and keep their name here.
+    _ => {
+      return match named_char_to_unicode(name) {
+        Some(unicode)
+          if !unicode.is_empty() && unicode.chars().all(is_symbol_letter) =>
+        {
+          Expr::Identifier(unicode.to_string())
+        }
+        _ => Expr::Identifier(name.to_string()),
+      };
+    }
   };
   Expr::Identifier(unicode.to_string())
+}
+
+/// Can this character spell a symbol on its own? Unicode letters can, and so
+/// can the letters of Wolfram's own script alphabet, which live in the
+/// private use area and are therefore not `Alphabetic`.
+fn is_symbol_letter(c: char) -> bool {
+  c.is_alphabetic()
+    || ('\u{F6B2}'..='\u{F6CB}').contains(&c)
+    || ('\u{F770}'..='\u{F789}').contains(&c)
 }
 
 /// Extract all child `Expr` nodes from a variant, leaving it childless.
@@ -5238,7 +5366,7 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Conditioned]" | "\u{F3D3}" => 10, // Conditioned (looser than Rule)
     // Cross and TensorProduct bind tighter than Dot in Wolfram
     // (Precedence 500 and 495 vs Dot's 490): a.b\[Cross]c is a.(b\[Cross]c).
-    "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 42, // Cross (above TensorProduct)
+    "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}" => 42, // Cross (above TensorProduct)
     "\\[TensorProduct]" | "\u{F3DA}" => 41, // TensorProduct (just above Dot)
     "\\[Cap]" | "\u{2322}" => 36,           // Cap (⌢, infix → Cap[a, b])
     "\\[Cup]" | "\u{2323}" => 36,           // Cup (⌣, infix → Cup[a, b])
@@ -5586,7 +5714,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     // Wedge and Vee are flat: a ⋀ b ⋀ c -> Wedge[a, b, c].
     "\\[Wedge]" | "\u{22C0}" => build_flat_op("Wedge", left, right),
     "\\[Vee]" | "\u{22C1}" => build_flat_op("Vee", left, right),
-    "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => {
+    "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}" => {
       // Cross is Flat/associative — flatten chains: a ⨯ b ⨯ c → Cross[a, b, c].
       let mut parts = Vec::new();
       match left {

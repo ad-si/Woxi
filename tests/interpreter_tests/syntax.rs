@@ -5171,6 +5171,34 @@ mod unknown_function_no_args {
     assert_eq!(interpret("\\[ImaginaryI]").unwrap(), "I");
   }
 
+  /// A named character that is a letter spells a symbol with that letter,
+  /// not with its own name: `\[AAcute]` is `á`, and `\[ScriptX]` is the
+  /// letter of Wolfram's private-use script alphabet (U+F6C9). Regression:
+  /// the letters outside the Greek block fell back to their names, so a
+  /// definition made with one could not be used through the other spelling.
+  #[test]
+  fn letter_named_chars_spell_symbols_with_the_letter() {
+    assert_eq!(
+      interpret("ToCharacterCode[ToString[Hold[\\[AAcute] + 1], InputForm]]")
+        .unwrap(),
+      "{72, 111, 108, 100, 91, 225, 32, 43, 32, 49, 93}"
+    );
+    assert_eq!(
+      interpret("ToCharacterCode[ToString[Hold[\\[ScriptX] + 1], InputForm]]")
+        .unwrap(),
+      "{72, 111, 108, 100, 91, 63177, 32, 43, 32, 49, 93}"
+    );
+    // The same symbol, so a definition written with the escape is found by
+    // the pattern written with it.
+    assert_eq!(
+      interpret("f[\\[ScriptX]_] := \\[ScriptX] + 1; f[2]").unwrap(),
+      "3"
+    );
+    // Wolfram's script letters are private-use characters, so they can be
+    // written literally too.
+    assert_eq!(interpret("\u{F773} = 3; \u{F773}^2").unwrap(), "9");
+  }
+
   #[test]
   fn function_with_trailing_semicolon_evaluates_to_null_arg() {
     assert_eq!(interpret("f[a;]").unwrap(), "f[Null]");
