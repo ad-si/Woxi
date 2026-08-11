@@ -234,3 +234,33 @@ $ wo 'Cases[{1, "a", 2, "b"}, _Integer]'
 $ wo 'Cases[{1, 2, 3, 4, 5}, Except[2 | 4]]'
 {1, 3, 5}
 ```
+
+
+## Comments (`(* … *)`)
+
+A comment is skipped wherever whitespace is, and what it holds is never
+read as code — not even a bracket, a quote or a semicolon left over from
+commented-out code:
+
+```scrut
+$ wo 'Hold[f[a (* endof For[ i *); b]]'
+Hold[f[a; b]]
+```
+
+```scrut
+$ wo '{1 (* a ) b *); 2}'
+{2}
+```
+
+```scrut
+$ wo 'Range[5][[2 (* [ *) ;; 3]]'
+{2, 3}
+```
+
+Comments nest, so a commented-out block that itself holds comments is
+skipped whole:
+
+```scrut
+$ wo '1 + (* outer (* inner *) still a comment *) 2'
+3
+```

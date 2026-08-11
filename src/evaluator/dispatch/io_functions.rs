@@ -4280,6 +4280,29 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
       expr_to_svg(&unquoted_display_string(&args[0]))
     }
+    // `Style[content, directives…]` shows `content`; the directives only
+    // change how it is set. The picture path has to look through the
+    // wrapper, or a styled layout — `Style[Row[{n, " leaves, ", …}],
+    // FontSize -> 16, Blue]`, how a Demonstration captions its plot —
+    // falls through to the text renderer, which prints the call's own
+    // source instead of the row it wraps. A `Style` is inherited by what
+    // it wraps, so its directives are pushed into the layout's items and
+    // the item renderer applies them there. A styled `Grid` is left to the
+    // arm below, which hands the directives to the grid renderer whole —
+    // they colour its frame and dividers, not only its cells.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && !args.is_empty()
+        && !matches!(&args[0], Expr::FunctionCall { name, args }
+          if (name == "Grid" || name == "TextGrid") && !args.is_empty()) =>
+    {
+      let inner = crate::functions::graphics::style_pushed_into_layout(
+        &args[0],
+        &args[1..],
+      )
+      .unwrap_or_else(|| args[0].clone());
+      expr_to_svg(&inner)
+    }
     // `Labeled[content, label]` (and `…, pos]`) puts the label beside the
     // content — below it by default. With a picture as the content the
     // FrontEnd stacks the two, so exporting one has to compose them

@@ -20,3 +20,26 @@ turns or the contents move:
 $ wo 'Head[Graphics3D[Sphere[], SphericalRegion -> True]]'
 Graphics3D
 ```
+
+`PlotLabel -> label` sets a title above the picture, the same way it does
+for a 2-D `Graphics`. Any expression can be the label; it is typeset
+rather than printed:
+
+```scrut
+$ wo 'StringContainsQ[ExportString[Graphics3D[Sphere[], PlotLabel -> Style[Row[{"Torus ", "Knot"}], FontSize -> 18]], "SVG"], "Torus Knot"]'
+True
+```
+
+`BSplineCurve[{p1, p2, …}]` draws the B-spline its control points define,
+and `Tube[BSplineCurve[…], r]` runs a tube of radius `r` along that same
+curve — how a knot is given its thickness:
+
+```scrut
+$ wo 'Head[Graphics3D[BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}}]]]'
+Graphics3D
+```
+
+```scrut
+$ wo 'StringContainsQ[ExportString[Graphics3D[Tube[BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}}], 0.2]], "SVG"], "<polygon"]'
+True
+```
