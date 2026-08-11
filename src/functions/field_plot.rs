@@ -1844,9 +1844,16 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let cell_size =
     (plot_w / VECTOR_GRID as f64).min(plot_h / VECTOR_GRID as f64);
 
+  // Arrows in data coordinates, kept so `VectorPlot[…][[1]]` yields the
+  // primitives a surrounding `Graphics[{…}]` can redraw.
+  let mut primitives: Vec<Expr> = Vec::new();
   if max_mag > 0.0 {
     let arrow_scale = cell_size * 0.4 / max_mag;
     let stroke_w = render_w as f64 / 1000.0 * 1.5;
+    // The pixel-space arrow length maps back to a data-space length so the
+    // symbolic arrows have the same footprint as the drawn ones.
+    let data_scale_x = arrow_scale * (ax_max - ax_min) / plot_w;
+    let data_scale_y = arrow_scale * (ay_max - ay_min) / plot_h;
     for &(x, y, vx, vy, mag) in &vectors {
       if mag < 1e-15 {
         continue;
@@ -1864,6 +1871,30 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let r = (t * 200.0) as u8 + 50;
       let g = ((1.0 - t) * 150.0) as u8 + 50;
       let b = 100_u8;
+
+      primitives.push(Expr::List(
+        vec![
+          rgb_color((r, g, b)),
+          Expr::FunctionCall {
+            name: "Arrow".to_string(),
+            args: vec![Expr::List(
+              vec![
+                Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+                Expr::List(
+                  vec![
+                    Expr::Real(x + vx * data_scale_x),
+                    Expr::Real(y + vy * data_scale_y),
+                  ]
+                  .into(),
+                ),
+              ]
+              .into(),
+            )]
+            .into(),
+          },
+        ]
+        .into(),
+      ));
 
       // Arrow shaft
       svg.push_str(&format!(
@@ -1891,7 +1922,13 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
+  Ok(crate::graphics_result_with_structure(
+    svg,
+    Expr::FunctionCall {
+      name: "Graphics".to_string(),
+      args: vec![Expr::List(primitives.into())].into(),
+    },
+  ))
 }
 
 /// StreamPlot[{vx, vy}, {x, xmin, xmax}, {y, ymin, ymax}]
@@ -1946,6 +1983,10 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let dt = ((x_max - x_min) + (y_max - y_min)) / 2.0 / 200.0;
   let max_steps = 200;
   let stroke_w = render_w as f64 / 1000.0 * 1.5;
+  // Streamlines in data coordinates, kept so `StreamPlot[…][[1]]` yields the
+  // primitives a surrounding `Graphics[{…}]` can redraw — as in Wolfram, where
+  // part 1 of the plot is its graphics content.
+  let mut primitives: Vec<Expr> = Vec::new();
 
   for si in 0..seed_n {
     for sj in 0..seed_n {
@@ -1953,6 +1994,7 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut y = y_min + (sj as f64 + 0.5) * y_step;
 
       let mut points = Vec::new();
+      let mut coords: Vec<(f64, f64)> = vec![(x, y)];
       let (px, py) = to_px(x, y);
       points.push(format!("{:.1},{:.1}", px, py));
 
@@ -1988,6 +2030,7 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         let (px, py) = to_px(x, y);
         points.push(format!("{:.1},{:.1}", px, py));
+        coords.push((x, y));
       }
 
       if points.len() > 1 {
@@ -1997,12 +2040,53 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "<polyline points=\"{}\" fill=\"none\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"{stroke_w:.1}\" stroke-opacity=\"0.7\"/>\n",
           points.join(" ")
         ));
+        primitives.push(styled_line(coords, (r, g, b)));
       }
     }
   }
 
   svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
+  Ok(crate::graphics_result_with_structure(
+    svg,
+    Expr::FunctionCall {
+      name: "Graphics".to_string(),
+      args: vec![Expr::List(primitives.into())].into(),
+    },
+  ))
+}
+
+/// `{RGBColor[r, g, b], Line[{{x, y}, …}]}` — one styled streamline in data
+/// coordinates, for the symbolic form a field plot remembers.
+fn styled_line(coords: Vec<(f64, f64)>, color: (u8, u8, u8)) -> Expr {
+  let points = Expr::List(
+    coords
+      .into_iter()
+      .map(|(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+      .collect(),
+  );
+  Expr::List(
+    vec![
+      rgb_color(color),
+      Expr::FunctionCall {
+        name: "Line".to_string(),
+        args: vec![points].into(),
+      },
+    ]
+    .into(),
+  )
+}
+
+/// `RGBColor[r, g, b]` from 8-bit channel values.
+fn rgb_color((r, g, b): (u8, u8, u8)) -> Expr {
+  Expr::FunctionCall {
+    name: "RGBColor".to_string(),
+    args: vec![
+      Expr::Real(r as f64 / 255.0),
+      Expr::Real(g as f64 / 255.0),
+      Expr::Real(b as f64 / 255.0),
+    ]
+    .into(),
+  }
 }
 
 /// StreamDensityPlot: StreamPlot overlaid on DensityPlot background
