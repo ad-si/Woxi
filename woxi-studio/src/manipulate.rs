@@ -49,6 +49,10 @@ pub enum ControlState {
     /// `ControlType -> PopupMenu`: always render a dropdown, even when the
     /// choice count is small enough for a SetterBar.
     popup: bool,
+    /// `ControlType -> SetterBar`: always render the row of buttons, even
+    /// when there are more choices than the automatic split would put in a
+    /// bar.
+    setter_bar: bool,
     /// `ControlType -> Slider`: render a slider stepping through the
     /// choices by index rather than a setter bar or dropdown.
     slider: bool,
@@ -862,6 +866,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         value_label_svgs,
         initial_index,
         popup,
+        setter_bar,
         slider,
       } => ControlState::Discrete {
         name: name.clone(),
@@ -878,6 +883,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           .collect(),
         current_index: *initial_index,
         popup: *popup,
+        setter_bar: *setter_bar,
         slider: *slider,
       },
       ManipulateControl::Slider2D {

@@ -172,6 +172,76 @@ mod column_visual_mode {
     assert!(!svg.contains("Dynamic"), "{svg}");
   }
 
+  /// A `Style` wrapping a layout is inherited by everything inside it, so
+  /// `Style[Column[{…}], 65, Hue[…]]` — the shape of a Demonstration's
+  /// `Manipulate` body — is a large, coloured column. It used to fall back
+  /// to the plain-text echo of the column, at the default size and colour.
+  #[test]
+  fn styled_column_renders_at_the_style_size_and_colour() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Style[Column[{\"a\", \"bb\"}, Center], 65, Red]")
+        .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert_eq!(svg.matches("font-size=\"65\"").count(), 2, "{svg}");
+    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 2, "{svg}");
+    assert!(svg.contains("text-anchor=\"middle\""), "{svg}");
+    // The canvas grows with the type: at 65 pt two rows are far taller than
+    // the 44 px a default-size two-row column takes.
+    let height: f64 = svg
+      .split("height=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .and_then(|s| s.parse().ok())
+      .unwrap();
+    assert!(height > 130.0, "canvas must grow with the font size: {svg}");
+  }
+
+  /// `Invisible[expr]` keeps exactly the space `expr` occupies but paints
+  /// nothing — Demonstrations hide a row with `If[show, Identity, Invisible]`
+  /// and rely on the layout not jumping. It used to print as its own source.
+  #[test]
+  fn an_invisible_column_item_reserves_its_space_unpainted() {
+    clear_state();
+    let hidden =
+      interpret_with_stdout("Column[{\"a\", Invisible[\"bcd\"], \"e\"}]")
+        .unwrap()
+        .graphics
+        .unwrap();
+    let shown = interpret_with_stdout("Column[{\"a\", \"bcd\", \"e\"}]")
+      .unwrap()
+      .graphics
+      .unwrap();
+    assert!(!hidden.contains("Invisible"), "{hidden}");
+    assert!(hidden.contains("fill=\"none\""), "{hidden}");
+    // Same geometry as the visible column — only the fill differs.
+    let dims = |svg: &str| {
+      svg
+        .split_once('>')
+        .map(|(head, _)| head.to_string())
+        .unwrap()
+    };
+    assert_eq!(dims(&hidden), dims(&shown));
+  }
+
+  /// Either nesting order hides the item: the `Style` may sit outside the
+  /// `Invisible` (which is what pushing a `Style[Column[…], …]`'s directives
+  /// into the items produces) or inside it.
+  #[test]
+  fn an_invisible_item_stays_hidden_under_a_style() {
+    clear_state();
+    for src in [
+      "Column[{Style[Invisible[\"bcd\"], 20, Red]}]",
+      "Column[{Invisible[Style[\"bcd\", 20, Red]]}]",
+    ] {
+      let svg = interpret_with_stdout(src).unwrap().graphics.unwrap();
+      assert!(svg.contains("fill=\"none\""), "{src}: {svg}");
+      assert!(svg.contains("font-size=\"20\""), "{src}: {svg}");
+      assert!(!svg.contains("Invisible"), "{src}: {svg}");
+    }
+  }
+
   #[test]
   fn column_right_alignment_svg() {
     clear_state();

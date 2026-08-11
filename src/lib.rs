@@ -2053,6 +2053,7 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
     let result_expr = render_tableform_if_needed(result_expr);
     let result_expr = render_matrixform_if_needed(result_expr);
     let result_expr = render_traditionalform_list_if_needed(result_expr);
+    let result_expr = render_styled_layout_if_needed(result_expr);
     let result_expr = render_column_if_needed(result_expr);
     let result_expr = render_row_if_needed(result_expr);
     let result_expr = render_treeform_if_needed(result_expr);
@@ -2901,6 +2902,44 @@ fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
       }
     }
     _ => expr,
+  }
+}
+
+/// `Style[Column[{…}], directives…]` / `Style[Row[{…}], …]` displays the
+/// layout it wraps with the directives in force — a `Style` is inherited by
+/// everything inside it, so `Style[Column[{…}], 65, Hue[c]]` is a large
+/// coloured column, not a column at the default size. Distributing the
+/// directives over the items is what lets the layout renderers, which read
+/// each item's own `Style`, apply them. (`Grid` has its own styled path in
+/// `render_grid_if_needed`, which also colours frames and dividers.)
+fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  let syntax::Expr::FunctionCall { name, args } = &expr else {
+    return expr;
+  };
+  if !functions::graphics::is_style_wrapper(name) || args.len() < 2 {
+    return expr;
+  }
+  let inner_name = match &args[0] {
+    syntax::Expr::FunctionCall { name: inner, .. } => inner.as_str(),
+    _ => return expr,
+  };
+  if !matches!(inner_name, "Column" | "Row") {
+    return expr;
+  }
+  let Some(styled) =
+    functions::graphics::style_pushed_into_layout(&args[0], &args[1..])
+  else {
+    return expr;
+  };
+  let rendered = if inner_name == "Column" {
+    render_column_if_needed(styled)
+  } else {
+    render_row_if_needed(styled)
+  };
+  if matches!(rendered, syntax::Expr::Graphics { .. }) {
+    rendered
+  } else {
+    expr
   }
 }
 
@@ -4575,6 +4614,16 @@ pub fn interpret_to_expr(
     input.replace("\r\n", "\n").replace('\r', "\n")
   } else {
     input.to_string()
+  };
+  // Expand Wolfram character escapes (`\.HH`, `\:HHHH`, `\OOO`) exactly as
+  // `interpret` does. Notebook cells store non-ASCII characters in this
+  // form, so without it a held expression — the Manipulate a Studio cell
+  // builds its controls from — keeps the literal escape text where the
+  // evaluated string has the character.
+  let normalized = if normalized.contains('\\') {
+    expand_char_escapes(&normalized)
+  } else {
+    normalized
   };
   // Treat the modifier-letter circumflex `ˆ` (U+02C6) as the Power operator.
   let normalized = normalize_circumflex_operator(&normalized);

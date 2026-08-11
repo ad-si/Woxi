@@ -12185,6 +12185,30 @@ mod graphics_grid {
     assert!(svg.contains("font-size=\"14\""), "Should have font-size 14");
   }
 
+  /// An `Invisible[…]` cell is laid out like any other but painted with no
+  /// fill, so a grid keeps its shape while the cell reads blank.
+  #[test]
+  fn grid_invisible_cell_is_laid_out_but_not_painted() {
+    clear_state();
+    let hidden = interpret_with_stdout("Grid[{{\"a\", Invisible[\"bcd\"]}}]")
+      .unwrap()
+      .graphics
+      .unwrap();
+    let shown = interpret_with_stdout("Grid[{{\"a\", \"bcd\"}}]")
+      .unwrap()
+      .graphics
+      .unwrap();
+    assert!(!hidden.contains("Invisible"), "{hidden}");
+    assert!(hidden.contains("fill=\"none\""), "{hidden}");
+    let dims = |svg: &str| {
+      svg
+        .split_once('>')
+        .map(|(head, _)| head.to_string())
+        .unwrap()
+    };
+    assert_eq!(dims(&hidden), dims(&shown));
+  }
+
   #[test]
   fn grid_with_image_cell() {
     clear_state();
@@ -17499,6 +17523,34 @@ mod manipulate {
         other => panic!("expected discrete control, got {other:?}"),
       }
     }
+  }
+
+  /// `ControlType -> SetterBar` is recorded as its own flag, so a frontend
+  /// can lay the bar out however long the choice list is. The automatic
+  /// split between a bar and a dropdown only decides for a spec that names
+  /// no type — a fourteen-entry alphabet picker the author explicitly asked
+  /// to be a SetterBar came out as a dropdown.
+  #[test]
+  fn spec_records_an_explicit_setter_bar_control_type() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b}, \
+       Control[{{a, \"pick\"}, {\"q\", \"w\", \"e\", \"r\", \"t\", \"y\", \"u\", \
+                 \"i\", \"o\", \"p\", \"z\", \"x\"}, ControlType -> SetterBar}], \
+       Control[{b, {1, 2, 3}}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let flags: Vec<(bool, bool)> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Discrete {
+          popup, setter_bar, ..
+        } => (*popup, *setter_bar),
+        other => panic!("expected discrete control, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(flags, [(false, true), (false, false)]);
   }
 
   /// A list value assigns one control type per spec, in the order the specs
