@@ -6414,7 +6414,8 @@ mod skeleton {
 
   #[test]
   fn attributes() {
-    assert_eq!(interpret("Attributes[Skeleton]").unwrap(), "{Protected}");
+    // Wolfram leaves Skeleton unprotected
+    assert_eq!(interpret("Attributes[Skeleton]").unwrap(), "{}");
   }
 }
 
@@ -6438,10 +6439,8 @@ mod string_skeleton {
 
   #[test]
   fn attributes() {
-    assert_eq!(
-      interpret("Attributes[StringSkeleton]").unwrap(),
-      "{Protected}"
-    );
+    // Wolfram leaves StringSkeleton unprotected
+    assert_eq!(interpret("Attributes[StringSkeleton]").unwrap(), "{}");
   }
 }
 

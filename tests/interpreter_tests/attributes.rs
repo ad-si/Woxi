@@ -2072,3 +2072,85 @@ mod builtin_attribute_table {
     assert!(used.stdout.contains("used"), "got {used:?}");
   }
 }
+
+// Wolfram protects every `System`` symbol apart from a fixed set it leaves
+// open so user code can attach its own definitions. Built-ins without an
+// explicit entry in the attribute table therefore default to Protected.
+mod default_protection {
+  use super::*;
+
+  #[test]
+  fn builtins_without_a_table_entry_are_protected() {
+    for name in ["Partition", "Array", "Identity", "Red", "Chop"] {
+      assert_eq!(
+        interpret(&format!("Attributes[{name}]")).unwrap(),
+        "{Protected}",
+        "{name}"
+      );
+    }
+  }
+
+  #[test]
+  fn assignment_to_such_a_builtin_is_blocked() {
+    clear_state();
+    // wolframscript: Set::wrsym plus the RHS as the result.
+    let out = interpret_with_stdout("BernoulliB = 1").unwrap();
+    assert_eq!(out.result, "1");
+    assert!(
+      out
+        .warnings
+        .iter()
+        .any(|w| w == "Set::wrsym: Symbol BernoulliB is Protected."),
+      "got {out:?}"
+    );
+    assert_eq!(interpret("BernoulliB[2]").unwrap(), "1/6");
+    clear_state();
+  }
+
+  #[test]
+  fn assert_matches_wolframscript() {
+    // Assert is HoldAllComplete and unprotected, unlike the neighbouring
+    // HoldAll builtins it used to be grouped with.
+    assert_eq!(
+      interpret("Attributes[Assert]").unwrap(),
+      "{HoldAllComplete}"
+    );
+  }
+
+  #[test]
+  fn symbols_wolfram_leaves_unprotected_have_no_attributes() {
+    for name in [
+      "Wedge",
+      "CircleTimes",
+      "Subset",
+      "Star",
+      "Square",
+      "Tilde",
+      "Derivative",
+      "VonMisesDistribution",
+    ] {
+      let attrs = interpret(&format!("Attributes[{name}]")).unwrap();
+      assert!(!attrs.contains("Protected"), "{name} got {attrs}");
+    }
+  }
+
+  #[test]
+  fn unprotected_operator_symbols_accept_user_definitions() {
+    clear_state();
+    // Wolfram leaves the operator symbols unprotected precisely so that they
+    // can be given a meaning; `tests/scripts/metaprogramming.wls` relies on it.
+    assert_eq!(
+      interpret(
+        "CircleTimes[x_, y_] := Mod[x, 10] Mod[y, 10]; 14 \\[CircleTimes] 13"
+      )
+      .unwrap(),
+      "12"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("CirclePlus[x_, y_] := x + y; 4 \\[CirclePlus] 0").unwrap(),
+      "4"
+    );
+    clear_state();
+  }
+}
