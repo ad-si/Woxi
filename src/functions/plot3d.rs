@@ -8094,10 +8094,9 @@ fn partition_tube(items: &[Expr]) -> (Option<Vec<Expr>>, Vec<Expr>) {
       Expr::FunctionCall { name, args } if name == "Tube" && tube.is_none() => {
         tube = Some(args.to_vec());
       }
-      Expr::List(_)
-      | Expr::FunctionCall {
-        name: _, args: _, ..
-      } if tube.is_none() && contains_tube(item) => {
+      Expr::List(_) | Expr::FunctionCall { .. }
+        if tube.is_none() && contains_tube(item) =>
+      {
         let (inner, rest) = take_tube_directive(item);
         tube = inner;
         kept.push(rest);
