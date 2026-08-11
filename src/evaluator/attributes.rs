@@ -714,7 +714,13 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     }
 
     // Unknown symbol: empty attributes
-    _ => vec![],
+    _ => {
+      if crate::evaluator::get_builtin_function_info(name).is_some() {
+        vec!["Protected"]
+      } else {
+        vec![]
+      }
+    }
   }
 }
 

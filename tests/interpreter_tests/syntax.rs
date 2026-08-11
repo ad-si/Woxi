@@ -6414,7 +6414,7 @@ mod skeleton {
 
   #[test]
   fn attributes() {
-    assert_eq!(interpret("Attributes[Skeleton]").unwrap(), "{}");
+    assert_eq!(interpret("Attributes[Skeleton]").unwrap(), "{Protected}");
   }
 }
 
@@ -6437,8 +6437,11 @@ mod string_skeleton {
   }
 
   #[test]
-  fn no_builtin_attributes() {
-    assert_eq!(interpret("Attributes[StringSkeleton]").unwrap(), "{}");
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[StringSkeleton]").unwrap(),
+      "{Protected}"
+    );
   }
 }
 
