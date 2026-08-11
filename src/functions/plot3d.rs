@@ -804,6 +804,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     mesh_mode,
     show_axes,
   )?;
+  // A `PlotLabel` sets a title above the finished picture.
+  let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   Ok(crate::graphics3d_result_with_structure(svg, structure))
 }
@@ -1809,6 +1811,8 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
+  // A `PlotLabel` sets a title above the finished picture.
+  let svg = with_plot_label(svg, args, svg_width, svg_height);
   Ok(crate::graphics3d_result(svg))
 }
 
@@ -2861,6 +2865,17 @@ fn collect_3d_primitives(
         // surface of revolution about a polyline, one radius per vertex.
         // `curve` is a point list, a `Line[…]`, or a list of either.
         "Tube" if !args.is_empty() => {
+          // `Tube[BSplineCurve[…], r]` runs the tube along the spline, so
+          // the curve is sampled first — a tube around the bare control
+          // points would cut every corner the spline rounds.
+          let spline = match &args[0] {
+            Expr::FunctionCall { name, args: inner }
+              if name == "BSplineCurve" && !inner.is_empty() =>
+            {
+              bspline_curve_points(inner)
+            }
+            _ => None,
+          };
           let curve = match &args[0] {
             Expr::FunctionCall { name, args: inner }
               if name == "Line" && !inner.is_empty() =>
@@ -2870,13 +2885,16 @@ fn collect_3d_primitives(
             other => other.clone(),
           };
           let curve = evaluate_expr_to_expr(&curve).unwrap_or(curve);
-          let curves: Vec<Vec<Point3D>> = match parse_point3d_list(&curve) {
+          let curves: Vec<Vec<Point3D>> = match spline {
             Some(pts) => vec![pts],
-            None => match &curve {
-              Expr::List(items) => {
-                items.iter().filter_map(parse_point3d_list).collect()
-              }
-              _ => vec![],
+            None => match parse_point3d_list(&curve) {
+              Some(pts) => vec![pts],
+              None => match &curve {
+                Expr::List(items) => {
+                  items.iter().filter_map(parse_point3d_list).collect()
+                }
+                _ => vec![],
+              },
             },
           };
           for pts in curves {
@@ -2956,6 +2974,19 @@ fn collect_3d_primitives(
             style: style.clone(),
             smooth: true,
           });
+        }
+        // `BSplineCurve[{p1, …}, opts…]` draws the spline its control
+        // points define. (`Tube[BSplineCurve[…], r]` thickens the same
+        // curve — see the `Tube` arm above.)
+        "BSplineCurve" if !args.is_empty() => {
+          if let Some(pts) = bspline_curve_points(args)
+            && pts.len() >= 2
+          {
+            prims.push(Primitive3D::Line3D {
+              segments: vec![pts],
+              style: style.clone(),
+            });
+          }
         }
         "BSplineSurface" if !args.is_empty() => {
           if let Some(grid) = parse_point3d_grid(&args[0]) {
@@ -3164,6 +3195,61 @@ fn bspline_sample_weights(n: usize, num_samples: usize) -> Vec<Vec<f64>> {
         .collect()
     })
     .collect()
+}
+
+/// The polyline a `BSplineCurve[{p1, …}, opts…]` stands for: the uniform
+/// B-spline of degree `min(3, n - 1)` over its control points, sampled
+/// finely enough to read as a curve. `SplineClosed -> True` wraps the
+/// leading control points onto the end so the curve closes on itself.
+/// Arguments after the control points that are not options are ignored,
+/// the way Wolfram ignores them. `None` when the first argument is not a
+/// list of 3-D points.
+fn bspline_curve_points(args: &[Expr]) -> Option<Vec<Point3D>> {
+  let pts_expr =
+    evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone());
+  let control = parse_point3d_list(&pts_expr)?;
+  if control.len() < 2 {
+    return Some(control);
+  }
+  let closed = args.iter().skip(1).any(|arg| {
+    matches!(arg,
+      Expr::Rule { pattern, replacement }
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "SplineClosed")
+        && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True"))
+  });
+  let control = if closed {
+    let degree = 3usize.min(control.len() - 1);
+    let mut cp = control.clone();
+    cp.extend_from_slice(&control[..degree]);
+    cp
+  } else {
+    control
+  };
+  let n = control.len();
+  // Enough samples that the curve is smooth without the tube it may feed
+  // exploding into triangles: a handful per control point, bounded.
+  let samples = (n * 6).clamp(64, 600);
+  Some(
+    bspline_sample_weights(n, samples)
+      .iter()
+      .map(|weights| {
+        let mut acc = Point3D {
+          x: 0.0,
+          y: 0.0,
+          z: 0.0,
+        };
+        for (j, &b) in weights.iter().enumerate() {
+          if b == 0.0 {
+            continue;
+          }
+          acc.x += b * control[j].x;
+          acc.y += b * control[j].y;
+          acc.z += b * control[j].z;
+        }
+        acc
+      })
+      .collect(),
+  )
 }
 
 /// Tessellate a B-spline surface from its control-point grid by sampling
@@ -4282,10 +4368,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if prims.is_empty() {
-    // Even with no primitives, return the marker
+    // Even with no primitives, return the marker — with its title, since
+    // a `PlotLabel` is drawn whether or not the picture has contents.
     let empty_svg = format!(
       "<svg width=\"{svg_width}\" height=\"{svg_height}\" xmlns=\"http://www.w3.org/2000/svg\"></svg>"
     );
+    let empty_svg =
+      with_plot_label(empty_svg, &args[1..], svg_width, svg_height);
     return Ok(crate::graphics3d_result_with_structure(
       empty_svg, structure,
     ));
@@ -5119,6 +5208,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
+  // A `PlotLabel` sets a title above the finished picture. `args[1..]` are
+  // the options; `args[0]` is the content, which may itself be a `Rule`
+  // (`Graphics3D[a -> b]` draws nothing but is legal) and must not be read
+  // as one.
+  let svg = with_plot_label(svg, &args[1..], svg_width, svg_height);
   Ok(crate::graphics3d_result_with_structure(svg, structure))
 }
 
@@ -5163,6 +5257,108 @@ fn axis_label_markup(expr: &Expr) -> Option<String> {
       (!markup.is_empty()).then_some(markup)
     }
   }
+}
+
+/// The height of the strip a `PlotLabel` reserves above a 3-D picture.
+/// Matches the strip the 2-D renderer reserves, so a labelled `Graphics`
+/// and a labelled `Graphics3D` set their titles at the same height.
+const PLOT_LABEL_STRIP: u32 = 26;
+
+/// The typeset markup of the `PlotLabel` an option list carries, or `None`
+/// when it carries none (`PlotLabel -> None` included). Any expression can
+/// label a plot — a string, a `Style[…]`, a `Row[…]` of computed values —
+/// so it is typeset the way every other label is rather than printed.
+fn plot_label_markup(opts: &[Expr]) -> Option<String> {
+  for opt in opts {
+    let (pattern, replacement): (&Expr, &Expr) = match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      Expr::FunctionCall { name, args }
+        if name == "Rule" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      _ => continue,
+    };
+    if !matches!(pattern, Expr::Identifier(n) if n == "PlotLabel") {
+      continue;
+    }
+    let value = evaluate_expr_to_expr(replacement)
+      .unwrap_or_else(|_| replacement.clone());
+    if matches!(&value, Expr::Identifier(s) if s == "None" || s == "Null") {
+      return None;
+    }
+    let markup = crate::functions::graphics::expr_to_svg_markup(&value);
+    if !markup.is_empty() {
+      return Some(markup);
+    }
+  }
+  None
+}
+
+/// Set a 3-D picture's `PlotLabel` above it. The finished SVG is nested,
+/// untouched, into a canvas one label strip taller, with the label centred
+/// in the strip — the projection inside was scaled to the picture's own
+/// size, so growing the canvas rather than the drawing area leaves it
+/// exactly as it was. Returns `svg` unchanged when there is no label.
+fn with_plot_label(
+  svg: String,
+  opts: &[Expr],
+  width: u32,
+  height: u32,
+) -> String {
+  let Some(label) = plot_label_markup(opts) else {
+    return svg;
+  };
+  let total = height + PLOT_LABEL_STRIP;
+  // The strip is painted in the picture's own background so the two read
+  // as one canvas — an explicit `Background` reaches it too.
+  let bg = opts
+    .iter()
+    .find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Background") => {
+        crate::functions::graphics::parse_color(replacement)
+      }
+      _ => None,
+    })
+    .map(|c| {
+      (
+        (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+      )
+    })
+    .unwrap_or_else(|| {
+      let (theme_bg, _, _, _, _) = crate::functions::plot::plot_theme();
+      (theme_bg.0, theme_bg.1, theme_bg.2)
+    });
+  // `width="100%"` (an `ImageSize -> Full` picture) has to stay responsive,
+  // so the outer canvas repeats whichever sizing the inner one chose.
+  let sizing = if svg.starts_with("<svg width=\"100%\"") {
+    format!(
+      "width=\"100%\" viewBox=\"0 0 {width} {total}\" \
+       preserveAspectRatio=\"xMidYMid meet\""
+    )
+  } else {
+    format!(
+      "width=\"{width}\" height=\"{total}\" viewBox=\"0 0 {width} {total}\""
+    )
+  };
+  let cx = width as f64 / 2.0;
+  format!(
+    "<svg {sizing} xmlns=\"http://www.w3.org/2000/svg\">\n\
+     <rect width=\"{width}\" height=\"{total}\" fill=\"rgb({},{},{})\"/>\n\
+     <text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
+     font-family=\"sans-serif\" font-size=\"16\" fill=\"#333333\">{label}</text>\n\
+     <g transform=\"translate(0,{PLOT_LABEL_STRIP})\">{svg}</g>\n\
+     </svg>",
+    bg.0, bg.1, bg.2,
+  )
 }
 
 /// The characters an SVG markup fragment actually shows, for width
@@ -5530,6 +5726,8 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _mesh_mode,
     true, // show_axes: always show axes for list_plot3d
   )?;
+  // A `PlotLabel` sets a title above the finished picture.
+  let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   Ok(crate::graphics3d_result(svg))
 }
@@ -5930,6 +6128,8 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _mesh_mode,
     show_axes,
   )?;
+  // A `PlotLabel` sets a title above the finished picture.
+  let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   Ok(crate::graphics3d_result_with_structure(svg, structure))
 }
@@ -6296,6 +6496,8 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _mesh_mode,
     show_axes,
   )?;
+  // A `PlotLabel` sets a title above the finished picture.
+  let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   Ok(crate::graphics3d_result(svg))
 }
@@ -6520,6 +6722,8 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_height,
     full_width,
   )?;
+  // A `PlotLabel` sets a title above the finished picture.
+  let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   Ok(crate::graphics3d_result(svg))
 }
@@ -6949,6 +7153,8 @@ pub fn list_line_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_height,
     full_width,
   )?;
+  // A `PlotLabel` sets a title above the finished picture.
+  let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   Ok(crate::graphics3d_result(svg))
 }
@@ -7612,6 +7818,8 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _mesh_mode,
     show_axes,
   )?;
+  // A `PlotLabel` sets a title above the finished picture.
+  let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   Ok(crate::graphics3d_result_with_structure(svg, structure))
 }
@@ -7839,8 +8047,77 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _mesh_mode,
     show_axes,
   )?;
+  // A `PlotLabel` sets a title above the finished picture.
+  let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   Ok(crate::graphics3d_result(svg))
+}
+
+/// Split a `PlotStyle` value into the `Tube[…]` directive it carries (as
+/// that `Tube`'s arguments after the curve — its radius, when given) and
+/// what remains of the style. `Tube` asks for a shape rather than a
+/// colour, so it has to be lifted out of the directive list and applied to
+/// the curve itself. Returns `(None, style)` when there is no `Tube`.
+fn take_tube_directive(style: &Expr) -> (Option<Vec<Expr>>, Expr) {
+  match style {
+    Expr::FunctionCall { name, args } if name == "Tube" => {
+      (Some(args.to_vec()), Expr::List(vec![].into()))
+    }
+    // `{colour, Tube[r]}` and `Directive[colour, Tube[r]]` both group
+    // directives, so look inside either for the `Tube`.
+    Expr::List(items) => {
+      let (tube, kept) = partition_tube(items);
+      (tube, Expr::List(kept.into()))
+    }
+    Expr::FunctionCall { name, args } if name == "Directive" => {
+      let (tube, kept) = partition_tube(args);
+      (
+        tube,
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: kept.into(),
+        },
+      )
+    }
+    other => (None, other.clone()),
+  }
+}
+
+/// The `Tube[…]` among a list of directives (its arguments) and the other
+/// directives, searched one level down as well so that a nested grouping
+/// (`{colour, Directive[Tube[r]]}`) is found too.
+fn partition_tube(items: &[Expr]) -> (Option<Vec<Expr>>, Vec<Expr>) {
+  let mut tube: Option<Vec<Expr>> = None;
+  let mut kept: Vec<Expr> = Vec::with_capacity(items.len());
+  for item in items {
+    match item {
+      Expr::FunctionCall { name, args } if name == "Tube" && tube.is_none() => {
+        tube = Some(args.to_vec());
+      }
+      Expr::List(_)
+      | Expr::FunctionCall {
+        name: _, args: _, ..
+      } if tube.is_none() && contains_tube(item) => {
+        let (inner, rest) = take_tube_directive(item);
+        tube = inner;
+        kept.push(rest);
+      }
+      other => kept.push(other.clone()),
+    }
+  }
+  (tube, kept)
+}
+
+/// Whether a directive group holds a `Tube[…]` one level down.
+fn contains_tube(expr: &Expr) -> bool {
+  let items: &[Expr] = match expr {
+    Expr::List(items) => items,
+    Expr::FunctionCall { name, args } if name == "Directive" => args,
+    _ => return false,
+  };
+  items
+    .iter()
+    .any(|i| matches!(i, Expr::FunctionCall { name, .. } if name == "Tube"))
 }
 
 /// 1-iterator (curve) form of ParametricPlot3D.
@@ -7920,9 +8197,21 @@ fn parametric_plot3d_curve_ast(
     }
   }
 
+  // `PlotStyle -> Tube[r]` asks for the curve to be drawn as a tube of
+  // radius `r` instead of as a line — how a Demonstration gives a knot its
+  // thickness. It is not a colour or a thickness, so it comes out of the
+  // style list and turns each sampled polyline into a `Tube` instead.
+  let (tube_args, plot_style) = match plot_style {
+    Some(ps) => {
+      let (tube, rest) = take_tube_directive(ps);
+      (tube, Some(rest))
+    }
+    None => (None, None),
+  };
+
   // Build a primitives list: [<style directives>, Line[pts1], Line[pts2], …]
   let mut prim_items: Vec<Expr> = Vec::new();
-  if let Some(ps) = plot_style {
+  if let Some(ps) = &plot_style {
     // Wrap whatever PlotStyle holds into a Directive[…] so that
     // collect_3d_primitives picks up nested colors/Thickness/etc.
     prim_items.push(Expr::FunctionCall {
@@ -7936,9 +8225,19 @@ fn parametric_plot3d_curve_ast(
     let mut current_segment: Vec<Expr> = Vec::new();
     let flush = |seg: &mut Vec<Expr>, sink: &mut Vec<Expr>| {
       if seg.len() >= 2 {
-        sink.push(Expr::FunctionCall {
-          name: "Line".to_string(),
-          args: vec![Expr::List(std::mem::take(seg).into())].into(),
+        let points = Expr::List(std::mem::take(seg).into());
+        sink.push(match &tube_args {
+          Some(extra) => Expr::FunctionCall {
+            name: "Tube".to_string(),
+            args: std::iter::once(points)
+              .chain(extra.iter().cloned())
+              .collect::<Vec<_>>()
+              .into(),
+          },
+          None => Expr::FunctionCall {
+            name: "Line".to_string(),
+            args: vec![points].into(),
+          },
         });
       } else {
         seg.clear();
@@ -7963,9 +8262,9 @@ fn parametric_plot3d_curve_ast(
   }
 
   if !produced_any
-    && prim_items
-      .iter()
-      .all(|e| !matches!(e, Expr::FunctionCall { name, .. } if name == "Line"))
+    && prim_items.iter().all(
+      |e| !matches!(e, Expr::FunctionCall { name, .. } if name == "Line" || name == "Tube"),
+    )
   {
     return Err(InterpreterError::EvaluationError(
       "ParametricPlot3D: parametric function produced no finite values".into(),
@@ -8324,6 +8623,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _mesh_mode,
     show_axes,
   )?;
+  // A `PlotLabel` sets a title above the finished picture.
+  let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   Ok(crate::graphics3d_result(svg))
 }

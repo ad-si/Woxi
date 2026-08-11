@@ -3326,6 +3326,24 @@ mod plot3d {
   mod plot_misc {
     use super::*;
 
+    /// The plotted function is held, so a `Table` generating the curves
+    /// only becomes a list once evaluated. Wolfram draws one curve per
+    /// entry either way, so writing `Evaluate` must not change the result.
+    #[test]
+    fn plot_table_generated_curves() {
+      let generated = export_svg("Plot[Table[Sin[i x], {i, 1, 3}], {x, 0, 3}]");
+      let curves = generated
+        .split("points=\"")
+        .skip(1)
+        .filter(|s| s.split('"').next().unwrap_or("").split(' ').count() > 20)
+        .count();
+      assert_eq!(curves, 3, "expected one curve per Table entry");
+      assert_eq!(
+        generated,
+        export_svg("Plot[Evaluate[Table[Sin[i x], {i, 1, 3}]], {x, 0, 3}]")
+      );
+    }
+
     #[test]
     fn plot_unevaluatable_returns_graphics() {
       // When the function can't be numerically evaluated, Plot still returns
@@ -3942,6 +3960,26 @@ mod plot3d {
       );
       assert!(ticks.contains(&"one".to_string()), "{ticks:?}");
       assert!(ticks.contains(&"three".to_string()), "{ticks:?}");
+    }
+
+    /// Bare tick positions label themselves in a plain `Graphics` too —
+    /// which is the path `Show` re-renders a merged plot through, so an
+    /// explicit `Ticks` setting survives being combined with other
+    /// primitives.
+    #[test]
+    fn graphics_labels_a_symbolic_tick_position_with_its_expression() {
+      let svg = export_svg(
+        "Graphics[{Line[{{-4, 0}, {4, 0}}]}, Axes -> True, \
+         Ticks -> {{-Pi, 0, Pi}, {-1, 0, 1}}]",
+      );
+      assert!(svg.contains(">π<"), "expected a π tick label: {svg}");
+      assert!(svg.contains(">-π<"), "expected a -π tick label: {svg}");
+      assert!(
+        !svg.contains("3.14159"),
+        "a symbolic tick must not be labelled by value: {svg}"
+      );
+      // A literal position still labels itself.
+      assert!(svg.contains(">-1<"), "expected a -1 tick label: {svg}");
     }
 
     /// A tick given as a bare position is labelled with that *expression*
@@ -7272,6 +7310,136 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// Counts the sampled polylines a plot SVG drew, ignoring the short
+    /// strokes that make up axes, ticks and frames.
+    fn sampled_curve_count(svg: &str) -> usize {
+      svg
+        .split("points=\"")
+        .skip(1)
+        .filter(|s| s.split('"').next().unwrap_or("").split(' ').count() > 20)
+        .count()
+    }
+
+    /// A curve specification may be nested to any depth — the grouping only
+    /// steers styling — so an extra pair of braces around a list of curves
+    /// still draws every one of them.
+    #[test]
+    fn parametric_plot_nested_curve_list() {
+      let svg = export_svg(
+        "ParametricPlot[{{{Sin[t], Cos[t]}, {2 Sin[t], 2 Cos[t]}, \
+         {3 Sin[t], 3 Cos[t]}}}, {t, 0, 2 Pi}]",
+      );
+      assert_eq!(
+        sampled_curve_count(&svg),
+        3,
+        "expected all three curves of the nested specification"
+      );
+    }
+
+    /// The curve specification is held, so a generated one only takes curve
+    /// shape once evaluated. Wolfram samples the held body, so `Table` in
+    /// the first argument must not need an explicit `Evaluate`.
+    #[test]
+    fn parametric_plot_table_generated_curves() {
+      let generated = export_svg(
+        "ParametricPlot[{Table[{a Sin[t], a Cos[t]}, {a, 1, 3}]}, \
+         {t, 0, 2 Pi}]",
+      );
+      assert_eq!(
+        sampled_curve_count(&generated),
+        3,
+        "expected one curve per Table entry"
+      );
+      // Same curves as writing the list out by hand.
+      let explicit = export_svg(
+        "ParametricPlot[{{Sin[t], Cos[t]}, {2 Sin[t], 2 Cos[t]}, \
+         {3 Sin[t], 3 Cos[t]}}, {t, 0, 2 Pi}]",
+      );
+      assert_eq!(generated, explicit);
+    }
+
+    /// A specification that is neither a curve nor a grouping of curves is
+    /// still an error rather than a silently empty plot.
+    #[test]
+    fn parametric_plot_rejects_non_curve_specification() {
+      let err = interpret("ParametricPlot[{1, 2, 3}, {t, 0, 1}]").unwrap_err();
+      assert!(
+        format!("{err}").contains("first argument must be"),
+        "unexpected error: {err}"
+      );
+    }
+
+    /// Sampling is refined where the polyline would depart from the curve,
+    /// so a curve that only bends over a small slice of a wide parameter
+    /// range still renders smoothly instead of as a few long chords.
+    #[test]
+    fn parametric_plot_refines_a_narrow_feature() {
+      // ArcTan saturates away from the origin: on {t, -1000, 1000} the
+      // whole shape lives in |t| < 10, a half-percent of the range.
+      let svg = export_svg(
+        "ParametricPlot[{ArcTan[t + 1] - ArcTan[t - 1], \
+         ArcTan[t + 1] + ArcTan[t - 1]}, {t, -1000, 1000}]",
+      );
+      let points: Vec<(f64, f64)> = svg
+        .split("points=\"")
+        .skip(1)
+        .max_by_key(|s| s.split('"').next().unwrap_or("").len())
+        .expect("a sampled curve")
+        .split('"')
+        .next()
+        .unwrap()
+        .split(' ')
+        .filter_map(|p| {
+          let (x, y) = p.split_once(',')?;
+          Some((x.parse().ok()?, y.parse().ok()?))
+        })
+        .collect();
+      // Points were added on top of the uniform grid, which is what tells
+      // refinement apart from plain sampling.
+      assert!(
+        points.len() > 500,
+        "expected the uniform grid to be refined, got {} points",
+        points.len()
+      );
+      // The turn from one sampled segment to the next stays gentle: no
+      // corner sharper than ~15° survives on a smooth curve. Segments too
+      // short to be seen are skipped — in the saturated tails the rounding
+      // of coordinates to the SVG grid, not the sampling, sets their
+      // direction.
+      let sharp_corners = points
+        .windows(3)
+        .filter(|w| {
+          let (a, b, c) = (w[0], w[1], w[2]);
+          let (u, v) = ((b.0 - a.0, b.1 - a.1), (c.0 - b.0, c.1 - b.1));
+          let (lu, lv) = (u.0.hypot(u.1), v.0.hypot(v.1));
+          if lu < 5.0 || lv < 5.0 {
+            return false;
+          }
+          (u.0 * v.0 + u.1 * v.1) / (lu * lv) < 0.966
+        })
+        .count();
+      assert_eq!(
+        sharp_corners, 0,
+        "adaptive sampling should leave no visible corners"
+      );
+    }
+
+    /// `Ticks` positions given as bare expressions are labelled with the
+    /// expression, not its numeric value — through `Show`, which re-renders
+    /// the plot as graphics, just as in the plot itself.
+    #[test]
+    fn show_keeps_symbolic_tick_labels() {
+      let svg = export_svg(
+        "Show[ParametricPlot[{4 Cos[t], 4 Sin[t]}, {t, 0, 2 Pi}, \
+         Ticks -> {{-Pi, 0, Pi}, {-Pi, 0, Pi}}], Graphics[{Point[{0, 0}]}]]",
+      );
+      assert!(svg.contains(">π<"), "expected a π tick label");
+      assert!(
+        !svg.contains("3.14159"),
+        "π ticks should not be labelled numerically"
+      );
+    }
+
     #[test]
     fn polar_plot_cardioid() {
       insta::assert_snapshot!(export_svg(
@@ -9089,6 +9257,59 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       insta::assert_snapshot!(export_svg(
         "StreamPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}]"
       ));
+    }
+
+    // Part 1 of a field plot is its graphics content, so a Demonstration can
+    // lift the field into a `Graphics[{Opacity[…], StreamPlot[…][[1]]}]` of
+    // its own instead of showing the plot on its own.
+    #[test]
+    fn stream_plot_part_one_yields_line_primitives() {
+      assert_eq!(
+        interpret(
+          "Head[StreamPlot[{1, x}, {x, -1, 1}, {y, -1, 1}][[1, 1, 2]]]"
+        )
+        .unwrap(),
+        "Line"
+      );
+      assert_eq!(
+        interpret(
+          "Head[Graphics[{Opacity[0.1], \
+             StreamPlot[{1, x}, {x, -1, 1}, {y, -1, 1}][[1]]}]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+    }
+
+    #[test]
+    fn vector_plot_part_one_yields_arrow_primitives() {
+      assert_eq!(
+        interpret(
+          "Head[VectorPlot[{1, x}, {x, -1, 1}, {y, -1, 1}][[1, 1, 2]]]"
+        )
+        .unwrap(),
+        "Arrow"
+      );
+    }
+
+    // The tick at the very edge of the plot range used to be centred on the
+    // boundary, so half of `-1.0` fell outside the picture and it read as
+    // `1.0`. It now sits far enough inside to stay whole.
+    #[test]
+    fn an_edge_tick_label_is_not_cut_off() {
+      let svg = export_svg(
+        "Graphics[{Circle[{0, 0}, 0.1]}, Axes -> True, \
+         PlotRange -> {{-1, 3}, {-2, 2}}, ImageSize -> {400, 400}]",
+      );
+      let x: f64 = svg
+        .split("</text>")
+        .find(|chunk| chunk.ends_with(">-1.0"))
+        .and_then(|chunk| chunk.rsplit("<text x=\"").next())
+        .and_then(|rest| rest.split('"').next())
+        .expect("an x tick labelled -1.0")
+        .parse()
+        .expect("a numeric x attribute");
+      assert!(x > 0.0, "the -1.0 label starts at x={x}, still clipped");
     }
 
     #[test]
@@ -16030,6 +16251,35 @@ mod manipulate {
         assert_eq!((*x_min, *y_min), (0.0, 0.0));
         assert_eq!((*x_max, *y_max), (1.0, 1.0));
         assert_eq!((*x_initial, *y_initial), (0.5, 0.5));
+      }
+      _ => panic!("expected 2D control"),
+    }
+  }
+
+  // A Locator's corner bounds are often written in terms of *other* control
+  // variables, which are only bound once the whole Manipulate is in scope.
+  #[test]
+  fn spec_locator_bounds_may_name_other_control_variables() {
+    let expr = interpret_to_expr(
+      "Manipulate[pt, \
+       {{pt, {0.2, 1}}, {xr[[1]], yr[[1]]}, {xr[[2]], yr[[2]]}, Locator}, \
+       {{xr, {-1, 3}}, ControlType -> None}, \
+       {{yr, {-2, 2}}, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D {
+        name,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } => {
+        assert_eq!(name, "pt");
+        assert_eq!((*x_min, *x_max), (-1.0, 3.0));
+        assert_eq!((*y_min, *y_max), (-2.0, 2.0));
       }
       _ => panic!("expected 2D control"),
     }

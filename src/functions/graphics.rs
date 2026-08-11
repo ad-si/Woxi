@@ -4597,7 +4597,16 @@ fn parse_tick_spec(expr: &Expr) -> TickSpec {
           Expr::List(pair) if pair.len() >= 2 => {
             Some((expr_to_f64(&pair[0])?, Some(expr_to_svg_markup(&pair[1]))))
           }
-          other => Some((expr_to_f64(other)?, None)),
+          // A bare position is labelled with the expression standing at
+          // it, so `Ticks -> {{-Pi, 0, Pi}, …}` reads "-π", "0", "π"
+          // rather than the numeric value it evaluates to.
+          other => {
+            let pos = expr_to_f64(other)?;
+            Some((
+              pos,
+              Some(crate::functions::plot::bare_tick_label(other, pos)),
+            ))
+          }
         })
         .collect(),
     ),
@@ -4624,6 +4633,28 @@ fn axis_ticks(
   }
 }
 
+/// Horizontal centre for a bottom-axis tick label, shifted inwards when
+/// centring it on the tick would push part of the text outside the picture.
+/// `margins` is the room available left of `0` and right of `svg_w`; the
+/// width estimate assumes the 14px monospace face the labels are drawn in.
+fn clamp_tick_label_x(
+  x: f64,
+  label: &str,
+  svg_w: f64,
+  margins: (f64, f64),
+) -> f64 {
+  let half = label.chars().count() as f64 * 14.0 * 0.6 / 2.0;
+  let (left, right) = margins;
+  let lo = -left + half;
+  let hi = svg_w + right - half;
+  // A label wider than the picture cannot be placed without overflow; leave
+  // it centred rather than swinging it to an arbitrary side.
+  if lo > hi {
+    return x;
+  }
+  x.clamp(lo, hi)
+}
+
 fn render_axes(
   svg: &mut String,
   axes: (bool, bool),
@@ -4632,6 +4663,7 @@ fn render_axes(
   svg_h: f64,
   axes_label: &Option<(String, String)>,
   ticks: (&TickSpec, &TickSpec),
+  x_margins: (f64, f64),
 ) {
   let t = theme();
   let axis_stroke = t.axis_stroke;
@@ -4677,6 +4709,12 @@ fn render_axes(
       if axes.1 && t.abs() < step.unwrap_or(1.0) * 1e-6 {
         continue;
       }
+      // A tick sitting on the edge of the drawing area centres its label
+      // half outside the picture, where it is cut off — `-1.0` at the left
+      // edge would read as `1.0`. Nudge such a label inwards just far enough
+      // to clear the margin, the way Wolfram's image padding keeps the
+      // outermost labels whole.
+      let x = clamp_tick_label_x(x, &label, svg_w, x_margins);
       svg.push_str(&format!(
         "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"hanging\">{label}</text>\n",
         axis_y_px + 6.0,
@@ -6829,6 +6867,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_h,
     &axes_label,
     (&ticks_x, &ticks_y),
+    (margin_left, margin_right),
   );
 
   // Render primitives. A primitive with a drop shadow is wrapped in a
@@ -14379,7 +14418,10 @@ fn resolve_display_item(expr: &Expr) -> Expr {
 /// Style[b, Bold]}]`. Only the item list is rewritten; a separator or
 /// option argument keeps its place. `None` when the wrapped expression is
 /// not a layout with a list of items.
-fn style_pushed_into_layout(inner: &Expr, directives: &[Expr]) -> Option<Expr> {
+pub(crate) fn style_pushed_into_layout(
+  inner: &Expr,
+  directives: &[Expr],
+) -> Option<Expr> {
   if directives.is_empty() {
     return None;
   }
@@ -15812,9 +15854,17 @@ fn process_manipulate_var_spec(items: &[Expr]) -> Expr {
   new_items.push(items[0].clone());
   for item in &items[1..] {
     // Try to evaluate bounds; if evaluation fails, keep the original so
-    // the echoed form still round-trips.
+    // the echoed form still round-trips. A bound stated in terms of another
+    // control's variable (`{{p, init}, {r[[1]], s[[1]]}, …}`) cannot resolve
+    // here — Wolfram holds the whole Manipulate and only ever sees such a
+    // bound with the control variables in scope — so this speculative pass
+    // must stay silent rather than report `Part::partd` on the free symbol.
+    let snapshot = crate::snapshot_warnings();
+    crate::push_quiet();
     let evaluated =
       evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone());
+    crate::pop_quiet();
+    crate::restore_warnings(snapshot);
     new_items.push(evaluated);
   }
   // A 2-item spec `{var, range}` whose `range` doesn't reduce to a concrete
@@ -18537,13 +18587,24 @@ fn parse_manipulate_control(
     // behavior: a fixed binding baked into the body.
     let evaluated = crate::evaluator::evaluate_expr_to_expr(&value_expr)
       .unwrap_or_else(|_| value_expr.clone());
+    // A corner bound is often written in terms of *other* control variables
+    // (`{{p, {0, 1}}, {xrange[[1]], yrange[[1]]}, {xrange[[2]],
+    // yrange[[2]]}, Locator}` reuses two `ControlType -> None` ranges), so
+    // each corner is evaluated against the initial-value bindings the caller
+    // installed before it is read as a numeric pair. Without this the corners
+    // look non-numeric and the locator falls back to a padded box around its
+    // starting point.
     let corner_bounds: Vec<(f64, f64)> = items[1..]
       .iter()
       .filter(|it| {
         !matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
           && !matches!(it, Expr::Identifier(s) if s == "Locator")
       })
-      .filter_map(list2_f64)
+      .filter_map(|it| {
+        list2_f64(it).or_else(|| {
+          list2_f64(&crate::evaluator::evaluate_expr_to_expr(it).ok()?)
+        })
+      })
       .collect();
     let auto_create = items.iter().any(|it| {
       matches!(

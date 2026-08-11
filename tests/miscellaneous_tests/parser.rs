@@ -211,6 +211,56 @@ mod tests {
   }
 
   #[test]
+  fn test_comment_holding_a_bracket_before_a_semicolon() {
+    // Regression: the zero-width lookaheads that scan ahead for a `;` (and
+    // for `;;` / `->`) walk the source bracket by bracket, and run inside an
+    // atomic rule where pest does not skip comments for them. A comment
+    // holding an unbalanced bracket, quote or semicolon therefore threw the
+    // scan off and made the whole enclosing expression unparseable — as in
+    // `For[…] (* endof For[ ik *);`, which is ordinary Demonstration code.
+    for input in [
+      "r[a (* [ *); b]",
+      "r[a (* ] *); b]",
+      "r[a (* endof For[ ij *);]",
+      "{1 (* ) *); 2}",
+      "f[a (* \" *); b]",
+      "f[a (* ; *), b]",
+      "f[a (* [ *) ;; 2]",
+      "f[a (* -> *) -> b]",
+    ] {
+      assert!(parse(input).is_ok(), "should parse: {:?}", input);
+    }
+    // The comment is still only a comment: what it holds never changes the
+    // expression the parser builds.
+    assert_eq!(
+      woxi::interpret("Hold[f[a (* [ *); b]]").unwrap(),
+      "Hold[f[a; b]]"
+    );
+    assert_eq!(woxi::interpret("{1 (* ) *); 2}").unwrap(), "{2}");
+    assert_eq!(
+      woxi::interpret("Range[5][[2 (* [ *);; 3]]").unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(
+      woxi::interpret("{a, b} /. a (* [ *) -> 1").unwrap(),
+      "{1, b}"
+    );
+  }
+
+  #[test]
+  fn test_comment_inside_a_manipulate_control_block() {
+    // The same scan runs for every function argument, so a commented-out
+    // bracket between a `For` body and the `;` that ends it has to survive
+    // several levels of nesting.
+    let code = "Hold[Module[{a}, \
+       For[i = 1, i < 3, i++, \
+         { For[j = 1, j < 2, j++, {a = i j}] } (* endof For[ j *) \
+       ]; (* endof For[ i *) \
+       a]]";
+    assert!(parse(code).is_ok(), "should parse: {:?}", code);
+  }
+
+  #[test]
   fn test_bracket_group_still_starts_implicit_times() {
     // The `SoloBracketGroup` guard must not reject a genuine juxtaposition.
     assert_eq!(woxi::interpret("{1, 2} {3, 4}").unwrap(), "{3, 8}");
