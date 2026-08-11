@@ -7572,6 +7572,70 @@ Cell[BoxData[
     assert_eq!(names, vec!["n", "nt"]);
   }
 
+  #[test]
+  fn modular_power_graph_manipulate_draws_its_own_edges() {
+    // The shape the modular-arithmetic Demonstrations share: a `GraphPlot`
+    // inside a `Pane`, laid out by name with `Method ->
+    // "CircularEmbedding"` and drawn edge by edge with an
+    // `EdgeShapeFunction`, plus a second slider whose maximum follows the
+    // first. Without the shape function the plot came out as the default
+    // grey arrows instead of the greyed-out dashed lines.
+    let code = "Manipulate[\
+      edges = Rule @@@ Flatten[Table[{a, b}, {a, k - 1}, {b, k - 1}], 1]; \
+      marked = Rule @@@ Transpose[{Range[k], Mod[Range[k]^p, k, 1]}]; \
+      Pane[GraphPlot[edges, Method -> \"CircularEmbedding\", \
+        DirectedEdges -> True, \
+        EdgeShapeFunction -> (If[MemberQ[List @@@ marked, #2], \
+          {Blue, Arrow[#1]}, {LightGray, Dashed, Line[#1]}] &)], 380], \
+      {{k, 7, \"modulus\"}, 2, 24, 1, Appearance -> \"Labeled\"}, \
+      {{p, 2, \"power\"}, 0, k, 1, Appearance -> \"Labeled\"}, \
+      TrackedSymbols -> Manipulate, AutorunSequencing -> {2}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the modular-power Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the graph must render");
+
+    let bounds =
+      |s: &manipulate::ManipulateState, i: usize| match &s.controls[i] {
+        manipulate::ControlState::Continuous { min, max, .. } => (*min, *max),
+        other => panic!("expected continuous control, got {other:?}"),
+      };
+    assert_eq!(bounds(&state, 0), (2.0, 24.0));
+    assert_eq!(
+      bounds(&state, 1),
+      (0.0, 7.0),
+      "the power slider stops at the modulus"
+    );
+
+    // Widening the modulus widens the power slider with it.
+    match &mut state.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 12.0,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "still clean: {:?}", state.error);
+    assert_eq!(bounds(&state, 1), (0.0, 12.0));
+
+    // The edges the shape function draws are plain dashed lines, so the
+    // picture carries no arrow heads at all.
+    let svg = woxi::interpret(
+      "ExportString[\
+       GraphPlot[Rule @@@ Flatten[Table[{a, b}, {a, 6}, {b, 6}], 1], \
+         Method -> \"CircularEmbedding\", DirectedEdges -> True, \
+         EdgeShapeFunction -> (If[MemberQ[{{1, 2}}, #2], \
+           {Blue, Arrow[#1]}, {LightGray, Dashed, Line[#1]}] &)], \"SVG\"]",
+    )
+    .expect("the plot must export");
+    assert!(
+      !svg.contains("<polygon"),
+      "every edge is drawn as a dashed line: {svg}"
+    );
+  }
+
   /// End-to-end regression for the shape the "Recursive Exercises"
   /// Demonstrations share: a recursive family of nested `Disk`s whose
   /// level setter offers fewer levels once the 3D view is on, a colour

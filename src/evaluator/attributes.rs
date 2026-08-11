@@ -343,26 +343,6 @@ fn is_unprotected_builtin(name: &str) -> bool {
   UNPROTECTED_BUILTINS.binary_search(&name).is_ok()
 }
 
-#[cfg(test)]
-mod unprotected_builtins_tests {
-  use super::*;
-
-  /// `is_unprotected_builtin` binary-searches, so an out-of-order entry would
-  /// silently stop matching.
-  #[test]
-  fn the_list_is_sorted_and_free_of_duplicates() {
-    assert!(
-      UNPROTECTED_BUILTINS.windows(2).all(|w| w[0] < w[1]),
-      "UNPROTECTED_BUILTINS must be sorted and duplicate-free"
-    );
-    assert!(
-      UNPROTECTED_BUILTINS
-        .iter()
-        .all(|n| is_unprotected_builtin(n))
-    );
-  }
-}
-
 /// Returns the built-in attributes for a given symbol name.
 /// Attributes are returned in alphabetical order, matching wolframscript output.
 pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
@@ -1456,5 +1436,25 @@ fn matching_user_symbols(pattern: &str) -> Vec<String> {
   match regex::Regex::new(&regex_pattern) {
     Ok(re) => names.into_iter().filter(|n| re.is_match(n)).collect(),
     Err(_) => Vec::new(),
+  }
+}
+
+#[cfg(test)]
+mod unprotected_builtins_tests {
+  use super::*;
+
+  /// `is_unprotected_builtin` binary-searches, so an out-of-order entry would
+  /// silently stop matching.
+  #[test]
+  fn the_list_is_sorted_and_free_of_duplicates() {
+    assert!(
+      UNPROTECTED_BUILTINS.windows(2).all(|w| w[0] < w[1]),
+      "UNPROTECTED_BUILTINS must be sorted and duplicate-free"
+    );
+    assert!(
+      UNPROTECTED_BUILTINS
+        .iter()
+        .all(|n| is_unprotected_builtin(n))
+    );
   }
 }

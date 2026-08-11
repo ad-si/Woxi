@@ -4146,6 +4146,22 @@ fn evaluate_function_call_ast_inner(
           .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
           .cloned(),
       );
+      // `GraphPlot[g, Method -> "CircularEmbedding"]` names the embedding
+      // the same way `Graph` does with `GraphLayout`, so the option is
+      // renamed on the way through. An explicit `GraphLayout` wins.
+      let has_layout = forwarded.iter().any(|o| {
+        matches!(o, Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "GraphLayout"))
+      });
+      if !has_layout {
+        for opt in forwarded.iter_mut() {
+          if let Expr::Rule { pattern, .. } = opt
+            && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method")
+          {
+            **pattern = Expr::Identifier("GraphLayout".to_string());
+          }
+        }
+      }
       if layered {
         let mut spec =
           vec![Expr::String("LayeredDigraphEmbedding".to_string())];

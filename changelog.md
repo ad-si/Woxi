@@ -2,6 +2,24 @@
 
 # Unreleased
 
+- Fixes driven by a Wolfram Demonstration that draws the powers of a
+    modular group as a directed graph:
+    - `EdgeShapeFunction -> f` hands the drawing of each edge to `f`, which
+        is applied as `f[{pt, …}, edge]` and whose result replaces the
+        default line or arrow. The second argument is the edge itself — a
+        `DirectedEdge` or `UndirectedEdge`, not a pair of vertices — so a
+        `MemberQ` test on it picks the same edges Wolfram picks. Directives
+        the function sets stay scoped to its own edge. `EdgeShapeFunction`
+        also takes `None` (draw no edge), a shape name such as `"Line"` or
+        `"Arrow"`, and the per-edge rule form `{DirectedEdge[u, v] -> f}`.
+        The option used to be ignored altogether, so a plot that greys out
+        most of its edges came out as a thicket of default arrows.
+    - `GraphPlot[…, Method -> "CircularEmbedding"]` lays the vertices out on
+        one circle. `Method` names the embedding for `GraphPlot` the way
+        `GraphLayout` does for `Graph`, and is now read as such; an explicit
+        `GraphLayout` still wins. A graph in several pieces used to be
+        packed into a grid of clusters whatever the option said.
+
 - Fixes driven by a Wolfram Demonstration that constructs the centre of a
     circle with compasses alone, each step drawing the circle through two
     points that two earlier circles cross at:
