@@ -243,7 +243,7 @@ Block,Scopes local variables within a block of code,✅,pure,1.0,188
 Alignment,Option symbol for specifying alignment in layouts,✅,pure,6.0,189
 Partition,Partitions a list into sublists of a given length (with offset padding alignment and an optional block head),✅,pure,1.0,190
 Norm,Returns the norm of a vector or matrix,✅,pure,5.0,191
-BSplineCurve,B-spline curve through control points in Graphics,✅,pure,7.0,192
+BSplineCurve,B-spline curve through control points in Graphics and Graphics3D,✅,pure,7.0,192
 PlotPoints,Option for number of sample points in plots,✅,pure,1.0,193
 Sort,Sorts a list in ascending order or by an ordering function which leaves a pair alone unless it compares False,✅,pure,1.0,194
 Series,Computes a power series expansion about a point or at Infinity,✅,pure,1.0,195

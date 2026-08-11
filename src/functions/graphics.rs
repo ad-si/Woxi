@@ -14379,7 +14379,10 @@ fn resolve_display_item(expr: &Expr) -> Expr {
 /// Style[b, Bold]}]`. Only the item list is rewritten; a separator or
 /// option argument keeps its place. `None` when the wrapped expression is
 /// not a layout with a list of items.
-fn style_pushed_into_layout(inner: &Expr, directives: &[Expr]) -> Option<Expr> {
+pub(crate) fn style_pushed_into_layout(
+  inner: &Expr,
+  directives: &[Expr],
+) -> Option<Expr> {
   if directives.is_empty() {
     return None;
   }

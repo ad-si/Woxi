@@ -744,9 +744,17 @@ ListItemRule = { ReplacementRule ~ RuleAnonSuffix? ~ RuleReplaceSuffix* ~ ("//" 
 // `/.` and `//.` bind looser than `->`, so a rule written as an argument may
 // itself be replaced in: `f[a -> 5 /. 5 -> 6]` is `f[(a -> 5) /. (5 -> 6)]`.
 RuleReplaceSuffix = { ("//." | "/.") ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }
+// Comments must be skipped explicitly by the balanced scans below.  They are
+// reachable from atomic rules (`HasSemicolon`), where pest disables the
+// implicit COMMENT rule, so a comment holding an unbalanced bracket, quote or
+// semicolon — e.g. `f[a (* end of For[ *); b]` — would otherwise derail the
+// scan and make the whole expression unparseable.  Listed first in every
+// alternation so `(*` is never mistaken for a parenthesis group.
+ScanComment = @{ "(*" ~ (ScanComment | (!"(*" ~ !"*)" ~ ANY))* ~ "*)" }
 // Scan forward looking for -> or :> at the current nesting depth
 NestedContent = _{ (
-    "<|" ~ NestedContent ~ "|>"
+    ScanComment
+  | "<|" ~ NestedContent ~ "|>"
   | "{" ~ NestedContent ~ "}"
   | "[" ~ NestedContent ~ "]"
   | "(" ~ NestedContent ~ ")"
@@ -758,7 +766,8 @@ NestedContent = _{ (
   | !("<|" | "|>" | "{" | "}" | "[" | "]" | "(" | ")" | "\u{27E6}" | "\u{27E7}" | "\u{301A}" | "\u{301B}" | "\"") ~ ANY
 )* }
 HasRuleOperator = _{ (
-    "<|" ~ NestedContent ~ "|>"
+    ScanComment
+  | "<|" ~ NestedContent ~ "|>"
   | "{" ~ NestedContent ~ "}"
   | "[" ~ NestedContent ~ "]"
   | "(" ~ NestedContent ~ ")"
@@ -774,7 +783,8 @@ HasRuleOperator = _{ (
 // is correctly detected — otherwise the non-atomic trailing `~` would skip the
 // whitespace and the `!(";"|"=")` lookahead would falsely reject the next `;`.
 HasSpanSep = _{ (
-    "<|" ~ NestedContent ~ "|>"
+    ScanComment
+  | "<|" ~ NestedContent ~ "|>"
   | "{" ~ NestedContent ~ "}"
   | "[" ~ NestedContent ~ "]"
   | "(" ~ NestedContent ~ ")"
@@ -787,7 +797,8 @@ HasSpanSep = _{ (
 // Scan forward looking for ; (compound separator, not ;;) at the current nesting depth.
 // Used as a zero-width lookahead to avoid expensive CompoundExpression backtracking.
 HasSemicolon = @{ (
-    ";;" ~ !(";" | "=")         // skip ;; span separators
+    ScanComment
+  | ";;" ~ !(";" | "=")         // skip ;; span separators
   | "<|" ~ NestedContent ~ "|>"
   | "{" ~ NestedContent ~ "}"
   | "[" ~ NestedContent ~ "]"

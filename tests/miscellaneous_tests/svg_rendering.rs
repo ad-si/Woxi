@@ -2671,6 +2671,186 @@ mod tests {
     }
 
     #[test]
+    fn styled_layout_keeps_its_layout_when_exported() {
+      // `Style[Row[…], …]` shows the row, styled — not the source of the
+      // call. A Demonstration captions its plot this way, and the caption
+      // used to export as the literal text `Row[{9, " leaves", …}]`.
+      let svg = svg_of(
+        "Labeled[Graphics[{Circle[]}], \
+         Style[Row[{9, \" leaves\"}], FontSize -> 16, Blue], Bottom]",
+      );
+      assert!(
+        !svg.contains(">Row<"),
+        "the caption must not export as source: {svg}"
+      );
+      assert!(svg.contains(" leaves"), "expected the row's text: {svg}");
+      assert!(
+        svg.contains("font-size=\"16\"") && svg.contains("rgb(0,0,255)"),
+        "the caption keeps the size and colour it asks for: {svg}"
+      );
+      // A styled picture is still the picture.
+      let styled = svg_of("Style[Graphics[{Disk[]}], Blue]");
+      assert!(styled.contains("<ellipse"), "expected the disk: {styled}");
+    }
+
+    #[test]
+    fn styled_grid_still_colours_its_frame() {
+      // The directives of a styled `Grid` reach its frame and dividers, not
+      // only its cells, so unwrapping `Style` must leave that path alone.
+      let svg = svg_of(
+        "Style[Grid[{{a, b}, {c, d}}, Frame -> True, Dividers -> All], Red]",
+      );
+      assert!(
+        svg.contains("stroke=\"rgb(255,0,0)\""),
+        "frame lines stay red: {svg}"
+      );
+    }
+
+    #[test]
+    fn bspline_curve_renders_in_graphics3d() {
+      // `BSplineCurve[{p1, …}]` draws the spline over its control points.
+      // Every control point sits on `z = 0`, so the drawn curve does too:
+      // a rendered curve is one made of line segments, not nothing.
+      let svg = svg_of(
+        "Graphics3D[BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 0}, \
+         {3, 2, 0}}]]",
+      );
+      assert!(
+        svg.matches("<line").count() > 20,
+        "expected a sampled spline curve: {svg}"
+      );
+    }
+
+    #[test]
+    fn bspline_curve_closes_on_spline_closed() {
+      // `SplineClosed -> True` wraps the leading control points onto the
+      // end, so the curve comes back to where it started: a closed ring
+      // spans its control points in both directions, an open spline over
+      // the same points stops short of the wrap.
+      let open = svg_of(
+        "Graphics3D[BSplineCurve[Table[{Sin[t], Cos[t], 0}, \
+         {t, 0, 6.0, 0.5}]]]",
+      );
+      let closed = svg_of(
+        "Graphics3D[BSplineCurve[Table[{Sin[t], Cos[t], 0}, \
+         {t, 0, 6.0, 0.5}], SplineClosed -> True]]",
+      );
+      assert!(open.contains("<line"), "expected an open spline: {open}");
+      assert!(
+        closed.matches("<line").count() > open.matches("<line").count(),
+        "a closed spline runs further than the open one"
+      );
+    }
+
+    #[test]
+    fn tube_follows_a_bspline_curve() {
+      // `Tube[BSplineCurve[…], r]` is how a Demonstration gives a knot its
+      // thickness: the tube runs along the spline, so it tessellates into
+      // a surface rather than being dropped for want of a point list.
+      let svg = svg_of(
+        "Graphics3D[Tube[BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}, \
+         {3, 2, 0}}], 0.2]]",
+      );
+      assert!(
+        svg.matches("<polygon").count() > 100,
+        "expected a tessellated tube around the spline: {svg}"
+      );
+    }
+
+    #[test]
+    fn parametric_plot3d_plot_style_tube_draws_a_tube() {
+      // `PlotStyle -> {colour, Tube[r]}` asks for the curve itself to be
+      // drawn as a tube of radius `r`. The colour still applies; only the
+      // `Tube` directive changes the shape.
+      let tube = svg_of(
+        "ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6.2}, \
+         PlotStyle -> {Red, Tube[0.2]}]",
+      );
+      assert!(
+        tube.matches("<polygon").count() > 100,
+        "expected a tessellated tube: {tube}"
+      );
+      assert!(
+        tube.contains("fill=\"rgb(2"),
+        "the tube keeps the PlotStyle colour: {tube}"
+      );
+      // Without the directive the same curve is still a plain line.
+      let line = svg_of(
+        "ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6.2}, \
+         PlotStyle -> Red]",
+      );
+      assert!(
+        !line.contains("<polygon"),
+        "a curve without Tube stays a line: {line}"
+      );
+    }
+
+    #[test]
+    fn graphics3d_draws_its_plot_label() {
+      // A 3-D picture carries a `PlotLabel` above it, exactly as a 2-D one
+      // does — the canvas grows by the label strip rather than the drawing
+      // area shrinking.
+      let plain = svg_of("Graphics3D[{Line[{{0, 0, 0}, {1, 1, 1}}]}]");
+      let labelled = svg_of(
+        "Graphics3D[{Line[{{0, 0, 0}, {1, 1, 1}}]}, \
+         PlotLabel -> \"Torus Knot\"]",
+      );
+      assert!(
+        labelled.contains("Torus Knot"),
+        "expected the plot label: {labelled}"
+      );
+      assert!(
+        !plain.contains("<text"),
+        "an unlabelled picture gains no text: {plain}"
+      );
+      assert!(
+        labelled.contains("height=\"386\""),
+        "the canvas grows by the label strip: {labelled}"
+      );
+      // `PlotLabel -> None` is how a picture asks to stay untitled.
+      let none =
+        svg_of("Graphics3D[{Line[{{0, 0, 0}, {1, 1, 1}}]}, PlotLabel -> None]");
+      assert!(!none.contains("<text"), "PlotLabel -> None draws nothing");
+    }
+
+    #[test]
+    fn plot3d_heads_draw_their_plot_label() {
+      // The label reaches every 3-D plot head, not only `Graphics3D`.
+      for code in [
+        "Plot3D[x + y, {x, 0, 1}, {y, 0, 1}, PlotLabel -> \"surface\"]",
+        "ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}, \
+         PlotLabel -> \"surface\"]",
+        "ListPointPlot3D[{{1, 2, 3}, {2, 1, 0}}, PlotLabel -> \"surface\"]",
+        "ListLinePlot3D[{{{1, 2, 3}, {2, 1, 0}}}, PlotLabel -> \"surface\"]",
+      ] {
+        let svg = svg_of(code);
+        assert!(
+          svg.contains("surface"),
+          "expected a label for {code}: {svg}"
+        );
+      }
+    }
+
+    #[test]
+    fn graphics3d_plot_label_typesets_its_expression() {
+      // The label is typeset like any other, so a `Style[Row[…]]` shows the
+      // row's text at the size and colour it asks for.
+      let svg = svg_of(
+        "Graphics3D[{Line[{{0, 0, 0}, {1, 1, 1}}]}, \
+         PlotLabel -> Style[Row[{\"Lotus \", \"Kolam\"}], FontSize -> 18, \
+         Blue]]",
+      );
+      assert!(
+        svg.contains("Lotus Kolam"),
+        "expected the row's text, not its source: {svg}"
+      );
+      assert!(
+        svg.contains("font-size=\"18\"") && svg.contains("rgb(0,0,255)"),
+        "expected the label's own size and colour: {svg}"
+      );
+    }
+
+    #[test]
     fn graphics3d_axes_carry_ticks_and_labels() {
       // `Show[Graphics3D[…], Axes -> True, AxesLabel -> {…}]`: a
       // Demonstration frames a 3D scene this way, and the axes, their tick
