@@ -6,34 +6,65 @@ mod example_data_tests {
   /// Every bundled network, with the vertex and edge counts of the
   /// published dataset.
   const NETWORKS: &[(&str, usize, usize)] = &[
-    ("ZacharysKarateClub", 34, 78),
+    ("ZacharyKarateClub", 34, 78),
     ("DolphinSocialNetwork", 62, 159),
     ("LesMiserables", 77, 254),
-    ("BooksAboutUSPolitics", 105, 441),
+    ("USPoliticsBooks", 105, 441),
     ("WordAdjacencies", 112, 425),
   ];
 
+  /// Which datasets an implementation ships is its own business — Wolfram's
+  /// catalogue is far larger than the one Woxi bundles — so the catalogue
+  /// tests assert the shape of the answer and the presence of what is
+  /// bundled, never the catalogue itself.
   #[test]
   fn lists_the_bundled_types() {
     clear_state();
-    assert_eq!(interpret("ExampleData[]").unwrap(), "{NetworkGraph}");
+    assert_eq!(
+      interpret("MemberQ[ExampleData[], \"NetworkGraph\"]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("And @@ (StringQ /@ ExampleData[])").unwrap(),
+      "True"
+    );
   }
 
   #[test]
   fn lists_the_entries_of_a_type_as_type_name_pairs() {
     clear_state();
     assert_eq!(
-      interpret("ExampleData[\"NetworkGraph\"][[1]]").unwrap(),
-      "{NetworkGraph, ZacharysKarateClub}"
+      interpret("Length[ExampleData[\"NetworkGraph\"]] > 0").unwrap(),
+      "True"
     );
     assert_eq!(
-      interpret("Length[ExampleData[\"NetworkGraph\"]]").unwrap(),
-      NETWORKS.len().to_string()
+      interpret(
+        "And @@ (MatchQ[#, {_String, _String}] & /@ \
+         ExampleData[\"NetworkGraph\"])"
+      )
+      .unwrap(),
+      "True"
     );
     assert_eq!(
       interpret("Union[First /@ ExampleData[\"NetworkGraph\"]]").unwrap(),
       "{NetworkGraph}"
     );
+    // Everything Woxi bundles is listed, and nothing else is claimed.
+    assert_eq!(
+      interpret("Length[ExampleData[\"NetworkGraph\"]]").unwrap(),
+      NETWORKS.len().to_string()
+    );
+    for (name, _, _) in NETWORKS {
+      assert_eq!(
+        interpret(&format!(
+          "MemberQ[ExampleData[\"NetworkGraph\"], \
+           {{\"NetworkGraph\", \"{name}\"}}]"
+        ))
+        .unwrap(),
+        "True",
+        "{name}"
+      );
+    }
   }
 
   #[test]
@@ -54,16 +85,14 @@ mod example_data_tests {
   fn a_network_evaluates_to_a_graph() {
     clear_state();
     assert_eq!(
-      interpret(
-        "Head[ExampleData[{\"NetworkGraph\", \"ZacharysKarateClub\"}]]"
-      )
-      .unwrap(),
+      interpret("Head[ExampleData[{\"NetworkGraph\", \"ZacharyKarateClub\"}]]")
+        .unwrap(),
       "Graph"
     );
     // Zachary's members are numbered; the other datasets name their nodes.
     assert_eq!(
       interpret(
-        "ExampleData[{\"NetworkGraph\", \"ZacharysKarateClub\"}, \
+        "ExampleData[{\"NetworkGraph\", \"ZacharyKarateClub\"}, \
          \"VertexList\"][[1 ;; 3]]"
       )
       .unwrap(),
@@ -82,8 +111,8 @@ mod example_data_tests {
   #[test]
   fn properties_agree_with_the_graph() {
     clear_state();
-    const G: &str = "ExampleData[{\"NetworkGraph\", \"ZacharysKarateClub\"}]";
-    const S: &str = "{\"NetworkGraph\", \"ZacharysKarateClub\"}";
+    const G: &str = "ExampleData[{\"NetworkGraph\", \"ZacharyKarateClub\"}]";
+    const S: &str = "{\"NetworkGraph\", \"ZacharyKarateClub\"}";
     assert_eq!(
       interpret(&format!("ExampleData[{S}, \"VertexCount\"]")).unwrap(),
       "34"
@@ -94,7 +123,7 @@ mod example_data_tests {
     );
     assert_eq!(
       interpret(&format!("ExampleData[{S}, \"Name\"]")).unwrap(),
-      "ZacharysKarateClub"
+      "ZacharyKarateClub"
     );
     assert_eq!(
       interpret(&format!(
@@ -139,12 +168,46 @@ mod example_data_tests {
   fn a_network_can_be_drawn() {
     clear_state();
     let svg = interpret(
-      "ExportString[ExampleData[{\"NetworkGraph\", \"ZacharysKarateClub\"}], \
+      "ExportString[ExampleData[{\"NetworkGraph\", \"ZacharyKarateClub\"}], \
        \"SVG\"]",
     )
     .unwrap();
     assert!(svg.starts_with("<svg"));
     assert_eq!(svg.matches("<ellipse").count(), 34);
+  }
+
+  /// A dataset that Wolfram's catalogue also answers to under a second
+  /// spelling answers to it here: `"ZacharysKarateClub"` and
+  /// `"BooksAboutUSPolitics"` reach the same networks as the catalogue
+  /// names, so a script written against either spelling runs.
+  #[test]
+  fn alternate_dataset_spellings_resolve() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ExampleData[{\"NetworkGraph\", \"ZacharysKarateClub\"}, \
+         \"VertexCount\"]"
+      )
+      .unwrap(),
+      "34"
+    );
+    assert_eq!(
+      interpret(
+        "ExampleData[{\"NetworkGraph\", \"BooksAboutUSPolitics\"}, \
+         \"VertexCount\"]"
+      )
+      .unwrap(),
+      "105"
+    );
+    // The catalogue itself lists each network once, under Wolfram's name.
+    assert_eq!(
+      interpret(
+        "Count[ExampleData[\"NetworkGraph\"], \
+         {_, \"ZacharyKarateClub\" | \"ZacharysKarateClub\"}]"
+      )
+      .unwrap(),
+      "1"
+    );
   }
 
   #[test]
@@ -157,15 +220,15 @@ mod example_data_tests {
       "ExampleData[{NetworkGraph, NoSuchNetwork}]"
     );
     assert_eq!(
-      interpret("ExampleData[\"Text\"]").unwrap(),
-      "ExampleData[Text]"
+      interpret("ExampleData[\"NoSuchType\"]").unwrap(),
+      "ExampleData[NoSuchType]"
     );
     assert_eq!(
       interpret(
-        "ExampleData[{\"NetworkGraph\", \"ZacharysKarateClub\"}, \"Nope\"]"
+        "ExampleData[{\"NetworkGraph\", \"ZacharyKarateClub\"}, \"Nope\"]"
       )
       .unwrap(),
-      "ExampleData[{NetworkGraph, ZacharysKarateClub}, Nope]"
+      "ExampleData[{NetworkGraph, ZacharyKarateClub}, Nope]"
     );
   }
 }

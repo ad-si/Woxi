@@ -71,6 +71,10 @@ pub(crate) struct StyledLabel {
   /// tspan). `None` for a plain string, which the renderer typesets from
   /// its own inline box markers instead.
   pub markup: Option<String>,
+  /// Typeset markup for the lines *after* the first, for a label that
+  /// stacks (`Grid[{{a}, {b}}]` / `Column[{a, b}]` as a plot title). Empty
+  /// for the ordinary single-line label.
+  pub extra_lines: Vec<String>,
   pub bold: bool,
   pub italic: bool,
   pub color: Option<Color>,
@@ -96,6 +100,30 @@ impl StyledLabel {
   /// sub/superscript tspan — already follow whatever they inherit.
   pub(crate) fn svg_scaled(&self, scale: f64) -> String {
     scale_markup_lengths(&self.svg(), scale)
+  }
+
+  /// The same, with each further line of a stacked label placed below the
+  /// first — centred on `cx` (the anchor the enclosing `<text>` uses) and
+  /// `line_height` render units apart.
+  pub(crate) fn svg_scaled_stacked(
+    &self,
+    scale: f64,
+    cx: f64,
+    line_height: f64,
+  ) -> String {
+    let mut out = self.svg_scaled(scale);
+    for line in &self.extra_lines {
+      out.push_str(&format!(
+        "<tspan x=\"{cx:.1}\" dy=\"{line_height:.1}\">{}</tspan>",
+        scale_markup_lengths(line, scale)
+      ));
+    }
+    out
+  }
+
+  /// How many lines below the first this label occupies.
+  pub(crate) fn extra_line_count(&self) -> usize {
+    self.extra_lines.len()
   }
 }
 
@@ -195,6 +223,29 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   if let Some(inner) = text_wrapper_content(expr) {
     return parse_styled_label(inner);
   }
+  // A `Grid`/`Column` title stacks: each row becomes its own line. This is
+  // how a Demonstration writes a two-line plot title (the function above,
+  // the transformed one below).
+  if matches!(expr, Expr::FunctionCall { name, args }
+      if (name == "Grid" || name == "Column") && !args.is_empty())
+  {
+    let lines = crate::functions::graphics::expr_to_svg_markup_lines(expr);
+    let (first, rest) = lines.split_first()?;
+    let text = lines
+      .iter()
+      .map(|l| svg_markup_visible_text(l))
+      .collect::<Vec<_>>()
+      .join(" ");
+    return Some(StyledLabel {
+      text,
+      markup: Some(first.clone()),
+      extra_lines: rest.to_vec(),
+      bold: false,
+      italic: false,
+      color: None,
+      font_size: None,
+    });
+  }
   if let Expr::FunctionCall { name, args } = expr
     && name == "Style"
     && !args.is_empty()
@@ -216,6 +267,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     Expr::String(s) => Some(StyledLabel {
       text: s.clone(),
       markup: None,
+      extra_lines: Vec::new(),
       bold: false,
       italic: false,
       color: None,
@@ -224,6 +276,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     Expr::Identifier(s) => Some(StyledLabel {
       text: s.clone(),
       markup: None,
+      extra_lines: Vec::new(),
       bold: false,
       italic: false,
       color: None,
@@ -263,6 +316,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       Some(StyledLabel {
         text,
         markup,
+        extra_lines: Vec::new(),
         bold,
         italic,
         color,
@@ -280,6 +334,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         Some(StyledLabel {
           text,
           markup: Some(markup),
+          extra_lines: Vec::new(),
           bold: false,
           italic: false,
           color: None,

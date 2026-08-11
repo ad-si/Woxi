@@ -10,6 +10,15 @@ use crate::functions::graphics::{Color as WoxiColor, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::syntax::PlotMarker;
 
+/// How many lines below the first a stacked `PlotLabel` (a `Grid`/`Column`
+/// title) occupies — the extra top margin every renderer has to reserve for
+/// it. Zero for the ordinary single-line title and for no title at all.
+fn plot_label_extra_lines(label: Option<&StyledLabel>) -> usize {
+  label
+    .filter(|sl| !sl.text.is_empty())
+    .map_or(0, StyledLabel::extra_line_count)
+}
+
 pub(crate) const DEFAULT_WIDTH: u32 = 360;
 pub(crate) const DEFAULT_HEIGHT: u32 = 225;
 /// Internal rendering resolution multiplier for sub-pixel precision.
@@ -2413,6 +2422,10 @@ pub(crate) fn plot_labels_svg(
       + if axes_label_y.is_some() { 1.0 } else { 0.0 };
     let ty = margin_top - title_font_size * 0.5 - stacked * font_size * 1.2;
     let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+    // A stacked title grows upwards: its last line stays where a one-line
+    // title would sit, so whatever shares the top margin below it (the y
+    // `AxesLabel`) is not written over.
+    let ty = ty - sl.extra_line_count() as f64 * fs * 1.2;
     let fill = sl
       .color
       .as_ref()
@@ -2429,7 +2442,7 @@ pub(crate) fn plot_labels_svg(
       "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
          fill=\"{fill}\"{style_attrs}>{}</text>\n",
-      sl.svg_scaled(sf)
+      sl.svg_scaled_stacked(sf, cx, fs * 1.2)
     ));
   }
 
@@ -2537,6 +2550,7 @@ fn generate_svg_with_options(
   // (they stack).
   let top_margin = 10 * s
     + if has_plot_label { 25 * s } else { 0 }
+    + plot_label_extra_lines(opts.plot_label.as_ref()) as i32 * 20 * s
     + if has_top_label { 25 * s } else { 0 }
     + if axes_label_y.is_some() { 20 * s } else { 0 };
 
@@ -3763,6 +3777,7 @@ pub(crate) fn generate_scatter_svg_with_options(
     .is_some_and(|(_, y)| !y.is_empty() && opts.axes.1);
   let margin_top = 10.0 * sf
     + if has_plot_label { 25.0 * sf } else { 0.0 }
+    + plot_label_extra_lines(opts.plot_label.as_ref()) as f64 * 20.0 * sf
     + if has_y_axes_label { 20.0 * sf } else { 0.0 };
   let margin_right = 10.0 * sf
     + axes_label_x.map_or(0.0, |label| {
@@ -4517,6 +4532,7 @@ pub(crate) fn generate_bar_svg(
 
   let has_value_labels = bar_labels.iter().any(|s| !s.is_empty());
   let top_margin = if has_plot_label { 35 * s } else { 10 * s }
+    + plot_label_extra_lines(plot_label) as i32 * 20 * s
     + if axes_label_y.is_some() { 20 * s } else { 0 };
   let has_rotated_labels = chart_labels.iter().any(|l| l.rotation.abs() > 0.01);
   // Only content drawn below the axis consumes bottom margin. Chart labels do
@@ -4881,6 +4897,10 @@ pub(crate) fn generate_bar_svg(
           0.0
         };
       let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+      // A stacked title grows upwards: its last line stays where a one-line
+      // title would sit, so whatever shares the top margin below it (the y
+      // `AxesLabel`) is not written over.
+      let ty = ty - sl.extra_line_count() as f64 * fs * 1.2;
       let fill = sl
         .color
         .as_ref()
@@ -4897,7 +4917,7 @@ pub(crate) fn generate_bar_svg(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
            fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg_scaled(sf)
+        sl.svg_scaled_stacked(sf, cx, fs * 1.2)
       ));
     }
 
@@ -5011,6 +5031,7 @@ pub(crate) fn generate_horizontal_bar_svg(
   // Margins. An `AxesLabel` sits at the far end of its axis, so it takes
   // room above (the category axis) and to the right (the value axis).
   let top_margin = if has_plot_label { 38.0 * sf } else { 16.0 * sf }
+    + plot_label_extra_lines(plot_label) as f64 * 20.0 * sf
     + if x_axis_label.is_empty() {
       0.0
     } else {
@@ -5231,6 +5252,10 @@ pub(crate) fn generate_horizontal_bar_svg(
     // Place the title near the top so a clear gap remains above the bars.
     let ty = title_font_size * 1.2;
     let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+    // A stacked title grows upwards: its last line stays where a one-line
+    // title would sit, so whatever shares the top margin below it (the y
+    // `AxesLabel`) is not written over.
+    let ty = ty - sl.extra_line_count() as f64 * fs * 1.2;
     let fill = sl
       .color
       .as_ref()
@@ -5246,7 +5271,7 @@ pub(crate) fn generate_horizontal_bar_svg(
     svg.push_str(&format!(
       "<text x=\"{cx:.2}\" y=\"{ty:.2}\" text-anchor=\"middle\" \
        font-family=\"sans-serif\" font-size=\"{fs:.0}\" fill=\"{fill}\"{style_attrs}>{}</text>\n",
-      sl.svg_scaled(sf)
+      sl.svg_scaled_stacked(sf, cx, fs * 1.2)
     ));
   }
 
@@ -5398,7 +5423,8 @@ pub(crate) fn generate_bubble_chart_svg(
     axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
   let has_plot_label = plot_label.is_some_and(|sl| !sl.text.is_empty());
 
-  let top_margin = if has_plot_label { 35 * s } else { 10 * s };
+  let top_margin = if has_plot_label { 35 * s } else { 10 * s }
+    + plot_label_extra_lines(plot_label) as i32 * 20 * s;
   let bottom_extra = if has_x_axis_label { 24.0 * sf } else { 0.0 };
   let x_label_area = 40 * RESOLUTION_SCALE + bottom_extra as u32;
   let y_label_area = 65 * RESOLUTION_SCALE;
@@ -5781,6 +5807,10 @@ pub(crate) fn generate_bubble_chart_svg(
       let cx = plot_x0 + plot_w / 2.0;
       let ty = margin_top - title_font_size * 0.5;
       let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+      // A stacked title grows upwards: its last line stays where a one-line
+      // title would sit, so whatever shares the top margin below it (the y
+      // `AxesLabel`) is not written over.
+      let ty = ty - sl.extra_line_count() as f64 * fs * 1.2;
       let fill = sl
         .color
         .as_ref()
@@ -5797,7 +5827,7 @@ pub(crate) fn generate_bubble_chart_svg(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
            fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg_scaled(sf)
+        sl.svg_scaled_stacked(sf, cx, fs * 1.2)
       ));
     }
 
@@ -6523,6 +6553,7 @@ pub(crate) fn generate_histogram_svg(
   let has_y_axes_label =
     opts.axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
   let top_margin = if has_plot_label { 35 * s } else { 10 * s }
+    + plot_label_extra_lines(opts.plot_label.as_ref()) as i32 * 20 * s
     + if has_y_axes_label { 20 * s } else { 0 };
   let bottom_extra = if has_x_frame_label { 24.0 * sf } else { 0.0 };
   let x_label_area = 40 * RESOLUTION_SCALE + bottom_extra as u32;
@@ -6764,6 +6795,10 @@ pub(crate) fn generate_histogram_svg(
           0.0
         };
       let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+      // A stacked title grows upwards: its last line stays where a one-line
+      // title would sit, so whatever shares the top margin below it (the y
+      // `AxesLabel`) is not written over.
+      let ty = ty - sl.extra_line_count() as f64 * fs * 1.2;
       let fill = sl
         .color
         .as_ref()
@@ -6780,7 +6815,7 @@ pub(crate) fn generate_histogram_svg(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
            fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg_scaled(sf)
+        sl.svg_scaled_stacked(sf, cx, fs * 1.2)
       ));
     }
 
@@ -8192,9 +8227,13 @@ pub(crate) fn apply_common_plot_option(
       }
       // `Ticks -> {xspec, yspec}`: each side is None, Automatic, or an
       // explicit list of positions (each optionally `{pos, label}`).
-      Expr::List(items) if items.len() == 2 => {
+      // The y side may be left off — `Ticks -> {xspec}` states the x ticks
+      // and leaves the y axis to its default.
+      Expr::List(items) if (1..=2).contains(&items.len()) => {
         plot_opts.ticks_x = parse_explicit_ticks(&items[0]);
-        plot_opts.ticks_y = parse_explicit_ticks(&items[1]);
+        if let Some(y) = items.get(1) {
+          plot_opts.ticks_y = parse_explicit_ticks(y);
+        }
       }
       _ => {}
     },

@@ -1256,7 +1256,8 @@ mod cross {
   }
 
   // Regression: the cross product operator (⨯, U+2A2F) should desugar to
-  // Cross[a, b]. Also accepts the PUA form U+F3C4 and the `\[Cross]` escape.
+  // Cross[a, b]. Also accepts the private-use form `\[Cross]` unescapes to
+  // (U+F4A0) and the `\[Cross]` escape itself.
   #[test]
   fn cross_operator_unicode_u2a2f() {
     assert_eq!(
@@ -1283,7 +1284,18 @@ mod cross {
 
   #[test]
   fn cross_operator_pua() {
-    // U+F3C4 is Mathematica's PUA representation of \[Cross].
+    // U+F4A0 is what `\[Cross]` is: Wolfram's private-use code point for the
+    // operator, which `ToCharacterCode["\[Cross]"]` reports as 62624.
+    assert_eq!(
+      interpret("{1, 2, 3} \u{F4A0} {4, 5, 6}").unwrap(),
+      "{-3, 6, -3}"
+    );
+    assert_eq!(
+      interpret("ToCharacterCode[\"\\[Cross]\"]").unwrap(),
+      "{62624}"
+    );
+    // U+F3C4 is the code point earlier versions wrote the operator with;
+    // notebooks that carry it still parse.
     assert_eq!(
       interpret("{1, 2, 3} \u{F3C4} {4, 5, 6}").unwrap(),
       "{-3, 6, -3}"

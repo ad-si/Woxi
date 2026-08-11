@@ -615,7 +615,7 @@ Divide,Divide numbers,✅,pure,1.0,572
 Around,Represent a value with uncertainty,✅,pure,12.0,573
 SaveDefinitions,Option to save definitions with output,✅,none,6.0,574
 Insert,Inserts an element at a specified position in a list,✅,pure,1.0,575
-Specularity,Graphics directive for specular highlighting,✅,none,6.0,576
+Specularity,Specifies the specular highlight of 3D surfaces,✅,pure,6.0,576
 Minimize,Global symbolic minimization of a function over variables with optional constraints and an optional Reals or Integers domain,✅,pure,5.0,577
 Begin,Begins a private context (no-op in Woxi),✅,effectful,1.0,578
 RepeatedTiming,Time expression evaluation with repeated sampling,✅,effectful,10.1,579

@@ -66,8 +66,12 @@ fn main() {
       println!("=== Interactive widget #{widget_count} ===");
       println!("animated: {}", state.animated);
       println!("controls:");
-      for c in &state.controls {
-        println!("  {c:?}");
+      for (i, c) in state.controls.iter().enumerate() {
+        // A control belonging to a `PaneSelector` pane the selector is not
+        // currently showing is built but left off the panel.
+        let hidden = !state.control_is_visible.get(i).copied().unwrap_or(true);
+        let mark = if hidden { " [hidden]" } else { "" };
+        println!("  {c:?}{mark}");
       }
       if !state.state.is_empty() {
         println!("state vars:");

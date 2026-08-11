@@ -13,13 +13,13 @@ pair ready to be passed straight back in.
 
 ```scrut
 $ wo 'ExampleData["NetworkGraph"][[1]]'
-{NetworkGraph, ZacharysKarateClub}
+{NetworkGraph, ZacharyKarateClub}
 ```
 
 `ExampleData[{"type", "name"}]` is the data itself — for a network, a `Graph`.
 
 ```scrut
-$ wo 'EdgeCount[ExampleData[{"NetworkGraph", "ZacharysKarateClub"}]]'
+$ wo 'EdgeCount[ExampleData[{"NetworkGraph", "ZacharyKarateClub"}]]'
 78
 ```
 

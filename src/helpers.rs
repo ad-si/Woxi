@@ -16,6 +16,10 @@ pub fn binop(op: BinaryOperator, a: Expr, b: Expr) -> Expr {
   }
 }
 
+pub fn minus2(a: Expr, b: Expr) -> Expr {
+  binop(BinaryOperator::Minus, a, b)
+}
+
 pub fn pow2(b: Expr, e: Expr) -> Expr {
   binop(BinaryOperator::Power, b, e)
 }

@@ -3791,17 +3791,32 @@ fn render_manipulate_widget<'a>(
   // Size the label column to the widest label so it sits snug against the
   // sliders. ~7.3px per character at the 12px caption font (monospace),
   // plus a little trailing padding; clamped so a single-glyph label still
-  // reads and a very long one can't swallow the slider.
+  // reads and a very long one can't swallow the slider. Only the rows
+  // actually on screen count — a `PaneSelector` pane that is not showing
+  // must not reserve room for its labels.
   let max_label_chars = state
     .controls
     .iter()
-    .map(manipulate_label_char_count)
+    .enumerate()
+    .filter(|(i, _)| state.control_is_visible.get(*i).copied().unwrap_or(true))
+    .map(|(_, c)| manipulate_label_char_count(c))
     .max()
     .unwrap_or(0);
   let label_col_width = (max_label_chars as f32 * 7.3 + 6.0).clamp(20.0, 220.0);
   let visible_controls: &[manipulate::ControlState] =
     if show_controls { &state.controls } else { &[] };
   for (ctrl_idx, ctrl) in visible_controls.iter().enumerate() {
+    // A control belonging to a `PaneSelector` pane the selector is not
+    // showing is left out of the panel entirely, the way Wolfram swaps one
+    // pane's controls for another's.
+    if !state
+      .control_is_visible
+      .get(ctrl_idx)
+      .copied()
+      .unwrap_or(true)
+    {
+      continue;
+    }
     // A control whose `Enabled` condition currently evaluates to `False` is
     // greyed out and swallows interaction (see `Message::Noop`).
     let enabled = state
@@ -6625,6 +6640,47 @@ mod tests {
     );
   }
 
+  /// A `PaneSelector` control panel — a Demonstration whose modes each need
+  /// different controls, as the closest-packing one does — shows only the
+  /// pane the selector is on. The controls of the other panes are built (so
+  /// their variables stay bound for the body) but left off the panel, and a
+  /// pane with no controls at all leaves no row behind.
+  #[test]
+  fn manipulate_pane_selector_shows_one_panel_at_a_time() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{q, a, b}, Control[{{q, 2}, {1 -> \"one\", 2 -> \"two\", \
+       3 -> \"three\"}, Setter}], \
+       PaneSelector[{1 -> Control[{{a, 5}, 0, 10}], \
+       2 -> Column[{Control[{{a, 5}, 0, 10}], Control[{{b, 1}, 0, 2}]}], \
+       3 -> \" \"}, q]]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(
+      names,
+      vec!["q", "a", "b"],
+      "the placeholder pane must not add a row"
+    );
+    // The selector starts on pane 2, which shows both of its controls.
+    assert_eq!(state.control_is_visible, vec![true, true, true]);
+
+    // Switching the selector swaps the panel: pane 1 offers only `a`.
+    let select = |state: &mut manipulate::ManipulateState, idx: usize| {
+      if let manipulate::ControlState::Discrete { current_index, .. } =
+        &mut state.controls[0]
+      {
+        *current_index = idx;
+      }
+      state.reevaluate();
+    };
+    select(&mut state, 0);
+    assert_eq!(state.control_is_visible, vec![true, true, false]);
+    // Pane 3 is the placeholder: the selector is the only row left.
+    select(&mut state, 2);
+    assert_eq!(state.control_is_visible, vec![true, false, false]);
+  }
+
   #[test]
   fn manipulate_untracked_control_does_not_reeval() {
     // `TrackedSymbols :> {b}`: moving `a` changes its value but must not
@@ -6966,6 +7022,125 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"…\"]"], "Output"]
       widget.graphics_handle.is_some(),
       "initPlot from the initialization cell must be in scope, \
        so the first render produces the plot"
+    );
+  }
+
+  #[test]
+  fn demonstration_compatibility_checkboxes_render_as_a_card() {
+    // The metadata cells at the end of every Demonstration submission
+    // notebook pair a checkbox with a caption in a `RowDefault` row. They
+    // must open as a rendered checkbox card rather than as the raw nested
+    // braces the box extraction leaves behind.
+    let nb_src = r#"Notebook[{
+Cell[BoxData[TagBox[GridBox[{{TagBox[GridBox[{{TemplateBox[{CheckboxBox[True, {False, False}], "\" \"", StyleBox["\"Supported in cloud\"", FontSize -> 12]}, "RowDefault"]}}], "Column"]}}], "Grid"]], "Output"]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let cell = match &nb.cells[0] {
+      CellEntry::Single(c) => c.clone(),
+      _ => panic!("expected a single cell"),
+    };
+    assert_eq!(cell.content, "{{{{\u{2611} Supported in cloud}}}}");
+    let editor = stored_output_editor(&cell)
+      .expect("a checkbox grid must render as a stored graphic");
+    assert!(editor.stored_graphic);
+    let svg = editor.graphics_svg.expect("the card is an SVG");
+    assert!(
+      svg.contains("Supported in cloud"),
+      "the caption must survive into the card: {svg}"
+    );
+    assert!(
+      svg.contains("[x]"),
+      "the checkbox must show as ticked: {svg}"
+    );
+  }
+
+  #[test]
+  fn hinged_dissection_notebook_opens_with_its_widget() {
+    // End-to-end regression for the shape of Demonstration that animates a
+    // hinged dissection: an initialization cell defines the pieces and a
+    // `helper[k_, opts___]` wrapper that forwards its options to
+    // `Graphics`, and the Manipulate swings each piece with `Rotate` about
+    // its own hinge, driven by a labelled slider.
+    let nb_src = r#"Notebook[{
+Cell[BoxData["squareA = Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}];\nsquareB = Polygon[{{1, 0}, {2, 0}, {2, 1}, {1, 1}}];\nswing[k_, opts___] := Graphics[{RGBColor[1, 0, 0], squareA, RGBColor[0, 0, 1], Rotate[squareB, k Pi/2, {1, 0}]}, opts]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[swing[k, PlotRange -> {{-1.5, 2.5}, {-1.5, 2.5}}, ImageSize -> {300, 300}], {{k, 0, \"swing\"}, 0, 1}, SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 0.}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+
+    // `SaveDefinitions -> True` is a Manipulate option, not a control.
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name, "k");
+        assert_eq!(label, "swing");
+        assert_eq!((*min, *max, *current), (0.0, 1.0, 0.0));
+      }
+      other => panic!("expected one labelled slider, got {other:?}"),
+    }
+
+    // The iced handle doesn't expose its bytes, so re-render the body
+    // through the widget's own bindings to inspect the SVG.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let code = match w.initialization.as_deref() {
+        Some(init) => format!("{init}; {}", w.body),
+        None => w.body.clone(),
+      };
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&code)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the pieces must render")
+    };
+
+    // The helper's `opts___` reaches Graphics, so ImageSize is honoured.
+    assert!(widget.graphics_handle.is_some());
+    let unswung = render(&widget);
+    assert!(
+      unswung.contains("width=\"300\"") && unswung.contains("height=\"300\""),
+      "ImageSize must pass through opts___: {unswung}"
+    );
+
+    // Swinging the hinge through a quarter turn moves the blue square: its
+    // far edge rotates from x = 2 up to y = 1 above the hinge at {1, 0}.
+    match &mut widget.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 1.0,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    assert!(widget.graphics_handle.is_some());
+    assert_ne!(
+      unswung,
+      render(&widget),
+      "Rotate about the hinge must change the rendered geometry"
     );
   }
 
@@ -8984,6 +9159,70 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       &mut state.controls[1]
     {
       *current = 2.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
+  fn compass_construction_manipulate_builds_widget() {
+    // End-to-end regression for a Demonstration that constructs with
+    // compasses alone: the initialization crosses two circles through
+    // `Solve`, a setter bar steps through the construction, and the body
+    // picks that step's graphics out of the list the function returns.
+    let code = "Manipulate[\
+      Graphics[steps[t, r][[step]], PlotRange -> 2, ImageSize -> {300, 300}], \
+      {{t, Pi/2, \"turn\"}, 0, 2 Pi}, \
+      {{r, 0.7, \"reach\"}, 0.5, 1.2, Appearance -> \"Labeled\"}, \
+      Control[{{step, 2, \"step\"}, {1, 2}}], \
+      TrackedSymbols :> {t, r, step}, \
+      Initialization :> (steps[t_, r_] := \
+        Module[{p, sol, x, y, hits}, \
+          p = {Cos[t], Sin[t]}; \
+          sol = Quiet[Solve[x^2 + y^2 == 1 && \
+            (x - p[[1]])^2 + (y - p[[2]])^2 == r^2, {x, y}]]; \
+          hits = {{x, y} /. sol[[1]], {x, y} /. sol[[2]]}; \
+          {{Circle[], Circle[p, r]}, \
+           {Circle[], Circle[p, r], PointSize[0.03], \
+            Point[hits[[1]]], Point[hits[[2]]]}}]), \
+      SaveDefinitions -> True]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the compass-construction Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the construction"
+    );
+
+    // Two sliders and the setter bar the construction steps through.
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous { label: turn, .. },
+        manipulate::ControlState::Continuous { label: reach, .. },
+        manipulate::ControlState::Discrete {
+          values,
+          current_index,
+          ..
+        },
+      ] => {
+        assert_eq!((turn.as_str(), reach.as_str()), ("turn", "reach"));
+        assert_eq!(values, &vec!["1".to_string(), "2".to_string()]);
+        assert_eq!(*current_index, 1);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    // Turning the point re-crosses the circles rather than leaving the
+    // intersections unsolved, which would draw no points at all.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 2.5;
     }
     state.reevaluate();
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
@@ -11748,9 +11987,11 @@ Cell[BoxData[
       .find(|t| t.starts_with("Manipulate["))
       .expect("the Manipulate cell must load");
     // The operator reads as a derivative of the expression that follows it,
-    // parenthesised so its coefficient stays a product.
+    // parenthesised so its coefficient stays a product. The diffusivity is
+    // the symbol `\[ScriptCapitalD]`, which is Wolfram's private-use script
+    // capital D (U+F773).
     assert!(
-      cell.contains("\u{1d49f}(D[c[x,t], x,x])-u(D[c[x,t], x])"),
+      cell.contains("\u{F773}(D[c[x,t], x,x])-u(D[c[x,t], x])"),
       "partial derivatives must read as D[…]: {cell}"
     );
     assert!(!cell.contains('\u{2202}'), "no bare operator left: {cell}");
@@ -11766,7 +12007,7 @@ Cell[BoxData[
         other => panic!("unexpected control: {other:?}"),
       })
       .collect();
-    assert_eq!(names, ["g", "time", "k", "\u{1d49f}", "f", "u"]);
+    assert_eq!(names, ["g", "time", "k", "\u{F773}", "f", "u"]);
   }
 
   /// End-to-end regression for "Plot a Quadratic Inequality": the region is
