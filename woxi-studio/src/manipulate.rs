@@ -49,6 +49,10 @@ pub enum ControlState {
     /// `ControlType -> PopupMenu`: always render a dropdown, even when the
     /// choice count is small enough for a SetterBar.
     popup: bool,
+    /// `ControlType -> SetterBar`: always render the row of buttons, even
+    /// when there are more choices than the automatic split would put in a
+    /// bar.
+    setter_bar: bool,
     /// `ControlType -> Slider`: render a slider stepping through the
     /// choices by index rather than a setter bar or dropdown.
     slider: bool,
@@ -245,6 +249,11 @@ impl ControlState {
     }
   }
 }
+
+/// A discrete control's freshly resolved choice list, as
+/// `(control name, (values, labels, rendered labels))`.
+type ResolvedChoices =
+  (String, (Vec<String>, Vec<String>, Vec<Option<String>>));
 
 /// Full state for a Manipulate cell: the held body plus its rendered
 /// output.
@@ -829,10 +838,7 @@ impl ManipulateState {
   /// The selected value is kept when it survives into the new list;
   /// otherwise the selection clamps to the last remaining choice, which is
   /// what Wolfram shows when the current level falls off the end.
-  fn apply_dynamic_values(
-    &mut self,
-    resolved: &[(String, (Vec<String>, Vec<String>, Vec<Option<String>>))],
-  ) -> bool {
+  fn apply_dynamic_values(&mut self, resolved: &[ResolvedChoices]) -> bool {
     let mut selection_moved = false;
     for (name, (new_values, new_labels, new_svgs)) in resolved {
       let Some(ControlState::Discrete {
@@ -905,6 +911,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         value_label_svgs,
         initial_index,
         popup,
+        setter_bar,
         slider,
       } => ControlState::Discrete {
         name: name.clone(),
@@ -921,6 +928,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           .collect(),
         current_index: *initial_index,
         popup: *popup,
+        setter_bar: *setter_bar,
         slider: *slider,
       },
       ManipulateControl::Slider2D {

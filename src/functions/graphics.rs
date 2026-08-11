@@ -9234,7 +9234,10 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       // The presentation wrappers `expr_to_svg_markup` types out as their
       // content only — measuring the `Head[…]` source instead would leave a
       // Row cell several times too wide for the glyphs drawn in it.
+      // `Invisible[content]` is one of them: it reserves exactly the space
+      // `content` takes, it just isn't painted.
       "Text" | "TraditionalForm" | "DisplayForm" | "StandardForm"
+      | "Invisible"
         if args.len() == 1 =>
       {
         estimate_display_width(&args[0])
@@ -10957,16 +10960,42 @@ pub(crate) fn is_manipulate_annotation_head(name: &str) -> bool {
   is_style_wrapper(name) || name == "Text"
 }
 
+/// Peel a display-only `Invisible[expr]` wrapper, returning the content it
+/// hides. `Invisible` keeps exactly the space `expr` would take but paints
+/// nothing — Demonstrations use it to hold a layout's shape steady while an
+/// item is toggled off (`If[show, Identity, Invisible] @ …`), so a renderer
+/// measures the content as usual and only suppresses its fill.
+pub(crate) fn peel_invisible(expr: &Expr) -> Option<&Expr> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Invisible" && args.len() == 1 =>
+    {
+      Some(&args[0])
+    }
+    _ => None,
+  }
+}
+
 /// Extract style info from a Style[content, directives...] cell.
-/// Returns (content, font_size, font_weight, font_style, color).
+/// Returns (content, font_size, font_weight, font_style, color, invisible).
 fn extract_cell_style(
   cell: &Expr,
-) -> (&Expr, Option<f64>, &str, &str, Option<Color>) {
+) -> (&Expr, Option<f64>, &str, &str, Option<Color>, bool) {
+  // `Invisible[Style[…]]` — the wrapper outside the styling.
+  if let Some(inner) = peel_invisible(cell) {
+    let (content, fs, fw, fst, color, _) = extract_cell_style(inner);
+    return (content, fs, fw, fst, color, true);
+  }
   if let Expr::FunctionCall { name, args } = cell
     && is_style_wrapper(name)
     && !args.is_empty()
   {
-    let content = &args[0];
+    // `Style[Invisible[…], …]` — the styling outside the wrapper. Either
+    // nesting order hides the cell while keeping its footprint.
+    let (content, invisible) = match peel_invisible(&args[0]) {
+      Some(inner) => (inner, true),
+      None => (&args[0], false),
+    };
     let mut fs: Option<f64> = None;
     let mut fw = "normal";
     let mut fst = "normal";
@@ -11022,9 +11051,9 @@ fn extract_cell_style(
         }
       }
     }
-    return (content, fs, fw, fst, color);
+    return (content, fs, fw, fst, color, invisible);
   }
-  (cell, None, "normal", "normal", None)
+  (cell, None, "normal", "normal", None, false)
 }
 
 /// Parse Style directives into a GridStyle.
@@ -12198,7 +12227,7 @@ fn grid_svg_styled_internal(
         }
       } else {
         // Text cell — extract optional Style attributes
-        let (content, cell_fs, cell_fw, cell_fst, cell_color) =
+        let (content, cell_fs, cell_fw, cell_fst, cell_color, cell_hidden) =
           extract_cell_style(cell);
 
         // Detect `Hyperlink[displayText, url]` cells so the grid can render
@@ -12243,7 +12272,11 @@ fn grid_svg_styled_internal(
         // Hyperlink cells default to a link-blue fill (overridable via
         // explicit Style[..., color]). Plain cells use the cell/default/theme
         // colors as before.
-        let text_fill = if let Some(ref c) = cell_color {
+        // An `Invisible[…]` cell is laid out like any other but painted with
+        // no fill, so the grid keeps its shape while the cell reads blank.
+        let text_fill = if cell_hidden {
+          "none".to_string()
+        } else if let Some(ref c) = cell_color {
           c.to_svg_rgb()
         } else if link_href.is_some() {
           "#1a73e8".to_string()
@@ -14820,9 +14853,9 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
   fn text_style(
     e: &Expr,
     default_size: f64,
-  ) -> (&Expr, f64, &str, &str, Option<Color>) {
-    let (content, fs, fw, fst, color) = extract_cell_style(e);
-    (content, fs.unwrap_or(default_size), fw, fst, color)
+  ) -> (&Expr, f64, &str, &str, Option<Color>, bool) {
+    let (content, fs, fw, fst, color, hidden) = extract_cell_style(e);
+    (content, fs.unwrap_or(default_size), fw, fst, color, hidden)
   }
 
   // Compute column width from widest item
@@ -14874,10 +14907,17 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
     match cell {
       Cell::Text(expr) => {
         let cy = y_cursor + h / 2.0;
-        let (content, fs, fw, fst, color) = text_style(expr, font_size);
-        let fill = color
-          .map(|c| c.to_svg_rgb())
-          .unwrap_or_else(|| text_fill.to_string());
+        let (content, fs, fw, fst, color, hidden) = text_style(expr, font_size);
+        // An `Invisible[…]` row is measured and placed like any other but
+        // painted with no fill, so the column keeps its height and width
+        // while the row itself reads blank.
+        let fill = if hidden {
+          "none".to_string()
+        } else {
+          color
+            .map(|c| c.to_svg_rgb())
+            .unwrap_or_else(|| text_fill.to_string())
+        };
         svg.push_str(&format!(
           "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\" fill=\"{fill}\" text-anchor=\"{alignment}\" dominant-baseline=\"central\">{}</text>\n",
           expr_to_svg_markup(content)
@@ -15028,6 +15068,12 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
   let make_text_cell = |item: &Expr| -> Cell {
     let mut st = StyleState::default();
     let mut color: Option<Color> = None;
+    // An `Invisible[…]` item takes its content's width but is painted with
+    // no fill, so the row keeps its shape while the item reads blank.
+    let (item, hidden) = match peel_invisible(item) {
+      Some(inner) => (inner, true),
+      None => (item, false),
+    };
     if let Expr::FunctionCall { name, args: sargs } = item
       && is_style_wrapper(name)
       && !sargs.is_empty()
@@ -15045,9 +15091,13 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
       markup: expr_to_svg_markup(item),
       width: estimate_display_width(item) * char_width * scale,
       height: st.font_size + pad_y,
-      fill: color
-        .map(|c| c.to_svg_rgb())
-        .unwrap_or_else(|| theme().text_primary.to_string()),
+      fill: if hidden {
+        "none".to_string()
+      } else {
+        color
+          .map(|c| c.to_svg_rgb())
+          .unwrap_or_else(|| theme().text_primary.to_string())
+      },
       size: st.font_size,
       weight: st.font_weight,
       slant: st.font_style,
@@ -16200,6 +16250,10 @@ pub enum ManipulateControl {
     /// `ControlType -> PopupMenu`: always render a dropdown, even when the
     /// choice count is small enough for a SetterBar.
     popup: bool,
+    /// `ControlType -> SetterBar`: always render the row of buttons, even
+    /// when there are more choices than the automatic split would put in a
+    /// bar. The heuristic only decides for a spec that stays silent.
+    setter_bar: bool,
     /// `ControlType -> Slider`: render a slider that steps through the
     /// choices by index, the way Wolfram draws a slider over a discrete
     /// domain. Without it a twenty-entry list would become a dropdown.
@@ -19376,6 +19430,7 @@ fn parse_manipulate_control(
           label,
           label_runs,
           popup: control_type.as_deref() == Some("PopupMenu"),
+          setter_bar: control_type.as_deref() == Some("SetterBar"),
           slider: matches!(
             control_type.as_deref(),
             Some("Slider" | "VerticalSlider" | "Manipulator")
@@ -20201,6 +20256,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         label,
         label_runs,
         popup,
+        setter_bar,
         slider,
       } => {
         let value_parts: Vec<String> = values
@@ -20212,6 +20268,11 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           .map(|v| format!(r#""{}""#, json_escape_manipulate(v)))
           .collect();
         let popup_json = if *popup { r#","popup":true"# } else { "" };
+        let setter_bar_json = if *setter_bar {
+          r#","setterBar":true"#
+        } else {
+          ""
+        };
         let slider_json = if *slider { r#","slider":true"# } else { "" };
         // Icon labels (rule right sides that are graphics) ride along as
         // rendered SVG, parallel to `values`; omitted when all-text.
@@ -20230,7 +20291,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           String::new()
         };
         ctrl_parts.push(format!(
-          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}}}"#,
+          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
           label_runs_to_json(label_runs),
@@ -20238,6 +20299,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           label_parts.join(","),
           initial_index,
           popup_json,
+          setter_bar_json,
           slider_json,
           svg_json,
         ));

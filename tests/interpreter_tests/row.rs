@@ -156,6 +156,38 @@ mod row_visual_mode {
     assert!(svg.contains(">world</text>"));
   }
 
+  /// A row inherits its `Style` the way a column does, and an
+  /// `Invisible[…]` item holds its width without being painted.
+  #[test]
+  fn styled_row_and_invisible_item() {
+    clear_state();
+    let styled =
+      interpret_with_stdout(r#"Style[Row[{"a", "bb"}], 40, Red]"#).unwrap();
+    assert_eq!(styled.result, "-Graphics-");
+    let svg = styled.graphics.unwrap();
+    assert_eq!(svg.matches(">a</").count(), 1, "{svg}");
+    assert!(svg.contains("font-size=\"40\""), "{svg}");
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+
+    let hidden = interpret_with_stdout(r#"Row[{"a", Invisible["bcd"], "e"}]"#)
+      .unwrap()
+      .graphics
+      .unwrap();
+    let shown = interpret_with_stdout(r#"Row[{"a", "bcd", "e"}]"#)
+      .unwrap()
+      .graphics
+      .unwrap();
+    assert!(!hidden.contains("Invisible"), "{hidden}");
+    assert!(hidden.contains("fill=\"none\""), "{hidden}");
+    let dims = |svg: &str| {
+      svg
+        .split_once('>')
+        .map(|(head, _)| head.to_string())
+        .unwrap()
+    };
+    assert_eq!(dims(&hidden), dims(&shown));
+  }
+
   #[test]
   fn row_with_spacer_renders_svg() {
     clear_state();

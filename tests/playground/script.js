@@ -787,9 +787,13 @@ function renderManipulate(item) {
       // choice, else the value itself).
       const labels = ctrl.valueLabels ?? ctrl.values
       const values = ctrl.values
-      // `ControlType -> PopupMenu` always renders a dropdown, matching
-      // Wolfram; a small anonymous set defaults to a SetterBar.
-      if (rendersAsSetterBar(labels, ctrl.valueLabelSvgs) && !ctrl.popup) {
+      // `ControlType -> PopupMenu` always renders a dropdown and
+      // `ControlType -> SetterBar` always renders the bar, matching Wolfram;
+      // `rendersAsSetterBar` only decides for a spec that names no type.
+      if (
+        ctrl.setterBar ||
+        (rendersAsSetterBar(labels, ctrl.valueLabelSvgs) && !ctrl.popup)
+      ) {
         // A small enumerated set renders as a segmented SetterBar: a row of
         // adjacent toggle buttons with the active choice highlighted, matching
         // Wolfram's SetterBar.

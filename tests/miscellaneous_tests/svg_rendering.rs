@@ -3491,6 +3491,220 @@ mod tests {
       assert!(plain.contains("<polyline"), "the edges are still drawn");
     }
 
+    /// `Method -> "CircularEmbedding"` names the embedding the same way
+    /// `GraphLayout` does, so a plot that would otherwise be packed as
+    /// separate clusters gets every vertex on one ring instead.
+    #[test]
+    fn graph_plot_method_asks_for_the_circular_embedding() {
+      let packed = svg_of(r#"GraphPlot[{1 -> 2, 3 -> 4, 5 -> 6}]"#);
+      let ring = svg_of(
+        r#"GraphPlot[{1 -> 2, 3 -> 4, 5 -> 6},
+           Method -> "CircularEmbedding"]"#,
+      );
+      let on_a_circle = |svg: &str| {
+        let centres = circle_centres(svg);
+        assert_eq!(centres.len(), 6, "one vertex circle each: {svg}");
+        let cx = centres.iter().map(|(x, _)| x).sum::<f64>() / 6.0;
+        let cy = centres.iter().map(|(_, y)| y).sum::<f64>() / 6.0;
+        let radii: Vec<f64> = centres
+          .iter()
+          .map(|(x, y)| ((x - cx).powi(2) + (y - cy).powi(2)).sqrt())
+          .collect();
+        let r0 = radii[0];
+        radii.iter().all(|r| (r - r0).abs() < 1.0)
+      };
+      assert!(
+        on_a_circle(&ring),
+        "the named embedding puts every vertex on one ring: {ring}"
+      );
+      assert!(
+        !on_a_circle(&packed),
+        "without it the components are packed into a grid: {packed}"
+      );
+    }
+
+    /// An explicit `GraphLayout` outranks `Method`, as it does in Wolfram.
+    #[test]
+    fn graph_layout_wins_over_method() {
+      let svg = svg_of(
+        r#"GraphPlot[{1 -> 2, 2 -> 3, 3 -> 4}, Method -> "CircularEmbedding",
+           GraphLayout -> "LayeredDigraphEmbedding"]"#,
+      );
+      let centres = circle_centres(&svg);
+      assert_eq!(centres.len(), 4);
+      let x0 = centres[0].0;
+      assert!(
+        centres.iter().all(|(x, _)| (x - x0).abs() < 1.0),
+        "the layered embedding stacks the chain in one column: {centres:?}"
+      );
+    }
+
+    /// `EdgeShapeFunction -> f` draws every edge with `f[{pt, …}, edge]`
+    /// instead of the built-in arrow. A Demonstration uses this to grey out
+    /// the edges it is not highlighting.
+    #[test]
+    fn edge_shape_function_replaces_the_drawn_edge() {
+      let svg = svg_of(
+        r#"GraphPlot[{1 -> 2, 2 -> 3},
+           EdgeShapeFunction -> ({Blue, Dashed, Line[#1]} &)]"#,
+      );
+      assert!(
+        !svg.contains("<polygon"),
+        "the arrow heads are gone once the shape is ours: {svg}"
+      );
+      assert_eq!(
+        svg.matches(r#"stroke="rgb(0,0,255)""#).count(),
+        2,
+        "both edges are drawn blue: {svg}"
+      );
+      assert_eq!(
+        svg.matches("stroke-dasharray").count(),
+        2,
+        "both edges are dashed: {svg}"
+      );
+    }
+
+    /// The second argument is the edge itself, as a `DirectedEdge` — which
+    /// is what a test like `MemberQ[…, #2]` in a Demonstration matches on.
+    #[test]
+    fn edge_shape_function_is_given_the_edge_as_a_directed_edge() {
+      let svg = svg_of(
+        r#"GraphPlot[{1 -> 2, 2 -> 3},
+           EdgeShapeFunction -> (If[MemberQ[{DirectedEdge[1, 2]}, #2],
+             {Blue, Line[#1]}, {Red, Line[#1]}] &)]"#,
+      );
+      assert_eq!(
+        svg.matches(r#"stroke="rgb(0,0,255)""#).count(),
+        1,
+        "only the named edge is blue: {svg}"
+      );
+      assert_eq!(
+        svg.matches(r#"stroke="rgb(255,0,0)""#).count(),
+        1,
+        "the other one is not: {svg}"
+      );
+      // A plain `{1, 2}` pair is a different expression from the edge, so
+      // the same test against a list of pairs matches nothing.
+      let none = svg_of(
+        r#"GraphPlot[{1 -> 2, 2 -> 3},
+           EdgeShapeFunction -> (If[MemberQ[{{1, 2}}, #2],
+             {Blue, Line[#1]}, {Red, Line[#1]}] &)]"#,
+      );
+      assert_eq!(
+        none.matches(r#"stroke="rgb(0,0,255)""#).count(),
+        0,
+        "a pair is not an edge: {none}"
+      );
+    }
+
+    /// An undirected graph hands its edges over as `UndirectedEdge`.
+    #[test]
+    fn edge_shape_function_is_given_undirected_edges_undirected() {
+      let svg = svg_of(
+        r#"GraphPlot[{UndirectedEdge[1, 2], UndirectedEdge[2, 3]},
+           EdgeShapeFunction -> (If[Head[#2] === UndirectedEdge,
+             {Blue, Line[#1]}, {Red, Line[#1]}] &)]"#,
+      );
+      assert_eq!(
+        svg.matches(r#"stroke="rgb(0,0,255)""#).count(),
+        2,
+        "both edges arrive undirected: {svg}"
+      );
+    }
+
+    /// Directives the shape function sets are scoped to its own edge and
+    /// do not bleed into the next one.
+    #[test]
+    fn edge_shape_function_directives_do_not_bleed_between_edges() {
+      let svg = svg_of(
+        r#"GraphPlot[{1 -> 2, 2 -> 3},
+           EdgeShapeFunction -> (If[#2 === DirectedEdge[1, 2],
+             {Blue, Dashed, Line[#1]}, Line[#1]] &)]"#,
+      );
+      assert_eq!(
+        svg.matches("stroke-dasharray").count(),
+        1,
+        "only the edge that asked for it is dashed: {svg}"
+      );
+      assert_eq!(
+        svg.matches(r#"stroke="rgb(0,0,255)""#).count(),
+        1,
+        "and only that one is blue: {svg}"
+      );
+    }
+
+    /// A self-loop is handed to the shape function too, as the arc it is
+    /// drawn along rather than as a two-point segment.
+    #[test]
+    fn edge_shape_function_covers_self_loops() {
+      let svg = svg_of(
+        r#"GraphPlot[{1 -> 1, 1 -> 2},
+           EdgeShapeFunction -> ({Blue, Line[#1]} &)]"#,
+      );
+      let widest = svg
+        .split("<polyline points=\"")
+        .skip(1)
+        .map(|tag| tag.split('"').next().unwrap_or("").split(' ').count())
+        .max()
+        .unwrap_or(0);
+      assert!(widest > 2, "the loop arrives as a many-point arc: {svg}");
+      assert!(
+        !svg.contains("<polygon"),
+        "the loop's arrow head is replaced along with the rest: {svg}"
+      );
+    }
+
+    /// `EdgeShapeFunction -> None` leaves the vertices without any edges.
+    #[test]
+    fn edge_shape_function_none_draws_no_edges() {
+      let svg =
+        svg_of(r#"GraphPlot[{1 -> 2, 2 -> 3}, EdgeShapeFunction -> None]"#);
+      assert!(
+        !svg.contains("<polyline") && !svg.contains("<polygon"),
+        "no edge is drawn: {svg}"
+      );
+      assert_eq!(circle_centres(&svg).len(), 3, "the vertices stay: {svg}");
+    }
+
+    /// The rule form names the edges it applies to; the rest keep the
+    /// default arrow.
+    #[test]
+    fn edge_shape_function_rules_apply_per_edge() {
+      let svg = svg_of(
+        r#"GraphPlot[{1 -> 2, 2 -> 3},
+           EdgeShapeFunction -> {DirectedEdge[1, 2] -> ({Red, Line[#1]} &)}]"#,
+      );
+      assert_eq!(
+        svg.matches(r#"stroke="rgb(255,0,0)""#).count(),
+        1,
+        "the named edge takes the rule: {svg}"
+      );
+      assert_eq!(
+        svg.matches("<polygon").count(),
+        1,
+        "the other one keeps its arrow head: {svg}"
+      );
+    }
+
+    /// A named shape says how to draw the edge without a function of its
+    /// own: `"Line"` drops the arrow head, `"Arrow"` puts one back.
+    #[test]
+    fn edge_shape_function_accepts_a_shape_name() {
+      let plain =
+        svg_of(r#"GraphPlot[{1 -> 2, 2 -> 3}, EdgeShapeFunction -> "Line"]"#);
+      assert!(
+        !plain.contains("<polygon"),
+        r#""Line" draws the edges without arrow heads: {plain}"#
+      );
+      let arrows = svg_of(
+        r#"GraphPlot[{UndirectedEdge[1, 2]}, EdgeShapeFunction -> "Arrow"]"#,
+      );
+      assert!(
+        arrows.contains("<polygon"),
+        r#""Arrow" draws one even on an undirected edge: {arrows}"#
+      );
+    }
+
     /// A graph plot is sized by its `ImageSize`, so a Demonstration can ask
     /// for a wide, short strip.
     #[test]

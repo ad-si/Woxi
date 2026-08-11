@@ -139,3 +139,22 @@ fn to_expression_reads_every_kind_of_statement() {
     "1"
   );
 }
+
+/// Wolfram character escapes (`\.HH`, `\:HHHH`, `\OOO`) expand to their
+/// characters here exactly as they do in `interpret`. Notebook cells store
+/// every non-ASCII character in this form, so without the expansion a held
+/// expression — the `Manipulate` a Studio cell builds its controls from —
+/// kept the literal escape text where the evaluated string has the
+/// character, and a pick list of Hangul syllables read `\:ac00` … `\:d558`.
+#[test]
+fn character_escapes_expand_to_their_characters() {
+  assert_eq!(run(r#""\:ac00""#), r#""가""#);
+  assert_eq!(run(r#""\.41""#), r#""A""#);
+  assert_eq!(run(r#""\102""#), r#""B""#);
+  assert_eq!(run(r#"StringLength["\:ac00\:b098"]"#), "2");
+  // Held (unevaluated) expressions carry the expansion too — that is what
+  // a control spec is read from.
+  assert_eq!(run(r#"Hold["\:ac00"]"#), r#"Hold["가"]"#);
+  // An escaped backslash is a literal backslash, not the start of an escape.
+  assert_eq!(run(r#"StringLength["\\:ac00"]"#), "6");
+}
