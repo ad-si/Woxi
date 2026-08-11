@@ -1161,6 +1161,12 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
 
   match expr {
     Expr::FunctionCall { name, args } => match name.as_str() {
+      // `Specularity` only means something in 3D. In 2D it is inert — but
+      // it still has to be consumed here, since the colour it carries is a
+      // highlight colour and letting it fall through to the generic
+      // recursion would repaint the primitives that follow
+      // (`{GrayLevel[.25], Specularity[White, 10], Disk[]}`).
+      "Specularity" if !args.is_empty() => true,
       "Opacity" if !args.is_empty() => {
         if let Some(o) = expr_to_f64(&args[0]) {
           style.opacity = o.clamp(0.0, 1.0);
@@ -15810,6 +15816,9 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // `Button[…]`, `Row[{Control[…], Spacer[…], …}]` and friends — are
       // valid Manipulate arguments (the Demonstrations layout pattern), not
       // malformed variable specs. They pass through with no message.
+      // `PaneSelector[{v -> controls, …}, sel]` is the same pattern one
+      // level up: a Demonstration whose modes need different controls
+      // swaps whole control panels as `sel` changes.
       Expr::FunctionCall { name, .. }
         if matches!(
           name.as_str(),
@@ -15820,6 +15829,8 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             | "Button"
             | "ButtonBar"
             | "Spacer"
+            | "PaneSelector"
+            | "TabView"
         ) =>
       {
         out_args.push(spec.clone());
@@ -16144,6 +16155,16 @@ pub struct ManipulateSpec {
   /// while `YinYang` is `True`). Controls with no `Enabled` option (or the
   /// trivial `Enabled -> True`) do not appear here and stay always enabled.
   pub control_enabled: Vec<(String, String)>,
+  /// Per-control visibility gating, as `(control name, condition code)`.
+  /// A `PaneSelector[{v -> controls, …}, sel]` argument swaps whole control
+  /// panels as `sel` changes, so each pane's controls are shown only while
+  /// `sel` holds that pane's value (Kepler's-conjecture packing shows one
+  /// angle slider for the disk view, four controls for the sphere view and
+  /// none for the cannonball view). Woxi's control panel is one flat list,
+  /// so the panes become conditions the frontend re-evaluates against the
+  /// live bindings, hiding the rows that do not apply. Controls outside any
+  /// pane do not appear here and stay always visible.
+  pub control_visible: Vec<(String, String)>,
   /// Continuous-control bounds that reference other control variables, as
   /// `(control name, min code, max code)`. A Demonstration like Kepler's
   /// Second Law bounds its time slider by the orbital-period variable
@@ -16281,6 +16302,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     mut displays,
     mut initialization,
     mut control_enabled,
+    mut control_visible,
     mut dynamic_bounds,
     mut dynamic_values,
     mut animation_var,
@@ -16295,6 +16317,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         inner.displays,
         inner.initialization,
         inner.control_enabled,
+        inner.control_visible,
         inner.dynamic_bounds,
         inner.dynamic_values,
         inner.animation_var,
@@ -16316,6 +16339,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         Vec::new(),
         body_displays,
         None,
+        Vec::new(),
         Vec::new(),
         Vec::new(),
         Vec::new(),
@@ -16346,6 +16370,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut arg_items: Vec<Expr> =
     Vec::with_capacity(args.len().saturating_sub(1));
   for spec in &args[1..] {
+    // A `PaneSelector` argument shows one pane's controls at a time; the
+    // flattened list holds every pane's, so each pane's controls also pick
+    // up the condition under which they are on screen.
+    collect_pane_visibility(spec, &mut control_visible);
     match control_group_items(spec) {
       Some(items) => arg_items.extend(items),
       None => arg_items.push(spec.clone()),
@@ -16743,7 +16771,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     if let Some(init) = &mut initialization {
       rewrite(init);
     }
-    for (_, cond) in &mut control_enabled {
+    for (_, cond) in
+      control_enabled.iter_mut().chain(control_visible.iter_mut())
+    {
       rewrite(cond);
     }
     for (_, min_code, max_code) in &mut dynamic_bounds {
@@ -16778,6 +16808,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays,
     initialization,
     control_enabled,
+    control_visible,
     dynamic_bounds,
     dynamic_values,
     animation_var,
@@ -17079,15 +17110,25 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   for item in items.iter() {
     // A `TabView` lists its tabs as `label -> content`, and a
     // `PaneSelector` its panes as `value -> content`; only the content
-    // holds controls. (Woxi's control panel is one flat list, so neither
-    // the tabs nor the panes are reproduced — every one's controls are
-    // shown, and a variable declared in more than one pane is registered
-    // once, from the first pane that declares it.)
+    // holds controls. (Woxi's control panel is one flat list, so every
+    // pane's controls are collected into it, and a variable declared in
+    // more than one pane is registered once, from the first pane that
+    // declares it. `collect_pane_visibility` records which pane each one
+    // came from, so the frontend can still show one panel at a time.)
     let item = match (name.as_str(), item) {
       (
         "TabView" | "PaneSelector",
         Expr::Rule { replacement, .. } | Expr::RuleDelayed { replacement, .. },
-      ) => replacement.as_ref(),
+      ) => {
+        // A pane holding no control at all contributes nothing to the flat
+        // list — a placeholder pane (`3 -> " "`, the Demonstrations idiom
+        // for "this mode has no controls") must not leave a blank heading
+        // row behind.
+        if !contains_control(replacement) {
+          continue;
+        }
+        replacement.as_ref()
+      }
       _ => item,
     };
     match item {
@@ -17102,6 +17143,110 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     }
   }
   Some(out)
+}
+
+/// Record, for every control declared inside a `PaneSelector[{v -> content,
+/// …}, sel]` argument, the condition under which its pane is on screen
+/// (`sel == v`). Woxi lays every pane's controls out in one flat list, so
+/// these conditions are what let a frontend hide the rows belonging to the
+/// panes the selector is not showing.
+///
+/// A variable declared in several panes (a Demonstration reusing one angle
+/// slider across two modes) is visible in all of them, so its conditions
+/// are or-ed together. Only the outermost `PaneSelector` of an argument is
+/// honoured — a pane nested inside another pane keeps its parent's
+/// condition rather than gaining its own.
+fn collect_pane_visibility(spec: &Expr, out: &mut Vec<(String, String)>) {
+  let Expr::FunctionCall { name, args } = spec else {
+    return;
+  };
+  if name != "PaneSelector" {
+    // The `PaneSelector` may sit inside a layout container.
+    for arg in args.iter() {
+      collect_pane_visibility(arg, out);
+    }
+    return;
+  }
+  let (Some(Expr::List(panes)), Some(selector)) = (args.first(), args.get(1))
+  else {
+    return;
+  };
+  let selector = crate::syntax::expr_to_input_form(selector);
+  for pane in panes.iter() {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = pane
+    else {
+      continue;
+    };
+    let cond = format!(
+      "({}) == ({})",
+      selector,
+      crate::syntax::expr_to_input_form(pattern)
+    );
+    for var in pane_control_variables(replacement) {
+      match out.iter_mut().find(|(n, _)| *n == var) {
+        Some((_, existing)) => *existing = format!("{existing} || {cond}"),
+        None => out.push((var, cond.clone())),
+      }
+    }
+  }
+}
+
+/// The control variables a `PaneSelector` pane declares: the variable of
+/// every `Control[…]` in it, plus — when the pane *is* a bare variable
+/// specification — that spec's own variable.
+fn pane_control_variables(pane: &Expr) -> Vec<String> {
+  fn walk(e: &Expr, out: &mut Vec<String>) {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        if name == "Control"
+          && let Some(spec) = args.first()
+          && let Some(var) = control_spec_variable(spec)
+        {
+          out.push(var);
+          return;
+        }
+        for a in args.iter() {
+          walk(a, out);
+        }
+      }
+      Expr::List(items) => {
+        for it in items.iter() {
+          walk(it, out);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut out = Vec::new();
+  if let Some(var) = control_spec_variable(pane) {
+    out.push(var);
+  } else {
+    walk(pane, &mut out);
+  }
+  out
+}
+
+/// The variable a control specification binds: `{u, …}` or `{{u, init, …},
+/// …}`. `None` for anything that is not a variable specification.
+fn control_spec_variable(spec: &Expr) -> Option<String> {
+  let Expr::List(items) = spec else {
+    return None;
+  };
+  match items.first()? {
+    Expr::List(head) => match head.first()? {
+      Expr::Identifier(name) => Some(name.clone()),
+      _ => None,
+    },
+    Expr::Identifier(name) if items.len() >= 2 => Some(name.clone()),
+    _ => None,
+  }
 }
 
 /// Collect `(name, initial value as InputForm)` for every control spec that
@@ -17393,6 +17538,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
+    control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     animation_var: None,
@@ -17470,6 +17616,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
+    control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     animation_var: None,
@@ -17545,6 +17692,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
+    control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     animation_var: None,
@@ -17596,6 +17744,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
+    control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     animation_var: None,
@@ -17658,6 +17807,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     displays: Vec::new(),
     initialization: None,
     control_enabled,
+    control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     animation_var,
@@ -19943,6 +20093,19 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
     {
       let field =
         format!(r#","enabledWhen":"{}""#, json_escape_manipulate(cond));
+      part.truncate(part.len() - 1);
+      part.push_str(&field);
+      part.push('}');
+    }
+    // A control belonging to a `PaneSelector` pane rides along with the
+    // condition under which its pane is on screen, so the frontend can hide
+    // the rows of the panes the selector is not showing.
+    if let Some((_, cond)) =
+      spec.control_visible.iter().find(|(n, _)| n == c.name())
+      && part.ends_with('}')
+    {
+      let field =
+        format!(r#","visibleWhen":"{}""#, json_escape_manipulate(cond));
       part.truncate(part.len() - 1);
       part.push_str(&field);
       part.push('}');

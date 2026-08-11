@@ -2539,6 +2539,91 @@ mod plot3d {
       insta::assert_snapshot!(export_svg("Graphics3D[Sphere[]]"));
     }
 
+    /// The red component of every shaded facet's fill, so a test can talk
+    /// about how dark or bright a surface came out. Only `<polygon>` fills
+    /// count — the white background `<rect>` is not part of the shading.
+    fn fill_reds(svg: &str) -> Vec<u32> {
+      svg
+        .split("<polygon ")
+        .skip(1)
+        .filter_map(|tag| {
+          let tag = tag.split('>').next()?;
+          tag
+            .split("fill=\"rgb(")
+            .nth(1)?
+            .split(',')
+            .next()?
+            .parse()
+            .ok()
+        })
+        .collect()
+    }
+
+    /// `Specularity[colour, n]` describes a surface's *highlight*, not its
+    /// body colour: a sphere given `{GrayLevel[.25], Specularity[White, 10]}`
+    /// (the Kepler's-conjecture cannonball stack) stays dark grey and gains a
+    /// bright spot, rather than being repainted white by the directive's own
+    /// colour.
+    #[test]
+    fn specularity_adds_a_highlight_without_repainting_the_surface() {
+      let plain =
+        export_svg("Graphics3D[{GrayLevel[.25], Sphere[]}, Boxed -> False]");
+      let shiny = export_svg(
+        "Graphics3D[{GrayLevel[.25], Specularity[White, 10], Sphere[]}, \
+         Boxed -> False]",
+      );
+      let darkest = |svg: &str| fill_reds(svg).into_iter().min().unwrap_or(0);
+      let brightest = |svg: &str| fill_reds(svg).into_iter().max().unwrap_or(0);
+      // The unlit side keeps the surface's own dark grey either way.
+      assert_eq!(
+        darkest(&plain),
+        darkest(&shiny),
+        "the highlight must not lighten the surface's own colour"
+      );
+      // A matte dark sphere never approaches white; a shiny one does.
+      assert!(
+        brightest(&plain) < 128,
+        "matte GrayLevel[.25] sphere should stay dark, got {}",
+        brightest(&plain)
+      );
+      assert!(
+        brightest(&shiny) > 250,
+        "Specularity[White, …] should add a near-white highlight, got {}",
+        brightest(&shiny)
+      );
+    }
+
+    /// A larger `Specularity` exponent concentrates the highlight, so fewer
+    /// facets are lit by it.
+    #[test]
+    fn specularity_exponent_tightens_the_highlight() {
+      let lit_facets = |exponent: &str| {
+        let svg = export_svg(&format!(
+          "Graphics3D[{{GrayLevel[.25], Specularity[White, {exponent}], \
+           Sphere[]}}, Boxed -> False]"
+        ));
+        fill_reds(&svg).into_iter().filter(|r| *r > 200).count()
+      };
+      assert!(
+        lit_facets("40") < lit_facets("4"),
+        "a higher exponent should light fewer facets"
+      );
+    }
+
+    /// `Specularity` means nothing in 2D, but it must still be consumed
+    /// there: its colour used to leak through as the fill of the primitives
+    /// that followed.
+    #[test]
+    fn specularity_is_inert_in_2d() {
+      let svg = export_svg(
+        "Graphics[{GrayLevel[.25], Specularity[White, 10], Disk[]}]",
+      );
+      assert!(
+        svg.contains("fill=\"rgb(64,64,64)\""),
+        "the disk keeps GrayLevel[.25]: {svg}"
+      );
+    }
+
     #[test]
     fn graphics3d_arrow_with_background() {
       insta::assert_snapshot!(export_svg(
@@ -17707,6 +17792,96 @@ mod manipulate {
       &spec.controls[0],
       ManipulateControl::Continuous { .. }
     ));
+  }
+
+  /// A `PaneSelector[{v -> controls, …}, sel]` argument is the Demonstrations
+  /// way of giving each mode its own control panel. It is a valid Manipulate
+  /// argument, so it must not emit `Manipulate::vsform` either.
+  #[test]
+  fn pane_selector_controls_are_not_vsform() {
+    let res = woxi::interpret_with_stdout(
+      "Manipulate[{q, a}, Control[{{q, 1}, {1, 2}, Setter}], \
+       PaneSelector[{1 -> Control[{{a, 5}, 0, 10}], 2 -> \" \"}, q]]",
+    )
+    .unwrap();
+    assert!(
+      !res.warnings.iter().any(|w| w.contains("vsform")),
+      "unexpected vsform message: {:?}",
+      res.warnings
+    );
+  }
+
+  /// Each `PaneSelector` pane's controls are collected into the one flat
+  /// control panel, but they carry the condition under which their pane is
+  /// on screen so a frontend can show one panel at a time. A variable used
+  /// by more than one pane is visible in all of them.
+  #[test]
+  fn pane_selector_controls_carry_pane_visibility() {
+    let expr = interpret_to_expr(
+      "Manipulate[{q, a, b}, Control[{{q, 1}, {1, 2, 3}, Setter}], \
+       PaneSelector[{1 -> Control[{{a, 5}, 0, 10}], \
+       2 -> Column[{Control[{{a, 5}, 0, 10}], Control[{{b, 1}, 0, 2}]}], \
+       3 -> \" \"}, q]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    // The placeholder pane holds no control, so it leaves no row behind:
+    // the panel is the selector plus the two pane variables.
+    let names: Vec<&str> = spec.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["q", "a", "b"]);
+    assert_eq!(
+      spec.control_visible,
+      vec![
+        ("a".to_string(), "(q) == (1) || (q) == (2)".to_string()),
+        ("b".to_string(), "(q) == (2)".to_string()),
+      ]
+    );
+    // The selector itself sits outside every pane and is always shown.
+    assert!(!spec.control_visible.iter().any(|(n, _)| n == "q"));
+
+    // Resolve the conditions the way a frontend does, for each mode.
+    let conditions: Vec<Option<String>> = spec
+      .controls
+      .iter()
+      .map(|c| {
+        spec
+          .control_visible
+          .iter()
+          .find(|(n, _)| n == c.name())
+          .map(|(_, cond)| cond.clone())
+      })
+      .collect();
+    let shown = |q: &str| {
+      manipulate_enabled_states(
+        &conditions,
+        &[("q".to_string(), q.to_string())],
+      )
+    };
+    assert_eq!(shown("1"), vec![true, true, false]);
+    assert_eq!(shown("2"), vec![true, true, true]);
+    assert_eq!(shown("3"), vec![true, false, false]);
+  }
+
+  #[test]
+  fn spec_json_includes_visible_when() {
+    let expr = interpret_to_expr(
+      "Manipulate[{q, a}, Control[{{q, 1}, {1, 2}, Setter}], \
+       PaneSelector[{1 -> Control[{{a, 5}, 0, 10}], 2 -> \" \"}, q]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    let json = manipulate_spec_to_json(&spec);
+    assert!(
+      json.contains(r#""visibleWhen":"(q) == (1)""#),
+      "json: {json}"
+    );
+    // The selector belongs to no pane and carries no condition.
+    let q_obj = json.split(r#""name":"q""#).nth(1).unwrap_or("");
+    let q_obj = q_obj.split('}').next().unwrap_or("");
+    assert!(
+      !q_obj.contains("visibleWhen"),
+      "a control outside every pane should have no visibleWhen: {q_obj}"
+    );
   }
 
   /// `Row[…]`-grouped controls are valid Manipulate arguments and must not
