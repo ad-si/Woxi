@@ -77,7 +77,6 @@ Questions about the type, shape, or value of an expression. Predicates in the Wo
 - [`Unique`](predicates/Unique.md)
 - [`UpValues`](predicates/UpValues.md)
 - [`IntervalMemberQ`](predicates/IntervalMemberQ.md)
-- [`PartitionsQ`](predicates/PartitionsQ.md)
 - [`Alternatives`](predicates/Alternatives.md)
 - [`Backslash`](predicates/Backslash.md)
 - [`CenterDot`](predicates/CenterDot.md)
