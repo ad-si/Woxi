@@ -644,8 +644,12 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       }
       // `InterpretationBox[displayed, value]` stores both the typeset form
       // and the underlying expression that should be used for evaluation.
-      // We want the second argument.
-      "InterpretationBox" if args.len() >= 2 => conv(&args[1]),
+      // We want the second argument — with any display-form wrapper it
+      // carries removed, since that only records how the boxes were laid
+      // out.
+      "InterpretationBox" if args.len() >= 2 => {
+        strip_display_form_wrapper(&conv(&args[1]))
+      }
       // `CheckboxBox[value, {off, on}]` (Demonstrations metadata cells) —
       // render a checkbox glyph, labelled with the `on` alternative when
       // it is a string (`CheckboxBox[False, {False, "Mathematics"}]` →
@@ -812,6 +816,33 @@ fn positional_box_args(head: &str, s: &str) -> Option<Vec<String>> {
     .collect();
   args.retain(|a| !is_option_arg(a));
   Some(args)
+}
+
+/// An `InterpretationBox`'s meaning with a display-form wrapper
+/// (`InputForm[expr]`, `TraditionalForm[expr]`, …) peeled off.
+///
+/// Pasting an `InputForm`-formatted result back into a notebook stores it as
+/// `InterpretationBox[StyleBox[<boxes>, …], InputForm[<expr>], AutoDelete ->
+/// True, …]`: the wrapper records *how* the boxes were formatted, while the
+/// expression the cell stands for is `<expr>` itself — which is what
+/// re-evaluating the cell gives back. Keeping the wrapper would leave the
+/// value an inert one-element `InputForm[…]` object, so `Dimensions`, `Map`
+/// and `Part` would each see a single opaque element instead of the array
+/// inside it (a Demonstration whose coordinate table is pasted that way then
+/// computes nothing at all).
+fn strip_display_form_wrapper(s: &str) -> String {
+  let trimmed = s.trim();
+  for head in ["InputForm", "OutputForm", "StandardForm", "TraditionalForm"] {
+    if !trimmed.starts_with(head) {
+      continue;
+    }
+    if let Some(args) = positional_box_args(head, trimmed)
+      && args.len() == 1
+    {
+      return args.into_iter().next().unwrap_or_default();
+    }
+  }
+  trimmed.to_string()
 }
 
 /// The evaluable head of a typeset "big operator" glyph — `∑` → `Sum`,
@@ -3947,6 +3978,55 @@ Cell[TextData[{
     match &parsed.cells[0] {
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "x\u{0302}+y\u{0304}+z\u{20D7}");
+      }
+      _ => panic!("Expected single cell"),
+    }
+  }
+
+  /// Pasting an `InputForm`-formatted result back into a cell stores it as
+  /// `InterpretationBox[StyleBox[…], InputForm[expr], …]`. The wrapper is
+  /// only a record of how the boxes were laid out — the cell stands for
+  /// `expr`, which is what re-evaluating it gives back. Keeping the wrapper
+  /// would leave an inert one-element `InputForm[…]` object, so `Dimensions`
+  /// and `Map` would see one opaque element instead of the array in it (the
+  /// shape a Demonstration's coordinate table is written in).
+  #[test]
+  fn test_interpretation_box_drops_input_form_wrapper() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{"data", "=",
+  InterpretationBox[
+   StyleBox[
+    RowBox[{"{", RowBox[{"1", ",", "2"}], "}"}],
+    ShowStringCharacters->True,
+    NumberMarks->True],
+   InputForm[{{1, 2}, {3, 4}}],
+   AutoDelete->True,
+   Editable->True]}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.content, "data={{1, 2}, {3, 4}}");
+      }
+      _ => panic!("Expected single cell"),
+    }
+  }
+
+  /// An `InterpretationBox` whose meaning is an ordinary expression keeps
+  /// it verbatim — only display-form wrappers are peeled off.
+  #[test]
+  fn test_interpretation_box_keeps_plain_meaning() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ InterpretationBox[
+  StyleBox["x", ShowStringCharacters->False],
+  Quantity[3, "Meters"]]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.content, "Quantity[3, \"Meters\"]");
       }
       _ => panic!("Expected single cell"),
     }

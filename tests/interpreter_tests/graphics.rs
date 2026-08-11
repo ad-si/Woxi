@@ -19071,6 +19071,57 @@ mod manipulate {
     );
   }
 
+  /// A bound written `Dynamic[…]` is the front end's way of saying "re-read
+  /// this whenever anything it names changes" — a counter slider whose end
+  /// is `Dynamic[Binomial[points, 3]]` follows the point count above it.
+  /// `Dynamic` never evaluates to a number, so the whole control (and with
+  /// it the entire Manipulate, since one unparseable spec fails them all)
+  /// used to be dropped and no widget appeared at all.
+  #[test]
+  fn spec_bounds_may_be_wrapped_in_dynamic() {
+    let expr = interpret_to_expr(
+      "Manipulate[{points, triangle}, \
+       {{points, 10, \"number of points\"}, 3, 22, 1}, \
+       {{triangle, 1, \"triangle\"}, 1, Dynamic[Binomial[points, 3]], 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[1] {
+      ManipulateControl::Continuous {
+        name,
+        min,
+        max,
+        initial,
+        ..
+      } => {
+        assert_eq!(name, "triangle");
+        // Binomial[10, 3] at build time, with `points` at its initial value.
+        assert_eq!((*min, *max, *initial), (1.0, 120.0, 1.0));
+      }
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    // The `Dynamic` wrapper is stripped from the code kept for re-resolving,
+    // so the frontend can evaluate it against the live bindings.
+    assert_eq!(
+      spec.dynamic_bounds,
+      vec![(
+        "triangle".to_string(),
+        None,
+        Some("Binomial[points, 3]".to_string())
+      )]
+    );
+    // Moving `points` to 22 widens the counter to Binomial[22, 3].
+    let resolved = woxi::with_scoped_globals(
+      &[("points".to_string(), "22".to_string())],
+      || {
+        woxi::functions::graphics::manipulate_eval_bound_code(
+          "Binomial[points, 3]",
+        )
+      },
+    );
+    assert_eq!(resolved, Some(1540.0));
+  }
+
   #[test]
   fn spec_trigger_animates_an_already_bound_variable() {
     // A `ControlType -> Trigger` spec for a variable that already has a

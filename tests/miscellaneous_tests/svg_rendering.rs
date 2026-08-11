@@ -2693,6 +2693,32 @@ mod tests {
       assert!(styled.contains("<ellipse"), "expected the disk: {styled}");
     }
 
+    /// `Style[expr, "Label", 12]` names a stylesheet style *and* overrides
+    /// its font size. Both used to be appended, emitting `font-size` twice
+    /// on one element — not valid SVG, and which size won was left to the
+    /// renderer. The later directive is the one Wolfram applies.
+    #[test]
+    fn explicit_size_overrides_a_named_style() {
+      let svg = svg_of(
+        "Graphics[{Point[{0, 0}]}, PlotLabel -> Style[\"area\", \"Label\", 12]]",
+      );
+      let label = svg
+        .lines()
+        .find(|l| l.contains(">area<"))
+        .unwrap_or_else(|| panic!("expected the label: {svg}"));
+      assert_eq!(
+        label.matches("font-size=").count(),
+        // One on the <text> element, one on the styled <tspan> — never two
+        // on the same element.
+        2,
+        "each element carries a single font-size: {label}"
+      );
+      assert!(
+        label.contains("<tspan font-size=\"12\">area</tspan>"),
+        "the explicit size wins over the named style's: {label}"
+      );
+    }
+
     #[test]
     fn styled_grid_still_colours_its_frame() {
       // The directives of a styled `Grid` reach its frame and dividers, not

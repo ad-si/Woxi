@@ -8176,27 +8176,38 @@ fn base_form_digits(x: &Expr, base: &Expr) -> Option<String> {
 /// slant, weight and size — for the `tspan` the styled content goes into.
 /// Directives with no textual meaning (or none we render) are skipped.
 fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
-  let mut attrs = String::new();
+  // One slot per SVG attribute, last directive wins: `Style[expr, "Label",
+  // 12]` names a stylesheet style *and* overrides its size, exactly as
+  // Wolfram reads it. Appending both would emit the attribute twice, which
+  // is not valid SVG and leaves the size up to the renderer's tie-break.
+  let mut attrs: Vec<(&'static str, String)> = Vec::new();
+  let mut set = |name: &'static str, value: String| match attrs
+    .iter_mut()
+    .find(|(n, _)| *n == name)
+  {
+    Some(slot) => slot.1 = value,
+    None => attrs.push((name, value)),
+  };
   for d in directives {
     match d {
       Expr::Identifier(s) if s == "Italic" => {
-        attrs.push_str(" font-style=\"italic\"");
+        set("font-style", "italic".to_string());
       }
       Expr::Identifier(s) if s == "Bold" => {
-        attrs.push_str(" font-weight=\"bold\"");
+        set("font-weight", "bold".to_string());
       }
       // A bare number is the font size (`Style[expr, 12]`).
       Expr::Integer(_) | Expr::Real(_) => {
         if let Some(size) = expr_to_f64(d) {
-          attrs.push_str(&format!(" font-size=\"{size:.0}\""));
+          set("font-size", format!("{size:.0}"));
         }
       }
       // A named style brings its size and colour from the stylesheet.
       Expr::String(name) => {
         if let Some((size, color)) = named_style_appearance(name) {
-          attrs.push_str(&format!(" font-size=\"{size:.0}\""));
+          set("font-size", format!("{size:.0}"));
           if let Some((r, g, b)) = color {
-            attrs.push_str(&format!(" fill=\"rgb({r},{g},{b})\""));
+            set("fill", format!("rgb({r},{g},{b})"));
           }
         }
       }
@@ -8206,36 +8217,39 @@ fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
       } => match option_name(pattern) {
         Some("FontSize") => {
           if let Some(size) = expr_to_f64(replacement) {
-            attrs.push_str(&format!(" font-size=\"{size:.0}\""));
+            set("font-size", format!("{size:.0}"));
           }
         }
         Some("FontColor") => {
           if let Some(c) = parse_color(replacement) {
-            attrs.push_str(&format!(" fill=\"{}\"", c.to_svg_rgb()));
+            set("fill", c.to_svg_rgb());
           }
         }
         Some("FontSlant") => {
           if matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Italic")
           {
-            attrs.push_str(" font-style=\"italic\"");
+            set("font-style", "italic".to_string());
           }
         }
         Some("FontWeight") => {
           if matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Bold")
           {
-            attrs.push_str(" font-weight=\"bold\"");
+            set("font-weight", "bold".to_string());
           }
         }
         _ => {}
       },
       other => {
         if let Some(c) = parse_color(other) {
-          attrs.push_str(&format!(" fill=\"{}\"", c.to_svg_rgb()));
+          set("fill", c.to_svg_rgb());
         }
       }
     }
   }
   attrs
+    .iter()
+    .map(|(name, value)| format!(" {name}=\"{value}\""))
+    .collect()
 }
 
 /// The root index `n` when `exp` is the unit fraction `1/n` — the shape a
@@ -17134,16 +17148,35 @@ fn manipulate_initial_value_bindings(specs: &[Expr]) -> Vec<(String, String)> {
     .collect()
 }
 
+/// The expression a Manipulate bound really states, with a `Dynamic[…]`
+/// wrapper stripped, plus whether such a wrapper was there. A bound written
+/// `Dynamic[expr]` (`{{k, 1}, 1, Dynamic[Binomial[n, 3]], 1}` — a counter
+/// whose end follows another control) is re-read by the front end whenever
+/// anything it names changes, so it is dynamic by construction even when it
+/// happens to be constant right now.
+fn manipulate_bound_expr(expr: &Expr) -> (&Expr, bool) {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      (&args[0], true)
+    }
+    other => (other, false),
+  }
+}
+
 /// Evaluate a Manipulate bound expression to a number. A literal (`2 Pi`)
 /// resolves statically; a bound referencing another control variable (`P`)
 /// resolves through the evaluator against the initial-value globals the
-/// caller installed. The flag reports whether the environment was needed —
-/// such bounds are dynamic and must be re-resolved against live bindings.
+/// caller installed. The flag reports whether the bound is dynamic — either
+/// because the environment was needed or because it is wrapped in
+/// `Dynamic[…]` — in which case it must be re-resolved against live bindings.
 fn eval_manipulate_bound(expr: &Expr) -> Option<(f64, bool)> {
+  let (expr, is_dynamic) = manipulate_bound_expr(expr);
   if let Some(v) =
     crate::functions::math_ast::try_eval_to_f64_with_infinity(expr)
   {
-    return Some((v, false));
+    return Some((v, is_dynamic));
   }
   let evaluated = crate::evaluator::evaluate_expr_to_expr(expr).ok()?;
   crate::functions::math_ast::try_eval_to_f64_with_infinity(&evaluated)
@@ -19043,14 +19076,19 @@ fn parse_manipulate_control(
   let (mut min, min_dynamic) = eval_manipulate_bound(bounds[0])?;
   let (mut max, max_dynamic) = eval_manipulate_bound(bounds[1])?;
   // A bound that only resolved through the environment references another
-  // control variable (Kepler's `{{t, 0, …}, 0, P, .01}`); keep its code so
-  // the frontend can re-resolve it against the live bindings and let the
-  // slider range follow the other control.
+  // control variable (Kepler's `{{t, 0, …}, 0, P, .01}`), as does one
+  // written `Dynamic[…]`; keep its code — the bare expression, without the
+  // `Dynamic` wrapper — so the frontend can re-resolve it against the live
+  // bindings and let the slider range follow the other control.
   let min_code = min_dynamic
-    .then(|| crate::syntax::expr_to_input_form(bounds[0]))
+    .then(|| {
+      crate::syntax::expr_to_input_form(manipulate_bound_expr(bounds[0]).0)
+    })
     .filter(|_| min.is_finite());
   let max_code = max_dynamic
-    .then(|| crate::syntax::expr_to_input_form(bounds[1]))
+    .then(|| {
+      crate::syntax::expr_to_input_form(manipulate_bound_expr(bounds[1]).0)
+    })
     .filter(|_| max.is_finite());
   // An infinite bound (`Animate[…, {ϕ, 0, Infinity}]` runs forever in
   // Wolfram) cannot drive a finite slider; substitute a 2π looping window

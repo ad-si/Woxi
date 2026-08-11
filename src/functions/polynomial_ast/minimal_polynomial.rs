@@ -3,6 +3,7 @@ use super::*;
 use crate::functions::math_ast::{
   expr_to_f64, expr_to_i128, expr_to_rational, gcd_bigint,
 };
+use num_bigint::BigInt;
 
 /// MinimalPolynomial[α, x] - Computes the minimal polynomial of an algebraic number α
 /// in the variable x.
@@ -395,6 +396,14 @@ fn compute_minpoly_coeffs(
   // treatment inside Q(m^(1/q)); the pairwise resultant composition below
   // would return a reducible degree-q^2 annihilating polynomial instead.
   if let Some(coeffs) = single_radical_minpoly(expr)? {
+    return Ok(Some(coeffs));
+  }
+  // The same idea one step further: a rational polynomial in *any* single
+  // algebraic generator (a `Root` object, say) is a vector in that
+  // generator's field, so its minimal polynomial has that field's degree
+  // rather than the product of the degrees the pairwise composition below
+  // would work through.
+  if let Some(coeffs) = single_generator_minpoly(expr)? {
     return Ok(Some(coeffs));
   }
   match expr {
@@ -1006,106 +1015,203 @@ fn minpoly_of_power(
 }
 
 /// Compute determinant of a matrix whose entries are polynomials (Vec<i128>).
-/// Uses cofactor expansion for small matrices.
+///
+/// The determinant itself is computed over `BigInt`: a Sylvester matrix of
+/// two minimal polynomials multiplies its way well past `i128` long before
+/// the *resultant* does. The minimal polynomial of an algebraic number whose
+/// coordinates are rationals with four-digit denominators (a Demonstration's
+/// coordinate table stated in a number field) reaches only ~10^21, while the
+/// 9×9 cofactor expansion producing it runs through ~10^189 — which used to
+/// overflow, panicking in a debug build and silently wrapping to a wrong
+/// polynomial in a release one. Only the finished, made-primitive result is
+/// brought back to `i128`; if even that does not fit, the caller gets `None`
+/// and leaves the expression unevaluated rather than reporting a wrong root.
 fn poly_matrix_determinant(matrix: &[Vec<Vec<i128>>]) -> Option<Vec<i128>> {
+  let big: Vec<Vec<Vec<BigInt>>> = matrix
+    .iter()
+    .map(|row| {
+      row
+        .iter()
+        .map(|poly| poly.iter().map(|&c| BigInt::from(c)).collect())
+        .collect()
+    })
+    .collect();
+  let det = poly_matrix_determinant_big(&big)?;
+  // Strip the content before narrowing: the resultant carries a large common
+  // factor that `make_primitive_monic` would divide out anyway, and dropping
+  // it here is often what makes the coefficients fit at all.
+  let det = poly_primitive_big(&det);
+  det.iter().map(|c| i128::try_from(c).ok()).collect()
+}
+
+/// [`poly_matrix_determinant`] over `BigInt`, **up to a positive constant
+/// factor** (every caller makes the result primitive, so the factor drops
+/// out).
+///
+/// The determinant is recovered from sample points rather than expanded
+/// symbolically: cofactor expansion of an n×n matrix of polynomials costs n!
+/// polynomial multiplications, which for the 9×9 Sylvester matrix of a pair
+/// of cubics is several hundred thousand big-integer convolutions — minutes
+/// of work for one number. Instead the entries are evaluated at
+/// `0, 1, …, deg`, each sample determinant is taken over the integers by
+/// fraction-free (Bareiss) elimination, and the polynomial is interpolated
+/// back through those points: `deg + 1` cubic-time integer determinants
+/// instead of a factorial number of polynomial ones.
+fn poly_matrix_determinant_big(
+  matrix: &[Vec<Vec<BigInt>>],
+) -> Option<Vec<BigInt>> {
   let n = matrix.len();
   if n == 0 {
-    return Some(vec![1]);
+    return Some(vec![BigInt::from(1)]);
   }
   if n == 1 {
     return Some(matrix[0][0].clone());
   }
-  if n == 2 {
-    let a = poly_mul_i128(&matrix[0][0], &matrix[1][1]);
-    let b = poly_mul_i128(&matrix[0][1], &matrix[1][0]);
-    return Some(poly_sub_i128(&a, &b));
-  }
-
-  // For larger matrices, use Bareiss-like elimination with polynomial entries
-  // or cofactor expansion along first row
   if n > 8 {
     return None; // Too expensive
   }
 
-  // Cofactor expansion along first row
-  let mut det = vec![0i128];
-  for j in 0..n {
-    if matrix[0][j].iter().all(|&c| c == 0) {
-      continue;
-    }
-    // Build (n-1)×(n-1) minor
-    let mut minor: Vec<Vec<Vec<i128>>> = Vec::new();
-    for i in 1..n {
-      let mut row = Vec::new();
-      for k in 0..n {
-        if k != j {
-          row.push(matrix[i][k].clone());
-        }
-      }
-      minor.push(row);
-    }
-    let minor_det = poly_matrix_determinant(&minor)?;
-    let term = poly_mul_i128(&matrix[0][j], &minor_det);
-    if j % 2 == 0 {
-      det = poly_add_i128(&det, &term);
-    } else {
-      det = poly_sub_i128(&det, &term);
-    }
-  }
-  Some(det)
+  // Every term of the permutation expansion takes one entry per row, so the
+  // determinant's degree is at most the sum of the per-row maxima.
+  let degree_bound: usize = matrix
+    .iter()
+    .map(|row| row.iter().map(|p| poly_degree_big(p)).max().unwrap_or(0))
+    .sum();
+  let samples: Vec<BigInt> = (0..=degree_bound)
+    .map(|x| {
+      let point = BigInt::from(x);
+      let evaluated: Vec<Vec<BigInt>> = matrix
+        .iter()
+        .map(|row| row.iter().map(|p| poly_eval_big(p, &point)).collect())
+        .collect();
+      integer_matrix_determinant_big(evaluated)
+    })
+    .collect();
+  Some(interpolate_at_integers_big(&samples))
 }
 
-/// Polynomial multiplication for i128 coefficients
-fn poly_mul_i128(a: &[i128], b: &[i128]) -> Vec<i128> {
-  if a.is_empty() || b.is_empty() {
-    return vec![0];
+/// Index of the highest non-zero coefficient (`0` for the zero polynomial).
+fn poly_degree_big(coeffs: &[BigInt]) -> usize {
+  let zero = BigInt::from(0);
+  coeffs.iter().rposition(|c| *c != zero).unwrap_or(0)
+}
+
+/// Horner evaluation of a `BigInt` polynomial.
+fn poly_eval_big(coeffs: &[BigInt], x: &BigInt) -> BigInt {
+  let mut acc = BigInt::from(0);
+  for c in coeffs.iter().rev() {
+    acc = acc * x + c;
   }
-  if a.iter().all(|&c| c == 0) || b.iter().all(|&c| c == 0) {
-    return vec![0];
+  acc
+}
+
+/// Exact determinant of an integer matrix by fraction-free (Bareiss)
+/// elimination: every division in the sweep is exact, so the whole
+/// computation stays in the integers.
+fn integer_matrix_determinant_big(mut a: Vec<Vec<BigInt>>) -> BigInt {
+  let n = a.len();
+  let zero = BigInt::from(0);
+  let mut previous_pivot = BigInt::from(1);
+  let mut negated = false;
+  for k in 0..n.saturating_sub(1) {
+    if a[k][k] == zero {
+      let Some(swap_with) = (k + 1..n).find(|&i| a[i][k] != zero) else {
+        return zero;
+      };
+      a.swap(k, swap_with);
+      negated = !negated;
+    }
+    for i in k + 1..n {
+      for j in k + 1..n {
+        let updated =
+          (&a[i][j] * &a[k][k] - &a[i][k] * &a[k][j]) / &previous_pivot;
+        a[i][j] = updated;
+      }
+    }
+    previous_pivot = a[k][k].clone();
   }
-  let mut result = vec![0i128; a.len() + b.len() - 1];
-  for (i, &ai) in a.iter().enumerate() {
-    if ai == 0 {
+  let det = a[n - 1][n - 1].clone();
+  if negated { -det } else { det }
+}
+
+/// Interpolate the polynomial running through `samples[k] = p(k)`, scaled by
+/// `(samples.len() - 1)!` so the whole reconstruction stays in the integers.
+/// Callers only use the result up to a positive constant factor.
+fn interpolate_at_integers_big(samples: &[BigInt]) -> Vec<BigInt> {
+  let zero = BigInt::from(0);
+  let degree = samples.len().saturating_sub(1);
+  // Forward differences: Δ^k p(0) for k = 0..=degree.
+  let mut differences = Vec::with_capacity(degree + 1);
+  let mut level = samples.to_vec();
+  differences.push(level.first().cloned().unwrap_or_else(|| zero.clone()));
+  for _ in 0..degree {
+    level = level.windows(2).map(|w| &w[1] - &w[0]).collect();
+    differences.push(level.first().cloned().unwrap_or_else(|| zero.clone()));
+  }
+  // p(x) = Σ_k (Δ^k p(0) / k!) · x(x-1)…(x-k+1); multiplying through by
+  // `degree!` turns every coefficient into an integer.
+  let mut degree_factorial = BigInt::from(1);
+  for i in 1..=degree {
+    degree_factorial *= BigInt::from(i);
+  }
+  let mut result = vec![zero.clone(); degree + 1];
+  let mut falling_factorial = vec![BigInt::from(1)];
+  let mut k_factorial = BigInt::from(1);
+  for (k, difference) in differences.iter().enumerate() {
+    if k > 0 {
+      k_factorial *= BigInt::from(k);
+      falling_factorial = poly_mul_big(
+        &falling_factorial,
+        &[BigInt::from(-((k as i64) - 1)), BigInt::from(1)],
+      );
+    }
+    if *difference == zero {
       continue;
     }
-    for (j, &bj) in b.iter().enumerate() {
+    let scale = &degree_factorial / &k_factorial * difference;
+    for (i, c) in falling_factorial.iter().enumerate() {
+      result[i] += &scale * c;
+    }
+  }
+  while result.len() > 1 && result.last() == Some(&zero) {
+    result.pop();
+  }
+  result
+}
+
+/// Polynomial multiplication for `BigInt` coefficients
+fn poly_mul_big(a: &[BigInt], b: &[BigInt]) -> Vec<BigInt> {
+  let zero = BigInt::from(0);
+  if a.is_empty() || b.is_empty() {
+    return vec![zero];
+  }
+  if a.iter().all(|c| *c == zero) || b.iter().all(|c| *c == zero) {
+    return vec![zero];
+  }
+  let mut result = vec![zero.clone(); a.len() + b.len() - 1];
+  for (i, ai) in a.iter().enumerate() {
+    if *ai == zero {
+      continue;
+    }
+    for (j, bj) in b.iter().enumerate() {
       result[i + j] += ai * bj;
     }
   }
   result
 }
 
-/// Polynomial addition
-fn poly_add_i128(a: &[i128], b: &[i128]) -> Vec<i128> {
-  let len = a.len().max(b.len());
-  let mut result = vec![0i128; len];
-  for (i, &v) in a.iter().enumerate() {
-    result[i] += v;
+/// Divide a `BigInt` polynomial by the GCD of its coefficients, so the
+/// narrowing back to `i128` sees the smallest equivalent polynomial.
+fn poly_primitive_big(coeffs: &[BigInt]) -> Vec<BigInt> {
+  let zero = BigInt::from(0);
+  let mut content = zero.clone();
+  for c in coeffs {
+    content = gcd_bigint(&content, c);
   }
-  for (i, &v) in b.iter().enumerate() {
-    result[i] += v;
+  if content <= BigInt::from(1) {
+    return coeffs.to_vec();
   }
-  // Trim trailing zeros
-  while result.len() > 1 && result.last() == Some(&0) {
-    result.pop();
-  }
-  result
-}
-
-/// Polynomial subtraction
-fn poly_sub_i128(a: &[i128], b: &[i128]) -> Vec<i128> {
-  let len = a.len().max(b.len());
-  let mut result = vec![0i128; len];
-  for (i, &v) in a.iter().enumerate() {
-    result[i] += v;
-  }
-  for (i, &v) in b.iter().enumerate() {
-    result[i] -= v;
-  }
-  while result.len() > 1 && result.last() == Some(&0) {
-    result.pop();
-  }
-  result
+  coeffs.iter().map(|c| c / &content).collect()
 }
 
 // ---- minimal polynomials inside a single radical extension Q(m^(1/q)) ----
@@ -1425,7 +1531,22 @@ fn single_radical_minpoly(
     }
   }
 
-  // Characteristic polynomial det(x I - M) via the evaluator.
+  char_poly_of_rational_matrix(&mat)
+}
+
+/// The characteristic polynomial `det(x I - M)` of a square rational matrix,
+/// as a primitive square-free integer polynomial in ascending degree order.
+///
+/// This is the multiplication-matrix step both single-generator paths share:
+/// for multiplication by an element of a degree-n field, `det(x I - M)` is a
+/// power of that element's minimal polynomial, so the square-free part is the
+/// minimal polynomial itself.
+fn char_poly_of_rational_matrix(
+  mat: &[Vec<Rat>],
+) -> Result<Option<Vec<i128>>, InterpreterError> {
+  let n = mat.len();
+  // Build the symbolic matrix and let the evaluator take the determinant, so
+  // the arithmetic stays exact.
   let var = Expr::Identifier("MinimalPolynomial$r".to_string());
   let rat_expr = |r: Rat| {
     if r.1 == 1 {
@@ -1438,9 +1559,9 @@ fn single_radical_minpoly(
       }
     }
   };
-  let mut rows = Vec::with_capacity(q);
+  let mut rows = Vec::with_capacity(n);
   for (i, mat_row) in mat.iter().enumerate() {
-    let mut row = Vec::with_capacity(q);
+    let mut row = Vec::with_capacity(n);
     for (j, &entry) in mat_row.iter().enumerate() {
       row.push(if i == j {
         Expr::BinaryOp {
@@ -1482,7 +1603,7 @@ fn single_radical_minpoly(
       _ => return Ok(None),
     }
   }
-  if rats.len() != q + 1 {
+  if rats.len() != n + 1 {
     return Ok(None);
   }
   let mut den_lcm = 1i128;
@@ -1491,6 +1612,281 @@ fn single_radical_minpoly(
   }
   let ints: Vec<i128> = rats.iter().map(|&(n, d)| n * (den_lcm / d)).collect();
   Ok(Some(make_square_free(&make_primitive_monic(&ints))))
+}
+
+/// A rational polynomial in a single algebraic generator α; `generator:
+/// None` means nothing but rational constants have been seen yet.
+#[derive(Clone)]
+struct GenPoly {
+  generator: Option<Expr>,
+  coeffs: Vec<Rat>,
+}
+
+/// Overflow-checked rational arithmetic. The collected coefficients come
+/// from arbitrary user input, so a product that leaves `i128` abandons the
+/// fast path instead of panicking (or, in a release build, wrapping to a
+/// wrong minimal polynomial).
+fn rat_try_mul(a: Rat, b: Rat) -> Option<Rat> {
+  Some(rat_reduce(a.0.checked_mul(b.0)?, a.1.checked_mul(b.1)?))
+}
+
+fn rat_try_add(a: Rat, b: Rat) -> Option<Rat> {
+  let n = a.0.checked_mul(b.1)?.checked_add(b.0.checked_mul(a.1)?)?;
+  Some(rat_reduce(n, a.1.checked_mul(b.1)?))
+}
+
+/// Collect `expr` as a rational polynomial in one algebraic generator.
+///
+/// Anything that is not built from rationals by `+`, `-`, `*` and
+/// non-negative integer powers is taken to *be* the generator; a second,
+/// different generator abandons the collection (the pairwise-resultant path
+/// handles genuinely multi-generator expressions).
+fn collect_gen_poly(expr: &Expr, depth: usize) -> Option<GenPoly> {
+  if depth > 32 {
+    return None;
+  }
+  let constant = |r: Rat| GenPoly {
+    generator: None,
+    coeffs: vec![r],
+  };
+  let atom = |e: &Expr| GenPoly {
+    generator: Some(e.clone()),
+    coeffs: vec![(0, 1), (1, 1)],
+  };
+  match expr {
+    Expr::Integer(n) => Some(constant((*n, 1))),
+    Expr::Real(_) => None,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => {
+          Some(constant(rat_reduce(*n, *d)))
+        }
+        _ => None,
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+      let mut acc = collect_gen_poly(&args[0], depth + 1)?;
+      for a in &args[1..] {
+        acc = gen_add(&acc, &collect_gen_poly(a, depth + 1)?)?;
+      }
+      Some(acc)
+    }
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      let mut acc = collect_gen_poly(&args[0], depth + 1)?;
+      for a in &args[1..] {
+        acc = gen_mul(&acc, &collect_gen_poly(a, depth + 1)?)?;
+      }
+      Some(acc)
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => gen_mul(&collect_gen_poly(operand, depth + 1)?, &constant((-1, 1))),
+    Expr::BinaryOp { op, left, right } => match op {
+      BinaryOperator::Plus => gen_add(
+        &collect_gen_poly(left, depth + 1)?,
+        &collect_gen_poly(right, depth + 1)?,
+      ),
+      BinaryOperator::Minus => gen_add(
+        &collect_gen_poly(left, depth + 1)?,
+        &gen_mul(&collect_gen_poly(right, depth + 1)?, &constant((-1, 1)))?,
+      ),
+      BinaryOperator::Times => gen_mul(
+        &collect_gen_poly(left, depth + 1)?,
+        &collect_gen_poly(right, depth + 1)?,
+      ),
+      BinaryOperator::Divide => {
+        let divisor = collect_gen_poly(right, depth + 1)?;
+        // Only division by a rational stays inside this representation;
+        // inverting a field element would need the extended Euclid step.
+        if divisor.generator.is_some() || divisor.coeffs.len() != 1 {
+          return None;
+        }
+        let (n, d) = divisor.coeffs[0];
+        if n == 0 {
+          return None;
+        }
+        gen_mul(
+          &collect_gen_poly(left, depth + 1)?,
+          &constant(rat_reduce(d, n)),
+        )
+      }
+      BinaryOperator::Power => gen_power(left, right, depth, expr),
+      _ => Some(atom(expr)),
+    },
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      gen_power(&args[0], &args[1], depth, expr)
+    }
+    _ => Some(atom(expr)),
+  }
+}
+
+/// `base^exponent` inside [`collect_gen_poly`]. A non-negative integer
+/// exponent raises the collected polynomial; anything else (a radical, a
+/// negative power) makes the whole power the generator.
+fn gen_power(
+  base: &Expr,
+  exponent: &Expr,
+  depth: usize,
+  whole: &Expr,
+) -> Option<GenPoly> {
+  let Some(Expr::Integer(n)) = (match exponent {
+    Expr::Integer(n) => Some(Expr::Integer(*n)),
+    _ => None,
+  }) else {
+    return Some(GenPoly {
+      generator: Some(whole.clone()),
+      coeffs: vec![(0, 1), (1, 1)],
+    });
+  };
+  if !(0..=32).contains(&n) {
+    return Some(GenPoly {
+      generator: Some(whole.clone()),
+      coeffs: vec![(0, 1), (1, 1)],
+    });
+  }
+  let factor = collect_gen_poly(base, depth + 1)?;
+  let mut acc = GenPoly {
+    generator: factor.generator.clone(),
+    coeffs: vec![(1, 1)],
+  };
+  for _ in 0..n {
+    acc = gen_mul(&acc, &factor)?;
+  }
+  Some(acc)
+}
+
+/// The generator shared by two collected polynomials, or `None` when they
+/// disagree (which abandons the fast path).
+fn gen_shared_generator(a: &GenPoly, b: &GenPoly) -> Option<Option<Expr>> {
+  match (&a.generator, &b.generator) {
+    (Some(x), Some(y))
+      if crate::evaluator::pattern_matching::expr_equal(x, y) =>
+    {
+      Some(Some(x.clone()))
+    }
+    (Some(_), Some(_)) => None,
+    (Some(x), None) => Some(Some(x.clone())),
+    (None, Some(y)) => Some(Some(y.clone())),
+    (None, None) => Some(None),
+  }
+}
+
+fn gen_add(a: &GenPoly, b: &GenPoly) -> Option<GenPoly> {
+  let generator = gen_shared_generator(a, b)?;
+  let mut coeffs = vec![(0i128, 1i128); a.coeffs.len().max(b.coeffs.len())];
+  for (i, &c) in a.coeffs.iter().enumerate() {
+    coeffs[i] = rat_try_add(coeffs[i], c)?;
+  }
+  for (i, &c) in b.coeffs.iter().enumerate() {
+    coeffs[i] = rat_try_add(coeffs[i], c)?;
+  }
+  Some(GenPoly { generator, coeffs })
+}
+
+fn gen_mul(a: &GenPoly, b: &GenPoly) -> Option<GenPoly> {
+  let generator = gen_shared_generator(a, b)?;
+  let mut coeffs = vec![(0i128, 1i128); a.coeffs.len() + b.coeffs.len() - 1];
+  for (i, &x) in a.coeffs.iter().enumerate() {
+    if x.0 == 0 {
+      continue;
+    }
+    for (j, &y) in b.coeffs.iter().enumerate() {
+      if y.0 == 0 {
+        continue;
+      }
+      coeffs[i + j] = rat_try_add(coeffs[i + j], rat_try_mul(x, y)?)?;
+    }
+  }
+  Some(GenPoly { generator, coeffs })
+}
+
+/// Reduce a rational polynomial modulo the integer polynomial `modulus`,
+/// returning exactly `deg(modulus)` coefficients.
+fn reduce_rational_poly(coeffs: &[Rat], modulus: &[i128]) -> Option<Vec<Rat>> {
+  let degree = modulus.len().checked_sub(1)?;
+  if degree == 0 {
+    return None;
+  }
+  let leading = (*modulus.last()?, 1i128);
+  let mut rest = coeffs.to_vec();
+  while rest.len() > degree {
+    let top = rest.len() - 1;
+    let factor = rat_try_mul(rest[top], (leading.1, leading.0))?;
+    if factor.0 != 0 {
+      for (j, &m) in modulus.iter().enumerate() {
+        let term = rat_try_mul(factor, (-m, 1))?;
+        let slot = top - degree + j;
+        rest[slot] = rat_try_add(rest[slot], term)?;
+      }
+    }
+    rest.pop();
+  }
+  rest.resize(degree, (0, 1));
+  Some(rest)
+}
+
+/// Minimal polynomial of a rational polynomial in one algebraic generator α
+/// — a Demonstration's coordinate table stated in a number field is written
+/// exactly this way (`1/144 + α/18 + 5 α^2/288` for a cubic α).
+///
+/// Composing such a sum with pairwise resultants multiplies the degrees
+/// together (3 · 3 · 3 = 27 for a three-term sum over a cubic) and then has
+/// to factor a degree-27 integer polynomial with enormous coefficients just
+/// to recover the cubic answer — minutes of work per coordinate. Inside
+/// Q(α) the element is a vector, and the characteristic polynomial of
+/// multiplication by it has the field's own degree, so the answer comes out
+/// of a 3×3 determinant instead.
+fn single_generator_minpoly(
+  expr: &Expr,
+) -> Result<Option<Vec<i128>>, InterpreterError> {
+  let Some(collected) = collect_gen_poly(expr, 0) else {
+    return Ok(None);
+  };
+  let Some(generator) = collected.generator else {
+    return Ok(None);
+  };
+  // The generator alone is the caller's own job (and recursing on it here
+  // would not terminate); this path is for genuine combinations.
+  if crate::evaluator::pattern_matching::expr_equal(&generator, expr) {
+    return Ok(None);
+  }
+  let Some(modulus) = compute_minpoly_coeffs(&generator)? else {
+    return Ok(None);
+  };
+  let degree = modulus.len() - 1;
+  if !(2..=8).contains(&degree) {
+    return Ok(None);
+  }
+  let Some(value) = reduce_rational_poly(&collected.coeffs, &modulus) else {
+    return Ok(None);
+  };
+
+  // Multiplication matrix: column i holds the coefficients of value · α^i.
+  let mut mat = vec![vec![(0i128, 1i128); degree]; degree];
+  for i in 0..degree {
+    let mut shifted = vec![(0i128, 1i128); i];
+    shifted.extend_from_slice(&value);
+    let Some(column) = reduce_rational_poly(&shifted, &modulus) else {
+      return Ok(None);
+    };
+    for (row, &entry) in column.iter().enumerate() {
+      mat[row][i] = entry;
+    }
+  }
+
+  let Some(candidate) = char_poly_of_rational_matrix(&mat)? else {
+    return Ok(None);
+  };
+  // An element may generate only a subfield (α + α^2 can land in a
+  // quadratic subfield of a quartic), leaving the characteristic polynomial
+  // reducible; keep the factor that actually vanishes at the value.
+  Ok(Some(match numeric_value_of(expr) {
+    Some(val) => pick_irreducible_factor(&candidate, val).unwrap_or(candidate),
+    None => candidate,
+  }))
 }
 
 /// Reduce a polynomial to its square-free part (remove repeated factors).
@@ -1617,6 +2013,22 @@ fn try_factor_integer_poly(coeffs: &[i128]) -> Vec<Vec<i128>> {
     }
     // No more rational roots found
     break;
+  }
+
+  // Beyond rational roots, hand the rest to the same Zassenhaus engine
+  // `Factor` uses, so a candidate that splits into two irreducible cubics
+  // (the shape a square root taken inside a cubic field produces) is
+  // recognised here too rather than being reported as one Root object of
+  // twice the true degree.
+  if remaining.len() > 3
+    && let Some(split) = super::zassenhaus::zassenhaus_int_factors(&remaining)
+  {
+    let split: Vec<Vec<i128>> =
+      split.into_iter().filter(|f| f.len() > 1).collect();
+    if split.len() > 1 {
+      factors.extend(split);
+      return factors;
+    }
   }
 
   // Try to factor what's left using poly_gcd with derivative

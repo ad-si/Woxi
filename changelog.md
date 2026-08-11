@@ -2,6 +2,38 @@
 
 # Unreleased
 
+- Fixes driven by a Wolfram Demonstration that highlights the smallest
+    triangle among optimally placed points in the unit square, whose
+    coordinates are tabulated as exact algebraic numbers:
+    - A control bound written `Dynamic[…]` — a counter slider whose end
+        follows another control (`{{k, 1}, 1, Dynamic[Binomial[n, 3]], 1}`)
+        — is read as the dynamic bound it is. `Dynamic` never evaluates to
+        a number, so the control failed to parse, and with it the whole
+        `Manipulate`: no widget appeared at all.
+    - A notebook cell holding a pasted `InputForm` result stands for the
+        expression itself. Its `InterpretationBox` names the display form as
+        the meaning, and keeping that wrapper left an inert one-element
+        object where an array was expected, so `Dimensions`, `Map` and
+        `Part` all saw a single opaque element.
+    - `RootReduce` and `MinimalPolynomial` of a rational polynomial in one
+        `Root` object stay inside that root's field: the minimal polynomial
+        comes from the multiplication matrix there rather than from
+        composing the terms pairwise by resultants, which multiplied the
+        degrees together (3 · 3 · 3 for a three-term sum over a cubic) and
+        then had to factor the result. Minutes per number became
+        milliseconds.
+    - The resultants those two functions still take are computed over big
+        integers, by sampling and interpolation instead of cofactor
+        expansion. A 9×9 Sylvester matrix overflowed `i128` — a panic in a
+        debug build, a silently wrong polynomial in a release one.
+    - `Factor` splits polynomials whose coefficients run into the thousands,
+        such as `5184 x^6 - 153 x^4 + 130 x^2 - 9`. The lift target was
+        capped where the *reached* modulus needed capping, so these were
+        reported as irreducible.
+    - `Style[expr, "Label", 12]` applies the explicit size over the named
+        style's. Both were emitted, putting two `font-size` attributes on
+        one SVG element.
+
 - Fixes driven by a Wolfram Demonstration that draws a diatomic molecule as
     a three-dimensional schematic beside an energy plot:
     - `Scale[g, s]` in a `Graphics3D` scales about the centre of `g`'s
