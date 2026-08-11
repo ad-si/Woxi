@@ -3791,17 +3791,32 @@ fn render_manipulate_widget<'a>(
   // Size the label column to the widest label so it sits snug against the
   // sliders. ~7.3px per character at the 12px caption font (monospace),
   // plus a little trailing padding; clamped so a single-glyph label still
-  // reads and a very long one can't swallow the slider.
+  // reads and a very long one can't swallow the slider. Only the rows
+  // actually on screen count — a `PaneSelector` pane that is not showing
+  // must not reserve room for its labels.
   let max_label_chars = state
     .controls
     .iter()
-    .map(manipulate_label_char_count)
+    .enumerate()
+    .filter(|(i, _)| state.control_is_visible.get(*i).copied().unwrap_or(true))
+    .map(|(_, c)| manipulate_label_char_count(c))
     .max()
     .unwrap_or(0);
   let label_col_width = (max_label_chars as f32 * 7.3 + 6.0).clamp(20.0, 220.0);
   let visible_controls: &[manipulate::ControlState] =
     if show_controls { &state.controls } else { &[] };
   for (ctrl_idx, ctrl) in visible_controls.iter().enumerate() {
+    // A control belonging to a `PaneSelector` pane the selector is not
+    // showing is left out of the panel entirely, the way Wolfram swaps one
+    // pane's controls for another's.
+    if !state
+      .control_is_visible
+      .get(ctrl_idx)
+      .copied()
+      .unwrap_or(true)
+    {
+      continue;
+    }
     // A control whose `Enabled` condition currently evaluates to `False` is
     // greyed out and swallows interaction (see `Message::Noop`).
     let enabled = state
@@ -6623,6 +6638,47 @@ mod tests {
       "span markers are layout, not displays: {:?}",
       state.displays
     );
+  }
+
+  /// A `PaneSelector` control panel — a Demonstration whose modes each need
+  /// different controls, as the closest-packing one does — shows only the
+  /// pane the selector is on. The controls of the other panes are built (so
+  /// their variables stay bound for the body) but left off the panel, and a
+  /// pane with no controls at all leaves no row behind.
+  #[test]
+  fn manipulate_pane_selector_shows_one_panel_at_a_time() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{q, a, b}, Control[{{q, 2}, {1 -> \"one\", 2 -> \"two\", \
+       3 -> \"three\"}, Setter}], \
+       PaneSelector[{1 -> Control[{{a, 5}, 0, 10}], \
+       2 -> Column[{Control[{{a, 5}, 0, 10}], Control[{{b, 1}, 0, 2}]}], \
+       3 -> \" \"}, q]]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(
+      names,
+      vec!["q", "a", "b"],
+      "the placeholder pane must not add a row"
+    );
+    // The selector starts on pane 2, which shows both of its controls.
+    assert_eq!(state.control_is_visible, vec![true, true, true]);
+
+    // Switching the selector swaps the panel: pane 1 offers only `a`.
+    let select = |state: &mut manipulate::ManipulateState, idx: usize| {
+      if let manipulate::ControlState::Discrete { current_index, .. } =
+        &mut state.controls[0]
+      {
+        *current_index = idx;
+      }
+      state.reevaluate();
+    };
+    select(&mut state, 0);
+    assert_eq!(state.control_is_visible, vec![true, true, false]);
+    // Pane 3 is the placeholder: the selector is the only row left.
+    select(&mut state, 2);
+    assert_eq!(state.control_is_visible, vec![true, false, false]);
   }
 
   #[test]
