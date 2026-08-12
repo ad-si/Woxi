@@ -14,9 +14,12 @@ const PRIMES: [i128; 15] =
   [3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53];
 const MAX_MODP_FACTORS: usize = 12;
 const MAX_DEGREE: usize = 24;
-/// Keep the lift target below 2^30 so the (possibly squared) working
-/// modulus stays multiplication-safe in i128.
-const MAX_LIFT_TARGET: i128 = 1 << 30;
+/// The lift squares its modulus until it passes the target, and every step
+/// (and the recombination after it) multiplies two residues of the modulus
+/// it *reached*. Keeping that below 2^62 leaves products under 2^124, well
+/// inside i128 — so the cap belongs on the reached modulus rather than on
+/// the target, which the lift routinely overshoots.
+const MAX_LIFT_MODULUS: i128 = 1 << 62;
 
 // ─── modular polynomial arithmetic (ascending trimmed vectors) ───────
 
@@ -312,26 +315,31 @@ pub(super) fn zassenhaus_int_factors(
     return None;
   }
 
-  // Landau–Mignotte bound: |coeff of any factor| <= 2^n * ||f||_2, and
-  // candidates are premultiplied by lc.
+  // Landau–Mignotte bound: a factor of degree j has |coeff| <= 2^j *
+  // ||f||_2, and candidates are premultiplied by lc. Only *proper* factors
+  // are ever recombined, so j <= n - 1 — halving the bound against the
+  // cruder 2^n, which is what keeps a sextet like `5184 x^6 - 153 x^4 +
+  // 130 x^2 - 9` (the minimal-polynomial candidate of a square root taken
+  // inside a cubic field) under the lift target instead of giving up on it.
   let norm_sq: i128 = f
     .iter()
     .try_fold(0i128, |acc, &c| acc.checked_add(c.checked_mul(c)?))?;
   let norm = (norm_sq as f64).sqrt().ceil() as i128;
-  let bound = (1i128 << n.min(60))
+  let bound = (1i128 << (n - 1).min(60))
     .checked_mul(norm)?
     .checked_mul(lc.abs())?;
   let target = bound.checked_mul(2)?.checked_add(1)?;
-  if target > MAX_LIFT_TARGET {
-    return None;
-  }
 
-  let lifted = hensel_lift_tree(&f, &modp_factors, p, target)?;
-  // The working modulus the lift ended at.
+  // The modulus the lift will actually reach, checked up front so the
+  // arithmetic inside it stays exact.
   let mut modulus = p;
   while modulus < target {
     modulus = modulus.checked_mul(modulus)?;
+    if modulus > MAX_LIFT_MODULUS {
+      return None;
+    }
   }
+  let lifted = hensel_lift_tree(&f, &modp_factors, p, target)?;
 
   // Subset recombination by trial division over Z.
   let mut avail: Vec<Vec<i128>> = lifted;

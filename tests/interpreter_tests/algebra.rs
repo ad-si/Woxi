@@ -1587,6 +1587,23 @@ mod factor {
     );
   }
 
+  // Coefficients in the thousands push the Landau–Mignotte lift target
+  // past what the modulus cap used to allow, so these gave up and reported
+  // the sextic as irreducible. They are the minimal-polynomial candidates
+  // of square roots taken inside a cubic field, where each splits into a
+  // conjugate pair of cubics.
+  #[test]
+  fn large_coefficient_sextics() {
+    assert_eq!(
+      interpret("Factor[5184 x^6 - 153 x^4 + 130 x^2 - 9]").unwrap(),
+      "(-3 + 2*x + 21*x^2 + 72*x^3)*(3 + 2*x - 21*x^2 + 72*x^3)"
+    );
+    assert_eq!(
+      interpret("Factor[5184 x^6 - 18729 x^4 + 23992 x^2 - 8464]").unwrap(),
+      "(-92 + 260*x - 237*x^2 + 72*x^3)*(92 + 260*x + 237*x^2 + 72*x^3)"
+    );
+  }
+
   // A bare monomial factor sorts against sum factors by the canonical
   // Times rule (found by the differential fuzzer: the x used to trail).
   #[test]
@@ -11666,6 +11683,31 @@ mod root_reduce {
     assert_eq!(interpret("RootReduce[x]").unwrap(), "x");
     assert_eq!(interpret("RootReduce[Pi]").unwrap(), "Pi");
     assert_eq!(interpret("RootReduce[Sin[1]]").unwrap(), "Sin[1]");
+  }
+
+  // A rational polynomial in one `Root` object is an element of that root's
+  // cubic field, so its minimal polynomial is a cubic too. Composing the
+  // three terms with pairwise resultants instead built a degree-27
+  // annihilating polynomial and then tried to factor it, which took minutes
+  // per number; the field's own multiplication matrix answers directly.
+  #[test]
+  fn polynomial_in_a_root_object_stays_in_its_field() {
+    let alpha = "Root[-32 - 6*#1 + #1^3 &, 1, 0]";
+    assert_eq!(
+      interpret(&format!("RootReduce[1/144 + {alpha}/18 + 5 {alpha}^2/288]"))
+        .unwrap(),
+      "Root[-1 - 14*#1 - 33*#1^2 + 144*#1^3 & , 1, 0]"
+    );
+    // And the square root of such an element, when it happens to live in a
+    // cubic field too, comes back as that cubic rather than as the
+    // reducible sextic the resultant produces.
+    assert_eq!(
+      interpret(&format!(
+        "RootReduce[Sqrt[1/144 + {alpha}/18 + 5 {alpha}^2/288]]"
+      ))
+      .unwrap(),
+      "Root[-1 + 2*#1 - 9*#1^2 + 12*#1^3 & , 1, 0]"
+    );
   }
 }
 
