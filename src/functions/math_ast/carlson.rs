@@ -305,19 +305,19 @@ fn cinf() -> Expr {
 
 /// `1 / Sqrt[x]`.
 fn recip_sqrt(x: &Expr) -> Result<Expr, InterpreterError> {
-  eval_expr(&binop(BinaryOperator::Divide, Expr::Integer(1), sqrt_of(x)))
+  eval_expr(&div2(Expr::Integer(1), sqrt_of(x)))
 }
 
 /// `x^(-3/2)`.
 fn recip_sqrt_cubed(x: &Expr) -> Result<Expr, InterpreterError> {
-  let exp = binop(BinaryOperator::Divide, Expr::Integer(-3), Expr::Integer(2));
-  eval_expr(&binop(BinaryOperator::Power, x.clone(), exp))
+  let exp = div2(Expr::Integer(-3), Expr::Integer(2));
+  eval_expr(&pow2(x.clone(), exp))
 }
 
 /// `Pi / (2 Sqrt[y])`.
 fn pi_over_2sqrt(y: &Expr) -> Result<Expr, InterpreterError> {
-  let den = binop(BinaryOperator::Times, Expr::Integer(2), sqrt_of(y));
-  eval_expr(&binop(BinaryOperator::Divide, pi(), den))
+  let den = times2(Expr::Integer(2), sqrt_of(y));
+  eval_expr(&div2(pi(), den))
 }
 
 fn rc_exact(x: &Expr, y: &Expr) -> Option<Result<Expr, InterpreterError>> {
@@ -417,23 +417,15 @@ fn rg_exact(
   if zeros >= 2 {
     // R_G(0, 0, z) = Sqrt[z]/2.
     let nz = args.iter().copied().find(|e| !is_zero(e)).unwrap();
-    return Some(eval_expr(&binop(
-      BinaryOperator::Divide,
-      sqrt_of(nz),
-      Expr::Integer(2),
-    )));
+    return Some(eval_expr(&div2(sqrt_of(nz), Expr::Integer(2))));
   }
   if zeros == 1 {
     let others: Vec<&Expr> =
       args.iter().copied().filter(|e| !is_zero(e)).collect();
     // R_G(0, y, y) = Pi Sqrt[y]/4.
     if expr_equal(others[0], others[1]) {
-      let num = binop(BinaryOperator::Times, pi(), sqrt_of(others[0]));
-      return Some(eval_expr(&binop(
-        BinaryOperator::Divide,
-        num,
-        Expr::Integer(4),
-      )));
+      let num = times2(pi(), sqrt_of(others[0]));
+      return Some(eval_expr(&div2(num, Expr::Integer(4))));
     }
     return None;
   }
