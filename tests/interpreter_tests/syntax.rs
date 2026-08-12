@@ -2777,6 +2777,40 @@ mod traditional_form {
       "TraditionalForm[6 - 12*x + 6*x^2]"
     );
   }
+
+  // `InputForm` writes a typeset expression as the FrontEnd's
+  // `\!\(\*boxes\)` escape, so reading that back has to land on the same
+  // expression. Woxi Studio serializes a Manipulate body through InputForm
+  // and re-parses it on every frame; without the read side a
+  // `TraditionalForm[…]` in the body came back as an opaque `HoldComplete`
+  // of its own source and printed as that.
+  #[test]
+  fn input_form_box_escape_round_trips() {
+    assert_eq!(
+      interpret(r"\!\(\*FormBox[Sin[x] + 1, TraditionalForm]\)").unwrap(),
+      "TraditionalForm[1 + Sin[x]]"
+    );
+    // The displayed part may itself be boxes rather than plain source —
+    // a 2-D box head, or the `RowBox` a flat run of source typesets to.
+    assert_eq!(
+      interpret(r#"\!\(\*FormBox[SqrtBox["x"], TraditionalForm]\)"#).unwrap(),
+      "TraditionalForm[Sqrt[x]]"
+    );
+    assert_eq!(
+      interpret(
+        r#"\!\(\*FormBox[RowBox[{"ArcSin[", "y", "]"}], TraditionalForm]\)"#
+      )
+      .unwrap(),
+      "TraditionalForm[ArcSin[y]]"
+    );
+    // Inside a layout the wrapper survives, so the item stays typeset
+    // instead of degrading to a line of source text.
+    assert_eq!(
+      interpret(r#"Column[{"a", \!\(\*FormBox[x + y, TraditionalForm]\)}]"#)
+        .unwrap(),
+      "Column[{a, TraditionalForm[x + y]}]"
+    );
+  }
 }
 
 mod batch_symbols {

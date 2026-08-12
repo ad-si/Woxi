@@ -1673,6 +1673,64 @@ fn is_assoc_item_delayed(s: &str) -> bool {
   false
 }
 
+/// Interpret the box source carried by a `\!\(\*boxes\)` escape back into
+/// the expression those boxes typeset.
+///
+/// `InputForm` writes a typeset expression this way, so this is the read
+/// side of that round trip — without it `TraditionalForm[expr]` serialized
+/// into a string (as Woxi Studio does with a Manipulate body) parsed back
+/// as an opaque `HoldComplete` of its own source. A `FormBox[boxes, form]`
+/// keeps its form wrapper, since that is exactly what `form[expr]` writes;
+/// any other box head converts through the notebook box reader.
+fn box_escape_to_expr(box_src: &str) -> Option<Expr> {
+  let src = box_src.trim();
+  if let Some(rest) = src.strip_prefix("FormBox[")
+    && let Some(inner) = rest.strip_suffix(']')
+  {
+    // The form name is the last top-level argument; everything before it
+    // is the boxes being displayed.
+    let (boxes, form) = split_last_top_level_comma(inner)?;
+    let form = form.trim();
+    if !matches!(form, "TraditionalForm" | "StandardForm" | "OutputForm") {
+      return None;
+    }
+    let inner_expr = box_escape_to_expr(boxes)
+      .or_else(|| string_to_expr(boxes.trim()).ok())?;
+    return Some(Expr::FunctionCall {
+      name: form.to_string(),
+      args: vec![inner_expr].into(),
+    });
+  }
+  let text = crate::notebook::box_source_to_expression(src)?;
+  string_to_expr(&text).ok()
+}
+
+/// Split `s` at its last top-level comma (one not nested in brackets or
+/// inside a string). `None` when there is no such comma.
+fn split_last_top_level_comma(s: &str) -> Option<(&str, &str)> {
+  let mut depth = 0i32;
+  let mut in_string = false;
+  let mut prev_backslash = false;
+  let mut last = None;
+  for (i, c) in s.char_indices() {
+    if in_string {
+      if c == '"' && !prev_backslash {
+        in_string = false;
+      }
+      prev_backslash = c == '\\' && !prev_backslash;
+      continue;
+    }
+    match c {
+      '"' => in_string = true,
+      '[' | '{' | '(' => depth += 1,
+      ']' | '}' | ')' => depth -= 1,
+      ',' if depth == 0 => last = Some(i),
+      _ => {}
+    }
+  }
+  last.map(|i| (&s[..i], &s[i + 1..]))
+}
+
 /// Parse a `\(...\)` box-notation literal into an explicit *Box AST. Atoms
 /// inside become String literals; `\^`, `\_`, `\+`, `\&`, `\@`, `\%`
 /// translate to SuperscriptBox/SubscriptBox/UnderscriptBox/OverscriptBox/
@@ -2601,6 +2659,13 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
           .replace("\\%", " ")
           .replace("\\@", " ");
         if let Ok(expr) = string_to_expr(&inner) {
+          return expr;
+        }
+        // `\!\(\*boxes\)` — the FrontEnd's "interpret these boxes" escape,
+        // which is what `InputForm` writes for a typeset expression.
+        if let Some(box_src) = inner.trim_start().strip_prefix("\\*")
+          && let Some(expr) = box_escape_to_expr(box_src)
+        {
           return expr;
         }
         // Fallback: surface the raw source as HoldComplete.

@@ -758,6 +758,73 @@ mod inverse_trig_identities {
     assert_eq!(interpret("ArcCot[2 + Sqrt[3]]").unwrap(), "Pi/12");
   }
 
+  // The inverse applied to its own forward function is not the identity —
+  // it lands on the one value in the inverse's principal range that shares
+  // the forward value. Wolfram reduces the round trip automatically for
+  // every exact real argument.
+  #[test]
+  fn arcsin_sin_reduces_into_principal_range() {
+    // Inside [-Pi/2, Pi/2] the round trip is the identity.
+    assert_eq!(interpret("ArcSin[Sin[1]]").unwrap(), "1");
+    assert_eq!(interpret("ArcSin[Sin[3/2]]").unwrap(), "3/2");
+    // One half-turn out: the sign flips around Pi.
+    assert_eq!(interpret("ArcSin[Sin[2]]").unwrap(), "-2 + Pi");
+    assert_eq!(interpret("ArcSin[Sin[-2]]").unwrap(), "2 - Pi");
+    // Several turns out, both parities of the reduction.
+    assert_eq!(interpret("ArcSin[Sin[7]]").unwrap(), "7 - 2*Pi");
+    assert_eq!(interpret("ArcSin[Sin[10]]").unwrap(), "-10 + 3*Pi");
+    // The half-turn count is exact, so the reduction holds however many
+    // turns out the argument is — far past what a machine float resolves.
+    assert_eq!(
+      interpret("ArcSin[Sin[10^20]]").unwrap(),
+      "100000000000000000000 - 31830988618379067154*Pi"
+    );
+  }
+
+  #[test]
+  fn arccos_cos_reduces_into_principal_range() {
+    // ArcCos lands in [0, Pi], so a negative argument comes back positive.
+    assert_eq!(interpret("ArcCos[Cos[1]]").unwrap(), "1");
+    assert_eq!(interpret("ArcCos[Cos[-1]]").unwrap(), "1");
+    assert_eq!(interpret("ArcCos[Cos[2]]").unwrap(), "2");
+    assert_eq!(interpret("ArcCos[Cos[7]]").unwrap(), "7 - 2*Pi");
+    assert_eq!(interpret("ArcCos[Cos[Sqrt[2]]]").unwrap(), "Sqrt[2]");
+  }
+
+  // Tan and Cot have period Pi, so the reduction is a plain shift. ArcCot's
+  // range is half-open the other way (`(-Pi/2, Pi/2]`), which is what makes
+  // ArcCot[Cot[Pi/2]] come back as Pi/2 rather than -Pi/2.
+  #[test]
+  fn arctan_tan_and_arccot_cot_shift_by_pi() {
+    assert_eq!(interpret("ArcTan[Tan[1]]").unwrap(), "1");
+    assert_eq!(interpret("ArcTan[Tan[7]]").unwrap(), "7 - 2*Pi");
+    assert_eq!(interpret("ArcTan[Tan[-7]]").unwrap(), "-7 + 2*Pi");
+    assert_eq!(interpret("ArcCot[Cot[3]]").unwrap(), "3 - Pi");
+    assert_eq!(interpret("ArcCot[Cot[Pi/2]]").unwrap(), "Pi/2");
+    assert_eq!(interpret("ArcCot[Cot[3*Pi/2]]").unwrap(), "Pi/2");
+  }
+
+  // Sec and Csc are reciprocals of Cos and Sin and share their ranges.
+  #[test]
+  fn arcsec_sec_and_arccsc_csc_reduce_like_cos_and_sin() {
+    assert_eq!(interpret("ArcSec[Sec[3]]").unwrap(), "3");
+    assert_eq!(interpret("ArcSec[Sec[7]]").unwrap(), "7 - 2*Pi");
+    assert_eq!(interpret("ArcCsc[Csc[3]]").unwrap(), "-3 + Pi");
+    assert_eq!(interpret("ArcCsc[Csc[1]]").unwrap(), "1");
+  }
+
+  // A symbolic argument has no branch to pick, and an inexact one already
+  // collapsed to a machine number in the forward call.
+  #[test]
+  fn inverse_of_forward_keeps_symbolic_and_inexact_arguments() {
+    assert_eq!(interpret("ArcSin[Sin[x]]").unwrap(), "ArcSin[Sin[x]]");
+    assert_eq!(
+      interpret("ArcCos[Cos[y + 1]]").unwrap(),
+      "ArcCos[Cos[1 + y]]"
+    );
+    assert_eq!(interpret("ArcSin[Sin[2.0]]").unwrap(), "1.1415926535897933");
+  }
+
   #[test]
   fn sinh_arcsinh() {
     assert_eq!(interpret("Sinh[ArcSinh[x]]").unwrap(), "x");
