@@ -1,11 +1,14 @@
-//! Audio synthesis for `Play[f, {t, tmin, tmax}]` and playable rendering of
-//! `Audio[…]` objects.
+//! Audio synthesis for `Play[f, {t, tmin, tmax}, opts…]` and playable
+//! rendering of `Audio[…]` objects.
 //!
 //! `Play` builds a `Sound` object whose amplitude is the function `f` of the
-//! time variable `t` (in seconds). The CLI cannot emit audio, so it renders
-//! the object textually as `-Sound-`. In visual hosts (the Woxi Playground and
-//! Woxi Studio) the waveform is sampled, encoded as a WAV file, and embedded in
-//! an `<audio controls>` element so the sound can actually be played.
+//! time variable `t` (in seconds), sampled at its `SampleRate` (8000 Hz by
+//! default). The CLI cannot emit audio, so it renders the object textually as
+//! `-Sound-`. In visual hosts (the Woxi Playground and Woxi Studio) the
+//! waveform is sampled, encoded as a WAV file, and embedded in an
+//! `<audio controls>` element so the sound can actually be played. Inside a
+//! layout (`Grid`, `Column`, `Row`) a sound is drawn as the sound box a
+//! notebook shows for it — see [`sound_svg`].
 //!
 //! `Audio[File["path"]]` / `Audio["path.flac"]` / `Audio[{samples…}]` objects
 //! are likewise turned into a playable [`crate::AudioOutput`] so visual hosts
@@ -26,13 +29,14 @@ const SAMPLE_RATE: u32 = 8000;
 /// Collect every playable segment reachable inside a `Sound` expression into
 /// concrete amplitude samples plus a sample rate, recursing through nested
 /// lists (so `Sound[{Play[…], Play[…]}]` yields both segments in order).
-/// Recognizes `Play[f, {t, tmin, tmax}]` (synthesized) and
-/// `SampledSoundList[{samples…}, rate]` (produced by `ListPlay`).
+/// Recognizes `Play[f, {t, tmin, tmax}, opts…]` (synthesized, honoring
+/// `SampleRate -> r`) and `SampledSoundList[{samples…}, rate]` (produced by
+/// `ListPlay`).
 fn collect_segments(expr: &Expr, out: &mut Vec<(Vec<f64>, u32)>) {
   match expr {
     Expr::FunctionCall { name, .. } if name == "Play" => {
       if let Some(seg) = sample_play(expr) {
-        out.push((seg, SAMPLE_RATE));
+        out.push(seg);
       }
     }
     Expr::FunctionCall { name, args } if name == "SampledSoundList" => {
@@ -79,14 +83,16 @@ fn sample_sampled_sound_list(args: &[Expr]) -> Option<(Vec<f64>, u32)> {
   Some((samples, rate))
 }
 
-/// Sample a single `Play[f, {t, tmin, tmax}]` segment into amplitude values
-/// clipped to [-1, 1]. Returns `None` when the iterator is malformed or the
-/// amplitude cannot be evaluated to a number anywhere on the interval.
-fn sample_play(play: &Expr) -> Option<Vec<f64>> {
+/// Sample a single `Play[f, {t, tmin, tmax}, opts…]` segment into amplitude
+/// values clipped to [-1, 1], together with the rate it was sampled at.
+/// A `SampleRate -> r` option overrides the 8000 Hz default. Returns `None`
+/// when the iterator is malformed or the amplitude cannot be evaluated to a
+/// number anywhere on the interval.
+fn sample_play(play: &Expr) -> Option<(Vec<f64>, u32)> {
   let Expr::FunctionCall { name, args } = play else {
     return None;
   };
-  if name != "Play" || args.len() != 2 {
+  if name != "Play" || args.len() < 2 {
     return None;
   }
   let Expr::List(iter) = &args[1] else {
@@ -105,9 +111,13 @@ fn sample_play(play: &Expr) -> Option<Vec<f64>> {
   if !(tmax > tmin) {
     return None;
   }
+  let rate = option_sample_rate(&args[2..], SAMPLE_RATE as f64).round() as u32;
+  if rate == 0 {
+    return None;
+  }
 
   let body = &args[0];
-  let count = ((tmax - tmin) * SAMPLE_RATE as f64).round() as usize;
+  let count = ((tmax - tmin) * rate as f64).round() as usize;
   if count == 0 {
     return None;
   }
@@ -118,7 +128,7 @@ fn sample_play(play: &Expr) -> Option<Vec<f64>> {
     // wolframscript samples at tmin + (i+1)/rate — the first sample is one
     // step past tmin and the last lands exactly on tmax (verified against
     // its WAV export byte stream).
-    let t = tmin + (i + 1) as f64 / SAMPLE_RATE as f64;
+    let t = tmin + (i + 1) as f64 / rate as f64;
     // Outside the defined range or where the amplitude is non-numeric, emit
     // silence rather than failing the whole segment.
     let amp = evaluate_at_point(body, var, t).unwrap_or(0.0);
@@ -128,7 +138,7 @@ fn sample_play(play: &Expr) -> Option<Vec<f64>> {
     // wolframscript clips amplitudes to [-1, 1] before quantizing.
     samples.push(amp.clamp(-1.0, 1.0));
   }
-  any_finite.then_some(samples)
+  any_finite.then_some((samples, rate))
 }
 
 /// Sample every `Play` segment inside a `Sound` (or bare `Play`) expression
@@ -149,6 +159,92 @@ pub fn sound_to_samples(sound_expr: &Expr) -> Option<(Vec<f64>, u32)> {
     samples.extend_from_slice(seg);
   }
   (!samples.is_empty()).then_some((samples, rate))
+}
+
+/// Width of the sound box drawn for a `Sound` object inside a layout (px).
+const SOUND_BOX_WIDTH: f64 = 190.0;
+/// Height of that box (px).
+const SOUND_BOX_HEIGHT: f64 = 46.0;
+/// How many waveform columns the box is divided into.
+const SOUND_BOX_COLUMNS: usize = 60;
+
+/// Render a `Sound` / `Play` object as the compact "sound box" a notebook
+/// shows for it: a framed panel with a play button and the waveform of the
+/// synthesized samples. Layout functions (`Grid`, `Column`, `Row`) draw a
+/// sound cell with this instead of printing the `Play[…]` source, which is
+/// what a notebook front end shows in that position.
+///
+/// Returns `None` for expressions that hold no samplable sound.
+pub fn sound_svg(expr: &Expr) -> Option<String> {
+  let (samples, _) = sound_to_samples(expr)?;
+  if samples.is_empty() {
+    return None;
+  }
+  let theme = crate::functions::graphics::theme();
+  let (w, h) = (SOUND_BOX_WIDTH, SOUND_BOX_HEIGHT);
+  let mid_y = h / 2.0;
+  // The play button sits in the left margin; the waveform fills the rest.
+  let button_cx = 23.0;
+  let wave_left = 42.0;
+  let wave_right = w - 10.0;
+  let half_height = h / 2.0 - 9.0;
+
+  let mut svg = String::with_capacity(1024);
+  svg.push_str(&format!(
+    "<svg width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
+  ));
+  svg.push_str(&format!(
+    "<rect x=\"0.5\" y=\"0.5\" width=\"{:.1}\" height=\"{:.1}\" rx=\"5\" fill=\"none\" stroke=\"{}\"/>\n",
+    w - 1.0,
+    h - 1.0,
+    theme.framed_border,
+  ));
+  // Play button: a circle with a triangle pointing right.
+  svg.push_str(&format!(
+    "<circle cx=\"{button_cx}\" cy=\"{mid_y}\" r=\"11\" fill=\"none\" stroke=\"{}\"/>\n",
+    theme.framed_border,
+  ));
+  svg.push_str(&format!(
+    "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"{}\"/>\n",
+    button_cx - 3.5,
+    mid_y - 5.5,
+    button_cx - 3.5,
+    mid_y + 5.5,
+    button_cx + 6.0,
+    mid_y,
+    theme.text_secondary,
+  ));
+  // Zero line, then one min/max bar per column of the waveform.
+  svg.push_str(&format!(
+    "<line x1=\"{wave_left:.1}\" y1=\"{mid_y:.1}\" x2=\"{wave_right:.1}\" y2=\"{mid_y:.1}\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",
+    theme.framed_border,
+  ));
+  let columns = SOUND_BOX_COLUMNS.min(samples.len());
+  let col_width = (wave_right - wave_left) / columns as f64;
+  for c in 0..columns {
+    let start = c * samples.len() / columns;
+    let end = ((c + 1) * samples.len() / columns).max(start + 1);
+    let bucket = &samples[start..end.min(samples.len())];
+    let lo = bucket.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = bucket.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    if !lo.is_finite() || !hi.is_finite() {
+      continue;
+    }
+    let x = wave_left + (c as f64 + 0.5) * col_width;
+    // A silent bucket still gets a hairline so the waveform reads as
+    // continuous rather than gapped.
+    let y1 = mid_y - hi * half_height;
+    let y2 = mid_y - lo * half_height;
+    svg.push_str(&format!(
+      "<line x1=\"{x:.1}\" y1=\"{:.1}\" x2=\"{x:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"{:.1}\"/>\n",
+      y1.min(y2 - 0.5),
+      y2,
+      theme.text_secondary,
+      (col_width * 0.6).max(1.0),
+    ));
+  }
+  svg.push_str("</svg>");
+  Some(svg)
 }
 
 /// Encode interleaved 16-bit PCM samples as a little-endian WAV byte stream.
@@ -210,8 +306,9 @@ pub fn sound_to_wav_base64(sound_expr: &Expr) -> Option<String> {
 }
 
 /// Render a playable expression into WAV bytes for `Export[…, "WAV"]`:
-/// `Sound`/`Play` synthesis is sampled and encoded (16-bit mono PCM at
-/// 8000 Hz, matching wolframscript); `Audio` objects whose bytes are
+/// `Sound`/`Play` synthesis is sampled and encoded (16-bit mono PCM at the
+/// sound's `SampleRate`, 8000 Hz by default, matching wolframscript);
+/// `Audio` objects whose bytes are
 /// already WAV (built from sample data, or backed by a .wav file) pass
 /// them through. Returns `None` for expressions that cannot be turned
 /// into WAV without an audio transcoder (e.g. a flac-backed `Audio`).
@@ -233,25 +330,40 @@ pub fn expr_to_wav_bytes(expr: &Expr) -> Option<Vec<u8>> {
 pub(crate) const AUDIO_SAMPLE_RATE: f64 = 44100.0;
 
 /// Find a positive `SampleRate -> r` option in an option list, falling back to
-/// `default` when absent or non-positive.
+/// `default` when absent or non-positive. Both the `Expr::Rule` form and the
+/// `Rule[SampleRate, r]` function-call form are recognised.
 fn option_sample_rate(opts: &[Expr], default: f64) -> f64 {
   for opt in opts.iter() {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = opt
-      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "SampleRate")
+    let Some((key, value)) = rule_parts(opt) else {
+      continue;
+    };
+    if !matches!(key, Expr::Identifier(n) if n == "SampleRate") {
+      continue;
+    }
+    let val =
+      crate::evaluator::evaluate_expr_to_expr(value).unwrap_or(value.clone());
+    if let Some(r) = try_eval_to_f64(&val)
+      && r > 0.0
     {
-      let val = crate::evaluator::evaluate_expr_to_expr(replacement)
-        .unwrap_or(*replacement.clone());
-      if let Some(r) = try_eval_to_f64(&val)
-        && r > 0.0
-      {
-        return r;
-      }
+      return r;
     }
   }
   default
+}
+
+/// Split an option into its key and value, accepting both the `key -> value`
+/// operator form and the `Rule[key, value]` function-call form.
+fn rule_parts(opt: &Expr) -> Option<(&Expr, &Expr)> {
+  match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Some((pattern.as_ref(), replacement.as_ref())),
+    Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
+      Some((&args[0], &args[1]))
+    }
+    _ => None,
+  }
 }
 
 /// Extract the sample rate from an `Audio[data, opts…]` argument list

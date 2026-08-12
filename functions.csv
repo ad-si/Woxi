@@ -1352,7 +1352,7 @@ DistributionFitTest,,🚫,,8.0,1343
 DiskMatrix,Gives the disk (L2-ball) structuring element for a scalar radius or list of radii (n-D),✅,pure,7.0,1345
 ExtentSize,,🚫,,8.0,1345
 CoshIntegral,Hyperbolic cosine integral Chi(z),✅,pure,3.0,1347
-SampleRate,,🚫,,2.0,1347
+SampleRate,Option specifying the number of samples per second in a sound or audio object,✅,none,2.0,1347
 LegendLayout,,🚫,,9.0,1348
 CentralMoment,Computes the k-th central moment of a list distribution or (column-wise) matrix,✅,pure,6.0,1349
 FaceGrids,Option for Graphics3D specifying grid lines on bounding box faces,✅,pure,2.0,1351

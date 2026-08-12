@@ -1380,6 +1380,7 @@
     - [`Wronskian`](symbolic/Wronskian.md)
   - [Module](module.md)
 - [Plotting](plotting.md)
+  - [`Play`](plotting/Play.md)
   - [`GraphPlot`](plotting/GraphPlot.md)
   - [`LayeredGraphPlot`](plotting/LayeredGraphPlot.md)
   - [`ListPlay`](plotting/ListPlay.md)
