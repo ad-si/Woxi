@@ -14725,12 +14725,22 @@ pub(crate) fn style_pushed_into_layout(
   let Expr::List(items) = &args[0] else {
     return None;
   };
-  let restyle = |e: &Expr| Expr::FunctionCall {
-    name: "Style".to_string(),
-    args: std::iter::once(e.clone())
-      .chain(directives.iter().cloned())
-      .collect::<Vec<_>>()
-      .into(),
+  // A picture takes no text style: wrapping it would only hide it from the
+  // row/column renderer, which recognises a graphic by its own head and
+  // would fall back to the `-Graphics-` placeholder text.
+  let restyle = |e: &Expr| {
+    if matches!(e, Expr::Graphics { .. })
+      || crate::evaluator::lays_out_a_graphic(e)
+    {
+      return e.clone();
+    }
+    Expr::FunctionCall {
+      name: "Style".to_string(),
+      args: std::iter::once(e.clone())
+        .chain(directives.iter().cloned())
+        .collect::<Vec<_>>()
+        .into(),
+    }
   };
   // A `Grid`'s items are rows of cells; everything else is a flat list.
   let styled: Vec<Expr> = items
@@ -16624,6 +16634,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   } else {
     None
   };
+  // Kept so a pick list the body draws can be lifted out of it once the
+  // control specs say which variable it drives (see `body_popups` below).
+  let mut body_expr_kept: Option<Expr> = None;
   let (
     body_code,
     mut controls,
@@ -16662,8 +16675,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         unwrap_dynamic_body(&args[0]),
         &mut body_displays,
       );
+      let body_code = crate::syntax::expr_to_input_form(&body_expr);
+      body_expr_kept = Some(body_expr);
       (
-        crate::syntax::expr_to_input_form(&body_expr),
+        body_code,
         Vec::with_capacity(args.len() - 1),
         Vec::new(),
         body_displays,
@@ -16681,6 +16696,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // variable is promoted to a visible Locator-style control below (with
   // `cb` as its write-back callback).
   let body_locators = collect_body_locator_callbacks(&args[0]);
+  // `PopupMenu[Dynamic[var], choices]` drawn by the body likewise drives its
+  // variable: a hidden `ControlType -> None` spec for such a variable turns
+  // into a visible pick list, with the body's own choice list behind it.
+  // Only this Manipulate's own body qualifies — a promoted pick list has to
+  // be taken back out of the body it was drawn in, and a body flattened from
+  // a nested `Animate` arrives already serialized.
+  let body_popups = match &body_expr_kept {
+    Some(body) => collect_body_popup_menus(body),
+    None => Vec::new(),
+  };
+  let mut promoted_popups: Vec<String> = Vec::new();
   // `Locator` bindings are baked into the body (never rewritten by a
   // display); `ControlType -> None` bindings become live mutable state.
   let mut fixed: Vec<(String, String)> = Vec::new();
@@ -17079,6 +17105,51 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             continue;
           }
         }
+        // Likewise for a hidden variable a `PopupMenu[Dynamic[…]]` in the
+        // body drives: it becomes a real pick list, built from the choice
+        // list the body computes. The list is re-resolved on every frame
+        // (through `dynamic_values`) because it usually depends on the
+        // other controls — and the body draws it that way too.
+        if let Some((_, choices_code)) =
+          body_popups.iter().find(|(n, _)| *n == name)
+          && let Some(choices) =
+            crate::with_scoped_globals(&initial_bindings, || {
+              crate::interpret_to_expr(choices_code)
+                .ok()
+                .and_then(|e| evaluate_expr_to_expr(&e).ok())
+            })
+          && matches!(choices, Expr::List(_))
+        {
+          let default = crate::interpret_to_expr(&value)
+            .unwrap_or_else(|_| Expr::Identifier(value.clone()));
+          let promoted = Expr::List(
+            vec![
+              Expr::List(vec![Expr::Identifier(name.clone()), default].into()),
+              choices,
+              Expr::Rule {
+                pattern: Box::new(Expr::Identifier("ControlType".to_string())),
+                replacement: Box::new(Expr::Identifier(
+                  "PopupMenu".to_string(),
+                )),
+              },
+            ]
+            .into(),
+          );
+          if let Some(ParsedControl::Visible {
+            control: c,
+            enabled: enabled2,
+            ..
+          }) = parse_manipulate_control(&promoted, &[])
+          {
+            if let Some(cond) = enabled2 {
+              control_enabled.push((c.name().to_string(), cond));
+            }
+            dynamic_values.push((name.clone(), choices_code.clone()));
+            promoted_popups.push(name.clone());
+            controls.push(c);
+            continue;
+          }
+        }
         state.push((name, value));
       }
       ParsedControl::StateWithControl {
@@ -17112,6 +17183,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // (including as a call head: `Subscript[signal, 1][x]`). Longest
   // original first so no rename can match inside a longer one.
   let mut body_code = body_code;
+  // A pick list that became a control is no longer part of the body — left
+  // in, it would print as its own source next to the control that replaced
+  // it.
+  if !promoted_popups.is_empty()
+    && let Some(body_expr) = &body_expr_kept
+  {
+    body_code = crate::syntax::expr_to_input_form(&strip_body_popup_menus(
+      body_expr,
+      &promoted_popups,
+    ));
+  }
   if !renames.is_empty() {
     renames.sort_by_key(|(orig, _)| std::cmp::Reverse(orig.len()));
     let rewrite = |code: &mut String| {
@@ -17335,6 +17417,117 @@ fn collect_body_locator_callbacks(
   let mut found = Vec::new();
   walk(expr, &mut found);
   found
+}
+
+/// The variable and choice-list code of every `PopupMenu[Dynamic[var], …]`
+/// written inside a Manipulate body.
+///
+/// Putting a pick list in the body rather than in the control panel is how a
+/// Demonstration places it inside its own layout. The choice list normally
+/// depends on locals the body itself introduces (`With[{choices = …}, …
+/// PopupMenu[Dynamic[an], choices] …]`), so the code returned here re-wraps
+/// the list in whatever `With`/`Module`/`Block` scopes enclose it — that
+/// makes it evaluable on its own, outside the body, which is what promoting
+/// the pick list to a real control needs.
+fn collect_body_popup_menus(expr: &Expr) -> Vec<(String, String)> {
+  fn walk(
+    expr: &Expr,
+    scopes: &mut Vec<(String, Expr)>,
+    found: &mut Vec<(String, String)>,
+  ) {
+    match expr {
+      Expr::FunctionCall { name, args } => {
+        if matches!(name.as_str(), "With" | "Module" | "Block")
+          && args.len() == 2
+        {
+          scopes.push((name.clone(), args[0].clone()));
+          walk(&args[1], scopes, found);
+          scopes.pop();
+          return;
+        }
+        if name == "PopupMenu"
+          && args.len() >= 2
+          && let Some(Expr::FunctionCall {
+            name: dname,
+            args: dargs,
+          }) = args.first()
+          && dname == "Dynamic"
+          && let Some(Expr::Identifier(var)) = dargs.first()
+          && !found.iter().any(|(n, _)| n == var)
+        {
+          let mut code = args[1].clone();
+          for (head, binds) in scopes.iter().rev() {
+            code = Expr::FunctionCall {
+              name: head.clone(),
+              args: vec![binds.clone(), code].into(),
+            };
+          }
+          found.push((var.clone(), crate::syntax::expr_to_input_form(&code)));
+        }
+        for a in args {
+          walk(a, scopes, found);
+        }
+      }
+      Expr::List(items) => {
+        for it in items {
+          walk(it, scopes, found);
+        }
+      }
+      Expr::CompoundExpr(items) => {
+        for it in items {
+          walk(it, scopes, found);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut found = Vec::new();
+  walk(expr, &mut Vec::new(), &mut found);
+  found
+}
+
+/// Replace each `PopupMenu[Dynamic[var], …]` whose `var` is listed in
+/// `promoted` with `Nothing`, so the pick list is not also printed as source
+/// inside the body it was lifted out of.
+fn strip_body_popup_menus(expr: &Expr, promoted: &[String]) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "PopupMenu"
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: dname, args: dargs })
+            if dname == "Dynamic"
+              && matches!(
+                dargs.first(),
+                Some(Expr::Identifier(v)) if promoted.contains(v)
+              )
+        ) =>
+    {
+      Expr::Identifier("Nothing".to_string())
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| strip_body_popup_menus(a, promoted))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|it| strip_body_popup_menus(it, promoted))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::CompoundExpr(items) => Expr::CompoundExpr(
+      items
+        .iter()
+        .map(|it| strip_body_popup_menus(it, promoted))
+        .collect(),
+    ),
+    other => other.clone(),
+  }
 }
 
 /// Replace every `TogglerBar[Dynamic[var], …]` in a Manipulate body with

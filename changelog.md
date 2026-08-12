@@ -19,6 +19,51 @@
         in inside those same layouts. The family was parsed but the layout
         renderers always emitted their own default.
 
+- Fixes driven by a Wolfram Demonstration that quizzes the reader on the
+    exact value of `f⁻¹(f(x))` for a trigonometric `f`, offering the
+    candidate answers in a pick list drawn inside its own layout:
+    - An inverse trigonometric function applied to its own forward function
+        at an exact real argument reduces into the inverse's principal
+        range: `ArcSin[Sin[2]]` is `Pi - 2`, `ArcSin[Sin[7]]` is
+        `7 - 2 Pi`, `ArcCot[Cot[Pi/2]]` is `Pi/2`. The round trip used to
+        stay unevaluated, which is precisely the answer the quiz asks for.
+    - `\!\(\*boxes\)`, the escape `InputForm` writes for a typeset
+        expression, reads back as that expression. Woxi Studio serializes a
+        `Manipulate` body through `InputForm` and re-parses it on every
+        frame, so a `TraditionalForm[…]` in the body came back as an opaque
+        `HoldComplete` and printed as its own source.
+    - A `Style` around a `Row`/`Column`/`Grid` sets the layout's text and
+        leaves any picture inside it alone. The font directives used to be
+        pushed onto the picture too, which hid it behind the `-Graphics-`
+        placeholder — so a body written `Text@Style[Row[{…}], 18]` lost its
+        plot.
+    - `PopupMenu[Dynamic[var], choices]` written inside a `Manipulate` body
+        becomes a real pick list for `var` instead of printing as source.
+        The choice list is taken with the `With`/`Module`/`Block` scopes the
+        body wraps it in, so a list built from the body's own locals still
+        resolves, and it is re-resolved whenever the other controls change.
+
+- `woxi repl` prints results the way wolframscript's terminal REPL does:
+    a machine-precision real shows the 6 significant figures of OutputForm
+    (`3203.60 - 2711.16` is `492.44`, not `492.44000000000005`) and an
+    arbitrary-precision real shows its stored precision without the backtick
+    marker (`N[Pi, 20]` is `3.1415926535897932385`). Only the printed text
+    is rounded — `%` and `Out[]` still hold the full value, and `woxi eval`
+    keeps the round-trip InputForm that `wolframscript -code` prints.
+
+- Fixes driven by a Wolfram Demonstration that trisects an angle with a
+    cubic curve, labelling its polar plot with the curve's equation and
+    logarithmic derivative:
+    - `TraditionalForm` sets a derivative with prime marks. `f'` holds as
+        `Derivative[1][f]`, and that head was showing through as
+        `Derivative(1, f)` instead of `f′`. Orders past three, and the
+        multivariate `Derivative[1, 0][f]`, spell the order out as a
+        parenthesised superscript.
+    - `TraditionalForm` puts a negative exponent under a fraction bar, so
+        `1/x` sets as a fraction rather than `x⁻¹`. A product already did
+        this for its reciprocal factors; a lone power did not, which left
+        `1/Cos[θ/3]^3` reading as `cos(θ/3)⁻³`.
+
 - Fixes driven by a Wolfram Demonstration that highlights the smallest
     triangle among optimally placed points in the unit square, whose
     coordinates are tabulated as exact algebraic numbers:

@@ -164,8 +164,10 @@ fn unseed_rng() {
   woxi::unseed_rng();
 }
 
-/// Enable or disable REPL session mode (persistent `%` / `Out[n]`
-/// output history across interpret()/evaluate() calls).
+/// Enable or disable REPL session mode: persistent `%` / `Out[n]` output
+/// history across interpret()/evaluate() calls, plus the OutputForm number
+/// display wolframscript's terminal REPL uses (a machine real shows 6
+/// significant figures, so `3203.60 - 2711.16` prints as `492.44`).
 #[pyfunction]
 fn set_repl_mode(enabled: bool) {
   woxi::set_repl_mode(enabled);

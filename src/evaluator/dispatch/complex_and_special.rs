@@ -4741,6 +4741,17 @@ fn tf_power(base: &Expr, exp: &Expr) -> Expr {
   if is_half {
     return tf_box("SqrtBox", vec![tf(base)]);
   }
+  // A negative exponent goes under a fraction bar: `x^-1` sets as `1/x` and
+  // `Cos[x]^-3` as `1/cos³(x)`. This is the same reciprocal handling a
+  // product already gets (see `tf_reciprocal_factor`), which `Times[a, b^-1]`
+  // reaches through `tf_times` — a lone power has to do it here, otherwise
+  // `1/x` (parsed as `Power[x, -1]`) would set as `x⁻¹`.
+  if let Some(denominator) = tf_reciprocal_factor(&Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![base.clone(), exp.clone()].into(),
+  }) {
+    return tf_box("FractionBox", vec![tf_string("1"), tf(&denominator)]);
+  }
   let negative_number = matches!(base, Expr::Integer(n) if *n < 0)
     || matches!(base, Expr::Real(f) if *f < 0.0);
   let base_box = if tf_needs_paren_factor(base)
@@ -4763,6 +4774,51 @@ fn tf_power(base: &Expr, exp: &Expr) -> Expr {
 
 fn tf_fraction(num: &Expr, den: &Expr) -> Expr {
   tf_box("FractionBox", vec![tf(num), tf(den)])
+}
+
+/// TraditionalForm boxes for the derivative `Derivative[orders…][func]`.
+///
+/// `Derivative` is the head `f'` carries, and a front end never shows that
+/// head: a single order sets as prime marks (`f′`, `f″`, `f‴`), a higher or
+/// multivariate order as a parenthesised superscript (`f^(4)`, `f^(1,0)`).
+/// `None` when `orders` are not all non-negative integers, in which case the
+/// caller falls back to the generic `head(args)` rendering.
+fn tf_derivative_boxes(orders: &[Expr], func: &Expr) -> Option<Expr> {
+  if orders.is_empty() {
+    return None;
+  }
+  let counts: Option<Vec<i128>> = orders
+    .iter()
+    .map(|o| match o {
+      Expr::Integer(n) if *n >= 0 => Some(*n),
+      _ => None,
+    })
+    .collect();
+  let counts = counts?;
+  // The differentiated function keeps the bracketing it would get as a
+  // factor, so `Derivative[1][f + g]` sets as `(f + g)′`.
+  let base = if tf_needs_paren_factor(func) {
+    tf_parens(tf(func))
+  } else {
+    tf(func)
+  };
+  let script = match counts.as_slice() {
+    // Wolfram writes up to three primes; beyond that the order is spelled
+    // out in parentheses because the marks stop being countable.
+    [n @ 1..=3] => tf_string(&"\u{2032}".repeat(*n as usize)),
+    _ => {
+      let mut parts = vec![tf_string("(")];
+      for (i, n) in counts.iter().enumerate() {
+        if i > 0 {
+          parts.push(tf_string(","));
+        }
+        parts.push(tf_string(&n.to_string()));
+      }
+      parts.push(tf_string(")"));
+      tf_row(parts)
+    }
+  };
+  Some(tf_box("SuperscriptBox", vec![base, script]))
 }
 
 /// The positive-power form of a factor that belongs under the fraction bar —
@@ -5284,6 +5340,28 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     "Superscript" if args.len() == 2 => {
       tf_box("SuperscriptBox", vec![tf(&args[0]), tf(&args[1])])
     }
+    // A single-order derivative arrives flattened: `f''[x]` is held as
+    // `Derivative[2, f, x]`, so the order leads, the differentiated function
+    // follows, and anything after that is what the derivative is applied to.
+    // (The multivariate `Derivative[1, 0][f]` keeps its curried shape and is
+    // handled in `tf`.)
+    "Derivative" if args.len() >= 2 => {
+      match tf_derivative_boxes(&args[..1], &args[1]) {
+        None => tf_generic_call(name, args),
+        Some(boxes) if args.len() == 2 => boxes,
+        Some(boxes) => {
+          let mut parts = vec![boxes, tf_string("(")];
+          for (i, a) in args[2..].iter().enumerate() {
+            if i > 0 {
+              parts.push(tf_string(","));
+            }
+            parts.push(tf(a));
+          }
+          parts.push(tf_string(")"));
+          tf_row(parts)
+        }
+      }
+    }
     _ => {
       if let Some(disp) = tf_known_func(name) {
         let mut items: Vec<Expr> = vec![tf_string(disp), tf_string("(")];
@@ -5315,6 +5393,16 @@ fn tf(expr: &Expr) -> Expr {
     // typesets as itself and the arguments follow in round brackets, the
     // same shape an unknown named head gets.
     Expr::CurriedCall { func, args } => {
+      // `Derivative[n₁, …, nₖ][f]` — a multivariate derivative keeps the
+      // curried shape, and typesets as `f^(n₁,…,nₖ)` rather than exposing
+      // the `Derivative` head.
+      if let Expr::FunctionCall { name, args: orders } = func.as_ref()
+        && name == "Derivative"
+        && args.len() == 1
+        && let Some(boxes) = tf_derivative_boxes(orders, &args[0])
+      {
+        return boxes;
+      }
       let mut parts = vec![tf(func), tf_string("(")];
       for (i, a) in args.iter().enumerate() {
         if i > 0 {
