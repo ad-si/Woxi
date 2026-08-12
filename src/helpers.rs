@@ -28,6 +28,10 @@ pub fn pow2(b: Expr, e: Expr) -> Expr {
   binop(BinaryOperator::Power, b, e)
 }
 
+pub fn times2(a: Expr, b: Expr) -> Expr {
+  binop(BinaryOperator::Times, a, b)
+}
+
 pub fn div2(a: Expr, b: Expr) -> Expr {
   binop(BinaryOperator::Divide, a, b)
 }

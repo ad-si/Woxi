@@ -313,11 +313,6 @@ fn solve_logistic_map(
     name: "Cos".to_string(),
     args: vec![arg].into(),
   };
-  let times = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(a),
-    right: Box::new(b),
-  };
 
   match ics.len() {
     0 => {
@@ -327,24 +322,19 @@ fn solve_logistic_map(
         args: vec![Expr::Integer(1)].into(),
       };
       let exp2 = pow2(Expr::Integer(2), n_var);
-      let body = times(
+      let body = times2(
         crate::functions::math_ast::make_rational(-1, 2),
-        cos(times(exp2, c1)),
+        cos(times2(exp2, c1)),
       );
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(crate::functions::math_ast::make_rational(1, 2)),
-        right: Box::new(body),
-      })
+      Some(plus2(crate::functions::math_ast::make_rational(1, 2), body))
     }
     1 => {
       let (k0, c) = &ics[0];
       // theta = ArcCos[1 - 2 c], evaluated so e.g. 1 - 2*(1/10) -> 4/5.
-      let inner = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(times(Expr::Integer(-2), c.clone())),
-      })
+      let inner = crate::evaluator::evaluate_expr_to_expr(&plus2(
+        Expr::Integer(1),
+        times2(Expr::Integer(-2), c.clone()),
+      ))
       .ok()?;
       let theta =
         crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
@@ -356,27 +346,12 @@ fn solve_logistic_map(
       let exponent = if *k0 == 0 {
         n_var.clone()
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::Integer(-k0)),
-          right: Box::new(n_var.clone()),
-        }
+        plus2(Expr::Integer(-k0), n_var.clone())
       };
       let exp2 = pow2(Expr::Integer(2), exponent);
       // (1 - Cos[2^(n-k0)*theta]) / 2
-      let numerator = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(cos(times(exp2, theta))),
-        }),
-      };
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(numerator),
-        right: Box::new(Expr::Integer(2)),
-      })
+      let numerator = plus2(Expr::Integer(1), neg1(cos(times2(exp2, theta))));
+      Some(div2(numerator, Expr::Integer(2)))
     }
     _ => None, // over-determined
   }
@@ -416,10 +391,7 @@ fn collect_terms_with_forcing(
     forcing.push(if sign >= 0 {
       e.clone()
     } else {
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(e.clone()),
-      }
+      neg1(e.clone())
     });
     true
   };
@@ -555,14 +527,10 @@ fn solve_first_order_arithmetic(
     1 => forcing.remove(0),
     _ => crate::functions::math_ast::plus_ast(&forcing).ok()?,
   };
-  let d = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(forcing_total),
-    }),
-    right: Box::new(Expr::Integer(c_hi)),
-  })
+  let d = crate::evaluator::evaluate_expr_to_expr(&div2(
+    neg1(forcing_total),
+    Expr::Integer(c_hi),
+  ))
   .ok()?;
   if crate::functions::polynomial_ast::contains_var(&d, var_name) {
     return None; // index-dependent forcing — not an arithmetic progression
@@ -570,20 +538,13 @@ fn solve_first_order_arithmetic(
 
   let n = Expr::Identifier(var_name.to_string());
   // d * n
-  let dn = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(d.clone()),
-    right: Box::new(n.clone()),
-  })
-  .ok()?;
+  let dn =
+    crate::evaluator::evaluate_expr_to_expr(&times2(d.clone(), n.clone()))
+      .ok()?;
 
   // Build the Plus terms in wolframscript's display order with a raw BinaryOp
   // (the canonical sorter would reorder, e.g. `C[1] + n` instead of `n + C[1]`).
-  let raw_plus = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: BinaryOperator::Plus,
-    left: Box::new(a),
-    right: Box::new(b),
-  };
+  let raw_plus = |a: Expr, b: Expr| plus2(a, b);
   match ics.len() {
     0 => {
       // d*n + C[1]
@@ -599,15 +560,10 @@ fn solve_first_order_arithmetic(
     1 => {
       // a[n] = v + d*(n - k0) = (v - d*k0) + d*n, with the constant first.
       let (k0, v) = &ics[0];
-      let constant = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(v.clone()),
-        right: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(d),
-          right: Box::new(Expr::Integer(*k0)),
-        }),
-      })
+      let constant = crate::evaluator::evaluate_expr_to_expr(&minus2(
+        v.clone(),
+        times2(d, Expr::Integer(*k0)),
+      ))
       .ok()?;
       if matches!(&dn, Expr::Integer(0)) {
         return Some(constant);
@@ -1051,17 +1007,10 @@ fn build_fib_lucas_combination(
     let mut iter = factors.into_iter();
     let mut term = iter.next().unwrap();
     for f in iter {
-      term = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(term),
-        right: Box::new(f),
-      };
+      term = times2(term, f);
     }
     if m == -1 {
-      term = Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(term),
-      };
+      term = neg1(term);
     }
     terms.push(term);
   }
@@ -1074,11 +1023,7 @@ fn build_fib_lucas_combination(
   if denom == 1 {
     Some(numerator)
   } else {
-    Some(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(numerator),
-      right: Box::new(Expr::Integer(denom)),
-    })
+    Some(div2(numerator, Expr::Integer(denom)))
   }
 }
 
@@ -1118,26 +1063,15 @@ fn build_first_order_with_ic(
   let exponent = if off == 0 {
     n_var
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(Expr::Integer(off)),
-      right: Box::new(n_var),
-    }
+    plus2(Expr::Integer(off), n_var)
   };
   let power = pow2(Expr::Integer(rn), exponent);
   let result = if v == 1 {
     power
   } else if v == -1 {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(power),
-    }
+    neg1(power)
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(v)),
-      right: Box::new(power),
-    }
+    times2(Expr::Integer(v), power)
   };
   Some(result)
 }
@@ -1215,11 +1149,7 @@ fn build_partial_solution(
   let term1 = if matches!(&r1_pow_n, Expr::Integer(1)) {
     c1.clone()
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(r1_pow_n.clone()),
-      right: Box::new(c1.clone()),
-    }
+    times2(r1_pow_n.clone(), c1.clone())
   };
 
   // Term 2: v * r_2^n  (collapsing on v == 1 / -1 / r_2 == 1)
@@ -1228,31 +1158,17 @@ fn build_partial_solution(
   } else if v == 1 {
     r2_pow_n.clone()
   } else if v == -1 {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(r2_pow_n.clone()),
-    }
+    neg1(r2_pow_n.clone())
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(v)),
-      right: Box::new(r2_pow_n.clone()),
-    }
+    times2(Expr::Integer(v), r2_pow_n.clone())
   };
 
   // Term 3: -C[1] * r_2^n
-  let neg_c1_r2n = Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(if matches!(&r2_pow_n, Expr::Integer(1)) {
-      c1.clone()
-    } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(r2_pow_n),
-        right: Box::new(c1.clone()),
-      }
-    }),
-  };
+  let neg_c1_r2n = neg1(if matches!(&r2_pow_n, Expr::Integer(1)) {
+    c1.clone()
+  } else {
+    times2(r2_pow_n, c1.clone())
+  });
 
   crate::functions::math_ast::plus_ast(&[term1, term2, neg_c1_r2n]).ok()
 }
@@ -1290,11 +1206,7 @@ fn build_general_solution(
       };
       let exponent = if single_root {
         // `-1 + n` (constant first) to match wolframscript's display order.
-        Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::Integer(-1)),
-          right: Box::new(Expr::Identifier(var_name.to_string())),
-        }
+        plus2(Expr::Integer(-1), Expr::Identifier(var_name.to_string()))
       } else {
         Expr::Identifier(var_name.to_string())
       };
@@ -1316,11 +1228,7 @@ fn build_general_solution(
     let mut iter = factors.into_iter();
     let mut term = iter.next().unwrap();
     for f in iter {
-      term = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(term),
-        right: Box::new(f),
-      };
+      term = times2(term, f);
     }
     terms.push(term);
   }
@@ -1747,19 +1655,12 @@ fn build_solution(
       let mut iter = factors.into_iter();
       let mut t = iter.next().unwrap();
       for f in iter {
-        t = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(t),
-          right: Box::new(f),
-        };
+        t = times2(t, f);
       }
       t
     };
     if num < 0 {
-      term = Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(term),
-      };
+      term = neg1(term);
     }
 
     terms.push(term);
@@ -1780,11 +1681,7 @@ fn build_solution(
   if common_denom == 1 {
     Some(numerator)
   } else {
-    Some(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(numerator),
-      right: Box::new(Expr::Integer(common_denom)),
-    })
+    Some(div2(numerator, Expr::Integer(common_denom)))
   }
 }
 
