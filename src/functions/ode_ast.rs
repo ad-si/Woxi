@@ -2167,11 +2167,7 @@ fn negate_expr(expr: &Expr) -> Expr {
       op: UnaryOperator::Minus,
       operand,
     } => *operand.clone(),
-    _ => Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(-1)),
-      right: Box::new(expr.clone()),
-    },
+    _ => times2(Expr::Integer(-1), expr.clone()),
   }
 }
 
@@ -2201,11 +2197,7 @@ fn solve_constant_coefficient_ode(
       match &forcing {
         None => forcing = Some(evaluated),
         Some(existing) => {
-          forcing = Some(Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(existing.clone()),
-            right: Box::new(evaluated),
-          });
+          forcing = Some(plus2(existing.clone(), evaluated));
         }
       }
     }
@@ -2234,11 +2226,10 @@ fn solve_constant_coefficient_ode(
     )
     .or_else(|| variation_of_parameters(&coeffs, &roots, forcing_expr, x_name));
     if let Some(part) = particular {
-      return Ok(crate::functions::calculus_ast::simplify(Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(homogeneous),
-        right: Box::new(part),
-      }));
+      return Ok(crate::functions::calculus_ast::simplify(plus2(
+        homogeneous,
+        part,
+      )));
     }
   }
 
@@ -2269,11 +2260,6 @@ fn variation_of_parameters(
     return None;
   }
   let x = || Expr::Identifier(x_name.to_string());
-  let times = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(a),
-    right: Box::new(b),
-  };
   // E^(r x), reduced to 1 for r == 0.
   let exp_rx = |r: f64| -> Expr {
     if r.abs() < 1e-10 {
@@ -2286,7 +2272,7 @@ fn variation_of_parameters(
     match (&a, &b) {
       (Expr::Integer(1), _) => b,
       (_, Expr::Integer(1)) => a,
-      _ => times(a, b),
+      _ => times2(a, b),
     }
   };
 
@@ -2324,7 +2310,7 @@ fn variation_of_parameters(
   let a2 = f64_to_nice_expr(coeffs[2]);
   let integrate_with = |y: &Expr| -> Option<Expr> {
     let integrand = div2(
-      times(y.clone(), g.clone()),
+      times2(y.clone(), g.clone()),
       mul(a2.clone(), wronskian.clone()),
     );
     // Canonicalize first so the integrator sees simplified products
@@ -2346,11 +2332,7 @@ fn variation_of_parameters(
 
   // y_p = -y1 ∫ y2 g/(a2 W) + y2 ∫ y1 g/(a2 W); expand so products like
   // -Cos (ArcTanh[Sin] - Sin) + Sin (-Cos) cancel across the two halves.
-  let y_p = Expr::BinaryOp {
-    op: BinaryOperator::Plus,
-    left: Box::new(times(negate_expr(&y1), int1)),
-    right: Box::new(times(y2, int2)),
-  };
+  let y_p = plus2(times2(negate_expr(&y1), int1), times2(y2, int2));
   let y_p = crate::evaluator::evaluate_function_call_ast(
     "Expand",
     std::slice::from_ref(&y_p),
@@ -2621,21 +2603,13 @@ fn build_homogeneous_solution(
           } else {
             pow2(x.clone(), Expr::Integer(k as i128))
           };
-          term = Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(x_power),
-            right: Box::new(term),
-          };
+          term = times2(x_power, term);
         }
 
         // Multiply by E^(r*x) if r != 0
         if real.abs() > 1e-10 {
           let exp_term = make_exp_term(*real, x_name);
-          term = Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(exp_term),
-            right: Box::new(term),
-          };
+          term = times2(exp_term, term);
         }
 
         terms.push(term);
@@ -2648,30 +2622,14 @@ fn build_homogeneous_solution(
       let c2 = make_c(c_idx);
       c_idx += 1;
 
-      let cos_term = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(c1),
-        right: Box::new(make_trig_term("Cos", *imag, x_name)),
-      };
-      let sin_term = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(c2),
-        right: Box::new(make_trig_term("Sin", *imag, x_name)),
-      };
+      let cos_term = times2(c1, make_trig_term("Cos", *imag, x_name));
+      let sin_term = times2(c2, make_trig_term("Sin", *imag, x_name));
 
-      let trig_sum = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(cos_term),
-        right: Box::new(sin_term),
-      };
+      let trig_sum = plus2(cos_term, sin_term);
 
       let term = if real.abs() > 1e-10 {
         let exp_term = make_exp_term(*real, x_name);
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(exp_term),
-          right: Box::new(trig_sum),
-        }
+        times2(exp_term, trig_sum)
       } else {
         trig_sum
       };
@@ -2691,11 +2649,7 @@ fn build_homogeneous_solution(
   // Sum all terms
   let mut result = terms.remove(0);
   for term in terms {
-    result = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(result),
-      right: Box::new(term),
-    };
+    result = plus2(result, term);
   }
   result
 }
@@ -2715,11 +2669,7 @@ fn make_exp_term(r: f64, x_name: &str) -> Expr {
   let exponent = if matches!(&r_expr, Expr::Integer(1)) {
     x
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(r_expr),
-      right: Box::new(x),
-    }
+    times2(r_expr, x)
   };
   pow2(Expr::Constant("E".to_string()), exponent)
 }
@@ -2731,11 +2681,7 @@ fn make_trig_term(func: &str, beta: f64, x_name: &str) -> Expr {
   let arg = if matches!(&beta_expr, Expr::Integer(1)) {
     x
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(beta_expr),
-      right: Box::new(x),
-    }
+    times2(beta_expr, x)
   };
   Expr::FunctionCall {
     name: func.to_string(),
@@ -2794,25 +2740,13 @@ fn solve_first_order_linear(
   for term in terms {
     match term.order {
       1 => {
-        a1 = Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(a1),
-          right: Box::new(term.coefficient.clone()),
-        };
+        a1 = plus2(a1, term.coefficient.clone());
       }
       0 => {
-        a0 = Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(a0),
-          right: Box::new(term.coefficient.clone()),
-        };
+        a0 = plus2(a0, term.coefficient.clone());
       }
       -1 => {
-        forcing = Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(forcing),
-          right: Box::new(term.coefficient.clone()),
-        };
+        forcing = plus2(forcing, term.coefficient.clone());
       }
       _ => {
         return Err(InterpreterError::EvaluationError(
@@ -2844,11 +2778,7 @@ fn solve_first_order_linear(
       q_expr,
       Expr::Identifier(x_name.to_string()),
     ])?;
-    return Ok(Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(integral),
-      right: Box::new(make_c(1)),
-    });
+    return Ok(plus2(integral, make_c(1)));
   }
 
   // Case 2: y' + a*y = 0 (constant coefficient, homogeneous)
@@ -2860,11 +2790,7 @@ fn solve_first_order_linear(
     // y = E^(-a*x)*C[1]
     let neg_p = negate_expr(&p_expr);
     let exp_term = make_exp_term_expr(&neg_p, x_name);
-    return Ok(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(exp_term),
-      right: Box::new(make_c(1)),
-    });
+    return Ok(times2(exp_term, make_c(1)));
   }
 
   // Case 3: General integrating factor method
@@ -2877,11 +2803,8 @@ fn solve_first_order_linear(
 
   let mu = pow2(Expr::Constant("E".to_string()), p_integral.clone());
 
-  let mu_q = crate::functions::calculus_ast::simplify(Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(mu.clone()),
-    right: Box::new(q_expr),
-  });
+  let mu_q =
+    crate::functions::calculus_ast::simplify(times2(mu.clone(), q_expr));
 
   let mu_q_integral = crate::functions::calculus_ast::integrate_ast(&[
     mu_q,
@@ -2897,21 +2820,13 @@ fn solve_first_order_linear(
   // (E^(3x)/3 + C[1])/E^(2x) -> E^x/3 + C[1]/E^(2x). Each product is simplified
   // (not fully expanded), so a grouped particular like (-Cos[x]+3Sin[x])/10
   // stays grouped rather than splitting into separate terms.
-  let particular = crate::functions::calculus_ast::simplify(Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(inv_mu.clone()),
-    right: Box::new(mu_q_integral),
-  });
-  let homogeneous = crate::functions::calculus_ast::simplify(Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(inv_mu),
-    right: Box::new(make_c(1)),
-  });
-  Ok(Expr::BinaryOp {
-    op: BinaryOperator::Plus,
-    left: Box::new(particular),
-    right: Box::new(homogeneous),
-  })
+  let particular = crate::functions::calculus_ast::simplify(times2(
+    inv_mu.clone(),
+    mu_q_integral,
+  ));
+  let homogeneous =
+    crate::functions::calculus_ast::simplify(times2(inv_mu, make_c(1)));
+  Ok(plus2(particular, homogeneous))
 }
 
 /// Create E^(expr*x) for symbolic expressions
@@ -2920,11 +2835,7 @@ fn make_exp_term_expr(coeff: &Expr, x_name: &str) -> Expr {
   let exponent = match coeff {
     Expr::Integer(1) => x,
     Expr::Integer(-1) => neg1(x),
-    _ => Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(coeff.clone()),
-      right: Box::new(x),
-    },
+    _ => times2(coeff.clone(), x),
   };
   pow2(Expr::Constant("E".to_string()), exponent)
 }
@@ -2952,11 +2863,10 @@ fn find_particular_solution(
     // If a_0 = 0 but a_1 != 0, try y_p = c*x
     if coeffs.len() > 1 && coeffs[1].abs() > 1e-15 {
       let c = -val / coeffs[1];
-      return Some(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(f64_to_nice_expr(c)),
-        right: Box::new(Expr::Identifier(x_name.to_string())),
-      });
+      return Some(times2(
+        f64_to_nice_expr(c),
+        Expr::Identifier(x_name.to_string()),
+      ));
     }
   }
   None
@@ -4229,11 +4139,7 @@ fn try_linear_first_order_pde_body(
     let exponent = if c_eff == 1 {
       n_var(xn)
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(c_eff)),
-        right: Box::new(n_var(xn)),
-      }
+      times2(Expr::Integer(c_eff), n_var(xn))
     };
     pow2(Expr::Constant("E".to_string()), exponent)
   };
@@ -4244,17 +4150,9 @@ fn try_linear_first_order_pde_body(
     let bx = if b == 1 {
       n_var(xn)
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(-b)),
-        right: Box::new(n_var(xn)),
-      }
+      times2(Expr::Integer(-b), n_var(xn))
     };
-    Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(bx),
-      right: Box::new(n_var(yn)),
-    }
+    plus2(bx, n_var(yn))
   };
   let c1_applied = Expr::CurriedCall {
     func: Box::new(Expr::FunctionCall {
@@ -4266,11 +4164,7 @@ fn try_linear_first_order_pde_body(
   let body = if matches!(&exp_part, Expr::Integer(1)) {
     c1_applied
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(exp_part),
-      right: Box::new(c1_applied),
-    }
+    times2(exp_part, c1_applied)
   };
   Some(body)
 }
@@ -4322,22 +4216,10 @@ fn try_direct_linear_pde_body(
     let coeff = make_neg_b_over_a(b, a);
     let bx = match &coeff {
       Expr::Integer(1) => n_var(xn),
-      Expr::Integer(n) => Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(*n)),
-        right: Box::new(n_var(xn)),
-      },
-      other => Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(other.clone()),
-        right: Box::new(n_var(xn)),
-      },
+      Expr::Integer(n) => times2(Expr::Integer(*n), n_var(xn)),
+      other => times2(other.clone(), n_var(xn)),
     };
-    Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(n_var(yn)),
-      right: Box::new(bx),
-    }
+    plus2(n_var(yn), bx)
   };
   let c1_applied = Expr::CurriedCall {
     func: Box::new(Expr::FunctionCall {
@@ -4353,22 +4235,10 @@ fn try_direct_linear_pde_body(
   let coeff = make_c_over_a(c, a);
   let head_term = match &coeff {
     Expr::Integer(1) => n_var(xn),
-    Expr::Integer(n) => Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(*n)),
-      right: Box::new(n_var(xn)),
-    },
-    other => Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(other.clone()),
-      right: Box::new(n_var(xn)),
-    },
+    Expr::Integer(n) => times2(Expr::Integer(*n), n_var(xn)),
+    other => times2(other.clone(), n_var(xn)),
   };
-  Some(Expr::BinaryOp {
-    op: BinaryOperator::Plus,
-    left: Box::new(head_term),
-    right: Box::new(c1_applied),
-  })
+  Some(plus2(head_term, c1_applied))
 }
 
 /// `-b/a` reduced to either an `Integer` (if `a` divides `b`) or a
@@ -4498,11 +4368,7 @@ fn try_euler_pde_body(
   let log_term = if c == 1 {
     log_x
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(c)),
-      right: Box::new(log_x),
-    }
+    times2(Expr::Integer(c), log_x)
   };
   let y_over_x = div2(n_var(yn), n_var(xn));
   let c1_applied = Expr::CurriedCall {
@@ -4512,11 +4378,7 @@ fn try_euler_pde_body(
     }),
     args: vec![y_over_x],
   };
-  let body = Expr::BinaryOp {
-    op: BinaryOperator::Plus,
-    left: Box::new(log_term),
-    right: Box::new(c1_applied),
-  };
+  let body = plus2(log_term, c1_applied);
   Some(body)
 }
 

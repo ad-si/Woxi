@@ -1059,19 +1059,17 @@ fn struve_half_integer_closed_form(
   two_nu: i64,
   z: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  use BinaryOperator as B;
   let call1 = |name: &str, e: Expr| Expr::FunctionCall {
     name: name.to_string(),
     args: vec![e].into(),
   };
   let int = Expr::Integer;
-  let times = |a, b| binop(B::Times, a, b);
-  let neg = |a| binop(B::Times, int(-1), a);
+  let neg = |a| times2(int(-1), a);
   let pi = || Expr::Constant("Pi".to_string());
   let sqrt = |e: Expr| call1("Sqrt", e);
   let z = || z.clone();
   let sqrt_z = || sqrt(z());
-  let sqrt_2pi = || sqrt(times(int(2), pi())); // Sqrt[2 Pi]
+  let sqrt_2pi = || sqrt(times2(int(2), pi())); // Sqrt[2 Pi]
   let sqrt_2_over_pi = || sqrt(div2(int(2), pi())); // Sqrt[2/Pi]
   let sqrt_pi_over_2 = || sqrt(div2(pi(), int(2))); // Sqrt[Pi/2]
   // c(z), s(z): Cos/Sin for H, Cosh/Sinh for L.
@@ -1083,23 +1081,23 @@ fn struve_half_integer_closed_form(
   let expr = match two_nu {
     1 => {
       // +-Sqrt[2 Pi]/(Pi Sqrt[z]) -/+ Sqrt[2/Pi] c[z]/Sqrt[z]
-      let a = div2(sqrt_2pi(), times(pi(), sqrt_z()));
-      let b = div2(times(sqrt_2_over_pi(), cz()), sqrt_z());
+      let a = div2(sqrt_2pi(), times2(pi(), sqrt_z()));
+      let b = div2(times2(sqrt_2_over_pi(), cz()), sqrt_z());
       if is_l { plus2(neg(a), b) } else { minus2(a, b) }
     }
     -1 => {
       // Sqrt[2/Pi] s[z]/Sqrt[z]
-      div2(times(sqrt_2_over_pi(), sz()), sqrt_z())
+      div2(times2(sqrt_2_over_pi(), sz()), sqrt_z())
     }
     3 if !is_l => {
       // (Sqrt[2 Pi]/z^(3/2) + Sqrt[Pi/2] Sqrt[z])/Pi
       //   + Sqrt[2/Pi] (-(Cos[z]/z) - Sin[z])/Sqrt[z]
       let a = div2(
-        plus2(div2(sqrt_2pi(), z_32()), times(sqrt_pi_over_2(), sqrt_z())),
+        plus2(div2(sqrt_2pi(), z_32()), times2(sqrt_pi_over_2(), sqrt_z())),
         pi(),
       );
       let inner = minus2(neg(div2(cz(), z())), sz());
-      let b = div2(times(sqrt_2_over_pi(), inner), sqrt_z());
+      let b = div2(times2(sqrt_2_over_pi(), inner), sqrt_z());
       plus2(a, b)
     }
     3 => {
@@ -1108,25 +1106,25 @@ fn struve_half_integer_closed_form(
       let a = neg(div2(
         plus2(
           neg(div2(sqrt_2pi(), z_32())),
-          times(sqrt_pi_over_2(), sqrt_z()),
+          times2(sqrt_pi_over_2(), sqrt_z()),
         ),
         pi(),
       ));
       let b = div2(
-        plus2(div2(times(int(-2), cz()), z()), times(int(2), sz())),
-        times(sqrt_2pi(), sqrt_z()),
+        plus2(div2(times2(int(-2), cz()), z()), times2(int(2), sz())),
+        times2(sqrt_2pi(), sqrt_z()),
       );
       plus2(a, b)
     }
     -3 if !is_l => {
       // -((Sqrt[2/Pi] (-Cos[z] + Sin[z]/z))/Sqrt[z])
       let inner = plus2(neg(cz()), div2(sz(), z()));
-      neg(div2(times(sqrt_2_over_pi(), inner), sqrt_z()))
+      neg(div2(times2(sqrt_2_over_pi(), inner), sqrt_z()))
     }
     -3 => {
       // (2 Cosh[z] - (2 Sinh[z])/z)/(Sqrt[2 Pi] Sqrt[z])
-      let num = minus2(times(int(2), cz()), div2(times(int(2), sz()), z()));
-      div2(num, times(sqrt_2pi(), sqrt_z()))
+      let num = minus2(times2(int(2), cz()), div2(times2(int(2), sz()), z()));
+      div2(num, times2(sqrt_2pi(), sqrt_z()))
     }
     _ => return None,
   };
@@ -1786,7 +1784,7 @@ fn weber_e_integer_closed_form(
 /// AngerJ[ν, 0] closed form: Sin[ν*Pi] / (ν*Pi).
 fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
   let pi = Expr::Constant("Pi".to_string());
-  let nu_pi = binop(BinaryOperator::Times, nu.clone(), pi.clone());
+  let nu_pi = times2(nu.clone(), pi.clone());
   let sin_nu_pi = Expr::FunctionCall {
     name: "Sin".to_string(),
     args: vec![nu_pi.clone()].into(),
@@ -1797,7 +1795,7 @@ fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
 /// WeberE[ν, 0] closed form: (1 - Cos[ν*Pi]) / (ν*Pi).
 fn weber_e_at_zero_symbolic(nu: &Expr) -> Expr {
   let pi = Expr::Constant("Pi".to_string());
-  let nu_pi = binop(BinaryOperator::Times, nu.clone(), pi.clone());
+  let nu_pi = times2(nu.clone(), pi.clone());
   let cos_nu_pi = Expr::FunctionCall {
     name: "Cos".to_string(),
     args: vec![nu_pi.clone()].into(),
@@ -2538,7 +2536,7 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Power".to_string(),
       args: vec![one_minus_y, args[2].clone()].into(),
     };
-    let denom = binop(BinaryOperator::Times, factor_x, factor_y);
+    let denom = times2(factor_x, factor_y);
     let result = div2(one, denom);
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }

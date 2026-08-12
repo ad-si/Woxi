@@ -77,11 +77,6 @@ pub fn build_var_power_derivative_chain(
     return Some(Expr::Integer(0));
   }
   let dn = k - n;
-  let times = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(a),
-    right: Box::new(b),
-  };
   let (mut result, start) = if dn == 0 {
     // The innermost factor is the literal `1` from `(k-n+1) * var^0`. The
     // chain ends with that 1 directly — no separate var factor remains.
@@ -93,22 +88,18 @@ pub fn build_var_power_derivative_chain(
     let inner_var = if dn == 1 {
       var_expr.clone()
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(var_expr.clone()),
-        right: Box::new(Expr::Integer(dn)),
-      }
+      pow2(var_expr.clone(), Expr::Integer(dn))
     };
     if n == 0 {
       return Some(inner_var);
     }
     // Innermost numeric factor is `(dn + 1) = k - n + 1`.
-    (times(Expr::Integer(dn + 1), inner_var), n - 1)
+    (times2(Expr::Integer(dn + 1), inner_var), n - 1)
   };
   // Wrap with the remaining numerics k, k-1, …, k-n+2 from outside in.
   for i in (0..start).rev() {
     let factor = k - i;
-    result = times(Expr::Integer(factor), result);
+    result = times2(Expr::Integer(factor), result);
   }
   Some(result)
 }
@@ -170,17 +161,9 @@ pub fn extract_var_power_factor(
     let factor = if matches!(sub_factor, Expr::Integer(1)) {
       const_side.clone()
     } else if l_const {
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(const_side.clone()),
-        right: Box::new(sub_factor),
-      }
+      times2(const_side.clone(), sub_factor)
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(sub_factor),
-        right: Box::new(const_side.clone()),
-      }
+      times2(sub_factor, const_side.clone())
     };
     return Some((factor, p));
   }
@@ -1876,11 +1859,7 @@ fn inverse_laplace_2d(
       name: "Times".to_string(),
       args: vec![Expr::Constant("Pi".to_string()), sqrt_x(), sqrt_y()].into(),
     };
-    return Some(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(cosh),
-      right: Box::new(pi_sqrt_xy),
-    });
+    return Some(div2(cosh, pi_sqrt_xy));
   }
 
   None
@@ -2649,11 +2628,7 @@ fn inverse_mellin_inner(
   x: &Expr,
 ) -> Option<(Expr, bool)> {
   let neg = |e: Expr| make_times(vec![Expr::Integer(-1), e]);
-  let e_pow = |e: Expr| Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(Expr::Identifier("E".to_string())),
-    right: Box::new(e),
-  };
+  let e_pow = |e: Expr| pow2(Expr::Identifier("E".to_string()), e);
   let is_s = |e: &Expr| matches!(e, Expr::Identifier(v) if v == sv);
   let is_pi = |e: &Expr| {
     matches!(e, Expr::Constant(c) if c == "Pi")
@@ -2956,14 +2931,10 @@ fn inverse_mellin_inner(
             .position(|c| crate::syntax::expr_to_string(c) == inv_gamma)?;
           let mut rest = consts.clone();
           rest.remove(pos);
-          let result = Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(make_plus(vec![Expr::Integer(1), x.clone()])),
-            right: Box::new(Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              operand: Box::new(a_part.clone()),
-            }),
-          };
+          let result = pow2(
+            make_plus(vec![Expr::Integer(1), x.clone()]),
+            neg1(a_part.clone()),
+          );
           if rest.is_empty() {
             return Some((result, false));
           }
@@ -4477,11 +4448,7 @@ fn simplify_domain_constraint(constraint: &Expr, var: &str) -> Expr {
     match op {
       ComparisonOp::NotEqual => {
         // Try to solve lhs == rhs for roots
-        let diff = Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(lhs.clone()),
-          right: Box::new(rhs.clone()),
-        };
+        let diff = minus2(lhs.clone(), rhs.clone());
         let diff_eval =
           crate::evaluator::evaluate_expr_to_expr(&diff).unwrap_or(diff);
 
@@ -4731,15 +4698,10 @@ fn symbolic_series_coefficient(f: &Expr, spec: &Expr) -> Option<Expr> {
     let a = coeff(arg, 1)?;
     let residual = ev(Expr::FunctionCall {
       name: "Expand".to_string(),
-      args: vec![Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(arg.clone()),
-        right: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(a.clone()),
-          right: Box::new(Expr::Identifier(x.clone())),
-        }),
-      }]
+      args: vec![minus2(
+        arg.clone(),
+        times2(a.clone(), Expr::Identifier(x.clone())),
+      )]
       .into(),
     })?;
     is_int(&residual, 0).then_some(a)
@@ -4979,33 +4941,19 @@ fn gf_inner(
   // Case 0: expr doesn't depend on n => constant * 1/(1-x)
   if !depends_on(expr, n) {
     // c/(1-x)
-    return Ok(Some(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(expr.clone()),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(x.clone()),
-      }),
-    }));
+    return Ok(Some(div2(
+      expr.clone(),
+      minus2(Expr::Integer(1), x.clone()),
+    )));
   }
 
   // Case 1: expr = n (just the variable)
   if matches!(expr, Expr::Identifier(name) if name == n) {
     // x/(-1+x)^2  (canonical Wolfram form; (1-x)^2 = (-1+x)^2 since power is even)
-    return Ok(Some(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(x.clone()),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::Integer(-1)),
-          right: Box::new(x.clone()),
-        }),
-        right: Box::new(Expr::Integer(2)),
-      }),
-    }));
+    return Ok(Some(div2(
+      x.clone(),
+      pow2(plus2(Expr::Integer(-1), x.clone()), Expr::Integer(2)),
+    )));
   }
 
   // Fibonacci[n] and LucasL[n]: the classic linear-recurrence sequences share
@@ -5112,41 +5060,16 @@ fn gf_inner(
         name: fname.clone(),
         args: vec![Expr::Integer(i as i128)].into(),
       };
-      let term = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(fi),
-        right: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(x.clone()),
-          right: Box::new(Expr::Integer(i as i128)),
-        }),
-      };
+      let term = times2(fi, pow2(x.clone(), Expr::Integer(i as i128)));
       subtract_terms.push(term);
     }
-    let subtracted =
-      subtract_terms.into_iter().reduce(|acc, t| Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(acc),
-        right: Box::new(t),
-      });
+    let subtracted = subtract_terms.into_iter().reduce(plus2);
     let numerator = if let Some(sub) = subtracted {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(gf_base),
-        right: Box::new(sub),
-      }
+      minus2(gf_base, sub)
     } else {
       gf_base
     };
-    let result = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(numerator),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(x.clone()),
-        right: Box::new(Expr::Integer(shift as i128)),
-      }),
-    };
+    let result = div2(numerator, pow2(x.clone(), Expr::Integer(shift as i128)));
     return Ok(Some(result));
   }
 
@@ -5206,19 +5129,10 @@ fn gf_power(
   // Case: a^n where a doesn't depend on n => 1/(1 - a*x)
   if matches!(exp, Expr::Identifier(name) if name == n) && !depends_on(base, n)
   {
-    return Ok(Some(Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(base.clone()),
-          right: Box::new(x.clone()),
-        }),
-      }),
-      right: Box::new(Expr::Integer(-1)),
-    }));
+    return Ok(Some(pow2(
+      minus2(Expr::Integer(1), times2(base.clone(), x.clone())),
+      Expr::Integer(-1),
+    )));
   }
 
   // Case: n^k where k is a positive integer => Eulerian number formula
@@ -5239,11 +5153,7 @@ fn gf_power(
     && args.len() == 1
     && matches!(&args[0], Expr::Identifier(var) if var == n)
   {
-    return Ok(Some(Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::Constant("E".to_string())),
-      right: Box::new(x.clone()),
-    }));
+    return Ok(Some(pow2(Expr::Constant("E".to_string()), x.clone())));
   }
 
   // Case: Power[Factorial[n], -2] => 1/(n!)^2 => BesselI[0, 2*Sqrt[x]]
@@ -5257,11 +5167,10 @@ fn gf_power(
       name: "BesselI".to_string(),
       args: vec![
         Expr::Integer(0),
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(2)),
-          right: Box::new(crate::functions::math_ast::make_sqrt(x.clone())),
-        },
+        times2(
+          Expr::Integer(2),
+          crate::functions::math_ast::make_sqrt(x.clone()),
+        ),
       ]
       .into(),
     }));
@@ -5291,71 +5200,37 @@ fn gf_n_power_k(k: i128, x: &Expr) -> Result<Option<Expr>, InterpreterError> {
     let x_pow = if power == 1 {
       x.clone()
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(x.clone()),
-        right: Box::new(Expr::Integer(power)),
-      }
+      pow2(x.clone(), Expr::Integer(power))
     };
     if signed_coeff == 1 {
       num_terms.push(x_pow);
     } else if signed_coeff == -1 {
-      num_terms.push(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(-1)),
-        right: Box::new(x_pow),
-      });
+      num_terms.push(times2(Expr::Integer(-1), x_pow));
     } else {
-      num_terms.push(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(signed_coeff)),
-        right: Box::new(x_pow),
-      });
+      num_terms.push(times2(Expr::Integer(signed_coeff), x_pow));
     }
   }
 
   let numerator = if num_terms.len() == 1 {
     num_terms.into_iter().next().unwrap()
   } else {
-    num_terms
-      .into_iter()
-      .reduce(|acc, t| Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(acc),
-        right: Box::new(t),
-      })
-      .unwrap()
+    num_terms.into_iter().reduce(plus2).unwrap()
   };
 
   // Denominator: (-1+x)^(k+1) — canonical Wolfram form.
   // Since (1-x) = -(-1+x), we have (1-x)^(k+1) = (-1)^(k+1) * (-1+x)^(k+1).
   // When (k+1) is odd, the numerator must be negated to compensate.
-  let denominator = Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(Expr::Integer(-1)),
-      right: Box::new(x.clone()),
-    }),
-    right: Box::new(Expr::Integer(k + 1)),
-  };
+  let denominator =
+    pow2(plus2(Expr::Integer(-1), x.clone()), Expr::Integer(k + 1));
 
   let final_numerator = if (k + 1) % 2 != 0 {
     // Odd power: negate numerator
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(-1)),
-      right: Box::new(numerator),
-    }
+    times2(Expr::Integer(-1), numerator)
   } else {
     numerator
   };
 
-  Ok(Some(Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(final_numerator),
-    right: Box::new(denominator),
-  }))
+  Ok(Some(div2(final_numerator, denominator)))
 }
 
 /// Compute Eulerian numbers A(k, j) for j = 0..k-1
@@ -5394,15 +5269,7 @@ fn gf_plus(
     }
   }
 
-  let result = result_terms
-    .into_iter()
-    .reduce(|acc, t| Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(acc),
-      right: Box::new(t),
-    })
-    .unwrap();
-
+  let result = result_terms.into_iter().reduce(plus2).unwrap();
   Ok(Some(result))
 }
 
@@ -5451,39 +5318,17 @@ fn gf_times(
     let const_product = if constants.len() == 1 {
       (*constants[0]).clone()
     } else {
-      constants
-        .iter()
-        .cloned()
-        .cloned()
-        .reduce(|acc, t| Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(acc),
-          right: Box::new(t),
-        })
-        .unwrap()
+      constants.iter().cloned().cloned().reduce(times2).unwrap()
     };
 
     let n_product = if n_dependent.len() == 1 {
       (*n_dependent[0]).clone()
     } else {
-      n_dependent
-        .iter()
-        .cloned()
-        .cloned()
-        .reduce(|acc, t| Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(acc),
-          right: Box::new(t),
-        })
-        .unwrap()
+      n_dependent.iter().cloned().cloned().reduce(times2).unwrap()
     };
 
     if let Some(inner_gf) = gf_inner(&n_product, n, x)? {
-      return Ok(Some(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(const_product),
-        right: Box::new(inner_gf),
-      }));
+      return Ok(Some(times2(const_product, inner_gf)));
     }
   }
 
@@ -5492,16 +5337,7 @@ fn gf_times(
 
   // c * a^n pattern (all together)
   let recombined = if n_dependent.len() >= 2 {
-    n_dependent
-      .iter()
-      .cloned()
-      .cloned()
-      .reduce(|acc, t| Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(acc),
-        right: Box::new(t),
-      })
-      .unwrap()
+    n_dependent.iter().cloned().cloned().reduce(times2).unwrap()
   } else if n_dependent.len() == 1 {
     (*n_dependent[0]).clone()
   } else {
@@ -5562,33 +5398,16 @@ fn gf_binomial(
     && let Expr::Integer(k) = bottom
   {
     let power = k + 1;
-    let x_pow = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(x.clone()),
-      right: Box::new(Expr::Integer(*k)),
-    };
+    let x_pow = pow2(x.clone(), Expr::Integer(*k));
     let num = if power % 2 != 0 {
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(-1)),
-        right: Box::new(x_pow),
-      }
+      times2(Expr::Integer(-1), x_pow)
     } else {
       x_pow
     };
-    return Ok(Some(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(num),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::Integer(-1)),
-          right: Box::new(x.clone()),
-        }),
-        right: Box::new(Expr::Integer(power)),
-      }),
-    }));
+    return Ok(Some(div2(
+      num,
+      pow2(plus2(Expr::Integer(-1), x.clone()), Expr::Integer(power)),
+    )));
   }
 
   // Binomial[2n, n] => 1/Sqrt[1-4x]
@@ -5609,15 +5428,10 @@ fn gf_binomial(
         // 1/Sqrt[1 - 4*x]
         return Ok(Some(Expr::BinaryOp {
           op: BinaryOperator::Power,
-          left: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Minus,
-            left: Box::new(Expr::Integer(1)),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(Expr::Integer(4)),
-              right: Box::new(x.clone()),
-            }),
-          }),
+          left: Box::new(minus2(
+            Expr::Integer(1),
+            times2(Expr::Integer(4), x.clone()),
+          )),
           right: Box::new(Expr::FunctionCall {
             name: "Rational".to_string(),
             args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
@@ -5676,11 +5490,7 @@ fn gf_divide(
       && args.len() == 1
       && matches!(&args[0], Expr::Identifier(var) if var == n)
     {
-      return Ok(Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Constant("E".to_string())),
-        right: Box::new(x.clone()),
-      }));
+      return Ok(Some(pow2(Expr::Constant("E".to_string()), x.clone())));
     }
   }
 
@@ -5698,16 +5508,8 @@ fn gf_divide(
     }
 
     // const / f(n) — rewrite as const * f(n)^(-1) and try
-    let inv_den = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(den.clone()),
-      right: Box::new(Expr::Integer(-1)),
-    };
-    let product = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(num.clone()),
-      right: Box::new(inv_den),
-    };
+    let inv_den = pow2(den.clone(), Expr::Integer(-1));
+    let product = times2(num.clone(), inv_den);
     // Guard against infinite recursion: `gf_inner` re-extracts a numerator and
     // denominator from `product`, so if that decomposition is the same one we
     // started with (e.g. `1/(2 n + 1)`), recursing would loop forever. Give up
@@ -5835,11 +5637,7 @@ fn egf_poly_part(
           } else {
             let mut product = n_dependent.remove(0);
             for f in n_dependent {
-              product = Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(product),
-                right: Box::new(f),
-              };
+              product = times2(product, f);
             }
             product
           };
@@ -5849,19 +5647,11 @@ fn egf_poly_part(
             } else {
               let mut product = constants.remove(0);
               for ci in constants {
-                product = Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(product),
-                  right: Box::new(ci),
-                };
+                product = times2(product, ci);
               }
               product
             };
-            return Ok(Some(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(c),
-              right: Box::new(inner_poly),
-            }));
+            return Ok(Some(times2(c, inner_poly)));
           }
         }
       }
@@ -5902,15 +5692,10 @@ fn egf_inner(
   // First try the polynomial approach: EGF = E^x * P(x)
   // This produces properly factored results like E^x*(1+x) instead of E^x + E^x*x
   if let Some(poly) = egf_poly_part(expr, n, x)? {
-    return Ok(Some(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Constant("E".to_string())),
-        right: Box::new(x.clone()),
-      }),
-      right: Box::new(poly),
-    }));
+    return Ok(Some(times2(
+      pow2(Expr::Constant("E".to_string()), x.clone()),
+      poly,
+    )));
   }
 
   // Handle Minus: a - b => a + (-b)
@@ -5966,15 +5751,10 @@ fn egf_inner(
       "Factorial" if fargs.len() == 1 => {
         // EGF[n!, n, x] = 1/(1-x)
         if matches!(fargs[0], Expr::Identifier(name) if name == n) {
-          return Ok(Some(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Minus,
-              left: Box::new(Expr::Integer(1)),
-              right: Box::new(x.clone()),
-            }),
-            right: Box::new(Expr::Integer(-1)),
-          }));
+          return Ok(Some(pow2(
+            minus2(Expr::Integer(1), x.clone()),
+            Expr::Integer(-1),
+          )));
         }
       }
       // EGF[Sin[n], n, x] = E^(x*Cos[1]) * Sin[x*Sin[1]]
@@ -5995,16 +5775,8 @@ fn egf_inner(
           name: "Sin".to_string(),
           args: vec![Expr::Integer(1)].into(),
         };
-        let x_cos1 = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(x.clone()),
-          right: Box::new(cos1),
-        };
-        let x_sin1 = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(x.clone()),
-          right: Box::new(sin1),
-        };
+        let x_cos1 = times2(x.clone(), cos1);
+        let x_sin1 = times2(x.clone(), sin1);
         let sin_part = Expr::FunctionCall {
           name: "Sin".to_string(),
           args: vec![x_sin1].into(),
@@ -6017,16 +5789,8 @@ fn egf_inner(
           name: "Sinh".to_string(),
           args: vec![x_cos1].into(),
         };
-        let exp_part = Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(cosh_part),
-          right: Box::new(sinh_part),
-        };
-        return Ok(Some(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(sin_part),
-          right: Box::new(exp_part),
-        }));
+        let exp_part = plus2(cosh_part, sinh_part);
+        return Ok(Some(times2(sin_part, exp_part)));
       }
       // EGF[Cos[n], n, x] = E^(x*Cos[1]) * Cos[x*Sin[1]]
       "Cos"
@@ -6041,16 +5805,8 @@ fn egf_inner(
           name: "Sin".to_string(),
           args: vec![Expr::Integer(1)].into(),
         };
-        let x_cos1 = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(x.clone()),
-          right: Box::new(cos1),
-        };
-        let x_sin1 = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(x.clone()),
-          right: Box::new(sin1),
-        };
+        let x_cos1 = times2(x.clone(), cos1);
+        let x_sin1 = times2(x.clone(), sin1);
         let cos_part = Expr::FunctionCall {
           name: "Cos".to_string(),
           args: vec![x_sin1].into(),
@@ -6063,16 +5819,8 @@ fn egf_inner(
           name: "Sinh".to_string(),
           args: vec![x_cos1].into(),
         };
-        let exp_part = Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(cosh_part),
-          right: Box::new(sinh_part),
-        };
-        return Ok(Some(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(cos_part),
-          right: Box::new(exp_part),
-        }));
+        let exp_part = plus2(cosh_part, sinh_part);
+        return Ok(Some(times2(cos_part, exp_part)));
       }
       _ => {}
     }
@@ -6098,11 +5846,7 @@ fn egf_plus(
   }
   let mut sum = results.remove(0);
   for r in results {
-    sum = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(sum),
-      right: Box::new(r),
-    };
+    sum = plus2(sum, r);
   }
   Ok(Some(sum))
 }
@@ -6131,11 +5875,7 @@ fn egf_times(
     } else {
       let mut product = constants.remove(0);
       for ci in constants {
-        product = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(product),
-          right: Box::new(ci),
-        };
+        product = times2(product, ci);
       }
       product
     };
@@ -6144,20 +5884,12 @@ fn egf_times(
     } else {
       let mut product = n_dependent.remove(0);
       for f in n_dependent {
-        product = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(product),
-          right: Box::new(f),
-        };
+        product = times2(product, f);
       }
       product
     };
     if let Some(inner) = egf_inner(&rest, n, x)? {
-      return Ok(Some(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(c),
-        right: Box::new(inner),
-      }));
+      return Ok(Some(times2(c, inner)));
     }
     return Ok(None);
   }
@@ -6175,15 +5907,10 @@ fn egf_power(
   // Case: c^n where c doesn't depend on n => e^(c*x)
   if !depends_on(base, n) && matches!(exp, Expr::Identifier(name) if name == n)
   {
-    return Ok(Some(Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::Constant("E".to_string())),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(base.clone()),
-        right: Box::new(x.clone()),
-      }),
-    }));
+    return Ok(Some(pow2(
+      Expr::Constant("E".to_string()),
+      times2(base.clone(), x.clone()),
+    )));
   }
 
   // Case: n^k where k is a non-negative integer
@@ -6192,15 +5919,10 @@ fn egf_power(
     && let Some(k) = egf_expr_to_nonneg_int(exp)
   {
     let poly = egf_stirling_polynomial(k, x);
-    return Ok(Some(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Constant("E".to_string())),
-        right: Box::new(x.clone()),
-      }),
-      right: Box::new(poly),
-    }));
+    return Ok(Some(times2(
+      pow2(Expr::Constant("E".to_string()), x.clone()),
+      poly,
+    )));
   }
 
   Ok(None)
@@ -6278,26 +6000,14 @@ fn egf_stirling_polynomial(k: usize, x: &Expr) -> Expr {
       if s == 1 {
         x.clone()
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(s as i128)),
-          right: Box::new(x.clone()),
-        }
+        times2(Expr::Integer(s as i128), x.clone())
       }
     } else {
-      let x_power = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(x.clone()),
-        right: Box::new(Expr::Integer(shifted as i128)),
-      };
+      let x_power = pow2(x.clone(), Expr::Integer(shifted as i128));
       if s == 1 {
         x_power
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(s as i128)),
-          right: Box::new(x_power),
-        }
+        times2(Expr::Integer(s as i128), x_power)
       }
     };
     inner_terms.push(term);
@@ -6320,11 +6030,7 @@ fn egf_stirling_polynomial(k: usize, x: &Expr) -> Expr {
   if matches!(&inner, Expr::Integer(1)) {
     x.clone()
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(x.clone()),
-      right: Box::new(inner),
-    }
+    times2(x.clone(), inner)
   }
 }
 

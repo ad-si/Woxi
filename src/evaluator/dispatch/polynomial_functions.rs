@@ -716,11 +716,7 @@ pub fn dispatch_polynomial_functions(
           // Build product of vars[indices[0]] * vars[indices[1]] * ...
           let mut product = vars[indices[0]].clone();
           for &idx in &indices[1..] {
-            product = Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(product),
-              right: Box::new(vars[idx].clone()),
-            };
+            product = times2(product, vars[idx].clone());
           }
           terms.push(product);
           // Next k-combination
@@ -793,11 +789,7 @@ pub fn dispatch_polynomial_functions(
                 Expr::Integer(1) => Expr::Identifier(var.clone()),
                 _ => pow2(Expr::Identifier(var.clone()), exp.clone()),
               };
-              term = Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(term),
-                right: Box::new(factor),
-              };
+              term = times2(term, factor);
             }
             terms.push(term);
           }
@@ -1402,13 +1394,7 @@ fn try_constrained_linear_disk_symbolic(
   };
   let plus = |x: Expr, y: Expr| -> Expr { eval(plus2(x, y)) };
   let minus = |x: Expr, y: Expr| -> Expr { eval(minus2(x, y)) };
-  let times = |x: Expr, y: Expr| -> Expr {
-    eval(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(x),
-      right: Box::new(y),
-    })
-  };
+  let times = |x: Expr, y: Expr| -> Expr { eval(times2(x, y)) };
   let div = |x: Expr, y: Expr| -> Expr { eval(div2(x, y)) };
   let neg = |x: Expr| -> Expr { eval(minus2(Expr::Integer(0), x)) };
   let square = |x: Expr| -> Expr { times(x.clone(), x) };
