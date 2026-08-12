@@ -6178,10 +6178,10 @@ enum DisjointShape {
 impl DisjointShape {
   fn dim(&self) -> usize {
     match self {
-      DisjointShape::Round { center, .. } => center.len(),
-      DisjointShape::AxisBox { lo, .. } => lo.len(),
-      DisjointShape::Poly { .. } => 2,
-      DisjointShape::Dot { p } => p.len(),
+      Self::Round { center, .. } => center.len(),
+      Self::AxisBox { lo, .. } => lo.len(),
+      Self::Poly { .. } => 2,
+      Self::Dot { p } => p.len(),
     }
   }
 }

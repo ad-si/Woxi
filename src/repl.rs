@@ -54,7 +54,7 @@ struct Session {
 
 impl Session {
   fn new() -> Self {
-    Session { line: 1 }
+    Self { line: 1 }
   }
 
   /// Evaluate one complete logical input and print its result. Returns

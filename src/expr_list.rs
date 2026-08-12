@@ -302,7 +302,7 @@ impl ExprList {
     }
   }
 
-  pub fn split_off(&mut self, at: usize) -> ExprList {
+  pub fn split_off(&mut self, at: usize) -> Self {
     self.invalidate_tree_cache();
     match &mut self.inner {
       Inner::Vec(v) => Self {
@@ -385,7 +385,7 @@ impl ExprList {
   }
 
   /// Slice — returns a fresh `ExprList`. O(N) for Vec, O(log N) for Tree.
-  pub fn slice(&self, range: impl RangeBounds<usize>) -> ExprList {
+  pub fn slice(&self, range: impl RangeBounds<usize>) -> Self {
     let len = self.len();
     let start = match range.start_bound() {
       std::ops::Bound::Included(&n) => n,

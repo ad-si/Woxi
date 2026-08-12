@@ -34,7 +34,7 @@ impl Linkage {
   /// Centroid, Median and Ward use the Lance-Williams update on *squared*
   /// distances; the merge height is the square root of the matrix entry.
   fn uses_squared_distances(self) -> bool {
-    matches!(self, Linkage::Centroid | Linkage::Median | Linkage::Ward)
+    matches!(self, Self::Centroid | Self::Median | Self::Ward)
   }
 }
 

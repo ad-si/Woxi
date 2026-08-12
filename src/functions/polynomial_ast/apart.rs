@@ -783,24 +783,24 @@ struct Rat {
 }
 
 impl Rat {
-  fn new(n: i128, d: i128) -> Rat {
+  fn new(n: i128, d: i128) -> Self {
     let (n, d) = rat_reduce(n, d);
-    Rat { n, d }
+    Self { n, d }
   }
-  fn int(n: i128) -> Rat {
-    Rat { n, d: 1 }
+  fn int(n: i128) -> Self {
+    Self { n, d: 1 }
   }
   fn is_zero(self) -> bool {
     self.n == 0
   }
-  fn sub(self, o: Rat) -> Rat {
-    Rat::new(self.n * o.d - o.n * self.d, self.d * o.d)
+  fn sub(self, o: Self) -> Self {
+    Self::new(self.n * o.d - o.n * self.d, self.d * o.d)
   }
-  fn mul(self, o: Rat) -> Rat {
-    Rat::new(self.n * o.n, self.d * o.d)
+  fn mul(self, o: Self) -> Self {
+    Self::new(self.n * o.n, self.d * o.d)
   }
-  fn div(self, o: Rat) -> Rat {
-    Rat::new(self.n * o.d, self.d * o.n)
+  fn div(self, o: Self) -> Self {
+    Self::new(self.n * o.d, self.d * o.n)
   }
 }
 

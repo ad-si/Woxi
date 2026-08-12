@@ -15,22 +15,22 @@ impl Rat {
   fn new(n: i128, d: i128) -> Self {
     assert!(d != 0);
     let (n, d) = rat_reduce(n, d);
-    Rat { n, d }
+    Self { n, d }
   }
 
   fn zero() -> Self {
-    Rat { n: 0, d: 1 }
+    Self { n: 0, d: 1 }
   }
 
   fn from_int(v: i128) -> Self {
-    Rat { n: v, d: 1 }
+    Self { n: v, d: 1 }
   }
 
-  fn add(self, other: Rat) -> Rat {
-    Rat::new(self.n * other.d + other.n * self.d, self.d * other.d)
+  fn add(self, other: Self) -> Self {
+    Self::new(self.n * other.d + other.n * self.d, self.d * other.d)
   }
 
-  fn max(self, other: Rat) -> Rat {
+  fn max(self, other: Self) -> Self {
     // Compare self.n/self.d vs other.n/other.d
     if self.n * other.d >= other.n * self.d {
       self
@@ -39,7 +39,7 @@ impl Rat {
     }
   }
 
-  fn min(self, other: Rat) -> Rat {
+  fn min(self, other: Self) -> Self {
     if self.n * other.d <= other.n * self.d {
       self
     } else {

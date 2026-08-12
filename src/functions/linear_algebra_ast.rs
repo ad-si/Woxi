@@ -1872,10 +1872,10 @@ impl CoefficientPlacement {
   fn from_expr(e: &Expr) -> Option<Self> {
     match e {
       Expr::Identifier(name) => match name.as_str() {
-        "Left" => Some(CoefficientPlacement::Left),
-        "Right" => Some(CoefficientPlacement::Right),
-        "Top" => Some(CoefficientPlacement::Top),
-        "Bottom" => Some(CoefficientPlacement::Bottom),
+        "Left" => Some(Self::Left),
+        "Right" => Some(Self::Right),
+        "Top" => Some(Self::Top),
+        "Bottom" => Some(Self::Bottom),
         _ => None,
       },
       _ => None,
@@ -9972,7 +9972,7 @@ struct QNum {
 }
 
 impl QNum {
-  fn new(n: i128, d: i128) -> Option<QNum> {
+  fn new(n: i128, d: i128) -> Option<Self> {
     if d == 0 {
       return None;
     }
@@ -9982,16 +9982,16 @@ impl QNum {
       (n, d)
     };
     let (n, d) = rat_reduce(n, d);
-    Some(QNum { n, d })
+    Some(Self { n, d })
   }
-  fn zero() -> QNum {
-    QNum { n: 0, d: 1 }
+  fn zero() -> Self {
+    Self { n: 0, d: 1 }
   }
   fn is_zero(&self) -> bool {
     self.n == 0
   }
-  fn add(&self, o: &QNum) -> Option<QNum> {
-    QNum::new(
+  fn add(&self, o: &Self) -> Option<Self> {
+    Self::new(
       self
         .n
         .checked_mul(o.d)?
@@ -9999,8 +9999,8 @@ impl QNum {
       self.d.checked_mul(o.d)?,
     )
   }
-  fn sub(&self, o: &QNum) -> Option<QNum> {
-    QNum::new(
+  fn sub(&self, o: &Self) -> Option<Self> {
+    Self::new(
       self
         .n
         .checked_mul(o.d)?
@@ -10008,8 +10008,8 @@ impl QNum {
       self.d.checked_mul(o.d)?,
     )
   }
-  fn mul(&self, o: &QNum) -> Option<QNum> {
-    QNum::new(self.n.checked_mul(o.n)?, self.d.checked_mul(o.d)?)
+  fn mul(&self, o: &Self) -> Option<Self> {
+    Self::new(self.n.checked_mul(o.n)?, self.d.checked_mul(o.d)?)
   }
 }
 
@@ -10022,14 +10022,14 @@ struct GQNum {
 }
 
 impl GQNum {
-  fn zero() -> GQNum {
-    GQNum {
+  fn zero() -> Self {
+    Self {
       re: QNum::zero(),
       im: QNum::zero(),
     }
   }
-  fn one() -> GQNum {
-    GQNum {
+  fn one() -> Self {
+    Self {
       re: QNum { n: 1, d: 1 },
       im: QNum::zero(),
     }
@@ -10037,25 +10037,25 @@ impl GQNum {
   fn is_zero(&self) -> bool {
     self.re.is_zero() && self.im.is_zero()
   }
-  fn add(&self, o: &GQNum) -> Option<GQNum> {
-    Some(GQNum {
+  fn add(&self, o: &Self) -> Option<Self> {
+    Some(Self {
       re: self.re.add(&o.re)?,
       im: self.im.add(&o.im)?,
     })
   }
-  fn sub(&self, o: &GQNum) -> Option<GQNum> {
-    Some(GQNum {
+  fn sub(&self, o: &Self) -> Option<Self> {
+    Some(Self {
       re: self.re.sub(&o.re)?,
       im: self.im.sub(&o.im)?,
     })
   }
-  fn mul(&self, o: &GQNum) -> Option<GQNum> {
-    Some(GQNum {
+  fn mul(&self, o: &Self) -> Option<Self> {
+    Some(Self {
       re: self.re.mul(&o.re)?.sub(&self.im.mul(&o.im)?)?,
       im: self.re.mul(&o.im)?.add(&self.im.mul(&o.re)?)?,
     })
   }
-  fn div(&self, o: &GQNum) -> Option<GQNum> {
+  fn div(&self, o: &Self) -> Option<Self> {
     // (a + bI)/(c + dI) = (a + bI)(c − dI)/(c² + d²)
     let norm = o.re.mul(&o.re)?.add(&o.im.mul(&o.im)?)?;
     if norm.is_zero() {
@@ -10063,13 +10063,13 @@ impl GQNum {
     }
     let num = self.mul(&o.conj())?;
     let inv_norm = QNum::new(norm.d, norm.n)?;
-    Some(GQNum {
+    Some(Self {
       re: num.re.mul(&inv_norm)?,
       im: num.im.mul(&inv_norm)?,
     })
   }
-  fn conj(&self) -> GQNum {
-    GQNum {
+  fn conj(&self) -> Self {
+    Self {
       re: self.re,
       im: QNum {
         n: -self.im.n,
@@ -10094,22 +10094,22 @@ trait PField: Copy + PartialEq {
 
 impl PField for GQNum {
   fn zero() -> Self {
-    GQNum::zero()
+    Self::zero()
   }
   fn is_zero(&self) -> bool {
-    GQNum::is_zero(self)
+    Self::is_zero(self)
   }
   fn add(&self, o: &Self) -> Option<Self> {
-    GQNum::add(self, o)
+    Self::add(self, o)
   }
   fn sub(&self, o: &Self) -> Option<Self> {
-    GQNum::sub(self, o)
+    Self::sub(self, o)
   }
   fn mul(&self, o: &Self) -> Option<Self> {
-    GQNum::mul(self, o)
+    Self::mul(self, o)
   }
   fn div(&self, o: &Self) -> Option<Self> {
-    GQNum::div(self, o)
+    Self::div(self, o)
   }
 }
 
@@ -10123,15 +10123,15 @@ struct FpNum {
 }
 
 impl FpNum {
-  fn new(v: i128, p: i128) -> FpNum {
-    FpNum {
+  fn new(v: i128, p: i128) -> Self {
+    Self {
       v: v.rem_euclid(p),
       p,
     }
   }
   /// Multiplicative inverse via the extended Euclidean algorithm; None
   /// for values not coprime to p.
-  fn inverse(&self) -> Option<FpNum> {
+  fn inverse(&self) -> Option<Self> {
     let (mut r0, mut r1) = (self.p, self.v);
     let (mut s0, mut s1) = (0i128, 1i128);
     while r1 != 0 {
@@ -10142,7 +10142,7 @@ impl FpNum {
     if r0 != 1 {
       return None;
     }
-    Some(FpNum::new(s0, self.p))
+    Some(Self::new(s0, self.p))
   }
 }
 
@@ -10151,23 +10151,23 @@ impl PField for FpNum {
   // for padding, and arithmetic picks up the real modulus from the other
   // operand (max(p, 1)), so the p = 0 sentinel never reaches rem_euclid.
   fn zero() -> Self {
-    FpNum { v: 0, p: 0 }
+    Self { v: 0, p: 0 }
   }
   fn is_zero(&self) -> bool {
     self.v == 0
   }
   fn add(&self, o: &Self) -> Option<Self> {
-    Some(FpNum::new(self.v.checked_add(o.v)?, self.p.max(o.p).max(1)))
+    Some(Self::new(self.v.checked_add(o.v)?, self.p.max(o.p).max(1)))
   }
   fn sub(&self, o: &Self) -> Option<Self> {
-    Some(FpNum::new(self.v.checked_sub(o.v)?, self.p.max(o.p).max(1)))
+    Some(Self::new(self.v.checked_sub(o.v)?, self.p.max(o.p).max(1)))
   }
   fn mul(&self, o: &Self) -> Option<Self> {
-    Some(FpNum::new(self.v.checked_mul(o.v)?, self.p.max(o.p).max(1)))
+    Some(Self::new(self.v.checked_mul(o.v)?, self.p.max(o.p).max(1)))
   }
   fn div(&self, o: &Self) -> Option<Self> {
     let p = self.p.max(o.p).max(1);
-    let inv = FpNum { v: o.v, p }.inverse()?;
+    let inv = Self { v: o.v, p }.inverse()?;
     self.mul(&inv)
   }
 }
@@ -12086,19 +12086,19 @@ enum SymmetryKind {
 impl SymmetryKind {
   fn head(self) -> &'static str {
     match self {
-      SymmetryKind::Symmetric => "Symmetric",
-      SymmetryKind::Antisymmetric => "Antisymmetric",
-      SymmetryKind::Hermitian => "Hermitian",
-      SymmetryKind::ZeroSymmetric => "ZeroSymmetric",
+      Self::Symmetric => "Symmetric",
+      Self::Antisymmetric => "Antisymmetric",
+      Self::Hermitian => "Hermitian",
+      Self::ZeroSymmetric => "ZeroSymmetric",
     }
   }
 
   fn from_head(head: &str) -> Option<Self> {
     match head {
-      "Symmetric" => Some(SymmetryKind::Symmetric),
-      "Antisymmetric" => Some(SymmetryKind::Antisymmetric),
-      "Hermitian" => Some(SymmetryKind::Hermitian),
-      "ZeroSymmetric" => Some(SymmetryKind::ZeroSymmetric),
+      "Symmetric" => Some(Self::Symmetric),
+      "Antisymmetric" => Some(Self::Antisymmetric),
+      "Hermitian" => Some(Self::Hermitian),
+      "ZeroSymmetric" => Some(Self::ZeroSymmetric),
       _ => None,
     }
   }

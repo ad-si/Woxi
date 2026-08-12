@@ -1433,8 +1433,8 @@ enum NumFn {
 impl NumFn {
   fn new(expr: Expr, var_names: &[String]) -> Self {
     match compile_numeric(&expr, var_names) {
-      Some(compiled) => NumFn::Compiled(compiled),
-      None => NumFn::Symbolic {
+      Some(compiled) => Self::Compiled(compiled),
+      None => Self::Symbolic {
         expr,
         names: var_names.to_vec(),
       },
@@ -1443,8 +1443,8 @@ impl NumFn {
 
   fn eval(&self, vars: &[f64]) -> Result<f64, InterpreterError> {
     match self {
-      NumFn::Compiled(nexpr) => Ok(nexpr.eval(vars)),
-      NumFn::Symbolic { expr, names } => {
+      Self::Compiled(nexpr) => Ok(nexpr.eval(vars)),
+      Self::Symbolic { expr, names } => {
         let mut substituted = expr.clone();
         for (name, value) in names.iter().zip(vars) {
           substituted = crate::syntax::substitute_variable(
@@ -1481,22 +1481,22 @@ impl NumFn {
 enum NExpr {
   Const(f64),
   Var(usize),
-  Add(Vec<NExpr>),
-  Mul(Vec<NExpr>),
-  Pow(Box<NExpr>, Box<NExpr>),
-  Neg(Box<NExpr>),
-  Fn1(fn(f64) -> f64, Box<NExpr>),
-  Fn2(fn(f64, f64) -> f64, Box<NExpr>, Box<NExpr>),
+  Add(Vec<Self>),
+  Mul(Vec<Self>),
+  Pow(Box<Self>, Box<Self>),
+  Neg(Box<Self>),
+  Fn1(fn(f64) -> f64, Box<Self>),
+  Fn2(fn(f64, f64) -> f64, Box<Self>, Box<Self>),
 }
 
 impl NExpr {
   fn eval(&self, vars: &[f64]) -> f64 {
     match self {
-      NExpr::Const(v) => *v,
-      NExpr::Var(i) => vars[*i],
-      NExpr::Add(items) => items.iter().map(|e| e.eval(vars)).sum(),
-      NExpr::Mul(items) => items.iter().map(|e| e.eval(vars)).product(),
-      NExpr::Pow(base, exp) => {
+      Self::Const(v) => *v,
+      Self::Var(i) => vars[*i],
+      Self::Add(items) => items.iter().map(|e| e.eval(vars)).sum(),
+      Self::Mul(items) => items.iter().map(|e| e.eval(vars)).product(),
+      Self::Pow(base, exp) => {
         let b = base.eval(vars);
         let e = exp.eval(vars);
         // Integer exponents use powi to keep negative bases exact.
@@ -1506,9 +1506,9 @@ impl NExpr {
           b.powf(e)
         }
       }
-      NExpr::Neg(e) => -e.eval(vars),
-      NExpr::Fn1(f, a) => f(a.eval(vars)),
-      NExpr::Fn2(f, a, b) => f(a.eval(vars), b.eval(vars)),
+      Self::Neg(e) => -e.eval(vars),
+      Self::Fn1(f, a) => f(a.eval(vars)),
+      Self::Fn2(f, a, b) => f(a.eval(vars), b.eval(vars)),
     }
   }
 }

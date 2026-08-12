@@ -59,7 +59,7 @@ enum Dur {
 impl Dur {
   /// Whether the note carries a stem (everything but a whole note).
   fn has_stem(self) -> bool {
-    self != Dur::Whole
+    self != Self::Whole
   }
 }
 
@@ -532,7 +532,7 @@ struct Canvas {
 
 impl Canvas {
   fn new(stroke: &str, scale: f64) -> Self {
-    Canvas {
+    Self {
       out: String::new(),
       stroke: stroke.to_string(),
       scale,

@@ -25,13 +25,13 @@ pub enum Padding {
 }
 
 impl Padding {
-  pub fn parse(e: &Expr) -> Option<Padding> {
+  pub fn parse(e: &Expr) -> Option<Self> {
     match e {
       Expr::String(s) => match s.as_str() {
-        "Periodic" => Some(Padding::Periodic),
-        "Reflected" => Some(Padding::Reflected),
-        "Reversed" => Some(Padding::Reversed),
-        "Fixed" => Some(Padding::Fixed),
+        "Periodic" => Some(Self::Periodic),
+        "Reflected" => Some(Self::Reflected),
+        "Reversed" => Some(Self::Reversed),
+        "Fixed" => Some(Self::Fixed),
         _ => None,
       },
       _ => crate::functions::math_ast::expr_to_num(e).map(Padding::Constant),
@@ -39,11 +39,11 @@ impl Padding {
   }
   pub fn to_expr(&self) -> Expr {
     match self {
-      Padding::Periodic => Expr::String("Periodic".into()),
-      Padding::Reflected => Expr::String("Reflected".into()),
-      Padding::Reversed => Expr::String("Reversed".into()),
-      Padding::Fixed => Expr::String("Fixed".into()),
-      Padding::Constant(c) => Expr::Real(*c),
+      Self::Periodic => Expr::String("Periodic".into()),
+      Self::Reflected => Expr::String("Reflected".into()),
+      Self::Reversed => Expr::String("Reversed".into()),
+      Self::Fixed => Expr::String("Fixed".into()),
+      Self::Constant(c) => Expr::Real(*c),
     }
   }
 }
@@ -86,22 +86,22 @@ pub enum CoefArray {
 impl CoefArray {
   pub fn dims(&self) -> Vec<usize> {
     match self {
-      CoefArray::D1(v) => vec![v.len()],
-      CoefArray::D2(m) => vec![m.len(), m.first().map_or(0, |r| r.len())],
+      Self::D1(v) => vec![v.len()],
+      Self::D2(m) => vec![m.len(), m.first().map_or(0, |r| r.len())],
     }
   }
   pub fn energy(&self) -> f64 {
     match self {
-      CoefArray::D1(v) => v.iter().map(|c| c * c).sum(),
-      CoefArray::D2(m) => m.iter().flat_map(|r| r.iter()).map(|c| c * c).sum(),
+      Self::D1(v) => v.iter().map(|c| c * c).sum(),
+      Self::D2(m) => m.iter().flat_map(|r| r.iter()).map(|c| c * c).sum(),
     }
   }
   pub fn to_expr(&self) -> Expr {
     match self {
-      CoefArray::D1(v) => {
+      Self::D1(v) => {
         Expr::List(v.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into())
       }
-      CoefArray::D2(m) => Expr::List(
+      Self::D2(m) => Expr::List(
         m.iter()
           .map(|r| {
             Expr::List(
@@ -113,10 +113,10 @@ impl CoefArray {
       ),
     }
   }
-  pub fn from_expr(e: &Expr) -> Option<CoefArray> {
+  pub fn from_expr(e: &Expr) -> Option<Self> {
     let Expr::List(items) = e else { return None };
     if items.is_empty() {
-      return Some(CoefArray::D1(vec![]));
+      return Some(Self::D1(vec![]));
     }
     if matches!(&items[0], Expr::List(_)) {
       let mut rows = Vec::new();
@@ -128,13 +128,13 @@ impl CoefArray {
         }
         rows.push(r);
       }
-      Some(CoefArray::D2(rows))
+      Some(Self::D2(rows))
     } else {
       let mut v = Vec::new();
       for c in items.iter() {
         v.push(crate::functions::math_ast::expr_to_num(c)?);
       }
-      Some(CoefArray::D1(v))
+      Some(Self::D1(v))
     }
   }
 }
@@ -520,28 +520,28 @@ pub enum TransformKind {
 impl TransformKind {
   pub fn name(&self) -> &'static str {
     match self {
-      TransformKind::Dwt => "DiscreteWaveletTransform",
-      TransformKind::Swt => "StationaryWaveletTransform",
-      TransformKind::Dwpt => "DiscreteWaveletPacketTransform",
-      TransformKind::Swpt => "StationaryWaveletPacketTransform",
-      TransformKind::Lwt => "LiftingWaveletTransform",
+      Self::Dwt => "DiscreteWaveletTransform",
+      Self::Swt => "StationaryWaveletTransform",
+      Self::Dwpt => "DiscreteWaveletPacketTransform",
+      Self::Swpt => "StationaryWaveletPacketTransform",
+      Self::Lwt => "LiftingWaveletTransform",
     }
   }
-  pub fn from_name(s: &str) -> Option<TransformKind> {
+  pub fn from_name(s: &str) -> Option<Self> {
     match s {
-      "DiscreteWaveletTransform" => Some(TransformKind::Dwt),
-      "StationaryWaveletTransform" => Some(TransformKind::Swt),
-      "DiscreteWaveletPacketTransform" => Some(TransformKind::Dwpt),
-      "StationaryWaveletPacketTransform" => Some(TransformKind::Swpt),
-      "LiftingWaveletTransform" => Some(TransformKind::Lwt),
+      "DiscreteWaveletTransform" => Some(Self::Dwt),
+      "StationaryWaveletTransform" => Some(Self::Swt),
+      "DiscreteWaveletPacketTransform" => Some(Self::Dwpt),
+      "StationaryWaveletPacketTransform" => Some(Self::Swpt),
+      "LiftingWaveletTransform" => Some(Self::Lwt),
       _ => None,
     }
   }
   pub fn is_packet(&self) -> bool {
-    matches!(self, TransformKind::Dwpt | TransformKind::Swpt)
+    matches!(self, Self::Dwpt | Self::Swpt)
   }
   pub fn is_stationary(&self) -> bool {
-    matches!(self, TransformKind::Swt | TransformKind::Swpt)
+    matches!(self, Self::Swt | Self::Swpt)
   }
 }
 

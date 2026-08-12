@@ -34,21 +34,21 @@ struct Rat {
 
 impl Rat {
   fn new(num: BigInt, den: BigInt) -> Self {
-    let mut r = Rat { num, den };
+    let mut r = Self { num, den };
     r.reduce();
     r
   }
   fn from_int(n: BigInt) -> Self {
-    Rat {
+    Self {
       num: n,
       den: BigInt::one(),
     }
   }
   fn zero() -> Self {
-    Rat::from_int(BigInt::zero())
+    Self::from_int(BigInt::zero())
   }
   fn one() -> Self {
-    Rat::from_int(BigInt::one())
+    Self::from_int(BigInt::one())
   }
   fn reduce(&mut self) {
     (self.num, self.den) = rat_reduce_bigint(&self.num, &self.den);
@@ -62,25 +62,25 @@ impl Rat {
   fn is_positive(&self) -> bool {
     self.num.is_positive()
   }
-  fn neg(&self) -> Rat {
-    Rat {
+  fn neg(&self) -> Self {
+    Self {
       num: -&self.num,
       den: self.den.clone(),
     }
   }
-  fn add(&self, o: &Rat) -> Rat {
-    Rat::new(&self.num * &o.den + &o.num * &self.den, &self.den * &o.den)
+  fn add(&self, o: &Self) -> Self {
+    Self::new(&self.num * &o.den + &o.num * &self.den, &self.den * &o.den)
   }
-  fn sub(&self, o: &Rat) -> Rat {
-    Rat::new(&self.num * &o.den - &o.num * &self.den, &self.den * &o.den)
+  fn sub(&self, o: &Self) -> Self {
+    Self::new(&self.num * &o.den - &o.num * &self.den, &self.den * &o.den)
   }
-  fn mul(&self, o: &Rat) -> Rat {
-    Rat::new(&self.num * &o.num, &self.den * &o.den)
+  fn mul(&self, o: &Self) -> Self {
+    Self::new(&self.num * &o.num, &self.den * &o.den)
   }
-  fn div(&self, o: &Rat) -> Rat {
-    Rat::new(&self.num * &o.den, &self.den * &o.num)
+  fn div(&self, o: &Self) -> Self {
+    Self::new(&self.num * &o.den, &self.den * &o.num)
   }
-  fn cmp(&self, o: &Rat) -> std::cmp::Ordering {
+  fn cmp(&self, o: &Self) -> std::cmp::Ordering {
     // den is always positive, so cross-multiplication preserves the order.
     (&self.num * &o.den).cmp(&(&o.num * &self.den))
   }

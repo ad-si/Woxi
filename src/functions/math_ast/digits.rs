@@ -1187,25 +1187,25 @@ struct Rat {
 }
 
 impl Rat {
-  fn new(num: i128, den: i128) -> Rat {
-    let mut r = Rat { num, den };
+  fn new(num: i128, den: i128) -> Self {
+    let mut r = Self { num, den };
     r.reduce();
     r
   }
-  fn int(n: i128) -> Rat {
-    Rat { num: n, den: 1 }
+  fn int(n: i128) -> Self {
+    Self { num: n, den: 1 }
   }
   fn reduce(&mut self) {
     (self.num, self.den) = rat_reduce(self.num, self.den);
   }
-  fn add(self, o: Rat) -> Rat {
-    Rat::new(self.num * o.den + o.num * self.den, self.den * o.den)
+  fn add(self, o: Self) -> Self {
+    Self::new(self.num * o.den + o.num * self.den, self.den * o.den)
   }
-  fn mul(self, o: Rat) -> Rat {
-    Rat::new(self.num * o.num, self.den * o.den)
+  fn mul(self, o: Self) -> Self {
+    Self::new(self.num * o.num, self.den * o.den)
   }
-  fn div(self, o: Rat) -> Rat {
-    Rat::new(self.num * o.den, self.den * o.num)
+  fn div(self, o: Self) -> Self {
+    Self::new(self.num * o.den, self.den * o.num)
   }
   fn is_zero(self) -> bool {
     self.num == 0

@@ -9345,9 +9345,9 @@ impl PipeThroughRational for Expr {
     if denom == 1 {
       return self;
     }
-    if let Expr::Integer(n) = self {
+    if let Self::Integer(n) = self {
       if n.rem_euclid(denom) == 0 {
-        return Expr::Integer(n / denom);
+        return Self::Integer(n / denom);
       }
       return make_rational(n, denom);
     }

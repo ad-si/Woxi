@@ -1782,8 +1782,8 @@ impl fmt::Display for Notebook {
 impl fmt::Display for CellEntry {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
-      CellEntry::Single(cell) => write!(f, "{cell}"),
-      CellEntry::Group(group) => write!(f, "{group}"),
+      Self::Single(cell) => write!(f, "{cell}"),
+      Self::Group(group) => write!(f, "{group}"),
     }
   }
 }
@@ -1872,7 +1872,7 @@ impl Default for Notebook {
 impl Notebook {
   /// Create an empty notebook.
   pub fn new() -> Self {
-    Notebook { cells: Vec::new() }
+    Self { cells: Vec::new() }
   }
 
   /// Add a single cell at the end.
@@ -1910,7 +1910,7 @@ impl Notebook {
 
 impl Cell {
   pub fn new(style: CellStyle, content: impl Into<String>) -> Self {
-    Cell {
+    Self {
       style,
       content: content.into(),
       collapsed: false,

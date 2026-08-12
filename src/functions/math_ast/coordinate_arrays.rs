@@ -19,22 +19,22 @@ enum Num {
 impl Num {
   fn to_f64(self) -> f64 {
     match self {
-      Num::Exact(p, q) => p as f64 / q as f64,
-      Num::Real(v) => v,
+      Self::Exact(p, q) => p as f64 / q as f64,
+      Self::Real(v) => v,
     }
   }
 
   fn is_positive(self) -> bool {
     match self {
-      Num::Exact(p, _) => p > 0,
-      Num::Real(v) => v > 0.0,
+      Self::Exact(p, _) => p > 0,
+      Self::Real(v) => v > 0.0,
     }
   }
 
   fn to_expr(self) -> Expr {
     match self {
-      Num::Exact(0, _) => Expr::Integer(0),
-      Num::Exact(p, q) => {
+      Self::Exact(0, _) => Expr::Integer(0),
+      Self::Exact(p, q) => {
         let (p, q) = rat_reduce(p, q);
         if q == 1 {
           Expr::Integer(p)
@@ -45,7 +45,7 @@ impl Num {
           }
         }
       }
-      Num::Real(v) => Expr::Real(v),
+      Self::Real(v) => Expr::Real(v),
     }
   }
 }

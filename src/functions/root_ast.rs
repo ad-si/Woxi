@@ -914,7 +914,7 @@ struct BranchInfo {
   /// Absolute file offset of each written basket's key record.
   basket_seek: Vec<u64>,
   leaves: Vec<LeafInfo>,
-  sub_branches: Vec<BranchInfo>,
+  sub_branches: Vec<Self>,
 }
 
 impl BranchInfo {
@@ -939,7 +939,7 @@ struct ClassMap {
 
 impl ClassMap {
   fn new(key_len: u32) -> Self {
-    ClassMap {
+    Self {
       map: std::collections::HashMap::new(),
       key_len,
     }
@@ -1285,26 +1285,26 @@ enum BasicKind {
 impl BasicKind {
   fn size(self) -> usize {
     match self {
-      BasicKind::I8 | BasicKind::U8 | BasicKind::Bool => 1,
-      BasicKind::I16 | BasicKind::U16 => 2,
-      BasicKind::I32 | BasicKind::U32 | BasicKind::F32 => 4,
-      BasicKind::I64 | BasicKind::U64 | BasicKind::F64 => 8,
+      Self::I8 | Self::U8 | Self::Bool => 1,
+      Self::I16 | Self::U16 => 2,
+      Self::I32 | Self::U32 | Self::F32 => 4,
+      Self::I64 | Self::U64 | Self::F64 => 8,
     }
   }
 
   fn read(self, r: &mut Reader) -> Result<Expr, String> {
     Ok(match self {
-      BasicKind::I8 => Expr::Integer(r.read_u8()? as i8 as i128),
-      BasicKind::U8 => Expr::Integer(r.read_u8()? as i128),
-      BasicKind::I16 => Expr::Integer(r.read_i16()? as i128),
-      BasicKind::U16 => Expr::Integer(r.read_u16()? as i128),
-      BasicKind::I32 => Expr::Integer(r.read_i32()? as i128),
-      BasicKind::U32 => Expr::Integer(r.read_u32()? as i128),
-      BasicKind::I64 => Expr::Integer(r.read_i64()? as i128),
-      BasicKind::U64 => Expr::Integer(r.read_i64()? as u64 as i128),
-      BasicKind::F32 => Expr::Real(r.read_f32()? as f64),
-      BasicKind::F64 => Expr::Real(r.read_f64()?),
-      BasicKind::Bool => bool_expr(r.read_u8()? != 0),
+      Self::I8 => Expr::Integer(r.read_u8()? as i8 as i128),
+      Self::U8 => Expr::Integer(r.read_u8()? as i128),
+      Self::I16 => Expr::Integer(r.read_i16()? as i128),
+      Self::U16 => Expr::Integer(r.read_u16()? as i128),
+      Self::I32 => Expr::Integer(r.read_i32()? as i128),
+      Self::U32 => Expr::Integer(r.read_u32()? as i128),
+      Self::I64 => Expr::Integer(r.read_i64()? as i128),
+      Self::U64 => Expr::Integer(r.read_i64()? as u64 as i128),
+      Self::F32 => Expr::Real(r.read_f32()? as f64),
+      Self::F64 => Expr::Real(r.read_f64()?),
+      Self::Bool => bool_expr(r.read_u8()? != 0),
     })
   }
 }

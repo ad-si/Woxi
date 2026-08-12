@@ -27,19 +27,19 @@ enum BondKind {
 impl BondKind {
   fn as_str(self) -> &'static str {
     match self {
-      BondKind::Single => "Single",
-      BondKind::Double => "Double",
-      BondKind::Triple => "Triple",
-      BondKind::Aromatic => "Aromatic",
+      Self::Single => "Single",
+      Self::Double => "Double",
+      Self::Triple => "Triple",
+      Self::Aromatic => "Aromatic",
     }
   }
 
   fn from_str(s: &str) -> Option<Self> {
     match s {
-      "Single" => Some(BondKind::Single),
-      "Double" => Some(BondKind::Double),
-      "Triple" => Some(BondKind::Triple),
-      "Aromatic" => Some(BondKind::Aromatic),
+      "Single" => Some(Self::Single),
+      "Double" => Some(Self::Double),
+      "Triple" => Some(Self::Triple),
+      "Aromatic" => Some(Self::Aromatic),
       _ => None,
     }
   }
@@ -48,9 +48,9 @@ impl BondKind {
   /// as one σ-bond; the delocalized π-system is accounted for separately.
   fn order(self) -> u32 {
     match self {
-      BondKind::Single | BondKind::Aromatic => 1,
-      BondKind::Double => 2,
-      BondKind::Triple => 3,
+      Self::Single | Self::Aromatic => 1,
+      Self::Double => 2,
+      Self::Triple => 3,
     }
   }
 }
@@ -69,7 +69,7 @@ struct AtomData {
 
 impl AtomData {
   fn plain(symbol: &str) -> Self {
-    AtomData {
+    Self {
       symbol: symbol.to_string(),
       formal_charge: 0,
       mass_number: None,

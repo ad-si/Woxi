@@ -69,7 +69,7 @@ impl EpilogStyle {
     } else {
       Color::new(0.0, 0.0, 0.0)
     };
-    EpilogStyle {
+    Self {
       color: default_color,
       thickness: 1.0,
       dashing: None,

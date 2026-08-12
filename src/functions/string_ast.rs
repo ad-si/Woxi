@@ -3052,7 +3052,7 @@ pub(crate) enum Overlaps {
 impl Overlaps {
   /// True when matches may start before the previous one ends.
   pub(crate) fn overlapping(self) -> bool {
-    self != Overlaps::No
+    self != Self::No
   }
 }
 

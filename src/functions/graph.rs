@@ -1004,10 +1004,10 @@ impl LayerDirection {
   /// The Wolfram symbol this direction is written as.
   pub(crate) fn symbol(self) -> &'static str {
     match self {
-      LayerDirection::Top => "Top",
-      LayerDirection::Bottom => "Bottom",
-      LayerDirection::Left => "Left",
-      LayerDirection::Right => "Right",
+      Self::Top => "Top",
+      Self::Bottom => "Bottom",
+      Self::Left => "Left",
+      Self::Right => "Right",
     }
   }
 }
@@ -7378,16 +7378,16 @@ impl Scope {
   /// The annotations every item of this kind offers.
   fn base_properties(self) -> &'static [&'static str] {
     match self {
-      Scope::Vertex => &BASE_VERTEX_PROPERTIES,
-      Scope::Edge => &BASE_EDGE_PROPERTIES,
+      Self::Vertex => &BASE_VERTEX_PROPERTIES,
+      Self::Edge => &BASE_EDGE_PROPERTIES,
     }
   }
 
   /// The prefix the names of this kind's annotations start with.
   fn prefix(self) -> &'static str {
     match self {
-      Scope::Vertex => "Vertex",
-      Scope::Edge => "Edge",
+      Self::Vertex => "Vertex",
+      Self::Edge => "Edge",
     }
   }
 }

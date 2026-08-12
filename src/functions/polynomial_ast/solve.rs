@@ -11108,27 +11108,27 @@ pub fn nminimize_ast(
 enum NumNode {
   Const(f64),
   Var(usize),
-  Neg(Box<NumNode>),
-  Add(Vec<NumNode>),
-  Mul(Vec<NumNode>),
-  Sub(Box<NumNode>, Box<NumNode>),
-  Div(Box<NumNode>, Box<NumNode>),
-  Pow(Box<NumNode>, Box<NumNode>),
-  Unary(fn(f64) -> f64, Box<NumNode>),
-  Binary(fn(f64, f64) -> f64, Box<NumNode>, Box<NumNode>),
+  Neg(Box<Self>),
+  Add(Vec<Self>),
+  Mul(Vec<Self>),
+  Sub(Box<Self>, Box<Self>),
+  Div(Box<Self>, Box<Self>),
+  Pow(Box<Self>, Box<Self>),
+  Unary(fn(f64) -> f64, Box<Self>),
+  Binary(fn(f64, f64) -> f64, Box<Self>, Box<Self>),
 }
 
 impl NumNode {
   fn eval(&self, point: &[f64]) -> f64 {
     match self {
-      NumNode::Const(c) => *c,
-      NumNode::Var(i) => point[*i],
-      NumNode::Neg(a) => -a.eval(point),
-      NumNode::Add(xs) => xs.iter().map(|x| x.eval(point)).sum(),
-      NumNode::Mul(xs) => xs.iter().map(|x| x.eval(point)).product(),
-      NumNode::Sub(a, b) => a.eval(point) - b.eval(point),
-      NumNode::Div(a, b) => a.eval(point) / b.eval(point),
-      NumNode::Pow(a, b) => {
+      Self::Const(c) => *c,
+      Self::Var(i) => point[*i],
+      Self::Neg(a) => -a.eval(point),
+      Self::Add(xs) => xs.iter().map(|x| x.eval(point)).sum(),
+      Self::Mul(xs) => xs.iter().map(|x| x.eval(point)).product(),
+      Self::Sub(a, b) => a.eval(point) - b.eval(point),
+      Self::Div(a, b) => a.eval(point) / b.eval(point),
+      Self::Pow(a, b) => {
         let base = a.eval(point);
         let exp = b.eval(point);
         // Integer exponents via powi keep `(-x)^2` real instead of NaN.
@@ -11138,8 +11138,8 @@ impl NumNode {
           base.powf(exp)
         }
       }
-      NumNode::Unary(f, a) => f(a.eval(point)),
-      NumNode::Binary(f, a, b) => f(a.eval(point), b.eval(point)),
+      Self::Unary(f, a) => f(a.eval(point)),
+      Self::Binary(f, a, b) => f(a.eval(point), b.eval(point)),
     }
   }
 }

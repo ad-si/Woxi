@@ -4769,7 +4769,7 @@ fn lyapunov_solve_common(
     d: i128,
   }
   impl Q {
-    fn new(mut n: i128, mut d: i128) -> Option<Q> {
+    fn new(mut n: i128, mut d: i128) -> Option<Self> {
       if d == 0 {
         return None;
       }
@@ -4778,13 +4778,13 @@ fn lyapunov_solve_common(
         d = d.checked_neg()?;
       }
       (n, d) = rat_reduce(n, d);
-      Some(Q { n, d })
+      Some(Self { n, d })
     }
-    fn zero() -> Q {
-      Q { n: 0, d: 1 }
+    fn zero() -> Self {
+      Self { n: 0, d: 1 }
     }
-    fn add(self, o: Q) -> Option<Q> {
-      Q::new(
+    fn add(self, o: Self) -> Option<Self> {
+      Self::new(
         self
           .n
           .checked_mul(o.d)?
@@ -4792,8 +4792,8 @@ fn lyapunov_solve_common(
         self.d.checked_mul(o.d)?,
       )
     }
-    fn sub(self, o: Q) -> Option<Q> {
-      Q::new(
+    fn sub(self, o: Self) -> Option<Self> {
+      Self::new(
         self
           .n
           .checked_mul(o.d)?
@@ -4801,11 +4801,11 @@ fn lyapunov_solve_common(
         self.d.checked_mul(o.d)?,
       )
     }
-    fn mul(self, o: Q) -> Option<Q> {
-      Q::new(self.n.checked_mul(o.n)?, self.d.checked_mul(o.d)?)
+    fn mul(self, o: Self) -> Option<Self> {
+      Self::new(self.n.checked_mul(o.n)?, self.d.checked_mul(o.d)?)
     }
-    fn div(self, o: Q) -> Option<Q> {
-      Q::new(self.n.checked_mul(o.d)?, self.d.checked_mul(o.n)?)
+    fn div(self, o: Self) -> Option<Self> {
+      Self::new(self.n.checked_mul(o.d)?, self.d.checked_mul(o.n)?)
     }
     fn to_f64(self) -> f64 {
       self.n as f64 / self.d as f64
