@@ -376,10 +376,18 @@ fn format_part_access(base: &str, spec: &str) -> String {
 
 /// Convert a bare box-expression source (`SubscriptBox[p, 0]`, as carried by
 /// an inline `\!\(\*…\)` segment inside a string) into the evaluable
-/// expression it typesets (`Subscript[p, 0]`). Returns None when `s` is not
-/// one of the recognised typeset box heads.
+/// expression it typesets (`Subscript[p, 0]`), including the `RowBox[{…}]`
+/// a flat run of source typesets to. Returns None when `s` is not one of the
+/// recognised typeset box heads.
 pub fn box_source_to_expression(s: &str) -> Option<String> {
-  extract_typeset_box(s.trim())
+  let s = s.trim();
+  // `RowBox[{…}]` is the box form of a plain run of source, which is what
+  // an expression with no 2-D structure typesets to.
+  if let Some(inner) = s.strip_prefix("RowBox[") {
+    let inner = inner.strip_suffix(']')?;
+    return Some(extract_rowbox_content(inner));
+  }
+  extract_typeset_box(s)
 }
 
 /// Extract cell content from BoxData[...] or a quoted string.
