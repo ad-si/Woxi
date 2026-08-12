@@ -43,3 +43,21 @@ Graphics3D
 $ wo 'StringContainsQ[ExportString[Graphics3D[Tube[BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}}], 0.2]], "SVG"], "<polygon"]'
 True
 ```
+
+The unbounded primitives `InfiniteLine`, `HalfLine`, `InfinitePlane` and
+`HalfPlane` draw the part of themselves that lies inside the picture's
+box, so an infinite line clipped to `PlotRange -> 10` is the same drawing
+as the segment between its two exit points:
+
+```scrut
+$ wo 'ExportString[Graphics3D[InfiniteLine[{{0, 0, 0}, {1, 1, 1}}], PlotRange -> 10], "SVG"] === ExportString[Graphics3D[Line[{{-10, -10, -10}, {10, 10, 10}}], PlotRange -> 10], "SVG"]'
+True
+```
+
+`Sphere[{p1, p2, …}, r]` is a whole set of spheres of radius `r`, one per
+centre — how a scene marks several points at once:
+
+```scrut
+$ wo 'ExportString[Graphics3D[Sphere[{{1, 0, 0}, {-1, 0, 0}}, 0.5]], "SVG"] === ExportString[Graphics3D[{Sphere[{1, 0, 0}, 0.5], Sphere[{-1, 0, 0}, 0.5]}], "SVG"]'
+True
+```

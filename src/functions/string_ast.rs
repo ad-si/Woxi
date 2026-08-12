@@ -14720,9 +14720,91 @@ pub(crate) fn number_form_family_to_string(
   ) {
     return None;
   }
-  match to_string_ast(std::slice::from_ref(value)) {
+  // A symbolic expression is formatted number by number: the wrapper applies
+  // to the approximate reals *inside* `expr`, so
+  // `NumberForm[0.370991 x - 0.927478 y, {4, 3}]` reads `0.371 x - 0.927 y`.
+  let formatted = number_form_family_inner(head, spec, &opts, value);
+  match to_string_ast(std::slice::from_ref(&formatted)) {
     Ok(Expr::String(ref rendered)) => Some(rendered.clone()),
     _ => None,
+  }
+}
+
+/// Rewrite every machine real inside `expr` as the text the
+/// `NumberForm`/`PaddedForm`/`AccountingForm` wrapper gives it, leaving the
+/// surrounding structure alone so it still prints as an expression. A
+/// negative coefficient becomes an explicit `-1` factor of its product,
+/// which is what the sum printer looks for to write `a - b` rather than
+/// `a + -b`.
+fn number_form_family_inner(
+  head: &str,
+  spec: Option<&Expr>,
+  opts: &NumberFormOptions,
+  expr: &Expr,
+) -> Expr {
+  // The formatted text of a real, as a verbatim token.
+  let formatted = |v: f64| -> Option<Expr> {
+    number_form_family_scalar(head, &Expr::Real(v), spec, opts).map(Expr::Raw)
+  };
+  // Split a product's factors, pulling a negative leading real out as `-1`.
+  let product_factors = |factors: &[Expr]| -> Option<Vec<Expr>> {
+    let Expr::Real(f) = factors.first()? else {
+      return None;
+    };
+    if *f >= 0.0 {
+      return None;
+    }
+    let mut out = vec![Expr::Integer(-1), formatted(-f)?];
+    out.extend(
+      factors[1..]
+        .iter()
+        .map(|a| number_form_family_inner(head, spec, opts, a)),
+    );
+    Some(out)
+  };
+  let recurse = |a: &Expr| number_form_family_inner(head, spec, opts, a);
+  match expr {
+    Expr::Real(f) => formatted(*f).unwrap_or_else(|| expr.clone()),
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let args = product_factors(args)
+        .unwrap_or_else(|| args.iter().map(recurse).collect());
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.into(),
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => match product_factors(&[(**left).clone(), (**right).clone()]) {
+      Some(args) => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: args.into(),
+      },
+      None => Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(recurse(left)),
+        right: Box::new(recurse(right)),
+      },
+    },
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(recurse).collect::<Vec<_>>().into(),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(recurse).collect::<Vec<_>>().into())
+    }
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(recurse(left)),
+      right: Box::new(recurse(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(recurse(operand)),
+    },
+    _ => expr.clone(),
   }
 }
 

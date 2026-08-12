@@ -2,6 +2,34 @@
 
 # Unreleased
 
+- Fixes driven by a Wolfram Demonstration that draws the shortest distance
+    between two skew lines, a `Manipulate` whose `Graphics3D` is built out
+    of unbounded objects:
+    - `InfiniteLine`, `HalfLine`, `InfinitePlane` and `HalfPlane` are drawn
+        in a `Graphics3D`, clipped to the picture's box: a line to the two
+        points where it leaves the box, a plane to the cross section it cuts
+        out of it. They used to draw nothing at all, so a scene built around
+        a pair of lines arrived empty. They are clipped to exactly the range
+        the finite contents ask for, so an unbounded object never widens the
+        range it was measured against.
+    - `Sphere[{p1, p2, …}, r]` is a set of spheres of radius `r`, one per
+        centre — how a scene marks several points at once. The list of
+        centres failed to parse as a point, leaving a single stray sphere at
+        the origin. `Ball` draws in a `Graphics3D` too, the same way it
+        already did in a 2-D `Graphics`.
+    - `(a ⨯ b) ⨯ c` is `Cross[Cross[a, b], c]`. `Cross` has no `Flat`
+        attribute, so parentheses group it like any other operator; the
+        chain used to collapse through them into the three-argument
+        `Cross[a, b, c]`, which wants vectors of length four and errored on
+        3D ones. `((b - a) ⨯ (d - c)) ⨯ (b - a)` is how a Demonstration
+        gets a second direction vector inside a plane.
+    - `NumberForm[expr, spec]` formats the approximate reals *inside* a
+        symbolic expression, so a plane equation shows its coefficients at
+        the width asked for: `NumberForm[0.370991 x - 0.927478 y, {4, 3}]`
+        reads `0.371 x - 0.927 y`.
+    - A term with a negative *real* coefficient prints as a subtraction, the
+        same as an integer one: `ToString[x - 0.5 y]` was `x + -0.5 y`.
+
 - Fixes driven by a Wolfram Demonstration that pairs a plot of two sine
     waves and their sum with the sound of that sum:
     - `Play[f, {t, tmin, tmax}, opts…]` accepts its options. Only the

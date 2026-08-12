@@ -319,7 +319,7 @@ Eigenvalues,Computes the eigenvalues of a matrix; the two-arg form takes the k l
 Timing,Returns the CPU time taken to evaluate an expression,✅,contextual,1.0,276
 RowBox,Represents a horizontal row of boxes for typesetting,✅,pure,3.0,277
 Button,Interactive button element (stays symbolic in script mode),✅,unevaluated,6.0,280
-Sphere,Sphere graphics primitive; a circle in two dimensions,✅,none,6.0,282
+Sphere,Sphere graphics primitive; a circle in two dimensions; a list of centres draws one sphere of the given radius per centre,✅,none,6.0,282
 Get,Reads and evaluates a file returning the last result,✅,effectful,1.0,283
 Quiet,Evaluate expression suppressing messages,✅,contextual,6.0,284
 Joined,Option for joining points in list plots,✅,none,6.0,285
@@ -912,7 +912,7 @@ GraphLayout,,🚫,,8.0,888
 Names,Lists symbol names matching a string pattern with wildcards,✅,pure,1.0,889
 RotateLabel,,🚫,,2.0,890
 TimeZone,,🚫,,2.0,892
-InfiniteLine,Geometric primitive representing an infinite line,✅,none,10.0,893
+InfiniteLine,Geometric primitive representing an infinite line; drawn in Graphics3D clipped to the plot range,✅,none,10.0,893
 GegenbauerC,Gegenbauer (ultraspherical) polynomial C_n^lambda(x); two-arg form GegenbauerC[n;x] is the renormalized (2/n) ChebyshevT[n;x],✅,pure,1.0,894
 SetterBar,Setter bar control (stays symbolic in script mode),✅,unevaluated,6.0,895
 StyleBox,Low-level box construct for styled content display,✅,pure,3.0,896
@@ -1003,7 +1003,7 @@ DirectedEdges,,🚫,,6.0,986
 ViewVertical,,🚫,,2.0,986
 StyleDefinitions,,🚫,,3.0,987
 RoundingRadius,,🚫,,7.0,988
-Ball,Geometric primitive representing a ball (filled sphere),✅,none,10.0,989
+Ball,Geometric primitive representing a ball (filled sphere); drawn in Graphics and Graphics3D; a list of centres draws one ball per centre,✅,none,10.0,989
 FormBox,,🚫,,3.0,991
 RegionDifference,Region left after removing one region from another,✅,pure,10.0,991
 UpSetDelayed,Assign delayed upvalues to symbols appearing in the LHS,✅,side_effect,1.0,992
@@ -1435,7 +1435,7 @@ GeoBackground,Background for geographic plots,🚫,pure,10.0,1430
 ItemStyle,Style specification for items,🚫,pure,6.0,1431
 GeoStyling,Styling for geographic regions,🚫,pure,10.0,1432
 CharacterEncoding,Character encoding specification,🚫,io,3.0,1434
-InfinitePlane,Infinite plane geometric region; symbolic region consumed by region functions and rendered in Graphics,✅,unevaluated,10.0,1434
+InfinitePlane,Infinite plane geometric region; symbolic region consumed by region functions and rendered in Graphics; drawn in Graphics3D clipped to the plot range,✅,unevaluated,10.0,1434
 ProgressIndicator,Progress indicator control (stays symbolic in script mode),✅,unevaluated,6.0,1435
 Square,Square geometric primitive,🚫,pure,3.0,1437
 StruveL,Modified Struve function L_n(z); elementary closed form at order +-1/2 and +-3/2; numeric for inexact args,✅,pure,4.0,1437
@@ -2276,7 +2276,7 @@ DateListLogPlot,date visualization,🚫,None,7.0,2294
 AbsoluteCurrentValue,dynamic content,🚫,None,6.0,2299
 BatchSize,machine learning option,🚫,None,11.0,2299
 DaubechiesWavelet,Daubechies wavelet family of order n,✅,pure,8.0,2299
-HalfLine,Geometric half-line primitive,✅,pure,10.0,2299
+HalfLine,Geometric half-line primitive; drawn in Graphics3D clipped to the plot range,✅,pure,10.0,2299
 PalindromeQ,Tests if a string or list is a palindrome,✅,pure,10.3,2299
 GraphQ,Test whether an expression is a valid Graph object,✅,1,8.0,2305
 ListStreamPlot,stream visualization,🚫,None,7.0,2305
@@ -2439,7 +2439,7 @@ VerticalGauge,,🚫,,9.0,2462
 Algebraics,,🚫,,4.0,2468
 Beep,,🚫,,6.0,2468
 GaussianIntegers,,🚫,,2.0,2468
-HalfPlane,Half-plane geometric region; symbolic region consumed by region functions and rendered in Graphics,✅,unevaluated,10.0,2468
+HalfPlane,Half-plane geometric region; symbolic region consumed by region functions and rendered in Graphics; drawn in Graphics3D clipped to the plot range,✅,unevaluated,10.0,2468
 MantissaExponent,Decompose a number into mantissa and exponent,✅,pure,2.0,2468
 SelectedCells,,🚫,,10.0,2468
 CellID,,🚫,,6.0,2469

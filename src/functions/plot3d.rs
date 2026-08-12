@@ -1891,6 +1891,371 @@ fn parse_point3d_list(expr: &Expr) -> Option<Vec<Point3D>> {
   None
 }
 
+/// Parse a list of 3D points, insisting that *every* element is one — so a
+/// `{x, y, z}` point is not mistaken for a list of three malformed points.
+fn parse_point3d_list_strict(expr: &Expr) -> Option<Vec<Point3D>> {
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  if items.is_empty() {
+    return None;
+  }
+  items.iter().map(parse_point3d).collect()
+}
+
+/// The unbounded `Graphics3D` primitives. They have no extent of their own:
+/// a picture shows the part of them that falls inside its box, so they are
+/// expanded into an ordinary `Line`/`Polygon` once that box is known.
+const UNBOUNDED_3D_HEADS: [&str; 4] =
+  ["InfiniteLine", "HalfLine", "InfinitePlane", "HalfPlane"];
+
+/// Does this scene contain an unbounded primitive anywhere?
+fn has_unbounded_3d(expr: &Expr) -> bool {
+  match expr {
+    Expr::List(items) => items.iter().any(has_unbounded_3d),
+    Expr::FunctionCall { name, args } => {
+      UNBOUNDED_3D_HEADS.contains(&name.as_str())
+        || args.iter().any(has_unbounded_3d)
+    }
+    _ => false,
+  }
+}
+
+/// Replace every unbounded primitive in `expr` with the `Line`/`Polygon` it
+/// shows inside `bounds`, leaving the rest of the scene untouched. One that
+/// misses the box entirely disappears (an empty `Line[{}]`), which is what
+/// Wolfram draws for it.
+fn expand_unbounded_3d(expr: &Expr, bounds: &[(f64, f64); 3]) -> Expr {
+  match expr {
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|i| expand_unbounded_3d(i, bounds))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::FunctionCall { name, args }
+      if UNBOUNDED_3D_HEADS.contains(&name.as_str()) =>
+    {
+      unbounded_3d_to_primitive(name, args, bounds).unwrap_or_else(empty_line3d)
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| expand_unbounded_3d(a, bounds))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    other => other.clone(),
+  }
+}
+
+/// A `Line` with no points: the drawn form of an unbounded primitive that
+/// lies entirely outside the picture's box.
+fn empty_line3d() -> Expr {
+  Expr::FunctionCall {
+    name: "Line".to_string(),
+    args: vec![Expr::List(Vec::new().into())].into(),
+  }
+}
+
+fn v_sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+  [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn v_add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+  [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+fn v_scale(a: [f64; 3], s: f64) -> [f64; 3] {
+  [a[0] * s, a[1] * s, a[2] * s]
+}
+
+fn v_dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+  a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn v_cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+  [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ]
+}
+
+fn v_len(a: [f64; 3]) -> f64 {
+  v_dot(a, a).sqrt()
+}
+
+fn point3d_expr(p: [f64; 3]) -> Expr {
+  Expr::List(vec![Expr::Real(p[0]), Expr::Real(p[1]), Expr::Real(p[2])].into())
+}
+
+/// The two points of an unbounded primitive's first argument, as either
+/// `{p1, p2}` (two points on it) or `p` with a direction in `args[1]`.
+fn unbounded_3d_line(args: &[Expr]) -> Option<([f64; 3], [f64; 3])> {
+  if args.len() >= 2
+    && let Some(p) = eval_vec3(&args[0])
+    && let Some(v) = eval_vec3(&args[1])
+  {
+    return Some((p, v));
+  }
+  let Expr::List(pts) = &args[0] else {
+    return None;
+  };
+  if pts.len() != 2 {
+    return None;
+  }
+  let p1 = eval_vec3(&pts[0])?;
+  let p2 = eval_vec3(&pts[1])?;
+  Some((p1, v_sub(p2, p1)))
+}
+
+/// Clip the line `p + t v` to the box, returning the parameter interval
+/// inside it (the slab method). `t_min` starts the interval, so a ray
+/// (`HalfLine`) passes `0.0` and a full line `-∞`.
+fn clip_line_to_box(
+  p: [f64; 3],
+  v: [f64; 3],
+  bounds: &[(f64, f64); 3],
+  t_min: f64,
+) -> Option<(f64, f64)> {
+  let mut lo = t_min;
+  let mut hi = f64::INFINITY;
+  for axis in 0..3 {
+    let (min, max) = bounds[axis];
+    if v[axis].abs() < 1e-12 {
+      // Parallel to this slab: inside it or nowhere at all.
+      if p[axis] < min - 1e-9 || p[axis] > max + 1e-9 {
+        return None;
+      }
+      continue;
+    }
+    let t1 = (min - p[axis]) / v[axis];
+    let t2 = (max - p[axis]) / v[axis];
+    lo = lo.max(t1.min(t2));
+    hi = hi.min(t1.max(t2));
+  }
+  if !lo.is_finite() || !hi.is_finite() || lo > hi {
+    return None;
+  }
+  Some((lo, hi))
+}
+
+/// Clip a convex polygon against the half space `n · x <= d`
+/// (Sutherland–Hodgman).
+fn clip_polygon_to_halfspace(
+  poly: &[[f64; 3]],
+  n: [f64; 3],
+  d: f64,
+) -> Vec<[f64; 3]> {
+  let mut out: Vec<[f64; 3]> = Vec::new();
+  for i in 0..poly.len() {
+    let a = poly[i];
+    let b = poly[(i + 1) % poly.len()];
+    let da = v_dot(n, a) - d;
+    let db = v_dot(n, b) - d;
+    if da <= 0.0 {
+      out.push(a);
+    }
+    if (da < 0.0 && db > 0.0) || (da > 0.0 && db < 0.0) {
+      let t = da / (da - db);
+      out.push(v_add(a, v_scale(v_sub(b, a), t)));
+    }
+  }
+  out
+}
+
+/// The convex polygon a plane through `p` spanned by `u` and `w` cuts out of
+/// the box. `bound` optionally adds the half plane's own edge as one more
+/// half space, so `HalfPlane` stops at its boundary line.
+fn clip_plane_to_box(
+  p: [f64; 3],
+  u: [f64; 3],
+  w: [f64; 3],
+  bounds: &[(f64, f64); 3],
+  bound: Option<([f64; 3], f64)>,
+) -> Option<Vec<[f64; 3]>> {
+  let normal = v_cross(u, w);
+  if v_len(normal) < 1e-12 {
+    return None;
+  }
+  // Start from a quad on the plane large enough to span the whole box, then
+  // cut it down by the box's six faces.
+  let diag = (0..3)
+    .map(|i| bounds[i].1 - bounds[i].0)
+    .fold(0.0f64, |acc, e| acc + e * e)
+    .sqrt();
+  let center = [
+    (bounds[0].0 + bounds[0].1) / 2.0,
+    (bounds[1].0 + bounds[1].1) / 2.0,
+    (bounds[2].0 + bounds[2].1) / 2.0,
+  ];
+  // Project the box centre onto the plane so the quad is centred on the
+  // part of it the box can actually see.
+  let unit_n = v_scale(normal, 1.0 / v_len(normal));
+  let base = v_add(center, v_scale(unit_n, -v_dot(unit_n, v_sub(center, p))));
+  let e1 = v_scale(u, 1.0 / v_len(u));
+  let e2 = v_cross(unit_n, e1);
+  let r = diag.max(1e-6);
+  let mut poly = vec![
+    v_add(v_add(base, v_scale(e1, -r)), v_scale(e2, -r)),
+    v_add(v_add(base, v_scale(e1, r)), v_scale(e2, -r)),
+    v_add(v_add(base, v_scale(e1, r)), v_scale(e2, r)),
+    v_add(v_add(base, v_scale(e1, -r)), v_scale(e2, r)),
+  ];
+  for axis in 0..3 {
+    let mut n = [0.0; 3];
+    n[axis] = 1.0;
+    poly = clip_polygon_to_halfspace(&poly, n, bounds[axis].1);
+    n[axis] = -1.0;
+    poly = clip_polygon_to_halfspace(&poly, n, -bounds[axis].0);
+    if poly.is_empty() {
+      return None;
+    }
+  }
+  if let Some((n, d)) = bound {
+    poly = clip_polygon_to_halfspace(&poly, n, d);
+  }
+  if poly.len() < 3 {
+    return None;
+  }
+  Some(poly)
+}
+
+/// A box the unbounded primitives can be clipped to. A scene made only of
+/// them has no bounds of its own, and one lying in a plane has an axis of
+/// no extent — neither can be cut against as it stands, so an empty axis is
+/// given the width of the widest one (or the unit box, when there is no
+/// extent at all).
+fn clipping_bounds(bounds: [(f64, f64); 3]) -> [(f64, f64); 3] {
+  let widest = (0..3)
+    .filter(|&i| bounds[i].0.is_finite() && bounds[i].1.is_finite())
+    .map(|i| bounds[i].1 - bounds[i].0)
+    .fold(0.0f64, f64::max);
+  let half = if widest > 0.0 { widest / 2.0 } else { 1.0 };
+  std::array::from_fn(|i| {
+    let (lo, hi) = bounds[i];
+    if !lo.is_finite() || !hi.is_finite() {
+      return (-half, half);
+    }
+    if hi > lo {
+      return (lo, hi);
+    }
+    let mid = (lo + hi) / 2.0;
+    (mid - half, mid + half)
+  })
+}
+
+/// The `Line`/`Polygon` an unbounded primitive draws inside `bounds`.
+fn unbounded_3d_to_primitive(
+  head: &str,
+  args: &[Expr],
+  bounds: &[(f64, f64); 3],
+) -> Option<Expr> {
+  if args.is_empty()
+    || bounds
+      .iter()
+      .any(|(lo, hi)| !lo.is_finite() || !hi.is_finite() || hi <= lo)
+  {
+    return None;
+  }
+  match head {
+    // A line or ray, clipped to the box.
+    "InfiniteLine" | "HalfLine" => {
+      let (p, v) = unbounded_3d_line(args)?;
+      if v_len(v) < 1e-12 {
+        return None;
+      }
+      let t_min = if head == "HalfLine" {
+        0.0
+      } else {
+        f64::NEG_INFINITY
+      };
+      let (lo, hi) = clip_line_to_box(p, v, bounds, t_min)?;
+      Some(Expr::FunctionCall {
+        name: "Line".to_string(),
+        args: vec![Expr::List(
+          vec![
+            point3d_expr(v_add(p, v_scale(v, lo))),
+            point3d_expr(v_add(p, v_scale(v, hi))),
+          ]
+          .into(),
+        )]
+        .into(),
+      })
+    }
+    // `InfinitePlane[{p1, p2, p3}]` — the plane through three points —
+    // or `InfinitePlane[p, {v1, v2}]` — through `p`, spanned by `v1`, `v2`.
+    "InfinitePlane" => {
+      let (p, u, w) = if args.len() >= 2 {
+        let p = eval_vec3(&args[0])?;
+        let Expr::List(dirs) = &args[1] else {
+          return None;
+        };
+        if dirs.len() != 2 {
+          return None;
+        }
+        (p, eval_vec3(&dirs[0])?, eval_vec3(&dirs[1])?)
+      } else {
+        let Expr::List(pts) = &args[0] else {
+          return None;
+        };
+        if pts.len() != 3 {
+          return None;
+        }
+        let p1 = eval_vec3(&pts[0])?;
+        let p2 = eval_vec3(&pts[1])?;
+        let p3 = eval_vec3(&pts[2])?;
+        (p1, v_sub(p2, p1), v_sub(p3, p1))
+      };
+      let poly = clip_plane_to_box(p, u, w, bounds, None)?;
+      Some(polygon3d_expr(&poly))
+    }
+    // `HalfPlane[{p1, p2}, v]` — bounded by the line through `p1`, `p2`,
+    // reaching out on the side `v` points to — or `HalfPlane[p, d, v]`,
+    // where `d` is the boundary line's direction.
+    "HalfPlane" => {
+      let (p, d, v) = if args.len() >= 3 {
+        (
+          eval_vec3(&args[0])?,
+          eval_vec3(&args[1])?,
+          eval_vec3(&args[2])?,
+        )
+      } else {
+        let (p, d) = unbounded_3d_line(&args[..1])?;
+        (p, d, eval_vec3(args.get(1)?)?)
+      };
+      // The outward normal of the boundary: in the plane, across the edge,
+      // pointing away from `v`.
+      let normal = v_cross(v_cross(d, v), d);
+      if v_len(normal) < 1e-12 {
+        return None;
+      }
+      let outward = v_scale(normal, -1.0);
+      let poly =
+        clip_plane_to_box(p, d, v, bounds, Some((outward, v_dot(outward, p))))?;
+      Some(polygon3d_expr(&poly))
+    }
+    _ => None,
+  }
+}
+
+fn polygon3d_expr(poly: &[[f64; 3]]) -> Expr {
+  Expr::FunctionCall {
+    name: "Polygon".to_string(),
+    args: vec![Expr::List(
+      poly
+        .iter()
+        .map(|p| point3d_expr(*p))
+        .collect::<Vec<_>>()
+        .into(),
+    )]
+    .into(),
+  }
+}
+
 /// A 3D primitive for Graphics3D
 #[derive(Clone)]
 struct StyleState3D {
@@ -2627,19 +2992,21 @@ fn collect_3d_primitives(
     }
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
-        "Sphere" => {
-          let center = if !args.is_empty() {
-            parse_point3d(&args[0]).unwrap_or(Point3D {
-              x: 0.0,
-              y: 0.0,
-              z: 0.0,
-            })
-          } else {
-            Point3D {
-              x: 0.0,
-              y: 0.0,
-              z: 0.0,
-            }
+        "Sphere" | "Ball" => {
+          // `Sphere[{p1, p2, …}, r]` is a whole set of spheres of the same
+          // radius, one per centre — how a scene marks several points at
+          // once. A single `{x, y, z}` is the one-centre case of that.
+          let origin = Point3D {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+          };
+          let centers = match args.first() {
+            None => vec![origin],
+            Some(arg) => match parse_point3d(arg) {
+              Some(p) => vec![p],
+              None => parse_point3d_list_strict(arg).unwrap_or(vec![origin]),
+            },
           };
           let radius = if args.len() >= 2 {
             try_eval_to_f64(
@@ -2649,11 +3016,13 @@ fn collect_3d_primitives(
           } else {
             1.0
           };
-          prims.push(Primitive3D::Sphere {
-            center,
-            radius,
-            style: style.clone(),
-          });
+          for center in centers {
+            prims.push(Primitive3D::Sphere {
+              center,
+              radius,
+              style: style.clone(),
+            });
+          }
         }
         "Cuboid" => {
           let p_min = if !args.is_empty() {
@@ -4453,6 +4822,22 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut prims = Vec::new();
   let mut style3d = StyleState3D::default();
   collect_3d_primitives(&content, &mut style3d, &mut prims);
+
+  // Unbounded primitives (`InfiniteLine`, `InfinitePlane`, …) show only the
+  // part of themselves that falls inside the picture's box, so they are
+  // expanded in a second pass: the finite contents — or an explicit
+  // `PlotRange` — fix the box, and the whole scene is collected again with
+  // each of them replaced by the `Line`/`Polygon` it draws there. Clipping
+  // to exactly those bounds is what keeps an unbounded object from
+  // widening the range it was measured against.
+  if has_unbounded_3d(&content) {
+    let bounds =
+      clipping_bounds(plot_range.unwrap_or_else(|| primitives_bounds(&prims)));
+    let expanded = expand_unbounded_3d(&content, &bounds);
+    prims.clear();
+    style3d = StyleState3D::default();
+    collect_3d_primitives(&expanded, &mut style3d, &mut prims);
+  }
 
   // The symbolic form carried on the rendered result so that Part can
   // index it (`Graphics3D[…][[1]]` → the content).

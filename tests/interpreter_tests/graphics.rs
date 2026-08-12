@@ -2638,6 +2638,167 @@ mod plot3d {
       ));
     }
 
+    /// The unbounded primitives — `InfiniteLine`, `HalfLine`,
+    /// `InfinitePlane`, `HalfPlane` — show the part of themselves that
+    /// falls inside the picture's box. They used to draw nothing at all in
+    /// a `Graphics3D`, which left a scene built around a pair of lines
+    /// (the shape of many Demonstrations) empty.
+    ///
+    /// The check is that each one draws exactly the finite primitive it is
+    /// equal to inside the box.
+    #[test]
+    fn unbounded_primitives_are_drawn_clipped_to_the_box() {
+      for (unbounded, finite) in [
+        (
+          "InfiniteLine[{{0, 0, 0}, {1, 1, 1}}]",
+          "Line[{{-10, -10, -10}, {10, 10, 10}}]",
+        ),
+        (
+          "InfiniteLine[{0, 0, 0}, {1, 1, 1}]",
+          "Line[{{-10, -10, -10}, {10, 10, 10}}]",
+        ),
+        (
+          "HalfLine[{0, 0, 0}, {1, 1, 1}]",
+          "Line[{{0, 0, 0}, {10, 10, 10}}]",
+        ),
+        (
+          "HalfLine[{{2, 0, 0}, {3, 0, 0}}]",
+          "Line[{{2, 0, 0}, {10, 0, 0}}]",
+        ),
+      ] {
+        assert_eq!(
+          export_svg(&format!("Graphics3D[{{{unbounded}}}, PlotRange -> 10]")),
+          export_svg(&format!("Graphics3D[{{{finite}}}, PlotRange -> 10]")),
+          "{unbounded} should draw as {finite}"
+        );
+      }
+    }
+
+    /// A plane cuts a quadrilateral out of the box. Comparing the whole
+    /// SVG would compare the triangle fan's starting corner too, so this
+    /// checks the drawn corners as a set.
+    #[test]
+    fn unbounded_planes_fill_their_cross_section_of_the_box() {
+      let corners = |code: &str| -> Vec<String> {
+        let svg =
+          export_svg(&format!("Graphics3D[{{{code}}}, PlotRange -> 10]"));
+        let mut pts: Vec<String> = svg
+          .split("<polygon points=\"")
+          .skip(1)
+          .filter_map(|t| t.split_once('"'))
+          .flat_map(|(pts, _)| {
+            pts.split(' ').map(str::to_string).collect::<Vec<_>>()
+          })
+          .collect();
+        pts.sort();
+        pts.dedup();
+        assert!(!pts.is_empty(), "{code} drew nothing");
+        pts
+      };
+      for (unbounded, finite) in [
+        (
+          "InfinitePlane[{0, 0, 0}, {{1, 0, 0}, {0, 1, 0}}]",
+          "Polygon[{{-10, -10, 0}, {10, -10, 0}, {10, 10, 0}, {-10, 10, 0}}]",
+        ),
+        (
+          "InfinitePlane[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}]",
+          "Polygon[{{-10, -10, 0}, {10, -10, 0}, {10, 10, 0}, {-10, 10, 0}}]",
+        ),
+        // A half plane stops at its boundary line and reaches out only on
+        // the side its direction points to.
+        (
+          "HalfPlane[{{0, 0, 0}, {1, 0, 0}}, {0, 1, 0}]",
+          "Polygon[{{-10, 0, 0}, {10, 0, 0}, {10, 10, 0}, {-10, 10, 0}}]",
+        ),
+        (
+          "HalfPlane[{{0, 0, 0}, {1, 0, 0}}, {0, -1, 0}]",
+          "Polygon[{{-10, 0, 0}, {10, 0, 0}, {10, -10, 0}, {-10, -10, 0}}]",
+        ),
+      ] {
+        assert_eq!(
+          corners(unbounded),
+          corners(finite),
+          "{unbounded} should cover the same area as {finite}"
+        );
+      }
+    }
+
+    /// Without an explicit `PlotRange` the box the finite contents ask for
+    /// is what the unbounded primitive is clipped to — it never widens the
+    /// range it was measured against.
+    #[test]
+    fn an_unbounded_primitive_does_not_widen_the_plot_range() {
+      assert_eq!(
+        export_svg(
+          "Graphics3D[{Sphere[{0, 0, 0}, 1], \
+           InfiniteLine[{{0, 0, 0}, {1, 0, 0}}]}]"
+        ),
+        export_svg(
+          "Graphics3D[{Sphere[{0, 0, 0}, 1], \
+           Line[{{-1, 0, 0}, {1, 0, 0}}]}]"
+        )
+      );
+    }
+
+    /// A box with no extent to cut against is still given one: a scene made
+    /// only of unbounded objects has no bounds of its own, and a flat one
+    /// has an axis of zero width. Neither may swallow the drawing.
+    #[test]
+    fn an_unbounded_primitive_draws_without_a_box_to_measure() {
+      for code in [
+        "Graphics3D[{InfiniteLine[{{0, 0, 0}, {1, 1, 1}}]}]",
+        "Graphics3D[{InfinitePlane[{0, 0, 0}, {{1, 0, 0}, {0, 1, 0}}]}]",
+        // Every point at z = 0: the z axis has no extent.
+        "Graphics3D[{Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}], \
+             Blue, InfiniteLine[{{0, 0, 0}, {1, 1, 0}}]}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(
+          svg.contains("<polygon") || svg.contains("<line"),
+          "{code} drew nothing: {svg:.200}"
+        );
+      }
+    }
+
+    /// One that misses the box entirely draws nothing, rather than being
+    /// stretched to reach it.
+    #[test]
+    fn an_unbounded_primitive_outside_the_box_draws_nothing() {
+      assert_eq!(
+        export_svg(
+          "Graphics3D[{InfiniteLine[{{100, 100, 100}, {100, 100, 101}}]}, \
+           PlotRange -> 10]"
+        ),
+        export_svg("Graphics3D[{}, PlotRange -> 10]")
+      );
+    }
+
+    /// `Sphere[{p1, p2, …}, r]` is a set of spheres of that radius, one per
+    /// centre — how a scene marks several points at once. The list of
+    /// centres used to fail to parse as a point, leaving a single stray
+    /// sphere at the origin.
+    #[test]
+    fn sphere_accepts_a_list_of_centers() {
+      for head in ["Sphere", "Ball"] {
+        assert_eq!(
+          export_svg(&format!(
+            "Graphics3D[{{{head}[{{{{1, 0, 0}}, {{-1, 0, 0}}}}, 0.5]}}, \
+             PlotRange -> 3]"
+          )),
+          export_svg(
+            "Graphics3D[{Sphere[{1, 0, 0}, 0.5], Sphere[{-1, 0, 0}, 0.5]}, \
+             PlotRange -> 3]"
+          ),
+          "{head} with a list of centres draws one sphere per centre"
+        );
+      }
+      // The single-centre and no-argument forms are unchanged.
+      assert_eq!(
+        export_svg("Graphics3D[{Sphere[]}, PlotRange -> 3]"),
+        export_svg("Graphics3D[{Sphere[{0, 0, 0}, 1]}, PlotRange -> 3]")
+      );
+    }
+
     /// `Text[expr, {x, y, z}]` labels a point of a 3D scene, drawn flat at
     /// the projection of its point. It used to be dropped entirely, so a
     /// labelled schematic arrived with no lettering at all.
