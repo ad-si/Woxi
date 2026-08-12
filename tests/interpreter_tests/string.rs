@@ -6582,6 +6582,19 @@ mod to_string_machine_reals {
       "1.23456789012*^11"
     );
   }
+
+  // Regression: a term with a negative *real* coefficient is a
+  // subtraction, the same as an integer one. `x - 0.5 y` used to come back
+  // as `x + -0.5 y`, which is not how wolframscript writes a sum.
+  #[test]
+  fn negative_real_coefficient_prints_as_subtraction() {
+    assert_eq!(interpret("ToString[x - 0.5 y]").unwrap(), "x - 0.5 y");
+    assert_eq!(interpret("ToString[1.5 - 2.5 x]").unwrap(), "1.5 - 2.5 x");
+    assert_eq!(interpret("ToString[2 x - 3 y]").unwrap(), "2 x - 3 y");
+    // A `-1.` coefficient stays written out, unlike the integer `-1`.
+    assert_eq!(interpret("ToString[x - 1. y]").unwrap(), "x - 1. y");
+    assert_eq!(interpret("ToString[x + 0.5 y]").unwrap(), "x + 0.5 y");
+  }
 }
 
 mod tex_form_standalone {
@@ -7463,6 +7476,46 @@ mod make_boxes {
       woxi::interpret_with_stdout("ToString[NumberForm[999.9, 2]]").unwrap();
     assert_eq!(r.result, "1000.");
     assert!(r.warnings.iter().any(|w| w.contains("NumberForm::reqsigz")));
+  }
+
+  /// `NumberForm[expr, …]` formats the approximate reals *inside* `expr`,
+  /// not just a bare number: a plane equation written as a symbolic sum
+  /// shows its coefficients at the requested width.
+  #[test]
+  fn to_string_number_form_symbolic_expression() {
+    assert_eq!(
+      interpret(
+        "ToString[NumberForm[0.370991 x - 0.927478 y - 0.0463739 z, {4, 3}]]"
+      )
+      .unwrap(),
+      "0.371 x - 0.927 y - 0.046 z"
+    );
+    assert_eq!(
+      interpret("ToString[NumberForm[1.23456 + x, 3]]").unwrap(),
+      "1.23 + x"
+    );
+    // A list of expressions threads element by element.
+    assert_eq!(
+      interpret("ToString[NumberForm[{1.23456, x + 2.34567}, 3]]").unwrap(),
+      "{1.23, 2.35 + x}"
+    );
+    // A negative coefficient keeps its sign in the product, so a lone
+    // formatted term still reads as a negative number.
+    assert_eq!(
+      interpret("ToString[NumberForm[-1.23456 x, 3]]").unwrap(),
+      "-1.23 x"
+    );
+  }
+
+  /// An expression with no approximate real in it is untouched: the
+  /// wrapper drops away and the value prints as itself.
+  #[test]
+  fn to_string_number_form_symbolic_without_reals() {
+    assert_eq!(interpret("ToString[NumberForm[Pi, 5]]").unwrap(), "Pi");
+    assert_eq!(
+      interpret("ToString[NumberForm[a + b, 3]]").unwrap(),
+      "a + b"
+    );
   }
 
   #[test]

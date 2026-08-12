@@ -5444,6 +5444,10 @@ fn build_expr_with_precedence(
 
   let mut result = terms[term_start].clone();
   let mut op_idx = term_start; // operators[i] is between terms[i] and terms[i+1]
+  // Was the operator that built the current `result` the same ⨯ chain we are
+  // extending? Only then may `a ⨯ b ⨯ c` collapse to `Cross[a, b, c]`; a
+  // `Cross[…]` that came from parentheses or an explicit call is an operand.
+  let mut in_cross_chain = false;
 
   while op_idx < operators.len() {
     let op_str = &operators[op_idx];
@@ -5485,7 +5489,17 @@ fn build_expr_with_precedence(
       build_expr_with_precedence(terms, operators, op_idx + 1, next_min_prec);
 
     // Create the binary operation
-    result = make_binary_op(&result, op_str, &right);
+    result = if is_cross_op(op_str) && !in_cross_chain {
+      // First ⨯ of a chain: group binary, so `(a ⨯ b) ⨯ c` and
+      // `Cross[a, b] ⨯ c` both stay `Cross[Cross[a, b], c]`.
+      Expr::FunctionCall {
+        name: "Cross".to_string(),
+        args: vec![result.clone(), right.clone()].into(),
+      }
+    } else {
+      make_binary_op(&result, op_str, &right)
+    };
+    in_cross_chain = is_cross_op(op_str);
 
     // Count how many terms were consumed on the right
     let mut right_terms = 1;
@@ -5500,6 +5514,12 @@ fn build_expr_with_precedence(
   }
 
   result
+}
+
+/// Is this operator token one of the spellings of the `⨯` (`Cross`) infix
+/// operator?
+fn is_cross_op(op_str: &str) -> bool {
+  matches!(op_str, "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}")
 }
 
 /// Create a binary operation from two expressions and an operator string
@@ -14451,6 +14471,44 @@ fn extract_sign_for_plus(expr: &Expr) -> (&'static str, Expr) {
     } => (" - ", *operand.clone()),
     Expr::Integer(n) if *n < 0 => (" - ", Expr::Integer(-n)),
     Expr::Real(f) if *f < 0.0 => (" - ", Expr::Real(-f)),
+    // Times with a leading negative Real coefficient: negate it, so
+    // `x - 0.5 y` renders as a subtraction rather than `x + -0.5 y`.
+    // Unlike an integer `-1`, a real `-1.` coefficient stays written out
+    // (`x - 1. y`), which is what wolframscript shows.
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && !args.is_empty()
+        && matches!(&args[0], Expr::Real(f) if *f < 0.0) =>
+    {
+      let mut new_args = args.to_vec();
+      if let Expr::Real(f) = &args[0] {
+        new_args[0] = Expr::Real(-f);
+      }
+      (
+        " - ",
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: new_args.into(),
+        },
+      )
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Real(f) if *f < 0.0) => {
+      let Expr::Real(f) = left.as_ref() else {
+        unreachable!()
+      };
+      (
+        " - ",
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Real(-f)),
+          right: right.clone(),
+        },
+      )
+    }
     // Negative rational atom: 1/2 - 1/3 x renders `- 1/3 x`, not `+ -(1/3) x`.
     _ if negate_negative_rational(expr).is_some() => {
       (" - ", negate_negative_rational(expr).unwrap())

@@ -7678,6 +7678,142 @@ Cell[BoxData[
     assert_eq!(names, vec!["n", "nt"]);
   }
 
+  /// The shape a whole family of solid-geometry Demonstrations is built
+  /// on: sliders stacked in a `Column` of `Control@…` entries beside the
+  /// picture, checkboxes toggling extra surfaces, and a `Graphics3D` whose
+  /// contents are unbounded — a line drawn to the edge of the box and a
+  /// plane filling its cross section of it — with a caption that reads off
+  /// the numbers at a fixed width.
+  ///
+  /// Four things had to be fixed together for it to come out: the
+  /// unbounded primitives drew nothing at all in 3D, `Sphere` with a list
+  /// of centres collapsed to one sphere at the origin, `((a ⨯ b) ⨯ a)`
+  /// parsed as the three-argument `Cross[a, b, a]` (an error for 3D
+  /// vectors), and `NumberForm` left the numbers of a symbolic expression
+  /// alone while a negative real coefficient printed as `+ -2. y`.
+  #[test]
+  fn skew_line_manipulate_draws_its_unbounded_geometry() {
+    let code = "Manipulate[\
+      Module[{u, w, n}, \
+        u = {u1, u2, 1}; w = {1, w2, w3}; \
+        n = ((u \\[Cross] w) \\[Cross] u); \
+        Column[{\
+          Text@Row[{\"n = \", NumberForm[N[n . {x, y, z}], {4, 3}]}], \
+          Graphics3D[{Thick, Blue, InfiniteLine[{{0, 0, 0}, u}], \
+            Black, Sphere[{{0, 0, 0}, u}, 0.2], \
+            Opacity[0.4], \
+            If[plane, {Green, InfinitePlane[{0, 0, 0}, {u, n}]}]}, \
+            PlotRange -> 4, ImageSize -> {320, 300}]}, \
+          Alignment -> Center]], \
+      Column[{\
+        Control@{{u1, 2, Subscript[Style[\"u\", Italic], 1]}, -4, 4, 0.01, \
+          Appearance -> \"Labeled\"}, \
+        Control@{{u2, 1, Subscript[Style[\"u\", Italic], 2]}, -4, 4, 0.01, \
+          Appearance -> \"Labeled\"}, \
+        \" \", \
+        Control@{{w2, 3, Subscript[Style[\"w\", Italic], 2]}, -4, 4, 0.01, \
+          Appearance -> \"Labeled\"}, \
+        Control@{{w3, -1, Subscript[Style[\"w\", Italic], 3]}, -4, 4, 0.01, \
+          Appearance -> \"Labeled\"}, \
+        \" \", \
+        Control@{{plane, False, \"show the plane\"}, {False, True}}}], \
+      ControlPlacement -> Left]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the scene must render");
+
+    // Four sliders and the checkbox survive the `Column` they are laid out
+    // in; the two `" "` spacers become headings.
+    let kinds: Vec<&str> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { .. } => "continuous",
+        manipulate::ControlState::Discrete { .. } => "discrete",
+        manipulate::ControlState::Heading { .. } => "heading",
+        other => panic!("unexpected control {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      kinds,
+      vec![
+        "continuous",
+        "continuous",
+        "heading",
+        "continuous",
+        "continuous",
+        "heading",
+        "discrete"
+      ]
+    );
+
+    let render = |plane: &str| -> String {
+      woxi::interpret_with_stdout(&format!(
+        "u1 = 2; u2 = 1; w2 = 3; w3 = -1; plane = {plane};\n{}",
+        state.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+
+    // `n` is `(u ⨯ w) ⨯ u` = {-2, 14, -10} for those settings, so the
+    // caption reads the plane's equation off at three decimals — with the
+    // negative coefficients written as subtractions.
+    let closed = render("False");
+    assert!(
+      closed.contains("-2.000 x + 14.000 y - 10.000 z"),
+      "the caption must format every coefficient: {closed:.2000}"
+    );
+
+    // The blue line reaches the edge of the box: without the unbounded
+    // primitives the picture held nothing but the marker spheres.
+    assert!(
+      closed.contains("stroke=\"rgb(0,0,255)\""),
+      "the infinite line must be drawn"
+    );
+    // Both marker spheres are there — the list of centres is a sphere
+    // each, not one stray sphere at the origin. Each is tessellated the
+    // same way, so the scene holds twice one sphere's triangles.
+    let one_sphere = woxi::interpret_with_stdout(
+      "ExportString[Graphics3D[{Black, Sphere[{0, 0, 0}, 0.2]}, \
+       PlotRange -> 4, ImageSize -> {320, 300}], \"SVG\"]",
+    )
+    .expect("the reference must render")
+    .result;
+    let black_faces = |svg: &str| svg.matches("fill=\"rgb(0,0,0)\"").count();
+    assert_eq!(
+      black_faces(&closed),
+      2 * black_faces(&one_sphere),
+      "both centres must get a sphere"
+    );
+
+    // Turning the checkbox on adds the green plane, clipped to the box.
+    let open = render("True");
+    let greens = |svg: &str| {
+      svg
+        .split("<polygon")
+        .skip(1)
+        .filter(|t| {
+          t.split_once("fill=\"rgb(")
+            .and_then(|(_, r)| r.split_once(')'))
+            .is_some_and(|(c, _)| {
+              let v: Vec<u32> =
+                c.split(',').filter_map(|n| n.parse().ok()).collect();
+              v.len() == 3 && v[1] > v[0] && v[1] > v[2]
+            })
+        })
+        .count()
+    };
+    assert_eq!(greens(&closed), 0, "the plane is hidden until asked for");
+    assert!(greens(&open) > 0, "the plane must fill its cross section");
+  }
+
   #[test]
   fn modular_power_graph_manipulate_draws_its_own_edges() {
     // The shape the modular-arithmetic Demonstrations share: a `GraphPlot`

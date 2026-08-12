@@ -1318,6 +1318,44 @@ mod cross {
       "FullForm[Hold[Cross[{1, 2, 3}, {4, 5, 6}]]]"
     );
   }
+
+  // Regression: the chain only collapses when the parser built it. `Cross`
+  // has no Flat attribute, so parentheses group it like any other operator
+  // — `(a ⨯ b) ⨯ c` is `Cross[Cross[a, b], c]`, not the three-argument
+  // `Cross[a, b, c]` (which wants vectors of length four and errors on 3D
+  // ones). Demonstrations write `((b - a) ⨯ (d - c)) ⨯ (b - a)` to get a
+  // vector in a plane, and it has to stay a nested cross product.
+  #[test]
+  fn cross_operator_respects_parentheses() {
+    assert_eq!(
+      interpret("FullForm[Hold[(a \u{2A2F} b) \u{2A2F} c]]").unwrap(),
+      "FullForm[Hold[Cross[Cross[a, b], c]]]"
+    );
+    assert_eq!(
+      interpret("FullForm[Hold[a \u{2A2F} (b \u{2A2F} c)]]").unwrap(),
+      "FullForm[Hold[Cross[a, Cross[b, c]]]]"
+    );
+    // A parenthesised head still starts a fresh chain that the rest of the
+    // operators extend.
+    assert_eq!(
+      interpret("FullForm[Hold[(a \u{2A2F} b) \u{2A2F} c \u{2A2F} d]]")
+        .unwrap(),
+      "FullForm[Hold[Cross[Cross[a, b], c, d]]]"
+    );
+  }
+
+  /// An explicit `Cross[…]` call is an operand too, not a chain to join.
+  #[test]
+  fn cross_operator_after_explicit_call() {
+    assert_eq!(
+      interpret("Cross[{1, 0, 0}, {0, 1, 0}] \u{2A2F} {1, 0, 0}").unwrap(),
+      "{0, 1, 0}"
+    );
+    assert_eq!(
+      interpret("(({1, 0, 0} \u{2A2F} {0, 1, 0})) \u{2A2F} {1, 0, 0}").unwrap(),
+      "{0, 1, 0}"
+    );
+  }
 }
 
 // The legacy `VectorAnalysis` package functions — DotProduct, CrossProduct,
