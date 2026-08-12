@@ -10983,16 +10983,19 @@ fn evaluate_function_call_ast_inner(
     });
   }
 
-  // Play[f, {t, tmin, tmax}] builds a sound object whose amplitude is given by
-  // the function f of the time variable t (in seconds) over [tmin, tmax].
-  // wolframscript compiles f into a SampledSoundFunction; Woxi cannot sample
-  // audio, so it wraps the inert Play expression in a Sound object. That makes
-  // the result render as -Sound- and report Head -> Sound, matching the REPL.
-  // The wrapped argument keeps the head `Play` (already evaluated, so it stays
-  // inert inside Sound), which avoids re-dispatching into an endless loop.
+  // Play[f, {t, tmin, tmax}, opts…] builds a sound object whose amplitude is
+  // given by the function f of the time variable t (in seconds) over
+  // [tmin, tmax]. wolframscript compiles f into a SampledSoundFunction; Woxi
+  // cannot sample audio, so it wraps the inert Play expression in a Sound
+  // object. That makes the result render as -Sound- and report Head -> Sound,
+  // matching the REPL. The wrapped argument keeps the head `Play` (already
+  // evaluated, so it stays inert inside Sound), which avoids re-dispatching
+  // into an endless loop. Trailing options (`SampleRate -> r`, `PlayRange`, …)
+  // ride along inside the wrapped call so the synthesis honors them.
   if name == "Play"
-    && args.len() == 2
+    && args.len() >= 2
     && matches!(&args[1], Expr::List(items) if items.len() == 3)
+    && args[2..].iter().all(crate::syntax::is_rule_expr)
   {
     return Ok(Expr::FunctionCall {
       name: "Sound".to_string(),
