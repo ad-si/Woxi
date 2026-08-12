@@ -2124,10 +2124,11 @@ pub fn dispatch_list_operations(
         return Some(Ok(Expr::List(results.into())));
       }
     }
-    "Select" if args.len() == 2 => {
+    // ParallelSelect is the serial Select in Woxi (evaluated sequentially).
+    "Select" | "ParallelSelect" if args.len() == 2 => {
       return Some(list_helpers_ast::select_ast(&args[0], &args[1], None));
     }
-    "Select" if args.len() == 3 => {
+    "Select" | "ParallelSelect" if args.len() == 3 => {
       return Some(list_helpers_ast::select_ast(
         &args[0],
         &args[1],
@@ -2332,7 +2333,8 @@ pub fn dispatch_list_operations(
         same_test.as_ref(),
       ));
     }
-    "Cases" if args.len() >= 2 && args.len() <= 5 => {
+    // ParallelCases is the serial Cases in Woxi (evaluated sequentially).
+    "Cases" | "ParallelCases" if args.len() >= 2 && args.len() <= 5 => {
       return Some(list_helpers_ast::cases_unified_ast(args));
     }
     // FirstCase[list, pattern] or FirstCase[list, pattern, default]

@@ -11342,6 +11342,144 @@ mod parallel_array {
   }
 }
 
+mod parallel_select {
+  use super::*;
+
+  // ParallelSelect is the serial Select in Woxi (evaluated sequentially).
+  #[test]
+  fn predicate_symbol() {
+    assert_eq!(
+      interpret("ParallelSelect[{1, 2, 3, 4}, EvenQ]").unwrap(),
+      "{2, 4}"
+    );
+  }
+
+  #[test]
+  fn pure_function() {
+    assert_eq!(
+      interpret("ParallelSelect[Range[10], # > 7 &]").unwrap(),
+      "{8, 9, 10}"
+    );
+  }
+
+  #[test]
+  fn with_max_count() {
+    assert_eq!(
+      interpret("ParallelSelect[Range[10], # > 3 &, 2]").unwrap(),
+      "{4, 5}"
+    );
+  }
+
+  #[test]
+  fn keeps_non_list_head() {
+    assert_eq!(
+      interpret("ParallelSelect[f[1, 2, 3, 4], EvenQ]").unwrap(),
+      "f[2, 4]"
+    );
+  }
+
+  #[test]
+  fn filters_association() {
+    assert_eq!(
+      interpret("ParallelSelect[<|\"a\" -> 1, \"b\" -> 2|>, EvenQ]").unwrap(),
+      "<|b -> 2|>"
+    );
+  }
+
+  #[test]
+  fn no_match_gives_empty_list() {
+    assert_eq!(interpret("ParallelSelect[{1, 3, 5}, EvenQ]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn too_many_arguments_stays_unevaluated() {
+    let r = woxi::interpret_with_stdout("ParallelSelect[1, 2, 3, 4]").unwrap();
+    assert_eq!(r.result, "ParallelSelect[1, 2, 3, 4]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("ParallelSelect::argb"))
+    );
+  }
+
+  #[test]
+  fn attributes_match_wolframscript() {
+    assert_eq!(
+      interpret("Attributes[ParallelSelect]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}
+
+mod parallel_cases {
+  use super::*;
+
+  // ParallelCases is the serial Cases in Woxi (evaluated sequentially).
+  #[test]
+  fn pattern_match() {
+    assert_eq!(
+      interpret("ParallelCases[{1, a, 2, b, 3}, _Integer]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn level_specification() {
+    assert_eq!(
+      interpret("ParallelCases[{{1, 2}, {3, 4}}, _Integer, {2}]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+  }
+
+  #[test]
+  fn all_level_specification() {
+    assert_eq!(
+      interpret("ParallelCases[{{1, 2}, {3, 4}}, _Integer, All]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+  }
+
+  #[test]
+  fn with_max_count() {
+    assert_eq!(
+      interpret("ParallelCases[{1, 2, 3, 4, 5}, _Integer, {1}, 2]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn delayed_rule_transforms_matches() {
+    assert_eq!(
+      interpret("ParallelCases[{1, 2, 3}, x_ :> x^2]").unwrap(),
+      "{1, 4, 9}"
+    );
+  }
+
+  #[test]
+  fn condition_pattern() {
+    assert_eq!(
+      interpret("ParallelCases[{1, 2, 3, 4}, x_ /; x > 2]").unwrap(),
+      "{3, 4}"
+    );
+  }
+
+  #[test]
+  fn single_argument_stays_unevaluated() {
+    assert_eq!(
+      interpret("ParallelCases[{1, 2}]").unwrap(),
+      "ParallelCases[{1, 2}]"
+    );
+  }
+
+  #[test]
+  fn attributes_match_wolframscript() {
+    assert_eq!(
+      interpret("Attributes[ParallelCases]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}
+
 mod angle_path {
   use super::*;
 

@@ -6294,3 +6294,5 @@ PropertyValue,Value a property carries for a vertex or an edge of a graph,✅,pu
 PropertyList,Annotations a graph offers,✅,pure,8.0,
 SetProperty,Graph with an annotation set for one of its vertices or edges,✅,pure,8.0,
 Evaluated,Option for whether to evaluate a plot's function once symbolically,✅,pure,6.0,
+ParallelSelect,Parallel version of Select (evaluated sequentially),✅,pure,14.2,
+ParallelCases,Parallel version of Cases (evaluated sequentially),✅,pure,14.2,

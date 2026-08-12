@@ -1378,8 +1378,9 @@ fn evaluate_function_call_ast_inner(
   // at that position really is a level belong in this list: `Flatten`
   // rejects `All` outright, and `MapAt` reads it as a position.
   let level_position = match name {
-    "Map" | "Apply" | "Scan" | "MapIndexed" | "Cases" | "Count"
-    | "Position" | "Replace" | "FreeQ" | "MemberQ" | "DeleteCases" => Some(2),
+    "Map" | "Apply" | "Scan" | "MapIndexed" | "Cases" | "ParallelCases"
+    | "Count" | "Position" | "Replace" | "FreeQ" | "MemberQ"
+    | "DeleteCases" => Some(2),
     "Level" | "Total" => Some(1),
     _ => None,
   };

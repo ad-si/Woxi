@@ -1237,6 +1237,8 @@ nav = [
     ] },
     { "Expressions" = [
       "expressions.md",
+      { "ParallelCases" = "expressions/ParallelCases.md" },
+      { "ParallelSelect" = "expressions/ParallelSelect.md" },
       { "ParallelDo" = "expressions/ParallelDo.md" },
       { "Molecule" = "expressions/Molecule.md" },
       { "LightDarkSwitched" = "expressions/LightDarkSwitched.md" },
@@ -1475,6 +1477,7 @@ nav = [
   ] },
   { "Plotting" = [
     "plotting.md",
+    { "Play" = "plotting/Play.md" },
     { "GraphPlot" = "plotting/GraphPlot.md" },
     { "LayeredGraphPlot" = "plotting/LayeredGraphPlot.md" },
     { "ListPlay" = "plotting/ListPlay.md" },

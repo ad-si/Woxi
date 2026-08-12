@@ -1924,10 +1924,7 @@ impl MeasureEvent {
   /// Whether the event carries an explicit (rigid) duration. Default events are
   /// elastic: a trailing default note stretches to fill the measure.
   fn is_explicit(&self) -> bool {
-    matches!(
-      self,
-      Self::Note(_, Some(_)) | Self::Rest(Some(_))
-    )
+    matches!(self, Self::Note(_, Some(_)) | Self::Rest(Some(_)))
   }
 }
 

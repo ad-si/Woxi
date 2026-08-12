@@ -596,6 +596,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "ParallelDo"
     | "ParallelTable" | "ParallelSum" | "ParallelProduct"
     | "ParallelMap" | "ParallelArray" | "ParallelCombine"
+    | "ParallelSelect" | "ParallelCases"
     | "ParallelSubmit" => vec!["Protected", "ReadProtected"],
     "Remove" => vec!["HoldAll", "Locked", "Protected"],
     "True" | "False" => vec!["Locked", "Protected"],
