@@ -3602,11 +3602,15 @@ fn handle_event(
 /// Build the caption widget shown next to a Manipulate control. Renders the
 /// label's styled runs as rich text so `Style[…, Italic]` shows as an italic
 /// glyph (e.g. an italic `t`, or the italic `m` of `m₁`). Falls back to the
-/// plain `label`, then the variable `name`, when there are no runs.
+/// plain `label` when there are no runs.
+///
+/// A control that gives no label of its own already carries its variable name
+/// as the label (Wolfram captions `{k, 0, 1}` with "k"), so an empty label is
+/// never a missing one: it is the explicit `""` a Demonstration writes to
+/// suppress the caption, and stays blank.
 fn manipulate_label_widget<'a>(
   runs: &[woxi::functions::graphics::LabelRun],
   label: &str,
-  name: &str,
   width: f32,
   enabled: bool,
 ) -> Element<'a, Message> {
@@ -3629,8 +3633,7 @@ fn manipulate_label_widget<'a>(
   };
 
   if runs.is_empty() {
-    let fallback = if label.is_empty() { name } else { label };
-    return text(fallback.to_string())
+    return text(label.to_string())
       .size(SIZE)
       .width(iced::Length::Fixed(width))
       .style(color)
@@ -3664,13 +3667,13 @@ fn manipulate_label_widget<'a>(
 /// the widest label so it sits snug against the sliders instead of leaving a
 /// fixed 140px gutter.
 fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
-  let (label, name) = match ctrl {
-    manipulate::ControlState::Continuous { label, name, .. }
-    | manipulate::ControlState::Discrete { label, name, .. }
-    | manipulate::ControlState::Slider2D { label, name, .. }
-    | manipulate::ControlState::IntervalSlider { label, name, .. }
-    | manipulate::ControlState::Trigger { label, name, .. }
-    | manipulate::ControlState::Locator { label, name, .. } => (label, name),
+  let label = match ctrl {
+    manipulate::ControlState::Continuous { label, .. }
+    | manipulate::ControlState::Discrete { label, .. }
+    | manipulate::ControlState::Slider2D { label, .. }
+    | manipulate::ControlState::IntervalSlider { label, .. }
+    | manipulate::ControlState::Trigger { label, .. }
+    | manipulate::ControlState::Locator { label, .. } => label,
     // Heading/divider rows span the full row instead of sitting in the
     // label column, so they don't widen it; a button carries its label
     // inside the button itself.
@@ -3678,8 +3681,9 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
     | manipulate::ControlState::Heading { .. }
     | manipulate::ControlState::Divider => return 0,
   };
-  let text = if label.is_empty() { name } else { label };
-  text.chars().count()
+  // An explicitly empty label (`{{fig, 1, ""}}`) claims no width — see
+  // `manipulate_label_widget` for why an empty label is never a missing one.
+  label.chars().count()
 }
 
 /// Throttle window for Manipulate re-evaluation. A slider drag emits a burst of
@@ -3696,15 +3700,23 @@ const MANIPULATE_THROTTLE_MS: u64 = 16;
 const ANIM_INTERVAL_MS: u64 = 60;
 
 /// Maximum number of choices rendered as a segmented SetterBar (a row of
-/// toggle buttons) whatever their labels look like. Wolfram picks a SetterBar
-/// for up to four choices even when each one is a phrase ("battle of the
-/// sexes"); past that the labels have to be short.
-const SETTER_BAR_MAX_CHOICES: usize = 4;
+/// toggle buttons) as long as the whole row still fits
+/// ([`SETTER_BAR_MAX_ROW_CHARS`]). Wolfram picks a SetterBar for up to five
+/// choices even when each one is a phrase ("battle of the sexes",
+/// "right triangle"); past that the labels have to be short.
+const SETTER_BAR_MAX_CHOICES: usize = 5;
+
+/// How wide, in characters summed over every label, a SetterBar of at most
+/// [`SETTER_BAR_MAX_CHOICES`] choices may be. Past this the row of buttons no
+/// longer fits the control panel and Wolfram falls back to a PopupMenu. The
+/// sampled Demonstrations bracket it: five figure names totalling 55
+/// characters are a bar, five error descriptions totalling 72 are a dropdown.
+const SETTER_BAR_MAX_ROW_CHARS: usize = 64;
 
 /// Maximum number of *compact* choices — every label at most
 /// [`SETTER_BAR_COMPACT_LABEL_CHARS`] wide, i.e. numbers or single letters —
 /// still rendered as a SetterBar. A run of short buttons stays readable well
-/// past four, but not without bound.
+/// past five, but not without bound.
 const SETTER_BAR_MAX_COMPACT_CHOICES: usize = 10;
 
 /// A choice label this short (in characters) keeps its button narrow enough
@@ -3717,38 +3729,46 @@ const SETTER_BAR_COMPACT_LABEL_CHARS: usize = 3;
 /// Wolfram's `Manipulate` picks between `SetterBar` and `PopupMenu` on its own
 /// whenever the spec doesn't say (`ControlType -> …` forces the choice, and is
 /// carried separately as `popup`). Sampling the Demonstrations that leave it
-/// automatic, the split follows the choice count and how wide the labels are —
-/// never the total width alone:
+/// automatic, the split follows the choice count first and the width of the
+/// row only within that count — never the total width alone:
 ///
-/// | choices | labels                              | Wolfram    |
-/// |---------|-------------------------------------|------------|
-/// | 4       | `4, 20, 100, 500`                   | SetterBar  |
-/// | 4       | `prisoners dilemma`, …              | SetterBar  |
-/// | 5       | `2, 3, 4, 5, 6`                     | SetterBar  |
-/// | 8       | `-3` … `4`                          | SetterBar  |
-/// | 5       | `u(y)`, `error in approximating …`  | PopupMenu  |
-/// | 6       | `triangle` … `octagon`              | PopupMenu  |
-/// | 17      | `Hue`, `BlueGreenYellow`, …         | PopupMenu  |
-/// | 33      | `-3` … `29`                         | PopupMenu  |
+/// | choices | labels                              | width | Wolfram    |
+/// |---------|-------------------------------------|-------|------------|
+/// | 4       | `4, 20, 100, 500`                   |     9 | SetterBar  |
+/// | 4       | `prisoners dilemma`, …              |    57 | SetterBar  |
+/// | 5       | `2, 3, 4, 5, 6`                     |     5 | SetterBar  |
+/// | 5       | `quadrilateral` … `right triangle`  |    55 | SetterBar  |
+/// | 8       | `-3` … `4`                          |    16 | SetterBar  |
+/// | 5       | `u(y)`, `error in approximating …`  |    72 | PopupMenu  |
+/// | 6       | `triangle` … `octagon`              |    44 | PopupMenu  |
+/// | 17      | `Hue`, `BlueGreenYellow`, …         |   183 | PopupMenu  |
+/// | 33      | `-3` … `29`                         |    75 | PopupMenu  |
 ///
-/// So four phrases stay a bar while six single words become a dropdown, even
-/// though the six are the narrower row — the count is what decides, and short
+/// So five phrases stay a bar while six single words become a dropdown, even
+/// though the six are the narrower row — the count decides first, and short
 /// labels buy a longer bar.
 ///
 /// A choice whose label is a rendered icon counts as compact: it draws at a
-/// fixed 24px, narrower than a three-character button.
+/// fixed 24px, narrower than a three-character button, so it costs the row
+/// nothing.
 fn renders_as_setter_bar(
   value_labels: &[String],
   value_label_svgs: &[Option<svg::Handle>],
 ) -> bool {
+  let is_icon = |i: usize| value_label_svgs.get(i).is_some_and(Option::is_some);
   let count = value_labels.len();
   if count <= SETTER_BAR_MAX_CHOICES {
-    return true;
+    let row_chars: usize = value_labels
+      .iter()
+      .enumerate()
+      .filter(|(i, _)| !is_icon(*i))
+      .map(|(_, label)| label.chars().count())
+      .sum();
+    return row_chars <= SETTER_BAR_MAX_ROW_CHARS;
   }
   count <= SETTER_BAR_MAX_COMPACT_CHOICES
     && value_labels.iter().enumerate().all(|(i, label)| {
-      value_label_svgs.get(i).is_some_and(Option::is_some)
-        || label.chars().count() <= SETTER_BAR_COMPACT_LABEL_CHARS
+      is_icon(i) || label.chars().count() <= SETTER_BAR_COMPACT_LABEL_CHARS
     })
 }
 
@@ -3826,7 +3846,7 @@ fn render_manipulate_widget<'a>(
       .unwrap_or(true);
     match ctrl {
       manipulate::ControlState::Continuous {
-        name,
+        name: _,
         label,
         label_runs,
         min,
@@ -3834,13 +3854,8 @@ fn render_manipulate_widget<'a>(
         step,
         current,
       } => {
-        let label_widget = manipulate_label_widget(
-          label_runs,
-          label,
-          name,
-          label_col_width,
-          enabled,
-        );
+        let label_widget =
+          manipulate_label_widget(label_runs, label, label_col_width, enabled);
         let mut s = slider(*min..=*max, *current, move |v| {
           if enabled {
             Message::ManipulateContinuousChanged(cell_idx, ctrl_idx, v)
@@ -3863,7 +3878,7 @@ fn render_manipulate_widget<'a>(
         controls_col = controls_col.push(control_row);
       }
       manipulate::ControlState::Discrete {
-        name,
+        name: _,
         label,
         label_runs,
         values,
@@ -3874,13 +3889,8 @@ fn render_manipulate_widget<'a>(
         setter_bar: force_setter_bar,
         slider: as_slider,
       } => {
-        let label_widget = manipulate_label_widget(
-          label_runs,
-          label,
-          name,
-          label_col_width,
-          enabled,
-        );
+        let label_widget =
+          manipulate_label_widget(label_runs, label, label_col_width, enabled);
         // `ControlType -> Slider` over a discrete domain: a slider that
         // steps through the choices by index, which is how Wolfram draws a
         // twenty-entry colour-scheme picker. Dragging sends the choice at
@@ -4006,7 +4016,7 @@ fn render_manipulate_widget<'a>(
         controls_col = controls_col.push(control_row);
       }
       manipulate::ControlState::Slider2D {
-        name,
+        name: _,
         label,
         x_min,
         x_max,
@@ -4054,7 +4064,7 @@ fn render_manipulate_widget<'a>(
         // Empty runs → plain label; shares label_col_width so 2D-slider rows
         // align with the other controls.
         let label_widget =
-          manipulate_label_widget(&[], label, name, label_col_width, enabled);
+          manipulate_label_widget(&[], label, label_col_width, enabled);
         let control_row = row![
           label_widget,
           column![x_slider, y_slider].spacing(4),
@@ -4065,7 +4075,7 @@ fn render_manipulate_widget<'a>(
         controls_col = controls_col.push(control_row);
       }
       manipulate::ControlState::IntervalSlider {
-        name,
+        name: _,
         label,
         min,
         max,
@@ -4107,7 +4117,7 @@ fn render_manipulate_widget<'a>(
         // Empty runs → plain label; shares label_col_width so interval-slider
         // rows align with the other controls.
         let label_widget =
-          manipulate_label_widget(&[], label, name, label_col_width, enabled);
+          manipulate_label_widget(&[], label, label_col_width, enabled);
         let control_row = row![
           label_widget,
           column![low_slider, high_slider].spacing(4),
@@ -4118,7 +4128,7 @@ fn render_manipulate_widget<'a>(
         controls_col = controls_col.push(control_row);
       }
       manipulate::ControlState::Locator {
-        name,
+        name: _,
         label,
         x_min,
         x_max,
@@ -4135,7 +4145,7 @@ fn render_manipulate_widget<'a>(
         let x_step = if x_span > 0.0 { x_span / 100.0 } else { 1.0 };
         let y_step = if y_span > 0.0 { y_span / 100.0 } else { 1.0 };
         let label_widget =
-          manipulate_label_widget(&[], label, name, label_col_width, enabled);
+          manipulate_label_widget(&[], label, label_col_width, enabled);
         let mut points_col = Column::new().spacing(4);
         for (point_idx, (x, y)) in points.iter().enumerate() {
           let mut x_slider = slider(*x_min..=*x_max, *x, move |v| {
@@ -4206,7 +4216,7 @@ fn render_manipulate_widget<'a>(
         controls_col = controls_col.push(control_row);
       }
       manipulate::ControlState::Trigger {
-        name,
+        name: _,
         label,
         label_runs,
         current,
@@ -4214,13 +4224,8 @@ fn render_manipulate_widget<'a>(
       } => {
         // A Trigger control: its own play/pause toggle plus a live readout
         // of the swept variable (Wolfram's TriggerButton/PauseButton pair).
-        let label_widget = manipulate_label_widget(
-          label_runs,
-          label,
-          name,
-          label_col_width,
-          enabled,
-        );
+        let label_widget =
+          manipulate_label_widget(label_runs, label, label_col_width, enabled);
         let symbol = if state.playing { "❚❚" } else { "▶" };
         let play_btn =
           button(text(symbol).size(11))
@@ -7250,6 +7255,168 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 0.}, \"…\"]"], "Output"]
     );
   }
 
+  /// End-to-end regression for the shape of dissection Demonstration that
+  /// reassembles one figure into several others: a `Switch` over a figure
+  /// picker chooses which rearrangement a single "move" slider drives. The
+  /// picker names its choices but suppresses its own caption with `""`, and
+  /// its five phrase-long labels sit in a SetterBar.
+  #[test]
+  fn dissection_figure_picker_notebook_opens_with_its_widget() {
+    let nb_src = r#"Notebook[{
+Cell[BoxData["lower = {RGBColor[1, 0, 0], Polygon[{{0, 0}, {1, 0}, {1, 1}}]};\nupper = {RGBColor[0, 0, 1], Polygon[{{0, 0}, {1, 1}, {0, 1}}]};\ncorners = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Graphics[{EdgeForm[Black], Switch[fig, 1, {lower, upper}, 2, {lower, Translate[upper, k {1, 0}]}, 3, {lower, Rotate[upper, -k Pi/2, corners[[3]]]}, 4, {Translate[lower, k (corners[[4]] - corners[[2]])], upper}, 5, {lower, Rotate[{Translate[upper, k {1, 0}]}, k Pi, corners[[2]]]}]}, PlotRange -> {{-1.5, 2.5}, {-1.5, 2.5}}, ImageSize -> {300, 300}], {{fig, 1, \"\"}, {1 -> \"quadrilateral\", 2 -> \"Greek cross\", 3 -> \"rhomboid\", 4 -> \"rectangle\", 5 -> \"right triangle\"}}, {{k, 0, \"move\"}, 0, 1}, ControlPlacement -> Top, SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`fig$$ = 1, $CellContext`k$$ = 0}, DynamicBox[…], Initialization:>({$CellContext`lower = {\n RGBColor[1, 0, 0], \n Polygon[{{0, 0}, {1, 0}, {1, 1}}]}, $CellContext`upper = {\n RGBColor[0, 0, 1], \n Polygon[{{0, 0}, {1, 1}, {0, 1}}]}, $CellContext`corners = {{0, 0}, {1, 0}, {1, 1}, {0, 1}}}; Typeset`initDone$$ = True)]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+
+    // `ControlPlacement` and `SaveDefinitions` are Manipulate options, not
+    // controls, so the panel is the picker followed by the slider.
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name,
+          label,
+          values,
+          value_labels,
+          current_index,
+          popup,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: k_name,
+          label: k_label,
+          min,
+          max,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name, "fig");
+        // `{{fig, 1, ""}}` suppresses the caption: an explicitly empty label
+        // stays empty instead of falling back to the variable name.
+        assert_eq!(label, "");
+        assert_eq!(values, &["1", "2", "3", "4", "5"]);
+        assert_eq!(
+          value_labels,
+          &[
+            "quadrilateral",
+            "Greek cross",
+            "rhomboid",
+            "rectangle",
+            "right triangle",
+          ]
+        );
+        assert_eq!(*current_index, 0);
+        assert!(
+          !*popup && renders_as_setter_bar(value_labels, &[]),
+          "Wolfram shows the five figure names as a row of buttons"
+        );
+        assert_eq!((k_name.as_str(), k_label.as_str()), ("k", "move"));
+        assert_eq!((*min, *max, *current), (0.0, 1.0, 0.0));
+      }
+      other => panic!("expected a figure picker and a slider, got {other:?}"),
+    }
+
+    // The suppressed caption claims no room in the shared label column, so
+    // the setter bar starts where the slider's "move" caption ends.
+    assert_eq!(manipulate_label_char_count(&widget.controls[0]), 0);
+    assert_eq!(manipulate_label_char_count(&widget.controls[1]), 4);
+
+    // The iced handle doesn't expose its bytes, so re-render the body
+    // through the widget's own bindings to inspect the SVG.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let code = match w.initialization.as_deref() {
+        Some(init) => format!("{init}; {}", w.body),
+        None => w.body.clone(),
+      };
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&code)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the pieces must render")
+    };
+
+    assert!(widget.graphics_handle.is_some());
+    let assembled = render(&widget);
+    assert!(
+      assembled.contains("width=\"300\"")
+        && assembled.contains("height=\"300\""),
+      "ImageSize must reach Graphics: {assembled}"
+    );
+
+    // Every branch starts from the same assembled figure, so the picker
+    // alone changes nothing while the slider sits at zero.
+    for index in 1..5 {
+      match &mut widget.controls[0] {
+        manipulate::ControlState::Discrete { current_index, .. } => {
+          *current_index = index
+        }
+        other => panic!("expected the figure picker, got {other:?}"),
+      }
+      widget.reevaluate();
+      assert!(widget.error.is_none(), "figure {} errored", index + 1);
+      assert_eq!(
+        assembled,
+        render(&widget),
+        "at move = 0 every figure must show the undissected shape"
+      );
+    }
+
+    // Sliding "move" to the end takes each branch apart differently, so no
+    // two of the five rearrangements render alike.
+    let mut moved: Vec<String> = Vec::new();
+    for index in 0..5 {
+      match &mut widget.controls[0] {
+        manipulate::ControlState::Discrete { current_index, .. } => {
+          *current_index = index
+        }
+        other => panic!("expected the figure picker, got {other:?}"),
+      }
+      match &mut widget.controls[1] {
+        manipulate::ControlState::Continuous { current, .. } => *current = 1.0,
+        other => panic!("expected the move slider, got {other:?}"),
+      }
+      widget.reevaluate();
+      assert!(widget.error.is_none(), "figure {} errored", index + 1);
+      assert!(widget.graphics_handle.is_some());
+      moved.push(render(&widget));
+    }
+    // Branch 1 leaves the pieces alone whatever `move` reads; the other four
+    // each move them somewhere else.
+    assert_eq!(moved[0], assembled, "the first figure never comes apart");
+    for i in 1..5 {
+      assert_ne!(moved[i], assembled, "figure {} must move its pieces", i + 1);
+      for j in (i + 1)..5 {
+        assert_ne!(
+          moved[i],
+          moved[j],
+          "figures {} and {} coincide",
+          i + 1,
+          j + 1
+        );
+      }
+    }
+  }
+
   #[test]
   fn two_circular_windows_notebook_opens_with_its_widget() {
     // End-to-end regression for the "Two Circular Windows" Demonstration.
@@ -9895,9 +10062,11 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
-  fn label_char_count_uses_visible_glyphs_and_falls_back_to_name() {
-    // A short styled label counts its rendered glyphs (m₁ = 2), while an
-    // empty label falls back to the variable name. The widest of these
+  fn label_char_count_uses_visible_glyphs() {
+    // A short styled label counts its rendered glyphs (m₁ = 2), while a
+    // suppressed one (`{{θ, 0, ""}, …}`) counts nothing — an unlabelled
+    // control already carries its variable name as the label, so an empty
+    // label is the author's explicit "no caption". The widest of these
     // drives the shared label-column width, so a row of single-glyph
     // labels no longer reserves the old fixed 140px gutter.
     let m1 = manipulate::ControlState::Continuous {
@@ -9919,7 +10088,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       current: 0.0,
     };
     assert_eq!(manipulate_label_char_count(&m1), 2);
-    assert_eq!(manipulate_label_char_count(&empty), 5); // "theta"
+    assert_eq!(manipulate_label_char_count(&empty), 0);
   }
 
   // ── Result-output SVG rendering ──
@@ -13092,7 +13261,7 @@ Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}
 
   /// The SetterBar/PopupMenu split Wolfram's `Manipulate` makes on its own,
   /// pinned to the Demonstrations it was read off (see
-  /// [`renders_as_setter_bar`]). The interesting pair is four phrases (a bar)
+  /// [`renders_as_setter_bar`]). The interesting pair is five phrases (a bar)
   /// against six single words (a dropdown) — the narrower row is the dropdown,
   /// so a width rule can't produce this and a count rule has to.
   #[test]
@@ -13103,7 +13272,7 @@ Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}
       renders_as_setter_bar(&labels, &svgs)
     };
 
-    // Up to four choices stay a bar however long the labels are.
+    // Up to five choices stay a bar even when every label is a phrase.
     assert!(bar(&["4", "20", "100", "500"]));
     assert!(bar(&["3", "4", "5", "6"]));
     assert!(bar(&["Poisson", "Gaussian", "gamma", "inverse Gaussian"]));
@@ -13113,13 +13282,23 @@ Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}
       "stag hunt",
       "coordination",
     ]));
-
-    // Past four, short labels keep the bar...
     assert!(bar(&["2", "3", "4", "5", "6"]));
+    // A dissection Demonstration's five target figures: 55 characters of
+    // labels across five buttons is still a bar in Wolfram.
+    assert!(bar(&[
+      "quadrilateral",
+      "Greek cross",
+      "rhomboid",
+      "rectangle",
+      "right triangle",
+    ]));
+
+    // Past five, short labels keep the bar...
     assert!(bar(&["-3", "-2", "-1", "1", "2", "3", "4"]));
     assert!(bar(&["-3", "-2", "-1", "0", "1", "2", "3", "4"]));
 
-    // ...and wide ones don't.
+    // ...and wide ones don't. Five sentence-long labels overflow the row
+    // even though five phrase-long ones fit.
     assert!(!bar(&[
       "u(y)",
       "u'(y)",
@@ -13164,6 +13343,58 @@ Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}
       .map(|_| Some(svg::Handle::from_memory(Vec::new())))
       .collect();
     assert!(renders_as_setter_bar(&icons, &handles));
+  }
+
+  /// A control's caption: Wolfram writes the variable's own name when the
+  /// spec gives no label, and writes nothing when the spec gives `""`. The
+  /// two must not collapse into one another — a Demonstration suppresses a
+  /// caption precisely by passing the empty string.
+  #[test]
+  fn an_explicitly_empty_control_label_stays_empty() {
+    let control_labels = |code: &str| -> Vec<(String, usize)> {
+      let expr = woxi::interpret_to_expr(code).expect("parses");
+      let state =
+        manipulate::ManipulateState::from_expr(&expr).expect("builds a widget");
+      state
+        .controls
+        .iter()
+        .map(|c| {
+          let label = match c {
+            manipulate::ControlState::Continuous { label, .. }
+            | manipulate::ControlState::Discrete { label, .. } => label.clone(),
+            other => panic!("unexpected control {other:?}"),
+          };
+          (label, manipulate_label_char_count(c))
+        })
+        .collect()
+    };
+
+    // No label of its own: the variable name captions the slider and sizes
+    // the label column.
+    assert_eq!(
+      control_labels("Manipulate[x, {x, 0, 1}]"),
+      [("x".into(), 1)]
+    );
+    // An initial value but still no label behaves the same way.
+    assert_eq!(
+      control_labels("Manipulate[x, {{x, 0.5}, 0, 1}]"),
+      [("x".into(), 1)]
+    );
+    // An explicit label replaces the name.
+    assert_eq!(
+      control_labels("Manipulate[x, {{x, 0.5, \"move\"}, 0, 1}]"),
+      [("move".into(), 4)]
+    );
+    // An explicit empty label suppresses the caption entirely, and claims no
+    // width in the shared label column.
+    assert_eq!(
+      control_labels("Manipulate[x, {{x, 0.5, \"\"}, 0, 1}]"),
+      [(String::new(), 0)]
+    );
+    assert_eq!(
+      control_labels("Manipulate[n, {{n, 1, \"\"}, {1, 2, 3}}]"),
+      [(String::new(), 0)]
+    );
   }
 
   /// End-to-end regression for the "Regular Polygon Rolling on a Catenary"
