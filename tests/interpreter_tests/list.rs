@@ -10766,6 +10766,51 @@ mod join_non_list {
     );
   }
 
+  // A rule is `Rule[lhs, rhs]`, so ReplacePart reaches into it by position the
+  // same way it reaches into any other expression. Rubi's `FixIntRules[]`
+  // rewrites its whole rule base this way; before this worked, ReplacePart
+  // silently returned held rules unchanged.
+  #[test]
+  fn replace_part_into_rule() {
+    assert_eq!(interpret("ReplacePart[a -> b, 2 -> c]").unwrap(), "a -> c");
+    assert_eq!(
+      interpret("ReplacePart[a :> b, {1 -> p, 2 -> q}]").unwrap(),
+      "p :> q"
+    );
+    assert_eq!(
+      interpret("ReplacePart[a -> b, 0 -> RuleDelayed]").unwrap(),
+      "a :> b"
+    );
+    // A deep path through a delayed rule into a Condition's held right side.
+    assert_eq!(
+      interpret(
+        "ReplacePart[HoldPattern[f[x_]] :> Condition[a + b, test], \
+         {{2, 1, 1} -> xx, {2, 1, 2} -> yy}]"
+      )
+      .unwrap(),
+      "HoldPattern[f[x_]] :> xx + yy /; test"
+    );
+  }
+
+  // `x_Symbol` is `Pattern[x, Blank[Symbol]]`, so part 1 is the name.
+  #[test]
+  fn replace_part_into_pattern() {
+    assert_eq!(
+      interpret("ReplacePart[x_Symbol, 1 -> y]").unwrap(),
+      "y_Symbol"
+    );
+  }
+
+  // FullForm shows Infinity as DirectedInfinity[1], but wolframscript still
+  // leaves it alone here.
+  #[test]
+  fn replace_part_infinity_unchanged() {
+    assert_eq!(
+      interpret("ReplacePart[Infinity, 1 -> 2]").unwrap(),
+      "Infinity"
+    );
+  }
+
   #[test]
   fn replace_part_out_of_range_returns_original() {
     // Out-of-range positions are silently ignored, matching wolframscript.

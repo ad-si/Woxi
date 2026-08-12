@@ -1760,28 +1760,32 @@ fn assoc_position_index(spec: &Expr, pairs: &[(Expr, Expr)]) -> Option<usize> {
 }
 
 /// Decompose a subject into its replaceable parts and optional head name.
-/// Lists have no head; function calls and operator expressions (e.g. `x^2`,
-/// `a + b`, `-a`) are decomposed to their full-form head and children so that
-/// integer part indices address them like Wolfram's FullForm. Atoms (and
-/// special symbols such as `Infinity`) yield None and are left unchanged.
+/// Lists have no head; everything non-atomic — function calls, operator
+/// expressions (`x^2`, `a + b`, `-a`), rules, patterns — goes through the
+/// canonical [`decompose_expr`], so integer part indices address it exactly as
+/// Wolfram's FullForm does. Atoms yield None and are left unchanged.
 pub(crate) fn parts_and_head(
   expr: &Expr,
 ) -> Option<(Vec<Expr>, Option<String>)> {
+  use crate::functions::expr_form::{ExprForm, decompose_expr};
   match expr {
     Expr::List(items) => Some((items.to_vec(), None)),
-    Expr::FunctionCall { name, args } => {
-      Some((args.to_vec(), Some(name.clone())))
+    // FullForm shows these as `DirectedInfinity[…]`, but wolframscript leaves
+    // them untouched here: `ReplacePart[Infinity, 1 -> 2]` is `Infinity`.
+    Expr::Identifier(s) | Expr::Constant(s)
+      if s == "Infinity" || s == "ComplexInfinity" =>
+    {
+      None
     }
-    Expr::BinaryOp { .. } | Expr::UnaryOp { .. } | Expr::Comparison { .. } => {
-      use crate::functions::expr_form::{ExprForm, decompose_expr};
-      match decompose_expr(expr) {
-        ExprForm::Composite { head, children } if !children.is_empty() => {
-          Some((children, Some(head)))
-        }
-        _ => None,
-      }
-    }
-    _ => None,
+    // An association is addressed by key, not by FullForm position: the
+    // callers that support it (`ReplacePart`, `Delete`, `MapAt`) match on
+    // `Expr::Association` before reaching here, and the positional
+    // `ReplacePart[assoc, x, 1]` spelling stays unevaluated in wolframscript.
+    Expr::Association(_) => None,
+    _ => match decompose_expr(expr) {
+      ExprForm::Composite { head, children } => Some((children, Some(head))),
+      ExprForm::Atom(_) => None,
+    },
   }
 }
 

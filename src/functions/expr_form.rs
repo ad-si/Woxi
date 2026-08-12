@@ -331,20 +331,27 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
         3 => "BlankNullSequence",
         _ => "Blank",
       };
-      let blank = if let Some(h) = head {
-        Expr::FunctionCall {
-          name: blank_func_name.to_string(),
-          args: vec![Expr::Identifier(h.clone())].into(),
-        }
-      } else {
-        Expr::FunctionCall {
-          name: blank_func_name.to_string(),
-          args: vec![].into(),
-        }
-      };
+      let blank_args: Vec<Expr> = head
+        .as_ref()
+        .map(|h| vec![Expr::Identifier(h.clone())])
+        .unwrap_or_default();
+      // An anonymous pattern is the bare blank: `_Integer` is
+      // `Blank[Integer]`, not `Pattern[, Blank[Integer]]`.
+      if name.is_empty() {
+        return ExprForm::Composite {
+          head: blank_func_name.to_string(),
+          children: blank_args,
+        };
+      }
       ExprForm::Composite {
         head: "Pattern".to_string(),
-        children: vec![Expr::Identifier(name.clone()), blank],
+        children: vec![
+          Expr::Identifier(name.clone()),
+          Expr::FunctionCall {
+            name: blank_func_name.to_string(),
+            args: blank_args.into(),
+          },
+        ],
       }
     }
     Expr::PatternOptional {
@@ -352,20 +359,22 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       head,
       default,
     } => {
-      let blank = if let Some(h) = head {
-        Expr::FunctionCall {
-          name: "Blank".to_string(),
-          args: vec![Expr::Identifier(h.clone())].into(),
-        }
+      let blank = Expr::FunctionCall {
+        name: "Blank".to_string(),
+        args: head
+          .as_ref()
+          .map(|h| vec![Expr::Identifier(h.clone())])
+          .unwrap_or_default()
+          .into(),
+      };
+      // `_.` is `Optional[Blank[]]`; only a named `x_.` wraps in `Pattern`.
+      let pattern = if name.is_empty() {
+        blank
       } else {
         Expr::FunctionCall {
-          name: "Blank".to_string(),
-          args: vec![].into(),
+          name: "Pattern".to_string(),
+          args: vec![Expr::Identifier(name.clone()), blank].into(),
         }
-      };
-      let pattern = Expr::FunctionCall {
-        name: "Pattern".to_string(),
-        args: vec![Expr::Identifier(name.clone()), blank].into(),
       };
       let mut children = vec![pattern];
       if let Some(d) = default {

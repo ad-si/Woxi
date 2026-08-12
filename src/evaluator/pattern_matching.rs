@@ -2829,11 +2829,6 @@ fn min_args_for_patterns(pats: &[Expr]) -> usize {
 /// `Power[x, 2]`) and for Woxi's dedicated pattern variants (`x_` is
 /// `Pattern[x, Blank[]]`). Returns `None` for atoms, which have no parts.
 fn full_form_head_args(expr: &Expr) -> Option<(Expr, Vec<Expr>)> {
-  let blank = |head: &Option<String>, blank_type: u8| Expr::Pattern {
-    name: String::new(),
-    head: head.clone(),
-    blank_type,
-  };
   match expr {
     Expr::FunctionCall { name, args } => {
       Some((Expr::Identifier(name.clone()), args.to_vec()))
@@ -2843,29 +2838,16 @@ fn full_form_head_args(expr: &Expr) -> Option<(Expr, Vec<Expr>)> {
     }
     // `h[a][b]`: the head is the compound `h[a]`.
     Expr::CurriedCall { func, args } => Some(((**func).clone(), args.clone())),
-    // A named pattern is `Pattern[name, blank]`; an anonymous one is the
-    // bare `Blank[…]`/`BlankSequence[…]`/`BlankNullSequence[…]`.
-    Expr::Pattern {
-      name,
-      head,
-      blank_type,
-    } => {
-      let blank_head = match blank_type {
-        2 => "BlankSequence",
-        3 => "BlankNullSequence",
-        _ => "Blank",
-      };
-      let blank_args: Vec<Expr> = head
-        .as_ref()
-        .map(|h| vec![Expr::Identifier(h.clone())])
-        .unwrap_or_default();
-      if name.is_empty() {
-        Some((Expr::Identifier(blank_head.to_string()), blank_args))
-      } else {
-        Some((
-          Expr::Identifier("Pattern".to_string()),
-          vec![Expr::Identifier(name.clone()), blank(head, *blank_type)],
-        ))
+    // Patterns and everything else go through the canonical decomposition,
+    // which knows that `x_` is `Pattern[x, Blank[]]` and `_` is `Blank[]`.
+    Expr::Pattern { .. }
+    | Expr::PatternTest { .. }
+    | Expr::PatternOptional { .. } => {
+      match crate::functions::expr_form::decompose_expr(expr) {
+        crate::functions::expr_form::ExprForm::Composite { head, children } => {
+          Some((Expr::Identifier(head), children))
+        }
+        crate::functions::expr_form::ExprForm::Atom(_) => None,
       }
     }
     _ => crate::functions::expr_to_head_args(expr)

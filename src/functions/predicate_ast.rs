@@ -2133,6 +2133,18 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::syntax::comparison_head_and_args(operands, operators);
       args.len() as i128
     }
+    // Patterns count their FullForm parts: `x_` is Pattern[x, Blank[]] (2),
+    // `_Integer` is Blank[Integer] (1), `x_.` is Optional[Pattern[…]] (1).
+    Expr::Pattern { .. }
+    | Expr::PatternTest { .. }
+    | Expr::PatternOptional { .. } => {
+      match crate::functions::expr_form::decompose_expr(&stripped) {
+        crate::functions::expr_form::ExprForm::Composite {
+          children, ..
+        } => children.len() as i128,
+        crate::functions::expr_form::ExprForm::Atom(_) => 0,
+      }
+    }
     // Atoms: Integer, Real, String, Identifier, BigFloat, BigInteger, etc.
     _ => 0,
   };

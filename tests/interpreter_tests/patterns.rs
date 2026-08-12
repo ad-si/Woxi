@@ -4593,4 +4593,68 @@ mod call_patterns_nested_in_a_list_pattern {
       "{HoldPattern[cn8[{foo[a_, b_]}]] :> a + b}"
     );
   }
+
+  // A pattern is an ordinary expression, not an atom: `x_Symbol` is
+  // `Pattern[x, Blank[Symbol]]`, so Part and Length see two elements.
+  // Rubi's `FixIntRules[]` walks its rules this way (`rule[[1, 1, -1, 1]]`).
+  mod patterns_are_ordinary_expressions {
+    use super::*;
+
+    #[test]
+    fn part_reaches_into_a_named_pattern() {
+      assert_eq!(interpret("Part[x_Symbol, 0]").unwrap(), "Pattern");
+      assert_eq!(interpret("Part[x_Symbol, 1]").unwrap(), "x");
+      assert_eq!(interpret("Part[x_Symbol, 2]").unwrap(), "_Symbol");
+      assert_eq!(interpret("Part[x_, 1]").unwrap(), "x");
+      assert_eq!(interpret("Part[x_, 2]").unwrap(), "_");
+      // Negative indices count from the end, as everywhere else.
+      assert_eq!(interpret("Part[x_Symbol, -1]").unwrap(), "_Symbol");
+    }
+
+    #[test]
+    fn part_reaches_into_an_anonymous_pattern() {
+      // `_Integer` is the bare `Blank[Integer]` — no `Pattern` wrapper.
+      assert_eq!(interpret("Part[_Integer, 0]").unwrap(), "Blank");
+      assert_eq!(interpret("Part[_Integer, 1]").unwrap(), "Integer");
+      assert_eq!(
+        interpret("ToString[FullForm[_Integer]]").unwrap(),
+        "Blank[Integer]"
+      );
+      assert_eq!(
+        interpret("ToString[FullForm[__]]").unwrap(),
+        "BlankSequence[]"
+      );
+    }
+
+    #[test]
+    fn part_reaches_into_pattern_test_and_optional() {
+      // `x_?NumberQ` is PatternTest[Pattern[x, Blank[]], NumberQ].
+      assert_eq!(interpret("Part[x_?NumberQ, 1]").unwrap(), "x_");
+      assert_eq!(interpret("Part[x_?NumberQ, 2]").unwrap(), "NumberQ");
+      // `x_:2` is Optional[Pattern[x, Blank[]], 2].
+      assert_eq!(interpret("Part[x_:2, 1]").unwrap(), "x_");
+      assert_eq!(interpret("Part[x_:2, 2]").unwrap(), "2");
+    }
+
+    #[test]
+    fn length_counts_the_full_form_parts() {
+      assert_eq!(
+        interpret("Length /@ {x_Symbol, x_, x_?NumberQ, x_:2, x_., _Integer}")
+          .unwrap(),
+        "{2, 2, 2, 2, 1, 1}"
+      );
+    }
+
+    #[test]
+    fn a_part_chain_walks_a_stored_rule_down_to_the_pattern_name() {
+      assert_eq!(
+        interpret(
+          "r = HoldPattern[Int[u_, x_Symbol]] :> Condition[a + b, t]; \
+           {r[[1, 1, 2, 1]], r[[1, 1, -1]], r[[1, 1, -1, 1]]}"
+        )
+        .unwrap(),
+        "{x, x_Symbol, x}"
+      );
+    }
+  }
 }

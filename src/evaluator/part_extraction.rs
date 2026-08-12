@@ -896,6 +896,32 @@ fn extract_part_ast_rest(
         Ok(part_take_unevaluated(expr, index))
       }
     }
+    // A pattern is an ordinary expression, not an atom: `x_Symbol` is
+    // `Pattern[x, Blank[Symbol]]`, so `[[1]]` is `x` and `[[2]]` is `_Symbol`.
+    Expr::Pattern { .. }
+    | Expr::PatternTest { .. }
+    | Expr::PatternOptional { .. } => {
+      let crate::functions::expr_form::ExprForm::Composite { head, children } =
+        crate::functions::expr_form::decompose_expr(expr)
+      else {
+        return Ok(part_take_unevaluated(expr, index));
+      };
+      if idx == 0 {
+        return Ok(Expr::Identifier(head));
+      }
+      let len = children.len() as i64;
+      let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
+      if actual_idx >= 0 && actual_idx < len {
+        Ok(children[actual_idx as usize].clone())
+      } else {
+        let expr_str = crate::syntax::expr_to_string(expr);
+        crate::emit_message_to_stdout(&format!(
+          "Part::partw: Part {} of {} does not exist.",
+          idx, expr_str
+        ));
+        Ok(part_take_unevaluated(expr, index))
+      }
+    }
     Expr::Comparison {
       operands,
       operators,
