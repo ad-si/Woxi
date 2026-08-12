@@ -5399,6 +5399,108 @@ fn flat_logical_call(head: &str, left: &Expr, right: &Expr) -> Expr {
   }
 }
 
+/// Named-character operators that still need a right-hand operand, in both the
+/// long `\[Name]` spelling and the character it stands for. A line ending in
+/// one of these continues onto the next line, exactly like a trailing `+`.
+///
+/// Every infix operator of the grammar's `Operator` rule is here, plus the
+/// `RadicalOp` prefixes. The postfix operators (`\[Transpose]`,
+/// `\[ConjugateTranspose]`) are deliberately absent: they complete an
+/// expression rather than open one, so a line ending in one is a whole
+/// statement. Keep in sync with the grammar and [`operator_precedence`].
+pub const CONTINUING_NAMED_OPERATORS: &[&str] = &[
+  "\\[NotElement]",
+  "\u{2209}",
+  "\\[ReverseElement]",
+  "\u{220B}",
+  "\\[Element]",
+  "\u{2208}",
+  "\\[DirectedEdge]",
+  "\u{F3D5}",
+  "\\[UndirectedEdge]",
+  "\u{F3D4}",
+  "\\[Distributed]",
+  "\u{F3D2}",
+  "\\[Conditioned]",
+  "\u{F3D3}",
+  "\\[Function]",
+  "\u{F4A1}",
+  "\\[Cross]",
+  "\u{F4A0}",
+  "\u{F3C4}",
+  "\u{2A2F}",
+  "\\[TensorProduct]",
+  "\u{F3DA}",
+  "\\[CircleTimes]",
+  "\u{2297}",
+  "\\[CirclePlus]",
+  "\u{2295}",
+  "\\[CenterDot]",
+  "\u{00B7}",
+  "\\[Times]",
+  "\u{00D7}",
+  "\\[Divide]",
+  "\u{00F7}",
+  "\\[CircleMinus]",
+  "\u{2296}",
+  "\\[Star]",
+  "\u{22C6}",
+  "\\[Diamond]",
+  "\u{22C4}",
+  "\\[Backslash]",
+  "\u{2216}",
+  "\\[CircleDot]",
+  "\u{2299}",
+  "\\[SmallCircle]",
+  "\u{2218}",
+  "\\[Wedge]",
+  "\u{22C0}",
+  "\\[Vee]",
+  "\u{22C1}",
+  "\\[Cap]",
+  "\u{2322}",
+  "\\[Cup]",
+  "\u{2323}",
+  "\\[DoubleRightTee]",
+  "\u{22A8}",
+  "\\[RightTee]",
+  "\u{22A2}",
+  "\\[DoubleLeftTee]",
+  "\u{2AE4}",
+  "\\[LeftTee]",
+  "\u{22A3}",
+  "\\[Implies]",
+  "\u{F523}",
+  "\\[Equivalent]",
+  "\u{29E6}",
+  "\\[Nand]",
+  "\u{22BC}",
+  "\\[Nor]",
+  "\u{22BD}",
+  "\\[Xor]",
+  "\u{22BB}",
+  "\\[And]",
+  "\u{2227}",
+  "\\[Or]",
+  "\u{2228}",
+  "\\[Not]",
+  "\u{00AC}",
+  "\\[Sqrt]",
+  "\u{221A}",
+  "\\[CubeRoot]",
+  "\u{221B}",
+];
+
+/// Does this line's code (whitespace already squeezed out) end with a named
+/// operator that is still waiting for its right operand? A single trailing
+/// `]` is an ordinary closing bracket, so only a full `\[Name]` — or the
+/// character it stands for — counts.
+pub fn ends_with_continuing_named_operator(code_tail: &str) -> bool {
+  CONTINUING_NAMED_OPERATORS
+    .iter()
+    .any(|op| code_tail.ends_with(op))
+}
+
 /// Get precedence of an operator (higher = binds tighter).
 /// Matches Wolfram Language operator precedence ordering.
 fn operator_precedence(op: &str) -> u8 {

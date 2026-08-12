@@ -4165,6 +4165,22 @@ fn expand_char_escapes(input: &str) -> String {
   result
 }
 
+/// Append a code character to a line's rolling tail, keeping the tail bounded.
+/// Whitespace is skipped, so `f[x] \[Star]` ends in `\[Star]` either way.
+fn push_code_tail(tail: &mut String, ch: char) {
+  if ch.is_whitespace() {
+    return;
+  }
+  tail.push(ch);
+  // 32 bytes comfortably covers the longest named operator.
+  if tail.len() > 64 {
+    let cut = (tail.len() - 32..tail.len())
+      .find(|i| tail.is_char_boundary(*i))
+      .unwrap_or(0);
+    tail.drain(..cut);
+  }
+}
+
 /// Insert semicolons at top-level newline boundaries so the parser treats
 /// each logical line as a separate statement.  Newlines inside brackets,
 /// parentheses or braces are left alone (they're part of a multiline expression).
@@ -4182,6 +4198,10 @@ pub fn insert_statement_separators(input: &str) -> String {
   let mut line_has_code = false; // whether the current line has non-whitespace, non-comment content
   let mut last_code_char: Option<char> = None; // last meaningful (non-comment) character
   let mut prev_code_char: Option<char> = None; // second-to-last meaningful character
+  // Tail of the current line's code with whitespace squeezed out, so a
+  // trailing multi-character operator (`\[Star]`) can be recognized — a
+  // single `last_code_char` of `]` cannot tell it from a closing bracket.
+  let mut code_tail = String::new();
   // Deferred semicolon: instead of inserting `;` immediately at a newline,
   // we record the position where it should go. We only actually insert it
   // when we later encounter actual code on a subsequent line. This avoids
@@ -4225,6 +4245,7 @@ pub fn insert_statement_separators(input: &str) -> String {
       line_has_code = true;
       prev_code_char = last_code_char;
       last_code_char = Some(ch);
+      push_code_tail(&mut code_tail, ch);
       i += 1;
       continue;
     }
@@ -4232,6 +4253,7 @@ pub fn insert_statement_separators(input: &str) -> String {
       result.push(ch);
       prev_code_char = last_code_char;
       last_code_char = Some(ch);
+      push_code_tail(&mut code_tail, ch);
       i += 1;
       continue;
     }
@@ -4253,6 +4275,8 @@ pub fn insert_statement_separators(input: &str) -> String {
       line_has_code = true;
       prev_code_char = Some('<');
       last_code_char = Some('|');
+      push_code_tail(&mut code_tail, '<');
+      push_code_tail(&mut code_tail, '|');
       result.push('<');
       result.push('|');
       i += 2;
@@ -4265,6 +4289,8 @@ pub fn insert_statement_separators(input: &str) -> String {
       line_has_code = true;
       prev_code_char = Some('|');
       last_code_char = Some('>');
+      push_code_tail(&mut code_tail, '|');
+      push_code_tail(&mut code_tail, '>');
       result.push('|');
       result.push('>');
       i += 2;
@@ -4326,7 +4352,8 @@ pub fn insert_statement_separators(input: &str) -> String {
         && !ends_with_set_delayed
         && !ends_with_tag_set
         && !ends_with_operator
-        && !ends_with_prefix_not;
+        && !ends_with_prefix_not
+        && !crate::syntax::ends_with_continuing_named_operator(&code_tail);
 
       if needs_semi {
         // Defer the semicolon — record position before the newline
@@ -4338,6 +4365,7 @@ pub fn insert_statement_separators(input: &str) -> String {
       line_has_code = false;
       last_code_char = None;
       prev_code_char = None;
+      code_tail.clear();
     } else if ch == '\n' {
       // Newline inside nesting — just pass through
       result.push(ch);
@@ -4350,6 +4378,7 @@ pub fn insert_statement_separators(input: &str) -> String {
         line_has_code = true;
         prev_code_char = last_code_char;
         last_code_char = Some(ch);
+        push_code_tail(&mut code_tail, ch);
       }
       result.push(ch);
     }
@@ -4388,6 +4417,9 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
   let mut current_has_code = false; // tracks whether the current buffer has actual code (not just comments/whitespace)
   let mut last_code_char: Option<char> = None;
   let mut prev_code_char: Option<char> = None;
+  // See `insert_statement_separators`: a trailing `\[Star]` is only visible in
+  // the whitespace-squeezed tail, not in `last_code_char`.
+  let mut code_tail = String::new();
   let chars: Vec<char> = trimmed.chars().collect();
   let len = chars.len();
   let mut i = 0;
@@ -4434,6 +4466,7 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
       line_has_code = true;
       prev_code_char = last_code_char;
       last_code_char = Some(ch);
+      push_code_tail(&mut code_tail, ch);
       i += 1;
       continue;
     }
@@ -4441,6 +4474,7 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
       current.push(ch);
       prev_code_char = last_code_char;
       last_code_char = Some(ch);
+      push_code_tail(&mut code_tail, ch);
       i += 1;
       continue;
     }
@@ -4452,6 +4486,8 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
       current_has_code = true;
       prev_code_char = Some('<');
       last_code_char = Some('|');
+      push_code_tail(&mut code_tail, '<');
+      push_code_tail(&mut code_tail, '|');
       current.push('<');
       current.push('|');
       i += 2;
@@ -4462,6 +4498,8 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
       current_has_code = true;
       prev_code_char = Some('|');
       last_code_char = Some('>');
+      push_code_tail(&mut code_tail, '|');
+      push_code_tail(&mut code_tail, '>');
       current.push('|');
       current.push('>');
       i += 2;
@@ -4519,7 +4557,8 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
         && !ends_with_tag_set
         && !ends_with_condition
         && !ends_with_operator
-        && !ends_with_prefix_not;
+        && !ends_with_prefix_not
+        && !crate::syntax::ends_with_continuing_named_operator(&code_tail);
 
       if should_split {
         let stmt = current.trim().to_string();
@@ -4535,6 +4574,7 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
       line_has_code = false;
       last_code_char = None;
       prev_code_char = None;
+      code_tail.clear();
     } else if ch == '\n' {
       // Newline inside nesting — just pass through
       current.push(ch);
@@ -4544,6 +4584,7 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
         current_has_code = true;
         prev_code_char = last_code_char;
         last_code_char = Some(ch);
+        push_code_tail(&mut code_tail, ch);
       }
       current.push(ch);
     }

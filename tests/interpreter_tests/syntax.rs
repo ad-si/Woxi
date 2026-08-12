@@ -6958,6 +6958,51 @@ mod line_continuation {
     // Same regression for `//.` (ReplaceRepeated).
     assert_eq!(interpret("f[g[a]] //.\n  f[x_] :> x").unwrap(), "g[a]");
   }
+
+  // Regression: a named-character operator at end of line must continue on the
+  // next line, exactly like a trailing `+`. The statement splitter only looked
+  // at the last code character, which for `\[Star]` is `]` — indistinguishable
+  // from a closing bracket — so it inserted a spurious `;`. Rubi writes its
+  // distribution operator this way 6583 times, which broke 76 of its 200 rule
+  // files at parse time.
+  #[test]
+  fn named_operator_across_newline() {
+    assert_eq!(interpret("a \\[Star]\n  b").unwrap(), "a ⋆ b");
+    assert_eq!(interpret("a \\[CircleDot]\n  b").unwrap(), "a ⊙ b");
+    assert_eq!(interpret("a \\[CirclePlus]\n  b").unwrap(), "a ⊕ b");
+    assert_eq!(interpret("True \\[And]\n  False").unwrap(), "False");
+    assert_eq!(
+      interpret("Cross[a, b]").unwrap(),
+      interpret("a \\[Cross]\n  b").unwrap()
+    );
+    // The bare character spells the same operator and continues the same way.
+    assert_eq!(interpret("a \u{22C6}\n  b").unwrap(), "a ⋆ b");
+  }
+
+  #[test]
+  fn named_operator_across_newline_in_a_definition() {
+    // The shape Rubi's rule files use: a `:=` body split across lines at the
+    // Star operator, with the condition on the line after.
+    assert_eq!(
+      interpret(
+        "dist[u_, v_] := u \\[Star]\n  v;\nStar[p_, q_] := p*q;\ndist[2, 3]"
+      )
+      .unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn postfix_named_operator_ends_the_line() {
+    // `\[Transpose]` completes an expression, so it must NOT swallow the next
+    // line the way an infix operator does.
+    assert_eq!(
+      interpret("{{1, 2}, {3, 4}}\\[Transpose]\n{5, 6}").unwrap(),
+      "{5, 6}"
+    );
+    // A named character that is not an operator likewise ends the statement.
+    assert_eq!(interpret("\\[Alpha]\n{5, 6}").unwrap(), "{5, 6}");
+  }
 }
 
 mod structural_pattern_consistency {
