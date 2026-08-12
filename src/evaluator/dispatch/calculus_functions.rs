@@ -765,7 +765,8 @@ pub fn dispatch_calculus_functions(
     }
     "DSolveValue" if args.len() == 3 => {
       // DSolveValue[eqs, y[x], x] = value from DSolve[eqs, y[x], x]
-      let result = crate::functions::ode_ast::dsolve_ast(args);
+      let result =
+        crate::functions::ode_ast::dsolve_ast_with_head(args, "DSolveValue");
       return Some(match result {
         Ok(result_expr) => extract_value_from_solve_result(&result_expr)
           .map(Ok)
@@ -780,7 +781,8 @@ pub fn dispatch_calculus_functions(
       return Some(crate::functions::ode_ast::ndsolve_ast(args));
     }
     "NDSolveValue" if args.len() >= 3 => {
-      let result = crate::functions::ode_ast::ndsolve_ast(args);
+      let result =
+        crate::functions::ode_ast::ndsolve_ast_with_head(args, "NDSolveValue");
       return Some(match result {
         Ok(result_expr) => extract_value_from_solve_result(&result_expr)
           .map(Ok)

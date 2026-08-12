@@ -12,17 +12,43 @@ use crate::functions::math_ast::{make_sqrt, rat_reduce};
 /// DSolve[eqn, y[x], x] or DSolve[{eqn, ic1, ...}, y[x], x]
 /// Also DSolve[eqn, y, x] (returns Function form)
 pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  dsolve_ast_with_head(args, "DSolve")
+}
+
+/// Same as [`dsolve_ast`], but an unevaluated result is returned under `head`.
+/// `DSolveValue` delegates here, and an equation neither can solve must come
+/// back as `DSolveValue[…]`, not as the `DSolve[…]` it delegated to.
+pub fn dsolve_ast_with_head(
+  args: &[Expr],
+  head: &str,
+) -> Result<Expr, InterpreterError> {
   // An ODE Woxi can't classify/solve should stay unevaluated (like
   // wolframscript for genuinely unsolvable equations) rather than leaking an
   // internal "DSolve: …" error to the user.
-  match dsolve_ast_inner(args) {
+  let result = match dsolve_ast_inner(args) {
     Err(InterpreterError::EvaluationError(msg))
       if msg.starts_with("DSolve:") =>
     {
       Ok(unevaluated("DSolve", args))
     }
     other => other,
+  };
+  result.map(|expr| retag_unevaluated(expr, "DSolve", head))
+}
+
+/// Rewrite the head of an unevaluated `solver[args…]` result, leaving genuine
+/// solutions untouched.
+fn retag_unevaluated(expr: Expr, from: &str, to: &str) -> Expr {
+  if from != to
+    && let Expr::FunctionCall { name, args } = &expr
+    && name == from
+  {
+    return Expr::FunctionCall {
+      name: to.to_string(),
+      args: args.clone(),
+    };
   }
+  expr
 }
 
 fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -235,6 +261,20 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// NDSolve[{eqn, ic1, ...}, y[x], {x, xmin, xmax}]
 /// Also NDSolve[{eqn, ic1, ...}, y, {x, xmin, xmax}]
 pub fn ndsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  ndsolve_ast_with_head(args, "NDSolve")
+}
+
+/// Same as [`ndsolve_ast`], but an unevaluated result is returned under
+/// `head`, so `NDSolveValue` keeps its own head instead of the `NDSolve` it
+/// delegates to.
+pub fn ndsolve_ast_with_head(
+  args: &[Expr],
+  head: &str,
+) -> Result<Expr, InterpreterError> {
+  ndsolve_ast_inner(args).map(|expr| retag_unevaluated(expr, "NDSolve", head))
+}
+
+fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Split trailing option rules (`Method -> …`, `MaxSteps -> …`, …) from
   // the three positional arguments.
   let n_pos = args
@@ -4365,11 +4405,6 @@ fn try_euler_pde_body(
     name: "Log".to_string(),
     args: vec![n_var(xn)].into(),
   };
-  let log_term = if c == 1 {
-    log_x
-  } else {
-    times2(Expr::Integer(c), log_x)
-  };
   let y_over_x = div2(n_var(yn), n_var(xn));
   let c1_applied = Expr::CurriedCall {
     func: Box::new(Expr::FunctionCall {
@@ -4377,6 +4412,16 @@ fn try_euler_pde_body(
       args: vec![Expr::Integer(1)].into(),
     }),
     args: vec![y_over_x],
+  };
+  // `c == 0` drops the logarithm entirely; keeping `0*Log[x]` would leak an
+  // unfolded zero term into the solution.
+  if c == 0 {
+    return Some(c1_applied);
+  }
+  let log_term = if c == 1 {
+    log_x
+  } else {
+    times2(Expr::Integer(c), log_x)
   };
   let body = plus2(log_term, c1_applied);
   Some(body)

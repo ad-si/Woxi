@@ -9507,6 +9507,39 @@ mod ndsolve_value {
     .unwrap();
     assert_eq!(result, "1.");
   }
+
+  /// An equation the numeric solver can't handle (a PDE) stays unevaluated
+  /// under its own head — it used to come back as the `NDSolve` that
+  /// `NDSolveValue` delegates to.
+  #[test]
+  fn unsolvable_keeps_its_own_head() {
+    assert_eq!(
+      interpret(
+        "NDSolveValue[{D[u[x, t], t] == D[u[x, t], x, x]}, u, {x, 0, 1}, {t, 0, 1}]"
+      )
+      .unwrap(),
+      "NDSolveValue[{Derivative[0, 1][u][x, t] == Derivative[2, 0][u][x, t]}, \
+       u, {x, 0, 1}, {t, 0, 1}]"
+    );
+  }
+}
+
+mod dsolve_value_unevaluated {
+  use super::*;
+
+  /// Same for the symbolic solver: `DSolveValue` must not report itself as
+  /// `DSolve` when it leaves an equation unsolved.
+  #[test]
+  fn unsolvable_keeps_its_own_head() {
+    assert_eq!(
+      interpret(
+        "DSolveValue[D[u[x, y], x, x] + D[u[x, y], y, y] == 0, u, {x, y}]"
+      )
+      .unwrap(),
+      "DSolveValue[Derivative[0, 2][u][x, y] + Derivative[2, 0][u][x, y] == 0, \
+       u, {x, y}]"
+    );
+  }
 }
 
 mod wronskian {
@@ -13056,6 +13089,14 @@ mod cases {
     assert_case(
       r#"DSolve[y''[x] == 0, y[x], x]; DSolve[y''[x] == y[x], y[x], x]; DSolve[y''[x] == y[x], y, x]; DSolve[D[f[x, y], x] / f[x, y] + 3 D[f[x, y], y] / f[x, y] == 2, f, {x, y}]; DSolve[D[f[x, y], x] x + D[f[x, y], y] y == 2, f[x, y], {x, y}]"#,
       r#"{{f[x, y] -> 2*Log[x] + C[1][y/x]}}"#,
+    );
+  }
+  #[test]
+  fn d_solve_euler_pde_zero_rhs() {
+    // Regression: the `c == 0` case used to leak an unfolded `0*Log[x]` term.
+    assert_case(
+      r#"DSolve[x D[f[x, y], x] + y D[f[x, y], y] == 0, f, {x, y}]"#,
+      r#"{{f -> Function[{x, y}, C[1][y/x]]}}"#,
     );
   }
   #[test]
