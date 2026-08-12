@@ -623,6 +623,44 @@ fn audio_measurements_accepts_play_expression() {
   );
 }
 
+// A `SampleRate -> r` option on `Play` sets the rate the amplitude function
+// is synthesized at — the rate the sound reports and the number of samples
+// one second of it holds.
+#[test]
+fn play_honors_its_sample_rate_option() {
+  let form =
+    |code: &str| interpret(&format!("ToString[{code}, InputForm]")).unwrap();
+  assert_eq!(
+    form("AudioSampleRate[Play[Sin[t], {t, 0, 1}]]"),
+    "Quantity[8000, \"Hertz\"]"
+  );
+  assert_eq!(
+    form("AudioSampleRate[Play[Sin[t], {t, 0, 1}, SampleRate -> 2^13]]"),
+    "Quantity[8192, \"Hertz\"]"
+  );
+  // The sound still lasts a second — it just holds `rate` samples of it.
+  assert_eq!(
+    form("AudioLength[Play[Sin[t], {t, 0, 1}, SampleRate -> 2^13]]"),
+    "Quantity[8192, \"Samples\"]"
+  );
+  assert_eq!(
+    form("AudioLength[Play[Sin[t], {t, 0, 1}]]"),
+    "Quantity[8000, \"Samples\"]"
+  );
+}
+
+// An unusable rate falls back to the 8000 Hz default rather than dropping
+// the sound.
+#[test]
+fn play_falls_back_to_the_default_rate() {
+  let form =
+    |code: &str| interpret(&format!("ToString[{code}, InputForm]")).unwrap();
+  assert_eq!(
+    form("AudioSampleRate[Play[Sin[t], {t, 0, 1}, SampleRate -> 0]]"),
+    "Quantity[8000, \"Hertz\"]"
+  );
+}
+
 // ─── Capture / web search stubs ──────────────────────────────────────────────
 
 #[test]

@@ -12413,6 +12413,105 @@ mod graphics_grid {
     assert!(svg.contains("font-size=\"14\""), "Should have font-size 14");
   }
 
+  /// `Style[…, FontFamily -> "…"]` picks the face a cell is set in; cells
+  /// without one keep the sans-serif default.
+  #[test]
+  fn grid_style_font_family() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Grid[{{Style[\"serif cell\", FontFamily -> \"Times\"], \"plain\"}}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(
+      svg.contains("font-family=\"Times\""),
+      "cell should be set in Times, got: {svg}"
+    );
+    assert!(
+      svg.contains("font-family=\"sans-serif\""),
+      "the unstyled cell should keep the default face, got: {svg}"
+    );
+  }
+
+  /// A `FontFamily` on the whole grid reaches every cell that does not name
+  /// a face of its own.
+  #[test]
+  fn grid_font_family_from_outer_style() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Style[Grid[{{\"a\", \"b\"}}], FontFamily -> \"Courier\"]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert_eq!(
+      svg.matches("font-family=\"Courier\"").count(),
+      2,
+      "both cells should inherit the face, got: {svg}"
+    );
+  }
+
+  #[test]
+  fn column_and_row_style_font_family() {
+    clear_state();
+    let column = interpret_with_stdout(
+      "Column[{Style[\"one\", FontFamily -> \"Times\"], \"two\"}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(
+      column.contains("font-family=\"Times\""),
+      "column item should be set in Times, got: {column}"
+    );
+    let row = interpret_with_stdout(
+      "Row[{Style[\"one\", FontFamily -> \"Times\"], \"two\"}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(
+      row.contains("font-family=\"Times\""),
+      "row item should be set in Times, got: {row}"
+    );
+  }
+
+  /// A sound in a layout draws the sound box a notebook shows for it — a
+  /// play button and the waveform — instead of the `Play[…]` source text.
+  #[test]
+  fn grid_cell_that_is_a_sound_draws_a_sound_box() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Grid[{{\"tone\", Play[Sin[2 Pi 440 t], {t, 0, 0.2}]}}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(
+      !svg.contains("Play["),
+      "the sound should be drawn, not printed as source, got: {svg}"
+    );
+    // The play button is the circle-and-triangle pair of the sound box.
+    assert!(svg.contains("<circle"), "{svg}");
+    assert!(svg.contains("<polygon"), "{svg}");
+    // The waveform is drawn as one bar per column.
+    assert!(svg.matches("<line").count() > 10, "{svg}");
+  }
+
+  #[test]
+  fn column_item_that_is_a_sound_draws_a_sound_box() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Column[{\"tone\", Sound[Play[Sin[t], {t, 0, 1}]]}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(!svg.contains("Play["), "{svg}");
+    assert!(svg.contains("<polygon"), "{svg}");
+  }
+
   /// An `Invisible[…]` cell is laid out like any other but painted with no
   /// fill, so a grid keeps its shape while the cell reads blank.
   #[test]
@@ -18683,6 +18782,70 @@ mod manipulate {
     let bindings = manipulate_initial_bindings(&spec);
     let code = manipulate_block_code(&spec.body_code, &bindings);
     assert_eq!(interpret(&format!("Head[{}]", code)).unwrap(), "Graphics");
+  }
+
+  /// End-to-end regression for the shape a "waveform and sound" Wolfram
+  /// Demonstration has: a `Grid` body pairing typeset headings with a
+  /// multi-curve `Plot` and a `Play` carrying a `SampleRate` option, driven
+  /// by sliders whose labels are `Style`d in colour.
+  #[test]
+  fn spec_grid_of_plot_and_sound_demonstration_manipulate() {
+    clear_state();
+    let expr = interpret_to_expr(
+      "Manipulate[\
+       Grid[{\
+       {Style[\"waves\", FontFamily -> \"Times\"], \
+        Style[\"tone\", FontFamily -> \"Times\"]},\
+       {Plot[{a Sin[f 2 Pi x], b Sin[g 2 Pi x], \
+        a Sin[f 2 Pi x] + b Sin[g 2 Pi x]}, {x, 0, window}, \
+        PlotRange -> {Automatic, (a + b) {-1, 1}}, ImageSize -> {300, 250}, \
+        PlotStyle -> {{Red, Thick}, {Blue, Thick}, {Dashed, Black}}], \
+        Play[a Sin[50 f 2 Pi x] + b Sin[50 g 2 Pi x], {x, 0, 1}, \
+        SampleRate -> 2^13]}}], \
+       {{f, 3, Style[\"first frequency\", Red]}, 1, 10, 0.5}, \
+       {{a, 2, \"first amplitude\"}, 0, 3, 0.5}, \
+       {{g, 8, Style[\"second frequency\", Blue]}, 1, 10, 0.5}, \
+       {{b, 1, \"second amplitude\"}, 0, 3, 0.5}, \
+       {{window, 1, \"time window\"}, 0.25, 2, 0.05}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    assert!(!spec.animated);
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Continuous { name, .. } => name.as_str(),
+        other => panic!("expected continuous control, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, vec!["f", "a", "g", "b", "window"]);
+    // A `Style[label, Red]` control label keeps its colour.
+    match &spec.controls[0] {
+      ManipulateControl::Continuous { label_runs, .. } => {
+        assert_eq!(label_runs.len(), 1);
+        assert_eq!(label_runs[0].color, Some((1.0, 0.0, 0.0)));
+      }
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+
+    // The body with the initial bindings renders as one picture holding the
+    // headings, the plot and the sound.
+    let bindings = manipulate_initial_bindings(&spec);
+    let code = manipulate_block_code(&spec.body_code, &bindings);
+    let svg = interpret_with_stdout(&code).unwrap().graphics.unwrap();
+    assert!(
+      svg.contains("font-family=\"Times\""),
+      "the headings keep the face they asked for, got: {svg}"
+    );
+    assert!(
+      !svg.contains("Play["),
+      "the sound is drawn, not printed as source, got: {svg}"
+    );
+    assert!(
+      svg.contains("<polygon"),
+      "the sound box draws a play button, got: {svg}"
+    );
   }
 
   #[test]

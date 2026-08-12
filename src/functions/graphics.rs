@@ -10903,6 +10903,8 @@ pub struct GridStyle {
   pub font_weight: Option<&'static str>,
   pub font_style: Option<&'static str>,
   pub font_size: Option<f64>,
+  /// The font family a `FontFamily -> "…"` directive asks for.
+  pub font_family: Option<String>,
   pub(crate) color: Option<Color>,
 }
 
@@ -10976,15 +10978,29 @@ pub(crate) fn peel_invisible(expr: &Expr) -> Option<&Expr> {
   }
 }
 
+/// The appearance a `Style[content, directives…]` cell asks for, as used by
+/// the `Grid`/`Column`/`Row` layout renderers.
+pub(crate) struct CellTextStyle<'a> {
+  /// The styled content, with the `Style`/`Invisible` wrappers peeled off.
+  pub content: &'a Expr,
+  pub font_size: Option<f64>,
+  pub font_weight: &'static str,
+  pub font_style: &'static str,
+  /// The font family a `FontFamily -> "…"` directive asks for.
+  pub font_family: Option<String>,
+  pub color: Option<Color>,
+  /// Set by an `Invisible[…]` wrapper: the cell is laid out but not painted.
+  pub hidden: bool,
+}
+
 /// Extract style info from a Style[content, directives...] cell.
-/// Returns (content, font_size, font_weight, font_style, color, invisible).
-fn extract_cell_style(
-  cell: &Expr,
-) -> (&Expr, Option<f64>, &str, &str, Option<Color>, bool) {
+fn extract_cell_style(cell: &Expr) -> CellTextStyle<'_> {
   // `Invisible[Style[…]]` — the wrapper outside the styling.
   if let Some(inner) = peel_invisible(cell) {
-    let (content, fs, fw, fst, color, _) = extract_cell_style(inner);
-    return (content, fs, fw, fst, color, true);
+    return CellTextStyle {
+      hidden: true,
+      ..extract_cell_style(inner)
+    };
   }
   if let Expr::FunctionCall { name, args } = cell
     && is_style_wrapper(name)
@@ -10999,6 +11015,7 @@ fn extract_cell_style(
     let mut fs: Option<f64> = None;
     let mut fw = "normal";
     let mut fst = "normal";
+    let mut ff: Option<String> = None;
     let mut color: Option<Color> = None;
     for directive in &args[1..] {
       match directive {
@@ -11036,6 +11053,13 @@ fn extract_cell_style(
                 fst = "italic";
               }
             }
+            "FontFamily" => {
+              if let Expr::String(v) | Expr::Identifier(v) =
+                replacement.as_ref()
+              {
+                ff = Some(v.clone());
+              }
+            }
             "FontColor" => {
               if let Some(c) = parse_color(replacement) {
                 color = Some(c);
@@ -11051,9 +11075,25 @@ fn extract_cell_style(
         }
       }
     }
-    return (content, fs, fw, fst, color, invisible);
+    return CellTextStyle {
+      content,
+      font_size: fs,
+      font_weight: fw,
+      font_style: fst,
+      font_family: ff,
+      color,
+      hidden: invisible,
+    };
   }
-  (cell, None, "normal", "normal", None, false)
+  CellTextStyle {
+    content: cell,
+    font_size: None,
+    font_weight: "normal",
+    font_style: "normal",
+    font_family: None,
+    color: None,
+    hidden: false,
+  }
 }
 
 /// Parse Style directives into a GridStyle.
@@ -11075,12 +11115,20 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
         pattern,
         replacement,
       } => {
-        if let Expr::Identifier(k) = pattern.as_ref()
-          && k == "FontSize"
-        {
-          match replacement.as_ref() {
-            Expr::Integer(n) => gs.font_size = Some(*n as f64),
-            Expr::Real(f) => gs.font_size = Some(*f),
+        if let Expr::Identifier(k) = pattern.as_ref() {
+          match k.as_str() {
+            "FontSize" => match replacement.as_ref() {
+              Expr::Integer(n) => gs.font_size = Some(*n as f64),
+              Expr::Real(f) => gs.font_size = Some(*f),
+              _ => {}
+            },
+            "FontFamily" => {
+              if let Expr::String(f) | Expr::Identifier(f) =
+                replacement.as_ref()
+              {
+                gs.font_family = Some(f.clone());
+              }
+            }
             _ => {}
           }
         }
@@ -11096,6 +11144,9 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
         }
         if inner.font_size.is_some() {
           gs.font_size = inner.font_size;
+        }
+        if inner.font_family.is_some() {
+          gs.font_family = inner.font_family;
         }
         if inner.color.is_some() {
           gs.color = inner.color;
@@ -11128,6 +11179,11 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     // for its SVG directly.
     Expr::FunctionCall { name, .. } if is_graphics_producing_head(name) => {
       crate::evaluator::expr_to_svg(cell)
+    }
+    // A sound cell shows the sound box a notebook draws for it — a play
+    // button and the waveform — rather than the `Play[…]` source text.
+    Expr::FunctionCall { name, .. } if name == "Sound" || name == "Play" => {
+      crate::functions::sound::sound_svg(cell)?
     }
     // As above, a display wrapper that resolves to a picture is drawn
     // rather than printed as source.
@@ -12227,8 +12283,15 @@ fn grid_svg_styled_internal(
         }
       } else {
         // Text cell — extract optional Style attributes
-        let (content, cell_fs, cell_fw, cell_fst, cell_color, cell_hidden) =
-          extract_cell_style(cell);
+        let CellTextStyle {
+          content,
+          font_size: cell_fs,
+          font_weight: cell_fw,
+          font_style: cell_fst,
+          font_family: cell_ff,
+          color: cell_color,
+          hidden: cell_hidden,
+        } = extract_cell_style(cell);
 
         // Detect `Hyperlink[displayText, url]` cells so the grid can render
         // them as clickable SVG anchors. The display text and href are kept
@@ -12269,6 +12332,13 @@ fn grid_svg_styled_internal(
         } else {
           String::new()
         };
+        // `Style[…, FontFamily -> "Times"]` on the cell, or on the whole
+        // grid, picks the face the text is set in; everything else stays
+        // with the sans-serif default.
+        let ff = cell_ff
+          .as_deref()
+          .or(default_style.font_family.as_deref())
+          .unwrap_or("sans-serif");
         // Hyperlink cells default to a link-blue fill (overridable via
         // explicit Style[..., color]). Plain cells use the cell/default/theme
         // colors as before.
@@ -12295,7 +12365,8 @@ fn grid_svg_styled_internal(
           ""
         };
         let text_elem = format!(
-          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"sans-serif\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",
+          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",
+          ff = svg_escape(ff),
         );
         if let Some(href) = link_href {
           svg.push_str(&format!(
@@ -14714,6 +14785,9 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // A `Framed[…]` box draws its border and its content; a `Column`
       // item that is one used to print as source.
       "Framed" if !args.is_empty() => return framed_to_svg(&args),
+      // A sound item shows the sound box a notebook draws for it — a play
+      // button and the waveform — rather than the `Play[…]` source text.
+      "Sound" | "Play" => return crate::functions::sound::sound_svg(expr),
       // `TraditionalForm[expr]` is typeset in conventional notation —
       // `=` for `Equal`, `≤` for `LessEqual`, `sin(x)` for `Sin[x]`,
       // stacked fractions — by the same box pipeline the top-level
@@ -14850,12 +14924,10 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
 
   // The appearance a text item's own `Style[…]` asks for; its size drives
   // both the cell's width and the row's height.
-  fn text_style(
-    e: &Expr,
-    default_size: f64,
-  ) -> (&Expr, f64, &str, &str, Option<Color>, bool) {
-    let (content, fs, fw, fst, color, hidden) = extract_cell_style(e);
-    (content, fs.unwrap_or(default_size), fw, fst, color, hidden)
+  fn text_style(e: &Expr, default_size: f64) -> (CellTextStyle<'_>, f64) {
+    let style = extract_cell_style(e);
+    let size = style.font_size.unwrap_or(default_size);
+    (style, size)
   }
 
   // Compute column width from widest item
@@ -14864,8 +14936,9 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
     .map(|c| match c {
       Cell::Svg { width, .. } => *width,
       Cell::Text(e) => {
-        let (content, fs, ..) = text_style(e, font_size);
-        estimate_display_width(content) * char_width * (fs / font_size) + pad_x
+        let (style, fs) = text_style(e, font_size);
+        estimate_display_width(style.content) * char_width * (fs / font_size)
+          + pad_x
       }
     })
     .fold(0.0_f64, f64::max);
@@ -14907,20 +14980,26 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
     match cell {
       Cell::Text(expr) => {
         let cy = y_cursor + h / 2.0;
-        let (content, fs, fw, fst, color, hidden) = text_style(expr, font_size);
+        let (style, fs) = text_style(expr, font_size);
+        let (fw, fst) = (style.font_weight, style.font_style);
         // An `Invisible[…]` row is measured and placed like any other but
         // painted with no fill, so the column keeps its height and width
         // while the row itself reads blank.
-        let fill = if hidden {
+        let fill = if style.hidden {
           "none".to_string()
         } else {
-          color
+          style
+            .color
             .map(|c| c.to_svg_rgb())
             .unwrap_or_else(|| text_fill.to_string())
         };
+        // `Style[…, FontFamily -> "Times"]` picks the face; without one the
+        // column keeps its monospace default.
+        let ff = style.font_family.as_deref().unwrap_or("monospace");
         svg.push_str(&format!(
-          "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\" fill=\"{fill}\" text-anchor=\"{alignment}\" dominant-baseline=\"central\">{}</text>\n",
-          expr_to_svg_markup(content)
+          "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\" fill=\"{fill}\" text-anchor=\"{alignment}\" dominant-baseline=\"central\">{content}</text>\n",
+          ff = svg_escape(ff),
+          content = expr_to_svg_markup(style.content),
         ));
       }
       Cell::Svg {
@@ -15062,6 +15141,8 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
       size: f64,
       weight: String,
       slant: String,
+      /// The face `FontFamily -> "…"` asked for; empty keeps the default.
+      family: String,
     },
   }
 
@@ -15101,6 +15182,7 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
       size: st.font_size,
       weight: st.font_weight,
       slant: st.font_style,
+      family: st.font_family,
     }
   };
 
@@ -15137,6 +15219,7 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
               size: font_size,
               weight: "normal".to_string(),
               slant: "normal".to_string(),
+              family: String::new(),
             },
             None => make_text_cell(&resolved),
           },
@@ -15233,6 +15316,7 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
         size,
         weight,
         slant,
+        family,
       } => {
         let cx = x + width / 2.0;
         let cy = cell_top(*height) + height / 2.0;
@@ -15246,8 +15330,16 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
         } else {
           String::new()
         };
+        // `Style[…, FontFamily -> "Times"]` picks the face; without one the
+        // row keeps its monospace default.
+        let ff = if family.is_empty() {
+          "monospace"
+        } else {
+          family.as_str()
+        };
         svg.push_str(&format!(
-          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{size}\" fill=\"{fill}\"{weight_attr}{slant_attr} text-anchor=\"middle\" dominant-baseline=\"central\">{markup}</text>\n"
+          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{size}\" fill=\"{fill}\"{weight_attr}{slant_attr} text-anchor=\"middle\" dominant-baseline=\"central\">{markup}</text>\n",
+          ff = svg_escape(ff),
         ));
         x += width;
       }

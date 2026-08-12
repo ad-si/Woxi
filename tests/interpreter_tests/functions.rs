@@ -3799,6 +3799,30 @@ mod play {
     // Without a proper {t, tmin, tmax} iterator there is nothing to build.
     assert_eq!(interpret("Play[Sin[t]]").unwrap(), "Play[Sin[t]]");
   }
+
+  #[test]
+  fn sample_rate_option_still_builds_a_sound() {
+    // Options ride along after the iterator; the result is a Sound object
+    // just like the option-less form.
+    assert_eq!(
+      interpret("Play[Sin[2 Pi 440 t], {t, 0, 1}, SampleRate -> 2^13]")
+        .unwrap(),
+      "-Sound-"
+    );
+    assert_eq!(
+      interpret("Head[Play[Sin[t], {t, 0, 1}, SampleRate -> 8192]]").unwrap(),
+      "Sound"
+    );
+  }
+
+  #[test]
+  fn non_option_third_argument_stays_symbolic() {
+    // Only options may follow the iterator.
+    assert_eq!(
+      interpret("Play[Sin[t], {t, 0, 1}, 5]").unwrap(),
+      "Play[Sin[t], {t, 0, 1}, 5]"
+    );
+  }
 }
 
 mod sound_volume {

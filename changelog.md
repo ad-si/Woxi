@@ -2,6 +2,23 @@
 
 # Unreleased
 
+- Fixes driven by a Wolfram Demonstration that pairs a plot of two sine
+    waves and their sum with the sound of that sum:
+    - `Play[f, {t, tmin, tmax}, opts…]` accepts its options. Only the
+        two-argument form built a sound, so a `Play` carrying
+        `SampleRate -> r` stayed an inert expression: no `-Sound-`, `Head`
+        of `Play` instead of `Sound`, and nothing to play in the visual
+        hosts.
+    - `SampleRate -> r` now sets the rate the amplitude function is
+        synthesized at, instead of every `Play` being fixed at 8000 Hz.
+    - A `Sound` (or `Play`) inside a `Grid`, `Column` or `Row` draws the
+        sound box a notebook shows for it — a play button beside the
+        waveform — rather than printing the `Play[…]` source into the
+        picture.
+    - `Style[expr, FontFamily -> "Times"]` picks the face its text is set
+        in inside those same layouts. The family was parsed but the layout
+        renderers always emitted their own default.
+
 - Fixes driven by a Wolfram Demonstration that highlights the smallest
     triangle among optimally placed points in the unit square, whose
     coordinates are tabulated as exact algebraic numbers:
