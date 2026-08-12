@@ -10261,6 +10261,79 @@ TrackedSymbols->Manipulate,\n ControlPlacement -> Left,SaveDefinitions->True,Aut
     }
   }
 
+  /// The widget shape a plane-geometry Demonstration uses: a `Text @
+  /// Column` that stacks the curve's polar equation and its logarithmic
+  /// derivative as `TraditionalForm` labels above a `Show` of a
+  /// `PolarPlot` and the construction lines, driven by a labeled slider
+  /// and a True/False setter under `TrackedSymbols :> {…}`.
+  ///
+  /// The equations are what makes this shape demanding: `r'` holds as
+  /// `Derivative[1][r]` and `1/Cos[t]^2` as `Power[Cos[t], -2]`, neither
+  /// of which a front end shows literally.
+  #[test]
+  fn polar_curve_with_derivative_labels_builds_its_widget() {
+    let code = "Manipulate[\n\
+Module[{p = Exp[a/2] {Cos[a], Sin[a]}, n},\n\
+  n = Normalize[{-Tan[a], 1}];\n\
+  Text @ Column[{\n\
+    TraditionalForm[r == 1/Cos[t/2]^2],\n\
+    TraditionalForm[r' == D[1/Cos[t/2]^2, t]],\n\
+    TraditionalForm[r'/r == Simplify[D[1/Cos[t/2]^2, t]/(1/Cos[t/2]^2)]],\n\
+    Show[\n\
+      PolarPlot[Exp[t/2], {t, 0, 2 Pi}, PlotStyle -> {Blue, Thickness[0.004]}],\n\
+      Graphics[{\n\
+        If[marks, {Text[\"P\", p, {0, -2 Sign@Last@p}]}, {}],\n\
+        Thickness[0.004],\n\
+        {Red, Line[{{0, 0}, p}]},\n\
+        {Darker@Green, Line[{p, p + len n}]}}],\n\
+      ImageSize -> {320, 220}, PlotRange -> {{-8, 8}, {-4, 12}}]},\n\
+    Alignment -> Center]],\n\
+{{a, Pi/2, \"\\[Theta]\"}, 0, 2 Pi, Appearance -> \"Labeled\"},\n\
+{{len, 2, \"length of normal\"}, 0., 3, Appearance -> \"Labeled\"},\n\
+{marks, {True, False}},\n\
+TrackedSymbols :> {a, len, marks}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the labeled column and its polar plot must render"
+    );
+    let labels: Vec<&str> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { label, .. } => label.as_str(),
+        manipulate::ControlState::Discrete { label, .. } => label.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(labels, ["\u{03B8}", "length of normal", "marks"]);
+    match &state.controls[0] {
+      manipulate::ControlState::Continuous {
+        min, max, current, ..
+      } => {
+        assert!(*min == 0.0 && *max > 6.2, "θ spans a full turn");
+        assert!((*current - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+      }
+      other => panic!("θ must be a slider: {other:?}"),
+    }
+    // Dragging the angle past the construction's starting point has to
+    // redraw rather than error out.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 4.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
   /// End-to-end regression for the "Trigonometric Sums as Parametric
   /// Curves" Demonstration. Its initialization cells write the partial
   /// sums as typeset `∑` boxes, which have to come back as

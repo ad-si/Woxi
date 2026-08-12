@@ -10,6 +10,19 @@
     is rounded — `%` and `Out[]` still hold the full value, and `woxi eval`
     keeps the round-trip InputForm that `wolframscript -code` prints.
 
+- Fixes driven by a Wolfram Demonstration that trisects an angle with a
+    cubic curve, labelling its polar plot with the curve's equation and
+    logarithmic derivative:
+    - `TraditionalForm` sets a derivative with prime marks. `f'` holds as
+        `Derivative[1][f]`, and that head was showing through as
+        `Derivative(1, f)` instead of `f′`. Orders past three, and the
+        multivariate `Derivative[1, 0][f]`, spell the order out as a
+        parenthesised superscript.
+    - `TraditionalForm` puts a negative exponent under a fraction bar, so
+        `1/x` sets as a fraction rather than `x⁻¹`. A product already did
+        this for its reciprocal factors; a lone power did not, which left
+        `1/Cos[θ/3]^3` reading as `cos(θ/3)⁻³`.
+
 - Fixes driven by a Wolfram Demonstration that highlights the smallest
     triangle among optimally placed points in the unit square, whose
     coordinates are tabulated as exact algebraic numbers:
