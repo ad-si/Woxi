@@ -351,3 +351,114 @@ fn repl_reports_errors_without_aborting_session() {
   );
   assert!(stdout.contains("Out[2]= 42"), "stdout={}", stdout);
 }
+
+/// `wolframscript`'s terminal REPL prints results in OutputForm, which shows a
+/// machine-precision real at 6 significant figures — `3203.60 - 2711.16` is
+/// `492.44` there, while `wolframscript -code` prints the full round-trip
+/// `492.44000000000005`. `woxi repl` follows the REPL; `woxi eval` follows
+/// `-code`.
+#[test]
+fn repl_shows_machine_reals_at_six_significant_figures() {
+  let (stdout, stderr, ok) = run_repl(concat!(
+    "3203.60 - 2711.16\n",
+    "1/3.\n",
+    "0.1 + 0.2\n",
+    "Range[3]*1.111111111\n",
+  ));
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert_eq!(
+    stdout,
+    concat!(
+      "Out[1]= 492.44\n\n",
+      "Out[2]= 0.333333\n\n",
+      "Out[3]= 0.3\n\n",
+      "Out[4]= {1.11111, 2.22222, 3.33333}\n\n",
+    )
+  );
+}
+
+/// The scientific-notation thresholds (|x| < 1e-5 or >= 1e6) apply to the
+/// *rounded* value, so `999999.6` displays as `1.*^6` and `0.000012345678`
+/// stays decimal — matching the REPL's `1. 10^6` / `0.0000123457`.
+#[test]
+fn repl_applies_scientific_thresholds_after_rounding() {
+  let (stdout, stderr, ok) = run_repl(concat!(
+    "999999.6\n",
+    "0.000012345678\n",
+    "-0.000001234\n",
+    "1234567.89\n",
+    "2^100 + 0.5\n",
+  ));
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert_eq!(
+    stdout,
+    concat!(
+      "Out[1]= 1.*^6\n\n",
+      "Out[2]= 0.0000123457\n\n",
+      "Out[3]= -1.234*^-6\n\n",
+      "Out[4]= 1.23457*^6\n\n",
+      "Out[5]= 1.26765*^30\n\n",
+    )
+  );
+}
+
+/// An arbitrary-precision real drops its backtick precision marker and shows
+/// exactly its stored precision in significant figures (`N[Pi, 20]` →
+/// `3.1415926535897932385`), unlike the `-code` InputForm echo.
+#[test]
+fn repl_shows_arbitrary_precision_reals_without_marker() {
+  let (stdout, stderr, ok) =
+    run_repl("N[Pi, 20]\nN[Pi, 3]\nSetAccuracy[0, 5]\n");
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert_eq!(
+    stdout,
+    concat!(
+      "Out[1]= 3.1415926535897932385\n\n",
+      "Out[2]= 3.14\n\n",
+      "Out[3]= 0.\n\n",
+    )
+  );
+}
+
+/// Display rounding is a rendering step only: `%` still holds the full
+/// machine value, and a bare literal or variable echo is rounded the same way
+/// a computed result is.
+#[test]
+fn repl_rounds_display_only_not_stored_values() {
+  let (stdout, stderr, ok) = run_repl(concat!(
+    "492.44000000000005\n",
+    "x = 3203.60 - 2711.16\n",
+    "x\n",
+    "(x - 492.44)*10^16\n",
+  ));
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert_eq!(
+    stdout,
+    concat!(
+      "Out[1]= 492.44\n\n",
+      "Out[2]= 492.44\n\n",
+      "Out[3]= 492.44\n\n",
+      "Out[4]= 568.434\n\n",
+    )
+  );
+}
+
+/// Digits inside a string value are text, not a number: the REPL prints them
+/// verbatim (`"3.14159265358979"` stays 15 digits).
+#[test]
+fn repl_does_not_round_digits_inside_strings() {
+  let (stdout, stderr, ok) = run_repl(concat!(
+    "\"3.14159265358979\"\n",
+    "s = \"9.87654321\"\n",
+    "{1.23456789, s}\n",
+  ));
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert_eq!(
+    stdout,
+    concat!(
+      "Out[1]= 3.14159265358979\n\n",
+      "Out[2]= 9.87654321\n\n",
+      "Out[3]= {1.23457, 9.87654321}\n\n",
+    )
+  );
+}

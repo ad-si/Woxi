@@ -2,6 +2,14 @@
 
 # Unreleased
 
+- `woxi repl` prints results the way wolframscript's terminal REPL does:
+    a machine-precision real shows the 6 significant figures of OutputForm
+    (`3203.60 - 2711.16` is `492.44`, not `492.44000000000005`) and an
+    arbitrary-precision real shows its stored precision without the backtick
+    marker (`N[Pi, 20]` is `3.1415926535897932385`). Only the printed text
+    is rounded — `%` and `Out[]` still hold the full value, and `woxi eval`
+    keeps the round-trip InputForm that `wolframscript -code` prints.
+
 - Fixes driven by a Wolfram Demonstration that highlights the smallest
     triangle among optimally placed points in the unit square, whose
     coordinates are tabulated as exact algebraic numbers:

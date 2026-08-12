@@ -238,17 +238,24 @@ pub fn is_visual_mode() -> bool {
   VISUAL_MODE.with(|v| *v.borrow())
 }
 
-// REPL session flag — set by the `woxi repl` command. Unlike VISUAL_MODE it
-// does not change result rendering (the terminal REPL keeps plain CLI/text
-// output to match wolframscript), but it does enable persistent `%` / `Out[]`
-// history caching across evaluations in the same process.
+// REPL session flag — set by the `woxi repl` command. It enables persistent
+// `%` / `Out[]` history caching across evaluations in the same process and
+// switches the printed result to the OutputForm digits wolframscript's
+// terminal REPL shows (see `to_display_precision`). It does not turn on the
+// SVG/notebook rendering that VISUAL_MODE controls.
 thread_local! {
     static REPL_MODE: RefCell<bool> = const { RefCell::new(false) };
 }
 
-/// Enable or disable REPL session mode (persistent `%` / `Out[]` history).
+/// Enable or disable REPL session mode (persistent `%` / `Out[]` history plus
+/// OutputForm number display).
 pub fn set_repl_mode(enabled: bool) {
   REPL_MODE.with(|v| *v.borrow_mut() = enabled);
+}
+
+/// Whether the terminal REPL (`woxi repl`) is driving evaluation.
+pub fn is_repl_mode() -> bool {
+  REPL_MODE.with(|v| *v.borrow())
 }
 
 /// Whether output history (`%` / `Out[]`) should persist across evaluations.
@@ -1331,6 +1338,18 @@ fn is_single_brace_group(s: &str) -> bool {
   depth == 0
 }
 
+/// Render a bare machine-real literal for the `interpret` fast path, applying
+/// the REPL's OutputForm rounding (see [`to_display_precision`]) so a typed-in
+/// `492.44000000000005` echoes as `492.44` there but stays exact in `eval`.
+fn real_literal_output(n: f64) -> String {
+  let shown = if is_repl_mode() {
+    round_machine_real_display(n)
+  } else {
+    n
+  };
+  syntax::format_real(shown)
+}
+
 pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   // Normalize CRLF to LF so line continuation and newline handling work
   // consistently regardless of line ending style.
@@ -1399,13 +1418,13 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         if is_visual_mode() {
           generate_output_svg(&syntax::Expr::Real(n));
         }
-        return Ok(syntax::format_real(n));
+        return Ok(real_literal_output(n));
       }
     } else {
       if is_visual_mode() {
         generate_output_svg(&syntax::Expr::Real(n));
       }
-      return Ok(syntax::format_real(n));
+      return Ok(real_literal_output(n));
     }
   }
   // Check for quoted string - return content without quotes (like wolframscript)
@@ -1504,9 +1523,25 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   {
     // This is a simple identifier
     if let Some(stored) = ENV.with(|e| e.borrow().get(trimmed).cloned()) {
+      // A bare variable echo goes through the same OutputForm rounding as a
+      // computed result, so `x = 3203.60 - 2711.16; x` shows `492.44` in the
+      // REPL (see `to_display_precision`).
+      let shown = |e: &syntax::Expr| {
+        if is_repl_mode() {
+          to_display_precision(e)
+        } else {
+          e.clone()
+        }
+      };
       return Ok(match stored {
-        StoredValue::ExprVal(e) => syntax::top_level_output(&e),
-        StoredValue::Raw(val) => val,
+        StoredValue::ExprVal(e) => syntax::top_level_output(&shown(&e)),
+        // A `Raw` binding holds the value's InputForm text; the REPL has to
+        // re-read it to round the numbers it contains (a string value keeps
+        // its quotes there, so its digits stay untouched).
+        StoredValue::Raw(val) => match syntax::string_to_expr(&val) {
+          Ok(e) if is_repl_mode() => syntax::top_level_output(&shown(&e)),
+          _ => val,
+        },
         StoredValue::Association(items) => {
           let items_expr: Vec<(syntax::Expr, syntax::Expr)> = items
             .iter()
@@ -1516,7 +1551,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
               (key_expr, v.clone())
             })
             .collect();
-          syntax::expr_to_output(&syntax::Expr::Association(items_expr))
+          syntax::expr_to_output(&shown(&syntax::Expr::Association(items_expr)))
         }
       });
     }
@@ -2099,12 +2134,21 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
   if output_history_enabled() {
     set_last_output(result_expr.clone());
   }
+  // The terminal REPL prints OutputForm digits (a machine real at 6
+  // significant figures, an arbitrary-precision real without its backtick
+  // marker), matching wolframscript's REPL. `%` / `Out[]` were stashed above
+  // from the unrounded expression, so only the printed text changes.
+  let shown_expr = if is_repl_mode() {
+    std::borrow::Cow::Owned(to_display_precision(&result_expr))
+  } else {
+    std::borrow::Cow::Borrowed(&result_expr)
+  };
   // In visual mode (playground), unwrap StandardForm/InputForm wrappers
   // so they display like in a Wolfram notebook.
   // CLI mode preserves wrappers to match wolframscript behavior.
   let is_visual = VISUAL_MODE.with(|v| *v.borrow());
   let output_text = if is_visual {
-    match &result_expr {
+    match shown_expr.as_ref() {
       syntax::Expr::FunctionCall { name, args }
         if name == "StandardForm" && args.len() == 1 =>
       {
@@ -2120,10 +2164,10 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
       {
         syntax::quantity_to_visual_string(&args[0], &args[1])
       }
-      _ => syntax::top_level_output(&result_expr),
+      _ => syntax::top_level_output(&shown_expr),
     }
   } else {
-    syntax::top_level_output(&result_expr)
+    syntax::top_level_output(&shown_expr)
   };
   // Convert to output string (strips quotes from strings for display).
   // Use "\0" sentinel for the Null symbol so consumers can suppress it
@@ -3811,6 +3855,80 @@ fn drop_trailing_frac_zeros(s: &str) -> String {
     }
     None => s.to_string(),
   }
+}
+
+/// Number of significant figures a Wolfram front end shows for a
+/// machine-precision real (`MachinePrecision` values print as `0.333333`,
+/// `492.44`, `1.23457*^10`), independent of the ~17 digits the `double`
+/// actually round-trips through.
+const MACHINE_REAL_DISPLAY_DIGITS: usize = 6;
+
+/// Round `f` to the [`MACHINE_REAL_DISPLAY_DIGITS`] significant figures a
+/// front end displays, so the existing [`syntax::format_real`] then renders the
+/// notebook form (`492.44000000000005` → `492.44`, `999999.6` → `1.*^6`, the
+/// `1e-5`/`1e6` scientific thresholds still applied to the *rounded* value).
+/// Zero and non-finite values are returned unchanged.
+fn round_machine_real_display(f: f64) -> f64 {
+  if !f.is_finite() || f == 0.0 {
+    return f;
+  }
+  format!("{:.prec$e}", f, prec = MACHINE_REAL_DISPLAY_DIGITS - 1)
+    .parse()
+    .unwrap_or(f)
+}
+
+/// Display form of an arbitrary-precision real: the InputForm rendering with
+/// the backtick precision marker dropped and the mantissa rounded to that
+/// precision (`` 3.14159265358979323846…`20. `` → `3.1415926535897932385`).
+/// Any `*^exp` scientific suffix is preserved.
+fn bigfloat_display(digits: &str, prec: f64) -> String {
+  let full = syntax::format_bigfloat(digits, prec);
+  let (sign, body) = match full.strip_prefix('-') {
+    Some(rest) => ("-", rest),
+    None => ("", full.as_str()),
+  };
+  match precision_number_display(body) {
+    Some(shown) => format!("{sign}{shown}"),
+    None => full,
+  }
+}
+
+/// Rewrite every inexact number in `expr` to the digits a front end actually
+/// prints: a machine real to 6 significant figures and an arbitrary-precision
+/// real to its stored precision without the backtick marker.
+///
+/// `wolframscript`'s terminal REPL prints results in OutputForm, which shows
+/// only those digits, while `wolframscript -code` prints the full round-trip
+/// InputForm — `3203.60 - 2711.16` is `492.44` in the REPL and
+/// `492.44000000000005` from `-code`. Woxi mirrors that split: `woxi repl`
+/// applies this transform to the *printed* expression only, so `%` / `Out[]`
+/// still resolve to the unrounded value, and `woxi eval` does not apply it
+/// at all.
+pub(crate) fn to_display_precision(expr: &syntax::Expr) -> syntax::Expr {
+  use syntax::Expr;
+  functions::string_ast::map_expr_tree(expr, &|e| match e {
+    Expr::Real(f) => Some(Expr::Real(round_machine_real_display(*f))),
+    // Rendered eagerly: no Expr variant can hold a marker-free
+    // arbitrary-precision decimal, and `Raw` prints verbatim.
+    Expr::BigFloat(digits, prec) => {
+      Some(Expr::Raw(bigfloat_display(digits, *prec)))
+    }
+    // `map_expr_tree` stops at function bodies on purpose (slot scoping);
+    // display rounding has no scope, so recurse into them here.
+    Expr::Function { body } => Some(Expr::Function {
+      body: Box::new(to_display_precision(body)),
+    }),
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => Some(Expr::NamedFunction {
+      params: params.clone(),
+      body: Box::new(to_display_precision(body)),
+      bracketed: *bracketed,
+    }),
+    _ => None,
+  })
 }
 
 /// Rewrite every arbitrary-precision real in a flat output string to its
