@@ -169,7 +169,7 @@ impl Dwd {
   }
 
   /// Parse a DiscreteWaveletData[…] expression (3 or 4 args).
-  pub fn from_expr(e: &Expr) -> Option<Dwd> {
+  pub fn from_expr(e: &Expr) -> Option<Self> {
     let Expr::FunctionCall { name, args } = e else {
       return None;
     };
@@ -212,7 +212,7 @@ impl Dwd {
       let arr = CoefArray::from_expr(c)?;
       arr.dims().iter().map(|&d| d << w.len().max(1)).collect()
     };
-    Some(Dwd {
+    Some(Self {
       rules,
       wavelet,
       kind,

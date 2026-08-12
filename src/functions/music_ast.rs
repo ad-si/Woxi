@@ -1926,7 +1926,7 @@ impl MeasureEvent {
   fn is_explicit(&self) -> bool {
     matches!(
       self,
-      MeasureEvent::Note(_, Some(_)) | MeasureEvent::Rest(Some(_))
+      Self::Note(_, Some(_)) | Self::Rest(Some(_))
     )
   }
 }

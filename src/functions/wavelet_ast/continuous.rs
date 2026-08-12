@@ -238,7 +238,7 @@ impl Cwd {
     }
   }
 
-  pub fn from_expr(e: &Expr) -> Option<Cwd> {
+  pub fn from_expr(e: &Expr) -> Option<Self> {
     let Expr::FunctionCall { name, args } = e else {
       return None;
     };
@@ -323,7 +323,7 @@ impl Cwd {
         }
       }
     }
-    Some(Cwd {
+    Some(Self {
       rules,
       wavelet,
       voices,

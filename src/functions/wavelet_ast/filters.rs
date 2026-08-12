@@ -25,7 +25,7 @@ pub struct WaveletFilters {
 
 impl WaveletFilters {
   fn orthogonal(lo: Filter, exact: Option<ExactFilter>) -> Self {
-    WaveletFilters {
+    Self {
       primal_lo: lo.clone(),
       dual_lo: lo,
       primal_lo_exact: exact.clone(),
@@ -112,20 +112,20 @@ impl Rat {
     debug_assert!(den != 0);
     let g = gcd_i128(num, den).max(1);
     let sign = if den < 0 { -1 } else { 1 };
-    Rat {
+    Self {
       num: sign * num / g,
       den: sign * den / g,
     }
   }
-  const ZERO: Rat = Rat { num: 0, den: 1 };
-  fn add(self, other: Rat) -> Rat {
-    Rat::new(
+  const ZERO: Self = Self { num: 0, den: 1 };
+  fn add(self, other: Self) -> Self {
+    Self::new(
       self.num * other.den + other.num * self.den,
       self.den * other.den,
     )
   }
-  fn mul(self, other: Rat) -> Rat {
-    Rat::new(self.num * other.num, self.den * other.den)
+  fn mul(self, other: Self) -> Self {
+    Self::new(self.num * other.num, self.den * other.den)
   }
   fn to_f64(self) -> f64 {
     self.num as f64 / self.den as f64
@@ -153,14 +153,14 @@ impl LaurentRat {
   fn one() -> Self {
     let mut m = std::collections::BTreeMap::new();
     m.insert(0, Rat::new(1, 1));
-    LaurentRat(m)
+    Self(m)
   }
   fn term(exp: i64, coef: Rat) -> Self {
     let mut m = std::collections::BTreeMap::new();
     if coef.num != 0 {
       m.insert(exp, coef);
     }
-    LaurentRat(m)
+    Self(m)
   }
   fn add(&self, other: &Self) -> Self {
     let mut m = self.0.clone();
@@ -172,7 +172,7 @@ impl LaurentRat {
         m.insert(e, v);
       }
     }
-    LaurentRat(m)
+    Self(m)
   }
   fn mul(&self, other: &Self) -> Self {
     let mut m = std::collections::BTreeMap::new();
@@ -184,10 +184,10 @@ impl LaurentRat {
       }
     }
     m.retain(|_, c: &mut Rat| c.num != 0);
-    LaurentRat(m)
+    Self(m)
   }
   fn pow(&self, n: u32) -> Self {
-    let mut result = LaurentRat::one();
+    let mut result = Self::one();
     for _ in 0..n {
       result = result.mul(self);
     }
@@ -199,7 +199,7 @@ impl LaurentRat {
       *c = c.mul(s);
       c.num != 0
     });
-    LaurentRat(m)
+    Self(m)
   }
 }
 
@@ -239,23 +239,23 @@ struct C64 {
 
 impl C64 {
   fn new(re: f64, im: f64) -> Self {
-    C64 { re, im }
+    Self { re, im }
   }
-  fn add(self, o: C64) -> C64 {
-    C64::new(self.re + o.re, self.im + o.im)
+  fn add(self, o: Self) -> Self {
+    Self::new(self.re + o.re, self.im + o.im)
   }
-  fn sub(self, o: C64) -> C64 {
-    C64::new(self.re - o.re, self.im - o.im)
+  fn sub(self, o: Self) -> Self {
+    Self::new(self.re - o.re, self.im - o.im)
   }
-  fn mul(self, o: C64) -> C64 {
-    C64::new(
+  fn mul(self, o: Self) -> Self {
+    Self::new(
       self.re * o.re - self.im * o.im,
       self.re * o.im + self.im * o.re,
     )
   }
-  fn div(self, o: C64) -> C64 {
+  fn div(self, o: Self) -> Self {
     let d = o.re * o.re + o.im * o.im;
-    C64::new(
+    Self::new(
       (self.re * o.re + self.im * o.im) / d,
       (self.im * o.re - self.re * o.im) / d,
     )
@@ -263,11 +263,11 @@ impl C64 {
   fn abs(self) -> f64 {
     self.re.hypot(self.im)
   }
-  fn sqrt(self) -> C64 {
+  fn sqrt(self) -> Self {
     let r = self.abs();
     let re = ((r + self.re) / 2.0).max(0.0).sqrt();
     let im_mag = ((r - self.re) / 2.0).max(0.0).sqrt();
-    C64::new(re, if self.im < 0.0 { -im_mag } else { im_mag })
+    Self::new(re, if self.im < 0.0 { -im_mag } else { im_mag })
   }
 }
 

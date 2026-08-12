@@ -19727,21 +19727,21 @@ enum Verdict {
 }
 
 impl Verdict {
-  fn and(self, other: Verdict) -> Verdict {
+  fn and(self, other: Self) -> Self {
     match (self, other) {
       // One definite `False` settles the conjunction even if the other side
       // never resolved.
-      (Verdict::False, _) | (_, Verdict::False) => Verdict::False,
-      (Verdict::True, Verdict::True) => Verdict::True,
-      _ => Verdict::Unknown,
+      (Self::False, _) | (_, Self::False) => Self::False,
+      (Self::True, Self::True) => Self::True,
+      _ => Self::Unknown,
     }
   }
 
   fn into_expr(self) -> Option<Expr> {
     match self {
-      Verdict::True => Some(Expr::Identifier("True".to_string())),
-      Verdict::False => Some(Expr::Identifier("False".to_string())),
-      Verdict::Unknown => None,
+      Self::True => Some(Expr::Identifier("True".to_string())),
+      Self::False => Some(Expr::Identifier("False".to_string())),
+      Self::Unknown => None,
     }
   }
 }

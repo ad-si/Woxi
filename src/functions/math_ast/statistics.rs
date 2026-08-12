@@ -9538,7 +9538,7 @@ fn erlang_common(
     a.max(1)
   }
   impl Q {
-    fn new(mut n: i128, mut d: i128) -> Option<Q> {
+    fn new(mut n: i128, mut d: i128) -> Option<Self> {
       if d == 0 {
         return None;
       }
@@ -9547,10 +9547,10 @@ fn erlang_common(
         d = d.checked_neg()?;
       }
       let g = qg(n.abs(), d);
-      Some(Q { n: n / g, d: d / g })
+      Some(Self { n: n / g, d: d / g })
     }
-    fn add(self, o: Q) -> Option<Q> {
-      Q::new(
+    fn add(self, o: Self) -> Option<Self> {
+      Self::new(
         self
           .n
           .checked_mul(o.d)?
@@ -9558,11 +9558,11 @@ fn erlang_common(
         self.d.checked_mul(o.d)?,
       )
     }
-    fn mul(self, o: Q) -> Option<Q> {
-      Q::new(self.n.checked_mul(o.n)?, self.d.checked_mul(o.d)?)
+    fn mul(self, o: Self) -> Option<Self> {
+      Self::new(self.n.checked_mul(o.n)?, self.d.checked_mul(o.d)?)
     }
-    fn div(self, o: Q) -> Option<Q> {
-      Q::new(self.n.checked_mul(o.d)?, self.d.checked_mul(o.n)?)
+    fn div(self, o: Self) -> Option<Self> {
+      Self::new(self.n.checked_mul(o.d)?, self.d.checked_mul(o.n)?)
     }
   }
 

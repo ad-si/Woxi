@@ -271,39 +271,39 @@ enum AngleVal {
 impl AngleVal {
   fn is_negative(&self) -> bool {
     match self {
-      AngleVal::Exact(p, _) => *p < 0,
-      AngleVal::Real(v) => *v < 0.0,
+      Self::Exact(p, _) => *p < 0,
+      Self::Real(v) => *v < 0.0,
     }
   }
 
-  fn abs(&self) -> AngleVal {
+  fn abs(&self) -> Self {
     match self {
-      AngleVal::Exact(p, q) => AngleVal::Exact(p.abs(), *q),
-      AngleVal::Real(v) => AngleVal::Real(v.abs()),
+      Self::Exact(p, q) => Self::Exact(p.abs(), *q),
+      Self::Real(v) => Self::Real(v.abs()),
     }
   }
 
   /// d + m/60 + s/3600, staying exact only when all three parts are exact.
-  fn from_dms(d: &AngleVal, m: &AngleVal, s: &AngleVal) -> AngleVal {
+  fn from_dms(d: &Self, m: &Self, s: &Self) -> Self {
     if let (
-      AngleVal::Exact(dp, dq),
-      AngleVal::Exact(mp, mq),
-      AngleVal::Exact(sp, sq),
+      Self::Exact(dp, dq),
+      Self::Exact(mp, mq),
+      Self::Exact(sp, sq),
     ) = (d, m, s)
       && let Some(v) = (|| {
         let a = rat_add((*dp, *dq), (*mp, mq.checked_mul(60)?))?;
         rat_add(a, (*sp, sq.checked_mul(3600)?))
       })()
     {
-      return AngleVal::Exact(v.0, v.1);
+      return Self::Exact(v.0, v.1);
     }
-    AngleVal::Real(d.to_f64() + m.to_f64() / 60.0 + s.to_f64() / 3600.0)
+    Self::Real(d.to_f64() + m.to_f64() / 60.0 + s.to_f64() / 3600.0)
   }
 
   fn to_f64(&self) -> f64 {
     match self {
-      AngleVal::Exact(p, q) => *p as f64 / *q as f64,
-      AngleVal::Real(v) => *v,
+      Self::Exact(p, q) => *p as f64 / *q as f64,
+      Self::Real(v) => *v,
     }
   }
 }

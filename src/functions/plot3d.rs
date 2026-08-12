@@ -2618,7 +2618,7 @@ impl Affine3 {
   }
 
   fn translation(v: [f64; 3]) -> Self {
-    Affine3 {
+    Self {
       m: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
       t: v,
     }
@@ -2661,11 +2661,11 @@ impl Affine3 {
       anchor[2]
         - (m[2][0] * anchor[0] + m[2][1] * anchor[1] + m[2][2] * anchor[2]),
     ];
-    Some(Affine3 { m, t })
+    Some(Self { m, t })
   }
 
   fn scaling(factors: [f64; 3], center: [f64; 3]) -> Self {
-    Affine3 {
+    Self {
       m: [
         [factors[0], 0.0, 0.0],
         [0.0, factors[1], 0.0],

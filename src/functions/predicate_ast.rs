@@ -194,8 +194,8 @@ fn qi_mul(x: (i128, i128), y: (i128, i128)) -> (i128, i128) {
 }
 
 impl QuadNum {
-  fn rational(n: i128, den: i128) -> QuadNum {
-    QuadNum {
+  fn rational(n: i128, den: i128) -> Self {
+    Self {
       a: qi_reduce(n, den),
       b: (0, 1),
       d: 1,
@@ -205,16 +205,16 @@ impl QuadNum {
     self.b.0 == 0
   }
   /// Add two quadratic numbers, requiring a common field (or one rational).
-  fn add(self, o: QuadNum) -> Option<QuadNum> {
+  fn add(self, o: Self) -> Option<Self> {
     if self.is_rational() {
-      return Some(QuadNum {
+      return Some(Self {
         a: qi_add(self.a, o.a),
         b: o.b,
         d: o.d,
       });
     }
     if o.is_rational() {
-      return Some(QuadNum {
+      return Some(Self {
         a: qi_add(self.a, o.a),
         b: self.b,
         d: self.d,
@@ -223,30 +223,30 @@ impl QuadNum {
     if self.d != o.d {
       return None; // different quadratic fields
     }
-    Some(QuadNum {
+    Some(Self {
       a: qi_add(self.a, o.a),
       b: qi_add(self.b, o.b),
       d: self.d,
     })
   }
-  fn neg(self) -> QuadNum {
-    QuadNum {
+  fn neg(self) -> Self {
+    Self {
       a: (-self.a.0, self.a.1),
       b: (-self.b.0, self.b.1),
       d: self.d,
     }
   }
   /// Multiply: (a1 + b1√d)(a2 + b2√d) = (a1a2 + b1b2 d) + (a1b2 + a2b1)√d.
-  fn mul(self, o: QuadNum) -> Option<QuadNum> {
+  fn mul(self, o: Self) -> Option<Self> {
     if self.is_rational() {
-      return Some(QuadNum {
+      return Some(Self {
         a: qi_mul(self.a, o.a),
         b: qi_mul(self.a, o.b),
         d: o.d,
       });
     }
     if o.is_rational() {
-      return Some(QuadNum {
+      return Some(Self {
         a: qi_mul(self.a, o.a),
         b: qi_mul(self.b, o.a),
         d: self.d,
@@ -260,14 +260,14 @@ impl QuadNum {
       qi_mul(self.a, o.a),
       qi_mul(qi_mul(self.b, o.b), (self.d, 1)),
     );
-    Some(QuadNum {
+    Some(Self {
       a: rat,
       b: cross,
       d: self.d,
     })
   }
   /// Inverse: 1/(a + b√d) = (a - b√d) / (a² - b² d).
-  fn inv(self) -> Option<QuadNum> {
+  fn inv(self) -> Option<Self> {
     let denom = qi_add(
       qi_mul(self.a, self.a),
       (
@@ -278,7 +278,7 @@ impl QuadNum {
     if denom.0 == 0 {
       return None;
     }
-    Some(QuadNum {
+    Some(Self {
       a: qi_mul(self.a, (denom.1, denom.0)),
       b: qi_mul((-self.b.0, self.b.1), (denom.1, denom.0)),
       d: self.d,

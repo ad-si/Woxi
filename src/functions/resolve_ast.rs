@@ -314,21 +314,21 @@ struct Q {
 }
 
 impl Q {
-  fn int(n: i128) -> Q {
-    Q { n, d: 1 }
+  fn int(n: i128) -> Self {
+    Self { n, d: 1 }
   }
-  fn new(n: i128, d: i128) -> Q {
+  fn new(n: i128, d: i128) -> Self {
     let (n, d) = rat_reduce(n, d);
-    Q { n, d }
+    Self { n, d }
   }
-  fn add(self, o: Q) -> Q {
-    Q::new(self.n * o.d + o.n * self.d, self.d * o.d)
+  fn add(self, o: Self) -> Self {
+    Self::new(self.n * o.d + o.n * self.d, self.d * o.d)
   }
-  fn mul(self, o: Q) -> Q {
-    Q::new(self.n * o.n, self.d * o.d)
+  fn mul(self, o: Self) -> Self {
+    Self::new(self.n * o.n, self.d * o.d)
   }
-  fn neg(self) -> Q {
-    Q {
+  fn neg(self) -> Self {
+    Self {
       n: -self.n,
       d: self.d,
     }
@@ -339,7 +339,7 @@ impl Q {
   fn sign(self) -> i32 {
     self.n.signum() as i32
   }
-  fn cmp(self, o: Q) -> std::cmp::Ordering {
+  fn cmp(self, o: Self) -> std::cmp::Ordering {
     (self.n * o.d).cmp(&(o.n * self.d))
   }
 }

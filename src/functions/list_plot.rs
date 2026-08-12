@@ -25,7 +25,7 @@ struct ErrPoint {
 
 impl ErrPoint {
   fn from_y(x: f64, (y, dy): (f64, (f64, f64))) -> Self {
-    ErrPoint {
+    Self {
       x,
       y,
       dx: (0.0, 0.0),
@@ -34,7 +34,7 @@ impl ErrPoint {
   }
 
   fn from_xy((x, dx): (f64, (f64, f64)), (y, dy): (f64, (f64, f64))) -> Self {
-    ErrPoint { x, y, dx, dy }
+    Self { x, y, dx, dy }
   }
 }
 

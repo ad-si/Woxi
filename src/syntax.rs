@@ -142,7 +142,7 @@ pub enum Expr {
     /// like `Part` can look inside a rendered graphic the way Wolfram's
     /// `Graphics3D[…][[1]]` does. `None` for renderings with no useful
     /// symbolic form.
-    structure: Option<Box<Expr>>,
+    structure: Option<Box<Self>>,
   },
 }
 
@@ -1524,14 +1524,14 @@ impl ComparisonOp {
   /// FullForm head name for this comparison operator (e.g. `!=` -> "Unequal").
   pub fn head_name(&self) -> &'static str {
     match self {
-      ComparisonOp::Equal => "Equal",
-      ComparisonOp::NotEqual => "Unequal",
-      ComparisonOp::Less => "Less",
-      ComparisonOp::LessEqual => "LessEqual",
-      ComparisonOp::Greater => "Greater",
-      ComparisonOp::GreaterEqual => "GreaterEqual",
-      ComparisonOp::SameQ => "SameQ",
-      ComparisonOp::UnsameQ => "UnsameQ",
+      Self::Equal => "Equal",
+      Self::NotEqual => "Unequal",
+      Self::Less => "Less",
+      Self::LessEqual => "LessEqual",
+      Self::Greater => "Greater",
+      Self::GreaterEqual => "GreaterEqual",
+      Self::SameQ => "SameQ",
+      Self::UnsameQ => "UnsameQ",
     }
   }
 }

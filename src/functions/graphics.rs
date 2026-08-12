@@ -731,21 +731,21 @@ impl Primitive {
   /// Raster, which carries no style).
   fn style(&self) -> Option<&StyleState> {
     match self {
-      Primitive::PointSingle { style, .. }
-      | Primitive::PointMulti { style, .. }
-      | Primitive::Line { style, .. }
-      | Primitive::CircleArc { style, .. }
-      | Primitive::Disk { style, .. }
-      | Primitive::DiskSector { style, .. }
-      | Primitive::RectPrim { style, .. }
-      | Primitive::PolygonPrim { style, .. }
-      | Primitive::ArrowPrim { style, .. }
-      | Primitive::TextPrim { style, .. }
-      | Primitive::BezierCurvePrim { style, .. }
-      | Primitive::HalfPlanePrim { style, .. } => Some(style),
-      Primitive::RasterPrim { .. }
-      | Primitive::MarkerPrim { .. }
-      | Primitive::InsetGraphic { .. } => None,
+      Self::PointSingle { style, .. }
+      | Self::PointMulti { style, .. }
+      | Self::Line { style, .. }
+      | Self::CircleArc { style, .. }
+      | Self::Disk { style, .. }
+      | Self::DiskSector { style, .. }
+      | Self::RectPrim { style, .. }
+      | Self::PolygonPrim { style, .. }
+      | Self::ArrowPrim { style, .. }
+      | Self::TextPrim { style, .. }
+      | Self::BezierCurvePrim { style, .. }
+      | Self::HalfPlanePrim { style, .. } => Some(style),
+      Self::RasterPrim { .. }
+      | Self::MarkerPrim { .. }
+      | Self::InsetGraphic { .. } => None,
     }
   }
 }
@@ -4996,7 +4996,7 @@ enum GridSpec {
 
 impl GridSpec {
   fn is_active(&self) -> bool {
-    !matches!(self, GridSpec::None)
+    !matches!(self, Self::None)
   }
 }
 
@@ -7331,7 +7331,7 @@ impl BoxLayout {
       let glyph_descent = fs * 0.28;
       let w = fs * 0.62;
       let escaped = svg_escape(s);
-      return BoxLayout {
+      return Self {
         width: w,
         height: glyph_ascent + glyph_descent,
         baseline: glyph_ascent,
@@ -7353,7 +7353,7 @@ impl BoxLayout {
       // centered anchor leaves the right gap looking larger than the left.
       let cx = w / 2.0 + ch * 0.1;
       let escaped = svg_escape("\u{00d7}");
-      return BoxLayout {
+      return Self {
         width: w,
         height,
         baseline: ascent,
@@ -7383,7 +7383,7 @@ impl BoxLayout {
         ));
         x += seg.chars().count() as f64 * ch;
       }
-      return BoxLayout {
+      return Self {
         width: x,
         height: ascent + descent,
         baseline: ascent,
@@ -7416,7 +7416,7 @@ impl BoxLayout {
     } else {
       ""
     };
-    BoxLayout {
+    Self {
       width: w,
       height,
       baseline: ascent,
@@ -16449,15 +16449,15 @@ impl ManipulateControl {
   /// (`Heading` / `Divider`) bind no variable and return `""`.
   pub fn name(&self) -> &str {
     match self {
-      ManipulateControl::Continuous { name, .. }
-      | ManipulateControl::Discrete { name, .. }
-      | ManipulateControl::Slider2D { name, .. }
-      | ManipulateControl::IntervalSlider { name, .. }
-      | ManipulateControl::Trigger { name, .. }
-      | ManipulateControl::Locator { name, .. } => name,
-      ManipulateControl::Button { .. }
-      | ManipulateControl::Heading { .. }
-      | ManipulateControl::Divider => "",
+      Self::Continuous { name, .. }
+      | Self::Discrete { name, .. }
+      | Self::Slider2D { name, .. }
+      | Self::IntervalSlider { name, .. }
+      | Self::Trigger { name, .. }
+      | Self::Locator { name, .. } => name,
+      Self::Button { .. }
+      | Self::Heading { .. }
+      | Self::Divider => "",
     }
   }
 }
@@ -20848,13 +20848,13 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
 #[derive(Debug, Clone)]
 pub enum DisplayNode {
   /// A framed container wrapping a single child (`Panel`, `Framed`, …).
-  Panel(Box<DisplayNode>),
+  Panel(Box<Self>),
   /// A 2D grid of cells (`Grid`).
-  Grid(Vec<Vec<DisplayNode>>),
+  Grid(Vec<Vec<Self>>),
   /// A vertical stack (`Column`, or a bare list).
-  Column(Vec<DisplayNode>),
+  Column(Vec<Self>),
   /// A horizontal stack (`Row`).
-  Row(Vec<DisplayNode>),
+  Row(Vec<Self>),
   /// A checkbox. `target` is the InputForm of the write-back lvalue (e.g.
   /// `data[[3, 5]]`), `None` for a non-interactive checkbox; `checked` is its
   /// current state; `on`/`off` are the InputForm values a toggle writes back.
@@ -20869,7 +20869,7 @@ pub enum DisplayNode {
   /// the ready-to-evaluate write-back assignment; `selected` is whether the
   /// value is currently a member of the list.
   Toggler {
-    label: Box<DisplayNode>,
+    label: Box<Self>,
     mutation: String,
     selected: bool,
   },
@@ -20878,7 +20878,7 @@ pub enum DisplayNode {
   /// Manipulate control argument. Demonstrations use these inside a
   /// `Dynamic[…]` caption to step a variable (`n++`, `n = 1`, …).
   Button {
-    label: Box<DisplayNode>,
+    label: Box<Self>,
     action: String,
   },
   /// A `Spacer[w]`: `w` printer's points of horizontal space.

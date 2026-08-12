@@ -1323,11 +1323,11 @@ impl Filling {
   /// Returns `None` for `Filling::None`.
   pub(crate) fn reference_y(&self, y_min: f64, y_max: f64) -> Option<f64> {
     match self {
-      Filling::None => None,
-      Filling::Axis => Some(0.0),
-      Filling::Bottom => Some(y_min),
-      Filling::Top => Some(y_max),
-      Filling::Value(v) => Some(*v),
+      Self::None => None,
+      Self::Axis => Some(0.0),
+      Self::Bottom => Some(y_min),
+      Self::Top => Some(y_max),
+      Self::Value(v) => Some(*v),
     }
   }
 
@@ -1335,11 +1335,11 @@ impl Filling {
   /// `PlotSeriesData` so `Show` can re-render filled regions.
   pub(crate) fn to_series_filling(self) -> crate::syntax::SeriesFilling {
     match self {
-      Filling::None => crate::syntax::SeriesFilling::None,
-      Filling::Axis => crate::syntax::SeriesFilling::Axis,
-      Filling::Bottom => crate::syntax::SeriesFilling::Bottom,
-      Filling::Top => crate::syntax::SeriesFilling::Top,
-      Filling::Value(v) => crate::syntax::SeriesFilling::Value(v),
+      Self::None => crate::syntax::SeriesFilling::None,
+      Self::Axis => crate::syntax::SeriesFilling::Axis,
+      Self::Bottom => crate::syntax::SeriesFilling::Bottom,
+      Self::Top => crate::syntax::SeriesFilling::Top,
+      Self::Value(v) => crate::syntax::SeriesFilling::Value(v),
     }
   }
 }
@@ -1435,11 +1435,11 @@ impl crate::syntax::SeriesFilling {
   /// Reference y-value for the fill, given the current y-range.
   pub fn reference_y(self, y_min: f64, y_max: f64) -> Option<f64> {
     match self {
-      crate::syntax::SeriesFilling::None => None,
-      crate::syntax::SeriesFilling::Axis => Some(0.0),
-      crate::syntax::SeriesFilling::Bottom => Some(y_min),
-      crate::syntax::SeriesFilling::Top => Some(y_max),
-      crate::syntax::SeriesFilling::Value(v) => Some(v),
+      Self::None => None,
+      Self::Axis => Some(0.0),
+      Self::Bottom => Some(y_min),
+      Self::Top => Some(y_max),
+      Self::Value(v) => Some(v),
     }
   }
 }

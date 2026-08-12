@@ -2876,7 +2876,7 @@ struct Rat {
 
 impl Rat {
   fn from_int(n: i128) -> Self {
-    Rat { num: n, den: 1 }
+    Self { num: n, den: 1 }
   }
   fn is_zero(&self) -> bool {
     self.num == 0

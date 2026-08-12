@@ -29,21 +29,21 @@ struct Rat {
 }
 
 impl Rat {
-  fn new(mut n: BigInt, mut d: BigInt) -> Rat {
+  fn new(mut n: BigInt, mut d: BigInt) -> Self {
     debug_assert!(!d.is_zero());
     (n, d) = rat_reduce_bigint(&n, &d);
-    Rat { n, d }
+    Self { n, d }
   }
 
-  fn from_int(n: BigInt) -> Rat {
-    Rat {
+  fn from_int(n: BigInt) -> Self {
+    Self {
       n,
       d: BigInt::one(),
     }
   }
 
-  fn zero() -> Rat {
-    Rat {
+  fn zero() -> Self {
+    Self {
       n: BigInt::zero(),
       d: BigInt::one(),
     }
@@ -64,24 +64,24 @@ impl Rat {
     }
   }
 
-  fn add(&self, o: &Rat) -> Rat {
-    Rat::new(&self.n * &o.d + &o.n * &self.d, &self.d * &o.d)
+  fn add(&self, o: &Self) -> Self {
+    Self::new(&self.n * &o.d + &o.n * &self.d, &self.d * &o.d)
   }
 
-  fn sub(&self, o: &Rat) -> Rat {
-    Rat::new(&self.n * &o.d - &o.n * &self.d, &self.d * &o.d)
+  fn sub(&self, o: &Self) -> Self {
+    Self::new(&self.n * &o.d - &o.n * &self.d, &self.d * &o.d)
   }
 
-  fn mul(&self, o: &Rat) -> Rat {
-    Rat::new(&self.n * &o.n, &self.d * &o.d)
+  fn mul(&self, o: &Self) -> Self {
+    Self::new(&self.n * &o.n, &self.d * &o.d)
   }
 
-  fn div(&self, o: &Rat) -> Rat {
-    Rat::new(&self.n * &o.d, &self.d * &o.n)
+  fn div(&self, o: &Self) -> Self {
+    Self::new(&self.n * &o.d, &self.d * &o.n)
   }
 
-  fn neg(&self) -> Rat {
-    Rat {
+  fn neg(&self) -> Self {
+    Self {
       n: -&self.n,
       d: self.d.clone(),
     }
@@ -96,7 +96,7 @@ impl Rat {
 struct Poly(Vec<Rat>); // ascending; trailing zeros trimmed; [] == zero poly
 
 impl Poly {
-  fn trim(mut self) -> Poly {
+  fn trim(mut self) -> Self {
     while self.0.last().map(|c| c.is_zero()).unwrap_or(false) {
       self.0.pop();
     }
@@ -116,18 +116,18 @@ impl Poly {
     self.0.last().expect("lead of zero polynomial")
   }
 
-  fn deriv(&self) -> Poly {
+  fn deriv(&self) -> Self {
     if self.0.len() <= 1 {
-      return Poly(vec![]);
+      return Self(vec![]);
     }
     let mut out = Vec::with_capacity(self.0.len() - 1);
     for (i, c) in self.0.iter().enumerate().skip(1) {
       out.push(c.mul(&Rat::from_int(BigInt::from(i))));
     }
-    Poly(out).trim()
+    Self(out).trim()
   }
 
-  fn sub(&self, o: &Poly) -> Poly {
+  fn sub(&self, o: &Self) -> Self {
     let n = self.0.len().max(o.0.len());
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
@@ -135,11 +135,11 @@ impl Poly {
       let b = o.0.get(i).cloned().unwrap_or_else(Rat::zero);
       out.push(a.sub(&b));
     }
-    Poly(out).trim()
+    Self(out).trim()
   }
 
   /// Polynomial remainder `self mod divisor` (divisor nonzero).
-  fn rem(&self, divisor: &Poly) -> Poly {
+  fn rem(&self, divisor: &Self) -> Self {
     let mut r = self.clone();
     let db = divisor.degree();
     let lc = divisor.lead();
@@ -156,9 +156,9 @@ impl Poly {
   }
 
   /// Exact quotient `self / divisor` (assumes the division is exact).
-  fn div_exact(&self, divisor: &Poly) -> Poly {
+  fn div_exact(&self, divisor: &Self) -> Self {
     if self.is_zero() {
-      return Poly(vec![]);
+      return Self(vec![]);
     }
     let db = divisor.degree();
     let lc = divisor.lead();
@@ -174,11 +174,11 @@ impl Poly {
       }
       r = r.trim();
     }
-    Poly(quot).trim()
+    Self(quot).trim()
   }
 
   /// Monic GCD of two polynomials.
-  fn gcd(&self, o: &Poly) -> Poly {
+  fn gcd(&self, o: &Self) -> Self {
     let mut a = self.clone();
     let mut b = o.clone();
     while !b.is_zero() {
@@ -189,12 +189,12 @@ impl Poly {
     a.monic()
   }
 
-  fn monic(&self) -> Poly {
+  fn monic(&self) -> Self {
     if self.is_zero() {
-      return Poly(vec![]);
+      return Self(vec![]);
     }
     let lc = self.lead().clone();
-    Poly(self.0.iter().map(|c| c.div(&lc)).collect())
+    Self(self.0.iter().map(|c| c.div(&lc)).collect())
   }
 
   /// Sign of the polynomial at a finite rational point.
