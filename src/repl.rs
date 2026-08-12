@@ -202,10 +202,12 @@ fn continuation_prompt(primary: &str) -> String {
   " ".repeat(primary.chars().count())
 }
 
-/// Heuristically decide whether `src` is a complete Wolfram Language input or
-/// whether a continuation line is still expected. Tracks `()`, `[]`, `{}`
-/// nesting while skipping over string literals (with `\` escapes) and
-/// `(* … *)` comments. Unbalanced openers ⇒ incomplete.
+/// Decide whether `src` is a complete Wolfram Language input or whether a
+/// continuation line is still expected. Tracks `()`, `[]`, `{}` nesting while
+/// skipping over string literals (with `\` escapes) and `(* … *)` comments.
+/// Unbalanced openers ⇒ incomplete. Balanced input is additionally handed to
+/// the parser, so a dangling operator (`f[x_] :=`, `c =`, `1 +`) also keeps
+/// the session reading — matching wolframscript's terminal REPL.
 fn input_is_complete(src: &str) -> bool {
   let mut depth: i32 = 0;
   let mut in_string = false;
@@ -259,7 +261,33 @@ fn input_is_complete(src: &str) -> bool {
   }
 
   // An unterminated string or comment, or unclosed brackets, means more
-  // input is expected. A negative depth (too many closers) is a syntax
-  // error the interpreter should report, so treat it as complete.
-  depth <= 0 && !in_string && comment_depth == 0
+  // input is expected. Checking this before parsing also keeps deeply nested
+  // unbalanced input (`f[f[f[…`) away from the parser, where it would hit the
+  // call limit instead of simply being reported as incomplete.
+  if depth > 0 || in_string || comment_depth > 0 {
+    return false;
+  }
+  // A negative depth (too many closers) is a syntax error the interpreter
+  // should report, so treat it as complete.
+  if depth < 0 {
+    return true;
+  }
+
+  !expects_continuation(src)
+}
+
+/// Whether `src` is only the beginning of an input — a dangling operator such
+/// as `f[x_] :=`, `c =` or `1 +` — so a continuation line should be read.
+///
+/// Uses the same preprocessing as `interpret`, so the parser sees exactly the
+/// text that would be evaluated. Input that already parses is finished. Input
+/// that does not parse on its own but does once an operand is appended is a
+/// proper prefix of a valid expression, hence unfinished; anything else is a
+/// genuine syntax error that the interpreter should report right away.
+fn expects_continuation(src: &str) -> bool {
+  let preprocessed = woxi::insert_statement_separators(src.trim());
+  if woxi::parse(&preprocessed).is_ok() {
+    return false;
+  }
+  woxi::parse(&format!("{preprocessed} Null")).is_ok()
 }

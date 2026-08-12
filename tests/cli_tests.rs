@@ -281,6 +281,48 @@ fn repl_joins_multiline_bracketed_input() {
 }
 
 #[test]
+fn repl_joins_line_ending_in_assignment_operator() {
+  // A line ending in `=` is only the start of an input: the value follows on
+  // the next line, and both together are a single `In[]` (issue #354).
+  let (stdout, stderr, ok) = run_repl("c =\n5\nc\n");
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert_eq!(stdout, "Out[1]= 5\n\nOut[2]= 5\n\n");
+}
+
+#[test]
+fn repl_joins_definition_ending_in_set_delayed() {
+  // Same for `:=`, the form reported in issue #354: the body of the
+  // definition is typed on the following line.
+  let (stdout, stderr, ok) = run_repl(concat!(
+    "CF[x_Real, n_Integer?Positive] :=\n",
+    "Block[{xi, xp = x, r = {}}, Do[xi = Floor[xp]; AppendTo[r, xi];",
+    " xp = 1 / (xp - xi), {n}]; Return[r]]\n",
+    "CF[N[Pi], 10]\n",
+  ));
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  // The definition is suppressed (Out[1] skipped), the call is Out[2].
+  assert_eq!(stdout, "Out[2]= {3, 7, 15, 1, 292, 1, 1, 1, 2, 1}\n\n");
+}
+
+#[test]
+fn repl_joins_line_ending_in_infix_operator() {
+  // Any dangling operator continues, not just the assignment ones.
+  let (stdout, stderr, ok) = run_repl("1 +\n2\nx /.\nx -> 7\n");
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert_eq!(stdout, "Out[1]= 3\n\nOut[2]= 7\n\n");
+}
+
+#[test]
+fn repl_syntax_error_does_not_swallow_the_next_line() {
+  // Input that cannot be completed by anything is a syntax error, reported
+  // immediately — the following line stays a separate input.
+  let (stdout, stderr, ok) = run_repl("1 +* 2\n7\n");
+  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(stderr.contains("Parse error"), "stderr={}", stderr);
+  assert_eq!(stdout, "Out[2]= 7\n\n");
+}
+
+#[test]
 fn repl_print_writes_before_suppressed_output() {
   // Print emits to stdout during evaluation; it returns Null so no Out[] line
   // is shown for that input.
