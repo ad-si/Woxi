@@ -56,6 +56,7 @@ There is 3 levels of tests:
     including a description and an effect_level.
 - To see the graphical output of expressions wrap them with:
     `ExportString[<expression>, "SVG"]`
+- Commit directly on `main` unless a branch is explicitly requested.
 - Never implement a construct twice (e.g. `/@` and `Map`).
     Duplicates drift apart and are a common cause of divergences.
     Always delegate to the single canonical implementation.
