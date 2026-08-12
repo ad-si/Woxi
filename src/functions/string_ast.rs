@@ -12913,8 +12913,14 @@ fn fortran_args(args: &[Expr]) -> String {
 /// `Some(replacement)` the node (and its subtree) is replaced; otherwise the
 /// node is rebuilt with its children transformed. Mirrors the variant coverage
 /// of `substitute_slot_zero_with_self` so slot-bearing template expressions are
-/// fully rewritten.
-fn map_expr_tree(expr: &Expr, f: &dyn Fn(&Expr) -> Option<Expr>) -> Expr {
+/// fully rewritten — in particular it does **not** descend into `Function` /
+/// `NamedFunction` bodies, whose slots belong to the inner function. Callers
+/// that need those (e.g. display rounding, which has no scope) handle the two
+/// variants in `f` themselves.
+pub(crate) fn map_expr_tree(
+  expr: &Expr,
+  f: &dyn Fn(&Expr) -> Option<Expr>,
+) -> Expr {
   if let Some(replacement) = f(expr) {
     return replacement;
   }

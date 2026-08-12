@@ -325,20 +325,12 @@ fn try_nsolve_quadratic(
       && operators.len() == 1
       && operators[0] == ComparisonOp::Equal =>
     {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(operands[0].clone()),
-        right: Box::new(operands[1].clone()),
-      }
+      minus2(operands[0].clone(), operands[1].clone())
     }
     Expr::FunctionCall { name, args: fargs }
       if name == "Equal" && fargs.len() == 2 =>
     {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(fargs[0].clone()),
-        right: Box::new(fargs[1].clone()),
-      }
+      minus2(fargs[0].clone(), fargs[1].clone())
     }
     _ => return None,
   };
@@ -453,20 +445,12 @@ fn try_nsolve_pure_power(
       && operators.len() == 1
       && operators[0] == ComparisonOp::Equal =>
     {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(operands[0].clone()),
-        right: Box::new(operands[1].clone()),
-      }
+      minus2(operands[0].clone(), operands[1].clone())
     }
     Expr::FunctionCall { name, args: fargs }
       if name == "Equal" && fargs.len() == 2 =>
     {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(fargs[0].clone()),
-        right: Box::new(fargs[1].clone()),
-      }
+      minus2(fargs[0].clone(), fargs[1].clone())
     }
     _ => return None,
   };
@@ -761,20 +745,12 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && operators.len() == 1
       && operators[0] == ComparisonOp::Equal =>
     {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(operands[0].clone()),
-        right: Box::new(operands[1].clone()),
-      }
+      minus2(operands[0].clone(), operands[1].clone())
     }
     Expr::FunctionCall { name, args: fargs }
       if name == "Equal" && fargs.len() == 2 =>
     {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(fargs[0].clone()),
-        right: Box::new(fargs[1].clone()),
-      }
+      minus2(fargs[0].clone(), fargs[1].clone())
     }
     _ => {
       return Ok(unevaluated("NRoots", args));
@@ -2192,11 +2168,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         (eq_expr.clone(), Expr::Integer(0))
       };
-      let poly = Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(lhs),
-        right: Box::new(rhs),
-      };
+      let poly = minus2(lhs, rhs);
       let expanded =
         crate::functions::polynomial_ast::expand_and_combine(&poly);
 
@@ -2434,20 +2406,12 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && operators[0] == ComparisonOp::Equal =>
     {
       // lhs - rhs
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(operands[0].clone()),
-        right: Box::new(operands[1].clone()),
-      }
+      minus2(operands[0].clone(), operands[1].clone())
     }
     Expr::FunctionCall { name, args: fargs }
       if name == "Equal" && fargs.len() == 2 =>
     {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(fargs[0].clone()),
-        right: Box::new(fargs[1].clone()),
-      }
+      minus2(fargs[0].clone(), fargs[1].clone())
     }
     Expr::Identifier(s) if s == "True" => {
       // x == x → True → all solutions
@@ -2550,11 +2514,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       let mut result = coeff_sum.remove(0);
       for c in coeff_sum {
-        result = Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(result),
-          right: Box::new(c),
-        };
+        result = plus2(result, c);
       }
       coeffs.push(simplify(result));
     }
@@ -2646,11 +2606,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Discriminant: b^2 - 4*a*c
       let b_sq = multiply_exprs(b, b);
       let four_ac = multiply_exprs(&Expr::Integer(4), &multiply_exprs(a, c));
-      let discriminant = simplify(Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(b_sq),
-        right: Box::new(four_ac),
-      });
+      let discriminant = simplify(minus2(b_sq, four_ac));
 
       let neg_b = negate_expr(b);
       let two_a = multiply_exprs(&Expr::Integer(2), a);
@@ -2748,11 +2704,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
               if den == 1 {
                 num
               } else {
-                Expr::BinaryOp {
-                  op: BinaryOperator::Divide,
-                  left: Box::new(num),
-                  right: Box::new(Expr::Integer(den)),
-                }
+                div2(num, Expr::Integer(den))
               }
             };
             let sol1 = make_sol(true);
@@ -2870,11 +2822,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
               if den == 1 {
                 num
               } else {
-                Expr::BinaryOp {
-                  op: BinaryOperator::Divide,
-                  left: Box::new(num),
-                  right: Box::new(Expr::Integer(den)),
-                }
+                div2(num, Expr::Integer(den))
               }
             };
             // Re-evaluate so a raw negation collapses (e.g. -(I*Sqrt[2]) →
@@ -2922,11 +2870,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let sol_pos = if matches!(&sqrt_denom, Expr::Integer(1)) {
           sqrt_numer.clone()
         } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(sqrt_numer.clone()),
-            right: Box::new(sqrt_denom),
-          }
+          div2(sqrt_numer.clone(), sqrt_denom)
         };
         let sol_neg = negate_expr(&sol_pos);
         return Ok(Expr::List(
@@ -2951,17 +2895,9 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .unwrap_or(evaled.clone());
         simplify(evaled2)
       };
-      let num1 = eval_expr(Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(neg_b.clone()),
-        right: Box::new(sqrt_disc.clone()),
-      });
+      let num1 = eval_expr(minus2(neg_b.clone(), sqrt_disc.clone()));
       let sol1 = eval_expr(solve_divide(&num1, &two_a));
-      let num2 = eval_expr(Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(neg_b),
-        right: Box::new(sqrt_disc),
-      });
+      let num2 = eval_expr(plus2(neg_b, sqrt_disc));
       let sol2 = eval_expr(solve_divide(&num2, &two_a));
       // Wolfram convention: negative root first. When the leading coefficient
       // is negative, dividing by 2a flips the root order, so swap.
@@ -3255,11 +3191,7 @@ fn try_solve_polynomial_system(eqs: &[Expr], vars: &[String]) -> Option<Expr> {
     if !matches!(op, crate::functions::polynomial_ast::reduce::CompOp::Equal) {
       return None;
     }
-    let poly = expand_and_combine(&Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(lhs),
-      right: Box::new(rhs),
-    });
+    let poly = expand_and_combine(&minus2(lhs, rhs));
     // Every symbol has to be one of the unknowns: a free parameter leaves
     // the solutions symbolic, and a symbolic solution cannot be checked
     // against the equations it did not come from.
@@ -3679,18 +3611,10 @@ fn solution_values_equal(a: &[Expr], b: &[Expr]) -> bool {
 fn max_degree_of_var(eq: &Expr, var: &str) -> Option<i128> {
   let lhs_minus_rhs = match eq {
     Expr::Comparison { operands, .. } if operands.len() == 2 => {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(operands[0].clone()),
-        right: Box::new(operands[1].clone()),
-      }
+      minus2(operands[0].clone(), operands[1].clone())
     }
     Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(args[0].clone()),
-        right: Box::new(args[1].clone()),
-      }
+      minus2(args[0].clone(), args[1].clone())
     }
     other => other.clone(),
   };
@@ -4138,12 +4062,7 @@ fn try_solve_abs_eq(
   let eff = if matches!(&coeff, Expr::Integer(1)) {
     val_side
   } else {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(val_side),
-      right: Box::new(coeff),
-    })
-    .ok()?
+    crate::evaluator::evaluate_expr_to_expr(&div2(val_side, coeff)).ok()?
   };
 
   // Solve `inner == value`, returning the outer list's solution entries.
@@ -4176,11 +4095,8 @@ fn try_solve_abs_eq(
       // is added first so the symbolic case keeps wolframscript's order
       // ({x -> -a} before {x -> a}); numeric cases are reordered by
       // sort_solutions anyway.
-      let neg = crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(eff.clone()),
-      })
-      .ok()?;
+      let neg =
+        crate::evaluator::evaluate_expr_to_expr(&neg1(eff.clone())).ok()?;
       solutions.extend(solve_branch(neg)?);
       solutions.extend(solve_branch(eff)?);
     }
@@ -4307,11 +4223,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
     left: Box::new(make_rational(-1, 2)),
     right: Box::new(pi.clone()),
   };
-  let half_pi = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(pi.clone()),
-    right: Box::new(Expr::Integer(2)),
-  };
+  let half_pi = div2(pi.clone(), Expr::Integer(2));
   // Helper: build `ConditionalExpression[expr, Element[C[1], Integers]]`.
   let cond = |body: Expr| Expr::FunctionCall {
     name: "ConditionalExpression".to_string(),
@@ -4335,11 +4247,6 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   };
 
   // Build "base + 2*Pi*C[1]" / "base + Pi*C[1]" expressions.
-  let plus = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: BinaryOperator::Plus,
-    left: Box::new(a),
-    right: Box::new(b),
-  };
 
   // Evaluate an expression (simplifies e.g. ArcSin[1/2] → Pi/6).
   let eval = |e: Expr| {
@@ -4351,45 +4258,39 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
       args: vec![rhs.clone()].into(),
     })
   };
-  let negate = |e: Expr| {
-    eval(Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(e),
-    })
-  };
+  let negate = |e: Expr| eval(neg1(e));
 
   let solutions: Vec<Expr> = match (trig_name, rhs_special) {
     ("Sin", Some(0)) => {
-      vec![two_pi_c1.clone(), plus(pi.clone(), two_pi_c1.clone())]
+      vec![two_pi_c1.clone(), plus2(pi.clone(), two_pi_c1.clone())]
     }
-    ("Sin", Some(1)) => vec![plus(half_pi.clone(), two_pi_c1.clone())],
-    ("Sin", Some(-1)) => vec![plus(neg_half_pi.clone(), two_pi_c1.clone())],
+    ("Sin", Some(1)) => vec![plus2(half_pi.clone(), two_pi_c1.clone())],
+    ("Sin", Some(-1)) => vec![plus2(neg_half_pi.clone(), two_pi_c1.clone())],
     ("Cos", Some(0)) => vec![
-      plus(neg_half_pi.clone(), two_pi_c1.clone()),
-      plus(half_pi.clone(), two_pi_c1.clone()),
+      plus2(neg_half_pi.clone(), two_pi_c1.clone()),
+      plus2(half_pi.clone(), two_pi_c1.clone()),
     ],
     ("Cos", Some(1)) => vec![two_pi_c1.clone()],
     ("Cos", Some(-1)) => {
       // Wolframscript returns the two-solution list `{x -> -Pi + 2*Pi*C[1],
       // x -> Pi + 2*Pi*C[1]}` even though they coincide modulo 2*Pi.
-      let neg_pi = Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(pi.clone()),
-      };
+      let neg_pi = neg1(pi.clone());
       vec![
-        plus(neg_pi, two_pi_c1.clone()),
-        plus(pi.clone(), two_pi_c1.clone()),
+        plus2(neg_pi, two_pi_c1.clone()),
+        plus2(pi.clone(), two_pi_c1.clone()),
       ]
     }
     ("Tan", Some(0)) => vec![pi_c1.clone()],
-    ("Cot", Some(0)) => vec![plus(half_pi.clone(), pi_c1.clone())],
+    ("Cot", Some(0)) => vec![plus2(half_pi.clone(), pi_c1.clone())],
     // General numeric rhs c: x = ArcSin[c] + 2πC, Pi - ArcSin[c] + 2πC for
     // Sin; -ArcCos[c] + 2πC, ArcCos[c] + 2πC for Cos; ArcTan[c] + πC for Tan.
     ("Sin", None) => {
       let a = inverse("ArcSin");
-      let arcsin_sol = plus(a.clone(), two_pi_c1.clone());
-      let pi_minus_sol =
-        plus(eval(plus(pi.clone(), negate(a.clone()))), two_pi_c1.clone());
+      let arcsin_sol = plus2(a.clone(), two_pi_c1.clone());
+      let pi_minus_sol = plus2(
+        eval(plus2(pi.clone(), negate(a.clone()))),
+        two_pi_c1.clone(),
+      );
       // wolframscript orders the two branches by canonical form: when
       // `ArcSin[c]` stays symbolic (|c| is not a special value) it lists
       // `Pi - ArcSin[c]` first; when it simplifies to a concrete multiple of Pi
@@ -4404,11 +4305,11 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
     ("Cos", None) => {
       let a = inverse("ArcCos");
       vec![
-        plus(negate(a.clone()), two_pi_c1.clone()),
-        plus(a, two_pi_c1.clone()),
+        plus2(negate(a.clone()), two_pi_c1.clone()),
+        plus2(a, two_pi_c1.clone()),
       ]
     }
-    ("Tan", None) => vec![plus(inverse("ArcTan"), pi_c1.clone())],
+    ("Tan", None) => vec![plus2(inverse("ArcTan"), pi_c1.clone())],
     _ => return None,
   };
 
@@ -4488,16 +4389,8 @@ fn try_solve_inverse_function(
       }
       // base^exp == val where exp is constant (non-integer), base contains var
       // → base == val^(1/exp)
-      let inverse_exp = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(exp.clone()),
-      };
-      let inverse_rhs = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(val.clone()),
-        right: Box::new(inverse_exp),
-      };
+      let inverse_exp = div2(Expr::Integer(1), exp.clone());
+      let inverse_rhs = pow2(val.clone(), inverse_exp);
       let simplified_rhs =
         crate::evaluator::evaluate_expr_to_expr(&inverse_rhs).ok()?;
       let new_eq = Expr::Comparison {
@@ -4634,19 +4527,11 @@ fn try_solve_inverse_function(
     let inverse_rhs = match name.as_str() {
       "Log" => {
         // Log[inner] == val → inner == E^val
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::Constant("E".to_string())),
-          right: Box::new(val.clone()),
-        }
+        pow2(Expr::Constant("E".to_string()), val.clone())
       }
       "Sqrt" => {
         // Sqrt[inner] == val → inner == val^2
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(val.clone()),
-          right: Box::new(Expr::Integer(2)),
-        }
+        pow2(val.clone(), Expr::Integer(2))
       }
       "Exp" => {
         // Exp[inner] == val → inner == Log[val]
@@ -4702,19 +4587,11 @@ fn try_solve_inverse_function(
       }
       "Log10" => {
         // Log10[inner] == val → inner == 10^val
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::Integer(10)),
-          right: Box::new(val.clone()),
-        }
+        pow2(Expr::Integer(10), val.clone())
       }
       "Log2" => {
         // Log2[inner] == val → inner == 2^val
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::Integer(2)),
-          right: Box::new(val.clone()),
-        }
+        pow2(Expr::Integer(2), val.clone())
       }
       _ => return None,
     };
@@ -4819,18 +4696,14 @@ fn try_solve_radical_equation(
       .collect(),
   );
   let raise = |base: &Expr| {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(base.clone()),
-      right: Box::new(Expr::Integer(index)),
-    })
+    crate::evaluator::evaluate_expr_to_expr(&pow2(
+      base.clone(),
+      Expr::Integer(index),
+    ))
     .ok()
   };
-  let cleared = expand_and_combine(&Expr::BinaryOp {
-    op: BinaryOperator::Minus,
-    left: Box::new(raise(&terms[isolated])?),
-    right: Box::new(raise(&rest)?),
-  });
+  let cleared =
+    expand_and_combine(&minus2(raise(&terms[isolated])?, raise(&rest)?));
   // Raising has to leave fewer roots behind than it found, or the equation
   // would come straight back here and never settle.
   let left_over = collect_additive_terms(&cleared)
@@ -5161,11 +5034,7 @@ fn try_solve_factoring_powers(
                       .into(),
                   }
                 };
-                remaining_factors[idx] = Expr::BinaryOp {
-                  op: BinaryOperator::Power,
-                  left: Box::new(base_expr),
-                  right: Box::new(new_exp),
-                };
+                remaining_factors[idx] = pow2(base_expr, new_exp);
               }
               factored = true;
               break;
@@ -5212,11 +5081,7 @@ pub fn solve_divide(num: &Expr, den: &Expr) -> Expr {
     // expression): evaluate the quotient so it is fully simplified
     // (e.g. -x / (-1/2) -> 2*x) rather than left as a nested fraction.
     _ => {
-      let div = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(num.clone()),
-        right: Box::new(den.clone()),
-      };
+      let div = div2(num.clone(), den.clone());
       crate::evaluator::evaluate_expr_to_expr(&div).unwrap_or(div)
     }
   }
@@ -5243,11 +5108,10 @@ fn build_eq_from_coeffs(coeffs: &[Expr], var: &str) -> Expr {
       Expr::BinaryOp {
         op: BinaryOperator::Times,
         left: Box::new(c.clone()),
-        right: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::Identifier(var.to_string())),
-          right: Box::new(Expr::Integer(i as i128)),
-        }),
+        right: Box::new(pow2(
+          Expr::Identifier(var.to_string()),
+          Expr::Integer(i as i128),
+        )),
       }
     };
     terms.push(term);
@@ -5257,11 +5121,7 @@ fn build_eq_from_coeffs(coeffs: &[Expr], var: &str) -> Expr {
   } else {
     let mut result = terms.remove(0);
     for t in terms {
-      result = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(result),
-        right: Box::new(t),
-      };
+      result = plus2(result, t);
     }
     result
   };
@@ -6062,20 +5922,12 @@ fn build_find_root_func(arg: &Expr) -> Expr {
       && operators.len() == 1
       && operators[0] == ComparisonOp::Equal =>
     {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(operands[0].clone()),
-        right: Box::new(operands[1].clone()),
-      }
+      minus2(operands[0].clone(), operands[1].clone())
     }
     Expr::FunctionCall { name, args: fargs }
       if name == "Equal" && fargs.len() == 2 =>
     {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(fargs[0].clone()),
-        right: Box::new(fargs[1].clone()),
-      }
+      minus2(fargs[0].clone(), fargs[1].clone())
     }
     other => other.clone(),
   }
@@ -6312,17 +6164,9 @@ fn find_root_complex_newton(
       right: Box::new(Expr::Identifier("I".to_string())),
     };
     let combined = if im >= 0.0 {
-      Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Real(re)),
-        right: Box::new(im_term),
-      }
+      plus2(Expr::Real(re), im_term)
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(Expr::Real(re)),
-        right: Box::new(im_term),
-      }
+      minus2(Expr::Real(re), im_term)
     };
     crate::evaluator::evaluate_expr_to_expr(&combined).unwrap_or(combined)
   };
@@ -7393,11 +7237,7 @@ fn minimize_poly_roots_int(coeffs: &[i128], var: &str) -> Vec<Expr> {
               let root = if den == 1 {
                 num
               } else {
-                Expr::BinaryOp {
-                  op: BinaryOperator::Divide,
-                  left: Box::new(num),
-                  right: Box::new(Expr::Integer(den)),
-                }
+                div2(num, Expr::Integer(den))
               };
               roots.push(simplify(root));
             }
@@ -7635,10 +7475,7 @@ fn minimize_neg_infinity_result(
   maximize: bool,
   var_toward_positive: bool,
 ) -> Expr {
-  let neg_infinity = || Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand: Box::new(Expr::Identifier("Infinity".to_string())),
-  };
+  let neg_infinity = || neg1(Expr::Identifier("Infinity".to_string()));
   let inf_val = if maximize {
     Expr::Identifier("Infinity".to_string())
   } else {
@@ -9301,11 +9138,7 @@ fn minimize_extract_linear_constraint(
   };
 
   // diff = lhs - rhs, should be linear
-  let diff = Expr::BinaryOp {
-    op: BinaryOperator::Minus,
-    left: Box::new(operands[0].clone()),
-    right: Box::new(operands[1].clone()),
-  };
+  let diff = minus2(operands[0].clone(), operands[1].clone());
   let expanded = expand_and_combine(&diff);
 
   let mut coeffs = vec![0.0f64; vars.len()];
@@ -9428,19 +9261,11 @@ fn minimize_constrained_boundary(
           left: Box::new(Expr::Real(coeffs[j])),
           right: Box::new(Expr::Identifier(var_j.clone())),
         };
-        elim_expr = Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(elim_expr),
-          right: Box::new(term),
-        };
+        elim_expr = minus2(elim_expr, term);
       }
     }
     if (elim_coeff - 1.0).abs() > 1e-12 {
-      elim_expr = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(elim_expr),
-        right: Box::new(Expr::Real(elim_coeff)),
-      };
+      elim_expr = div2(elim_expr, Expr::Real(elim_coeff));
     }
 
     // Substitute elim_var = elim_expr in f
@@ -9573,11 +9398,7 @@ fn minimize_lp_2d(
     };
 
     // Extract coefficients from lhs - rhs as linear function of vars
-    let diff = Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(lhs.clone()),
-      right: Box::new(rhs.clone()),
-    };
+    let diff = minus2(lhs.clone(), rhs.clone());
     let expanded = expand_and_combine(&diff);
     let terms = collect_additive_terms(&expanded);
 
@@ -10340,11 +10161,7 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
       _ => return None,
     };
     // poly = lhs - rhs; find coefficients of poly == 0
-    let poly_raw = Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(lhs.clone()),
-      right: Box::new(rhs.clone()),
-    };
+    let poly_raw = minus2(lhs.clone(), rhs.clone());
     let poly = expand_and_combine(&poly_raw);
     let terms = collect_additive_terms(&poly);
 
@@ -10414,11 +10231,7 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
         for j in 0..ncols {
           let t1 = eval_entry(multiply_exprs(&pivot, &matrix[row][j]));
           let t2 = eval_entry(multiply_exprs(&factor, &matrix[pivot_row][j]));
-          matrix[row][j] = eval_entry(Expr::BinaryOp {
-            op: BinaryOperator::Minus,
-            left: Box::new(t1),
-            right: Box::new(t2),
-          });
+          matrix[row][j] = eval_entry(minus2(t1, t2));
         }
       }
     }
@@ -10601,11 +10414,7 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
             let t1 = new_matrix[r2][j].clone();
             let t2 =
               eval_entry(multiply_exprs(&factor, &new_matrix[pivot_r][j]));
-            new_matrix[r2][j] = eval_entry(Expr::BinaryOp {
-              op: BinaryOperator::Minus,
-              left: Box::new(t1),
-              right: Box::new(t2),
-            });
+            new_matrix[r2][j] = eval_entry(minus2(t1, t2));
           }
         }
         let new_rules =
@@ -11543,10 +11352,7 @@ fn nminimize_infeasible_result(
   ));
 
   let inf = if maximize {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(Expr::Identifier("Infinity".to_string())),
-    }
+    neg1(Expr::Identifier("Infinity".to_string()))
   } else {
     Expr::Identifier("Infinity".to_string())
   };
@@ -11569,10 +11375,7 @@ fn nminimize_unbounded_result(vars: &[String], maximize: bool) -> Expr {
   let inf = if maximize {
     Expr::Identifier("Infinity".to_string())
   } else {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(Expr::Identifier("Infinity".to_string())),
-    }
+    neg1(Expr::Identifier("Infinity".to_string()))
   };
   let rules: Vec<Expr> = vars
     .iter()
