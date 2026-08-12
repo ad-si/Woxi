@@ -16,7 +16,7 @@ fn main() {
   {
     let ref_path = format!(".git/{}", git_ref.trim());
     if std::path::Path::new(&ref_path).exists() {
-      println!("cargo:rerun-if-changed={}", ref_path);
+      println!("cargo:rerun-if-changed={ref_path}");
     }
   }
 
@@ -33,5 +33,5 @@ fn main() {
     })
     .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
 
-  println!("cargo:rustc-env=WOXI_GIT_VERSION={}", version);
+  println!("cargo:rustc-env=WOXI_GIT_VERSION={version}");
 }

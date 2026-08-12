@@ -18,7 +18,7 @@ fn run_script_file(absolute_path: &std::path::Path) {
   let content = match fs::read_to_string(absolute_path) {
     Ok(content) => content,
     Err(e) => {
-      eprintln!("Error reading file: {}", e);
+      eprintln!("Error reading file: {e}");
       return;
     }
   };
@@ -43,9 +43,9 @@ fn run_script_file(absolute_path: &std::path::Path) {
         // been written by the interpreter itself.
       }
       Err(e) => {
-        eprintln!("Error interpreting file: {}", e);
+        eprintln!("Error interpreting file: {e}");
         if let Some(trace) = woxi::take_error_trace() {
-          eprintln!("{}", trace);
+          eprintln!("{trace}");
         }
       }
     }
@@ -58,7 +58,7 @@ fn run_notebook(content: &str) {
   let notebook = match parse_notebook(content) {
     Ok(nb) => nb,
     Err(e) => {
-      eprintln!("Error parsing notebook: {}", e);
+      eprintln!("Error parsing notebook: {e}");
       return;
     }
   };
@@ -79,9 +79,9 @@ fn run_notebook(content: &str) {
       }
       Err(woxi::InterpreterError::EmptyInput) => {}
       Err(e) => {
-        eprintln!("Error interpreting cell: {}", e);
+        eprintln!("Error interpreting cell: {e}");
         if let Some(trace) = woxi::take_error_trace() {
-          eprintln!("{}", trace);
+          eprintln!("{trace}");
         }
       }
     }
@@ -101,7 +101,7 @@ enum Commands {
   Eval {
     /// The Wolfram Language expression to evaluate. Pass `-` to read
     /// the expression from stdin instead — useful for inputs that
-    /// exceed the shell's ARG_MAX (e.g. huge image NumericArrays).
+    /// exceed the shell's `ARG_MAX` (e.g. huge image `NumericArrays`).
     #[arg(allow_hyphen_values = true)]
     expression: String,
     /// Suppress Print output to stdout (Print still captured internally)
@@ -115,7 +115,7 @@ enum Commands {
     /// The path to the Wolfram Language file to execute
     #[arg(value_name = "FILE")]
     file: PathBuf,
-    /// Additional arguments passed to the script (accessible via $ScriptCommandLine)
+    /// Additional arguments passed to the script (accessible via $`ScriptCommandLine`)
     #[arg(trailing_var_arg = true)]
     args: Vec<String>,
   },
@@ -170,8 +170,7 @@ fn install_kernel(user: bool, system: bool) -> std::io::Result<()> {
     Ok(())
   } else {
     Err(std::io::Error::other(format!(
-      "Failed to install kernel. Exit code: {}",
-      status
+      "Failed to install kernel. Exit code: {status}"
     )))
   }
 }
@@ -214,7 +213,7 @@ fn run(cli: Cli) {
         use std::io::Read;
         let mut buf = String::new();
         if let Err(e) = std::io::stdin().read_to_string(&mut buf) {
-          eprintln!("Error: failed to read stdin: {}", e);
+          eprintln!("Error: failed to read stdin: {e}");
           std::process::exit(1);
         }
         buf
@@ -242,9 +241,9 @@ fn run(cli: Cli) {
           }
         }
         Err(e) => {
-          eprintln!("Error: {}", e);
+          eprintln!("Error: {e}");
           if let Some(trace) = woxi::take_error_trace() {
-            eprintln!("{}", trace);
+            eprintln!("{trace}");
           }
         }
       }
@@ -267,7 +266,7 @@ fn run(cli: Cli) {
 
       // Set $InputFileName and $ScriptCommandLine
       let abs_str = absolute_path.to_string_lossy().to_string();
-      woxi::set_system_variable("$InputFileName", &format!("\"{}\"", abs_str));
+      woxi::set_system_variable("$InputFileName", &format!("\"{abs_str}\""));
       let mut cmd_line = vec![abs_str];
       cmd_line.extend(args);
       set_script_command_line(&cmd_line);
@@ -305,7 +304,7 @@ fn run(cli: Cli) {
 
       // Set $InputFileName and $ScriptCommandLine
       let abs_str = absolute_path.to_string_lossy().to_string();
-      woxi::set_system_variable("$InputFileName", &format!("\"{}\"", abs_str));
+      woxi::set_system_variable("$InputFileName", &format!("\"{abs_str}\""));
       let mut cmd_line = vec![abs_str];
       cmd_line.extend(args.into_iter().skip(1));
       set_script_command_line(&cmd_line);

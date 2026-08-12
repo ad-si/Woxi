@@ -30,7 +30,7 @@ struct WoxiKernel {
 impl WoxiKernel {
   pub(crate) async fn start(connection_info: &ConnectionInfo) -> Result<()> {
     let session_id = Uuid::new_v4().to_string();
-    debug!("Starting kernel with session ID: {}", session_id);
+    debug!("Starting kernel with session ID: {session_id}");
 
     // Create all connections
     let mut heartbeat =
@@ -75,7 +75,7 @@ impl WoxiKernel {
           JupyterMessageContent::KernelInfoRequest(_) => {
             let reply = Self::kernel_info().as_child_of(&message);
             if let Err(err) = control_connection.send(reply).await {
-              error!("Error on control: {}", err);
+              error!("Error on control: {err}");
             }
           }
           JupyterMessageContent::ShutdownRequest(req) => {
@@ -96,7 +96,7 @@ impl WoxiKernel {
     // Shell task
     let shell_handle = tokio::spawn(async move {
       if let Err(err) = kernel.handle_shell(&mut shell_reader).await {
-        error!("Shell error: {}", err);
+        error!("Shell error: {err}");
       }
     });
 
@@ -117,7 +117,7 @@ impl WoxiKernel {
     loop {
       let msg = reader.read().await?;
       if let Err(err) = self.handle_shell_message(&msg).await {
-        error!("Error handling shell message: {}", err);
+        error!("Error handling shell message: {err}");
       }
     }
   }
@@ -144,7 +144,7 @@ impl WoxiKernel {
         trace!("is_complete_request: {}", req.code);
         let reply = jupyter_protocol::IsCompleteReply {
           status: jupyter_protocol::IsCompleteReplyStatus::Complete,
-          indent: "".to_string(),
+          indent: String::new(),
         };
         self.shell.send(reply.as_child_of(parent)).await?;
       }
@@ -217,8 +217,7 @@ impl WoxiKernel {
               .iopub
               .send(
                 jupyter_protocol::StreamContent::stdout(&format!(
-                  "{}\n",
-                  trimmed_stdout
+                  "{trimmed_stdout}\n"
                 ))
                 .as_child_of(parent),
               )
@@ -230,7 +229,7 @@ impl WoxiKernel {
             self
               .iopub
               .send(
-                jupyter_protocol::StreamContent::stderr(&format!("{}\n", w))
+                jupyter_protocol::StreamContent::stderr(&format!("{w}\n"))
                   .as_child_of(parent),
               )
               .await?;
@@ -279,11 +278,8 @@ impl WoxiKernel {
           self
             .iopub
             .send(
-              jupyter_protocol::StreamContent::stderr(&format!(
-                "Error: {}\n",
-                e
-              ))
-              .as_child_of(parent),
+              jupyter_protocol::StreamContent::stderr(&format!("Error: {e}\n"))
+                .as_child_of(parent),
             )
             .await?;
         }
@@ -338,7 +334,7 @@ async fn run_impl(connection_file: Option<&Path>) -> Result<()> {
     serde_json::from_str(&content)?
   } else {
     // Create a new connection on localhost with random ports
-    let ip = std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1));
+    let ip = std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
     let ports = runtimelib::peek_ports(ip, 5).await?;
     assert_eq!(ports.len(), 5);
 
