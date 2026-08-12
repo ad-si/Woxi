@@ -3514,11 +3514,119 @@ fn try_complex_inverse_trig(
   Some(build_complex_float_result(rr, ri))
 }
 
+/// Fold an inverse trig function applied to its own forward function at an
+/// exact real argument: `ArcSin[Sin[u]]`, `ArcCos[Cos[u]]`, `ArcTan[Tan[u]]`,
+/// `ArcCot[Cot[u]]`, `ArcSec[Sec[u]]` and `ArcCsc[Csc[u]]`.
+///
+/// The round trip is not the identity — it lands on the one value in the
+/// inverse function's principal range that shares the forward value, so
+/// `ArcSin[Sin[2]]` is `Pi - 2` and `ArcSin[Sin[7]]` is `7 - 2 Pi`. Wolfram
+/// performs this range reduction automatically for every exact real
+/// argument; the exact result is always `±u` shifted by an integer multiple
+/// of `Pi`, so it is built symbolically from `u` itself rather than
+/// numerically.
+///
+/// `None` for a symbolic argument (no branch to pick), for an inexact one
+/// (the forward call already collapsed to a machine number), and for a
+/// complex one (the reduction is a real-line argument): in each case the
+/// half-turn count below fails to come out an integer, which is the test.
+fn fold_inverse_of_forward(name: &str, arg: &Expr) -> Option<Expr> {
+  // Which forward function inverts, and which principal range the result
+  // is reduced into: `Csc`/`Sec` share the range of `Sin`/`Cos` because
+  // they are their reciprocals.
+  let (forward, range) = match name {
+    "ArcSin" => ("Sin", 'S'),
+    "ArcCsc" => ("Csc", 'S'),
+    "ArcCos" => ("Cos", 'C'),
+    "ArcSec" => ("Sec", 'C'),
+    "ArcTan" => ("Tan", 'T'),
+    "ArcCot" => ("Cot", 'O'),
+    _ => return None,
+  };
+  let Expr::FunctionCall { name: inner, args } = arg else {
+    return None;
+  };
+  if inner != forward || args.len() != 1 {
+    return None;
+  }
+  let u = &args[0];
+  if contains_inexact_real(u) {
+    return None;
+  }
+
+  let pi = || Expr::Constant("Pi".to_string());
+  let half = || Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+  };
+  // How many half turns to take off `u`, as an exact integer. Each range
+  // wants its own half-open period:
+  //   `[-Pi/2, Pi/2)` for Sin/Tan — `Floor[u/Pi + 1/2]`
+  //   `[0, Pi)`       for Cos     — `Floor[u/Pi]`
+  //   `(-Pi/2, Pi/2]` for Cot     — `Ceiling[u/Pi - 1/2]`, half-open the
+  //                                 other way, which is what makes
+  //                                 `ArcCot[Cot[Pi/2]]` come back `Pi/2`
+  // Computing it through `Floor`/`Ceiling` rather than in f64 keeps the
+  // reduction exact however many turns out the argument is.
+  let ratio = binop(BinaryOperator::Divide, u.clone(), pi());
+  let (rounder, shifted_ratio) = match range {
+    'C' => ("Floor", ratio),
+    'O' => ("Ceiling", binop(BinaryOperator::Minus, ratio, half())),
+    _ => ("Floor", binop(BinaryOperator::Plus, ratio, half())),
+  };
+  let k = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: rounder.to_string(),
+    args: vec![shifted_ratio].into(),
+  })
+  .ok()?;
+  // Anything that is not an exact integer here — a symbol, a complex
+  // number, an unevaluated `Floor` — has no branch to land on.
+  let k_is_even = match &k {
+    Expr::Integer(n) => n.rem_euclid(2) == 0,
+    Expr::BigInteger(n) => !n.bit(0),
+    _ => return None,
+  };
+  let k_is_zero = matches!(&k, Expr::Integer(0));
+
+  // `u - k Pi`, its reflection `k Pi - u`, and `(k + 1) Pi - u`.
+  let k_pi = binop(BinaryOperator::Times, k.clone(), pi());
+  let reduced = if k_is_zero {
+    u.clone()
+  } else {
+    binop(BinaryOperator::Minus, u.clone(), k_pi.clone())
+  };
+  let reflected = binop(BinaryOperator::Minus, k_pi.clone(), u.clone());
+  let complement = binop(
+    BinaryOperator::Minus,
+    binop(BinaryOperator::Plus, k_pi, pi()),
+    u.clone(),
+  );
+
+  let result = match range {
+    // Sin[u - k Pi] = (-1)^k Sin[u], so an odd number of half turns flips
+    // the sign and the answer reflects to `k Pi - u`.
+    'S' if k_is_even => reduced,
+    'S' => reflected,
+    // With `w = u - k Pi` in `[0, Pi)`, Cos[u] = (-1)^k Cos[w], and the
+    // value in `[0, Pi]` sharing it is `w` for an even `k`, `Pi - w` — that
+    // is, `(k + 1) Pi - u` — for an odd one.
+    'C' if k_is_even => reduced,
+    'C' => complement,
+    // Tan and Cot have period Pi, so the shift alone is the answer.
+    _ => reduced,
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result).ok()
+}
+
 pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "ArcSin expects exactly 1 argument".into(),
     ));
+  }
+  // `ArcSin[Sin[u]]` and friends reduce into the principal range.
+  if let Some(folded) = fold_inverse_of_forward("ArcSin", &args[0]) {
+    return Ok(folded);
   }
   if let Some(r) = try_complex_inverse_trig("ArcSin", &args[0]) {
     return r;
@@ -3684,6 +3792,9 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ArcCos expects exactly 1 argument".into(),
     ));
   }
+  if let Some(folded) = fold_inverse_of_forward("ArcCos", &args[0]) {
+    return Ok(folded);
+  }
   if let Some(r) = try_complex_inverse_trig("ArcCos", &args[0]) {
     return r;
   }
@@ -3840,6 +3951,9 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "ArcTan expects exactly 1 argument".into(),
     ));
+  }
+  if let Some(folded) = fold_inverse_of_forward("ArcTan", &args[0]) {
+    return Ok(folded);
   }
   if let Some(r) = try_complex_inverse_trig("ArcTan", &args[0]) {
     return r;
@@ -5134,6 +5248,9 @@ pub fn arccot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ArcCot expects 1 argument".into(),
     ));
   }
+  if let Some(folded) = fold_inverse_of_forward("ArcCot", &args[0]) {
+    return Ok(folded);
+  }
   let x = &args[0];
   let unevaluated = || Ok(unevaluated("ArcCot", args));
 
@@ -5179,6 +5296,9 @@ pub fn arccsc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ArcCsc expects 1 argument".into(),
     ));
   }
+  if let Some(folded) = fold_inverse_of_forward("ArcCsc", &args[0]) {
+    return Ok(folded);
+  }
   match &args[0] {
     // ArcCsc[0] = ArcSin[1/0] = ComplexInfinity.
     Expr::Integer(0) => {
@@ -5222,6 +5342,9 @@ pub fn arcsec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "ArcSec expects 1 argument".into(),
     ));
+  }
+  if let Some(folded) = fold_inverse_of_forward("ArcSec", &args[0]) {
+    return Ok(folded);
   }
   match &args[0] {
     // ArcSec[0] = ArcCos[1/0] = ComplexInfinity.

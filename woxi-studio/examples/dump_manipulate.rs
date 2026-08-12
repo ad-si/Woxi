@@ -41,9 +41,20 @@ fn main() {
   }
 
   let mut widget_count = 0;
-  for cell in &all_cells {
+  for (idx, cell) in all_cells.iter().enumerate() {
     if !matches!(cell.style, CellStyle::Input | CellStyle::Code) {
       continue;
+    }
+    // `Manipulate[…, SaveDefinitions -> True]` stores the definitions its
+    // body depends on in the following Output cell's widget dump. The
+    // Studio runs them before instantiating; do the same here, or a
+    // Demonstration's helper functions look undefined.
+    if let Some(next) = all_cells.get(idx + 1)
+      && next.style == CellStyle::Output
+      && let Some(init) =
+        woxi::notebook::extract_saved_initialization(&next.content)
+    {
+      let _ = woxi::interpret(&init);
     }
     let code = cell.content.trim();
     for stmt in woxi::split_into_statements(code) {

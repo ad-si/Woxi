@@ -30,6 +30,30 @@
     - A term with a negative *real* coefficient prints as a subtraction, the
         same as an integer one: `ToString[x - 0.5 y]` was `x + -0.5 y`.
 
+- Fixes driven by a Wolfram Demonstration that quizzes the reader on the
+    exact value of `f⁻¹(f(x))` for a trigonometric `f`, offering the
+    candidate answers in a pick list drawn inside its own layout:
+    - An inverse trigonometric function applied to its own forward function
+        at an exact real argument reduces into the inverse's principal
+        range: `ArcSin[Sin[2]]` is `Pi - 2`, `ArcSin[Sin[7]]` is
+        `7 - 2 Pi`, `ArcCot[Cot[Pi/2]]` is `Pi/2`. The round trip used to
+        stay unevaluated, which is precisely the answer the quiz asks for.
+    - `\!\(\*boxes\)`, the escape `InputForm` writes for a typeset
+        expression, reads back as that expression. Woxi Studio serializes a
+        `Manipulate` body through `InputForm` and re-parses it on every
+        frame, so a `TraditionalForm[…]` in the body came back as an opaque
+        `HoldComplete` and printed as its own source.
+    - A `Style` around a `Row`/`Column`/`Grid` sets the layout's text and
+        leaves any picture inside it alone. The font directives used to be
+        pushed onto the picture too, which hid it behind the `-Graphics-`
+        placeholder — so a body written `Text@Style[Row[{…}], 18]` lost its
+        plot.
+    - `PopupMenu[Dynamic[var], choices]` written inside a `Manipulate` body
+        becomes a real pick list for `var` instead of printing as source.
+        The choice list is taken with the `With`/`Module`/`Block` scopes the
+        body wraps it in, so a list built from the body's own locals still
+        resolves, and it is re-resolved whenever the other controls change.
+
 - `woxi repl` prints results the way wolframscript's terminal REPL does:
     a machine-precision real shows the 6 significant figures of OutputForm
     (`3203.60 - 2711.16` is `492.44`, not `492.44000000000005`) and an

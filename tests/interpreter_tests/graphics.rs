@@ -16698,6 +16698,74 @@ mod manipulate {
     }
   }
 
+  // A Demonstration that wants its pick list *inside* its own layout writes
+  // `PopupMenu[Dynamic[var], choices]` in the body and declares `var` as a
+  // hidden `ControlType -> None` variable. That is a control, so it becomes
+  // one — and the body no longer prints the pick list as source next to it.
+  #[test]
+  fn spec_body_popup_menu_becomes_a_control() {
+    let expr = interpret_to_expr(
+      "Manipulate[Column[{\"pick\", PopupMenu[Dynamic[a], {1, 2, 3}]}], \
+       {a, 0, ControlType -> None}, {b, 0, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete {
+        name,
+        values,
+        popup,
+        ..
+      } => {
+        assert_eq!(name, "a");
+        assert_eq!(values, &["1", "2", "3"]);
+        assert!(popup, "a pick list renders as a dropdown");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+    assert!(
+      !spec.body_code.contains("PopupMenu"),
+      "the pick list moved out of the body: {}",
+      spec.body_code
+    );
+    assert!(
+      !spec.state.iter().any(|(n, _)| n == "a"),
+      "the promoted variable is a control, not hidden state"
+    );
+  }
+
+  // The choice list a body draws is usually built from locals the body
+  // itself introduces, so it only evaluates inside those scopes. The
+  // promoted control therefore carries the list re-wrapped in them, and
+  // re-resolves it whenever the controls it depends on change.
+  #[test]
+  fn spec_body_popup_menu_reads_choices_from_enclosing_scopes() {
+    let expr = interpret_to_expr(
+      "Manipulate[With[{d = 2 k}, With[{choices = {d, d + 1}}, \
+         Row[{\"pick\", PopupMenu[Dynamic[a], choices]}]]], \
+       {a, 0, ControlType -> None}, {{k, 3}, {3, 4}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete { name, values, .. } => {
+        assert_eq!(name, "a");
+        assert_eq!(values, &["6", "7"], "choices resolved with k = 3");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+    let (var, code) = spec
+      .dynamic_values
+      .iter()
+      .find(|(n, _)| n == "a")
+      .expect("the choice list is re-resolved per frame");
+    assert_eq!(var, "a");
+    assert!(
+      code.starts_with("With[{d = 2*k},") && code.ends_with("choices]]"),
+      "the list keeps the body's scopes: {code}"
+    );
+  }
+
   #[test]
   fn spec_locator_pane_explicit_range_and_initial() {
     // A literal initial point and an explicit coordinate range are honored.
@@ -23204,6 +23272,31 @@ mod display_wrapper_export {
       "{svg:.400}"
     );
     assert!(svg.contains(">hi<"), "the text cell must typeset");
+  }
+
+  /// A `Style` around a layout sets the layout's *text*; a picture inside
+  /// it keeps drawing. Pushing the font directives onto the picture as well
+  /// hid it behind the `-Graphics-` placeholder — which is how a
+  /// Demonstration body written as `Text@Style[Row[{…}], 18]` lost its
+  /// plot.
+  #[test]
+  fn a_styled_layout_still_draws_the_picture_it_holds() {
+    clear_state();
+    let result = woxi::interpret_with_stdout(
+      "Text[Style[Row[{Column[{\"a\", \"b\"}], \
+       Graphics[{Circle[]}, ImageSize -> {100, 100}]}], 18]]",
+    )
+    .unwrap();
+    let svg = result.graphics.expect("the layout renders as a picture");
+    assert!(svg.contains("<ellipse"), "the circle must draw: {svg:.600}");
+    assert!(
+      !svg.contains("-Graphics-"),
+      "no placeholder in place of the picture: {svg:.600}"
+    );
+    assert!(
+      svg.contains(">a<"),
+      "the styled text still typesets: {svg:.600}"
+    );
   }
 
   /// Text-only layouts keep the text renderer, which already aligns them.
