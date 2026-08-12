@@ -3108,6 +3108,104 @@ mod tests {
     }
 
     #[test]
+    fn negative_power_sets_as_a_fraction() {
+      // TraditionalForm puts a negative exponent under a fraction bar:
+      // `1/x` parses as `Power[x, -1]` and must not set as `x⁻¹`.
+      let boxes = tf("1/x");
+      assert!(boxes.contains("FractionBox"), "1/x is a fraction: {boxes}");
+      assert!(!boxes.contains("SuperscriptBox"), "no `x⁻¹`: {boxes}");
+      // The exponent's magnitude stays on the denominator.
+      let boxes = tf("x^-2");
+      assert!(boxes.contains("FractionBox"), "x⁻² is a fraction: {boxes}");
+      assert!(boxes.contains("\"2\""), "denominator keeps `²`: {boxes}");
+      assert!(!boxes.contains("\"-\""), "no minus in the script: {boxes}");
+      // Composite bases keep their own rendering under the bar — the trig
+      // exponent still sits on the function name (`1/cos³(x)`).
+      let boxes = tf("Cos[x]^-3");
+      assert!(boxes.contains("FractionBox"), "reciprocal power: {boxes}");
+      assert!(boxes.contains("\"cos\""), "cos under the bar: {boxes}");
+    }
+
+    #[test]
+    fn positive_power_stays_a_superscript() {
+      // The fraction rule must not swallow ordinary exponents.
+      let boxes = tf("x^2");
+      assert!(boxes.contains("SuperscriptBox"), "x² is a script: {boxes}");
+      assert!(!boxes.contains("FractionBox"), "not a fraction: {boxes}");
+    }
+
+    #[test]
+    fn derivative_sets_as_prime_marks() {
+      // `f'` is held as `Derivative[1][f]`, and no front end shows that head:
+      // orders 1–3 typeset as prime marks on the function name.
+      for (code, primes) in [("r'", 1), ("f''", 2), ("g'''", 3)] {
+        let boxes = tf(code);
+        assert!(
+          boxes.contains(&"\u{2032}".repeat(primes)),
+          "{code} carries {primes} prime(s): {boxes}"
+        );
+        assert!(
+          !boxes.contains("Derivative"),
+          "{code} hides the Derivative head: {boxes}"
+        );
+      }
+    }
+
+    #[test]
+    fn applied_derivative_keeps_its_argument() {
+      // `f''[x]` → `f″(x)`: the primes stay on the name, the argument
+      // follows in round brackets like any other call.
+      let boxes = tf("f''[x]");
+      assert!(boxes.contains("\u{2032}\u{2032}"), "two primes: {boxes}");
+      assert!(boxes.contains("\"x\""), "argument kept: {boxes}");
+      assert!(!boxes.contains("Derivative"), "head hidden: {boxes}");
+    }
+
+    #[test]
+    fn high_order_derivative_uses_a_parenthesised_order() {
+      // Past three, the marks stop being countable and Wolfram spells the
+      // order out: `f⁽⁴⁾`.
+      let boxes = tf("Derivative[4][f]");
+      assert!(boxes.contains("\"4\""), "order shown: {boxes}");
+      assert!(!boxes.contains('\u{2032}'), "no prime marks: {boxes}");
+      assert!(!boxes.contains("Derivative"), "head hidden: {boxes}");
+    }
+
+    #[test]
+    fn multivariate_derivative_lists_its_orders() {
+      // `Derivative[1, 0][f][x, y]` → `f⁽¹’⁰⁾(x, y)`.
+      let boxes = tf("Derivative[1, 0][f][x, y]");
+      assert!(boxes.contains("\"1\"") && boxes.contains("\"0\""));
+      assert!(
+        boxes.contains("\"x\"") && boxes.contains("\"y\""),
+        "arguments kept: {boxes}"
+      );
+      assert!(!boxes.contains("Derivative"), "head hidden: {boxes}");
+    }
+
+    #[test]
+    fn typeset_svg_shows_a_logarithmic_derivative() {
+      // The shape a Wolfram Demonstration labels a polar curve with: the
+      // logarithmic derivative `r′/r` over a fraction bar, and the curve's
+      // own equation as a reciprocal power. Both go through the typeset
+      // SVG the Studio draws into a Manipulate cell.
+      let svg = tf_svg("TraditionalForm[r'/r == Tan[t/3]]");
+      assert!(svg.contains('\u{2032}'), "prime drawn: {svg}");
+      assert!(!svg.contains(">Derivative<"), "head hidden: {svg}");
+      let svg = tf_svg("TraditionalForm[r == 1/Cos[t/3]^3]");
+      assert!(svg.contains(">cos<"), "cos drawn: {svg}");
+      assert!(!svg.contains(">-3<"), "no negative exponent: {svg}");
+    }
+
+    #[test]
+    fn symbolic_derivative_order_falls_back_to_the_head() {
+      // An order that is not a literal count has no prime rendering, so the
+      // generic `head(args)` form stands in rather than a wrong script.
+      let boxes = tf("Derivative[n][f]");
+      assert!(boxes.contains("Derivative"), "head shown: {boxes}");
+    }
+
+    #[test]
     fn unknown_function_uses_parentheses() {
       // Preserves the MakeBoxes contract: F[x] → RowBox[{F, (, x, )}].
       let boxes = tf("F[x]");

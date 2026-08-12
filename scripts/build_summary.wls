@@ -9,8 +9,11 @@
       of per-function pages (e.g. `math/bits.md` <-> `math/bits/`), the
       function pages are inserted as nested children below the category
       entry. Files already referenced are skipped so each page appears
-      exactly once. Idempotent — running it again after function pages
-      are added/removed updates the tree.
+      exactly once. Entries pointing at a `.md` file that no longer
+      exists are dropped — otherwise a moved page leaves a nav link that
+      404s on the published site and a dead `Information[…]` URL.
+      Idempotent — running it again after function pages are
+      added/moved/removed updates the tree.
 
    2. Emit a TOML `nav` array into tests/zensical.toml, replacing the
       lines between the `# nav-begin` and `# nav-end` markers. The nav
@@ -81,6 +84,13 @@ parseEntry[line_String] := Module[{r},
 
 (* ----- Summary augmentation --------------------------------------- *)
 
+(* A `.md` target that has no file behind it. Non-`.md` targets (e.g.
+   the hand-written `jupyterlite-showcase.html` page) are left alone. *)
+danglingQ[target_String] := Module[{targetPath},
+  If[!StringEndsQ[target, ".md"], Return[False]];
+  targetPath = FileNameJoin[{docsDir, target}];
+  !FileExistsQ[targetPath] || FileType[targetPath] =!= File];
+
 updateSummary[] := Module[{
     text, lines, referenced, out, ent, indent, target,
     targetPath, siblingDir, children, childIndent, rel, newText
@@ -94,14 +104,16 @@ updateSummary[] := Module[{
     {line, lines}];
   out = {};
   Do[
-    AppendTo[out, line];
     ent = parseEntry[line];
+    If[ent =!= None && danglingQ[ent[[3]]],
+      WriteString["stderr",
+        "dropped dangling entry: " <> ent[[3]] <> "\n"];
+      Continue[]];
+    AppendTo[out, line];
     If[ent === None, Continue[]];
     indent = ent[[1]]; target = ent[[3]];
     If[!StringEndsQ[target, ".md"], Continue[]];
     targetPath = FileNameJoin[{docsDir, target}];
-    If[!FileExistsQ[targetPath] || FileType[targetPath] =!= File,
-      Continue[]];
     siblingDir = StringDrop[targetPath, -3];
     If[!DirectoryQ[siblingDir], Continue[]];
     children = Sort[FileNames["*.md", siblingDir], asciiLess];

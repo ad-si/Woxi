@@ -1065,7 +1065,6 @@ fn struve_half_integer_closed_form(
     args: vec![e].into(),
   };
   let int = Expr::Integer;
-  let plus = |a, b| binop(B::Plus, a, b);
   let times = |a, b| binop(B::Times, a, b);
   let neg = |a| binop(B::Times, int(-1), a);
   let pi = || Expr::Constant("Pi".to_string());
@@ -1086,7 +1085,7 @@ fn struve_half_integer_closed_form(
       // +-Sqrt[2 Pi]/(Pi Sqrt[z]) -/+ Sqrt[2/Pi] c[z]/Sqrt[z]
       let a = div2(sqrt_2pi(), times(pi(), sqrt_z()));
       let b = div2(times(sqrt_2_over_pi(), cz()), sqrt_z());
-      if is_l { plus(neg(a), b) } else { minus2(a, b) }
+      if is_l { plus2(neg(a), b) } else { minus2(a, b) }
     }
     -1 => {
       // Sqrt[2/Pi] s[z]/Sqrt[z]
@@ -1096,32 +1095,32 @@ fn struve_half_integer_closed_form(
       // (Sqrt[2 Pi]/z^(3/2) + Sqrt[Pi/2] Sqrt[z])/Pi
       //   + Sqrt[2/Pi] (-(Cos[z]/z) - Sin[z])/Sqrt[z]
       let a = div2(
-        plus(div2(sqrt_2pi(), z_32()), times(sqrt_pi_over_2(), sqrt_z())),
+        plus2(div2(sqrt_2pi(), z_32()), times(sqrt_pi_over_2(), sqrt_z())),
         pi(),
       );
       let inner = minus2(neg(div2(cz(), z())), sz());
       let b = div2(times(sqrt_2_over_pi(), inner), sqrt_z());
-      plus(a, b)
+      plus2(a, b)
     }
     3 => {
       // L: -((-(Sqrt[2 Pi]/z^(3/2)) + Sqrt[Pi/2] Sqrt[z])/Pi)
       //      + ((-2 Cosh[z])/z + 2 Sinh[z])/(Sqrt[2 Pi] Sqrt[z])
       let a = neg(div2(
-        plus(
+        plus2(
           neg(div2(sqrt_2pi(), z_32())),
           times(sqrt_pi_over_2(), sqrt_z()),
         ),
         pi(),
       ));
       let b = div2(
-        plus(div2(times(int(-2), cz()), z()), times(int(2), sz())),
+        plus2(div2(times(int(-2), cz()), z()), times(int(2), sz())),
         times(sqrt_2pi(), sqrt_z()),
       );
-      plus(a, b)
+      plus2(a, b)
     }
     -3 if !is_l => {
       // -((Sqrt[2/Pi] (-Cos[z] + Sin[z]/z))/Sqrt[z])
-      let inner = plus(neg(cz()), div2(sz(), z()));
+      let inner = plus2(neg(cz()), div2(sz(), z()));
       neg(div2(times(sqrt_2_over_pi(), inner), sqrt_z()))
     }
     -3 => {
