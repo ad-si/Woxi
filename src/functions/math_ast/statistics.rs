@@ -2219,8 +2219,8 @@ fn covariance_pair(xs: &[Expr], ys: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = xs.len();
   let mut terms = Vec::with_capacity(n);
   for (x, y) in xs.iter().zip(ys.iter()) {
-    let dx = binop(BinaryOperator::Minus, x.clone(), mean_x.clone());
-    let dy = binop(BinaryOperator::Minus, y.clone(), mean_y.clone());
+    let dx = minus2(x.clone(), mean_x.clone());
+    let dy = minus2(y.clone(), mean_y.clone());
     let conj_dy = Expr::FunctionCall {
       name: "Conjugate".to_string(),
       args: vec![dy].into(),
@@ -2261,15 +2261,14 @@ fn symbolic_covariance(
     args: vec![e.clone()].into(),
   };
   let result = if n == 2 {
-    let dx = binop(B::Minus, xs[0].clone(), xs[1].clone());
-    let dy = binop(B::Minus, conj(&ys[0]), conj(&ys[1]));
+    let dx = minus2(xs[0].clone(), xs[1].clone());
+    let dy = minus2(conj(&ys[0]), conj(&ys[1]));
     div2(binop(B::Times, dx, dy), Expr::Integer(2))
   } else {
     let sum_x = unevaluated("Plus", xs);
     let mut terms = Vec::with_capacity(n);
     for (x, y) in xs.iter().zip(ys.iter()) {
-      let coeff = binop(
-        B::Minus,
+      let coeff = minus2(
         binop(B::Times, Expr::Integer(n as i128), x.clone()),
         sum_x.clone(),
       );
@@ -3130,8 +3129,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let v1 = xs[1].clone();
       let w0 = ys[0].clone();
       let w1 = ys[1].clone();
-      let diff =
-        |a: &Expr, b: &Expr| binop(BinaryOperator::Minus, a.clone(), b.clone());
+      let diff = |a: &Expr, b: &Expr| minus2(a.clone(), b.clone());
       let conj = |e: &Expr| Expr::FunctionCall {
         name: "Conjugate".to_string(),
         args: vec![e.clone()].into(),
@@ -3140,8 +3138,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Times".to_string(),
         args: vec![a, b].into(),
       };
-      let conj_diff =
-        |a: &Expr, b: &Expr| binop(BinaryOperator::Minus, conj(a), conj(b));
+      let conj_diff = |a: &Expr, b: &Expr| minus2(conj(a), conj(b));
       let v_diff = diff(&v0, &v1);
       let w_diff = diff(&w0, &w1);
       let v_conj_diff = conj_diff(&v0, &v1);
@@ -3352,9 +3349,9 @@ fn skellam_central_moment(a: &Expr, b: &Expr, n: i128) -> Expr {
   }
   let kappa = |j: usize| -> Expr {
     if j.is_multiple_of(2) {
-      binop(BinaryOperator::Plus, a.clone(), b.clone())
+      plus2(a.clone(), b.clone())
     } else {
-      binop(BinaryOperator::Minus, a.clone(), b.clone())
+      minus2(a.clone(), b.clone())
     }
   };
   let mut terms: Vec<Expr> = Vec::new();
@@ -3661,7 +3658,7 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut terms = Vec::with_capacity(n);
   for item in items {
     // (item - mean)^r
-    let diff = binop(BinaryOperator::Minus, item.clone(), mean_expr.clone());
+    let diff = minus2(item.clone(), mean_expr.clone());
     let powered = pow2(diff, Expr::Integer(r as i128));
     let val = crate::evaluator::evaluate_expr_to_expr(&powered)?;
     terms.push(val);
@@ -3767,7 +3764,7 @@ fn cumulant_from_raw_moments(
         args: vec![Expr::Integer(binom), k[m].clone(), mu[nn - m].clone()]
           .into(),
       };
-      acc = binop(BinaryOperator::Minus, acc, term);
+      acc = minus2(acc, term);
       acc = crate::evaluator::evaluate_expr_to_expr(&acc)?;
     }
     k.push(acc);
@@ -3783,65 +3780,54 @@ pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Skellam: Kurtosis = 3 + 1/(a+b). Built directly because the generic
   // moment-ratio Expand mangles the multi-parameter denominator.
   if let Some((a, b)) = skellam_params(&args[0]) {
-    let a_plus_b = binop(BinaryOperator::Plus, a, b);
-    let result = binop(
-      BinaryOperator::Plus,
-      Expr::Integer(3),
-      div2(Expr::Integer(1), a_plus_b),
-    );
+    let a_plus_b = plus2(a, b);
+    let result = plus2(Expr::Integer(3), div2(Expr::Integer(1), a_plus_b));
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
   // PolyaAeppli: Kurtosis = 3 + (1 + 10 p + p^2)/((1 + p) t).
   if let Some((t, p)) = two_params_of(&args[0], "PolyaAeppliDistribution") {
     use BinaryOperator as B;
-    let num = binop(
-      B::Plus,
-      binop(
-        B::Plus,
+    let num = plus2(
+      plus2(
         Expr::Integer(1),
         binop(B::Times, Expr::Integer(10), p.clone()),
       ),
       pow2(p.clone(), Expr::Integer(2)),
     );
-    let den = binop(B::Times, binop(B::Plus, Expr::Integer(1), p), t);
-    let result = binop(B::Plus, Expr::Integer(3), div2(num, den));
+    let den = binop(B::Times, plus2(Expr::Integer(1), p), t);
+    let result = plus2(Expr::Integer(3), div2(num, den));
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
   // Geometric: Kurtosis = 3 + (6 - 6 p + p^2)/(1 - p).
   if let Some(p) = one_param_of(&args[0], "GeometricDistribution") {
     use BinaryOperator as B;
-    let num = binop(
-      B::Plus,
-      binop(
-        B::Plus,
+    let num = plus2(
+      plus2(
         Expr::Integer(6),
         binop(B::Times, Expr::Integer(-6), p.clone()),
       ),
       pow2(p.clone(), Expr::Integer(2)),
     );
-    let den = binop(B::Minus, Expr::Integer(1), p);
-    let result = binop(B::Plus, Expr::Integer(3), div2(num, den));
+    let den = minus2(Expr::Integer(1), p);
+    let result = plus2(Expr::Integer(3), div2(num, den));
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
   // Negative-binomial family: Kurtosis = 3 + (6 - 6 p + p^2)/(scale (1 - p)),
   // scale = r (NegativeBinomial) or n (Pascal). Binomial has its own numerator.
   {
     use BinaryOperator as B;
-    let one_minus_p = |p: &Expr| binop(B::Minus, Expr::Integer(1), p.clone());
+    let one_minus_p = |p: &Expr| minus2(Expr::Integer(1), p.clone());
     // 6 - 6 p + p^2
     let nb_num = |p: &Expr| {
-      binop(
-        B::Plus,
-        binop(
-          B::Plus,
+      plus2(
+        plus2(
           Expr::Integer(6),
           binop(B::Times, Expr::Integer(-6), p.clone()),
         ),
         pow2(p.clone(), Expr::Integer(2)),
       )
     };
-    let three_plus =
-      |num, den| binop(B::Plus, Expr::Integer(3), div2(num, den));
+    let three_plus = |num, den| plus2(Expr::Integer(3), div2(num, den));
     if let Some((r, p)) =
       two_params_of(&args[0], "NegativeBinomialDistribution")
     {
@@ -3854,8 +3840,7 @@ pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     if let Some((n, p)) = two_params_of(&args[0], "BinomialDistribution") {
       // 3 + (1 - 6 (1 - p) p)/(n (1 - p) p)
-      let num = binop(
-        B::Minus,
+      let num = minus2(
         Expr::Integer(1),
         Expr::FunctionCall {
           name: "Times".to_string(),
@@ -3902,22 +3887,17 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // is preserved (the generic moment-ratio Expand would distribute it).
   if let Some((a, b)) = skellam_params(&args[0]) {
     let result = div2(
-      binop(BinaryOperator::Minus, a.clone(), b.clone()),
-      pow2(
-        binop(BinaryOperator::Plus, a, b),
-        div2(Expr::Integer(3), Expr::Integer(2)),
-      ),
+      minus2(a.clone(), b.clone()),
+      pow2(plus2(a, b), div2(Expr::Integer(3), Expr::Integer(2))),
     );
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
   // PolyaAeppli: Skewness = (1 + 4 p + p^2)/((1 + p) Sqrt[(1 + p) t]).
   if let Some((t, p)) = two_params_of(&args[0], "PolyaAeppliDistribution") {
     use BinaryOperator as B;
-    let one_plus_p = binop(B::Plus, Expr::Integer(1), p.clone());
-    let num = binop(
-      B::Plus,
-      binop(
-        B::Plus,
+    let one_plus_p = plus2(Expr::Integer(1), p.clone());
+    let num = plus2(
+      plus2(
         Expr::Integer(1),
         binop(B::Times, Expr::Integer(4), p.clone()),
       ),
@@ -3934,12 +3914,11 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Geometric: Skewness = (2 - p)/Sqrt[1 - p]. Built directly to preserve the
   // compact form (the generic moment ratio leaves CentralMoment unevaluated).
   if let Some(p) = one_param_of(&args[0], "GeometricDistribution") {
-    use BinaryOperator as B;
     let sqrt = Expr::FunctionCall {
       name: "Sqrt".to_string(),
-      args: vec![binop(B::Minus, Expr::Integer(1), p.clone())].into(),
+      args: vec![minus2(Expr::Integer(1), p.clone())].into(),
     };
-    let result = div2(binop(B::Minus, Expr::Integer(2), p), sqrt);
+    let result = div2(minus2(Expr::Integer(2), p), sqrt);
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
   // Negative-binomial family: Skewness = (2 - p)/Sqrt[scale (1 - p)], with the
@@ -3951,26 +3930,25 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Sqrt".to_string(),
       args: vec![e].into(),
     };
-    let one_minus_p = |p: &Expr| binop(B::Minus, Expr::Integer(1), p.clone());
+    let one_minus_p = |p: &Expr| minus2(Expr::Integer(1), p.clone());
     if let Some((r, p)) =
       two_params_of(&args[0], "NegativeBinomialDistribution")
     {
       let result = div2(
-        binop(B::Minus, Expr::Integer(2), p.clone()),
+        minus2(Expr::Integer(2), p.clone()),
         sqrt(binop(B::Times, one_minus_p(&p), r)),
       );
       return crate::evaluator::evaluate_expr_to_expr(&result);
     }
     if let Some((n, p)) = two_params_of(&args[0], "PascalDistribution") {
       let result = div2(
-        binop(B::Minus, Expr::Integer(2), p.clone()),
+        minus2(Expr::Integer(2), p.clone()),
         sqrt(binop(B::Times, n, one_minus_p(&p))),
       );
       return crate::evaluator::evaluate_expr_to_expr(&result);
     }
     if let Some((n, p)) = two_params_of(&args[0], "BinomialDistribution") {
-      let num = binop(
-        B::Minus,
+      let num = minus2(
         Expr::Integer(1),
         binop(B::Times, Expr::Integer(2), p.clone()),
       );
@@ -4794,7 +4772,7 @@ pub fn mean_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let n = items.len() as i128;
     let mut abs_devs = Vec::new();
     for item in items {
-      let diff = binop(BinaryOperator::Minus, item.clone(), mean_expr.clone());
+      let diff = minus2(item.clone(), mean_expr.clone());
       let abs_diff = Expr::FunctionCall {
         name: "Abs".to_string(),
         args: vec![diff].into(),
@@ -4825,8 +4803,7 @@ pub fn median_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Compute absolute deviations |xi - median|
     let mut abs_devs = Vec::new();
     for item in items {
-      let diff =
-        binop(BinaryOperator::Minus, item.clone(), median_expr.clone());
+      let diff = minus2(item.clone(), median_expr.clone());
       let abs_diff = Expr::FunctionCall {
         name: "Abs".to_string(),
         args: vec![diff].into(),
@@ -6886,7 +6863,7 @@ pub fn covariance_function_data(
     Ok(m) => m,
     Err(e) => return Some(Err(e)),
   };
-  let dev = |x: &Expr| binop(BinaryOperator::Minus, x.clone(), mean.clone());
+  let dev = |x: &Expr| minus2(x.clone(), mean.clone());
   let h_us = h.unsigned_abs() as usize;
   let mut terms = Vec::new();
   for t in 0..(n - h_us) {
@@ -7014,7 +6991,6 @@ fn process_covariance(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
     args: a.into(),
   };
   let times2 = |a: Expr, b: Expr| binop(BinaryOperator::Times, a, b);
-  let plus2 = |a: Expr, b: Expr| binop(BinaryOperator::Plus, a, b);
   let neg = |a: Expr| times2(Expr::Integer(-1), a);
   let sq = |a: &Expr| pow2(a.clone(), Expr::Integer(2));
   let min = call("Min", vec![t1.clone(), t2.clone()]);
@@ -7127,12 +7103,7 @@ pub fn biweight_midvariance_ast(
   let median = ev(&call("Median", vec![args[0].clone()]))?;
   let deviations: Vec<Expr> = items
     .iter()
-    .map(|x| {
-      call(
-        "Abs",
-        vec![binop(BinaryOperator::Minus, x.clone(), median.clone())],
-      )
-    })
+    .map(|x| call("Abs", vec![minus2(x.clone(), median.clone())]))
     .collect();
   let mad = ev(&call("Median", vec![Expr::List(deviations.into())]))?;
   match try_eval_to_f64(&mad) {
@@ -7144,7 +7115,7 @@ pub fn biweight_midvariance_ast(
   let mut num_terms: Vec<Expr> = Vec::new();
   let mut den_terms: Vec<Expr> = Vec::new();
   for x in items.iter() {
-    let dev = binop(BinaryOperator::Minus, x.clone(), median.clone());
+    let dev = minus2(x.clone(), median.clone());
     let u = ev(&div2(dev.clone(), scale.clone()))?;
     let Some(u_f) = try_eval_to_f64(&u) else {
       return unevaluated();
@@ -7153,7 +7124,7 @@ pub fn biweight_midvariance_ast(
       continue;
     }
     let u2 = pow2(u.clone(), Expr::Integer(2));
-    let one_minus = binop(BinaryOperator::Minus, Expr::Integer(1), u2.clone());
+    let one_minus = minus2(Expr::Integer(1), u2.clone());
     num_terms.push(binop(
       BinaryOperator::Times,
       pow2(dev, Expr::Integer(2)),
@@ -7162,8 +7133,7 @@ pub fn biweight_midvariance_ast(
     den_terms.push(binop(
       BinaryOperator::Times,
       one_minus,
-      binop(
-        BinaryOperator::Minus,
+      minus2(
         Expr::Integer(1),
         binop(BinaryOperator::Times, Expr::Integer(5), u2),
       ),
@@ -7197,7 +7167,6 @@ pub fn process_correlation(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
     args: a.into(),
   };
   let times2 = |a: Expr, b: Expr| binop(BinaryOperator::Times, a, b);
-  let plus2 = |a: Expr, b: Expr| binop(BinaryOperator::Plus, a, b);
   let neg = |a: Expr| times2(Expr::Integer(-1), a);
   let sq = |a: &Expr| pow2(a.clone(), Expr::Integer(2));
   let min = call("Min", vec![t1.clone(), t2.clone()]);
@@ -7284,7 +7253,6 @@ pub fn process_absolute_correlation(
     args: a.into(),
   };
   let times2 = |a: Expr, b: Expr| binop(BinaryOperator::Times, a, b);
-  let plus2 = |a: Expr, b: Expr| binop(BinaryOperator::Plus, a, b);
   let neg = |a: Expr| times2(Expr::Integer(-1), a);
   let sq = |a: &Expr| pow2(a.clone(), Expr::Integer(2));
   let min = call("Min", vec![t1.clone(), t2.clone()]);

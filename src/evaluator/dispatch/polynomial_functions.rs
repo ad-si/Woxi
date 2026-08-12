@@ -731,11 +731,7 @@ pub fn dispatch_polynomial_functions(
               // Build sum of all terms
               let mut result = terms[0].clone();
               for term in &terms[1..] {
-                result = Expr::BinaryOp {
-                  op: BinaryOperator::Plus,
-                  left: Box::new(result),
-                  right: Box::new(term.clone()),
-                };
+                result = plus2(result, term.clone());
               }
               return Some(evaluate_expr_to_expr(&result));
             }
@@ -809,15 +805,7 @@ pub fn dispatch_polynomial_functions(
             // Empty rule list reconstructs to 0.
             let mut result = Expr::Integer(0);
             for (i, term) in terms.into_iter().enumerate() {
-              result = if i == 0 {
-                term
-              } else {
-                Expr::BinaryOp {
-                  op: BinaryOperator::Plus,
-                  left: Box::new(result),
-                  right: Box::new(term),
-                }
-              };
+              result = if i == 0 { term } else { plus2(result, term) };
             }
             return Some(crate::evaluator::evaluate_expr_to_expr(&result));
           }
@@ -1412,13 +1400,7 @@ fn try_constrained_linear_disk_symbolic(
   let eval = |e: Expr| -> Expr {
     crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(Expr::Integer(0))
   };
-  let plus = |x: Expr, y: Expr| -> Expr {
-    eval(Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(x),
-      right: Box::new(y),
-    })
-  };
+  let plus = |x: Expr, y: Expr| -> Expr { eval(plus2(x, y)) };
   let minus = |x: Expr, y: Expr| -> Expr { eval(minus2(x, y)) };
   let times = |x: Expr, y: Expr| -> Expr {
     eval(Expr::BinaryOp {
