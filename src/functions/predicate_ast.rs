@@ -1964,6 +1964,11 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Head expects exactly 1 argument".into(),
     ));
   }
+  // Head consumes the wrapper: `Head[Unevaluated[1 + 2]]` is `Plus`, like
+  // Length. Rubi's `FixRhsIntRule` decides whether a rule's right-hand side is
+  // already an `Int[…]` this way, so without the strip every rule gets wrapped
+  // in a spurious `Simp[…]`.
+  let args = &[crate::evaluator::strip_unevaluated(&args[0])];
   // Check for complex number patterns before the general match
   if is_complex_number(&args[0]) {
     return Ok(Expr::Identifier("Complex".to_string()));
