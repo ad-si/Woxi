@@ -1529,6 +1529,17 @@ enum NExpr {
   Neg(Box<Self>),
   Fn1(fn(f64) -> f64, Box<Self>),
   Fn2(fn(f64, f64) -> f64, Box<Self>, Box<Self>),
+  /// A leaf the compiler can't reduce to closed-form arithmetic — e.g. a
+  /// call to a function defined elsewhere in the session (a boundary value
+  /// pinned via `f[n][t_] := …`, say) rather than one of `compile_numeric`'s
+  /// known operators. Falls back to full symbolic evaluation, but only for
+  /// this leaf: the surrounding arithmetic stays compiled, so one
+  /// unresolved call amid an otherwise-numeric right-hand side doesn't
+  /// force the *entire* residual through the slow path on every step.
+  External {
+    template: Expr,
+    refs: Vec<(String, usize)>,
+  },
 }
 
 impl NExpr {
@@ -1551,7 +1562,53 @@ impl NExpr {
       Self::Neg(e) => -e.eval(vars),
       Self::Fn1(f, a) => f(a.eval(vars)),
       Self::Fn2(f, a, b) => f(a.eval(vars), b.eval(vars)),
+      Self::External { template, refs } => {
+        let mut substituted = template.clone();
+        for (name, idx) in refs {
+          substituted = crate::syntax::substitute_variable(
+            &substituted,
+            name,
+            &Expr::Real(vars[*idx]),
+          );
+        }
+        crate::evaluator::evaluate_expr_to_expr(&substituted)
+          .ok()
+          .and_then(|r| expr_to_f64(&r).ok())
+          .unwrap_or(f64::NAN)
+      }
     }
+  }
+}
+
+/// Every `var_names` identifier referenced anywhere inside `expr`, paired
+/// with its index — the substitutions an `NExpr::External` leaf needs to
+/// apply before handing the template to the full evaluator.
+fn collect_var_refs(
+  expr: &Expr,
+  var_names: &[String],
+  out: &mut Vec<(String, usize)>,
+) {
+  if let Expr::Identifier(name) = expr {
+    if let Some(idx) = var_names.iter().position(|n| n == name)
+      && !out.iter().any(|(n, _)| n == name)
+    {
+      out.push((name.clone(), idx));
+    }
+    return;
+  }
+  for child in expr_children(expr) {
+    collect_var_refs(child, var_names, out);
+  }
+}
+
+/// Wrap a construct `compile_numeric` doesn't otherwise reduce to
+/// closed-form arithmetic as an `NExpr::External` leaf.
+fn compile_external_leaf(expr: &Expr, var_names: &[String]) -> NExpr {
+  let mut refs = Vec::new();
+  collect_var_refs(expr, var_names, &mut refs);
+  NExpr::External {
+    template: expr.clone(),
+    refs,
   }
 }
 
@@ -1675,10 +1732,15 @@ fn compile_numeric(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
             .into_iter()
             .reduce(|acc, e| NExpr::Fn2(f64::min, Box::new(acc), Box::new(e)))
         }
-        _ => None,
+        // Not one of the closed-form operators above — most commonly a
+        // call to a function the session itself defined (a fixed boundary
+        // value, a helper via `f[n_] := …`), which can only be resolved by
+        // the full evaluator. Compiled as an External leaf rather than
+        // bailing the whole residual out to the symbolic path.
+        _ => Some(compile_external_leaf(expr, var_names)),
       }
     }
-    _ => None,
+    other => Some(compile_external_leaf(other, var_names)),
   }
 }
 

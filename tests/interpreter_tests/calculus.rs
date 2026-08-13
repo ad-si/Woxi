@@ -7639,6 +7639,52 @@ mod ndsolve {
       -(-2.0_f64).exp()
     );
   }
+
+  /// An orthogonal-collocation scheme (used in Demonstrations of nonlinear
+  /// heat conduction) pins one member of an indexed family of functions to
+  /// a fixed boundary value via `n = N; Y[n][t_] := c`, after the *other*
+  /// equations were already captured with a literal, still-unresolved
+  /// `Y[N][t]` call inside them. That leftover call is outside the system's
+  /// own dependent variables, so the residual can't be reduced to
+  /// closed-form arithmetic at compile time — it used to force the *whole*
+  /// right-hand side through per-step symbolic re-evaluation for every one
+  /// of the fixed grid's 1000 steps, which was slow enough to look like a
+  /// hang on a system of even a handful of equations. Only that one
+  /// unresolved call should pay the symbolic-evaluation cost now.
+  #[test]
+  fn a_pinned_external_function_does_not_blow_up_the_solve() {
+    // Y3' = 2 - Y3, Y2' = Y3 - Y2, Y1' = Y2 - Y1, all zero initial
+    // conditions: a linear cascade with a closed-form solution via
+    // repeated convolution with Exp[-t].
+    let result = interpret(
+      "eq1 = Y[1]'[t] == Y[2][t] - Y[1][t]; \
+       eq2 = Y[2]'[t] == Y[3][t] - Y[2][t]; \
+       eq3 = Y[3]'[t] == Y[4][t] - Y[3][t]; \
+       n = 4; Y[n][t_] := 2; \
+       sol = NDSolve[{eq1, eq2, eq3, Y[1][0] == 0, Y[2][0] == 0, \
+         Y[3][0] == 0}, {Y[1], Y[2], Y[3]}, {t, 0, 1}]; \
+       {Y[1][1.], Y[2][1.], Y[3][1.]} /. sol[[1]]",
+    )
+    .unwrap();
+    let nums: Vec<f64> = result
+      .trim_matches(['{', '}'])
+      .split(", ")
+      .map(|s| s.parse().expect("all three solutions are numbers"))
+      .collect();
+    let y3 = 2.0 * (1.0 - (-1.0_f64).exp());
+    let y2 = 2.0 - 2.0 * (-1.0_f64).exp() * 2.0;
+    let y1 = 2.0 - (-1.0_f64).exp() * 5.0;
+    for (value, expected, name) in [
+      (nums[0], y1, "Y[1]"),
+      (nums[1], y2, "Y[2]"),
+      (nums[2], y3, "Y[3]"),
+    ] {
+      assert!(
+        (value - expected).abs() < 1e-3,
+        "{name}(1) should be about {expected}, got {value} (in {result})"
+      );
+    }
+  }
 }
 
 mod sinh_cosh {
