@@ -8235,6 +8235,54 @@ mod find_root {
       r.warnings
     );
   }
+
+  // Regression: FindRoot is HoldAll (so the search variable isn't looked up
+  // as an OwnValue before the iteration starts), so its equation argument
+  // arrives unevaluated — still containing a raw `D[f[x], x]`. Substituting
+  // a numeric trial value straight into that raw form used to land the
+  // number inside D's variable slot (`D[f[3.], 3.]`) and fail with
+  // `D::ivar`, so every derivative-based FindRoot (the standard
+  // "extremum of f" idiom, `FindRoot[D[f[x], x] == 0, {x, x0}]`) errored
+  // out. The objective is now evaluated once — with the variable still
+  // free — before any substitution, exactly like the already-correct
+  // multivariate path.
+  #[test]
+  fn derivative_equation_evaluates_before_substitution() {
+    assert_eq!(
+      interpret("FindRoot[D[Sin[x], x] == 0, {x, 1}]").unwrap(),
+      "{x -> 1.5707963267948966}"
+    );
+  }
+
+  #[test]
+  fn derivative_equation_no_ivar_message() {
+    use woxi::interpret_with_stdout;
+    let r =
+      interpret_with_stdout("FindRoot[D[Sin[x], x] == 0, {x, 1}]").unwrap();
+    assert!(
+      r.warnings.iter().all(|w| !w.contains("D::ivar")),
+      "the derivative must resolve before substitution, not after: {:?}",
+      r.warnings
+    );
+  }
+
+  // The same pattern with a special function (the Demonstrations idiom this
+  // was found from: locating a Bessel function's stationary points via
+  // `FindRoot[D[BesselJ[m, r], r] == 0, {r, BesselJZero[n, k]}]`). The
+  // result is a genuine root of `BesselJ`'s derivative — cross-checked here
+  // via `D[BesselJ[0, r], r] == -BesselJ[1, r]`, so its root is exactly
+  // `BesselJZero[1, 1]`.
+  #[test]
+  fn derivative_of_special_function_equation() {
+    assert_eq!(
+      interpret("FindRoot[D[BesselJ[0, r], r] == 0, {r, 3}]").unwrap(),
+      "{r -> 3.831705970207513}"
+    );
+    assert_eq!(
+      interpret("N[BesselJZero[1, 1]]").unwrap(),
+      "3.8317059702075125"
+    );
+  }
 }
 
 mod replace {
