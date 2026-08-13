@@ -17820,22 +17820,26 @@ fn try_trig_delta(expr: &Expr, var: &str, step: &Expr) -> Option<Expr> {
   let half_delta =
     crate::evaluator::evaluate_expr_to_expr(&half_delta_raw).ok()?;
 
-  // Build second Sin argument:
-  // For Sin: arg + (step + Pi)/2  (= arg + half_delta + Pi/2, combined fraction)
-  // For Cos: arg + (step - Pi)/2
-  // We construct (step ± Pi)/2 as a single fraction, then add arg.
-  let pi_term = if fn_name == "Sin" {
-    Expr::Constant("Pi".to_string())
+  // Build the second Sin argument. The mean of the two arguments is
+  // `arg + half_delta`, so:
+  //   Δ Sin[f] = 2 Sin[d] Cos[f + d]   with d = half_delta
+  //   Δ Cos[f] = -2 Sin[d] Sin[f + d]
+  // Wolfram writes that cosine as `Sin[Pi/2 + …]`, hence the extra half-turn
+  // for `Sin` — `arg + (2*half_delta + Pi)/2` as one combined fraction. `Cos`
+  // is already a sine and takes no phase shift; giving it one turned the
+  // result back into the derivative of the *sine* (`Sin[θ - Pi/2]` is
+  // `-Cos[θ]`, not `-Sin[θ]`).
+  let const_part = if fn_name == "Sin" {
+    div2(
+      plus2(
+        times2(Expr::Integer(2), half_delta.clone()),
+        Expr::Constant("Pi".to_string()),
+      ),
+      Expr::Integer(2),
+    )
   } else {
-    neg1(Expr::Constant("Pi".to_string()))
+    half_delta.clone()
   };
-  // Build (2*half_delta + Pi) / 2  for the constant part, but use direct
-  // (step + Pi) / 2 to get a cleaner fraction when possible.
-  // General form: half_delta + Pi/2 + arg, combined as arg + (2*half_delta ± Pi)/2
-  let const_part = div2(
-    plus2(times2(Expr::Integer(2), half_delta.clone()), pi_term),
-    Expr::Integer(2),
-  );
   let second_arg_expr = plus2(const_part, arg.clone());
 
   let coeff = if fn_name == "Sin" {

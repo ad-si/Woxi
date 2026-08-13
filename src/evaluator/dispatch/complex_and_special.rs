@@ -3109,6 +3109,88 @@ fn wrap_list_number_display_box(elems: Vec<Expr>, head: &str) -> Expr {
   call("TagBox", vec![braced, Expr::Identifier(head.to_string())])
 }
 
+/// StandardForm boxes for a derivative — `f′[x]`, `f′′[x]`, `f⁽⁴⁾[x]`,
+/// `f⁽¹’⁰⁾[x, y]` — or `None` when `expr` is not one, or its orders are not
+/// literal counts (`Derivative[n][f]` has no prime marks to set).
+///
+/// A single-order derivative arrives flattened (`f''[x]` is held as
+/// `Derivative[2, f, x]`); a multivariate one keeps the curried shape
+/// `Derivative[1, 0][f][x, y]`.
+fn derivative_boxes(expr: &Expr) -> Option<Expr> {
+  let (orders, func, applied): (&[Expr], &Expr, &[Expr]) = match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Derivative" && args.len() >= 2 =>
+    {
+      (&args[..1], &args[1], &args[2..])
+    }
+    Expr::CurriedCall { func, args } => match func.as_ref() {
+      Expr::FunctionCall { name, args: orders } if name == "Derivative" => {
+        if args.len() != 1 {
+          return None;
+        }
+        (&orders[..], &args[0], &[])
+      }
+      // The same derivative applied to its arguments: the head is the
+      // curried `Derivative[n₁, …][f]` above.
+      Expr::CurriedCall {
+        func: inner,
+        args: fargs,
+      } if fargs.len() == 1 => match inner.as_ref() {
+        Expr::FunctionCall { name, args: orders } if name == "Derivative" => {
+          (&orders[..], &fargs[0], &args[..])
+        }
+        _ => return None,
+      },
+      _ => return None,
+    },
+    _ => return None,
+  };
+
+  let counts: Option<Vec<i128>> = orders
+    .iter()
+    .map(|o| match o {
+      Expr::Integer(n) if *n >= 0 => Some(*n),
+      _ => None,
+    })
+    .collect();
+  let counts = counts?;
+  let script = if let [n @ 1..=3] = counts.as_slice() {
+    Expr::String("\u{2032}".repeat(*n as usize))
+  } else {
+    let mut parts = vec![Expr::String("(".to_string())];
+    for (i, n) in counts.iter().enumerate() {
+      if i > 0 {
+        parts.push(Expr::String(",".to_string()));
+      }
+      parts.push(Expr::String(n.to_string()));
+    }
+    parts.push(Expr::String(")".to_string()));
+    call1("RowBox", Expr::List(parts.into()))
+  };
+  let primed = Expr::FunctionCall {
+    name: "SuperscriptBox".to_string(),
+    args: vec![expr_to_box_form(func), script].into(),
+  };
+  if applied.is_empty() {
+    return Some(primed);
+  }
+  let mut parts = vec![primed, Expr::String("[".to_string())];
+  if applied.len() == 1 {
+    parts.push(expr_to_box_form(&applied[0]));
+  } else {
+    let mut inner = Vec::new();
+    for (i, arg) in applied.iter().enumerate() {
+      if i > 0 {
+        inner.push(Expr::String(",".to_string()));
+      }
+      inner.push(expr_to_box_form(arg));
+    }
+    parts.push(call1("RowBox", Expr::List(inner.into())));
+  }
+  parts.push(Expr::String("]".to_string()));
+  Some(call1("RowBox", Expr::List(parts.into())))
+}
+
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
   // MakeBoxes has HoldAllComplete, so a postfix `expr // f` arg is
   // delivered as `Expr::Postfix { expr, func }` rather than being
@@ -3134,6 +3216,13 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
   if let Expr::FunctionCall { name, args } = expr
     && let Some(boxed) = number_display_form_box(name, args)
   {
+    return boxed;
+  }
+  // `f'[x]` is held as `Derivative[1][f][x]`, and no notebook shows that
+  // head: the order sets as prime marks on the differentiated function.
+  // Without this the whole call fell through to its plain text, so every
+  // derivative of an undefined function read as `Derivative[1][f][x]`.
+  if let Some(boxed) = derivative_boxes(expr) {
     return boxed;
   }
   match expr {

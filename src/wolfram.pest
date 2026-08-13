@@ -125,7 +125,7 @@ PatternName = @{ (ASCII_ALPHA | LETTER | PrivateUseLetter) ~ (ASCII_ALPHANUMERIC
 // Matches \[Name] syntax or direct Unicode chars for common symbols
 // Excludes operator named chars (\[Element], \[NotElement], \[ReverseElement], \[DirectedEdge], \[UndirectedEdge])
 // which must be parsed as infix operators, not as identifiers in implicit multiplication.
-NamedCharBase = _{ !("\\[Sqrt]" | "\\[CubeRoot]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Times]" | "\\[Divide]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" }
+NamedCharBase = _{ !("\\[DifferentialD]" | "\\[Sqrt]" | "\\[CubeRoot]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Times]" | "\\[Divide]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" }
 // Adjacent `\[Name]` segments (or named char + identifier chars)
 // concatenate into a single identifier — `\[CapitalGamma]\[Beta]` → `Γβ`,
 // `\[Angle]XYZ` → `∠XYZ`, `i\[Ellipsis]j` (when `i` then `\[Ellipsis]j`
@@ -528,6 +528,7 @@ Term = _{
   | SlotCall
   | ImplicitTimes
   | RadicalPrefix
+  | DifferentialPrefix
   | Unset
   | ApplyToOp
   | AddTo
@@ -569,6 +570,13 @@ Term = _{
 // `\[Sqrt]x y` is `Sqrt[x] y` but `\[Sqrt]x^2` is `Sqrt[x^2]`.
 RadicalOp = { "\\[Sqrt]" | "\u{221A}" | "\\[CubeRoot]" | "\u{221B}" }
 RadicalPrefix = { RadicalOp ~ SimpleTerm ~ PartIndexSuffix? ~ ImplicitPowerSuffix? ~ FactorialSuffix? }
+// `\[DifferentialD]x` is the differential the calculus notation `ⅆarea == 2 π r ⅆr`
+// is written with: a prefix operator binding to the next factor, so `2 π r ⅆr`
+// is `2 π r DifferentialD[r]`. The FrontEnd stores the character in the private
+// use area (U+F74C); the public code point (U+2146) is a Unicode *letter*, so
+// the prefix has to be tried before `Identifier` or `ⅆarea` reads as one name.
+DifferentialOp = { "\\[DifferentialD]" | "\u{2146}" | "\u{F74C}" }
+DifferentialPrefix = { DifferentialOp ~ SimpleTerm ~ PartIndexSuffix? ~ ImplicitPowerSuffix? }
 PrefixApplySimple = { (FunctionCall | Identifier) ~ "@" ~ SimpleTerm }
 SimpleTerm = _{
   // Increment/Decrement come first so a postfix `++` binds to its operand
@@ -577,6 +585,7 @@ SimpleTerm = _{
     Increment
   | Decrement
   | RadicalPrefix
+  | DifferentialPrefix
   | UnsignedNumericValue
   | PrefixApplySimple
   | FunctionCall
@@ -880,7 +889,13 @@ TopLevelSpan = { &HasSpanSep ~ SpanExpr ~ ("//" ~ PostfixFunction)* }
 // Atomic so the `!";"` lookahead checks the *immediate* next character.
 // Without atomic mode, pest skips WHITESPACE before evaluating `!";"`, which
 // would (wrongly) reject `; ;;3` because the next non-whitespace char is `;`.
-StatementSeparator = @{ (";" ~ !";")? }
+//
+// Several semicolons in a row with only space or a comment between them
+// (`c = 4; (* c = 6 *); c`) separate the same two statements: what stands
+// between them is the empty statement `Null`, which has no value and no
+// effect. They are taken together here rather than left to produce a
+// statement that is not there. `;;` stays untouched — that is a `Span`.
+StatementSeparator = @{ (";" ~ !";" ~ ((WHITESPACE | COMMENT)+ ~ ";" ~ !";")*)? }
 
 // TrailingSemicolon marks that the last statement ends with ; (suppresses output)
 TrailingSemicolon = @{ ";" ~ !";" }

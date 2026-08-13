@@ -3492,6 +3492,32 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         args: vec![operand].into(),
       }
     }
+    // `ⅆx`: the differential of the following factor. It has no value of its
+    // own — `ⅆarea == 2 π r ⅆr` stays an equation between differentials — and
+    // `∫ … ⅆx` is turned into `Integrate[…, x]` before it reaches the parser.
+    Rule::DifferentialPrefix => {
+      let inners: Vec<_> = pair.into_inner().collect();
+      let mut operand = pair_to_expr(inners[1].clone());
+      for suffix in &inners[2..] {
+        match suffix.as_rule() {
+          Rule::PartIndexSuffix => {
+            operand = apply_part_index_suffix(operand, suffix.clone());
+          }
+          Rule::ImplicitPowerSuffix => {
+            operand = Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(operand),
+              right: Box::new(implicit_power_exponent(suffix.clone())),
+            };
+          }
+          _ => {}
+        }
+      }
+      Expr::FunctionCall {
+        name: "DifferentialD".to_string(),
+        args: vec![operand].into(),
+      }
+    }
     Rule::Increment => {
       // x++ -> Increment[x]; chained `x++++` -> Increment[Increment[x]].
       // Grammar emits one base pair followed by N `IncrementOp` pairs

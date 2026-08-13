@@ -12215,6 +12215,22 @@ mod difference_delta {
   }
 
   #[test]
+  fn cos_function() {
+    // Δ Cos[x] = Cos[1 + x] - Cos[x] = -2 Sin[1/2] Sin[1/2 + x]. The sine of
+    // the mean takes no phase shift — adding one (as the Sin case needs to
+    // turn its cosine into a sine) gave back the *sine's* difference instead.
+    assert_eq!(
+      interpret("DifferenceDelta[Cos[x], x]").unwrap(),
+      "-2*Sin[1/2]*Sin[1/2 + x]"
+    );
+    // The derivative it defines has to come out as the cosine's own.
+    assert_eq!(
+      interpret("Limit[DifferenceQuotient[Cos[x], {x, h}], h -> 0]").unwrap(),
+      "-Sin[x]"
+    );
+  }
+
+  #[test]
   fn second_order() {
     // Second-order difference of x^2 is 2
     assert_eq!(interpret("DifferenceDelta[x^2, {x, 2}]").unwrap(), "2");
@@ -16669,5 +16685,39 @@ mod unevaluated_limit_echoes_the_original {
     // result still echoes what was asked.
     let out = interpret("Limit[h[x], x -> Infinity]").unwrap();
     assert_eq!(out, "Limit[h[x], x -> Infinity]");
+  }
+}
+
+mod differential_notation {
+  use super::*;
+
+  /// `ⅆx` is the differential of `x`, the notation the "Linear
+  /// Approximations" chapter states its error estimates in. It has no value
+  /// of its own, so an equation between differentials stays symbolic and a
+  /// rule can replace a whole differential.
+  #[test]
+  fn a_differential_is_a_symbolic_factor() {
+    assert_eq!(
+      interpret(r"\[DifferentialD]area == 2 \[Pi] r \[DifferentialD]r")
+        .unwrap(),
+      "DifferentialD[area] == 2*Pi*r*DifferentialD[r]"
+    );
+    assert_eq!(
+      interpret(
+        r"sol = \[DifferentialD]area == 2 \[Pi] r \[DifferentialD]r; \
+          sol /. {r -> 50, \[DifferentialD]r -> 0.1}"
+      )
+      .unwrap(),
+      "DifferentialD[area] == 31.41592653589793"
+    );
+  }
+
+  /// The bare character a notebook stores it as parses the same way, even
+  /// though Unicode files it under *letters* — `ⅆarea` is a differential,
+  /// not a symbol named "ⅆarea".
+  #[test]
+  fn the_differential_character_is_not_part_of_the_name() {
+    assert_eq!(interpret("\u{2146}area").unwrap(), "DifferentialD[area]");
+    assert_eq!(interpret("\u{F74C}x").unwrap(), "DifferentialD[x]");
   }
 }

@@ -10436,3 +10436,27 @@ mod precision_mark_with_exponent {
     );
   }
 }
+
+mod empty_statements {
+  use super::*;
+
+  /// A notebook writes a commented-out line as a comment standing alone
+  /// between two `;` — "Calculus and Programming" shows `c = 4;
+  /// (* c = 6 *); c` to explain that a comment is not evaluated. What
+  /// stands between the two separators is the empty statement `Null`.
+  #[test]
+  fn a_comment_between_two_semicolons_is_an_empty_statement() {
+    assert_eq!(interpret("c = 4; (* c = 6 *); c").unwrap(), "4");
+  }
+
+  #[test]
+  fn a_bare_empty_statement_evaluates_to_the_next_one() {
+    assert_eq!(interpret("c = 4; ; c + 1").unwrap(), "5");
+  }
+
+  /// `;;` is still a `Span`, not two separators.
+  #[test]
+  fn a_double_semicolon_stays_a_span() {
+    assert_eq!(interpret("1 ;; 4").unwrap(), "Span[1, 4]");
+  }
+}
