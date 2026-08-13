@@ -189,10 +189,7 @@ pub fn gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if im == 0 {
       return Ok(Expr::Integer(re));
     }
-    let complex = Expr::FunctionCall {
-      name: "Complex".to_string(),
-      args: vec![Expr::Integer(re), Expr::Integer(im)].into(),
-    };
+    let complex = call("Complex", vec![Expr::Integer(re), Expr::Integer(im)]);
     return crate::evaluator::evaluate_expr_to_expr(&complex);
   }
 
@@ -319,10 +316,7 @@ pub fn lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(
       "LCM::argm: LCM called with 0 arguments; 1 or more arguments are expected.",
     );
-    return Ok(Expr::FunctionCall {
-      name: "LCM".to_string(),
-      args: vec![].into(),
-    });
+    return Ok(call("LCM", vec![]));
   }
 
   // Gaussian-integer LCM: when at least one argument is a complex (Gaussian)
@@ -342,10 +336,7 @@ pub fn lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if im == 0 {
       return Ok(Expr::Integer(re));
     }
-    let complex = Expr::FunctionCall {
-      name: "Complex".to_string(),
-      args: vec![Expr::Integer(re), Expr::Integer(im)].into(),
-    };
+    let complex = call("Complex", vec![Expr::Integer(re), Expr::Integer(im)]);
     return crate::evaluator::evaluate_expr_to_expr(&complex);
   }
 
@@ -417,10 +408,7 @@ pub fn make_rational_expr(num: &BigInt, den: &BigInt) -> Expr {
   if d.is_one() {
     return bigint_to_expr(n);
   }
-  Expr::FunctionCall {
-    name: "Rational".to_string(),
-    args: vec![bigint_to_expr(n), bigint_to_expr(d)].into(),
-  }
+  call("Rational", vec![bigint_to_expr(n), bigint_to_expr(d)])
 }
 
 /// Split-recursive factorial helper based on Fateman's `kg` algorithm.
@@ -523,10 +511,7 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if name == "Rational" && ra.len() == 2 =>
       {
         if let (Expr::Integer(p), Expr::Integer(q)) = (&ra[0], &ra[1]) {
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(p + q), Expr::Integer(*q)].into(),
-          }
+          call("Rational", vec![Expr::Integer(p + q), Expr::Integer(*q)])
         } else {
           // Can't simplify, return unevaluated
           return Ok(unevaluated("Factorial", args));
@@ -705,14 +690,7 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for _ in 2..=n {
       let next = Expr::FunctionCall {
         name: "Plus".to_string(),
-        args: vec![
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![x.clone(), curr.clone()].into(),
-          },
-          prev,
-        ]
-        .into(),
+        args: vec![call("Times", vec![x.clone(), curr.clone()]), prev].into(),
       };
       let expanded =
         crate::evaluator::evaluate_function_call_ast("Expand", &[next])?;
@@ -1069,26 +1047,14 @@ fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
       let power = if k == 1 {
         z.clone()
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(z.clone()),
-          right: Box::new(Expr::Integer(k as i128)),
-        }
+        pow2(z.clone(), Expr::Integer(k as i128))
       };
       if cn == cd {
         power
       } else if cn == -cd {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(-1)),
-          right: Box::new(power),
-        }
+        times2(Expr::Integer(-1), power)
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(coeff_expr),
-          right: Box::new(power),
-        }
+        times2(coeff_expr, power)
       }
     };
     terms.push(term);
@@ -1100,11 +1066,7 @@ fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
 
   let mut result = terms[0].clone();
   for term in &terms[1..] {
-    result = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(result),
-      right: Box::new(term.clone()),
-    };
+    result = plus2(result, term.clone());
   }
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
@@ -1253,28 +1215,16 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
       let power = if k == 1 {
         z.clone()
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(z.clone()),
-          right: Box::new(Expr::Integer(k as i128)),
-        }
+        pow2(z.clone(), Expr::Integer(k as i128))
       };
       if cn == cd {
         // coefficient is 1
         power
       } else if cn == -cd {
         // coefficient is -1
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(-1)),
-          right: Box::new(power),
-        }
+        times2(Expr::Integer(-1), power)
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(coeff_expr),
-          right: Box::new(power),
-        }
+        times2(coeff_expr, power)
       }
     };
     terms.push(term);
@@ -1286,11 +1236,7 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
 
   let mut result = terms[0].clone();
   for term in &terms[1..] {
-    result = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(result),
-      right: Box::new(term.clone()),
-    };
+    result = plus2(result, term.clone());
   }
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
@@ -1379,27 +1325,11 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if is_one {
           x.clone()
         } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(coeff),
-            right: Box::new(x.clone()),
-          }
+          times2(coeff, x.clone())
         }
       } else {
-        let power = Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(x.clone()),
-          right: Box::new(Expr::Integer(k as i128)),
-        };
-        if is_one {
-          power
-        } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(coeff),
-            right: Box::new(power),
-          }
-        }
+        let power = pow2(x.clone(), Expr::Integer(k as i128));
+        if is_one { power } else { times2(coeff, power) }
       };
       terms.push(term);
     }
@@ -1409,11 +1339,7 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Build sum of terms
     let mut result = terms[0].clone();
     for term in &terms[1..] {
-      result = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(result),
-        right: Box::new(term.clone()),
-      };
+      result = plus2(result, term.clone());
     }
     crate::evaluator::evaluate_expr_to_expr(&result)
   }
@@ -1430,11 +1356,7 @@ pub fn pauli_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("PauliMatrix", args));
   };
   let i_expr = Expr::Identifier("I".to_string());
-  let neg_i = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(Expr::Integer(-1)),
-    right: Box::new(i_expr.clone()),
-  };
+  let neg_i = times2(Expr::Integer(-1), i_expr.clone());
   match k {
     0 => Ok(Expr::List(
       vec![
@@ -1692,10 +1614,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     if let Some(s) = expr_to_num(&args[1]) {
       if s > 1.0 {
-        let zeta = Expr::FunctionCall {
-          name: "Zeta".to_string(),
-          args: vec![args[1].clone()].into(),
-        };
+        let zeta = call1("Zeta", args[1].clone());
         return crate::evaluator::evaluate_expr_to_expr(&zeta);
       } else if s >= 0.0 {
         return Ok(Expr::Identifier("Infinity".to_string()));
@@ -1736,11 +1655,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       // Build the BinaryOp Power form (k^j), which Sum's closed-form path
       // recognises; FunctionCall Power[k, j] would be left unevaluated.
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(k.clone()),
-        right: Box::new(Expr::Integer(j)),
-      }
+      pow2(k.clone(), Expr::Integer(j))
     };
     let sum = Expr::FunctionCall {
       name: "Sum".to_string(),
@@ -1750,10 +1665,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ]
       .into(),
     };
-    let expanded = Expr::FunctionCall {
-      name: "Expand".to_string(),
-      args: vec![sum].into(),
-    };
+    let expanded = call1("Expand", sum);
     return crate::evaluator::evaluate_expr_to_expr(&expanded);
   }
 
@@ -1805,24 +1717,15 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if i == 1 {
             terms.push(Expr::Integer(1));
           } else {
-            let neg_order = Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![Expr::Integer(-1), order.clone()].into(),
-            };
-            terms.push(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(Expr::Integer(i)),
-              right: Box::new(neg_order),
-            });
+            let neg_order =
+              call("Times", vec![Expr::Integer(-1), order.clone()]);
+            terms.push(pow2(Expr::Integer(i), neg_order));
           }
         }
         let sum = match terms.len() {
           0 => Expr::Integer(0),
           1 => terms.pop().unwrap(),
-          _ => Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: terms.into(),
-          },
+          _ => call("Plus", terms),
         };
         return crate::evaluator::evaluate_expr_to_expr(&sum);
       }
@@ -1863,10 +1766,10 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if den == BigInt::from(1) {
     Ok(bigint_to_expr(num))
   } else {
-    Ok(Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![bigint_to_expr(num), bigint_to_expr(den)].into(),
-    })
+    Ok(call(
+      "Rational",
+      vec![bigint_to_expr(num), bigint_to_expr(den)],
+    ))
   }
 }
 
@@ -1922,11 +1825,7 @@ pub fn multiple_harmonic_number_ast(
     terms: &mut Vec<Expr>,
   ) {
     let Some((&s, rest)) = exps.split_first() else {
-      terms.push(Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(bigint_to_expr(denom.clone())),
-      });
+      terms.push(div2(Expr::Integer(1), bigint_to_expr(denom.clone())));
       return;
     };
     // Leave room for the `rest.len()` smaller indices still to be chosen.
@@ -1942,10 +1841,7 @@ pub fn multiple_harmonic_number_ast(
   if terms.is_empty() {
     return Ok(Expr::Integer(0));
   }
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  })
+  crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms))
 }
 
 /// AlternatingHarmonicNumber[n] - Sum[(-1)^(k+1)/k, {k,1,n}].
@@ -1969,10 +1865,7 @@ pub fn alternating_harmonic_number_ast(
         if name == "Rational" && args.len() == 2 =>
       {
         let p = expr_to_bigint(&args[0])?;
-        Some(Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![bigint_to_expr(-p), args[1].clone()].into(),
-        })
+        Some(call("Rational", vec![bigint_to_expr(-p), args[1].clone()]))
       }
       _ => None,
     }
@@ -1984,36 +1877,22 @@ pub fn alternating_harmonic_number_ast(
   fn build_alternating_sum(n: i128, neg_r: &Expr, x: Option<&Expr>) -> Expr {
     let mut terms = Vec::new();
     for k in 1..=n {
-      let k_pow = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Integer(k)),
-        right: Box::new(neg_r.clone()),
-      };
+      let k_pow = pow2(Expr::Integer(k), neg_r.clone());
       let mut factors = Vec::new();
       if k % 2 == 0 {
         factors.push(Expr::Integer(-1));
       }
       if let Some(x) = x {
-        factors.push(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(x.clone()),
-          right: Box::new(Expr::Integer(k)),
-        });
+        factors.push(pow2(x.clone(), Expr::Integer(k)));
       }
       factors.push(k_pow);
       terms.push(if factors.len() == 1 {
         factors.pop().unwrap()
       } else {
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: factors.into(),
-        }
+        call("Times", factors)
       });
     }
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    }
+    call("Plus", terms)
   }
 
   let is_exact_order = |r: &Expr| {
@@ -2026,10 +1905,7 @@ pub fn alternating_harmonic_number_ast(
   let is_infinity = matches!(&args[0],
     Expr::Identifier(n) | Expr::Constant(n) if n == "Infinity");
   if is_infinity {
-    let log2 = Expr::FunctionCall {
-      name: "Log".to_string(),
-      args: vec![Expr::Integer(2)].into(),
-    };
+    let log2 = call1("Log", Expr::Integer(2));
     match args.len() {
       1 => return crate::evaluator::evaluate_expr_to_expr(&log2),
       2 => {
@@ -2041,26 +1917,13 @@ pub fn alternating_harmonic_number_ast(
           return crate::evaluator::evaluate_expr_to_expr(&log2);
         }
         // Eta[r] in wolframscript's form: ((-2 + 2^r) Zeta[r])/2^r
-        let two_pow_r = |exp: Expr| Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::Integer(2)),
-          right: Box::new(exp),
-        };
+        let two_pow_r = |exp: Expr| pow2(Expr::Integer(2), exp);
         let eta = Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
-            Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: vec![Expr::Integer(-2), two_pow_r(r.clone())].into(),
-            },
-            Expr::FunctionCall {
-              name: "Zeta".to_string(),
-              args: vec![r.clone()].into(),
-            },
-            two_pow_r(Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![Expr::Integer(-1), r.clone()].into(),
-            }),
+            call("Plus", vec![Expr::Integer(-2), two_pow_r(r.clone())]),
+            call1("Zeta", r.clone()),
+            two_pow_r(call("Times", vec![Expr::Integer(-1), r.clone()])),
           ]
           .into(),
         };
@@ -2076,10 +1939,7 @@ pub fn alternating_harmonic_number_ast(
               name: "PolyLog".to_string(),
               args: vec![
                 args[1].clone(),
-                Expr::FunctionCall {
-                  name: "Times".to_string(),
-                  args: vec![Expr::Integer(-1), args[2].clone()].into(),
-                },
+                call("Times", vec![Expr::Integer(-1), args[2].clone()]),
               ]
               .into(),
             },
@@ -2143,10 +2003,10 @@ pub fn alternating_harmonic_number_ast(
       return if den == BigInt::from(1) {
         Ok(bigint_to_expr(num))
       } else {
-        Ok(Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![bigint_to_expr(num), bigint_to_expr(den)].into(),
-        })
+        Ok(call(
+          "Rational",
+          vec![bigint_to_expr(num), bigint_to_expr(den)],
+        ))
       };
     }
 
@@ -2241,33 +2101,18 @@ pub fn hyper_harmonic_number_ast(
   let neg_s = |s: &Expr| -> Expr {
     match s {
       Expr::Integer(p) => Expr::Integer(-p),
-      _ => Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), s.clone()].into(),
-      },
+      _ => call("Times", vec![Expr::Integer(-1), s.clone()]),
     }
   };
 
   // r = 0 is the plain base term x^n / n^s; wolframscript evaluates it even
   // for symbolic s and x (e.g. HyperHarmonicNumber[0, 5, s] -> 5^(-s)).
   if r == 0 {
-    let n_pow = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::Integer(n)),
-      right: Box::new(neg_s(&s)),
-    };
+    let n_pow = pow2(Expr::Integer(n), neg_s(&s));
     let term = match x {
       Some(x) => Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![
-          Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(x.clone()),
-            right: Box::new(Expr::Integer(n)),
-          },
-          n_pow,
-        ]
-        .into(),
+        args: vec![pow2(x.clone(), Expr::Integer(n)), n_pow].into(),
       },
       None => n_pow,
     };
@@ -2301,29 +2146,15 @@ pub fn hyper_harmonic_number_ast(
   let mut terms = Vec::new();
   for k in 1..=n {
     let coeff = bigint_to_expr(binom(n - k + r - 1, r - 1));
-    let k_pow = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::Integer(k)),
-      right: Box::new(neg_s.clone()),
-    };
+    let k_pow = pow2(Expr::Integer(k), neg_s.clone());
     let mut factors = vec![coeff];
     if let Some(x) = x {
-      factors.push(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(x.clone()),
-        right: Box::new(Expr::Integer(k)),
-      });
+      factors.push(pow2(x.clone(), Expr::Integer(k)));
     }
     factors.push(k_pow);
-    terms.push(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: factors.into(),
-    });
+    terms.push(call("Times", factors));
   }
-  let sum = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  };
+  let sum = call("Plus", terms);
   crate::evaluator::evaluate_expr_to_expr(&sum)
 }
 
@@ -2411,10 +2242,7 @@ fn fibonacci_polynomial_ast(
   x: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let Some(n) = expr_to_i128(n_arg) else {
-    return Ok(Expr::FunctionCall {
-      name: "Fibonacci".to_string(),
-      args: vec![n_arg.clone(), x.clone()].into(),
-    });
+    return Ok(call("Fibonacci", vec![n_arg.clone(), x.clone()]));
   };
 
   // Negative index: F_{-n}(x) = (-1)^{n+1} F_n(x)
@@ -2954,10 +2782,10 @@ fn gaussian_to_expr(re: i128, im: i128) -> Result<Expr, InterpreterError> {
   if im == 0 {
     return Ok(Expr::Integer(re));
   }
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Complex".to_string(),
-    args: vec![Expr::Integer(re), Expr::Integer(im)].into(),
-  })
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    "Complex",
+    vec![Expr::Integer(re), Expr::Integer(im)],
+  ))
 }
 
 /// For a prime `p ≡ 1 (mod 4)`, return `(a, b)` with `a² + b² = p` and
@@ -2996,12 +2824,8 @@ fn factor_integer_partial(
   n_expr: &Expr,
   k_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "FactorInteger".to_string(),
-      args: vec![n_expr.clone(), k_expr.clone()].into(),
-    })
-  };
+  let unevaluated =
+    || Ok(call("FactorInteger", vec![n_expr.clone(), k_expr.clone()]));
 
   // k must be a positive integer.
   let k = match k_expr {
@@ -4694,14 +4518,8 @@ pub fn multinomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 2-arg symbolic case keeps a single Binomial form for backward
   // compatibility with the existing convention.
   if args.len() == 2 && symbolic_indices.len() >= 2 {
-    let sum = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![args[0].clone(), args[1].clone()].into(),
-    };
-    let binom = Expr::FunctionCall {
-      name: "Binomial".to_string(),
-      args: vec![sum, args[1].clone()].into(),
-    };
+    let sum = call("Plus", vec![args[0].clone(), args[1].clone()]);
+    let binom = call("Binomial", vec![sum, args[1].clone()]);
     return crate::evaluator::evaluate_expr_to_expr(&binom);
   }
 
@@ -4732,18 +4550,9 @@ pub fn multinomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     sum_args.push(sym.clone());
     sum_args.extend(rest.iter().cloned());
     let sum_total =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: sum_args.into(),
-      })?;
-    let binom = Expr::FunctionCall {
-      name: "Binomial".to_string(),
-      args: vec![sum_total, sym].into(),
-    };
-    let product = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![binom, multi_rest].into(),
-    };
+      crate::evaluator::evaluate_expr_to_expr(&call("Plus", sum_args))?;
+    let binom = call("Binomial", vec![sum_total, sym]);
+    let product = call("Times", vec![binom, multi_rest]);
     return crate::evaluator::evaluate_expr_to_expr(&product);
   }
 
@@ -4756,20 +4565,18 @@ pub fn multinomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut remaining: Vec<Expr> = sorted;
   while remaining.len() > 1 {
     let first = remaining[0].clone();
-    let sum_expr =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: remaining.clone().into(),
-      })?;
-    let binom_expr =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Binomial".to_string(),
-        args: vec![sum_expr, first].into(),
-      })?;
-    result = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![result, binom_expr].into(),
-    })?;
+    let sum_expr = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Plus",
+      remaining.clone(),
+    ))?;
+    let binom_expr = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Binomial",
+      vec![sum_expr, first],
+    ))?;
+    result = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Times",
+      vec![result, binom_expr],
+    ))?;
     remaining.remove(0);
   }
   Ok(result)
@@ -5922,12 +5729,10 @@ pub fn arithmetic_geometric_mean_ast(
   // and purely symbolic negations (e.g. AGM[x, -x]). Detect it structurally by
   // testing whether a + b evaluates to zero, and preserve exactness (a
   // machine-real argument yields 0. rather than 0), matching wolframscript.
-  if let Ok(sum) =
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![args[0].clone(), args[1].clone()].into(),
-    })
-    && is_zero(&sum)
+  if let Ok(sum) = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Plus",
+    vec![args[0].clone(), args[1].clone()],
+  )) && is_zero(&sum)
   {
     return Ok(if inexact {
       Expr::Real(0.0)
@@ -6086,10 +5891,7 @@ pub fn bit_set_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|pos| {
         bit_set_ast(&[args[0].clone(), pos.clone()]).unwrap_or_else(|_| {
-          Expr::FunctionCall {
-            name: "BitSet".to_string(),
-            args: vec![args[0].clone(), pos.clone()].into(),
-          }
+          call("BitSet", vec![args[0].clone(), pos.clone()])
         })
       })
       .collect();
@@ -6123,10 +5925,7 @@ pub fn bit_clear_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|pos| {
         bit_clear_ast(&[args[0].clone(), pos.clone()]).unwrap_or_else(|_| {
-          Expr::FunctionCall {
-            name: "BitClear".to_string(),
-            args: vec![args[0].clone(), pos.clone()].into(),
-          }
+          call("BitClear", vec![args[0].clone(), pos.clone()])
         })
       })
       .collect();
@@ -6380,10 +6179,10 @@ fn bell_y_enumerate(
           if j_i == 1 {
             factors.push(xs[i - 1].clone());
           } else {
-            factors.push(Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![xs[i - 1].clone(), Expr::Integer(j_i as i128)].into(),
-            });
+            factors.push(call(
+              "Power",
+              vec![xs[i - 1].clone(), Expr::Integer(j_i as i128)],
+            ));
           }
         }
       }
@@ -6393,20 +6192,14 @@ fn bell_y_enumerate(
         if factors.len() == 1 {
           factors[0].clone()
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: factors.into(),
-          }
+          call("Times", factors)
         }
       } else if factors.is_empty() {
         coeff_expr
       } else {
         let mut all = vec![coeff_expr];
         all.extend(factors);
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: all.into(),
-        }
+        call("Times", all)
       };
       let evaluated =
         crate::evaluator::evaluate_function_call_ast("Times", &[term])?;
@@ -9028,10 +8821,10 @@ fn six_j_symbol_symbolic(
   if branches.is_empty() {
     return Ok(Expr::Integer(0));
   }
-  Ok(Expr::FunctionCall {
-    name: "Piecewise".to_string(),
-    args: vec![Expr::List(branches.into()), Expr::Integer(0)].into(),
-  })
+  Ok(call(
+    "Piecewise",
+    vec![Expr::List(branches.into()), Expr::Integer(0)],
+  ))
 }
 
 /// Split `n` (assumed positive) into `(outside, inside)` such that
@@ -9069,10 +8862,7 @@ fn bigint_rational_to_expr(num: &BigInt, den: &BigInt) -> Expr {
   if d.is_one() {
     return bigint_to_expr(n);
   }
-  Expr::FunctionCall {
-    name: "Rational".to_string(),
-    args: vec![bigint_to_expr(n), bigint_to_expr(d)].into(),
-  }
+  call("Rational", vec![bigint_to_expr(n), bigint_to_expr(d)])
 }
 
 /// Like `two_half_int` but preserves sign — used for the m projections in
@@ -9185,10 +8975,7 @@ pub fn clebsch_gordan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let branch = Expr::List(vec![value, condition].into());
     let pw_args = Expr::List(vec![branch].into());
-    return Ok(Expr::FunctionCall {
-      name: "Piecewise".to_string(),
-      args: vec![pw_args, Expr::Integer(0)].into(),
-    });
+    return Ok(call("Piecewise", vec![pw_args, Expr::Integer(0)]));
   }
 
   let (j1, j2, j3) = (two_j[0], two_j[1], two_j[2]);

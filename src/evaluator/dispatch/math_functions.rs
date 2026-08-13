@@ -5063,7 +5063,7 @@ fn cantor_staircase_ast(arg: &Expr) -> crate::syntax::Expr {
   }
 
   // Return unevaluated for symbolic arguments
-  call("CantorStaircase", vec![arg.clone()])
+  call1("CantorStaircase", arg.clone())
 }
 
 /// Compute cantor staircase for exact rational p/q where 0 < p/q < 1
@@ -5252,10 +5252,7 @@ fn find_linear_recurrence_impl(seq: &[Expr]) -> crate::syntax::Expr {
     match expr_to_rational(&ev) {
       Some(r) => rats.push(r),
       None => {
-        return call(
-          "FindLinearRecurrence",
-          vec![Expr::List(seq.to_vec().into())],
-        );
+        return call1("FindLinearRecurrence", Expr::List(seq.to_vec().into()));
       }
     }
   }
@@ -5310,10 +5307,7 @@ fn find_linear_recurrence_impl(seq: &[Expr]) -> crate::syntax::Expr {
   }
 
   // No recurrence found
-  call(
-    "FindLinearRecurrence",
-    vec![Expr::List(seq.to_vec().into())],
-  )
+  call1("FindLinearRecurrence", Expr::List(seq.to_vec().into()))
 }
 
 fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {

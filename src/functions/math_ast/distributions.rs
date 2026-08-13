@@ -5239,12 +5239,12 @@ pub fn distribution_mean_variance(
           let delta_sq = pow2(delta.clone(), int(2));
           let exp_half =
             pow2(e(), div2(int(1), times2(int(2), delta_sq.clone())));
-          let sinh_gd = call("Sinh", vec![div2(gamma.clone(), delta.clone())]);
+          let sinh_gd = call1("Sinh", div2(gamma.clone(), delta.clone()));
           let mean =
             minus2(mu, times2(sigma.clone(), times2(exp_half, sinh_gd)));
           // Var = (sigma^2/2) * (Exp[1/delta^2] - 1) * (Exp[1/delta^2]*Cosh[2*gamma/delta] + 1)
           let exp_full = pow2(e(), div2(int(1), delta_sq));
-          let cosh_2gd = call("Cosh", vec![div2(times2(int(2), gamma), delta)]);
+          let cosh_2gd = call1("Cosh", div2(times2(int(2), gamma), delta));
           let var = times2(
             div2(pow2(sigma, int(2)), int(2)),
             times2(
@@ -6388,7 +6388,7 @@ fn pdf_laplace(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
   let mu = dargs[0].clone();
   let b = dargs[1].clone();
-  let abs_diff = call("Abs", vec![minus2(x, mu)]);
+  let abs_diff = call1("Abs", minus2(x, mu));
   let pdf_val = div2(
     pow2(e(), neg1(div2(abs_diff, b.clone()))),
     times2(int(2), b),
@@ -8892,7 +8892,7 @@ fn benini_checked(dargs: &[Expr]) -> Option<()> {
 
 /// Log[x/σ], the building block of the Benini closed forms.
 fn benini_log(x: &Expr, sigma: &Expr) -> Expr {
-  call("Log", vec![div2(x.clone(), sigma.clone())])
+  call1("Log", div2(x.clone(), sigma.clone()))
 }
 
 /// PDF[BeniniDistribution[α, β, σ], x]. Numeric α uses the split form
@@ -9089,7 +9089,7 @@ fn pdf_vonmises(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
   let (m, k) = (dargs[0].clone(), dargs[1].clone());
   let pi = pi();
-  let cos = call("Cos", vec![plus2(m.clone(), times2(int(-1), x.clone()))]);
+  let cos = call1("Cos", plus2(m.clone(), times2(int(-1), x.clone())));
   let bessel = call("BesselI", vec![int(0), k.clone()]);
   let value = times2(
     pow2(e(), times2(k, cos)),
@@ -10829,7 +10829,7 @@ fn pdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     "SL" => {
       // PDF = delta / (E^(z^2/2) * Sqrt[2*Pi] * (-mu + x))
       // where z = gamma + delta*Log[(-mu + x)/sigma], for x > mu
-      let log_t = call("Log", vec![div2(neg_mu_plus_x.clone(), sigma)]);
+      let log_t = call1("Log", div2(neg_mu_plus_x.clone(), sigma));
       let z = plus2(gamma, times2(delta.clone(), log_t));
       let density = div2(
         delta,
@@ -10937,7 +10937,7 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     "SB" => {
       let mu_plus_sigma_minus_x =
         plus2(plus2(mu.clone(), sigma.clone()), neg1(x.clone()));
-      call("Log", vec![div2(neg_mu_plus_x, mu_plus_sigma_minus_x)])
+      call1("Log", div2(neg_mu_plus_x, mu_plus_sigma_minus_x))
     }
     _ => {
       return Err(InterpreterError::EvaluationError(format!(

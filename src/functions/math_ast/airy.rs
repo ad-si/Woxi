@@ -264,10 +264,7 @@ pub fn airy_ai_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // AiryAiPrime[0] = -3^(2/3) / (3 * Gamma[1/3])
   if matches!(&args[0], Expr::Integer(0)) {
     let result = airy_build_value((2, 3), (1, 3), true)?;
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(result),
-    });
+    return crate::evaluator::evaluate_expr_to_expr(&neg1(result));
   }
 
   if let Some(x_f) = expr_to_f64(&args[0])
@@ -355,26 +352,16 @@ pub fn airy_bi_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Power".to_string(),
       args: vec![
         Expr::Integer(3),
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(6)].into(),
-        },
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(6)]),
       ]
       .into(),
     };
     let gamma = Expr::FunctionCall {
       name: "Gamma".to_string(),
-      args: vec![Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(3)].into(),
-      }]
-      .into(),
+      args: vec![call("Rational", vec![Expr::Integer(1), Expr::Integer(3)])]
+        .into(),
     };
-    let result = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(power_3),
-      right: Box::new(gamma),
-    };
+    let result = div2(power_3, gamma);
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
@@ -473,18 +460,11 @@ fn airy_build_value(
     .into(),
   };
   let denom = if with_extra_3 {
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(3), gamma].into(),
-    }
+    call("Times", vec![Expr::Integer(3), gamma])
   } else {
     gamma
   };
-  let result = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(power_3),
-    right: Box::new(denom),
-  };
+  let result = div2(power_3, denom);
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
@@ -606,27 +586,13 @@ fn scorer_hi(x: f64) -> f64 {
 /// Build the exact value at 0: `numer / (3 * 3^(1/6) * Gamma[2/3])`, the shared
 /// closed form of ScorerGi[0] (numer = 1) and ScorerHi[0] (numer = 2).
 fn scorer_value_at_zero(numer: i128) -> Result<Expr, InterpreterError> {
-  let rational = |a: i128, b: i128| Expr::FunctionCall {
-    name: "Rational".to_string(),
-    args: vec![Expr::Integer(a), Expr::Integer(b)].into(),
+  let rational = |a: i128, b: i128| {
+    call("Rational", vec![Expr::Integer(a), Expr::Integer(b)])
   };
-  let three_sixth = Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![Expr::Integer(3), rational(1, 6)].into(),
-  };
-  let gamma = Expr::FunctionCall {
-    name: "Gamma".to_string(),
-    args: vec![rational(2, 3)].into(),
-  };
-  let denom = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![Expr::Integer(3), three_sixth, gamma].into(),
-  };
-  let result = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(Expr::Integer(numer)),
-    right: Box::new(denom),
-  };
+  let three_sixth = call("Power", vec![Expr::Integer(3), rational(1, 6)]);
+  let gamma = call1("Gamma", rational(2, 3));
+  let denom = call("Times", vec![Expr::Integer(3), three_sixth, gamma]);
+  let result = div2(Expr::Integer(numer), denom);
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 

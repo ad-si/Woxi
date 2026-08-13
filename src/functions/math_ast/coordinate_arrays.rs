@@ -39,10 +39,7 @@ impl Num {
         if q == 1 {
           Expr::Integer(p)
         } else {
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(p), Expr::Integer(q)].into(),
-          }
+          call("Rational", vec![Expr::Integer(p), Expr::Integer(q)])
         }
       }
       Self::Real(v) => Expr::Real(v),

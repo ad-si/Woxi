@@ -973,10 +973,7 @@ pub fn extract_square_factor_i128(n: i128) -> (i128, i128) {
 pub fn make_rational(numer: i128, denom: i128) -> Expr {
   if denom == 0 {
     // Division by zero - shouldn't reach here but be safe
-    return Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(numer), Expr::Integer(denom)].into(),
-    };
+    return call("Rational", vec![Expr::Integer(numer), Expr::Integer(denom)]);
   }
 
   // Simplify
@@ -985,21 +982,14 @@ pub fn make_rational(numer: i128, denom: i128) -> Expr {
   if denom == 1 {
     Expr::Integer(numer)
   } else {
-    Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(numer), Expr::Integer(denom)].into(),
-    }
+    call("Rational", vec![Expr::Integer(numer), Expr::Integer(denom)])
   }
 }
 
 /// Create a canonical Sqrt expression: Power[x, Rational[1, 2]]
 /// In Wolfram Language, Sqrt[x] is just syntactic sugar for Power[x, 1/2].
 pub fn make_sqrt(arg: Expr) -> Expr {
-  Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(arg),
-    right: Box::new(make_rational(1, 2)),
-  }
+  pow2(arg, make_rational(1, 2))
 }
 
 /// Check if an expression is a Sqrt (i.e. Power[x, Rational[1, 2]])
@@ -1064,39 +1054,21 @@ pub fn complex_rational_to_expr(
       return i_expr;
     }
     if matches!(&imag_part, Expr::Integer(-1)) {
-      return Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(i_expr),
-      };
+      return neg1(i_expr);
     }
-    return Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(imag_part),
-      right: Box::new(i_expr),
-    };
+    return times2(imag_part, i_expr);
   }
 
   // General complex: real + imag*I
   let imag_term = if matches!(&imag_part, Expr::Integer(1)) {
     i_expr
   } else if matches!(&imag_part, Expr::Integer(-1)) {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(i_expr),
-    }
+    neg1(i_expr)
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(imag_part),
-      right: Box::new(i_expr),
-    }
+    times2(imag_part, i_expr)
   };
 
-  Expr::BinaryOp {
-    op: BinaryOperator::Plus,
-    left: Box::new(real_part),
-    right: Box::new(imag_term),
-  }
+  plus2(real_part, imag_term)
 }
 
 /// Multiply a numeric scalar (Integer, Rational, or Real) by an expression.
@@ -1108,15 +1080,10 @@ pub fn multiply_scalar_by_expr(
   match scalar {
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     Expr::Integer(1) => Ok(expr.clone()),
-    Expr::Integer(-1) => Ok(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), expr.clone()].into(),
-    }),
-    _ => Ok(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(scalar.clone()),
-      right: Box::new(expr.clone()),
-    }),
+    Expr::Integer(-1) => {
+      Ok(call("Times", vec![Expr::Integer(-1), expr.clone()]))
+    }
+    _ => Ok(times2(scalar.clone(), expr.clone())),
   }
 }
 
@@ -1346,38 +1313,19 @@ pub fn build_complex_float_expr(re: f64, im: f64) -> Expr {
   let im_term = if im_abs == 1.0 {
     i_expr
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Real(im_abs)),
-      right: Box::new(i_expr),
-    }
+    times2(Expr::Real(im_abs), i_expr)
   };
 
   if re == 0.0 {
-    if im > 0.0 {
-      im_term
-    } else {
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(im_term),
-      }
-    }
+    if im > 0.0 { im_term } else { neg1(im_term) }
   } else {
     // A machine-complex result keeps its Real head even for an integral real
     // part: wolframscript prints (1.5 + 2.5 I)^2 as -4. + 7.5*I, not -4 + 7.5*I.
     let re_expr = Expr::Real(re);
     if im > 0.0 {
-      Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(re_expr),
-        right: Box::new(im_term),
-      }
+      plus2(re_expr, im_term)
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(re_expr),
-        right: Box::new(im_term),
-      }
+      minus2(re_expr, im_term)
     }
   }
 }
@@ -1390,24 +1338,12 @@ pub fn build_complex_float_expr_keep_real(re: f64, im: f64) -> Expr {
   let im_abs = im.abs();
   // Always materialise the coefficient as `Real * I` so the |coeff|==1 case
   // prints as `1.*I` rather than bare `I` — wolframscript's numeric form.
-  let im_term = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(Expr::Real(im_abs)),
-    right: Box::new(i_expr),
-  };
+  let im_term = times2(Expr::Real(im_abs), i_expr);
   let re_expr = Expr::Real(re);
   if im >= 0.0 {
-    Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(re_expr),
-      right: Box::new(im_term),
-    }
+    plus2(re_expr, im_term)
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(re_expr),
-      right: Box::new(im_term),
-    }
+    minus2(re_expr, im_term)
   }
 }
 
@@ -1436,11 +1372,7 @@ pub fn build_complex_expr(
     i_expr
   } else {
     let coeff = make_rational(im_abs_num, id_s);
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(coeff),
-      right: Box::new(i_expr),
-    }
+    times2(coeff, i_expr)
   };
 
   // Check if real part is zero
@@ -1450,34 +1382,19 @@ pub fn build_complex_expr(
       im_term
     } else if im_abs_num == 1 && id_s == 1 {
       // -I
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(im_term),
-      }
+      neg1(im_term)
     } else {
       // -n*I: build Times[-n, I] directly
       let coeff = make_rational(-im_abs_num, id_s);
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(coeff),
-        right: Box::new(Expr::Identifier("I".to_string())),
-      }
+      times2(coeff, Expr::Identifier("I".to_string()))
     };
   }
 
   // Build re ± im*I
   if im_positive {
-    Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(re),
-      right: Box::new(im_term),
-    }
+    plus2(re, im_term)
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(re),
-      right: Box::new(im_term),
-    }
+    minus2(re, im_term)
   }
 }
 

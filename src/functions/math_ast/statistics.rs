@@ -673,7 +673,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::List(items) => {
       if items.is_empty() {
-        return Ok(call("Mean", vec![Expr::List(vec![].into())]));
+        return Ok(call1("Mean", Expr::List(vec![].into())));
       }
       // Try to compute exact integer sum first
       let mut int_sum: Option<i128> = Some(0);
@@ -712,7 +712,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Plus canonical-sorts its operands, changing the f64 summation
         // order for real entries (Mean[{23.1, 24.4, 21.8, 25.5}] must stay
         // exactly 23.7 like wolframscript's left-to-right Total).
-        let sum_expr = call("Total", vec![Expr::List(items.clone())]);
+        let sum_expr = call1("Total", Expr::List(items.clone()));
         let evaluated_sum = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
         let n = items.len() as i128;
         // A rational sum folds to an exact rational (e.g. Mean[{1/4, 1/8}]
@@ -1042,7 +1042,7 @@ fn mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
   if row_vecs.is_empty() {
-    return Ok(call("Mean", vec![Expr::List(rows.to_vec().into())]));
+    return Ok(call1("Mean", Expr::List(rows.to_vec().into())));
   }
   let ncols = row_vecs[0].len();
   let nrows = row_vecs.len();
@@ -1114,7 +1114,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             expr_to_string(&args[0])
           ));
         }
-        return Ok(call("Variance", vec![args[0].clone()]));
+        return Ok(call1("Variance", args[0].clone()));
       }
       // Try all-integer exact path (Integer and BigInteger). Computed in
       // BigInt so the squared deviations don't overflow i128.
@@ -1433,7 +1433,7 @@ fn variance_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
   if row_vecs.is_empty() {
-    return Ok(call("Variance", vec![Expr::List(rows.to_vec().into())]));
+    return Ok(call1("Variance", Expr::List(rows.to_vec().into())));
   }
   let ncols = row_vecs[0].len();
   let mut col_vars = Vec::new();
@@ -1847,10 +1847,7 @@ fn geometric_mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
   if row_vecs.is_empty() {
-    return Ok(call(
-      "GeometricMean",
-      vec![Expr::List(rows.to_vec().into())],
-    ));
+    return Ok(call1("GeometricMean", Expr::List(rows.to_vec().into())));
   }
   let ncols = row_vecs[0].len();
   let mut col_means = Vec::with_capacity(ncols);
@@ -1996,7 +1993,7 @@ fn harmonic_mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
   if row_vecs.is_empty() {
-    return Ok(call("HarmonicMean", vec![Expr::List(rows.to_vec().into())]));
+    return Ok(call1("HarmonicMean", Expr::List(rows.to_vec().into())));
   }
   let ncols = row_vecs[0].len();
   let mut col_means = Vec::with_capacity(ncols);
@@ -2542,11 +2539,10 @@ pub fn kendall_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_real {
     return Ok(Expr::Real(num as f64 / (denom_sq as f64).sqrt()));
   }
-  let expr = Expr::FunctionCall {
-    name: "Divide".to_string(),
-    args: vec![Expr::Integer(num), call1("Sqrt", Expr::Integer(denom_sq))]
-      .into(),
-  };
+  let expr = call(
+    "Divide",
+    vec![Expr::Integer(num), call1("Sqrt", Expr::Integer(denom_sq))],
+  );
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
@@ -3312,11 +3308,10 @@ fn distribution_moment(
     let result = if n.rem_euclid(2) == 1 {
       Expr::Integer(0)
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(fact_i128(n)), pow2(b, Expr::Integer(n))]
-          .into(),
-      }
+      call(
+        "Times",
+        vec![Expr::Integer(fact_i128(n)), pow2(b, Expr::Integer(n))],
+      )
     };
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
   }
@@ -3355,7 +3350,7 @@ fn distribution_moment(
             ]
             .into(),
           },
-          call("BernoulliB", vec![Expr::Integer(n)]),
+          call1("BernoulliB", Expr::Integer(n)),
           pow2(Expr::Identifier("Pi".to_string()), Expr::Integer(n)),
           pow2(b, Expr::Integer(n)),
         ]
@@ -3409,7 +3404,7 @@ fn distribution_moment(
         name: "Times".to_string(),
         args: vec![
           pow2(Expr::Integer(-1), Expr::Integer(n / 2)),
-          call("EulerE", vec![Expr::Integer(n)]),
+          call1("EulerE", Expr::Integer(n)),
           pow2(s, Expr::Integer(n)),
         ]
         .into(),
@@ -3440,7 +3435,7 @@ fn distribution_moment(
   let sum = call("Plus", terms);
   // Expand so symbolic-parameter results collapse to their reduced form
   // (e.g. the Normal third central moment cancels to 0, Poisson's to m).
-  let expanded = call("Expand", vec![sum]);
+  let expanded = call1("Expand", sum);
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&expanded)?))
 }
 
@@ -3568,7 +3563,7 @@ pub fn cumulant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     let result = cumulant_from_raw_moments(&mu, r)?;
-    let expanded = call("Expand", vec![result]);
+    let expanded = call1("Expand", result);
     return crate::evaluator::evaluate_expr_to_expr(&expanded);
   }
 
@@ -3707,7 +3702,7 @@ pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// results are unaffected.
 fn maybe_expand_for_distribution(arg: &Expr, result: Expr) -> Expr {
   if as_distribution(arg).is_some() {
-    call("Expand", vec![result])
+    call1("Expand", result)
   } else {
     result
   }
@@ -4305,11 +4300,10 @@ fn factorial_moment_of_distribution(
     }),
     // Geometric: r! (1/p - 1)^r, printed by Wolfram as r! (-1 + p^(-1))^r.
     ("GeometricDistribution", [p]) => {
-      let base = Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![Expr::Integer(-1), pow2(p.clone(), Expr::Integer(-1))]
-          .into(),
-      };
+      let base = call(
+        "Plus",
+        vec![Expr::Integer(-1), pow2(p.clone(), Expr::Integer(-1))],
+      );
       Some(times(vec![
         Expr::Integer(r_factorial),
         pow2(base, Expr::Integer(r)),
@@ -4400,7 +4394,7 @@ fn factorial_moment_via_expectation(
 
   // Expand into a monomial sum so Expectation resolves each moment exactly.
   let polynomial =
-    crate::evaluator::evaluate_expr_to_expr(&call("Expand", vec![falling]))?;
+    crate::evaluator::evaluate_expr_to_expr(&call1("Expand", falling))?;
 
   let distributed = call("Distributed", vec![var_expr, dist.clone()]);
   // Route through the main evaluator (rather than calling expectation_ast
@@ -4529,7 +4523,7 @@ pub fn mean_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut abs_devs = Vec::new();
     for item in items {
       let diff = minus2(item.clone(), mean_expr.clone());
-      let abs_diff = call("Abs", vec![diff]);
+      let abs_diff = call1("Abs", diff);
       abs_devs.push(abs_diff);
     }
     let sum = call("Plus", abs_devs);
@@ -4554,7 +4548,7 @@ pub fn median_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut abs_devs = Vec::new();
     for item in items {
       let diff = minus2(item.clone(), median_expr.clone());
-      let abs_diff = call("Abs", vec![diff]);
+      let abs_diff = call1("Abs", diff);
       abs_devs.push(crate::evaluator::evaluate_expr_to_expr(&abs_diff)?);
     }
     // Return median of the absolute deviations
@@ -4768,22 +4762,14 @@ fn format_location_test_result(
               Expr::Identifier("Dividers".to_string()),
               Expr::List(
                 vec![
-                  Expr::FunctionCall {
-                    name: "Rule".to_string(),
-                    args: vec![
-                      Expr::Integer(2),
-                      call("GrayLevel", vec![Expr::Real(0.7)]),
-                    ]
-                    .into(),
-                  },
-                  Expr::FunctionCall {
-                    name: "Rule".to_string(),
-                    args: vec![
-                      Expr::Integer(2),
-                      call("GrayLevel", vec![Expr::Real(0.7)]),
-                    ]
-                    .into(),
-                  },
+                  call(
+                    "Rule",
+                    vec![Expr::Integer(2), call1("GrayLevel", Expr::Real(0.7))],
+                  ),
+                  call(
+                    "Rule",
+                    vec![Expr::Integer(2), call1("GrayLevel", Expr::Real(0.7))],
+                  ),
                 ]
                 .into(),
               ),
@@ -6174,7 +6160,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
         && args.len() == 1
         && is_pure_var(&args[0], var) =>
     {
-      Some(call("Log", vec![Expr::Identifier(var.to_string())]))
+      Some(call1("Log", Expr::Identifier(var.to_string())))
     }
 
     // Power[base, exp] - handle var^k, k^var, etc.
@@ -6707,10 +6693,7 @@ fn process_covariance(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
     ("OrnsteinUhlenbeckProcess", [_, sp, th]) => {
       let decay = pow2(
         Expr::Constant("E".to_string()),
-        times2(
-          th.clone(),
-          call("Abs", vec![plus2(t1.clone(), neg(t2.clone()))]),
-        ),
+        times2(th.clone(), call1("Abs", plus2(t1.clone(), neg(t2.clone())))),
       );
       Some(div2(
         sq(sp),
@@ -6775,7 +6758,7 @@ pub fn biweight_midvariance_ast(
   let median = ev(&call1("Median", args[0].clone()))?;
   let deviations: Vec<Expr> = items
     .iter()
-    .map(|x| call("Abs", vec![minus2(x.clone(), median.clone())]))
+    .map(|x| call1("Abs", minus2(x.clone(), median.clone())))
     .collect();
   let mad = ev(&call1("Median", Expr::List(deviations.into())))?;
   match try_eval_to_f64(&mad) {
@@ -6834,7 +6817,7 @@ pub fn process_correlation(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
       Expr::Constant("E".to_string()),
       neg(times2(
         th.clone(),
-        call("Abs", vec![plus2(t1.clone(), neg(t2.clone()))]),
+        call1("Abs", plus2(t1.clone(), neg(t2.clone()))),
       )),
     )),
     ("BernoulliProcess", [_]) => {
@@ -6922,10 +6905,7 @@ pub fn process_absolute_correlation(
     ("OrnsteinUhlenbeckProcess", [m, sp, th]) => {
       let decay = pow2(
         Expr::Constant("E".to_string()),
-        times2(
-          th.clone(),
-          call("Abs", vec![plus2(t1.clone(), neg(t2.clone()))]),
-        ),
+        times2(th.clone(), call1("Abs", plus2(t1.clone(), neg(t2.clone())))),
       );
       Some(plus2(
         sq(m),
@@ -8022,7 +8002,7 @@ fn is_e_base(e: &Expr) -> bool {
 ///   E^X → X,  base^(-a) → -(a Log[base]),  base^exp → exp Log[base],
 ///   otherwise → Log[f].
 fn cgf_term(f: &Expr) -> Expr {
-  let log = |e: Expr| call("Log", vec![e]);
+  let log = |e: Expr| call1("Log", e);
   if let Some((base, exp)) = as_power_pair(f) {
     if is_e_base(base) {
       exp.clone()
@@ -8175,7 +8155,7 @@ pub fn factorial_moment_generating_function_ast(
   if args.len() != 2 {
     return Ok(uneval());
   }
-  let log_t = call("Log", vec![args[1].clone()]);
+  let log_t = call1("Log", args[1].clone());
   // Symbolic NormalDistribution keeps E^(m Log[t] + (s^2 Log[t]^2)/2)
   // unfolded like wolframscript (evaluation would extract t^m; both
   // engines only do that folding for numeric m).

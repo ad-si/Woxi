@@ -102,10 +102,7 @@ fn polynomial_term_to_series_data(
         .iter()
         .map(|c| match c {
           Expr::Integer(n) => Expr::Integer(-n),
-          other => Expr::UnaryOp {
-            op: UnaryOperator::Minus,
-            operand: Box::new(other.clone()),
-          },
+          other => neg1(other.clone()),
         })
         .collect();
       return Some(Expr::FunctionCall {
@@ -171,10 +168,7 @@ fn polynomial_term_to_series_data(
     } else if coeff_factors.len() == 1 {
       coeff_factors.remove(0)
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: coeff_factors.into(),
-      }
+      call("Times", coeff_factors)
     };
     return Some(make_sd(coeff, n));
   }
@@ -617,10 +611,7 @@ fn as_threaded(e: &Expr) -> Option<&Expr> {
 }
 
 fn make_threaded(inner: Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "Threaded".to_string(),
-    args: vec![inner].into(),
-  }
+  call1("Threaded", inner)
 }
 
 /// Array nesting depth: 0 for an atom, 1 + max child depth for a list.
@@ -793,11 +784,9 @@ fn split_numeric_complex_minus(e: &Expr) -> Option<(Expr, Expr)> {
         right: i.clone(),
       }
     }
-    i if is_i(i) => Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(-1)),
-      right: Box::new(Expr::Identifier("I".to_string())),
-    },
+    i if is_i(i) => {
+      times2(Expr::Integer(-1), Expr::Identifier("I".to_string()))
+    }
     _ => return None,
   };
   Some(((**left).clone(), neg_imag))
@@ -1004,11 +993,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && cargs.iter().all(is_numeric_literal_part) =>
       {
         flat_args.push(cargs[0].clone());
-        stack.push(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(cargs[1].clone()),
-          right: Box::new(Expr::Identifier("I".to_string())),
-        });
+        stack.push(times2(cargs[1].clone(), Expr::Identifier("I".to_string())));
       }
       other => {
         if let Some((re, imag)) = split_numeric_complex_minus(&other) {
@@ -1051,10 +1036,10 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let opposite = directions.len() == 2
         && matches!(
-          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![directions[0].clone(), directions[1].clone()].into(),
-          }),
+          crate::evaluator::evaluate_expr_to_expr(&call(
+            "Plus",
+            vec![directions[0].clone(), directions[1].clone()]
+          )),
           Ok(Expr::Integer(0))
         );
       if complex_inf || opposite {
@@ -1065,10 +1050,10 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::Identifier("Indeterminate".to_string()));
       }
       if directions.len() == 1 {
-        return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "DirectedInfinity".to_string(),
-          args: vec![directions[0].clone()].into(),
-        });
+        return crate::evaluator::evaluate_expr_to_expr(&call1(
+          "DirectedInfinity",
+          directions[0].clone(),
+        ));
       }
       // Several unrelated directions: leave the sum alone.
       if directions.len() > 1 {
@@ -1092,11 +1077,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && m == "Lists must have the same length"
       && flat_args.len() == 2
     {
-      let unevaluated = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(flat_args[0].clone()),
-        right: Box::new(flat_args[1].clone()),
-      };
+      let unevaluated = plus2(flat_args[0].clone(), flat_args[1].clone());
       crate::emit_message(&format!(
         "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
         expr_to_string(&unevaluated)
@@ -1150,10 +1131,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if final_args.len() == 1 {
       return Ok(final_args.remove(0));
     }
-    return Ok(Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: final_args.into(),
-    });
+    return Ok(call("Plus", final_args));
   }
 
   // Classify arguments: exact (Integer/Rational), real (Real), bigfloat, or symbolic
@@ -1411,10 +1389,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else if final_args.len() == 1 {
       Ok(final_args.remove(0))
     } else {
-      Ok(Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: final_args.into(),
-      })
+      Ok(call("Plus", final_args))
     }
   }
 }
@@ -1492,10 +1467,10 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
     }
   };
   if matches!(&e, Expr::Identifier(s) if s == "I") {
-    return Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Real(1.0), Expr::Identifier("I".to_string())].into(),
-    };
+    return call(
+      "Times",
+      vec![Expr::Real(1.0), Expr::Identifier("I".to_string())],
+    );
   }
   if let Expr::FunctionCall { name, args } = &e
     && name == "Times"
@@ -1508,10 +1483,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
         new_args.push(a.clone());
       }
     }
-    return Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: new_args.into(),
-    };
+    return call("Times", new_args);
   }
   if let Expr::BinaryOp {
     op: BinaryOperator::Times,
@@ -1521,10 +1493,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
   {
     let left_new = to_real(left).unwrap_or((**left).clone());
     let right_new = to_real(right).unwrap_or((**right).clone());
-    return Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![left_new, right_new].into(),
-    };
+    return call("Times", vec![left_new, right_new]);
   }
   // Complex[a, b] → Times[Real(b), I] is an oversimplification when a != 0;
   // for the simple `Complex[0, n]` case we expand to `Times[Real(n), I]`,
@@ -1558,19 +1527,13 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
     let zero_re = matches!(&re, Expr::Real(f) if *f == 0.0)
       || matches!(&re, Expr::Integer(0));
     if zero_re {
-      return Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![im, Expr::Identifier("I".to_string())].into(),
-      };
+      return call("Times", vec![im, Expr::Identifier("I".to_string())]);
     }
     return Expr::FunctionCall {
       name: "Plus".to_string(),
       args: vec![
         re,
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![im, Expr::Identifier("I".to_string())].into(),
-        },
+        call("Times", vec![im, Expr::Identifier("I".to_string())]),
       ]
       .into(),
     };
@@ -1767,10 +1730,7 @@ fn decompose_term(e: &Expr) -> (Coeff, Expr) {
         if args.len() == 2 {
           args[1].clone()
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: args[1..].to_vec().into(),
-          }
+          call("Times", args[1..].to_vec())
         }
       };
       // Check if first arg is a numeric coefficient (integer/rational)
@@ -1880,10 +1840,7 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
         && matches!(&c, Coeff::Real(_))
         && matches!(&base, Expr::Identifier(s) if s == "I")
       {
-        result.push(Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![c.to_expr(), base].into(),
-        });
+        result.push(call("Times", vec![c.to_expr(), base]));
       }
       continue;
     }
@@ -1905,10 +1862,7 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
     // reason). Without this, `0. + 1. I` would collapse to `I` instead
     // of `Complex[0., 1.]` ≡ `0. + 1.*I`.
     if matches!(&c, Coeff::Real(_)) && c.is_one() {
-      result.push(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![c.to_expr(), base].into(),
-      });
+      result.push(call("Times", vec![c.to_expr(), base]));
       continue;
     }
     if c.is_one() {
@@ -1926,10 +1880,7 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
           times_args.push(base);
         }
       }
-      result.push(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: times_args.into(),
-      });
+      result.push(call("Times", times_args));
     }
   }
   result
@@ -2531,10 +2482,7 @@ fn strip_imaginary_literal_coeff(e: &Expr) -> Option<Expr> {
   Some(if rest.len() == 1 {
     rest.into_iter().next().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: rest.into(),
-    }
+    call("Times", rest)
   })
 }
 
@@ -3199,10 +3147,7 @@ fn strip_complex_literal_coeff(e: &Expr) -> Option<Expr> {
     return Some(if rest.len() == 1 {
       rest[0].clone()
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: rest.to_vec().into(),
-      }
+      call("Times", rest.to_vec())
     });
   }
   None
@@ -5100,10 +5045,7 @@ fn order_factor_vs_additive(
   if let Some(v) = sym_var_name(&fb)
     && fe.is_some_and(|e| e > 0.0)
   {
-    let sum_expr = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: plus_args.to_vec().into(),
-    };
+    let sum_expr = call("Plus", plus_args.to_vec());
     if let Some((sv, coeffs)) = univar_rat_coeffs(&sum_expr)
       && sv == v
     {
@@ -5854,18 +5796,10 @@ fn multiply_exponents(a: &Expr, b: &Expr) -> Expr {
       if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
         make_rational(n * m, *d)
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(a.clone()),
-          right: Box::new(b.clone()),
-        }
+        times2(a.clone(), b.clone())
       }
     }
-    _ => Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(a.clone()),
-      right: Box::new(b.clone()),
-    },
+    _ => times2(a.clone(), b.clone()),
   }
 }
 
@@ -6005,10 +5939,7 @@ fn combine_reciprocal_trig(
   let negate_exp = |e: &Expr| -> Expr {
     match e {
       Expr::Integer(n) => Expr::Integer(-n),
-      _ => Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), e.clone()].into(),
-      },
+      _ => call("Times", vec![Expr::Integer(-1), e.clone()]),
     }
   };
 
@@ -6066,10 +5997,7 @@ fn combine_reciprocal_trig(
       Expr::Integer(0) => {} // Sin[x]^0 = 1, contributes nothing
       Expr::Integer(n) if *n < 0 => {
         let recip = primary_trig_reciprocal(g.primary).unwrap();
-        let f = Expr::FunctionCall {
-          name: recip.to_string(),
-          args: vec![g.arg.clone()].into(),
-        };
+        let f = call1(recip, g.arg.clone());
         combined.push(if *n == -1 {
           f
         } else {
@@ -6077,10 +6005,7 @@ fn combine_reciprocal_trig(
         });
       }
       _ => {
-        let f = Expr::FunctionCall {
-          name: g.primary.to_string(),
-          args: vec![g.arg.clone()].into(),
-        };
+        let f = call1(g.primary, g.arg.clone());
         combined.push(if matches!(&net, Expr::Integer(1)) {
           f
         } else {
@@ -7160,17 +7085,11 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let combined_cond = if ce_conds.len() == 1 {
       ce_conds.into_iter().next().unwrap()
     } else {
-      Expr::FunctionCall {
-        name: "And".to_string(),
-        args: ce_conds.into(),
-      }
+      call("And", ce_conds)
     };
     let combined_cond =
       crate::evaluator::evaluate_expr_to_expr(&combined_cond)?;
-    return Ok(Expr::FunctionCall {
-      name: "ConditionalExpression".to_string(),
-      args: vec![combined_value, combined_cond].into(),
-    });
+    return Ok(call("ConditionalExpression", vec![combined_value, combined_cond]));
   }
   // ComplexInfinity * 0 = Indeterminate, ComplexInfinity * x = ComplexInfinity
   let has_complex_inf = flat_args
@@ -7369,14 +7288,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           sign = 1; // defensive; real_factor_sign never yields 0
         }
         let inf = Expr::Identifier("Infinity".to_string());
-        return Ok(if sign > 0 {
-          inf
-        } else {
-          Expr::UnaryOp {
-            op: UnaryOperator::Minus,
-            operand: Box::new(inf),
-          }
-        });
+        return Ok(if sign > 0 { inf } else { neg1(inf) });
       }
     }
   }
@@ -7409,10 +7321,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         "Underflow"
       };
-      return Ok(Expr::FunctionCall {
-        name: tag.to_string(),
-        args: vec![].into(),
-      });
+      return Ok(call(tag, vec![]));
     }
   }
 
@@ -7829,10 +7738,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       sort_symbolic_factors(&mut symbolic_args);
       let mut final_args: Vec<Expr> = vec![numeric];
       final_args.extend(symbolic_args);
-      return Ok(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: final_args.into(),
-      });
+      return Ok(call("Times", final_args));
     }
 
     if symbolic_args.is_empty() {
@@ -7849,10 +7755,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if final_args.len() == 1 {
       return Ok(final_args.remove(0));
     }
-    return Ok(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: final_args.into(),
-    });
+    return Ok(call("Times", final_args));
   }
 
   // Separate into: integers, rationals, reals, and symbolic arguments.
@@ -8000,10 +7903,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if final_args.len() == 1 {
       return Ok(final_args.remove(0));
     }
-    return Ok(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: final_args.into(),
-    });
+    return Ok(call("Times", final_args));
   }
 
   // If any Real, try to convert symbolic constants (Pi, E, etc.) to floats.
@@ -8043,15 +7943,10 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .any(|a| matches!(a, Expr::Identifier(s) if s == "I"));
       if has_imag {
         // 0.0 * I → 0. + 0.*I (Complex form)
-        return Ok(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::Real(0.0)),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Real(0.0)),
-            right: Box::new(Expr::Identifier("I".to_string())),
-          }),
-        });
+        return Ok(plus2(
+          Expr::Real(0.0),
+          times2(Expr::Real(0.0), Expr::Identifier("I".to_string())),
+        ));
       }
       // 0.0 * x → 0. (approximate zero, not exact)
       return Ok(Expr::Real(0.0));
@@ -8073,10 +7968,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return if final_args.len() == 1 {
       Ok(final_args.remove(0))
     } else {
-      Ok(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: final_args.into(),
-      })
+      Ok(call("Times", final_args))
     };
   }
 
@@ -8092,10 +7984,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if sd.is_one() {
         bigint_to_expr(sn)
       } else {
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![bigint_to_expr(sn), bigint_to_expr(sd)].into(),
-        }
+        call("Rational", vec![bigint_to_expr(sn), bigint_to_expr(sd)])
       }
     };
     if symbolic_args.is_empty() {
@@ -8108,10 +7997,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if final_args.len() == 1 {
       return Ok(final_args.remove(0));
     }
-    return Ok(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: final_args.into(),
-    });
+    return Ok(call("Times", final_args));
   };
   let combined_denom = rat_denom;
   let mut coeff = if has_rational || (has_int && combined_denom != 1) {
@@ -8157,10 +8043,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if result_positive {
         return Ok(Expr::Identifier("Infinity".to_string()));
       }
-      return Ok(Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(Expr::Identifier("Infinity".to_string())),
-      });
+      return Ok(neg1(Expr::Identifier("Infinity".to_string())));
     }
   }
 
@@ -8296,11 +8179,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             } else if matches!(&new_exp, Expr::Integer(1)) {
               symbolic_args[i] = base;
             } else {
-              symbolic_args[i] = Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(base),
-                right: Box::new(new_exp),
-              };
+              symbolic_args[i] = pow2(base, new_exp);
             }
             let sign = if cv < 0 { -1i128 } else { 1i128 };
             let remainder = (abs_cv / bv as u128) as i128;
@@ -8492,10 +8371,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if final_args.len() == 1 {
     Ok(final_args.remove(0))
   } else {
-    Ok(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: final_args.into(),
-    })
+    Ok(call("Times", final_args))
   }
 }
 
@@ -8632,15 +8508,10 @@ fn direct_real_divide(a: &Expr, b: &Expr) -> Option<Expr> {
     && re.is_finite()
     && im.is_finite()
   {
-    return Some(Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(Expr::Real(re / y)),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Real(im / y)),
-        right: Box::new(Expr::Identifier("I".to_string())),
-      }),
-    });
+    return Some(plus2(
+      Expr::Real(re / y),
+      times2(Expr::Real(im / y), Expr::Identifier("I".to_string())),
+    ));
   }
   let Expr::Real(y) = b else { return None };
   if *y == 0.0 {
@@ -8989,10 +8860,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     if let Some(false) = is_known_positive_local(b) {
       // Negative divisor flips Infinity → -Infinity. Use UnaryOp Minus
       // so the formatter prints `-Infinity` consistently.
-      return Ok(Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(a.clone()),
-      });
+      return Ok(neg1(a.clone()));
     }
   }
 
@@ -9055,10 +8923,10 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       if rd == BigInt::from(1) {
         return Ok(bigint_to_expr(rn));
       }
-      return Ok(Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![bigint_to_expr(rn), bigint_to_expr(rd)].into(),
-      });
+      return Ok(call(
+        "Rational",
+        vec![bigint_to_expr(rn), bigint_to_expr(rd)],
+      ));
     }
   }
 
@@ -9100,10 +8968,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
           if rest.len() == 1 {
             return multiply_scalar_by_expr(&coeff, &rest.remove(0));
           }
-          let rest_expr = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: rest.into(),
-          };
+          let rest_expr = call("Times", rest);
           return multiply_scalar_by_expr(&coeff, &rest_expr);
         }
       }
@@ -9118,11 +8983,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     && is_sqrt(b).is_some()
     && matches!(is_sqrt(b).unwrap(), Expr::Integer(m) if *m > 0)
   {
-    let b_inv = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(b.clone()),
-      right: Box::new(Expr::Integer(-1)),
-    };
+    let b_inv = pow2(b.clone(), Expr::Integer(-1));
     return times_ast(&[Expr::Integer(*n), b_inv]);
   }
 
@@ -9301,10 +9162,10 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     if rd == BigInt::from(1) {
       return Ok(bigint_to_expr(rn));
     }
-    return Ok(Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![bigint_to_expr(rn), bigint_to_expr(rd)].into(),
-    });
+    return Ok(call(
+      "Rational",
+      vec![bigint_to_expr(rn), bigint_to_expr(rd)],
+    ));
   }
 
   // For reals, perform floating-point division
@@ -9493,10 +9354,7 @@ fn flip_unit_negative_rational_product(expr: Expr) -> Expr {
   if !is_additive(&negated) {
     return expr;
   }
-  Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![make_rational(1, *cd), negated].into(),
-  }
+  call("Times", vec![make_rational(1, *cd), negated])
 }
 
 /// Build the canonical form of `a / b` structurally (without evaluation).
@@ -9534,15 +9392,9 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
         let rest_expr = if rest.len() == 1 {
           rest.remove(0)
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: rest.into(),
-          }
+          call("Times", rest)
         };
-        let rest_inv = Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![rest_expr, Expr::Integer(-1)].into(),
-        };
+        let rest_inv = call("Power", vec![rest_expr, Expr::Integer(-1)]);
         // Sign is carried on the rational's numerator (Rational[-1, |c|]).
         let coeff = Expr::FunctionCall {
           name: "Rational".to_string(),
@@ -9552,21 +9404,12 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
           ]
           .into(),
         };
-        return Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![coeff, rest_inv].into(),
-        };
+        return call("Times", vec![coeff, rest_inv]);
       }
     }
-    return Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![b, Expr::Integer(-1)].into(),
-    };
+    return call("Power", vec![b, Expr::Integer(-1)]);
   }
-  let b_inv = Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![b, Expr::Integer(-1)].into(),
-  };
+  let b_inv = call("Power", vec![b, Expr::Integer(-1)]);
   // Flatten: if a is already Times, merge b_inv into its args
   if let Expr::FunctionCall { name, args } = &a
     && name == "Times"
@@ -9578,10 +9421,7 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
       args: new_args,
     };
   }
-  Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![a, b_inv].into(),
-  }
+  call("Times", vec![a, b_inv])
 }
 
 /// True iff `exp` is a numeric constant whose absolute value is strictly
@@ -9678,11 +9518,8 @@ fn infinite_power(base: &Expr, exp: &Expr) -> Option<Expr> {
   let complex_inf = || Expr::Identifier("ComplexInfinity".to_string());
   let indet = || Expr::Identifier("Indeterminate".to_string());
   let directed = |dir: Expr| {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "DirectedInfinity".to_string(),
-      args: vec![dir].into(),
-    })
-    .ok()
+    crate::evaluator::evaluate_expr_to_expr(&call1("DirectedInfinity", dir))
+      .ok()
   };
   let base_dir = infinity_direction(base);
   let exp_dir = infinity_direction(exp);
@@ -9906,10 +9743,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
     let copies: Vec<Expr> =
       std::iter::repeat_n(base.clone(), *n as usize).collect();
-    let product = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: copies.into(),
-    };
+    let product = call("Times", copies);
     return crate::evaluator::evaluate_expr_to_expr(&product);
   }
 
@@ -9984,10 +9818,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     } else {
       make_rational(yn, yd)
     };
-    let neg_one_pow = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![Expr::Integer(-1), y_expr].into(),
-    };
+    let neg_one_pow = call("Power", vec![Expr::Integer(-1), y_expr]);
     return crate::evaluator::evaluate_function_call_ast(
       "Times",
       &[Expr::Integer(-1), neg_one_pow],
@@ -10027,10 +9858,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     } else {
       make_rational(yn, yd)
     };
-    let neg_one_pow = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![Expr::Integer(-1), y_expr].into(),
-    };
+    let neg_one_pow = call("Power", vec![Expr::Integer(-1), y_expr]);
     return if sign == 1 {
       Ok(neg_one_pow)
     } else {
@@ -10049,16 +9877,10 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && inner.is_empty()
   {
     if name == "Underflow" {
-      return Ok(Expr::FunctionCall {
-        name: "Overflow".to_string(),
-        args: vec![].into(),
-      });
+      return Ok(call("Overflow", vec![]));
     }
     if name == "Overflow" {
-      return Ok(Expr::FunctionCall {
-        name: "Underflow".to_string(),
-        args: vec![].into(),
-      });
+      return Ok(call("Underflow", vec![]));
     }
   }
 
@@ -10119,20 +9941,14 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         let rest_sum = if rest.len() == 1 {
           rest.into_iter().next().unwrap()
         } else {
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: rest.into(),
-          }
+          call("Plus", rest)
         };
         factors.push(power_two(&e, &rest_sum)?);
       }
       let result = if factors.len() == 1 {
         factors.into_iter().next().unwrap()
       } else {
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: factors.into(),
-        }
+        call("Times", factors)
       };
       return crate::evaluator::evaluate_expr_to_expr(&result);
     }
@@ -10230,10 +10046,10 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         Some((_, im)) if im != 0.0
       )
     {
-      return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Complex".to_string(),
-        args: vec![Expr::Real(1.0), Expr::Real(0.0)].into(),
-      });
+      return crate::evaluator::evaluate_expr_to_expr(&call(
+        "Complex",
+        vec![Expr::Real(1.0), Expr::Real(0.0)],
+      ));
     }
     return Ok(Expr::Integer(1));
   }
@@ -10513,10 +10329,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           if s == 1 {
             // Nothing to extract: keep the radical merged (skip the
             // distribution below and every later rewrite of this power).
-            return Ok(Expr::FunctionCall {
-              name: "Sqrt".to_string(),
-              args: vec![base.clone()].into(),
-            });
+            return Ok(call1("Sqrt", base.clone()));
           }
           let r = *c / (s * s);
           let mut radicand_factors: Vec<Expr> = Vec::new();
@@ -10527,18 +10340,9 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           let radicand = if radicand_factors.len() == 1 {
             radicand_factors.into_iter().next().unwrap()
           } else {
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: radicand_factors.into(),
-            }
+            call("Times", radicand_factors)
           };
-          return times_ast(&[
-            Expr::Integer(s),
-            Expr::FunctionCall {
-              name: "Sqrt".to_string(),
-              args: vec![radicand].into(),
-            },
-          ]);
+          return times_ast(&[Expr::Integer(s), call1("Sqrt", radicand)]);
         }
         let rest_has_nonnumeric =
           rest.iter().any(|f| !is_numeric_like_extended(f));
@@ -10562,10 +10366,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           let rest_expr = if rest.len() == 1 {
             rest.into_iter().next().unwrap()
           } else {
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: rest.into(),
-            }
+            call("Times", rest)
           };
           let pow_rest = power_two(&rest_expr, exp)?;
           return times_ast(&[pow_numeric, pow_rest]);
@@ -10836,20 +10637,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       } else if matches!(&im_expr, Expr::Integer(-1)) {
         negate_expr(i_expr.clone())
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(im_expr),
-          right: Box::new(i_expr),
-        }
+        times2(im_expr, i_expr)
       };
       if result_re.is_zero() {
         return Ok(imag_term);
       }
-      return Ok(Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(re_expr),
-        right: Box::new(imag_term),
-      });
+      return Ok(plus2(re_expr, imag_term));
     }
   }
 
@@ -10878,18 +10671,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     } else if matches!(&sin_val, Expr::Integer(-1)) {
       negate_expr(i_expr)
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![sin_val, i_expr].into(),
-      }
+      call("Times", vec![sin_val, i_expr])
     };
     if cos_is_zero {
       return Ok(imag_term);
     }
-    return Ok(Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![cos_val, imag_term].into(),
-    });
+    return Ok(call("Plus", vec![cos_val, imag_term]));
   }
 
   // E^(a + k*I*Pi) → E^a * E^(k*I*Pi), when k*I*Pi appears as a Plus term
@@ -10968,21 +10755,15 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         return Ok(Expr::Real(real_part));
       }
       if real_part == 0.0 {
-        return Ok(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Real(imag_part)),
-          right: Box::new(Expr::Identifier("I".to_string())),
-        });
+        return Ok(times2(
+          Expr::Real(imag_part),
+          Expr::Identifier("I".to_string()),
+        ));
       }
-      return Ok(Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Real(real_part)),
-        right: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Real(imag_part)),
-          right: Box::new(Expr::Identifier("I".to_string())),
-        }),
-      });
+      return Ok(plus2(
+        Expr::Real(real_part),
+        times2(Expr::Real(imag_part), Expr::Identifier("I".to_string())),
+      ));
     }
   }
 
@@ -11169,11 +10950,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       if is_plain(&p_root) && is_plain(&q_root) {
         return divide_ast(&[p_root, q_root]);
       }
-      return Ok(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(base.clone()),
-        right: Box::new(exp.clone()),
-      });
+      return Ok(pow2(base.clone(), exp.clone()));
     }
   }
 
@@ -11335,21 +11112,13 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         let combined_base: i128 =
           radical_factors.iter().map(|(p, _)| *p).product();
         if combined_base == *b {
-          return Ok(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(base.clone()),
-            right: Box::new(exp.clone()),
-          });
+          return Ok(pow2(base.clone(), exp.clone()));
         }
         let (rn, rd) = reduced[0];
         if rn == 1 && rd == 2 {
           return Ok(make_sqrt(Expr::Integer(combined_base)));
         }
-        return Ok(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::Integer(combined_base)),
-          right: Box::new(make_rational(rn, rd)),
-        });
+        return Ok(pow2(Expr::Integer(combined_base), make_rational(rn, rd)));
       }
 
       // Build radical part: product of p_i^(rem_i/q)
@@ -11363,11 +11132,10 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         } else if reduced_num == 1 && reduced_den == 2 {
           rad_parts.push(make_sqrt(Expr::Integer(*prime)));
         } else {
-          rad_parts.push(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(Expr::Integer(*prime)),
-            right: Box::new(make_rational(reduced_num, reduced_den)),
-          });
+          rad_parts.push(pow2(
+            Expr::Integer(*prime),
+            make_rational(reduced_num, reduced_den),
+          ));
         }
       }
 
@@ -11385,11 +11153,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
 
     // Not exact — keep symbolic
-    return Ok(Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(base.clone()),
-      right: Box::new(exp.clone()),
-    });
+    return Ok(pow2(base.clone(), exp.clone()));
   }
 
   // Integer^Integer with non-negative exponent: use exact BigInt arithmetic
@@ -11493,10 +11257,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         if re == 0.0 {
           Ok(im_part)
         } else {
-          Ok(Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![Expr::Real(re), im_part].into(),
-          })
+          Ok(call("Plus", vec![Expr::Real(re), im_part]))
         }
       }
     } else if has_real {
@@ -11557,11 +11318,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       let im = if im.abs() < 1e-15 { 0.0 } else { im };
       return Ok(build_complex_float_expr(re, im));
     }
-    Ok(Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(base.clone()),
-      right: Box::new(exp.clone()),
-    })
+    Ok(pow2(base.clone(), exp.clone()))
   }
 }
 
@@ -11633,10 +11390,7 @@ fn make_around(value: f64, uncertainty: f64) -> Expr {
   if uncertainty == 0.0 {
     return Expr::Real(value);
   }
-  Expr::FunctionCall {
-    name: "Around".to_string(),
-    args: vec![Expr::Real(value), Expr::Real(uncertainty)].into(),
-  }
+  call("Around", vec![Expr::Real(value), Expr::Real(uncertainty)])
 }
 
 /// Assemble a propagated result: list-form uncertainty iff any input was
@@ -11987,10 +11741,7 @@ fn simplify_neg1_rational_power(
     return Ok(Expr::Identifier("I".to_string()));
   }
   // 0 < p < q: return (-1)^(p/q)
-  Ok(Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![Expr::Integer(-1), make_rational(p, q)].into(),
-  })
+  Ok(call("Power", vec![Expr::Integer(-1), make_rational(p, q)]))
 }
 
 /// Numerator and denominator of a `Rational[p, q]` expression.
@@ -12098,19 +11849,13 @@ fn negative_base_rational_power(
           _ => false,
         };
         if positive_int && expr_to_string(&fexp) == root_key {
-          *factor = Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![negate_expr(fbase), root_exp.clone()].into(),
-          };
+          *factor = call("Power", vec![negate_expr(fbase), root_exp.clone()]);
           merged = true;
           break;
         }
       }
       if !merged {
-        factors.push(Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![Expr::Integer(-1), root_exp].into(),
-        });
+        factors.push(call("Power", vec![Expr::Integer(-1), root_exp]));
       }
     }
   }
@@ -12321,10 +12066,7 @@ pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if result_args.len() == 1 {
       Ok(result_args.remove(0))
     } else {
-      Ok(Expr::FunctionCall {
-        name: "Max".to_string(),
-        args: result_args.into(),
-      })
+      Ok(call("Max", result_args))
     }
   }
 }
@@ -12408,10 +12150,7 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if result_args.len() == 1 {
       Ok(result_args.remove(0))
     } else {
-      Ok(Expr::FunctionCall {
-        name: "Min".to_string(),
-        args: result_args.into(),
-      })
+      Ok(call("Min", result_args))
     }
   }
 }

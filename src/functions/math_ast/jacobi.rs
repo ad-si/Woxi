@@ -79,10 +79,10 @@ pub fn jacobi_amplitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // JacobiAmplitude[u, 1] = Gudermannian[u]. (Real arguments are numericized by
   // the path below; this covers the exact-integer m == 1 case symbolically.)
   if matches!(m, Expr::Integer(1)) {
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Gudermannian".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return crate::evaluator::evaluate_expr_to_expr(&call1(
+      "Gudermannian",
+      u.clone(),
+    ));
   }
 
   // Numeric evaluation
@@ -125,10 +125,7 @@ pub fn jacobi_epsilon_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // JacobiEpsilon[u, 1] = Tanh[u].
   if matches!(m, Expr::Integer(1)) {
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Tanh".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return crate::evaluator::evaluate_expr_to_expr(&call1("Tanh", u.clone()));
   }
 
   // Numeric: JacobiEpsilon[u, m] = EllipticE[JacobiAmplitude[u, m], m].
@@ -166,18 +163,12 @@ pub fn jacobi_dn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // JacobiDN[u, 1] = Sech[u]
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Sech".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Sech", u.clone()));
   }
 
   // JacobiDN[-u, m] = JacobiDN[u, m] (even function)
   if let Some(inner) = extract_negated_expr(u) {
-    return Ok(Expr::FunctionCall {
-      name: "JacobiDN".to_string(),
-      args: vec![inner, m.clone()].into(),
-    });
+    return Ok(call("JacobiDN", vec![inner, m.clone()]));
   }
 
   // Numeric evaluation only when an argument is inexact (a machine number);
@@ -212,18 +203,12 @@ pub fn jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // JacobiSN[u, 0] = Sin[u]
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Sin".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Sin", u.clone()));
   }
 
   // JacobiSN[u, 1] = Tanh[u]
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Tanh".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Tanh", u.clone()));
   }
 
   // JacobiSN[-u, m] = -JacobiSN[u, m] (odd function)
@@ -231,10 +216,7 @@ pub fn jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::BinaryOp {
       op: BinaryOperator::Times,
       left: Box::new(Expr::Integer(-1)),
-      right: Box::new(Expr::FunctionCall {
-        name: "JacobiSN".to_string(),
-        args: vec![inner, m.clone()].into(),
-      }),
+      right: Box::new(call("JacobiSN", vec![inner, m.clone()])),
     });
   }
 
@@ -270,26 +252,17 @@ pub fn jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // JacobiCN[u, 0] = Cos[u]
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Cos".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Cos", u.clone()));
   }
 
   // JacobiCN[u, 1] = Sech[u]
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Sech".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Sech", u.clone()));
   }
 
   // JacobiCN[-u, m] = JacobiCN[u, m] (even function)
   if let Some(inner) = extract_negated_expr(u) {
-    return Ok(Expr::FunctionCall {
-      name: "JacobiCN".to_string(),
-      args: vec![inner, m.clone()].into(),
-    });
+    return Ok(call("JacobiCN", vec![inner, m.clone()]));
   }
 
   // Numeric evaluation only when an argument is inexact (a machine number);
@@ -338,10 +311,7 @@ pub fn inverse_jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // InverseJacobiSN[1, m] = EllipticK[m]
   if is_expr_one(v) && !has_real_arg(v, m) {
-    return Ok(Expr::FunctionCall {
-      name: "EllipticK".to_string(),
-      args: vec![m.clone()].into(),
-    });
+    return Ok(call1("EllipticK", m.clone()));
   }
 
   // Numeric evaluation: EllipticF[ArcSin[v], m]
@@ -353,18 +323,12 @@ pub fn inverse_jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // InverseJacobiSN[x, 0] = ArcSin[x]
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcSin".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcSin", v.clone()));
   }
 
   // InverseJacobiSN[x, 1] = ArcTanh[x]
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcTanh".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcTanh", v.clone()));
   }
 
   Ok(unevaluated("InverseJacobiSN", args))
@@ -387,10 +351,7 @@ pub fn inverse_jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // InverseJacobiCN[0, m] = EllipticK[m] (symbolic only)
   if is_expr_zero(v) && !has_real_arg(v, m) {
-    return Ok(Expr::FunctionCall {
-      name: "EllipticK".to_string(),
-      args: vec![m.clone()].into(),
-    });
+    return Ok(call1("EllipticK", m.clone()));
   }
 
   // Numeric: EllipticF[ArcCos[v], m]
@@ -402,18 +363,12 @@ pub fn inverse_jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // InverseJacobiCN[x, 0] = ArcCos[x]
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcCos".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcCos", v.clone()));
   }
 
   // InverseJacobiCN[x, 1] = ArcSech[x]
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcSech".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcSech", v.clone()));
   }
 
   Ok(unevaluated("InverseJacobiCN", args))
@@ -445,10 +400,7 @@ pub fn inverse_jacobi_dn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // InverseJacobiDN[x, 1] = ArcSech[x]
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcSech".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcSech", v.clone()));
   }
 
   Ok(unevaluated("InverseJacobiDN", args))
@@ -471,10 +423,7 @@ pub fn inverse_jacobi_cd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // InverseJacobiCD[0, m] = EllipticK[m] (symbolic only)
   if is_expr_zero(v) && !has_real_arg(v, m) {
-    return Ok(Expr::FunctionCall {
-      name: "EllipticK".to_string(),
-      args: vec![m.clone()].into(),
-    });
+    return Ok(call1("EllipticK", m.clone()));
   }
 
   // Numeric: EllipticF[ArcSin[Sqrt[(1-v^2)/(1-m*v^2)]], m]
@@ -487,10 +436,7 @@ pub fn inverse_jacobi_cd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // InverseJacobiCD[x, 0] = ArcCos[x]
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcCos".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcCos", v.clone()));
   }
 
   Ok(unevaluated("InverseJacobiCD", args))
@@ -524,18 +470,12 @@ pub fn inverse_jacobi_sc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // InverseJacobiSC[x, 0] = ArcTan[x]
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcTan".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcTan", v.clone()));
   }
 
   // InverseJacobiSC[x, 1] = ArcSinh[x]
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcSinh".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcSinh", v.clone()));
   }
 
   Ok(unevaluated("InverseJacobiSC", args))
@@ -561,10 +501,7 @@ pub fn inverse_jacobi_cs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // InverseJacobiCS[x, 0] = ArcCot[x]
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcCot".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcCot", v.clone()));
   }
 
   Ok(unevaluated("InverseJacobiCS", args))
@@ -598,18 +535,12 @@ pub fn inverse_jacobi_sd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // InverseJacobiSD[x, 0] = ArcSin[x]
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcSin".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcSin", v.clone()));
   }
 
   // InverseJacobiSD[x, 1] = ArcSinh[x]
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcSinh".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcSinh", v.clone()));
   }
 
   Ok(unevaluated("InverseJacobiSD", args))
@@ -635,18 +566,12 @@ pub fn inverse_jacobi_ds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // InverseJacobiDS[x, 0] = ArcCsc[x]
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcCsc".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcCsc", v.clone()));
   }
 
   // InverseJacobiDS[x, 1] = ArcCsch[x]
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcCsch".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcCsch", v.clone()));
   }
 
   Ok(unevaluated("InverseJacobiDS", args))
@@ -672,18 +597,12 @@ pub fn inverse_jacobi_ns_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // InverseJacobiNS[x, 0] = ArcCsc[x]
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcCsc".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcCsc", v.clone()));
   }
 
   // InverseJacobiNS[x, 1] = ArcCoth[x]
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcCoth".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcCoth", v.clone()));
   }
 
   Ok(unevaluated("InverseJacobiNS", args))
@@ -714,18 +633,12 @@ pub fn inverse_jacobi_nc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // InverseJacobiNC[x, 0] = ArcSec[x]
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcSec".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcSec", v.clone()));
   }
 
   // InverseJacobiNC[x, 1] = ArcCosh[x]
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcCosh".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcCosh", v.clone()));
   }
 
   Ok(unevaluated("InverseJacobiNC", args))
@@ -757,10 +670,7 @@ pub fn inverse_jacobi_nd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // InverseJacobiND[x, 1] = ArcCosh[x]
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "ArcCosh".to_string(),
-      args: vec![v.clone()].into(),
-    });
+    return Ok(call1("ArcCosh", v.clone()));
   }
 
   Ok(unevaluated("InverseJacobiND", args))
@@ -845,17 +755,11 @@ pub fn jacobi_sc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // JacobiSC[u, 0] = Tan[u]
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Tan".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Tan", u.clone()));
   }
   // JacobiSC[u, 1] = Sinh[u]
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Sinh".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Sinh", u.clone()));
   }
 
   // Numeric evaluation only when an argument is inexact (a machine number);
@@ -890,10 +794,7 @@ pub fn jacobi_dc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // JacobiDC[u, 0] = Sec[u]
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Sec".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Sec", u.clone()));
   }
   // JacobiDC[u, 1] = 1
   if is_expr_one(m) {
@@ -932,10 +833,7 @@ pub fn jacobi_cd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // JacobiCD[u, 0] = Cos[u]
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Cos".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Cos", u.clone()));
   }
   // JacobiCD[u, 1] = 1
   if is_expr_one(m) {
@@ -973,16 +871,10 @@ pub fn jacobi_sd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Sin".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Sin", u.clone()));
   }
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Sinh".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Sinh", u.clone()));
   }
 
   if has_real_arg(u, m)
@@ -1009,16 +901,10 @@ pub fn jacobi_cs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Cot".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Cot", u.clone()));
   }
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Csch".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Csch", u.clone()));
   }
 
   if has_real_arg(u, m)
@@ -1045,16 +931,10 @@ pub fn jacobi_ds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Csc".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Csc", u.clone()));
   }
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Csch".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Csch", u.clone()));
   }
 
   if has_real_arg(u, m)
@@ -1081,16 +961,10 @@ pub fn jacobi_ns_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Csc".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Csc", u.clone()));
   }
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Coth".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Coth", u.clone()));
   }
 
   if has_real_arg(u, m)
@@ -1124,10 +998,7 @@ pub fn jacobi_nd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Cosh".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Cosh", u.clone()));
   }
 
   if has_real_arg(u, m)
@@ -1158,16 +1029,10 @@ pub fn jacobi_nc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
   if is_expr_zero(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Sec".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Sec", u.clone()));
   }
   if is_expr_one(m) {
-    return Ok(Expr::FunctionCall {
-      name: "Cosh".to_string(),
-      args: vec![u.clone()].into(),
-    });
+    return Ok(call1("Cosh", u.clone()));
   }
 
   if has_real_arg(u, m)

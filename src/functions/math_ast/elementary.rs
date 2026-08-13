@@ -116,23 +116,14 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let kept_prod = if kept.len() == 1 {
             kept.into_iter().next().unwrap()
           } else {
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: kept.into(),
-            }
+            call("Times", kept)
           };
-          all.push(Expr::FunctionCall {
-            name: "Abs".to_string(),
-            args: vec![kept_prod].into(),
-          });
+          all.push(call1("Abs", kept_prod));
         }
         let result = match all.len() {
           0 => Expr::Integer(1),
           1 => all.into_iter().next().unwrap(),
-          _ => Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: all.into(),
-          },
+          _ => call("Times", all),
         };
         return crate::evaluator::evaluate_expr_to_expr(&result);
       }
@@ -145,22 +136,19 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((base, exp)) = as_power(&args[0])
     && is_strictly_positive_real(base)
   {
-    let re_exp = Expr::FunctionCall {
-      name: "Re".to_string(),
-      args: vec![exp.clone()].into(),
-    };
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![base.clone(), re_exp].into(),
-    });
+    let re_exp = call1("Re", exp.clone());
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "Power",
+      vec![base.clone(), re_exp],
+    ));
   }
   // Abs[base^exp] = Abs[base]^exp for a real numeric exponent (|z^n| = |z|^n).
   if let Some((base, exp)) = power_with_real_exponent(&args[0]) {
     let abs_base = abs_ast(std::slice::from_ref(base))?;
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![abs_base, exp.clone()].into(),
-    });
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "Power",
+      vec![abs_base, exp.clone()],
+    ));
   }
   // Handle exact complex numbers and rationals: Abs[a + b*I] = Sqrt[a^2 + b^2]
   if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {
@@ -221,10 +209,7 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // because the negation/identity re-evaluates the original arithmetic.
   if let Some(v) = try_eval_to_f64(&args[0]) {
     if v < 0.0 {
-      let neg = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), args[0].clone()].into(),
-      };
+      let neg = call("Times", vec![Expr::Integer(-1), args[0].clone()]);
       return crate::evaluator::evaluate_expr_to_expr(&neg);
     }
     return Ok(args[0].clone());
@@ -460,18 +445,13 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((base, exp)) = power_parts
     && is_strictly_positive_real(base)
   {
-    let im_exp = Expr::FunctionCall {
-      name: "Im".to_string(),
-      args: vec![exp.clone()].into(),
-    };
-    let new_exp = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Identifier("I".to_string()), im_exp].into(),
-    };
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![base.clone(), new_exp].into(),
-    });
+    let im_exp = call1("Im", exp.clone());
+    let new_exp =
+      call("Times", vec![Expr::Identifier("I".to_string()), im_exp]);
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "Power",
+      vec![base.clone(), new_exp],
+    ));
   }
   // Handle Infinity, -Infinity, ComplexInfinity, Indeterminate
   if matches!(&args[0], Expr::Identifier(s) if s == "Infinity") {
@@ -649,11 +629,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Build (a + b*I) * (1/Sqrt[|z|^2])
         let z_expr = build_complex_expr(rn, rd, in_, id);
         let abs_expr = make_sqrt(make_rational(abs2_n, abs2_d));
-        return Ok(Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(z_expr),
-          right: Box::new(abs_expr),
-        });
+        return Ok(div2(z_expr, abs_expr));
       }
     }
   }
@@ -731,23 +707,14 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let kept_prod = if kept.len() == 1 {
             kept.into_iter().next().unwrap()
           } else {
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: kept.into(),
-            }
+            call("Times", kept)
           };
-          all.push(Expr::FunctionCall {
-            name: "Sign".to_string(),
-            args: vec![kept_prod].into(),
-          });
+          all.push(call1("Sign", kept_prod));
         }
         let result = match all.len() {
           0 => Expr::Integer(1),
           1 => all.into_iter().next().unwrap(),
-          _ => Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: all.into(),
-          },
+          _ => call("Times", all),
         };
         return crate::evaluator::evaluate_expr_to_expr(&result);
       }
@@ -757,10 +724,10 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (z^n / |z^n| = (z/|z|)^n).
   if let Some((base, exp)) = power_with_real_exponent(&args[0]) {
     let sign_base = sign_ast(std::slice::from_ref(base))?;
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![sign_base, exp.clone()].into(),
-    });
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "Power",
+      vec![sign_base, exp.clone()],
+    ));
   }
   Ok(unevaluated("Sign", args))
 }
@@ -948,10 +915,8 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Sqrt of a negative machine real is the numeric imaginary 0. + Sqrt[|f|] I
     // (an inexact base forces a numeric complex result, matching wolframscript).
     Expr::Real(f) => {
-      let complex = Expr::FunctionCall {
-        name: "Complex".to_string(),
-        args: vec![Expr::Real(0.0), Expr::Real((-*f).sqrt())].into(),
-      };
+      let complex =
+        call("Complex", vec![Expr::Real(0.0), Expr::Real((-*f).sqrt())]);
       crate::evaluator::evaluate_expr_to_expr(&complex)
     }
     // Sqrt[base^(2n)] → base^n only when base is known non-negative
@@ -1071,11 +1036,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               if half == 1 {
                 outside.push(pargs[0].clone());
               } else {
-                outside.push(Expr::BinaryOp {
-                  op: BinaryOperator::Power,
-                  left: Box::new(pargs[0].clone()),
-                  right: Box::new(Expr::Integer(half)),
-                });
+                outside.push(pow2(pargs[0].clone(), Expr::Integer(half)));
               }
             }
           }
@@ -1420,20 +1381,15 @@ fn try_sqrt_plus_gcd(expr: &Expr) -> Option<Expr> {
     } else if new_coeff == -1 {
       new_terms.push(negate_expr(base.clone()));
     } else {
-      new_terms.push(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(new_coeff), base.clone()].into(),
-      });
+      new_terms
+        .push(call("Times", vec![Expr::Integer(new_coeff), base.clone()]));
     }
   }
 
   let new_sum = if new_terms.len() == 1 {
     new_terms.remove(0)
   } else {
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: new_terms.into(),
-    }
+    call("Plus", new_terms)
   };
 
   let sqrt_part = make_sqrt(new_sum);
@@ -1539,17 +1495,11 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let n = *n;
     let power = |b: Expr| -> Result<Expr, InterpreterError> {
-      let expr = Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![b, make_rational(1, n)].into(),
-      };
+      let expr = call("Power", vec![b, make_rational(1, n)]);
       crate::evaluator::evaluate_expr_to_expr(&expr)
     };
     let negate = |e: Expr| -> Result<Expr, InterpreterError> {
-      let expr = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), e].into(),
-      };
+      let expr = call("Times", vec![Expr::Integer(-1), e]);
       crate::evaluator::evaluate_expr_to_expr(&expr)
     };
     if x < 0.0 {
@@ -1907,10 +1857,7 @@ fn extract_integer_offset(
   let rest_expr = if rest.len() == 1 {
     rest.into_iter().next().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: rest.into(),
-    }
+    call("Plus", rest)
   };
   let rounded = if is_floor {
     floor_ast(&[rest_expr])?
@@ -1979,10 +1926,7 @@ fn floor_ceil_two_arg(
     if rd == 1 {
       return Ok(Expr::Integer(rn));
     }
-    return Ok(Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(rn), Expr::Integer(rd)].into(),
-    });
+    return Ok(call("Rational", vec![Expr::Integer(rn), Expr::Integer(rd)]));
   }
   // Exact step `a` (rational): the result follows the type of `a`, so it stays
   // exact even when `x` is a symbolic constant (Floor[Pi, 1/10]) or a machine
@@ -2013,10 +1957,7 @@ fn floor_ceil_two_arg(
       if rd == 1 {
         return Ok(Expr::Integer(rn));
       }
-      return Ok(Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(rn), Expr::Integer(rd)].into(),
-      });
+      return Ok(call("Rational", vec![Expr::Integer(rn), Expr::Integer(rd)]));
     }
   }
   // Fall back to floating point
@@ -2040,10 +1981,7 @@ fn floor_ceil_two_arg(
     return Ok(Expr::Real(result));
   }
   let name = if is_floor { "Floor" } else { "Ceiling" };
-  Ok(Expr::FunctionCall {
-    name: name.to_string(),
-    args: vec![x.clone(), a.clone()].into(),
-  })
+  Ok(call(name, vec![x.clone(), a.clone()]))
 }
 
 /// Banker's rounding: round half to even
@@ -2166,11 +2104,10 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // If a is not a plain number, return n * a symbolically
       if !a_is_real && !a_is_int {
         // Symbolic: return n * a
-        return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(n)),
-          right: Box::new(eval_a),
-        });
+        return crate::evaluator::evaluate_expr_to_expr(&times2(
+          Expr::Integer(n),
+          eval_a,
+        ));
       }
       let rounded = n as f64 * a_val;
       // When the step a is Real, result should be Real;
@@ -2201,10 +2138,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Plus",
       &[
         re,
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![im, Expr::Identifier("I".to_string())].into(),
-        },
+        call("Times", vec![im, Expr::Identifier("I".to_string())]),
       ],
     );
   }
@@ -2220,10 +2154,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Plus",
       &[
         re_rounded,
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![im_rounded, Expr::Identifier("I".to_string())].into(),
-        },
+        call("Times", vec![im_rounded, Expr::Identifier("I".to_string())]),
       ],
     );
   }
@@ -2294,11 +2225,10 @@ fn infinite_mod_quotient(
       try_eval_to_f64(n),
       Some(v) if v < 0.0
     );
-    let divided =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![m.clone(), Expr::Integer(if flip { -1 } else { 1 })].into(),
-      });
+    let divided = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Times",
+      vec![m.clone(), Expr::Integer(if flip { -1 } else { 1 })],
+    ));
     return Some(divided);
   }
   // Finite dividend, infinite divisor: nothing is taken away.
@@ -2458,25 +2388,10 @@ fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     }
     // floor_quot = Floor[m/n]; evaluating the quotient first lets exact
     // cancellations (e.g. 2*Pi/Pi -> 2) happen so the floor is exact.
-    let quotient = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(m.clone()),
-      right: Box::new(n.clone()),
-    };
-    let floor_quot = Expr::FunctionCall {
-      name: "Floor".to_string(),
-      args: vec![quotient].into(),
-    };
+    let quotient = div2(m.clone(), n.clone());
+    let floor_quot = call1("Floor", quotient);
     // result = m - n*Floor[m/n]
-    let result = Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(m.clone()),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(n.clone()),
-        right: Box::new(floor_quot),
-      }),
-    };
+    let result = minus2(m.clone(), times2(n.clone(), floor_quot));
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
@@ -2489,24 +2404,9 @@ fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     (try_extract_complex_exact(m), try_extract_complex_exact(n))
     && (m_im != 0 || n_im != 0)
   {
-    let quotient = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(m.clone()),
-      right: Box::new(n.clone()),
-    };
-    let round_quot = Expr::FunctionCall {
-      name: "Round".to_string(),
-      args: vec![quotient].into(),
-    };
-    let result = Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(m.clone()),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(n.clone()),
-        right: Box::new(round_quot),
-      }),
-    };
+    let quotient = div2(m.clone(), n.clone());
+    let round_quot = call1("Round", quotient);
+    let result = minus2(m.clone(), times2(n.clone(), round_quot));
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
@@ -2527,10 +2427,7 @@ fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   // Symbolic
-  Ok(Expr::FunctionCall {
-    name: "Mod".to_string(),
-    args: vec![m.clone(), n.clone()].into(),
-  })
+  Ok(call("Mod", vec![m.clone(), n.clone()]))
 }
 
 /// True if `expr` contains any machine real (`Real`/`BigFloat`) atom, i.e.
@@ -2602,30 +2499,11 @@ fn mod3_ast(m: &Expr, n: &Expr, d: &Expr) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
     // floor_quot = Floor[(m - d)/n]
-    let diff = Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(m.clone()),
-      right: Box::new(d.clone()),
-    };
-    let quotient = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(diff),
-      right: Box::new(n.clone()),
-    };
-    let floor_quot = Expr::FunctionCall {
-      name: "Floor".to_string(),
-      args: vec![quotient].into(),
-    };
+    let diff = minus2(m.clone(), d.clone());
+    let quotient = div2(diff, n.clone());
+    let floor_quot = call1("Floor", quotient);
     // result = m - n*Floor[(m - d)/n]
-    let result = Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(m.clone()),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(n.clone()),
-        right: Box::new(floor_quot),
-      }),
-    };
+    let result = minus2(m.clone(), times2(n.clone(), floor_quot));
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
@@ -2648,10 +2526,7 @@ fn mod3_ast(m: &Expr, n: &Expr, d: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   // Symbolic
-  Ok(Expr::FunctionCall {
-    name: "Mod".to_string(),
-    args: vec![m.clone(), n.clone(), d.clone()].into(),
-  })
+  Ok(call("Mod", vec![m.clone(), n.clone(), d.clone()]))
 }
 
 /// Integer floor division: floor(a / b)
@@ -2801,15 +2676,8 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // component-wise (round-half-to-even). This matches wolframscript and
       // the identity Mod[m, n] = m - n*Quotient[m, n]. Building the symbolic
       // Round and evaluating it also normalises the display to `a + b*I`.
-      let quotient = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(args[0].clone()),
-        right: Box::new(args[1].clone()),
-      };
-      let round_quot = Expr::FunctionCall {
-        name: "Round".to_string(),
-        args: vec![quotient].into(),
-      };
+      let quotient = div2(args[0].clone(), args[1].clone());
+      let round_quot = call1("Round", quotient);
       crate::evaluator::evaluate_expr_to_expr(&round_quot)
     } else {
       Ok(unevaluated("Quotient", args))
@@ -2986,10 +2854,7 @@ fn build_complex_result(re: Expr, im: Expr) -> Result<Expr, InterpreterError> {
     "Plus",
     &[
       re,
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![im, Expr::Identifier("I".to_string())].into(),
-      },
+      call("Times", vec![im, Expr::Identifier("I".to_string())]),
     ],
   )
 }
@@ -3244,10 +3109,7 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             "Plus",
             &[
               args[0].clone(),
-              Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![Expr::Integer(-1), int_val].into(),
-              },
+              call("Times", vec![Expr::Integer(-1), int_val]),
             ],
           );
         }
@@ -3405,16 +3267,13 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let cube_root_remainder = Expr::BinaryOp {
           op: BinaryOperator::Power,
           left: Box::new(Expr::Integer(remainder as i128)),
-          right: Box::new(Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(3)].into(),
-          }),
+          right: Box::new(call(
+            "Rational",
+            vec![Expr::Integer(1), Expr::Integer(3)],
+          )),
         };
-        let result = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(sign * cube_part as i128)),
-          right: Box::new(cube_root_remainder),
-        };
+        let result =
+          times2(Expr::Integer(sign * cube_part as i128), cube_root_remainder);
         crate::evaluator::evaluate_expr_to_expr(&result)
       } else {
         // No cube factor — CubeRoot is the real cube root, so return
@@ -3423,17 +3282,13 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let pow = Expr::BinaryOp {
           op: BinaryOperator::Power,
           left: Box::new(Expr::Integer(abs_n as i128)),
-          right: Box::new(Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(3)].into(),
-          }),
+          right: Box::new(call(
+            "Rational",
+            vec![Expr::Integer(1), Expr::Integer(3)],
+          )),
         };
         if sign < 0 {
-          Ok(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(-1)),
-            right: Box::new(pow),
-          })
+          Ok(times2(Expr::Integer(-1), pow))
         } else {
           Ok(pow)
         }
@@ -3445,10 +3300,7 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(Expr::Real(f.signum() * f.abs().cbrt()))
       } else {
         // Canonicalize CubeRoot[x] → Surd[x, 3]
-        Ok(Expr::FunctionCall {
-          name: "Surd".to_string(),
-          args: vec![args[0].clone(), Expr::Integer(3)].into(),
-        })
+        Ok(call("Surd", vec![args[0].clone(), Expr::Integer(3)]))
       }
     }
   }
@@ -3578,21 +3430,9 @@ fn subdivide_scalar_at(
   let coeff_min = make_rational(n - i, n);
   let coeff_max = make_rational(i, n);
 
-  let term_min = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(coeff_min),
-    right: Box::new(xmin.clone()),
-  };
-  let term_max = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(coeff_max),
-    right: Box::new(xmax.clone()),
-  };
-  let result = Expr::BinaryOp {
-    op: BinaryOperator::Plus,
-    left: Box::new(term_min),
-    right: Box::new(term_max),
-  };
+  let term_min = times2(coeff_min, xmin.clone());
+  let term_max = times2(coeff_max, xmax.clone());
+  let result = plus2(term_min, term_max);
   evaluate_expr_to_expr(&result)
 }
 
@@ -3941,10 +3781,7 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Integer(1));
     }
     remaining.sort_by(crate::functions::list_helpers_ast::canonical_cmp);
-    return Ok(Expr::FunctionCall {
-      name: "UnitStep".to_string(),
-      args: remaining.into(),
-    });
+    return Ok(call("UnitStep", remaining));
   }
 
   // Single arg
@@ -4050,20 +3887,14 @@ pub fn heaviside_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if has_zero {
       let mut sorted_args = args.to_vec();
       sorted_args.sort_by(crate::functions::list_helpers_ast::canonical_cmp);
-      return Ok(Expr::FunctionCall {
-        name: "HeavisideTheta".to_string(),
-        args: sorted_args.into(),
-      });
+      return Ok(call("HeavisideTheta", sorted_args));
     }
     if remaining.is_empty() {
       return Ok(Expr::Integer(1));
     }
     // Sort remaining args for canonical form
     remaining.sort_by(crate::functions::list_helpers_ast::canonical_cmp);
-    return Ok(Expr::FunctionCall {
-      name: "HeavisideTheta".to_string(),
-      args: remaining.into(),
-    });
+    return Ok(call("HeavisideTheta", remaining));
   }
 
   // Single arg
@@ -4075,10 +3906,7 @@ pub fn heaviside_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(Expr::Integer(0))
       } else {
         // HeavisideTheta[0] stays symbolic
-        Ok(Expr::FunctionCall {
-          name: "HeavisideTheta".to_string(),
-          args: vec![Expr::Integer(0)].into(),
-        })
+        Ok(call1("HeavisideTheta", Expr::Integer(0)))
       }
     }
     Expr::Real(f) => {
@@ -4087,10 +3915,7 @@ pub fn heaviside_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if *f < 0.0 {
         Ok(Expr::Integer(0))
       } else {
-        Ok(Expr::FunctionCall {
-          name: "HeavisideTheta".to_string(),
-          args: vec![Expr::Real(0.0)].into(),
-        })
+        Ok(call1("HeavisideTheta", Expr::Real(0.0)))
       }
     }
     Expr::Constant(c) => match c.as_str() {
@@ -4196,11 +4021,7 @@ fn dirac_delta_scale(arg: &Expr) -> Option<(Expr, Expr)> {
   let c = if consts.len() == 1 {
     consts.into_iter().next().unwrap()
   } else {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: consts.into(),
-    })
-    .ok()?
+    crate::evaluator::evaluate_expr_to_expr(&call("Times", consts)).ok()?
   };
   // `c == 1` leaves the argument unchanged; `c == -1` still normalizes the sign.
   if matches!(&c, Expr::Integer(1)) {
@@ -4209,16 +4030,9 @@ fn dirac_delta_scale(arg: &Expr) -> Option<(Expr, Expr)> {
   let g = if rest.len() == 1 {
     rest.into_iter().next().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: rest.into(),
-    }
+    call("Times", rest)
   };
-  let abs_c = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Abs".to_string(),
-    args: vec![c].into(),
-  })
-  .ok()?;
+  let abs_c = crate::evaluator::evaluate_expr_to_expr(&call1("Abs", c)).ok()?;
   Some((abs_c, g))
 }
 
@@ -4248,11 +4062,10 @@ pub fn dirac_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 1
     && let Some((abs_c, g)) = dirac_delta_scale(&args[0])
   {
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(unevaluated("DiracDelta", std::slice::from_ref(&g))),
-      right: Box::new(abs_c),
-    });
+    return crate::evaluator::evaluate_expr_to_expr(&div2(
+      unevaluated("DiracDelta", std::slice::from_ref(&g)),
+      abs_c,
+    ));
   }
 
   // If all args are zero, or mixed with symbolic, stay symbolic
@@ -4365,10 +4178,10 @@ pub fn unit_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if num == 0 {
             return Ok(Expr::Integer(0));
           }
-          return Ok(Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(num), Expr::Integer(abs_d)].into(),
-          });
+          return Ok(call(
+            "Rational",
+            vec![Expr::Integer(num), Expr::Integer(abs_d)],
+          ));
         }
         return Ok(Expr::Integer(0));
       }

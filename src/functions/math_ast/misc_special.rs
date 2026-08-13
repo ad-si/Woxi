@@ -253,10 +253,10 @@ fn mittag_leffler_three_arg(
 ) -> Result<Expr, InterpreterError> {
   // E_{alpha,beta}(0) = 1/Γ(beta) (only the k = 0 term survives).
   if is_expr_zero(z) {
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![call1("Gamma", beta.clone()), Expr::Integer(-1)].into(),
-    });
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "Power",
+      vec![call1("Gamma", beta.clone()), Expr::Integer(-1)],
+    ));
   }
 
   // Numeric series when a Real argument forces machine-precision evaluation.

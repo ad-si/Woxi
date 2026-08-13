@@ -193,10 +193,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let negate_fresnel_s = |inner: Expr| -> Expr {
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
-      operand: Box::new(Expr::FunctionCall {
-        name: "FresnelS".to_string(),
-        args: vec![inner].into(),
-      }),
+      operand: Box::new(call1("FresnelS", inner)),
     }
   };
 
@@ -216,10 +213,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &[
           Expr::Integer(-1),
           Expr::Identifier("I".to_string()),
-          Expr::FunctionCall {
-            name: "FresnelS".to_string(),
-            args: vec![Expr::Integer(1)].into(),
-          },
+          call1("FresnelS", Expr::Integer(1)),
         ],
       )
     }
@@ -248,10 +242,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Expr::Integer(n) = &fargs[0]
         && *n < 0
       {
-        let pos_arg = Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-*n), fargs[1].clone()].into(),
-        };
+        let pos_arg = call("Times", vec![Expr::Integer(-*n), fargs[1].clone()]);
         return Ok(negate_fresnel_s(pos_arg));
       }
       // FresnelS[I*z] = -I*FresnelS[z]
@@ -261,10 +252,7 @@ pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &[
             Expr::Integer(-1),
             Expr::Identifier("I".to_string()),
-            Expr::FunctionCall {
-              name: "FresnelS".to_string(),
-              args: vec![fargs[1].clone()].into(),
-            },
+            call1("FresnelS", fargs[1].clone()),
           ],
         );
       }
@@ -316,10 +304,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let negate_fresnel_c = |inner: Expr| -> Expr {
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
-      operand: Box::new(Expr::FunctionCall {
-        name: "FresnelC".to_string(),
-        args: vec![inner].into(),
-      }),
+      operand: Box::new(call1("FresnelC", inner)),
     }
   };
 
@@ -338,10 +323,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Times",
         &[
           Expr::Identifier("I".to_string()),
-          Expr::FunctionCall {
-            name: "FresnelC".to_string(),
-            args: vec![Expr::Integer(1)].into(),
-          },
+          call1("FresnelC", Expr::Integer(1)),
         ],
       )
     }
@@ -370,10 +352,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Expr::Integer(n) = &fargs[0]
         && *n < 0
       {
-        let pos_arg = Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-*n), fargs[1].clone()].into(),
-        };
+        let pos_arg = call("Times", vec![Expr::Integer(-*n), fargs[1].clone()]);
         return Ok(negate_fresnel_c(pos_arg));
       }
       // FresnelC[I*z] = I*FresnelC[z]
@@ -382,10 +361,7 @@ pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "Times",
           &[
             Expr::Identifier("I".to_string()),
-            Expr::FunctionCall {
-              name: "FresnelC".to_string(),
-              args: vec![fargs[1].clone()].into(),
-            },
+            call1("FresnelC", fargs[1].clone()),
           ],
         );
       }
@@ -609,10 +585,10 @@ pub fn sin_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // SinIntegral[0] = 0
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     // SinIntegral[Infinity] = Pi/2
-    Expr::Identifier(s) if s == "Infinity" => Ok(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![make_rational(1, 2), Expr::Constant("Pi".to_string())].into(),
-    }),
+    Expr::Identifier(s) if s == "Infinity" => Ok(call(
+      "Times",
+      vec![make_rational(1, 2), Expr::Constant("Pi".to_string())],
+    )),
     // Numeric evaluation
     Expr::Real(x) => Ok(Expr::Real(sin_integral_numeric(*x))),
     // Check for -Infinity
@@ -709,18 +685,9 @@ pub fn exp_integral_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(n_expr, Expr::Integer(0)) {
     let exp_neg_z = Expr::FunctionCall {
       name: "Exp".to_string(),
-      args: vec![Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(-1)),
-        right: Box::new(z_expr.clone()),
-      }]
-      .into(),
+      args: vec![times2(Expr::Integer(-1), z_expr.clone())].into(),
     };
-    let result = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(exp_neg_z),
-      right: Box::new(z_expr.clone()),
-    };
+    let result = div2(exp_neg_z, z_expr.clone());
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
@@ -1091,10 +1058,7 @@ pub fn fresnel_fg_ast(
   }
   match &args[0] {
     Expr::Integer(0) => {
-      return Ok(Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      });
+      return Ok(call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]));
     }
     Expr::Constant(c) | Expr::Identifier(c) if c == "Infinity" => {
       return Ok(Expr::Integer(0));

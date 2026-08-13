@@ -174,26 +174,11 @@ fn hurwitz_zeta_ast_inner(
         && matches!(&rargs[1], Expr::Integer(2))
   ) {
     // (-1 + 2^s) * Zeta[s]
-    let two_pow_s = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::Integer(2)),
-      right: Box::new(s_expr.clone()),
-    };
-    let factor = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(Expr::Integer(-1)),
-      right: Box::new(two_pow_s),
-    };
-    let zeta_s = Expr::FunctionCall {
-      name: "Zeta".to_string(),
-      args: vec![s_expr.clone()].into(),
-    };
+    let two_pow_s = pow2(Expr::Integer(2), s_expr.clone());
+    let factor = plus2(Expr::Integer(-1), two_pow_s);
+    let zeta_s = call1("Zeta", s_expr.clone());
     // Evaluate the product so integer cases simplify fully
-    let product = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(factor),
-      right: Box::new(zeta_s),
-    };
+    let product = times2(factor, zeta_s);
     return crate::evaluator::evaluate_expr_to_expr(&product);
   }
 
@@ -230,30 +215,15 @@ fn hurwitz_zeta_ast_inner(
       &reduced_a,
       &[s_expr.clone(), reduced_a.clone()],
     )?;
-    let neg_s = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(-1)),
-      right: Box::new(s_expr.clone()),
-    };
+    let neg_s = times2(Expr::Integer(-1), s_expr.clone());
     // base - sum_{j=0}^{m-1} ((r_p + j*q)/q)^(-s)
     let mut terms = vec![base];
     for j in 0..m {
       let term_a = make_rational(r_p + j * q, q);
-      let pow = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(term_a),
-        right: Box::new(neg_s.clone()),
-      };
-      terms.push(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(-1)),
-        right: Box::new(pow),
-      });
+      let pow = pow2(term_a, neg_s.clone());
+      terms.push(times2(Expr::Integer(-1), pow));
     }
-    let sum = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    };
+    let sum = call("Plus", terms);
     return crate::evaluator::evaluate_expr_to_expr(&sum);
   }
 
@@ -323,15 +293,7 @@ fn hurwitz_zeta_ast_inner(
           }
         }
         let sum_rational = make_rational(sum_num, sum_den);
-        return Ok(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(-1)),
-            right: Box::new(sum_rational),
-          }),
-          right: Box::new(zeta_s),
-        });
+        return Ok(plus2(times2(Expr::Integer(-1), sum_rational), zeta_s));
       }
 
       // If a is a float, evaluate numerically
@@ -598,36 +560,22 @@ fn zeta_positive_even(two_n: usize) -> Option<Expr> {
   }
 
   // Build: num * Pi^(2n) / den
-  let pi_power = Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(Expr::Identifier("Pi".to_string())),
-    right: Box::new(Expr::Integer(two_n as i128)),
-  };
+  let pi_power = pow2(
+    Expr::Identifier("Pi".to_string()),
+    Expr::Integer(two_n as i128),
+  );
 
   if num == 1 && den == 1 {
     Some(pi_power)
   } else if num == 1 {
-    Some(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(pi_power),
-      right: Box::new(Expr::Integer(den)),
-    })
+    Some(div2(pi_power, Expr::Integer(den)))
   } else if den == 1 {
-    Some(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(num)),
-      right: Box::new(pi_power),
-    })
+    Some(times2(Expr::Integer(num), pi_power))
   } else {
-    Some(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(num)),
-        right: Box::new(pi_power),
-      }),
-      right: Box::new(Expr::Integer(den)),
-    })
+    Some(div2(
+      times2(Expr::Integer(num), pi_power),
+      Expr::Integer(den),
+    ))
   }
 }
 
@@ -963,10 +911,10 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       // Even n >= 2: return unevaluated (involves odd Zeta values)
-      Ok(Expr::FunctionCall {
-        name: "PolyGamma".to_string(),
-        args: vec![Expr::Integer(n as i128), Expr::Integer(z as i128)].into(),
-      })
+      Ok(call(
+        "PolyGamma",
+        vec![Expr::Integer(n as i128), Expr::Integer(z as i128)],
+      ))
     }
     Expr::Real(f) => {
       // PolyGamma has poles at the non-positive integers (z = 0, -1, -2, ...);
@@ -995,23 +943,19 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // n! (the sign factor is +1 for odd n). Keep the product un-distributed
       // so e.g. PolyGamma[3, 3/2] prints 6*(-16 + Pi^4/6) like wolframscript.
       let factorial: i128 = (1..=n as i128).product();
-      let product = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(factorial)),
-        right: Box::new(hz),
-      };
+      let product = times2(Expr::Integer(factorial), hz);
       crate::evaluator::evaluate_expr_to_expr(&product)
     }
     _ => {
       // Symbolic: return unevaluated in 2-arg form
-      Ok(Expr::FunctionCall {
-        name: "PolyGamma".to_string(),
-        args: if args.len() == 1 {
-          vec![Expr::Integer(0), args[0].clone()].into()
+      Ok(call(
+        "PolyGamma",
+        if args.len() == 1 {
+          vec![Expr::Integer(0), args[0].clone()]
         } else {
-          args.to_vec().into()
+          args.to_vec()
         },
-      })
+      ))
     }
   }
 }
@@ -1033,20 +977,12 @@ fn polygamma_digamma_integer(z: usize) -> Expr {
   let euler = Expr::Identifier("EulerGamma".to_string());
   if z == 1 {
     // H_0 = 0, so result is -EulerGamma
-    return Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(-1)),
-      right: Box::new(euler),
-    };
+    return times2(Expr::Integer(-1), euler);
   }
   // Compute H_{z-1} = Σ_{k=1}^{z-1} 1/k as rational
   let (h_num, h_den) = harmonic_rational(z - 1);
   let h_expr = make_rational(h_num, h_den);
-  Expr::BinaryOp {
-    op: BinaryOperator::Minus,
-    left: Box::new(h_expr),
-    right: Box::new(euler),
-  }
+  minus2(h_expr, euler)
 }
 
 /// Compute H_n = 1 + 1/2 + ... + 1/n as (numerator, denominator)
@@ -1085,21 +1021,14 @@ fn polygamma_odd_integer(n: usize, z: usize) -> Option<Expr> {
 
   // Inner expression: Plus[-partial_sum, zeta(n+1)]
   let neg_ps = make_rational(-ps_num, ps_den);
-  let inner = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![neg_ps, zeta_expr].into(),
-  };
+  let inner = call("Plus", vec![neg_ps, zeta_expr]);
 
   if nfact == 1 {
     // n = 1: just the inner expression
     Some(inner)
   } else {
     // n >= 3: Times[n!, inner]
-    Some(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(nfact)),
-      right: Box::new(inner),
-    })
+    Some(times2(Expr::Integer(nfact), inner))
   }
 }
 
@@ -1126,36 +1055,22 @@ fn polygamma_multiply_zeta_by_nfact(two_n: usize, nfact: i128) -> Option<Expr> {
     (num, den) = rat_reduce(num, den);
   }
 
-  let pi_power = Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(Expr::Identifier("Pi".to_string())),
-    right: Box::new(Expr::Integer(two_n as i128)),
-  };
+  let pi_power = pow2(
+    Expr::Identifier("Pi".to_string()),
+    Expr::Integer(two_n as i128),
+  );
 
   if num == 1 && den == 1 {
     Some(pi_power)
   } else if num == 1 {
-    Some(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(pi_power),
-      right: Box::new(Expr::Integer(den)),
-    })
+    Some(div2(pi_power, Expr::Integer(den)))
   } else if den == 1 {
-    Some(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(num)),
-      right: Box::new(pi_power),
-    })
+    Some(times2(Expr::Integer(num), pi_power))
   } else {
-    Some(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(num)),
-        right: Box::new(pi_power),
-      }),
-      right: Box::new(Expr::Integer(den)),
-    })
+    Some(div2(
+      times2(Expr::Integer(num), pi_power),
+      Expr::Integer(den),
+    ))
   }
 }
 
@@ -1251,28 +1166,19 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Evaluate the full a^(-s) expression so the exponent Times[-1, s] folds
     // (e.g. 3^(-2) -> 1/9) instead of staying a literal Power.
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(a.clone()),
-      right: Box::new(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), s.clone()].into(),
-      }),
-    });
+    return crate::evaluator::evaluate_expr_to_expr(&pow2(
+      a.clone(),
+      call("Times", vec![Expr::Integer(-1), s.clone()]),
+    ));
   }
 
   // LerchPhi[z, 0, a] = 1/(1 - z): the series Σ_k z^k/(k+a)^0 is the geometric
   // series, independent of a. z = 0 is handled above.
   if is_expr_zero(s) {
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(Expr::Integer(1)),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(z.clone()),
-      }),
-    });
+    return crate::evaluator::evaluate_expr_to_expr(&div2(
+      Expr::Integer(1),
+      minus2(Expr::Integer(1), z.clone()),
+    ));
   }
 
   // LerchPhi[z, s, 1] = PolyLog[s, z] / z (for z != 0, which the z = 0 case
@@ -1286,11 +1192,7 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "PolyLog",
       &[s.clone(), z.clone()],
     )?;
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(polylog),
-      right: Box::new(z.clone()),
-    });
+    return crate::evaluator::evaluate_expr_to_expr(&div2(polylog, z.clone()));
   }
 
   // z = 1: LerchPhi[1, s, a] == HurwitzZeta[s, a]. Delegate for exact s and a
@@ -1401,17 +1303,16 @@ fn complex_real(re: f64, im: f64) -> Expr {
   if im == 0.0 {
     return Expr::Real(re);
   }
-  Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![
+  call(
+    "Plus",
+    vec![
       Expr::Real(re),
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Real(im), Expr::Identifier("I".to_string())].into(),
-      },
-    ]
-    .into(),
-  }
+      call(
+        "Times",
+        vec![Expr::Real(im), Expr::Identifier("I".to_string())],
+      ),
+    ],
+  )
 }
 
 /// LerchPhi(z, s, a) for real z > 1, integer s ≥ 1, real a (and a + k
@@ -1619,15 +1520,10 @@ pub fn prime_zeta_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let ks = (k as f64) * s;
     // Use the evaluator's Zeta function for accuracy
-    let zeta_expr =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "N".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "Zeta".to_string(),
-          args: vec![Expr::Real(ks)].into(),
-        }]
-        .into(),
-      });
+    let zeta_expr = crate::evaluator::evaluate_expr_to_expr(&call1(
+      "N",
+      call1("Zeta", Expr::Real(ks)),
+    ));
     let zeta_val = match zeta_expr {
       Ok(ref e) => try_eval_to_f64(e).unwrap_or(1.0),
       Err(_) => 1.0,
@@ -1968,10 +1864,7 @@ pub fn dirichlet_eta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Handle special case s=1: eta(1) = ln(2)
   if matches!(&args[0], Expr::Integer(1)) {
-    return Ok(Expr::FunctionCall {
-      name: "Log".to_string(),
-      args: vec![Expr::Integer(2)].into(),
-    });
+    return Ok(call1("Log", Expr::Integer(2)));
   }
 
   // For numeric (Real) input, compute directly

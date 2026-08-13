@@ -30,11 +30,7 @@ pub fn elliptic_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Integer(0) => {
       // EllipticK[0] = Pi/2
-      Ok(Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Identifier("Pi".to_string())),
-        right: Box::new(Expr::Integer(2)),
-      })
+      Ok(div2(Expr::Identifier("Pi".to_string()), Expr::Integer(2)))
     }
     Expr::Integer(1) => {
       // EllipticK[1] = ComplexInfinity (pole)
@@ -112,18 +108,16 @@ pub fn elliptic_nome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1]) {
         if *n == 1 && *d == 2 {
           // q(1/2) = exp(-Pi * K(1/2) / K(1/2)) = exp(-Pi)
-          return Ok(Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
+          return Ok(call(
+            "Power",
+            vec![
               Expr::Constant("E".to_string()),
-              Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![Expr::Integer(-1), Expr::Constant("Pi".to_string())]
-                  .into(),
-              },
-            ]
-            .into(),
-          });
+              call(
+                "Times",
+                vec![Expr::Integer(-1), Expr::Constant("Pi".to_string())],
+              ),
+            ],
+          ));
         }
         // For other rationals, compute numerically
         let f = *n as f64 / *d as f64;
@@ -246,11 +240,7 @@ pub fn elliptic_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Integer(0) => {
       // EllipticE[0] = Pi/2
-      Ok(Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Identifier("Pi".to_string())),
-        right: Box::new(Expr::Integer(2)),
-      })
+      Ok(div2(Expr::Identifier("Pi".to_string()), Expr::Integer(2)))
     }
     Expr::Integer(1) => {
       // EllipticE[1] = 1
@@ -775,35 +765,19 @@ pub fn dedekind_eta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Exact case: η(I) = Gamma[1/4] / (2 * Pi^(3/4))
   if matches!(&args[0], Expr::Identifier(s) if s == "I") {
     // Construct Gamma[1/4] / (2*Pi^(3/4)) explicitly.
-    let gamma_quarter = Expr::FunctionCall {
-      name: "Gamma".to_string(),
-      args: vec![Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(4)].into(),
-      }]
-      .into(),
-    };
-    let pi_three_quarters = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![
+    let gamma_quarter = call1(
+      "Gamma",
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(4)]),
+    );
+    let pi_three_quarters = call(
+      "Power",
+      vec![
         Expr::Identifier("Pi".to_string()),
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(3), Expr::Integer(4)].into(),
-        },
-      ]
-      .into(),
-    };
-    let denom = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(2)),
-      right: Box::new(pi_three_quarters),
-    };
-    let result = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(gamma_quarter),
-      right: Box::new(denom),
-    };
+        call("Rational", vec![Expr::Integer(3), Expr::Integer(4)]),
+      ],
+    );
+    let denom = times2(Expr::Integer(2), pi_three_quarters);
+    let result = div2(gamma_quarter, denom);
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
@@ -1017,10 +991,7 @@ fn weierstrass_cm_invariants(
   // Evaluate the (possibly transcendental) half-periods to complex floats via
   // N[…] so ratios like Exp[I π/3] or (1 + I Sqrt[3])/2 are recognised.
   let to_complex = |e: &Expr| -> Option<(f64, f64)> {
-    let n = Expr::FunctionCall {
-      name: "N".to_string(),
-      args: vec![e.clone()].into(),
-    };
+    let n = call1("N", e.clone());
     let r = crate::evaluator::evaluate_expr_to_expr(&n).ok()?;
     try_extract_complex_float(&r)
   };
@@ -1043,36 +1014,30 @@ fn weierstrass_cm_invariants(
   if !is_square && !is_hex {
     return Ok(None);
   }
-  let pow = |base: Expr, exp: i128| Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(base),
-    right: Box::new(Expr::Integer(exp)),
-  };
-  let gamma = |num: i128, den: i128| Expr::FunctionCall {
-    name: "Gamma".to_string(),
-    args: vec![Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
-    }]
-    .into(),
+  let pow = |base: Expr, exp: i128| pow2(base, Expr::Integer(exp));
+  let gamma = |num: i128, den: i128| {
+    call1(
+      "Gamma",
+      call("Rational", vec![Expr::Integer(num), Expr::Integer(den)]),
+    )
   };
   let pi = Expr::Identifier("Pi".to_string());
   let build = |gamma_arg_den: i128,
                gamma_pow: i128,
                coeff: i128,
                pi_pow: i128,
-               w_pow: i128| Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(pow(gamma(1, gamma_arg_den), gamma_pow)),
-    right: Box::new(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
-        Expr::Integer(coeff),
-        pow(pi.clone(), pi_pow),
-        pow(w1e.clone(), w_pow),
-      ]
-      .into(),
-    }),
+               w_pow: i128| {
+    div2(
+      pow(gamma(1, gamma_arg_den), gamma_pow),
+      call(
+        "Times",
+        vec![
+          Expr::Integer(coeff),
+          pow(pi.clone(), pi_pow),
+          pow(w1e.clone(), w_pow),
+        ],
+      ),
+    )
   };
   let (g2, g3) = if is_square {
     // Gamma[1/4]^8 / (256 Pi^2 ω₁^4)
@@ -1203,10 +1168,10 @@ pub fn modular_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("ModularLambda", args));
   // Exact value at the lemniscatic point: λ(i) = 1/2.
   if matches!(&args[0], Expr::Identifier(s) if s == "I") {
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-    });
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "Rational",
+      vec![Expr::Integer(1), Expr::Integer(2)],
+    ));
   }
   // Numeric (machine-precision) argument in the upper half-plane.
   if expr_contains_real(&args[0])
@@ -1543,10 +1508,7 @@ pub fn neville_theta_ast(
   }
   let (z, m) = (&args[0], &args[1]);
   let trig = |head: &str, arg: Expr| {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: head.to_string(),
-      args: vec![arg].into(),
-    })
+    crate::evaluator::evaluate_expr_to_expr(&call1(head, arg))
   };
   // z == 0: {s, c, d, n} → {0, 1, 1, 1}.
   if matches!(z, Expr::Integer(0)) {
@@ -1583,16 +1545,13 @@ pub fn neville_theta_ast(
     _ => None,
   };
   if let Some(pos) = negated {
-    let inner = Expr::FunctionCall {
-      name: name.to_string(),
-      args: vec![pos, m.clone()].into(),
-    };
+    let inner = call(name, vec![pos, m.clone()]);
     let flipped = crate::evaluator::evaluate_expr_to_expr(&inner)?;
     return if kind == 's' {
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), flipped].into(),
-      })
+      crate::evaluator::evaluate_expr_to_expr(&call(
+        "Times",
+        vec![Expr::Integer(-1), flipped],
+      ))
     } else {
       Ok(flipped)
     };
