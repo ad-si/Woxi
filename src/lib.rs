@@ -135,6 +135,10 @@ pub struct AudioOutput {
 pub struct InterpretResult {
   pub stdout: String,
   pub result: String,
+  /// The final value as an expression tree, for hosts that want structure
+  /// rather than the formatted `result` text. `None` when the evaluation
+  /// produced no top-level value.
+  pub expr: Option<syntax::Expr>,
   pub graphics: Option<String>,
   pub output_svg: Option<String>,
   /// Playable audio (synthesized from Play/Sound, or an Audio object), if any.
@@ -322,6 +326,41 @@ pub fn get_last_output() -> Option<syntax::Expr> {
 /// before re-evaluating the whole notebook.
 pub fn clear_last_output() {
   LAST_OUTPUT_EXPR.with(|c| *c.borrow_mut() = None);
+}
+
+// Structured result of the most recent top-level evaluation. Unlike
+// `LAST_OUTPUT_EXPR` — which backs `%` / `Out[]` and is therefore only
+// filled when output history is enabled — this is set on every top-level
+// result, so `interpret_with_stdout` can hand callers the expression tree
+// alongside the formatted string.
+thread_local! {
+    static LAST_RESULT_EXPR: RefCell<Option<syntax::Expr>> = const { RefCell::new(None) };
+}
+
+/// Record the structured value of a top-level result. Called from
+/// `format_top_level_result` for the outermost evaluation only.
+fn set_last_result_expr(expr: syntax::Expr) {
+  LAST_RESULT_EXPR.with(|c| *c.borrow_mut() = Some(expr));
+}
+
+/// Record the value of a result that `interpret` returned through one of
+/// its literal fast paths, which produce formatted text without ever
+/// reaching `format_top_level_result`.
+///
+/// Those paths return before the depth guard runs, so the nesting level is
+/// read here rather than passed in: only an outermost evaluation may
+/// record, or an inner `ToExpression["3"]` would leave its `3` behind as
+/// the reported result of the whole program.
+fn set_fast_path_result_expr(expr: syntax::Expr) {
+  if INTERPRET_DEPTH.with(|d| *d.borrow()) == 0 {
+    set_last_result_expr(expr);
+  }
+}
+
+/// Take the structured result of the most recent top-level evaluation,
+/// clearing it so a later evaluation cannot pick up a stale value.
+fn take_last_result_expr() -> Option<syntax::Expr> {
+  LAST_RESULT_EXPR.with(|c| c.borrow_mut().take())
 }
 
 // Session start time for SessionTime[]
@@ -1382,6 +1421,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     if is_visual_mode() {
       generate_output_svg(&syntax::Expr::Integer(n.into()));
     }
+    set_fast_path_result_expr(syntax::Expr::Integer(n.into()));
     return Ok(n.to_string());
   }
   // Check for float (must contain '.' to distinguish from integer)
@@ -1417,12 +1457,14 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         if is_visual_mode() {
           generate_output_svg(&syntax::Expr::Real(n));
         }
+        set_fast_path_result_expr(syntax::Expr::Real(n));
         return Ok(real_literal_output(n));
       }
     } else {
       if is_visual_mode() {
         generate_output_svg(&syntax::Expr::Real(n));
       }
+      set_fast_path_result_expr(syntax::Expr::Real(n));
       return Ok(real_literal_output(n));
     }
   }
@@ -1440,6 +1482,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       && !inner.contains("\\*")
       && !inner.contains("\\`")
     {
+      set_fast_path_result_expr(syntax::Expr::String(inner.to_string()));
       return Ok(inner.to_string());
     }
   }
@@ -1505,7 +1548,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       });
       // In visual mode fall through to the full parser so a list of literals
       // gets a typeset SVG with digit-grouped numbers (`{10000}` → `{10 000}`);
-      // the CLI keeps the fast return.
+      // the CLI keeps the fast return. Falling through is also what lets
+      // `interpret_with_stdout` report a structured result here — it always
+      // runs in visual mode, so this early return never fires for it and
+      // needs no `set_fast_path_result_expr`.
       if !needs_eval && !is_visual_mode() {
         // Simple list with no function calls or operators - return as-is
         return Ok(trimmed.to_string());
@@ -1532,14 +1578,23 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
           e.clone()
         }
       };
-      return Ok(match stored {
-        StoredValue::ExprVal(e) => syntax::top_level_output(&shown(&e)),
+      // Each arm reports the value it echoed, so a host asking for the
+      // structured result gets the variable's value rather than nothing.
+      let (expr, text) = match stored {
+        StoredValue::ExprVal(e) => {
+          let e = shown(&e);
+          (Some(e.clone()), syntax::top_level_output(&e))
+        }
         // A `Raw` binding holds the value's InputForm text; the REPL has to
         // re-read it to round the numbers it contains (a string value keeps
         // its quotes there, so its digits stay untouched).
         StoredValue::Raw(val) => match syntax::string_to_expr(&val) {
-          Ok(e) if is_repl_mode() => syntax::top_level_output(&shown(&e)),
-          _ => val,
+          Ok(e) if is_repl_mode() => {
+            let e = shown(&e);
+            (Some(e.clone()), syntax::top_level_output(&e))
+          }
+          Ok(e) => (Some(e), val),
+          Err(_) => (None, val),
         },
         StoredValue::Association(items) => {
           let items_expr: Vec<(syntax::Expr, syntax::Expr)> = items
@@ -1550,9 +1605,14 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
               (key_expr, v.clone())
             })
             .collect();
-          syntax::expr_to_output(&shown(&syntax::Expr::Association(items_expr)))
+          let e = shown(&syntax::Expr::Association(items_expr));
+          (Some(e.clone()), syntax::expr_to_output(&e))
         }
-      });
+      };
+      if let Some(e) = expr {
+        set_fast_path_result_expr(e);
+      }
+      return Ok(text);
     }
     // Handle built-in symbols that evaluate to values
     #[cfg(not(target_arch = "wasm32"))]
@@ -1595,6 +1655,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         ]
         .into(),
       };
+      set_fast_path_result_expr(expr.clone());
       return Ok(syntax::expr_to_output(&expr));
     }
     #[cfg(target_arch = "wasm32")]
@@ -1623,6 +1684,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         ]
         .into(),
       };
+      set_fast_path_result_expr(expr.clone());
       return Ok(syntax::expr_to_output(&expr));
     }
     // Handle Today/Tomorrow/Yesterday → DateObject[{y, m, d}, Day]
@@ -1656,6 +1718,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         ]
         .into(),
       };
+      set_fast_path_result_expr(expr.clone());
       return Ok(syntax::expr_to_output(&expr));
     }
     #[cfg(target_arch = "wasm32")]
@@ -1683,33 +1746,22 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         ]
         .into(),
       };
+      set_fast_path_result_expr(expr.clone());
       return Ok(syntax::expr_to_output(&expr));
     }
     // Handle named colors (Red → RGBColor[1, 0, 0], etc.)
     if let Some(color_expr) = evaluator::named_color_expr(trimmed) {
+      set_fast_path_result_expr(color_expr.clone());
       return Ok(syntax::expr_to_output(&color_expr));
     }
-    // Thick → Thickness[Large]
-    if trimmed == "Thick" {
-      return Ok("Thickness[Large]".to_string());
-    }
-    // Thin → Thickness[Tiny]
-    if trimmed == "Thin" {
-      return Ok("Thickness[Tiny]".to_string());
-    }
-    // Dashed → Dashing[{Small, Small}]
-    if trimmed == "Dashed" {
-      return Ok("Dashing[{Small, Small}]".to_string());
-    }
-    // Dotted → Dashing[{0, Small}]
-    if trimmed == "Dotted" {
-      return Ok("Dashing[{0, Small}]".to_string());
-    }
-    // DotDashed → Dashing[{0, Small, Small, Small}]
-    if trimmed == "DotDashed" {
-      return Ok("Dashing[{0, Small, Small, Small}]".to_string());
+    // Thick → Thickness[Large], Dashed → Dashing[{Small, Small}], …
+    if let Some(style_expr) = evaluator::style_directive_expr(trimmed) {
+      let text = syntax::expr_to_output(&style_expr);
+      set_fast_path_result_expr(style_expr);
+      return Ok(text);
     }
     // Return identifier as-is if not found
+    set_fast_path_result_expr(syntax::Expr::Identifier(trimmed.to_string()));
     return Ok(trimmed.to_string());
   }
 
@@ -2000,6 +2052,22 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   }
 }
 
+/// Strip a top-level `Return[val]` wrapper (left by a Block/Module/While/For
+/// that caught an internal Return) down to the bare `val`, matching
+/// wolframscript's REPL. The symbolic form is preserved when the Return
+/// wrapper is held (e.g. inside `ToString[…, InputForm]`), which is why this
+/// only applies to a top-level result.
+fn unwrap_top_level_return(expr: &syntax::Expr) -> &syntax::Expr {
+  match expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Return" && args.len() == 1 =>
+    {
+      &args[0]
+    }
+    other => other,
+  }
+}
+
 /// Run the display pipeline on a top-level statement's evaluated value:
 /// render passes (Image/Graphics/Dataset/... wrappers), SVG typesetting for
 /// visual hosts, `%` history, and the final text formatting. Returns the
@@ -2008,6 +2076,13 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
 /// `depth` is the `interpret` nesting level; only the outermost call decides
 /// which picture the cell shows (see `promote_result_graphics`).
 fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
+  // Report the evaluated value as the structured result *before* the
+  // display pipeline below rewrites it into rendered forms — an Image into
+  // an `<img>` tag, a Grid into an SVG. A host asking for the structure
+  // wants `Image[…]`, not its rendering.
+  if depth == 0 {
+    set_last_result_expr(unwrap_top_level_return(&result_expr).clone());
+  }
   // If the result is an Image, render it as a PNG <img> tag
   let result_expr = render_image_if_needed(result_expr);
   // Render unevaluated Graphics[{...}] FunctionCalls to SVG (e.g.
@@ -2104,18 +2179,7 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
   } else {
     result_expr
   };
-  // Top-level `Return[val]` (from Block/Module/While/For catching
-  // an internal Return) displays as the bare value `val`, matching
-  // wolframscript's REPL. The symbolic form is preserved when the
-  // Return wrapper is held (e.g. inside ToString[…, InputForm]).
-  let result_expr = match &result_expr {
-    syntax::Expr::FunctionCall { name, args }
-      if name == "Return" && args.len() == 1 =>
-    {
-      args[0].clone()
-    }
-    _ => result_expr,
-  };
+  let result_expr = unwrap_top_level_return(&result_expr).clone();
   // The picture a cell shows is the one its value *is*, not the last one
   // drawn on the way there.
   if depth == 0 {
@@ -4598,6 +4662,15 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
 
 /// Try to evaluate a simple function call without full parsing.
 /// Returns Some(result) if successfully handled, None if needs full parsing.
+/// Report a boolean fast-path result both as text and as an expression.
+/// Recorded after the argument scan, so an element this path evaluated on
+/// the way (`MemberQ[{f[1], 2}, 2]`) cannot be left behind as the result.
+fn bool_fast_path_result(value: bool) -> String {
+  let text = if value { "True" } else { "False" };
+  set_fast_path_result_expr(syntax::Expr::Identifier(text.to_string()));
+  text.to_string()
+}
+
 fn try_fast_function_call(
   input: &str,
 ) -> Option<Result<String, InterpreterError>> {
@@ -4687,10 +4760,10 @@ fn try_fast_function_call(
           elem.to_string()
         };
         if elem_val == target {
-          return Some(Ok("True".to_string()));
+          return Some(Ok(bool_fast_path_result(true)));
         }
       }
-      Some(Ok("False".to_string()))
+      Some(Ok(bool_fast_path_result(false)))
     }
     // First/Rest intentionally have no fast path: the AST
     // implementations carry the conformant ::nofirst/::norest/::normal
@@ -4758,32 +4831,39 @@ pub(crate) fn is_statement_rule(rule: Rule) -> bool {
   )
 }
 
-pub fn interpret_to_expr(
-  input: &str,
-) -> Result<syntax::Expr, InterpreterError> {
+/// Bring source text into the shape the grammar expects, exactly as
+/// `interpret` does before parsing: LF line endings, expanded Wolfram
+/// character escapes (`\.HH`, `\:HHHH`, `\OOO`), the modifier-letter
+/// circumflex read as `^`, and a statement break at every top-level
+/// newline.
+///
+/// Notebook cells store non-ASCII characters in escaped form, so without
+/// the expansion a held expression — the `Manipulate` a Studio cell builds
+/// its controls from — keeps the literal escape text where the evaluated
+/// string has the character. And without the statement breaks, a cell
+/// reading `f[x_] := x + 1⏎g[y_] := f[y]` parses as one statement with an
+/// implicit multiplication across the line break, leaving only the first
+/// symbol defined.
+fn normalize_source(input: &str) -> String {
   let normalized = if input.contains('\r') {
     input.replace("\r\n", "\n").replace('\r', "\n")
   } else {
     input.to_string()
   };
-  // Expand Wolfram character escapes (`\.HH`, `\:HHHH`, `\OOO`) exactly as
-  // `interpret` does. Notebook cells store non-ASCII characters in this
-  // form, so without it a held expression — the Manipulate a Studio cell
-  // builds its controls from — keeps the literal escape text where the
-  // evaluated string has the character.
   let normalized = if normalized.contains('\\') {
     expand_char_escapes(&normalized)
   } else {
     normalized
   };
-  // Treat the modifier-letter circumflex `ˆ` (U+02C6) as the Power operator.
   let normalized = normalize_circumflex_operator(&normalized);
-  // End a statement at a top-level newline, the way `interpret` does:
-  // without this a definition cell reading `f[x_] := x + 1⏎g[y_] := f[y]`
-  // parses as one statement with an implicit multiplication across the
-  // line break, and only the first symbol ends up defined.
-  let normalized = insert_statement_separators(normalized.trim());
+  insert_statement_separators(normalized.trim())
+}
 
+/// Parse the program in `input` into its statements, without evaluating.
+fn parse_statements(
+  input: &str,
+) -> Result<Vec<syntax::Expr>, InterpreterError> {
+  let normalized = normalize_source(input);
   let mut pairs = parse(&normalized).map_err(|e| {
     InterpreterError::EvaluationError(format!("Parse error: {e}"))
   })?;
@@ -4794,25 +4874,49 @@ pub fn interpret_to_expr(
       program.as_rule()
     )));
   }
+  Ok(
+    program
+      .into_inner()
+      .filter(|node| is_statement_rule(node.as_rule()))
+      .map(syntax::pair_to_expr)
+      .collect(),
+  )
+}
 
+/// Parse source text into a single expression *without* evaluating it, so
+/// held and unevaluated forms stay intact. Several statements come back as
+/// one `CompoundExpression`, the way `a; b` reads.
+pub fn parse_to_expr(input: &str) -> Result<syntax::Expr, InterpreterError> {
+  let mut statements = parse_statements(input)?;
+  match statements.len() {
+    0 => Err(InterpreterError::EmptyInput),
+    1 => Ok(statements.remove(0)),
+    _ => Ok(syntax::Expr::CompoundExpr(statements)),
+  }
+}
+
+pub fn interpret_to_expr(
+  input: &str,
+) -> Result<syntax::Expr, InterpreterError> {
   // Evaluate every statement and return the last value, as `interpret` does.
   // Returning at the first `Expression` made `"a = 1; {a}"` come back as `1`,
   // and skipping the other `Statement` alternatives dropped a definition
   // whose left side carries a pattern (`f[x_] := …`) on the floor.
   let mut last: Option<syntax::Expr> = None;
-  for node in program.into_inner() {
-    if is_statement_rule(node.as_rule()) {
-      let expr = syntax::pair_to_expr(node);
-      last = Some(evaluator::evaluate_expr_to_expr(&expr)?);
-    }
+  for expr in parse_statements(input)? {
+    last = Some(evaluator::evaluate_expr_to_expr(&expr)?);
   }
   last.ok_or(InterpreterError::EmptyInput)
 }
 
-/// New interpret function that returns both stdout and the result
-pub fn interpret_with_stdout(
-  input: &str,
-) -> Result<InterpretResult, InterpreterError> {
+/// Run `evaluate` with the output capture buffers and visual mode that a
+/// notebook-style host expects, and collect everything it produced into an
+/// [`InterpretResult`]. Shared by the text and expression entry points so
+/// the two cannot drift apart.
+fn with_capture<F>(evaluate: F) -> Result<InterpretResult, InterpreterError>
+where
+  F: FnOnce() -> Result<String, InterpreterError>,
+{
   // Clear the capture buffers
   clear_captured_stdout();
   clear_captured_graphics();
@@ -4820,6 +4924,9 @@ pub fn interpret_with_stdout(
   clear_captured_warnings();
   clear_captured_output_svg();
   clear_captured_sound();
+  // Drop any structured result left over from a previous evaluation, so a
+  // failed or value-less one cannot report the older tree.
+  take_last_result_expr();
 
   // Enable visual mode for display wrapper rendering (e.g. TableForm → Grid SVG)
   VISUAL_MODE.with(|v| *v.borrow_mut() = true);
@@ -4828,13 +4935,13 @@ pub fn interpret_with_stdout(
   // subsequent evaluations. The cache is set at the moment evaluation
   // completes (inside the dispatch loop) via `set_last_output`, so we
   // do nothing here besides keep the value put there.
-  // Perform the standard interpretation
-  let result = interpret(input);
+  let result = evaluate();
 
   // Reset visual mode
   VISUAL_MODE.with(|v| *v.borrow_mut() = false);
 
   let result = result?;
+  let expr = take_last_result_expr();
 
   // Get the captured output
   let stdout = get_captured_stdout();
@@ -4863,10 +4970,31 @@ pub fn interpret_with_stdout(
   Ok(InterpretResult {
     stdout,
     result,
+    expr,
     graphics,
     output_svg,
     sound,
     warnings,
+  })
+}
+
+/// New interpret function that returns both stdout and the result
+pub fn interpret_with_stdout(
+  input: &str,
+) -> Result<InterpretResult, InterpreterError> {
+  with_capture(|| interpret(input))
+}
+
+/// Evaluate an already-built expression tree, capturing stdout, graphics and
+/// warnings the way [`interpret_with_stdout`] does for source text. Lets a
+/// host submit an expression it constructed itself — the Python bindings'
+/// `evaluate_expr` — without going through a string round-trip.
+pub fn interpret_expr_with_stdout(
+  expr: &syntax::Expr,
+) -> Result<InterpretResult, InterpreterError> {
+  with_capture(|| {
+    let evaluated = evaluator::evaluate_expr_to_expr(expr)?;
+    Ok(format_top_level_result(evaluated, 0))
   })
 }
 

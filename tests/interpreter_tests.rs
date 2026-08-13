@@ -543,6 +543,78 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_interpret_with_stdout_exposes_result_expr() {
+    // The structured result must be filled in even under plain
+    // command-line semantics, where `%` history (and therefore
+    // `get_last_output`) stays empty.
+    clear_state();
+    woxi::clear_last_output();
+    let r = interpret_with_stdout("1/3 + 1/6").unwrap();
+    assert_eq!(r.result, "1/2");
+    let expr = r.expr.expect("structured result");
+    assert_eq!(
+      woxi::functions::predicate_ast::expr_to_full_form(&expr),
+      "Rational[1, 2]"
+    );
+  }
+
+  #[test]
+  fn test_interpret_with_stdout_result_expr_not_stale() {
+    // A failed evaluation must not report the previous call's tree.
+    clear_state();
+    let _ = interpret_with_stdout("2 + 3").unwrap();
+    assert!(interpret_with_stdout("1 +").is_err());
+    let r = interpret_with_stdout("x = 1;").unwrap();
+    assert_eq!(r.result, "\0");
+    assert!(
+      r.expr.is_none()
+        || woxi::functions::predicate_ast::expr_to_full_form(
+          r.expr.as_ref().unwrap()
+        ) != "5"
+    );
+    clear_state();
+  }
+
+  #[test]
+  fn test_interpret_expr_with_stdout_evaluates_a_tree() {
+    // Submitting an already-built expression must behave like the text
+    // path: same formatted result, same captured stdout, same tree.
+    use woxi::syntax::Expr;
+    clear_state();
+    let tree = Expr::FunctionCall {
+      name: "Integrate".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![Expr::Identifier("x".to_string()), Expr::Integer(2)]
+            .into(),
+        },
+        Expr::Identifier("x".to_string()),
+      ]
+      .into(),
+    };
+    let r = woxi::interpret_expr_with_stdout(&tree).unwrap();
+    assert_eq!(r.result, "x^3/3");
+    assert_eq!(
+      r.result,
+      interpret_with_stdout("Integrate[x^2, x]").unwrap().result
+    );
+    assert!(r.expr.is_some());
+  }
+
+  #[test]
+  fn test_interpret_expr_with_stdout_captures_print() {
+    use woxi::syntax::Expr;
+    clear_state();
+    let tree = Expr::FunctionCall {
+      name: "Print".to_string(),
+      args: vec![Expr::String("hi".to_string())].into(),
+    };
+    let r = woxi::interpret_expr_with_stdout(&tree).unwrap();
+    assert_eq!(r.stdout, "hi\n");
+  }
+
+  #[test]
   fn test_part_partw_mirrored_to_captured_stdout() {
     // wolframscript prints Part::partw to stdout in script mode, so the
     // library path (interpret_with_stdout — snapshot tests, playground,

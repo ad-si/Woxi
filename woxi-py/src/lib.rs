@@ -7,9 +7,13 @@
 //! definitions, RNG seed, `%` history, …) in thread-locals, so every
 //! Python thread gets an independent Wolfram session.
 
+mod convert;
+
 use pyo3::create_exception;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
+
+use convert::{expr_to_py, py_to_expr};
 
 create_exception!(
   _woxi,
@@ -63,6 +67,12 @@ impl Sound {
 struct EvaluationResult {
   /// The final expression value formatted as Wolfram Language text.
   result: String,
+  /// The final value as a structured expression tree (Symbol/Expr/int/…).
+  ///
+  /// None when the evaluation produced no value at all — a definition, or
+  /// a statement whose display a trailing `;` suppressed. An evaluation
+  /// whose value *is* Null (`Print["hi"]`) reports `Symbol("Null")`.
+  expr: Option<Py<PyAny>>,
   /// Text printed during evaluation (Print, WriteString["stdout", …], …).
   stdout: String,
   /// SVG markup of captured graphics (Plot, Graphics, …), if any.
@@ -77,10 +87,14 @@ struct EvaluationResult {
 
 #[pymethods]
 impl EvaluationResult {
-  fn __repr__(&self) -> String {
-    format!(
-      "EvaluationResult(result={:?}, stdout={:?}, graphics={}, svg={}, sound={}, warnings={:?})",
+  fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+    Ok(format!(
+      "EvaluationResult(result={:?}, expr={}, stdout={:?}, graphics={}, svg={}, sound={}, warnings={:?})",
       self.result,
+      match &self.expr {
+        Some(e) => e.bind(py).repr()?.to_string(),
+        None => "None".to_string(),
+      },
       self.stdout,
       if self.graphics.is_some() {
         "<svg>"
@@ -94,8 +108,29 @@ impl EvaluationResult {
         "None"
       },
       self.warnings,
-    )
+    ))
   }
+}
+
+/// Convert an interpreter outcome into the Python-facing result object.
+/// Shared by `evaluate` and `evaluate_expr` so the two report identically.
+fn to_evaluation_result(
+  py: Python<'_>,
+  r: woxi::InterpretResult,
+) -> PyResult<EvaluationResult> {
+  Ok(EvaluationResult {
+    result: normalize_result(r.result),
+    expr: r.expr.as_ref().map(|e| expr_to_py(py, e)).transpose()?,
+    stdout: r.stdout,
+    graphics: r.graphics,
+    svg: r.output_svg,
+    sound: r.sound.map(|s| Sound {
+      base64: s.base64,
+      mime: s.mime,
+      label: s.label,
+    }),
+    warnings: r.warnings,
+  })
 }
 
 /// Evaluate Wolfram Language code and return the result as a string.
@@ -121,26 +156,53 @@ fn evaluate(
   code: &str,
   print_to_stdout: bool,
 ) -> PyResult<EvaluationResult> {
-  py.detach(|| {
-    let was_quiet = woxi::is_quiet_print();
-    woxi::set_quiet_print(!print_to_stdout);
-    let outcome = woxi::interpret_with_stdout(code);
-    woxi::set_quiet_print(was_quiet);
-    outcome
-  })
-  .map(|r| EvaluationResult {
-    result: normalize_result(r.result),
-    stdout: r.stdout,
-    graphics: r.graphics,
-    svg: r.output_svg,
-    sound: r.sound.map(|s| Sound {
-      base64: s.base64,
-      mime: s.mime,
-      label: s.label,
-    }),
-    warnings: r.warnings,
-  })
-  .map_err(to_py_err)
+  let outcome = py
+    .detach(|| {
+      let was_quiet = woxi::is_quiet_print();
+      woxi::set_quiet_print(!print_to_stdout);
+      let outcome = woxi::interpret_with_stdout(code);
+      woxi::set_quiet_print(was_quiet);
+      outcome
+    })
+    .map_err(to_py_err)?;
+  to_evaluation_result(py, outcome)
+}
+
+/// Evaluate a structured expression tree and capture everything it produces.
+///
+/// The tree is built from Symbol/Expr nodes and plain Python values —
+/// `evaluate_expr(wl.Integrate(wl.Power(wl.x, 2), wl.x))` — so no string
+/// concatenation is needed to pass Python data into an evaluation.
+/// Returns the same EvaluationResult as `evaluate()`.
+#[pyfunction]
+#[pyo3(signature = (expr, *, print_to_stdout = false))]
+fn evaluate_expr(
+  py: Python<'_>,
+  expr: &Bound<'_, PyAny>,
+  print_to_stdout: bool,
+) -> PyResult<EvaluationResult> {
+  let tree = py_to_expr(expr)?;
+  let outcome = py
+    .detach(|| {
+      let was_quiet = woxi::is_quiet_print();
+      woxi::set_quiet_print(!print_to_stdout);
+      let outcome = woxi::interpret_expr_with_stdout(&tree);
+      woxi::set_quiet_print(was_quiet);
+      outcome
+    })
+    .map_err(to_py_err)?;
+  to_evaluation_result(py, outcome)
+}
+
+/// Parse Wolfram Language code into a structured expression tree *without*
+/// evaluating it, so held and unevaluated forms stay intact:
+/// `parse_expr("1 + 1")` is `Expr(Symbol("Plus"), [1, 1])`, not `2`.
+///
+/// Raises WolframError if the code does not parse.
+#[pyfunction]
+fn parse_expr(py: Python<'_>, code: &str) -> PyResult<Py<PyAny>> {
+  let tree = py.detach(|| woxi::parse_to_expr(code)).map_err(to_py_err)?;
+  expr_to_py(py, &tree)
 }
 
 /// Reset the interpreter session of the current thread: clears all
@@ -206,6 +268,8 @@ fn take_error_trace() -> Option<String> {
 fn _woxi(m: &Bound<'_, PyModule>) -> PyResult<()> {
   m.add_function(wrap_pyfunction!(interpret, m)?)?;
   m.add_function(wrap_pyfunction!(evaluate, m)?)?;
+  m.add_function(wrap_pyfunction!(evaluate_expr, m)?)?;
+  m.add_function(wrap_pyfunction!(parse_expr, m)?)?;
   m.add_function(wrap_pyfunction!(clear_state, m)?)?;
   m.add_function(wrap_pyfunction!(seed_rng, m)?)?;
   m.add_function(wrap_pyfunction!(unseed_rng, m)?)?;
@@ -216,6 +280,11 @@ fn _woxi(m: &Bound<'_, PyModule>) -> PyResult<()> {
   m.add_function(wrap_pyfunction!(take_error_trace, m)?)?;
   m.add_class::<EvaluationResult>()?;
   m.add_class::<Sound>()?;
+  m.add_class::<convert::Symbol>()?;
+  m.add_class::<convert::Expr>()?;
+  m.add_class::<convert::BigReal>()?;
+  m.add_class::<convert::Graphics>()?;
+  m.add_class::<convert::Image>()?;
   m.add("WolframError", m.py().get_type::<WolframError>())?;
   m.add("__version__", env!("CARGO_PKG_VERSION"))?;
   Ok(())

@@ -413,6 +413,7 @@ fn try_build_manipulate_item(stmt: &str) -> Option<String> {
     Err(_) => crate::InterpretResult {
       stdout: String::new(),
       result: String::new(),
+      expr: None,
       graphics: None,
       output_svg: None,
       sound: None,

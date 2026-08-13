@@ -4121,6 +4121,8 @@ dependencies = [
  "indoc",
  "libc",
  "memoffset",
+ "num-bigint",
+ "num-traits",
  "once_cell",
  "portable-atomic",
  "pyo3-build-config",
@@ -6795,6 +6797,7 @@ dependencies = [
 name = "woxi-py"
 version = "0.3.0"
 dependencies = [
+ "num-bigint",
  "pyo3",
  "woxi",
 ]

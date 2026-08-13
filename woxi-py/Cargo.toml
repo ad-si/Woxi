@@ -21,7 +21,10 @@ crate-type = ["cdylib"]
 woxi = { path = "..", default-features = false }
 # abi3-py310 produces one wheel per platform that works on all
 # CPython >= 3.10 instead of one wheel per Python minor version.
-pyo3 = { version = "0.27", features = ["abi3-py310"] }
+# num-bigint converts Woxi's arbitrary-precision integers to Python `int`
+# exactly, rather than round-tripping them through a decimal string.
+pyo3 = { version = "0.27", features = ["abi3-py310", "num-bigint"] }
+num-bigint = "0.4.6"
 
 [features]
 # Enabled by maturin (see pyproject.toml). Kept behind a feature so plain

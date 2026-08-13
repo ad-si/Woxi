@@ -44,6 +44,77 @@ except woxi.WolframError as err:
 ```
 
 
+## Expression trees
+
+Results are also available as a structured tree,
+so you don't have to parse Wolfram output text to use them:
+
+```python
+import woxi
+
+woxi.evaluate("1/3 + 1/6").expr
+# => Expr(Symbol("Rational"), [1, 2])
+
+woxi.evaluate("Solve[x^2 == 2, x]").expr
+# => [[Expr(Symbol("Rule"), [Symbol("x"), …])], …]
+```
+
+The tree mirrors Wolfram's `FullForm`,
+so `x + y` is `Plus[x, y]` and `a/b` is `Times[a, Power[b, -1]]`
+no matter how they were written.
+Only exact, total mappings use native Python types:
+
+| Wolfram                     | Python                                |
+| --------------------------- | ------------------------------------- |
+| `Integer`, `BigInteger`     | `int`                                 |
+| `Real`                      | `float`                               |
+| `String`                    | `str`                                 |
+| `List[…]`                   | `list`                                |
+| symbol or constant          | `woxi.Symbol`                         |
+| arbitrary-precision real    | `woxi.BigReal`                        |
+| everything else             | `woxi.Expr(head, args)`               |
+
+`woxi.to_python` converts the rest
+when convenience matters more than exactness —
+`Rational` to `fractions.Fraction`, `Complex` to `complex`,
+`Association` to `dict`, and `True`/`False`/`Null`
+to `True`/`False`/`None`:
+
+```python
+woxi.to_python(woxi.evaluate("1/3 + 1/6").expr)
+# => Fraction(1, 2)
+
+woxi.to_python(woxi.evaluate('<|"a" -> 1|>').expr)
+# => {'a': 1}
+```
+
+Trees also go the other way,
+so Python values reach an evaluation without string concatenation:
+
+```python
+from woxi import wl
+
+woxi.evaluate_expr(wl.Integrate(wl.Power(wl.x, 2), wl.x)).result
+# => 'x^3/3'
+
+woxi.evaluate_expr(wl.Total([1, 2, 3, 4])).result
+# => '10'
+
+# A str argument is data here, never code:
+woxi.evaluate_expr(wl.StringLength("1 + 1")).result
+# => '5'
+```
+
+`wl.<name>` is the symbol of that name and calling it applies it,
+so any Wolfram expression can be built without quoting.
+`woxi.parse_expr` parses source into a tree *without* evaluating it:
+
+```python
+woxi.parse_expr("1 + 1")
+# => Expr(Symbol("Plus"), [1, 1])
+```
+
+
 ## Command line
 
 The package also installs a `woxi` command:
