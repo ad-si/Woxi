@@ -235,7 +235,7 @@ mod get {
   use std::io::Write;
 
   fn write_temp(name: &str, content: &str) -> String {
-    let path = temp_file(&format!("woxi_test_{}.txt", name));
+    let path = temp_file(&format!("woxi_test_{name}.txt"));
     let mut f = std::fs::File::create(&path).unwrap();
     f.write_all(content.as_bytes()).unwrap();
     path
@@ -502,8 +502,7 @@ mod streams {
         .unwrap();
     assert!(
       result.starts_with("Close["),
-      "Close on already-closed stream should return unevaluated, got: {}",
-      result
+      "Close on already-closed stream should return unevaluated, got: {result}"
     );
   }
 
@@ -674,7 +673,7 @@ mod rename_directory {
       .join(format!("woxi_rename_dir_test_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&base);
     std::fs::create_dir_all(base.join("src")).unwrap();
-    let b = unixify(base.display().to_string());
+    let b = unixify(&base.display().to_string());
 
     // Success returns the destination path (absolute in, absolute out).
     let result = interpret_with_stdout(&format!(
@@ -972,7 +971,7 @@ mod file_hash {
         .warnings
         .iter()
         .any(|w| w.contains("FileHash::noopen: Cannot open")
-          && w.contains(&path.to_string())),
+          && w.contains(&path.clone())),
       "expected FileHash::noopen warning with absolute path, got {:?}",
       result.warnings
     );
@@ -1487,7 +1486,7 @@ mod unimplemented_warnings {
     // only flags functions where ALL test calls produce the "unimplemented" warning.
     let produces_unimplemented = |func: &str| -> bool {
       clear_state();
-      let code = format!("{}[0]", func);
+      let code = format!("{func}[0]");
       if let Ok(result) = interpret_with_stdout(&code) {
         result
           .warnings
@@ -1512,8 +1511,7 @@ mod unimplemented_warnings {
 
     assert!(
       missing_marks.is_empty(),
-      "\nImplemented but not marked in functions.csv (add ✅): {:?}",
-      missing_marks
+      "\nImplemented but not marked in functions.csv (add ✅): {missing_marks:?}"
     );
   }
 }
@@ -1912,8 +1910,7 @@ mod grid_graphics {
       svg.contains(
         "y<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>"
       ),
-      "y^2 should render with superscript tspan, got: {}",
-      svg
+      "y^2 should render with superscript tspan, got: {svg}"
     );
     assert!(
       svg.contains(
@@ -2063,8 +2060,7 @@ mod grid_graphics {
     let line_count = svg.matches("<line").count();
     assert_eq!(
       line_count, 4,
-      "Frame -> True on 2x2 should have 4 outer lines, got {}",
-      line_count
+      "Frame -> True on 2x2 should have 4 outer lines, got {line_count}"
     );
   }
 
@@ -2244,8 +2240,7 @@ mod grid_graphics {
     // 4 horizontal + 4 vertical = 8 lines (outer + inner)
     assert_eq!(
       line_count, 8,
-      "Frame -> True + Dividers -> All on 3x3 should have 8 lines, got {}",
-      line_count
+      "Frame -> True + Dividers -> All on 3x3 should have 8 lines, got {line_count}"
     );
   }
 }
@@ -2261,7 +2256,7 @@ mod read_string {
     file.write_all(b"hello world\nfoo bar").unwrap();
     drop(file);
 
-    let code = format!("ReadString[\"{}\"]", path);
+    let code = format!("ReadString[\"{path}\"]");
     assert_eq!(interpret(&code).unwrap(), "hello world\nfoo bar");
     let _ = std::fs::remove_file(path);
   }
@@ -2468,7 +2463,7 @@ mod read_list {
     writeln!(file, "30").unwrap();
     drop(file);
 
-    let code = format!("ReadList[\"{}\"]", path);
+    let code = format!("ReadList[\"{path}\"]");
     assert_eq!(interpret(&code).unwrap(), "{10, 20, 30}");
     let _ = std::fs::remove_file(path);
   }
@@ -3119,7 +3114,7 @@ mod information {
     let svg = result
       .graphics
       .expect("?h should capture a graphical SVG card");
-    assert!(svg.contains("h"));
+    assert!(svg.contains('h'));
     assert!(svg.contains("DownValues"));
   }
 
@@ -3492,8 +3487,7 @@ mod expand_file_name {
     let sep = std::path::MAIN_SEPARATOR;
     assert!(
       result.ends_with(&format!("{sep}test.txt")) && !result.starts_with('~'),
-      "Expected expanded path, got: {}",
-      result
+      "Expected expanded path, got: {result}"
     );
   }
 
@@ -3504,8 +3498,7 @@ mod expand_file_name {
     assert!(
       std::path::Path::new(&result).is_absolute()
         && result.ends_with(&format!("foo{sep}bar")),
-      "Expected absolute path, got: {}",
-      result
+      "Expected absolute path, got: {result}"
     );
   }
 }
@@ -4132,8 +4125,7 @@ mod csv_import {
     // Dataset renders as graphics in the interpreter
     assert!(
       result == "-Graphics-" || result.starts_with("Dataset["),
-      "unexpected: {}",
-      result
+      "unexpected: {result}"
     );
   }
 
@@ -4153,8 +4145,7 @@ mod csv_import {
     // Tabular renders as graphics in the interpreter
     assert!(
       result == "-Graphics-" || result.starts_with("Tabular["),
-      "unexpected: {}",
-      result
+      "unexpected: {result}"
     );
   }
 
@@ -4247,7 +4238,7 @@ mod csv_import {
       writeln!(f, "{i},row{i},{}.5", i % 100).unwrap();
     }
     drop(f);
-    let path = unixify(path.display().to_string());
+    let path = unixify(&path.display().to_string());
     assert_eq!(
       interpret(&format!(r#"d = Import["{path}"]; Dimensions[d]"#)).unwrap(),
       "{20001, 3}"
@@ -4275,7 +4266,7 @@ mod csv_import {
         let _ = stream.write_all(response.as_bytes());
       }
     });
-    format!("http://{}/matrix.csv", addr)
+    format!("http://{addr}/matrix.csv")
   }
 
   #[test]
@@ -4313,8 +4304,7 @@ mod xlsx_import {
     let result = interpret(&format!(r#"Import["{path}"]"#)).unwrap();
     assert!(
       result.starts_with("{{{"),
-      "expected outer list of sheets, got: {}",
-      result
+      "expected outer list of sheets, got: {result}"
     );
     assert!(result.contains("China"));
     assert!(result.contains("Japan"));
@@ -4328,8 +4318,7 @@ mod xlsx_import {
       interpret(&format!(r#"Import["{path}", {{"Data", 1}}]"#)).unwrap();
     assert!(
       result.starts_with("{{1.313973713*^9, China}"),
-      "unexpected: {}",
-      result
+      "unexpected: {result}"
     );
     assert!(result.contains("{1.27463611*^8, Japan}"));
   }
@@ -4884,7 +4873,7 @@ mod xlsx_export {
 
   fn tmp_path(name: &str) -> String {
     let dir = std::env::temp_dir();
-    unixify(dir.join(name).to_string_lossy().into_owned())
+    unixify(&dir.join(name).to_string_lossy())
   }
 
   #[test]
@@ -5027,7 +5016,7 @@ mod txt_import {
         let _ = stream.write_all(response.as_bytes());
       }
     });
-    format!("http://{}/article.txt", addr)
+    format!("http://{addr}/article.txt")
   }
 
   #[test]
@@ -7403,7 +7392,7 @@ mod file_size {
   fn existing_file() {
     let path = std::env::temp_dir().join("woxi_file_size_test.txt");
     std::fs::write(&path, "hello world").unwrap();
-    let path_str = super::unixify(path.display().to_string());
+    let path_str = super::unixify(&path.display().to_string());
     assert_eq!(
       interpret(&format!(r#"FileSize["{path_str}"]"#)).unwrap(),
       "Quantity[11., Bytes]"
@@ -7426,7 +7415,7 @@ mod file_size {
       "FileSize[/definitely/missing/file_xyz.txt]"
     );
     let dir = std::env::temp_dir().display().to_string();
-    let dir_str = super::unixify(dir.trim_end_matches('/').to_string());
+    let dir_str = super::unixify(dir.trim_end_matches('/'));
     assert_eq!(
       interpret(&format!(r#"FileSize["{dir_str}"]"#)).unwrap(),
       format!("FileSize[{dir_str}]")
@@ -7514,7 +7503,7 @@ mod find_list_tests {
     )
     .unwrap();
     std::fs::write(base.join("second.txt"), "one alpha\ntwo beta\n").unwrap();
-    unixify(base.to_str().unwrap().to_string())
+    unixify(base.to_str().unwrap())
   }
 
   // Literal, case-sensitive substring search per line; the third argument

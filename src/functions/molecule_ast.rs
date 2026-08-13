@@ -319,26 +319,23 @@ impl<'a> SmilesParser<'a> {
         .bytes
         .get(self.pos..self.pos + 2)
         .map(|w| std::str::from_utf8(w).unwrap_or_default().to_string());
-      match two.as_deref() {
-        Some("se") | Some("as") | Some("te") | Some("si") => {
-          self.pos += 2;
-          let s = two.unwrap();
-          let mut chars = s.chars();
-          let cap: String = chars
-            .next()
-            .map(|c| c.to_ascii_uppercase())
-            .into_iter()
-            .chain(chars)
-            .collect();
-          (cap, true)
+      if let Some("se" | "as" | "te" | "si") = two.as_deref() {
+        self.pos += 2;
+        let s = two.unwrap();
+        let mut chars = s.chars();
+        let cap: String = chars
+          .next()
+          .map(|c| c.to_ascii_uppercase())
+          .into_iter()
+          .chain(chars)
+          .collect();
+        (cap, true)
+      } else {
+        if !matches!(first, b'b' | b'c' | b'n' | b'o' | b'p' | b's') {
+          return None;
         }
-        _ => {
-          if !matches!(first, b'b' | b'c' | b'n' | b'o' | b'p' | b's') {
-            return None;
-          }
-          self.pos += 1;
-          ((first as char).to_ascii_uppercase().to_string(), true)
-        }
+        self.pos += 1;
+        ((first as char).to_ascii_uppercase().to_string(), true)
       }
     } else {
       return None;
@@ -972,7 +969,7 @@ fn molecular_formula(graph: &MolGraph) -> Expr {
     0 => return row,
     1 => "+".to_string(),
     -1 => "-".to_string(),
-    c if c > 1 => format!("{}+", c),
+    c if c > 1 => format!("{c}+"),
     c => format!("{}-", -c),
   };
   Expr::FunctionCall {
@@ -1004,8 +1001,7 @@ pub fn molecule_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(graph_to_expr(&graph));
       }
       crate::emit_message(&format!(
-        "Molecule::nointerp: Unable to interpret the input \"{}\" as a molecule.",
-        spec
+        "Molecule::nointerp: Unable to interpret the input \"{spec}\" as a molecule."
       ));
       Ok(unevaluated("Molecule", args))
     }

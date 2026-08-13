@@ -86,8 +86,7 @@ const MAX_OBJECT_CELLS: usize = 10_000_000;
 pub fn root_import_file(path: &str) -> Result<Expr, InterpreterError> {
   let bytes = std::fs::read(path).map_err(|e| {
     InterpreterError::EvaluationError(format!(
-      "Import: cannot open \"{}\": {}",
-      path, e
+      "Import: cannot open \"{path}\": {e}"
     ))
   })?;
   root_import_bytes(&bytes)
@@ -95,7 +94,7 @@ pub fn root_import_file(path: &str) -> Result<Expr, InterpreterError> {
 
 pub fn root_import_bytes(bytes: &[u8]) -> Result<Expr, InterpreterError> {
   parse_root(bytes)
-    .map_err(|e| InterpreterError::EvaluationError(format!("Import: {}", e)))
+    .map_err(|e| InterpreterError::EvaluationError(format!("Import: {e}")))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -105,8 +104,7 @@ pub fn root_import_file_element(
 ) -> Result<Expr, InterpreterError> {
   let bytes = std::fs::read(path).map_err(|e| {
     InterpreterError::EvaluationError(format!(
-      "Import: cannot open \"{}\": {}",
-      path, e
+      "Import: cannot open \"{path}\": {e}"
     ))
   })?;
   root_import_bytes_element(&bytes, elements)
@@ -122,7 +120,7 @@ pub fn root_import_bytes_element(
   elements: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   root_element(bytes, elements)
-    .map_err(|e| InterpreterError::EvaluationError(format!("Import: {}", e)))
+    .map_err(|e| InterpreterError::EvaluationError(format!("Import: {e}")))
 }
 
 fn root_element(data: &[u8], elements: &[Expr]) -> Result<Expr, String> {
@@ -149,7 +147,7 @@ fn root_element(data: &[u8], elements: &[Expr]) -> Result<Expr, String> {
       .into_iter()
       .filter(|k| k.name == name && cycle.is_none_or(|c| k.cycle == c))
       .max_by_key(|k| k.cycle)
-      .ok_or_else(|| format!("object \"{}\" not found in file", component))?;
+      .ok_or_else(|| format!("object \"{component}\" not found in file"))?;
     let is_last = i + 1 == components.len();
     if key.class_name == "TDirectory" || key.class_name == "TDirectoryFile" {
       let sub =
@@ -157,8 +155,7 @@ fn root_element(data: &[u8], elements: &[Expr]) -> Result<Expr, String> {
       if is_last {
         if !rest.is_empty() {
           return Err(format!(
-            "\"{}\" is a directory and has no branch elements",
-            path
+            "\"{path}\" is a directory and has no branch elements"
           ));
         }
         let mut budget = MAX_LISTING_CELLS;
@@ -166,7 +163,7 @@ fn root_element(data: &[u8], elements: &[Expr]) -> Result<Expr, String> {
       }
       seek_keys = sub;
     } else if !is_last {
-      return Err(format!("\"{}\" is not a directory", component));
+      return Err(format!("\"{component}\" is not a directory"));
     } else {
       let payload = object_payload(data, &key)?;
       return decode_element(data, &key, &payload, rest);
@@ -206,7 +203,7 @@ fn decode_element(
       .branches
       .iter()
       .find(|b| b.name == name)
-      .ok_or_else(|| format!("branch \"{}\" not found in tree", name))
+      .ok_or_else(|| format!("branch \"{name}\" not found in tree"))
   };
   match selector {
     // A single branch name yields its bare column.
@@ -231,7 +228,7 @@ fn decode_element(
     // A list of branch names yields an Association of those columns.
     Expr::List(names) => {
       let mut pairs: Vec<(Expr, Expr)> = Vec::new();
-      for item in names.iter() {
+      for item in names {
         let Expr::String(name) = item else {
           return Err("branch names must be strings".into());
         };
@@ -589,7 +586,7 @@ fn object_payload(data: &[u8], key: &KeyInfo) -> Result<Vec<u8>, String> {
           .by_ref()
           .take(u_size as u64)
           .read_to_end(&mut out)
-          .map_err(|e| format!("zlib decompression failed: {}", e))?;
+          .map_err(|e| format!("zlib decompression failed: {e}"))?;
         if out.len() - before != u_size {
           return Err("zlib block decompressed to unexpected size".into());
         }
@@ -598,7 +595,7 @@ fn object_payload(data: &[u8], key: &KeyInfo) -> Result<Vec<u8>, String> {
         // The compressed payload starts with an 8-byte xxhash64 checksum.
         let lz4_data = payload.get(8..).ok_or("truncated LZ4 block")?;
         let decoded = lz4_flex::block::decompress(lz4_data, u_size)
-          .map_err(|e| format!("LZ4 decompression failed: {}", e))?;
+          .map_err(|e| format!("LZ4 decompression failed: {e}"))?;
         out.extend_from_slice(&decoded);
       }
       b"XZ" => {
@@ -953,7 +950,10 @@ impl ClassMap {
   }
 
   fn resolve(&self, tag: u32) -> Option<&str> {
-    self.map.get(&(tag & !K_CLASS_MASK)).map(|s| s.as_str())
+    self
+      .map
+      .get(&(tag & !K_CLASS_MASK))
+      .map(std::string::String::as_str)
   }
 }
 
@@ -1048,7 +1048,7 @@ fn parse_tbranch_base(
   let (version, end) = r.read_version()?;
   let end = end.ok_or("missing byte count on TBranch")?;
   if version < 12 {
-    return Err(format!("TBranch version {} not supported", version));
+    return Err(format!("TBranch version {version} not supported"));
   }
   let (name, title) = r.read_tnamed()?;
   r.skip_versioned()?; // TAttFill
@@ -1129,7 +1129,7 @@ fn parse_branch(
       r.seek(end)?;
       Ok(info)
     }
-    other => Err(format!("branch class {} not supported", other)),
+    other => Err(format!("branch class {other} not supported")),
   }
 }
 
@@ -1193,7 +1193,7 @@ fn parse_ttree(
   if !(19..=20).contains(&version) {
     return Ok((
       info,
-      Some(format!("TTree version {} branches not decoded", version)),
+      Some(format!("TTree version {version} branches not decoded")),
     ));
   }
   let branches = (|| -> Result<Vec<BranchInfo>, String> {
@@ -1338,7 +1338,7 @@ fn leaf_basic_kind(leaf: &LeafInfo) -> Result<BasicKind, String> {
     ("TLeafF", _) => BasicKind::F32,
     ("TLeafD", _) => BasicKind::F64,
     ("TLeafO", _) => BasicKind::Bool,
-    (other, _) => return Err(format!("leaf class {} not decoded", other)),
+    (other, _) => return Err(format!("leaf class {other} not decoded")),
   })
 }
 
@@ -1356,7 +1356,7 @@ fn vector_element_kind(element: &str) -> Result<BasicKind, String> {
     "unsigned char" | "UChar_t" => BasicKind::U8,
     "bool" | "Bool_t" => BasicKind::Bool,
     other => {
-      return Err(format!("vector element type {} not decoded", other));
+      return Err(format!("vector element type {other} not decoded"));
     }
   })
 }
@@ -1378,7 +1378,7 @@ fn resolve_interp(branch: &BranchInfo) -> Result<Interp, String> {
         kind: vector_element_kind(inner)?,
       });
     }
-    return Err(format!("branch class {} not decoded", class));
+    return Err(format!("branch class {class} not decoded"));
   }
   let [leaf] = branch.leaves.as_slice() else {
     return Err("multi-leaf branches are not decoded".into());

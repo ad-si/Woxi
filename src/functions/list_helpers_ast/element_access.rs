@@ -632,7 +632,7 @@ fn spec_range(n: &Expr) -> Option<(i128, i128)> {
         spec.iter().map(super::utilities::expr_to_i128).collect();
       match nums.as_deref() {
         Some([i]) => Some((*i, *i)),
-        Some([i, j]) | Some([i, j, _]) => Some((*i, *j)),
+        Some([i, j] | [i, j, _]) => Some((*i, *j)),
         _ => None,
       }
     }
@@ -864,14 +864,11 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(wrap(items[..actual].to_vec()));
   }
 
-  let count = match expr_to_i128(n) {
-    Some(i) => i,
-    None => {
-      return Ok(Expr::FunctionCall {
-        name: "Take".to_string(),
-        args: vec![list.clone(), n.clone()].into(),
-      });
-    }
+  let Some(count) = expr_to_i128(n) else {
+    return Ok(Expr::FunctionCall {
+      name: "Take".to_string(),
+      args: vec![list.clone(), n.clone()].into(),
+    });
   };
 
   let len = items.len() as i128;
@@ -880,8 +877,7 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       // Print warning to stderr and return unevaluated
       let list_str = crate::syntax::expr_to_string(list);
       crate::emit_message(&format!(
-        "Take::take: Cannot take positions 1 through {} in {}.",
-        count, list_str
+        "Take::take: Cannot take positions 1 through {count} in {list_str}."
       ));
       return Ok(Expr::FunctionCall {
         name: "Take".to_string(),
@@ -894,8 +890,7 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       // Print warning to stderr and return unevaluated
       let list_str = crate::syntax::expr_to_string(list);
       crate::emit_message(&format!(
-        "Take::take: Cannot take positions {} through -1 in {}.",
-        count, list_str
+        "Take::take: Cannot take positions {count} through -1 in {list_str}."
       ));
       return Ok(Expr::FunctionCall {
         name: "Take".to_string(),
@@ -1111,14 +1106,11 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(wrap_drop(items[drop_count..].to_vec()));
   }
 
-  let count = match expr_to_i128(n) {
-    Some(i) => i,
-    None => {
-      return Ok(Expr::FunctionCall {
-        name: "Drop".to_string(),
-        args: vec![list.clone(), n.clone()].into(),
-      });
-    }
+  let Some(count) = expr_to_i128(n) else {
+    return Ok(Expr::FunctionCall {
+      name: "Drop".to_string(),
+      args: vec![list.clone(), n.clone()].into(),
+    });
   };
 
   if count.unsigned_abs() > len.unsigned_abs() {
@@ -1179,7 +1171,7 @@ fn insert_ins_message(path: &[i128], list: &Expr) {
     "{{{}}}",
     path
       .iter()
-      .map(|p| p.to_string())
+      .map(std::string::ToString::to_string)
       .collect::<Vec<_>>()
       .join(", ")
   );
@@ -1207,7 +1199,7 @@ fn insert_paths(
 
   // Paths that descend deeper, grouped by their (0-based) first index
   let mut deeper: std::collections::BTreeMap<usize, Vec<Vec<i128>>> =
-    Default::default();
+    std::collections::BTreeMap::default();
   // Insertion indices at this level (0-based slots in the original)
   let mut here: Vec<usize> = Vec::new();
   for path in paths {
@@ -1257,8 +1249,7 @@ fn insert_paths(
         let lead = paths
           .iter()
           .find(|p| p.len() > 1 && p[1..] == failing[..])
-          .map(|p| p[0])
-          .unwrap_or((*idx + 1) as i128);
+          .map_or((*idx + 1) as i128, |p| p[0]);
         failing.insert(0, lead);
         return Err(failing);
       }
@@ -1332,21 +1323,17 @@ pub fn insert_ast(
       }
       _ => None,
     };
-    match idx {
-      Some(i) => {
-        let mut new_pairs = pairs.clone();
-        new_pairs.insert(i, (key, val));
-        return Ok(Expr::Association(new_pairs));
-      }
-      None => {
-        crate::emit_message(&format!(
-          "Insert::ins: Cannot insert at position {} in {}",
-          crate::syntax::format_expr(pos, crate::syntax::ExprForm::Output),
-          crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
-        ));
-        return Ok(unevaluated());
-      }
+    if let Some(i) = idx {
+      let mut new_pairs = pairs.clone();
+      new_pairs.insert(i, (key, val));
+      return Ok(Expr::Association(new_pairs));
     }
+    crate::emit_message(&format!(
+      "Insert::ins: Cannot insert at position {} in {}",
+      crate::syntax::format_expr(pos, crate::syntax::ExprForm::Output),
+      crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(unevaluated());
   }
 
   // Parse the position specification:
@@ -1362,7 +1349,7 @@ pub fn insert_ast(
         && inner.iter().all(|i| matches!(i, Expr::List(_))) =>
     {
       let mut ps = Vec::with_capacity(inner.len());
-      for sub in inner.iter() {
+      for sub in inner {
         let Expr::List(sub_items) = sub else {
           unreachable!()
         };
@@ -1386,23 +1373,22 @@ pub fn insert_ast(
       ps
     }
     Expr::List(inner) if !inner.is_empty() => {
-      match inner
+      if let Some(p) = inner
         .iter()
         .map(expr_to_i128)
         .collect::<Option<Vec<i128>>>()
       {
-        Some(p) => vec![p],
-        None => {
-          crate::emit_message(&format!(
-            "Insert::psl: Position specification {} in {} is not a machine-sized integer or a list of machine-sized integers.",
-            crate::syntax::format_expr(pos, crate::syntax::ExprForm::Output),
-            crate::syntax::format_expr(
-              &unevaluated(),
-              crate::syntax::ExprForm::Output
-            )
-          ));
-          return Ok(unevaluated());
-        }
+        vec![p]
+      } else {
+        crate::emit_message(&format!(
+          "Insert::psl: Position specification {} in {} is not a machine-sized integer or a list of machine-sized integers.",
+          crate::syntax::format_expr(pos, crate::syntax::ExprForm::Output),
+          crate::syntax::format_expr(
+            &unevaluated(),
+            crate::syntax::ExprForm::Output
+          )
+        ));
+        return Ok(unevaluated());
       }
     }
     _ => {
@@ -1852,7 +1838,7 @@ pub fn replace_part_positional_ast(
         "ReplacePart::partw: Part {{{}}} of {} does not exist.",
         path
           .iter()
-          .map(|p| p.to_string())
+          .map(std::string::ToString::to_string)
           .collect::<Vec<_>>()
           .join(", "),
         crate::syntax::format_expr(expr, crate::syntax::ExprForm::Output)
@@ -1917,9 +1903,10 @@ pub fn replace_part_ast(
     Expr::List(items) if items.iter().all(|r| as_rule(r).is_some()) => {
       items.iter().map(|r| as_rule(r).unwrap()).collect()
     }
-    single => match as_rule(single) {
-      Some(r) => vec![r],
-      None => {
+    single => {
+      if let Some(r) = as_rule(single) {
+        vec![r]
+      } else {
         crate::emit_message(&format!(
           "ReplacePart::reps: {} is neither a list of replacement rules nor a valid dispatch table, and so cannot be used for replacing.",
           crate::syntax::format_expr(rule, crate::syntax::ExprForm::Output)
@@ -1929,7 +1916,7 @@ pub fn replace_part_ast(
           args: vec![expr.clone(), rule.clone()].into(),
         });
       }
-    },
+    }
   };
 
   // Association subject: positions are integer indices, `Key[k]`, bare keys,
@@ -1967,7 +1954,7 @@ pub fn replace_part_ast(
           && items.iter().all(|i| matches!(i, Expr::List(_))) =>
       {
         // {{p1...}, {p2...}}: several paths for the same rule
-        for sub in items.iter() {
+        for sub in items {
           if let Expr::List(parts) = sub {
             matchers.push((parts.iter().map(to_comp).collect(), ri));
           }
@@ -2046,34 +2033,33 @@ pub fn replace_part_ast(
               }
             }
             Comp::Pattern(pat) => {
-              match crate::evaluator::pattern_matching::match_pattern(
-                &Expr::Integer(p_idx),
-                pat,
-              ) {
-                Some(bs) => {
-                  // Repeated pattern variables must bind consistently
-                  for (name, val) in bs {
-                    match bindings.iter().find(|(n, _)| *n == name) {
-                      Some((_, prev))
-                        if !crate::evaluator::pattern_matching::expr_equal(
-                          prev, &val,
-                        ) =>
-                      {
-                        ok = false;
-                        break;
-                      }
-                      Some(_) => {}
-                      None => bindings.push((name, val)),
+              if let Some(bs) =
+                crate::evaluator::pattern_matching::match_pattern(
+                  &Expr::Integer(p_idx),
+                  pat,
+                )
+              {
+                // Repeated pattern variables must bind consistently
+                for (name, val) in bs {
+                  match bindings.iter().find(|(n, _)| *n == name) {
+                    Some((_, prev))
+                      if !crate::evaluator::pattern_matching::expr_equal(
+                        prev, &val,
+                      ) =>
+                    {
+                      ok = false;
+                      break;
                     }
-                  }
-                  if !ok {
-                    break;
+                    Some(_) => {}
+                    None => bindings.push((name, val)),
                   }
                 }
-                None => {
-                  ok = false;
+                if !ok {
                   break;
                 }
+              } else {
+                ok = false;
+                break;
               }
             }
           }
@@ -2164,18 +2150,15 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Extract items and optional head name. Operator expressions such as
   // `x^2` are decomposed to their full-form parts (Power[x, 2]) so integer
   // positions address them like Wolfram's FullForm.
-  let (items_owned, head_owned) = match parts_and_head(&args[0]) {
-    Some(p) => p,
-    None => {
-      // Atomic subject: wolframscript shows the scalar position without
-      // braces here (Part 1 of y does not exist.)
-      crate::emit_message(&format!(
-        "Delete::partw: Part {} of {} does not exist.",
-        crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output),
-        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
-      ));
-      return Ok(unevaluated("Delete", args));
-    }
+  let Some((items_owned, head_owned)) = parts_and_head(&args[0]) else {
+    // Atomic subject: wolframscript shows the scalar position without
+    // braces here (Part 1 of y does not exist.)
+    crate::emit_message(&format!(
+      "Delete::partw: Part {} of {} does not exist.",
+      crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output),
+      crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+    ));
+    return Ok(unevaluated("Delete", args));
   };
   let items = items_owned.as_slice();
   let head_name = head_owned.as_deref();
@@ -2183,9 +2166,8 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[1] {
     // Delete[expr, n] - delete at position n
     Expr::Integer(_) | Expr::BigInteger(_) => {
-      let pos = match expr_to_i128(&args[1]) {
-        Some(n) => n,
-        None => return Ok(args[0].clone()),
+      let Some(pos) = expr_to_i128(&args[1]) else {
+        return Ok(args[0].clone());
       };
       // Out-of-range: emit Delete::partw and return unevaluated (matches
       // wolframscript). Position 0 deletes the head, which is always valid.
@@ -2198,7 +2180,7 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
         return Ok(unevaluated("Delete", args));
       }
-      let deleted = delete_at_position_general(items, pos, head_name)?;
+      let deleted = delete_at_position_general(items, pos, head_name);
       return crate::evaluator::evaluate_expr_to_expr(&deleted);
     }
     Expr::List(pos_list) => {
@@ -2219,7 +2201,7 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               "{{{}}}",
               path
                 .iter()
-                .map(|p| p.to_string())
+                .map(std::string::ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(", ")
             )
@@ -2282,62 +2264,57 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               &cur_items,
               pos[0],
               cur_head.as_deref(),
-            )?;
+            );
+          } else if let Ok(v) = delete_at_deep_position(&result, pos)? {
+            result = v;
           } else {
-            match delete_at_deep_position(&result, pos)? {
-              Ok(v) => result = v,
-              Err(_) => {
-                partw_path(pos);
-                return Ok(unevaluated("Delete", args));
-              }
-            }
+            partw_path(pos);
+            return Ok(unevaluated("Delete", args));
           }
         }
         // Evaluate once after all structural deletions (e.g. Power[] -> 1).
         return crate::evaluator::evaluate_expr_to_expr(&result);
-      } else {
-        // Multi-part position: Delete[expr, {i, j, ...}]
-        let pos: Vec<i128> = pos_list.iter().filter_map(expr_to_i128).collect();
-        if pos.len() == pos_list.len() {
-          if pos.len() == 1 {
-            let deleted = delete_at_position_general(items, pos[0], head_name)?;
-            return crate::evaluator::evaluate_expr_to_expr(&deleted);
-          } else {
-            match delete_at_deep_position(&args[0], &pos)? {
-              Ok(v) => return crate::evaluator::evaluate_expr_to_expr(&v),
-              Err(fail) => {
-                // Descent into an atom names the inner subject (Part 1
-                // of b); an out-of-range final index names the full path
-                let atomic = !matches!(
-                  fail.subject,
-                  Expr::List(_) | Expr::FunctionCall { .. }
-                );
-                if atomic {
-                  crate::emit_message(&format!(
-                    "Delete::partw: Part {} of {} does not exist.",
-                    fail.index,
-                    crate::syntax::format_expr(
-                      &fail.subject,
-                      crate::syntax::ExprForm::Output
-                    )
-                  ));
-                } else {
-                  crate::emit_message(&format!(
-                    "Delete::partw: Part {{{}}} of {} does not exist.",
-                    pos
-                      .iter()
-                      .map(|p| p.to_string())
-                      .collect::<Vec<_>>()
-                      .join(", "),
-                    crate::syntax::format_expr(
-                      &args[0],
-                      crate::syntax::ExprForm::Output
-                    )
-                  ));
-                }
-                return Ok(unevaluated("Delete", args));
-              }
+      }
+      // Multi-part position: Delete[expr, {i, j, ...}]
+      let pos: Vec<i128> = pos_list.iter().filter_map(expr_to_i128).collect();
+      if pos.len() == pos_list.len() {
+        if pos.len() == 1 {
+          let deleted = delete_at_position_general(items, pos[0], head_name);
+          return crate::evaluator::evaluate_expr_to_expr(&deleted);
+        }
+        match delete_at_deep_position(&args[0], &pos)? {
+          Ok(v) => return crate::evaluator::evaluate_expr_to_expr(&v),
+          Err(fail) => {
+            // Descent into an atom names the inner subject (Part 1
+            // of b); an out-of-range final index names the full path
+            let atomic = !matches!(
+              fail.subject,
+              Expr::List(_) | Expr::FunctionCall { .. }
+            );
+            if atomic {
+              crate::emit_message(&format!(
+                "Delete::partw: Part {} of {} does not exist.",
+                fail.index,
+                crate::syntax::format_expr(
+                  &fail.subject,
+                  crate::syntax::ExprForm::Output
+                )
+              ));
+            } else {
+              crate::emit_message(&format!(
+                "Delete::partw: Part {{{}}} of {} does not exist.",
+                pos
+                  .iter()
+                  .map(std::string::ToString::to_string)
+                  .collect::<Vec<_>>()
+                  .join(", "),
+                crate::syntax::format_expr(
+                  &args[0],
+                  crate::syntax::ExprForm::Output
+                )
+              ));
             }
+            return Ok(unevaluated("Delete", args));
           }
         }
       }
@@ -2359,7 +2336,7 @@ fn delete_at_position_general(
   items: &[Expr],
   pos: i128,
   head_name: Option<&str>,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let wrap = |result_items: Vec<Expr>| -> Expr {
     match head_name {
       Some(h) => Expr::FunctionCall {
@@ -2376,14 +2353,14 @@ fn delete_at_position_general(
     (len + pos) as usize
   } else {
     // Position 0 = delete the head, return Sequence[args...]
-    return Ok(unevaluated("Sequence", items));
+    return unevaluated("Sequence", items);
   };
   if idx >= items.len() {
-    return Ok(wrap(items.to_vec()));
+    return wrap(items.to_vec());
   }
   let mut result = items.to_vec();
   result.remove(idx);
-  Ok(wrap(result))
+  wrap(result)
 }
 
 /// Delete element at a deep multi-part position {i, j, ...}.

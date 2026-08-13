@@ -387,11 +387,11 @@ fn hoist_denominator_content(den: &Expr) -> Option<Expr> {
         continue;
       }
       match super::factor::factor_terms_numeric(&p, &pterms) {
-        Ok(Expr::BinaryOp {
+        Expr::BinaryOp {
           op: BinaryOperator::Times,
           ref left,
           ref right,
-        }) if matches!(left.as_ref(), Expr::Integer(n) if *n > 1) => {
+        } if matches!(left.as_ref(), Expr::Integer(n) if *n > 1) => {
           if let Expr::Integer(n) = left.as_ref() {
             int_content = int_content.checked_mul(*n)?;
           }
@@ -577,7 +577,9 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
             } else {
               // Power[fraction, n] → split base into num/den
               let (base_num, base_den) = extract_num_den(&pargs[0]);
-              if !matches!(&base_den, Expr::Integer(1)) {
+              if matches!(&base_den, Expr::Integer(1)) {
+                num_factors.push(arg.clone());
+              } else {
                 num_factors.push(Expr::FunctionCall {
                   name: "Power".to_string(),
                   args: vec![base_num, pargs[1].clone()].into(),
@@ -586,8 +588,6 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
                   name: "Power".to_string(),
                   args: vec![base_den, pargs[1].clone()].into(),
                 });
-              } else {
-                num_factors.push(arg.clone());
               }
             }
           }
@@ -608,7 +608,9 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
             } else {
               // Power[fraction, n] → split base into num/den
               let (base_num, base_den) = extract_num_den(left);
-              if !matches!(&base_den, Expr::Integer(1)) {
+              if matches!(&base_den, Expr::Integer(1)) {
+                num_factors.push(arg.clone());
+              } else {
                 num_factors.push(Expr::BinaryOp {
                   op: BinaryOperator::Power,
                   left: Box::new(base_num),
@@ -619,8 +621,6 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
                   left: Box::new(base_den),
                   right: right.clone(),
                 });
-              } else {
-                num_factors.push(arg.clone());
               }
             }
           }
@@ -675,7 +675,9 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
       } else {
         // Power[num/den, n] → (num^n, den^n)
         let (base_num, base_den) = extract_num_den(left);
-        if !matches!(&base_den, Expr::Integer(1)) {
+        if matches!(&base_den, Expr::Integer(1)) {
+          (expr.clone(), Expr::Integer(1))
+        } else {
           let num = Expr::BinaryOp {
             op: BinaryOperator::Power,
             left: Box::new(base_num),
@@ -687,8 +689,6 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
             right: right.clone(),
           };
           (num, den)
-        } else {
-          (expr.clone(), Expr::Integer(1))
         }
       }
     }
@@ -909,22 +909,22 @@ pub(super) fn canonicalize_quotient_sign(
           op: BinaryOperator::Power,
           left,
           right,
-        } => match right.as_ref() {
-          Expr::Integer(e) => ((**left).clone(), *e),
-          _ => {
+        } => {
+          if let Expr::Integer(e) = right.as_ref() {
+            ((**left).clone(), *e)
+          } else {
             split.push(f);
             continue;
           }
-        },
+        }
         Expr::FunctionCall { name, args }
           if name == "Power" && args.len() == 2 =>
         {
-          match &args[1] {
-            Expr::Integer(e) => (args[0].clone(), *e),
-            _ => {
-              split.push(f);
-              continue;
-            }
+          if let Expr::Integer(e) = &args[1] {
+            (args[0].clone(), *e)
+          } else {
+            split.push(f);
+            continue;
           }
         }
         _ => {
@@ -997,22 +997,22 @@ pub(super) fn canonicalize_quotient_sign(
         op: BinaryOperator::Power,
         left,
         right,
-      } => match right.as_ref() {
-        Expr::Integer(e) => ((**left).clone(), *e),
-        _ => {
+      } => {
+        if let Expr::Integer(e) = right.as_ref() {
+          ((**left).clone(), *e)
+        } else {
           new_factors.push(f.clone());
           continue;
         }
-      },
+      }
       Expr::FunctionCall { name, args }
         if name == "Power" && args.len() == 2 =>
       {
-        match &args[1] {
-          Expr::Integer(e) => (args[0].clone(), *e),
-          _ => {
-            new_factors.push(f.clone());
-            continue;
-          }
+        if let Expr::Integer(e) = &args[1] {
+          (args[0].clone(), *e)
+        } else {
+          new_factors.push(f.clone());
+          continue;
         }
       }
       other => (other.clone(), 1),
@@ -1034,8 +1034,7 @@ pub(super) fn canonicalize_quotient_sign(
       }
       let base_content =
         super::factor::rational_content(&collect_additive_terms(&base))
-          .map(|(n, d, _)| (n.abs(), d))
-          .unwrap_or((1, 1));
+          .map_or((1, 1), |(n, d, _)| (n.abs(), d));
       if base_content == (1, 1) {
         any_flipped_content_one = true;
       }
@@ -1408,13 +1407,13 @@ pub(super) fn extract_quotient_minus(num: &Expr, den: &Expr) -> Option<Expr> {
     left: Box::new(new_num),
     right: Box::new(new_den),
   };
-  if num_flip != den_flip {
+  if num_flip == den_flip {
+    Some(quotient)
+  } else {
     Some(Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand: Box::new(quotient),
     })
-  } else {
-    Some(quotient)
   }
 }
 
@@ -1652,19 +1651,16 @@ fn shares_cancelable_factor(num: &Expr, den: &Expr) -> bool {
     let mut bases = Vec::new();
     for f in flatten_times_args(std::slice::from_ref(e)) {
       let b = strip_power(&f);
-      match &b {
-        Expr::Integer(n) => {
+      if let Expr::Integer(n) = &b {
+        content = content.saturating_mul(n.abs().max(1));
+      } else {
+        let terms = collect_additive_terms(&b);
+        if terms.len() >= 2
+          && let Some((n, _, _)) = super::factor::rational_content(&terms)
+        {
           content = content.saturating_mul(n.abs().max(1));
         }
-        _ => {
-          let terms = collect_additive_terms(&b);
-          if terms.len() >= 2
-            && let Some((n, _, _)) = super::factor::rational_content(&terms)
-          {
-            content = content.saturating_mul(n.abs().max(1));
-          }
-          bases.push(expr_to_string(&b));
-        }
+        bases.push(expr_to_string(&b));
       }
     }
     (content, bases)
@@ -1711,41 +1707,42 @@ pub fn together_expr(expr: &Expr) -> Expr {
     // (only inverse Power factors, one numerator factor); re-combining it
     // would only reorder its denominator (`Sqrt[2]*s` → `s*Sqrt[2]`). And a
     // purely constant denominator (`(-4 (-3+2 x))/13`) is left factored.
-    let is_foldable_product =
-      terms
-        .first()
-        .map(|t| {
-          let den = extract_num_den(t).1;
-          if matches!(den, Expr::Integer(1)) {
-            return false;
+    let is_foldable_product = terms.first().is_some_and(|t| {
+      let den = extract_num_den(t).1;
+      if matches!(den, Expr::Integer(1)) {
+        return false;
+      }
+      let mut vars = std::collections::HashSet::new();
+      super::simplify::collect_variables(&den, &mut vars);
+      if vars.is_empty() {
+        return false;
+      }
+      let factors = flatten_times_args(std::slice::from_ref(t));
+      if factors.len() < 2 {
+        return false;
+      }
+      let has_divide_node = factors.iter().any(|f| {
+        matches!(
+          f,
+          Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            ..
           }
-          let mut vars = std::collections::HashSet::new();
-          super::simplify::collect_variables(&den, &mut vars);
-          if vars.is_empty() {
-            return false;
-          }
-          let factors = flatten_times_args(std::slice::from_ref(t));
-          if factors.len() < 2 {
-            return false;
-          }
-          let has_divide_node = factors.iter().any(|f| {
-          matches!(f, Expr::BinaryOp { op: BinaryOperator::Divide, .. })
-            || matches!(f, Expr::FunctionCall { name, .. } if name == "Divide")
-        });
-          let num_contributors = factors
-            .iter()
-            .filter(|f| !matches!(extract_num_den(f).0, Expr::Integer(1)))
-            .count();
-          // Multiple numerator factors alone don't justify combining:
-          // wolframscript keeps (5*x*(1+x))/((1-x)*(2+x)) factored, so
-          // only fold when something actually cancels.
-          has_divide_node
-            || (num_contributors >= 2 && {
-              let (n, d) = extract_num_den(t);
-              shares_cancelable_factor(&n, &d)
-            })
+        ) || matches!(f, Expr::FunctionCall { name, .. } if name == "Divide")
+      });
+      let num_contributors = factors
+        .iter()
+        .filter(|f| !matches!(extract_num_den(f).0, Expr::Integer(1)))
+        .count();
+      // Multiple numerator factors alone don't justify combining:
+      // wolframscript keeps (5*x*(1+x))/((1-x)*(2+x)) factored, so
+      // only fold when something actually cancels.
+      has_divide_node
+        || (num_contributors >= 2 && {
+          let (n, d) = extract_num_den(t);
+          shares_cancelable_factor(&n, &d)
         })
-        .unwrap_or(false);
+    });
     if !is_foldable_product {
       // A lone fraction is still GCD-cancelled when it reduces to a polynomial
       // (Together[(x^2-1)/(x-1)] -> 1 + x). Only commit when a denominator was
@@ -1907,8 +1904,7 @@ pub fn together_expr(expr: &Expr) -> Expr {
     // content out of a plain sum: Together[2 - 4x - 4x^2] →
     // -2*(-1 + 2x + 2x^2), Together[2 Sin[x] + 4 Sin[y]] →
     // 2*(Sin[x] + 2*Sin[y]).
-    return super::factor::factor_terms_numeric(&expr_rec, &terms)
-      .unwrap_or(expr_rec);
+    return super::factor::factor_terms_numeric(&expr_rec, &terms);
   }
 
   // Build numerator: for each term, multiply by (common_den / den_i)
@@ -2079,11 +2075,9 @@ pub fn together_expr(expr: &Expr) -> Expr {
       // Together[2/3 + 4x/3] → (2*(1 + 2*x))/3.
       if matches!(&simplified_den, Expr::Integer(_)) {
         let num_terms = collect_additive_terms(&simplified_num);
-        if num_terms.len() > 1
-          && let Ok(factored) =
-            super::factor::factor_terms_numeric(&simplified_num, &num_terms)
-        {
-          simplified_num = factored;
+        if num_terms.len() > 1 {
+          simplified_num =
+            super::factor::factor_terms_numeric(&simplified_num, &num_terms);
         }
       }
       Expr::BinaryOp {
@@ -2111,7 +2105,7 @@ fn expand_numeric_content_denominator(den: &Expr) -> Option<Expr> {
     match f {
       Expr::Integer(n) if n > 0 => int_content = int_content.checked_mul(n)?,
       other if is_plus_polynomial(&other) && plus.is_none() => {
-        plus = Some(other)
+        plus = Some(other);
       }
       _ => return None,
     }
@@ -2491,8 +2485,7 @@ fn compute_missing_factor(
     let den_exp = den_map
       .iter()
       .find(|(k, _)| k == key)
-      .map(|(_, e)| *e)
-      .unwrap_or((0, 1));
+      .map_or((0, 1), |(_, e)| *e);
     let diff = rat_sub(*lcm_exp, den_exp);
     if rat_gt(diff, (0, 1)) {
       if diff == (1, 1) {

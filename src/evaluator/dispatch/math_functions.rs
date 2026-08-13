@@ -270,22 +270,19 @@ pub fn dispatch_math_functions(
             name: "Quantile".to_string(),
             args: vec![args[0].clone(), q_expr].into(),
           };
-          match crate::evaluator::evaluate_expr_to_expr(&call) {
-            Ok(v) => {
-              // Treat an unevaluated Quantile[...] result as failure so we
-              // leave the whole call symbolic rather than emitting a
-              // half-symbolic list.
-              if matches!(&v, Expr::FunctionCall { name, .. } if name == "Quantile")
-              {
-                all_ok = false;
-                break;
-              }
-              results.push(v);
-            }
-            Err(_) => {
+          if let Ok(v) = crate::evaluator::evaluate_expr_to_expr(&call) {
+            // Treat an unevaluated Quantile[...] result as failure so we
+            // leave the whole call symbolic rather than emitting a
+            // half-symbolic list.
+            if matches!(&v, Expr::FunctionCall { name, .. } if name == "Quantile")
+            {
               all_ok = false;
               break;
             }
+            results.push(v);
+          } else {
+            all_ok = false;
+            break;
           }
         }
         if all_ok && results.len() == 3 {
@@ -829,7 +826,7 @@ pub fn dispatch_math_functions(
     {
       if let Expr::FunctionCall { args: da, .. } = &args[0] {
         let mut out: Vec<Expr> = Vec::with_capacity(da.len());
-        for d in da.iter() {
+        for d in da {
           let Expr::FunctionCall { name: cn, args: ca } = d else {
             return None;
           };
@@ -2035,7 +2032,7 @@ pub fn dispatch_math_functions(
         Expr::FunctionCall { name, args: dargs }
           if name == "DirectedInfinity" && dargs.len() == 1 =>
         {
-          if matches!(&dargs[0], Expr::Integer(1) | Expr::Integer(-1)) {
+          if matches!(&dargs[0], Expr::Integer(1 | -1)) {
             return Some(Ok(Expr::Integer(0)));
           }
         }
@@ -2157,8 +2154,7 @@ pub fn dispatch_math_functions(
           Ok(c) => c,
           Err(e) => {
             return Some(Err(InterpreterError::EvaluationError(format!(
-              "BigFloat init error: {}",
-              e
+              "BigFloat init error: {e}"
             ))));
           }
         };
@@ -2200,9 +2196,9 @@ pub fn dispatch_math_functions(
               // Format: "-.123e3" style — f64 parser accepts scientific notation
               // but astro-float uses a leading dot (".123e3"); normalize to "0.123e3".
               let s2 = if let Some(rest) = s.strip_prefix('.') {
-                format!("0.{}", rest)
+                format!("0.{rest}")
               } else if let Some(rest) = s.strip_prefix("-.") {
-                format!("-0.{}", rest)
+                format!("-0.{rest}")
               } else {
                 s
               };
@@ -2601,13 +2597,12 @@ pub fn dispatch_math_functions(
         // Normalise the target residues into [0, n).
         let mut targets: Vec<i128> = Vec::with_capacity(residues.len());
         let mut ok = true;
-        for r in residues.iter() {
-          match r {
-            Expr::Integer(ri) => targets.push(((*ri % *n) + *n) % *n),
-            _ => {
-              ok = false;
-              break;
-            }
+        for r in residues {
+          if let Expr::Integer(ri) = r {
+            targets.push(((*ri % *n) + *n) % *n);
+          } else {
+            ok = false;
+            break;
           }
         }
         if ok && !targets.is_empty() {
@@ -2677,8 +2672,7 @@ pub fn dispatch_math_functions(
       if let Expr::Integer(n) = &args[0] {
         if *n <= 1 {
           crate::emit_message(&format!(
-            "PrimitiveRoot::intg: Integer greater than 1 expected at position 1 in PrimitiveRoot[{}].",
-            n
+            "PrimitiveRoot::intg: Integer greater than 1 expected at position 1 in PrimitiveRoot[{n}]."
           ));
           return Some(Ok(unevaluated("PrimitiveRoot", args)));
         }
@@ -2821,15 +2815,9 @@ pub fn dispatch_math_functions(
         // bit k of (-n - 1)
         let bit = if n.is_negative() {
           let m = -n - BigInt::one();
-          if (m >> k) & BigInt::one() == BigInt::one() {
-            0
-          } else {
-            1
-          }
-        } else if (n >> k) & BigInt::one() == BigInt::one() {
-          1
+          i128::from((m >> k) & BigInt::one() != BigInt::one())
         } else {
-          0
+          i128::from((n >> k) & BigInt::one() == BigInt::one())
         };
         let _ = BigInt::zero();
         return Some(Ok(Expr::Integer(bit)));
@@ -2975,8 +2963,7 @@ pub fn dispatch_math_functions(
       }
       if n > d {
         crate::emit_message(&format!(
-          "BernsteinBasis::invidx2: Index {} should be a machine-sized integer between 0 and {}.",
-          n, d,
+          "BernsteinBasis::invidx2: Index {n} should be a machine-sized integer between 0 and {d}.",
         ));
         return Some(Ok(unevaluated()));
       }
@@ -3231,7 +3218,7 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::trig_expand_ast(args));
     }
     "ComplexExpand" if args.len() == 1 => {
-      return Some(complex_expand_ast(&args[0]));
+      return Some(Ok(complex_expand_ast(&args[0])));
     }
     "ComplexExpand" if args.len() == 2 => {
       // ComplexExpand[expr, vars]: treat each name in `vars` as complex,
@@ -3248,7 +3235,7 @@ pub fn dispatch_math_functions(
         _ => vec![],
       };
       let substituted = substitute_complex_vars(&args[0], &vars);
-      return Some(complex_expand_with_expand(&substituted));
+      return Some(Ok(complex_expand_with_expand(&substituted)));
     }
     "TrigReduce" if args.len() == 1 => {
       return Some(crate::functions::math_ast::trig_reduce_ast(args));
@@ -3560,7 +3547,7 @@ pub fn dispatch_math_functions(
     }
     "FindLinearRecurrence" if args.len() == 1 => {
       if let Expr::List(ref elems) = args[0] {
-        return Some(find_linear_recurrence_impl(elems));
+        return Some(Ok(find_linear_recurrence_impl(elems)));
       }
     }
     "AASTriangle" if args.len() == 3 => {
@@ -4535,7 +4522,7 @@ pub fn dispatch_math_functions(
         for i in 0..dim {
           let mut row = Vec::with_capacity(dim);
           for j in 0..dim {
-            let delta = Expr::Integer(if i == j { 1 } else { 0 });
+            let delta = Expr::Integer(i128::from(i == j));
             // Tan[theta] * v_proj[i]*n[j] / (Sqrt[vpp]*Sqrt[nn])
             let shear = call(
               "Times",
@@ -4648,20 +4635,19 @@ pub fn dispatch_math_functions(
             return Some(Ok(Expr::List(
               vec![Expr::Integer(d), Expr::Integer(m), Expr::Integer(s)].into(),
             )));
-          } else {
-            let (sec_num, den) = rat_reduce(sec_num, den);
-            return Some(Ok(Expr::List(
-              vec![
-                Expr::Integer(d),
-                Expr::Integer(m),
-                Expr::FunctionCall {
-                  name: "Rational".to_string(),
-                  args: vec![Expr::Integer(sec_num), Expr::Integer(den)].into(),
-                },
-              ]
-              .into(),
-            )));
           }
+          let (sec_num, den) = rat_reduce(sec_num, den);
+          return Some(Ok(Expr::List(
+            vec![
+              Expr::Integer(d),
+              Expr::Integer(m),
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(sec_num), Expr::Integer(den)].into(),
+              },
+            ]
+            .into(),
+          )));
         }
       }
 
@@ -4678,20 +4664,19 @@ pub fn dispatch_math_functions(
           return Some(Ok(Expr::List(
             vec![Expr::Integer(d), Expr::Integer(m), Expr::Integer(s)].into(),
           )));
-        } else {
-          let (sec_num, den) = rat_reduce(sec_num, den);
-          return Some(Ok(Expr::List(
-            vec![
-              Expr::Integer(d),
-              Expr::Integer(m),
-              Expr::FunctionCall {
-                name: "Rational".to_string(),
-                args: vec![Expr::Integer(sec_num), Expr::Integer(den)].into(),
-              },
-            ]
-            .into(),
-          )));
         }
+        let (sec_num, den) = rat_reduce(sec_num, den);
+        return Some(Ok(Expr::List(
+          vec![
+            Expr::Integer(d),
+            Expr::Integer(m),
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(sec_num), Expr::Integer(den)].into(),
+            },
+          ]
+          .into(),
+        )));
       }
     }
     // AlternatingFactorial[n] = n! - (n-1)! + (n-2)! - ... + (-1)^n * 0!
@@ -4742,7 +4727,7 @@ pub fn dispatch_math_functions(
     "BinaryDistance" if args.len() == 2 => {
       let s1 = crate::syntax::expr_to_string(&args[0]);
       let s2 = crate::syntax::expr_to_string(&args[1]);
-      return Some(Ok(Expr::Integer(if s1 == s2 { 0 } else { 1 })));
+      return Some(Ok(Expr::Integer(i128::from(s1 != s2))));
     }
     // SquaresR[k, n] — number of representations of n as sum of k squares
     "SquaresR" if args.len() == 2 => {
@@ -5212,7 +5197,7 @@ pub fn dispatch_math_functions(
       return Some(Ok(unevaluated("ChampernowneNumber", args)));
     }
     "CantorStaircase" if args.len() == 1 => {
-      return Some(cantor_staircase_ast(&args[0]));
+      return Some(Ok(cantor_staircase_ast(&args[0])));
     }
     "Midpoint" if args.len() == 1 => {
       return Some(midpoint_ast(&args[0]));
@@ -5256,9 +5241,8 @@ fn qgamma_ast(z_expr: &Expr, q_expr: &Expr) -> Result<Expr, InterpreterError> {
     })
   };
 
-  let n = match expr_to_i128(z_expr) {
-    Some(n) => n,
-    None => return unevaluated(),
+  let Some(n) = expr_to_i128(z_expr) else {
+    return unevaluated();
   };
   if n <= 0 {
     // Poles at the non-positive integers.
@@ -5310,46 +5294,45 @@ fn qgamma_ast(z_expr: &Expr, q_expr: &Expr) -> Result<Expr, InterpreterError> {
 /// Algorithm: Express x in base 3. If a digit 1 appears, replace it
 /// and all subsequent digits with a single "1" in base 2.
 /// Replace all 2s with 1s. Read the result in base 2.
-fn cantor_staircase_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
+fn cantor_staircase_ast(arg: &Expr) -> crate::syntax::Expr {
   use crate::functions::math_ast::{expr_to_i128, try_eval_to_f64};
 
   // Handle exact integers
   if let Some(n) = expr_to_i128(arg) {
     if n <= 0 {
-      return Ok(Expr::Integer(0));
-    } else {
-      return Ok(Expr::Integer(1));
+      return Expr::Integer(0);
     }
+    return Expr::Integer(1);
   }
 
   // Handle rationals
   if let Some((num, den)) = expr_to_rational(arg) {
     if num <= 0 {
-      return Ok(Expr::Integer(0));
+      return Expr::Integer(0);
     }
     if num >= den {
-      return Ok(Expr::Integer(1));
+      return Expr::Integer(1);
     }
     // Compute cantor staircase for rational num/den in (0,1)
-    return Ok(cantor_staircase_rational(num, den));
+    return cantor_staircase_rational(num, den);
   }
 
   // Handle numeric values (Real)
   if let Some(x) = try_eval_to_f64(arg) {
     if x <= 0.0 {
-      return Ok(Expr::Integer(0));
+      return Expr::Integer(0);
     }
     if x >= 1.0 {
-      return Ok(Expr::Integer(1));
+      return Expr::Integer(1);
     }
-    return Ok(Expr::Real(cantor_staircase_f64(x)));
+    return Expr::Real(cantor_staircase_f64(x));
   }
 
   // Return unevaluated for symbolic arguments
-  Ok(Expr::FunctionCall {
+  Expr::FunctionCall {
     name: "CantorStaircase".to_string(),
     args: vec![arg.clone()].into(),
-  })
+  }
 }
 
 /// Compute cantor staircase for exact rational p/q where 0 < p/q < 1
@@ -5550,7 +5533,7 @@ fn qfactorial_ast(
 
 /// Find minimum linear recurrence coefficients {c1, c2, ..., cd} such that
 /// a[n] = c1*a[n-1] + c2*a[n-2] + ... + cd*a[n-d] for all valid n.
-fn find_linear_recurrence_impl(seq: &[Expr]) -> Result<Expr, InterpreterError> {
+fn find_linear_recurrence_impl(seq: &[Expr]) -> crate::syntax::Expr {
   // Convert sequence to rationals
   let mut rats: Vec<(i128, i128)> = Vec::new();
   for e in seq {
@@ -5559,10 +5542,10 @@ fn find_linear_recurrence_impl(seq: &[Expr]) -> Result<Expr, InterpreterError> {
     match expr_to_rational(&ev) {
       Some(r) => rats.push(r),
       None => {
-        return Ok(Expr::FunctionCall {
+        return Expr::FunctionCall {
           name: "FindLinearRecurrence".to_string(),
           args: vec![Expr::List(seq.to_vec().into())].into(),
-        });
+        };
       }
     }
   }
@@ -5611,16 +5594,16 @@ fn find_linear_recurrence_impl(seq: &[Expr]) -> Result<Expr, InterpreterError> {
           .iter()
           .map(|&(num, den)| make_rational(num, den))
           .collect();
-        return Ok(Expr::List(result.into()));
+        return Expr::List(result.into());
       }
     }
   }
 
   // No recurrence found
-  Ok(Expr::FunctionCall {
+  Expr::FunctionCall {
     name: "FindLinearRecurrence".to_string(),
     args: vec![Expr::List(seq.to_vec().into())].into(),
-  })
+  }
 }
 
 fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
@@ -5778,26 +5761,24 @@ fn substitute_complex_vars(expr: &Expr, vars: &[String]) -> Expr {
 
 /// ComplexExpand[expr] — expand complex-valued functions assuming all
 /// variables are real. E.g. Sin[x + I*y] → Sin[x]*Cosh[y] + I*Cos[x]*Sinh[y].
-fn complex_expand_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+fn complex_expand_ast(expr: &Expr) -> crate::syntax::Expr {
   // Re-evaluate so arithmetic left by the generic Plus/Times recursion folds
   // (e.g. the `-0` from Re[a + b I] = -Im[b] + Re[a] → -0 + a).
   let folded = ce_simplify(complex_expand_recursive(expr));
   // Distribute products and integer powers of sums, matching wolframscript:
   // ComplexExpand[(x+1)^2] = 1 + 2 x + x^2, and hence
   // ComplexExpand[Abs[x+1]^2] = 1 + 2 x + x^2 (via Abs[x+1] = Sqrt[(x+1)^2]).
-  Ok(
-    crate::evaluator::evaluate_function_call_ast(
-      "Expand",
-      std::slice::from_ref(&folded),
-    )
-    .unwrap_or(folded),
+  crate::evaluator::evaluate_function_call_ast(
+    "Expand",
+    std::slice::from_ref(&folded),
   )
+  .unwrap_or(folded)
 }
 
 /// Like `complex_expand_ast` but additionally distributes products via
 /// Expand, used by the 2-arg form `ComplexExpand[expr, vars]` so the
 /// polynomial result is a single distributed Plus chain.
-fn complex_expand_with_expand(expr: &Expr) -> Result<Expr, InterpreterError> {
+fn complex_expand_with_expand(expr: &Expr) -> crate::syntax::Expr {
   let expanded = complex_expand_recursive(expr);
   let distributed = crate::evaluator::evaluate_function_call_ast(
     "Expand",
@@ -5813,7 +5794,7 @@ fn complex_expand_with_expand(expr: &Expr) -> Result<Expr, InterpreterError> {
   // Group terms by I-factor: re-emit as `<real> + I*<imag>` so the
   // imaginary contributions appear under a single `I*(…)` umbrella,
   // matching wolframscript's `ComplexExpand[…, vars]` shape.
-  Ok(group_imag_terms(&log_split))
+  group_imag_terms(&log_split)
 }
 
 /// True when `e` is the rational `1/2` in any of the shapes our parser
@@ -7439,7 +7420,7 @@ fn count_squares_r(
   depth: usize,
 ) -> i64 {
   if depth == k {
-    return if remaining == 0 { 1 } else { 0 };
+    return i64::from(remaining == 0);
   }
   let mut count = 0i64;
   let limit = (remaining as f64).sqrt() as i64;
@@ -7703,14 +7684,11 @@ fn image_min_max_filter(
 /// Standardize[data, f1, f2] — use f1 for location and f2 for scale
 fn standardize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = &args[0];
-  let items = match data {
-    Expr::List(items) => items,
-    _ => {
-      crate::emit_message(
-        "Standardize::vectmat: The first argument is expected to be a vector or matrix.",
-      );
-      return Ok(unevaluated("Standardize", args));
-    }
+  let Expr::List(items) = data else {
+    crate::emit_message(
+      "Standardize::vectmat: The first argument is expected to be a vector or matrix.",
+    );
+    return Ok(unevaluated("Standardize", args));
   };
 
   if items.is_empty() {

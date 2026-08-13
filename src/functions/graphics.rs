@@ -81,7 +81,7 @@ impl Color {
     let r = (self.r.clamp(0.0, 1.0) * 255.0).round() as u8;
     let g = (self.g.clamp(0.0, 1.0) * 255.0).round() as u8;
     let b = (self.b.clamp(0.0, 1.0) * 255.0).round() as u8;
-    format!("rgb({},{},{})", r, g, b)
+    format!("rgb({r},{g},{b})")
   }
 
   fn opacity_attr(&self) -> String {
@@ -310,7 +310,7 @@ pub(crate) struct DropShadow {
 /// Format a shadow parameter without trailing zeros (2 → "2", 1.5 → "1.5").
 fn fmt_shadow_num(x: f64) -> String {
   let x = if x == 0.0 { 0.0 } else { x }; // normalize -0
-  let s = format!("{:.2}", x);
+  let s = format!("{x:.2}");
   s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
@@ -320,7 +320,7 @@ impl DropShadow {
   /// map through the render pipeline.
   pub(crate) fn filter_id(&self) -> String {
     fn enc(x: f64) -> String {
-      format!("{:.2}", x).replace('-', "m").replace('.', "p")
+      format!("{x:.2}").replace('-', "m").replace('.', "p")
     }
     format!(
       "ds_{}_{}_{}_{:02x}{:02x}{:02x}{:02x}",
@@ -849,7 +849,7 @@ fn parse_hex_color(s: &str) -> Option<Color> {
 fn auto_light_dark_variant(c: Color) -> Color {
   let max = c.r.max(c.g).max(c.b);
   let min = c.r.min(c.g).min(c.b);
-  let l = (max + min) / 2.0;
+  let l = f64::midpoint(max, min);
   let flipped = 1.0 - l;
   let d = max - min;
   if d < 1e-12 {
@@ -1003,7 +1003,9 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
         }
       }
       "GrayLevel" => {
-        if !args.is_empty() {
+        if args.is_empty() {
+          None
+        } else {
           let g = expr_to_f64(&args[0])?;
           let a = if args.len() >= 2 {
             expr_to_f64(&args[1]).unwrap_or(1.0)
@@ -1011,8 +1013,6 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
             1.0
           };
           Some(Color::new(g, g, g).with_alpha(a))
-        } else {
-          None
         }
       }
       "Darker" => {
@@ -1560,11 +1560,11 @@ fn apply_text_style_rule(
     },
     "FontFamily" => match replacement {
       Expr::String(s) => {
-        style.font_family = s.clone();
+        style.font_family.clone_from(s);
         true
       }
       Expr::Identifier(s) => {
-        style.font_family = s.clone();
+        style.font_family.clone_from(s);
         true
       }
       _ => false,
@@ -1803,7 +1803,10 @@ fn collect_primitives(
                   if bb.is_empty() {
                     (0.0, 0.0)
                   } else {
-                    ((bb.x_min + bb.x_max) / 2.0, (bb.y_min + bb.y_max) / 2.0)
+                    (
+                      f64::midpoint(bb.x_min, bb.x_max),
+                      f64::midpoint(bb.y_min, bb.y_max),
+                    )
                   }
                 });
               for p in &inner {
@@ -1860,7 +1863,10 @@ fn collect_primitives(
                   if bb.is_empty() {
                     (0.0, 0.0)
                   } else {
-                    ((bb.x_min + bb.x_max) / 2.0, (bb.y_min + bb.y_max) / 2.0)
+                    (
+                      f64::midpoint(bb.x_min, bb.x_max),
+                      f64::midpoint(bb.y_min, bb.y_max),
+                    )
                   }
                 });
               for p in &inner {
@@ -2128,10 +2134,10 @@ fn parse_line(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
 }
 
 fn parse_circle(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
-  let (cx, cy) = if !args.is_empty() {
-    expr_to_point(&args[0]).unwrap_or((0.0, 0.0))
-  } else {
+  let (cx, cy) = if args.is_empty() {
     (0.0, 0.0)
+  } else {
+    expr_to_point(&args[0]).unwrap_or((0.0, 0.0))
   };
   let (rx, ry) = if args.len() >= 2 {
     if let Some((a, b)) = expr_to_point(&args[1]) {
@@ -2157,10 +2163,10 @@ fn parse_circle(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
 }
 
 fn parse_disk(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
-  let (cx, cy) = if !args.is_empty() {
-    expr_to_point(&args[0]).unwrap_or((0.0, 0.0))
-  } else {
+  let (cx, cy) = if args.is_empty() {
     (0.0, 0.0)
+  } else {
+    expr_to_point(&args[0]).unwrap_or((0.0, 0.0))
   };
   let (rx, ry) = if args.len() >= 2 {
     if let Some((a, b)) = expr_to_point(&args[1]) {
@@ -2271,10 +2277,10 @@ fn parse_rectangle(
   style: &StyleState,
   prims: &mut Vec<Primitive>,
 ) {
-  let (x_min, y_min) = if !args.is_empty() {
-    expr_to_point(&args[0]).unwrap_or((0.0, 0.0))
-  } else {
+  let (x_min, y_min) = if args.is_empty() {
     (0.0, 0.0)
+  } else {
+    expr_to_point(&args[0]).unwrap_or((0.0, 0.0))
   };
   let (x_max, y_max) = if args.len() >= 2 {
     expr_to_point(&args[1]).unwrap_or((1.0, 1.0))
@@ -2910,7 +2916,10 @@ fn inset_primitives(
   if bb.is_empty() {
     return None;
   }
-  let (cx, cy) = ((bb.x_min + bb.x_max) / 2.0, (bb.y_min + bb.y_max) / 2.0);
+  let (cx, cy) = (
+    f64::midpoint(bb.x_min, bb.x_max),
+    f64::midpoint(bb.y_min, bb.y_max),
+  );
   let (w, h) = (bb.x_max - bb.x_min, bb.y_max - bb.y_min);
 
   // `size` may be `{w, h}`, a single number (both sides), or Automatic.
@@ -3007,10 +3016,10 @@ fn apply_agreed_row_part_styles(content: &Expr, style: &mut StyleState) {
     style.font_size = first.font_size;
   }
   if parts.iter().all(|p| p.font_weight == first.font_weight) {
-    style.font_weight = first.font_weight.clone();
+    style.font_weight.clone_from(&first.font_weight);
   }
   if parts.iter().all(|p| p.font_style == first.font_style) {
-    style.font_style = first.font_style.clone();
+    style.font_style.clone_from(&first.font_style);
   }
   if parts.iter().all(|p| p.color == first.color) {
     style.color = first.color;
@@ -3125,9 +3134,7 @@ fn text_offset(spec: &Expr) -> Option<(f64, f64)> {
     if let Expr::Identifier(s) = e {
       return match (s.as_str(), horizontal) {
         ("Left", true) | ("Bottom", false) => Some(-1.0),
-        ("Center", _) | ("Automatic", _) | ("Axis", _) | ("Baseline", _) => {
-          Some(0.0)
-        }
+        ("Center" | "Automatic" | "Axis" | "Baseline", _) => Some(0.0),
         ("Right", true) | ("Top", false) => Some(1.0),
         _ => None,
       };
@@ -3380,10 +3387,7 @@ fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
     }
     other => other,
   };
-  let rows = match data_expr {
-    Expr::List(rows) => rows,
-    _ => return,
-  };
+  let Expr::List(rows) = data_expr else { return };
   if rows.is_empty() {
     return;
   }
@@ -3405,10 +3409,7 @@ fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
 
   let mut grid: Vec<Vec<Color>> = Vec::with_capacity(rows.len());
   for row in rows {
-    let cols = match row {
-      Expr::List(cols) => cols,
-      _ => return,
-    };
+    let Expr::List(cols) = row else { return };
     let mut row_colors: Vec<Color> = Vec::with_capacity(cols.len());
     for cell in cols {
       if let Expr::List(components) = cell
@@ -3436,7 +3437,7 @@ fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
   }
 
   let nrows = grid.len();
-  let ncols = grid.iter().map(|r| r.len()).max().unwrap_or(0);
+  let ncols = grid.iter().map(std::vec::Vec::len).max().unwrap_or(0);
   if ncols == 0 {
     return;
   }
@@ -3551,12 +3552,11 @@ fn parse_locator(args: &[Expr], prims: &mut Vec<Primitive>) {
   crate::truncate_captured_graphics(captured);
 
   for (x, y) in points {
-    let (svg, w, h) = match &marker {
-      Some((svg, w, h)) => (svg.clone(), *w, *h),
-      None => {
-        let (svg, size) = default_locator_marker_svg();
-        (svg, size, size)
-      }
+    let (svg, w, h) = if let Some((svg, w, h)) = &marker {
+      (svg.clone(), *w, *h)
+    } else {
+      let (svg, size) = default_locator_marker_svg();
+      (svg, size, size)
     };
     prims.push(Primitive::MarkerPrim { x, y, w, h, svg });
   }
@@ -3783,12 +3783,16 @@ fn affine_primitive(
   v: (f64, f64),
 ) -> Primitive {
   let (a, b, c, d) = (m[0][0], m[0][1], m[1][0], m[1][1]);
-  let (e, f, g, h) =
-    ((a + d) / 2.0, (a - d) / 2.0, (c + b) / 2.0, (c - b) / 2.0);
+  let (e, f, g, h) = (
+    f64::midpoint(a, d),
+    (a - d) / 2.0,
+    f64::midpoint(c, b),
+    (c - b) / 2.0,
+  );
   let (q, r) = ((e * e + h * h).sqrt(), (f * f + g * g).sqrt());
   let (sx, sy) = (q + r, q - r);
   let (a1, a2) = (g.atan2(f), h.atan2(e));
-  let (theta, phi) = ((a2 - a1) / 2.0, (a2 + a1) / 2.0);
+  let (theta, phi) = ((a2 - a1) / 2.0, f64::midpoint(a2, a1));
   let rotated = rotate_primitive(prim, 0.0, 0.0, theta);
   let scaled = scale_primitive(&rotated, 0.0, 0.0, sx, sy);
   let rotated = rotate_primitive(&scaled, 0.0, 0.0, phi);
@@ -4217,10 +4221,10 @@ fn scale_primitive(
   // A single mirror flips the sweep direction, so the endpoints swap to keep
   // the arc's counterclockwise orientation.
   let sr = |a1: f64, a2: f64| -> (f64, f64) {
-    if (sx < 0.0) != (sy < 0.0) {
-      (sa(a2), sa(a1))
-    } else {
+    if (sx < 0.0) == (sy < 0.0) {
       (sa(a1), sa(a2))
+    } else {
+      (sa(a2), sa(a1))
     }
   };
   match prim {
@@ -4551,7 +4555,7 @@ fn symbolic_thickness_arg(arg: &Expr) -> Option<f64> {
 /// `EdgeForm` naming only a thickness draws it in black, and one naming
 /// only a colour draws it at the default width of 1.
 fn edge_stroke(
-  edge_form: &Option<EdgeForm>,
+  edge_form: Option<&EdgeForm>,
   bb: &BBox,
   svg_w: f64,
 ) -> Option<(Color, f64)> {
@@ -4561,9 +4565,7 @@ fn edge_stroke(
   }
   Some((
     ef.color.unwrap_or(Color::new(0.0, 0.0, 0.0)),
-    ef.thickness
-      .map(|t| thickness_px(t, bb, svg_w))
-      .unwrap_or(1.0),
+    ef.thickness.map_or(1.0, |t| thickness_px(t, bb, svg_w)),
   ))
 }
 
@@ -4589,7 +4591,7 @@ fn thickness_px(t: f64, bb: &BBox, svg_w: f64) -> f64 {
 /// zero-length dash is drawn as one pixel, which is how Wolfram makes
 /// `Dotted` (`Dashing[{0, Small}]`) visible as `1,4`; scaling it by the
 /// data width instead left dotted lines invisible.
-fn dash_attr(dashing: &Option<Vec<f64>>, _bb: &BBox, svg_w: f64) -> String {
+fn dash_attr(dashing: Option<&Vec<f64>>, _bb: &BBox, svg_w: f64) -> String {
   if let Some(dashes) = dashing {
     let px: Vec<String> = dashes
       .iter()
@@ -4773,7 +4775,7 @@ fn render_axes(
   bb: &BBox,
   svg_w: f64,
   svg_h: f64,
-  axes_label: &Option<(String, String)>,
+  axes_label: Option<&(String, String)>,
   ticks: (&TickSpec, &TickSpec),
   x_margins: (f64, f64),
 ) {
@@ -4876,8 +4878,7 @@ fn render_axes(
     }
     if axes.1 && !y_label.is_empty() {
       svg.push_str(&format!(
-        "<text x=\"{:.2}\" y=\"-8.00\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"middle\">{y_label}</text>\n",
-        axis_x_px,
+        "<text x=\"{axis_x_px:.2}\" y=\"-8.00\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"middle\">{y_label}</text>\n",
       ));
     }
   }
@@ -5081,7 +5082,7 @@ fn render_grid_lines(
       color.to_svg_rgb(),
       thickness_px(style.thickness, bb, svg_w).max(0.5),
       color.opacity_attr(),
-      dash_attr(&style.dashing, bb, svg_w),
+      dash_attr(style.dashing.as_ref(), bb, svg_w),
     ));
   }
   for (pos, style) in grid_positions(grid_y, &y_ticks, default_style) {
@@ -5096,7 +5097,7 @@ fn render_grid_lines(
       color.to_svg_rgb(),
       thickness_px(style.thickness, bb, svg_w).max(0.5),
       color.opacity_attr(),
-      dash_attr(&style.dashing, bb, svg_w),
+      dash_attr(style.dashing.as_ref(), bb, svg_w),
     ));
   }
 }
@@ -5142,7 +5143,7 @@ fn truncate_bigfloat_digits(digits: &str, prec: usize) -> String {
   // Remove trailing dot if nothing follows
   let truncated = truncated.strip_suffix('.').unwrap_or(truncated);
   if negative {
-    format!("-{}", truncated)
+    format!("-{truncated}")
   } else {
     truncated.to_string()
   }
@@ -5181,7 +5182,7 @@ fn bigfloat_display_parts(digits: &str, prec: f64) -> BigFloatDisplay {
     let sig_digits = all_digits.trim_end_matches('0');
     if sig_digits.is_empty() {
       return BigFloatDisplay {
-        mantissa: format!("{}0.", prefix),
+        mantissa: format!("{prefix}0."),
         exponent: Some(0),
       };
     }
@@ -5209,7 +5210,7 @@ fn bigfloat_display_parts(digits: &str, prec: f64) -> BigFloatDisplay {
       let sig_digits = sig_part.trim_end_matches('0');
       if sig_digits.is_empty() {
         return BigFloatDisplay {
-          mantissa: format!("{}0.", prefix),
+          mantissa: format!("{prefix}0."),
           exponent: Some(0),
         };
       }
@@ -5278,7 +5279,7 @@ pub(crate) fn machine_real_display_parts(f: f64) -> BigFloatDisplay {
     let mantissa = if sig.len() > 1 {
       format!("{}{}.{}", sign, &sig[..1], &sig[1..])
     } else {
-      format!("{}{}.", sign, sig)
+      format!("{sign}{sig}.")
     };
     return BigFloatDisplay {
       mantissa,
@@ -5400,7 +5401,7 @@ fn render_primitive(
     Primitive::Line { segments, style } => {
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
-      let dash = dash_attr(&style.dashing, bb, svg_w);
+      let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
       for seg in segments {
         let pts: Vec<String> = seg
           .iter()
@@ -5441,7 +5442,7 @@ fn render_primitive(
       let sry = *ry / bb.height() * svg_h;
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
-      let dash = dash_attr(&style.dashing, bb, svg_w);
+      let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
       // A partial angular range draws only that open arc (stroked on one
       // side); a full turn (or no range) draws the whole circle as an ellipse.
       let partial = angles
@@ -5453,11 +5454,7 @@ fn render_primitive(
         let y1 = scy - sry * a1.sin();
         let x2 = scx + srx * a2.cos();
         let y2 = scy - sry * a2.sin();
-        let large_arc = if (a2 - a1).abs() > std::f64::consts::PI {
-          1
-        } else {
-          0
-        };
+        let large_arc = i32::from((a2 - a1).abs() > std::f64::consts::PI);
         out.push_str(&format!(
           "<path d=\"M {x1:.2},{y1:.2} A {srx:.2},{sry:.2} 0 {large_arc} 0 {x2:.2},{y2:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\"{}{}/>\n",
           color.to_svg_rgb(),
@@ -5487,7 +5484,7 @@ fn render_primitive(
       let color = style.effective_color();
       // Edge form for stroke
       let (stroke_color, stroke_width) =
-        match edge_stroke(&style.edge_form, bb, svg_w) {
+        match edge_stroke(style.edge_form.as_ref(), bb, svg_w) {
           Some((sc, sw)) => (Some(sc), sw),
           None => (None, 0.0),
         };
@@ -5537,11 +5534,7 @@ fn render_primitive(
       let y2 = scy - sry * angle2.sin();
       // large-arc flag: 1 if arc spans more than PI
       let sweep_angle = angle2 - angle1;
-      let large_arc = if sweep_angle.abs() > std::f64::consts::PI {
-        1
-      } else {
-        0
-      };
+      let large_arc = i32::from(sweep_angle.abs() > std::f64::consts::PI);
       // Because we negate the sine component when computing arc points
       // (to flip y), the arc geometry is already mirrored.  We therefore
       // need sweep-flag=0 (counter-clockwise in SVG y-down) to trace the
@@ -5554,7 +5547,7 @@ fn render_primitive(
         String::new()
       };
       // Edge form for stroke
-      let stroke_attr = match edge_stroke(&style.edge_form, bb, svg_w) {
+      let stroke_attr = match edge_stroke(style.edge_form.as_ref(), bb, svg_w) {
         Some((sc, sw)) => {
           let so = if sc.a < 1.0 {
             format!(" stroke-opacity=\"{}\"", sc.a)
@@ -5590,7 +5583,7 @@ fn render_primitive(
       let color = style.effective_color();
       // Edge form
       let (stroke_color, stroke_width) =
-        match edge_stroke(&style.edge_form, bb, svg_w) {
+        match edge_stroke(style.edge_form.as_ref(), bb, svg_w) {
           Some((sc, sw)) => (Some(sc), sw),
           None => (None, 0.0),
         };
@@ -5633,7 +5626,7 @@ fn render_primitive(
         .collect();
       // Edge form
       let (stroke_color, stroke_width) =
-        match edge_stroke(&style.edge_form, bb, svg_w) {
+        match edge_stroke(style.edge_form.as_ref(), bb, svg_w) {
           Some((sc, sw)) => (Some(sc), sw),
           None => (None, 0.0),
         };
@@ -5756,7 +5749,7 @@ fn render_primitive(
 
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
-      let dash = dash_attr(&style.dashing, bb, svg_w);
+      let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
 
       // Draw the line
       let pts: Vec<String> = trimmed
@@ -5973,7 +5966,7 @@ fn render_primitive(
     Primitive::BezierCurvePrim { points, style } => {
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
-      let dash = dash_attr(&style.dashing, bb, svg_w);
+      let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
 
       if points.len() < 2 {
         return;
@@ -6078,7 +6071,7 @@ fn render_primitive(
       if nrows == 0 {
         return;
       }
-      let ncols = data.iter().map(|r| r.len()).max().unwrap_or(0);
+      let ncols = data.iter().map(std::vec::Vec::len).max().unwrap_or(0);
       if ncols == 0 {
         return;
       }
@@ -6172,18 +6165,21 @@ fn render_primitive(
 
 fn parse_plot_range(
   expr: &Expr,
-) -> Option<(Option<(f64, f64)>, Option<(f64, f64)>)> {
+) -> (
+  std::option::Option<(f64, f64)>,
+  std::option::Option<(f64, f64)>,
+) {
   match expr {
-    Expr::Identifier(s) if s == "All" || s == "Automatic" => Some((None, None)),
+    Expr::Identifier(s) if s == "All" || s == "Automatic" => (None, None),
     Expr::List(items) if items.len() == 2 => {
       let x_range = parse_range_spec(&items[0]);
       let y_range = parse_range_spec(&items[1]);
-      Some((x_range, y_range))
+      (x_range, y_range)
     }
     _ => {
       // Single range applies to both axes
       let r = parse_range_spec(expr);
-      Some((r, r))
+      (r, r)
     }
   }
 }
@@ -6236,17 +6232,17 @@ use crate::functions::graphicsbox as gbox;
 
 /// Track style changes and emit corresponding box directives.
 struct BoxStyleTracker {
-  current_color: (f64, f64, f64),
-  current_opacity: f64,
-  current_thickness: f64,
+  color: (f64, f64, f64),
+  opacity: f64,
+  thickness: f64,
 }
 
 impl Default for BoxStyleTracker {
   fn default() -> Self {
     Self {
-      current_color: (0.0, 0.0, 0.0), // Black
-      current_opacity: 1.0,
-      current_thickness: -1.0,
+      color: (0.0, 0.0, 0.0), // Black
+      opacity: 1.0,
+      thickness: -1.0,
     }
   }
 }
@@ -6256,24 +6252,24 @@ impl BoxStyleTracker {
   fn emit_style_changes(&mut self, style: &StyleState) -> Vec<String> {
     let mut directives = Vec::new();
     let new_color = (style.color.r, style.color.g, style.color.b);
-    if (new_color.0 - self.current_color.0).abs() > 1e-6
-      || (new_color.1 - self.current_color.1).abs() > 1e-6
-      || (new_color.2 - self.current_color.2).abs() > 1e-6
+    if (new_color.0 - self.color.0).abs() > 1e-6
+      || (new_color.1 - self.color.1).abs() > 1e-6
+      || (new_color.2 - self.color.2).abs() > 1e-6
     {
       directives.push(gbox::rgbcolor_box(
         new_color.0,
         new_color.1,
         new_color.2,
       ));
-      self.current_color = new_color;
+      self.color = new_color;
     }
-    if (style.opacity - self.current_opacity).abs() > 1e-6 {
+    if (style.opacity - self.opacity).abs() > 1e-6 {
       directives.push(gbox::opacity_box(style.opacity));
-      self.current_opacity = style.opacity;
+      self.opacity = style.opacity;
     }
-    if (style.thickness - self.current_thickness).abs() > 1e-6 {
+    if (style.thickness - self.thickness).abs() > 1e-6 {
       directives.push(gbox::abs_thickness_box(style.thickness));
-      self.current_thickness = style.thickness;
+      self.thickness = style.thickness;
     }
     directives
   }
@@ -6507,10 +6503,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "PlotRange" => {
-          if let Some((xr, yr)) = parse_plot_range(replacement) {
-            plot_range_x = xr;
-            plot_range_y = yr;
-          }
+          let (xr, yr) = parse_plot_range(replacement);
+          plot_range_x = xr;
+          plot_range_y = yr;
         }
         "Prolog" => prolog = Some(replacement.clone()),
         "Epilog" => epilog = Some(replacement.clone()),
@@ -6923,8 +6918,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Render error indicator (red background + border + message) if primitives had invalid args
   if !errors.is_empty() {
     svg.push_str(&format!(
-      "<rect width=\"{}\" height=\"{}\" fill=\"rgb(100%,33%,33%)\" fill-opacity=\"0.08\"/>\n",
-      svg_width, svg_height
+      "<rect width=\"{svg_width}\" height=\"{svg_height}\" fill=\"rgb(100%,33%,33%)\" fill-opacity=\"0.08\"/>\n"
     ));
     svg.push_str(&format!(
       "<rect x=\"0.6\" y=\"0.6\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"rgb(100%,33%,33%)\" stroke-width=\"1.2\"/>\n",
@@ -6937,8 +6931,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect::<Vec<_>>()
       .join("\n");
     svg.push_str(&format!(
-      "<rect width=\"{}\" height=\"{}\" fill=\"transparent\" stroke=\"none\"><title>{}</title></rect>\n",
-      svg_width, svg_height, title_text
+      "<rect width=\"{svg_width}\" height=\"{svg_height}\" fill=\"transparent\" stroke=\"none\"><title>{title_text}</title></rect>\n"
     ));
   }
 
@@ -6965,7 +6958,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &bb,
     svg_w,
     svg_h,
-    &axes_label,
+    axes_label.as_ref(),
     (&ticks_x, &ticks_y),
     (margin_left, margin_right),
   );
@@ -7107,7 +7100,7 @@ fn stacked_fraction_svg(
   _num_w: f64,
   _den_w: f64,
 ) -> String {
-  format!("{}/{}", num_markup, den_markup)
+  format!("{num_markup}/{den_markup}")
 }
 
 /// A rendered box layout node. Each node carries its pixel dimensions,
@@ -7208,7 +7201,7 @@ fn render_stretchy_delim(
   let x1 = bearing + body_w;
   let path = match kind {
     '|' => {
-      let cx = (x0 + x1) / 2.0;
+      let cx = f64::midpoint(x0, x1);
       format!(
         "<line x1=\"{cx:.2}\" y1=\"0\" x2=\"{cx:.2}\" y2=\"{h:.2}\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>"
       )
@@ -7221,7 +7214,7 @@ fn render_stretchy_delim(
     ),
     '{' => {
       let midy = h / 2.0;
-      let xm = (x0 + x1) / 2.0;
+      let xm = f64::midpoint(x0, x1);
       format!(
         "<path d=\"M {x1:.2} 0 Q {x0:.2} 0 {x0:.2} {q:.2} L {x0:.2} {a:.2} Q {x0:.2} {midy:.2} {xm:.2} {midy:.2} Q {x0:.2} {midy:.2} {x0:.2} {b:.2} L {x0:.2} {c:.2} Q {x0:.2} {h:.2} {x1:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>",
         q = h * 0.12,
@@ -7232,7 +7225,7 @@ fn render_stretchy_delim(
     }
     '}' => {
       let midy = h / 2.0;
-      let xm = (x0 + x1) / 2.0;
+      let xm = f64::midpoint(x0, x1);
       format!(
         "<path d=\"M {x0:.2} 0 Q {x1:.2} 0 {x1:.2} {q:.2} L {x1:.2} {a:.2} Q {x1:.2} {midy:.2} {xm:.2} {midy:.2} Q {x1:.2} {midy:.2} {x1:.2} {b:.2} L {x1:.2} {c:.2} Q {x1:.2} {h:.2} {x0:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>",
         q = h * 0.12,
@@ -7875,7 +7868,8 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             })
             .collect();
 
-          let n_cols = laid_out.iter().map(|r| r.len()).max().unwrap_or(0);
+          let n_cols =
+            laid_out.iter().map(std::vec::Vec::len).max().unwrap_or(0);
           // Column widths
           let col_widths: Vec<f64> = (0..n_cols)
             .map(|c| {
@@ -7916,8 +7910,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             }
             y += row_h + gap_y;
           }
-          let first_bl =
-            row_metrics.first().map(|(bl, _)| *bl).unwrap_or(font_size);
+          let first_bl = row_metrics.first().map_or(font_size, |(bl, _)| *bl);
           BoxLayout {
             width: total_w,
             height: total_h,
@@ -8131,8 +8124,7 @@ fn quantity_unit_to_svg_abbrev(unit: &Expr) -> String {
     let base_str = quantity_unit_to_svg_abbrev(base);
     let exp_str = expr_to_svg_markup(exp);
     return format!(
-      "{}<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
-      base_str, exp_str
+      "{base_str}<tspan baseline-shift=\"super\" font-size=\"70%\">{exp_str}</tspan>"
     );
   }
 
@@ -8193,7 +8185,7 @@ fn quantity_unit_to_svg_abbrev(unit: &Expr) -> String {
           numer_parts.join("\u{22c5}")
         };
         let denom = denom_parts.join("\u{22c5}");
-        format!("{}/{}", numer, denom)
+        format!("{numer}/{denom}")
       }
     }
     _ => expr_to_svg_markup(unit),
@@ -8246,7 +8238,7 @@ fn digit_group_extra_width(digit_count: usize) -> f64 {
     return 0.0;
   }
   let remainder = digit_count % 3;
-  let num_groups = digit_count / 3 + if remainder > 0 { 1 } else { 0 };
+  let num_groups = digit_count / 3 + usize::from(remainder > 0);
   (num_groups - 1) as f64 * 0.3
 }
 
@@ -8346,10 +8338,11 @@ fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
       }
     }
   }
-  attrs
-    .iter()
-    .map(|(name, value)| format!(" {name}=\"{value}\""))
-    .collect()
+  use std::fmt::Write;
+  attrs.iter().fold(String::new(), |mut out, (name, value)| {
+    let _ = write!(out, " {name}=\"{value}\"");
+    out
+  })
 }
 
 /// The root index `n` when `exp` is the unit fraction `1/n` — the shape a
@@ -8461,13 +8454,12 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
     let exp_markup = expr_to_svg_markup(exp);
     // Wrap base in parens if it's a lower-precedence additive expression
     let base_fmt = if is_additive_expr(base) {
-      format!("({})", base_markup)
+      format!("({base_markup})")
     } else {
       base_markup
     };
     return format!(
-      "{}<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
-      base_fmt, exp_markup
+      "{base_fmt}<tspan baseline-shift=\"super\" font-size=\"70%\">{exp_markup}</tspan>"
     );
   }
 
@@ -8527,8 +8519,8 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
     Expr::UnaryOp { op, operand } => {
       let inner = expr_to_svg_markup(operand);
       match op {
-        UnaryOperator::Minus => format!("-{}", inner),
-        UnaryOperator::Not => format!("!{}", inner),
+        UnaryOperator::Minus => format!("-{inner}"),
+        UnaryOperator::Not => format!("!{inner}"),
       }
     }
 
@@ -8540,13 +8532,12 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         let base_markup = expr_to_svg_markup(left);
         let exp_markup = expr_to_svg_markup(right);
         let base_fmt = if is_additive_expr(left) {
-          format!("({})", base_markup)
+          format!("({base_markup})")
         } else {
           base_markup
         };
         return format!(
-          "{}<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
-          base_fmt, exp_markup
+          "{base_fmt}<tspan baseline-shift=\"super\" font-size=\"70%\">{exp_markup}</tspan>"
         );
       }
       let (op_str, needs_space) = match op {
@@ -8565,19 +8556,19 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
       let left_str = expr_to_svg_markup(left);
       let right_str = expr_to_svg_markup(right);
       let left_fmt = if is_mult && is_additive_expr(left) {
-        format!("({})", left_str)
+        format!("({left_str})")
       } else {
         left_str
       };
       let right_fmt = if is_mult && is_additive_expr(right.as_ref()) {
-        format!("({})", right_str)
+        format!("({right_str})")
       } else {
         right_str
       };
       if needs_space {
-        format!("{} {} {}", left_fmt, op_str, right_fmt)
+        format!("{left_fmt} {op_str} {right_fmt}")
       } else {
-        format!("{}{}{}", left_fmt, op_str, right_fmt)
+        format!("{left_fmt}{op_str}{right_fmt}")
       }
     }
 
@@ -8718,7 +8709,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               .map(|a| {
                 let s = expr_to_svg_markup(a);
                 if is_additive_expr(a) {
-                  format!("({})", s)
+                  format!("({s})")
                 } else {
                   s
                 }
@@ -8732,7 +8723,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               ));
               joined.push_str(&rest[i]);
             }
-            return format!("-{}", joined);
+            return format!("-{joined}");
           }
           // General: implicit multiplication (no * symbol)
           let parts: Vec<String> = args
@@ -8740,7 +8731,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             .map(|a| {
               let s = expr_to_svg_markup(a);
               if is_additive_expr(a) {
-                format!("({})", s)
+                format!("({s})")
               } else {
                 s
               }
@@ -8775,7 +8766,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           let mag = expr_to_svg_markup(&args[0]);
           let unit = quantity_unit_to_svg_abbrev(&args[1]);
           let unit = crate::syntax::singularize_unit_if_one(&args[0], &unit);
-          format!("{} {}", mag, unit)
+          format!("{mag} {unit}")
         }
 
         // CForm/TeXForm/FortranForm → display converted text
@@ -9000,7 +8991,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 
     // ── Expr::Image → placeholder text (actual embedding happens in grid) ──
     Expr::Image { width, height, .. } => {
-      format!("-Image ({}×{})-", width, height)
+      format!("-Image ({width}×{height})-")
     }
 
     // ── Curried call f[a][b] → head markup + bracketed args, so display
@@ -9467,8 +9458,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         let base_svg = boxes_to_svg(&args[0]);
         let exp_svg = boxes_to_svg(&args[1]);
         format!(
-          "{}<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
-          base_svg, exp_svg
+          "{base_svg}<tspan baseline-shift=\"super\" font-size=\"70%\">{exp_svg}</tspan>"
         )
       }
 
@@ -9477,8 +9467,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         let base_svg = boxes_to_svg(&args[0]);
         let sub_svg = boxes_to_svg(&args[1]);
         format!(
-          "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>",
-          base_svg, sub_svg
+          "{base_svg}<tspan baseline-shift=\"sub\" font-size=\"70%\">{sub_svg}</tspan>"
         )
       }
 
@@ -9488,9 +9477,8 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         let sub_svg = boxes_to_svg(&args[1]);
         let sup_svg = boxes_to_svg(&args[2]);
         format!(
-          "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>\
-           <tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
-          base_svg, sub_svg, sup_svg
+          "{base_svg}<tspan baseline-shift=\"sub\" font-size=\"70%\">{sub_svg}</tspan>\
+           <tspan baseline-shift=\"super\" font-size=\"70%\">{sup_svg}</tspan>"
         )
       }
 
@@ -9506,10 +9494,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
       // SqrtBox[expr] → √content with overline
       "SqrtBox" if args.len() == 1 => {
         let content = boxes_to_svg(&args[0]);
-        format!(
-          "\u{221A}<tspan text-decoration=\"overline\">{}</tspan>",
-          content
-        )
+        format!("\u{221A}<tspan text-decoration=\"overline\">{content}</tspan>")
       }
 
       // RadicalBox[expr, n] → index√content with overline
@@ -9517,8 +9502,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         let content = boxes_to_svg(&args[0]);
         let index = boxes_to_svg(&args[1]);
         format!(
-          "<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>\u{221A}<tspan text-decoration=\"overline\">{}</tspan>",
-          index, content
+          "<tspan baseline-shift=\"super\" font-size=\"70%\">{index}</tspan>\u{221A}<tspan text-decoration=\"overline\">{content}</tspan>"
         )
       }
 
@@ -9527,8 +9511,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         let base_svg = boxes_to_svg(&args[0]);
         let over_svg = boxes_to_svg(&args[1]);
         format!(
-          "{}<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
-          base_svg, over_svg
+          "{base_svg}<tspan baseline-shift=\"super\" font-size=\"70%\">{over_svg}</tspan>"
         )
       }
 
@@ -9545,8 +9528,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         }
         let under_svg = boxes_to_svg(&args[1]);
         format!(
-          "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>",
-          base_svg, under_svg
+          "{base_svg}<tspan baseline-shift=\"sub\" font-size=\"70%\">{under_svg}</tspan>"
         )
       }
 
@@ -9556,16 +9538,15 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         let under_svg = boxes_to_svg(&args[1]);
         let over_svg = boxes_to_svg(&args[2]);
         format!(
-          "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>\
-           <tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
-          base_svg, under_svg, over_svg
+          "{base_svg}<tspan baseline-shift=\"sub\" font-size=\"70%\">{under_svg}</tspan>\
+           <tspan baseline-shift=\"super\" font-size=\"70%\">{over_svg}</tspan>"
         )
       }
 
       // FrameBox[content, ...] → content with frame markers
       "FrameBox" if !args.is_empty() => {
         let content = boxes_to_svg(&args[0]);
-        format!("[{}]", content)
+        format!("[{content}]")
       }
 
       // TagBox[boxes, tag, opts...] → render boxes, ignore tag and options
@@ -9599,7 +9580,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
             match k.as_str() {
               "FontSize" => {
                 if let Some(sz) = expr_to_f64(val) {
-                  font_size_attr = format!(" font-size=\"{}\"", sz);
+                  font_size_attr = format!(" font-size=\"{sz}\"");
                 }
               }
               "FontColor" => {
@@ -9614,7 +9595,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         if font_size_attr.is_empty() && color_attr.is_empty() {
           content
         } else {
-          format!("<tspan{}{}>{}</tspan>", font_size_attr, color_attr, content)
+          format!("<tspan{font_size_attr}{color_attr}>{content}</tspan>")
         }
       }
 
@@ -9654,7 +9635,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
 
     Expr::List(items) => {
       // Lists in box form (e.g. inside RowBox) – just concatenate
-      items.iter().map(boxes_to_svg).collect::<Vec<_>>().join("")
+      items.iter().map(boxes_to_svg).collect::<String>()
     }
 
     // Fallback: use expr_to_output for anything else
@@ -9836,7 +9817,7 @@ fn parse_box_units(cs: &[char]) -> Vec<Expr> {
     Some(tick)
       if tick > 0
         && cs[..tick].iter().collect::<String>().ends_with("Form")
-        && cs[..tick].iter().all(|c| c.is_ascii_alphanumeric()) =>
+        && cs[..tick].iter().all(char::is_ascii_alphanumeric) =>
     {
       tick + 1
     }
@@ -10106,8 +10087,8 @@ fn merge_option(opts: &mut Vec<Expr>, opt: &Expr) {
         .iter()
         .position(|e| matches!(option_name_value(e), Some(("PlotRange", _))))
       && let Some((_, existing_repl)) = option_name_value(&opts[pos])
-      && let Some(merged) = merge_plot_ranges(&existing_repl, &replacement)
     {
+      let merged = merge_plot_ranges(&existing_repl, &replacement);
       opts[pos] = Expr::Rule {
         pattern: Box::new(Expr::Identifier("PlotRange".to_string())),
         replacement: Box::new(merged),
@@ -10123,9 +10104,9 @@ fn merge_option(opts: &mut Vec<Expr>, opt: &Expr) {
 }
 
 /// Merge two PlotRange values by taking the union (min of mins, max of maxes).
-fn merge_plot_ranges(a: &Expr, b: &Expr) -> Option<Expr> {
-  let (ax, ay) = parse_plot_range(a)?;
-  let (bx, by) = parse_plot_range(b)?;
+fn merge_plot_ranges(a: &Expr, b: &Expr) -> crate::syntax::Expr {
+  let (ax, ay) = parse_plot_range(a);
+  let (bx, by) = parse_plot_range(b);
 
   let merge_range =
     |r1: Option<(f64, f64)>, r2: Option<(f64, f64)>| -> Option<(f64, f64)> {
@@ -10148,9 +10129,7 @@ fn merge_plot_ranges(a: &Expr, b: &Expr) -> Option<Expr> {
     }
   };
 
-  Some(Expr::List(
-    vec![range_to_expr(mx), range_to_expr(my)].into(),
-  ))
+  Expr::List(vec![range_to_expr(mx), range_to_expr(my)].into())
 }
 
 /// Implementation of Show[g1, g2, ..., opts...].
@@ -10159,9 +10138,8 @@ pub(crate) fn mesh_region_to_graphics_prims(
   vertices_expr: &Expr,
   primitives_expr: &Expr,
 ) -> Option<Vec<Expr>> {
-  let vertices_list = match vertices_expr {
-    Expr::List(v) => v,
-    _ => return None,
+  let Expr::List(vertices_list) = vertices_expr else {
+    return None;
   };
   let mut vertices: Vec<(f64, f64)> = Vec::new();
   for v in vertices_list {
@@ -10178,9 +10156,8 @@ pub(crate) fn mesh_region_to_graphics_prims(
     return None;
   }
 
-  let prims = match primitives_expr {
-    Expr::List(v) => v,
-    _ => return None,
+  let Expr::List(prims) = primitives_expr else {
+    return None;
   };
 
   let mut result = Vec::new();
@@ -10463,7 +10440,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     if let Expr::List(items) = &expr_owned {
       let items: Vec<Expr> = items.iter().cloned().collect();
-      pending.splice(idx..idx + 1, items);
+      pending.splice(idx..=idx, items);
       continue;
     }
     idx += 1;
@@ -10827,7 +10804,7 @@ fn grid_of_graphics_svgs(args: &[Expr]) -> Option<Vec<Vec<String>>> {
     return None;
   };
   let mut out: Vec<Vec<String>> = Vec::with_capacity(rows.len());
-  for row in rows.iter() {
+  for row in rows {
     let cells = match row {
       Expr::List(cells) => cells.iter().cloned().collect::<Vec<_>>(),
       single => vec![single.clone()],
@@ -11657,7 +11634,7 @@ fn grid_svg_styled_internal(
           // 1-based indices.
           Expr::Identifier(v) if v == "Automatic" => {
             let n_rows = rows.len();
-            let n_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+            let n_cols = rows.iter().map(std::vec::Vec::len).max().unwrap_or(0);
             row_headings =
               (1..=n_rows).map(|i| Expr::Integer(i as i128)).collect();
             col_headings =
@@ -11711,7 +11688,7 @@ fn grid_svg_styled_internal(
   }
   if !row_headings.is_empty() {
     // Add row headings as the first column
-    let start = if has_col_heading_row { 1 } else { 0 };
+    let start = usize::from(has_col_heading_row);
     for (i, row) in rows.iter_mut().enumerate() {
       if i >= start {
         let idx = i - start;
@@ -11727,7 +11704,7 @@ fn grid_svg_styled_internal(
 
   // Convert cells to text
   let num_rows = rows.len();
-  let num_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+  let num_cols = rows.iter().map(std::vec::Vec::len).max().unwrap_or(0);
   if num_cols == 0 {
     return Err(InterpreterError::EvaluationError("Grid: empty data".into()));
   }
@@ -12012,13 +11989,11 @@ fn grid_svg_styled_internal(
   let mut svg = String::with_capacity(2048);
   if has_frame {
     svg.push_str(&format!(
-      "<svg width=\"{}\" height=\"{}\" viewBox=\"-0.5 -0.5 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-      svg_w, svg_h, svg_w, svg_h
+      "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"-0.5 -0.5 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
     ));
   } else {
     svg.push_str(&format!(
-      "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-      svg_w, svg_h, svg_w, svg_h
+      "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
     ));
   }
 
@@ -12090,13 +12065,13 @@ fn grid_svg_styled_internal(
     } else {
       // Midpoint of gap between row i-1 and row i
       let prev_bottom = content_y_starts[i - 1] + row_heights[i - 1];
-      (prev_bottom + content_y_starts[i]) / 2.0
+      f64::midpoint(prev_bottom, content_y_starts[i])
     };
     let bottom = if i == num_rows - 1 {
       total_height
     } else {
       let this_bottom = content_y_starts[i] + row_heights[i];
-      (this_bottom + content_y_starts[i + 1]) / 2.0
+      f64::midpoint(this_bottom, content_y_starts[i + 1])
     };
     visual_tops.push(top);
     visual_bottoms.push(bottom);
@@ -12196,7 +12171,7 @@ fn grid_svg_styled_internal(
       };
       // Shift text down slightly to compensate for ascenders being taller
       // than descenders, which makes mathematical centering look top-heavy.
-      let cy = (cell_top + cell_bottom) / 2.0 - 1.0;
+      let cy = f64::midpoint(cell_top, cell_bottom) - 1.0;
 
       // A graphic cell is drawn as a nested <svg> at its own size,
       // centred in the cell.
@@ -12282,25 +12257,25 @@ fn grid_svg_styled_internal(
 
         let fs = cell_fs.or(default_style.font_size).unwrap_or(font_size);
         // Cell style overrides default style; default style overrides "normal"
-        let eff_fw = if cell_fw != "normal" {
-          cell_fw
-        } else {
+        let eff_fw = if cell_fw == "normal" {
           default_style.font_weight.unwrap_or("normal")
-        };
-        let eff_fst = if cell_fst != "normal" {
-          cell_fst
         } else {
+          cell_fw
+        };
+        let eff_fst = if cell_fst == "normal" {
           default_style.font_style.unwrap_or("normal")
-        };
-        let fw_attr = if eff_fw != "normal" {
-          format!(" font-weight=\"{}\"", eff_fw)
         } else {
-          String::new()
+          cell_fst
         };
-        let fst_attr = if eff_fst != "normal" {
-          format!(" font-style=\"{}\"", eff_fst)
-        } else {
+        let fw_attr = if eff_fw == "normal" {
           String::new()
+        } else {
+          format!(" font-weight=\"{eff_fw}\"")
+        };
+        let fst_attr = if eff_fst == "normal" {
+          String::new()
+        } else {
+          format!(" font-style=\"{eff_fst}\"")
         };
         // `Style[…, FontFamily -> "Times"]` on the cell, or on the whole
         // grid, picks the face the text is set in; everything else stays
@@ -12357,8 +12332,7 @@ fn grid_svg_styled_internal(
   let default_stroke = frame_color
     .as_ref()
     .or(default_style.color.as_ref())
-    .map(|c| c.to_svg_rgb())
-    .unwrap_or_else(|| theme().stroke_default.to_string());
+    .map_or_else(|| theme().stroke_default.to_string(), |c| c.to_svg_rgb());
 
   {
     // Horizontal lines (row dividers)
@@ -12521,7 +12495,8 @@ pub fn matrixform_3d_ast(
   let cell_gap_y: f64 = 10.0; // vertical gap between rows
 
   let num_outer_rows = outer_rows.len();
-  let num_outer_cols = outer_rows.iter().map(|r| r.len()).max().unwrap_or(0);
+  let num_outer_cols =
+    outer_rows.iter().map(std::vec::Vec::len).max().unwrap_or(0);
   if num_outer_cols == 0 {
     return Err(InterpreterError::EvaluationError(
       "MatrixForm: empty 3D data".into(),
@@ -12592,8 +12567,7 @@ pub fn matrixform_3d_ast(
   let svg_h = total_height.ceil() as u32;
   let mut svg = String::with_capacity(4096);
   svg.push_str(&format!(
-    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-    svg_w, svg_h, svg_w, svg_h
+    "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
   ));
 
   // Draw outer parentheses
@@ -12727,8 +12701,7 @@ fn dataset_assoc_to_svg(pairs: &[(Expr, Expr)]) -> Option<String> {
   let svg_h = total_height.ceil() as u32;
   let mut svg = String::with_capacity(4096);
   svg.push_str(&format!(
-    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-    svg_w, svg_h, svg_w, svg_h
+    "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
   ));
 
   let t = theme();
@@ -12824,8 +12797,7 @@ fn dataset_plain_list_to_svg(items: &[Expr]) -> Option<String> {
   let svg_h = total_height.ceil() as u32;
   let mut svg = String::with_capacity(2048);
   svg.push_str(&format!(
-    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-    svg_w, svg_h, svg_w, svg_h
+    "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
   ));
 
   let t = theme();
@@ -12912,8 +12884,7 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
             pairs
               .iter()
               .find(|(k, _)| expr_to_svg_markup(k) == *h)
-              .map(|(_, v)| v.clone())
-              .unwrap_or(call("Missing", vec![]))
+              .map_or(call("Missing", vec![]), |(_, v)| v.clone())
           })
           .collect()
       } else {
@@ -12961,8 +12932,7 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
   let svg_h = total_height.ceil() as u32;
   let mut svg = String::with_capacity(4096);
   svg.push_str(&format!(
-    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-    svg_w, svg_h, svg_w, svg_h
+    "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
   ));
 
   let t = theme();
@@ -13114,8 +13084,7 @@ pub(crate) fn embed_svg_centered(
   h: f64,
 ) -> String {
   let view_box = parse_svg_dimensions(svg)
-    .map(|p| p.view_box)
-    .unwrap_or_else(|| format!("0 0 {w} {h}"));
+    .map_or_else(|| format!("0 0 {w} {h}"), |p| p.view_box);
   format!(
     "<svg x=\"{:.2}\" y=\"{:.2}\" width=\"{w:.2}\" height=\"{h:.2}\" viewBox=\"{view_box}\" preserveAspectRatio=\"xMidYMid meet\">\n{}</svg>\n",
     cx - w / 2.0,
@@ -13130,13 +13099,12 @@ fn parse_svg_dimensions(svg: &str) -> Option<ParsedSvg> {
   // wrapper produced for `Image[…]`) synthesizes it from width/height so
   // raster images can take part in GraphicsRow/Column/Grid layouts.
   let header = svg_root_header(svg)?;
-  let view_box = match find_svg_attr(header, "viewBox") {
-    Some(vb) => vb.to_string(),
-    None => {
-      let w = parse_svg_numeric_attr(svg, "width")?;
-      let h = parse_svg_numeric_attr(svg, "height")?;
-      format!("0 0 {w} {h}")
-    }
+  let view_box = if let Some(vb) = find_svg_attr(header, "viewBox") {
+    vb.to_string()
+  } else {
+    let w = parse_svg_numeric_attr(svg, "width")?;
+    let h = parse_svg_numeric_attr(svg, "height")?;
+    format!("0 0 {w} {h}")
   };
 
   // Parse viewBox to get dimensions: "x y w h"
@@ -13252,10 +13220,9 @@ pub fn graphics_list_svg(svgs: &[String]) -> Option<String> {
       // and this one, i.e. just left of the current shifted cell x.
       let comma_center = cell_x - comma_w / 2.0;
       out.push_str(&format!(
-        "<text x=\"{:.1}\" y=\"{text_y:.1}\" font-family=\"monospace\" \
+        "<text x=\"{comma_center:.1}\" y=\"{text_y:.1}\" font-family=\"monospace\" \
          font-size=\"{font_size:.1}\" fill=\"{text_fill}\" text-anchor=\"middle\" \
          dominant-baseline=\"central\">,</text>\n",
-        comma_center,
       ));
     }
 
@@ -13274,10 +13241,9 @@ pub fn graphics_list_svg(svgs: &[String]) -> Option<String> {
   // Closing brace — sits just past the last cell's right edge.
   let close_x = total_width - brace_w / 2.0;
   out.push_str(&format!(
-    "<text x=\"{:.1}\" y=\"{text_y:.1}\" font-family=\"monospace\" \
+    "<text x=\"{close_x:.1}\" y=\"{text_y:.1}\" font-family=\"monospace\" \
      font-size=\"{font_size:.1}\" fill=\"{text_fill}\" text-anchor=\"middle\" \
      dominant-baseline=\"central\">}}</text>\n",
-    close_x,
   ));
 
   out.push_str("</svg>");
@@ -13493,7 +13459,7 @@ fn compute_grid_layout(
   if rows.is_empty() {
     return None;
   }
-  if rows.iter().all(|r| r.is_empty()) {
+  if rows.iter().all(std::vec::Vec::is_empty) {
     return None;
   }
 
@@ -13529,7 +13495,7 @@ fn compute_grid_layout(
     })
     .collect();
 
-  if parsed_rows.iter().all(|r| r.is_empty()) {
+  if parsed_rows.iter().all(std::vec::Vec::is_empty) {
     return None;
   }
 
@@ -13552,7 +13518,11 @@ fn compute_grid_layout(
 
   // Default total width: widest natural row + padding for Scaled[0.1]
   // gaps so cells aren't compressed below their native resolution.
-  let max_cols = parsed_rows.iter().map(|r| r.len()).max().unwrap_or(1);
+  let max_cols = parsed_rows
+    .iter()
+    .map(std::vec::Vec::len)
+    .max()
+    .unwrap_or(1);
   let gap_pad = if max_cols > 1 {
     1.0 + 0.1 * (max_cols as f64 - 1.0) / max_cols as f64
   } else {
@@ -13667,12 +13637,12 @@ fn compute_grid_layout(
     .map(|(x, w)| x + w)
     .fold(0.0_f64, f64::max);
 
-  let v_gap = if !row_layouts.is_empty() {
+  let v_gap = if row_layouts.is_empty() {
+    0.0
+  } else {
     let avg_h = row_layouts.iter().map(|r| r.row_h).sum::<f64>()
       / row_layouts.len().max(1) as f64;
     opts.v_spacing.to_px(avg_h)
-  } else {
-    0.0
   };
   let total_height: f64 = row_layouts.iter().map(|r| r.row_h).sum::<f64>()
     + (row_layouts.iter().filter(|r| r.row_h > 0.0).count() as f64 - 1.0)
@@ -13794,8 +13764,7 @@ fn draw_frame_lines(
     .rows
     .iter()
     .max_by_key(|r| r.cells.len())
-    .map(|r| &r.cells[..])
-    .unwrap_or(&[]);
+    .map_or(&[][..], |r| &r.cells[..]);
   for (i, cell) in widest_row.iter().enumerate() {
     if i == 0 {
       continue;
@@ -14179,13 +14148,10 @@ pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     grid_expr_owned = evaluate_expr_to_expr(&args[0])?;
     &grid_expr_owned
   };
-  let outer_items = match grid_list_ref {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "GraphicsGrid expects a list of lists as its first argument".into(),
-      ));
-    }
+  let Expr::List(outer_items) = grid_list_ref else {
+    return Err(InterpreterError::EvaluationError(
+      "GraphicsGrid expects a list of lists as its first argument".into(),
+    ));
   };
 
   // Determine the widest row so every cell in the grid is re-rendered
@@ -14213,7 +14179,7 @@ pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   // Check if we have any SVGs at all
-  if rows.iter().all(|r| r.is_empty()) {
+  if rows.iter().all(std::vec::Vec::is_empty) {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
@@ -14310,8 +14276,7 @@ fn tabular_list_of_assocs_to_svg(
             pairs
               .iter()
               .find(|(k, _)| expr_to_svg_markup(k) == *h)
-              .map(|(_, v)| v.clone())
-              .unwrap_or(call("Missing", vec![]))
+              .map_or(call("Missing", vec![]), |(_, v)| v.clone())
           })
           .collect()
       } else {
@@ -14414,10 +14379,10 @@ fn render_tabular_svg_grid(
   }
 
   let num_data_rows = grid.len();
-  let num_cols = if !col_keys.is_empty() {
-    col_keys.len()
+  let num_cols = if col_keys.is_empty() {
+    grid.iter().map(std::vec::Vec::len).max().unwrap_or(0)
   } else {
-    grid.iter().map(|r| r.len()).max().unwrap_or(0)
+    col_keys.len()
   };
 
   if num_cols == 0 {
@@ -14432,7 +14397,7 @@ fn render_tabular_svg_grid(
   let header_row_height = font_size + pad_y + 2.0;
 
   // Row-number column width (for 1-based row indices)
-  let max_row_digits = format!("{}", num_data_rows).len().max(1) as f64;
+  let max_row_digits = format!("{num_data_rows}").len().max(1) as f64;
   let row_num_col_w = max_row_digits * char_width + pad_x;
 
   // Compute data column widths from headers and data
@@ -14458,11 +14423,7 @@ fn render_tabular_svg_grid(
 
   let data_width: f64 = col_widths.iter().sum();
   let total_width = row_num_col_w + data_width;
-  let num_header_rows = if show_headers && !col_keys.is_empty() {
-    1
-  } else {
-    0
-  };
+  let num_header_rows = usize::from(show_headers && !col_keys.is_empty());
   let total_height: f64 = if num_header_rows > 0 {
     header_row_height + (num_data_rows as f64) * row_height
   } else {
@@ -14473,8 +14434,7 @@ fn render_tabular_svg_grid(
   let svg_h = total_height.ceil() as u32;
   let mut svg = String::with_capacity(4096);
   svg.push_str(&format!(
-    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-    svg_w, svg_h, svg_w, svg_h
+    "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
   ));
 
   let t = theme();
@@ -14927,8 +14887,7 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
 
   let mut svg = String::with_capacity(1024);
   svg.push_str(&format!(
-    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-    svg_w, svg_h, svg_w, svg_h
+    "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
   ));
 
   // Compute text x-coordinate based on alignment
@@ -14955,8 +14914,7 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
         } else {
           style
             .color
-            .map(|c| c.to_svg_rgb())
-            .unwrap_or_else(|| text_fill.to_string())
+            .map_or_else(|| text_fill.to_string(), Color::to_svg_rgb)
         };
         // `Style[…, FontFamily -> "Times"]` picks the face; without one the
         // column keeps its monospace default.
@@ -14981,8 +14939,7 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
         // multiple of its display size, so the nested `<svg>` needs the
         // child's viewBox or none of it lands inside the cell.
         let view_box = parse_svg_dimensions(child)
-          .map(|p| p.view_box)
-          .unwrap_or_else(|| format!("0 0 {cw} {ch}"));
+          .map_or_else(|| format!("0 0 {cw} {ch}"), |p| p.view_box);
         svg.push_str(&format!(
           "<svg x=\"{x_off:.1}\" y=\"{y_cursor:.1}\" width=\"{cw:.1}\" height=\"{ch:.1}\" viewBox=\"{view_box}\" preserveAspectRatio=\"xMidYMid meet\">\n"
         ));
@@ -15006,9 +14963,8 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
   }
 
   // First argument must be a list
-  let items = match &args[0] {
-    Expr::List(items) => items,
-    _ => return None,
+  let Expr::List(items) = &args[0] else {
+    return None;
   };
 
   if items.is_empty() {
@@ -15141,8 +15097,7 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
         "none".to_string()
       } else {
         color
-          .map(|c| c.to_svg_rgb())
-          .unwrap_or_else(|| theme().text_primary.to_string())
+          .map_or_else(|| theme().text_primary.to_string(), Color::to_svg_rgb)
       },
       size: st.font_size,
       weight: st.font_weight,
@@ -15285,15 +15240,15 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
       } => {
         let cx = x + width / 2.0;
         let cy = cell_top(*height) + height / 2.0;
-        let weight_attr = if weight != "normal" {
+        let weight_attr = if weight == "normal" {
+          String::new()
+        } else {
           format!(" font-weight=\"{weight}\"")
-        } else {
-          String::new()
         };
-        let slant_attr = if slant != "normal" {
-          format!(" font-style=\"{slant}\"")
-        } else {
+        let slant_attr = if slant == "normal" {
           String::new()
+        } else {
+          format!(" font-style=\"{slant}\"")
         };
         // `Style[…, FontFamily -> "Times"]` picks the face; without one the
         // row keeps its monospace default.
@@ -15318,8 +15273,7 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
         // multiple of its display size, so the nested `<svg>` needs the
         // child's viewBox or none of it lands inside the cell.
         let view_box = parse_svg_dimensions(child)
-          .map(|p| p.view_box)
-          .unwrap_or_else(|| format!("0 0 {width} {height}"));
+          .map_or_else(|| format!("0 0 {width} {height}"), |p| p.view_box);
         svg.push_str(&format!(
           "<svg x=\"{x:.1}\" y=\"{y_off:.1}\" width=\"{width:.1}\" height=\"{height:.1}\" viewBox=\"{view_box}\" preserveAspectRatio=\"xMidYMid meet\">\n"
         ));
@@ -15371,7 +15325,7 @@ pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
     .filter_map(option_kv)
     .find(|(k, _)| *k == "Background")
     .and_then(|(_, v)| parse_color(v))
-    .map(|c| c.to_svg_rgb());
+    .map(Color::to_svg_rgb);
   let rect_fill = bg_fill.as_deref().unwrap_or("none");
 
   // Layout constants
@@ -15500,8 +15454,7 @@ pub fn highlighted_to_svg(args: &[Expr]) -> Option<String> {
   let bg_fill = args
     .get(1)
     .and_then(parse_color)
-    .map(|c| c.to_svg_rgb())
-    .unwrap_or_else(|| theme().highlighted_bg.to_string());
+    .map_or_else(|| theme().highlighted_bg.to_string(), Color::to_svg_rgb);
 
   // Layout constants (mirrors framed_to_svg)
   let char_width: f64 = 8.4;
@@ -15517,18 +15470,16 @@ pub fn highlighted_to_svg(args: &[Expr]) -> Option<String> {
     } = content
     {
       match name.as_str() {
-        "Highlighted" => highlighted_to_svg(inner_args)
-          .map(|svg| {
+        "Highlighted" => {
+          highlighted_to_svg(inner_args).map_or((None, 0.0, 0.0), |svg| {
             let (w, h) = parse_svg_wh(&svg);
             (Some(svg), w, h)
           })
-          .unwrap_or((None, 0.0, 0.0)),
-        "Framed" => framed_to_svg(inner_args)
-          .map(|svg| {
-            let (w, h) = parse_svg_wh(&svg);
-            (Some(svg), w, h)
-          })
-          .unwrap_or((None, 0.0, 0.0)),
+        }
+        "Framed" => framed_to_svg(inner_args).map_or((None, 0.0, 0.0), |svg| {
+          let (w, h) = parse_svg_wh(&svg);
+          (Some(svg), w, h)
+        }),
         _ => (None, 0.0, 0.0),
       }
     } else if let Expr::Graphics { svg, .. } = content {
@@ -15616,7 +15567,7 @@ fn parse_svg_wh(svg: &str) -> (f64, f64) {
 
 /// Strip the outer <svg ...> and </svg> tags, returning only the inner content.
 fn strip_svg_wrapper(svg: &str) -> &str {
-  let start = svg.find('>').map(|i| i + 1).unwrap_or(0);
+  let start = svg.find('>').map_or(0, |i| i + 1);
   let end = svg.rfind("</svg>").unwrap_or(svg.len());
   &svg[start..end]
 }
@@ -16537,9 +16488,8 @@ fn is_track_everything_symbol(sym: &str) -> bool {
 /// `Manipulate[expr]`, or a spec that isn't a list). In those cases the caller
 /// should fall back to the standard text/graphics output path.
 pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
-  let (name, args) = match expr {
-    Expr::FunctionCall { name, args } => (name, args),
-    _ => return None,
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
   };
   if (name != "Manipulate" && name != "Animate") || args.len() < 2 {
     return None;
@@ -16577,48 +16527,45 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     mut dynamic_bounds,
     mut dynamic_values,
     mut animation_var,
-  ) = match inner {
-    Some(inner) => {
-      animated = true;
-      animation_running = inner.animation_running;
-      (
-        inner.body_code,
-        inner.controls,
-        inner.state,
-        inner.displays,
-        inner.initialization,
-        inner.control_enabled,
-        inner.control_visible,
-        inner.dynamic_bounds,
-        inner.dynamic_values,
-        inner.animation_var,
-      )
-    }
-    None => {
-      // `TogglerBar[Dynamic[var], …]` inside the body moves into the
-      // display list (replaced by `Nothing` in the body): a front-end
-      // renders displays as live widgets, whereas inside the rendered
-      // output it would only be a static picture.
-      let mut body_displays = Vec::new();
-      let body_expr = extract_body_togglerbars(
-        unwrap_dynamic_body(&args[0]),
-        &mut body_displays,
-      );
-      let body_code = crate::syntax::expr_to_input_form(&body_expr);
-      body_expr_kept = Some(body_expr);
-      (
-        body_code,
-        Vec::with_capacity(args.len() - 1),
-        Vec::new(),
-        body_displays,
-        None,
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        None,
-      )
-    }
+  ) = if let Some(inner) = inner {
+    animated = true;
+    animation_running = inner.animation_running;
+    (
+      inner.body_code,
+      inner.controls,
+      inner.state,
+      inner.displays,
+      inner.initialization,
+      inner.control_enabled,
+      inner.control_visible,
+      inner.dynamic_bounds,
+      inner.dynamic_values,
+      inner.animation_var,
+    )
+  } else {
+    // `TogglerBar[Dynamic[var], …]` inside the body moves into the
+    // display list (replaced by `Nothing` in the body): a front-end
+    // renders displays as live widgets, whereas inside the rendered
+    // output it would only be a static picture.
+    let mut body_displays = Vec::new();
+    let body_expr = extract_body_togglerbars(
+      unwrap_dynamic_body(&args[0]),
+      &mut body_displays,
+    );
+    let body_code = crate::syntax::expr_to_input_form(&body_expr);
+    body_expr_kept = Some(body_expr);
+    (
+      body_code,
+      Vec::with_capacity(args.len() - 1),
+      Vec::new(),
+      body_displays,
+      None,
+      Vec::new(),
+      Vec::new(),
+      Vec::new(),
+      Vec::new(),
+      None,
+    )
   };
   // `Locator[Dynamic[var, cb], …]` markers inside the body drive their
   // variable interactively: a hidden `ControlType -> None` spec for such a
@@ -16864,7 +16811,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone());
         if let Expr::List(items) = &entries {
           let mut any = false;
-          for item in items.iter() {
+          for item in items {
             let (Expr::Rule {
               pattern,
               replacement,
@@ -16917,29 +16864,29 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       continue;
     }
     let (spec, rename) = rewrite_compound_control_var(spec);
-    let parsed = match crate::with_scoped_globals(&initial_bindings, || {
-      parse_manipulate_control(&spec, &sibling_names)
-    }) {
-      Some(parsed) => parsed,
-      None => {
-        // Wolfram evaluates the body once before laying the controls out, so
-        // a control whose choice list is a symbol the *body* fills in —
-        // `{{k, 9, " "}, choices, ControlType -> PopupMenu}` next to a
-        // `{{choices, {}}, ControlType -> None}` state variable — already has
-        // its choices in hand by then. The leading-assignment probe above
-        // only reaches assignments the body opens with, so retry against the
-        // bindings a full body run leaves behind. That run is expensive, so
-        // it happens lazily: only after a spec has actually failed, and only
-        // once per Manipulate.
-        let after_body = post_body_bindings
-          .get_or_insert_with(|| {
-            manipulate_post_body_bindings(args.first(), &initial_bindings)
-          })
-          .clone();
-        crate::with_scoped_globals(&after_body, || {
-          parse_manipulate_control(&spec, &sibling_names)
-        })?
-      }
+    let parsed = if let Some(parsed) =
+      crate::with_scoped_globals(&initial_bindings, || {
+        parse_manipulate_control(&spec, &sibling_names)
+      }) {
+      parsed
+    } else {
+      // Wolfram evaluates the body once before laying the controls out, so
+      // a control whose choice list is a symbol the *body* fills in —
+      // `{{k, 9, " "}, choices, ControlType -> PopupMenu}` next to a
+      // `{{choices, {}}, ControlType -> None}` state variable — already has
+      // its choices in hand by then. The leading-assignment probe above
+      // only reaches assignments the body opens with, so retry against the
+      // bindings a full body run leaves behind. That run is expensive, so
+      // it happens lazily: only after a spec has actually failed, and only
+      // once per Manipulate.
+      let after_body = post_body_bindings
+        .get_or_insert_with(|| {
+          manipulate_post_body_bindings(args.first(), &initial_bindings)
+        })
+        .clone();
+      crate::with_scoped_globals(&after_body, || {
+        parse_manipulate_control(&spec, &sibling_names)
+      })?
     };
     match parsed {
       ParsedControl::Visible {
@@ -17584,7 +17531,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     return None;
   };
   let mut out = Vec::new();
-  for item in items.iter() {
+  for item in items {
     // A `TabView` lists its tabs as `label -> content`, and a
     // `PaneSelector` its panes as `value -> content`; only the content
     // holds controls. (Woxi's control panel is one flat list, so every
@@ -17639,7 +17586,7 @@ fn collect_pane_visibility(spec: &Expr, out: &mut Vec<(String, String)>) {
   };
   if name != "PaneSelector" {
     // The `PaneSelector` may sit inside a layout container.
-    for arg in args.iter() {
+    for arg in args {
       collect_pane_visibility(arg, out);
     }
     return;
@@ -17649,7 +17596,7 @@ fn collect_pane_visibility(spec: &Expr, out: &mut Vec<(String, String)>) {
     return;
   };
   let selector = crate::syntax::expr_to_input_form(selector);
-  for pane in panes.iter() {
+  for pane in panes {
     let (Expr::Rule {
       pattern,
       replacement,
@@ -17689,12 +17636,12 @@ fn pane_control_variables(pane: &Expr) -> Vec<String> {
           out.push(var);
           return;
         }
-        for a in args.iter() {
+        for a in args {
           walk(a, out);
         }
       }
       Expr::List(items) => {
-        for it in items.iter() {
+        for it in items {
           walk(it, out);
         }
       }
@@ -17792,7 +17739,7 @@ fn manipulate_post_body_bindings(
   crate::push_quiet();
   crate::with_scoped_globals(initial, || {
     let _ = evaluate_expr_to_expr(body);
-    for (name, value) in out.iter_mut() {
+    for (name, value) in &mut out {
       let symbol = Expr::Identifier(name.clone());
       if let Ok(evaluated) = evaluate_expr_to_expr(&symbol)
         && !matches!(&evaluated, Expr::Identifier(s) if s == name)
@@ -17857,26 +17804,23 @@ fn discrete_choice_columns(
   let mut labels = Vec::with_capacity(items.len());
   let mut svgs = Vec::with_capacity(items.len());
   for item in items {
-    match discrete_choice_rule(item) {
-      Some((value, label)) => {
-        values.push(crate::syntax::expr_to_input_form(value));
-        // A rule label that is itself a graphic (the crosshair icons of
-        // the Demonstrations site) renders as an SVG icon; its text column
-        // falls back to the bound value so a non-graphical frontend still
-        // shows something short and meaningful.
-        let svg = discrete_choice_label_svg(label);
-        labels.push(if svg.is_some() {
-          discrete_choice_label(value)
-        } else {
-          discrete_choice_label(label)
-        });
-        svgs.push(svg);
-      }
-      None => {
-        values.push(crate::syntax::expr_to_input_form(item));
-        labels.push(discrete_choice_label(item));
-        svgs.push(None);
-      }
+    if let Some((value, label)) = discrete_choice_rule(item) {
+      values.push(crate::syntax::expr_to_input_form(value));
+      // A rule label that is itself a graphic (the crosshair icons of
+      // the Demonstrations site) renders as an SVG icon; its text column
+      // falls back to the bound value so a non-graphical frontend still
+      // shows something short and meaningful.
+      let svg = discrete_choice_label_svg(label);
+      labels.push(if svg.is_some() {
+        discrete_choice_label(value)
+      } else {
+        discrete_choice_label(label)
+      });
+      svgs.push(svg);
+    } else {
+      values.push(crate::syntax::expr_to_input_form(item));
+      labels.push(discrete_choice_label(item));
+      svgs.push(None);
     }
   }
   (values, labels, svgs)
@@ -17893,9 +17837,8 @@ pub fn manipulate_eval_values_code(
 ) -> Option<(Vec<String>, Vec<String>, Vec<Option<String>>)> {
   let expr = crate::interpret_to_expr(code).ok()?;
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
-  let items = match &evaluated {
-    Expr::List(items) => items,
-    _ => return None,
+  let Expr::List(items) = &evaluated else {
+    return None;
   };
   let columns = discrete_choice_columns(items);
   (!columns.0.is_empty()).then_some(columns)
@@ -18030,9 +17973,8 @@ fn patch_default_label(
 /// list literal (e.g. `ListAnimate[expr]` or `ListAnimate[{}]`), so the caller
 /// falls back to the plain output path.
 pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
-  let (name, args) = match expr {
-    Expr::FunctionCall { name, args } => (name, args),
-    _ => return None,
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
   };
   if name != "ListAnimate" || args.is_empty() {
     return None;
@@ -18045,7 +17987,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let list_code = crate::syntax::expr_to_input_form(&args[0]);
   // Frame index `i` runs 1..n in unit steps; the body picks that element.
   // `Round` guards against any float drift the slider might introduce.
-  let body_code = format!("Part[{}, Round[i]]", list_code);
+  let body_code = format!("Part[{list_code}, Round[i]]");
   let control = ManipulateControl::Continuous {
     name: "i".to_string(),
     min: 1.0,
@@ -18085,9 +18027,8 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
 /// default 0..1 range with initial value `x`), and `Animator[]`. Returns
 /// `None` when the range doesn't resolve to numbers.
 pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
-  let (name, args) = match expr {
-    Expr::FunctionCall { name, args } => (name, args),
-    _ => return None,
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
   };
   if name != "Animator" {
     return None;
@@ -18100,7 +18041,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     && da.len() == 1
     && let Expr::Identifier(s) = &da[0]
   {
-    var = s.clone();
+    var.clone_from(s);
     idx = 1;
   }
   let (min, max, step, initial) = match args.get(idx) {
@@ -18178,9 +18119,8 @@ fn pane_range(arg: Option<&Expr>) -> ((f64, f64), (f64, f64)) {
 /// draggable locator — beside the live `body` graphic. Returns `None` if the
 /// arguments don't fit.
 pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
-  let (name, args) = match expr {
-    Expr::FunctionCall { name, args } => (name, args),
-    _ => return None,
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
   };
   if name != "LocatorPane" || args.len() < 2 {
     return None;
@@ -18200,8 +18140,8 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let body_code = crate::syntax::expr_to_input_form(&args[1]);
   let ((x_min, y_min), (x_max, y_max)) = pane_range(args.get(2));
   // Start the locator at the given point, else the range centre.
-  let (x_initial, y_initial) =
-    explicit_init.unwrap_or(((x_min + x_max) / 2.0, (y_min + y_max) / 2.0));
+  let (x_initial, y_initial) = explicit_init
+    .unwrap_or((f64::midpoint(x_min, x_max), f64::midpoint(y_min, y_max)));
   let control = ManipulateControl::Slider2D {
     name: var.clone(),
     x_min,
@@ -18238,9 +18178,8 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
 /// clickable/draggable pad with the live `func[{x, y}]` result shown beside
 /// it. Returns `None` if there's no handler to apply.
 pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
-  let (name, args) = match expr {
-    Expr::FunctionCall { name, args } => (name, args),
-    _ => return None,
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
   };
   if name != "ClickPane" || args.len() < 2 {
     return None;
@@ -18253,15 +18192,15 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // Bind the click position `pos` and show the handler applied to it; the body
   // re-evaluates `func[pos]` on every pad move.
   let func_code = crate::syntax::expr_to_input_form(func);
-  let body_code = format!("({})[pos]", func_code);
+  let body_code = format!("({func_code})[pos]");
   let control = ManipulateControl::Slider2D {
     name: "pos".to_string(),
     x_min,
     x_max,
     y_min,
     y_max,
-    x_initial: (x_min + x_max) / 2.0,
-    y_initial: (y_min + y_max) / 2.0,
+    x_initial: f64::midpoint(x_min, x_max),
+    y_initial: f64::midpoint(y_min, y_max),
     label: "pos".to_string(),
     write_callback: None,
   };
@@ -18292,9 +18231,8 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
 /// Returns `None` if the expression is not a well-formed `Control` (e.g. the
 /// argument is not a variable-spec list, or resolves to a hidden control).
 pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
-  let (name, args) = match expr {
-    Expr::FunctionCall { name, args } => (name, args),
-    _ => return None,
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
   };
   if name != "Control" || args.is_empty() {
     return None;
@@ -19147,10 +19085,7 @@ fn parse_manipulate_control(
   spec: &Expr,
   siblings: &[String],
 ) -> Option<ParsedControl> {
-  let items = match spec {
-    Expr::List(items) => items,
-    _ => return None,
-  };
+  let Expr::List(items) = spec else { return None };
   if items.is_empty() {
     return None;
   }
@@ -19475,8 +19410,7 @@ fn parse_manipulate_control(
       let mx = bounds
         .get(1)
         .and_then(|e| eval_manipulate_bound(e))
-        .map(|(v, _)| v)
-        .unwrap_or(mn + 1.0);
+        .map_or(mn + 1.0, |(v, _)| v);
       (mn, mx, mn, mx)
     };
     let (x_initial, y_initial) =
@@ -19511,8 +19445,7 @@ fn parse_manipulate_control(
     let max = bounds
       .get(1)
       .and_then(|e| eval_manipulate_bound(e))
-      .map(|(v, _)| v)
-      .unwrap_or(min + 1.0);
+      .map_or(min + 1.0, |(v, _)| v);
     let step = bounds
       .get(2)
       .and_then(|e| eval_manipulate_bound(e))
@@ -19696,8 +19629,7 @@ fn parse_manipulate_control(
     let button_runs = manipulate_label_runs(&built_args[0], false);
     let value = explicit_initial
       .as_ref()
-      .map(crate::syntax::expr_to_input_form)
-      .unwrap_or_else(|| "Null".to_string());
+      .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_input_form);
     return Some(ParsedControl::StateWithControl {
       name,
       value,
@@ -19720,8 +19652,10 @@ fn parse_manipulate_control(
     let value = explicit_initial
       .as_ref()
       .filter(|init| parse_color(init).is_some())
-      .map(crate::syntax::expr_to_input_form)
-      .unwrap_or_else(|| crate::syntax::expr_to_input_form(bounds[0]));
+      .map_or_else(
+        || crate::syntax::expr_to_input_form(bounds[0]),
+        crate::syntax::expr_to_input_form,
+      );
     return Some(ParsedControl::Fixed { name, value });
   }
 
@@ -19766,7 +19700,7 @@ fn parse_manipulate_control(
     .and_then(|e| eval_manipulate_bound(e))
     .map(|(v, _)| v);
   let initial = match explicit_initial.as_ref() {
-    Some(init) => eval_manipulate_bound(init).map(|(v, _)| v).unwrap_or(min),
+    Some(init) => eval_manipulate_bound(init).map_or(min, |(v, _)| v),
     None => min,
   };
 
@@ -20013,7 +19947,7 @@ fn format_f64_input(v: f64) -> String {
   if v.is_finite() && v.fract() == 0.0 && v.abs() < 1e15 {
     format!("{}", v as i64)
   } else {
-    format!("{}", v)
+    format!("{v}")
   }
 }
 
@@ -20037,7 +19971,7 @@ fn format_f64_real(v: f64) -> String {
   if v.is_finite() && v.fract() == 0.0 && v.abs() < 1e15 {
     format!("{}.", v as i64)
   } else {
-    format!("{}", v)
+    format!("{v}")
   }
 }
 
@@ -20052,7 +19986,7 @@ pub fn manipulate_block_code(
   }
   let binding_parts: Vec<String> = bindings
     .iter()
-    .map(|(name, value)| format!("{} = {}", name, value))
+    .map(|(name, value)| format!("{name} = {value}"))
     .collect();
   format!("Block[{{{}}}, {}]", binding_parts.join(", "), body_code)
 }
@@ -20127,9 +20061,8 @@ pub fn parse_manipulate_bindings(s: &str) -> Vec<(String, String)> {
     if bytes[i] != b'"' {
       break;
     }
-    let (key, next) = match parse_json_string(bytes, i) {
-      Some(v) => v,
-      None => break,
+    let Some((key, next)) = parse_json_string(bytes, i) else {
+      break;
     };
     i = next;
 
@@ -20444,7 +20377,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         label_runs,
       } => {
         let step_json = match step {
-          Some(s) => format!(r#","step":{}"#, s),
+          Some(s) => format!(r#","step":{s}"#),
           None => String::new(),
         };
         ctrl_parts.push(format!(
@@ -20548,7 +20481,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         label,
       } => {
         let step_json = match step {
-          Some(s) => format!(r#","step":{}"#, s),
+          Some(s) => format!(r#","step":{s}"#),
           None => String::new(),
         };
         ctrl_parts.push(format!(
@@ -20572,10 +20505,8 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         auto_create,
         label,
       } => {
-        let point_parts: Vec<String> = points
-          .iter()
-          .map(|(x, y)| format!("[{},{}]", x, y))
-          .collect();
+        let point_parts: Vec<String> =
+          points.iter().map(|(x, y)| format!("[{x},{y}]")).collect();
         ctrl_parts.push(format!(
           r#"{{"kind":"locator","name":"{}","label":"{}","xMin":{},"xMax":{},"yMin":{},"yMax":{},"points":[{}],"autoCreate":{}}}"#,
           json_escape_manipulate(name),
@@ -20601,7 +20532,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         // An infinite sweep end (`{time, 0, Infinity, 1}`) serializes as
         // `null` — JSON has no Infinity literal.
         let max_json = if max.is_finite() {
-          format!("{}", max)
+          format!("{max}")
         } else {
           "null".to_string()
         };
@@ -20833,14 +20764,11 @@ pub fn build_manipulate_display(
   display_code: &str,
   bindings: &[(String, String)],
 ) -> DisplayNode {
-  let expr = match crate::interpret_to_expr(display_code) {
-    Ok(e) => e,
-    Err(_) => {
-      return DisplayNode::Static {
-        svg: None,
-        text: String::new(),
-      };
-    }
+  let Ok(expr) = crate::interpret_to_expr(display_code) else {
+    return DisplayNode::Static {
+      svg: None,
+      text: String::new(),
+    };
   };
 
   // First pass: build the tree, collecting each checkbox's value-probe
@@ -21155,7 +21083,7 @@ fn assign_checkbox_state(
       }
     }
     DisplayNode::Toggler { label, .. } | DisplayNode::Button { label, .. } => {
-      assign_checkbox_state(label, flags, idx)
+      assign_checkbox_state(label, flags, idx);
     }
     DisplayNode::Checkbox { checked, .. } => {
       if let Some(f) = flags.get(*idx) {
@@ -21292,7 +21220,7 @@ fn space_filling_curve(
   name: &str,
   args: &[Expr],
   side: i64,
-  points: Vec<(i64, i64)>,
+  points: &[(i64, i64)],
 ) -> Expr {
   let mut range: Option<[(f64, f64); 2]> = None;
   for opt in &args[1..] {
@@ -21395,7 +21323,7 @@ pub fn hilbert_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     points.push((x, y));
   }
-  Ok(space_filling_curve("HilbertCurve", args, side, points))
+  Ok(space_filling_curve("HilbertCurve", args, side, &points))
 }
 
 /// PeanoCurve[n] — one Line through all 9^n cells of the 3^n × 3^n grid in
@@ -21441,7 +21369,7 @@ pub fn peano_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     points.push((x, y));
   }
-  Ok(space_filling_curve("PeanoCurve", args, side, points))
+  Ok(space_filling_curve("PeanoCurve", args, side, &points))
 }
 
 /// SierpinskiCurve[n] — the closed Sierpiński square curve as a Line,

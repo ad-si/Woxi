@@ -49,11 +49,8 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Get degree and leading coefficient
   let expanded = expand_and_combine(poly);
-  let degree = match max_power_int(&expanded, var_name) {
-    Some(d) => d,
-    None => {
-      return Ok(unevaluated("Discriminant", args));
-    }
+  let Some(degree) = max_power_int(&expanded, var_name) else {
+    return Ok(unevaluated("Discriminant", args));
   };
 
   let leading_coeff = super::coefficient_ast(&[

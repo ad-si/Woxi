@@ -2175,8 +2175,8 @@ mod radical_coefficient_merge {
       ("Sqrt[Log[2]*x]", "Sqrt[x]*Sqrt[Log[2]]"),
     ] {
       assert_eq!(
-        interpret(&format!("InputForm[{}]", input)).unwrap(),
-        format!("InputForm[{}]", expected),
+        interpret(&format!("InputForm[{input}]")).unwrap(),
+        format!("InputForm[{expected}]"),
         "for {}",
         input
       );

@@ -44,7 +44,11 @@ fn summary_entries_point_at_existing_pages() {
 
   let dangling: Vec<String> = outline_targets(&summary)
     .into_iter()
-    .filter(|t| t.ends_with(".md"))
+    .filter(|t| {
+      std::path::Path::new(t)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+    })
     .filter(|t| !docs.join(t).is_file())
     .collect();
 

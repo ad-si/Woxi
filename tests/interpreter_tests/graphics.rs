@@ -4,7 +4,7 @@ use super::*;
 /// and returns the SVG string. Panics if evaluation fails or if the result
 /// doesn't look like an SVG.
 fn export_svg(expr: &str) -> String {
-  let code = format!("ExportString[{}, \"SVG\"]", expr);
+  let code = format!("ExportString[{expr}, \"SVG\"]");
   let svg = interpret(&code).unwrap();
   // The exporter embeds the fonts an SVG uses as an @font-face <style> block
   // (see `embed_used_fonts`). Strip it here so these snapshots stay focused on
@@ -1573,8 +1573,7 @@ mod graphics {
       let gbox = gbox.unwrap();
       assert!(
         gbox.contains("DiskBox"),
-        "Should contain DiskBox, got: {}",
-        gbox
+        "Should contain DiskBox, got: {gbox}"
       );
     }
 
@@ -1628,18 +1627,15 @@ mod graphics {
       let svg = export_svg("Graphics[{Orange, Point[pts]}]");
       assert!(
         svg.contains("fill=\"rgb(100%,33%,33%)\""),
-        "Should contain red error background: {}",
-        svg
+        "Should contain red error background: {svg}"
       );
       assert!(
         svg.contains("stroke=\"rgb(100%,33%,33%)\""),
-        "Should contain red error border: {}",
-        svg
+        "Should contain red error border: {svg}"
       );
       assert!(
         svg.contains("<title>Coordinate pts should be a pair of numbers"),
-        "Should contain error message in title attribute: {}",
-        svg
+        "Should contain error message in title attribute: {svg}"
       );
     }
 
@@ -1648,8 +1644,7 @@ mod graphics {
       let svg = export_svg("Graphics[{Line[pts]}]");
       assert!(
         svg.contains("<title>Coordinate pts should be a pair of numbers"),
-        "Should contain error message in title: {}",
-        svg
+        "Should contain error message in title: {svg}"
       );
     }
 
@@ -1658,8 +1653,7 @@ mod graphics {
       let svg = export_svg("Graphics[{Point[{1, 2}]}]");
       assert!(
         !svg.contains("fill=\"rgb(100%,33%,33%)\""),
-        "Valid point should not show error: {}",
-        svg
+        "Valid point should not show error: {svg}"
       );
     }
 
@@ -1668,14 +1662,12 @@ mod graphics {
       let svg = export_svg("Graphics[{Point[{0, 0}], Point[pts]}]");
       assert!(
         svg.contains("<title>Coordinate pts should be a pair of numbers"),
-        "Mixed content with invalid primitive should show error message in title: {}",
-        svg
+        "Mixed content with invalid primitive should show error message in title: {svg}"
       );
       // The valid point should still be rendered
       assert!(
         svg.contains("<circle"),
-        "Valid point should still render: {}",
-        svg
+        "Valid point should still render: {svg}"
       );
     }
   }
@@ -1841,8 +1833,7 @@ mod plot3d {
       let result = interpret("Plot3D[x^2, {x, -1, 1}]").unwrap();
       assert!(
         result.contains("Plot3D"),
-        "Should return unevaluated: {}",
-        result
+        "Should return unevaluated: {result}"
       );
     }
 
@@ -2103,8 +2094,7 @@ mod plot3d {
           interpret("RegionPlot3D[x^2 < 1, {x, -1, 1}, {y, -1, 1}]").unwrap();
         assert!(
           result.contains("RegionPlot3D"),
-          "Should return unevaluated: {}",
-          result
+          "Should return unevaluated: {result}"
         );
       }
 
@@ -2198,8 +2188,7 @@ mod plot3d {
         let result = interpret("RevolutionPlot3D[t^2]").unwrap();
         assert!(
           result.contains("RevolutionPlot3D"),
-          "Should return unevaluated: {}",
-          result
+          "Should return unevaluated: {result}"
         );
       }
 
@@ -2271,8 +2260,7 @@ mod plot3d {
         let result = interpret("SphericalPlot3D[1, {theta, 0, Pi}]").unwrap();
         assert!(
           result.contains("SphericalPlot3D"),
-          "Should return unevaluated: {}",
-          result
+          "Should return unevaluated: {result}"
         );
       }
 
@@ -2411,8 +2399,7 @@ mod plot3d {
         let result = interpret("ListPointPlot3D[]").unwrap();
         assert!(
           result.contains("ListPointPlot3D"),
-          "Should return unevaluated: {}",
-          result
+          "Should return unevaluated: {result}"
         );
       }
 
@@ -2514,8 +2501,7 @@ mod plot3d {
         let result = interpret("ListLinePlot3D[]").unwrap();
         assert!(
           result.contains("ListLinePlot3D"),
-          "Should return unevaluated: {}",
-          result
+          "Should return unevaluated: {result}"
         );
       }
 
@@ -3042,8 +3028,8 @@ mod plot3d {
           }
         }
         let span = |v: &[f64]| {
-          v.iter().cloned().fold(f64::MIN, f64::max)
-            - v.iter().cloned().fold(f64::MAX, f64::min)
+          v.iter().copied().fold(f64::MIN, f64::max)
+            - v.iter().copied().fold(f64::MAX, f64::min)
         };
         (span(&xs), span(&ys))
       };
@@ -3899,8 +3885,8 @@ mod plot3d {
         }
       }
       assert!(!y_ticks.is_empty(), "should have y-axis tick labels");
-      let y_max = y_ticks.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-      let y_min = y_ticks.iter().cloned().fold(f64::INFINITY, f64::min);
+      let y_max = y_ticks.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+      let y_min = y_ticks.iter().copied().fold(f64::INFINITY, f64::min);
       assert!(
         y_max <= 20.0,
         "y-axis max tick {y_max} is too large; singularity should be clipped"
@@ -9164,8 +9150,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let last_h: f64 = h_str.parse().unwrap();
       assert!(
         (last_h - 547.0).abs() < 5.0,
-        "last bar height {} should be near 547",
-        last_h
+        "last bar height {last_h} should be near 547"
       );
     }
 
@@ -12231,8 +12216,7 @@ mod graphics_row {
     let nested_count = svg.matches("<svg ").count();
     assert!(
       nested_count >= 3,
-      "Should have outer + 2 nested SVGs, got {}",
-      nested_count
+      "Should have outer + 2 nested SVGs, got {nested_count}"
     );
   }
 
@@ -12474,8 +12458,7 @@ mod graphics_column {
     let nested_count = svg.matches("<svg ").count();
     assert!(
       nested_count >= 3,
-      "Should have outer + 2 nested SVGs, got {}",
-      nested_count
+      "Should have outer + 2 nested SVGs, got {nested_count}"
     );
   }
 }
@@ -12510,8 +12493,7 @@ mod graphics_grid {
     let nested_count = svg.matches("<svg ").count();
     assert!(
       nested_count >= 5,
-      "Should have outer + 4 nested SVGs, got {}",
-      nested_count
+      "Should have outer + 4 nested SVGs, got {nested_count}"
     );
   }
 
@@ -12535,8 +12517,7 @@ mod graphics_grid {
     let svg = result.graphics.unwrap();
     assert!(
       svg.contains("font-weight=\"bold\""),
-      "Style[..., Bold] should produce font-weight=\"bold\" in SVG, got: {}",
-      svg
+      "Style[..., Bold] should produce font-weight=\"bold\" in SVG, got: {svg}"
     );
   }
 
@@ -12559,8 +12540,7 @@ mod graphics_grid {
     let svg = result.graphics.unwrap();
     assert!(
       svg.contains("font-size=\"20\""),
-      "Style[..., 20] should produce font-size=\"20\" in SVG, got: {}",
-      svg
+      "Style[..., 20] should produce font-size=\"20\" in SVG, got: {svg}"
     );
   }
 
@@ -12932,8 +12912,7 @@ mod plot_grid {
     let nested_count = svg.matches("<svg ").count();
     assert!(
       nested_count >= 5,
-      "Should have outer + 4 nested SVGs, got {}",
-      nested_count
+      "Should have outer + 4 nested SVGs, got {nested_count}"
     );
   }
 
@@ -13516,11 +13495,7 @@ mod grid_rasterize {
     // At 3x DPI, dimensions should be ~3x larger
     assert!(
       w2 >= w1 * 2 && h2 >= h1 * 2,
-      "Higher DPI should produce larger image: {}x{} vs {}x{}",
-      w1,
-      h1,
-      w2,
-      h2
+      "Higher DPI should produce larger image: {w1}x{h1} vs {w2}x{h2}"
     );
   }
 
@@ -14563,13 +14538,11 @@ mod blend {
       msgs.iter().any(|m| m.contains(
         "DominantColors::imginv: Expecting an image or graphics instead of {$Failed}."
       )),
-      "expected DominantColors::imginv message (not ::argt), got {:?}",
-      msgs
+      "expected DominantColors::imginv message (not ::argt), got {msgs:?}"
     );
     assert!(
       !msgs.iter().any(|m| m.contains("DominantColors::argt")),
-      "should not emit ::argt when imginv applies, got {:?}",
-      msgs
+      "should not emit ::argt when imginv applies, got {msgs:?}"
     );
   }
 
@@ -14586,8 +14559,7 @@ mod blend {
       msgs.iter().any(|m| m.contains(
         "Binarize::imginv: Expecting an image or graphics instead of img."
       )),
-      "expected Binarize::imginv message, got {:?}",
-      msgs
+      "expected Binarize::imginv message, got {msgs:?}"
     );
   }
 
@@ -14599,8 +14571,7 @@ mod blend {
       msgs.iter().any(|m| m.contains(
         "Threshold::wlist: Argument img should be one of rectangular array of any depth, image, sound or sampled sound list."
       )),
-      "expected Threshold::wlist message, got {:?}",
-      msgs
+      "expected Threshold::wlist message, got {msgs:?}"
     );
   }
 
@@ -14612,8 +14583,7 @@ mod blend {
       msgs.iter().any(|m| m.contains(
         "Sharpen::imginv: Expecting an image or graphics instead of hedy."
       )),
-      "expected Sharpen::imginv message, got {:?}",
-      msgs
+      "expected Sharpen::imginv message, got {msgs:?}"
     );
   }
 
@@ -14628,8 +14598,7 @@ mod blend {
       msgs.iter().any(|m| m.contains(
         "ImagePartition::imginv: Expecting an image or graphics instead of hedy."
       )),
-      "expected ImagePartition::imginv message, got {:?}",
-      msgs
+      "expected ImagePartition::imginv message, got {msgs:?}"
     );
   }
 
@@ -14644,8 +14613,7 @@ mod blend {
       msgs.iter().any(|m| m.contains(
         "ImageDimensions::imginv: Expecting an image or graphics instead of hedy."
       )),
-      "expected ImageDimensions::imginv message, got {:?}",
-      msgs
+      "expected ImageDimensions::imginv message, got {msgs:?}"
     );
   }
 
@@ -14657,8 +14625,7 @@ mod blend {
       msgs.iter().any(|m| m.contains(
         "ImageAdjust::imginv: Expecting an image or graphics instead of hedy."
       )),
-      "expected ImageAdjust::imginv message, got {:?}",
-      msgs
+      "expected ImageAdjust::imginv message, got {msgs:?}"
     );
   }
 
@@ -14673,8 +14640,7 @@ mod blend {
       msgs.iter().any(|m| m.contains(
         "Blur::imginv: Expecting an image or graphics instead of hedy."
       )),
-      "expected Blur::imginv message, got {:?}",
-      msgs
+      "expected Blur::imginv message, got {msgs:?}"
     );
   }
 
@@ -14692,8 +14658,7 @@ mod blend {
       msgs.iter().any(|m| m.contains(
         "DominantColors::imginv: Expecting an image or graphics instead of {$Failed}."
       )),
-      "expected DominantColors::imginv message, got {:?}",
-      msgs
+      "expected DominantColors::imginv message, got {msgs:?}"
     );
   }
 
@@ -14710,8 +14675,7 @@ mod blend {
       msgs.iter().any(|m| m.contains(
         "Import::nffil: File ExampleData/no_such_image_xyz123.tif not found during Import."
       )),
-      "expected Import::nffil message, got {:?}",
-      msgs
+      "expected Import::nffil message, got {msgs:?}"
     );
   }
 
@@ -14729,8 +14693,7 @@ mod blend {
       msgs.iter().any(|m| m.contains(
         "Blend::argl: {1, 0.5} should be a real number or a list of non-negative numbers, which has the same length as {RGBColor[1, 0, 0], RGBColor[0, 1, 0], RGBColor[0, 0, 1]}."
       )),
-      "expected Blend::argl message, got {:?}",
-      msgs
+      "expected Blend::argl message, got {msgs:?}"
     );
   }
 
@@ -16031,7 +15994,7 @@ mod dendrogram {
     // Leaves are labeled with the data values.
     for label in ["1", "2", "5", "6", "12"] {
       assert!(
-        svg.contains(&format!(">{}<", label)),
+        svg.contains(&format!(">{label}<")),
         "Expected leaf label {label}"
       );
     }
@@ -16203,7 +16166,7 @@ mod periodic_table_plot {
     // First, last main-group, an f-block, and a transition metal.
     for sym in ["H", "He", "Fe", "Au", "U", "Og"] {
       assert!(
-        svg.contains(&format!(">{}</text>", sym)),
+        svg.contains(&format!(">{sym}</text>")),
         "Expected element symbol {sym} in periodic table SVG"
       );
     }
@@ -16239,7 +16202,7 @@ mod periodic_table_plot {
     for sym in ["Lu", "Lr"] {
       let line = svg
         .lines()
-        .find(|l| l.contains(&format!(">{}</text>", sym)))
+        .find(|l| l.contains(&format!(">{sym}</text>")))
         .unwrap_or_else(|| panic!("Missing symbol {sym}"));
       assert!(
         line.contains("x=\"286.0\""),
@@ -16981,7 +16944,11 @@ mod manipulate {
     )
     .unwrap();
     let spec = extract_manipulate_spec(&expr).expect("row-wrapped controls");
-    let names: Vec<&str> = spec.controls.iter().map(|c| c.name()).collect();
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(woxi::functions::ManipulateControl::name)
+      .collect();
     assert_eq!(names, vec!["", "p", "q"]); // heading row binds no variable
     match &spec.controls[1] {
       ManipulateControl::Discrete {
@@ -17009,7 +16976,11 @@ mod manipulate {
     )
     .unwrap();
     let spec = extract_manipulate_spec(&expr).expect("row-wrapped controls");
-    let names: Vec<&str> = spec.controls.iter().map(|c| c.name()).collect();
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(woxi::functions::ManipulateControl::name)
+      .collect();
     assert_eq!(names, vec!["n", "flag"]);
     match &spec.controls[0] {
       ManipulateControl::Continuous {
@@ -17053,7 +17024,11 @@ mod manipulate {
     )
     .unwrap();
     let spec = extract_manipulate_spec(&expr).expect("a grid control panel");
-    let names: Vec<&str> = spec.controls.iter().map(|c| c.name()).collect();
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(woxi::functions::ManipulateControl::name)
+      .collect();
     assert_eq!(names, vec!["a", "b"]);
     assert!(
       spec.displays.is_empty(),
@@ -18350,7 +18325,11 @@ mod manipulate {
     let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
     // The placeholder pane holds no control, so it leaves no row behind:
     // the panel is the selector plus the two pane variables.
-    let names: Vec<&str> = spec.controls.iter().map(|c| c.name()).collect();
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(woxi::functions::ManipulateControl::name)
+      .collect();
     assert_eq!(names, vec!["q", "a", "b"]);
     assert_eq!(
       spec.control_visible,
@@ -18613,7 +18592,7 @@ mod manipulate {
     let code = manipulate_block_code(&spec.body_code, &bindings);
     assert_eq!(code, "Block[{a = 0}, Plot[Sin[a*x], {x, 0, 6}]]");
     // Evaluating it should yield a Graphics expression.
-    assert_eq!(interpret(&format!("Head[{}]", code)).unwrap(), "Graphics");
+    assert_eq!(interpret(&format!("Head[{code}]")).unwrap(), "Graphics");
   }
 
   #[test]
@@ -18859,7 +18838,7 @@ mod manipulate {
     // rewritten body evaluates with the initial bindings.
     let bindings = manipulate_initial_bindings(&spec);
     let code = manipulate_block_code(&spec.body_code, &bindings);
-    assert_eq!(interpret(&format!("{} /. x -> 0.3", code)).unwrap(), "1");
+    assert_eq!(interpret(&format!("{code} /. x -> 0.3")).unwrap(), "1");
   }
 
   #[test]
@@ -19010,7 +18989,7 @@ mod manipulate {
     // The body with the initial bindings must evaluate to a Graphics.
     let bindings = manipulate_initial_bindings(&spec);
     let code = manipulate_block_code(&spec.body_code, &bindings);
-    assert_eq!(interpret(&format!("Head[{}]", code)).unwrap(), "Graphics");
+    assert_eq!(interpret(&format!("Head[{code}]")).unwrap(), "Graphics");
   }
 
   /// End-to-end regression for the shape a "waveform and sound" Wolfram
@@ -23345,7 +23324,7 @@ mod arrowheads_render {
       // Tip first, then the two base corners: the head's length is the
       // tip's distance from the midpoint of the base.
       let (tip, a, b) = (pts[0], pts[1], pts[2]);
-      let mid = ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0);
+      let mid = (f64::midpoint(a.0, b.0), f64::midpoint(a.1, b.1));
       ((tip.0 - mid.0).powi(2) + (tip.1 - mid.1).powi(2)).sqrt()
     };
     let lengths: Vec<f64> = svg
@@ -23467,7 +23446,7 @@ mod display_wrapper_export {
   fn text_only_grid_is_unaffected() {
     clear_state();
     let svg = export_svg("Grid[{{\"a\", \"b\"}, {\"c\", \"d\"}}]");
-    assert!(svg.contains("a"), "{svg:.400}");
+    assert!(svg.contains('a'), "{svg:.400}");
   }
 
   /// Outside a `Graphics`, `Text[expr]` shows `expr` — including a string
@@ -24017,7 +23996,10 @@ fn the_default_arrowhead_is_four_percent_of_the_width() {
       })
       .collect();
     let (tx, ty) = xy[0];
-    let (bx, by) = ((xy[1].0 + xy[2].0) / 2.0, (xy[1].1 + xy[2].1) / 2.0);
+    let (bx, by) = (
+      f64::midpoint(xy[1].0, xy[2].0),
+      f64::midpoint(xy[1].1, xy[2].1),
+    );
     ((tx - bx).powi(2) + (ty - by).powi(2)).sqrt()
   };
   let plain = export_svg(

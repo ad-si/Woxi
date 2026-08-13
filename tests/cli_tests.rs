@@ -37,21 +37,21 @@ fn eval_negative_integer_value() {
   // The audit's `### Integer` case: passing `-12` as the expression argument
   // should be accepted even though it starts with `-`.
   let (stdout, stderr, ok) = run_eval(&["-12"]);
-  assert!(ok, "woxi eval -12 failed: stderr={}", stderr);
+  assert!(ok, "woxi eval -12 failed: stderr={stderr}");
   assert_eq!(stdout.trim(), "-12");
 }
 
 #[test]
 fn eval_negative_expression() {
   let (stdout, stderr, ok) = run_eval(&["-3 + 5"]);
-  assert!(ok, "woxi eval '-3 + 5' failed: stderr={}", stderr);
+  assert!(ok, "woxi eval '-3 + 5' failed: stderr={stderr}");
   assert_eq!(stdout.trim(), "2");
 }
 
 #[test]
 fn eval_positive_integer_still_works() {
   let (stdout, stderr, ok) = run_eval(&["42"]);
-  assert!(ok, "woxi eval 42 failed: stderr={}", stderr);
+  assert!(ok, "woxi eval 42 failed: stderr={stderr}");
   assert_eq!(stdout.trim(), "42");
 }
 
@@ -86,7 +86,7 @@ fn eval_reads_expression_from_stdin_when_arg_is_dash() {
   // that exceed the shell's ARG_MAX (the audit harness's huge-image
   // cases would otherwise fail with `Argument list too long`).
   let (stdout, stderr, ok) = run_eval_stdin("1 + 2 * 3");
-  assert!(ok, "woxi eval - failed: stderr={}", stderr);
+  assert!(ok, "woxi eval - failed: stderr={stderr}");
   assert_eq!(stdout.trim(), "7");
 }
 
@@ -111,9 +111,9 @@ fn eval_stdin_handles_large_image_input() {
     matrix.push_str(&row);
   }
   matrix.push('}');
-  let expression = format!("Head[Image[{}]]", matrix);
+  let expression = format!("Head[Image[{matrix}]]");
   let (stdout, stderr, ok) = run_eval_stdin(&expression);
-  assert!(ok, "woxi eval - on large image failed: stderr={}", stderr);
+  assert!(ok, "woxi eval - on large image failed: stderr={stderr}");
   assert_eq!(stdout.trim(), "Image");
 }
 
@@ -141,7 +141,7 @@ fn run_routes_messages_to_stdout_like_wolframscript() {
   std::fs::write(&path, script).expect("write temp script");
   let (stdout, stderr, ok) = run_file(&path);
   let _ = std::fs::remove_file(&path);
-  assert!(ok, "woxi run failed: stderr={}", stderr);
+  assert!(ok, "woxi run failed: stderr={stderr}");
   assert_eq!(
     stdout, "\nGet::noopen: Cannot open missing_file.m.\ndone\n",
     "message must go to stdout (matching wolframscript -file)"
@@ -169,7 +169,7 @@ fn get_scopes_input_file_name_to_the_included_file() {
 
   let (stdout, stderr, ok) = run_file(&main);
   let _ = std::fs::remove_dir_all(&dir);
-  assert!(ok, "woxi run failed: stderr={}", stderr);
+  assert!(ok, "woxi run failed: stderr={stderr}");
   assert_eq!(
     stdout,
     format!(">> {included_arg}\n>> {}\n", main.display()),
@@ -184,7 +184,7 @@ fn run_notebook_hello_world() {
   let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
     .join("tests/notebooks/hello_world.nb");
   let (stdout, stderr, ok) = run_file(&path);
-  assert!(ok, "woxi run hello_world.nb failed: stderr={}", stderr);
+  assert!(ok, "woxi run hello_world.nb failed: stderr={stderr}");
   assert_eq!(stdout.trim(), "Hello World!");
 }
 
@@ -211,7 +211,7 @@ Cell[BoxData[RowBox[{"Print[\"hi\"]", "\n", "x = 5"}]], "Code"]
   std::fs::write(&path, nb).expect("write temp notebook");
   let (stdout, stderr, ok) = run_file(&path);
   let _ = std::fs::remove_file(&path);
-  assert!(ok, "woxi run notebook failed: stderr={}", stderr);
+  assert!(ok, "woxi run notebook failed: stderr={stderr}");
   assert_eq!(stdout, "3\n{1, 2, 3}\nhi\n5\n");
 }
 
@@ -228,15 +228,14 @@ fn run_notebook_notebook_directory_resolves_to_file_dir() {
   std::fs::write(&path, nb).expect("write temp notebook");
   let (stdout, stderr, ok) = run_file(&path);
   let _ = std::fs::remove_file(&path);
-  assert!(ok, "woxi run notebook failed: stderr={}", stderr);
+  assert!(ok, "woxi run notebook failed: stderr={stderr}");
   // The canonical temp dir, with a trailing separator (WL convention).
   let sep = std::path::MAIN_SEPARATOR;
   let expected =
     format!("{}{}", dir.to_string_lossy().trim_end_matches(sep), sep);
   assert!(
     !stderr.contains("nosv"),
-    "NotebookDirectory emitted nosv message: stderr={}",
-    stderr
+    "NotebookDirectory emitted nosv message: stderr={stderr}"
   );
   assert_eq!(stdout.trim(), expected.trim_end_matches(sep));
 }
@@ -269,7 +268,7 @@ fn run_repl(input: &str) -> (String, String, bool) {
 #[test]
 fn repl_evaluates_and_numbers_output() {
   let (stdout, stderr, ok) = run_repl("1 + 2\n3 * 4\n");
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
   assert_eq!(stdout, "Out[1]= 3\n\nOut[2]= 12\n\n");
 }
 
@@ -278,7 +277,7 @@ fn repl_persists_state_across_lines() {
   // Variable bindings and function definitions must survive across inputs
   // in a single REPL process (unlike `woxi eval`, a fresh process each call).
   let (stdout, stderr, ok) = run_repl("x = 5\nx^2\nf[n_] := n!\nf[4]\n");
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
   // x=5 -> Out[1], x^2 -> Out[2]=25, the := definition is suppressed (Out[3]
   // is skipped), f[4] -> Out[4]=24.
   assert_eq!(stdout, "Out[1]= 5\n\nOut[2]= 25\n\nOut[4]= 24\n\n");
@@ -287,14 +286,14 @@ fn repl_persists_state_across_lines() {
 #[test]
 fn repl_percent_references_previous_output() {
   let (stdout, stderr, ok) = run_repl("10 + 5\n% + 1\n% * 2\n");
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
   assert_eq!(stdout, "Out[1]= 15\n\nOut[2]= 16\n\nOut[3]= 32\n\n");
 }
 
 #[test]
 fn repl_suppresses_output_on_trailing_semicolon() {
   let (stdout, stderr, ok) = run_repl("a = 7;\na + 1\n");
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
   // The trailing semicolon suppresses Out[1]; the line counter still advances.
   assert_eq!(stdout, "Out[2]= 8\n\n");
 }
@@ -304,7 +303,7 @@ fn repl_joins_multiline_bracketed_input() {
   // An input with unbalanced brackets continues onto the next line until the
   // brackets close, then evaluates as a single expression.
   let (stdout, stderr, ok) = run_repl("Sum[i^2,\n  {i, 1, 10}]\n");
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
   assert_eq!(stdout, "Out[1]= 385\n\n");
 }
 
@@ -313,7 +312,7 @@ fn repl_joins_line_ending_in_assignment_operator() {
   // A line ending in `=` is only the start of an input: the value follows on
   // the next line, and both together are a single `In[]` (issue #354).
   let (stdout, stderr, ok) = run_repl("c =\n5\nc\n");
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
   assert_eq!(stdout, "Out[1]= 5\n\nOut[2]= 5\n\n");
 }
 
@@ -327,7 +326,7 @@ fn repl_joins_definition_ending_in_set_delayed() {
     " xp = 1 / (xp - xi), {n}]; Return[r]]\n",
     "CF[N[Pi], 10]\n",
   ));
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
   // The definition is suppressed (Out[1] skipped), the call is Out[2].
   assert_eq!(stdout, "Out[2]= {3, 7, 15, 1, 292, 1, 1, 1, 2, 1}\n\n");
 }
@@ -336,7 +335,7 @@ fn repl_joins_definition_ending_in_set_delayed() {
 fn repl_joins_line_ending_in_infix_operator() {
   // Any dangling operator continues, not just the assignment ones.
   let (stdout, stderr, ok) = run_repl("1 +\n2\nx /.\nx -> 7\n");
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
   assert_eq!(stdout, "Out[1]= 3\n\nOut[2]= 7\n\n");
 }
 
@@ -345,8 +344,8 @@ fn repl_syntax_error_does_not_swallow_the_next_line() {
   // Input that cannot be completed by anything is a syntax error, reported
   // immediately — the following line stays a separate input.
   let (stdout, stderr, ok) = run_repl("1 +* 2\n7\n");
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
-  assert!(stderr.contains("Parse error"), "stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
+  assert!(stderr.contains("Parse error"), "stderr={stderr}");
   assert_eq!(stdout, "Out[2]= 7\n\n");
 }
 
@@ -355,7 +354,7 @@ fn repl_print_writes_before_suppressed_output() {
   // Print emits to stdout during evaluation; it returns Null so no Out[] line
   // is shown for that input.
   let (stdout, stderr, ok) = run_repl("Print[\"hi\"]\n2 + 2\n");
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
   assert_eq!(stdout, "hi\nOut[2]= 4\n\n");
 }
 
@@ -363,7 +362,7 @@ fn repl_print_writes_before_suppressed_output() {
 fn repl_quit_command_exits() {
   // Lines after `Quit` are not evaluated.
   let (stdout, stderr, ok) = run_repl("1 + 1\nQuit\n99\n");
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
   assert_eq!(stdout, "Out[1]= 2\n\n");
 }
 
@@ -371,13 +370,12 @@ fn repl_quit_command_exits() {
 fn repl_reports_errors_without_aborting_session() {
   // A bad expression prints an error to stderr but the session continues.
   let (stdout, stderr, ok) = run_repl("1/0\n6 * 7\n");
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
   assert!(
     stdout.contains("Out[1]= ComplexInfinity"),
-    "stdout={}",
-    stdout
+    "stdout={stdout}"
   );
-  assert!(stdout.contains("Out[2]= 42"), "stdout={}", stdout);
+  assert!(stdout.contains("Out[2]= 42"), "stdout={stdout}");
 }
 
 /// `wolframscript`'s terminal REPL prints results in OutputForm, which shows a
@@ -393,7 +391,7 @@ fn repl_shows_machine_reals_at_six_significant_figures() {
     "0.1 + 0.2\n",
     "Range[3]*1.111111111\n",
   ));
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
   assert_eq!(
     stdout,
     concat!(
@@ -417,7 +415,7 @@ fn repl_applies_scientific_thresholds_after_rounding() {
     "1234567.89\n",
     "2^100 + 0.5\n",
   ));
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
   assert_eq!(
     stdout,
     concat!(
@@ -437,7 +435,7 @@ fn repl_applies_scientific_thresholds_after_rounding() {
 fn repl_shows_arbitrary_precision_reals_without_marker() {
   let (stdout, stderr, ok) =
     run_repl("N[Pi, 20]\nN[Pi, 3]\nSetAccuracy[0, 5]\n");
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
   assert_eq!(
     stdout,
     concat!(
@@ -459,7 +457,7 @@ fn repl_rounds_display_only_not_stored_values() {
     "x\n",
     "(x - 492.44)*10^16\n",
   ));
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
   assert_eq!(
     stdout,
     concat!(
@@ -480,7 +478,7 @@ fn repl_does_not_round_digits_inside_strings() {
     "s = \"9.87654321\"\n",
     "{1.23456789, s}\n",
   ));
-  assert!(ok, "woxi repl failed: stderr={}", stderr);
+  assert!(ok, "woxi repl failed: stderr={stderr}");
   assert_eq!(
     stdout,
     concat!(

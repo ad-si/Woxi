@@ -457,7 +457,7 @@ fn offset_segment(a: Pt, b: Pt, side: f64, dist: f64) -> (Pt, Pt) {
 
 /// Pull both endpoints of a segment toward its midpoint by fraction `frac`.
 fn shrink(a: Pt, b: Pt, frac: f64) -> (Pt, Pt) {
-  let mid = ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0);
+  let mid = (f64::midpoint(a.0, b.0), f64::midpoint(a.1, b.1));
   (
     (a.0 + (mid.0 - a.0) * frac, a.1 + (mid.1 - a.1) * frac),
     (b.0 + (mid.0 - b.0) * frac, b.1 + (mid.1 - b.1) * frac),
@@ -515,7 +515,7 @@ fn charge_label(charge: i64) -> String {
   match charge {
     1 => "+".to_string(),
     -1 => "\u{2013}".to_string(), // en dash reads better than hyphen
-    c if c > 0 => format!("{}+", c),
+    c if c > 0 => format!("{c}+"),
     c => format!("{}\u{2013}", -c),
   }
 }

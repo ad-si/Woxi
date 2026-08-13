@@ -913,8 +913,8 @@ fn generate_svg(
   let scale = (draw_w / p_width).min(draw_h / p_height);
   let cx = margin + draw_w / 2.0;
   let cy = margin + draw_h / 2.0;
-  let p_cx = (px_min + px_max) / 2.0;
-  let p_cy = (py_min + py_max) / 2.0;
+  let p_cx = f64::midpoint(px_min, px_max);
+  let p_cy = f64::midpoint(py_min, py_max);
 
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
     let sx = cx + (px - p_cx) * scale;
@@ -926,13 +926,11 @@ fn generate_svg(
 
   if full_width {
     svg.push_str(&format!(
-            "<svg width=\"100%\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-            svg_width, svg_height
+            "<svg width=\"100%\" viewBox=\"0 0 {svg_width} {svg_height}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n"
         ));
   } else {
     svg.push_str(&format!(
-            "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-            svg_width, svg_height, svg_width, svg_height
+            "<svg width=\"{svg_width}\" height=\"{svg_height}\" viewBox=\"0 0 {svg_width} {svg_height}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
         ));
   }
 
@@ -1013,8 +1011,7 @@ fn generate_svg(
           project(edge.endpoints[1], camera).1,
         );
         svg.push_str(&format!(
-          "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
-          ex0, ey0, ex1, ey1, axis_color
+          "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n"
         ));
         ei += 1;
       }
@@ -1025,13 +1022,11 @@ fn generate_svg(
       let (r, g, b) = tri.color;
       if mesh_mode == MeshMode::All {
         svg.push_str(&format!(
-          "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"#00000060\" stroke-width=\"0.5\"/>\n",
-          x0, y0, x1, y1, x2, y2, r, g, b
+          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"#00000060\" stroke-width=\"0.5\"/>\n"
         ));
       } else {
         svg.push_str(&format!(
-          "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"rgb({},{},{})\" stroke-width=\"0.5\"/>\n",
-          x0, y0, x1, y1, x2, y2, r, g, b, r, g, b
+          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"0.5\"/>\n"
         ));
       }
     }
@@ -1047,8 +1042,7 @@ fn generate_svg(
         project(edge.endpoints[1], camera).1,
       );
       svg.push_str(&format!(
-        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
-        ex0, ey0, ex1, ey1, axis_color
+        "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n"
       ));
       ei += 1;
     }
@@ -1059,8 +1053,7 @@ fn generate_svg(
     let (x0, y0) = to_svg(line.projected[0].0, line.projected[0].1);
     let (x1, y1) = to_svg(line.projected[1].0, line.projected[1].1);
     svg.push_str(&format!(
-      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"#000000a0\" stroke-width=\"0.5\"/>\n",
-      x0, y0, x1, y1
+      "<line x1=\"{x0:.1}\" y1=\"{y0:.1}\" x2=\"{x1:.1}\" y2=\"{y1:.1}\" stroke=\"#000000a0\" stroke-width=\"0.5\"/>\n"
     ));
   }
 
@@ -1244,9 +1237,9 @@ fn draw_axes_on_box(
 
   // Project the box center so we can orient tick labels outward
   let box_center = Point3D {
-    x: (box_x_lo + box_x_hi) / 2.0,
-    y: (box_y_lo + box_y_hi) / 2.0,
-    z: (box_z_lo + box_z_hi) / 2.0,
+    x: f64::midpoint(box_x_lo, box_x_hi),
+    y: f64::midpoint(box_y_lo, box_y_hi),
+    z: f64::midpoint(box_z_lo, box_z_hi),
   };
   let (cx, cy) =
     to_svg(project(box_center, camera).0, project(box_center, camera).1);
@@ -1262,8 +1255,7 @@ fn draw_axes_on_box(
 
     // Axis line
     svg.push_str(&format!(
-            "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"1\"/>\n",
-            sx0, sy0, sx1, sy1, axis_color
+            "<line x1=\"{sx0:.1}\" y1=\"{sy0:.1}\" x2=\"{sx1:.1}\" y2=\"{sy1:.1}\" stroke=\"{axis_color}\" stroke-width=\"1\"/>\n"
         ));
 
     // The axis label sits centred on the axis, clear of the tick labels
@@ -1684,8 +1676,8 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let scale = (draw_w / p_width).min(draw_h / p_height);
   let cx = margin + draw_w / 2.0;
   let cy = margin + draw_h / 2.0;
-  let p_cx = (px_min + px_max) / 2.0;
-  let p_cy = (py_min + py_max) / 2.0;
+  let p_cx = f64::midpoint(px_min, px_max);
+  let p_cy = f64::midpoint(py_min, py_max);
 
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
     (cx + (px - p_cx) * scale, cy - (py - p_cy) * scale)
@@ -1745,13 +1737,11 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if full_width {
     svg.push_str(&format!(
-      "<svg width=\"100%\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-      svg_width, svg_height
+      "<svg width=\"100%\" viewBox=\"0 0 {svg_width} {svg_height}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n"
     ));
   } else {
     svg.push_str(&format!(
-      "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-      svg_width, svg_height, svg_width, svg_height
+      "<svg width=\"{svg_width}\" height=\"{svg_height}\" viewBox=\"0 0 {svg_width} {svg_height}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
     ));
   }
   {
@@ -1778,8 +1768,7 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           project(edge.endpoints[1], &camera).1,
         );
         svg.push_str(&format!(
-          "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
-          ex0, ey0, ex1, ey1, axis_color
+          "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n"
         ));
         ei += 1;
       }
@@ -1797,14 +1786,12 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if vector_markers == "Tube" {
         // Tube: thicker stroke with rounded caps
         svg.push_str(&format!(
-          "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"3\" stroke-linecap=\"round\"/>\n",
-          sx0, sy0, sx1, sy1, color_str
+          "<line x1=\"{sx0:.1}\" y1=\"{sy0:.1}\" x2=\"{sx1:.1}\" y2=\"{sy1:.1}\" stroke=\"{color_str}\" stroke-width=\"3\" stroke-linecap=\"round\"/>\n"
         ));
       } else {
         // Arrow: line + arrowhead
         svg.push_str(&format!(
-          "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"1.2\"/>\n",
-          sx0, sy0, sx1, sy1, color_str
+          "<line x1=\"{sx0:.1}\" y1=\"{sy0:.1}\" x2=\"{sx1:.1}\" y2=\"{sy1:.1}\" stroke=\"{color_str}\" stroke-width=\"1.2\"/>\n"
         ));
 
         // Arrowhead
@@ -1821,8 +1808,7 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let bx2 = sx1 - ux * hl - (-uy) * hw;
           let by2 = sy1 - uy * hl - ux * hw;
           svg.push_str(&format!(
-            "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"{}\"/>\n",
-            sx1, sy1, bx1, by1, bx2, by2, color_str
+            "<polygon points=\"{sx1:.1},{sy1:.1} {bx1:.1},{by1:.1} {bx2:.1},{by2:.1}\" fill=\"{color_str}\"/>\n"
           ));
         }
       }
@@ -1840,8 +1826,7 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         project(edge.endpoints[1], &camera).1,
       );
       svg.push_str(&format!(
-        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
-        ex0, ey0, ex1, ey1, axis_color
+        "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n"
       ));
       ei += 1;
     }
@@ -2088,9 +2073,9 @@ fn clip_plane_to_box(
     .fold(0.0f64, |acc, e| acc + e * e)
     .sqrt();
   let center = [
-    (bounds[0].0 + bounds[0].1) / 2.0,
-    (bounds[1].0 + bounds[1].1) / 2.0,
-    (bounds[2].0 + bounds[2].1) / 2.0,
+    f64::midpoint(bounds[0].0, bounds[0].1),
+    f64::midpoint(bounds[1].0, bounds[1].1),
+    f64::midpoint(bounds[2].0, bounds[2].1),
   ];
   // Project the box centre onto the plane so the quad is centred on the
   // part of it the box can actually see.
@@ -2143,7 +2128,7 @@ fn clipping_bounds(bounds: [(f64, f64); 3]) -> [(f64, f64); 3] {
     if hi > lo {
       return (lo, hi);
     }
-    let mid = (lo + hi) / 2.0;
+    let mid = f64::midpoint(lo, hi);
     (mid - half, mid + half)
   })
 }
@@ -2532,12 +2517,11 @@ fn parse_specularity(args: &[Expr]) -> Option<((u8, u8, u8), f64)> {
   use crate::functions::graphics::parse_color;
   use crate::functions::math_ast::expr_to_f64;
 
-  let color = match parse_color(&args[0]) {
-    Some(c) => c,
-    None => {
-      let g = expr_to_f64(&args[0])?;
-      crate::functions::graphics::Color::new(g, g, g)
-    }
+  let color = if let Some(c) = parse_color(&args[0]) {
+    c
+  } else {
+    let g = expr_to_f64(&args[0])?;
+    crate::functions::graphics::Color::new(g, g, g)
   };
   let rgb = (
     (color.r.clamp(0.0, 1.0) * 255.0).round() as u8,
@@ -2774,7 +2758,7 @@ fn content_center(prims: &[Primitive3D]) -> [f64; 3] {
   let [(x0, x1), (y0, y1), (z0, z1)] = primitives_bounds(prims);
   let mid = |lo: f64, hi: f64| {
     if lo.is_finite() && hi.is_finite() {
-      (lo + hi) / 2.0
+      f64::midpoint(lo, hi)
     } else {
       0.0
     }
@@ -2957,9 +2941,7 @@ fn parse_text3d_offset(spec: &Expr) -> Option<(f64, f64)> {
     if let Expr::Identifier(s) = e {
       return match (s.as_str(), horizontal) {
         ("Left", true) | ("Bottom", false) => Some(-1.0),
-        ("Center", _) | ("Automatic", _) | ("Axis", _) | ("Baseline", _) => {
-          Some(0.0)
-        }
+        ("Center" | "Automatic" | "Axis" | "Baseline", _) => Some(0.0),
         ("Right", true) | ("Top", false) => Some(1.0),
         _ => None,
       };
@@ -3025,18 +3007,18 @@ fn collect_3d_primitives(
           }
         }
         "Cuboid" => {
-          let p_min = if !args.is_empty() {
-            parse_point3d(&args[0]).unwrap_or(Point3D {
-              x: 0.0,
-              y: 0.0,
-              z: 0.0,
-            })
-          } else {
+          let p_min = if args.is_empty() {
             Point3D {
               x: 0.0,
               y: 0.0,
               z: 0.0,
             }
+          } else {
+            parse_point3d(&args[0]).unwrap_or(Point3D {
+              x: 0.0,
+              y: 0.0,
+              z: 0.0,
+            })
           };
           let p_max = if args.len() >= 2 {
             parse_point3d(&args[1]).unwrap_or(Point3D {
@@ -3080,7 +3062,7 @@ fn collect_3d_primitives(
           } else if let Expr::List(poly_exprs) = &args[0] {
             // Polygon[{{p1, p2, …}, {q1, q2, …}, …}]: a collection of
             // polygons in one primitive.
-            for poly in poly_exprs.iter() {
+            for poly in poly_exprs {
               if let Some(pts) = parse_point3d_list(poly) {
                 prims.push(Primitive3D::Polygon3D {
                   points: pts,
@@ -3184,34 +3166,32 @@ fn collect_3d_primitives(
           }
         }
         "Cylinder" => {
-          let (p1, p2) = if !args.is_empty() {
-            if let Expr::List(items) = &args[0] {
-              if items.len() == 2 {
-                let a = parse_point3d(&items[0]).unwrap_or(Point3D {
-                  x: 0.0,
-                  y: 0.0,
-                  z: -1.0,
-                });
-                let b = parse_point3d(&items[1]).unwrap_or(Point3D {
-                  x: 0.0,
-                  y: 0.0,
-                  z: 1.0,
-                });
-                (a, b)
-              } else {
-                (
-                  Point3D {
-                    x: 0.0,
-                    y: 0.0,
-                    z: -1.0,
-                  },
-                  Point3D {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 1.0,
-                  },
-                )
-              }
+          let (p1, p2) = if args.is_empty() {
+            (
+              Point3D {
+                x: 0.0,
+                y: 0.0,
+                z: -1.0,
+              },
+              Point3D {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+              },
+            )
+          } else if let Expr::List(items) = &args[0] {
+            if items.len() == 2 {
+              let a = parse_point3d(&items[0]).unwrap_or(Point3D {
+                x: 0.0,
+                y: 0.0,
+                z: -1.0,
+              });
+              let b = parse_point3d(&items[1]).unwrap_or(Point3D {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+              });
+              (a, b)
             } else {
               (
                 Point3D {
@@ -3256,34 +3236,32 @@ fn collect_3d_primitives(
           });
         }
         "Cone" => {
-          let (p1, p2) = if !args.is_empty() {
-            if let Expr::List(items) = &args[0] {
-              if items.len() == 2 {
-                let a = parse_point3d(&items[0]).unwrap_or(Point3D {
-                  x: 0.0,
-                  y: 0.0,
-                  z: -1.0,
-                });
-                let b = parse_point3d(&items[1]).unwrap_or(Point3D {
-                  x: 0.0,
-                  y: 0.0,
-                  z: 1.0,
-                });
-                (a, b)
-              } else {
-                (
-                  Point3D {
-                    x: 0.0,
-                    y: 0.0,
-                    z: -1.0,
-                  },
-                  Point3D {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 1.0,
-                  },
-                )
-              }
+          let (p1, p2) = if args.is_empty() {
+            (
+              Point3D {
+                x: 0.0,
+                y: 0.0,
+                z: -1.0,
+              },
+              Point3D {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+              },
+            )
+          } else if let Expr::List(items) = &args[0] {
+            if items.len() == 2 {
+              let a = parse_point3d(&items[0]).unwrap_or(Point3D {
+                x: 0.0,
+                y: 0.0,
+                z: -1.0,
+              });
+              let b = parse_point3d(&items[1]).unwrap_or(Point3D {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+              });
+              (a, b)
             } else {
               (
                 Point3D {
@@ -3364,43 +3342,36 @@ fn collect_3d_primitives(
             },
           };
           for pts in curves {
-            let radii: Vec<f64> = match args.get(1) {
-              Some(spec) => {
-                let spec = evaluate_expr_to_expr(spec).unwrap_or(spec.clone());
-                match &spec {
-                  Expr::List(items) if items.len() == pts.len() => items
-                    .iter()
-                    .map(|e| {
-                      try_eval_to_f64(
-                        &evaluate_expr_to_expr(e).unwrap_or(e.clone()),
-                      )
-                      .unwrap_or(0.0)
-                    })
-                    .collect(),
-                  _ => {
-                    let r = try_eval_to_f64(&spec).unwrap_or(0.0);
-                    vec![r; pts.len()]
-                  }
+            let radii: Vec<f64> = if let Some(spec) = args.get(1) {
+              let spec = evaluate_expr_to_expr(spec).unwrap_or(spec.clone());
+              match &spec {
+                Expr::List(items) if items.len() == pts.len() => items
+                  .iter()
+                  .map(|e| {
+                    try_eval_to_f64(
+                      &evaluate_expr_to_expr(e).unwrap_or(e.clone()),
+                    )
+                    .unwrap_or(0.0)
+                  })
+                  .collect(),
+                _ => {
+                  let r = try_eval_to_f64(&spec).unwrap_or(0.0);
+                  vec![r; pts.len()]
                 }
               }
-              // Wolfram sizes an unspecified tube radius from the scene
-              // rather than fixing it; a hundredth of the curve's own
-              // extent is the same kind of thin, and is all the notebooks
-              // that omit it need (they nearly always give one).
-              None => {
-                let extent = pts
-                  .iter()
-                  .flat_map(|a| {
-                    pts.iter().map(move |b| {
-                      ((a.x - b.x).powi(2)
-                        + (a.y - b.y).powi(2)
-                        + (a.z - b.z).powi(2))
-                      .sqrt()
-                    })
+            } else {
+              let extent = pts
+                .iter()
+                .flat_map(|a| {
+                  pts.iter().map(move |b| {
+                    ((a.x - b.x).powi(2)
+                      + (a.y - b.y).powi(2)
+                      + (a.z - b.z).powi(2))
+                    .sqrt()
                   })
-                  .fold(0.0f64, f64::max);
-                vec![extent / 100.0; pts.len()]
-              }
+                })
+                .fold(0.0f64, f64::max);
+              vec![extent / 100.0; pts.len()]
             };
             let tris = tessellate_tube(&pts, &radii, style.capped);
             if !tris.is_empty() {
@@ -3413,18 +3384,18 @@ fn collect_3d_primitives(
           }
         }
         "Torus" | "FilledTorus" => {
-          let center = if !args.is_empty() {
-            parse_point3d(&args[0]).unwrap_or(Point3D {
-              x: 0.0,
-              y: 0.0,
-              z: 0.0,
-            })
-          } else {
+          let center = if args.is_empty() {
             Point3D {
               x: 0.0,
               y: 0.0,
               z: 0.0,
             }
+          } else {
+            parse_point3d(&args[0]).unwrap_or(Point3D {
+              x: 0.0,
+              y: 0.0,
+              z: 0.0,
+            })
           };
           let (r1, r2) = match args.get(1) {
             Some(Expr::List(radii)) if radii.len() == 2 => {
@@ -3585,7 +3556,7 @@ fn tessellate_torus(
   r1: f64,
   r2: f64,
 ) -> Vec<(Point3D, Point3D, Point3D)> {
-  let ring = (r1 + r2) / 2.0;
+  let ring = f64::midpoint(r1, r2);
   let tube = (r2 - r1) / 2.0;
   let n_u = 32;
   let n_v = 16;
@@ -5293,9 +5264,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // so the scale no longer follows the view angle or a moving shape.
   if spherical_region {
     let center = Point3D {
-      x: (x3_min + x3_max) / 2.0,
-      y: (y3_min + y3_max) / 2.0,
-      z: (z3_min + z3_max) / 2.0,
+      x: f64::midpoint(x3_min, x3_max),
+      y: f64::midpoint(y3_min, y3_max),
+      z: f64::midpoint(z3_min, z3_max),
     };
     let radius = if plot_range.is_some() {
       ((x3_max - x3_min).powi(2)
@@ -5332,8 +5303,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut scale = (draw_w / p_width).min(draw_h / p_height);
   let cx = margin + draw_w / 2.0;
   let cy = margin + draw_h / 2.0;
-  let mut p_cx = (px_min + px_max) / 2.0;
-  let mut p_cy = (py_min + py_max) / 2.0;
+  let mut p_cx = f64::midpoint(px_min, px_max);
+  let mut p_cy = f64::midpoint(py_min, py_max);
 
   // An explicit `ViewAngle` fixes the camera's field of view, so the scale
   // comes from the view volume rather than from fitting the contents: the
@@ -5351,9 +5322,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // whatever part of it the contents happen to occupy.
       let (bcx, bcy) = project(
         Point3D {
-          x: (x3_min + x3_max) / 2.0,
-          y: (y3_min + y3_max) / 2.0,
-          z: (z3_min + z3_max) / 2.0,
+          x: f64::midpoint(x3_min, x3_max),
+          y: f64::midpoint(y3_min, y3_max),
+          z: f64::midpoint(z3_min, z3_max),
         },
         &camera,
       );
@@ -5474,13 +5445,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg = String::with_capacity(all_triangles.len() * 120 + 1000);
   if full_width {
     svg.push_str(&format!(
-      "<svg width=\"100%\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-      svg_width, svg_height
+      "<svg width=\"100%\" viewBox=\"0 0 {svg_width} {svg_height}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n"
     ));
   } else {
     svg.push_str(&format!(
-      "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-      svg_width, svg_height, svg_width, svg_height
+      "<svg width=\"{svg_width}\" height=\"{svg_height}\" viewBox=\"0 0 {svg_width} {svg_height}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
     ));
   }
   {
@@ -5544,13 +5513,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // colour instead, so the face reads as one flat surface.
       if tri.boundary == [true; 3] {
         svg.push_str(&format!(
-          "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"{edge_stroke}\" stroke-width=\"1\"{}/>\n",
-          x0, y0, x1, y1, x2, y2, r, g, b, opacity_attr
+          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{edge_stroke}\" stroke-width=\"1\"{opacity_attr}/>\n"
         ));
       } else {
         svg.push_str(&format!(
-          "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"0.5\"{}/>\n",
-          x0, y0, x1, y1, x2, y2, opacity_attr
+          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"0.5\"{opacity_attr}/>\n"
         ));
         let corners = [(x0, y0), (x1, y1), (x2, y2)];
         for (e, on_outline) in tri.boundary.iter().enumerate() {
@@ -5619,8 +5586,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (sx, sy) =
             to_svg(project(*pt, &camera).0, project(*pt, &camera).1);
           svg.push_str(&format!(
-            "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"3\" fill=\"{}\"{}/>\n",
-            sx, sy, fill_color, opacity_attr
+            "<circle cx=\"{sx:.1}\" cy=\"{sy:.1}\" r=\"3\" fill=\"{fill_color}\"{opacity_attr}/>\n"
           ));
         }
       }
@@ -5640,7 +5606,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(|p| {
             let (sx, sy) =
               to_svg(project(*p, &camera).0, project(*p, &camera).1);
-            format!("{:.1},{:.1}", sx, sy)
+            format!("{sx:.1},{sy:.1}")
           })
           .collect();
         svg.push_str(&format!(
@@ -5670,8 +5636,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let bx2 = sx2 - ux * hl - (-uy) * hw;
           let by2 = sy2 - uy * hl - ux * hw;
           svg.push_str(&format!(
-            "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"{}\"{}/>\n",
-            sx2, sy2, bx1, by1, bx2, by2, stroke_color, opacity_attr
+            "<polygon points=\"{sx2:.1},{sy2:.1} {bx1:.1},{by1:.1} {bx2:.1},{by2:.1}\" fill=\"{stroke_color}\"{opacity_attr}/>\n"
           ));
         }
       }
@@ -5813,17 +5778,15 @@ fn with_plot_label(
         crate::functions::graphics::parse_color(replacement)
       }
       _ => None,
-    })
-    .map(|c| {
+    }).map_or_else(|| {
+      let (theme_bg, _, _, _, _) = crate::functions::plot::plot_theme();
+      (theme_bg.0, theme_bg.1, theme_bg.2)
+    }, |c| {
       (
         (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
         (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
         (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
       )
-    })
-    .unwrap_or_else(|| {
-      let (theme_bg, _, _, _, _) = crate::functions::plot::plot_theme();
-      (theme_bg.0, theme_bg.1, theme_bg.2)
     });
   // `width="100%"` (an `ImageSize -> Full` picture) has to stay responsive,
   // so the outer canvas repeats whichever sizing the inner one chose.
@@ -5876,7 +5839,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
-  let mut _mesh_mode = MeshMode::Default;
+  let mut mesh_mode = MeshMode::Default;
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -5896,8 +5859,8 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => _mesh_mode = MeshMode::None,
-            Expr::Identifier(n) if n == "All" => _mesh_mode = MeshMode::All,
+            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
         }
@@ -6211,7 +6174,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_width,
     svg_height,
     full_width,
-    _mesh_mode,
+    mesh_mode,
     true, // show_axes: always show axes for list_plot3d
   )?;
   // A `PlotLabel` sets a title above the finished picture.
@@ -6280,7 +6243,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
-  let mut _mesh_mode = MeshMode::Default;
+  let mut mesh_mode = MeshMode::Default;
   let mut show_axes = true;
   let mut z_clip: Option<(f64, f64)> = None;
   let mut plot_style: Option<Expr> = None;
@@ -6306,8 +6269,8 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => _mesh_mode = MeshMode::None,
-            Expr::Identifier(n) if n == "All" => _mesh_mode = MeshMode::All,
+            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
         }
@@ -6613,7 +6576,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_width,
     svg_height,
     full_width,
-    _mesh_mode,
+    mesh_mode,
     show_axes,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
@@ -6710,7 +6673,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
-  let mut _mesh_mode = MeshMode::Default;
+  let mut mesh_mode = MeshMode::Default;
   let mut show_axes = true;
 
   for opt in &args[4..] {
@@ -6731,8 +6694,8 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => _mesh_mode = MeshMode::None,
-            Expr::Identifier(n) if n == "All" => _mesh_mode = MeshMode::All,
+            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
         }
@@ -6981,7 +6944,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_width,
     svg_height,
     full_width,
-    _mesh_mode,
+    mesh_mode,
     show_axes,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
@@ -7283,8 +7246,8 @@ fn generate_scatter_svg(
   let scale = (draw_w / p_width).min(draw_h / p_height);
   let cx = margin + draw_w / 2.0;
   let cy = margin + draw_h / 2.0;
-  let p_cx = (px_min + px_max) / 2.0;
-  let p_cy = (py_min + py_max) / 2.0;
+  let p_cx = f64::midpoint(px_min, px_max);
+  let p_cy = f64::midpoint(py_min, py_max);
 
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
     let sx = cx + (px - p_cx) * scale;
@@ -7296,13 +7259,11 @@ fn generate_scatter_svg(
 
   if full_width {
     svg.push_str(&format!(
-      "<svg width=\"100%\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-      svg_width, svg_height
+      "<svg width=\"100%\" viewBox=\"0 0 {svg_width} {svg_height}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n"
     ));
   } else {
     svg.push_str(&format!(
-      "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-      svg_width, svg_height, svg_width, svg_height
+      "<svg width=\"{svg_width}\" height=\"{svg_height}\" viewBox=\"0 0 {svg_width} {svg_height}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
     ));
   }
 
@@ -7379,8 +7340,7 @@ fn generate_scatter_svg(
           project(edge.endpoints[1], camera).1,
         );
         svg.push_str(&format!(
-          "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
-          ex0, ey0, ex1, ey1, axis_color
+          "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n"
         ));
         ei += 1;
       }
@@ -7405,8 +7365,7 @@ fn generate_scatter_svg(
         project(edge.endpoints[1], camera).1,
       );
       svg.push_str(&format!(
-        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
-        ex0, ey0, ex1, ey1, axis_color
+        "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n"
       ));
       ei += 1;
     }
@@ -7694,8 +7653,8 @@ fn generate_line3d_svg(
   let scale = (draw_w / p_width).min(draw_h / p_height);
   let cx = margin + draw_w / 2.0;
   let cy = margin + draw_h / 2.0;
-  let p_cx = (px_min + px_max) / 2.0;
-  let p_cy = (py_min + py_max) / 2.0;
+  let p_cx = f64::midpoint(px_min, px_max);
+  let p_cy = f64::midpoint(py_min, py_max);
 
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
     let sx = cx + (px - p_cx) * scale;
@@ -7707,13 +7666,11 @@ fn generate_line3d_svg(
 
   if full_width {
     svg.push_str(&format!(
-      "<svg width=\"100%\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-      svg_width, svg_height
+      "<svg width=\"100%\" viewBox=\"0 0 {svg_width} {svg_height}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n"
     ));
   } else {
     svg.push_str(&format!(
-      "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-      svg_width, svg_height, svg_width, svg_height
+      "<svg width=\"{svg_width}\" height=\"{svg_height}\" viewBox=\"0 0 {svg_width} {svg_height}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
     ));
   }
 
@@ -7784,8 +7741,7 @@ fn generate_line3d_svg(
       project(edge.endpoints[1], camera).1,
     );
     svg.push_str(&format!(
-      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
-      ex0, ey0, ex1, ey1, axis_color
+      "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n"
     ));
   };
 
@@ -7799,8 +7755,7 @@ fn generate_line3d_svg(
     let (sx1, sy1) = to_svg(seg.x1, seg.y1);
     let (r, g, b) = seg.color;
     svg.push_str(&format!(
-      "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"rgb({},{},{})\" stroke-width=\"1.5\" stroke-linecap=\"round\"/>\n",
-      sx0, sy0, sx1, sy1, r, g, b
+      "<line x1=\"{sx0:.2}\" y1=\"{sy0:.2}\" x2=\"{sx1:.2}\" y2=\"{sy1:.2}\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"1.5\" stroke-linecap=\"round\"/>\n"
     ));
   }
   while ei < sorted_edges.len() {
@@ -7843,7 +7798,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
-  let mut _mesh_mode = MeshMode::Default;
+  let mut mesh_mode = MeshMode::Default;
   let mut show_axes = true;
   // `PlotPoints -> n`: number of samples per direction (n - 1 grid cells),
   // as in Wolfram. Low values matter: Demonstrations use PlotPoints -> 2
@@ -7875,8 +7830,8 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => _mesh_mode = MeshMode::None,
-            Expr::Identifier(n) if n == "All" => _mesh_mode = MeshMode::All,
+            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
         }
@@ -7924,8 +7879,8 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  let n_theta = plot_points.map(|p| p - 1).unwrap_or(SPHERICAL_GRID);
-  let n_phi = plot_points.map(|p| p - 1).unwrap_or(SPHERICAL_GRID);
+  let n_theta = plot_points.map_or(SPHERICAL_GRID, |p| p - 1);
+  let n_phi = plot_points.map_or(SPHERICAL_GRID, |p| p - 1);
   let theta_range = theta_max - theta_min;
   let phi_range = phi_max - phi_min;
 
@@ -8010,14 +7965,14 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // `a` inside, `b` outside; converge onto the boundary.
       let (mut lo, mut hi) = (a, b);
       for _ in 0..24 {
-        let mid = ((lo.0 + hi.0) / 2.0, (lo.1 + hi.1) / 2.0);
+        let mid = (f64::midpoint(lo.0, hi.0), f64::midpoint(lo.1, hi.1));
         if inside_at(mid.0, mid.1) {
           lo = mid;
         } else {
           hi = mid;
         }
       }
-      ((lo.0 + hi.0) / 2.0, (lo.1 + hi.1) / 2.0)
+      (f64::midpoint(lo.0, hi.0), f64::midpoint(lo.1, hi.1))
     };
     let mut out = Vec::new();
     for k in 0..3 {
@@ -8303,7 +8258,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_width,
     svg_height,
     full_width,
-    _mesh_mode,
+    mesh_mode,
     show_axes,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
@@ -8329,7 +8284,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
-  let _mesh_mode = MeshMode::Default;
+  let mesh_mode = MeshMode::Default;
   let show_axes = true;
 
   for opt in &args[3..] {
@@ -8532,7 +8487,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_width,
     svg_height,
     full_width,
-    _mesh_mode,
+    mesh_mode,
     show_axes,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
@@ -8855,7 +8810,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
-  let mut _mesh_mode = MeshMode::Default;
+  let mut mesh_mode = MeshMode::Default;
   let mut show_axes = true;
 
   for opt in &args[3..] {
@@ -8876,8 +8831,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => _mesh_mode = MeshMode::None,
-            Expr::Identifier(n) if n == "All" => _mesh_mode = MeshMode::All,
+            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
         }
@@ -9107,7 +9062,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_width,
     svg_height,
     full_width,
-    _mesh_mode,
+    mesh_mode,
     show_axes,
   )?;
   // A `PlotLabel` sets a title above the finished picture.

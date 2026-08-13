@@ -201,10 +201,10 @@ fn date_to_absolute_time(expr: &Expr) -> Option<f64> {
     return None;
   }
   let year = components[0] as i64;
-  let month = components.get(1).map(|v| *v as i64).unwrap_or(1);
-  let day = components.get(2).map(|v| *v as i64).unwrap_or(1);
-  let hour = components.get(3).map(|v| *v as i64).unwrap_or(0);
-  let minute = components.get(4).map(|v| *v as i64).unwrap_or(0);
+  let month = components.get(1).map_or(1, |v| *v as i64);
+  let day = components.get(2).map_or(1, |v| *v as i64);
+  let hour = components.get(3).map_or(0, |v| *v as i64);
+  let minute = components.get(4).map_or(0, |v| *v as i64);
   let second = components.get(5).copied().unwrap_or(0.0);
   Some(crate::functions::datetime_ast::date_to_absolute_seconds(
     year, month, day, hour, minute, second,
@@ -333,7 +333,7 @@ fn render_timeline_svg(
     marker_gap,
     row_gap,
   );
-  let num_rows = rows.iter().copied().max().map(|m| m + 1).unwrap_or(1);
+  let num_rows = rows.iter().copied().max().map_or(1, |m| m + 1);
 
   let svg_height =
     PADDING_TOP + num_rows as u32 * ROW_HEIGHT + AXIS_GAP + PADDING_BOTTOM;
@@ -349,8 +349,7 @@ fn render_timeline_svg(
 
   // Background.
   body.push_str(&format!(
-    "<rect width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
-    render_width, render_height, bg_color
+    "<rect width=\"{render_width}\" height=\"{render_height}\" fill=\"{bg_color}\"/>\n"
   ));
 
   let axis_x0 = margin_left;
@@ -377,30 +376,26 @@ fn render_timeline_svg(
       sf * 2.0,
     ));
 
-    let label_x = match ev.end {
-      Some(end) => {
-        // Interval: draw a rounded bar from start to end.
-        let x_end = x_to_px(end);
-        body.push_str(&format!(
-          "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" \
-           rx=\"{:.1}\" fill=\"{}\"/>\n",
-          x_start,
-          y - bar_half,
-          (x_end - x_start).max(sf),
-          bar_half * 2.0,
-          bar_half,
-          event_color,
-        ));
-        x_end + marker_gap
-      }
-      None => {
-        // Point: draw a filled circle marker.
-        body.push_str(&format!(
-          "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" fill=\"{}\"/>\n",
-          x_start, y, marker_r, event_color
-        ));
-        x_start + marker_r + marker_gap
-      }
+    let label_x = if let Some(end) = ev.end {
+      // Interval: draw a rounded bar from start to end.
+      let x_end = x_to_px(end);
+      body.push_str(&format!(
+        "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" \
+         rx=\"{:.1}\" fill=\"{}\"/>\n",
+        x_start,
+        y - bar_half,
+        (x_end - x_start).max(sf),
+        bar_half * 2.0,
+        bar_half,
+        event_color,
+      ));
+      x_end + marker_gap
+    } else {
+      // Point: draw a filled circle marker.
+      body.push_str(&format!(
+        "<circle cx=\"{x_start:.1}\" cy=\"{y:.1}\" r=\"{marker_r:.1}\" fill=\"{event_color}\"/>\n"
+      ));
+      x_start + marker_r + marker_gap
     };
 
     // Event label to the right of the marker, vertically centered.
@@ -417,9 +412,8 @@ fn render_timeline_svg(
 
   // Bottom axis line.
   body.push_str(&format!(
-    "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
-     stroke=\"{}\" stroke-width=\"{:.0}\"/>\n",
-    axis_x0, axis_y, axis_x1, axis_y, axis_color, sf
+    "<line x1=\"{axis_x0:.1}\" y1=\"{axis_y:.1}\" x2=\"{axis_x1:.1}\" y2=\"{axis_y:.1}\" \
+     stroke=\"{axis_color}\" stroke-width=\"{sf:.0}\"/>\n"
   ));
 
   // Date ticks and labels on the axis.
@@ -453,13 +447,12 @@ fn render_timeline_svg(
   }
 
   let mut buf = format!(
-    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" \
-     xmlns=\"http://www.w3.org/2000/svg\">\n{}</svg>",
-    svg_width, svg_height, render_width, render_height, body
+    "<svg width=\"{svg_width}\" height=\"{svg_height}\" viewBox=\"0 0 {render_width} {render_height}\" \
+     xmlns=\"http://www.w3.org/2000/svg\">\n{body}</svg>"
   );
 
   if full_width {
-    let old = format!("width=\"{}\" height=\"{}\"", svg_width, svg_height);
+    let old = format!("width=\"{svg_width}\" height=\"{svg_height}\"");
     buf = buf.replacen(&old, "width=\"100%\"", 1);
   }
 
@@ -469,7 +462,7 @@ fn render_timeline_svg(
 /// Theme colors: `(background, axis, label, event)`.
 fn theme_colors() -> (&'static str, &'static str, String, String) {
   let (r, g, b) = PLOT_COLORS[0];
-  let event = format!("rgb({},{},{})", r, g, b);
+  let event = format!("rgb({r},{g},{b})");
   if crate::is_dark_mode() {
     ("#1a1a1a", "#999999", "#999".to_string(), event)
   } else {

@@ -90,7 +90,7 @@ pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(var_powers) = as_multivar_monomial(&args[1])
     && var_powers.len() > 1
   {
-    return coefficient_of_monomial(&args[0], &var_powers);
+    return Ok(coefficient_of_monomial(&args[0], &var_powers));
   }
 
   // Composite form like `2*x` or `b*x` — anything beyond a bare symbol or
@@ -107,7 +107,7 @@ pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if args.len() == 3 && !matches!(&args[2], Expr::Integer(1)) {
         return Ok(unevaluated("Coefficient", args));
       }
-      return coefficient_of_general_form(&args[0], &form_factors);
+      return Ok(coefficient_of_general_form(&args[0], &form_factors));
     }
   }
 
@@ -314,7 +314,7 @@ fn factor_subset_remainder(
 fn coefficient_of_general_form(
   expr: &Expr,
   form_factors: &[Expr],
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let expanded = expand_expr(expr);
   let terms = collect_additive_terms(&expanded);
   let mut contributions: Vec<Expr> = Vec::new();
@@ -327,10 +327,10 @@ fn coefficient_of_general_form(
     }
   }
   if contributions.is_empty() {
-    return Ok(Expr::Integer(0));
+    return Expr::Integer(0);
   }
   if contributions.len() == 1 {
-    return Ok(contributions.remove(0));
+    return contributions.remove(0);
   }
   let mut result = contributions.remove(0);
   for c in contributions {
@@ -340,14 +340,14 @@ fn coefficient_of_general_form(
       right: Box::new(c),
     };
   }
-  Ok(simplify(result))
+  simplify(result)
 }
 
 /// Extract the coefficient of a multivariate monomial from a polynomial.
 fn coefficient_of_monomial(
   expr: &Expr,
   var_powers: &[(String, i128)],
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let expanded = expand_expr(expr);
   let terms = collect_additive_terms(&expanded);
   let mut coeff_sum: Vec<Expr> = Vec::new();
@@ -376,9 +376,9 @@ fn coefficient_of_monomial(
   }
 
   if coeff_sum.is_empty() {
-    Ok(Expr::Integer(0))
+    Expr::Integer(0)
   } else if coeff_sum.len() == 1 {
-    Ok(coeff_sum.remove(0))
+    coeff_sum.remove(0)
   } else {
     let mut result = coeff_sum.remove(0);
     for c in coeff_sum {
@@ -388,7 +388,7 @@ fn coefficient_of_monomial(
         right: Box::new(c),
       };
     }
-    Ok(simplify(result))
+    simplify(result)
   }
 }
 
@@ -540,11 +540,8 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let expanded = expand_and_combine(&normalized);
 
   // Find the degree
-  let degree = match max_power_int(&expanded, var) {
-    Some(d) => d,
-    None => {
-      return Ok(unevaluated("CoefficientList", args));
-    }
+  let Some(degree) = max_power_int(&expanded, var) else {
+    return Ok(unevaluated("CoefficientList", args));
   };
 
   // When `var` is absent the whole (unexpanded) expression is the sole
@@ -903,12 +900,12 @@ impl MonomialOrder {
     }
   }
 
-  fn compare(&self, a: &[i128], b: &[i128]) -> std::cmp::Ordering {
+  fn compare(self, a: &[i128], b: &[i128]) -> std::cmp::Ordering {
     // Larger exponent on the earlier variable leads.
     let lex = |a: &[i128], b: &[i128]| -> std::cmp::Ordering {
       for (ea, eb) in a.iter().zip(b.iter()) {
         match eb.cmp(ea) {
-          std::cmp::Ordering::Equal => continue,
+          std::cmp::Ordering::Equal => {}
           other => return other,
         }
       }
@@ -919,7 +916,7 @@ impl MonomialOrder {
     let revlex = |a: &[i128], b: &[i128]| -> std::cmp::Ordering {
       for (ea, eb) in a.iter().rev().zip(b.iter().rev()) {
         match ea.cmp(eb) {
-          std::cmp::Ordering::Equal => continue,
+          std::cmp::Ordering::Equal => {}
           other => return other,
         }
       }
@@ -964,15 +961,14 @@ pub fn monomial_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(s) | Expr::Constant(s) => Some(s.clone()),
         _ => None,
       };
-      match name.as_deref().and_then(MonomialOrder::parse) {
-        Some(o) => o,
-        None => {
-          crate::emit_message(&format!(
-            "MonomialList::mnmord1: {} is not a valid monomial order.",
-            crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
-          ));
-          return Ok(unevaluated("MonomialList", args));
-        }
+      if let Some(o) = name.as_deref().and_then(MonomialOrder::parse) {
+        o
+      } else {
+        crate::emit_message(&format!(
+          "MonomialList::mnmord1: {} is not a valid monomial order.",
+          crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
+        ));
+        return Ok(unevaluated("MonomialList", args));
       }
     }
   };
@@ -1158,7 +1154,7 @@ pub fn coefficient_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   entries.sort_by(|a, b| {
     for (ea, eb) in a.0.iter().zip(b.0.iter()) {
       match eb.cmp(ea) {
-        std::cmp::Ordering::Equal => continue,
+        std::cmp::Ordering::Equal => {}
         other => return other,
       }
     }
@@ -1204,7 +1200,7 @@ pub fn from_coefficient_rules_ast(
   };
 
   let mut terms: Vec<Expr> = Vec::new();
-  for rule in rules.iter() {
+  for rule in rules {
     let (exps, coeff) = match rule {
       Expr::Rule {
         pattern,
@@ -1372,7 +1368,7 @@ pub fn coefficient_arrays_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         indices.push(i + 1);
       }
     }
-    indices.sort();
+    indices.sort_unstable();
     entries.push((degree, indices, remaining));
   }
   // Group entries by degree. Sum coefficients for duplicate index lists.
@@ -1570,7 +1566,7 @@ fn coefficient_arrays_multi(
           indices.push(i + 1);
         }
       }
-      indices.sort();
+      indices.sort_unstable();
       entries.push((degree, indices, remaining));
     }
     // Sum coefficients sharing the same (degree, indices) — same as the

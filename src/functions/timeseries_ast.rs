@@ -271,7 +271,7 @@ pub fn time_series_moving_average_ast(
 pub fn try_series_arithmetic(head: &str, args: &[Expr]) -> Option<Expr> {
   let series: Vec<Option<Vec<(Expr, Expr)>>> =
     args.iter().map(series_pairs_of).collect();
-  let first = series.iter().position(|s| s.is_some())?;
+  let first = series.iter().position(std::option::Option::is_some)?;
   let base = series[first].as_ref()?;
   let mut out = Vec::with_capacity(base.len());
   for (i, (time, _)) in base.iter().enumerate() {
@@ -389,7 +389,7 @@ pub fn time_series_rescale_ast(
   };
   if span.len() != 2 {
     return Ok(args[0].clone());
-  };
+  }
   let (Some(low), Some(high)) = (to_time(&span[0]), to_time(&span[1])) else {
     return echo();
   };
@@ -478,7 +478,7 @@ pub fn time_series_thread_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return echo();
   };
   let mut all: Vec<Vec<(Expr, Expr)>> = Vec::with_capacity(series.len());
-  for s in series.iter() {
+  for s in series {
     match series_pairs_of(s) {
       Some(p) => all.push(p),
       None => return echo(),
@@ -588,10 +588,10 @@ pub fn series_pairs_of(expr: &Expr) -> Option<Vec<(Expr, Expr)>> {
     return None;
   };
   let mut out = Vec::with_capacity(items.len());
-  for item in items.iter() {
+  for item in items {
     match item {
       Expr::List(kv) if kv.len() == 2 => {
-        out.push((kv[0].clone(), kv[1].clone()))
+        out.push((kv[0].clone(), kv[1].clone()));
       }
       _ => return None,
     }
@@ -633,7 +633,7 @@ pub fn time_series_pairs(expr: &Expr) -> Option<Vec<(Expr, Expr)>> {
     _ => return None,
   };
   let mut out = Vec::new();
-  for p in pairs.iter() {
+  for p in pairs {
     if let Expr::List(kv) = p {
       let kv: Vec<_> = kv.iter().collect();
       if kv.len() == 2 {
@@ -727,9 +727,8 @@ pub fn temporal_paths(expr: &Expr) -> Option<Vec<Vec<(Expr, Expr)>>> {
   if name != "TemporalData" {
     return None;
   }
-  let paths = match args.first()? {
-    Expr::List(p) => p,
-    _ => return None,
+  let Expr::List(paths) = args.first()? else {
+    return None;
   };
   // Times are wrapped as `{{t1, …}}`; unwrap the singleton path-list, otherwise
   // take the stamps directly.
@@ -741,7 +740,7 @@ pub fn temporal_paths(expr: &Expr) -> Option<Vec<Vec<(Expr, Expr)>>> {
     _ => return None,
   };
   let mut out = Vec::with_capacity(paths.len());
-  for p in paths.iter() {
+  for p in paths {
     let Expr::List(vals) = p else { return None };
     out.push(
       times
@@ -917,9 +916,9 @@ pub fn time_series_resample_ast(
     let filtered: Vec<Expr> = pairs
       .into_iter()
       .filter(|(date, _)| {
-        date_components(date)
-          .map(|c| day_of_week(c[0] as i64, c[1] as i64, c[2] as i64) == target)
-          .unwrap_or(false)
+        date_components(date).is_some_and(|c| {
+          day_of_week(c[0] as i64, c[1] as i64, c[2] as i64) == target
+        })
       })
       .map(|(d, v)| Expr::List(vec![d, v].into()))
       .collect();

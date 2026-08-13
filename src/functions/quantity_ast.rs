@@ -29,7 +29,9 @@ fn dims(pairs: &[(Dimension, i64)]) -> BTreeMap<Dimension, i64> {
 }
 
 fn get_unit_info(name: &str) -> Option<UnitInfo> {
-  use Dimension::*;
+  use Dimension::{
+    AmountOfSubstance, ElectricCurrent, Information, Length, Mass, Time,
+  };
   let info = match name {
     // ── Length → Meters ───────────────────────────────────────────────
     "Meters" => UnitInfo {
@@ -672,7 +674,7 @@ fn resolve_per_unit(s: &str) -> Option<Expr> {
   let numer_name = if get_unit_info(numer_part).is_some() {
     numer_part.to_string()
   } else {
-    let plural = format!("{}s", numer_part);
+    let plural = format!("{numer_part}s");
     if get_unit_info(&plural).is_some() {
       plural
     } else {
@@ -682,7 +684,7 @@ fn resolve_per_unit(s: &str) -> Option<Expr> {
   let denom_name = if get_unit_info(denom_base).is_some() {
     denom_base.to_string()
   } else {
-    let plural = format!("{}s", denom_base);
+    let plural = format!("{denom_base}s");
     if get_unit_info(&plural).is_some() {
       plural
     } else {
@@ -1352,13 +1354,13 @@ fn normalize_singular_to_plural(name: &str) -> String {
   }
   // Names ending in "y" → "ies" (Henry → Henries)
   if let Some(base) = name.strip_suffix('y') {
-    let candidate = format!("{}ies", base);
+    let candidate = format!("{base}ies");
     if get_unit_info(&candidate).is_some() {
       return candidate;
     }
   }
   // Default: add "s"
-  format!("{}s", name)
+  format!("{name}s")
 }
 
 /// Full normalization for UnitConvert output: expands abbreviations, "Per" compounds,
@@ -1541,16 +1543,15 @@ fn convert_magnitude(
   to_unit: &str,
 ) -> Result<Expr, InterpreterError> {
   let from = get_unit_info(from_unit).ok_or_else(|| {
-    InterpreterError::EvaluationError(format!("Unknown unit: {}", from_unit))
+    InterpreterError::EvaluationError(format!("Unknown unit: {from_unit}"))
   })?;
   let to = get_unit_info(to_unit).ok_or_else(|| {
-    InterpreterError::EvaluationError(format!("Unknown unit: {}", to_unit))
+    InterpreterError::EvaluationError(format!("Unknown unit: {to_unit}"))
   })?;
 
   if from.dimensions != to.dimensions {
     return Err(InterpreterError::EvaluationError(format!(
-      "{} and {} are incompatible units.",
-      from_unit, to_unit
+      "{from_unit} and {to_unit} are incompatible units."
     )));
   }
 
@@ -1862,7 +1863,9 @@ fn has_bare_identifier_units(e: &Expr) -> bool {
 /// Build an SI base-unit expression from a dimension exponent map.
 /// E.g. {Mass: 1} → "Kilograms"; {Length: 1, Time: -2} → "Meters/Seconds^2".
 fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
-  use Dimension::*;
+  use Dimension::{
+    AmountOfSubstance, ElectricCurrent, Information, Length, Mass, Time,
+  };
   let base_name = |d: Dimension| -> &'static str {
     match d {
       Length => "Meters",
@@ -1876,7 +1879,7 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
   // Collect positive and negative exponents
   let mut positives: Vec<(Dimension, i64)> = Vec::new();
   let mut negatives: Vec<(Dimension, i64)> = Vec::new();
-  for (&d, &e) in dimensions.iter() {
+  for (&d, &e) in dimensions {
     if e > 0 {
       positives.push((d, e));
     } else if e < 0 {
@@ -2196,8 +2199,7 @@ pub fn try_quantity_plus(
       let u1_name = crate::syntax::expr_to_string(ref_unit);
       let u2_name = crate::syntax::expr_to_string(u);
       crate::emit_message(&format!(
-        "Quantity::compat: {} and {} are incompatible units.",
-        u1_name, u2_name
+        "Quantity::compat: {u1_name} and {u2_name} are incompatible units."
       ));
       // Return unevaluated Plus with operands sorted canonically (Plus is
       // Orderless — e.g. Quantity[3, Seconds] should precede
@@ -2223,18 +2225,15 @@ pub fn try_quantity_plus(
       let (_m, u) = is_quantity(q).unwrap();
       if let Some(info) = decompose_unit_expr(u) {
         // Compare (info.si.0 / info.si.1) with best via cross-multiply.
-        match best {
-          Some((bn, bd)) => {
-            // info < best iff info.si.0 * bd < bn * info.si.1
-            if info.si.0 * bd < bn * info.si.1 {
-              best = Some(info.si);
-              target_idx = i;
-            }
-          }
-          _ => {
+        if let Some((bn, bd)) = best {
+          // info < best iff info.si.0 * bd < bn * info.si.1
+          if info.si.0 * bd < bn * info.si.1 {
             best = Some(info.si);
             target_idx = i;
           }
+        } else {
+          best = Some(info.si);
+          target_idx = i;
         }
       }
     }
@@ -2949,7 +2948,7 @@ fn unit_factors(unit: &Expr) -> (Vec<Expr>, Vec<Expr>) {
   fn walk(e: &Expr, num: &mut Vec<Expr>, den: &mut Vec<Expr>, flip: bool) {
     match e {
       Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
+        for a in args {
           walk(a, num, den, flip);
         }
       }

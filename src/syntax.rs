@@ -1549,8 +1549,7 @@ pub fn comparison_head_and_args(
   if all_same {
     let head = operators
       .first()
-      .map(|o| o.head_name())
-      .unwrap_or("Equal")
+      .map_or("Equal", ComparisonOp::head_name)
       .to_string();
     (head, operands.to_vec())
   } else {
@@ -2003,7 +2002,7 @@ fn parse_box_continued(
 ) -> Option<(Expr, usize)> {
   while idx < toks.len() {
     match &toks[idx] {
-      BoxTok::Op('^') | BoxTok::Op('_') => {
+      BoxTok::Op('^' | '_') => {
         let op = match &toks[idx] {
           BoxTok::Op(c) => *c,
           _ => unreachable!(),
@@ -2041,7 +2040,7 @@ fn parse_box_continued(
         };
         return Some((box_call("FormBox", vec![body, form_tag]), toks.len()));
       }
-      BoxTok::Op('+') | BoxTok::Op('&') => {
+      BoxTok::Op('+' | '&') => {
         let op = match &toks[idx] {
           BoxTok::Op(c) => *c,
           _ => unreachable!(),
@@ -2132,8 +2131,8 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       }
     }
     Rule::List => parse_list(pair),
-    Rule::ListExtended => parse_list_extended(pair),
-    Rule::FunctionCallExtended => parse_function_call_extended(pair),
+    Rule::ListExtended => parse_list_extended(&pair),
+    Rule::FunctionCallExtended => parse_function_call_extended(&pair),
     Rule::FunctionCall => parse_function_call(pair),
     Rule::Expression | Rule::ExpressionNoImplicit | Rule::ConditionExpr => {
       parse_expression(pair)
@@ -2196,55 +2195,50 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       if exponent >= 0 {
         // Positive exponent: multiply mantissa by 10^exp → Integer
         let factor = 10_i128.checked_pow(exponent as u32);
-        match factor.and_then(|f| mantissa.checked_mul(f)) {
-          Some(n) => Expr::Integer(n),
-          None => {
-            // Overflow: use BigInteger
-            let m = num_bigint::BigInt::from(mantissa);
-            let f = num_bigint::BigInt::from(10).pow(exponent as u32);
-            Expr::BigInteger(m * f)
-          }
+        if let Some(n) = factor.and_then(|f| mantissa.checked_mul(f)) {
+          Expr::Integer(n)
+        } else {
+          // Overflow: use BigInteger
+          let m = num_bigint::BigInt::from(mantissa);
+          let f = num_bigint::BigInt::from(10).pow(exponent as u32);
+          Expr::BigInteger(m * f)
         }
       } else {
         // Negative exponent: mantissa / 10^|exp| → Rational
         let abs_exp = (-exponent) as u32;
         let denom = 10_i128.checked_pow(abs_exp);
-        match denom {
-          Some(d) => {
-            // Simplify the fraction
-            let (num, den) =
-              crate::functions::math_ast::rat_reduce(mantissa, d);
-            if den == 1 {
-              Expr::Integer(num)
-            } else {
-              Expr::FunctionCall {
-                name: "Rational".to_string(),
-                args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
-              }
+        if let Some(d) = denom {
+          // Simplify the fraction
+          let (num, den) = crate::functions::math_ast::rat_reduce(mantissa, d);
+          if den == 1 {
+            Expr::Integer(num)
+          } else {
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
             }
           }
-          None => {
-            // Overflow: keep the value exact with big integers, the way the
-            // positive branch does. `1*^-300` is the rational 1/10^300 in
-            // Wolfram, not a machine real.
-            let m = num_bigint::BigInt::from(mantissa);
-            let d = num_bigint::BigInt::from(10).pow(abs_exp);
-            let zero = num_bigint::BigInt::from(0);
-            let (mut a, mut b) =
-              (if m < zero { -m.clone() } else { m.clone() }, d.clone());
-            while b != zero {
-              let r = &a % &b;
-              a = b;
-              b = r;
-            }
-            let (num, den) = (m / &a, d / &a);
-            if den == num_bigint::BigInt::from(1) {
-              Expr::BigInteger(num)
-            } else {
-              Expr::FunctionCall {
-                name: "Rational".to_string(),
-                args: vec![Expr::BigInteger(num), Expr::BigInteger(den)].into(),
-              }
+        } else {
+          // Overflow: keep the value exact with big integers, the way the
+          // positive branch does. `1*^-300` is the rational 1/10^300 in
+          // Wolfram, not a machine real.
+          let m = num_bigint::BigInt::from(mantissa);
+          let d = num_bigint::BigInt::from(10).pow(abs_exp);
+          let zero = num_bigint::BigInt::from(0);
+          let (mut a, mut b) =
+            (if m < zero { -m.clone() } else { m.clone() }, d.clone());
+          while b != zero {
+            let r = &a % &b;
+            a = b;
+            b = r;
+          }
+          let (num, den) = (m / &a, d / &a);
+          if den == num_bigint::BigInt::from(1) {
+            Expr::BigInteger(num)
+          } else {
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::BigInteger(num), Expr::BigInteger(den)].into(),
             }
           }
         }
@@ -2307,9 +2301,9 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
             let prec = prec.max(1.0);
             let neg = int_part.starts_with('-');
             let digits = if neg {
-              format!("-{}.{}", int_signless, frac_part)
+              format!("-{int_signless}.{frac_part}")
             } else {
-              format!("{}.{}", int_signless, frac_part)
+              format!("{int_signless}.{frac_part}")
             };
             return Expr::BigFloat(digits, prec);
           }
@@ -2393,18 +2387,15 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         let frac_part = &lower[dot_pos + 1..];
         let int_val: f64 = if int_part.is_empty() {
           0.0
+        } else if let Ok(v) = i128::from_str_radix(int_part, base) {
+          v as f64
         } else {
-          match i128::from_str_radix(int_part, base) {
-            Ok(v) => v as f64,
-            Err(_) => {
-              use num_bigint::BigInt;
-              use num_traits::{Num, ToPrimitive};
-              BigInt::from_str_radix(int_part, base)
-                .ok()
-                .and_then(|n| n.to_f64())
-                .unwrap_or(0.0)
-            }
-          }
+          use num_bigint::BigInt;
+          use num_traits::{Num, ToPrimitive};
+          BigInt::from_str_radix(int_part, base)
+            .ok()
+            .and_then(|n| n.to_f64())
+            .unwrap_or(0.0)
         };
         let mut frac_val: f64 = 0.0;
         let mut divisor: f64 = base as f64;
@@ -2414,18 +2405,15 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
           divisor *= base as f64;
         }
         Expr::Real(int_val + frac_val)
+      } else if let Ok(val) = i128::from_str_radix(&lower, base) {
+        Expr::Integer(val)
       } else {
-        match i128::from_str_radix(&lower, base) {
-          Ok(val) => Expr::Integer(val),
-          Err(_) => {
-            // Overflows i128 — try BigInteger
-            use num_bigint::BigInt;
-            use num_traits::Num;
-            match BigInt::from_str_radix(&lower, base) {
-              Ok(n) => Expr::BigInteger(n),
-              Err(_) => Expr::Integer(0),
-            }
-          }
+        // Overflows i128 — try BigInteger
+        use num_bigint::BigInt;
+        use num_traits::Num;
+        match BigInt::from_str_radix(&lower, base) {
+          Ok(n) => Expr::BigInteger(n),
+          Err(_) => Expr::Integer(0),
         }
       }
     }
@@ -2619,7 +2607,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
               out.push_str(unicode);
             } else {
               // Unknown name — keep the raw `\[Name]` form
-              out.push_str(&rest[open..open + 2 + close + 1]);
+              out.push_str(&rest[open..=(open + 2 + close)]);
             }
             rest = &after[close + 1..];
           } else {
@@ -2895,14 +2883,20 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         }
       }
 
-      let start = slots.first().and_then(|s| s.clone()).unwrap_or(one);
-      let end = slots.get(1).and_then(|s| s.clone()).unwrap_or(all);
+      let start = slots
+        .first()
+        .and_then(std::clone::Clone::clone)
+        .unwrap_or(one);
+      let end = slots
+        .get(1)
+        .and_then(std::clone::Clone::clone)
+        .unwrap_or(all);
 
       if slots.len() >= 3 {
         // 3-part Span: a;;b;;c
         let step = slots
           .get(2)
-          .and_then(|s| s.clone())
+          .and_then(std::clone::Clone::clone)
           .unwrap_or_else(|| Expr::Integer(1));
         Expr::FunctionCall {
           name: "Span".to_string(),
@@ -2916,7 +2910,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         }
       }
     }
-    Rule::CompoundExpression => parse_compound_expression(pair),
+    Rule::CompoundExpression => parse_compound_expression(&pair),
     Rule::AssociationExtended => parse_association_extended(pair),
     Rule::Association => parse_association(pair),
     Rule::AssociationItem => parse_association_item(pair),
@@ -2967,10 +2961,10 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       let full = pair.as_str();
       let inner = pair.into_inner();
       let children: Vec<_> = inner.collect();
-      let name = if !children.is_empty() {
-        children[0].as_str().to_string()
-      } else {
+      let name = if children.is_empty() {
         String::new()
+      } else {
+        children[0].as_str().to_string()
       };
       // Count underscores in the full text (reliable even with implicit whitespace)
       let blank_count = full.chars().filter(|&c| c == '_').count();
@@ -3146,7 +3140,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       // (c) parenthesized form: `(r_)?Positive`, which is the same pattern
       //     as `r_?Positive` — the brackets only group.
       if matches!(
-        inner_pairs.first().map(|p| p.as_rule()),
+        inner_pairs.first().map(pest::iterators::Pair::as_rule),
         Some(Rule::PatternTestLhsParen)
       ) {
         let mut iter = inner_pairs.into_iter();
@@ -3177,7 +3171,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         };
       }
       if matches!(
-        inner_pairs.first().map(|p| p.as_rule()),
+        inner_pairs.first().map(pest::iterators::Pair::as_rule),
         Some(Rule::PatternTestLhsBare)
       ) {
         let mut iter = inner_pairs.into_iter();
@@ -3338,7 +3332,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       } else {
         rule_expr
       };
-      for p in inner_pairs.iter() {
+      for p in &inner_pairs {
         match p.as_rule() {
           Rule::RuleReplaceSuffix => {
             let repeated = p.as_str().trim_start().starts_with("//.");
@@ -3793,7 +3787,7 @@ fn parse_postfix_function(pair: Pair<Rule>) -> Expr {
 /// individual factors. Used when splicing the contents of an
 /// `ImplicitTimes` term back into the parent operator chain so that
 /// `a/b c d` parses as `(a*c*d)/b` rather than `a/(b*c*d)`.
-fn flatten_times_chain(expr: Expr) -> Vec<Expr> {
+fn flatten_times_chain(expr: &Expr) -> Vec<Expr> {
   fn walk(e: &Expr, out: &mut Vec<Expr>) {
     match e {
       Expr::BinaryOp {
@@ -3808,7 +3802,7 @@ fn flatten_times_chain(expr: Expr) -> Vec<Expr> {
     }
   }
   let mut out = Vec::new();
-  walk(&expr, &mut out);
+  walk(expr, &mut out);
   out
 }
 
@@ -3853,7 +3847,7 @@ fn split_implicit_products(
         .get(i)
         .is_some_and(|op| splits_implicit_product(op));
     if was_implicit.get(i).copied().unwrap_or(false) && touches_tighter_op {
-      let mut factors = flatten_times_chain(term).into_iter();
+      let mut factors = flatten_times_chain(&term).into_iter();
       if let Some(first) = factors.next() {
         new_terms.push(first);
         for factor in factors {
@@ -3878,7 +3872,7 @@ fn parse_list(pair: Pair<Rule>) -> Expr {
   Expr::List(items.into())
 }
 
-fn parse_list_extended(pair: Pair<Rule>) -> Expr {
+fn parse_list_extended(pair: &Pair<Rule>) -> Expr {
   // Merged rule: List + optional suffix (PartIndexSuffix or ListCallSuffix)
   // Eliminates exponential backtracking for deeply nested lists.
   // Note: Anonymous function suffix (&) is NOT handled here — it is handled
@@ -3932,7 +3926,7 @@ fn parse_list_extended(pair: Pair<Rule>) -> Expr {
   }
 }
 
-fn parse_function_call_extended(pair: Pair<Rule>) -> Expr {
+fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
   // Merged rule: FunctionCall + optional Part extraction + optional implicit multiplication suffix
   // Inner pairs: (Identifier|SimpleAnonymousFunction) DerivativePrime? BracketArgs+ DerivativePrime? [PartIndexSuffix | FunctionCallImplicitSuffix]
   // Note: Anonymous function suffix (&) is NOT handled here — it is handled
@@ -4034,7 +4028,7 @@ fn parse_function_call_extended(pair: Pair<Rule>) -> Expr {
         args: vec![Expr::Identifier(name)],
       };
       // Apply bracket args: Derivative[n][f][x], then any further chained calls
-      for args in fc_bracket_args.iter() {
+      for args in &fc_bracket_args {
         result = Expr::CurriedCall {
           func: Box::new(result),
           args: args.clone(),
@@ -4307,7 +4301,7 @@ fn parse_function_call(pair: Pair<Rule>) -> Expr {
       }),
       args: vec![Expr::Identifier(name)],
     };
-    for args in bracket_sequences.iter() {
+    for args in &bracket_sequences {
       result = Expr::CurriedCall {
         func: Box::new(result),
         args: args.clone(),
@@ -4543,7 +4537,7 @@ fn parse_expression_inner(
         let func_expr = pair_to_expr(inner);
         // Store as "~<encoded>~" for make_binary_op to handle
         let func_str = match &func_expr {
-          Expr::Identifier(name) => format!("~{}~", name),
+          Expr::Identifier(name) => format!("~{name}~"),
           _ => format!("~{}~", expr_to_string(&func_expr)),
         };
         operators.push(func_str);
@@ -4669,7 +4663,7 @@ fn parse_expression_inner(
           is_implicit_times && operators.last().is_some_and(|o| o == "/");
         let expr = pair_to_expr(item);
         if split_implicit {
-          let factors = flatten_times_chain(expr);
+          let factors = flatten_times_chain(&expr);
           let mut iter = factors.into_iter();
           if let Some(first) = iter.next() {
             terms.push(first);
@@ -4772,7 +4766,7 @@ fn parse_expression_inner(
       }
     } else {
       // Build binary operation tree (left-to-right for same precedence)
-      build_binary_tree(terms, operators)
+      build_binary_tree(terms, &operators)
     }
   };
 
@@ -4986,7 +4980,7 @@ fn parse_expression_inner(
           let inner = op_pair.into_inner().next().unwrap();
           let func_expr = pair_to_expr(inner);
           let func_str = match &func_expr {
-            Expr::Identifier(name) => format!("~{}~", name),
+            Expr::Identifier(name) => format!("~{name}~"),
             _ => format!("~{}~", expr_to_string(&func_expr)),
           };
           post_ops.push(func_str);
@@ -5031,7 +5025,7 @@ fn parse_expression_inner(
       }
 
       // Build expression tree with precedence
-      result = build_binary_tree(post_terms, post_ops);
+      result = build_binary_tree(post_terms, &post_ops);
 
       // A `/.` between the first `&` application and any further one.
       for (rules, repeated) in leading_replaces {
@@ -5096,7 +5090,7 @@ fn parse_expression_inner(
   result
 }
 
-fn parse_compound_expression(pair: Pair<Rule>) -> Expr {
+fn parse_compound_expression(pair: &Pair<Rule>) -> Expr {
   // Use each child Expression's span position to detect `;` separators
   // that have no Expression between them (Wolfram: `a ; ; c` →
   // CompoundExpression[a, Null, c]). Pest doesn't emit pairs for literal
@@ -5586,7 +5580,7 @@ fn operator_precedence(op: &str) -> u8 {
 }
 
 /// Build a binary operation tree from terms and operators with correct precedence
-fn build_binary_tree(terms: Vec<Expr>, operators: Vec<String>) -> Expr {
+fn build_binary_tree(terms: Vec<Expr>, operators: &[String]) -> Expr {
   if terms.len() == 1 {
     return terms.into_iter().next().unwrap();
   }
@@ -5595,7 +5589,7 @@ fn build_binary_tree(terms: Vec<Expr>, operators: Vec<String>) -> Expr {
   }
 
   // Use a precedence climbing algorithm
-  build_expr_with_precedence(&terms, &operators, 0, 0)
+  build_expr_with_precedence(&terms, operators, 0, 0)
 }
 
 /// Build expression with precedence climbing
@@ -6034,13 +6028,13 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       let mut funcs = Vec::new();
       match left {
         Expr::FunctionCall { name, args } if name == "Composition" => {
-          funcs.extend(args.clone())
+          funcs.extend(args.clone());
         }
         _ => funcs.push(left.clone()),
       }
       match right {
         Expr::FunctionCall { name, args } if name == "Composition" => {
-          funcs.extend(args.clone())
+          funcs.extend(args.clone());
         }
         _ => funcs.push(right.clone()),
       }
@@ -6054,13 +6048,13 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       let mut funcs = Vec::new();
       match left {
         Expr::FunctionCall { name, args } if name == "RightComposition" => {
-          funcs.extend(args.clone())
+          funcs.extend(args.clone());
         }
         _ => funcs.push(left.clone()),
       }
       match right {
         Expr::FunctionCall { name, args } if name == "RightComposition" => {
-          funcs.extend(args.clone())
+          funcs.extend(args.clone());
         }
         _ => funcs.push(right.clone()),
       }
@@ -6296,9 +6290,8 @@ pub fn format_real(f: f64) -> String {
   if f.is_infinite() {
     if f > 0.0 {
       return "Infinity".to_string();
-    } else {
-      return "-Infinity".to_string();
     }
+    return "-Infinity".to_string();
   }
   if f.is_nan() {
     return "Indeterminate".to_string();
@@ -6317,7 +6310,7 @@ pub fn format_real(f: f64) -> String {
     // IEEE 754 doubles need up to 17 significant digits for faithful
     // round-trip representation.  Wolfram displays all 17 when needed
     // (e.g. 0.1 + 0.2 → 0.30000000000000004).
-    let s = format!("{}", f);
+    let s = format!("{f}");
     cap_significant_digits(&s, f, 17)
   }
 }
@@ -6352,8 +6345,7 @@ fn cap_significant_digits(s: &str, f: f64, max_sig: usize) -> String {
   let sci = format!("{:.prec$e}", f.abs(), prec = max_sig - 1);
   let (mantissa, exp_str) = sci.split_once('e').unwrap();
   let exp: i32 = exp_str.parse().unwrap();
-  let digits: String =
-    mantissa.chars().filter(|c| c.is_ascii_digit()).collect();
+  let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
   let digits = digits.trim_end_matches('0');
   if digits.is_empty() {
     return "0.".to_string();
@@ -6402,11 +6394,10 @@ fn format_real_scientific(f: f64) -> String {
   // expansion for very large values (e.g. f64::MAX has 309 digits), which
   // then inflates the precision count and produces far more digits than
   // needed. Rust's `{:e}` already uses the shortest unambiguous mantissa.
-  let sci_short = format!("{:e}", abs);
+  let sci_short = format!("{abs:e}");
   let mantissa_short = sci_short
     .split_once('e')
-    .map(|(m, _)| m)
-    .unwrap_or(&sci_short);
+    .map_or(sci_short.as_str(), |(m, _)| m);
   let mut sig = 0usize;
   let mut started = false;
   for ch in mantissa_short.chars() {
@@ -6426,7 +6417,7 @@ fn format_real_scientific(f: f64) -> String {
   let prec = sig.saturating_sub(1);
 
   // Format with exactly the right number of significant digits
-  let sci = format!("{:.prec$e}", abs, prec = prec);
+  let sci = format!("{abs:.prec$e}");
   let (mantissa, exp_str) = sci.split_once('e').unwrap();
   let exp: i32 = exp_str.parse().unwrap();
   // Trim trailing zeros from mantissa, keeping the dot
@@ -6435,9 +6426,9 @@ fn format_real_scientific(f: f64) -> String {
   let mantissa = if mantissa.contains('.') {
     mantissa.to_string()
   } else {
-    format!("{}.", mantissa)
+    format!("{mantissa}.")
   };
-  format!("{}{}*^{}", sign, mantissa, exp)
+  format!("{sign}{mantissa}*^{exp}")
 }
 
 /// Format a BigFloat (arbitrary-precision real) for display.
@@ -6451,7 +6442,7 @@ fn format_precision(prec: f64) -> String {
     format!("{}.", prec as i64)
   } else {
     // Format with full precision, trimming trailing zeros but keeping at least one decimal
-    let s = format!("{}", prec);
+    let s = format!("{prec}");
     s
   }
 }
@@ -6533,7 +6524,7 @@ pub fn format_bigfloat(digits: &str, prec: f64) -> String {
     let int_p = &abs_digits[..dp];
     let frac_p = &abs_digits[dp + 1..];
     let trimmed_frac = frac_p.trim_end_matches('0');
-    format!("{}{}.{}", prefix, int_p, trimmed_frac)
+    format!("{prefix}{int_p}.{trimmed_frac}")
   } else {
     digits.to_string()
   };
@@ -6756,7 +6747,7 @@ fn quantity_unit_to_string(unit: &Expr) -> String {
       let exp_fmt = if is_quantity_exp_atom(right) {
         exp_str
       } else {
-        format!("({})", exp_str)
+        format!("({exp_str})")
       };
       format!("{}^{}", quantity_unit_to_string(left), exp_fmt)
     }
@@ -6788,7 +6779,7 @@ fn quantity_unit_to_string(unit: &Expr) -> String {
       let exp_fmt = if is_quantity_exp_atom(&args[1]) {
         exp_str
       } else {
-        format!("({})", exp_str)
+        format!("({exp_str})")
       };
       format!("{}^{}", quantity_unit_to_string(&args[0]), exp_fmt)
     }
@@ -6813,7 +6804,7 @@ fn quantity_unit_to_string(unit: &Expr) -> String {
         if let Some((base, neg_exp)) = extract_neg_power_info(a) {
           let mut base_str = quantity_unit_to_string(base);
           if is_product(base) {
-            base_str = format!("({})", base_str);
+            base_str = format!("({base_str})");
           }
           if neg_exp == -1 {
             denom_parts.push(base_str);
@@ -6842,7 +6833,7 @@ fn quantity_unit_to_string(unit: &Expr) -> String {
         } else {
           denom_parts.join("*")
         };
-        format!("{}/{}", numer, denom)
+        format!("{numer}/{denom}")
       }
     }
     _ => expr_to_string(unit),
@@ -6859,7 +6850,7 @@ fn quantity_unit_to_abbrev(unit: &Expr) -> String {
       if let Some(abbr) = unit_to_abbreviation(s) {
         abbr.to_string()
       } else {
-        let plural = format!("{}s", s);
+        let plural = format!("{s}s");
         unit_to_abbreviation(&plural)
           .unwrap_or(s.as_str())
           .to_string()
@@ -6874,7 +6865,7 @@ fn quantity_unit_to_abbrev(unit: &Expr) -> String {
       let exp_fmt = if matches!(right.as_ref(), Expr::Integer(_)) {
         exp_str
       } else {
-        format!("({})", exp_str)
+        format!("({exp_str})")
       };
       format!("{}^{}", quantity_unit_to_abbrev(left), exp_fmt)
     }
@@ -6905,7 +6896,7 @@ fn quantity_unit_to_abbrev(unit: &Expr) -> String {
       let exp_fmt = if matches!(args[1], Expr::Integer(_)) {
         exp_str
       } else {
-        format!("({})", exp_str)
+        format!("({exp_str})")
       };
       format!("{}^{}", quantity_unit_to_abbrev(&args[0]), exp_fmt)
     }
@@ -6934,7 +6925,7 @@ fn quantity_unit_to_abbrev(unit: &Expr) -> String {
           numer_parts.join("*")
         };
         let denom = denom_parts.join("*");
-        format!("{}/{}", numer, denom)
+        format!("{numer}/{denom}")
       }
     }
     _ => expr_to_string(unit),
@@ -6947,7 +6938,7 @@ pub fn quantity_to_visual_string(mag: &Expr, unit: &Expr) -> String {
   let mag_str = expr_to_output(mag);
   let unit_str = quantity_unit_to_abbrev(unit);
   let unit_str = singularize_unit_if_one(mag, &unit_str);
-  format!("{} {}", mag_str, unit_str)
+  format!("{mag_str} {unit_str}")
 }
 
 /// If the magnitude is exactly 1, singularize unit display names
@@ -7259,7 +7250,7 @@ fn format_times_with_denominator(
   // When a Rational[n, d] appears alongside denominator factors, split it:
   // n goes to the numerator and d goes to the denominator.
   // E.g. Times[Rational[1,3], Power[2,-1/2]] → 1/(3*Sqrt[2]) instead of (1/3)/Sqrt[2]
-  for a in args.iter() {
+  for a in args {
     if let Expr::FunctionCall { name, args: rargs } = a
       && name == "Rational"
       && rargs.len() == 2
@@ -7293,7 +7284,7 @@ fn format_times_with_denominator(
         }
       )
     {
-      format!("({})", s)
+      format!("({s})")
     } else {
       s
     }
@@ -7310,7 +7301,7 @@ fn format_times_with_denominator(
       .map(|a| fmt_factor(a))
       .collect::<Vec<_>>()
       .join("*");
-    format!("({})", inner)
+    format!("({inner})")
   };
 
   // Format denominator
@@ -7329,7 +7320,7 @@ fn format_times_with_denominator(
   let denom_str = if denom_exprs.len() == 1 {
     let s = formatter(&denom_exprs[0]);
     if needs_parens(&denom_exprs[0]) {
-      format!("({})", s)
+      format!("({s})")
     } else {
       s
     }
@@ -7338,18 +7329,14 @@ fn format_times_with_denominator(
       .iter()
       .map(|a| {
         let s = formatter(a);
-        if needs_parens(a) {
-          format!("({})", s)
-        } else {
-          s
-        }
+        if needs_parens(a) { format!("({s})") } else { s }
       })
       .collect::<Vec<_>>()
       .join("*");
-    format!("({})", inner)
+    format!("({inner})")
   };
 
-  Some(format!("{}/{}", numer_str, denom_str))
+  Some(format!("{numer_str}/{denom_str}"))
 }
 
 fn expr_to_part_index_string(expr: &Expr, form: ExprForm) -> String {
@@ -7367,7 +7354,7 @@ fn expr_to_part_index_string(expr: &Expr, form: ExprForm) -> String {
       .map(|a| {
         let s = format_expr(a, form);
         if matches!(a, Expr::FunctionCall { name: n, .. } if n == "Span") {
-          format!("({})", s)
+          format!("({s})")
         } else {
           s
         }
@@ -7470,7 +7457,7 @@ fn format_percent_form(expr: &Expr, form: ExprForm) -> String {
     Expr::Real(f) if *f >= 0.0 => {
       let scaled = format_real(f * 100.0);
       let trimmed = scaled.strip_suffix('.').unwrap_or(&scaled);
-      format!("{}%", trimmed)
+      format!("{trimmed}%")
     }
     Expr::List(items) => {
       let parts: Vec<String> =
@@ -7647,18 +7634,18 @@ fn format_map_apply_shorthand(
   let func_needs_parens = matches!(func, Expr::NamedFunction { .. })
     || printed_infix_precedence(func).is_some_and(|p| p <= prec);
   let func_display = if func_needs_parens {
-    format!("({})", func_str)
+    format!("({func_str})")
   } else {
     func_str
   };
   let list_str = format_expr(list, ExprForm::Input);
   let list_display = if printed_infix_precedence(list).is_some_and(|p| p < prec)
   {
-    format!("({})", list_str)
+    format!("({list_str})")
   } else {
     list_str
   };
-  format!("{} {} {}", func_display, op, list_display)
+  format!("{func_display} {op} {list_display}")
 }
 
 fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
@@ -7718,16 +7705,16 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             match c {
               '\u{F7CD}' => out.push_str("\\`"),
               c if c == crate::functions::string_ast::BOX_OPEN => {
-                out.push_str("\\(")
+                out.push_str("\\(");
               }
               c if c == crate::functions::string_ast::BOX_CLOSE => {
-                out.push_str("\\)")
+                out.push_str("\\)");
               }
               c if c == crate::functions::string_ast::BOX_START => {
-                out.push_str("\\!")
+                out.push_str("\\!");
               }
               c if c == crate::functions::string_ast::BOX_SEP => {
-                out.push_str("\\*")
+                out.push_str("\\*");
               }
               _ => out.push(c),
             }
@@ -7743,15 +7730,15 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         s.clone()
       } else {
         let escaped = escape_string_for_input_form(s);
-        format!("\"{}\"", escaped)
+        format!("\"{escaped}\"")
       }
     }
     Expr::Identifier(s) => s.clone(),
     Expr::Slot(n) => {
-      format!("#{}", n)
+      format!("#{n}")
     }
     Expr::SlotSequence(n) => {
-      format!("##{}", n)
+      format!("##{n}")
     }
     Expr::List(items) => {
       let parts: Vec<String> = items.iter().map(&fmt).collect();
@@ -7786,7 +7773,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         && key.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
         && key.chars().all(|c| c.is_ascii_alphanumeric())
       {
-        return format!("#{}", key);
+        return format!("#{key}");
       }
       // Sound[...] always renders as -Sound- (matching wolframscript REPL),
       // regardless of what primitives it wraps.
@@ -7858,7 +7845,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         } else {
           quantity_unit_to_string(&args[1])
         };
-        return format!("Quantity[{}, {}]", mag_str, unit_str);
+        return format!("Quantity[{mag_str}, {unit_str}]");
       }
       // OutputForm-only: FullForm, CForm, TeXForm, FortranForm wrap inner in output form
       if is_output && name == "FullForm" && args.len() == 1 {
@@ -7897,8 +7884,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         })
       {
         return format!(
-          "Could not connect to DisplayForm[TagBox[\"{}\", Short[#1, 3] & ]].",
-          url
+          "Could not connect to DisplayForm[TagBox[\"{url}\", Short[#1, 3] & ]]."
         );
       }
       // Special case: ByteArray
@@ -7931,10 +7917,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         };
         let dim_str = dims
           .iter()
-          .map(|d| d.to_string())
+          .map(std::string::ToString::to_string)
           .collect::<Vec<_>>()
           .join(",");
-        return format!("NumericArray[<{}>, {}]", dim_str, dtype);
+        return format!("NumericArray[<{dim_str}>, {dtype}]");
       }
       // InputForm: falls through to default formatting (ByteArray["base64"])
       // Special case: InterpolatingFunction[domain, data] — hide data with <>
@@ -7995,10 +7981,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           };
           if let Some(under) = underscores {
             if bargs.is_empty() {
-              return format!("{}{}", nm, under);
+              return format!("{nm}{under}");
             }
             if let Expr::Identifier(h) = &bargs[0] {
-              return format!("{}{}{}", nm, under, h);
+              return format!("{nm}{under}{h}");
             }
           }
         }
@@ -8014,8 +8000,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         {
           let under = "_".repeat(*blank_type as usize);
           return match head {
-            Some(h) => format!("{}{}{}", nm, under, h),
-            None => format!("{}{}", nm, under),
+            Some(h) => format!("{nm}{under}{h}"),
+            None => format!("{nm}{under}"),
           };
         }
         let needs_parens = matches!(
@@ -8045,18 +8031,18 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if name == "Repeated" && args.len() == 1 {
         let inner = fmt(&args[0]);
         return if is_pattern_arg(&args[0]) {
-          format!("({})..", inner)
+          format!("({inner})..")
         } else {
-          format!("{}..", inner)
+          format!("{inner}..")
         };
       }
       // Special case: RepeatedNull[x] displays as x... (mirrors Repeated)
       if name == "RepeatedNull" && args.len() == 1 {
         let inner = fmt(&args[0]);
         return if is_pattern_arg(&args[0]) {
-          format!("({})...", inner)
+          format!("({inner})...")
         } else {
-          format!("{}...", inner)
+          format!("{inner}...")
         };
       }
       // Special case: Colon[a, b, ...] displays as a ∶ b ∶ ...
@@ -8123,7 +8109,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         if args.len() == 1
           && let Expr::Identifier(h) = &args[0]
         {
-          return format!("_{}", h);
+          return format!("_{h}");
         }
       }
       // BlankSequence[] → __, BlankSequence[h] → __h
@@ -8134,7 +8120,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         if args.len() == 1
           && let Expr::Identifier(h) = &args[0]
         {
-          return format!("__{}", h);
+          return format!("__{h}");
         }
       }
       // BlankNullSequence[] → ___, BlankNullSequence[h] → ___h
@@ -8145,7 +8131,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         if args.len() == 1
           && let Expr::Identifier(h) = &args[0]
         {
-          return format!("___{}", h);
+          return format!("___{h}");
         }
       }
       // OutputForm-only: BaseForm[expr, base]
@@ -8191,9 +8177,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           _ => false,
         };
         if needs_parens {
-          return format!("({}){}", arg_str, suffix);
+          return format!("({arg_str}){suffix}");
         }
-        return format!("{}{}", arg_str, suffix);
+        return format!("{arg_str}{suffix}");
       }
       if name == "Rule" && args.len() == 2 {
         return format!("{} -> {}", fmt(&args[0]), fmt(&args[1]));
@@ -8221,7 +8207,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
             ) && a.len() == 2 =>
           {
-            format!("({})", rhs_str)
+            format!("({rhs_str})")
           }
           _ => rhs_str,
         };
@@ -8278,17 +8264,17 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if name == "PreIncrement" && args.len() == 1 {
         let inner = fmt(&args[0]);
         return if needs_inc_parens(&args[0]) {
-          format!("++({})", inner)
+          format!("++({inner})")
         } else {
-          format!("++{}", inner)
+          format!("++{inner}")
         };
       }
       if name == "PreDecrement" && args.len() == 1 {
         let inner = fmt(&args[0]);
         return if needs_inc_parens(&args[0]) {
-          format!("--({})", inner)
+          format!("--({inner})")
         } else {
-          format!("--{}", inner)
+          format!("--{inner}")
         };
       }
       if name == "Condition" && args.len() == 2 {
@@ -8341,7 +8327,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             for (i, arg) in pargs.iter().enumerate().skip(1) {
               let s = fmt(arg);
               let s = if i == pargs.len() - 1 {
-                format!("({})", s)
+                format!("({s})")
               } else {
                 s
               };
@@ -8371,9 +8357,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           || pat == "___"
           || matches!(&args[0], Expr::Identifier(_));
         if pat_atomic {
-          return format!("{}?{}", pat, test);
+          return format!("{pat}?{test}");
         }
-        return format!("({})?{}", pat, test);
+        return format!("({pat})?{test}");
       }
       // See the matching block above for the Wolfram display rule:
       // postfix outer never parenthesizes; prefix outer parenthesizes
@@ -8395,17 +8381,17 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if name == "PreIncrement" && args.len() == 1 {
         let inner = fmt(&args[0]);
         return if needs_inc_parens(&args[0]) {
-          format!("++({})", inner)
+          format!("++({inner})")
         } else {
-          format!("++{}", inner)
+          format!("++{inner}")
         };
       }
       if name == "PreDecrement" && args.len() == 1 {
         let inner = fmt(&args[0]);
         return if needs_inc_parens(&args[0]) {
-          format!("--({})", inner)
+          format!("--({inner})")
         } else {
-          format!("--{}", inner)
+          format!("--{inner}")
         };
       }
       if name == "Optional" && args.len() == 1 {
@@ -8441,7 +8427,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           return format!("{}.", fmt(&args[0]));
         }
         let inner = fmt(&args[0]);
-        return format!("Optional[{}]", inner);
+        return format!("Optional[{inner}]");
       }
       if name == "Optional" && args.len() == 2 {
         // Parenthesize the default when it's itself an Optional —
@@ -8479,7 +8465,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         let operand = |a: &Expr| {
           let s = fmt(a);
           if printed_infix_precedence(a).is_some_and(|p| p < 40) {
-            format!("({})", s)
+            format!("({s})")
           } else {
             s
           }
@@ -8540,7 +8526,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           .map(|a| {
             let s = fmt(a);
             if ring_operand_needs_parens(a) {
-              format!("({})", s)
+              format!("({s})")
             } else {
               s
             }
@@ -8566,7 +8552,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               Expr::FunctionCall { name: n, args: ia }
                 if n == "CircleDot" && ia.len() >= 2
             ) {
-              format!("({})", s)
+              format!("({s})")
             } else {
               s
             }
@@ -8655,7 +8641,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               }
             ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "And");
             if is_and {
-              format!("({})", s)
+              format!("({s})")
             } else {
               s
             }
@@ -8677,7 +8663,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 ..
               }
             ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "Or");
-            if is_or { format!("({})", s) } else { s }
+            if is_or { format!("({s})") } else { s }
           })
           .collect();
         return parts.join(" && ");
@@ -8789,7 +8775,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         // so that format_times_with_denominator can render e.g. Times[a, d/(c+b*d)]
         // as (a*d)/(c + b*d).
         let mut flat_args: Vec<Expr> = Vec::with_capacity(args.len());
-        for a in args.iter() {
+        for a in args {
           flatten_times_recursive(a, &mut flat_args);
         }
         // Normalize a pure-imaginary integer Complex coefficient
@@ -8845,11 +8831,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 }
               );
             let power_str = if denom_needs_parens {
-              format!("1/({})", denom_str)
+              format!("1/({denom_str})")
             } else {
-              format!("1/{}", denom_str)
+              format!("1/{denom_str}")
             };
-            return format!("-1/{}*{}", d, power_str);
+            return format!("-1/{d}*{power_str}");
           }
           let inner_needs_parens = matches!(&denom_form, Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
             || matches!(
@@ -8862,29 +8848,27 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               }
             );
           let denom_str_parened = if inner_needs_parens {
-            format!("({})", denom_str)
+            format!("({denom_str})")
           } else {
             denom_str
           };
           if is_output {
             // OutputForm: combine Rational denominator with Power denominator
             if *n == 1 {
-              return format!("1/({}*{})", d, denom_str_parened);
+              return format!("1/({d}*{denom_str_parened})");
             }
-            return format!("{}/({}*{})", n, d, denom_str_parened);
-          } else {
-            // For other numerators, combine into n/(d*base^exp)
-            let full_denom = if *d > 1 {
-              format!("({}*{})", d, denom_str_parened)
-            } else {
-              denom_str_parened
-            };
-            if *n == 1 {
-              return format!("1/{}", full_denom);
-            } else {
-              return format!("{}/{}", n, full_denom);
-            }
+            return format!("{n}/({d}*{denom_str_parened})");
           }
+          // For other numerators, combine into n/(d*base^exp)
+          let full_denom = if *d > 1 {
+            format!("({d}*{denom_str_parened})")
+          } else {
+            denom_str_parened
+          };
+          if *n == 1 {
+            return format!("1/{full_denom}");
+          }
+          return format!("{n}/{full_denom}");
         }
         // Handle Times[Rational[1, d], expr] as "expr/d" (2-arg)
         if args.len() == 2
@@ -8908,28 +8892,27 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                   ..
                 }
               ) {
-              format!("({})", inner)
+              format!("({inner})")
             } else {
               inner
             };
-            return format!("{}/{}", inner_str, d);
-          } else {
-            // InputForm: wrap Plus in parens like OutputForm
-            let inner = fmt(&args[1]);
-            let inner_str = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
-              || matches!(
-                &args[1],
-                Expr::BinaryOp {
-                  op: BinaryOperator::Plus | BinaryOperator::Minus,
-                  ..
-                }
-              ) {
-              format!("({})", inner)
-            } else {
-              inner
-            };
-            return format!("{}/{}", inner_str, d);
+            return format!("{inner_str}/{d}");
           }
+          // InputForm: wrap Plus in parens like OutputForm
+          let inner = fmt(&args[1]);
+          let inner_str = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
+            || matches!(
+              &args[1],
+              Expr::BinaryOp {
+                op: BinaryOperator::Plus | BinaryOperator::Minus,
+                ..
+              }
+            ) {
+            format!("({inner})")
+          } else {
+            inner
+          };
+          return format!("{inner_str}/{d}");
         }
         // Handle Times[Rational[-1, d], Plus[t1, t2, ...]] as
         // "(-t1 - t2 - ...)/d" by negating each summand (matching
@@ -9021,11 +9004,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 ..
               }
             ) {
-            format!("({})", inner)
+            format!("({inner})")
           } else {
             inner
           };
-          return format!("({}*{})/{}", n, inner_str, d);
+          return format!("({n}*{inner_str})/{d}");
         }
         // Handle Times[Rational[1, d], e1, e2, ...] as "(e1*e2*...)/d" (3+ args)
         // Only when no factor is I (imaginary unit, which pairs with the coefficient)
@@ -9054,14 +9037,14 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 }
               )
             {
-              format!("({})", s)
+              format!("({s})")
             } else {
               s
             }
           };
           let rest: Vec<String> = args[1..].iter().map(fmt_factor).collect();
           let numer = rest.join("*");
-          return format!("({})/{}", numer, d);
+          return format!("({numer})/{d}");
         }
         // Handle Times[Rational[n, d], e1, e2, ...] as "(n*e1*e2*...)/d"
         // for |n| > 1, d > 1 (Wolfram convention for general rationals).
@@ -9091,14 +9074,14 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 }
               )
             {
-              format!("({})", s)
+              format!("({s})")
             } else {
               s
             }
           };
           let rest: Vec<String> = args[1..].iter().map(fmt_factor).collect();
           let numer = rest.join("*");
-          return format!("({}*{})/{}", n, numer, d);
+          return format!("({n}*{numer})/{d}");
         }
         // Handle Times[Rational[-1, d], e1, e2, ...] as "-1/d*(e1*e2*...)"
         // (Wolfram convention for negative reciprocal coefficients).
@@ -9134,11 +9117,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             false
           };
           let formatted = if needs_parens {
-            format!("({})", rest_str)
+            format!("({rest_str})")
           } else {
             rest_str
           };
-          return format!("-1/{}*{}", d, formatted);
+          return format!("-1/{d}*{formatted}");
         }
         // Handle Times[-1, x, ...] as "-x*..."
         // In InputForm, `Times[-1, I, sym…]` is rendered by the imaginary-
@@ -9188,7 +9171,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                     }
                   )
                 {
-                  format!("({})", s)
+                  format!("({s})")
                 } else {
                   s
                 }
@@ -9198,7 +9181,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             return if merged.is_empty() {
               "-Infinity".to_string()
             } else {
-              format!("{}*-Infinity", rest_str)
+              format!("{rest_str}*-Infinity")
             };
           }
           // If the rest is a single Power[symbolic_base, negative_int], use -base^(-n)
@@ -9217,7 +9200,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             {
               return format!("(-I*{}", &frac[3..]);
             }
-            return format!("-({})", frac);
+            return format!("-({frac})");
           }
           let rest = args[1..]
             .iter()
@@ -9232,7 +9215,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                   }
                 )
               {
-                format!("({})", s)
+                format!("({s})")
               } else {
                 s
               }
@@ -9266,9 +9249,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 // `Function[-0]`).
                 || matches!(&args[1], Expr::Function { .. })));
           if needs_neg_parens {
-            return format!("-({})", rest);
+            return format!("-({rest})");
           }
-          return format!("-{}", rest);
+          return format!("-{rest}");
         }
         // Complex number grouping: Times containing I with non-numeric remaining factors
         // e.g. Times[2, I, Sqrt[3]] → (2*I)*Sqrt[3], Times[Rational[1,2], I, Pi] → (I/2)*Pi
@@ -9290,7 +9273,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         if has_imaginary {
           let mut numeric_factors: Vec<&Expr> = Vec::new();
           let mut symbolic_factors: Vec<&Expr> = Vec::new();
-          for arg in args.iter() {
+          for arg in args {
             match arg {
               Expr::Integer(_) | Expr::Real(_) => numeric_factors.push(arg),
               _ if is_i_unit(arg) => {}
@@ -9322,7 +9305,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                     Some("-I".to_string())
                   }
                 }
-                Expr::Integer(n) => Some(format!("({}*I)", n)),
+                Expr::Integer(n) => Some(format!("({n}*I)")),
                 Expr::FunctionCall { name: rn, args: ra }
                   if rn == "Rational" && ra.len() == 2 =>
                 {
@@ -9336,12 +9319,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                     // unary minus by the parser.
                     if *num == 1 {
                       if in_true_input_form() {
-                        Some(format!("(I/{})", den))
+                        Some(format!("(I/{den})"))
                       } else {
-                        Some(format!("I/{}", den))
+                        Some(format!("I/{den}"))
                       }
                     } else if *num == -1 {
-                      Some(format!("(-1/{}*I)", den))
+                      Some(format!("(-1/{den}*I)"))
                     } else {
                       Some(format!("(({num}*I)/{den})"))
                     }
@@ -9384,7 +9367,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                       }
                     )
                   {
-                    format!("({})", s)
+                    format!("({s})")
                   } else {
                     s
                   }
@@ -9411,7 +9394,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 let denom_str = if denom_exprs.len() == 1 {
                   let s = fmt(&denom_exprs[0]);
                   if needs_parens(&denom_exprs[0]) {
-                    format!("({})", s)
+                    format!("({s})")
                   } else {
                     s
                   }
@@ -9420,17 +9403,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                     .iter()
                     .map(|a| {
                       let s = fmt(a);
-                      if needs_parens(a) {
-                        format!("({})", s)
-                      } else {
-                        s
-                      }
+                      if needs_parens(a) { format!("({s})") } else { s }
                     })
                     .collect::<Vec<_>>()
                     .join("*");
-                  format!("({})", inner)
+                  format!("({inner})")
                 };
-                return format!("{}/{}", numer_str, denom_str);
+                return format!("{numer_str}/{denom_str}");
               }
               let rest: Vec<String> = symbolic_factors
                 .iter()
@@ -9445,7 +9424,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                       }
                     )
                   {
-                    format!("({})", s)
+                    format!("({s})")
                   } else {
                     s
                   }
@@ -9479,7 +9458,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               // Pattern expressions need parens in Times (Wolfram convention)
               || matches!(a, Expr::Pattern { .. } | Expr::PatternOptional { .. } | Expr::PatternTest { .. })
             {
-              format!("({})", s)
+              format!("({s})")
             } else {
               s
             }
@@ -9532,7 +9511,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             || needs_condition_parens(a)
             || needs_nested_plus_parens(a)
           {
-            format!("({})", s)
+            format!("({s})")
           } else {
             s
           }
@@ -9736,7 +9715,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                   Expr::FunctionCall { name: n, args: a }
                     if n == "MinusPlus" && a.len() == 1
                 ) {
-                  format!("({})", pos_term_str)
+                  format!("({pos_term_str})")
                 } else {
                   pos_term_str
                 };
@@ -9801,7 +9780,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           && matches!(&rargs[1], Expr::Integer(2))
         {
           let base_str = fmt(&args[0]);
-          return format!("1/Sqrt[{}]", base_str);
+          return format!("1/Sqrt[{base_str}]");
         }
         let base_str = fmt(&args[0]);
         let exp_str = fmt(&args[1]);
@@ -9824,7 +9803,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               | Expr::PatternOptional { .. }
               | Expr::PatternTest { .. }
           ) {
-          format!("({})", base_str)
+          format!("({base_str})")
         } else {
           base_str
         };
@@ -9860,11 +9839,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               | Expr::PatternOptional { .. }
               | Expr::PatternTest { .. }
           ) {
-          format!("({})", exp_str)
+          format!("({exp_str})")
         } else {
           exp_str
         };
-        return format!("{}^{}", base, exp);
+        return format!("{base}^{exp}");
       }
       // Special case: Derivative[n, f, x] displays as Derivative[n][f][x]
       // and Derivative[n, f] displays as Derivative[n][f]
@@ -9879,9 +9858,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         let f_str = fmt(&args[1]);
         if args.len() == 3 {
           let x_str = fmt(&args[2]);
-          return format!("Derivative[{}][{}][{}]", n_str, f_str, x_str);
+          return format!("Derivative[{n_str}][{f_str}][{x_str}]");
         }
-        return format!("Derivative[{}][{}]", n_str, f_str);
+        return format!("Derivative[{n_str}][{f_str}]");
       }
       let parts: Vec<String> = args.iter().map(&fmt).collect();
       format!("{}[{}]", name, parts.join(", "))
@@ -9926,7 +9905,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
     ) =>
     {
       let base_str = expr_to_output(left);
-      format!("1/Sqrt[{}]", base_str)
+      format!("1/Sqrt[{base_str}]")
     }
     // StringJoin renders as the function-call form `StringJoin[a, b, ...]`,
     // never as the infix `<>` operator. Wolfram's parser produces a flat
@@ -10012,7 +9991,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             right: right.clone(),
           };
           let inner_str = expr_to_string(&inner_div);
-          return format!("-({})", inner_str);
+          return format!("-({inner_str})");
         }
         // Handle FunctionCall Times[-1, ...] as numerator
         if let Expr::FunctionCall { name, args } = left.as_ref()
@@ -10035,13 +10014,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             right: right.clone(),
           };
           let inner_str = expr_to_string(&inner_div);
-          return format!("-({})", inner_str);
+          return format!("-({inner_str})");
         }
         // Special case: 1/identifier → identifier^(-1) (Wolfram InputForm convention)
         if matches!(left.as_ref(), Expr::Integer(1))
           && let Expr::Identifier(s) = right.as_ref()
         {
-          return format!("{}^(-1)", s);
+          return format!("{s}^(-1)");
         }
         // Special case: 1/Plus[...] → (Plus[...])^(-1) (Wolfram InputForm convention)
         if matches!(left.as_ref(), Expr::Integer(1))
@@ -10055,7 +10034,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             ))
         {
           let rhs = expr_to_string(right);
-          return format!("({})^(-1)", rhs);
+          return format!("({rhs})^(-1)");
         }
       }
 
@@ -10073,7 +10052,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         && *den > 0
       {
         let inner = expr_to_string(right);
-        return format!("{}/{}", inner, den);
+        return format!("{inner}/{den}");
       }
 
       // Special case: BinaryOp Times with Rational[n, d] * expr → "(n*expr)/d"
@@ -10152,11 +10131,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               ..
             }
           ) {
-          format!("({})", inner)
+          format!("({inner})")
         } else {
           inner
         };
-        return format!("({}*{})/{}", num, inner_str, den);
+        return format!("({num}*{inner_str})/{den}");
       }
 
       // Special case: Times[-1, expr] should display as -expr
@@ -10177,9 +10156,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           }
         ) || matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
         {
-          format!("-({})", right_str)
+          format!("-({right_str})")
         } else {
-          format!("-{}", right_str)
+          format!("-{right_str}")
         };
       }
 
@@ -10192,7 +10171,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       {
         let left_str = expr_to_string(left);
         let operand_str = expr_to_string(operand);
-        return format!("{} - {}", left_str, operand_str);
+        return format!("{left_str} - {operand_str}");
       }
       // Special case: a + Times[neg, ...] should display as a - abs(neg)*...
       // Handles both BinaryOp{Times} and FunctionCall{Times} forms
@@ -10201,7 +10180,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         if let Some(abs_term) = negated_term {
           let left_str = expr_to_string(left);
           let right_str = expr_to_string(&abs_term);
-          return format!("{} - {}", left_str, right_str);
+          return format!("{left_str} - {right_str}");
         }
         // a + Divide[-n, d] displays as a - n/d (Wolfram never shows "+ -").
         if let Expr::BinaryOp {
@@ -10296,16 +10275,16 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           ) || matches!(e, Expr::FunctionCall { name, .. } if name == "And")
         };
         let lf = if is_and_expr(left) {
-          format!("({})", left_str)
+          format!("({left_str})")
         } else {
           left_str
         };
         let rf = if is_and_expr(right) {
-          format!("({})", right_str)
+          format!("({right_str})")
         } else {
           right_str
         };
-        return format!("{} || {}", lf, rf);
+        return format!("{lf} || {rf}");
       }
 
       // Special case: And wraps Or children in parens (Wolfram convention)
@@ -10320,16 +10299,16 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Or")
         };
         let lf = if is_or_expr(left) {
-          format!("({})", left_str)
+          format!("({left_str})")
         } else {
           left_str
         };
         let rf = if is_or_expr(right) {
-          format!("({})", right_str)
+          format!("({right_str})")
         } else {
           right_str
         };
-        return format!("{} && {}", lf, rf);
+        return format!("{lf} && {rf}");
       }
 
       // Add parens when a lower-precedence expr is inside a higher-precedence one,
@@ -10429,7 +10408,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             }
           ));
       let left_formatted = if left_needs_parens {
-        format!("({})", left_str)
+        format!("({left_str})")
       } else {
         left_str
       };
@@ -10540,15 +10519,15 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             }
           ));
       let right_formatted = if needs_right_parens {
-        format!("({})", right_str)
+        format!("({right_str})")
       } else {
         right_str
       };
 
       if needs_space {
-        format!("{} {} {}", left_formatted, op_str, right_formatted)
+        format!("{left_formatted} {op_str} {right_formatted}")
       } else {
-        format!("{}{}{}", left_formatted, op_str, right_formatted)
+        format!("{left_formatted}{op_str}{right_formatted}")
       }
     }
     // UnaryOp, Comparison, CompoundExpr, ReplaceAll, etc.: always use InputForm
@@ -10579,9 +10558,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           }
         );
         if needs_parens {
-          format!(" !({})", inner)
+          format!(" !({inner})")
         } else {
-          format!(" !{}", inner)
+          format!(" !{inner}")
         }
       } else {
         // Minus needs parens around Plus, Minus, Times, Divide and around
@@ -10612,9 +10591,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           Expr::Function { .. }
         ) || prints_as_not(operand.as_ref());
         if needs_parens {
-          format!("-({})", inner)
+          format!("-({inner})")
         } else {
-          format!("-{}", inner)
+          format!("-{inner}")
         }
       }
     }
@@ -10642,7 +10621,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             .map(|e| {
               let s = format_expr(e, form);
               if comparison_operand_needs_parens(e) {
-                format!("({})", s)
+                format!("({s})")
               } else {
                 s
               }
@@ -10673,7 +10652,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         let fmt_operand = |e: &Expr| -> String {
           let s = format_expr(e, form);
           if comparison_operand_needs_parens(e) {
-            format!("({})", s)
+            format!("({s})")
           } else {
             s
           }
@@ -10755,10 +10734,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // Parenthesize RHS if it's a pure function (& has low precedence)
       let rhs_str = fmt(replacement);
       let rhs_final = match replacement.as_ref() {
-        Expr::Function { .. } => format!("({})", rhs_str),
+        Expr::Function { .. } => format!("({rhs_str})"),
         _ => rhs_str,
       };
-      format!("{} -> {}", lhs, rhs_final)
+      format!("{lhs} -> {rhs_final}")
     }
     Expr::RuleDelayed {
       pattern,
@@ -10784,11 +10763,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
           ) && a.len() == 2 =>
         {
-          format!("({})", rhs_str)
+          format!("({rhs_str})")
         }
         _ => rhs_str,
       };
-      format!("{} :> {}", lhs, rhs_final)
+      format!("{lhs} :> {rhs_final}")
     }
     // ReplaceAll, ReplaceRepeated, Map, Apply, etc.: always use InputForm
     Expr::ReplaceAll { expr, rules } => {
@@ -10820,13 +10799,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       let arg_str = format_expr(arg, ExprForm::Input);
       // Parenthesize func if it's complex (not a simple identifier or function call)
       let func_display = match func.as_ref() {
-        head if prints_as_not(head) => format!("({})", func_str),
+        head if prints_as_not(head) => format!("({func_str})"),
         Expr::Identifier(_)
         | Expr::FunctionCall { .. }
         | Expr::CurriedCall { .. } => func_str,
-        _ => format!("({})", func_str),
+        _ => format!("({func_str})"),
       };
-      format!("{}[{}]", func_display, arg_str)
+      format!("{func_display}[{arg_str}]")
     }
     Expr::Postfix { expr, func } => {
       // Display as function-call form (matching wolframscript): `x // f` is
@@ -10834,13 +10813,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       let func_str = format_expr(func, ExprForm::Input);
       let arg_str = format_expr(expr, ExprForm::Input);
       let func_display = match func.as_ref() {
-        head if prints_as_not(head) => format!("({})", func_str),
+        head if prints_as_not(head) => format!("({func_str})"),
         Expr::Identifier(_)
         | Expr::FunctionCall { .. }
         | Expr::CurriedCall { .. } => func_str,
-        _ => format!("({})", func_str),
+        _ => format!("({func_str})"),
       };
-      format!("{}[{}]", func_display, arg_str)
+      format!("{func_display}[{arg_str}]")
     }
     Expr::Part { expr, index } => {
       // Flatten nested Part into a single [[i, j, k]] notation
@@ -10870,9 +10849,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // a different (and, once slots are involved, badly broken) tree.
       let body_str = format_expr(body, ExprForm::Input);
       if function_body_needs_parens(body) {
-        format!("({}) & ", body_str)
+        format!("({body_str}) & ")
       } else {
-        format!("{} & ", body_str)
+        format!("{body_str} & ")
       }
     }
     Expr::NamedFunction {
@@ -10901,9 +10880,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
     } => {
       let blanks = "_".repeat(*blank_type as usize);
       if let Some(h) = head {
-        format!("{}{}{}", name, blanks, h)
+        format!("{name}{blanks}{h}")
       } else {
-        format!("{}{}", name, blanks)
+        format!("{name}{blanks}")
       }
     }
     Expr::PatternOptional {
@@ -10917,8 +10896,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       (None, Some(d)) => {
         format!("{}_:{}", name, format_expr(d, ExprForm::Input))
       }
-      (Some(h), None) => format!("{}_{}.", name, h),
-      (None, None) => format!("{}_.", name),
+      (Some(h), None) => format!("{name}_{h}."),
+      (None, None) => format!("{name}_."),
     },
     Expr::PatternTest {
       name,
@@ -10929,7 +10908,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       let blanks = "_".repeat(*blank_type as usize);
       let head_str = head.as_deref().unwrap_or("");
       let test_str = format_expr(test, ExprForm::Input);
-      let pattern_str = format!("{}{}{}", name, blanks, head_str);
+      let pattern_str = format!("{name}{blanks}{head_str}");
       // Bare `_` / `__` / `___` (no name, no head) is the only shape
       // wolframscript writes without parentheses: `_?test`. Anything
       // that carries a name or head — `x_?test`, `_Integer?test` — is
@@ -10938,14 +10917,14 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if !matches!(test.as_ref(), Expr::Identifier(_)) {
         // Non-atomic test needs parens around the test too.
         if needs_parens {
-          format!("({})?({})", pattern_str, test_str)
+          format!("({pattern_str})?({test_str})")
         } else {
-          format!("{}?({})", pattern_str, test_str)
+          format!("{pattern_str}?({test_str})")
         }
       } else if needs_parens {
-        format!("({})?{}", pattern_str, test_str)
+        format!("({pattern_str})?{test_str}")
       } else {
-        format!("{}?{}", pattern_str, test_str)
+        format!("{pattern_str}?{test_str}")
       }
     }
     Expr::Constant(s) => s.clone(),
@@ -10971,7 +10950,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       let func_str = fmt(func);
       let needs_parens = curried_head_needs_parens(func.as_ref());
       let func_display = if needs_parens {
-        format!("({})", func_str)
+        format!("({func_str})")
       } else {
         func_str
       };
@@ -11037,9 +11016,9 @@ fn replace_derivative_shorthand(s: &str) -> String {
     let primes = if n <= 3 {
       "'".repeat(n as usize)
     } else {
-      format!("^({})", n)
+      format!("^({n})")
     };
-    let replacement = format!("{}{}[{}]", func_name, primes, args_str);
+    let replacement = format!("{func_name}{primes}[{args_str}]");
     result = format!(
       "{}{}{}",
       &result[..start],
@@ -11136,7 +11115,7 @@ fn flatten_times_recursive(expr: &Expr, out: &mut Vec<Expr>) {
       name,
       args: inner_args,
     } if name == "Times" => {
-      for a in inner_args.iter() {
+      for a in inner_args {
         flatten_times_recursive(a, out);
       }
     }
@@ -11292,19 +11271,19 @@ thread_local! {
 
 /// Whether the current render is genuine InputForm (see `IN_TRUE_INPUT_FORM`).
 fn in_true_input_form() -> bool {
-  IN_TRUE_INPUT_FORM.with(|c| c.get())
+  IN_TRUE_INPUT_FORM.with(std::cell::Cell::get)
 }
 
 /// Whether the current render originated from OutputForm (see `IN_OUTPUT_FORM`).
 fn in_output_form() -> bool {
-  IN_OUTPUT_FORM.with(|c| c.get())
+  IN_OUTPUT_FORM.with(std::cell::Cell::get)
 }
 
 /// Whether the current render is the inner of a FullForm wrapper (see
 /// `IN_FULL_FORM`). Used by the Span InputForm branch to keep the head form
 /// (`Span[1, 4]`) inside `FullForm[…]` while rendering `1 ;; 4` elsewhere.
 fn in_full_form() -> bool {
-  IN_FULL_FORM.with(|c| c.get())
+  IN_FULL_FORM.with(std::cell::Cell::get)
 }
 
 /// RAII guard that restores the previous `IN_FULL_FORM` value on drop.
@@ -11416,7 +11395,7 @@ fn input_form_subtracted_term(term: &Expr) -> String {
     term,
     Expr::FunctionCall { name, args } if name == "MinusPlus" && args.len() == 1
   ) {
-    format!("({})", s)
+    format!("({s})")
   } else {
     s
   }
@@ -11446,7 +11425,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     }
     Expr::String(s) => {
       let escaped = escape_string_for_input_form(s);
-      format!("\"{}\"", escaped)
+      format!("\"{escaped}\"")
     }
     Expr::List(items) => {
       let parts: Vec<String> = items.iter().map(expr_to_input_form).collect();
@@ -11499,9 +11478,9 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
             "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
           ) && a.len() == 2 =>
         {
-          format!("({})", rhs_str)
+          format!("({rhs_str})")
         }
-        Expr::Function { .. } => format!("({})", rhs_str),
+        Expr::Function { .. } => format!("({rhs_str})"),
         _ => rhs_str,
       };
       format!("{} :> {}", input_form_rule_lhs(pattern), rhs_final)
@@ -11517,9 +11496,9 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
             "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
           ) && a.len() == 2 =>
         {
-          format!("({})", rhs_str)
+          format!("({rhs_str})")
         }
-        Expr::Function { .. } => format!("({})", rhs_str),
+        Expr::Function { .. } => format!("({rhs_str})"),
         _ => rhs_str,
       };
       format!("{} :> {}", input_form_rule_lhs(&args[0]), rhs_final)
@@ -11544,7 +11523,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         .map(|a| {
           let s = expr_to_input_form(a);
           if ring_operand_needs_parens(a) {
-            format!("({})", s)
+            format!("({s})")
           } else {
             s
           }
@@ -11576,7 +11555,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
           if matches!(a, Expr::FunctionCall { name: n, .. } if n == "Span")
             || prints_as_not(a)
           {
-            format!("({})", s)
+            format!("({s})")
           } else {
             s
           }
@@ -11608,10 +11587,10 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         };
         if let Some(under) = underscores {
           if bargs.is_empty() {
-            return format!("{}{}", nm, under);
+            return format!("{nm}{under}");
           }
           if let Expr::Identifier(h) = &bargs[0] {
-            return format!("{}{}{}", nm, under, h);
+            return format!("{nm}{under}{h}");
           }
         }
       }
@@ -11627,8 +11606,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       {
         let under = "_".repeat(*blank_type as usize);
         return match head {
-          Some(h) => format!("{}{}{}", nm, under, h),
-          None => format!("{}{}", nm, under),
+          Some(h) => format!("{nm}{under}{h}"),
+          None => format!("{nm}{under}"),
         };
       }
       let needs_parens = matches!(
@@ -11761,7 +11740,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     {
       let mag_str = expr_to_input_form(&args[0]);
       let unit_str = quantity_unit_to_input_form(&args[1]);
-      format!("Quantity[{}, {}]", mag_str, unit_str)
+      format!("Quantity[{mag_str}, {unit_str}]")
     }
     // FunctionCall: handle FullForm specially in InputForm (keep the wrapper)
     Expr::FunctionCall { name, args }
@@ -11812,7 +11791,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         Expr::Identifier(s) => s.clone(),
         other => expr_to_input_form(other),
       };
-      format!("{}::{}", sym, tag)
+      format!("{sym}::{tag}")
     }
     // StringExpression[a, b, c]: InputForm shows a~~b~~c with quoted strings.
     // A single-element StringExpression has no infix form, so it keeps the
@@ -11855,8 +11834,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       };
       let box_str = crate::functions::string_ast::expr_to_boxes(&args[0]);
       let s = format!(
-        "{}{}{}FormBox[{}, TraditionalForm]{}",
-        BOX_START, BOX_OPEN, BOX_SEP, box_str, BOX_CLOSE
+        "{BOX_START}{BOX_OPEN}{BOX_SEP}FormBox[{box_str}, TraditionalForm]{BOX_CLOSE}"
       );
       escape_string_for_input_form(&s)
     }
@@ -11873,7 +11851,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
               ..
             }
           ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "And");
-          if is_and { format!("({})", s) } else { s }
+          if is_and { format!("({s})") } else { s }
         })
         .collect();
       parts.join(" || ")
@@ -11891,7 +11869,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
               ..
             }
           ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "Or");
-          if is_or { format!("({})", s) } else { s }
+          if is_or { format!("({s})") } else { s }
         })
         .collect();
       parts.join(" && ")
@@ -12003,7 +11981,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
             Expr::FunctionCall { name: n, args: ia }
               if n == "CircleDot" && ia.len() >= 2
           ) {
-            format!("({})", s)
+            format!("({s})")
           } else {
             s
           }
@@ -12104,7 +12082,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
             && key.chars().all(|c| c.is_ascii_alphanumeric())) =>
     {
       match &args[0] {
-        Expr::String(key) => format!("#{}", key),
+        Expr::String(key) => format!("#{key}"),
         _ => unreachable!(),
       }
     }
@@ -12160,7 +12138,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       ) =>
     {
       if args.is_empty() {
-        format!("{}[]", name)
+        format!("{name}[]")
       } else {
         let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
         format!("{}[{}]", name, parts.join(", "))
@@ -12191,7 +12169,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
           .map(|e| {
             let s = expr_to_input_form(e);
             if comparison_operand_needs_parens(e) {
-              format!("({})", s)
+              format!("({s})")
             } else {
               s
             }
@@ -12239,7 +12217,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       let fmt_operand = |e: &Expr| -> String {
         let s = expr_to_input_form(e);
         if comparison_operand_needs_parens(e) {
-          format!("({})", s)
+          format!("({s})")
         } else {
           s
         }
@@ -12419,7 +12397,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
             ..
           }
         ) {
-        format!("({})", base)
+        format!("({base})")
       } else {
         base
       };
@@ -12433,9 +12411,9 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         ) {
         exp
       } else {
-        format!("({})", exp)
+        format!("({exp})")
       };
-      format!("{}^{}", base_str, exp_str)
+      format!("{base_str}^{exp_str}")
     }
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
       // Flatten nested Times so I and -1 are reachable at the top level
@@ -12468,7 +12446,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
           if let Some(frac) =
             format_times_with_denominator(&args[1..], expr_to_input_form)
           {
-            return format!("-({})", frac);
+            return format!("-({frac})");
           }
         } else if let Some(frac) =
           format_times_with_denominator(args, expr_to_input_form)
@@ -12490,7 +12468,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
                   }
                 )
               {
-                format!("({})", s)
+                format!("({s})")
               } else {
                 s
               }
@@ -12506,7 +12484,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
                 && args.len() == 2
                 && !matches!((&args[0], &args[1]), (Expr::Integer(0), Expr::Integer(1))))
             {
-              format!("({})", s)
+              format!("({s})")
             } else { s }
           }).collect();
           parts.join("*")
@@ -12549,7 +12527,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
           let mut row_vals = Vec::with_capacity(w);
           for x in 0..w {
             let v = data[y * w + x];
-            row_vals.push(format_image_value(v, image_type));
+            row_vals.push(format_image_value(v, *image_type));
           }
           rows.push(format!("{{{}}}", row_vals.join(", ")));
         } else {
@@ -12560,7 +12538,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
             let mut comps = Vec::with_capacity(ch);
             for c in 0..ch {
               let v = data[base + c];
-              comps.push(format_image_value(v, image_type));
+              comps.push(format_image_value(v, *image_type));
             }
             pixels.push(format!("{{{}}}", comps.join(", ")));
           }
@@ -12570,8 +12548,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       let array_data = format!("{{{}}}", rows.join(", "));
 
       format!(
-        "Image[NumericArray[{}, \"{}\"], \"{}\", ColorSpace -> Automatic, Interleaving -> {}]",
-        array_data, type_str, type_str, interleaving
+        "Image[NumericArray[{array_data}, \"{type_str}\"], \"{type_str}\", ColorSpace -> Automatic, Interleaving -> {interleaving}]"
       )
     }
 
@@ -12586,7 +12563,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       let func_str = expr_to_input_form(func);
       let needs_parens = curried_head_needs_parens(func.as_ref());
       let func_display = if needs_parens {
-        format!("({})", func_str)
+        format!("({func_str})")
       } else {
         func_str
       };
@@ -12637,7 +12614,7 @@ fn numeric_array_dims(payload: &Expr) -> Vec<usize> {
 
 /// Format an image pixel value with proper precision.
 /// For Real32 images, values are displayed with f32 precision (cast to f32 then back to f64).
-fn format_image_value(v: f64, image_type: &ImageType) -> String {
+fn format_image_value(v: f64, image_type: ImageType) -> String {
   match image_type {
     ImageType::Bit => {
       format!("{}", v.round() as i64)
@@ -12718,8 +12695,7 @@ pub fn string_to_expr(s: &str) -> Result<Expr, crate::InterpreterError> {
     && trimmed
       .chars()
       .next()
-      .map(|c| c.is_ascii_alphabetic() || c == '$')
-      .unwrap_or(false)
+      .is_some_and(|c| c.is_ascii_alphabetic() || c == '$')
     && trimmed
       .chars()
       .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
@@ -12900,7 +12876,7 @@ pub fn collect_named_slot_keys(expr: &Expr, out: &mut Vec<String>) {
       }
     }
     Expr::FunctionCall { args, .. } => {
-      for a in args.iter() {
+      for a in args {
         collect_named_slot_keys(a, out);
       }
     }
@@ -12911,12 +12887,12 @@ pub fn collect_named_slot_keys(expr: &Expr, out: &mut Vec<String>) {
       }
     }
     Expr::List(items) => {
-      for e in items.iter() {
+      for e in items {
         collect_named_slot_keys(e, out);
       }
     }
     Expr::CompoundExpr(items) => {
-      for e in items.iter() {
+      for e in items {
         collect_named_slot_keys(e, out);
       }
     }
@@ -12931,7 +12907,7 @@ pub fn collect_named_slot_keys(expr: &Expr, out: &mut Vec<String>) {
       }
     }
     Expr::Association(items) => {
-      for (k, v) in items.iter() {
+      for (k, v) in items {
         collect_named_slot_keys(k, out);
         collect_named_slot_keys(v, out);
       }
@@ -13285,9 +13261,9 @@ fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
 /// substitution: before substituting `value` into a body that binds a
 /// parameter P, we need to know whether P appears as a name somewhere in
 /// `value` — if so, the binding must first be alpha-renamed.
-pub fn collect_identifier_names(
+pub fn collect_identifier_names<S: std::hash::BuildHasher>(
   expr: &Expr,
-  out: &mut std::collections::HashSet<String>,
+  out: &mut std::collections::HashSet<String, S>,
 ) {
   match expr {
     Expr::Identifier(name) => {
@@ -13628,7 +13604,7 @@ fn substitute_variable_impl(
         let mut new_body = (**body).clone();
         for param in params {
           if value_names.contains(param) {
-            let fresh = format!("{}$", param);
+            let fresh = format!("{param}$");
             new_body = substitute_variable_impl(
               &new_body,
               param,
@@ -13859,7 +13835,7 @@ fn resolve_function_params<'a>(
     match supplied_name {
       Some(name) => new_params.push(name.clone()),
       None if value_names.contains(param) => {
-        let fresh = format!("{}$", param);
+        let fresh = format!("{param}$");
         new_body = substitute_variable(
           &new_body,
           param,
@@ -14119,7 +14095,12 @@ impl TextBox {
 
   /// Width of the widest line.
   fn width(&self) -> usize {
-    self.lines.iter().map(|l| l.len()).max().unwrap_or(0)
+    self
+      .lines
+      .iter()
+      .map(std::string::String::len)
+      .max()
+      .unwrap_or(0)
   }
 
   /// Height (number of lines).
@@ -14268,7 +14249,7 @@ impl TextBox {
   /// Stack boxes vertically, left-aligned, keeping the first row's baseline.
   fn vstack(parts: &[Self]) -> Self {
     let mut lines = Vec::new();
-    let baseline = parts.first().map(|p| p.baseline).unwrap_or(0);
+    let baseline = parts.first().map_or(0, |p| p.baseline);
     for part in parts {
       let mut p = part.clone();
       p.normalize();
@@ -14329,10 +14310,10 @@ fn derivative_shorthand(expr: &Expr) -> Option<String> {
   let primes = if n <= 3 {
     "'".repeat(n as usize)
   } else {
-    format!("^({})", n)
+    format!("^({n})")
   };
   if args.len() == 2 {
-    return Some(format!("{}{}", func, primes));
+    return Some(format!("{func}{primes}"));
   }
   let call_args: Vec<String> = args[2..].iter().map(expr_to_string).collect();
   Some(format!("{}{}[{}]", func, primes, call_args.join(", ")))
@@ -14538,7 +14519,7 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
         return TextBox::atom(&flat);
       }
       let mut parts: Vec<TextBox> = Vec::new();
-      parts.push(TextBox::atom(&format!("{}[", name)));
+      parts.push(TextBox::atom(&format!("{name}[")));
       for (i, a) in args.iter().enumerate() {
         if i > 0 {
           parts.push(TextBox::atom(", "));
@@ -14893,7 +14874,7 @@ fn product_row(parts: &[TextBox]) -> TextBox {
 }
 
 /// Is this optional coefficient literally 1 (hidden in display)?
-fn p_is_one_local(c: &Option<Expr>) -> bool {
+fn p_is_one_local(c: Option<&Expr>) -> bool {
   matches!(c, Some(Expr::Integer(1)))
 }
 
@@ -14972,19 +14953,15 @@ fn render_times_textbox(args: &[Expr]) -> TextBox {
 
   // Row lengths decide sum parenthesization: the numerator row also
   // carries the coefficient p when it is shown (p ≠ ±1).
-  let p_shown = coeff_num.is_some() && !p_is_one_local(&coeff_num);
+  let p_shown = coeff_num.is_some() && !p_is_one_local(coeff_num.as_ref());
   let num_refs: Vec<&Expr> = num_factors.iter().collect();
-  let num_boxes: Vec<TextBox> =
-    factor_boxes(&num_refs, if p_shown { 1 } else { 0 });
+  let num_boxes: Vec<TextBox> = factor_boxes(&num_refs, usize::from(p_shown));
   let den_refs: Vec<&Expr> = denom_factors.iter().collect();
   let mut den_boxes: Vec<TextBox> = Vec::new();
   if let Some(q) = &coeff_den {
     den_boxes.push(expr_to_textbox(q));
   }
-  den_boxes.extend(factor_boxes(
-    &den_refs,
-    if coeff_den.is_some() { 1 } else { 0 },
-  ));
+  den_boxes.extend(factor_boxes(&den_refs, usize::from(coeff_den.is_some())));
 
   if !has_den {
     // Plain product row: `3 x`, `-2 x`, `-x`.
@@ -15300,11 +15277,11 @@ pub fn top_level_output(expr: &Expr) -> String {
             .strip_prefix('-')
             .map(str::to_string)
             .unwrap_or(coef_str);
-          format!("0. - {}*I", abs_str)
+          format!("0. - {abs_str}*I")
         } else {
-          format!("0. + {}*I", coef_str)
+          format!("0. + {coef_str}*I")
         };
-        return format!("FullForm[{}]", body);
+        return format!("FullForm[{body}]");
       }
       // `MessageName[sym, "tag"]` shows as `MessageName[sym, tag]` inside the
       // FullForm wrapper in wolframscript's REPL: the head form is preserved
@@ -15321,7 +15298,7 @@ pub fn top_level_output(expr: &Expr) -> String {
           Expr::Identifier(s) => s.clone(),
           other => expr_to_input_form(other),
         };
-        return format!("FullForm[MessageName[{}, {}]]", head, tag);
+        return format!("FullForm[MessageName[{head}, {tag}]]");
       }
       // Box-form heads (`SuperscriptBox`, `SubscriptBox`, `RowBox`, …)
       // render their string arguments without surrounding quotes inside
@@ -15523,7 +15500,7 @@ pub fn top_level_output(expr: &Expr) -> String {
       format!("HoldForm[{}]", expr_to_output(&args[0]))
     }
     Expr::FunctionCall { name, args } if name == "Sequence" => {
-      args.iter().map(expr_to_output).collect::<Vec<_>>().join("")
+      args.iter().map(expr_to_output).collect::<String>()
     }
     // `OutputForm[Times[Real, I]]` mirrors the bare pure-imaginary
     // display rule below — wolframscript prints
@@ -15558,11 +15535,11 @@ pub fn top_level_output(expr: &Expr) -> String {
           .strip_prefix('-')
           .map(str::to_string)
           .unwrap_or(coef_str);
-        format!("0. - {}*I", abs_str)
+        format!("0. - {abs_str}*I")
       } else {
-        format!("0. + {}*I", coef_str)
+        format!("0. + {coef_str}*I")
       };
-      format!("OutputForm[{}]", body)
+      format!("OutputForm[{body}]")
     }
     // Pure-imaginary `Times[Real, I]` at the top level displays as
     // `0. ± r*I` to match wolframscript's Complex output for
@@ -15588,9 +15565,9 @@ pub fn top_level_output(expr: &Expr) -> String {
             .strip_prefix('-')
             .map(str::to_string)
             .unwrap_or(coef_str);
-          return format!("0. - {}*I", abs_str);
+          return format!("0. - {abs_str}*I");
         }
-        return format!("0. + {}*I", coef_str);
+        return format!("0. + {coef_str}*I");
       }
       expr_to_output(expr)
     }

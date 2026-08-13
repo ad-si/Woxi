@@ -69,7 +69,7 @@ fn fmt_real(v: f64) -> String {
     // Integer-valued: emit without decimal point for cleanliness
     format!("{}", v as i64)
   } else {
-    format!("{}", v)
+    format!("{v}")
   }
 }
 

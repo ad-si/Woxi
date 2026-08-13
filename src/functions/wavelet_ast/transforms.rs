@@ -87,7 +87,7 @@ impl CoefArray {
   pub fn dims(&self) -> Vec<usize> {
     match self {
       Self::D1(v) => vec![v.len()],
-      Self::D2(m) => vec![m.len(), m.first().map_or(0, |r| r.len())],
+      Self::D2(m) => vec![m.len(), m.first().map_or(0, std::vec::Vec::len)],
     }
   }
   pub fn energy(&self) -> f64 {
@@ -120,10 +120,10 @@ impl CoefArray {
     }
     if matches!(&items[0], Expr::List(_)) {
       let mut rows = Vec::new();
-      for row in items.iter() {
+      for row in items {
         let Expr::List(cells) = row else { return None };
         let mut r = Vec::new();
-        for c in cells.iter() {
+        for c in cells {
           r.push(crate::functions::math_ast::expr_to_num(c)?);
         }
         rows.push(r);
@@ -131,7 +131,7 @@ impl CoefArray {
       Some(Self::D2(rows))
     } else {
       let mut v = Vec::new();
-      for c in items.iter() {
+      for c in items {
         v.push(crate::functions::math_ast::expr_to_num(c)?);
       }
       Some(Self::D1(v))
@@ -229,11 +229,11 @@ fn idwt_step_1d(
     let n_even = 2 * m;
     let mut x = vec![0.0; n_even];
     for (t, (&at, &dt)) in a.iter().zip(d.iter()).enumerate() {
-      for &(i, c) in synth_lo.iter() {
+      for &(i, c) in synth_lo {
         let j = (2 * t as i64 + i).rem_euclid(n_even as i64) as usize;
         x[j] += s2 * c * at;
       }
-      for &(i, c) in synth_hi.iter() {
+      for &(i, c) in &synth_hi {
         let j = (2 * t as i64 + i).rem_euclid(n_even as i64) as usize;
         x[j] += s2 * c * dt;
       }
@@ -250,7 +250,7 @@ fn idwt_step_1d(
     let t0 = -(imax.div_euclid(2));
     for (idx, &ct) in coeffs.iter().enumerate() {
       let t = t0 + idx as i64;
-      for &(i, c) in synth.iter() {
+      for &(i, c) in synth {
         let j = 2 * t + i;
         if (0..n as i64).contains(&j) {
           x[j as usize] += s2 * c * ct;
@@ -293,10 +293,10 @@ fn iswt_step_1d(
   (0..n)
     .map(|t| {
       let mut acc = 0.0;
-      for &(i, c) in synth_lo.iter() {
+      for &(i, c) in synth_lo {
         acc += c * approx[(t + dilation * i).rem_euclid(n) as usize];
       }
-      for &(i, c) in synth_hi.iter() {
+      for &(i, c) in &synth_hi {
         acc += c * detail[(t + dilation * i).rem_euclid(n) as usize];
       }
       acc
@@ -360,57 +360,54 @@ fn idwt_level(
   filters: &WaveletFilters,
   pad: &Padding,
 ) -> CoefArray {
-  match dims.len() {
-    1 => {
-      let n = dims[0];
-      let m = n.div_ceil(2);
-      let zero = vec![0.0; m];
-      let get = |digit: u8| -> Vec<f64> {
-        children
-          .iter()
-          .find(|(d, _)| *d == digit)
-          .and_then(|(_, c)| match c {
-            CoefArray::D1(v) => Some(v.clone()),
-            _ => None,
-          })
-          .unwrap_or_else(|| zero.clone())
-      };
-      CoefArray::D1(idwt_step_1d(&get(0), &get(1), n, filters, pad))
-    }
-    _ => {
-      let (n1, n2) = (dims[0], dims[1]);
-      let (m1, m2) = (n1.div_ceil(2), n2.div_ceil(2));
-      let get = |digit: u8| -> Vec<Vec<f64>> {
-        children
-          .iter()
-          .find(|(d, _)| *d == digit)
-          .and_then(|(_, c)| match c {
-            CoefArray::D2(v) => Some(v.clone()),
-            _ => None,
-          })
-          .unwrap_or_else(|| vec![vec![0.0; m2]; m1])
-      };
-      // Undo dim-1 (rows) filtering per column, then dim-2 per row.
-      let mut halves: Vec<Vec<Vec<f64>>> = Vec::new(); // [dim2-digit][rows][cols]
-      for col_digit in [0u8, 1] {
-        let lo = get(col_digit); // dim1 lowpass
-        let hi = get(col_digit + 2); // dim1 highpass
-        let lo_cols = transpose(&lo);
-        let hi_cols = transpose(&hi);
-        let rec_cols: Vec<Vec<f64>> = lo_cols
-          .iter()
-          .zip(hi_cols.iter())
-          .map(|(a, d)| idwt_step_1d(a, d, n1, filters, pad))
-          .collect();
-        halves.push(transpose(&rec_cols));
-      }
-      let rec_rows: Vec<Vec<f64>> = halves[0]
+  if dims.len() == 1 {
+    let n = dims[0];
+    let m = n.div_ceil(2);
+    let zero = vec![0.0; m];
+    let get = |digit: u8| -> Vec<f64> {
+      children
         .iter()
-        .zip(halves[1].iter())
-        .map(|(a, d)| idwt_step_1d(a, d, n2, filters, pad))
+        .find(|(d, _)| *d == digit)
+        .and_then(|(_, c)| match c {
+          CoefArray::D1(v) => Some(v.clone()),
+          CoefArray::D2(_) => None,
+        })
+        .unwrap_or_else(|| zero.clone())
+    };
+    CoefArray::D1(idwt_step_1d(&get(0), &get(1), n, filters, pad))
+  } else {
+    let (n1, n2) = (dims[0], dims[1]);
+    let (m1, m2) = (n1.div_ceil(2), n2.div_ceil(2));
+    let get = |digit: u8| -> Vec<Vec<f64>> {
+      children
+        .iter()
+        .find(|(d, _)| *d == digit)
+        .and_then(|(_, c)| match c {
+          CoefArray::D2(v) => Some(v.clone()),
+          CoefArray::D1(_) => None,
+        })
+        .unwrap_or_else(|| vec![vec![0.0; m2]; m1])
+    };
+    // Undo dim-1 (rows) filtering per column, then dim-2 per row.
+    let mut halves: Vec<Vec<Vec<f64>>> = Vec::new(); // [dim2-digit][rows][cols]
+    for col_digit in [0u8, 1] {
+      let lo = get(col_digit); // dim1 lowpass
+      let hi = get(col_digit + 2); // dim1 highpass
+      let lo_cols = transpose(&lo);
+      let hi_cols = transpose(&hi);
+      let rec_cols: Vec<Vec<f64>> = lo_cols
+        .iter()
+        .zip(hi_cols.iter())
+        .map(|(a, d)| idwt_step_1d(a, d, n1, filters, pad))
         .collect();
-      CoefArray::D2(rec_rows)
+      halves.push(transpose(&rec_cols));
     }
+    let rec_rows: Vec<Vec<f64>> = halves[0]
+      .iter()
+      .zip(halves[1].iter())
+      .map(|(a, d)| idwt_step_1d(a, d, n2, filters, pad))
+      .collect();
+    CoefArray::D2(rec_rows)
   }
 }
 
@@ -453,54 +450,51 @@ fn iswt_level(
   filters: &WaveletFilters,
   dilation: i64,
 ) -> CoefArray {
-  match dims.len() {
-    1 => {
-      let n = dims[0];
-      let zero = vec![0.0; n];
-      let get = |digit: u8| -> Vec<f64> {
-        children
-          .iter()
-          .find(|(d, _)| *d == digit)
-          .and_then(|(_, c)| match c {
-            CoefArray::D1(v) => Some(v.clone()),
-            _ => None,
-          })
-          .unwrap_or_else(|| zero.clone())
-      };
-      CoefArray::D1(iswt_step_1d(&get(0), &get(1), dilation, filters))
-    }
-    _ => {
-      let (n1, n2) = (dims[0], dims[1]);
-      let get = |digit: u8| -> Vec<Vec<f64>> {
-        children
-          .iter()
-          .find(|(d, _)| *d == digit)
-          .and_then(|(_, c)| match c {
-            CoefArray::D2(v) => Some(v.clone()),
-            _ => None,
-          })
-          .unwrap_or_else(|| vec![vec![0.0; n2]; n1])
-      };
-      let mut halves: Vec<Vec<Vec<f64>>> = Vec::new();
-      for col_digit in [0u8, 1] {
-        let lo = get(col_digit);
-        let hi = get(col_digit + 2);
-        let lo_cols = transpose(&lo);
-        let hi_cols = transpose(&hi);
-        let rec_cols: Vec<Vec<f64>> = lo_cols
-          .iter()
-          .zip(hi_cols.iter())
-          .map(|(a, d)| iswt_step_1d(a, d, dilation, filters))
-          .collect();
-        halves.push(transpose(&rec_cols));
-      }
-      let rec_rows: Vec<Vec<f64>> = halves[0]
+  if dims.len() == 1 {
+    let n = dims[0];
+    let zero = vec![0.0; n];
+    let get = |digit: u8| -> Vec<f64> {
+      children
         .iter()
-        .zip(halves[1].iter())
+        .find(|(d, _)| *d == digit)
+        .and_then(|(_, c)| match c {
+          CoefArray::D1(v) => Some(v.clone()),
+          CoefArray::D2(_) => None,
+        })
+        .unwrap_or_else(|| zero.clone())
+    };
+    CoefArray::D1(iswt_step_1d(&get(0), &get(1), dilation, filters))
+  } else {
+    let (n1, n2) = (dims[0], dims[1]);
+    let get = |digit: u8| -> Vec<Vec<f64>> {
+      children
+        .iter()
+        .find(|(d, _)| *d == digit)
+        .and_then(|(_, c)| match c {
+          CoefArray::D2(v) => Some(v.clone()),
+          CoefArray::D1(_) => None,
+        })
+        .unwrap_or_else(|| vec![vec![0.0; n2]; n1])
+    };
+    let mut halves: Vec<Vec<Vec<f64>>> = Vec::new();
+    for col_digit in [0u8, 1] {
+      let lo = get(col_digit);
+      let hi = get(col_digit + 2);
+      let lo_cols = transpose(&lo);
+      let hi_cols = transpose(&hi);
+      let rec_cols: Vec<Vec<f64>> = lo_cols
+        .iter()
+        .zip(hi_cols.iter())
         .map(|(a, d)| iswt_step_1d(a, d, dilation, filters))
         .collect();
-      CoefArray::D2(rec_rows)
+      halves.push(transpose(&rec_cols));
     }
+    let rec_rows: Vec<Vec<f64>> = halves[0]
+      .iter()
+      .zip(halves[1].iter())
+      .map(|(a, d)| iswt_step_1d(a, d, dilation, filters))
+      .collect();
+    CoefArray::D2(rec_rows)
   }
 }
 
@@ -550,22 +544,19 @@ impl TransformKind {
 /// 2-adic valuation of the (evened) length, capped at 4.
 pub fn default_refinement(kind: TransformKind, dims: &[usize]) -> usize {
   let n = dims.iter().copied().min().unwrap_or(1).max(1);
-  match kind {
-    TransformKind::Lwt => {
-      let r = dims
-        .iter()
-        .map(|&d| {
-          let e = if d % 2 == 1 { d + 1 } else { d };
-          (e.trailing_zeros() as usize).max(1)
-        })
-        .min()
-        .unwrap_or(1);
-      r.min(4)
-    }
-    _ => {
-      let base = ((n as f64).log2() + 0.5).floor().max(1.0) as usize;
-      if kind.is_packet() { base.min(4) } else { base }
-    }
+  if kind == TransformKind::Lwt {
+    let r = dims
+      .iter()
+      .map(|&d| {
+        let e = if d % 2 == 1 { d + 1 } else { d };
+        (e.trailing_zeros() as usize).max(1)
+      })
+      .min()
+      .unwrap_or(1);
+    r.min(4)
+  } else {
+    let base = ((n as f64).log2() + 0.5).floor().max(1.0) as usize;
+    if kind.is_packet() { base.min(4) } else { base }
   }
 }
 
@@ -669,7 +660,7 @@ fn lwt_prepad(data: &CoefArray, r: usize, pad: &Padding) -> CoefArray {
     }
     CoefArray::D2(rows) => {
       let m1 = target(rows.len());
-      let m2 = target(rows.first().map_or(0, |r| r.len()));
+      let m2 = target(rows.first().map_or(0, std::vec::Vec::len));
       let padded_rows: Vec<Vec<f64>> = rows
         .iter()
         .map(|row| (0..m2).map(|j| pad_sample(row, j as i64, pad)).collect())
@@ -843,67 +834,64 @@ fn idwt_level_plain(
     let s2 = std::f64::consts::SQRT_2;
     let mut x = vec![0.0; n];
     for t in 0..a.len() {
-      for &(i, c) in synth_lo.iter() {
+      for &(i, c) in &synth_lo {
         let j = (2 * t as i64 + i).rem_euclid(n as i64) as usize;
         x[j] += s2 * c * a[t];
       }
-      for &(i, c) in synth_hi.iter() {
+      for &(i, c) in &synth_hi {
         let j = (2 * t as i64 + i).rem_euclid(n as i64) as usize;
         x[j] += s2 * c * d[t];
       }
     }
     x
   };
-  match dims.len() {
-    1 => {
-      let n = dims[0];
-      let m = n / 2;
-      let zero = vec![0.0; m];
-      let get = |digit: u8| -> Vec<f64> {
-        children
-          .iter()
-          .find(|(dg, _)| *dg == digit)
-          .and_then(|(_, c)| match c {
-            CoefArray::D1(v) => Some(v.clone()),
-            _ => None,
-          })
-          .unwrap_or_else(|| zero.clone())
-      };
-      CoefArray::D1(step(&get(0), &get(1), n))
-    }
-    _ => {
-      let (n1, n2) = (dims[0], dims[1]);
-      let (m1, m2) = (n1 / 2, n2 / 2);
-      let get = |digit: u8| -> Vec<Vec<f64>> {
-        children
-          .iter()
-          .find(|(dg, _)| *dg == digit)
-          .and_then(|(_, c)| match c {
-            CoefArray::D2(v) => Some(v.clone()),
-            _ => None,
-          })
-          .unwrap_or_else(|| vec![vec![0.0; m2]; m1])
-      };
-      let mut halves: Vec<Vec<Vec<f64>>> = Vec::new();
-      for col_digit in [0u8, 1] {
-        let lo = get(col_digit);
-        let hi = get(col_digit + 2);
-        let lo_cols = transpose(&lo);
-        let hi_cols = transpose(&hi);
-        let rec_cols: Vec<Vec<f64>> = lo_cols
-          .iter()
-          .zip(hi_cols.iter())
-          .map(|(a, d)| step(a, d, n1))
-          .collect();
-        halves.push(transpose(&rec_cols));
-      }
-      let rec_rows: Vec<Vec<f64>> = halves[0]
+  if dims.len() == 1 {
+    let n = dims[0];
+    let m = n / 2;
+    let zero = vec![0.0; m];
+    let get = |digit: u8| -> Vec<f64> {
+      children
         .iter()
-        .zip(halves[1].iter())
-        .map(|(a, d)| step(a, d, n2))
+        .find(|(dg, _)| *dg == digit)
+        .and_then(|(_, c)| match c {
+          CoefArray::D1(v) => Some(v.clone()),
+          CoefArray::D2(_) => None,
+        })
+        .unwrap_or_else(|| zero.clone())
+    };
+    CoefArray::D1(step(&get(0), &get(1), n))
+  } else {
+    let (n1, n2) = (dims[0], dims[1]);
+    let (m1, m2) = (n1 / 2, n2 / 2);
+    let get = |digit: u8| -> Vec<Vec<f64>> {
+      children
+        .iter()
+        .find(|(dg, _)| *dg == digit)
+        .and_then(|(_, c)| match c {
+          CoefArray::D2(v) => Some(v.clone()),
+          CoefArray::D1(_) => None,
+        })
+        .unwrap_or_else(|| vec![vec![0.0; m2]; m1])
+    };
+    let mut halves: Vec<Vec<Vec<f64>>> = Vec::new();
+    for col_digit in [0u8, 1] {
+      let lo = get(col_digit);
+      let hi = get(col_digit + 2);
+      let lo_cols = transpose(&lo);
+      let hi_cols = transpose(&hi);
+      let rec_cols: Vec<Vec<f64>> = lo_cols
+        .iter()
+        .zip(hi_cols.iter())
+        .map(|(a, d)| step(a, d, n1))
         .collect();
-      CoefArray::D2(rec_rows)
+      halves.push(transpose(&rec_cols));
     }
+    let rec_rows: Vec<Vec<f64>> = halves[0]
+      .iter()
+      .zip(halves[1].iter())
+      .map(|(a, d)| step(a, d, n2))
+      .collect();
+    CoefArray::D2(rec_rows)
   }
 }
 

@@ -9,14 +9,7 @@ pub(crate) fn format_power_infy_2d(base: &str, exp: &str) -> String {
   const PREFIX: &str = "Power::infy: Infinite expression ";
   let line1_width = PREFIX.len() + base.len() + exp.len();
   let trailing_spaces = " ".repeat(exp.len() + 1);
-  format!(
-    "{:>width$}\n{}{}{}encountered.",
-    exp,
-    PREFIX,
-    base,
-    trailing_spaces,
-    width = line1_width
-  )
+  format!("{exp:>line1_width$}\n{PREFIX}{base}{trailing_spaces}encountered.")
 }
 
 /// True if any of the given expressions contains an inexact (machine) number,
@@ -248,17 +241,11 @@ pub fn inverse_weierstrass_p_ast(
   };
 
   // Try to get g2, g3 as f64
-  let g2_f = match try_eval_to_f64(g2) {
-    Some(v) => v,
-    None => {
-      return Ok(unevaluated("InverseWeierstrassP", args));
-    }
+  let Some(g2_f) = try_eval_to_f64(g2) else {
+    return Ok(unevaluated("InverseWeierstrassP", args));
   };
-  let g3_f = match try_eval_to_f64(g3) {
-    Some(v) => v,
-    None => {
-      return Ok(unevaluated("InverseWeierstrassP", args));
-    }
+  let Some(g3_f) = try_eval_to_f64(g3) else {
+    return Ok(unevaluated("InverseWeierstrassP", args));
   };
 
   // Two forms:
@@ -267,34 +254,25 @@ pub fn inverse_weierstrass_p_ast(
   match &args[0] {
     Expr::List(items) if items.len() == 2 => {
       // Form 2: {p, pp} given
-      let p_f = match try_eval_to_f64(&items[0]) {
-        Some(v) => v,
-        None => {
-          return Ok(unevaluated("InverseWeierstrassP", args));
-        }
+      let Some(p_f) = try_eval_to_f64(&items[0]) else {
+        return Ok(unevaluated("InverseWeierstrassP", args));
       };
-      let pp_f = match try_eval_to_f64(&items[1]) {
-        Some(v) => v,
-        None => {
-          return Ok(unevaluated("InverseWeierstrassP", args));
-        }
+      let Some(pp_f) = try_eval_to_f64(&items[1]) else {
+        return Ok(unevaluated("InverseWeierstrassP", args));
       };
       let u = inverse_weierstrass_p_with_prime(p_f, pp_f, g2_f, g3_f);
       Ok(Expr::Real(u))
     }
     _ => {
       // Form 1: just p given
-      let p_f = match try_eval_to_f64(&args[0]) {
-        Some(v) => v,
-        None => {
-          // Check if it's purely symbolic
-          if !matches!(&args[0], Expr::Real(_))
-            && !matches!(&args[0], Expr::Integer(_))
-          {
-            return Ok(unevaluated("InverseWeierstrassP", args));
-          }
+      let Some(p_f) = try_eval_to_f64(&args[0]) else {
+        // Check if it's purely symbolic
+        if !matches!(&args[0], Expr::Real(_))
+          && !matches!(&args[0], Expr::Integer(_))
+        {
           return Ok(unevaluated("InverseWeierstrassP", args));
         }
+        return Ok(unevaluated("InverseWeierstrassP", args));
       };
       // Need at least one Real for numeric eval
       let has_real = matches!(&args[0], Expr::Real(_))

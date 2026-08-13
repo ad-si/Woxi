@@ -63,8 +63,7 @@ pub fn export_image_bytes(
     "TIF" | "TIFF" => image::ImageFormat::Tiff,
     _ => {
       return Err(InterpreterError::EvaluationError(format!(
-        "Export: unsupported image format \"{}\"",
-        fmt
+        "Export: unsupported image format \"{fmt}\""
       )));
     }
   };
@@ -146,10 +145,9 @@ pub fn image_to_html_img(
   let b64 =
     base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &buf);
   format!(
-    "<svg xmlns='http://www.w3.org/2000/svg' width='{}' height='{}'>\
-     <image href='data:image/png;base64,{}' width='{}' height='{}'/>\
-     </svg>",
-    width, height, b64, width, height
+    "<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}'>\
+     <image href='data:image/png;base64,{b64}' width='{width}' height='{height}'/>\
+     </svg>"
   )
 }
 
@@ -216,22 +214,18 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(second) = args.get(1)
     && !matches!(second, Expr::Rule { .. } | Expr::RuleDelayed { .. })
   {
-    match parse_type(second) {
-      Some(ty) => {
-        requested_type = Some(ty);
-        opt_start = 2;
-      }
-      None => {
-        let shown = match second {
-          Expr::String(s) => s.clone(),
-          e => crate::syntax::expr_to_string(e),
-        };
-        crate::emit_message(&format!(
-          "Image::imgdtype: The specified data type {} should be \"Bit\", \"Byte\", \"Bit16\", \"Real32\" or \"Real64\".",
-          shown
-        ));
-        return Ok(unevaluated());
-      }
+    if let Some(ty) = parse_type(second) {
+      requested_type = Some(ty);
+      opt_start = 2;
+    } else {
+      let shown = match second {
+        Expr::String(s) => s.clone(),
+        e => crate::syntax::expr_to_string(e),
+      };
+      crate::emit_message(&format!(
+        "Image::imgdtype: The specified data type {shown} should be \"Bit\", \"Byte\", \"Bit16\", \"Real32\" or \"Real64\"."
+      ));
+      return Ok(unevaluated());
     }
   }
 
@@ -300,8 +294,8 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         requested_type = match s {
           Some("Bit") => Some(ImageType::Bit),
-          Some("Byte") | Some("UnsignedInteger8") => Some(ImageType::Byte),
-          Some("Bit16") | Some("UnsignedInteger16") => Some(ImageType::Bit16),
+          Some("Byte" | "UnsignedInteger8") => Some(ImageType::Byte),
+          Some("Bit16" | "UnsignedInteger16") => Some(ImageType::Bit16),
           Some("Real32") => Some(ImageType::Real32),
           Some("Real64") => Some(ImageType::Real64),
           _ => None,
@@ -323,8 +317,8 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         requested_type = match s {
           Some("Bit") => Some(ImageType::Bit),
-          Some("Byte") | Some("UnsignedInteger8") => Some(ImageType::Byte),
-          Some("Bit16") | Some("UnsignedInteger16") => Some(ImageType::Bit16),
+          Some("Byte" | "UnsignedInteger8") => Some(ImageType::Byte),
+          Some("Bit16" | "UnsignedInteger16") => Some(ImageType::Bit16),
           Some("Real32") => Some(ImageType::Real32),
           Some("Real64") => Some(ImageType::Real64),
           _ => None,
@@ -413,18 +407,18 @@ fn parse_image_array(arg: &Expr) -> Option<(u32, u32, u8, Vec<f64>)> {
     let v = crate::functions::math_ast::try_eval_to_f64(e)?;
     v.is_finite().then_some(v)
   };
-  for row in rows.iter() {
+  for row in rows {
     let Expr::List(items) = row else { return None };
     if items.len() != width {
       return None;
     }
-    for cell in items.iter() {
+    for cell in items {
       if is_color {
         let Expr::List(pixel) = cell else { return None };
         if pixel.len() != channels {
           return None;
         }
-        for v in pixel.iter() {
+        for v in pixel {
           data.push(leaf(v)?);
         }
       } else {
@@ -475,7 +469,7 @@ fn is_valid_image3d(e: &Expr) -> bool {
     other => other,
   };
   let rank = nested_list_rank(inner);
-  matches!(rank, Some(3) | Some(4))
+  matches!(rank, Some(3 | 4))
 }
 
 /// Depth of a regular nested list (the innermost elements must be
@@ -726,9 +720,9 @@ fn image3d_type(e: &Expr) -> Option<ImageType> {
     return None;
   }
   Some(match type_tag {
-    Some("Byte") | Some("UnsignedInteger8") => ImageType::Byte,
+    Some("Byte" | "UnsignedInteger8") => ImageType::Byte,
     Some("Bit") => ImageType::Bit,
-    Some("Bit16") | Some("UnsignedInteger16") => ImageType::Bit16,
+    Some("Bit16" | "UnsignedInteger16") => ImageType::Bit16,
     Some("Real64") => ImageType::Real64,
     _ => ImageType::Real32,
   })
@@ -749,88 +743,85 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     None
   };
-  match &args[0] {
-    Expr::Image {
-      color_space: _,
-      width,
-      height,
-      channels,
-      data,
-      image_type,
-    } => {
-      let w = *width as usize;
-      let h = *height as usize;
-      let ch = *channels as usize;
+  if let Expr::Image {
+    color_space: _,
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  {
+    let w = *width as usize;
+    let h = *height as usize;
+    let ch = *channels as usize;
 
-      let expected_len = w
-        .checked_mul(h)
-        .and_then(|wh| wh.checked_mul(ch))
-        .ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "ImageData: image dimensions overflow".into(),
-          )
-        })?;
-      if data.len() < expected_len {
-        return Err(InterpreterError::EvaluationError(
-          "ImageData: image data buffer is too small for the given dimensions"
-            .into(),
-        ));
-      }
-
-      // Convert values to the appropriate precision.
-      // - Explicit 2nd-arg "Bit"/"Byte"/"Bit16"/"Real"/"Real32"/"Real64"
-      //   overrides the image's internal type.
-      // - Bit images (from Binarize) return integers 0 and 1.
-      // - Real32 images store f64 internally but output f32-precision values.
-      let to_expr = |v: f64| -> Expr {
-        if let Some(t) = requested_type {
-          return match t {
-            "Bit" => Expr::Integer(v.round().clamp(0.0, 1.0) as i128),
-            "Byte" => {
-              Expr::Integer((v * 255.0).round().clamp(0.0, 255.0) as i128)
-            }
-            "Bit16" => {
-              Expr::Integer((v * 65535.0).round().clamp(0.0, 65535.0) as i128)
-            }
-            "Real32" => Expr::Real((v as f32) as f64),
-            _ => Expr::Real(v),
-          };
-        }
-        match image_type {
-          ImageType::Bit => Expr::Integer(v.round() as i128),
-          ImageType::Real32 => Expr::Real((v as f32) as f64),
-          _ => Expr::Real(v),
-        }
-      };
-
-      let mut rows = Vec::with_capacity(h);
-      for y in 0..h {
-        if ch == 1 {
-          // Grayscale: {{v, v, ...}, ...}
-          let row: Vec<Expr> =
-            (0..w).map(|x| to_expr(data[y * w + x])).collect();
-          rows.push(Expr::List(row.into()));
-        } else {
-          // Color: {{{r, g, b}, ...}, ...}
-          let row: Vec<Expr> = (0..w)
-            .map(|x| {
-              let base = (y * w + x) * ch;
-              Expr::List((0..ch).map(|c| to_expr(data[base + c])).collect())
-            })
-            .collect();
-          rows.push(Expr::List(row.into()));
-        }
-      }
-
-      Ok(Expr::List(rows.into()))
-    }
-    _ => {
-      crate::emit_message(&format!(
-        "ImageData::imginv: Expecting an image or graphics instead of {}.",
-        crate::syntax::expr_to_string(&args[0])
+    let expected_len = w
+      .checked_mul(h)
+      .and_then(|wh| wh.checked_mul(ch))
+      .ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "ImageData: image dimensions overflow".into(),
+        )
+      })?;
+    if data.len() < expected_len {
+      return Err(InterpreterError::EvaluationError(
+        "ImageData: image data buffer is too small for the given dimensions"
+          .into(),
       ));
-      Ok(unevaluated("ImageData", args))
     }
+
+    // Convert values to the appropriate precision.
+    // - Explicit 2nd-arg "Bit"/"Byte"/"Bit16"/"Real"/"Real32"/"Real64"
+    //   overrides the image's internal type.
+    // - Bit images (from Binarize) return integers 0 and 1.
+    // - Real32 images store f64 internally but output f32-precision values.
+    let to_expr = |v: f64| -> Expr {
+      if let Some(t) = requested_type {
+        return match t {
+          "Bit" => Expr::Integer(v.round().clamp(0.0, 1.0) as i128),
+          "Byte" => {
+            Expr::Integer((v * 255.0).round().clamp(0.0, 255.0) as i128)
+          }
+          "Bit16" => {
+            Expr::Integer((v * 65535.0).round().clamp(0.0, 65535.0) as i128)
+          }
+          "Real32" => Expr::Real((v as f32) as f64),
+          _ => Expr::Real(v),
+        };
+      }
+      match image_type {
+        ImageType::Bit => Expr::Integer(v.round() as i128),
+        ImageType::Real32 => Expr::Real((v as f32) as f64),
+        _ => Expr::Real(v),
+      }
+    };
+
+    let mut rows = Vec::with_capacity(h);
+    for y in 0..h {
+      if ch == 1 {
+        // Grayscale: {{v, v, ...}, ...}
+        let row: Vec<Expr> = (0..w).map(|x| to_expr(data[y * w + x])).collect();
+        rows.push(Expr::List(row.into()));
+      } else {
+        // Color: {{{r, g, b}, ...}, ...}
+        let row: Vec<Expr> = (0..w)
+          .map(|x| {
+            let base = (y * w + x) * ch;
+            Expr::List((0..ch).map(|c| to_expr(data[base + c])).collect())
+          })
+          .collect();
+        rows.push(Expr::List(row.into()));
+      }
+    }
+
+    Ok(Expr::List(rows.into()))
+  } else {
+    crate::emit_message(&format!(
+      "ImageData::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    Ok(unevaluated("ImageData", args))
   }
 }
 
@@ -875,7 +866,7 @@ pub fn pixel_value_positions_ast(
   let target: Vec<f64> = match &args[1] {
     Expr::List(items) => {
       let mut vs = Vec::with_capacity(items.len());
-      for it in items.iter() {
+      for it in items {
         match crate::functions::math_ast::try_eval_to_f64(it) {
           Some(v) => vs.push(v),
           None => {
@@ -1023,12 +1014,11 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       fn negate_component(e: &Expr) -> Result<Expr, InterpreterError> {
         // ColorNegate numericizes components: an exact 1 negates to the
         // machine real `0.`, matching wolframscript's RGBColor[0., 1., 1.].
-        match e {
-          Expr::Real(r) => Ok(Expr::Real(1.0 - r)),
-          _ => {
-            let v = expr_to_f64(e)?;
-            Ok(Expr::Real(1.0 - v))
-          }
+        if let Expr::Real(r) = e {
+          Ok(Expr::Real(1.0 - r))
+        } else {
+          let v = expr_to_f64(e)?;
+          Ok(Expr::Real(1.0 - v))
         }
       }
       match cargs.len() {
@@ -1061,12 +1051,11 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       fn negate_component(e: &Expr) -> Result<Expr, InterpreterError> {
         // ColorNegate numericizes components: an exact 1 negates to the
         // machine real `0.`, matching wolframscript's RGBColor[0., 1., 1.].
-        match e {
-          Expr::Real(r) => Ok(Expr::Real(1.0 - r)),
-          _ => {
-            let v = expr_to_f64(e)?;
-            Ok(Expr::Real(1.0 - v))
-          }
+        if let Expr::Real(r) = e {
+          Ok(Expr::Real(1.0 - r))
+        } else {
+          let v = expr_to_f64(e)?;
+          Ok(Expr::Real(1.0 - v))
         }
       }
       match cargs.len() {
@@ -1427,21 +1416,23 @@ fn blur_radius_pair(head: &str, args: &[Expr]) -> Option<(f64, f64)> {
     // `{r_rows, r_columns}` — the first radius applies across rows, i.e.
     // vertically, matching wolframscript's row-then-column convention.
     Some(Expr::List(items)) if items.len() == 2 => {
-      match (non_negative(&items[0]), non_negative(&items[1])) {
-        (Some(rows), Some(columns)) => Some((rows, columns)),
-        _ => {
-          bdrad(&args[1]);
-          None
-        }
+      if let (Some(rows), Some(columns)) =
+        (non_negative(&items[0]), non_negative(&items[1]))
+      {
+        Some((rows, columns))
+      } else {
+        bdrad(&args[1]);
+        None
       }
     }
-    Some(spec) => match non_negative(spec) {
-      Some(radius) => Some((radius, radius)),
-      None => {
+    Some(spec) => {
+      if let Some(radius) = non_negative(spec) {
+        Some((radius, radius))
+      } else {
         bdrad(spec);
         None
       }
-    },
+    }
   }
 }
 
@@ -1728,73 +1719,71 @@ pub fn image_reflect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  match &args[0] {
-    Expr::Image {
-      color_space: _,
-      width,
-      height,
-      channels,
-      data,
-      image_type,
-    } => {
-      let w = *width as usize;
-      let h = *height as usize;
-      let ch = *channels as usize;
-      let pixel = |r: usize, c: usize| -> &[f64] {
-        let base = (r * w + c) * ch;
-        &data[base..base + ch]
-      };
-      let mut new_data = Vec::with_capacity(data.len());
-      let (new_w, new_h) = match mode {
-        Mode::Vertical => {
-          for r in 0..h {
-            for c in 0..w {
-              new_data.extend_from_slice(pixel(h - 1 - r, c));
-            }
+  if let Expr::Image {
+    color_space: _,
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  {
+    let w = *width as usize;
+    let h = *height as usize;
+    let ch = *channels as usize;
+    let pixel = |r: usize, c: usize| -> &[f64] {
+      let base = (r * w + c) * ch;
+      &data[base..base + ch]
+    };
+    let mut new_data = Vec::with_capacity(data.len());
+    let (new_w, new_h) = match mode {
+      Mode::Vertical => {
+        for r in 0..h {
+          for c in 0..w {
+            new_data.extend_from_slice(pixel(h - 1 - r, c));
           }
-          (*width, *height)
         }
-        Mode::Horizontal => {
-          for r in 0..h {
-            for c in 0..w {
-              new_data.extend_from_slice(pixel(r, w - 1 - c));
-            }
+        (*width, *height)
+      }
+      Mode::Horizontal => {
+        for r in 0..h {
+          for c in 0..w {
+            new_data.extend_from_slice(pixel(r, w - 1 - c));
           }
-          (*width, *height)
         }
-        Mode::Diagonal => {
-          for r in 0..w {
-            for c in 0..h {
-              new_data.extend_from_slice(pixel(c, r));
-            }
+        (*width, *height)
+      }
+      Mode::Diagonal => {
+        for r in 0..w {
+          for c in 0..h {
+            new_data.extend_from_slice(pixel(c, r));
           }
-          (*height, *width)
         }
-        Mode::AntiDiagonal => {
-          for r in 0..w {
-            for c in 0..h {
-              new_data.extend_from_slice(pixel(h - 1 - c, w - 1 - r));
-            }
+        (*height, *width)
+      }
+      Mode::AntiDiagonal => {
+        for r in 0..w {
+          for c in 0..h {
+            new_data.extend_from_slice(pixel(h - 1 - c, w - 1 - r));
           }
-          (*height, *width)
         }
-      };
-      Ok(Expr::Image {
-        color_space: None,
-        width: new_w,
-        height: new_h,
-        channels: *channels,
-        data: Arc::new(new_data),
-        image_type: *image_type,
-      })
-    }
-    _ => {
-      crate::emit_message(&format!(
-        "ImageReflect::imgvinv: Expecting an image, graphics or video instead of {}.",
-        crate::syntax::expr_to_string(&args[0])
-      ));
-      Ok(unevaluated("ImageReflect", args))
-    }
+        (*height, *width)
+      }
+    };
+    Ok(Expr::Image {
+      color_space: None,
+      width: new_w,
+      height: new_h,
+      channels: *channels,
+      data: Arc::new(new_data),
+      image_type: *image_type,
+    })
+  } else {
+    crate::emit_message(&format!(
+      "ImageReflect::imgvinv: Expecting an image, graphics or video instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    Ok(unevaluated("ImageReflect", args))
   }
 }
 
@@ -1830,19 +1819,18 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Identifier(name) | Expr::Constant(name) if name == "Right" => {
         -pi / 2.0
       }
-      other => match expr_to_f64(other) {
-        Ok(value) => value,
-        // Anything else is reported and the call left alone; it used to raise a
-        // hard error, which takes the whole evaluation down.
-        Err(_) => {
+      other => {
+        if let Ok(value) = expr_to_f64(other) {
+          value
+        } else {
           crate::emit_message(&format!(
             "ImageRotate::imgang: Angle {} should be a real number; one of \
-             Top, Bottom, Left or Right; or a rule from one to another.",
+           Top, Bottom, Left or Right; or a rule from one to another.",
             crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
           ));
           return Ok(unevaluated("ImageRotate", args));
         }
-      },
+      }
     }
   } else {
     pi / 2.0
@@ -1967,7 +1955,7 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     match &args[1] {
       Expr::List(dims) if !dims.is_empty() && dims.len() <= 2 => {
-        for dim in dims.iter() {
+        for dim in dims {
           if placeholder(dim) {
             continue;
           }
@@ -2123,8 +2111,8 @@ fn image_crop_sides(spec: &Expr) -> Option<(String, String)> {
       return None;
     };
     match s.as_str() {
-      "Left" | "Right" => horizontal = s.clone(),
-      "Top" | "Bottom" => vertical = s.clone(),
+      "Left" | "Right" => horizontal.clone_from(s),
+      "Top" | "Bottom" => vertical.clone_from(s),
       "Center" => {}
       other => {
         crate::emit_message(&format!(
@@ -2366,15 +2354,16 @@ pub fn image_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     },
   };
 
-  match image_pad_extents(&args[0], left, right, bottom, top, args.get(2)) {
-    Some(image) => Ok(image),
-    None => {
-      crate::emit_message(&format!(
-        "ImagePad::padnull: Padding specification {} corresponds to an empty image.",
-        crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
-      ));
-      echo()
-    }
+  if let Some(image) =
+    image_pad_extents(&args[0], left, right, bottom, top, args.get(2))
+  {
+    Ok(image)
+  } else {
+    crate::emit_message(&format!(
+      "ImagePad::padnull: Padding specification {} corresponds to an empty image.",
+      crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
+    ));
+    echo()
   }
 }
 
@@ -2410,7 +2399,7 @@ fn image_pad_extents(
 
   // The fill: an extension mode, or a constant (defaulting to black).
   let mode = match padding {
-    Some(Expr::String(s)) | Some(Expr::Identifier(s))
+    Some(Expr::String(s) | Expr::Identifier(s))
       if image_pad_source(s, 0, 1).is_some() =>
     {
       Some(s.clone())
@@ -2422,7 +2411,7 @@ fn image_pad_extents(
     (None, Some(value)) => match value {
       Expr::List(items) if items.len() == ch => {
         let mut v = Vec::with_capacity(ch);
-        for item in items.iter() {
+        for item in items {
           v.push(crate::functions::math_ast::try_eval_to_f64(item)?);
         }
         v
@@ -2602,16 +2591,17 @@ pub fn edge_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let user_threshold = match args.get(2) {
     None => None,
-    Some(spec) => match crate::functions::math_ast::try_eval_to_f64(spec) {
-      Some(value) => Some(value),
-      None => {
+    Some(spec) => {
+      if let Some(value) = crate::functions::math_ast::try_eval_to_f64(spec) {
+        Some(value)
+      } else {
         crate::emit_message(&format!(
           "EdgeDetect::bdthr: Invalid threshold specification {}.",
           crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
         ));
         return Ok(unevaluated("EdgeDetect", args));
       }
-    },
+    }
   };
 
   let w = *width as usize;
@@ -3046,7 +3036,7 @@ pub fn image_apply_ast(
     |result: &Expr, dst: &mut Vec<f64>| -> Result<(), InterpreterError> {
       match result {
         Expr::List(vs) => {
-          for v in vs.iter() {
+          for v in vs {
             dst.push(expr_to_f64(v)?);
           }
         }
@@ -3438,8 +3428,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })
         }
         _ => Err(InterpreterError::EvaluationError(format!(
-          "ColorConvert: unsupported color space \"{}\"",
-          target_space
+          "ColorConvert: unsupported color space \"{target_space}\""
         ))),
       }
     }
@@ -3558,8 +3547,7 @@ fn pointwise_image_op(
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(format!(
-      "{} expects exactly 2 arguments",
-      name
+      "{name} expects exactly 2 arguments"
     )));
   }
 
@@ -3594,8 +3582,7 @@ fn pointwise_image_op(
   {
     if w1 != w2 || h1 != h2 || ch1 != ch2 {
       return Err(InterpreterError::EvaluationError(format!(
-        "{}: images must have the same dimensions and channels",
-        name
+        "{name}: images must have the same dimensions and channels"
       )));
     }
     let is_r32 = matches!(t1, ImageType::Real32);
@@ -3664,10 +3651,10 @@ fn pointwise_image_op(
   // Neither argument is a usable image (and no scalar broadcast applies).
   // Match wolframscript: identify the first non-image argument, emit
   // <Name>::imginv, and return the call unevaluated.
-  let bad = if !matches!(&args[0], Expr::Image { .. }) {
-    &args[0]
-  } else {
+  let bad = if matches!(&args[0], Expr::Image { .. }) {
     &args[1]
+  } else {
+    &args[0]
   };
   crate::emit_message(&format!(
     "{}::imginv: Expecting an image or graphics instead of {}.",
@@ -3702,8 +3689,7 @@ fn fold_pointwise(
 ) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(format!(
-      "{} expects at least 2 arguments",
-      name
+      "{name} expects at least 2 arguments"
     )));
   }
   let mut acc = args[0].clone();
@@ -3927,7 +3913,7 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let n = elems.len();
     let mut values: Vec<f64> = Vec::with_capacity(n);
-    for e in elems.iter() {
+    for e in elems {
       let Some(v) = crate::functions::math_ast::try_eval_to_f64(e) else {
         return Ok(unevaluated());
       };
@@ -4081,7 +4067,7 @@ fn gradient_filter_derivative_kernel(smooth: &[f64]) -> Vec<f64> {
     denom += kf * kf * t_val;
   }
   if denom > 0.0 {
-    for v in d.iter_mut() {
+    for v in &mut d {
       *v /= denom;
     }
   }
@@ -4103,14 +4089,14 @@ pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let mut whole = args.to_vec();
     whole[1] = Expr::Integer(radius as i128);
-    return median_filter_body(&whole);
+    return Ok(median_filter_body(&whole));
   }
-  median_filter_body(args)
+  Ok(median_filter_body(args))
 }
 
 /// The body of `median_filter_ast`, reached with a range already
 /// resolved for list data.
-fn median_filter_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
+fn median_filter_body(args: &[Expr]) -> crate::syntax::Expr {
   let r = crate::functions::math_ast::try_eval_to_f64(&args[1])
     .filter(|v| *v >= 0.0)
     .map(|v| v as usize);
@@ -4159,14 +4145,14 @@ fn median_filter_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
-    return Ok(Expr::Image {
+    return Expr::Image {
       color_space: None,
       width: *width,
       height: *height,
       channels: *channels,
       data: Arc::new(new_data),
       image_type: *image_type,
-    });
+    };
   }
 
   // MedianFilter[list, r] — flat 1D or 2D nested-list median filter
@@ -4216,7 +4202,7 @@ fn median_filter_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         rows.push(Expr::List(new_row.into()));
       }
-      return Ok(Expr::List(rows.into()));
+      return Expr::List(rows.into());
     }
     // 1D path.
     let n = elems.len();
@@ -4232,7 +4218,7 @@ fn median_filter_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .unwrap_or_else(|_| elems[i].clone());
       result.push(med);
     }
-    return Ok(Expr::List(result.into()));
+    return Expr::List(result.into());
   }
 
   let valid = matches!(&args[0], Expr::Image { .. } | Expr::List(_));
@@ -4243,7 +4229,7 @@ fn median_filter_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::syntax::expr_to_string(&args[0])
     ));
   }
-  Ok(unevaluated("MedianFilter", args))
+  unevaluated("MedianFilter", args)
 }
 
 /// MeanFilter[arg, r] — replace every element by the mean of the values
@@ -4303,7 +4289,12 @@ pub fn mean_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       image_type: *image_type,
     }));
   }
-  aggregating_filter_ast(args, "Mean", "MeanFilter", NeighborhoodRange::Whole)
+  Ok(aggregating_filter_ast(
+    args,
+    "Mean",
+    "MeanFilter",
+    NeighborhoodRange::Whole,
+  ))
 }
 
 /// The same image with every sample stored at its own precision, so a
@@ -4494,12 +4485,12 @@ pub fn standard_deviation_filter_ast(
     );
     return Ok(unevaluated("StandardDeviationFilter", args));
   }
-  aggregating_filter_ast(
+  Ok(aggregating_filter_ast(
     args,
     "StandardDeviation",
     "StandardDeviationFilter",
     NeighborhoodRange::Whole,
-  )
+  ))
 }
 
 /// `aggregating_filter_ast` for callers outside this module.
@@ -4509,7 +4500,7 @@ pub fn aggregating_filter_public(
   filter_name: &str,
   range: NeighborhoodRange,
 ) -> Result<Expr, InterpreterError> {
-  aggregating_filter_ast(args, agg, filter_name, range)
+  Ok(aggregating_filter_ast(args, agg, filter_name, range))
 }
 
 /// How a neighborhood filter reads its range argument. All of them take
@@ -4564,7 +4555,7 @@ fn aggregating_filter_ast(
   agg: &str,
   filter_name: &str,
   range: NeighborhoodRange,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let r = neighborhood_radius(filter_name, &args[1], range, false);
 
   if let (Expr::List(elems), Some(r)) = (&args[0], r) {
@@ -4613,7 +4604,7 @@ fn aggregating_filter_ast(
         }
         rows.push(Expr::List(new_row.into()));
       }
-      return Ok(Expr::List(rows.into()));
+      return Expr::List(rows.into());
     }
     // 1D path.
     let n = elems.len();
@@ -4629,7 +4620,7 @@ fn aggregating_filter_ast(
       .unwrap_or_else(|_| elems[i].clone());
       result.push(mean);
     }
-    return Ok(Expr::List(result.into()));
+    return Expr::List(result.into());
   }
 
   // A range that named no radius has already been reported.
@@ -4641,7 +4632,7 @@ fn aggregating_filter_ast(
       crate::syntax::expr_to_string(&args[0])
     ));
   }
-  Ok(unevaluated(filter_name, args))
+  unevaluated(filter_name, args)
 }
 
 /// ImageCorrelate[img, kernel] — 2D correlation per channel: each output
@@ -4752,14 +4743,14 @@ fn spatial_filter_ast(
     return Ok(args[0].clone());
   }
   let mut kernel = Vec::with_capacity(krows * kcols);
-  for row in rows.iter() {
+  for row in rows {
     let Expr::List(items) = row else {
       return Ok(unevaluated(head, args));
     };
     if items.len() != kcols {
       return Ok(unevaluated(head, args));
     }
-    for v in items.iter() {
+    for v in items {
       kernel.push(expr_to_f64(v)?);
     }
   }
@@ -4840,17 +4831,18 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(_) => {
       return Ok(unevaluated("GaussianFilter", args));
     }
-    other => match expr_to_f64_opt(other) {
-      Some(radius) => gaussian_axis_from_radius(radius),
-      None => {
+    other => {
+      if let Some(radius) = expr_to_f64_opt(other) {
+        gaussian_axis_from_radius(radius)
+      } else {
         crate::emit_message(&format!(
           "GaussianFilter::bdrad: The radius specification {} must be a \
-           non-complex number or a nonempty list of non-complex numbers.",
+         non-complex number or a nonempty list of non-complex numbers.",
           crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
         ));
         return Ok(unevaluated("GaussianFilter", args));
       }
-    },
+    }
   };
   let (radius, sigma) = (axis.radius, axis.sigma);
 
@@ -5025,7 +5017,7 @@ fn gaussian_filter_kernel(radius: usize, sigma: f64) -> Vec<f64> {
   }
   let sum: f64 = kernel.iter().sum();
   if sum > 0.0 {
-    for v in kernel.iter_mut() {
+    for v in &mut kernel {
       *v /= sum;
     }
   }
@@ -5044,23 +5036,23 @@ pub fn gaussian_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(spec) if spec.len() == 2 => {
       let r = match expr_to_f64_opt(&spec[0]) {
         Some(v) if v >= 0.0 && v.fract() == 0.0 => v as usize,
-        _ => return symbolic_gaussian_matrix(args),
+        _ => return Ok(symbolic_gaussian_matrix(args)),
       };
       let s = match expr_to_f64_opt(&spec[1]) {
         Some(v) if v > 0.0 => v,
-        _ => return symbolic_gaussian_matrix(args),
+        _ => return Ok(symbolic_gaussian_matrix(args)),
       };
       (r, s)
     }
     // GaussianMatrix[r] with integer r; sigma defaults to r/2.
     other => match expr_to_f64_opt(other) {
       Some(v) if v >= 0.0 && v.fract() == 0.0 => (v as usize, v / 2.0),
-      _ => return symbolic_gaussian_matrix(args),
+      _ => return Ok(symbolic_gaussian_matrix(args)),
     },
   };
 
   if sigma <= 0.0 {
-    return symbolic_gaussian_matrix(args);
+    return Ok(symbolic_gaussian_matrix(args));
   }
 
   let kernel = gaussian_filter_kernel(radius, sigma);
@@ -5090,8 +5082,8 @@ fn expr_to_f64_opt(e: &Expr) -> Option<f64> {
   }
 }
 
-fn symbolic_gaussian_matrix(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  Ok(unevaluated("GaussianMatrix", args))
+fn symbolic_gaussian_matrix(args: &[Expr]) -> crate::syntax::Expr {
+  unevaluated("GaussianMatrix", args)
 }
 
 /// Colorize[matrix] — colorize an integer-label matrix as an RGB
@@ -5116,9 +5108,9 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let height = rows.len() as u32;
     let width = first_cols.len() as u32;
     let mut labels: Vec<i64> = Vec::with_capacity((width * height) as usize);
-    for row in rows.iter() {
+    for row in rows {
       if let Expr::List(cols) = row {
-        for c in cols.iter() {
+        for c in cols {
           if let Expr::Integer(n) = c {
             labels.push(*n as i64);
           }
@@ -5563,15 +5555,14 @@ pub fn delete_small_components_ast(
   let mut mat: Vec<Vec<i128>> = Vec::with_capacity(rows.len());
   let mut counts: std::collections::HashMap<i128, usize> =
     std::collections::HashMap::new();
-  for r in rows.iter() {
+  for r in rows {
     let Expr::List(cells) = r else {
       return unevaluated();
     };
     let mut row = Vec::with_capacity(cells.len());
-    for c in cells.iter() {
-      let v = match crate::functions::math_ast::try_eval_to_f64(c) {
-        Some(v) => v,
-        None => return unevaluated(),
+    for c in cells {
+      let Some(v) = crate::functions::math_ast::try_eval_to_f64(c) else {
+        return unevaluated();
       };
       if v.fract() != 0.0 {
         return unevaluated();
@@ -5629,14 +5620,13 @@ pub fn component_measurements_ast(
   // by the label's rounded-integer value (component labels are integers).
   let mut counts: std::collections::BTreeMap<i128, usize> =
     std::collections::BTreeMap::new();
-  for r in rows.iter() {
+  for r in rows {
     let Expr::List(cells) = r else {
       return unevaluated();
     };
-    for c in cells.iter() {
-      let v = match crate::functions::math_ast::try_eval_to_f64(c) {
-        Some(v) => v,
-        None => return unevaluated(),
+    for c in cells {
+      let Some(v) = crate::functions::math_ast::try_eval_to_f64(c) else {
+        return unevaluated();
       };
       if v == 0.0 {
         continue;
@@ -5653,7 +5643,7 @@ pub fn component_measurements_ast(
     Expr::String(s) => vec![s.clone()],
     Expr::List(items) => {
       let mut v = Vec::with_capacity(items.len());
-      for it in items.iter() {
+      for it in items {
         match it {
           Expr::String(s) => v.push(s.clone()),
           _ => return unevaluated(),
@@ -5716,12 +5706,12 @@ pub fn morphological_components_ast(
   };
   let mut mat: Vec<Vec<f64>> = Vec::with_capacity(rows.len());
   let mut ncols: Option<usize> = None;
-  for r in rows.iter() {
+  for r in rows {
     let Expr::List(cells) = r else {
       return unevaluated();
     };
     let mut row = Vec::with_capacity(cells.len());
-    for c in cells.iter() {
+    for c in cells {
       match crate::functions::math_ast::try_eval_to_f64(c) {
         Some(v) => row.push(v),
         None => return unevaluated(),
@@ -6082,15 +6072,14 @@ pub fn distance_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   };
   let t = if args.len() == 2 {
-    match crate::functions::math_ast::try_eval_to_f64(&args[1]) {
-      Some(v) => v,
-      None => {
-        crate::emit_message(&format!(
-          "DistanceTransform::rthres: The specified threshold value {} should represent a real number.",
-          crate::syntax::expr_to_string(&args[1])
-        ));
-        return Ok(unevaluated());
-      }
+    if let Some(v) = crate::functions::math_ast::try_eval_to_f64(&args[1]) {
+      v
+    } else {
+      crate::emit_message(&format!(
+        "DistanceTransform::rthres: The specified threshold value {} should represent a real number.",
+        crate::syntax::expr_to_string(&args[1])
+      ));
+      return Ok(unevaluated());
     }
   } else {
     0.0
@@ -6185,19 +6174,17 @@ pub fn color_combine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .copied(),
       _ => None,
     };
-    match found {
-      Some(cs) => Some(cs),
-      None => {
-        let shown = match &args[1] {
-          Expr::String(s) => s.clone(),
-          e => crate::syntax::expr_to_string(e),
-        };
-        crate::emit_message(&format!(
-          "ColorCombine::imgcstype: {} is an invalid color space specification.",
-          shown
-        ));
-        return Ok(unevaluated());
-      }
+    if let Some(cs) = found {
+      Some(cs)
+    } else {
+      let shown = match &args[1] {
+        Expr::String(s) => s.clone(),
+        e => crate::syntax::expr_to_string(e),
+      };
+      crate::emit_message(&format!(
+        "ColorCombine::imgcstype: {shown} is an invalid color space specification."
+      ));
+      return Ok(unevaluated());
     }
   } else {
     None
@@ -6215,7 +6202,7 @@ pub fn color_combine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let mut inputs: Vec<(u32, u32, usize, &std::sync::Arc<Vec<f64>>, ImageType)> =
     Vec::with_capacity(items.len());
-  for item in items.iter() {
+  for item in items {
     let Expr::Image {
       width,
       height,
@@ -6244,8 +6231,7 @@ pub fn color_combine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && total != want
   {
     crate::emit_message(&format!(
-      "ColorCombine::imgcsmis: The specified color space {} and the number of channels {} are not compatible.",
-      name, total
+      "ColorCombine::imgcsmis: The specified color space {name} and the number of channels {total} are not compatible."
     ));
     return Ok(unevaluated());
   }
@@ -6441,7 +6427,7 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Some(Expr::List(items.clone()));
         }
         let mut out = Vec::with_capacity(items.len());
-        for item in items.iter() {
+        for item in items {
           out.push(apply(item, t, promote, method)?);
         }
         Some(Expr::List(out.into()))
@@ -6471,15 +6457,14 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
     return Ok(unevaluated());
   }
-  match apply(&args[0], &threshold, promote_to_real, method) {
-    Some(result) => Ok(result),
-    None => {
-      crate::emit_message(&format!(
-        "Threshold::nlist: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
-        crate::syntax::expr_to_string(&args[0])
-      ));
-      Ok(unevaluated())
-    }
+  if let Some(result) = apply(&args[0], &threshold, promote_to_real, method) {
+    Ok(result)
+  } else {
+    crate::emit_message(&format!(
+      "Threshold::nlist: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    Ok(unevaluated())
   }
 }
 
@@ -6811,8 +6796,7 @@ pub fn image_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (dx, dy) = if args.len() == 3 {
     let invalid = |shown: &str| {
       crate::emit_message(&format!(
-        "ImagePartition::arg3: {} is not a positive number or a pair of positive numbers.",
-        shown
+        "ImagePartition::arg3: {shown} is not a positive number or a pair of positive numbers."
       ));
     };
     // Positivity is checked on the raw value; the effective step is
@@ -6827,26 +6811,26 @@ pub fn image_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     match &args[2] {
       Expr::List(items) if items.len() == 2 => {
-        match (step_of(&items[0]), step_of(&items[1])) {
-          (Some(a), Some(b)) => (a, b),
-          _ => {
-            invalid(&crate::syntax::expr_to_string(&args[2]));
-            return Ok(unevaluated());
-          }
+        if let (Some(a), Some(b)) = (step_of(&items[0]), step_of(&items[1])) {
+          (a, b)
+        } else {
+          invalid(&crate::syntax::expr_to_string(&args[2]));
+          return Ok(unevaluated());
         }
       }
       Expr::List(_) => {
         invalid(&crate::syntax::expr_to_string(&args[2]));
         return Ok(unevaluated());
       }
-      e => match step_of(e) {
-        Some(d) => (d, d),
-        None => {
+      e => {
+        if let Some(d) = step_of(e) {
+          (d, d)
+        } else {
           let shown = crate::syntax::expr_to_string(e);
-          invalid(&format!("{{{}, {}}}", shown, shown));
+          invalid(&format!("{{{shown}, {shown}}}"));
           return Ok(unevaluated());
         }
-      },
+      }
     }
   } else {
     // Default offsets are the (floored) block sizes.
@@ -6896,61 +6880,59 @@ pub fn image_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  match &args[0] {
-    Expr::Image {
-      color_space,
-      width,
-      height,
-      channels,
-      data,
-      image_type,
-    } => {
-      let w = *width as usize;
-      let h = *height as usize;
-      let ch = *channels as usize;
+  if let Expr::Image {
+    color_space,
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  {
+    let w = *width as usize;
+    let h = *height as usize;
+    let ch = *channels as usize;
 
-      let (r1, r2) = parse_take_range(&args[1], h)?;
-      let (c1, c2) = if args.len() == 3 {
-        parse_take_range(&args[2], w)?
-      } else {
-        (0, w)
-      };
+    let (r1, r2) = parse_take_range(&args[1], h)?;
+    let (c1, c2) = if args.len() == 3 {
+      parse_take_range(&args[2], w)?
+    } else {
+      (0, w)
+    };
 
-      if r1 >= r2 || c1 >= c2 {
-        return Err(InterpreterError::EvaluationError(
-          "ImageTake: invalid range".into(),
-        ));
-      }
+    if r1 >= r2 || c1 >= c2 {
+      return Err(InterpreterError::EvaluationError(
+        "ImageTake: invalid range".into(),
+      ));
+    }
 
-      let new_h = r2 - r1;
-      let new_w = c2 - c1;
-      let mut new_data = Vec::with_capacity(new_h * new_w * ch);
+    let new_h = r2 - r1;
+    let new_w = c2 - c1;
+    let mut new_data = Vec::with_capacity(new_h * new_w * ch);
 
-      for y in r1..r2 {
-        for x in c1..c2 {
-          let base = (y * w + x) * ch;
-          for c in 0..ch {
-            new_data.push(data[base + c]);
-          }
+    for y in r1..r2 {
+      for x in c1..c2 {
+        let base = (y * w + x) * ch;
+        for c in 0..ch {
+          new_data.push(data[base + c]);
         }
       }
+    }
 
-      Ok(Expr::Image {
-        color_space: *color_space,
-        width: new_w as u32,
-        height: new_h as u32,
-        channels: *channels,
-        data: Arc::new(new_data),
-        image_type: *image_type,
-      })
-    }
-    _ => {
-      crate::emit_message(&format!(
-        "ImageTake::imginv: Expecting an image or graphics instead of {}.",
-        crate::syntax::expr_to_string(&args[0])
-      ));
-      Ok(unevaluated("ImageTake", args))
-    }
+    Ok(Expr::Image {
+      color_space: *color_space,
+      width: new_w as u32,
+      height: new_h as u32,
+      channels: *channels,
+      data: Arc::new(new_data),
+      image_type: *image_type,
+    })
+  } else {
+    crate::emit_message(&format!(
+      "ImageTake::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    Ok(unevaluated("ImageTake", args))
   }
 }
 
@@ -7060,7 +7042,7 @@ fn layout_rows(
   let mut rows: Vec<&[(usize, f64)]> = Vec::with_capacity(num_rows);
   let mut offset = 0;
   for r in 0..num_rows {
-    let count = base + if r < remainder { 1 } else { 0 };
+    let count = base + usize::from(r < remainder);
     rows.push(&items[offset..offset + count]);
     offset += count;
   }
@@ -7202,7 +7184,7 @@ fn try_collage_same_shape(items: &[Expr]) -> Option<Expr> {
     } => (*width, *height, *channels, *image_type),
     _ => return None,
   };
-  for it in items.iter() {
+  for it in items {
     let Expr::Image {
       width,
       height,
@@ -7313,13 +7295,10 @@ pub fn image_collage_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut entries: Vec<ImageEntry> = Vec::new();
   let mut max_channels: u8 = 1;
 
-  let list = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "ImageCollage: first argument must be a list of images".into(),
-      ));
-    }
+  let Expr::List(list) = &args[0] else {
+    return Err(InterpreterError::EvaluationError(
+      "ImageCollage: first argument must be a list of images".into(),
+    ));
   };
 
   // Fast path: every item is a plain Image of the same width, height,
@@ -7607,7 +7586,7 @@ fn try_assemble_same_shape(outer: &[Expr]) -> Option<Expr> {
 
   // Every cell must match the reference shape and type.
   for row in &rows {
-    for cell in row.iter() {
+    for cell in *row {
       let Expr::Image {
         width,
         height,
@@ -7688,13 +7667,10 @@ pub fn image_assemble_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let bg = image::Rgba([0u8, 0, 0, 255]); // Black background (Automatic)
 
   // Parse the grid from the first argument
-  let outer = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "ImageAssemble: first argument must be a list".into(),
-      ));
-    }
+  let Expr::List(outer) = &args[0] else {
+    return Err(InterpreterError::EvaluationError(
+      "ImageAssemble: first argument must be a list".into(),
+    ));
   };
 
   if outer.is_empty() {
@@ -7748,7 +7724,7 @@ pub fn image_assemble_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let num_rows = grid.len();
-  let num_cols = grid.iter().map(|row| row.len()).max().unwrap_or(0);
+  let num_cols = grid.iter().map(std::vec::Vec::len).max().unwrap_or(0);
   if num_cols == 0 {
     return Err(InterpreterError::EvaluationError(
       "ImageAssemble: no images found".into(),
@@ -7780,7 +7756,7 @@ pub fn image_assemble_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if fitting == "None" && args.len() < 2 {
     for (r, row) in grid.iter().enumerate() {
       let expected_h = row_heights[r];
-      for cell in row.iter() {
+      for cell in row {
         if let Some((_, _, h)) = cell
           && *h != expected_h
         {
@@ -7873,8 +7849,7 @@ pub fn image_assemble_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn import_image_from_bytes(bytes: &[u8]) -> Result<Expr, InterpreterError> {
   let img = image::load_from_memory(bytes).map_err(|e| {
     InterpreterError::EvaluationError(format!(
-      "Import: cannot decode image: {}",
-      e
+      "Import: cannot decode image: {e}"
     ))
   })?;
   Ok(dynamic_image_to_expr(&img))
@@ -7888,17 +7863,13 @@ pub fn import_image(path: &str) -> Result<Expr, InterpreterError> {
   // but without the not-found message.
   if !std::path::Path::new(path).exists() {
     crate::emit_message(&format!(
-      "Import::nffil: File {} not found during Import.",
-      path
+      "Import::nffil: File {path} not found during Import."
     ));
     return Ok(Expr::Identifier("$Failed".to_string()));
   }
-  let img = match image::open(path) {
-    Ok(img) => img,
-    Err(_) => {
-      // Wolfram returns $Failed when the file cannot be opened
-      return Ok(Expr::Identifier("$Failed".to_string()));
-    }
+  let Ok(img) = image::open(path) else {
+    // Wolfram returns $Failed when the file cannot be opened
+    return Ok(Expr::Identifier("$Failed".to_string()));
   };
   Ok(dynamic_image_to_expr(&img))
 }
@@ -7911,8 +7882,7 @@ pub fn import_image_from_url(url: &str) -> Result<Expr, InterpreterError> {
     .output()
     .map_err(|e| {
       InterpreterError::EvaluationError(format!(
-        "Import: failed to run curl: {}",
-        e
+        "Import: failed to run curl: {e}"
       ))
     })?;
   if !output.status.success() {
@@ -8056,8 +8026,7 @@ pub fn rasterize_svg(
 
   let tree = resvg::usvg::Tree::from_str(svg_str, &opt).map_err(|e| {
     InterpreterError::EvaluationError(format!(
-      "Rasterize: SVG parse error: {}",
-      e
+      "Rasterize: SVG parse error: {e}"
     ))
   })?;
 
@@ -8113,8 +8082,7 @@ pub fn export_image(
   let dyn_img = expr_to_dynamic_image(width, height, channels, data);
   dyn_img.save(path).map_err(|e| {
     InterpreterError::EvaluationError(format!(
-      "Export: cannot save \"{}\": {}",
-      path, e
+      "Export: cannot save \"{path}\": {e}"
     ))
   })
 }
@@ -8152,8 +8120,7 @@ pub fn export_animated_gif(
 
   let file = File::create(path).map_err(|e| {
     InterpreterError::EvaluationError(format!(
-      "Export: cannot save \"{}\": {}",
-      path, e
+      "Export: cannot save \"{path}\": {e}"
     ))
   })?;
   let mut encoder = GifEncoder::new(file);
@@ -8298,8 +8265,7 @@ fn resolve_color_value(
         resolve_color_value(&color_expr)
       } else {
         Err(InterpreterError::EvaluationError(format!(
-          "ConstantImage: unknown color \"{}\"",
-          name
+          "ConstantImage: unknown color \"{name}\""
         )))
       }
     }
@@ -8787,10 +8753,10 @@ fn cmc_distance(
   };
   // The CMC formula uses h1 (the reference colour's hue).
   let cos = |deg: f64| (deg / to_deg).cos();
-  let t = if !(164.0..345.0).contains(&h1) {
-    0.36 + (0.4 * cos(h1 + 35.0)).abs()
-  } else {
+  let t = if (164.0..345.0).contains(&h1) {
     0.56 + (0.2 * cos(h1 + 168.0)).abs()
+  } else {
+    0.36 + (0.4 * cos(h1 + 35.0)).abs()
   };
   let c1_4 = c1.powi(4);
   let f = (c1_4 / (c1_4 + 1900.0)).sqrt();
@@ -8836,7 +8802,7 @@ pub fn crossing_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let zeroed = |v: f64| if v.abs() < delta { 0.0 } else { v };
   let crossings = |grid: &Vec<Vec<f64>>| -> Vec<Vec<i128>> {
     let h = grid.len();
-    let w = grid.first().map(|r| r.len()).unwrap_or(0);
+    let w = grid.first().map_or(0, std::vec::Vec::len);
     let mut out = vec![vec![0i128; w]; h];
     for r in 0..h {
       for c in 0..w {
@@ -8914,7 +8880,7 @@ pub fn crossing_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       let mut grid: Vec<Vec<f64>> = Vec::with_capacity(rows.len());
       let mut width: Option<usize> = None;
-      for r in rows.iter() {
+      for r in rows {
         let Expr::List(cells) = r else {
           return unevaluated();
         };
@@ -8923,7 +8889,7 @@ pub fn crossing_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return unevaluated();
         }
         let mut vals = Vec::with_capacity(cells.len());
-        for c in cells.iter() {
+        for c in cells {
           match num(c) {
             Some(v) => vals.push(v),
             None => return unevaluated(),
@@ -9011,7 +8977,7 @@ fn samples_median(samples: &[f64]) -> f64 {
   if n % 2 == 1 {
     sorted[n / 2]
   } else {
-    (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+    f64::midpoint(sorted[n / 2 - 1], sorted[n / 2])
   }
 }
 
@@ -9049,7 +9015,7 @@ fn image_measurement(
   height: u32,
   channels: u8,
   data: &[f64],
-  image_type: &ImageType,
+  image_type: ImageType,
   color_space: Option<&'static str>,
   property: &str,
 ) -> Option<Expr> {
@@ -9265,7 +9231,7 @@ pub fn image_measurements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       *height,
       *channels,
       data,
-      image_type,
+      *image_type,
       *color_space,
       name,
     )
@@ -9274,7 +9240,7 @@ pub fn image_measurements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[1] {
     Expr::List(names) => {
       let mut out = Vec::with_capacity(names.len());
-      for name in names.iter() {
+      for name in names {
         match one(name) {
           Some(Ok(value)) => out.push(value),
           Some(Err(e)) => return Err(e),

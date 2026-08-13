@@ -171,7 +171,9 @@ fn country_name_index() -> &'static HashMap<String, keshvar::Alpha2> {
 fn keshvar_country(name: &str) -> Option<keshvar::Country> {
   let lower = name.to_lowercase();
   stacker::maybe_grow(4 * 1024 * 1024, 16 * 1024 * 1024, || {
-    country_name_index().get(&lower).map(|a| a.to_country())
+    country_name_index()
+      .get(&lower)
+      .map(keshvar::Alpha2::to_country)
   })
 }
 
@@ -189,7 +191,7 @@ fn subdivision_centroid_in(
   country: &keshvar::Country,
   region: &str,
 ) -> Option<(f64, f64)> {
-  for (code, s) in country.subdivisions().iter() {
+  for (code, s) in country.subdivisions() {
     let hit = code.eq_ignore_ascii_case(region)
       || s.name().eq_ignore_ascii_case(region)
       || s
@@ -298,7 +300,7 @@ pub fn positions_from_arg(expr: &Expr) -> Vec<(f64, f64)> {
   };
   if let Expr::List(items) = list {
     let mut out = Vec::new();
-    for it in items.iter() {
+    for it in items {
       if let Some(p) = position_to_latlon(it) {
         out.push(p);
       }
@@ -453,8 +455,8 @@ fn compute_window(
         .iter()
         .map(|p| p.1)
         .fold(f64::NEG_INFINITY, f64::max);
-      let lat_c = (lat_min + lat_max) / 2.0;
-      let lon_c = (lon_min + lon_max) / 2.0;
+      let lat_c = f64::midpoint(lat_min, lat_max);
+      let lon_c = f64::midpoint(lon_min, lon_max);
       let half_lat = meters / M_PER_DEG_LAT;
       let half_lon = half_lat / lon_scale(lat_c);
       (lon_c, lat_c, half_lon, half_lat)
@@ -484,8 +486,8 @@ fn compute_window(
         .iter()
         .map(|p| p.1)
         .fold(f64::NEG_INFINITY, f64::max);
-      let lat_c = (lat_min + lat_max) / 2.0;
-      let lon_c = (lon_min + lon_max) / 2.0;
+      let lat_c = f64::midpoint(lat_min, lat_max);
+      let lon_c = f64::midpoint(lon_min, lon_max);
       let k = lon_scale(lat_c);
 
       let span_lat = lat_max - lat_min;
@@ -786,7 +788,7 @@ fn render_histogram_bin(
 /// Pixel radius for a dot given the current `PointSize` directive and image
 /// width. Named sizes follow the usual Graphics conventions; numeric values are
 /// fractions of the image width.
-fn point_radius(point_size: &Option<Expr>, width: f64) -> f64 {
+fn point_radius(point_size: Option<&Expr>, width: f64) -> f64 {
   match point_size {
     None => 3.0,
     Some(Expr::Identifier(s)) => match s.as_str() {
@@ -805,7 +807,7 @@ fn point_radius(point_size: &Option<Expr>, width: f64) -> f64 {
 
 /// Pin scale factor for the current `PointSize` directive (the pin keeps a
 /// recognizable shape, so `PointSize` only nudges its overall size).
-fn pin_scale(point_size: &Option<Expr>) -> f64 {
+fn pin_scale(point_size: Option<&Expr>) -> f64 {
   match point_size {
     Some(Expr::Identifier(s)) => match s.as_str() {
       "Tiny" => 0.7,
@@ -829,13 +831,13 @@ struct GeoStyle {
 fn collect_positions(expr: &Expr, out: &mut Vec<(f64, f64)>) {
   match expr {
     Expr::List(items) => {
-      for it in items.iter() {
+      for it in items {
         collect_positions(it, out);
       }
     }
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Directive" => {
-        for a in args.iter() {
+        for a in args {
           collect_positions(a, out);
         }
       }
@@ -907,13 +909,13 @@ fn render_content(
 ) {
   match expr {
     Expr::List(items) => {
-      for it in items.iter() {
+      for it in items {
         render_content(it, style, proj, svg);
       }
     }
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Directive" => {
-        for a in args.iter() {
+        for a in args {
           render_content(a, style, proj, svg);
         }
       }
@@ -921,7 +923,7 @@ fn render_content(
         style.point_size = Some(args[0].clone());
       }
       "GeoMarker" if !args.is_empty() => {
-        let scale = pin_scale(&style.point_size);
+        let scale = pin_scale(style.point_size.as_ref());
         for (lat, lon) in positions_from_arg(&args[0]) {
           let (px, py) = proj.project(lon, lat);
           render_pin(svg, px, py, &style.color, scale);
@@ -965,7 +967,7 @@ fn render_content(
         }
       }
       "Point" if !args.is_empty() => {
-        let radius = point_radius(&style.point_size, proj.w);
+        let radius = point_radius(style.point_size.as_ref(), proj.w);
         for (lat, lon) in positions_from_arg(&args[0]) {
           let (px, py) = proj.project(lon, lat);
           render_dot(svg, px, py, &style.color, radius);
@@ -1106,7 +1108,7 @@ pub fn geo_region_value_plot_ast(
   };
   // Collect (entity, value) pairs.
   let mut pairs: Vec<(Expr, f64)> = Vec::new();
-  for r in rules.iter() {
+  for r in rules {
     if let Expr::Rule {
       pattern,
       replacement,
@@ -1135,7 +1137,7 @@ pub fn geo_region_value_plot_ast(
   }
   // Render the shaded map with a color-scale legend on the right.
   let content = Expr::List(items.into());
-  geographics_impl(
+  Ok(geographics_impl(
     &content,
     &args[1..],
     Some(Legend {
@@ -1143,7 +1145,7 @@ pub fn geo_region_value_plot_ast(
       hi,
       color: choropleth_color,
     }),
-  )
+  ))
 }
 
 // ── GeoHistogram (geographic density histogram) ───────────────────────────
@@ -1340,7 +1342,7 @@ fn compute_geo_bins(
   let lat_max = pts.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
   let lon_min = pts.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
   let lon_max = pts.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
-  let lat_c = (lat_min + lat_max) / 2.0;
+  let lat_c = f64::midpoint(lat_min, lat_max);
   let k = lon_scale(lat_c);
   let x0 = lon_min * k;
   let y0 = lat_min;
@@ -1551,7 +1553,7 @@ pub fn geo_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     hi: vmax,
     color: heat_color,
   });
-  let result = geographics_impl(&content, &opts, legend)?;
+  let result = geographics_impl(&content, &opts, legend);
   // Keep the GeoGraphics head (`Head` reports GeoGraphics, as in the Wolfram
   // Language) while rendering as an ordinary SVG image.
   if let Expr::Graphics {
@@ -1581,7 +1583,7 @@ pub fn geographics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   // `GeoGraphics` keeps its own symbolic head (so `Head` reports `GeoGraphics`,
   // matching wolframscript) while still rendering as an ordinary SVG image.
-  let result = geographics_impl(&content, &args[1..], None)?;
+  let result = geographics_impl(&content, &args[1..], None);
   if let Expr::Graphics {
     svg, is_3d, source, ..
   } = &result
@@ -1604,7 +1606,7 @@ fn geographics_impl(
   content: &Expr,
   opt_args: &[Expr],
   legend: Option<Legend>,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   // Options: ImageSize (width), GeoRange, GeoProjection, GeoGridLines.
   let mut width = 360.0_f64;
   let mut range = GeoRange::Auto;
@@ -1741,7 +1743,7 @@ fn geographics_impl(
 
   svg.push_str("</svg>");
 
-  Ok(crate::graphics_result(svg))
+  crate::graphics_result(svg)
 }
 
 /// Draw a vertical color-scale legend bar (high at top, low at bottom) in the
@@ -1778,9 +1780,11 @@ fn render_legend(svg: &mut String, leg: &Legend, map_width: f64, height: f64) {
   ));
   // Tick labels at min, midpoint and max.
   let label_x = bar_x + bar_w + 5.0;
-  for (frac, value) in
-    [(0.0, leg.hi), (0.5, (leg.lo + leg.hi) / 2.0), (1.0, leg.lo)]
-  {
+  for (frac, value) in [
+    (0.0, leg.hi),
+    (0.5, f64::midpoint(leg.lo, leg.hi)),
+    (1.0, leg.lo),
+  ] {
     let y = top + bar_h * frac + 3.5;
     svg.push_str(&format!(
       "<text x=\"{label_x:.1}\" y=\"{y:.1}\" font-family=\"sans-serif\" \

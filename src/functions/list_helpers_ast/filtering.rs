@@ -209,7 +209,7 @@ pub fn select_first_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // On an association, the predicate is tested against the values and the first
   // matching value is returned.
   if let Expr::Association(pairs) = list {
-    for (_k, v) in pairs.iter() {
+    for (_k, v) in pairs {
       if expr_to_bool(&apply_func_ast(pred, v)?) == Some(true) {
         return Ok(v.clone());
       }
@@ -335,7 +335,7 @@ fn get_sequence_info_bool(pattern: &Expr) -> Option<SeqInfoBool> {
     Expr::Pattern {
       head, blank_type, ..
     } if *blank_type >= 2 => {
-      let min = if *blank_type == 2 { 1 } else { 0 };
+      let min = usize::from(*blank_type == 2);
       Some(SeqInfoBool {
         head: head.clone(),
         min_count: min,
@@ -350,7 +350,7 @@ fn get_sequence_info_bool(pattern: &Expr) -> Option<SeqInfoBool> {
       test,
       ..
     } if *blank_type >= 2 => {
-      let min = if *blank_type == 2 { 1 } else { 0 };
+      let min = usize::from(*blank_type == 2);
       Some(SeqInfoBool {
         head: head.clone(),
         min_count: min,
@@ -371,7 +371,7 @@ fn get_sequence_info_bool(pattern: &Expr) -> Option<SeqInfoBool> {
       } else {
         None
       };
-      let min = if name == "BlankSequence" { 1 } else { 0 };
+      let min = usize::from(name == "BlankSequence");
       Some(SeqInfoBool {
         head,
         min_count: min,
@@ -1094,15 +1094,14 @@ pub fn cases_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         other => bound(other).map(|n| (1, n)),
       };
-      match parsed {
-        Some(b) => b,
-        None => {
-          crate::emit_message(&format!(
-            "Cases::level: Level specification {} is not of the form n, {{n}} or {{m, n}}.",
-            show(spec)
-          ));
-          return Ok(original());
-        }
+      if let Some(b) = parsed {
+        b
+      } else {
+        crate::emit_message(&format!(
+          "Cases::level: Level specification {} is not of the form n, {{n}} or {{m, n}}.",
+          show(spec)
+        ));
+        return Ok(original());
       }
     }
   };
@@ -1231,15 +1230,14 @@ pub fn count_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         other => bound(other).map(|n| (1, n)),
       };
-      match parsed {
-        Some(b) => b,
-        None => {
-          crate::emit_message(&format!(
-            "Count::level: Level specification {} is not of the form n, {{n}} or {{m, n}}.",
-            show(spec)
-          ));
-          return Ok(original());
-        }
+      if let Some(b) = parsed {
+        b
+      } else {
+        crate::emit_message(&format!(
+          "Count::level: Level specification {} is not of the form n, {{n}} or {{m, n}}.",
+          show(spec)
+        ));
+        return Ok(original());
       }
     }
   };
@@ -1504,15 +1502,14 @@ pub fn delete_cases_unified_ast(
         }
         other => bound(other).map(|n| (1, n)),
       };
-      match parsed {
-        Some(b) => b,
-        None => {
-          crate::emit_message(&format!(
-            "DeleteCases::level: Level specification {} is not of the form n, {{n}} or {{m, n}}.",
-            show(spec)
-          ));
-          return Ok(original());
-        }
+      if let Some(b) = parsed {
+        b
+      } else {
+        crate::emit_message(&format!(
+          "DeleteCases::level: Level specification {} is not of the form n, {{n}} or {{m, n}}.",
+          show(spec)
+        ));
+        return Ok(original());
       }
     }
   };
@@ -1645,15 +1642,14 @@ pub fn position_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         other => bound(other).map(|n| (1, n)),
       };
-      match parsed {
-        Some(b) => b,
-        None => {
-          crate::emit_message(&format!(
-            "Position::level: Level specification {} is not of the form n, {{n}} or {{m, n}}.",
-            show(spec)
-          ));
-          return Ok(original());
-        }
+      if let Some(b) = parsed {
+        b
+      } else {
+        crate::emit_message(&format!(
+          "Position::level: Level specification {} is not of the form n, {{n}} or {{m, n}}.",
+          show(spec)
+        ));
+        return Ok(original());
       }
     }
   };
@@ -1786,17 +1782,11 @@ pub fn contains_only_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ContainsOnly expects 2 or 3 arguments".into(),
     ));
   }
-  let list = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("ContainsOnly", args));
-    }
+  let Expr::List(list) = &args[0] else {
+    return Ok(unevaluated("ContainsOnly", args));
   };
-  let elems = match &args[1] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("ContainsOnly", args));
-    }
+  let Expr::List(elems) = &args[1] else {
+    return Ok(unevaluated("ContainsOnly", args));
   };
 
   // Extract optional SameTest option from the 3rd argument. Accepts either
@@ -2019,11 +2009,8 @@ pub fn peak_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let data = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("PeakDetect", args));
-    }
+  let Expr::List(data) = &args[0] else {
+    return Ok(unevaluated("PeakDetect", args));
   };
 
   let sharpness: usize = if args.len() >= 2 {
@@ -2128,7 +2115,7 @@ pub fn peak_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let result = is_peak
     .iter()
-    .map(|&p| Expr::Integer(if p { 1 } else { 0 }))
+    .map(|&p| Expr::Integer(i128::from(p)))
     .collect();
   Ok(Expr::List(result))
 }
@@ -2271,14 +2258,11 @@ pub fn subset_position_ast(
   list: &Expr,
   pattern: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "SubsetPosition".to_string(),
-        args: vec![list.clone(), pattern.clone()].into(),
-      });
-    }
+  let Expr::List(items) = list else {
+    return Ok(Expr::FunctionCall {
+      name: "SubsetPosition".to_string(),
+      args: vec![list.clone(), pattern.clone()].into(),
+    });
   };
 
   let k = subset_pattern_size(pattern);
@@ -2318,18 +2302,15 @@ pub fn subset_cases_ast(
   pattern: &Expr,
   max_count: Option<usize>,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      let mut a = vec![list.clone(), pattern.clone()];
-      if let Some(n) = max_count {
-        a.push(Expr::Integer(n as i128));
-      }
-      return Ok(Expr::FunctionCall {
-        name: "SubsetCases".to_string(),
-        args: a.into(),
-      });
+  let Expr::List(items) = list else {
+    let mut a = vec![list.clone(), pattern.clone()];
+    if let Some(n) = max_count {
+      a.push(Expr::Integer(n as i128));
     }
+    return Ok(Expr::FunctionCall {
+      name: "SubsetCases".to_string(),
+      args: a.into(),
+    });
   };
 
   let k = subset_pattern_size(pattern);
@@ -2396,15 +2377,12 @@ pub fn commonest_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(unevaluated(args));
   }
-  let items = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      crate::emit_message(&format!(
-        "CommonestFilter::arg1: The first argument {} should be a rectangular array, image or video.",
-        crate::syntax::expr_to_string(&args[0])
-      ));
-      return Ok(unevaluated(args));
-    }
+  let Expr::List(items) = &args[0] else {
+    crate::emit_message(&format!(
+      "CommonestFilter::arg1: The first argument {} should be a rectangular array, image or video.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated(args));
   };
   // The range rounds up and ignores its sign, as it does for MinFilter
   // and MaxFilter, so 1.5 is a radius of 2 and -1 a radius of 1.

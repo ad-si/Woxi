@@ -102,7 +102,7 @@ fn csqrt(a: C) -> C {
     };
   }
   let r = cabs(a);
-  let re = ((r + a.0) / 2.0).sqrt();
+  let re = f64::midpoint(r, a.0).sqrt();
   let im = ((r - a.0) / 2.0).sqrt() * if a.1 < 0.0 { -1.0 } else { 1.0 };
   (re, im)
 }

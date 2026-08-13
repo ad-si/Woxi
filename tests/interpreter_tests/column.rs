@@ -295,12 +295,7 @@ mod column_visual_mode {
     let h2: u32 = height_re.captures(&svg_with_gap).unwrap()[1]
       .parse()
       .unwrap();
-    assert!(
-      h2 > h1,
-      "SVG with spacing should be taller: {} vs {}",
-      h2,
-      h1
-    );
+    assert!(h2 > h1, "SVG with spacing should be taller: {h2} vs {h1}");
   }
 
   #[test]

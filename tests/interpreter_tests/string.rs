@@ -50,8 +50,7 @@ mod string_join_arg_errors {
       msgs.iter().any(|m| m.contains(
         "StringJoin::string: String expected at position 2 in U<>2."
       )),
-      "expected infix `U<>2` message, got {:?}",
-      msgs
+      "expected infix `U<>2` message, got {msgs:?}"
     );
   }
 
@@ -81,8 +80,7 @@ mod string_join_arg_errors {
       msgs.iter().any(|m| m.contains(
         "StringJoin::string: String expected at position 2 in x<>b<>y."
       )),
-      "expected position-2 message, got {:?}",
-      msgs
+      "expected position-2 message, got {msgs:?}"
     );
   }
 
@@ -94,15 +92,13 @@ mod string_join_arg_errors {
       msgs.iter().any(|m| m.contains(
         "StringJoin::string: String expected at position 1 in 1<>2."
       )),
-      "missing position-1 message, got {:?}",
-      msgs
+      "missing position-1 message, got {msgs:?}"
     );
     assert!(
       msgs.iter().any(|m| m.contains(
         "StringJoin::string: String expected at position 2 in 1<>2."
       )),
-      "missing position-2 message, got {:?}",
-      msgs
+      "missing position-2 message, got {msgs:?}"
     );
   }
 
@@ -116,8 +112,7 @@ mod string_join_arg_errors {
         "General::stop: Further output of StringJoin::string will be \
          suppressed during this calculation."
       )),
-      "expected General::stop, got {:?}",
-      msgs
+      "expected General::stop, got {msgs:?}"
     );
   }
 }
@@ -166,8 +161,7 @@ mod string_replace_arg_errors {
         "StringReplace::strse: A string or list of strings is expected at \
          position 1 in StringReplace[xyz, a -> x]."
       )),
-      "expected StringReplace::strse message, got {:?}",
-      msgs
+      "expected StringReplace::strse message, got {msgs:?}"
     );
   }
 
@@ -3666,8 +3660,7 @@ mod hash {
     let result = interpret(r#"Hash["hello"]"#).unwrap();
     assert!(
       result.parse::<u64>().is_ok(),
-      "Hash[\"hello\"] should return an integer, got: {}",
-      result
+      "Hash[\"hello\"] should return an integer, got: {result}"
     );
   }
 
@@ -9497,11 +9490,7 @@ mod to_string_bigfloat {
   #[test]
   fn to_string_pi_100_strips_precision_marker() {
     let result = interpret("ToString[N[Pi, 100]]").unwrap();
-    assert!(
-      !result.contains('`'),
-      "no precision marker, got: {}",
-      result
-    );
+    assert!(!result.contains('`'), "no precision marker, got: {result}");
     assert!(result.starts_with("3.14159265358979323846264338327"));
     // 1 integer digit + dot + 99 fractional digits.
     assert_eq!(result.len(), 101);
@@ -9518,11 +9507,7 @@ mod to_string_bigfloat {
   #[test]
   fn to_string_sqrt2_30_drops_marker() {
     let result = interpret("ToString[N[Sqrt[2], 30]]").unwrap();
-    assert!(
-      !result.contains('`'),
-      "no precision marker, got: {}",
-      result
-    );
+    assert!(!result.contains('`'), "no precision marker, got: {result}");
     // wolframscript rounds the 30th significant figure (the 31st digit of
     // Sqrt[2] is 9), so the value ends in ...421, not the truncated ...420.
     assert_eq!(result, "1.41421356237309504880168872421");
@@ -12650,8 +12635,7 @@ mod string_take_drop_specs {
       msgs.iter().any(|m| m.contains(
         "StringTake::take: Cannot take positions 1 through 5 in \"abc\"."
       )),
-      "expected take message, got {:?}",
-      msgs
+      "expected take message, got {msgs:?}"
     );
     assert_eq!(
       interpret(r#"StringDrop["abc", -5]"#).unwrap(),
@@ -12662,8 +12646,7 @@ mod string_take_drop_specs {
       msgs.iter().any(|m| m.contains(
         "StringDrop::drop: Cannot drop positions -5 through -1 in \"abc\"."
       )),
-      "expected drop message, got {:?}",
-      msgs
+      "expected drop message, got {msgs:?}"
     );
   }
 
@@ -12687,8 +12670,7 @@ mod string_take_drop_specs {
       msgs.iter().any(|m| m.contains(
         "StringTake::take: Cannot take positions 3 through 1 in \"abcdef\"."
       )),
-      "expected take message, got {:?}",
-      msgs
+      "expected take message, got {msgs:?}"
     );
     // Out-of-range single position (previously a hard error)
     assert_eq!(
@@ -12719,8 +12701,7 @@ mod string_take_drop_specs {
       msgs.iter().any(|m| m.contains(
         "StringTake::strse: A string or list of strings is expected at position 1 in StringTake[x, 2]."
       )),
-      "expected strse message, got {:?}",
-      msgs
+      "expected strse message, got {msgs:?}"
     );
     assert_eq!(interpret("StringDrop[x, 2]").unwrap(), "StringDrop[x, 2]");
   }
@@ -13161,10 +13142,9 @@ mod string_subject_conformance {
       ),
     ] {
       let r = interpret_with_stdout(call).unwrap();
-      assert_eq!(r.result, shown, "for {}", call);
+      assert_eq!(r.result, shown, "for {call}");
       let expected = format!(
-        "StringReplacePart::repart: Cannot replace positions {} in \"abc\".",
-        span
+        "StringReplacePart::repart: Cannot replace positions {span} in \"abc\"."
       );
       assert!(
         r.warnings.contains(&expected),
@@ -14001,7 +13981,7 @@ mod tex_form_conformance {
   use super::*;
 
   fn tex(input: &str) -> String {
-    interpret(&format!("ToString[TeXForm[{}]]", input)).unwrap()
+    interpret(&format!("ToString[TeXForm[{input}]]")).unwrap()
   }
 
   #[test]
@@ -14156,8 +14136,7 @@ mod character_normalize {
   /// nothing depends on the encoding of this file.
   fn norm(codes: &str, form: &str) -> String {
     interpret(&format!(
-      "ToCharacterCode[CharacterNormalize[FromCharacterCode[{{{}}}], \"{}\"]]",
-      codes, form
+      "ToCharacterCode[CharacterNormalize[FromCharacterCode[{{{codes}}}], \"{form}\"]]"
     ))
     .unwrap()
   }
@@ -14242,8 +14221,7 @@ mod character_normalize {
     clear_state();
     for form in ["NFC", "NFD", "NFKC", "NFKD"] {
       assert_eq!(
-        interpret(&format!(r#"CharacterNormalize["abc", "{}"]"#, form))
-          .unwrap(),
+        interpret(&format!(r#"CharacterNormalize["abc", "{form}"]"#)).unwrap(),
         "abc"
       );
     }

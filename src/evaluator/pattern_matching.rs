@@ -26,9 +26,8 @@ fn lhs_condition_definitely_fails(bindings: &[(String, Expr)]) -> bool {
     let Some(cond) = stack.last() else {
       return false;
     };
-    let evaluated = match apply_bindings(cond, bindings) {
-      Ok(e) => e,
-      Err(_) => return false,
+    let Ok(evaluated) = apply_bindings(cond, bindings) else {
+      return false;
     };
     matches!(evaluated, Expr::Identifier(ref s) if s == "False")
   })
@@ -159,8 +158,7 @@ pub fn association_nested_access(
         Ok(Expr::Association(items))
       } else {
         Err(InterpreterError::EvaluationError(format!(
-          "{} is not an association",
-          var_name
+          "{var_name} is not an association"
         )))
       }
     });
@@ -223,8 +221,7 @@ pub fn association_nested_access(
       }
     }
     _ => Err(InterpreterError::EvaluationError(format!(
-      "{} is not an association",
-      var_name
+      "{var_name} is not an association"
     ))),
   }
 }
@@ -366,7 +363,7 @@ fn multi_replace_head(
 /// Plus or Times) into its operand list, e.g. `(a + b) + c` → `[a, b, c]`.
 fn collect_flat_binary_operands(
   expr: &Expr,
-  op: &BinaryOperator,
+  op: BinaryOperator,
   out: &mut Vec<Expr>,
 ) {
   if let Expr::BinaryOp {
@@ -374,7 +371,7 @@ fn collect_flat_binary_operands(
     left,
     right,
   } = expr
-    && e_op == op
+    && *e_op == op
   {
     collect_flat_binary_operands(left, op, out);
     collect_flat_binary_operands(right, op, out);
@@ -505,12 +502,12 @@ fn try_ast_pattern_replace_impl(
       // Flat operators (Plus/Times/And/Or) are flattened so a chain like
       // `a + b + c` matches `x_ + y_` as Plus[a, b, c] (x=a, y=b+c), the same
       // as the unheld form.
-      let func_name = binary_op_to_func_name(op);
+      let func_name = binary_op_to_func_name(*op);
       if !func_name.is_empty() {
         let args: Vec<Expr> =
           if matches!(func_name, "Plus" | "Times" | "And" | "Or") {
             let mut operands = Vec::new();
-            collect_flat_binary_operands(expr, op, &mut operands);
+            collect_flat_binary_operands(expr, *op, &mut operands);
             operands
           } else {
             vec![(**left).clone(), (**right).clone()]
@@ -761,7 +758,7 @@ fn lookup_user_default(
 }
 
 /// Map a BinaryOperator to the corresponding Wolfram Language function name.
-fn binary_op_to_func_name(op: &BinaryOperator) -> &'static str {
+fn binary_op_to_func_name(op: BinaryOperator) -> &'static str {
   use BinaryOperator;
   match op {
     BinaryOperator::Plus => "Plus",
@@ -1346,7 +1343,7 @@ fn set_partitions(n: usize, k: usize) -> Vec<Vec<Vec<usize>>> {
     // groups first. This yields partitions with smaller leading groups
     // first — Wolfram's convention for Plus[x_, y_] matching Plus[a,b,c]
     // which prefers x=a, y=Plus[b,c] over x=Plus[a,b], y=c.
-    let first_empty = groups.iter().position(|gr| gr.is_empty());
+    let first_empty = groups.iter().position(std::vec::Vec::is_empty);
     for g in (0..k).rev() {
       // Symmetry-breaking: only place in group g if all earlier groups
       // are non-empty OR group g is the first empty group.
@@ -1704,13 +1701,13 @@ fn pattern_contains_optional(pat: &Expr) -> bool {
 /// default value in the given bindings.  Used to prefer Orderless matches
 /// that maximise default usage (Wolfram semantics).
 fn count_optional_defaults_used(
-  _outer_func: &str,
+  outer_func: &str,
   pat_args: &[Expr],
   bindings: &[(String, Expr)],
 ) -> usize {
   let mut count = 0;
   for pat in pat_args {
-    count += count_defaults_in_pat(pat, _outer_func, bindings);
+    count += count_defaults_in_pat(pat, outer_func, bindings);
   }
   count
 }
@@ -1729,7 +1726,7 @@ fn count_defaults_in_pat(
       };
       if let Some(def) = default_val {
         if let Some((_, val)) = bindings.iter().find(|(n, _)| n == name) {
-          if expr_equal(val, &def) { 1 } else { 0 }
+          usize::from(expr_equal(val, &def))
         } else {
           0
         }
@@ -1742,7 +1739,8 @@ fn count_defaults_in_pat(
       .map(|a| count_defaults_in_pat(a, name, bindings))
       .sum(),
     Expr::BinaryOp { op, left, right } => {
-      let func = crate::evaluator::pattern_matching::binary_op_to_func_name(op);
+      let func =
+        crate::evaluator::pattern_matching::binary_op_to_func_name(*op);
       let ctx = if func.is_empty() { context_func } else { func };
       count_defaults_in_pat(left, ctx, bindings)
         + count_defaults_in_pat(right, ctx, bindings)
@@ -1775,19 +1773,18 @@ fn try_symbol_replace_all(
         })
         .collect();
       // Replace the head
-      match replacement {
-        Expr::Identifier(new_head) => Some(Expr::FunctionCall {
+      if let Expr::Identifier(new_head) = replacement {
+        Some(Expr::FunctionCall {
           name: new_head.clone(),
           args: new_items.into(),
-        }),
-        _ => {
-          // For non-symbol replacements, convert to FullForm-style
-          let head_str = expr_to_string(replacement);
-          Some(Expr::FunctionCall {
-            name: head_str,
-            args: new_items.into(),
-          })
-        }
+        })
+      } else {
+        // For non-symbol replacements, convert to FullForm-style
+        let head_str = expr_to_string(replacement);
+        Some(Expr::FunctionCall {
+          name: head_str,
+          args: new_items.into(),
+        })
       }
     }
 
@@ -1856,12 +1853,12 @@ fn try_symbol_replace_all(
       // `Plus -> Times`) rewrites a held `a + b` into `a*b`, mirroring the
       // FunctionCall-head case above. Flat operators are flattened first so
       // `a + b + c` maps to a single new head over all operands.
-      let func_name = binary_op_to_func_name(op);
+      let func_name = binary_op_to_func_name(*op);
       if !func_name.is_empty() && func_name == pattern_sym {
         let operands: Vec<Expr> =
           if matches!(func_name, "Plus" | "Times" | "And" | "Or") {
             let mut ops = Vec::new();
-            collect_flat_binary_operands(expr, op, &mut ops);
+            collect_flat_binary_operands(expr, *op, &mut ops);
             ops
           } else {
             vec![left.as_ref().clone(), right.as_ref().clone()]
@@ -2630,7 +2627,7 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
       head,
       blank_type,
     } if *blank_type >= 2 => {
-      let min = if *blank_type == 2 { 1 } else { 0 };
+      let min = usize::from(*blank_type == 2);
       Some(SeqInfo {
         name: name.clone(),
         head: head.clone(),
@@ -2659,7 +2656,7 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
       blank_type,
       test,
     } if *blank_type >= 2 => {
-      let min = if *blank_type == 2 { 1 } else { 0 };
+      let min = usize::from(*blank_type == 2);
       Some(SeqInfo {
         name: name.clone(),
         head: head.clone(),
@@ -2684,7 +2681,7 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
       } else {
         None
       };
-      let min = if name == "BlankSequence" { 1 } else { 0 };
+      let min = usize::from(name == "BlankSequence");
       Some(SeqInfo {
         name: String::new(),
         head,
@@ -2938,17 +2935,15 @@ fn match_args_with_sequences(
       let mut bindings: Vec<(String, Expr)> = Vec::new();
       let mut ok = true;
       for (slot, pat_index) in perm.iter().enumerate() {
-        match match_pattern(&block[*pat_index], &ordered_pats[slot]) {
-          Some(b) => {
-            if !merge_bindings(&mut bindings, b) {
-              ok = false;
-              break;
-            }
-          }
-          None => {
+        if let Some(b) = match_pattern(&block[*pat_index], &ordered_pats[slot])
+        {
+          if !merge_bindings(&mut bindings, b) {
             ok = false;
             break;
           }
+        } else {
+          ok = false;
+          break;
         }
       }
       if !ok {
@@ -3001,7 +2996,7 @@ fn match_args_with_sequences(
     && !group.is_empty()
   {
     let k = group.len();
-    let mut min_reps = if name == "Repeated" { 1 } else { 0 };
+    let mut min_reps = usize::from(name == "Repeated");
     let mut max_reps = usize::MAX;
     if let Some(spec) = args.get(1) {
       match spec {
@@ -3416,7 +3411,7 @@ fn match_key_value_pattern(
   let required: Vec<(Expr, Expr)> = match arg {
     Expr::List(items) => {
       let mut reqs = Vec::with_capacity(items.len());
-      for it in items.iter() {
+      for it in items {
         match it {
           Expr::Rule {
             pattern,
@@ -3450,7 +3445,7 @@ fn match_key_value_pattern(
     Expr::Association(pairs) => pairs.clone(),
     Expr::List(items) => {
       let mut pairs = Vec::with_capacity(items.len());
-      for it in items.iter() {
+      for it in items {
         match it {
           Expr::Rule {
             pattern,
@@ -4000,17 +3995,14 @@ fn match_pattern_impl(
                 push_match_context(&bs);
                 let r = match_pattern(e, p);
                 pop_match_context();
-                match r {
-                  Some(b) => {
-                    if !merge_bindings(&mut bs, b) {
-                      ok = false;
-                      break;
-                    }
-                  }
-                  None => {
+                if let Some(b) = r {
+                  if !merge_bindings(&mut bs, b) {
                     ok = false;
                     break;
                   }
+                } else {
+                  ok = false;
+                  break;
                 }
               }
               if ok { Some(bs) } else { None }
@@ -4295,8 +4287,10 @@ fn match_pattern_impl(
         // Convert BinaryOp pattern to a FunctionCall pattern and retry so
         // Flat partition matching and other FunctionCall-specific logic
         // (Orderless permutation, sequence patterns, etc.) applies.
-        let func_name = binary_op_to_func_name(pat_op);
-        if !func_name.is_empty() {
+        let func_name = binary_op_to_func_name(*pat_op);
+        if func_name.is_empty() {
+          None
+        } else {
           if let Expr::FunctionCall {
             name: expr_name, ..
           } = expr
@@ -4315,8 +4309,6 @@ fn match_pattern_impl(
             func_name,
             &[*pat_left.clone(), *pat_right.clone()],
           )
-        } else {
-          None
         }
       }
     }

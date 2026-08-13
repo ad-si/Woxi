@@ -920,7 +920,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let one = BigInt::from(1);
         let (n_out, n_in) = extract_square_factor_big(&nb);
         let (d_out, d_in) = extract_square_factor_big(&db);
-        let coeff = make_rational_expr(n_out.clone(), d_out.clone());
+        let coeff = make_rational_expr(&n_out.clone(), &d_out.clone());
         if n_in == one && d_in == one {
           return Ok(coeff);
         }
@@ -929,7 +929,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else if n_in == one {
           power_ast(&[bigint_to_expr(d_in), make_rational(-1, 2)])?
         } else {
-          make_sqrt(make_rational_expr(n_in, d_in))
+          make_sqrt(make_rational_expr(&n_in, &d_in))
         };
         if matches!(&coeff, Expr::Integer(1)) {
           return Ok(radicand);
@@ -966,13 +966,12 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let half = n / 2;
         if half == 1 {
           return Ok(*base.clone());
-        } else {
-          return Ok(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: base.clone(),
-            right: Box::new(Expr::Integer(half)),
-          });
         }
+        return Ok(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: base.clone(),
+          right: Box::new(Expr::Integer(half)),
+        });
       }
       Ok(make_sqrt(args[0].clone()))
     }
@@ -1617,7 +1616,7 @@ fn floor_via_bigfloat(
   let int_part = &rest[..dot_pos];
   let frac_part = &rest[dot_pos + 1..];
   // Parse the integer part as a BigInt.
-  let int_str = format!("{}{}", sign, int_part);
+  let int_str = format!("{sign}{int_part}");
   let int_bi = int_str.parse::<BigInt>().ok()?;
   // For Floor on a negative number with a non-zero fractional part, subtract 1.
   // For Ceiling on a positive number with a non-zero fractional part, add 1.
@@ -2740,83 +2739,80 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // 2-argument form: Quotient[n, m] = Floor[n / m]
-  match (&args[0], &args[1]) {
-    (Expr::Integer(a), Expr::Integer(b)) => {
-      if *b == 0 {
+  if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
+    if *b == 0 {
+      Err(InterpreterError::EvaluationError(
+        "Quotient: division by zero".into(),
+      ))
+    } else {
+      Ok(Expr::Integer(floor_div(*a, *b)))
+    }
+  } else {
+    // Exact arbitrary-precision path: if both args are Integer or
+    // BigInteger, compute floor division without falling back to f64
+    // (which loses precision for numbers that don't fit in 53 bits).
+    use num_traits::Zero;
+    let as_bigint = |e: &Expr| -> Option<BigInt> {
+      match e {
+        Expr::Integer(n) => Some(BigInt::from(*n)),
+        Expr::BigInteger(n) => Some(n.clone()),
+        _ => None,
+      }
+    };
+    if let (Some(a), Some(b)) = (as_bigint(&args[0]), as_bigint(&args[1])) {
+      if b.is_zero() {
+        return Err(InterpreterError::EvaluationError(
+          "Quotient: division by zero".into(),
+        ));
+      }
+      // Floor division: when the sign of the dividend differs from the
+      // divisor and there is a non-zero remainder, round the truncated
+      // quotient toward -infinity.
+      let (mut q, r) = (&a / &b, &a % &b);
+      if !r.is_zero()
+        && ((a.sign() != Sign::NoSign && b.sign() != Sign::NoSign)
+          && (a.sign() != b.sign()))
+      {
+        q -= 1;
+      }
+      return Ok(bigint_to_expr(q));
+    }
+    if let (Some(a), Some(b)) =
+      (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
+    {
+      if b == 0.0 {
         Err(InterpreterError::EvaluationError(
           "Quotient: division by zero".into(),
         ))
       } else {
-        Ok(Expr::Integer(floor_div(*a, *b)))
+        Ok(Expr::Integer((a / b).floor() as i128))
       }
-    }
-    _ => {
-      // Exact arbitrary-precision path: if both args are Integer or
-      // BigInteger, compute floor division without falling back to f64
-      // (which loses precision for numbers that don't fit in 53 bits).
-      use num_traits::Zero;
-      let as_bigint = |e: &Expr| -> Option<BigInt> {
-        match e {
-          Expr::Integer(n) => Some(BigInt::from(*n)),
-          Expr::BigInteger(n) => Some(n.clone()),
-          _ => None,
-        }
+    } else if let (Some((_, a_im)), Some((c_re, c_im))) = (
+      try_extract_complex_float(&args[0]),
+      try_extract_complex_float(&args[1]),
+    ) && (a_im != 0.0 || c_im != 0.0)
+    {
+      if c_re == 0.0 && c_im == 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Quotient: division by zero".into(),
+        ));
+      }
+      // Gaussian quotient = Round[z/w], rounding the complex quotient
+      // component-wise (round-half-to-even). This matches wolframscript and
+      // the identity Mod[m, n] = m - n*Quotient[m, n]. Building the symbolic
+      // Round and evaluating it also normalises the display to `a + b*I`.
+      let quotient = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(args[0].clone()),
+        right: Box::new(args[1].clone()),
       };
-      if let (Some(a), Some(b)) = (as_bigint(&args[0]), as_bigint(&args[1])) {
-        if b.is_zero() {
-          return Err(InterpreterError::EvaluationError(
-            "Quotient: division by zero".into(),
-          ));
-        }
-        // Floor division: when the sign of the dividend differs from the
-        // divisor and there is a non-zero remainder, round the truncated
-        // quotient toward -infinity.
-        let (mut q, r) = (&a / &b, &a % &b);
-        if !r.is_zero()
-          && ((a.sign() != Sign::NoSign && b.sign() != Sign::NoSign)
-            && (a.sign() != b.sign()))
-        {
-          q -= 1;
-        }
-        return Ok(bigint_to_expr(q));
-      }
-      if let (Some(a), Some(b)) =
-        (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
-      {
-        if b == 0.0 {
-          Err(InterpreterError::EvaluationError(
-            "Quotient: division by zero".into(),
-          ))
-        } else {
-          Ok(Expr::Integer((a / b).floor() as i128))
-        }
-      } else if let (Some((_, a_im)), Some((c_re, c_im))) = (
-        try_extract_complex_float(&args[0]),
-        try_extract_complex_float(&args[1]),
-      ) && (a_im != 0.0 || c_im != 0.0)
-      {
-        if c_re == 0.0 && c_im == 0.0 {
-          return Err(InterpreterError::EvaluationError(
-            "Quotient: division by zero".into(),
-          ));
-        }
-        // Gaussian quotient = Round[z/w], rounding the complex quotient
-        // component-wise (round-half-to-even). This matches wolframscript and
-        // the identity Mod[m, n] = m - n*Quotient[m, n]. Building the symbolic
-        // Round and evaluating it also normalises the display to `a + b*I`.
-        let quotient = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(args[0].clone()),
-          right: Box::new(args[1].clone()),
-        };
-        let round_quot = Expr::FunctionCall {
-          name: "Round".to_string(),
-          args: vec![quotient].into(),
-        };
-        crate::evaluator::evaluate_expr_to_expr(&round_quot)
-      } else {
-        Ok(unevaluated("Quotient", args))
-      }
+      let round_quot = Expr::FunctionCall {
+        name: "Round".to_string(),
+        args: vec![quotient].into(),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&round_quot)
+    } else {
+      Ok(unevaluated("Quotient", args))
     }
   }
 }
@@ -2871,9 +2867,8 @@ pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // preserved in the result, so Clip[1/2] stays 1/2 and Clip[Pi, {0, 10}] stays
   // Pi rather than being floatified. Infinity / -Infinity resolve to ±inf so
   // they clamp to the upper / lower bound respectively.
-  let x = match try_eval_to_f64_with_infinity(&args[0]) {
-    Some(v) => v,
-    None => return unevaluated(),
+  let Some(x) = try_eval_to_f64_with_infinity(&args[0]) else {
+    return unevaluated();
   };
 
   // Bounds: exact expressions plus their numeric values. The default range is
@@ -2881,13 +2876,11 @@ pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (min_expr, max_expr, min_val, max_val) = if args.len() >= 2 {
     match &args[1] {
       Expr::List(bounds) if bounds.len() == 2 => {
-        let min = match try_eval_to_f64(&bounds[0]) {
-          Some(v) => v,
-          None => return unevaluated(),
+        let Some(min) = try_eval_to_f64(&bounds[0]) else {
+          return unevaluated();
         };
-        let max = match try_eval_to_f64(&bounds[1]) {
-          Some(v) => v,
-          None => return unevaluated(),
+        let Some(max) = try_eval_to_f64(&bounds[1]) else {
+          return unevaluated();
         };
         (bounds[0].clone(), bounds[1].clone(), min, max)
       }
@@ -3788,7 +3781,7 @@ pub fn find_divisions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // combined with nested counts (leave that form unevaluated).
     Expr::List(counts) if dx.is_none() && !counts.is_empty() => {
       let mut ns = Vec::with_capacity(counts.len());
-      for c in counts.iter() {
+      for c in counts {
         match c {
           Expr::Integer(n) if *n > 0 => ns.push(*n),
           _ => return unevaluated(),
@@ -3846,8 +3839,8 @@ pub fn kronecker_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Single argument: KroneckerDelta[n] is 1 if n==0, 0 otherwise
   if args.len() == 1 {
     return match &args[0] {
-      Expr::Integer(n) => Ok(Expr::Integer(if *n == 0 { 1 } else { 0 })),
-      Expr::Real(f) => Ok(Expr::Integer(if *f == 0.0 { 1 } else { 0 })),
+      Expr::Integer(n) => Ok(Expr::Integer(i128::from(*n == 0))),
+      Expr::Real(f) => Ok(Expr::Integer(i128::from(*f == 0.0))),
       _ => Ok(unevaluated("KroneckerDelta", args)),
     };
   }
@@ -3865,10 +3858,10 @@ pub fn kronecker_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let (Some(a), Some(b)) =
         (try_eval_to_f64(&args[0]), try_eval_to_f64(arg))
       {
-        if a != b {
-          return Ok(Expr::Integer(0));
-        } else {
+        if a == b {
           all_equal = true;
+        } else {
+          return Ok(Expr::Integer(0));
         }
       } else {
         has_symbolic = true;
@@ -3956,8 +3949,8 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Single arg
   match &args[0] {
-    Expr::Integer(n) => Ok(Expr::Integer(if *n >= 0 { 1 } else { 0 })),
-    Expr::Real(f) => Ok(Expr::Integer(if *f >= 0.0 { 1 } else { 0 })),
+    Expr::Integer(n) => Ok(Expr::Integer(i128::from(*n >= 0))),
+    Expr::Real(f) => Ok(Expr::Integer(i128::from(*f >= 0.0))),
     Expr::Constant(c) => match c.as_str() {
       "Pi" | "E" | "Degree" => Ok(Expr::Integer(1)),
       _ => Ok(unevaluated("UnitStep", args)),
@@ -4273,11 +4266,11 @@ pub fn unit_box_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(n) => {
       let v = (*n).abs();
       // |n| <= 1/2 only if n == 0
-      Ok(Expr::Integer(if v == 0 { 1 } else { 0 }))
+      Ok(Expr::Integer(i128::from(v == 0)))
     }
     Expr::Real(f) => {
       let v = f.abs();
-      Ok(Expr::Integer(if v <= 0.5 { 1 } else { 0 }))
+      Ok(Expr::Integer(i128::from(v <= 0.5)))
     }
     Expr::FunctionCall { name, args: fargs }
       if name == "Rational" && fargs.len() == 2 =>
@@ -4286,7 +4279,7 @@ pub fn unit_box_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && *d != 0
       {
         let abs_val = (*n as f64 / *d as f64).abs();
-        return Ok(Expr::Integer(if abs_val <= 0.5 { 1 } else { 0 }));
+        return Ok(Expr::Integer(i128::from(abs_val <= 0.5)));
       }
       Ok(unevaluated("UnitBox", args))
     }
@@ -4300,7 +4293,7 @@ pub fn heaviside_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match x {
     Expr::Integer(n) => {
       // |n| < 1/2 only if n == 0
-      Ok(Expr::Integer(if *n == 0 { 1 } else { 0 }))
+      Ok(Expr::Integer(i128::from(*n == 0)))
     }
     Expr::Real(f) => {
       let v = f.abs();
@@ -4376,9 +4369,8 @@ pub fn unit_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             name: "Rational".to_string(),
             args: vec![Expr::Integer(num), Expr::Integer(abs_d)].into(),
           });
-        } else {
-          return Ok(Expr::Integer(0));
         }
+        return Ok(Expr::Integer(0));
       }
       Ok(unevaluated("UnitTriangle", args))
     }

@@ -74,8 +74,7 @@ fn now_jd() -> f64 {
   use web_time::{SystemTime, UNIX_EPOCH};
   let unix = SystemTime::now()
     .duration_since(UNIX_EPOCH)
-    .map(|d| d.as_secs_f64())
-    .unwrap_or(0.0);
+    .map_or(0.0, |d| d.as_secs_f64());
   2440587.5 + unix / 86400.0
 }
 
@@ -413,7 +412,7 @@ fn moon_coordinates(jde: f64) -> (f64, f64, f64) {
 
   let mut sum_l = 0.0;
   let mut sum_r = 0.0;
-  for &(cd, cm, cmp, cf, sl, sr) in MOON_LR.iter() {
+  for &(cd, cm, cmp, cf, sl, sr) in &MOON_LR {
     let arg = cd as f64 * d + cm as f64 * m + cmp as f64 * mp + cf as f64 * f;
     let e_factor = match cm.abs() {
       1 => e,
@@ -426,7 +425,7 @@ fn moon_coordinates(jde: f64) -> (f64, f64, f64) {
   sum_l += 3958.0 * sin_d(a1) + 1962.0 * sin_d(lp - f) + 318.0 * sin_d(a2);
 
   let mut sum_b = 0.0;
-  for &(cd, cm, cmp, cf, sb) in MOON_B.iter() {
+  for &(cd, cm, cmp, cf, sb) in &MOON_B {
     let arg = cd as f64 * d + cm as f64 * m + cmp as f64 * mp + cf as f64 * f;
     let e_factor = match cm.abs() {
       1 => e,
@@ -751,7 +750,7 @@ fn moon_illumination(jde: f64) -> (f64, f64) {
   let psi = libm::acos(cos_psi.clamp(-1.0, 1.0));
   // Phase angle (48.3)
   let i = libm::atan2(r * libm::sin(psi), delta - r * libm::cos(psi));
-  let frac = (1.0 + libm::cos(i)) / 2.0;
+  let frac = f64::midpoint(1.0, libm::cos(i));
   (frac, norm360(lambda_m - lambda_s))
 }
 
@@ -1129,11 +1128,11 @@ fn right_ascension_quantity(hours: f64) -> Expr {
   }
 }
 
-fn unevaluated(name: &str, args: &[Expr]) -> Result<Expr, InterpreterError> {
-  Ok(Expr::FunctionCall {
+fn unevaluated(name: &str, args: &[Expr]) -> crate::syntax::Expr {
+  Expr::FunctionCall {
     name: name.to_string(),
     args: args.to_vec().into(),
-  })
+  }
 }
 
 // ─── MoonPhase ──────────────────────────────────────────────────────
@@ -1166,13 +1165,13 @@ pub fn moon_phase_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     [Expr::String(p)] if is_property(p) => (&[], p.as_str()),
     [date] => (std::slice::from_ref(date), "Fraction"),
     [date, Expr::String(p)] => (std::slice::from_ref(date), p.as_str()),
-    _ => return unevaluated("MoonPhase", args),
+    _ => return Ok(unevaluated("MoonPhase", args)),
   };
   let jd = match date_args {
     [] => now_jd(),
     [date] => match parse_date_arg(date) {
       Some(jd) => jd,
-      None => return unevaluated("MoonPhase", args),
+      None => return Ok(unevaluated("MoonPhase", args)),
     },
     _ => unreachable!(),
   };
@@ -1187,26 +1186,26 @@ pub fn moon_phase_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ]
       .into(),
     }),
-    _ => unevaluated("MoonPhase", args),
+    _ => Ok(unevaluated("MoonPhase", args)),
   }
 }
 
 /// NewMoon[] / NewMoon[date] — the DateObject of the first new moon
 /// after the date (default: now).
 pub fn new_moon_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  next_phase_function("NewMoon", Phase::New, args)
+  Ok(next_phase_function("NewMoon", Phase::New, args))
 }
 
 /// FullMoon[] / FullMoon[date] — the first full moon after the date.
 pub fn full_moon_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  next_phase_function("FullMoon", Phase::Full, args)
+  Ok(next_phase_function("FullMoon", Phase::Full, args))
 }
 
 fn next_phase_function(
   name: &str,
   phase: Phase,
   args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let jd = match args {
     [] => now_jd(),
     [date] => match parse_date_arg(date) {
@@ -1215,7 +1214,7 @@ fn next_phase_function(
     },
     _ => return unevaluated(name, args),
   };
-  Ok(date_object_instant(next_phase_jd(jd, phase)))
+  date_object_instant(next_phase_jd(jd, phase))
 }
 
 /// MoonPhaseDate[] / MoonPhaseDate[date] / MoonPhaseDate[date, phase] —
@@ -1228,15 +1227,15 @@ pub fn moon_phase_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // A lone argument is always read as a phase spec (as in Wolfram): a
     // date-only call has no phase to look for and stays unevaluated.
     [one] if phase_from_expr(one).is_some() => (None, Some(one)),
-    [_] => return unevaluated("MoonPhaseDate", args),
+    [_] => return Ok(unevaluated("MoonPhaseDate", args)),
     [date, phase] => (Some(date), Some(phase)),
-    _ => return unevaluated("MoonPhaseDate", args),
+    _ => return Ok(unevaluated("MoonPhaseDate", args)),
   };
   let jd = match date_arg {
     None => now_jd(),
     Some(date) => match parse_date_arg(date) {
       Some(jd) => jd,
-      None => return unevaluated("MoonPhaseDate", args),
+      None => return Ok(unevaluated("MoonPhaseDate", args)),
     },
   };
   let result = match phase_arg {
@@ -1254,7 +1253,7 @@ pub fn moon_phase_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Some(p) => match phase_from_expr(p) {
       Some(phase) => next_phase_jd(jd, phase),
-      None => return unevaluated("MoonPhaseDate", args),
+      None => return Ok(unevaluated("MoonPhaseDate", args)),
     },
   };
   Ok(date_object_instant(result))
@@ -1303,7 +1302,7 @@ fn split_celestial_options(args: &[Expr]) -> (Vec<Expr>, String) {
       && matches!(&**pattern, Expr::Identifier(n) if n == "CelestialSystem")
     {
       if let Expr::String(s) = &**replacement {
-        system = s.clone();
+        system.clone_from(s);
       }
       continue;
     }
@@ -1316,7 +1315,7 @@ fn body_position_ast(
   name: &str,
   ra_dec_dist: fn(f64) -> (f64, f64, f64),
   args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let (positional, system) = split_celestial_options(args);
   let Some(((lat, lon), jd)) = parse_location_date(&positional) else {
     return unevaluated(name, args);
@@ -1326,20 +1325,20 @@ fn body_position_ast(
   // ~1° parallax shows up in its right ascension as well as its altitude.
   let (ra, dec) = topocentric_ra_dec(ra_geo, dec_geo, distance, lat, lon, jd);
   match system.as_str() {
-    "Equatorial" => Ok(Expr::List(
+    "Equatorial" => Expr::List(
       vec![right_ascension_quantity(ra / 15.0), angle_quantity(dec)].into(),
-    )),
+    ),
     "Horizon" => {
       let (az, alt) = equatorial_to_horizontal(ra, dec, lat, lon, jd);
       // The altitude is the apparent one: what an observer sees through
       // the atmosphere, lifted above the geometric altitude by refraction.
-      Ok(Expr::List(
+      Expr::List(
         vec![
           angle_quantity(az),
           angle_quantity(alt + refraction_deg(alt)),
         ]
         .into(),
-      ))
+      )
     }
     _ => unevaluated(name, args),
   }
@@ -1348,12 +1347,12 @@ fn body_position_ast(
 /// SunPosition[loc?, date?] — azimuth/altitude of the Sun (or
 /// RA/declination with CelestialSystem -> "Equatorial").
 pub fn sun_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  body_position_ast("SunPosition", sun_ra_dec_dist, args)
+  Ok(body_position_ast("SunPosition", sun_ra_dec_dist, args))
 }
 
 /// MoonPosition[loc?, date?] — azimuth/altitude of the Moon.
 pub fn moon_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  body_position_ast("MoonPosition", moon_ra_dec_dist, args)
+  Ok(body_position_ast("MoonPosition", moon_ra_dec_dist, args))
 }
 
 // ─── SiderealTime ───────────────────────────────────────────────────
@@ -1362,7 +1361,7 @@ pub fn moon_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Quantity[MixedMagnitude[{h, m, s}], MixedUnit[{…OfRightAscension}]].
 pub fn sidereal_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Some(((_, lon), jd)) = parse_location_date(args) else {
-    return unevaluated("SiderealTime", args);
+    return Ok(unevaluated("SiderealTime", args));
   };
   let lst_hours = norm360(apparent_gst_deg(jd) + lon) / 15.0;
   let h = lst_hours.floor();
@@ -1415,11 +1414,7 @@ pub fn sidereal_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── Sunrise / Sunset / DaylightQ ───────────────────────────────────
 
-fn sun_event_ast(
-  name: &str,
-  rise: bool,
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+fn sun_event_ast(name: &str, rise: bool, args: &[Expr]) -> crate::syntax::Expr {
   let Some(((lat, lon), jd)) = parse_location_date(args) else {
     return unevaluated(name, args);
   };
@@ -1429,11 +1424,11 @@ fn sun_event_ast(
   if explicit_date {
     // The event on the given UTC calendar day
     match sun_rise_set(jd, lat, lon) {
-      Some((r, s)) => Ok(date_object_instant(if rise { r } else { s })),
-      None => Ok(Expr::FunctionCall {
+      Some((r, s)) => date_object_instant(if rise { r } else { s }),
+      None => Expr::FunctionCall {
         name: "Missing".to_string(),
         args: vec![Expr::String("NotApplicable".to_string())].into(),
-      }),
+      },
     }
   } else {
     // No date given: the next event after now (skipping polar
@@ -1442,35 +1437,34 @@ fn sun_event_ast(
       if let Some((r, s)) = sun_rise_set(jd + day as f64, lat, lon) {
         let event = if rise { r } else { s };
         if event > jd {
-          return Ok(date_object_instant(event));
+          return date_object_instant(event);
         }
-        // Event already passed today; check the next day.
-        continue;
+        // Event already passed today; the loop moves on to the next day.
       }
     }
-    Ok(Expr::FunctionCall {
+    Expr::FunctionCall {
       name: "Missing".to_string(),
       args: vec![Expr::String("NotApplicable".to_string())].into(),
-    })
+    }
   }
 }
 
 /// Sunrise[loc?, date?] — with a date, the sunrise of that day; without,
 /// the next sunrise, as a UTC instant.
 pub fn sunrise_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  sun_event_ast("Sunrise", true, args)
+  Ok(sun_event_ast("Sunrise", true, args))
 }
 
 /// Sunset[loc?, date?] — like Sunrise for the evening crossing.
 pub fn sunset_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  sun_event_ast("Sunset", false, args)
+  Ok(sun_event_ast("Sunset", false, args))
 }
 
 /// DaylightQ[loc?, date?] — whether the Sun is up (above the standard
 /// −50′ rise/set altitude) at the location and time.
 pub fn daylight_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Some(((lat, lon), jd)) = parse_location_date(args) else {
-    return unevaluated("DaylightQ", args);
+    return Ok(unevaluated("DaylightQ", args));
   };
   let (ra, dec) = sun_ra_dec(jd_utc_to_jde(jd));
   let (_, alt) = equatorial_to_horizontal(ra, dec, lat, lon, jd);
@@ -1506,13 +1500,13 @@ fn eclipse_args(args: &[Expr]) -> Option<(Option<&Expr>, &str)> {
 /// ("Partial" | "Annular" | "Total" | "Hybrid").
 pub fn solar_eclipse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Some((date_arg, property)) = eclipse_args(args) else {
-    return unevaluated("SolarEclipse", args);
+    return Ok(unevaluated("SolarEclipse", args));
   };
   let jd = match date_arg {
     None => now_jd(),
     Some(date) => match parse_date_arg(date) {
       Some(jd) => jd,
-      None => return unevaluated("SolarEclipse", args),
+      None => return Ok(unevaluated("SolarEclipse", args)),
     },
   };
   let (jd_max, kind) = next_solar_eclipse(jd);
@@ -1524,7 +1518,7 @@ pub fn solar_eclipse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       SolarEclipseKind::Total => "Total",
       SolarEclipseKind::Hybrid => "Hybrid",
     })),
-    _ => unevaluated("SolarEclipse", args),
+    _ => Ok(unevaluated("SolarEclipse", args)),
   }
 }
 
@@ -1546,13 +1540,13 @@ fn eclipse_type_entity(kind: &str) -> Expr {
 /// ("Penumbral" | "Partial" | "Total").
 pub fn lunar_eclipse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Some((date_arg, property)) = eclipse_args(args) else {
-    return unevaluated("LunarEclipse", args);
+    return Ok(unevaluated("LunarEclipse", args));
   };
   let jd = match date_arg {
     None => now_jd(),
     Some(date) => match parse_date_arg(date) {
       Some(jd) => jd,
-      None => return unevaluated("LunarEclipse", args),
+      None => return Ok(unevaluated("LunarEclipse", args)),
     },
   };
   let (jd_max, kind) = next_lunar_eclipse(jd);
@@ -1563,7 +1557,7 @@ pub fn lunar_eclipse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       LunarEclipseKind::Partial => "Partial",
       LunarEclipseKind::Total => "Total",
     })),
-    _ => unevaluated("LunarEclipse", args),
+    _ => Ok(unevaluated("LunarEclipse", args)),
   }
 }
 

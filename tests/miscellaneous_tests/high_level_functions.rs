@@ -5,7 +5,7 @@ mod high_level_functions {
 
   fn temp_file(file: &str) -> String {
     let tmp = std::env::temp_dir().join(file);
-    tmp.display().to_string().replace("\\", "/")
+    tmp.display().to_string().replace('\\', "/")
   }
 
   mod entropy_tests {
@@ -310,8 +310,7 @@ mod high_level_functions {
       assert!(
         s.starts_with("1.5707963267948966192313216916397514")
           && s.ends_with("*I"),
-        "got: {}",
-        s
+        "got: {s}"
       );
     }
   }
@@ -2556,10 +2555,9 @@ mod high_level_functions {
       .unwrap();
       assert!(
         r.contains("g[x_] := f[x] + 1"),
-        "should contain g's def: {}",
-        r
+        "should contain g's def: {r}"
       );
-      assert!(r.contains("f[x_] := x^2"), "should contain f's def: {}", r);
+      assert!(r.contains("f[x_] := x^2"), "should contain f's def: {r}");
     }
 
     #[test]
@@ -2568,13 +2566,9 @@ mod high_level_functions {
         "Clear[f, g, h]; f[x_] := x^2; g[x_] := f[x] + 1; h[x_] := g[x] + f[x]; FullDefinition[h]",
       )
       .unwrap();
-      assert!(
-        r.contains("h[x_] := g[x] + f[x]"),
-        "should contain h: {}",
-        r
-      );
-      assert!(r.contains("g[x_] := f[x] + 1"), "should contain g: {}", r);
-      assert!(r.contains("f[x_] := x^2"), "should contain f: {}", r);
+      assert!(r.contains("h[x_] := g[x] + f[x]"), "should contain h: {r}");
+      assert!(r.contains("g[x_] := f[x] + 1"), "should contain g: {r}");
+      assert!(r.contains("f[x_] := x^2"), "should contain f: {r}");
     }
 
     #[test]
@@ -2594,8 +2588,7 @@ mod high_level_functions {
       let r = interpret("FullDefinition[Sin]").unwrap();
       assert!(
         r.contains("Attributes[Sin]"),
-        "should show built-in attrs: {}",
-        r
+        "should show built-in attrs: {r}"
       );
     }
 
@@ -2629,8 +2622,8 @@ mod high_level_functions {
     fn set_delayed_variable_dependency() {
       let r = interpret("Clear[a, b]; a := 5; b := a + 1; FullDefinition[b]")
         .unwrap();
-      assert!(r.contains("b = a + 1"), "should contain b: {}", r);
-      assert!(r.contains("a = 5"), "should contain a: {}", r);
+      assert!(r.contains("b = a + 1"), "should contain b: {r}");
+      assert!(r.contains("a = 5"), "should contain a: {r}");
     }
   }
 
@@ -3442,8 +3435,7 @@ mod high_level_functions {
           .unwrap();
       assert!(
         svg.contains("font-weight=\"bold\""),
-        "Expected bold text in SVG: {}",
-        svg
+        "Expected bold text in SVG: {svg}"
       );
       // Count bold attributes — should be 4 (one per cell)
       let bold_count = svg.matches("font-weight=\"bold\"").count();
@@ -3508,8 +3500,7 @@ mod high_level_functions {
       // Lines should have red stroke
       assert!(
         svg.contains("stroke=\"rgb(255,0,0)\""),
-        "Frame lines should be red: {}",
-        svg
+        "Frame lines should be red: {svg}"
       );
     }
 
@@ -3536,8 +3527,7 @@ mod high_level_functions {
       .unwrap();
       assert!(
         svg.contains("font-size=\"24\""),
-        "Expected font-size=\"24\" in SVG: {}",
-        svg
+        "Expected font-size=\"24\" in SVG: {svg}"
       );
     }
 
@@ -3550,8 +3540,7 @@ mod high_level_functions {
       .unwrap();
       assert!(
         svg.contains("font-family=\"Consolas\""),
-        "Expected font-family=\"Consolas\" in SVG: {}",
-        svg
+        "Expected font-family=\"Consolas\" in SVG: {svg}"
       );
     }
 
@@ -3564,8 +3553,7 @@ mod high_level_functions {
       .unwrap();
       assert!(
         svg.contains("font-weight=\"medium\""),
-        "Expected font-weight=\"medium\" in SVG: {}",
-        svg
+        "Expected font-weight=\"medium\" in SVG: {svg}"
       );
     }
 
@@ -3578,8 +3566,7 @@ mod high_level_functions {
       .unwrap();
       assert!(
         svg.contains("font-weight=\"bold\""),
-        "Expected font-weight=\"bold\" in SVG: {}",
-        svg
+        "Expected font-weight=\"bold\" in SVG: {svg}"
       );
     }
 
@@ -3590,20 +3577,14 @@ mod high_level_functions {
         "ExportString[Graphics[Text[Style[1, FontSize -> 30, FontFamily -> \"Consolas\", FontWeight -> \"Medium\"]]], \"SVG\"]",
       )
       .unwrap();
-      assert!(
-        svg.contains("font-size=\"30\""),
-        "missing font-size: {}",
-        svg
-      );
+      assert!(svg.contains("font-size=\"30\""), "missing font-size: {svg}");
       assert!(
         svg.contains("font-family=\"Consolas\""),
-        "missing font-family: {}",
-        svg
+        "missing font-family: {svg}"
       );
       assert!(
         svg.contains("font-weight=\"medium\""),
-        "missing font-weight: {}",
-        svg
+        "missing font-weight: {svg}"
       );
     }
   }
@@ -3623,8 +3604,7 @@ mod high_level_functions {
       let line_count = svg.matches("<line ").count();
       assert_eq!(
         line_count, 8,
-        "Frame -> All on a 3x3 grid should produce 8 lines (4 outer + 2 inner-row + 2 inner-col): {}",
-        svg
+        "Frame -> All on a 3x3 grid should produce 8 lines (4 outer + 2 inner-row + 2 inner-col): {svg}"
       );
     }
 
@@ -3636,8 +3616,7 @@ mod high_level_functions {
       .unwrap();
       assert!(
         !svg.contains("<line "),
-        "No Frame option should produce no frame lines: {}",
-        svg
+        "No Frame option should produce no frame lines: {svg}"
       );
     }
 
@@ -3652,8 +3631,7 @@ mod high_level_functions {
       // Total grid width should be exactly 3 * 360 = 1080 (no gaps)
       assert!(
         svg.contains("width=\"1080\""),
-        "Frame -> All should yield zero default spacing: {}",
-        svg
+        "Frame -> All should yield zero default spacing: {svg}"
       );
     }
 
@@ -3697,8 +3675,7 @@ mod high_level_functions {
       // Should have a frame rect element
       assert!(
         svg.contains("<rect") && svg.contains("fill=\"none\""),
-        "Frame should render a border rect: {}",
-        svg
+        "Frame should render a border rect: {svg}"
       );
     }
 
@@ -3710,8 +3687,7 @@ mod high_level_functions {
       // Should have tick label text elements
       assert!(
         svg.contains("<text"),
-        "Frame should have tick labels: {}",
-        svg
+        "Frame should have tick labels: {svg}"
       );
     }
 
@@ -3723,8 +3699,7 @@ mod high_level_functions {
       // Should have a translate for margins
       assert!(
         svg.contains("translate(50,10)"),
-        "Frame should offset for margin: {}",
-        svg
+        "Frame should offset for margin: {svg}"
       );
     }
 
@@ -3737,13 +3712,11 @@ mod high_level_functions {
       // Ticks should show values up to 6
       assert!(
         svg.contains(">6<") || svg.contains("\">6</"),
-        "Frame ticks should reach PlotRange bounds: {}",
-        svg
+        "Frame ticks should reach PlotRange bounds: {svg}"
       );
       assert!(
         svg.contains(">-6<") || svg.contains("\">-6</"),
-        "Frame ticks should reach negative PlotRange bounds: {}",
-        svg
+        "Frame ticks should reach negative PlotRange bounds: {svg}"
       );
     }
 
@@ -3753,8 +3726,7 @@ mod high_level_functions {
       // Should NOT have frame border or tick labels
       assert!(
         !svg.contains("translate(50"),
-        "No frame margin by default: {}",
-        svg
+        "No frame margin by default: {svg}"
       );
     }
 
@@ -3767,8 +3739,7 @@ mod high_level_functions {
       .unwrap();
       assert!(
         svg.contains("\">-3</") || svg.contains(">-3<"),
-        "PlotRange -> 3 should give range -3 to 3: {}",
-        svg
+        "PlotRange -> 3 should give range -3 to 3: {svg}"
       );
     }
   }
@@ -5140,7 +5111,7 @@ mod high_level_functions {
       // prints `Import::fmterr: Cannot import data as PPM format.` and
       // returns `$Failed`. Woxi must match.
       let path = write_tmp("invalid.ppm", b"image");
-      let code = format!(r#"Import["{}","PPM"]"#, path);
+      let code = format!(r#"Import["{path}","PPM"]"#);
       let r = interpret_with_stdout(&code).unwrap();
       assert_eq!(r.result, "$Failed");
       assert!(
@@ -5159,7 +5130,7 @@ mod high_level_functions {
         std::process::id()
       ));
       let _ = std::fs::remove_file(&path);
-      let code = format!(r#"Import["{}","PPM"]"#, path);
+      let code = format!(r#"Import["{path}","PPM"]"#);
       let r = interpret_with_stdout(&code).unwrap();
       assert_eq!(r.result, "$Failed");
       assert!(
@@ -5174,7 +5145,7 @@ mod high_level_functions {
       // No explicit format argument; .ppm extension alone must trigger
       // the Netpbm path so the error message still appears.
       let path = write_tmp("invalid_ext.ppm", b"not a ppm");
-      let code = format!(r#"Import["{}"]"#, path);
+      let code = format!(r#"Import["{path}"]"#);
       let r = interpret_with_stdout(&code).unwrap();
       assert_eq!(r.result, "$Failed");
       assert!(
@@ -5208,7 +5179,7 @@ mod high_level_functions {
       // FileTemplate reads the file and produces a TemplateObject whose
       // rendered form matches wolframscript exactly.
       let path = write_tmp("object.txt", "Hello `name`, welcome to `place`!");
-      let code = format!(r#"FileTemplate["{}"]"#, path);
+      let code = format!(r#"FileTemplate["{path}"]"#);
       assert_eq!(
         interpret(&code).unwrap(),
         "TemplateObject[{Hello , TemplateSlot[name], , welcome to , \
@@ -5221,7 +5192,7 @@ mod high_level_functions {
     #[test]
     fn test_file_template_head_is_template_object() {
       let path = write_tmp("head.txt", "x = `x`");
-      let code = format!(r#"Head[FileTemplate["{}"]]"#, path);
+      let code = format!(r#"Head[FileTemplate["{path}"]]"#);
       assert_eq!(interpret(&code).unwrap(), "TemplateObject");
       let _ = std::fs::remove_file(&path);
     }
@@ -5229,7 +5200,7 @@ mod high_level_functions {
     #[test]
     fn test_file_template_numbered_slots() {
       let path = write_tmp("numbered.txt", "a `1` b `2`");
-      let code = format!(r#"FileTemplate["{}"]"#, path);
+      let code = format!(r#"FileTemplate["{path}"]"#);
       assert_eq!(
         interpret(&code).unwrap(),
         "TemplateObject[{a , TemplateSlot[1],  b , TemplateSlot[2]}, \
@@ -5242,7 +5213,7 @@ mod high_level_functions {
     #[test]
     fn test_file_template_no_slots() {
       let path = write_tmp("plain.txt", "plain text");
-      let code = format!(r#"FileTemplate["{}"]"#, path);
+      let code = format!(r#"FileTemplate["{path}"]"#);
       assert_eq!(
         interpret(&code).unwrap(),
         "TemplateObject[{plain text}, CombinerFunction -> StringJoin, \
@@ -5255,8 +5226,7 @@ mod high_level_functions {
     fn test_template_apply_on_file_template_association() {
       let path = write_tmp("apply.txt", "Hello `name`, welcome to `place`!");
       let code = format!(
-        r#"TemplateApply[FileTemplate["{}"], <|"name" -> "Bob", "place" -> "Earth"|>]"#,
-        path
+        r#"TemplateApply[FileTemplate["{path}"], <|"name" -> "Bob", "place" -> "Earth"|>]"#
       );
       assert_eq!(interpret(&code).unwrap(), "Hello Bob, welcome to Earth!");
       let _ = std::fs::remove_file(&path);
@@ -5266,7 +5236,7 @@ mod high_level_functions {
     fn test_template_apply_on_file_template_numbered_list() {
       let path = write_tmp("applynum.txt", "a `1` b `2`");
       let code =
-        format!(r#"TemplateApply[FileTemplate["{}"], {{"X", "Y"}}]"#, path);
+        format!(r#"TemplateApply[FileTemplate["{path}"], {{"X", "Y"}}]"#);
       assert_eq!(interpret(&code).unwrap(), "a X b Y");
       let _ = std::fs::remove_file(&path);
     }
@@ -5274,7 +5244,7 @@ mod high_level_functions {
     #[test]
     fn test_file_template_with_file_wrapper() {
       let path = write_tmp("wrapper.txt", "v = `v`");
-      let code = format!(r#"Head[FileTemplate[File["{}"]]]"#, path);
+      let code = format!(r#"Head[FileTemplate[File["{path}"]]]"#);
       assert_eq!(interpret(&code).unwrap(), "TemplateObject");
       let _ = std::fs::remove_file(&path);
     }
@@ -5286,7 +5256,7 @@ mod high_level_functions {
         std::process::id()
       ));
       let _ = std::fs::remove_file(&path);
-      let code = format!(r#"FileTemplate["{}"]"#, path);
+      let code = format!(r#"FileTemplate["{path}"]"#);
       let r = interpret_with_stdout(&code).unwrap();
       assert_eq!(r.result, "$Failed");
       assert!(
@@ -5369,7 +5339,7 @@ mod high_level_functions {
         temp_file(&format!("woxi_xmltemplate_{}.xml", std::process::id()));
       let mut f = std::fs::File::create(&path).unwrap();
       f.write_all(b"Hello `name`").unwrap();
-      let code = format!(r#"Head[XMLTemplate[File["{}"]]]"#, path);
+      let code = format!(r#"Head[XMLTemplate[File["{path}"]]]"#);
       assert_eq!(interpret(&code).unwrap(), "TemplateObject");
       let _ = std::fs::remove_file(&path);
     }
@@ -5381,7 +5351,7 @@ mod high_level_functions {
         std::process::id()
       ));
       let _ = std::fs::remove_file(&path);
-      let code = format!(r#"XMLTemplate[File["{}"]]"#, path);
+      let code = format!(r#"XMLTemplate[File["{path}"]]"#);
       let r = interpret_with_stdout(&code).unwrap();
       assert_eq!(r.result, "$Failed");
       assert!(

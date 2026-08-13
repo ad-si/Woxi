@@ -222,7 +222,7 @@ fn parse_cell_entry(s: &str) -> Result<CellEntry, String> {
   }
 
   // Regular cell: Cell["content", "Style"]
-  let cell = parse_single_cell(inner_trimmed)?;
+  let cell = parse_single_cell(inner_trimmed);
   Ok(CellEntry::Single(cell))
 }
 
@@ -264,17 +264,17 @@ fn parse_cell_group_body(s: &str) -> Result<CellEntry, String> {
 
 /// Parse the content of a single cell:
 /// e.g. `"some text", "Title"` or `BoxData[...], "Input"`
-fn parse_single_cell(s: &str) -> Result<Cell, String> {
+fn parse_single_cell(s: &str) -> crate::notebook::Cell {
   // Split on the last comma at top level to get the style
   let parts = split_top_level_commas(s);
   if parts.len() < 2 {
     // Try to handle cells with just content
     let content = extract_string_content(s);
-    return Ok(Cell {
+    return Cell {
       style: CellStyle::Text,
       content,
       collapsed: false,
-    });
+    };
   }
 
   // The style string is the first part that parses as a valid style
@@ -320,11 +320,11 @@ fn parse_single_cell(s: &str) -> Result<Cell, String> {
     }
   }
 
-  Ok(Cell {
+  Cell {
     style,
     content,
     collapsed,
-  })
+  }
 }
 
 /// Does this option-expression set `CellOpen -> False`?
@@ -522,7 +522,7 @@ fn display_text(s: &str) -> Option<String> {
 /// that carry their own label text pass `false` so the label is not
 /// repeated.
 fn render_checkbox(args: &[String], with_label: bool) -> String {
-  let value = args.first().map(|a| a.trim()).unwrap_or("");
+  let value = args.first().map_or("", |a| a.trim());
   let mut checked = value == "True";
   let mut label = None;
   if let Some(alts) = args.get(1) {
@@ -1158,7 +1158,7 @@ fn render_text_element(s: &str) -> String {
       // from the .nb file's physical line wrapping — strip it before
       // matching the style string.
       let t = p.trim();
-      let t = t.strip_prefix('\\').map(str::trim_start).unwrap_or(t);
+      let t = t.strip_prefix('\\').map_or(t, str::trim_start);
       let is_option = t.contains("->") || t.contains(":>");
       (!is_option && t.starts_with('"') && t.ends_with('"') && t.len() >= 2)
         .then(|| t[1..t.len() - 1].to_string())
@@ -2284,9 +2284,8 @@ impl Notebook {
           }
         },
         CellEntry::Group(group) => {
-          let first = match group.cells.first() {
-            Some(c) => c,
-            None => continue,
+          let Some(first) = group.cells.first() else {
+            continue;
           };
           if first.style == CellStyle::Input || first.style == CellStyle::Code {
             let outputs: Vec<&Cell> = group.cells[1..]
@@ -2581,7 +2580,7 @@ Cell[BoxData["1 + 1"], "Input"]
         assert_eq!(cell.style, CellStyle::Title);
         assert_eq!(cell.content, "Hello World");
       }
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
 
     match &parsed.cells[1] {
@@ -2589,7 +2588,7 @@ Cell[BoxData["1 + 1"], "Input"]
         assert_eq!(cell.style, CellStyle::Text);
         assert_eq!(cell.content, "Some explanation");
       }
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
 
     match &parsed.cells[2] {
@@ -2597,7 +2596,7 @@ Cell[BoxData["1 + 1"], "Input"]
         assert_eq!(cell.style, CellStyle::Input);
         assert_eq!(cell.content, "1 + 1");
       }
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
   }
 
@@ -2622,7 +2621,7 @@ Cell[BoxData["5"], "Output"]
         assert_eq!(group.cells[1].style, CellStyle::Output);
         assert_eq!(group.cells[1].content, "5");
       }
-      _ => panic!("Expected cell group"),
+      CellEntry::Single(_) => panic!("Expected cell group"),
     }
   }
 
@@ -2800,7 +2799,7 @@ Cell["A subitem", "Subitem"]
       .iter()
       .filter_map(|e| match e {
         CellEntry::Single(c) => Some(c.style),
-        _ => None,
+        CellEntry::Group(_) => None,
       })
       .collect();
     assert_eq!(
@@ -2860,7 +2859,7 @@ Cell[TextData[{
         // InputForm `<=`) — this is prose, not code.
         assert_eq!(cell.content, "To find P(X\u{2264}x) with mean \u{03bc}.");
       }
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
   }
 
@@ -2887,7 +2886,7 @@ Cell[TextData[{
         assert_eq!(cell.style, CellStyle::Section);
         assert_eq!(cell.content, "Caption");
       }
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
   }
 
@@ -2948,7 +2947,7 @@ Cell[TextData[{
       .iter()
       .filter_map(|e| match e {
         CellEntry::Single(c) => Some(c.collapsed),
-        _ => None,
+        CellEntry::Group(_) => None,
       })
       .collect();
     assert_eq!(collapsed_states, vec![true, true, false]);
@@ -2983,13 +2982,13 @@ Cell["Chapter 2", "Chapter"]
         assert_eq!(cell.content, "Chapter 1");
         assert!(cell.collapsed);
       }
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
     match &parsed.cells[1] {
       CellEntry::Single(cell) => {
         assert!(!cell.collapsed);
       }
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
   }
 
@@ -3027,7 +3026,7 @@ Cell["Chapter 2", "Chapter"]
           group.cells[1].content
         );
       }
-      _ => panic!("Expected a cell group"),
+      CellEntry::Single(_) => panic!("Expected a cell group"),
     }
   }
 
@@ -3049,7 +3048,9 @@ Cell["Chapter 2", "Chapter"]
           assert_eq!(group.cells[0].style, CellStyle::Input);
           assert_eq!(group.cells[1].style, CellStyle::Output);
         }
-        _ => panic!("Expected all entries to be cell groups"),
+        CellEntry::Single(_) => {
+          panic!("Expected all entries to be cell groups")
+        }
       }
     }
   }
@@ -3828,7 +3829,7 @@ Cell["Chapter 2", "Chapter"]
     let s = r#"TextData[{"hello ", StyleBox["world", "MRbig"]}], "CodeText",
  Editable->False,
  CellID->687519280,ExpressionUUID->"39c481cb-843d-42b3-8aef-160cab90e699""#;
-    let cell = parse_single_cell(s).unwrap();
+    let cell = parse_single_cell(s);
     // Unmodelled styles fall back to Text for rendering.
     assert_eq!(cell.style, CellStyle::Text);
     assert_eq!(cell.content, "hello world");
@@ -3868,7 +3869,7 @@ Cell[BoxData["2"], "Output", ExpressionUUID -> "bbb"]
         assert_eq!(group.cells[0].style, CellStyle::Input);
         assert_eq!(group.cells[1].style, CellStyle::Output);
       }
-      _ => panic!("Expected cell group"),
+      CellEntry::Single(_) => panic!("Expected cell group"),
     }
   }
 
@@ -4018,7 +4019,7 @@ Cell[TextData[{
         assert_eq!(cell.style, CellStyle::Text);
         assert_eq!(cell.content, "Here D_U and V\u{00b2} appear.");
       }
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
   }
 
@@ -4043,7 +4044,7 @@ Cell[TextData[Cell[BoxData[
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "{U \u{2192} P\nV \u{2192} Q");
       }
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
   }
 
@@ -4065,7 +4066,7 @@ Cell[TextData[{
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "a field size of 40\u{00d7}40");
       }
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
   }
 
@@ -4087,7 +4088,7 @@ Cell[TextData[{
         assert_eq!(cell.style, CellStyle::Section);
         assert_eq!(cell.content, "Caption");
       }
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
   }
 
@@ -4141,7 +4142,7 @@ Cell[TextData[{
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "Sums like ∑_(n=1)^m sin[t]/n² are curves.");
       }
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
   }
 
@@ -4176,7 +4177,7 @@ Cell[TextData[{
           "X⟺_(k_1^d)^(k_1^a)Y⟶^(k_2^a)Z is the scheme."
         );
       }
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
   }
 
@@ -4199,7 +4200,7 @@ Cell[TextData[{
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "x\u{0302}+y\u{0304}+z\u{20D7}");
       }
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
   }
 
@@ -4229,7 +4230,7 @@ Cell[BoxData[
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "data={{1, 2}, {3, 4}}");
       }
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
   }
 
@@ -4248,7 +4249,7 @@ Cell[BoxData[
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "Quantity[3, \"Meters\"]");
       }
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
   }
 
@@ -4265,7 +4266,7 @@ Cell[BoxData[\n\
     let parsed = parse_notebook(nb).unwrap();
     match &parsed.cells[0] {
       CellEntry::Single(cell) => assert_eq!(cell.content, "f[a,b]"),
-      _ => panic!("Expected single cell"),
+      CellEntry::Group(_) => panic!("Expected single cell"),
     }
     // Inside a string literal the continuation is dropped too, joining
     // the two halves — but an *escaped* backslash at the end of a line

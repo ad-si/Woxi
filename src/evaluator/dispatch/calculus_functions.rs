@@ -316,14 +316,14 @@ pub fn dispatch_calculus_functions(
         };
         let mut resolved = true;
         for _ in 0..n {
-          deriv = match crate::functions::calculus_ast::differentiate_expr(
-            &deriv, &dummy_var,
-          ) {
-            Ok(v) => v,
-            Err(_) => {
-              resolved = false;
-              break;
-            }
+          deriv = if let Ok(v) =
+            crate::functions::calculus_ast::differentiate_expr(
+              &deriv, &dummy_var,
+            ) {
+            v
+          } else {
+            resolved = false;
+            break;
           };
           // If differentiation returned a Derivative[...][func][var] form,
           // no actual symbolic derivative was computed (e.g. unknown function).
@@ -403,14 +403,13 @@ pub fn dispatch_calculus_functions(
           };
           let mut resolved = true;
           for _ in 0..n {
-            deriv = match crate::functions::calculus_ast::differentiate_expr(
-              &deriv, dummy,
-            ) {
-              Ok(v) => v,
-              Err(_) => {
-                resolved = false;
-                break;
-              }
+            deriv = if let Ok(v) =
+              crate::functions::calculus_ast::differentiate_expr(&deriv, dummy)
+            {
+              v
+            } else {
+              resolved = false;
+              break;
             };
             if contains_unresolved_derivative(&deriv, func_name) {
               resolved = false;
@@ -453,14 +452,13 @@ pub fn dispatch_calculus_functions(
           let mut deriv = with_dummy;
           let mut resolved = true;
           for _ in 0..n {
-            deriv = match crate::functions::calculus_ast::differentiate_expr(
-              &deriv, dummy,
-            ) {
-              Ok(v) => v,
-              Err(_) => {
-                resolved = false;
-                break;
-              }
+            deriv = if let Ok(v) =
+              crate::functions::calculus_ast::differentiate_expr(&deriv, dummy)
+            {
+              v
+            } else {
+              resolved = false;
+              break;
             };
           }
           if resolved {
@@ -660,9 +658,8 @@ pub fn dispatch_calculus_functions(
         let idx_u = idx as usize;
         if idx_u < coeffs.len() {
           return Some(Ok(coeffs[idx_u].clone()));
-        } else {
-          return Some(Ok(Expr::Identifier("Indeterminate".to_string())));
         }
+        return Some(Ok(Expr::Identifier("Indeterminate".to_string())));
       }
       // SeriesCoefficient[f, {x, x0, n}]
       if let Expr::List(spec) = &args[1]
@@ -692,9 +689,8 @@ pub fn dispatch_calculus_functions(
               let idx = (n as i128 - nmin) as usize;
               if idx < coeffs.len() {
                 return Some(Ok(coeffs[idx].clone()));
-              } else {
-                return Some(Ok(Expr::Integer(0)));
               }
+              return Some(Ok(Expr::Integer(0)));
             }
           }
           Ok(_) => {}
@@ -1022,10 +1018,10 @@ fn laplace_affine(arg: &Expr, t: &str) -> Option<(Expr, Expr)> {
   let mut c_terms: Vec<Expr> = Vec::new();
   let mut b_terms: Vec<Expr> = Vec::new();
   for term in &terms {
-    if !depends_on(term, t) {
-      b_terms.push(term.clone());
-    } else {
+    if depends_on(term, t) {
       c_terms.push(extract_linear_coeff(term, t)?);
+    } else {
+      b_terms.push(term.clone());
     }
   }
   if c_terms.is_empty() {
@@ -1604,36 +1600,31 @@ fn inverse_laplace_transform(
     name: "InverseLaplaceTransform".to_string(),
     args: vec![expr.clone(), s_expr.clone(), t_expr.clone()].into(),
   };
-  let t = match t_expr {
-    Expr::Identifier(name) => name.as_str(),
-    // A third argument that is not a plain symbol names the point (or the
-    // expression) the inverse transform is taken at: transform to a fresh
-    // variable, then substitute. `…[1/(s + 1), s, 2 u]` is `E^(-2 u)`, and a
-    // number there samples the inverse transform at that number.
-    _ => {
-      let mut used = std::collections::HashSet::new();
-      crate::syntax::collect_identifier_names(expr, &mut used);
-      crate::syntax::collect_identifier_names(s_expr, &mut used);
-      crate::syntax::collect_identifier_names(t_expr, &mut used);
-      let mut dummy = "t$".to_string();
-      let mut suffix = 0;
-      while used.contains(&dummy) {
-        suffix += 1;
-        dummy = format!("t${suffix}");
-      }
-      let transformed = inverse_laplace_transform(
-        expr,
-        s_expr,
-        &Expr::Identifier(dummy.clone()),
-      )?;
-      if matches!(&transformed, Expr::FunctionCall { name, .. } if name == "InverseLaplaceTransform")
-      {
-        return Ok(unevaluated());
-      }
-      let substituted =
-        crate::syntax::substitute_variable(&transformed, &dummy, t_expr);
-      return crate::evaluator::evaluate_expr_to_expr(&substituted);
+  let t = if let Expr::Identifier(name) = t_expr {
+    name.as_str()
+  } else {
+    let mut used = std::collections::HashSet::new();
+    crate::syntax::collect_identifier_names(expr, &mut used);
+    crate::syntax::collect_identifier_names(s_expr, &mut used);
+    crate::syntax::collect_identifier_names(t_expr, &mut used);
+    let mut dummy = "t$".to_string();
+    let mut suffix = 0;
+    while used.contains(&dummy) {
+      suffix += 1;
+      dummy = format!("t${suffix}");
     }
+    let transformed = inverse_laplace_transform(
+      expr,
+      s_expr,
+      &Expr::Identifier(dummy.clone()),
+    )?;
+    if matches!(&transformed, Expr::FunctionCall { name, .. } if name == "InverseLaplaceTransform")
+    {
+      return Ok(unevaluated());
+    }
+    let substituted =
+      crate::syntax::substitute_variable(&transformed, &dummy, t_expr);
+    return crate::evaluator::evaluate_expr_to_expr(&substituted);
   };
 
   // Normalize the expression by converting BinaryOps to FunctionCall form
@@ -3561,14 +3552,14 @@ fn match_inv_quadratic(base: &Expr, var: &str) -> Option<(Expr, Expr)> {
   let mut p_terms: Vec<Expr> = Vec::new();
   let mut q: Option<Expr> = None;
   for term in &args {
-    if !depends_on(term, var) {
-      p_terms.push((*term).clone());
-    } else {
+    if depends_on(term, var) {
       let coeff = match_var_squared(term, var)?;
       if q.is_some() {
         return None;
       }
       q = Some(coeff);
+    } else {
+      p_terms.push((*term).clone());
     }
   }
   if p_terms.is_empty() {
@@ -4855,7 +4846,7 @@ fn symbolic_series_coefficient(f: &Expr, spec: &Expr) -> Option<Expr> {
       if (name == "Cosh" || name == "Sinh") && fa.len() == 1 =>
     {
       let a = linear(&fa[0])?;
-      let parity = if name == "Cosh" { 0 } else { 1 };
+      let parity = i32::from(name != "Cosh");
       build(
         format!("{}^{nvar}/{nvar}!", paren(&a)),
         &format!("Mod[{nvar}, 2] == {parity} && {nvar} >= 0"),
@@ -5019,7 +5010,7 @@ fn gf_inner(
   if let Some((fname, fargs)) = as_func_args(expr) {
     match fname {
       "Power" if fargs.len() == 2 => {
-        return gf_power(fargs[0], fargs[1], n, x);
+        return Ok(gf_power(fargs[0], fargs[1], n, x));
       }
       "Plus" => {
         return gf_plus(expr, n, x);
@@ -5031,7 +5022,7 @@ fn gf_inner(
         // 1/n! case is handled in gf_times via Power[Factorial[n], -1]
       }
       "Binomial" if fargs.len() == 2 => {
-        return gf_binomial(fargs[0], fargs[1], n, x);
+        return Ok(gf_binomial(fargs[0], fargs[1], n, x));
       }
       _ => {}
     }
@@ -5127,14 +5118,14 @@ fn gf_power(
   exp: &Expr,
   n: &str,
   x: &Expr,
-) -> Result<Option<Expr>, InterpreterError> {
+) -> std::option::Option<crate::syntax::Expr> {
   // Case: a^n where a doesn't depend on n => 1/(1 - a*x)
   if matches!(exp, Expr::Identifier(name) if name == n) && !depends_on(base, n)
   {
-    return Ok(Some(pow2(
+    return Some(pow2(
       minus2(Expr::Integer(1), times2(base.clone(), x.clone())),
       Expr::Integer(-1),
-    )));
+    ));
   }
 
   // Case: n^k where k is a positive integer => Eulerian number formula
@@ -5144,7 +5135,7 @@ fn gf_power(
   {
     let k = *k;
     if k >= 2 {
-      return gf_n_power_k(k, x);
+      return Some(gf_n_power_k(k, x));
     }
   }
 
@@ -5155,7 +5146,7 @@ fn gf_power(
     && args.len() == 1
     && matches!(&args[0], Expr::Identifier(var) if var == n)
   {
-    return Ok(Some(pow2(Expr::Constant("E".to_string()), x.clone())));
+    return Some(pow2(Expr::Constant("E".to_string()), x.clone()));
   }
 
   // Case: Power[Factorial[n], -2] => 1/(n!)^2 => BesselI[0, 2*Sqrt[x]]
@@ -5165,7 +5156,7 @@ fn gf_power(
     && args.len() == 1
     && matches!(&args[0], Expr::Identifier(var) if var == n)
   {
-    return Ok(Some(Expr::FunctionCall {
+    return Some(Expr::FunctionCall {
       name: "BesselI".to_string(),
       args: vec![
         Expr::Integer(0),
@@ -5175,16 +5166,16 @@ fn gf_power(
         ),
       ]
       .into(),
-    }));
+    });
   }
 
-  Ok(None)
+  None
 }
 
 /// Generating function for n^k: Sum[n^k * x^n, {n, 0, inf}]
 /// Uses the formula involving Eulerian numbers: result = Sum[A(k,j) * x^(j+1), j=0..k-1] / (1-x)^(k+1)
 /// where A(k,j) are the Eulerian numbers.
-fn gf_n_power_k(k: i128, x: &Expr) -> Result<Option<Expr>, InterpreterError> {
+fn gf_n_power_k(k: i128, x: &Expr) -> crate::syntax::Expr {
   // Compute Eulerian numbers A(k, j) for j = 0..k-1
   let k_usize = k as usize;
   let eulerian = compute_eulerian_numbers(k_usize);
@@ -5232,7 +5223,7 @@ fn gf_n_power_k(k: i128, x: &Expr) -> Result<Option<Expr>, InterpreterError> {
     numerator
   };
 
-  Ok(Some(div2(final_numerator, denominator)))
+  div2(final_numerator, denominator)
 }
 
 /// Compute Eulerian numbers A(k, j) for j = 0..k-1
@@ -5320,13 +5311,13 @@ fn gf_times(
     let const_product = if constants.len() == 1 {
       (*constants[0]).clone()
     } else {
-      constants.iter().cloned().cloned().reduce(times2).unwrap()
+      constants.iter().copied().cloned().reduce(times2).unwrap()
     };
 
     let n_product = if n_dependent.len() == 1 {
       (*n_dependent[0]).clone()
     } else {
-      n_dependent.iter().cloned().cloned().reduce(times2).unwrap()
+      n_dependent.iter().copied().cloned().reduce(times2).unwrap()
     };
 
     if let Some(inner_gf) = gf_inner(&n_product, n, x)? {
@@ -5339,7 +5330,7 @@ fn gf_times(
 
   // c * a^n pattern (all together)
   let recombined = if n_dependent.len() >= 2 {
-    n_dependent.iter().cloned().cloned().reduce(times2).unwrap()
+    n_dependent.iter().copied().cloned().reduce(times2).unwrap()
   } else if n_dependent.len() == 1 {
     (*n_dependent[0]).clone()
   } else {
@@ -5351,7 +5342,7 @@ fn gf_times(
     && fname == "Power"
     && fargs.len() == 2
   {
-    return gf_power(fargs[0], fargs[1], n, x);
+    return Ok(gf_power(fargs[0], fargs[1], n, x));
   }
 
   // Try expanding the product and handling as a sum
@@ -5391,7 +5382,7 @@ fn gf_binomial(
   bottom: &Expr,
   n: &str,
   x: &Expr,
-) -> Result<Option<Expr>, InterpreterError> {
+) -> std::option::Option<crate::syntax::Expr> {
   // Binomial[n, k] where k is constant: x^k/(-1+x)^(k+1) (with sign adjustment)
   // Canonical Wolfram form uses (-1+x) as base.
   // (1-x)^(k+1) = (-1)^(k+1) * (-1+x)^(k+1), so negate numerator when (k+1) is odd.
@@ -5406,15 +5397,15 @@ fn gf_binomial(
     } else {
       x_pow
     };
-    return Ok(Some(div2(
+    return Some(div2(
       num,
       pow2(plus2(Expr::Integer(-1), x.clone()), Expr::Integer(power)),
-    )));
+    ));
   }
 
   // Binomial[2n, n] => 1/Sqrt[1-4x]
   if !depends_on(bottom, n) {
-    return Ok(None);
+    return None;
   }
   if matches!(bottom, Expr::Identifier(name) if name == n) {
     // Check if top is 2*n
@@ -5428,7 +5419,7 @@ fn gf_binomial(
           && matches!(fargs[0], Expr::Identifier(name) if name == n));
       if is_2n {
         // 1/Sqrt[1 - 4*x]
-        return Ok(Some(Expr::BinaryOp {
+        return Some(Expr::BinaryOp {
           op: BinaryOperator::Power,
           left: Box::new(minus2(
             Expr::Integer(1),
@@ -5438,12 +5429,12 @@ fn gf_binomial(
             name: "Rational".to_string(),
             args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
           }),
-        }));
+        });
       }
     }
   }
 
-  Ok(None)
+  None
 }
 
 /// Handle Divide in generating function context
@@ -5506,7 +5497,7 @@ fn gf_divide(
       && let Expr::Integer(k) = dargs[1]
       && *k > 0
     {
-      return gf_power(dargs[0], &Expr::Integer(-*k), n, x);
+      return Ok(gf_power(dargs[0], &Expr::Integer(-*k), n, x));
     }
 
     // const / f(n) — rewrite as const * f(n)^(-1) and try
@@ -5748,7 +5739,7 @@ fn egf_inner(
         return egf_times(expr, n, x);
       }
       "Power" if fargs.len() == 2 => {
-        return egf_power(fargs[0], fargs[1], n, x);
+        return Ok(egf_power(fargs[0], fargs[1], n, x));
       }
       "Factorial" if fargs.len() == 1 => {
         // EGF[n!, n, x] = 1/(1-x)
@@ -5905,14 +5896,14 @@ fn egf_power(
   exp: &Expr,
   n: &str,
   x: &Expr,
-) -> Result<Option<Expr>, InterpreterError> {
+) -> std::option::Option<crate::syntax::Expr> {
   // Case: c^n where c doesn't depend on n => e^(c*x)
   if !depends_on(base, n) && matches!(exp, Expr::Identifier(name) if name == n)
   {
-    return Ok(Some(pow2(
+    return Some(pow2(
       Expr::Constant("E".to_string()),
       times2(base.clone(), x.clone()),
-    )));
+    ));
   }
 
   // Case: n^k where k is a non-negative integer
@@ -5921,13 +5912,13 @@ fn egf_power(
     && let Some(k) = egf_expr_to_nonneg_int(exp)
   {
     let poly = egf_stirling_polynomial(k, x);
-    return Ok(Some(times2(
+    return Some(times2(
       pow2(Expr::Constant("E".to_string()), x.clone()),
       poly,
-    )));
+    ));
   }
 
-  Ok(None)
+  None
 }
 
 /// Collect all terms from a Plus expression.
@@ -6377,9 +6368,8 @@ fn fourier_sin_cos_transform_inner(
             Expr::Integer(-1),
           ),
         ]));
-      } else {
-        return Some(Expr::Integer(0));
       }
+      return Some(Expr::Integer(0));
     }
     // Symbolic path: (Pi - Pi*Sign[c-w]) / (2*Sqrt[2*Pi]).
     let sign = Expr::FunctionCall {
@@ -6710,17 +6700,13 @@ fn invert_pure_function(body: &Expr) -> Option<Expr> {
     crate::functions::polynomial_ast::solve_ast(&[eq, x_expr.clone()]).ok()?;
 
   // Expect `{{x -> rhs}}` or `{{x -> rhs1}, ...}`. Take the first rule's rhs.
-  let solutions = if let Expr::List(outer) = &solve_result {
-    outer
-  } else {
+  let Expr::List(solutions) = &solve_result else {
     return None;
   };
   if solutions.is_empty() {
     return None;
   }
-  let first = if let Expr::List(rules) = &solutions[0] {
-    rules
-  } else {
+  let Expr::List(first) = &solutions[0] else {
     return None;
   };
   if first.is_empty() {
@@ -6886,11 +6872,10 @@ fn extract_neg_linear_coeff(expr: &Expr, t: &str) -> Option<Expr> {
         has_neg = true;
         continue;
       }
-      if !depends_on(a, t) {
-        coeffs.push(a.clone());
-      } else {
+      if depends_on(a, t) {
         return None;
       }
+      coeffs.push(a.clone());
     }
     if has_t && has_neg {
       return Some(if coeffs.is_empty() {

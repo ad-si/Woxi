@@ -96,7 +96,7 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Expr::List(bases) = &margs[0]
   {
     let mut base_vals: Vec<BigInt> = Vec::with_capacity(bases.len());
-    for b in bases.iter() {
+    for b in bases {
       let Some(bi) = expr_to_i128(b) else {
         return Ok(unevaluated("DigitSum", args));
       };
@@ -191,7 +191,7 @@ impl BigUint {
     }
     for i in (0..a_len).rev() {
       match self.digits[i].cmp(&other.digits[i]) {
-        Ordering::Equal => continue,
+        Ordering::Equal => {}
         ord => return ord,
       }
     }
@@ -290,13 +290,11 @@ impl BigUint {
   /// Division: returns (quotient, remainder)
   fn divmod(&self, other: &Self) -> (Self, Self) {
     use std::cmp::Ordering;
-    if other.is_zero() {
-      panic!("BigUint division by zero");
-    }
+    assert!(!other.is_zero(), "BigUint division by zero");
     match self.cmp(other) {
       Ordering::Less => return (Self::zero(), self.clone()),
       Ordering::Equal => return (Self::from_u64(1), Self::zero()),
-      _ => {}
+      Ordering::Greater => {}
     }
     if other.digits.len() == 1 {
       let d = other.digits[0];
@@ -1367,11 +1365,8 @@ pub fn from_continued_fraction_ast(
     ));
   }
 
-  let elements = match &args[0] {
-    Expr::List(elems) => elems,
-    _ => {
-      return Ok(unevaluated("FromContinuedFraction", args));
-    }
+  let Expr::List(elements) = &args[0] else {
+    return Ok(unevaluated("FromContinuedFraction", args));
   };
 
   if elements.is_empty() {
@@ -1696,11 +1691,11 @@ fn bigfloat_to_digits_base(
   let mut x = bf.clone();
   // Normalize into [1, base) by dividing/multiplying by base.
   let mut shift: i64 = 0;
-  while x.cmp(&base_bf).map(|v| v >= 0).unwrap_or(false) {
+  while x.cmp(&base_bf).is_some_and(|v| v >= 0) {
     x = x.div(&base_bf, bits, rm);
     shift += 1;
   }
-  while x.cmp(&one).map(|v| v < 0).unwrap_or(false) {
+  while x.cmp(&one).is_some_and(|v| v < 0) {
     x = x.mul(&base_bf, bits, rm);
     shift -= 1;
   }
@@ -1736,8 +1731,7 @@ fn bigfloat_small_int_to_i128(
   }
   let s = bf.format(astro_float::Radix::Dec, rm, cc).map_err(|e| {
     InterpreterError::EvaluationError(format!(
-      "RealDigits: format error: {:?}",
-      e
+      "RealDigits: format error: {e:?}"
     ))
   })?;
   // astro-float `format` returns mantissa-style strings such as "3.14e1" or
@@ -1751,8 +1745,7 @@ fn bigfloat_small_int_to_i128(
     let e_trim = &e[1..];
     let exp: i64 = e_trim.parse().map_err(|_| {
       InterpreterError::EvaluationError(format!(
-        "RealDigits: failed to parse exponent in {}",
-        s
+        "RealDigits: failed to parse exponent in {s}"
       ))
     })?;
     (m, exp)
@@ -1776,8 +1769,7 @@ fn bigfloat_small_int_to_i128(
   let effective_exp = exp_part - frac_len;
   let base_int: i128 = digits_str.parse().map_err(|_| {
     InterpreterError::EvaluationError(format!(
-      "RealDigits: failed to parse digits in {}",
-      s
+      "RealDigits: failed to parse digits in {s}"
     ))
   })?;
   let mut value = base_int;
@@ -1814,8 +1806,7 @@ fn bigfloat_to_digits(
     .convert_to_radix(astro_float::Radix::Dec, rm, cc)
     .map_err(|e| {
       InterpreterError::EvaluationError(format!(
-        "RealDigits: conversion error: {}",
-        e
+        "RealDigits: conversion error: {e}"
       ))
     })?;
 
@@ -1838,7 +1829,7 @@ fn real_to_rational(r: f64) -> Option<(i128, i128)> {
   if !r.is_finite() {
     return None;
   }
-  let s = format!("{:?}", r);
+  let s = format!("{r:?}");
   let sign = if r < 0.0 { -1i128 } else { 1 };
   let unsigned = s.trim_start_matches('-');
 
@@ -1856,7 +1847,7 @@ fn decimal_to_rational(s: &str) -> Option<(i128, i128)> {
   if let Some(dot_idx) = s.find('.') {
     let int_part = &s[..dot_idx];
     let frac_part = &s[dot_idx + 1..];
-    let combined = format!("{}{}", int_part, frac_part);
+    let combined = format!("{int_part}{frac_part}");
     let numer: i128 = combined.parse().ok()?;
     let denom: i128 = 10i128.checked_pow(frac_part.len() as u32)?;
     Some((numer, denom))
@@ -2063,7 +2054,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if is_zero {
     let count = if explicit_num_digits { num_digits } else { 1 };
-    let exp = if explicit_num_digits { 0 } else { 1 };
+    let exp = i128::from(!explicit_num_digits);
     let digits = vec![Expr::Integer(0); count];
     return Ok(Expr::List(
       vec![Expr::List(digits.into()), Expr::Integer(exp)].into(),
@@ -2091,13 +2082,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     rational_from_real.or_else(|| expr_to_rational(&abs_expr))
     && denom != 0
   {
-    if !treat_as_explicit {
-      let (digit_list, exponent) =
-        real_digits_rational_base(numer, denom, base);
-      return Ok(Expr::List(
-        vec![Expr::List(digit_list.into()), Expr::Integer(exponent)].into(),
-      ));
-    } else {
+    if treat_as_explicit {
       // With explicit num_digits: use long division and produce exactly
       // num_digits significant digits starting from the first nonzero.
       // The rational long division already gives us digits starting
@@ -2233,6 +2218,10 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         vec![Expr::List(digit_exprs.into()), Expr::Integer(exponent)].into(),
       ));
     }
+    let (digit_list, exponent) = real_digits_rational_base(numer, denom, base);
+    return Ok(Expr::List(
+      vec![Expr::List(digit_list.into()), Expr::Integer(exponent)].into(),
+    ));
   }
 
   // Compute with extra precision to avoid rounding errors in the last digits.
@@ -2246,17 +2235,14 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   use astro_float::{Consts, RoundingMode};
   let mut cc = Consts::new().map_err(|e| {
-    InterpreterError::EvaluationError(format!("BigFloat init error: {}", e))
+    InterpreterError::EvaluationError(format!("BigFloat init error: {e}"))
   })?;
   let rm = RoundingMode::ToEven;
   let bits = nominal_bits(precision);
 
-  let bf = match expr_to_bigfloat(&abs_expr, bits, rm, &mut cc) {
-    Ok(v) => v,
-    Err(_) => {
-      // Non-numeric expression (e.g. bare symbol): return unevaluated.
-      return Ok(unevaluated("RealDigits", args));
-    }
+  let Ok(bf) = expr_to_bigfloat(&abs_expr, bits, rm, &mut cc) else {
+    // Non-numeric expression (e.g. bare symbol): return unevaluated.
+    return Ok(unevaluated("RealDigits", args));
   };
 
   // Non-decimal bases route through the arbitrary-base digit extractor.
@@ -2407,11 +2393,8 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(radix_vals) =
       radices.iter().map(expr_to_i128).collect::<Option<Vec<_>>>()
   {
-    let digits = match &args[0] {
-      Expr::List(items) => items,
-      _ => {
-        return Ok(unevaluated("FromDigits", args));
-      }
+    let Expr::List(digits) = &args[0] else {
+      return Ok(unevaluated("FromDigits", args));
     };
     if digits.is_empty() {
       return Ok(Expr::Integer(0));
@@ -2428,7 +2411,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         break;
       }
       cur *= BigInt::from(radix_vals[ridx as usize]);
-      weights[n - 1 - j] = cur.clone();
+      weights[n - 1 - j].clone_from(&cur);
     }
     let mut terms: Vec<Expr> = Vec::with_capacity(n);
     for (i, digit) in digits.iter().enumerate() {
@@ -2517,11 +2500,8 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(bigint_to_expr(result));
   }
 
-  let items = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("FromDigits", args));
-    }
+  let Expr::List(items) = &args[0] else {
+    return Ok(unevaluated("FromDigits", args));
   };
 
   // Handle {digit_list, {p1, p2, ...}} form: a list of decimal-point positions
@@ -2533,7 +2513,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Expr::List(positions) = &items[1]
   {
     let mut results = Vec::with_capacity(positions.len());
-    for p in positions.iter() {
+    for p in positions {
       let inner = Expr::List(vec![items[0].clone(), p.clone()].into());
       let mut call_args = vec![inner];
       if args.len() == 2 {
@@ -2563,19 +2543,17 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if shift >= 0 {
       let factor = big_base.pow(shift as u32);
       return Ok(bigint_to_expr(int_val * factor));
-    } else {
-      // Need a rational: int_val / base^(-shift)
-      let denom = big_base.pow((-shift) as u32);
-      let (num, den) = rat_reduce_bigint(&int_val, &denom);
-      if den == BigInt::from(1) {
-        return Ok(bigint_to_expr(num));
-      } else {
-        return Ok(Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![bigint_to_expr(num), bigint_to_expr(den)].into(),
-        });
-      }
     }
+    // Need a rational: int_val / base^(-shift)
+    let denom = big_base.pow((-shift) as u32);
+    let (num, den) = rat_reduce_bigint(&int_val, &denom);
+    if den == BigInt::from(1) {
+      return Ok(bigint_to_expr(num));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![bigint_to_expr(num), bigint_to_expr(den)].into(),
+    });
   }
 
   // Check if all items are numeric
@@ -2643,8 +2621,7 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some(b) if b >= 2 => b,
       Some(b) => {
         crate::emit_message(&format!(
-          "IntegerLength::ibase: Base {} is not an integer greater than 1.",
-          b
+          "IntegerLength::ibase: Base {b} is not an integer greater than 1."
         ));
         return Ok(unevaluated("IntegerLength", args));
       }
@@ -2874,7 +2851,7 @@ fn integer_name_cardinal(n: i128) -> Option<String> {
   if abs_n <= 999 {
     let word = spell_below_1000(abs_n as u64);
     return Some(if negative {
-      format!("negative {}", word)
+      format!("negative {word}")
     } else {
       word
     });
@@ -2899,7 +2876,7 @@ fn integer_name_cardinal(n: i128) -> Option<String> {
   for &(group, sidx) in &groups {
     if sidx == 0 {
       // Lowest group: use digits (for numbers >= 1000)
-      parts.push(format!("{}", group));
+      parts.push(format!("{group}"));
     } else {
       // Higher groups: use digits + scale word
       let scale = if sidx < SCALES.len() {
@@ -2907,13 +2884,13 @@ fn integer_name_cardinal(n: i128) -> Option<String> {
       } else {
         return None;
       };
-      parts.push(format!("{} {}", group, scale));
+      parts.push(format!("{group} {scale}"));
     }
   }
 
   let result = parts.join(" ");
   Some(if negative {
-    format!("negative {}", result)
+    format!("negative {result}")
   } else {
     result
   })
@@ -2957,13 +2934,13 @@ fn integer_name_words(n: i128) -> Option<String> {
       } else {
         return None;
       };
-      parts.push(format!("{} {}", words, scale));
+      parts.push(format!("{words} {scale}"));
     }
   }
 
   let result = parts.join(", ");
   Some(if negative {
-    format!("negative {}", result)
+    format!("negative {result}")
   } else {
     result
   })
@@ -3092,9 +3069,9 @@ fn german_ordinal_suffix(word: &str) -> String {
     "elf" => "elfte".to_string(),
     "zwölf" => "zwölfte".to_string(),
     "zwanzig" | "dreißig" | "vierzig" | "fünfzig" | "sechzig" | "siebzig"
-    | "achtzig" | "neunzig" | "hundert" | "tausend" => format!("{}ste", word),
+    | "achtzig" | "neunzig" | "hundert" | "tausend" => format!("{word}ste"),
     // Teens (dreizehn..neunzehn).
-    _ => format!("{}te", word),
+    _ => format!("{word}te"),
   }
 }
 
@@ -3172,11 +3149,10 @@ fn german_millions(n: u64, ordinal: bool) -> Option<String> {
     // space or soft-hyphen; long-scale nouns take "-ste", others the usual form.
     let split = out
       .rfind([' ', '\u{00AD}'])
-      .map(|i| i + out[i..].chars().next().unwrap().len_utf8())
-      .unwrap_or(0);
+      .map_or(0, |i| i + out[i..].chars().next().unwrap().len_utf8());
     let last = out[split..].to_string();
     let suffixed = if is_german_scale_word(&last) {
-      format!("{}ste", last)
+      format!("{last}ste")
     } else {
       german_ordinal_suffix(&last)
     };
@@ -3208,7 +3184,7 @@ fn integer_name_german(n: i128, ordinal: bool) -> Option<String> {
     german_millions(abs as u64, ordinal)?
   };
   Some(if negative {
-    format!("minus {}", body)
+    format!("minus {body}")
   } else {
     body
   })
@@ -3233,14 +3209,12 @@ pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?.into()));
   }
 
-  let n = match expr_to_i128(&args[0]) {
-    Some(v) => v,
-    None => return unevaluated(),
+  let Some(n) = expr_to_i128(&args[0]) else {
+    return unevaluated();
   };
 
-  let cardinal = match integer_name_cardinal(n) {
-    Some(s) => s,
-    None => return unevaluated(),
+  let Some(cardinal) = integer_name_cardinal(n) else {
+    return unevaluated();
   };
 
   // The qualifier may be a plain string ("Ordinal"/"Words") or a list such as
@@ -3252,7 +3226,7 @@ pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::String(s) => vec![s.as_str()],
       Expr::List(items) => {
         let mut t = Vec::with_capacity(items.len());
-        for it in items.iter() {
+        for it in items {
           match it {
             Expr::String(s) => t.push(s.as_str()),
             _ => return unevaluated(),
@@ -3281,19 +3255,17 @@ pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if want_words {
         return unevaluated();
       }
-      return match integer_name_german(n, want_ordinal) {
-        Some(s) => Ok(Expr::String(s)),
-        None => {
-          // wolframscript spells German only below 10^18; larger values warn.
-          if n.unsigned_abs() >= 1_000_000_000_000_000_000 {
-            crate::emit_message(&format!(
-              "IntegerName::outrange: Number {} is too large for the \
-               algorithms available for German.",
-              n
-            ));
-          }
-          unevaluated()
+      return if let Some(s) = integer_name_german(n, want_ordinal) {
+        Ok(Expr::String(s))
+      } else {
+        // wolframscript spells German only below 10^18; larger values warn.
+        if n.unsigned_abs() >= 1_000_000_000_000_000_000 {
+          crate::emit_message(&format!(
+            "IntegerName::outrange: Number {n} is too large for the \
+             algorithms available for German."
+          ));
         }
+        unevaluated()
       };
     }
     if want_ordinal {
@@ -3313,11 +3285,8 @@ pub fn roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Zero: returns N
   // Non-integer: return unevaluated
 
-  let n = match expr_to_i128(&args[0]) {
-    Some(v) => v,
-    None => {
-      return Ok(unevaluated("RomanNumeral", args));
-    }
+  let Some(n) = expr_to_i128(&args[0]) else {
+    return Ok(unevaluated("RomanNumeral", args));
   };
 
   if n == 0 {
@@ -3369,11 +3338,8 @@ pub fn convergents_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => continued_fraction_ast(args)?,
   };
 
-  let elements = match &cf_list {
-    Expr::List(elems) => elems,
-    _ => {
-      return Ok(unevaluated("Convergents", args));
-    }
+  let Expr::List(elements) = &cf_list else {
+    return Ok(unevaluated("Convergents", args));
   };
 
   if elements.is_empty() {
@@ -3554,12 +3520,12 @@ pub fn number_digit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let raw_exp = ((bits >> 52) & 0x7ff) as i64;
         let e2 = if raw_exp == 0 { -1074 } else { raw_exp - 1075 };
         // Shortest representation, normalized to digits + top exponent
-        let s = format!("{:e}", a); // like 2.10345e2
+        let s = format!("{a:e}"); // like 2.10345e2
         let (mant, exp10) = s.split_once('e').unwrap();
         let exp10: i64 = exp10.parse().unwrap();
         let digits: Vec<u8> = mant
           .bytes()
-          .filter(|b| b.is_ascii_digit())
+          .filter(u8::is_ascii_digit)
           .map(|b| b - b'0')
           .collect();
         Value::Shortest(digits, exp10, e2)
@@ -3597,32 +3563,24 @@ pub fn number_digit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut cc = astro_float::Consts::new()
         .map_err(|e| InterpreterError::EvaluationError(format!("N: {e}")))?;
       let rm = astro_float::RoundingMode::ToEven;
-      match expr_to_bigfloat(other, bits, rm, &mut cc) {
-        Ok(bf) => {
-          let Some(radix) = radix else {
-            return Ok(unevaluated());
-          };
-          if bf.is_zero() {
-            Value::Zero
-          } else {
-            match bf.convert_to_radix(radix, rm, &mut cc) {
-              Ok((_, digits, exponent)) => {
-                Value::Radix(digits, exponent as i64)
-              }
-              Err(_) => return Ok(unevaluated()),
-            }
+      if let Ok(bf) = expr_to_bigfloat(other, bits, rm, &mut cc) {
+        let Some(radix) = radix else {
+          return Ok(unevaluated());
+        };
+        if bf.is_zero() {
+          Value::Zero
+        } else {
+          match bf.convert_to_radix(radix, rm, &mut cc) {
+            Ok((_, digits, exponent)) => Value::Radix(digits, exponent as i64),
+            Err(_) => return Ok(unevaluated()),
           }
         }
-        Err(_) => {
-          crate::emit_message(&format!(
-            "NumberDigit::num: Argument {} should be a number.",
-            crate::syntax::format_expr(
-              &args[0],
-              crate::syntax::ExprForm::Output
-            )
-          ));
-          return Ok(unevaluated());
-        }
+      } else {
+        crate::emit_message(&format!(
+          "NumberDigit::num: Argument {} should be a number.",
+          crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+        ));
+        return Ok(unevaluated());
       }
     }
   };
@@ -3825,9 +3783,8 @@ pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // The value must be numeric before the unit list is even validated
-  let value = match to_num(&args[0]) {
-    Some(v) => v,
-    None => return Ok(unevaluated(args)),
+  let Some(value) = to_num(&args[0]) else {
+    return Ok(unevaluated(args));
   };
   let unit_exprs = match &args[1] {
     Expr::List(items) if !items.is_empty() => items,
@@ -3911,13 +3868,11 @@ pub fn number_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(unevaluated(args));
   }
-  let coeff_exprs = match &args[0] {
-    Expr::List(items) => items,
-    _ => return Ok(unevaluated(args)),
+  let Expr::List(coeff_exprs) = &args[0] else {
+    return Ok(unevaluated(args));
   };
-  let unit_exprs = match &args[1] {
-    Expr::List(items) => items,
-    _ => return Ok(unevaluated(args)),
+  let Expr::List(unit_exprs) = &args[1] else {
+    return Ok(unevaluated(args));
   };
 
   // The coefficient list cannot be longer than the unit list. This is checked
@@ -4114,7 +4069,7 @@ pub fn minkowski_question_mark_ast(
     total = add(&total, &tail);
   }
 
-  Ok(super::number_theory::make_rational_expr(total.0, total.1))
+  Ok(super::number_theory::make_rational_expr(&total.0, &total.1))
 }
 
 /// FromRomanNumeral[s] - integer value of a roman numeral string.
@@ -4145,29 +4100,26 @@ pub fn from_roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => None,
         })
         .collect();
-      match values {
-        Some(v) => {
-          let mut total = 0i128;
-          for (i, val) in v.iter().enumerate() {
-            if v.get(i + 1).is_some_and(|next| val < next) {
-              total -= val;
-            } else {
-              total += val;
-            }
+      if let Some(v) = values {
+        let mut total = 0i128;
+        for (i, val) in v.iter().enumerate() {
+          if v.get(i + 1).is_some_and(|next| val < next) {
+            total -= val;
+          } else {
+            total += val;
           }
-          Ok(Expr::Integer(total))
         }
-        None => {
-          crate::emit_message(&format!(
-            "FromRomanNumeral::nrom: String {s} does not represent a valid roman numeral."
-          ));
-          Ok(unevaluated(args))
-        }
+        Ok(Expr::Integer(total))
+      } else {
+        crate::emit_message(&format!(
+          "FromRomanNumeral::nrom: String {s} does not represent a valid roman numeral."
+        ));
+        Ok(unevaluated(args))
       }
     }
     Expr::List(items) => {
       let mut results = Vec::with_capacity(items.len());
-      for item in items.iter() {
+      for item in items {
         results.push(from_roman_numeral_ast(std::slice::from_ref(item))?);
       }
       Ok(Expr::List(results.into()))
@@ -4192,31 +4144,28 @@ pub fn thue_morse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(unevaluated(args));
   }
-  match expr_to_bigint(&args[0]) {
-    Some(n) => {
-      let ones = n
-        .abs()
-        .to_radix_le(2)
-        .1
-        .into_iter()
-        .filter(|&b| b == 1)
-        .count();
-      Ok(Expr::Integer((ones % 2) as i128))
+  if let Some(n) = expr_to_bigint(&args[0]) {
+    let ones = n
+      .abs()
+      .to_radix_le(2)
+      .1
+      .into_iter()
+      .filter(|&b| b == 1)
+      .count();
+    Ok(Expr::Integer((ones % 2) as i128))
+  } else {
+    // A Real or Rational is numeric but not a valid non-negative integer.
+    if matches!(&args[0], Expr::Real(_))
+      || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Rational")
+    {
+      crate::emit_message(&format!(
+        "ThueMorse::nnintprm: Parameter {} at position 1 in {} is expected \
+         to be a non-negative integer.",
+        expr_to_string(&args[0]),
+        expr_to_string(&unevaluated(args))
+      ));
     }
-    None => {
-      // A Real or Rational is numeric but not a valid non-negative integer.
-      if matches!(&args[0], Expr::Real(_))
-        || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Rational")
-      {
-        crate::emit_message(&format!(
-          "ThueMorse::nnintprm: Parameter {} at position 1 in {} is expected \
-           to be a non-negative integer.",
-          expr_to_string(&args[0]),
-          expr_to_string(&unevaluated(args))
-        ));
-      }
-      Ok(unevaluated(args))
-    }
+    Ok(unevaluated(args))
   }
 }
 

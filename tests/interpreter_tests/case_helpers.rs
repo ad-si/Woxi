@@ -95,7 +95,7 @@ fn parse_complex_float(s: &str) -> Option<(f64, f64)> {
   if let Some(i) = split {
     let (left, right) = t.split_at(i);
     // `right` keeps its leading sign (`+x*I` or `-x*I`).
-    if !right.ends_with("*I") && !right.ends_with("I") {
+    if !right.ends_with("*I") && !right.ends_with('I') {
       return None;
     }
     let im_str = right.trim_end_matches('I').trim_end_matches('*');
@@ -110,7 +110,7 @@ fn parse_complex_float(s: &str) -> Option<(f64, f64)> {
     return Some((re_val, im_val));
   }
   // Single term: either pure real or pure imaginary.
-  if t.ends_with("*I") || t.ends_with("I") {
+  if t.ends_with("*I") || t.ends_with('I') {
     let im_str = t.trim_end_matches('I').trim_end_matches('*');
     let im_val = if im_str.is_empty() || im_str == "+" {
       1.0
@@ -277,7 +277,7 @@ fn outputs_match(a: &str, b: &str) -> bool {
   // same operator on both sides — recurse on each side so float
   // tolerance applies to RHS values like `x -> 1.5707…66`.
   for op in ["->", ":>"] {
-    let pad = format!(" {} ", op);
+    let pad = format!(" {op} ");
     if let (Some(ai), Some(bi)) = (a_t.find(&pad), b_t.find(&pad)) {
       let (a_l, a_r) = a_t.split_at(ai);
       let a_r = &a_r[pad.len()..];
@@ -362,7 +362,7 @@ fn outputs_match(a: &str, b: &str) -> bool {
   };
   if let Some((head, other)) = pair {
     let other = other.trim_start();
-    let head_prefix = format!("{}[", head);
+    let head_prefix = format!("{head}[");
     if other.starts_with(&head_prefix) {
       return true;
     }
@@ -382,14 +382,14 @@ fn outputs_match(a: &str, b: &str) -> bool {
   // same length.
   if let Some((head, expanded)) = list_of_graphics_pair(a, b) {
     let elems = top_level_split_list(expanded);
-    let head_prefix = format!("{}[", head);
+    let head_prefix = format!("{head}[");
     if !elems.is_empty()
       && elems
         .iter()
         .all(|e| e.trim_start().starts_with(&head_prefix))
     {
       // Count `-Head-` placeholders on the other side.
-      let placeholder = format!("-{}-", head);
+      let placeholder = format!("-{head}-");
       let occurrences = top_level_split_list(if expanded == a { b } else { a });
       if occurrences.len() == elems.len()
         && occurrences.iter().all(|p| p.trim() == placeholder)
@@ -554,7 +554,7 @@ fn normalize_term_sign(sign: char, body: &str) -> (char, String) {
     Some(idx) if idx + 1 < bytes.len() => {
       let inner = &body[2..idx];
       let rest = &body[idx + 1..];
-      let new_body = format!("({}){}", inner, rest);
+      let new_body = format!("({inner}){rest}");
       let new_sign = if sign == '+' { '-' } else { '+' };
       (new_sign, new_body)
     }
@@ -923,18 +923,21 @@ pub(crate) fn assert_case(input: &str, expected: &str) {
   let actual = match result {
     Ok(Ok(s)) => s,
     Ok(Err(e)) => panic!(
-      "Woxi returned error: {:?}\n  input:    {}\n  expected: {}",
-      e, input, expected
+      "Woxi returned error: {e:?}\n  input:    {input}\n  expected: {expected}"
     ),
-    Err(_) => panic!(
-      "Woxi panicked\n  input:    {}\n  expected: {}",
-      input, expected
-    ),
+    Err(payload) => {
+      let why = payload
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| payload.downcast_ref::<&str>().copied())
+        .unwrap_or("<non-string panic payload>");
+      panic!(
+        "Woxi panicked: {why}\n  input:    {input}\n  expected: {expected}"
+      )
+    }
   };
-  if !outputs_match(&actual, expected) {
-    panic!(
-      "output mismatch\n  input:    {}\n  expected: {}\n  actual:   {}",
-      input, expected, actual
-    );
-  }
+  assert!(
+    outputs_match(&actual, expected),
+    "output mismatch\n  input:    {input}\n  expected: {expected}\n  actual:   {actual}"
+  );
 }

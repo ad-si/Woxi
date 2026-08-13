@@ -546,8 +546,8 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // direction the edge travels, so a pair (a→b, b→a) with indices
         // 0 and 1 in the group get offsets -0.5 and +0.5 respectively
         // and render as two clearly distinct curves on opposite sides.
-        let ctrl_x = (x1 + x2) / 2.0 + perp_x * offset_mag;
-        let ctrl_y = (y1 + y2) / 2.0 + perp_y * offset_mag;
+        let ctrl_x = f64::midpoint(x1, x2) + perp_x * offset_mag;
+        let ctrl_y = f64::midpoint(y1, y2) + perp_y * offset_mag;
 
         // Shorten each endpoint toward the control point by vertex_radius
         // so the curve starts/ends on the vertex boundary with its tangent
@@ -620,7 +620,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // sets stay scoped to this edge.
           Ok(drawn) => primitives.push(Expr::List(vec![drawn].into())),
           Err(_) => {
-            primitives.push(line_or_arrow(edge_data.directed, &default_pts))
+            primitives.push(line_or_arrow(edge_data.directed, &default_pts));
           }
         }
       }
@@ -629,11 +629,11 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // Edge label
     if let Some(lbl) = &edge_data.label {
-      let mx = if si == di { x1 } else { (x1 + x2) / 2.0 };
+      let mx = if si == di { x1 } else { f64::midpoint(x1, x2) };
       let my = if si == di {
         y1 + vertex_radius * 2.0 + vertex_radius * 1.8 * 1.5
       } else {
-        (y1 + y2) / 2.0
+        f64::midpoint(y1, y2)
       };
       // Force labels to black so they don't inherit the edge color.
       primitives.push(Expr::FunctionCall {
@@ -655,7 +655,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // --- Draw vertices ---
-  let (v_fill, v_edge_form) = parse_vertex_style(&vertex_style);
+  let (v_fill, v_edge_form) = parse_vertex_style(vertex_style.as_ref());
 
   if let Some(ef) = &v_edge_form {
     primitives.push(ef.clone());
@@ -774,7 +774,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let cx = if positions.is_empty() {
       0.0
     } else {
-      (x_min + x_max) / 2.0
+      f64::midpoint(x_min, x_max)
     };
     let label_y = y_max + vertex_radius + 0.2;
 
@@ -854,7 +854,7 @@ fn flat_axis_plot_range(
   }
   let (w, h) = (x1 - x0, y1 - y0);
   let widen = |lo: f64, hi: f64, want: f64| {
-    let mid = (lo + hi) / 2.0;
+    let mid = f64::midpoint(lo, hi);
     (mid - want / 2.0, mid + want / 2.0)
   };
   let ((x0, x1), (y0, y1)) = if w < h * MIN_ASPECT {
@@ -1381,8 +1381,8 @@ fn pack_components(
         max_y = y;
       }
     }
-    let local_cx = (min_x + max_x) / 2.0;
-    let local_cy = (min_y + max_y) / 2.0;
+    let local_cx = f64::midpoint(min_x, max_x);
+    let local_cy = f64::midpoint(min_y, max_y);
     let local_w = (max_x - min_x).max(1e-6);
     let local_h = (max_y - min_y).max(1e-6);
 
@@ -1390,7 +1390,7 @@ fn pack_components(
     // between clusters), then scale by sqrt(size)/sqrt(max_size) so
     // larger clusters look larger while tiny ones still get a minimum
     // size so single-node components don't shrink to nothing.
-    let max_size = components.iter().map(|c| c.len()).max().unwrap_or(1);
+    let max_size = components.iter().map(std::vec::Vec::len).max().unwrap_or(1);
     let size_scale =
       ((comp.len() as f64).sqrt() / (max_size as f64).sqrt()).max(0.35);
     let fit_scale = (cell_w * 0.7 / local_w).min(cell_h * 0.7 / local_h);
@@ -1714,7 +1714,7 @@ pub fn perron_eigenpair(m: &[Vec<f64>]) -> (f64, Vec<f64>) {
     if norm == 0.0 {
       break;
     }
-    for x in w.iter_mut() {
+    for x in &mut w {
       *x /= norm;
     }
     let diff: f64 = v.iter().zip(&w).map(|(a, b)| (a - b).abs()).sum();
@@ -1732,13 +1732,13 @@ pub fn perron_eigenpair(m: &[Vec<f64>]) -> (f64, Vec<f64>) {
   }
   let lambda: f64 = (0..n).map(|i| v[i] * mv[i]).sum();
   if v.iter().sum::<f64>() < 0.0 {
-    for x in v.iter_mut() {
+    for x in &mut v {
       *x = -*x;
     }
   }
   let sum: f64 = v.iter().sum();
   if sum != 0.0 {
-    for x in v.iter_mut() {
+    for x in &mut v {
       *x /= sum;
     }
   }
@@ -1778,7 +1778,7 @@ pub fn eigenvector_centrality(adj: &[Vec<f64>]) -> Vec<f64> {
     if norm == 0.0 {
       break;
     }
-    for x in w.iter_mut() {
+    for x in &mut w {
       *x /= norm;
     }
     let diff: f64 = v.iter().zip(&w).map(|(a, b)| (a - b).abs()).sum();
@@ -1789,13 +1789,13 @@ pub fn eigenvector_centrality(adj: &[Vec<f64>]) -> Vec<f64> {
   }
   // Perron eigenvector is single-signed; orient it non-negative.
   if v.iter().sum::<f64>() < 0.0 {
-    for x in v.iter_mut() {
+    for x in &mut v {
       *x = -*x;
     }
   }
   let sum: f64 = v.iter().sum();
   if sum != 0.0 {
-    for x in v.iter_mut() {
+    for x in &mut v {
       *x /= sum;
     }
   }
@@ -1871,7 +1871,7 @@ pub fn graph_disjoint_union(graphs: &[(&[Expr], &[Expr])]) -> Expr {
       label.insert(crate::syntax::expr_to_string(v), new_id);
       new_vertices.push(Expr::Integer(new_id));
     }
-    for e in edges.iter() {
+    for e in *edges {
       match edge_endpoints(e) {
         Some((u, v, directed)) => {
           match (
@@ -1984,13 +1984,10 @@ pub fn contract_vertices_in_graph(
     .collect();
 
   let mut new_edges: Vec<Expr> = Vec::new();
-  for e in edges.iter() {
-    let (head, a, b) = match edge_parts(e) {
-      Some(t) => t,
-      None => {
-        new_edges.push(e.clone());
-        continue;
-      }
+  for e in edges {
+    let Some((head, a, b)) = edge_parts(e) else {
+      new_edges.push(e.clone());
+      continue;
     };
     let directed = is_directed(&head);
     // Undirected endpoints are stored canonically as (min, max).
@@ -2158,17 +2155,14 @@ pub fn find_cycle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   }
 
-  let (vertices, raw_edges) = match fc_parse_input(&args[0]) {
-    Some(p) => p,
-    None => return unevaluated(),
+  let Some((vertices, raw_edges)) = fc_parse_input(&args[0]) else {
+    return unevaluated();
   };
-  let (kmin, kmax) = match fc_parse_kspec(args.get(1)) {
-    Some(k) => k,
-    None => return unevaluated(),
+  let Some((kmin, kmax)) = fc_parse_kspec(args.get(1)) else {
+    return unevaluated();
   };
-  let max_count = match fc_parse_count(args.get(2)) {
-    Some(n) => n,
-    None => return unevaluated(),
+  let Some(max_count) = fc_parse_count(args.get(2)) else {
+    return unevaluated();
   };
 
   let n = vertices.len();
@@ -2199,12 +2193,11 @@ pub fn find_cycle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } => (pattern.as_ref(), replacement.as_ref(), true),
       _ => continue,
     };
-    let (si, di) = match (
+    let (Some(&si), Some(&di)) = (
       rank.get(&expr_to_string(src)),
       rank.get(&expr_to_string(dst)),
-    ) {
-      (Some(&s), Some(&d)) => (s, d),
-      _ => continue,
+    ) else {
+      continue;
     };
     let id = next_edge_id;
     next_edge_id += 1;
@@ -2591,9 +2584,8 @@ pub fn find_hamiltonian_cycle_ast(
     return unevaluated();
   }
 
-  let (vertices, raw_edges) = match fc_parse_input(&args[0]) {
-    Some(p) => p,
-    None => return unevaluated(),
+  let Some((vertices, raw_edges)) = fc_parse_input(&args[0]) else {
+    return unevaluated();
   };
 
   let n = vertices.len();
@@ -2624,12 +2616,11 @@ pub fn find_hamiltonian_cycle_ast(
       } => (pattern.as_ref(), replacement.as_ref(), true),
       _ => continue,
     };
-    let (si, di) = match (
+    let (Some(&si), Some(&di)) = (
       rank.get(&expr_to_string(src)),
       rank.get(&expr_to_string(dst)),
-    ) {
-      (Some(&s), Some(&d)) => (s, d),
-      _ => continue,
+    ) else {
+      continue;
     };
     if si == di {
       continue; // self-loops never participate in a Hamiltonian cycle
@@ -2750,9 +2741,8 @@ pub fn find_eulerian_cycle_ast(
   if args.len() != 1 {
     return unevaluated();
   }
-  let (vertices, raw_edges) = match fc_parse_input(&args[0]) {
-    Some(p) => p,
-    None => return unevaluated(),
+  let Some((vertices, raw_edges)) = fc_parse_input(&args[0]) else {
+    return unevaluated();
   };
   let n = vertices.len();
   let empty = Expr::List(vec![].into());
@@ -2782,12 +2772,11 @@ pub fn find_eulerian_cycle_ast(
       } => (pattern.as_ref(), replacement.as_ref(), true),
       _ => continue,
     };
-    let (si, di) = match (
+    let (Some(&si), Some(&di)) = (
       rank.get(&expr_to_string(src)),
       rank.get(&expr_to_string(dst)),
-    ) {
-      (Some(&s), Some(&d)) => (s, d),
-      _ => return unevaluated(),
+    ) else {
+      return unevaluated();
     };
     let id = edges.len();
     edges.push((si, di, directed));
@@ -2805,9 +2794,8 @@ pub fn find_eulerian_cycle_ast(
     a.sort_by_key(|x| std::cmp::Reverse(x.0));
   }
 
-  let circuit = match hierholzer_euler_tour(n, &adj, num_edges) {
-    Some(c) => c,
-    None => return Ok(empty),
+  let Some(circuit) = hierholzer_euler_tour(n, &adj, num_edges) else {
+    return Ok(empty);
   };
 
   let edge_kind = if edges.iter().any(|e| e.2) {
@@ -2837,9 +2825,8 @@ pub fn find_postman_tour_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return unevaluated();
   }
-  let (vertices, raw_edges) = match fc_parse_input(&args[0]) {
-    Some(p) => p,
-    None => return unevaluated(),
+  let Some((vertices, raw_edges)) = fc_parse_input(&args[0]) else {
+    return unevaluated();
   };
   let n = vertices.len();
   let empty = Expr::List(vec![].into());
@@ -2959,9 +2946,8 @@ pub fn find_postman_tour_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let mut best: Option<(i64, Vec<(usize, usize)>)> = None;
     match_odd(&odd, &dist_from, 0, &mut Vec::new(), &mut best);
-    let pairs = match best {
-      Some((_, p)) => p,
-      None => return Ok(empty),
+    let Some((_, pairs)) = best else {
+      return Ok(empty);
     };
     // Duplicate each matched pair's shortest path.
     for (a, b) in pairs {
@@ -2985,9 +2971,8 @@ pub fn find_postman_tour_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for a in &mut adj {
     a.sort_by_key(|x| std::cmp::Reverse(x.0));
   }
-  let circuit = match hierholzer_euler_tour(n, &adj, num_edges) {
-    Some(c) => c,
-    None => return Ok(empty),
+  let Some(circuit) = hierholzer_euler_tour(n, &adj, num_edges) else {
+    return Ok(empty);
   };
   let tour: Vec<Expr> = circuit
     .windows(2)
@@ -3010,9 +2995,8 @@ pub fn mean_neighbor_degree_ast(
   if args.len() != 1 {
     return unevaluated();
   }
-  let (vertices, raw_edges) = match fc_parse_input(&args[0]) {
-    Some(p) => p,
-    None => return unevaluated(),
+  let Some((vertices, raw_edges)) = fc_parse_input(&args[0]) else {
+    return unevaluated();
   };
   let n = vertices.len();
   if n == 0 {
@@ -3033,17 +3017,16 @@ pub fn mean_neighbor_degree_ast(
       } => (pattern.as_ref(), replacement.as_ref()),
       _ => continue,
     };
-    let (si, di) = match (
+    let (Some(&si), Some(&di)) = (
       rank.get(&expr_to_string(src)),
       rank.get(&expr_to_string(dst)),
-    ) {
-      (Some(&s), Some(&d)) => (s, d),
-      _ => return unevaluated(),
+    ) else {
+      return unevaluated();
     };
     neighbors[si].push(di);
     neighbors[di].push(si);
   }
-  let deg: Vec<usize> = neighbors.iter().map(|nb| nb.len()).collect();
+  let deg: Vec<usize> = neighbors.iter().map(std::vec::Vec::len).collect();
   let mut out = Vec::with_capacity(n);
   for nb in &neighbors {
     if nb.is_empty() {
@@ -3121,11 +3104,10 @@ fn apply_style_rule(
 }
 
 fn parse_vertex_style(
-  directives: &Option<Vec<Expr>>,
+  directives: Option<&Vec<Expr>>,
 ) -> (Option<Color>, Option<Expr>) {
-  let dirs = match directives {
-    Some(d) => d,
-    None => return (None, None),
+  let Some(dirs) = directives else {
+    return (None, None);
   };
 
   let mut fill_color: Option<Color> = None;
@@ -3230,15 +3212,14 @@ pub fn find_fundamental_cycles_ast(
       ));
       return unevaluated();
     }
-    match (
+    if let (Some(&si), Some(&di)) = (
       rank.get(&expr_to_string(src)),
       rank.get(&expr_to_string(dst)),
     ) {
-      (Some(&si), Some(&di)) => edges.push((si, di)),
-      _ => {
-        graph_expected();
-        return unevaluated();
-      }
+      edges.push((si, di));
+    } else {
+      graph_expected();
+      return unevaluated();
     }
   }
 
@@ -3572,7 +3553,7 @@ pub fn transitive_closure_graph_ast(
   let n = vertices.len();
   let mut adjacency = vec![vec![false; n]; n];
   let mut any_directed = false;
-  for edge in edges.iter() {
+  for edge in &edges {
     if let Expr::FunctionCall { name, args: eargs } = edge
       && eargs.len() == 2
       && let (Some(&u), Some(&v)) =
@@ -3675,7 +3656,7 @@ pub fn transitive_reduction_graph_ast(
     .collect();
   let n = vertices.len();
   let mut adjacency = vec![vec![false; n]; n];
-  for edge in edges.iter() {
+  for edge in &edges {
     if let Expr::FunctionCall { name, args: eargs } = edge
       && eargs.len() == 2
       && let (Some(&u), Some(&v)) =
@@ -3782,7 +3763,7 @@ pub fn reverse_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Reverse directed edges in place, then stable-sort everything by the
   // vertex-list positions of the (new) endpoints.
   let mut reversed: Vec<(usize, usize, Expr)> = Vec::with_capacity(edges.len());
-  for edge in edges.iter() {
+  for edge in &edges {
     // `a -> b` edges may still be raw Rule nodes in the explicit
     // Graph[vertices, edges] form.
     let (head, from, to) = match edge {
@@ -3866,7 +3847,7 @@ pub fn directed_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Emit directed edges, then stable-sort by the vertex-list positions of the
   // endpoints (matching ReverseGraph's ordering convention).
   let mut out: Vec<(usize, usize, Expr)> = Vec::with_capacity(edges.len() * 2);
-  for edge in edges.iter() {
+  for edge in &edges {
     let (head, a, b) = match edge {
       Expr::FunctionCall { name, args: eargs } if eargs.len() == 2 => {
         (name.as_str(), &eargs[0], &eargs[1])
@@ -3958,7 +3939,7 @@ pub fn find_independent_vertex_set_ast(
     .collect();
   // Neighbor bitmasks over the underlying undirected graph
   let mut nbr = vec![0u64; n];
-  for edge in edges.iter() {
+  for edge in &edges {
     if let Expr::FunctionCall { name, args: eargs } = edge
       && (name == "DirectedEdge" || name == "UndirectedEdge")
       && eargs.len() == 2
@@ -4047,7 +4028,7 @@ pub fn vertex_component_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = vertices.len();
   // In-neighbor lists (undirected edges count both ways)
   let mut in_nbrs: Vec<Vec<usize>> = vec![Vec::new(); n];
-  for edge in edges.iter() {
+  for edge in &edges {
     if let Expr::FunctionCall { name, args: eargs } = edge
       && (name == "DirectedEdge" || name == "UndirectedEdge")
       && eargs.len() == 2
@@ -4074,19 +4055,18 @@ pub fn vertex_component_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let mut seed_indices = Vec::with_capacity(seeds.len());
   for seed in &seeds {
-    match index.get(&key(seed)) {
-      Some(&i) => seed_indices.push(i),
-      None => {
-        crate::emit_message(&format!(
-          "VertexComponent::inv: The argument {} in {} is not a valid vertex.",
-          key(seed),
-          crate::syntax::expr_to_string(&Expr::FunctionCall {
-            name: "VertexComponent".to_string(),
-            args: vec![graph.clone(), args[1].clone()].into(),
-          })
-        ));
-        return Ok(unevaluated(&[graph, args[1].clone()]));
-      }
+    if let Some(&i) = index.get(&key(seed)) {
+      seed_indices.push(i);
+    } else {
+      crate::emit_message(&format!(
+        "VertexComponent::inv: The argument {} in {} is not a valid vertex.",
+        key(seed),
+        crate::syntax::expr_to_string(&Expr::FunctionCall {
+          name: "VertexComponent".to_string(),
+          args: vec![graph.clone(), args[1].clone()].into(),
+        })
+      ));
+      return Ok(unevaluated(&[graph, args[1].clone()]));
     }
   }
 
@@ -4163,7 +4143,7 @@ pub fn vertex_reach_component_ast(
     .collect();
   let n = vertices.len();
   let mut nbrs: Vec<Vec<usize>> = vec![Vec::new(); n];
-  for edge in edges.iter() {
+  for edge in &edges {
     if let Expr::FunctionCall {
       name: en,
       args: eargs,
@@ -4194,20 +4174,19 @@ pub fn vertex_reach_component_ast(
   };
   let mut seed_indices = Vec::with_capacity(seeds.len());
   for seed in &seeds {
-    match index.get(&key(seed)) {
-      Some(&i) => seed_indices.push(i),
-      None => {
-        crate::emit_message(&format!(
-          "{}::inv: The argument {} in {} is not a valid vertex.",
-          name,
-          key(seed),
-          crate::syntax::expr_to_string(&Expr::FunctionCall {
-            name: name.to_string(),
-            args: vec![graph.clone(), args[1].clone()].into(),
-          })
-        ));
-        return Ok(unevaluated());
-      }
+    if let Some(&i) = index.get(&key(seed)) {
+      seed_indices.push(i);
+    } else {
+      crate::emit_message(&format!(
+        "{}::inv: The argument {} in {} is not a valid vertex.",
+        name,
+        key(seed),
+        crate::syntax::expr_to_string(&Expr::FunctionCall {
+          name: name.to_string(),
+          args: vec![graph.clone(), args[1].clone()].into(),
+        })
+      ));
+      return Ok(unevaluated());
     }
   }
 
@@ -4498,7 +4477,7 @@ pub fn nearest_neighbor_graph_ast(
   };
   let n = points.len();
   let mut coords: Vec<Vec<Expr>> = Vec::with_capacity(n);
-  for p in points.iter() {
+  for p in points {
     let cs = coords_of(p);
     if !coords.is_empty() && cs.len() != coords[0].len() {
       return Ok(unevaluated(args));
@@ -4539,7 +4518,7 @@ pub fn nearest_neighbor_graph_ast(
         .filter(|&j| j != i)
         .map(|j| (dist2_int(&coords[i], &coords[j]), j))
         .collect();
-      ds.sort();
+      ds.sort_unstable();
       if ds.is_empty() {
         continue;
       }
@@ -4715,7 +4694,7 @@ pub fn connectivity_ast(
   // two. Only used when the graph actually contains a directed edge.
   let mut arcs: Vec<(usize, usize)> = Vec::new();
   let mut directed = false;
-  for e in edge_exprs.iter() {
+  for e in edge_exprs {
     match e {
       Expr::FunctionCall {
         name: ename,
@@ -4807,19 +4786,13 @@ pub fn connectivity_ast(
         expr_to_string(&unevaluated())
       ));
     };
-    let s = match find(&args[1]) {
-      Some(i) => i,
-      None => {
-        inv(2);
-        return Ok(unevaluated());
-      }
+    let Some(s) = find(&args[1]) else {
+      inv(2);
+      return Ok(unevaluated());
     };
-    let t = match find(&args[2]) {
-      Some(i) => i,
-      None => {
-        inv(3);
-        return Ok(unevaluated());
-      }
+    let Some(t) = find(&args[2]) else {
+      inv(3);
+      return Ok(unevaluated());
     };
     if s == t {
       // wolframscript artifacts: degree of s (edge), edge count (vertex)
@@ -4897,15 +4870,14 @@ pub fn k_core_components_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     },
     _ => return Ok(unevaluated()),
   };
-  let k = match &args[1] {
-    Expr::Integer(k) => *k,
-    _ => {
-      crate::emit_message(&format!(
-        "KCoreComponents::int: Integer expected at position 2 in {}.",
-        call_str()
-      ));
-      return Ok(unevaluated());
-    }
+  let k = if let Expr::Integer(k) = &args[1] {
+    *k
+  } else {
+    crate::emit_message(&format!(
+      "KCoreComponents::int: Integer expected at position 2 in {}.",
+      call_str()
+    ));
+    return Ok(unevaluated());
   };
   if args.len() == 3 {
     let valid = matches!(&args[2], Expr::String(s) if s == "In" || s == "Out");
@@ -4923,8 +4895,8 @@ pub fn k_core_components_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = vkeys.len();
   // Underlying simple graph: dedup edges, drop self-loops
   let mut adj: Vec<std::collections::BTreeSet<usize>> =
-    vec![Default::default(); n];
-  for e in edge_exprs.iter() {
+    vec![std::collections::BTreeSet::default(); n];
+  for e in edge_exprs {
     if let Expr::FunctionCall {
       name: ename,
       args: eargs,
@@ -5133,7 +5105,7 @@ pub fn find_clique_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let n = vertices.len();
   let mut adj = vec![vec![false; n]; n];
-  for e in edge_exprs.iter() {
+  for e in edge_exprs {
     if let Expr::FunctionCall {
       name: ename,
       args: eargs,
@@ -5163,7 +5135,7 @@ pub fn find_clique_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut cliques: Vec<Vec<usize>> = Vec::new();
   let mut p: Vec<usize> = (0..n).collect();
   bron_kerbosch(&adj, &mut Vec::new(), &mut p, &mut Vec::new(), &mut cliques);
-  for c in cliques.iter_mut() {
+  for c in &mut cliques {
     c.sort_unstable();
   }
   let mut qualifying: Vec<Vec<usize>> = cliques
@@ -5175,7 +5147,7 @@ pub fn find_clique_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let selected: Vec<Vec<usize>> = match count {
     Count::One => {
-      let best_len = qualifying.iter().map(|c| c.len()).max();
+      let best_len = qualifying.iter().map(std::vec::Vec::len).max();
       match best_len {
         Some(l) => {
           vec![
@@ -5237,7 +5209,7 @@ fn collect_highlight_items(
 ) {
   match spec {
     Expr::List(items) => {
-      for item in items.iter() {
+      for item in items {
         collect_highlight_items(item, inherited, out);
       }
     }
@@ -5256,7 +5228,7 @@ fn collect_highlight_items(
     Expr::FunctionCall { name, args } if name == "Graph" && args.len() >= 2 => {
       for part in [&args[0], &args[1]] {
         if let Expr::List(items) = part {
-          for item in items.iter() {
+          for item in items {
             out.push((item.clone(), inherited.clone()));
           }
         }
@@ -5401,7 +5373,7 @@ pub fn subgraph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let pos_of = |e: &Expr| sub_keys.iter().position(|k| *k == expr_to_string(e));
   let mut edges: Vec<((usize, usize), Expr)> = Vec::new();
-  for e in edge_exprs.iter() {
+  for e in edge_exprs {
     if let Expr::FunctionCall {
       name: ename,
       args: eargs,
@@ -5482,7 +5454,7 @@ pub fn kirchhoff_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let n = rows.len();
   let mut matrix: Vec<Vec<i64>> = Vec::with_capacity(n);
-  for row in rows.iter() {
+  for row in rows {
     let Expr::List(cells) = row else {
       return not_square();
     };
@@ -5490,7 +5462,7 @@ pub fn kirchhoff_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return not_square();
     }
     let mut out = Vec::with_capacity(n);
-    for cell in cells.iter() {
+    for cell in cells {
       match cell {
         Expr::Integer(v) => match i64::try_from(*v) {
           Ok(v) => out.push(v),
@@ -5586,10 +5558,10 @@ pub fn incidence_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return not_a_matrix();
   };
   let mut matrix: Vec<Vec<&Expr>> = Vec::with_capacity(rows.len());
-  for row in rows.iter() {
+  for row in rows {
     match row {
       Expr::List(cells) if !cells.is_empty() => {
-        matrix.push(cells.iter().collect())
+        matrix.push(cells.iter().collect());
       }
       _ => return not_a_matrix(),
     }
@@ -5674,7 +5646,7 @@ pub fn line_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(unevaluated()),
   };
   let mut endpoints: Vec<(String, String)> = Vec::new();
-  for e in edge_exprs.iter() {
+  for e in edge_exprs {
     if let Expr::FunctionCall {
       name: ename,
       args: eargs,
@@ -5749,7 +5721,7 @@ pub fn neighborhood_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let vkeys: Vec<String> = vertices.iter().map(expr_to_string).collect();
   let n = vkeys.len();
   let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
-  for e in edge_exprs.iter() {
+  for e in edge_exprs {
     if let Expr::FunctionCall {
       name: ename,
       args: eargs,
@@ -5771,7 +5743,7 @@ pub fn neighborhood_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated());
     }
   }
-  for nb in adj.iter_mut() {
+  for nb in &mut adj {
     nb.sort_unstable();
     nb.dedup();
   }
@@ -5897,7 +5869,7 @@ fn parse_graph_pairs(
   };
   let vkeys: Vec<String> = vertices.iter().map(expr_to_string).collect();
   let mut pairs = Vec::with_capacity(edge_exprs.len());
-  for e in edge_exprs.iter() {
+  for e in edge_exprs {
     // Directed and undirected edges both count; the flag records which, so
     // `1 -> 2` and `2 -> 1` are two edges while `1 <-> 2` and `2 <-> 1` are one.
     if let Expr::FunctionCall {
@@ -5931,9 +5903,8 @@ pub fn graph_predicate_ast(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let (n, pairs) = match parse_graph_pairs(&args[0]) {
-    Some(g) => g,
-    None => return Ok(bool_expr(false)),
+  let Some((n, pairs)) = parse_graph_pairs(&args[0]) else {
+    return Ok(bool_expr(false));
   };
   let has_loop = pairs.iter().any(|&(a, b, _)| a == b);
   let all_directed = !pairs.is_empty() && pairs.iter().all(|&(_, _, d)| d);
@@ -6216,9 +6187,8 @@ fn dmp_planar(edges: &[(usize, usize)]) -> bool {
       dfs_stack.pop();
     }
   }
-  let (mut cu, cw) = match back_edge {
-    Some(e) => e,
-    None => return true, // acyclic — cannot happen in a bicomp, but safe
+  let Some((mut cu, cw)) = back_edge else {
+    return true;
   };
   let mut cycle = vec![cu];
   while cu != cw {
@@ -6228,7 +6198,7 @@ fn dmp_planar(edges: &[(usize, usize)]) -> bool {
 
   let mut in_h = vec![false; k];
   let mut h_edges: std::collections::BTreeSet<(usize, usize)> =
-    Default::default();
+    std::collections::BTreeSet::default();
   for &v in &cycle {
     in_h[v] = true;
   }
@@ -6336,9 +6306,8 @@ fn dmp_planar(edges: &[(usize, usize)]) -> bool {
         best = Some((count, fi, first_face));
       }
     }
-    let (_, fi, face_idx) = match best {
-      Some(b) => b,
-      None => return true, // no fragments left (unreachable: loop guard)
+    let Some((_, fi, face_idx)) = best else {
+      return true;
     };
     let path = fragments[fi].1.clone();
 
@@ -6387,9 +6356,8 @@ fn dmp_planar(edges: &[(usize, usize)]) -> bool {
 
 /// PlanarGraphQ[g]
 pub fn planar_graph_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let (n, pairs) = match parse_graph_pairs(&args[0]) {
-    Some(g) => g,
-    None => return Ok(bool_expr(false)),
+  let Some((n, pairs)) = parse_graph_pairs(&args[0]) else {
+    return Ok(bool_expr(false));
   };
   // Reduce to the underlying simple graph
   let mut simple: Vec<(usize, usize)> = pairs
@@ -6448,7 +6416,7 @@ fn directed_graph_density(expr: &Expr) -> Option<Expr> {
     .collect();
   let mut edges: std::collections::HashSet<(usize, usize)> =
     std::collections::HashSet::new();
-  for e in edge_exprs.iter() {
+  for e in edge_exprs {
     let Expr::FunctionCall { name, args } = e else {
       return None;
     };
@@ -6500,7 +6468,7 @@ fn directed_mean_graph_distance(expr: &Expr) -> Option<Expr> {
     .map(|(i, v)| (expr_to_string(v), i))
     .collect();
   let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
-  for e in edge_exprs.iter() {
+  for e in edge_exprs {
     let Expr::FunctionCall { name, args } = e else {
       return None;
     };
@@ -6577,7 +6545,7 @@ fn directed_global_clustering(expr: &Expr) -> Option<Expr> {
     .collect();
   // Simple 0/1 directed adjacency, self-loops excluded.
   let mut a = vec![vec![0i128; n]; n];
-  for e in edge_exprs.iter() {
+  for e in edge_exprs {
     let Expr::FunctionCall { name, args } = e else {
       return None;
     };
@@ -6663,7 +6631,7 @@ pub fn directed_local_clustering(expr: &Expr) -> Option<Vec<(i128, i128)>> {
   let mut arcs: std::collections::HashSet<(usize, usize)> =
     std::collections::HashSet::new();
   let mut directed = false;
-  for e in edge_exprs.iter() {
+  for e in edge_exprs {
     let Expr::FunctionCall { name, args } = e else {
       return None;
     };
@@ -6742,7 +6710,7 @@ fn directed_mean_degree_connectivity(expr: &Expr) -> Option<Expr> {
     .collect();
   let mut deg = vec![0i128; n];
   let mut nbr_of: Vec<Vec<usize>> = vec![Vec::new(); n];
-  for e in edge_exprs.iter() {
+  for e in edge_exprs {
     let Expr::FunctionCall { name, args } = e else {
       return None;
     };
@@ -6816,61 +6784,58 @@ pub fn graph_metric_ast(
       }),
     });
   }
-  let (n, pairs) = match parse_undirected_graph_pairs(&args[0]) {
-    Some(g) => g,
-    None => {
-      // Only undirected graphs take the shared path; the metrics with a
-      // directed definition handle a digraph themselves.
-      if name == "GraphDensity"
-        && let Some(result) = directed_graph_density(&args[0])
-      {
-        return Ok(result);
-      }
-      if name == "MeanGraphDistance"
-        && let Some(result) = directed_mean_graph_distance(&args[0])
-      {
-        return Ok(result);
-      }
-      if name == "GlobalClusteringCoefficient"
-        && let Some(result) = directed_global_clustering(&args[0])
-      {
-        return Ok(result);
-      }
-      if name == "MeanDegreeConnectivity"
-        && let Some(result) = directed_mean_degree_connectivity(&args[0])
-      {
-        return Ok(result);
-      }
-      if name == "MeanClusteringCoefficient"
-        && let Some(local) = directed_local_clustering(&args[0])
-        && !local.is_empty()
-      {
-        // Mean of the per-vertex directed local clustering coefficients.
-        let terms: Vec<Expr> = local
-          .iter()
-          .map(|&(c, t)| {
-            if t == 0 {
-              Expr::Integer(0)
-            } else {
-              make_rational(c, t)
-            }
-          })
-          .collect();
-        let sum = Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: terms.into(),
-        };
-        let mean = Expr::FunctionCall {
-          name: "Divide".to_string(),
-          args: vec![sum, Expr::Integer(local.len() as i128)].into(),
-        };
-        return Ok(
-          crate::evaluator::evaluate_expr_to_expr(&mean)
-            .unwrap_or_else(|_| unevaluated()),
-        );
-      }
-      return Ok(unevaluated());
+  let Some((n, pairs)) = parse_undirected_graph_pairs(&args[0]) else {
+    // Only undirected graphs take the shared path; the metrics with a
+    // directed definition handle a digraph themselves.
+    if name == "GraphDensity"
+      && let Some(result) = directed_graph_density(&args[0])
+    {
+      return Ok(result);
     }
+    if name == "MeanGraphDistance"
+      && let Some(result) = directed_mean_graph_distance(&args[0])
+    {
+      return Ok(result);
+    }
+    if name == "GlobalClusteringCoefficient"
+      && let Some(result) = directed_global_clustering(&args[0])
+    {
+      return Ok(result);
+    }
+    if name == "MeanDegreeConnectivity"
+      && let Some(result) = directed_mean_degree_connectivity(&args[0])
+    {
+      return Ok(result);
+    }
+    if name == "MeanClusteringCoefficient"
+      && let Some(local) = directed_local_clustering(&args[0])
+      && !local.is_empty()
+    {
+      // Mean of the per-vertex directed local clustering coefficients.
+      let terms: Vec<Expr> = local
+        .iter()
+        .map(|&(c, t)| {
+          if t == 0 {
+            Expr::Integer(0)
+          } else {
+            make_rational(c, t)
+          }
+        })
+        .collect();
+      let sum = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      };
+      let mean = Expr::FunctionCall {
+        name: "Divide".to_string(),
+        args: vec![sum, Expr::Integer(local.len() as i128)].into(),
+      };
+      return Ok(
+        crate::evaluator::evaluate_expr_to_expr(&mean)
+          .unwrap_or_else(|_| unevaluated()),
+      );
+    }
+    return Ok(unevaluated());
   };
   // Underlying simple graph
   let mut simple: Vec<(usize, usize)> = pairs
@@ -7032,7 +6997,7 @@ pub fn graph_accessor_ast(
   let vkeys: Vec<String> = vertices.iter().map(expr_to_string).collect();
   let n = vkeys.len();
   let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(edge_exprs.len());
-  for e in edge_exprs.iter() {
+  for e in edge_exprs {
     if let Expr::FunctionCall {
       name: ename,
       args: eargs,
@@ -7147,12 +7112,11 @@ pub fn graph_accessor_ast(
           .iter()
           .position(|&(a, b)| (a == xi && b == yi) || (a == yi && b == xi))
       });
-      match found {
-        Some(i) => Ok(Expr::Integer((i + 1) as i128)),
-        None => {
-          inv("edge", &args[1]);
-          Ok(unevaluated())
-        }
+      if let Some(i) = found {
+        Ok(Expr::Integer((i + 1) as i128))
+      } else {
+        inv("edge", &args[1]);
+        Ok(unevaluated())
       }
     }
     _ => Ok(unevaluated()),
@@ -7167,9 +7131,8 @@ pub fn graph_assortativity_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("GraphAssortativity", args);
-  let (n, pairs) = match parse_undirected_graph_pairs(&args[0]) {
-    Some(g) => g,
-    None => return Ok(unevaluated()),
+  let Some((n, pairs)) = parse_undirected_graph_pairs(&args[0]) else {
+    return Ok(unevaluated());
   };
   let mut simple: Vec<(usize, usize)> = pairs
     .iter()
@@ -7271,7 +7234,7 @@ pub fn vertex_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } => vec![((**pattern).clone(), (**replacement).clone())],
     Expr::List(items) => {
       let mut out = Vec::with_capacity(items.len());
-      for item in items.iter() {
+      for item in items {
         let Expr::Rule {
           pattern,
           replacement,
@@ -7290,8 +7253,7 @@ pub fn vertex_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     rules
       .iter()
       .find(|(from, _)| crate::syntax::expr_to_string(from) == key)
-      .map(|(_, to)| to.clone())
-      .unwrap_or_else(|| v.clone())
+      .map_or_else(|| v.clone(), |(_, to)| to.clone())
   };
   let mut new_vertices: Vec<Expr> = Vec::with_capacity(vertices.len());
   for v in &vertices {
@@ -7625,7 +7587,7 @@ fn item_annotation_keys(
   let mut names: Vec<String> = scope
     .base_properties()
     .iter()
-    .map(|p| p.to_string())
+    .map(std::string::ToString::to_string)
     .collect();
   // An annotation the graph sets for this item joins the list; one it sets for
   // other items only, or one that describes the graph as a whole, does not.
@@ -7781,7 +7743,7 @@ pub fn graph_annotation_delete_ast(
     Some(Expr::Identifier(key)) => Some(vec![key.clone()]),
     Some(Expr::List(keys)) => {
       let mut out = Vec::with_capacity(keys.len());
-      for key in keys.iter() {
+      for key in keys {
         let Expr::Identifier(key) = key else {
           return Ok(original());
         };
@@ -7945,7 +7907,7 @@ pub fn graph_options_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Identifier(s) => vec![s.clone()],
     Expr::List(items) => {
       let mut out = Vec::with_capacity(items.len());
-      for item in items.iter() {
+      for item in items {
         let Expr::Identifier(s) = item else {
           return Ok(original());
         };
@@ -8047,7 +8009,7 @@ pub fn graph_property_list_ast(
   }
   let mut names: Vec<String> = BASE_GRAPH_PROPERTIES
     .iter()
-    .map(|p| p.to_string())
+    .map(std::string::ToString::to_string)
     .collect();
   names.append(&mut extra);
   sort_property_names(&mut names);
@@ -8112,15 +8074,13 @@ pub fn edge_tagged_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let tag = existing_tag.unwrap_or_else(|| {
       let key = format!("{head}:{a:?}:{b:?}");
-      let count = match seen.iter_mut().find(|(k, _)| *k == key) {
-        Some((_, n)) => {
-          *n += 1;
-          *n
-        }
-        None => {
-          seen.push((key, 1));
-          1
-        }
+      let count = if let Some((_, n)) = seen.iter_mut().find(|(k, _)| *k == key)
+      {
+        *n += 1;
+        *n
+      } else {
+        seen.push((key, 1));
+        1
       };
       Expr::Integer(count as i128)
     });

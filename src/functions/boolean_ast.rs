@@ -52,7 +52,7 @@ fn splice_flat_head(
 ) {
   match expr {
     Expr::FunctionCall { name, args } if name == head => {
-      for a in args.iter() {
+      for a in args {
         splice_flat_head(a, op, head, out);
       }
     }
@@ -121,7 +121,7 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         operators,
       } = &evaluated
         && operators.len() == 1
-        && let Some(neg_op) = negate_comparison_op(&operators[0])
+        && let Some(neg_op) = negate_comparison_op(operators[0])
       {
         return Ok(Expr::Comparison {
           operands: operands.clone(),
@@ -136,7 +136,7 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-fn negate_comparison_op(op: &ComparisonOp) -> Option<ComparisonOp> {
+fn negate_comparison_op(op: ComparisonOp) -> Option<ComparisonOp> {
   match op {
     ComparisonOp::Equal => Some(ComparisonOp::NotEqual),
     ComparisonOp::NotEqual => Some(ComparisonOp::Equal),
@@ -386,8 +386,7 @@ pub fn which_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ("argct", "arguments")
     };
     crate::emit_message(&format!(
-      "Which::{}: Which called with {} {}.",
-      tag, n, word
+      "Which::{tag}: Which called with {n} {word}."
     ));
     return Ok(unevaluated("Which", args));
   }
@@ -671,7 +670,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Check if all args are numeric
   let nums: Vec<Option<f64>> = args.iter().map(try_eval_to_f64).collect();
-  if nums.iter().all(|n| n.is_some()) {
+  if nums.iter().all(std::option::Option::is_some) {
     // `Equal` compares machine-precision Reals up to the last ~7 bits (the
     // f64 "guard" bits wolframscript ignores). Promote to exact comparison
     // only if no operand is a Real; otherwise two values that differ by at
@@ -818,19 +817,19 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Two operands also count as "equal" when they share head and arity with
   // every leaf determinably equal, e.g. RGBColor[0., 0., 1.] != RGBColor[0,
   // 0, 1] is False.
-  if !has_free {
+  if has_free {
+    for i in 0..strs.len() - 1 {
+      if strs[i] == strs[i + 1] || all_components_equal(&args[i], &args[i + 1])
+      {
+        return Ok(bool_expr(false));
+      }
+    }
+  } else {
     for i in 0..strs.len() {
       for j in i + 1..strs.len() {
         if strs[i] == strs[j] || all_components_equal(&args[i], &args[j]) {
           return Ok(bool_expr(false));
         }
-      }
-    }
-  } else {
-    for i in 0..strs.len() - 1 {
-      if strs[i] == strs[i + 1] || all_components_equal(&args[i], &args[i + 1])
-      {
-        return Ok(bool_expr(false));
       }
     }
   }
@@ -846,7 +845,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Check if all args are numeric
   let nums: Vec<Option<f64>> = args.iter().map(try_eval_to_f64).collect();
-  if nums.iter().all(|n| n.is_some()) {
+  if nums.iter().all(std::option::Option::is_some) {
     // All numeric and pairwise different (checked above via strings)
     return Ok(bool_expr(true));
   }
@@ -1267,7 +1266,7 @@ fn canonicalize_dnf(expr: &Expr) -> Expr {
   let mut clauses: Vec<Vec<(String, bool, Expr)>> = Vec::new();
   for c in &clause_exprs {
     match clause_lits(c) {
-      None => continue,
+      None => {}
       Some(lits) => {
         if lits.is_empty() {
           // An empty conjunction is `True`, which absorbs the whole Or.
@@ -2153,7 +2152,7 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::FunctionCall { name, args } if name == "Or" || name == "And" => {
           let mut names = Vec::with_capacity(args.len());
           let mut polarities = Vec::with_capacity(args.len());
-          for arg in args.iter() {
+          for arg in args {
             let (n, p) = sort_key(arg);
             names.extend(n);
             polarities.extend(p);
@@ -2397,7 +2396,7 @@ pub fn tautology_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return unevaluated();
     };
     let mut v = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       match item {
         Expr::Identifier(name) => v.push(name.clone()),
         _ => return unevaluated(),
@@ -2511,7 +2510,7 @@ pub fn boolean_minimize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let cover = greedy_cover(&prime_implicants, &minterms);
 
   // Convert to Boolean expression
-  implicants_to_expr(&cover, &var_list)
+  Ok(implicants_to_expr(&cover, &var_list))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -2549,7 +2548,7 @@ fn quine_mccluskey(minterms: &[u64], n: usize) -> Vec<Implicant> {
           continue;
         }
         let diff = current[i].value ^ current[j].value;
-        if diff.count_ones() == 1 {
+        if diff.is_power_of_two() {
           let new_mask = current[i].mask & !diff;
           let new_value = current[i].value & new_mask;
           let merged = Implicant {
@@ -2634,9 +2633,9 @@ fn greedy_cover(primes: &[Implicant], minterms: &[u64]) -> Vec<Implicant> {
 fn implicants_to_expr(
   implicants: &[Implicant],
   vars: &[String],
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   if implicants.is_empty() {
-    return Ok(bool_expr(false));
+    return bool_expr(false);
   }
 
   // wolframscript writes the terms in descending order of their literal
@@ -2688,9 +2687,9 @@ fn implicants_to_expr(
   }
 
   if terms.len() == 1 {
-    Ok(terms.remove(0))
+    terms.remove(0)
   } else {
-    Ok(call("Or", terms))
+    call("Or", terms)
   }
 }
 
@@ -2751,7 +2750,7 @@ pub fn boolean_counting_function_ast(
   let vars: Vec<String> = match &args[1] {
     Expr::List(items) => {
       let mut out = Vec::with_capacity(items.len());
-      for it in items.iter() {
+      for it in items {
         if let Expr::Identifier(s) = it {
           out.push(s.clone());
         } else {
@@ -2845,7 +2844,7 @@ fn parse_counting_spec(spec: &Expr, n: usize) -> Option<Vec<usize>> {
         Expr::Integer(_) => None,
         Expr::List(counts) => {
           let mut out = Vec::with_capacity(counts.len());
-          for c in counts.iter() {
+          for c in counts {
             let Expr::Integer(k) = c else {
               return None;
             };
@@ -3058,34 +3057,31 @@ fn or_of(mut terms: Vec<Expr>) -> Expr {
 /// VectorLess[{v1, v2, ...}] - componentwise strict less-than comparison
 /// Returns True if for each consecutive pair, every component is strictly less.
 pub fn vector_less_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  vector_compare_ast(args, "VectorLess", false)
+  Ok(vector_compare_ast(args, "VectorLess", false))
 }
 
 /// VectorLessEqual[{v1, v2, ...}] - componentwise less-than-or-equal comparison
 /// Returns True if for each consecutive pair, every component is less than or equal.
 pub fn vector_less_equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  vector_compare_ast(args, "VectorLessEqual", true)
+  Ok(vector_compare_ast(args, "VectorLessEqual", true))
 }
 
 fn vector_compare_ast(
   args: &[Expr],
   name: &str,
   allow_equal: bool,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   // VectorLess/VectorLessEqual takes exactly 1 argument: a list of vectors/scalars
   if args.len() != 1 {
-    return Ok(unevaluated(name, args));
+    return unevaluated(name, args);
   }
 
-  let items = match &args[0] {
-    Expr::List(list_args) => list_args,
-    _ => {
-      return Ok(unevaluated(name, args));
-    }
+  let Expr::List(items) = &args[0] else {
+    return unevaluated(name, args);
   };
 
   if items.len() < 2 {
-    return Ok(unevaluated(name, args));
+    return unevaluated(name, args);
   }
 
   // Check if items are vectors (lists) or scalars
@@ -3093,62 +3089,45 @@ fn vector_compare_ast(
     let a = &items[i];
     let b = &items[i + 1];
 
-    match (a, b) {
-      // Both are lists (vectors)
-      (Expr::List(args_a), Expr::List(args_b)) => {
-        // Mismatched lengths → False
-        if args_a.len() != args_b.len() {
-          return Ok(bool_expr(false));
-        }
-        // Empty vectors → True (vacuously), continue to next pair
-        for (ea, eb) in args_a.iter().zip(args_b.iter()) {
-          let na = match expr_to_num(ea) {
-            Some(n) => n,
-            None => {
-              return Ok(unevaluated(name, args));
-            }
-          };
-          let nb = match expr_to_num(eb) {
-            Some(n) => n,
-            None => {
-              return Ok(unevaluated(name, args));
-            }
-          };
-          if allow_equal {
-            if na > nb {
-              return Ok(bool_expr(false));
-            }
-          } else if na >= nb {
-            return Ok(bool_expr(false));
-          }
-        }
+    if let (Expr::List(args_a), Expr::List(args_b)) = (a, b) {
+      // Mismatched lengths → False
+      if args_a.len() != args_b.len() {
+        return bool_expr(false);
       }
-      // Both are scalars
-      _ => {
-        let na = match expr_to_num(a) {
-          Some(n) => n,
-          None => {
-            return Ok(unevaluated(name, args));
-          }
+      // Empty vectors → True (vacuously), continue to next pair
+      for (ea, eb) in args_a.iter().zip(args_b.iter()) {
+        let Some(na) = expr_to_num(ea) else {
+          return unevaluated(name, args);
         };
-        let nb = match expr_to_num(b) {
-          Some(n) => n,
-          None => {
-            return Ok(unevaluated(name, args));
-          }
+        let Some(nb) = expr_to_num(eb) else {
+          return unevaluated(name, args);
         };
         if allow_equal {
           if na > nb {
-            return Ok(bool_expr(false));
+            return bool_expr(false);
           }
         } else if na >= nb {
-          return Ok(bool_expr(false));
+          return bool_expr(false);
         }
+      }
+    } else {
+      let Some(na) = expr_to_num(a) else {
+        return unevaluated(name, args);
+      };
+      let Some(nb) = expr_to_num(b) else {
+        return unevaluated(name, args);
+      };
+      if allow_equal {
+        if na > nb {
+          return bool_expr(false);
+        }
+      } else if na >= nb {
+        return bool_expr(false);
       }
     }
   }
 
-  Ok(bool_expr(true))
+  bool_expr(true)
 }
 
 // ---------------------------------------------------------------------------
@@ -3187,12 +3166,12 @@ fn collect_boolean_variable_exprs(expr: &Expr, out: &mut Vec<Expr>) {
           | "Majority"
       ) =>
     {
-      for arg in args.iter() {
+      for arg in args {
         collect_boolean_variable_exprs(arg, out);
       }
     }
     Expr::List(items) => {
-      for item in items.iter() {
+      for item in items {
         collect_boolean_variable_exprs(item, out);
       }
     }
@@ -3263,11 +3242,11 @@ pub fn boolean_variables_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Resolve the variable list for the 1- or 2-argument satisfiability forms.
-fn satisfiability_vars(args: &[Expr]) -> Option<Vec<Expr>> {
+fn satisfiability_vars(args: &[Expr]) -> std::vec::Vec<crate::syntax::Expr> {
   if args.len() == 2 {
     match &args[1] {
-      Expr::List(items) => Some(items.iter().cloned().collect()),
-      single => Some(vec![single.clone()]),
+      Expr::List(items) => items.iter().cloned().collect(),
+      single => vec![single.clone()],
     }
   } else {
     let mut vars = Vec::new();
@@ -3275,7 +3254,7 @@ fn satisfiability_vars(args: &[Expr]) -> Option<Vec<Expr>> {
     vars.sort_by(|a, b| {
       (-crate::functions::list_helpers_ast::compare_exprs(a, b)).cmp(&0)
     });
-    Some(vars)
+    vars
   }
 }
 
@@ -3309,10 +3288,10 @@ fn count_satisfying(
 /// SatisfiableQ[expr] / SatisfiableQ[expr, vars]
 pub fn satisfiable_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("SatisfiableQ", args);
-  let vars = match satisfiability_vars(args) {
-    Some(v) if v.len() <= 24 => v,
-    _ => return Ok(unevaluated()),
-  };
+  let vars = satisfiability_vars(args);
+  if vars.len() > 24 {
+    return Ok(unevaluated());
+  }
   // Short-circuiting variant of count_satisfying: stop at the first True.
   let n = vars.len();
   for idx in 0..(1u64 << n) {
@@ -3354,10 +3333,10 @@ pub fn satisfiability_count_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("SatisfiabilityCount", args);
-  let vars = match satisfiability_vars(args) {
-    Some(v) if v.len() <= 24 => v,
-    _ => return Ok(unevaluated()),
-  };
+  let vars = satisfiability_vars(args);
+  if vars.len() > 24 {
+    return Ok(unevaluated());
+  }
   match count_satisfying(&args[0], &vars)? {
     (count, None) => Ok(Expr::Integer(count as i128)),
     // Non-Boolean evaluation: stay unevaluated (wolframscript is silent
@@ -3448,12 +3427,9 @@ pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Each minterm becomes a bit row over a prefix of the variables
   let mut rows: Vec<Vec<bool>> = Vec::new();
-  let spec_items = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      bspec();
-      return Ok(unevaluated());
-    }
+  let Expr::List(spec_items) = &args[0] else {
+    bspec();
+    return Ok(unevaluated());
   };
   let all_ints = spec_items
     .iter()
@@ -3464,7 +3440,7 @@ pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ))
   });
   if all_ints && !spec_items.is_empty() {
-    for i in spec_items.iter() {
+    for i in spec_items {
       let Expr::Integer(v) = i else { unreachable!() };
       let idx = (*v as u64) % (1u64 << nvars);
       rows.push(
@@ -3476,7 +3452,7 @@ pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else if all_rows {
     // Rows must share one length (at most the variable count)
     let mut row_len: Option<usize> = None;
-    for i in spec_items.iter() {
+    for i in spec_items {
       let Expr::List(cells) = i else { unreachable!() };
       if cells.len() > nvars
         || *row_len.get_or_insert(cells.len()) != cells.len()
@@ -3660,12 +3636,9 @@ pub fn boolean_maxterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   }
   let mut rows: Vec<Vec<bool>> = Vec::new();
-  let spec_items = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      bspec();
-      return Ok(unevaluated());
-    }
+  let Expr::List(spec_items) = &args[0] else {
+    bspec();
+    return Ok(unevaluated());
   };
   let all_ints = spec_items
     .iter()
@@ -3676,7 +3649,7 @@ pub fn boolean_maxterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ))
   });
   if all_ints && !spec_items.is_empty() {
-    for i in spec_items.iter() {
+    for i in spec_items {
       let Expr::Integer(v) = i else { unreachable!() };
       let idx = (*v as u64) % (1u64 << nvars);
       rows.push(
@@ -3687,7 +3660,7 @@ pub fn boolean_maxterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   } else if all_rows {
     let mut row_len: Option<usize> = None;
-    for i in spec_items.iter() {
+    for i in spec_items {
       let Expr::List(cells) = i else { unreachable!() };
       if cells.len() > nvars
         || *row_len.get_or_insert(cells.len()) != cells.len()

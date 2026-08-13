@@ -63,16 +63,12 @@ fn decode_entities(text: &str) -> String {
         .and_then(char::from_u32)
         .map(|c| c.to_string()),
     };
-    match decoded {
-      Some(text) => {
-        out.push_str(&text);
-        rest = &after[end + 1..];
-      }
-      // An unknown entity is left as written.
-      None => {
-        out.push('&');
-        rest = after;
-      }
+    if let Some(text) = decoded {
+      out.push_str(&text);
+      rest = &after[end + 1..];
+    } else {
+      out.push('&');
+      rest = after;
     }
   }
   out.push_str(rest);
@@ -151,7 +147,7 @@ impl<'a> Parser<'a> {
     loop {
       self.skip_whitespace();
       match self.peek() {
-        Some(b'>') | Some(b'/') | Some(b'?') | None => return Ok(attributes),
+        Some(b'>' | b'/' | b'?') | None => return Ok(attributes),
         _ => {}
       }
       let name = self.parse_name()?;
@@ -161,9 +157,8 @@ impl<'a> Parser<'a> {
       }
       self.pos += 1;
       self.skip_whitespace();
-      let quote = match self.peek() {
-        Some(q @ (b'"' | b'\'')) => q,
-        _ => return self.error(),
+      let Some(quote @ (b'"' | b'\'')) = self.peek() else {
+        return self.error();
       };
       self.pos += 1;
       let start = self.pos;
@@ -470,8 +465,7 @@ fn xml_name(expr: &Expr, prefixes: &[(String, String)]) -> Option<String> {
         .iter()
         .rev()
         .find(|(_, u)| u == uri)
-        .map(|(p, _)| p.as_str())
-        .unwrap_or(uri);
+        .map_or(uri.as_str(), |(p, _)| p.as_str());
       Some(format!("{prefix}:{local}"))
     }
     _ => None,
@@ -484,7 +478,7 @@ fn declared_prefixes(attributes: &Expr) -> Vec<(String, String)> {
     return Vec::new();
   };
   let mut out = Vec::new();
-  for a in items.iter() {
+  for a in items {
     let (Expr::Rule {
       pattern,
       replacement,
@@ -537,7 +531,7 @@ fn prolog_to_string(prolog: &Expr) -> Option<String> {
     return None;
   };
   let mut out = String::new();
-  for item in items.iter() {
+  for item in items {
     if let Some(options) = xml_object(item, "Declaration") {
       out.push_str("<?xml");
       for option in options {
@@ -598,7 +592,7 @@ fn xml_to_string_at(
       let tag = xml_name(&args[0], prefixes)?;
       let mut out = format!("<{tag}");
       if let Expr::List(attributes) = &args[1] {
-        for a in attributes.iter() {
+        for a in attributes {
           let (Expr::Rule {
             pattern,
             replacement,
@@ -617,9 +611,8 @@ fn xml_to_string_at(
           out.push_str(&format!(" {key}='{}'", escape_attribute(value)));
         }
       }
-      let children = match &args[2] {
-        Expr::List(items) => items,
-        _ => return None,
+      let Expr::List(children) = &args[2] else {
+        return None;
       };
       if children.is_empty() {
         out.push_str(" />");
@@ -631,7 +624,7 @@ fn xml_to_string_at(
       });
       out.push('>');
       if all_elements {
-        for child in children.iter() {
+        for child in children {
           out.push('\n');
           out.push_str(&" ".repeat(depth + 1));
           out.push_str(&xml_to_string_at(child, depth + 1, prefixes)?);
@@ -639,7 +632,7 @@ fn xml_to_string_at(
         out.push('\n');
         out.push_str(&" ".repeat(depth));
       } else {
-        for child in children.iter() {
+        for child in children {
           out.push_str(&xml_to_string_at(child, depth, prefixes)?);
         }
       }
@@ -707,7 +700,7 @@ fn collect_tags(expr: &Expr, out: &mut Vec<String>) {
       _ => {}
     }
     if let Expr::List(children) = &args[2] {
-      for child in children.iter() {
+      for child in children {
         collect_tags(child, out);
       }
     }
@@ -722,7 +715,7 @@ fn collect_text(expr: &Expr, out: &mut Vec<String>) {
       if name == "XMLElement" && args.len() == 3 =>
     {
       if let Expr::List(children) = &args[2] {
-        for child in children.iter() {
+        for child in children {
           collect_text(child, out);
         }
       }

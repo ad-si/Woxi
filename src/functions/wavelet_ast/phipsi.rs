@@ -42,17 +42,14 @@ fn wrap_real_if_numeric(x: &Expr, v: f64) -> Expr {
 }
 
 pub fn wavelet_psi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  wavelet_phi_psi_ast(args, false)
+  Ok(wavelet_phi_psi_ast(args, false))
 }
 
 pub fn wavelet_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  wavelet_phi_psi_ast(args, true)
+  Ok(wavelet_phi_psi_ast(args, true))
 }
 
-fn wavelet_phi_psi_ast(
-  args: &[Expr],
-  phi: bool,
-) -> Result<Expr, InterpreterError> {
+fn wavelet_phi_psi_ast(args: &[Expr], phi: bool) -> crate::syntax::Expr {
   let fname = if phi { "WaveletPhi" } else { "WaveletPsi" };
   let positional: Vec<&Expr> = args
     .iter()
@@ -62,13 +59,13 @@ fn wavelet_phi_psi_ast(
     crate::emit_message(&format!(
       "{fname}::argt: {fname} called with an invalid number of arguments."
     ));
-    return Ok(unevaluated(fname, args));
+    return unevaluated(fname, args);
   }
   let wave = positional[0];
   // The pure-function form WaveletPhi[wave] would be an
   // InterpolatingFunction; only the explicit-formula families produce one.
   let Some(x) = positional.get(1) else {
-    return Ok(unevaluated(fname, args));
+    return unevaluated(fname, args);
   };
   let dual = matches!(positional.get(2), Some(Expr::String(s)) if s == "Dual");
 
@@ -80,17 +77,17 @@ fn wavelet_phi_psi_ast(
         fname,
         expr_to_string(wave)
       ));
-      return Ok(unevaluated(fname, args));
+      return unevaluated(fname, args);
     }
     let result = continuous_psi(&cspec, x);
     // Inexact input gives a fully numeric result.
     if num(x).is_some() && matches!(x, Expr::Real(_) | Expr::BigFloat(_, _)) {
-      return Ok(eval(Expr::FunctionCall {
+      return eval(Expr::FunctionCall {
         name: "N".to_string(),
         args: vec![result.clone()].into(),
-      }));
+      });
     }
-    return Ok(result);
+    return result;
   }
 
   let Some(spec) = parse_discrete_wavelet(wave) else {
@@ -99,37 +96,31 @@ fn wavelet_phi_psi_ast(
       fname,
       expr_to_string(wave)
     ));
-    return Ok(unevaluated(fname, args));
+    return unevaluated(fname, args);
   };
 
   match &spec {
-    WaveletSpec::Haar => Ok(haar_phi_psi(x, phi)),
-    WaveletSpec::Shannon(_) => Ok(shannon_phi_psi(x, phi)),
+    WaveletSpec::Haar => haar_phi_psi(x, phi),
+    WaveletSpec::Shannon(_) => shannon_phi_psi(x, phi),
     WaveletSpec::Meyer(n, _) => match num(x) {
-      Some(t) => Ok(wrap_real_if_numeric(x, meyer_phi_psi_numeric(*n, t, phi))),
-      None => Ok(unevaluated(fname, args)),
+      Some(t) => wrap_real_if_numeric(x, meyer_phi_psi_numeric(*n, t, phi)),
+      None => unevaluated(fname, args),
     },
     WaveletSpec::BattleLemarie(_, _) => match num(x) {
       Some(t) => {
         let filters = wavelet_filters(&spec).unwrap();
-        Ok(wrap_real_if_numeric(
-          x,
-          cascade_eval(&filters, t, phi, dual),
-        ))
+        wrap_real_if_numeric(x, cascade_eval(&filters, t, phi, dual))
       }
-      None => Ok(unevaluated(fname, args)),
+      None => unevaluated(fname, args),
     },
     _ => match num(x) {
       Some(t) => {
         let Some(filters) = wavelet_filters(&spec) else {
-          return Ok(unevaluated(fname, args));
+          return unevaluated(fname, args);
         };
-        Ok(wrap_real_if_numeric(
-          x,
-          cascade_eval(&filters, t, phi, dual),
-        ))
+        wrap_real_if_numeric(x, cascade_eval(&filters, t, phi, dual))
       }
-      None => Ok(unevaluated(fname, args)),
+      None => unevaluated(fname, args),
     },
   }
 }

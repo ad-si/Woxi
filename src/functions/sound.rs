@@ -45,12 +45,12 @@ fn collect_segments(expr: &Expr, out: &mut Vec<(Vec<f64>, u32)>) {
       }
     }
     Expr::FunctionCall { args, .. } => {
-      for a in args.iter() {
+      for a in args {
         collect_segments(a, out);
       }
     }
     Expr::List(items) => {
-      for a in items.iter() {
+      for a in items {
         collect_segments(a, out);
       }
     }
@@ -71,15 +71,14 @@ fn sample_sampled_sound_list(args: &[Expr]) -> Option<(Vec<f64>, u32)> {
     return None;
   }
   let mut samples = Vec::with_capacity(items.len());
-  for it in items.iter() {
+  for it in items {
     samples.push(try_eval_to_f64(it)?.clamp(-1.0, 1.0));
   }
   let rate = args
     .get(1)
     .and_then(try_eval_to_f64)
     .filter(|r| *r > 0.0)
-    .map(|r| r.round() as u32)
-    .unwrap_or(SAMPLE_RATE);
+    .map_or(SAMPLE_RATE, |r| r.round() as u32);
   Some((samples, rate))
 }
 
@@ -333,7 +332,7 @@ pub(crate) const AUDIO_SAMPLE_RATE: f64 = 44100.0;
 /// `default` when absent or non-positive. Both the `Expr::Rule` form and the
 /// `Rule[SampleRate, r]` function-call form are recognised.
 fn option_sample_rate(opts: &[Expr], default: f64) -> f64 {
-  for opt in opts.iter() {
+  for opt in opts {
     let Some((key, value)) = rule_parts(opt) else {
       continue;
     };
@@ -393,7 +392,7 @@ pub fn list_play(args: &[Expr]) -> Option<Expr> {
     return None;
   }
   let mut data = Vec::with_capacity(items.len());
-  for it in items.iter() {
+  for it in items {
     data.push(try_eval_to_f64(it)?);
   }
   let min = data.iter().copied().fold(f64::INFINITY, f64::min);
@@ -532,8 +531,7 @@ pub fn audio_to_output(expr: &Expr) -> Option<AudioOutput> {
       .unwrap_or_default();
     let label = std::path::Path::new(&path)
       .file_name()
-      .map(|f| f.to_string_lossy().into_owned())
-      .unwrap_or_else(|| path.clone());
+      .map_or_else(|| path.clone(), |f| f.to_string_lossy().into_owned());
     return Some(AudioOutput {
       base64,
       mime,

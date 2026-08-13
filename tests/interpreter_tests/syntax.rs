@@ -1169,7 +1169,7 @@ mod full_form {
       interpret("ToString[FullForm[1/((1 + x) (5 + x))]]").unwrap();
     let apart_original = interpret("Apart[1/((1 + x) (5 + x))]").unwrap();
     let apart_from_full_form =
-      interpret(&format!("Apart[{}]", full_form)).unwrap();
+      interpret(&format!("Apart[{full_form}]")).unwrap();
     assert_eq!(
       apart_original, apart_from_full_form,
       "Apart of FullForm output should match Apart of original"
@@ -5679,7 +5679,7 @@ mod grid {
       "f[x_] := x^2; values = Table[{i, f[i]}, {i, 1, 10, 1}]; PrependTo[values, {\"x\", \"x^2\"}]; TraditionalForm[Grid[values, Frame -> All]]"
     )
     .unwrap();
-    assert!(out.starts_with("TraditionalForm[Grid["), "got: {}", out);
+    assert!(out.starts_with("TraditionalForm[Grid["), "got: {out}");
     assert!(out.contains("x^2"));
   }
 
@@ -5738,7 +5738,7 @@ mod text_grid {
       "TextGrid[{{\"item 1\", \"item 2\"}, {\"item 3\", \"item 4\"}}, Frame -> All]",
     )
     .unwrap();
-    assert!(out.starts_with("TextGrid["), "got: {}", out);
+    assert!(out.starts_with("TextGrid["), "got: {out}");
   }
 
   #[test]
@@ -7944,8 +7944,7 @@ mod complex_expand {
     assert!(
       result == "Cosh[y]*Sin[x] + I*Cos[x]*Sinh[y]"
         || result == "I*Cos[x]*Sinh[y] + Cosh[y]*Sin[x]",
-      "Got: {}",
-      result
+      "Got: {result}"
     );
   }
 
@@ -8206,8 +8205,7 @@ mod boolean_minimize {
     let result = interpret("BooleanMinimize[Implies[a, b]]").unwrap();
     assert!(
       result == " !a || b" || result == "b ||  !a",
-      "Got: {}",
-      result
+      "Got: {result}"
     );
   }
 
@@ -8216,8 +8214,8 @@ mod boolean_minimize {
     clear_state();
     // Xor[a, b] → (a && !b) || (!a && b)
     let result = interpret("BooleanMinimize[Xor[a, b]]").unwrap();
-    assert!(result.contains("&&"), "Got: {}", result);
-    assert!(result.contains("||"), "Got: {}", result);
+    assert!(result.contains("&&"), "Got: {result}");
+    assert!(result.contains("||"), "Got: {result}");
   }
 
   #[test]

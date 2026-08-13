@@ -9,8 +9,8 @@ use super::transforms::CoefArray;
 #[allow(unused_imports)]
 use super::*;
 
-fn call(name: &str, args: Vec<Expr>) -> Result<Expr, InterpreterError> {
-  crate::evaluator::evaluate_function_call_ast(name, &args)
+fn call(name: &str, args: &[Expr]) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_function_call_ast(name, args)
 }
 
 fn apply_func(
@@ -85,9 +85,9 @@ pub fn wavelet_scalogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     winds.sort_by_key(|w| (w.len(), w.clone()));
     for w in &winds {
       let Some(coef) = dwd.coef(w) else { continue };
-      let values = match apply_func(func, coef, super::data::wind_to_expr(w)) {
-        Some(v) => v,
-        None => continue,
+      let Some(values) = apply_func(func, coef, super::data::wind_to_expr(w))
+      else {
+        continue;
       };
       let values: Vec<f64> = if func.is_none() {
         values.iter().map(|v| v.abs()).collect()
@@ -130,7 +130,7 @@ pub fn wavelet_scalogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect::<Vec<_>>()
       .into(),
   );
-  call("ArrayPlot", vec![matrix])
+  call("ArrayPlot", &[matrix])
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +210,7 @@ pub fn wavelet_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if series.is_empty() {
     return Ok(unevaluated(fname, args));
   }
-  call("ListLinePlot", vec![Expr::List(series.into())])
+  call("ListLinePlot", &[Expr::List(series.into())])
 }
 
 // ---------------------------------------------------------------------------
@@ -288,12 +288,12 @@ fn pyramid_matrix(
     let rows_bottom = hl.len().max(hh.len());
     let cols_left = ll
       .first()
-      .map_or(0, |r| r.len())
-      .max(hl.first().map_or(0, |r| r.len()));
+      .map_or(0, std::vec::Vec::len)
+      .max(hl.first().map_or(0, std::vec::Vec::len));
     let cols_right = lh
       .first()
-      .map_or(0, |r| r.len())
-      .max(hh.first().map_or(0, |r| r.len()));
+      .map_or(0, std::vec::Vec::len)
+      .max(hh.first().map_or(0, std::vec::Vec::len));
     let mut out = Vec::new();
     for i in 0..rows_top {
       let mut row = Vec::new();
@@ -379,9 +379,9 @@ fn matrix_or_image_plot(
       .into(),
   );
   if image {
-    call("Image", vec![matrix_expr])
+    call("Image", &[matrix_expr])
   } else {
-    call("MatrixPlot", vec![matrix_expr])
+    call("MatrixPlot", &[matrix_expr])
   }
 }
 

@@ -30,16 +30,13 @@ mod machine_specific {
     let actual = match interpret(input) {
       Ok(s) => s,
       Err(e) => panic!(
-        "Woxi returned error: {:?}\n  input:    {}\n  expected: {}",
-        e, input, expected
+        "Woxi returned error: {e:?}\n  input:    {input}\n  expected: {expected}"
       ),
     };
-    if normalise(&actual) != normalise(expected) {
-      panic!(
-        "output mismatch\n  input:    {}\n  expected: {}\n  actual:   {}",
-        input, expected, actual
-      );
-    }
+    assert!(
+      normalise(&actual) == normalise(expected),
+      "output mismatch\n  input:    {input}\n  expected: {expected}\n  actual:   {actual}"
+    );
   }
 
   fn host_home() -> String {
@@ -84,7 +81,7 @@ mod machine_specific {
   fn host_machine_name() -> String {
     let mut buf = [0u8; 256];
     let ret = unsafe {
-      libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len())
+      libc::gethostname(buf.as_mut_ptr().cast::<libc::c_char>(), buf.len())
     };
     assert_eq!(ret, 0, "gethostname() failed");
     let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
@@ -163,7 +160,7 @@ mod machine_specific {
     } else {
       "/usr/share/Wolfram"
     };
-    assert_eval(r#"$BaseDirectory"#, &format!(r#""{}""#, root));
+    assert_eval(r#"$BaseDirectory"#, &format!(r#""{root}""#));
   }
 
   #[test]
@@ -189,7 +186,7 @@ mod machine_specific {
       .expect("current_dir has no parent")
       .to_string_lossy()
       .into_owned();
-    assert_eval(r#"ParentDirectory[]"#, &format!(r#""{}""#, parent));
+    assert_eval(r#"ParentDirectory[]"#, &format!(r#""{parent}""#));
   }
 
   #[test]
@@ -198,7 +195,7 @@ mod machine_specific {
       r#""{}/ExampleData/sunflowers.jpg""#,
       host_initial_dir().trim_end_matches('/'),
     )
-    .replace("/", std::path::MAIN_SEPARATOR_STR);
+    .replace('/', std::path::MAIN_SEPARATOR_STR);
     assert_eval(r#"ExpandFileName["ExampleData/sunflowers.jpg"]"#, &expected);
   }
 
@@ -213,7 +210,7 @@ mod machine_specific {
     } else {
       "Unknown"
     };
-    assert_eval(r#"$OperatingSystem"#, &format!(r#""{}""#, os));
+    assert_eval(r#"$OperatingSystem"#, &format!(r#""{os}""#));
   }
 }
 

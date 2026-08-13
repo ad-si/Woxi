@@ -104,10 +104,10 @@ pub(crate) fn normalize_date_components(items: &[Expr]) -> Option<Vec<Expr>> {
     }
   };
   let mut y = as_i64(&items[0])?;
-  let mut mo = items.get(1).map(&as_i64).unwrap_or(Some(1))?;
-  let mut d = items.get(2).map(&as_i64).unwrap_or(Some(1))?;
-  let mut h = items.get(3).map(&as_i64).unwrap_or(Some(0))?;
-  let mut mi = items.get(4).map(&as_i64).unwrap_or(Some(0))?;
+  let mut mo = items.get(1).map_or(Some(1), &as_i64)?;
+  let mut d = items.get(2).map_or(Some(1), &as_i64)?;
+  let mut h = items.get(3).map_or(Some(0), &as_i64)?;
+  let mut mi = items.get(4).map_or(Some(0), &as_i64)?;
   let (mut s, s_is_real) = match items.get(5) {
     None => (0.0, false),
     Some(Expr::Integer(n)) => (i64::try_from(*n).ok()? as f64, false),
@@ -175,8 +175,8 @@ pub fn day_count_weekday_ast(
     let c = extract_date_components(e)?;
     Some((
       *c.first()? as i64,
-      c.get(1).map(|v| *v as i64).unwrap_or(1),
-      c.get(2).map(|v| *v as i64).unwrap_or(1),
+      c.get(1).map_or(1, |v| *v as i64),
+      c.get(2).map_or(1, |v| *v as i64),
     ))
   };
   let (y1, m1, dd1) = ymd(d1)?;
@@ -326,7 +326,7 @@ pub fn calendar_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )
   };
   let mut granularity = "Day";
-  for a in dargs[1..].iter() {
+  for a in &dargs[1..] {
     if let Some(t) = token(a) {
       if is_calendar(t) && t != "Gregorian" {
         return unevaluated();
@@ -460,10 +460,10 @@ pub(crate) fn absolute_seconds_to_date(
 /// Normalize a date list, handling fractional days, overflow months, etc.
 /// Input: {y, m, d, h, min, sec} where some values can be fractional or out of range
 fn normalize_date(components: &[f64]) -> (i64, i64, i64, i64, i64, f64) {
-  let year = if !components.is_empty() {
-    components[0] as i64
-  } else {
+  let year = if components.is_empty() {
     1900
+  } else {
+    components[0] as i64
   };
   let month = if components.len() > 1 {
     components[1]
@@ -1218,13 +1218,13 @@ fn date_interval_endpoint(iargs: &[Expr], want_max: bool) -> Option<Expr> {
     return None;
   };
   let granularity = match iargs.get(1) {
-    Some(Expr::Identifier(g)) | Some(Expr::String(g)) => g.clone(),
+    Some(Expr::Identifier(g) | Expr::String(g)) => g.clone(),
     _ => "Day".to_string(),
   };
   let ncomp = granularity_component_count(&granularity);
 
   let mut best: Option<(f64, Vec<f64>)> = None;
-  for r in ranges.iter() {
+  for r in ranges {
     let Expr::List(pair) = r else {
       return None;
     };
@@ -1359,7 +1359,7 @@ pub fn time_zone_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Granularity and calendar to copy into the result.
   let granularity = match dargs.get(1) {
-    Some(Expr::Identifier(g)) | Some(Expr::String(g)) => g.clone(),
+    Some(Expr::Identifier(g) | Expr::String(g)) => g.clone(),
     _ => {
       if components.len() >= 4 {
         "Instant".to_string()
@@ -1369,7 +1369,7 @@ pub fn time_zone_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   let calendar = match dargs.get(2) {
-    Some(Expr::Identifier(c)) | Some(Expr::String(c)) => c.clone(),
+    Some(Expr::Identifier(c) | Expr::String(c)) => c.clone(),
     _ => "Gregorian".to_string(),
   };
 
@@ -1424,9 +1424,8 @@ pub fn time_zone_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => return unevaluated(),
   };
 
-  let source_offset = match zone_offset_hours(&source_tz, &nums, true) {
-    Some(v) => v,
-    None => return unevaluated(),
+  let Some(source_offset) = zone_offset_hours(&source_tz, &nums, true) else {
+    return unevaluated();
   };
   let utc: Vec<f64> = {
     let mut u = nums.clone();
@@ -1492,20 +1491,19 @@ pub(crate) fn named_zone_offset_at(
   name: &str,
   date: Option<&Expr>,
 ) -> Option<f64> {
-  let comps: Vec<f64> = match date {
-    Some(d) => extract_date_components(d)?,
-    None => {
-      use chrono::{Datelike, Timelike};
-      let now = chrono::Utc::now();
-      vec![
-        now.year() as f64,
-        now.month() as f64,
-        now.day() as f64,
-        now.hour() as f64,
-        now.minute() as f64,
-        now.second() as f64,
-      ]
-    }
+  let comps: Vec<f64> = if let Some(d) = date {
+    extract_date_components(d)?
+  } else {
+    use chrono::{Datelike, Timelike};
+    let now = chrono::Utc::now();
+    vec![
+      now.year() as f64,
+      now.month() as f64,
+      now.day() as f64,
+      now.hour() as f64,
+      now.minute() as f64,
+      now.second() as f64,
+    ]
   };
   named_zone_offset(name, &comps, false)
 }
@@ -1579,14 +1577,11 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Track whether the input is a DateObject so we can wrap the result
   let input_is_date_object = matches!(&date_arg, Expr::FunctionCall { name, .. } if name == "DateObject");
 
-  let components = match extract_date_components(&date_arg) {
-    Some(c) => c,
-    None => {
-      return Ok(Expr::FunctionCall {
-        name: "DatePlus".to_string(),
-        args: vec![date_arg, delta_arg].into(),
-      });
-    }
+  let Some(components) = extract_date_components(&date_arg) else {
+    return Ok(Expr::FunctionCall {
+      name: "DatePlus".to_string(),
+      args: vec![date_arg, delta_arg].into(),
+    });
   };
   // A date needs at least a year; an empty specification has none, and
   // indexing it used to abort the whole evaluation.
@@ -1759,9 +1754,8 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // rather than silently treating the magnitude as a number of days.
         _ => {
           crate::emit_message(&format!(
-            "UnitConvert::compat: {} and MixedUnit[{{Years, Months, Days, \
-             Hours, Minutes, Seconds}}] are incompatible units.",
-            unit
+            "UnitConvert::compat: {unit} and MixedUnit[{{Years, Months, Days, \
+             Hours, Minutes, Seconds}}] are incompatible units."
           ));
           crate::emit_message(&format!(
             "DatePlus::inc: {} is not a recognized calendar increment \
@@ -1974,17 +1968,11 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let date1 = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
   let date2 = crate::evaluator::evaluate_expr_to_expr(&args[1])?;
 
-  let c1 = match extract_date_components(&date1) {
-    Some(c) => c,
-    None => {
-      return Ok(unevaluated("DateDifference", args));
-    }
+  let Some(c1) = extract_date_components(&date1) else {
+    return Ok(unevaluated("DateDifference", args));
   };
-  let c2 = match extract_date_components(&date2) {
-    Some(c) => c,
-    None => {
-      return Ok(unevaluated("DateDifference", args));
-    }
+  let Some(c2) = extract_date_components(&date2) else {
+    return Ok(unevaluated("DateDifference", args));
   };
 
   let s1 = date_to_absolute_seconds(
@@ -2027,7 +2015,7 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Identifier(s) => s.clone(),
     Expr::List(_) => {
       // Multi-unit format like {"Week", "Day"}
-      return date_difference_multi_unit(&c1, &c2, &unit_arg);
+      return Ok(date_difference_multi_unit(&c1, &c2, &unit_arg));
     }
     _ => {
       return Ok(unevaluated("DateDifference", args));
@@ -2096,7 +2084,7 @@ fn date_difference_multi_unit(
   c1: &[f64],
   c2: &[f64],
   units: &Expr,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   // Multi-unit decomposition like {"Week", "Day"} → MixedMagnitude[{9, 6}].
   // Walk the unit list largest-to-smallest, taking the integer part of each
   // bucket and passing the remainder down. Returns the unevaluated form for
@@ -2109,20 +2097,20 @@ fn date_difference_multi_unit(
         match item {
           Expr::String(s) => v.push(s.clone()),
           Expr::Identifier(s) => v.push(s.clone()),
-          _ => return Ok(unevaluated_date_difference(c1, c2, units)),
+          _ => return unevaluated_date_difference(c1, c2, units),
         }
       }
       v
     }
-    _ => return Ok(unevaluated_date_difference(c1, c2, units)),
+    _ => return unevaluated_date_difference(c1, c2, units),
   };
   if unit_strs.is_empty() {
-    return Ok(unevaluated_date_difference(c1, c2, units));
+    return unevaluated_date_difference(c1, c2, units);
   }
   // Bail out for calendar-aware units that don't reduce to fixed seconds.
   for u in &unit_strs {
     if u == "Year" || u == "Month" {
-      return Ok(unevaluated_date_difference(c1, c2, units));
+      return unevaluated_date_difference(c1, c2, units);
     }
   }
   let s1 = date_to_absolute_seconds(
@@ -2152,7 +2140,7 @@ fn date_difference_multi_unit(
       "Hour" => 3600.0,
       "Minute" => 60.0,
       "Second" => 1.0,
-      _ => return Ok(unevaluated_date_difference(c1, c2, units)),
+      _ => return unevaluated_date_difference(c1, c2, units),
     };
     let plural = match u.as_str() {
       "Week" => "Weeks",
@@ -2177,7 +2165,7 @@ fn date_difference_multi_unit(
       magnitudes.push(Expr::Integer(count as i128));
     }
   }
-  Ok(Expr::FunctionCall {
+  Expr::FunctionCall {
     name: "Quantity".to_string(),
     args: vec![
       Expr::FunctionCall {
@@ -2190,7 +2178,7 @@ fn date_difference_multi_unit(
       },
     ]
     .into(),
-  })
+  }
 }
 
 fn unevaluated_date_difference(c1: &[f64], c2: &[f64], units: &Expr) -> Expr {
@@ -2379,16 +2367,15 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         min,
         sec as i64
       )));
-    } else {
-      // Format without time: "DayNameShort DD MonthNameShort YYYY"
-      return Ok(Expr::String(format!(
-        "{} {} {} {}",
-        day_name_short(dow),
-        d,
-        month_name_short(m),
-        y,
-      )));
     }
+    // Format without time: "DayNameShort DD MonthNameShort YYYY"
+    return Ok(Expr::String(format!(
+      "{} {} {} {}",
+      day_name_short(dow),
+      d,
+      month_name_short(m),
+      y,
+    )));
   }
 
   let fmt_arg = crate::evaluator::evaluate_expr_to_expr(&args[1])?;
@@ -2405,7 +2392,7 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )));
         }
         "ISODate" => {
-          return Ok(Expr::String(format!("{}-{:02}-{:02}", y, m, d)));
+          return Ok(Expr::String(format!("{y}-{m:02}-{d:02}")));
         }
         "DateTime" => {
           return Ok(Expr::String(format!(
@@ -2469,41 +2456,41 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for spec in &format_specs {
     if let Expr::String(s) = spec {
       match s.as_str() {
-        "Year" => result.push_str(&format!("{}", y)),
+        "Year" => result.push_str(&format!("{y}")),
         "YearShort" => result.push_str(&format!("{:02}", y % 100)),
-        "Month" => result.push_str(&format!("{:02}", m)),
+        "Month" => result.push_str(&format!("{m:02}")),
         "MonthName" => result.push_str(month_name(m)),
         "MonthNameShort" => result.push_str(month_name_short(m)),
-        "Day" => result.push_str(&format!("{:02}", d)),
+        "Day" => result.push_str(&format!("{d:02}")),
         "DayName" => result.push_str(day_name(day_of_week(y, m, d))),
         "DayNameShort" => result.push_str(day_name_short(day_of_week(y, m, d))),
         // "Hour" is the 24-hour clock by default; "Hour24" is its explicit
         // 2-digit form.
-        "Hour" | "Hour24" => result.push_str(&format!("{:02}", h)),
-        "Minute" => result.push_str(&format!("{:02}", min)),
+        "Hour" | "Hour24" => result.push_str(&format!("{h:02}")),
+        "Minute" => result.push_str(&format!("{min:02}")),
         "Second" => result.push_str(&format!("{:02}", sec as i64)),
         // ISO day of the week: Monday = 1, ..., Sunday = 7.
         "ISOWeekDay" => {
-          result.push_str(&format!("{}", day_of_week(y, m, d) + 1))
+          result.push_str(&format!("{}", day_of_week(y, m, d) + 1));
         }
         // "Short" variants omit the leading zero.
-        "MonthShort" => result.push_str(&format!("{}", m)),
-        "DayShort" => result.push_str(&format!("{}", d)),
-        "HourShort" | "Hour24Short" => result.push_str(&format!("{}", h)),
-        "MinuteShort" => result.push_str(&format!("{}", min)),
+        "MonthShort" => result.push_str(&format!("{m}")),
+        "DayShort" => result.push_str(&format!("{d}")),
+        "HourShort" | "Hour24Short" => result.push_str(&format!("{h}")),
+        "MinuteShort" => result.push_str(&format!("{min}")),
         "SecondShort" => result.push_str(&format!("{}", sec as i64)),
         // 12-hour clock: 0 and 12 both map to 12, 13..23 map to 1..11.
         "Hour12" => {
-          result.push_str(&format!("{:02}", (h + 11).rem_euclid(12) + 1))
+          result.push_str(&format!("{:02}", (h + 11).rem_euclid(12) + 1));
         }
         "Hour12Short" => {
-          result.push_str(&format!("{}", (h + 11).rem_euclid(12) + 1))
+          result.push_str(&format!("{}", (h + 11).rem_euclid(12) + 1));
         }
         "AMPM" => result.push_str(if h < 12 { "AM" } else { "PM" }),
         "AMPMLowerCase" => result.push_str(if h < 12 { "am" } else { "pm" }),
         "Quarter" => result.push_str(&format!("{}", (m - 1) / 3 + 1)),
         "QuarterName" => {
-          result.push_str(&format!("Quarter {}", (m - 1) / 3 + 1))
+          result.push_str(&format!("Quarter {}", (m - 1) / 3 + 1));
         }
         "QuarterNameShort" => result.push_str(&format!("Q{}", (m - 1) / 3 + 1)),
         // The ISO-8601 week date: <ISO year>-W<week>-<weekday>, so
@@ -2517,15 +2504,15 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // wolframscript's "ISOYear" is the calendar year, not the ISO
         // week-numbering one — 2024-12-31 gives "2024" even though its week
         // belongs to ISO year 2025.
-        "ISOYear" => result.push_str(&format!("{}", y)),
+        "ISOYear" => result.push_str(&format!("{y}")),
         // Both week forms are the zero-padded ISO week number.
         "Week" | "WeekShort" => {
-          result.push_str(&format!("{:02}", iso_week(y, m, d)))
+          result.push_str(&format!("{:02}", iso_week(y, m, d)));
         }
         // Just the first letter of the English name.
         "MonthNameInitial" => result.push_str(&month_name(m)[..1]),
         "DayNameInitial" => {
-          result.push_str(&day_name(day_of_week(y, m, d))[..1])
+          result.push_str(&day_name(day_of_week(y, m, d))[..1]);
         }
         _ => result.push_str(s), // literal separator
       }
@@ -2661,9 +2648,9 @@ pub fn date_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let y = comps[0] as i64;
   let mo = comps[1] as i64;
   let d = comps[2] as i64;
-  let h = comps.get(3).map(|v| *v as i64).unwrap_or(0);
-  let mi = comps.get(4).map(|v| *v as i64).unwrap_or(0);
-  let sec = comps.get(5).map(|v| *v as i64).unwrap_or(0);
+  let h = comps.get(3).map_or(0, |v| *v as i64);
+  let mi = comps.get(4).map_or(0, |v| *v as i64);
+  let sec = comps.get(5).map_or(0, |v| *v as i64);
 
   let property = |prop: &str| -> Option<Expr> {
     let int = |n: i64| Expr::Integer(n as i128);
@@ -2719,7 +2706,7 @@ pub fn date_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::String(prop) => property(prop).map_or_else(unevaluated, Ok),
     Expr::List(props) => {
       let mut values = Vec::with_capacity(props.len());
-      for p in props.iter() {
+      for p in props {
         match p {
           Expr::String(s) => match property(s) {
             Some(v) => values.push(v),
@@ -3146,7 +3133,7 @@ pub fn datetime_order_key(e: &Expr) -> Option<(f64, u8)> {
     && (1..=3).contains(&items.len())
   {
     let mut comps = Vec::with_capacity(items.len());
-    for it in items.iter() {
+    for it in items {
       comps.push(match it {
         Expr::Integer(n) => *n as f64,
         Expr::Real(r) => *r,
@@ -3173,11 +3160,8 @@ pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let date_arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
   let n_arg = crate::evaluator::evaluate_expr_to_expr(&args[1])?;
 
-  let components = match extract_date_components(&date_arg) {
-    Some(c) => c,
-    None => {
-      return Ok(unevaluated("DayPlus", args));
-    }
+  let Some(components) = extract_date_components(&date_arg) else {
+    return Ok(unevaluated("DayPlus", args));
   };
   // A date needs at least a year; an empty specification has none, and
   // indexing it used to abort the whole evaluation.
@@ -3328,14 +3312,13 @@ pub fn day_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let unevaluated = || Ok(unevaluated("DayRange", args));
 
-  let start_comp = match extract_date_components(&start_arg).and_then(pad_date)
-  {
-    Some(c) => c,
-    None => return unevaluated(),
+  let Some(start_comp) = extract_date_components(&start_arg).and_then(pad_date)
+  else {
+    return unevaluated();
   };
-  let end_comp = match extract_date_components(&end_arg).and_then(pad_date) {
-    Some(c) => c,
-    None => return unevaluated(),
+  let Some(end_comp) = extract_date_components(&end_arg).and_then(pad_date)
+  else {
+    return unevaluated();
   };
 
   let mut abs_start = date_to_absolute_days(
@@ -3414,7 +3397,7 @@ pub fn time_object_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let mut comps: Vec<f64> = Vec::with_capacity(items.len());
-  for item in items.iter() {
+  for item in items {
     match item {
       Expr::Integer(n) => comps.push(*n as f64),
       Expr::Real(r) => comps.push(*r),
@@ -3509,13 +3492,12 @@ pub fn date_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(out)
   };
 
-  let start = match extract_date_components(&start_arg).and_then(pad_full) {
-    Some(c) => c,
-    None => return unevaluated(),
+  let Some(start) = extract_date_components(&start_arg).and_then(pad_full)
+  else {
+    return unevaluated();
   };
-  let end = match extract_date_components(&end_arg).and_then(pad_full) {
-    Some(c) => c,
-    None => return unevaluated(),
+  let Some(end) = extract_date_components(&end_arg).and_then(pad_full) else {
+    return unevaluated();
   };
 
   // Parse the optional increment into either a fixed number of seconds or a
@@ -3671,8 +3653,7 @@ pub fn julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     use web_time::{SystemTime, UNIX_EPOCH};
     let unix = SystemTime::now()
       .duration_since(UNIX_EPOCH)
-      .map(|d| d.as_secs_f64())
-      .unwrap_or(0.0);
+      .map_or(0.0, |d| d.as_secs_f64());
     return Ok(Expr::Real(2440587.5 + unix / 86400.0));
   }
   if args.len() != 1 {
@@ -3694,14 +3675,14 @@ pub fn julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(unevaluated(args)),
   };
   let mut parts: Vec<f64> = Vec::with_capacity(6);
-  for item in items.iter() {
+  for item in items {
     match item {
       Expr::Integer(v) => parts.push(*v as f64),
       Expr::Real(v) => parts.push(*v),
       Expr::FunctionCall { name, args } if name == "Rational" => {
         match (&args[0], &args[1]) {
           (Expr::Integer(p), Expr::Integer(q)) if *q != 0 => {
-            parts.push(*p as f64 / *q as f64)
+            parts.push(*p as f64 / *q as f64);
           }
           _ => return Ok(unevaluated(&[Expr::List(items.clone())])),
         }
@@ -3817,9 +3798,10 @@ fn date_component_interval(
   if comps.is_empty() {
     return None;
   }
-  let gran = gran.map(str::to_string).unwrap_or_else(|| {
-    granularity_from_component_count(comps.len()).to_string()
-  });
+  let gran = gran.map_or_else(
+    || granularity_from_component_count(comps.len()).to_string(),
+    str::to_string,
+  );
   let mut y = comps[0] as i64;
   let mut m = if comps.len() > 1 { comps[1] as i64 } else { 1 };
   let mut d = if comps.len() > 2 { comps[2] as i64 } else { 1 };
@@ -3860,7 +3842,7 @@ fn date_spec_interval(expr: &Expr) -> Option<(f64, f64, f64)> {
       if name == "DateInterval" && !args.is_empty() =>
     {
       let gran = match args.get(1) {
-        Some(Expr::String(g)) | Some(Expr::Identifier(g))
+        Some(Expr::String(g) | Expr::Identifier(g))
           if is_granularity_name(g) =>
         {
           g.clone()
@@ -3872,7 +3854,7 @@ fn date_spec_interval(expr: &Expr) -> Option<(f64, f64, f64)> {
       };
       let mut lo = f64::INFINITY;
       let mut hi = f64::NEG_INFINITY;
-      for pair in pairs.iter() {
+      for pair in pairs {
         let Expr::List(se) = pair else {
           return None;
         };
@@ -3893,7 +3875,7 @@ fn date_spec_interval(expr: &Expr) -> Option<(f64, f64, f64)> {
       if name == "DateObject" && !args.is_empty() =>
     {
       let gran = match args.get(1) {
-        Some(Expr::String(g)) | Some(Expr::Identifier(g))
+        Some(Expr::String(g) | Expr::Identifier(g))
           if is_granularity_name(g) =>
         {
           Some(g.as_str())
@@ -4052,7 +4034,7 @@ pub fn mid_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     lo + x * (hi - lo)
   } else if intervals.len() == 1 {
     let (start, end, _) = intervals[0];
-    (start + end) / 2.0
+    f64::midpoint(start, end)
   } else {
     // "GranularMean": midpoints weighted by nominal granularity length.
     let total_weight: f64 = intervals.iter().map(|iv| iv.2).sum();
@@ -4126,15 +4108,12 @@ pub fn date_object_panel_svg(expr: &Expr) -> Option<String> {
   let text_w = text.chars().count() as f64 * char_w;
   let tz_w = tz_label
     .as_ref()
-    .map(|t| 5.0 + t.chars().count() as f64 * tz_char_w)
-    .unwrap_or(0.0);
+    .map_or(0.0, |t| 5.0 + t.chars().count() as f64 * tz_char_w);
   let width = (2.0 * pad_x + icon_w + gap + text_w + tz_w).ceil();
 
   let mut svg = format!(
-    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" \
-     viewBox=\"0 0 {w} {h}\">",
-    w = width,
-    h = height,
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" \
+     viewBox=\"0 0 {width} {height}\">",
   );
   // Panel frame
   svg.push_str(&format!(
@@ -4281,7 +4260,7 @@ pub fn date_within_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let level = granularity_level(args.get(1));
         let (mut min_start, mut max_end) = (f64::INFINITY, f64::NEG_INFINITY);
-        for pair in pairs.iter() {
+        for pair in pairs {
           let Expr::List(ends) = pair else {
             return None;
           };
@@ -4375,7 +4354,7 @@ pub fn date_select_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some((g(&c[0])?, g(&c[1])?, g(&c[2])?))
       };
       let mut days: Vec<Expr> = Vec::new();
-      for pair in pairs.iter() {
+      for pair in pairs {
         let Expr::List(ends) = pair else {
           return unevaluated();
         };
@@ -4510,7 +4489,7 @@ pub fn date_overlaps_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let level = granularity_level(args.get(1));
         let mut out = Vec::new();
-        for pair in pairs.iter() {
+        for pair in pairs {
           let Expr::List(ends) = pair else {
             return None;
           };

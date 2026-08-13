@@ -426,7 +426,7 @@ fn fresnel_cs_via_erf(x: f64) -> (f64, f64) {
   let (er, ei) = erf_complex(t, t);
   // Using: C = (E_r + E_i)/2, S = (E_r - E_i)/2
   // where erf((1+i)·t) = E_r + i·E_i
-  let c = (er + ei) / 2.0;
+  let c = f64::midpoint(er, ei);
   let s = (er - ei) / 2.0;
   (c, s)
 }

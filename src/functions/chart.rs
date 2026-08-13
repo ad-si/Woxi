@@ -17,13 +17,10 @@ fn extract_grouped_values(
   arg: &Expr,
 ) -> Result<Vec<Vec<f64>>, InterpreterError> {
   let data = evaluate_expr_to_expr(arg)?;
-  let items = match &data {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Chart: first argument must be a list".into(),
-      ));
-    }
+  let Expr::List(items) = &data else {
+    return Err(InterpreterError::EvaluationError(
+      "Chart: first argument must be a list".into(),
+    ));
   };
 
   if items.is_empty() {
@@ -166,16 +163,13 @@ fn scale_lengths_after(
       return out;
     };
     let (value, tail) = tail.split_at(end);
-    match value.parse::<f64>() {
-      Ok(len) => {
-        out.push_str(&format!("{:.0}{unit}", len * scale));
-        // The unit was re-emitted, so skip the copy still in `tail`.
-        rest = &tail[unit.len()..];
-      }
-      Err(_) => {
-        out.push_str(value);
-        rest = tail;
-      }
+    if let Ok(len) = value.parse::<f64>() {
+      out.push_str(&format!("{:.0}{unit}", len * scale));
+      // The unit was re-emitted, so skip the copy still in `tail`.
+      rest = &tail[unit.len()..];
+    } else {
+      out.push_str(value);
+      rest = tail;
     }
   }
   out.push_str(rest);
@@ -1501,7 +1495,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &opts.chart_legends,
       opts.plot_range_x,
       &bar_labels,
-    )?;
+    );
     return Ok(crate::graphics_result(svg));
   }
 
@@ -1593,13 +1587,10 @@ fn labeling_function_label(
 /// per sublist and renders as concentric rings (one ring per dataset).
 fn extract_pie_rows(arg: &Expr) -> Result<Vec<Vec<f64>>, InterpreterError> {
   let data = evaluate_expr_to_expr(arg)?;
-  let items = match &data {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Chart: first argument must be a list".into(),
-      ));
-    }
+  let Expr::List(items) = &data else {
+    return Err(InterpreterError::EvaluationError(
+      "Chart: first argument must be a list".into(),
+    ));
   };
   if items.is_empty() {
     return Ok(vec![]);
@@ -1741,24 +1732,23 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Color and label are keyed by the original data index `i` (not the
       // draw order), matching wolframscript: `ChartStyle -> {c1, c2, ...}`
       // and `ChartLabels -> {l1, l2, ...}` align with the input values.
-      let (r, g, b) = if !opts.chart_style.is_empty() {
+      let (r, g, b) = if opts.chart_style.is_empty() {
+        PLOT_COLORS[i % PLOT_COLORS.len()]
+      } else {
         let c = &opts.chart_style[i % opts.chart_style.len()];
         (
           (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
         )
-      } else {
-        PLOT_COLORS[i % PLOT_COLORS.len()]
       };
       let sweep = 2.0 * std::f64::consts::PI * val / total;
       let end_angle = start_angle + sweep;
-      let large_arc = if sweep > std::f64::consts::PI { 1 } else { 0 };
+      let large_arc = i32::from(sweep > std::f64::consts::PI);
       let tooltip = opts
         .chart_labels
         .get(i)
-        .map(|l| l.text.clone())
-        .unwrap_or_else(|| format_chart_value(val));
+        .map_or_else(|| format_chart_value(val), |l| l.text.clone());
 
       if r_in <= 1e-9 {
         // Innermost ring with no hole: render as a center-anchored wedge.
@@ -1792,7 +1782,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let r_label = if r_in <= 1e-9 {
           r_out * 0.6
         } else {
-          (r_in + r_out) / 2.0
+          f64::midpoint(r_in, r_out)
         };
         let lx = cx + r_label * mid_angle.cos();
         let ly = cy + r_label * mid_angle.sin();
@@ -1863,7 +1853,7 @@ fn pie_slice_label_svg(
       if r_in <= 1e-9 {
         r_out * 0.6
       } else {
-        (r_in + r_out) / 2.0
+        f64::midpoint(r_in, r_out)
       }
     }
   };
@@ -1904,12 +1894,9 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     triangle_normal,
   };
 
-  let groups = match extract_grouped_values(&args[0]) {
-    Ok(g) => g,
-    Err(_) => {
-      // Return unevaluated for invalid (non-list) input, matching wolframscript.
-      return Ok(unevaluated("BarChart3D", args));
-    }
+  let Ok(groups) = extract_grouped_values(&args[0]) else {
+    // Return unevaluated for invalid (non-list) input, matching wolframscript.
+    return Ok(unevaluated("BarChart3D", args));
   };
   if groups.is_empty() {
     return Ok(crate::graphics3d_result(
@@ -1951,7 +1938,8 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Layout: each group occupies a "slot" along x; bars within a group are
   // positioned side by side along y.
   let n_groups = groups.len();
-  let max_bars_per_group = groups.iter().map(|g| g.len()).max().unwrap_or(1);
+  let max_bars_per_group =
+    groups.iter().map(std::vec::Vec::len).max().unwrap_or(1);
 
   // Normalized box spans x in [-1, 1]. Bars are centered in y with a
   // total depth proportional to the per-group x width so they look thin
@@ -1996,15 +1984,15 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Choose color: ChartStyle overrides; otherwise cycle PLOT_COLORS by
       // group index (single-bar) or by bar index within group.
       let color_index = if max_bars_per_group > 1 { bi } else { gi };
-      let base_color = if !opts.chart_style.is_empty() {
+      let base_color = if opts.chart_style.is_empty() {
+        PLOT_COLORS[color_index % PLOT_COLORS.len()]
+      } else {
         let c = &opts.chart_style[color_index % opts.chart_style.len()];
         (
           (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
         )
-      } else {
-        PLOT_COLORS[color_index % PLOT_COLORS.len()]
       };
 
       for (v0, v1, v2) in tessellate_cuboid(&p_min, &p_max) {
@@ -2054,11 +2042,8 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Point3D, Triangle, apply_lighting, depth, project, triangle_normal,
   };
 
-  let rows = match extract_pie_rows(&args[0]) {
-    Ok(r) => r,
-    Err(_) => {
-      return Ok(unevaluated("PieChart3D", args));
-    }
+  let Ok(rows) = extract_pie_rows(&args[0]) else {
+    return Ok(unevaluated("PieChart3D", args));
   };
   let has_data = rows.iter().any(|r| r.iter().sum::<f64>() > 0.0);
   if !has_data {
@@ -2125,15 +2110,15 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let end_angle = start_angle + sweep;
 
-      let base_color = if !opts.chart_style.is_empty() {
+      let base_color = if opts.chart_style.is_empty() {
+        PLOT_COLORS[slot_color_idx % PLOT_COLORS.len()]
+      } else {
         let c = &opts.chart_style[slot_color_idx % opts.chart_style.len()];
         (
           (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
         )
-      } else {
-        PLOT_COLORS[slot_color_idx % PLOT_COLORS.len()]
       };
 
       let n_seg = ((sweep / (2.0 * std::f64::consts::PI) * SEG_PER_TURN as f64)
@@ -2322,8 +2307,8 @@ fn render_3d_triangles(
   let scale = (draw_w / p_width).min(draw_h / p_height);
   let cx = margin + draw_w / 2.0;
   let cy = margin + draw_h / 2.0;
-  let p_cx = (px_min + px_max) / 2.0;
-  let p_cy = (py_min + py_max) / 2.0;
+  let p_cx = f64::midpoint(px_min, px_max);
+  let p_cy = f64::midpoint(py_min, py_max);
 
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
     (cx + (px - p_cx) * scale, cy - (py - p_cy) * scale)
@@ -2365,7 +2350,7 @@ pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A flat list `{v1, v2, ...}` is one dataset; a list of lists
   // `{{...}, {...}}` is several datasets drawn overlaid.
   let datasets = parse_datasets(&args[0])?;
-  if datasets.is_empty() || datasets.iter().all(|d| d.is_empty()) {
+  if datasets.is_empty() || datasets.iter().all(std::vec::Vec::is_empty) {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
@@ -2384,29 +2369,33 @@ pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .unwrap_or(HistogramHeight::Count);
 
   let mut opts = parse_chart_options(args);
-  let svg =
-    generate_histogram_svg(&datasets, bin_spec.clone(), height, &mut opts)?;
+  let svg = generate_histogram_svg(
+    &datasets,
+    bin_spec.clone().as_ref(),
+    height,
+    &mut opts,
+  )?;
 
   // Per-dataset colors matching the rendered bars, used to build a PlotSource
   // so `Show[Histogram[...], Plot[...]]` overlays the bars with the curves.
   let colors: Vec<(u8, u8, u8)> = (0..datasets.len())
     .map(|di| {
-      if !opts.chart_style.is_empty() {
+      if opts.chart_style.is_empty() {
+        PLOT_COLORS[di % PLOT_COLORS.len()]
+      } else {
         let c = &opts.chart_style[di % opts.chart_style.len()];
         (
           (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
         )
-      } else {
-        PLOT_COLORS[di % PLOT_COLORS.len()]
       }
     })
     .collect();
 
   match crate::functions::plot::histogram_plot_source(
     &datasets,
-    &bin_spec,
+    bin_spec.as_ref(),
     height,
     &colors,
     (opts.svg_width, opts.svg_height),
@@ -2421,36 +2410,32 @@ pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// else (e.g. `Automatic`) yields `None` (automatic binning).
 fn parse_bin_spec(arg: &Expr) -> Option<BinSpec> {
   let evaluated = evaluate_expr_to_expr(arg).unwrap_or_else(|_| arg.clone());
-  match &evaluated {
-    Expr::List(outer) => {
-      // {{e1, e2, ...}} — a list wrapping the explicit bin edges.
-      if outer.len() == 1
-        && let Expr::List(inner) = &outer[0]
-      {
-        let edges: Vec<f64> =
-          inner.iter().filter_map(try_eval_to_f64).collect();
-        return (edges.len() >= 2).then_some(BinSpec::Edges(edges));
-      }
-      // {w} — a bin width.
-      if outer.len() == 1
-        && let Some(w) = try_eval_to_f64(&outer[0])
-      {
-        return (w > 0.0).then_some(BinSpec::Width(w));
-      }
-      // {min, max, w} — width w over an explicit range: use the width and
-      // let the shared edge builder align to it.
-      if outer.len() == 3
-        && let Some(w) = try_eval_to_f64(&outer[2])
-      {
-        return (w > 0.0).then_some(BinSpec::Width(w));
-      }
-      None
+  if let Expr::List(outer) = &evaluated {
+    // {{e1, e2, ...}} — a list wrapping the explicit bin edges.
+    if outer.len() == 1
+      && let Expr::List(inner) = &outer[0]
+    {
+      let edges: Vec<f64> = inner.iter().filter_map(try_eval_to_f64).collect();
+      return (edges.len() >= 2).then_some(BinSpec::Edges(edges));
     }
-    _ => {
-      let f = try_eval_to_f64(&evaluated)?;
-      let n = f as usize;
-      (n > 0).then_some(BinSpec::Count(n))
+    // {w} — a bin width.
+    if outer.len() == 1
+      && let Some(w) = try_eval_to_f64(&outer[0])
+    {
+      return (w > 0.0).then_some(BinSpec::Width(w));
     }
+    // {min, max, w} — width w over an explicit range: use the width and
+    // let the shared edge builder align to it.
+    if outer.len() == 3
+      && let Some(w) = try_eval_to_f64(&outer[2])
+    {
+      return (w > 0.0).then_some(BinSpec::Width(w));
+    }
+    None
+  } else {
+    let f = try_eval_to_f64(&evaluated)?;
+    let n = f as usize;
+    (n > 0).then_some(BinSpec::Count(n))
   }
 }
 
@@ -2487,7 +2472,7 @@ fn box_stats(sorted: &[f64]) -> (f64, f64, f64, f64, f64) {
     sorted[lo] * (1.0 - frac) + sorted[hi] * frac
   };
   let q1 = interp((n + 2.0) / 4.0);
-  let median = interp((n + 1.0) / 2.0);
+  let median = interp(f64::midpoint(n, 1.0));
   let q3 = interp((3.0 * n + 2.0) / 4.0);
   (sorted[0], q1, median, q3, sorted[sorted.len() - 1])
 }
@@ -2498,13 +2483,10 @@ fn box_stats(sorted: &[f64]) -> (f64, f64, f64, f64, f64) {
 /// - `{{d1, d2, ...}, {d3, d4, ...}}` → multiple datasets
 fn parse_datasets(arg: &Expr) -> Result<Vec<Vec<f64>>, InterpreterError> {
   let data = evaluate_expr_to_expr(arg)?;
-  let items = match &data {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Chart: first argument must be a list".into(),
-      ));
-    }
+  let Expr::List(items) = &data else {
+    return Err(InterpreterError::EvaluationError(
+      "Chart: first argument must be a list".into(),
+    ));
   };
 
   if items.is_empty() {
@@ -2652,15 +2634,15 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let stroke_w = (area.render_width as f64 / 1000.0 * 1.5).max(1.0);
 
   for (i, &(lo, q1, med, q3, hi)) in all_stats.iter().enumerate() {
-    let (r, g, b) = if !opts.chart_style.is_empty() {
+    let (r, g, b) = if opts.chart_style.is_empty() {
+      PLOT_COLORS[0]
+    } else {
       let c = &opts.chart_style[i % opts.chart_style.len()];
       (
         (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
         (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
         (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
       )
-    } else {
-      PLOT_COLORS[0]
     };
     let cx = plot_x0 + (i as f64 + 0.5) * slot_w;
     let box_half_w = slot_w * 0.3;
@@ -2789,12 +2771,11 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let cx = plot_x0 + plot_w / 2.0;
     let ty = top_margin as f64 - title_font_size * 0.5;
-    let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+    let fs = sl.font_size.map_or(title_font_size, |f| f * sf);
     let fill = sl
       .color
       .as_ref()
-      .map(|c| c.to_svg_rgb())
-      .unwrap_or_else(|| chart_title_fill.to_string());
+      .map_or_else(|| chart_title_fill.to_string(), |c| c.to_svg_rgb());
     let mut style_attrs = String::new();
     if sl.bold {
       style_attrs.push_str(" font-weight=\"bold\"");
@@ -2906,15 +2887,12 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     (gs, Some(labels))
   } else {
-    let items = match &data {
-      Expr::List(items) => items,
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "BubbleChart: first argument must be a list of {x, y, z} triples \
+    let Expr::List(items) = &data else {
+      return Err(InterpreterError::EvaluationError(
+        "BubbleChart: first argument must be a list of {x, y, z} triples \
              or an Association"
-            .into(),
-        ));
-      }
+          .into(),
+      ));
     };
 
     // Detect shape: if every top-level item is itself a list of triples
@@ -2967,7 +2945,7 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (gs, None)
   };
 
-  let total_points: usize = groups.iter().map(|g| g.len()).sum();
+  let total_points: usize = groups.iter().map(std::vec::Vec::len).sum();
   if total_points == 0 {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
@@ -2981,7 +2959,7 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && opts.chart_legends.is_empty()
     && let Some(labels) = &assoc_labels
   {
-    opts.chart_legends = labels.clone();
+    opts.chart_legends.clone_from(labels);
   }
   // BubbleChart's plot area is square by default — override the generic
   // (non-square) DEFAULT_HEIGHT unless the caller provided an explicit
@@ -3054,13 +3032,10 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// wolframscript.
 pub fn bubble_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
-  let items = match &data {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "BubbleHistogram: first argument must be a list of {x, y} pairs".into(),
-      ));
-    }
+  let Expr::List(items) = &data else {
+    return Err(InterpreterError::EvaluationError(
+      "BubbleHistogram: first argument must be a list of {x, y} pairs".into(),
+    ));
   };
 
   // Parse the {x, y} pairs, silently skipping entries that aren't numeric
@@ -3114,8 +3089,8 @@ pub fn bubble_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // dx-aligned edges, bins centered on commensurate data).
   let axis_bins = |vals: &[f64]| -> (f64, f64, usize) {
     if let Some(BinReq::Count(n)) = &bin_req {
-      let d_min = vals.iter().cloned().fold(f64::INFINITY, f64::min);
-      let d_max = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+      let d_min = vals.iter().copied().fold(f64::INFINITY, f64::min);
+      let d_max = vals.iter().copied().fold(f64::NEG_INFINITY, f64::max);
       let range = d_max - d_min;
       let bw = if range.abs() < f64::EPSILON {
         1.0
@@ -3245,13 +3220,10 @@ pub fn bubble_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// SectorChart[{{angle, radius}, ...}] - like PieChart but with variable radius
 pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
-  let items = match &data {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "SectorChart: first argument must be a list".into(),
-      ));
-    }
+  let Expr::List(items) = &data else {
+    return Err(InterpreterError::EvaluationError(
+      "SectorChart: first argument must be a list".into(),
+    ));
   };
 
   let mut sectors: Vec<(f64, f64)> = Vec::new();
@@ -3318,7 +3290,7 @@ pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let y1 = cy + sector_r * start_angle.sin();
     let x2 = cx + sector_r * end_angle.cos();
     let y2 = cy + sector_r * end_angle.sin();
-    let large_arc = if sweep > std::f64::consts::PI { 1 } else { 0 };
+    let large_arc = i32::from(sweep > std::f64::consts::PI);
 
     let tooltip = format!(
       "{{{}, {}}}",
@@ -3404,13 +3376,10 @@ pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ),
     None => data,
   };
-  let items = match &data {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "DateListPlot: first argument must be a list".into(),
-      ));
-    }
+  let Expr::List(items) = &data else {
+    return Err(InterpreterError::EvaluationError(
+      "DateListPlot: first argument must be a list".into(),
+    ));
   };
 
   // `DateListPlot[{y1, y2, …}, datespec]` — plain values plus a starting
@@ -3638,13 +3607,10 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Extract list of strings from first argument
   let data = evaluate_expr_to_expr(&args[0])?;
-  let items = match &data {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "WordCloud: first argument must be a list".into(),
-      ));
-    }
+  let Expr::List(items) = &data else {
+    return Err(InterpreterError::EvaluationError(
+      "WordCloud: first argument must be a list".into(),
+    ));
   };
 
   let mut words: Vec<String> = Vec::new();
@@ -3689,7 +3655,7 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let font_size_for = |count: usize| -> f64 {
     if (max_freq - min_freq).abs() < f64::EPSILON {
-      (min_font + max_font) / 2.0
+      f64::midpoint(min_font, max_font)
     } else {
       min_font
         + (count as f64 - min_freq) / (max_freq - min_freq)
@@ -3729,7 +3695,6 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let max_steps = 10000;
     let a = 1.5; // spiral spacing
 
-    let mut placed_ok = false;
     for s in 0..max_steps {
       let t = s as f64 * 0.04;
       let x = cx + a * t * t.cos();
@@ -3761,14 +3726,11 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           color_idx: i,
           rotated,
         });
-        placed_ok = true;
         break;
       }
     }
 
-    if !placed_ok {
-      continue; // skip words that can't be placed
-    }
+    // Words that can't be placed are simply skipped.
   }
 
   // Generate SVG

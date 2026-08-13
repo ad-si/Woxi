@@ -7,11 +7,8 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("VoronoiMesh", args));
   }
 
-  let pts_expr = match &args[0] {
-    Expr::List(v) => v,
-    _ => {
-      return Ok(unevaluated("VoronoiMesh", args));
-    }
+  let Expr::List(pts_expr) = &args[0] else {
+    return Ok(unevaluated("VoronoiMesh", args));
   };
 
   // Empty list: return unevaluated (Wolfram issues VoronoiMesh::pts message)
@@ -49,12 +46,12 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Special case: 2 points — split bounding box by the perpendicular bisector
   if n == 2 {
-    return voronoi_2_sites(&sites);
+    return Ok(voronoi_2_sites(&sites));
   }
 
   // Check for collinear points
   if are_collinear(&sites) {
-    return voronoi_collinear(&sites);
+    return Ok(voronoi_collinear(&sites));
   }
 
   // Compute bounding box with 25% padding
@@ -86,8 +83,8 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // --- Bowyer-Watson Delaunay triangulation ---
   let margin = dx.max(dy).max(1.0) * 10.0;
-  let cx = (xmin + xmax) / 2.0;
-  let cy = (ymin + ymax) / 2.0;
+  let cx = f64::midpoint(xmin, xmax);
+  let cy = f64::midpoint(ymin, ymax);
 
   let mut all_pts: Vec<(f64, f64)> = sites.clone();
   all_pts.push((cx - 2.0 * margin, cy - margin));
@@ -253,7 +250,7 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     cells.push(cell_indices);
   }
 
-  build_mesh_region(all_voronoi_verts, cells)
+  Ok(build_mesh_region(&all_voronoi_verts, &cells))
 }
 
 fn are_collinear(sites: &[(f64, f64)]) -> bool {
@@ -271,7 +268,7 @@ fn are_collinear(sites: &[(f64, f64)]) -> bool {
   true
 }
 
-fn voronoi_collinear(sites: &[(f64, f64)]) -> Result<Expr, InterpreterError> {
+fn voronoi_collinear(sites: &[(f64, f64)]) -> crate::syntax::Expr {
   // Sort sites along their collinear direction
   let (x0, y0) = sites[0];
   let (x1, y1) = sites[1];
@@ -335,7 +332,7 @@ fn voronoi_collinear(sites: &[(f64, f64)]) -> Result<Expr, InterpreterError> {
   for i in 0..n - 1 {
     let (ax, ay) = sorted_sites[i];
     let (bx, by) = sorted_sites[i + 1];
-    let mid = ((ax + bx) / 2.0, (ay + by) / 2.0);
+    let mid = (f64::midpoint(ax, bx), f64::midpoint(ay, by));
     let p1 = (mid.0 + perp.0 * far, mid.1 + perp.1 * far);
     let p2 = (mid.0 - perp.0 * far, mid.1 - perp.1 * far);
     bisector_points.push((p1, p2));
@@ -400,10 +397,10 @@ fn voronoi_collinear(sites: &[(f64, f64)]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  build_mesh_region(all_verts, cells)
+  build_mesh_region(&all_verts, &cells)
 }
 
-fn voronoi_2_sites(sites: &[(f64, f64)]) -> Result<Expr, InterpreterError> {
+fn voronoi_2_sites(sites: &[(f64, f64)]) -> crate::syntax::Expr {
   let (x0, y0) = sites[0];
   let (x1, y1) = sites[1];
 
@@ -421,7 +418,7 @@ fn voronoi_2_sites(sites: &[(f64, f64)]) -> Result<Expr, InterpreterError> {
   let bb_ymax = ymax + pad;
 
   // Perpendicular bisector splits the bbox into two half-planes
-  let mid = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+  let mid = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
   let dir = (-(y1 - y0), x1 - x0); // perpendicular direction
   let far = dx.max(dy).max(1.0) * 100.0;
   let len = (dir.0 * dir.0 + dir.1 * dir.1).sqrt();
@@ -514,13 +511,13 @@ fn voronoi_2_sites(sites: &[(f64, f64)]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  build_mesh_region(all_verts, cells)
+  build_mesh_region(&all_verts, &cells)
 }
 
 fn build_mesh_region(
-  all_verts: Vec<(f64, f64)>,
-  cells: Vec<Vec<usize>>,
-) -> Result<Expr, InterpreterError> {
+  all_verts: &[(f64, f64)],
+  cells: &[Vec<usize>],
+) -> crate::syntax::Expr {
   // Build MeshRegion[{{x1,y1},...}, {Polygon[{{i1,i2,...},{j1,j2,...}}]}]
   // Vertices list (1-indexed coordinates)
   let verts_expr: Vec<Expr> = all_verts
@@ -542,14 +539,14 @@ fn build_mesh_region(
     args: vec![Expr::List(faces.into())].into(),
   };
 
-  Ok(Expr::FunctionCall {
+  Expr::FunctionCall {
     name: "MeshRegion".to_string(),
     args: vec![
       Expr::List(verts_expr.into()),
       Expr::List(vec![polygon].into()),
     ]
     .into(),
-  })
+  }
 }
 
 fn point_key(x: f64, y: f64) -> u128 {
@@ -716,8 +713,8 @@ fn ray_direction(
   let (sx, sy) = sites[site_idx];
   let (nx, ny) = sites[unshared_neighbor];
   let (dx, dy) = (nx - sx, ny - sy);
-  let mid_x = (sx + nx) / 2.0;
-  let mid_y = (sy + ny) / 2.0;
+  let mid_x = f64::midpoint(sx, nx);
+  let mid_y = f64::midpoint(sy, ny);
   let perp = (-dy, dx);
 
   // The ray should point away from the third vertex (the other neighbor of site_idx)
@@ -843,9 +840,8 @@ pub fn mesh_region_to_svg(
   primitives_expr: &Expr,
 ) -> Option<String> {
   // Parse vertices
-  let vertices_list = match vertices_expr {
-    Expr::List(v) => v,
-    _ => return None,
+  let Expr::List(vertices_list) = vertices_expr else {
+    return None;
   };
   let mut vertices: Vec<(f64, f64)> = Vec::new();
   for v in vertices_list {
@@ -866,9 +862,8 @@ pub fn mesh_region_to_svg(
   }
 
   // Parse polygons
-  let prims = match primitives_expr {
-    Expr::List(v) => v,
-    _ => return None,
+  let Expr::List(prims) = primitives_expr else {
+    return None;
   };
   let mut polygons: Vec<Vec<usize>> = Vec::new(); // 0-indexed vertex indices
   for prim in prims {

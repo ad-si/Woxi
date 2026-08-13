@@ -64,7 +64,7 @@ fn reorder_factored_product(result: Expr) -> Expr {
         collect(right, out);
       }
       Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
+        for a in args {
           collect(a, out);
         }
       }
@@ -306,14 +306,13 @@ fn factor_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if vars.len() > 1 {
     // Multivariate polynomial — try Kronecker substitution
-    return factor_multivariate(&expanded, vars);
+    return Ok(factor_multivariate(&expanded, vars));
   }
   let var = vars.into_iter().next().unwrap();
 
   // Extract integer coefficients
-  let coeffs = match extract_poly_coeffs(&expanded, &var) {
-    Some(c) => c,
-    None => return Ok(expanded), // non-integer coefficients
+  let Some(coeffs) = extract_poly_coeffs(&expanded, &var) else {
+    return Ok(expanded);
   };
 
   // Factor out GCD of coefficients
@@ -330,15 +329,15 @@ fn factor_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     coeffs.iter().map(|c| c / gcd_coeff).collect();
 
   // Factor out leading negative
-  let (sign, reduced_coeffs) =
-    if reduced_coeffs.last().map(|&c| c < 0).unwrap_or(false) {
-      (
-        -1i128,
-        reduced_coeffs.iter().map(|c| -c).collect::<Vec<_>>(),
-      )
-    } else {
-      (1, reduced_coeffs)
-    };
+  let (sign, reduced_coeffs) = if reduced_coeffs.last().is_some_and(|&c| c < 0)
+  {
+    (
+      -1i128,
+      reduced_coeffs.iter().map(|c| -c).collect::<Vec<_>>(),
+    )
+  } else {
+    (1, reduced_coeffs)
+  };
   let overall = gcd_coeff * sign;
 
   // Factor the monic-ish polynomial
@@ -496,41 +495,38 @@ pub fn factor_integer_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
     }
 
     // Try rational root theorem
-    match find_integer_root(&remaining) {
-      Some(root) => {
-        // Factor out (x - root) which in canonical form is (root_neg + x) → (-root + x)
-        factors.push(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::Integer(-root)),
-          right: Box::new(Expr::Identifier(var.to_string())),
-        });
-        remaining = divide_by_root(&remaining, root);
-      }
-      None => {
-        // No integer root. Try a non-integer rational root p/q: factor out the
-        // primitive linear (q*x - p) and divide it out, e.g.
-        // 6x^2+11x+3 -> (2x+3)(3x+1).
-        if let Some((p, q)) = find_rational_root(&remaining) {
-          let linear = vec![-p, q]; // -p + q*x  ==  q*x - p
-          if let Some((quot, rem)) = poly_div(&remaining, &linear)
-            && rem == [0]
-          {
-            factors.push(linear_to_expr(-p, q, var));
-            remaining = quot;
-            continue;
-          }
+    if let Some(root) = find_integer_root(&remaining) {
+      // Factor out (x - root) which in canonical form is (root_neg + x) → (-root + x)
+      factors.push(Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(-root)),
+        right: Box::new(Expr::Identifier(var.to_string())),
+      });
+      remaining = divide_by_root(&remaining, root);
+    } else {
+      // No integer root. Try a non-integer rational root p/q: factor out the
+      // primitive linear (q*x - p) and divide it out, e.g.
+      // 6x^2+11x+3 -> (2x+3)(3x+1).
+      if let Some((p, q)) = find_rational_root(&remaining) {
+        let linear = vec![-p, q]; // -p + q*x  ==  q*x - p
+        if let Some((quot, rem)) = poly_div(&remaining, &linear)
+          && rem == [0]
+        {
+          factors.push(linear_to_expr(-p, q, var));
+          remaining = quot;
+          continue;
         }
-        // Can't find more rational roots — try polynomial trial division
-        let sub_factors = try_factor_no_rational_roots(&remaining, var);
-        if sub_factors.is_empty() {
-          if remaining != [1] {
-            factors.push(coeffs_to_expr(&remaining, var));
-          }
-        } else {
-          factors.extend(sub_factors);
-        }
-        break;
       }
+      // Can't find more rational roots — try polynomial trial division
+      let sub_factors = try_factor_no_rational_roots(&remaining, var);
+      if sub_factors.is_empty() {
+        if remaining != [1] {
+          factors.push(coeffs_to_expr(&remaining, var));
+        }
+      } else {
+        factors.extend(sub_factors);
+      }
+      break;
     }
   }
 
@@ -589,7 +585,7 @@ fn factor_degree(expr: &Expr) -> usize {
     // After '^', try to parse the number
     if let Ok(n) = cap
       .chars()
-      .take_while(|c| c.is_ascii_digit())
+      .take_while(char::is_ascii_digit)
       .collect::<String>()
       .parse::<usize>()
       && n > max_deg
@@ -804,7 +800,7 @@ fn integer_divisors(n: i128) -> Vec<i128> {
     }
     i += 1;
   }
-  divs.sort();
+  divs.sort_unstable();
   divs
 }
 
@@ -907,7 +903,7 @@ fn divisors_of(n: u64) -> Vec<u64> {
     }
     i += 1;
   }
-  divs.sort();
+  divs.sort_unstable();
   divs
 }
 
@@ -1401,11 +1397,8 @@ pub fn irreducible_polynomial_q_ast(
 
   // Use FactorList to obtain the {factor, exponent} decomposition, then
   // count the non-constant irreducible factors.
-  let list = match factor_list_ast(args) {
-    Ok(l) => l,
-    Err(_) => {
-      return Ok(bool_expr(false));
-    }
+  let Ok(list) = factor_list_ast(args) else {
+    return Ok(bool_expr(false));
   };
 
   let Expr::List(ref entries) = list else {
@@ -1414,7 +1407,7 @@ pub fn irreducible_polynomial_q_ast(
 
   let mut non_constant_count = 0usize;
   let mut has_higher_power = false;
-  for entry in entries.iter() {
+  for entry in entries {
     if let Expr::List(pair) = entry
       && pair.len() == 2
       && !is_constant_factor(&pair[0])
@@ -1555,7 +1548,7 @@ pub fn factor_terms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // First, factor out the numeric GCD from all terms
-  let numeric_factored = factor_terms_numeric(&expanded, &terms)?;
+  let numeric_factored = factor_terms_numeric(&expanded, &terms);
 
   if args.len() == 2 {
     // FactorTerms[poly, x] — also factor out terms not depending on x
@@ -1572,7 +1565,7 @@ pub fn factor_terms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         right,
       } => {
         // numeric_factor * inner — apply var factoring to inner
-        let inner_factored = factor_terms_wrt_var(right, &var)?;
+        let inner_factored = factor_terms_wrt_var(right, &var);
         return Ok(Expr::BinaryOp {
           op: BinaryOperator::Times,
           left: left.clone(),
@@ -1581,7 +1574,7 @@ pub fn factor_terms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       _ => {
         // No numeric factor was extracted
-        return factor_terms_wrt_var(&numeric_factored, &var);
+        return Ok(factor_terms_wrt_var(&numeric_factored, &var));
       }
     }
   }
@@ -1890,13 +1883,13 @@ fn divide_terms_by(
 pub(crate) fn factor_terms_numeric(
   expanded: &Expr,
   terms: &[Expr],
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let Some((num_gcd, den_lcm, coeffs)) = rational_content(terms) else {
-    return Ok(expanded.clone());
+    return expanded.clone();
   };
 
   if num_gcd.abs() <= 1 && den_lcm == 1 {
-    return Ok(expanded.clone());
+    return expanded.clone();
   }
 
   // Display flip: Times[Rational[-1,d], sum] renders as Rational[1,d] times
@@ -1925,23 +1918,20 @@ pub(crate) fn factor_terms_numeric(
 
   // Return factor * inner (or just inner if factor is 1)
   if matches!(&factor, Expr::Integer(1)) {
-    Ok(inner)
+    inner
   } else {
-    Ok(Expr::BinaryOp {
+    Expr::BinaryOp {
       op: BinaryOperator::Times,
       left: Box::new(factor),
       right: Box::new(inner),
-    })
+    }
   }
 }
 
 /// FactorTerms[poly, x] — factor out terms that don't depend on x.
 /// Groups terms by power of x, collects the coefficient of each power,
 /// then factors out the polynomial GCD of those coefficient expressions.
-fn factor_terms_wrt_var(
-  expr: &Expr,
-  var: &str,
-) -> Result<Expr, InterpreterError> {
+fn factor_terms_wrt_var(expr: &Expr, var: &str) -> crate::syntax::Expr {
   let terms = collect_additive_terms(expr);
 
   // Collect coefficients for each power of x
@@ -1966,7 +1956,7 @@ fn factor_terms_wrt_var(
   }
 
   if summed_coeffs.is_empty() {
-    return Ok(Expr::Integer(0));
+    return Expr::Integer(0);
   }
 
   // Try to find a common symbolic factor among all coefficient expressions.
@@ -1998,12 +1988,11 @@ fn factor_terms_wrt_var(
     let mut all_valid = true;
 
     for coeff in &coeff_exprs {
-      match extract_poly_coeffs(coeff, cv) {
-        Some(c) => poly_coeffs.push(c),
-        None => {
-          all_valid = false;
-          break;
-        }
+      if let Some(c) = extract_poly_coeffs(coeff, cv) {
+        poly_coeffs.push(c);
+      } else {
+        all_valid = false;
+        break;
       }
     }
 
@@ -2022,19 +2011,19 @@ fn factor_terms_wrt_var(
       }
 
       // Check if GCD is non-trivial (not just a constant ±1)
-      let is_trivial = gcd_poly.len() <= 1
-        && gcd_poly.first().map(|c| c.abs()).unwrap_or(0) <= 1;
+      let is_trivial =
+        gcd_poly.len() <= 1 && gcd_poly.first().map_or(0, |c| c.abs()) <= 1;
 
       if !is_trivial {
         // Divide each coefficient by the GCD polynomial
         let mut new_terms: Vec<Expr> = Vec::new();
         for (power, coeff) in &summed_coeffs {
           if let Some(c) = extract_poly_coeffs(coeff, cv) {
-            let (quotient, _remainder) =
-              match crate::functions::polynomial_ast::poly_div(&c, &gcd_poly) {
-                Some(qr) => qr,
-                None => return factor_terms_numeric(expr, &terms),
-              };
+            let Some((quotient, _remainder)) =
+              crate::functions::polynomial_ast::poly_div(&c, &gcd_poly)
+            else {
+              return factor_terms_numeric(expr, &terms);
+            };
             let q_expr = coeffs_to_expr(&quotient, cv);
 
             let var_power = if *power == 0 {
@@ -2065,17 +2054,15 @@ fn factor_terms_wrt_var(
 
         // Factor out numeric GCD from both parts
         let gcd_terms = collect_additive_terms(&gcd_expr);
-        let factored_gcd =
-          factor_terms_numeric(&gcd_expr, &gcd_terms).unwrap_or(gcd_expr);
+        let factored_gcd = factor_terms_numeric(&gcd_expr, &gcd_terms);
         let inner_terms = collect_additive_terms(&inner);
-        let factored_inner =
-          factor_terms_numeric(&inner, &inner_terms).unwrap_or(inner);
+        let factored_inner = factor_terms_numeric(&inner, &inner_terms);
 
-        return Ok(Expr::BinaryOp {
+        return Expr::BinaryOp {
           op: BinaryOperator::Times,
           left: Box::new(factored_gcd),
           right: Box::new(factored_inner),
-        });
+        };
       }
     }
   }
@@ -2624,14 +2611,12 @@ fn factor_square_free_ast_impl(
 
   let expanded = expand_and_combine(&args[0]);
 
-  let var = match find_single_variable(&expanded) {
-    Some(v) => v,
-    None => return multivariate_square_free(&args[0], &expanded),
+  let Some(var) = find_single_variable(&expanded) else {
+    return multivariate_square_free(&args[0], &expanded);
   };
 
-  let coeffs = match extract_poly_coeffs(&expanded, &var) {
-    Some(c) => c,
-    None => return Ok(expanded),
+  let Some(coeffs) = extract_poly_coeffs(&expanded, &var) else {
+    return Ok(expanded);
   };
 
   // Factor out GCD of coefficients (content)
@@ -2647,7 +2632,7 @@ fn factor_square_free_ast_impl(
   let pp: Vec<i128> = coeffs.iter().map(|c| c / content).collect();
 
   // Make leading coefficient positive
-  let (sign, pp) = if pp.last().map(|&c| c < 0).unwrap_or(false) {
+  let (sign, pp) = if pp.last().is_some_and(|&c| c < 0) {
     (-1i128, pp.iter().map(|c| -c).collect::<Vec<_>>())
   } else {
     (1, pp)
@@ -2766,9 +2751,8 @@ fn yun_square_free(pp: &[i128]) -> Vec<(Vec<i128>, i128)> {
   }
 
   let fp = poly_derivative(pp);
-  let g = match poly_gcd(pp, &fp) {
-    Some(g) => g,
-    None => return vec![(pp.to_vec(), 1)],
+  let Some(g) = poly_gcd(pp, &fp) else {
+    return vec![(pp.to_vec(), 1)];
   };
 
   // If GCD is constant (degree 0), polynomial is already square-free
@@ -2778,9 +2762,8 @@ fn yun_square_free(pp: &[i128]) -> Vec<(Vec<i128>, i128)> {
     return vec![(pp.to_vec(), 1)];
   }
 
-  let mut w = match poly_exact_divide(pp, &g) {
-    Some(q) => q,
-    None => return vec![(pp.to_vec(), 1)],
+  let Some(mut w) = poly_exact_divide(pp, &g) else {
+    return vec![(pp.to_vec(), 1)];
   };
 
   let mut result: Vec<(Vec<i128>, i128)> = Vec::new();
@@ -2792,13 +2775,9 @@ fn yun_square_free(pp: &[i128]) -> Vec<(Vec<i128>, i128)> {
       break;
     }
 
-    let y = match poly_gcd(&w, &g) {
-      Some(y) => y,
-      None => break,
-    };
-    let z = match poly_exact_divide(&w, &y) {
-      Some(q) => q,
-      None => break,
+    let Some(y) = poly_gcd(&w, &g) else { break };
+    let Some(z) = poly_exact_divide(&w, &y) else {
+      break;
     };
 
     // z is the square-free factor with multiplicity i
@@ -2807,7 +2786,7 @@ fn yun_square_free(pp: &[i128]) -> Vec<(Vec<i128>, i128)> {
     if !z_is_trivial {
       // Normalize: make monic-positive
       let mut zn = z;
-      if zn.last().map(|&c| c < 0).unwrap_or(false) {
+      if zn.last().is_some_and(|&c| c < 0) {
         zn = zn.iter().map(|c| -c).collect();
       }
       let zg = zn.iter().copied().filter(|&c| c != 0).fold(0i128, gcd_i128);
@@ -2829,7 +2808,7 @@ fn yun_square_free(pp: &[i128]) -> Vec<(Vec<i128>, i128)> {
   let w_is_trivial = w.len() == 1 && (w[0] == 1 || w[0] == -1) || w.is_empty();
   if !w_is_trivial {
     let mut wn = w;
-    if wn.last().map(|&c| c < 0).unwrap_or(false) {
+    if wn.last().is_some_and(|&c| c < 0) {
       wn = wn.iter().map(|c| -c).collect();
     }
     let wg = wn.iter().copied().filter(|&c| c != 0).fold(0i128, gcd_i128);
@@ -2867,23 +2846,17 @@ pub fn factor_square_free_list_ast(
     ));
   }
 
-  let var = match find_single_variable(&expanded) {
-    Some(v) => v,
-    None => {
-      // Constant expression
-      return Ok(Expr::List(
-        vec![Expr::List(vec![expanded, Expr::Integer(1)].into())].into(),
-      ));
-    }
+  let Some(var) = find_single_variable(&expanded) else {
+    // Constant expression
+    return Ok(Expr::List(
+      vec![Expr::List(vec![expanded, Expr::Integer(1)].into())].into(),
+    ));
   };
 
-  let coeffs = match extract_poly_coeffs(&expanded, &var) {
-    Some(c) => c,
-    None => {
-      return Ok(Expr::List(
-        vec![Expr::List(vec![expanded, Expr::Integer(1)].into())].into(),
-      ));
-    }
+  let Some(coeffs) = extract_poly_coeffs(&expanded, &var) else {
+    return Ok(Expr::List(
+      vec![Expr::List(vec![expanded, Expr::Integer(1)].into())].into(),
+    ));
   };
 
   // Factor out GCD of coefficients (content)
@@ -2901,7 +2874,7 @@ pub fn factor_square_free_list_ast(
   let pp: Vec<i128> = coeffs.iter().map(|c| c / content).collect();
 
   // Make leading coefficient positive
-  let (sign, pp) = if pp.last().map(|&c| c < 0).unwrap_or(false) {
+  let (sign, pp) = if pp.last().is_some_and(|&c| c < 0) {
     (-1i128, pp.iter().map(|c| -c).collect::<Vec<_>>())
   } else {
     (1, pp)
@@ -3051,11 +3024,7 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
     // Fallback: if every term is a constant (single-term polynomial), use
     // its sign.
     found.unwrap_or_else(|| {
-      coeffs
-        .iter()
-        .find(|&&c| c != 0)
-        .map(|&c| c.signum())
-        .unwrap_or(1)
+      coeffs.iter().find(|&&c| c != 0).map_or(1, |&c| c.signum())
     })
   };
   let signed_content = abs_gcd * sign;
@@ -3187,16 +3156,13 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     find_single_variable(&expanded)
   };
 
-  let var = match var {
-    Some(v) => v,
-    None => {
-      // Multi-variable polynomial — extract the integer GCD content of the
-      // expanded sum. Wolfram's `FactorTermsList[3*(-1+2*x)*(-1+y)*(1-a)]`
-      // returns `{-3, ...}` because the leading (canonical-first) term in
-      // the expanded form has a negative coefficient, and the absolute GCD
-      // of all coefficients is 3.
-      return Ok(extract_multi_var_content(&expanded));
-    }
+  let Some(var) = var else {
+    // Multi-variable polynomial — extract the integer GCD content of the
+    // expanded sum. Wolfram's `FactorTermsList[3*(-1+2*x)*(-1+y)*(1-a)]`
+    // returns `{-3, ...}` because the leading (canonical-first) term in
+    // the expanded form has a negative coefficient, and the absolute GCD
+    // of all coefficients is 3.
+    return Ok(extract_multi_var_content(&expanded));
   };
 
   // 2-arg form with a chosen variable: get the multi-var content, then
@@ -3270,66 +3236,61 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  let coeffs = match extract_poly_coeffs(&expanded, &var) {
-    Some(c) => c,
-    None => {
-      // Rational coefficients: extract the rational content num_gcd/den_lcm
-      // (sign of the highest-degree term), matching wolframscript:
-      // FactorTermsList[x/2 - x^2/2] → {-1/2, -x + x^2}.
-      let terms = collect_additive_terms(&expanded);
-      if let Some((num_gcd, den_lcm, term_coeffs)) = rational_content(&terms)
-        && (num_gcd.abs() != 1 || den_lcm != 1)
-      {
-        let inner =
-          build_sum(divide_terms_by(&terms, &term_coeffs, num_gcd, den_lcm));
-        let content = if den_lcm == 1 {
-          Expr::Integer(num_gcd)
-        } else {
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(num_gcd), Expr::Integer(den_lcm)].into(),
-          }
-        };
-        if args.len() == 2 {
-          // The var-dependent primitive goes in the third slot; a
-          // primitive independent of `var` is the non-var second slot
-          // (FactorTermsList[3 f, x] → {3, f, 1}).
-          if contains_var(&inner, &var) {
-            return Ok(Expr::List(
-              vec![content, Expr::Integer(1), inner].into(),
-            ));
-          }
-          return Ok(Expr::List(vec![content, inner, Expr::Integer(1)].into()));
+  let Some(coeffs) = extract_poly_coeffs(&expanded, &var) else {
+    // Rational coefficients: extract the rational content num_gcd/den_lcm
+    // (sign of the highest-degree term), matching wolframscript:
+    // FactorTermsList[x/2 - x^2/2] → {-1/2, -x + x^2}.
+    let terms = collect_additive_terms(&expanded);
+    if let Some((num_gcd, den_lcm, term_coeffs)) = rational_content(&terms)
+      && (num_gcd.abs() != 1 || den_lcm != 1)
+    {
+      let inner =
+        build_sum(divide_terms_by(&terms, &term_coeffs, num_gcd, den_lcm));
+      let content = if den_lcm == 1 {
+        Expr::Integer(num_gcd)
+      } else {
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(num_gcd), Expr::Integer(den_lcm)].into(),
         }
-        return Ok(Expr::List(vec![content, inner].into()));
-      }
-      // 2-arg form always returns a 3-element {numeric, non-var, var-part}
-      // list. When we can't extract integer coefficients, conservatively
-      // split off a numeric factor and route the rest based on whether it
-      // depends on the chosen variable.
+      };
       if args.len() == 2 {
-        if contains_var(&expanded, &var) {
-          return Ok(Expr::List(
-            vec![Expr::Integer(1), Expr::Integer(1), expanded].into(),
-          ));
+        // The var-dependent primitive goes in the third slot; a
+        // primitive independent of `var` is the non-var second slot
+        // (FactorTermsList[3 f, x] → {3, f, 1}).
+        if contains_var(&inner, &var) {
+          return Ok(Expr::List(vec![content, Expr::Integer(1), inner].into()));
         }
-        let (num_coeff, _key, var_factors) = decompose_term(&expanded);
-        let non_var = if var_factors.is_empty() {
-          Expr::Integer(1)
-        } else if var_factors.len() == 1 {
-          var_factors.into_iter().next().unwrap()
-        } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: var_factors.into(),
-          }
-        };
+        return Ok(Expr::List(vec![content, inner, Expr::Integer(1)].into()));
+      }
+      return Ok(Expr::List(vec![content, inner].into()));
+    }
+    // 2-arg form always returns a 3-element {numeric, non-var, var-part}
+    // list. When we can't extract integer coefficients, conservatively
+    // split off a numeric factor and route the rest based on whether it
+    // depends on the chosen variable.
+    if args.len() == 2 {
+      if contains_var(&expanded, &var) {
         return Ok(Expr::List(
-          vec![num_coeff, non_var, Expr::Integer(1)].into(),
+          vec![Expr::Integer(1), Expr::Integer(1), expanded].into(),
         ));
       }
-      return Ok(Expr::List(vec![Expr::Integer(1), expanded].into()));
+      let (num_coeff, _key, var_factors) = decompose_term(&expanded);
+      let non_var = if var_factors.is_empty() {
+        Expr::Integer(1)
+      } else if var_factors.len() == 1 {
+        var_factors.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: var_factors.into(),
+        }
+      };
+      return Ok(Expr::List(
+        vec![num_coeff, non_var, Expr::Integer(1)].into(),
+      ));
     }
+    return Ok(Expr::List(vec![Expr::Integer(1), expanded].into()));
   };
 
   // Compute content (GCD of coefficients)
@@ -3347,8 +3308,7 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .iter()
     .rev()
     .find(|&&c| c != 0)
-    .map(|&c| c < 0)
-    .unwrap_or(false)
+    .is_some_and(|&c| c < 0)
   {
     -1i128
   } else {
@@ -3639,7 +3599,8 @@ fn try_factor_homogeneous_binomial(expr: &Expr) -> Option<Expr> {
   for f in &mut factors {
     if expr_to_string(f).starts_with('-') {
       let terms = collect_additive_terms(f);
-      *f = combine_and_build(terms.iter().map(negate_term).collect());
+      *f =
+        combine_and_build(&terms.iter().map(negate_term).collect::<Vec<_>>());
       negated = !negated;
     }
   }
@@ -3695,13 +3656,13 @@ fn min_term_coefficient(expr: &Expr) -> i128 {
 fn factor_multivariate(
   expanded: &Expr,
   vars: std::collections::HashSet<String>,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   // Fast path: a^n ± b^n decomposes directly via cyclotomic polynomials.
   // Skips the expensive Kronecker substitution path, which was effectively
   // hanging on inputs like `Factor[x^10 - y^10]` (degree-110 sparse trial
   // divisions).
   if let Some(result) = try_factor_homogeneous_binomial(expanded) {
-    return Ok(result);
+    return result;
   }
 
   let mut sorted_vars: Vec<String> = vars.into_iter().collect();
@@ -3718,7 +3679,8 @@ fn factor_multivariate(
   };
   if content < 0 {
     let terms = collect_additive_terms(&working);
-    working = combine_and_build(terms.iter().map(negate_term).collect());
+    working =
+      combine_and_build(&terms.iter().map(negate_term).collect::<Vec<_>>());
   }
 
   // Extract common monomial factor (e.g., x^2*y from all terms)
@@ -3736,16 +3698,16 @@ fn factor_multivariate(
         let overall = content * overall_sign;
         let mut all_factors = monomial_factors;
         all_factors.extend(factors);
-        return Ok(build_multivariate_result(overall, all_factors));
+        return build_multivariate_result(overall, &all_factors);
       }
       _ => {
         // Can't factor further; return with monomial factors
         if monomial_factors.is_empty() && content == 1 {
-          return Ok(expanded.clone());
+          return expanded.clone();
         }
         let mut all_factors = monomial_factors;
         all_factors.push((working.clone(), 1));
-        return Ok(build_multivariate_result(content, all_factors));
+        return build_multivariate_result(content, &all_factors);
       }
     }
   } else if remaining_vars.len() == 1 {
@@ -3759,8 +3721,7 @@ fn factor_multivariate(
         .fold(0i128, gcd_i128);
       if coeff_gcd > 0 {
         let reduced: Vec<i128> = coeffs.iter().map(|c| c / coeff_gcd).collect();
-        let (sign, reduced) = if reduced.last().map(|&c| c < 0).unwrap_or(false)
-        {
+        let (sign, reduced) = if reduced.last().is_some_and(|&c| c < 0) {
           (-1i128, reduced.iter().map(|c| -c).collect::<Vec<_>>())
         } else {
           (1, reduced)
@@ -3783,7 +3744,7 @@ fn factor_multivariate(
             }
           }
           all_factors.extend(grouped);
-          return Ok(build_multivariate_result(overall, all_factors));
+          return build_multivariate_result(overall, &all_factors);
         }
       }
     }
@@ -3795,10 +3756,10 @@ fn factor_multivariate(
   if !poly_factors.is_empty() || !monomial_factors.is_empty() {
     let mut all_factors = monomial_factors;
     all_factors.extend(poly_factors);
-    return Ok(build_multivariate_result(content, all_factors));
+    return build_multivariate_result(content, &all_factors);
   }
 
-  Ok(expanded.clone())
+  expanded.clone()
 }
 
 /// Core Kronecker substitution algorithm for multivariate factoring.
@@ -3848,7 +3809,7 @@ fn kronecker_factor_multivar(
     return None;
   }
   let reduced: Vec<i128> = coeffs.iter().map(|c| c / coeff_gcd).collect();
-  let (reduced, uni_sign) = if reduced.last().map(|&c| c < 0).unwrap_or(false) {
+  let (reduced, uni_sign) = if reduced.last().is_some_and(|&c| c < 0) {
     (reduced.iter().map(|c| -c).collect::<Vec<_>>(), -1i128)
   } else {
     (reduced, 1i128)
@@ -4051,7 +4012,7 @@ fn reverse_kronecker_coeffs(
     Expr::Integer(0)
   } else {
     let raw = build_sum(terms);
-    combine_and_build(collect_additive_terms(&raw))
+    combine_and_build(&collect_additive_terms(&raw))
   }
 }
 
@@ -4184,7 +4145,7 @@ fn try_refactor_multivar(
       return vec![(expanded, 1)];
     }
     let reduced: Vec<i128> = coeffs.iter().map(|c| c / coeff_gcd).collect();
-    let (reduced, _) = if reduced.last().map(|&c| c < 0).unwrap_or(false) {
+    let (reduced, _) = if reduced.last().is_some_and(|&c| c < 0) {
       (reduced.iter().map(|c| -c).collect::<Vec<_>>(), -1i128)
     } else {
       (reduced, 1i128)
@@ -4279,16 +4240,15 @@ fn extract_common_monomial(
   let mut valid = true;
 
   for term in &terms {
-    match extract_multivar_term_data(term, sorted_vars) {
-      Some((_coeff, exponents)) => {
-        for (i, &exp) in exponents.iter().enumerate() {
-          min_exps[i] = min_exps[i].min(exp);
-        }
+    if let Some((_coeff, exponents)) =
+      extract_multivar_term_data(term, sorted_vars)
+    {
+      for (i, &exp) in exponents.iter().enumerate() {
+        min_exps[i] = min_exps[i].min(exp);
       }
-      None => {
-        valid = false;
-        break;
-      }
+    } else {
+      valid = false;
+      break;
     }
   }
 
@@ -4344,7 +4304,7 @@ fn extract_common_monomial(
   let remaining = if new_terms.is_empty() {
     Expr::Integer(0)
   } else {
-    combine_and_build(new_terms)
+    combine_and_build(&new_terms)
   };
 
   (monomial_factors, remaining)
@@ -4437,7 +4397,7 @@ fn divide_expr_by_scalar(expr: &Expr, scalar: i128) -> Expr {
   if new_terms.is_empty() {
     Expr::Integer(0)
   } else {
-    combine_and_build(new_terms)
+    combine_and_build(&new_terms)
   }
 }
 
@@ -4501,14 +4461,11 @@ fn divide_term_by_scalar(term: &Expr, scalar: i128) -> Expr {
 }
 
 /// Build the final factored result from overall coefficient and factor list.
-fn build_multivariate_result(
-  overall: i128,
-  factors: Vec<(Expr, usize)>,
-) -> Expr {
+fn build_multivariate_result(overall: i128, factors: &[(Expr, usize)]) -> Expr {
   // First, group identical factors by string representation
   let mut grouped: Vec<(Expr, usize)> = Vec::new();
-  for (factor, mult) in &factors {
-    let f = combine_and_build(collect_additive_terms(factor));
+  for (factor, mult) in factors {
+    let f = combine_and_build(&collect_additive_terms(factor));
     let key = expr_to_string(&f);
     if let Some(entry) =
       grouped.iter_mut().find(|(e, _)| expr_to_string(e) == key)

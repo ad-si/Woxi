@@ -620,7 +620,7 @@ pub fn scan_levelspec_ast(
   let parts = crate::evaluator::evaluate_expr_to_expr(&level_call)?;
   match parts {
     Expr::List(ref items) => {
-      for item in items.iter() {
+      for item in items {
         apply_func_ast(func, item)?;
       }
       Ok(Expr::Identifier("Null".to_string()))
@@ -944,13 +944,13 @@ fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
         | BinaryOperator::Or
         | BinaryOperator::StringJoin
         | BinaryOperator::Alternatives => {
-          fn flatten(op: &BinaryOperator, e: &Expr, out: &mut Vec<Expr>) {
+          fn flatten(op: BinaryOperator, e: &Expr, out: &mut Vec<Expr>) {
             if let Expr::BinaryOp {
               op: inner,
               left,
               right,
             } = e
-              && inner == op
+              && *inner == op
             {
               flatten(op, left, out);
               flatten(op, right, out);
@@ -959,12 +959,14 @@ fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
             out.push(e.clone());
           }
           let mut parts = Vec::new();
-          flatten(op, left, &mut parts);
-          flatten(op, right, &mut parts);
+          flatten(*op, left, &mut parts);
+          flatten(*op, right, &mut parts);
           Some(parts)
         }
         // Power (right-associative, binary) and any remaining operators.
-        _ => Some(vec![left.as_ref().clone(), right.as_ref().clone()]),
+        BinaryOperator::Power => {
+          Some(vec![left.as_ref().clone(), right.as_ref().clone()])
+        }
       }
     }
     Expr::UnaryOp { operand, .. } => Some(vec![operand.as_ref().clone()]),
@@ -1204,7 +1206,7 @@ fn apply_at_level_recursive(
       })
       .collect::<Result<Vec<_>, _>>()?
   } else {
-    items.to_vec()
+    items.clone()
   };
 
   // Replace head at this level if in range
@@ -1427,8 +1429,8 @@ fn times_factors(e: &Expr) -> Option<Vec<Expr>> {
 
 /// Re-evaluate `head[args…]` through the normal evaluator so the result is
 /// canonicalized exactly like a freshly parsed expression.
-fn reeval_head(head: &str, args: Vec<Expr>) -> Result<Expr, InterpreterError> {
-  crate::evaluator::evaluate_function_call_ast(head, &args)
+fn reeval_head(head: &str, args: &[Expr]) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_function_call_ast(head, args)
 }
 
 /// Cartesian product of a list of summand-lists.
@@ -1462,7 +1464,7 @@ fn tensor_expand_rec(expr: &Expr) -> Result<Expr, InterpreterError> {
     for t in &terms {
       out.push(tensor_expand_rec(t)?);
     }
-    return reeval_head("Plus", out);
+    return reeval_head("Plus", &out);
   }
 
   // Times: expand each factor, then distribute over any sums (Cartesian).
@@ -1474,9 +1476,9 @@ fn tensor_expand_rec(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
     let mut out = Vec::new();
     for combo in cartesian(&expanded) {
-      out.push(reeval_head("Times", combo)?);
+      out.push(reeval_head("Times", &combo)?);
     }
-    return reeval_head("Plus", out);
+    return reeval_head("Plus", &out);
   }
 
   match expr {
@@ -1485,14 +1487,14 @@ fn tensor_expand_rec(expr: &Expr) -> Result<Expr, InterpreterError> {
       if (name == "TensorProduct" || name == "Dot") && !args.is_empty() =>
     {
       let mut slots: Vec<Vec<Expr>> = Vec::with_capacity(args.len());
-      for a in args.iter() {
+      for a in args {
         slots.push(slot_summands(a)?);
       }
       let mut out = Vec::new();
       for combo in cartesian(&slots) {
-        out.push(reeval_head(name, combo)?);
+        out.push(reeval_head(name, &combo)?);
       }
-      reeval_head("Plus", out)
+      reeval_head("Plus", &out)
     }
     // TensorContract / TensorTranspose are linear in their tensor argument.
     Expr::FunctionCall { name, args }
@@ -1504,11 +1506,11 @@ fn tensor_expand_rec(expr: &Expr) -> Result<Expr, InterpreterError> {
       if let Some(terms) = plus_terms(&t) {
         let mut out = Vec::with_capacity(terms.len());
         for term in terms {
-          out.push(reeval_head(name, vec![term, rest.clone()])?);
+          out.push(reeval_head(name, &[term, rest.clone()])?);
         }
-        reeval_head("Plus", out)
+        reeval_head("Plus", &out)
       } else {
-        reeval_head(name, vec![t, rest])
+        reeval_head(name, &[t, rest])
       }
     }
     _ => Ok(expr.clone()),
@@ -1529,7 +1531,7 @@ fn tensor_expand_slot(arg: &Expr) -> Result<Expr, InterpreterError> {
     for t in &terms {
       out.push(tensor_expand_slot(t)?);
     }
-    return reeval_head("Plus", out);
+    return reeval_head("Plus", &out);
   }
   match arg {
     Expr::FunctionCall { name, .. }
@@ -1765,21 +1767,15 @@ fn inner_recursive(
 
   if a_depth == 1 && b_depth == 1 {
     // Base case: both are flat lists - do pairwise f then combine with g
-    let items_a = match a {
-      Expr::List(items) => items,
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Inner expects lists as arguments".into(),
-        ));
-      }
+    let Expr::List(items_a) = a else {
+      return Err(InterpreterError::EvaluationError(
+        "Inner expects lists as arguments".into(),
+      ));
     };
-    let items_b = match b {
-      Expr::List(items) => items,
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Inner expects lists as arguments".into(),
-        ));
-      }
+    let Expr::List(items_b) = b else {
+      return Err(InterpreterError::EvaluationError(
+        "Inner expects lists as arguments".into(),
+      ));
     };
     if items_a.len() != items_b.len() {
       return Err(InterpreterError::EvaluationError(
@@ -1794,13 +1790,10 @@ fn inner_recursive(
     apply_func_to_n_args(g, &products)
   } else if a_depth > 1 {
     // Map over the first dimension of a
-    let items_a = match a {
-      Expr::List(items) => items,
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Inner expects lists as arguments".into(),
-        ));
-      }
+    let Expr::List(items_a) = a else {
+      return Err(InterpreterError::EvaluationError(
+        "Inner expects lists as arguments".into(),
+      ));
     };
     let mut results = Vec::new();
     for row in items_a {
@@ -1811,21 +1804,15 @@ fn inner_recursive(
     // a_depth == 1, b_depth > 1
     // Contract a (vector) with first dimension of b
     // Need to iterate over the inner structure of b
-    let items_a = match a {
-      Expr::List(items) => items,
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Inner expects lists as arguments".into(),
-        ));
-      }
+    let Expr::List(items_a) = a else {
+      return Err(InterpreterError::EvaluationError(
+        "Inner expects lists as arguments".into(),
+      ));
     };
-    let items_b = match b {
-      Expr::List(items) => items,
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Inner expects lists as arguments".into(),
-        ));
-      }
+    let Expr::List(items_b) = b else {
+      return Err(InterpreterError::EvaluationError(
+        "Inner expects lists as arguments".into(),
+      ));
     };
     if items_a.len() != items_b.len() {
       return Err(InterpreterError::EvaluationError(
@@ -1982,15 +1969,13 @@ pub fn array_reduce_ast(
   for &l in &raw_levels {
     if l < 1 {
       crate::emit_message(&format!(
-        "ArrayReduce::arlowlev: Level specification {} should be positive.",
-        l
+        "ArrayReduce::arlowlev: Level specification {l} should be positive."
       ));
       return unevaluated();
     }
     if l as usize > rank {
       crate::emit_message(&format!(
-        "ArrayReduce::arhighlev: Level specification {} is higher than array depth.",
-        l
+        "ArrayReduce::arhighlev: Level specification {l} is higher than array depth."
       ));
       return unevaluated();
     }
@@ -2087,7 +2072,8 @@ pub fn find_repeat_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if chars.is_empty() {
         return Ok(Expr::String(String::new()));
       }
-      let strs: Vec<String> = chars.iter().map(|c| c.to_string()).collect();
+      let strs: Vec<String> =
+        chars.iter().map(std::string::ToString::to_string).collect();
       match find_repeat_period(&strs, min_reps) {
         Some(p) => Ok(Expr::String(chars[..p].iter().collect())),
         None => Ok(Expr::String(String::new())),
@@ -2180,7 +2166,8 @@ pub fn find_transient_repeat_ast(
     }
     Expr::String(s) => {
       let chars: Vec<char> = s.chars().collect();
-      let strs: Vec<String> = chars.iter().map(|c| c.to_string()).collect();
+      let strs: Vec<String> =
+        chars.iter().map(std::string::ToString::to_string).collect();
       let (t, p) = transient_repeat_split(&strs, n);
       Ok(Expr::List(
         vec![

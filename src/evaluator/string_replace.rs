@@ -217,7 +217,7 @@ pub fn apply_wolfram_pattern(
       test_func,
     } => {
       // x_?test - check if test[expr] is True
-      let test_expr = format!("{}[{}]", test_func, expr);
+      let test_expr = format!("{test_func}[{expr}]");
       match interpret(&test_expr) {
         Ok(result) if result == "True" => {
           let replaced = replace_var_with_value(replacement, var_name, expr);
@@ -283,27 +283,26 @@ pub fn apply_replace_all_direct(
       }
 
       return Ok(format!("{{{}}}", results.join(", ")));
-    } else {
-      // Single expression - apply pattern directly
-      if let Some(replaced) =
-        apply_wolfram_pattern(expr, &wolfram_pattern, replacement)?
-      {
-        let evaluated = evaluate_fullform(&replaced).unwrap_or(replaced);
-        return Ok(evaluated);
-      }
-      return Ok(expr.to_string());
     }
+    // Single expression - apply pattern directly
+    if let Some(replaced) =
+      apply_wolfram_pattern(expr, &wolfram_pattern, replacement)?
+    {
+      let evaluated = evaluate_fullform(&replaced).unwrap_or(replaced);
+      return Ok(evaluated);
+    }
+    return Ok(expr.to_string());
   }
 
   // Fall back to literal string replacement for non-pattern cases
   let result = replace_in_expr(expr, pattern, replacement);
 
   // Re-evaluate the result to simplify if possible
-  if result != *expr {
+  if result == *expr {
+    Ok(result)
+  } else {
     // Try to evaluate the result, but if it fails, return as-is
     evaluate_fullform(&result).or(Ok(result))
-  } else {
-    Ok(result)
   }
 }
 

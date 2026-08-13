@@ -221,14 +221,14 @@ fn refine_minimal_coeffs(alpha: &Expr, coeffs: &[i128]) -> Vec<i128> {
   }
   let var = "WoxiRootReduceFactorVar";
   let poly = coeffs_to_expr(coeffs, var);
-  let factored =
-    match crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+  let Ok(factored) =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Factor".to_string(),
       args: vec![poly].into(),
-    }) {
-      Ok(f) => f,
-      Err(_) => return coeffs.to_vec(),
-    };
+    })
+  else {
+    return coeffs.to_vec();
+  };
   let factors = collect_poly_factors(&factored, var);
   if factors.len() <= 1 {
     return coeffs.to_vec();
@@ -329,7 +329,7 @@ fn factor_int_coeffs(factor: &Expr, var: &str) -> Option<Vec<i128>> {
     return None;
   };
   let mut coeffs: Vec<i128> = Vec::with_capacity(items.len());
-  for it in items.iter() {
+  for it in items {
     coeffs.push(expr_to_i128(it)?);
   }
   while coeffs.len() > 1 && *coeffs.last().unwrap() == 0 {
@@ -339,7 +339,7 @@ fn factor_int_coeffs(factor: &Expr, var: &str) -> Option<Vec<i128>> {
     return None;
   }
   if *coeffs.last().unwrap() < 0 {
-    for c in coeffs.iter_mut() {
+    for c in &mut coeffs {
       *c = -*c;
     }
   }
@@ -348,7 +348,7 @@ fn factor_int_coeffs(factor: &Expr, var: &str) -> Option<Vec<i128>> {
     g = gcd_i128(g, c);
   }
   if g > 1 {
-    for c in coeffs.iter_mut() {
+    for c in &mut coeffs {
       *c /= g;
     }
   }
@@ -559,9 +559,7 @@ fn compute_minpoly_coeffs(
           let primitive = make_primitive_monic(&c);
           let nval = numeric_value_of(expr);
           Ok(Some(match nval {
-            Some(val) => {
-              pick_irreducible_factor(&primitive, val).unwrap_or(primitive)
-            }
+            Some(val) => pick_irreducible_factor(&primitive, val),
             None => primitive,
           }))
         }
@@ -613,16 +611,15 @@ fn handle_power(
         let mut coeffs = vec![0i128; q_us as usize + 1];
         coeffs[0] = -num_pow;
         coeffs[q_us as usize] = den_pow;
-        return Ok(make_primitive_and_irreducible(coeffs));
-      } else {
-        // α = (a_num/a_den)^(-|p|/q) = (a_den/a_num)^(|p|/q)
-        let num_pow = a_den.pow(p_abs);
-        let den_pow = a_num.pow(p_abs);
-        let mut coeffs = vec![0i128; q_us as usize + 1];
-        coeffs[0] = -num_pow;
-        coeffs[q_us as usize] = den_pow;
-        return Ok(make_primitive_and_irreducible(coeffs));
+        return Ok(Some(make_primitive_and_irreducible(&coeffs)));
       }
+      // α = (a_num/a_den)^(-|p|/q) = (a_den/a_num)^(|p|/q)
+      let num_pow = a_den.pow(p_abs);
+      let den_pow = a_num.pow(p_abs);
+      let mut coeffs = vec![0i128; q_us as usize + 1];
+      coeffs[0] = -num_pow;
+      coeffs[q_us as usize] = den_pow;
+      return Ok(Some(make_primitive_and_irreducible(&coeffs)));
     }
   }
 
@@ -687,7 +684,7 @@ fn handle_power(
       let composed = compose_with_x_power(&bp, q as usize);
       let primitive = make_primitive_monic(&composed);
       let result = if let Some(val) = numeric_val {
-        pick_irreducible_factor(&primitive, val).unwrap_or(primitive)
+        pick_irreducible_factor(&primitive, val)
       } else {
         primitive
       };
@@ -720,17 +717,15 @@ fn handle_times(expr: &Expr) -> Result<Option<Vec<i128>>, InterpreterError> {
   }
 
   // Start with first factor
-  let mut result = match compute_minpoly_coeffs(&factors[0])? {
-    Some(c) => c,
-    None => return Ok(None),
+  let Some(mut result) = compute_minpoly_coeffs(&factors[0])? else {
+    return Ok(None);
   };
 
   let mut numeric_product = expr_to_f64(&factors[0]);
 
   for factor in &factors[1..] {
-    let fc = match compute_minpoly_coeffs(factor)? {
-      Some(c) => c,
-      None => return Ok(None),
+    let Some(fc) = compute_minpoly_coeffs(factor)? else {
+      return Ok(None);
     };
     let factor_val = expr_to_f64(factor);
     numeric_product = numeric_product.and_then(|a| factor_val.map(|b| a * b));
@@ -752,17 +747,15 @@ fn handle_plus(args: &[Expr]) -> Result<Option<Vec<i128>>, InterpreterError> {
     return Ok(None);
   }
 
-  let mut result = match compute_minpoly_coeffs(&args[0])? {
-    Some(c) => c,
-    None => return Ok(None),
+  let Some(mut result) = compute_minpoly_coeffs(&args[0])? else {
+    return Ok(None);
   };
 
   let mut numeric_sum = expr_to_f64(&args[0]);
 
   for arg in &args[1..] {
-    let ac = match compute_minpoly_coeffs(arg)? {
-      Some(c) => c,
-      None => return Ok(None),
+    let Some(ac) = compute_minpoly_coeffs(arg)? else {
+      return Ok(None);
     };
     let arg_val = expr_to_f64(arg);
     numeric_sum = numeric_sum.and_then(|a| arg_val.map(|b| a + b));
@@ -860,7 +853,7 @@ fn minpoly_of_sum(
     for j in 0..=deg_a {
       let col = i + deg_a - j;
       if col < size {
-        matrix[i][col] = p_xy_coeffs[j].clone();
+        matrix[i][col].clone_from(&p_xy_coeffs[j]);
       }
     }
   }
@@ -870,7 +863,7 @@ fn minpoly_of_sum(
     for j in 0..=deg_b {
       let col = i + deg_b - j;
       if col < size {
-        matrix[deg_b + i][col] = q_coeffs[j].clone();
+        matrix[deg_b + i][col].clone_from(&q_coeffs[j]);
       }
     }
   }
@@ -884,7 +877,7 @@ fn minpoly_of_sum(
 
   // If the result is reducible, find the factor that vanishes at numeric_val
   if let Some(val) = numeric_val {
-    return pick_irreducible_factor(&result, val);
+    return Some(pick_irreducible_factor(&result, val));
   }
 
   Some(result)
@@ -928,7 +921,7 @@ fn minpoly_of_product(
     for j in 0..=deg_a {
       let col = i + deg_a - j;
       if col < size {
-        matrix[i][col] = p_xy_coeffs[j].clone();
+        matrix[i][col].clone_from(&p_xy_coeffs[j]);
       }
     }
   }
@@ -937,7 +930,7 @@ fn minpoly_of_product(
     for j in 0..=deg_b {
       let col = i + deg_b - j;
       if col < size {
-        matrix[deg_b + i][col] = q_coeffs[j].clone();
+        matrix[deg_b + i][col].clone_from(&q_coeffs[j]);
       }
     }
   }
@@ -946,7 +939,7 @@ fn minpoly_of_product(
   let result = make_primitive_monic(&det);
 
   if let Some(val) = numeric_val {
-    return pick_irreducible_factor(&result, val);
+    return Some(pick_irreducible_factor(&result, val));
   }
 
   Some(result)
@@ -989,7 +982,7 @@ fn minpoly_of_power(
     for j in 0..=deg_a {
       let col = i + deg_a - j;
       if col < size {
-        matrix[i][col] = p_coeffs[j].clone();
+        matrix[i][col].clone_from(&p_coeffs[j]);
       }
     }
   }
@@ -999,7 +992,7 @@ fn minpoly_of_power(
     for j in 0..=n_us {
       let col = i + n_us - j;
       if col < size {
-        matrix[n_us + i][col] = q_coeffs[j].clone();
+        matrix[n_us + i][col].clone_from(&q_coeffs[j]);
       }
     }
   }
@@ -1008,7 +1001,7 @@ fn minpoly_of_power(
   let result = make_primitive_monic(&det);
 
   if let Some(val) = numeric_val {
-    return pick_irreducible_factor(&result, val);
+    return Some(pick_irreducible_factor(&result, val));
   }
 
   Some(result)
@@ -1128,7 +1121,7 @@ fn integer_matrix_determinant_big(mut a: Vec<Vec<BigInt>>) -> BigInt {
         a[i][j] = updated;
       }
     }
-    previous_pivot = a[k][k].clone();
+    previous_pivot.clone_from(&a[k][k]);
   }
   let det = a[n - 1][n - 1].clone();
   if negated { -det } else { det }
@@ -1588,7 +1581,7 @@ fn char_poly_of_rational_matrix(
     return Ok(None);
   };
   let mut rats: Vec<Rat> = Vec::with_capacity(items.len());
-  for it in items.iter() {
+  for it in items {
     match it {
       Expr::Integer(n) => rats.push((*n, 1)),
       Expr::FunctionCall { name, args }
@@ -1884,7 +1877,7 @@ fn single_generator_minpoly(
   // quadratic subfield of a quartic), leaving the characteristic polynomial
   // reducible; keep the factor that actually vanishes at the value.
   Ok(Some(match numeric_value_of(expr) {
-    Some(val) => pick_irreducible_factor(&candidate, val).unwrap_or(candidate),
+    Some(val) => pick_irreducible_factor(&candidate, val),
     None => candidate,
   }))
 }
@@ -1943,22 +1936,22 @@ fn make_primitive_monic(coeffs: &[i128]) -> Vec<i128> {
 }
 
 /// Make primitive and check irreducibility, return Some if valid
-fn make_primitive_and_irreducible(coeffs: Vec<i128>) -> Option<Vec<i128>> {
-  let result = make_primitive_monic(&coeffs);
+fn make_primitive_and_irreducible(coeffs: &[i128]) -> std::vec::Vec<i128> {
+  let result = make_primitive_monic(coeffs);
   // For simple cases like x^n - a, check if this is already irreducible
   // by trying to factor
   let factors = try_factor_integer_poly(&result);
   if factors.len() == 1 {
-    Some(factors[0].clone())
+    factors[0].clone()
   } else {
     // Return the factor of smallest degree > 0
     let mut best = result;
     for f in &factors {
       if f.len() > 1 && f.len() < best.len() {
-        best = f.clone();
+        best.clone_from(f);
       }
     }
-    Some(make_primitive_monic(&best))
+    make_primitive_monic(&best)
   }
 }
 
@@ -2054,14 +2047,14 @@ fn try_factor_integer_poly(coeffs: &[i128]) -> Vec<Vec<i128>> {
 }
 
 /// Pick the irreducible factor of a polynomial that vanishes at the given numeric value
-fn pick_irreducible_factor(coeffs: &[i128], val: f64) -> Option<Vec<i128>> {
+fn pick_irreducible_factor(coeffs: &[i128], val: f64) -> std::vec::Vec<i128> {
   if coeffs.len() <= 2 {
-    return Some(coeffs.to_vec());
+    return coeffs.to_vec();
   }
 
   let factors = try_factor_integer_poly(coeffs);
   if factors.len() <= 1 {
-    return Some(coeffs.to_vec());
+    return coeffs.to_vec();
   }
 
   // Find the factor closest to zero at val
@@ -2074,12 +2067,12 @@ fn pick_irreducible_factor(coeffs: &[i128], val: f64) -> Option<Vec<i128>> {
     }
     let ev = eval_poly_f64(f, val).abs();
     if ev < best_eval || (ev == best_eval && f.len() < best.len()) {
-      best = f.clone();
+      best.clone_from(f);
       best_eval = ev;
     }
   }
 
-  Some(make_primitive_monic(&best))
+  make_primitive_monic(&best)
 }
 
 /// Evaluate polynomial at f64 value
@@ -2164,7 +2157,7 @@ fn small_divisors(n: i128) -> Vec<i128> {
       }
     }
   }
-  divs.sort();
+  divs.sort_unstable();
   divs
 }
 
@@ -2324,7 +2317,7 @@ fn sturm_real_root_count(coeffs: &[i128]) -> usize {
   use num_traits::{Signed, Zero};
 
   fn trim(mut v: Vec<BigInt>) -> Vec<BigInt> {
-    while v.len() > 1 && v.last().is_some_and(|c| c.is_zero()) {
+    while v.len() > 1 && v.last().is_some_and(num_traits::Zero::is_zero) {
       v.pop();
     }
     v
@@ -2388,7 +2381,7 @@ fn sturm_real_root_count(coeffs: &[i128]) -> usize {
     }
     let a = &chain[chain.len() - 2];
     let r = trim(pseudo_rem(a, b));
-    if r.iter().all(|c| c.is_zero()) {
+    if r.iter().all(num_traits::Zero::is_zero) {
       break;
     }
     let neg: Vec<BigInt> = content_reduce(&r).iter().map(|c| -c).collect();

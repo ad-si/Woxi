@@ -26,7 +26,7 @@ fn to_radicals_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
       if let Expr::FunctionCall { name: rn, .. } = &result
         && rn == "Root"
       {
-        return root_to_radical(&args[0], &args[1]);
+        return Ok(root_to_radical(&args[0], &args[1]));
       }
       Ok(result)
     }
@@ -239,21 +239,18 @@ fn contains_slot(expr: &Expr) -> bool {
 }
 
 /// Convert Root[f&, k] to radical form.
-fn root_to_radical(
-  func: &Expr,
-  k_expr: &Expr,
-) -> Result<Expr, InterpreterError> {
+fn root_to_radical(func: &Expr, k_expr: &Expr) -> crate::syntax::Expr {
   let k = match k_expr {
     Expr::Integer(n) => *n,
     _ => {
-      return Ok(call("Root", vec![func.clone(), k_expr.clone()]));
+      return call("Root", vec![func.clone(), k_expr.clone()]);
     }
   };
 
   let body_raw = match func {
     Expr::Function { body } => body.as_ref(),
     _ => {
-      return Ok(call("Root", vec![func.clone(), k_expr.clone()]));
+      return call("Root", vec![func.clone(), k_expr.clone()]);
     }
   };
   // Evaluate the body to normalize it into FunctionCall form (Plus, Times, Power)
@@ -261,11 +258,8 @@ fn root_to_radical(
     .unwrap_or_else(|_| body_raw.clone());
   let body = &body_eval;
 
-  let coeffs = match extract_poly_coefficients(body) {
-    Some(c) => c,
-    None => {
-      return Ok(call("Root", vec![func.clone(), k_expr.clone()]));
-    }
+  let Some(coeffs) = extract_poly_coefficients(body) else {
+    return call("Root", vec![func.clone(), k_expr.clone()]);
   };
 
   let degree = coeffs.len() - 1;
@@ -277,12 +271,12 @@ fn root_to_radical(
     .all(|c| crate::syntax::expr_to_string(c) == "0");
 
   let roots = if is_pure && degree >= 1 {
-    solve_pure_nth(&coeffs[degree], &coeffs[0], degree as i128)
+    Some(solve_pure_nth(&coeffs[degree], &coeffs[0], degree as i128))
   } else {
     match degree {
-      1 => solve_linear(&coeffs),
-      2 => solve_quadratic(&coeffs),
-      3 => solve_cubic(&coeffs),
+      1 => Some(solve_linear(&coeffs)),
+      2 => Some(solve_quadratic(&coeffs)),
+      3 => Some(solve_cubic(&coeffs)),
       4 => solve_quartic(&coeffs),
       _ => None,
     }
@@ -300,29 +294,29 @@ fn root_to_radical(
 
       let idx = (k as usize) - 1;
       if idx >= evaluated_roots.len() {
-        Ok(call("Root", vec![func.clone(), k_expr.clone()]))
+        call("Root", vec![func.clone(), k_expr.clone()])
       } else {
-        Ok(evaluated_roots.remove(idx))
+        evaluated_roots.remove(idx)
       }
     }
-    None => Ok(call("Root", vec![func.clone(), k_expr.clone()])),
+    None => call("Root", vec![func.clone(), k_expr.clone()]),
   }
 }
 
 /// Solve linear: a0 + a1*x = 0 → x = -a0/a1
-fn solve_linear(coeffs: &[Expr]) -> Option<Vec<Expr>> {
-  Some(vec![call(
+fn solve_linear(coeffs: &[Expr]) -> std::vec::Vec<crate::syntax::Expr> {
+  vec![call(
     "Times",
     vec![
       mk_int(-1),
       coeffs[0].clone(),
       mk_power(coeffs[1].clone(), mk_int(-1)),
     ],
-  )])
+  )]
 }
 
 /// Solve quadratic: a0 + a1*x + a2*x^2 = 0
-fn solve_quadratic(coeffs: &[Expr]) -> Option<Vec<Expr>> {
+fn solve_quadratic(coeffs: &[Expr]) -> std::vec::Vec<crate::syntax::Expr> {
   let a = &coeffs[2];
   let b = &coeffs[1];
   let c = &coeffs[0];
@@ -348,12 +342,12 @@ fn solve_quadratic(coeffs: &[Expr]) -> Option<Vec<Expr>> {
     mk_power(denom, mk_int(-1)),
   );
 
-  Some(vec![root1, root2])
+  vec![root1, root2]
 }
 
 /// Solve depressed cubic x^3 + px + q = 0 using Cardano's formula.
 /// Then shift for general cubic a0 + a1*x + a2*x^2 + a3*x^3 = 0.
-fn solve_cubic(coeffs: &[Expr]) -> Option<Vec<Expr>> {
+fn solve_cubic(coeffs: &[Expr]) -> std::vec::Vec<crate::syntax::Expr> {
   // Normalize: divide by leading coefficient
   let a3 = &coeffs[3];
   let a2 = &coeffs[2];
@@ -468,7 +462,7 @@ fn solve_cubic(coeffs: &[Expr]) -> Option<Vec<Expr>> {
     roots.push(root);
   }
 
-  Some(roots)
+  roots
 }
 
 /// Solve pure nth degree: a_n * x^n + a_0 = 0 → x = (-a_0/a_n)^(1/n) * omega^k
@@ -476,7 +470,7 @@ fn solve_pure_nth(
   leading: &Expr,
   constant: &Expr,
   n: i128,
-) -> Option<Vec<Expr>> {
+) -> std::vec::Vec<crate::syntax::Expr> {
   // x^n = -a0/an
   let base = mk_times(
     mk_times(mk_int(-1), constant.clone()),
@@ -499,7 +493,7 @@ fn solve_pure_nth(
     }
   }
 
-  Some(roots)
+  roots
 }
 
 /// Compute the k-th n-th root of unity as an exact expression.
@@ -559,7 +553,7 @@ fn solve_quartic(coeffs: &[Expr]) -> Option<Vec<Expr>> {
 
   // Pure quartic: a4*x^4 + a0 = 0
   if a3_str == "0" && a2_str == "0" && a1_str == "0" {
-    return solve_pure_nth(a4, a0, 4);
+    return Some(solve_pure_nth(a4, a0, 4));
   }
 
   // General quartic is very complex; return None for now

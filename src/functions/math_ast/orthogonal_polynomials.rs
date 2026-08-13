@@ -15,7 +15,7 @@ fn for_each_plus_term(e: &Expr, f: &mut impl FnMut(&Expr)) {
       for_each_plus_term(right, f);
     }
     Expr::FunctionCall { name, args } if name == "Plus" => {
-      for a in args.iter() {
+      for a in args {
         for_each_plus_term(a, f);
       }
     }
@@ -52,7 +52,7 @@ fn integer_coeff_of_term(t: &Expr) -> Option<BigInt> {
       _ => Some(BigInt::from(1)),
     },
     Expr::FunctionCall { name, args } if name == "Times" => {
-      for a in args.iter() {
+      for a in args {
         match a {
           Expr::Integer(c) => return Some(BigInt::from(*c)),
           Expr::BigInteger(c) => return Some(c.clone()),
@@ -139,7 +139,7 @@ fn reduce_poly_over_integer(expr: Expr) -> Result<Expr, InterpreterError> {
   // reduced numerator = Expand[(1/g) * numerator]
   let scaled = Expr::BinaryOp {
     op: BinaryOperator::Times,
-    left: Box::new(make_rational_expr(BigInt::from(1), g.clone())),
+    left: Box::new(make_rational_expr(&BigInt::from(1), &g.clone())),
     right: Box::new(poly),
   };
   let reduced_num =
@@ -191,7 +191,7 @@ fn hoist_plus_integer_content(expr: Expr) -> Result<Expr, InterpreterError> {
   // reduced Plus = Expand[(1/g) * Plus]
   let scaled = Expr::BinaryOp {
     op: BinaryOperator::Times,
-    left: Box::new(make_rational_expr(BigInt::from(1), g.clone())),
+    left: Box::new(make_rational_expr(&BigInt::from(1), &g.clone())),
     right: Box::new(factors[plus_idx].clone()),
   };
   let reduced =
@@ -293,7 +293,7 @@ fn jacobi_p_integer_ab(
     if num == BigInt::from(0) {
       continue;
     }
-    let coeff = make_rational_expr(num, denom);
+    let coeff = make_rational_expr(&num, &denom);
     let coeff_is_one = matches!(&coeff, Expr::Integer(1));
     let term = if k == 0 {
       coeff
@@ -575,7 +575,7 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Evaluate at integer x using recurrence with rationals
       let (num, den) =
         legendre_eval_rational(n, (BigInt::from(*x), BigInt::from(1)));
-      Ok(make_rational_expr(num, den))
+      Ok(make_rational_expr(&num, &den))
     }
     Expr::FunctionCall {
       name,
@@ -585,7 +585,7 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let (num, den) =
           legendre_eval_rational(n, (BigInt::from(*p), BigInt::from(*q)));
-        Ok(make_rational_expr(num, den))
+        Ok(make_rational_expr(&num, &den))
       } else {
         Ok(unevaluated("LegendreP", args))
       }
@@ -670,9 +670,10 @@ fn associated_legendre_p_ast(
   // Build P_n^m(x) = (-1)^m * (1 - x^2)^(m/2) * D^m[P_n(x), x]
   // For a compound x_expr (e.g. Cos[θ]) we substitute a fresh placeholder
   // so D[…, var] sees an Identifier, then substitute it back at the end.
-  let (var_name, working_x, needs_back_sub) = match x_expr {
-    Expr::Identifier(s) => (s.clone(), x_expr.clone(), false),
-    _ => {
+  let (var_name, working_x, needs_back_sub) =
+    if let Expr::Identifier(s) = x_expr {
+      (s.clone(), x_expr.clone(), false)
+    } else {
       // Numeric fallback only for an inexact machine number. An exact numeric
       // x (0, 1/2, Cos[Pi/2]) substitutes into the symbolic polynomial so the
       // result stays exact, matching wolframscript (LegendreP[1, 1, 0] = -1,
@@ -686,8 +687,7 @@ fn associated_legendre_p_ast(
       }
       let placeholder = "$LegendrePAssocDummy$".to_string();
       (placeholder.clone(), Expr::Identifier(placeholder), true)
-    }
-  };
+    };
 
   // First compute P_n(working_x) symbolically
   let pn = legendre_p_ast(&[Expr::Integer(n as i128), working_x.clone()])?;
@@ -952,68 +952,62 @@ pub fn spherical_harmonic_y_ast(
     _ => None,
   };
 
-  let (l, m) = match (l_val, m_val) {
-    (Some(l), Some(m)) => (l, m),
-    _ => {
-      // Non-integer ℓ or m: route through the formula
-      //   Y[ℓ, m, θ, φ] =
-      //     Sqrt[(2ℓ+1)/(4π) · Γ(ℓ−m+1)/Γ(ℓ+m+1)]
-      //     · LegendreP[ℓ, m, Cos[θ]] · E^(I m φ)
-      // when all four arguments are real-valued floats.
-      if let (Some(lf), Some(mf), Some(theta), Some(phi)) = (
-        try_eval_to_f64(&args[0]),
-        try_eval_to_f64(&args[1]),
-        try_eval_to_f64(&args[2]),
-        try_eval_to_f64(&args[3]),
-      ) {
-        let cos_theta = theta.cos();
-        let leg_call = Expr::FunctionCall {
-          name: "LegendreP".to_string(),
-          args: vec![Expr::Real(lf), Expr::Real(mf), Expr::Real(cos_theta)]
-            .into(),
-        };
-        let leg_val = match crate::evaluator::evaluate_expr_to_expr(&leg_call) {
-          Ok(Expr::Real(v)) => v,
-          _ => {
-            return Ok(unevaluated("SphericalHarmonicY", args));
-          }
-        };
-        // Normalization: Sqrt[(2ℓ+1)/(4π) · Γ(ℓ−m+1)/Γ(ℓ+m+1)]
-        let g_num_call = Expr::FunctionCall {
-          name: "Gamma".to_string(),
-          args: vec![Expr::Real(lf - mf + 1.0)].into(),
-        };
-        let g_den_call = Expr::FunctionCall {
-          name: "Gamma".to_string(),
-          args: vec![Expr::Real(lf + mf + 1.0)].into(),
-        };
-        let g_num = match crate::evaluator::evaluate_expr_to_expr(&g_num_call) {
-          Ok(Expr::Real(v)) => v,
-          _ => {
-            return Ok(unevaluated("SphericalHarmonicY", args));
-          }
-        };
-        let g_den = match crate::evaluator::evaluate_expr_to_expr(&g_den_call) {
-          Ok(Expr::Real(v)) => v,
-          _ => {
-            return Ok(unevaluated("SphericalHarmonicY", args));
-          }
-        };
-        let norm = ((2.0 * lf + 1.0) / (4.0 * std::f64::consts::PI) * g_num
-          / g_den)
-          .sqrt();
-        let phase_re = (mf * phi).cos();
-        let phase_im = (mf * phi).sin();
-        let amplitude = norm * leg_val;
-        let re = amplitude * phase_re;
-        let im = amplitude * phase_im;
-        if im.abs() < 1e-15 {
-          return Ok(Expr::Real(re));
-        }
-        return Ok(build_complex_float_expr(re, im));
+  let (Some(l), Some(m)) = (l_val, m_val) else {
+    // Non-integer ℓ or m: route through the formula
+    //   Y[ℓ, m, θ, φ] =
+    //     Sqrt[(2ℓ+1)/(4π) · Γ(ℓ−m+1)/Γ(ℓ+m+1)]
+    //     · LegendreP[ℓ, m, Cos[θ]] · E^(I m φ)
+    // when all four arguments are real-valued floats.
+    if let (Some(lf), Some(mf), Some(theta), Some(phi)) = (
+      try_eval_to_f64(&args[0]),
+      try_eval_to_f64(&args[1]),
+      try_eval_to_f64(&args[2]),
+      try_eval_to_f64(&args[3]),
+    ) {
+      let cos_theta = theta.cos();
+      let leg_call = Expr::FunctionCall {
+        name: "LegendreP".to_string(),
+        args: vec![Expr::Real(lf), Expr::Real(mf), Expr::Real(cos_theta)]
+          .into(),
+      };
+      let Ok(Expr::Real(leg_val)) =
+        crate::evaluator::evaluate_expr_to_expr(&leg_call)
+      else {
+        return Ok(unevaluated("SphericalHarmonicY", args));
+      };
+      // Normalization: Sqrt[(2ℓ+1)/(4π) · Γ(ℓ−m+1)/Γ(ℓ+m+1)]
+      let g_num_call = Expr::FunctionCall {
+        name: "Gamma".to_string(),
+        args: vec![Expr::Real(lf - mf + 1.0)].into(),
+      };
+      let g_den_call = Expr::FunctionCall {
+        name: "Gamma".to_string(),
+        args: vec![Expr::Real(lf + mf + 1.0)].into(),
+      };
+      let Ok(Expr::Real(g_num)) =
+        crate::evaluator::evaluate_expr_to_expr(&g_num_call)
+      else {
+        return Ok(unevaluated("SphericalHarmonicY", args));
+      };
+      let Ok(Expr::Real(g_den)) =
+        crate::evaluator::evaluate_expr_to_expr(&g_den_call)
+      else {
+        return Ok(unevaluated("SphericalHarmonicY", args));
+      };
+      let norm = ((2.0 * lf + 1.0) / (4.0 * std::f64::consts::PI) * g_num
+        / g_den)
+        .sqrt();
+      let phase_re = (mf * phi).cos();
+      let phase_im = (mf * phi).sin();
+      let amplitude = norm * leg_val;
+      let re = amplitude * phase_re;
+      let im = amplitude * phase_im;
+      if im.abs() < 1e-15 {
+        return Ok(Expr::Real(re));
       }
-      return Ok(unevaluated("SphericalHarmonicY", args));
+      return Ok(build_complex_float_expr(re, im));
     }
+    return Ok(unevaluated("SphericalHarmonicY", args));
   };
 
   // |m| > l → 0
@@ -1451,7 +1445,7 @@ fn extract_largest_square(n: i128) -> (i128, i128) {
   let mut k: i128 = 1;
   let mut residual = n;
   let mut p: i128 = 2;
-  while p.checked_mul(p).map(|s| s <= residual).unwrap_or(false) {
+  while p.checked_mul(p).is_some_and(|s| s <= residual) {
     while residual % (p * p) == 0 {
       k *= p;
       residual /= p * p;
@@ -1586,7 +1580,7 @@ fn legendre_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
     }
 
     // Divide by (m+1)
-    for coeff in next.iter_mut() {
+    for coeff in &mut next {
       if coeff.0 == 0 {
         continue;
       }
@@ -1609,7 +1603,7 @@ fn legendre_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
 /// matching wolframscript's complex-valued result for real z > 1.
 pub fn legendre_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 3 {
-    return legendre_q_associated_ast(&args[0], &args[1], &args[2]);
+    return Ok(legendre_q_associated_ast(&args[0], &args[1], &args[2]));
   }
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1623,52 +1617,50 @@ pub fn legendre_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => None,
   };
 
-  let n = match n {
-    Some(n) => n,
-    None => {
-      // Complex/inexact path for non-integer ν, |z| > 1: wolframscript's
-      // type-2 LegendreQ
-      //   Q_ν(z) = Q_real(z) − (i π/2) · P_ν(z)
-      // with
-      //   Q_real(z) = √π/2 · Γ(ν+1) / (2^ν · Γ(ν+3/2) · z^(ν+1))
-      //               · 2F1((ν+1)/2, (ν+2)/2, ν+3/2, 1/z²)
-      // and P_ν via the standard Legendre P. Only fires when at least one
-      // of ν / z is inexact and |z| > 1 (so the 2F1 series converges).
-      let any_inexact = args.iter().any(|a| {
-        matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
-          || try_extract_complex_float(a).is_some_and(|(_, im)| im != 0.0)
-      });
-      if any_inexact
-        && let (Some(nc), Some(zc)) = (
-          try_extract_complex_float(&args[0]),
-          try_extract_complex_float(&args[1]),
-        )
-        && (zc.0 * zc.0 + zc.1 * zc.1) > 1.0
-      {
-        let (re, im) = legendre_q_complex(nc, zc);
-        return Ok(build_complex_float_expr(re, im));
-      }
-      // Real z with |z| < 1 and non-integer ν: type-2 LegendreQ on the cut.
-      //   Q_ν(z) = (π / (2 sin(νπ))) · [P_ν(z) cos(νπ) − P_ν(−z)]
-      // with P_ν(z) = 2F1(-ν, ν+1; 1; (1-z)/2). The formula is singular at
-      // integer ν, but the integer-ν path is already handled above.
-      if any_inexact
-        && let (Some(nu), Some(xf)) =
-          (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
-        && xf.abs() < 1.0
-      {
-        let pi = std::f64::consts::PI;
-        let sin_nu_pi = (nu * pi).sin();
-        if sin_nu_pi.abs() > 1e-12 {
-          let cos_nu_pi = (nu * pi).cos();
-          let p_z = hypergeometric2f1(-nu, nu + 1.0, 1.0, (1.0 - xf) / 2.0);
-          let p_negz = hypergeometric2f1(-nu, nu + 1.0, 1.0, (1.0 + xf) / 2.0);
-          let q = pi / (2.0 * sin_nu_pi) * (p_z * cos_nu_pi - p_negz);
-          return Ok(Expr::Real(q));
-        }
-      }
-      return Ok(unevaluated("LegendreQ", args));
+  let Some(n) = n else {
+    // Complex/inexact path for non-integer ν, |z| > 1: wolframscript's
+    // type-2 LegendreQ
+    //   Q_ν(z) = Q_real(z) − (i π/2) · P_ν(z)
+    // with
+    //   Q_real(z) = √π/2 · Γ(ν+1) / (2^ν · Γ(ν+3/2) · z^(ν+1))
+    //               · 2F1((ν+1)/2, (ν+2)/2, ν+3/2, 1/z²)
+    // and P_ν via the standard Legendre P. Only fires when at least one
+    // of ν / z is inexact and |z| > 1 (so the 2F1 series converges).
+    let any_inexact = args.iter().any(|a| {
+      matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
+        || try_extract_complex_float(a).is_some_and(|(_, im)| im != 0.0)
+    });
+    if any_inexact
+      && let (Some(nc), Some(zc)) = (
+        try_extract_complex_float(&args[0]),
+        try_extract_complex_float(&args[1]),
+      )
+      && (zc.0 * zc.0 + zc.1 * zc.1) > 1.0
+    {
+      let (re, im) = legendre_q_complex(nc, zc);
+      return Ok(build_complex_float_expr(re, im));
     }
+    // Real z with |z| < 1 and non-integer ν: type-2 LegendreQ on the cut.
+    //   Q_ν(z) = (π / (2 sin(νπ))) · [P_ν(z) cos(νπ) − P_ν(−z)]
+    // with P_ν(z) = 2F1(-ν, ν+1; 1; (1-z)/2). The formula is singular at
+    // integer ν, but the integer-ν path is already handled above.
+    if any_inexact
+      && let (Some(nu), Some(xf)) =
+        (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
+      && xf.abs() < 1.0
+    {
+      let pi = std::f64::consts::PI;
+      let sin_nu_pi = (nu * pi).sin();
+      if sin_nu_pi.abs() > 1e-12 {
+        let cos_nu_pi = (nu * pi).cos();
+        let p_z = hypergeometric2f1(-nu, nu + 1.0, 1.0, (1.0 - xf) / 2.0);
+        let p_negz =
+          hypergeometric2f1(-nu, nu + 1.0, 1.0, f64::midpoint(1.0, xf));
+        let q = pi / (2.0 * sin_nu_pi) * (p_z * cos_nu_pi - p_negz);
+        return Ok(Expr::Real(q));
+      }
+    }
+    return Ok(unevaluated("LegendreQ", args));
   };
 
   // Numeric evaluation
@@ -1831,8 +1823,8 @@ fn legendre_q_complex(n: (f64, f64), z: (f64, f64)) -> (f64, f64) {
 
   let inv_z_sq = cdiv((1.0, 0.0), cmul(z, z));
   let f = hypergeometric_2f1_complex(
-    ((n.0 + 1.0) / 2.0, n.1 / 2.0),
-    ((n.0 + 2.0) / 2.0, n.1 / 2.0),
+    (f64::midpoint(n.0, 1.0), n.1 / 2.0),
+    (f64::midpoint(n.0, 2.0), n.1 / 2.0),
     n_plus_three_half,
     inv_z_sq,
   );
@@ -1856,7 +1848,7 @@ fn legendre_q_associated_ast(
   n_expr: &Expr,
   m_expr: &Expr,
   z_expr: &Expr,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let unevaluated = || Expr::FunctionCall {
     name: "LegendreQ".to_string(),
     args: vec![n_expr.clone(), m_expr.clone(), z_expr.clone()].into(),
@@ -1866,18 +1858,17 @@ fn legendre_q_associated_ast(
       || try_extract_complex_float(a).is_some_and(|(_, im)| im != 0.0)
   });
   if !any_inexact {
-    return Ok(unevaluated());
+    return unevaluated();
   }
-  let (n, m, z) = match (
+  let (Some(n), Some(m), Some(z)) = (
     try_extract_complex_float(n_expr),
     try_extract_complex_float(m_expr),
     try_extract_complex_float(z_expr),
-  ) {
-    (Some(n), Some(m), Some(z)) => (n, m, z),
-    _ => return Ok(unevaluated()),
+  ) else {
+    return unevaluated();
   };
   let (re, im) = legendre_q_associated_complex(n, m, z);
-  Ok(build_complex_float_expr(re, im))
+  build_complex_float_expr(re, im)
 }
 
 /// Compute LegendreP[ν, μ, z] (Ferrers form) for complex/inexact args
@@ -2190,29 +2181,27 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let n = match &args[0] {
-    // T is even in its order: T_{-n}(x) = T_n(x), so use |n|.
-    Expr::Integer(n) => n.unsigned_abs() as usize,
-    _ => {
-      // Complex (or non-integer) order with a numeric x: use the closed
-      // form T_n(x) = Cos[n * ArcCos[x]] so wolframscript-style numeric
-      // results work, e.g. ChebyshevT[1 - I, 0.5].
-      if let Some(result) = chebyshev_general_numeric("T", &args[0], &args[1]) {
-        return Ok(result);
-      }
-      // Exact non-integer order: rewrite to Cos[n ArcCos[x]] like wolframscript.
-      if let Some(result) = chebyshev_general_exact("T", &args[0], &args[1]) {
-        return Ok(result);
-      }
-      return Ok(unevaluated("ChebyshevT", args));
+  let n = if let Expr::Integer(n) = &args[0] {
+    n.unsigned_abs() as usize
+  } else {
+    // Complex (or non-integer) order with a numeric x: use the closed
+    // form T_n(x) = Cos[n * ArcCos[x]] so wolframscript-style numeric
+    // results work, e.g. ChebyshevT[1 - I, 0.5].
+    if let Some(result) = chebyshev_general_numeric("T", &args[0], &args[1]) {
+      return Ok(result);
     }
+    // Exact non-integer order: rewrite to Cos[n ArcCos[x]] like wolframscript.
+    if let Some(result) = chebyshev_general_exact("T", &args[0], &args[1]) {
+      return Ok(result);
+    }
+    return Ok(unevaluated("ChebyshevT", args));
   };
 
   match &args[1] {
     Expr::Integer(x) => {
       let (num, den) =
         chebyshev_t_eval_rational(n, (BigInt::from(*x), BigInt::from(1)));
-      Ok(make_rational_expr(num, den))
+      Ok(make_rational_expr(&num, &den))
     }
     Expr::FunctionCall {
       name,
@@ -2222,7 +2211,7 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let (num, den) =
           chebyshev_t_eval_rational(n, (BigInt::from(*p), BigInt::from(*q)));
-        Ok(make_rational_expr(num, den))
+        Ok(make_rational_expr(&num, &den))
       } else {
         Ok(unevaluated("ChebyshevT", args))
       }
@@ -2428,7 +2417,7 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(x) => {
       let (num, den) =
         chebyshev_u_eval_rational(n, (BigInt::from(*x), BigInt::from(1)));
-      Ok(make_rational_expr(num, den))
+      Ok(make_rational_expr(&num, &den))
     }
     Expr::FunctionCall {
       name,
@@ -2438,7 +2427,7 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let (num, den) =
           chebyshev_u_eval_rational(n, (BigInt::from(*p), BigInt::from(*q)));
-        Ok(make_rational_expr(num, den))
+        Ok(make_rational_expr(&num, &den))
       } else {
         Ok(unevaluated("ChebyshevU", args))
       }
@@ -2723,10 +2712,10 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(x) => {
       let (num, den) = gegenbauer_eval_rational(
         n,
-        lam_big(),
-        (BigInt::from(*x), BigInt::from(1)),
+        &lam_big(),
+        &(BigInt::from(*x), BigInt::from(1)),
       );
-      Ok(make_rational_expr(num, den))
+      Ok(make_rational_expr(&num, &den))
     }
     Expr::FunctionCall {
       name,
@@ -2736,10 +2725,10 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let (num, den) = gegenbauer_eval_rational(
           n,
-          lam_big(),
-          (BigInt::from(*p), BigInt::from(*q)),
+          &lam_big(),
+          &(BigInt::from(*p), BigInt::from(*q)),
         );
-        Ok(make_rational_expr(num, den))
+        Ok(make_rational_expr(&num, &den))
       } else {
         Ok(unevaluated("GegenbauerC", args))
       }
@@ -2834,8 +2823,8 @@ fn gegenbauer_symbolic_lambda(n: usize, lambda: &Expr, x: &Expr) -> Expr {
 /// C_0^λ = 1, C_1^λ = 2λx, C_{k+1}^λ = (2(k+λ)x C_k^λ - (k+2λ-1) C_{k-1}^λ) / (k+1)
 fn gegenbauer_eval_rational(
   n: usize,
-  lam: (BigInt, BigInt),
-  x: (BigInt, BigInt),
+  lam: &(BigInt, BigInt),
+  x: &(BigInt, BigInt),
 ) -> (BigInt, BigInt) {
   // BigInt throughout: the former i128 recurrence substituted 0 on overflow,
   // corrupting GegenbauerC[20, 3, 100] (value ≈ 2.4×10^39).
@@ -3162,7 +3151,7 @@ fn gegenbauer_coefficients(
 
     // Divide by (k+1)
     let div = kk + 1;
-    for (cn, cd) in next.iter_mut() {
+    for (cn, cd) in &mut next {
       *cd = cd.checked_mul(div)?;
       (*cn, *cd) = rat_reduce(*cn, *cd);
     }
@@ -3215,7 +3204,7 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(x) => {
       let (num, den) =
         laguerre_eval_rational(n, (BigInt::from(*x), BigInt::from(1)));
-      Ok(make_rational_expr(num, den))
+      Ok(make_rational_expr(&num, &den))
     }
     Expr::FunctionCall {
       name,
@@ -3225,22 +3214,19 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let (num, den) =
           laguerre_eval_rational(n, (BigInt::from(*p), BigInt::from(*q)));
-        Ok(make_rational_expr(num, den))
+        Ok(make_rational_expr(&num, &den))
       } else {
         Ok(unevaluated("LaguerreL", args))
       }
     }
     Expr::Real(f) => Ok(Expr::Real(laguerre_eval_f64(n, *f))),
     _ => {
-      if let Some(expr) = laguerre_polynomial_symbolic(n, &args[1]) {
-        // Evaluate so a monomial argument like `2 x` distributes `(2 x)^k`
-        // to `2^k x^k` (matching wolframscript); sum arguments stay factored.
-        // Then reduce the polynomial-over-factorial fraction to lowest terms.
-        let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr)?;
-        reduce_poly_over_integer(evaluated)
-      } else {
-        Ok(unevaluated("LaguerreL", args))
-      }
+      let expr = laguerre_polynomial_symbolic(n, &args[1]);
+      // Evaluate so a monomial argument like `2 x` distributes `(2 x)^k`
+      // to `2^k x^k` (matching wolframscript); sum arguments stay factored.
+      // Then reduce the polynomial-over-factorial fraction to lowest terms.
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr)?;
+      reduce_poly_over_integer(evaluated)
     }
   }
 }
@@ -3404,9 +3390,7 @@ fn generalized_laguerre_l_ast(
   // Expand n! · (that sum) into an integer-coefficient polynomial in a and x,
   // then divide by n! so the result prints as a single fraction the way
   // wolframscript does (e.g. (2 + 3 a + a^2 - 4 x - 2 a x + x^2)/2).
-  let Some(n_fact) =
-    (1..=n as i128).try_fold(1i128, |acc, v| acc.checked_mul(v))
-  else {
+  let Some(n_fact) = (1..=n as i128).try_fold(1i128, i128::checked_mul) else {
     // n! overflows i128 (n > 20): leave unevaluated rather than risk garbage.
     return Ok(Expr::FunctionCall {
       name: "LaguerreL".to_string(),
@@ -3526,7 +3510,7 @@ fn laguerre_eval_f64(n: usize, x: f64) -> f64 {
 
 /// Build symbolic Laguerre polynomial L_n(x)
 /// Output as (c_0 + c_1*x + c_2*x^2 + ...) / n!
-fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
+fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> crate::syntax::Expr {
   use num_traits::Zero;
   let (n_fact, coeffs) = laguerre_scaled_coefficients(n);
   let mut terms: Vec<Expr> = Vec::new();
@@ -3563,7 +3547,7 @@ fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
   }
 
   if terms.is_empty() {
-    return Some(Expr::Integer(0));
+    return Expr::Integer(0);
   }
 
   let mut numerator = terms[0].clone();
@@ -3576,14 +3560,14 @@ fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
   }
 
   if n_fact == BigInt::from(1) {
-    return Some(numerator);
+    return numerator;
   }
 
-  Some(Expr::BinaryOp {
+  Expr::BinaryOp {
     op: BinaryOperator::Divide,
     left: Box::new(numerator),
     right: Box::new(Expr::BigInteger(n_fact.clone())),
-  })
+  }
 }
 
 /// Compute Laguerre scaled coefficients: n! * L_n(x) = Σ c_k x^k
@@ -4041,11 +4025,8 @@ pub fn zernike_r_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Coefficients as (power, integer-coefficient) for the *full* polynomial
   // Sum c_k x^(n-2k). Returns None on i128 overflow so we stay symbolic.
-  let coeffs = match zernike_r_coefficients(n, m) {
-    Some(c) => c,
-    None => {
-      return Ok(unevaluated("ZernikeR", args));
-    }
+  let Some(coeffs) = zernike_r_coefficients(n, m) else {
+    return Ok(unevaluated("ZernikeR", args));
   };
 
   match &args[2] {
@@ -4073,7 +4054,7 @@ fn zernike_r_coefficients(n: i128, m: i128) -> Option<Vec<(i128, i128)>> {
   //                  / ((n - k + 1) * k)
   // c_0 = n! / (((n+m)/2)! * ((n-m)/2)!) = C(n, (n-m)/2) * C((n+m)/2, ...)
   // Compute c_0 = multinomial n! / (a! b!) with a=(n+m)/2, b=(n-m)/2.
-  let a = (n + m) / 2;
+  let a = i128::midpoint(n, m);
   let b = (n - m) / 2;
   let mut c0 = zernike_multinomial(n, a, b)?;
 
@@ -4122,38 +4103,27 @@ fn zernike_eval_rational(coeffs: &[(i128, i128)], x: (i128, i128)) -> Expr {
   let mut overflow = false;
   for (power, coeff) in coeffs {
     // term = coeff * (xp/xq)^power = coeff * xp^power / xq^power
-    let tn =
-      match pow_i128(xp, *power as u32).and_then(|v| v.checked_mul(*coeff)) {
-        Some(v) => v,
-        None => {
-          overflow = true;
-          break;
-        }
-      };
-    let td = match pow_i128(xq, *power as u32) {
-      Some(v) => v,
-      None => {
-        overflow = true;
-        break;
-      }
+    let Some(tn) =
+      pow_i128(xp, *power as u32).and_then(|v| v.checked_mul(*coeff))
+    else {
+      overflow = true;
+      break;
+    };
+    let Some(td) = pow_i128(xq, *power as u32) else {
+      overflow = true;
+      break;
     };
     // acc = acc + tn/td
-    let new_n = match acc_n
+    let Some(new_n) = acc_n
       .checked_mul(td)
       .and_then(|a| tn.checked_mul(acc_d).map(|b| a + b))
-    {
-      Some(v) => v,
-      None => {
-        overflow = true;
-        break;
-      }
+    else {
+      overflow = true;
+      break;
     };
-    let new_d = match acc_d.checked_mul(td) {
-      Some(v) => v,
-      None => {
-        overflow = true;
-        break;
-      }
+    let Some(new_d) = acc_d.checked_mul(td) else {
+      overflow = true;
+      break;
     };
     (acc_n, acc_d) = rat_reduce(new_n, new_d);
   }

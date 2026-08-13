@@ -31,7 +31,7 @@ pub fn resolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(v) => vec![v.clone()],
         Expr::List(items) => {
           let mut vs = Vec::with_capacity(items.len());
-          for it in items.iter() {
+          for it in items {
             match it {
               Expr::Identifier(v) => vs.push(v.clone()),
               _ => return Ok(unevaluated(args)),
@@ -94,9 +94,8 @@ pub fn resolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     "ForAll" => {
       // ForAll[x, cond] == !Exists[x, !cond] for invertible comparisons
-      let negated = match negate_comparison(&cond) {
-        Some(n) => n,
-        None => return Ok(unevaluated(args)),
+      let Some(negated) = negate_comparison(&cond) else {
+        return Ok(unevaluated(args));
       };
       let reduced =
         crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
@@ -495,7 +494,7 @@ fn walk_monomial(
       }
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
-      for a in args.iter() {
+      for a in args {
         walk_monomial(a, vars, coeff, vp)?;
       }
       Some(())
@@ -569,7 +568,7 @@ fn add_var_power(
 fn collect_plus<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
   match e {
     Expr::FunctionCall { name, args } if name == "Plus" => {
-      for a in args.iter() {
+      for a in args {
         collect_plus(a, out);
       }
     }

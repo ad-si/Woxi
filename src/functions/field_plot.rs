@@ -256,7 +256,7 @@ fn parse_density_contour_options(
           Expr::Integer(n) if *n >= 0 => mesh = Some(*n as usize),
           Expr::Identifier(v) if v == "None" || v == "False" => mesh = None,
           Expr::Identifier(v) if v == "All" || v == "Automatic" => {
-            mesh = Some(10)
+            mesh = Some(10);
           }
           _ => {}
         },
@@ -319,14 +319,13 @@ impl DensityContourOptions {
   /// `render_width / 1000`, so a thickness given in display pixels
   /// converts by the picture's own width.
   fn contour_stroke(&self) -> (String, f64) {
-    let style = match &self.contour_style {
-      Some(s) => s,
-      None => return (CONTOUR_LINE_COLOR.to_string(), CONTOUR_LINE_WEIGHT),
+    let Some(style) = &self.contour_style else {
+      return (CONTOUR_LINE_COLOR.to_string(), CONTOUR_LINE_WEIGHT);
     };
-    let color = style
-      .color
-      .map(|c| c.to_svg_rgb())
-      .unwrap_or_else(|| CONTOUR_LINE_COLOR.to_string());
+    let color = style.color.map_or_else(
+      || CONTOUR_LINE_COLOR.to_string(),
+      super::graphics::Color::to_svg_rgb,
+    );
     let weight = match style.thickness {
       Some(t) if self.svg_width > 0 => t * 1000.0 / self.svg_width as f64,
       _ => CONTOUR_LINE_WEIGHT,
@@ -504,7 +503,7 @@ fn embed_grid_image(
 ) {
   use base64::Engine as _;
   let cols = grid.len();
-  let rows = grid.first().map(|c| c.len()).unwrap_or(0);
+  let rows = grid.first().map_or(0, std::vec::Vec::len);
   if cols == 0 || rows == 0 || !v_min.is_finite() || !v_max.is_finite() {
     return;
   }
@@ -801,7 +800,7 @@ fn render_contour_bands(
   cell_h: f64,
   color_function: Option<&str>,
 ) {
-  let Some(rows) = grid.first().map(|c| c.len()) else {
+  let Some(rows) = grid.first().map(std::vec::Vec::len) else {
     return;
   };
   if rows < 2 {
@@ -857,7 +856,7 @@ fn contour_band_primitives(
   color_function: Option<&str>,
 ) -> Vec<Expr> {
   let cols = grid.len();
-  let rows = grid.first().map(|c| c.len()).unwrap_or(0);
+  let rows = grid.first().map_or(0, std::vec::Vec::len);
   if cols < 2 || rows < 2 {
     return Vec::new();
   }
@@ -1584,18 +1583,16 @@ fn contour_plot_equations(
   let cell_w = area.plot_w / FIELD_GRID as f64;
   let cell_h = area.plot_h / FIELD_GRID as f64;
   let (contour_color, contour_weight) = opts.contour_stroke();
-  let series_color = opts
-    .contour_style
-    .as_ref()
-    .and_then(|s| s.color)
-    .map(|c| {
+  let series_color = opts.contour_style.as_ref().and_then(|s| s.color).map_or(
+    (0x40, 0x40, 0x40),
+    |c| {
       (
         (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
         (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
         (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
       )
-    })
-    .unwrap_or((0x40, 0x40, 0x40));
+    },
+  );
   let series_thickness = opts.contour_style.as_ref().and_then(|s| s.thickness);
 
   // Alongside the standalone SVG, collect every contour chain in *data*
@@ -1980,7 +1977,7 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let seed_n = 8;
   let x_step = (x_max - x_min) / seed_n as f64;
   let y_step = (y_max - y_min) / seed_n as f64;
-  let dt = ((x_max - x_min) + (y_max - y_min)) / 2.0 / 200.0;
+  let dt = f64::midpoint(x_max - x_min, y_max - y_min) / 200.0;
   let max_steps = 200;
   let stroke_w = render_w as f64 / 1000.0 * 1.5;
   // Streamlines in data coordinates, kept so `StreamPlot[…][[1]]` yields the
@@ -1996,7 +1993,7 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut points = Vec::new();
       let mut coords: Vec<(f64, f64)> = vec![(x, y)];
       let (px, py) = to_px(x, y);
-      points.push(format!("{:.1},{:.1}", px, py));
+      points.push(format!("{px:.1},{py:.1}"));
 
       for _ in 0..max_steps {
         // RK4 step
@@ -2029,7 +2026,7 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           break;
         }
         let (px, py) = to_px(x, y);
-        points.push(format!("{:.1},{:.1}", px, py));
+        points.push(format!("{px:.1},{py:.1}"));
         coords.push((x, y));
       }
 
@@ -2166,7 +2163,7 @@ pub fn stream_density_plot_ast(
   let seed_n = 8;
   let x_step = (x_max - x_min) / seed_n as f64;
   let y_step_seed = (y_max - y_min) / seed_n as f64;
-  let dt = ((x_max - x_min) + (y_max - y_min)) / 2.0 / 200.0;
+  let dt = f64::midpoint(x_max - x_min, y_max - y_min) / 200.0;
   let max_steps = 200;
   let stroke_w = render_w as f64 / 1000.0 * 1.2;
 
@@ -2176,7 +2173,7 @@ pub fn stream_density_plot_ast(
       let mut y = y_min + (sj as f64 + 0.5) * y_step_seed;
       let mut points = Vec::new();
       let (px, py) = to_px(x, y);
-      points.push(format!("{:.1},{:.1}", px, py));
+      points.push(format!("{px:.1},{py:.1}"));
 
       for _ in 0..max_steps {
         let (k1x, k1y) =
@@ -2208,7 +2205,7 @@ pub fn stream_density_plot_ast(
           break;
         }
         let (px, py) = to_px(x, y);
-        points.push(format!("{:.1},{:.1}", px, py));
+        points.push(format!("{px:.1},{py:.1}"));
       }
 
       if points.len() > 1 {
@@ -2244,7 +2241,7 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let opts = parse_density_contour_options(args, 1);
   let (grid, x_min, x_max, y_min, y_max, v_min, v_max, _n_rows, _n_cols) =
-    parse_list_data_to_grid(rows, "ListDensityPlot")?;
+    parse_list_data_to_grid(rows, "ListDensityPlot");
 
   if grid.is_empty() || !v_min.is_finite() || !v_max.is_finite() {
     return Ok(crate::graphics_result(
@@ -2299,10 +2296,17 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn parse_list_data_to_grid(
   rows: &[Expr],
   func_name: &str,
-) -> Result<
-  (Vec<Vec<f64>>, f64, f64, f64, f64, f64, f64, usize, usize),
-  InterpreterError,
-> {
+) -> (
+  std::vec::Vec<std::vec::Vec<f64>>,
+  f64,
+  f64,
+  f64,
+  f64,
+  f64,
+  f64,
+  usize,
+  usize,
+) {
   // Determine if input is {x,y,z} triples or a matrix
   let is_triples = is_triples_data(rows);
 
@@ -2364,10 +2368,17 @@ fn is_triples_data(rows: &[Expr]) -> bool {
 fn parse_matrix_to_grid(
   rows: &[Expr],
   _func_name: &str,
-) -> Result<
-  (Vec<Vec<f64>>, f64, f64, f64, f64, f64, f64, usize, usize),
-  InterpreterError,
-> {
+) -> (
+  std::vec::Vec<std::vec::Vec<f64>>,
+  f64,
+  f64,
+  f64,
+  f64,
+  f64,
+  f64,
+  usize,
+  usize,
+) {
   let mut matrix: Vec<Vec<f64>> = Vec::new();
   let mut v_min = f64::INFINITY;
   let mut v_max = f64::NEG_INFINITY;
@@ -2392,11 +2403,11 @@ fn parse_matrix_to_grid(
   }
 
   if matrix.is_empty() {
-    return Ok((vec![], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0));
+    return (vec![], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0);
   }
 
   let n_rows = matrix.len();
-  let n_cols = matrix.iter().map(|r| r.len()).max().unwrap_or(1);
+  let n_cols = matrix.iter().map(std::vec::Vec::len).max().unwrap_or(1);
 
   // Convert to grid[col][row] format (row 0 at the bottom). Matrix row i
   // sits at y = i + 1, i.e. the first data row is at the bottom, matching
@@ -2410,7 +2421,7 @@ fn parse_matrix_to_grid(
     }
   }
 
-  Ok((
+  (
     grid,
     1.0,
     n_cols as f64,
@@ -2420,17 +2431,24 @@ fn parse_matrix_to_grid(
     v_max,
     n_rows,
     n_cols,
-  ))
+  )
 }
 
 /// Parse {x,y,z} triples into a grid using inverse distance weighting
 fn parse_triples_to_grid(
   rows: &[Expr],
   _func_name: &str,
-) -> Result<
-  (Vec<Vec<f64>>, f64, f64, f64, f64, f64, f64, usize, usize),
-  InterpreterError,
-> {
+) -> (
+  std::vec::Vec<std::vec::Vec<f64>>,
+  f64,
+  f64,
+  f64,
+  f64,
+  f64,
+  f64,
+  usize,
+  usize,
+) {
   let mut points: Vec<(f64, f64, f64)> = Vec::new();
 
   for row in rows {
@@ -2457,7 +2475,7 @@ fn parse_triples_to_grid(
   }
 
   if points.is_empty() {
-    return Ok((vec![], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0));
+    return (vec![], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0);
   }
 
   let x_min = points.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
@@ -2500,9 +2518,9 @@ fn parse_triples_to_grid(
     }
   }
 
-  Ok((
+  (
     grid, x_min, x_max, y_min, y_max, z_min, z_max, grid_n, grid_n,
-  ))
+  )
 }
 
 /// ListContourPlot[data] - contour plot from data
@@ -2520,7 +2538,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let opts = parse_density_contour_options(args, 1);
   let (grid, x_min, x_max, y_min, y_max, v_min, v_max, _n_rows, _n_cols) =
-    parse_list_data_to_grid(rows, "ListContourPlot")?;
+    parse_list_data_to_grid(rows, "ListContourPlot");
 
   if grid.is_empty() || !v_min.is_finite() || !v_max.is_finite() {
     return Ok(crate::graphics_result(
@@ -2712,13 +2730,10 @@ fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
 /// Cells can also be explicit color directives (e.g. Pink, Red).
 pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
-  let rows = match &data {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "ArrayPlot: first argument must be a matrix (list of lists)".into(),
-      ));
-    }
+  let Expr::List(rows) = &data else {
+    return Err(InterpreterError::EvaluationError(
+      "ArrayPlot: first argument must be a matrix (list of lists)".into(),
+    ));
   };
 
   // Parse options
@@ -2814,7 +2829,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (svg_width, svg_height, full_width) = parse_field_options(args, 1);
   let n_rows = matrix.len();
-  let n_cols = matrix.iter().map(|r| r.len()).max().unwrap_or(1);
+  let n_cols = matrix.iter().map(std::vec::Vec::len).max().unwrap_or(1);
 
   // Aspect ratio: match the matrix shape (wider if more cols, taller if more rows)
   let aspect = n_rows as f64 / n_cols as f64;
@@ -3038,13 +3053,10 @@ fn frame_labelled_svg(
 /// MatrixPlot[matrix] - like ArrayPlot with automatic color scaling
 pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
-  let rows = match &data {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "MatrixPlot: first argument must be a matrix".into(),
-      ));
-    }
+  let Expr::List(rows) = &data else {
+    return Err(InterpreterError::EvaluationError(
+      "MatrixPlot: first argument must be a matrix".into(),
+    ));
   };
 
   let mut matrix: Vec<Vec<f64>> = Vec::new();
@@ -3078,7 +3090,7 @@ pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (svg_width, svg_height, full_width) = parse_field_options(args, 1);
   let n_rows = matrix.len();
-  let n_cols = matrix.iter().map(|r| r.len()).max().unwrap_or(1);
+  let n_cols = matrix.iter().map(std::vec::Vec::len).max().unwrap_or(1);
   let w = svg_width as f64;
   let h = svg_height as f64;
   let cell_w = w / n_cols as f64;

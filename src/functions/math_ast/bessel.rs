@@ -438,7 +438,7 @@ fn bessel_y_zero(n: f64, k: usize) -> f64 {
         let mut lo = x;
         let mut hi = next_x;
         for _ in 0..60 {
-          let mid = (lo + hi) / 2.0;
+          let mid = f64::midpoint(lo, hi);
           let mid_val = bessel_y(n, mid);
           if mid_val == 0.0 {
             return mid;
@@ -449,7 +449,7 @@ fn bessel_y_zero(n: f64, k: usize) -> f64 {
             lo = mid;
           }
         }
-        let mut root = (lo + hi) / 2.0;
+        let mut root = f64::midpoint(lo, hi);
         for _ in 0..20 {
           let yn = bessel_y(n, root);
           let yn1 = bessel_y(n + 1.0, root);
@@ -498,7 +498,7 @@ fn bessel_j_zero(n: f64, k: usize) -> f64 {
 
         // Bisection to get close
         for _ in 0..60 {
-          let mid = (lo + hi) / 2.0;
+          let mid = f64::midpoint(lo, hi);
           let mid_val = bessel_j(n, mid);
           if mid_val == 0.0 {
             return mid;
@@ -511,7 +511,7 @@ fn bessel_j_zero(n: f64, k: usize) -> f64 {
         }
 
         // Newton's method to polish
-        let mut root = (lo + hi) / 2.0;
+        let mut root = f64::midpoint(lo, hi);
         for _ in 0..20 {
           let jn = bessel_j(n, root);
           // J'_n(x) = n/x * J_n(x) - J_{n+1}(x)
@@ -1466,8 +1466,7 @@ fn build_hankel(
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(format!(
-      "{} expects exactly 2 arguments",
-      name
+      "{name} expects exactly 2 arguments"
     )));
   }
   // Try numeric evaluation: compute BesselJ + sign*I*BesselY

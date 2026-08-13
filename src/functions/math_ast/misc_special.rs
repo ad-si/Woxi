@@ -1302,9 +1302,8 @@ pub fn square_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let frac = t - t.floor();
         if frac < 0.5 {
           return Ok(Expr::Integer(1));
-        } else {
-          return Ok(Expr::Integer(-1));
         }
+        return Ok(Expr::Integer(-1));
       }
       // Exact rational input
       if let Expr::FunctionCall {
@@ -1320,9 +1319,8 @@ pub fn square_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // frac = rem/d, compare with 1/2 => 2*rem < d
         if 2 * rem < *d {
           return Ok(Expr::Integer(1));
-        } else {
-          return Ok(Expr::Integer(-1));
         }
+        return Ok(Expr::Integer(-1));
       }
       Ok(unevaluated("SquareWave", args))
     }
@@ -1719,7 +1717,7 @@ fn weber_e_integer_closed_form(
       let raw_num =
         fact(2 * k) * fact(m - k) * BigInt::from(2).pow((m - 2 * k + 1) as u32);
       let raw_den = fact(2 * (m - k)) * fact(k);
-      let coeff = make_rational_expr(raw_num, raw_den);
+      let coeff = make_rational_expr(&raw_num, &raw_den);
       let p = m - 2 * k - 1;
       let mut factors = vec![coeff];
       if p > 0 {
@@ -1802,23 +1800,14 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (j_val, m1_val, m2_val) = match &args[0] {
     Expr::List(items) if items.len() == 3 => {
-      let j = match try_eval_to_f64(&items[0]) {
-        Some(v) => v,
-        None => {
-          return Ok(unevaluated("WignerD", args));
-        }
+      let Some(j) = try_eval_to_f64(&items[0]) else {
+        return Ok(unevaluated("WignerD", args));
       };
-      let m1 = match try_eval_to_f64(&items[1]) {
-        Some(v) => v,
-        None => {
-          return Ok(unevaluated("WignerD", args));
-        }
+      let Some(m1) = try_eval_to_f64(&items[1]) else {
+        return Ok(unevaluated("WignerD", args));
       };
-      let m2 = match try_eval_to_f64(&items[2]) {
-        Some(v) => v,
-        None => {
-          return Ok(unevaluated("WignerD", args));
-        }
+      let Some(m2) = try_eval_to_f64(&items[2]) else {
+        return Ok(unevaluated("WignerD", args));
       };
       (j, m1, m2)
     }
@@ -1829,15 +1818,12 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if args.len() == 2 {
     // WignerD[{j, m1, m2}, theta]
-    let theta = match try_eval_to_f64(&args[1]) {
-      Some(v) => v,
-      None => {
-        // Check if at least one is Real
-        if !matches!(&args[1], Expr::Real(_)) {
-          return Ok(unevaluated("WignerD", args));
-        }
+    let Some(theta) = try_eval_to_f64(&args[1]) else {
+      // Check if at least one is Real
+      if !matches!(&args[1], Expr::Real(_)) {
         return Ok(unevaluated("WignerD", args));
       }
+      return Ok(unevaluated("WignerD", args));
     };
     let result = wigner_d_small(j_val, m1_val, m2_val, theta);
     Ok(Expr::Real(result))
@@ -1915,7 +1901,7 @@ fn wigner_d_symbolic(
   if m1_2.abs() > j2 || m2_2.abs() > j2 {
     return Some(Expr::Integer(0));
   }
-  let d = wigner_d_small_symbolic(j2, m1_2, m2_2, theta)?;
+  let d = wigner_d_small_symbolic(j2, m1_2, m2_2, theta);
   // Build E^(I*m1*phi) * E^(I*m2*psi).
   let exp_factor = |coef: f64, ang: &Expr| -> Option<Expr> {
     if coef == 0.0 {
@@ -1950,17 +1936,17 @@ fn wigner_d_small_symbolic(
   m1_2: i64,
   m2_2: i64,
   theta: &Expr,
-) -> Option<Expr> {
-  let jpm1 = (j2 + m1_2) / 2;
+) -> crate::syntax::Expr {
+  let jpm1 = i64::midpoint(j2, m1_2);
   let jmm1 = (j2 - m1_2) / 2;
-  let jpm2 = (j2 + m2_2) / 2;
+  let jpm2 = i64::midpoint(j2, m2_2);
   let jmm2 = (j2 - m2_2) / 2;
   let m1mm2 = (m1_2 - m2_2) / 2;
 
   let s_min = 0i64.max(m1mm2);
   let s_max = jpm1.min(jmm2);
   if s_min > s_max {
-    return Some(Expr::Integer(0));
+    return Expr::Integer(0);
   }
 
   // Helper: factorial as i128.
@@ -2046,7 +2032,7 @@ fn wigner_d_small_symbolic(
   } else {
     call("Plus", terms)
   };
-  Some(call("Times", vec![prefactor, sum]))
+  call("Times", vec![prefactor, sum])
 }
 
 /// Compute the Wigner (small) d-matrix element d^j_{m1,m2}(theta).
@@ -2071,9 +2057,9 @@ fn wigner_d_small(j: f64, m1: f64, m2: f64, theta: f64) -> f64 {
   // Use integer arithmetic for factorials
   // s ranges from max(0, m1-m2) to min(j+m1, j-m2)
   // Using half-integer labels: j+m1 = (j2+m1_2)/2, etc.
-  let jpm1 = (j2 + m1_2) / 2;
+  let jpm1 = i64::midpoint(j2, m1_2);
   let jmm1 = (j2 - m1_2) / 2;
-  let jpm2 = (j2 + m2_2) / 2;
+  let jpm2 = i64::midpoint(j2, m2_2);
   let jmm2 = (j2 - m2_2) / 2;
   let m1mm2 = (m1_2 - m2_2) / 2;
 
@@ -2419,7 +2405,7 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let vals: Vec<Option<f64>> = args.iter().map(expr_to_f64).collect();
   let has_real = args.iter().any(|a| matches!(a, Expr::Real(_)));
 
-  if vals.iter().all(|v| v.is_some()) && has_real {
+  if vals.iter().all(std::option::Option::is_some) && has_real {
     let a = vals[0].unwrap();
     let b1 = vals[1].unwrap();
     let b2 = vals[2].unwrap();
@@ -2456,7 +2442,6 @@ fn appell_f1_numeric(a: f64, b1: f64, b2: f64, c: f64, x: f64, y: f64) -> f64 {
   let mut total = 0.0;
 
   // Pochhammer ratio terms for outer loop (m)
-  let _a_m = 1.0; // (a)_m at current m... actually we need (a)_{m+n} which depends on n
   // Let's use a different approach: compute each term incrementally
   // term(m, n) = (a)_{m+n} (b1)_m (b2)_n / ((c)_{m+n} m! n!) x^m y^n
   // term(m, n+1) / term(m, n) = (a+m+n)(b2+n) / ((c+m+n)(n+1)) * y
@@ -2555,7 +2540,7 @@ pub fn appell_f2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let vals: Vec<Option<f64>> = args.iter().map(expr_to_f64).collect();
   let has_real = args.iter().any(|a| matches!(a, Expr::Real(_)));
 
-  if vals.iter().all(|v| v.is_some()) && has_real {
+  if vals.iter().all(std::option::Option::is_some) && has_real {
     let a = vals[0].unwrap();
     let b1 = vals[1].unwrap();
     let b2 = vals[2].unwrap();
@@ -2671,7 +2656,7 @@ pub fn appell_f3_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let vals: Vec<Option<f64>> = args.iter().map(expr_to_f64).collect();
   let has_real = args.iter().any(|a| matches!(a, Expr::Real(_)));
 
-  if vals.iter().all(|v| v.is_some()) && has_real {
+  if vals.iter().all(std::option::Option::is_some) && has_real {
     let a1 = vals[0].unwrap();
     let a2 = vals[1].unwrap();
     let b1 = vals[2].unwrap();
@@ -2787,7 +2772,7 @@ pub fn appell_f4_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let vals: Vec<Option<f64>> = args.iter().map(expr_to_f64).collect();
   let has_real = args.iter().any(|a| matches!(a, Expr::Real(_)));
 
-  if vals.iter().all(|v| v.is_some()) && has_real {
+  if vals.iter().all(std::option::Option::is_some) && has_real {
     let a = vals[0].unwrap();
     let b = vals[1].unwrap();
     let c1 = vals[2].unwrap();
@@ -3140,7 +3125,7 @@ pub fn effective_interest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Listable on the first argument.
   if let Expr::List(items) = &args[0] {
     let mut out = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       out.push(effective_interest_ast(&[item.clone(), args[1].clone()])?);
     }
     return Ok(Expr::List(out.into()));
@@ -3189,11 +3174,8 @@ pub fn entropy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("Entropy", args));
-    }
+  let Expr::List(items) = list else {
+    return Ok(unevaluated("Entropy", args));
   };
 
   // Empty list -> 0 (matches wolframscript).
@@ -3205,7 +3187,7 @@ pub fn entropy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use std::collections::HashMap;
   let mut counts: HashMap<String, i128> = HashMap::new();
   let mut order: Vec<String> = Vec::new();
-  for item in items.iter() {
+  for item in items {
     let key = expr_to_string(item);
     if let Some(c) = counts.get_mut(&key) {
       *c += 1;
@@ -3224,8 +3206,8 @@ pub fn entropy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // wolframscript.
   let log = |x: String| -> String {
     match &base_str {
-      Some(b) => format!("Log[{}, {}]", b, x),
-      None => format!("Log[{}]", x),
+      Some(b) => format!("Log[{b}, {x}]"),
+      None => format!("Log[{x}]"),
     }
   };
 

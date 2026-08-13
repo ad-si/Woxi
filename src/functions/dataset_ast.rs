@@ -79,15 +79,15 @@ fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
     .map(|(_, v)| {
       // When inferring types for values that are associations nested inside
       // another association, always produce Struct (not Assoc)
-      if !top_level {
-        infer_type(v)
-      } else {
+      if top_level {
         match v {
           Expr::Association(inner_pairs) => {
             infer_assoc_type(inner_pairs, false)
           }
           _ => infer_type(v),
         }
+      } else {
+        infer_type(v)
       }
     })
     .collect();

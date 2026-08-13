@@ -952,10 +952,7 @@ fn try_gamma_ratio_in_times(factors: &[Expr]) -> Option<Expr> {
     mk_times(mk_int(-1), b.clone()),
   ))
   .ok()?;
-  let k = match diff {
-    Expr::Integer(k) => k,
-    _ => return None,
-  };
+  let Expr::Integer(k) = diff else { return None };
   // Gamma[A]/Gamma[B] = Pochhammer[B, k] for k > 0, 1/Pochhammer[A, -k] for
   // k < 0, and 1 for k == 0.
   let poch = match k.cmp(&0) {

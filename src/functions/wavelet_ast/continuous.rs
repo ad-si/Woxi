@@ -249,7 +249,7 @@ impl Cwd {
       return None;
     };
     let mut rules = Vec::new();
-    for r in rule_items.iter() {
+    for r in rule_items {
       let Expr::Rule {
         pattern,
         replacement,
@@ -270,7 +270,7 @@ impl Cwd {
         return None;
       };
       let mut values = Vec::new();
-      for c in coefs.iter() {
+      for c in coefs {
         values.push(expr_to_complex(c)?);
       }
       rules.push(((*o as i64, *v as i64), values));
@@ -282,7 +282,7 @@ impl Cwd {
     let mut sample_rate = 1.0;
     let mut dims = vec![rules.first().map_or(0, |(_, c)| c.len())];
     if let Some(Expr::List(opts)) = args.get(2) {
-      for o in opts.iter() {
+      for o in opts {
         if let Expr::Rule {
           pattern,
           replacement,
@@ -354,25 +354,22 @@ pub fn continuous_wavelet_transform_ast(
     return Ok(unevaluated(fname, args));
   }
   // Data: 1D numeric list.
-  let data: Vec<f64> = match positional[0] {
-    Expr::List(items) => {
-      let vals: Option<Vec<f64>> = items.iter().map(num).collect();
-      match vals {
-        Some(v) if v.len() >= 2 => v,
-        _ => {
-          crate::emit_message(&format!(
-            "{fname}::invdata: The data should be a list of at least two real numbers."
-          ));
-          return Ok(unevaluated(fname, args));
-        }
+  let data: Vec<f64> = if let Expr::List(items) = positional[0] {
+    let vals: Option<Vec<f64>> = items.iter().map(num).collect();
+    match vals {
+      Some(v) if v.len() >= 2 => v,
+      _ => {
+        crate::emit_message(&format!(
+          "{fname}::invdata: The data should be a list of at least two real numbers."
+        ));
+        return Ok(unevaluated(fname, args));
       }
     }
-    _ => {
-      crate::emit_message(&format!(
-        "{fname}::invdata: The data should be a list of at least two real numbers."
-      ));
-      return Ok(unevaluated(fname, args));
-    }
+  } else {
+    crate::emit_message(&format!(
+      "{fname}::invdata: The data should be a list of at least two real numbers."
+    ));
+    return Ok(unevaluated(fname, args));
   };
   // The default continuous wavelet is reported in its canonical form
   // MexicanHatWavelet[1] (the sigma-1 Mexican hat), matching Wolfram.
@@ -511,20 +508,19 @@ pub fn inverse_continuous_wavelet_transform_ast(
     }
     Some(spec_expr) => {
       let winds = select_ovs(&cwd, spec_expr);
-      match winds {
-        Some(ovs) => cwd
+      if let Some(ovs) = winds {
+        cwd
           .rules
           .iter()
           .filter(|(ov, _)| ovs.contains(ov))
-          .collect(),
-        None => {
-          crate::emit_message(&format!(
-            "{}::invov: {} is not a valid octave/voice specification.",
-            fname,
-            expr_to_string(spec_expr)
-          ));
-          return Ok(unevaluated(fname, args));
-        }
+          .collect()
+      } else {
+        crate::emit_message(&format!(
+          "{}::invov: {} is not a valid octave/voice specification.",
+          fname,
+          expr_to_string(spec_expr)
+        ));
+        return Ok(unevaluated(fname, args));
       }
     }
   };
@@ -669,7 +665,7 @@ pub fn apply_cwd(func: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
   if let Expr::String(prop) = &args[0] {
-    return cwd_property(&cwd, prop);
+    return Ok(cwd_property(&cwd, prop));
   }
   let form = match args.get(1) {
     Some(Expr::String(f)) => f.as_str(),
@@ -679,9 +675,10 @@ pub fn apply_cwd(func: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Identifier(a) if a == "All" || a == "Automatic" => {
       cwd.rules.iter().map(|(ov, _)| *ov).collect()
     }
-    spec => match select_ovs(&cwd, spec) {
-      Some(ovs) => ovs,
-      None => {
+    spec => {
+      if let Some(ovs) = select_ovs(&cwd, spec) {
+        ovs
+      } else {
         crate::emit_message(&format!(
           "ContinuousWaveletData::ov: {} is not a valid octave/voice specification.",
           expr_to_string(&args[0])
@@ -691,7 +688,7 @@ pub fn apply_cwd(func: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: args.to_vec(),
         });
       }
-    },
+    }
   };
   let single = select_single(&args[0]);
   let mut out = Vec::new();
@@ -729,9 +726,9 @@ fn select_single(spec: &Expr) -> bool {
   false
 }
 
-fn cwd_property(cwd: &Cwd, prop: &str) -> Result<Expr, InterpreterError> {
+fn cwd_property(cwd: &Cwd, prop: &str) -> crate::syntax::Expr {
   match prop {
-    "Properties" => Ok(Expr::List(
+    "Properties" => Expr::List(
       [
         "DataDimensions",
         "DataMean",
@@ -747,30 +744,30 @@ fn cwd_property(cwd: &Cwd, prop: &str) -> Result<Expr, InterpreterError> {
       .map(|s| Expr::String(s.to_string()))
       .collect::<Vec<_>>()
       .into(),
-    )),
-    "Octaves" => Ok(Expr::Integer(cwd.octaves() as i128)),
-    "Voices" => Ok(Expr::Integer(cwd.voices as i128)),
-    "Wavelet" => Ok(cwd.wavelet.clone()),
-    "WaveletScale" => Ok(Expr::Real(cwd.wavelet_scale)),
-    "DataMean" => Ok(Expr::Real(cwd.data_mean)),
-    "SampleRate" => Ok(Expr::Real(cwd.sample_rate)),
-    "DataDimensions" => Ok(Expr::List(
+    ),
+    "Octaves" => Expr::Integer(cwd.octaves() as i128),
+    "Voices" => Expr::Integer(cwd.voices as i128),
+    "Wavelet" => cwd.wavelet.clone(),
+    "WaveletScale" => Expr::Real(cwd.wavelet_scale),
+    "DataMean" => Expr::Real(cwd.data_mean),
+    "SampleRate" => Expr::Real(cwd.sample_rate),
+    "DataDimensions" => Expr::List(
       cwd
         .dims
         .iter()
         .map(|&d| Expr::Integer(d as i128))
         .collect::<Vec<_>>()
         .into(),
-    )),
-    "WaveletIndex" => Ok(Expr::List(
+    ),
+    "WaveletIndex" => Expr::List(
       cwd
         .rules
         .iter()
         .map(|(ov, _)| ov_to_expr(*ov))
         .collect::<Vec<_>>()
         .into(),
-    )),
-    "Scales" => Ok(Expr::List(
+    ),
+    "Scales" => Expr::List(
       cwd
         .rules
         .iter()
@@ -780,15 +777,15 @@ fn cwd_property(cwd: &Cwd, prop: &str) -> Result<Expr, InterpreterError> {
         })
         .collect::<Vec<_>>()
         .into(),
-    )),
+    ),
     _ => {
       crate::emit_message(&format!(
         "ContinuousWaveletData::prop: {prop} is not a valid property."
       ));
-      Ok(Expr::FunctionCall {
+      Expr::FunctionCall {
         name: "Missing".to_string(),
         args: vec![Expr::String("NotAvailable".into())].into(),
-      })
+      }
     }
   }
 }
@@ -814,7 +811,7 @@ pub fn cwd_map_indexed(
     },
   };
   let mut new_rules = cwd.rules.clone();
-  for (ov, coefs) in new_rules.iter_mut() {
+  for (ov, coefs) in &mut new_rules {
     if !ovs.contains(ov) {
       continue;
     }

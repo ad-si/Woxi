@@ -248,7 +248,7 @@ impl WoxiKernel {
               let execute_result = ExecuteResult {
                 execution_count: self.execution_count,
                 data: media,
-                metadata: Default::default(),
+                metadata: serde_json::Map::default(),
                 transient: None,
               };
               self.iopub.send(execute_result.as_child_of(parent)).await?;
@@ -265,7 +265,7 @@ impl WoxiKernel {
             let execute_result = ExecuteResult {
               execution_count: self.execution_count,
               data: media,
-              metadata: Default::default(),
+              metadata: serde_json::Map::default(),
               transient: None,
             };
             self.iopub.send(execute_result.as_child_of(parent)).await?;
@@ -291,7 +291,7 @@ impl WoxiKernel {
       status: ReplyStatus::Ok,
       execution_count: self.execution_count,
       payload: vec![],
-      user_expressions: Default::default(),
+      user_expressions: Option::default(),
       error: None,
     };
     self.shell.send(execute_reply.as_child_of(parent)).await?;

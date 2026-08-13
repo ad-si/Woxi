@@ -338,7 +338,7 @@ fn collect(
 ) -> bool {
   match expr {
     Expr::List(items) => {
-      for it in items.iter() {
+      for it in items {
         collect(it, out, ts);
       }
       false
@@ -359,8 +359,7 @@ fn collect(
             })
           };
           if let Some(h) = get("Pitch").and_then(pitch_head) {
-            let dur =
-              get("Duration").map(parse_duration).unwrap_or(Dur::Quarter);
+            let dur = get("Duration").map_or(Dur::Quarter, parse_duration);
             out.push(Glyph::Note {
               heads: vec![h],
               dur,
@@ -371,7 +370,7 @@ fn collect(
       }
       "MusicNote" if !args.is_empty() => {
         if let Some(h) = pitch_head(&args[0]) {
-          let dur = args.get(1).map(parse_duration).unwrap_or(Dur::Quarter);
+          let dur = args.get(1).map_or(Dur::Quarter, parse_duration);
           out.push(Glyph::Note {
             heads: vec![h],
             dur,
@@ -380,7 +379,7 @@ fn collect(
         false
       }
       "MusicRest" => {
-        let dur = args.first().map(parse_duration).unwrap_or(Dur::Quarter);
+        let dur = args.first().map_or(Dur::Quarter, parse_duration);
         out.push(Glyph::Rest { dur });
         false
       }
@@ -389,7 +388,7 @@ fn collect(
         match &args[0] {
           // Explicit pitch list: `MusicChord[{"C4", "E4", "G4"}]`.
           Expr::List(items) => {
-            for it in items.iter() {
+            for it in items {
               if let Some(h) = pitch_head(it) {
                 heads.push(h);
               }
@@ -422,7 +421,7 @@ fn collect(
         }
         if !heads.is_empty() {
           heads.sort_by_key(|h| h.dn);
-          let dur = args.get(1).map(parse_duration).unwrap_or(Dur::Quarter);
+          let dur = args.get(1).map_or(Dur::Quarter, parse_duration);
           out.push(Glyph::Note { heads, dur });
         }
         false
@@ -459,7 +458,7 @@ fn collect(
           if let Some(Expr::List(items)) = pairs.iter().find_map(|(k, v)| {
             matches!(k, Expr::String(s) if s == "NoteList").then_some(v)
           }) {
-            for it in items.iter() {
+            for it in items {
               collect(it, out, ts);
             }
           }
@@ -487,7 +486,7 @@ fn collect(
           if let Some(Expr::List(items)) = pairs.iter().find_map(|(k, v)| {
             matches!(k, Expr::String(s) if s == key).then_some(v)
           }) {
-            for it in items.iter() {
+            for it in items {
               collect(it, out, ts);
             }
           }
@@ -580,9 +579,8 @@ impl Canvas {
   /// Draw a glyph horizontally centred on `cx`, with its vertical origin (the
   /// SMuFL staff reference) at `cy`.
   fn glyph_centered(&mut self, ch: char, cx: f64, cy: f64, class: &str) {
-    let cxoff = music_font::glyph_bbox(ch)
-      .map(|bb| bb.center_x(self.scale))
-      .unwrap_or(0.0);
+    let cxoff =
+      music_font::glyph_bbox(ch).map_or(0.0, |bb| bb.center_x(self.scale));
     self.glyph_at(ch, cx - cxoff, cy, class);
   }
 
@@ -590,15 +588,12 @@ impl Canvas {
   /// horizontal offset from a head's centre to where its stem attaches.
   fn notehead_half_width(&self, dur: Dur) -> f64 {
     music_font::glyph_bbox(notehead_glyph(dur))
-      .map(|bb| bb.half_width(self.scale))
-      .unwrap_or(6.0)
+      .map_or(6.0, |bb| bb.half_width(self.scale))
   }
 
   /// Half the width of an arbitrary glyph, in user units.
   fn glyph_half_width(&self, ch: char) -> f64 {
-    music_font::glyph_bbox(ch)
-      .map(|bb| bb.half_width(self.scale))
-      .unwrap_or(6.0)
+    music_font::glyph_bbox(ch).map_or(6.0, |bb| bb.half_width(self.scale))
   }
 
   /// Total ink width (user units) of a run of digit glyphs laid out adjacently
@@ -636,7 +631,7 @@ impl Canvas {
       };
       // Left ink edge at `left`; bounding box vertically centred on `cy`.
       let ox = left - bb.x_min * self.scale;
-      let oy = cy + (bb.y_min + bb.y_max) / 2.0 * self.scale;
+      let oy = cy + f64::midpoint(bb.y_min, bb.y_max) * self.scale;
       self.glyph_at(c, ox, oy, "timesig");
       left += (bb.x_max - bb.x_min) * self.scale + DIGIT_GAP;
     }
@@ -650,7 +645,7 @@ impl Canvas {
     // sit left of that displaced head.
     let leftmost = second_offsets(heads, stem_up(heads), hw)
       .iter()
-      .cloned()
+      .copied()
       .fold(0.0, f64::min);
     let acc_base = -leftmost + hw;
     let mut reach = hw - leftmost;
@@ -672,7 +667,7 @@ impl Canvas {
     let hw = self.notehead_half_width(dur);
     let rightmost = second_offsets(heads, stem_up(heads), hw)
       .iter()
-      .cloned()
+      .copied()
       .fold(0.0, f64::max);
     let mut reach = hw + rightmost;
     if dur.has_stem()
@@ -742,16 +737,14 @@ fn accidental_glyph(accidental: i32) -> Option<char> {
 fn accidental_half_height(accidental: i32, scale: f64) -> f64 {
   accidental_glyph(accidental)
     .and_then(music_font::glyph_bbox)
-    .map(|bb| (bb.y_max - bb.y_min) * scale / 2.0)
-    .unwrap_or(STEP)
+    .map_or(STEP, |bb| (bb.y_max - bb.y_min) * scale / 2.0)
 }
 
 /// Full width (user units) of an accidental glyph.
 fn accidental_width(accidental: i32, scale: f64) -> f64 {
   accidental_glyph(accidental)
     .and_then(music_font::glyph_bbox)
-    .map(|bb| (bb.x_max - bb.x_min) * scale)
-    .unwrap_or(0.0)
+    .map_or(0.0, |bb| (bb.x_max - bb.x_min) * scale)
 }
 
 /// Stack a chord's accidentals into columns to the left of the note heads so
@@ -850,7 +843,7 @@ fn draw_note(cv: &mut Canvas, x: f64, heads: &[Head], dur: Dur) {
   let offsets = second_offsets(heads, up, hw);
   // Accidentals sit in a column to the left of the whole cluster, so anchor
   // them at the leftmost head edge (a down-stem second can reach further left).
-  let leftmost = offsets.iter().cloned().fold(0.0, f64::min);
+  let leftmost = offsets.iter().copied().fold(0.0, f64::min);
   let acc_anchor = x + leftmost - hw;
   // Ledger lines behind the heads.
   for (i, h) in heads.iter().enumerate() {
@@ -989,9 +982,7 @@ fn render_staff(glyphs: &[Glyph], container: bool) -> String {
   let clef_x = STAFF_X0 + 4.0;
   draw_treble_clef(&mut cv, clef_x);
   let clef_right = clef_x
-    + music_font::glyph_bbox(glyph::G_CLEF)
-      .map(|bb| bb.x_max * scale)
-      .unwrap_or(28.0);
+    + music_font::glyph_bbox(glyph::G_CLEF).map_or(28.0, |bb| bb.x_max * scale);
   let first_note_x = clef_right + 14.0;
 
   // Lay the glyphs out left to right. `cursor` is the preferred centre of the
@@ -1099,7 +1090,7 @@ fn music_score_to_svg(args: &[Expr]) -> Option<String> {
       glyphs
     })
     .collect();
-  if streams.iter().all(|s| s.is_empty()) {
+  if streams.iter().all(std::vec::Vec::is_empty) {
     return None;
   }
   Some(render_staff(&merge_voice_glyphs(&streams), true))
@@ -1479,12 +1470,12 @@ mod tests {
       glyphs.first(),
       Some(Glyph::TimeSig { num: 4, den: 4 })
     ));
-    assert!(
+    assert_eq!(
       glyphs
         .iter()
         .filter(|g| matches!(g, Glyph::Note { .. }))
-        .count()
-        == 2
+        .count(),
+      2
     );
     assert!(matches!(glyphs.last(), Some(Glyph::Barline)));
   }

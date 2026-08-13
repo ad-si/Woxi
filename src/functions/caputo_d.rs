@@ -88,7 +88,7 @@ fn term_parts(term: &Expr, var: &str) -> Option<(Expr, Expr)> {
     Expr::FunctionCall { name, args } if name == "Times" => {
       let mut coefficients = Vec::new();
       let mut power = None;
-      for factor in args.iter() {
+      for factor in args {
         if mentions(factor, var) {
           if power.is_some() {
             return None;
@@ -229,7 +229,7 @@ pub fn caputo_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       vec![
         coefficient,
         ratio,
-        eval_call("Power", vec![Expr::Identifier(var.to_string()), exponent])?,
+        eval_call("Power", vec![Expr::Identifier(var.clone()), exponent])?,
       ],
     )?);
   }

@@ -55,12 +55,8 @@ fn format_real_for_precision(value: f64, _sig_digits: usize) -> String {
   if value == 0.0 {
     return "0.".to_string();
   }
-  let s = format!("{}", value);
-  if s.contains('.') {
-    s
-  } else {
-    format!("{}.", s)
-  }
+  let s = format!("{value}");
+  if s.contains('.') { s } else { format!("{s}.") }
 }
 
 fn missing_not_available() -> Expr {
@@ -2297,13 +2293,13 @@ fn find_element(identifier: &Expr) -> Option<&'static Element> {
 fn find_element_by_string(s: &str) -> Option<&'static Element> {
   let lower = s.to_lowercase();
   // Try by standard name (case-insensitive)
-  for elem in ELEMENTS.iter() {
+  for elem in ELEMENTS {
     if elem.standard_name.to_lowercase() == lower {
       return Some(elem);
     }
   }
   // Try by abbreviation (case-sensitive first, then insensitive)
-  for elem in ELEMENTS.iter() {
+  for elem in ELEMENTS {
     if elem.abbreviation == s {
       return Some(elem);
     }
@@ -2517,7 +2513,7 @@ fn format_electron_configuration_row(elem: &Element) -> Expr {
       continue;
     };
     let n_str = &token[..li];
-    let letter = &token[li..li + 1];
+    let letter = &token[li..=li];
     let count_str = &token[li + 1..];
     let n: i128 = n_str.parse().unwrap_or(0);
     let count: i128 = count_str.parse().unwrap_or(0);
@@ -2587,7 +2583,7 @@ fn format_electron_configuration(elem: &Element) -> String {
 
   let mut parts: Vec<String> = Vec::new();
   if let Some(sym) = prefix_sym {
-    parts.push(format!("[{}]", sym));
+    parts.push(format!("[{sym}]"));
   }
   const SUBSHELL_LETTERS: &[char] = &['s', 'p', 'd', 'f', 'g', 'h', 'i'];
   for (shell_idx, shell) in elem_shells.iter().enumerate() {
@@ -2605,7 +2601,7 @@ fn format_electron_configuration(elem: &Element) -> String {
         continue;
       }
       let letter = SUBSHELL_LETTERS.get(sub_idx).copied().unwrap_or('?');
-      parts.push(format!("{}{}{}", n, letter, count));
+      parts.push(format!("{n}{letter}{count}"));
     }
   }
   parts.join(" ")
@@ -2621,16 +2617,16 @@ fn electronegativity_precision(v: f64) -> f64 {
     3.0
   } else {
     // e.g. 0.7 → 1, 0.82 → 2, 0.98 → 2
-    let s = format!("{}", v);
+    let s = format!("{v}");
     let s = s.trim_start_matches("0.");
     s.len() as f64
   }
 }
 
 fn temp_precision(v: f64) -> f64 {
-  let s = format!("{}", v);
+  let s = format!("{v}");
   let s_clean = s.trim_start_matches('-');
-  let digits: String = s_clean.chars().filter(|c| c.is_ascii_digit()).collect();
+  let digits: String = s_clean.chars().filter(char::is_ascii_digit).collect();
   let digits = digits.trim_start_matches('0');
   if digits.is_empty() {
     1.0
@@ -2755,11 +2751,8 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     2 => {
       // ElementData[element, property]
-      let elem = match find_element(&args[0]) {
-        Some(e) => e,
-        None => {
-          return Ok(unevaluated("ElementData", args));
-        }
+      let Some(elem) = find_element(&args[0]) else {
+        return Ok(unevaluated("ElementData", args));
       };
       match &args[1] {
         Expr::String(prop) => Ok(get_property(elem, prop)),

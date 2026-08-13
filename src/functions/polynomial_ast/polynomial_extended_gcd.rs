@@ -68,15 +68,15 @@ pub fn polynomial_extended_gcd_ast(
       ));
     }
     // Prefer the first non-zero argument as the inverted coefficient.
-    let (s, t) = if !p_zero {
-      (
-        poly_divide_by_const(&Expr::Integer(1), &p, &var)?,
-        Expr::Integer(0),
-      )
-    } else {
+    let (s, t) = if p_zero {
       (
         Expr::Integer(0),
         poly_divide_by_const(&Expr::Integer(1), &q, &var)?,
+      )
+    } else {
+      (
+        poly_divide_by_const(&Expr::Integer(1), &p, &var)?,
+        Expr::Integer(0),
       )
     };
     return Ok(Expr::List(

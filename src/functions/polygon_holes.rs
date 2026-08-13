@@ -41,14 +41,13 @@ where
   // `outer -> {{q…}, …}`: every element of the right side is a hole.
   // `outer -> {q…}`: the right side is one hole. The two are told apart by
   // whether the right side parses as a coordinate list itself.
-  let holes = match points_of(replacement) {
-    Some(single) => vec![single],
-    None => {
-      let Expr::List(items) = replacement.as_ref() else {
-        return None;
-      };
-      items.iter().filter_map(points_of).collect()
-    }
+  let holes = if let Some(single) = points_of(replacement) {
+    vec![single]
+  } else {
+    let Expr::List(items) = replacement.as_ref() else {
+      return None;
+    };
+    items.iter().filter_map(points_of).collect()
   };
   Some((outer, holes))
 }

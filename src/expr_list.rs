@@ -302,6 +302,7 @@ impl ExprList {
     }
   }
 
+  #[must_use]
   pub fn split_off(&mut self, at: usize) -> Self {
     self.invalidate_tree_cache();
     match &mut self.inner {
@@ -385,6 +386,7 @@ impl ExprList {
   }
 
   /// Slice — returns a fresh `ExprList`. O(N) for Vec, O(log N) for Tree.
+  #[must_use]
   pub fn slice(&self, range: impl RangeBounds<usize>) -> Self {
     let len = self.len();
     let start = match range.start_bound() {

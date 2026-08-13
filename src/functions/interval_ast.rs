@@ -730,11 +730,8 @@ pub fn interval_member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let spans = match is_interval(&args[0]) {
-    Some(s) => s,
-    None => {
-      return Ok(unevaluated("IntervalMemberQ", args));
-    }
+  let Some(spans) = is_interval(&args[0]) else {
+    return Ok(unevaluated("IntervalMemberQ", args));
   };
 
   // A list of test points threads: IntervalMemberQ[iv, {p1, p2, …}] returns
@@ -1035,7 +1032,7 @@ pub fn try_interval_power(
   } else {
     None
   };
-  let is_even = exp_int.map(|n| n % 2 == 0).unwrap_or(false);
+  let is_even = exp_int.is_some_and(|n| n % 2 == 0);
 
   let mut result_spans = Vec::new();
   for (lo, hi) in &spans {

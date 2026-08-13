@@ -84,7 +84,7 @@ fn structuring_element_in_width(
           (2 * (idx[i] + 1) - (dims[i] as i128 + 1)).abs() <= thresholds[i]
         })
       };
-      return Expr::Integer(if inside { 1 } else { 0 });
+      return Expr::Integer(i128::from(inside));
     }
     let mut row = Vec::with_capacity(dims[level]);
     for i in 0..dims[level] {
@@ -725,8 +725,8 @@ pub fn dispatch_linear_algebra_functions(
             vec![ev.clone()],
           ));
           match n_val {
-            Ok(Expr::Real(f)) if f > 0.0 => continue,
-            Ok(Expr::Integer(n)) if n > 0 => continue,
+            Ok(Expr::Real(f)) if f > 0.0 => {}
+            Ok(Expr::Integer(n)) if n > 0 => {}
             _ => return Some(Ok(bool_expr(false))),
           }
         }
@@ -769,7 +769,7 @@ pub fn dispatch_linear_algebra_functions(
         {
           let mut has_pos = false;
           let mut has_neg = false;
-          for ev in eigenvals.iter() {
+          for ev in eigenvals {
             let n_val = evaluate_expr_to_expr(&call(
               "N",
               vec![call("Re", vec![ev.clone()])],
@@ -894,7 +894,7 @@ pub fn dispatch_linear_algebra_functions(
     | "YuleDissimilarity"
       if args.len() == 2 =>
     {
-      return Some(binary_dissimilarity_ast(name, &args[0], &args[1]));
+      return Some(Ok(binary_dissimilarity_ast(name, &args[0], &args[1])));
     }
     "UpperTriangularize" if args.len() == 1 || args.len() == 2 => {
       return Some(
@@ -1405,9 +1405,7 @@ pub fn dispatch_linear_algebra_functions(
     // i.e. diagonal scale s_i = (ymax_i - ymin_i)/(max_i - min_i) and
     //      translation t_i = ymin_i - min_i * s_i.
     "RescalingTransform" if args.len() == 1 || args.len() == 2 => {
-      let src = if let Expr::List(v) = &args[0] {
-        v
-      } else {
+      let Expr::List(src) = &args[0] else {
         return Some(Ok(unevaluated("RescalingTransform", args)));
       };
       // Optional target box.
@@ -1436,11 +1434,8 @@ pub fn dispatch_linear_algebra_functions(
       let mut scales: Vec<Expr> = Vec::with_capacity(n);
       let mut translates: Vec<Expr> = Vec::with_capacity(n);
       for i in 0..n {
-        let (min_i, max_i) = match pair(&src[i]) {
-          Some(p) => p,
-          None => {
-            return Some(Ok(unevaluated("RescalingTransform", args)));
-          }
+        let Some((min_i, max_i)) = pair(&src[i]) else {
+          return Some(Ok(unevaluated("RescalingTransform", args)));
         };
         let (ymin_i, ymax_i) = match &tgt {
           Some(t) => match pair(&t[i]) {
@@ -1689,7 +1684,7 @@ pub fn dispatch_linear_algebra_functions(
       let m_ok = m_rows
         .iter()
         .all(|r| matches!(r, Expr::List(c) if c.len() == n));
-      let v_ok = v_opt.map(|v| v.len() == n).unwrap_or(true);
+      let v_ok = v_opt.is_none_or(|v| v.len() == n);
       if !m_ok || !v_ok {
         return Some(Ok(unevaluated("AffineTransform", args)));
       }
@@ -1702,7 +1697,7 @@ pub fn dispatch_linear_algebra_functions(
           _ => unreachable!(),
         };
         // Append the translation entry for this row (default 0).
-        let t = v_opt.map(|v| v[i].clone()).unwrap_or(Expr::Integer(0));
+        let t = v_opt.map_or(Expr::Integer(0), |v| v[i].clone());
         row.push(t);
         rows.push(Expr::List(row.into()));
       }
@@ -2735,7 +2730,7 @@ pub fn dispatch_linear_algebra_functions(
     "HadamardMatrix" if args.len() == 1 => {
       if let Some(n) = expr_to_i128(&args[0]) {
         let n = n as usize;
-        if n > 0 && (n & (n - 1)) == 0 {
+        if n > 0 && n.is_power_of_two() {
           // n is a power of 2: Sylvester construction, normalized by 1/Sqrt[n]
           let mat = hadamard_sylvester(n);
           // Evaluate 1/Sqrt[n] first
@@ -3202,11 +3197,8 @@ fn hadamard_sylvester(n: usize) -> Vec<Vec<i128>> {
 /// Returns {lu_combined, pivots, 0} where lu_combined stores L (below diagonal)
 /// and U (on and above diagonal), and pivots is the row permutation (1-indexed).
 fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
-  let rows = match mat {
-    Expr::List(rows) => rows,
-    _ => {
-      return Ok(call("LUDecomposition", vec![mat.clone()]));
-    }
+  let Expr::List(rows) = mat else {
+    return Ok(call("LUDecomposition", vec![mat.clone()]));
   };
 
   let n = rows.len();
@@ -3294,7 +3286,7 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
           best_numeric = Some((i, v.abs()));
         }
       }
-      best_numeric.map(|(i, _)| i).unwrap_or(first_nonzero)
+      best_numeric.map_or(first_nonzero, |(i, _)| i)
     };
 
     // Swap rows
@@ -3468,7 +3460,7 @@ fn lu_num(e: &Expr) -> Option<f64> {
 /// Magnitude of a numeric expression for pivot selection; non-numeric or
 /// unreadable entries sort as 0.
 fn lu_magnitude(e: &Expr) -> f64 {
-  lu_num(e).map(f64::abs).unwrap_or(0.0)
+  lu_num(e).map_or(0.0, f64::abs)
 }
 
 /// ∞-norm condition number ‖A‖∞·‖A⁻¹‖∞ of a machine matrix, matching Wolfram's
@@ -3483,14 +3475,13 @@ fn lu_infinity_condition(matrix: &[Vec<Expr>]) -> Expr {
   );
   let norm_a = lu_infinity_norm(matrix);
 
-  let inv = match evaluate_expr_to_expr(&call("Inverse", vec![orig])) {
-    Ok(e) => e,
-    _ => return Expr::Identifier("Infinity".into()),
+  let Ok(inv) = evaluate_expr_to_expr(&call("Inverse", vec![orig])) else {
+    return Expr::Identifier("Infinity".into());
   };
   let mut inv_mat: Vec<Vec<Expr>> = Vec::with_capacity(n);
   match &inv {
     Expr::List(rows) if rows.len() == n => {
-      for row in rows.iter() {
+      for row in rows {
         match row {
           Expr::List(cols) if cols.len() == n => inv_mat.push(cols.to_vec()),
           _ => return Expr::Identifier("Infinity".into()),
@@ -3556,10 +3547,7 @@ enum KronArg<'a> {
 /// Classify an `Expr` as a KroneckerProduct vector or matrix operand.
 /// Returns `None` for anything that is not a vector or rectangular matrix.
 fn classify_kron_arg(expr: &Expr) -> Option<KronArg<'_>> {
-  let rows = match expr {
-    Expr::List(rows) => rows,
-    _ => return None,
-  };
+  let Expr::List(rows) = expr else { return None };
   if rows.is_empty() {
     return None;
   }
@@ -3672,13 +3660,11 @@ fn kronecker_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   for next in &args[1..] {
-    let a = match classify_kron_arg(&acc_owned) {
-      Some(a) => a,
-      None => return Ok(unevaluated()),
+    let Some(a) = classify_kron_arg(&acc_owned) else {
+      return Ok(unevaluated());
     };
-    let b = match classify_kron_arg(next) {
-      Some(b) => b,
-      None => return Ok(unevaluated()),
+    let Some(b) = classify_kron_arg(next) else {
+      return Ok(unevaluated());
     };
     acc_owned = kronecker_product_pair(&a, &b)?;
   }
@@ -3691,11 +3677,11 @@ fn binary_dissimilarity_ast(
   name: &str,
   a: &Expr,
   b: &Expr,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let (list_a, list_b) = match (a, b) {
     (Expr::List(la), Expr::List(lb)) if la.len() == lb.len() => (la, lb),
     _ => {
-      return Ok(call(name, vec![a.clone(), b.clone()]));
+      return call(name, vec![a.clone(), b.clone()]);
     }
   };
 
@@ -3717,7 +3703,7 @@ fn binary_dissimilarity_ast(
   }
   for (ai, bi) in list_a.iter().zip(list_b.iter()) {
     let (Some(av), Some(bv)) = (as_bool(ai), as_bool(bi)) else {
-      return Ok(call(name, vec![a.clone(), b.clone()]));
+      return call(name, vec![a.clone(), b.clone()]);
     };
     match (av, bv) {
       (true, true) => n11 += 1,
@@ -3738,15 +3724,15 @@ fn binary_dissimilarity_ast(
     "SokalSneathDissimilarity" => (2 * (n10 + n01), n11 + 2 * (n10 + n01)),
     "YuleDissimilarity" => (2 * n10 * n01, n11 * n00 + n10 * n01),
     _ => {
-      return Ok(call(name, vec![a.clone(), b.clone()]));
+      return call(name, vec![a.clone(), b.clone()]);
     }
   };
 
   if den == 0 {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Expr::Identifier("Indeterminate".to_string());
   }
 
-  Ok(crate::functions::math_ast::make_rational(num, den))
+  crate::functions::math_ast::make_rational(num, den)
 }
 
 /// `MatrixMinimalPolynomial[A, x]` — the monic polynomial of least degree
@@ -3759,9 +3745,8 @@ fn matrix_minimal_polynomial(
   matrix: &Expr,
   x: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  let rows = match matrix {
-    Expr::List(rows) => rows,
-    _ => return None,
+  let Expr::List(rows) = matrix else {
+    return None;
   };
   let n = rows.len();
   if n == 0
@@ -3794,7 +3779,7 @@ fn matrix_minimal_polynomial(
     .map(|p| match p {
       Expr::List(prows) => {
         let mut v = Vec::with_capacity(n * n);
-        for pr in prows.iter() {
+        for pr in prows {
           match pr {
             Expr::List(pc) => v.extend(pc.iter().cloned()),
             _ => return None,
@@ -3858,9 +3843,7 @@ fn matrix_power_block_symbolic(rows: &[Expr], n_expr: &Expr) -> Option<Expr> {
   let matrix: Vec<Vec<Expr>> = {
     let mut m = Vec::with_capacity(size);
     for row in rows {
-      let cols = if let Expr::List(c) = row {
-        c
-      } else {
+      let Expr::List(cols) = row else {
         return None;
       };
       if cols.len() != size {
@@ -4476,7 +4459,7 @@ fn lyapunov_solve_common(
     }
     let mut out: Vec<Vec<Q>> = Vec::with_capacity(rows.len());
     let mut width = None;
-    for row in rows.iter() {
+    for row in rows {
       let Expr::List(cells) = row else { return None };
       match width {
         None => width = Some(cells.len()),
@@ -4487,7 +4470,7 @@ fn lyapunov_solve_common(
         return None;
       }
       let mut r = Vec::with_capacity(cells.len());
-      for c in cells.iter() {
+      for c in cells {
         r.push(parse_entry(c)?);
       }
       out.push(r);
@@ -4623,8 +4606,7 @@ fn lyapunov_solve_common(
     Outcome::Solved(s) => s,
     Outcome::Singular => {
       crate::emit_message(&format!(
-        "{}::nosol: The matrix equation has no solution.",
-        name
+        "{name}::nosol: The matrix equation has no solution."
       ));
       return unevaluated();
     }
@@ -4693,7 +4675,7 @@ fn lyapunov_symbolic_diagonal(
   }
   // Shape-check every row up front so no messages are emitted for
   // malformed input, then solve entrywise.
-  for crow in crows.iter() {
+  for crow in crows {
     let Expr::List(ccells) = crow else {
       return None;
     };
@@ -4726,8 +4708,7 @@ fn lyapunov_symbolic_diagonal(
       };
       if is_zero(&denom) {
         crate::emit_message(&format!(
-          "{}::nosol: The matrix equation has no solution.",
-          name
+          "{name}::nosol: The matrix equation has no solution."
         ));
         return Some(Ok(unevaluated(name, args)));
       }
@@ -4844,7 +4825,7 @@ fn control_structure_matrix(
         return unevaluated();
       };
       let mut block_rows = Vec::with_capacity(n);
-      for r in rows.iter() {
+      for r in rows {
         let Expr::List(cols) = r else {
           return unevaluated();
         };

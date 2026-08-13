@@ -89,7 +89,74 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let use_numeric = all_floatable && any_real;
 
-  if !use_numeric {
+  if use_numeric {
+    // Numeric mode
+    if let Some(Expr::List(pair)) = &start_pos
+      && pair.len() == 2
+    {
+      x = expr_to_f64(&pair[0]).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "AnglePath: starting x must be numeric".into(),
+        )
+      })?;
+      y = expr_to_f64(&pair[1]).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "AnglePath: starting y must be numeric".into(),
+        )
+      })?;
+    }
+    if let Some(theta_expr) = &start_angle {
+      angle = expr_to_f64(theta_expr).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "AnglePath: starting angle must be numeric".into(),
+        )
+      })?;
+    }
+    points.push(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()));
+
+    for item in items {
+      let (step, theta) = if is_pair_form {
+        if let Expr::List(pair) = item {
+          if pair.len() != 2 {
+            return Err(InterpreterError::EvaluationError(
+              "AnglePath: each element must be a number or {step, angle} pair"
+                .into(),
+            ));
+          }
+          let s = expr_to_f64(&pair[0]).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "AnglePath: step must be numeric".into(),
+            )
+          })?;
+          let t = expr_to_f64(&pair[1]).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "AnglePath: angle must be numeric".into(),
+            )
+          })?;
+          (s, t)
+        } else {
+          let t = expr_to_f64(item).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "AnglePath: angle must be numeric".into(),
+            )
+          })?;
+          (1.0, t)
+        }
+      } else {
+        let t = expr_to_f64(item).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "AnglePath: angle must be numeric".into(),
+          )
+        })?;
+        (1.0, t)
+      };
+
+      angle += theta;
+      x += step * angle.cos();
+      y += step * angle.sin();
+      points.push(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()));
+    }
+  } else {
     // Symbolic mode: keep exact Cos/Sin
     let mut cum_terms_x: Vec<Expr> = Vec::new();
     let mut cum_terms_y: Vec<Expr> = Vec::new();
@@ -171,73 +238,6 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
 
       points.push(Expr::List(vec![px, py].into()));
-    }
-  } else {
-    // Numeric mode
-    if let Some(Expr::List(pair)) = &start_pos
-      && pair.len() == 2
-    {
-      x = expr_to_f64(&pair[0]).ok_or_else(|| {
-        InterpreterError::EvaluationError(
-          "AnglePath: starting x must be numeric".into(),
-        )
-      })?;
-      y = expr_to_f64(&pair[1]).ok_or_else(|| {
-        InterpreterError::EvaluationError(
-          "AnglePath: starting y must be numeric".into(),
-        )
-      })?;
-    }
-    if let Some(theta_expr) = &start_angle {
-      angle = expr_to_f64(theta_expr).ok_or_else(|| {
-        InterpreterError::EvaluationError(
-          "AnglePath: starting angle must be numeric".into(),
-        )
-      })?;
-    }
-    points.push(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()));
-
-    for item in items {
-      let (step, theta) = if is_pair_form {
-        if let Expr::List(pair) = item {
-          if pair.len() != 2 {
-            return Err(InterpreterError::EvaluationError(
-              "AnglePath: each element must be a number or {step, angle} pair"
-                .into(),
-            ));
-          }
-          let s = expr_to_f64(&pair[0]).ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "AnglePath: step must be numeric".into(),
-            )
-          })?;
-          let t = expr_to_f64(&pair[1]).ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "AnglePath: angle must be numeric".into(),
-            )
-          })?;
-          (s, t)
-        } else {
-          let t = expr_to_f64(item).ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "AnglePath: angle must be numeric".into(),
-            )
-          })?;
-          (1.0, t)
-        }
-      } else {
-        let t = expr_to_f64(item).ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "AnglePath: angle must be numeric".into(),
-          )
-        })?;
-        (1.0, t)
-      };
-
-      angle += theta;
-      x += step * angle.cos();
-      y += step * angle.sin();
-      points.push(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()));
     }
   }
 
@@ -482,7 +482,7 @@ fn monic_linear_int_shifts(poly: &Expr, var_name: &str) -> Option<Vec<i128>> {
     return None;
   };
   let mut shifts: Vec<i128> = Vec::new();
-  for entry in entries.iter() {
+  for entry in entries {
     let Expr::List(pair) = entry else {
       return None;
     };
@@ -627,7 +627,7 @@ fn horner_i128(coeffs: &[i128], x: i128) -> Option<i128> {
 /// Synthetic division of an ascending integer polynomial by `(var - r)`,
 /// returning the ascending integer quotient (assumes `r` is an exact root).
 fn deflate_i128(coeffs: &[i128], r: i128) -> Option<Vec<i128>> {
-  let desc: Vec<i128> = coeffs.iter().rev().cloned().collect();
+  let desc: Vec<i128> = coeffs.iter().rev().copied().collect();
   let n = desc.len();
   let mut quot = vec![0i128; n - 1];
   let mut carry = desc[0];
@@ -886,11 +886,8 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if args.len() == 1 {
     // Product[{a, b, c}] -> a * b * c
-    let items = match &args[0] {
-      Expr::List(items) => items,
-      _ => {
-        return Ok(unevaluated("Product", args));
-      }
+    let Expr::List(items) = &args[0] else {
+      return Ok(unevaluated("Product", args));
     };
 
     let mut product = 1.0;
@@ -913,11 +910,10 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let inner_product = product_ast(&[body.clone(), inner_iter.clone()])?;
     if args.len() == 3 {
       return product_ast(&[inner_product, args[1].clone()]);
-    } else {
-      let mut new_args = vec![inner_product];
-      new_args.extend_from_slice(&args[1..args.len() - 1]);
-      return product_ast(&new_args);
     }
+    let mut new_args = vec![inner_product];
+    new_args.extend_from_slice(&args[1..args.len() - 1]);
+    return product_ast(&new_args);
   }
 
   if args.len() == 2 {
@@ -1546,9 +1542,9 @@ fn product_early_terms_clean(body: &Expr, var: &str, n0: i128) -> bool {
   for k in 0..5 {
     let substituted =
       crate::syntax::substitute_variable(body, var, &Expr::Integer(n0 + k));
-    let value = match crate::evaluator::evaluate_expr_to_expr(&substituted) {
-      Ok(v) => v,
-      Err(_) => return false,
+    let Ok(value) = crate::evaluator::evaluate_expr_to_expr(&substituted)
+    else {
+      return false;
     };
     match crate::functions::math_ast::n_ast(&[value]) {
       Ok(Expr::Real(r)) if r.is_finite() && r != 0.0 => {}
@@ -1590,7 +1586,7 @@ fn product_growth(expr: &Expr, var: &str) -> Option<(f64, f64)> {
     Expr::FunctionCall { name, args } if name == "Times" => {
       let mut rate = 0.0;
       let mut degree = 0.0;
-      for a in args.iter() {
+      for a in args {
         let (r, d) = product_growth(a, var)?;
         rate += r;
         degree += d;
@@ -1608,12 +1604,7 @@ fn product_growth(expr: &Expr, var: &str) -> Option<(f64, f64)> {
       Some((0.0, d * 0.5))
     }
     Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left,
-      right,
-    }
-    | Expr::BinaryOp {
-      op: BinaryOperator::Minus,
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
       left,
       right,
     } => {
@@ -1691,7 +1682,7 @@ fn linear_slope_in(expr: &Expr, var: &str) -> Option<f64> {
       // Exactly one var-bearing factor, all others numeric.
       let mut slope: Option<f64> = None;
       let mut coeff = 1.0;
-      for a in args.iter() {
+      for a in args {
         if summand_contains_var(a, var) {
           if slope.is_some() {
             return None;
@@ -1983,7 +1974,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 2
     && let Expr::Identifier(var_name) = &args[1]
   {
-    let fresh_name = format!("$sum_indef_{}_$", var_name);
+    let fresh_name = format!("$sum_indef_{var_name}_$");
     let fresh = Expr::Identifier(fresh_name.clone());
     let body_in_fresh =
       crate::syntax::substitute_variable(&args[0], var_name, &fresh);
@@ -2010,11 +2001,10 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let inner_sum = sum_ast(&[body.clone(), inner_iter.clone()])?;
     if args.len() == 3 {
       return sum_ast(&[inner_sum, args[1].clone()]);
-    } else {
-      let mut new_args = vec![inner_sum];
-      new_args.extend_from_slice(&args[1..args.len() - 1]);
-      return sum_ast(&new_args);
     }
+    let mut new_args = vec![inner_sum];
+    new_args.extend_from_slice(&args[1..args.len() - 1]);
+    return sum_ast(&new_args);
   }
 
   // Sum[expr, {i, min, max}] or variants
@@ -2200,7 +2190,6 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             &items[1],
             &items[2],
             min_concrete,
-            max_concrete,
           )? {
             // Evaluate to simplify the symbolic result
             return crate::evaluator::evaluate_expr_to_expr(&result);
@@ -2338,7 +2327,7 @@ fn collect_times_factors(e: &Expr, out: &mut Vec<Expr>) {
       collect_times_factors(right, out);
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
-      for a in args.iter() {
+      for a in args {
         collect_times_factors(a, out);
       }
     }
@@ -2452,7 +2441,6 @@ fn try_symbolic_sum(
   min_expr: &Expr,
   max_expr: &Expr,
   min_concrete: Option<i128>,
-  _max_concrete: Option<i128>,
 ) -> Result<Option<Expr>, InterpreterError> {
   // If body doesn't contain the iteration variable, it's a constant sum:
   // Sum[c, {var, min, max}] = c * (max - min + 1)
@@ -2505,7 +2493,6 @@ fn try_symbolic_sum(
           min_expr,
           max_expr,
           min_concrete,
-          _max_concrete,
         )? {
           let mut all = const_factors;
           all.push(inner_sum);
@@ -2890,7 +2877,7 @@ fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
         });
       }
       Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
+        for a in args {
           collect(a, out);
         }
       }
@@ -2911,7 +2898,7 @@ fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
           collect_times(right, out);
         }
         Expr::FunctionCall { name, args } if name == "Times" => {
-          for a in args.iter() {
+          for a in args {
             collect_times(a, out);
           }
         }
@@ -3121,7 +3108,7 @@ fn match_arith_geometric(body: &Expr, var_name: &str) -> Option<(i128, Expr)> {
         });
       }
       Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
+        for a in args {
           collect(a, out);
         }
       }
@@ -3237,7 +3224,7 @@ fn linear_coeff_of_var(exp: &Expr, var_name: &str) -> Option<Expr> {
         collect_times(right, out);
       }
       Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
+        for a in args {
           collect_times(a, out);
         }
       }
@@ -3286,7 +3273,7 @@ fn match_log_geometric(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
         recip(right, out);
       }
       Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
+        for a in args {
           recip(a, out);
         }
       }
@@ -3313,7 +3300,7 @@ fn match_log_geometric(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
             times2(Expr::Integer(-1), args[1].clone()),
           ]
           .into(),
-        })
+        });
       }
       other => out.push(pow2(other.clone(), Expr::Integer(-1))),
     }
@@ -3329,7 +3316,7 @@ fn match_log_geometric(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
         collect(right, out);
       }
       Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
+        for a in args {
           collect(a, out);
         }
       }
@@ -3471,7 +3458,7 @@ fn match_exponential_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
         });
       }
       Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
+        for a in args {
           collect(a, out);
         }
       }
@@ -3641,7 +3628,7 @@ fn try_telescoping_rational_sum(
   body: &Expr,
   var_name: &str,
   min: i128,
-) -> Result<Option<Expr>, InterpreterError> {
+) -> std::option::Option<crate::syntax::Expr> {
   // Trim trailing zero coefficients to get true degrees.
   let trim = |mut v: Vec<(i128, i128)>| {
     while v.len() > 1 && v.last() == Some(&(0, 1)) {
@@ -3671,13 +3658,13 @@ fn try_telescoping_rational_sum(
   // An empty coefficient list means the numerator/denominator isn't a genuine
   // polynomial in `var`; leave it to other paths.
   if num.is_empty() || den.is_empty() {
-    return Ok(None);
+    return None;
   }
   let deg_num = num.len() - 1;
   let deg_den = den.len() - 1;
   // Need a genuine rational function that decays at least like 1/n^2.
   if deg_den < deg_num + 2 || deg_den == 0 {
-    return Ok(None);
+    return None;
   }
 
   // Find the integer roots of Q with multiplicity. A root at 0 shows up as a
@@ -3698,7 +3685,7 @@ fn try_telescoping_rational_sum(
     lowest += 1;
   }
   if lowest >= int_coeffs.len() {
-    return Ok(None);
+    return None;
   }
   let reduced = &int_coeffs[lowest..];
   let c0 = reduced[0];
@@ -3723,16 +3710,16 @@ fn try_telescoping_rational_sum(
   // Every pole must be simple and the roots must account for the full degree
   // (Q factors completely over the integers with no repeats).
   if roots.len() != deg_den {
-    return Ok(None);
+    return None;
   }
   let mut sorted = roots.clone();
   sorted.sort_unstable();
   if sorted.windows(2).any(|w| w[0] == w[1]) {
-    return Ok(None); // a repeated pole is not handled here
+    return None; // a repeated pole is not handled here
   }
   // No pole may lie inside the summation range [min, Infinity).
   if roots.iter().any(|&r| r > min - 1) {
-    return Ok(None);
+    return None;
   }
 
   let mut total = (0i128, 1i128);
@@ -3741,7 +3728,7 @@ fn try_telescoping_rational_sum(
     let pr = tr_poly_eval(&num, r);
     let dpr = tr_poly_deriv_eval(&den, r);
     if dpr.0 == 0 {
-      return Ok(None);
+      return None;
     }
     // residue = P(r) / Q'(r)
     let c = tr_mul(pr, (dpr.1, dpr.0));
@@ -3751,10 +3738,10 @@ fn try_telescoping_rational_sum(
   }
   // Convergence requires the 1/n coefficient (sum of residues) to vanish.
   if residue_sum.0 != 0 {
-    return Ok(None);
+    return None;
   }
   let (n, d) = tr_reduce(total.0, total.1);
-  Ok(Some(crate::functions::math_ast::make_rational(n, d)))
+  Some(crate::functions::math_ast::make_rational(n, d))
 }
 
 /// Evaluate an ascending polynomial (rational coefficients) at a rational point.
@@ -3793,7 +3780,7 @@ fn try_rational_pole_telescoping_sum(
   body: &Expr,
   var_name: &str,
   min: i128,
-) -> Result<Option<Expr>, InterpreterError> {
+) -> std::option::Option<crate::syntax::Expr> {
   use std::collections::{HashMap, HashSet};
   let trim = |mut v: Vec<(i128, i128)>| {
     while v.len() > 1 && v.last() == Some(&(0, 1)) {
@@ -3817,13 +3804,13 @@ fn try_rational_pole_telescoping_sum(
     }
   }
   if num.is_empty() || den.is_empty() {
-    return Ok(None);
+    return None;
   }
   let deg_num = num.len() - 1;
   let deg_den = den.len() - 1;
   // Need a genuine rational function that decays at least like 1/n^2.
   if deg_den < deg_num + 2 || deg_den == 0 {
-    return Ok(None);
+    return None;
   }
 
   // Integer-clear the denominator for the rational-root search.
@@ -3841,7 +3828,7 @@ fn try_rational_pole_telescoping_sum(
     int_coeffs.remove(0);
   }
   if zero_mult > 1 {
-    return Ok(None);
+    return None;
   }
   if zero_mult == 1 {
     roots.push((0, 1));
@@ -3852,7 +3839,7 @@ fn try_rational_pole_telescoping_sum(
     let c0 = int_coeffs[0].abs();
     let cd = int_coeffs[int_coeffs.len() - 1].abs();
     if c0 == 0 || c0 > LIMIT || cd > LIMIT {
-      return Ok(None);
+      return None;
     }
     let divisors =
       |m: i128| -> Vec<i128> { (1..=m).filter(|d| m % d == 0).collect() };
@@ -3874,13 +3861,13 @@ fn try_rational_pole_telescoping_sum(
   }
   // Q must split completely into distinct rational linear factors.
   if roots.len() != deg_den {
-    return Ok(None);
+    return None;
   }
   // Every pole must lie strictly below the integer summation start, so q = min-r
   // is positive and no integer pole falls in [min, Infinity).
   for &r in &roots {
     if r.0 >= min * r.1 {
-      return Ok(None);
+      return None;
     }
   }
 
@@ -3891,14 +3878,14 @@ fn try_rational_pole_telescoping_sum(
     let pr = tr_poly_eval_rat(&num, r);
     let dpr = tr_poly_deriv_eval_rat(&den, r);
     if dpr.0 == 0 {
-      return Ok(None);
+      return None;
     }
     let c = tr_mul(pr, (dpr.1, dpr.0)); // residue = P(r)/Q'(r)
     residue_sum = tr_add(residue_sum, c);
     // q = min - r, decomposed as q0 + m with q0 in (0, 1], m >= 0.
     let q = tr_add((min, 1), (-r.0, r.1));
     if q.0 <= 0 {
-      return Ok(None);
+      return None;
     }
     let floor = q.0.div_euclid(q.1);
     let frac = tr_reduce(q.0 - floor * q.1, q.1);
@@ -3908,7 +3895,7 @@ fn try_rational_pole_telescoping_sum(
       (frac, floor)
     };
     if m > 100_000 {
-      return Ok(None); // guard against overflow in the harmonic accumulation
+      return None; // guard against overflow in the harmonic accumulation
     }
     let e = class_residue.entry(q0).or_insert((0, 1));
     *e = tr_add(*e, c);
@@ -3923,13 +3910,13 @@ fn try_rational_pole_telescoping_sum(
   // Convergence (sum of residues zero) and a rational value (each fractional
   // class cancels, so the transcendental PolyGamma[0, q0] terms drop out).
   if residue_sum.0 != 0 {
-    return Ok(None);
+    return None;
   }
   if class_residue.values().any(|v| v.0 != 0) {
-    return Ok(None);
+    return None;
   }
   let (n, d) = tr_reduce(total.0, total.1);
-  Ok(Some(crate::functions::math_ast::make_rational(n, d)))
+  Some(crate::functions::math_ast::make_rational(n, d))
 }
 
 fn try_infinite_sum(
@@ -4266,14 +4253,13 @@ fn try_infinite_sum(
   // Convergent rational summand with simple integer poles telescopes to an
   // exact rational, e.g. Sum[1/(n(n+1)), {n, 1, Infinity}] = 1. Handled for
   // any finite lower bound >= 1.
-  if let Some(result) = try_telescoping_rational_sum(body, var_name, min)? {
+  if let Some(result) = try_telescoping_rational_sum(body, var_name, min) {
     return Ok(Some(result));
   }
 
   // Same idea, but for simple rational poles whose residues cancel within each
   // fractional class, e.g. Sum[1/(4 n^2 - 1), {n, 1, Infinity}] = 1/2.
-  if let Some(result) = try_rational_pole_telescoping_sum(body, var_name, min)?
-  {
+  if let Some(result) = try_rational_pole_telescoping_sum(body, var_name, min) {
     return Ok(Some(result));
   }
 
@@ -4368,7 +4354,7 @@ fn collect_factors(
       collect_factors(right, num, den, invert);
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
-      for a in args.iter() {
+      for a in args {
         collect_factors(a, num, den, invert);
       }
     }
@@ -5078,7 +5064,7 @@ pub fn angle_path_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       a.to_vec()
     }
   };
-  for step in steps.iter() {
+  for step in steps {
     // {α, β, γ}, {α, β} (γ = 0), or the same wrapped as {dist, {…}}.
     let (dist, angles): (Option<&Expr>, Vec<Expr>) = match step {
       Expr::List(items)

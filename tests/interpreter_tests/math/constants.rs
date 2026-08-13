@@ -630,8 +630,7 @@ mod e_constant {
     let result = interpret("N[E, 50]").unwrap();
     assert!(
       result.starts_with("2.7182818284590452353602874713526624977572470936999"),
-      "N[E, 50] = {}",
-      result
+      "N[E, 50] = {result}"
     );
     assert!(result.ends_with("`50."));
   }

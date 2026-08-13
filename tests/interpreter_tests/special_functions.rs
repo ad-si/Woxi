@@ -954,8 +954,7 @@ mod bessel_j_zero {
     let result = interpret("BesselJ[1, BesselJZero[0, 1]]").unwrap();
     assert!(
       result.contains("BesselJ"),
-      "expected unevaluated, got {}",
-      result
+      "expected unevaluated, got {result}"
     );
   }
 }
@@ -1016,8 +1015,7 @@ mod bessel_y_zero {
     let result = interpret("BesselY[1, BesselYZero[0, 1]]").unwrap();
     assert!(
       result.contains("BesselY"),
-      "expected unevaluated, got {}",
-      result
+      "expected unevaluated, got {result}"
     );
   }
 }
@@ -2071,7 +2069,7 @@ mod function_interpolation {
     let result =
       interpret("FunctionInterpolation[Sin[x], {x, 0, 6.28}][0.0]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!(val.abs() < 0.01, "Expected ~0 at x=0, got {}", val);
+    assert!(val.abs() < 0.01, "Expected ~0 at x=0, got {val}");
   }
 
   #[test]
@@ -2792,9 +2790,9 @@ mod cases {
   #[test]
   fn orthogonal_polynomials_large_args_no_overflow() {
     fn check(func: &str, x: i32, expected: &str) {
-      let integer_cmd = func.replace("x", &x.to_string());
+      let integer_cmd = func.replace('x', &x.to_string());
       let integer_eval = interpret(&integer_cmd).unwrap();
-      let symbolic_cmd = format!("{} /. x -> {}", func, x);
+      let symbolic_cmd = format!("{func} /. x -> {x}");
       let symbolic_eval = interpret(&symbolic_cmd).unwrap();
       assert_eq!(integer_eval, expected);
       assert_eq!(symbolic_eval, expected);

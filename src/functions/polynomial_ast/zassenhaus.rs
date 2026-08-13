@@ -117,10 +117,10 @@ fn ext_gcd(
   let (mut r0, mut r1) = (a.to_vec(), b.to_vec());
   let (mut s0, mut s1) = (vec![1i128], vec![0i128]);
   let (mut t0, mut t1) = (vec![0i128], vec![1i128]);
-  for v in r0.iter_mut() {
+  for v in &mut r0 {
     *v = v.rem_euclid(p);
   }
-  for v in r1.iter_mut() {
+  for v in &mut r1 {
     *v = v.rem_euclid(p);
   }
   trim(&mut r0);

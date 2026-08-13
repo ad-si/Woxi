@@ -58,7 +58,7 @@ fn norm(f: Frac) -> Option<Frac> {
   if f.1 == 0 {
     return None;
   }
-  if let Some(p) = GB_MODULUS.with(|m| m.get()) {
+  if let Some(p) = GB_MODULUS.with(std::cell::Cell::get) {
     let inv = mod_inverse(f.1, p)?;
     return Some(((f.0.rem_euclid(p) * inv).rem_euclid(p), 1));
   }
@@ -140,7 +140,7 @@ fn poly_sub_scaled(p: &Poly, q: &Poly, c: Frac, m: &Mono) -> Option<Poly> {
 fn reduce(p: &Poly, basis: &[Poly]) -> Option<Poly> {
   let mut current = p.clone();
   'outer: loop {
-    for (key, &c) in current.iter() {
+    for (key, &c) in &current {
       for b in basis {
         if let Some((lm, lc)) = leading(b)
           && mono_divides(lm, &key.0)
@@ -163,7 +163,7 @@ fn poly_to_expr(p: &Poly, vars: &[String]) -> Expr {
     return Expr::Integer(0);
   }
   let mut terms: Vec<Expr> = Vec::new();
-  for (key, &(n, d)) in p.iter() {
+  for (key, &(n, d)) in p {
     let mono = &key.0;
     let mut factors: Vec<Expr> = Vec::new();
     for (j, &e) in mono.iter().enumerate() {
@@ -504,7 +504,7 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         nums.push((key.0.clone(), scaled));
       }
       let content = content.max(1);
-      let lead_sign = nums.first().map(|(_, c)| *c < 0).unwrap_or(false);
+      let lead_sign = nums.first().is_some_and(|(_, c)| *c < 0);
       let sign = if lead_sign { -1 } else { 1 };
       let mut terms: Vec<Expr> = Vec::new();
       for (m, c) in &nums {

@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- `$VersionNumber` is a `Real` — the Wolfram Language version Woxi aims to
+    be compatible with (`15.`) — instead of the Woxi build's git version as
+    a `String`. Scripts gate language features on it
+    (`If[$VersionNumber >= 8, …]`), which only works for a number. The Woxi
+    build stays available through `$Version`.
 - `$InputFileName` names the file `Get` is currently reading, so a file
     pulled in with `Get` can locate its own directory
     (`DirectoryName[$InputFileName]`) instead of the including script's. The

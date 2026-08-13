@@ -86,8 +86,7 @@ const PROPERTY_NAMES: [&str; 22] = [
 pub fn http_request_extract(func_args: &[Expr], arg: &Expr) -> Option<Expr> {
   if !matches!(
     func_args,
-    [Expr::String(_)]
-      | [Expr::Association(_)]
+    [Expr::String(_) | Expr::Association(_)]
       | [Expr::String(_), Expr::Association(_)]
   ) {
     return None;
@@ -114,13 +113,14 @@ pub fn http_request_extract(func_args: &[Expr], arg: &Expr) -> Option<Expr> {
         })
         .collect(),
     )),
-    Expr::String(_) | Expr::Identifier(_) => match resolve(arg) {
-      Some(value) => Some(value),
-      None => {
+    Expr::String(_) | Expr::Identifier(_) => {
+      if let Some(value) = resolve(arg) {
+        Some(value)
+      } else {
         emit_notprop(arg, func_args.len());
         None
       }
-    },
+    }
     _ => None,
   }
 }
@@ -301,7 +301,7 @@ fn request_headers(assoc: Option<&[(Expr, Expr)]>) -> Vec<(String, Expr)> {
       }
     }
     Some(Expr::List(items)) => {
-      for item in items.iter() {
+      for item in items {
         if let Expr::Rule {
           pattern,
           replacement,
@@ -483,7 +483,7 @@ fn apply_assoc_overrides(parts: &mut UrlParts, pairs: &[(Expr, Expr)]) {
       },
       "Path" => {
         if let Expr::String(p) = value {
-          parts.path = p.clone();
+          parts.path.clone_from(p);
         }
       }
       "Fragment" => {
@@ -915,8 +915,7 @@ pub fn url_parse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(p) => p,
     Err(port) => {
       crate::emit_message(&format!(
-        "URLParse::nvldval: {} is not a valid value",
-        port
+        "URLParse::nvldval: {port} is not a valid value"
       ));
       return Ok(Expr::Identifier("$Failed".to_string()));
     }
@@ -1031,13 +1030,14 @@ pub fn url_parse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   match spec {
     Expr::Identifier(s) if s == "All" => Ok(assoc_of(&ALL_COMPONENTS)),
-    Expr::String(s) => match component_value(s) {
-      Some(v) => Ok(v),
-      None => {
+    Expr::String(s) => {
+      if let Some(v) = component_value(s) {
+        Ok(v)
+      } else {
         invcomp();
         unevaluated()
       }
-    },
+    }
     Expr::List(items) => {
       let values: Option<Vec<Expr>> = items
         .iter()
@@ -1046,12 +1046,11 @@ pub fn url_parse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => None,
         })
         .collect();
-      match values {
-        Some(v) => Ok(Expr::List(v.into())),
-        None => {
-          invcomp();
-          unevaluated()
-        }
+      if let Some(v) = values {
+        Ok(Expr::List(v.into()))
+      } else {
+        invcomp();
+        unevaluated()
       }
     }
     _ => {

@@ -16,7 +16,7 @@ pub(super) fn dispatch_wavelet_functions(
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
     "WaveletFilterCoefficients" => {
-      Some(wa::filters::wavelet_filter_coefficients_ast(args))
+      Some(Ok(wa::filters::wavelet_filter_coefficients_ast(args)))
     }
     "DiscreteWaveletTransform" => {
       Some(wa::data::wavelet_transform_ast(TransformKind::Dwt, args))
