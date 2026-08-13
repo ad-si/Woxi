@@ -114,10 +114,7 @@ impl Color {
   /// Convert to an Expr (RGBColor or GrayLevel) for embedding in Graphics expressions.
   pub(crate) fn to_expr(self) -> Expr {
     if (self.r - self.g).abs() < 1e-14 && (self.g - self.b).abs() < 1e-14 {
-      Expr::FunctionCall {
-        name: "GrayLevel".to_string(),
-        args: vec![Expr::Real(self.r)].into(),
-      }
+      call1("GrayLevel", Expr::Real(self.r))
     } else {
       Expr::FunctionCall {
         name: "RGBColor".to_string(),
@@ -9902,10 +9899,7 @@ fn parse_box_to_expr(cs: &[char]) -> Expr {
   match units.len() {
     0 => Expr::String(String::new()),
     1 => units.pop().unwrap(),
-    _ => Expr::FunctionCall {
-      name: "RowBox".to_string(),
-      args: vec![Expr::List(units.into())].into(),
-    },
+    _ => call1("RowBox", Expr::List(units.into())),
   }
 }
 
@@ -10191,14 +10185,8 @@ pub(crate) fn mesh_region_to_graphics_prims(
 
   let mut result = Vec::new();
   // Add default styling
-  result.push(Expr::FunctionCall {
-    name: "EdgeForm".to_string(),
-    args: vec![Color::gray(0.4).to_expr()].into(),
-  });
-  result.push(Expr::FunctionCall {
-    name: "FaceForm".to_string(),
-    args: vec![Color::new(0.626, 0.836, 0.919).to_expr()].into(),
-  });
+  result.push(call1("EdgeForm", Color::gray(0.4).to_expr()));
+  result.push(call1("FaceForm", Color::new(0.626, 0.836, 0.919).to_expr()));
 
   for prim in prims {
     if let Expr::FunctionCall { name, args } = prim
@@ -10223,10 +10211,7 @@ pub(crate) fn mesh_region_to_graphics_prims(
             })
             .collect();
           if points.len() >= 3 {
-            result.push(Expr::FunctionCall {
-              name: "Polygon".to_string(),
-              args: vec![Expr::List(points.into())].into(),
-            });
+            result.push(call1("Polygon", Expr::List(points.into())));
           }
         }
       }
@@ -10274,10 +10259,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
     {
       let (fr, fg, fb) = sd.fill_color.unwrap_or(sd.color);
       let mut fill_prims: Vec<Expr> = vec![
-        Expr::FunctionCall {
-          name: "Opacity".to_string(),
-          args: vec![Expr::Real(sd.fill_opacity.unwrap_or(0.2))].into(),
-        },
+        call1("Opacity", Expr::Real(sd.fill_opacity.unwrap_or(0.2))),
         Expr::FunctionCall {
           name: "RGBColor".to_string(),
           args: vec![
@@ -10304,10 +10286,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
         coords.push(Expr::List(
           vec![Expr::Real(x_first), Expr::Real(ref_y)].into(),
         ));
-        fill_prims.push(Expr::FunctionCall {
-          name: "Polygon".to_string(),
-          args: vec![Expr::List(coords.into())].into(),
-        });
+        fill_prims.push(call1("Polygon", Expr::List(coords.into())));
       }
       series_prims.push(Expr::List(fill_prims.into()));
     }
@@ -10322,10 +10301,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       .into(),
     });
     if sd.is_scatter {
-      series_prims.push(Expr::FunctionCall {
-        name: "PointSize".to_string(),
-        args: vec![Expr::Real(0.012)].into(),
-      });
+      series_prims.push(call1("PointSize", Expr::Real(0.012)));
       let coords: Vec<Expr> = sd
         .points
         .iter()
@@ -10333,16 +10309,13 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
         .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
         .collect();
       if !coords.is_empty() {
-        series_prims.push(Expr::FunctionCall {
-          name: "Point".to_string(),
-          args: vec![Expr::List(coords.into())].into(),
-        });
+        series_prims.push(call1("Point", Expr::List(coords.into())));
       }
     } else {
-      series_prims.push(Expr::FunctionCall {
-        name: "AbsoluteThickness".to_string(),
-        args: vec![Expr::Real(sd.thickness.unwrap_or(1.5))].into(),
-      });
+      series_prims.push(call1(
+        "AbsoluteThickness",
+        Expr::Real(sd.thickness.unwrap_or(1.5)),
+      ));
       let segments = crate::functions::plot::split_into_segments(&sd.points);
       for seg in &segments {
         let coords: Vec<Expr> = seg
@@ -10350,10 +10323,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
           .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
           .collect();
         if coords.len() >= 2 {
-          series_prims.push(Expr::FunctionCall {
-            name: "Line".to_string(),
-            args: vec![Expr::List(coords.into())].into(),
-          });
+          series_prims.push(call1("Line", Expr::List(coords.into())));
         }
       }
     }
@@ -12943,10 +12913,7 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
               .iter()
               .find(|(k, _)| expr_to_svg_markup(k) == *h)
               .map(|(_, v)| v.clone())
-              .unwrap_or(Expr::FunctionCall {
-                name: "Missing".to_string(),
-                args: vec![].into(),
-              })
+              .unwrap_or(call("Missing", vec![]))
           })
           .collect()
       } else {
@@ -14344,10 +14311,7 @@ fn tabular_list_of_assocs_to_svg(
               .iter()
               .find(|(k, _)| expr_to_svg_markup(k) == *h)
               .map(|(_, v)| v.clone())
-              .unwrap_or(Expr::FunctionCall {
-                name: "Missing".to_string(),
-                args: vec![].into(),
-              })
+              .unwrap_or(call("Missing", vec![]))
           })
           .collect()
       } else {
@@ -14424,17 +14388,11 @@ fn tabular_column_assoc_to_svg(
       .iter()
       .map(|(_, v)| {
         if let Expr::List(items) = v {
-          items.get(i).cloned().unwrap_or(Expr::FunctionCall {
-            name: "Missing".to_string(),
-            args: vec![].into(),
-          })
+          items.get(i).cloned().unwrap_or(call("Missing", vec![]))
         } else if i == 0 {
           v.clone()
         } else {
-          Expr::FunctionCall {
-            name: "Missing".to_string(),
-            args: vec![].into(),
-          }
+          call("Missing", vec![])
         }
       })
       .collect();
@@ -14672,10 +14630,7 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
     && !matches!(&current, Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Grid" | "Column" | "Row" | "Framed"))
   {
-    current = Expr::FunctionCall {
-      name: "TraditionalForm".to_string(),
-      args: vec![current].into(),
-    };
+    current = call1("TraditionalForm", current);
   }
   current
 }
@@ -15852,10 +15807,7 @@ pub fn koch_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
     .collect();
 
-  Ok(Expr::FunctionCall {
-    name: "Line".to_string(),
-    args: vec![Expr::List(point_exprs.into())].into(),
-  })
+  Ok(call1("Line", Expr::List(point_exprs.into())))
 }
 
 // ─── LinearGradientFilling ──────────────────────────────────────────
@@ -15972,10 +15924,7 @@ pub fn drop_shadowing_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Opacity".to_string(),
         args: vec![
           crate::functions::make_rational(1, 3),
-          Expr::FunctionCall {
-            name: "ThemeColor".to_string(),
-            args: vec![Expr::Identifier("Foreground".to_string())].into(),
-          },
+          call1("ThemeColor", Expr::Identifier("Foreground".to_string())),
         ]
         .into(),
       }),
@@ -15992,14 +15941,8 @@ pub fn linear_gradient_filling_ast(
     // LinearGradientFilling[] → default black to white
     let stops = vec![Expr::Integer(0), Expr::Integer(1)];
     let colors = vec![
-      Expr::FunctionCall {
-        name: "GrayLevel".to_string(),
-        args: vec![Expr::Integer(0)].into(),
-      },
-      Expr::FunctionCall {
-        name: "GrayLevel".to_string(),
-        args: vec![Expr::Integer(1)].into(),
-      },
+      call1("GrayLevel", Expr::Integer(0)),
+      call1("GrayLevel", Expr::Integer(1)),
     ];
     (
       stops,
@@ -16052,10 +15995,10 @@ pub fn linear_gradient_filling_ast(
       }
       // Single non-list color arg
       other => {
-        return Ok(Expr::FunctionCall {
-          name: "LinearGradientFilling".to_string(),
-          args: vec![other.clone(), angle, space].into(),
-        });
+        return Ok(call(
+          "LinearGradientFilling",
+          vec![other.clone(), angle, space],
+        ));
       }
     }
   };
@@ -16066,10 +16009,7 @@ pub fn linear_gradient_filling_ast(
     replacement: Box::new(Expr::List(colors.into())),
   };
 
-  Ok(Expr::FunctionCall {
-    name: "LinearGradientFilling".to_string(),
-    args: vec![rule, angle, space].into(),
-  })
+  Ok(call("LinearGradientFilling", vec![rule, angle, space]))
 }
 
 /// Manipulate[expr, {u, umin, umax}, …] — interactive control construct.
@@ -16183,10 +16123,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::FunctionCall {
-    name: "Manipulate".to_string(),
-    args: out_args.into(),
-  })
+  Ok(call("Manipulate", out_args))
 }
 
 /// Process a single Manipulate/Control variable specification list,
@@ -16257,10 +16194,7 @@ fn process_manipulate_var_spec(items: &[Expr]) -> Expr {
     && needs_dynamic
   {
     let range = new_items.pop().unwrap();
-    new_items.push(Expr::FunctionCall {
-      name: "Dynamic".to_string(),
-      args: vec![range].into(),
-    });
+    new_items.push(call1("Dynamic", range));
   }
   Expr::List(new_items.into())
 }
@@ -16285,10 +16219,7 @@ pub fn control_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for extra in args.iter().skip(1) {
     out_args.push(extra.clone());
   }
-  Ok(Expr::FunctionCall {
-    name: "Control".to_string(),
-    args: out_args.into(),
-  })
+  Ok(call("Control", out_args))
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -16455,9 +16386,7 @@ impl ManipulateControl {
       | Self::IntervalSlider { name, .. }
       | Self::Trigger { name, .. }
       | Self::Locator { name, .. } => name,
-      Self::Button { .. }
-      | Self::Heading { .. }
-      | Self::Divider => "",
+      Self::Button { .. } | Self::Heading { .. } | Self::Divider => "",
     }
   }
 }
@@ -19755,10 +19684,7 @@ fn parse_manipulate_control(
     // storing it.
     && let built = crate::syntax::substitute_slots(
       body,
-      &[Expr::FunctionCall {
-        name: "Dynamic".to_string(),
-        args: vec![Expr::Identifier(name.clone())].into(),
-      }],
+      &[call1("Dynamic", Expr::Identifier(name.clone()))],
     )
     && let Expr::FunctionCall {
       name: built_name,
@@ -20877,10 +20803,7 @@ pub enum DisplayNode {
   /// against the live bindings, exactly like a `Button` written as a
   /// Manipulate control argument. Demonstrations use these inside a
   /// `Dynamic[…]` caption to step a variable (`n++`, `n = 1`, …).
-  Button {
-    label: Box<Self>,
-    action: String,
-  },
+  Button { label: Box<Self>, action: String },
   /// A `Spacer[w]`: `w` printer's points of horizontal space.
   Spacer { width: f64 },
   /// A text leaf with its styled runs, so `Style["…", Bold, Red]` renders
@@ -21418,10 +21341,7 @@ fn space_filling_curve(
     })
     .collect();
   let _ = name;
-  Expr::FunctionCall {
-    name: "Line".to_string(),
-    args: vec![Expr::List(point_exprs.into())].into(),
-  }
+  call1("Line", Expr::List(point_exprs.into()))
 }
 
 /// The curve order, or None (after emitting ::intpm) for invalid input.
@@ -21642,22 +21562,12 @@ pub fn sierpinski_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )
     })
     .collect();
-  Ok(Expr::FunctionCall {
-    name: "Line".to_string(),
-    args: vec![Expr::List(point_exprs.into())].into(),
-  })
+  Ok(call1("Line", Expr::List(point_exprs.into())))
 }
 
 #[cfg(test)]
 mod manipulate_label_tests {
   use super::*;
-
-  fn call(name: &str, args: Vec<Expr>) -> Expr {
-    Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.into(),
-    }
-  }
 
   fn runs(expr: &Expr) -> Vec<LabelRun> {
     manipulate_label_runs(expr, false)
@@ -21703,7 +21613,7 @@ mod manipulate_label_tests {
       vec![Expr::String("m".into()), Expr::Identifier("Italic".into())],
     );
     let subscript = call("Subscript", vec![styled, Expr::Integer(1)]);
-    let label = call("Text", vec![subscript]);
+    let label = call1("Text", subscript);
     assert_eq!(runs(&label), vec![run("m", true), run("\u{2081}", false)]);
   }
 
@@ -21729,9 +21639,9 @@ mod manipulate_label_tests {
       "Style",
       vec![Expr::String("a".into()), Expr::Identifier("Italic".into())],
     );
-    let row = call(
+    let row = call1(
       "Row",
-      vec![Expr::List(vec![italic_a, Expr::String("b".into())].into())],
+      Expr::List(vec![italic_a, Expr::String("b".into())].into()),
     );
     assert_eq!(runs(&row), vec![run("a", true), run("b", false)]);
     assert_eq!(flatten_label_runs(&runs(&row)), "ab");
@@ -21740,7 +21650,7 @@ mod manipulate_label_tests {
   /// `Derivative[n][f]` — a slider labelled `y'(0)` in a Demonstration.
   fn derivative(order: i128, func: Expr) -> Expr {
     Expr::CurriedCall {
-      func: Box::new(call("Derivative", vec![Expr::Integer(order)])),
+      func: Box::new(call1("Derivative", Expr::Integer(order))),
       args: vec![func],
     }
   }
@@ -21751,14 +21661,14 @@ mod manipulate_label_tests {
       "Style",
       vec![Expr::String("y".into()), Expr::Identifier("Italic".into())],
     );
-    let label = call(
+    let label = call1(
       "Text",
-      vec![call(
+      call1(
         "Row",
-        vec![Expr::List(
+        Expr::List(
           vec![derivative(1, italic_y), Expr::String("(0)".into())].into(),
-        )],
-      )],
+        ),
+      ),
     );
     assert_eq!(
       runs(&label),

@@ -364,10 +364,7 @@ pub fn periodic_table_plot_ast(
       if let (Some(i), Some(spec)) = (spec_idx, spec) {
         echo_args[i] = spec;
       }
-      return Ok(Expr::FunctionCall {
-        name: "PeriodicTablePlot".to_string(),
-        args: echo_args.into(),
-      });
+      return Ok(call("PeriodicTablePlot", echo_args));
     }
   };
   let elements = elements_layout();
@@ -474,12 +471,6 @@ pub fn periodic_table_plot_ast(
 /// `PeriodicTablePlot["Phase"]` (the swatch colours are wolframscript's
 /// exact values).
 fn phase_legended(graphics: Expr) -> Expr {
-  fn call(name: &str, args: Vec<Expr>) -> Expr {
-    Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.into(),
-    }
-  }
   let rgb = |r: f64, g: f64, b: f64| {
     call(
       "RGBColor",

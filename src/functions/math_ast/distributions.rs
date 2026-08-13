@@ -6,19 +6,12 @@ fn sqrt(a: Expr) -> Expr {
   make_sqrt(a)
 }
 
-fn call(name: &str, args: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  }
-}
-
 fn factorial(a: Expr) -> Expr {
-  call("Factorial", vec![a])
+  call1("Factorial", a)
 }
 
 fn gamma(z: Expr) -> Expr {
-  call("Gamma", vec![z])
+  call1("Gamma", z)
 }
 
 fn e() -> Expr {
@@ -405,7 +398,7 @@ pub fn survival_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // prints it: (-m + x)/(Sqrt[2]*s) rather than -((m - x)/(Sqrt[2]*s)).
   if let Some(z) = match_erfc_half(&cdf) {
     let neg_z = eval(call("Simplify", vec![times2(int(-1), z)]))?;
-    return Ok(div2(call("Erfc", vec![neg_z]), int(2)));
+    return Ok(div2(call1("Erfc", neg_z), int(2)));
   }
 
   eval(minus2(int(1), cdf))
@@ -435,7 +428,7 @@ pub fn hazard_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && matches!(&dargs[0], Expr::Integer(0))
         && matches!(&dargs[1], Expr::Integer(1))));
   if is_std_normal && matches!(&x, Expr::Identifier(_)) {
-    let sqrt = |e: Expr| call("Sqrt", vec![e]);
+    let sqrt = |e: Expr| call1("Sqrt", e);
     return Ok(div2(
       sqrt(div2(int(2), pi())),
       call(
@@ -456,7 +449,7 @@ pub fn hazard_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let simplify_ratio = |p: Expr, s: Expr| -> Result<Expr, InterpreterError> {
-    eval(call("Simplify", vec![div2(p, s)]))
+    eval(call1("Simplify", div2(p, s)))
   };
 
   let pdf = pdf_ast(args)?;
@@ -557,8 +550,8 @@ pub fn quantile_distribution_closed_form(
   let is_exact_q = !matches!(q, Expr::Real(_));
 
   // Builders for the elementary inverse-CDF formulas below.
-  let log = |x: Expr| call("Log", vec![x]);
-  let sqrt = |x: Expr| call("Sqrt", vec![x]);
+  let log = |x: Expr| call1("Log", x);
+  let sqrt = |x: Expr| call1("Sqrt", x);
   let power = |b: Expr, e: Expr| call("Power", vec![b, e]);
   let neg = |x: Expr| times2(int(-1), x);
   let one_minus_q = || minus2(int(1), q.clone());
@@ -599,7 +592,7 @@ pub fn quantile_distribution_closed_form(
       }
       let lambda = dargs[0].clone();
       let one_minus_q = minus2(int(1), q.clone());
-      let log_term = call("Log", vec![one_minus_q]);
+      let log_term = call1("Log", one_minus_q);
       let neg_log = times2(int(-1), log_term);
       let expr = div2(neg_log, lambda);
       eval(expr).ok()
@@ -617,7 +610,7 @@ pub fn quantile_distribution_closed_form(
       let (a, b) = (dargs[0].clone(), dargs[1].clone());
       let pi = pi();
       let q_minus_half = minus2(q.clone(), make_rational(1, 2));
-      let tan = call("Tan", vec![times2(pi, q_minus_half)]);
+      let tan = call1("Tan", times2(pi, q_minus_half));
       eval(plus2(a, times2(b, tan))).ok()
     }
     // Quantile[WeibullDistribution[k, λ], q] = λ (-Log[1 - q])^(1/k)
@@ -734,8 +727,8 @@ pub fn quantile_distribution_closed_form(
         // InverseErfc[2q] for q > 1/2 (2q > 1 → -InverseErfc[2-2q]) and folds
         // the sign, matching wolframscript while preserving the factor order.
         let two_q = eval(times2(int(2), q.clone())).ok()?;
-        let inverse_erfc = call("InverseErfc", vec![two_q]);
-        let sqrt2 = call("Sqrt", vec![int(2)]);
+        let inverse_erfc = call1("InverseErfc", two_q);
+        let sqrt2 = call1("Sqrt", int(2));
         let factors: Vec<Expr> = match &s {
           Expr::Integer(1) => vec![sqrt2, inverse_erfc],
           _ => vec![sqrt2, s.clone(), inverse_erfc],
@@ -915,8 +908,8 @@ pub fn inverse_survival_closed_form(
         }
       }
       let two_q = eval(times2(int(2), q.clone())).ok()?;
-      let inverse_erfc = call("InverseErfc", vec![two_q]);
-      let sqrt2 = call("Sqrt", vec![int(2)]);
+      let inverse_erfc = call1("InverseErfc", two_q);
+      let sqrt2 = call1("Sqrt", int(2));
       let factors: Vec<Expr> = match &s {
         Expr::Integer(1) => vec![sqrt2, inverse_erfc],
         _ => vec![sqrt2, s.clone(), inverse_erfc],
@@ -1336,14 +1329,12 @@ fn pdf_meixner(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let iy = div2(times2(i, xm.clone()), a.clone()); // I (x-m)/a
   let two_pow = pow2(int(2), plus2(int(-1), times2(int(2), d.clone())));
   let e_part = pow2(e(), div2(times2(b.clone(), xm), a.clone()));
-  let cos_part =
-    pow2(unary_fn("Cos", div2(b, int(2))), times2(int(2), d.clone()));
-  let g1 = unary_fn("Gamma", minus2(d.clone(), iy.clone()));
-  let g2 = unary_fn("Gamma", plus2(d.clone(), iy));
+  let cos_part = pow2(call1("Cos", div2(b, int(2))), times2(int(2), d.clone()));
+  let g1 = gamma(minus2(d.clone(), iy.clone()));
+  let g2 = gamma(plus2(d.clone(), iy));
   let numerator =
     times2(times2(times2(times2(two_pow, e_part), cos_part), g1), g2);
-  let denominator =
-    times2(times2(a, pi()), unary_fn("Gamma", times2(int(2), d)));
+  let denominator = times2(times2(a, pi()), gamma(times2(int(2), d)));
   eval(div2(numerator, denominator))
 }
 
@@ -1377,10 +1368,6 @@ fn pdf_poisson_consul(
   eval(piecewise(vec![(density, cond)], int(0)))
 }
 
-fn unary_fn(name: &str, arg: Expr) -> Expr {
-  call(name, vec![arg])
-}
-
 /// PDF[SkellamDistribution[a, b], k] =
 ///   (a/b)^(k/2) * E^(-a-b) * BesselI[k, 2 Sqrt[a b]]   (for all integers k).
 fn pdf_skellam(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
@@ -1397,7 +1384,7 @@ fn pdf_skellam(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   );
   let bessel = call(
     "BesselI",
-    vec![x, times2(int(2), unary_fn("Sqrt", times2(a, b)))],
+    vec![x, times2(int(2), call1("Sqrt", times2(a, b)))],
   );
   eval(times2(times2(ratio_pow, exp_part), bessel))
 }
@@ -1411,13 +1398,13 @@ fn cdf_skellam(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     ));
   }
   let (a, b) = (dargs[0].clone(), dargs[1].clone());
-  let sqrt2 = unary_fn("Sqrt", int(2));
+  let sqrt2 = call1("Sqrt", int(2));
   let marcum = call(
     "MarcumQ",
     vec![
-      times2(int(-1), unary_fn("Floor", x)),
-      times2(sqrt2.clone(), unary_fn("Sqrt", a)),
-      times2(sqrt2, unary_fn("Sqrt", b)),
+      times2(int(-1), call1("Floor", x)),
+      times2(sqrt2.clone(), call1("Sqrt", a)),
+      times2(sqrt2, call1("Sqrt", b)),
     ],
   );
   eval(minus2(int(1), marcum))
@@ -1643,7 +1630,7 @@ fn pdf_log_series(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     ));
   }
   let t = dargs[0].clone();
-  let log_1mt = unary_fn("Log", minus2(int(1), t.clone()));
+  let log_1mt = call1("Log", minus2(int(1), t.clone()));
   let density = times2(
     int(-1),
     div2(pow2(t, x.clone()), times2(x.clone(), log_1mt)),
@@ -1676,7 +1663,7 @@ fn pdf_nakagami(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // denominator = E^((m x^2)/w) Gamma[m]
   let denom = times2(
     pow2(e(), div2(times2(m.clone(), pow2(x.clone(), int(2))), w)),
-    unary_fn("Gamma", m),
+    gamma(m),
   );
   let density = div2(numer, denom);
   let cond = comparison(x, ComparisonOp::Greater, int(0));
@@ -1966,7 +1953,7 @@ fn cdf_normal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
   // Erfc[(mu - x) / (Sqrt[2] * sigma)] / 2
   let erfc_arg = div2(minus2(mu, x), times2(sqrt(int(2)), sigma));
-  let erfc_call = call("Erfc", vec![erfc_arg]);
+  let erfc_call = call1("Erfc", erfc_arg);
   let result = div2(erfc_call, int(2));
   eval(result)
 }
@@ -2042,7 +2029,7 @@ fn cdf_poisson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let mu = dargs[0].clone();
 
   // GammaRegularized[Floor[k] + 1, mu]
-  let floor_k_plus_1 = plus2(call("Floor", vec![x.clone()]), int(1));
+  let floor_k_plus_1 = plus2(call1("Floor", x.clone()), int(1));
   let value = call("GammaRegularized", vec![floor_k_plus_1, mu]);
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
 
@@ -2087,7 +2074,7 @@ fn cdf_binomial(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let n = dargs[0].clone();
   let p = dargs[1].clone();
 
-  let floor_k = call("Floor", vec![x.clone()]);
+  let floor_k = call1("Floor", x.clone());
   // BetaRegularized[1 - p, n - Floor[k], 1 + Floor[k]] is the regularized
   // incomplete beta form of the binomial CDF; it collapses to the exact
   // rational at numeric points and stays symbolic otherwise.
@@ -2123,11 +2110,11 @@ fn cdf_log_series(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     ));
   }
   let t = dargs[0].clone();
-  let log_1mt = unary_fn("Log", minus2(int(1), t.clone()));
+  let log_1mt = call1("Log", minus2(int(1), t.clone()));
   // Beta[t, 1 + Floor[k], 0] — the incomplete beta B_t(1 + Floor[k], 0).
   let beta = call(
     "Beta",
-    vec![t, plus2(int(1), unary_fn("Floor", x.clone())), int(0)],
+    vec![t, plus2(int(1), call1("Floor", x.clone())), int(0)],
   );
   let value = plus2(int(1), div2(beta, log_1mt));
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(1));
@@ -2143,7 +2130,7 @@ fn cdf_geometric(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
   let p = dargs[0].clone();
   let one_minus_p = minus2(int(1), p);
-  let floor_k_plus_1 = plus2(call("Floor", vec![x.clone()]), int(1));
+  let floor_k_plus_1 = plus2(call1("Floor", x.clone()), int(1));
   let value = minus2(int(1), pow2(one_minus_p, floor_k_plus_1));
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
   eval(piecewise(vec![(value, cond)], int(0)))
@@ -2164,7 +2151,7 @@ fn cdf_negative_binomial(
   }
   let n = dargs[0].clone();
   let p = dargs[1].clone();
-  let floor_k = call("Floor", vec![x.clone()]);
+  let floor_k = call1("Floor", x.clone());
   let value = call("BetaRegularized", vec![p, n, plus2(int(1), floor_k)]);
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
   eval(piecewise(vec![(value, cond)], int(0)))
@@ -2182,7 +2169,7 @@ fn cdf_pascal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
   let n = dargs[0].clone();
   let p = dargs[1].clone();
-  let floor_k = call("Floor", vec![x.clone()]);
+  let floor_k = call1("Floor", x.clone());
   // 1 - n + Floor[k]
   let third = plus2(minus2(int(1), n.clone()), floor_k);
   let value = call("BetaRegularized", vec![p, n.clone(), third]);
@@ -2202,7 +2189,7 @@ fn cdf_cauchy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     }
   };
   // 1/2 + ArcTan[(x - a) / b] / Pi
-  let arctan = call("ArcTan", vec![div2(minus2(x, a), b)]);
+  let arctan = call1("ArcTan", div2(minus2(x, a), b));
   eval(plus2(
     call("Rational", vec![int(1), int(2)]),
     div2(arctan, pi()),
@@ -2224,7 +2211,7 @@ fn pdf_gamma(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // E^(-x/beta)
   let exp_part = pow2(e(), neg1(div2(x.clone(), beta.clone())));
   // beta^alpha * Gamma[alpha]
-  let denom = times2(pow2(beta, alpha.clone()), call("Gamma", vec![alpha]));
+  let denom = times2(pow2(beta, alpha.clone()), gamma(alpha));
   let value = eval(div2(times2(x_part, exp_part), denom))?;
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(value, cond)], int(0)))
@@ -2266,7 +2253,7 @@ fn pdf_inverse_gamma(
   // E^(b/x)
   let exp_part = pow2(e(), div2(b, x.clone()));
   // x * Gamma[a]
-  let denom = times2(x.clone(), call("Gamma", vec![a]));
+  let denom = times2(x.clone(), gamma(a));
   let value = eval(div2(bx_a, times2(exp_part, denom)))?;
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(value, cond)], int(0)))
@@ -2347,7 +2334,7 @@ fn pdf_inverse_chi_square(
   // E^(1/(2*x))
   let exp_part = pow2(e(), div2(int(1), times2(int(2), x.clone())));
   // Gamma[n/2]
-  let gamma_part = call("Gamma", vec![div2(n, int(2))]);
+  let gamma_part = gamma(div2(n, int(2)));
   let value =
     eval(div2(x_part, times2(two_part, times2(exp_part, gamma_part))))?;
   let cond = comparison(x, ComparisonOp::Greater, int(0));
@@ -2557,14 +2544,14 @@ fn cdf_inverse_gaussian(
     times2(minus2(m.clone(), x.clone()), sqrt_lx.clone()),
     times2(sqrt(int(2)), m.clone()),
   );
-  let erfc1 = div2(call("Erfc", vec![erfc1_arg]), int(2));
+  let erfc1 = div2(call1("Erfc", erfc1_arg), int(2));
   // E^((2*l)/m) * Erfc[(Sqrt[l/x]*(m + x))/(Sqrt[2]*m)]/2
   let exp_part = pow2(e(), div2(times2(int(2), l), m.clone()));
   let erfc2_arg = div2(
     times2(sqrt_lx, plus2(m.clone(), x.clone())),
     times2(sqrt(int(2)), m),
   );
-  let erfc2 = div2(call("Erfc", vec![erfc2_arg]), int(2));
+  let erfc2 = div2(call1("Erfc", erfc2_arg), int(2));
   let value = eval(plus2(erfc1, times2(exp_part, erfc2)))?;
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(value, cond)], int(0)))
@@ -2613,7 +2600,7 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && pairs.len() >= 2
   {
     if let Some(result) = try_joint_probability_discrete(event, &pairs)? {
-      return eval(call("Together", vec![result]));
+      return eval(call1("Together", result));
     }
     return unevaluated();
   }
@@ -2684,7 +2671,7 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse the event condition and compute probability
   let result = probability_from_event(event, var_name, dist, is_discrete)?;
   // Apply Together to normalize fractions (e.g. 1 - E^(-2) → (-1 + E^2)/E^2)
-  eval(call("Together", vec![result]))
+  eval(call1("Together", result))
 }
 
 /// True when `event` is a comparison chain (inequality/equality) or a logical
@@ -3552,7 +3539,7 @@ pub fn n_probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&prob, Expr::FunctionCall { name, .. } if name == "Probability") {
     return Ok(unevaluated("NProbability", args));
   }
-  eval(call("N", vec![prob]))
+  eval(call1("N", prob))
 }
 
 /// Numerical wrapper for `Expectation` — returns `N[Expectation[…]]`.
@@ -3561,7 +3548,7 @@ pub fn n_expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&exp, Expr::FunctionCall { name, .. } if name == "Expectation") {
     return Ok(unevaluated("NExpectation", args));
   }
-  eval(call("N", vec![exp]))
+  eval(call1("N", exp))
 }
 
 /// Implements `Expectation[f(x), x ~ CensoredDistribution[{a, b}, base]]`.
@@ -3853,12 +3840,9 @@ pub fn distribution_mean_variance(
       let var = div2(
         times2(
           pow2(k.clone(), div2(int(2), k.clone())),
-          times2(
-            pow2(s, int(2)),
-            call("Gamma", vec![div2(int(3), k.clone())]),
-          ),
+          times2(pow2(s, int(2)), gamma(div2(int(3), k.clone()))),
         ),
-        call("Gamma", vec![pow2(k, int(-1))]),
+        gamma(pow2(k, int(-1))),
       );
       Ok((m, var))
     }
@@ -4272,16 +4256,16 @@ pub fn distribution_mean_variance(
       // Simplify re-combines the Sqrt ratios that arise from evaluating the
       // half-integer Gammas (e.g. Sqrt[Pi]/Sqrt[2] -> Sqrt[Pi/2]).
       let k = dargs[0].clone();
-      let g_kp1 = unary_fn("Gamma", div2(plus2(int(1), k.clone()), int(2)));
-      let g_k = unary_fn("Gamma", div2(k.clone(), int(2)));
+      let g_kp1 = gamma(div2(plus2(int(1), k.clone()), int(2)));
+      let g_k = gamma(div2(k.clone(), int(2)));
       let mean_raw =
-        div2(times2(unary_fn("Sqrt", int(2)), g_kp1.clone()), g_k.clone());
-      let mean = eval(unary_fn("Simplify", mean_raw))?;
+        div2(times2(call1("Sqrt", int(2)), g_kp1.clone()), g_k.clone());
+      let mean = eval(call1("Simplify", mean_raw))?;
       let var_raw = minus2(
         k,
         div2(times2(int(2), pow2(g_kp1, int(2))), pow2(g_k, int(2))),
       );
-      let var = eval(unary_fn("Simplify", var_raw))?;
+      let var = eval(call1("Simplify", var_raw))?;
       Ok((mean, var))
     }
     "BinomialDistribution" => {
@@ -4507,10 +4491,8 @@ pub fn distribution_mean_variance(
       let a = dargs[0].clone();
       let b = dargs[1].clone();
       // Mean = b * Gamma[1 + 1/a]; the 3-argument form adds the location m.
-      let base_mean = times2(
-        b.clone(),
-        call("Gamma", vec![plus2(int(1), div2(int(1), a.clone()))]),
-      );
+      let base_mean =
+        times2(b.clone(), gamma(plus2(int(1), div2(int(1), a.clone()))));
       let mean = if dargs.len() == 3 {
         plus2(dargs[2].clone(), base_mean)
       } else {
@@ -4520,8 +4502,8 @@ pub fn distribution_mean_variance(
       let var = times2(
         pow2(b, int(2)),
         minus2(
-          call("Gamma", vec![plus2(int(1), div2(int(2), a.clone()))]),
-          pow2(call("Gamma", vec![plus2(int(1), div2(int(1), a))]), int(2)),
+          gamma(plus2(int(1), div2(int(2), a.clone()))),
+          pow2(gamma(plus2(int(1), div2(int(1), a))), int(2)),
         ),
       );
       Ok((mean, var))
@@ -4636,7 +4618,7 @@ pub fn distribution_mean_variance(
       let mean_branch = match &type_ {
         Expr::Integer(0) => {
           let tan_arg = div2(times2(alpha.clone(), pi()), int(2));
-          let tan_term = call("Tan", vec![tan_arg]);
+          let tan_term = call1("Tan", tan_arg);
           minus2(mu.clone(), times2(times2(beta, sigma.clone()), tan_term))
         }
         _ => mu.clone(),
@@ -4731,8 +4713,7 @@ pub fn distribution_mean_variance(
         None
       };
       // Mean = Piecewise[{{μ + b * Gamma[1 - 1/a], 1 < a}}, Infinity]
-      let gamma_1_minus_inv_a =
-        call("Gamma", vec![minus2(int(1), div2(int(1), a.clone()))]);
+      let gamma_1_minus_inv_a = gamma(minus2(int(1), div2(int(1), a.clone())));
       let b_gamma = times2(b.clone(), gamma_1_minus_inv_a.clone());
       let mean_value = match &mu {
         Some(m) => plus2(m.clone(), b_gamma),
@@ -4747,8 +4728,7 @@ pub fn distribution_mean_variance(
       );
       // Var = Piecewise[{{b^2 * (Gamma[1 - 2/a] - Gamma[1 - 1/a]^2), a > 2}}, Infinity]
       // (Variance is translation-invariant — μ drops out.)
-      let gamma_1_minus_2_a =
-        call("Gamma", vec![minus2(int(1), div2(int(2), a.clone()))]);
+      let gamma_1_minus_2_a = gamma(minus2(int(1), div2(int(2), a.clone())));
       let var = piecewise(
         vec![(
           times2(
@@ -4796,14 +4776,14 @@ pub fn distribution_mean_variance(
         m,
         times2(
           times2(a.clone(), d.clone()),
-          unary_fn("Tan", div2(b.clone(), int(2))),
+          call1("Tan", div2(b.clone(), int(2))),
         ),
       );
       // Variance = a^2 d Sec[b/2]^2 / 2
       let var = div2(
         times2(
           times2(pow2(a, int(2)), d),
-          pow2(unary_fn("Sec", div2(b, int(2))), int(2)),
+          pow2(call1("Sec", div2(b, int(2))), int(2)),
         ),
         int(2),
       );
@@ -4851,7 +4831,7 @@ pub fn distribution_mean_variance(
         ));
       }
       let t = dargs[0].clone();
-      let log_1mt = unary_fn("Log", minus2(int(1), t.clone()));
+      let log_1mt = call1("Log", minus2(int(1), t.clone()));
       // Mean = -(t/((1 - t) Log[1 - t]))
       let mean = times2(
         int(-1),
@@ -4896,7 +4876,7 @@ pub fn distribution_mean_variance(
       }
       let g = dargs[0].clone();
       let s = dargs[1].clone();
-      let csc = |arg: Expr| call("Csc", vec![arg]);
+      let csc = |arg: Expr| call1("Csc", arg);
       // Mean = Piecewise[{{(Pi s Csc[Pi/g])/g, g > 1}}, Indeterminate]
       let mean_val = div2(
         times2(times2(pi(), s.clone()), csc(div2(pi(), g.clone()))),
@@ -5624,7 +5604,7 @@ fn pdf_pert(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let cond = comparison3(a, ComparisonOp::Less, x, ComparisonOp::Less, b);
   let result = eval(piecewise(vec![(value, cond)], int(0)))?;
   if real_arg {
-    return eval(unary_fn("N", result));
+    return eval(call1("N", result));
   }
   Ok(result)
 }
@@ -5663,7 +5643,7 @@ fn cdf_pert(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let cond2 = comparison(x, ComparisonOp::GreaterEqual, b);
   let result = eval(piecewise(vec![(reg, cond1), (int(1), cond2)], int(0)))?;
   if real_arg {
-    return eval(unary_fn("N", result));
+    return eval(call1("N", result));
   }
   Ok(result)
 }
@@ -5708,7 +5688,7 @@ fn pdf_power(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // wolframscript numericizes the whole result for machine-real arguments
   // (0. and 1. outside the support), unlike most other distributions.
   if real_arg {
-    return eval(unary_fn("N", result));
+    return eval(call1("N", result));
   }
   Ok(result)
 }
@@ -5749,7 +5729,7 @@ fn cdf_power(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let cond2 = comparison(x, ComparisonOp::Greater, pow2(k, int(-1)));
   let result = eval(piecewise(vec![(value, cond1), (int(1), cond2)], int(0)))?;
   if real_arg {
-    return eval(unary_fn("N", result));
+    return eval(call1("N", result));
   }
   Ok(result)
 }
@@ -5806,13 +5786,10 @@ fn pdf_loggamma(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let (a, b, m) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
   // 1 - m + x
   let shifted = plus2(plus2(int(1), times2(int(-1), m.clone())), x.clone());
-  let num = pow2(unary_fn("Log", shifted.clone()), minus2(a.clone(), int(1)));
+  let num = pow2(call1("Log", shifted.clone()), minus2(a.clone(), int(1)));
   let den = times2(
     pow2(b.clone(), a.clone()),
-    times2(
-      pow2(shifted, div2(plus2(int(1), b.clone()), b)),
-      unary_fn("Gamma", a),
-    ),
+    times2(pow2(shifted, div2(plus2(int(1), b.clone()), b)), gamma(a)),
   );
   let value = div2(num, den);
   let cond = comparison(x, ComparisonOp::GreaterEqual, m);
@@ -5831,7 +5808,7 @@ fn cdf_loggamma(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let shifted = plus2(plus2(int(1), times2(int(-1), m.clone())), x.clone());
   let reg = call(
     "GammaRegularized",
-    vec![a, int(0), div2(unary_fn("Log", shifted), b)],
+    vec![a, int(0), div2(call1("Log", shifted), b)],
   );
   let cond = comparison(x, ComparisonOp::GreaterEqual, m);
   eval(piecewise(vec![(reg, cond)], int(0)))
@@ -5962,7 +5939,7 @@ fn pdf_lognormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let sigma = dargs[1].clone();
 
   // 1 / (E^((Log[x] - mu)^2 / (2*sigma^2)) * Sqrt[2*Pi] * sigma * x)
-  let log_x = call("Log", vec![x.clone()]);
+  let log_x = call1("Log", x.clone());
   let exponent = div2(
     pow2(minus2(log_x, mu), int(2)),
     times2(int(2), pow2(sigma.clone(), int(2))),
@@ -5992,9 +5969,9 @@ fn cdf_lognormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let sigma = dargs[1].clone();
 
   // Erfc[-(Log[x] - mu) / (Sqrt[2] * sigma)] / 2
-  let log_x = call("Log", vec![x.clone()]);
+  let log_x = call1("Log", x.clone());
   let arg = neg1(div2(minus2(log_x, mu), times2(sqrt(int(2)), sigma)));
-  let cdf_val = div2(call("Erfc", vec![arg]), int(2));
+  let cdf_val = div2(call1("Erfc", arg), int(2));
 
   // Piecewise[{{cdf_val, x > 0}}, 0]
   let cond = comparison(x, ComparisonOp::Greater, int(0));
@@ -6017,7 +5994,7 @@ fn pdf_chi_square(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // E^(x/2)
   let exp_part = pow2(e(), div2(x.clone(), int(2)));
   // Gamma[k/2]
-  let gamma_part = call("Gamma", vec![div2(k, int(2))]);
+  let gamma_part = gamma(div2(k, int(2)));
   let denom = times2(times2(two_power, exp_part), gamma_part);
   let pdf_val = div2(x_power, denom);
 
@@ -6132,7 +6109,7 @@ fn pdf_waring_yule(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 fn cdf_waring_yule(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   if dargs.len() == 1 {
     let a = dargs[0].clone();
-    let floor_k = call("Floor", vec![x.clone()]);
+    let floor_k = call1("Floor", x.clone());
     let beta = call("Beta", vec![a.clone(), plus2(int(2), floor_k)]);
     let cdf = minus2(int(1), times2(a, beta));
     let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
@@ -6146,7 +6123,7 @@ fn cdf_waring_yule(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let a = dargs[0].clone();
   let b = dargs[1].clone();
 
-  let floor_k = call("Floor", vec![x.clone()]);
+  let floor_k = call1("Floor", x.clone());
   let idx = plus2(int(1), floor_k);
   let poch =
     |first: Expr, second: Expr| call("Pochhammer", vec![first, second]);
@@ -6374,7 +6351,7 @@ fn cdf_discrete_uniform(
     }
   };
   let n = eval(plus2(minus2(imax.clone(), imin.clone()), int(1)))?;
-  let floor_x = call("Floor", vec![x.clone()]);
+  let floor_x = call1("Floor", x.clone());
   let cdf_val = div2(plus2(minus2(floor_x, imin.clone()), int(1)), n);
   let cond_low = comparison(x.clone(), ComparisonOp::Less, imin.clone());
   let cond_mid = comparison3(
@@ -6649,7 +6626,7 @@ fn failure_read_once_form(bexpr: &Expr) -> Option<Expr> {
     Expr::Integer(i) => Some(Expr::Identifier(format!("{PREFIX}{i}"))),
     _ => None,
   });
-  let minimized = eval(call("BooleanMinimize", vec![to_symbol])).ok()?;
+  let minimized = eval(call1("BooleanMinimize", to_symbol)).ok()?;
   Some(map_leaves(&minimized, &|e| match e {
     Expr::Identifier(s) => s
       .strip_prefix(PREFIX)
@@ -6943,7 +6920,7 @@ pub fn process_slice_distribution(
   dargs: &[Expr],
   t: &Expr,
 ) -> Option<Expr> {
-  let sqrt_t = call("Sqrt", vec![t.clone()]);
+  let sqrt_t = call1("Sqrt", t.clone());
   match proc_name {
     "WienerProcess" if dargs.len() == 2 => Some(call(
       "NormalDistribution",
@@ -6963,7 +6940,7 @@ pub fn process_slice_distribution(
     )),
     // A Bernoulli process' slice does not depend on the time.
     "BernoulliProcess" if dargs.len() == 1 => {
-      Some(call("BernoulliDistribution", vec![dargs[0].clone()]))
+      Some(call1("BernoulliDistribution", dargs[0].clone()))
     }
     // White noise is the underlying distribution at every time.
     "WhiteNoiseProcess"
@@ -6979,7 +6956,7 @@ pub fn process_slice_distribution(
         "NormalDistribution",
         vec![
           m.clone(),
-          div2(sp.clone(), call("Sqrt", vec![times2(int(2), th.clone())])),
+          div2(sp.clone(), call1("Sqrt", times2(int(2), th.clone()))),
         ],
       ))
     }
@@ -7003,10 +6980,7 @@ pub fn process_slice_distribution(
         ),
         times2(int(2), th.clone()),
       );
-      Some(call(
-        "NormalDistribution",
-        vec![mu, call("Sqrt", vec![var])],
-      ))
+      Some(call("NormalDistribution", vec![mu, call1("Sqrt", var)]))
     }
     // BrownianBridgeProcess[s, {t1, a}, {t2, b}] — the interpolating
     // Gaussian bridge.
@@ -7031,7 +7005,7 @@ pub fn process_slice_distribution(
       // wolframscript's SliceDistribution display
       // s*Sqrt[((t - t1)*(-t + t2))/(-t1 + t2)].
       let sigma =
-        times2(sp.clone(), call("Sqrt", vec![div2(times2(up, down), span)]));
+        times2(sp.clone(), call1("Sqrt", div2(times2(up, down), span)));
       Some(call("NormalDistribution", vec![mu, sigma]))
     }
     "GeometricBrownianMotionProcess" if dargs.len() == 3 => {
@@ -7043,7 +7017,7 @@ pub fn process_slice_distribution(
           pow2(s.clone(), int(2)),
         ),
       );
-      let mu = plus2(times2(drift, t.clone()), call("Log", vec![x0.clone()]));
+      let mu = plus2(times2(drift, t.clone()), call1("Log", x0.clone()));
       Some(call(
         "LogNormalDistribution",
         vec![mu, times2(s.clone(), sqrt_t)],
@@ -7871,7 +7845,7 @@ fn hoyt_mean_variance(
     "EllipticE",
     vec![plus2(int(1), times2(int(-1), pow2(q, int(2))))],
   );
-  let sqrt = |e: Expr| call("Sqrt", vec![e]);
+  let sqrt = |e: Expr| call1("Sqrt", e);
   let mean = call(
     "Times",
     vec![
@@ -7964,8 +7938,8 @@ fn variance_gamma_pdf(
     dargs[2].clone(),
     dargs[3].clone(),
   );
-  let sqrt_pi = call("Sqrt", vec![pi()]);
-  let gamma_l = call("Gamma", vec![l.clone()]);
+  let sqrt_pi = call1("Sqrt", pi());
+  let gamma_l = gamma(l.clone());
   let half_minus_l = plus2(div2(int(1), int(2)), times2(int(-1), l.clone()));
   let a2b2 = times2(
     plus2(a.clone(), times2(int(-1), b.clone())),
@@ -8005,7 +7979,7 @@ fn variance_gamma_pdf(
       vec![
         pow2(a.clone(), plus2(int(1), times2(int(-2), l.clone()))),
         pow2(a2b2, l.clone()),
-        call("Gamma", vec![plus2(div2(int(-1), int(2)), l.clone())]),
+        gamma(plus2(div2(int(-1), int(2)), l.clone())),
       ],
     ),
     times2(times2(int(2), sqrt_pi), gamma_l),
@@ -8130,7 +8104,7 @@ struct TsallisParts {
 }
 
 fn tsallis_parts(m: &Expr, b: &Expr, q: &Expr, x: &Expr) -> TsallisParts {
-  let sqrt = |e: Expr| call("Sqrt", vec![e]);
+  let sqrt = |e: Expr| call1("Sqrt", e);
   let two_pi = times2(int(2), pi());
   let m_minus_x = plus2(m.clone(), times2(int(-1), x.clone()));
   let qm1 = plus2(int(-1), q.clone());
@@ -8317,7 +8291,7 @@ fn tsallis_qgaussian_cdf(
         "Erf",
         vec![div2(
           plus2(times2(int(-1), m.clone()), x.clone()),
-          times2(call("Sqrt", vec![int(2)]), b.clone()),
+          times2(call1("Sqrt", int(2)), b.clone()),
         )],
       ),
     ),
@@ -8480,10 +8454,7 @@ fn tukey_lambda_pdf_cdf(
     if want_pdf {
       let v = div2(
         plus2(int(1), times2(int(-1), c.clone())),
-        times2(
-          int(2),
-          call("Sqrt", vec![plus2(int(2), times2(int(-1), c))]),
-        ),
+        times2(int(2), call1("Sqrt", plus2(int(2), times2(int(-1), c)))),
       );
       Some((vec![(v, cond)], int(0)))
     } else {
@@ -8491,7 +8462,7 @@ fn tukey_lambda_pdf_cdf(
         int(4),
         times2(
           y.clone(),
-          call("Sqrt", vec![plus2(int(8), times2(int(-1), sq(&y)))]),
+          call1("Sqrt", plus2(int(8), times2(int(-1), sq(&y)))),
         ),
       );
       // Float λ folds the 1/8 into a 0.125 prefactor, like wolframscript.
@@ -8536,10 +8507,7 @@ fn tukey_lambda_pdf_cdf(
           int(1),
           times2(
             int(-1),
-            pow2(
-              call("Sqrt", vec![plus2(int(1), div2(sq(&y), int(4)))]),
-              int(-1),
-            ),
+            pow2(call1("Sqrt", plus2(int(1), div2(sq(&y), int(4)))), int(-1)),
           ),
         ),
         sq(&y),
@@ -8549,7 +8517,7 @@ fn tukey_lambda_pdf_cdf(
       let v = div2(
         plus2(
           plus2(int(-2), y.clone()),
-          call("Sqrt", vec![plus2(int(4), sq(&y))]),
+          call1("Sqrt", plus2(int(4), sq(&y))),
         ),
         times2(int(2), y.clone()),
       );
@@ -9031,8 +8999,8 @@ fn benini_mean_variance(
     ));
   };
   let (a, b, sg) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
-  let sqrt_pi = call("Sqrt", vec![pi()]);
-  let sqrt_b = call("Sqrt", vec![b.clone()]);
+  let sqrt_pi = call1("Sqrt", pi());
+  let sqrt_b = call1("Sqrt", b.clone());
   // Shared pieces for shift k: E^((-k+a)^2/(4β)) and Erfc[(-k+a)/(2√β)].
   let shifted = |k: i128, denom_scale: i128| -> (Expr, Expr) {
     let base = plus2(int(-k), a.clone());
@@ -10466,7 +10434,7 @@ fn cdf_half_normal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
   let t = dargs[0].clone();
   let erf_arg = div2(times2(t, x.clone()), sqrt(pi()));
-  let erf_val = call("Erf", vec![erf_arg]);
+  let erf_val = call1("Erf", erf_arg);
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(erf_val, cond)], int(0)))
 }
@@ -10486,7 +10454,7 @@ fn pdf_chi(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // E^(x^2/2)
   let exp_part = pow2(e(), div2(pow2(x.clone(), int(2)), int(2)));
   // Gamma[n/2]
-  let gamma_part = call("Gamma", vec![div2(n, int(2))]);
+  let gamma_part = gamma(div2(n, int(2)));
   let pdf_val = eval(div2(times2(exp2, x_pow), times2(exp_part, gamma_part)))?;
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(pdf_val, cond)], int(0)))
@@ -10878,7 +10846,7 @@ fn pdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       // PDF = delta / (E^(z^2/2) * Sqrt[2*Pi] * Sqrt[sigma^2 + (-mu + x)^2])
       // where z = gamma + delta*ArcSinh[(-mu + x)/sigma]
       let arcsinh_t =
-        call("ArcSinh", vec![div2(neg_mu_plus_x.clone(), sigma.clone())]);
+        call1("ArcSinh", div2(neg_mu_plus_x.clone(), sigma.clone()));
       let z = plus2(gamma, times2(delta.clone(), arcsinh_t));
       let density = div2(
         delta,
@@ -10898,7 +10866,7 @@ fn pdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       let mu_plus_sigma_minus_x =
         plus2(plus2(mu.clone(), sigma.clone()), neg1(x.clone()));
       let log_arg = div2(neg_mu_plus_x.clone(), mu_plus_sigma_minus_x.clone());
-      let log_t = call("Log", vec![log_arg]);
+      let log_t = call1("Log", log_arg);
       let z = plus2(gamma, times2(delta.clone(), log_t));
       let density = div2(
         times2(delta, sigma.clone()),
@@ -10962,8 +10930,8 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // where h depends on type
   let h_of_t = match type_str.as_str() {
     "SN" => t.clone(),
-    "SL" => call("Log", vec![t.clone()]),
-    "SU" => call("ArcSinh", vec![t.clone()]),
+    "SL" => call1("Log", t.clone()),
+    "SU" => call1("ArcSinh", t.clone()),
     "SB" => {
       let mu_plus_sigma_minus_x =
         plus2(plus2(mu.clone(), sigma.clone()), neg1(x.clone()));
@@ -10980,11 +10948,11 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let neg_gamma = neg1(gamma.clone());
   let neg_delta_h = neg1(times2(delta.clone(), h_of_t.clone()));
   let erfc_arg = div2(plus2(neg_gamma, neg_delta_h), sqrt(int(2)));
-  let cdf_val = div2(call("Erfc", vec![erfc_arg]), int(2));
+  let cdf_val = div2(call1("Erfc", erfc_arg), int(2));
 
   // Also build (1 + Erf[(gamma + delta*h) / Sqrt[2]]) / 2 form (used by Wolfram for some types)
   let erf_arg = div2(plus2(gamma, times2(delta, h_of_t)), sqrt(int(2)));
-  let cdf_erf = div2(plus2(int(1), call("Erf", vec![erf_arg])), int(2));
+  let cdf_erf = div2(plus2(int(1), call1("Erf", erf_arg)), int(2));
 
   match type_str.as_str() {
     "SN" => eval(cdf_val),
@@ -11197,7 +11165,7 @@ pub fn log_likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let n = data.len() as i128;
 
-  let log_of = |e: Expr| call("Log", vec![e]);
+  let log_of = |e: Expr| call1("Log", e);
   let sum_expr =
     || -> Result<Expr, InterpreterError> { eval(unevaluated("Plus", data)) };
 
@@ -11555,7 +11523,7 @@ fn distribution_raw_moment(
       let (a, b) = (dargs[0].clone(), dargs[1].clone());
       let result = times2(
         pow2(b.clone(), int(k)),
-        call("Gamma", vec![plus2(int(1), div2(int(k), a.clone()))]),
+        gamma(plus2(int(1), div2(int(k), a.clone()))),
       );
       if numeric(&a) && numeric(&b) {
         eval(result).ok()
@@ -11571,7 +11539,7 @@ fn distribution_raw_moment(
       let result = div2(
         times2(
           pow2(pi(), div2(int(k - 1), int(2))),
-          call("Gamma", vec![div2(int(k + 1), int(2))]),
+          gamma(div2(int(k + 1), int(2))),
         ),
         pow2(t, int(k)),
       );
@@ -11707,7 +11675,6 @@ pub fn transformed_distribution_ast(
   }
   let a_positive = af.0 > 0;
 
-  let dist_call = |name: &str, params: Vec<Expr>| call(name, params);
   let linear = |e: &Expr| -> Result<Expr, InterpreterError> {
     // a*e + b
     eval(plus2(times2(a.clone(), e.clone()), b.clone()))
@@ -11718,29 +11685,29 @@ pub fn transformed_distribution_ast(
       let new_m = linear(m)?;
       let abs_a = frac_to_rational_expr((af.0.abs(), af.1));
       let new_s = eval(times2(abs_a, s.clone()))?;
-      Ok(dist_call("NormalDistribution", vec![new_m, new_s]))
+      Ok(call("NormalDistribution", vec![new_m, new_s]))
     }
     ("NormalDistribution", []) => {
       let new_m = eval(b.clone())?;
       let new_s = frac_to_rational_expr((af.0.abs(), af.1));
-      Ok(dist_call("NormalDistribution", vec![new_m, new_s]))
+      Ok(call("NormalDistribution", vec![new_m, new_s]))
     }
     ("UniformDistribution", [Expr::List(bounds)]) if bounds.len() == 2 => {
       let p = linear(&bounds[0])?;
       let q = linear(&bounds[1])?;
       let (lo, hi) = if a_positive { (p, q) } else { (q, p) };
-      Ok(dist_call(
+      Ok(call(
         "UniformDistribution",
         vec![Expr::List(vec![lo, hi].into())],
       ))
     }
     ("ExponentialDistribution", [l]) if a_positive && bf.0 == 0 => {
       let new_l = eval(div2(l.clone(), a.clone()))?;
-      Ok(dist_call("ExponentialDistribution", vec![new_l]))
+      Ok(call1("ExponentialDistribution", new_l))
     }
     ("GammaDistribution", [al, be]) if a_positive && bf.0 == 0 => {
       let new_be = eval(times2(a.clone(), be.clone()))?;
-      Ok(dist_call("GammaDistribution", vec![al.clone(), new_be]))
+      Ok(call("GammaDistribution", vec![al.clone(), new_be]))
     }
     _ => Ok(unevaluated(args)),
   }
@@ -11829,14 +11796,14 @@ fn pdf_multinormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let det: i128 = variances.iter().product();
   let denominator = if k == 2 {
     // 2*Pi, 2*Sqrt[det]*Pi, or (2*sqrt)*Pi when det is a perfect square
-    let sqrt_det = eval(call("Sqrt", vec![int(det)]))?;
+    let sqrt_det = eval(call1("Sqrt", int(det)))?;
     match &sqrt_det {
       Expr::Integer(s) => times2(int(2 * s), pi()),
       _ => call("Times", vec![int(2), sqrt_det, pi()]),
     }
   } else {
     // k == 3: 2*Sqrt[2*det]*Pi^(3/2)
-    let sqrt_part = eval(call("Sqrt", vec![int(2 * det)]))?;
+    let sqrt_part = eval(call1("Sqrt", int(2 * det)))?;
     let pi_pow = pow2(pi(), make_rational(3, 2));
     match &sqrt_part {
       Expr::Integer(s) => call("Times", vec![int(2 * s), pi_pow]),
@@ -12148,7 +12115,7 @@ fn histogram_pdf_cdf(
   cumulative: bool,
 ) -> Option<Result<Expr, InterpreterError>> {
   let (weights, edges) = histogram_parts(dargs)?;
-  let boole = |cond: Expr| call("Boole", vec![cond]);
+  let boole = |cond: Expr| call1("Boole", cond);
   // At a numeric point the sum is evaluated down to its value; at a symbolic
   // point the built form is returned as-is, preserving wolframscript's term
   // order (CDF leads with Boole[x >= last] and the bins follow ascending),
@@ -12483,7 +12450,7 @@ fn pdf_product_distribution(
     }
   }
   let e_pow = pow2(Expr::Identifier("E".to_string()), call("Plus", terms));
-  let sqrt = |e: Expr| call("Sqrt", vec![e]);
+  let sqrt = |e: Expr| call1("Sqrt", e);
 
   // Assemble the density with wolframscript's coefficient shapes
   let value = match normal_count {
@@ -13210,7 +13177,7 @@ fn pdf_noncentral_chi_square(
   }
   let (nu, lam) = (dargs[0].clone(), dargs[1].clone());
   let raw_div = |a: Expr, b: Expr| div2(a, b);
-  let sqrt = |e: Expr| call("Sqrt", vec![e]);
+  let sqrt = |e: Expr| call1("Sqrt", e);
   let int_of = |e: &Expr| -> Option<i128> {
     match e {
       Expr::Integer(v) => Some(*v),
@@ -13294,7 +13261,7 @@ fn pdf_noncentral_chi_square(
         // Cosh[Sqrt[l] Sqrt[x]] / (Sqrt[2 Pi] Sqrt[x])
         let arg = eval(times2(sqrt(lam.clone()), sqrt(at.clone())))?;
         Ok(Some(raw_div(
-          call("Times", vec![e_part(at)?, call("Cosh", vec![arg])]),
+          call("Times", vec![e_part(at)?, call1("Cosh", arg)]),
           call(
             "Times",
             vec![sqrt(call("Times", vec![int(2), pi()])), sqrt(at.clone())],
@@ -13306,7 +13273,7 @@ fn pdf_noncentral_chi_square(
         let arg = eval(times2(sqrt(lam.clone()), sqrt(at.clone())))?;
         let den = eval(sqrt(times2(times2(int(2), lam.clone()), pi())))?;
         Ok(Some(raw_div(
-          call("Times", vec![e_part(at)?, call("Sinh", vec![arg])]),
+          call("Times", vec![e_part(at)?, call1("Sinh", arg)]),
           den,
         )))
       }
@@ -13398,9 +13365,9 @@ fn cdf_noncentral_chi_square(
       "MarcumQ",
       vec![
         eval(div2(nu.clone(), int(2)))?,
-        eval(call("Sqrt", vec![lam.clone()]))?,
+        eval(call1("Sqrt", lam.clone()))?,
         int(0),
-        call("Sqrt", vec![at.clone()]),
+        call1("Sqrt", at.clone()),
       ],
     ))
   };
@@ -13454,16 +13421,13 @@ fn pdf_exponential_power(
 
   // 2 k^(1/k) s Gamma[1 + 1/k], with the k = 2 Sqrt[2 Pi] merge
   let coef: Vec<Expr> = if matches!(&k, Expr::Integer(2)) {
-    vec![
-      s.clone(),
-      call("Sqrt", vec![call("Times", vec![int(2), pi()])]),
-    ]
+    vec![s.clone(), call1("Sqrt", call("Times", vec![int(2), pi()]))]
   } else {
     vec![
       int(2),
       pow2(k.clone(), pow2(k.clone(), int(-1))),
       s.clone(),
-      call("Gamma", vec![plus2(int(1), pow2(k.clone(), int(-1)))]),
+      gamma(plus2(int(1), pow2(k.clone(), int(-1)))),
     ]
   };
   let branch = |diff: Expr| -> Result<Expr, InterpreterError> {
@@ -13644,7 +13608,7 @@ pub fn rice_mean_variance(
   b: &Expr,
 ) -> Result<(Expr, Expr), InterpreterError> {
   let square = |e: &Expr| pow2(e.clone(), int(2));
-  let sqrt_half_pi = call("Sqrt", vec![div2(pi(), int(2))]);
+  let sqrt_half_pi = call1("Sqrt", div2(pi(), int(2)));
   let numeric_params = rice_numeric(a).is_some() && rice_numeric(b).is_some();
   if numeric_params {
     // k = a^2/(2 b^2) as an exact fraction p/q; wolframscript pulls
@@ -14117,7 +14081,6 @@ fn min_stable_mean_variance(
       int(6),
     )
   };
-  let gamma_of = |inner: Expr| call("Gamma", vec![inner]);
   let one_minus_g = call(
     "Plus",
     vec![int(1), call("Times", vec![int(-1), g.clone()])],
@@ -14131,7 +14094,7 @@ fn min_stable_mean_variance(
         call("Times", vec![a.clone(), g.clone()]),
         call(
           "Times",
-          vec![int(-1), b.clone(), gamma_of(one_minus_g.clone())],
+          vec![int(-1), b.clone(), gamma(one_minus_g.clone())],
         ),
       ],
     ),
@@ -14150,8 +14113,8 @@ fn min_stable_mean_variance(
         call(
           "Plus",
           vec![
-            gamma_of(one_minus_2g),
-            call("Times", vec![int(-1), pow2(gamma_of(one_minus_g), int(2))]),
+            gamma(one_minus_2g),
+            call("Times", vec![int(-1), pow2(gamma(one_minus_g), int(2))]),
           ],
         ),
       ],
@@ -14476,10 +14439,7 @@ fn max_stable_mean_variance(
       vec![
         call("Times", vec![int(-1), b.clone()]),
         call("Times", vec![a.clone(), g.clone()]),
-        call(
-          "Times",
-          vec![b.clone(), call("Gamma", vec![one_minus_g.clone()])],
-        ),
+        call("Times", vec![b.clone(), gamma(one_minus_g.clone())]),
       ],
     ),
     g.clone(),
@@ -14801,11 +14761,11 @@ fn triangular_mean_variance(
   // 2-argument form TriangularDistribution[{a, b}] (mode c = (a+b)/2) to
   // wolframscript's Mean (a+b)/2 and Variance (b-a)^2/24, while leaving the
   // genuine 3-parameter forms unchanged.
-  let mean = eval(unary_fn(
+  let mean = eval(call1(
     "Simplify",
     div2(plus2(plus2(a.clone(), b.clone()), c.clone()), int(3)),
   ))?;
-  let var = eval(unary_fn(
+  let var = eval(call1(
     "Simplify",
     div2(
       call(
@@ -14854,7 +14814,7 @@ fn maxwell_term(
       den_factors.push(int(c));
     }
     den_factors.push(e_part);
-    den_factors.push(call("Sqrt", vec![times2(int(2), pi())]));
+    den_factors.push(call1("Sqrt", times2(int(2), pi())));
     div2(num_expr, call("Times", den_factors))
   } else {
     // (p Sqrt[2/Pi] num)/(m E-part)
@@ -14862,7 +14822,7 @@ fn maxwell_term(
     if r_num != 1 {
       num_factors.push(int(r_num));
     }
-    num_factors.push(call("Sqrt", vec![div2(int(2), pi())]));
+    num_factors.push(call1("Sqrt", div2(int(2), pi())));
     num_factors.push(numerator);
     let den = if m > 1 {
       call("Times", vec![int(m), e_part])
@@ -14897,7 +14857,7 @@ fn pdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(dargs, x));
   }
   let s = dargs[0].clone();
-  let sqrt_2_pi = call("Sqrt", vec![div2(int(2), pi())]);
+  let sqrt_2_pi = call1("Sqrt", div2(int(2), pi()));
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
     let e_part = pow2(
       e(),
@@ -14961,7 +14921,7 @@ fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(dargs, x));
   }
   let s = dargs[0].clone();
-  let sqrt_2_pi = call("Sqrt", vec![div2(int(2), pi())]);
+  let sqrt_2_pi = call1("Sqrt", div2(int(2), pi()));
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
     if ms_numeric(at).is_none()
       && let Some((sp, sq)) = maxwell_rational(&s)
@@ -14979,7 +14939,7 @@ fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
         "Erf",
         vec![eval(div2(
           at.clone(),
-          call("Times", vec![call("Sqrt", vec![int(2)]), s.clone()]),
+          call("Times", vec![call1("Sqrt", int(2)), s.clone()]),
         ))?],
       );
       return Ok(call("Plus", vec![term1, erf]));
@@ -15013,7 +14973,7 @@ fn cdf_maxwell(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
           "Erf",
           vec![div2(
             at.clone(),
-            call("Times", vec![call("Sqrt", vec![int(2)]), s.clone()]),
+            call("Times", vec![call1("Sqrt", int(2)), s.clone()]),
           )],
         ),
       ],
@@ -15063,11 +15023,8 @@ fn pdf_birnbaum_saunders(
     let denom = times2(
       times2(int(2), a.clone()),
       times2(
-        times2(
-          pow2(e(), exponent),
-          call("Sqrt", vec![times2(int(2), pi())]),
-        ),
-        call("Sqrt", vec![times2(l.clone(), pow2(at.clone(), int(3)))]),
+        times2(pow2(e(), exponent), call1("Sqrt", times2(int(2), pi()))),
+        call1("Sqrt", times2(l.clone(), pow2(at.clone(), int(3)))),
       ),
     );
     eval(div2(plus2(int(1), times2(l.clone(), at.clone())), denom))
@@ -15108,11 +15065,11 @@ fn cdf_birnbaum_saunders(
     let erf_arg = div2(
       plus2(int(-1), times2(l.clone(), at.clone())),
       times2(
-        times2(call("Sqrt", vec![int(2)]), a.clone()),
-        call("Sqrt", vec![times2(l.clone(), at.clone())]),
+        times2(call1("Sqrt", int(2)), a.clone()),
+        call1("Sqrt", times2(l.clone(), at.clone())),
       ),
     );
-    eval(div2(plus2(int(1), call("Erf", vec![erf_arg])), int(2)))
+    eval(div2(plus2(int(1), call1("Erf", erf_arg)), int(2)))
   };
   if ms_numeric(&x).is_some() {
     if ms_numeric(&x).is_some_and(|v| v <= 0.0) {
@@ -15147,7 +15104,7 @@ fn pdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     let denom = times2(
       times2(
         pow2(e(), div2(s.clone(), times2(int(2), sh))),
-        call("Sqrt", vec![times2(int(2), pi())]),
+        call1("Sqrt", times2(int(2), pi())),
       ),
       s.clone(),
     );
@@ -15182,10 +15139,10 @@ fn cdf_levy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let shift = |at: &Expr| plus2(times2(int(-1), m.clone()), at.clone());
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
     let erfc_arg = div2(
-      call("Sqrt", vec![div2(s.clone(), shift(at))]),
-      call("Sqrt", vec![int(2)]),
+      call1("Sqrt", div2(s.clone(), shift(at))),
+      call1("Sqrt", int(2)),
     );
-    eval(call("Erfc", vec![erfc_arg]))
+    eval(call1("Erfc", erfc_arg))
   };
   if let (Some(mv), Some(xv)) = (ms_numeric(&m), ms_numeric(&x)) {
     if xv <= mv {
@@ -15273,7 +15230,7 @@ pub fn maxwell_mean_variance(
 ) -> Result<(Expr, Expr), InterpreterError> {
   let mean = eval(call(
     "Times",
-    vec![int(2), call("Sqrt", vec![div2(int(2), pi())]), s.clone()],
+    vec![int(2), call1("Sqrt", div2(int(2), pi())), s.clone()],
   ))?;
   let var = if ms_numeric(s).is_some() {
     eval(div2(
@@ -15343,7 +15300,7 @@ fn pdf_wigner_semicircle(
       ],
     );
     eval(div2(
-      call("Times", vec![int(2), call("Sqrt", vec![inner])]),
+      call("Times", vec![int(2), call1("Sqrt", inner)]),
       call("Times", vec![pi(), r.clone()]),
     ))
   };
@@ -15415,7 +15372,7 @@ fn cdf_wigner_semicircle(
     );
     // The x-before-Sqrt factor order matches wolframscript, so the
     // middle term stays raw with evaluated subparts
-    let sqrt_part = call("Sqrt", vec![eval(inner)?]);
+    let sqrt_part = call1("Sqrt", eval(inner)?);
     let denom = eval(call("Times", vec![pi(), r.clone()]))?;
     let arcsin_arg = eval(div2(d.clone(), r.clone()))?;
     Ok(call(
@@ -15433,7 +15390,7 @@ fn cdf_wigner_semicircle(
           },
           denom,
         ),
-        div2(call("ArcSin", vec![arcsin_arg]), pi()),
+        div2(call1("ArcSin", arcsin_arg), pi()),
       ],
     ))
   };
@@ -15524,7 +15481,7 @@ fn pdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(dargs, x));
   }
   let arg = sech_arg(&m, &s, &x)?;
-  eval(div2(call("Sech", vec![arg]), times2(int(2), s)))
+  eval(div2(call1("Sech", arg), times2(int(2), s)))
 }
 
 /// CDF[SechDistribution[m, s], x] =
@@ -15541,7 +15498,7 @@ fn cdf_sech(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
   let arg = sech_arg(&m, &s, &x)?;
   eval(div2(
-    call("Times", vec![int(2), call("ArcTan", vec![pow2(e(), arg)])]),
+    call("Times", vec![int(2), call1("ArcTan", pow2(e(), arg))]),
     pi(),
   ))
 }
@@ -15625,7 +15582,7 @@ fn pdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     }
     // wolframscript orders the numeric scale before Sqrt[2 Pi] but a
     // symbolic one after it
-    let sqrt_2pi = call("Sqrt", vec![times2(int(2), pi())]);
+    let sqrt_2pi = call1("Sqrt", times2(int(2), pi()));
     let den = if den_factors.is_empty() {
       sqrt_2pi
     } else if ms_numeric(&s).is_some() {
@@ -15668,7 +15625,7 @@ fn cdf_moyal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       "Erfc",
       vec![div2(
         int(1),
-        call("Times", vec![call("Sqrt", vec![int(2)]), pow2(e(), z_half)]),
+        call("Times", vec![call1("Sqrt", int(2)), pow2(e(), z_half)]),
       )],
     ))
   };
@@ -15700,7 +15657,7 @@ pub fn moyal_mean_variance(
     "Plus",
     vec![
       Expr::Identifier("EulerGamma".to_string()),
-      call("Log", vec![int(2)]),
+      call1("Log", int(2)),
     ],
   );
   let mean = if matches!(&m, Expr::Integer(0)) && matches!(&s, Expr::Integer(1))
@@ -15907,7 +15864,7 @@ fn pdf_benktander_gibrat(
   if !benktander_valid(&a, &b, &dist)? {
     return Ok(uneval(dargs, x));
   }
-  let log_x = |at: &Expr| call("Log", vec![at.clone()]);
+  let log_x = |at: &Expr| call1("Log", at.clone());
   let numeric = ms_numeric(&a).is_some() && ms_numeric(&b).is_some();
 
   if ms_numeric(&x).is_some() {
@@ -16031,7 +15988,7 @@ fn cdf_benktander_gibrat(
   if !benktander_valid(&a, &b, &dist)? {
     return Ok(uneval(dargs, x));
   }
-  let log_x = |at: &Expr| call("Log", vec![at.clone()]);
+  let log_x = |at: &Expr| call1("Log", at.clone());
   let numeric = ms_numeric(&a).is_some() && ms_numeric(&b).is_some();
   let body = |at: &Expr| -> Result<Expr, InterpreterError> {
     let f2 = eval(call(
@@ -16108,7 +16065,7 @@ fn benktander_gibrat_mean_variance(
     "Erfc",
     vec![eval(div2(
       a_minus_1.clone(),
-      call("Times", vec![int(2), call("Sqrt", vec![b.clone()])]),
+      call("Times", vec![int(2), call1("Sqrt", b.clone())]),
     ))?],
   );
   let e_part = pow2(
@@ -16127,7 +16084,7 @@ fn benktander_gibrat_mean_variance(
             vec![
               a.clone(),
               e_part,
-              call("Sqrt", vec![eval(div2(pi(), b.clone()))?]),
+              call1("Sqrt", eval(div2(pi(), b.clone()))?),
               erfc,
             ],
           ),
@@ -16143,11 +16100,8 @@ fn benktander_gibrat_mean_variance(
         vec![
           int(-1),
           div2(
-            call(
-              "Times",
-              vec![a.clone(), e_part, call("Sqrt", vec![pi()]), erfc],
-            ),
-            call("Sqrt", vec![b.clone()]),
+            call("Times", vec![a.clone(), e_part, call1("Sqrt", pi()), erfc]),
+            call1("Sqrt", b.clone()),
           ),
         ],
       ),
@@ -16282,7 +16236,7 @@ fn pdf_skew_normal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       times2(a.clone(), xm.clone()),
       times2(sqrt2, s.clone()),
     ));
-    let num = call("Erfc", vec![erfc_arg]);
+    let num = call1("Erfc", erfc_arg);
     let gauss = pow2(
       e(),
       div2(pow2(xm, int(2)), times2(int(2), pow2(s.clone(), int(2)))),
@@ -16441,12 +16395,11 @@ fn cdf_zipf(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
   let s1 = eval(plus2(int(1), r.clone()))?; // 1 + r
   let norm = match &n {
-    None => call("Zeta", vec![s1.clone()]),
+    None => call1("Zeta", s1.clone()),
     Some(n) => call("HarmonicNumber", vec![n.clone(), s1.clone()]),
   };
   let hn = |at: Expr| -> Result<Expr, InterpreterError> {
-    let harmonic =
-      call("HarmonicNumber", vec![call("Floor", vec![at]), s1.clone()]);
+    let harmonic = call("HarmonicNumber", vec![call1("Floor", at), s1.clone()]);
     eval(div2(harmonic, norm.clone()))
   };
   // Numeric argument: the support is the positive integers (bounded above by n
@@ -16623,7 +16576,7 @@ fn pdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // Log[1 + 1/d] / Log[b].
   let body = |d: &Expr| -> Result<Expr, InterpreterError> {
     let inner = eval(plus2(int(1), div2(int(1), d.clone())))?;
-    eval(div2(call("Log", vec![inner]), call("Log", vec![b.clone()])))
+    eval(div2(call1("Log", inner), call1("Log", b.clone())))
   };
   if let Some(xv) = ms_numeric(&x) {
     let in_support = xv >= 1.0 && xv.fract() == 0.0 && xv <= bv - 1.0;
@@ -16662,10 +16615,7 @@ fn cdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   }
   // Log[1 + Floor[x]] / Log[b] at the given point.
   let body = |floor_plus_one: Expr| -> Result<Expr, InterpreterError> {
-    eval(div2(
-      call("Log", vec![floor_plus_one]),
-      call("Log", vec![b.clone()]),
-    ))
+    eval(div2(call1("Log", floor_plus_one), call1("Log", b.clone())))
   };
   if let Some(xv) = ms_numeric(&x) {
     if xv < 1.0 {
@@ -16680,7 +16630,7 @@ fn cdf_benford(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   if !matches!(&x, Expr::Identifier(_)) {
     return Ok(unevaluated(dargs, x));
   }
-  let floor_x = call("Floor", vec![x.clone()]);
+  let floor_x = call1("Floor", x.clone());
   let main = body(eval(plus2(int(1), floor_x))?)?;
   Ok(piecewise(
     vec![
@@ -16723,12 +16673,12 @@ fn benford_mean_variance(
     ));
   }
   let b_int = bv as i128;
-  let log_b = call("Log", vec![b.clone()]);
+  let log_b = call1("Log", b.clone());
   // Mean = b - Log[b!]/Log[b].
   let factorial = eval(factorial(b.clone()))?;
   let mean = eval(plus2(
     b.clone(),
-    times2(int(-1), div2(call("Log", vec![factorial]), log_b.clone())),
+    times2(int(-1), div2(call1("Log", factorial), log_b.clone())),
   ))?;
   // Variance = Sum[d^2 Log[1 + 1/d]/Log[b], {d, 1, b-1}] - Mean^2.
   let mut terms: Vec<Expr> = Vec::new();
@@ -16736,7 +16686,7 @@ fn benford_mean_variance(
     let inner = eval(plus2(int(1), div2(int(1), int(d))))?;
     terms.push(times2(
       pow2(int(d), int(2)),
-      div2(call("Log", vec![inner]), log_b.clone()),
+      div2(call1("Log", inner), log_b.clone()),
     ));
   }
   let second_moment = eval(call("Plus", terms))?;
@@ -17135,10 +17085,10 @@ fn truncated_normalization(
   let at = |x: &Expr| -> Result<Expr, InterpreterError> {
     cdf_ast(&[base.clone(), x.clone()])
   };
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Subtract".to_string(),
-    args: vec![at(hi)?, at(lo)?].into(),
-  })
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    "Subtract",
+    vec![at(hi)?, at(lo)?],
+  ))
 }
 
 /// `Mean`/`Variance` of a truncated distribution, by integrating the
@@ -17160,14 +17110,8 @@ pub fn truncated_mean_variance(
     }
     let integrand = Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![
-        Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![x.clone(), Expr::Integer(k)].into(),
-        },
-        density,
-      ]
-      .into(),
+      args: vec![call("Power", vec![x.clone(), Expr::Integer(k)]), density]
+        .into(),
     };
     let integral =
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
@@ -17182,12 +17126,10 @@ pub fn truncated_mean_variance(
     {
       return Ok(None);
     }
-    Ok(Some(crate::evaluator::evaluate_expr_to_expr(
-      &Expr::FunctionCall {
-        name: "Divide".to_string(),
-        args: vec![integral, z.clone()].into(),
-      },
-    )?))
+    Ok(Some(crate::evaluator::evaluate_expr_to_expr(&call(
+      "Divide",
+      vec![integral, z.clone()],
+    ))?))
   };
 
   let (Some(m1), Some(m2)) = (moment(1)?, moment(2)?) else {
@@ -17196,14 +17138,7 @@ pub fn truncated_mean_variance(
   let variance =
     crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Subtract".to_string(),
-      args: vec![
-        m2,
-        Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![m1.clone(), Expr::Integer(2)].into(),
-        },
-      ]
-      .into(),
+      args: vec![m2, call("Power", vec![m1.clone(), Expr::Integer(2)])].into(),
     })?;
   Ok(Some((m1, variance)))
 }
@@ -17221,10 +17156,7 @@ pub fn truncated_distribution_value(
   };
   let z = truncated_normalization(&lo, &hi, &base)?;
   let eval = |name: &str, args: Vec<Expr>| -> Result<Expr, InterpreterError> {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.into(),
-    })
+    crate::evaluator::evaluate_expr_to_expr(&call(name, args))
   };
   // Whether x lies in the kept interval, when that is decidable.
   let inside = |x: &Expr| -> Option<bool> {
@@ -17328,10 +17260,7 @@ pub fn censored_distribution_value(
     return Ok(None);
   };
   let eval = |name: &str, args: Vec<Expr>| -> Result<Expr, InterpreterError> {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.into(),
-    })
+    crate::evaluator::evaluate_expr_to_expr(&call(name, args))
   };
   let decides =
     |a: &Expr, op: crate::syntax::ComparisonOp, b: &Expr| -> Option<bool> {
@@ -17383,10 +17312,7 @@ pub fn censored_mean_variance(
   };
   let x = Expr::Identifier("Global`censx".to_string());
   let eval = |name: &str, args: Vec<Expr>| -> Result<Expr, InterpreterError> {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.into(),
-    })
+    crate::evaluator::evaluate_expr_to_expr(&call(name, args))
   };
 
   let moment = |k: i128| -> Result<Option<Expr>, InterpreterError> {
@@ -17394,9 +17320,8 @@ pub fn censored_mean_variance(
     if matches!(&density, Expr::FunctionCall { name, .. } if name == "PDF") {
       return Ok(None);
     }
-    let power = |base_expr: &Expr| Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![base_expr.clone(), Expr::Integer(k)].into(),
+    let power = |base_expr: &Expr| {
+      call("Power", vec![base_expr.clone(), Expr::Integer(k)])
     };
     let integral = eval(
       "Integrate",
@@ -17432,13 +17357,7 @@ pub fn censored_mean_variance(
   };
   let variance = eval(
     "Subtract",
-    vec![
-      m2,
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![m1.clone(), Expr::Integer(2)].into(),
-      },
-    ],
+    vec![m2, call("Power", vec![m1.clone(), Expr::Integer(2)])],
   )?;
   Ok(Some((m1, variance)))
 }

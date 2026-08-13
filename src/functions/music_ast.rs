@@ -454,18 +454,17 @@ fn axes_to_music_pitch(position: i128, midi: i128) -> Expr {
   let natural_midi = (octave + 1) * 12 + DIATONIC_BASE_SEMITONE[letter_idx];
   let accidental = midi - natural_midi;
   // Keys are alphabetical (Accidental, Key, MIDINumber), matching Wolfram.
-  Expr::FunctionCall {
-    name: "MusicPitch".to_string(),
-    args: vec![Expr::Association(vec![
+  call1(
+    "MusicPitch",
+    Expr::Association(vec![
       (Expr::String("Accidental".into()), Expr::Integer(accidental)),
       (
         Expr::String("Key".into()),
         Expr::String(DIATONIC_LETTERS[letter_idx].to_string()),
       ),
       (Expr::String("MIDINumber".into()), Expr::Integer(midi)),
-    ])]
-    .into(),
-  }
+    ]),
+  )
 }
 
 /// Decode a MIDI number into the canonical arithmetic pitch object
@@ -480,15 +479,14 @@ fn midi_to_music_pitch(midi: i128) -> Expr {
   let key = spelling.as_bytes()[0] as char;
   // Every chromatic name is either natural or a single sharp.
   let accidental = spelling.len() as i128 - 1;
-  Expr::FunctionCall {
-    name: "MusicPitch".to_string(),
-    args: vec![Expr::Association(vec![
+  call1(
+    "MusicPitch",
+    Expr::Association(vec![
       (Expr::String("Accidental".into()), Expr::Integer(accidental)),
       (Expr::String("Key".into()), Expr::String(key.to_string())),
       (Expr::String("MIDINumber".into()), Expr::Integer(midi)),
-    ])]
-    .into(),
-  }
+    ]),
+  )
 }
 
 /// Whether a summand (possibly negated or integer-scaled) is a bare-semitone
@@ -893,10 +891,7 @@ pub fn try_music_chord_plus_interval(args: &[Expr]) -> Option<Expr> {
   )]);
   let mut new_args = vec![pitch_list];
   new_args.extend(cargs.iter().skip(1).cloned());
-  Some(Expr::FunctionCall {
-    name: "MusicChord".to_string(),
-    args: new_args.into(),
-  })
+  Some(call("MusicChord", new_args))
 }
 
 /// Heads of the computational-music containers/events whose pitches are
@@ -1034,16 +1029,15 @@ pub fn music_pitch_midi(expr: &Expr) -> Option<i128> {
 /// A `MusicPitch[<|…|>]` / `MusicDuration[<|…|>]` / … object wrapping a
 /// key-ordered association.
 fn music_assoc(head: &str, pairs: Vec<(&str, Expr)>) -> Expr {
-  Expr::FunctionCall {
-    name: head.to_string(),
-    args: vec![Expr::Association(
+  call1(
+    head,
+    Expr::Association(
       pairs
         .into_iter()
         .map(|(k, v)| (Expr::String(k.to_string()), v))
         .collect(),
-    )]
-    .into(),
-  }
+    ),
+  )
 }
 
 /// Look up a string key in an association's `(key, value)` pairs.
@@ -1736,10 +1730,7 @@ fn times_of(mut factors: Vec<Expr>) -> Expr {
   match factors.len() {
     0 => Expr::Integer(1),
     1 => factors.pop().unwrap(),
-    _ => Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: factors.into(),
-    },
+    _ => call("Times", factors),
   }
 }
 
@@ -1778,10 +1769,7 @@ pub fn music_duration_plus_terms(args: &[Expr]) -> Option<Vec<Expr>> {
   let mut products = Vec::with_capacity(flat.len());
   for term in &flat {
     let (coeff, value) = music_duration_summand(term)?;
-    products.push(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![coeff, value].into(),
-    });
+    products.push(call("Times", vec![coeff, value]));
   }
   Some(products)
 }
@@ -1924,10 +1912,7 @@ impl MeasureEvent {
   /// Whether the event carries an explicit (rigid) duration. Default events are
   /// elastic: a trailing default note stretches to fill the measure.
   fn is_explicit(&self) -> bool {
-    matches!(
-      self,
-      Self::Note(_, Some(_)) | Self::Rest(Some(_))
-    )
+    matches!(self, Self::Note(_, Some(_)) | Self::Rest(Some(_)))
   }
 }
 
@@ -2109,10 +2094,10 @@ pub fn music_measure(args: &[Expr]) -> Option<Expr> {
       format_ratio(total),
       capacity.0,
     ));
-    return Some(Expr::FunctionCall {
-      name: "MusicMeasure".to_string(),
-      args: vec![Expr::List(events_raw.clone()), timesig.clone()].into(),
-    });
+    return Some(call(
+      "MusicMeasure",
+      vec![Expr::List(events_raw.clone()), timesig.clone()],
+    ));
   }
 
   // Fill the measure to exactly `capacity` beats.
@@ -2327,10 +2312,7 @@ mod tests {
   // on structure / rendering to a string.
 
   fn head_with_c4(name: &str) -> Expr {
-    Expr::FunctionCall {
-      name: name.to_string(),
-      args: vec![Expr::String("C4".to_string())].into(),
-    }
+    call(name, vec![Expr::String("C4".to_string())])
   }
 
   fn is_true(expr: &Expr) -> bool {
@@ -2354,15 +2336,9 @@ mod tests {
   #[test]
   fn music_object_q_rejects_non_objects() {
     assert!(is_false(&music_object_q(&[Expr::Integer(3)])));
-    assert!(is_false(&music_object_q(&[Expr::FunctionCall {
-      name: "List".to_string(),
-      args: vec![].into(),
-    }])));
+    assert!(is_false(&music_object_q(&[call("List", vec![])])));
     // MusicPlot/MusicTransform/MusicMeasurements are operations, not objects.
-    assert!(is_false(&music_object_q(&[Expr::FunctionCall {
-      name: "MusicPlot".to_string(),
-      args: vec![].into(),
-    }])));
+    assert!(is_false(&music_object_q(&[call("MusicPlot", vec![])])));
   }
 
   #[test]
@@ -2480,26 +2456,19 @@ mod tests {
     assert_eq!(frequency_to_midi(f64::INFINITY), None);
   }
 
-  fn func(name: &str, args: Vec<Expr>) -> Expr {
-    Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.into(),
-    }
-  }
-
   #[test]
   fn music_pitch_canonicalizes_frequency() {
     // Frequencies fix no letter spelling and keep their MIDI number:
     // A4 = 440 Hz = MIDI 69; 200 Hz is nearest G3 = MIDI 55.
     expect_midi_pitch(
-      music_pitch(&[func(
+      music_pitch(&[call(
         "Quantity",
         vec![Expr::Integer(440), Expr::String("Hertz".into())],
       )]),
       69,
     );
     expect_midi_pitch(
-      music_pitch(&[func(
+      music_pitch(&[call(
         "Quantity",
         vec![Expr::Integer(200), Expr::String("Hertz".into())],
       )]),
@@ -2507,7 +2476,7 @@ mod tests {
     );
     // Identifier unit spelling and the "Hz" abbreviation are both accepted.
     expect_midi_pitch(
-      music_pitch(&[func(
+      music_pitch(&[call(
         "Quantity",
         vec![Expr::Real(440.0), Expr::Identifier("Hertz".into())],
       )]),
@@ -2515,7 +2484,7 @@ mod tests {
     );
     // A non-frequency Quantity has no pitch interpretation.
     assert!(
-      music_pitch(&[func(
+      music_pitch(&[call(
         "Quantity",
         vec![Expr::Integer(440), Expr::String("Meters".into())]
       )])
@@ -2526,16 +2495,13 @@ mod tests {
   #[test]
   fn music_pitch_canonicalizes_soundnote() {
     // SoundNote numbers pitches relative to middle C (0), so 0 -> MIDI 60.
+    expect_midi_pitch(music_pitch(&[call1("SoundNote", Expr::Integer(0))]), 60);
     expect_midi_pitch(
-      music_pitch(&[func("SoundNote", vec![Expr::Integer(0)])]),
-      60,
-    );
-    expect_midi_pitch(
-      music_pitch(&[func("SoundNote", vec![Expr::Integer(-5)])]),
+      music_pitch(&[call1("SoundNote", Expr::Integer(-5))]),
       55,
     );
     expect_midi_pitch(
-      music_pitch(&[func("SoundNote", vec![Expr::String("A4".into())])]),
+      music_pitch(&[call1("SoundNote", Expr::String("A4".into()))]),
       69,
     );
   }
@@ -2543,8 +2509,7 @@ mod tests {
   #[test]
   fn music_pitch_extracts_note_pitch() {
     // A raw MusicNote spec resolves to the spelled note-pitch object …
-    let result =
-      music_pitch(&[func("MusicNote", vec![Expr::String("G3".into())])]);
+    let result = music_pitch(&[call1("MusicNote", Expr::String("G3".into()))]);
     match &result {
       Some(Expr::FunctionCall { name, args }) if name == "MusicPitch" => {
         match &args[..] {
@@ -2563,24 +2528,24 @@ mod tests {
       other => panic!("expected MusicPitch[<|…|>], got {other:?}"),
     }
     // … while a canonical note returns its stored pitch object verbatim.
-    let stored = func(
+    let stored = call1(
       "MusicNote",
-      vec![Expr::Association(vec![(
+      Expr::Association(vec![(
         Expr::String("Pitch".into()),
-        func(
+        call1(
           "MusicPitch",
-          vec![Expr::Association(vec![(
+          Expr::Association(vec![(
             Expr::String("MIDINumber".into()),
             Expr::Integer(55),
-          )])],
+          )]),
         ),
-      )])],
+      )]),
     );
     expect_midi_pitch(music_pitch(&[stored]), 55);
   }
 
   fn named_pitch(name: &str) -> Expr {
-    func("MusicPitch", vec![Expr::String(name.into())])
+    call1("MusicPitch", Expr::String(name.into()))
   }
 
   /// Assert that `try_music_pitch_plus` produced the canonical association form
@@ -2623,7 +2588,7 @@ mod tests {
     let result = try_music_pitch_plus(&[
       named_pitch("Bb"),
       named_pitch("A#"),
-      func("Times", vec![Expr::Integer(-1), named_pitch("C")]),
+      call("Times", vec![Expr::Integer(-1), named_pitch("C")]),
     ]);
     expect_pitch_sum(result, 1, "G", 80);
   }
@@ -2635,7 +2600,7 @@ mod tests {
     // once.
     let partial = try_music_pitch_plus(&[
       named_pitch("Bb"),
-      func("Times", vec![Expr::Integer(-1), named_pitch("C")]),
+      call("Times", vec![Expr::Integer(-1), named_pitch("C")]),
     ])
     .unwrap();
     let result = try_music_pitch_plus(&[named_pitch("A#"), partial]);
@@ -2671,8 +2636,8 @@ mod tests {
     // collects to `p` on the ordinary path).
     assert!(
       try_music_pitch_plus(&[
-        func("Times", vec![Expr::Integer(2), named_pitch("C")]),
-        func("Times", vec![Expr::Integer(-1), named_pitch("C")]),
+        call("Times", vec![Expr::Integer(2), named_pitch("C")]),
+        call("Times", vec![Expr::Integer(-1), named_pitch("C")]),
       ])
       .is_none()
     );
@@ -2683,7 +2648,7 @@ mod tests {
     // Octaveless `C` defaults to octave 4, so `C - C4` cancels to a Unison.
     let result = try_music_pitch_plus(&[
       named_pitch("C"),
-      func("Times", vec![Expr::Integer(-1), named_pitch("C4")]),
+      call("Times", vec![Expr::Integer(-1), named_pitch("C4")]),
     ]);
     match &result {
       Some(Expr::FunctionCall { name, args }) if name == "MusicInterval" => {
@@ -2722,7 +2687,7 @@ mod tests {
   }
 
   fn named_interval(spec: &str) -> Expr {
-    func("MusicInterval", vec![Expr::String(spec.into())])
+    call1("MusicInterval", Expr::String(spec.into()))
   }
 
   #[test]
@@ -2734,20 +2699,20 @@ mod tests {
     );
     // Bare-semitone interval: 5 semitones is the simplest perfect fourth.
     assert_eq!(
-      music_interval_axes(&func("MusicInterval", vec![Expr::Integer(5)])),
+      music_interval_axes(&call1("MusicInterval", Expr::Integer(5))),
       Some((3, 5)),
     );
     // Compound (octave-plus) interval via the canonical association form.
-    let assoc = func(
+    let assoc = call1(
       "MusicInterval",
-      vec![Expr::Association(vec![
+      Expr::Association(vec![
         (Expr::String("Semitones".into()), Expr::Integer(4)),
         (
           Expr::String("Name".into()),
           Expr::String("MajorThird".into()),
         ),
         (Expr::String("CompoundOctaves".into()), Expr::Integer(1)),
-      ])],
+      ]),
     );
     assert_eq!(music_interval_axes(&assoc), Some((9, 16)));
   }
@@ -2785,15 +2750,15 @@ mod tests {
   #[test]
   fn music_chord_plus_interval_transposes_every_tone() {
     // MusicChord[{C4, E4, G4}] + MusicInterval[5] -> {F4, A4, C5}.
-    let chord = func(
+    let chord = call1(
       "MusicChord",
-      vec![Expr::List(
+      Expr::List(
         vec![named_pitch("C4"), named_pitch("E4"), named_pitch("G4")].into(),
-      )],
+      ),
     );
     let result = try_music_chord_plus_interval(&[
       chord,
-      func("MusicInterval", vec![Expr::Integer(5)]),
+      call1("MusicInterval", Expr::Integer(5)),
     ])
     .expect("chord + interval should transpose");
     let Expr::FunctionCall { name, args } = &result else {
@@ -2833,7 +2798,7 @@ mod tests {
     expect_pitch_sum(
       try_music_pitch_plus(&[
         named_pitch("C"),
-        func("MusicInterval", vec![Expr::Integer(8)]),
+        call1("MusicInterval", Expr::Integer(8)),
       ]),
       1,
       "G",
@@ -2843,7 +2808,7 @@ mod tests {
     expect_pitch_sum(
       try_music_pitch_plus(&[
         named_pitch("Eb"),
-        func("MusicInterval", vec![Expr::Integer(8)]),
+        call1("MusicInterval", Expr::Integer(8)),
       ]),
       0,
       "B",
@@ -2857,15 +2822,12 @@ mod tests {
     assert!(
       try_music_chord_plus_interval(&[
         named_pitch("C"),
-        func("MusicInterval", vec![Expr::Integer(5)]),
+        call1("MusicInterval", Expr::Integer(5)),
       ])
       .is_none()
     );
     // A bare chord with no interval is left for the normal path.
-    let chord = func(
-      "MusicChord",
-      vec![Expr::List(vec![named_pitch("C4")].into())],
-    );
+    let chord = call1("MusicChord", Expr::List(vec![named_pitch("C4")].into()));
     assert!(try_music_chord_plus_interval(&[chord]).is_none());
   }
 }

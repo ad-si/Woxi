@@ -75,7 +75,7 @@ fn mk_plus(args: Vec<Expr>) -> Expr {
   if args.len() == 1 {
     args.into_iter().next().unwrap()
   } else {
-    mk_call("Plus", args)
+    call("Plus", args)
   }
 }
 
@@ -208,7 +208,7 @@ fn classify_term(term: &Expr) -> Option<(usize, Expr)> {
         let coeff = if coeff_parts.len() == 1 {
           coeff_parts.into_iter().next().unwrap()
         } else {
-          mk_call("Times", coeff_parts)
+          call("Times", coeff_parts)
         };
 
         if let Expr::Slot(1) = slot_part {
@@ -246,14 +246,14 @@ fn root_to_radical(
   let k = match k_expr {
     Expr::Integer(n) => *n,
     _ => {
-      return Ok(mk_call("Root", vec![func.clone(), k_expr.clone()]));
+      return Ok(call("Root", vec![func.clone(), k_expr.clone()]));
     }
   };
 
   let body_raw = match func {
     Expr::Function { body } => body.as_ref(),
     _ => {
-      return Ok(mk_call("Root", vec![func.clone(), k_expr.clone()]));
+      return Ok(call("Root", vec![func.clone(), k_expr.clone()]));
     }
   };
   // Evaluate the body to normalize it into FunctionCall form (Plus, Times, Power)
@@ -264,7 +264,7 @@ fn root_to_radical(
   let coeffs = match extract_poly_coefficients(body) {
     Some(c) => c,
     None => {
-      return Ok(mk_call("Root", vec![func.clone(), k_expr.clone()]));
+      return Ok(call("Root", vec![func.clone(), k_expr.clone()]));
     }
   };
 
@@ -300,18 +300,18 @@ fn root_to_radical(
 
       let idx = (k as usize) - 1;
       if idx >= evaluated_roots.len() {
-        Ok(mk_call("Root", vec![func.clone(), k_expr.clone()]))
+        Ok(call("Root", vec![func.clone(), k_expr.clone()]))
       } else {
         Ok(evaluated_roots.remove(idx))
       }
     }
-    None => Ok(mk_call("Root", vec![func.clone(), k_expr.clone()])),
+    None => Ok(call("Root", vec![func.clone(), k_expr.clone()])),
   }
 }
 
 /// Solve linear: a0 + a1*x = 0 → x = -a0/a1
 fn solve_linear(coeffs: &[Expr]) -> Option<Vec<Expr>> {
-  Some(vec![mk_call(
+  Some(vec![call(
     "Times",
     vec![
       mk_int(-1),
@@ -394,7 +394,7 @@ fn solve_cubic(coeffs: &[Expr]) -> Option<Vec<Expr>> {
       mk_times(mk_int(2), mk_power(a2.clone(), mk_int(3))),
       mk_times(
         mk_int(-9),
-        mk_call("Times", vec![a3.clone(), a2.clone(), a1.clone()]),
+        call("Times", vec![a3.clone(), a2.clone(), a1.clone()]),
       ),
       mk_times(
         mk_int(27),
@@ -528,8 +528,8 @@ fn nth_root_of_unity(
       mk_times(mk_ratio(num, den), Expr::Identifier("Pi".to_string()))
     };
     Some(mk_plus(vec![
-      mk_call("Cos", vec![angle.clone()]),
-      mk_times(i_val.clone(), mk_call("Sin", vec![angle])),
+      call1("Cos", angle.clone()),
+      mk_times(i_val.clone(), call1("Sin", angle)),
     ]))
   }
 }

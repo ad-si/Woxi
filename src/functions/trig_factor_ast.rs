@@ -18,25 +18,12 @@ pub fn trig_factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(factor(&args[0]).unwrap_or_else(|| args[0].clone()))
 }
 
-fn trig_call(head: &str, arg: Expr) -> Expr {
-  Expr::FunctionCall {
-    name: head.to_string(),
-    args: vec![arg].into(),
-  }
-}
-
 fn times(fs: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: fs.into(),
-  }
+  call("Times", fs)
 }
 
 fn plus(ts: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: ts.into(),
-  }
+  call("Plus", ts)
 }
 
 fn div(a: Expr, b: i128) -> Expr {
@@ -64,10 +51,7 @@ fn square(e: Expr) -> Expr {
 }
 
 fn sqrt2() -> Expr {
-  Expr::FunctionCall {
-    name: "Sqrt".to_string(),
-    args: vec![Expr::Integer(2)].into(),
-  }
+  call1("Sqrt", Expr::Integer(2))
 }
 
 fn pi_quarter() -> Expr {
@@ -109,16 +93,13 @@ fn sin_pm(v: &Expr, plus_quarter: bool) -> (Expr, i32) {
     } else {
       neg1(pi_quarter())
     });
-    (trig_call("Sin", plus(terms)), 1)
+    (call1("Sin", plus(terms)), 1)
   } else if plus_quarter {
     // Sin[v + Pi/4] == Sin[Pi/4 + v]
-    (trig_call("Sin", plus(vec![pi_quarter(), v.clone()])), 1)
+    (call1("Sin", plus(vec![pi_quarter(), v.clone()])), 1)
   } else {
     // Sin[v - Pi/4] == -Sin[Pi/4 - v]
-    (
-      trig_call("Sin", plus(vec![pi_quarter(), neg1(v.clone())])),
-      -1,
-    )
+    (call1("Sin", plus(vec![pi_quarter(), neg1(v.clone())])), -1)
   }
 }
 
@@ -206,8 +187,8 @@ fn factor(expr: &Expr) -> Option<Expr> {
       // 2*Cos[u]*Sin[u]
       times(vec![
         Expr::Integer(2),
-        trig_call("Cos", u.clone()),
-        trig_call("Sin", u),
+        call1("Cos", u.clone()),
+        call1("Sin", u),
       ])
     } else {
       // Cos[2u] = 2*Sin[Pi/4 - u]*Sin[Pi/4 + u]
@@ -223,8 +204,8 @@ fn factor(expr: &Expr) -> Option<Expr> {
   {
     return Some(times(vec![
       Expr::Integer(2),
-      trig_call("Cosh", u.clone()),
-      trig_call("Sinh", u),
+      call1("Cosh", u.clone()),
+      call1("Sinh", u),
     ]));
   }
 
@@ -246,7 +227,7 @@ fn factor(expr: &Expr) -> Option<Expr> {
         two_sin_sq(&h, true)
       } else {
         // 2*Cos[h]^2
-        times(vec![Expr::Integer(2), square(trig_call("Cos", h))])
+        times(vec![Expr::Integer(2), square(call1("Cos", h))])
       });
     }
     if let Some(inner) = negated(b)
@@ -258,7 +239,7 @@ fn factor(expr: &Expr) -> Option<Expr> {
         two_sin_sq(&h, false)
       } else {
         // 2*Sin[h]^2
-        times(vec![Expr::Integer(2), square(trig_call("Sin", h))])
+        times(vec![Expr::Integer(2), square(call1("Sin", h))])
       });
     }
   }
@@ -311,11 +292,7 @@ fn factor(expr: &Expr) -> Option<Expr> {
     // Fold the overall sign into the leading coefficient (-2, not -(2 ...))
     // to match Wolfram's printed form.
     let cos_sin = |k: i128, c: Expr, s: Expr| {
-      times(vec![
-        Expr::Integer(k),
-        trig_call("Cos", c),
-        trig_call("Sin", s),
-      ])
+      times(vec![Expr::Integer(k), call1("Cos", c), call1("Sin", s)])
     };
     return Some(match (na, nb) {
       (false, false) => cos_sin(2, hd, hs), // +Sin[p] +Sin[q]
@@ -375,9 +352,9 @@ fn factor(expr: &Expr) -> Option<Expr> {
   if let Some((k, u)) = const_and_cosh(a, b).or_else(|| const_and_cosh(b, a)) {
     let h = halved(&u).unwrap_or_else(|| div(u.clone(), 2));
     return Some(if k == 1 {
-      times(vec![Expr::Integer(2), square(trig_call("Cosh", h))])
+      times(vec![Expr::Integer(2), square(call1("Cosh", h))])
     } else {
-      times(vec![Expr::Integer(2), square(trig_call("Sinh", h))])
+      times(vec![Expr::Integer(2), square(call1("Sinh", h))])
     });
   }
 
@@ -407,7 +384,7 @@ fn factor(expr: &Expr) -> Option<Expr> {
     let hd = half_diff(&ua, &ub); // x/2 - y/2
     let hs = half_sum(&ua, &ub); // x/2 + y/2
     let prod = |k: i128, h1: &str, a1: Expr, h2: &str, a2: Expr| {
-      times(vec![Expr::Integer(k), trig_call(h1, a1), trig_call(h2, a2)])
+      times(vec![Expr::Integer(k), call1(h1, a1), call1(h2, a2)])
     };
     return Some(if sa {
       // Both Sinh: the product is Cosh * Sinh.

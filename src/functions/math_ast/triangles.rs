@@ -11,13 +11,6 @@
 #[allow(unused_imports)]
 use super::*;
 
-fn fc(name: &str, args: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  }
-}
-
 fn eval(e: Expr) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&e)
 }
@@ -158,16 +151,16 @@ fn symbolic_angle_ok(e: &Expr) -> bool {
 /// Vertices {{0,0}, {c,0}, {cx,cy}} as an evaluated Triangle expression.
 fn triangle(c: Expr, cx: Expr, cy: Expr) -> Result<Expr, InterpreterError> {
   let zero = || Expr::Integer(0);
-  Ok(fc(
+  Ok(call1(
     "Triangle",
-    vec![Expr::List(
+    Expr::List(
       vec![
         Expr::List(vec![zero(), zero()].into()),
         Expr::List(vec![eval(c)?, zero()].into()),
         Expr::List(vec![eval(cx)?, eval(cy)?].into()),
       ]
       .into(),
-    )],
+    ),
   ))
 }
 
@@ -210,34 +203,34 @@ fn two_angle_triangle(
   // Csc/Cot forms wolframscript displays (`c*Csc[a]*Sin[a + b]`,
   // `c*Cot[a]*Sin[b]`). Numeric angles evaluate these to the same values
   // the plain Sin-quotient forms produce.
-  let gamma = fc(
+  let gamma = call(
     "Plus",
     vec![
       Expr::Identifier("Pi".to_string()),
-      fc("Times", vec![Expr::Integer(-1), alpha.clone()]),
-      fc("Times", vec![Expr::Integer(-1), beta.clone()]),
+      call("Times", vec![Expr::Integer(-1), alpha.clone()]),
+      call("Times", vec![Expr::Integer(-1), beta.clone()]),
     ],
   );
   let (c, cx, cy) = if side_is_included {
     // ASA: the given side is c; apex = c Sin[β]/Sin[γ] * (Cos[α], Sin[α]).
     (
       side.clone(),
-      fc(
+      call(
         "Times",
         vec![
           side.clone(),
-          fc("Cos", vec![alpha.clone()]),
-          fc("Csc", vec![gamma.clone()]),
-          fc("Sin", vec![beta.clone()]),
+          call1("Cos", alpha.clone()),
+          call1("Csc", gamma.clone()),
+          call1("Sin", beta.clone()),
         ],
       ),
-      fc(
+      call(
         "Times",
         vec![
           side.clone(),
-          fc("Csc", vec![gamma]),
-          fc("Sin", vec![alpha.clone()]),
-          fc("Sin", vec![beta.clone()]),
+          call1("Csc", gamma),
+          call1("Sin", alpha.clone()),
+          call1("Sin", beta.clone()),
         ],
       ),
     )
@@ -245,23 +238,23 @@ fn two_angle_triangle(
     // AAS: the given side is a (opposite α); c = a Sin[γ] Csc[α],
     // apex = (a Sin[β] Cot[α], a Sin[β]).
     (
-      fc(
+      call(
         "Times",
         vec![
           side.clone(),
-          fc("Csc", vec![alpha.clone()]),
-          fc("Sin", vec![gamma]),
+          call1("Csc", alpha.clone()),
+          call1("Sin", gamma),
         ],
       ),
-      fc(
+      call(
         "Times",
         vec![
           side.clone(),
-          fc("Cot", vec![alpha.clone()]),
-          fc("Sin", vec![beta.clone()]),
+          call1("Cot", alpha.clone()),
+          call1("Sin", beta.clone()),
         ],
       ),
-      fc("Times", vec![side.clone(), fc("Sin", vec![beta.clone()])]),
+      call("Times", vec![side.clone(), call1("Sin", beta.clone())]),
     )
   };
   triangle(c, cx, cy)
@@ -302,41 +295,41 @@ pub fn sas_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return unevaluated();
   }
-  let c = fc(
+  let c = call(
     "Sqrt",
-    vec![fc(
+    vec![call(
       "Plus",
       vec![
-        fc("Power", vec![a.clone(), Expr::Integer(2)]),
-        fc("Power", vec![b.clone(), Expr::Integer(2)]),
-        fc(
+        call("Power", vec![a.clone(), Expr::Integer(2)]),
+        call("Power", vec![b.clone(), Expr::Integer(2)]),
+        call(
           "Times",
           vec![
             Expr::Integer(-2),
             a.clone(),
             b.clone(),
-            fc("Cos", vec![gamma.clone()]),
+            call1("Cos", gamma.clone()),
           ],
         ),
       ],
     )],
   );
   let c_eval = eval(c)?;
-  let inv_c = fc("Power", vec![c_eval.clone(), Expr::Integer(-1)]);
-  let cx = fc(
+  let inv_c = call("Power", vec![c_eval.clone(), Expr::Integer(-1)]);
+  let cx = call(
     "Times",
     vec![
-      fc(
+      call(
         "Plus",
         vec![
-          fc("Power", vec![b.clone(), Expr::Integer(2)]),
-          fc(
+          call("Power", vec![b.clone(), Expr::Integer(2)]),
+          call(
             "Times",
             vec![
               Expr::Integer(-1),
               a.clone(),
               b.clone(),
-              fc("Cos", vec![gamma.clone()]),
+              call1("Cos", gamma.clone()),
             ],
           ),
         ],
@@ -344,9 +337,9 @@ pub fn sas_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       inv_c.clone(),
     ],
   );
-  let cy = fc(
+  let cy = call(
     "Times",
-    vec![a.clone(), b.clone(), fc("Sin", vec![gamma.clone()]), inv_c],
+    vec![a.clone(), b.clone(), call1("Sin", gamma.clone()), inv_c],
   );
   triangle(c_eval, cx, cy)
 }
@@ -410,16 +403,16 @@ pub fn triangle_measurement_ast(
   let (bx, by) = &coords[1];
   let (cx, cy) = &coords[2];
   let diff = |u: &Expr, v: &Expr| {
-    fc(
+    call(
       "Plus",
-      vec![u.clone(), fc("Times", vec![Expr::Integer(-1), v.clone()])],
+      vec![u.clone(), call("Times", vec![Expr::Integer(-1), v.clone()])],
     )
   };
-  let twice_signed_area = fc(
+  let twice_signed_area = call(
     "Plus",
     vec![
-      fc("Times", vec![diff(bx, ax), diff(cy, ay)]),
-      fc("Times", vec![Expr::Integer(-1), diff(cx, ax), diff(by, ay)]),
+      call("Times", vec![diff(bx, ax), diff(cy, ay)]),
+      call("Times", vec![Expr::Integer(-1), diff(cx, ax), diff(by, ay)]),
     ],
   );
   let signed = eval(twice_signed_area.clone())?;
@@ -430,40 +423,34 @@ pub fn triangle_measurement_ast(
     ));
     return unevaluated();
   }
-  let area = fc(
+  let area = call(
     "Times",
     vec![
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      },
-      fc("Abs", vec![twice_signed_area]),
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+      call1("Abs", twice_signed_area),
     ],
   );
 
   let dist = |p: &(Expr, Expr), q: &(Expr, Expr)| {
-    fc(
+    call1(
       "Sqrt",
-      vec![fc(
+      call(
         "Plus",
         vec![
-          fc("Power", vec![diff(&p.0, &q.0), Expr::Integer(2)]),
-          fc("Power", vec![diff(&p.1, &q.1), Expr::Integer(2)]),
+          call("Power", vec![diff(&p.0, &q.0), Expr::Integer(2)]),
+          call("Power", vec![diff(&p.1, &q.1), Expr::Integer(2)]),
         ],
-      )],
+      ),
     )
   };
   let side_a = dist(&coords[1], &coords[2]);
   let side_b = dist(&coords[0], &coords[2]);
   let side_c = dist(&coords[0], &coords[1]);
   let half = |e: Expr| {
-    fc(
+    call(
       "Times",
       vec![
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-        },
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
         e,
       ],
     )
@@ -471,36 +458,39 @@ pub fn triangle_measurement_ast(
 
   let result = match prop.as_str() {
     "Area" => area,
-    "Perimeter" => fc("Plus", vec![side_a, side_b, side_c]),
+    "Perimeter" => call("Plus", vec![side_a, side_b, side_c]),
     // Term-wise halves so rational parts fold (1/2 + 1/2 + Sqrt[2]/2 →
     // 1 + 1/Sqrt[2], matching wolframscript's display).
     "Semiperimeter" => {
-      fc("Plus", vec![half(side_a), half(side_b), half(side_c)])
+      call("Plus", vec![half(side_a), half(side_b), half(side_c)])
     }
     // r = Area / s
-    "Inradius" => fc(
+    "Inradius" => call(
       "Times",
       vec![
         area,
-        fc(
+        call(
           "Power",
           vec![
-            fc("Plus", vec![half(side_a), half(side_b), half(side_c)]),
+            call("Plus", vec![half(side_a), half(side_b), half(side_c)]),
             Expr::Integer(-1),
           ],
         ),
       ],
     ),
     // R = a b c / (4 Area)
-    "Circumradius" => fc(
+    "Circumradius" => call(
       "Times",
       vec![
         side_a,
         side_b,
         side_c,
-        fc(
+        call(
           "Power",
-          vec![fc("Times", vec![Expr::Integer(4), area]), Expr::Integer(-1)],
+          vec![
+            call("Times", vec![Expr::Integer(4), area]),
+            Expr::Integer(-1),
+          ],
         ),
       ],
     ),

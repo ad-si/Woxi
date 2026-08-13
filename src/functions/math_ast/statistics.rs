@@ -419,10 +419,7 @@ fn total_parts(expr: &Expr) -> Option<(Option<&str>, &[Expr])> {
 fn total_rebuild(head: Option<&str>, items: Vec<Expr>) -> Expr {
   match head {
     None => Expr::List(items.into()),
-    Some(name) => Expr::FunctionCall {
-      name: name.to_string(),
-      args: items.into(),
-    },
+    Some(name) => call(name, items),
   }
 }
 
@@ -586,10 +583,7 @@ pub(crate) fn mixture_weighted_component_quantity(
   if weights.is_empty() || weights.len() != dists.len() {
     return Ok(None);
   }
-  let call = |name: &str, a: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: a.into(),
-  };
+  let call = |name: &str, a: Vec<Expr>| call(name, a);
   // Distribute the normalizing weight into every term — Σ (w_i/W) q(d_i) —
   // rather than dividing the summed numerator, so the result matches
   // wolframscript's form (e.g. `1/(2 Sqrt[2 Pi]) + …` instead of `(… )/2`).
@@ -622,10 +616,7 @@ fn mixture_variance(dargs: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
   if weights.is_empty() || weights.len() != dists.len() {
     return Ok(None);
   }
-  let call = |name: &str, a: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: a.into(),
-  };
+  let call = |name: &str, a: Vec<Expr>| call(name, a);
   let resolved = |q: &Expr| {
     !matches!(q, Expr::FunctionCall { name, .. }
       if name == "Mean" || name == "Variance")
@@ -684,10 +675,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::List(items) => {
       if items.is_empty() {
-        return Ok(Expr::FunctionCall {
-          name: "Mean".to_string(),
-          args: vec![Expr::List(vec![].into())].into(),
-        });
+        return Ok(call("Mean", vec![Expr::List(vec![].into())]));
       }
       // Try to compute exact integer sum first
       let mut int_sum: Option<i128> = Some(0);
@@ -712,10 +700,10 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           // Return as Rational
           let (num, denom) = rat_reduce(sum, count);
-          Ok(Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(num), Expr::Integer(denom)].into(),
-          })
+          Ok(call(
+            "Rational",
+            vec![Expr::Integer(num), Expr::Integer(denom)],
+          ))
         }
       } else {
         // Check for list-of-lists (matrix) → compute column-wise mean
@@ -726,10 +714,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Plus canonical-sorts its operands, changing the f64 summation
         // order for real entries (Mean[{23.1, 24.4, 21.8, 25.5}] must stay
         // exactly 23.7 like wolframscript's left-to-right Total).
-        let sum_expr = Expr::FunctionCall {
-          name: "Total".to_string(),
-          args: vec![Expr::List(items.clone())].into(),
-        };
+        let sum_expr = call("Total", vec![Expr::List(items.clone())]);
         let evaluated_sum = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
         let n = items.len() as i128;
         // A rational sum folds to an exact rational (e.g. Mean[{1/4, 1/8}]
@@ -994,10 +979,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if dist_name == "QuantityDistribution" && dargs.len() == 2 => {
       // Mean[QuantityDistribution[dist, unit]] = Quantity[Mean[dist], unit]
       let inner_mean = mean_ast(&[dargs[0].clone()])?;
-      Ok(Expr::FunctionCall {
-        name: "Quantity".to_string(),
-        args: vec![inner_mean, dargs[1].clone()].into(),
-      })
+      Ok(call("Quantity", vec![inner_mean, dargs[1].clone()]))
     }
     Expr::Association(pairs) => {
       let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
@@ -1046,11 +1028,7 @@ fn standby_component_moments(
     }
     terms.push(m);
   }
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  })
-  .map(Some)
+  crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms)).map(Some)
 }
 
 /// Mean of columns in a list-of-lists (matrix)
@@ -1066,10 +1044,7 @@ fn mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
   if row_vecs.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "Mean".to_string(),
-      args: vec![Expr::List(rows.to_vec().into())].into(),
-    });
+    return Ok(call("Mean", vec![Expr::List(rows.to_vec().into())]));
   }
   let ncols = row_vecs[0].len();
   let nrows = row_vecs.len();
@@ -1141,10 +1116,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             expr_to_string(&args[0])
           ));
         }
-        return Ok(Expr::FunctionCall {
-          name: "Variance".to_string(),
-          args: vec![args[0].clone()].into(),
-        });
+        return Ok(call("Variance", vec![args[0].clone()]));
       }
       // Try all-integer exact path (Integer and BigInteger). Computed in
       // BigInt so the squared deviations don't overflow i128.
@@ -1414,10 +1386,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Variance[QuantityDistribution[dist, unit]] = Quantity[Variance[dist], unit^2]
       let inner_var = variance_ast(&[dargs[0].clone()])?;
       let unit_sq = pow2(dargs[1].clone(), Expr::Integer(2));
-      Ok(Expr::FunctionCall {
-        name: "Quantity".to_string(),
-        args: vec![inner_var, unit_sq].into(),
-      })
+      Ok(call("Quantity", vec![inner_var, unit_sq]))
     }
     // Random-process time slices delegate to their slice distribution.
     Expr::CurriedCall { func, args: targs } if targs.len() == 1 => {
@@ -1466,10 +1435,7 @@ fn variance_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
   if row_vecs.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "Variance".to_string(),
-      args: vec![Expr::List(rows.to_vec().into())].into(),
-    });
+    return Ok(call("Variance", vec![Expr::List(rows.to_vec().into())]));
   }
   let ncols = row_vecs[0].len();
   let mut col_vars = Vec::new();
@@ -1702,10 +1668,8 @@ fn thread_sqrt_into_piecewise(
     Expr::Integer(0)
   };
   let new_default = sqrt_of_value(&default, is_dist)?;
-  let result = Expr::FunctionCall {
-    name: "Piecewise".to_string(),
-    args: vec![Expr::List(new_pairs.into()), new_default].into(),
-  };
+  let result =
+    call("Piecewise", vec![Expr::List(new_pairs.into()), new_default]);
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?))
 }
 
@@ -1885,10 +1849,10 @@ fn geometric_mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
   if row_vecs.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "GeometricMean".to_string(),
-      args: vec![Expr::List(rows.to_vec().into())].into(),
-    });
+    return Ok(call(
+      "GeometricMean",
+      vec![Expr::List(rows.to_vec().into())],
+    ));
   }
   let ncols = row_vecs[0].len();
   let mut col_means = Vec::with_capacity(ncols);
@@ -2016,10 +1980,7 @@ fn harmonic_mean_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
     .iter()
     .map(|x| div2(Expr::Integer(1), x.clone()))
     .collect();
-  let sum = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: recips.into(),
-  })?;
+  let sum = crate::evaluator::evaluate_expr_to_expr(&call("Plus", recips))?;
   let n = items.len() as i128;
   crate::evaluator::evaluate_expr_to_expr(&div2(Expr::Integer(n), sum))
 }
@@ -2037,10 +1998,7 @@ fn harmonic_mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
   if row_vecs.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "HarmonicMean".to_string(),
-      args: vec![Expr::List(rows.to_vec().into())].into(),
-    });
+    return Ok(call("HarmonicMean", vec![Expr::List(rows.to_vec().into())]));
   }
   let ncols = row_vecs[0].len();
   let mut col_means = Vec::with_capacity(ncols);
@@ -2221,19 +2179,13 @@ fn covariance_pair(xs: &[Expr], ys: &[Expr]) -> Result<Expr, InterpreterError> {
   for (x, y) in xs.iter().zip(ys.iter()) {
     let dx = minus2(x.clone(), mean_x.clone());
     let dy = minus2(y.clone(), mean_y.clone());
-    let conj_dy = Expr::FunctionCall {
-      name: "Conjugate".to_string(),
-      args: vec![dy].into(),
-    };
+    let conj_dy = call1("Conjugate", dy);
     let product = times2(dx, conj_dy);
     let val = crate::evaluator::evaluate_expr_to_expr(&product)?;
     terms.push(val);
   }
 
-  let sum_expr = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  };
+  let sum_expr = call("Plus", terms);
   let sum_val = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
   let result = div2(sum_val, Expr::Integer((n - 1) as i128));
   crate::evaluator::evaluate_expr_to_expr(&result)
@@ -2255,10 +2207,7 @@ fn symbolic_covariance(
   ys: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let n = xs.len();
-  let conj = |e: &Expr| Expr::FunctionCall {
-    name: "Conjugate".to_string(),
-    args: vec![e.clone()].into(),
-  };
+  let conj = |e: &Expr| call1("Conjugate", e.clone());
   let result = if n == 2 {
     let dx = minus2(xs[0].clone(), xs[1].clone());
     let dy = minus2(conj(&ys[0]), conj(&ys[1]));
@@ -2271,13 +2220,7 @@ fn symbolic_covariance(
         minus2(times2(Expr::Integer(n as i128), x.clone()), sum_x.clone());
       terms.push(times2(coeff, conj(y)));
     }
-    div2(
-      Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: terms.into(),
-      },
-      Expr::Integer((n * (n - 1)) as i128),
-    )
+    div2(call("Plus", terms), Expr::Integer((n * (n - 1)) as i128))
   };
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
@@ -2603,14 +2546,8 @@ pub fn kendall_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let expr = Expr::FunctionCall {
     name: "Divide".to_string(),
-    args: vec![
-      Expr::Integer(num),
-      Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Integer(denom_sq)].into(),
-      },
-    ]
-    .into(),
+    args: vec![Expr::Integer(num), call1("Sqrt", Expr::Integer(denom_sq))]
+      .into(),
   };
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
@@ -2687,10 +2624,10 @@ pub fn hoeffding_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let k = (n - 2) * (n - 3) * d1 + d2 - 2 * (n - 2) * d3;
     let den = 16 * n * (n - 1) * (n - 2) * (n - 3) * (n - 4);
     if exact {
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Divide".to_string(),
-        args: vec![Expr::Integer(30 * k), Expr::Integer(den)].into(),
-      })
+      crate::evaluator::evaluate_expr_to_expr(&call(
+        "Divide",
+        vec![Expr::Integer(30 * k), Expr::Integer(den)],
+      ))
       .unwrap_or(Expr::Integer(0))
     } else {
       Expr::Real(30.0 * k as f64 / den as f64)
@@ -2914,10 +2851,10 @@ pub fn goodman_kruskal_gamma_ast(
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
     if exact {
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Divide".to_string(),
-        args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
-      })
+      crate::evaluator::evaluate_expr_to_expr(&call(
+        "Divide",
+        vec![Expr::Integer(num), Expr::Integer(den)],
+      ))
     } else {
       Ok(Expr::Real(num as f64 / den as f64))
     }
@@ -2973,10 +2910,7 @@ pub fn blomqvist_beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if exact || a * b == 0 {
       crate::evaluator::evaluate_expr_to_expr(&div2(
         Expr::Integer(num),
-        Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![Expr::Integer(a * b)].into(),
-        },
+        call1("Sqrt", Expr::Integer(a * b)),
       ))
     } else {
       Ok(Expr::Real(num as f64 / ((a * b) as f64).sqrt()))
@@ -2998,10 +2932,7 @@ fn correlation_from_covariance(cov_rows: &[Expr]) -> Option<Expr> {
     }
     cov.push(row.to_vec());
   }
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
+  let call = |name: &str, args: Vec<Expr>| call(name, args);
   let mut result = Vec::with_capacity(n);
   for i in 0..n {
     let mut row = Vec::with_capacity(n);
@@ -3126,28 +3057,16 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let w0 = ys[0].clone();
       let w1 = ys[1].clone();
       let diff = |a: &Expr, b: &Expr| minus2(a.clone(), b.clone());
-      let conj = |e: &Expr| Expr::FunctionCall {
-        name: "Conjugate".to_string(),
-        args: vec![e.clone()].into(),
-      };
-      let times = |a: Expr, b: Expr| Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![a, b].into(),
-      };
+      let conj = |e: &Expr| call1("Conjugate", e.clone());
+      let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
       let conj_diff = |a: &Expr, b: &Expr| minus2(conj(a), conj(b));
       let v_diff = diff(&v0, &v1);
       let w_diff = diff(&w0, &w1);
       let v_conj_diff = conj_diff(&v0, &v1);
       let w_conj_diff = conj_diff(&w0, &w1);
       let numer = times(v_diff.clone(), w_conj_diff.clone());
-      let sqrt_v = Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![times(v_diff, v_conj_diff)].into(),
-      };
-      let sqrt_w = Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![times(w_diff, w_conj_diff)].into(),
-      };
+      let sqrt_v = call1("Sqrt", times(v_diff, v_conj_diff));
+      let sqrt_w = call1("Sqrt", times(w_diff, w_conj_diff));
       let denom = times(sqrt_v, sqrt_w);
       // Return without re-evaluating to preserve the Times factor order
       // inside each Sqrt (which Woxi's canonical sort would otherwise
@@ -3199,10 +3118,7 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("Correlation", args));
   }
   let var_product = times2(var_x, var_y);
-  let denom = Expr::FunctionCall {
-    name: "Sqrt".to_string(),
-    args: vec![var_product].into(),
-  };
+  let denom = call1("Sqrt", var_product);
   let result = div2(cov_xy, denom);
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
@@ -3251,14 +3167,11 @@ fn distribution_raw_moment(
   var: &str,
 ) -> Result<Option<Expr>, InterpreterError> {
   let powered = pow2(Expr::Identifier(var.to_string()), Expr::Integer(n));
-  let distributed = Expr::FunctionCall {
-    name: "Distributed".to_string(),
-    args: vec![Expr::Identifier(var.to_string()), dist.clone()].into(),
-  };
-  let exp = Expr::FunctionCall {
-    name: "Expectation".to_string(),
-    args: vec![powered, distributed].into(),
-  };
+  let distributed = call(
+    "Distributed",
+    vec![Expr::Identifier(var.to_string()), dist.clone()],
+  );
+  let exp = call("Expectation", vec![powered, distributed]);
   let result = crate::evaluator::evaluate_expr_to_expr(&exp)?;
   if matches!(&result, Expr::FunctionCall { name, .. } if name == "Expectation")
   {
@@ -3370,18 +3283,12 @@ fn skellam_central_moment(a: &Expr, b: &Expr, n: i128) -> Expr {
     for &p in &lambda {
       factors.push(kappa(p));
     }
-    terms.push(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: factors.into(),
-    });
+    terms.push(call("Times", factors));
   }
   if terms.is_empty() {
     return Expr::Integer(0);
   }
-  Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  }
+  call("Plus", terms)
 }
 
 fn distribution_moment(
@@ -3458,10 +3365,7 @@ fn distribution_moment(
             ]
             .into(),
           },
-          Expr::FunctionCall {
-            name: "BernoulliB".to_string(),
-            args: vec![Expr::Integer(n)].into(),
-          },
+          call("BernoulliB", vec![Expr::Integer(n)]),
           pow2(Expr::Identifier("Pi".to_string()), Expr::Integer(n)),
           pow2(b, Expr::Integer(n)),
         ]
@@ -3488,14 +3392,7 @@ fn distribution_moment(
     } else {
       let diff = Expr::FunctionCall {
         name: "Plus".to_string(),
-        args: vec![
-          b,
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), a].into(),
-          },
-        ]
-        .into(),
+        args: vec![b, call("Times", vec![Expr::Integer(-1), a])].into(),
       };
       let num = pow2(diff, Expr::Integer(n));
       // 2^n * (n + 1), kept symbolic so large n does not overflow.
@@ -3524,10 +3421,7 @@ fn distribution_moment(
         name: "Times".to_string(),
         args: vec![
           pow2(Expr::Integer(-1), Expr::Integer(n / 2)),
-          Expr::FunctionCall {
-            name: "EulerE".to_string(),
-            args: vec![Expr::Integer(n)].into(),
-          },
+          call("EulerE", vec![Expr::Integer(n)]),
           pow2(s, Expr::Integer(n)),
         ]
         .into(),
@@ -3550,28 +3444,16 @@ fn distribution_moment(
       Expr::Integer(1)
     } else {
       pow2(
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), mean.clone()].into(),
-        },
+        call("Times", vec![Expr::Integer(-1), mean.clone()]),
         Expr::Integer(n - k),
       )
     };
-    terms.push(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![binom, neg_mean_pow, raw].into(),
-    });
+    terms.push(call("Times", vec![binom, neg_mean_pow, raw]));
   }
-  let sum = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  };
+  let sum = call("Plus", terms);
   // Expand so symbolic-parameter results collapse to their reduced form
   // (e.g. the Normal third central moment cancels to 0, Poisson's to m).
-  let expanded = Expr::FunctionCall {
-    name: "Expand".to_string(),
-    args: vec![sum].into(),
-  };
+  let expanded = call("Expand", vec![sum]);
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&expanded)?))
 }
 
@@ -3661,10 +3543,7 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Sum and divide by n
-  let sum_expr = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  };
+  let sum_expr = call("Plus", terms);
   let sum_val = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
   let result = div2(sum_val, Expr::Integer(n as i128));
   crate::evaluator::evaluate_expr_to_expr(&result)
@@ -3702,10 +3581,7 @@ pub fn cumulant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     let result = cumulant_from_raw_moments(&mu, r)?;
-    let expanded = Expr::FunctionCall {
-      name: "Expand".to_string(),
-      args: vec![result].into(),
-    };
+    let expanded = call("Expand", vec![result]);
     return crate::evaluator::evaluate_expr_to_expr(&expanded);
   }
 
@@ -3723,10 +3599,7 @@ pub fn cumulant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let powered = pow2(item.clone(), Expr::Integer(j as i128));
       terms.push(crate::evaluator::evaluate_expr_to_expr(&powered)?);
     }
-    let sum_expr = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    };
+    let sum_expr = call("Plus", terms);
     let div = div2(sum_expr, Expr::Integer(n));
     crate::evaluator::evaluate_expr_to_expr(&div)
   };
@@ -3826,15 +3699,9 @@ pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // 3 + (1 - 6 (1 - p) p)/(n (1 - p) p)
       let num = minus2(
         Expr::Integer(1),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(6), one_minus_p(&p), p.clone()].into(),
-        },
+        call("Times", vec![Expr::Integer(6), one_minus_p(&p), p.clone()]),
       );
-      let den = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![n, one_minus_p(&p), p.clone()].into(),
-      };
+      let den = call("Times", vec![n, one_minus_p(&p), p.clone()]);
       let result = three_plus(num, den);
       return crate::evaluator::evaluate_expr_to_expr(&result);
     }
@@ -3853,10 +3720,7 @@ pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// results are unaffected.
 fn maybe_expand_for_distribution(arg: &Expr, result: Expr) -> Expr {
   if as_distribution(arg).is_some() {
-    Expr::FunctionCall {
-      name: "Expand".to_string(),
-      args: vec![result].into(),
-    }
+    call("Expand", vec![result])
   } else {
     result
   }
@@ -3883,10 +3747,7 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       plus2(Expr::Integer(1), times2(Expr::Integer(4), p.clone())),
       pow2(p, Expr::Integer(2)),
     );
-    let sqrt = Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![times2(one_plus_p.clone(), t)].into(),
-    };
+    let sqrt = call1("Sqrt", times2(one_plus_p.clone(), t));
     let den = times2(one_plus_p, sqrt);
     let result = div2(num, den);
     return crate::evaluator::evaluate_expr_to_expr(&result);
@@ -3894,10 +3755,7 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Geometric: Skewness = (2 - p)/Sqrt[1 - p]. Built directly to preserve the
   // compact form (the generic moment ratio leaves CentralMoment unevaluated).
   if let Some(p) = one_param_of(&args[0], "GeometricDistribution") {
-    let sqrt = Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![minus2(Expr::Integer(1), p.clone())].into(),
-    };
+    let sqrt = call1("Sqrt", minus2(Expr::Integer(1), p.clone()));
     let result = div2(minus2(Expr::Integer(2), p), sqrt);
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
@@ -3905,10 +3763,7 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // scale being r (NegativeBinomial) or n (Pascal). Binomial has the (1 - 2 p)
   // form. Built directly so the compact shapes are preserved.
   {
-    let sqrt = |e| Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![e].into(),
-    };
+    let sqrt = |e| call1("Sqrt", e);
     let one_minus_p = |p: &Expr| minus2(Expr::Integer(1), p.clone());
     if let Some((r, p)) =
       two_params_of(&args[0], "NegativeBinomialDistribution")
@@ -3928,10 +3783,7 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     if let Some((n, p)) = two_params_of(&args[0], "BinomialDistribution") {
       let num = minus2(Expr::Integer(1), times2(Expr::Integer(2), p.clone()));
-      let scale = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![n, one_minus_p(&p), p.clone()].into(),
-      };
+      let scale = call("Times", vec![n, one_minus_p(&p), p.clone()]);
       let result = div2(num, sqrt(scale));
       return crate::evaluator::evaluate_expr_to_expr(&result);
     }
@@ -3950,10 +3802,10 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let m2_pow = Expr::BinaryOp {
       op: BinaryOperator::Power,
       left: Box::new(m2),
-      right: Box::new(Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(-3), Expr::Integer(2)].into(),
-      }),
+      right: Box::new(call(
+        "Rational",
+        vec![Expr::Integer(-3), Expr::Integer(2)],
+      )),
     };
     times2(m3, m2_pow)
   } else {
@@ -3986,18 +3838,9 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !items.is_empty()
     && items.iter().all(|r| matches!(r, Expr::List(_)))
   {
-    let squared = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![args[0].clone(), Expr::Integer(2)].into(),
-    };
-    let mean = Expr::FunctionCall {
-      name: "Mean".to_string(),
-      args: vec![squared].into(),
-    };
-    let sqrt = Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![mean].into(),
-    };
+    let squared = call("Power", vec![args[0].clone(), Expr::Integer(2)]);
+    let mean = call1("Mean", squared);
+    let sqrt = call1("Sqrt", mean);
     return crate::evaluator::evaluate_expr_to_expr(&sqrt);
   }
   match &args[0] {
@@ -4065,21 +3908,12 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // it.
       let squares: Vec<Expr> = items
         .iter()
-        .map(|item| Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![item.clone(), Expr::Integer(2)].into(),
-        })
+        .map(|item| call("Power", vec![item.clone(), Expr::Integer(2)]))
         .collect();
       let mean_square = Expr::FunctionCall {
         name: "Divide".to_string(),
-        args: vec![
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: squares.into(),
-          },
-          Expr::Integer(items.len() as i128),
-        ]
-        .into(),
+        args: vec![call("Plus", squares), Expr::Integer(items.len() as i128)]
+          .into(),
       };
       Ok(crate::evaluator::evaluate_expr_to_expr(&make_sqrt(
         mean_square,
@@ -4182,10 +4016,7 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && name == "ErlangDistribution"
     && dargs.len() == 2
   {
-    let gamma = Expr::FunctionCall {
-      name: "GammaDistribution".to_string(),
-      args: erlang_gamma_dargs(dargs)?.into(),
-    };
+    let gamma = call("GammaDistribution", erlang_gamma_dargs(dargs)?);
     let mut new_args = args.to_vec();
     new_args[0] = gamma;
     return quantile_ast(&new_args);
@@ -4362,14 +4193,8 @@ fn quantile_parametric(
   d: &Expr,
 ) -> Result<Expr, InterpreterError> {
   use crate::evaluator::evaluate_expr_to_expr as ev;
-  let plus = |x: Expr, y: Expr| Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![x, y].into(),
-  };
-  let times = |x: Expr, y: Expr| Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![x, y].into(),
-  };
+  let plus = |x: Expr, y: Expr| call("Plus", vec![x, y]);
+  let times = |x: Expr, y: Expr| call("Times", vec![x, y]);
   // q must be numeric (Integer, Rational, or Real); otherwise leave symbolic.
   if try_eval_to_f64(q).is_none() {
     return Ok(Expr::FunctionCall {
@@ -4393,10 +4218,7 @@ fn quantile_parametric(
   let nb = ev(&plus(Expr::Integer(n), b.clone()))?;
   let x = ev(&plus(a.clone(), times(nb, q.clone())))?;
   // k = Floor[x]
-  let k_expr = ev(&Expr::FunctionCall {
-    name: "Floor".to_string(),
-    args: vec![x.clone()].into(),
-  })?;
+  let k_expr = ev(&call("Floor", vec![x.clone()]))?;
   let k = match &k_expr {
     Expr::Integer(v) => *v,
     other => try_eval_to_f64(other)
@@ -4465,10 +4287,10 @@ pub fn moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Raise each element to power r and evaluate, then compute mean
   let mut powered = Vec::with_capacity(items.len());
   for x in items {
-    let p = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![x.clone(), r.clone()].into(),
-    })?;
+    let p = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Power",
+      vec![x.clone(), r.clone()],
+    ))?;
     powered.push(p);
   }
 
@@ -4488,10 +4310,7 @@ fn factorial_moment_of_distribution(
   dargs: &[Expr],
   r: i128,
 ) -> Option<Expr> {
-  let times = |fs: Vec<Expr>| Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: fs.into(),
-  };
+  let times = |fs: Vec<Expr>| call("Times", fs);
   let r_factorial: i128 = (1..=r).product::<i128>().max(1);
   match (name, dargs) {
     // Poisson: E[X^(r)] = lambda^r (the defining property).
@@ -4591,36 +4410,24 @@ fn factorial_moment_via_expectation(
       factors.push(if i == 0 {
         var_expr.clone()
       } else {
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![var_expr.clone(), Expr::Integer(-i)].into(),
-        }
+        call("Plus", vec![var_expr.clone(), Expr::Integer(-i)])
       });
     }
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: factors.into(),
-    }
+    call("Times", factors)
   };
 
   // Expand into a monomial sum so Expectation resolves each moment exactly.
   let polynomial =
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Expand".to_string(),
-      args: vec![falling].into(),
-    })?;
+    crate::evaluator::evaluate_expr_to_expr(&call("Expand", vec![falling]))?;
 
-  let distributed = Expr::FunctionCall {
-    name: "Distributed".to_string(),
-    args: vec![var_expr, dist.clone()].into(),
-  };
+  let distributed = call("Distributed", vec![var_expr, dist.clone()]);
   // Route through the main evaluator (rather than calling expectation_ast
   // directly) so the exact symbolic-moment path is taken instead of the
   // numerical-integration fallback.
-  let result = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Expectation".to_string(),
-    args: vec![polynomial, distributed].into(),
-  })?;
+  let result = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Expectation",
+    vec![polynomial, distributed],
+  ))?;
 
   // If Expectation could not resolve, it returns an Expectation[...] call.
   if matches!(&result, Expr::FunctionCall { name, .. } if name == "Expectation")
@@ -4684,22 +4491,16 @@ pub fn factorial_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if k == 0 {
             x.clone()
           } else {
-            Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: vec![x.clone(), Expr::Integer(-k)].into(),
-            }
+            call("Plus", vec![x.clone(), Expr::Integer(-k)])
           }
         })
         .collect();
-      return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: factors.into(),
-      });
+      return crate::evaluator::evaluate_expr_to_expr(&call("Times", factors));
     }
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "FactorialPower".to_string(),
-      args: vec![x.clone(), r.clone()].into(),
-    })
+    crate::evaluator::evaluate_expr_to_expr(&call(
+      "FactorialPower",
+      vec![x.clone(), r.clone()],
+    ))
   };
 
   let mut terms = Vec::with_capacity(items.len());
@@ -4716,12 +4517,9 @@ pub fn factorial_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         for (x, r) in coords.iter().zip(orders.iter()) {
           factors.push(factorial_power(x, r)?);
         }
-        terms.push(crate::evaluator::evaluate_expr_to_expr(
-          &Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: factors.into(),
-          },
-        )?);
+        terms.push(crate::evaluator::evaluate_expr_to_expr(&call(
+          "Times", factors,
+        ))?);
       }
     }
     r => {
@@ -4749,16 +4547,10 @@ pub fn mean_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut abs_devs = Vec::new();
     for item in items {
       let diff = minus2(item.clone(), mean_expr.clone());
-      let abs_diff = Expr::FunctionCall {
-        name: "Abs".to_string(),
-        args: vec![diff].into(),
-      };
+      let abs_diff = call("Abs", vec![diff]);
       abs_devs.push(abs_diff);
     }
-    let sum = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: abs_devs.into(),
-    };
+    let sum = call("Plus", abs_devs);
     let result = div2(sum, Expr::Integer(n));
     crate::evaluator::evaluate_expr_to_expr(&result)
   } else {
@@ -4780,10 +4572,7 @@ pub fn median_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut abs_devs = Vec::new();
     for item in items {
       let diff = minus2(item.clone(), median_expr.clone());
-      let abs_diff = Expr::FunctionCall {
-        name: "Abs".to_string(),
-        args: vec![diff].into(),
-      };
+      let abs_diff = call("Abs", vec![diff]);
       abs_devs.push(crate::evaluator::evaluate_expr_to_expr(&abs_diff)?);
     }
     // Return median of the absolute deviations
@@ -5001,10 +4790,7 @@ fn format_location_test_result(
                     name: "Rule".to_string(),
                     args: vec![
                       Expr::Integer(2),
-                      Expr::FunctionCall {
-                        name: "GrayLevel".to_string(),
-                        args: vec![Expr::Real(0.7)].into(),
-                      },
+                      call("GrayLevel", vec![Expr::Real(0.7)]),
                     ]
                     .into(),
                   },
@@ -5012,10 +4798,7 @@ fn format_location_test_result(
                     name: "Rule".to_string(),
                     args: vec![
                       Expr::Integer(2),
-                      Expr::FunctionCall {
-                        name: "GrayLevel".to_string(),
-                        args: vec![Expr::Real(0.7)].into(),
-                      },
+                      call("GrayLevel", vec![Expr::Real(0.7)]),
                     ]
                     .into(),
                   },
@@ -5080,10 +4863,7 @@ pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Compute PDF[dist, xi] for each data point
   let mut pdf_values = Vec::with_capacity(data.len());
   for xi in data {
-    let pdf_expr = Expr::FunctionCall {
-      name: "PDF".to_string(),
-      args: vec![dist.clone(), xi.clone()].into(),
-    };
+    let pdf_expr = call("PDF", vec![dist.clone(), xi.clone()]);
     let pdf_val = crate::evaluator::evaluate_expr_to_expr(&pdf_expr)?;
     pdf_values.push(pdf_val);
   }
@@ -5092,10 +4872,7 @@ pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let product = if pdf_values.len() == 1 {
     pdf_values.into_iter().next().unwrap()
   } else {
-    let product_expr = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: pdf_values.into(),
-    };
+    let product_expr = call("Times", pdf_values);
     crate::evaluator::evaluate_expr_to_expr(&product_expr)?
   };
 
@@ -5105,10 +4882,7 @@ pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(num_to_expr(val));
     }
     // Try N[product]
-    let n_expr = Expr::FunctionCall {
-      name: "N".to_string(),
-      args: vec![product.clone()].into(),
-    };
+    let n_expr = call1("N", product.clone());
     if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&n_expr)
       && try_eval_to_f64(&result).is_some()
     {
@@ -5322,10 +5096,10 @@ pub fn longitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let coords = extract_geo_coords(&args[0]);
   match coords {
-    Some((_, lon)) => Ok(Expr::FunctionCall {
-      name: "Quantity".to_string(),
-      args: vec![lon, Expr::String("AngularDegrees".to_string())].into(),
-    }),
+    Some((_, lon)) => Ok(call(
+      "Quantity",
+      vec![lon, Expr::String("AngularDegrees".to_string())],
+    )),
     None => Ok(unevaluated("Longitude", args)),
   }
 }
@@ -5337,10 +5111,10 @@ pub fn latitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let coords = extract_geo_coords(&args[0]);
   match coords {
-    Some((lat, _)) => Ok(Expr::FunctionCall {
-      name: "Quantity".to_string(),
-      args: vec![lat, Expr::String("AngularDegrees".to_string())].into(),
-    }),
+    Some((lat, _)) => Ok(call(
+      "Quantity",
+      vec![lat, Expr::String("AngularDegrees".to_string())],
+    )),
     None => Ok(unevaluated("Latitude", args)),
   }
 }
@@ -5373,14 +5147,14 @@ pub fn latitude_longitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match extract_geo_coords(&args[0]) {
     Some((lat, lon)) => Ok(Expr::List(
       vec![
-        Expr::FunctionCall {
-          name: "Quantity".to_string(),
-          args: vec![lat, Expr::String("AngularDegrees".to_string())].into(),
-        },
-        Expr::FunctionCall {
-          name: "Quantity".to_string(),
-          args: vec![lon, Expr::String("AngularDegrees".to_string())].into(),
-        },
+        call(
+          "Quantity",
+          vec![lat, Expr::String("AngularDegrees".to_string())],
+        ),
+        call(
+          "Quantity",
+          vec![lon, Expr::String("AngularDegrees".to_string())],
+        ),
       ]
       .into(),
     )),
@@ -6390,10 +6164,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
                 name: "Plus".to_string(),
                 args: vec![
                   n.clone(),
-                  Expr::FunctionCall {
-                    name: "Rational".to_string(),
-                    args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
-                  },
+                  call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
                 ]
                 .into(),
               },
@@ -6411,10 +6182,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
             name: "Power".to_string(),
             args: vec![
               Expr::Constant("E".to_string()),
-              Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![Expr::Integer(-1), n].into(),
-              },
+              call("Times", vec![Expr::Integer(-1), n]),
             ]
             .into(),
           },
@@ -6429,10 +6197,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
         && args.len() == 1
         && is_pure_var(&args[0], var) =>
     {
-      Some(Expr::FunctionCall {
-        name: "Log".to_string(),
-        args: vec![Expr::Identifier(var.to_string())].into(),
-      })
+      Some(call("Log", vec![Expr::Identifier(var.to_string())]))
     }
 
     // Power[base, exp] - handle var^k, k^var, etc.
@@ -6469,10 +6234,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
       left,
       right,
     } => {
-      let neg_right = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), *right.clone()].into(),
-      };
+      let neg_right = call("Times", vec![Expr::Integer(-1), *right.clone()]);
       asymptotic_sum(&[*left.clone(), neg_right], var)
     }
 
@@ -6487,10 +6249,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
       if result_factors.len() == 1 {
         Some(result_factors.into_iter().next().unwrap())
       } else {
-        Some(Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: result_factors.into(),
-        })
+        Some(call("Times", result_factors))
       }
     }
 
@@ -6502,10 +6261,7 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
     } => {
       let l = discrete_asymptotic_leading(left, var)?;
       let r = discrete_asymptotic_leading(right, var)?;
-      Some(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![l, r].into(),
-      })
+      Some(call("Times", vec![l, r]))
     }
 
     // BinaryOp Divide
@@ -6587,10 +6343,7 @@ fn stirling_approx(var: &str) -> Expr {
             name: "Plus".to_string(),
             args: vec![
               n.clone(),
-              Expr::FunctionCall {
-                name: "Rational".to_string(),
-                args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-              },
+              call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
             ]
             .into(),
           },
@@ -6598,19 +6351,16 @@ fn stirling_approx(var: &str) -> Expr {
         .into(),
       },
       // Sqrt[2*Pi]
-      make_sqrt(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())].into(),
-      }),
+      make_sqrt(call(
+        "Times",
+        vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
+      )),
       // E^(-n)
       Expr::FunctionCall {
         name: "Power".to_string(),
         args: vec![
           Expr::Constant("E".to_string()),
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), n].into(),
-          },
+          call("Times", vec![Expr::Integer(-1), n]),
         ]
         .into(),
       },
@@ -6717,10 +6467,7 @@ fn asymptotic_sum(terms: &[Expr], var: &str) -> Option<Expr> {
     } else if (order - best_order).abs() < 1e-10 {
       // Same order - need to add them (e.g. 3n^2 + 5n^2 -> 8n^2)
       // For simplicity, if they have the same growth order, keep as sum
-      best_expr = Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![best_expr, asym].into(),
-      };
+      best_expr = call("Plus", vec![best_expr, asym]);
     }
   }
   Some(best_expr)
@@ -6768,10 +6515,7 @@ fn asymptotic_binomial(
           Expr::FunctionCall {
             name: "Plus".to_string(),
             args: vec![
-              Expr::FunctionCall {
-                name: "Rational".to_string(),
-                args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-              },
+              call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
               n.clone(),
             ]
             .into(),
@@ -6830,10 +6574,10 @@ pub fn covariance_function_data(
     crate::emit_message(&format!(
       "CovarianceFunction::bdlag: The lag specification {h} should be a symbol, an integer with magnitude less than the length of the data or a range specification indicating such integers."
     ));
-    return Some(Ok(Expr::FunctionCall {
-      name: "CovarianceFunction".to_string(),
-      args: vec![data.clone(), lag.clone()].into(),
-    }));
+    return Some(Ok(call(
+      "CovarianceFunction",
+      vec![data.clone(), lag.clone()],
+    )));
   }
   let mean = match mean_ast(&[Expr::List(items.to_vec().into())]) {
     Ok(m) => m,
@@ -6845,10 +6589,7 @@ pub fn covariance_function_data(
   for t in 0..(n - h_us) {
     terms.push(times2(dev(&items[t]), dev(&items[t + h_us])));
   }
-  let sum = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  };
+  let sum = call("Plus", terms);
   let result = div2(sum, Expr::Integer(n as i128));
   Some(crate::evaluator::evaluate_expr_to_expr(&result))
 }
@@ -6884,10 +6625,7 @@ pub fn absolute_correlation_function_ast(
       .map(|t| times2(items[t].clone(), items[t + h_us].clone()))
       .collect();
     crate::evaluator::evaluate_expr_to_expr(&div2(
-      Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: terms.into(),
-      },
+      call("Plus", terms),
       Expr::Integer(n as i128),
     ))
   };
@@ -6952,10 +6690,7 @@ fn process_covariance(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = proc else {
     return None;
   };
-  let call = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
-    name: n.to_string(),
-    args: a.into(),
-  };
+  let call = |n: &str, a: Vec<Expr>| call(n, a);
   let neg = |a: Expr| times2(Expr::Integer(-1), a);
   let sq = |a: &Expr| pow2(a.clone(), Expr::Integer(2));
   let min = call("Min", vec![t1.clone(), t2.clone()]);
@@ -7061,16 +6796,13 @@ pub fn biweight_midvariance_ast(
     _ => return unevaluated(),
   };
   let ev = crate::evaluator::evaluate_expr_to_expr;
-  let call = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
-    name: n.to_string(),
-    args: a.into(),
-  };
-  let median = ev(&call("Median", vec![args[0].clone()]))?;
+  let call = |n: &str, a: Vec<Expr>| call(n, a);
+  let median = ev(&call1("Median", args[0].clone()))?;
   let deviations: Vec<Expr> = items
     .iter()
     .map(|x| call("Abs", vec![minus2(x.clone(), median.clone())]))
     .collect();
-  let mad = ev(&call("Median", vec![Expr::List(deviations.into())]))?;
+  let mad = ev(&call1("Median", Expr::List(deviations.into())))?;
   match try_eval_to_f64(&mad) {
     Some(v) if v != 0.0 => {}
     Some(_) => return Ok(Expr::Identifier("Indeterminate".to_string())),
@@ -7102,10 +6834,7 @@ pub fn biweight_midvariance_ast(
   if den_terms.is_empty() {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
-  let total = |ts: Vec<Expr>| Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: ts.into(),
-  };
+  let total = |ts: Vec<Expr>| call("Plus", ts);
   ev(&div2(
     times2(Expr::Integer(items.len() as i128), total(num_terms)),
     pow2(total(den_terms), Expr::Integer(2)),
@@ -7118,10 +6847,7 @@ pub fn process_correlation(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = proc else {
     return None;
   };
-  let call = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
-    name: n.to_string(),
-    args: a.into(),
-  };
+  let call = |n: &str, a: Vec<Expr>| call(n, a);
   let neg = |a: Expr| times2(Expr::Integer(-1), a);
   let sq = |a: &Expr| pow2(a.clone(), Expr::Integer(2));
   let min = call("Min", vec![t1.clone(), t2.clone()]);
@@ -7129,10 +6855,9 @@ pub fn process_correlation(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
     // The scale cancels for all three counting/Brownian cases.
     ("WienerProcess", [_, _])
     | ("PoissonProcess", [_])
-    | ("BinomialProcess", [_]) => Some(div2(
-      min,
-      call("Sqrt", vec![times2(t1.clone(), t2.clone())]),
-    )),
+    | ("BinomialProcess", [_]) => {
+      Some(div2(min, call1("Sqrt", times2(t1.clone(), t2.clone()))))
+    }
     ("OrnsteinUhlenbeckProcess", [_, _, th]) => Some(pow2(
       Expr::Constant("E".to_string()),
       neg(times2(
@@ -7164,12 +6889,12 @@ pub fn process_correlation(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
         times2(plus2(neg(ta.clone()), tb.clone()), min),
       );
       let leg = |t: &Expr| {
-        call(
+        call1(
           "Sqrt",
-          vec![times2(
+          times2(
             plus2(t.clone(), neg(ta.clone())),
             plus2(neg(t.clone()), tb.clone()),
-          )],
+          ),
         )
       };
       Some(div2(numer, times2(leg(t1), leg(t2))))
@@ -7184,8 +6909,8 @@ pub fn process_correlation(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
       Some(div2(
         bump(min),
         times2(
-          call("Sqrt", vec![bump(t1.clone())]),
-          call("Sqrt", vec![bump(t2.clone())]),
+          call1("Sqrt", bump(t1.clone())),
+          call1("Sqrt", bump(t2.clone())),
         ),
       ))
     }
@@ -7203,10 +6928,7 @@ pub fn process_absolute_correlation(
   let Expr::FunctionCall { name, args } = proc else {
     return None;
   };
-  let call = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
-    name: n.to_string(),
-    args: a.into(),
-  };
+  let call = |n: &str, a: Vec<Expr>| call(n, a);
   let neg = |a: Expr| times2(Expr::Integer(-1), a);
   let sq = |a: &Expr| pow2(a.clone(), Expr::Integer(2));
   let min = call("Min", vec![t1.clone(), t2.clone()]);
@@ -7377,20 +7099,14 @@ fn eval_once(e: Expr) -> Expr {
 
 // ─── AST builder helpers ────────────────────────────────────────────────
 
-fn fc(name: &str, args: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  }
-}
 fn cf_plus(xs: Vec<Expr>) -> Expr {
-  fc("Plus", xs)
+  call("Plus", xs)
 }
 fn cf_times(xs: Vec<Expr>) -> Expr {
-  fc("Times", xs)
+  call("Times", xs)
 }
 fn cf_pow(b: Expr, e: Expr) -> Expr {
-  fc("Power", vec![b, e])
+  call("Power", vec![b, e])
 }
 fn cf_div(n: Expr, d: Expr) -> Expr {
   div2(n, d)
@@ -7399,7 +7115,7 @@ fn cf_neg(x: Expr) -> Expr {
   cf_times(vec![Expr::Integer(-1), x])
 }
 fn cf_abs(x: Expr) -> Expr {
-  fc("Abs", vec![x])
+  call1("Abs", x)
 }
 fn cf_abs_diff(s: &Expr, t: &Expr) -> Expr {
   cf_abs(cf_plus(vec![s.clone(), cf_neg(t.clone())]))
@@ -7444,7 +7160,7 @@ fn cov_ma1(b: &Expr, sigma2: &Expr, s: &Expr, t: &Expr) -> Expr {
     ]
     .into(),
   );
-  fc(
+  call(
     "Piecewise",
     vec![Expr::List(vec![case1, case0].into()), Expr::Integer(0)],
   )
@@ -7508,7 +7224,7 @@ fn cov_arma11(a: &Expr, b: &Expr, sigma2: &Expr, s: &Expr, t: &Expr) -> Expr {
     ]
     .into(),
   );
-  fc(
+  call(
     "Piecewise",
     vec![Expr::List(vec![case].into()), default_value],
   )
@@ -7539,10 +7255,7 @@ pub fn characteristic_function_ast(
   // special cases match Identifier("I")
   let i_unit = || Expr::Identifier("I".to_string());
   let e_sym = || Expr::Identifier("E".to_string());
-  let call = |name: &str, fargs: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: fargs.into(),
-  };
+  let call = |name: &str, fargs: Vec<Expr>| call(name, fargs);
   // E^(I*t) and E^(I*c*t)
   let e_it = |factors: Vec<Expr>| {
     let mut f = vec![i_unit()];
@@ -7926,7 +7639,7 @@ pub fn characteristic_function_ast(
                 Expr::Integer(-1),
                 b.clone(),
                 t.clone(),
-                call("Sign", vec![t.clone()]),
+                call1("Sign", t.clone()),
               ],
             ),
           ],
@@ -7940,7 +7653,7 @@ pub fn characteristic_function_ast(
         e_sym(),
         call(
           "Times",
-          vec![Expr::Integer(-1), t.clone(), call("Sign", vec![t.clone()])],
+          vec![Expr::Integer(-1), t.clone(), call1("Sign", t.clone())],
         ),
       ),
       true,
@@ -7975,10 +7688,7 @@ pub fn moment_generating_function_ast(
   let t = args[1].clone();
 
   let e_sym = || Expr::Identifier("E".to_string());
-  let call = |name: &str, fargs: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: fargs.into(),
-  };
+  let call = |name: &str, fargs: Vec<Expr>| call(name, fargs);
   // E^t and E^(c*t)
   let e_t = |factors: Vec<Expr>| {
     if factors.is_empty() {
@@ -8343,10 +8053,7 @@ fn is_e_base(e: &Expr) -> bool {
 ///   E^X → X,  base^(-a) → -(a Log[base]),  base^exp → exp Log[base],
 ///   otherwise → Log[f].
 fn cgf_term(f: &Expr) -> Expr {
-  let log = |e: Expr| Expr::FunctionCall {
-    name: "Log".to_string(),
-    args: vec![e].into(),
-  };
+  let log = |e: Expr| call("Log", vec![e]);
   if let Some((base, exp)) = as_power_pair(f) {
     if is_e_base(base) {
       exp.clone()
@@ -8355,15 +8062,9 @@ fn cgf_term(f: &Expr) -> Expr {
       operand,
     } = exp
     {
-      neg1(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![(**operand).clone(), log(base.clone())].into(),
-      })
+      neg1(call("Times", vec![(**operand).clone(), log(base.clone())]))
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![exp.clone(), log(base.clone())].into(),
-      }
+      call("Times", vec![exp.clone(), log(base.clone())])
     }
   } else {
     log(f.clone())
@@ -8389,14 +8090,8 @@ pub fn cumulant_generating_function_ast(
   let t = args[1].clone();
 
   let e_sym = || Expr::Identifier("E".to_string());
-  let call = |name: &str, fargs: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: fargs.into(),
-  };
-  let log = |e: Expr| Expr::FunctionCall {
-    name: "Log".to_string(),
-    args: vec![e].into(),
-  };
+  let call = |name: &str, fargs: Vec<Expr>| call(name, fargs);
+  let log = |e: Expr| call("Log", vec![e]);
 
   let (dist_name, dargs) = match &args[0] {
     Expr::FunctionCall { name, args } => (name.as_str(), args.as_slice()),
@@ -8512,10 +8207,7 @@ pub fn factorial_moment_generating_function_ast(
   if args.len() != 2 {
     return Ok(uneval());
   }
-  let log_t = Expr::FunctionCall {
-    name: "Log".to_string(),
-    args: vec![args[1].clone()].into(),
-  };
+  let log_t = call("Log", vec![args[1].clone()]);
   // Symbolic NormalDistribution keeps E^(m Log[t] + (s^2 Log[t]^2)/2)
   // unfolded like wolframscript (evaluation would extract t^m; both
   // engines only do that folding for numeric m).
@@ -8526,10 +8218,7 @@ pub fn factorial_moment_generating_function_ast(
     && dargs.iter().all(|d| matches!(d, Expr::Identifier(_)))
   {
     let (m, sd) = (dargs[0].clone(), dargs[1].clone());
-    let times = |f: Vec<Expr>| Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: f.into(),
-    };
+    let times = |f: Vec<Expr>| call("Times", f);
     let sq = |e: Expr| pow2(e, Expr::Integer(2));
     return Ok(pow2(
       Expr::Identifier("E".to_string()),
@@ -8567,18 +8256,17 @@ pub fn central_moment_generating_function_ast(
   {
     return Ok(uneval());
   }
-  let mean = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Mean".to_string(),
-    args: vec![args[0].clone()].into(),
-  })?;
+  let mean = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Mean",
+    vec![args[0].clone()],
+  ))?;
   if matches!(&mean, Expr::FunctionCall { name, .. } if name == "Mean") {
     return Ok(uneval());
   }
-  let damp_exponent =
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), mean.clone(), args[1].clone()].into(),
-    })?;
+  let damp_exponent = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Times",
+    vec![Expr::Integer(-1), mean.clone(), args[1].clone()],
+  ))?;
   // UniformDistribution keeps wolframscript's numerator order
   // (-E^(a t) + E^(b t)); a re-evaluated product would resort it.
   if let Expr::FunctionCall { name, args: dargs } = &args[0]
@@ -8590,15 +8278,9 @@ pub fn central_moment_generating_function_ast(
     let (a, b) = (minmax[0].clone(), minmax[1].clone());
     let symbolic = matches!(&args[1], Expr::Identifier(_))
       && minmax.iter().all(|d| matches!(d, Expr::Identifier(_)));
-    let times = |f: Vec<Expr>| Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: f.into(),
-    };
+    let times = |f: Vec<Expr>| call("Times", f);
     let e_pow = |e: Expr| pow2(Expr::Identifier("E".to_string()), e);
-    let half = Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-    };
+    let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
     let t = args[1].clone();
     let expr = div2(
       Expr::FunctionCall {
@@ -8618,14 +8300,7 @@ pub fn central_moment_generating_function_ast(
           args: vec![times(vec![Expr::Integer(-1), a.clone()]), b.clone()]
             .into(),
         },
-        e_pow(times(vec![
-          half,
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![a, b].into(),
-          },
-          t.clone(),
-        ])),
+        e_pow(times(vec![half, call("Plus", vec![a, b]), t.clone()])),
         t,
       ]),
     );
@@ -8662,10 +8337,7 @@ pub fn central_moment_generating_function_ast(
     if matches!(damp_exponent, Expr::Integer(0)) {
       return Ok(mgf);
     }
-    let raw = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![expo, damp_exponent].into(),
-    };
+    let raw = call("Plus", vec![expo, damp_exponent]);
     // Keep wolframscript's exponent order (MGF exponent first, then
     // -mean*t) unless evaluation cancels terms — then use the
     // simplified exponent (e.g. the Normal case collapses to
@@ -8689,10 +8361,7 @@ pub fn central_moment_generating_function_ast(
     return Ok(pow2(Expr::Identifier("E".to_string()), exponent));
   }
   let damp = pow2(Expr::Identifier("E".to_string()), damp_exponent);
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![damp, mgf].into(),
-  })
+  crate::evaluator::evaluate_expr_to_expr(&call("Times", vec![damp, mgf]))
 }
 
 // ─── CorrelationFunction ─────────────────────────────────────────────
@@ -8739,32 +8408,20 @@ pub fn correlation_function_ast(
     name: "Plus".to_string(),
     args: vec![
       x.clone(),
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), mean.clone()].into(),
-      },
+      call("Times", vec![Expr::Integer(-1), mean.clone()]),
     ]
     .into(),
   };
   let sum = |terms: Vec<Expr>| -> Result<Expr, InterpreterError> {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    })
+    crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms))
   };
   let len = data.len();
   let num_terms: Vec<Expr> = (0..len - lag)
-    .map(|i| Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![dev(&data[i]), dev(&data[i + lag])].into(),
-    })
+    .map(|i| call("Times", vec![dev(&data[i]), dev(&data[i + lag])]))
     .collect();
   let den_terms: Vec<Expr> = data
     .iter()
-    .map(|x| Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![dev(x), dev(x)].into(),
-    })
+    .map(|x| call("Times", vec![dev(x), dev(x)]))
     .collect();
   let numerator = sum(num_terms)?;
   let denominator = sum(den_terms)?;
@@ -9059,10 +8716,10 @@ pub fn cycle_index_polynomial_ast(
   let terms: Vec<Expr> = type_counts
     .into_iter()
     .map(|(mult, count)| {
-      let mut factors: Vec<Expr> = vec![Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(count), Expr::Integer(order)].into(),
-      }];
+      let mut factors: Vec<Expr> = vec![call(
+        "Rational",
+        vec![Expr::Integer(count), Expr::Integer(order)],
+      )];
       for (k, &m) in mult.iter().enumerate().skip(1) {
         if m == 0 {
           continue;
@@ -9074,16 +8731,10 @@ pub fn cycle_index_polynomial_ast(
           pow2(base, Expr::Integer(m as i128))
         });
       }
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: factors.into(),
-      }
+      call("Times", factors)
     })
     .collect();
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  })
+  crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms))
 }
 
 /// Expand PermutationGroup generators into the full group via BFS closure.
@@ -9321,10 +8972,8 @@ pub fn group_stabilizer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => return Ok(unevaluated()),
     }
   }
-  let permutation_group = |gens: Vec<Expr>| Expr::FunctionCall {
-    name: "PermutationGroup".to_string(),
-    args: vec![Expr::List(gens.into())].into(),
-  };
+  let permutation_group =
+    |gens: Vec<Expr>| call("PermutationGroup", vec![Expr::List(gens.into())]);
   if let Expr::FunctionCall { name, args: gargs } = &args[0]
     && gargs.len() == 1
     && let Expr::Integer(n) = &gargs[0]
@@ -9412,10 +9061,6 @@ fn erlang_b_symbolic(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
-  let fc = |name: &str, fargs: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: fargs.into(),
-  };
   let plausible_symbol = |e: &Expr| {
     !matches!(e, Expr::String(_) | Expr::List(_))
       && try_eval_to_f64(e).is_none()
@@ -9454,23 +9099,23 @@ fn erlang_b_symbolic(
   }
   let (c, a) = (args[0].clone(), args[1].clone());
   // a^c * E^(-a) / Gamma[1 + c, a]
-  let body = fc(
+  let body = call(
     "Times",
     vec![
-      fc("Power", vec![a.clone(), c.clone()]),
-      fc(
+      call("Power", vec![a.clone(), c.clone()]),
+      call(
         "Power",
         vec![
           Expr::Constant("E".to_string()),
-          fc("Times", vec![Expr::Integer(-1), a.clone()]),
+          call("Times", vec![Expr::Integer(-1), a.clone()]),
         ],
       ),
-      fc(
+      call(
         "Power",
         vec![
-          fc(
+          call(
             "Gamma",
-            vec![fc("Plus", vec![Expr::Integer(1), c.clone()]), a.clone()],
+            vec![call("Plus", vec![Expr::Integer(1), c.clone()]), a.clone()],
           ),
           Expr::Integer(-1),
         ],
@@ -9491,10 +9136,10 @@ fn erlang_b_symbolic(
   };
   let mut conds: Vec<Expr> = Vec::new();
   if c_num.is_none() {
-    conds.push(fc("Element", vec![c.clone(), integers()]));
+    conds.push(call("Element", vec![c.clone(), integers()]));
   }
   if a_num.is_none() {
-    conds.push(fc("Element", vec![a.clone(), reals()]));
+    conds.push(call("Element", vec![a.clone(), reals()]));
     conds.push(positive(&a));
   }
   if c_num.is_none() {
@@ -9503,9 +9148,9 @@ fn erlang_b_symbolic(
   let cond = if conds.len() == 1 {
     conds.pop().unwrap()
   } else {
-    fc("And", conds)
+    call("And", conds)
   };
-  Some(Ok(fc(
+  Some(Ok(call(
     "Piecewise",
     vec![
       Expr::List(vec![Expr::List(vec![body, cond].into())].into()),
@@ -9656,10 +9301,7 @@ fn erlang_common(
     } else if q.d == 1 {
       Expr::Integer(q.n)
     } else {
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(q.n), Expr::Integer(q.d)].into(),
-      }
+      call("Rational", vec![Expr::Integer(q.n), Expr::Integer(q.d)])
     }
   };
   if waiting {
@@ -9810,11 +9452,7 @@ fn central_feature_index(keys: &[Expr]) -> Result<usize, InterpreterError> {
       return Some(p);
     }
     let evaluated =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "N".to_string(),
-        args: vec![e.clone()].into(),
-      })
-      .ok()?;
+      crate::evaluator::evaluate_expr_to_expr(&call1("N", e.clone())).ok()?;
     expr_to_complex_parts(&evaluated)
   };
 

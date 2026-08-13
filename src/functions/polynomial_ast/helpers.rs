@@ -35,14 +35,6 @@ pub fn extract_exponent_map(var_factors: &[Expr]) -> HashMap<String, i128> {
   map
 }
 
-/// Build a FunctionCall expression.
-pub fn mk_call(name: &str, args: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  }
-}
-
 /// Build an Integer expression.
 pub fn mk_int(n: i128) -> Expr {
   Expr::Integer(n)
@@ -50,20 +42,17 @@ pub fn mk_int(n: i128) -> Expr {
 
 /// Build a `Rational[n, d]` expression.
 pub fn mk_ratio(n: i128, d: i128) -> Expr {
-  Expr::FunctionCall {
-    name: "Rational".to_string(),
-    args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
-  }
+  call("Rational", vec![Expr::Integer(n), Expr::Integer(d)])
 }
 
 /// Build `Times[a, b]`.
 pub fn mk_times(a: Expr, b: Expr) -> Expr {
-  mk_call("Times", vec![a, b])
+  call("Times", vec![a, b])
 }
 
 /// Build `Power[base, exp]`.
 pub fn mk_power(base: Expr, exp: Expr) -> Expr {
-  mk_call("Power", vec![base, exp])
+  call("Power", vec![base, exp])
 }
 
 // ─── Ascending trimmed polynomial coefficient vectors ────────────────

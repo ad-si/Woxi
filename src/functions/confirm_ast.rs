@@ -41,13 +41,6 @@ fn symbol(s: &str) -> Expr {
   Expr::Identifier(s.to_string())
 }
 
-fn call(name: &str, args: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  }
-}
-
 fn failure(tag: &str, pairs: Vec<(&str, Expr)>) -> Expr {
   let assoc =
     Expr::Association(pairs.into_iter().map(|(k, v)| (string(k), v)).collect());
@@ -337,10 +330,10 @@ fn exception_object(tags: Vec<Expr>, payload: Option<Expr>) -> Expr {
   }
   pairs.push((string("ExceptionValidated"), symbol("True")));
   pairs.push((string("ExceptionSystemVersion"), string("1")));
-  Expr::FunctionCall {
-    name: "Exception".to_string(),
-    args: vec![Expr::List(tags.into()), Expr::Association(pairs)].into(),
-  }
+  call(
+    "Exception",
+    vec![Expr::List(tags.into()), Expr::Association(pairs)],
+  )
 }
 
 /// The exception wolframscript builds when the specification is not a tag:
