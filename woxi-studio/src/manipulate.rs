@@ -659,11 +659,15 @@ impl ManipulateState {
     let control_visible = self.control_visible.clone();
     let dynamic_bounds = self.dynamic_bounds.clone();
     let dynamic_values = self.dynamic_values.clone();
-    let state_names: Vec<String> =
-      self.state.iter().map(|(n, _)| n.clone()).collect();
+    // Every bound name (visible controls + hidden state), so a body that
+    // reassigns one of its own controls — a common "preset" idiom, e.g.
+    // `If[given > 0, {a, b, c} = presets[[given]]]` — moves that control's
+    // widget too, not just the value used to render this frame.
+    let binding_names: Vec<String> =
+      bindings.iter().map(|(n, _)| n.clone()).collect();
     let (
       render,
-      updated_state,
+      updated_bindings,
       display_trees,
       enabled,
       visible,
@@ -675,7 +679,7 @@ impl ManipulateState {
       // and a `Dynamic[…]` caption showing them must display what this
       // frame computed, not the previous frame's values.
       let render = woxi::interpret_with_stdout(&code);
-      let updated_state = read_manipulate_state(&state_names);
+      let updated_bindings = read_manipulate_state(&binding_names);
       let trees: Vec<_> = displays
         .iter()
         .map(|d| build_manipulate_display(d, &[]))
@@ -722,7 +726,7 @@ impl ManipulateState {
         .collect();
       (
         render,
-        updated_state,
+        updated_bindings,
         trees,
         enabled,
         visible,
@@ -731,10 +735,18 @@ impl ManipulateState {
       )
     });
     // Keep the body's writes to the widget's own variables, so the next
-    // frame (and any caption) builds on them.
-    for (name, value) in updated_state {
+    // frame (and any caption) builds on them — whether that variable is
+    // hidden state or a visible control's own slider/picker.
+    for (name, value) in updated_bindings {
       if let Some(slot) = self.state.iter_mut().find(|(n, _)| *n == name) {
         slot.1 = value;
+        continue;
+      }
+      for ctrl in &mut self.controls {
+        if ctrl.name() == name {
+          ctrl.set_current_from_code(&value);
+          break;
+        }
       }
     }
     self.display_trees = display_trees;

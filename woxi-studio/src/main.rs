@@ -6716,6 +6716,38 @@ mod tests {
   }
 
   #[test]
+  fn manipulate_body_assignment_moves_the_written_controls_sliders() {
+    // A "preset" idiom several Demonstrations use: picking one control
+    // (`preset`) makes the body assign new values straight into other
+    // controls' own variables (`{a, b} = presets[[preset]]`). Wolfram
+    // treats that assignment as moving those controls' widgets, not just
+    // feeding the current render — so after the assignment runs, `a` and
+    // `b`'s sliders must show the assigned values, not their declared
+    // defaults.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[If[preset == 1, {a, b} = {10, 20}]; a + b, \
+       {{preset, 1, \"\"}, {0, 1}}, {{a, 3}, 0, 100}, {{b, 4}, 0, 100}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert_eq!(state.text_output.as_deref(), Some("30"));
+    let manipulate::ControlState::Continuous { name, current, .. } =
+      &state.controls[1]
+    else {
+      panic!("expected a continuous slider for `a`");
+    };
+    assert_eq!(name, "a");
+    assert_eq!(*current, 10.0, "slider `a` must follow the assignment");
+    let manipulate::ControlState::Continuous { name, current, .. } =
+      &state.controls[2]
+    else {
+      panic!("expected a continuous slider for `b`");
+    };
+    assert_eq!(name, "b");
+    assert_eq!(*current, 20.0, "slider `b` must follow the assignment");
+  }
+
+  #[test]
   fn animate_widget_starts_playing_and_wraps() {
     // An Animate widget auto-plays from its initial value and its animation
     // tick advances the continuous control by one step, wrapping back to
