@@ -125,6 +125,46 @@ fn virtual_current_dir() -> String {
     })
 }
 
+/// Scopes `$InputFileName` to the file a `Get` is currently reading.
+///
+/// While a file is being read it *is* the input file, so `$InputFileName`
+/// has to name it rather than the enclosing script. Restoring on drop (rather
+/// than after the evaluation) keeps nested and sequential `Get`s correct even
+/// when the read file raises an error.
+#[cfg(not(target_arch = "wasm32"))]
+struct InputFileNameGuard {
+  prev: Option<crate::StoredValue>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl InputFileNameGuard {
+  fn install(path: &std::path::Path) -> Self {
+    let value = crate::StoredValue::ExprVal(Expr::String(
+      path.to_string_lossy().into_owned(),
+    ));
+    let prev = crate::ENV
+      .with(|e| e.borrow_mut().insert("$InputFileName".to_string(), value));
+    Self { prev }
+  }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for InputFileNameGuard {
+  fn drop(&mut self) {
+    crate::ENV.with(|e| {
+      let mut env = e.borrow_mut();
+      match self.prev.take() {
+        Some(v) => {
+          env.insert("$InputFileName".to_string(), v);
+        }
+        None => {
+          env.remove("$InputFileName");
+        }
+      }
+    });
+  }
+}
+
 pub fn dispatch_io_functions(
   name: &str,
   args: &[Expr],
@@ -546,7 +586,15 @@ pub fn dispatch_io_functions(
       if crate::utils::is_standard_distribution_context(&filename) {
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
-      let content = match std::fs::read_to_string(&filename) {
+      // A relative name resolves against the virtual working directory, so a
+      // preceding `SetDirectory` is honoured the way it is in wolframscript.
+      let requested = std::path::Path::new(&filename);
+      let resolved = if requested.is_absolute() {
+        requested.to_path_buf()
+      } else {
+        std::path::PathBuf::from(virtual_current_dir()).join(requested)
+      };
+      let content = match std::fs::read_to_string(&resolved) {
         Ok(c) => c,
         Err(_) => {
           // wolframscript prints this message to stdout (verified with
@@ -559,6 +607,9 @@ pub fn dispatch_io_functions(
           return Some(Ok(Expr::Identifier("$Failed".to_string())));
         }
       };
+      // The read file is the input file for the duration of the read, so
+      // `$InputFileName` must point at it and not at the enclosing script.
+      let _input_file_name = InputFileNameGuard::install(&resolved);
       // Use interpret to evaluate the file content (handles all node types
       // including FunctionDefinition, Expression, etc.)
       let result_str = match crate::interpret(&content) {
