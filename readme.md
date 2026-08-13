@@ -65,6 +65,42 @@ remove the flag once after unzipping:
 xattr -dr com.apple.quarantine "Woxi Studio.app"
 ```
 
+#### Verifying a Download
+
+Every archive on a release is built by
+[a public GitHub Actions run](./.github/workflows/build-archives.yml)
+and carries a signed build provenance attestation.
+[GitHub's CLI](https://cli.github.com) checks a download against it:
+
+```sh
+gh attestation verify woxi-studio-v0.3.0-x86_64-pc-windows-msvc.zip \
+  --repo ad-si/Woxi
+```
+
+That confirms the exact file came out of this repository's release workflow —
+a stronger guarantee than the `SHA256SUMS.txt` checksums,
+which whoever swapped a binary could regenerate too.
+
+#### Windows Defender False Positives
+
+The Windows binaries are not yet code-signed,
+so Microsoft Defender's machine-learning heuristics
+occasionally flag a fresh release with a generic verdict
+such as `Trojan:Win32/Wacatac.B!ml`.
+This is a known false positive pattern for unsigned Rust executables
+that no scanner has seen before, not a detection of actual malware:
+the verdict comes from the file's lack of reputation, not from its contents.
+
+If you hit it, please
+[report the file to Microsoft as a false positive](https://www.microsoft.com/en-us/wdsi/filesubmission)
+— submissions from affected users are what get the signature corrected —
+and [open an issue](https://github.com/ad-si/Woxi/issues) so we can submit it
+too. Verify the download with the attestation command above first;
+if that check fails, the file did not come from us and should be discarded.
+
+You can always avoid the prebuilt binary entirely
+by building from source (see below).
+
 ### JavaScript / Node.js
 
 Woxi is also available [on npm as `woxi-wasm`](https://www.npmjs.com/package/woxi-wasm)
