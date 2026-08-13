@@ -150,8 +150,18 @@ woxi repl
 
 ### Jupyter Notebook
 
-You can also use Woxi in Jupyter notebooks.
-Install the kernel with:
+You can also use Woxi in Jupyter notebooks. In this case you must clone this repository,
+as installing Woxi using `cargo install woxi` won't copy the necessary files to your
+computer.
+
+Clone the repository and move into the `Woxi` directory with:
+
+```sh
+git clone https://github.com/ad-si/Woxi
+cd Woxi
+```
+
+Be sure to have Jupyter already installed, and install the kernel with:
 
 ```sh
 woxi install-kernel
