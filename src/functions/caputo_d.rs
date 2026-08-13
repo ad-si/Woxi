@@ -12,10 +12,6 @@ use super::*;
 /// The same expression with its arithmetic written as calls, so one matcher
 /// covers both spellings the parser produces.
 fn as_calls(expr: &Expr) -> Expr {
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   match expr {
     Expr::BinaryOp { op, left, right } => {
       let (l, r) = (as_calls(left), as_calls(right));
@@ -46,10 +42,7 @@ fn as_calls(expr: &Expr) -> Expr {
 
 /// `f[args…]`, evaluated.
 fn eval_call(name: &str, args: Vec<Expr>) -> Result<Expr, InterpreterError> {
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  })
+  crate::evaluator::evaluate_expr_to_expr(&call(name, args))
 }
 
 /// Whether `expr` mentions the variable anywhere.
@@ -101,10 +94,7 @@ fn term_parts(term: &Expr, var: &str) -> Option<(Expr, Expr)> {
       let coefficient = match coefficients.len() {
         0 => Expr::Integer(1),
         1 => coefficients.into_iter().next().unwrap(),
-        _ => Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: coefficients.into(),
-        },
+        _ => call("Times", coefficients),
       };
       Some((coefficient, power?))
     }
@@ -208,10 +198,7 @@ pub fn caputo_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     // Gamma[p + 1] / Gamma[p - α + 1] * var^(p - α).
-    let plus = |a: Expr, b: Expr| Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![a, b].into(),
-    };
+    let plus = |a: Expr, b: Expr| call("Plus", vec![a, b]);
     let shifted = eval_call(
       "Subtract",
       vec![plus(power.clone(), Expr::Integer(1)), order.clone()],

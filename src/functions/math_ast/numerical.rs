@@ -286,15 +286,10 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
           if im == 0.0 {
             // Preserve complex form: re + 0.*I (matching Wolfram's convention
             // for complex power results where imaginary part is numerically zero)
-            return Ok(Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(Expr::Real(re)),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(Expr::Real(0.0)),
-                right: Box::new(Expr::Identifier("I".to_string())),
-              }),
-            });
+            return Ok(plus2(
+              Expr::Real(re),
+              times2(Expr::Real(0.0), Expr::Identifier("I".to_string())),
+            ));
           }
           return Ok(build_complex_float_expr(re, im));
         }
@@ -1970,22 +1965,14 @@ fn build_complex_bigfloat_result(
   let im_bf = Expr::BigFloat(im_str, precision as f64);
 
   // Build |im| * I term (always positive coefficient)
-  let abs_im_term = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(im_bf),
-    right: Box::new(i_expr),
-  };
+  let abs_im_term = times2(im_bf, i_expr);
 
   if re.is_zero() {
     if im_negative {
       // Pure negative imaginary: -|im|*I
       let neg_im_str = bigfloat_to_string(im, max_digits, rm, cc)?;
       let neg_im_bf = Expr::BigFloat(neg_im_str, precision as f64);
-      return Ok(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(neg_im_bf),
-        right: Box::new(Expr::Identifier("I".to_string())),
-      });
+      return Ok(times2(neg_im_bf, Expr::Identifier("I".to_string())));
     }
     return Ok(abs_im_term);
   }
@@ -1995,18 +1982,10 @@ fn build_complex_bigfloat_result(
 
   if im_negative {
     // re - |im|*I
-    Ok(Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(re_bf),
-      right: Box::new(abs_im_term),
-    })
+    Ok(minus2(re_bf, abs_im_term))
   } else {
     // re + |im|*I
-    Ok(Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(re_bf),
-      right: Box::new(abs_im_term),
-    })
+    Ok(plus2(re_bf, abs_im_term))
   }
 }
 
@@ -2034,24 +2013,12 @@ fn build_complex_result_with_string_precision(
   let im_raw = Expr::Raw(format!("{im_abs_str}`{prec_im_str}"));
 
   let i_expr = Expr::Identifier("I".to_string());
-  let abs_im_term = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(im_raw),
-    right: Box::new(i_expr),
-  };
+  let abs_im_term = times2(im_raw, i_expr);
 
   if im_negative {
-    Ok(Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(re_raw),
-      right: Box::new(abs_im_term),
-    })
+    Ok(minus2(re_raw, abs_im_term))
   } else {
-    Ok(Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(re_raw),
-      right: Box::new(abs_im_term),
-    })
+    Ok(plus2(re_raw, abs_im_term))
   }
 }
 
@@ -2335,14 +2302,8 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Evaluating the symbolic expression keeps exact and symbolic values
   // (Pi/10, 1/3, x/10, …) instead of floatifying, and a Real input still
   // yields a Real.
-  let neg = |e: &Expr| Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![Expr::Integer(-1), e.clone()].into(),
-  };
-  let sub = |a: &Expr, b: &Expr| Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![a.clone(), neg(b)].into(),
-  };
+  let neg = |e: &Expr| call("Times", vec![Expr::Integer(-1), e.clone()]);
+  let sub = |a: &Expr, b: &Expr| call("Plus", vec![a.clone(), neg(b)]);
   let x_minus_min = sub(&args[0], &range[0]);
   let y_span = sub(ymax, ymin);
   let x_span = sub(&range[1], &range[0]);
@@ -2351,17 +2312,11 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: vec![
       x_minus_min,
       y_span,
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![x_span, Expr::Integer(-1)].into(),
-      },
+      call("Power", vec![x_span, Expr::Integer(-1)]),
     ]
     .into(),
   };
-  let result = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![ymin.clone(), fraction].into(),
-  };
+  let result = call("Plus", vec![ymin.clone(), fraction]);
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
@@ -2491,18 +2446,9 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let ncols = mat[0].len();
     if ncols > 0 && mat.iter().all(|r| r.len() == ncols) {
       use crate::evaluator::evaluate_expr_to_expr;
-      let abs = |e: &Expr| Expr::FunctionCall {
-        name: "Abs".to_string(),
-        args: vec![e.clone()].into(),
-      };
-      let sum = |terms: Vec<Expr>| Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: terms.into(),
-      };
-      let max_of = |terms: Vec<Expr>| Expr::FunctionCall {
-        name: "Max".to_string(),
-        args: terms.into(),
-      };
+      let abs = |e: &Expr| call1("Abs", e.clone());
+      let sum = |terms: Vec<Expr>| call("Plus", terms);
+      let max_of = |terms: Vec<Expr>| call("Max", terms);
 
       if is_infinity {
         // Maximum absolute row sum.
@@ -2522,22 +2468,10 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if p_val == Some(2.0) {
         // Spectral norm: Sqrt[Max[Eigenvalues[Transpose[A].A]]].
         let a = args[0].clone();
-        let at = Expr::FunctionCall {
-          name: "Transpose".to_string(),
-          args: vec![a.clone()].into(),
-        };
-        let ata = Expr::FunctionCall {
-          name: "Dot".to_string(),
-          args: vec![at, a].into(),
-        };
-        let eig = Expr::FunctionCall {
-          name: "Eigenvalues".to_string(),
-          args: vec![ata].into(),
-        };
-        let sqrt = Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![max_of(vec![eig])].into(),
-        };
+        let at = call1("Transpose", a.clone());
+        let ata = call("Dot", vec![at, a]);
+        let eig = call1("Eigenvalues", ata);
+        let sqrt = call1("Sqrt", max_of(vec![eig]));
         return evaluate_expr_to_expr(&sqrt);
       }
       // Only 1, 2, Infinity and "Frobenius" are valid matrix norms; anything
@@ -2623,15 +2557,9 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Max[Abs[x], Abs[y], ...]
         let abs_items: Vec<Expr> = items
           .iter()
-          .map(|item| Expr::FunctionCall {
-            name: "Abs".to_string(),
-            args: vec![item.clone()].into(),
-          })
+          .map(|item| call1("Abs", item.clone()))
           .collect();
-        return evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "Max".to_string(),
-          args: abs_items.into(),
-        });
+        return evaluate_expr_to_expr(&call("Max", abs_items));
       }
 
       // Match against `p_val`/`p_expr` (not the defaulted `p`) so a symbolic p
@@ -2640,18 +2568,12 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Sum of Abs[item]
         let terms: Vec<Expr> = items
           .iter()
-          .map(|item| Expr::FunctionCall {
-            name: "Abs".to_string(),
-            args: vec![item.clone()].into(),
-          })
+          .map(|item| call1("Abs", item.clone()))
           .collect();
         let sum = if terms.len() == 1 {
           terms.into_iter().next().unwrap()
         } else {
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: terms.into(),
-          }
+          call("Plus", terms)
         };
         return evaluate_expr_to_expr(&sum);
       }
@@ -2675,33 +2597,24 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(|item| {
             let base = if is_real_valued(item) {
               if try_eval_to_f64(item).is_some_and(|v| v < 0.0) {
-                evaluate_expr_to_expr(&Expr::FunctionCall {
-                  name: "Times".to_string(),
-                  args: vec![Expr::Integer(-1), item.clone()].into(),
-                })
+                evaluate_expr_to_expr(&call(
+                  "Times",
+                  vec![Expr::Integer(-1), item.clone()],
+                ))
                 .unwrap_or_else(|_| item.clone())
               } else {
                 item.clone()
               }
             } else {
-              Expr::FunctionCall {
-                name: "Abs".to_string(),
-                args: vec![item.clone()].into(),
-              }
+              call1("Abs", item.clone())
             };
-            Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![base, Expr::Integer(2)].into(),
-            }
+            call("Power", vec![base, Expr::Integer(2)])
           })
           .collect();
         let sum = if sq_items.len() == 1 {
           sq_items.into_iter().next().unwrap()
         } else {
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: sq_items.into(),
-          }
+          call("Plus", sq_items)
         };
         let sum_eval = evaluate_expr_to_expr(&sum)?;
         return evaluate_expr_to_expr(&make_sqrt(sum_eval));
@@ -2711,29 +2624,15 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // (Sum Abs[item]^p)^(1/p). Abs of a known real evaluates away, so
       // numeric inputs collapse (Norm[{3, 4}, 4] -> 337^(1/4)).
       let p_term = p_expr.clone().unwrap_or(Expr::Integer(2));
-      let power = |base: Expr, exp: Expr| Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![base, exp].into(),
-      };
+      let power = |base: Expr, exp: Expr| call("Power", vec![base, exp]);
       let terms: Vec<Expr> = items
         .iter()
-        .map(|item| {
-          power(
-            Expr::FunctionCall {
-              name: "Abs".to_string(),
-              args: vec![item.clone()].into(),
-            },
-            p_term.clone(),
-          )
-        })
+        .map(|item| power(call1("Abs", item.clone()), p_term.clone()))
         .collect();
       let sum = if terms.len() == 1 {
         terms.into_iter().next().unwrap()
       } else {
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: terms.into(),
-        }
+        call("Plus", terms)
       };
       let result = power(sum, power(p_term, Expr::Integer(-1)));
       evaluate_expr_to_expr(&result)
@@ -2758,11 +2657,10 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let norm_val =
       crate::functions::list_helpers_ast::apply_func_ast(&args[1], &args[0])?;
     // v / norm_val
-    let result = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(args[0].clone()),
-      right: Box::new(norm_val),
-    })?;
+    let result = crate::evaluator::evaluate_expr_to_expr(&div2(
+      args[0].clone(),
+      norm_val,
+    ))?;
     return Ok(result);
   }
   if args.len() != 1 {
@@ -2795,20 +2693,14 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .iter()
             .map(|e| Expr::BinaryOp {
               op: BinaryOperator::Power,
-              left: Box::new(Expr::FunctionCall {
-                name: "Abs".to_string(),
-                args: vec![e.clone()].into(),
-              }),
+              left: Box::new(call("Abs", vec![e.clone()])),
               right: Box::new(Expr::Integer(2)),
             })
             .collect();
           let sum_of_squares = if squared_terms.len() == 1 {
             squared_terms.into_iter().next().unwrap()
           } else {
-            Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: squared_terms.into(),
-            }
+            call("Plus", squared_terms)
           };
           // Evaluate the norm so numeric entries collapse the Abs-of-square
           // sum (e.g. Normalize[{1, I}] -> {1/Sqrt[2], I/Sqrt[2]} rather than
@@ -2820,11 +2712,10 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let result: Vec<Expr> = items
             .iter()
             .map(|e| {
-              crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-                op: BinaryOperator::Divide,
-                left: Box::new(e.clone()),
-                right: Box::new(norm_expr.clone()),
-              })
+              crate::evaluator::evaluate_expr_to_expr(&div2(
+                e.clone(),
+                norm_expr.clone(),
+              ))
             })
             .collect::<Result<Vec<_>, _>>()?;
           return Ok(Expr::List(result.into()));
@@ -2856,11 +2747,7 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Expr::Integer(0)
           } else {
             // x / Sqrt[sum_sq] = x * Power[sum_sq, -1/2]
-            Expr::BinaryOp {
-              op: BinaryOperator::Divide,
-              left: Box::new(Expr::Integer(*x)),
-              right: Box::new(make_sqrt(Expr::Integer(sum_sq))),
-            }
+            div2(Expr::Integer(*x), make_sqrt(Expr::Integer(sum_sq)))
           }
         })
         .collect();
@@ -3275,10 +3162,7 @@ fn try_complex_accuracy(expr: &Expr) -> Option<Expr> {
     } else if others.len() == 1 {
       others.into_iter().next().unwrap()
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: others.into(),
-      }
+      call("Times", others)
     };
     Some((true, coeff))
   };
@@ -3332,10 +3216,7 @@ fn power_expand_recursive(expr: &Expr) -> Expr {
         let sqrt_arg = is_sqrt(expr).unwrap();
         Some((
           sqrt_arg.clone(),
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-          },
+          call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
         ))
       }
       _ => None,
@@ -3396,17 +3277,11 @@ fn power_expand_recursive(expr: &Expr) -> Expr {
       if let Some((inner_base, inner_exp)) = extract_power(&base) {
         let new_exp = match times_ast(&[inner_exp.clone(), exp.clone()]) {
           Ok(r) => r,
-          Err(_) => Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(inner_exp),
-            right: Box::new(exp),
-          },
+          Err(_) => times2(inner_exp, exp),
         };
-        return match crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(inner_base),
-          right: Box::new(new_exp),
-        }) {
+        return match crate::evaluator::evaluate_expr_to_expr(&pow2(
+          inner_base, new_exp,
+        )) {
           Ok(r) => r,
           Err(_) => expr.clone(),
         };
@@ -3422,38 +3297,23 @@ fn power_expand_recursive(expr: &Expr) -> Expr {
             if let Some((inner_base, inner_exp)) = extract_power(factor) {
               let new_exp = match times_ast(&[inner_exp.clone(), exp.clone()]) {
                 Ok(r) => r,
-                Err(_) => Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(inner_exp),
-                  right: Box::new(exp.clone()),
-                },
+                Err(_) => times2(inner_exp, exp.clone()),
               };
               match power_two(&inner_base, &new_exp) {
                 Ok(r) => r,
-                Err(_) => Expr::BinaryOp {
-                  op: BinaryOperator::Power,
-                  left: Box::new(inner_base),
-                  right: Box::new(new_exp),
-                },
+                Err(_) => pow2(inner_base, new_exp),
               }
             } else {
               match power_two(factor, &exp) {
                 Ok(r) => r,
-                Err(_) => Expr::BinaryOp {
-                  op: BinaryOperator::Power,
-                  left: Box::new(factor.clone()),
-                  right: Box::new(exp.clone()),
-                },
+                Err(_) => pow2(factor.clone(), exp.clone()),
               }
             }
           })
           .collect();
         return match times_ast(&expanded) {
           Ok(r) => r,
-          Err(_) => Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: expanded.into(),
-          },
+          Err(_) => call("Times", expanded),
         };
       }
 
@@ -3486,31 +3346,19 @@ fn power_expand_recursive(expr: &Expr) -> Expr {
               match times_ast(&remaining) {
                 Ok(r) => r,
                 Err(_) => {
-                  return Expr::BinaryOp {
-                    op: BinaryOperator::Power,
-                    left: Box::new(base),
-                    right: Box::new(exp),
-                  };
+                  return pow2(base, exp);
                 }
               }
             };
             return match power_two(&log_arg, &new_exp) {
               Ok(r) => r,
-              Err(_) => Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(log_arg),
-                right: Box::new(new_exp),
-              },
+              Err(_) => pow2(log_arg, new_exp),
             };
           }
         }
       }
 
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(base),
-        right: Box::new(exp),
-      }
+      pow2(base, exp)
     }
     // Log expansion rules (assuming positive reals):
     // Log[a*b*...] -> Log[a] + Log[b] + ...
@@ -3545,46 +3393,29 @@ fn power_expand_recursive(expr: &Expr) -> Expr {
       if let Some(factors) = extract_times(&expanded_arg) {
         let log_terms: Vec<Expr> = factors
           .iter()
-          .map(|f| {
-            power_expand_recursive(&Expr::FunctionCall {
-              name: "Log".to_string(),
-              args: vec![f.clone()].into(),
-            })
-          })
+          .map(|f| power_expand_recursive(&call1("Log", f.clone())))
           .collect();
         return match plus_ast(&log_terms) {
           Ok(r) => r,
-          Err(_) => Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: log_terms.into(),
-          },
+          Err(_) => call("Plus", log_terms),
         };
       }
 
       // Log of a power: Log[a^b] -> b*Log[a]
       if let Some((base, exp)) = extract_power(&expanded_arg) {
-        let log_expr = Expr::FunctionCall {
-          name: "Log".to_string(),
-          args: vec![base].into(),
-        };
+        let log_expr = call1("Log", base);
         // Evaluate Log[base] to simplify cases like Log[E] -> 1
         let log_base = crate::evaluator::evaluate_expr_to_expr(&log_expr)
           .unwrap_or(log_expr);
         let log_base = power_expand_recursive(&log_base);
         return match times_ast(&[exp, log_base]) {
           Ok(r) => r,
-          Err(_) => Expr::FunctionCall {
-            name: "Log".to_string(),
-            args: vec![expanded_arg].into(),
-          },
+          Err(_) => call1("Log", expanded_arg),
         };
       }
 
       // Evaluate Log to simplify cases like Log[E] -> 1, Log[1] -> 0
-      let log_expr = Expr::FunctionCall {
-        name: "Log".to_string(),
-        args: vec![expanded_arg.clone()].into(),
-      };
+      let log_expr = call1("Log", expanded_arg.clone());
       crate::evaluator::evaluate_expr_to_expr(&log_expr).unwrap_or(log_expr)
     }
     Expr::FunctionCall { name, args } => {
@@ -3784,16 +3615,8 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut next = Expr::Integer(0);
     for (i, coeff) in kernel.iter().enumerate() {
       let idx = seq.len() - 1 - i;
-      let term = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(coeff.clone()),
-        right: Box::new(seq[idx].clone()),
-      };
-      next = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(next),
-        right: Box::new(term),
-      };
+      let term = times2(coeff.clone(), seq[idx].clone());
+      next = plus2(next, term);
     }
     // Evaluate the expression to simplify
     let evaluated = crate::evaluator::evaluate_expr_to_expr(&next)?;
@@ -5483,16 +5306,8 @@ pub fn list_fourier_sequence_transform_ast(
         ]
         .into(),
       };
-      let exp_term = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Identifier("E".to_string())),
-        right: Box::new(exponent),
-      };
-      let term = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(coeff.clone()),
-        right: Box::new(exp_term),
-      };
+      let exp_term = pow2(Expr::Identifier("E".to_string()), exponent);
+      let term = times2(coeff.clone(), exp_term);
       terms.push(term);
     }
   }
@@ -5504,10 +5319,7 @@ pub fn list_fourier_sequence_transform_ast(
   let sum = if terms.len() == 1 {
     terms.pop().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    }
+    call("Plus", terms)
   };
 
   evaluate_expr_to_expr(&sum)
@@ -5518,10 +5330,6 @@ pub fn list_fourier_sequence_transform_ast(
 /// becomes `Cos[Pi/4]` → `1/Sqrt[2]` and `LanczosWindow[1/4]` becomes
 /// `Sinc[Pi/2]` → `2/Pi`, instead of being rounded back from a float.
 fn window_expr(name: &str, x: &Expr) -> Option<Expr> {
-  let call = |f: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: f.to_string(),
-    args: args.into(),
-  };
   // `k Pi x`, the argument of the trigonometric terms.
   let pi_x = |k: i128| {
     call(
@@ -5543,7 +5351,7 @@ fn window_expr(name: &str, x: &Expr) -> Option<Expr> {
         if k == 0 {
           coeff
         } else {
-          call("Times", vec![coeff, call("Cos", vec![pi_x(2 * k as i128)])])
+          call("Times", vec![coeff, call1("Cos", pi_x(2 * k as i128))])
         }
       })
       .collect();
@@ -5575,16 +5383,13 @@ fn window_expr(name: &str, x: &Expr) -> Option<Expr> {
       "Plus",
       vec![
         Expr::Integer(1),
-        call(
-          "Times",
-          vec![Expr::Integer(-2), call("Abs", vec![x.clone()])],
-        ),
+        call("Times", vec![Expr::Integer(-2), call1("Abs", x.clone())]),
       ],
     ),
     "WelchWindow" => parabola(),
     "ConnesWindow" => call("Power", vec![parabola(), Expr::Integer(2)]),
-    "CosineWindow" => call("Cos", vec![pi_x(1)]),
-    "LanczosWindow" => call("Sinc", vec![pi_x(2)]),
+    "CosineWindow" => call1("Cos", pi_x(1)),
+    "LanczosWindow" => call1("Sinc", pi_x(2)),
     _ => return None,
   })
 }
@@ -5724,44 +5529,25 @@ pub fn tukey_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Exact: build (1 + Cos[Pi (2 Abs[x] - 1 + alpha)/alpha]) / 2 and evaluate
   // symbolically so Cos simplifies (matching wolframscript's radical forms).
-  let abs_x = Expr::FunctionCall {
-    name: "Abs".to_string(),
-    args: vec![x.clone()].into(),
-  };
+  let abs_x = call1("Abs", x.clone());
   let theta_num = Expr::FunctionCall {
     name: "Plus".to_string(),
     args: vec![
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(2), abs_x].into(),
-      },
+      call("Times", vec![Expr::Integer(2), abs_x]),
       Expr::Integer(-1),
       alpha.clone(),
     ]
     .into(),
   };
-  let theta = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(theta_num),
-    right: Box::new(alpha),
-  };
-  let cos = Expr::FunctionCall {
-    name: "Cos".to_string(),
-    args: vec![Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Identifier("Pi".to_string())),
-      right: Box::new(theta),
-    }]
-    .into(),
-  };
-  crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![Expr::Integer(1), cos].into(),
-    }),
-    right: Box::new(Expr::Integer(2)),
-  })
+  let theta = div2(theta_num, alpha);
+  let cos = call(
+    "Cos",
+    vec![times2(Expr::Identifier("Pi".to_string()), theta)],
+  );
+  crate::evaluator::evaluate_expr_to_expr(&div2(
+    call("Plus", vec![Expr::Integer(1), cos]),
+    Expr::Integer(2),
+  ))
 }
 
 /// KaiserWindow[x] / KaiserWindow[x, alpha] — Kaiser (Kaiser–Bessel) window.
@@ -5798,42 +5584,20 @@ pub fn kaiser_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Build BesselI[0, alpha Sqrt[1 - 4 x^2]] / BesselI[0, alpha] and evaluate.
   // Real arguments numericize; exact arguments stay symbolic.
-  let x_sq = Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![x.clone(), Expr::Integer(2)].into(),
-  };
+  let x_sq = call("Power", vec![x.clone(), Expr::Integer(2)]);
   let one_minus = Expr::FunctionCall {
     name: "Plus".to_string(),
     args: vec![
       Expr::Integer(1),
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-4), x_sq].into(),
-      },
+      call("Times", vec![Expr::Integer(-4), x_sq]),
     ]
     .into(),
   };
-  let sqrt = Expr::FunctionCall {
-    name: "Sqrt".to_string(),
-    args: vec![one_minus].into(),
-  };
-  let bessel_arg = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![alpha.clone(), sqrt].into(),
-  };
-  let numer = Expr::FunctionCall {
-    name: "BesselI".to_string(),
-    args: vec![Expr::Integer(0), bessel_arg].into(),
-  };
-  let denom = Expr::FunctionCall {
-    name: "BesselI".to_string(),
-    args: vec![Expr::Integer(0), alpha].into(),
-  };
-  crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(numer),
-    right: Box::new(denom),
-  })
+  let sqrt = call1("Sqrt", one_minus);
+  let bessel_arg = call("Times", vec![alpha.clone(), sqrt]);
+  let numer = call("BesselI", vec![Expr::Integer(0), bessel_arg]);
+  let denom = call("BesselI", vec![Expr::Integer(0), alpha]);
+  crate::evaluator::evaluate_expr_to_expr(&div2(numer, denom))
 }
 
 /// True if `e` contains an inexact (machine) number, so a window function
@@ -5884,19 +5648,9 @@ pub fn parzen_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(v));
   }
   // Exact polynomial.
-  let abs_x = Expr::FunctionCall {
-    name: "Abs".to_string(),
-    args: vec![x.clone()].into(),
-  };
-  let pow = |base: Expr, n: i128| Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(base),
-    right: Box::new(Expr::Integer(n)),
-  };
-  let times = |c: i128, e: Expr| Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![Expr::Integer(c), e].into(),
-  };
+  let abs_x = call1("Abs", x.clone());
+  let pow = |base: Expr, n: i128| pow2(base, Expr::Integer(n));
+  let times = |c: i128, e: Expr| call("Times", vec![Expr::Integer(c), e]);
   let expr = if ax <= 0.25 {
     // 1 - 24 x^2 + 48 Abs[x]^3
     Expr::FunctionCall {
@@ -5912,13 +5666,7 @@ pub fn parzen_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // 2 (1 - 2 Abs[x])^3
     times(
       2,
-      pow(
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![Expr::Integer(1), times(-2, abs_x)].into(),
-        },
-        3,
-      ),
+      pow(call("Plus", vec![Expr::Integer(1), times(-2, abs_x)]), 3),
     )
   };
   crate::evaluator::evaluate_expr_to_expr(&expr)
@@ -5952,28 +5700,11 @@ pub fn gaussian_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real((-xf * xf / (2.0 * sf * sf)).exp()));
   }
   // Exact: Exp[-x^2 / (2 sigma^2)].
-  let pow = |base: Expr, n: i128| Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(base),
-    right: Box::new(Expr::Integer(n)),
-  };
-  let numer = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![Expr::Integer(-1), pow(x.clone(), 2)].into(),
-  };
-  let denom = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![Expr::Integer(2), pow(sigma, 2)].into(),
-  };
-  let arg = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(numer),
-    right: Box::new(denom),
-  };
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Exp".to_string(),
-    args: vec![arg].into(),
-  })
+  let pow = |base: Expr, n: i128| pow2(base, Expr::Integer(n));
+  let numer = call("Times", vec![Expr::Integer(-1), pow(x.clone(), 2)]);
+  let denom = call("Times", vec![Expr::Integer(2), pow(sigma, 2)]);
+  let arg = div2(numer, denom);
+  crate::evaluator::evaluate_expr_to_expr(&call1("Exp", arg))
 }
 
 /// BohmanWindow[x] — Bohman window: 0 outside [-1/2, 1/2], otherwise
@@ -6003,10 +5734,7 @@ pub fn bohman_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(v));
   }
   // Exact: (1 - 2 Abs[x]) Cos[2 Pi Abs[x]] + Sin[2 Pi Abs[x]] / Pi.
-  let abs_x = Expr::FunctionCall {
-    name: "Abs".to_string(),
-    args: vec![x.clone()].into(),
-  };
+  let abs_x = call1("Abs", x.clone());
   let two_pi_absx = Expr::FunctionCall {
     name: "Times".to_string(),
     args: vec![
@@ -6020,34 +5748,15 @@ pub fn bohman_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Plus".to_string(),
     args: vec![
       Expr::Integer(1),
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-2), abs_x].into(),
-      },
+      call("Times", vec![Expr::Integer(-2), abs_x]),
     ]
     .into(),
   };
-  let cos = Expr::FunctionCall {
-    name: "Cos".to_string(),
-    args: vec![two_pi_absx.clone()].into(),
-  };
-  let sin = Expr::FunctionCall {
-    name: "Sin".to_string(),
-    args: vec![two_pi_absx].into(),
-  };
-  let term1 = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![one_minus_2ax, cos].into(),
-  };
-  let term2 = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(sin),
-    right: Box::new(Expr::Identifier("Pi".to_string())),
-  };
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![term1, term2].into(),
-  })
+  let cos = call1("Cos", two_pi_absx.clone());
+  let sin = call1("Sin", two_pi_absx);
+  let term1 = call("Times", vec![one_minus_2ax, cos]);
+  let term2 = div2(sin, Expr::Identifier("Pi".to_string()));
+  crate::evaluator::evaluate_expr_to_expr(&call("Plus", vec![term1, term2]))
 }
 
 /// BandpassFilter[data, {omega1, omega2}] or BandpassFilter[data, {omega1, omega2}, n]
@@ -6257,20 +5966,14 @@ fn convolve_edge_padded_symbolic(data: &[Expr], kernel: &[f64]) -> Vec<Expr> {
       if coeff == 0.0 {
         continue;
       }
-      terms.push(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Real(coeff), data[i].clone()].into(),
-      });
+      terms.push(call("Times", vec![Expr::Real(coeff), data[i].clone()]));
     }
     let expr = if terms.is_empty() {
       Expr::Integer(0)
     } else if terms.len() == 1 {
       terms.pop().unwrap()
     } else {
-      Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: terms.into(),
-      }
+      call("Plus", terms)
     };
     // Evaluate the symbolic expression to simplify
     match crate::evaluator::evaluate_expr_to_expr(&expr) {
@@ -6821,10 +6524,10 @@ pub(crate) fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
       name: "Plus".to_string(),
       args: vec![
         Expr::Real(re),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Real(im), Expr::Identifier("I".to_string())].into(),
-        },
+        call(
+          "Times",
+          vec![Expr::Real(im), Expr::Identifier("I".to_string())],
+        ),
       ]
       .into(),
     })
@@ -7143,10 +6846,7 @@ fn apply_fn_to_complex(fnexpr: &Expr, zr: f64, zi: f64) -> Option<(f64, f64)> {
       let value = if zi.abs() < 1e-300 {
         Expr::Real(zr)
       } else {
-        Expr::FunctionCall {
-          name: "Complex".to_string(),
-          args: vec![Expr::Real(zr), Expr::Real(zi)].into(),
-        }
+        call("Complex", vec![Expr::Real(zr), Expr::Real(zi)])
       };
       let substituted = crate::syntax::substitute_slots(body, &[value]);
       let evaluated =
@@ -7309,9 +7009,8 @@ pub fn cosine_sum_window_ast(
   // Exact argument: build Σ (nₖ/d) Cos[2πk x] and let the evaluator's exact
   // trig tables fold it (rational at the common grid points, radicals
   // elsewhere).
-  let rational = |n: i128, d: i128| Expr::FunctionCall {
-    name: "Rational".to_string(),
-    args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
+  let rational = |n: i128, d: i128| {
+    call("Rational", vec![Expr::Integer(n), Expr::Integer(d)])
   };
   let terms: Vec<Expr> = numerators
     .iter()
@@ -7343,10 +7042,7 @@ pub fn cosine_sum_window_ast(
       }
     })
     .collect();
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  })
+  crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms))
 }
 
 /// ListZTransform[{a0, a1, …}, z] — the finite Z transform
@@ -7386,10 +7082,7 @@ pub fn list_z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .into(),
     })
     .collect();
-  let sum = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  };
+  let sum = call("Plus", terms);
   crate::evaluator::evaluate_expr_to_expr(&sum)
 }
 
@@ -7469,28 +7162,19 @@ pub fn discrete_hadamard_transform_ast(
           if (r & j).count_ones() % 2 == 0 {
             e.clone()
           } else {
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![Expr::Integer(-1), e.clone()].into(),
-            }
+            call("Times", vec![Expr::Integer(-1), e.clone()])
           }
         })
         .collect();
       let scaled = Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: terms.into(),
-          },
+          call("Plus", terms),
           Expr::FunctionCall {
             name: "Power".to_string(),
             args: vec![
               Expr::Integer(n as i128),
-              Expr::FunctionCall {
-                name: "Rational".to_string(),
-                args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
-              },
+              call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
             ]
             .into(),
           },
@@ -7539,9 +7223,8 @@ pub fn parametric_window_ast(
     return uneval();
   };
   let eval = crate::evaluator::evaluate_expr_to_expr;
-  let rational = |p: i128, q: i128| Expr::FunctionCall {
-    name: "Rational".to_string(),
-    args: vec![Expr::Integer(p), Expr::Integer(q)].into(),
+  let rational = |p: i128, q: i128| {
+    call("Rational", vec![Expr::Integer(p), Expr::Integer(q)])
   };
   if is_real {
     let pi = std::f64::consts::PI;
@@ -7585,11 +7268,7 @@ pub fn parametric_window_ast(
         Expr::Identifier("E".to_string()),
         call(
           "Times",
-          vec![
-            Expr::Integer(-2),
-            alpha_expr,
-            call("Abs", vec![args[0].clone()]),
-          ],
+          vec![Expr::Integer(-2), alpha_expr, call1("Abs", args[0].clone())],
         ),
       ],
     ),

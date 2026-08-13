@@ -137,22 +137,14 @@ fn reduce_poly_over_integer(expr: Expr) -> Result<Expr, InterpreterError> {
     return Ok(expr);
   }
   // reduced numerator = Expand[(1/g) * numerator]
-  let scaled = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(make_rational_expr(&BigInt::from(1), &g.clone())),
-    right: Box::new(poly),
-  };
+  let scaled = times2(make_rational_expr(&BigInt::from(1), &g.clone()), poly);
   let reduced_num =
     crate::evaluator::evaluate_function_call_ast("Expand", &[scaled])?;
   let new_d = &d / &g;
   if new_d == BigInt::from(1) {
     return Ok(reduced_num);
   }
-  Ok(Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(reduced_num),
-    right: Box::new(bigint_to_expr(new_d)),
-  })
+  Ok(div2(reduced_num, bigint_to_expr(new_d)))
 }
 
 /// Pull the integer content of a top-level `Plus` factor out in front, so
@@ -189,11 +181,10 @@ fn hoist_plus_integer_content(expr: Expr) -> Result<Expr, InterpreterError> {
     return Ok(expr);
   }
   // reduced Plus = Expand[(1/g) * Plus]
-  let scaled = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(make_rational_expr(&BigInt::from(1), &g.clone())),
-    right: Box::new(factors[plus_idx].clone()),
-  };
+  let scaled = times2(
+    make_rational_expr(&BigInt::from(1), &g.clone()),
+    factors[plus_idx].clone(),
+  );
   let reduced =
     crate::evaluator::evaluate_function_call_ast("Expand", &[scaled])?;
   factors[plus_idx] = reduced;
@@ -202,11 +193,7 @@ fn hoist_plus_integer_content(expr: Expr) -> Result<Expr, InterpreterError> {
   if matches!(&den, Expr::Integer(1)) {
     Ok(new_num)
   } else {
-    Ok(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(new_num),
-      right: Box::new(den),
-    })
+    Ok(div2(new_num, den))
   }
 }
 
@@ -237,10 +224,7 @@ fn jacobi_p_integer_ab(
 ) -> Result<Expr, InterpreterError> {
   // a == b == 0 is the Legendre polynomial; Wolfram displays it expanded in x.
   if a == 0 && b == 0 {
-    let leg = Expr::FunctionCall {
-      name: "LegendreP".to_string(),
-      args: vec![Expr::Integer(n as i128), x.clone()].into(),
-    };
+    let leg = call("LegendreP", vec![Expr::Integer(n as i128), x.clone()]);
     return crate::evaluator::evaluate_expr_to_expr(&leg);
   }
 
@@ -256,20 +240,13 @@ fn jacobi_p_integer_ab(
     let coeff_x = times_ast(&[two_plus_ab, x.clone()])?;
     let neg_b = times_ast(&[Expr::Integer(-1), b_e])?;
     let numer = plus_ast(&[a_e, neg_b, coeff_x])?;
-    let half = Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-    };
+    let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
     return times_ast(&[half, numer]);
   }
 
   let ni = n as i128;
   // (x - 1) as Plus[-1, x] so it prints as `(-1 + x)`.
-  let x_minus_1 = Expr::BinaryOp {
-    op: BinaryOperator::Plus,
-    left: Box::new(Expr::Integer(-1)),
-    right: Box::new(x.clone()),
-  };
+  let x_minus_1 = plus2(Expr::Integer(-1), x.clone());
 
   // Coefficients are BigInt: binomial(n+a, n-k) and the rising factorial
   // (n+a+b+1)_k overflow i128 around n = 30 (JacobiP[30, 1, 1, 10] panicked).
@@ -301,20 +278,12 @@ fn jacobi_p_integer_ab(
       let power = if k == 1 {
         x_minus_1.clone()
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(x_minus_1.clone()),
-          right: Box::new(Expr::Integer(k)),
-        }
+        pow2(x_minus_1.clone(), Expr::Integer(k))
       };
       if coeff_is_one {
         power
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(coeff),
-          right: Box::new(power),
-        }
+        times2(coeff, power)
       }
     };
     terms.push(term);
@@ -324,10 +293,7 @@ fn jacobi_p_integer_ab(
   let sum = match terms.len() {
     0 => Expr::Integer(0),
     1 => terms.into_iter().next().unwrap(),
-    _ => Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    },
+    _ => call("Plus", terms),
   };
 
   if jacobi_x_is_exact_numeric(x) {
@@ -421,10 +387,7 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let coeff_x = times_ast(&[two_plus_ab, x])?;
     let neg_b = times_ast(&[Expr::Integer(-1), b])?;
     let numer = plus_ast(&[a, neg_b, coeff_x])?;
-    let half = Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-    };
+    let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
     return times_ast(&[half, numer]);
   }
 
@@ -453,10 +416,6 @@ fn jacobi_p_rational_ab(
   b: &Expr,
   x: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   // const + a, and const + a + b.
   let plus_a = |c: i128| call("Plus", vec![Expr::Integer(c), a.clone()]);
   let plus_ab =
@@ -642,10 +601,10 @@ fn associated_legendre_p_ast(
       let (re, im) = legendre_p_associated_complex(nc, mc, zc);
       return Ok(build_complex_float_expr(re, im));
     }
-    return Ok(Expr::FunctionCall {
-      name: "LegendreP".to_string(),
-      args: vec![n_expr.clone(), m_expr.clone(), x_expr.clone()].into(),
-    });
+    return Ok(call(
+      "LegendreP",
+      vec![n_expr.clone(), m_expr.clone(), x_expr.clone()],
+    ));
   }
 
   let n = match n_expr {
@@ -695,10 +654,7 @@ fn associated_legendre_p_ast(
   // Differentiate m times w.r.t. var_name
   let mut deriv = pn;
   for _ in 0..m {
-    let d_expr = Expr::FunctionCall {
-      name: "D".to_string(),
-      args: vec![deriv, Expr::Identifier(var_name.clone())].into(),
-    };
+    let d_expr = call("D", vec![deriv, Expr::Identifier(var_name.clone())]);
     deriv = crate::evaluator::evaluate_expr_to_expr(&d_expr)?;
   }
   if needs_back_sub {
@@ -719,15 +675,7 @@ fn associated_legendre_p_ast(
     Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![
-        Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(Expr::Integer(1)),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(x_expr.clone()),
-            right: Box::new(Expr::Integer(2)),
-          }),
-        },
+        minus2(Expr::Integer(1), pow2(x_expr.clone(), Expr::Integer(2))),
         Expr::Integer(half_m as i128),
       ]
       .into(),
@@ -738,19 +686,8 @@ fn associated_legendre_p_ast(
     let sqrt_part = Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![
-        Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(Expr::Integer(1)),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(x_expr.clone()),
-            right: Box::new(Expr::Integer(2)),
-          }),
-        },
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-        },
+        minus2(Expr::Integer(1), pow2(x_expr.clone(), Expr::Integer(2))),
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
       ]
       .into(),
     };
@@ -762,15 +699,7 @@ fn associated_legendre_p_ast(
         left: Box::new(Expr::FunctionCall {
           name: "Power".to_string(),
           args: vec![
-            Expr::BinaryOp {
-              op: BinaryOperator::Minus,
-              left: Box::new(Expr::Integer(1)),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(x_expr.clone()),
-                right: Box::new(Expr::Integer(2)),
-              }),
-            },
+            minus2(Expr::Integer(1), pow2(x_expr.clone(), Expr::Integer(2))),
             Expr::Integer(half_m as i128),
           ]
           .into(),
@@ -781,15 +710,7 @@ fn associated_legendre_p_ast(
   };
 
   // Build: sign * factor * deriv
-  let result = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(Expr::Integer(sign)),
-    right: Box::new(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(factor),
-      right: Box::new(deriv),
-    }),
-  };
+  let result = times2(Expr::Integer(sign), times2(factor, deriv));
 
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
@@ -976,14 +897,8 @@ pub fn spherical_harmonic_y_ast(
         return Ok(unevaluated("SphericalHarmonicY", args));
       };
       // Normalization: Sqrt[(2ℓ+1)/(4π) · Γ(ℓ−m+1)/Γ(ℓ+m+1)]
-      let g_num_call = Expr::FunctionCall {
-        name: "Gamma".to_string(),
-        args: vec![Expr::Real(lf - mf + 1.0)].into(),
-      };
-      let g_den_call = Expr::FunctionCall {
-        name: "Gamma".to_string(),
-        args: vec![Expr::Real(lf + mf + 1.0)].into(),
-      };
+      let g_num_call = call("Gamma", vec![Expr::Real(lf - mf + 1.0)]);
+      let g_den_call = call("Gamma", vec![Expr::Real(lf + mf + 1.0)]);
       let Ok(Expr::Real(g_num)) =
         crate::evaluator::evaluate_expr_to_expr(&g_num_call)
       else {
@@ -1079,10 +994,10 @@ pub fn spherical_harmonic_y_ast(
     name: "Times".to_string(),
     args: vec![
       norm_inner,
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)].into(),
-      },
+      call(
+        "Power",
+        vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)],
+      ),
     ]
     .into(),
   };
@@ -1090,28 +1005,19 @@ pub fn spherical_harmonic_y_ast(
     name: "Power".to_string(),
     args: vec![
       sqrt_arg,
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      },
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
     ]
     .into(),
   };
   let norm_expr = Expr::FunctionCall {
     name: "Times".to_string(),
     args: vec![
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      },
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
       sqrt_part,
     ]
     .into(),
   };
-  let cos_theta = Expr::FunctionCall {
-    name: "Cos".to_string(),
-    args: vec![args[2].clone()].into(),
-  };
+  let cos_theta = call1("Cos", args[2].clone());
   let plm_raw = associated_legendre_p_ast(
     &Expr::Integer(l),
     &Expr::Integer(m),
@@ -1141,10 +1047,7 @@ pub fn spherical_harmonic_y_ast(
       .into(),
     }
   };
-  let result = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![norm_expr, plm, imp].into(),
-  };
+  let result = call("Times", vec![norm_expr, plm, imp]);
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&result)?;
   Ok(simplify_spherical_harmonic_form(&evaluated))
 }
@@ -1277,18 +1180,18 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
     let new_coeff = if coeff_d == 1 {
       Expr::Integer(coeff_n)
     } else {
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(coeff_n), Expr::Integer(coeff_d)].into(),
-      }
+      call(
+        "Rational",
+        vec![Expr::Integer(coeff_n), Expr::Integer(coeff_d)],
+      )
     };
     let new_radicand_rat = if residual_d == 1 {
       Expr::Integer(residual_n)
     } else {
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(residual_n), Expr::Integer(residual_d)].into(),
-      }
+      call(
+        "Rational",
+        vec![Expr::Integer(residual_n), Expr::Integer(residual_d)],
+      )
     };
     let new_sqrt_arg = Expr::FunctionCall {
       name: "Times".to_string(),
@@ -1306,10 +1209,7 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
       name: "Power".to_string(),
       args: vec![
         new_sqrt_arg,
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-        },
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
       ]
       .into(),
     };
@@ -1432,10 +1332,7 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
     new_args.push(c);
   }
   new_args.extend(others);
-  Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: new_args.into(),
-  }
+  call("Times", new_args)
 }
 
 fn extract_largest_square(n: i128) -> (i128, i128) {
@@ -1493,26 +1390,14 @@ fn legendre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
       let x_power = if k == 1 {
         x.clone()
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(x.clone()),
-          right: Box::new(Expr::Integer(k as i128)),
-        }
+        pow2(x.clone(), Expr::Integer(k as i128))
       };
       if c == 1 {
         x_power
       } else if c == -1 {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(-1)),
-          right: Box::new(x_power),
-        }
+        times2(Expr::Integer(-1), x_power)
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(c)),
-          right: Box::new(x_power),
-        }
+        times2(Expr::Integer(c), x_power)
       }
     };
     terms.push(term);
@@ -1521,20 +1406,13 @@ fn legendre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
   let numerator = if terms.len() == 1 {
     terms.into_iter().next().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    }
+    call("Plus", terms)
   };
 
   if lcm == 1 {
     Some(numerator)
   } else {
-    Some(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(numerator),
-      right: Box::new(Expr::Integer(lcm)),
-    })
+    Some(div2(numerator, Expr::Integer(lcm)))
   }
 }
 
@@ -1683,48 +1561,27 @@ fn legendre_q_symbolic_ast(
   x: &Expr,
 ) -> Result<Expr, InterpreterError> {
   // Q_0(x) = -Log[1-x]/2 + Log[1+x]/2
-  let half = Expr::FunctionCall {
-    name: "Rational".to_string(),
-    args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-  };
-  let neg_half = Expr::FunctionCall {
-    name: "Rational".to_string(),
-    args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
-  };
+  let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
+  let neg_half = call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]);
   let log_1mx = Expr::FunctionCall {
     name: "Log".to_string(),
     args: vec![Expr::FunctionCall {
       name: "Plus".to_string(),
       args: vec![
         Expr::Integer(1),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), x.clone()].into(),
-        },
+        call("Times", vec![Expr::Integer(-1), x.clone()]),
       ]
       .into(),
     }]
     .into(),
   };
-  let log_1px = Expr::FunctionCall {
-    name: "Log".to_string(),
-    args: vec![Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![Expr::Integer(1), x.clone()].into(),
-    }]
-    .into(),
-  };
+  let log_1px =
+    call("Log", vec![call("Plus", vec![Expr::Integer(1), x.clone()])]);
   let q0 = Expr::FunctionCall {
     name: "Plus".to_string(),
     args: vec![
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![neg_half, log_1mx].into(),
-      },
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![half, log_1px].into(),
-      },
+      call("Times", vec![neg_half, log_1mx]),
+      call("Times", vec![half, log_1px]),
     ]
     .into(),
   };
@@ -1734,49 +1591,33 @@ fn legendre_q_symbolic_ast(
   }
 
   // LegendreP[n, x] (Woxi already returns the polynomial for symbolic x).
-  let p_n = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "LegendreP".to_string(),
-    args: vec![Expr::Integer(n as i128), x.clone()].into(),
-  })?;
+  let p_n = crate::evaluator::evaluate_expr_to_expr(&call(
+    "LegendreP",
+    vec![Expr::Integer(n as i128), x.clone()],
+  ))?;
 
   // W_{n-1}(x) = Σ_{k=1..n} P_{k-1}(x) · P_{n-k}(x) / k
   let mut w_terms = Vec::with_capacity(n);
   for k in 1..=n {
-    let p_k_minus_1 =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "LegendreP".to_string(),
-        args: vec![Expr::Integer((k - 1) as i128), x.clone()].into(),
-      })?;
-    let p_n_minus_k =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "LegendreP".to_string(),
-        args: vec![Expr::Integer((n - k) as i128), x.clone()].into(),
-      })?;
-    let one_over_k = Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(1), Expr::Integer(k as i128)].into(),
-    };
-    w_terms.push(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![one_over_k, p_k_minus_1, p_n_minus_k].into(),
-    });
+    let p_k_minus_1 = crate::evaluator::evaluate_expr_to_expr(&call(
+      "LegendreP",
+      vec![Expr::Integer((k - 1) as i128), x.clone()],
+    ))?;
+    let p_n_minus_k = crate::evaluator::evaluate_expr_to_expr(&call(
+      "LegendreP",
+      vec![Expr::Integer((n - k) as i128), x.clone()],
+    ))?;
+    let one_over_k =
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(k as i128)]);
+    w_terms.push(call("Times", vec![one_over_k, p_k_minus_1, p_n_minus_k]));
   }
-  let w = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: w_terms.into(),
-  };
+  let w = call("Plus", w_terms);
 
   let result = Expr::FunctionCall {
     name: "Plus".to_string(),
     args: vec![
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), w].into(),
-      },
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![p_n, q0].into(),
-      },
+      call("Times", vec![Expr::Integer(-1), w]),
+      call("Times", vec![p_n, q0]),
     ]
     .into(),
   };
@@ -1849,9 +1690,11 @@ fn legendre_q_associated_ast(
   m_expr: &Expr,
   z_expr: &Expr,
 ) -> crate::syntax::Expr {
-  let unevaluated = || Expr::FunctionCall {
-    name: "LegendreQ".to_string(),
-    args: vec![n_expr.clone(), m_expr.clone(), z_expr.clone()].into(),
+  let unevaluated = || {
+    call(
+      "LegendreQ",
+      vec![n_expr.clone(), m_expr.clone(), z_expr.clone()],
+    )
   };
   let any_inexact = [n_expr, m_expr, z_expr].iter().any(|a| {
     matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
@@ -2020,24 +1863,13 @@ fn chebyshev_general_numeric(
   if !has_real_literal(n_expr) && !has_real_literal(x_expr) {
     return None;
   }
-  let acos_x = Expr::FunctionCall {
-    name: "ArcCos".to_string(),
-    args: vec![x_expr.clone()].into(),
-  };
+  let acos_x = call1("ArcCos", x_expr.clone());
   let order = match kind {
     "T" => n_expr.clone(),
-    "U" => Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(n_expr.clone()),
-      right: Box::new(Expr::Integer(1)),
-    },
+    "U" => plus2(n_expr.clone(), Expr::Integer(1)),
     _ => return None,
   };
-  let arg = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(order),
-    right: Box::new(acos_x),
-  };
+  let arg = times2(order, acos_x);
   let trig = Expr::FunctionCall {
     name: match kind {
       "T" => "Cos".to_string(),
@@ -2052,22 +1884,13 @@ fn chebyshev_general_numeric(
       // Divide by Sqrt[1 - x^2]
       let denom = Expr::FunctionCall {
         name: "Sqrt".to_string(),
-        args: vec![Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(Expr::Integer(1)),
-          right: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(x_expr.clone()),
-            right: Box::new(Expr::Integer(2)),
-          }),
-        }]
+        args: vec![minus2(
+          Expr::Integer(1),
+          pow2(x_expr.clone(), Expr::Integer(2)),
+        )]
         .into(),
       };
-      Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(trig),
-        right: Box::new(denom),
-      }
+      div2(trig, denom)
     }
     _ => return None,
   };
@@ -2114,31 +1937,19 @@ fn chebyshev_general_exact(
   }
   // ChebyshevU[n, 1] = n + 1 (the Sin/Sqrt form is 0/0 there).
   if kind == "U" && matches!(x_expr, Expr::Integer(1)) {
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(n_expr.clone()),
-      right: Box::new(Expr::Integer(1)),
-    })
+    return crate::evaluator::evaluate_expr_to_expr(&plus2(
+      n_expr.clone(),
+      Expr::Integer(1),
+    ))
     .ok();
   }
-  let acos_x = Expr::FunctionCall {
-    name: "ArcCos".to_string(),
-    args: vec![x_expr.clone()].into(),
-  };
+  let acos_x = call1("ArcCos", x_expr.clone());
   let order = match kind {
     "T" => n_expr.clone(),
-    "U" => Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(n_expr.clone()),
-      right: Box::new(Expr::Integer(1)),
-    },
+    "U" => plus2(n_expr.clone(), Expr::Integer(1)),
     _ => return None,
   };
-  let arg = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(order),
-    right: Box::new(acos_x),
-  };
+  let arg = times2(order, acos_x);
   let trig = Expr::FunctionCall {
     name: if kind == "T" { "Cos" } else { "Sin" }.to_string(),
     args: vec![arg].into(),
@@ -2147,28 +1958,12 @@ fn chebyshev_general_exact(
     trig
   } else {
     // Sin[(n+1) ArcCos[x]] / (Sqrt[1 - x] Sqrt[1 + x]).
-    let sqrt = |e: Expr| Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![e].into(),
-    };
-    let denom = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(sqrt(Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(x_expr.clone()),
-      })),
-      right: Box::new(sqrt(Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(x_expr.clone()),
-      })),
-    };
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(trig),
-      right: Box::new(denom),
-    }
+    let sqrt = |e: Expr| call1("Sqrt", e);
+    let denom = times2(
+      sqrt(minus2(Expr::Integer(1), x_expr.clone())),
+      sqrt(plus2(Expr::Integer(1), x_expr.clone())),
+    );
+    div2(trig, denom)
   };
   crate::evaluator::evaluate_expr_to_expr(&final_expr).ok()
 }
@@ -2296,25 +2091,14 @@ fn chebyshev_t_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
     } else if k == 1 {
       Some(x.clone())
     } else {
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(x.clone()),
-        right: Box::new(Expr::Integer(k as i128)),
-      })
+      Some(pow2(x.clone(), Expr::Integer(k as i128)))
     };
 
     let term = match (coeff, x_power) {
       ((c, 1), None) => Expr::Integer(c),
       ((1, 1), Some(xp)) => xp,
-      ((-1, 1), Some(xp)) => Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), xp].into(),
-      },
-      ((c, 1), Some(xp)) => Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(c)),
-        right: Box::new(xp),
-      },
+      ((-1, 1), Some(xp)) => call("Times", vec![Expr::Integer(-1), xp]),
+      ((c, 1), Some(xp)) => times2(Expr::Integer(c), xp),
       _ => return None, // Should not happen for Chebyshev (all integer coefficients)
     };
     terms.push(term);
@@ -2330,11 +2114,7 @@ fn chebyshev_t_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
   // Build sum from left to right using Plus
   let mut result = terms[0].clone();
   for t in terms.iter().skip(1) {
-    result = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(result),
-      right: Box::new(t.clone()),
-    };
+    result = plus2(result, t.clone());
   }
   Some(result)
 }
@@ -2390,10 +2170,7 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let pos = chebyshev_u_ast(&[Expr::Integer(-*m - 2), args[1].clone()])?;
     // Expand so the leading -1 distributes over a polynomial result
     // (e.g. -U_2(x) = -(-1 + 4 x^2) becomes 1 - 4 x^2).
-    let negated = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), pos].into(),
-    };
+    let negated = call("Times", vec![Expr::Integer(-1), pos]);
     return crate::evaluator::evaluate_function_call_ast("Expand", &[negated]);
   }
 
@@ -2506,25 +2283,14 @@ fn chebyshev_u_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
     } else if k == 1 {
       Some(x.clone())
     } else {
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(x.clone()),
-        right: Box::new(Expr::Integer(k as i128)),
-      })
+      Some(pow2(x.clone(), Expr::Integer(k as i128)))
     };
 
     let term = match (coeff, x_power) {
       ((c, 1), None) => Expr::Integer(c),
       ((1, 1), Some(xp)) => xp,
-      ((-1, 1), Some(xp)) => Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), xp].into(),
-      },
-      ((c, 1), Some(xp)) => Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(c)),
-        right: Box::new(xp),
-      },
+      ((-1, 1), Some(xp)) => call("Times", vec![Expr::Integer(-1), xp]),
+      ((c, 1), Some(xp)) => times2(Expr::Integer(c), xp),
       _ => return None,
     };
     terms.push(term);
@@ -2539,11 +2305,7 @@ fn chebyshev_u_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
 
   let mut result = terms[0].clone();
   for t in terms.iter().skip(1) {
-    result = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(result),
-      right: Box::new(t.clone()),
-    };
+    result = plus2(result, t.clone());
   }
   Some(result)
 }
@@ -2590,23 +2352,13 @@ fn gegenbauer_c_two_arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
     Expr::Integer(n) => make_rational(2, *n),
-    other => Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(Expr::Integer(2)),
-      right: Box::new(other.clone()),
-    },
+    other => div2(Expr::Integer(2), other.clone()),
   };
 
   // (2/n) * ChebyshevT[n, x], evaluated so the rational prefactor combines
   // with the polynomial into Wolfram's canonical form.
-  let cheb = Expr::FunctionCall {
-    name: "ChebyshevT".to_string(),
-    args: vec![args[0].clone(), args[1].clone()].into(),
-  };
-  let prod = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![prefactor, cheb].into(),
-  };
+  let cheb = call("ChebyshevT", vec![args[0].clone(), args[1].clone()]);
+  let prod = call("Times", vec![prefactor, cheb]);
   crate::evaluator::evaluate_expr_to_expr(&prod)
 }
 
@@ -2775,47 +2527,37 @@ fn gegenbauer_symbolic_lambda(n: usize, lambda: &Expr, x: &Expr) -> Expr {
         factors.push(Expr::Integer(num));
       }
     } else {
-      factors.push(Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
-      });
+      factors.push(call(
+        "Rational",
+        vec![Expr::Integer(num), Expr::Integer(den)],
+      ));
     }
     // Pochhammer[λ, m] = λ · (1+λ) · … · (m-1+λ).
     for i in 0..m {
       factors.push(if i == 0 {
         lambda.clone()
       } else {
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![Expr::Integer(i as i128), lambda.clone()].into(),
-        }
+        call("Plus", vec![Expr::Integer(i as i128), lambda.clone()])
       });
     }
     // x^power (omit for power 0, bare x for power 1).
     match power {
       0 => {}
       1 => factors.push(x.clone()),
-      p => factors.push(Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![x.clone(), Expr::Integer(p as i128)].into(),
-      }),
+      p => {
+        factors.push(call("Power", vec![x.clone(), Expr::Integer(p as i128)]));
+      }
     }
     terms.push(match factors.len() {
       0 => Expr::Integer(1),
       1 => factors.remove(0),
-      _ => Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: factors.into(),
-      },
+      _ => call("Times", factors),
     });
   }
   match terms.len() {
     0 => Expr::Integer(0),
     1 => terms.remove(0),
-    _ => Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    },
+    _ => call("Plus", terms),
   }
 }
 
@@ -3039,11 +2781,7 @@ fn gegenbauer_polynomial_symbolic(
     } else if k == 1 {
       Some(x.clone())
     } else {
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(x.clone()),
-        right: Box::new(Expr::Integer(k as i128)),
-      })
+      Some(pow2(x.clone(), Expr::Integer(k as i128)))
     };
 
     let coeff_expr = if *cd == 1 {
@@ -3058,16 +2796,9 @@ fn gegenbauer_polynomial_symbolic(
         if *cn == 1 && *cd == 1 {
           xp
         } else if *cn == -1 && *cd == 1 {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), xp].into(),
-          }
+          call("Times", vec![Expr::Integer(-1), xp])
         } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(coeff_expr),
-            right: Box::new(xp),
-          }
+          times2(coeff_expr, xp)
         }
       }
     };
@@ -3083,11 +2814,7 @@ fn gegenbauer_polynomial_symbolic(
 
   let mut result = terms[0].clone();
   for t in terms.iter().skip(1) {
-    result = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(result),
-      right: Box::new(t.clone()),
-    };
+    result = plus2(result, t.clone());
   }
   Some(result)
 }
@@ -3184,14 +2911,11 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       //   LaguerreL[n, x] = Hypergeometric1F1[-n, 1, x].
       // Only forward the rewrite when both n and x are numeric (so the
       // Hypergeometric1F1 path returns a Real); otherwise stay unevaluated.
-      let neg_n = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), args[0].clone()].into(),
-      };
-      let rewrite = Expr::FunctionCall {
-        name: "Hypergeometric1F1".to_string(),
-        args: vec![neg_n, Expr::Integer(1), args[1].clone()].into(),
-      };
+      let neg_n = call("Times", vec![Expr::Integer(-1), args[0].clone()]);
+      let rewrite = call(
+        "Hypergeometric1F1",
+        vec![neg_n, Expr::Integer(1), args[1].clone()],
+      );
       let evaluated = crate::evaluator::evaluate_expr_to_expr(&rewrite)?;
       if matches!(evaluated, Expr::Real(_) | Expr::BigFloat(_, _)) {
         return Ok(evaluated);
@@ -3242,10 +2966,10 @@ fn generalized_laguerre_l_ast(
   let n = match n_expr {
     Expr::Integer(n) if *n >= 0 => *n as usize,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "LaguerreL".to_string(),
-        args: vec![n_expr.clone(), a_expr.clone(), x_expr.clone()].into(),
-      });
+      return Ok(call(
+        "LaguerreL",
+        vec![n_expr.clone(), a_expr.clone(), x_expr.clone()],
+      ));
     }
   };
 
@@ -3322,26 +3046,14 @@ fn generalized_laguerre_l_ast(
         let power = if k == 1 {
           x_expr.clone()
         } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(x_expr.clone()),
-            right: Box::new(Expr::Integer(k as i128)),
-          }
+          pow2(x_expr.clone(), Expr::Integer(k as i128))
         };
         if scaled == 1 {
           power
         } else if scaled == -1 {
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(-1)),
-            right: Box::new(power),
-          }
+          times2(Expr::Integer(-1), power)
         } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(coeff_expr),
-            right: Box::new(power),
-          }
+          times2(coeff_expr, power)
         }
       };
       terms.push(term);
@@ -3353,20 +3065,12 @@ fn generalized_laguerre_l_ast(
 
     let mut numer = terms[0].clone();
     for term in &terms[1..] {
-      numer = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(numer),
-        right: Box::new(term.clone()),
-      };
+      numer = plus2(numer, term.clone());
     }
     let result = if common_denom == 1 {
       numer
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(numer),
-        right: Box::new(Expr::Integer(common_denom)),
-      }
+      div2(numer, Expr::Integer(common_denom))
     };
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
@@ -3392,15 +3096,12 @@ fn generalized_laguerre_l_ast(
   // wolframscript does (e.g. (2 + 3 a + a^2 - 4 x - 2 a x + x^2)/2).
   let Some(n_fact) = (1..=n as i128).try_fold(1i128, i128::checked_mul) else {
     // n! overflows i128 (n > 20): leave unevaluated rather than risk garbage.
-    return Ok(Expr::FunctionCall {
-      name: "LaguerreL".to_string(),
-      args: vec![n_expr.clone(), a_expr.clone(), x_expr.clone()].into(),
-    });
+    return Ok(call(
+      "LaguerreL",
+      vec![n_expr.clone(), a_expr.clone(), x_expr.clone()],
+    ));
   };
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
+  let call = |name: &str, args: Vec<Expr>| call(name, args);
   let pow = |b: Expr, e: i128| call("Power", vec![b, Expr::Integer(e)]);
   let mut sum_terms: Vec<Expr> = Vec::with_capacity(n + 1);
   for k in 0..=n {
@@ -3425,11 +3126,7 @@ fn generalized_laguerre_l_ast(
     "Times",
     vec![Expr::Integer(n_fact), call("Plus", sum_terms)],
   );
-  let result = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(call("Expand", vec![scaled])),
-    right: Box::new(Expr::Integer(n_fact)),
-  };
+  let result = div2(call1("Expand", scaled), Expr::Integer(n_fact));
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
@@ -3523,25 +3220,16 @@ fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> crate::syntax::Expr {
     } else if k == 1 {
       Some(x.clone())
     } else {
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(x.clone()),
-        right: Box::new(Expr::Integer(k as i128)),
-      })
+      Some(pow2(x.clone(), Expr::Integer(k as i128)))
     };
 
     let term = match x_power {
       None => Expr::BigInteger(c.clone()),
       Some(xp) if *c == BigInt::from(1) => xp,
-      Some(xp) if *c == BigInt::from(-1) => Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), xp].into(),
-      },
-      Some(xp) => Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::BigInteger(c.clone())),
-        right: Box::new(xp),
-      },
+      Some(xp) if *c == BigInt::from(-1) => {
+        call("Times", vec![Expr::Integer(-1), xp])
+      }
+      Some(xp) => times2(Expr::BigInteger(c.clone()), xp),
     };
     terms.push(term);
   }
@@ -3552,22 +3240,14 @@ fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> crate::syntax::Expr {
 
   let mut numerator = terms[0].clone();
   for t in terms.iter().skip(1) {
-    numerator = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(numerator),
-      right: Box::new(t.clone()),
-    };
+    numerator = plus2(numerator, t.clone());
   }
 
   if n_fact == BigInt::from(1) {
     return numerator;
   }
 
-  Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(numerator),
-    right: Box::new(Expr::BigInteger(n_fact.clone())),
-  }
+  div2(numerator, Expr::BigInteger(n_fact.clone()))
 }
 
 /// Compute Laguerre scaled coefficients: n! * L_n(x) = Σ c_k x^k
@@ -3631,14 +3311,8 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ]
           .into(),
         });
-        let g1 = eval_real(Expr::FunctionCall {
-          name: "Gamma".to_string(),
-          args: vec![Expr::Real((1.0 - nu) / 2.0)].into(),
-        });
-        let g2 = eval_real(Expr::FunctionCall {
-          name: "Gamma".to_string(),
-          args: vec![Expr::Real(-nu / 2.0)].into(),
-        });
+        let g1 = eval_real(call1("Gamma", Expr::Real((1.0 - nu) / 2.0)));
+        let g2 = eval_real(call1("Gamma", Expr::Real(-nu / 2.0)));
         if let (Some(h1v), Some(h2v), Some(g1v), Some(g2v)) = (h1, h2, g1, g2) {
           let pi = std::f64::consts::PI;
           let result =
@@ -3765,25 +3439,14 @@ fn hermite_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
     } else if k == 1 {
       Some(x.clone())
     } else {
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(x.clone()),
-        right: Box::new(Expr::Integer(k as i128)),
-      })
+      Some(pow2(x.clone(), Expr::Integer(k as i128)))
     };
 
     let term = match x_power {
       None => Expr::Integer(*c),
       Some(xp) if *c == 1 => xp,
-      Some(xp) if *c == -1 => Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), xp].into(),
-      },
-      Some(xp) => Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(*c)),
-        right: Box::new(xp),
-      },
+      Some(xp) if *c == -1 => call("Times", vec![Expr::Integer(-1), xp]),
+      Some(xp) => times2(Expr::Integer(*c), xp),
     };
     terms.push(term);
   }
@@ -3797,11 +3460,7 @@ fn hermite_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
 
   let mut result = terms[0].clone();
   for t in terms.iter().skip(1) {
-    result = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(result),
-      right: Box::new(t.clone()),
-    };
+    result = plus2(result, t.clone());
   }
   Some(result)
 }
@@ -3893,18 +3552,12 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
     false
   };
   // Sin[θ]; and Sin[θ]^e, collapsing the exponent 1 back to bare Sin[θ].
-  let sin = || Expr::FunctionCall {
-    name: "Sin".to_string(),
-    args: vec![theta.clone()].into(),
-  };
+  let sin = || call1("Sin", theta.clone());
   let sin_pow = |e2: Expr| -> Expr {
     if matches!(&e2, Expr::Integer(1)) {
       sin()
     } else {
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![sin(), e2].into(),
-      }
+      call("Power", vec![sin(), e2])
     }
   };
   // Double an exponent e → 2e (reduced), so (1 - Cos[θ]^2)^e becomes
@@ -3920,10 +3573,10 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
           if den == 1 {
             Some(Expr::Integer(num))
           } else {
-            Some(Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
-            })
+            Some(call(
+              "Rational",
+              vec![Expr::Integer(num), Expr::Integer(den)],
+            ))
           }
         } else {
           None
@@ -3947,11 +3600,10 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
       {
         return sin_pow(e2);
       }
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(rewrite_sqrt_one_minus_cos_sq(left, theta)),
-        right: Box::new(rewrite_sqrt_one_minus_cos_sq(right, theta)),
-      }
+      pow2(
+        rewrite_sqrt_one_minus_cos_sq(left, theta),
+        rewrite_sqrt_one_minus_cos_sq(right, theta),
+      )
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       if is_one_minus_cos_sq(&args[0])
@@ -4169,24 +3821,13 @@ fn zernike_r_polynomial_symbolic(
     } else if inner == 1 {
       Some(x.clone())
     } else {
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(x.clone()),
-        right: Box::new(Expr::Integer(inner)),
-      })
+      Some(pow2(x.clone(), Expr::Integer(inner)))
     };
     let term = match (*coeff, x_power) {
       (c, None) => Expr::Integer(c),
       (1, Some(xp)) => xp,
-      (-1, Some(xp)) => Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), xp].into(),
-      },
-      (c, Some(xp)) => Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(c)),
-        right: Box::new(xp),
-      },
+      (-1, Some(xp)) => call("Times", vec![Expr::Integer(-1), xp]),
+      (c, Some(xp)) => times2(Expr::Integer(c), xp),
     };
     terms.push(term);
   }
@@ -4199,11 +3840,7 @@ fn zernike_r_polynomial_symbolic(
   } else {
     let mut result = terms[0].clone();
     for t in terms.iter().skip(1) {
-      result = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(result),
-        right: Box::new(t.clone()),
-      };
+      result = plus2(result, t.clone());
     }
     result
   };
@@ -4218,11 +3855,7 @@ fn zernike_r_polynomial_symbolic(
     return if m == 1 {
       x.clone()
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(x.clone()),
-        right: Box::new(Expr::Integer(m)),
-      }
+      pow2(x.clone(), Expr::Integer(m))
     };
   }
 
@@ -4230,16 +3863,8 @@ fn zernike_r_polynomial_symbolic(
   let x_m = if m == 1 {
     x.clone()
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(x.clone()),
-      right: Box::new(Expr::Integer(m)),
-    }
+    pow2(x.clone(), Expr::Integer(m))
   };
 
-  Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(x_m),
-    right: Box::new(inner_sum),
-  }
+  times2(x_m, inner_sum)
 }

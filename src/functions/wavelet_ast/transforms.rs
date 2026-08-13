@@ -947,26 +947,17 @@ pub fn basis_index(kind: TransformKind, r: usize, rank: usize) -> Vec<Vec<u8>> {
 /// filter properties and LiftingWaveletTransform can consume it.
 pub fn lifting_filter_data(spec: &WaveletSpec) -> Expr {
   let wavelet = spec_to_expr(spec);
-  Expr::FunctionCall {
-    name: "LiftingFilterData".to_string(),
-    args: vec![wavelet].into(),
-  }
+  call1("LiftingFilterData", wavelet)
 }
 
 /// Canonical expression for a discrete wavelet spec.
 fn spec_to_expr(spec: &WaveletSpec) -> Expr {
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   let int = |n: i128| Expr::Integer(n);
   match spec {
     WaveletSpec::Haar => call("HaarWavelet", vec![]),
-    WaveletSpec::Daubechies(n) => {
-      call("DaubechiesWavelet", vec![int(*n as i128)])
-    }
-    WaveletSpec::Symlet(n) => call("SymletWavelet", vec![int(*n as i128)]),
-    WaveletSpec::Coiflet(n) => call("CoifletWavelet", vec![int(*n as i128)]),
+    WaveletSpec::Daubechies(n) => call1("DaubechiesWavelet", int(*n as i128)),
+    WaveletSpec::Symlet(n) => call1("SymletWavelet", int(*n as i128)),
+    WaveletSpec::Coiflet(n) => call1("CoifletWavelet", int(*n as i128)),
     WaveletSpec::BattleLemarie(n, lim) => call(
       "BattleLemarieWavelet",
       vec![int(*n as i128), Expr::Real(*lim)],
@@ -979,13 +970,13 @@ fn spec_to_expr(spec: &WaveletSpec) -> Expr {
       "ReverseBiorthogonalSplineWavelet",
       vec![int(*n as i128), int(*m as i128)],
     ),
-    WaveletSpec::Cdf(lossy) => call(
+    WaveletSpec::Cdf(lossy) => call1(
       "CDFWavelet",
-      vec![Expr::String(if *lossy { "9/7" } else { "5/3" }.to_string())],
+      Expr::String(if *lossy { "9/7" } else { "5/3" }.to_string()),
     ),
     WaveletSpec::Meyer(n, lim) => {
       call("MeyerWavelet", vec![int(*n as i128), Expr::Real(*lim)])
     }
-    WaveletSpec::Shannon(lim) => call("ShannonWavelet", vec![Expr::Real(*lim)]),
+    WaveletSpec::Shannon(lim) => call1("ShannonWavelet", Expr::Real(*lim)),
   }
 }

@@ -438,7 +438,7 @@ pub fn while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Err(InterpreterError::BreakSignal) => break,
             Err(InterpreterError::ContinueSignal) => {}
             Err(InterpreterError::ReturnValue(val)) => {
-              return Ok(call("Return", vec![*val]));
+              return Ok(call1("Return", *val));
             }
             Err(e) => return Err(e),
           }
@@ -876,7 +876,7 @@ pub fn boole_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match as_bool(&evaluated) {
     Some(true) => Ok(Expr::Integer(1)),
     Some(false) => Ok(Expr::Integer(0)),
-    None => Ok(call("Boole", vec![evaluated])),
+    None => Ok(call1("Boole", evaluated)),
   }
 }
 
@@ -1392,10 +1392,7 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
           // Implies[a, b] → Or[b, Not[a]]
           let a = eliminate_connectives(&args[0]);
           let b = eliminate_connectives(&args[1]);
-          Expr::FunctionCall {
-            name: "Or".to_string(),
-            args: vec![b, call("Not", vec![a])].into(),
-          }
+          call("Or", vec![b, call1("Not", a)])
         }
         "Equivalent" if args.len() >= 2 => {
           // Equivalent[a, b] → And[Or[Not[a], b], Or[a, Not[b]]]
@@ -1412,11 +1409,8 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
                 call("And", vec![a.clone(), b.clone()]),
                 Expr::FunctionCall {
                   name: "And".to_string(),
-                  args: vec![
-                    call("Not", vec![a.clone()]),
-                    call("Not", vec![b.clone()]),
-                  ]
-                  .into(),
+                  args: vec![call1("Not", a.clone()), call1("Not", b.clone())]
+                    .into(),
                 },
               ]
               .into(),
@@ -1444,14 +1438,8 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             Expr::FunctionCall {
               name: "Or".to_string(),
               args: vec![
-                Expr::FunctionCall {
-                  name: "And".to_string(),
-                  args: vec![a.clone(), call("Not", vec![b.clone()])].into(),
-                },
-                Expr::FunctionCall {
-                  name: "And".to_string(),
-                  args: vec![b.clone(), call("Not", vec![a.clone()])].into(),
-                },
+                call("And", vec![a.clone(), call1("Not", b.clone())]),
+                call("And", vec![b.clone(), call1("Not", a.clone())]),
               ]
               .into(),
             }
@@ -1469,26 +1457,20 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
           // Nand[a, b] → Not[And[a, b]]
           let elim_args: Vec<Expr> =
             args.iter().map(eliminate_connectives).collect();
-          Expr::FunctionCall {
-            name: "Not".to_string(),
-            args: vec![call("And", elim_args)].into(),
-          }
+          call1("Not", call("And", elim_args))
         }
         "Nor" if args.len() >= 2 => {
           // Nor[a, b] → Not[Or[a, b]]
           let elim_args: Vec<Expr> =
             args.iter().map(eliminate_connectives).collect();
-          Expr::FunctionCall {
-            name: "Not".to_string(),
-            args: vec![call("Or", elim_args)].into(),
-          }
+          call1("Not", call("Or", elim_args))
         }
         "If" if args.len() == 3 => {
           // As a boolean expression, If[a, b, c] is (a && b) || (!a && c).
           let a = eliminate_connectives(&args[0]);
           let b = eliminate_connectives(&args[1]);
           let c = eliminate_connectives(&args[2]);
-          let not_a = call("Not", vec![a.clone()]);
+          let not_a = call1("Not", a.clone());
           Expr::FunctionCall {
             name: "Or".to_string(),
             args: vec![call("And", vec![a, b]), call("And", vec![not_a, c])]
@@ -1531,7 +1513,7 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
       operand,
     } => {
       let inner = eliminate_connectives(operand);
-      call("Not", vec![inner])
+      call1("Not", inner)
     }
     _ => expr.clone(),
   }
@@ -1576,7 +1558,7 @@ fn apply_not_inward(inner: &Expr) -> Expr {
     // Not[other] → Not[other] (keep as-is, recurse into inner)
     other => {
       let recurse = push_not_inward(other);
-      call("Not", vec![recurse])
+      call1("Not", recurse)
     }
   }
 }
@@ -1900,7 +1882,7 @@ fn bc_negate_literal(e: &Expr) -> Expr {
       op: UnaryOperator::Not,
       operand,
     } => (**operand).clone(),
-    _ => call("Not", vec![e.clone()]),
+    _ => call1("Not", e.clone()),
   }
 }
 
@@ -1912,10 +1894,7 @@ fn bc_demorgan_clause(clause: &Expr, clause_head: &str, dual: &str) -> Expr {
     && name == clause_head
   {
     let negated: Vec<Expr> = args.iter().map(bc_negate_literal).collect();
-    return Expr::FunctionCall {
-      name: "Not".to_string(),
-      args: vec![call(dual, negated)].into(),
-    };
+    return call1("Not", call(dual, negated));
   }
   clause.clone()
 }
@@ -1955,7 +1934,6 @@ fn bc_to_sheffer(
   clause_head: &str,
   sheffer: &str,
 ) -> Expr {
-  let call = |name: &str, args: Vec<Expr>| call(name, args);
   let clause = |c: &Expr| match c {
     Expr::FunctionCall { name, args } if name == clause_head => {
       call(sheffer, args.iter().cloned().collect())
@@ -1969,7 +1947,7 @@ fn bc_to_sheffer(
     // One clause on its own is that clause negated twice: the Sheffer
     // connective already negates it, so a Not goes back on the outside.
     Expr::FunctionCall { name, args } if name == clause_head => {
-      call("Not", vec![call(sheffer, args.iter().cloned().collect())])
+      call1("Not", call(sheffer, args.iter().cloned().collect()))
     }
     // A bare literal, `True` or `False` needs no connective at all.
     other => other.clone(),
@@ -2064,7 +2042,7 @@ fn bc_algebraic_normal_form(variables: &[String], table: &[bool]) -> Expr {
     _ => call("Xor", terms),
   };
   if constant {
-    call("Not", vec![joined])
+    call1("Not", joined)
   } else {
     joined
   }
@@ -3784,7 +3762,7 @@ fn boolean_quantifier(
     name: if conjunct { "And" } else { "Or" }.to_string(),
     args: branches.into(),
   })?;
-  eval(&call("BooleanMinimize", vec![combined]))
+  eval(&call1("BooleanMinimize", combined))
 }
 
 pub fn conjunction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

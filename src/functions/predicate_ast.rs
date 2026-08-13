@@ -137,10 +137,7 @@ pub fn real_valued_numeric_q_ast(
   }
   // Numerically evaluate and check the result is a real-number atom (not a
   // complex value, which carries the head Complex or stays as `I`).
-  let n_call = Expr::FunctionCall {
-    name: "N".to_string(),
-    args: vec![args[0].clone()].into(),
-  };
+  let n_call = call1("N", args[0].clone());
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&n_call)?;
   let is_real = matches!(
     evaluated,
@@ -892,10 +889,7 @@ fn interval_sign(expr: &Expr, name: &str) -> Option<Expr> {
   };
   // Strict straddle: the sign cannot be determined.
   if a < 0.0 && b > 0.0 {
-    return Some(Expr::FunctionCall {
-      name: name.to_string(),
-      args: vec![expr.clone()].into(),
-    });
+    return Some(call1(name, expr.clone()));
   }
   let val = match name {
     "Positive" => a > 0.0,
@@ -1666,13 +1660,8 @@ fn is_squarefree_i128(n: i128) -> bool {
 fn poly_square_free_q(expr: &Expr) -> Option<bool> {
   use crate::evaluator::evaluate_expr_to_expr;
   let is_true = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
-  let call = |name: &str, args: Vec<Expr>| {
-    evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.into(),
-    })
-    .ok()
-  };
+  let call =
+    |name: &str, args: Vec<Expr>| evaluate_expr_to_expr(&call(name, args)).ok();
 
   // Restrict to a single symbol variable; multivariate PolynomialGCD is not
   // reliable enough to build the square-free test on.
@@ -2371,10 +2360,7 @@ pub fn expr_to_full_form(expr: &Expr) -> String {
 /// FullForm[expr] - Returns a symbolic FullForm wrapper (like wolframscript).
 /// The display layer (expr_to_output) renders the inner expr in FullForm notation.
 pub fn full_form_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
-  Ok(Expr::FunctionCall {
-    name: "FullForm".to_string(),
-    args: vec![arg.clone()].into(),
-  })
+  Ok(call1("FullForm", arg.clone()))
 }
 
 /// Construct[f, a, b, c, ...] - Creates function call f[a, b, c, ...]
@@ -2812,10 +2798,7 @@ pub fn possible_zero_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // 8. For complex-valued expressions, evaluate via N[] and check magnitude.
-  let n_call = Expr::FunctionCall {
-    name: "N".to_string(),
-    args: vec![expr.clone()].into(),
-  };
+  let n_call = call1("N", expr.clone());
   if let Ok(num) = crate::evaluator::evaluate_expr_to_expr(&n_call)
     && let Some((re, im)) =
       crate::functions::math_ast::try_extract_complex_float(&num)
