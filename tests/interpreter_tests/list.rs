@@ -201,6 +201,45 @@ mod table_do_raw_iterator {
   }
 }
 
+mod table_do_bare_count {
+  use super::*;
+
+  // A bare (non-list) iterator spec need not be a literal integer: a symbol
+  // or an arbitrary expression that evaluates to a non-negative integer is
+  // also a valid repeat count (regression test: these used to raise
+  // "invalid iterator specification" because only literal Expr::Integer was
+  // recognized).
+  #[test]
+  fn table_bare_symbol_count() {
+    clear_state();
+    assert_eq!(interpret("n = 3; Table[x, n]").unwrap(), "{x, x, x}");
+  }
+
+  #[test]
+  fn table_bare_expression_count() {
+    clear_state();
+    assert_eq!(
+      interpret("iStart = 5; Table[x, 8 - iStart]").unwrap(),
+      "{x, x, x}"
+    );
+  }
+
+  #[test]
+  fn do_bare_symbol_count() {
+    clear_state();
+    let r = woxi::interpret_with_stdout("n = 3; Do[Print[1], n]").unwrap();
+    assert_eq!(r.stdout, "1\n1\n1\n");
+  }
+
+  #[test]
+  fn do_bare_expression_count() {
+    clear_state();
+    let r = woxi::interpret_with_stdout("iStart = 5; Do[Print[1], 8 - iStart]")
+      .unwrap();
+    assert_eq!(r.stdout, "1\n1\n1\n");
+  }
+}
+
 mod table_symbolic_bounds {
   use super::*;
 
