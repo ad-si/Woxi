@@ -188,6 +188,21 @@ pub fn table_ast(
   body: &Expr,
   iter_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // A bare (non-list) iterator spec may be a symbol or expression that
+  // evaluates to a repeat count (`Table[x, n]`, `Table[x, 2 + 3]`), not just
+  // a literal integer. Resolve it before dispatching so the arms below only
+  // have to deal with already-evaluated forms; the caller (table_iterators_
+  // invalid) has already confirmed a bare spec resolves to a number.
+  let resolved_spec;
+  let iter_spec: &Expr = if matches!(
+    iter_spec,
+    Expr::List(_) | Expr::Integer(_) | Expr::BigInteger(_)
+  ) {
+    iter_spec
+  } else {
+    resolved_spec = crate::evaluator::evaluate_expr_to_expr(iter_spec)?;
+    &resolved_spec
+  };
   match iter_spec {
     Expr::Integer(_) | Expr::BigInteger(_) => {
       // Simple form: Table[expr, n]
@@ -1099,6 +1114,21 @@ fn restore_loop_var(var_name: &str, prev: Option<crate::StoredValue>) {
 /// Do[expr, {i, max}] -> execute with i from 1 to max
 /// Do[expr, {i, min, max}] -> execute with i from min to max
 pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
+  // A bare (non-list) iterator spec may be a symbol or expression that
+  // evaluates to a repeat count (`Do[expr, n]`, `Do[expr, 500 - iStart]`),
+  // not just a literal integer. Resolve it before dispatching, mirroring
+  // table_ast; the caller (table_iterators_invalid) has already confirmed a
+  // bare spec resolves to a number.
+  let resolved_spec;
+  let iter_spec: &Expr = if matches!(
+    iter_spec,
+    Expr::List(_) | Expr::Integer(_) | Expr::BigInteger(_)
+  ) {
+    iter_spec
+  } else {
+    resolved_spec = crate::evaluator::evaluate_expr_to_expr(iter_spec)?;
+    &resolved_spec
+  };
   match iter_spec {
     Expr::Integer(_) | Expr::BigInteger(_) => {
       let n = expr_to_i128(iter_spec).unwrap_or(0);
