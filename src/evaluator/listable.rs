@@ -1510,3 +1510,35 @@ pub fn flatten_sequences<'a>(
   }
   std::borrow::Cow::Owned(result)
 }
+
+/// Evaluate a top-level `Sequence @@ list` argument so it can splice.
+///
+/// `Show`, `GraphicsRow`, `GraphicsColumn`, `GraphicsGrid`, `PlotGrid` and
+/// `BooleanTable` are not `HoldAll` in Wolfram Language — Woxi dispatches
+/// them with their raw, unevaluated arguments only so each implementation
+/// can re-render child `Graphics[…]` literals at the right size. A literal
+/// `Sequence[…]` argument already splices via [`flatten_sequences`], but
+/// `Sequence @@ list` (`Expr::Apply`) only *reduces* to `Sequence[…]` once
+/// evaluated, so without this step `Show[Sequence @@ graphics]` sees a
+/// single unevaluated `Apply` argument instead of the spliced graphics.
+/// Every other argument is left untouched, preserving the hold.
+pub fn resolve_sequence_apply_args(
+  args: &[Expr],
+) -> Result<std::borrow::Cow<'_, [Expr]>, crate::InterpreterError> {
+  fn is_sequence_apply(e: &Expr) -> bool {
+    matches!(e, Expr::Apply { func, .. }
+      if matches!(func.as_ref(), Expr::Identifier(n) if n == "Sequence"))
+  }
+  if !args.iter().any(is_sequence_apply) {
+    return Ok(std::borrow::Cow::Borrowed(args));
+  }
+  let mut result = Vec::with_capacity(args.len());
+  for arg in args {
+    if is_sequence_apply(arg) {
+      result.push(crate::evaluator::evaluate_expr_to_expr(arg)?);
+    } else {
+      result.push(arg.clone());
+    }
+  }
+  Ok(std::borrow::Cow::Owned(result))
+}

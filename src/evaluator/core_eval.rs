@@ -2363,8 +2363,25 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "LocatorPane"
         || name == "ClickPane"
         {
+          // Show/GraphicsRow/GraphicsColumn/GraphicsGrid/PlotGrid/
+          // BooleanTable aren't actually HoldAll in Wolfram Language, so a
+          // `Sequence @@ list` argument must reduce to `Sequence[…]` before
+          // the flatten below can splice it (see `resolve_sequence_apply_args`).
+          let resolved: std::borrow::Cow<[Expr]> = if matches!(
+            name.as_str(),
+            "Show"
+              | "GraphicsRow"
+              | "GraphicsColumn"
+              | "GraphicsGrid"
+              | "PlotGrid"
+              | "BooleanTable"
+          ) {
+            crate::evaluator::listable::resolve_sequence_apply_args(args)?
+          } else {
+            std::borrow::Cow::Borrowed(args)
+          };
           // Flatten Sequence even in held args (unless SequenceHold)
-          let flattened = flatten_sequences(name, args);
+          let flattened = flatten_sequences(name, &resolved);
           // Honour Evaluate[...] inside HoldAll wrappers like Hold and
           // HoldForm — Evaluate forces evaluation of its argument even
           // through a hold. HoldComplete suppresses it (matching Wolfram).
