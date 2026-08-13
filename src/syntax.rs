@@ -1704,6 +1704,45 @@ fn box_escape_to_expr(box_src: &str) -> Option<Expr> {
   string_to_expr(&text).ok()
 }
 
+/// Undo `escape_string_for_input_form`'s `\"`/`\\` escaping of a `\!\(\*
+/// boxes\)` escape's content. Named-character escapes (`\[Name]`) are left
+/// untouched — they're valid box-source syntax on their own, not part of
+/// this string-quoting layer.
+fn unescape_box_source(s: &str) -> String {
+  let mut out = String::with_capacity(s.len());
+  let mut chars = s.chars().peekable();
+  while let Some(c) = chars.next() {
+    if c != '\\' {
+      out.push(c);
+      continue;
+    }
+    match chars.peek() {
+      Some('"') => {
+        out.push('"');
+        chars.next();
+      }
+      Some('\\') => {
+        out.push('\\');
+        chars.next();
+      }
+      Some('n') => {
+        out.push('\n');
+        chars.next();
+      }
+      Some('t') => {
+        out.push('\t');
+        chars.next();
+      }
+      Some('r') => {
+        out.push('\r');
+        chars.next();
+      }
+      _ => out.push('\\'),
+    }
+  }
+  out
+}
+
 /// Split `s` at its last top-level comma (one not nested in brackets or
 /// inside a string). `None` when there is no such comma.
 fn split_last_top_level_comma(s: &str) -> Option<(&str, &str)> {
@@ -2650,9 +2689,14 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
           return expr;
         }
         // `\!\(\*boxes\)` — the FrontEnd's "interpret these boxes" escape,
-        // which is what `InputForm` writes for a typeset expression.
+        // which is what `InputForm` writes for a typeset expression. Its
+        // string literals are `\"`-escaped (the way `escape_string_for_
+        // input_form` writes them, so the whole `\!\(…\)` token survives
+        // being re-tokenized as source); undo that before handing the text
+        // to the box-source readers, which expect the bare `"` delimiters
+        // real `.nb` box data uses.
         if let Some(box_src) = inner.trim_start().strip_prefix("\\*")
-          && let Some(expr) = box_escape_to_expr(box_src)
+          && let Some(expr) = box_escape_to_expr(&unescape_box_source(box_src))
         {
           return expr;
         }

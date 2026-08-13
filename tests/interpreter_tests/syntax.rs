@@ -2811,6 +2811,26 @@ mod traditional_form {
       "Column[{a, TraditionalForm[x + y]}]"
     );
   }
+
+  // A `TraditionalForm` of a symbolic product typesets to a `RowBox` of
+  // *string* atoms ("Pi", " ", "p", …), and `InputForm` `\"`-escapes those
+  // quotes so the whole `\!\(…\)` token survives being re-tokenized as
+  // source — exactly what Woxi Studio does to serialize and re-evaluate a
+  // Manipulate body on every frame. The box-source readers expect the bare
+  // `"` delimiters real `.nb` box data uses, so without undoing that
+  // escaping first, reading the text back degraded to an opaque
+  // `HoldComplete` dump of its own source instead of the original
+  // `TraditionalForm[…]`.
+  #[test]
+  fn input_form_box_escape_round_trips_escaped_string_atoms() {
+    let serialized =
+      interpret("ToString[InputForm[TraditionalForm[Pi*p*q]]]").unwrap();
+    assert!(
+      serialized.contains("\\\"Pi\\\""),
+      "expected escaped string atoms in: {serialized}"
+    );
+    assert_eq!(interpret(&serialized).unwrap(), "TraditionalForm[p*Pi*q]");
+  }
 }
 
 mod batch_symbols {
