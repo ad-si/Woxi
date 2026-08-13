@@ -149,6 +149,34 @@ fn run_routes_messages_to_stdout_like_wolframscript() {
   assert_eq!(stderr, "", "no message should leak to stderr");
 }
 
+// Regression test for #422: a file pulled in with `Get` sees its own path in
+// `$InputFileName`, and the including script sees its own again afterwards.
+#[test]
+fn get_scopes_input_file_name_to_the_included_file() {
+  let dir = std::env::temp_dir().join("woxi_cli_get_input_file_name");
+  std::fs::create_dir_all(&dir).expect("create temp dir");
+  let included = dir.join("included_file.wl");
+  let main = dir.join("test.wl");
+  // Use forward slashes inside the script: on Windows a backslash in a
+  // string literal reads as an escape sequence.
+  let included_arg = included.to_string_lossy().replace('\\', "/");
+  std::fs::write(&included, "Echo[$InputFileName];\n").expect("write include");
+  std::fs::write(
+    &main,
+    format!("Get[\"{included_arg}\"];\nEcho[$InputFileName];\n"),
+  )
+  .expect("write main");
+
+  let (stdout, stderr, ok) = run_file(&main);
+  let _ = std::fs::remove_dir_all(&dir);
+  assert!(ok, "woxi run failed: stderr={stderr}");
+  assert_eq!(
+    stdout,
+    format!(">> {included_arg}\n>> {}\n", main.display()),
+    "the included file must report its own path, the script its own"
+  );
+}
+
 #[test]
 fn run_notebook_hello_world() {
   // `woxi run` should accept a real `.nb` notebook file, evaluate its

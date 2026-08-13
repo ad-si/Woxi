@@ -295,6 +295,93 @@ mod get {
     assert_eq!(result, "\0");
     std::fs::remove_file(path).ok();
   }
+
+  // Regression test for #422: inside a file read by Get, `$InputFileName`
+  // must name that file — not the script that called Get.
+  #[test]
+  fn input_file_name_names_the_read_file() {
+    clear_state();
+    let path = write_temp("get_ifn", "getIfnInner = $InputFileName;");
+    woxi::set_system_variable("$InputFileName", "\"/outer/script.wls\"");
+    let result =
+      interpret(&format!("Get[\"{path}\"]; SameQ[getIfnInner, \"{path}\"]"))
+        .unwrap();
+    assert_eq!(result, "True");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn input_file_name_is_restored_after_get() {
+    clear_state();
+    let path = write_temp("get_ifn_restore", "1 + 1");
+    woxi::set_system_variable("$InputFileName", "\"/outer/script.wls\"");
+    let result =
+      interpret(&format!("Get[\"{path}\"]; $InputFileName")).unwrap();
+    assert_eq!(result, "/outer/script.wls");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn input_file_name_stays_unset_when_it_was_unset() {
+    clear_state();
+    let path = write_temp("get_ifn_unset", "1 + 1");
+    let result =
+      interpret(&format!("Get[\"{path}\"]; $InputFileName")).unwrap();
+    assert_eq!(result, "$InputFileName");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn input_file_name_is_restored_when_the_read_file_fails_to_evaluate() {
+    clear_state();
+    let path = write_temp("get_ifn_err", "Throw[1]");
+    woxi::set_system_variable("$InputFileName", "\"/outer/script.wls\"");
+    let _ = interpret(&format!("Get[\"{path}\"]"));
+    assert_eq!(interpret("$InputFileName").unwrap(), "/outer/script.wls");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn nested_get_restores_the_outer_input_file_name() {
+    clear_state();
+    let inner =
+      write_temp("get_ifn_nested_inner", "getIfnNestedIn = $InputFileName;");
+    let outer = write_temp(
+      "get_ifn_nested_outer",
+      &format!("Get[\"{inner}\"]; getIfnNestedOut = $InputFileName;"),
+    );
+    interpret(&format!("Get[\"{outer}\"]")).unwrap();
+    assert_eq!(
+      interpret(&format!("SameQ[getIfnNestedIn, \"{inner}\"]")).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(&format!("SameQ[getIfnNestedOut, \"{outer}\"]")).unwrap(),
+      "True"
+    );
+    std::fs::remove_file(inner).ok();
+    std::fs::remove_file(outer).ok();
+  }
+
+  // A relative file name resolves against the virtual working directory, so
+  // `SetDirectory` before a `Get` is honoured.
+  #[test]
+  fn relative_name_resolves_against_the_current_directory() {
+    clear_state();
+    let path = write_temp("get_relative", "getRelativeVar = 7;");
+    let dir = temp_dir();
+    let name = std::path::Path::new(&path)
+      .file_name()
+      .unwrap()
+      .to_string_lossy()
+      .into_owned();
+    let result = interpret(&format!(
+      "SetDirectory[\"{dir}\"]; Get[\"{name}\"]; ResetDirectory[]; getRelativeVar"
+    ))
+    .unwrap();
+    assert_eq!(result, "7");
+    std::fs::remove_file(path).ok();
+  }
 }
 
 mod directory {

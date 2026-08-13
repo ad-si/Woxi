@@ -7,7 +7,13 @@
     a `String`. Scripts gate language features on it
     (`If[$VersionNumber >= 8, …]`), which only works for a number. The Woxi
     build stays available through `$Version`.
-
+- `$InputFileName` names the file `Get` is currently reading, so a file
+    pulled in with `Get` can locate its own directory
+    (`DirectoryName[$InputFileName]`) instead of the including script's. The
+    previous value is restored when the read finishes, so nested and
+    sequential `Get`s each see their own file.
+- `Get["relative/name.wl"]` resolves against the current directory reported
+    by `Directory[]`, so a preceding `SetDirectory` is honoured.
 - Fixes driven by a Wolfram Demonstration that draws the shortest distance
     between two skew lines, a `Manipulate` whose `Graphics3D` is built out
     of unbounded objects:
