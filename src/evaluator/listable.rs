@@ -1,6 +1,10 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Version of the Wolfram Language that Woxi aims to be compatible with,
+/// reported by `$VersionNumber` (major and minor part only, as in Wolfram).
+pub const WOLFRAM_LANGUAGE_VERSION: f64 = 15.0;
+
 /// Dispatch function call to built-in implementations (AST version).
 /// This is the AST equivalent of the string-based function dispatch.
 /// IMPORTANT: This function must NOT call interpret() to avoid infinite recursion.
@@ -471,9 +475,11 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         .or_else(os_user_name)
         .map(Expr::String)
     }
-    "$VersionNumber" => {
-      Some(Expr::String(env!("WOXI_GIT_VERSION").to_string()))
-    }
+    // A `Real` like in Wolfram (e.g. `15.`), *not* the Woxi git version —
+    // scripts use it to gate on available language features
+    // (e.g. `If[$VersionNumber >= 8, …]`), which only works for a number.
+    // The Woxi build itself is reported by `$Version`.
+    "$VersionNumber" => Some(Expr::Real(WOLFRAM_LANGUAGE_VERSION)),
     // `$Version` is a human-readable banner — Wolfram returns e.g.
     // "14.3.0 for Mac OS X ARM (64-bit) (...)". Woxi has no notion of
     // such a string; surface the git version with a "Woxi " prefix so
