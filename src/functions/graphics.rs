@@ -16455,9 +16455,7 @@ impl ManipulateControl {
       | Self::IntervalSlider { name, .. }
       | Self::Trigger { name, .. }
       | Self::Locator { name, .. } => name,
-      Self::Button { .. }
-      | Self::Heading { .. }
-      | Self::Divider => "",
+      Self::Button { .. } | Self::Heading { .. } | Self::Divider => "",
     }
   }
 }
@@ -20877,10 +20875,7 @@ pub enum DisplayNode {
   /// against the live bindings, exactly like a `Button` written as a
   /// Manipulate control argument. Demonstrations use these inside a
   /// `Dynamic[…]` caption to step a variable (`n++`, `n = 1`, …).
-  Button {
-    label: Box<Self>,
-    action: String,
-  },
+  Button { label: Box<Self>, action: String },
   /// A `Spacer[w]`: `w` printer's points of horizontal space.
   Spacer { width: f64 },
   /// A text leaf with its styled runs, so `Style["…", Bold, Red]` renders
