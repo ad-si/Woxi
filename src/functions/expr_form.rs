@@ -437,35 +437,60 @@ fn render_rational_full_form(numer: i128, denom: i128) -> String {
   }
 }
 
-/// Recursively render an expression in FullForm notation.
-pub fn render_full_form(expr: &Expr) -> String {
-  // Check for complex number patterns: a + b*I → Complex[a, b]
-  // This must come before the general decomposition since complex numbers
-  // are stored as Plus/Times trees internally but should display as Complex[re, im].
-  if let Some(((rn, rd), (in_, id))) =
-    crate::functions::math_ast::try_extract_complex_exact(expr)
-    && in_ != 0
-  {
-    let re = render_rational_full_form(rn, rd);
-    let im = render_rational_full_form(in_, id);
-    return format!("Complex[{re}, {im}]");
-  }
+/// The real and imaginary parts of a complex number, as FullForm sees it.
+///
+/// Woxi stores `2 + 3 I` as a Plus/Times tree, but its head is `Complex`
+/// and its FullForm is `Complex[2, 3]`. Every consumer that reports the
+/// canonical structure — the FullForm renderer below and the structured
+/// (Python) expression tree — recognises one through this function, so the
+/// two cannot disagree about what counts as a complex number.
+///
+/// Returns exact parts as `(numerator, denominator)` pairs, or machine
+/// floats, mirroring the two shapes Woxi stores.
+pub enum ComplexParts {
+  Exact { re: (i128, i128), im: (i128, i128) },
+  Float { re: f64, im: f64 },
+}
 
-  // Machine-precision complex number: `Real + Real*I` (including
-  // `0. + 0.*I`) renders as `Complex[re\`, im\`]` like wolframscript.
-  // Only fires when the expression syntactically contains `I` and at
-  // least one Real component, so pure Reals continue to render as
-  // `<value>\``.
+pub fn complex_full_form_parts(expr: &Expr) -> Option<ComplexParts> {
+  // Exact: a + b*I with rational a and b.
+  if let Some((re, im)) =
+    crate::functions::math_ast::try_extract_complex_exact(expr)
+    && im.0 != 0
+  {
+    return Some(ComplexParts::Exact { re, im });
+  }
+  // Machine-precision: `Real + Real*I`, including `0. + 0.*I`. Requires a
+  // syntactic `I` and at least one Real component, so pure Reals are not
+  // mistaken for complex numbers.
   if expr_contains_imag_unit(expr)
     && expr_contains_real(expr)
     && let Some((re, im)) =
       crate::functions::math_ast::try_extract_complex_float(expr)
   {
-    return format!(
-      "Complex[{}, {}]",
-      format_real_full_form(re),
-      format_real_full_form(im)
-    );
+    return Some(ComplexParts::Float { re, im });
+  }
+  None
+}
+
+/// Recursively render an expression in FullForm notation.
+pub fn render_full_form(expr: &Expr) -> String {
+  // Complex numbers are stored as Plus/Times trees internally but display
+  // as Complex[re, im], so this must come before the general decomposition.
+  match complex_full_form_parts(expr) {
+    Some(ComplexParts::Exact { re, im }) => {
+      let re = render_rational_full_form(re.0, re.1);
+      let im = render_rational_full_form(im.0, im.1);
+      return format!("Complex[{re}, {im}]");
+    }
+    Some(ComplexParts::Float { re, im }) => {
+      return format!(
+        "Complex[{}, {}]",
+        format_real_full_form(re),
+        format_real_full_form(im)
+      );
+    }
+    None => {}
   }
 
   // Machine-precision Reals get the `1.\`` / `0.2\`` precision-marker
