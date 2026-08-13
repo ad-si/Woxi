@@ -14,6 +14,11 @@
     sequential `Get`s each see their own file.
 - `Get["relative/name.wl"]` resolves against the current directory reported
     by `Directory[]`, so a preceding `SetDirectory` is honoured.
+- `ParallelSelect` and `ParallelCases` (new in Wolfram 14.2) are supported.
+    Like the other `Parallel*` combinators in Woxi they delegate to the
+    sequential implementation — `Select` and `Cases` respectively — so every
+    form those accept works, including `ParallelSelect[list, crit, n]` and
+    `ParallelCases[expr, patt, levelspec, n]`.
 - Fixes driven by a Wolfram Demonstration that draws the shortest distance
     between two skew lines, a `Manipulate` whose `Graphics3D` is built out
     of unbounded objects:

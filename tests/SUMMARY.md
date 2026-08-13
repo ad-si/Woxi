@@ -1149,6 +1149,8 @@
     - [`ToTabular`](associations/ToTabular.md)
     - [`Values`](associations/Values.md)
   - [Expressions](expressions.md)
+    - [`ParallelCases`](expressions/ParallelCases.md)
+    - [`ParallelSelect`](expressions/ParallelSelect.md)
     - [`ParallelDo`](expressions/ParallelDo.md)
     - [`Molecule`](expressions/Molecule.md)
     - [`LightDarkSwitched`](expressions/LightDarkSwitched.md)

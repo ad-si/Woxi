@@ -768,6 +768,9 @@ function main() {
     // fuzzer must not chase it (this expression was flip-flopped twice before).
     // Woxi returns the cold-kernel value, matching the unit test.
     "Attributes[ParallelDo]",
+    // Same lazy-autoload non-determinism as Attributes[ParallelDo].
+    "Attributes[ParallelSelect]",
+    "Attributes[ParallelCases]",
     // The integer in InputStream[String, n] is wolframscript's per-session
     // stream counter: a cold kernel hands out 4, 5, ... and every stream any
     // earlier expression in the batch opened shifts it further. There is no

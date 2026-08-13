@@ -140,7 +140,6 @@ Woxi does **not** support.
 - Video object tracking: `VideoObjectTracking`, `ImageBoundingBoxes`
 - `GPUArray` GPU-native arrays
 - Astronomy: `FindAstroEvent`
-- `ParallelSelect`, `ParallelCases`
 - `Failsafe`
 
 ### Version 14.1 (2024)
