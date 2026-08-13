@@ -7604,10 +7604,6 @@ pub fn parametric_window_ast(
     return uneval();
   };
   let eval = crate::evaluator::evaluate_expr_to_expr;
-  let fc = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
-    name: n.to_string(),
-    args: a.into(),
-  };
   let rational = |p: i128, q: i128| Expr::FunctionCall {
     name: "Rational".to_string(),
     args: vec![Expr::Integer(p), Expr::Integer(q)].into(),
@@ -7625,17 +7621,17 @@ pub fn parametric_window_ast(
   }
   let expr = match name {
     // 1/(1 + (2 α x)²)
-    "CauchyWindow" => fc(
+    "CauchyWindow" => call(
       "Power",
       vec![
-        fc(
+        call(
           "Plus",
           vec![
             Expr::Integer(1),
-            fc(
+            call(
               "Power",
               vec![
-                fc(
+                call(
                   "Times",
                   vec![Expr::Integer(2), alpha_expr, args[0].clone()],
                 ),
@@ -7648,43 +7644,43 @@ pub fn parametric_window_ast(
       ],
     ),
     // E^(-2 α |x|)
-    "PoissonWindow" => fc(
+    "PoissonWindow" => call(
       "Power",
       vec![
         Expr::Identifier("E".to_string()),
-        fc(
+        call(
           "Times",
           vec![
             Expr::Integer(-2),
             alpha_expr,
-            fc("Abs", vec![args[0].clone()]),
+            call("Abs", vec![args[0].clone()]),
           ],
         ),
       ],
     ),
     // 31/50 - (12/25)|x| + (19/50)Cos[2 π x]
-    _ => fc(
+    _ => call(
       "Plus",
       vec![
         rational(31, 50),
-        fc(
+        call(
           "Times",
-          vec![rational(-12, 25), fc("Abs", vec![args[0].clone()])],
+          vec![rational(-12, 25), call1("Abs", args[0].clone())],
         ),
-        fc(
+        call(
           "Times",
           vec![
             rational(19, 50),
-            fc(
+            call1(
               "Cos",
-              vec![fc(
+              call(
                 "Times",
                 vec![
                   Expr::Integer(2),
                   Expr::Identifier("Pi".to_string()),
                   args[0].clone(),
                 ],
-              )],
+              ),
             ),
           ],
         ),

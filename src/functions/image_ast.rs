@@ -596,10 +596,7 @@ pub fn image_aspect_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if den == 1 {
       Expr::Integer(num)
     } else {
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
-      }
+      call("Rational", vec![Expr::Integer(num), Expr::Integer(den)])
     }
   }
   if let Expr::Image { width, height, .. } = &args[0] {
@@ -1073,14 +1070,11 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       match cargs.len() {
-        1 => Ok(Expr::FunctionCall {
-          name: "GrayLevel".to_string(),
-          args: vec![negate_component(&cargs[0])?].into(),
-        }),
-        2 => Ok(Expr::FunctionCall {
-          name: "GrayLevel".to_string(),
-          args: vec![negate_component(&cargs[0])?, cargs[1].clone()].into(),
-        }),
+        1 => Ok(call1("GrayLevel", negate_component(&cargs[0])?)),
+        2 => Ok(call(
+          "GrayLevel",
+          vec![negate_component(&cargs[0])?, cargs[1].clone()],
+        )),
         _ => Err(InterpreterError::EvaluationError(
           "ColorNegate: GrayLevel must have 1 or 2 arguments".into(),
         )),
@@ -2803,10 +2797,7 @@ pub fn dominant_colors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let centers = kmeans_1d(&grays, k, 20);
         let colors: Vec<Expr> = centers
           .iter()
-          .map(|c| Expr::FunctionCall {
-            name: "GrayLevel".to_string(),
-            args: vec![Expr::Real(c[0])].into(),
-          })
+          .map(|c| call1("GrayLevel", Expr::Real(c[0])))
           .collect();
         return Ok(Expr::List(colors.into()));
       }
@@ -3293,20 +3284,14 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(a) = alpha {
           gargs.push(Expr::Real(a));
         }
-        return Ok(Expr::FunctionCall {
-          name: "GrayLevel".to_string(),
-          args: gargs.into(),
-        });
+        return Ok(call("GrayLevel", gargs));
       }
       "RGB" => {
         let mut rargs = vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)];
         if let Some(a) = alpha {
           rargs.push(Expr::Real(a));
         }
-        return Ok(Expr::FunctionCall {
-          name: "RGBColor".to_string(),
-          args: rargs.into(),
-        });
+        return Ok(call("RGBColor", rargs));
       }
       "CMYK" => {
         let (c, m, y, k) = rgb_to_cmyk(r, g, b);
@@ -3315,10 +3300,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(a) = alpha {
           cargs.push(Expr::Real(a));
         }
-        return Ok(Expr::FunctionCall {
-          name: "CMYKColor".to_string(),
-          args: cargs.into(),
-        });
+        return Ok(call("CMYKColor", cargs));
       }
       // "HSB" produces the Hue[h, s, b(, a)] directive.
       "HSB" | "Hue" => {
@@ -3327,10 +3309,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(a) = alpha {
           hargs.push(Expr::Real(a));
         }
-        return Ok(Expr::FunctionCall {
-          name: "Hue".to_string(),
-          args: hargs.into(),
-        });
+        return Ok(call("Hue", hargs));
       }
       _ => {}
     }
@@ -4228,12 +4207,11 @@ fn median_filter_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
               window.push(get(yy, xx));
             }
           }
-          let med =
-            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-              name: "Median".to_string(),
-              args: vec![Expr::List(window.into())].into(),
-            })
-            .unwrap_or_else(|_| get(y, x));
+          let med = crate::evaluator::evaluate_expr_to_expr(&call(
+            "Median",
+            vec![Expr::List(window.into())],
+          ))
+          .unwrap_or_else(|_| get(y, x));
           new_row.push(med);
         }
         rows.push(Expr::List(new_row.into()));
@@ -4247,10 +4225,10 @@ fn median_filter_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let lo = i.saturating_sub(r);
       let hi = if i + r < n { i + r } else { n - 1 };
       let window: Vec<Expr> = elems[lo..=hi].to_vec();
-      let med = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Median".to_string(),
-        args: vec![Expr::List(window.into())].into(),
-      })
+      let med = crate::evaluator::evaluate_expr_to_expr(&call(
+        "Median",
+        vec![Expr::List(window.into())],
+      ))
       .unwrap_or_else(|_| elems[i].clone());
       result.push(med);
     }
@@ -4626,12 +4604,11 @@ fn aggregating_filter_ast(
               window.push(get(yy, xx));
             }
           }
-          let mean =
-            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-              name: agg.to_string(),
-              args: vec![Expr::List(window.into())].into(),
-            })
-            .unwrap_or_else(|_| get(y, x));
+          let mean = crate::evaluator::evaluate_expr_to_expr(&call(
+            agg,
+            vec![Expr::List(window.into())],
+          ))
+          .unwrap_or_else(|_| get(y, x));
           new_row.push(mean);
         }
         rows.push(Expr::List(new_row.into()));
@@ -4645,10 +4622,10 @@ fn aggregating_filter_ast(
       let lo = i.saturating_sub(r);
       let hi = if i + r < n { i + r } else { n - 1 };
       let window: Vec<Expr> = elems[lo..=hi].to_vec();
-      let mean = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: agg.to_string(),
-        args: vec![Expr::List(window.into())].into(),
-      })
+      let mean = crate::evaluator::evaluate_expr_to_expr(&call(
+        agg,
+        vec![Expr::List(window.into())],
+      ))
       .unwrap_or_else(|_| elems[i].clone());
       result.push(mean);
     }
@@ -6421,10 +6398,10 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     (
       ThreshMethod::Hard,
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(10_000_000_000)].into(),
-      },
+      call(
+        "Rational",
+        vec![Expr::Integer(1), Expr::Integer(10_000_000_000)],
+      ),
     )
   };
   // When the data array contains any inexact value (Real/BigFloat), the whole
@@ -6533,21 +6510,15 @@ enum ThreshMethod {
 /// wolframscript. The caller (`apply`) handles real-promotion of the array.
 fn threshold_one_method(x: &Expr, t: &Expr, method: ThreshMethod) -> Expr {
   // Helper constructors for the symbolic forms.
-  fn call(name: &str, args: Vec<Expr>) -> Expr {
-    Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.into(),
-    }
-  }
   let pow = |b: Expr, e: i128| call("Power", vec![b, Expr::Integer(e)]);
-  let abs_x = call("Abs", vec![x.clone()]);
+  let abs_x = call1("Abs", x.clone());
   let expr = match method {
     ThreshMethod::Hard | ThreshMethod::Firm => return threshold_one(x, t),
     // Sign[x] * Max[|x| - t, 0]
     ThreshMethod::Soft => call(
       "Times",
       vec![
-        call("Sign", vec![x.clone()]),
+        call1("Sign", x.clone()),
         call(
           "Max",
           vec![
@@ -6586,7 +6557,7 @@ fn threshold_one_method(x: &Expr, t: &Expr, method: ThreshMethod) -> Expr {
         call(
           "Times",
           vec![
-            call("Sign", vec![x.clone()]),
+            call1("Sign", x.clone()),
             call(
               "Sqrt",
               vec![call(
@@ -8526,10 +8497,10 @@ pub fn color_balance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Resolve the reference → target pair from the three accepted spellings.
-  let white = Expr::FunctionCall {
-    name: "RGBColor".to_string(),
-    args: vec![Expr::Integer(1), Expr::Integer(1), Expr::Integer(1)].into(),
-  };
+  let white = call(
+    "RGBColor",
+    vec![Expr::Integer(1), Expr::Integer(1), Expr::Integer(1)],
+  );
   let (source_expr, target_expr) = match args.len() {
     2 => match &args[1] {
       Expr::Rule {
@@ -8933,10 +8904,7 @@ pub fn crossing_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .collect::<Vec<_>>()
           .into(),
       );
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "SparseArray".to_string(),
-        args: vec![dense].into(),
-      })
+      crate::evaluator::evaluate_expr_to_expr(&call1("SparseArray", dense))
     }
     // 2-D numeric matrix → binary SparseArray matrix. (In one dimension
     // the 8-neighborhood reduces to the two adjacent elements.)
@@ -8979,10 +8947,7 @@ pub fn crossing_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .collect::<Vec<_>>()
           .into(),
       );
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "SparseArray".to_string(),
-        args: vec![dense].into(),
-      })
+      crate::evaluator::evaluate_expr_to_expr(&call1("SparseArray", dense))
     }
     _ => unevaluated(),
   }
@@ -9221,13 +9186,11 @@ fn image_measurement(
       }
       .into(),
     )),
-    "AspectRatio" => {
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Divide".to_string(),
-        args: vec![Expr::Integer(h as i128), Expr::Integer(w as i128)].into(),
-      })
-      .ok()
-    }
+    "AspectRatio" => crate::evaluator::evaluate_expr_to_expr(&call(
+      "Divide",
+      vec![Expr::Integer(h as i128), Expr::Integer(w as i128)],
+    ))
+    .ok(),
     "DataType" => Some(Expr::String(
       match image_type {
         ImageType::Bit => "Bit",

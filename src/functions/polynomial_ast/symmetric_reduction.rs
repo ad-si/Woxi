@@ -16,21 +16,11 @@ fn eval(e: Expr) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&e)
 }
 
-fn call(name: &str, args: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  }
-}
-
 fn sum(terms: Vec<Expr>) -> Expr {
   match terms.len() {
     0 => Expr::Integer(0),
     1 => terms.into_iter().next().unwrap(),
-    _ => Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    },
+    _ => call("Plus", terms),
   }
 }
 
@@ -172,10 +162,7 @@ pub fn power_symmetric_polynomial_ast(
         terms.push(match factors.len() {
           0 => Expr::Integer(1),
           1 => factors.into_iter().next().unwrap(),
-          _ => Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: factors.into(),
-          },
+          _ => call("Times", factors),
         });
       }
       eval(sum(terms))
@@ -272,10 +259,7 @@ pub fn augmented_symmetric_polynomial_ast(
       .collect();
     let term = match factors.len() {
       1 => factors.into_iter().next().unwrap(),
-      _ => Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: factors.into(),
-      },
+      _ => call("Times", factors),
     };
     terms.push(term);
   }

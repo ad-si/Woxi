@@ -285,11 +285,8 @@ impl AngleVal {
 
   /// d + m/60 + s/3600, staying exact only when all three parts are exact.
   fn from_dms(d: &Self, m: &Self, s: &Self) -> Self {
-    if let (
-      Self::Exact(dp, dq),
-      Self::Exact(mp, mq),
-      Self::Exact(sp, sq),
-    ) = (d, m, s)
+    if let (Self::Exact(dp, dq), Self::Exact(mp, mq), Self::Exact(sp, sq)) =
+      (d, m, s)
       && let Some(v) = (|| {
         let a = rat_add((*dp, *dq), (*mp, mq.checked_mul(60)?))?;
         rat_add(a, (*sp, sq.checked_mul(3600)?))

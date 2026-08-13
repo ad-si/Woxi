@@ -104,17 +104,15 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let pos_n = -n;
     let parity = pos_n.unsigned_abs() & 1;
-    let positive_call = Expr::FunctionCall {
-      name: "BesselJ".to_string(),
-      args: vec![Expr::Integer(pos_n), z_expr.clone()].into(),
-    };
+    let positive_call =
+      call("BesselJ", vec![Expr::Integer(pos_n), z_expr.clone()]);
     return if parity == 0 {
       Ok(positive_call)
     } else {
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), positive_call].into(),
-      })
+      crate::evaluator::evaluate_expr_to_expr(&call(
+        "Times",
+        vec![Expr::Integer(-1), positive_call],
+      ))
     };
   }
 
@@ -177,44 +175,28 @@ fn wrap_with_sqrt_factor_rationalised(
   z_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
   // Build Distribute[2*p, Plus] / (Sqrt[2*Pi] * Sqrt[z]).
-  let two_p = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![Expr::Integer(2), p.clone()].into(),
-  };
-  let distributed = Expr::FunctionCall {
-    name: "Distribute".to_string(),
-    args: vec![two_p, Expr::Identifier("Plus".to_string())].into(),
-  };
-  let denom = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
-      Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(2), Expr::Identifier("Pi".to_string())]
-            .into(),
-        }]
-        .into(),
-      },
-      Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![z_expr.clone()].into(),
-      },
-    ]
-    .into(),
-  };
-  let expr = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
-      distributed,
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![denom, Expr::Integer(-1)].into(),
-      },
-    ]
-    .into(),
-  };
+  let two_p = call("Times", vec![Expr::Integer(2), p.clone()]);
+  let distributed = call(
+    "Distribute",
+    vec![two_p, Expr::Identifier("Plus".to_string())],
+  );
+  let denom = call(
+    "Times",
+    vec![
+      call1(
+        "Sqrt",
+        call(
+          "Times",
+          vec![Expr::Integer(2), Expr::Identifier("Pi".to_string())],
+        ),
+      ),
+      call1("Sqrt", z_expr.clone()),
+    ],
+  );
+  let expr = call(
+    "Times",
+    vec![distributed, call("Power", vec![denom, Expr::Integer(-1)])],
+  );
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
@@ -237,8 +219,8 @@ fn half_int_bessel_polynomial(
   trig_neg: &str,
   sign: BesselSign,
 ) -> Result<Expr, InterpreterError> {
-  let mut prev = trig_call(trig_neg, z_expr); // P_{-1}
-  let mut curr = trig_call(trig_pos, z_expr); // P_{1}
+  let mut prev = call1(trig_neg, z_expr.clone()); // P_{-1}
+  let mut curr = call1(trig_pos, z_expr.clone()); // P_{1}
   let raw = if m == 1 {
     curr
   } else if m == -1 {
@@ -278,13 +260,6 @@ fn half_int_bessel_polynomial(
   }
 }
 
-fn trig_call(name: &str, z_expr: &Expr) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: vec![z_expr.clone()].into(),
-  }
-}
-
 /// One step of the half-integer Bessel polynomial recurrence.
 ///
 /// J family, forward: P_{m+2} = (m/z) * P_m - P_{m-2}
@@ -305,28 +280,20 @@ fn bessel_poly_recurrence(
     (BesselSign::I, true) => (-coef, 1), // -(m/z) P_m + P_other
     (BesselSign::I, false) => (coef, 1), // (m/z) P_m + P_other
   };
-  let expr = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+  let expr = call(
+    "Plus",
+    vec![
+      call(
+        "Times",
+        vec![
           Expr::Integer(a_coef),
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![z_expr.clone(), Expr::Integer(-1)].into(),
-          },
+          call("Power", vec![z_expr.clone(), Expr::Integer(-1)]),
           p_n.clone(),
-        ]
-        .into(),
-      },
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(b_coef), p_other.clone()].into(),
-      },
-    ]
-    .into(),
-  };
+        ],
+      ),
+      call("Times", vec![Expr::Integer(b_coef), p_other.clone()]),
+    ],
+  );
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
@@ -335,40 +302,29 @@ fn wrap_with_sqrt_factor(
   p: &Expr,
   z_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let expr = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
-      Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+  let expr = call(
+    "Times",
+    vec![
+      call1(
+        "Sqrt",
+        call(
+          "Times",
+          vec![
             Expr::Integer(2),
-            Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![Expr::Identifier("Pi".to_string()), Expr::Integer(-1)]
-                .into(),
-            },
-          ]
-          .into(),
-        }]
-        .into(),
-      },
+            call(
+              "Power",
+              vec![Expr::Identifier("Pi".to_string()), Expr::Integer(-1)],
+            ),
+          ],
+        ),
+      ),
       p.clone(),
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
-          Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![z_expr.clone()].into(),
-          },
-          Expr::Integer(-1),
-        ]
-        .into(),
-      },
-    ]
-    .into(),
-  };
+      call(
+        "Power",
+        vec![call1("Sqrt", z_expr.clone()), Expr::Integer(-1)],
+      ),
+    ],
+  );
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
@@ -755,10 +711,7 @@ pub fn bessel_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::Integer(n) = n_expr
     && *n < 0
   {
-    return Ok(Expr::FunctionCall {
-      name: "BesselK".to_string(),
-      args: vec![Expr::Integer(-n), z_expr.clone()].into(),
-    });
+    return Ok(call("BesselK", vec![Expr::Integer(-n), z_expr.clone()]));
   }
 
   Ok(unevaluated("BesselK", args))
@@ -795,25 +748,20 @@ fn bessel_k_polynomial(
   let mut m_cur: i128 = 1;
   while m_cur < m {
     // P_{m_cur+2} = (m_cur/z) * curr + prev
-    let next_expr = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+    let next_expr = call(
+      "Plus",
+      vec![
+        call(
+          "Times",
+          vec![
             Expr::Integer(m_cur),
-            Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![z_expr.clone(), Expr::Integer(-1)].into(),
-            },
+            call("Power", vec![z_expr.clone(), Expr::Integer(-1)]),
             curr.clone(),
-          ]
-          .into(),
-        },
+          ],
+        ),
         prev.clone(),
-      ]
-      .into(),
-    };
+      ],
+    );
     let next = crate::evaluator::evaluate_expr_to_expr(&next_expr)?;
     prev = curr;
     curr = next;
@@ -829,53 +777,36 @@ fn wrap_bessel_k_factor(
   p: &Expr,
   z_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let expr = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
+  let expr = call(
+    "Times",
+    vec![
       // Sqrt[Pi/2]
-      Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+      call1(
+        "Sqrt",
+        call(
+          "Times",
+          vec![
             Expr::Identifier("Pi".to_string()),
-            Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![Expr::Integer(2), Expr::Integer(-1)].into(),
-            },
-          ]
-          .into(),
-        }]
-        .into(),
-      },
+            call("Power", vec![Expr::Integer(2), Expr::Integer(-1)]),
+          ],
+        ),
+      ),
       p.clone(),
       // 1 / E^z = E^(-z)
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
+      call(
+        "Power",
+        vec![
           Expr::Constant("E".to_string()),
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), z_expr.clone()].into(),
-          },
-        ]
-        .into(),
-      },
+          call("Times", vec![Expr::Integer(-1), z_expr.clone()]),
+        ],
+      ),
       // 1 / Sqrt[z]
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
-          Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![z_expr.clone()].into(),
-          },
-          Expr::Integer(-1),
-        ]
-        .into(),
-      },
-    ]
-    .into(),
-  };
+      call(
+        "Power",
+        vec![call1("Sqrt", z_expr.clone()), Expr::Integer(-1)],
+      ),
+    ],
+  );
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
@@ -1010,11 +941,10 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Expr::Integer(n) = n_expr
   {
     return if *n == 0 {
-      Ok(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())]
-          .into(),
-      })
+      Ok(call(
+        "Times",
+        vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())],
+      ))
     } else {
       Ok(Expr::Identifier("ComplexInfinity".to_string()))
     };
@@ -1057,10 +987,10 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let p =
       half_int_bessel_polynomial(-n_num, z_expr, "Sin", "Cos", BesselSign::J)?;
     let p_signed = if sign < 0 {
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), p].into(),
-      })?
+      crate::evaluator::evaluate_expr_to_expr(&call(
+        "Times",
+        vec![Expr::Integer(-1), p],
+      ))?
     } else {
       p
     };
@@ -1072,17 +1002,15 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && *n < 0
   {
     let pos_n = -n;
-    let positive_call = Expr::FunctionCall {
-      name: "BesselY".to_string(),
-      args: vec![Expr::Integer(pos_n), z_expr.clone()].into(),
-    };
+    let positive_call =
+      call("BesselY", vec![Expr::Integer(pos_n), z_expr.clone()]);
     return if pos_n.unsigned_abs() & 1 == 0 {
       Ok(positive_call)
     } else {
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), positive_call].into(),
-      })
+      crate::evaluator::evaluate_expr_to_expr(&call(
+        "Times",
+        vec![Expr::Integer(-1), positive_call],
+      ))
     };
   }
 
@@ -1253,22 +1181,18 @@ fn coulomb_wave_reduce(
       && try_eval_to_f64(eta).is_some()
       && try_eval_to_f64(z).is_some()
     {
-      let fc = |name: &str, a: Vec<Expr>| Expr::FunctionCall {
-        name: name.to_string(),
-        args: a.into(),
-      };
       return match kind {
         CoulombKind::F => coulomb_f_numeric(l_int, eta, z),
         CoulombKind::G => {
           let hplus = coulomb_hplus_expr(l_int, eta, z);
-          crate::evaluator::evaluate_expr_to_expr(&fc("Re", vec![hplus]))
+          crate::evaluator::evaluate_expr_to_expr(&call1("Re", hplus))
         }
         CoulombKind::H1 => crate::evaluator::evaluate_expr_to_expr(
           &coulomb_hplus_expr(l_int, eta, z),
         ),
         CoulombKind::H2 => {
           let hplus = coulomb_hplus_expr(l_int, eta, z);
-          crate::evaluator::evaluate_expr_to_expr(&fc("Conjugate", vec![hplus]))
+          crate::evaluator::evaluate_expr_to_expr(&call1("Conjugate", hplus))
         }
       };
     }
@@ -1278,31 +1202,14 @@ fn coulomb_wave_reduce(
   // L == 0: the spherical functions collapse to elementary form.
   if matches!(l, Expr::Integer(0)) {
     let elem = match kind {
-      CoulombKind::F => Expr::FunctionCall {
-        name: "Sin".to_string(),
-        args: vec![z.clone()].into(),
-      },
-      CoulombKind::G => Expr::FunctionCall {
-        name: "Cos".to_string(),
-        args: vec![z.clone()].into(),
-      },
+      CoulombKind::F => call1("Sin", z.clone()),
+      CoulombKind::G => call1("Cos", z.clone()),
       // E^(I z) and E^(-I z).
-      CoulombKind::H1 => Expr::FunctionCall {
-        name: "Exp".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![i_unit(), z.clone()].into(),
-        }]
-        .into(),
-      },
-      CoulombKind::H2 => Expr::FunctionCall {
-        name: "Exp".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), i_unit(), z.clone()].into(),
-        }]
-        .into(),
-      },
+      CoulombKind::H1 => call1("Exp", call("Times", vec![i_unit(), z.clone()])),
+      CoulombKind::H2 => call1(
+        "Exp",
+        call("Times", vec![Expr::Integer(-1), i_unit(), z.clone()]),
+      ),
     };
     return crate::evaluator::evaluate_expr_to_expr(&elem);
   }
@@ -1313,10 +1220,7 @@ fn coulomb_wave_reduce(
     CoulombKind::H1 => "SphericalHankelH1",
     CoulombKind::H2 => "SphericalHankelH2",
   };
-  let sph = Expr::FunctionCall {
-    name: sph_name.to_string(),
-    args: vec![l.clone(), z.clone()].into(),
-  };
+  let sph = call(sph_name, vec![l.clone(), z.clone()]);
   // Leading factors before z: F -> none, G -> -1, H1 -> I, H2 -> -I.
   let mut factors: Vec<Expr> = match kind {
     CoulombKind::F => vec![],
@@ -1326,10 +1230,7 @@ fn coulomb_wave_reduce(
   };
   factors.push(z.clone());
   factors.push(sph);
-  let result = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: factors.into(),
-  };
+  let result = call("Times", factors);
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
@@ -1339,65 +1240,61 @@ fn coulomb_wave_reduce(
 /// with sigma_L = Arg[Gamma[L+1+i eta]] the Coulomb phase shift. G = Re(H+),
 /// H1 = H+, H2 = Conjugate(H+). Uses the evaluator's complex WhittakerW/Gamma.
 fn coulomb_hplus_expr(l: i128, eta: &Expr, rho: &Expr) -> Expr {
-  let fc = |name: &str, a: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: a.into(),
-  };
   let i_unit = Expr::Identifier("I".to_string());
   // (-i)^L
-  let neg_i_pow = fc(
+  let neg_i_pow = call(
     "Power",
     vec![
-      fc("Times", vec![Expr::Integer(-1), i_unit.clone()]),
+      call("Times", vec![Expr::Integer(-1), i_unit.clone()]),
       Expr::Integer(l),
     ],
   );
   // e^(pi eta / 2)
-  let exp_norm = fc(
+  let exp_norm = call1(
     "Exp",
-    vec![fc(
+    call(
       "Times",
       vec![
-        fc("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
         Expr::Constant("Pi".to_string()),
         eta.clone(),
       ],
-    )],
+    ),
   );
   // e^(i sigma_L), sigma_L = Arg[Gamma[L+1 + i eta]]
-  let sigma = fc(
+  let sigma = call1(
     "Arg",
-    vec![fc(
+    call1(
       "Gamma",
-      vec![fc(
+      call(
         "Plus",
         vec![
           Expr::Integer(l + 1),
-          fc("Times", vec![i_unit.clone(), eta.clone()]),
+          call("Times", vec![i_unit.clone(), eta.clone()]),
         ],
-      )],
-    )],
+      ),
+    ),
   );
-  let exp_phase = fc("Exp", vec![fc("Times", vec![i_unit.clone(), sigma])]);
+  let exp_phase = call1("Exp", call("Times", vec![i_unit.clone(), sigma]));
   // WhittakerW[-i eta, L+1/2, -2 i rho]
-  let whittaker = fc(
+  let whittaker = call(
     "WhittakerW",
     vec![
-      fc(
+      call(
         "Times",
         vec![Expr::Integer(-1), i_unit.clone(), eta.clone()],
       ),
-      fc(
+      call(
         "Plus",
         vec![
           Expr::Integer(l),
-          fc("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+          call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
         ],
       ),
-      fc("Times", vec![Expr::Integer(-2), i_unit, rho.clone()]),
+      call("Times", vec![Expr::Integer(-2), i_unit, rho.clone()]),
     ],
   );
-  fc("Times", vec![neg_i_pow, exp_norm, exp_phase, whittaker])
+  call("Times", vec![neg_i_pow, exp_norm, exp_phase, whittaker])
 }
 
 /// Numeric CoulombF[L, eta, rho] for a non-negative integer order L and real
@@ -1412,72 +1309,68 @@ fn coulomb_f_numeric(
   eta: &Expr,
   rho: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let fc = |name: &str, a: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: a.into(),
-  };
   let i_unit = Expr::Identifier("I".to_string());
   let l1 = Expr::Integer(l + 1);
   let two_l2 = Expr::Integer(2 * l + 2);
 
   // C_L(eta) factors.
-  let two_pow_l = fc("Power", vec![Expr::Integer(2), Expr::Integer(l)]);
+  let two_pow_l = call("Power", vec![Expr::Integer(2), Expr::Integer(l)]);
   // e^(-pi eta / 2)
-  let exp_norm = fc(
+  let exp_norm = call1(
     "Exp",
-    vec![fc(
+    call(
       "Times",
       vec![
-        fc("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
+        call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
         Expr::Constant("Pi".to_string()),
         eta.clone(),
       ],
-    )],
+    ),
   );
   // |Gamma[L+1 + i eta]|
-  let abs_gamma = fc(
+  let abs_gamma = call1(
     "Abs",
-    vec![fc(
+    call1(
       "Gamma",
-      vec![fc(
+      call(
         "Plus",
-        vec![l1.clone(), fc("Times", vec![i_unit.clone(), eta.clone()])],
-      )],
-    )],
+        vec![l1.clone(), call("Times", vec![i_unit.clone(), eta.clone()])],
+      ),
+    ),
   );
-  let inv_gamma_2l2 = fc(
+  let inv_gamma_2l2 = call(
     "Power",
-    vec![fc("Gamma", vec![two_l2.clone()]), Expr::Integer(-1)],
+    vec![call1("Gamma", two_l2.clone()), Expr::Integer(-1)],
   );
 
   // rho^(L+1) e^(-i rho) 1F1(L+1 - i eta; 2L+2; 2 i rho)
-  let rho_pow = fc("Power", vec![rho.clone(), l1.clone()]);
-  let exp_rho = fc(
+  let rho_pow = call("Power", vec![rho.clone(), l1.clone()]);
+  let exp_rho = call1(
     "Exp",
-    vec![fc(
+    call(
       "Times",
       vec![Expr::Integer(-1), i_unit.clone(), rho.clone()],
-    )],
+    ),
   );
-  let hyp = fc(
+  let hyp = call(
     "Hypergeometric1F1",
     vec![
-      fc(
+      call(
         "Plus",
         vec![
           l1,
-          fc(
+          call(
             "Times",
             vec![Expr::Integer(-1), i_unit.clone(), eta.clone()],
           ),
         ],
       ),
       two_l2,
-      fc("Times", vec![Expr::Integer(2), i_unit, rho.clone()]),
+      call("Times", vec![Expr::Integer(2), i_unit, rho.clone()]),
     ],
   );
 
-  let product = fc(
+  let product = call(
     "Times",
     vec![
       two_pow_l,
@@ -1489,7 +1382,7 @@ fn coulomb_f_numeric(
       hyp,
     ],
   );
-  crate::evaluator::evaluate_expr_to_expr(&fc("Re", vec![product]))
+  crate::evaluator::evaluate_expr_to_expr(&call1("Re", product))
 }
 
 pub fn spherical_bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1549,11 +1442,10 @@ pub fn spherical_bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if has_real && let (Some(n_val), Some(z_val)) = (n_f64, z_f64) {
-    let bessel_result =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "BesselJ".to_string(),
-        args: vec![Expr::Real(n_val + 0.5), Expr::Real(z_val)].into(),
-      })?;
+    let bessel_result = crate::evaluator::evaluate_expr_to_expr(&call(
+      "BesselJ",
+      vec![Expr::Real(n_val + 0.5), Expr::Real(z_val)],
+    ))?;
     if let Some(bj) = try_eval_to_f64(&bessel_result) {
       let result = (std::f64::consts::PI / (2.0 * z_val)).sqrt() * bj;
       return Ok(Expr::Real(result));
@@ -1580,15 +1472,9 @@ fn build_hankel(
   }
   // Try numeric evaluation: compute BesselJ + sign*I*BesselY
   let j_result =
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: j_name.to_string(),
-      args: args.to_vec().into(),
-    })?;
+    crate::evaluator::evaluate_expr_to_expr(&call(j_name, args.to_vec()))?;
   let y_result =
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: y_name.to_string(),
-      args: args.to_vec().into(),
-    })?;
+    crate::evaluator::evaluate_expr_to_expr(&call(y_name, args.to_vec()))?;
   // Only proceed if both evaluated to numbers
   let j_val = try_eval_to_f64(&j_result);
   let y_val = try_eval_to_f64(&y_result);
@@ -1596,24 +1482,19 @@ fn build_hankel(
     && j.is_finite()
     && y.is_finite()
   {
-    let expr = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    let expr = call(
+      "Plus",
+      vec![
         Expr::Real(j),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
-            Expr::FunctionCall {
-              name: "Complex".to_string(),
-              args: vec![Expr::Integer(0), Expr::Integer(sign)].into(),
-            },
+        call(
+          "Times",
+          vec![
+            call("Complex", vec![Expr::Integer(0), Expr::Integer(sign)]),
             Expr::Real(y),
-          ]
-          .into(),
-        },
-      ]
-      .into(),
-    };
+          ],
+        ),
+      ],
+    );
     return crate::evaluator::evaluate_expr_to_expr(&expr);
   }
   Ok(unevaluated(name, args))
@@ -1668,11 +1549,10 @@ pub fn spherical_bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let (Some(n_val), Some(z_val)) = (n_f64, z_f64)
     && z_val > 0.0
   {
-    let bessel_result =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "BesselY".to_string(),
-        args: vec![Expr::Real(n_val + 0.5), Expr::Real(z_val)].into(),
-      })?;
+    let bessel_result = crate::evaluator::evaluate_expr_to_expr(&call(
+      "BesselY",
+      vec![Expr::Real(n_val + 0.5), Expr::Real(z_val)],
+    ))?;
     if let Some(by) = try_eval_to_f64(&bessel_result) {
       let result = (std::f64::consts::PI / (2.0 * z_val)).sqrt() * by;
       return Ok(Expr::Real(result));
@@ -1914,10 +1794,7 @@ pub fn kelvin_ber_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(build_complex_float_expr(rr, ri));
   }
   // KelvinBer[z] = KelvinBer[0, z] for exact/symbolic z (matches wolframscript).
-  Ok(Expr::FunctionCall {
-    name: "KelvinBer".to_string(),
-    args: vec![Expr::Integer(0), args[0].clone()].into(),
-  })
+  Ok(call("KelvinBer", vec![Expr::Integer(0), args[0].clone()]))
 }
 
 /// KelvinBei[x] - imaginary part of BesselJ[0, x·e^(3πI/4)].
@@ -1961,10 +1838,7 @@ pub fn kelvin_bei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(build_complex_float_expr(rr, ri));
   }
   // KelvinBei[z] = KelvinBei[0, z] for exact/symbolic z (matches wolframscript).
-  Ok(Expr::FunctionCall {
-    name: "KelvinBei".to_string(),
-    args: vec![Expr::Integer(0), args[0].clone()].into(),
-  })
+  Ok(call("KelvinBei", vec![Expr::Integer(0), args[0].clone()]))
 }
 
 /// Real-valued `ker(x)` via the standard power series (DLMF 10.65.6).
@@ -2202,10 +2076,7 @@ pub fn kelvin_ker_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(build_complex_float_expr(rr, ri));
   }
   // KelvinKer[z] = KelvinKer[0, z] for exact/symbolic z (matches wolframscript).
-  Ok(Expr::FunctionCall {
-    name: "KelvinKer".to_string(),
-    args: vec![Expr::Integer(0), args[0].clone()].into(),
-  })
+  Ok(call("KelvinKer", vec![Expr::Integer(0), args[0].clone()]))
 }
 
 /// KelvinKei[x] - imaginary part of e^(-Pi·I/2)·BesselK[0, x·e^(Pi I/4)].
@@ -2251,8 +2122,5 @@ pub fn kelvin_kei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(build_complex_float_expr(rr, ri));
   }
   // KelvinKei[z] = KelvinKei[0, z] for exact/symbolic z (matches wolframscript).
-  Ok(Expr::FunctionCall {
-    name: "KelvinKei".to_string(),
-    args: vec![Expr::Integer(0), args[0].clone()].into(),
-  })
+  Ok(call("KelvinKei", vec![Expr::Integer(0), args[0].clone()]))
 }
