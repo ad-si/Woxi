@@ -199,9 +199,10 @@ format-check:
 	cargo fmt --all --check
 
 
-# Fail on any clippy warning. The three lints this codebase deliberately
-# does not follow are allowed in Cargo.toml's [lints.clippy]; everything
-# else must stay clean. Most findings are fixed by `make format`.
+# Fail on any clippy warning. `clippy::pedantic` is enabled in Cargo.toml's
+# [lints.clippy], together with the lints this codebase deliberately does not
+# follow; everything else must stay clean. Many findings are fixed by
+# `make format`.
 .PHONY: lint
 lint:
 	cargo clippy --all-targets -- -D warnings
