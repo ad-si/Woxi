@@ -316,6 +316,29 @@ pub fn named_color_expr(name: &str) -> Option<Expr> {
   })
 }
 
+/// Map the shorthand line-style directives to the expression they evaluate
+/// to. `Thick` is `Thickness[Large]`, `Dotted` is `Dashing[{0, Small}]`, and
+/// so on — the same relationship [`named_color_expr`] captures for colors.
+pub fn style_directive_expr(name: &str) -> Option<Expr> {
+  let thickness = |size: &str| Expr::FunctionCall {
+    name: "Thickness".to_string(),
+    args: vec![Expr::Identifier(size.to_string())].into(),
+  };
+  let small = || Expr::Identifier("Small".to_string());
+  let dashing = |segments: Vec<Expr>| Expr::FunctionCall {
+    name: "Dashing".to_string(),
+    args: vec![Expr::List(segments.into())].into(),
+  };
+  Some(match name {
+    "Thick" => thickness("Large"),
+    "Thin" => thickness("Tiny"),
+    "Dashed" => dashing(vec![small(), small()]),
+    "Dotted" => dashing(vec![Expr::Integer(0), small()]),
+    "DotDashed" => dashing(vec![Expr::Integer(0), small(), small(), small()]),
+    _ => return None,
+  })
+}
+
 /// Find the index of a Label[tag] in a list of expressions where `tag` matches `goto_tag`.
 /// Both the goto tag and each label's tag are compared after evaluation,
 /// since neither Goto nor Label has HoldAll.
@@ -846,60 +869,9 @@ pub fn evaluate_expr_to_expr_inner(
         if let Some(color_expr) = named_color_expr(name) {
           return Ok(color_expr);
         }
-        // Thick → Thickness[Large]
-        if name == "Thick" {
-          return Ok(Expr::FunctionCall {
-            name: "Thickness".to_string(),
-            args: vec![Expr::Identifier("Large".to_string())].into(),
-          });
-        }
-        // Thin → Thickness[Tiny]
-        if name == "Thin" {
-          return Ok(Expr::FunctionCall {
-            name: "Thickness".to_string(),
-            args: vec![Expr::Identifier("Tiny".to_string())].into(),
-          });
-        }
-        // Dashed → Dashing[{Small, Small}]
-        if name == "Dashed" {
-          return Ok(Expr::FunctionCall {
-            name: "Dashing".to_string(),
-            args: vec![Expr::List(
-              vec![
-                Expr::Identifier("Small".to_string()),
-                Expr::Identifier("Small".to_string()),
-              ]
-              .into(),
-            )]
-            .into(),
-          });
-        }
-        // Dotted → Dashing[{0, Small}]
-        if name == "Dotted" {
-          return Ok(Expr::FunctionCall {
-            name: "Dashing".to_string(),
-            args: vec![Expr::List(
-              vec![Expr::Integer(0), Expr::Identifier("Small".to_string())]
-                .into(),
-            )]
-            .into(),
-          });
-        }
-        // DotDashed → Dashing[{0, Small, Small, Small}]
-        if name == "DotDashed" {
-          return Ok(Expr::FunctionCall {
-            name: "Dashing".to_string(),
-            args: vec![Expr::List(
-              vec![
-                Expr::Integer(0),
-                Expr::Identifier("Small".to_string()),
-                Expr::Identifier("Small".to_string()),
-                Expr::Identifier("Small".to_string()),
-              ]
-              .into(),
-            )]
-            .into(),
-          });
+        // Thick → Thickness[Large], Dashed → Dashing[{Small, Small}], …
+        if let Some(style_expr) = style_directive_expr(name) {
+          return Ok(style_expr);
         }
         // Return as symbolic identifier
         Ok(Expr::Identifier(name.clone()))
