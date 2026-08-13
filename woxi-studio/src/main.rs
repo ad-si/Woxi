@@ -7264,6 +7264,112 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"…\"]"], "Output"]
     );
   }
 
+  /// A stored Manipulate whose body composes `Tooltip`-wrapped series
+  /// (one built with `Table`, one with `NestList`/`Partition`) into a
+  /// `ListLinePlot` with a `PlotLabel` assembled from `ToString`/
+  /// `NumberForm` string concatenation, driven by three
+  /// `Appearance -> "Labeled"` sliders — the shape of a typical Wolfram
+  /// Demonstrations finance/growth calculator. This must open live with
+  /// all three sliders recognized and the plot drawn.
+  #[test]
+  fn demonstration_labeled_sliders_drive_multi_series_line_plot() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["growthSeries[base_, pct_, periods_] := N[Table[base (1 + pct/100)^k, {k, 1, periods}]]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ ListLinePlot[
+   {Tooltip[growthSeries[base, pct, periods], \"compounded\"],
+    Tooltip[Last /@ Partition[NestList[# + base pct/100 &, base, periods], 3], \"linear\"]},
+   PlotLabel -> \"base $\" <> ToString[NumberForm[base, {6, 0}]] <> \" at \" <>
+     ToString[NumberForm[pct, {4, 2}]] <> \"%\",
+   Frame -> {True, True, False, False},
+   FrameLabel -> {\"period\", \"value\"},
+   ImageSize -> {400, 300},
+   AxesOrigin -> {0, 0}],
+ {{base, 1000, \"base amount\"}, 200, 5000, 100, Appearance -> \"Labeled\"},
+ {{pct, 5, \"growth percent\"}, 1, 20, 0.5, Appearance -> \"Labeled\"},
+ {{periods, 10, \"periods\"}, 2, 30, 1, Appearance -> \"Labeled\"},
+ SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`base$$ = 1000, $CellContext`pct$$ = 5, $CellContext`periods$$ = 10}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the multi-series ListLinePlot must draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: base,
+          label: base_label,
+          min: base_min,
+          max: base_max,
+          current: base_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: pct,
+          label: pct_label,
+          min: pct_min,
+          max: pct_max,
+          current: pct_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: periods,
+          label: periods_label,
+          min: periods_min,
+          max: periods_max,
+          current: periods_now,
+          ..
+        },
+      ] => {
+        assert_eq!(
+          (
+            base.as_str(),
+            base_label.as_str(),
+            *base_min,
+            *base_max,
+            *base_now
+          ),
+          ("base", "base amount", 200.0, 5000.0, 1000.0)
+        );
+        assert_eq!(
+          (
+            pct.as_str(),
+            pct_label.as_str(),
+            *pct_min,
+            *pct_max,
+            *pct_now
+          ),
+          ("pct", "growth percent", 1.0, 20.0, 5.0)
+        );
+        assert_eq!(
+          (
+            periods.as_str(),
+            periods_label.as_str(),
+            *periods_min,
+            *periods_max,
+            *periods_now
+          ),
+          ("periods", "periods", 2.0, 30.0, 10.0)
+        );
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
   #[test]
   fn demonstration_compatibility_checkboxes_render_as_a_card() {
     // The metadata cells at the end of every Demonstration submission
