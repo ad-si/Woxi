@@ -2,6 +2,22 @@
 
 # Unreleased
 
+- Fixes driven by a Wolfram Demonstration on cellular-automaton patch
+    reentry, whose interactive widget sets a control's per-choice appearance
+    with a small `Grid` and drives a step-counter button's label with a
+    `Dynamic`:
+    - Woxi Studio: a `Grid`/`TableForm`/`TextGrid` used as a setter's
+        per-choice appearance function (rather than a plain string) now
+        typesets its cells — joined by a space within a row, by a newline
+        between rows — instead of falling through to the choice's raw
+        source dump, options and all. `Framed` and `Labeled` wrappers around
+        a choice's content are unwrapped the same way. A choice that
+        legitimately renders to nothing (a blank `Grid` marking "no flag
+        set" among a family of choices that each flip one cell on) now stays
+        blank rather than falling back to its source, too.
+    - Woxi Studio: a `Dynamic[…]` wrapped around a control's own label (a
+        step-counter button framing a live `Dynamic[Row[…]]`) now typesets
+        the wrapped content instead of the `Dynamic[…]` call's own source.
 - Fixes driven by a Wolfram Demonstration on a cylindrical cavity resonator,
     which locates a Bessel function's stationary points and interpolates a
     field built on a 2-D grid:

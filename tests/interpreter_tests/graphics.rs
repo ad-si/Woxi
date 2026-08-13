@@ -17202,6 +17202,78 @@ mod manipulate {
     }
   }
 
+  /// A control's custom appearance function (`Button[label, action] &`, the
+  /// way a Demonstration draws its own "advance" button) often wraps live
+  /// content — a step counter — in its own `Dynamic[…]`. The label used to
+  /// typeset that wrapper's own source (`Dynamic[t\[Rule]t + 1]`) instead of
+  /// the counter it names.
+  #[test]
+  fn spec_button_appearance_unwraps_dynamic_label_content() {
+    let expr = interpret_to_expr(
+      "Manipulate[k, {{g, False, \"advance\"}, \
+       Button[Framed[Dynamic[Row[{t, Style[\"\\[Rule]\", 12], t + 1}]]], g \
+       = True] &, ControlPlacement -> Left}, {{t, 0}, ControlType -> \
+       None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a button spec");
+    match &spec.controls[0] {
+      ManipulateControl::Button { label, action, .. } => {
+        assert_eq!(label, "t\u{2192}t + 1");
+        assert_eq!(action, "g = True");
+      }
+      other => panic!("expected a button control, got {other:?}"),
+    }
+  }
+
+  /// A choice's appearance function can be a small `Grid` rather than a
+  /// string — a Demonstration marking which side of a shape a toggle flips
+  /// draws a two-row grid with the flipped side named in one cell and its
+  /// axis below it, the rest of the grid left blank. `Grid` used to miss
+  /// the structural label renderer (only `Row`/`Column` were handled) and
+  /// fall through to the choice's raw source dump, options and all.
+  #[test]
+  fn spec_grid_choice_labels_render_their_cells() {
+    let expr = interpret_to_expr(
+      "Manipulate[k, {{k, {0, 0}}, {{0, 0} -> Grid[{{\"\", \"\"}, {\"\", \
+       \"\"}}, ItemSize -> {5, 1}], {1, 0} -> Grid[{{\"left\", \"\"}, \
+       {\"column\", \"\"}}, ItemSize -> {5, 1}], {0, 1} -> \
+       Grid[{{\"\", \"right\"}, {\"\", \"column\"}}, ItemSize -> {5, 1}]}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a setter spec");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        // Blank cells drop out entirely rather than leaving stray spaces or
+        // the grid's `ItemSize` option leaking into the text.
+        assert_eq!(value_labels[0], "");
+        assert_eq!(value_labels[1], "left\ncolumn");
+        assert_eq!(value_labels[2], "right\ncolumn");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// `Framed` and `Labeled` wrappers around a choice's content typeset the
+  /// content itself (and, for `Labeled`, the caption below it) instead of
+  /// falling through to their own source dump.
+  #[test]
+  fn spec_framed_and_labeled_choice_labels_render_their_content() {
+    let expr = interpret_to_expr(
+      "Manipulate[k, {{k, 1}, {1 -> Framed[Style[\"on\", Bold]], \
+       2 -> Labeled[\"circle\", \"shape\"]}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a setter spec");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels[0], "on");
+        assert_eq!(value_labels[1], "circle\nshape");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
   /// A `Setter` / `Toggler` control type offers one widget per value, the
   /// way `SetterBar` and `RadioButton` already do. Before these were
   /// recognised as control-type names they were read as a *bound*, the
