@@ -1073,30 +1073,44 @@ fn extract_rowbox_content(s: &str) -> String {
       result.push_str(&format!("(D[{body}, {vars}])"));
       break;
     }
-    if part.starts_with('"') && part.ends_with('"') && part.len() >= 2 {
-      let inner = &part[1..part.len() - 1];
-      // A box element whose own text is quoted (`"\"…\""`) is a *string
-      // literal* in the cell, not an operator token. Its named characters
-      // are content, so `\[GreaterEqual]` stays `≥` rather than collapsing
-      // to the ASCII operator `>=` the way a bare `"\[GreaterEqual]"`
-      // element between two operands does.
-      if inner.starts_with("\\\"") {
-        result.push_str(&unescape_string(inner));
+    let piece =
+      if part.starts_with('"') && part.ends_with('"') && part.len() >= 2 {
+        let inner = &part[1..part.len() - 1];
+        // A box element whose own text is quoted (`"\"…\""`) is a *string
+        // literal* in the cell, not an operator token. Its named characters
+        // are content, so `\[GreaterEqual]` stays `≥` rather than collapsing
+        // to the ASCII operator `>=` the way a bare `"\[GreaterEqual]"`
+        // element between two operands does.
+        if inner.starts_with("\\\"") {
+          unescape_string(inner)
+        } else {
+          unescape_code_string(inner)
+        }
+      } else if part.starts_with("RowBox[") {
+        extract_rowbox_content(&part[7..part.len().saturating_sub(1)])
+      } else if part == "\"\\n\"" || part == "\"\\[NewLine]\"" {
+        "\n".to_string()
+      } else if let Some(converted) = extract_typeset_box(part) {
+        converted
       } else {
-        result.push_str(&unescape_code_string(inner));
-      }
-    } else if part.starts_with("RowBox[") {
-      result.push_str(&extract_rowbox_content(
-        &part[7..part.len().saturating_sub(1)],
-      ));
-    } else if part == "\"\\n\"" || part == "\"\\[NewLine]\"" {
-      result.push('\n');
-    } else if let Some(converted) = extract_typeset_box(part) {
-      result.push_str(&converted);
-    } else {
-      // For non-string tokens, include as-is
-      result.push_str(part);
+        // For non-string tokens, include as-is
+        part.to_string()
+      };
+    // A bare `#`/`##` and a following letter-initial piece are *separate*
+    // sibling boxes here (implicit multiplication, e.g. `# Sin[Pi/u]`
+    // typeset without a literal space token between them), but gluing
+    // their text together verbatim would read back as named-slot syntax
+    // (`#Sin` = `Slot["Sin"]`) instead. Insert a space to keep the
+    // juxtaposition a product rather than change its meaning.
+    if result.ends_with('#')
+      && piece
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic())
+    {
+      result.push(' ');
     }
+    result.push_str(&piece);
   }
   result
 }
@@ -3711,6 +3725,24 @@ Cell["Chapter 2", "Chapter"]
        SuperscriptBox["\[Phi]", "\[Prime]",
         MultilineFunction->None], "[", "t", "]"}], "2"]]"#;
     assert_eq!(extract_cell_content(s), "(ϕ'[t])^(2)");
+  }
+
+  #[test]
+  fn test_extract_cell_content_slot_before_function_call() {
+    // `#` and a following function-call box are *separate* sibling
+    // elements of the row (implicit multiplication — e.g. a Manipulate
+    // body scaling a value by `# Cos[x]` where the FrontEnd's box form
+    // omits a literal space token between them). Gluing their text
+    // together verbatim would read back as the named-slot syntax `#Cos`
+    // (`Slot["Cos"]`) instead of `Slot[1] * Cos[x]`, which then throws at
+    // evaluation time because the argument isn't an Association.
+    let s = r##"BoxData[RowBox[{"#", RowBox[{"Cos", "[", "x", "]"}]}]]"##;
+    let content = extract_cell_content(s);
+    assert_eq!(content, "# Cos[x]");
+    assert_eq!(
+      crate::interpret(&format!("({content})&[3]")).unwrap(),
+      "3*Cos[x]"
+    );
   }
 
   #[test]
