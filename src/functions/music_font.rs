@@ -62,7 +62,7 @@ pub mod glyph {
 /// The font-unit → user-unit scale for a staff with `gap` user units between
 /// adjacent staff lines. One SMuFL staff space is a quarter of the em square.
 pub fn scale_for_gap(gap: f64) -> f64 {
-  let upm = face().map(|f| f.units_per_em()).unwrap_or(1000) as f64;
+  let upm = face().map_or(1000, ttf_parser::Face::units_per_em) as f64;
   gap * 4.0 / upm
 }
 
@@ -82,7 +82,7 @@ impl FontBBox {
   }
   /// The horizontal centre of the box, scaled to user units.
   pub fn center_x(&self, scale: f64) -> f64 {
-    (self.x_min + self.x_max) / 2.0 * scale
+    f64::midpoint(self.x_min, self.x_max) * scale
   }
 }
 

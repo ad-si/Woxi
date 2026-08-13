@@ -56,9 +56,8 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for eq in &equations {
     // Each equation should be lhs == rhs
-    let (lhs, rhs) = match extract_equation(eq) {
-      Some(pair) => pair,
-      None => return Ok(unevaluated()),
+    let Some((lhs, rhs)) = extract_equation(eq) else {
+      return Ok(unevaluated());
     };
 
     // Check if this is an initial condition: a[integer] == value
@@ -82,9 +81,8 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     recurrence = Some((lhs, rhs));
   }
 
-  let (rec_lhs, rec_rhs) = match recurrence {
-    Some(r) => r,
-    None => return Ok(unevaluated()),
+  let Some((rec_lhs, rec_rhs)) = recurrence else {
+    return Ok(unevaluated());
   };
 
   // Try to solve as constant-coefficient linear recurrence
@@ -251,17 +249,15 @@ fn logistic_parameter(
   })
   .ok()?;
 
-  let items = match &clist {
-    Expr::List(v) => v,
-    _ => return None,
+  let Expr::List(items) = &clist else {
+    return None;
   };
   // Need exactly {0, r, -r}: constant 0, linear r, quadratic -r, no higher.
   if items.len() != 3 || !matches!(items[0], Expr::Integer(0)) {
     return None;
   }
-  let r = match items[1] {
-    Expr::Integer(r) => r,
-    _ => return None,
+  let Expr::Integer(r) = items[1] else {
+    return None;
   };
   match items[2] {
     Expr::Integer(c2) if c2 == -r => Some(r),
@@ -1405,7 +1401,6 @@ fn find_characteristic_roots(coeffs: &[i128]) -> Option<Vec<(i128, i128)>> {
           let den = q;
           // Evaluate polynomial at num/den: multiply through by den^n
           let mut val = 0i128;
-          let _den_power = 1i128;
           for (i, &c) in remaining.iter().enumerate() {
             let num_power = num.checked_pow(i as u32)?;
             // We need: c * num^i * den^(degree-i)
@@ -1753,9 +1748,8 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     std::collections::HashMap::new();
 
   for eq in &equations {
-    let (lhs, rhs) = match extract_equation(eq) {
-      Some(pair) => pair,
-      None => return Ok(unevaluated()),
+    let Some((lhs, rhs)) = extract_equation(eq) else {
+      return Ok(unevaluated());
     };
 
     // An initial condition: f[integer] == value, either way round.

@@ -20,7 +20,7 @@ fn big_int() -> impl Strategy<Value = BigInt> {
 /// Strategy that generates symbolic variable names.
 fn symbol() -> impl Strategy<Value = String> {
   prop::sample::select(vec!["x", "y", "z", "a", "b", "c", "w", "t", "u", "v"])
-    .prop_map(|s| s.to_string())
+    .prop_map(std::string::ToString::to_string)
 }
 
 /// Strategy that generates symbolic expressions of bounded depth.
@@ -175,7 +175,7 @@ mod plus {
     #[test]
     fn symbolic_identity(a in symbolic_expr(1)) {
       let result_with_zero = eval(&format!("{a} + 0"));
-      let result_alone = eval(&a.to_string());
+      let result_alone = eval(&a.clone());
       prop_assert_eq!(result_with_zero, result_alone);
     }
 

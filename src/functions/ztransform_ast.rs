@@ -61,7 +61,7 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(a) = linear_coeff_in_n(&fargs[0], &n_var)
     && is_constant_wrt(&a, &z_var)
   {
-    let cos_a = func("Cos", a.clone());
+    let cos_a = call1("Cos", a.clone());
     // 1 + z^2 - 2 z Cos[a]
     let den = plus(vec![
       Expr::Integer(1),
@@ -69,7 +69,7 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       times(vec![Expr::Integer(-2), z.clone(), cos_a.clone()]),
     ]);
     let num = if name == "Sin" {
-      times(vec![z.clone(), func("Sin", a)])
+      times(vec![z.clone(), call1("Sin", a)])
     } else {
       times(vec![
         z.clone(),
@@ -99,17 +99,14 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated(args));
     }
     let exponent = if p == 1 {
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![z.clone(), Expr::Integer(-1)].into(),
-      }
+      call("Power", vec![z.clone(), Expr::Integer(-1)])
     } else {
       div2(Expr::Integer(p), z.clone())
     };
-    return Ok(Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![Expr::Identifier("E".to_string()), exponent].into(),
-    });
+    return Ok(call(
+      "Power",
+      vec![Expr::Identifier("E".to_string()), exponent],
+    ));
   }
 
   // Symbolic base: fixed templates for k = 0, 1, 2 (c must be 1)
@@ -386,28 +383,15 @@ fn as_power(expr: &Expr) -> Option<(Expr, Expr)> {
 }
 
 fn plus(terms: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  }
+  call("Plus", terms)
 }
 
 fn times(factors: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: factors.into(),
-  }
+  call("Times", factors)
 }
 
 fn power(base: Expr, exp: i128) -> Expr {
   pow2(base, Expr::Integer(exp))
-}
-
-fn func(name: &str, arg: Expr) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: vec![arg].into(),
-  }
 }
 
 /// If `arg` is exactly `a * n` — degree one in `n` with no constant term and
@@ -633,10 +617,7 @@ pub fn inverse_z_transform_ast(
     _ => return Ok(unevaluated(args)),
   };
   let n = Expr::Identifier(n_var.clone());
-  let factorial_n = Expr::FunctionCall {
-    name: "Factorial".to_string(),
-    args: vec![n.clone()].into(),
-  };
+  let factorial_n = call("Factorial", vec![n.clone()]);
 
   // E^(1/z) → 1/n!, E^(c/z) → c^n/n!
   if let Some((base, exp)) = as_power(&args[0])
@@ -683,10 +664,7 @@ pub fn inverse_z_transform_ast(
 
   // Constant with respect to z: c → c*DiscreteDelta[n]
   if is_constant_wrt(&args[0], &z_var) {
-    let delta = Expr::FunctionCall {
-      name: "DiscreteDelta".to_string(),
-      args: vec![n.clone()].into(),
-    };
+    let delta = call("DiscreteDelta", vec![n.clone()]);
     return Ok(match &args[0] {
       Expr::Integer(1) => delta,
       c => times(vec![c.clone(), delta]),
@@ -860,16 +838,14 @@ pub fn inverse_z_transform_ast(
     let mut a = matrix.clone();
     for col in 0..m {
       let pivot = (col..m).find(|&r0| a[r0][col].0 != 0);
-      let pivot = match pivot {
-        Some(p0) => p0,
-        None => return Ok(unevaluated(args)),
+      let Some(pivot) = pivot else {
+        return Ok(unevaluated(args));
       };
       a.swap(col, pivot);
       rhs.swap(col, pivot);
       for row in (col + 1)..m {
-        let factor = match frac_div(a[row][col], a[col][col]) {
-          Some(f) => f,
-          None => return Ok(unevaluated(args)),
+        let Some(factor) = frac_div(a[row][col], a[col][col]) else {
+          return Ok(unevaluated(args));
         };
         for kk in col..m {
           let sub = frac_mul(factor, a[col][kk]);
@@ -946,10 +922,10 @@ fn format_inverse_result(
       return Ok(Some(if coef.1 == 1 {
         Expr::Integer(coef.0)
       } else {
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(coef.0), Expr::Integer(coef.1)].into(),
-        }
+        call(
+          "Rational",
+          vec![Expr::Integer(coef.0), Expr::Integer(coef.1)],
+        )
       }));
     }
     return Ok(None);
@@ -1062,9 +1038,8 @@ pub fn fourier_coefficient_ast(
   let n_arg = args[2].clone();
 
   // Polynomial in t with rational coefficients, degree <= 3
-  let coeffs = match poly_coeffs(&args[0], &t_var) {
-    Some(c) => c,
-    None => return Ok(unevaluated(args)),
+  let Some(coeffs) = poly_coeffs(&args[0], &t_var) else {
+    return Ok(unevaluated(args));
   };
   if coeffs.len() > 4 {
     return Ok(unevaluated(args));
@@ -1075,16 +1050,10 @@ pub fn fourier_coefficient_ast(
     if f.1 == 1 {
       Expr::Integer(f.0)
     } else {
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(f.0), Expr::Integer(f.1)].into(),
-      }
+      call("Rational", vec![Expr::Integer(f.0), Expr::Integer(f.1)])
     }
   };
-  let times = |fs: Vec<Expr>| Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: fs.into(),
-  };
+  let times = |fs: Vec<Expr>| call("Times", fs);
   let pow = |b: Expr, e: i128| pow2(b, Expr::Integer(e));
   let i_unit = || Expr::Identifier("I".to_string());
   let pi = || Expr::Constant("Pi".to_string());
@@ -1093,10 +1062,7 @@ pub fn fourier_coefficient_ast(
 
   // Pure constant: c*DiscreteDelta[n]
   if c1.0 == 0 && c2.0 == 0 && c3.0 == 0 {
-    let delta = Expr::FunctionCall {
-      name: "DiscreteDelta".to_string(),
-      args: vec![n_arg.clone()].into(),
-    };
+    let delta = call("DiscreteDelta", vec![n_arg.clone()]);
     let result = if c0 == (1, 1) {
       delta
     } else {
@@ -1130,10 +1096,7 @@ pub fn fourier_coefficient_ast(
     match terms.len() {
       0 => Expr::Integer(0),
       1 => terms.remove(0),
-      _ => Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: terms.into(),
-      },
+      _ => call("Plus", terms),
     }
   };
 
@@ -1166,23 +1129,19 @@ pub fn fourier_coefficient_ast(
   }
   // t^3: (c3*I*(-1)^n*(-6 + n^2*Pi^2))/n^3
   if let Some(ci) = coeff_i(c3) {
-    let bracket = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    let bracket = call(
+      "Plus",
+      vec![
         Expr::Integer(-6),
         times(vec![pow(n_expr(), 2), pow(pi(), 2)]),
-      ]
-      .into(),
-    };
+      ],
+    );
     general_terms.push(div2(times(vec![ci, m1n(), bracket]), pow(n_expr(), 3)));
   }
   let general = match general_terms.len() {
     0 => Expr::Integer(0),
     1 => general_terms.remove(0),
-    _ => Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: general_terms.into(),
-    },
+    _ => call("Plus", general_terms),
   };
 
   // Numeric n: pick the branch and evaluate
@@ -1199,14 +1158,13 @@ pub fn fourier_coefficient_ast(
     operands: vec![n_arg.clone(), Expr::Integer(0)],
     operators: vec![ComparisonOp::Equal],
   };
-  Ok(Expr::FunctionCall {
-    name: "Piecewise".to_string(),
-    args: vec![
+  Ok(call(
+    "Piecewise",
+    vec![
       Expr::List(vec![Expr::List(vec![zero_piece, cond].into())].into()),
       general,
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 // ─── FourierSinCoefficient / FourierCosCoefficient ───────────────────
@@ -1236,9 +1194,8 @@ pub fn fourier_sin_cos_coefficient_ast(
   }
 
   // Single monomial c*t^k with rational c, k <= 3
-  let coeffs = match poly_coeffs(&args[0], &t_var) {
-    Some(c) => c,
-    None => return Ok(unevaluated(args)),
+  let Some(coeffs) = poly_coeffs(&args[0], &t_var) else {
+    return Ok(unevaluated(args));
   };
   if coeffs.len() > 4 {
     return Ok(unevaluated(args));
@@ -1254,14 +1211,8 @@ pub fn fourier_sin_cos_coefficient_ast(
   }
   let (k, c) = nonzero[0];
 
-  let times = |fs: Vec<Expr>| Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: fs.into(),
-  };
-  let plus = |ts: Vec<Expr>| Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: ts.into(),
-  };
+  let times = |fs: Vec<Expr>| call("Times", fs);
+  let plus = |ts: Vec<Expr>| call("Plus", ts);
   let pow = |b: Expr, e: i128| pow2(b, Expr::Integer(e));
   let pi = || Expr::Constant("Pi".to_string());
   let n_e = || n_arg.clone();
@@ -1271,10 +1222,7 @@ pub fn fourier_sin_cos_coefficient_ast(
     if f.1 == 1 {
       Expr::Integer(f.0)
     } else {
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(f.0), Expr::Integer(f.1)].into(),
-      }
+      call("Rational", vec![Expr::Integer(f.0), Expr::Integer(f.1)])
     }
   };
   // 2 - 2*(-1)^n + (-1)^n*n^2*Pi^2
@@ -1329,13 +1277,7 @@ pub fn fourier_sin_cos_coefficient_ast(
   } else {
     match k {
       // 2*DiscreteDelta[n]
-      0 => times(vec![
-        scaled(2),
-        Expr::FunctionCall {
-          name: "DiscreteDelta".to_string(),
-          args: vec![n_e()].into(),
-        },
-      ]),
+      0 => times(vec![scaled(2), call("DiscreteDelta", vec![n_e()])]),
       // (2*(-1 + (-1)^n))/(n^2*Pi)
       1 => div2(
         times(vec![scaled(2), plus(vec![Expr::Integer(-1), m1()])]),

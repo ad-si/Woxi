@@ -97,7 +97,7 @@ struct Poly(Vec<Rat>); // ascending; trailing zeros trimmed; [] == zero poly
 
 impl Poly {
   fn trim(mut self) -> Self {
-    while self.0.last().map(|c| c.is_zero()).unwrap_or(false) {
+    while self.0.last().is_some_and(Rat::is_zero) {
       self.0.pop();
     }
     self
@@ -250,7 +250,7 @@ fn sturm_chain(q: &Poly) -> Vec<Poly> {
     if r.is_zero() {
       break;
     }
-    chain.push(Poly(r.0.iter().map(|c| c.neg()).collect()));
+    chain.push(Poly(r.0.iter().map(Rat::neg).collect()));
   }
   chain
 }
@@ -362,9 +362,8 @@ fn poly_from(f: &Expr, var: &str) -> Option<Poly> {
       args: vec![f.clone(), Expr::Identifier(var.to_string())].into(),
     })
     .ok()?;
-  let items = match &coeff_list {
-    Expr::List(items) => items,
-    _ => return None,
+  let Expr::List(items) = &coeff_list else {
+    return None;
   };
   let mut out = Vec::with_capacity(items.len());
   for it in items {
@@ -438,22 +437,19 @@ pub fn count_roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(v) => v.clone(),
         _ => return unevaluated(),
       };
-      let lo = match parse_bound(&items[1]) {
-        Some(b) => b,
-        None => return unevaluated(),
+      let Some(lo) = parse_bound(&items[1]) else {
+        return unevaluated();
       };
-      let hi = match parse_bound(&items[2]) {
-        Some(b) => b,
-        None => return unevaluated(),
+      let Some(hi) = parse_bound(&items[2]) else {
+        return unevaluated();
       };
       (v, lo, hi)
     }
     _ => return unevaluated(),
   };
 
-  let poly = match poly_from(&args[0], &var) {
-    Some(p) => p,
-    None => return unevaluated(),
+  let Some(poly) = poly_from(&args[0], &var) else {
+    return unevaluated();
   };
 
   // Zero polynomial: every point is a root — not a finite count.

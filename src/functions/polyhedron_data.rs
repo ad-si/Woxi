@@ -1137,7 +1137,7 @@ fn numeric_vertices(
     )));
   };
   let mut vertices = Vec::with_capacity(rows.len());
-  for row in rows.iter() {
+  for row in rows {
     let Expr::List(coords) = row else {
       return Err(InterpreterError::EvaluationError(format!(
         "PolyhedronData: vertex row for {} is not a coordinate triple",
@@ -1246,7 +1246,7 @@ fn numeric_faces(
     )));
   };
   let mut faces = Vec::with_capacity(rows.len());
-  for row in rows.iter() {
+  for row in rows {
     let Expr::List(items) = row else {
       return Err(InterpreterError::EvaluationError(format!(
         "PolyhedronData: face row for {} is not a list",
@@ -1254,7 +1254,7 @@ fn numeric_faces(
       )));
     };
     let mut face = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       let Expr::Integer(idx) = item else {
         return Err(InterpreterError::EvaluationError(format!(
           "PolyhedronData: face index for {} is not an integer",
@@ -1338,7 +1338,7 @@ fn classes() -> Result<Expr, InterpreterError> {
     let Expr::List(items) = &evaluated else {
       continue;
     };
-    for item in items.iter() {
+    for item in items {
       if let Expr::String(class) = item
         && !names.contains(class)
       {

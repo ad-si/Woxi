@@ -699,8 +699,7 @@ mod interpreter_tests {
     // entry.
     clear_state();
     let path = temp_file("woxi_test_export_barchart.svg");
-    let code =
-      format!("Export[\"{}\", BarChart[{{5, 8, 3, 9, 6, 4, 7}}]]", path);
+    let code = format!("Export[\"{path}\", BarChart[{{5, 8, 3, 9, 6, 4, 7}}]]");
     let r = interpret_with_stdout(&code).unwrap();
     assert_eq!(r.result, path);
     assert!(
@@ -1128,8 +1127,7 @@ mod interpreter_tests {
     std::fs::write(&path, &bytes).unwrap();
 
     clear_state();
-    let r =
-      interpret_with_stdout(&format!("Audio[File[\"{}\"]]", path)).unwrap();
+    let r = interpret_with_stdout(&format!("Audio[File[\"{path}\"]]")).unwrap();
     assert_eq!(r.result, "-Audio-");
     let audio = r.sound.expect("file-backed Audio should produce audio");
     assert_eq!(audio.mime, "audio/wav");
@@ -1152,7 +1150,7 @@ mod interpreter_tests {
     std::fs::write(&path, &bytes).unwrap();
 
     clear_state();
-    let r = interpret_with_stdout(&format!("Audio[\"{}\"]", path)).unwrap();
+    let r = interpret_with_stdout(&format!("Audio[\"{path}\"]")).unwrap();
     assert_eq!(r.result, "-Audio-");
     let audio = r.sound.expect("file-backed Audio should produce audio");
     assert_eq!(audio.label.as_deref(), Some("woxi_test_audio_str.wav"));
@@ -1169,8 +1167,7 @@ mod interpreter_tests {
     let path = temp_file("woxi_test_export_image.svg");
     let _ = std::fs::remove_file(&path);
     let code = format!(
-      "Export[\"{}\", Image[ConstantArray[{{0, 1, 0.5}}, {{4, 4}}]]]",
-      path
+      "Export[\"{path}\", Image[ConstantArray[{{0, 1, 0.5}}, {{4, 4}}]]]"
     );
     // Export returns the filename it wrote to.
     assert_eq!(interpret(&code).unwrap(), path);
@@ -2149,8 +2146,8 @@ mod interpreter_tests {
   // Patching paths in the test cases is whack-a-mole, so
   // just use a Unix-style path syntax always.
   // C:/tmp/foo/bar.txt works fine on Windows.
-  fn unixify(path: String) -> String {
-    path.replace("\\", "/")
+  fn unixify(path: &str) -> String {
+    path.replace('\\', "/")
   }
 
   fn temp_dir() -> String {
@@ -2158,7 +2155,7 @@ mod interpreter_tests {
     if tmp.ends_with(std::path::MAIN_SEPARATOR) {
       tmp.pop();
     }
-    unixify(tmp)
+    unixify(&tmp)
   }
 
   /// A scratch path inside the platform temp directory. Never hardcode
@@ -2166,12 +2163,12 @@ mod interpreter_tests {
   /// nightly CI runs the full unit suite.
   fn temp_file(file: &str) -> String {
     let tmp = std::env::temp_dir().join(file);
-    unixify(tmp.display().to_string())
+    unixify(&tmp.display().to_string())
   }
 
   fn manifest_file(file: &str) -> String {
     let manifest = env!("CARGO_MANIFEST_DIR");
-    unixify(format!("{manifest}/{file}"))
+    unixify(&format!("{manifest}/{file}"))
   }
 
   mod case_helpers;

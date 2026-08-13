@@ -567,8 +567,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
   // Validate domain name
   if !VALID_DOMAINS.contains(&domain_name) {
     crate::emit_message(&format!(
-      "Element::bset: The second argument {} of Element should be one of: Primes, Integers, Rationals, Algebraics, Reals, Complexes or Booleans.",
-      domain_name
+      "Element::bset: The second argument {domain_name} of Element should be one of: Primes, Integers, Rationals, Algebraics, Reals, Complexes or Booleans."
     ));
     return Ok(Expr::FunctionCall {
       name: "Element".to_string(),
@@ -648,7 +647,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
     let mut remaining: Vec<Expr> = Vec::new();
     let mut any_dropped = false;
     let mut conflict = false;
-    for a in args.iter() {
+    for a in args {
       match is_member_of_domain(a, domain_name) {
         Some(true) => any_dropped = true,
         Some(false) => {
@@ -811,13 +810,13 @@ fn apply_assumption_substitutions(body: &Expr, assumption: &Expr) -> Expr {
     match a {
       // List of assumptions: walk each entry.
       Expr::List(items) => {
-        for item in items.iter() {
+        for item in items {
           extract_equalities(item, out);
         }
       }
       // And[…] (sometimes from `&&`): walk each clause.
       Expr::FunctionCall { name, args } if name == "And" => {
-        for arg in args.iter() {
+        for arg in args {
           extract_equalities(arg, out);
         }
       }
@@ -859,14 +858,11 @@ pub fn filter_rules_ast(
   rules: &Expr,
   keys: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let rule_list = match rules {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "FilterRules".to_string(),
-        args: vec![rules.clone(), keys.clone()].into(),
-      });
-    }
+  let Expr::List(rule_list) = rules else {
+    return Ok(Expr::FunctionCall {
+      name: "FilterRules".to_string(),
+      args: vec![rules.clone(), keys.clone()].into(),
+    });
   };
 
   // Build set of key names to keep
@@ -1136,8 +1132,7 @@ pub fn set_part_deep(
       let actual_idx = if n < 0 { len + n } else { n - 1 };
       if actual_idx < 0 || actual_idx >= len {
         return Err(InterpreterError::EvaluationError(format!(
-          "Part::partw: Part {} of list does not exist.",
-          n
+          "Part::partw: Part {n} of list does not exist."
         )));
       }
       positions.push(actual_idx as usize);
@@ -1179,8 +1174,7 @@ pub fn set_part_deep(
       let actual_idx = if n < 0 { len + n } else { n - 1 };
       if actual_idx < 0 || actual_idx >= len {
         return Err(InterpreterError::EvaluationError(format!(
-          "Part::partw: Part {} of association does not exist.",
-          n
+          "Part::partw: Part {n} of association does not exist."
         )));
       }
       return set_part_deep(
@@ -1204,8 +1198,7 @@ pub fn set_part_deep(
       return Ok(());
     }
     return Err(InterpreterError::EvaluationError(format!(
-      "Part::partw: Part {} of association does not exist.",
-      key_cmp
+      "Part::partw: Part {key_cmp} of association does not exist."
     )));
   }
 
@@ -1232,8 +1225,7 @@ pub fn set_part_deep(
       let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
       if actual_idx < 0 || actual_idx >= len {
         return Err(InterpreterError::EvaluationError(format!(
-          "Part::partw: Part {} of list does not exist.",
-          idx
+          "Part::partw: Part {idx} of list does not exist."
         )));
       }
       set_part_deep(&mut items[actual_idx as usize], &indices[1..], value)
@@ -1248,8 +1240,7 @@ pub fn set_part_deep(
       let actual_idx = (idx - 1) as usize;
       if actual_idx >= args.len() {
         return Err(InterpreterError::EvaluationError(format!(
-          "Part::partw: Part {} of expression does not exist.",
-          idx
+          "Part::partw: Part {idx} of expression does not exist."
         )));
       }
       set_part_deep(&mut args[actual_idx], &indices[1..], value)
@@ -1305,8 +1296,7 @@ fn resolve_span(args: &[Expr], len: i64) -> Result<Vec<i64>, InterpreterError> {
     while p <= end {
       if p < 1 || p > len {
         return Err(InterpreterError::EvaluationError(format!(
-          "Part::partw: Part {} of list does not exist.",
-          p
+          "Part::partw: Part {p} of list does not exist."
         )));
       }
       positions.push(p);
@@ -1316,8 +1306,7 @@ fn resolve_span(args: &[Expr], len: i64) -> Result<Vec<i64>, InterpreterError> {
     while p >= end {
       if p < 1 || p > len {
         return Err(InterpreterError::EvaluationError(format!(
-          "Part::partw: Part {} of list does not exist.",
-          p
+          "Part::partw: Part {p} of list does not exist."
         )));
       }
       positions.push(p);

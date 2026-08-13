@@ -657,20 +657,16 @@ pub fn dispatch_evaluation_control(
           // Validate base64 string, then store as-is
           use base64::Engine;
           let engine = base64::engine::general_purpose::STANDARD;
-          match engine.decode(s) {
-            Ok(_) => {
-              return Some(Ok(Expr::FunctionCall {
-                name: "ByteArray".to_string(),
-                args: vec![Expr::String(s.clone())].into(),
-              }));
-            }
-            Err(_) => {
-              crate::emit_message(
-                "ByteArray::lend: The argument at position 1 in ByteArray[...] should be a vector of unsigned byte values or a Base64-encoded string.",
-              );
-              return Some(Ok(unevaluated("ByteArray", args)));
-            }
+          if engine.decode(s).is_ok() {
+            return Some(Ok(Expr::FunctionCall {
+              name: "ByteArray".to_string(),
+              args: vec![Expr::String(s.clone())].into(),
+            }));
           }
+          crate::emit_message(
+            "ByteArray::lend: The argument at position 1 in ByteArray[...] should be a vector of unsigned byte values or a Base64-encoded string.",
+          );
+          return Some(Ok(unevaluated("ByteArray", args)));
         }
         _ => {
           crate::emit_message(&format!(
@@ -841,9 +837,8 @@ pub fn dispatch_evaluation_control(
       } else if matches!(&cond, Expr::Identifier(s) if s == "False") {
         if args.len() >= 3 {
           return Some(evaluate_expr_to_expr(&args[2]));
-        } else {
-          return Some(Ok(Expr::Identifier("Null".to_string())));
         }
+        return Some(Ok(Expr::Identifier("Null".to_string())));
       } else if args.len() == 4 {
         return Some(evaluate_expr_to_expr(&args[3]));
       }

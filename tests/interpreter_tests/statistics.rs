@@ -43,7 +43,7 @@ mod association_statistics {
       .unwrap()
       .parse()
       .unwrap();
-    assert!((v - 0.381_801_774_160_606).abs() < 1e-12, "got {}", v);
+    assert!((v - 0.381_801_774_160_606).abs() < 1e-12, "got {v}");
   }
 
   #[test]
@@ -2705,8 +2705,7 @@ mod cdf {
     let val: f64 = result.parse().expect("should be a number");
     assert!(
       (val - 0.8413447460685429).abs() < 1e-10,
-      "Expected ~0.8413, got {}",
-      val
+      "Expected ~0.8413, got {val}"
     );
   }
 
@@ -2846,8 +2845,7 @@ mod cdf {
     let result = interpret("CDF[NormalDistribution[], 1]").unwrap();
     assert!(
       result.contains("Erfc"),
-      "Expected Erfc expression, got: {}",
-      result
+      "Expected Erfc expression, got: {result}"
     );
   }
 }
@@ -3324,8 +3322,7 @@ mod beta_distribution {
     let result = interpret("PDF[BetaDistribution[a, b], x]").unwrap();
     assert!(
       result.contains("Piecewise") && result.contains("Beta[a, b]"),
-      "Expected Piecewise with Beta, got: {}",
-      result
+      "Expected Piecewise with Beta, got: {result}"
     );
   }
 
@@ -3342,8 +3339,7 @@ mod beta_distribution {
     let result = interpret("CDF[BetaDistribution[2, 3], x]").unwrap();
     assert!(
       result.contains("BetaRegularized"),
-      "Expected BetaRegularized, got: {}",
-      result
+      "Expected BetaRegularized, got: {result}"
     );
   }
 
@@ -3393,8 +3389,7 @@ mod student_t_distribution {
     let result = interpret("PDF[StudentTDistribution[nu], x]").unwrap();
     assert!(
       result.contains("Beta[nu/2, 1/2]"),
-      "Expected Beta in denominator, got: {}",
-      result
+      "Expected Beta in denominator, got: {result}"
     );
   }
 
@@ -3509,8 +3504,7 @@ mod lognormal_distribution {
     let result = interpret("PDF[LogNormalDistribution[mu, sigma], x]").unwrap();
     assert!(
       result.contains("Piecewise") && result.contains("Log[x]"),
-      "Expected Piecewise with Log[x], got: {}",
-      result
+      "Expected Piecewise with Log[x], got: {result}"
     );
   }
 
@@ -3519,8 +3513,7 @@ mod lognormal_distribution {
     let result = interpret("CDF[LogNormalDistribution[mu, sigma], x]").unwrap();
     assert!(
       result.contains("Erfc"),
-      "Expected Erfc expression, got: {}",
-      result
+      "Expected Erfc expression, got: {result}"
     );
   }
 
@@ -4753,13 +4746,11 @@ mod stable_distribution {
     let result = interpret("PDF[StableDistribution[2, 0], x]").unwrap();
     assert!(
       result.contains("E^"),
-      "Expected exponential form, got: {}",
-      result
+      "Expected exponential form, got: {result}"
     );
     assert!(
       result.contains("Pi"),
-      "Expected Pi in denominator, got: {}",
-      result
+      "Expected Pi in denominator, got: {result}"
     );
   }
 
@@ -4777,11 +4768,7 @@ mod stable_distribution {
   fn cdf_cauchy_standard() {
     clear_state();
     let result = interpret("CDF[StableDistribution[1, 0], x]").unwrap();
-    assert!(
-      result.contains("ArcTan"),
-      "Expected ArcTan, got: {}",
-      result
-    );
+    assert!(result.contains("ArcTan"), "Expected ArcTan, got: {result}");
   }
 }
 
@@ -4796,8 +4783,7 @@ mod location_test {
     let val: f64 = result.parse().unwrap();
     assert!(
       (val - 0.0033200264871519245).abs() < 1e-10,
-      "Expected ~0.00332, got {}",
-      val
+      "Expected ~0.00332, got {val}"
     );
   }
 
@@ -4810,8 +4796,7 @@ mod location_test {
     let val: f64 = result.parse().unwrap();
     assert!(
       (val - 5.252257314388901).abs() < 1e-10,
-      "Expected ~5.2523, got {}",
-      val
+      "Expected ~5.2523, got {val}"
     );
   }
 
@@ -4823,8 +4808,7 @@ mod location_test {
     let val: f64 = result.parse().unwrap();
     assert!(
       (val - 0.2461912778840749).abs() < 1e-8,
-      "Expected ~0.2462, got {}",
-      val
+      "Expected ~0.2462, got {val}"
     );
   }
 
@@ -4837,8 +4821,7 @@ mod location_test {
     let val: f64 = result.parse().unwrap();
     assert!(
       (val - 1.313064328597225).abs() < 1e-10,
-      "Expected ~1.3131, got {}",
-      val
+      "Expected ~1.3131, got {val}"
     );
   }
 
@@ -4848,8 +4831,7 @@ mod location_test {
     let val: f64 = result.parse().unwrap();
     assert!(
       (val - 0.07417990022744857).abs() < 1e-8,
-      "Expected ~0.0742, got {}",
-      val
+      "Expected ~0.0742, got {val}"
     );
   }
 
@@ -4860,8 +4842,7 @@ mod location_test {
     let val: f64 = result.parse().unwrap();
     assert!(
       (val - 3.464101615137754).abs() < 1e-8,
-      "Expected ~3.4641, got {}",
-      val
+      "Expected ~3.4641, got {val}"
     );
   }
 
@@ -4874,8 +4855,7 @@ mod location_test {
     let val: f64 = result.parse().unwrap();
     assert!(
       (val - 0.6541475396789262).abs() < 1e-3,
-      "Expected ~0.654, got {}",
-      val
+      "Expected ~0.654, got {val}"
     );
   }
 
@@ -4888,8 +4868,7 @@ mod location_test {
     let val: f64 = result.parse().unwrap();
     assert!(
       (val - (-0.4832976746641418)).abs() < 1e-10,
-      "Expected ~-0.4833, got {}",
-      val
+      "Expected ~-0.4833, got {val}"
     );
   }
 
@@ -4901,7 +4880,7 @@ mod location_test {
     )
     .unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!(val.abs() < 1e-10, "Expected 0, got {}", val);
+    assert!(val.abs() < 1e-10, "Expected 0, got {val}");
   }
 
   #[test]
@@ -4915,8 +4894,7 @@ mod location_test {
     .unwrap();
     assert!(
       result.starts_with("Grid["),
-      "Expected Grid[...], got: {}",
-      result
+      "Expected Grid[...], got: {result}"
     );
     assert!(result.contains("Statistic"), "Expected 'Statistic' header");
     assert!(
@@ -4935,8 +4913,7 @@ mod location_test {
     let val: f64 = result.parse().unwrap();
     assert!(
       (val - 0.0033200264871519245).abs() < 1e-10,
-      "Expected ~0.00332, got {}",
-      val
+      "Expected ~0.00332, got {val}"
     );
   }
 }
@@ -5068,8 +5045,7 @@ mod likelihood {
     let val: f64 = result.parse().unwrap();
     assert!(
       (val - 0.032490238142406966).abs() < 1e-12,
-      "Expected ~0.0325, got {}",
-      val
+      "Expected ~0.0325, got {val}"
     );
   }
 
@@ -5080,8 +5056,7 @@ mod likelihood {
     let val: f64 = result.parse().unwrap();
     assert!(
       (val - 0.00004915369882662568).abs() < 1e-15,
-      "Expected ~4.9e-5, got {}",
-      val
+      "Expected ~4.9e-5, got {val}"
     );
   }
 
@@ -5092,8 +5067,7 @@ mod likelihood {
     let val: f64 = result.parse().unwrap();
     assert!(
       (val - 0.013220011608887245).abs() < 1e-12,
-      "Expected ~0.01322, got {}",
-      val
+      "Expected ~0.01322, got {val}"
     );
   }
 
@@ -5105,8 +5079,7 @@ mod likelihood {
     // Result should contain lambda^3 and exponential terms
     assert!(
       result.contains("lambda"),
-      "Expected symbolic result with lambda, got: {}",
-      result
+      "Expected symbolic result with lambda, got: {result}"
     );
   }
 
@@ -5125,9 +5098,7 @@ mod likelihood {
     let expected = 1.0 / (2.0 * std::f64::consts::PI).sqrt();
     assert!(
       (val - expected).abs() < 1e-12,
-      "Expected ~{}, got {}",
-      expected,
-      val
+      "Expected ~{expected}, got {val}"
     );
   }
 }
@@ -5796,8 +5767,7 @@ mod pearson_chi_square_test {
     let val: f64 = result.parse().unwrap();
     assert!(
       val > 0.0 && val < 1.0,
-      "Expected p-value between 0 and 1, got {}",
-      val
+      "Expected p-value between 0 and 1, got {val}"
     );
   }
 
@@ -5810,8 +5780,7 @@ mod pearson_chi_square_test {
     let val: f64 = result.parse().unwrap();
     assert!(
       val >= 0.0,
-      "Expected non-negative test statistic, got {}",
-      val
+      "Expected non-negative test statistic, got {val}"
     );
   }
 
@@ -5825,8 +5794,7 @@ mod pearson_chi_square_test {
     // Data doesn't fit N(0,1) well, so statistic should be large
     assert!(
       val > 5.0,
-      "Expected large chi-square statistic for non-fitting distribution, got {}",
-      val
+      "Expected large chi-square statistic for non-fitting distribution, got {val}"
     );
   }
 
@@ -5838,7 +5806,7 @@ mod pearson_chi_square_test {
     .unwrap();
     let val: f64 = result.parse().unwrap();
     // p-value should be small since data doesn't fit N(0,1)
-    assert!(val < 0.1, "Expected small p-value, got {}", val);
+    assert!(val < 0.1, "Expected small p-value, got {val}");
   }
 
   #[test]
@@ -5851,8 +5819,7 @@ mod pearson_chi_square_test {
     let val: f64 = result.parse().unwrap();
     assert!(
       val > 0.05,
-      "Expected high p-value for well-fitting data, got {}",
-      val
+      "Expected high p-value for well-fitting data, got {val}"
     );
   }
 }

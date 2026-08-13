@@ -421,7 +421,7 @@ fn parse_dms_string(s: &str) -> Option<AngleVal> {
   }
   // One decimal number as an exact rational, consuming it from the input.
   fn take_number(rest: &mut &str) -> Option<(i128, i128)> {
-    let digits = |s: &str| s.chars().take_while(|c| c.is_ascii_digit()).count();
+    let digits = |s: &str| s.chars().take_while(char::is_ascii_digit).count();
     let int_len = digits(rest);
     if int_len == 0 {
       return None;
@@ -495,8 +495,7 @@ pub fn dms_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(Expr::Integer(n)) if (0..=27).contains(n) => *n as u32,
     Some(Expr::String(s)) => {
       crate::emit_message(&format!(
-        "DMSString::form: Invalid formatting specification {}.",
-        s
+        "DMSString::form: Invalid formatting specification {s}."
       ));
       return unevaluated();
     }
@@ -520,16 +519,16 @@ pub fn dms_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   match &args[0] {
-    Expr::String(s) => match parse_dms_string(s) {
-      Some(v) => Ok(Expr::String(format_dms(&v.abs(), prec))),
-      None => {
+    Expr::String(s) => {
+      if let Some(v) = parse_dms_string(s) {
+        Ok(Expr::String(format_dms(&v.abs(), prec)))
+      } else {
         crate::emit_message(&format!(
-          "DMSString::str: {} cannot be interpreted as a degree-minute-second string specification.",
-          s
+          "DMSString::str: {s} cannot be interpreted as a degree-minute-second string specification."
         ));
         unevaluated()
       }
-    },
+    }
     Expr::List(items) => {
       let vals: Option<Vec<AngleVal>> = items.iter().map(to_angle).collect();
       match vals.as_deref() {
@@ -563,16 +562,17 @@ pub fn dms_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
       unevaluated()
     }
-    other => match to_angle(other) {
-      Some(v) => Ok(Expr::String(format_dms(&v.abs(), prec))),
-      None => {
+    other => {
+      if let Some(v) = to_angle(other) {
+        Ok(Expr::String(format_dms(&v.abs(), prec)))
+      } else {
         crate::emit_message(&format!(
           "DMSString::ang: {} cannot be interpreted as a degree-minute-second angle specification.",
           crate::syntax::expr_to_output(other)
         ));
         unevaluated()
       }
-    },
+    }
   }
 }
 

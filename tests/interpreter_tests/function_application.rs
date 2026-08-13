@@ -2170,8 +2170,7 @@ mod named_slots {
       msgs.iter().any(|m| m.contains(
         "Function::slota: Named slot b in #a + #b &  cannot be filled from <|a -> 1|>."
       )),
-      "expected Function::slota message, got {:?}",
-      msgs
+      "expected Function::slota message, got {msgs:?}"
     );
   }
 
@@ -2183,8 +2182,7 @@ mod named_slots {
       msgs.iter().any(|m| m.contains(
         "Function::slot1: (#a & )[5] is expected to have an Association as the first argument."
       )),
-      "expected Function::slot1 message, got {:?}",
-      msgs
+      "expected Function::slot1 message, got {msgs:?}"
     );
   }
 
@@ -2196,8 +2194,7 @@ mod named_slots {
       msgs.iter().any(|m| m.contains(
         "Function::slot1: (#a & )[] is expected to have an Association as the first argument."
       )),
-      "expected Function::slot1 message, got {:?}",
-      msgs
+      "expected Function::slot1 message, got {msgs:?}"
     );
   }
 
@@ -2223,8 +2220,7 @@ mod part_of_atoms {
         .iter()
         .any(|m| m
           .contains("Part::pspec1: Part specification a is not applicable.")),
-      "expected Part::pspec1 message, got {:?}",
-      msgs
+      "expected Part::pspec1 message, got {msgs:?}"
     );
   }
 
@@ -2237,8 +2233,7 @@ mod part_of_atoms {
         .iter()
         .any(|m| m
           .contains("Part::pspec1: Part specification a is not applicable.")),
-      "expected Part::pspec1 message, got {:?}",
-      msgs
+      "expected Part::pspec1 message, got {msgs:?}"
     );
   }
 
@@ -2252,8 +2247,7 @@ mod part_of_atoms {
         .iter()
         .any(|m| m
           .contains("Part::pspec1: Part specification a is not applicable.")),
-      "expected Part::pspec1 message, got {:?}",
-      msgs
+      "expected Part::pspec1 message, got {msgs:?}"
     );
   }
 
@@ -2270,8 +2264,7 @@ mod part_of_atoms {
       msgs.iter().any(|m| m.contains(
         "Part::partd: Part specification {{1, 2}, {3, 4}}[[1,2,3]] is longer than depth of object."
       )),
-      "expected Part::partd message, got {:?}",
-      msgs
+      "expected Part::partd message, got {msgs:?}"
     );
   }
 
@@ -2284,8 +2277,7 @@ mod part_of_atoms {
       msgs.iter().any(|m| m.contains(
         "Part::partd: Part specification Alice[[2]] is longer than depth of object."
       )),
-      "expected Part::partd message, got {:?}",
-      msgs
+      "expected Part::partd message, got {msgs:?}"
     );
   }
 
@@ -2297,8 +2289,7 @@ mod part_of_atoms {
       msgs.iter().any(|m| m.contains(
         "Part::partd: Part specification 5[[1]] is longer than depth of object."
       )),
-      "expected Part::partd message, got {:?}",
-      msgs
+      "expected Part::partd message, got {msgs:?}"
     );
   }
 }

@@ -39,11 +39,7 @@ fn strip_query_options(ops: &[Expr]) -> Vec<Expr> {
   ops
     .iter()
     .filter(|op| {
-      let (lhs, rhs) = match op {
-        Expr::Rule { pattern, replacement }
-        | Expr::RuleDelayed { pattern, replacement } => (pattern, replacement),
-        _ => return true,
-      };
+      let (Expr::Rule { pattern: lhs, replacement: rhs } | Expr::RuleDelayed { pattern: lhs, replacement: rhs }) = op else { return true };
       if matches!(&**lhs, Expr::Identifier(s) if s == "MissingBehavior") {
         if !matches!(&**rhs, Expr::Identifier(s) if s == "Automatic" || s == "None")
         {
@@ -99,17 +95,17 @@ fn apply_query_inner(
     }
     // `Query[{s1, s2, …}]` picks several parts at this level, keeping the
     // container type, then queries on inside each of them.
-    Expr::List(specs) => match query_take_parts(data, specs) {
-      Some(picked) => map_rest(rest, &picked),
-      // Not a list or association: treat the spec as an ordinary operator.
-      None => {
+    Expr::List(specs) => {
+      if let Some(picked) = query_take_parts(data, specs) {
+        map_rest(rest, &picked)
+      } else {
         let deeper = map_rest(rest, data)?;
         eval(&Expr::CurriedCall {
           func: Box::new(op.clone()),
           args: vec![deeper],
         })
       }
-    },
+    }
     Expr::FunctionCall { name, .. }
       if matches!(
         name.as_str(),

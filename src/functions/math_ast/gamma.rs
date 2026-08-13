@@ -38,7 +38,7 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // (or falling) factorial as an exact BigInt rational, with no degree cap.
     // Pochhammer[p/q, n] = ∏_{i=0}^{n-1} (p + i q) / q^n. The symbolic path
     // below caps at |n| <= 20, which left e.g. Pochhammer[1/2, 30] unevaluated.
-    if let (Expr::FunctionCall { name, args: ra }, _) = (a_expr, ())
+    if let (Expr::FunctionCall { name, args: ra }, ()) = (a_expr, ())
       && name == "Rational"
       && ra.len() == 2
       && let (Expr::Integer(p), Expr::Integer(q)) = (&ra[0], &ra[1])
@@ -52,19 +52,18 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           num *= &p + BigInt::from(i) * &q;
           den *= &q;
         }
-        return Ok(make_rational_expr(num, den));
-      } else {
-        // Pochhammer[a, -k] = 1/∏_{i=1}^{k} (a - i); a - i = (p - i q)/q.
-        let abs_n = -n;
-        let mut num = BigInt::from(1);
-        let mut den = BigInt::from(1);
-        for i in 1..=abs_n {
-          num *= &p - BigInt::from(i) * &q;
-          den *= &q;
-        }
-        // result = 1 / (num/den) = den/num
-        return Ok(make_rational_expr(den, num));
+        return Ok(make_rational_expr(&num, &den));
       }
+      // Pochhammer[a, -k] = 1/∏_{i=1}^{k} (a - i); a - i = (p - i q)/q.
+      let abs_n = -n;
+      let mut num = BigInt::from(1);
+      let mut den = BigInt::from(1);
+      for i in 1..=abs_n {
+        num *= &p - BigInt::from(i) * &q;
+        den *= &q;
+      }
+      // result = 1 / (num/den) = den/num
+      return Ok(make_rational_expr(&den, &num));
     }
     if n > 0 {
       // Pochhammer[a, n] = a * (a+1) * ... * (a+n-1). Expanded for any concrete
@@ -391,7 +390,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             numer *= i;
           }
           let denom = BigInt::from(4).pow(n as u32);
-          return Ok(gamma_half_expr(numer, denom, false));
+          return Ok(gamma_half_expr(&numer, &denom, false));
         } else if num < 0 {
           // Negative half-integers: Gamma[(1-2n)/2] where n = (1-num)/2
           // Gamma[1/2 - n] = (-4)^n * n! * Sqrt[Pi] / (2n)!
@@ -402,7 +401,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           for i in (n + 1)..=(2 * n) {
             denom *= i;
           }
-          return Ok(gamma_half_expr(numer, denom, is_neg));
+          return Ok(gamma_half_expr(&numer, &denom, is_neg));
         }
       }
       Ok(unevaluated("Gamma", args))
@@ -424,9 +423,9 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-fn gamma_half_expr(numer: BigInt, denom: BigInt, is_neg: bool) -> Expr {
+fn gamma_half_expr(numer: &BigInt, denom: &BigInt, is_neg: bool) -> Expr {
   // Simplify the rational part
-  let (num_simplified, den_simplified) = rat_reduce_bigint(&numer, &denom);
+  let (num_simplified, den_simplified) = rat_reduce_bigint(numer, denom);
   let coeff_num = if is_neg {
     -num_simplified.clone()
   } else {
@@ -483,9 +482,8 @@ fn gamma_incomplete_upper(
       return gamma_ast(std::slice::from_ref(a));
     } else if a_val == 0.0 {
       return Ok(Expr::Identifier("Infinity".to_string()));
-    } else {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
   // Same divergences for an inexact zero z: Gamma[0, 0.] = Infinity and
   // Gamma[a, 0.] = ComplexInfinity for a < 0. (a > 0 falls through to the
@@ -813,7 +811,7 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && *b > 0
   {
     let (num, den) = beta_parts_big(*a, *b);
-    return Ok(make_rational_expr(num, den));
+    return Ok(make_rational_expr(&num, &den));
   }
 
   // Integer arguments with at least one non-positive: resolve via the Gamma
@@ -839,7 +837,7 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let is_neg = pos % 2 != 0;
       let (mut num, den) = beta_parts_big(pos, m - pos + 1);
       num = if is_neg { -num } else { num };
-      return Ok(make_rational_expr(num, den));
+      return Ok(make_rational_expr(&num, &den));
     }
   }
 
@@ -925,7 +923,7 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               let total_pi_pow = a_pi_pow + b_pi_pow; // each half-integer contributes 1/2
               let num = a_num * b_num;
               let den = a_den * b_den * sum_fact;
-              let coeff = make_rational_expr(num, den);
+              let coeff = make_rational_expr(&num, &den);
 
               if total_pi_pow == 0 {
                 return Ok(coeff);
@@ -2322,7 +2320,8 @@ fn log_barnes_g_series(z: f64) -> f64 {
   let log_2pi = (2.0 * std::f64::consts::PI).ln();
   let gamma_e = 0.5772156649015329;
 
-  let mut result = z / 2.0 * log_2pi - (z + (1.0 + gamma_e) * z * z) / 2.0;
+  let mut result =
+    z / 2.0 * log_2pi - f64::midpoint(z, (1.0 + gamma_e) * z * z);
 
   // Precomputed ζ(m) values for m=2..40
   let zeta: [f64; 39] = [

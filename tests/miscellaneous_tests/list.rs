@@ -411,8 +411,7 @@ mod list {
       msgs.iter().any(|m| m.contains(
         "FindTransientRepeat::intp: Positive integer expected at position 2 in FindTransientRepeat[{1, 2, 3, 2, 3}, 0]."
       )),
-      "expected intp message, got {:?}",
-      msgs
+      "expected intp message, got {msgs:?}"
     );
   }
 
@@ -2557,7 +2556,7 @@ mod list {
     // Numeric rate evaluates to a Real.
     let result = interpret("Median[ExponentialDistribution[2.]]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.3465735902799726).abs() < 1e-12, "got {}", val);
+    assert!((val - 0.3465735902799726).abs() < 1e-12, "got {val}");
   }
 
   #[test]

@@ -37,10 +37,7 @@ pub fn and_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match remaining.len() {
     0 => Ok(bool_expr(true)),
     1 => Ok(remaining.into_iter().next().unwrap()),
-    _ => Ok(Expr::FunctionCall {
-      name: "And".to_string(),
-      args: remaining.into(),
-    }),
+    _ => Ok(call("And", remaining)),
   }
 }
 
@@ -55,7 +52,7 @@ fn splice_flat_head(
 ) {
   match expr {
     Expr::FunctionCall { name, args } if name == head => {
-      for a in args.iter() {
+      for a in args {
         splice_flat_head(a, op, head, out);
       }
     }
@@ -87,10 +84,7 @@ pub fn or_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match remaining.len() {
     0 => Ok(bool_expr(false)),
     1 => Ok(remaining.into_iter().next().unwrap()),
-    _ => Ok(Expr::FunctionCall {
-      name: "Or".to_string(),
-      args: remaining.into(),
-    }),
+    _ => Ok(call("Or", remaining)),
   }
 }
 
@@ -127,7 +121,7 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         operators,
       } = &evaluated
         && operators.len() == 1
-        && let Some(neg_op) = negate_comparison_op(&operators[0])
+        && let Some(neg_op) = negate_comparison_op(operators[0])
       {
         return Ok(Expr::Comparison {
           operands: operands.clone(),
@@ -142,7 +136,7 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-fn negate_comparison_op(op: &ComparisonOp) -> Option<ComparisonOp> {
+fn negate_comparison_op(op: ComparisonOp) -> Option<ComparisonOp> {
   match op {
     ComparisonOp::Equal => Some(ComparisonOp::NotEqual),
     ComparisonOp::NotEqual => Some(ComparisonOp::Equal),
@@ -212,10 +206,7 @@ pub fn xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let core = if remaining.len() == 1 {
     remaining.into_iter().next().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "Xor".to_string(),
-      args: remaining.into(),
-    }
+    call("Xor", remaining)
   };
 
   // An odd number of True operands negates the result:
@@ -246,10 +237,7 @@ pub fn xnor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Two or more operands keep the Xnor head; an odd True count negates it:
   //   Xnor[a, b] stays Xnor[a, b],  Xnor[a, b, True] -> Not[Xnor[a, b]].
-  let core = Expr::FunctionCall {
-    name: "Xnor".to_string(),
-    args: remaining.into(),
-  };
+  let core = call("Xnor", remaining);
   if odd_true { not_ast(&[core]) } else { Ok(core) }
 }
 
@@ -398,8 +386,7 @@ pub fn which_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ("argct", "arguments")
     };
     crate::emit_message(&format!(
-      "Which::{}: Which called with {} {}.",
-      tag, n, word
+      "Which::{tag}: Which called with {n} {word}."
     ));
     return Ok(unevaluated("Which", args));
   }
@@ -415,10 +402,7 @@ pub fn which_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         for j in ((i + 2)..args.len()).step_by(1) {
           remaining.push(args[j].clone());
         }
-        return Ok(Expr::FunctionCall {
-          name: "Which".to_string(),
-          args: remaining.into(),
-        });
+        return Ok(call("Which", remaining));
       }
     }
   }
@@ -454,10 +438,7 @@ pub fn while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Err(InterpreterError::BreakSignal) => break,
             Err(InterpreterError::ContinueSignal) => {}
             Err(InterpreterError::ReturnValue(val)) => {
-              return Ok(Expr::FunctionCall {
-                name: "Return".to_string(),
-                args: vec![*val].into(),
-              });
+              return Ok(call("Return", vec![*val]));
             }
             Err(e) => return Err(e),
           }
@@ -689,7 +670,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Check if all args are numeric
   let nums: Vec<Option<f64>> = args.iter().map(try_eval_to_f64).collect();
-  if nums.iter().all(|n| n.is_some()) {
+  if nums.iter().all(std::option::Option::is_some) {
     // `Equal` compares machine-precision Reals up to the last ~7 bits (the
     // f64 "guard" bits wolframscript ignores). Promote to exact comparison
     // only if no operand is a Real; otherwise two values that differ by at
@@ -836,19 +817,19 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Two operands also count as "equal" when they share head and arity with
   // every leaf determinably equal, e.g. RGBColor[0., 0., 1.] != RGBColor[0,
   // 0, 1] is False.
-  if !has_free {
+  if has_free {
+    for i in 0..strs.len() - 1 {
+      if strs[i] == strs[i + 1] || all_components_equal(&args[i], &args[i + 1])
+      {
+        return Ok(bool_expr(false));
+      }
+    }
+  } else {
     for i in 0..strs.len() {
       for j in i + 1..strs.len() {
         if strs[i] == strs[j] || all_components_equal(&args[i], &args[j]) {
           return Ok(bool_expr(false));
         }
-      }
-    }
-  } else {
-    for i in 0..strs.len() - 1 {
-      if strs[i] == strs[i + 1] || all_components_equal(&args[i], &args[i + 1])
-      {
-        return Ok(bool_expr(false));
       }
     }
   }
@@ -864,7 +845,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Check if all args are numeric
   let nums: Vec<Option<f64>> = args.iter().map(try_eval_to_f64).collect();
-  if nums.iter().all(|n| n.is_some()) {
+  if nums.iter().all(std::option::Option::is_some) {
     // All numeric and pairwise different (checked above via strings)
     return Ok(bool_expr(true));
   }
@@ -895,10 +876,7 @@ pub fn boole_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match as_bool(&evaluated) {
     Some(true) => Ok(Expr::Integer(1)),
     Some(false) => Ok(Expr::Integer(0)),
-    None => Ok(Expr::FunctionCall {
-      name: "Boole".to_string(),
-      args: vec![evaluated].into(),
-    }),
+    None => Ok(call("Boole", vec![evaluated])),
   }
 }
 
@@ -954,10 +932,7 @@ pub fn implies_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           {
             Ok(bool_expr(true))
           } else {
-            Ok(Expr::FunctionCall {
-              name: "Implies".to_string(),
-              args: vec![a, b].into(),
-            })
+            Ok(call("Implies", vec![a, b]))
           }
         }
       }
@@ -992,10 +967,7 @@ pub fn nand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // A lone surviving operand collapses to its negation: Nand[a, True] -> !a.
     1 => not_ast(&[remaining.into_iter().next().unwrap()]),
     // Some symbolic: Nand[remaining...]
-    _ => Ok(Expr::FunctionCall {
-      name: "Nand".to_string(),
-      args: remaining.into(),
-    }),
+    _ => Ok(call("Nand", remaining)),
   }
 }
 
@@ -1026,10 +998,7 @@ pub fn nor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // A lone surviving operand collapses to its negation: Nor[a, False] -> !a.
     1 => not_ast(&[remaining.into_iter().next().unwrap()]),
     // Some symbolic: Nor[remaining...]
-    _ => Ok(Expr::FunctionCall {
-      name: "Nor".to_string(),
-      args: remaining.into(),
-    }),
+    _ => Ok(call("Nor", remaining)),
   }
 }
 
@@ -1077,36 +1046,24 @@ pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if remaining.len() == 1 {
       return Ok(remaining.into_iter().next().unwrap());
     }
-    return Ok(Expr::FunctionCall {
-      name: "And".to_string(),
-      args: remaining.into(),
-    });
+    return Ok(call("And", remaining));
   }
   if has_false {
     let negated: Vec<Expr> = remaining
       .into_iter()
-      .map(|e| Expr::FunctionCall {
-        name: "Not".to_string(),
-        args: vec![e].into(),
-      })
+      .map(|e| call("Not", vec![e]))
       .collect();
     if negated.len() == 1 {
       return Ok(negated.into_iter().next().unwrap());
     }
-    return Ok(Expr::FunctionCall {
-      name: "And".to_string(),
-      args: negated.into(),
-    });
+    return Ok(call("And", negated));
   }
   // No boolean literal: a single distinct operand (e.g. Equivalent[a, a]) is
   // vacuously True; otherwise keep the deduplicated chain symbolic.
   if remaining.len() <= 1 {
     return Ok(bool_expr(true));
   }
-  Ok(Expr::FunctionCall {
-    name: "Equivalent".to_string(),
-    args: remaining.into(),
-  })
+  Ok(call("Equivalent", remaining))
 }
 
 /// Evaluate `body` over every True/False assignment of each variable group,
@@ -1309,7 +1266,7 @@ fn canonicalize_dnf(expr: &Expr) -> Expr {
   let mut clauses: Vec<Vec<(String, bool, Expr)>> = Vec::new();
   for c in &clause_exprs {
     match clause_lits(c) {
-      None => continue,
+      None => {}
       Some(lits) => {
         if lits.is_empty() {
           // An empty conjunction is `True`, which absorbs the whole Or.
@@ -1388,10 +1345,7 @@ fn canonicalize_dnf(expr: &Expr) -> Expr {
     if parts.len() == 1 {
       parts.into_iter().next().unwrap()
     } else {
-      Expr::FunctionCall {
-        name: "And".to_string(),
-        args: parts.into(),
-      }
+      call("And", parts)
     }
   };
 
@@ -1399,10 +1353,7 @@ fn canonicalize_dnf(expr: &Expr) -> Expr {
   if rebuilt.len() == 1 {
     rebuilt.into_iter().next().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "Or".to_string(),
-      args: rebuilt.into(),
-    }
+    call("Or", rebuilt)
   }
 }
 
@@ -1443,14 +1394,7 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
           let b = eliminate_connectives(&args[1]);
           Expr::FunctionCall {
             name: "Or".to_string(),
-            args: vec![
-              b,
-              Expr::FunctionCall {
-                name: "Not".to_string(),
-                args: vec![a].into(),
-              },
-            ]
-            .into(),
+            args: vec![b, call("Not", vec![a])].into(),
           }
         }
         "Equivalent" if args.len() >= 2 => {
@@ -1465,21 +1409,12 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             Expr::FunctionCall {
               name: "Or".to_string(),
               args: vec![
-                Expr::FunctionCall {
-                  name: "And".to_string(),
-                  args: vec![a.clone(), b.clone()].into(),
-                },
+                call("And", vec![a.clone(), b.clone()]),
                 Expr::FunctionCall {
                   name: "And".to_string(),
                   args: vec![
-                    Expr::FunctionCall {
-                      name: "Not".to_string(),
-                      args: vec![a.clone()].into(),
-                    },
-                    Expr::FunctionCall {
-                      name: "Not".to_string(),
-                      args: vec![b.clone()].into(),
-                    },
+                    call("Not", vec![a.clone()]),
+                    call("Not", vec![b.clone()]),
                   ]
                   .into(),
                 },
@@ -1496,10 +1431,7 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
                   .into(),
               }));
             }
-            Expr::FunctionCall {
-              name: "And".to_string(),
-              args: pairs.into(),
-            }
+            call("And", pairs)
           }
         }
         "Xor" if args.len() >= 2 => {
@@ -1514,25 +1446,11 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
               args: vec![
                 Expr::FunctionCall {
                   name: "And".to_string(),
-                  args: vec![
-                    a.clone(),
-                    Expr::FunctionCall {
-                      name: "Not".to_string(),
-                      args: vec![b.clone()].into(),
-                    },
-                  ]
-                  .into(),
+                  args: vec![a.clone(), call("Not", vec![b.clone()])].into(),
                 },
                 Expr::FunctionCall {
                   name: "And".to_string(),
-                  args: vec![
-                    b.clone(),
-                    Expr::FunctionCall {
-                      name: "Not".to_string(),
-                      args: vec![a.clone()].into(),
-                    },
-                  ]
-                  .into(),
+                  args: vec![b.clone(), call("Not", vec![a.clone()])].into(),
                 },
               ]
               .into(),
@@ -1541,10 +1459,8 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             // Reduce: Xor[a, b, c, ...] → Xor[Xor[a, b], c, ...]
             let mut result = elim_args[0].clone();
             for arg in &elim_args[1..] {
-              result = eliminate_connectives(&Expr::FunctionCall {
-                name: "Xor".to_string(),
-                args: vec![result, arg.clone()].into(),
-              });
+              result =
+                eliminate_connectives(&call("Xor", vec![result, arg.clone()]));
             }
             result
           }
@@ -1555,11 +1471,7 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             args.iter().map(eliminate_connectives).collect();
           Expr::FunctionCall {
             name: "Not".to_string(),
-            args: vec![Expr::FunctionCall {
-              name: "And".to_string(),
-              args: elim_args.into(),
-            }]
-            .into(),
+            args: vec![call("And", elim_args)].into(),
           }
         }
         "Nor" if args.len() >= 2 => {
@@ -1568,11 +1480,7 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             args.iter().map(eliminate_connectives).collect();
           Expr::FunctionCall {
             name: "Not".to_string(),
-            args: vec![Expr::FunctionCall {
-              name: "Or".to_string(),
-              args: elim_args.into(),
-            }]
-            .into(),
+            args: vec![call("Or", elim_args)].into(),
           }
         }
         "If" if args.len() == 3 => {
@@ -1580,23 +1488,11 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
           let a = eliminate_connectives(&args[0]);
           let b = eliminate_connectives(&args[1]);
           let c = eliminate_connectives(&args[2]);
-          let not_a = Expr::FunctionCall {
-            name: "Not".to_string(),
-            args: vec![a.clone()].into(),
-          };
+          let not_a = call("Not", vec![a.clone()]);
           Expr::FunctionCall {
             name: "Or".to_string(),
-            args: vec![
-              Expr::FunctionCall {
-                name: "And".to_string(),
-                args: vec![a, b].into(),
-              },
-              Expr::FunctionCall {
-                name: "And".to_string(),
-                args: vec![not_a, c].into(),
-              },
-            ]
-            .into(),
+            args: vec![call("And", vec![a, b]), call("And", vec![not_a, c])]
+              .into(),
           }
         }
         // Majority[e₁, …, eₙ] holds when more than half its arguments do,
@@ -1616,10 +1512,7 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
                 .into(),
             })
             .collect();
-          Expr::FunctionCall {
-            name: "Or".to_string(),
-            args: clauses.into(),
-          }
+          call("Or", clauses)
         }
         "And" | "Or" | "Not" => {
           let new_args: Vec<Expr> =
@@ -1638,10 +1531,7 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
       operand,
     } => {
       let inner = eliminate_connectives(operand);
-      Expr::FunctionCall {
-        name: "Not".to_string(),
-        args: vec![inner].into(),
-      }
+      call("Not", vec![inner])
     }
     _ => expr.clone(),
   }
@@ -1669,10 +1559,7 @@ fn apply_not_inward(inner: &Expr) -> Expr {
     } if inner_name == "And" => {
       let new_args: Vec<Expr> =
         inner_args.iter().map(apply_not_inward).collect();
-      Expr::FunctionCall {
-        name: "Or".to_string(),
-        args: new_args.into(),
-      }
+      call("Or", new_args)
     }
     // Not[Or[a, b, ...]] → And[Not[a], Not[b], ...]
     Expr::FunctionCall {
@@ -1681,10 +1568,7 @@ fn apply_not_inward(inner: &Expr) -> Expr {
     } if inner_name == "Or" => {
       let new_args: Vec<Expr> =
         inner_args.iter().map(apply_not_inward).collect();
-      Expr::FunctionCall {
-        name: "And".to_string(),
-        args: new_args.into(),
-      }
+      call("And", new_args)
     }
     // Not[True] → False, Not[False] → True
     Expr::Identifier(s) if s == "True" => bool_expr(false),
@@ -1692,10 +1576,7 @@ fn apply_not_inward(inner: &Expr) -> Expr {
     // Not[other] → Not[other] (keep as-is, recurse into inner)
     other => {
       let recurse = push_not_inward(other);
-      Expr::FunctionCall {
-        name: "Not".to_string(),
-        args: vec![recurse].into(),
-      }
+      call("Not", vec![recurse])
     }
   }
 }
@@ -1783,10 +1664,7 @@ fn distribute_and_over_or(expr: &Expr) -> Expr {
           if group.len() == 1 {
             group.into_iter().next().unwrap()
           } else {
-            Expr::FunctionCall {
-              name: "And".to_string(),
-              args: group.into(),
-            }
+            call("And", group)
           }
         })
         .collect();
@@ -1794,10 +1672,7 @@ fn distribute_and_over_or(expr: &Expr) -> Expr {
       if or_terms.len() == 1 {
         or_terms.into_iter().next().unwrap()
       } else {
-        Expr::FunctionCall {
-          name: "Or".to_string(),
-          args: or_terms.into(),
-        }
+        call("Or", or_terms)
       }
     }
     Expr::FunctionCall { name, args } if name == "Or" => {
@@ -1822,10 +1697,7 @@ fn distribute_and_over_or(expr: &Expr) -> Expr {
       if result.len() == 1 {
         result.into_iter().next().unwrap()
       } else {
-        Expr::FunctionCall {
-          name: "Or".to_string(),
-          args: result.into(),
-        }
+        call("Or", result)
       }
     }
     Expr::FunctionCall { name, args } => {
@@ -1864,10 +1736,7 @@ fn simplify_cnf(expr: &Expr) -> Expr {
       } else if simplified.len() == 1 {
         simplified.into_iter().next().unwrap()
       } else {
-        Expr::FunctionCall {
-          name: "And".to_string(),
-          args: simplified.into(),
-        }
+        call("And", simplified)
       }
     }
     _ => expr.clone(),
@@ -1972,10 +1841,7 @@ fn distribute_or_over_and(expr: &Expr) -> Expr {
           if group.len() == 1 {
             group.into_iter().next().unwrap()
           } else {
-            Expr::FunctionCall {
-              name: "Or".to_string(),
-              args: group.into(),
-            }
+            call("Or", group)
           }
         })
         .collect();
@@ -1983,10 +1849,7 @@ fn distribute_or_over_and(expr: &Expr) -> Expr {
       if and_terms.len() == 1 {
         and_terms.into_iter().next().unwrap()
       } else {
-        Expr::FunctionCall {
-          name: "And".to_string(),
-          args: and_terms.into(),
-        }
+        call("And", and_terms)
       }
     }
     Expr::FunctionCall { name, args } if name == "And" => {
@@ -2009,10 +1872,7 @@ fn distribute_or_over_and(expr: &Expr) -> Expr {
       if result.len() == 1 {
         result.into_iter().next().unwrap()
       } else {
-        Expr::FunctionCall {
-          name: "And".to_string(),
-          args: result.into(),
-        }
+        call("And", result)
       }
     }
     Expr::FunctionCall { name, args } => {
@@ -2040,10 +1900,7 @@ fn bc_negate_literal(e: &Expr) -> Expr {
       op: UnaryOperator::Not,
       operand,
     } => (**operand).clone(),
-    _ => Expr::FunctionCall {
-      name: "Not".to_string(),
-      args: vec![e.clone()].into(),
-    },
+    _ => call("Not", vec![e.clone()]),
   }
 }
 
@@ -2057,11 +1914,7 @@ fn bc_demorgan_clause(clause: &Expr, clause_head: &str, dual: &str) -> Expr {
     let negated: Vec<Expr> = args.iter().map(bc_negate_literal).collect();
     return Expr::FunctionCall {
       name: "Not".to_string(),
-      args: vec![Expr::FunctionCall {
-        name: dual.to_string(),
-        args: negated.into(),
-      }]
-      .into(),
+      args: vec![call(dual, negated)].into(),
     };
   }
   clause.clone()
@@ -2102,10 +1955,7 @@ fn bc_to_sheffer(
   clause_head: &str,
   sheffer: &str,
 ) -> Expr {
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
+  let call = |name: &str, args: Vec<Expr>| call(name, args);
   let clause = |c: &Expr| match c {
     Expr::FunctionCall { name, args } if name == clause_head => {
       call(sheffer, args.iter().cloned().collect())
@@ -2167,10 +2017,7 @@ fn bc_conjunction(variables: &[String], mask: usize) -> Expr {
   match chosen.len() {
     0 => bool_expr(true),
     1 => chosen.into_iter().next().unwrap(),
-    _ => Expr::FunctionCall {
-      name: "And".to_string(),
-      args: chosen.into(),
-    },
+    _ => call("And", chosen),
   }
 }
 
@@ -2214,16 +2061,10 @@ fn bc_algebraic_normal_form(variables: &[String], table: &[bool]) -> Expr {
   let joined = match terms.len() {
     0 => return bool_expr(constant),
     1 => terms.into_iter().next().unwrap(),
-    _ => Expr::FunctionCall {
-      name: "Xor".to_string(),
-      args: terms.into(),
-    },
+    _ => call("Xor", terms),
   };
   if constant {
-    Expr::FunctionCall {
-      name: "Not".to_string(),
-      args: vec![joined].into(),
-    }
+    call("Not", vec![joined])
   } else {
     joined
   }
@@ -2272,10 +2113,7 @@ fn bc_drop_redundant_clauses(
   while i < kept.len() && kept.len() > 1 {
     let mut without = kept.clone();
     without.remove(i);
-    let candidate = Expr::FunctionCall {
-      name: top.to_string(),
-      args: without.clone().into(),
-    };
+    let candidate = call(top, without.clone());
     if bc_truth_table(&candidate, variables)?.as_deref() == Some(table) {
       kept = without;
     } else {
@@ -2285,10 +2123,7 @@ fn bc_drop_redundant_clauses(
   Ok(if kept.len() == 1 {
     kept.into_iter().next().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: top.to_string(),
-      args: kept.into(),
-    }
+    call(top, kept)
   })
 }
 
@@ -2317,7 +2152,7 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::FunctionCall { name, args } if name == "Or" || name == "And" => {
           let mut names = Vec::with_capacity(args.len());
           let mut polarities = Vec::with_capacity(args.len());
-          for arg in args.iter() {
+          for arg in args {
             let (n, p) = sort_key(arg);
             names.extend(n);
             polarities.extend(p);
@@ -2484,10 +2319,7 @@ fn reduce_cnf_clauses(expr: &Expr) -> Expr {
     let rebuilt = if kept.len() == 1 {
       kept.remove(0)
     } else {
-      Expr::FunctionCall {
-        name: "Or".to_string(),
-        args: kept.into(),
-      }
+      call("Or", kept)
     };
     reduced.push((keys, rebuilt));
   }
@@ -2506,10 +2338,7 @@ fn reduce_cnf_clauses(expr: &Expr) -> Expr {
   match survivors.len() {
     0 => bool_expr(true),
     1 => survivors.remove(0),
-    _ => Expr::FunctionCall {
-      name: "And".to_string(),
-      args: survivors.into(),
-    },
+    _ => call("And", survivors),
   }
 }
 
@@ -2567,7 +2396,7 @@ pub fn tautology_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return unevaluated();
     };
     let mut v = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       match item {
         Expr::Identifier(name) => v.push(name.clone()),
         _ => return unevaluated(),
@@ -2681,7 +2510,7 @@ pub fn boolean_minimize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let cover = greedy_cover(&prime_implicants, &minterms);
 
   // Convert to Boolean expression
-  implicants_to_expr(&cover, &var_list)
+  Ok(implicants_to_expr(&cover, &var_list))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -2719,7 +2548,7 @@ fn quine_mccluskey(minterms: &[u64], n: usize) -> Vec<Implicant> {
           continue;
         }
         let diff = current[i].value ^ current[j].value;
-        if diff.count_ones() == 1 {
+        if diff.is_power_of_two() {
           let new_mask = current[i].mask & !diff;
           let new_value = current[i].value & new_mask;
           let merged = Implicant {
@@ -2804,9 +2633,9 @@ fn greedy_cover(primes: &[Implicant], minterms: &[u64]) -> Vec<Implicant> {
 fn implicants_to_expr(
   implicants: &[Implicant],
   vars: &[String],
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   if implicants.is_empty() {
-    return Ok(bool_expr(false));
+    return bool_expr(false);
   }
 
   // wolframscript writes the terms in descending order of their literal
@@ -2852,21 +2681,15 @@ fn implicants_to_expr(
     } else if literals.len() == 1 {
       literals.remove(0)
     } else {
-      Expr::FunctionCall {
-        name: "And".to_string(),
-        args: literals.into(),
-      }
+      call("And", literals)
     };
     terms.push(term);
   }
 
   if terms.len() == 1 {
-    Ok(terms.remove(0))
+    terms.remove(0)
   } else {
-    Ok(Expr::FunctionCall {
-      name: "Or".to_string(),
-      args: terms.into(),
-    })
+    call("Or", terms)
   }
 }
 
@@ -2927,7 +2750,7 @@ pub fn boolean_counting_function_ast(
   let vars: Vec<String> = match &args[1] {
     Expr::List(items) => {
       let mut out = Vec::with_capacity(items.len());
-      for it in items.iter() {
+      for it in items {
         if let Expr::Identifier(s) = it {
           out.push(s.clone());
         } else {
@@ -3021,7 +2844,7 @@ fn parse_counting_spec(spec: &Expr, n: usize) -> Option<Vec<usize>> {
         Expr::Integer(_) => None,
         Expr::List(counts) => {
           let mut out = Vec::with_capacity(counts.len());
-          for c in counts.iter() {
+          for c in counts {
             let Expr::Integer(k) = c else {
               return None;
             };
@@ -3118,10 +2941,7 @@ fn exactly_k_dnf(vars: &[String], k: usize) -> Expr {
     terms.push(if literals.len() == 1 {
       literals.remove(0)
     } else {
-      Expr::FunctionCall {
-        name: "And".to_string(),
-        args: literals.into(),
-      }
+      call("And", literals)
     });
   }
   or_of(terms)
@@ -3148,10 +2968,7 @@ fn at_most_k_dnf(vars: &[String], kmax: usize) -> Expr {
     terms.push(if literals.len() == 1 {
       literals.remove(0)
     } else {
-      Expr::FunctionCall {
-        name: "And".to_string(),
-        args: literals.into(),
-      }
+      call("And", literals)
     });
   }
   or_of(terms)
@@ -3182,10 +2999,7 @@ fn minterms_to_dnf(vars: &[String], count_set: &[usize]) -> Expr {
       terms.push(if literals.len() == 1 {
         literals.remove(0)
       } else {
-        Expr::FunctionCall {
-          name: "And".to_string(),
-          args: literals.into(),
-        }
+        call("And", literals)
       });
     }
   }
@@ -3237,43 +3051,37 @@ fn or_of(mut terms: Vec<Expr>) -> Expr {
   if terms.len() == 1 {
     return terms.remove(0);
   }
-  Expr::FunctionCall {
-    name: "Or".to_string(),
-    args: terms.into(),
-  }
+  call("Or", terms)
 }
 
 /// VectorLess[{v1, v2, ...}] - componentwise strict less-than comparison
 /// Returns True if for each consecutive pair, every component is strictly less.
 pub fn vector_less_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  vector_compare_ast(args, "VectorLess", false)
+  Ok(vector_compare_ast(args, "VectorLess", false))
 }
 
 /// VectorLessEqual[{v1, v2, ...}] - componentwise less-than-or-equal comparison
 /// Returns True if for each consecutive pair, every component is less than or equal.
 pub fn vector_less_equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  vector_compare_ast(args, "VectorLessEqual", true)
+  Ok(vector_compare_ast(args, "VectorLessEqual", true))
 }
 
 fn vector_compare_ast(
   args: &[Expr],
   name: &str,
   allow_equal: bool,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   // VectorLess/VectorLessEqual takes exactly 1 argument: a list of vectors/scalars
   if args.len() != 1 {
-    return Ok(unevaluated(name, args));
+    return unevaluated(name, args);
   }
 
-  let items = match &args[0] {
-    Expr::List(list_args) => list_args,
-    _ => {
-      return Ok(unevaluated(name, args));
-    }
+  let Expr::List(items) = &args[0] else {
+    return unevaluated(name, args);
   };
 
   if items.len() < 2 {
-    return Ok(unevaluated(name, args));
+    return unevaluated(name, args);
   }
 
   // Check if items are vectors (lists) or scalars
@@ -3281,62 +3089,45 @@ fn vector_compare_ast(
     let a = &items[i];
     let b = &items[i + 1];
 
-    match (a, b) {
-      // Both are lists (vectors)
-      (Expr::List(args_a), Expr::List(args_b)) => {
-        // Mismatched lengths → False
-        if args_a.len() != args_b.len() {
-          return Ok(bool_expr(false));
-        }
-        // Empty vectors → True (vacuously), continue to next pair
-        for (ea, eb) in args_a.iter().zip(args_b.iter()) {
-          let na = match expr_to_num(ea) {
-            Some(n) => n,
-            None => {
-              return Ok(unevaluated(name, args));
-            }
-          };
-          let nb = match expr_to_num(eb) {
-            Some(n) => n,
-            None => {
-              return Ok(unevaluated(name, args));
-            }
-          };
-          if allow_equal {
-            if na > nb {
-              return Ok(bool_expr(false));
-            }
-          } else if na >= nb {
-            return Ok(bool_expr(false));
-          }
-        }
+    if let (Expr::List(args_a), Expr::List(args_b)) = (a, b) {
+      // Mismatched lengths → False
+      if args_a.len() != args_b.len() {
+        return bool_expr(false);
       }
-      // Both are scalars
-      _ => {
-        let na = match expr_to_num(a) {
-          Some(n) => n,
-          None => {
-            return Ok(unevaluated(name, args));
-          }
+      // Empty vectors → True (vacuously), continue to next pair
+      for (ea, eb) in args_a.iter().zip(args_b.iter()) {
+        let Some(na) = expr_to_num(ea) else {
+          return unevaluated(name, args);
         };
-        let nb = match expr_to_num(b) {
-          Some(n) => n,
-          None => {
-            return Ok(unevaluated(name, args));
-          }
+        let Some(nb) = expr_to_num(eb) else {
+          return unevaluated(name, args);
         };
         if allow_equal {
           if na > nb {
-            return Ok(bool_expr(false));
+            return bool_expr(false);
           }
         } else if na >= nb {
-          return Ok(bool_expr(false));
+          return bool_expr(false);
         }
+      }
+    } else {
+      let Some(na) = expr_to_num(a) else {
+        return unevaluated(name, args);
+      };
+      let Some(nb) = expr_to_num(b) else {
+        return unevaluated(name, args);
+      };
+      if allow_equal {
+        if na > nb {
+          return bool_expr(false);
+        }
+      } else if na >= nb {
+        return bool_expr(false);
       }
     }
   }
 
-  Ok(bool_expr(true))
+  bool_expr(true)
 }
 
 // ---------------------------------------------------------------------------
@@ -3375,12 +3166,12 @@ fn collect_boolean_variable_exprs(expr: &Expr, out: &mut Vec<Expr>) {
           | "Majority"
       ) =>
     {
-      for arg in args.iter() {
+      for arg in args {
         collect_boolean_variable_exprs(arg, out);
       }
     }
     Expr::List(items) => {
-      for item in items.iter() {
+      for item in items {
         collect_boolean_variable_exprs(item, out);
       }
     }
@@ -3451,11 +3242,11 @@ pub fn boolean_variables_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Resolve the variable list for the 1- or 2-argument satisfiability forms.
-fn satisfiability_vars(args: &[Expr]) -> Option<Vec<Expr>> {
+fn satisfiability_vars(args: &[Expr]) -> std::vec::Vec<crate::syntax::Expr> {
   if args.len() == 2 {
     match &args[1] {
-      Expr::List(items) => Some(items.iter().cloned().collect()),
-      single => Some(vec![single.clone()]),
+      Expr::List(items) => items.iter().cloned().collect(),
+      single => vec![single.clone()],
     }
   } else {
     let mut vars = Vec::new();
@@ -3463,7 +3254,7 @@ fn satisfiability_vars(args: &[Expr]) -> Option<Vec<Expr>> {
     vars.sort_by(|a, b| {
       (-crate::functions::list_helpers_ast::compare_exprs(a, b)).cmp(&0)
     });
-    Some(vars)
+    vars
   }
 }
 
@@ -3497,10 +3288,10 @@ fn count_satisfying(
 /// SatisfiableQ[expr] / SatisfiableQ[expr, vars]
 pub fn satisfiable_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("SatisfiableQ", args);
-  let vars = match satisfiability_vars(args) {
-    Some(v) if v.len() <= 24 => v,
-    _ => return Ok(unevaluated()),
-  };
+  let vars = satisfiability_vars(args);
+  if vars.len() > 24 {
+    return Ok(unevaluated());
+  }
   // Short-circuiting variant of count_satisfying: stop at the first True.
   let n = vars.len();
   for idx in 0..(1u64 << n) {
@@ -3542,10 +3333,10 @@ pub fn satisfiability_count_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("SatisfiabilityCount", args);
-  let vars = match satisfiability_vars(args) {
-    Some(v) if v.len() <= 24 => v,
-    _ => return Ok(unevaluated()),
-  };
+  let vars = satisfiability_vars(args);
+  if vars.len() > 24 {
+    return Ok(unevaluated());
+  }
   match count_satisfying(&args[0], &vars)? {
     (count, None) => Ok(Expr::Integer(count as i128)),
     // Non-Boolean evaluation: stay unevaluated (wolframscript is silent
@@ -3603,10 +3394,7 @@ pub fn majority_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   sorted.sort_by(|a, b| {
     (-crate::functions::list_helpers_ast::compare_exprs(a, b)).cmp(&0)
   });
-  Ok(Expr::FunctionCall {
-    name: "Majority".to_string(),
-    args: sorted.into(),
-  })
+  Ok(call("Majority", sorted))
 }
 
 /// BooleanMinterms[spec, {v1, ...}] — the disjunction of minterms given
@@ -3639,12 +3427,9 @@ pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Each minterm becomes a bit row over a prefix of the variables
   let mut rows: Vec<Vec<bool>> = Vec::new();
-  let spec_items = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      bspec();
-      return Ok(unevaluated());
-    }
+  let Expr::List(spec_items) = &args[0] else {
+    bspec();
+    return Ok(unevaluated());
   };
   let all_ints = spec_items
     .iter()
@@ -3655,7 +3440,7 @@ pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ))
   });
   if all_ints && !spec_items.is_empty() {
-    for i in spec_items.iter() {
+    for i in spec_items {
       let Expr::Integer(v) = i else { unreachable!() };
       let idx = (*v as u64) % (1u64 << nvars);
       rows.push(
@@ -3667,7 +3452,7 @@ pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else if all_rows {
     // Rows must share one length (at most the variable count)
     let mut row_len: Option<usize> = None;
-    for i in spec_items.iter() {
+    for i in spec_items {
       let Expr::List(cells) = i else { unreachable!() };
       if cells.len() > nvars
         || *row_len.get_or_insert(cells.len()) != cells.len()
@@ -3729,20 +3514,14 @@ pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if literals.len() == 1 {
         literals.into_iter().next().unwrap()
       } else {
-        Expr::FunctionCall {
-          name: "And".to_string(),
-          args: literals.into(),
-        }
+        call("And", literals)
       }
     })
     .collect();
   let result = match terms.len() {
     0 => bool_expr(false),
     1 => terms.into_iter().next().unwrap(),
-    _ => Expr::FunctionCall {
-      name: "Or".to_string(),
-      args: terms.into(),
-    },
+    _ => call("Or", terms),
   };
   evaluate_expr_to_expr(&result)
 }
@@ -3760,11 +3539,7 @@ pub fn unate_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   }
   let eval = crate::evaluator::evaluate_expr_to_expr;
-  let fc = |name: &str, a: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: a.into(),
-  };
-  let vars = match eval(&fc("BooleanVariables", vec![args[0].clone()]))? {
+  let vars = match eval(&call1("BooleanVariables", args[0].clone()))? {
     Expr::List(ref v) => v.to_vec(),
     _ => return unevaluated(),
   };
@@ -3805,7 +3580,7 @@ pub fn unate_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         )),
       })
       .collect();
-    table.push(eval(&fc(
+    table.push(eval(&call(
       "ReplaceAll",
       vec![args[0].clone(), Expr::List(rules.into())],
     ))?);
@@ -3861,12 +3636,9 @@ pub fn boolean_maxterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   }
   let mut rows: Vec<Vec<bool>> = Vec::new();
-  let spec_items = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      bspec();
-      return Ok(unevaluated());
-    }
+  let Expr::List(spec_items) = &args[0] else {
+    bspec();
+    return Ok(unevaluated());
   };
   let all_ints = spec_items
     .iter()
@@ -3877,7 +3649,7 @@ pub fn boolean_maxterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ))
   });
   if all_ints && !spec_items.is_empty() {
-    for i in spec_items.iter() {
+    for i in spec_items {
       let Expr::Integer(v) = i else { unreachable!() };
       let idx = (*v as u64) % (1u64 << nvars);
       rows.push(
@@ -3888,7 +3660,7 @@ pub fn boolean_maxterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   } else if all_rows {
     let mut row_len: Option<usize> = None;
-    for i in spec_items.iter() {
+    for i in spec_items {
       let Expr::List(cells) = i else { unreachable!() };
       if cells.len() > nvars
         || *row_len.get_or_insert(cells.len()) != cells.len()
@@ -3950,20 +3722,14 @@ pub fn boolean_maxterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if literals.len() == 1 {
         literals.into_iter().next().unwrap()
       } else {
-        Expr::FunctionCall {
-          name: "Or".to_string(),
-          args: literals.into(),
-        }
+        call("Or", literals)
       }
     })
     .collect();
   let result = match terms.len() {
     0 => bool_expr(true),
     1 => terms.into_iter().next().unwrap(),
-    _ => Expr::FunctionCall {
-      name: "And".to_string(),
-      args: terms.into(),
-    },
+    _ => call("And", terms),
   };
   evaluate_expr_to_expr(&result)
 }
@@ -4007,10 +3773,10 @@ fn boolean_quantifier(
         )),
       })
       .collect();
-    branches.push(eval(&Expr::FunctionCall {
-      name: "ReplaceAll".to_string(),
-      args: vec![args[0].clone(), Expr::List(rules.into())].into(),
-    })?);
+    branches.push(eval(&call(
+      "ReplaceAll",
+      vec![args[0].clone(), Expr::List(rules.into())],
+    ))?);
   }
   // wolframscript returns minimized results (x || x collapses, absorption
   // applies), so run the combined expression through BooleanMinimize.
@@ -4018,10 +3784,7 @@ fn boolean_quantifier(
     name: if conjunct { "And" } else { "Or" }.to_string(),
     args: branches.into(),
   })?;
-  eval(&Expr::FunctionCall {
-    name: "BooleanMinimize".to_string(),
-    args: vec![combined].into(),
-  })
+  eval(&call("BooleanMinimize", vec![combined]))
 }
 
 pub fn conjunction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

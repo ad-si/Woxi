@@ -206,7 +206,7 @@ fn quantity_add_incompatible_units() {
   let result =
     interpret("Quantity[3, \"Meters\"] + Quantity[2, \"Seconds\"]").unwrap();
   assert!(result.contains("Quantity"));
-  assert!(result.contains("Plus") || result.contains("+"));
+  assert!(result.contains("Plus") || result.contains('+'));
 }
 
 // ─── Mixed addition (Quantity + number) ─────────────────────────────────────
@@ -1501,13 +1501,11 @@ fn quantity_sqrt_free_fall() {
   // Extract magnitude and verify it's approximately 159.46
   assert!(
     result.starts_with("Quantity["),
-    "Expected Quantity, got: {}",
-    result
+    "Expected Quantity, got: {result}"
   );
   assert!(
     result.ends_with("Kilometers/Hours]"),
-    "Expected km/h unit, got: {}",
-    result
+    "Expected km/h unit, got: {result}"
   );
   let mag_str = result
     .strip_prefix("Quantity[")
@@ -1515,7 +1513,7 @@ fn quantity_sqrt_free_fall() {
     .strip_suffix(", Kilometers/Hours]")
     .unwrap();
   let mag: f64 = mag_str.parse().unwrap();
-  assert!((mag - 159.46).abs() < 0.1, "Expected ~159.46, got: {}", mag);
+  assert!((mag - 159.46).abs() < 0.1, "Expected ~159.46, got: {mag}");
 }
 
 #[test]
@@ -1773,7 +1771,7 @@ fn unit_convert_electronvolts_to_joules() {
     .strip_suffix(", Joules]")
     .unwrap();
   // It should be a rational: 1602176634/10000000000000000000000000000
-  assert!(mag_str.contains('/'), "Expected rational, got: {}", mag_str);
+  assert!(mag_str.contains('/'), "Expected rational, got: {mag_str}");
 }
 
 // ─── Extended units: Frequency ─────────────────────────────────────────────
@@ -2275,7 +2273,7 @@ fn quantity_box_power_unit() {
     "Power unit box should contain SuperscriptBox: {result}"
   );
   assert!(
-    result.contains("FractionBox") || result.contains("/"),
+    result.contains("FractionBox") || result.contains('/'),
     "Compound unit box should show division: {result}"
   );
 }

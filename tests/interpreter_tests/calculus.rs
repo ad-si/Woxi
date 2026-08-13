@@ -83,8 +83,7 @@ mod integrate_with_sum {
     // Accept either ordering
     assert!(
       result == "x^3/3 - Cos[x]" || result == "-Cos[x] + x^3/3",
-      "Got: {}",
-      result
+      "Got: {result}"
     );
   }
 
@@ -1448,8 +1447,7 @@ mod integrate_reciprocal_powers {
     let result = interpret("Integrate[1/x^2 + 1, x]").unwrap();
     assert!(
       result == "-x^(-1) + x" || result == "x - x^(-1)",
-      "Got: {}",
-      result
+      "Got: {result}"
     );
   }
 }
@@ -1664,7 +1662,7 @@ mod differentiate_plus_times {
     let result = interpret("D[x^x, {x, 10}]").unwrap();
     // Result is a non-empty symbolic expression containing the variable.
     assert!(
-      result.contains("x") && !result.is_empty(),
+      result.contains('x') && !result.is_empty(),
       "expected non-trivial derivative, got {} chars",
       result.len()
     );
@@ -1673,7 +1671,7 @@ mod differentiate_plus_times {
   #[test]
   fn high_order_derivative_of_x_x_order_8() {
     let result = interpret("D[x^x, {x, 8}]").unwrap();
-    assert!(result.contains("x"));
+    assert!(result.contains('x'));
   }
 
   #[test]
@@ -4648,7 +4646,7 @@ mod nintegrate {
   fn assert_approx(code: &str, expected: f64, tol: f64) {
     let result = interpret(code).unwrap();
     let val: f64 = result.parse().unwrap_or_else(|_| {
-      panic!("NIntegrate result should be a number, got: {}", result)
+      panic!("NIntegrate result should be a number, got: {result}")
     });
     assert!(
       (val - expected).abs() < tol,
@@ -4840,14 +4838,12 @@ mod nintegrate {
     // Result starts with the canonical Sqrt[Pi/10^8] prefix.
     assert!(
       result.starts_with("0.000177245385090551602"),
-      "expected Sqrt[Pi/10^8] prefix, got `{}`",
-      result
+      "expected Sqrt[Pi/10^8] prefix, got `{result}`"
     );
     // 20-digit backtick precision marker.
     assert!(
       result.contains("`20."),
-      "expected `20. precision marker, got `{}`",
-      result
+      "expected `20. precision marker, got `{result}`"
     );
   }
 
@@ -5886,7 +5882,7 @@ mod erfi {
   #[test]
   fn n_erfi_0() {
     let result = interpret("N[Erfi[0], 20]").unwrap();
-    assert!(result.starts_with("0"), "N[Erfi[0], 20] = {result}");
+    assert!(result.starts_with('0'), "N[Erfi[0], 20] = {result}");
   }
 
   #[test]
@@ -5980,8 +5976,7 @@ mod mixed_partial_derivatives {
     let result = interpret("D[Sin[x] Cos[y], x, y]").unwrap();
     assert!(
       result == "-(Cos[x]*Sin[y])" || result == "-Sin[y]*Cos[x]",
-      "Got: {}",
-      result
+      "Got: {result}"
     );
   }
 }
@@ -7057,8 +7052,7 @@ mod dsolve {
     assert!(
       result == "{{y[x] -> C[1] + x*C[2]}}"
         || result == "{{y[x] -> x*C[2] + C[1]}}",
-      "Got: {}",
-      result
+      "Got: {result}"
     );
   }
 
@@ -7069,8 +7063,7 @@ mod dsolve {
     assert!(
       result == "{{y[x] -> C[1]*Cos[x] + C[2]*Sin[x]}}"
         || result == "{{y[x] -> C[2]*Sin[x] + C[1]*Cos[x]}}",
-      "Got: {}",
-      result
+      "Got: {result}"
     );
   }
 
@@ -7153,8 +7146,7 @@ mod dsolve {
     let result = interpret("DSolve[y'[x] == 2*x, y[x], x]").unwrap();
     assert!(
       result == "{{y[x] -> x^2 + C[1]}}" || result == "{{y[x] -> C[1] + x^2}}",
-      "Got: {}",
-      result
+      "Got: {result}"
     );
   }
 
@@ -7168,8 +7160,7 @@ mod dsolve {
     .unwrap();
     assert!(
       result.contains("Cos[3*x]") && result.contains("Sin[3*x]"),
-      "Got: {}",
-      result
+      "Got: {result}"
     );
   }
 
@@ -7180,8 +7171,7 @@ mod dsolve {
       interpret("DSolve[y''[x] - 3*y'[x] + 2*y[x] == 0, y[x], x]").unwrap();
     assert!(
       result.contains("E^x") && result.contains("E^(2*x)"),
-      "Got: {}",
-      result
+      "Got: {result}"
     );
   }
 
@@ -7191,14 +7181,14 @@ mod dsolve {
     let result =
       interpret("DSolve[y''[x] - 2*y'[x] + y[x] == 0, y[x], x]").unwrap();
     // Should contain x*E^x for the repeated root part
-    assert!(result.contains("E^x"), "Got: {}", result);
+    assert!(result.contains("E^x"), "Got: {result}");
   }
 
   #[test]
   fn function_form() {
     // y'' + y == 0, returning Function form
     let result = interpret("DSolve[y''[x] + y[x] == 0, y, x]").unwrap();
-    assert!(result.contains("Function["), "Got: {}", result);
+    assert!(result.contains("Function["), "Got: {result}");
   }
 
   #[test]
@@ -7210,8 +7200,7 @@ mod dsolve {
     .unwrap();
     assert!(
       result.contains("Cos") && result.contains("Sin"),
-      "Got: {}",
-      result
+      "Got: {result}"
     );
   }
 }
@@ -7388,9 +7377,7 @@ mod ndsolve {
     let expected = std::f64::consts::E.powf(0.5);
     assert!(
       (val - expected).abs() < 0.001,
-      "Expected {}, got {}",
-      expected,
-      val
+      "Expected {expected}, got {val}"
     );
   }
 
@@ -7402,7 +7389,7 @@ mod ndsolve {
     )
     .unwrap();
     let val: f64 = result.parse().expect("should be a number");
-    assert!((val - 0.5).abs() < 0.001, "Expected 0.5, got {}", val);
+    assert!((val - 0.5).abs() < 0.001, "Expected 0.5, got {val}");
   }
 
   #[test]
@@ -7413,7 +7400,7 @@ mod ndsolve {
     )
     .unwrap();
     let val: f64 = result.parse().expect("should be a number");
-    assert!((val - 0.5).abs() < 0.001, "Expected 0.5, got {}", val);
+    assert!((val - 0.5).abs() < 0.001, "Expected 0.5, got {val}");
   }
 
   #[test]
@@ -7423,8 +7410,7 @@ mod ndsolve {
       interpret("NDSolve[{y'[x] == y[x], y[0] == 1}, y, {x, 0, 1}]").unwrap();
     assert!(
       result.contains("InterpolatingFunction") && result.contains("<>"),
-      "Got: {}",
-      result
+      "Got: {result}"
     );
   }
 
@@ -7451,7 +7437,7 @@ mod ndsolve {
     )
     .unwrap();
     let val: f64 = result.parse().expect("should be a number");
-    assert!((val - (-1.0)).abs() < 0.01, "Expected -1.0, got {}", val);
+    assert!((val - (-1.0)).abs() < 0.01, "Expected -1.0, got {val}");
   }
 
   #[test]
@@ -7463,7 +7449,7 @@ mod ndsolve {
     )
     .unwrap();
     let val: f64 = result.parse().expect("should be a number");
-    assert!((val - (-1.0)).abs() < 0.01, "Expected -1.0, got {}", val);
+    assert!((val - (-1.0)).abs() < 0.01, "Expected -1.0, got {val}");
   }
 
   #[test]
@@ -7483,9 +7469,7 @@ mod ndsolve {
     let expected = 1.0_f64.cos();
     assert!(
       (val - expected).abs() < 0.01,
-      "Expected {}, got {}",
-      expected,
-      val
+      "Expected {expected}, got {val}"
     );
   }
 
@@ -7553,9 +7537,7 @@ mod ndsolve {
     let expected = -(31.0_f64 / 40.0).acos();
     assert!(
       (val - expected).abs() < 0.001,
-      "Expected {}, got {}",
-      expected,
-      val
+      "Expected {expected}, got {val}"
     );
   }
 
@@ -8326,11 +8308,10 @@ mod nmaximize {
     let result =
       interpret("NMinimize[{x^2 - 4*x + 5, -10 < x < 10}, x]").unwrap();
     assert!(
-      result.starts_with("{"),
-      "Expected list result, got: {}",
-      result
+      result.starts_with('{'),
+      "Expected list result, got: {result}"
     );
-    assert!(result.contains("1."), "Min should be ~1, got: {}", result);
+    assert!(result.contains("1."), "Min should be ~1, got: {result}");
   }
 
   #[test]
@@ -8341,19 +8322,14 @@ mod nmaximize {
     let result = interpret("NMinimize[x^4 - 3 x^2 + 2, x]").unwrap();
     assert!(
       result.starts_with("{-0.25"),
-      "Min should be ~-0.25, got: {}",
-      result
+      "Min should be ~-0.25, got: {result}"
     );
   }
 
   #[test]
   fn nminimize_unconstrained_quadratic() {
     let result = interpret("NMinimize[x^2, x]").unwrap();
-    assert!(
-      result.starts_with("{0."),
-      "Min should be ~0, got: {}",
-      result
-    );
+    assert!(result.starts_with("{0."), "Min should be ~0, got: {result}");
   }
 
   #[test]
@@ -8425,8 +8401,7 @@ mod findroot_symbolic_start {
     let result = interpret("FindRoot[Sin[x] - 0.5, {x, Pi/4}]").unwrap();
     assert!(
       result.contains("x ->"),
-      "Expected rule result, got: {}",
-      result
+      "Expected rule result, got: {result}"
     );
   }
 
@@ -9494,8 +9469,7 @@ mod ndsolve_value {
         .unwrap();
     assert!(
       result.contains("InterpolatingFunction"),
-      "Expected InterpolatingFunction, got: {}",
-      result
+      "Expected InterpolatingFunction, got: {result}"
     );
   }
 
@@ -9506,6 +9480,39 @@ mod ndsolve_value {
     )
     .unwrap();
     assert_eq!(result, "1.");
+  }
+
+  /// An equation the numeric solver can't handle (a PDE) stays unevaluated
+  /// under its own head — it used to come back as the `NDSolve` that
+  /// `NDSolveValue` delegates to.
+  #[test]
+  fn unsolvable_keeps_its_own_head() {
+    assert_eq!(
+      interpret(
+        "NDSolveValue[{D[u[x, t], t] == D[u[x, t], x, x]}, u, {x, 0, 1}, {t, 0, 1}]"
+      )
+      .unwrap(),
+      "NDSolveValue[{Derivative[0, 1][u][x, t] == Derivative[2, 0][u][x, t]}, \
+       u, {x, 0, 1}, {t, 0, 1}]"
+    );
+  }
+}
+
+mod dsolve_value_unevaluated {
+  use super::*;
+
+  /// Same for the symbolic solver: `DSolveValue` must not report itself as
+  /// `DSolve` when it leaves an equation unsolved.
+  #[test]
+  fn unsolvable_keeps_its_own_head() {
+    assert_eq!(
+      interpret(
+        "DSolveValue[D[u[x, y], x, x] + D[u[x, y], y, y] == 0, u, {x, y}]"
+      )
+      .unwrap(),
+      "DSolveValue[Derivative[0, 2][u][x, y] + Derivative[2, 0][u][x, y] == 0, \
+       u, {x, y}]"
+    );
   }
 }
 
@@ -9918,9 +9925,8 @@ mod trig_to_exp {
     let result = interpret("TrigToExp[Cos[x]]").unwrap();
     // Should contain exponential terms with I
     assert!(
-      result.contains("E^") && result.contains("I"),
-      "Expected exponential form, got: {}",
-      result
+      result.contains("E^") && result.contains('I'),
+      "Expected exponential form, got: {result}"
     );
   }
 
@@ -10165,7 +10171,7 @@ mod interpolation {
     let result =
       interpret("f = Interpolation[{1, 2, 3, 5, 8, 5}]; f[1]").unwrap();
     let val: f64 = result.parse().expect("should be a number");
-    assert!((val - 1.0).abs() < 0.001, "Expected 1.0, got {}", val);
+    assert!((val - 1.0).abs() < 0.001, "Expected 1.0, got {val}");
   }
 
   #[test]
@@ -10174,7 +10180,7 @@ mod interpolation {
     let result =
       interpret("f = Interpolation[{1, 2, 3, 5, 8, 5}]; f[4]").unwrap();
     let val: f64 = result.parse().expect("should be a number");
-    assert!((val - 5.0).abs() < 0.001, "Expected 5.0, got {}", val);
+    assert!((val - 5.0).abs() < 0.001, "Expected 5.0, got {val}");
   }
 
   #[test]
@@ -10182,7 +10188,7 @@ mod interpolation {
     let result =
       interpret("f = Interpolation[{1, 2, 3, 5, 8, 5}]; f[6]").unwrap();
     let val: f64 = result.parse().expect("should be a number");
-    assert!((val - 5.0).abs() < 0.001, "Expected 5.0, got {}", val);
+    assert!((val - 5.0).abs() < 0.001, "Expected 5.0, got {val}");
   }
 
   #[test]
@@ -10192,7 +10198,7 @@ mod interpolation {
       interpret("f = Interpolation[{{0, 0}, {1, 1}, {2, 4}, {3, 9}}]; f[2]")
         .unwrap();
     let val: f64 = result.parse().expect("should be a number");
-    assert!((val - 4.0).abs() < 0.001, "Expected 4.0, got {}", val);
+    assert!((val - 4.0).abs() < 0.001, "Expected 4.0, got {val}");
   }
 
   // Exact symbolic data values (e.g. Sin[1], Sin[2]) are numericised via N,
@@ -10255,7 +10261,7 @@ mod interpolation {
         .unwrap();
     let val: f64 = result.parse().expect("should be a number");
     // Cubic interpolation of x^2 data should approximate 1.5^2 = 2.25
-    assert!((val - 2.25).abs() < 0.5, "Expected ~2.25, got {}", val);
+    assert!((val - 2.25).abs() < 0.5, "Expected ~2.25, got {val}");
   }
 
   #[test]
@@ -10263,13 +10269,11 @@ mod interpolation {
     let result = interpret("Interpolation[{1, 2, 3, 4}]").unwrap();
     assert!(
       result.contains("InterpolatingFunction"),
-      "Expected InterpolatingFunction, got: {}",
-      result
+      "Expected InterpolatingFunction, got: {result}"
     );
     assert!(
       result.contains("<>"),
-      "Expected <> in display, got: {}",
-      result
+      "Expected <> in display, got: {result}"
     );
   }
 
@@ -10282,7 +10286,7 @@ mod interpolation {
     .unwrap();
     let val: f64 = result.parse().expect("should be a number");
     // Linear interpolation between (0,0) and (1,1): 0.5
-    assert!((val - 0.5).abs() < 0.001, "Expected 0.5, got {}", val);
+    assert!((val - 0.5).abs() < 0.001, "Expected 0.5, got {val}");
   }
 
   #[test]
@@ -10293,7 +10297,7 @@ mod interpolation {
     .unwrap();
     let val: f64 = result.parse().expect("should be a number");
     // Linear interpolation between (1,1) and (2,4): 1 + 0.5*3 = 2.5
-    assert!((val - 2.5).abs() < 0.001, "Expected 2.5, got {}", val);
+    assert!((val - 2.5).abs() < 0.001, "Expected 2.5, got {val}");
   }
 
   #[test]
@@ -10302,8 +10306,7 @@ mod interpolation {
       interpret("Interpolation[{{0, 1}, {1, 2}, {2, 3}, {3, 4}}]").unwrap();
     assert!(
       result.contains("{{0., 3.}}"),
-      "Expected domain {{0., 3.}}, got: {}",
-      result
+      "Expected domain {{0., 3.}}, got: {result}"
     );
   }
 
@@ -10370,8 +10373,7 @@ mod interpolation {
     let result = interpret("f = Interpolation[{1, 2, 3, 4}]; f[x]").unwrap();
     assert!(
       result.contains("InterpolatingFunction"),
-      "Expected unevaluated form with symbolic arg, got: {}",
-      result
+      "Expected unevaluated form with symbolic arg, got: {result}"
     );
   }
 
@@ -10382,7 +10384,7 @@ mod interpolation {
       interpret("f = Interpolation[{{1, 3}, {2, 5}, {3, 11}}]; f[1.5]")
         .unwrap();
     let val: f64 = result.parse().expect("should be a number");
-    assert!((val - 3.5).abs() < 0.001, "Expected 3.5, got {}", val);
+    assert!((val - 3.5).abs() < 0.001, "Expected 3.5, got {val}");
   }
 
   #[test]
@@ -10393,7 +10395,7 @@ mod interpolation {
     )
     .unwrap();
     let val: f64 = result.parse().expect("should be a number");
-    assert!((val - 2.25).abs() < 0.001, "Expected 2.25, got {}", val);
+    assert!((val - 2.25).abs() < 0.001, "Expected 2.25, got {val}");
   }
 
   // Default order-3 interpolation must reproduce a degree-<=3 polynomial
@@ -10850,8 +10852,7 @@ mod fourier_transform {
     let result = interpret("FourierTransform[f[t], t, w]").unwrap();
     assert!(
       result.contains("FourierTransform"),
-      "Should return unevaluated: {}",
-      result
+      "Should return unevaluated: {result}"
     );
   }
 
@@ -10920,8 +10921,7 @@ mod inverse_fourier_transform {
     let result = interpret("InverseFourierTransform[g[w], w, t]").unwrap();
     assert!(
       result.contains("InverseFourierTransform"),
-      "Should return unevaluated: {}",
-      result
+      "Should return unevaluated: {result}"
     );
   }
 
@@ -11166,9 +11166,8 @@ mod function_domain {
     // Log[Sqrt[x]] → x > 0 && x >= 0 → simplifies to x > 0
     let result = interpret("FunctionDomain[Log[Sqrt[x]], x]").unwrap();
     assert!(
-      result.contains("x") && result.contains("0"),
-      "Should contain domain constraint: {}",
-      result
+      result.contains('x') && result.contains('0'),
+      "Should contain domain constraint: {result}"
     );
   }
 }
@@ -11381,8 +11380,7 @@ mod asymptotic_solve {
     let result = interpret("AsymptoticSolve[x - 1 == 0, x -> 0, 3]").unwrap();
     assert!(
       result.starts_with("AsymptoticSolve["),
-      "expected unevaluated for integer 3rd arg, got {}",
-      result
+      "expected unevaluated for integer 3rd arg, got {result}"
     );
   }
 
@@ -11393,8 +11391,7 @@ mod asymptotic_solve {
     let result = interpret("AsymptoticSolve[x^2 - 1]").unwrap();
     assert!(
       result.starts_with("AsymptoticSolve["),
-      "expected unevaluated, got {}",
-      result
+      "expected unevaluated, got {result}"
     );
   }
 }
@@ -11408,9 +11405,8 @@ mod fourier_sin_transform {
     // FourierSinTransform[E^(-a*t), t, w] = Sqrt[2/Pi] * w / (a^2 + w^2)
     let result = interpret("FourierSinTransform[E^(-a*t), t, w]").unwrap();
     assert!(
-      result.contains("w") && !result.contains("FourierSinTransform"),
-      "expected evaluated result, got {}",
-      result
+      result.contains('w') && !result.contains("FourierSinTransform"),
+      "expected evaluated result, got {result}"
     );
   }
 
@@ -11420,8 +11416,7 @@ mod fourier_sin_transform {
     let result = interpret("FourierSinTransform[3*E^(-t), t, w]").unwrap();
     assert!(
       !result.contains("FourierSinTransform"),
-      "expected evaluated result, got {}",
-      result
+      "expected evaluated result, got {result}"
     );
   }
 
@@ -11431,8 +11426,7 @@ mod fourier_sin_transform {
     let result = interpret("FourierSinTransform[f[t], t, w]").unwrap();
     assert!(
       result.contains("FourierSinTransform"),
-      "expected unevaluated, got {}",
-      result
+      "expected unevaluated, got {result}"
     );
   }
 
@@ -11491,9 +11485,8 @@ mod fourier_cos_transform {
     clear_state();
     let result = interpret("FourierCosTransform[E^(-a*t), t, w]").unwrap();
     assert!(
-      result.contains("a") && !result.contains("FourierCosTransform"),
-      "expected evaluated result, got {}",
-      result
+      result.contains('a') && !result.contains("FourierCosTransform"),
+      "expected evaluated result, got {result}"
     );
   }
 
@@ -11503,8 +11496,7 @@ mod fourier_cos_transform {
     let result = interpret("FourierCosTransform[g[t], t, w]").unwrap();
     assert!(
       result.contains("FourierCosTransform"),
-      "expected unevaluated, got {}",
-      result
+      "expected unevaluated, got {result}"
     );
   }
 
@@ -11687,9 +11679,8 @@ mod list_fourier_sequence_transform {
     let result =
       interpret("ListFourierSequenceTransform[{1, 1}, omega]").unwrap();
     assert!(
-      result.contains("E"),
-      "expected expression with E, got {}",
-      result
+      result.contains('E'),
+      "expected expression with E, got {result}"
     );
   }
 
@@ -11712,8 +11703,7 @@ mod list_fourier_sequence_transform {
     // Should contain numeric values (possibly complex)
     assert!(
       !result.contains("ListFourierSequenceTransform"),
-      "expected evaluated, got {}",
-      result
+      "expected evaluated, got {result}"
     );
   }
 
@@ -13056,6 +13046,14 @@ mod cases {
     assert_case(
       r#"DSolve[y''[x] == 0, y[x], x]; DSolve[y''[x] == y[x], y[x], x]; DSolve[y''[x] == y[x], y, x]; DSolve[D[f[x, y], x] / f[x, y] + 3 D[f[x, y], y] / f[x, y] == 2, f, {x, y}]; DSolve[D[f[x, y], x] x + D[f[x, y], y] y == 2, f[x, y], {x, y}]"#,
       r#"{{f[x, y] -> 2*Log[x] + C[1][y/x]}}"#,
+    );
+  }
+  #[test]
+  fn d_solve_euler_pde_zero_rhs() {
+    // Regression: the `c == 0` case used to leak an unfolded `0*Log[x]` term.
+    assert_case(
+      r#"DSolve[x D[f[x, y], x] + y D[f[x, y], y] == 0, f, {x, y}]"#,
+      r#"{{f -> Function[{x, y}, C[1][y/x]]}}"#,
     );
   }
   #[test]

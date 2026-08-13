@@ -81,7 +81,7 @@ pub fn number_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Generate SVG
   let svg = render_number_line_svg(
     &series, x_min, x_max, svg_width, svg_height, full_width,
-  )?;
+  );
 
   Ok(crate::graphics_result(svg))
 }
@@ -347,7 +347,7 @@ fn refine_boundary(
   let mut lo = x_false;
   let mut hi = x_true;
   for _ in 0..50 {
-    let mid = (lo + hi) / 2.0;
+    let mid = f64::midpoint(lo, hi);
     if eval_predicate(body, var, mid) {
       hi = mid;
     } else {
@@ -387,7 +387,7 @@ fn render_number_line_svg(
   svg_width: u32,
   svg_height: u32,
   full_width: bool,
-) -> Result<String, InterpreterError> {
+) -> std::string::String {
   let sf = RESOLUTION_SCALE as f64;
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
@@ -416,8 +416,7 @@ fn render_number_line_svg(
 
   // Background
   svg.push_str(&format!(
-    "<rect width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
-    render_width, render_height, bg_color
+    "<rect width=\"{render_width}\" height=\"{render_height}\" fill=\"{bg_color}\"/>\n"
   ));
 
   let axis_x0 = margin_left;
@@ -426,9 +425,8 @@ fn render_number_line_svg(
   // Single axis line at the bottom of the plot area.
   let axis_y = axis_area_top + usable_height;
   svg.push_str(&format!(
-    "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
-     stroke=\"{}\" stroke-width=\"{:.0}\"/>\n",
-    axis_x0, axis_y, axis_x1, axis_y, axis_color, sf
+    "<line x1=\"{axis_x0:.1}\" y1=\"{axis_y:.1}\" x2=\"{axis_x1:.1}\" y2=\"{axis_y:.1}\" \
+     stroke=\"{axis_color}\" stroke-width=\"{sf:.0}\"/>\n"
   ));
 
   // Draw each series row (first series closest to axis, rest stacked upward).
@@ -443,8 +441,7 @@ fn render_number_line_svg(
           if v.is_finite() {
             let px = x_to_px(v);
             svg.push_str(&format!(
-              "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" fill=\"{}\"/>\n",
-              px, data_y, radius, color
+              "<circle cx=\"{px:.1}\" cy=\"{data_y:.1}\" r=\"{radius:.1}\" fill=\"{color}\"/>\n"
             ));
           }
         }
@@ -628,19 +625,18 @@ fn render_number_line_svg(
 
   // Wrap in SVG element
   let mut buf = format!(
-    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" \
-     xmlns=\"http://www.w3.org/2000/svg\">\n{}</svg>",
-    svg_width, svg_height, render_width, render_height, svg
+    "<svg width=\"{svg_width}\" height=\"{svg_height}\" viewBox=\"0 0 {render_width} {render_height}\" \
+     xmlns=\"http://www.w3.org/2000/svg\">\n{svg}</svg>"
   );
 
   if full_width {
     // Replace width/height with 100%
-    let old = format!("width=\"{}\" height=\"{}\"", svg_width, svg_height);
+    let old = format!("width=\"{svg_width}\" height=\"{svg_height}\"");
     let new = "width=\"100%\"".to_string();
     buf = buf.replacen(&old, &new, 1);
   }
 
-  Ok(buf)
+  buf
 }
 
 /// Draw a left-pointing arrow for -Infinity.
@@ -684,14 +680,12 @@ fn draw_endpoint(
   let stroke_w = r * 0.5;
   if inclusive {
     svg.push_str(&format!(
-      "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" fill=\"{}\"/>\n",
-      cx, cy, r, color
+      "<circle cx=\"{cx:.1}\" cy=\"{cy:.1}\" r=\"{r:.1}\" fill=\"{color}\"/>\n"
     ));
   } else {
     svg.push_str(&format!(
-      "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" \
-       fill=\"{}\" stroke=\"{}\" stroke-width=\"{:.1}\"/>\n",
-      cx, cy, r, bg_color, color, stroke_w
+      "<circle cx=\"{cx:.1}\" cy=\"{cy:.1}\" r=\"{r:.1}\" \
+       fill=\"{bg_color}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.1}\"/>\n"
     ));
   }
 }
@@ -714,5 +708,5 @@ fn theme_colors() -> (
 /// Get color for a series by index.
 fn series_color(idx: usize) -> String {
   let (r, g, b) = PLOT_COLORS[idx % PLOT_COLORS.len()];
-  format!("rgb({},{},{})", r, g, b)
+  format!("rgb({r},{g},{b})")
 }

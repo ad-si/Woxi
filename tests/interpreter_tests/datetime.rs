@@ -978,11 +978,10 @@ mod date_string {
     // Should match YYYY-MM-DDTHH:MM:SS pattern
     assert!(
       result.len() == 19
-        && result.contains("T")
-        && result.contains("-")
-        && result.contains(":"),
-      "DateString[Now, \"ISODateTime\"] should return ISO format, got: {}",
-      result
+        && result.contains('T')
+        && result.contains('-')
+        && result.contains(':'),
+      "DateString[Now, \"ISODateTime\"] should return ISO format, got: {result}"
     );
   }
 
@@ -1130,13 +1129,11 @@ mod today {
     let result = interpret("Today").unwrap();
     assert!(
       result.starts_with("DateObject[{"),
-      "Today should return a DateObject, got: {}",
-      result
+      "Today should return a DateObject, got: {result}"
     );
     assert!(
       result.contains("}, Day]"),
-      "Today should include Day granularity, got: {}",
-      result
+      "Today should include Day granularity, got: {result}"
     );
   }
 
@@ -1147,8 +1144,7 @@ mod today {
     assert_eq!(
       parts.len(),
       3,
-      "Today should have 3 date components (y, m, d), got: {:?}",
-      parts
+      "Today should have 3 date components (y, m, d), got: {parts:?}"
     );
   }
 
@@ -1173,13 +1169,11 @@ mod tomorrow {
     let result = interpret("Tomorrow").unwrap();
     assert!(
       result.starts_with("DateObject[{"),
-      "Tomorrow should return a DateObject, got: {}",
-      result
+      "Tomorrow should return a DateObject, got: {result}"
     );
     assert!(
       result.contains("}, Day]"),
-      "Tomorrow should include Day granularity, got: {}",
-      result
+      "Tomorrow should include Day granularity, got: {result}"
     );
   }
 
@@ -1190,8 +1184,7 @@ mod tomorrow {
     assert_eq!(
       parts.len(),
       3,
-      "Tomorrow should have 3 date components (y, m, d), got: {:?}",
-      parts
+      "Tomorrow should have 3 date components (y, m, d), got: {parts:?}"
     );
   }
 
@@ -1216,13 +1209,11 @@ mod yesterday {
     let result = interpret("Yesterday").unwrap();
     assert!(
       result.starts_with("DateObject[{"),
-      "Yesterday should return a DateObject, got: {}",
-      result
+      "Yesterday should return a DateObject, got: {result}"
     );
     assert!(
       result.contains("}, Day]"),
-      "Yesterday should include Day granularity, got: {}",
-      result
+      "Yesterday should include Day granularity, got: {result}"
     );
   }
 
@@ -1233,8 +1224,7 @@ mod yesterday {
     assert_eq!(
       parts.len(),
       3,
-      "Yesterday should have 3 date components (y, m, d), got: {:?}",
-      parts
+      "Yesterday should have 3 date components (y, m, d), got: {parts:?}"
     );
   }
 

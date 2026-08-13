@@ -419,9 +419,8 @@ fn evaluate_expr_to_expr_early_dispatch(
               if let Some(label_idx) = find_label_index(args, &tag) {
                 start_index = label_idx + 1;
                 continue 'goto_loop;
-              } else {
-                return Err(InterpreterError::GotoSignal(tag));
               }
+              return Err(InterpreterError::GotoSignal(tag));
             }
             Err(e) => return Err(e),
           }
@@ -919,7 +918,7 @@ pub fn evaluate_expr_to_expr_inner(
         match stored {
           StoredValue::Raw(val) => return string_to_expr(&val),
           StoredValue::ExprVal(e) => return Ok(e),
-          _ => {}
+          StoredValue::Association(_) => {}
         }
       }
       Ok(Expr::Constant(name.clone()))
@@ -996,20 +995,18 @@ pub fn evaluate_expr_to_expr_inner(
               return Err(InterpreterError::TailCall(Box::new(
                 args[2].clone(),
               )));
-            } else {
-              return Ok(Expr::Identifier("Null".to_string()));
             }
-          } else {
-            // Condition didn't evaluate to True/False - return unevaluated
-            let mut new_args = vec![cond];
-            for arg in args.iter().skip(1) {
-              new_args.push(arg.clone());
-            }
-            return Ok(Expr::FunctionCall {
-              name: name.clone(),
-              args: new_args.into(),
-            });
+            return Ok(Expr::Identifier("Null".to_string()));
           }
+          // Condition didn't evaluate to True/False - return unevaluated
+          let mut new_args = vec![cond];
+          for arg in args.iter().skip(1) {
+            new_args.push(arg.clone());
+          }
+          return Ok(Expr::FunctionCall {
+            name: name.clone(),
+            args: new_args.into(),
+          });
         }
         // Special handling for Module/Block/Assuming - don't evaluate args (body needs local bindings first)
         if name == "Module" {
@@ -1091,8 +1088,7 @@ pub fn evaluate_expr_to_expr_inner(
                 // and leave the Increment/Decrement/PreIncrement/PreDecrement
                 // call unevaluated.
                 crate::emit_message(&format!(
-                  "{}::rvalue: {} is not a variable with a value, so its value cannot be changed.",
-                  name, var_name
+                  "{name}::rvalue: {var_name} is not a variable with a value, so its value cannot be changed."
                 ));
                 return Ok(Expr::FunctionCall {
                   name: name.clone(),
@@ -1274,8 +1270,7 @@ pub fn evaluate_expr_to_expr_inner(
             if !had_any {
               let lhs_str = crate::syntax::expr_to_string(&args[0]);
               crate::emit_message(&format!(
-                "Unset::norep: Assignment on {} for {} not found.",
-                head, lhs_str
+                "Unset::norep: Assignment on {head} for {lhs_str} not found."
               ));
               return Ok(Expr::Identifier("$Failed".to_string()));
             }
@@ -1321,7 +1316,7 @@ pub fn evaluate_expr_to_expr_inner(
                         }
                         Expr::Pattern {
                           name: p.clone(),
-                          head: heads.get(i).and_then(|h| h.clone()),
+                          head: heads.get(i).and_then(std::clone::Clone::clone),
                           blank_type: blank_types.get(i).copied().unwrap_or(1),
                         }
                       })
@@ -1344,8 +1339,7 @@ pub fn evaluate_expr_to_expr_inner(
             if !removed_any {
               let lhs_str = crate::syntax::expr_to_string(&args[0]);
               crate::emit_message(&format!(
-                "Unset::norep: Assignment on {} for {} not found.",
-                head, lhs_str
+                "Unset::norep: Assignment on {head} for {lhs_str} not found."
               ));
               return Ok(Expr::Identifier("$Failed".to_string()));
             }
@@ -1375,8 +1369,7 @@ pub fn evaluate_expr_to_expr_inner(
               }
               _ => {
                 crate::emit_message(&format!(
-                  "ApplyTo::rvalue: {} is not a variable with a value, so its value cannot be changed.",
-                  var_name
+                  "ApplyTo::rvalue: {var_name} is not a variable with a value, so its value cannot be changed."
                 ));
                 return Ok(Expr::FunctionCall {
                   name: name.clone(),
@@ -1437,8 +1430,7 @@ pub fn evaluate_expr_to_expr_inner(
               }
               _ => {
                 crate::emit_message(&format!(
-                  "{}::rvalue: {} is not a variable with a value, so its value cannot be changed.",
-                  name, var_name
+                  "{name}::rvalue: {var_name} is not a variable with a value, so its value cannot be changed."
                 ));
                 // Match Mathematica: leave the whole call unevaluated.
                 return Ok(Expr::FunctionCall {
@@ -1655,17 +1647,18 @@ pub fn evaluate_expr_to_expr_inner(
             // System variables like `$BoxForms` aren't in ENV until written —
             // first AppendTo seeds the env from the built-in default.
             _ => {
-              match crate::evaluator::listable::get_system_variable(var_name) {
-                Some(default) => default,
-                None => {
-                  // wolframscript reports that the target has no value and
-                  // leaves the call alone; it is not an error.
-                  emit_rvalue(name, &args[0]);
-                  return Ok(Expr::FunctionCall {
-                    name: name.clone(),
-                    args: args.clone(),
-                  });
-                }
+              if let Some(default) =
+                crate::evaluator::listable::get_system_variable(var_name)
+              {
+                default
+              } else {
+                // wolframscript reports that the target has no value and
+                // leaves the call alone; it is not an error.
+                emit_rvalue(name, &args[0]);
+                return Ok(Expr::FunctionCall {
+                  name: name.clone(),
+                  args: args.clone(),
+                });
               }
             }
           };
@@ -1698,8 +1691,7 @@ pub fn evaluate_expr_to_expr_inner(
             }
             _ => {
               return Err(InterpreterError::EvaluationError(format!(
-                "{}: {} is not a list",
-                name, var_name
+                "{name}: {var_name} is not a list"
               )));
             }
           };
@@ -1846,8 +1838,7 @@ pub fn evaluate_expr_to_expr_inner(
             _ => {
               // Undefined symbol: wolframscript emits ::blnoval.
               crate::emit_message(&format!(
-                "KeyDropFrom::blnoval: The symbol {} at position 1 should have an immediate value defined.",
-                var_name
+                "KeyDropFrom::blnoval: The symbol {var_name} at position 1 should have an immediate value defined."
               ));
               return Ok(Expr::FunctionCall {
                 name: "KeyDropFrom".to_string(),
@@ -1945,8 +1936,7 @@ pub fn evaluate_expr_to_expr_inner(
               if args.len() == 3 {
                 let f = evaluate_expr_to_expr(&args[2])?;
                 let tag_expr = thrown_tag
-                  .map(|t| *t)
-                  .unwrap_or_else(|| Expr::Identifier("Null".to_string()));
+                  .map_or_else(|| Expr::Identifier("Null".to_string()), |t| *t);
                 let application = if let Expr::Identifier(fname) = &f {
                   Expr::FunctionCall {
                     name: fname.clone(),
@@ -2030,7 +2020,7 @@ pub fn evaluate_expr_to_expr_inner(
           use crate::functions::confirm_ast;
           if !confirm_ast::inside_enclose() {
             let held = Expr::FunctionCall {
-              name: name.to_string(),
+              name: name.clone(),
               args: args.to_vec().into(),
             };
             return Ok(confirm_ast::no_enclose_failure(name, held));
@@ -2113,8 +2103,7 @@ pub fn evaluate_expr_to_expr_inner(
             let code = if args.len() == 1 {
               if let Ok(val) = evaluate_expr_to_expr(&args[0]) {
                 crate::functions::math_ast::try_eval_to_f64(&val)
-                  .map(|f| f as i32)
-                  .unwrap_or(0)
+                  .map_or(0, |f| f as i32)
               } else {
                 0
               }
@@ -2158,8 +2147,7 @@ pub fn evaluate_expr_to_expr_inner(
                   args: vec![shown.clone()].into(),
                 });
               crate::emit_message(&format!(
-                "Pause::numnm: Non-negative machine-sized number expected at position 1 in {}.",
-                call_str
+                "Pause::numnm: Non-negative machine-sized number expected at position 1 in {call_str}."
               ));
               return Ok(Expr::FunctionCall {
                 name: "Pause".to_string(),
@@ -3047,7 +3035,7 @@ pub fn evaluate_expr_to_expr_inner(
         // the normal logic, which leaves the comparison unevaluated.
         if (crate::functions::interval_ast::is_interval(left).is_some()
           || crate::functions::interval_ast::is_interval(right).is_some())
-          && let Some(b) = interval_compare(op, left, right)
+          && let Some(b) = interval_compare(*op, left, right)
         {
           if !b {
             return Ok(bool_expr(false));
@@ -3354,9 +3342,8 @@ pub fn evaluate_expr_to_expr_inner(
               if let Some(label_idx) = find_label_index(exprs, &tag) {
                 start_index = label_idx + 1;
                 continue 'goto_loop;
-              } else {
-                return Err(InterpreterError::GotoSignal(tag));
               }
+              return Err(InterpreterError::GotoSignal(tag));
             }
             Err(e) => return Err(e),
           }
@@ -3771,8 +3758,7 @@ pub fn evaluate_expr_to_expr_inner(
           indices.iter().find(|i| matches!(i, Expr::String(_)))
         {
           crate::emit_message(&format!(
-            "Part::pspec1: Part specification {} is not applicable.",
-            s
+            "Part::pspec1: Part specification {s} is not applicable."
           ));
           return Ok(result);
         }
@@ -3794,8 +3780,7 @@ pub fn evaluate_expr_to_expr_inner(
             crate::syntax::ExprForm::Output,
           );
           crate::emit_message(&format!(
-            "Part::partd: Part specification {} is longer than depth of object.",
-            part_str
+            "Part::partd: Part specification {part_str} is longer than depth of object."
           ));
         }
       }
@@ -3991,7 +3976,7 @@ fn interval_numeric_bounds(expr: &Expr) -> Option<(f64, f64)> {
 /// and indeterminate (None) when the ranges overlap. `==`/`!=` resolve only for
 /// disjoint ranges. None lets the caller leave the comparison unevaluated.
 fn interval_compare(
-  op: &ComparisonOp,
+  op: ComparisonOp,
   left: &Expr,
   right: &Expr,
 ) -> Option<bool> {

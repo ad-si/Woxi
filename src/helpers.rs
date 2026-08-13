@@ -36,6 +36,17 @@ pub fn div2(a: Expr, b: Expr) -> Expr {
   binop(BinaryOperator::Divide, a, b)
 }
 
+pub fn call(name: &str, args: Vec<Expr>) -> Expr {
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.into(),
+  }
+}
+
+pub fn call1(name: &str, arg: Expr) -> Expr {
+  call(name, vec![arg])
+}
+
 /// Build the boolean symbol `True` or `False`.
 pub fn bool_expr(b: bool) -> Expr {
   Expr::Identifier(if b { "True" } else { "False" }.to_string())

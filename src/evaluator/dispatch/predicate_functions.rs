@@ -62,13 +62,11 @@ fn root_of_unity_q(z: &Expr) -> bool {
     name: "N".to_string(),
     args: vec![z.clone()].into(),
   };
-  let num = match evaluate_expr_to_expr(&n_call) {
-    Ok(v) => v,
-    Err(_) => return false,
+  let Ok(num) = evaluate_expr_to_expr(&n_call) else {
+    return false;
   };
-  let (re, im) = match try_extract_complex_float(&num) {
-    Some(v) => v,
-    None => return false,
+  let Some((re, im)) = try_extract_complex_float(&num) else {
+    return false;
   };
   // Roots of unity lie on the unit circle.
   let mag2 = re * re + im * im;
@@ -201,7 +199,7 @@ pub fn dispatch_predicate_functions(
             _ => None,
           })
           .collect();
-        if op_names.iter().all(|o| o.is_some()) {
+        if op_names.iter().all(std::option::Option::is_some) {
           let names: Vec<&str> = op_names.into_iter().flatten().collect();
           if should_split_inequality(&names) {
             let operands: Vec<Expr> = args
@@ -356,7 +354,7 @@ pub fn dispatch_predicate_functions(
         Ok(l) => l,
         Err(e) => return Some(Err(e)),
       };
-      let is_monic = matches!(&lead, Expr::Integer(1) | Expr::Integer(-1));
+      let is_monic = matches!(&lead, Expr::Integer(1 | -1));
       return Some(Ok(bool_expr(is_monic)));
     }
     "ColorQ" if args.len() == 1 => {
@@ -410,7 +408,7 @@ pub fn dispatch_predicate_functions(
     "LetterQ" if args.len() == 1 => {
       return Some(Ok(match &args[0] {
         Expr::String(s) => {
-          if !s.is_empty() && s.chars().all(|c| c.is_alphabetic()) {
+          if !s.is_empty() && s.chars().all(char::is_alphabetic) {
             bool_expr(true)
           } else {
             bool_expr(false)
@@ -848,7 +846,7 @@ pub fn dispatch_predicate_functions(
       let rules: Vec<Expr> = func_defs
         .iter()
         .filter_map(
-          |(params, _conds, _defaults, _heads, _blank_types, body)| {
+          |(params, rule_conds, _defaults, _heads, _blank_types, body)| {
             // MessageName has exactly two slots: first is the symbol literal
             // (matched as a SameQ condition with param `_dv0`), second is
             // the tag string (`_dv1`). Re-derive the literal MessageName
@@ -856,7 +854,7 @@ pub fn dispatch_predicate_functions(
             // The simpler path: use the conditions to read the literal sym
             // value matched in slot 0. If the rule's slot-0 SameQ value
             // doesn't equal `sym`, skip it.
-            let slot0_literal = _conds.iter().find_map(|c| {
+            let slot0_literal = rule_conds.iter().find_map(|c| {
               if let Some(Expr::Comparison {
                 operands,
                 operators,
@@ -877,7 +875,7 @@ pub fn dispatch_predicate_functions(
             }
             // Slot 1 is the tag string (or symbol). It's matched the same
             // way; pull its literal value out of the conditions.
-            let slot1_literal = _conds.iter().find_map(|c| {
+            let slot1_literal = rule_conds.iter().find_map(|c| {
               if let Some(Expr::Comparison {
                 operands,
                 operators,
@@ -1256,7 +1254,7 @@ pub fn dispatch_predicate_functions(
               "Attributes",
               std::slice::from_ref(sym),
             )
-            .and_then(|r| r.ok())
+            .and_then(std::result::Result::ok)
           })
           .collect();
         if let Some(lists) = per_symbol {
@@ -1281,7 +1279,7 @@ pub fn dispatch_predicate_functions(
         .unwrap_or_default();
       let mut all_attr_strs: Vec<String> = builtin
         .iter()
-        .map(|a| a.to_string())
+        .map(std::string::ToString::to_string)
         .filter(|a| !removed.contains(a))
         .collect();
       if let Some(user) = user_attrs {
@@ -1295,7 +1293,7 @@ pub fn dispatch_predicate_functions(
       return Some(Ok(Expr::List(
         all_attr_strs
           .iter()
-          .map(|a| Expr::Identifier(a.to_string()))
+          .map(|a| Expr::Identifier(a.clone()))
           .collect(),
       )));
     }
@@ -1386,10 +1384,10 @@ pub fn dispatch_predicate_functions(
             }
           }
         }
-        if !pattern.contains('*') {
-          name == pattern
-        } else {
+        if pattern.contains('*') {
           true
+        } else {
+          name == pattern
         }
       };
       let all = ["System`", "Global`"];
@@ -1429,29 +1427,28 @@ pub fn dispatch_predicate_functions(
       let opts = stored.unwrap_or_else(|| builtin_default_options(&func_name));
       if args.len() == 1 {
         return Some(Ok(Expr::List(opts.into())));
-      } else {
-        // Options[f, opt] - find the matching option
-        let opt_arg = match evaluate_expr_to_expr(&args[1]) {
-          Ok(v) => v,
-          Err(e) => return Some(Err(e)),
-        };
-        let opt_name = match &opt_arg {
-          Expr::Identifier(name) => name.clone(),
-          _ => {
-            return Some(Ok(Expr::List(vec![].into())));
-          }
-        };
-        let matching: Vec<Expr> = opts
-          .into_iter()
-          .filter(|rule| match rule {
-            Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
-              matches!(pattern.as_ref(), Expr::Identifier(n) if *n == opt_name)
-            }
-            _ => false,
-          })
-          .collect();
-        return Some(Ok(Expr::List(matching.into())));
       }
+      // Options[f, opt] - find the matching option
+      let opt_arg = match evaluate_expr_to_expr(&args[1]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      let opt_name = match &opt_arg {
+        Expr::Identifier(name) => name.clone(),
+        _ => {
+          return Some(Ok(Expr::List(vec![].into())));
+        }
+      };
+      let matching: Vec<Expr> = opts
+        .into_iter()
+        .filter(|rule| match rule {
+          Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+            matches!(pattern.as_ref(), Expr::Identifier(n) if *n == opt_name)
+          }
+          _ => false,
+        })
+        .collect();
+      return Some(Ok(Expr::List(matching.into())));
     }
     // OptionValue[name] - look up option value from current OptionsPattern context.
     // The name can be a Symbol (`OptionValue[m]`) or a String
@@ -1600,35 +1597,32 @@ pub fn dispatch_predicate_functions(
           // A name that is neither a symbol nor a string resolves to itself.
           other => return Ok(other.clone()),
         };
-        match value_of(&explicit, &key).or_else(|| value_of(&defaults, &key)) {
-          // A `:>` default holds its right-hand side, so evaluate what we find.
-          Some(v) => {
-            let v = evaluate_expr_to_expr(&v)?;
-            Ok(match &wrapper {
-              Some(h) => Expr::FunctionCall {
-                name: crate::syntax::expr_to_string(h),
-                args: vec![v].into(),
-              },
-              None => v,
-            })
+        if let Some(v) =
+          value_of(&explicit, &key).or_else(|| value_of(&defaults, &key))
+        {
+          let v = evaluate_expr_to_expr(&v)?;
+          Ok(match &wrapper {
+            Some(h) => Expr::FunctionCall {
+              name: crate::syntax::expr_to_string(h),
+              args: vec![v].into(),
+            },
+            None => v,
+          })
+        } else {
+          if !quiet {
+            crate::emit_message(&format!(
+              "OptionValue::optnf: Option name {key} not found in defaults for {target}."
+            ));
           }
-          None => {
-            if !quiet {
-              crate::emit_message(&format!(
-                "OptionValue::optnf: Option name {} not found in defaults for {}.",
-                key, target
-              ));
-            }
-            // A missing option gives back the name it was asked for, never
-            // wrapped.
-            Ok(name.clone())
-          }
+          // A missing option gives back the name it was asked for, never
+          // wrapped.
+          Ok(name.clone())
         }
       };
       return Some(match &name_arg {
         Expr::List(names) => {
           let mut out = Vec::with_capacity(names.len());
-          for name in names.iter() {
+          for name in names {
             match resolve(name) {
               Ok(v) => out.push(v),
               Err(e) => return Some(Err(e)),

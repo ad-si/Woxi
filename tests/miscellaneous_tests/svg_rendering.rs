@@ -32,13 +32,11 @@ mod tests {
     let markup = expr_to_svg_markup(&expr);
     assert!(
       markup.starts_with("(x + y)"),
-      "Power base should have parentheses: got '{}'",
-      markup
+      "Power base should have parentheses: got '{markup}'"
     );
     assert!(
       markup.contains("(x + y)<tspan"),
-      "Expected (x + y) before superscript: got '{}'",
-      markup
+      "Expected (x + y) before superscript: got '{markup}'"
     );
   }
 
@@ -53,8 +51,7 @@ mod tests {
     let markup = expr_to_svg_markup(&expr);
     assert!(
       markup.starts_with("x<tspan"),
-      "Simple base should not have parentheses: got '{}'",
-      markup
+      "Simple base should not have parentheses: got '{markup}'"
     );
   }
 
@@ -73,8 +70,7 @@ mod tests {
     let markup = expr_to_svg_markup(&expr);
     assert!(
       markup.starts_with("(x + y)"),
-      "BinaryOp Plus base should have parentheses: got '{}'",
-      markup
+      "BinaryOp Plus base should have parentheses: got '{markup}'"
     );
   }
 
@@ -93,8 +89,7 @@ mod tests {
     let markup = expr_to_svg_markup(&expr);
     assert!(
       markup.starts_with("(x - y)"),
-      "BinaryOp Minus base should have parentheses: got '{}'",
-      markup
+      "BinaryOp Minus base should have parentheses: got '{markup}'"
     );
   }
 
@@ -182,8 +177,7 @@ mod tests {
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
       markup, "10 x",
-      "Number*identifier should use space: got '{}'",
-      markup
+      "Number*identifier should use space: got '{markup}'"
     );
   }
 
@@ -201,8 +195,7 @@ mod tests {
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
       markup, "x y",
-      "Identifier*identifier should use space: got '{}'",
-      markup
+      "Identifier*identifier should use space: got '{markup}'"
     );
   }
 
@@ -232,8 +225,7 @@ mod tests {
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
       markup, "9(2 + x)(x + y)",
-      "Times with additive operands should use juxtaposition: got '{}'",
-      markup
+      "Times with additive operands should use juxtaposition: got '{markup}'"
     );
     assert!(!markup.contains('*'), "SVG should not contain *");
   }
@@ -249,8 +241,7 @@ mod tests {
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
       markup, "x y",
-      "BinaryOp Times should use space: got '{}'",
-      markup
+      "BinaryOp Times should use space: got '{markup}'"
     );
   }
 
@@ -265,8 +256,7 @@ mod tests {
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
       markup, "10 x",
-      "BinaryOp Times number*id should use space: got '{}'",
-      markup
+      "BinaryOp Times number*id should use space: got '{markup}'"
     );
   }
 
@@ -292,8 +282,7 @@ mod tests {
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
       markup, "-x(a + b)",
-      "Times[-1,...] should use implicit mult: got '{}'",
-      markup
+      "Times[-1,...] should use implicit mult: got '{markup}'"
     );
     assert!(!markup.contains('*'), "SVG should not contain *");
   }
@@ -322,9 +311,7 @@ mod tests {
     let expected = base_w + 2.0 + 1.0 * 0.7;
     assert!(
       (total_w - expected).abs() < 0.01,
-      "Power width should include parens: got {}, expected {}",
-      total_w,
-      expected
+      "Power width should include parens: got {total_w}, expected {expected}"
     );
   }
 
@@ -343,9 +330,7 @@ mod tests {
     let expected = base_w + 1.0 * 0.7;
     assert!(
       (total_w - expected).abs() < 0.01,
-      "Simple Power width should not include parens: got {}, expected {}",
-      total_w,
-      expected
+      "Simple Power width should not include parens: got {total_w}, expected {expected}"
     );
   }
 
@@ -378,8 +363,7 @@ mod tests {
     // factors: 1 + (5+2) + (5+2) = 15, seps: 0+0 = 0, total = 15
     assert!(
       (w - 15.0).abs() < 0.01,
-      "Times width for 9(2 + x)(x + y) should be 15: got {}",
-      w
+      "Times width for 9(2 + x)(x + y) should be 15: got {w}"
     );
   }
 
@@ -404,8 +388,7 @@ mod tests {
     // Each side: base=5 + parens=2 = 7, sep=0, total = 14
     assert!(
       (w - 14.0).abs() < 0.01,
-      "BinaryOp Times (x+y)(a+b) width should be 14: got {}",
-      w
+      "BinaryOp Times (x+y)(a+b) width should be 14: got {w}"
     );
   }
 
@@ -431,8 +414,7 @@ mod tests {
     // -(x + y): '-' = 1, '(' = 1, 'x + y' = 5, ')' = 1 → total = 8
     assert!(
       w >= 8.0,
-      "Times[-1, Plus] width should include parens: got {}",
-      w
+      "Times[-1, Plus] width should include parens: got {w}"
     );
   }
 
@@ -447,8 +429,7 @@ mod tests {
     // "10 x" = 4 chars: factors = 2+1 = 3, sep = 1
     assert!(
       (w - 4.0).abs() < 0.01,
-      "Times[10, x] width should be 4: got {}",
-      w
+      "Times[10, x] width should be 4: got {w}"
     );
   }
 
@@ -503,13 +484,11 @@ mod tests {
     // Should contain parens around Power base and no * anywhere
     assert!(
       markup.contains("(x + y)<tspan"),
-      "Full expression should have parens around Power base: got '{}'",
-      markup
+      "Full expression should have parens around Power base: got '{markup}'"
     );
     assert!(
       !markup.contains('*'),
-      "SVG markup should not contain * symbol: got '{}'",
-      markup
+      "SVG markup should not contain * symbol: got '{markup}'"
     );
   }
 
@@ -565,18 +544,15 @@ mod tests {
     // Both Power bases should have parentheses, no * anywhere
     assert!(
       markup.contains("(x + y)<tspan"),
-      "First Power should have parens: got '{}'",
-      markup
+      "First Power should have parens: got '{markup}'"
     );
     assert!(
       markup.contains("(18 + 10 x + y)<tspan"),
-      "Second Power should have parens: got '{}'",
-      markup
+      "Second Power should have parens: got '{markup}'"
     );
     assert!(
       !markup.contains('*'),
-      "SVG markup should not contain * symbol: got '{}'",
-      markup
+      "SVG markup should not contain * symbol: got '{markup}'"
     );
   }
 
@@ -595,8 +571,7 @@ mod tests {
     let markup = expr_to_svg_markup(&Expr::Integer(12345));
     assert!(
       markup.contains("12<tspan dx=\"0.3ch\">345</tspan>"),
-      "5-digit number should be grouped: got '{}'",
-      markup
+      "5-digit number should be grouped: got '{markup}'"
     );
   }
 
@@ -609,8 +584,7 @@ mod tests {
         "2<tspan dx=\"0.3ch\">000</tspan><tspan dx=\"0.3ch\">000</tspan>\
          <tspan dx=\"0.3ch\">000</tspan><tspan dx=\"0.3ch\">000</tspan>"
       ),
-      "Large number should have grouped digits: got '{}'",
-      markup
+      "Large number should have grouped digits: got '{markup}'"
     );
   }
 
@@ -622,8 +596,7 @@ mod tests {
       markup.contains(
         "−12<tspan dx=\"0.3ch\">345</tspan><tspan dx=\"0.3ch\">678</tspan>"
       ),
-      "Negative number should be grouped with minus sign: got '{}'",
-      markup
+      "Negative number should be grouped with minus sign: got '{markup}'"
     );
   }
 
@@ -634,8 +607,7 @@ mod tests {
     // 13 chars + 4 * 0.3 = 14.2
     assert!(
       (w - 14.2).abs() < 0.01,
-      "Width should account for digit group gaps: got {}",
-      w
+      "Width should account for digit group gaps: got {w}"
     );
   }
 
@@ -661,7 +633,7 @@ mod tests {
     fn assert_width_reasonable(expr: &Expr) {
       let boxes = expr_to_box_form(expr);
       let box_w = estimate_box_display_width(&boxes);
-      assert!(box_w > 0.0, "Box width should be positive, got {box_w}",);
+      assert!(box_w > 0.0, "Box width should be positive, got {box_w}");
     }
 
     // ── Power base parenthesization (boxes) ──
@@ -1176,21 +1148,18 @@ mod tests {
       // Top level should be RowBox (Plus)
       assert!(
         matches!(&boxes, Expr::FunctionCall { name, .. } if name == "RowBox"),
-        "Plus should become RowBox: got {:?}",
-        boxes
+        "Plus should become RowBox: got {boxes:?}"
       );
       let svg = boxes_to_svg(&boxes);
       // Should contain a SuperscriptBox rendering (superscript tspan)
       assert!(
         svg.contains("baseline-shift=\"super\""),
-        "Full expression box SVG should have superscript: got '{}'",
-        svg
+        "Full expression box SVG should have superscript: got '{svg}'"
       );
       // Should not contain * symbol
       assert!(
         !svg.contains('*'),
-        "Box SVG should not contain * symbol: got '{}'",
-        svg
+        "Box SVG should not contain * symbol: got '{svg}'"
       );
     }
 
@@ -1245,15 +1214,13 @@ mod tests {
       // Should be a RowBox containing SuperscriptBox elements
       assert!(
         matches!(&boxes, Expr::FunctionCall { name, .. } if name == "RowBox"),
-        "Product of powers should be RowBox: got {:?}",
-        boxes
+        "Product of powers should be RowBox: got {boxes:?}"
       );
       let svg = boxes_to_svg(&boxes);
       // Should contain superscripts
       assert!(
         svg.contains("baseline-shift=\"super\""),
-        "Product of powers box SVG should have superscripts: got '{}'",
-        svg
+        "Product of powers box SVG should have superscripts: got '{svg}'"
       );
     }
 
@@ -1359,7 +1326,7 @@ mod tests {
       {
         let svg = boxes_to_svg(&args[0]);
         assert!(
-          svg.contains("x") && svg.contains("baseline-shift=\"super\""),
+          svg.contains('x') && svg.contains("baseline-shift=\"super\""),
           "DisplayForm inner boxes should render as superscript SVG: got '{svg}'"
         );
       }
@@ -1377,7 +1344,7 @@ mod tests {
       };
       let svg = boxes_to_svg(&inner);
       assert!(
-        svg.contains("a") && svg.contains("baseline-shift=\"sub\""),
+        svg.contains('a') && svg.contains("baseline-shift=\"sub\""),
         "SubscriptBox should render with subscript: got '{svg}'"
       );
     }
@@ -1412,7 +1379,7 @@ mod tests {
       };
       let svg = boxes_to_svg(&inner);
       assert!(
-        svg.contains("a") && svg.contains("b"),
+        svg.contains('a') && svg.contains('b'),
         "RowBox of SubscriptBoxes should render both: got '{svg}'"
       );
       // Should have two subscript tspans
@@ -1663,7 +1630,7 @@ mod tests {
           args[1]
         );
       } else {
-        panic!("expected TemplateBox, got {:?}", boxes);
+        panic!("expected TemplateBox, got {boxes:?}");
       }
     }
 

@@ -97,12 +97,11 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if contains_float(&args[0])
         && let Some((re, im)) = try_extract_complex_float(&args[0])
       {
-        if im != 0.0 {
-          let (res_re, res_im) = zeta_numeric_complex(re, im);
-          return Ok(build_complex_float_expr(res_re, res_im));
-        } else {
+        if im == 0.0 {
           return Ok(Expr::Real(zeta_numeric(re)));
         }
+        let (res_re, res_im) = zeta_numeric_complex(re, im);
+        return Ok(build_complex_float_expr(res_re, res_im));
       }
       // Symbolic argument: return unevaluated
       Ok(unevaluated("Zeta", args))
@@ -1309,7 +1308,7 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if name == "Rational" && args.len() == 2)
   };
   let s_is_even_int = matches!(s, Expr::Integer(n) if *n % 2 == 0);
-  let a_is_1_or_2 = matches!(a, Expr::Integer(1) | Expr::Integer(2));
+  let a_is_1_or_2 = matches!(a, Expr::Integer(1 | 2));
   if matches!(z, Expr::Integer(1))
     && is_exact_number(s)
     && is_exact_number(a)
@@ -1500,7 +1499,7 @@ fn gauss_legendre_integrate_lerch<F: Fn(f64) -> f64>(
   let half = (hi - lo) * 0.5;
   let mid = (lo + hi) * 0.5;
   let mut sum = 0.0;
-  for (t, w) in nodes.iter() {
+  for (t, w) in nodes {
     let x = mid + half * t;
     sum += w * f(x);
   }

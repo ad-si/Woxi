@@ -1117,8 +1117,7 @@ pub fn dispatch_attributes(
               && existing.contains(&"Locked".to_string())
             {
               crate::emit_message(&format!(
-                "Attributes::locked: Symbol {} is locked.",
-                func_name
+                "Attributes::locked: Symbol {func_name} is locked."
               ));
               locked = true;
               continue;
@@ -1174,8 +1173,7 @@ pub fn dispatch_attributes(
               && existing.contains(&"Locked".to_string())
             {
               crate::emit_message(&format!(
-                "Attributes::locked: Symbol {} is locked.",
-                func_name
+                "Attributes::locked: Symbol {func_name} is locked."
               ));
               continue;
             }
@@ -1253,8 +1251,7 @@ pub fn dispatch_attributes(
           };
           if is_locked {
             crate::emit_message(&format!(
-              "Protect::locked: Symbol {} is locked.",
-              sym
+              "Protect::locked: Symbol {sym} is locked."
             ));
             continue;
           }
@@ -1296,8 +1293,7 @@ pub fn dispatch_attributes(
             // reports `Clear::wrsym` and moves on to the next argument.
             if crate::evaluator::pattern_matching::is_symbol_protected(sym) {
               crate::emit_message(&format!(
-                "Clear::wrsym: Symbol {} is Protected.",
-                sym
+                "Clear::wrsym: Symbol {sym} is Protected."
               ));
               continue;
             }
@@ -1389,12 +1385,11 @@ pub fn dispatch_attributes(
             // Same Protected guard as `Clear`, with the `ClearAll` tag.
             if crate::evaluator::pattern_matching::is_symbol_protected(sym) {
               crate::emit_message(&format!(
-                "ClearAll::wrsym: Symbol {} is Protected.",
-                sym
+                "ClearAll::wrsym: Symbol {sym} is Protected."
               ));
               continue;
             }
-            clear_one(sym)
+            clear_one(sym);
           }
           Expr::String(pattern) => {
             for sym in matching_user_symbols(pattern) {

@@ -97,16 +97,15 @@ fn extremal_by_count(name: &str, args: &[Expr]) -> Result<i128, Expr> {
     }
     _ => None,
   };
-  match valid {
-    Some(n) => Ok(n),
-    None => {
-      crate::emit_message(&format!(
-        "{}::arg3: The third argument {} is expected to be a non-negative integer.",
-        name,
-        crate::syntax::format_expr(arg3, crate::syntax::ExprForm::Output)
-      ));
-      Err(unevaluated(name, args))
-    }
+  if let Some(n) = valid {
+    Ok(n)
+  } else {
+    crate::emit_message(&format!(
+      "{}::arg3: The third argument {} is expected to be a non-negative integer.",
+      name,
+      crate::syntax::format_expr(arg3, crate::syntax::ExprForm::Output)
+    ));
+    Err(unevaluated(name, args))
   }
 }
 
@@ -179,7 +178,7 @@ fn validate_take_extreme(name: &str, args: &[Expr]) -> Option<TakeExtreme> {
 
   let reject = |suffix: String| -> TakeExtreme {
     let call = unevaluated(name, args);
-    crate::emit_message(&format!("{}::{}", name, suffix));
+    crate::emit_message(&format!("{name}::{suffix}"));
     TakeExtreme::Reject(call)
   };
   let spec_str =
@@ -187,28 +186,24 @@ fn validate_take_extreme(name: &str, args: &[Expr]) -> Option<TakeExtreme> {
 
   if is_infinity_symbol(spec) {
     return Some(reject(format!(
-      "insuff: Cannot take Infinity element(s) from a list of length {}.",
-      len
+      "insuff: Cannot take Infinity element(s) from a list of length {len}."
     )));
   }
   if let Some(n) = expr_to_i128(spec) {
     if n < 0 {
       return Some(reject(format!(
-        "innfup: Non-negative integer, Infinity or valid UpTo specification expected instead of {}.",
-        spec_str
+        "innfup: Non-negative integer, Infinity or valid UpTo specification expected instead of {spec_str}."
       )));
     }
     if n > len {
       return Some(reject(format!(
-        "insuff: Cannot take {} element(s) from a list of length {}.",
-        n, len
+        "insuff: Cannot take {n} element(s) from a list of length {len}."
       )));
     }
     return Some(TakeExtreme::Take(n));
   }
   Some(reject(format!(
-    "innfup: Non-negative integer, Infinity or valid UpTo specification expected instead of {}.",
-    spec_str
+    "innfup: Non-negative integer, Infinity or valid UpTo specification expected instead of {spec_str}."
   )))
 }
 
@@ -442,8 +437,9 @@ fn flatten_at_apply(expr: &Expr, positions: &[Vec<i128>]) -> Expr {
   };
   let len = children.len() as i128;
   let mut groups: std::collections::HashMap<usize, Vec<Vec<i128>>> =
-    Default::default();
-  let mut flatten_here: std::collections::HashSet<usize> = Default::default();
+    std::collections::HashMap::default();
+  let mut flatten_here: std::collections::HashSet<usize> =
+    std::collections::HashSet::default();
   for pos in positions {
     if pos.is_empty() {
       continue;
@@ -604,7 +600,8 @@ fn flatten_at_unified(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Deduplicate repeated paths, then splice.
-  let mut seen: std::collections::HashSet<Vec<i128>> = Default::default();
+  let mut seen: std::collections::HashSet<Vec<i128>> =
+    std::collections::HashSet::default();
   let deduped: Vec<Vec<i128>> = positions
     .into_iter()
     .filter(|p| seen.insert(p.clone()))
@@ -1437,7 +1434,7 @@ fn tree_map(func: &Expr, e: &Expr) -> Result<Option<Expr>, InterpreterError> {
   let new_children = match &args[1] {
     Expr::List(cs) => {
       let mut mapped = Vec::with_capacity(cs.len());
-      for c in cs.iter() {
+      for c in cs {
         match tree_map(func, c)? {
           Some(x) => mapped.push(x),
           None => return Ok(None),
@@ -1630,12 +1627,7 @@ fn weighted_data_stat(
           return Ok(x.clone());
         }
       }
-      Ok(
-        pairs
-          .last()
-          .map(|(x, _, _)| x.clone())
-          .unwrap_or(Expr::Integer(0)),
-      )
+      Ok(pairs.last().map_or(Expr::Integer(0), |(x, _, _)| x.clone()))
     }
     _ => unreachable!(),
   }
@@ -2004,13 +1996,13 @@ pub fn dispatch_list_operations(
         let mut out_cycles: Vec<Vec<i128>> =
           Vec::with_capacity(cycle_list.len());
         let mut valid = true;
-        for cycle in cycle_list.iter() {
+        for cycle in cycle_list {
           let Expr::List(c) = cycle else {
             valid = false;
             break;
           };
           let mut ints: Vec<i128> = Vec::with_capacity(c.len());
-          for e in c.iter() {
+          for e in c {
             if let Expr::Integer(n) = e {
               ints.push(*n);
             } else {
@@ -2029,8 +2021,7 @@ pub fn dispatch_list_operations(
             .iter()
             .enumerate()
             .min_by_key(|(_, v)| *v)
-            .map(|(i, _)| i)
-            .unwrap_or(0);
+            .map_or(0, |(i, _)| i);
           ints.rotate_left(min_idx);
           out_cycles.push(ints);
         }
@@ -2057,8 +2048,7 @@ pub fn dispatch_list_operations(
         let n = items.len();
         if r > n {
           crate::emit_message(&format!(
-            "MovingMedian::arg2: The second argument {} must be a positive integer less than or equal to the length {} of the first argument.",
-            r, n
+            "MovingMedian::arg2: The second argument {r} must be a positive integer less than or equal to the length {n} of the first argument."
           ));
           return Some(Ok(unevaluated("MovingMedian", args)));
         }
@@ -2102,8 +2092,8 @@ pub fn dispatch_list_operations(
             if n + 1 > items.len() {
               return Some(Ok(Expr::List(vec![].into())));
             }
-            (0..=(items.len() - n - 1))
-              .map(|i| items[i..i + n + 1].to_vec())
+            (0..(items.len() - n))
+              .map(|i| items[i..=(i + n)].to_vec())
               .collect()
           }
           Some(padding) => moving_map_padded_windows(&items, n, padding)?,
@@ -2654,12 +2644,10 @@ pub fn dispatch_list_operations(
             );
             match mismatch {
               Some((i, j, da, db)) => crate::emit_message(&format!(
-                "MapThread::mptc: Incompatible dimensions of objects at positions {{2, {}}} and {{2, {}}} of {}; dimensions are {} and {}.",
-                i, j, call, da, db
+                "MapThread::mptc: Incompatible dimensions of objects at positions {{2, {i}}} and {{2, {j}}} of {call}; dimensions are {da} and {db}."
               )),
               None => crate::emit_message(&format!(
-                "MapThread::mptc: Incompatible dimensions of objects in {}.",
-                call
+                "MapThread::mptc: Incompatible dimensions of objects in {call}."
               )),
             }
             Ok(unevaluated("MapThread", args))
@@ -2815,12 +2803,11 @@ pub fn dispatch_list_operations(
       }
       if let Some(n) = positive_machine(&args[1]) {
         let d = if args.len() >= 3 {
-          match positive_machine(&args[2]) {
-            Some(d) => Some(d),
-            None => {
-              ilsmp(3);
-              return uneval();
-            }
+          if let Some(d) = positive_machine(&args[2]) {
+            Some(d)
+          } else {
+            ilsmp(3);
+            return uneval();
           }
         } else {
           None
@@ -2967,8 +2954,7 @@ pub fn dispatch_list_operations(
       let is_atom = crate::functions::predicate_ast::atom_q_ast(
         std::slice::from_ref(&args[0]),
       )
-      .map(|r| matches!(r, Expr::Identifier(ref s) if s == "True"))
-      .unwrap_or(false);
+      .is_ok_and(|r| matches!(r, Expr::Identifier(ref s) if s == "True"));
       if is_atom {
         crate::emit_message(&format!(
           "Signature::normal: Nonatomic expression expected at position 1 in Signature[{}].",
@@ -3155,9 +3141,8 @@ pub fn dispatch_list_operations(
       {
         let var = &sd_args[0];
         let x0 = &sd_args[1];
-        let coeffs = match &sd_args[2] {
-          Expr::List(c) => c,
-          _ => return Some(Ok(args[0].clone())),
+        let Expr::List(coeffs) = &sd_args[2] else {
+          return Some(Ok(args[0].clone()));
         };
         let nmin = match &sd_args[3] {
           Expr::Integer(n) => *n,
@@ -3425,7 +3410,7 @@ pub fn dispatch_list_operations(
       });
     }
     "ArrayFlatten" if args.len() == 1 => {
-      return Some(array_flatten_ast(&args[0]));
+      return Some(Ok(array_flatten_ast(&args[0])));
     }
     // ArrayFlatten[a, r] glues a depth-2r block array. It is defined as
     // Flatten[a, {{1, r+1}, {2, r+2}, ..., {r, 2r}}]. r = 2 is the default,
@@ -3436,7 +3421,7 @@ pub fn dispatch_list_operations(
         return Some(Ok(unevaluated("ArrayFlatten", args)));
       };
       if r == 2 {
-        return Some(array_flatten_ast(&args[0]));
+        return Some(Ok(array_flatten_ast(&args[0])));
       }
       let spec: Vec<Expr> = (1..=r)
         .map(|i| {
@@ -3807,16 +3792,14 @@ pub fn dispatch_list_operations(
     "TensorTranspose" if args.len() == 1 || args.len() == 2 => {
       use list_helpers_ast::TensorTransposeResult;
       let perm: Option<Vec<Expr>> = if args.len() == 2 {
-        match &args[1] {
-          Expr::List(perm) => Some(perm.to_vec()),
-          // A non-list permutation argument is invalid.
-          _ => {
-            crate::emit_message(&format!(
-              "TensorTranspose::symmperm: Invalid permutation or symmetry generator {}.",
-              crate::syntax::expr_to_string(&args[1])
-            ));
-            return Some(Ok(unevaluated("TensorTranspose", args)));
-          }
+        if let Expr::List(perm) = &args[1] {
+          Some(perm.to_vec())
+        } else {
+          crate::emit_message(&format!(
+            "TensorTranspose::symmperm: Invalid permutation or symmetry generator {}.",
+            crate::syntax::expr_to_string(&args[1])
+          ));
+          return Some(Ok(unevaluated("TensorTranspose", args)));
         }
       } else {
         None
@@ -3831,8 +3814,7 @@ pub fn dispatch_list_operations(
             None => "{2, 1}".to_string(),
           };
           crate::emit_message(&format!(
-            "TensorTranspose::ttrank: Permutation {} moves slots beyond tensor rank {}.",
-            perm_str, rank
+            "TensorTranspose::ttrank: Permutation {perm_str} moves slots beyond tensor rank {rank}."
           ));
           unevaluated("TensorTranspose", args)
         }
@@ -3842,8 +3824,7 @@ pub fn dispatch_list_operations(
             None => "{2, 1}".to_string(),
           };
           crate::emit_message(&format!(
-            "TensorTranspose::symmperm: Invalid permutation or symmetry generator {}.",
-            perm_str
+            "TensorTranspose::symmperm: Invalid permutation or symmetry generator {perm_str}."
           ));
           unevaluated("TensorTranspose", args)
         }
@@ -4458,17 +4439,15 @@ pub fn dispatch_list_operations(
       if path.is_empty() {
         return Some(Ok(unevaluated()));
       }
-      match tree_insert_at(&args[0], &path, &args[1]) {
-        Some(updated) => return Some(Ok(updated)),
-        None => {
-          crate::emit_message(&format!(
-            "TreeInsert::ins: Cannot insert at position {} in {}.",
-            crate::syntax::expr_to_string(&args[2]),
-            crate::syntax::expr_to_string(&args[0])
-          ));
-          return Some(Ok(unevaluated()));
-        }
+      if let Some(updated) = tree_insert_at(&args[0], &path, &args[1]) {
+        return Some(Ok(updated));
       }
+      crate::emit_message(&format!(
+        "TreeInsert::ins: Cannot insert at position {} in {}.",
+        crate::syntax::expr_to_string(&args[2]),
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      return Some(Ok(unevaluated()));
     }
     // TreeDelete[tree, pos]: remove the subtree at `pos`. The root position {}
     // and out-of-range positions leave the expression unevaluated.
@@ -4633,7 +4612,7 @@ pub fn dispatch_list_operations(
           if elems.iter().all(|e| matches!(e, Expr::List(_))) =>
         {
           let mut out = Vec::with_capacity(elems.len());
-          for e in elems.iter() {
+          for e in elems {
             match tree_position_path(e)
               .and_then(|p| tree_navigate(&args[0], &p))
             {
@@ -4790,7 +4769,7 @@ pub fn dispatch_list_operations(
       if n == 0 {
         return Some(
           Ok(Expr::FunctionCall {
-            name: "".to_string(),
+            name: String::new(),
             args: vec![expr.clone()].into(),
           })
           .map(|_| Expr::FunctionCall {
@@ -5583,7 +5562,7 @@ pub fn dispatch_list_operations(
     }
     // PositionIndex[list] — association mapping values to their positions
     "PositionIndex" if args.len() == 1 => {
-      return Some(position_index_ast(&args[0]));
+      return Some(Ok(position_index_ast(&args[0])));
     }
     // ListConvolve[kernel, list] — discrete convolution
     "ListConvolve" if args.len() == 2 => {
@@ -5929,9 +5908,8 @@ pub fn dispatch_list_operations(
             _ => break,
           }
         }
-        let sub = match list_pat {
-          Expr::List(items) => items,
-          _ => return Some(Ok(Expr::List(vec![].into()))),
+        let Expr::List(sub) = list_pat else {
+          return Some(Ok(Expr::List(vec![].into())));
         };
         if sub.is_empty() {
           return Some(Ok(Expr::List(vec![].into())));
@@ -6071,9 +6049,8 @@ pub fn dispatch_list_operations(
         }
 
         // Get the sub-elements for length calculations
-        let sub = match list_pat {
-          Expr::List(items) => items,
-          _ => return Some(Ok(Expr::List(vec![].into()))),
+        let Expr::List(sub) = list_pat else {
+          return Some(Ok(Expr::List(vec![].into())));
         };
 
         if sub.is_empty() {
@@ -6135,29 +6112,28 @@ pub fn dispatch_list_operations(
             }
           }
           return Some(Ok(Expr::List(results.into())));
-        } else {
-          // Literal subsequence match
-          let sub_len = sub.len();
-          let sub_strs: Vec<String> = sub.iter().map(expr_to_string).collect();
-          let mut results: Vec<Expr> = Vec::new();
-          let mut i = 0;
-          while i + sub_len <= list.len() && results.len() < max_count {
-            let mut matches = true;
-            for j in 0..sub_len {
-              if expr_to_string(&list[i + j]) != sub_strs[j] {
-                matches = false;
-                break;
-              }
-            }
-            if matches {
-              results.push(Expr::List(list[i..i + sub_len].to_vec().into()));
-              i += if overlaps { 1 } else { sub_len };
-            } else {
-              i += 1;
+        }
+        // Literal subsequence match
+        let sub_len = sub.len();
+        let sub_strs: Vec<String> = sub.iter().map(expr_to_string).collect();
+        let mut results: Vec<Expr> = Vec::new();
+        let mut i = 0;
+        while i + sub_len <= list.len() && results.len() < max_count {
+          let mut matches = true;
+          for j in 0..sub_len {
+            if expr_to_string(&list[i + j]) != sub_strs[j] {
+              matches = false;
+              break;
             }
           }
-          return Some(Ok(Expr::List(results.into())));
+          if matches {
+            results.push(Expr::List(list[i..i + sub_len].to_vec().into()));
+            i += if overlaps { 1 } else { sub_len };
+          } else {
+            i += 1;
+          }
         }
+        return Some(Ok(Expr::List(results.into())));
       }
     }
     // SequenceSplit[list, patt] — split list into segments separated by the
@@ -6498,9 +6474,8 @@ pub fn dispatch_list_operations(
         return Some(Ok(unevaluated("SequenceReplace", args)));
       }
 
-      let list = match &args[0] {
-        Expr::List(l) => l,
-        _ => unreachable!(),
+      let Expr::List(list) = &args[0] else {
+        unreachable!()
       };
 
       let mut result: Vec<Expr> = Vec::new();
@@ -6762,7 +6737,7 @@ pub fn dispatch_list_operations(
         Expr::List(items) => {
           let mut out = Vec::with_capacity(items.len());
           let mut ok = true;
-          for item in items.iter() {
+          for item in items {
             if let Expr::Integer(n) = item
               && *n >= 0
             {
@@ -6808,10 +6783,10 @@ pub fn dispatch_list_operations(
       }
       // If a is a scalar (non-List), it's a rank-0 block. If a is a
       // list, we expect its rank to match `dims.len()`.
-      let block_dims: Vec<usize> = if !matches!(a, Expr::List(_)) {
-        vec![1; dims.len()]
-      } else {
+      let block_dims: Vec<usize> = if matches!(a, Expr::List(_)) {
         block_shape(&a, dims.len())?
+      } else {
+        vec![1; dims.len()]
       };
       // Per-dimension layout: how much to truncate from the block's
       // front (block_start), the effective block size after truncation
@@ -7036,7 +7011,7 @@ pub fn dispatch_list_operations(
     "Cycles" if args.len() == 1 => {
       if let Some(cycles) = cycles_arg(&unevaluated("Cycles", args)) {
         let mut canonical: Vec<Vec<i128>> = Vec::with_capacity(cycles.len());
-        for cycle in cycles.iter() {
+        for cycle in &cycles {
           if cycle.len() <= 1 {
             continue;
           }
@@ -7173,12 +7148,12 @@ pub fn dispatch_list_operations(
       {
         let mut max_elem: usize = 0;
         let mut valid = true;
-        for cycle in cycle_list.iter() {
+        for cycle in cycle_list {
           let Expr::List(c) = cycle else {
             valid = false;
             break;
           };
-          for e in c.iter() {
+          for e in c {
             if let Expr::Integer(v) = e {
               if *v >= 1 {
                 let u = *v as usize;
@@ -7201,7 +7176,7 @@ pub fn dispatch_list_operations(
         if valid {
           // Build the underlying permutation map perm[i] = σ(i) for i in 1..=N
           let mut perm: Vec<usize> = (0..=max_elem).collect();
-          for cycle in cycle_list.iter() {
+          for cycle in cycle_list {
             if let Expr::List(c) = cycle {
               let ints: Vec<usize> = c
                 .iter()
@@ -7277,8 +7252,7 @@ pub fn dispatch_list_operations(
                 .iter()
                 .enumerate()
                 .min_by_key(|(_, v)| *v)
-                .map(|(i, _)| i)
-                .unwrap_or(0);
+                .map_or(0, |(i, _)| i);
               cycle.rotate_left(min_idx);
               out_cycles.push(cycle);
             }
@@ -7420,7 +7394,7 @@ pub fn dispatch_list_operations(
       // Cycles form: sorted union of integers across all cycles.
       if let Some(cycles) = cycles_arg(&args[0]) {
         let mut support: Vec<i128> = cycles.iter().flatten().copied().collect();
-        support.sort();
+        support.sort_unstable();
         support.dedup();
         return Some(Ok(Expr::List(
           support
@@ -7695,12 +7669,12 @@ fn subsetmap_positions(subject: &Expr, spec: &Expr) -> Option<Vec<Vec<i128>>> {
     // path (`{{1,1},{2,2}}` deep, `{{2},{4}}` level-1).
     Expr::List(items) if items.iter().all(|e| matches!(e, Expr::List(_))) => {
       let mut paths = Vec::with_capacity(items.len());
-      for item in items.iter() {
+      for item in items {
         let Expr::List(inner) = item else {
           unreachable!()
         };
         let mut path = Vec::with_capacity(inner.len());
-        for c in inner.iter() {
+        for c in inner {
           match c {
             Expr::Integer(n) => path.push(*n),
             _ => return None,
@@ -7740,7 +7714,7 @@ fn expand_part_spec(
       ),
       Expr::List(ks) => {
         let mut out = Vec::with_capacity(ks.len());
-        for k in ks.iter() {
+        for k in ks {
           match k {
             Expr::Integer(k) => out.push(clamp(*k)?),
             _ => return None,
@@ -7790,12 +7764,12 @@ fn cycles_arg(expr: &Expr) -> Option<Vec<Vec<i128>>> {
     return None;
   };
   let mut result = Vec::with_capacity(cycles.len());
-  for cycle in cycles.iter() {
+  for cycle in cycles {
     let Expr::List(items) = cycle else {
       return None;
     };
     let mut nums = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       if let Expr::Integer(n) = item {
         nums.push(*n);
       } else {
@@ -7894,7 +7868,7 @@ fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !spec_items.is_empty()
   {
     let mut per_dim: Vec<(i128, i128)> = Vec::with_capacity(spec_items.len());
-    for s in spec_items.iter() {
+    for s in spec_items {
       let Expr::List(inner) = s else {
         return Ok(unevaluated());
       };
@@ -8292,20 +8266,17 @@ fn normal_convert_associations(expr: &Expr) -> Expr {
 /// Combines a matrix of sub-matrices (blocks) into a single matrix.
 /// Scalar entries (e.g. 0) are expanded to zero/constant matrices
 /// of the appropriate dimensions inferred from neighboring blocks.
-fn array_flatten_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
+fn array_flatten_ast(arg: &Expr) -> crate::syntax::Expr {
   // arg should be a list of rows, where each row is a list of blocks (sub-matrices)
-  let block_rows = match arg {
-    Expr::List(rows) => rows,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ArrayFlatten".to_string(),
-        args: vec![arg.clone()].into(),
-      });
-    }
+  let Expr::List(block_rows) = arg else {
+    return Expr::FunctionCall {
+      name: "ArrayFlatten".to_string(),
+      args: vec![arg.clone()].into(),
+    };
   };
 
   if block_rows.is_empty() {
-    return Ok(Expr::List(vec![].into()));
+    return Expr::List(vec![].into());
   }
 
   // First, determine the grid dimensions (number of block rows and columns)
@@ -8315,14 +8286,11 @@ fn array_flatten_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   // Collect all blocks as raw expressions in a 2D grid
   let mut block_grid: Vec<Vec<&Expr>> = Vec::new();
   for block_row in block_rows {
-    let blocks_in_row = match block_row {
-      Expr::List(blocks) => blocks,
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: "ArrayFlatten".to_string(),
-          args: vec![arg.clone()].into(),
-        });
-      }
+    let Expr::List(blocks_in_row) = block_row else {
+      return Expr::FunctionCall {
+        name: "ArrayFlatten".to_string(),
+        args: vec![arg.clone()].into(),
+      };
     };
     if n_block_cols == 0 {
       n_block_cols = blocks_in_row.len();
@@ -8422,9 +8390,7 @@ fn array_flatten_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::List(
-    result.into_iter().map(|v| Expr::List(v.into())).collect(),
-  ))
+  Expr::List(result.into_iter().map(|v| Expr::List(v.into())).collect())
 }
 
 thread_local! {
@@ -9012,7 +8978,7 @@ fn moving_map_padded_windows(
 
   let mut padded: Vec<Expr> = (1..=n).rev().map(pad).collect();
   padded.extend(items.iter().cloned());
-  Some((0..len).map(|i| padded[i..i + n + 1].to_vec()).collect())
+  Some((0..len).map(|i| padded[i..=(i + n)].to_vec()).collect())
 }
 
 /// Fold a composition chain of `TransformationFunction[m]`s into the single
@@ -9045,7 +9011,7 @@ fn compose_transformation_functions(parts: &[Expr]) -> Option<Expr> {
   })
 }
 
-fn position_index_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+fn position_index_ast(expr: &Expr) -> crate::syntax::Expr {
   // `PositionIndex[list]` indexes values by their integer positions;
   // `PositionIndex[assoc]` indexes the association's values by their keys.
   let pairs: Vec<(Expr, Expr)> = match expr {
@@ -9062,10 +9028,10 @@ fn position_index_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
         "PositionIndex::invrp: The argument {} is not a valid Association or a list.",
         crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
       ));
-      return Ok(Expr::FunctionCall {
+      return Expr::FunctionCall {
         name: "PositionIndex".to_string(),
         args: vec![expr.clone()].into(),
-      });
+      };
     }
   };
 
@@ -9090,7 +9056,7 @@ fn position_index_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
     .map(|(key, positions)| (key, Expr::List(positions.into())))
     .collect();
 
-  Ok(Expr::Association(rules))
+  Expr::Association(rules)
 }
 
 /// Two-dimensional (valid, no-overhang) ListCorrelate / ListConvolve. Returns
@@ -9164,23 +9130,17 @@ fn list_convolve_ast(
   kernel: &Expr,
   list: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let ker = match kernel {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ListConvolve".to_string(),
-        args: vec![kernel.clone(), list.clone()].into(),
-      });
-    }
+  let Expr::List(ker) = kernel else {
+    return Ok(Expr::FunctionCall {
+      name: "ListConvolve".to_string(),
+      args: vec![kernel.clone(), list.clone()].into(),
+    });
   };
-  let data = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ListConvolve".to_string(),
-        args: vec![kernel.clone(), list.clone()].into(),
-      });
-    }
+  let Expr::List(data) = list else {
+    return Ok(Expr::FunctionCall {
+      name: "ListConvolve".to_string(),
+      args: vec![kernel.clone(), list.clone()].into(),
+    });
   };
 
   // Matrix arguments: 2-D convolution (kernel reversed in both dimensions).
@@ -9318,9 +9278,8 @@ fn list_convolve_overhang(
   };
   let (kl, kr) = match spec {
     Expr::Integer(k) => {
-      let p = match norm(*k) {
-        Some(p) => p,
-        None => return unevaluated(),
+      let Some(p) = norm(*k) else {
+        return unevaluated();
       };
       (p, p)
     }
@@ -9397,9 +9356,8 @@ fn list_correlate_overhang(
   };
   let (kl, kr) = match spec {
     Expr::Integer(k) => {
-      let p = match norm(*k) {
-        Some(p) => p,
-        None => return unevaluated(),
+      let Some(p) = norm(*k) else {
+        return unevaluated();
       };
       (p, p)
     }
@@ -9438,23 +9396,17 @@ fn list_correlate_ast(
   kernel: &Expr,
   list: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let ker = match kernel {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ListCorrelate".to_string(),
-        args: vec![kernel.clone(), list.clone()].into(),
-      });
-    }
+  let Expr::List(ker) = kernel else {
+    return Ok(Expr::FunctionCall {
+      name: "ListCorrelate".to_string(),
+      args: vec![kernel.clone(), list.clone()].into(),
+    });
   };
-  let data = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ListCorrelate".to_string(),
-        args: vec![kernel.clone(), list.clone()].into(),
-      });
-    }
+  let Expr::List(data) = list else {
+    return Ok(Expr::FunctionCall {
+      name: "ListCorrelate".to_string(),
+      args: vec![kernel.clone(), list.clone()].into(),
+    });
   };
 
   // Matrix arguments: 2-D cross-correlation.
@@ -9859,20 +9811,17 @@ fn build_outer_with_sparse_last(
     rest: &[Expr],
     sa: &ParsedSparseArray,
   ) -> Option<Expr> {
-    match arg {
-      Expr::List(items) => {
-        let mut results = Vec::with_capacity(items.len());
-        for it in items {
-          results.push(walk_arg(func, it, accumulated, rest, sa)?);
-        }
-        Some(Expr::List(results.into()))
+    if let Expr::List(items) = arg {
+      let mut results = Vec::with_capacity(items.len());
+      for it in items {
+        results.push(walk_arg(func, it, accumulated, rest, sa)?);
       }
-      _ => {
-        accumulated.push(arg.clone());
-        let r = process_outer_args(func, rest, accumulated, sa);
-        accumulated.pop();
-        r
-      }
+      Some(Expr::List(results.into()))
+    } else {
+      accumulated.push(arg.clone());
+      let r = process_outer_args(func, rest, accumulated, sa);
+      accumulated.pop();
+      r
     }
   }
 
@@ -9936,7 +9885,7 @@ pub fn permutation_list_indices(
     return None;
   };
   let mut values: Vec<i128> = Vec::with_capacity(items.len());
-  for item in items.iter() {
+  for item in items {
     let Expr::Integer(value) = item else {
       return None;
     };

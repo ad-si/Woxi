@@ -48,8 +48,7 @@ fn assessment_objects_emit_no_unimplemented_warning() {
   let warnings = woxi::get_captured_warnings();
   assert!(
     !warnings.iter().any(|w| w.contains("not yet implemented")),
-    "unexpected unimplemented warning: {:?}",
-    warnings
+    "unexpected unimplemented warning: {warnings:?}"
   );
 }
 

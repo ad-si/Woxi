@@ -41,21 +41,21 @@ fn compile_regex(pat: &str) -> Result<regex::Regex, regex::Error> {
 }
 
 /// Helper to extract a string from an Expr
-fn expr_to_str(expr: &Expr) -> Result<String, InterpreterError> {
+fn expr_to_str(expr: &Expr) -> std::string::String {
   match expr {
-    Expr::String(s) => Ok(s.clone()),
-    Expr::Identifier(s) => Ok(s.clone()),
-    Expr::Integer(n) => Ok(n.to_string()),
-    Expr::BigInteger(n) => Ok(n.to_string()),
-    Expr::Real(f) => Ok(crate::syntax::format_real(*f)),
+    Expr::String(s) => s.clone(),
+    Expr::Identifier(s) => s.clone(),
+    Expr::Integer(n) => n.to_string(),
+    Expr::BigInteger(n) => n.to_string(),
+    Expr::Real(f) => crate::syntax::format_real(*f),
     _ => {
       // Try to get string representation
       let s = crate::syntax::expr_to_string(expr);
       // If it's a quoted string, strip the quotes
       if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-        Ok(s[1..s.len() - 1].to_string())
+        s[1..s.len() - 1].to_string()
       } else {
-        Ok(s)
+        s
       }
     }
   }
@@ -116,8 +116,7 @@ fn string_take_drop_message(fname: &str, from: i128, to: i128, s: &str) {
     ("drop", "drop")
   };
   crate::emit_message(&format!(
-    "{}::{}: Cannot {} positions {} through {} in \"{}\".",
-    fname, tag, verb, from, to, s
+    "{fname}::{tag}: Cannot {verb} positions {from} through {to} in \"{s}\"."
   ));
 }
 
@@ -137,9 +136,8 @@ fn emit_seqs(fname: &str, args: &[Expr]) {
 
 fn emit_ambgsntx(fname: &str) {
   crate::emit_message(&format!(
-    "{}::ambgsntx: Warning: interpreting list of integers as a list of \
-     sequence specifications.",
-    fname
+    "{fname}::ambgsntx: Warning: interpreting list of integers as a list of \
+     sequence specifications."
   ));
 }
 
@@ -210,7 +208,7 @@ enum StringSubject {
 /// for the functions that must refuse a non-string subject. `None` means the
 /// call is not one of those (an operator form, say) and is left alone.
 fn string_subject_kind(name: &str, argc: usize) -> Option<StringSubject> {
-  use StringSubject::*;
+  use StringSubject::{ListOfParts, Single, Threaded};
   Some(match name {
     "StringCases" | "StringCount" | "StringDelete" | "StringPadLeft"
     | "StringPadRight" | "StringPart" | "StringPosition"
@@ -558,7 +556,7 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       Expr::FunctionCall { name, args } if name == "StringJoin" => {
-        for a in args.iter() {
+        for a in args {
           flatten_leaves(a, out);
         }
       }
@@ -601,8 +599,7 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .join("<>");
     for pos in non_string {
       crate::emit_message(&format!(
-        "StringJoin::string: String expected at position {} in {}.",
-        pos, infix
+        "StringJoin::string: String expected at position {pos} in {infix}."
       ));
     }
     return Ok(Expr::FunctionCall {
@@ -618,7 +615,7 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Expr::List(items) = &args[0]
   {
     for item in items {
-      joined.push_str(&expr_to_str(item)?);
+      joined.push_str(&expr_to_str(item));
     }
     return Ok(Expr::String(joined));
   }
@@ -634,7 +631,7 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           collect_strings(item, out)?;
         }
       }
-      _ => out.push_str(&expr_to_str(expr)?),
+      _ => out.push_str(&expr_to_str(expr)),
     }
     Ok(())
   }
@@ -689,7 +686,7 @@ fn extract_regex_pattern(expr: &Expr) -> Option<String> {
 
 /// Trim leading and trailing empty strings from a split result,
 /// matching Wolfram's StringSplit behavior (interior empty strings are preserved).
-fn trim_empty_strings(parts: Vec<Expr>) -> Vec<Expr> {
+fn trim_empty_strings(parts: &[Expr]) -> Vec<Expr> {
   let is_empty = |e: &Expr| matches!(e, Expr::String(s) if s.is_empty());
   let start = parts
     .iter()
@@ -698,8 +695,7 @@ fn trim_empty_strings(parts: Vec<Expr>) -> Vec<Expr> {
   let end = parts
     .iter()
     .rposition(|e| !is_empty(e))
-    .map(|i| i + 1)
-    .unwrap_or(0);
+    .map_or(0, |i| i + 1);
   if start >= end {
     return Vec::new();
   }
@@ -734,7 +730,7 @@ fn split_delim_regex(
     let mut alts: Vec<String> = Vec::new();
     for it in items {
       let (re, _) = split_delim_regex(it)?;
-      alts.push(format!("(?:{})", re));
+      alts.push(format!("(?:{re})"));
     }
     alts.sort_by_key(|b| std::cmp::Reverse(b.len()));
     return Ok((alts.join("|"), None));
@@ -756,7 +752,7 @@ fn split_delim_regex(
     return Ok((p, None));
   }
   // Fallback: treat as a literal string.
-  Ok((regex::escape(&expr_to_str(lhs)?), None))
+  Ok((regex::escape(&expr_to_str(lhs)), None))
 }
 
 /// Compute the replacement expression for a matched delimiter. A plain string
@@ -806,14 +802,13 @@ fn string_split_with_replacement(
   for (lhs, rhs) in rules {
     let (pat, cap_name) = split_delim_regex(lhs)?;
     let pat = if ignore_case {
-      format!("(?i){}", pat)
+      format!("(?i){pat}")
     } else {
       pat
     };
     let re = compile_regex(&pat).map_err(|e| {
       InterpreterError::EvaluationError(format!(
-        "Invalid regular expression: {}",
-        e
+        "Invalid regular expression: {e}"
       ))
     })?;
     compiled.push((re, cap_name, *rhs));
@@ -910,7 +905,7 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
     return Ok(unevaluated);
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
 
   // 1-argument form: split by whitespace, removing empty strings
   if args.len() == 1 {
@@ -972,14 +967,13 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let test = &cargs[1];
     let pat = if ignore_case {
-      format!("(?i){}", regex_str)
+      format!("(?i){regex_str}")
     } else {
       regex_str
     };
     let re = compile_regex(&pat).map_err(|e| {
       InterpreterError::EvaluationError(format!(
-        "Invalid regular expression: {}",
-        e
+        "Invalid regular expression: {e}"
       ))
     })?;
     let mut parts: Vec<Expr> = Vec::new();
@@ -1033,14 +1027,13 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if let Some(pat) = regex_from_pattern {
     let regex_pat = if ignore_case {
-      format!("(?i){}", pat)
+      format!("(?i){pat}")
     } else {
       pat
     };
     let re = compile_regex(&regex_pat).map_err(|e| {
       InterpreterError::EvaluationError(format!(
-        "Invalid regular expression: {}",
-        e
+        "Invalid regular expression: {e}"
       ))
     })?;
     let parts: Vec<Expr> = if !split_constraints.is_empty() {
@@ -1070,7 +1063,7 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Leading/trailing empty pieces are only dropped when no explicit
     // maximum number of pieces was requested.
     let parts = if max_parts.is_none() {
-      trim_empty_strings(parts)
+      trim_empty_strings(&parts)
     } else {
       parts
     };
@@ -1082,11 +1075,11 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => {
       let mut ds = Vec::new();
       for item in items {
-        ds.push(expr_to_str(item)?);
+        ds.push(expr_to_str(item));
       }
       ds
     }
-    _ => vec![expr_to_str(&args[1])?],
+    _ => vec![expr_to_str(&args[1])],
   };
 
   let parts: Vec<Expr> = if delims.len() == 1 && delims[0].is_empty() {
@@ -1097,7 +1090,7 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .case_insensitive(true)
         .build()
         .map_err(|e| {
-          InterpreterError::EvaluationError(format!("Regex error: {}", e))
+          InterpreterError::EvaluationError(format!("Regex error: {e}"))
         })?;
       if let Some(n) = max_parts {
         re.splitn(&s, n)
@@ -1155,7 +1148,7 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Leading/trailing empty pieces are only dropped when no explicit maximum
   // number of pieces was requested.
   let parts = if max_parts.is_none() {
-    trim_empty_strings(parts)
+    trim_empty_strings(&parts)
   } else {
     parts
   };
@@ -1181,7 +1174,7 @@ pub fn string_starts_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   let ignore_case = has_ignore_case_option(args);
 
   // Try regex-based pattern first
@@ -1189,12 +1182,12 @@ pub fn string_starts_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     string_pattern_to_regex_with_state(&args[1])
   {
     let full_pat = if ignore_case {
-      format!("(?i)^(?:{})", regex_pat)
+      format!("(?i)^(?:{regex_pat})")
     } else {
-      format!("^(?:{})", regex_pat)
+      format!("^(?:{regex_pat})")
     };
     let re = compile_regex(&full_pat).map_err(|e| {
-      InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
+      InterpreterError::EvaluationError(format!("Invalid pattern: {e}"))
     })?;
     return Ok(Expr::Identifier(
       if full_match_with_constraints(&re, &constraints, &s) {
@@ -1206,7 +1199,7 @@ pub fn string_starts_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let prefix = expr_to_str(&args[1])?;
+  let prefix = expr_to_str(&args[1]);
   let result = if ignore_case {
     s.to_lowercase().starts_with(&prefix.to_lowercase())
   } else {
@@ -1234,7 +1227,7 @@ pub fn string_ends_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   let ignore_case = has_ignore_case_option(args);
 
   // Try regex-based pattern first
@@ -1242,12 +1235,12 @@ pub fn string_ends_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     string_pattern_to_regex_with_state(&args[1])
   {
     let full_pat = if ignore_case {
-      format!("(?i)(?:{})$", regex_pat)
+      format!("(?i)(?:{regex_pat})$")
     } else {
-      format!("(?:{})$", regex_pat)
+      format!("(?:{regex_pat})$")
     };
     let re = compile_regex(&full_pat).map_err(|e| {
-      InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
+      InterpreterError::EvaluationError(format!("Invalid pattern: {e}"))
     })?;
     return Ok(Expr::Identifier(
       if full_match_with_constraints(&re, &constraints, &s) {
@@ -1259,7 +1252,7 @@ pub fn string_ends_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let suffix = expr_to_str(&args[1])?;
+  let suffix = expr_to_str(&args[1]);
   let result = if ignore_case {
     s.to_lowercase().ends_with(&suffix.to_lowercase())
   } else {
@@ -1288,7 +1281,7 @@ pub fn string_contains_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   let ignore_case = has_ignore_case_option(args);
 
   // Every string contains the empty pattern: StringContainsQ["", ""] and
@@ -1306,7 +1299,7 @@ pub fn string_contains_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(bool_expr(present));
   }
 
-  let sub = expr_to_str(&args[1])?;
+  let sub = expr_to_str(&args[1]);
   let result = if ignore_case {
     s.to_lowercase().contains(&sub.to_lowercase())
   } else {
@@ -1357,19 +1350,15 @@ fn expand_dollar_replacement(template: &str, caps: &regex::Captures) -> String {
           }
           num.push(d);
         }
-        match (closed, num.parse::<usize>()) {
-          (true, Ok(n)) => {
-            if let Some(g) = caps.get(n) {
-              out.push_str(g.as_str());
-            }
+        if let (true, Ok(n)) = (closed, num.parse::<usize>()) {
+          if let Some(g) = caps.get(n) {
+            out.push_str(g.as_str());
           }
-          // Malformed `${…}` is emitted verbatim.
-          _ => {
-            out.push_str("${");
-            out.push_str(&num);
-            if closed {
-              out.push('}');
-            }
+        } else {
+          out.push_str("${");
+          out.push_str(&num);
+          if closed {
+            out.push('}');
           }
         }
       }
@@ -1466,7 +1455,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results.into()));
   }
 
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
 
   /// A replacement rule: either a simple literal pattern or a regex pattern.
   enum ReplaceRule {
@@ -1548,14 +1537,13 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )
         })?;
       let regex_str = if ignore_case {
-        format!("(?i){}", regex_str)
+        format!("(?i){regex_str}")
       } else {
         regex_str
       };
       let re = compile_regex(&regex_str).map_err(|e| {
         InterpreterError::EvaluationError(format!(
-          "StringReplace: invalid pattern regex: {}",
-          e
+          "StringReplace: invalid pattern regex: {e}"
         ))
       })?;
       return Ok(ReplaceRule::RegexDelayed {
@@ -1578,8 +1566,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           compile_regex(&format!("{}{}", prefix, regex::escape(pat_str)))
             .map_err(|e| {
               InterpreterError::EvaluationError(format!(
-                "StringReplace: invalid pattern regex: {}",
-                e
+                "StringReplace: invalid pattern regex: {e}"
               ))
             })?;
         return Ok(ReplaceRule::RegexDelayed {
@@ -1590,13 +1577,12 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           expand_dollar: false,
         });
       }
-      let replacement = expr_to_str(replacement_expr)?;
+      let replacement = expr_to_str(replacement_expr);
       if ignore_case && !pat_str.is_empty() {
         let re = compile_regex(&format!("(?i){}", regex::escape(pat_str)))
           .map_err(|e| {
             InterpreterError::EvaluationError(format!(
-              "StringReplace: invalid pattern regex: {}",
-              e
+              "StringReplace: invalid pattern regex: {e}"
             ))
           })?;
         return Ok(ReplaceRule::Regex {
@@ -1617,14 +1603,13 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       string_pattern_to_regex_with_state(pattern_expr)
     {
       let regex_str = if ignore_case {
-        format!("(?i){}", regex_str)
+        format!("(?i){regex_str}")
       } else {
         regex_str
       };
       let re = compile_regex(&regex_str).map_err(|e| {
         InterpreterError::EvaluationError(format!(
-          "StringReplace: invalid pattern regex: {}",
-          e
+          "StringReplace: invalid pattern regex: {e}"
         ))
       })?;
 
@@ -1664,7 +1649,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         });
       }
 
-      let replacement = expr_to_str(replacement_expr)?;
+      let replacement = expr_to_str(replacement_expr);
       return Ok(ReplaceRule::Regex {
         regex: re,
         replacement,
@@ -1679,32 +1664,26 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     // Fallback: try expr_to_str for identifiers etc.
-    if let Ok(pat_str) = expr_to_str(pattern_expr) {
-      let replacement = expr_to_str(replacement_expr)?;
-      if ignore_case && !pat_str.is_empty() {
-        let re = compile_regex(&format!("(?i){}", regex::escape(&pat_str)))
-          .map_err(|e| {
-            InterpreterError::EvaluationError(format!(
-              "StringReplace: invalid pattern regex: {}",
-              e
-            ))
-          })?;
-        return Ok(ReplaceRule::Regex {
-          regex: re,
-          replacement,
-          expand_dollar: false,
-          constraints: Vec::new(),
-        });
-      }
-      return Ok(ReplaceRule::Simple {
-        pattern: pat_str,
+    let pat_str = expr_to_str(pattern_expr);
+    let replacement = expr_to_str(replacement_expr);
+    if ignore_case && !pat_str.is_empty() {
+      let re = compile_regex(&format!("(?i){}", regex::escape(&pat_str)))
+        .map_err(|e| {
+          InterpreterError::EvaluationError(format!(
+            "StringReplace: invalid pattern regex: {e}"
+          ))
+        })?;
+      return Ok(ReplaceRule::Regex {
+        regex: re,
         replacement,
+        expand_dollar: false,
+        constraints: Vec::new(),
       });
     }
-
-    Err(InterpreterError::EvaluationError(
-      "StringReplace: unsupported pattern type".into(),
-    ))
+    Ok(ReplaceRule::Simple {
+      pattern: pat_str,
+      replacement,
+    })
   }
 
   // Collect all rules into a vec
@@ -1943,7 +1922,7 @@ pub fn string_replace_list_ast(
     }
     return Ok(Expr::List(per_string.into()));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
 
   // An empty rule list leaves the subject alone.
   if matches!(&args[1], Expr::List(items) if items.is_empty()) {
@@ -2142,9 +2121,7 @@ fn expr_to_plain_string(expr: &Expr) -> String {
       let parts: Vec<String> = items.iter().map(expr_to_plain_string).collect();
       format!("{{{}}}", parts.join(", "))
     }
-    _ => {
-      expr_to_str(expr).unwrap_or_else(|_| crate::syntax::expr_to_string(expr))
-    }
+    _ => expr_to_str(expr),
   }
 }
 
@@ -2161,11 +2138,11 @@ fn string_riffle_recursive(
       // triple.
       let (left, sep, right) = match &seps[0] {
         Expr::List(triple) if triple.len() == 3 => (
-          expr_to_str(&triple[0])?,
-          expr_to_str(&triple[1])?,
-          expr_to_str(&triple[2])?,
+          expr_to_str(&triple[0]),
+          expr_to_str(&triple[1]),
+          expr_to_str(&triple[2]),
         ),
-        other => (String::new(), expr_to_str(other)?, String::new()),
+        other => (String::new(), expr_to_str(other), String::new()),
       };
       let rest = &seps[1..];
       let parts: Result<Vec<String>, _> = items
@@ -2199,7 +2176,7 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?.into()));
   }
 
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   // Trailing arguments: an optional count limit (Integer) and/or an
   // `Overlaps -> True | False | All` option. StringPosition reports
   // overlapping matches by default.
@@ -2245,7 +2222,7 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let test = &cargs[1];
     let pat = if ignore_case {
-      format!("(?i){}", regex_str)
+      format!("(?i){regex_str}")
     } else {
       regex_str
     };
@@ -2269,7 +2246,7 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else if let Some(pat) = regex_pat.as_ref() {
     // Regex-based matching: find all overlapping matches
     let pat = if ignore_case {
-      format!("(?i){}", pat)
+      format!("(?i){pat}")
     } else {
       pat.clone()
     };
@@ -2325,11 +2302,11 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(items) => {
         let mut v = Vec::with_capacity(items.len());
         for it in items {
-          v.push(expr_to_str(it)?);
+          v.push(expr_to_str(it));
         }
         v
       }
-      _ => vec![expr_to_str(&args[1])?],
+      _ => vec![expr_to_str(&args[1])],
     };
 
     for sub in &subs {
@@ -2366,7 +2343,7 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Sort by start position, then by length, and drop duplicates so that
   // multiple alternatives matching at the same span don't yield repeats.
-  raw_matches.sort();
+  raw_matches.sort_unstable();
   raw_matches.dedup();
 
   // `Overlaps -> False` keeps matches greedily left-to-right, skipping any
@@ -2424,9 +2401,9 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let ignore_case = has_ignore_case_option(args);
   let s = if ignore_case {
-    expr_to_str(&args[0])?.to_lowercase()
+    expr_to_str(&args[0]).to_lowercase()
   } else {
-    expr_to_str(&args[0])?
+    expr_to_str(&args[0])
   };
 
   // Try pattern-based matching (DigitCharacter, LetterCharacter, Repeated, etc.)
@@ -2434,12 +2411,9 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     string_pattern_to_regex_with_state(&args[1])
   {
     let case_flag = if ignore_case { "(?i)" } else { "" };
-    let full_regex = format!("{}^(?:{})$", case_flag, regex_str);
+    let full_regex = format!("{case_flag}^(?:{regex_str})$");
     let re = compile_regex(&full_regex).map_err(|e| {
-      InterpreterError::EvaluationError(format!(
-        "Invalid string pattern: {}",
-        e
-      ))
+      InterpreterError::EvaluationError(format!("Invalid string pattern: {e}"))
     })?;
     return Ok(Expr::Identifier(
       if full_match_with_constraints(&re, &constraints, &s) {
@@ -2454,18 +2428,18 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Try RegularExpression pattern
   if let Some(pat) = extract_regex_pattern(&args[1]) {
     let case_flag = if ignore_case { "(?i)" } else { "" };
-    let full_regex = format!("{}^(?:{})$", case_flag, pat);
+    let full_regex = format!("{case_flag}^(?:{pat})$");
     let re = compile_regex(&full_regex).map_err(|e| {
-      InterpreterError::EvaluationError(format!("Invalid regex: {}", e))
+      InterpreterError::EvaluationError(format!("Invalid regex: {e}"))
     })?;
     return Ok(bool_expr(re.is_match(&s)));
   }
 
   // Fall back to string-based wildcard matching
   let pattern_str = if ignore_case {
-    expr_to_str(&args[1])?.to_lowercase()
+    expr_to_str(&args[1]).to_lowercase()
   } else {
-    expr_to_str(&args[1])?
+    expr_to_str(&args[1])
   };
   let matches = wildcard_match(&s, &pattern_str);
   Ok(bool_expr(matches))
@@ -2537,7 +2511,7 @@ pub fn string_repeat_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StringRepeat expects 2 or 3 arguments".into(),
     ));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   // Both counts have to be whole and not negative; zero is allowed and
   // gives the empty string, despite what the message calls for.
   let count = |position: usize| -> Option<usize> {
@@ -2589,7 +2563,7 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
 
   if args.len() == 1 {
     Ok(Expr::String(s.trim().to_string()))
@@ -2605,13 +2579,12 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // leading and a trailing match only when it satisfies any back-reference
     // constraints (`x_ ~~ x_`).
     let start_re =
-      compile_regex(&format!("^(?:{})", regex_pat)).map_err(|e| {
-        InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
+      compile_regex(&format!("^(?:{regex_pat})")).map_err(|e| {
+        InterpreterError::EvaluationError(format!("Invalid pattern: {e}"))
       })?;
-    let end_re =
-      compile_regex(&format!("(?:{})$", regex_pat)).map_err(|e| {
-        InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
-      })?;
+    let end_re = compile_regex(&format!("(?:{regex_pat})$")).map_err(|e| {
+      InterpreterError::EvaluationError(format!("Invalid pattern: {e}"))
+    })?;
     let after_start = if let Some(caps) = start_re.captures(&s)
       && let Some(m) = caps.get(0)
       && !m.as_str().is_empty()
@@ -2813,11 +2786,11 @@ fn char_class_difference(excluded: &str, base: &str) -> Option<String> {
               continue;
             }
           }
-          atoms.push(format!("\\{}", next));
+          atoms.push(format!("\\{next}"));
           i += 2;
           continue;
         }
-        atoms.push(format!("\\{}", next));
+        atoms.push(format!("\\{next}"));
         i += 2;
         continue;
       }
@@ -2911,7 +2884,7 @@ fn string_pattern_to_regex_with_state(
   // Enable the "dot matches newline" flag so blanks (`.`, `.+`, `.*`) and `*`
   // span newlines, matching Wolfram string patterns — e.g. Shortest[___]
   // stripping a multi-line block comment.
-  Some((format!("(?s){}", regex), state.constraints))
+  Some((format!("(?s){regex}"), state.constraints))
 }
 
 /// Wrap a regex body in a named capture group. On a repeated name, reuse the
@@ -2925,16 +2898,16 @@ fn maybe_named_group(
   state: &mut PatternState,
 ) -> String {
   if !is_valid_regex_capture_name(name) {
-    return format!("(?:{})", body);
+    return format!("(?:{body})");
   }
   if let Some(first_body) = state.first_body.get(name).cloned() {
     let dup_name = format!("{}__dup{}", name, state.dup_counter);
     state.dup_counter += 1;
     state.constraints.push((name.to_string(), dup_name.clone()));
-    format!("(?P<{}>{})", dup_name, first_body)
+    format!("(?P<{dup_name}>{first_body})")
   } else {
     state.first_body.insert(name.to_string(), body.to_string());
-    format!("(?P<{}>{})", name, body)
+    format!("(?P<{name}>{body})")
   }
 }
 
@@ -2966,7 +2939,7 @@ fn string_pattern_regex_source(
   let (regex_str, constraints) = string_pattern_to_regex_with_state(expr)?;
   Some((
     if ignore_case {
-      format!("(?i){}", regex_str)
+      format!("(?i){regex_str}")
     } else {
       regex_str
     },
@@ -2988,8 +2961,7 @@ fn compile_string_pattern(
       .map(|re| (re, constraints))
       .map_err(|e| {
         InterpreterError::EvaluationError(format!(
-          "Invalid string pattern: {}",
-          e
+          "Invalid string pattern: {e}"
         ))
       }),
   )
@@ -3092,8 +3064,8 @@ pub(crate) fn parse_overlaps_option(
 /// `pat` wrapped so that it only matches a slice in its entirety — the probe
 /// `all_overlap_spans` uses to discover every match length at a start position.
 fn anchored_regex(pat: &str) -> Result<regex::Regex, InterpreterError> {
-  compile_regex(&format!("\\A(?:{})\\z", pat)).map_err(|e| {
-    InterpreterError::EvaluationError(format!("Invalid string pattern: {}", e))
+  compile_regex(&format!("\\A(?:{pat})\\z")).map_err(|e| {
+    InterpreterError::EvaluationError(format!("Invalid string pattern: {e}"))
   })
 }
 
@@ -3122,7 +3094,7 @@ fn all_overlap_spans(
   s: &str,
 ) -> Result<Vec<(usize, usize)>, InterpreterError> {
   let re = compile_regex(pat).map_err(|e| {
-    InterpreterError::EvaluationError(format!("Invalid string pattern: {}", e))
+    InterpreterError::EvaluationError(format!("Invalid string pattern: {e}"))
   })?;
   let anchored = anchored_regex(pat)?;
   // `\A` / `\z` in the pattern itself would match at the edges of every probed
@@ -3205,7 +3177,7 @@ fn all_rule_matches<'a>(
   let mut per_rule = Vec::with_capacity(rules.len());
   for (pat, constraints, rhs, expand_dollar) in rules {
     let pat = if ignore_case {
-      format!("(?i){}", pat)
+      format!("(?i){pat}")
     } else {
       pat.clone()
     };
@@ -3322,22 +3294,19 @@ fn date_pattern_to_regex(
   };
   let mut out = String::new();
   let mut prev_was_element = false;
-  for item in items.iter() {
+  for item in items {
     let Expr::String(s) = item else {
       return None;
     };
-    match date_pattern_element_regex(s) {
-      Some(field) => {
-        if prev_was_element {
-          out.push_str(&sep);
-        }
-        out.push_str(field);
-        prev_was_element = true;
+    if let Some(field) = date_pattern_element_regex(s) {
+      if prev_was_element {
+        out.push_str(&sep);
       }
-      None => {
-        out.push_str(&regex::escape(s));
-        prev_was_element = false;
-      }
+      out.push_str(field);
+      prev_was_element = true;
+    } else {
+      out.push_str(&regex::escape(s));
+      prev_was_element = false;
     }
   }
   Some(out)
@@ -3401,10 +3370,10 @@ fn string_pattern_to_regex_inner(
         3 => ".*", // BlankNullSequence: zero or more characters
         _ => return None,
       };
-      if !name.is_empty() {
-        Some(maybe_named_group(name, inner, seen))
-      } else {
+      if name.is_empty() {
         Some(inner.to_string())
+      } else {
+        Some(maybe_named_group(name, inner, seen))
       }
     }
 
@@ -3430,8 +3399,8 @@ fn string_pattern_to_regex_inner(
       };
       let inner = match blank_type {
         1 => class.to_string(),
-        2 => format!("{}+", class),
-        3 => format!("{}*", class),
+        2 => format!("{class}+"),
+        3 => format!("{class}*"),
         _ => return None,
       };
       if name.is_empty() {
@@ -3451,7 +3420,7 @@ fn string_pattern_to_regex_inner(
       if let Expr::Identifier(var) = &args[0] {
         Some(maybe_named_group(var, &inner, seen))
       } else {
-        Some(format!("(?:{})", inner))
+        Some(format!("(?:{inner})"))
       }
     }
 
@@ -3463,7 +3432,7 @@ fn string_pattern_to_regex_inner(
     } => {
       let l = string_pattern_to_regex_inner(left, seen)?;
       let r = string_pattern_to_regex_inner(right, seen)?;
-      Some(format!("(?:{}|{})", l, r))
+      Some(format!("(?:{l}|{r})"))
     }
 
     // Alternatives[pat1, pat2, ...] = pat1 | pat2 | ...
@@ -3533,23 +3502,23 @@ fn string_pattern_to_regex_inner(
       };
       let base = string_pattern_to_regex_inner(inner_pat, seen)?;
       let body = if args.len() == 1 {
-        format!("(?:{})+", base)
+        format!("(?:{base})+")
       } else {
         // Repeated[pat, n] means 1..n, Repeated[pat, {n}] means exactly n
         let quantifier = match &args[1] {
-          Expr::Integer(n) => format!("{{1,{}}}", n),
+          Expr::Integer(n) => format!("{{1,{n}}}"),
           Expr::List(items) if items.len() == 1 => {
             let n = crate::functions::math_ast::expr_to_i128(&items[0])?;
-            format!("{{{}}}", n)
+            format!("{{{n}}}")
           }
           Expr::List(items) if items.len() == 2 => {
             let min = crate::functions::math_ast::expr_to_i128(&items[0])?;
             let max = crate::functions::math_ast::expr_to_i128(&items[1])?;
-            format!("{{{},{}}}", min, max)
+            format!("{{{min},{max}}}")
           }
           _ => return None,
         };
-        format!("(?:{}){}", base, quantifier)
+        format!("(?:{base}){quantifier}")
       };
       Some(match capture_name {
         Some(var) => maybe_named_group(&var, &body, seen),
@@ -3575,7 +3544,7 @@ fn string_pattern_to_regex_inner(
         _ => (None, &args[0]),
       };
       let base = string_pattern_to_regex_inner(inner_pat, seen)?;
-      let body = format!("(?:{})*", base);
+      let body = format!("(?:{base})*");
       Some(match capture_name {
         Some(var) => maybe_named_group(&var, &body, seen),
         None => body,
@@ -3632,9 +3601,9 @@ fn string_pattern_to_regex_inner(
       {
         if let Some(neg_body) = body.strip_prefix('^') {
           // Double negation — just drop the ^.
-          return Some(format!("[{}]", neg_body));
+          return Some(format!("[{neg_body}]"));
         }
-        return Some(format!("[^{}]", body));
+        return Some(format!("[^{body}]"));
       }
       // Single-character literal (e.g. `]` → `\]`, `a` → `a`): lift into
       // a negated character class so that `Except[c]..` quantifies as
@@ -3642,10 +3611,10 @@ fn string_pattern_to_regex_inner(
       // look-around, so this is the only shape that composes with `..`
       // / `...` quantifiers without errors.
       if is_single_char_atom(&inner) {
-        return Some(format!("[^{}]", inner));
+        return Some(format!("[^{inner}]"));
       }
       // Otherwise fall back to a regex negative lookahead + any char.
-      Some(format!("(?:(?!{}).)", inner))
+      Some(format!("(?:(?!{inner}).)"))
     }
 
     // Except[c, base] — match `base` but not `c`. The Rust `regex` crate
@@ -3677,14 +3646,14 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // flattened list.
   if let Expr::List(items) = &args[0] {
     let mut per_string = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       let mut rest = args.to_vec();
       rest[0] = item.clone();
       per_string.push(string_cases_ast(&rest)?);
     }
     return Ok(Expr::List(per_string.into()));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
 
   // Parse the optional trailing arguments: a max-count (Integer/Infinity)
   // and/or an `Overlaps -> True | All` option (default: non-overlapping).
@@ -3703,7 +3672,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ignore_case = has_ignore_case_option(args);
   let with_ci = |pat: &str| -> String {
     if ignore_case {
-      format!("(?i){}", pat)
+      format!("(?i){pat}")
     } else {
       pat.to_string()
     }
@@ -3717,8 +3686,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for (pat, constraints, rhs, expand_dollar) in &rules {
       let re = compile_regex(&with_ci(pat)).map_err(|e| {
         InterpreterError::EvaluationError(format!(
-          "Invalid string pattern: {}",
-          e
+          "Invalid string pattern: {e}"
         ))
       })?;
       compiled.push((re, constraints.clone(), rhs.clone(), *expand_dollar));
@@ -3792,10 +3760,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let test = &cargs[1];
     let re = compile_regex(&with_ci(&regex_str)).map_err(|e| {
-      InterpreterError::EvaluationError(format!(
-        "Invalid string pattern: {}",
-        e
-      ))
+      InterpreterError::EvaluationError(format!("Invalid string pattern: {e}"))
     })?;
     let mut out: Vec<Expr> = Vec::new();
     let mut i = 0;
@@ -3838,10 +3803,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     string_pattern_to_regex_with_state(&args[1])
   {
     let re = compile_regex(&with_ci(&regex_str)).map_err(|e| {
-      InterpreterError::EvaluationError(format!(
-        "Invalid string pattern: {}",
-        e
-      ))
+      InterpreterError::EvaluationError(format!("Invalid string pattern: {e}"))
     })?;
     let matches: Vec<Expr> = if mode == Overlaps::All {
       // Every match at every start position, not just the preferred one.
@@ -3913,13 +3875,12 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Fall back to literal string matching. Under IgnoreCase, search case-
   // insensitively and emit the actual matched substring (which may differ
   // from the pattern in case).
-  let patt = expr_to_str(&args[1])?;
+  let patt = expr_to_str(&args[1]);
   if ignore_case && !patt.is_empty() {
     let re =
       compile_regex(&format!("(?i){}", regex::escape(&patt))).map_err(|e| {
         InterpreterError::EvaluationError(format!(
-          "Invalid string pattern: {}",
-          e
+          "Invalid string pattern: {e}"
         ))
       })?;
     let matches: Vec<Expr> = re
@@ -4044,7 +4005,7 @@ fn number_form_to_string(x: &Expr, n: i64) -> Option<String> {
     rounded.log10().floor() as i64
   };
   let decimals = (n - 1 - m2).max(0) as usize;
-  let mut s = format!("{:.*}", decimals, rounded);
+  let mut s = format!("{rounded:.decimals$}");
   if s.contains('.') {
     // Drop padding zeros but keep the trailing point (3.00 -> 3.).
     while s.ends_with('0') {
@@ -4164,7 +4125,7 @@ pub(crate) fn scientific_form_parts(
   let prec = (n - 1) as usize;
   // Rust's `{:e}` formatter produces a normalized mantissa (one nonzero digit
   // before the point) and renormalizes after rounding (9.9995e3 -> 1.00000e4).
-  let formatted = format!("{:.*e}", prec, v);
+  let formatted = format!("{v:.prec$e}");
   let (mantissa_raw, exp_raw) = formatted.split_once('e')?;
   let exp: i64 = exp_raw.parse().ok()?;
   // Drop padding zeros from the fractional part but keep the trailing point.
@@ -4246,7 +4207,7 @@ fn number_form_exponent_function_to_string(
   // Mantissa at the chosen exponent, keeping n significant figures total.
   let decimals = (n - 1 - e + e_prime).max(0) as usize;
   let mant_val = av / 10f64.powi(e_prime as i32);
-  let mant_str = format!("{:.*}", decimals, mant_val);
+  let mant_str = format!("{mant_val:.decimals$}");
   // Trim trailing fractional zeros but keep the decimal point.
   let mant_trimmed = match mant_str.split_once('.') {
     Some((int_part, frac)) => {
@@ -4270,7 +4231,7 @@ fn number_form_exponent_function_to_string(
 fn hcat_2d_blocks(blocks: &[String]) -> String {
   let split: Vec<Vec<&str>> =
     blocks.iter().map(|b| b.lines().collect()).collect();
-  let height = split.iter().map(|l| l.len()).max().unwrap_or(0);
+  let height = split.iter().map(std::vec::Vec::len).max().unwrap_or(0);
   let widths: Vec<usize> = split
     .iter()
     .map(|lines| lines.iter().map(|l| l.chars().count()).max().unwrap_or(0))
@@ -4343,7 +4304,7 @@ pub(crate) fn engineering_form_parts(
   let n = if n < 1 { 1 } else { n };
   let prec = (n - 1) as usize;
   // Scientific decomposition (normalized mantissa, renormalized after rounding).
-  let formatted = format!("{:.*e}", prec, v);
+  let formatted = format!("{v:.prec$e}");
   let (mantissa_raw, exp_raw) = formatted.split_once('e')?;
   let e: i64 = exp_raw.parse().ok()?;
   // Engineering exponent is the largest multiple of 3 not exceeding `e`; the
@@ -4390,7 +4351,7 @@ fn number_form_fixed_to_string(x: &Expr, f: i64) -> Option<String> {
     return None;
   }
   let f = f as usize;
-  let mut s = format!("{:.*}", f, val);
+  let mut s = format!("{val:.f$}");
   // `{:.0}` omits the decimal point; NumberForm keeps a trailing one (3.).
   if f == 0 {
     s.push('.');
@@ -4430,7 +4391,7 @@ fn decimal_form_default(f: f64) -> String {
   let decimals = (6 - 1 - m).max(0) as usize;
   let factor = 10f64.powi(decimals as i32);
   let rounded = (ax * factor).round() / factor;
-  let mut s = format!("{:.*}", decimals, rounded);
+  let mut s = format!("{rounded:.decimals$}");
   if s.contains('.') {
     while s.ends_with('0') {
       s.pop();
@@ -4705,7 +4666,7 @@ fn table_form_to_string(arg: &Expr) -> Option<String> {
         _ => vec![],
       })
       .collect();
-    let ncols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    let ncols = rows.iter().map(std::vec::Vec::len).max().unwrap_or(0);
     let mut col_w = vec![0usize; ncols];
     for row in &rows {
       for (j, cell) in row.iter().enumerate() {
@@ -4951,7 +4912,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       digits
     } else {
       let indent = " ".repeat(digits.chars().count());
-      format!("{}\n{}{}", digits, indent, b)
+      format!("{digits}\n{indent}{b}")
     };
     return Ok(Expr::String(rendered));
   }
@@ -4975,9 +4936,9 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let script_str = to_string_default_form(&inner_args[1]);
     let indent = " ".repeat(base_str.chars().count());
     let rendered = if name == "Subscript" {
-      format!("{}\n{}{}", base_str, indent, script_str)
+      format!("{base_str}\n{indent}{script_str}")
     } else {
-      format!("{}{}\n{}", indent, script_str, base_str)
+      format!("{indent}{script_str}\n{base_str}")
     };
     return Ok(Expr::String(rendered));
   }
@@ -5215,7 +5176,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           digits
         } else {
           let indent = " ".repeat(digits.chars().count());
-          format!("{}\n{}{}", digits, indent, base)
+          format!("{digits}\n{indent}{base}")
         };
         return Ok(Expr::String(rendered));
       }
@@ -5241,9 +5202,8 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && matches!(&args[1], Expr::Identifier(f) if f == "InputForm");
     if is_input_form {
       return Ok(Expr::String(mathml));
-    } else {
-      return Ok(Expr::String(mathml.trim_end_matches('\n').to_string()));
     }
+    return Ok(Expr::String(mathml.trim_end_matches('\n').to_string()));
   }
 
   // If the expression is StandardForm[inner], produce box form representation
@@ -5271,8 +5231,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // - OutputForm renders as DisplayForm[FormBox[..., TraditionalForm]]
     // - InputForm renders as \!\(\*FormBox[..., TraditionalForm]\)
     return Ok(Expr::String(format!(
-      "{}{}{}FormBox[{}, TraditionalForm]{}",
-      BOX_START, BOX_OPEN, BOX_SEP, box_str, BOX_CLOSE
+      "{BOX_START}{BOX_OPEN}{BOX_SEP}FormBox[{box_str}, TraditionalForm]{BOX_CLOSE}"
     )));
   }
 
@@ -5307,7 +5266,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // quotes), then escape `{` / `}` using TeX's `$\{$` / `$\}$`.
       let input_text = crate::syntax::expr_to_output(&formatted);
       let escaped = input_text.replace('{', "$\\{$").replace('}', "$\\}$");
-      return Ok(Expr::String(format!("\\text{{{}}}", escaped)));
+      return Ok(Expr::String(format!("\\text{{{escaped}}}")));
     }
     if let Expr::FunctionCall { name: head, .. } = inner {
       let has_format = crate::evaluator::assignment::FORMAT_VALUES
@@ -5502,8 +5461,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .unwrap_or_else(|_| args[0].clone());
         let box_inner_text = crate::syntax::expr_to_input_form(&box_ast);
         return Ok(Expr::String(format!(
-          "{}{}{}{}{}",
-          BOX_START, BOX_OPEN, BOX_SEP, box_inner_text, BOX_CLOSE
+          "{BOX_START}{BOX_OPEN}{BOX_SEP}{box_inner_text}{BOX_CLOSE}"
         )));
       }
       _ => {}
@@ -5559,7 +5517,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )
     } else {
       // Non-positive precision (e.g. an accuracy form): keep the digits.
-      format!("{}{}", sign, body)
+      format!("{sign}{body}")
     };
     return Ok(Expr::String(s));
   }
@@ -5599,7 +5557,7 @@ fn round_real_to_6_sig_digits(f: f64) -> f64 {
   // 10^k factor (which is not exactly representable in f64) loses precision —
   // e.g. 1.5e10 would round-trip to 1.4999999999999998e10. Formatting to 5
   // digits after the point in `e` notation rounds correctly.
-  format!("{:.5e}", f).parse().unwrap_or(f)
+  format!("{f:.5e}").parse().unwrap_or(f)
 }
 
 /// Recursively replace each `Expr::Real(f)` in `expr` with its
@@ -5684,11 +5642,7 @@ fn box_ast_to_tex(expr: &Expr) -> String {
       if name == "RowBox" && args.len() == 1 =>
     {
       if let Expr::List(items) = &args[0] {
-        items
-          .iter()
-          .map(box_ast_to_tex)
-          .collect::<Vec<_>>()
-          .join("")
+        items.iter().map(box_ast_to_tex).collect::<String>()
       } else {
         box_ast_to_tex(&args[0])
       }
@@ -5805,7 +5759,7 @@ pub fn expr_to_tex(expr: &Expr) -> String {
     && args.len() == 1
   {
     let rendered = crate::syntax::expr_to_output_form_2d(&args[0]);
-    return format!("\\text{{{}}}", rendered);
+    return format!("\\text{{{rendered}}}");
   }
   match expr {
     Expr::Integer(n) => n.to_string(),
@@ -5821,7 +5775,7 @@ pub fn expr_to_tex(expr: &Expr) -> String {
     }
     Expr::String(s) => format!("\\text{{{}}}", tex_escape_text(s)),
     // Raw is the rendered output of OutputForm / 2d boxes — treat as text.
-    Expr::Raw(s) => format!("\\text{{{}}}", s),
+    Expr::Raw(s) => format!("\\text{{{s}}}"),
     Expr::Identifier(name) | Expr::Constant(name) => tex_identifier(name),
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
@@ -5840,9 +5794,9 @@ pub fn expr_to_tex(expr: &Expr) -> String {
       let r = expr_to_tex(right);
       // Check if right side starts with minus to avoid x+-y
       if r.starts_with('-') {
-        format!("{}{}", l, r)
+        format!("{l}{r}")
       } else {
-        format!("{}+{}", l, r)
+        format!("{l}+{r}")
       }
     }
     Expr::BinaryOp {
@@ -5922,7 +5876,7 @@ pub fn expr_to_tex(expr: &Expr) -> String {
       if tex_matrix_rows(items).is_some()
         && let Some(array) = tex_array_body(expr, false)
       {
-        return format!("\\left(\n{}\n\\right)", array);
+        return format!("\\left(\n{array}\n\\right)");
       }
       let parts: Vec<String> = items.iter().map(expr_to_tex).collect();
       format!("\\{{{}\\}}", parts.join(","))
@@ -6015,9 +5969,9 @@ fn tex_delimited(inner: &str, ldelim: &str, rdelim: &str) -> String {
     || inner.contains('^')
     || inner.contains('_');
   if tall {
-    format!("\\left{} {}\\right{}", ldelim, inner, rdelim)
+    format!("\\left{ldelim} {inner}\\right{rdelim}")
   } else {
-    format!("{} {}{}", ldelim, inner, rdelim)
+    format!("{ldelim} {inner}{rdelim}")
   }
 }
 
@@ -6074,8 +6028,7 @@ fn tex_real(f: f64) -> String {
       let raw = crate::syntax::format_real(f);
       match raw.split_once("*^") {
         Some((mantissa, exponent)) => format!(
-          "\\text{{{}$\\grave{{ }}$*${{}}^{{\\wedge}}${}}}",
-          mantissa, exponent
+          "\\text{{{mantissa}$\\grave{{ }}$*${{}}^{{\\wedge}}${exponent}}}"
         ),
         None => raw,
       }
@@ -6125,9 +6078,9 @@ fn tex_complex_atom(re: &Expr, im: &Expr) -> String {
   let thin_space = matches!(re, Expr::Real(f) if *f >= 0.0);
   let separator = if thin_space { "\\, " } else { "" };
   if let Some(rest) = im_tex.strip_prefix('-') {
-    format!("{}{}-{}", re_tex, separator, rest)
+    format!("{re_tex}{separator}-{rest}")
   } else {
-    format!("{}{}+{}", re_tex, separator, im_tex)
+    format!("{re_tex}{separator}+{im_tex}")
   }
 }
 
@@ -6138,7 +6091,7 @@ fn tex_subscript_arg(expr: &Expr) -> String {
   if rendered.chars().count() == 1 {
     rendered
   } else {
-    format!("{{{}}}", rendered)
+    format!("{{{rendered}}}")
   }
 }
 
@@ -6153,7 +6106,7 @@ fn tex_escape_text(text: &str) -> String {
       }
       '^' => out.push_str("${}^{\\wedge}$"),
       '~' => out.push_str("$\\sim $"),
-      '<' | '>' => out.push_str(&format!("${}$", c)),
+      '<' | '>' => out.push_str(&format!("${c}$")),
       other => out.push(other),
     }
   }
@@ -6192,7 +6145,7 @@ fn tex_exponent(exp: &Expr) -> String {
     && !denominator.contains(' ')
     && (sign.is_empty() || numeric_denominator)
   {
-    format!("{}{}/{}", sign, numerator, denominator)
+    format!("{sign}{numerator}/{denominator}")
   } else {
     rendered
   }
@@ -6342,10 +6295,10 @@ fn tex_identifier(name: &str) -> String {
       '\u{03a1}' => "P".to_string(),
       '\u{03a4}' => "T".to_string(),
       '\u{03a7}' => "X".to_string(),
-      other => format!("\\text{{{}}}", other),
+      other => format!("\\text{{{other}}}"),
     },
     // Multi-letter identifiers get \text{}
-    s => format!("\\text{{{}}}", s),
+    s => format!("\\text{{{s}}}"),
   }
 }
 
@@ -6517,7 +6470,7 @@ fn tex_times_nary(args: &[Expr]) -> String {
   numer.extend(numer_args.iter().map(|arg| {
     let tex = expr_to_tex(arg);
     if multi && tex_needs_product_parens(arg) {
-      format!("({})", tex)
+      format!("({tex})")
     } else {
       tex
     }
@@ -6528,7 +6481,7 @@ fn tex_times_nary(args: &[Expr]) -> String {
   if denom.is_empty() {
     // No denominator factors — simple product
     let body = numer.join(" ");
-    format!("{}{}", sign, body)
+    format!("{sign}{body}")
   } else {
     let numer_tex = if numer.is_empty() {
       "1".to_string()
@@ -6536,7 +6489,7 @@ fn tex_times_nary(args: &[Expr]) -> String {
       numer.join(" ")
     };
     let denom_tex = denom.join(" ");
-    format!("{}\\frac{{{}}}{{{}}}", sign, numer_tex, denom_tex)
+    format!("{sign}\\frac{{{numer_tex}}}{{{denom_tex}}}")
   }
 }
 
@@ -6594,7 +6547,7 @@ fn tex_power(base: &Expr, exp: &Expr) -> String {
     let exp_grp = if exp_tex.chars().count() == 1 {
       exp_tex
     } else {
-      format!("{{{}}}", exp_tex)
+      format!("{{{exp_tex}}}")
     };
     let arg = expr_to_tex(&args[0]);
     if matches!(
@@ -6628,9 +6581,9 @@ fn tex_power(base: &Expr, exp: &Expr) -> String {
 
   // Single-character exponents don't need braces in Wolfram TeXForm
   if exp_tex.chars().count() == 1 {
-    format!("{}^{}", base_tex, exp_tex)
+    format!("{base_tex}^{exp_tex}")
   } else {
-    format!("{}^{{{}}}", base_tex, exp_tex)
+    format!("{base_tex}^{{{exp_tex}}}")
   }
 }
 
@@ -6788,7 +6741,7 @@ fn tex_logic_operand(
     let paren = cp < parent_prec
       || (cp == parent_prec && (ck != parent_kind || parent_kind == "Implies"));
     if paren {
-      return format!("({})", inner);
+      return format!("({inner})");
     }
   }
   inner
@@ -6811,11 +6764,7 @@ fn tex_atom_or_paren(expr: &Expr) -> String {
     ),
     _ => false,
   };
-  if atomic {
-    inner
-  } else {
-    format!("({})", inner)
-  }
+  if atomic { inner } else { format!("({inner})") }
 }
 
 /// Render an operand for a postfix operator (factorial), parenthesizing
@@ -6837,7 +6786,7 @@ fn tex_postfix_arg(expr: &Expr) -> String {
     }
     _ => false,
   };
-  if needs { format!("({})", inner) } else { inner }
+  if needs { format!("({inner})") } else { inner }
 }
 
 /// Render a subscript index, wrapping it in braces only when multi-character.
@@ -6846,7 +6795,7 @@ fn tex_sub(expr: &Expr) -> String {
   if s.chars().count() == 1 {
     s
   } else {
-    format!("{{{}}}", s)
+    format!("{{{s}}}")
   }
 }
 
@@ -6903,7 +6852,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       } else {
         expr_to_tex(&args[0])
       };
-      format!("{}\\in {}", lhs, dom)
+      format!("{lhs}\\in {dom}")
     }
     // Max/Min/GCD use LaTeX operator names; LCM is plain text.
     "Max" if !args.is_empty() => format!(
@@ -7335,7 +7284,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       };
       let mut out = String::from("\\begin{array}{l}\n");
       for item in items {
-        out.push_str(&format!(" {} \\\\\n", item));
+        out.push_str(&format!(" {item} \\\\\n"));
       }
       out.push_str("\\end{array}");
       out
@@ -7389,9 +7338,9 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       let num = expr_to_tex(&args[0]);
       let den = expr_to_tex(&args[1]);
       if let Some(rest) = num.strip_prefix('-') {
-        format!("-\\frac{{{}}}{{{}}}", rest, den)
+        format!("-\\frac{{{rest}}}{{{den}}}")
       } else {
-        format!("\\frac{{{}}}{{{}}}", num, den)
+        format!("\\frac{{{num}}}{{{den}}}")
       }
     }
     // Plus (n-ary) — use Wolfram canonical order but move pure numeric
@@ -7446,7 +7395,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       let reordered: Vec<&str> = tex_strs[lead..]
         .iter()
         .chain(tex_strs[..lead].iter())
-        .map(|s| s.as_str())
+        .map(std::string::String::as_str)
         .collect();
       let mut result = reordered[0].to_string();
       for t in reordered.iter().skip(1) {
@@ -7515,7 +7464,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         if s.chars().count() == 1 {
           s.to_string()
         } else {
-          format!("{{{}}}", s)
+          format!("{{{s}}}")
         }
       }
       if let Expr::List(bounds) = &args[1]
@@ -7571,7 +7520,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     // MatrixForm — a parenthesized LaTeX array. A non-list argument is
     // transparent: `MatrixForm[x] // TeXForm` is just `x`.
     "MatrixForm" if args.len() == 1 => match tex_array_body(&args[0], false) {
-      Some(arr) => format!("\\left(\n{}\n\\right)", arr),
+      Some(arr) => format!("\\left(\n{arr}\n\\right)"),
       None => expr_to_tex(&args[0]),
     },
     // TableForm — a bare LaTeX array (no surrounding parentheses).
@@ -7595,7 +7544,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       if let Expr::List(cases) = &args[0] {
         let mut rows: Vec<String> = Vec::new();
         let mut closed = false;
-        for case in cases.iter() {
+        for case in cases {
           if let Expr::List(pair) = case
             && pair.len() == 2
           {
@@ -7607,11 +7556,8 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         // Wolfram always shows the catch-all; append the default (2nd arg, or
         // 0) with a True condition unless an explicit True case already closed.
         if !closed {
-          let def = args
-            .get(1)
-            .map(expr_to_tex)
-            .unwrap_or_else(|| "0".to_string());
-          rows.push(format!(" {} & \\text{{True}}", def));
+          let def = args.get(1).map_or_else(|| "0".to_string(), expr_to_tex);
+          rows.push(format!(" {def} & \\text{{True}}"));
         }
         format!("\\begin{{cases}}\n{}\n\\end{{cases}}", rows.join(" \\\\\n"))
       } else {
@@ -7625,7 +7571,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     "Complex" if args.len() == 2 => {
       let re = expr_to_tex(&args[0]);
       let im = expr_to_tex(&args[1]);
-      format!("{}+{} i", re, im)
+      format!("{re}+{im} i")
     }
     // Subscript[x, i, j, ...] -> x_{i, j, ...}
     "Subscript" if args.len() >= 2 => {
@@ -7634,9 +7580,9 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       if args.len() == 2 {
         let s = &idx_tex[0];
         if s.chars().count() == 1 {
-          format!("{}_{}", base, s)
+          format!("{base}_{s}")
         } else {
-          format!("{}_{{{}}}", base, s)
+          format!("{base}_{{{s}}}")
         }
       } else {
         format!("{}_{{{}}}", base, idx_tex.join(", "))
@@ -7647,9 +7593,9 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       let base = expr_to_tex(&args[0]);
       let exp = expr_to_tex(&args[1]);
       if exp.chars().count() == 1 {
-        format!("{}^{}", base, exp)
+        format!("{base}^{exp}")
       } else {
-        format!("{}^{{{}}}", base, exp)
+        format!("{base}^{{{exp}}}")
       }
     }
     // Subsuperscript[x, b, c] -> x_b^c (with brace wrapping for multi-char parts)
@@ -7658,16 +7604,16 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       let sub = expr_to_tex(&args[1]);
       let sup = expr_to_tex(&args[2]);
       let sub_part = if sub.chars().count() == 1 {
-        format!("_{}", sub)
+        format!("_{sub}")
       } else {
-        format!("_{{{}}}", sub)
+        format!("_{{{sub}}}")
       };
       let sup_part = if sup.chars().count() == 1 {
-        format!("^{}", sup)
+        format!("^{sup}")
       } else {
-        format!("^{{{}}}", sup)
+        format!("^{{{sup}}}")
       };
-      format!("{}{}{}", base, sub_part, sup_part)
+      format!("{base}{sub_part}{sup_part}")
     }
     // Floor[x] -> \lfloor x\rfloor, Ceiling[x] -> \lceil x\rceil.
     "Floor" if args.len() == 1 => {
@@ -7696,7 +7642,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         let head = if name.chars().count() == 1 {
           name.to_string()
         } else {
-          format!("\\text{{{}}}", name)
+          format!("\\text{{{name}}}")
         };
         format!("{}({})", head, args_tex.join(","))
       }
@@ -7712,7 +7658,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
 /// Returns the complete `<math>...</math>` block with proper indentation.
 fn expr_to_mathml(expr: &Expr) -> String {
   let inner = mathml_inner(expr, 1);
-  format!("<math>\n{}\n</math>\n", inner)
+  format!("<math>\n{inner}\n</math>\n")
 }
 
 /// Render a single expression as a MathML fragment at the given indentation depth.
@@ -7721,8 +7667,8 @@ fn mathml_inner(expr: &Expr, depth: usize) -> String {
 
   match expr {
     // Numbers
-    Expr::Integer(n) => format!("{}<mn>{}</mn>", indent, n),
-    Expr::BigInteger(n) => format!("{}<mn>{}</mn>", indent, n),
+    Expr::Integer(n) => format!("{indent}<mn>{n}</mn>"),
+    Expr::BigInteger(n) => format!("{indent}<mn>{n}</mn>"),
     Expr::Real(f) => {
       format!("{}<mn>{}</mn>", indent, crate::syntax::format_real(*f))
     }
@@ -7791,20 +7737,20 @@ fn mathml_inner(expr: &Expr, depth: usize) -> String {
       BinaryOperator::Divide => {
         let l = mathml_inner(left, depth + 1);
         let r = mathml_inner(right, depth + 1);
-        format!("{}<mfrac>\n{}\n{}\n{}</mfrac>", indent, l, r, indent)
+        format!("{indent}<mfrac>\n{l}\n{r}\n{indent}</mfrac>")
       }
       BinaryOperator::Power => {
         if let Some(sqrt_arg) = crate::functions::is_sqrt(expr) {
           let b = mathml_inner(sqrt_arg, depth + 1);
-          return format!("{}<msqrt>\n{}\n{}</msqrt>", indent, b, indent);
+          return format!("{indent}<msqrt>\n{b}\n{indent}</msqrt>");
         }
         let b = mathml_inner(left, depth + 1);
         let e = mathml_inner(right, depth + 1);
-        format!("{}<msup>\n{}\n{}\n{}</msup>", indent, b, e, indent)
+        format!("{indent}<msup>\n{b}\n{e}\n{indent}</msup>")
       }
       _ => {
         // Fallback: render as operator
-        let op_str = format!("{:?}", op);
+        let op_str = format!("{op:?}");
         let l = mathml_inner(left, depth + 1);
         let r = mathml_inner(right, depth + 1);
         format!(
@@ -7861,7 +7807,7 @@ fn mathml_list(items: &[Expr], depth: usize) -> String {
   for (i, item) in items.iter().enumerate() {
     parts.push(mathml_inner(item, depth + 2));
     if i + 1 < items.len() {
-      parts.push(format!("{}<mo>,</mo>", inner2_indent));
+      parts.push(format!("{inner2_indent}<mo>,</mo>"));
     }
   }
 
@@ -7886,7 +7832,7 @@ fn mathml_function_call(name: &str, args: &[Expr], depth: usize) -> String {
     "Rational" if args.len() == 2 => {
       let n = mathml_inner(&args[0], depth + 1);
       let d = mathml_inner(&args[1], depth + 1);
-      format!("{}<mfrac>\n{}\n{}\n{}</mfrac>", indent, n, d, indent)
+      format!("{indent}<mfrac>\n{n}\n{d}\n{indent}</mfrac>")
     }
 
     // Power
@@ -7899,17 +7845,17 @@ fn mathml_function_call(name: &str, args: &[Expr], depth: usize) -> String {
         && matches!(&ra[1], Expr::Integer(2))
       {
         let b = mathml_inner(&args[0], depth + 1);
-        return format!("{}<msqrt>\n{}\n{}</msqrt>", indent, b, indent);
+        return format!("{indent}<msqrt>\n{b}\n{indent}</msqrt>");
       }
       let b = mathml_inner(&args[0], depth + 1);
       let e = mathml_inner(&args[1], depth + 1);
-      format!("{}<msup>\n{}\n{}\n{}</msup>", indent, b, e, indent)
+      format!("{indent}<msup>\n{b}\n{e}\n{indent}</msup>")
     }
 
     // Sqrt
     "Sqrt" if args.len() == 1 => {
       let b = mathml_inner(&args[0], depth + 1);
-      format!("{}<msqrt>\n{}\n{}</msqrt>", indent, b, indent)
+      format!("{indent}<msqrt>\n{b}\n{indent}</msqrt>")
     }
 
     // Plus (n-ary)
@@ -7931,7 +7877,7 @@ fn mathml_function_call(name: &str, args: &[Expr], depth: usize) -> String {
           );
 
         if is_neg {
-          parts.push(format!("{}<mo>-</mo>", inner));
+          parts.push(format!("{inner}<mo>-</mo>"));
           // Render the negated form
           match arg {
             Expr::FunctionCall { name: n, args: a }
@@ -7957,7 +7903,7 @@ fn mathml_function_call(name: &str, args: &[Expr], depth: usize) -> String {
             _ => parts.push(mathml_inner(arg, depth + 1)),
           }
         } else {
-          parts.push(format!("{}<mo>+</mo>", inner));
+          parts.push(format!("{inner}<mo>+</mo>"));
           parts.push(mathml_inner(arg, depth + 1));
         }
       }
@@ -7972,20 +7918,18 @@ fn mathml_function_call(name: &str, args: &[Expr], depth: usize) -> String {
         if rest.len() == 1 {
           let r = mathml_inner(&rest[0], depth + 1);
           return format!(
-            "{}<mrow>\n{}<mo>-</mo>\n{}\n{}</mrow>",
-            indent, inner, r, indent
+            "{indent}<mrow>\n{inner}<mo>-</mo>\n{r}\n{indent}</mrow>"
           );
         }
         let r = mathml_function_call("Times", rest, depth + 1);
         return format!(
-          "{}<mrow>\n{}<mo>-</mo>\n{}\n{}</mrow>",
-          indent, inner, r, indent
+          "{indent}<mrow>\n{inner}<mo>-</mo>\n{r}\n{indent}</mrow>"
         );
       }
       let mut parts = Vec::new();
       parts.push(mathml_inner(&args[0], depth + 1));
       for arg in args.iter().skip(1) {
-        parts.push(format!("{}<mo>&#8290;</mo>", inner));
+        parts.push(format!("{inner}<mo>&#8290;</mo>"));
         parts.push(mathml_inner(arg, depth + 1));
       }
       format!("{}<mrow>\n{}\n{}</mrow>", indent, parts.join("\n"), indent)
@@ -7998,8 +7942,7 @@ fn mathml_function_call(name: &str, args: &[Expr], depth: usize) -> String {
       let fn_name = name.to_lowercase();
       let a = mathml_inner(&args[0], depth + 1);
       format!(
-        "{}<mrow>\n{}<mi>{}</mi>\n{}<mo>&#8289;</mo>\n{}<mo>(</mo>\n{}\n{}<mo>)</mo>\n{}</mrow>",
-        indent, inner, fn_name, inner, inner, a, inner, indent
+        "{indent}<mrow>\n{inner}<mi>{fn_name}</mi>\n{inner}<mo>&#8289;</mo>\n{inner}<mo>(</mo>\n{a}\n{inner}<mo>)</mo>\n{indent}</mrow>"
       )
     }
 
@@ -8008,8 +7951,7 @@ fn mathml_function_call(name: &str, args: &[Expr], depth: usize) -> String {
       let re = mathml_inner(&args[0], depth + 1);
       let im = mathml_inner(&args[1], depth + 1);
       format!(
-        "{}<mrow>\n{}\n{}<mo>+</mo>\n{}\n{}<mo>&#8290;</mo>\n{}<mi>&#8520;</mi>\n{}</mrow>",
-        indent, re, inner, im, inner, inner, indent
+        "{indent}<mrow>\n{re}\n{inner}<mo>+</mo>\n{im}\n{inner}<mo>&#8290;</mo>\n{inner}<mi>&#8520;</mi>\n{indent}</mrow>"
       )
     }
 
@@ -8021,7 +7963,7 @@ fn mathml_function_call(name: &str, args: &[Expr], depth: usize) -> String {
       for (i, a) in args_inner.iter().enumerate() {
         parts.push(a.clone());
         if i + 1 < args_inner.len() {
-          parts.push(format!("{}<mo>,</mo>", inner));
+          parts.push(format!("{inner}<mo>,</mo>"));
         }
       }
       format!(
@@ -8164,15 +8106,9 @@ pub fn expr_to_box_form(expr: &Expr) -> String {
   let box_str = expr_to_boxes(expr);
   // If the result is NOT already a box (RowBox, FractionBox, etc.), wrap in RowBox
   if box_str.contains("Box[") {
-    format!(
-      "{}{}{}{}{}",
-      BOX_START, BOX_OPEN, BOX_SEP, box_str, BOX_CLOSE
-    )
+    format!("{BOX_START}{BOX_OPEN}{BOX_SEP}{box_str}{BOX_CLOSE}")
   } else {
-    format!(
-      "{}{}{}RowBox[{{{}}}]{}",
-      BOX_START, BOX_OPEN, BOX_SEP, box_str, BOX_CLOSE
-    )
+    format!("{BOX_START}{BOX_OPEN}{BOX_SEP}RowBox[{{{box_str}}}]{BOX_CLOSE}")
   }
 }
 
@@ -8181,8 +8117,8 @@ pub fn expr_to_box_form(expr: &Expr) -> String {
 pub fn expr_to_boxes(expr: &Expr) -> String {
   match expr {
     // Simple atoms — all quoted in box form
-    Expr::Integer(n) => format!("\"{}\"", n),
-    Expr::BigInteger(n) => format!("\"{}\"", n),
+    Expr::Integer(n) => format!("\"{n}\""),
+    Expr::BigInteger(n) => format!("\"{n}\""),
     Expr::Real(f) => format!("\"{}\"", crate::syntax::format_real(*f)),
     Expr::String(s) => {
       format!(
@@ -8190,7 +8126,7 @@ pub fn expr_to_boxes(expr: &Expr) -> String {
         s.replace('\\', "\\\\").replace('"', "\\\"")
       )
     }
-    Expr::Identifier(name) | Expr::Constant(name) => format!("\"{}\"", name),
+    Expr::Identifier(name) | Expr::Constant(name) => format!("\"{name}\""),
 
     // Unary minus
     Expr::UnaryOp {
@@ -8348,15 +8284,12 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
         // loses the sign, so `Plus[-5, Times[-5, x]]` reads `-5 - 5 x`
         // rather than `-5 + -5 x`. A coefficient of exactly -1 disappears
         // entirely (`-x`, not `-1 x`).
-        match negated_term_boxes(arg) {
-          Some(positive) => {
-            parts.push("\"-\"".to_string());
-            parts.push(positive);
-          }
-          None => {
-            parts.push("\"+\"".to_string());
-            parts.push(expr_to_boxes(arg));
-          }
+        if let Some(positive) = negated_term_boxes(arg) {
+          parts.push("\"-\"".to_string());
+          parts.push(positive);
+        } else {
+          parts.push("\"+\"".to_string());
+          parts.push(expr_to_boxes(arg));
         }
       }
       format!("RowBox[{{{}}}]", parts.join(", "))
@@ -8370,7 +8303,7 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
           return format!("RowBox[{{\"-\", {}}}]", expr_to_boxes(&args[1]));
         }
         let rest = box_function_call("Times", &args[1..]);
-        return format!("RowBox[{{\"-\", {}}}]", rest);
+        return format!("RowBox[{{\"-\", {rest}}}]");
       }
       // Check for fraction form: Times[..., Power[den, -1]]
       let full_expr = unevaluated("Times", args);
@@ -8587,7 +8520,7 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(interpreted);
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   // Empty (or whitespace-only) input is Null, not a value.
   if s.trim().is_empty() {
     return Ok(Expr::Identifier("Null".to_string()));
@@ -8695,8 +8628,7 @@ fn to_expression_syntax_error(src: &str) -> Option<String> {
   } else {
     let snippet = preprocessed[offset..].trim();
     Some(format!(
-      "ToExpression::sntx: Invalid syntax in or before \"{}\".",
-      snippet
+      "ToExpression::sntx: Invalid syntax in or before \"{snippet}\"."
     ))
   }
 }
@@ -8852,9 +8784,9 @@ pub fn string_pad_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?.into()));
   }
 
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   let pad_str = if args.len() == 3 {
-    expr_to_str(&args[2])?
+    expr_to_str(&args[2])
   } else {
     " ".to_string()
   };
@@ -8876,7 +8808,7 @@ pub fn string_pad_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .skip(offset)
       .take(pad_needed)
       .collect();
-    Ok(Expr::String(format!("{}{}", padding, s)))
+    Ok(Expr::String(format!("{padding}{s}")))
   }
 }
 
@@ -8929,9 +8861,9 @@ pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?.into()));
   }
 
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   let pad_str = if args.len() == 3 {
-    expr_to_str(&args[2])?
+    expr_to_str(&args[2])
   } else {
     " ".to_string()
   };
@@ -8951,7 +8883,7 @@ pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .skip(offset)
       .take(pad_needed)
       .collect();
-    Ok(Expr::String(format!("{}{}", s, padding)))
+    Ok(Expr::String(format!("{s}{padding}")))
   }
 }
 
@@ -9040,7 +8972,7 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?.into()));
   }
 
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   let ignore_case = has_ignore_case_option(args);
   let mode = parse_overlaps_option(&args[2..], Overlaps::No);
   let overlaps = mode.overlapping();
@@ -9074,8 +9006,7 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       let re = compile_regex(&pat).map_err(|e| {
         InterpreterError::EvaluationError(format!(
-          "Invalid string pattern: {}",
-          e
+          "Invalid string pattern: {e}"
         ))
       })?;
       find_constraint_spans(&re, &constraints, &s, overlaps).len()
@@ -9084,7 +9015,7 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Fallback to plain string matching.
-  let sub = expr_to_str(&args[1])?;
+  let sub = expr_to_str(&args[1]);
   if sub.is_empty() {
     // The empty pattern matches at every character boundary:
     // StringCount["ab", ""] = 3, StringCount["", ""] = 1
@@ -9142,7 +9073,7 @@ pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?.into()));
   }
 
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   let ignore_case = has_ignore_case_option(args);
 
   // No string is free of the empty pattern: StringFreeQ["", ""] is False
@@ -9159,7 +9090,7 @@ pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(bool_expr(!present));
   }
 
-  let sub = expr_to_str(&args[1])?;
+  let sub = expr_to_str(&args[1]);
   let contains = if ignore_case {
     s.to_lowercase().contains(&sub.to_lowercase())
   } else {
@@ -9183,13 +9114,10 @@ pub fn to_character_code_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::String(s) => s.clone(),
     _ => crate::syntax::expr_to_string(e),
   });
-  let is_utf8 = encoding
-    .as_deref()
-    .map(|e| {
-      let e = e.replace('-', "").to_ascii_lowercase();
-      e == "utf8"
-    })
-    .unwrap_or(false);
+  let is_utf8 = encoding.as_deref().is_some_and(|e| {
+    let e = e.replace('-', "").to_ascii_lowercase();
+    e == "utf8"
+  });
 
   let codes_for = |s: &str| -> Vec<Expr> {
     if is_utf8 {
@@ -9216,7 +9144,7 @@ pub fn to_character_code_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let mut results = Vec::new();
     for item in items {
-      let s = expr_to_str(item)?;
+      let s = expr_to_str(item);
       results.push(Expr::List(codes_for(&s).into()));
     }
     return Ok(Expr::List(results.into()));
@@ -9231,7 +9159,7 @@ pub fn to_character_code_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
     return Ok(unevaluated("ToCharacterCode", args));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   Ok(Expr::List(codes_for(&s).into()))
 }
 
@@ -9249,8 +9177,7 @@ pub fn from_character_code_ast(
     Expr::Integer(n) => {
       let c = char::from_u32(*n as u32).ok_or_else(|| {
         InterpreterError::EvaluationError(format!(
-          "Invalid character code: {}",
-          n
+          "Invalid character code: {n}"
         ))
       })?;
       Ok(Expr::String(c.to_string()))
@@ -9259,14 +9186,12 @@ pub fn from_character_code_ast(
       use num_traits::ToPrimitive;
       let code = n.to_u32().ok_or_else(|| {
         InterpreterError::EvaluationError(format!(
-          "Invalid character code: {}",
-          n
+          "Invalid character code: {n}"
         ))
       })?;
       let c = char::from_u32(code).ok_or_else(|| {
         InterpreterError::EvaluationError(format!(
-          "Invalid character code: {}",
-          n
+          "Invalid character code: {n}"
         ))
       })?;
       Ok(Expr::String(c.to_string()))
@@ -9289,8 +9214,7 @@ pub fn from_character_code_ast(
             use num_traits::ToPrimitive;
             n.to_u32().ok_or_else(|| {
               InterpreterError::EvaluationError(format!(
-                "Invalid character code: {}",
-                n
+                "Invalid character code: {n}"
               ))
             })?
           }
@@ -9302,8 +9226,7 @@ pub fn from_character_code_ast(
         };
         let c = char::from_u32(code).ok_or_else(|| {
           InterpreterError::EvaluationError(format!(
-            "Invalid character code: {}",
-            code
+            "Invalid character code: {code}"
           ))
         })?;
         result.push(c);
@@ -9340,7 +9263,7 @@ pub fn character_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Expr::Integer(n) = e {
       return (*n >= 0).then_some(*n as u32);
     }
-    expr_to_str(e).ok()?.chars().next().map(|c| c as u32)
+    expr_to_str(e).chars().next().map(|c| c as u32)
   };
   let (Some(start), Some(end)) =
     (endpoint_code(&args[0]), endpoint_code(&args[1]))
@@ -9512,29 +9435,26 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // IntegerString uses absolute value (drops sign). Handle BigInteger
   // directly via num-bigint's to_str_radix; fall back to i128 for
   // smaller integers.
-  let mut result = match &args[0] {
-    Expr::BigInteger(n) => {
-      use num_bigint::Sign;
-      match n.sign() {
-        Sign::Minus => (-n).to_str_radix(base),
-        _ => n.to_str_radix(base),
-      }
+  let mut result = if let Expr::BigInteger(n) = &args[0] {
+    use num_bigint::Sign;
+    match n.sign() {
+      Sign::Minus => (-n).to_str_radix(base),
+      _ => n.to_str_radix(base),
     }
-    _ => {
-      let n = expr_to_int(&args[0])?;
-      let abs_n = n.unsigned_abs();
-      if abs_n == 0 {
-        "0".to_string()
-      } else {
-        let mut val = abs_n;
-        let mut digits = String::new();
-        while val > 0 {
-          let digit = (val % base as u128) as u32;
-          digits.push(char::from_digit(digit, base).unwrap());
-          val /= base as u128;
-        }
-        digits.chars().rev().collect()
+  } else {
+    let n = expr_to_int(&args[0])?;
+    let abs_n = n.unsigned_abs();
+    if abs_n == 0 {
+      "0".to_string()
+    } else {
+      let mut val = abs_n;
+      let mut digits = String::new();
+      while val > 0 {
+        let digit = (val % base as u128) as u32;
+        digits.push(char::from_digit(digit, base).unwrap());
+        val /= base as u128;
       }
+      digits.chars().rev().collect()
     }
   };
 
@@ -9545,7 +9465,7 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Pad with zeros on the left
       let padding: String =
         std::iter::repeat_n('0', target_len - result.len()).collect();
-      result = format!("{}{}", padding, result);
+      result = format!("{padding}{result}");
     } else if result.len() > target_len {
       // Truncate from the left (keep rightmost digits)
       result = result[result.len() - target_len..].to_string();
@@ -9576,15 +9496,16 @@ pub fn alphabet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let letters: Vec<Expr> = match lang {
-    None | Some("English") | Some("French") | Some("German")
-    | Some("Italian") | Some("Dutch") | Some("Portuguese") | Some("Latin") => {
-      ascii
-    }
+    None
+    | Some(
+      "English" | "French" | "German" | "Italian" | "Dutch" | "Portuguese"
+      | "Latin",
+    ) => ascii,
     Some("Spanish") => chars_to_list("abcdefghijklmnñopqrstuvwxyz"),
-    Some("Swedish") | Some("Finnish") => {
+    Some("Swedish" | "Finnish") => {
       chars_to_list("abcdefghijklmnopqrstuvwxyzåäö")
     }
-    Some("Norwegian") | Some("Danish") => {
+    Some("Norwegian" | "Danish") => {
       chars_to_list("abcdefghijklmnopqrstuvwxyzæøå")
     }
     Some("Polish") => [
@@ -9629,9 +9550,8 @@ pub fn from_letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 2 {
     let unevaluated = || Ok(unevaluated("FromLetterNumber", args));
     let alphabet = alphabet_ast(std::slice::from_ref(&args[1]))?;
-    let letters = match &alphabet {
-      Expr::List(items) => items,
-      _ => return unevaluated(),
+    let Expr::List(letters) = &alphabet else {
+      return unevaluated();
     };
     let len = letters.len() as i128;
     let from_index = |n: i128| -> Expr {
@@ -9892,7 +9812,7 @@ pub fn letter_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::String(s) => {
-      let result = s.chars().all(|c| c.is_alphabetic());
+      let result = s.chars().all(char::is_alphabetic);
       Ok(bool_expr(result))
     }
     _ => Ok(bool_expr(false)),
@@ -10034,8 +9954,8 @@ pub fn string_insert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results.into()));
   }
 
-  let s = expr_to_str(&args[0])?;
-  let insert = expr_to_str(&args[1])?;
+  let s = expr_to_str(&args[0]);
+  let insert = expr_to_str(&args[1]);
 
   // Handle list of positions
   if let Expr::List(positions) = &args[2] {
@@ -10059,7 +9979,7 @@ pub fn string_insert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     // Sort positions in ascending order
-    abs_positions.sort();
+    abs_positions.sort_unstable();
 
     // Build result by inserting at each position, adjusting for previous insertions
     let mut result = String::new();
@@ -10086,9 +10006,8 @@ pub fn string_insert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Positive n inserts before the n-th character, negative counts from the
   // end. Out-of-range positions leave the call unevaluated.
-  let pos = match string_insert_index(n, len) {
-    Some(pos) => pos,
-    None => return Ok(string_insert_invalid(args, n)),
+  let Some(pos) = string_insert_index(n, len) else {
+    return Ok(string_insert_invalid(args, n));
   };
 
   let mut result: String = chars[..pos].iter().collect();
@@ -10111,12 +10030,7 @@ pub fn string_replace_part_ast(
     ));
   }
 
-  let s = match expr_to_str(&args[0]) {
-    Ok(s) => s,
-    Err(_) => {
-      return Ok(unevaluated("StringReplacePart", args));
-    }
-  };
+  let s = expr_to_str(&args[0]);
   let chars: Vec<char> = s.chars().collect();
   let len = chars.len() as i128;
 
@@ -10134,9 +10048,8 @@ pub fn string_replace_part_ast(
   // used to raise a hard error, which took the whole evaluation down.
   let repart = |m: i128, n: i128| {
     crate::emit_message(&format!(
-      "StringReplacePart::repart: Cannot replace positions {} through {} in \
-       \"{}\".",
-      m, n, s
+      "StringReplacePart::repart: Cannot replace positions {m} through {n} in \
+       \"{s}\"."
     ));
   };
 
@@ -10148,12 +10061,11 @@ pub fn string_replace_part_ast(
     }
     let m = expr_to_int(&elems[0]).ok()?;
     let n = expr_to_int(&elems[1]).ok()?;
-    match (resolve_index(m), resolve_index(n)) {
-      (Some(start), Some(end)) => Some((start, end)),
-      _ => {
-        repart(m, n);
-        None
-      }
+    if let (Some(start), Some(end)) = (resolve_index(m), resolve_index(n)) {
+      Some((start, end))
+    } else {
+      repart(m, n);
+      None
     }
   };
 
@@ -10182,7 +10094,7 @@ pub fn string_replace_part_ast(
       let Some((start, end)) = parse_range(elems) else {
         return Ok(unevaluated("StringReplacePart", args));
       };
-      let replacement = expr_to_str(&args[1])?;
+      let replacement = expr_to_str(&args[1]);
       let mut result = String::new();
       result.extend(&chars[..start]);
       result.push_str(&replacement);
@@ -10208,22 +10120,16 @@ pub fn string_replace_part_ast(
       }
 
       // Get replacements (single string or list of strings)
-      let replacements: Vec<String> = match &args[1] {
-        Expr::List(repls) => {
-          if repls.len() != range_vec.len() {
-            return Err(InterpreterError::EvaluationError(
-              "StringReplacePart: number of replacements must match number of ranges".into(),
-            ));
-          }
-          repls
-            .iter()
-            .map(expr_to_str)
-            .collect::<Result<Vec<_>, _>>()?
+      let replacements: Vec<String> = if let Expr::List(repls) = &args[1] {
+        if repls.len() != range_vec.len() {
+          return Err(InterpreterError::EvaluationError(
+            "StringReplacePart: number of replacements must match number of ranges".into(),
+          ));
         }
-        _ => {
-          let r = expr_to_str(&args[1])?;
-          vec![r; range_vec.len()]
-        }
+        repls.iter().map(expr_to_str).collect::<Vec<_>>()
+      } else {
+        let r = expr_to_str(&args[1]);
+        vec![r; range_vec.len()]
       };
 
       // Sort ranges by start position, along with their replacements
@@ -10275,7 +10181,7 @@ pub fn string_delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   let ignore_case = has_ignore_case_option(args);
 
   // Deleting is replacing every match of the pattern with the empty string.
@@ -10301,12 +10207,12 @@ pub fn string_delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[1] {
     let mut result = s;
     for item in items {
-      let sub = expr_to_str(item)?;
+      let sub = expr_to_str(item);
       result = result.replace(&sub, "");
     }
-    return Ok(Expr::String(result));
+    return Ok(Expr::String(result.clone()));
   }
-  let sub = expr_to_str(&args[1])?;
+  let sub = expr_to_str(&args[1]);
   Ok(Expr::String(s.replace(&sub, "")))
 }
 
@@ -10331,7 +10237,7 @@ pub fn capitalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
 
   // Capitalize the first character of a whitespace-delimited word.
   let cap_word = |w: &str| -> String {
@@ -10414,14 +10320,14 @@ pub fn decapitalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   if s.is_empty() {
     return Ok(Expr::String(s));
   }
   let mut chars = s.chars();
   let first = chars.next().unwrap().to_lowercase().to_string();
   let rest: String = chars.collect();
-  Ok(Expr::String(format!("{}{}", first, rest)))
+  Ok(Expr::String(format!("{first}{rest}")))
 }
 
 // ─── DigitQ ────────────────────────────────────────────────────────
@@ -10452,28 +10358,25 @@ pub fn edit_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let ignore_case = args.len() == 3 && extract_ignore_case(&args[2..]);
 
-  fn to_tokens(
-    expr: &Expr,
-    lower: bool,
-  ) -> Result<Vec<String>, InterpreterError> {
+  fn to_tokens(expr: &Expr, lower: bool) -> std::vec::Vec<std::string::String> {
     match expr {
       Expr::String(s) => {
         let s = if lower { s.to_lowercase() } else { s.clone() };
-        Ok(s.chars().map(|c| c.to_string()).collect())
+        s.chars().map(|c| c.to_string()).collect()
       }
       Expr::List(items) => {
-        Ok(items.iter().map(crate::syntax::expr_to_output).collect())
+        items.iter().map(crate::syntax::expr_to_output).collect()
       }
       _ => {
-        let s = expr_to_str(expr)?;
+        let s = expr_to_str(expr);
         let s = if lower { s.to_lowercase() } else { s };
-        Ok(s.chars().map(|c| c.to_string()).collect())
+        s.chars().map(|c| c.to_string()).collect()
       }
     }
   }
 
-  let a = to_tokens(&args[0], ignore_case)?;
-  let b = to_tokens(&args[1], ignore_case)?;
+  let a = to_tokens(&args[0], ignore_case);
+  let b = to_tokens(&args[1], ignore_case);
   let n = a.len();
   let m = b.len();
 
@@ -10486,7 +10389,7 @@ pub fn edit_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   for i in 1..=n {
     for j in 1..=m {
-      let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+      let cost = usize::from(a[i - 1] != b[j - 1]);
       dp[i][j] = (dp[i - 1][j] + 1)
         .min(dp[i][j - 1] + 1)
         .min(dp[i - 1][j - 1] + cost);
@@ -10497,15 +10400,15 @@ pub fn edit_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Tokenize an alignment argument: a string into its characters, a list into
 /// its (output-formatted) elements.
-fn alignment_tokens(expr: &Expr) -> Result<Vec<String>, InterpreterError> {
+fn alignment_tokens(expr: &Expr) -> std::vec::Vec<std::string::String> {
   match expr {
-    Expr::String(s) => Ok(s.chars().map(|c| c.to_string()).collect()),
+    Expr::String(s) => s.chars().map(|c| c.to_string()).collect(),
     Expr::List(items) => {
-      Ok(items.iter().map(crate::syntax::expr_to_output).collect())
+      items.iter().map(crate::syntax::expr_to_output).collect()
     }
     _ => {
-      let s = expr_to_str(expr)?;
-      Ok(s.chars().map(|c| c.to_string()).collect())
+      let s = expr_to_str(expr);
+      s.chars().map(|c| c.to_string()).collect()
     }
   }
 }
@@ -10519,8 +10422,8 @@ pub fn needleman_wunsch_similarity_ast(
   if args.len() != 2 {
     return Ok(unevaluated("NeedlemanWunschSimilarity", args));
   }
-  let a = alignment_tokens(&args[0])?;
-  let b = alignment_tokens(&args[1])?;
+  let a = alignment_tokens(&args[0]);
+  let b = alignment_tokens(&args[1]);
   let (n, m) = (a.len(), b.len());
   if n == 0 || m == 0 {
     return Ok(Expr::Real(n.max(m) as f64));
@@ -10552,8 +10455,8 @@ pub fn smith_waterman_similarity_ast(
   if args.len() != 2 {
     return Ok(unevaluated("SmithWatermanSimilarity", args));
   }
-  let a = alignment_tokens(&args[0])?;
-  let b = alignment_tokens(&args[1])?;
+  let a = alignment_tokens(&args[0]);
+  let b = alignment_tokens(&args[1]);
   let (n, m) = (a.len(), b.len());
   let mut dp = vec![vec![0i64; m + 1]; n + 1];
   let mut best = 0i64;
@@ -10584,28 +10487,25 @@ pub fn damerau_levenshtein_distance_ast(
   }
   let ignore_case = args.len() == 3 && extract_ignore_case(&args[2..]);
 
-  fn to_tokens(
-    expr: &Expr,
-    lower: bool,
-  ) -> Result<Vec<String>, InterpreterError> {
+  fn to_tokens(expr: &Expr, lower: bool) -> std::vec::Vec<std::string::String> {
     match expr {
       Expr::String(s) => {
         let s = if lower { s.to_lowercase() } else { s.clone() };
-        Ok(s.chars().map(|c| c.to_string()).collect())
+        s.chars().map(|c| c.to_string()).collect()
       }
       Expr::List(items) => {
-        Ok(items.iter().map(crate::syntax::expr_to_output).collect())
+        items.iter().map(crate::syntax::expr_to_output).collect()
       }
       _ => {
-        let s = expr_to_str(expr)?;
+        let s = expr_to_str(expr);
         let s = if lower { s.to_lowercase() } else { s };
-        Ok(s.chars().map(|c| c.to_string()).collect())
+        s.chars().map(|c| c.to_string()).collect()
       }
     }
   }
 
-  let a = to_tokens(&args[0], ignore_case)?;
-  let b = to_tokens(&args[1], ignore_case)?;
+  let a = to_tokens(&args[0], ignore_case);
+  let b = to_tokens(&args[1], ignore_case);
   let n = a.len();
   let m = b.len();
 
@@ -10721,12 +10621,18 @@ pub fn longest_common_subsequence_ast(
     return Ok(Expr::List(sub.into()));
   }
 
-  let s1 = expr_to_str(&args[0])?;
-  let s2 = expr_to_str(&args[1])?;
+  let s1 = expr_to_str(&args[0]);
+  let s2 = expr_to_str(&args[1]);
   let chars1: Vec<char> = s1.chars().collect();
   let chars2: Vec<char> = s2.chars().collect();
-  let t1: Vec<String> = chars1.iter().map(|c| c.to_string()).collect();
-  let t2: Vec<String> = chars2.iter().map(|c| c.to_string()).collect();
+  let t1: Vec<String> = chars1
+    .iter()
+    .map(std::string::ToString::to_string)
+    .collect();
+  let t2: Vec<String> = chars2
+    .iter()
+    .map(std::string::ToString::to_string)
+    .collect();
   let (start, _, len) = longest_common_run(&t1, &t2);
   let result: String = chars1[start..start + len].iter().collect();
   Ok(Expr::String(result))
@@ -10744,11 +10650,9 @@ pub fn longest_common_subsequence_positions_ast(
       "LongestCommonSubsequencePositions expects exactly 2 arguments".into(),
     ));
   }
-  let (t1, t2) = match (lcs_tokens(&args[0]), lcs_tokens(&args[1])) {
-    (Some(t1), Some(t2)) => (t1, t2),
-    _ => {
-      return Ok(unevaluated("LongestCommonSubsequencePositions", args));
-    }
+  let (Some(t1), Some(t2)) = (lcs_tokens(&args[0]), lcs_tokens(&args[1]))
+  else {
+    return Ok(unevaluated("LongestCommonSubsequencePositions", args));
   };
   let (start1, start2, len) = longest_common_run(&t1, &t2);
   if len == 0 {
@@ -10793,12 +10697,18 @@ pub fn longest_common_sequence_ast(
     return Ok(Expr::List(sub.into()));
   }
 
-  let s1 = expr_to_str(&args[0])?;
-  let s2 = expr_to_str(&args[1])?;
+  let s1 = expr_to_str(&args[0]);
+  let s2 = expr_to_str(&args[1]);
   let chars1: Vec<char> = s1.chars().collect();
   let chars2: Vec<char> = s2.chars().collect();
-  let t1: Vec<String> = chars1.iter().map(|c| c.to_string()).collect();
-  let t2: Vec<String> = chars2.iter().map(|c| c.to_string()).collect();
+  let t1: Vec<String> = chars1
+    .iter()
+    .map(std::string::ToString::to_string)
+    .collect();
+  let t2: Vec<String> = chars2
+    .iter()
+    .map(std::string::ToString::to_string)
+    .collect();
   let result: String = lcs_index_pairs(&t1, &t2)
     .iter()
     .map(|&(i, _)| chars1[i])
@@ -11078,12 +10988,12 @@ pub fn string_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A list of strings is handled string by string.
   if let Expr::List(items) = &args[0] {
     let mut per_string = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       per_string.push(string_part_ast(&[item.clone(), args[1].clone()])?);
     }
     return Ok(Expr::List(per_string.into()));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   let chars: Vec<char> = s.chars().collect();
   let len = chars.len() as i128;
 
@@ -11119,31 +11029,28 @@ pub fn string_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     unevaluated("StringPart", args)
   };
 
-  match &args[1] {
-    Expr::List(indices) => {
-      // Inside a list, anything unusable is reported as the whole list
-      // not existing rather than as a bad specification.
-      let mut result = Vec::new();
-      for idx_expr in indices {
-        let Ok(n) = expr_to_int(idx_expr) else {
-          return Ok(partw_unevaluated());
-        };
-        let Some(idx) = resolve_index(n, len) else {
-          return Ok(partw_unevaluated());
-        };
-        result.push(Expr::String(chars[idx].to_string()));
-      }
-      Ok(Expr::List(result.into()))
-    }
-    _ => {
-      let Ok(n) = expr_to_int(&args[1]) else {
-        return Ok(pkspec1_unevaluated());
+  if let Expr::List(indices) = &args[1] {
+    // Inside a list, anything unusable is reported as the whole list
+    // not existing rather than as a bad specification.
+    let mut result = Vec::new();
+    for idx_expr in indices {
+      let Ok(n) = expr_to_int(idx_expr) else {
+        return Ok(partw_unevaluated());
       };
       let Some(idx) = resolve_index(n, len) else {
         return Ok(partw_unevaluated());
       };
-      Ok(Expr::String(chars[idx].to_string()))
+      result.push(Expr::String(chars[idx].to_string()));
     }
+    Ok(Expr::List(result.into()))
+  } else {
+    let Ok(n) = expr_to_int(&args[1]) else {
+      return Ok(pkspec1_unevaluated());
+    };
+    let Some(idx) = resolve_index(n, len) else {
+      return Ok(partw_unevaluated());
+    };
+    Ok(Expr::String(chars[idx].to_string()))
   }
 }
 
@@ -11159,7 +11066,7 @@ pub fn string_take_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // StringTake / StringDrop results.
   if let Expr::List(items) = &args[0] {
     let mut per_string = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       per_string.push(string_take_drop_ast(&[item.clone(), args[1].clone()])?);
     }
     return Ok(Expr::List(per_string.into()));
@@ -11178,8 +11085,8 @@ pub fn hamming_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let ignore_case = args.len() == 3 && extract_ignore_case(&args[2..]);
-  let s1 = expr_to_str(&args[0])?;
-  let s2 = expr_to_str(&args[1])?;
+  let s1 = expr_to_str(&args[0]);
+  let s2 = expr_to_str(&args[1]);
   let s1 = if ignore_case { s1.to_lowercase() } else { s1 };
   let s2 = if ignore_case { s2.to_lowercase() } else { s2 };
   let chars1: Vec<char> = s1.chars().collect();
@@ -11190,8 +11097,8 @@ pub fn hamming_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // an evaluation abort.
     crate::emit_message(&format!(
       "HammingDistance::idim: {} and {} must have the same length.",
-      expr_to_str(&args[0])?,
-      expr_to_str(&args[1])?
+      expr_to_str(&args[0]),
+      expr_to_str(&args[1])
     ));
     return Ok(unevaluated("HammingDistance", args));
   }
@@ -11223,7 +11130,7 @@ pub fn text_word_tokens(s: &str) -> Vec<String> {
 /// Case-sensitive by default; `IgnoreCase -> True` folds case.
 pub fn word_frequency_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("WordFrequency", args));
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   let ignore_case = extract_ignore_case(&args[2..]);
   let words = text_word_tokens(&s);
   let total = words.len();
@@ -11249,7 +11156,7 @@ pub fn word_frequency_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::String(word) => Ok(Expr::Real(frequency(word))),
     Expr::List(items) => {
       let mut pairs = Vec::with_capacity(items.len());
-      for item in items.iter() {
+      for item in items {
         match item {
           Expr::String(w) => {
             pairs.push((Expr::String(w.clone()), Expr::Real(frequency(w))));
@@ -11264,7 +11171,7 @@ pub fn word_frequency_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 pub fn word_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   let n = if args.len() == 2 {
     let n = expr_to_int(&args[1])?;
     if n < 1 {
@@ -11370,7 +11277,7 @@ pub fn character_counts_ngram_ast(
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   // The n-gram length has to be a positive whole number; note that this
   // message names no call.
   let Some(n) = expr_to_int(&args[1]).ok().filter(|n| *n >= 1) else {
@@ -11397,7 +11304,7 @@ pub fn letter_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   // Count letters preserving first-occurrence order.
   let mut counts: Vec<(char, i128)> = Vec::new();
   let mut seen: std::collections::HashMap<char, usize> =
@@ -11438,7 +11345,7 @@ pub fn letter_counts_ngram_ast(
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   // The n-gram length has to be a positive whole number; note that this
   // message names no call.
   let Some(n) = expr_to_int(&args[1]).ok().filter(|n| *n >= 1) else {
@@ -11486,7 +11393,7 @@ pub fn character_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
 
   // Count characters preserving first-occurrence order
   let mut counts: Vec<(char, i128)> = Vec::new();
@@ -11520,7 +11427,7 @@ pub fn remove_diacritics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "RemoveDiacritics expects exactly 1 argument".into(),
     ));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   use unicode_normalization::UnicodeNormalization;
   // NFD decompose, then filter out combining marks (Unicode category Mn)
   let result: String = s.nfd().filter(|c| !is_combining_mark(*c)).collect();
@@ -11549,20 +11456,19 @@ pub fn string_rotate_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StringRotateLeft expects 1 or 2 arguments".into(),
     ));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   let n = if args.len() == 2 {
-    match expr_to_int(&args[1]) {
-      Ok(n) => n,
-      Err(_) => {
-        crate::emit_message(&format!(
-          "StringRotateLeft::int: Integer expected at position 2 in {}.",
-          crate::syntax::format_expr(
-            &unevaluated("StringRotateLeft", args),
-            crate::syntax::ExprForm::Output
-          )
-        ));
-        return Ok(unevaluated("StringRotateLeft", args));
-      }
+    if let Ok(n) = expr_to_int(&args[1]) {
+      n
+    } else {
+      crate::emit_message(&format!(
+        "StringRotateLeft::int: Integer expected at position 2 in {}.",
+        crate::syntax::format_expr(
+          &unevaluated("StringRotateLeft", args),
+          crate::syntax::ExprForm::Output
+        )
+      ));
+      return Ok(unevaluated("StringRotateLeft", args));
     }
   } else {
     1
@@ -11590,20 +11496,19 @@ pub fn string_rotate_right_ast(
       "StringRotateRight expects 1 or 2 arguments".into(),
     ));
   }
-  let s = expr_to_str(&args[0])?;
+  let s = expr_to_str(&args[0]);
   let n = if args.len() == 2 {
-    match expr_to_int(&args[1]) {
-      Ok(n) => n,
-      Err(_) => {
-        crate::emit_message(&format!(
-          "StringRotateRight::int: Integer expected at position 2 in {}.",
-          crate::syntax::format_expr(
-            &unevaluated("StringRotateRight", args),
-            crate::syntax::ExprForm::Output
-          )
-        ));
-        return Ok(unevaluated("StringRotateRight", args));
-      }
+    if let Ok(n) = expr_to_int(&args[1]) {
+      n
+    } else {
+      crate::emit_message(&format!(
+        "StringRotateRight::int: Integer expected at position 2 in {}.",
+        crate::syntax::format_expr(
+          &unevaluated("StringRotateRight", args),
+          crate::syntax::ExprForm::Output
+        )
+      ));
+      return Ok(unevaluated("StringRotateRight", args));
     }
   } else {
     1
@@ -11744,7 +11649,7 @@ pub fn hash_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let hash_type = if args.len() >= 2 {
-    expr_to_str(&args[1])?
+    expr_to_str(&args[1])
   } else {
     "Expression".to_string()
   };
@@ -11764,11 +11669,11 @@ pub fn hash_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the string of those bytes; anything else is hashed over how it prints.
   let data = match byte_array_bytes(&args[0]) {
     Some(bytes) => bytes,
-    None => expr_to_str(&args[0])?.into_bytes(),
+    None => expr_to_str(&args[0]).into_bytes(),
   };
 
   let format = if args.len() == 3 {
-    expr_to_str(&args[2])?
+    expr_to_str(&args[2])
   } else {
     "Integer".to_string()
   };
@@ -11779,14 +11684,11 @@ pub fn hash_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
     return Ok(unevaluated("Hash", args));
   };
-  match format_digest(&hex_string, &format) {
-    Some(result) => Ok(result),
-    None => {
-      crate::emit_message(&format!(
-        "Hash::uform: Invalid hash format {format}."
-      ));
-      Ok(unevaluated("Hash", args))
-    }
+  if let Some(result) = format_digest(&hex_string, &format) {
+    Ok(result)
+  } else {
+    crate::emit_message(&format!("Hash::uform: Invalid hash format {format}."));
+    Ok(unevaluated("Hash", args))
   }
 }
 
@@ -11794,7 +11696,11 @@ pub fn hash_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// one wolframscript names.
 pub fn hash_bytes(data: &[u8], hash_type: &str) -> Option<String> {
   let hex = |digest: &[u8]| -> String {
-    digest.iter().map(|b| format!("{:02x}", b)).collect()
+    use std::fmt::Write;
+    digest.iter().fold(String::new(), |mut out, b| {
+      let _ = write!(out, "{b:02x}");
+      out
+    })
   };
   let hex_string = match hash_type {
     "MD2" => hex(&md2(data)),
@@ -11899,7 +11805,7 @@ pub fn format_digest(hex_string: &str, format: &str) -> Option<Expr> {
         .pow(bytes.len() as u32)
         .to_string()
         .len();
-      Some(Expr::String(format!("{:0>width$}", n, width = width)))
+      Some(Expr::String(format!("{n:0>width$}")))
     }
     "Integer" => {
       let n = num_bigint::BigInt::parse_bytes(hex_string.as_bytes(), 16)
@@ -11931,15 +11837,15 @@ pub fn compress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
   encoder.write_all(repr.as_bytes()).map_err(|e| {
-    InterpreterError::EvaluationError(format!("Compress failed: {}", e))
+    InterpreterError::EvaluationError(format!("Compress failed: {e}"))
   })?;
   let compressed = encoder.finish().map_err(|e| {
-    InterpreterError::EvaluationError(format!("Compress failed: {}", e))
+    InterpreterError::EvaluationError(format!("Compress failed: {e}"))
   })?;
 
   use base64::Engine;
   let encoded = base64::engine::general_purpose::STANDARD.encode(&compressed);
-  Ok(Expr::String(format!("1:eJx{}", encoded)))
+  Ok(Expr::String(format!("1:eJx{encoded}")))
 }
 
 /// Inflate a `"1:..."` compressed string to raw bytes, accepting both
@@ -11997,13 +11903,10 @@ fn decompress_to_expr(s: &str) -> Result<Expr, InterpreterError> {
   }
 
   let text = String::from_utf8(bytes).map_err(|e| {
-    InterpreterError::EvaluationError(format!(
-      "Uncompress decode failed: {}",
-      e
-    ))
+    InterpreterError::EvaluationError(format!("Uncompress decode failed: {e}"))
   })?;
   crate::syntax::string_to_expr(&text).map_err(|e| {
-    InterpreterError::EvaluationError(format!("Uncompress parse failed: {}", e))
+    InterpreterError::EvaluationError(format!("Uncompress parse failed: {e}"))
   })
 }
 
@@ -12086,8 +11989,7 @@ fn readlist_get_text(source: &Expr) -> Result<String, InterpreterError> {
     #[cfg(not(target_arch = "wasm32"))]
     Expr::String(path) => std::fs::read_to_string(path).map_err(|_| {
       InterpreterError::EvaluationError(format!(
-        "ReadList::noopen: Cannot open {}.",
-        path
+        "ReadList::noopen: Cannot open {path}."
       ))
     }),
     _ => Err(InterpreterError::EvaluationError(
@@ -12126,8 +12028,7 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .collect::<Vec<_>>()
           .join(", ");
         crate::emit_message(&format!(
-          "ReadList::intnm: Non-negative machine-sized integer expected at position 3 in ReadList[{}].",
-          formatted_args
+          "ReadList::intnm: Non-negative machine-sized integer expected at position 3 in ReadList[{formatted_args}]."
         ));
         return Ok(unevaluated("ReadList", args));
       }
@@ -12138,7 +12039,7 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Handle composite types like {Word, Word}
   if let Expr::List(types) = read_type {
-    return read_list_record(&text, types, max_count);
+    return Ok(read_list_record(&text, types, max_count));
   }
 
   let type_name = match read_type {
@@ -12200,14 +12101,13 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         {
           break;
         }
-        match crate::syntax::string_to_expr(trimmed) {
-          Ok(expr) => match crate::evaluator::evaluate_expr_to_expr(&expr) {
+        if let Ok(expr) = crate::syntax::string_to_expr(trimmed) {
+          match crate::evaluator::evaluate_expr_to_expr(&expr) {
             Ok(val) => results.push(val),
             Err(_) => results.push(expr),
-          },
-          Err(_) => {
-            // If parsing fails, skip
           }
+        } else {
+          // If parsing fails, skip
         }
       }
     }
@@ -12221,7 +12121,7 @@ fn read_list_record(
   text: &str,
   types: &[Expr],
   max_count: Option<usize>,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let mut results = Vec::new();
 
   for line in text.lines() {
@@ -12271,7 +12171,7 @@ fn read_list_record(
     results.push(Expr::List(record.into()));
   }
 
-  Ok(Expr::List(results.into()))
+  Expr::List(results.into())
 }
 
 /// Convert an expression to C language format
@@ -12280,7 +12180,7 @@ fn read_list_record(
 fn flatten_times(expr: &Expr, out: &mut Vec<Expr>) {
   match expr {
     Expr::FunctionCall { name, args } if name == "Times" => {
-      for a in args.iter() {
+      for a in args {
         flatten_times(a, out);
       }
     }
@@ -12313,7 +12213,7 @@ fn c_like_factor(expr: &Expr, fortran: bool) -> String {
       }
     )
   {
-    format!("({})", s)
+    format!("({s})")
   } else {
     s
   }
@@ -12365,7 +12265,7 @@ fn c_like_times(args: &[Expr], fortran: bool) -> String {
       if *p != 1 {
         num.push(p.to_string());
       }
-      den.push(format!("{}.", q));
+      den.push(format!("{q}."));
       continue;
     }
     num.push(c_like_factor(a, fortran));
@@ -12394,9 +12294,9 @@ fn c_like_times(args: &[Expr], fortran: bool) -> String {
     format!("{}/{}", num_s, group(&den))
   };
   if neg && compound {
-    format!("-({})", body)
+    format!("-({body})")
   } else if neg {
-    format!("-{}", body)
+    format!("-{body}")
   } else {
     body
   }
@@ -12461,11 +12361,11 @@ fn c_like_comparison(
 /// (`1000000.` is `1.e6`, `0.000001` is `1.e-6`).
 fn c_like_real(value: f64) -> String {
   let plain = |v: f64| -> String {
-    let s = format!("{}", v);
+    let s = format!("{v}");
     if s.contains('.') || s.contains('e') || s.contains('E') {
       s
     } else {
-      format!("{}.", s)
+      format!("{s}.")
     }
   };
   if value == 0.0 || !value.is_finite() {
@@ -12475,10 +12375,10 @@ fn c_like_real(value: f64) -> String {
   if (-6..6).contains(&exponent) {
     return plain(value);
   }
-  let scientific = format!("{:e}", value);
+  let scientific = format!("{value:e}");
   match scientific.split_once('e') {
     Some((mantissa, exp)) if !mantissa.contains('.') => {
-      format!("{}.e{}", mantissa, exp)
+      format!("{mantissa}.e{exp}")
     }
     _ => scientific,
   }
@@ -12597,7 +12497,7 @@ pub fn expr_to_c(expr: &Expr) -> String {
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),
     Expr::Real(f) => c_like_real(*f),
-    Expr::String(s) => format!("\"{}\"", s),
+    Expr::String(s) => format!("\"{s}\""),
     Expr::Identifier(name) => name.clone(),
     Expr::Constant(name) => name.clone(),
     Expr::FunctionCall { name, args } => match name.as_str() {
@@ -12632,7 +12532,7 @@ pub fn expr_to_c(expr: &Expr) -> String {
           if s.contains('.') || s.contains('e') || s.contains('E') {
             s
           } else {
-            format!("{}.", s)
+            format!("{s}.")
           }
         } else {
           format!("{}/{}", expr_to_c(&args[0]), c_paren(&args[1]))
@@ -12644,14 +12544,14 @@ pub fn expr_to_c(expr: &Expr) -> String {
       let l = expr_to_c(left);
       let r = expr_to_c(right);
       match op {
-        BinaryOperator::Plus => format!("{} + {}", l, r),
-        BinaryOperator::Minus => format!("{} - {}", l, r),
+        BinaryOperator::Plus => format!("{l} + {r}"),
+        BinaryOperator::Minus => format!("{l} - {r}"),
         BinaryOperator::Times => {
           let mut factors = Vec::new();
           flatten_times(expr, &mut factors);
           c_like_times(&factors, false)
         }
-        BinaryOperator::Divide => format!("{}/{}", l, r),
+        BinaryOperator::Divide => format!("{l}/{r}"),
         BinaryOperator::Power => {
           if matches!(right.as_ref(), Expr::Integer(-1)) {
             format!("1/{}", c_paren(left))
@@ -12660,10 +12560,10 @@ pub fn expr_to_c(expr: &Expr) -> String {
           } else if is_rational_exponent(right, -1, 2) {
             format!("1/Sqrt({})", expr_to_c(left))
           } else {
-            format!("Power({},{})", l, r)
+            format!("Power({l},{r})")
           }
         }
-        _ => format!("{:?}({},{})", op, l, r),
+        _ => format!("{op:?}({l},{r})"),
       }
     }
     Expr::UnaryOp {
@@ -12694,15 +12594,15 @@ pub fn expr_to_c(expr: &Expr) -> String {
 fn c_paren(expr: &Expr) -> String {
   let s = expr_to_c(expr);
   match expr {
-    Expr::FunctionCall { name, .. } if name == "Plus" => format!("({})", s),
+    Expr::FunctionCall { name, .. } if name == "Plus" => format!("({s})"),
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
       ..
-    } => format!("({})", s),
+    } => format!("({s})"),
     Expr::BinaryOp {
       op: BinaryOperator::Minus,
       ..
-    } => format!("({})", s),
+    } => format!("({s})"),
     _ => s,
   }
 }
@@ -12724,7 +12624,7 @@ pub fn expr_to_fortran(expr: &Expr) -> String {
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),
     Expr::Real(f) => c_like_real(*f),
-    Expr::String(s) => format!("\"{}\"", s),
+    Expr::String(s) => format!("\"{s}\""),
     Expr::Identifier(name) => name.clone(),
     Expr::Constant(name) => name.clone(),
     Expr::FunctionCall { name, args } => match name.as_str() {
@@ -12753,10 +12653,10 @@ pub fn expr_to_fortran(expr: &Expr) -> String {
         // Wolfram FortranForm evaluates rationals to decimal
         if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
           let val = *n as f64 / *d as f64;
-          let s = format!("{}", val);
+          let s = format!("{val}");
           // Ensure decimal point
           if !s.contains('.') && !s.contains('e') && !s.contains('E') {
-            format!("{}.", s)
+            format!("{s}.")
           } else {
             s
           }
@@ -12776,16 +12676,16 @@ pub fn expr_to_fortran(expr: &Expr) -> String {
       let l = expr_to_fortran(left);
       let r = expr_to_fortran(right);
       match op {
-        BinaryOperator::Plus => format!("{} + {}", l, r),
-        BinaryOperator::Minus => format!("{} - {}", l, r),
+        BinaryOperator::Plus => format!("{l} + {r}"),
+        BinaryOperator::Minus => format!("{l} - {r}"),
         BinaryOperator::Times => {
           let mut factors = Vec::new();
           flatten_times(expr, &mut factors);
           c_like_times(&factors, true)
         }
-        BinaryOperator::Divide => format!("{}/{}", l, r),
+        BinaryOperator::Divide => format!("{l}/{r}"),
         BinaryOperator::Power => fortran_power(left, right),
-        _ => format!("{:?}({},{})", op, l, r),
+        _ => format!("{op:?}({l},{r})"),
       }
     }
     Expr::UnaryOp {
@@ -12871,7 +12771,7 @@ fn fortran_power(base: &Expr, exponent: &Expr) -> String {
       expr_to_fortran(base)
     },
     if exponent_needs_parens {
-      format!("({})", exponent_text)
+      format!("({exponent_text})")
     } else {
       exponent_text
     }
@@ -12882,20 +12782,20 @@ fn fortran_power(base: &Expr, exponent: &Expr) -> String {
 fn fortran_paren(expr: &Expr) -> String {
   let s = expr_to_fortran(expr);
   match expr {
-    Expr::FunctionCall { name, .. } if name == "Plus" => format!("({})", s),
+    Expr::FunctionCall { name, .. } if name == "Plus" => format!("({s})"),
     Expr::BinaryOp {
       op: BinaryOperator::Plus,
       ..
-    } => format!("({})", s),
+    } => format!("({s})"),
     Expr::BinaryOp {
       op: BinaryOperator::Minus,
       ..
-    } => format!("({})", s),
-    Expr::Integer(n) if *n < 0 => format!("({})", s),
+    } => format!("({s})"),
+    Expr::Integer(n) if *n < 0 => format!("({s})"),
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       ..
-    } => format!("({})", s),
+    } => format!("({s})"),
     _ => s,
   }
 }
@@ -13538,7 +13438,7 @@ static DICTIONARY_WORDS: LazyLock<std::collections::HashSet<String>> =
       .read_to_string(&mut text)
       .expect("Failed to decompress dictionary");
 
-    text.lines().map(|line| line.to_lowercase()).collect()
+    text.lines().map(str::to_lowercase).collect()
   });
 
 /// DictionaryWordQ[string] - True if string is a dictionary word
@@ -13563,7 +13463,7 @@ pub fn url_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &evaluated {
     Expr::String(s) => Ok(Expr::String(percent_encode(s))),
     Expr::Integer(n) => Ok(Expr::String(n.to_string())),
-    Expr::Real(f) => Ok(Expr::String(format!("{}", f))),
+    Expr::Real(f) => Ok(Expr::String(format!("{f}"))),
     Expr::BigFloat(digits, _) => Ok(Expr::String(digits.clone())),
     Expr::Identifier(id) if id == "None" => Ok(Expr::String(String::new())),
     Expr::FunctionCall { name, .. } if name == "Missing" => {
@@ -13632,7 +13532,7 @@ pub fn url_query_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Association(entries) => entries.clone(),
     Expr::List(items) => {
       let mut out = Vec::with_capacity(items.len());
-      for item in items.iter() {
+      for item in items {
         match item {
           Expr::Rule {
             pattern,
@@ -13705,7 +13605,7 @@ fn percent_encode(s: &str) -> String {
       }
       _ => {
         result.push('%');
-        result.push_str(&format!("{:02X}", byte));
+        result.push_str(&format!("{byte:02X}"));
       }
     }
   }
@@ -13741,11 +13641,8 @@ pub fn string_to_byte_array_ast(
       "StringToByteArray expects 1 or 2 arguments".into(),
     ));
   }
-  let s = match &args[0] {
-    Expr::String(s) => s,
-    _ => {
-      return Ok(unevaluated("StringToByteArray", args));
-    }
+  let Expr::String(s) = &args[0] else {
+    return Ok(unevaluated("StringToByteArray", args));
   };
   // Encode as UTF-8 bytes and create ByteArray
   let bytes = s.as_bytes();
@@ -13835,19 +13732,16 @@ pub fn base_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return unevaluated();
   }
-  match byte_array_bytes(&args[0]) {
-    Some(bytes) => {
-      use base64::Engine;
-      let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-      Ok(Expr::String(b64))
-    }
-    None => {
-      crate::emit_message(&format!(
-        "BaseEncode::barray: {} is not a ByteArray object.",
-        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
-      ));
-      unevaluated()
-    }
+  if let Some(bytes) = byte_array_bytes(&args[0]) {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(Expr::String(b64))
+  } else {
+    crate::emit_message(&format!(
+      "BaseEncode::barray: {} is not a ByteArray object.",
+      crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+    ));
+    unevaluated()
   }
 }
 
@@ -13893,14 +13787,11 @@ pub fn text_sentences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Ok(unevaluated(args));
   }
-  let text = match &args[0] {
-    Expr::String(s) => s,
-    _ => {
-      crate::emit_message(
-        "TextSentences::arg1: String or ContentObject expected at position 1.",
-      );
-      return Ok(unevaluated(args));
-    }
+  let Expr::String(text) = &args[0] else {
+    crate::emit_message(
+      "TextSentences::arg1: String or ContentObject expected at position 1.",
+    );
+    return Ok(unevaluated(args));
   };
   let limit = match args.get(1) {
     None => None,
@@ -14012,7 +13903,7 @@ fn is_abbreviation(before: &[char], after: &[char]) -> bool {
     return true;
   }
   // Single-letter initials: "J. Smith"
-  if token.chars().count() == 1 && token.chars().all(|c| c.is_alphabetic()) {
+  if token.chars().count() == 1 && token.chars().all(char::is_alphabetic) {
     return true;
   }
   // Titles and common abbreviations that never end a sentence
@@ -14357,8 +14248,8 @@ pub(crate) fn number_form_options(
       }
       "NumberSeparator" => match replacement.as_ref() {
         Expr::String(s) => {
-          opts.int_sep = s.clone();
-          opts.frac_sep = s.clone();
+          opts.int_sep.clone_from(s);
+          opts.frac_sep.clone_from(s);
         }
         Expr::List(items) if items.len() == 2 => {
           if let Some(s) = text(&items[0]) {
@@ -14379,7 +14270,7 @@ pub(crate) fn number_form_options(
       }
       // A single string sets the integer-side padding only.
       "NumberPadding" => match replacement.as_ref() {
-        Expr::String(s) => opts.lpad = s.clone(),
+        Expr::String(s) => opts.lpad.clone_from(s),
         Expr::List(pad) if pad.len() == 2 => {
           if let Some(s) = text(&pad[0]) {
             opts.lpad = s;
@@ -15030,7 +14921,7 @@ fn padded_form_to_string(
             let v = crate::functions::math_ast::expr_to_num(value)?;
             let f_usize = *f as usize;
             let n_usize = *n as usize;
-            let rounded = format!("{v:.prec$}", prec = f_usize);
+            let rounded = format!("{v:.f_usize$}");
             if let Some(dot) = rounded.find('.') {
               let int_str = &rounded[..dot];
               let frac_str = &rounded[dot + 1..];
@@ -15080,25 +14971,24 @@ pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A list of strings maps the extraction over its elements
   if let Expr::List(items) = &args[0] {
     let mut out = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       let mut sub_args = args.to_vec();
       sub_args[0] = item.clone();
       out.push(string_extract_ast(&sub_args)?);
     }
     return Ok(Expr::List(out.into()));
   }
-  let s = match &args[0] {
-    Expr::String(s) => s.clone(),
-    _ => {
-      crate::emit_message(&format!(
-        "StringExtract::strse: A string or list of strings is expected at position 1 in {}.",
-        crate::syntax::format_expr(
-          &unevaluated(),
-          crate::syntax::ExprForm::Output
-        )
-      ));
-      return Ok(unevaluated());
-    }
+  let s = if let Expr::String(s) = &args[0] {
+    s.clone()
+  } else {
+    crate::emit_message(&format!(
+      "StringExtract::strse: A string or list of strings is expected at position 1 in {}.",
+      crate::syntax::format_expr(
+        &unevaluated(),
+        crate::syntax::ExprForm::Output
+      )
+    ));
+    return Ok(unevaluated());
   };
   // Parse the spec list: each step is (delimiter, positions)
   let parse_pos = |e: &Expr| -> Option<Pos> {
@@ -15106,7 +14996,7 @@ pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Integer(n) if *n != 0 => Some(Pos::One(*n as i64)),
       Expr::List(items) => {
         let mut v = Vec::with_capacity(items.len());
-        for i in items.iter() {
+        for i in items {
           match i {
             Expr::Integer(n) if *n != 0 => v.push(*n as i64),
             _ => return None,
@@ -15142,37 +15032,36 @@ pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         pattern,
         replacement,
       } => {
-        let delim = match pattern.as_ref() {
-          Expr::String(d) => d.clone(),
-          _ => {
-            crate::emit_message(&format!(
-              "StringExtract::patt: {} is not a valid extraction specification.",
-              crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
-            ));
-            return Ok(unevaluated());
-          }
+        let delim = if let Expr::String(d) = pattern.as_ref() {
+          d.clone()
+        } else {
+          crate::emit_message(&format!(
+            "StringExtract::patt: {} is not a valid extraction specification.",
+            crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
+          ));
+          return Ok(unevaluated());
         };
-        match parse_pos(replacement) {
-          Some(p) => steps.push((Some(delim), p)),
-          None => {
-            crate::emit_message(&format!(
-              "StringExtract::patt: {} is not a valid extraction specification.",
-              crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
-            ));
-            return Ok(unevaluated());
-          }
+        if let Some(p) = parse_pos(replacement) {
+          steps.push((Some(delim), p));
+        } else {
+          crate::emit_message(&format!(
+            "StringExtract::patt: {} is not a valid extraction specification.",
+            crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
+          ));
+          return Ok(unevaluated());
         }
       }
-      other => match parse_pos(other) {
-        Some(p) => steps.push((None, p)),
-        None => {
+      other => {
+        if let Some(p) = parse_pos(other) {
+          steps.push((None, p));
+        } else {
           crate::emit_message(&format!(
             "StringExtract::patt: {} is not a valid extraction specification.",
             crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
           ));
           return Ok(unevaluated());
         }
-      },
+      }
     }
   }
 
@@ -15351,7 +15240,7 @@ fn expand_template_parts(
           return one(expr.clone());
         };
         let mut out = Vec::new();
-        for item in items.iter() {
+        for item in items {
           let element = Expr::List(vec![item.clone()].into());
           out.extend(expand_template_parts(&parts[0], &element)?);
         }
@@ -15359,7 +15248,7 @@ fn expand_template_parts(
       }
       _ => {
         let mut expanded = Vec::new();
-        for part in parts.iter() {
+        for part in parts {
           expanded.extend(expand_template_parts(part, args)?);
         }
         one(Expr::FunctionCall {
@@ -15370,7 +15259,7 @@ fn expand_template_parts(
     },
     Expr::List(items) => {
       let mut expanded = Vec::new();
-      for item in items.iter() {
+      for item in items {
         expanded.extend(expand_template_parts(item, args)?);
       }
       one(Expr::List(expanded.into()))
@@ -15451,34 +15340,29 @@ pub fn snippet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         _ => None,
       };
-      match span {
-        Some((from, to)) => {
-          let start = match &from {
-            Expr::Integer(i) if *i > 0 => clamp(i - 1),
-            Expr::Integer(i) if *i < 0 => clamp(count + i),
-            Expr::Identifier(s) if s == "All" => 0,
-            _ => return Ok(original()),
-          };
-          let end = match &to {
-            Expr::Integer(i) if *i > 0 => clamp(*i),
-            Expr::Integer(i) if *i < 0 => clamp(count + i + 1),
-            Expr::Identifier(s) if s == "All" => clamp(count),
-            _ => return Ok(original()),
-          };
-          (start, end.max(start))
+      if let Some((from, to)) = span {
+        let start = match &from {
+          Expr::Integer(i) if *i > 0 => clamp(i - 1),
+          Expr::Integer(i) if *i < 0 => clamp(count + i),
+          Expr::Identifier(s) if s == "All" => 0,
+          _ => return Ok(original()),
+        };
+        let end = match &to {
+          Expr::Integer(i) if *i > 0 => clamp(*i),
+          Expr::Integer(i) if *i < 0 => clamp(count + i + 1),
+          Expr::Identifier(s) if s == "All" => clamp(count),
+          _ => return Ok(original()),
+        };
+        (start, end.max(start))
+      } else {
+        if matches!(spec, Expr::Identifier(s) if s == "All") {
+          return Ok(original());
         }
-        // `All` and anything else that is not a count are left as written or
-        // reported, as wolframscript does.
-        None => {
-          if matches!(spec, Expr::Identifier(s) if s == "All") {
-            return Ok(original());
-          }
-          crate::emit_message(&format!(
-            "Snippet::invspec: Specification {} should be an integer or Span.",
-            crate::syntax::expr_to_output(spec)
-          ));
-          return Ok(Expr::Identifier("$Failed".to_string()));
-        }
+        crate::emit_message(&format!(
+          "Snippet::invspec: Specification {} should be an integer or Span.",
+          crate::syntax::expr_to_output(spec)
+        ));
+        return Ok(Expr::Identifier("$Failed".to_string()));
       }
     }
   };
@@ -15618,7 +15502,7 @@ pub fn character_normalize_ast(
     other => {
       // Strings show quoted in the message; anything else in OutputForm.
       let shown = match other {
-        Expr::String(s) => format!("\"{}\"", s),
+        Expr::String(s) => format!("\"{s}\""),
         _ => crate::syntax::expr_to_output(other),
       };
       let text = match other {
@@ -15629,7 +15513,7 @@ pub fn character_normalize_ast(
         let names: Vec<String> = NORMALIZATION_FORMS
           .iter()
           .filter(|f| Some(**f) != skip)
-          .map(|f| format!("\"{}\"", f))
+          .map(|f| format!("\"{f}\""))
           .collect();
         let (last, rest) = names.split_last().expect("five forms");
         format!("{}, and {}", rest.join(", "), last)

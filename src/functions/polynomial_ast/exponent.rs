@@ -90,7 +90,7 @@ fn expr_to_rat(e: &Expr) -> Option<Rat> {
 
 /// Convenience wrapper: returns max power as integer, or None if non-integer.
 pub fn max_power_int(expr: &Expr, var: &str) -> Option<i128> {
-  max_power(expr, var).and_then(|r| r.as_int())
+  max_power(expr, var).and_then(Rat::as_int)
 }
 
 // ─── Exponent ───────────────────────────────────────────────────────
@@ -125,7 +125,7 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // that form across the additive terms, without expanding. A form that
     // never appears (any bare number) gives 0. Matches wolframscript.
     _ => {
-      return exponent_of_form(args);
+      return Ok(exponent_of_form(args));
     }
   };
 
@@ -158,8 +158,7 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         });
         // Deduplicate
         sorted.dedup_by(|a, b| a.n * b.d == b.n * a.d);
-        let elems: Vec<Expr> =
-          sorted.into_iter().map(|r| r.to_expr()).collect();
+        let elems: Vec<Expr> = sorted.into_iter().map(Rat::to_expr).collect();
         Ok(Expr::List(elems.into()))
       }
       None => Ok(unevaluated("Exponent", args)),
@@ -169,18 +168,15 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some(r) => Ok(r.to_expr()),
       None => Ok(unevaluated("Exponent", args)),
     }
+  } else if let Some(r) = max_power(&expanded, var) {
+    Ok(r.to_expr())
   } else {
-    match max_power(&expanded, var) {
-      Some(r) => Ok(r.to_expr()),
-      None => {
-        // Symbolic fallback: collect per-term exponents, retaining symbolic
-        // ones as Expr; then build a Max[...] over all distinct values.
-        if let Some(exprs) = collect_term_powers(&expanded, var) {
-          return Ok(build_max_expr(exprs));
-        }
-        Ok(unevaluated("Exponent", args))
-      }
+    // Symbolic fallback: collect per-term exponents, retaining symbolic
+    // ones as Expr; then build a Max[...] over all distinct values.
+    if let Some(exprs) = collect_term_powers(&expanded, var) {
+      return Ok(build_max_expr(exprs));
     }
+    Ok(unevaluated("Exponent", args))
   }
 }
 
@@ -189,7 +185,7 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// across the additive terms of `expr`. The expression is NOT expanded, so a
 /// compound form such as `x + 1` keeps its structure
 /// (Exponent[(x + 1)^2, x + 1] = 2). A form that never appears contributes 0.
-fn exponent_of_form(args: &[Expr]) -> Result<Expr, InterpreterError> {
+fn exponent_of_form(args: &[Expr]) -> crate::syntax::Expr {
   let form = &args[1];
   let terms = super::coefficient::collect_additive_terms(&args[0]);
   let mut powers: Vec<Rat> =
@@ -206,14 +202,14 @@ fn exponent_of_form(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if use_list {
     powers.sort_by(|a, b| (a.n * b.d).cmp(&(b.n * a.d)));
     powers.dedup_by(|a, b| a.n * b.d == b.n * a.d);
-    let elems: Vec<Expr> = powers.into_iter().map(|r| r.to_expr()).collect();
-    Ok(Expr::List(elems.into()))
+    let elems: Vec<Expr> = powers.into_iter().map(Rat::to_expr).collect();
+    Expr::List(elems.into())
   } else if use_min {
-    let m = powers.into_iter().reduce(|a, b| a.min(b)).unwrap();
-    Ok(m.to_expr())
+    let m = powers.into_iter().reduce(Rat::min).unwrap();
+    m.to_expr()
   } else {
-    let m = powers.into_iter().reduce(|a, b| a.max(b)).unwrap();
-    Ok(m.to_expr())
+    let m = powers.into_iter().reduce(Rat::max).unwrap();
+    m.to_expr()
   }
 }
 

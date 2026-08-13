@@ -416,10 +416,10 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         BinaryOperator::Minus => Some(l - r),
         BinaryOperator::Times => Some(l * r),
         BinaryOperator::Divide => {
-          if r != 0.0 {
-            Some(l / r)
-          } else {
+          if r == 0.0 {
             None
+          } else {
+            Some(l / r)
           }
         }
         BinaryOperator::Power => {
@@ -440,7 +440,7 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         }
         let n = try_eval_to_f64(&args[0])?;
         let d = try_eval_to_f64(&args[1])?;
-        if d != 0.0 { Some(n / d) } else { None }
+        if d == 0.0 { None } else { Some(n / d) }
       }
       // `Root[poly &, k]` is an exact algebraic number: it keeps its exact
       // form when printed, but it counts as a number wherever one is wanted
@@ -481,33 +481,27 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         Expr::Integer(10) => Some(0.0002053328149090648),
         _ => None,
       },
-      "Sin" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.sin()),
-      "Cos" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.cos()),
-      "Tan" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.tan()),
+      "Sin" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::sin),
+      "Cos" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::cos),
+      "Tan" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::tan),
       "Sec" if args.len() == 1 => try_eval_to_f64(&args[0]).and_then(|v| {
         let c = v.cos();
-        if c != 0.0 { Some(1.0 / c) } else { None }
+        if c == 0.0 { None } else { Some(1.0 / c) }
       }),
       "Csc" if args.len() == 1 => try_eval_to_f64(&args[0]).and_then(|v| {
         let s = v.sin();
-        if s != 0.0 { Some(1.0 / s) } else { None }
+        if s == 0.0 { None } else { Some(1.0 / s) }
       }),
       "Cot" if args.len() == 1 => try_eval_to_f64(&args[0]).and_then(|v| {
         let s = v.sin();
-        if s != 0.0 { Some(v.cos() / s) } else { None }
+        if s == 0.0 { None } else { Some(v.cos() / s) }
       }),
-      "ArcSin" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(|v| v.asin())
-      }
-      "ArcCos" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(|v| v.acos())
-      }
-      "ArcTan" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(|v| v.atan())
-      }
-      "Sinh" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.sinh()),
-      "Cosh" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.cosh()),
-      "Tanh" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.tanh()),
+      "ArcSin" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::asin),
+      "ArcCos" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::acos),
+      "ArcTan" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::atan),
+      "Sinh" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::sinh),
+      "Cosh" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::cosh),
+      "Tanh" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::tanh),
       "Coth" if args.len() == 1 => {
         try_eval_to_f64(&args[0]).map(|v| 1.0 / v.tanh())
       }
@@ -517,9 +511,7 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "Csch" if args.len() == 1 => {
         try_eval_to_f64(&args[0]).map(|v| 1.0 / v.sinh())
       }
-      "ArcSinh" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(|v| v.asinh())
-      }
+      "ArcSinh" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::asinh),
       "ArcCosh" if args.len() == 1 => try_eval_to_f64(&args[0])
         .and_then(|v| if v >= 1.0 { Some(v.acosh()) } else { None }),
       "ArcTanh" if args.len() == 1 => try_eval_to_f64(&args[0])
@@ -551,9 +543,9 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         let v = bessel_y(n, z);
         v.is_finite().then_some(v)
       }
-      "Sqrt" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.sqrt()),
-      "Abs" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.abs()),
-      "Exp" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.exp()),
+      "Sqrt" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::sqrt),
+      "Abs" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::abs),
+      "Exp" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::exp),
       "Erf" if args.len() == 1 => try_eval_to_f64(&args[0]).map(erf_f64),
       "Erfc" if args.len() == 1 => {
         try_eval_to_f64(&args[0]).map(|v| 1.0 - erf_f64(v))
@@ -596,9 +588,7 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         let result = b.powf(e);
         if result.is_nan() { None } else { Some(result) }
       }
-      "Floor" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(|v| v.floor())
-      }
+      "Floor" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::floor),
       "Floor" if args.len() == 2 => {
         let x = try_eval_to_f64(&args[0])?;
         let a = try_eval_to_f64(&args[1])?;
@@ -608,9 +598,7 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
           Some((x / a).floor() * a)
         }
       }
-      "Ceiling" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(|v| v.ceil())
-      }
+      "Ceiling" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::ceil),
       "Ceiling" if args.len() == 2 => {
         let x = try_eval_to_f64(&args[0])?;
         let a = try_eval_to_f64(&args[1])?;
@@ -620,9 +608,7 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
           Some((x / a).ceil() * a)
         }
       }
-      "Round" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(|v| v.round())
-      }
+      "Round" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::round),
       "Times" => {
         let mut product = 1.0;
         for arg in args {
@@ -826,11 +812,11 @@ pub fn format_bigfloat_value(value: f64, sig_digits: usize) -> String {
   let abs_val = value.abs();
   let magnitude = abs_val.log10().floor() as i32;
   let decimal_places = ((sig_digits as i32) - magnitude - 1).max(0) as usize;
-  let formatted = format!("{}{:.prec$}", sign, abs_val, prec = decimal_places);
-  if !formatted.contains('.') {
-    format!("{}.", formatted)
-  } else {
+  let formatted = format!("{sign}{abs_val:.decimal_places$}");
+  if formatted.contains('.') {
     formatted
+  } else {
+    format!("{formatted}.")
   }
 }
 

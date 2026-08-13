@@ -151,7 +151,7 @@ fn symbolic_count_definite(
     crate::evaluator::evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone())
   };
   let (min_e, max_e) = (eval(min), eval(max));
-  let step_e = step.map(eval).unwrap_or(Expr::Integer(1));
+  let step_e = step.map_or(Expr::Integer(1), eval);
   let Ok(diff) =
     crate::evaluator::evaluate_function_call_ast("Subtract", &[max_e, min_e])
   else {
@@ -220,9 +220,8 @@ pub fn table_ast(
         // check normally intercepts this; kept here as a safety net). A real
         // count is truncated toward zero, matching wolframscript's
         // Table[q, {5.5}] -> 5 copies.
-        let n = match bound_to_count(&evaluated) {
-          Some(n) => n,
-          None => return Ok(table_unevaluated(body, iter_spec)),
+        let Some(n) = bound_to_count(&evaluated) else {
+          return Ok(table_unevaluated(body, iter_spec));
         };
         let mut results = Vec::new();
         for _ in 0..n {
@@ -255,41 +254,36 @@ pub fn table_ast(
       if items.len() == 2 {
         // Check if second element is a list (iterate over list)
         let mut second = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
-        match &mut second {
-          Expr::List(list_items) => {
-            // {i, {a, b, c}} form - iterate over list elements
-            let mut results = Vec::new();
-            for item in list_items.iter() {
-              let substituted =
-                crate::syntax::substitute_variable(body, &var_name, item);
-              let val = crate::evaluator::evaluate_value(&substituted)?;
-              if !is_nothing(&val) {
-                results.push(val);
-              }
+        if let Expr::List(list_items) = &mut second {
+          // {i, {a, b, c}} form - iterate over list elements
+          let mut results = Vec::new();
+          for item in list_items.iter() {
+            let substituted =
+              crate::syntax::substitute_variable(body, &var_name, item);
+            let val = crate::evaluator::evaluate_value(&substituted)?;
+            if !is_nothing(&val) {
+              results.push(val);
             }
-            return Ok(Expr::List(results.into()));
           }
-          _ => {
-            // {i, max} form - iterate from 1 to max (real max truncated).
-            let max_val = match bound_to_count(&second) {
-              Some(n) => n,
-              None => return Ok(table_unevaluated(body, iter_spec)),
-            };
-            let mut results = Vec::new();
-            for i in 1..=max_val {
-              let substituted = crate::syntax::substitute_variable(
-                body,
-                &var_name,
-                &Expr::Integer(i),
-              );
-              let val = crate::evaluator::evaluate_value(&substituted)?;
-              if !is_nothing(&val) {
-                results.push(val);
-              }
-            }
-            return Ok(Expr::List(results.into()));
+          return Ok(Expr::List(results.into()));
+        }
+        // {i, max} form - iterate from 1 to max (real max truncated).
+        let Some(max_val) = bound_to_count(&second) else {
+          return Ok(table_unevaluated(body, iter_spec));
+        };
+        let mut results = Vec::new();
+        for i in 1..=max_val {
+          let substituted = crate::syntax::substitute_variable(
+            body,
+            &var_name,
+            &Expr::Integer(i),
+          );
+          let val = crate::evaluator::evaluate_value(&substituted)?;
+          if !is_nothing(&val) {
+            results.push(val);
           }
         }
+        return Ok(Expr::List(results.into()));
       } else if items.len() >= 3 {
         // {i, min, max} or {i, min, max, step} form
         let min_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
@@ -395,18 +389,16 @@ pub fn table_ast(
         if crate::functions::math_ast::try_eval_to_f64(&min_expr).is_none() {
           return Ok(table_unevaluated(body, iter_spec));
         }
-        let max_num =
-          match crate::functions::math_ast::try_eval_to_f64(&max_expr) {
-            Some(v) => v,
-            None => return Ok(table_unevaluated(body, iter_spec)),
-          };
-        let step_num =
-          match crate::functions::math_ast::try_eval_to_f64_with_infinity(
-            &step_expr,
-          ) {
-            Some(v) => v,
-            None => return Ok(table_unevaluated(body, iter_spec)),
-          };
+        let Some(max_num) =
+          crate::functions::math_ast::try_eval_to_f64(&max_expr)
+        else {
+          return Ok(table_unevaluated(body, iter_spec));
+        };
+        let Some(step_num) =
+          crate::functions::math_ast::try_eval_to_f64_with_infinity(&step_expr)
+        else {
+          return Ok(table_unevaluated(body, iter_spec));
+        };
 
         if step_num.abs() <= f64::EPSILON {
           return Err(InterpreterError::EvaluationError(
@@ -859,7 +851,7 @@ pub fn power_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if fac_n == 0 || (fac_n == fac_d) {
       crate::emit_message(&format!(
         "PowerRange::factor: Factor cannot be {}.",
-        if fac_n == 0 { 0 } else { 1 }
+        i32::from(fac_n != 0)
       ));
       return Ok(unevaluated("PowerRange", args));
     }
@@ -950,24 +942,23 @@ pub fn constant_array_ast(
   let mut concrete_dims: Vec<usize> = Vec::with_capacity(dim_exprs.len());
   let mut has_symbolic = false;
   for d in &dim_exprs {
-    match nonneg_dim(d) {
-      Some(n) => concrete_dims.push(n),
-      None => {
-        // A concrete but invalid dimension (negative, non-integer, too large)
-        // makes wolframscript emit `::ilsmn` and leave the call unevaluated; a
-        // symbolic dimension yields a SymbolicZeros/OnesArray placeholder.
-        if crate::functions::predicate_ast::is_numeric_q(d) {
-          crate::emit_message(&format!(
-            "ConstantArray::ilsmn: Single or list of non-negative machine-sized integers expected at position 2 of {}.",
-            crate::syntax::expr_to_string(&Expr::FunctionCall {
-              name: "ConstantArray".to_string(),
-              args: vec![elem.clone(), dims.clone()].into(),
-            })
-          ));
-          return unevaluated();
-        }
-        has_symbolic = true;
+    if let Some(n) = nonneg_dim(d) {
+      concrete_dims.push(n);
+    } else {
+      // A concrete but invalid dimension (negative, non-integer, too large)
+      // makes wolframscript emit `::ilsmn` and leave the call unevaluated; a
+      // symbolic dimension yields a SymbolicZeros/OnesArray placeholder.
+      if crate::functions::predicate_ast::is_numeric_q(d) {
+        crate::emit_message(&format!(
+          "ConstantArray::ilsmn: Single or list of non-negative machine-sized integers expected at position 2 of {}.",
+          crate::syntax::expr_to_string(&Expr::FunctionCall {
+            name: "ConstantArray".to_string(),
+            args: vec![elem.clone(), dims.clone()].into(),
+          })
+        ));
+        return unevaluated();
       }
+      has_symbolic = true;
     }
   }
 
@@ -1187,7 +1178,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
               match crate::evaluator::evaluate_expr_to_expr(body) {
                 Ok(_) => {}
                 Err(InterpreterError::BreakSignal) => break,
-                Err(InterpreterError::ContinueSignal) => continue,
+                Err(InterpreterError::ContinueSignal) => {}
                 Err(InterpreterError::ReturnValue(val)) => {
                   early_return = Some(*val);
                   break;
@@ -1229,7 +1220,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
               match crate::evaluator::evaluate_expr_to_expr(body) {
                 Ok(_) => {}
                 Err(InterpreterError::BreakSignal) => break,
-                Err(InterpreterError::ContinueSignal) => continue,
+                Err(InterpreterError::ContinueSignal) => {}
                 Err(InterpreterError::ReturnValue(val)) => {
                   early_return = Some(*val);
                   break;
@@ -1457,7 +1448,7 @@ pub fn do_multi_ast(
     }
   }
   match do_multi_inner(body, iter_specs) {
-    Ok(_) => Ok(Expr::Identifier("Null".to_string())),
+    Ok(()) => Ok(Expr::Identifier("Null".to_string())),
     Err(InterpreterError::BreakSignal) => {
       Ok(Expr::Identifier("Null".to_string()))
     }
@@ -1905,25 +1896,22 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Parse a dimension specification into a list of sizes. Accepts a List of
 /// non-negative integers, or a single non-negative integer for 1D.
 fn parse_sparse_dims(expr: &Expr) -> Option<Vec<usize>> {
-  match expr {
-    Expr::List(items) => {
-      let mut result = Vec::with_capacity(items.len());
-      for item in items {
-        let n = expr_to_i128(item)?;
-        if n < 0 {
-          return None;
-        }
-        result.push(n as usize);
-      }
-      Some(result)
-    }
-    _ => {
-      let n = expr_to_i128(expr)?;
+  if let Expr::List(items) = expr {
+    let mut result = Vec::with_capacity(items.len());
+    for item in items {
+      let n = expr_to_i128(item)?;
       if n < 0 {
         return None;
       }
-      Some(vec![n as usize])
+      result.push(n as usize);
     }
+    Some(result)
+  } else {
+    let n = expr_to_i128(expr)?;
+    if n < 0 {
+      return None;
+    }
+    Some(vec![n as usize])
   }
 }
 
@@ -1946,7 +1934,7 @@ fn expand_band_rules(data: &Expr, dims: &[usize]) -> Option<Expr> {
     return None;
   }
   let mut expanded: Vec<Expr> = Vec::with_capacity(items.len());
-  for item in items.iter() {
+  for item in &items {
     if let Expr::Rule {
       pattern,
       replacement,
@@ -2226,7 +2214,7 @@ fn list_of_positive_ints(e: &Expr, rank: usize) -> Option<Vec<usize>> {
     return None;
   }
   let mut out = Vec::with_capacity(rank);
-  for it in items.iter() {
+  for it in items {
     let n = expr_to_i128(it)?;
     if n < 1 {
       return None;
@@ -2343,10 +2331,7 @@ fn parse_sparse_data(
     return parse_sparse_rules(std::slice::from_ref(data));
   }
 
-  let items = match data {
-    Expr::List(items) => items,
-    _ => return None,
-  };
+  let Expr::List(items) = data else { return None };
 
   if items.is_empty() {
     return Some((Vec::new(), vec![0]));
@@ -2421,11 +2406,9 @@ pub fn sparse_array_normalize_ast(
     Expr::Integer(0)
   };
 
-  let (parsed_rules, inferred_dims) = match parse_sparse_data(data, &default) {
-    Some(x) => x,
-    None => {
-      return Ok(unevaluated("SparseArray", args));
-    }
+  let Some((parsed_rules, inferred_dims)) = parse_sparse_data(data, &default)
+  else {
+    return Ok(unevaluated("SparseArray", args));
   };
 
   // Determine final dimensions. When explicit dims are given they must have
@@ -2504,9 +2487,9 @@ pub fn sparse_array_normalize_ast(
     .map(|(pos, _)| {
       let tail: Vec<Expr> = if rank <= 1 {
         // 1D arrays still show a single-element inner position.
-        pos.iter().cloned().map(Expr::Integer).collect()
+        pos.iter().copied().map(Expr::Integer).collect()
       } else {
-        pos[1..].iter().cloned().map(Expr::Integer).collect()
+        pos[1..].iter().copied().map(Expr::Integer).collect()
       };
       Expr::List(tail.into())
     })

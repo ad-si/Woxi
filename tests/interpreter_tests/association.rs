@@ -2003,7 +2003,7 @@ mod part_on_associations {
       "Missing[KeyAbsent, a]"
     );
     let msgs = woxi::get_captured_messages_raw();
-    assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
+    assert!(msgs.is_empty(), "expected no messages, got {msgs:?}");
   }
 
   #[test]
@@ -2024,8 +2024,7 @@ mod part_on_associations {
       msgs.iter().any(|m| m.contains(
         "Part::pkspec1: The expression x cannot be used as a part specification."
       )),
-      "expected Part::pkspec1 message, got {:?}",
-      msgs
+      "expected Part::pkspec1 message, got {msgs:?}"
     );
   }
 
@@ -2088,8 +2087,7 @@ mod part_on_associations {
       msgs.iter().any(
         |m| m.contains("Part::partw: Part 5 of <|a -> 1|> does not exist.")
       ),
-      "expected Part::partw message, got {:?}",
-      msgs
+      "expected Part::partw message, got {msgs:?}"
     );
   }
 
@@ -2117,14 +2115,11 @@ mod invalid_subject_messages {
       assert_eq!(interpret(input).unwrap(), input);
       let msgs = woxi::get_captured_messages_raw();
       let expected = format!(
-        "{}::invrl: The argument x is not a valid Association or a list of rules.",
-        func
+        "{func}::invrl: The argument x is not a valid Association or a list of rules."
       );
       assert!(
         msgs.iter().any(|m| m.contains(&expected)),
-        "expected {:?}, got {:?}",
-        expected,
-        msgs
+        "expected {expected:?}, got {msgs:?}"
       );
     }
     assert_eq!(interpret("Lookup[x, a]").unwrap(), "Lookup[x, a]");
@@ -2140,8 +2135,7 @@ mod invalid_subject_messages {
       msgs.iter().any(|m| m.contains(
         "Keys::invrl: The argument f[a -> 1, b -> 2] is not a valid Association or a list of rules."
       )),
-      "expected invrl message for general head, got {:?}",
-      msgs
+      "expected invrl message for general head, got {msgs:?}"
     );
   }
 
@@ -2154,8 +2148,7 @@ mod invalid_subject_messages {
       msgs.iter().any(|m| m.contains(
         "KeyValueMap::invak: The argument x is not a valid Association."
       )),
-      "expected invak message, got {:?}",
-      msgs
+      "expected invak message, got {msgs:?}"
     );
     assert_eq!(interpret("KeyMap[f, x]").unwrap(), "KeyMap[f, x]");
     assert_eq!(interpret("KeySelect[x, f]").unwrap(), "KeySelect[x, f]");
@@ -2164,8 +2157,7 @@ mod invalid_subject_messages {
       msgs.iter().any(|m| m.contains(
         "KeySelect::invru: The argument x is not a valid Association or a list of rules."
       )),
-      "expected invru message, got {:?}",
-      msgs
+      "expected invru message, got {msgs:?}"
     );
     assert_eq!(
       interpret("AssociationMap[f, x]").unwrap(),
@@ -2176,8 +2168,7 @@ mod invalid_subject_messages {
       msgs.iter().any(|m| m.contains(
         "AssociationMap::invrp: The argument x is not a valid Association or a list."
       )),
-      "expected invrp message, got {:?}",
-      msgs
+      "expected invrp message, got {msgs:?}"
     );
     assert_eq!(interpret("Merge[x, Total]").unwrap(), "Merge[x, Total]");
     let msgs = woxi::get_captured_messages_raw();
@@ -2185,8 +2176,7 @@ mod invalid_subject_messages {
       msgs.iter().any(|m| m.contains(
         "Merge::list1: The argument x is not a valid list of Associations or rules or lists of rules."
       )),
-      "expected list1 message, got {:?}",
-      msgs
+      "expected list1 message, got {msgs:?}"
     );
     assert_eq!(interpret("KeyUnion[x]").unwrap(), "KeyUnion[x]");
     let msgs = woxi::get_captured_messages_raw();
@@ -2194,8 +2184,7 @@ mod invalid_subject_messages {
       msgs.iter().any(|m| m.contains(
         "KeyUnion::invar: The argument x is not a valid list of Associations or rules."
       )),
-      "expected invar message, got {:?}",
-      msgs
+      "expected invar message, got {msgs:?}"
     );
   }
 
@@ -2208,8 +2197,7 @@ mod invalid_subject_messages {
       msgs.iter().any(|m| m.contains(
         "KeyExistsQ::invrl: The argument x is not a valid Association or a list of rules."
       )),
-      "expected invrl message, got {:?}",
-      msgs
+      "expected invrl message, got {msgs:?}"
     );
     // Lists of rules are valid subjects (regression: hard error)
     assert_eq!(
@@ -2231,8 +2219,7 @@ mod invalid_subject_messages {
       msgs.iter().any(|m| m.contains(
         "KeyDropFrom::blnoval: The symbol u at position 1 should have an immediate value defined."
       )),
-      "expected blnoval message, got {:?}",
-      msgs
+      "expected blnoval message, got {msgs:?}"
     );
     assert_eq!(interpret("KeyDropFrom[5, a]").unwrap(), "KeyDropFrom[5, a]");
     let msgs = woxi::get_captured_messages_raw();
@@ -2240,8 +2227,7 @@ mod invalid_subject_messages {
       msgs.iter().any(|m| m.contains(
         "KeyDropFrom::rvalue: 5 is not a variable with a value, so its value cannot be changed."
       )),
-      "expected rvalue message, got {:?}",
-      msgs
+      "expected rvalue message, got {msgs:?}"
     );
     // The mutating happy path still works
     assert_eq!(

@@ -515,7 +515,7 @@ fn mora_at(chars: &[char], i: usize) -> Option<(String, usize)> {
         // sha, chu, jo — the y is absorbed
         format!("{}{}", stem, &v[1..])
       } else {
-        format!("{}{}", stem, v)
+        format!("{stem}{v}")
       };
       return Some((combined, 2));
     }

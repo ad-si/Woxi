@@ -234,7 +234,7 @@ fn parse_bounds(l: &Expr, n: usize) -> Result<Vec<(Bound, Bound)>, BoundError> {
           return Err(BoundError::Dim);
         }
         let mut out = Vec::with_capacity(n);
-        for it in items.iter() {
+        for it in items {
           let Expr::List(pair) = it else { unreachable!() };
           let (Some(lo), Some(hi)) =
             (parse_bound(&pair[0]), parse_bound(&pair[1]))
@@ -250,7 +250,7 @@ fn parse_bounds(l: &Expr, n: usize) -> Result<Vec<(Bound, Bound)>, BoundError> {
           return Err(BoundError::Dim);
         }
         let mut out = Vec::with_capacity(n);
-        for it in items.iter() {
+        for it in items {
           match parse_bound(it) {
             Some(lo) => out.push((lo, Bound::PosInf)),
             None => return Err(BoundError::Value),
@@ -314,7 +314,7 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Objective coefficients.
   let mut c = Vec::with_capacity(n);
-  for ci in c_items.iter() {
+  for ci in c_items {
     match expr_to_rat(ci) {
       Some(r) => c.push(r),
       None => return call(),
@@ -323,7 +323,7 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Constraint matrix.
   let mut a: Vec<Vec<Rat>> = Vec::with_capacity(k);
-  for row in m_rows.iter() {
+  for row in m_rows {
     let Expr::List(row_items) = row else {
       return call();
     };
@@ -332,7 +332,7 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return call();
     }
     let mut r = Vec::with_capacity(n);
-    for e in row_items.iter() {
+    for e in row_items {
       match expr_to_rat(e) {
         Some(v) => r.push(v),
         None => return call(),
@@ -345,7 +345,7 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // {value, sign} selects the relation from the sign.
   let mut b = Vec::with_capacity(k);
   let mut rel = Vec::with_capacity(k);
-  for item in b_items.iter() {
+  for item in b_items {
     match item {
       Expr::List(pair) if pair.len() == 2 => {
         let (Some(val), Some(sign)) =
@@ -550,7 +550,7 @@ fn solve_simplex(
   let mut rels: Vec<Rel> = Vec::with_capacity(k);
   for i in 0..k {
     if b[i].is_negative() {
-      rows.push(a[i].iter().map(|v| v.neg()).collect());
+      rows.push(a[i].iter().map(Rat::neg).collect());
       rhs.push(b[i].neg());
       rels.push(match rel[i] {
         Rel::Ge => Rel::Le,

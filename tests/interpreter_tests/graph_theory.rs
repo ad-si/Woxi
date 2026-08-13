@@ -38,7 +38,7 @@ mod connected_components {
         .unwrap();
     // All three vertices form one SCC
     assert!(
-      result.contains("1") && result.contains("2") && result.contains("3")
+      result.contains('1') && result.contains('2') && result.contains('3')
     );
     // Should be a single component
     assert_eq!(result.matches('{').count(), 2); // outer { + one inner {
@@ -51,8 +51,8 @@ mod connected_components {
     )
     .unwrap();
     // {1,2} and {3,4} are separate SCCs (1->3 doesn't create a cycle between them)
-    assert!(result.contains("1") && result.contains("2"));
-    assert!(result.contains("3") && result.contains("4"));
+    assert!(result.contains('1') && result.contains('2'));
+    assert!(result.contains('3') && result.contains('4'));
   }
 
   #[test]
@@ -932,13 +932,13 @@ mod voronoi_mesh {
   #[test]
   fn two_points_produces_mesh_region() {
     let result = interpret("VoronoiMesh[{{0, 0}, {1, 0}}]").unwrap();
-    assert_eq!(result, "-Graphics-", "Got: {}", result);
+    assert_eq!(result, "-Graphics-", "Got: {result}");
   }
 
   #[test]
   fn three_points_produces_mesh_region() {
     let result = interpret("VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}}]").unwrap();
-    assert_eq!(result, "-Graphics-", "Got: {}", result);
+    assert_eq!(result, "-Graphics-", "Got: {result}");
   }
 
   #[test]
@@ -946,13 +946,13 @@ mod voronoi_mesh {
     let result =
       interpret("VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}, {1, 1}, {0.5, 0.5}}]")
         .unwrap();
-    assert_eq!(result, "-Graphics-", "Got: {}", result);
+    assert_eq!(result, "-Graphics-", "Got: {result}");
   }
 
   #[test]
   fn collinear_points_produces_mesh_region() {
     let result = interpret("VoronoiMesh[{{0, 0}, {1, 0}, {2, 0}}]").unwrap();
-    assert_eq!(result, "-Graphics-", "Got: {}", result);
+    assert_eq!(result, "-Graphics-", "Got: {result}");
   }
 
   #[test]
@@ -985,7 +985,7 @@ mod voronoi_mesh {
     // 4 corners of unit square should produce 4 cells in a MeshRegion
     let result =
       interpret("VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}, {1, 1}}]").unwrap();
-    assert_eq!(result, "-Graphics-", "Got: {}", result);
+    assert_eq!(result, "-Graphics-", "Got: {result}");
   }
 
   #[test]
@@ -1724,7 +1724,10 @@ mod two_way_rule {
       // Arrowhead length = distance from tip to midpoint of the base.
       // The tip is vertex 0 of the polygon (emitted first in graphics.rs).
       let tip = pg[0];
-      let base_mid = ((pg[1].0 + pg[2].0) / 2.0, (pg[1].1 + pg[2].1) / 2.0);
+      let base_mid = (
+        f64::midpoint(pg[1].0, pg[2].0),
+        f64::midpoint(pg[1].1, pg[2].1),
+      );
       let head_len =
         ((tip.0 - base_mid.0).powi(2) + (tip.1 - base_mid.1).powi(2)).sqrt();
 
@@ -3041,8 +3044,7 @@ mod harary_graph {
       msgs.iter().any(|m| m.contains(
         "HararyGraph::intg: Integer greater than 1 expected at position 1 in HararyGraph[1, 5]."
       )),
-      "expected intg message, got {:?}",
-      msgs
+      "expected intg message, got {msgs:?}"
     );
   }
 
@@ -3054,8 +3056,7 @@ mod harary_graph {
       msgs.iter().any(|m| m.contains(
         "HararyGraph::intg: Integer greater than 8 expected at position 2 in HararyGraph[8, 8]."
       )),
-      "expected intg message, got {:?}",
-      msgs
+      "expected intg message, got {msgs:?}"
     );
   }
 
@@ -3067,8 +3068,7 @@ mod harary_graph {
       msgs.iter().any(|m| m.contains(
         "HararyGraph::intpm: Positive machine-sized integer expected at position 1 in HararyGraph[0, 5]."
       )),
-      "expected intpm message, got {:?}",
-      msgs
+      "expected intpm message, got {msgs:?}"
     );
     assert_eq!(
       interpret("HararyGraph[3, 7.5]").unwrap(),
@@ -3079,8 +3079,7 @@ mod harary_graph {
       msgs.iter().any(|m| m.contains(
         "HararyGraph::intpm: Positive machine-sized integer expected at position 2 in HararyGraph[3, 7.5]."
       )),
-      "expected intpm message, got {:?}",
-      msgs
+      "expected intpm message, got {msgs:?}"
     );
   }
 
@@ -3088,7 +3087,7 @@ mod harary_graph {
   fn symbolic_arguments_stay_unevaluated_silently() {
     assert_eq!(interpret("HararyGraph[2, n]").unwrap(), "HararyGraph[2, n]");
     let msgs = woxi::get_captured_messages_raw();
-    assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
+    assert!(msgs.is_empty(), "expected no messages, got {msgs:?}");
   }
 
   #[test]
@@ -3102,8 +3101,7 @@ mod harary_graph {
       msgs.iter().any(|m| m.contains(
         "HararyGraph::nonopt: Options expected (instead of 1) beyond position 2 in HararyGraph[3, 7, 1]."
       )),
-      "expected nonopt message, got {:?}",
-      msgs
+      "expected nonopt message, got {msgs:?}"
     );
   }
 }
@@ -3304,8 +3302,7 @@ mod connectivity {
       msgs.iter().any(|m| m.contains(
         "EdgeConnectivity::inv: The argument 3 in EdgeConnectivity[Graph[<5>, <5>], 1, 7] is not a valid vertex."
       )),
-      "expected inv message, got {:?}",
-      msgs
+      "expected inv message, got {msgs:?}"
     );
     assert_eq!(
       interpret("VertexConnectivity[CycleGraph[5], 9, 2]").unwrap(),
@@ -3316,8 +3313,7 @@ mod connectivity {
       msgs.iter().any(|m| m.contains(
         "VertexConnectivity::inv: The argument 2 in VertexConnectivity[Graph[<5>, <5>], 9, 2] is not a valid vertex."
       )),
-      "expected inv message, got {:?}",
-      msgs
+      "expected inv message, got {msgs:?}"
     );
   }
 
@@ -3328,7 +3324,7 @@ mod connectivity {
       "EdgeConnectivity[x]"
     );
     let msgs = woxi::get_captured_messages_raw();
-    assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
+    assert!(msgs.is_empty(), "expected no messages, got {msgs:?}");
   }
 }
 
@@ -3430,8 +3426,7 @@ mod k_core_components {
       msgs.iter().any(|m| m.contains(
         "KCoreComponents::inv: The argument Bogus in KCoreComponents[Graph[<5>, <5>], 2, Bogus] is not a valid parameter."
       )),
-      "expected inv message, got {:?}",
-      msgs
+      "expected inv message, got {msgs:?}"
     );
   }
 
@@ -3446,8 +3441,7 @@ mod k_core_components {
       msgs.iter().any(|m| m.contains(
         "KCoreComponents::int: Integer expected at position 2 in KCoreComponents[Graph[<5>, <5>], 1.5]."
       )),
-      "expected int message, got {:?}",
-      msgs
+      "expected int message, got {msgs:?}"
     );
   }
 
@@ -3462,8 +3456,7 @@ mod k_core_components {
       msgs.iter().any(|m| m.contains(
         "KCoreComponents::argtu: KCoreComponents called with 1 argument; 2 or 3 arguments are expected."
       )),
-      "expected argtu message, got {:?}",
-      msgs
+      "expected argtu message, got {msgs:?}"
     );
   }
 
@@ -3474,7 +3467,7 @@ mod k_core_components {
       "KCoreComponents[x, 2]"
     );
     let msgs = woxi::get_captured_messages_raw();
-    assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
+    assert!(msgs.is_empty(), "expected no messages, got {msgs:?}");
   }
 }
 
@@ -3602,8 +3595,7 @@ mod find_clique {
       msgs.iter().any(|m| m.contains(
         "FindClique::inv: The argument 0 in FindClique[Graph[<5>, <5>], 0] is not a valid parameter."
       )),
-      "expected inv message, got {:?}",
-      msgs
+      "expected inv message, got {msgs:?}"
     );
     assert_eq!(
       interpret("FindClique[CycleGraph[5], {1, 2, 3}]").unwrap(),
@@ -3614,8 +3606,7 @@ mod find_clique {
       msgs.iter().any(|m| m.contains(
         "FindClique::inv: The argument {1, 2, 3} in FindClique[Graph[<5>, <5>], {1, 2, 3}] is not a valid parameter."
       )),
-      "expected inv message, got {:?}",
-      msgs
+      "expected inv message, got {msgs:?}"
     );
   }
 
@@ -3623,7 +3614,7 @@ mod find_clique {
   fn non_graph_stays_unevaluated() {
     assert_eq!(interpret("FindClique[x]").unwrap(), "FindClique[x]");
     let msgs = woxi::get_captured_messages_raw();
-    assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
+    assert!(msgs.is_empty(), "expected no messages, got {msgs:?}");
   }
 }
 
@@ -4923,8 +4914,7 @@ mod graph_accessors {
       msgs.iter().any(|m| m.contains(
         "AdjacencyList::inv: The argument 9 in AdjacencyList[Graph[<5>, <5>], 9] is not a valid vertex."
       )),
-      "expected inv message, got {:?}",
-      msgs
+      "expected inv message, got {msgs:?}"
     );
     assert_eq!(
       interpret("EdgeIndex[CycleGraph[5], 1 <-> 3]").unwrap(),
@@ -4935,8 +4925,7 @@ mod graph_accessors {
       msgs.iter().any(|m| m.contains(
         "EdgeIndex::inv: The argument 1 <-> 3 in EdgeIndex[Graph[<5>, <5>], 1 <-> 3] is not a valid edge."
       )),
-      "expected inv message, got {:?}",
-      msgs
+      "expected inv message, got {msgs:?}"
     );
     // Non-graphs stay silently unevaluated
     assert_eq!(
@@ -4944,7 +4933,7 @@ mod graph_accessors {
       "AdjacencyList[x, 1]"
     );
     let msgs = woxi::get_captured_messages_raw();
-    assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
+    assert!(msgs.is_empty(), "expected no messages, got {msgs:?}");
   }
 }
 

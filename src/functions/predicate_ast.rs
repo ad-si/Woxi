@@ -2460,11 +2460,8 @@ pub fn leap_year_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Wolfram parses the string as a date and tests its year, so take the
     // leading run of digits as the year.
     Expr::String(s) => {
-      let digits: String = s
-        .trim()
-        .chars()
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
+      let digits: String =
+        s.trim().chars().take_while(char::is_ascii_digit).collect();
       match digits.parse::<i128>() {
         Ok(y) if !digits.is_empty() => y,
         _ => return Ok(bool_expr(false)),
@@ -2499,8 +2496,10 @@ pub fn match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// The display name of an expression's head, for ::heads messages.
 fn head_name(e: &Expr) -> String {
   crate::evaluator::evaluate_function_call_ast("Head", std::slice::from_ref(e))
-    .map(|h| crate::syntax::format_expr(&h, crate::syntax::ExprForm::Output))
-    .unwrap_or_else(|_| "Symbol".to_string())
+    .map_or_else(
+      |_| "Symbol".to_string(),
+      |h| crate::syntax::format_expr(&h, crate::syntax::ExprForm::Output),
+    )
 }
 
 /// Element slices for the two subjects of SubsetQ/DisjointQ/
@@ -2541,8 +2540,7 @@ fn same_head_elements<'a>(
       let h2 = head_name(&args[1]);
       if h1 != h2 {
         crate::emit_message(&format!(
-          "{}::heads: Heads {} and {} at positions 1 and 2 are expected to be the same.",
-          fname, h1, h2
+          "{fname}::heads: Heads {h1} and {h2} at positions 1 and 2 are expected to be the same."
         ));
         return Err(unevaluated(fname, args));
       }
@@ -2645,8 +2643,7 @@ fn intersecting_or_disjoint(
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 2 && args.len() != 3 {
     return Err(InterpreterError::EvaluationError(format!(
-      "{} expects 2 or 3 arguments",
-      fname
+      "{fname} expects 2 or 3 arguments"
     )));
   }
   // Optional `SameTest -> f` (or `{SameTest -> f}`) as the third argument.
@@ -2925,7 +2922,7 @@ pub fn mandelbrot_set_iteration_count_ast(
     match lhs {
       Expr::Identifier(s) if s == "MaxIterations" => {
         if let Expr::Integer(n) = rhs {
-          max_iter = (*n).max(0) as usize
+          max_iter = (*n).max(0) as usize;
         }
       }
       Expr::Identifier(s) if s == "WorkingPrecision" => {}
@@ -2970,18 +2967,17 @@ pub fn mandelbrot_set_iteration_count_ast(
     return unevaluated();
   }
   fn thread(e: &Expr, max_iter: usize) -> Expr {
-    match e {
-      Expr::List(items) => Expr::List(
+    if let Expr::List(items) = e {
+      Expr::List(
         items
           .iter()
           .map(|it| thread(it, max_iter))
           .collect::<Vec<_>>()
           .into(),
-      ),
-      _ => {
-        let (x, y) = expr_to_complex_parts(e).unwrap();
-        Expr::Integer(count(x, y, max_iter))
-      }
+      )
+    } else {
+      let (x, y) = expr_to_complex_parts(e).unwrap();
+      Expr::Integer(count(x, y, max_iter))
     }
   }
   Ok(thread(&args[0], max_iter))
@@ -3136,32 +3132,31 @@ pub fn mandelbrot_set_member_q_ast(
   }
 
   fn thread(e: &Expr, max_iter: usize, msg_count: &mut u32) -> Expr {
-    match e {
-      Expr::List(items) => Expr::List(
+    if let Expr::List(items) = e {
+      Expr::List(
         items
           .iter()
           .map(|it| thread(it, max_iter, msg_count))
           .collect::<Vec<_>>()
           .into(),
-      ),
-      _ => {
-        let (x, y) = expr_to_complex_parts(e).unwrap();
-        let (is_member, hit_max) = member(x, y, max_iter);
-        if hit_max {
-          *msg_count += 1;
-          if *msg_count <= 3 {
+      )
+    } else {
+      let (x, y) = expr_to_complex_parts(e).unwrap();
+      let (is_member, hit_max) = member(x, y, max_iter);
+      if hit_max {
+        *msg_count += 1;
+        if *msg_count <= 3 {
+          crate::emit_message(
+            "MandelbrotSetMemberQ::maxiter: Maximum number of iterations reached. Point may not actually be in the Mandelbrot set, but just extremely close.",
+          );
+          if *msg_count == 3 {
             crate::emit_message(
-              "MandelbrotSetMemberQ::maxiter: Maximum number of iterations reached. Point may not actually be in the Mandelbrot set, but just extremely close.",
+              "General::stop: Further output of MandelbrotSetMemberQ::maxiter will be suppressed during this calculation.",
             );
-            if *msg_count == 3 {
-              crate::emit_message(
-                "General::stop: Further output of MandelbrotSetMemberQ::maxiter will be suppressed during this calculation.",
-              );
-            }
           }
         }
-        bool_expr(is_member)
       }
+      bool_expr(is_member)
     }
   }
   let mut msg_count = 0u32;

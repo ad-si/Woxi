@@ -28,7 +28,7 @@ pub struct AudioData {
 impl AudioData {
   /// Number of sample frames per channel.
   pub fn len(&self) -> usize {
-    self.channels.first().map(|c| c.len()).unwrap_or(0)
+    self.channels.first().map_or(0, std::vec::Vec::len)
   }
 
   pub fn is_empty(&self) -> bool {
@@ -430,7 +430,7 @@ pub fn duration_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Audio — sample count / sample rate, as machine precision.
     "Audio" => parse_audio(&args[0]).and_then(|audio| {
-      let len = audio.channels.first().map(|c| c.len())?;
+      let len = audio.channels.first().map(std::vec::Vec::len)?;
       Some(seconds(Expr::Real(len as f64 / audio.rate)))
     }),
     // Sound — SoundNote durations play sequentially and sum (default
@@ -441,7 +441,7 @@ pub fn duration_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       fn note_durations(e: &Expr, total: &mut f64) -> Option<()> {
         match e {
           Expr::List(items) => {
-            for item in items.iter() {
+            for item in items {
               note_durations(item, total)?;
             }
             Some(())

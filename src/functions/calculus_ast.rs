@@ -138,14 +138,13 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         rows.push(Expr::List(row.into()));
       }
       return Ok(Expr::List(rows.into()));
-    } else {
-      // D[f, {{x, y, ...}}] → gradient vector
-      let mut result = Vec::new();
-      for v in vars {
-        result.push(d_ast(&[args[0].clone(), v.clone()])?);
-      }
-      return Ok(Expr::List(result.into()));
     }
+    // D[f, {{x, y, ...}}] → gradient vector
+    let mut result = Vec::new();
+    for v in vars {
+      result.push(d_ast(&[args[0].clone(), v.clone()])?);
+    }
+    return Ok(Expr::List(result.into()));
   }
 
   // Handle D[expr, {{x, y, ...}, n}] — n-th order derivative tensor.
@@ -264,12 +263,12 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // canonicalize (D[ArcCoth[x^2], x] stays (2*x)/(1 - x^4)).
   let (_, den) =
     crate::functions::polynomial_ast::together::extract_num_den(&result);
-  if !matches!(&den, Expr::Integer(1)) {
+  if matches!(&den, Expr::Integer(1)) {
+    Ok(result)
+  } else {
     Ok(
       crate::functions::polynomial_ast::cancel_expr_keep_quotient_sign(&result),
     )
-  } else {
-    Ok(result)
   }
 }
 
@@ -765,7 +764,7 @@ fn factor_logarithmic_antiderivative(expr: &Expr, var: &str) -> Option<Expr> {
   fn flatten_plus(expr: &Expr, out: &mut Vec<Expr>) {
     match expr {
       Expr::FunctionCall { name, args } if name == "Plus" => {
-        for a in args.iter() {
+        for a in args {
           flatten_plus(a, out);
         }
       }
@@ -795,7 +794,7 @@ fn factor_logarithmic_antiderivative(expr: &Expr, var: &str) -> Option<Expr> {
   fn factors(expr: &Expr, out: &mut Vec<Expr>) {
     match expr {
       Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
+        for a in args {
           factors(a, out);
         }
       }
@@ -1630,7 +1629,7 @@ fn flatten_times_factors(expr: &Expr) -> Vec<Expr> {
         rec(right, out);
       }
       Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
+        for a in args {
           rec(a, out);
         }
       }
@@ -2376,7 +2375,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         "Piecewise" if !args.is_empty() => {
           if let Expr::List(pieces) = &args[0] {
             let mut diffed_pieces: Vec<Expr> = Vec::with_capacity(pieces.len());
-            for piece in pieces.iter() {
+            for piece in pieces {
               if let Expr::List(pair) = piece
                 && pair.len() == 2
               {
@@ -2589,7 +2588,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             new_nmin += 1;
           }
           while new_coeffs.len() > 1
-            && new_coeffs.last().map(is_zero_expr).unwrap_or(false)
+            && new_coeffs.last().is_some_and(is_zero_expr)
           {
             new_coeffs.pop();
           }
@@ -4065,15 +4064,15 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             let db = differentiate(hi, var)?;
 
             // Substitute integration variable with upper/lower bound in integrand
-            let f_at_hi = if !int_var_name.is_empty() {
+            let f_at_hi = if int_var_name.is_empty() {
+              integrand.clone()
+            } else {
               crate::syntax::substitute_variable(integrand, int_var_name, hi)
-            } else {
-              integrand.clone()
             };
-            let f_at_lo = if !int_var_name.is_empty() {
-              crate::syntax::substitute_variable(integrand, int_var_name, lo)
-            } else {
+            let f_at_lo = if int_var_name.is_empty() {
               integrand.clone()
+            } else {
+              crate::syntax::substitute_variable(integrand, int_var_name, lo)
             };
 
             let mut terms: Vec<Expr> = Vec::new();
@@ -4348,9 +4347,8 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         let result = pow2(deriv_f_at_inv, Expr::Integer(-1));
         if matches!(dx, Expr::Integer(1)) {
           return Ok(result);
-        } else {
-          return Ok(simplify(times2(dx, result)));
         }
+        return Ok(simplify(times2(dx, result)));
       }
 
       // Check if this is Derivative[...][f][args]
@@ -5504,7 +5502,7 @@ fn try_integrate_derivative_product(
   }
   let coeff = try_match_linear_arg(&a0, var)?;
   let mut names = [n0.as_str(), n1.as_str()];
-  names.sort();
+  names.sort_unstable();
   let (head, negate) = match (names[0], names[1]) {
     ("Sec", "Tan") => ("Sec", false),
     ("Cot", "Csc") => ("Csc", true),
@@ -6012,9 +6010,8 @@ fn try_integrate_inverse_sqrt(base: &Expr, var: &str) -> Option<Expr> {
     base_eval, var_expr,
   ])
   .ok()?;
-  let coeffs = match &coeff_result {
-    Expr::List(items) => items,
-    _ => return None,
+  let Expr::List(coeffs) = &coeff_result else {
+    return None;
   };
 
   // We need exactly a polynomial of degree 2 with no linear term: a + 0*x + b*x^2
@@ -6092,9 +6089,8 @@ fn sqrt_quadratic_antiderivative(base: &Expr, var: &str) -> Option<Expr> {
     base_eval, var_expr,
   ])
   .ok()?;
-  let coeffs = match &coeff_result {
-    Expr::List(items) => items,
-    _ => return None,
+  let Expr::List(coeffs) = &coeff_result else {
+    return None;
   };
   // Need exactly a degree-2 polynomial: a + (linear)*x + b*x^2.
   if coeffs.len() != 3 {
@@ -6252,7 +6248,7 @@ fn try_integrate_rational(
     return None;
   }
   let reduced: Vec<i128> = den_coeffs.iter().map(|c| c / gcd_coeff).collect();
-  let (sign, reduced) = if reduced.last().map(|&c| c < 0).unwrap_or(false) {
+  let (sign, reduced) = if reduced.last().is_some_and(|&c| c < 0) {
     (-1i128, reduced.iter().map(|c| -c).collect::<Vec<_>>())
   } else {
     (1, reduced)
@@ -6792,7 +6788,8 @@ fn try_integrate_rational(
         times2(Expr::Integer(int_factor), make_sqrt(Expr::Integer(m)))
       };
 
-      let arctan_term = build_arctan_term(at_num, &effective_sqrt, arctan_expr);
+      let arctan_term =
+        build_arctan_term(at_num, &effective_sqrt, &arctan_expr);
       quad_terms.push(arctan_term);
     }
   } else if remaining_deg == 0 && roots.is_empty() {
@@ -6825,7 +6822,7 @@ fn try_integrate_rational(
 fn build_arctan_term(
   coeff_num: i128,
   sqrt_expr: &Expr,
-  arctan_expr: Expr,
+  arctan_expr: &Expr,
 ) -> Expr {
   let abs_coeff = coeff_num.abs();
 
@@ -7393,7 +7390,7 @@ fn try_integration_by_parts(factors: &[&Expr], var: &str) -> Option<Expr> {
   }
 
   // Limit recursion depth to prevent infinite loops
-  let depth = IBP_DEPTH.with(|d| d.get());
+  let depth = IBP_DEPTH.with(std::cell::Cell::get);
   if depth >= 5 {
     return None;
   }
@@ -7633,9 +7630,8 @@ fn try_integrate_log_derivative(expr: &Expr, var: &str) -> Option<Expr> {
     if is_constant_wrt(&g, var) {
       continue;
     }
-    let dg = match differentiate(&g, var) {
-      Ok(d) => d,
-      Err(_) => continue,
+    let Ok(dg) = differentiate(&g, var) else {
+      continue;
     };
     // ratio = integrand · g / g'
     let ratio = Expr::FunctionCall {
@@ -7650,9 +7646,8 @@ fn try_integrate_log_derivative(expr: &Expr, var: &str) -> Option<Expr> {
       ]
       .into(),
     };
-    let ratio_val = match crate::evaluator::evaluate_expr_to_expr(&ratio) {
-      Ok(v) => v,
-      Err(_) => continue,
+    let Ok(ratio_val) = crate::evaluator::evaluate_expr_to_expr(&ratio) else {
+      continue;
     };
     if matches!(&ratio_val, Expr::Integer(0)) {
       continue;
@@ -8539,9 +8534,8 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         // `∫ Piecewise[{{1, x ≤ 0}, {-1, x > 0}}] dx` →
         // `Piecewise[{{x, x ≤ 0}}, -x]`.
         "Piecewise" if !args.is_empty() => {
-          let pieces = match &args[0] {
-            Expr::List(items) => items,
-            _ => return None,
+          let Expr::List(pieces) = &args[0] else {
+            return None;
           };
           let mut new_pieces: Vec<Expr> = Vec::with_capacity(pieces.len());
           for item in pieces {
@@ -9263,24 +9257,23 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               }
             }
             // Try trig product: Sin[f]^m * Cos[f]^n
-            let var_refs: Vec<&Expr> = var_factors.to_vec();
+            let var_refs: Vec<&Expr> = var_factors.clone();
             // ∫ E^(a x) Sin[b x] dx / ∫ E^(a x) Cos[b x] dx
             if let Some(et_result) =
               try_integrate_exp_trig_product(&var_refs, var)
             {
               if const_factors.is_empty() {
                 return Some(et_result);
-              } else {
-                let const_expr = if const_factors.len() == 1 {
-                  const_factors[0].clone()
-                } else {
-                  Expr::FunctionCall {
-                    name: "Times".to_string(),
-                    args: const_factors.into_iter().cloned().collect(),
-                  }
-                };
-                return Some(times2(const_expr, et_result));
               }
+              let const_expr = if const_factors.len() == 1 {
+                const_factors[0].clone()
+              } else {
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: const_factors.into_iter().cloned().collect(),
+                }
+              };
+              return Some(times2(const_expr, et_result));
             }
             if let Some(trig_result) =
               try_integrate_sin_cos_product(&var_refs, var)
@@ -9288,17 +9281,16 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             {
               if const_factors.is_empty() {
                 return Some(trig_result);
-              } else {
-                let const_expr = if const_factors.len() == 1 {
-                  const_factors[0].clone()
-                } else {
-                  Expr::FunctionCall {
-                    name: "Times".to_string(),
-                    args: const_factors.into_iter().cloned().collect(),
-                  }
-                };
-                return Some(times2(const_expr, trig_result));
               }
+              let const_expr = if const_factors.len() == 1 {
+                const_factors[0].clone()
+              } else {
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: const_factors.into_iter().cloned().collect(),
+                }
+              };
+              return Some(times2(const_expr, trig_result));
             }
             // Try u-substitution for pairs of variable-dependent factors
             if var_factors.len() == 2
@@ -9781,7 +9773,7 @@ fn limit_bounded_oscillating_sum(expr: &Expr, var_name: &str) -> Option<Expr> {
     }
     Expr::FunctionCall { name, args } if name == "Plus" => {
       let mut v = Vec::new();
-      for a in args.iter() {
+      for a in args {
         v.extend(crate::functions::polynomial_ast::collect_additive_terms(a));
       }
       v
@@ -10111,7 +10103,7 @@ fn net_poly_order(expr: &Expr, var: &str) -> Option<f64> {
     // Times: orders add.
     Expr::FunctionCall { name, args } if name == "Times" => {
       let mut total = 0.0;
-      for a in args.iter() {
+      for a in args {
         total += net_poly_order(a, var)?;
       }
       Some(total)
@@ -10216,7 +10208,7 @@ fn leading_power_behavior(
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
       let mut acc = (0.0, Expr::Integer(1));
-      for a in args.iter() {
+      for a in args {
         acc = combine(acc, leading_power_behavior(a, var, at_zero)?)?;
       }
       Some(acc)
@@ -10226,7 +10218,7 @@ fn leading_power_behavior(
     }
     // Sums: the highest-order terms decide, and their coefficients add.
     Expr::FunctionCall { name, args } if name == "Plus" => leading_of_sum(
-      args.iter().cloned().collect::<Vec<_>>(),
+      &args.iter().cloned().collect::<Vec<_>>(),
       var,
       at_zero,
       ORDER_EPS,
@@ -10236,7 +10228,7 @@ fn leading_power_behavior(
       left,
       right,
     } => leading_of_sum(
-      vec![(**left).clone(), (**right).clone()],
+      &[(**left).clone(), (**right).clone()],
       var,
       at_zero,
       ORDER_EPS,
@@ -10246,7 +10238,7 @@ fn leading_power_behavior(
       left,
       right,
     } => leading_of_sum(
-      vec![
+      &[
         (**left).clone(),
         Expr::UnaryOp {
           op: UnaryOperator::Minus,
@@ -10300,7 +10292,7 @@ fn leading_power_of(
 }
 
 fn leading_of_sum(
-  terms: Vec<Expr>,
+  terms: &[Expr],
   var: &str,
   at_zero: bool,
   order_eps: f64,
@@ -10380,7 +10372,8 @@ fn tends_to_zero(expr: &Expr, var: &str) -> bool {
     for f in &factors {
       if is_constant_wrt(f, var) {
         continue; // finite factor
-      } else if tends_to_zero(f, var) {
+      }
+      if tends_to_zero(f, var) {
         saw_zero = true;
       } else {
         return false; // diverging or unclassifiable factor
@@ -10619,9 +10612,8 @@ fn limit_at_infinity(
       ));
     } else if order < -ORDER_EPS {
       return Ok(Expr::Integer(0));
-    } else {
-      return Ok(coeff);
     }
+    return Ok(coeff);
   }
 
   // Pull out multiplicative factors that are constant w.r.t. `var_name`.
@@ -11192,9 +11184,7 @@ fn bounded_trig_extremum(
   if name == "Abs" && fargs.len() == 1 {
     // The oscillation is the same; only the lower end of the range moves.
     let inner = bounded_trig_extremum(&fargs[0], rule, "MaxLimit")?;
-    return Ok(
-      inner.map(|_| Expr::Integer(if fn_name == "MaxLimit" { 1 } else { 0 })),
-    );
+    return Ok(inner.map(|_| Expr::Integer(i128::from(fn_name == "MaxLimit"))));
   }
   if (name != "Sin" && name != "Cos") || fargs.len() != 1 {
     return Ok(None);
@@ -11276,13 +11266,11 @@ fn conditions_are_complementary(a: &Expr, b: &Expr) -> bool {
       None
     }
   };
-  let (la, opa, ra) = match extract(a) {
-    Some(t) => t,
-    None => return false,
+  let Some((la, opa, ra)) = extract(a) else {
+    return false;
   };
-  let (lb, opb, rb) = match extract(b) {
-    Some(t) => t,
-    None => return false,
+  let Some((lb, opb, rb)) = extract(b) else {
+    return false;
   };
   // Same variable on the left, same constant on the right.
   if expr_to_string(&la) != expr_to_string(&lb)
@@ -11315,9 +11303,8 @@ fn try_piecewise_definite_integral(
     Expr::FunctionCall { name, args }
       if name == "Piecewise" && !args.is_empty() =>
     {
-      let pieces = match &args[0] {
-        Expr::List(p) => p,
-        _ => return None,
+      let Expr::List(pieces) = &args[0] else {
+        return None;
       };
       (pieces, args.get(1).cloned().unwrap_or(Expr::Integer(0)))
     }
@@ -11335,7 +11322,7 @@ fn try_piecewise_definite_integral(
     crate::functions::math_ast::try_eval_to_f64_with_infinity(e)
   };
   let mut terms: Vec<Expr> = Vec::new();
-  for piece in pieces.iter() {
+  for piece in pieces {
     let (val, cond) = match piece {
       Expr::List(p) if p.len() == 2 => (&p[0], &p[1]),
       _ => return None,
@@ -11457,7 +11444,7 @@ fn piecewise_condition_bounds(
     Expr::FunctionCall { name, args } if name == "And" => {
       let mut lo: Option<Expr> = None;
       let mut hi: Option<Expr> = None;
-      for c in args.iter() {
+      for c in args {
         let (l, h) = piecewise_condition_bounds(c, var)?;
         lo = intersect_bound(lo, l, true)?;
         hi = intersect_bound(hi, h, false)?;
@@ -11781,9 +11768,9 @@ fn reconcile_one_sided_direct(
     Some(v) if v.is_finite() => v,
     _ => return direct,
   };
-  let num = match numerical_one_sided_limit(expr, var_name, point, direction) {
-    Some(n) => n,
-    None => return direct,
+  let Some(num) = numerical_one_sided_limit(expr, var_name, point, direction)
+  else {
+    return direct;
   };
   let n_f = match crate::functions::math_ast::try_eval_to_f64(&num) {
     Some(v) if v.is_finite() => v,
@@ -11826,13 +11813,11 @@ fn numerical_one_sided_limit(
     let sign_positive = vals
       .iter()
       .find(|v| !v.is_infinite())
-      .map(|v| *v > 0.0)
-      .unwrap_or_else(|| vals[0].is_sign_positive());
+      .map_or_else(|| vals[0].is_sign_positive(), |v| *v > 0.0);
     if sign_positive {
       return Some(Expr::Identifier("Infinity".to_string()));
-    } else {
-      return Some(neg1(Expr::Identifier("Infinity".to_string())));
     }
+    return Some(neg1(Expr::Identifier("Infinity".to_string())));
   }
 
   // Check if the values are monotonically diverging (sign consistent, magnitude increasing)
@@ -11845,9 +11830,8 @@ fn numerical_one_sided_limit(
     if vals.last().unwrap().abs() > 2.0 * vals.first().unwrap().abs() {
       if all_positive {
         return Some(Expr::Identifier("Infinity".to_string()));
-      } else {
-        return Some(neg1(Expr::Identifier("Infinity".to_string())));
       }
+      return Some(neg1(Expr::Identifier("Infinity".to_string())));
     }
   }
 
@@ -11891,27 +11875,24 @@ fn numerical_two_sided_limit(
       // Check if both sides agree
       let a_val = crate::functions::math_ast::try_eval_to_f64(&a);
       let b_val = crate::functions::math_ast::try_eval_to_f64(&b);
-      match (a_val, b_val) {
-        (Some(av), Some(bv)) => {
-          let diff = (av - bv).abs();
-          let scale = av.abs().max(bv.abs()).max(1e-15);
-          if diff / scale < 0.01 || diff < 1e-10 {
-            // Both sides converge to the same value
-            return Some(a);
-          }
-          // Sides disagree — indeterminate
-          Some(Expr::Identifier("Indeterminate".to_string()))
+      if let (Some(av), Some(bv)) = (a_val, b_val) {
+        let diff = (av - bv).abs();
+        let scale = av.abs().max(bv.abs()).max(1e-15);
+        if diff / scale < 0.01 || diff < 1e-10 {
+          // Both sides converge to the same value
+          return Some(a);
         }
-        _ => {
-          // At least one side is infinite — check if they match symbolically
-          let a_str = expr_to_string(&a);
-          let b_str = expr_to_string(&b);
-          if a_str == b_str {
-            return Some(a);
-          }
-          // Different infinities — indeterminate
-          Some(Expr::Identifier("Indeterminate".to_string()))
+        // Sides disagree — indeterminate
+        Some(Expr::Identifier("Indeterminate".to_string()))
+      } else {
+        // At least one side is infinite — check if they match symbolically
+        let a_str = expr_to_string(&a);
+        let b_str = expr_to_string(&b);
+        if a_str == b_str {
+          return Some(a);
         }
+        // Different infinities — indeterminate
+        Some(Expr::Identifier("Indeterminate".to_string()))
       }
     }
     _ => None,
@@ -11938,9 +11919,8 @@ fn classify_factor_at(factor: &Expr, var: &str, point: &Expr) -> FactorAtPoint {
   let res = crate::evaluator::evaluate_expr_to_expr(&subst);
   crate::pop_quiet();
   crate::restore_warnings(saved);
-  let val = match res {
-    Ok(v) => v,
-    Err(_) => return FactorAtPoint::Unknown,
+  let Ok(val) = res else {
+    return FactorAtPoint::Unknown;
   };
   if matches!(&val, Expr::Integer(0))
     || matches!(&val, Expr::Real(f) if *f == 0.0)
@@ -12025,7 +12005,7 @@ fn limit_zero_times_infinity(
   }
 
   // Guard against pathological unbounded recursion.
-  let depth = LIMIT_PRODUCT_DEPTH.with(|d| d.get());
+  let depth = LIMIT_PRODUCT_DEPTH.with(std::cell::Cell::get);
   if depth >= 12 {
     return None;
   }
@@ -12102,7 +12082,7 @@ fn expr_node_count_capped(expr: &Expr, limit: usize) -> usize {
     *count += 1;
     match expr {
       Expr::FunctionCall { args, .. } | Expr::List(args) => {
-        for a in args.iter() {
+        for a in args {
           go(a, count, limit);
         }
       }
@@ -12197,7 +12177,7 @@ fn limit_power_form(
   };
 
   // Guard against unbounded re-entry (the transformed limit is itself a Limit).
-  let depth = LIMIT_POWER_DEPTH.with(|d| d.get());
+  let depth = LIMIT_POWER_DEPTH.with(std::cell::Cell::get);
   if depth > 4 {
     return None;
   }
@@ -12216,9 +12196,8 @@ fn limit_power_form(
   let exp_lim = limit_ast(&inner_args(exp.clone()));
   LIMIT_POWER_DEPTH.with(|d| d.set(depth));
 
-  let (base_lim, exp_lim) = match (base_lim, exp_lim) {
-    (Ok(b), Ok(e)) => (b, e),
-    _ => return None,
+  let (Ok(base_lim), Ok(exp_lim)) = (base_lim, exp_lim) else {
+    return None;
   };
 
   let is_indet = |e: &Expr| matches!(e, Expr::Identifier(n) | Expr::Constant(n) if n == "Indeterminate");
@@ -12399,7 +12378,7 @@ fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Bound recursion: repeated L'Hôpital / product rewrites can differentiate an
   // expression that never resolves, exploding its size. Past the bound, return
   // the call unevaluated rather than hanging.
-  let cur_depth = LIMIT_DEPTH.with(|d| d.get());
+  let cur_depth = LIMIT_DEPTH.with(std::cell::Cell::get);
   if cur_depth > 16 {
     return Ok(unevaluated("Limit", args));
   }
@@ -12571,11 +12550,25 @@ fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::pop_quiet();
     crate::restore_warnings(saved_warnings);
 
-    match result {
-      Ok(ref val) => {
-        // Check if the result is a valid numeric value (not Indeterminate, ComplexInfinity, etc.)
-        match val {
-          Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) => {
+    if let Ok(ref val) = result {
+      // Check if the result is a valid numeric value (not Indeterminate, ComplexInfinity, etc.)
+      match val {
+        Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) => {
+          return Ok(reconcile_one_sided_direct(
+            val.clone(),
+            &args[0],
+            &var_name,
+            &point,
+            direction,
+          ));
+        }
+        Expr::FunctionCall { name, args: fargs }
+          if name == "Rational" && fargs.len() == 2 =>
+        {
+          // Check for 0/0 indeterminate form
+          if matches!(&fargs[1], Expr::Integer(0)) {
+            // Fall through to L'Hôpital
+          } else {
             return Ok(reconcile_one_sided_direct(
               val.clone(),
               &args[0],
@@ -12584,85 +12577,68 @@ fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
               direction,
             ));
           }
-          Expr::FunctionCall { name, args: fargs }
-            if name == "Rational" && fargs.len() == 2 =>
-          {
-            // Check for 0/0 indeterminate form
-            if matches!(&fargs[1], Expr::Integer(0)) {
-              // Fall through to L'Hôpital
-            } else {
-              return Ok(reconcile_one_sided_direct(
-                val.clone(),
-                &args[0],
-                &var_name,
-                &point,
-                direction,
-              ));
-            }
+        }
+        Expr::FunctionCall { name, .. }
+          if name == "DirectedInfinity" || name == "Indeterminate" =>
+        {
+          // Fall through to try other methods
+        }
+        v if is_infinity(v) || is_negative_infinity(v) => {
+          // Direct substitution produced a real, directed +/-Infinity
+          // (e.g. Log[0] -> -Infinity); that signed value is the limit.
+          // ComplexInfinity / DirectedInfinity (an unsigned or genuinely
+          // two-sided divergence such as 1/x at 0) are handled by the arm
+          // above and stay Indeterminate, so they are not affected.
+          return result;
+        }
+        _ => {
+          // Check if it evaluates to a number via N[]
+          if crate::functions::math_ast::try_eval_to_f64(val).is_some() {
+            return Ok(reconcile_one_sided_direct(
+              val.clone(),
+              &args[0],
+              &var_name,
+              &point,
+              direction,
+            ));
           }
-          Expr::FunctionCall { name, .. }
-            if name == "DirectedInfinity" || name == "Indeterminate" =>
-          {
-            // Fall through to try other methods
-          }
-          v if is_infinity(v) || is_negative_infinity(v) => {
-            // Direct substitution produced a real, directed +/-Infinity
-            // (e.g. Log[0] -> -Infinity); that signed value is the limit.
-            // ComplexInfinity / DirectedInfinity (an unsigned or genuinely
-            // two-sided divergence such as 1/x at 0) are handled by the arm
-            // above and stay Indeterminate, so they are not affected.
+          // Accept a finite complex-number constant (e.g. -I/2). Direct
+          // substitution at a point where the expression is continuous is
+          // exactly the limit; for complex points the result is a pure
+          // numeric-complex form that try_eval_to_f64 can't see.
+          if is_numeric_complex_constant(val) {
             return result;
           }
-          _ => {
-            // Check if it evaluates to a number via N[]
-            if crate::functions::math_ast::try_eval_to_f64(val).is_some() {
-              return Ok(reconcile_one_sided_direct(
-                val.clone(),
-                &args[0],
-                &var_name,
-                &point,
-                direction,
-              ));
-            }
-            // Accept a finite complex-number constant (e.g. -I/2). Direct
-            // substitution at a point where the expression is continuous is
-            // exactly the limit; for complex points the result is a pure
-            // numeric-complex form that try_eval_to_f64 can't see.
-            if is_numeric_complex_constant(val) {
-              return result;
-            }
-            // A substituted result free of the limit variable is the value at
-            // a point of continuity (e.g. Limit[a x, x -> 2] = 2 a). Skip the
-            // indeterminate/divergent markers so 0/0, 1/0, … still fall through
-            // to L'Hôpital and the other strategies below.
-            let is_special_marker = matches!(
-              val,
-              Expr::Identifier(s) | Expr::Constant(s)
-                if s == "Indeterminate"
-                  || s == "ComplexInfinity"
-                  || s == "Infinity"
-                  || s == "Undefined"
-            ) || is_infinity(val)
-              || is_negative_infinity(val)
-              || matches!(val, Expr::FunctionCall { name, .. } if name == "DirectedInfinity" || name == "Indeterminate");
-            if !is_special_marker
-              && !crate::functions::polynomial_ast::contains_var(val, &var_name)
-            {
-              return Ok(reconcile_one_sided_direct(
-                val.clone(),
-                &args[0],
-                &var_name,
-                &point,
-                direction,
-              ));
-            }
-            // Return unevaluated if substitution doesn't yield a clean result
+          // A substituted result free of the limit variable is the value at
+          // a point of continuity (e.g. Limit[a x, x -> 2] = 2 a). Skip the
+          // indeterminate/divergent markers so 0/0, 1/0, … still fall through
+          // to L'Hôpital and the other strategies below.
+          let is_special_marker = matches!(
+            val,
+            Expr::Identifier(s) | Expr::Constant(s)
+              if s == "Indeterminate"
+                || s == "ComplexInfinity"
+                || s == "Infinity"
+                || s == "Undefined"
+          ) || is_infinity(val)
+            || is_negative_infinity(val)
+            || matches!(val, Expr::FunctionCall { name, .. } if name == "DirectedInfinity" || name == "Indeterminate");
+          if !is_special_marker
+            && !crate::functions::polynomial_ast::contains_var(val, &var_name)
+          {
+            return Ok(reconcile_one_sided_direct(
+              val.clone(),
+              &args[0],
+              &var_name,
+              &point,
+              direction,
+            ));
           }
+          // Return unevaluated if substitution doesn't yield a clean result
         }
       }
-      Err(_) => {
-        // Substitution failed (e.g., division by zero)
-      }
+    } else {
+      // Substitution failed (e.g., division by zero)
     }
   }
 
@@ -13020,7 +12996,7 @@ fn monomial_power_in(e: &Expr, var: &str) -> Option<i128> {
     } => Some(monomial_power_in(left, var)? - monomial_power_in(right, var)?),
     Expr::FunctionCall { name, args } if name == "Times" => {
       let mut total = 0i128;
-      for a in args.iter() {
+      for a in args {
         total += monomial_power_in(a, var)?;
       }
       Some(total)
@@ -13101,7 +13077,7 @@ fn essential_series_safe(e: &Expr, var: &str) -> (bool, bool) {
     {
       let mut safe = true;
       let mut ess = false;
-      for a in args.iter() {
+      for a in args {
         let (s, e2) = essential_series_safe(a, var);
         safe &= s;
         ess |= e2;
@@ -13662,17 +13638,14 @@ pub fn pade_approximant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall { name, args: sd }
       if name == "SeriesData" && sd.len() == 6 =>
     {
-      let coeffs = match &sd[2] {
-        Expr::List(c) => c,
-        _ => return unevaluated(),
+      let Expr::List(coeffs) = &sd[2] else {
+        return unevaluated();
       };
-      let nmin = match crate::functions::math_ast::expr_to_i128(&sd[3]) {
-        Some(v) => v,
-        None => return unevaluated(),
+      let Some(nmin) = crate::functions::math_ast::expr_to_i128(&sd[3]) else {
+        return unevaluated();
       };
-      let den = match crate::functions::math_ast::expr_to_i128(&sd[5]) {
-        Some(v) => v,
-        None => return unevaluated(),
+      let Some(den) = crate::functions::math_ast::expr_to_i128(&sd[5]) else {
+        return unevaluated();
       };
       if den != 1 {
         return unevaluated();
@@ -13824,17 +13797,14 @@ pub fn inverse_series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::List(c) => c.clone(),
         _ => return unevaluated(),
       };
-      let nmin = match crate::functions::math_ast::expr_to_i128(&sd[3]) {
-        Some(v) => v,
-        None => return unevaluated(),
+      let Some(nmin) = crate::functions::math_ast::expr_to_i128(&sd[3]) else {
+        return unevaluated();
       };
-      let nmax = match crate::functions::math_ast::expr_to_i128(&sd[4]) {
-        Some(v) => v,
-        None => return unevaluated(),
+      let Some(nmax) = crate::functions::math_ast::expr_to_i128(&sd[4]) else {
+        return unevaluated();
       };
-      let den = match crate::functions::math_ast::expr_to_i128(&sd[5]) {
-        Some(v) => v,
-        None => return unevaluated(),
+      let Some(den) = crate::functions::math_ast::expr_to_i128(&sd[5]) else {
+        return unevaluated();
       };
       // Reversion about 0 requires f(0)=0 (no constant term) and a present
       // linear term, i.e. the series starts exactly at x^1.
@@ -13999,7 +13969,7 @@ fn split_for_series(expr: &Expr) -> Option<(Expr, Expr)> {
     Expr::FunctionCall { name, args } if name == "Times" => {
       let mut num_f = Vec::new();
       let mut den_f = Vec::new();
-      for a in args.iter() {
+      for a in args {
         if let Some(d) = neg_power_den(a) {
           den_f.push(d);
         } else {
@@ -14099,7 +14069,7 @@ fn try_series_quotient(
     let target = l + m;
     let mut terms: Vec<Expr> =
       vec![num_map.get(&target).cloned().unwrap_or(Expr::Integer(0))];
-    for (&j, bj) in den_map.iter() {
+    for (&j, bj) in &den_map {
       if j == m {
         continue;
       }
@@ -14264,7 +14234,7 @@ fn compose_series_pair(outer: &Expr, inner: &Expr) -> Option<Expr> {
   let mut dense: Vec<Expr> = Vec::new();
   if nmin_r < big_m {
     let mut hi = big_m - 1;
-    while hi > nmin_r && coeff_map.get(&hi).map(&is_zero).unwrap_or(true) {
+    while hi > nmin_r && coeff_map.get(&hi).is_none_or(&is_zero) {
       hi -= 1;
     }
     for p in nmin_r..=hi {
@@ -15095,7 +15065,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&x0, Expr::Identifier(s) if s == "Infinity")
     && is_rational_function(&args[0])
   {
-    let temp = format!("{}$si", var_name);
+    let temp = format!("{var_name}$si");
     let recip = Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![Expr::Identifier(temp.clone()), Expr::Integer(-1)].into(),
@@ -16422,7 +16392,7 @@ fn adaptive_simpson(
 ) -> Option<f64> {
   let fa = f(a)?;
   let fb = f(b)?;
-  let m = (a + b) / 2.0;
+  let m = f64::midpoint(a, b);
   let fm = f(m)?;
   let whole = (b - a) / 6.0 * (fa + 4.0 * fm + fb);
   // A binary refinement to depth `max_depth` can visit up to 2^max_depth nodes
@@ -16452,9 +16422,9 @@ fn adaptive_simpson_rec(
   depth: u32,
   budget: &std::cell::Cell<u64>,
 ) -> Option<f64> {
-  let m = (a + b) / 2.0;
-  let m1 = (a + m) / 2.0;
-  let m2 = (m + b) / 2.0;
+  let m = f64::midpoint(a, b);
+  let m1 = f64::midpoint(a, m);
+  let m2 = f64::midpoint(m, b);
   let fm1 = f(m1)?;
   let fm2 = f(m2)?;
   let h = b - a;
@@ -16663,9 +16633,8 @@ pub fn grad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let unevaluated = || Ok(unevaluated("Grad", args));
-  let vars = match &args[1] {
-    Expr::List(items) => items,
-    _ => return unevaluated(),
+  let Expr::List(vars) = &args[1] else {
+    return unevaluated();
   };
 
   // Scale factors: all 1 for the plain (Cartesian) form, or system-specific.
@@ -16684,7 +16653,7 @@ pub fn grad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // All variables must be plain symbols.
   let mut var_names = Vec::with_capacity(vars.len());
-  for var in vars.iter() {
+  for var in vars {
     match var {
       Expr::Identifier(s) => var_names.push(s.clone()),
       _ => return unevaluated(),
@@ -16708,7 +16677,7 @@ fn grad_field(
 ) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = field {
     let mut rows = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       rows.push(grad_field(item, var_names, scales)?);
     }
     return Ok(Expr::List(rows.into()));
@@ -16746,17 +16715,11 @@ pub fn wronskian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Wronskian expects exactly 2 arguments".into(),
     ));
   }
-  let funcs = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("Wronskian", args));
-    }
+  let Expr::List(funcs) = &args[0] else {
+    return Ok(unevaluated("Wronskian", args));
   };
-  let var_name = match &args[1] {
-    Expr::Identifier(s) => s,
-    _ => {
-      return Ok(unevaluated("Wronskian", args));
-    }
+  let Expr::Identifier(var_name) = &args[1] else {
+    return Ok(unevaluated("Wronskian", args));
   };
 
   let n = funcs.len();
@@ -16786,10 +16749,10 @@ pub fn wronskian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::polynomial_ast::apply_trig_identities(&result);
   let simplified_str = expr_to_string(&simplified);
   let result_str = expr_to_string(&result);
-  if simplified_str != result_str {
-    crate::evaluator::evaluate_expr_to_expr(&simplified)
-  } else {
+  if simplified_str == result_str {
     Ok(result)
+  } else {
+    crate::evaluator::evaluate_expr_to_expr(&simplified)
   }
 }
 
@@ -16801,13 +16764,11 @@ pub fn div_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let unevaluated = || Ok(unevaluated("Div", args));
-  let funcs = match &args[0] {
-    Expr::List(items) => items,
-    _ => return unevaluated(),
+  let Expr::List(funcs) = &args[0] else {
+    return unevaluated();
   };
-  let vars = match &args[1] {
-    Expr::List(items) => items,
-    _ => return unevaluated(),
+  let Expr::List(vars) = &args[1] else {
+    return unevaluated();
   };
 
   // The 3-argument form uses orthogonal-curvilinear scale factors. It is
@@ -16816,9 +16777,8 @@ pub fn div_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if funcs.len() != vars.len() {
       return unevaluated();
     }
-    let scales = match coord_scales_from_arg(&args[2], vars) {
-      Some(h) => h,
-      None => return unevaluated(),
+    let Some(scales) = coord_scales_from_arg(&args[2], vars) else {
+      return unevaluated();
     };
     let mut var_names = Vec::with_capacity(vars.len());
     for var in vars {
@@ -16863,7 +16823,7 @@ fn divergence_field(
       return Ok(None);
     }
     let mut rows = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       match divergence_field(item, var_names)? {
         Some(r) => rows.push(r),
         None => return Ok(None),
@@ -16899,16 +16859,14 @@ pub fn laplacian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let unevaluated = || Ok(unevaluated("Laplacian", args));
-  let vars = match &args[1] {
-    Expr::List(items) => items,
-    _ => return unevaluated(),
+  let Expr::List(vars) = &args[1] else {
+    return unevaluated();
   };
 
   // The 3-argument form uses orthogonal-curvilinear scale factors.
   if args.len() == 3 {
-    let scales = match coord_scales_from_arg(&args[2], vars) {
-      Some(h) => h,
-      None => return unevaluated(),
+    let Some(scales) = coord_scales_from_arg(&args[2], vars) else {
+      return unevaluated();
     };
     let mut var_names = Vec::with_capacity(vars.len());
     for var in vars {
@@ -16922,9 +16880,8 @@ pub fn laplacian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut terms = Vec::with_capacity(vars.len());
   for var in vars {
-    let var_name = match var {
-      Expr::Identifier(s) => s,
-      _ => return unevaluated(),
+    let Expr::Identifier(var_name) = var else {
+      return unevaluated();
     };
     // Second derivative: D[D[f, x], x]
     let first = differentiate_expr(&args[0], var_name)?;
@@ -16969,27 +16926,22 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Curl expects 2 or 3 arguments".into(),
     ));
   }
-  let vars = match &args[1] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("Curl", args));
-    }
+  let Expr::List(vars) = &args[1] else {
+    return Ok(unevaluated("Curl", args));
   };
 
   // The 3-argument form uses orthogonal-curvilinear scale factors and requires
   // a vector field of 2 (scalar result) or 3 (vector result) components.
   if args.len() == 3 {
     let unevaluated = || Ok(unevaluated("Curl", args));
-    let field = match &args[0] {
-      Expr::List(items) => items,
-      _ => return unevaluated(),
+    let Expr::List(field) = &args[0] else {
+      return unevaluated();
     };
     if field.len() != vars.len() || !(field.len() == 2 || field.len() == 3) {
       return unevaluated();
     }
-    let scales = match coord_scales_from_arg(&args[2], vars) {
-      Some(h) => h,
-      None => return unevaluated(),
+    let Some(scales) = coord_scales_from_arg(&args[2], vars) else {
+      return unevaluated();
     };
     let mut var_names = Vec::with_capacity(vars.len());
     for v in vars {
@@ -17003,17 +16955,11 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Curl[s, {x, y}] for a scalar s: the 2D scalar curl equals
   // {-D[s, y], D[s, x]} (the perpendicular gradient). Matches Wolfram.
   if !matches!(&args[0], Expr::List(_)) && vars.len() == 2 {
-    let var1 = match &vars[0] {
-      Expr::Identifier(s) => s,
-      _ => {
-        return Ok(unevaluated("Curl", args));
-      }
+    let Expr::Identifier(var1) = &vars[0] else {
+      return Ok(unevaluated("Curl", args));
     };
-    let var2 = match &vars[1] {
-      Expr::Identifier(s) => s,
-      _ => {
-        return Ok(unevaluated("Curl", args));
-      }
+    let Expr::Identifier(var2) = &vars[1] else {
+      return Ok(unevaluated("Curl", args));
     };
     let dsdy = differentiate_expr(&args[0], var2)?;
     let dsdx = differentiate_expr(&args[0], var1)?;
@@ -17023,11 +16969,8 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ))?;
     return Ok(Expr::List(vec![neg_dsdy, dsdx].into()));
   }
-  let field = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("Curl", args));
-    }
+  let Expr::List(field) = &args[0] else {
+    return Ok(unevaluated("Curl", args));
   };
 
   // Validate the field's rank and dimensions against the space dimension n,
@@ -17064,8 +17007,7 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     if rank >= n {
       crate::emit_message(&format!(
-        "Curl::hrank: Tensor expression {} does not have a curl because its rank, {}, is greater than or equal to the dimension {}.",
-        field_str, rank, n
+        "Curl::hrank: Tensor expression {field_str} does not have a curl because its rank, {rank}, is greater than or equal to the dimension {n}."
       ));
       return Ok(unevaluated());
     }
@@ -17076,17 +17018,11 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if field.len() == 2 && vars.len() == 2 {
     // 2D curl: dF2/dx1 - dF1/dx2
-    let var1 = match &vars[0] {
-      Expr::Identifier(s) => s,
-      _ => {
-        return Ok(unevaluated());
-      }
+    let Expr::Identifier(var1) = &vars[0] else {
+      return Ok(unevaluated());
     };
-    let var2 = match &vars[1] {
-      Expr::Identifier(s) => s,
-      _ => {
-        return Ok(unevaluated());
-      }
+    let Expr::Identifier(var2) = &vars[1] else {
+      return Ok(unevaluated());
     };
     let df2_dx1 = differentiate_expr(&field[1], var1)?;
     let df1_dx2 = differentiate_expr(&field[0], var2)?;
@@ -17173,7 +17109,7 @@ pub fn dt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Anything that is not a plain symbol or a `{symbol, integer}` spec (a
 /// symbolic order, say) is left exactly where it is — the canonical order is
 /// only known for the specs Woxi can read.
-fn canonical_dt(args: Vec<Expr>) -> Expr {
+fn canonical_dt(args: &[Expr]) -> Expr {
   let mut specs: Vec<(String, i128)> = Vec::with_capacity(args.len() - 1);
   for spec in &args[1..] {
     match spec {
@@ -17191,7 +17127,7 @@ fn canonical_dt(args: Vec<Expr>) -> Expr {
         };
         specs.push((v.clone(), *n));
       }
-      _ => return crate::syntax::unevaluated("Dt", &args),
+      _ => return crate::syntax::unevaluated("Dt", args),
     }
   }
 
@@ -17253,7 +17189,7 @@ fn collect_dt_symbols(expr: &Expr, out: &mut Vec<String>) {
       out.push(n.clone());
     }
     Expr::FunctionCall { args, .. } => {
-      for a in args.iter() {
+      for a in args {
         collect_dt_symbols(a, out);
       }
     }
@@ -17263,7 +17199,7 @@ fn collect_dt_symbols(expr: &Expr, out: &mut Vec<String>) {
     }
     Expr::UnaryOp { operand, .. } => collect_dt_symbols(operand, out),
     Expr::List(items) => {
-      for i in items.iter() {
+      for i in items {
         collect_dt_symbols(i, out);
       }
     }
@@ -17462,7 +17398,7 @@ fn total_differentiate(
           }
           let mut new_args = args.to_vec();
           new_args.push(Expr::Identifier(var.to_string()));
-          Ok(canonical_dt(new_args))
+          Ok(canonical_dt(&new_args))
         }
         "Sin" if args.len() == 1 => {
           let df = total_differentiate(&args[0], var)?;
@@ -17658,9 +17594,8 @@ fn leading_series_term(series: &Expr, var: &str, x0: &Expr) -> Option<Expr> {
     return None;
   }
   // SeriesData[var, x0, {coeffs}, nmin, nmax, denom]
-  let coeffs = match &args[2] {
-    Expr::List(c) => c,
-    _ => return None,
+  let Expr::List(coeffs) = &args[2] else {
+    return None;
   };
   let nmin = crate::functions::math_ast::expr_to_i128(&args[3])?;
   let denom = crate::functions::math_ast::expr_to_i128(&args[5])?;
@@ -17799,11 +17734,9 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ])?;
 
   // Extract SeriesData coefficients
-  let (coeffs, _min_power) = match extract_series_coefficients(&series_result) {
-    Some(c) => c,
-    None => {
-      return Ok(unevaluated("AsymptoticSolve", args));
-    }
+  let Some((coeffs, min_pow)) = extract_series_coefficients(&series_result)
+  else {
+    return Ok(unevaluated("AsymptoticSolve", args));
   };
 
   if coeffs.is_empty() {
@@ -17827,7 +17760,7 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if matches!(coeff, Expr::Integer(0)) {
       continue;
     }
-    let power = _min_power + i as i128;
+    let power = min_pow + i as i128;
     let term = if power == 0 {
       coeff.clone()
     } else if power == 1 {
@@ -18133,12 +18066,11 @@ pub fn frenet_serret_system_ast(
 
   // If the first argument is a scalar function f[t], treat it as the 2D curve {t, f[t]}
   let owned_components: Vec<Expr>;
-  let components: &[Expr] = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      owned_components = vec![args[1].clone(), args[0].clone()];
-      &owned_components
-    }
+  let components: &[Expr] = if let Expr::List(items) = &args[0] {
+    items
+  } else {
+    owned_components = vec![args[1].clone(), args[0].clone()];
+    &owned_components
   };
 
   let var_name = match &args[1] {

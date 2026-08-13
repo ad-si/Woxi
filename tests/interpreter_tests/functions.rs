@@ -2383,8 +2383,7 @@ mod reals {
     let result = interpret("Element[x + 5*I, Reals]").unwrap();
     assert!(
       result.contains("Element"),
-      "expected unevaluated, got {}",
-      result
+      "expected unevaluated, got {result}"
     );
   }
 }
@@ -5210,8 +5209,7 @@ mod boolean_satisfiability {
       msgs.iter().any(|m| m.contains(
         "SatisfiableQ::boolv: x && y is not Boolean valued at {True}."
       )),
-      "expected boolv message, got {:?}",
-      msgs
+      "expected boolv message, got {msgs:?}"
     );
     assert_eq!(
       interpret("SatisfiableQ[x && y && z, {x, y}]").unwrap(),
@@ -5222,8 +5220,7 @@ mod boolean_satisfiability {
       msgs.iter().any(|m| m.contains(
         "SatisfiableQ::boolv: x && y && z is not Boolean valued at {True, True}."
       )),
-      "expected boolv message, got {:?}",
-      msgs
+      "expected boolv message, got {msgs:?}"
     );
   }
 
@@ -5254,7 +5251,7 @@ mod boolean_satisfiability {
       "SatisfiabilityCount[x && y, {x}]"
     );
     let msgs = woxi::get_captured_messages_raw();
-    assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
+    assert!(msgs.is_empty(), "expected no messages, got {msgs:?}");
   }
 
   #[test]
@@ -5834,8 +5831,7 @@ mod string_extract {
       msgs.iter().any(|m| m.contains(
         "StringExtract::strse: A string or list of strings is expected at position 1 in StringExtract[42, 1]."
       )),
-      "expected strse message, got {:?}",
-      msgs
+      "expected strse message, got {msgs:?}"
     );
   }
 }
@@ -5920,8 +5916,7 @@ mod boolean_minterms {
       msgs.iter().any(|m| m.contains(
         "BooleanMinterms::bspec: BooleanMinterms[a || b, {a, b}] is not a valid BooleanMinterms specification."
       )),
-      "expected bspec message, got {:?}",
-      msgs
+      "expected bspec message, got {msgs:?}"
     );
     // Mixed row lengths are invalid
     assert_eq!(
@@ -5986,8 +5981,7 @@ mod cross_dot_shape_messages {
       msgs.iter().any(|m| m.contains(
         "Cross::nonn1: The arguments are expected to be vectors of equal length, and the number of arguments is expected to be one less than their length."
       )),
-      "expected nonn1 message, got {:?}",
-      msgs
+      "expected nonn1 message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Cross[{1, 2, 3}, {4, 5}]").unwrap(),
@@ -6000,8 +5994,7 @@ mod cross_dot_shape_messages {
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.is_empty(),
-      "symbolic Cross must stay silent, got {:?}",
-      msgs
+      "symbolic Cross must stay silent, got {msgs:?}"
     );
     // Valid forms still work
     assert_eq!(
@@ -6042,8 +6035,7 @@ mod cross_dot_shape_messages {
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.iter().any(|m| m.contains("Cross::nonn1")),
-      "expected nonn1, got {:?}",
-      msgs
+      "expected nonn1, got {msgs:?}"
     );
   }
 
@@ -6059,8 +6051,7 @@ mod cross_dot_shape_messages {
       msgs.iter().any(|m| m.contains(
         "Dot::dotsh: Tensors {1, 2} and {3, 4, 5} have incompatible shapes."
       )),
-      "expected dotsh message, got {:?}",
-      msgs
+      "expected dotsh message, got {msgs:?}"
     );
     assert_eq!(
       interpret("{{1, 2}} . {1, 2, 3}").unwrap(),
@@ -6095,8 +6086,7 @@ mod map_thread_mptc_message {
       msgs.iter().any(|m| m.contains(
         "MapThread::mptc: Incompatible dimensions of objects at positions {2, 1} and {2, 2} of MapThread[f, {{a, b}, {c, d, e}}]; dimensions are 2 and 3."
       )),
-      "expected detailed mptc message, got {:?}",
-      msgs
+      "expected detailed mptc message, got {msgs:?}"
     );
     // Adjacent comparison: the first two lists match, the third differs
     assert_eq!(
@@ -6108,8 +6098,7 @@ mod map_thread_mptc_message {
       msgs.iter().any(|m| m.contains(
         "MapThread::mptc: Incompatible dimensions of objects at positions {2, 2} and {2, 3} of MapThread[f, {{a, b}, {c, d}, {e}}]; dimensions are 2 and 1."
       )),
-      "expected adjacent-pair mptc message, got {:?}",
-      msgs
+      "expected adjacent-pair mptc message, got {msgs:?}"
     );
   }
 
@@ -6124,8 +6113,7 @@ mod map_thread_mptc_message {
       msgs.iter().any(|m| m.contains(
         "MapThread::mptc: Incompatible dimensions of objects at positions {2, 1} and {2, 2} of MapThread[f, {{{a, b}}, {{c, d}, {e, f}}}, 2]; dimensions are 1 and 2."
       )),
-      "expected level-2 mptc message, got {:?}",
-      msgs
+      "expected level-2 mptc message, got {msgs:?}"
     );
     // Valid forms still work
     assert_eq!(

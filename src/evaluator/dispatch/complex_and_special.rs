@@ -119,16 +119,14 @@ pub fn dispatch_complex_and_special(
       if !imag_has_i {
         // If real part is 0, return b*I
         if matches!(real, Expr::Integer(0)) {
-          return Some(Ok(binop(
-            BinaryOperator::Times,
+          return Some(Ok(times2(
             imag.clone(),
             Expr::Identifier("I".to_string()),
           )));
         }
         // If imaginary is 1, return a + I
         if matches!(imag, Expr::Integer(1)) {
-          return Some(Ok(binop(
-            BinaryOperator::Plus,
+          return Some(Ok(plus2(
             real.clone(),
             Expr::Identifier("I".to_string()),
           )));
@@ -160,14 +158,9 @@ pub fn dispatch_complex_and_special(
         // Symbolic components (e.g. the pattern Complex[a_, b_]) keep the
         // raw a + b*I BinaryOp shape so structural pattern matching against
         // Plus/Times complex trees still works.
-        return Some(Ok(binop(
-          BinaryOperator::Plus,
+        return Some(Ok(plus2(
           real.clone(),
-          binop(
-            BinaryOperator::Times,
-            imag.clone(),
-            Expr::Identifier("I".to_string()),
-          ),
+          times2(imag.clone(), Expr::Identifier("I".to_string())),
         )));
       }
       // Imaginary part contains I (iterated Complex), evaluate algebraically
@@ -229,10 +222,7 @@ pub fn dispatch_complex_and_special(
           return Some(Ok(Expr::Identifier("Infinity".to_string())));
         }
         Expr::Integer(-1) => {
-          return Some(Ok(Expr::UnaryOp {
-            op: UnaryOperator::Minus,
-            operand: Box::new(Expr::Identifier("Infinity".to_string())),
-          }));
+          return Some(Ok(neg1(Expr::Identifier("Infinity".to_string()))));
         }
         Expr::Integer(0) => {
           return Some(Ok(Expr::Identifier("ComplexInfinity".to_string())));
@@ -248,10 +238,7 @@ pub fn dispatch_complex_and_special(
               return Some(Ok(Expr::Identifier("Infinity".to_string())));
             }
             if v < 0.0 {
-              return Some(Ok(Expr::UnaryOp {
-                op: UnaryOperator::Minus,
-                operand: Box::new(Expr::Identifier("Infinity".to_string())),
-              }));
+              return Some(Ok(neg1(Expr::Identifier("Infinity".to_string()))));
             }
             return Some(Ok(Expr::Identifier("ComplexInfinity".to_string())));
           }
@@ -264,15 +251,11 @@ pub fn dispatch_complex_and_special(
               if re_n > 0 {
                 return Some(Ok(Expr::Identifier("Infinity".to_string())));
               } else if re_n < 0 {
-                return Some(Ok(Expr::UnaryOp {
-                  op: UnaryOperator::Minus,
-                  operand: Box::new(Expr::Identifier("Infinity".to_string())),
-                }));
-              } else {
-                return Some(Ok(Expr::Identifier(
-                  "ComplexInfinity".to_string(),
-                )));
+                return Some(Ok(neg1(Expr::Identifier(
+                  "Infinity".to_string(),
+                ))));
               }
+              return Some(Ok(Expr::Identifier("ComplexInfinity".to_string())));
             }
             // Compute magnitude squared: (re_n/re_d)^2 + (im_n/im_d)^2
             let mag_sq_num = re_n
@@ -302,11 +285,7 @@ pub fn dispatch_complex_and_special(
                   args: vec![Expr::Integer(msn), Expr::Integer(msd)].into(),
                 }
               };
-              let normalized = binop(
-                BinaryOperator::Divide,
-                args[0].clone(),
-                make_sqrt(sqrt_arg),
-              );
+              let normalized = div2(args[0].clone(), make_sqrt(sqrt_arg));
               let normalized = match evaluate_expr_to_expr(&normalized) {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
@@ -316,10 +295,9 @@ pub fn dispatch_complex_and_special(
                 return Some(Ok(Expr::Identifier("Infinity".to_string())));
               }
               if matches!(&normalized, Expr::Integer(-1)) {
-                return Some(Ok(Expr::UnaryOp {
-                  op: UnaryOperator::Minus,
-                  operand: Box::new(Expr::Identifier("Infinity".to_string())),
-                }));
+                return Some(Ok(neg1(Expr::Identifier(
+                  "Infinity".to_string(),
+                ))));
               }
               return Some(Ok(Expr::FunctionCall {
                 name: "DirectedInfinity".to_string(),
@@ -336,17 +314,14 @@ pub fn dispatch_complex_and_special(
             && let Some((re, im)) = split_real_imag_symbolic(&args[0])
             && !is_zero_expr(&im)
           {
-            let re_sq =
-              binop(BinaryOperator::Power, re.clone(), Expr::Integer(2));
-            let im_sq =
-              binop(BinaryOperator::Power, im.clone(), Expr::Integer(2));
-            let mag_sq = binop(BinaryOperator::Plus, re_sq, im_sq);
+            let re_sq = pow2(re.clone(), Expr::Integer(2));
+            let im_sq = pow2(im.clone(), Expr::Integer(2));
+            let mag_sq = plus2(re_sq, im_sq);
             let mag_sq = match evaluate_expr_to_expr(&mag_sq) {
               Ok(v) => v,
               Err(e) => return Some(Err(e)),
             };
-            let direction =
-              binop(BinaryOperator::Divide, args[0].clone(), make_sqrt(mag_sq));
+            let direction = div2(args[0].clone(), make_sqrt(mag_sq));
             let direction = match evaluate_expr_to_expr(&direction) {
               Ok(v) => v,
               Err(e) => return Some(Err(e)),
@@ -378,21 +353,16 @@ pub fn dispatch_complex_and_special(
                   return Some(Ok(Expr::Identifier("Infinity".to_string())));
                 }
                 if nre < 0.0 {
-                  return Some(Ok(Expr::UnaryOp {
-                    op: UnaryOperator::Minus,
-                    operand: Box::new(Expr::Identifier("Infinity".to_string())),
-                  }));
+                  return Some(Ok(neg1(Expr::Identifier(
+                    "Infinity".to_string(),
+                  ))));
                 }
               }
               // Build `re + im*I` so the regular Times printer handles
               // sign placement and `0. + r*I` Re/Im split.
-              let im_term = binop(
-                BinaryOperator::Times,
-                Expr::Real(nim),
-                Expr::Identifier("I".to_string()),
-              );
-              let direction =
-                binop(BinaryOperator::Plus, Expr::Real(nre), im_term);
+              let im_term =
+                times2(Expr::Real(nim), Expr::Identifier("I".to_string()));
+              let direction = plus2(Expr::Real(nre), im_term);
               let direction = match evaluate_expr_to_expr(&direction) {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
@@ -445,11 +415,11 @@ pub fn dispatch_complex_and_special(
         crate::syntax::expr_to_output(&args[0])
       };
       let line = if args.len() >= 2 {
-        format!(">> {} {}", label, display_expr)
+        format!(">> {label} {display_expr}")
       } else {
-        format!(">> {}", display_expr)
+        format!(">> {display_expr}")
       };
-      println!("{}", line);
+      println!("{line}");
       crate::capture_stdout(&line);
       return Some(Ok(args[0].clone()));
     }
@@ -643,8 +613,10 @@ pub fn dispatch_complex_and_special(
           // Collect all known names: built-in + user-defined
           let builtin_names = crate::evaluator::get_builtin_function_names();
           let user_names = crate::get_defined_names();
-          let mut all_names: Vec<String> =
-            builtin_names.into_iter().map(|s| s.to_string()).collect();
+          let mut all_names: Vec<String> = builtin_names
+            .into_iter()
+            .map(std::string::ToString::to_string)
+            .collect();
           for name in user_names {
             if !all_names.contains(&name) {
               all_names.push(name);
@@ -771,106 +743,105 @@ pub fn dispatch_complex_and_special(
         return Some(Ok(Expr::List(
           vec![result, Expr::List(groups.into())].into(),
         )));
-      } else {
-        // Reap[expr, patt] / Reap[expr, {patt1, ...}] / Reap[expr, patt, f]
-        let patt_arg = match evaluate_expr_to_expr(&args[1]) {
-          Ok(v) => v,
-          Err(e) => return Some(Err(e)),
-        };
-        let patterns = match &patt_arg {
-          Expr::List(pats) => pats.clone(),
-          _ => vec![patt_arg.clone()].into(),
-        };
-        let is_list_form = matches!(&patt_arg, Expr::List(_));
-        let wrap_fn: Option<Expr> = if args.len() == 3 {
-          match evaluate_expr_to_expr(&args[2]) {
-            Ok(f) => Some(f),
-            Err(e) => return Some(Err(e)),
-          }
-        } else {
-          None
-        };
-
-        // Build per-pattern groups: for each pattern, find all matching
-        // tags (in order of first sow), and for each unique tag collect
-        // its sowed values. Sows whose tags do not match any of the given
-        // patterns are propagated to the enclosing Reap scope (if any),
-        // matching Wolfram's behaviour.
-        let mut matched_indices: std::collections::HashSet<usize> =
-          std::collections::HashSet::new();
-        let mut result_groups: Vec<Expr> = Vec::new();
-        for patt in &patterns {
-          let mut tag_order: Vec<Expr> = Vec::new();
-          let mut tag_groups: Vec<Vec<Expr>> = Vec::new();
-          for (i, (val, tag)) in sowed.iter().enumerate() {
-            if !tag_matches_pattern(tag, patt) {
-              continue;
-            }
-            matched_indices.insert(i);
-            if let Some(idx) = tag_order
-              .iter()
-              .position(|t| expr_to_string(t) == expr_to_string(tag))
-            {
-              tag_groups[idx].push(val.clone());
-            } else {
-              tag_order.push(tag.clone());
-              tag_groups.push(vec![val.clone()]);
-            }
-          }
-          // Build the group list for this pattern.
-          let per_pattern: Vec<Expr> = tag_order
-            .into_iter()
-            .zip(tag_groups)
-            .map(|(tag, vals)| {
-              let vals_list = Expr::List(vals.into());
-              if let Some(f) = &wrap_fn {
-                // Apply f[tag, {values}] — handles named heads, anonymous
-                // functions (Function[body]), and NamedFunction forms.
-                crate::evaluator::function_application::apply_curried_call(
-                  f,
-                  &[tag, vals_list],
-                )
-                .unwrap_or(Expr::FunctionCall {
-                  name: "List".to_string(),
-                  args: vec![].into(),
-                })
-              } else {
-                vals_list
-              }
-            })
-            .collect();
-
-          if is_list_form {
-            // {patt1, patt2, ...} form: each pattern contributes a list,
-            // even if empty.
-            result_groups.push(Expr::List(per_pattern.into()));
-          } else {
-            // Single-pattern form: the result groups are the per-tag
-            // entries directly (flattened — no extra wrapping).
-            result_groups.extend(per_pattern);
-          }
-        }
-        // Forward unmatched sows to the enclosing Reap scope (if any) so
-        // nested Reap[..., patt] expressions propagate sows that did not
-        // match the inner pattern upward.
-        let unmatched: Vec<(Expr, Expr)> = sowed
-          .iter()
-          .enumerate()
-          .filter(|(i, _)| !matched_indices.contains(i))
-          .map(|(_, pair)| pair.clone())
-          .collect();
-        if !unmatched.is_empty() {
-          crate::SOW_STACK.with(|stack| {
-            let mut stack = stack.borrow_mut();
-            if let Some(parent) = stack.last_mut() {
-              parent.extend(unmatched);
-            }
-          });
-        }
-        return Some(Ok(Expr::List(
-          vec![result, Expr::List(result_groups.into())].into(),
-        )));
       }
+      // Reap[expr, patt] / Reap[expr, {patt1, ...}] / Reap[expr, patt, f]
+      let patt_arg = match evaluate_expr_to_expr(&args[1]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      let patterns = match &patt_arg {
+        Expr::List(pats) => pats.clone(),
+        _ => vec![patt_arg.clone()].into(),
+      };
+      let is_list_form = matches!(&patt_arg, Expr::List(_));
+      let wrap_fn: Option<Expr> = if args.len() == 3 {
+        match evaluate_expr_to_expr(&args[2]) {
+          Ok(f) => Some(f),
+          Err(e) => return Some(Err(e)),
+        }
+      } else {
+        None
+      };
+
+      // Build per-pattern groups: for each pattern, find all matching
+      // tags (in order of first sow), and for each unique tag collect
+      // its sowed values. Sows whose tags do not match any of the given
+      // patterns are propagated to the enclosing Reap scope (if any),
+      // matching Wolfram's behaviour.
+      let mut matched_indices: std::collections::HashSet<usize> =
+        std::collections::HashSet::new();
+      let mut result_groups: Vec<Expr> = Vec::new();
+      for patt in &patterns {
+        let mut tag_order: Vec<Expr> = Vec::new();
+        let mut tag_groups: Vec<Vec<Expr>> = Vec::new();
+        for (i, (val, tag)) in sowed.iter().enumerate() {
+          if !tag_matches_pattern(tag, patt) {
+            continue;
+          }
+          matched_indices.insert(i);
+          if let Some(idx) = tag_order
+            .iter()
+            .position(|t| expr_to_string(t) == expr_to_string(tag))
+          {
+            tag_groups[idx].push(val.clone());
+          } else {
+            tag_order.push(tag.clone());
+            tag_groups.push(vec![val.clone()]);
+          }
+        }
+        // Build the group list for this pattern.
+        let per_pattern: Vec<Expr> = tag_order
+          .into_iter()
+          .zip(tag_groups)
+          .map(|(tag, vals)| {
+            let vals_list = Expr::List(vals.into());
+            if let Some(f) = &wrap_fn {
+              // Apply f[tag, {values}] — handles named heads, anonymous
+              // functions (Function[body]), and NamedFunction forms.
+              crate::evaluator::function_application::apply_curried_call(
+                f,
+                &[tag, vals_list],
+              )
+              .unwrap_or(Expr::FunctionCall {
+                name: "List".to_string(),
+                args: vec![].into(),
+              })
+            } else {
+              vals_list
+            }
+          })
+          .collect();
+
+        if is_list_form {
+          // {patt1, patt2, ...} form: each pattern contributes a list,
+          // even if empty.
+          result_groups.push(Expr::List(per_pattern.into()));
+        } else {
+          // Single-pattern form: the result groups are the per-tag
+          // entries directly (flattened — no extra wrapping).
+          result_groups.extend(per_pattern);
+        }
+      }
+      // Forward unmatched sows to the enclosing Reap scope (if any) so
+      // nested Reap[..., patt] expressions propagate sows that did not
+      // match the inner pattern upward.
+      let unmatched: Vec<(Expr, Expr)> = sowed
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !matched_indices.contains(i))
+        .map(|(_, pair)| pair.clone())
+        .collect();
+      if !unmatched.is_empty() {
+        crate::SOW_STACK.with(|stack| {
+          let mut stack = stack.borrow_mut();
+          if let Some(parent) = stack.last_mut() {
+            parent.extend(unmatched);
+          }
+        });
+      }
+      return Some(Ok(Expr::List(
+        vec![result, Expr::List(result_groups.into())].into(),
+      )));
     }
 
     // ReplaceAll and ReplaceRepeated function call forms
@@ -1180,13 +1151,12 @@ pub fn dispatch_complex_and_special(
       // Replace[expr, rules, levelspec, Heads -> True]
       let heads_on = args
         .get(3)
-        .map(|opt| {
+        .is_some_and(|opt| {
           matches!(opt,
             Expr::Rule { pattern, replacement }
               if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Heads")
                  && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True"))
-        })
-        .unwrap_or(false);
+        });
       if crate::evaluator::core_eval::reject_invalid_replace_rules(
         "Replace", &args[1],
       ) {
@@ -1448,13 +1418,13 @@ pub fn dispatch_complex_and_special(
       ));
     }
     "RegionDisjoint" => {
-      return Some(compute_region_disjoint(args));
+      return Some(Ok(compute_region_disjoint(args)));
     }
     "RegionIntersection" | "RegionUnion" | "RegionDifference" => {
       return Some(compute_region_set_op(name, args));
     }
     "RegionProduct" => {
-      return Some(compute_region_product(args));
+      return Some(Ok(compute_region_product(args)));
     }
     "RegionDistance" if args.len() == 2 => {
       return Some(compute_region_distance(
@@ -1483,14 +1453,14 @@ pub fn dispatch_complex_and_special(
       ));
     }
     "RegionBounds" if args.len() == 1 => {
-      return Some(compute_region_bounds(strip_region_wrapper(&args[0])));
+      return Some(Ok(compute_region_bounds(strip_region_wrapper(&args[0]))));
     }
     "RegionDimension" if args.len() == 1 => {
       return Some(compute_region_dimension(strip_region_wrapper(&args[0])));
     }
     "RegionEmbeddingDimension" if args.len() == 1 => {
-      return Some(compute_region_embedding_dimension(strip_region_wrapper(
-        &args[0],
+      return Some(Ok(compute_region_embedding_dimension(
+        strip_region_wrapper(&args[0]),
       )));
     }
     "RegionCentroid" if args.len() == 1 => {
@@ -1673,7 +1643,7 @@ pub fn dispatch_complex_and_special(
     }
     // RegionEqual[r1, r2, ...] — test whether regions are equal
     "RegionEqual" => {
-      return Some(compute_region_equal(args));
+      return Some(Ok(compute_region_equal(args)));
     }
     // FindSequenceFunction[list, var] — find a formula for an integer sequence
     "FindSequenceFunction" if args.len() == 2 => {
@@ -1718,7 +1688,7 @@ pub fn dispatch_complex_and_special(
       } else {
         None
       };
-      let activated = activate_expr(&args[0], &filter);
+      let activated = activate_expr(&args[0], filter.as_ref());
       return Some(crate::evaluator::evaluate_expr_to_expr(&activated));
     }
     // Inactivate[expr] wraps every head H in `expr` with Inactive[H];
@@ -1829,7 +1799,7 @@ pub fn dispatch_complex_and_special(
         name: "Sqrt".to_string(),
         args: vec![Expr::Integer(n as i128)].into(),
       };
-      let std_err = binop(BinaryOperator::Divide, std_dev, sqrt_n);
+      let std_err = div2(std_dev, sqrt_n);
       let std_err_n = Expr::FunctionCall {
         name: "N".to_string(),
         args: vec![std_err].into(),
@@ -1867,7 +1837,7 @@ pub fn dispatch_complex_and_special(
               crate::functions::math_ast::try_eval_to_f64(&bounds[1]),
             )
           {
-            let value = (a + b) / 2.0;
+            let value = f64::midpoint(a, b);
             // Around[Interval[{a, b}]] uses the interval half-width as the
             // uncertainty (wolframscript), not the uniform-distribution std.
             let uncertainty = (b - a).abs() / 2.0;
@@ -1991,11 +1961,11 @@ pub fn dispatch_complex_and_special(
           _ => {}
         }
       }
-      for a in new_args.iter_mut() {
+      for a in &mut new_args {
         if let Expr::List(items) = a {
           if items.len() == 2 {
             let mut promoted = items.to_vec();
-            for item in promoted.iter_mut() {
+            for item in &mut promoted {
               promote_to_real(item);
             }
             *a = Expr::List(promoted.into());
@@ -2329,8 +2299,10 @@ fn format_builtin_information(
 ) -> Expr {
   // Collect user-set attributes (merged with built-in)
   let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
-  let mut all_attrs: Vec<String> =
-    builtin_attrs.iter().map(|a| a.to_string()).collect();
+  let mut all_attrs: Vec<String> = builtin_attrs
+    .iter()
+    .map(std::string::ToString::to_string)
+    .collect();
   if let Some(ua) = user_attrs {
     for a in ua {
       if !all_attrs.contains(&a) {
@@ -2340,7 +2312,7 @@ fn format_builtin_information(
   }
   all_attrs.sort();
 
-  let description = info.map(|i| i.description).unwrap_or("");
+  let description = info.map_or("", |i| i.description);
 
   // Build association fields as parallel lists: textual key -> value lines
   // (for the InputForm echo) and structured field entries (for the Grid SVG
@@ -2348,10 +2320,10 @@ fn format_builtin_information(
   use crate::functions::information_render::InfoField;
   let mut fields: Vec<String> = Vec::new();
   let mut display_fields: Vec<InfoField> = Vec::new();
-  fields.push(format!("Name -> {}", sym));
+  fields.push(format!("Name -> {sym}"));
   display_fields.push(InfoField::text("Name", sym));
   if !description.is_empty() {
-    fields.push(format!("Usage -> {}", description));
+    fields.push(format!("Usage -> {description}"));
     display_fields.push(InfoField::text("Usage", description));
   }
 
@@ -2362,7 +2334,7 @@ fn format_builtin_information(
   } else {
     format!("{{{}}}", all_attrs.join(", "))
   };
-  fields.push(format!("Attributes -> {}", attrs_repr));
+  fields.push(format!("Attributes -> {attrs_repr}"));
   display_fields.push(InfoField::text("Attributes", &attrs_repr));
 
   // Documentation URL — only when the symbol has a public docs page.
@@ -2370,7 +2342,7 @@ fn format_builtin_information(
   // as the anchor target so the link remains clickable.
   if let Some(url) = crate::evaluator::get_doc_url(sym) {
     let display_url = url.trim_start_matches("https://").to_string();
-    fields.push(format!("Documentation -> {}", display_url));
+    fields.push(format!("Documentation -> {display_url}"));
     display_fields.push(InfoField::link("Documentation", &display_url, url));
   }
 
@@ -2390,16 +2362,16 @@ fn format_builtin_information(
         .map(expr_to_string)
         .collect::<Vec<_>>()
         .join(", ");
-      fields.push(format!("Options -> {{{}}}", opts_str));
+      fields.push(format!("Options -> {{{opts_str}}}"));
       display_fields
-        .push(InfoField::text("Options", format!("{{{}}}", opts_str)));
+        .push(InfoField::text("Options", format!("{{{opts_str}}}")));
     } else {
       fields.push("Options -> {}".to_string());
       display_fields.push(InfoField::text("Options", "{}"));
     }
 
-    fields.push(format!("FullName -> System`{}", sym));
-    display_fields.push(InfoField::text("FullName", format!("System`{}", sym)));
+    fields.push(format!("FullName -> System`{sym}"));
+    display_fields.push(InfoField::text("FullName", format!("System`{sym}")));
   }
 
   // Capture a graphical SVG card alongside the textual InputForm result.
@@ -2519,8 +2491,7 @@ fn format_user_information(
       }
     };
     format!(
-      "Information`InformationValueForm[OwnValues, {}, {{{} -> {}}}]",
-      sym, sym, val_str
+      "Information`InformationValueForm[OwnValues, {sym}, {{{sym} -> {val_str}}}]"
     )
   } else {
     "None".to_string()
@@ -2545,15 +2516,15 @@ fn format_user_information(
               return expr_to_string(literal_val);
             }
             if let Some(head) = heads.get(i).and_then(|h| h.as_ref()) {
-              format!("{}_{}", p, head)
+              format!("{p}_{head}")
             } else {
-              format!("{}_", p)
+              format!("{p}_")
             }
           })
           .collect::<Vec<_>>()
           .join(", ");
         let body_str = expr_to_string(body);
-        format!("{}[{}] :> {}", sym, params_str, body_str)
+        format!("{sym}[{params_str}] :> {body_str}")
       })
       .collect();
     format!(
@@ -2581,7 +2552,7 @@ fn format_user_information(
   // shows when no usage has been set.
   let usage_str = match lookup_usage_message(sym) {
     Some(text) => text,
-    None => format!("Global`{}", sym),
+    None => format!("Global`{sym}"),
   };
 
   // UpValues from `g[…sym…] ^:= …` style assignments.
@@ -2604,7 +2575,7 @@ fn format_user_information(
     display_fields.push(InfoField::text("DownValues", &down_str));
   }
   display_fields.push(InfoField::text("Attributes", &attrs_str));
-  display_fields.push(InfoField::text("FullName", format!("Global`{}", sym)));
+  display_fields.push(InfoField::text("FullName", format!("Global`{sym}")));
   if let Some(svg) =
     crate::functions::information_render::render_information_card_svg(
       sym,
@@ -2627,7 +2598,7 @@ fn format_user_information(
         .map(expr_to_string)
         .collect::<Vec<_>>()
         .join(", ");
-      format!("{{{}}}", s)
+      format!("{{{s}}}")
     } else {
       "None".to_string()
     };
@@ -2803,7 +2774,7 @@ fn to_graphics_boxes(expr: &Expr) -> Expr {
       ];
       if PRIMITIVES.contains(&name.as_str()) {
         return Expr::FunctionCall {
-          name: format!("{}Box", name),
+          name: format!("{name}Box"),
           args: args.to_vec().into(),
         };
       }
@@ -2896,7 +2867,7 @@ fn expr_to_full_box_form(expr: &Expr) -> Expr {
     }
     Expr::String(s) => {
       // Strings render with explicit quotes inside FullForm.
-      return Expr::String(format!("\"{}\"", s));
+      return Expr::String(format!("\"{s}\""));
     }
     _ => {}
   }
@@ -3320,7 +3291,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       let text = if let Some(idx) = abs_text.find("*^") {
         format!("{}`{}", &abs_text[..idx], &abs_text[idx..])
       } else {
-        format!("{}`", abs_text)
+        format!("{abs_text}`")
       };
       if *f < 0.0 {
         Expr::FunctionCall {
@@ -3355,7 +3326,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       }
     }
     Expr::Identifier(s) | Expr::Constant(s) => Expr::String(s.clone()),
-    Expr::String(s) => Expr::String(format!("\"{}\"", s)),
+    Expr::String(s) => Expr::String(format!("\"{s}\"")),
     // Part[expr, indices…] (Expr::Part / chained Part) →
     //   RowBox[{<head>, 〚, <i1>, ",", <i2>, …, 〛}]
     // wolframscript uses the Unicode double-bracket glyphs
@@ -3405,12 +3376,12 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     Expr::Slot(n) => Expr::String(if *n == 1 {
       "#".to_string()
     } else {
-      format!("#{}", n)
+      format!("#{n}")
     }),
     Expr::SlotSequence(n) => Expr::String(if *n == 1 {
       "##".to_string()
     } else {
-      format!("##{}", n)
+      format!("##{n}")
     }),
     // UnaryOp: -x → RowBox[{"-", box(x)}], !x → RowBox[{"!", box(x)}]
     Expr::UnaryOp { op, operand } => {
@@ -4055,7 +4026,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // wolframscript bakes one set of quotes into the String
       // content so the rendered text reads `"a-b"` (with quotes)
       // when Woxi's top-level output strips outer String quotes.
-      let quoted_text = format!("\"{}\"", text);
+      let quoted_text = format!("\"{text}\"");
       Expr::FunctionCall {
         name: "InterpretationBox".to_string(),
         args: vec![
@@ -4088,9 +4059,9 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       ) && !args.is_empty() =>
     {
       let template = if name.ends_with("Color") {
-        format!("{}SwatchTemplate", name)
+        format!("{name}SwatchTemplate")
       } else {
-        format!("{}ColorSwatchTemplate", name)
+        format!("{name}ColorSwatchTemplate")
       };
       let assoc = Expr::Association(vec![(
         Expr::String("color".to_string()),
@@ -4163,7 +4134,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // characters at the start and end. When displayed in
       // script-mode (which strips outer String quotes) this
       // reproduces the visible `"a - b"` quoting.
-      let quoted_text = format!("\"{}\"", output_text);
+      let quoted_text = format!("\"{output_text}\"");
       Expr::FunctionCall {
         name: "InterpretationBox".to_string(),
         args: vec![
@@ -4385,7 +4356,7 @@ fn trim_bigfloat_to_precision_for_output(expr: &Expr) -> Expr {
       };
       let frac_needed = prec_target.saturating_sub(int_sig);
       let formatted = if frac_needed == 0 {
-        format!("{}{}.", sign, int_part)
+        format!("{sign}{int_part}.")
       } else if frac_part.len() >= frac_needed {
         format!("{}{}.{}", sign, int_part, &frac_part[..frac_needed])
       } else {
@@ -4655,7 +4626,7 @@ fn tf_flatten_additive(expr: &Expr, neg: bool, out: &mut Vec<(bool, Expr)>) {
       operand,
     } => tf_flatten_additive(operand, !neg, out),
     Expr::FunctionCall { name, args } if name == "Plus" => {
-      for a in args.iter() {
+      for a in args {
         tf_flatten_additive(a, neg, out);
       }
     }
@@ -4676,7 +4647,7 @@ fn tf_flatten_times(expr: &Expr, out: &mut Vec<Expr>) {
       tf_flatten_times(right, out);
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
-      for a in args.iter() {
+      for a in args {
         tf_flatten_times(a, out);
       }
     }
@@ -4802,21 +4773,18 @@ fn tf_derivative_boxes(orders: &[Expr], func: &Expr) -> Option<Expr> {
   } else {
     tf(func)
   };
-  let script = match counts.as_slice() {
-    // Wolfram writes up to three primes; beyond that the order is spelled
-    // out in parentheses because the marks stop being countable.
-    [n @ 1..=3] => tf_string(&"\u{2032}".repeat(*n as usize)),
-    _ => {
-      let mut parts = vec![tf_string("(")];
-      for (i, n) in counts.iter().enumerate() {
-        if i > 0 {
-          parts.push(tf_string(","));
-        }
-        parts.push(tf_string(&n.to_string()));
+  let script = if let [n @ 1..=3] = counts.as_slice() {
+    tf_string(&"\u{2032}".repeat(*n as usize))
+  } else {
+    let mut parts = vec![tf_string("(")];
+    for (i, n) in counts.iter().enumerate() {
+      if i > 0 {
+        parts.push(tf_string(","));
       }
-      parts.push(tf_string(")"));
-      tf_row(parts)
+      parts.push(tf_string(&n.to_string()));
     }
+    parts.push(tf_string(")"));
+    tf_row(parts)
   };
   Some(tf_box("SuperscriptBox", vec![base, script]))
 }
@@ -5113,15 +5081,7 @@ fn tf_derivative(head: &str, glyph: &str, args: &[Expr]) -> Expr {
   {
     Expr::Integer(sum)
   } else {
-    specs
-      .iter()
-      .map(|(_, n)| n.clone())
-      .reduce(|acc, n| Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(acc),
-        right: Box::new(n),
-      })
-      .unwrap()
+    specs.iter().map(|(_, n)| n.clone()).reduce(plus2).unwrap()
   };
   let num = if is_one(&total) {
     tf_string(glyph)
@@ -5755,7 +5715,7 @@ fn extract_activate_filter(filter: &Expr) -> Vec<String> {
 
 /// Recursively replace Inactive[f][args...] with f[args...] in an expression.
 /// If `filter` is Some, only activate the specified functions.
-fn activate_expr(expr: &Expr, filter: &Option<Vec<String>>) -> Expr {
+fn activate_expr(expr: &Expr, filter: Option<&Vec<String>>) -> Expr {
   match expr {
     // CurriedCall where func is Inactive[f] → f[args...]
     Expr::CurriedCall { func, args } => {
@@ -6459,25 +6419,25 @@ fn disjoint_shapes_intersect(a: &DisjointShape, b: &DisjointShape) -> bool {
 /// RegionDisjoint[reg1, reg2, …] — True when the regions are pairwise
 /// disjoint. Zero regions are vacuously disjoint; a single supported
 /// region is too. Unsupported arguments leave the call unevaluated.
-fn compute_region_disjoint(args: &[Expr]) -> Result<Expr, InterpreterError> {
+fn compute_region_disjoint(args: &[Expr]) -> crate::syntax::Expr {
   let shapes: Option<Vec<DisjointShape>> = args
     .iter()
     .map(|a| disjoint_shape(strip_region_wrapper(a)))
     .collect();
   let Some(shapes) = shapes else {
     if args.is_empty() {
-      return Ok(bool_expr(true));
+      return bool_expr(true);
     }
-    return Ok(unevaluated("RegionDisjoint", args));
+    return unevaluated("RegionDisjoint", args);
   };
   for i in 0..shapes.len() {
     for j in i + 1..shapes.len() {
       if disjoint_shapes_intersect(&shapes[i], &shapes[j]) {
-        return Ok(bool_expr(false));
+        return bool_expr(false);
       }
     }
   }
-  Ok(bool_expr(true))
+  bool_expr(true)
 }
 
 /// Nearest point of a `Line[{v1, v2, …}]` (a segment or polyline) to `point`,
@@ -6490,7 +6450,6 @@ fn line_nearest_point(
   pt: &[Expr],
   n: usize,
 ) -> Result<Option<Expr>, InterpreterError> {
-  use BinaryOperator as B;
   if verts.len() < 2 {
     return Ok(None);
   }
@@ -6521,10 +6480,9 @@ fn line_nearest_point(
     let num = plus(
       (0..n)
         .map(|i| {
-          binop(
-            B::Times,
-            binop(B::Minus, pt[i].clone(), a[i].clone()),
-            binop(B::Minus, b[i].clone(), a[i].clone()),
+          times2(
+            minus2(pt[i].clone(), a[i].clone()),
+            minus2(b[i].clone(), a[i].clone()),
           )
         })
         .collect(),
@@ -6532,8 +6490,8 @@ fn line_nearest_point(
     let den = plus(
       (0..n)
         .map(|i| {
-          let d = binop(B::Minus, b[i].clone(), a[i].clone());
-          binop(B::Times, d.clone(), d)
+          let d = minus2(b[i].clone(), a[i].clone());
+          times2(d.clone(), d)
         })
         .collect(),
     );
@@ -6541,7 +6499,7 @@ fn line_nearest_point(
     let cand: Vec<Expr> = if den_val.is_none_or(|d| d.abs() < 1e-15) {
       a.clone() // degenerate (zero-length) segment
     } else {
-      let t = binop(B::Divide, num, den);
+      let t = div2(num, den);
       let t_val = to_f64(&eval(&t)?).unwrap_or(0.0);
       if t_val <= 0.0 {
         a.clone()
@@ -6550,14 +6508,9 @@ fn line_nearest_point(
       } else {
         (0..n)
           .map(|i| {
-            binop(
-              B::Plus,
+            plus2(
               a[i].clone(),
-              binop(
-                B::Times,
-                t.clone(),
-                binop(B::Minus, b[i].clone(), a[i].clone()),
-              ),
+              times2(t.clone(), minus2(b[i].clone(), a[i].clone())),
             )
           })
           .collect()
@@ -6657,7 +6610,7 @@ fn compute_region_distance(
     args: a.into(),
   };
   let euclid = |a: Expr, b: Expr| call("EuclideanDistance", vec![a, b]);
-  let sub = |a: Expr, b: Expr| binop(BinaryOperator::Minus, a, b);
+  let sub = |a: Expr, b: Expr| minus2(a, b);
   let zeros = |n: usize| Expr::List(vec![Expr::Integer(0); n].into());
 
   let expr = match name.as_str() {
@@ -6709,11 +6662,7 @@ fn compute_region_distance(
           args: norm_sq.into(),
         }],
       );
-      return crate::evaluator::evaluate_expr_to_expr(&binop(
-        BinaryOperator::Divide,
-        excess,
-        norm,
-      ));
+      return crate::evaluator::evaluate_expr_to_expr(&div2(excess, norm));
     }
     "Disk" | "Ball" => {
       let dim = if name == "Ball" { 3 } else { 2 };
@@ -6886,13 +6835,11 @@ fn compute_region_nearest(
       let center_list = Expr::List(center.clone().into());
       let dist_sym =
         call("EuclideanDistance", vec![point.clone(), center_list]);
-      let dist = match to_f64(&eval(&dist_sym)?) {
-        Some(d) => d,
-        None => return unevaluated(),
+      let Some(dist) = to_f64(&eval(&dist_sym)?) else {
+        return unevaluated();
       };
-      let r = match to_f64(&radius) {
-        Some(r) => r,
-        None => return unevaluated(),
+      let Some(r) = to_f64(&radius) else {
+        return unevaluated();
       };
       // A point at the center has no unique projection onto the boundary.
       if dist <= 1e-12 {
@@ -6906,14 +6853,9 @@ fn compute_region_nearest(
       // Project onto the boundary: center + r * (point - center) / dist.
       let proj: Vec<Expr> = (0..n)
         .map(|i| {
-          let diff =
-            binop(BinaryOperator::Minus, pt[i].clone(), center[i].clone());
-          let scaled = binop(
-            BinaryOperator::Divide,
-            binop(BinaryOperator::Times, radius.clone(), diff),
-            dist_sym.clone(),
-          );
-          binop(BinaryOperator::Plus, center[i].clone(), scaled)
+          let diff = minus2(pt[i].clone(), center[i].clone());
+          let scaled = div2(times2(radius.clone(), diff), dist_sym.clone());
+          plus2(center[i].clone(), scaled)
         })
         .collect();
       eval(&Expr::List(proj.into()))
@@ -7016,7 +6958,7 @@ fn compute_signed_region_distance(
     name: nm.to_string(),
     args: a.into(),
   };
-  let sub = |a: Expr, b: Expr| binop(BinaryOperator::Minus, a, b);
+  let sub = |a: Expr, b: Expr| minus2(a, b);
   let euclid = |a: Expr, b: Expr| call("EuclideanDistance", vec![a, b]);
   let zeros = |k: usize| Expr::List(vec![Expr::Integer(0); k].into());
 
@@ -7071,7 +7013,7 @@ fn compute_signed_region_distance(
         .collect();
       let outside = call("Norm", vec![Expr::List(clamped.into())]);
       let inside = call("Min", vec![call("Max", dx), Expr::Integer(0)]);
-      binop(BinaryOperator::Plus, outside, inside)
+      plus2(outside, inside)
     }
     // A Line is measure-zero: its signed distance is the ordinary distance.
     "Line" if args.len() == 1 => {
@@ -7108,7 +7050,7 @@ fn compute_signed_region_distance(
       };
       let dist = euclid(point.clone(), nearest);
       if point_in_polygon_2d(&verts_f, pf, 1e-10) {
-        binop(BinaryOperator::Times, Expr::Integer(-1), dist)
+        times2(Expr::Integer(-1), dist)
       } else {
         dist
       }
@@ -7253,7 +7195,7 @@ fn polyline_shortest_path(
   let finish = |raw: Vec<Vec<f64>>| -> (Vec<Vec<f64>>, f64) {
     let mut path: Vec<Vec<f64>> = Vec::with_capacity(raw.len());
     for p in raw {
-      if path.last().map(|q| dist(q, &p) > 1e-12) != Some(false) {
+      if path.last().is_none_or(|q| dist(q, &p) > 1e-12) {
         path.push(p);
       }
     }
@@ -7740,7 +7682,7 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
           ]
           .into(),
         };
-        let volume = binop(BinaryOperator::Divide, product, Expr::Integer(3));
+        let volume = div2(product, Expr::Integer(3));
         return crate::evaluator::evaluate_expr_to_expr(&volume);
       }
       _ => {}
@@ -7838,7 +7780,7 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
         let Some((_, r1, r2)) = torus_parts(args) else {
           return unevaluated();
         };
-        let half = |e: Expr| binop(BinaryOperator::Divide, e, Expr::Integer(2));
+        let half = |e: Expr| div2(e, Expr::Integer(2));
         let tube = half(Expr::FunctionCall {
           name: "Subtract".to_string(),
           args: vec![r2.clone(), r1.clone()].into(),
@@ -7959,11 +7901,7 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
           }
           _ => return unevaluated(),
         };
-        let half_n = binop(
-          BinaryOperator::Divide,
-          Expr::Integer(n as i128),
-          Expr::Integer(2),
-        );
+        let half_n = div2(Expr::Integer(n as i128), Expr::Integer(2));
         let pi_pow = Expr::FunctionCall {
           name: "Power".to_string(),
           args: vec![Expr::Constant("Pi".to_string()), half_n.clone()].into(),
@@ -8122,22 +8060,20 @@ fn compute_region_dimension(expr: &Expr) -> Result<Expr, InterpreterError> {
 /// RegionEmbeddingDimension[region] — the dimension of the ambient space the
 /// region lives in, i.e. the number of coordinates. This equals the number of
 /// `{min, max}` pairs in the region's bounding box.
-fn compute_region_embedding_dimension(
-  expr: &Expr,
-) -> Result<Expr, InterpreterError> {
+fn compute_region_embedding_dimension(expr: &Expr) -> crate::syntax::Expr {
   if let Expr::FunctionCall { name, args } = expr {
     match name.as_str() {
       "StadiumShape" if stadium_parts(args).is_some() => {
-        return Ok(Expr::Integer(2));
+        return Expr::Integer(2);
       }
       "Torus" | "FilledTorus" => {
         if torus_parts(args).is_some() {
-          return Ok(Expr::Integer(3));
+          return Expr::Integer(3);
         }
       }
       "Parallelogram" => {
         if let Some((p, _, _)) = parallelogram_parts(args) {
-          return Ok(Expr::Integer(p.len() as i128));
+          return Expr::Integer(p.len() as i128);
         }
       }
       // HalfPlane[{p1, p2}, w] / HalfPlane[p, v, w] — ambient space of the
@@ -8157,24 +8093,24 @@ fn compute_region_embedding_dimension(
           _ => None,
         };
         if let Some(n) = first_coord {
-          return Ok(Expr::Integer(n as i128));
+          return Expr::Integer(n as i128);
         }
       }
       _ => {}
     }
   }
-  match compute_region_bounds(expr)? {
-    Expr::List(ref bounds) => Ok(Expr::Integer(bounds.len() as i128)),
-    _ => Ok(Expr::FunctionCall {
+  match compute_region_bounds(expr) {
+    Expr::List(ref bounds) => Expr::Integer(bounds.len() as i128),
+    _ => Expr::FunctionCall {
       name: "RegionEmbeddingDimension".to_string(),
       args: vec![expr.clone()].into(),
-    }),
+    },
   }
 }
 
 /// Compute the axis-aligned bounding box of a geometric region as a list of
 /// `{min, max}` pairs, one per dimension.
-fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
+fn compute_region_bounds(expr: &Expr) -> crate::syntax::Expr {
   let unevaluated = || Expr::FunctionCall {
     name: "RegionBounds".to_string(),
     args: vec![expr.clone()].into(),
@@ -8193,10 +8129,7 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
     && p1.len() == p2.len()
   {
     let inf = || Expr::Identifier("Infinity".to_string());
-    let neg_inf = || Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(Expr::Identifier("Infinity".to_string())),
-    };
+    let neg_inf = || neg1(Expr::Identifier("Infinity".to_string()));
     let mut bounds = Vec::with_capacity(p1.len());
     for (a, b) in p1.iter().zip(p2.iter()) {
       let diff = Expr::FunctionCall {
@@ -8222,11 +8155,11 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
         Some(std::cmp::Ordering::Equal) => {
           Expr::List(vec![a.clone(), a.clone()].into())
         }
-        None => return Ok(unevaluated()),
+        None => return unevaluated(),
       };
       bounds.push(pair);
     }
-    return Ok(Expr::List(bounds.into()));
+    return Expr::List(bounds.into());
   }
   if let Expr::FunctionCall { name, args } = expr {
     // Line/Triangle/Polygon[{p1, ..., pk}] — min/max over all vertices.
@@ -8234,7 +8167,7 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
       && args.len() == 1
       && let Expr::List(points) = &args[0]
     {
-      return Ok(points_bounds(points).unwrap_or_else(unevaluated));
+      return points_bounds(points).unwrap_or_else(unevaluated);
     }
     // Simplex[n]: the standard n-simplex spans [0, 1] in each of its n
     // coordinates. Simplex[{p0, …, pk}]: the box over its vertices.
@@ -8243,10 +8176,10 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
         && *n >= 1
       {
         let pair = Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into());
-        return Ok(Expr::List(vec![pair; *n as usize].into()));
+        return Expr::List(vec![pair; *n as usize].into());
       }
       if let Expr::List(points) = &args[0] {
-        return Ok(points_bounds(points).unwrap_or_else(unevaluated));
+        return points_bounds(points).unwrap_or_else(unevaluated);
       }
     }
     // Point[{x, y, ...}] — a degenerate box {{x, x}, {y, y}, ...}.
@@ -8259,7 +8192,7 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
         .iter()
         .map(|c| Expr::List(vec![c.clone(), c.clone()].into()))
         .collect();
-      return Ok(Expr::List(bounds.into()));
+      return Expr::List(bounds.into());
     }
     // Disk/Circle (2D) and Ball/Sphere (3D): center ± radius per dimension.
     // The radius may be a scalar or, for Disk, a {rx, ry} semi-axis list.
@@ -8271,10 +8204,10 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
       let center: Vec<Expr> = match args.first() {
         Some(Expr::List(c)) => c.to_vec(),
         None => vec![Expr::Integer(0); dim],
-        _ => return Ok(unevaluated()),
+        _ => return unevaluated(),
       };
       if center.len() != dim {
-        return Ok(unevaluated());
+        return unevaluated();
       }
       let radius_at = |d: usize| -> Expr {
         match args.get(1) {
@@ -8287,7 +8220,7 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
       if let Some(Expr::List(rs)) = args.get(1)
         && rs.len() != dim
       {
-        return Ok(unevaluated());
+        return unevaluated();
       }
       let mut bounds = Vec::with_capacity(dim);
       for (d, c) in center.iter().enumerate() {
@@ -8296,7 +8229,7 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
         let hi = eval_binop("Plus", c.clone(), r);
         bounds.push(Expr::List(vec![lo, hi].into()));
       }
-      return Ok(Expr::List(bounds.into()));
+      return Expr::List(bounds.into());
     }
     // Torus/FilledTorus — x and y span center ± outer radius r2, z spans
     // center ± tube radius (r2 - r1)/2.
@@ -8321,7 +8254,7 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
           Expr::List(vec![lo, hi].into())
         })
         .collect();
-      return Ok(Expr::List(bounds.into()));
+      return Expr::List(bounds.into());
     }
     // Parallelogram — min/max over the four corners p, p+v1, p+v2, p+v1+v2.
     if name == "Parallelogram"
@@ -8339,7 +8272,7 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
         Expr::List(add(&p, &v2).into()),
         Expr::List(add(&add(&p, &v1), &v2).into()),
       ];
-      return Ok(points_bounds(&corners).unwrap_or_else(unevaluated));
+      return points_bounds(&corners).unwrap_or_else(unevaluated);
     }
     // Rectangle/Cuboid[c1, c2] — per-dimension sorted corners.
     if matches!(name.as_str(), "Rectangle" | "Cuboid") {
@@ -8347,15 +8280,15 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
       let c1: Vec<Expr> = match args.first() {
         Some(Expr::List(c)) => c.to_vec(),
         None => vec![Expr::Integer(0); default_dim],
-        _ => return Ok(unevaluated()),
+        _ => return unevaluated(),
       };
       let c2: Vec<Expr> = match args.get(1) {
         Some(Expr::List(c)) => c.to_vec(),
         None => vec![Expr::Integer(1); c1.len()],
-        _ => return Ok(unevaluated()),
+        _ => return unevaluated(),
       };
       if c1.len() != c2.len() {
-        return Ok(unevaluated());
+        return unevaluated();
       }
       let bounds: Vec<Expr> = c1
         .into_iter()
@@ -8366,7 +8299,7 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
           Expr::List(vec![lo, hi].into())
         })
         .collect();
-      return Ok(Expr::List(bounds.into()));
+      return Expr::List(bounds.into());
     }
     // Cylinder/Cone[{{p1}, {p2}}, r] — the perpendicular extent of the base
     // disk in dimension d is r·Sqrt[1 - (axis_d/|axis|)^2]. A cylinder extends
@@ -8377,13 +8310,13 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
           (Expr::List(a), Expr::List(b)) if a.len() == b.len() => {
             (a.to_vec(), b.to_vec())
           }
-          _ => return Ok(unevaluated()),
+          _ => return unevaluated(),
         },
         None => (
           vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(-1)],
           vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(1)],
         ),
-        _ => return Ok(unevaluated()),
+        _ => return unevaluated(),
       };
       let dim = p1.len();
       let r = args.get(1).cloned().unwrap_or(Expr::Integer(1));
@@ -8403,13 +8336,11 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
       let mut bounds = Vec::with_capacity(dim);
       for d in 0..dim {
         // e_d = r · Sqrt[(|axis|^2 - axis_d^2) / |axis|^2].
-        let frac = binop(
-          BinaryOperator::Divide,
+        let frac = div2(
           eval_binop("Subtract", sum.clone(), sq(&axis[d])),
           sum.clone(),
         );
-        let e = crate::evaluator::evaluate_expr_to_expr(&binop(
-          BinaryOperator::Times,
+        let e = crate::evaluator::evaluate_expr_to_expr(&times2(
           r.clone(),
           Expr::FunctionCall {
             name: "Sqrt".to_string(),
@@ -8446,10 +8377,10 @@ fn compute_region_bounds(expr: &Expr) -> Result<Expr, InterpreterError> {
         };
         bounds.push(Expr::List(vec![lo, hi].into()));
       }
-      return Ok(Expr::List(bounds.into()));
+      return Expr::List(bounds.into());
     }
   }
-  Ok(unevaluated())
+  unevaluated()
 }
 
 /// Evaluate `head[a, b]` (e.g. Plus/Subtract/Min/Max), falling back to the
@@ -8546,7 +8477,7 @@ fn det_measure(
   let vol = if divisor == 1 {
     abs
   } else {
-    binop(BinaryOperator::Divide, abs, Expr::Integer(divisor))
+    div2(abs, Expr::Integer(divisor))
   };
   crate::evaluator::evaluate_expr_to_expr(&vol)
 }
@@ -8645,7 +8576,7 @@ fn pyramid_volume(pts: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
     name: "Abs".to_string(),
     args: vec![sum].into(),
   };
-  let vol = binop(BinaryOperator::Divide, abs, Expr::Integer(6));
+  let vol = div2(abs, Expr::Integer(6));
   Some(crate::evaluator::evaluate_expr_to_expr(&vol))
 }
 
@@ -8690,8 +8621,7 @@ fn pyramid_centroid(pts: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
   let mut weight_terms: Vec<Expr> = Vec::new();
   for (i, j) in tris {
     let w = dot(cross(edge(i), edge(j)), normal.clone());
-    let centroid = binop(
-      BinaryOperator::Divide,
+    let centroid = div2(
       Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![
@@ -8709,8 +8639,7 @@ fn pyramid_centroid(pts: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
     });
     weight_terms.push(w);
   }
-  let base_centroid = binop(
-    BinaryOperator::Divide,
+  let base_centroid = div2(
     Expr::FunctionCall {
       name: "Plus".to_string(),
       args: num_terms.into(),
@@ -8722,8 +8651,7 @@ fn pyramid_centroid(pts: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
   );
   // (3 base_centroid + apex) / 4.
   let apex = Expr::List(c[4].clone().into());
-  let centroid = binop(
-    BinaryOperator::Divide,
+  let centroid = div2(
     Expr::FunctionCall {
       name: "Plus".to_string(),
       args: vec![
@@ -8797,8 +8725,7 @@ fn triangulated_surface_area(
     .iter()
     .map(|&(i, j, k)| triangle_double_area(c, i, j, k))
     .collect();
-  let half = binop(
-    BinaryOperator::Divide,
+  let half = div2(
     Expr::FunctionCall {
       name: "Plus".to_string(),
       args: terms.into(),
@@ -9004,7 +8931,7 @@ fn compute_region_moment(
       },
     }
   };
-  let ratio = |num: Expr, den: Expr| binop(BinaryOperator::Divide, num, den);
+  let ratio = |num: Expr, den: Expr| div2(num, den);
   let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
 
   // The supported region kinds with their embedding dimension.
@@ -9052,9 +8979,8 @@ fn compute_region_moment(
           vec![Expr::Integer(1); default_dim],
         ),
         (Some(c1), None) => {
-          let lo = match coords(c1) {
-            Some(c) => c,
-            None => return unevaluated(),
+          let Some(lo) = coords(c1) else {
+            return unevaluated();
           };
           let hi: Result<Vec<Expr>, InterpreterError> = lo
             .iter()
@@ -9269,7 +9195,7 @@ fn triangle_moment_parts(
       },
     }
   };
-  let ratio = |num: Expr, den: Expr| binop(BinaryOperator::Divide, num, den);
+  let ratio = |num: Expr, den: Expr| div2(num, den);
   let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
   let sub = |a: &Expr, b: &Expr| -> Result<Expr, InterpreterError> {
     ev(&plus(vec![a.clone(), times(vec![int_e(-1), b.clone()])]))
@@ -9958,7 +9884,7 @@ fn spherical_shell_measure(
   let measure = if den == 1 {
     product
   } else {
-    binop(BinaryOperator::Divide, product, Expr::Integer(den))
+    div2(product, Expr::Integer(den))
   };
   crate::evaluator::evaluate_expr_to_expr(&measure)
 }
@@ -10559,7 +10485,7 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
       args: vec![Expr::Constant("Pi".to_string()), r_squared, length].into(),
     };
     if name == "Cone" {
-      volume = binop(BinaryOperator::Divide, volume, Expr::Integer(3));
+      volume = div2(volume, Expr::Integer(3));
     }
     return crate::evaluator::evaluate_expr_to_expr(&volume);
   }
@@ -11892,9 +11818,8 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       // Parallelogram[p, {v1, v2}] — centroid is p + (v1 + v2)/2.
       "Parallelogram" => {
-        let (p, v1, v2) = match parallelogram_parts(args) {
-          Some(parts) => parts,
-          None => return unevaluated(),
+        let Some((p, v1, v2)) = parallelogram_parts(args) else {
+          return unevaluated();
         };
         let coords: Vec<Expr> = (0..p.len())
           .map(|d| Expr::FunctionCall {
@@ -11925,7 +11850,7 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           return unevaluated();
         }
         let mut cols: Vec<&[Expr]> = Vec::with_capacity(vecs.len());
-        for v in vecs.iter() {
+        for v in vecs {
           let Expr::List(vc) = v else {
             return unevaluated();
           };
@@ -11993,8 +11918,7 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           }),
           right: Box::new(Expr::Integer(2)),
         };
-        let half_dt =
-          binop(BinaryOperator::Divide, dt.clone(), Expr::Integer(2));
+        let half_dt = div2(dt.clone(), Expr::Integer(2));
         // Unit-circle offset 4 Sin[Δθ/2]^3 / (3 (Δθ - Sin[Δθ])).
         let offset = Expr::BinaryOp {
           op: BinaryOperator::Divide,
@@ -12084,8 +12008,7 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           _ => return unevaluated(),
         };
         let centroid = if name == "Cylinder" {
-          binop(
-            BinaryOperator::Divide,
+          div2(
             Expr::FunctionCall {
               name: "Plus".to_string(),
               args: vec![p1, p2].into(),
@@ -12093,8 +12016,7 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
             Expr::Integer(2),
           )
         } else {
-          binop(
-            BinaryOperator::Divide,
+          div2(
             Expr::FunctionCall {
               name: "Plus".to_string(),
               args: vec![
@@ -12961,7 +12883,7 @@ fn compute_arc_length_curve(
   let sum_of_squares = match curve {
     Expr::List(comps) if !comps.is_empty() => {
       let mut terms = Vec::with_capacity(comps.len());
-      for c in comps.iter() {
+      for c in comps {
         terms.push(square(deriv(c)?));
       }
       Expr::FunctionCall {
@@ -13139,8 +13061,7 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
           return unevaluated();
         }
         let dt = disk_segment_dtheta(&th1, &th2)?;
-        let half_dt =
-          binop(BinaryOperator::Divide, dt.clone(), Expr::Integer(2));
+        let half_dt = div2(dt.clone(), Expr::Integer(2));
         let chord = Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
@@ -13202,11 +13123,7 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
         // m = 1 - (r1/r2)^2
         let ratio_sq = Expr::FunctionCall {
           name: "Power".to_string(),
-          args: vec![
-            binop(BinaryOperator::Divide, r1, r2.clone()),
-            Expr::Integer(2),
-          ]
-          .into(),
+          args: vec![div2(r1, r2.clone()), Expr::Integer(2)].into(),
         };
         let m = Expr::FunctionCall {
           name: "Plus".to_string(),
@@ -13516,7 +13433,7 @@ fn normalize_region(expr: &Expr) -> Option<Expr> {
             Expr::List(vec![p2[0].clone(), p2[1].clone()].into()),
             Expr::List(vec![p1[0].clone(), p2[1].clone()].into()),
           ];
-          normalize_polygon_vertices(vertices)
+          Some(normalize_polygon_vertices(vertices))
         } else {
           Some(expr.clone())
         }
@@ -13536,13 +13453,13 @@ fn normalize_region(expr: &Expr) -> Option<Expr> {
         } else {
           return Some(expr.clone());
         };
-        normalize_polygon_vertices(vertices)
+        Some(normalize_polygon_vertices(vertices))
       }
 
       // Polygon[{v1, v2, ...}] → sorted canonical form
       "Polygon" => {
         if let Some(Expr::List(vertices)) = args.first() {
-          normalize_polygon_vertices(vertices.to_vec())
+          Some(normalize_polygon_vertices(vertices.to_vec()))
         } else {
           Some(expr.clone())
         }
@@ -13578,19 +13495,19 @@ fn normalize_region(expr: &Expr) -> Option<Expr> {
 /// Normalize polygon vertices to a canonical sorted form for comparison.
 /// We sort vertices lexicographically by their string representation to get
 /// a rotation/order-independent comparison.
-fn normalize_polygon_vertices(mut vertices: Vec<Expr>) -> Option<Expr> {
+fn normalize_polygon_vertices(mut vertices: Vec<Expr>) -> crate::syntax::Expr {
   vertices.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
-  Some(Expr::FunctionCall {
+  Expr::FunctionCall {
     name: "Polygon".to_string(),
     args: vec![Expr::List(vertices.into())].into(),
-  })
+  }
 }
 
 /// Compute RegionEqual[r1, r2, ...].
-fn compute_region_equal(args: &[Expr]) -> Result<Expr, InterpreterError> {
+fn compute_region_equal(args: &[Expr]) -> crate::syntax::Expr {
   // RegionEqual[] and RegionEqual[r] → True
   if args.len() <= 1 {
-    return Ok(bool_expr(true));
+    return bool_expr(true);
   }
 
   // Try to normalize all regions
@@ -13598,8 +13515,8 @@ fn compute_region_equal(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args.iter().map(normalize_region).collect();
 
   // If any region is not recognized, return unevaluated
-  if normalized.iter().any(|n| n.is_none()) {
-    return Ok(unevaluated("RegionEqual", args));
+  if normalized.iter().any(std::option::Option::is_none) {
+    return unevaluated("RegionEqual", args);
   }
 
   let normalized: Vec<Expr> =
@@ -13612,9 +13529,9 @@ fn compute_region_equal(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .all(|n| format!("{n:?}") == format!("{first:?}"));
 
   if all_equal {
-    Ok(bool_expr(true))
+    bool_expr(true)
   } else {
-    Ok(bool_expr(false))
+    bool_expr(false)
   }
 }
 
@@ -13866,17 +13783,14 @@ fn compute_polygon_angle(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut best: Option<(f64, f64)> = None;
   let mut all_numeric = true;
   for (i, v) in verts.iter().enumerate() {
-    match polygon_point_2d(v) {
-      Some((x, y)) => {
-        if best.is_none_or(|(bx, by)| x < bx || (x == bx && y < by)) {
-          best = Some((x, y));
-          start = i;
-        }
+    if let Some((x, y)) = polygon_point_2d(v) {
+      if best.is_none_or(|(bx, by)| x < bx || (x == bx && y < by)) {
+        best = Some((x, y));
+        start = i;
       }
-      None => {
-        all_numeric = false;
-        break;
-      }
+    } else {
+      all_numeric = false;
+      break;
     }
   }
   if !all_numeric {
@@ -13940,7 +13854,7 @@ fn region_point_list(expr: &Expr, allow_line: bool) -> Option<Vec<Vec<Expr>>> {
   match expr {
     Expr::List(points) if !points.is_empty() => {
       let mut coords = Vec::with_capacity(points.len());
-      for p in points.iter() {
+      for p in points {
         let Expr::List(c) = p else {
           return None;
         };
@@ -14462,7 +14376,7 @@ fn compute_perpendicular_bisector(
     return uneval();
   }
   let mut coords: Vec<&crate::ExprList> = Vec::with_capacity(2);
-  for pt in pts.iter() {
+  for pt in pts {
     let Expr::List(c) = pt else {
       return uneval();
     };
@@ -14528,7 +14442,7 @@ fn compute_angle_bisector(expr: &Expr) -> Result<Expr, InterpreterError> {
   }
   // Each of q1, p, q2 must be a 2-element coordinate list.
   let mut coords: Vec<&crate::ExprList> = Vec::with_capacity(3);
-  for pt in pts.iter() {
+  for pt in pts {
     let Expr::List(c) = pt else {
       return uneval();
     };
@@ -14598,7 +14512,7 @@ fn same_value(a: &Expr, b: &Expr) -> bool {
   };
   matches!(
     eval_call("Simplify", vec![difference]),
-    Ok(Expr::Integer(0)) | Ok(Expr::Real(0.0))
+    Ok(Expr::Integer(0) | Expr::Real(0.0))
   )
 }
 
@@ -14707,7 +14621,7 @@ fn compute_circular_arc_through(
   }
   // Only planar points, and at least two of them, describe an arc.
   let mut coords: Vec<Vec<Expr>> = Vec::with_capacity(points.len());
-  for point in points.iter() {
+  for point in points {
     let Expr::List(c) = point else {
       return indep();
     };
@@ -15120,7 +15034,7 @@ fn insphere_times(a: Expr, b: Expr) -> Expr {
 
 /// Helper: build a - b
 fn insphere_minus(a: Expr, b: Expr) -> Expr {
-  binop(BinaryOperator::Minus, a, b)
+  minus2(a, b)
 }
 
 /// Helper: build a^n
@@ -15697,10 +15611,7 @@ pub fn split_real_imag_symbolic(expr: &Expr) -> Option<(Expr, Expr)> {
       Expr::UnaryOp {
         op: UnaryOperator::Minus,
         operand,
-      } => pull_i_factor(operand).map(|r| Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(r),
-      }),
+      } => pull_i_factor(operand).map(neg1),
       _ => None,
     }
   }
@@ -15743,10 +15654,7 @@ pub fn split_real_imag_symbolic(expr: &Expr) -> Option<(Expr, Expr)> {
         right,
       } => {
         collect_plus(left, out);
-        out.push(Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new((**right).clone()),
-        });
+        out.push(neg1((**right).clone()));
       }
       _ => out.push(e.clone()),
     }
@@ -15756,14 +15664,13 @@ pub fn split_real_imag_symbolic(expr: &Expr) -> Option<(Expr, Expr)> {
   let mut re_terms: Vec<Expr> = Vec::new();
   let mut im_terms: Vec<Expr> = Vec::new();
   for t in terms {
-    match pull_i_factor(&t) {
-      Some(r) => im_terms.push(r),
-      None => {
-        if expr_contains_imag(&t) {
-          return None;
-        }
-        re_terms.push(t);
+    if let Some(r) = pull_i_factor(&t) {
+      im_terms.push(r);
+    } else {
+      if expr_contains_imag(&t) {
+        return None;
       }
+      re_terms.push(t);
     }
   }
   fn build_plus(terms: Vec<Expr>) -> Expr {
@@ -16248,7 +16155,7 @@ fn region_product_pair(a: &Expr, b: &Expr) -> Option<Expr> {
   };
   // A disk swept along a segment is a cylinder, a triangle swept along one a
   // prism — neither side of which is a parallelotope.
-  for (disk, segment, disk_first) in [(a, b, true), (b, a, false)].into_iter() {
+  for (disk, segment, disk_first) in [(a, b, true), (b, a, false)] {
     let (Some((centre, radius)), Some((lo, hi))) =
       (disk_parts(disk), segment_ends(segment))
     else {
@@ -16266,9 +16173,7 @@ fn region_product_pair(a: &Expr, b: &Expr) -> Option<Expr> {
       vec![Expr::List(vec![ends(lo), ends(hi)].into()), radius],
     ));
   }
-  for (triangle, segment, triangle_first) in
-    [(a, b, true), (b, a, false)].into_iter()
-  {
+  for (triangle, segment, triangle_first) in [(a, b, true), (b, a, false)] {
     let (Some(corners), Some((lo, hi))) =
       (triangle_corners(triangle), segment_ends(segment))
     else {
@@ -16314,13 +16219,13 @@ fn region_product_pair(a: &Expr, b: &Expr) -> Option<Expr> {
 /// `RegionProduct[reg1, reg2, …]` — the Cartesian product of its arguments,
 /// taken two at a time from the left. A product Wolfram does not name is left
 /// standing over whatever has been combined so far.
-fn compute_region_product(args: &[Expr]) -> Result<Expr, InterpreterError> {
+fn compute_region_product(args: &[Expr]) -> crate::syntax::Expr {
   if args.is_empty() {
     crate::emit_message(
       "RegionProduct::argm: RegionProduct called with 0 arguments; \
        1 or more arguments are expected.",
     );
-    return Ok(unevaluated("RegionProduct", args));
+    return unevaluated("RegionProduct", args);
   }
   for arg in args {
     let is_region =
@@ -16333,20 +16238,19 @@ fn compute_region_product(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "RegionProduct::reg: {} is not a correctly specified region.",
         expr_to_string(arg)
       ));
-      return Ok(unevaluated("RegionProduct", args));
+      return unevaluated("RegionProduct", args);
     }
   }
   let mut product = args[0].clone();
   for (i, next) in args.iter().enumerate().skip(1) {
-    match region_product_pair(&product, next) {
-      Some(combined) => product = combined,
-      None => {
-        let rest = [&[product], &args[i..]].concat();
-        return Ok(unevaluated("RegionProduct", &rest));
-      }
+    if let Some(combined) = region_product_pair(&product, next) {
+      product = combined;
+    } else {
+      let rest = [&[product], &args[i..]].concat();
+      return unevaluated("RegionProduct", &rest);
     }
   }
-  Ok(product)
+  product
 }
 
 /// Render coordinates back as integers when the source region used integers,
@@ -16382,7 +16286,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
     Some(a) if !a.is_empty() => a.clone(),
     _ => crate::evaluator::attributes::get_builtin_attributes(sym)
       .into_iter()
-      .map(|s| s.to_string())
+      .map(std::string::ToString::to_string)
       .collect(),
   };
   if !attrs_to_show.is_empty() {
@@ -16414,7 +16318,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
         expr_to_string(&Expr::Association(items_expr))
       }
     };
-    lines.push(format!("{} = {}", sym, val_str));
+    lines.push(format!("{sym} = {val_str}"));
   }
 
   // ReadProtected hides the symbol's implementation details
@@ -16437,7 +16341,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
     for (
       _outer,
       _params,
-      _conds,
+      _rule_conds,
       _defaults,
       _heads,
       _body,
@@ -16533,7 +16437,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
             {
               return expr_to_string(&operands[1]);
             }
-            format!("{}_", p)
+            format!("{p}_")
           })
           .collect();
         lines.push(format!(
@@ -16599,14 +16503,14 @@ pub fn definition_text(sym: &str) -> Option<String> {
 
   // Show built-in DefaultValues (e.g. Default[Plus] := 0)
   if let Some(def_str) = builtin_default_value_str(sym) {
-    lines.push(format!("Default[{}] := {}", sym, def_str));
+    lines.push(format!("Default[{sym}] := {def_str}"));
   }
   // Show user-set DefaultValues. They live in `FUNC_DEFS["Default"]`
   // because that's how Default[r, n] := v is dispatched, but
   // wolframscript surfaces them as a TagSet line: `r /: Default[r, n] := v`.
   let default_defs = crate::FUNC_DEFS
     .with(|m| m.borrow().get("Default").cloned().unwrap_or_default());
-  for (params, _conds, _defaults, _heads, _blanks, body) in &default_defs {
+  for (params, rule_conds, _defaults, _heads, _blanks, body) in &default_defs {
     // Our SetDelayed stores `Default[r, 1]` with the first param named
     // `"r"` (a pattern variable named after the symbol). Match by name.
     if params.first().is_none_or(|p| p != sym) {
@@ -16620,7 +16524,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
       // Skip the param name; the actual literal lives in the
       // SameQ condition on this slot. Reconstruct via the same
       // helper used by DefaultValues.
-      let lit = _conds.iter().find_map(|c| {
+      let lit = rule_conds.iter().find_map(|c| {
         if let Some(Expr::Comparison {
           operands,
           operators,
@@ -16810,7 +16714,7 @@ pub fn full_definition_text(sym: &str) -> Option<String> {
           expr_to_string(&Expr::Association(items_expr))
         }
       };
-      lines.push(format!("{} = {}", sym, val_str));
+      lines.push(format!("{sym} = {val_str}"));
     }
 
     let down_values = crate::down_values_with_memo(sym);
@@ -16840,7 +16744,7 @@ pub fn full_definition_text(sym: &str) -> Option<String> {
               {
                 return expr_to_string(&operands[1]);
               }
-              format!("{}_", p)
+              format!("{p}_")
             })
             .collect();
           lines.push(format!(
@@ -16855,9 +16759,9 @@ pub fn full_definition_text(sym: &str) -> Option<String> {
             .enumerate()
             .map(|(i, p)| {
               if let Some(head) = heads.get(i).and_then(|h| h.as_ref()) {
-                format!("{}_{}", p, head)
+                format!("{p}_{head}")
               } else {
-                format!("{}_", p)
+                format!("{p}_")
               }
             })
             .collect();
@@ -16885,7 +16789,7 @@ pub fn full_definition_text(sym: &str) -> Option<String> {
 
     // Show built-in DefaultValues (e.g. Default[Plus] := 0)
     if let Some(def_str) = builtin_default_value_str(sym) {
-      lines.push(format!("Default[{}] := {}", sym, def_str));
+      lines.push(format!("Default[{sym}] := {def_str}"));
     }
 
     lines

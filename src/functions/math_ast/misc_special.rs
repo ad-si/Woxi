@@ -44,34 +44,31 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let qk = if k == 0 {
       Expr::Integer(1)
     } else {
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![q.clone(), Expr::Integer(k as i128)].into(),
-      })?
+      crate::evaluator::evaluate_expr_to_expr(&call(
+        "Power",
+        vec![q.clone(), Expr::Integer(k as i128)],
+      ))?
     };
     // Compute a * q^k
-    let aqk = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![a.clone(), qk].into(),
-    })?;
+    let aqk = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Times",
+      vec![a.clone(), qk],
+    ))?;
     // Compute 1 - a*q^k
     let factor =
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![
           Expr::Integer(1),
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), aqk].into(),
-          },
+          call("Times", vec![Expr::Integer(-1), aqk]),
         ]
         .into(),
       })?;
     // Multiply into result
-    result = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![result, factor].into(),
-    })?;
+    result = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Times",
+      vec![result, factor],
+    ))?;
   }
 
   Ok(result)
@@ -82,12 +79,7 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// arguments (no closed form), evaluates to a machine number only when an
 /// argument is inexact (e.g. under N), and is 1 when a == 0.
 fn q_pochhammer_infinite(a: &Expr, q: &Expr) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "QPochhammer".to_string(),
-      args: vec![a.clone(), q.clone()].into(),
-    })
-  };
+  let unevaluated = || Ok(call("QPochhammer", vec![a.clone(), q.clone()]));
 
   // QPochhammer[0, q] = 1 (every factor is 1).
   if matches!(a, Expr::Integer(0)) {
@@ -178,10 +170,7 @@ pub fn mittag_leffler_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 fn mittag_leffler_unevaluated(args: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: "MittagLefflerE".to_string(),
-    args: args.into(),
-  }
+  call("MittagLefflerE", args)
 }
 
 fn mittag_leffler_two_arg(
@@ -221,35 +210,26 @@ fn mittag_leffler_two_arg(
           name: "Plus".to_string(),
           args: vec![
             Expr::Integer(1),
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![Expr::Integer(-1), z.clone()].into(),
-            },
+            call("Times", vec![Expr::Integer(-1), z.clone()]),
           ]
           .into(),
         };
-        return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![one_minus_z, Expr::Integer(-1)].into(),
-        });
+        return crate::evaluator::evaluate_expr_to_expr(&call(
+          "Power",
+          vec![one_minus_z, Expr::Integer(-1)],
+        ));
       }
       1 => {
         // E^z
-        return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![Expr::Identifier("E".to_string()), z.clone()].into(),
-        });
+        return crate::evaluator::evaluate_expr_to_expr(&call(
+          "Power",
+          vec![Expr::Identifier("E".to_string()), z.clone()],
+        ));
       }
       2 => {
         // Cosh[Sqrt[z]]
-        let sqrt_z = Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![z.clone()].into(),
-        };
-        return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "Cosh".to_string(),
-          args: vec![sqrt_z].into(),
-        });
+        let sqrt_z = call1("Sqrt", z.clone());
+        return crate::evaluator::evaluate_expr_to_expr(&call1("Cosh", sqrt_z));
       }
       _ => {}
     }
@@ -275,14 +255,7 @@ fn mittag_leffler_three_arg(
   if is_expr_zero(z) {
     return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Power".to_string(),
-      args: vec![
-        Expr::FunctionCall {
-          name: "Gamma".to_string(),
-          args: vec![beta.clone()].into(),
-        },
-        Expr::Integer(-1),
-      ]
-      .into(),
+      args: vec![call1("Gamma", beta.clone()), Expr::Integer(-1)].into(),
     });
   }
 
@@ -689,10 +662,7 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![
             Expr::Integer(3),
             Expr::Identifier("E".to_string()),
-            Expr::FunctionCall {
-              name: "ExpIntegralEi".to_string(),
-              args: vec![Expr::Integer(-1)].into(),
-            },
+            call1("ExpIntegralEi", Expr::Integer(-1)),
           ]
           .into(),
         },
@@ -1059,12 +1029,8 @@ fn struve_half_integer_closed_form(
   two_nu: i64,
   z: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  let call1 = |name: &str, e: Expr| Expr::FunctionCall {
-    name: name.to_string(),
-    args: vec![e].into(),
-  };
   let int = Expr::Integer;
-  let neg = |a| times2(int(-1), a);
+  let neg = |a: Expr| times2(int(-1), a);
   let pi = || Expr::Constant("Pi".to_string());
   let sqrt = |e: Expr| call1("Sqrt", e);
   let z = || z.clone();
@@ -1336,9 +1302,8 @@ pub fn square_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let frac = t - t.floor();
         if frac < 0.5 {
           return Ok(Expr::Integer(1));
-        } else {
-          return Ok(Expr::Integer(-1));
         }
+        return Ok(Expr::Integer(-1));
       }
       // Exact rational input
       if let Expr::FunctionCall {
@@ -1354,9 +1319,8 @@ pub fn square_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // frac = rem/d, compare with 1/2 => 2*rem < d
         if 2 * rem < *d {
           return Ok(Expr::Integer(1));
-        } else {
-          return Ok(Expr::Integer(-1));
         }
+        return Ok(Expr::Integer(-1));
       }
       Ok(unevaluated("SquareWave", args))
     }
@@ -1421,10 +1385,10 @@ pub fn triangle_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if sd == 1 {
           return Ok(Expr::Integer(sn));
         }
-        return Ok(Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(sn), Expr::Integer(sd)].into(),
-        });
+        return Ok(call(
+          "Rational",
+          vec![Expr::Integer(sn), Expr::Integer(sd)],
+        ));
       }
       // Float input
       if let Some(t) = expr_to_f64(&args[0]) {
@@ -1487,10 +1451,10 @@ pub fn sawtooth_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if sd == 1 {
           return Ok(Expr::Integer(sn));
         }
-        return Ok(Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(sn), Expr::Integer(sd)].into(),
-        });
+        return Ok(call(
+          "Rational",
+          vec![Expr::Integer(sn), Expr::Integer(sd)],
+        ));
       }
       // Float input
       if let Some(t) = expr_to_f64(&args[0]) {
@@ -1753,7 +1717,7 @@ fn weber_e_integer_closed_form(
       let raw_num =
         fact(2 * k) * fact(m - k) * BigInt::from(2).pow((m - 2 * k + 1) as u32);
       let raw_den = fact(2 * (m - k)) * fact(k);
-      let coeff = make_rational_expr(raw_num, raw_den);
+      let coeff = make_rational_expr(&raw_num, &raw_den);
       let p = m - 2 * k - 1;
       let mut factors = vec![coeff];
       if p > 0 {
@@ -1767,10 +1731,7 @@ fn weber_e_integer_closed_form(
   }
 
   // - StruveH[|n|, z]
-  let struve = Expr::FunctionCall {
-    name: "StruveH".to_string(),
-    args: vec![Expr::Integer(m), z.clone()].into(),
-  };
+  let struve = call("StruveH", vec![Expr::Integer(m), z.clone()]);
   terms.push(times_ast(&[Expr::Integer(-1), struve])?);
 
   let mut result = plus_ast(&terms)?;
@@ -1785,10 +1746,7 @@ fn weber_e_integer_closed_form(
 fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
   let pi = Expr::Constant("Pi".to_string());
   let nu_pi = times2(nu.clone(), pi.clone());
-  let sin_nu_pi = Expr::FunctionCall {
-    name: "Sin".to_string(),
-    args: vec![nu_pi.clone()].into(),
-  };
+  let sin_nu_pi = call1("Sin", nu_pi.clone());
   div2(sin_nu_pi, nu_pi)
 }
 
@@ -1796,10 +1754,7 @@ fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
 fn weber_e_at_zero_symbolic(nu: &Expr) -> Expr {
   let pi = Expr::Constant("Pi".to_string());
   let nu_pi = times2(nu.clone(), pi.clone());
-  let cos_nu_pi = Expr::FunctionCall {
-    name: "Cos".to_string(),
-    args: vec![nu_pi.clone()].into(),
-  };
+  let cos_nu_pi = call1("Cos", nu_pi.clone());
   let one_minus_cos = minus2(Expr::Integer(1), cos_nu_pi);
   div2(one_minus_cos, nu_pi)
 }
@@ -1845,23 +1800,14 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (j_val, m1_val, m2_val) = match &args[0] {
     Expr::List(items) if items.len() == 3 => {
-      let j = match try_eval_to_f64(&items[0]) {
-        Some(v) => v,
-        None => {
-          return Ok(unevaluated("WignerD", args));
-        }
+      let Some(j) = try_eval_to_f64(&items[0]) else {
+        return Ok(unevaluated("WignerD", args));
       };
-      let m1 = match try_eval_to_f64(&items[1]) {
-        Some(v) => v,
-        None => {
-          return Ok(unevaluated("WignerD", args));
-        }
+      let Some(m1) = try_eval_to_f64(&items[1]) else {
+        return Ok(unevaluated("WignerD", args));
       };
-      let m2 = match try_eval_to_f64(&items[2]) {
-        Some(v) => v,
-        None => {
-          return Ok(unevaluated("WignerD", args));
-        }
+      let Some(m2) = try_eval_to_f64(&items[2]) else {
+        return Ok(unevaluated("WignerD", args));
       };
       (j, m1, m2)
     }
@@ -1872,15 +1818,12 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if args.len() == 2 {
     // WignerD[{j, m1, m2}, theta]
-    let theta = match try_eval_to_f64(&args[1]) {
-      Some(v) => v,
-      None => {
-        // Check if at least one is Real
-        if !matches!(&args[1], Expr::Real(_)) {
-          return Ok(unevaluated("WignerD", args));
-        }
+    let Some(theta) = try_eval_to_f64(&args[1]) else {
+      // Check if at least one is Real
+      if !matches!(&args[1], Expr::Real(_)) {
         return Ok(unevaluated("WignerD", args));
       }
+      return Ok(unevaluated("WignerD", args));
     };
     let result = wigner_d_small(j_val, m1_val, m2_val, theta);
     Ok(Expr::Real(result))
@@ -1958,7 +1901,7 @@ fn wigner_d_symbolic(
   if m1_2.abs() > j2 || m2_2.abs() > j2 {
     return Some(Expr::Integer(0));
   }
-  let d = wigner_d_small_symbolic(j2, m1_2, m2_2, theta)?;
+  let d = wigner_d_small_symbolic(j2, m1_2, m2_2, theta);
   // Build E^(I*m1*phi) * E^(I*m2*psi).
   let exp_factor = |coef: f64, ang: &Expr| -> Option<Expr> {
     if coef == 0.0 {
@@ -1969,27 +1912,21 @@ fn wigner_d_symbolic(
     } else {
       // Half-integer case: represent as Rational.
       let num = (2.0 * coef).round() as i128;
-      Some(Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(num), Expr::Integer(2)].into(),
-      })?
+      Some(call("Rational", vec![Expr::Integer(num), Expr::Integer(2)]))?
     };
     let exponent = Expr::FunctionCall {
       name: "Times".to_string(),
       args: vec![Expr::Identifier("I".to_string()), coef_expr, ang.clone()]
         .into(),
     };
-    Some(Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![Expr::Constant("E".to_string()), exponent].into(),
-    })
+    Some(call(
+      "Power",
+      vec![Expr::Constant("E".to_string()), exponent],
+    ))
   };
   let e1 = exp_factor(m1, phi)?;
   let e2 = exp_factor(m2, psi)?;
-  Some(Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![e1, d, e2].into(),
-  })
+  Some(call("Times", vec![e1, d, e2]))
 }
 
 /// Symbolic small d-matrix d^j_{m1,m2}(theta). `j2 = 2j`, `m1_2 = 2*m1`,
@@ -1999,17 +1936,17 @@ fn wigner_d_small_symbolic(
   m1_2: i64,
   m2_2: i64,
   theta: &Expr,
-) -> Option<Expr> {
-  let jpm1 = (j2 + m1_2) / 2;
+) -> crate::syntax::Expr {
+  let jpm1 = i64::midpoint(j2, m1_2);
   let jmm1 = (j2 - m1_2) / 2;
-  let jpm2 = (j2 + m2_2) / 2;
+  let jpm2 = i64::midpoint(j2, m2_2);
   let jmm2 = (j2 - m2_2) / 2;
   let m1mm2 = (m1_2 - m2_2) / 2;
 
   let s_min = 0i64.max(m1mm2);
   let s_max = jpm1.min(jmm2);
   if s_min > s_max {
-    return Some(Expr::Integer(0));
+    return Expr::Integer(0);
   }
 
   // Helper: factorial as i128.
@@ -2022,31 +1959,19 @@ fn wigner_d_small_symbolic(
   }
   // Prefactor: Sqrt[(j+m1)!(j-m1)!(j+m2)!(j-m2)!].
   let pref_under = fact(jpm1) * fact(jmm1) * fact(jpm2) * fact(jmm2);
-  let prefactor = Expr::FunctionCall {
-    name: "Sqrt".to_string(),
-    args: vec![Expr::Integer(pref_under)].into(),
-  };
+  let prefactor = call1("Sqrt", Expr::Integer(pref_under));
 
   // Build half-angle expressions Cos[theta/2], Sin[theta/2].
   let half_theta = Expr::FunctionCall {
     name: "Times".to_string(),
     args: vec![
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      },
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
       theta.clone(),
     ]
     .into(),
   };
-  let cos_ht = Expr::FunctionCall {
-    name: "Cos".to_string(),
-    args: vec![half_theta.clone()].into(),
-  };
-  let sin_ht = Expr::FunctionCall {
-    name: "Sin".to_string(),
-    args: vec![half_theta].into(),
-  };
+  let cos_ht = call1("Cos", half_theta.clone());
+  let sin_ht = call1("Sin", half_theta);
 
   // Build the sum.
   let mut terms: Vec<Expr> = Vec::new();
@@ -2076,34 +2001,28 @@ fn wigner_d_small_symbolic(
     } else if cos_power == 1 {
       cos_ht.clone()
     } else {
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![cos_ht.clone(), Expr::Integer(cos_power as i128)].into(),
-      }
+      call(
+        "Power",
+        vec![cos_ht.clone(), Expr::Integer(cos_power as i128)],
+      )
     };
     let sin_term = if sin_power == 0 {
       Expr::Integer(1)
     } else if sin_power == 1 {
       sin_ht.clone()
     } else {
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![sin_ht.clone(), Expr::Integer(sin_power as i128)].into(),
-      }
+      call(
+        "Power",
+        vec![sin_ht.clone(), Expr::Integer(sin_power as i128)],
+      )
     };
     // coefficient = sign / denom (Rational).
     let coeff = if denom == 1 {
       Expr::Integer(sign)
     } else {
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(sign), Expr::Integer(denom)].into(),
-      }
+      call("Rational", vec![Expr::Integer(sign), Expr::Integer(denom)])
     };
-    terms.push(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![coeff, cos_term, sin_term].into(),
-    });
+    terms.push(call("Times", vec![coeff, cos_term, sin_term]));
   }
 
   let sum = if terms.is_empty() {
@@ -2111,15 +2030,9 @@ fn wigner_d_small_symbolic(
   } else if terms.len() == 1 {
     terms.into_iter().next().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    }
+    call("Plus", terms)
   };
-  Some(Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![prefactor, sum].into(),
-  })
+  call("Times", vec![prefactor, sum])
 }
 
 /// Compute the Wigner (small) d-matrix element d^j_{m1,m2}(theta).
@@ -2144,9 +2057,9 @@ fn wigner_d_small(j: f64, m1: f64, m2: f64, theta: f64) -> f64 {
   // Use integer arithmetic for factorials
   // s ranges from max(0, m1-m2) to min(j+m1, j-m2)
   // Using half-integer labels: j+m1 = (j2+m1_2)/2, etc.
-  let jpm1 = (j2 + m1_2) / 2;
+  let jpm1 = i64::midpoint(j2, m1_2);
   let jmm1 = (j2 - m1_2) / 2;
-  let jpm2 = (j2 + m2_2) / 2;
+  let jpm2 = i64::midpoint(j2, m2_2);
   let jmm2 = (j2 - m2_2) / 2;
   let m1mm2 = (m1_2 - m2_2) / 2;
 
@@ -2336,27 +2249,15 @@ fn norlund_b_poly_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut terms: Vec<Expr> = Vec::with_capacity(n + 1);
   for k in 0..=n {
-    let binom = Expr::FunctionCall {
-      name: "Binomial".to_string(),
-      args: vec![Expr::Integer(n as i128), Expr::Integer(k as i128)].into(),
-    };
-    let nb = Expr::FunctionCall {
-      name: "NorlundB".to_string(),
-      args: vec![Expr::Integer(k as i128), a.clone()].into(),
-    };
-    let x_pow = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![x.clone(), Expr::Integer((n - k) as i128)].into(),
-    };
-    terms.push(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![binom, nb, x_pow].into(),
-    });
+    let binom = call(
+      "Binomial",
+      vec![Expr::Integer(n as i128), Expr::Integer(k as i128)],
+    );
+    let nb = call("NorlundB", vec![Expr::Integer(k as i128), a.clone()]);
+    let x_pow = call("Power", vec![x.clone(), Expr::Integer((n - k) as i128)]);
+    terms.push(call("Times", vec![binom, nb, x_pow]));
   }
-  let sum = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  };
+  let sum = call("Plus", terms);
   crate::evaluator::evaluate_expr_to_expr(&sum)
 }
 
@@ -2377,15 +2278,9 @@ fn evaluate_norlund_symbolic(
       let a_pow = if k == 1 {
         a.clone()
       } else {
-        Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![a.clone(), Expr::Integer(k as i128)].into(),
-        }
+        call("Power", vec![a.clone(), Expr::Integer(k as i128)])
       };
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![coeff, a_pow].into(),
-      }
+      call("Times", vec![coeff, a_pow])
     };
     terms.push(term);
   }
@@ -2395,10 +2290,7 @@ fn evaluate_norlund_symbolic(
   if terms.len() == 1 {
     return crate::evaluator::evaluate_expr_to_expr(&terms.pop().unwrap());
   }
-  let sum = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  };
+  let sum = call("Plus", terms);
   crate::evaluator::evaluate_expr_to_expr(&sum)
 }
 
@@ -2513,7 +2405,7 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let vals: Vec<Option<f64>> = args.iter().map(expr_to_f64).collect();
   let has_real = args.iter().any(|a| matches!(a, Expr::Real(_)));
 
-  if vals.iter().all(|v| v.is_some()) && has_real {
+  if vals.iter().all(std::option::Option::is_some) && has_real {
     let a = vals[0].unwrap();
     let b1 = vals[1].unwrap();
     let b2 = vals[2].unwrap();
@@ -2528,14 +2420,8 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let one = Expr::Integer(1);
     let one_minus_x = minus2(one.clone(), args[4].clone());
     let one_minus_y = minus2(one.clone(), args[5].clone());
-    let factor_x = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![one_minus_x, args[1].clone()].into(),
-    };
-    let factor_y = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![one_minus_y, args[2].clone()].into(),
-    };
+    let factor_x = call("Power", vec![one_minus_x, args[1].clone()]);
+    let factor_y = call("Power", vec![one_minus_y, args[2].clone()]);
     let denom = times2(factor_x, factor_y);
     let result = div2(one, denom);
     return crate::evaluator::evaluate_expr_to_expr(&result);
@@ -2556,7 +2442,6 @@ fn appell_f1_numeric(a: f64, b1: f64, b2: f64, c: f64, x: f64, y: f64) -> f64 {
   let mut total = 0.0;
 
   // Pochhammer ratio terms for outer loop (m)
-  let _a_m = 1.0; // (a)_m at current m... actually we need (a)_{m+n} which depends on n
   // Let's use a different approach: compute each term incrementally
   // term(m, n) = (a)_{m+n} (b1)_m (b2)_n / ((c)_{m+n} m! n!) x^m y^n
   // term(m, n+1) / term(m, n) = (a+m+n)(b2+n) / ((c+m+n)(n+1)) * y
@@ -2655,7 +2540,7 @@ pub fn appell_f2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let vals: Vec<Option<f64>> = args.iter().map(expr_to_f64).collect();
   let has_real = args.iter().any(|a| matches!(a, Expr::Real(_)));
 
-  if vals.iter().all(|v| v.is_some()) && has_real {
+  if vals.iter().all(std::option::Option::is_some) && has_real {
     let a = vals[0].unwrap();
     let b1 = vals[1].unwrap();
     let b2 = vals[2].unwrap();
@@ -2771,7 +2656,7 @@ pub fn appell_f3_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let vals: Vec<Option<f64>> = args.iter().map(expr_to_f64).collect();
   let has_real = args.iter().any(|a| matches!(a, Expr::Real(_)));
 
-  if vals.iter().all(|v| v.is_some()) && has_real {
+  if vals.iter().all(std::option::Option::is_some) && has_real {
     let a1 = vals[0].unwrap();
     let a2 = vals[1].unwrap();
     let b1 = vals[2].unwrap();
@@ -2887,7 +2772,7 @@ pub fn appell_f4_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let vals: Vec<Option<f64>> = args.iter().map(expr_to_f64).collect();
   let has_real = args.iter().any(|a| matches!(a, Expr::Real(_)));
 
-  if vals.iter().all(|v| v.is_some()) && has_real {
+  if vals.iter().all(std::option::Option::is_some) && has_real {
     let a = vals[0].unwrap();
     let b = vals[1].unwrap();
     let c1 = vals[2].unwrap();
@@ -3240,7 +3125,7 @@ pub fn effective_interest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Listable on the first argument.
   if let Expr::List(items) = &args[0] {
     let mut out = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       out.push(effective_interest_ast(&[item.clone(), args[1].clone()])?);
     }
     return Ok(Expr::List(out.into()));
@@ -3257,38 +3142,17 @@ pub fn effective_interest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if p_is_zero {
     // -1 + E^r
-    let e_r = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![Expr::Identifier("E".to_string()), r.clone()].into(),
-    };
-    let expr = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![Expr::Integer(-1), e_r].into(),
-    };
+    let e_r = call("Power", vec![Expr::Identifier("E".to_string()), r.clone()]);
+    let expr = call("Plus", vec![Expr::Integer(-1), e_r]);
     return crate::evaluator::evaluate_expr_to_expr(&expr);
   }
 
   // General form: (1 + p*r)^(1/p) - 1.
-  let pr = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![p.clone(), r.clone()].into(),
-  };
-  let one_plus_pr = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![Expr::Integer(1), pr].into(),
-  };
-  let inv_p = Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![p.clone(), Expr::Integer(-1)].into(),
-  };
-  let pow = Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![one_plus_pr, inv_p].into(),
-  };
-  let expr = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![Expr::Integer(-1), pow].into(),
-  };
+  let pr = call("Times", vec![p.clone(), r.clone()]);
+  let one_plus_pr = call("Plus", vec![Expr::Integer(1), pr]);
+  let inv_p = call("Power", vec![p.clone(), Expr::Integer(-1)]);
+  let pow = call("Power", vec![one_plus_pr, inv_p]);
+  let expr = call("Plus", vec![Expr::Integer(-1), pow]);
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
@@ -3310,11 +3174,8 @@ pub fn entropy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("Entropy", args));
-    }
+  let Expr::List(items) = list else {
+    return Ok(unevaluated("Entropy", args));
   };
 
   // Empty list -> 0 (matches wolframscript).
@@ -3326,7 +3187,7 @@ pub fn entropy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use std::collections::HashMap;
   let mut counts: HashMap<String, i128> = HashMap::new();
   let mut order: Vec<String> = Vec::new();
-  for item in items.iter() {
+  for item in items {
     let key = expr_to_string(item);
     if let Some(c) = counts.get_mut(&key) {
       *c += 1;
@@ -3345,8 +3206,8 @@ pub fn entropy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // wolframscript.
   let log = |x: String| -> String {
     match &base_str {
-      Some(b) => format!("Log[{}, {}]", b, x),
-      None => format!("Log[{}]", x),
+      Some(b) => format!("Log[{b}, {x}]"),
+      None => format!("Log[{x}]"),
     }
   };
 

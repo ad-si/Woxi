@@ -65,8 +65,7 @@ pub fn dispatch_plotting(
             Ok(Expr::Integer(code * 256))
           }
           Err(e) => Err(InterpreterError::EvaluationError(format!(
-            "Run: failed to execute command: {}",
-            e
+            "Run: failed to execute command: {e}"
           ))),
         })
       } else {
@@ -103,7 +102,7 @@ pub fn dispatch_plotting(
       let reim_list = match &args[0] {
         Expr::List(items) => {
           let mut out: Vec<Expr> = Vec::with_capacity(items.len() * 2);
-          for it in items.iter() {
+          for it in items {
             out.push(Expr::FunctionCall {
               name: "Re".to_string(),
               args: vec![it.clone()].into(),
@@ -606,10 +605,9 @@ pub fn dispatch_plotting(
       let display_str: String = args
         .iter()
         .map(crate::syntax::expr_to_output)
-        .collect::<Vec<_>>()
-        .join("");
+        .collect::<String>();
       if !crate::is_quiet_print() {
-        println!("{}", display_str);
+        println!("{display_str}");
       }
       crate::capture_stdout(&display_str);
       Some(Ok(Expr::Identifier("Null".to_string())))

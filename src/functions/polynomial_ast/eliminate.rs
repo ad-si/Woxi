@@ -46,7 +46,7 @@ pub fn eliminate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Eliminate each variable one at a time
   for var in &vars_to_eliminate {
-    eqs = eliminate_one_variable(&eqs, var)?;
+    eqs = eliminate_one_variable(&eqs, var);
     if eqs.is_empty() {
       return Ok(bool_expr(true));
     }
@@ -163,7 +163,7 @@ pub fn contains_var(expr: &Expr, var: &str) -> bool {
 fn eliminate_one_variable(
   equations: &[Expr],
   var: &str,
-) -> Result<Vec<Expr>, InterpreterError> {
+) -> std::vec::Vec<crate::syntax::Expr> {
   // Find an equation containing the variable, preferring linear ones
   let mut solve_idx = None;
   let mut solve_degree = i128::MAX;
@@ -189,19 +189,15 @@ fn eliminate_one_variable(
     }
   }
 
-  let solve_idx = match solve_idx {
-    Some(i) => i,
-    None => {
-      // Variable not found in any equation — return equations unchanged
-      return Ok(equations.to_vec());
-    }
+  let Some(solve_idx) = solve_idx else {
+    // Variable not found in any equation — return equations unchanged
+    return equations.to_vec();
   };
 
   // Solve the chosen equation for the variable directly
   let chosen_eq = &equations[solve_idx];
-  let val = match solve_for_var(chosen_eq, var) {
-    Some(v) => v,
-    None => return Ok(equations.to_vec()),
+  let Some(val) = solve_for_var(chosen_eq, var) else {
+    return equations.to_vec();
   };
 
   // Substitute into all other equations
@@ -212,7 +208,7 @@ fn eliminate_one_variable(
     }
     let substituted = crate::syntax::substitute_variable(eq, var, &val);
     // Simplify the substituted equation
-    let simplified = simplify_equation(&substituted)?;
+    let simplified = simplify_equation(&substituted);
     // Skip trivially true equations (True, or a == a)
     if is_trivially_true(&simplified) {
       continue;
@@ -220,11 +216,11 @@ fn eliminate_one_variable(
     result.push(simplified);
   }
 
-  Ok(result)
+  result
 }
 
 /// Simplify an equation by evaluating both sides
-fn simplify_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
+fn simplify_equation(eq: &Expr) -> crate::syntax::Expr {
   match eq {
     Expr::Comparison {
       operands,
@@ -235,20 +231,20 @@ fn simplify_equation(eq: &Expr) -> Result<Expr, InterpreterError> {
     {
       let lhs = simplify(expand_and_combine(&operands[0]));
       let rhs = simplify(expand_and_combine(&operands[1]));
-      Ok(Expr::Comparison {
+      Expr::Comparison {
         operands: vec![lhs, rhs],
         operators: vec![ComparisonOp::Equal],
-      })
+      }
     }
     Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
       let lhs = simplify(expand_and_combine(&args[0]));
       let rhs = simplify(expand_and_combine(&args[1]));
-      Ok(Expr::Comparison {
+      Expr::Comparison {
         operands: vec![lhs, rhs],
         operators: vec![ComparisonOp::Equal],
-      })
+      }
     }
-    other => Ok(simplify(expand_and_combine(other))),
+    other => simplify(expand_and_combine(other)),
   }
 }
 
@@ -325,12 +321,12 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // lhs == rhs => lhs - rhs
       let lhs_str = expr_to_string(&operands[0]);
       let rhs_str = expr_to_string(&operands[1]);
-      format!("Expand[({}) - ({})]", lhs_str, rhs_str)
+      format!("Expand[({lhs_str}) - ({rhs_str})]")
     }
     _ => {
       // Treat expression itself as the polynomial = 0
       let s = expr_to_string(eqn);
-      format!("Expand[{}]", s)
+      format!("Expand[{s}]")
     }
   };
 
@@ -354,9 +350,8 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for coeff_str in &leaf_coeffs {
     // Parse the coefficient expression
-    let coeff_expr = match crate::syntax::string_to_expr(coeff_str) {
-      Ok(e) => e,
-      Err(_) => continue,
+    let Ok(coeff_expr) = crate::syntax::string_to_expr(coeff_str) else {
+      continue;
     };
 
     // Simple case: coefficient is a single variable
@@ -383,7 +378,7 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if free_vars_here.is_empty() {
       // No free variables — nonzero constant, impossible
       // But first substitute solved values and check if it becomes zero
-      let mut sub_code = format!("({})", coeff_str);
+      let mut sub_code = format!("({coeff_str})");
       for rule in &rules {
         if let Expr::Rule {
           pattern,
@@ -392,7 +387,7 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         {
           let p = expr_to_string(pattern);
           let r = expr_to_string(replacement);
-          sub_code = format!("({} /. {} -> ({}))", sub_code, p, r);
+          sub_code = format!("({sub_code} /. {p} -> ({r}))");
         }
       }
       if let Ok(result) = crate::interpret(&sub_code)
@@ -404,7 +399,7 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else if free_vars_here.len() == 1 {
       // Single free variable, try Solve
       let fv = free_vars_here.iter().next().unwrap().clone();
-      let mut sub_code = format!("({})", coeff_str);
+      let mut sub_code = format!("({coeff_str})");
       for rule in &rules {
         if let Expr::Rule {
           pattern,
@@ -413,10 +408,10 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         {
           let p = expr_to_string(pattern);
           let r = expr_to_string(replacement);
-          sub_code = format!("({} /. {} -> ({}))", sub_code, p, r);
+          sub_code = format!("({sub_code} /. {p} -> ({r}))");
         }
       }
-      let solve_code = format!("Solve[({}) == 0, {}]", sub_code, fv);
+      let solve_code = format!("Solve[({sub_code}) == 0, {fv}]");
       if let Ok(solve_result) = crate::interpret(&solve_code)
         && let Ok(result_expr) = crate::syntax::string_to_expr(&solve_result)
         && let Expr::List(outer) = &result_expr
@@ -441,7 +436,7 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       // Multiple free variables: solve one at a time
       // Substitute known solutions first
-      let mut sub_code = format!("({})", coeff_str);
+      let mut sub_code = format!("({coeff_str})");
       for rule in &rules {
         if let Expr::Rule {
           pattern,
@@ -450,12 +445,12 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         {
           let p = expr_to_string(pattern);
           let r = expr_to_string(replacement);
-          sub_code = format!("({} /. {} -> ({}))", sub_code, p, r);
+          sub_code = format!("({sub_code} /. {p} -> ({r}))");
         }
       }
       // Try to solve for the first free variable
       let fv = free_vars_here.iter().next().unwrap().clone();
-      let solve_code = format!("Solve[({}) == 0, {}]", sub_code, fv);
+      let solve_code = format!("Solve[({sub_code}) == 0, {fv}]");
       if let Ok(solve_result) = crate::interpret(&solve_code)
         && let Ok(result_expr) = crate::syntax::string_to_expr(&solve_result)
         && let Expr::List(outer) = &result_expr
@@ -522,28 +517,25 @@ fn extract_leaf_coefficients(
   if var_idx >= vars.len() {
     // No more variables to extract — this is a leaf coefficient
     // Simplify it
-    let simplified = crate::interpret(&format!("Expand[{}]", poly_str))?;
+    let simplified = crate::interpret(&format!("Expand[{poly_str}]"))?;
     result.push(simplified.trim().to_string());
     return Ok(());
   }
 
   let var = &vars[var_idx];
-  let coeffs_code = format!("CoefficientList[{}, {}]", poly_str, var);
+  let coeffs_code = format!("CoefficientList[{poly_str}, {var}]");
   let coeffs_str = crate::interpret(&coeffs_code)?;
   let coeffs_expr = crate::syntax::string_to_expr(&coeffs_str)
     .unwrap_or(Expr::Identifier(coeffs_str));
 
-  match &coeffs_expr {
-    Expr::List(coeffs) => {
-      for coeff in coeffs {
-        let coeff_s = expr_to_string(coeff);
-        extract_leaf_coefficients(&coeff_s, vars, var_idx + 1, result)?;
-      }
+  if let Expr::List(coeffs) = &coeffs_expr {
+    for coeff in coeffs {
+      let coeff_s = expr_to_string(coeff);
+      extract_leaf_coefficients(&coeff_s, vars, var_idx + 1, result)?;
     }
-    _ => {
-      let s = expr_to_string(&coeffs_expr);
-      extract_leaf_coefficients(&s, vars, var_idx + 1, result)?;
-    }
+  } else {
+    let s = expr_to_string(&coeffs_expr);
+    extract_leaf_coefficients(&s, vars, var_idx + 1, result)?;
   }
   Ok(())
 }
@@ -558,7 +550,7 @@ fn collect_free_vars_sa(
     Expr::Identifier(s)
       if !excluded.contains(s)
         && !is_builtin_constant_sa(s)
-        && s.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false) =>
+        && s.chars().next().is_some_and(char::is_alphabetic) =>
     {
       result.insert(s.clone());
     }
@@ -615,9 +607,8 @@ pub fn is_builtin_constant_sa(s: &str) -> bool {
 /// - Multi-variable, linear: isolate alphabetically first variable on RHS
 /// - Non-linear: move everything to LHS → poly == 0
 fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
-  let (lhs, rhs) = match extract_eq_sides(eq) {
-    Some(pair) => pair,
-    None => return eq.clone(),
+  let Some((lhs, rhs)) = extract_eq_sides(eq) else {
+    return eq.clone();
   };
 
   // Convert to standard form: lhs - rhs = 0

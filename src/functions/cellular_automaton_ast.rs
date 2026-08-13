@@ -178,7 +178,7 @@ fn parse_rule(expr: &Expr) -> Option<RuleSpec> {
           let k = *k as u128;
           let range = range.unwrap_or(RangeSpec::One(1));
           let two_d = matches!(range, RangeSpec::Two(..));
-          let weights = positional_weights(k, range)?;
+          let weights = positional_weights(k, &range)?;
           Some(RuleSpec {
             n,
             k,
@@ -209,7 +209,7 @@ fn parse_rule(expr: &Expr) -> Option<RuleSpec> {
 
 /// Positional weights for a general (non-totalistic) rule: cell values read
 /// row-major as a base-k number.
-fn positional_weights(k: u128, range: RangeSpec) -> Option<Vec<Vec<u128>>> {
+fn positional_weights(k: u128, range: &RangeSpec) -> Option<Vec<Vec<u128>>> {
   let (rows, cols) = match range {
     RangeSpec::One(r) => (1, 2 * r + 1),
     RangeSpec::Two(r1, r2) => (2 * r1 + 1, 2 * r2 + 1),
@@ -553,20 +553,16 @@ fn evolve(
           for (j, &w) in wrow.iter().enumerate() {
             let dx = x as i64 + i as i64 - r1 as i64;
             let dy = y as i64 + j as i64 - r2 as i64;
-            let value = match background {
-              Some(_) => {
-                if dx < 0 || dy < 0 || dx >= height as i64 || dy >= width as i64
-                {
-                  bg
-                } else {
-                  grid[dx as usize][dy as usize]
-                }
+            let value = if background.is_some() {
+              if dx < 0 || dy < 0 || dx >= height as i64 || dy >= width as i64 {
+                bg
+              } else {
+                grid[dx as usize][dy as usize]
               }
-              None => {
-                let dx = dx.rem_euclid(height as i64) as usize;
-                let dy = dy.rem_euclid(width as i64) as usize;
-                grid[dx][dy]
-              }
+            } else {
+              let dx = dx.rem_euclid(height as i64) as usize;
+              let dy = dy.rem_euclid(width as i64) as usize;
+              grid[dx][dy]
             };
             s = s.saturating_add(w.saturating_mul(value));
           }

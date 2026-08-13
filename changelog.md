@@ -2,12 +2,23 @@
 
 # Unreleased
 
+- `$VersionNumber` is a `Real` — the Wolfram Language version Woxi aims to
+    be compatible with (`15.`) — instead of the Woxi build's git version as
+    a `String`. Scripts gate language features on it
+    (`If[$VersionNumber >= 8, …]`), which only works for a number. The Woxi
+    build stays available through `$Version`.
+- `$InputFileName` names the file `Get` is currently reading, so a file
+    pulled in with `Get` can locate its own directory
+    (`DirectoryName[$InputFileName]`) instead of the including script's. The
+    previous value is restored when the read finishes, so nested and
+    sequential `Get`s each see their own file.
+- `Get["relative/name.wl"]` resolves against the current directory reported
+    by `Directory[]`, so a preceding `SetDirectory` is honoured.
 - `ParallelSelect` and `ParallelCases` (new in Wolfram 14.2) are supported.
     Like the other `Parallel*` combinators in Woxi they delegate to the
     sequential implementation — `Select` and `Cases` respectively — so every
     form those accept works, including `ParallelSelect[list, crit, n]` and
     `ParallelCases[expr, patt, levelspec, n]`.
-
 - Fixes driven by a Wolfram Demonstration that draws the shortest distance
     between two skew lines, a `Manipulate` whose `Graphics3D` is built out
     of unbounded objects:

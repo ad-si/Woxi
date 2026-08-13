@@ -389,7 +389,7 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
         return Ok(expr.clone());
       }
       let original_str = expr_to_string(expr);
-      let n_call_str = format!("N[{}]", original_str);
+      let n_call_str = format!("N[{original_str}]");
       match crate::evaluator::evaluate_function_call_ast(
         "N",
         std::slice::from_ref(expr),
@@ -495,7 +495,7 @@ pub fn bigfloat_exp(
   let mut cc = match Consts::new() {
     Ok(c) => c,
     Err(e) => {
-      return Some(Err(InterpreterError::EvaluationError(format!("{}", e))));
+      return Some(Err(InterpreterError::EvaluationError(format!("{e}"))));
     }
   };
   let x = BigFloat::parse(digits, Radix::Dec, bits, rm, &mut cc);
@@ -528,7 +528,7 @@ pub fn bigfloat_log(
   let mut cc = match Consts::new() {
     Ok(c) => c,
     Err(e) => {
-      return Some(Err(InterpreterError::EvaluationError(format!("{}", e))));
+      return Some(Err(InterpreterError::EvaluationError(format!("{e}"))));
     }
   };
   let x = BigFloat::parse(digits, Radix::Dec, bits, rm, &mut cc);
@@ -641,7 +641,7 @@ pub fn bigfloat_to_string(
   let (sign, digits, exponent) = bf
     .convert_to_radix(astro_float::Radix::Dec, rm, cc)
     .map_err(|e| {
-      InterpreterError::EvaluationError(format!("N: format error: {}", e))
+      InterpreterError::EvaluationError(format!("N: format error: {e}"))
     })?;
 
   if digits.is_empty() || digits.iter().all(|&d| d == 0) {
@@ -671,7 +671,7 @@ pub fn bigfloat_to_string(
       let kept = &digit_str[..total_keep];
       let next_digit = digit_str.as_bytes()[total_keep] - b'0';
       let mut bytes: Vec<u8> = kept.bytes().collect();
-      let mut carry = if next_digit >= 5 { 1u8 } else { 0u8 };
+      let mut carry = u8::from(next_digit >= 5);
       // Round-half-up. (Wolfram uses banker's rounding internally, but the
       // BigFloat is already at higher precision than `total_keep` so the
       // next digit is rarely exactly 5 with no further nonzero digits.)
@@ -710,14 +710,14 @@ pub fn bigfloat_to_string(
     let zeros = (-decimal_exp) as usize;
     let trimmed = digit_str.trim_end_matches('0');
     if trimmed.is_empty() {
-      Ok(format!("{}0.", prefix))
+      Ok(format!("{prefix}0."))
     } else {
       let frac = format!("{}{}", "0".repeat(zeros), trimmed);
       let frac = frac.trim_end_matches('0');
       if frac.is_empty() {
-        Ok(format!("{}0.", prefix))
+        Ok(format!("{prefix}0."))
       } else {
-        Ok(format!("{}0.{}", prefix, frac))
+        Ok(format!("{prefix}0.{frac}"))
       }
     }
   } else {
@@ -725,15 +725,15 @@ pub fn bigfloat_to_string(
     if dp >= digit_str.len() {
       // All digits are in the integer part
       let padded = format!("{}{}", digit_str, "0".repeat(dp - digit_str.len()));
-      Ok(format!("{}{}.", prefix, padded))
+      Ok(format!("{prefix}{padded}."))
     } else {
       // Some digits before decimal, some after
       let int_part = &digit_str[..dp];
       let frac_part = digit_str[dp..].trim_end_matches('0');
       if frac_part.is_empty() {
-        Ok(format!("{}{}.", prefix, int_part))
+        Ok(format!("{prefix}{int_part}."))
       } else {
-        Ok(format!("{}{}.{}", prefix, int_part, frac_part))
+        Ok(format!("{prefix}{int_part}.{frac_part}"))
       }
     }
   }
@@ -772,7 +772,7 @@ pub fn set_precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   use astro_float::{Consts, RoundingMode};
   let mut cc = Consts::new().map_err(|e| {
-    InterpreterError::EvaluationError(format!("BigFloat init error: {}", e))
+    InterpreterError::EvaluationError(format!("BigFloat init error: {e}"))
   })?;
   let rm = RoundingMode::ToEven;
   let prec_usize = precision_f64.floor().max(1.0) as usize;
@@ -820,7 +820,7 @@ fn set_precision_walk(
     }
     Expr::List(items) => {
       let mut out = Vec::with_capacity(items.len());
-      for item in items.iter() {
+      for item in items {
         out.push(set_precision_walk(
           item,
           precision,
@@ -834,7 +834,7 @@ fn set_precision_walk(
     }
     Expr::FunctionCall { name, args } => {
       let mut out = Vec::with_capacity(args.len());
-      for a in args.iter() {
+      for a in args {
         out.push(set_precision_walk(
           a,
           precision,
@@ -926,7 +926,7 @@ pub fn set_accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   use astro_float::{Consts, RoundingMode};
   let mut cc = Consts::new().map_err(|e| {
-    InterpreterError::EvaluationError(format!("BigFloat init error: {}", e))
+    InterpreterError::EvaluationError(format!("BigFloat init error: {e}"))
   })?;
   set_accuracy_walk(&args[0], accuracy, RoundingMode::ToEven, &mut cc)
 }
@@ -952,14 +952,14 @@ fn set_accuracy_walk(
     }
     Expr::List(items) => {
       let mut out = Vec::with_capacity(items.len());
-      for item in items.iter() {
+      for item in items {
         out.push(set_accuracy_walk(item, accuracy, rm, cc)?);
       }
       Ok(Expr::List(out.into()))
     }
     Expr::FunctionCall { name, args } => {
       let mut out = Vec::with_capacity(args.len());
-      for a in args.iter() {
+      for a in args {
         out.push(set_accuracy_walk(a, accuracy, rm, cc)?);
       }
       Ok(Expr::FunctionCall {
@@ -1038,14 +1038,14 @@ fn set_precision_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
     Expr::List(items) => {
       let mut out = Vec::with_capacity(items.len());
-      for item in items.iter() {
+      for item in items {
         out.push(set_precision_machine(item)?);
       }
       Ok(Expr::List(out.into()))
     }
     Expr::FunctionCall { name, args } => {
       let mut out = Vec::with_capacity(args.len());
-      for a in args.iter() {
+      for a in args {
         out.push(set_precision_machine(a)?);
       }
       Ok(Expr::FunctionCall {
@@ -1114,7 +1114,7 @@ pub fn n_eval_arbitrary(
   use astro_float::{Consts, RoundingMode};
 
   let mut cc = Consts::new().map_err(|e| {
-    InterpreterError::EvaluationError(format!("BigFloat init error: {}", e))
+    InterpreterError::EvaluationError(format!("BigFloat init error: {e}"))
   })?;
   let rm = RoundingMode::ToEven;
 
@@ -1148,48 +1148,45 @@ pub fn n_eval_arbitrary(
     ((display_bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
 
   // Try full conversion to BigFloat first (fast path for purely numeric expressions)
-  match expr_to_bigfloat(expr, bits, rm, &mut cc) {
-    Ok(result) => {
-      let decimal =
-        bigfloat_to_string(&result, Some(max_fraction_digits), rm, &mut cc)?;
-      Ok(Expr::BigFloat(decimal, precision))
-    }
-    Err(_) => {
-      // Try complex BigFloat evaluation (handles expressions with I)
-      if let Ok((re, im)) = expr_to_complex_bigfloat(expr, bits, rm, &mut cc) {
-        // For complex function results, compute per-component precision markers
-        if let Expr::FunctionCall { name: _, args } = expr
-          && !im.is_zero()
-          && args.len() == 1
-          && let Ok(input_complex) =
-            expr_to_complex_bigfloat(&args[0], bits, rm, &mut cc)
-          && let Ok((prec_re_str, prec_im_str)) =
-            compute_complex_precision_markers(
-              &input_complex.0,
-              &input_complex.1,
-              &re,
-              &im,
-              prec_usize,
-              rm,
-              &mut cc,
-            )
-        {
-          return build_complex_result_with_string_precision(
-            re,
-            im,
-            &prec_re_str,
-            &prec_im_str,
+  if let Ok(result) = expr_to_bigfloat(expr, bits, rm, &mut cc) {
+    let decimal =
+      bigfloat_to_string(&result, Some(max_fraction_digits), rm, &mut cc)?;
+    Ok(Expr::BigFloat(decimal, precision))
+  } else {
+    // Try complex BigFloat evaluation (handles expressions with I)
+    if let Ok((re, im)) = expr_to_complex_bigfloat(expr, bits, rm, &mut cc) {
+      // For complex function results, compute per-component precision markers
+      if let Expr::FunctionCall { name: _, args } = expr
+        && !im.is_zero()
+        && args.len() == 1
+        && let Ok(input_complex) =
+          expr_to_complex_bigfloat(&args[0], bits, rm, &mut cc)
+        && let Ok((prec_re_str, prec_im_str)) =
+          compute_complex_precision_markers(
+            &input_complex.0,
+            &input_complex.1,
+            &re,
+            &im,
             prec_usize,
             rm,
             &mut cc,
-          );
-        }
-        return build_complex_bigfloat_result(re, im, prec_usize, rm, &mut cc);
+          )
+      {
+        return build_complex_result_with_string_precision(
+          &re,
+          &im,
+          &prec_re_str,
+          &prec_im_str,
+          prec_usize,
+          rm,
+          &mut cc,
+        );
       }
-      // Fall back to partial evaluation: convert numeric sub-expressions
-      // to arbitrary precision while leaving symbolic parts as-is
-      n_eval_arbitrary_partial(expr, precision, bits, rm, &mut cc)
+      return build_complex_bigfloat_result(&re, &im, prec_usize, rm, &mut cc);
     }
+    // Fall back to partial evaluation: convert numeric sub-expressions
+    // to arbitrary precision while leaving symbolic parts as-is
+    n_eval_arbitrary_partial(expr, precision, bits, rm, &mut cc)
   }
 }
 
@@ -1462,8 +1459,7 @@ pub fn expr_to_bigfloat(
         Ok(pi.div(&d180, bits, rm))
       }
       _ => Err(InterpreterError::EvaluationError(format!(
-        "N: cannot evaluate constant {} to arbitrary precision",
-        name
+        "N: cannot evaluate constant {name} to arbitrary precision"
       ))),
     },
     Expr::Identifier(name) if name == "GoldenRatio" => {
@@ -1484,8 +1480,7 @@ pub fn expr_to_bigfloat(
       let three = BigFloat::from_i32(3, wbits);
       let factor = three.sub(&sqrt5, wbits, rm);
       let pi = astro_float::Consts::new()
-        .map(|mut c| c.pi(wbits, rm))
-        .unwrap_or_else(|_| BigFloat::from_i32(0, wbits));
+        .map_or_else(|_| BigFloat::from_i32(0, wbits), |mut c| c.pi(wbits, rm));
       Ok(pi.mul(&factor, bits, rm))
     }
     Expr::Identifier(name) if name == "EulerGamma" => {
@@ -1675,8 +1670,7 @@ pub fn expr_to_bigfloat(
           Ok(compute_champernowne(base, bits, rm, cc))
         }
         _ => Err(InterpreterError::EvaluationError(format!(
-          "N: cannot evaluate {}[...] to arbitrary precision",
-          name
+          "N: cannot evaluate {name}[...] to arbitrary precision"
         ))),
       }
     }
@@ -1940,11 +1934,10 @@ fn expr_to_complex_bigfloat(
       }
       "ExpIntegralEi" if args.len() == 1 => {
         let (a, b) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
-        complex_exp_integral_ei(a, b, bits, rm, cc)
+        Ok(complex_exp_integral_ei(&a, &b, bits, rm, cc))
       }
       _ => Err(InterpreterError::EvaluationError(format!(
-        "N: cannot evaluate {}[...] to complex arbitrary precision",
-        name
+        "N: cannot evaluate {name}[...] to complex arbitrary precision"
       ))),
     },
     _ => Err(InterpreterError::EvaluationError(format!(
@@ -1956,8 +1949,8 @@ fn expr_to_complex_bigfloat(
 
 /// Build a properly formatted complex result from BigFloat real and imaginary parts.
 fn build_complex_bigfloat_result(
-  re: astro_float::BigFloat,
-  im: astro_float::BigFloat,
+  re: &astro_float::BigFloat,
+  im: &astro_float::BigFloat,
   precision: usize,
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
@@ -1966,7 +1959,7 @@ fn build_complex_bigfloat_result(
   let max_digits: Option<usize> = None;
 
   if im.is_zero() {
-    let re_str = bigfloat_to_string(&re, None, rm, cc)?;
+    let re_str = bigfloat_to_string(re, None, rm, cc)?;
     return Ok(Expr::BigFloat(re_str, precision as f64));
   }
 
@@ -1986,7 +1979,7 @@ fn build_complex_bigfloat_result(
   if re.is_zero() {
     if im_negative {
       // Pure negative imaginary: -|im|*I
-      let neg_im_str = bigfloat_to_string(&im, max_digits, rm, cc)?;
+      let neg_im_str = bigfloat_to_string(im, max_digits, rm, cc)?;
       let neg_im_bf = Expr::BigFloat(neg_im_str, precision as f64);
       return Ok(Expr::BinaryOp {
         op: BinaryOperator::Times,
@@ -1997,7 +1990,7 @@ fn build_complex_bigfloat_result(
     return Ok(abs_im_term);
   }
 
-  let re_str = bigfloat_to_string(&re, max_digits, rm, cc)?;
+  let re_str = bigfloat_to_string(re, max_digits, rm, cc)?;
   let re_bf = Expr::BigFloat(re_str, precision as f64);
 
   if im_negative {
@@ -2020,25 +2013,25 @@ fn build_complex_bigfloat_result(
 /// Build a complex result with per-component string precision markers.
 /// Uses Expr::Raw to embed the precision marker directly in the formatted string.
 fn build_complex_result_with_string_precision(
-  re: astro_float::BigFloat,
-  im: astro_float::BigFloat,
+  re: &astro_float::BigFloat,
+  im: &astro_float::BigFloat,
   prec_re_str: &str,
   prec_im_str: &str,
   _precision: usize,
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
 ) -> Result<Expr, InterpreterError> {
-  let re_str = bigfloat_to_string(&re, None, rm, cc)?;
+  let re_str = bigfloat_to_string(re, None, rm, cc)?;
 
-  let re_raw = Expr::Raw(format!("{}`{}", re_str, prec_re_str));
+  let re_raw = Expr::Raw(format!("{re_str}`{prec_re_str}"));
 
   let im_negative = im.is_negative();
   let im_abs_str = if im_negative {
     bigfloat_to_string(&im.neg(), None, rm, cc)?
   } else {
-    bigfloat_to_string(&im, None, rm, cc)?
+    bigfloat_to_string(im, None, rm, cc)?
   };
-  let im_raw = Expr::Raw(format!("{}`{}", im_abs_str, prec_im_str));
+  let im_raw = Expr::Raw(format!("{im_abs_str}`{prec_im_str}"));
 
   let i_expr = Expr::Identifier("I".to_string());
   let abs_im_term = Expr::BinaryOp {
@@ -2140,7 +2133,7 @@ fn format_bigfloat_as_precision_marker(
   } else {
     // Use Rust's Debug format which shows the exact f64 representation
     // with minimum digits to uniquely represent the value
-    Ok(format!("{:?}", val))
+    Ok(format!("{val:?}"))
   }
 }
 
@@ -2159,7 +2152,7 @@ fn rescale_collect_leaves(
 ) {
   match expr {
     Expr::List(items) => {
-      for it in items.iter() {
+      for it in items {
         rescale_collect_leaves(it, vals, int_vals, all_int, ok);
       }
     }
@@ -2251,8 +2244,8 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if !ok || vals.is_empty() {
         return Ok(unevaluated("Rescale", args));
       }
-      let min_f = vals.iter().cloned().fold(f64::INFINITY, f64::min);
-      let max_f = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+      let min_f = vals.iter().copied().fold(f64::INFINITY, f64::min);
+      let max_f = vals.iter().copied().fold(f64::NEG_INFINITY, f64::max);
       let degenerate = (max_f - min_f).abs() < f64::EPSILON;
       let (min_i, range_i) = if all_int {
         let mn = *int_vals.iter().min().unwrap();
@@ -2777,131 +2770,127 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Normalize expects 1 or 2 arguments".into(),
     ));
   }
-  match &args[0] {
-    Expr::List(items) => {
-      if items.is_empty() {
-        return Ok(Expr::List(vec![].into()));
-      }
-      // Compute the Euclidean norm
-      let mut vals = Vec::new();
-      let mut all_int = true;
-      let mut int_vals: Vec<i128> = Vec::new();
-      for item in items {
-        match item {
-          Expr::Integer(n) => {
-            vals.push(*n as f64);
-            int_vals.push(*n);
-          }
-          Expr::Real(f) => {
-            vals.push(*f);
-            all_int = false;
-          }
-          _ => {
-            // Symbolic case: return {elem/Sqrt[sum_of_squares], ...}
-            // like Mathematica does for Normalize[{a, b}] → {a/Sqrt[a^2+b^2], b/Sqrt[a^2+b^2]}
-            let squared_terms: Vec<Expr> = items
-              .iter()
-              .map(|e| Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(Expr::FunctionCall {
-                  name: "Abs".to_string(),
-                  args: vec![e.clone()].into(),
-                }),
-                right: Box::new(Expr::Integer(2)),
-              })
-              .collect();
-            let sum_of_squares = if squared_terms.len() == 1 {
-              squared_terms.into_iter().next().unwrap()
-            } else {
-              Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: squared_terms.into(),
-              }
-            };
-            // Evaluate the norm so numeric entries collapse the Abs-of-square
-            // sum (e.g. Normalize[{1, I}] -> {1/Sqrt[2], I/Sqrt[2]} rather than
-            // leaving Sqrt[Abs[1]^2 + Abs[I]^2]); a fully symbolic vector keeps
-            // the Abs form unchanged.
-            let norm_expr = crate::evaluator::evaluate_expr_to_expr(
-              &make_sqrt(sum_of_squares),
-            )?;
-            let result: Vec<Expr> = items
-              .iter()
-              .map(|e| {
-                crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-                  op: BinaryOperator::Divide,
-                  left: Box::new(e.clone()),
-                  right: Box::new(norm_expr.clone()),
-                })
-              })
-              .collect::<Result<Vec<_>, _>>()?;
-            return Ok(Expr::List(result.into()));
-          }
+  if let Expr::List(items) = &args[0] {
+    if items.is_empty() {
+      return Ok(Expr::List(vec![].into()));
+    }
+    // Compute the Euclidean norm
+    let mut vals = Vec::new();
+    let mut all_int = true;
+    let mut int_vals: Vec<i128> = Vec::new();
+    for item in items {
+      match item {
+        Expr::Integer(n) => {
+          vals.push(*n as f64);
+          int_vals.push(*n);
         }
-      }
-      let norm_sq: f64 = vals.iter().map(|x| x * x).sum();
-      if norm_sq == 0.0 {
-        return Ok(args[0].clone());
-      }
-      let norm = norm_sq.sqrt();
-
-      if all_int {
-        // Try to keep exact: each element / Sqrt[sum_sq]
-        let sum_sq: i128 = int_vals.iter().map(|x| x * x).sum();
-        // Check if sum_sq is a perfect square
-        let root = (sum_sq as f64).sqrt() as i128;
-        if root * root == sum_sq && root > 0 {
-          // Exact: each element / root
-          let result: Vec<Expr> =
-            int_vals.iter().map(|x| make_rational(*x, root)).collect();
+        Expr::Real(f) => {
+          vals.push(*f);
+          all_int = false;
+        }
+        _ => {
+          // Symbolic case: return {elem/Sqrt[sum_of_squares], ...}
+          // like Mathematica does for Normalize[{a, b}] → {a/Sqrt[a^2+b^2], b/Sqrt[a^2+b^2]}
+          let squared_terms: Vec<Expr> = items
+            .iter()
+            .map(|e| Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(Expr::FunctionCall {
+                name: "Abs".to_string(),
+                args: vec![e.clone()].into(),
+              }),
+              right: Box::new(Expr::Integer(2)),
+            })
+            .collect();
+          let sum_of_squares = if squared_terms.len() == 1 {
+            squared_terms.into_iter().next().unwrap()
+          } else {
+            Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: squared_terms.into(),
+            }
+          };
+          // Evaluate the norm so numeric entries collapse the Abs-of-square
+          // sum (e.g. Normalize[{1, I}] -> {1/Sqrt[2], I/Sqrt[2]} rather than
+          // leaving Sqrt[Abs[1]^2 + Abs[I]^2]); a fully symbolic vector keeps
+          // the Abs form unchanged.
+          let norm_expr = crate::evaluator::evaluate_expr_to_expr(&make_sqrt(
+            sum_of_squares,
+          ))?;
+          let result: Vec<Expr> = items
+            .iter()
+            .map(|e| {
+              crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+                op: BinaryOperator::Divide,
+                left: Box::new(e.clone()),
+                right: Box::new(norm_expr.clone()),
+              })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
           return Ok(Expr::List(result.into()));
         }
-        // Return as xi / Sqrt[sum_sq]
-        let result: Vec<Expr> = int_vals
-          .iter()
-          .map(|x| {
-            if *x == 0 {
-              Expr::Integer(0)
-            } else {
-              // x / Sqrt[sum_sq] = x * Power[sum_sq, -1/2]
-              Expr::BinaryOp {
-                op: BinaryOperator::Divide,
-                left: Box::new(Expr::Integer(*x)),
-                right: Box::new(make_sqrt(Expr::Integer(sum_sq))),
-              }
-            }
-          })
-          .collect();
+      }
+    }
+    let norm_sq: f64 = vals.iter().map(|x| x * x).sum();
+    if norm_sq == 0.0 {
+      return Ok(args[0].clone());
+    }
+    let norm = norm_sq.sqrt();
+
+    if all_int {
+      // Try to keep exact: each element / Sqrt[sum_sq]
+      let sum_sq: i128 = int_vals.iter().map(|x| x * x).sum();
+      // Check if sum_sq is a perfect square
+      let root = (sum_sq as f64).sqrt() as i128;
+      if root * root == sum_sq && root > 0 {
+        // Exact: each element / root
+        let result: Vec<Expr> =
+          int_vals.iter().map(|x| make_rational(*x, root)).collect();
         return Ok(Expr::List(result.into()));
       }
+      // Return as xi / Sqrt[sum_sq]
+      let result: Vec<Expr> = int_vals
+        .iter()
+        .map(|x| {
+          if *x == 0 {
+            Expr::Integer(0)
+          } else {
+            // x / Sqrt[sum_sq] = x * Power[sum_sq, -1/2]
+            Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(Expr::Integer(*x)),
+              right: Box::new(make_sqrt(Expr::Integer(sum_sq))),
+            }
+          }
+        })
+        .collect();
+      return Ok(Expr::List(result.into()));
+    }
 
-      // Float path. Wolfram scales the vector as `v/norm`, which is a
-      // multiply by the reciprocal — the last bit of each component follows
-      // from that order, so dividing instead moves it (`Normalize[{3., 4.}]`
-      // is `{0.6000000000000001, 0.8}`, not `{0.6, 0.8}`). A component that
-      // lands on a whole number stays a machine real.
-      let inv = 1.0 / norm;
-      let result: Vec<Expr> =
-        vals.iter().map(|x| Expr::Real(x * inv)).collect();
-      Ok(Expr::List(result.into()))
+    // Float path. Wolfram scales the vector as `v/norm`, which is a
+    // multiply by the reciprocal — the last bit of each component follows
+    // from that order, so dividing instead moves it (`Normalize[{3., 4.}]`
+    // is `{0.6000000000000001, 0.8}`, not `{0.6, 0.8}`). A component that
+    // lands on a whole number stays a machine real.
+    let inv = 1.0 / norm;
+    let result: Vec<Expr> = vals.iter().map(|x| Expr::Real(x * inv)).collect();
+    Ok(Expr::List(result.into()))
+  } else {
+    // Scalar: Normalize[x] = x / Norm[x]
+    let norm_val = norm_ast(args)?;
+    // If norm is 0, return the original
+    let is_zero = match &norm_val {
+      Expr::Integer(0) => true,
+      Expr::Real(f) if *f == 0.0 => true,
+      _ => false,
+    };
+    if is_zero {
+      return Ok(args[0].clone());
     }
-    _ => {
-      // Scalar: Normalize[x] = x / Norm[x]
-      let norm_val = norm_ast(args)?;
-      // If norm is 0, return the original
-      let is_zero = match &norm_val {
-        Expr::Integer(0) => true,
-        Expr::Real(f) if *f == 0.0 => true,
-        _ => false,
-      };
-      if is_zero {
-        return Ok(args[0].clone());
-      }
-      crate::evaluator::evaluate_function_call_ast(
-        "Divide",
-        &[args[0].clone(), norm_val],
-      )
-    }
+    crate::evaluator::evaluate_function_call_ast(
+      "Divide",
+      &[args[0].clone(), norm_val],
+    )
   }
 }
 
@@ -3300,13 +3289,11 @@ fn try_complex_accuracy(expr: &Expr) -> Option<Expr> {
     (true, false) => (b_part, a_part),
     _ => return None,
   };
-  let re_acc = match accuracy_ast(&[re_part]).ok()? {
-    Expr::Real(v) => v,
-    _ => return None,
+  let Expr::Real(re_acc) = accuracy_ast(&[re_part]).ok()? else {
+    return None;
   };
-  let im_acc = match accuracy_ast(&[im_part]).ok()? {
-    Expr::Real(v) => v,
-    _ => return None,
+  let Expr::Real(im_acc) = accuracy_ast(&[im_part]).ok()? else {
+    return None;
   };
   let combined = -((10f64.powf(-2.0 * re_acc) + 10f64.powf(-2.0 * im_acc))
     .sqrt()
@@ -3918,8 +3905,8 @@ pub fn warping_correspondence_ast(
   if args.len() != 2 {
     return unevaluated();
   }
-  match warping_correspondence_path(&args[0], &args[1]) {
-    Some((pi, pj)) => Ok(Expr::List(
+  if let Some((pi, pj)) = warping_correspondence_path(&args[0], &args[1]) {
+    Ok(Expr::List(
       vec![
         Expr::List(
           pi.into_iter().map(Expr::Integer).collect::<Vec<_>>().into(),
@@ -3929,21 +3916,20 @@ pub fn warping_correspondence_ast(
         ),
       ]
       .into(),
-    )),
-    None => {
-      let is_numeric_vec = |e: &Expr| {
-        matches!(e, Expr::List(items) if !items.is_empty()
-          && items.iter().all(|x| try_eval_to_f64(x).is_some()))
-      };
-      if let Some(bad) = args.iter().find(|a| !is_numeric_vec(a)) {
-        crate::emit_message(&format!(
-          "WarpingCorrespondence::invarg: Expecting a real-valued numeric or \
-           Boolean vector or matrix instead of {}.",
-          crate::syntax::format_expr(bad, crate::syntax::ExprForm::Output)
-        ));
-      }
-      unevaluated()
+    ))
+  } else {
+    let is_numeric_vec = |e: &Expr| {
+      matches!(e, Expr::List(items) if !items.is_empty()
+        && items.iter().all(|x| try_eval_to_f64(x).is_some()))
+    };
+    if let Some(bad) = args.iter().find(|a| !is_numeric_vec(a)) {
+      crate::emit_message(&format!(
+        "WarpingCorrespondence::invarg: Expecting a real-valued numeric or \
+         Boolean vector or matrix instead of {}.",
+        crate::syntax::format_expr(bad, crate::syntax::ExprForm::Output)
+      ));
     }
+    unevaluated()
   }
 }
 
@@ -3976,40 +3962,36 @@ pub fn euclidean_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  match (&args[0], &args[1]) {
-    (Expr::List(u), Expr::List(v)) => {
-      if u.len() != v.len() {
-        return Err(InterpreterError::EvaluationError(
-          "EuclideanDistance: vectors must have the same length".into(),
-        ));
-      }
-      // Build Sqrt[Sum[Abs[u_i - v_i]^2]]
-      let mut sum_args = Vec::new();
-      for (ui, vi) in u.iter().zip(v.iter()) {
-        let diff = crate::evaluator::evaluate_function_call_ast(
-          "Subtract",
-          &[ui.clone(), vi.clone()],
-        )?;
-        let abs_diff =
-          crate::evaluator::evaluate_function_call_ast("Abs", &[diff])?;
-        let sq = crate::evaluator::evaluate_function_call_ast(
-          "Power",
-          &[abs_diff, Expr::Integer(2)],
-        )?;
-        sum_args.push(sq);
-      }
-      let sum =
-        crate::evaluator::evaluate_function_call_ast("Plus", &sum_args)?;
-      crate::evaluator::evaluate_function_call_ast("Sqrt", &[sum])
+  if let (Expr::List(u), Expr::List(v)) = (&args[0], &args[1]) {
+    if u.len() != v.len() {
+      return Err(InterpreterError::EvaluationError(
+        "EuclideanDistance: vectors must have the same length".into(),
+      ));
     }
-    _ => {
-      // Scalar distance: Abs[u - v]
+    // Build Sqrt[Sum[Abs[u_i - v_i]^2]]
+    let mut sum_args = Vec::new();
+    for (ui, vi) in u.iter().zip(v.iter()) {
       let diff = crate::evaluator::evaluate_function_call_ast(
         "Subtract",
-        &[args[0].clone(), args[1].clone()],
+        &[ui.clone(), vi.clone()],
       )?;
-      crate::evaluator::evaluate_function_call_ast("Abs", &[diff])
+      let abs_diff =
+        crate::evaluator::evaluate_function_call_ast("Abs", &[diff])?;
+      let sq = crate::evaluator::evaluate_function_call_ast(
+        "Power",
+        &[abs_diff, Expr::Integer(2)],
+      )?;
+      sum_args.push(sq);
     }
+    let sum = crate::evaluator::evaluate_function_call_ast("Plus", &sum_args)?;
+    crate::evaluator::evaluate_function_call_ast("Sqrt", &[sum])
+  } else {
+    // Scalar distance: Abs[u - v]
+    let diff = crate::evaluator::evaluate_function_call_ast(
+      "Subtract",
+      &[args[0].clone(), args[1].clone()],
+    )?;
+    crate::evaluator::evaluate_function_call_ast("Abs", &[diff])
   }
 }
 
@@ -4023,41 +4005,38 @@ pub fn squared_euclidean_distance_ast(
     ));
   }
 
-  match (&args[0], &args[1]) {
-    (Expr::List(u), Expr::List(v)) => {
-      if u.len() != v.len() {
-        return Err(InterpreterError::EvaluationError(
-          "SquaredEuclideanDistance: vectors must have the same length".into(),
-        ));
-      }
-      let mut sum_args = Vec::new();
-      for (ui, vi) in u.iter().zip(v.iter()) {
-        let diff = crate::evaluator::evaluate_function_call_ast(
-          "Subtract",
-          &[ui.clone(), vi.clone()],
-        )?;
-        let abs_diff =
-          crate::evaluator::evaluate_function_call_ast("Abs", &[diff])?;
-        let sq = crate::evaluator::evaluate_function_call_ast(
-          "Power",
-          &[abs_diff, Expr::Integer(2)],
-        )?;
-        sum_args.push(sq);
-      }
-      crate::evaluator::evaluate_function_call_ast("Plus", &sum_args)
+  if let (Expr::List(u), Expr::List(v)) = (&args[0], &args[1]) {
+    if u.len() != v.len() {
+      return Err(InterpreterError::EvaluationError(
+        "SquaredEuclideanDistance: vectors must have the same length".into(),
+      ));
     }
-    _ => {
+    let mut sum_args = Vec::new();
+    for (ui, vi) in u.iter().zip(v.iter()) {
       let diff = crate::evaluator::evaluate_function_call_ast(
         "Subtract",
-        &[args[0].clone(), args[1].clone()],
+        &[ui.clone(), vi.clone()],
       )?;
       let abs_diff =
         crate::evaluator::evaluate_function_call_ast("Abs", &[diff])?;
-      crate::evaluator::evaluate_function_call_ast(
+      let sq = crate::evaluator::evaluate_function_call_ast(
         "Power",
         &[abs_diff, Expr::Integer(2)],
-      )
+      )?;
+      sum_args.push(sq);
     }
+    crate::evaluator::evaluate_function_call_ast("Plus", &sum_args)
+  } else {
+    let diff = crate::evaluator::evaluate_function_call_ast(
+      "Subtract",
+      &[args[0].clone(), args[1].clone()],
+    )?;
+    let abs_diff =
+      crate::evaluator::evaluate_function_call_ast("Abs", &[diff])?;
+    crate::evaluator::evaluate_function_call_ast(
+      "Power",
+      &[abs_diff, Expr::Integer(2)],
+    )
   }
 }
 
@@ -4243,8 +4222,7 @@ fn fourier_impl(
 ) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(format!(
-      "{} expects 1 or 2 arguments",
-      func_name
+      "{func_name} expects 1 or 2 arguments"
     )));
   }
 
@@ -4378,7 +4356,7 @@ pub fn fourier_dct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Extract real numeric values. Any non-real entry leaves it unevaluated.
   let mut data: Vec<f64> = Vec::with_capacity(items.len());
-  for item in items.iter() {
+  for item in items {
     match try_extract_complex_float(item) {
       Some((re, 0.0)) => data.push(re),
       _ => return unevaluated(),
@@ -4433,7 +4411,7 @@ pub fn discrete_hilbert_transform_ast(
 
   // Real numeric entries only.
   let mut data: Vec<(f64, f64)> = Vec::with_capacity(items.len());
-  for item in items.iter() {
+  for item in items {
     match try_extract_complex_float(item) {
       Some((re, 0.0)) => data.push((re, 0.0)),
       _ => return data_err(),
@@ -4549,7 +4527,7 @@ pub fn fourier_dst_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let mut data: Vec<f64> = Vec::with_capacity(items.len());
-  for item in items.iter() {
+  for item in items {
     match try_extract_complex_float(item) {
       Some((re, 0.0)) => data.push(re),
       _ => return unevaluated(),
@@ -4688,11 +4666,8 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     let max_n = *checkpoints.last().unwrap();
     for i in min_val..(min_val + max_n) {
-      let term = match term_at(i) {
-        Some(f) => f,
-        None => {
-          return Ok(unevaluated("NSum", args));
-        }
+      let Some(term) = term_at(i) else {
+        return Ok(unevaluated("NSum", args));
       };
 
       if !term.is_finite() {
@@ -4728,11 +4703,8 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut sum = 0.0_f64;
   for i in min_val..=max_val {
-    let term = match term_at(i) {
-      Some(f) => f,
-      None => {
-        return Ok(unevaluated("NSum", args));
-      }
+    let Some(term) = term_at(i) else {
+      return Ok(unevaluated("NSum", args));
     };
     sum += term;
   }
@@ -4831,11 +4803,8 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let sample_factor = 1.3_f64;
     for k in 0..n_terms {
       let i = min_val + k as i64;
-      let term = match eval_term(i)? {
-        Some(f) => f,
-        None => {
-          return Ok(unevaluated("NProduct", args));
-        }
+      let Some(term) = eval_term(i)? else {
+        return Ok(unevaluated("NProduct", args));
       };
       if term <= 0.0 || !term.is_finite() {
         return Ok(unevaluated("NProduct", args));
@@ -4898,11 +4867,8 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut product = 1.0_f64;
   for i in min_val..=max_val {
-    let term = match eval_term(i)? {
-      Some(f) => f,
-      None => {
-        return Ok(unevaluated("NProduct", args));
-      }
+    let Some(term) = eval_term(i)? else {
+      return Ok(unevaluated("NProduct", args));
     };
     product *= term;
   }
@@ -4918,32 +4884,29 @@ pub fn manhattan_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  match (&args[0], &args[1]) {
-    (Expr::List(u), Expr::List(v)) => {
-      if u.len() != v.len() {
-        return Err(InterpreterError::EvaluationError(
-          "ManhattanDistance: vectors must have the same length".into(),
-        ));
-      }
-      let mut abs_diffs = Vec::new();
-      for (ui, vi) in u.iter().zip(v.iter()) {
-        let diff = crate::evaluator::evaluate_function_call_ast(
-          "Subtract",
-          &[ui.clone(), vi.clone()],
-        )?;
-        let abs = crate::evaluator::evaluate_function_call_ast("Abs", &[diff])?;
-        abs_diffs.push(abs);
-      }
-      crate::evaluator::evaluate_function_call_ast("Plus", &abs_diffs)
+  if let (Expr::List(u), Expr::List(v)) = (&args[0], &args[1]) {
+    if u.len() != v.len() {
+      return Err(InterpreterError::EvaluationError(
+        "ManhattanDistance: vectors must have the same length".into(),
+      ));
     }
-    _ => {
-      // Scalar distance: Abs[u - v]
+    let mut abs_diffs = Vec::new();
+    for (ui, vi) in u.iter().zip(v.iter()) {
       let diff = crate::evaluator::evaluate_function_call_ast(
         "Subtract",
-        &[args[0].clone(), args[1].clone()],
+        &[ui.clone(), vi.clone()],
       )?;
-      crate::evaluator::evaluate_function_call_ast("Abs", &[diff])
+      let abs = crate::evaluator::evaluate_function_call_ast("Abs", &[diff])?;
+      abs_diffs.push(abs);
     }
+    crate::evaluator::evaluate_function_call_ast("Plus", &abs_diffs)
+  } else {
+    // Scalar distance: Abs[u - v]
+    let diff = crate::evaluator::evaluate_function_call_ast(
+      "Subtract",
+      &[args[0].clone(), args[1].clone()],
+    )?;
+    crate::evaluator::evaluate_function_call_ast("Abs", &[diff])
   }
 }
 
@@ -5247,12 +5210,12 @@ fn bigfloat_exp_integral_ei(
 /// For complex z = a + bi: Ei(z) = γ + Log(z) + Σ_{n=1}^{∞} z^n / (n * n!)
 /// where γ is the Euler-Mascheroni constant and Log is the complex logarithm.
 fn complex_exp_integral_ei(
-  a: astro_float::BigFloat,
-  b: astro_float::BigFloat,
+  a: &astro_float::BigFloat,
+  b: &astro_float::BigFloat,
   bits: usize,
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
-) -> Result<(astro_float::BigFloat, astro_float::BigFloat), InterpreterError> {
+) -> (astro_float::BigFloat, astro_float::BigFloat) {
   use astro_float::BigFloat;
 
   // Use many extra guard bits to ensure the rounding to `bits` is correct
@@ -5264,8 +5227,8 @@ fn complex_exp_integral_ei(
   // Complex Log(z) = ln|z| + i*arg(z)
   // |z| = sqrt(a^2 + b^2), arg(z) = atan2(b, a)
   let abs_sq =
-    a.mul(&a, work_bits, rm)
-      .add(&b.mul(&b, work_bits, rm), work_bits, rm);
+    a.mul(a, work_bits, rm)
+      .add(&b.mul(b, work_bits, rm), work_bits, rm);
   let abs_z = abs_sq.sqrt(work_bits, rm);
   let ln_abs_z = abs_z.ln(work_bits, rm, cc);
   // atan2(b, a) via atan and quadrant adjustment
@@ -5273,7 +5236,7 @@ fn complex_exp_integral_ei(
     let zero = BigFloat::from_i32(0, work_bits);
     let pi = cc.pi(work_bits, rm);
     if !a.is_zero() {
-      let ratio = b.div(&a, work_bits, rm);
+      let ratio = b.div(a, work_bits, rm);
       let atan_val = ratio.atan(work_bits, rm, cc);
       if a.is_positive() {
         atan_val
@@ -5307,13 +5270,13 @@ fn complex_exp_integral_ei(
     let n_bf = BigFloat::from_i32(n as i32, work_bits);
     if n > 1 {
       // z^n = z^(n-1) * z
-      let new_re = pow_re.mul(&a, work_bits, rm).sub(
-        &pow_im.mul(&b, work_bits, rm),
+      let new_re = pow_re.mul(a, work_bits, rm).sub(
+        &pow_im.mul(b, work_bits, rm),
         work_bits,
         rm,
       );
-      let new_im = pow_re.mul(&b, work_bits, rm).add(
-        &pow_im.mul(&a, work_bits, rm),
+      let new_im = pow_re.mul(b, work_bits, rm).add(
+        &pow_im.mul(a, work_bits, rm),
         work_bits,
         rm,
       );
@@ -5358,7 +5321,7 @@ fn complex_exp_integral_ei(
   let result_re = sum_re.add(&zero, bits, rm);
   let result_im = sum_im.add(&zero, bits, rm);
 
-  Ok((result_re, result_im))
+  (result_re, result_im)
 }
 
 /// Compute the Euler-Mascheroni constant γ to the given precision.
@@ -5484,11 +5447,8 @@ pub fn list_fourier_sequence_transform_ast(
     return Ok(unevaluated("ListFourierSequenceTransform", args));
   }
 
-  let list = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("ListFourierSequenceTransform", args));
-    }
+  let Expr::List(list) = &args[0] else {
+    return Ok(unevaluated("ListFourierSequenceTransform", args));
   };
 
   if list.is_empty() {
@@ -5641,11 +5601,8 @@ pub fn window_function_ast(
     return Ok(unevaluated(name, args));
   }
 
-  let x = match try_eval_to_f64(&args[0]) {
-    Some(v) => v,
-    None => {
-      return Ok(unevaluated(name, args));
-    }
+  let Some(x) = try_eval_to_f64(&args[0]) else {
+    return Ok(unevaluated(name, args));
   };
   let is_real = matches!(&args[0], Expr::Real(_));
 
@@ -5667,7 +5624,7 @@ pub fn window_function_ast(
   let pi = std::f64::consts::PI;
   let val = match name {
     "HammingWindow" => 25.0 / 46.0 + 21.0 / 46.0 * (2.0 * pi * x).cos(),
-    "HannWindow" => (1.0 + (2.0 * pi * x).cos()) / 2.0,
+    "HannWindow" => f64::midpoint(1.0, (2.0 * pi * x).cos()),
     // Integer numerators summed and divided once at the end, like the
     // other cosine-sum windows: the 0.42 / 0.5 / 0.08 literals lose the
     // exact endpoints (BlackmanWindow[0.] came out 0.9999999999999999
@@ -5720,9 +5677,9 @@ pub fn tukey_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let x = &args[0];
   let alpha = args.get(1).cloned().unwrap_or_else(|| make_rational(2, 3));
 
-  let (xf, af) = match (try_eval_to_f64(x), try_eval_to_f64(&alpha)) {
-    (Some(xf), Some(af)) => (xf, af),
-    _ => return Ok(unevaluated()),
+  let (Some(xf), Some(af)) = (try_eval_to_f64(x), try_eval_to_f64(&alpha))
+  else {
+    return Ok(unevaluated());
   };
 
   fn contains_real(e: &Expr) -> bool {
@@ -5760,9 +5717,10 @@ pub fn tukey_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Raised-cosine taper.
   if inexact {
     let theta = (2.0 * ax - 1.0 + af) / af;
-    return Ok(Expr::Real(
-      (1.0 + (std::f64::consts::PI * theta).cos()) / 2.0,
-    ));
+    return Ok(Expr::Real(f64::midpoint(
+      1.0,
+      (std::f64::consts::PI * theta).cos(),
+    )));
   }
   // Exact: build (1 + Cos[Pi (2 Abs[x] - 1 + alpha)/alpha]) / 2 and evaluate
   // symbolically so Cos simplifies (matching wolframscript's radical forms).
@@ -5820,9 +5778,8 @@ pub fn kaiser_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let x = &args[0];
   let alpha = args.get(1).cloned().unwrap_or(Expr::Integer(3));
 
-  let xf = match try_eval_to_f64(x) {
-    Some(xf) => xf,
-    None => return Ok(unevaluated()),
+  let Some(xf) = try_eval_to_f64(x) else {
+    return Ok(unevaluated());
   };
   if try_eval_to_f64(&alpha).is_none() {
     return Ok(unevaluated());
@@ -5905,9 +5862,8 @@ pub fn parzen_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   }
   let x = &args[0];
-  let xf = match try_eval_to_f64(x) {
-    Some(v) => v,
-    None => return Ok(unevaluated()),
+  let Some(xf) = try_eval_to_f64(x) else {
+    return Ok(unevaluated());
   };
   let inexact = window_arg_inexact(x);
   let ax = xf.abs();
@@ -5979,9 +5935,9 @@ pub fn gaussian_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let x = &args[0];
   let sigma = args.get(1).cloned().unwrap_or_else(|| make_rational(3, 10));
-  let (xf, sf) = match (try_eval_to_f64(x), try_eval_to_f64(&sigma)) {
-    (Some(xf), Some(sf)) => (xf, sf),
-    _ => return Ok(unevaluated()),
+  let (Some(xf), Some(sf)) = (try_eval_to_f64(x), try_eval_to_f64(&sigma))
+  else {
+    return Ok(unevaluated());
   };
   let inexact = window_arg_inexact(x) || window_arg_inexact(&sigma);
   let ax = xf.abs();
@@ -6029,9 +5985,8 @@ pub fn bohman_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   }
   let x = &args[0];
-  let xf = match try_eval_to_f64(x) {
-    Some(v) => v,
-    None => return Ok(unevaluated()),
+  let Some(xf) = try_eval_to_f64(x) else {
+    return Ok(unevaluated());
   };
   let inexact = window_arg_inexact(x);
   let ax = xf.abs();
@@ -6106,17 +6061,11 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Extract {omega1, omega2}
   let (omega1, omega2) = match &args[1] {
     Expr::List(freqs) if freqs.len() == 2 => {
-      let o1 = match try_eval_to_f64(&freqs[0]) {
-        Some(v) => v,
-        None => {
-          return Ok(unevaluated("BandpassFilter", args));
-        }
+      let Some(o1) = try_eval_to_f64(&freqs[0]) else {
+        return Ok(unevaluated("BandpassFilter", args));
       };
-      let o2 = match try_eval_to_f64(&freqs[1]) {
-        Some(v) => v,
-        None => {
-          return Ok(unevaluated("BandpassFilter", args));
-        }
+      let Some(o2) = try_eval_to_f64(&freqs[1]) else {
+        return Ok(unevaluated("BandpassFilter", args));
       };
       (o1, o2)
     }
@@ -6339,11 +6288,8 @@ pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("LowpassFilter", args));
   }
 
-  let omega_c = match try_eval_to_f64(&args[1]) {
-    Some(v) => v,
-    None => {
-      return Ok(unevaluated("LowpassFilter", args));
-    }
+  let Some(omega_c) = try_eval_to_f64(&args[1]) else {
+    return Ok(unevaluated("LowpassFilter", args));
   };
 
   let mut sample_rate = 1.0_f64;
@@ -6482,11 +6428,8 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("HighpassFilter", args));
   }
 
-  let omega_c = match try_eval_to_f64(&args[1]) {
-    Some(v) => v,
-    None => {
-      return Ok(unevaluated("HighpassFilter", args));
-    }
+  let Some(omega_c) = try_eval_to_f64(&args[1]) else {
+    return Ok(unevaluated("HighpassFilter", args));
   };
 
   let mut sample_rate = 1.0_f64;
@@ -6618,17 +6561,11 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (omega1, omega2) = match &args[1] {
     Expr::List(freqs) if freqs.len() == 2 => {
-      let o1 = match try_eval_to_f64(&freqs[0]) {
-        Some(v) => v,
-        None => {
-          return Ok(unevaluated("BandstopFilter", args));
-        }
+      let Some(o1) = try_eval_to_f64(&freqs[0]) else {
+        return Ok(unevaluated("BandstopFilter", args));
       };
-      let o2 = match try_eval_to_f64(&freqs[1]) {
-        Some(v) => v,
-        None => {
-          return Ok(unevaluated("BandstopFilter", args));
-        }
+      let Some(o2) = try_eval_to_f64(&freqs[1]) else {
+        return Ok(unevaluated("BandstopFilter", args));
       };
       (o1, o2)
     }
@@ -6832,8 +6769,8 @@ pub(crate) fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
   // Two accepted first-argument shapes for Root[f, k]:
   //   * pure function `#^3 - 2 &` (Slot/`#1` is the root variable), or
   //   * an ordinary polynomial expression in a single symbol, e.g. `x^3 - 2`.
-  let (poly_in_var, var): (Expr, String) = match poly_arg {
-    Expr::Function { body } => {
+  let (poly_in_var, var): (Expr, String) =
+    if let Expr::Function { body } = poly_arg {
       let var = "__root_x__".to_string();
       let sub = crate::syntax::substitute_variable(
         body.as_ref(),
@@ -6841,8 +6778,7 @@ pub(crate) fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
         &Expr::Identifier(var.clone()),
       );
       (substitute_slot_with_identifier(&sub, 1, &var), var)
-    }
-    _ => {
+    } else {
       let mut vars = std::collections::HashSet::new();
       collect_expr_vars(poly_arg, &mut vars);
       if vars.len() != 1 {
@@ -6850,8 +6786,7 @@ pub(crate) fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
       }
       let var = vars.into_iter().next().unwrap();
       (poly_arg.clone(), var)
-    }
-  };
+    };
   let expanded =
     crate::functions::polynomial_ast::expand_and_combine(&poly_in_var);
   let coeffs_i = extract_poly_coeffs(&expanded, &var)?;
@@ -7153,8 +7088,8 @@ pub fn polish_and_pair_roots(coeffs: &[f64], roots: &mut [(f64, f64)]) {
       if (roots[k].0 - roots[j].0).abs() < snap_eps
         && (roots[k].1 + roots[j].1).abs() < snap_eps
       {
-        let avg = (roots[k].0 + roots[j].0) / 2.0;
-        let mag = (roots[k].1.abs() + roots[j].1.abs()) / 2.0;
+        let avg = f64::midpoint(roots[k].0, roots[j].0);
+        let mag = f64::midpoint(roots[k].1.abs(), roots[j].1.abs());
         let k_negative = roots[k].1 < 0.0;
         roots[k] = (avg, if k_negative { -mag } else { mag });
         roots[j] = (avg, if k_negative { mag } else { -mag });
@@ -7485,7 +7420,7 @@ pub fn discrete_hadamard_transform_ast(
   if items.is_empty()
     || !items
       .iter()
-      .all(|e| try_eval_to_f64(e).is_some_and(|v| v.is_finite()))
+      .all(|e| try_eval_to_f64(e).is_some_and(f64::is_finite))
   {
     return data_err();
   }
@@ -7604,10 +7539,6 @@ pub fn parametric_window_ast(
     return uneval();
   };
   let eval = crate::evaluator::evaluate_expr_to_expr;
-  let fc = |n: &str, a: Vec<Expr>| Expr::FunctionCall {
-    name: n.to_string(),
-    args: a.into(),
-  };
   let rational = |p: i128, q: i128| Expr::FunctionCall {
     name: "Rational".to_string(),
     args: vec![Expr::Integer(p), Expr::Integer(q)].into(),
@@ -7625,17 +7556,17 @@ pub fn parametric_window_ast(
   }
   let expr = match name {
     // 1/(1 + (2 α x)²)
-    "CauchyWindow" => fc(
+    "CauchyWindow" => call(
       "Power",
       vec![
-        fc(
+        call(
           "Plus",
           vec![
             Expr::Integer(1),
-            fc(
+            call(
               "Power",
               vec![
-                fc(
+                call(
                   "Times",
                   vec![Expr::Integer(2), alpha_expr, args[0].clone()],
                 ),
@@ -7648,43 +7579,43 @@ pub fn parametric_window_ast(
       ],
     ),
     // E^(-2 α |x|)
-    "PoissonWindow" => fc(
+    "PoissonWindow" => call(
       "Power",
       vec![
         Expr::Identifier("E".to_string()),
-        fc(
+        call(
           "Times",
           vec![
             Expr::Integer(-2),
             alpha_expr,
-            fc("Abs", vec![args[0].clone()]),
+            call("Abs", vec![args[0].clone()]),
           ],
         ),
       ],
     ),
     // 31/50 - (12/25)|x| + (19/50)Cos[2 π x]
-    _ => fc(
+    _ => call(
       "Plus",
       vec![
         rational(31, 50),
-        fc(
+        call(
           "Times",
-          vec![rational(-12, 25), fc("Abs", vec![args[0].clone()])],
+          vec![rational(-12, 25), call1("Abs", args[0].clone())],
         ),
-        fc(
+        call(
           "Times",
           vec![
             rational(19, 50),
-            fc(
+            call1(
               "Cos",
-              vec![fc(
+              call(
                 "Times",
                 vec![
                   Expr::Integer(2),
                   Expr::Identifier("Pi".to_string()),
                   args[0].clone(),
                 ],
-              )],
+              ),
             ),
           ],
         ),

@@ -52,7 +52,7 @@ fn spectral_input(expr: &Expr) -> Option<(Vec<f64>, f64, bool)> {
   }
   if let Expr::List(items) = expr {
     let mut xs = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       xs.push(try_eval_to_f64(item)?);
     }
     if xs.is_empty() {
@@ -271,7 +271,7 @@ fn raster_svg(
   y_label: &str,
 ) -> String {
   let rows = matrix.len();
-  let cols = matrix.first().map(|r| r.len()).unwrap_or(0);
+  let cols = matrix.first().map_or(0, std::vec::Vec::len);
   let dark = crate::is_dark_mode();
 
   // PNG rows run top-to-bottom; our matrix rows run bottom-to-top.
@@ -412,8 +412,8 @@ pub fn spectrogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect()
     })
     .collect();
-  let n_bins = spectra.first().map(|s| s.len()).unwrap_or(0);
-  let max_mag = spectra.iter().flatten().cloned().fold(0.0f64, f64::max);
+  let n_bins = spectra.first().map_or(0, std::vec::Vec::len);
+  let max_mag = spectra.iter().flatten().copied().fold(0.0f64, f64::max);
   // matrix[row][col]: row = frequency bin (bottom = DC), col = frame.
   let matrix: Vec<Vec<f64>> = (0..n_bins)
     .map(|bin| {
@@ -472,13 +472,13 @@ pub fn cepstrogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect()
     })
     .collect();
-  let n_bins = cepstra.first().map(|s| s.len()).unwrap_or(0);
+  let n_bins = cepstra.first().map_or(0, std::vec::Vec::len);
   // Quefrency bin 0 (the overall level) dwarfs everything; skip it for
   // the intensity scaling like Wolfram's display does.
   let max_val = cepstra
     .iter()
     .flat_map(|s| s.iter().skip(1))
-    .cloned()
+    .copied()
     .fold(0.0f64, f64::max);
   let matrix: Vec<Vec<f64>> = (1..n_bins)
     .map(|bin| {
@@ -545,7 +545,7 @@ pub fn periodogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .chunks(bucket)
       .map(|c| {
         c.iter()
-          .cloned()
+          .copied()
           .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
           .unwrap()
       })

@@ -123,9 +123,7 @@ pub fn piecewise_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             true_default = Some(val);
             break;
           }
-          Expr::Identifier(s) if s == "False" => {
-            continue;
-          }
+          Expr::Identifier(s) if s == "False" => {}
           _ => {
             let val = evaluate_expr_to_expr(&items[0])?;
             kept.push(Expr::List(vec![val, cond].into()));
@@ -267,12 +265,12 @@ fn parse_message_name(expr: &Expr) -> Option<(String, String)> {
 /// Warning format: "Symbol::tag: ..."
 fn message_matches(warning: &str, specs: &[(String, String)]) -> bool {
   for (sym, tag) in specs {
-    let prefix = format!("{}::{}: ", sym, tag);
+    let prefix = format!("{sym}::{tag}: ");
     if warning.starts_with(&prefix) {
       return true;
     }
     // Also match without trailing space (in case message is just "Symbol::tag:")
-    let prefix2 = format!("{}::{}:", sym, tag);
+    let prefix2 = format!("{sym}::{tag}:");
     if warning.starts_with(&prefix2) {
       return true;
     }

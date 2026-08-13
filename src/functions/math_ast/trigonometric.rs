@@ -330,7 +330,7 @@ fn extract_pi_phase(arg: &Expr) -> Option<(i64, bool, (i64, i64), Vec<Expr>)> {
     term_is_negative(&rest[0])
   };
   if flip {
-    for t in rest.iter_mut() {
+    for t in &mut rest {
       *t = negate_expr(t.clone());
     }
     pn = -pn;
@@ -379,10 +379,10 @@ fn try_trig_pi_phase(
     ("Cos", 1) => ("Sin", true),
     ("Cos", 2) => ("Cos", true),
     ("Cos", 3) => ("Sin", false),
-    ("Tan", 0) | ("Tan", 2) => ("Tan", false),
-    ("Tan", 1) | ("Tan", 3) => ("Cot", true),
-    ("Cot", 0) | ("Cot", 2) => ("Cot", false),
-    ("Cot", 1) | ("Cot", 3) => ("Tan", true),
+    ("Tan", 0 | 2) => ("Tan", false),
+    ("Tan", 1 | 3) => ("Cot", true),
+    ("Cot", 0 | 2) => ("Cot", false),
+    ("Cot", 1 | 3) => ("Tan", true),
     ("Sec", 0) => ("Sec", false),
     ("Sec", 1) => ("Csc", true),
     ("Sec", 2) => ("Sec", true),
@@ -396,7 +396,7 @@ fn try_trig_pi_phase(
   // Odd functions pick up a sign from the leading-term flip.
   let neg = neg ^ (flip && matches!(head, "Sin" | "Tan" | "Cot" | "Csc"));
   if pn != 0 {
-    rest.push(lit(&format!("({}*Pi)/{}", pn, pd)));
+    rest.push(lit(&format!("({pn}*Pi)/{pd}")));
   }
   let rest_expr = if rest.len() == 1 {
     rest.pop().unwrap()
@@ -427,11 +427,11 @@ fn lit(s: &str) -> Expr {
 /// Build `head[m*Pi/d]` (e.g. `Cos[Pi/14]`, `Sin[(3*Pi)/16]`).
 fn build_trig_angle_call(head: &str, m: i64, d: i64) -> Expr {
   let angle = if m == 1 {
-    format!("Pi/{}", d)
+    format!("Pi/{d}")
   } else {
-    format!("({}*Pi)/{}", m, d)
+    format!("({m}*Pi)/{d}")
   };
-  lit(&format!("{}[{}]", head, angle))
+  lit(&format!("{head}[{angle}]"))
 }
 
 /// Canonical first-octant fallback for a trig function of `k*Pi/n` when there
@@ -509,46 +509,20 @@ fn exact_sin(k: i64, n: i64) -> Option<Expr> {
   let val = match (kr, nr) {
     (0, _) => Expr::Integer(0),
     // sin(Pi/12) = (-1 + Sqrt[3]) / (2*Sqrt[2])
-    (1, 12) => binop(
-      BinaryOperator::Divide,
-      binop(
-        BinaryOperator::Plus,
-        Expr::Integer(-1),
-        make_sqrt(Expr::Integer(3)),
-      ),
-      binop(
-        BinaryOperator::Times,
-        Expr::Integer(2),
-        make_sqrt(Expr::Integer(2)),
-      ),
+    (1, 12) => div2(
+      plus2(Expr::Integer(-1), make_sqrt(Expr::Integer(3))),
+      times2(Expr::Integer(2), make_sqrt(Expr::Integer(2))),
     ),
     // sin(Pi/6) = 1/2
     (1, 6) => make_rational(1, 2),
     // sin(Pi/4) = 1/Sqrt[2]
-    (1, 4) => binop(
-      BinaryOperator::Divide,
-      Expr::Integer(1),
-      make_sqrt(Expr::Integer(2)),
-    ),
+    (1, 4) => div2(Expr::Integer(1), make_sqrt(Expr::Integer(2))),
     // sin(Pi/3) = Sqrt[3]/2
-    (1, 3) => binop(
-      BinaryOperator::Divide,
-      make_sqrt(Expr::Integer(3)),
-      Expr::Integer(2),
-    ),
+    (1, 3) => div2(make_sqrt(Expr::Integer(3)), Expr::Integer(2)),
     // sin(5*Pi/12) = (1 + Sqrt[3]) / (2*Sqrt[2])
-    (5, 12) => binop(
-      BinaryOperator::Divide,
-      binop(
-        BinaryOperator::Plus,
-        Expr::Integer(1),
-        make_sqrt(Expr::Integer(3)),
-      ),
-      binop(
-        BinaryOperator::Times,
-        Expr::Integer(2),
-        make_sqrt(Expr::Integer(2)),
-      ),
+    (5, 12) => div2(
+      plus2(Expr::Integer(1), make_sqrt(Expr::Integer(3))),
+      times2(Expr::Integer(2), make_sqrt(Expr::Integer(2))),
     ),
     // sin(Pi/5) = Sqrt[5/8 - Sqrt[5]/8]
     (1, 5) => lit("Sqrt[5/8 - Sqrt[5]/8]"),
@@ -600,46 +574,20 @@ fn exact_cos(k: i64, n: i64) -> Option<Expr> {
   let val = match (kr, nr) {
     (0, _) => Expr::Integer(1),
     // cos(Pi/12) = (1 + Sqrt[3]) / (2*Sqrt[2])
-    (1, 12) => binop(
-      BinaryOperator::Divide,
-      binop(
-        BinaryOperator::Plus,
-        Expr::Integer(1),
-        make_sqrt(Expr::Integer(3)),
-      ),
-      binop(
-        BinaryOperator::Times,
-        Expr::Integer(2),
-        make_sqrt(Expr::Integer(2)),
-      ),
+    (1, 12) => div2(
+      plus2(Expr::Integer(1), make_sqrt(Expr::Integer(3))),
+      times2(Expr::Integer(2), make_sqrt(Expr::Integer(2))),
     ),
     // cos(Pi/6) = Sqrt[3]/2
-    (1, 6) => binop(
-      BinaryOperator::Divide,
-      make_sqrt(Expr::Integer(3)),
-      Expr::Integer(2),
-    ),
+    (1, 6) => div2(make_sqrt(Expr::Integer(3)), Expr::Integer(2)),
     // cos(Pi/4) = 1/Sqrt[2]
-    (1, 4) => binop(
-      BinaryOperator::Divide,
-      Expr::Integer(1),
-      make_sqrt(Expr::Integer(2)),
-    ),
+    (1, 4) => div2(Expr::Integer(1), make_sqrt(Expr::Integer(2))),
     // cos(Pi/3) = 1/2
     (1, 3) => make_rational(1, 2),
     // cos(5*Pi/12) = (-1 + Sqrt[3]) / (2*Sqrt[2])
-    (5, 12) => binop(
-      BinaryOperator::Divide,
-      binop(
-        BinaryOperator::Plus,
-        Expr::Integer(-1),
-        make_sqrt(Expr::Integer(3)),
-      ),
-      binop(
-        BinaryOperator::Times,
-        Expr::Integer(2),
-        make_sqrt(Expr::Integer(2)),
-      ),
+    (5, 12) => div2(
+      plus2(Expr::Integer(-1), make_sqrt(Expr::Integer(3))),
+      times2(Expr::Integer(2), make_sqrt(Expr::Integer(2))),
     ),
     // cos(Pi/5) = (1 + Sqrt[5])/4
     (1, 5) => lit("(1 + Sqrt[5])/4"),
@@ -692,27 +640,15 @@ fn exact_tan(k: i64, n: i64) -> Option<Expr> {
   let val = match (kr, nr) {
     (0, _) => Expr::Integer(0),
     // tan(Pi/12) = 2 - Sqrt[3]
-    (1, 12) => binop(
-      BinaryOperator::Minus,
-      Expr::Integer(2),
-      make_sqrt(Expr::Integer(3)),
-    ),
+    (1, 12) => minus2(Expr::Integer(2), make_sqrt(Expr::Integer(3))),
     // tan(Pi/6) = 1/Sqrt[3]
-    (1, 6) => binop(
-      BinaryOperator::Divide,
-      Expr::Integer(1),
-      make_sqrt(Expr::Integer(3)),
-    ),
+    (1, 6) => div2(Expr::Integer(1), make_sqrt(Expr::Integer(3))),
     // tan(Pi/4) = 1
     (1, 4) => Expr::Integer(1),
     // tan(Pi/3) = Sqrt[3]
     (1, 3) => make_sqrt(Expr::Integer(3)),
     // tan(5*Pi/12) = 2 + Sqrt[3]
-    (5, 12) => binop(
-      BinaryOperator::Plus,
-      Expr::Integer(2),
-      make_sqrt(Expr::Integer(3)),
-    ),
+    (5, 12) => plus2(Expr::Integer(2), make_sqrt(Expr::Integer(3))),
     // tan(Pi/5) = Sqrt[5 - 2*Sqrt[5]]
     (1, 5) => lit("Sqrt[5 - 2*Sqrt[5]]"),
     // tan(2*Pi/5) = Sqrt[5 + 2*Sqrt[5]]
@@ -759,11 +695,7 @@ fn exact_sec(k: i64, n: i64) -> Option<Expr> {
   let val = match (kr, nr) {
     (0, _) => Expr::Integer(1),
     // Sec(Pi/6) = 2/Sqrt[3]
-    (1, 6) => binop(
-      BinaryOperator::Divide,
-      Expr::Integer(2),
-      make_sqrt(Expr::Integer(3)),
-    ),
+    (1, 6) => div2(Expr::Integer(2), make_sqrt(Expr::Integer(3))),
     // Sec(Pi/4) = Sqrt[2]
     (1, 4) => make_sqrt(Expr::Integer(2)),
     // Sec(Pi/3) = 2
@@ -820,11 +752,7 @@ fn exact_csc(k: i64, n: i64) -> Option<Expr> {
     // Csc(Pi/4) = Sqrt[2]
     (1, 4) => make_sqrt(Expr::Integer(2)),
     // Csc(Pi/3) = 2/Sqrt[3]
-    (1, 3) => binop(
-      BinaryOperator::Divide,
-      Expr::Integer(2),
-      make_sqrt(Expr::Integer(3)),
-    ),
+    (1, 3) => div2(Expr::Integer(2), make_sqrt(Expr::Integer(3))),
     // Csc(Pi/5) = 1/Sqrt[5/8 - Sqrt[5]/8]
     (1, 5) => lit("1/Sqrt[5/8 - Sqrt[5]/8]"),
     // Csc(2*Pi/5) = 1/Sqrt[5/8 + Sqrt[5]/8]
@@ -873,27 +801,15 @@ fn exact_cot(k: i64, n: i64) -> Option<Expr> {
 
   let val = match (kr, nr) {
     // Cot(Pi/12) = 2 + Sqrt[3]
-    (1, 12) => binop(
-      BinaryOperator::Plus,
-      Expr::Integer(2),
-      make_sqrt(Expr::Integer(3)),
-    ),
+    (1, 12) => plus2(Expr::Integer(2), make_sqrt(Expr::Integer(3))),
     // Cot(Pi/6) = Sqrt[3]
     (1, 6) => make_sqrt(Expr::Integer(3)),
     // Cot(Pi/4) = 1
     (1, 4) => Expr::Integer(1),
     // Cot(Pi/3) = 1/Sqrt[3]
-    (1, 3) => binop(
-      BinaryOperator::Divide,
-      Expr::Integer(1),
-      make_sqrt(Expr::Integer(3)),
-    ),
+    (1, 3) => div2(Expr::Integer(1), make_sqrt(Expr::Integer(3))),
     // Cot(5*Pi/12) = 2 - Sqrt[3]
-    (5, 12) => binop(
-      BinaryOperator::Minus,
-      Expr::Integer(2),
-      make_sqrt(Expr::Integer(3)),
-    ),
+    (5, 12) => minus2(Expr::Integer(2), make_sqrt(Expr::Integer(3))),
     // Cot(Pi/5) = Sqrt[1 + 2/Sqrt[5]]
     (1, 5) => lit("Sqrt[1 + 2/Sqrt[5]]"),
     // Cot(2*Pi/5) = Sqrt[1 - 2/Sqrt[5]]
@@ -923,7 +839,7 @@ fn exact_cot(k: i64, n: i64) -> Option<Expr> {
 /// 2/Sin[Pi/4]. A negated sum distributes its sign first, so Cot[-Pi/12]
 /// keeps wolframscript's "-2 - Sqrt[3]" form rather than "-(2 + Sqrt[3])".
 fn canonicalize_exact_trig_value(
-  exact: Expr,
+  exact: &Expr,
 ) -> Result<Expr, InterpreterError> {
   if let Expr::UnaryOp {
     op: UnaryOperator::Minus,
@@ -935,14 +851,13 @@ fn canonicalize_exact_trig_value(
       right,
     } = operand.as_ref()
   {
-    let distributed = binop(
-      BinaryOperator::Plus,
+    let distributed = plus2(
       negate_expr((**left).clone()),
       negate_expr((**right).clone()),
     );
     return crate::evaluator::evaluate_expr_to_expr(&distributed);
   }
-  crate::evaluator::evaluate_expr_to_expr(&exact)
+  crate::evaluator::evaluate_expr_to_expr(exact)
 }
 
 pub fn negate_expr(mut expr: Expr) -> Expr {
@@ -1045,18 +960,14 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
     Expr::BinaryOp { op, left, right } if *op == BinaryOperator::Plus => {
       let left = std::mem::replace(left, Box::new(Expr::Integer(0)));
       let right = std::mem::replace(right, Box::new(Expr::Integer(0)));
-      return binop(
-        BinaryOperator::Plus,
-        negate_expr(*left),
-        negate_expr(*right),
-      );
+      return plus2(negate_expr(*left), negate_expr(*right));
     }
     // -(a - b) => (-a) + b: likewise distribute over a difference so the
     // result keeps the additive form (e.g. -(2 - Sqrt[3]) => -2 + Sqrt[3]).
     Expr::BinaryOp { op, left, right } if *op == BinaryOperator::Minus => {
       let left = std::mem::replace(left, Box::new(Expr::Integer(0)));
       let right = std::mem::replace(right, Box::new(Expr::Integer(0)));
-      return binop(BinaryOperator::Plus, negate_expr(*left), *right);
+      return plus2(negate_expr(*left), *right);
     }
     // -(a/b) => Times[-1, a/b] to match Wolfram output style
     Expr::BinaryOp { op, left, right } if *op == BinaryOperator::Divide => {
@@ -1078,7 +989,7 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
       if let Some((k, rest)) = denom_integer_factor(right) {
         let mut factors = vec![make_rational(-1, k), (**left).clone()];
         if let Some(rest) = rest {
-          factors.push(binop(BinaryOperator::Power, rest, Expr::Integer(-1)));
+          factors.push(pow2(rest, Expr::Integer(-1)));
         }
         return Expr::FunctionCall {
           name: "Times".to_string(),
@@ -1169,7 +1080,7 @@ fn imaginary_pi_coeff(term: &Expr) -> Option<(i128, i128)> {
   fn flatten(e: &Expr, out: &mut Vec<Expr>) {
     match e {
       Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
+        for a in args {
           flatten(a, out);
         }
       }
@@ -1214,7 +1125,7 @@ fn imaginary_pi_coeff(term: &Expr) -> Option<(i128, i128)> {
   let (mut num, mut den): (i128, i128) = (1, 1);
   let mut has_pi = false;
   let mut has_imag = false;
-  for f in factors.iter() {
+  for f in &factors {
     match f {
       Expr::Constant(s) | Expr::Identifier(s) if s == "Pi" => {
         if has_pi {
@@ -1539,7 +1450,7 @@ fn imaginary_arg_reduction(
 /// `Sqrt[1 +- x^2]` with the inner `1 +- x^2` evaluated so that a compound
 /// argument's square expands (e.g. `(2 y)^2 -> 4 y^2`), matching wolframscript.
 fn sqrt_one_pm_sq(x: &Expr, plus: bool) -> Expr {
-  let x_sq = binop(BinaryOperator::Power, x.clone(), Expr::Integer(2));
+  let x_sq = pow2(x.clone(), Expr::Integer(2));
   let inner = Expr::BinaryOp {
     op: if plus {
       BinaryOperator::Plus
@@ -1571,7 +1482,7 @@ fn sqrt_one_plus_sq(x: &Expr) -> Expr {
 }
 
 fn divide(num: Expr, den: Expr) -> Expr {
-  let quotient = binop(BinaryOperator::Divide, num, den);
+  let quotient = div2(num, den);
   // Evaluate so a rational numerator/denominator collapses, e.g.
   // Tan[ArcSin[3/5]] = (3/5)/(4/5) -> 3/4; a symbolic quotient such as
   // x/Sqrt[1 - x^2] is left in its canonical printed form.
@@ -1620,17 +1531,11 @@ fn reciprocal_trig_of_inverse(outer: &str, inner: &Expr) -> Option<Expr> {
 /// `Sqrt[(-1 + x)/(1 + x)] * (1 + x)` — wolframscript's branch-cut form for
 /// the hyperbolic-of-ArcCosh identities.
 fn arccosh_branch_form(x: &Expr) -> Expr {
-  let one_plus = binop(BinaryOperator::Plus, Expr::Integer(1), x.clone());
-  let minus_one_plus =
-    binop(BinaryOperator::Plus, Expr::Integer(-1), x.clone());
+  let one_plus = plus2(Expr::Integer(1), x.clone());
+  let minus_one_plus = plus2(Expr::Integer(-1), x.clone());
   let sqrt = Expr::FunctionCall {
     name: "Sqrt".to_string(),
-    args: vec![binop(
-      BinaryOperator::Divide,
-      minus_one_plus,
-      one_plus.clone(),
-    )]
-    .into(),
+    args: vec![div2(minus_one_plus, one_plus.clone())].into(),
   };
   Expr::FunctionCall {
     name: "Times".to_string(),
@@ -1854,7 +1759,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_sin(k, n)
   {
-    return canonicalize_exact_trig_value(exact);
+    return canonicalize_exact_trig_value(&exact);
   }
   // Pi/2 shift: Sin[rest + k*Pi/2] -> +/-Sin/Cos[rest].
   if let Some(r) = try_trig_pi_phase("Sin", &args[0]) {
@@ -2033,7 +1938,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_cos(k, n)
   {
-    return canonicalize_exact_trig_value(exact);
+    return canonicalize_exact_trig_value(&exact);
   }
   if let Some(r) = try_trig_pi_phase("Cos", &args[0]) {
     return r;
@@ -2162,7 +2067,7 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_tan(k, n)
   {
-    return canonicalize_exact_trig_value(exact);
+    return canonicalize_exact_trig_value(&exact);
   }
   if let Some(r) = try_trig_pi_phase("Tan", &args[0]) {
     return r;
@@ -2214,7 +2119,7 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_sec(k, n)
   {
-    return canonicalize_exact_trig_value(exact);
+    return canonicalize_exact_trig_value(&exact);
   }
   if let Some(r) = try_trig_pi_phase("Sec", &args[0]) {
     return r;
@@ -2267,7 +2172,7 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_csc(k, n)
   {
-    return canonicalize_exact_trig_value(exact);
+    return canonicalize_exact_trig_value(&exact);
   }
   if let Some(r) = try_trig_pi_phase("Csc", &args[0]) {
     return r;
@@ -2320,7 +2225,7 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_cot(k, n)
   {
-    return canonicalize_exact_trig_value(exact);
+    return canonicalize_exact_trig_value(&exact);
   }
   if let Some(r) = try_trig_pi_phase("Cot", &args[0]) {
     return r;
@@ -2392,10 +2297,7 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Erf[z, 0] = -Erf[z]
     if matches!(&args[1], Expr::Integer(0)) {
       let erf_z0 = erf_ast(&args[..1])?;
-      return crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(erf_z0),
-      });
+      return crate::evaluator::evaluate_expr_to_expr(&neg1(erf_z0));
     }
     // Erf[z, z] = 0
     if crate::syntax::expr_to_string(&args[0])
@@ -2583,10 +2485,7 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Helper: compute -Erfi[inner] by evaluating Erfi[inner] first, then negating
   let negate_erfi = |inner: Expr| -> Result<Expr, InterpreterError> {
     let inner_result = erfi_ast(&[inner])?;
-    Ok(Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(inner_result),
-    })
+    Ok(neg1(inner_result))
   };
   match &args[0] {
     // Erfi[0] = 0
@@ -2667,10 +2566,7 @@ pub fn dawson_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Helper: compute -DawsonF[inner] by evaluating then negating.
   let negate = |inner: Expr| -> Result<Expr, InterpreterError> {
     let inner_result = dawson_f_ast(&[inner])?;
-    Ok(Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(inner_result),
-    })
+    Ok(neg1(inner_result))
   };
   match &args[0] {
     // DawsonF[0] = 0
@@ -2748,10 +2644,7 @@ pub fn inverse_erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // InverseErf[1] = Infinity
     Expr::Integer(1) => Ok(Expr::Identifier("Infinity".to_string())),
     // InverseErf[-1] = -Infinity
-    Expr::Integer(-1) => Ok(Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(Expr::Identifier("Infinity".to_string())),
-    }),
+    Expr::Integer(-1) => Ok(neg1(Expr::Identifier("Infinity".to_string()))),
     // Numeric evaluation for Real arguments
     Expr::Real(f) => {
       if *f > -1.0 && *f < 1.0 {
@@ -2759,10 +2652,7 @@ pub fn inverse_erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if *f == 1.0 {
         Ok(Expr::Identifier("Infinity".to_string()))
       } else if *f == -1.0 {
-        Ok(Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(Expr::Identifier("Infinity".to_string())),
-        })
+        Ok(neg1(Expr::Identifier("Infinity".to_string())))
       } else {
         Ok(unevaluated("InverseErf", args))
       }
@@ -2786,10 +2676,7 @@ pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // InverseErfc[1] = 0
     Expr::Integer(1) => Ok(Expr::Integer(0)),
     // InverseErfc[2] = -Infinity
-    Expr::Integer(2) => Ok(Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(Expr::Identifier("Infinity".to_string())),
-    }),
+    Expr::Integer(2) => Ok(neg1(Expr::Identifier("Infinity".to_string()))),
     // Reflection for an exact rational z with 1 < z < 2:
     // InverseErfc[z] = -InverseErfc[2 - z]  (keeps the argument in (0, 1)).
     Expr::FunctionCall { name, args: rargs }
@@ -2803,10 +2690,7 @@ pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         unreachable!()
       };
       let inner = inverse_erfc_ast(&[make_rational(2 * q - p, *q)])?;
-      Ok(Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(inner),
-      })
+      Ok(neg1(inner))
     }
     // Numeric evaluation for Real arguments
     Expr::Real(f) => {
@@ -2816,10 +2700,7 @@ pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if *f == 0.0 {
         Ok(Expr::Identifier("Infinity".to_string()))
       } else if *f == 2.0 {
-        Ok(Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(Expr::Identifier("Infinity".to_string())),
-        })
+        Ok(neg1(Expr::Identifier("Infinity".to_string())))
       } else {
         Ok(unevaluated("InverseErfc", args))
       }
@@ -2897,10 +2778,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     1 => {
       // Log[0] = -Infinity
       if matches!(&args[0], Expr::Integer(0)) {
-        return Ok(Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(Expr::Identifier("Infinity".to_string())),
-        });
+        return Ok(neg1(Expr::Identifier("Infinity".to_string())));
       }
       // Log[1] = 0
       if matches!(&args[0], Expr::Integer(1)) {
@@ -3156,8 +3034,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let result = Expr::FunctionCall {
           name: "Plus".to_string(),
           args: vec![
-            binop(
-              BinaryOperator::Times,
+            times2(
               Expr::Identifier("I".to_string()),
               Expr::Constant("Pi".to_string()),
             ),
@@ -3176,8 +3053,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let abs_n = -*n;
         // I*Pi
-        let i_pi = binop(
-          BinaryOperator::Times,
+        let i_pi = times2(
           Expr::Identifier("I".to_string()),
           Expr::Constant("Pi".to_string()),
         );
@@ -3214,8 +3090,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => None,
         };
         if let Some(inner_expr) = inner {
-          let i_pi = binop(
-            BinaryOperator::Times,
+          let i_pi = times2(
             Expr::Identifier("I".to_string()),
             Expr::Constant("Pi".to_string()),
           );
@@ -3255,7 +3130,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           name: "Log".to_string(),
           args: vec![inverted].into(),
         };
-        return Ok(binop(BinaryOperator::Times, Expr::Integer(-1), log_inv));
+        return Ok(times2(Expr::Integer(-1), log_inv));
       }
       // Arbitrary-precision argument: compute ln(x) at the tracked precision
       // instead of leaving `Log[2.`30.]` unevaluated.
@@ -3269,15 +3144,14 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(Expr::Real(f.ln()));
         } else if *f == 0.0 {
           return Ok(Expr::Identifier("Indeterminate".to_string()));
-        } else {
-          // Log of negative real: return complex result
-          let re = f.abs().ln();
-          let im = std::f64::consts::PI;
-          return crate::evaluator::evaluate_function_call_ast(
-            "Complex",
-            &[Expr::Real(re), Expr::Real(im)],
-          );
         }
+        // Log of negative real: return complex result
+        let re = f.abs().ln();
+        let im = std::f64::consts::PI;
+        return crate::evaluator::evaluate_function_call_ast(
+          "Complex",
+          &[Expr::Real(re), Expr::Real(im)],
+        );
       }
       // Log of a complex floating-point number: principal value
       // = 0.5*Log[a^2 + b^2] + I*atan2(b, a)
@@ -3472,7 +3346,7 @@ fn try_complex_inverse_trig(
   // Principal complex square root and logarithm.
   let csqrt = |a: f64, b: f64| {
     let r = a.hypot(b);
-    let re = ((r + a) / 2.0).sqrt();
+    let re = f64::midpoint(r, a).sqrt();
     let im = ((r - a) / 2.0).sqrt() * if b < 0.0 { -1.0 } else { 1.0 };
     (re, im)
   };
@@ -3568,11 +3442,11 @@ fn fold_inverse_of_forward(name: &str, arg: &Expr) -> Option<Expr> {
   //                                 `ArcCot[Cot[Pi/2]]` come back `Pi/2`
   // Computing it through `Floor`/`Ceiling` rather than in f64 keeps the
   // reduction exact however many turns out the argument is.
-  let ratio = binop(BinaryOperator::Divide, u.clone(), pi());
+  let ratio = div2(u.clone(), pi());
   let (rounder, shifted_ratio) = match range {
     'C' => ("Floor", ratio),
-    'O' => ("Ceiling", binop(BinaryOperator::Minus, ratio, half())),
-    _ => ("Floor", binop(BinaryOperator::Plus, ratio, half())),
+    'O' => ("Ceiling", minus2(ratio, half())),
+    _ => ("Floor", plus2(ratio, half())),
   };
   let k = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
     name: rounder.to_string(),
@@ -3589,18 +3463,14 @@ fn fold_inverse_of_forward(name: &str, arg: &Expr) -> Option<Expr> {
   let k_is_zero = matches!(&k, Expr::Integer(0));
 
   // `u - k Pi`, its reflection `k Pi - u`, and `(k + 1) Pi - u`.
-  let k_pi = binop(BinaryOperator::Times, k.clone(), pi());
+  let k_pi = times2(k.clone(), pi());
   let reduced = if k_is_zero {
     u.clone()
   } else {
-    binop(BinaryOperator::Minus, u.clone(), k_pi.clone())
+    minus2(u.clone(), k_pi.clone())
   };
-  let reflected = binop(BinaryOperator::Minus, k_pi.clone(), u.clone());
-  let complement = binop(
-    BinaryOperator::Minus,
-    binop(BinaryOperator::Plus, k_pi, pi()),
-    u.clone(),
-  );
+  let reflected = minus2(k_pi.clone(), u.clone());
+  let complement = minus2(plus2(k_pi, pi()), u.clone());
 
   let result = match range {
     // Sin[u - k Pi] = (-1)^k Sin[u], so an odd number of half turns flips
@@ -3663,11 +3533,7 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Integer(1) => {
-      return Ok(binop(
-        BinaryOperator::Divide,
-        Expr::Constant("Pi".to_string()),
-        Expr::Integer(2),
-      ));
+      return Ok(div2(Expr::Constant("Pi".to_string()), Expr::Integer(2)));
     }
     Expr::Integer(-1) => {
       // -1/2*Pi = Times[Rational[-1, 2], Pi]
@@ -3809,11 +3675,7 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Integer(1) => return Ok(Expr::Integer(0)),
     Expr::Integer(0) => {
-      return Ok(binop(
-        BinaryOperator::Divide,
-        Expr::Constant("Pi".to_string()),
-        Expr::Integer(2),
-      ));
+      return Ok(div2(Expr::Constant("Pi".to_string()), Expr::Integer(2)));
     }
     Expr::Integer(-1) => return Ok(Expr::Constant("Pi".to_string())),
     Expr::Real(f) if (-1.0..=1.0).contains(f) => {
@@ -3836,11 +3698,7 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(sign) = imaginary_infinity_sign(&args[0]) {
     let direction = if sign > 0 {
       // Negate I: Times[-1, I]
-      binop(
-        BinaryOperator::Times,
-        Expr::Integer(-1),
-        Expr::Identifier("I".to_string()),
-      )
+      times2(Expr::Integer(-1), Expr::Identifier("I".to_string()))
     } else {
       Expr::Identifier("I".to_string())
     };
@@ -3868,23 +3726,15 @@ fn arccos_special_value(v: f64) -> Option<Expr> {
       if num == 1 {
         Expr::Constant("Pi".to_string())
       } else {
-        binop(
-          BinaryOperator::Times,
-          Expr::Integer(num),
-          Expr::Constant("Pi".to_string()),
-        )
+        times2(Expr::Integer(num), Expr::Constant("Pi".to_string()))
       }
     } else {
       let numerator = if num == 1 {
         Expr::Constant("Pi".to_string())
       } else {
-        binop(
-          BinaryOperator::Times,
-          Expr::Integer(num),
-          Expr::Constant("Pi".to_string()),
-        )
+        times2(Expr::Integer(num), Expr::Constant("Pi".to_string()))
       };
-      binop(BinaryOperator::Divide, numerator, Expr::Integer(den))
+      div2(numerator, Expr::Integer(den))
     }
   };
 
@@ -3933,13 +3783,8 @@ fn arcsin_special_value(v: f64) -> Option<Expr> {
         });
       } else if den == 1 {
         return Some(Expr::Constant("Pi".to_string()));
-      } else {
-        return Some(binop(
-          BinaryOperator::Divide,
-          Expr::Constant("Pi".to_string()),
-          Expr::Integer(den),
-        ));
       }
+      return Some(div2(Expr::Constant("Pi".to_string()), Expr::Integer(den)));
     }
   }
   None
@@ -3986,11 +3831,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Integer(1) => {
-      return Ok(binop(
-        BinaryOperator::Divide,
-        Expr::Constant("Pi".to_string()),
-        Expr::Integer(4),
-      ));
+      return Ok(div2(Expr::Constant("Pi".to_string()), Expr::Integer(4)));
     }
     Expr::Integer(-1) => {
       // -1/4*Pi = Times[Rational[-1, 4], Pi]
@@ -4005,11 +3846,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Identifier(s) if s == "Infinity" => {
       // ArcTan[Infinity] = Pi/2
-      return Ok(binop(
-        BinaryOperator::Divide,
-        Expr::Constant("Pi".to_string()),
-        Expr::Integer(2),
-      ));
+      return Ok(div2(Expr::Constant("Pi".to_string()), Expr::Integer(2)));
     }
     Expr::Real(f) => return Ok(Expr::Real(f.atan())),
     _ => {}
@@ -4036,11 +3873,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let eps = 1e-12;
     if (val - sqrt3).abs() < eps {
       // ArcTan[Sqrt[3]] = Pi/3
-      return Ok(binop(
-        BinaryOperator::Divide,
-        Expr::Constant("Pi".to_string()),
-        Expr::Integer(3),
-      ));
+      return Ok(div2(Expr::Constant("Pi".to_string()), Expr::Integer(3)));
     }
     if (val + sqrt3).abs() < eps {
       // ArcTan[-Sqrt[3]] = -Pi/3
@@ -4059,11 +3892,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let inv_sqrt3 = 1.0 / sqrt3;
     if (val - inv_sqrt3).abs() < eps {
       // ArcTan[1/Sqrt[3]] = Pi/6
-      return Ok(binop(
-        BinaryOperator::Divide,
-        Expr::Constant("Pi".to_string()),
-        Expr::Integer(6),
-      ));
+      return Ok(div2(Expr::Constant("Pi".to_string()), Expr::Integer(6)));
     }
     if (val + inv_sqrt3).abs() < eps {
       // ArcTan[-1/Sqrt[3]] = -Pi/6
@@ -4083,11 +3912,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Tan[5 Pi/12] = 2 + Sqrt[3]). `k_over_12_pi(k)` builds k*Pi/12.
     let k_over_12_pi = |k: i128| -> Expr {
       if k == 1 {
-        binop(
-          BinaryOperator::Divide,
-          Expr::Constant("Pi".to_string()),
-          Expr::Integer(12),
-        )
+        div2(Expr::Constant("Pi".to_string()), Expr::Integer(12))
       } else {
         Expr::FunctionCall {
           name: "Times".to_string(),
@@ -4166,11 +3991,7 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if num == 1 {
         Expr::Constant("Pi".to_string())
       } else {
-        binop(
-          BinaryOperator::Times,
-          Expr::Integer(num),
-          Expr::Constant("Pi".to_string()),
-        )
+        times2(Expr::Integer(num), Expr::Constant("Pi".to_string()))
       }
     } else {
       Expr::BinaryOp {
@@ -4230,11 +4051,7 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let pi_term = if yf >= 0.0 {
       Expr::Constant("Pi".to_string())
     } else {
-      binop(
-        BinaryOperator::Times,
-        Expr::Integer(-1),
-        Expr::Constant("Pi".to_string()),
-      )
+      times2(Expr::Integer(-1), Expr::Constant("Pi".to_string()))
     };
     return crate::evaluator::evaluate_function_call_ast(
       "Plus",
@@ -4484,17 +4301,17 @@ fn hyperbolic_of_log(
   {
     return None;
   }
-  let u2 = binop(B::Power, u.clone(), Expr::Integer(2));
-  let u2_minus_1 = binop(B::Minus, u2.clone(), Expr::Integer(1));
-  let u2_plus_1 = binop(B::Plus, u2, Expr::Integer(1));
-  let two_u = binop(B::Times, Expr::Integer(2), u.clone());
+  let u2 = pow2(u.clone(), Expr::Integer(2));
+  let u2_minus_1 = minus2(u2.clone(), Expr::Integer(1));
+  let u2_plus_1 = plus2(u2, Expr::Integer(1));
+  let two_u = times2(Expr::Integer(2), u.clone());
   let result = match name {
-    "Sinh" => binop(B::Divide, u2_minus_1, two_u),
-    "Cosh" => binop(B::Divide, u2_plus_1, two_u),
-    "Tanh" => binop(B::Divide, u2_minus_1, u2_plus_1),
-    "Coth" => binop(B::Divide, u2_plus_1, u2_minus_1),
-    "Sech" => binop(B::Divide, two_u, u2_plus_1),
-    "Csch" => binop(B::Divide, two_u, u2_minus_1),
+    "Sinh" => div2(u2_minus_1, two_u),
+    "Cosh" => div2(u2_plus_1, two_u),
+    "Tanh" => div2(u2_minus_1, u2_plus_1),
+    "Coth" => div2(u2_plus_1, u2_minus_1),
+    "Sech" => div2(two_u, u2_plus_1),
+    "Csch" => div2(two_u, u2_minus_1),
     _ => return None,
   };
   Some(crate::evaluator::evaluate_expr_to_expr(&result))
@@ -4542,13 +4359,8 @@ fn circular_at_infinity(
     return None;
   }
   let inf = || Expr::Identifier("Infinity".to_string());
-  let neg_inf = || {
-    binop(
-      BinaryOperator::Times,
-      Expr::Integer(-1),
-      Expr::Identifier("Infinity".to_string()),
-    )
-  };
+  let neg_inf =
+    || times2(Expr::Integer(-1), Expr::Identifier("Infinity".to_string()));
   let span = |lo: Expr, hi: Expr| Expr::List(vec![lo, hi].into());
   let interval = |spans: Vec<Expr>| Expr::FunctionCall {
     name: "Interval".to_string(),
@@ -4931,10 +4743,7 @@ pub fn arcsinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       op: UnaryOperator::Minus,
       operand,
     } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") => {
-      return Ok(Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(Expr::Identifier("Infinity".to_string())),
-      });
+      return Ok(neg1(Expr::Identifier("Infinity".to_string())));
     }
     _ => {}
   }
@@ -4985,10 +4794,9 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if x >= -1.0 {
         // ArcCosh[x] = I*ArcCos[x] for real x in [-1, 1].
         return build_complex_float_result(0.0, x.acos());
-      } else {
-        // x < -1: ArcCosh[x] = ArcCosh[|x|] + I*Pi. (x.acos() would be NaN.)
-        return build_complex_float_result((-x).acosh(), std::f64::consts::PI);
       }
+      // x < -1: ArcCosh[x] = ArcCosh[|x|] + I*Pi. (x.acos() would be NaN.)
+      return build_complex_float_result((-x).acosh(), std::f64::consts::PI);
     }
     // ArcCosh[0``α] = (Pi/2 at α-digit accuracy) * I
     Expr::BigFloat(s, prec) if s == "0" => {
@@ -5048,10 +4856,7 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Integer(1) => return Ok(Expr::Identifier("Infinity".to_string())),
     Expr::Integer(-1) => {
-      return Ok(Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(Expr::Identifier("Infinity".to_string())),
-      });
+      return Ok(neg1(Expr::Identifier("Infinity".to_string())));
     }
     Expr::Real(f) if f.abs() < 1.0 => return Ok(Expr::Real(f.atanh())),
     // Outside (-1, 1) the (inexact) real argument gives a complex result:
@@ -5133,10 +4938,7 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Integer(1) => return Ok(Expr::Identifier("Infinity".to_string())),
     Expr::Integer(-1) => {
-      return Ok(Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(Expr::Identifier("Infinity".to_string())),
-      });
+      return Ok(neg1(Expr::Identifier("Infinity".to_string())));
     }
     Expr::Real(f) => {
       // ArcCoth[x] = ArcTanh[1/x]
@@ -5155,21 +4957,20 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "Complex",
           &[Expr::Real(0.0), Expr::Real(std::f64::consts::FRAC_PI_2)],
         );
-      } else {
-        // |x| <= 1 and x != 0: complex result
-        // ArcCoth[x] = (1/2) * ln((x+1)/(x-1))
-        // For |x| < 1: real part = (1/2)*ln(|(x+1)/(x-1)|), imag part = ±Pi/2
-        let re = 0.5 * ((x + 1.0) / (x - 1.0)).abs().ln();
-        let im = if x > 0.0 {
-          -std::f64::consts::FRAC_PI_2
-        } else {
-          std::f64::consts::FRAC_PI_2
-        };
-        return crate::evaluator::evaluate_function_call_ast(
-          "Complex",
-          &[Expr::Real(re), Expr::Real(im)],
-        );
       }
+      // |x| <= 1 and x != 0: complex result
+      // ArcCoth[x] = (1/2) * ln((x+1)/(x-1))
+      // For |x| < 1: real part = (1/2)*ln(|(x+1)/(x-1)|), imag part = ±Pi/2
+      let re = 0.5 * ((x + 1.0) / (x - 1.0)).abs().ln();
+      let im = if x > 0.0 {
+        -std::f64::consts::FRAC_PI_2
+      } else {
+        std::f64::consts::FRAC_PI_2
+      };
+      return crate::evaluator::evaluate_function_call_ast(
+        "Complex",
+        &[Expr::Real(re), Expr::Real(im)],
+      );
     }
     // ArcCoth[0``α] = (Pi/2 at α-digit accuracy) * I
     Expr::BigFloat(s, prec) if s == "0" => {
@@ -5422,17 +5223,12 @@ pub fn arccsch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Helper to construct -Pi/2 matching wolframscript output format
 /// Construct Pi/n as an AST expression
 fn pi_over_n(n: i128) -> Expr {
-  binop(
-    BinaryOperator::Divide,
-    Expr::Constant("Pi".to_string()),
-    Expr::Integer(n),
-  )
+  div2(Expr::Constant("Pi".to_string()), Expr::Integer(n))
 }
 
 fn negative_pi_over_2() -> Expr {
-  binop(
-    BinaryOperator::Times,
-    binop(BinaryOperator::Divide, Expr::Integer(-1), Expr::Integer(2)),
+  times2(
+    div2(Expr::Integer(-1), Expr::Integer(2)),
     Expr::Constant("Pi".to_string()),
   )
 }
@@ -5448,7 +5244,7 @@ fn extract_half_odd_pi_i_coefficient(e: &Expr) -> Option<i128> {
   fn flatten<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
     match e {
       Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
+        for a in args {
           flatten(a, out);
         }
       }
@@ -5594,10 +5390,7 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let direction = if m == 1 {
       Expr::Identifier("I".to_string())
     } else {
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(Expr::Identifier("I".to_string())),
-      }
+      neg1(Expr::Identifier("I".to_string()))
     };
     return Ok(Expr::FunctionCall {
       name: "DirectedInfinity".to_string(),
@@ -5614,11 +5407,7 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Identifier(name) if name == "Infinity" => {
       // Gudermannian[Infinity] = Pi/2
-      return Ok(binop(
-        BinaryOperator::Divide,
-        Expr::Constant("Pi".to_string()),
-        Expr::Integer(2),
-      ));
+      return Ok(div2(Expr::Constant("Pi".to_string()), Expr::Integer(2)));
     }
     Expr::Identifier(name) if name == "ComplexInfinity" => {
       // Gudermannian[ComplexInfinity] is unevaluated in Wolfram
@@ -5661,10 +5450,7 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Gudermannian is odd: Gudermannian[-x] = -Gudermannian[x].
   if let Some(pos) = strip_negation(&args[0]) {
     let inner = gudermannian_ast(&[pos])?;
-    return Ok(Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(inner),
-    });
+    return Ok(neg1(inner));
   }
   // Symbolic: return unevaluated (matching wolframscript behavior)
   Ok(unevaluated("Gudermannian", args))
@@ -5783,8 +5569,7 @@ fn trig_degrees_ast(
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(format!(
-      "{} expects 1 argument",
-      degrees_name
+      "{degrees_name} expects 1 argument"
     )));
   }
   // Convert degrees to radians: x * Degree
@@ -5811,8 +5596,7 @@ fn arc_trig_degrees_ast(
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(format!(
-      "{} expects 1 argument",
-      degrees_name
+      "{degrees_name} expects 1 argument"
     )));
   }
   let radians = crate::evaluator::evaluate_function_call_ast(
@@ -6440,7 +6224,7 @@ fn trig_reduce_recursive(expr: &Expr) -> Expr {
       {
         return result;
       }
-      binop(BinaryOperator::Power, base, trig_reduce_recursive(right))
+      pow2(base, trig_reduce_recursive(right))
     }
     // Recurse into other structures
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
@@ -6517,7 +6301,7 @@ fn reduce_two_factor_product(a: &Expr, b: &Expr) -> Expr {
   if let Some(result) = try_reduce_with_power(b, a) {
     return result;
   }
-  binop(BinaryOperator::Times, a.clone(), b.clone())
+  times2(a.clone(), b.clone())
 }
 
 /// Try product-to-sum for Sin[a]*Cos[b], Sin[a]*Sin[b], Cos[a]*Cos[b].
@@ -6525,11 +6309,10 @@ fn try_reduce_trig_pair(a: &Expr, b: &Expr) -> Option<Expr> {
   let (a_name, a_arg) = extract_trig(a)?;
   let (b_name, b_arg) = extract_trig(b)?;
 
-  let sum = binop(BinaryOperator::Plus, a_arg.clone(), b_arg.clone());
-  let diff = binop(BinaryOperator::Minus, a_arg.clone(), b_arg.clone());
+  let sum = plus2(a_arg.clone(), b_arg.clone());
+  let diff = minus2(a_arg.clone(), b_arg.clone());
 
-  let half =
-    |e: Expr| -> Expr { binop(BinaryOperator::Divide, e, Expr::Integer(2)) };
+  let half = |e: Expr| -> Expr { div2(e, Expr::Integer(2)) };
 
   let sin = |e: Expr| -> Expr {
     Expr::FunctionCall {
@@ -6564,19 +6347,19 @@ fn try_reduce_trig_pair(a: &Expr, b: &Expr) -> Option<Expr> {
       } else {
         (b_arg, a_arg)
       };
-      let s = binop(BinaryOperator::Plus, sin_arg.clone(), cos_arg.clone());
-      let d = binop(BinaryOperator::Minus, sin_arg, cos_arg);
-      let result = binop(BinaryOperator::Plus, sin(s), sin(d));
+      let s = plus2(sin_arg.clone(), cos_arg.clone());
+      let d = minus2(sin_arg, cos_arg);
+      let result = plus2(sin(s), sin(d));
       Some(half(result))
     }
     // Cos[a]*Cos[b] = (Cos[a-b] + Cos[a+b])/2
     ("Cos", "Cos") => {
-      let result = binop(BinaryOperator::Plus, cos(diff), cos(sum));
+      let result = plus2(cos(diff), cos(sum));
       Some(half(result))
     }
     // Sin[a]*Sin[b] = (Cos[a-b] - Cos[a+b])/2
     ("Sin", "Sin") => {
-      let result = binop(BinaryOperator::Minus, cos(diff), cos(sum));
+      let result = minus2(cos(diff), cos(sum));
       Some(half(result))
     }
     // Sinh[a]*Cosh[b] = (Sinh[a+b] + Sinh[a-b])/2
@@ -6586,19 +6369,19 @@ fn try_reduce_trig_pair(a: &Expr, b: &Expr) -> Option<Expr> {
       } else {
         (b_arg, a_arg)
       };
-      let s = binop(BinaryOperator::Plus, sinh_arg.clone(), cosh_arg.clone());
-      let d = binop(BinaryOperator::Minus, sinh_arg, cosh_arg);
-      let result = binop(BinaryOperator::Plus, sinh(s), sinh(d));
+      let s = plus2(sinh_arg.clone(), cosh_arg.clone());
+      let d = minus2(sinh_arg, cosh_arg);
+      let result = plus2(sinh(s), sinh(d));
       Some(half(result))
     }
     // Cosh[a]*Cosh[b] = (Cosh[a-b] + Cosh[a+b])/2
     ("Cosh", "Cosh") => {
-      let result = binop(BinaryOperator::Plus, cosh(diff), cosh(sum));
+      let result = plus2(cosh(diff), cosh(sum));
       Some(half(result))
     }
     // Sinh[a]*Sinh[b] = (Cosh[a+b] - Cosh[a-b])/2
     ("Sinh", "Sinh") => {
-      let result = binop(BinaryOperator::Minus, cosh(sum), cosh(diff));
+      let result = minus2(cosh(sum), cosh(diff));
       Some(half(result))
     }
     _ => None,
@@ -6631,7 +6414,7 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
     if m == 1 {
       arg.clone()
     } else {
-      binop(BinaryOperator::Times, Expr::Integer(coeff), arg.clone())
+      times2(Expr::Integer(coeff), arg.clone())
     }
   };
 
@@ -6697,17 +6480,9 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
         if reduced_c == 1 {
           terms.push(trig_call);
         } else if reduced_c == -1 {
-          terms.push(binop(
-            BinaryOperator::Times,
-            Expr::Integer(-1),
-            trig_call,
-          ));
+          terms.push(times2(Expr::Integer(-1), trig_call));
         } else {
-          terms.push(binop(
-            BinaryOperator::Times,
-            Expr::Integer(reduced_c),
-            trig_call,
-          ));
+          terms.push(times2(Expr::Integer(reduced_c), trig_call));
         }
       }
     }
@@ -6725,11 +6500,7 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
   if reduced_denom == 1 {
     Some(numerator)
   } else {
-    Some(binop(
-      BinaryOperator::Divide,
-      numerator,
-      Expr::Integer(reduced_denom),
-    ))
+    Some(div2(numerator, Expr::Integer(reduced_denom)))
   }
 }
 

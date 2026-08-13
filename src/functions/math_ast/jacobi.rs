@@ -26,7 +26,7 @@ pub fn jacobi_elliptic(u: f64, m: f64) -> (f64, f64, f64) {
   for _ in 0..n_max {
     let a_prev = *a.last().unwrap();
     let b_prev = *b.last().unwrap();
-    a.push((a_prev + b_prev) / 2.0);
+    a.push(f64::midpoint(a_prev, b_prev));
     b.push((a_prev * b_prev).sqrt());
     c.push((a_prev - b_prev) / 2.0);
 
@@ -41,7 +41,7 @@ pub fn jacobi_elliptic(u: f64, m: f64) -> (f64, f64, f64) {
 
   // Descend: phi_{n-1} from phi_n
   for i in (1..=n).rev() {
-    phi = (phi + (c[i] / a[i] * phi.sin()).asin()) / 2.0;
+    phi = f64::midpoint(phi, (c[i] / a[i] * phi.sin()).asin());
   }
 
   let sn = phi.sin();

@@ -168,10 +168,7 @@ fn run_piped(session: &mut Session) {
   let mut buffer = String::new();
 
   for line in stdin.lock().lines() {
-    let line = match line {
-      Ok(l) => l,
-      Err(_) => break,
-    };
+    let Ok(line) = line else { break };
     if !buffer.is_empty() {
       buffer.push('\n');
     }

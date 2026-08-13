@@ -245,8 +245,7 @@ fn import_data_spec_args(elem: &Expr) -> Option<(&Expr, Option<&Expr>)> {
 fn import_svg(path: &str, is_url: bool) -> Result<Expr, InterpreterError> {
   if !is_url && !std::path::Path::new(path).exists() {
     crate::emit_message(&format!(
-      "Import::nffil: File {} not found during Import.",
-      path
+      "Import::nffil: File {path} not found during Import."
     ));
     return Ok(Expr::Identifier("$Failed".to_string()));
   }
@@ -267,8 +266,7 @@ fn import_read_text(
   } else {
     std::fs::read_to_string(path).map_err(|e| {
       InterpreterError::EvaluationError(format!(
-        "Import: cannot open \"{}\": {}",
-        path, e
+        "Import: cannot open \"{path}\": {e}"
       ))
     })
   }
@@ -299,20 +297,16 @@ fn import_json(
 /// `$Failed` after the magic-byte check passes — but without the error
 /// message, mirroring wolframscript's silent success on a valid file.
 #[cfg(not(target_arch = "wasm32"))]
-fn import_netpbm(path: &str) -> Result<Expr, InterpreterError> {
+fn import_netpbm(path: &str) -> crate::syntax::Expr {
   if !std::path::Path::new(path).exists() {
     // wolframscript prints Import::nffil to stdout for a missing file.
     crate::emit_message_to_stdout(&format!(
-      "Import::nffil: File {} not found during Import.",
-      path
+      "Import::nffil: File {path} not found during Import."
     ));
-    return Ok(Expr::Identifier("$Failed".to_string()));
+    return Expr::Identifier("$Failed".to_string());
   }
-  let bytes = match std::fs::read(path) {
-    Ok(b) => b,
-    Err(_) => {
-      return Ok(Expr::Identifier("$Failed".to_string()));
-    }
+  let Ok(bytes) = std::fs::read(path) else {
+    return Expr::Identifier("$Failed".to_string());
   };
   // A valid Netpbm stream starts with `P1`..`P6` followed by whitespace.
   let valid_magic = bytes.len() >= 3
@@ -324,12 +318,12 @@ fn import_netpbm(path: &str) -> Result<Expr, InterpreterError> {
     crate::emit_message_to_stdout(
       "Import::fmterr: Cannot import data as PPM format.",
     );
-    return Ok(Expr::Identifier("$Failed".to_string()));
+    return Expr::Identifier("$Failed".to_string());
   }
   // Magic looks plausible but Woxi doesn't yet parse Netpbm pixel data.
   // Return $Failed silently — matches wolframscript on a valid file when
   // parsing succeeds (no message; wolframscript returns `Image[…]`).
-  Ok(Expr::Identifier("$Failed".to_string()))
+  Expr::Identifier("$Failed".to_string())
 }
 
 /// Import a host-registered virtual file (WASM). The browser host registers
@@ -429,7 +423,7 @@ fn json_number_tokens(text: &str) -> Vec<String> {
       continue;
     }
     let starts_number = c.is_ascii_digit()
-      || (c == '-' && bytes.get(i + 1).is_some_and(|n| n.is_ascii_digit()));
+      || (c == '-' && bytes.get(i + 1).is_some_and(char::is_ascii_digit));
     if starts_number {
       let start = i;
       i += 1;
@@ -495,14 +489,14 @@ fn exact_json_numbers(
     }
     Expr::List(items) => {
       let mut out = Vec::with_capacity(items.len());
-      for item in items.iter() {
+      for item in items {
         out.push(exact_json_numbers(item, tokens, index)?);
       }
       Some(Expr::List(out.into()))
     }
     Expr::Association(pairs) => {
       let mut out = Vec::with_capacity(pairs.len());
-      for (k, v) in pairs.iter() {
+      for (k, v) in pairs {
         out.push((k.clone(), exact_json_numbers(v, tokens, index)?));
       }
       Some(Expr::Association(out))
@@ -989,11 +983,8 @@ pub fn dispatch_image_functions(
       return Some(crate::functions::image_ast::rasterize_ast(args));
     }
     "Import" if args.len() == 1 => {
-      let path = match import_path_spec(&args[0]) {
-        Some(p) => p,
-        None => {
-          return Some(Ok(unevaluated("Import", args)));
-        }
+      let Some(path) = import_path_spec(&args[0]) else {
+        return Some(Ok(unevaluated("Import", args)));
       };
       let is_url = path.starts_with("http://") || path.starts_with("https://");
       let ext = import_extension(&path);
@@ -1104,8 +1095,7 @@ pub fn dispatch_image_functions(
                 })
                 .map_err(|e| {
                   InterpreterError::EvaluationError(format!(
-                    "Import: cannot open \"{}\": {}",
-                    path, e
+                    "Import: cannot open \"{path}\": {e}"
                   ))
                 }),
             );
@@ -1114,7 +1104,7 @@ pub fn dispatch_image_functions(
             return Some(crate::functions::image_ast::import_image(&path));
           }
           "ppm" | "pgm" | "pbm" | "pnm" => {
-            return Some(import_netpbm(&path));
+            return Some(Ok(import_netpbm(&path)));
           }
           "root" => {
             return Some(crate::functions::root_ast::root_import_file(&path));
@@ -1163,8 +1153,7 @@ pub fn dispatch_image_functions(
           }
           _ => {
             return Some(Err(InterpreterError::EvaluationError(format!(
-              "Import: unsupported file format \"{}\"",
-              ext
+              "Import: unsupported file format \"{ext}\""
             ))));
           }
         }
@@ -1177,11 +1166,8 @@ pub fn dispatch_image_functions(
       }
     }
     "Import" if args.len() == 2 => {
-      let path = match import_path_spec(&args[0]) {
-        Some(p) => p,
-        None => {
-          return Some(Ok(unevaluated("Import", args)));
-        }
+      let Some(path) = import_path_spec(&args[0]) else {
+        return Some(Ok(unevaluated("Import", args)));
       };
       let is_url = path.starts_with("http://") || path.starts_with("https://");
       let ext = import_extension(&path);
@@ -1400,8 +1386,7 @@ pub fn dispatch_image_functions(
               Ok(s) => s,
               Err(e) => {
                 return Some(Err(InterpreterError::EvaluationError(format!(
-                  "Import: cannot open \"{}\": {}",
-                  path, e
+                  "Import: cannot open \"{path}\": {e}"
                 ))));
               }
             }
@@ -1410,8 +1395,7 @@ pub fn dispatch_image_functions(
             Some(expr) => return Some(Ok(expr)),
             None => {
               return Some(Err(InterpreterError::EvaluationError(format!(
-                "Import: unsupported element \"{}\" for txt file",
-                element
+                "Import: unsupported element \"{element}\" for txt file"
               ))));
             }
           }
@@ -1437,7 +1421,7 @@ pub fn dispatch_image_functions(
       if matches!(ext.as_str(), "ppm" | "pgm" | "pbm" | "pnm")
         || matches!(
           explicit_fmt.as_deref(),
-          Some("ppm") | Some("pgm") | Some("pbm") | Some("pnm")
+          Some("ppm" | "pgm" | "pbm" | "pnm")
         )
       {
         #[cfg(not(target_arch = "wasm32"))]
@@ -1445,7 +1429,7 @@ pub fn dispatch_image_functions(
           if is_url {
             // URL imports for netpbm aren't supported yet; fall through.
           } else {
-            return Some(import_netpbm(&path));
+            return Some(Ok(import_netpbm(&path)));
           }
         }
         #[cfg(target_arch = "wasm32")]
@@ -1482,17 +1466,16 @@ pub fn dispatch_image_functions(
       });
       let args: Vec<Expr> = positional.iter().map(|a| (*a).clone()).collect();
       let args = &args[..];
-      let content = match &args[0] {
-        Expr::String(s) => s.clone(),
-        _ => {
-          // wolframscript emits an error when the first argument isn't a
-          // string — match that message format.
-          crate::emit_message(&format!(
-            "ImportString::string: First argument {} is not a string.",
-            crate::syntax::expr_to_string(&args[0])
-          ));
-          return Some(Ok(unevaluated("ImportString", args)));
-        }
+      let content = if let Expr::String(s) = &args[0] {
+        s.clone()
+      } else {
+        // wolframscript emits an error when the first argument isn't a
+        // string — match that message format.
+        crate::emit_message(&format!(
+          "ImportString::string: First argument {} is not a string.",
+          crate::syntax::expr_to_string(&args[0])
+        ));
+        return Some(Ok(unevaluated("ImportString", args)));
       };
 
       // ImportString[str] — default to CSV
@@ -1719,9 +1702,15 @@ pub fn dispatch_image_functions(
             .split('\n')
             .map(|line| {
               if format == "TSV" {
-                line.split('\t').map(|s| s.to_string()).collect()
+                line
+                  .split('\t')
+                  .map(std::string::ToString::to_string)
+                  .collect()
               } else {
-                line.split_whitespace().map(|s| s.to_string()).collect()
+                line
+                  .split_whitespace()
+                  .map(std::string::ToString::to_string)
+                  .collect()
               }
             })
             .collect()

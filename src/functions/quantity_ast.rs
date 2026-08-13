@@ -29,7 +29,9 @@ fn dims(pairs: &[(Dimension, i64)]) -> BTreeMap<Dimension, i64> {
 }
 
 fn get_unit_info(name: &str) -> Option<UnitInfo> {
-  use Dimension::*;
+  use Dimension::{
+    AmountOfSubstance, ElectricCurrent, Information, Length, Mass, Time,
+  };
   let info = match name {
     // ── Length → Meters ───────────────────────────────────────────────
     "Meters" => UnitInfo {
@@ -672,7 +674,7 @@ fn resolve_per_unit(s: &str) -> Option<Expr> {
   let numer_name = if get_unit_info(numer_part).is_some() {
     numer_part.to_string()
   } else {
-    let plural = format!("{}s", numer_part);
+    let plural = format!("{numer_part}s");
     if get_unit_info(&plural).is_some() {
       plural
     } else {
@@ -682,7 +684,7 @@ fn resolve_per_unit(s: &str) -> Option<Expr> {
   let denom_name = if get_unit_info(denom_base).is_some() {
     denom_base.to_string()
   } else {
-    let plural = format!("{}s", denom_base);
+    let plural = format!("{denom_base}s");
     if get_unit_info(&plural).is_some() {
       plural
     } else {
@@ -694,14 +696,10 @@ fn resolve_per_unit(s: &str) -> Option<Expr> {
   let denom_expr = if exp == 1 {
     Expr::String(denom_name)
   } else {
-    binop(
-      BinaryOperator::Power,
-      Expr::String(denom_name.clone()),
-      Expr::Integer(exp),
-    )
+    pow2(Expr::String(denom_name.clone()), Expr::Integer(exp))
   };
 
-  Some(binop(BinaryOperator::Divide, numer_expr, denom_expr))
+  Some(div2(numer_expr, denom_expr))
 }
 
 /// Resolve common unit abbreviation strings to full unit names.
@@ -786,11 +784,7 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
 
   // Compound abbreviations
   let make_div = |n: &str, d: &str| -> Expr {
-    binop(
-      BinaryOperator::Divide,
-      Expr::String(n.to_string()),
-      Expr::String(d.to_string()),
-    )
+    div2(Expr::String(n.to_string()), Expr::String(d.to_string()))
   };
   match s {
     "mph" => Some(make_div("Miles", "Hours")),
@@ -805,7 +799,7 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
         let den_expr = resolve_unit_abbreviation(den).or_else(|| {
           get_unit_info(den).map(|_| Expr::String(den.to_string()))
         })?;
-        Some(binop(BinaryOperator::Divide, num_expr, den_expr))
+        Some(div2(num_expr, den_expr))
       } else {
         None
       }
@@ -1133,7 +1127,7 @@ fn components_to_unit_expr(components: &[(String, i64)]) -> Expr {
     let part = if abs_exp == 1 {
       base
     } else {
-      binop(BinaryOperator::Power, base, Expr::Integer(abs_exp as i128))
+      pow2(base, Expr::Integer(abs_exp as i128))
     };
     if *exp > 0 {
       numer_parts.push(part);
@@ -1164,7 +1158,7 @@ fn components_to_unit_expr(components: &[(String, i64)]) -> Expr {
         args: denom_parts.into(),
       }
     };
-    binop(BinaryOperator::Divide, numer, denom)
+    div2(numer, denom)
   }
 }
 
@@ -1324,13 +1318,11 @@ fn canonical_unit_name(name: &str) -> &str {
 /// Used at format time to display entity-resolved compound units.
 fn format_expand_compound_unit(name: &str) -> Option<Expr> {
   match name {
-    "KilowattHours" => Some(binop(
-      BinaryOperator::Times,
+    "KilowattHours" => Some(times2(
       Expr::String("Hours".to_string()),
       Expr::String("Kilowatts".to_string()),
     )),
-    "WattHours" => Some(binop(
-      BinaryOperator::Times,
+    "WattHours" => Some(times2(
       Expr::String("Hours".to_string()),
       Expr::String("Watts".to_string()),
     )),
@@ -1362,13 +1354,13 @@ fn normalize_singular_to_plural(name: &str) -> String {
   }
   // Names ending in "y" → "ies" (Henry → Henries)
   if let Some(base) = name.strip_suffix('y') {
-    let candidate = format!("{}ies", base);
+    let candidate = format!("{base}ies");
     if get_unit_info(&candidate).is_some() {
       return candidate;
     }
   }
   // Default: add "s"
-  format!("{}s", name)
+  format!("{name}s")
 }
 
 /// Full normalization for UnitConvert output: expands abbreviations, "Per" compounds,
@@ -1551,16 +1543,15 @@ fn convert_magnitude(
   to_unit: &str,
 ) -> Result<Expr, InterpreterError> {
   let from = get_unit_info(from_unit).ok_or_else(|| {
-    InterpreterError::EvaluationError(format!("Unknown unit: {}", from_unit))
+    InterpreterError::EvaluationError(format!("Unknown unit: {from_unit}"))
   })?;
   let to = get_unit_info(to_unit).ok_or_else(|| {
-    InterpreterError::EvaluationError(format!("Unknown unit: {}", to_unit))
+    InterpreterError::EvaluationError(format!("Unknown unit: {to_unit}"))
   })?;
 
   if from.dimensions != to.dimensions {
     return Err(InterpreterError::EvaluationError(format!(
-      "{} and {} are incompatible units.",
-      from_unit, to_unit
+      "{from_unit} and {to_unit} are incompatible units."
     )));
   }
 
@@ -1872,7 +1863,9 @@ fn has_bare_identifier_units(e: &Expr) -> bool {
 /// Build an SI base-unit expression from a dimension exponent map.
 /// E.g. {Mass: 1} → "Kilograms"; {Length: 1, Time: -2} → "Meters/Seconds^2".
 fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
-  use Dimension::*;
+  use Dimension::{
+    AmountOfSubstance, ElectricCurrent, Information, Length, Mass, Time,
+  };
   let base_name = |d: Dimension| -> &'static str {
     match d {
       Length => "Meters",
@@ -1886,7 +1879,7 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
   // Collect positive and negative exponents
   let mut positives: Vec<(Dimension, i64)> = Vec::new();
   let mut negatives: Vec<(Dimension, i64)> = Vec::new();
-  for (&d, &e) in dimensions.iter() {
+  for (&d, &e) in dimensions {
     if e > 0 {
       positives.push((d, e));
     } else if e < 0 {
@@ -2010,20 +2003,12 @@ fn try_temperature_convert(
   let (mtn, mtd, btn, btd) = temp_to_kelvin_affine(tgt);
   let int = Expr::Integer;
   // K = (msn/msd)·v + bsn/bsd; result = (K − btn/btd) / (mtn/mtd).
-  let term = binop(
-    BinaryOperator::Divide,
-    binop(BinaryOperator::Times, int(msn), mag.clone()),
-    int(msd),
-  );
-  let bs = binop(BinaryOperator::Divide, int(bsn), int(bsd));
-  let bt = binop(BinaryOperator::Divide, int(btn), int(btd));
-  let kelvin = binop(BinaryOperator::Plus, term, bs);
-  let shifted = binop(BinaryOperator::Minus, kelvin, bt);
-  let result = binop(
-    BinaryOperator::Divide,
-    binop(BinaryOperator::Times, shifted, int(mtd)),
-    int(mtn),
-  );
+  let term = div2(times2(int(msn), mag.clone()), int(msd));
+  let bs = div2(int(bsn), int(bsd));
+  let bt = div2(int(btn), int(btd));
+  let kelvin = plus2(term, bs);
+  let shifted = minus2(kelvin, bt);
+  let result = div2(times2(shifted, int(mtd)), int(mtn));
   let new_mag = crate::evaluator::evaluate_expr_to_expr(&result)?;
 
   Ok(Some(Expr::FunctionCall {
@@ -2214,8 +2199,7 @@ pub fn try_quantity_plus(
       let u1_name = crate::syntax::expr_to_string(ref_unit);
       let u2_name = crate::syntax::expr_to_string(u);
       crate::emit_message(&format!(
-        "Quantity::compat: {} and {} are incompatible units.",
-        u1_name, u2_name
+        "Quantity::compat: {u1_name} and {u2_name} are incompatible units."
       ));
       // Return unevaluated Plus with operands sorted canonically (Plus is
       // Orderless — e.g. Quantity[3, Seconds] should precede
@@ -2241,18 +2225,15 @@ pub fn try_quantity_plus(
       let (_m, u) = is_quantity(q).unwrap();
       if let Some(info) = decompose_unit_expr(u) {
         // Compare (info.si.0 / info.si.1) with best via cross-multiply.
-        match best {
-          Some((bn, bd)) => {
-            // info < best iff info.si.0 * bd < bn * info.si.1
-            if info.si.0 * bd < bn * info.si.1 {
-              best = Some(info.si);
-              target_idx = i;
-            }
-          }
-          _ => {
+        if let Some((bn, bd)) = best {
+          // info < best iff info.si.0 * bd < bn * info.si.1
+          if info.si.0 * bd < bn * info.si.1 {
             best = Some(info.si);
             target_idx = i;
           }
+        } else {
+          best = Some(info.si);
+          target_idx = i;
         }
       }
     }
@@ -2473,8 +2454,7 @@ pub fn try_quantity_divide(
         // Same units cancel out
         Some(Ok(new_mag))
       } else {
-        let raw_compound =
-          binop(BinaryOperator::Divide, unit_a.clone(), unit_b.clone());
+        let raw_compound = div2(unit_a.clone(), unit_b.clone());
         // Try to simplify (merge same-dimension units)
         let (final_unit, conv) =
           simplify_unit_expr(&raw_compound).unwrap_or((raw_compound, (1, 1)));
@@ -2509,8 +2489,7 @@ pub fn try_quantity_divide(
           Ok(m) => m,
           Err(e) => return Some(Err(e)),
         };
-      let inv_unit =
-        binop(BinaryOperator::Power, unit.clone(), Expr::Integer(-1));
+      let inv_unit = pow2(unit.clone(), Expr::Integer(-1));
       // Try to simplify
       let (final_unit, conv) =
         simplify_unit_expr(&inv_unit).unwrap_or((inv_unit, (1, 1)));
@@ -2552,16 +2531,12 @@ fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
     let part = if rd == 1 && abs_rn == 1 {
       base
     } else if rd == 1 {
-      binop(BinaryOperator::Power, base, Expr::Integer(abs_rn))
+      pow2(base, Expr::Integer(abs_rn))
     } else if abs_rn == 1 && rd == 2 {
       // Power[base, 1/2] → Sqrt[base] (matching Wolfram convention for units)
       make_sqrt(base)
     } else {
-      binop(
-        BinaryOperator::Power,
-        base,
-        crate::functions::math_ast::make_rational(abs_rn, rd),
-      )
+      pow2(base, crate::functions::math_ast::make_rational(abs_rn, rd))
     };
 
     if rn > 0 {
@@ -2593,7 +2568,7 @@ fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
         args: denom_parts.into(),
       }
     };
-    Some(binop(BinaryOperator::Divide, numer, denom))
+    Some(div2(numer, denom))
   }
 }
 
@@ -2625,7 +2600,7 @@ pub fn try_quantity_power(
   }
 
   // Fallback: wrap unit in Power without simplification
-  let new_unit = binop(BinaryOperator::Power, unit.clone(), exp.clone());
+  let new_unit = pow2(unit.clone(), exp.clone());
 
   Some(Ok(make_quantity(new_mag, new_unit)))
 }
@@ -2973,7 +2948,7 @@ fn unit_factors(unit: &Expr) -> (Vec<Expr>, Vec<Expr>) {
   fn walk(e: &Expr, num: &mut Vec<Expr>, den: &mut Vec<Expr>, flip: bool) {
     match e {
       Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
+        for a in args {
           walk(a, num, den, flip);
         }
       }

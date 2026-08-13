@@ -121,7 +121,7 @@ fn rem_euclid(a: Num, b: Num) -> Num {
       }
       Some((num.rem_euclid(den), q1 * q2))
     },
-    |x, y| x.rem_euclid(y),
+    f64::rem_euclid,
   )
 }
 
@@ -218,21 +218,21 @@ fn build_array(
   let offs: Vec<Num> = match offsets {
     None => (0..k).map(|_| Num::Exact(0, 1)).collect(),
     Some(Expr::List(items)) if items.len() == k => {
-      match items.iter().map(to_num).collect::<Option<Vec<_>>>() {
-        Some(v) => v,
-        None => {
-          emit_offs(offsets.unwrap());
-          return None;
-        }
+      if let Some(v) = items.iter().map(to_num).collect::<Option<Vec<_>>>() {
+        v
+      } else {
+        emit_offs(offsets.unwrap());
+        return None;
       }
     }
-    Some(e) => match to_num(e) {
-      Some(v) => (0..k).map(|_| v).collect(),
-      None => {
+    Some(e) => {
+      if let Some(v) = to_num(e) {
+        (0..k).map(|_| v).collect()
+      } else {
         emit_offs(e);
         return None;
       }
-    },
+    }
   };
 
   // Values per dimension: min + (off mod step) + k*step, up to max.

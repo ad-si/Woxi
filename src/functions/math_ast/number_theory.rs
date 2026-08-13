@@ -199,12 +199,11 @@ pub fn gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Convert each arg to (numerator, denominator); bail out for non-numeric.
   let mut fractions: Vec<(BigInt, BigInt)> = Vec::with_capacity(args.len());
   for arg in args {
-    match expr_to_fraction(arg) {
-      Some(f) => fractions.push(f),
-      None => {
-        emit_gcd_lcm_exact_message("GCD", args);
-        return Ok(unevaluated("GCD", args));
-      }
+    if let Some(f) = expr_to_fraction(arg) {
+      fractions.push(f);
+    } else {
+      emit_gcd_lcm_exact_message("GCD", args);
+      return Ok(unevaluated("GCD", args));
     }
   }
 
@@ -213,10 +212,10 @@ pub fn gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut den_lcm = fractions[0].1.clone().abs();
   for (n, d) in &fractions[1..] {
     num_gcd = gcd_bigint(&num_gcd, n);
-    den_lcm = lcm_bigint(den_lcm, d.clone());
+    den_lcm = lcm_bigint(&den_lcm, &d.clone());
   }
 
-  Ok(make_rational_expr(num_gcd, den_lcm))
+  Ok(make_rational_expr(&num_gcd, &den_lcm))
 }
 
 /// Extended Euclidean algorithm: returns (gcd, s, t) where a*s + b*t = gcd
@@ -352,23 +351,22 @@ pub fn lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut fractions: Vec<(BigInt, BigInt)> = Vec::with_capacity(args.len());
   for arg in args {
-    match expr_to_fraction(arg) {
-      Some(f) => fractions.push(f),
-      None => {
-        emit_gcd_lcm_exact_message("LCM", args);
-        return Ok(unevaluated("LCM", args));
-      }
+    if let Some(f) = expr_to_fraction(arg) {
+      fractions.push(f);
+    } else {
+      emit_gcd_lcm_exact_message("LCM", args);
+      return Ok(unevaluated("LCM", args));
     }
   }
 
   let mut num_lcm = fractions[0].0.clone().abs();
   let mut den_gcd = fractions[0].1.clone().abs();
   for (n, d) in &fractions[1..] {
-    num_lcm = lcm_bigint(num_lcm, n.clone());
+    num_lcm = lcm_bigint(&num_lcm, &n.clone());
     den_gcd = gcd_bigint(&den_gcd, d);
   }
 
-  Ok(make_rational_expr(num_lcm, den_gcd))
+  Ok(make_rational_expr(&num_lcm, &den_gcd))
 }
 
 /// Convert an Expr to (numerator, denominator) if it's an integer, big
@@ -397,25 +395,25 @@ fn expr_to_fraction(expr: &Expr) -> Option<(BigInt, BigInt)> {
 }
 
 /// LCM helper for BigInts. LCM(0, _) = LCM(_, 0) = 0.
-fn lcm_bigint(a: BigInt, b: BigInt) -> BigInt {
+fn lcm_bigint(a: &BigInt, b: &BigInt) -> BigInt {
   use num_traits::Zero;
   if a.is_zero() || b.is_zero() {
     return BigInt::from(0);
   }
-  let g = gcd_bigint(&a, &b);
+  let g = gcd_bigint(a, b);
   (a.abs() / g) * b.abs()
 }
 
 /// Reduce numerator/denominator and emit either an Integer (when the
 /// denominator is 1) or a `Rational[p, q]` Expr.
-pub fn make_rational_expr(num: BigInt, den: BigInt) -> Expr {
+pub fn make_rational_expr(num: &BigInt, den: &BigInt) -> Expr {
   use num_traits::One;
   if den.is_zero() {
     // Wolfram returns ComplexInfinity for 1/0 — preserve that here so
     // callers see the same surface behaviour.
     return Expr::Identifier("ComplexInfinity".to_string());
   }
-  let (n, d) = rat_reduce_bigint(&num, &den);
+  let (n, d) = rat_reduce_bigint(num, den);
   if d.is_one() {
     return bigint_to_expr(n);
   }
@@ -564,7 +562,7 @@ pub fn factorial2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
 
         let numer = BigInt::from(if (-n + 1) % 4 == 0 { -1 } else { 1 });
-        return Ok(make_rational_expr(numer, denom));
+        return Ok(make_rational_expr(&numer, &denom));
       }
       return Ok(unevaluated("Factorial2", args));
     }
@@ -597,7 +595,7 @@ pub fn factorial2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // `N[Pi!!, 6]` lands on a precision-tagged real instead of falling back
     // to the unevaluated form.
     if let Some(prec) = bf_prec {
-      let display_str = format!("{:?}", result);
+      let display_str = format!("{result:?}");
       return Ok(Expr::BigFloat(display_str, prec));
     }
     Ok(Expr::Real(result))
@@ -676,11 +674,8 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 2 {
     // Two-argument form: Lucas polynomial in x.
     // Negative index uses the reflection LucasL[-n, x] = (-1)^n LucasL[n, x].
-    let n_raw = match expr_to_i128(&args[0]) {
-      Some(n) => n,
-      None => {
-        return Ok(unevaluated("LucasL", args));
-      }
+    let Some(n_raw) = expr_to_i128(&args[0]) else {
+      return Ok(unevaluated("LucasL", args));
     };
     let negate = n_raw < 0 && n_raw % 2 != 0;
     let n = n_raw.unsigned_abs() as usize;
@@ -735,17 +730,14 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Real argument: analytic continuation
   // LucasL[x] = phi^x + Cos[pi x] phi^-x (phi = golden ratio).
   if let Expr::Real(x) = &args[0] {
-    let phi = (1.0 + 5.0_f64.sqrt()) / 2.0;
+    let phi = f64::midpoint(1.0, 5.0_f64.sqrt());
     let val = phi.powf(*x) + (std::f64::consts::PI * *x).cos() * phi.powf(-*x);
     return Ok(Expr::Real(val));
   }
 
   // Negative index uses the reflection LucasL[-n] = (-1)^n LucasL[n].
-  let n_raw = match expr_to_i128(&args[0]) {
-    Some(n) => n,
-    None => {
-      return Ok(unevaluated("LucasL", args));
-    }
+  let Some(n_raw) = expr_to_i128(&args[0]) else {
+    return Ok(unevaluated("LucasL", args));
   };
   let negate = n_raw < 0 && n_raw % 2 != 0;
   let n = n_raw.unsigned_abs() as usize;
@@ -785,17 +777,11 @@ pub fn chinese_remainder_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     None
   };
-  let remainders = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("ChineseRemainder", args));
-    }
+  let Expr::List(remainders) = &args[0] else {
+    return Ok(unevaluated("ChineseRemainder", args));
   };
-  let moduli = match &args[1] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("ChineseRemainder", args));
-    }
+  let Expr::List(moduli) = &args[1] else {
+    return Ok(unevaluated("ChineseRemainder", args));
   };
   // Mismatched lengths are a reported argument error, not a hard failure.
   if remainders.len() != moduli.len() {
@@ -891,28 +877,27 @@ pub fn divisor_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // on the ~10^20 terms of RosettaCode's aliquot-sequence-classifications,
   // even though those terms have very few divisors).
   let n_u = n as u128;
-  let divs: Vec<i128> = match divisors_u128(n_u) {
-    Some(d) => d.into_iter().map(|x| x as i128).collect(),
-    None => {
-      // Fallback: O(√n) trial division.
-      let sqrt_n = (n_u as f64).sqrt() as u128;
-      let mut small_divs: Vec<u128> = Vec::new();
-      let mut large_divs: Vec<u128> = Vec::new();
-      for i in 1..=sqrt_n {
-        if n_u.is_multiple_of(i) {
-          small_divs.push(i);
-          if i != n_u / i {
-            large_divs.push(n_u / i);
-          }
+  let divs: Vec<i128> = if let Some(d) = divisors_u128(n_u) {
+    d.into_iter().map(|x| x as i128).collect()
+  } else {
+    // Fallback: O(√n) trial division.
+    let sqrt_n = (n_u as f64).sqrt() as u128;
+    let mut small_divs: Vec<u128> = Vec::new();
+    let mut large_divs: Vec<u128> = Vec::new();
+    for i in 1..=sqrt_n {
+      if n_u.is_multiple_of(i) {
+        small_divs.push(i);
+        if i != n_u / i {
+          large_divs.push(n_u / i);
         }
       }
-      large_divs.reverse();
-      let mut divs: Vec<i128> =
-        Vec::with_capacity(small_divs.len() + large_divs.len());
-      divs.extend(small_divs.iter().map(|&x| x as i128));
-      divs.extend(large_divs.iter().map(|&x| x as i128));
-      divs
     }
+    large_divs.reverse();
+    let mut divs: Vec<i128> =
+      Vec::with_capacity(small_divs.len() + large_divs.len());
+    divs.extend(small_divs.iter().map(|&x| x as i128));
+    divs.extend(large_divs.iter().map(|&x| x as i128));
+    divs
   };
 
   // Apply function to each divisor and sum, filtering by cond if present
@@ -983,14 +968,14 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Represent each Bernoulli number as a reduced (numerator, denominator)
   // pair in BigInt, so large numerators (e.g. BernoulliB[60]) don't overflow
   // i128.
-  fn rat_reduce(num: BigInt, den: BigInt) -> (BigInt, BigInt) {
-    rat_reduce_bigint(&num, &den)
+  fn rat_reduce(num: &BigInt, den: &BigInt) -> (BigInt, BigInt) {
+    rat_reduce_bigint(num, den)
   }
   fn rat_add(a: &(BigInt, BigInt), b: &(BigInt, BigInt)) -> (BigInt, BigInt) {
-    rat_reduce(&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1)
+    rat_reduce(&(&a.0 * &b.1 + &b.0 * &a.1), &(&a.1 * &b.1))
   }
   fn rat_mul(a: &(BigInt, BigInt), b: &(BigInt, BigInt)) -> (BigInt, BigInt) {
-    rat_reduce(&a.0 * &b.0, &a.1 * &b.1)
+    rat_reduce(&(&a.0 * &b.0), &(&a.1 * &b.1))
   }
 
   let mut b: Vec<(BigInt, BigInt)> = Vec::with_capacity(n + 1);
@@ -1015,7 +1000,7 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let (num, den) = b[n].clone();
-  Ok(make_rational_expr(num, den))
+  Ok(make_rational_expr(&num, &den))
 }
 
 /// Compute the nth Bernoulli polynomial B_n(z) = sum_{k=0}^{n} C(n,k) * B_k * z^(n-k)
@@ -1346,7 +1331,7 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let zero = BigInt::from(0);
     let one = BigInt::from(1);
     let mut row = vec![zero.clone(); n + 1];
-    row[0] = one.clone();
+    row[0].clone_from(&one);
     let mut next = vec![zero.clone(); n + 1];
     for i in 1..=n {
       next[0] = &row[i - 1] - &row[0];
@@ -1368,10 +1353,10 @@ pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let zero = BigInt::from(0);
     let one = BigInt::from(1);
     let mut row = vec![zero.clone(); n + 1];
-    row[0] = one.clone(); // S(0,0) = 1
+    row[0].clone_from(&one); // S(0,0) = 1
     let mut next = vec![zero.clone(); n + 1];
     for i in 1..=n {
-      next[0] = zero.clone(); // S(i,0) = 0
+      next[0].clone_from(&zero); // S(i,0) = 0
       for j in 1..=i {
         // S(i,j) = S(i-1,j-1) + j*S(i-1,j) (Stirling S2)
         next[j] = &row[j - 1] + BigInt::from(j as i128) * &row[j];
@@ -1441,11 +1426,8 @@ pub fn pauli_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "PauliMatrix expects exactly 1 argument".into(),
     ));
   }
-  let k = match expr_to_i128(&args[0]) {
-    Some(k) => k,
-    _ => {
-      return Ok(unevaluated("PauliMatrix", args));
-    }
+  let Some(k) = expr_to_i128(&args[0]) else {
+    return Ok(unevaluated("PauliMatrix", args));
   };
   let i_expr = Expr::Identifier("I".to_string());
   let neg_i = Expr::BinaryOp {
@@ -1587,10 +1569,10 @@ pub fn stirling_s1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let zero = BigInt::from(0);
   let one = BigInt::from(1);
   let mut row = vec![zero.clone(); k + 1];
-  row[0] = one.clone(); // s(0,0) = 1
+  row[0].clone_from(&one); // s(0,0) = 1
   let mut next = vec![zero.clone(); k + 1];
   for i in 1..=n {
-    next[0] = zero.clone(); // s(i,0) = 0
+    next[0].clone_from(&zero); // s(i,0) = 0
     for j in 1..=k.min(i) {
       // s(i,j) = s(i-1,j-1) - (i-1)*s(i-1,j) (signed Stirling S1)
       next[j] = &row[j - 1] - BigInt::from(i - 1) * &row[j];
@@ -1629,10 +1611,10 @@ pub fn stirling_s2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let zero = BigInt::from(0);
   let one = BigInt::from(1);
   let mut row = vec![zero.clone(); k + 1];
-  row[0] = one.clone(); // S(0,0) = 1.
+  row[0].clone_from(&one); // S(0,0) = 1.
   let mut next = vec![zero.clone(); k + 1];
   for i in 1..=n {
-    next[0] = zero.clone(); // S(i,0) = 0
+    next[0].clone_from(&zero); // S(i,0) = 0
     for j in 1..=k.min(i) {
       // S(i,j) = S(i-1,j-1) + j*S(i-1,j) (Stirling S2)
       next[j] = &row[j - 1] + BigInt::from(j) * &row[j];
@@ -1717,9 +1699,8 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return crate::evaluator::evaluate_expr_to_expr(&zeta);
       } else if s >= 0.0 {
         return Ok(Expr::Identifier("Infinity".to_string()));
-      } else {
-        return Ok(Expr::Identifier("Indeterminate".to_string()));
       }
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
     // Symbolic order: stay unevaluated.
     return Ok(unevaluated("HarmonicNumber", args));
@@ -1799,54 +1780,53 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let r = if args.len() == 2 {
-    match expr_to_i128(&args[1]) {
-      Some(r) => r,
-      None => {
-        // A non-integer order with a non-negative integer n: the generalized
-        // harmonic number is the finite sum Sum_{i=1}^n i^(-r).
-        let order = &args[1];
-        // An inexact (machine-real) order numericizes for any n.
-        if harmonic_arg_is_inexact(order)
-          && let Some(rv) = expr_to_num(order)
-        {
-          let mut acc = 0.0_f64;
-          for i in 1..=n {
-            acc += (i as f64).powf(-rv);
-          }
-          return Ok(Expr::Real(acc));
+    if let Some(r) = expr_to_i128(&args[1]) {
+      r
+    } else {
+      // A non-integer order with a non-negative integer n: the generalized
+      // harmonic number is the finite sum Sum_{i=1}^n i^(-r).
+      let order = &args[1];
+      // An inexact (machine-real) order numericizes for any n.
+      if harmonic_arg_is_inexact(order)
+        && let Some(rv) = expr_to_num(order)
+      {
+        let mut acc = 0.0_f64;
+        for i in 1..=n {
+          acc += (i as f64).powf(-rv);
         }
-        // An exact non-integer order (symbolic, rational, Pi, …) is rendered
-        // expanded by wolframscript only for small n (n <= 4); larger n stays
-        // symbolic.
-        if n <= 4 {
-          let mut terms: Vec<Expr> = Vec::with_capacity(n as usize);
-          for i in 1..=n {
-            if i == 1 {
-              terms.push(Expr::Integer(1));
-            } else {
-              let neg_order = Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![Expr::Integer(-1), order.clone()].into(),
-              };
-              terms.push(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(Expr::Integer(i)),
-                right: Box::new(neg_order),
-              });
-            }
-          }
-          let sum = match terms.len() {
-            0 => Expr::Integer(0),
-            1 => terms.pop().unwrap(),
-            _ => Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: terms.into(),
-            },
-          };
-          return crate::evaluator::evaluate_expr_to_expr(&sum);
-        }
-        return Ok(unevaluated("HarmonicNumber", args));
+        return Ok(Expr::Real(acc));
       }
+      // An exact non-integer order (symbolic, rational, Pi, …) is rendered
+      // expanded by wolframscript only for small n (n <= 4); larger n stays
+      // symbolic.
+      if n <= 4 {
+        let mut terms: Vec<Expr> = Vec::with_capacity(n as usize);
+        for i in 1..=n {
+          if i == 1 {
+            terms.push(Expr::Integer(1));
+          } else {
+            let neg_order = Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), order.clone()].into(),
+            };
+            terms.push(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(Expr::Integer(i)),
+              right: Box::new(neg_order),
+            });
+          }
+        }
+        let sum = match terms.len() {
+          0 => Expr::Integer(0),
+          1 => terms.pop().unwrap(),
+          _ => Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: terms.into(),
+          },
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&sum);
+      }
+      return Ok(unevaluated("HarmonicNumber", args));
     }
   } else {
     1
@@ -1917,7 +1897,7 @@ pub fn multiple_harmonic_number_ast(
       return Ok(unevaluated());
     }
     let mut v = Vec::with_capacity(items.len());
-    for it in items.iter() {
+    for it in items {
       match expr_to_i128(it) {
         Some(s) if s >= 1 && s <= i128::from(u32::MAX) => v.push(s as u32),
         _ => return Ok(unevaluated()),
@@ -2190,9 +2170,8 @@ pub fn alternating_harmonic_number_ast(
   if n == 0 {
     return Ok(Expr::Integer(0));
   }
-  let neg_r = match negate_exact(r_expr) {
-    Some(neg_r) => neg_r,
-    None => return Ok(unevaluated),
+  let Some(neg_r) = negate_exact(r_expr) else {
+    return Ok(unevaluated);
   };
   let sum = build_alternating_sum(n, &neg_r, Some(x));
   crate::evaluator::evaluate_expr_to_expr(&sum)
@@ -2365,8 +2344,7 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Concrete non-positive integer: emit message like wolframscript
       let arg_str = expr_to_string(&args[0]);
       crate::emit_message(&format!(
-        "Prime::intpp: Positive integer argument expected in Prime[{}].",
-        arg_str
+        "Prime::intpp: Positive integer argument expected in Prime[{arg_str}]."
       ));
       Ok(unevaluated)
     }
@@ -2376,8 +2354,7 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _)) {
         let arg_str = expr_to_string(&args[0]);
         crate::emit_message(&format!(
-          "Prime::intpp: Positive integer argument expected in Prime[{}].",
-          arg_str
+          "Prime::intpp: Positive integer argument expected in Prime[{arg_str}]."
         ));
       }
       Ok(unevaluated)
@@ -2402,7 +2379,7 @@ pub fn fibonacci_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // golden ratio. This is what wolframscript returns for non-integer (and
   // for N[Fibonacci[1/2]], which first numericizes the index to a Real).
   if let Expr::Real(x) = &args[0] {
-    let phi = (1.0 + 5.0_f64.sqrt()) / 2.0;
+    let phi = f64::midpoint(1.0, 5.0_f64.sqrt());
     let val = (phi.powf(*x)
       - (std::f64::consts::PI * *x).cos() * phi.powf(-*x))
       / 5.0_f64.sqrt();
@@ -2527,8 +2504,8 @@ pub fn factor_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   match &args[0] {
-    Expr::Integer(n) => factor_integer_i128(*n),
-    Expr::BigInteger(n) => factor_integer_bigint(n),
+    Expr::Integer(n) => Ok(factor_integer_i128(*n)),
+    Expr::BigInteger(n) => Ok(factor_integer_bigint(n)),
     // Handle Rational[numerator, denominator]
     Expr::FunctionCall {
       name,
@@ -2942,7 +2919,7 @@ fn gaussian_divisors(a: i128, b: i128) -> Option<Vec<(i128, i128)>> {
   }
   let mut out: Vec<(i128, i128)> =
     divisors.into_iter().map(gaussian_first_quadrant).collect();
-  out.sort();
+  out.sort_unstable();
   Some(out)
 }
 
@@ -3047,7 +3024,7 @@ fn factor_integer_partial(
 
   // Fully factor, then extract the (prime, exponent) pairs (sorted ascending by
   // prime, which `factor_integer_i128` already guarantees).
-  let full = factor_integer_i128(n)?;
+  let full = factor_integer_i128(n);
   let pairs: Vec<(i128, i128)> = match &full {
     Expr::List(items) => items
       .iter()
@@ -3163,12 +3140,12 @@ fn factor_integer_rational(
   Ok(Expr::List(result.into()))
 }
 
-fn factor_integer_i128(n: i128) -> Result<Expr, InterpreterError> {
+fn factor_integer_i128(n: i128) -> crate::syntax::Expr {
   if n == 0 {
     // wolframscript: FactorInteger[0] = {{0, 1}} (0 treated as 0^1).
-    return Ok(Expr::List(
+    return Expr::List(
       vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into())].into(),
-    ));
+    );
   }
 
   // For large integers where trial division would be too slow,
@@ -3189,7 +3166,7 @@ fn factor_integer_i128(n: i128) -> Result<Expr, InterpreterError> {
       // FactorInteger[1] → {{1, 1}}
       factors.push(Expr::List(vec![Expr::Integer(1), Expr::Integer(1)].into()));
     }
-    return Ok(Expr::List(factors.into()));
+    return Expr::List(factors.into());
   }
 
   // Handle factor of 2
@@ -3226,17 +3203,17 @@ fn factor_integer_i128(n: i128) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  Ok(Expr::List(factors.into()))
+  Expr::List(factors.into())
 }
 
-fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
+fn factor_integer_bigint(n: &BigInt) -> crate::syntax::Expr {
   use num_traits::{One, Signed, Zero};
 
   if n.is_zero() {
     // wolframscript: FactorInteger[0] = {{0, 1}} (0 treated as 0^1).
-    return Ok(Expr::List(
+    return Expr::List(
       vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into())].into(),
-    ));
+    );
   }
 
   let mut factors: Vec<Expr> = Vec::new();
@@ -3249,7 +3226,7 @@ fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
   let one = BigInt::one();
 
   if remaining == one {
-    return Ok(Expr::List(factors.into()));
+    return Expr::List(factors.into());
   }
 
   // Trial division for small primes
@@ -3293,7 +3270,7 @@ fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
       let factor_bigint = BigInt::from(factor);
       // Merge with existing factor or add new entry
       let mut merged = false;
-      for f in factors.iter_mut() {
+      for f in &mut factors {
         if let Expr::List(pair) = f {
           let matches = match (&pair[0], &factor_bigint) {
             (Expr::Integer(a), b) => BigInt::from(*a) == *b,
@@ -3342,7 +3319,7 @@ fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
     a_val.cmp(&b_val)
   });
 
-  Ok(Expr::List(factors.into()))
+  Expr::List(factors.into())
 }
 
 // ─── IntegerPartitions ─────────────────────────────────────────────
@@ -3354,11 +3331,8 @@ fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
 // kspec can be All (equivalent to no constraint)
 pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse n
-  let n = match expr_to_i128(&args[0]) {
-    Some(v) => v,
-    None => {
-      return Ok(unevaluated("IntegerPartitions", args));
-    }
+  let Some(n) = expr_to_i128(&args[0]) else {
+    return Ok(unevaluated("IntegerPartitions", args));
   };
 
   if n < 0 {
@@ -3515,9 +3489,8 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if n == 0 {
     if min_len == 0 || (args.len() < 2) {
       return Ok(Expr::List(vec![Expr::List(vec![].into())].into()));
-    } else {
-      return Ok(Expr::List(vec![].into()));
     }
+    return Ok(Expr::List(vec![].into()));
   }
 
   if has_non_positive {
@@ -3775,12 +3748,12 @@ fn prime_factorization_u128(n: u128) -> Option<Vec<(u128, u32)>> {
     return Some(Vec::new());
   }
   let ni = i128::try_from(n).ok()?;
-  let factored = factor_integer_i128(ni).ok()?;
+  let factored = factor_integer_i128(ni);
   let Expr::List(pairs) = &factored else {
     return None;
   };
   let mut out = Vec::with_capacity(pairs.len());
-  for pair in pairs.iter() {
+  for pair in pairs {
     let Expr::List(pv) = pair else { return None };
     if pv.len() != 2 {
       return None;
@@ -3894,23 +3867,22 @@ pub fn divisors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let divs = match divisors_u128(n) {
-    Some(d) => d,
-    None => {
-      // Fallback: O(√n) trial division.
-      let mut divs = Vec::new();
-      let sqrt_n = (n as f64).sqrt() as u128;
-      for i in 1..=sqrt_n {
-        if n % i == 0 {
-          divs.push(i);
-          if i != n / i {
-            divs.push(n / i);
-          }
+  let divs = if let Some(d) = divisors_u128(n) {
+    d
+  } else {
+    // Fallback: O(√n) trial division.
+    let mut divs = Vec::new();
+    let sqrt_n = (n as f64).sqrt() as u128;
+    for i in 1..=sqrt_n {
+      if n % i == 0 {
+        divs.push(i);
+        if i != n / i {
+          divs.push(n / i);
         }
       }
-      divs.sort_unstable();
-      divs
     }
+    divs.sort_unstable();
+    divs
   };
   Ok(Expr::List(
     divs.into_iter().map(|d| Expr::Integer(d as i128)).collect(),
@@ -3964,13 +3936,10 @@ pub fn divisor_sigma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The order may be negative. Since divisors pair as d <-> n/d,
   //   DivisorSigma[-p, n] = sum_{d|n} d^{-p} = sigma_p(n) / n^p  (a rational).
   // Non-integer orders (symbolic/rational/real) are not handled here.
-  let order = match expr_to_i128(&args[0]) {
-    Some(k) => k,
-    None => {
-      return Err(InterpreterError::EvaluationError(
-        "DivisorSigma: first argument must be a non-negative integer".into(),
-      ));
-    }
+  let Some(order) = expr_to_i128(&args[0]) else {
+    return Err(InterpreterError::EvaluationError(
+      "DivisorSigma: first argument must be a non-negative integer".into(),
+    ));
   };
 
   let n = match expr_to_i128(&args[1]) {
@@ -3988,21 +3957,18 @@ pub fn divisor_sigma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Compute sigma_p(n) = sum of p-th powers of divisors, where p = |order|.
   let p = order.unsigned_abs() as u32;
   let mut sum: u128 = 0;
-  match divisors_u128(n) {
-    Some(divs) => {
-      for d in divs {
-        sum += d.pow(p);
-      }
+  if let Some(divs) = divisors_u128(n) {
+    for d in divs {
+      sum += d.pow(p);
     }
-    None => {
-      // Fallback: O(√n) trial division.
-      let sqrt_n = (n as f64).sqrt() as u128;
-      for i in 1..=sqrt_n {
-        if n % i == 0 {
-          sum += i.pow(p);
-          if i != n / i {
-            sum += (n / i).pow(p);
-          }
+  } else {
+    // Fallback: O(√n) trial division.
+    let sqrt_n = (n as f64).sqrt() as u128;
+    for i in 1..=sqrt_n {
+      if n % i == 0 {
+        sum += i.pow(p);
+        if i != n / i {
+          sum += (n / i).pow(p);
         }
       }
     }
@@ -4129,14 +4095,11 @@ fn euler_phi_bigint(n: &BigInt) -> Result<BigInt, InterpreterError> {
   if n_abs == BigInt::one() {
     return Ok(BigInt::one());
   }
-  let factors_expr = factor_integer_bigint(&n_abs)?;
-  let factors = match &factors_expr {
-    Expr::List(v) => v,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "EulerPhi: unexpected factorization result".into(),
-      ));
-    }
+  let factors_expr = factor_integer_bigint(&n_abs);
+  let Expr::List(factors) = &factors_expr else {
+    return Err(InterpreterError::EvaluationError(
+      "EulerPhi: unexpected factorization result".into(),
+    ));
   };
   let mut result = BigInt::one();
   for f in factors {
@@ -4272,18 +4235,12 @@ pub fn jacobi_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let n = match expr_to_i128(&args[0]) {
-    Some(v) => v,
-    None => {
-      return Ok(unevaluated("JacobiSymbol", args));
-    }
+  let Some(n) = expr_to_i128(&args[0]) else {
+    return Ok(unevaluated("JacobiSymbol", args));
   };
 
-  let m = match expr_to_i128(&args[1]) {
-    Some(v) => v,
-    None => {
-      return Ok(unevaluated("JacobiSymbol", args));
-    }
+  let Some(m) = expr_to_i128(&args[1]) else {
+    return Ok(unevaluated("JacobiSymbol", args));
   };
 
   // wolframscript defines JacobiSymbol[a, n] for all integers n via the
@@ -4330,7 +4287,7 @@ fn jacobi_symbol(mut a: i128, mut n: i128) -> i128 {
 /// both `JacobiSymbol[a, n]` and `KroneckerSymbol[a, n]` by this same symbol.
 pub fn kronecker_symbol(a: i128, n: i128) -> i128 {
   if n == 0 {
-    return if a == 1 || a == -1 { 1 } else { 0 };
+    return i128::from(a == 1 || a == -1);
   }
   if n == 1 {
     return 1;
@@ -4420,7 +4377,7 @@ pub fn coprime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Extract all integer values
   let nums: Vec<u128> = args
     .iter()
-    .filter_map(|a| expr_to_i128(a).map(|n| n.unsigned_abs()))
+    .filter_map(|a| expr_to_i128(a).map(i128::unsigned_abs))
     .collect();
 
   if nums.len() != args.len() {
@@ -4794,7 +4751,7 @@ pub fn multinomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // product of Binomials, preferring integer args in the k position so
   // each Binomial reduces.
   let mut sorted = args.to_vec();
-  sorted.sort_by_key(|a| if matches!(a, Expr::Integer(_)) { 0 } else { 1 });
+  sorted.sort_by_key(|a| i32::from(!matches!(a, Expr::Integer(_))));
   let mut result: Expr = Expr::Integer(1);
   let mut remaining: Vec<Expr> = sorted;
   while remaining.len() > 1 {
@@ -5016,10 +4973,10 @@ fn mod_inverse(a: i128, m: i128) -> Option<i128> {
     s = old_s - q * s;
     old_s = temp_s;
   }
-  if old_r != 1 {
-    None // No inverse exists
-  } else {
+  if old_r == 1 {
     Some(((old_s % m_abs) + m_abs) % m_abs)
+  } else {
+    None // No inverse exists
   }
 }
 
@@ -5050,8 +5007,7 @@ pub fn mersenne_prime_exponent_ast(
     Some(n) if n >= 1 && n <= MERSENNE_EXPONENTS.len() as i128 => n as usize,
     Some(n) if n < 1 => {
       return Err(InterpreterError::EvaluationError(format!(
-        "The argument {} should be a positive integer.",
-        n
+        "The argument {n} should be a positive integer."
       )));
     }
     _ => {
@@ -5382,15 +5338,13 @@ pub fn modular_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use num_traits::{One, Signed, Zero};
 
   // Both arguments must be ordinary integers.
-  let (a, m) = match (expr_to_bigint(&args[0]), expr_to_bigint(&args[1])) {
-    (Some(a), Some(m)) => (a, m),
-    _ => {
-      crate::emit_message(
-        "ModularInverse::minv: The two arguments to ModularInverse must be \
-         ordinary or Gaussian integers.",
-      );
-      return unevaluated();
-    }
+  let (Some(a), Some(m)) = (expr_to_bigint(&args[0]), expr_to_bigint(&args[1]))
+  else {
+    crate::emit_message(
+      "ModularInverse::minv: The two arguments to ModularInverse must be \
+       ordinary or Gaussian integers.",
+    );
+    return unevaluated();
   };
 
   // The modulus must be nonzero.
@@ -5645,11 +5599,8 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("FrobeniusNumber", args));
   }
 
-  let items = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("FrobeniusNumber", args));
-    }
+  let Expr::List(items) = &args[0] else {
+    return Ok(unevaluated("FrobeniusNumber", args));
   };
 
   if items.is_empty() {
@@ -5665,7 +5616,7 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for item in items {
     match item {
       e if expr_to_i128(e).is_some_and(|n| n > 0) => {
-        nums.push(expr_to_i128(e).unwrap())
+        nums.push(expr_to_i128(e).unwrap());
       }
       _ => {
         crate::emit_message(&format!(
@@ -5701,7 +5652,7 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // General case: dynamic programming
   // Upper bound for Frobenius number: a1*a2 - a1 - a2 (using two smallest)
-  nums.sort();
+  nums.sort_unstable();
   let a0 = nums[0] as usize;
 
   // Use the round-robin algorithm (Wilf) based on shortest paths
@@ -5744,11 +5695,8 @@ pub fn frobenius_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // First argument: a non-empty list of positive integers.
-  let items = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("FrobeniusSolve", args));
-    }
+  let Expr::List(items) = &args[0] else {
+    return Ok(unevaluated("FrobeniusSolve", args));
   };
   let coef_err = || {
     crate::emit_message(&format!(
@@ -5761,7 +5709,7 @@ pub fn frobenius_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return coef_err();
   }
   let mut coeffs: Vec<i128> = Vec::with_capacity(items.len());
-  for item in items.iter() {
+  for item in items {
     match expr_to_i128(item) {
       Some(n) if n > 0 => coeffs.push(n),
       _ => return coef_err(),
@@ -6032,7 +5980,7 @@ pub fn arithmetic_geometric_mean_ast(
 /// Compute AGM iteratively
 fn agm(mut a: f64, mut b: f64) -> f64 {
   for _ in 0..100 {
-    let a_new = (a + b) / 2.0;
+    let a_new = f64::midpoint(a, b);
     let b_new = (a * b).sqrt();
     if (a_new - b_new).abs() < 1e-15 * a_new.abs().max(1.0) {
       return a_new;
@@ -6040,7 +5988,7 @@ fn agm(mut a: f64, mut b: f64) -> f64 {
     a = a_new;
     b = b_new;
   }
-  (a + b) / 2.0
+  f64::midpoint(a, b)
 }
 
 /// Compute q(n) - number of partitions into distinct parts
@@ -6148,11 +6096,8 @@ pub fn bit_set_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results.into()));
   }
 
-  let n = match expr_to_bigint(&args[0]) {
-    Some(n) => n,
-    None => {
-      return Ok(unevaluated("BitSet", args));
-    }
+  let Some(n) = expr_to_bigint(&args[0]) else {
+    return Ok(unevaluated("BitSet", args));
   };
 
   let k = match &args[1] {
@@ -6188,11 +6133,8 @@ pub fn bit_clear_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results.into()));
   }
 
-  let n = match expr_to_bigint(&args[0]) {
-    Some(n) => n,
-    None => {
-      return Ok(unevaluated("BitClear", args));
-    }
+  let Some(n) = expr_to_bigint(&args[0]) else {
+    return Ok(unevaluated("BitClear", args));
   };
 
   let k = match &args[1] {
@@ -6214,11 +6156,8 @@ pub fn bit_flip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("BitFlip", args));
   }
 
-  let n = match expr_to_bigint(&args[0]) {
-    Some(n) => n,
-    None => {
-      return Ok(unevaluated("BitFlip", args));
-    }
+  let Some(n) = expr_to_bigint(&args[0]) else {
+    return Ok(unevaluated("BitFlip", args));
   };
 
   let k = match &args[1] {
@@ -8717,7 +8656,7 @@ pub fn three_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Δ²(j1, j2, j3): same form as the 6j helper (uses 2j units).
   let n1 = (j1 + j2 - j3) / 2;
-  let n2 = (j1 - j2 + j3) / 2;
+  let n2 = i128::midpoint(j1 - j2, j3);
   let n3 = (-j1 + j2 + j3) / 2;
   let nd = (j1 + j2 + j3) / 2 + 1;
   let mut radicand_num = fact(n1) * fact(n2) * fact(n3);
@@ -8725,7 +8664,7 @@ pub fn three_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Π_i (j_i + m_i)!·(j_i - m_i)! using 2j/2m units (every sum/difference
   // is even because (2j_i, 2m_i) share parity).
   for i in 0..3 {
-    let p = (two_j[i] + two_m[i]) / 2;
+    let p = i128::midpoint(two_j[i], two_m[i]);
     let m = (two_j[i] - two_m[i]) / 2;
     radicand_num *= fact(p);
     radicand_num *= fact(m);
@@ -8737,7 +8676,7 @@ pub fn three_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .into_iter()
     .max()
     .unwrap();
-  let t_max = [(j1 + j2 - j3) / 2, (j1 - m1) / 2, (j2 + m2) / 2]
+  let t_max = [(j1 + j2 - j3) / 2, (j1 - m1) / 2, i128::midpoint(j2, m2)]
     .into_iter()
     .min()
     .unwrap();
@@ -8749,8 +8688,8 @@ pub fn three_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       t,
       (j1 + j2 - j3) / 2 - t,
       (j1 - m1) / 2 - t,
-      (j2 + m2) / 2 - t,
-      (j3 - j2 + m1) / 2 + t,
+      i128::midpoint(j2, m2) - t,
+      i128::midpoint(j3 - j2, m1) + t,
       (j3 - j1 - m2) / 2 + t,
     ];
     if denoms.iter().any(|d| *d < 0) {
@@ -8789,7 +8728,7 @@ pub fn three_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (out_d, in_d) = extract_perfect_square_bigint(&radicand_den);
   let coeff_num = sum_num * &out_n;
   let coeff_den = &sum_den * &out_d;
-  let coeff_expr = bigint_rational_to_expr(coeff_num, coeff_den);
+  let coeff_expr = bigint_rational_to_expr(&coeff_num, &coeff_den);
   let radicand_expr = if in_d == BigInt::from(1) {
     bigint_to_expr(in_n)
   } else {
@@ -8851,7 +8790,7 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // and emit a Piecewise of (value, var == k) branches for the ones that
   // produce a non-zero coefficient.
   if let Some((idx, sym_name)) = symbolic {
-    return six_j_symbol_symbolic(args, idx, sym_name, two_j);
+    return six_j_symbol_symbolic(args, idx, &sym_name, two_j);
   }
   let [j1, j2, j3, j4, j5, j6] = two_j;
   let triangles = [(j1, j2, j3), (j1, j5, j6), (j4, j2, j6), (j4, j5, j3)];
@@ -8880,7 +8819,7 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Each triangle satisfies a+b+c even, so the half-integer factorials
     // collapse to integer factorials.
     let n1 = (a + b - c) / 2;
-    let n2 = (a - b + c) / 2;
+    let n2 = i128::midpoint(a - b, c);
     let n3 = (-a + b + c) / 2;
     let nd = (a + b + c) / 2 + 1;
     (fact(n1) * fact(n2) * fact(n3), fact(nd))
@@ -8959,7 +8898,7 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // result = (sum_num · out_n) / (sum_den · out_d) · Sqrt[in_n/in_d]
   let coeff_num = sum_num * &delta_sq_outside_num;
   let coeff_den = &sum_den * &delta_sq_outside_den;
-  let coeff_expr = bigint_rational_to_expr(coeff_num, coeff_den);
+  let coeff_expr = bigint_rational_to_expr(&coeff_num, &coeff_den);
   let radicand_expr = if delta_sq_inside_den == BigInt::from(1) {
     bigint_to_expr(delta_sq_inside_num)
   } else {
@@ -8987,7 +8926,7 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn six_j_symbol_symbolic(
   args: &[Expr],
   sym_pos: usize,
-  sym_name: String,
+  sym_name: &str,
   mut two_j: [i128; 6],
 ) -> Result<Expr, InterpreterError> {
   // The four triangle (a, b, c) tuples in terms of indices 0..6:
@@ -9080,7 +9019,7 @@ fn six_j_symbol_symbolic(
     }
     let forced_value = Expr::Integer(v_2j / 2);
     let cond = Expr::Comparison {
-      operands: vec![Expr::Identifier(sym_name.clone()), forced_value],
+      operands: vec![Expr::Identifier(sym_name.to_string()), forced_value],
       operators: vec![ComparisonOp::Equal],
     };
     branches.push(Expr::List(vec![value, cond].into()));
@@ -9121,12 +9060,12 @@ fn extract_perfect_square_bigint(n: &BigInt) -> (BigInt, BigInt) {
   (outside, inside)
 }
 
-fn bigint_rational_to_expr(num: BigInt, den: BigInt) -> Expr {
+fn bigint_rational_to_expr(num: &BigInt, den: &BigInt) -> Expr {
   use num_traits::One;
   if den.is_zero() {
     return Expr::Identifier("ComplexInfinity".to_string());
   }
-  let (n, d) = rat_reduce_bigint(&num, &den);
+  let (n, d) = rat_reduce_bigint(num, den);
   if d.is_one() {
     return bigint_to_expr(n);
   }
@@ -9316,7 +9255,7 @@ pub fn clebsch_gordan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let three_j = three_j_symbol_ast(&three_j_args)?;
   // (-1)^(j1 - j2 + m3): the parity check above guarantees this exponent
   // is an integer.
-  let outer_sign_exp = (j1 - j2 + m3) / 2;
+  let outer_sign_exp = i128::midpoint(j1 - j2, m3);
   let outer_sign: i128 = if outer_sign_exp.rem_euclid(2) == 0 {
     1
   } else {
@@ -9392,7 +9331,7 @@ pub fn farey_sequence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     b = d;
     c = c2;
     d = d2;
-    terms.push(make_rational_expr(BigInt::from(a), BigInt::from(b)));
+    terms.push(make_rational_expr(&BigInt::from(a), &BigInt::from(b)));
   }
 
   if args.len() == 1 {

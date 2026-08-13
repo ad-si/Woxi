@@ -38,8 +38,9 @@ impl Sandbox {
       seq,
       safe
     ));
-    fs::create_dir_all(&dir)
-      .unwrap_or_else(|e| panic!("Failed to create sandbox {dir:?}: {e}"));
+    fs::create_dir_all(&dir).unwrap_or_else(|e| {
+      panic!("Failed to create sandbox {}: {e}", dir.display())
+    });
     Sandbox { dir }
   }
 }
@@ -90,7 +91,7 @@ fn run_script_snapshot_with_args(name: &str, args: &[&str]) {
         cmd.arg(arg);
       }
       let output = cmd.output().unwrap_or_else(|e| {
-        panic!("Failed to run wolframscript on {}: {}", name, e)
+        panic!("Failed to run wolframscript on {name}: {e}")
       });
 
       attempt += 1;
@@ -120,7 +121,7 @@ fn run_script_snapshot_with_args(name: &str, args: &[&str]) {
 
     // Set $ScriptCommandLine: first element is the script path, rest are args
     let mut cmd_line = vec![path.to_string_lossy().to_string()];
-    cmd_line.extend(args.iter().map(|s| s.to_string()));
+    cmd_line.extend(args.iter().map(std::string::ToString::to_string));
     set_script_command_line(&cmd_line);
 
     let content = fs::read_to_string(&path).unwrap();
@@ -129,10 +130,12 @@ fn run_script_snapshot_with_args(name: &str, args: &[&str]) {
     // The interpreter resolves relative paths against the process working
     // directory, so swap it for the sandbox while evaluating. The lock keeps
     // this safe even if tests share a process.
-    let _guard = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = CWD_LOCK
+      .lock()
+      .unwrap_or_else(std::sync::PoisonError::into_inner);
     let prev_dir = std::env::current_dir().ok();
     std::env::set_current_dir(&sandbox.dir).unwrap_or_else(|e| {
-      panic!("Failed to enter sandbox {:?}: {}", sandbox.dir, e)
+      panic!("Failed to enter sandbox {}: {}", sandbox.dir.display(), e)
     });
 
     let result = interpret_with_stdout(&code);
@@ -144,7 +147,7 @@ fn run_script_snapshot_with_args(name: &str, args: &[&str]) {
     }
 
     result
-      .unwrap_or_else(|e| panic!("Script {} failed: {}", name, e))
+      .unwrap_or_else(|e| panic!("Script {name} failed: {e}"))
       .stdout
   };
 

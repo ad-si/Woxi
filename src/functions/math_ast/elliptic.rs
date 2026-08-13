@@ -60,7 +60,7 @@ fn elliptic_k(m: f64) -> f64 {
   let mut a = 1.0;
   let mut b = (1.0 - m).sqrt();
   for _ in 0..100 {
-    let a_new = (a + b) / 2.0;
+    let a_new = f64::midpoint(a, b);
     let b_new = (a * b).sqrt();
     if (a_new - b_new).abs() < 1e-16 {
       return std::f64::consts::PI / (2.0 * a_new);
@@ -1024,9 +1024,8 @@ fn weierstrass_cm_invariants(
     let r = crate::evaluator::evaluate_expr_to_expr(&n).ok()?;
     try_extract_complex_float(&r)
   };
-  let (w1, w2) = match (to_complex(w1e), to_complex(w2e)) {
-    (Some(a), Some(b)) => (a, b),
-    _ => return Ok(None),
+  let (Some(w1), Some(w2)) = (to_complex(w1e), to_complex(w2e)) else {
+    return Ok(None);
   };
   // τ = ω₂/ω₁
   let den = w1.0 * w1.0 + w1.1 * w1.1;
@@ -1112,12 +1111,11 @@ pub fn weierstrass_invariants_ast(
     }
     return unevaluated();
   }
-  let (w1, w2) = match (
+  let (Some(w1), Some(w2)) = (
     try_extract_complex_float(&periods[0]),
     try_extract_complex_float(&periods[1]),
-  ) {
-    (Some(a), Some(b)) => (a, b),
-    _ => return unevaluated(),
+  ) else {
+    return unevaluated();
   };
   match weierstrass_invariants_numeric(w1, w2) {
     Some((g2, g3)) => Ok(Expr::List(
@@ -1272,11 +1270,8 @@ pub fn elliptic_exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(unevaluated("EllipticExp", args));
   }
-  let u = match expr_to_real_f64(&args[0]) {
-    Some(v) => v,
-    None => {
-      return Ok(unevaluated("EllipticExp", args));
-    }
+  let Some(u) = expr_to_real_f64(&args[0]) else {
+    return Ok(unevaluated("EllipticExp", args));
   };
   let (a, b) = match &args[1] {
     Expr::List(items) if items.len() == 2 => {
@@ -1323,14 +1318,14 @@ fn expr_to_real_f64(e: &Expr) -> Option<f64> {
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
       let mut prod = 1.0;
-      for a in args.iter() {
+      for a in args {
         prod *= expr_to_real_f64(a)?;
       }
       Some(prod)
     }
     Expr::FunctionCall { name, args } if name == "Plus" => {
       let mut sum = 0.0;
-      for a in args.iter() {
+      for a in args {
         sum += expr_to_real_f64(a)?;
       }
       Some(sum)
@@ -1388,7 +1383,7 @@ fn elliptic_g(tau: f64, a: f64, b: f64) -> f64 {
   let nodes = elliptic_gl_nodes_weights();
   let half = tau * 0.5;
   let mut sum = 0.0;
-  for (t, w) in nodes.iter() {
+  for (t, w) in nodes {
     let wval = half * (t + 1.0);
     let f = 1.0 / (1.0 + a * wval * wval + b * wval.powi(4)).sqrt();
     sum += w * f;
@@ -1555,7 +1550,7 @@ pub fn neville_theta_ast(
   };
   // z == 0: {s, c, d, n} → {0, 1, 1, 1}.
   if matches!(z, Expr::Integer(0)) {
-    return Ok(Expr::Integer(if kind == 's' { 0 } else { 1 }));
+    return Ok(Expr::Integer(i128::from(kind != 's')));
   }
   // m == 0: {Sin[z], Cos[z], 1, 1}; m == 1: {Sinh[z], 1, 1, Cosh[z]}.
   if matches!(m, Expr::Integer(0)) {

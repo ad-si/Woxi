@@ -6,7 +6,7 @@ fn rand_str(length: usize) -> String {
   let rng = rand::thread_rng();
   let characters: Vec<char> = Alphanumeric
     .sample_iter(rng)
-    .map(|c| c.into())
+    .map(std::convert::Into::into)
     .take(length)
     .collect();
   characters.iter().collect::<String>()

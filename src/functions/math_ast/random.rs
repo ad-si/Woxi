@@ -5,10 +5,7 @@ use super::*;
 /// invalid dimension specification (a negative integer, a non-integer, or a
 /// list containing one) in position 2 of a Random* array generator, matching
 /// wolframscript instead of raising a hard evaluation error.
-fn random_array_dims_error(
-  name: &str,
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+fn random_array_dims_error(name: &str, args: &[Expr]) -> crate::syntax::Expr {
   let call = unevaluated(name, args);
   crate::emit_message(&format!(
     "{}::array: The array dimensions {} given in position 2 of {} should be a list of non-negative machine-sized integers giving the dimensions for the result.",
@@ -16,7 +13,7 @@ fn random_array_dims_error(
     crate::syntax::expr_to_string(&args[1]),
     crate::syntax::expr_to_string(&call)
   ));
-  Ok(call)
+  call
 }
 
 /// RandomInteger[max] or RandomInteger[{min, max}] - Random integer
@@ -70,12 +67,12 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           for item in items {
             match item {
               Expr::Integer(n) if *n >= 0 => dims.push(*n as usize),
-              _ => return random_array_dims_error("RandomInteger", args),
+              _ => return Ok(random_array_dims_error("RandomInteger", args)),
             }
           }
           dims
         }
-        _ => return random_array_dims_error("RandomInteger", args),
+        _ => return Ok(random_array_dims_error("RandomInteger", args)),
       };
 
       let (min, max) = match &args[0] {
@@ -222,12 +219,12 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           for item in items {
             match item {
               Expr::Integer(n) if *n >= 0 => dims.push(*n as usize),
-              _ => return random_array_dims_error("RandomReal", args),
+              _ => return Ok(random_array_dims_error("RandomReal", args)),
             }
           }
           dims
         }
-        _ => return random_array_dims_error("RandomReal", args),
+        _ => return Ok(random_array_dims_error("RandomReal", args)),
       };
 
       let (min, max) = match &args[0] {
@@ -480,12 +477,12 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           for item in items {
             match item {
               Expr::Integer(n) if *n >= 0 => dims.push(*n as usize),
-              _ => return random_array_dims_error("RandomComplex", args),
+              _ => return Ok(random_array_dims_error("RandomComplex", args)),
             }
           }
           dims
         }
-        _ => return random_array_dims_error("RandomComplex", args),
+        _ => return Ok(random_array_dims_error("RandomComplex", args)),
       };
 
       fn build(
@@ -748,7 +745,7 @@ fn time_object_span(expr: &Expr) -> Option<(f64, f64)> {
   }
   let start = (secs[0] * 3600.0 + secs[1] * 60.0 + secs[2]).rem_euclid(86400.0);
   let granularity = match args.get(1) {
-    Some(Expr::Identifier(s)) | Some(Expr::String(s)) => s.as_str(),
+    Some(Expr::Identifier(s) | Expr::String(s)) => s.as_str(),
     Some(_) => return None,
     None => match comps.len() {
       1 => "Hour",
@@ -931,7 +928,7 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         let mut cdf = Vec::with_capacity(weights.len());
         let mut acc = 0.0f64;
-        for w in weights.iter() {
+        for w in weights {
           let v = expr_to_num(w).ok_or_else(|| {
             InterpreterError::EvaluationError(
               "RandomChoice: weights must be numeric".into(),
@@ -994,15 +991,15 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Integer(n) if *n >= 0 => vec![*n as usize],
       Expr::List(ds) if !ds.is_empty() => {
         let mut out = Vec::with_capacity(ds.len());
-        for d in ds.iter() {
+        for d in ds {
           match d {
             Expr::Integer(k) if *k >= 0 => out.push(*k as usize),
-            _ => return random_array_dims_error("RandomChoice", args),
+            _ => return Ok(random_array_dims_error("RandomChoice", args)),
           }
         }
         out
       }
-      _ => return random_array_dims_error("RandomChoice", args),
+      _ => return Ok(random_array_dims_error("RandomChoice", args)),
     };
     fn build(items: &[Expr], dims: &[usize], cdf: Option<&[f64]>) -> Expr {
       use rand::Rng;
@@ -1067,7 +1064,7 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
       let mut ws = Vec::with_capacity(weights.len());
-      for w in weights.iter() {
+      for w in weights {
         let v = expr_to_num(w).ok_or_else(|| {
           InterpreterError::EvaluationError(
             "RandomSample: weights must be numeric".into(),
@@ -1256,19 +1253,18 @@ pub fn random_permutation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  match args.len() {
-    1 => Ok(random_permutation_cycles(n)),
-    _ => {
-      let k = match &args[1] {
-        Expr::Integer(k) if *k >= 0 => *k as usize,
-        _ => {
-          return Ok(unevaluated("RandomPermutation", args));
-        }
-      };
-      let perms: Vec<Expr> =
-        (0..k).map(|_| random_permutation_cycles(n)).collect();
-      Ok(Expr::List(perms.into()))
-    }
+  if args.len() == 1 {
+    Ok(random_permutation_cycles(n))
+  } else {
+    let k = match &args[1] {
+      Expr::Integer(k) if *k >= 0 => *k as usize,
+      _ => {
+        return Ok(unevaluated("RandomPermutation", args));
+      }
+    };
+    let perms: Vec<Expr> =
+      (0..k).map(|_| random_permutation_cycles(n)).collect();
+    Ok(Expr::List(perms.into()))
   }
 }
 
@@ -1295,10 +1291,10 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // draw prod(d) samples flat, then reshape.
       Expr::List(dims_expr) => {
         let mut dims = Vec::with_capacity(dims_expr.len());
-        for d in dims_expr.iter() {
+        for d in dims_expr {
           match d {
             Expr::Integer(k) if *k >= 0 => dims.push(*k as usize),
-            _ => return random_array_dims_error("RandomVariate", args),
+            _ => return Ok(random_array_dims_error("RandomVariate", args)),
           }
         }
         let total: usize = dims.iter().product();
@@ -1329,7 +1325,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         return crate::evaluator::evaluate_expr_to_expr(&reshaped);
       }
-      _ => return random_array_dims_error("RandomVariate", args),
+      _ => return Ok(random_array_dims_error("RandomVariate", args)),
     }
   } else {
     None
@@ -1339,7 +1335,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   fn sample_poisson(lambda: f64) -> Result<i128, InterpreterError> {
     use rand_distr::{Distribution, Poisson};
     let p = Poisson::new(lambda).map_err(|e| {
-      InterpreterError::EvaluationError(format!("PoissonDistribution: {}", e))
+      InterpreterError::EvaluationError(format!("PoissonDistribution: {e}"))
     })?;
     Ok(crate::with_rng(|rng| p.sample(rng) as i128))
   }
@@ -1426,7 +1422,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       };
       let normal = Normal::new(mu, sigma).map_err(|e| {
-        InterpreterError::EvaluationError(format!("NormalDistribution: {}", e))
+        InterpreterError::EvaluationError(format!("NormalDistribution: {e}"))
       })?;
       match n {
         None => Ok(Expr::Real(crate::with_rng(|rng| normal.sample(rng)))),
@@ -1487,8 +1483,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 Ok((a, b))
               } else {
                 Err(InterpreterError::EvaluationError(format!(
-                  "BinormalDistribution: invalid {} (expected a 2-element list)",
-                  label
+                  "BinormalDistribution: invalid {label} (expected a 2-element list)"
                 )))
               }
             };
@@ -1541,9 +1536,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "MultivariatePoissonDistribution: invalid shared rate".into(),
         )
       })?;
-      let marginals_list = if let Expr::List(items) = &dargs[1] {
-        items
-      } else {
+      let Expr::List(marginals_list) = &dargs[1] else {
         return Err(InterpreterError::EvaluationError(
           "MultivariatePoissonDistribution: expected a list of marginal rates"
             .into(),
@@ -1551,7 +1544,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       let mut marginal_rates: Vec<f64> =
         Vec::with_capacity(marginals_list.len());
-      for item in marginals_list.iter() {
+      for item in marginals_list {
         let mi = expr_to_num(item).ok_or_else(|| {
           InterpreterError::EvaluationError(
             "MultivariatePoissonDistribution: invalid marginal rate".into(),
@@ -1559,8 +1552,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })?;
         if mi < mu0 {
           return Err(InterpreterError::EvaluationError(format!(
-            "MultivariatePoissonDistribution: each marginal must be >= mu0 ({} < {})",
-            mi, mu0
+            "MultivariatePoissonDistribution: each marginal must be >= mu0 ({mi} < {mu0})"
           )));
         }
         marginal_rates.push(mi);
@@ -1662,7 +1654,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::List(items) if items.len() == 2 => {
       // Both bounds must be positive integers; report the first offender.
-      for it in items.iter() {
+      for it in items {
         match it {
           Expr::Integer(b) if *b >= 1 => {}
           Expr::Integer(_) | Expr::Real(_) => {
@@ -1705,7 +1697,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Integer(n) if *n > 0 => vec![*n as usize],
       Expr::List(items) if !items.is_empty() => {
         let mut ds = Vec::with_capacity(items.len());
-        for it in items.iter() {
+        for it in items {
           match it {
             Expr::Integer(n) if *n > 0 => ds.push(*n as usize),
             _ => return posdim(),
@@ -1962,7 +1954,7 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut shuffled = all_edges.to_vec();
     crate::with_rng(|rng| shuffled.shuffle(rng));
     shuffled.truncate(m);
-    shuffled.sort();
+    shuffled.sort_unstable();
     make_graph(shuffled)
   };
 

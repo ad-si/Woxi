@@ -54,8 +54,7 @@ fn load_sheets(
 ) -> Result<(Vec<String>, Vec<Expr>), InterpreterError> {
   let workbook = open_workbook_auto(path).map_err(|e| {
     InterpreterError::EvaluationError(format!(
-      "Import: cannot open \"{}\": {}",
-      path, e
+      "Import: cannot open \"{path}\": {e}"
     ))
   })?;
   collect_sheets(workbook)
@@ -68,8 +67,7 @@ fn load_sheets_from_bytes(
   let workbook =
     open_workbook_auto_from_rs(Cursor::new(bytes)).map_err(|e| {
       InterpreterError::EvaluationError(format!(
-        "Import: cannot open \"{}\": {}",
-        source, e
+        "Import: cannot open \"{source}\": {e}"
       ))
     })?;
   collect_sheets(workbook)
@@ -83,8 +81,7 @@ fn collect_sheets<RS: std::io::Read + std::io::Seek>(
   for name in &names {
     let range = workbook.worksheet_range(name).map_err(|e| {
       InterpreterError::EvaluationError(format!(
-        "Import: failed to read sheet \"{}\": {:?}",
-        name, e
+        "Import: failed to read sheet \"{name}\": {e:?}"
       ))
     })?;
     sheets.push(sheet_to_expr(&range));
@@ -101,8 +98,7 @@ pub fn download_url(url: &str) -> Result<Vec<u8>, InterpreterError> {
     .output()
     .map_err(|e| {
       InterpreterError::EvaluationError(format!(
-        "Import: failed to run curl: {}",
-        e
+        "Import: failed to run curl: {e}"
       ))
     })?;
   if !output.status.success() {
@@ -243,8 +239,7 @@ pub fn xlsx_export_file(
 
   workbook.save(path).map_err(|e| {
     InterpreterError::EvaluationError(format!(
-      "Export: cannot write \"{}\": {}",
-      path, e
+      "Export: cannot write \"{path}\": {e}"
     ))
   })?;
   Ok(())
@@ -278,13 +273,11 @@ fn select_element(
         Ok(sheets.into_iter().nth((idx - 1) as usize).unwrap())
       }
       _ => Err(InterpreterError::EvaluationError(format!(
-        "Import: unsupported element {:?} for xlsx file",
-        elem
+        "Import: unsupported element {elem:?} for xlsx file"
       ))),
     },
     _ => Err(InterpreterError::EvaluationError(format!(
-      "Import: unsupported element {:?} for xlsx file",
-      elem
+      "Import: unsupported element {elem:?} for xlsx file"
     ))),
   }
 }

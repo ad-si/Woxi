@@ -84,7 +84,7 @@ fn structuring_element_in_width(
           (2 * (idx[i] + 1) - (dims[i] as i128 + 1)).abs() <= thresholds[i]
         })
       };
-      return Expr::Integer(if inside { 1 } else { 0 });
+      return Expr::Integer(i128::from(inside));
     }
     let mut row = Vec::with_capacity(dims[level]);
     for i in 0..dims[level] {
@@ -324,12 +324,10 @@ pub fn dispatch_linear_algebra_functions(
       // A dense identity contains no structural zeros to preserve, so the
       // usual SparseArray conversion produces the same CSR form as
       // wolframscript's IdentityMatrix[n, SparseArray].
-      return Some(crate::evaluator::evaluate_expr_to_expr(
-        &Expr::FunctionCall {
-          name: "SparseArray".to_string(),
-          args: vec![dense].into(),
-        },
-      ));
+      return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+        "SparseArray",
+        vec![dense],
+      )));
     }
     // IdentityMatrix[n, type] with an unsupported structural type (neither a
     // list nor SparseArray) stays unevaluated with wolframscript's message.
@@ -597,10 +595,7 @@ pub fn dispatch_linear_algebra_functions(
       if let Expr::List(v) = &args[0] {
         let n = v.len();
         if n > 0 {
-          let dot_vv = Expr::FunctionCall {
-            name: "Dot".to_string(),
-            args: vec![args[0].clone(), args[0].clone()].into(),
-          };
+          let dot_vv = call("Dot", vec![args[0].clone(), args[0].clone()]);
           let mut rows = Vec::with_capacity(n);
           for i in 0..n {
             let mut row = Vec::with_capacity(n);
@@ -610,26 +605,10 @@ pub fn dispatch_linear_algebra_functions(
               } else {
                 Expr::Integer(0)
               };
-              let vi_vj = Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(v[i].clone()),
-                right: Box::new(v[j].clone()),
-              };
-              let two_vi_vj = Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(Expr::Integer(2)),
-                right: Box::new(vi_vj),
-              };
-              let frac = Expr::BinaryOp {
-                op: BinaryOperator::Divide,
-                left: Box::new(two_vi_vj),
-                right: Box::new(dot_vv.clone()),
-              };
-              let entry = Expr::BinaryOp {
-                op: BinaryOperator::Minus,
-                left: Box::new(delta),
-                right: Box::new(frac),
-              };
+              let vi_vj = times2(v[i].clone(), v[j].clone());
+              let two_vi_vj = times2(Expr::Integer(2), vi_vj);
+              let frac = div2(two_vi_vj, dot_vv.clone());
+              let entry = minus2(delta, frac);
               row.push(entry);
             }
             rows.push(Expr::List(row.into()));
@@ -642,12 +621,10 @@ pub fn dispatch_linear_algebra_functions(
     // ScalingMatrix[{s1, …, sn}] → DiagonalMatrix of the scale factors.
     "ScalingMatrix" if args.len() == 1 => {
       if let Expr::List(_) = &args[0] {
-        return Some(crate::evaluator::evaluate_expr_to_expr(
-          &Expr::FunctionCall {
-            name: "DiagonalMatrix".to_string(),
-            args: vec![args[0].clone()].into(),
-          },
-        ));
+        return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+          "DiagonalMatrix",
+          vec![args[0].clone()],
+        )));
       }
     }
     // ScalingMatrix[s, v] → matrix scaling by factor s along direction v:
@@ -658,15 +635,8 @@ pub fn dispatch_linear_algebra_functions(
         let n = v.len();
         if n > 0 {
           let s = &args[0];
-          let dot_vv = Expr::FunctionCall {
-            name: "Dot".to_string(),
-            args: vec![args[1].clone(), args[1].clone()].into(),
-          };
-          let s_minus_1 = Expr::BinaryOp {
-            op: BinaryOperator::Minus,
-            left: Box::new(s.clone()),
-            right: Box::new(Expr::Integer(1)),
-          };
+          let dot_vv = call("Dot", vec![args[1].clone(), args[1].clone()]);
+          let s_minus_1 = minus2(s.clone(), Expr::Integer(1));
           let mut rows = Vec::with_capacity(n);
           for i in 0..n {
             let mut row = Vec::with_capacity(n);
@@ -676,31 +646,12 @@ pub fn dispatch_linear_algebra_functions(
               } else {
                 Expr::Integer(0)
               };
-              let vi_vj = Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(v[i].clone()),
-                right: Box::new(v[j].clone()),
-              };
-              let numer = Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(s_minus_1.clone()),
-                right: Box::new(vi_vj),
-              };
-              let frac = Expr::BinaryOp {
-                op: BinaryOperator::Divide,
-                left: Box::new(numer),
-                right: Box::new(dot_vv.clone()),
-              };
-              let sum = Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(delta),
-                right: Box::new(frac),
-              };
+              let vi_vj = times2(v[i].clone(), v[j].clone());
+              let numer = times2(s_minus_1.clone(), vi_vj);
+              let frac = div2(numer, dot_vv.clone());
+              let sum = plus2(delta, frac);
               // Together so e.g. 1 + (s − 1)/2 renders as (1 + s)/2.
-              row.push(Expr::FunctionCall {
-                name: "Together".to_string(),
-                args: vec![sum].into(),
-              });
+              row.push(call("Together", vec![sum]));
             }
             rows.push(Expr::List(row.into()));
           }
@@ -769,14 +720,13 @@ pub fn dispatch_linear_algebra_functions(
         && let Expr::List(eigenvals) = &list_expr
       {
         for ev in eigenvals {
-          let n_val =
-            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-              name: "N".to_string(),
-              args: vec![ev.clone()].into(),
-            });
+          let n_val = crate::evaluator::evaluate_expr_to_expr(&call(
+            "N",
+            vec![ev.clone()],
+          ));
           match n_val {
-            Ok(Expr::Real(f)) if f > 0.0 => continue,
-            Ok(Expr::Integer(n)) if n > 0 => continue,
+            Ok(Expr::Real(f)) if f > 0.0 => {}
+            Ok(Expr::Integer(n)) if n > 0 => {}
             _ => return Some(Ok(bool_expr(false))),
           }
         }
@@ -803,17 +753,11 @@ pub fn dispatch_linear_algebra_functions(
           }
         }
         // Build the Hermitian part: (m + ConjugateTranspose[m]) / 2.
-        let conj_t = Expr::FunctionCall {
-          name: "ConjugateTranspose".to_string(),
-          args: vec![args[0].clone()].into(),
-        };
+        let conj_t = call("ConjugateTranspose", vec![args[0].clone()]);
         let herm = Expr::FunctionCall {
           name: "Divide".to_string(),
           args: vec![
-            Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: vec![args[0].clone(), conj_t].into(),
-            },
+            call("Plus", vec![args[0].clone(), conj_t]),
             Expr::Integer(2),
           ]
           .into(),
@@ -825,15 +769,11 @@ pub fn dispatch_linear_algebra_functions(
         {
           let mut has_pos = false;
           let mut has_neg = false;
-          for ev in eigenvals.iter() {
-            let n_val = evaluate_expr_to_expr(&Expr::FunctionCall {
-              name: "N".to_string(),
-              args: vec![Expr::FunctionCall {
-                name: "Re".to_string(),
-                args: vec![ev.clone()].into(),
-              }]
-              .into(),
-            });
+          for ev in eigenvals {
+            let n_val = evaluate_expr_to_expr(&call(
+              "N",
+              vec![call("Re", vec![ev.clone()])],
+            ));
             match n_val {
               Ok(Expr::Real(f)) if f > 0.0 => has_pos = true,
               Ok(Expr::Real(f)) if f < 0.0 => has_neg = true,
@@ -954,7 +894,7 @@ pub fn dispatch_linear_algebra_functions(
     | "YuleDissimilarity"
       if args.len() == 2 =>
     {
-      return Some(binary_dissimilarity_ast(name, &args[0], &args[1]));
+      return Some(Ok(binary_dissimilarity_ast(name, &args[0], &args[1])));
     }
     "UpperTriangularize" if args.len() == 1 || args.len() == 2 => {
       return Some(
@@ -1000,10 +940,7 @@ pub fn dispatch_linear_algebra_functions(
                     name: "Plus".to_string(),
                     args: vec![
                       elem.clone(),
-                      Expr::FunctionCall {
-                        name: "Times".to_string(),
-                        args: vec![Expr::Integer(-1), x.clone()].into(),
-                      },
+                      call("Times", vec![Expr::Integer(-1), x.clone()]),
                     ]
                     .into(),
                   };
@@ -1169,10 +1106,10 @@ pub fn dispatch_linear_algebra_functions(
       {
         return Some(Ok(unevaluated("MatrixExp", args)));
       }
-      return Some(evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Dot".to_string(),
-        args: vec![exp, args[1].clone()].into(),
-      }));
+      return Some(evaluate_expr_to_expr(&call(
+        "Dot",
+        vec![exp, args[1].clone()],
+      )));
     }
     "MatrixLog" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::matrix_function_ast(
@@ -1314,18 +1251,9 @@ pub fn dispatch_linear_algebra_functions(
         && u.len() == 2
         && v.len() == 2
       {
-        let times = |a: Expr, b: Expr| Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![a, b].into(),
-        };
-        let plus = |a: Expr, b: Expr| Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![a, b].into(),
-        };
-        let sq = |a: Expr| Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![a, Expr::Integer(2)].into(),
-        };
+        let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
+        let plus = |a: Expr, b: Expr| call("Plus", vec![a, b]);
+        let sq = |a: Expr| call("Power", vec![a, Expr::Integer(2)]);
         let neg = |a: Expr| times(Expr::Integer(-1), a);
         let (ux, uy, vx, vy) =
           (u[0].clone(), u[1].clone(), v[0].clone(), v[1].clone());
@@ -1336,17 +1264,8 @@ pub fn dispatch_linear_algebra_functions(
           neg(times(uy.clone(), vx.clone())),
         );
         let normsq = times(plus(sq(ux), sq(uy)), plus(sq(vx), sq(vy)));
-        let inv_d = Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![
-            Expr::FunctionCall {
-              name: "Sqrt".to_string(),
-              args: vec![normsq].into(),
-            },
-            Expr::Integer(-1),
-          ]
-          .into(),
-        };
+        let inv_d =
+          call("Power", vec![call1("Sqrt", normsq), Expr::Integer(-1)]);
         let cos = times(dot, inv_d.clone());
         let sin = times(cross, inv_d);
         let mat = Expr::List(
@@ -1365,10 +1284,7 @@ pub fn dispatch_linear_algebra_functions(
         && uu.len() >= 2
         && uu.len() == vv.len()
       {
-        let theta = Expr::FunctionCall {
-          name: "VectorAngle".to_string(),
-          args: vec![pair[0].clone(), pair[1].clone()].into(),
-        };
+        let theta = call("VectorAngle", vec![pair[0].clone(), pair[1].clone()]);
         return Some(rotation_matrix_plane(&theta, &pair[0], &pair[1]));
       }
       return Some(Ok(unevaluated("RotationMatrix", args)));
@@ -1376,18 +1292,9 @@ pub fn dispatch_linear_algebra_functions(
     "RotationMatrix" if args.len() == 1 => {
       // 2D rotation matrix: {{Cos[θ], -Sin[θ]}, {Sin[θ], Cos[θ]}}
       let theta = &args[0];
-      let cos = Expr::FunctionCall {
-        name: "Cos".to_string(),
-        args: vec![theta.clone()].into(),
-      };
-      let sin = Expr::FunctionCall {
-        name: "Sin".to_string(),
-        args: vec![theta.clone()].into(),
-      };
-      let neg_sin = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), sin.clone()].into(),
-      };
+      let cos = call1("Cos", theta.clone());
+      let sin = call1("Sin", theta.clone());
+      let neg_sin = call("Times", vec![Expr::Integer(-1), sin.clone()]);
       let mat = Expr::List(
         vec![
           Expr::List(vec![cos.clone(), neg_sin].into()),
@@ -1483,11 +1390,10 @@ pub fn dispatch_linear_algebra_functions(
         last_row[n] = Expr::Integer(1);
         rows.push(Expr::List(last_row.into()));
         let matrix = Expr::List(rows.into());
-        let evaluated =
-          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-            name: "TransformationFunction".to_string(),
-            args: vec![matrix].into(),
-          });
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(&call(
+          "TransformationFunction",
+          vec![matrix],
+        ));
         return Some(evaluated);
       }
       return Some(Ok(unevaluated("TranslationTransform", args)));
@@ -1499,9 +1405,7 @@ pub fn dispatch_linear_algebra_functions(
     // i.e. diagonal scale s_i = (ymax_i - ymin_i)/(max_i - min_i) and
     //      translation t_i = ymin_i - min_i * s_i.
     "RescalingTransform" if args.len() == 1 || args.len() == 2 => {
-      let src = if let Expr::List(v) = &args[0] {
-        v
-      } else {
+      let Expr::List(src) = &args[0] else {
         return Some(Ok(unevaluated("RescalingTransform", args)));
       };
       // Optional target box.
@@ -1530,11 +1434,8 @@ pub fn dispatch_linear_algebra_functions(
       let mut scales: Vec<Expr> = Vec::with_capacity(n);
       let mut translates: Vec<Expr> = Vec::with_capacity(n);
       for i in 0..n {
-        let (min_i, max_i) = match pair(&src[i]) {
-          Some(p) => p,
-          None => {
-            return Some(Ok(unevaluated("RescalingTransform", args)));
-          }
+        let Some((min_i, max_i)) = pair(&src[i]) else {
+          return Some(Ok(unevaluated("RescalingTransform", args)));
         };
         let (ymin_i, ymax_i) = match &tgt {
           Some(t) => match pair(&t[i]) {
@@ -1546,30 +1447,14 @@ pub fn dispatch_linear_algebra_functions(
           None => (Expr::Integer(0), Expr::Integer(1)),
         };
         // scale = (ymax - ymin)/(max - min)
-        let num = Expr::FunctionCall {
-          name: "Subtract".to_string(),
-          args: vec![ymax_i.clone(), ymin_i.clone()].into(),
-        };
-        let den = Expr::FunctionCall {
-          name: "Subtract".to_string(),
-          args: vec![max_i.clone(), min_i.clone()].into(),
-        };
-        let scale = Expr::FunctionCall {
-          name: "Divide".to_string(),
-          args: vec![num, den].into(),
-        };
+        let num = call("Subtract", vec![ymax_i.clone(), ymin_i.clone()]);
+        let den = call("Subtract", vec![max_i.clone(), min_i.clone()]);
+        let scale = call("Divide", vec![num, den]);
         // translate = ymin - min * scale
-        let translate = Expr::FunctionCall {
-          name: "Subtract".to_string(),
-          args: vec![
-            ymin_i,
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![min_i, scale.clone()].into(),
-            },
-          ]
-          .into(),
-        };
+        let translate = call(
+          "Subtract",
+          vec![ymin_i, call("Times", vec![min_i, scale.clone()])],
+        );
         scales.push(scale);
         translates.push(translate);
       }
@@ -1585,12 +1470,10 @@ pub fn dispatch_linear_algebra_functions(
       last_row[n] = Expr::Integer(1);
       rows.push(Expr::List(last_row.into()));
       let matrix = Expr::List(rows.into());
-      return Some(crate::evaluator::evaluate_expr_to_expr(
-        &Expr::FunctionCall {
-          name: "TransformationFunction".to_string(),
-          args: vec![matrix].into(),
-        },
-      ));
+      return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+        "TransformationFunction",
+        vec![matrix],
+      )));
     }
     // TransformationMatrix[TransformationFunction[m]] → m. Extracts the
     // homogeneous matrix from a transformation; any other argument (a plain
@@ -1643,10 +1526,10 @@ pub fn dispatch_linear_algebra_functions(
           );
         }
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "GeometricTransformation".to_string(),
-        args: vec![args[0].clone(), transform].into(),
-      }));
+      return Some(Ok(call(
+        "GeometricTransformation",
+        vec![args[0].clone(), transform],
+      )));
     }
     // RotationTransform[angle] → TransformationFunction[2D rotation matrix in homogeneous coords]
     // RotationTransform[angle, {cx, cy}] → rotation about point {cx, cy}
@@ -1662,22 +1545,10 @@ pub fn dispatch_linear_algebra_functions(
         && u.len() == 2
         && v.len() == 2
       {
-        let times = |a: Expr, b: Expr| Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![a, b].into(),
-        };
-        let plus = |a: Expr, b: Expr| Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![a, b].into(),
-        };
-        let sq = |e: &Expr| Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![e.clone(), Expr::Integer(2)].into(),
-        };
-        let sqrt = |e: Expr| Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![e].into(),
-        };
+        let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
+        let plus = |a: Expr, b: Expr| call("Plus", vec![a, b]);
+        let sq = |e: &Expr| call("Power", vec![e.clone(), Expr::Integer(2)]);
+        let sqrt = |e: Expr| call1("Sqrt", e);
         let dot = plus(
           times(u[0].clone(), v[0].clone()),
           times(u[1].clone(), v[1].clone()),
@@ -1689,16 +1560,8 @@ pub fn dispatch_linear_algebra_functions(
         let nu = sqrt(plus(sq(&u[0]), sq(&u[1])));
         let nv = sqrt(plus(sq(&v[0]), sq(&v[1])));
         let denom = times(nu, nv);
-        let cos_t = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(dot),
-          right: Box::new(denom.clone()),
-        };
-        let sin_t = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(cross),
-          right: Box::new(denom),
-        };
+        let cos_t = div2(dot, denom.clone());
+        let sin_t = div2(cross, denom);
         let neg_sin = times(Expr::Integer(-1), sin_t.clone());
         let matrix = Expr::List(
           vec![
@@ -1710,12 +1573,10 @@ pub fn dispatch_linear_algebra_functions(
           ]
           .into(),
         );
-        return Some(crate::evaluator::evaluate_expr_to_expr(
-          &Expr::FunctionCall {
-            name: "TransformationFunction".to_string(),
-            args: vec![matrix].into(),
-          },
-        ));
+        return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+          "TransformationFunction",
+          vec![matrix],
+        )));
       }
       // Three-dimensional axis form RotationTransform[theta, {x, y, z}]:
       // rotation by theta about the axis through the origin (Rodrigues'
@@ -1731,18 +1592,9 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(unevaluated("RotationTransform", args)));
       }
       let theta = &args[0];
-      let cos_t = Expr::FunctionCall {
-        name: "Cos".to_string(),
-        args: vec![theta.clone()].into(),
-      };
-      let sin_t = Expr::FunctionCall {
-        name: "Sin".to_string(),
-        args: vec![theta.clone()].into(),
-      };
-      let neg_sin_t = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), sin_t.clone()].into(),
-      };
+      let cos_t = call1("Cos", theta.clone());
+      let sin_t = call1("Sin", theta.clone());
+      let neg_sin_t = call("Times", vec![Expr::Integer(-1), sin_t.clone()]);
       // Default last column is the zero translation
       let (tx, ty) = if args.len() == 2 {
         if let Expr::List(center) = &args[1]
@@ -1753,30 +1605,15 @@ pub fn dispatch_linear_algebra_functions(
           // Translation column for rotation about {cx,cy}:
           // tx = cx - cx*cos + cy*sin
           // ty = cy - cx*sin - cy*cos
-          let neg_cx_cos = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), cx.clone(), cos_t.clone()].into(),
-          };
-          let cy_sin = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![cy.clone(), sin_t.clone()].into(),
-          };
-          let tx_e = Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![cx.clone(), neg_cx_cos, cy_sin].into(),
-          };
-          let neg_cx_sin = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), cx.clone(), sin_t.clone()].into(),
-          };
-          let neg_cy_cos = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), cy.clone(), cos_t.clone()].into(),
-          };
-          let ty_e = Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![cy.clone(), neg_cx_sin, neg_cy_cos].into(),
-          };
+          let neg_cx_cos =
+            call("Times", vec![Expr::Integer(-1), cx.clone(), cos_t.clone()]);
+          let cy_sin = call("Times", vec![cy.clone(), sin_t.clone()]);
+          let tx_e = call("Plus", vec![cx.clone(), neg_cx_cos, cy_sin]);
+          let neg_cx_sin =
+            call("Times", vec![Expr::Integer(-1), cx.clone(), sin_t.clone()]);
+          let neg_cy_cos =
+            call("Times", vec![Expr::Integer(-1), cy.clone(), cos_t.clone()]);
+          let ty_e = call("Plus", vec![cy.clone(), neg_cx_sin, neg_cy_cos]);
           (tx_e, ty_e)
         } else {
           // Non-list or wrong-dim center: leave unevaluated.
@@ -1798,11 +1635,10 @@ pub fn dispatch_linear_algebra_functions(
         .into(),
       );
       // Evaluate the matrix to simplify trig functions (e.g. Cos[Pi/4] → 1/Sqrt[2])
-      let evaluated =
-        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "TransformationFunction".to_string(),
-          args: vec![matrix].into(),
-        });
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(&call(
+        "TransformationFunction",
+        vec![matrix],
+      ));
       return Some(evaluated);
     }
     // AffineTransform[m] or AffineTransform[{m, v}] →
@@ -1848,7 +1684,7 @@ pub fn dispatch_linear_algebra_functions(
       let m_ok = m_rows
         .iter()
         .all(|r| matches!(r, Expr::List(c) if c.len() == n));
-      let v_ok = v_opt.map(|v| v.len() == n).unwrap_or(true);
+      let v_ok = v_opt.is_none_or(|v| v.len() == n);
       if !m_ok || !v_ok {
         return Some(Ok(unevaluated("AffineTransform", args)));
       }
@@ -1861,7 +1697,7 @@ pub fn dispatch_linear_algebra_functions(
           _ => unreachable!(),
         };
         // Append the translation entry for this row (default 0).
-        let t = v_opt.map(|v| v[i].clone()).unwrap_or(Expr::Integer(0));
+        let t = v_opt.map_or(Expr::Integer(0), |v| v[i].clone());
         row.push(t);
         rows.push(Expr::List(row.into()));
       }
@@ -1869,11 +1705,10 @@ pub fn dispatch_linear_algebra_functions(
       last_row[n] = Expr::Integer(1);
       rows.push(Expr::List(last_row.into()));
       let matrix = Expr::List(rows.into());
-      let evaluated =
-        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "TransformationFunction".to_string(),
-          args: vec![matrix].into(),
-        });
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(&call(
+        "TransformationFunction",
+        vec![matrix],
+      ));
       return Some(evaluated);
     }
     // LinearFractionalTransform[{m, v, w, b}] → the projective transform
@@ -1929,21 +1764,17 @@ pub fn dispatch_linear_algebra_functions(
           last_row.push(b.clone());
           rows.push(Expr::List(last_row.into()));
           let matrix = Expr::List(rows.into());
-          return Some(crate::evaluator::evaluate_expr_to_expr(
-            &Expr::FunctionCall {
-              name: "TransformationFunction".to_string(),
-              args: vec![matrix].into(),
-            },
-          ));
+          return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+            "TransformationFunction",
+            vec![matrix],
+          )));
         }
         // Plain (n+1)x(n+1) homogeneous matrix form.
         Expr::List(_) if is_matrix(&args[0]) => {
-          return Some(crate::evaluator::evaluate_expr_to_expr(
-            &Expr::FunctionCall {
-              name: "TransformationFunction".to_string(),
-              args: vec![args[0].clone()].into(),
-            },
-          ));
+          return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+            "TransformationFunction",
+            vec![args[0].clone()],
+          )));
         }
         _ => return unevaluated(),
       }
@@ -1975,15 +1806,8 @@ pub fn dispatch_linear_algebra_functions(
           row[i] = scales[i].clone();
           // Translation column: ci - si*ci = ci*(1 - si)
           if let Some(c) = center {
-            let translation = Expr::BinaryOp {
-              op: BinaryOperator::Minus,
-              left: Box::new(c[i].clone()),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(scales[i].clone()),
-                right: Box::new(c[i].clone()),
-              }),
-            };
+            let translation =
+              minus2(c[i].clone(), times2(scales[i].clone(), c[i].clone()));
             row[n] = translation;
           }
           rows.push(Expr::List(row.into()));
@@ -1992,11 +1816,10 @@ pub fn dispatch_linear_algebra_functions(
         last_row[n] = Expr::Integer(1);
         rows.push(Expr::List(last_row.into()));
         let matrix = Expr::List(rows.into());
-        let evaluated =
-          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-            name: "TransformationFunction".to_string(),
-            args: vec![matrix].into(),
-          });
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(&call(
+          "TransformationFunction",
+          vec![matrix],
+        ));
         return Some(evaluated);
       }
       return Some(Ok(unevaluated("ScalingTransform", args)));
@@ -2019,18 +1842,9 @@ pub fn dispatch_linear_algebra_functions(
         Some(Expr::List(c)) if c.len() == n => Some(c.clone()),
         Some(_) => return uneval(),
       };
-      let power = |b: Expr, e: i128| Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![b, Expr::Integer(e)].into(),
-      };
-      let times = |factors: Vec<Expr>| Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: factors.into(),
-      };
-      let plus = |terms: Vec<Expr>| Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: terms.into(),
-      };
+      let power = |b: Expr, e: i128| call("Power", vec![b, Expr::Integer(e)]);
+      let times = |factors: Vec<Expr>| call("Times", factors);
+      let plus = |terms: Vec<Expr>| call("Plus", terms);
       let vv = plus(v.iter().map(|vi| power(vi.clone(), 2)).collect());
       let s_minus_1 = plus(vec![args[0].clone(), Expr::Integer(-1)]);
       let m_entry = |i: usize, j: usize| {
@@ -2048,10 +1862,7 @@ pub fn dispatch_linear_algebra_functions(
       };
       // Collect each entry over a common denominator, so a symbolic factor
       // gives wolframscript's (1 + s)/2 rather than 1 + (-1 + s)/2.
-      let simplify = |e: Expr| Expr::FunctionCall {
-        name: "Simplify".to_string(),
-        args: vec![e].into(),
-      };
+      let simplify = |e: Expr| call("Simplify", vec![e]);
       let mut rows = Vec::with_capacity(n + 1);
       for i in 0..n {
         let mut row: Vec<Expr> =
@@ -2071,12 +1882,10 @@ pub fn dispatch_linear_algebra_functions(
       let mut last_row = vec![Expr::Integer(0); n + 1];
       last_row[n] = Expr::Integer(1);
       rows.push(Expr::List(last_row.into()));
-      return Some(crate::evaluator::evaluate_expr_to_expr(
-        &Expr::FunctionCall {
-          name: "TransformationFunction".to_string(),
-          args: vec![Expr::List(rows.into())].into(),
-        },
-      ));
+      return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+        "TransformationFunction",
+        vec![Expr::List(rows.into())],
+      )));
     }
     // ReflectionTransform[v] → reflection in the hyperplane through the origin
     // perpendicular to v. The linear part is M = I - 2 (v⊗v)/(v·v), embedded in
@@ -2099,18 +1908,9 @@ pub fn dispatch_linear_algebra_functions(
       if n == 0 {
         return unevaluated();
       }
-      let power = |b: Expr, e: i128| Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![b, Expr::Integer(e)].into(),
-      };
-      let times = |factors: Vec<Expr>| Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: factors.into(),
-      };
-      let plus = |terms: Vec<Expr>| Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: terms.into(),
-      };
+      let power = |b: Expr, e: i128| call("Power", vec![b, Expr::Integer(e)]);
+      let times = |factors: Vec<Expr>| call("Times", factors);
+      let plus = |terms: Vec<Expr>| call("Plus", terms);
       // v·v
       let vv = plus(v.iter().map(|vi| power(vi.clone(), 2)).collect());
       // Linear part M[i][j] = delta_ij - 2 v_i v_j / (v·v).
@@ -2152,12 +1952,10 @@ pub fn dispatch_linear_algebra_functions(
       last_row[n] = Expr::Integer(1);
       rows.push(Expr::List(last_row.into()));
       let matrix = Expr::List(rows.into());
-      return Some(crate::evaluator::evaluate_expr_to_expr(
-        &Expr::FunctionCall {
-          name: "TransformationFunction".to_string(),
-          args: vec![matrix].into(),
-        },
-      ));
+      return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+        "TransformationFunction",
+        vec![matrix],
+      )));
     }
     // ShearingTransform[phi, e, n] → TransformationFunction[ homogeneous shear ]
     // A point x is mapped to x + Tan[phi] (nhat·x) ep, where nhat = n/Norm[n]
@@ -2182,28 +1980,12 @@ pub fn dispatch_linear_algebra_functions(
         let norm = |v: &[Expr]| -> Expr {
           let squares: Vec<Expr> = v
             .iter()
-            .map(|c| Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![c.clone(), Expr::Integer(2)].into(),
-            })
+            .map(|c| call("Power", vec![c.clone(), Expr::Integer(2)]))
             .collect();
-          Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: squares.into(),
-            }]
-            .into(),
-          }
+          call1("Sqrt", call("Plus", squares))
         };
-        let times = |factors: Vec<Expr>| Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: factors.into(),
-        };
-        let recip = |x: Expr| Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![x, Expr::Integer(-1)].into(),
-        };
+        let times = |factors: Vec<Expr>| call("Times", factors);
+        let recip = |x: Expr| call("Power", vec![x, Expr::Integer(-1)]);
         // nhat = n / Norm[n]
         let norm_n = norm(n);
         let nhat: Vec<Expr> = n
@@ -2238,20 +2020,14 @@ pub fn dispatch_linear_algebra_functions(
           .iter()
           .map(|c| times(vec![c.clone(), recip(norm_eperp.clone())]))
           .collect();
-        let tan_phi = Expr::FunctionCall {
-          name: "Tan".to_string(),
-          args: vec![phi.clone()].into(),
-        };
+        let tan_phi = call("Tan", vec![phi.clone()]);
         // Build (d+1)x(d+1) homogeneous matrix.
         let m_entry = |i: usize, j: usize| {
           // off[i][j] = Tan[phi] * ep[i] * nhat[j]
           let off =
             times(vec![tan_phi.clone(), ep[i].clone(), nhat[j].clone()]);
           if i == j {
-            Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: vec![Expr::Integer(1), off].into(),
-            }
+            call("Plus", vec![Expr::Integer(1), off])
           } else {
             off
           }
@@ -2262,10 +2038,7 @@ pub fn dispatch_linear_algebra_functions(
           for j in 0..d {
             // Simplify so that e.g. 1 + (-1/2) collapses to 1/2 (matching
             // Wolfram), while symbolic forms like Sqrt[3/5] are preserved.
-            row.push(Expr::FunctionCall {
-              name: "Simplify".to_string(),
-              args: vec![m_entry(i, j)].into(),
-            });
+            row.push(call("Simplify", vec![m_entry(i, j)]));
           }
           // Translation column p - M·p, zero when there is no centre.
           row.push(match &center {
@@ -2294,16 +2067,12 @@ pub fn dispatch_linear_algebra_functions(
         // numeric in Wolfram — promote every entry to machine precision.
         use crate::functions::math_ast::contains_inexact_real as is_inexact;
         if args.iter().any(is_inexact) {
-          matrix = Expr::FunctionCall {
-            name: "N".to_string(),
-            args: vec![matrix].into(),
-          };
+          matrix = call1("N", matrix);
         }
-        let evaluated =
-          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-            name: "TransformationFunction".to_string(),
-            args: vec![matrix].into(),
-          });
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(&call(
+          "TransformationFunction",
+          vec![matrix],
+        ));
         return Some(evaluated);
       }
       return Some(Ok(unevaluated("ShearingTransform", args)));
@@ -2343,12 +2112,9 @@ pub fn dispatch_linear_algebra_functions(
               match det {
                 Ok(d) => {
                   let sign = if (i + j) % 2 == 0 { 1 } else { -1 };
-                  let cofactor = evaluate_expr_to_expr(&Expr::BinaryOp {
-                    op: BinaryOperator::Times,
-                    left: Box::new(Expr::Integer(sign)),
-                    right: Box::new(d),
-                  })
-                  .unwrap_or(Expr::Integer(0));
+                  let cofactor =
+                    evaluate_expr_to_expr(&times2(Expr::Integer(sign), d))
+                      .unwrap_or(Expr::Integer(0));
                   row.push(cofactor);
                 }
                 Err(e) => return Some(Err(e)),
@@ -2519,10 +2285,8 @@ pub fn dispatch_linear_algebra_functions(
               }
               _ => {
                 // Try numeric evaluation
-                let nval = evaluate_expr_to_expr(&Expr::FunctionCall {
-                  name: "N".to_string(),
-                  args: vec![evaluated.clone()].into(),
-                });
+                let nval =
+                  evaluate_expr_to_expr(&call1("N", evaluated.clone()));
                 if let Ok(Expr::Real(v)) = nval
                   && v < 0.0
                 {
@@ -2571,10 +2335,8 @@ pub fn dispatch_linear_algebra_functions(
                 }
               }
               _ => {
-                let nval = evaluate_expr_to_expr(&Expr::FunctionCall {
-                  name: "N".to_string(),
-                  args: vec![evaluated.clone()].into(),
-                });
+                let nval =
+                  evaluate_expr_to_expr(&call1("N", evaluated.clone()));
                 if let Ok(Expr::Real(v)) = nval {
                   v < 0.0
                 } else {
@@ -2626,10 +2388,8 @@ pub fn dispatch_linear_algebra_functions(
                 }
               }
               _ => {
-                let nval = evaluate_expr_to_expr(&Expr::FunctionCall {
-                  name: "N".to_string(),
-                  args: vec![evaluated.clone()].into(),
-                });
+                let nval =
+                  evaluate_expr_to_expr(&call1("N", evaluated.clone()));
                 if let Ok(Expr::Real(v)) = nval {
                   v > 0.0
                 } else {
@@ -2662,20 +2422,15 @@ pub fn dispatch_linear_algebra_functions(
           for i in 0..n {
             for j in i..n {
               // Check M[i][j] == Conjugate[M[j][i]]
-              let conj = evaluate_expr_to_expr(&Expr::FunctionCall {
-                name: "Conjugate".to_string(),
-                args: vec![matrix[j][i].clone()].into(),
-              })
+              let conj = evaluate_expr_to_expr(&call(
+                "Conjugate",
+                vec![matrix[j][i].clone()],
+              ))
               .unwrap_or(matrix[j][i].clone());
-              let diff = evaluate_expr_to_expr(&Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(matrix[i][j].clone()),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(Expr::Integer(-1)),
-                  right: Box::new(conj),
-                }),
-              })
+              let diff = evaluate_expr_to_expr(&plus2(
+                matrix[i][j].clone(),
+                times2(Expr::Integer(-1), conj),
+              ))
               .unwrap_or(Expr::Integer(1));
               if !is_zero_expr(&diff) {
                 return Some(Ok(bool_expr(false)));
@@ -2703,17 +2458,14 @@ pub fn dispatch_linear_algebra_functions(
           for i in 0..n {
             for j in i..n {
               // Check M[i][j] == -Conjugate[M[j][i]]
-              let conj = evaluate_expr_to_expr(&Expr::FunctionCall {
-                name: "Conjugate".to_string(),
-                args: vec![matrix[j][i].clone()].into(),
-              })
+              let conj = evaluate_expr_to_expr(&call(
+                "Conjugate",
+                vec![matrix[j][i].clone()],
+              ))
               .unwrap_or(matrix[j][i].clone());
-              let sum = evaluate_expr_to_expr(&Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(matrix[i][j].clone()),
-                right: Box::new(conj),
-              })
-              .unwrap_or(Expr::Integer(1));
+              let sum =
+                evaluate_expr_to_expr(&plus2(matrix[i][j].clone(), conj))
+                  .unwrap_or(Expr::Integer(1));
               if !is_zero_expr(&sum) {
                 return Some(Ok(bool_expr(false)));
               }
@@ -2741,10 +2493,10 @@ pub fn dispatch_linear_algebra_functions(
           let mut ct = vec![vec![Expr::Integer(0); n]; n];
           for i in 0..n {
             for j in 0..n {
-              ct[i][j] = evaluate_expr_to_expr(&Expr::FunctionCall {
-                name: "Conjugate".to_string(),
-                args: vec![matrix[j][i].clone()].into(),
-              })
+              ct[i][j] = evaluate_expr_to_expr(&call(
+                "Conjugate",
+                vec![matrix[j][i].clone()],
+              ))
               .unwrap_or(matrix[j][i].clone());
             }
           }
@@ -2887,10 +2639,8 @@ pub fn dispatch_linear_algebra_functions(
             for j in 0..n {
               if let Expr::List(row_j) = &rows[j] {
                 // Check m[i][j] + m[j][i] == 0
-                let sum = Expr::FunctionCall {
-                  name: "Plus".to_string(),
-                  args: vec![row_i[j].clone(), row_j[i].clone()].into(),
-                };
+                let sum =
+                  call("Plus", vec![row_i[j].clone(), row_j[i].clone()]);
                 let evaluated = evaluate_expr_to_expr(&sum).unwrap_or(sum);
                 if !matches!(evaluated, Expr::Integer(0)) {
                   is_antisymmetric = false;
@@ -2980,7 +2730,7 @@ pub fn dispatch_linear_algebra_functions(
     "HadamardMatrix" if args.len() == 1 => {
       if let Some(n) = expr_to_i128(&args[0]) {
         let n = n as usize;
-        if n > 0 && (n & (n - 1)) == 0 {
+        if n > 0 && n.is_power_of_two() {
           // n is a power of 2: Sylvester construction, normalized by 1/Sqrt[n]
           let mat = hadamard_sylvester(n);
           // Evaluate 1/Sqrt[n] first
@@ -2988,11 +2738,7 @@ pub fn dispatch_linear_algebra_functions(
           let sqrt_n =
             evaluate_expr_to_expr(&sqrt_n_expr).unwrap_or(sqrt_n_expr);
           // Compute 1/Sqrt[n] once (evaluated)
-          let inv_sqrt_n_expr = Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(Expr::Integer(1)),
-            right: Box::new(sqrt_n.clone()),
-          };
+          let inv_sqrt_n_expr = div2(Expr::Integer(1), sqrt_n.clone());
           let inv_sqrt_n =
             evaluate_expr_to_expr(&inv_sqrt_n_expr).unwrap_or(inv_sqrt_n_expr);
 
@@ -3007,19 +2753,14 @@ pub fn dispatch_linear_algebra_functions(
                       inv_sqrt_n.clone()
                     } else if v == -1 {
                       // Use Times[-1, inv_sqrt_n] so display matches -(1/Sqrt[n])
-                      let entry = Expr::FunctionCall {
-                        name: "Times".to_string(),
-                        args: vec![Expr::Integer(-1), inv_sqrt_n.clone()]
-                          .into(),
-                      };
+                      let entry = call(
+                        "Times",
+                        vec![Expr::Integer(-1), inv_sqrt_n.clone()],
+                      );
                       evaluate_expr_to_expr(&entry).unwrap_or(entry)
                     } else {
                       // v / Sqrt[n]
-                      let entry = Expr::BinaryOp {
-                        op: BinaryOperator::Divide,
-                        left: Box::new(Expr::Integer(v)),
-                        right: Box::new(sqrt_n.clone()),
-                      };
+                      let entry = div2(Expr::Integer(v), sqrt_n.clone());
                       evaluate_expr_to_expr(&entry).unwrap_or(entry)
                     }
                   })
@@ -3050,24 +2791,12 @@ pub fn dispatch_linear_algebra_functions(
       if let Expr::List(v) = &args[1]
         && !v.is_empty()
       {
-        let times = |xs: Vec<Expr>| Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: xs.into(),
-        };
-        let plus = |xs: Vec<Expr>| Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: xs.into(),
-        };
-        let sq = |a: Expr| Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![a, Expr::Integer(2)].into(),
-        };
+        let times = |xs: Vec<Expr>| call("Times", xs);
+        let plus = |xs: Vec<Expr>| call("Plus", xs);
+        let sq = |a: Expr| call("Power", vec![a, Expr::Integer(2)]);
         let vdotv = plus(v.iter().cloned().map(sq).collect());
         let s_minus_1 = plus(vec![args[0].clone(), Expr::Integer(-1)]);
-        let inv = Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![vdotv, Expr::Integer(-1)].into(),
-        };
+        let inv = call("Power", vec![vdotv, Expr::Integer(-1)]);
         let factor = times(vec![s_minus_1, inv]);
         let n = v.len();
         let rows: Vec<Expr> = (0..n)
@@ -3143,15 +2872,9 @@ pub fn dispatch_linear_algebra_functions(
               ]
               .into(),
             };
-            Expr::FunctionCall {
-              name: "Cos".to_string(),
-              args: vec![angle].into(),
-            }
+            call1("Cos", angle)
           };
-          let times = |a: Expr, b: Expr| Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![a, b].into(),
-          };
+          let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
           let mut rows = Vec::with_capacity(n as usize);
           for i in 1..=n {
             let mut row = Vec::with_capacity(n as usize);
@@ -3217,10 +2940,7 @@ pub fn dispatch_linear_algebra_functions(
           name: "Power".to_string(),
           args: vec![
             Expr::Integer(n as i128),
-            Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
-            },
+            call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
           ]
           .into(),
         };
@@ -3249,40 +2969,27 @@ pub fn dispatch_linear_algebra_functions(
                 Expr::FunctionCall {
                   name: "Times".to_string(),
                   args: vec![
-                    Expr::FunctionCall {
-                      name: "Rational".to_string(),
-                      args: vec![Expr::Integer(snum), Expr::Integer(sden)]
-                        .into(),
-                    },
+                    call(
+                      "Rational",
+                      vec![Expr::Integer(snum), Expr::Integer(sden)],
+                    ),
                     Expr::Identifier("Pi".to_string()),
                   ]
                   .into(),
                 }
               };
               // Build (Cos[angle] + I*Sin[angle]) / Sqrt[n]
-              let cos_part = Expr::FunctionCall {
-                name: "Cos".to_string(),
-                args: vec![angle.clone()].into(),
-              };
+              let cos_part = call1("Cos", angle.clone());
               let sin_part = Expr::FunctionCall {
                 name: "Times".to_string(),
                 args: vec![
                   Expr::Identifier("I".to_string()),
-                  Expr::FunctionCall {
-                    name: "Sin".to_string(),
-                    args: vec![angle].into(),
-                  },
+                  call1("Sin", angle),
                 ]
                 .into(),
               };
-              let omega = Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![cos_part, sin_part].into(),
-              };
-              let entry = Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![omega, inv_sqrt_n.clone()].into(),
-              };
+              let omega = call("Plus", vec![cos_part, sin_part]);
+              let entry = call("Times", vec![omega, inv_sqrt_n.clone()]);
               row.push(entry);
             }
           }
@@ -3490,14 +3197,8 @@ fn hadamard_sylvester(n: usize) -> Vec<Vec<i128>> {
 /// Returns {lu_combined, pivots, 0} where lu_combined stores L (below diagonal)
 /// and U (on and above diagonal), and pivots is the row permutation (1-indexed).
 fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
-  let rows = match mat {
-    Expr::List(rows) => rows,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "LUDecomposition".to_string(),
-        args: vec![mat.clone()].into(),
-      });
-    }
+  let Expr::List(rows) = mat else {
+    return Ok(call("LUDecomposition", vec![mat.clone()]));
   };
 
   let n = rows.len();
@@ -3505,10 +3206,7 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
     let empty = Expr::List(vec![].into());
     let perm_data = Expr::List(
       vec![
-        Expr::FunctionCall {
-          name: "Cycles".to_string(),
-          args: vec![Expr::List(vec![].into())].into(),
-        },
+        call("Cycles", vec![Expr::List(vec![].into())]),
         Expr::Identifier("Infinity".into()),
       ]
       .into(),
@@ -3535,10 +3233,7 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
       }
       matrix.push(cols.to_vec());
     } else {
-      return Ok(Expr::FunctionCall {
-        name: "LUDecomposition".to_string(),
-        args: vec![mat.clone()].into(),
-      });
+      return Ok(call("LUDecomposition", vec![mat.clone()]));
     }
   }
 
@@ -3591,7 +3286,7 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
           best_numeric = Some((i, v.abs()));
         }
       }
-      best_numeric.map(|(i, _)| i).unwrap_or(first_nonzero)
+      best_numeric.map_or(first_nonzero, |(i, _)| i)
     };
 
     // Swap rows
@@ -3612,10 +3307,7 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
         name: "Times".to_string(),
         args: vec![
           matrix[i][k].clone(),
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![pivot_val.clone(), Expr::Integer(-1)].into(),
-          },
+          call("Power", vec![pivot_val.clone(), Expr::Integer(-1)]),
         ]
         .into(),
       })
@@ -3623,23 +3315,17 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
 
       // Update row i: A[i][j] -= L[i][k] * A[k][j] for j > k
       for j in (k + 1)..n {
-        let product = evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![l_ik.clone(), matrix[k][j].clone()].into(),
-        })
-        .unwrap_or(Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![l_ik.clone(), matrix[k][j].clone()].into(),
-        });
+        let product = evaluate_expr_to_expr(&call(
+          "Times",
+          vec![l_ik.clone(), matrix[k][j].clone()],
+        ))
+        .unwrap_or(call("Times", vec![l_ik.clone(), matrix[k][j].clone()]));
 
         let new_val = evaluate_expr_to_expr(&Expr::FunctionCall {
           name: "Plus".to_string(),
           args: vec![
             matrix[i][j].clone(),
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![Expr::Integer(-1), product].into(),
-            },
+            call("Times", vec![Expr::Integer(-1), product]),
           ]
           .into(),
         })
@@ -3731,14 +3417,10 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
 fn lu_structured_matrix(head: &str, n: usize, payload: Expr) -> Expr {
   let dims =
     Expr::List(vec![Expr::Integer(n as i128), Expr::Integer(n as i128)].into());
-  Expr::FunctionCall {
-    name: head.to_string(),
-    args: vec![Expr::FunctionCall {
-      name: "StructuredArray`StructuredData".to_string(),
-      args: vec![dims, payload].into(),
-    }]
-    .into(),
-  }
+  call(
+    head,
+    vec![call("StructuredArray`StructuredData", vec![dims, payload])],
+  )
 }
 
 /// Convert a row permutation (0-indexed `pivots[i]` = original row now at
@@ -3763,18 +3445,12 @@ fn lu_pivots_to_cycles(pivots: &[usize]) -> Expr {
       cycles.push(Expr::List(cycle.into()));
     }
   }
-  Expr::FunctionCall {
-    name: "Cycles".to_string(),
-    args: vec![Expr::List(cycles.into())].into(),
-  }
+  call("Cycles", vec![Expr::List(cycles.into())])
 }
 
 /// Numeric value of an expression (integer, real, or rational) via `N`.
 fn lu_num(e: &Expr) -> Option<f64> {
-  match evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "N".to_string(),
-    args: vec![e.clone()].into(),
-  }) {
+  match evaluate_expr_to_expr(&call1("N", e.clone())) {
     Ok(Expr::Real(r)) => Some(r),
     Ok(Expr::Integer(i)) => Some(i as f64),
     _ => None,
@@ -3784,7 +3460,7 @@ fn lu_num(e: &Expr) -> Option<f64> {
 /// Magnitude of a numeric expression for pivot selection; non-numeric or
 /// unreadable entries sort as 0.
 fn lu_magnitude(e: &Expr) -> f64 {
-  lu_num(e).map(f64::abs).unwrap_or(0.0)
+  lu_num(e).map_or(0.0, f64::abs)
 }
 
 /// ∞-norm condition number ‖A‖∞·‖A⁻¹‖∞ of a machine matrix, matching Wolfram's
@@ -3799,17 +3475,13 @@ fn lu_infinity_condition(matrix: &[Vec<Expr>]) -> Expr {
   );
   let norm_a = lu_infinity_norm(matrix);
 
-  let inv = match evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Inverse".to_string(),
-    args: vec![orig].into(),
-  }) {
-    Ok(e) => e,
-    _ => return Expr::Identifier("Infinity".into()),
+  let Ok(inv) = evaluate_expr_to_expr(&call("Inverse", vec![orig])) else {
+    return Expr::Identifier("Infinity".into());
   };
   let mut inv_mat: Vec<Vec<Expr>> = Vec::with_capacity(n);
   match &inv {
     Expr::List(rows) if rows.len() == n => {
-      for row in rows.iter() {
+      for row in rows {
         match row {
           Expr::List(cols) if cols.len() == n => inv_mat.push(cols.to_vec()),
           _ => return Expr::Identifier("Infinity".into()),
@@ -3875,10 +3547,7 @@ enum KronArg<'a> {
 /// Classify an `Expr` as a KroneckerProduct vector or matrix operand.
 /// Returns `None` for anything that is not a vector or rectangular matrix.
 fn classify_kron_arg(expr: &Expr) -> Option<KronArg<'_>> {
-  let rows = match expr {
-    Expr::List(rows) => rows,
-    _ => return None,
-  };
+  let Expr::List(rows) = expr else { return None };
   if rows.is_empty() {
     return None;
   }
@@ -3991,13 +3660,11 @@ fn kronecker_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   for next in &args[1..] {
-    let a = match classify_kron_arg(&acc_owned) {
-      Some(a) => a,
-      None => return Ok(unevaluated()),
+    let Some(a) = classify_kron_arg(&acc_owned) else {
+      return Ok(unevaluated());
     };
-    let b = match classify_kron_arg(next) {
-      Some(b) => b,
-      None => return Ok(unevaluated()),
+    let Some(b) = classify_kron_arg(next) else {
+      return Ok(unevaluated());
     };
     acc_owned = kronecker_product_pair(&a, &b)?;
   }
@@ -4010,14 +3677,11 @@ fn binary_dissimilarity_ast(
   name: &str,
   a: &Expr,
   b: &Expr,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let (list_a, list_b) = match (a, b) {
     (Expr::List(la), Expr::List(lb)) if la.len() == lb.len() => (la, lb),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: vec![a.clone(), b.clone()].into(),
-      });
+      return call(name, vec![a.clone(), b.clone()]);
     }
   };
 
@@ -4039,10 +3703,7 @@ fn binary_dissimilarity_ast(
   }
   for (ai, bi) in list_a.iter().zip(list_b.iter()) {
     let (Some(av), Some(bv)) = (as_bool(ai), as_bool(bi)) else {
-      return Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: vec![a.clone(), b.clone()].into(),
-      });
+      return call(name, vec![a.clone(), b.clone()]);
     };
     match (av, bv) {
       (true, true) => n11 += 1,
@@ -4063,18 +3724,15 @@ fn binary_dissimilarity_ast(
     "SokalSneathDissimilarity" => (2 * (n10 + n01), n11 + 2 * (n10 + n01)),
     "YuleDissimilarity" => (2 * n10 * n01, n11 * n00 + n10 * n01),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: vec![a.clone(), b.clone()].into(),
-      });
+      return call(name, vec![a.clone(), b.clone()]);
     }
   };
 
   if den == 0 {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Expr::Identifier("Indeterminate".to_string());
   }
 
-  Ok(crate::functions::math_ast::make_rational(num, den))
+  crate::functions::math_ast::make_rational(num, den)
 }
 
 /// `MatrixMinimalPolynomial[A, x]` — the monic polynomial of least degree
@@ -4087,9 +3745,8 @@ fn matrix_minimal_polynomial(
   matrix: &Expr,
   x: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  let rows = match matrix {
-    Expr::List(rows) => rows,
-    _ => return None,
+  let Expr::List(rows) = matrix else {
+    return None;
   };
   let n = rows.len();
   if n == 0
@@ -4108,10 +3765,10 @@ fn matrix_minimal_polynomial(
   let mut powers: Vec<Expr> = Vec::with_capacity(n + 1);
   powers.push(identity);
   for i in 1..=n {
-    let prod = evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Dot".to_string(),
-      args: vec![powers[i - 1].clone(), matrix.clone()].into(),
-    })
+    let prod = evaluate_expr_to_expr(&call(
+      "Dot",
+      vec![powers[i - 1].clone(), matrix.clone()],
+    ))
     .ok()?;
     powers.push(prod);
   }
@@ -4122,7 +3779,7 @@ fn matrix_minimal_polynomial(
     .map(|p| match p {
       Expr::List(prows) => {
         let mut v = Vec::with_capacity(n * n);
-        for pr in prows.iter() {
+        for pr in prows {
           match pr {
             Expr::List(pc) => v.extend(pc.iter().cloned()),
             _ => return None,
@@ -4151,39 +3808,24 @@ fn matrix_minimal_polynomial(
       let lead = coeffs[k].clone();
       let mut terms: Vec<Expr> = Vec::with_capacity(k + 1);
       for (i, c) in coeffs.iter().enumerate() {
-        let coeff = Expr::FunctionCall {
-          name: "Divide".to_string(),
-          args: vec![c.clone(), lead.clone()].into(),
-        };
+        let coeff = call("Divide", vec![c.clone(), lead.clone()]);
         let term = if i == 0 {
           coeff
         } else {
           let xpow = if i == 1 {
             x.clone()
           } else {
-            Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![x.clone(), Expr::Integer(i as i128)].into(),
-            }
+            call("Power", vec![x.clone(), Expr::Integer(i as i128)])
           };
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![coeff, xpow].into(),
-          }
+          call("Times", vec![coeff, xpow])
         };
         terms.push(term);
       }
-      let poly = Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: terms.into(),
-      };
+      let poly = call("Plus", terms);
       // Expand so a matrix with symbolic entries flattens to the wolframscript
       // term form (e.g. -(b c) + a d - a x - d x + x^2 rather than the factored
       // -(b c) + a d + (-a - d) x + x^2); harmless for numeric entries.
-      return Some(evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Expand".to_string(),
-        args: vec![poly].into(),
-      }));
+      return Some(evaluate_expr_to_expr(&call("Expand", vec![poly])));
     }
   }
   None
@@ -4201,9 +3843,7 @@ fn matrix_power_block_symbolic(rows: &[Expr], n_expr: &Expr) -> Option<Expr> {
   let matrix: Vec<Vec<Expr>> = {
     let mut m = Vec::with_capacity(size);
     for row in rows {
-      let cols = if let Expr::List(c) = row {
-        c
-      } else {
+      let Expr::List(cols) = row else {
         return None;
       };
       if cols.len() != size {
@@ -4278,15 +3918,13 @@ fn matrix_power_block_symbolic(rows: &[Expr], n_expr: &Expr) -> Option<Expr> {
       1 => {
         let i = comp[0];
         let entry = matrix[i][i].clone();
-        result[i][i] =
-          match crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(entry),
-            right: Box::new(n_expr.clone()),
-          }) {
-            Ok(v) => v,
-            Err(_) => return None,
-          };
+        result[i][i] = match crate::evaluator::evaluate_expr_to_expr(&pow2(
+          entry,
+          n_expr.clone(),
+        )) {
+          Ok(v) => v,
+          Err(_) => return None,
+        };
       }
       2 => {
         let i = comp[0];
@@ -4368,21 +4006,11 @@ fn matrix_power_2x2_symbolic_block(
     let base = if re == 0 && im == 1 {
       Expr::Identifier("I".to_string())
     } else if re == 0 {
-      Expr::FunctionCall {
-        name: "Complex".to_string(),
-        args: vec![Expr::Integer(0), Expr::Integer(im)].into(),
-      }
+      call("Complex", vec![Expr::Integer(0), Expr::Integer(im)])
     } else {
-      Expr::FunctionCall {
-        name: "Complex".to_string(),
-        args: vec![Expr::Integer(re), Expr::Integer(im)].into(),
-      }
+      call("Complex", vec![Expr::Integer(re), Expr::Integer(im)])
     };
-    Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(base),
-      right: Box::new(n_expr.clone()),
-    }
+    pow2(base, n_expr.clone())
   };
   let lam1_n = lam_power(re_part, im_part);
   let lam2_n = lam_power(re_part, -im_part);
@@ -4391,24 +4019,21 @@ fn matrix_power_2x2_symbolic_block(
   let lambda_diff = if k == 1 {
     Expr::Identifier("I".to_string())
   } else {
-    Expr::FunctionCall {
-      name: "Complex".to_string(),
-      args: vec![Expr::Integer(0), Expr::Integer(k)].into(),
-    }
+    call("Complex", vec![Expr::Integer(0), Expr::Integer(k)])
   };
   // For each scalar Complex factor `q = (a + b·I) / (k·I)` we'd build
   // and evaluate. Instead, compute the coefficient matrices c_1, c_2
   // numerically (each entry is a Complex rational), then assemble the
   // result via Plus of scalar·Power terms.
 
-  let lambda_1 = Expr::FunctionCall {
-    name: "Complex".to_string(),
-    args: vec![Expr::Integer(re_part), Expr::Integer(im_part)].into(),
-  };
-  let lambda_2 = Expr::FunctionCall {
-    name: "Complex".to_string(),
-    args: vec![Expr::Integer(re_part), Expr::Integer(-im_part)].into(),
-  };
+  let lambda_1 = call(
+    "Complex",
+    vec![Expr::Integer(re_part), Expr::Integer(im_part)],
+  );
+  let lambda_2 = call(
+    "Complex",
+    vec![Expr::Integer(re_part), Expr::Integer(-im_part)],
+  );
   let mat_expr = |ai: i128| Expr::Integer(ai);
   let eval = crate::evaluator::evaluate_expr_to_expr;
 
@@ -4417,38 +4042,17 @@ fn matrix_power_2x2_symbolic_block(
   let build_entry = |entry_int: i128, is_diag: bool| -> Option<Expr> {
     let entry = mat_expr(entry_int);
     let c1_num_raw = if is_diag {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(entry.clone()),
-        right: Box::new(lambda_2.clone()),
-      }
+      minus2(entry.clone(), lambda_2.clone())
     } else {
       entry.clone()
     };
     let c2_num_raw = if is_diag {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(lambda_1.clone()),
-        right: Box::new(entry.clone()),
-      }
+      minus2(lambda_1.clone(), entry.clone())
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), entry.clone()].into(),
-      }
+      call("Times", vec![Expr::Integer(-1), entry.clone()])
     };
-    let c1 = eval(&Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(c1_num_raw),
-      right: Box::new(lambda_diff.clone()),
-    })
-    .ok()?;
-    let c2 = eval(&Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(c2_num_raw),
-      right: Box::new(lambda_diff.clone()),
-    })
-    .ok()?;
+    let c1 = eval(&div2(c1_num_raw, lambda_diff.clone())).ok()?;
+    let c2 = eval(&div2(c2_num_raw, lambda_diff.clone())).ok()?;
     // Build `c1 * λ_1^n + c2 * λ_2^n` without evaluating the Power
     // sub-expressions (so `(-I)^n` survives intact).
     let t1 = if matches!(&c1, Expr::Integer(1)) {
@@ -4456,30 +4060,21 @@ fn matrix_power_2x2_symbolic_block(
     } else if matches!(&c1, Expr::Integer(0)) {
       Expr::Integer(0)
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![c1, lam1_n.clone()].into(),
-      }
+      call("Times", vec![c1, lam1_n.clone()])
     };
     let t2 = if matches!(&c2, Expr::Integer(1)) {
       lam2_n.clone()
     } else if matches!(&c2, Expr::Integer(0)) {
       Expr::Integer(0)
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![c2, lam2_n.clone()].into(),
-      }
+      call("Times", vec![c2, lam2_n.clone()])
     };
     let sum = if matches!(&t1, Expr::Integer(0)) {
       t2
     } else if matches!(&t2, Expr::Integer(0)) {
       t1
     } else {
-      Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![t1, t2].into(),
-      }
+      call("Plus", vec![t1, t2])
     };
     eval(&sum).ok()
   };
@@ -4494,18 +4089,9 @@ fn matrix_power_2x2_symbolic_block(
 /// Builds an elementary 3x3 active rotation matrix about the given Cartesian
 /// axis (1 = x, 2 = y, 3 = z) by `angle`.
 fn elementary_rotation(axis: i128, angle: &Expr) -> Expr {
-  let c = Expr::FunctionCall {
-    name: "Cos".to_string(),
-    args: vec![angle.clone()].into(),
-  };
-  let s = Expr::FunctionCall {
-    name: "Sin".to_string(),
-    args: vec![angle.clone()].into(),
-  };
-  let neg_s = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![Expr::Integer(-1), s.clone()].into(),
-  };
+  let c = call1("Cos", angle.clone());
+  let s = call1("Sin", angle.clone());
+  let neg_s = call("Times", vec![Expr::Integer(-1), s.clone()]);
   let zero = Expr::Integer(0);
   let one = Expr::Integer(1);
   let rows: [[Expr; 3]; 3] = match axis {
@@ -4641,28 +4227,19 @@ fn rotation_transform_3d_axis(
     return None;
   }
   let int = Expr::Integer;
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
+  let call = |name: &str, args: Vec<Expr>| call(name, args);
   let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
   let plus = |xs: Vec<Expr>| call("Plus", xs);
   let neg = |e: Expr| times(int(-1), e);
   let sq = |e: &Expr| call("Power", vec![e.clone(), int(2)]);
 
   // Normalized axis u_i = axis_i / Sqrt[sum axis_i^2].
-  let norm = call("Sqrt", vec![plus(axis.iter().map(sq).collect())]);
-  let u: Vec<Expr> = axis
-    .iter()
-    .map(|a| Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(a.clone()),
-      right: Box::new(norm.clone()),
-    })
-    .collect();
+  let norm = call1("Sqrt", plus(axis.iter().map(sq).collect()));
+  let u: Vec<Expr> =
+    axis.iter().map(|a| div2(a.clone(), norm.clone())).collect();
 
-  let cos = call("Cos", vec![theta.clone()]);
-  let sin = call("Sin", vec![theta.clone()]);
+  let cos = call1("Cos", theta.clone());
+  let sin = call1("Sin", theta.clone());
   let one_minus_cos = plus(vec![int(1), neg(cos.clone())]);
 
   // Skew-symmetric cross-product matrix [u]ₓ entries.
@@ -4714,10 +4291,7 @@ fn rotation_matrix_plane(
     Expr::List(items) => items.len(),
     _ => return Ok(Expr::Integer(0)),
   };
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
+  let call = |name: &str, args: Vec<Expr>| call(name, args);
   // Orthonormal frame {e1, e2} spanning the rotation plane.
   let e1 = evaluate_expr_to_expr(&call("Normalize", vec![u.clone()]))?;
   let vdot = evaluate_expr_to_expr(&call("Dot", vec![v.clone(), e1.clone()]))?;
@@ -4731,11 +4305,9 @@ fn rotation_matrix_plane(
       vec![Expr::Identifier("Times".to_string()), a.clone(), b.clone()],
     )
   };
-  let sin = call("Sin", vec![theta.clone()]);
-  let cos_m1 = call(
-    "Plus",
-    vec![call("Cos", vec![theta.clone()]), Expr::Integer(-1)],
-  );
+  let sin = call1("Sin", theta.clone());
+  let cos_m1 =
+    call("Plus", vec![call1("Cos", theta.clone()), Expr::Integer(-1)]);
   let anti = call("Subtract", vec![outer(&e2, &e1), outer(&e1, &e2)]);
   let sym = call("Plus", vec![outer(&e1, &e1), outer(&e2, &e2)]);
   let id = call("IdentityMatrix", vec![Expr::Integer(n as i128)]);
@@ -4887,7 +4459,7 @@ fn lyapunov_solve_common(
     }
     let mut out: Vec<Vec<Q>> = Vec::with_capacity(rows.len());
     let mut width = None;
-    for row in rows.iter() {
+    for row in rows {
       let Expr::List(cells) = row else { return None };
       match width {
         None => width = Some(cells.len()),
@@ -4898,7 +4470,7 @@ fn lyapunov_solve_common(
         return None;
       }
       let mut r = Vec::with_capacity(cells.len());
-      for c in cells.iter() {
+      for c in cells {
         r.push(parse_entry(c)?);
       }
       out.push(r);
@@ -5034,8 +4606,7 @@ fn lyapunov_solve_common(
     Outcome::Solved(s) => s,
     Outcome::Singular => {
       crate::emit_message(&format!(
-        "{}::nosol: The matrix equation has no solution.",
-        name
+        "{name}::nosol: The matrix equation has no solution."
       ));
       return unevaluated();
     }
@@ -5048,10 +4619,7 @@ fn lyapunov_solve_common(
     } else if q.d == 1 {
       Expr::Integer(q.n)
     } else {
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(q.n), Expr::Integer(q.d)].into(),
-      }
+      call("Rational", vec![Expr::Integer(q.n), Expr::Integer(q.d)])
     }
   };
   let rows: Vec<Expr> = (0..n)
@@ -5105,13 +4673,9 @@ fn lyapunov_symbolic_diagonal(
   if crows.len() != n {
     return None;
   }
-  let fc = |name: &str, fargs: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: fargs.into(),
-  };
   // Shape-check every row up front so no messages are emitted for
   // malformed input, then solve entrywise.
-  for crow in crows.iter() {
+  for crow in crows {
     let Expr::List(ccells) = crow else {
       return None;
     };
@@ -5126,14 +4690,17 @@ fn lyapunov_symbolic_diagonal(
     };
     let mut out_cells: Vec<Expr> = Vec::with_capacity(n);
     for (j, cij) in ccells.iter().enumerate() {
-      let conj = fc("Conjugate", vec![diag[j].clone()]);
+      let conj = call1("Conjugate", diag[j].clone());
       let denom = if discrete {
-        fc(
+        call(
           "Plus",
-          vec![Expr::Integer(-1), fc("Times", vec![diag[i].clone(), conj])],
+          vec![
+            Expr::Integer(-1),
+            call("Times", vec![diag[i].clone(), conj]),
+          ],
         )
       } else {
-        fc("Plus", vec![diag[i].clone(), conj])
+        call("Plus", vec![diag[i].clone(), conj])
       };
       let denom = match crate::evaluator::evaluate_expr_to_expr(&denom) {
         Ok(d) => d,
@@ -5141,14 +4708,13 @@ fn lyapunov_symbolic_diagonal(
       };
       if is_zero(&denom) {
         crate::emit_message(&format!(
-          "{}::nosol: The matrix equation has no solution.",
-          name
+          "{name}::nosol: The matrix equation has no solution."
         ));
         return Some(Ok(unevaluated(name, args)));
       }
-      let entry = fc(
+      let entry = call(
         "Times",
-        vec![cij.clone(), fc("Power", vec![denom, Expr::Integer(-1)])],
+        vec![cij.clone(), call("Power", vec![denom, Expr::Integer(-1)])],
       );
       match crate::evaluator::evaluate_expr_to_expr(&entry) {
         Ok(e) => out_cells.push(e),
@@ -5179,12 +4745,7 @@ fn control_structure_matrix(
   ssm: &Expr,
   observability: bool,
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: fname.to_string(),
-      args: vec![ssm.clone()].into(),
-    })
-  };
+  let unevaluated = || Ok(call(fname, vec![ssm.clone()]));
   // Parse StateSpaceModel[{a, b, c, d}] (d optional for our purposes).
   let Expr::FunctionCall { name, args } = ssm else {
     return unevaluated();
@@ -5223,10 +4784,10 @@ fn control_structure_matrix(
     return unevaluated();
   }
   let dot = |x: &Expr, y: &Expr| -> Result<Expr, InterpreterError> {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Dot".to_string(),
-      args: vec![x.clone(), y.clone()].into(),
-    })
+    crate::evaluator::evaluate_expr_to_expr(&call(
+      "Dot",
+      vec![x.clone(), y.clone()],
+    ))
   };
   let a = mats[0].clone();
   if observability {
@@ -5264,7 +4825,7 @@ fn control_structure_matrix(
         return unevaluated();
       };
       let mut block_rows = Vec::with_capacity(n);
-      for r in rows.iter() {
+      for r in rows {
         let Expr::List(cols) = r else {
           return unevaluated();
         };

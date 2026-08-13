@@ -12,25 +12,15 @@
 #[allow(unused_imports)]
 use super::*;
 
-fn eval(e: Expr) -> Result<Expr, InterpreterError> {
-  crate::evaluator::evaluate_expr_to_expr(&e)
-}
-
-fn call(name: &str, args: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  }
+fn eval(e: &Expr) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_expr_to_expr(e)
 }
 
 fn sum(terms: Vec<Expr>) -> Expr {
   match terms.len() {
     0 => Expr::Integer(0),
     1 => terms.into_iter().next().unwrap(),
-    _ => Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    },
+    _ => call("Plus", terms),
   }
 }
 
@@ -51,7 +41,7 @@ fn coeff_rules(
   poly: &Expr,
   vars: &[Expr],
 ) -> Result<Option<Vec<(Vec<i128>, Expr)>>, InterpreterError> {
-  let rules = eval(call(
+  let rules = eval(&call(
     "CoefficientRules",
     vec![poly.clone(), Expr::List(vars.to_vec().into())],
   ))?;
@@ -59,7 +49,7 @@ fn coeff_rules(
     return Ok(None);
   };
   let mut out = Vec::new();
-  for it in items.iter() {
+  for it in items {
     let Expr::Rule {
       pattern,
       replacement,
@@ -71,7 +61,7 @@ fn coeff_rules(
       return Ok(None);
     };
     let mut ev = Vec::with_capacity(exps.len());
-    for e in exps.iter() {
+    for e in exps {
       match e {
         Expr::Integer(n) => ev.push(*n),
         _ => return Ok(None),
@@ -139,8 +129,8 @@ pub fn power_symmetric_polynomial_ast(
     // The one-argument form is a formal object.
     return unevaluated();
   }
-  let rspec = eval(args[0].clone())?;
-  let data = match eval(args[1].clone())? {
+  let rspec = eval(&args[0].clone())?;
+  let data = match eval(&args[1].clone())? {
     Expr::List(ref items) => items.to_vec(),
     _ => return unevaluated(),
   };
@@ -172,20 +162,17 @@ pub fn power_symmetric_polynomial_ast(
         terms.push(match factors.len() {
           0 => Expr::Integer(1),
           1 => factors.into_iter().next().unwrap(),
-          _ => Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: factors.into(),
-          },
+          _ => call("Times", factors),
         });
       }
-      eval(sum(terms))
+      eval(&sum(terms))
     }
     r => {
       if negative_numeric(r) {
         return unevaluated();
       }
       let terms: Vec<Expr> = data.iter().map(|e| power(e, r)).collect();
-      eval(sum(terms))
+      eval(&sum(terms))
     }
   }
 }
@@ -234,11 +221,11 @@ pub fn augmented_symmetric_polynomial_ast(
   if args.len() != 2 {
     return unevaluated();
   }
-  let partition_expr = eval(args[0].clone())?;
+  let partition_expr = eval(&args[0].clone())?;
   let partition: Vec<i128> = match &partition_expr {
     Expr::List(items) => {
       let mut ps = Vec::with_capacity(items.len());
-      for it in items.iter() {
+      for it in items {
         match it {
           Expr::Integer(k) if *k >= 1 => ps.push(*k),
           _ => return unevaluated(),
@@ -248,7 +235,7 @@ pub fn augmented_symmetric_polynomial_ast(
     }
     _ => return unevaluated(),
   };
-  let vars_expr = eval(args[1].clone())?;
+  let vars_expr = eval(&args[1].clone())?;
   let vars: Vec<Expr> = match &vars_expr {
     Expr::List(items) => items.to_vec(),
     _ => return unevaluated(),
@@ -272,14 +259,11 @@ pub fn augmented_symmetric_polynomial_ast(
       .collect();
     let term = match factors.len() {
       1 => factors.into_iter().next().unwrap(),
-      _ => Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: factors.into(),
-      },
+      _ => call("Times", factors),
     };
     terms.push(term);
   }
-  eval(sum(terms))
+  eval(&sum(terms))
 }
 
 pub fn symmetric_reduction_ast(
@@ -303,7 +287,7 @@ pub fn symmetric_reduction_ast(
   // for the subtraction step and, in the 2-arg form, as the symbolic names).
   let mut elem: Vec<Expr> = Vec::with_capacity(n);
   for k in 1..=n {
-    elem.push(eval(call(
+    elem.push(eval(&call(
       "SymmetricPolynomial",
       vec![Expr::Integer(k as i128), Expr::List(vars.clone().into())],
     ))?);
@@ -318,7 +302,7 @@ pub fn symmetric_reduction_ast(
     elem.clone()
   };
 
-  let mut g = eval(call("Expand", vec![f.clone()]))?;
+  let mut g = eval(&call("Expand", vec![f.clone()]))?;
   let mut p_terms: Vec<Expr> = Vec::new();
   let mut q_terms: Vec<Expr> = Vec::new();
 
@@ -355,13 +339,13 @@ pub fn symmetric_reduction_ast(
           e_factors.push(pow(elem[k].clone(), dk));
         }
       }
-      p_terms.push(eval(call("Times", p_factors))?);
+      p_terms.push(eval(&call("Times", p_factors))?);
       let e_prod = call("Times", e_factors);
-      g = eval(call(
+      g = eval(&call(
         "Expand",
         vec![sum(vec![
           g.clone(),
-          eval(call("Times", vec![Expr::Integer(-1), e_prod]))?,
+          eval(&call("Times", vec![Expr::Integer(-1), e_prod]))?,
         ])],
       ))?;
     } else {
@@ -373,19 +357,19 @@ pub fn symmetric_reduction_ast(
           m_factors.push(pow(vars[i].clone(), ai));
         }
       }
-      let mono = eval(call("Times", m_factors))?;
+      let mono = eval(&call("Times", m_factors))?;
       q_terms.push(mono.clone());
-      g = eval(call(
+      g = eval(&call(
         "Expand",
         vec![sum(vec![
           g.clone(),
-          eval(call("Times", vec![Expr::Integer(-1), mono]))?,
+          eval(&call("Times", vec![Expr::Integer(-1), mono]))?,
         ])],
       ))?;
     }
   }
 
-  let p = eval(sum(p_terms))?;
-  let q = eval(sum(q_terms))?;
+  let p = eval(&sum(p_terms))?;
+  let q = eval(&sum(q_terms))?;
   Ok(Expr::List(vec![p, q].into()))
 }

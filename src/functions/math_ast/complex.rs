@@ -1248,49 +1248,44 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if re_positive {
           // Arg = atan_sign * (pi_n/pi_d) * Pi
           return Ok(make_rational_times_pi(atan_sign * pi_n, pi_d));
-        } else {
-          // re < 0: Arg = atan_sign * (Pi - (pi_n/pi_d) * Pi)
-          //       = atan_sign * ((pi_d - pi_n)/pi_d) * Pi
-          let result_n = pi_d - pi_n;
-          return Ok(make_rational_times_pi(atan_sign * result_n, pi_d));
         }
-      } else {
-        // ArcTan doesn't simplify to exact Pi fraction
-        // Build ArcTan[ratio] expression
-        let ratio_expr = make_rational(ratio_n, ratio_d);
-        let arctan_expr = Expr::FunctionCall {
-          name: "ArcTan".to_string(),
-          args: vec![ratio_expr].into(),
-        };
-
-        let re_positive = (rn > 0 && rd > 0) || (rn < 0 && rd < 0);
-
-        if re_positive {
-          // Arg = sign * ArcTan[|ratio|]
-          if in_ > 0 {
-            return Ok(arctan_expr);
-          } else {
-            return Ok(negate_expr(arctan_expr));
-          }
-        } else {
-          // re < 0, im >= 0: Pi - ArcTan[|ratio|]
-          // re < 0, im < 0: -Pi + ArcTan[|ratio|]
-          let pi = Expr::Identifier("Pi".to_string());
-          if in_ > 0 {
-            return Ok(Expr::BinaryOp {
-              op: BinaryOperator::Minus,
-              left: Box::new(pi),
-              right: Box::new(arctan_expr),
-            });
-          } else {
-            return Ok(Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(negate_expr(pi)),
-              right: Box::new(arctan_expr),
-            });
-          }
-        }
+        // re < 0: Arg = atan_sign * (Pi - (pi_n/pi_d) * Pi)
+        //       = atan_sign * ((pi_d - pi_n)/pi_d) * Pi
+        let result_n = pi_d - pi_n;
+        return Ok(make_rational_times_pi(atan_sign * result_n, pi_d));
       }
+      // ArcTan doesn't simplify to exact Pi fraction
+      // Build ArcTan[ratio] expression
+      let ratio_expr = make_rational(ratio_n, ratio_d);
+      let arctan_expr = Expr::FunctionCall {
+        name: "ArcTan".to_string(),
+        args: vec![ratio_expr].into(),
+      };
+
+      let re_positive = (rn > 0 && rd > 0) || (rn < 0 && rd < 0);
+
+      if re_positive {
+        // Arg = sign * ArcTan[|ratio|]
+        if in_ > 0 {
+          return Ok(arctan_expr);
+        }
+        return Ok(negate_expr(arctan_expr));
+      }
+      // re < 0, im >= 0: Pi - ArcTan[|ratio|]
+      // re < 0, im < 0: -Pi + ArcTan[|ratio|]
+      let pi = Expr::Identifier("Pi".to_string());
+      if in_ > 0 {
+        return Ok(Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(pi),
+          right: Box::new(arctan_expr),
+        });
+      }
+      return Ok(Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(negate_expr(pi)),
+        right: Box::new(arctan_expr),
+      });
     }
   }
 
@@ -1359,7 +1354,7 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // list handling rather than a Listable attribute, so we replicate it here.
   if let Expr::List(items) = &args[0] {
     let mut out = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       let mut sub = vec![item.clone()];
       if args.len() == 2 {
         sub.push(args[1].clone());
@@ -1676,13 +1671,11 @@ fn find_rational(x: f64, tolerance: f64, max_denom: i64) -> (i64, i64) {
 
   for _ in 0..50 {
     let ai = xi.floor() as i64;
-    let p2 = match ai.checked_mul(p1).and_then(|v| v.checked_add(p0)) {
-      Some(v) => v,
-      None => break, // overflow, stop iterating
+    let Some(p2) = ai.checked_mul(p1).and_then(|v| v.checked_add(p0)) else {
+      break;
     };
-    let q2 = match ai.checked_mul(q1).and_then(|v| v.checked_add(q0)) {
-      Some(v) => v,
-      None => break, // overflow, stop iterating
+    let Some(q2) = ai.checked_mul(q1).and_then(|v| v.checked_add(q0)) else {
+      break;
     };
 
     if q2 == 0 || q2 > max_denom {
@@ -1737,13 +1730,11 @@ fn find_rational_smallest_denom(x: f64, tolerance: f64) -> (i64, i64) {
   for _ in 0..50 {
     let ai = xi.floor() as i64;
 
-    let p2 = match ai.checked_mul(p1).and_then(|v| v.checked_add(p0)) {
-      Some(v) => v,
-      None => break,
+    let Some(p2) = ai.checked_mul(p1).and_then(|v| v.checked_add(p0)) else {
+      break;
     };
-    let q2 = match ai.checked_mul(q1).and_then(|v| v.checked_add(q0)) {
-      Some(v) => v,
-      None => break,
+    let Some(q2) = ai.checked_mul(q1).and_then(|v| v.checked_add(q0)) else {
+      break;
     };
 
     if q2 == 0 {

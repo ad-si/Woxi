@@ -105,11 +105,9 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let n = items.len();
   let mut result: Vec<Expr> = Vec::new();
-  let indices: Vec<usize> = (0..n).collect();
   for k in sizes {
     if (0..=len).contains(&k) {
       generate_k_permutations(
-        &indices,
         k as usize,
         &mut vec![],
         &mut vec![false; n],
@@ -141,7 +139,6 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// skipping any item at the current recursion level that is structurally
 /// equal to a previously tried item at the same level.
 fn generate_k_permutations(
-  _indices: &[usize],
   k: usize,
   current: &mut Vec<usize>,
   used: &mut Vec<bool>,
@@ -167,7 +164,7 @@ fn generate_k_permutations(
     }
     used[i] = true;
     current.push(i);
-    generate_k_permutations(_indices, k, current, used, items, result);
+    generate_k_permutations(k, current, used, items, result);
     current.pop();
     used[i] = false;
   }
@@ -410,11 +407,8 @@ pub fn subsequences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Subsequences expects 1 or 2 arguments".into(),
     ));
   }
-  let items = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("Subsequences", args));
-    }
+  let Expr::List(items) = &args[0] else {
+    return Ok(unevaluated("Subsequences", args));
   };
 
   let n = items.len();
@@ -509,7 +503,7 @@ fn parse_grouping_ops(arg: &Expr) -> Option<Vec<GroupingOp>> {
     // List of Rules `{f -> k, ...}` or singleton `{f -> k}`.
     Expr::List(items) if !items.is_empty() => {
       let mut ops = Vec::with_capacity(items.len());
-      for it in items.iter() {
+      for it in items {
         if let Expr::Rule {
           pattern,
           replacement,
@@ -550,11 +544,8 @@ pub fn groupings_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let ops = match parse_grouping_ops(&args[1]) {
-    Some(ops) => ops,
-    None => {
-      return Ok(unevaluated("Groupings", args));
-    }
+  let Some(ops) = parse_grouping_ops(&args[1]) else {
+    return Ok(unevaluated("Groupings", args));
   };
 
   let elements: Vec<Expr> = match &args[0] {
@@ -687,7 +678,7 @@ fn groupings_op_at_root(
     // before the (i+1)-th. Lengths may differ if children of compositions
     // in the same partition produce different numbers of inner shapes —
     // skip empties.
-    let max_len = per_comp.iter().map(|v| v.len()).max().unwrap_or(0);
+    let max_len = per_comp.iter().map(std::vec::Vec::len).max().unwrap_or(0);
     for i in 0..max_len {
       for trees in &per_comp {
         if i < trees.len() {
@@ -718,7 +709,7 @@ fn build_trees_for_composition(
   }
   // If any child has no valid groupings, this composition contributes
   // nothing.
-  if child_groupings.iter().any(|v| v.is_empty()) {
+  if child_groupings.iter().any(std::vec::Vec::is_empty) {
     return Vec::new();
   }
 
@@ -821,10 +812,10 @@ fn groupings_binary(elements: &[Expr]) -> Vec<Expr> {
     let (l1, r1) = split_pairs[idx];
 
     // Find complement pair (r1, l1) if different
-    let complement_idx = if l1 != r1 {
-      split_pairs.iter().position(|&(l, r)| l == r1 && r == l1)
-    } else {
+    let complement_idx = if l1 == r1 {
       None
+    } else {
+      split_pairs.iter().position(|&(l, r)| l == r1 && r == l1)
     };
 
     let left_groupings_1 = groupings_binary(&elements[..l1]);

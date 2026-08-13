@@ -202,14 +202,11 @@ pub fn group_by_ast(
     return Ok(Expr::Association(pairs));
   }
 
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "GroupBy".to_string(),
-        args: vec![list.clone(), func.clone()].into(),
-      });
-    }
+  let Expr::List(items) = list else {
+    return Ok(Expr::FunctionCall {
+      name: "GroupBy".to_string(),
+      args: vec![list.clone(), func.clone()].into(),
+    });
   };
 
   // `GroupBy[list, {f1, f2, ...}]` groups by `f1`, then sub-groups each result
@@ -837,9 +834,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
 /// x = Log[2] (i.e. u = 1/2) is a root — when so, F has the closed-form
 /// median Log[2].
 fn hypoexponential_median(arg: &Expr) -> Option<Expr> {
-  let rates = if let Expr::List(items) = arg {
-    items
-  } else {
+  let Expr::List(rates) = arg else {
     return None;
   };
   if rates.is_empty() {
@@ -863,7 +858,7 @@ fn hypoexponential_median(arg: &Expr) -> Option<Expr> {
   // Multi-rate case: only handle distinct positive-integer rates and test
   // whether u = 1/2 is a root of the CDF polynomial Σ_i c_i u^lambda_i = 1/2.
   let mut int_rates: Vec<i128> = Vec::with_capacity(rates.len());
-  for r in rates.iter() {
+  for r in rates {
     let Expr::Integer(n) = r else { return None };
     if *n <= 0 {
       return None;
@@ -872,7 +867,7 @@ fn hypoexponential_median(arg: &Expr) -> Option<Expr> {
   }
   // Distinct rates required for the simple partial-fraction formula.
   let mut sorted = int_rates.clone();
-  sorted.sort();
+  sorted.sort_unstable();
   for w in sorted.windows(2) {
     if w[0] == w[1] {
       return None;
@@ -950,18 +945,15 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   {
     return Ok(med);
   }
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      crate::functions::math_ast::emit_rectt_if_numeric(
-        "Median",
-        std::slice::from_ref(list),
-      );
-      return Ok(Expr::FunctionCall {
-        name: "Median".to_string(),
-        args: vec![list.clone()].into(),
-      });
-    }
+  let Expr::List(items) = list else {
+    crate::functions::math_ast::emit_rectt_if_numeric(
+      "Median",
+      std::slice::from_ref(list),
+    );
+    return Ok(Expr::FunctionCall {
+      name: "Median".to_string(),
+      args: vec![list.clone()].into(),
+    });
   };
 
   // Median requires a rectangular array of real numbers; a ragged/mixed array
@@ -1076,7 +1068,7 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         }
       })
       .collect();
-    int_values.sort();
+    int_values.sort_unstable();
 
     let len = int_values.len();
     if len % 2 == 1 {
@@ -1203,14 +1195,11 @@ pub fn take_largest_ast(
   {
     return result;
   }
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "TakeLargest".to_string(),
-        args: vec![list.clone(), Expr::Integer(n)].into(),
-      });
-    }
+  let Expr::List(items) = list else {
+    return Ok(Expr::FunctionCall {
+      name: "TakeLargest".to_string(),
+      args: vec![list.clone(), Expr::Integer(n)].into(),
+    });
   };
 
   // Extract numeric values, skipping non-numeric entries.
@@ -1248,14 +1237,11 @@ pub fn take_largest_excluded_ast(
   n: i128,
   excluded_forms: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "TakeLargest".to_string(),
-        args: vec![list.clone(), Expr::Integer(n)].into(),
-      });
-    }
+  let Expr::List(items) = list else {
+    return Ok(Expr::FunctionCall {
+      name: "TakeLargest".to_string(),
+      args: vec![list.clone(), Expr::Integer(n)].into(),
+    });
   };
 
   let filtered: Vec<Expr> = items
@@ -1287,14 +1273,11 @@ pub fn take_smallest_excluded_ast(
   n: i128,
   excluded_forms: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "TakeSmallest".to_string(),
-        args: vec![list.clone(), Expr::Integer(n)].into(),
-      });
-    }
+  let Expr::List(items) = list else {
+    return Ok(Expr::FunctionCall {
+      name: "TakeSmallest".to_string(),
+      args: vec![list.clone(), Expr::Integer(n)].into(),
+    });
   };
 
   let filtered: Vec<Expr> = items
@@ -1333,14 +1316,11 @@ pub fn take_smallest_ast(
   {
     return result;
   }
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "TakeSmallest".to_string(),
-        args: vec![list.clone(), Expr::Integer(n)].into(),
-      });
-    }
+  let Expr::List(items) = list else {
+    return Ok(Expr::FunctionCall {
+      name: "TakeSmallest".to_string(),
+      args: vec![list.clone(), Expr::Integer(n)].into(),
+    });
   };
 
   // Extract numeric values, skipping non-numeric entries.
@@ -1399,11 +1379,8 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("MinMax", args));
   }
   let list = &args[0];
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("MinMax", args));
-    }
+  let Expr::List(items) = list else {
+    return Ok(unevaluated("MinMax", args));
   };
 
   if items.is_empty() {
@@ -1501,11 +1478,8 @@ fn list_expected_message(fname: &str, args: Vec<Expr>) -> Expr {
 }
 
 pub fn gather_ast(list: &Expr) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(list_expected_message("Gather", vec![list.clone()]));
-    }
+  let Expr::List(items) = list else {
+    return Ok(list_expected_message("Gather", vec![list.clone()]));
   };
   let mut groups: Vec<Vec<Expr>> = Vec::new();
   for item in items {
@@ -1531,18 +1505,15 @@ pub fn gather_with_test_ast(
   list: &Expr,
   test: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(list_expected_message(
-        "Gather",
-        vec![list.clone(), test.clone()],
-      ));
-    }
+  let Expr::List(items) = list else {
+    return Ok(list_expected_message(
+      "Gather",
+      vec![list.clone(), test.clone()],
+    ));
   };
   let mut groups: Vec<Vec<Expr>> = Vec::new();
   'outer: for item in items {
-    for group in groups.iter_mut() {
+    for group in &mut groups {
       let result =
         super::utilities::apply_func_to_two_args(test, &group[0], item)?;
       if matches!(result, Expr::Identifier(ref s) if s == "True") {
@@ -1577,14 +1548,11 @@ pub fn gather_by_ast(
     };
     return gather_by_nested(&items, funcs);
   }
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(list_expected_message(
-        "GatherBy",
-        vec![list.clone(), func.clone()],
-      ));
-    }
+  let Expr::List(items) = list else {
+    return Ok(list_expected_message(
+      "GatherBy",
+      vec![list.clone(), func.clone()],
+    ));
   };
   let mut groups: Vec<(String, Vec<Expr>)> = Vec::new();
   for item in items {
@@ -1772,25 +1740,21 @@ pub fn split_by_ast(
     return Ok(Expr::List(result.into()));
   }
 
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      // SplitBy delegates to Split, so wolframscript's message shows
-      // the desugared test: Split[x, g[#1] === g[#2] & ].
-      let show = |e: &Expr| {
-        crate::syntax::format_expr(e, crate::syntax::ExprForm::Output)
-      };
-      crate::emit_message(&format!(
-        "Split::normal: Nonatomic expression expected at position 1 in Split[{}, {}[#1] === {}[#2] & ].",
-        show(list),
-        show(func),
-        show(func)
-      ));
-      return Ok(Expr::FunctionCall {
-        name: "SplitBy".to_string(),
-        args: vec![list.clone(), func.clone()].into(),
-      });
-    }
+  let Expr::List(items) = list else {
+    // SplitBy delegates to Split, so wolframscript's message shows
+    // the desugared test: Split[x, g[#1] === g[#2] & ].
+    let show =
+      |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+    crate::emit_message(&format!(
+      "Split::normal: Nonatomic expression expected at position 1 in Split[{}, {}[#1] === {}[#2] & ].",
+      show(list),
+      show(func),
+      show(func)
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "SplitBy".to_string(),
+      args: vec![list.clone(), func.clone()].into(),
+    });
   };
   if items.is_empty() {
     return Ok(Expr::List(vec![].into()));
@@ -1859,11 +1823,8 @@ fn edge_to_f64(e: &Expr) -> Option<f64> {
 /// BinCounts[data, {min, max, dx}] - count data points in equal-width bins
 /// Bins are [min, min+dx), [min+dx, min+2dx), ..., [max-dx, max)
 pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let data = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("BinCounts", args));
-    }
+  let Expr::List(data) = &args[0] else {
+    return Ok(unevaluated("BinCounts", args));
   };
 
   // Extract numeric values from data, skip non-numeric
@@ -1874,8 +1835,8 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if values.is_empty() {
       return Ok(Expr::List(vec![].into()));
     }
-    let data_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
-    let data_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let data_min = values.iter().copied().fold(f64::INFINITY, f64::min);
+    let data_max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let dx = 1.0;
     let mut lo = (data_min / dx).floor() * dx;
     if (data_min - lo).abs() < 1e-12 {
@@ -1893,8 +1854,8 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if values.is_empty() {
           return Ok(Expr::List(vec![].into()));
         }
-        let data_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
-        let data_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let data_min = values.iter().copied().fold(f64::INFINITY, f64::min);
+        let data_max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         let dx = *dx_int as f64;
         let mut lo = (data_min / dx).floor() * dx;
         if (data_min - lo).abs() < 1e-12 {
@@ -1910,8 +1871,8 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if values.is_empty() {
           return Ok(Expr::List(vec![].into()));
         }
-        let data_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
-        let data_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let data_min = values.iter().copied().fold(f64::INFINITY, f64::min);
+        let data_max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         let dx = *dx_f;
         let mut lo = (data_min / dx).floor() * dx;
         if (data_min - lo).abs() < 1e-12 {
@@ -1933,10 +1894,8 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           unreachable!()
         };
         let mut numeric_edges: Vec<f64> = Vec::with_capacity(edges.len());
-        for e in edges.iter() {
-          let v = if let Some(v) = edge_to_f64(e) {
-            v
-          } else {
+        for e in edges {
+          let Some(v) = edge_to_f64(e) else {
             return Ok(unevaluated("BinCounts", args));
           };
           numeric_edges.push(v);
@@ -1956,23 +1915,14 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // BinCounts[data, {min, max, dx}]
       Expr::List(spec) if spec.len() == 3 => {
-        let min_v = match numeric_expr_to_f64(&spec[0]) {
-          Some(v) => v,
-          None => {
-            return Ok(unevaluated("BinCounts", args));
-          }
+        let Some(min_v) = numeric_expr_to_f64(&spec[0]) else {
+          return Ok(unevaluated("BinCounts", args));
         };
-        let max_v = match numeric_expr_to_f64(&spec[1]) {
-          Some(v) => v,
-          None => {
-            return Ok(unevaluated("BinCounts", args));
-          }
+        let Some(max_v) = numeric_expr_to_f64(&spec[1]) else {
+          return Ok(unevaluated("BinCounts", args));
         };
-        let dx = match numeric_expr_to_f64(&spec[2]) {
-          Some(v) => v,
-          None => {
-            return Ok(unevaluated("BinCounts", args));
-          }
+        let Some(dx) = numeric_expr_to_f64(&spec[2]) else {
+          return Ok(unevaluated("BinCounts", args));
         };
         (min_v, max_v, dx)
       }
@@ -2012,14 +1962,11 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// BinLists[data, {min, max, dx}] - group data points into equal-width bins
 /// Returns lists of elements per bin instead of counts
 pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let data = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      crate::emit_message(
-        "BinLists::vectmat: The first argument is expected to be a unit-compatible vector or a matrix with unit-compatible columns.",
-      );
-      return Ok(unevaluated("BinLists", args));
-    }
+  let Expr::List(data) = &args[0] else {
+    crate::emit_message(
+      "BinLists::vectmat: The first argument is expected to be a unit-compatible vector or a matrix with unit-compatible columns.",
+    );
+    return Ok(unevaluated("BinLists", args));
   };
 
   // Extract numeric values paired with original expressions
@@ -2100,10 +2047,8 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           unreachable!()
         };
         let mut numeric_edges: Vec<f64> = Vec::with_capacity(edges.len());
-        for e in edges.iter() {
-          let v = if let Some(v) = edge_to_f64(e) {
-            v
-          } else {
+        for e in edges {
+          let Some(v) = edge_to_f64(e) else {
             return Ok(unevaluated("BinLists", args));
           };
           numeric_edges.push(v);
@@ -2123,23 +2068,14 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::List(result_exprs.into()));
       }
       Expr::List(spec) if spec.len() == 3 => {
-        let min_v = match numeric_expr_to_f64(&spec[0]) {
-          Some(v) => v,
-          None => {
-            return Ok(unevaluated("BinLists", args));
-          }
+        let Some(min_v) = numeric_expr_to_f64(&spec[0]) else {
+          return Ok(unevaluated("BinLists", args));
         };
-        let max_v = match numeric_expr_to_f64(&spec[1]) {
-          Some(v) => v,
-          None => {
-            return Ok(unevaluated("BinLists", args));
-          }
+        let Some(max_v) = numeric_expr_to_f64(&spec[1]) else {
+          return Ok(unevaluated("BinLists", args));
         };
-        let dx = match numeric_expr_to_f64(&spec[2]) {
-          Some(v) => v,
-          None => {
-            return Ok(unevaluated("BinLists", args));
-          }
+        let Some(dx) = numeric_expr_to_f64(&spec[2]) else {
+          return Ok(unevaluated("BinLists", args));
         };
         (min_v, max_v, dx)
       }
@@ -2285,32 +2221,29 @@ pub(crate) fn wl_bin_spec(
   values: &[f64],
   width: Option<f64>,
 ) -> (f64, f64, f64, bool) {
-  let (data_min, data_max, dx) = match width {
-    Some(dx) => {
-      let mn = values.iter().cloned().fold(f64::INFINITY, f64::min);
-      let mx = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-      (mn, mx, dx)
-    }
-    None => {
-      let mut sorted = values.to_vec();
-      sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-      let data_min = sorted[0];
-      let data_max = sorted[sorted.len() - 1];
-      let n = sorted.len() as f64;
-      let iqr = interquartile_range(&sorted);
-      let dx = if iqr > 0.0 {
-        wl_nice_bin_width(2.0 * iqr / n.cbrt(), &sorted)
-      } else if data_max > data_min {
-        // Fallback: use range / Sturges' rule
-        let sturges_bins = (n.log2() + 1.0).ceil().max(1.0);
-        wl_nice_bin_width((data_max - data_min) / sturges_bins, &sorted)
-      } else {
-        // All values identical
-        let v = data_min.abs();
-        if v == 0.0 { 1.0 } else { nice_number(v) }
-      };
-      (data_min, data_max, dx)
-    }
+  let (data_min, data_max, dx) = if let Some(dx) = width {
+    let mn = values.iter().copied().fold(f64::INFINITY, f64::min);
+    let mx = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    (mn, mx, dx)
+  } else {
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let data_min = sorted[0];
+    let data_max = sorted[sorted.len() - 1];
+    let n = sorted.len() as f64;
+    let iqr = interquartile_range(&sorted);
+    let dx = if iqr > 0.0 {
+      wl_nice_bin_width(2.0 * iqr / n.cbrt(), &sorted)
+    } else if data_max > data_min {
+      // Fallback: use range / Sturges' rule
+      let sturges_bins = (n.log2() + 1.0).ceil().max(1.0);
+      wl_nice_bin_width((data_max - data_min) / sturges_bins, &sorted)
+    } else {
+      // All values identical
+      let v = data_min.abs();
+      if v == 0.0 { 1.0 } else { nice_number(v) }
+    };
+    (data_min, data_max, dx)
   };
   if data_max > data_min && all_multiples_of(values, dx) {
     // Center bins on the values: edges at value ± dx/2.
@@ -2457,8 +2390,8 @@ pub(crate) fn wl_user_binning_n(values: &[f64], n: i128) -> Option<NBinEdges> {
     return None;
   }
   let nn = n as usize;
-  let min_d = values.iter().cloned().fold(f64::INFINITY, f64::min);
-  let max_d = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+  let min_d = values.iter().copied().fold(f64::INFINITY, f64::min);
+  let max_d = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
   if !min_d.is_finite() || !max_d.is_finite() {
     return None;
   }
@@ -2481,9 +2414,8 @@ pub(crate) fn wl_user_binning_n(values: &[f64], n: i128) -> Option<NBinEdges> {
     if g.is_finite() { g } else { 0.0 }
   };
 
-  let (mant, e) = match ws_smooth_width(gran.max(raw)) {
-    None => return Some(zero_range_bins(values, nn)),
-    Some(pair) => pair,
+  let Some((mant, e)) = ws_smooth_width(gran.max(raw)) else {
+    return Some(zero_range_bins(values, nn));
   };
   let delta_f = nice_width_f64(mant, e);
   let x_lo = (min_d + f64::EPSILON) * (1.0 + 2.0 * f64::EPSILON);
@@ -2562,15 +2494,12 @@ fn count_into_edges(values: &[f64], edges: &[f64]) -> Vec<i128> {
 /// HistogramList[data, {dx}] - explicit bin width
 /// HistogramList[data, {min, max, dx}] - explicit bin specification
 pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let data = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      crate::emit_message(&format!(
-        "HistogramList::ldata: {} is not a valid dataset or list of datasets.",
-        crate::syntax::expr_to_string(&args[0])
-      ));
-      return Ok(unevaluated("HistogramList", args));
-    }
+  let Expr::List(data) = &args[0] else {
+    crate::emit_message(&format!(
+      "HistogramList::ldata: {} is not a valid dataset or list of datasets.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated("HistogramList", args));
   };
 
   let values: Vec<f64> = data.iter().filter_map(numeric_expr_to_f64).collect();
@@ -2591,11 +2520,8 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[1] {
       // HistogramList[data, n] — target bin count
       Expr::Integer(n) if *n >= 1 => {
-        let bins = match wl_user_binning_n(&values, *n) {
-          Some(b) => b,
-          None => {
-            return Ok(unevaluated("HistogramList", args));
-          }
+        let Some(bins) = wl_user_binning_n(&values, *n) else {
+          return Ok(unevaluated("HistogramList", args));
         };
         let counts = count_into_edges(&values, &bins.f64s);
         return Ok(Expr::List(
@@ -2631,17 +2557,11 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // HistogramList[data, {min, max, dx}]
       Expr::List(spec) if spec.len() == 3 => {
-        let min_v = match numeric_expr_to_f64(&spec[0]) {
-          Some(v) => v,
-          None => {
-            return Ok(unevaluated("HistogramList", args));
-          }
+        let Some(min_v) = numeric_expr_to_f64(&spec[0]) else {
+          return Ok(unevaluated("HistogramList", args));
         };
-        let max_v = match numeric_expr_to_f64(&spec[1]) {
-          Some(v) => v,
-          None => {
-            return Ok(unevaluated("HistogramList", args));
-          }
+        let Some(max_v) = numeric_expr_to_f64(&spec[1]) else {
+          return Ok(unevaluated("HistogramList", args));
         };
         let dx = match numeric_expr_to_f64(&spec[2]) {
           Some(v) if v > 0.0 => v,
@@ -2770,18 +2690,12 @@ pub fn take_largest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  let list = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("TakeLargestBy", args));
-    }
+  let Expr::List(list) = &args[0] else {
+    return Ok(unevaluated("TakeLargestBy", args));
   };
   let f = &args[1];
-  let n = match take_count_or_upto(&args[2], list.len()) {
-    Some(n) => n,
-    None => {
-      return Ok(unevaluated("TakeLargestBy", args));
-    }
+  let Some(n) = take_count_or_upto(&args[2], list.len()) else {
+    return Ok(unevaluated("TakeLargestBy", args));
   };
 
   // Compute f[item] for each item
@@ -2826,18 +2740,12 @@ pub fn take_smallest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  let list = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("TakeSmallestBy", args));
-    }
+  let Expr::List(list) = &args[0] else {
+    return Ok(unevaluated("TakeSmallestBy", args));
   };
   let f = &args[1];
-  let n = match take_count_or_upto(&args[2], list.len()) {
-    Some(n) => n,
-    None => {
-      return Ok(unevaluated("TakeSmallestBy", args));
-    }
+  let Some(n) = take_count_or_upto(&args[2], list.len()) else {
+    return Ok(unevaluated("TakeSmallestBy", args));
   };
 
   // Compute f[item] for each item
@@ -2874,11 +2782,8 @@ pub fn all_same_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "AllSameBy expects 2 arguments".into(),
     ));
   }
-  let items = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("AllSameBy", args));
-    }
+  let Expr::List(items) = &args[0] else {
+    return Ok(unevaluated("AllSameBy", args));
   };
   if items.is_empty() {
     return Ok(bool_expr(true));
@@ -2907,17 +2812,16 @@ pub fn all_same_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn clustering_components_ast(
   list: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items.clone(),
-    _ => {
-      crate::emit_message(
-        "ClusteringComponents::nosup: This type of data is not supported.",
-      );
-      return Ok(Expr::FunctionCall {
-        name: "ClusteringComponents".to_string(),
-        args: vec![list.clone()].into(),
-      });
-    }
+  let items = if let Expr::List(items) = list {
+    items.clone()
+  } else {
+    crate::emit_message(
+      "ClusteringComponents::nosup: This type of data is not supported.",
+    );
+    return Ok(Expr::FunctionCall {
+      name: "ClusteringComponents".to_string(),
+      args: vec![list.clone()].into(),
+    });
   };
   if items.is_empty() {
     return Ok(Expr::List(vec![].into()));
@@ -2987,17 +2891,16 @@ pub fn clustering_components_n_ast(
       });
     }
   };
-  let items = match list {
-    Expr::List(items) => items.clone(),
-    _ => {
-      crate::emit_message(
-        "ClusteringComponents::nosup: This type of data is not supported.",
-      );
-      return Ok(Expr::FunctionCall {
-        name: "ClusteringComponents".to_string(),
-        args: vec![list.clone(), n_expr.clone()].into(),
-      });
-    }
+  let items = if let Expr::List(items) = list {
+    items.clone()
+  } else {
+    crate::emit_message(
+      "ClusteringComponents::nosup: This type of data is not supported.",
+    );
+    return Ok(Expr::FunctionCall {
+      name: "ClusteringComponents".to_string(),
+      args: vec![list.clone(), n_expr.clone()].into(),
+    });
   };
   if items.is_empty() {
     return Ok(Expr::List(vec![].into()));
@@ -3111,27 +3014,25 @@ fn cluster_keys_emit_values(
   keys: &[Expr],
   vals: &[Expr],
   raw_input: &Expr,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   // Numeric keys only.
   let mut numeric_keys: Vec<f64> = Vec::with_capacity(keys.len());
   for k in keys {
     match expr_to_f64(k) {
       Some(v) => numeric_keys.push(v),
       None => {
-        return Ok(Expr::FunctionCall {
+        return Expr::FunctionCall {
           name: "FindClusters".to_string(),
           args: vec![raw_input.clone()].into(),
-        });
+        };
       }
     }
   }
   if numeric_keys.is_empty() {
-    return Ok(Expr::List(vec![].into()));
+    return Expr::List(vec![].into());
   }
   if numeric_keys.len() == 1 {
-    return Ok(Expr::List(
-      vec![Expr::List(vec![vals[0].clone()].into())].into(),
-    ));
+    return Expr::List(vec![Expr::List(vec![vals[0].clone()].into())].into());
   }
   // Locate the largest gap on the *sorted* keys.
   let n = numeric_keys.len();
@@ -3152,7 +3053,7 @@ fn cluster_keys_emit_values(
   }
   // All keys identical — single cluster.
   if max_gap == 0.0 || !max_gap.is_finite() {
-    return Ok(Expr::List(vec![Expr::List(vals.to_vec().into())].into()));
+    return Expr::List(vec![Expr::List(vals.to_vec().into())].into());
   }
   // Threshold halfway through the largest gap.
   let threshold = numeric_keys[sort_idx[max_gap_pos]] + max_gap / 2.0;
@@ -3167,9 +3068,7 @@ fn cluster_keys_emit_values(
     }
   }
   // wolframscript prints the high-key cluster first.
-  Ok(Expr::List(
-    vec![Expr::List(high.into()), Expr::List(low.into())].into(),
-  ))
+  Expr::List(vec![Expr::List(high.into()), Expr::List(low.into())].into())
 }
 
 /// `FindClusters[list]` / `FindClusters[list, k]` — dispatch entry that
@@ -3207,7 +3106,7 @@ pub fn find_clusters_ast_n(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(unevaluated("FindClusters", args));
       }
     };
-    return find_clusters_with_k(&args[0], k, args);
+    return Ok(find_clusters_with_k(&args[0], k, args));
   }
   find_clusters_ast(&args[0])
 }
@@ -3460,7 +3359,7 @@ fn edit_distance_str(a: &str, b: &str) -> u32 {
   for i in 1..=m {
     curr[0] = i as u32;
     for j in 1..=n {
-      let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+      let cost = u32::from(a[i - 1] != b[j - 1]);
       curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
     }
     std::mem::swap(&mut prev, &mut curr);
@@ -3472,27 +3371,27 @@ fn find_clusters_with_k(
   list: &Expr,
   k: usize,
   raw_args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let items = match list {
     Expr::List(items) => items.clone(),
     _ => {
-      return Ok(unevaluated("FindClusters", raw_args));
+      return unevaluated("FindClusters", raw_args);
     }
   };
   if items.is_empty() {
-    return Ok(Expr::List(vec![].into()));
+    return Expr::List(vec![].into());
   }
   if k == 1 {
-    return Ok(Expr::List(vec![Expr::List(items)].into()));
+    return Expr::List(vec![Expr::List(items)].into());
   }
   if k >= items.len() {
     // One element per cluster.
-    return Ok(Expr::List(
+    return Expr::List(
       items
         .into_iter()
         .map(|e| Expr::List(vec![e].into()))
         .collect(),
-    ));
+    );
   }
   // Convert items to f64 for gap analysis. If any item isn't numeric,
   // try the string-input path via agglomerative clustering on
@@ -3500,19 +3399,18 @@ fn find_clusters_with_k(
   let mut values: Vec<f64> = Vec::with_capacity(items.len());
   let mut all_numeric = true;
   for item in &items {
-    match expr_to_f64(item) {
-      Some(v) => values.push(v),
-      None => {
-        all_numeric = false;
-        break;
-      }
+    if let Some(v) = expr_to_f64(item) {
+      values.push(v);
+    } else {
+      all_numeric = false;
+      break;
     }
   }
   if !all_numeric {
     if items.iter().all(|e| matches!(e, Expr::String(_))) {
-      return Ok(agglomerative_cluster_strings(&items, k));
+      return agglomerative_cluster_strings(&items, k);
     }
-    return Ok(unevaluated("FindClusters", raw_args));
+    return unevaluated("FindClusters", raw_args);
   }
   // Sort indices by value to find gaps in ascending value order.
   let n = values.len();
@@ -3531,7 +3429,7 @@ fn find_clusters_with_k(
     .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
   let mut cut_positions: Vec<usize> =
     gaps.iter().take(k - 1).map(|(_, p)| *p).collect();
-  cut_positions.sort();
+  cut_positions.sort_unstable();
   // Assign each input index a cluster label (1..=k) based on its
   // position in the sorted order and the cut positions. Lower-value
   // elements end up in cluster 1.
@@ -3558,7 +3456,7 @@ fn find_clusters_with_k(
     .filter(|g| !g.is_empty())
     .map(|v| Expr::List(v.into()))
     .collect();
-  Ok(Expr::List(result.into()))
+  Expr::List(result.into())
 }
 
 /// `FindClusters[list]` — partition `list` into clusters, returning each
@@ -3574,7 +3472,7 @@ fn find_clusters_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   // cluster first (matching wolframscript's
   // `FindClusters[{1->a, 2->b, 10->c}]` → `{{c}, {a, b}}`).
   if let Some((keys, vals)) = extract_rule_style_input(list) {
-    return cluster_keys_emit_values(&keys, &vals, list);
+    return Ok(cluster_keys_emit_values(&keys, &vals, list));
   }
   let items = match list {
     Expr::List(items) => items.clone(),

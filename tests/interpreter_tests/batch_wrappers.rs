@@ -25,7 +25,7 @@ mod batch_unevaluated_wrappers {
     // for 3 periods is 1157.625.
     let result = interpret("TimeValue[1000, 0.05, 3]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 1157.6250000000002).abs() < 1e-9, "got {}", val);
+    assert!((val - 1157.6250000000002).abs() < 1e-9, "got {val}");
   }
   // `s (1 + i)^t` holds symbolically too, so a growth curve can be
   // plotted or solved. Regression: any non-numeric part left the whole
@@ -58,7 +58,7 @@ mod batch_unevaluated_wrappers {
     // Negative t for present value: 1000 / 1.05^3.
     let result = interpret("TimeValue[1000, 0.05, -3]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 863.837598531476).abs() < 1e-9, "got {}", val);
+    assert!((val - 863.837598531476).abs() < 1e-9, "got {val}");
   }
   #[test]
   fn time_value_exact_rational() {
@@ -71,7 +71,7 @@ mod batch_unevaluated_wrappers {
     let result =
       interpret("TimeValue[1000, {0.04, 0.05, 0.06, 0.07, 0.08}, 5]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 1337.6301120000003).abs() < 1e-9, "got {}", val);
+    assert!((val - 1337.6301120000003).abs() < 1e-9, "got {val}");
   }
   #[test]
   fn time_value_list_of_rates_extends_with_last() {
@@ -79,7 +79,7 @@ mod batch_unevaluated_wrappers {
     // 1000 * 1.04 * 1.05 * 1.05 * 1.05 * 1.05 = 1264.1265.
     let result = interpret("TimeValue[1000, {0.04, 0.05}, 5]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 1264.1265).abs() < 1e-9, "got {}", val);
+    assert!((val - 1264.1265).abs() < 1e-9, "got {val}");
   }
   #[test]
   fn time_value_list_of_rates_truncates() {
@@ -87,7 +87,7 @@ mod batch_unevaluated_wrappers {
     let result = interpret("TimeValue[1000, {0.04, 0.05, 0.06}, 2]").unwrap();
     let val: f64 = result.parse().unwrap();
     // 1000 * 1.04 * 1.05 = 1092.
-    assert!((val - 1092.0).abs() < 1e-9, "got {}", val);
+    assert!((val - 1092.0).abs() < 1e-9, "got {val}");
   }
   #[test]
   fn time_value_list_of_rates_zero_t() {
@@ -104,7 +104,7 @@ mod batch_unevaluated_wrappers {
     // PMT * (1 - (1+r)^-n) / r = 100 * (1 - 1.06^-12)/0.06 ≈ 838.384...
     let result = interpret("TimeValue[Annuity[100, 12], 0.06, 0]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 838.384394038332).abs() < 1e-9, "got {}", val);
+    assert!((val - 838.384394038332).abs() < 1e-9, "got {val}");
   }
 
   #[test]
@@ -112,7 +112,7 @@ mod batch_unevaluated_wrappers {
     // FV at end of term (t=n): PMT * ((1+r)^n - 1) / r.
     let result = interpret("TimeValue[Annuity[100, 12], 0.06, 12]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 1686.994119725919).abs() < 1e-9, "got {}", val);
+    assert!((val - 1686.994119725919).abs() < 1e-9, "got {val}");
   }
 
   #[test]
@@ -122,7 +122,7 @@ mod batch_unevaluated_wrappers {
       interpret("TimeValue[Cashflow[{0, 100, 200, 450, 300, 580}], 0.06, 7]")
         .unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 1986.6044587456004).abs() < 1e-7, "got {}", val);
+    assert!((val - 1986.6044587456004).abs() < 1e-7, "got {val}");
   }
 
   #[test]
@@ -132,7 +132,7 @@ mod batch_unevaluated_wrappers {
       interpret("TimeValue[1000, 0.075, {{2013, 1, 1}, {2010, 1, 1}}]")
         .unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 1242.2968749999998).abs() < 1e-9, "got {}", val);
+    assert!((val - 1242.2968749999998).abs() < 1e-9, "got {val}");
   }
 
   #[test]
@@ -144,7 +144,7 @@ mod batch_unevaluated_wrappers {
     )
     .unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 807.3980918276454).abs() < 1e-7, "got {}", val);
+    assert!((val - 807.3980918276454).abs() < 1e-7, "got {val}");
   }
 
   #[test]
@@ -156,7 +156,7 @@ mod batch_unevaluated_wrappers {
     )
     .unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 881.6787162757889).abs() < 1e-7, "got {}", val);
+    assert!((val - 881.6787162757889).abs() < 1e-7, "got {val}");
   }
 
   #[test]
@@ -167,7 +167,7 @@ mod batch_unevaluated_wrappers {
     )
     .unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 585.4305794276072).abs() < 1e-7, "got {}", val);
+    assert!((val - 585.4305794276072).abs() < 1e-7, "got {val}");
   }
 
   #[test]
@@ -179,7 +179,7 @@ mod batch_unevaluated_wrappers {
     )
     .unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 915.1416593531594).abs() < 1e-7, "got {}", val);
+    assert!((val - 915.1416593531594).abs() < 1e-7, "got {val}");
   }
 
   #[test]
@@ -190,35 +190,35 @@ mod batch_unevaluated_wrappers {
     let result =
       interpret("TimeValue[1000, EffectiveInterest[0.05, 1/4], 10]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 1643.6194634870124).abs() < 1e-9, "got {}", val);
+    assert!((val - 1643.6194634870124).abs() < 1e-9, "got {val}");
   }
   #[test]
   fn effective_interest_quarterly() {
     // Compounded 4 times per year (period = 1/4).
     let result = interpret("EffectiveInterest[0.05, 1/4]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.050945336914062445).abs() < 1e-12, "got {}", val);
+    assert!((val - 0.050945336914062445).abs() < 1e-12, "got {val}");
   }
   #[test]
   fn effective_interest_monthly() {
     // 12 compounding periods per year → period = 1/12.
     let result = interpret("EffectiveInterest[0.05, 1/12]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.0511618978817332).abs() < 1e-12, "got {}", val);
+    assert!((val - 0.0511618978817332).abs() < 1e-12, "got {val}");
   }
   #[test]
   fn effective_interest_annual() {
     // Annual compounding leaves the rate unchanged.
     let result = interpret("EffectiveInterest[0.05, 1]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.05).abs() < 1e-12, "got {}", val);
+    assert!((val - 0.05).abs() < 1e-12, "got {val}");
   }
   #[test]
   fn effective_interest_continuous() {
     // Period 0 → continuous compounding: e^r - 1.
     let result = interpret("EffectiveInterest[0.05, 0]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.05127109637602412).abs() < 1e-12, "got {}", val);
+    assert!((val - 0.05127109637602412).abs() < 1e-12, "got {val}");
   }
   #[test]
   fn effective_interest_symbolic() {
@@ -238,7 +238,7 @@ mod batch_unevaluated_wrappers {
     // First argument threads over a list of rates.
     let result =
       interpret("EffectiveInterest[{0.04, 0.05, 0.06}, 1/2]").unwrap();
-    assert!(result.starts_with("{"), "got {}", result);
+    assert!(result.starts_with('{'), "got {result}");
     let stripped = result.trim_start_matches('{').trim_end_matches('}');
     let vals: Vec<f64> = stripped
       .split(',')
@@ -285,7 +285,7 @@ mod batch_unevaluated_wrappers {
     // value 2/3 ≈ 0.6666666666666666 (matches wolframscript).
     let result = interpret("BSplineBasis[3, 0.5]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 2.0 / 3.0).abs() < 1e-12, "got {}", val);
+    assert!((val - 2.0 / 3.0).abs() < 1e-12, "got {val}");
   }
 
   #[test]
@@ -293,7 +293,7 @@ mod batch_unevaluated_wrappers {
     // BSplineBasis[2, 0.5] = 3/4 = 0.75.
     let result = interpret("BSplineBasis[2, 0.5]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.75).abs() < 1e-12, "got {}", val);
+    assert!((val - 0.75).abs() < 1e-12, "got {val}");
   }
 
   #[test]
@@ -301,10 +301,10 @@ mod batch_unevaluated_wrappers {
     // d = 1: triangle peaked at 1/2 with value 1.
     let result = interpret("BSplineBasis[1, 0.5]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 1.0).abs() < 1e-12, "got {}", val);
+    assert!((val - 1.0).abs() < 1e-12, "got {val}");
     let result = interpret("BSplineBasis[1, 0.25]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.5).abs() < 1e-12, "got {}", val);
+    assert!((val - 0.5).abs() < 1e-12, "got {val}");
   }
 
   #[test]
@@ -312,7 +312,7 @@ mod batch_unevaluated_wrappers {
     // d = 0: indicator of [0, 1).
     let result = interpret("BSplineBasis[0, 0.5]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 1.0).abs() < 1e-12, "got {}", val);
+    assert!((val - 1.0).abs() < 1e-12, "got {val}");
   }
 
   #[test]
@@ -1253,13 +1253,11 @@ mod batch_unevaluated_wrappers_2 {
     // Output is an Or of And terms — not unevaluated.
     assert!(
       result.contains("||"),
-      "expected Or-form DNF, got `{}`",
-      result
+      "expected Or-form DNF, got `{result}`"
     );
     assert!(
       !result.starts_with("BooleanCountingFunction"),
-      "still unevaluated: {}",
-      result
+      "still unevaluated: {result}"
     );
   }
 
@@ -2525,8 +2523,7 @@ mod batch_unevaluated_wrappers_2 {
     let result = interpret("TreeGraph[{1  2, 1  3}]").unwrap();
     assert!(
       result.contains("-Graphics-"),
-      "TreeGraph should render as Graphics, got: {}",
-      result
+      "TreeGraph should render as Graphics, got: {result}"
     );
   }
 
@@ -3816,7 +3813,7 @@ mod batch_unevaluated_wrappers_2 {
         .unwrap()
         .parse()
         .unwrap();
-    assert!((v - 2.0 / 3.0).abs() < 1e-12, "got {}", v);
+    assert!((v - 2.0 / 3.0).abs() < 1e-12, "got {v}");
   }
   #[test]
   fn word_frequency_absent_word() {
@@ -4510,7 +4507,7 @@ mod batch_unevaluated_wrappers_2 {
     let result =
       interpret("NMaxValue[{x - 2*y, x^2 + y^2 <= 1}, {x, y}]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 5.0_f64.sqrt()).abs() < 1e-9, "got {}", val);
+    assert!((val - 5.0_f64.sqrt()).abs() < 1e-9, "got {val}");
   }
 
   #[test]
@@ -4518,14 +4515,14 @@ mod batch_unevaluated_wrappers_2 {
     let result =
       interpret("NMinValue[{x - 2*y, x^2 + y^2 <= 1}, {x, y}]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val + 5.0_f64.sqrt()).abs() < 1e-9, "got {}", val);
+    assert!((val + 5.0_f64.sqrt()).abs() < 1e-9, "got {val}");
   }
 
   #[test]
   fn nargmax_linear_on_unit_disk() {
     let result =
       interpret("NArgMax[{x - 2*y, x^2 + y^2 <= 1}, {x, y}]").unwrap();
-    assert!(result.starts_with("{"), "got {}", result);
+    assert!(result.starts_with('{'), "got {result}");
     let inner = &result[1..result.len() - 1];
     let parts: Vec<f64> =
       inner.split(", ").map(|s| s.parse().unwrap()).collect();
@@ -6110,49 +6107,49 @@ mod batch_unevaluated_wrappers_2 {
     let data = "{{1, 2}, {3, {4, 5}}}";
     for (call, expected) in [
       (
-        format!("Map[f, {}, All]", data),
+        format!("Map[f, {data}, All]"),
         "f[{f[{f[1], f[2]}], f[{f[3], f[{f[4], f[5]}]}]}]".to_string(),
       ),
       (
-        format!("Apply[f, {}, All]", data),
+        format!("Apply[f, {data}, All]"),
         "f[f[1, 2], f[3, f[4, 5]]]".to_string(),
       ),
       (
-        format!("Cases[{}, _Integer, All]", data),
+        format!("Cases[{data}, _Integer, All]"),
         "{1, 2, 3, 4, 5}".to_string(),
       ),
-      (format!("Count[{}, _Integer, All]", data), "5".to_string()),
+      (format!("Count[{data}, _Integer, All]"), "5".to_string()),
       (
-        format!("Position[{}, _Integer, All]", data),
+        format!("Position[{data}, _Integer, All]"),
         "{{1, 1}, {1, 2}, {2, 1}, {2, 2, 1}, {2, 2, 2}}".to_string(),
       ),
       (
-        format!("Level[{}, All]", data),
+        format!("Level[{data}, All]"),
         "{1, 2, {1, 2}, 3, 4, 5, {4, 5}, {3, {4, 5}}, {{1, 2}, {3, {4, 5}}}}"
           .to_string(),
       ),
-      (format!("Total[{}, All]", data), "15".to_string()),
-      (format!("FreeQ[{}, 4, All]", data), "False".to_string()),
-      (format!("MemberQ[{}, 4, All]", data), "True".to_string()),
+      (format!("Total[{data}, All]"), "15".to_string()),
+      (format!("FreeQ[{data}, 4, All]"), "False".to_string()),
+      (format!("MemberQ[{data}, 4, All]"), "True".to_string()),
       (
-        format!("DeleteCases[{}, 4, All]", data),
+        format!("DeleteCases[{data}, 4, All]"),
         "{{1, 2}, {3, {5}}}".to_string(),
       ),
     ] {
-      assert_eq!(interpret(&call).unwrap(), expected, "for {}", call);
+      assert_eq!(interpret(&call).unwrap(), expected, "for {call}");
       // Every one of them is exactly the {0, Infinity} answer.
       let spelled = call.replace("All]", "{0, Infinity}]");
-      assert_eq!(interpret(&spelled).unwrap(), expected, "for {}", spelled);
+      assert_eq!(interpret(&spelled).unwrap(), expected, "for {spelled}");
     }
     // Scan returns Null either way; it is the traversal that matters.
     assert_eq!(
-      interpret(&format!("Scan[f, {}, All]", data)).unwrap(),
-      interpret(&format!("Scan[f, {}, {{0, Infinity}}]", data)).unwrap()
+      interpret(&format!("Scan[f, {data}, All]")).unwrap(),
+      interpret(&format!("Scan[f, {data}, {{0, Infinity}}]")).unwrap()
     );
     // Flatten rejects All rather than reading it as a level, and MapAt
     // reads it as a position specification, so neither is rewritten.
     assert_eq!(
-      interpret(&format!("MapAt[f, {}, All]", data)).unwrap(),
+      interpret(&format!("MapAt[f, {data}, All]")).unwrap(),
       "{f[{1, 2}], f[{3, {4, 5}}]}"
     );
   }
@@ -6170,38 +6167,37 @@ mod batch_unevaluated_wrappers_2 {
     // -1 is {1, -1}: every part at level 1 or below.
     for spec in ["-1", "{1, -1}", "Infinity"] {
       assert_eq!(
-        interpret(&format!("MapIndexed[f, {}, {}]", data, spec)).unwrap(),
+        interpret(&format!("MapIndexed[f, {data}, {spec}]")).unwrap(),
         everything,
-        "for level {}",
-        spec
+        "for level {spec}"
       );
     }
     // {-1} on its own is only the atoms.
     assert_eq!(
-      interpret(&format!("MapIndexed[f, {}, {{-1}}]", data)).unwrap(),
+      interpret(&format!("MapIndexed[f, {data}, {{-1}}]")).unwrap(),
       "{{f[1, {1, 1}], f[2, {1, 2}]}, {f[3, {2, 1}], \
        {f[4, {2, 2, 1}], f[5, {2, 2, 2}]}}}"
     );
     // -2 is the parts whose own depth is at least 2, so {1, 2} and
     // {4, 5} are mapped and so is {3, {4, 5}} -- but not the atoms.
     assert_eq!(
-      interpret(&format!("MapIndexed[f, {}, -2]", data)).unwrap(),
+      interpret(&format!("MapIndexed[f, {data}, -2]")).unwrap(),
       "{f[{1, 2}, {1}], f[{3, f[{4, 5}, {2, 2}]}, {2}]}"
     );
     // {-2, -1} is depth 2 down to depth 1, which excludes the depth-3
     // {3, {4, 5}} even though its sibling {1, 2} is included.
     assert_eq!(
-      interpret(&format!("MapIndexed[f, {}, {{-2, -1}}]", data)).unwrap(),
+      interpret(&format!("MapIndexed[f, {data}, {{-2, -1}}]")).unwrap(),
       "{f[{f[1, {1, 1}], f[2, {1, 2}]}, {1}], {f[3, {2, 1}], \
        f[{f[4, {2, 2, 1}], f[5, {2, 2, 2}]}, {2, 2}]}}"
     );
     // The positive specs are unchanged.
     assert_eq!(
-      interpret(&format!("MapIndexed[f, {}, 1]", data)).unwrap(),
+      interpret(&format!("MapIndexed[f, {data}, 1]")).unwrap(),
       "{f[{1, 2}, {1}], f[{3, {4, 5}}, {2}]}"
     );
     assert_eq!(
-      interpret(&format!("MapIndexed[f, {}, {{2}}]", data)).unwrap(),
+      interpret(&format!("MapIndexed[f, {data}, {{2}}]")).unwrap(),
       "{{f[1, {1, 1}], f[2, {1, 2}]}, {f[3, {2, 1}], f[{4, 5}, {2, 2}]}}"
     );
   }
@@ -6218,13 +6214,12 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("Dimensions[{{1, 2}, {3, 4}}, 1]").unwrap(), "{2}");
     assert_eq!(interpret("Dimensions[{{1, 2}, {3, 4}}, 0]").unwrap(), "{}");
     for spec in ["-1", "1.5", "x"] {
-      let call = format!("Dimensions[{{1, 2, 3, 4, 5}}, {}]", spec);
+      let call = format!("Dimensions[{{1, 2, 3, 4, 5}}, {spec}]");
       let r = interpret_with_stdout(&call).unwrap();
       assert_eq!(r.result, call);
       let expected = format!(
         "Dimensions::innf: Non-negative integer or Infinity expected at \
-         position 2 in {}.",
-        call
+         position 2 in {call}."
       );
       assert!(
         r.warnings.contains(&expected),
@@ -6241,13 +6236,12 @@ mod batch_unevaluated_wrappers_2 {
   fn integer_reverse_reports_a_base_below_two() {
     use woxi::interpret_with_stdout;
     for base in ["-1", "0", "1"] {
-      let call = format!("IntegerReverse[123, {}]", base);
+      let call = format!("IntegerReverse[123, {base}]");
       let r = interpret_with_stdout(&call).unwrap();
       assert_eq!(r.result, call);
       let expected = format!(
         "IntegerReverse::ibmr: Positive integer greater than 1 or mixed \
-         radix specification expected at position 2 of {}.",
-        call
+         radix specification expected at position 2 of {call}."
       );
       assert!(
         r.warnings.contains(&expected),
@@ -6330,11 +6324,11 @@ mod batch_unevaluated_wrappers_2 {
     use woxi::interpret_with_stdout;
     for head in ["LetterCounts", "CharacterCounts"] {
       for spec in ["0", "-1", "1.5", "x"] {
-        let call = format!("{}[\"abcde\", {}]", head, spec);
+        let call = format!("{head}[\"abcde\", {spec}]");
         let r = interpret_with_stdout(&call).unwrap();
-        assert_eq!(r.result, format!("{}[abcde, {}]", head, spec));
+        assert_eq!(r.result, format!("{head}[abcde, {spec}]"));
         let expected =
-          format!("{}::arg2: Positive integer expected in position 2.", head);
+          format!("{head}::arg2: Positive integer expected in position 2.");
         assert!(
           r.warnings.contains(&expected),
           "expected {:?} for {}, got {:?}",
@@ -6344,7 +6338,7 @@ mod batch_unevaluated_wrappers_2 {
         );
       }
       assert_eq!(
-        interpret(&format!("{}[\"abcde\", 2]", head)).unwrap(),
+        interpret(&format!("{head}[\"abcde\", 2]")).unwrap(),
         "<|ab -> 1, bc -> 1, cd -> 1, de -> 1|>"
       );
     }
@@ -6381,9 +6375,9 @@ mod batch_unevaluated_wrappers_2 {
         "StringPart::partw: Part {{1, 2}} of abcde does not exist.",
       ),
     ] {
-      let call = format!("StringPart[\"abcde\", {}]", spec);
+      let call = format!("StringPart[\"abcde\", {spec}]");
       let r = interpret_with_stdout(&call).unwrap();
-      assert_eq!(r.result, format!("StringPart[abcde, {}]", spec));
+      assert_eq!(r.result, format!("StringPart[abcde, {spec}]"));
       assert!(
         r.warnings.contains(&message.to_string()),
         "expected {:?} for {}, got {:?}",
@@ -6409,12 +6403,11 @@ mod batch_unevaluated_wrappers_2 {
     use woxi::interpret_with_stdout;
     for head in ["StringRotateLeft", "StringRotateRight"] {
       for spec in ["{0}", "1.5", "x"] {
-        let call = format!("{}[\"abcde\", {}]", head, spec);
+        let call = format!("{head}[\"abcde\", {spec}]");
         let r = interpret_with_stdout(&call).unwrap();
-        assert_eq!(r.result, format!("{}[abcde, {}]", head, spec));
+        assert_eq!(r.result, format!("{head}[abcde, {spec}]"));
         let expected = format!(
-          "{}::int: Integer expected at position 2 in {}[abcde, {}].",
-          head, head, spec
+          "{head}::int: Integer expected at position 2 in {head}[abcde, {spec}]."
         );
         assert!(
           r.warnings.contains(&expected),
@@ -6448,13 +6441,12 @@ mod batch_unevaluated_wrappers_2 {
     for (spec, position) in
       [("-1", 2), ("1.5", 2), ("x", 2), ("2, -1", 3), ("2, x", 3)]
     {
-      let call = format!("StringRepeat[\"abcde\", {}]", spec);
+      let call = format!("StringRepeat[\"abcde\", {spec}]");
       let r = interpret_with_stdout(&call).unwrap();
-      assert_eq!(r.result, format!("StringRepeat[abcde, {}]", spec));
+      assert_eq!(r.result, format!("StringRepeat[abcde, {spec}]"));
       let expected = format!(
-        "StringRepeat::intp: Positive integer expected at position {} in \
-         StringRepeat[abcde, {}].",
-        position, spec
+        "StringRepeat::intp: Positive integer expected at position {position} in \
+         StringRepeat[abcde, {spec}]."
       );
       assert!(
         r.warnings.contains(&expected),
@@ -6490,11 +6482,11 @@ mod batch_unevaluated_wrappers_2 {
       "PermutationSupport",
     ] {
       for spec in ["{0}", "{1, 1}", "{2}", "{-1}", "{1, 3}"] {
-        let call = format!("{}[{}]", head, spec);
+        let call = format!("{head}[{spec}]");
         let r = interpret_with_stdout(&call).unwrap();
-        assert_eq!(r.result, call, "for {}", call);
+        assert_eq!(r.result, call, "for {call}");
         let expected =
-          format!("{}::permlist: Invalid permutation list {}.", head, spec);
+          format!("{head}::permlist: Invalid permutation list {spec}.");
         assert!(
           r.warnings.contains(&expected),
           "expected {:?} for {}, got {:?}",
@@ -6506,7 +6498,7 @@ mod batch_unevaluated_wrappers_2 {
     }
     // PermutationMatrix declines the same lists without reporting.
     for spec in ["{0}", "{1, 1}", "{2}", "{1, 3}"] {
-      let call = format!("PermutationMatrix[{}]", spec);
+      let call = format!("PermutationMatrix[{spec}]");
       let r = interpret_with_stdout(&call).unwrap();
       assert_eq!(r.result, call);
       assert!(r.warnings.is_empty(), "for {}, got {:?}", call, r.warnings);
@@ -6581,9 +6573,8 @@ mod batch_unevaluated_wrappers_2 {
       let r = interpret_with_stdout(call).unwrap();
       assert_eq!(r.result, call);
       let expected = format!(
-        "PowerRange::range: Range specification in {} does not have \
-         appropriate bounds.",
-        call
+        "PowerRange::range: Range specification in {call} does not have \
+         appropriate bounds."
       );
       assert!(
         r.warnings.contains(&expected),
@@ -6602,11 +6593,11 @@ mod batch_unevaluated_wrappers_2 {
   fn power_range_reports_an_unusable_factor() {
     use woxi::interpret_with_stdout;
     for (factor, reported) in [("0", "0"), ("1", "1")] {
-      let call = format!("PowerRange[1, 5, {}]", factor);
+      let call = format!("PowerRange[1, 5, {factor}]");
       let r = interpret_with_stdout(&call).unwrap();
       assert_eq!(r.result, call);
       let expected =
-        format!("PowerRange::factor: Factor cannot be {}.", reported);
+        format!("PowerRange::factor: Factor cannot be {reported}.");
       assert!(
         r.warnings.contains(&expected),
         "expected {:?}, got {:?}",
@@ -6670,8 +6661,7 @@ mod batch_unevaluated_wrappers_2 {
       let r = interpret_with_stdout(call).unwrap();
       assert_eq!(r.result, call);
       let expected = format!(
-        "ArrayResample::nodim: Invalid dimension specification {}.",
-        spec
+        "ArrayResample::nodim: Invalid dimension specification {spec}."
       );
       assert!(
         r.warnings.contains(&expected),
@@ -6698,10 +6688,9 @@ mod batch_unevaluated_wrappers_2 {
       let r = interpret_with_stdout(call).unwrap();
       assert_eq!(r.result, call);
       let expected = format!(
-        "{}::bddim: The specified dimensions {} should be a positive \
+        "{head}::bddim: The specified dimensions {spec} should be a positive \
          integer or a list of positive integers for every spatial \
-         dimension.",
-        head, spec
+         dimension."
       );
       assert!(
         r.warnings.contains(&expected),
@@ -6723,13 +6712,12 @@ mod batch_unevaluated_wrappers_2 {
   fn date_arithmetic_reports_an_empty_specification() {
     use woxi::interpret_with_stdout;
     for head in ["DatePlus", "DayPlus"] {
-      let call = format!("{}[{{}}, 1]", head);
+      let call = format!("{head}[{{}}, 1]");
       let r = interpret_with_stdout(&call).unwrap();
       assert_eq!(r.result, call);
       let expected = format!(
-        "{}::date: Expression {{}} cannot be interpreted as a date \
-         specification.",
-        head
+        "{head}::date: Expression {{}} cannot be interpreted as a date \
+         specification."
       );
       assert!(
         r.warnings.contains(&expected),
@@ -6748,11 +6736,11 @@ mod batch_unevaluated_wrappers_2 {
   fn min_and_max_filter_slide_a_two_dimensional_window() {
     let square = "{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}";
     assert_eq!(
-      interpret(&format!("MinFilter[{}, 1]", square)).unwrap(),
+      interpret(&format!("MinFilter[{square}, 1]")).unwrap(),
       "{{1, 1, 2}, {1, 1, 2}, {4, 4, 5}}"
     );
     assert_eq!(
-      interpret(&format!("MaxFilter[{}, 1]", square)).unwrap(),
+      interpret(&format!("MaxFilter[{square}, 1]")).unwrap(),
       "{{5, 6, 6}, {8, 9, 9}, {8, 9, 9}}"
     );
     assert_eq!(interpret("MinFilter[{}, 1]").unwrap(), "{}");
@@ -6772,11 +6760,9 @@ mod batch_unevaluated_wrappers_2 {
     ] {
       for magnitude in ["1", "2"] {
         assert_eq!(
-          interpret(&format!("{}[{}, -{}]", head, data, magnitude)).unwrap(),
-          interpret(&format!("{}[{}, {}]", head, data, magnitude)).unwrap(),
-          "{} at range -{}",
-          head,
-          magnitude
+          interpret(&format!("{head}[{data}, -{magnitude}]")).unwrap(),
+          interpret(&format!("{head}[{data}, {magnitude}]")).unwrap(),
+          "{head} at range -{magnitude}"
         );
       }
     }
@@ -6798,11 +6784,9 @@ mod batch_unevaluated_wrappers_2 {
     for (range, radius) in [("0.4", "1"), ("1.5", "2"), ("2.5", "3")] {
       for head in ["MinFilter", "MaxFilter"] {
         assert_eq!(
-          interpret(&format!("{}[{}, {}]", head, data, range)).unwrap(),
-          interpret(&format!("{}[{}, {}]", head, data, radius)).unwrap(),
-          "{} at range {}",
-          head,
-          range
+          interpret(&format!("{head}[{data}, {range}]")).unwrap(),
+          interpret(&format!("{head}[{data}, {radius}]")).unwrap(),
+          "{head} at range {range}"
         );
       }
     }
@@ -6833,12 +6817,11 @@ mod batch_unevaluated_wrappers_2 {
       cases.push((head, "x"));
     }
     for (head, range) in cases {
-      let call = format!("{}[{}, {}]", head, data, range);
+      let call = format!("{head}[{data}, {range}]");
       let r = interpret_with_stdout(&call).unwrap();
-      assert_eq!(r.result, call, "for {}", call);
+      assert_eq!(r.result, call, "for {call}");
       let expected = format!(
-        "{}::bdrad: {} is not a valid neighborhood range specification.",
-        head, range
+        "{head}::bdrad: {range} is not a valid neighborhood range specification."
       );
       assert!(
         r.warnings.contains(&expected),
@@ -6885,13 +6868,13 @@ mod batch_unevaluated_wrappers_2 {
       "TrimmedVariance",
       "WinsorizedVariance",
     ] {
-      let short = format!("{}[{{1, 2, 3, 4, 5, 6, 7, 8, 9, 1000}}]", head);
+      let short = format!("{head}[{{1, 2, 3, 4, 5, 6, 7, 8, 9, 1000}}]");
       let expected = if head.ends_with("Variance") {
         "594055/6"
       } else {
         "209/2"
       };
-      assert_eq!(interpret(&short).unwrap(), expected, "for {}", head);
+      assert_eq!(interpret(&short).unwrap(), expected, "for {head}");
     }
     // Floor[0.05 * 100] = 5, so the outlier and four more go from each end.
     assert_eq!(
@@ -6912,29 +6895,28 @@ mod batch_unevaluated_wrappers_2 {
     let data = "{1, 2, 3, 4, 5, 6, 7, 8, 9, 1000}";
     // Floor[0.1 * 10] = 1 off the bottom, Floor[0.3 * 10] = 3 off the top.
     assert_eq!(
-      interpret(&format!("TrimmedMean[{}, {{0.1, 0.3}}]", data)).unwrap(),
+      interpret(&format!("TrimmedMean[{data}, {{0.1, 0.3}}]")).unwrap(),
       "9/2"
     );
     assert_eq!(
-      interpret(&format!("WinsorizedMean[{}, {{0.1, 0.3}}]", data)).unwrap(),
+      interpret(&format!("WinsorizedMean[{data}, {{0.1, 0.3}}]")).unwrap(),
       "5"
     );
     assert_eq!(
-      interpret(&format!("TrimmedVariance[{}, {{0.1, 0.3}}]", data)).unwrap(),
+      interpret(&format!("TrimmedVariance[{data}, {{0.1, 0.3}}]")).unwrap(),
       "7/2"
     );
     assert_eq!(
-      interpret(&format!("WinsorizedVariance[{}, {{0.1, 0.3}}]", data))
-        .unwrap(),
+      interpret(&format!("WinsorizedVariance[{data}, {{0.1, 0.3}}]")).unwrap(),
       "40/9"
     );
     // The pair may leave one end untouched.
     assert_eq!(
-      interpret(&format!("TrimmedMean[{}, {{0, 0.2}}]", data)).unwrap(),
+      interpret(&format!("TrimmedMean[{data}, {{0, 0.2}}]")).unwrap(),
       "9/2"
     );
     assert_eq!(
-      interpret(&format!("WinsorizedMean[{}, {{0, 0.2}}]", data)).unwrap(),
+      interpret(&format!("WinsorizedMean[{data}, {{0, 0.2}}]")).unwrap(),
       "26/5"
     );
   }
@@ -6945,32 +6927,32 @@ mod batch_unevaluated_wrappers_2 {
   fn trimmed_and_winsorized_accept_associations_and_matrices() {
     let assoc = "<|\"x\" -> 1, \"y\" -> 2, \"z\" -> 1000|>";
     assert_eq!(
-      interpret(&format!("TrimmedMean[{}, 1/3]", assoc)).unwrap(),
+      interpret(&format!("TrimmedMean[{assoc}, 1/3]")).unwrap(),
       "2"
     );
     assert_eq!(
-      interpret(&format!("WinsorizedMean[{}, 1/3]", assoc)).unwrap(),
+      interpret(&format!("WinsorizedMean[{assoc}, 1/3]")).unwrap(),
       "2"
     );
     assert_eq!(
-      interpret(&format!("WinsorizedVariance[{}, 1/3]", assoc)).unwrap(),
+      interpret(&format!("WinsorizedVariance[{assoc}, 1/3]")).unwrap(),
       "0"
     );
     assert_eq!(
-      interpret(&format!("WinsorizedVariance[{}]", assoc)).unwrap(),
+      interpret(&format!("WinsorizedVariance[{assoc}]")).unwrap(),
       "997003/3"
     );
     let matrix = "{{1, 2}, {3, 4}, {5, 100}}";
     assert_eq!(
-      interpret(&format!("TrimmedMean[{}, 1/3]", matrix)).unwrap(),
+      interpret(&format!("TrimmedMean[{matrix}, 1/3]")).unwrap(),
       "{3, 4}"
     );
     assert_eq!(
-      interpret(&format!("WinsorizedMean[{}, 1/3]", matrix)).unwrap(),
+      interpret(&format!("WinsorizedMean[{matrix}, 1/3]")).unwrap(),
       "{3, 4}"
     );
     assert_eq!(
-      interpret(&format!("WinsorizedVariance[{}, 1/3]", matrix)).unwrap(),
+      interpret(&format!("WinsorizedVariance[{matrix}, 1/3]")).unwrap(),
       "{0, 0}"
     );
   }
@@ -7021,13 +7003,12 @@ mod batch_unevaluated_wrappers_2 {
       "WinsorizedVariance",
     ] {
       let r =
-        interpret_with_stdout(&format!("{}[{{1, 2, 3, 4}}, x]", head)).unwrap();
-      assert_eq!(r.result, format!("{}[{{1, 2, 3, 4}}, x]", head));
+        interpret_with_stdout(&format!("{head}[{{1, 2, 3, 4}}, x]")).unwrap();
+      assert_eq!(r.result, format!("{head}[{{1, 2, 3, 4}}, x]"));
       let expected = format!(
-        "{}::arg2: The second argument x is expected to be a non-negative \
+        "{head}::arg2: The second argument x is expected to be a non-negative \
          number less than 0.5 or a list of two non-negative numbers that \
-         sum to less than 1.",
-        head
+         sum to less than 1."
       );
       assert!(
         r.warnings.contains(&expected),
@@ -8785,8 +8766,7 @@ mod batch_unevaluated_wrappers_2 {
       msgs.iter().any(|m| m.contains(
         "SubsetMap::newls: The function f does not give a list of the same length when applied to list {1, 3}."
       )),
-      "expected newls message, got {:?}",
-      msgs
+      "expected newls message, got {msgs:?}"
     );
   }
 
@@ -10190,8 +10170,7 @@ mod batch_unevaluated_wrappers_2 {
       msgs.iter().any(|m| m.contains(
         "ExpressionTree::struct: Foo is not a valid expression structure."
       )),
-      "expected struct message, got {:?}",
-      msgs
+      "expected struct message, got {msgs:?}"
     );
   }
 
@@ -11152,7 +11131,7 @@ mod batch_unevaluated_wrappers_2 {
     // Clean up if left over from previous test
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(
-      interpret(&format!(r#"CreateDirectory["{}"]"#, dir)).unwrap(),
+      interpret(&format!(r#"CreateDirectory["{dir}"]"#)).unwrap(),
       dir
     );
     assert!(std::path::Path::new(&dir).is_dir());
@@ -11165,7 +11144,7 @@ mod batch_unevaluated_wrappers_2 {
     let base = temp_file("woxi_test_create_dir_nested");
     let _ = std::fs::remove_dir_all(&base);
     assert_eq!(
-      interpret(&format!(r#"CreateDirectory["{}"]"#, dir)).unwrap(),
+      interpret(&format!(r#"CreateDirectory["{dir}"]"#)).unwrap(),
       dir
     );
     assert!(std::path::Path::new(&dir).is_dir());
@@ -11177,7 +11156,7 @@ mod batch_unevaluated_wrappers_2 {
     let dir = temp_file("woxi_test_create_dir_exists");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let result = interpret(&format!(r#"CreateDirectory["{}"]"#, dir)).unwrap();
+    let result = interpret(&format!(r#"CreateDirectory["{dir}"]"#)).unwrap();
     assert_eq!(result, "$Failed");
     std::fs::remove_dir_all(&dir).unwrap();
   }
@@ -11194,10 +11173,9 @@ mod batch_unevaluated_wrappers_2 {
         .file_name()
         .and_then(|n| n.to_str())
         .is_some_and(|n| n.starts_with("woxi_")),
-      "Expected a woxi_* temp path, got: {}",
-      result
+      "Expected a woxi_* temp path, got: {result}"
     );
-    assert!(path.is_dir(), "Expected an existing directory: {}", result);
+    assert!(path.is_dir(), "Expected an existing directory: {result}");
     let _ = std::fs::remove_dir_all(path);
   }
 
@@ -11258,8 +11236,7 @@ mod batch_unevaluated_wrappers_2 {
     let dst = temp_file("woxi_test_copy_exists_dst.txt");
     std::fs::write(&src, "hello").unwrap();
     std::fs::write(&dst, "world").unwrap();
-    let result =
-      interpret(&format!(r#"CopyFile["{}", "{}"]"#, src, dst)).unwrap();
+    let result = interpret(&format!(r#"CopyFile["{src}", "{dst}"]"#)).unwrap();
     assert_eq!(result, "$Failed");
     std::fs::remove_file(&src).unwrap();
     std::fs::remove_file(&dst).unwrap();
@@ -11492,8 +11469,7 @@ mod option_symbols_batch {
     // Match Wolfram's output Around[2., 0.5773502691896258].
     assert!(
       result.starts_with("Around[2.,") && result.contains("0.577350269189"),
-      "got {}",
-      result
+      "got {result}"
     );
   }
 

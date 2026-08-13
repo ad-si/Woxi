@@ -286,7 +286,7 @@ fn poly_gcd_coeffs_mod(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
   trim_high(&mut a);
   if !is_zero_poly(&a) {
     let inv = mod_inv(*a.last().unwrap(), p);
-    for x in a.iter_mut() {
+    for x in &mut a {
       *x = mod_norm(*x * inv, p);
     }
   }

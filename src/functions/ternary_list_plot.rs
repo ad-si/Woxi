@@ -72,13 +72,10 @@ fn parse_ternary_data(
 ) -> Result<Vec<Vec<Triple>>, InterpreterError> {
   let data = evaluate_expr_to_expr(arg)?;
 
-  let items = match &data {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "TernaryListPlot: first argument must be a list".into(),
-      ));
-    }
+  let Expr::List(items) = &data else {
+    return Err(InterpreterError::EvaluationError(
+      "TernaryListPlot: first argument must be a list".into(),
+    ));
   };
 
   if items.is_empty() {
@@ -150,7 +147,7 @@ fn series_color(idx: usize, custom_colors: &[String]) -> String {
     return custom_colors[idx % custom_colors.len()].clone();
   }
   let (r, g, b) = PLOT_COLORS[idx % PLOT_COLORS.len()];
-  format!("rgb({},{},{})", r, g, b)
+  format!("rgb({r},{g},{b})")
 }
 
 /// Render the ternary diagram to a complete SVG document.
@@ -179,7 +176,7 @@ fn render_ternary_svg(
   let tri_h = side * tri_h_ratio;
 
   let cx = render_width as f64 / 2.0;
-  let bottom_y = (render_height as f64 + tri_h) / 2.0;
+  let bottom_y = f64::midpoint(render_height as f64, tri_h);
   let top_y = bottom_y - tri_h;
 
   // Triangle vertices in pixel space.
@@ -200,8 +197,7 @@ fn render_ternary_svg(
 
   // Background.
   svg.push_str(&format!(
-    "<rect width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
-    render_width, render_height, bg_color
+    "<rect width=\"{render_width}\" height=\"{render_height}\" fill=\"{bg_color}\"/>\n"
   ));
 
   // Grid lines parallel to each edge at 0.2 intervals.
@@ -267,20 +263,18 @@ fn render_ternary_svg(
     for t in series {
       let (px, py) = to_px(t);
       svg.push_str(&format!(
-        "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" fill=\"{}\"/>\n",
-        px, py, radius, color
+        "<circle cx=\"{px:.1}\" cy=\"{py:.1}\" r=\"{radius:.1}\" fill=\"{color}\"/>\n"
       ));
     }
   }
 
   let mut buf = format!(
-    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" \
-     xmlns=\"http://www.w3.org/2000/svg\">\n{}</svg>",
-    svg_width, svg_height, render_width, render_height, svg
+    "<svg width=\"{svg_width}\" height=\"{svg_height}\" viewBox=\"0 0 {render_width} {render_height}\" \
+     xmlns=\"http://www.w3.org/2000/svg\">\n{svg}</svg>"
   );
 
   if full_width {
-    let old = format!("width=\"{}\" height=\"{}\"", svg_width, svg_height);
+    let old = format!("width=\"{svg_width}\" height=\"{svg_height}\"");
     buf = buf.replacen(&old, "width=\"100%\"", 1);
   }
 
@@ -313,8 +307,7 @@ fn push_label(
   text: &str,
 ) {
   svg.push_str(&format!(
-    "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"{}\" \
-     font-family=\"sans-serif\" font-size=\"{:.0}\" fill=\"{}\">{}</text>\n",
-    x, y, anchor, font_size, color, text
+    "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"{anchor}\" \
+     font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{color}\">{text}</text>\n"
   ));
 }

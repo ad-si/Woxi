@@ -125,6 +125,46 @@ fn virtual_current_dir() -> String {
     })
 }
 
+/// Scopes `$InputFileName` to the file a `Get` is currently reading.
+///
+/// While a file is being read it *is* the input file, so `$InputFileName`
+/// has to name it rather than the enclosing script. Restoring on drop (rather
+/// than after the evaluation) keeps nested and sequential `Get`s correct even
+/// when the read file raises an error.
+#[cfg(not(target_arch = "wasm32"))]
+struct InputFileNameGuard {
+  prev: Option<crate::StoredValue>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl InputFileNameGuard {
+  fn install(path: &std::path::Path) -> Self {
+    let value = crate::StoredValue::ExprVal(Expr::String(
+      path.to_string_lossy().into_owned(),
+    ));
+    let prev = crate::ENV
+      .with(|e| e.borrow_mut().insert("$InputFileName".to_string(), value));
+    Self { prev }
+  }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for InputFileNameGuard {
+  fn drop(&mut self) {
+    crate::ENV.with(|e| {
+      let mut env = e.borrow_mut();
+      match self.prev.take() {
+        Some(v) => {
+          env.insert("$InputFileName".to_string(), v);
+        }
+        None => {
+          env.remove("$InputFileName");
+        }
+      }
+    });
+  }
+}
+
 pub fn dispatch_io_functions(
   name: &str,
   args: &[Expr],
@@ -173,7 +213,7 @@ pub fn dispatch_io_functions(
         // reacts to user messages), respects Quiet/Off, participates in
         // General::stop suppression, and reaches the same stream as
         // built-in messages.
-        crate::emit_message(&format!("{}::{}: {}", sym_name, tag, filled));
+        crate::emit_message(&format!("{sym_name}::{tag}: {filled}"));
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
     }
@@ -389,16 +429,16 @@ pub fn dispatch_io_functions(
       };
 
       let (content, position, stream_id) = match &args[0] {
-        Expr::String(path) => match std::fs::read_to_string(path) {
-          Ok(c) => (c, 0usize, None),
-          Err(_) => {
+        Expr::String(path) => {
+          if let Ok(c) = std::fs::read_to_string(path) {
+            (c, 0usize, None)
+          } else {
             crate::emit_message(&format!(
-              "ReadString::noopen: Cannot open {}.",
-              path
+              "ReadString::noopen: Cannot open {path}."
             ));
             return Some(Ok(Expr::Identifier("$Failed".to_string())));
           }
-        },
+        }
         Expr::FunctionCall {
           name: stream_head,
           args: stream_args,
@@ -458,15 +498,11 @@ pub fn dispatch_io_functions(
       } else {
         std::path::PathBuf::from(virtual_current_dir()).join(requested)
       };
-      let content = match std::fs::read_to_string(&resolved) {
-        Ok(c) => c,
-        Err(_) => {
-          crate::emit_message_to_stdout(&format!(
-            "StringTemplate::fnfnd: File \"{}\" not found.",
-            filename
-          ));
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
-        }
+      let Ok(content) = std::fs::read_to_string(&resolved) else {
+        crate::emit_message_to_stdout(&format!(
+          "StringTemplate::fnfnd: File \"{filename}\" not found."
+        ));
+        return Some(Ok(Expr::Identifier("$Failed".to_string())));
       };
       let bound_args = if args.len() == 2 {
         Some(args[1].clone())
@@ -502,15 +538,13 @@ pub fn dispatch_io_functions(
           } else {
             std::path::PathBuf::from(virtual_current_dir()).join(requested)
           };
-          match std::fs::read_to_string(&resolved) {
-            Ok(c) => c,
-            Err(_) => {
-              crate::emit_message_to_stdout(&format!(
-                "XMLTemplate::fnfnd: File \"{}\" not found.",
-                filename
-              ));
-              return Some(Ok(Expr::Identifier("$Failed".to_string())));
-            }
+          if let Ok(c) = std::fs::read_to_string(&resolved) {
+            c
+          } else {
+            crate::emit_message_to_stdout(&format!(
+              "XMLTemplate::fnfnd: File \"{filename}\" not found."
+            ));
+            return Some(Ok(Expr::Identifier("$Failed".to_string())));
           }
         }
         // URL[…] / CloudObject[…] and other specifications are left
@@ -546,19 +580,26 @@ pub fn dispatch_io_functions(
       if crate::utils::is_standard_distribution_context(&filename) {
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
-      let content = match std::fs::read_to_string(&filename) {
-        Ok(c) => c,
-        Err(_) => {
-          // wolframscript prints this message to stdout (verified with
-          // `wolframscript -file`), so mirror it into the captured buffer to
-          // keep snapshot/playground/Jupyter output byte-for-byte consistent.
-          crate::emit_message_to_stdout(&format!(
-            "Get::noopen: Cannot open {}.",
-            filename
-          ));
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
-        }
+      // A relative name resolves against the virtual working directory, so a
+      // preceding `SetDirectory` is honoured the way it is in wolframscript.
+      let requested = std::path::Path::new(&filename);
+      let resolved = if requested.is_absolute() {
+        requested.to_path_buf()
+      } else {
+        std::path::PathBuf::from(virtual_current_dir()).join(requested)
       };
+      let Ok(content) = std::fs::read_to_string(&resolved) else {
+        // wolframscript prints this message to stdout (verified with
+        // `wolframscript -file`), so mirror it into the captured buffer to
+        // keep snapshot/playground/Jupyter output byte-for-byte consistent.
+        crate::emit_message_to_stdout(&format!(
+          "Get::noopen: Cannot open {filename}."
+        ));
+        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+      };
+      // The read file is the input file for the duration of the read, so
+      // `$InputFileName` must point at it and not at the enclosing script.
+      let _input_file_name = InputFileNameGuard::install(&resolved);
       // Use interpret to evaluate the file content (handles all node types
       // including FunctionDefinition, Expression, etc.)
       let result_str = match crate::interpret(&content) {
@@ -587,15 +628,12 @@ pub fn dispatch_io_functions(
       let to_write = if exprs.is_empty() {
         String::new()
       } else {
-        format!("{}\n", content)
+        format!("{content}\n")
       };
       match std::fs::write(&filename, to_write) {
-        Ok(_) => return Some(Ok(Expr::Identifier("Null".to_string()))),
+        Ok(()) => return Some(Ok(Expr::Identifier("Null".to_string()))),
         Err(_e) => {
-          crate::emit_message(&format!(
-            "Put::noopen: Cannot open {}.",
-            filename
-          ));
+          crate::emit_message(&format!("Put::noopen: Cannot open {filename}."));
           return Some(Ok(Expr::Identifier("$Failed".to_string())));
         }
       }
@@ -617,28 +655,23 @@ pub fn dispatch_io_functions(
         .join("\n");
       if !exprs.is_empty() {
         use std::io::Write;
-        let to_write = format!("{}\n", content);
-        match std::fs::OpenOptions::new()
+        let to_write = format!("{content}\n");
+        if let Ok(mut file) = std::fs::OpenOptions::new()
           .create(true)
           .append(true)
           .open(&filename)
         {
-          Ok(mut file) => {
-            if file.write_all(to_write.as_bytes()).is_err() {
-              crate::emit_message(&format!(
-                "PutAppend::noopen: Cannot open {}.",
-                filename
-              ));
-              return Some(Ok(Expr::Identifier("$Failed".to_string())));
-            }
-          }
-          Err(_) => {
+          if file.write_all(to_write.as_bytes()).is_err() {
             crate::emit_message(&format!(
-              "PutAppend::noopen: Cannot open {}.",
-              filename
+              "PutAppend::noopen: Cannot open {filename}."
             ));
             return Some(Ok(Expr::Identifier("$Failed".to_string())));
           }
+        } else {
+          crate::emit_message(&format!(
+            "PutAppend::noopen: Cannot open {filename}."
+          ));
+          return Some(Ok(Expr::Identifier("$Failed".to_string())));
         }
       }
       return Some(Ok(Expr::Identifier("Null".to_string())));
@@ -666,7 +699,7 @@ pub fn dispatch_io_functions(
       let ext_fmt = std::path::Path::new(&filename)
         .extension()
         .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_uppercase());
+        .map(str::to_ascii_uppercase);
       let fmt = explicit_fmt.or(ext_fmt).unwrap_or_default();
 
       // Exporting a graphic writes it to the file; it must not also appear as
@@ -1249,8 +1282,7 @@ pub fn dispatch_io_functions(
         _ => {
           let arg_str = crate::syntax::expr_to_string(&args[0]);
           crate::emit_message(&format!(
-            "Find::stream: {} is not a string, SocketObject, InputStream[ ] or OutputStream[ ].",
-            arg_str
+            "Find::stream: {arg_str} is not a string, SocketObject, InputStream[ ] or OutputStream[ ]."
           ));
           return Some(Ok(Expr::Identifier("$Failed".to_string())));
         }
@@ -1292,8 +1324,7 @@ pub fn dispatch_io_functions(
           ("argt", "0 arguments")
         };
         crate::emit_message(&format!(
-          "FindList::{}: FindList called with {}; 2 or 3 arguments are expected.",
-          tag, noun
+          "FindList::{tag}: FindList called with {noun}; 2 or 3 arguments are expected."
         ));
         return failed();
       }
@@ -1377,8 +1408,7 @@ pub fn dispatch_io_functions(
         match std::fs::read_to_string(path) {
           Err(_) => {
             crate::emit_message(&format!(
-              "FindList::noopen: Cannot open {}.",
-              path
+              "FindList::noopen: Cannot open {path}."
             ));
             if !is_list {
               return failed();
@@ -1421,14 +1451,13 @@ pub fn dispatch_io_functions(
       return Some(Ok(Expr::String(virtual_current_dir())));
     }
     "NotebookDirectory" if args.is_empty() => {
-      return Some(match crate::get_notebook_directory() {
-        Some(dir) => Ok(Expr::String(dir)),
-        None => {
-          crate::emit_message(
-            "NotebookDirectory::nosv: The notebook directory is not available outside a notebook front-end.",
-          );
-          Ok(unevaluated("NotebookDirectory", args))
-        }
+      return Some(if let Some(dir) = crate::get_notebook_directory() {
+        Ok(Expr::String(dir))
+      } else {
+        crate::emit_message(
+          "NotebookDirectory::nosv: The notebook directory is not available outside a notebook front-end.",
+        );
+        Ok(unevaluated("NotebookDirectory", args))
       });
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -1442,8 +1471,7 @@ pub fn dispatch_io_functions(
       };
       let parent = std::path::Path::new(&base)
         .parent()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|| base.clone());
+        .map_or_else(|| base.clone(), |p| p.to_string_lossy().into_owned());
       return Some(Ok(Expr::String(parent)));
     }
     // DirectoryName["path"] or DirectoryName["path", n]
@@ -1515,7 +1543,7 @@ pub fn dispatch_io_functions(
       if args.len() == 1 {
         if let Some(dirs) = collect_dirs(&args[0]) {
           let joined = dirs.join(&sep);
-          return Some(Ok(Expr::String(format!("{}{}", joined, sep))));
+          return Some(Ok(Expr::String(format!("{joined}{sep}"))));
         }
       } else if let (Some(dirs), Expr::String(file)) =
         (collect_dirs(&args[0]), &args[1])
@@ -1601,7 +1629,7 @@ pub fn dispatch_io_functions(
         let expanded = if let Some(rest) = s.strip_prefix('~') {
           match std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE"))
           {
-            Ok(home) => format!("{}{}", home, rest),
+            Ok(home) => format!("{home}{rest}"),
             Err(_) => s.clone(),
           }
         } else {
@@ -1752,8 +1780,7 @@ pub fn dispatch_io_functions(
       };
       if !std::path::Path::new(&filename).exists() {
         crate::emit_message_to_stdout(&format!(
-          "OpenRead::noopen: Cannot open {}.",
-          filename
+          "OpenRead::noopen: Cannot open {filename}."
         ));
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
       }
@@ -1792,8 +1819,7 @@ pub fn dispatch_io_functions(
       // Create or truncate the file
       if let Err(e) = std::fs::File::create(&filename).map_err(|e| {
         InterpreterError::EvaluationError(format!(
-          "OpenWrite: cannot open {}: {}",
-          filename, e
+          "OpenWrite: cannot open {filename}: {e}"
         ))
       }) {
         return Some(Err(e));
@@ -1816,11 +1842,8 @@ pub fn dispatch_io_functions(
     // infers the type from the value (Integer → Byte, String → Character8).
     #[cfg(not(target_arch = "wasm32"))]
     "BinaryWrite" if (2..=3).contains(&args.len()) => {
-      let path = match io_stream_path(&args[0]) {
-        Some(p) => p,
-        None => {
-          return Some(Ok(unevaluated("BinaryWrite", args)));
-        }
+      let Some(path) = io_stream_path(&args[0]) else {
+        return Some(Ok(unevaluated("BinaryWrite", args)));
       };
       // Render a single value at the given type into the byte buffer.
       // Returns false on an unsupported pairing so the caller can fall
@@ -1899,15 +1922,13 @@ pub fn dispatch_io_functions(
         Ok(f) => f,
         Err(e) => {
           return Some(Err(InterpreterError::EvaluationError(format!(
-            "BinaryWrite: cannot open {}: {}",
-            path, e
+            "BinaryWrite: cannot open {path}: {e}"
           ))));
         }
       };
       if let Err(e) = f.write_all(&bytes) {
         return Some(Err(InterpreterError::EvaluationError(format!(
-          "BinaryWrite: write failed on {}: {}",
-          path, e
+          "BinaryWrite: write failed on {path}: {e}"
         ))));
       }
       return Some(Ok(args[0].clone()));
@@ -1923,11 +1944,8 @@ pub fn dispatch_io_functions(
     // from offset 0 every time.
     #[cfg(not(target_arch = "wasm32"))]
     "BinaryRead" if (1..=2).contains(&args.len()) => {
-      let path = match io_stream_path(&args[0]) {
-        Some(p) => p,
-        None => {
-          return Some(Ok(unevaluated("BinaryRead", args)));
-        }
+      let Some(path) = io_stream_path(&args[0]) else {
+        return Some(Ok(unevaluated("BinaryRead", args)));
       };
       // Extract stream id (second arg of InputStream[path, id]) so we can
       // track and advance the read position. Falls back to id-less reads
@@ -1948,8 +1966,7 @@ pub fn dispatch_io_functions(
         Ok(b) => b,
         Err(e) => {
           return Some(Err(InterpreterError::EvaluationError(format!(
-            "BinaryRead: cannot read {}: {}",
-            path, e
+            "BinaryRead: cannot read {path}: {e}"
           ))));
         }
       };
@@ -1989,12 +2006,9 @@ pub fn dispatch_io_functions(
             return Some(Ok(unevaluated("BinaryRead", args)));
           };
           if let Some(id) = stream_id {
-            let advance = if matches!(&result, Expr::Identifier(s) if s == "EndOfFile")
-            {
-              0
-            } else {
-              1
-            };
+            let advance = usize::from(
+              !matches!(&result, Expr::Identifier(s) if s == "EndOfFile"),
+            );
             set_stream_position(id, start_pos + advance);
           }
           return Some(Ok(result));
@@ -2002,7 +2016,7 @@ pub fn dispatch_io_functions(
         Expr::List(items) => {
           let mut out = Vec::with_capacity(items.len());
           let mut offset = start_pos;
-          for it in items.iter() {
+          for it in items {
             let Some(value) = read_one(it, offset) else {
               return Some(Ok(unevaluated("BinaryRead", args)));
             };
@@ -2055,8 +2069,7 @@ pub fn dispatch_io_functions(
         Ok(b) => b,
         Err(e) => {
           return Some(Err(InterpreterError::EvaluationError(format!(
-            "BinaryReadList: cannot read {}: {}",
-            path, e
+            "BinaryReadList: cannot read {path}: {e}"
           ))));
         }
       };
@@ -2095,8 +2108,7 @@ pub fn dispatch_io_functions(
         .open(&filename)
         .map_err(|e| {
           InterpreterError::EvaluationError(format!(
-            "OpenAppend: cannot open {}: {}",
-            filename, e
+            "OpenAppend: cannot open {filename}: {e}"
           ))
         })
       {
@@ -2164,21 +2176,20 @@ pub fn dispatch_io_functions(
             }
             None => {
               let stream_str = crate::syntax::expr_to_string(&args[0]);
-              crate::emit_message(&format!("{} is not open.", stream_str));
+              crate::emit_message(&format!("{stream_str} is not open."));
               return Some(Ok(unevaluated("Close", args)));
             }
           }
         }
         Expr::String(s) => {
-          crate::emit_message(&format!("{} is not open.", s));
+          crate::emit_message(&format!("{s} is not open."));
           return Some(Ok(unevaluated("Close", args)));
         }
         _ => {
           // Anything else is a type error — match wolframscript's message.
           let arg_str = crate::syntax::expr_to_string(&args[0]);
           crate::emit_message_to_stdout(&format!(
-            "Close::stream: {} is not a string, SocketObject, InputStream[ ] or OutputStream[ ].",
-            arg_str
+            "Close::stream: {arg_str} is not a string, SocketObject, InputStream[ ] or OutputStream[ ]."
           ));
           return Some(Ok(unevaluated("Close", args)));
         }
@@ -2196,25 +2207,20 @@ pub fn dispatch_io_functions(
           && stream_args.len() == 2 =>
         {
           if let Expr::Integer(id) = &stream_args[1] {
-            match get_stream_position(*id as usize) {
-              Some(pos) => return Some(Ok(Expr::Integer(pos as i128))),
-              None => {
-                let stream_str = crate::syntax::expr_to_string(stream);
-                crate::emit_message(&format!(
-                  "StreamPosition::openx: {} is not open.",
-                  stream_str
-                ));
-                return Some(Ok(unevaluated("StreamPosition", args)));
-              }
+            if let Some(pos) = get_stream_position(*id as usize) {
+              return Some(Ok(Expr::Integer(pos as i128)));
             }
-          } else {
+            let stream_str = crate::syntax::expr_to_string(stream);
+            crate::emit_message(&format!(
+              "StreamPosition::openx: {stream_str} is not open."
+            ));
             return Some(Ok(unevaluated("StreamPosition", args)));
           }
+          return Some(Ok(unevaluated("StreamPosition", args)));
         }
         Expr::String(s) => {
           crate::emit_message(&format!(
-            "StreamPosition::openx: {} is not open.",
-            s
+            "StreamPosition::openx: {s} is not open."
           ));
           return Some(Ok(unevaluated("StreamPosition", args)));
         }
@@ -2249,8 +2255,7 @@ pub fn dispatch_io_functions(
             let id_usize = *id as usize;
             if is_stream_open(id_usize) {
               let stream_len = get_stream_content(id_usize)
-                .map(|(content, _)| content.len())
-                .unwrap_or(0);
+                .map_or(0, |(content, _)| content.len());
               let pos = match pos_explicit {
                 Some(p) => {
                   if p > stream_len {
@@ -2258,8 +2263,7 @@ pub fn dispatch_io_functions(
                     // and clamps the position to the end of stream.
                     let stream_str = crate::syntax::expr_to_string(stream);
                     crate::emit_message(&format!(
-                      "SetStreamPosition::stmrng: Cannot set the current point in {} to position {}; the requested position exceeds the length of the stream.",
-                      stream_str, p
+                      "SetStreamPosition::stmrng: Cannot set the current point in {stream_str} to position {p}; the requested position exceeds the length of the stream."
                     ));
                     stream_len
                   } else {
@@ -2270,17 +2274,14 @@ pub fn dispatch_io_functions(
               };
               set_stream_position(id_usize, pos);
               return Some(Ok(Expr::Integer(pos as i128)));
-            } else {
-              let stream_str = crate::syntax::expr_to_string(stream);
-              crate::emit_message(&format!(
-                "SetStreamPosition::openx: {} is not open.",
-                stream_str
-              ));
-              return Some(Ok(unevaluated("SetStreamPosition", args)));
             }
-          } else {
+            let stream_str = crate::syntax::expr_to_string(stream);
+            crate::emit_message(&format!(
+              "SetStreamPosition::openx: {stream_str} is not open."
+            ));
             return Some(Ok(unevaluated("SetStreamPosition", args)));
           }
+          return Some(Ok(unevaluated("SetStreamPosition", args)));
         }
         _ => {
           return Some(Ok(unevaluated("SetStreamPosition", args)));
@@ -2294,15 +2295,13 @@ pub fn dispatch_io_functions(
       let (content, position, stream_id) = match &args[0] {
         Expr::String(path) => {
           // ReadLine["file"] - read first line from file directly
-          match std::fs::read_to_string(path) {
-            Ok(content) => (content, 0usize, None),
-            Err(_) => {
-              crate::emit_message(&format!(
-                "OpenRead::noopen: Cannot open {}.",
-                path
-              ));
-              return Some(Ok(Expr::Identifier("$Failed".to_string())));
-            }
+          if let Ok(content) = std::fs::read_to_string(path) {
+            (content, 0usize, None)
+          } else {
+            crate::emit_message(&format!(
+              "OpenRead::noopen: Cannot open {path}."
+            ));
+            return Some(Ok(Expr::Identifier("$Failed".to_string())));
           }
         }
         Expr::FunctionCall {
@@ -2476,7 +2475,7 @@ pub fn dispatch_io_functions(
               let registry = reg.borrow();
               registry.get(&stream_id).and_then(|s| match &s.kind {
                 StreamKind::FileStream(path) => Some(path.clone()),
-                _ => None,
+                StreamKind::StringStream(_) => None,
               })
             })
           } else {
@@ -2495,8 +2494,7 @@ pub fn dispatch_io_functions(
           .open(&path)
           .map_err(|e| {
             InterpreterError::EvaluationError(format!(
-              "Write: cannot open {}: {}",
-              path, e
+              "Write: cannot open {path}: {e}"
             ))
           }) {
           Ok(v) => v,
@@ -2508,10 +2506,7 @@ pub fn dispatch_io_functions(
         }
         content.push('\n');
         if let Err(e) = file.write_all(content.as_bytes()).map_err(|e| {
-          InterpreterError::EvaluationError(format!(
-            "Write: write error: {}",
-            e
-          ))
+          InterpreterError::EvaluationError(format!("Write: write error: {e}"))
         }) {
           return Some(Err(e));
         }
@@ -2545,12 +2540,12 @@ pub fn dispatch_io_functions(
           };
           if is_stdout {
             if !crate::is_quiet_print() {
-              print!("{}", text);
+              print!("{text}");
               let _ = std::io::stdout().flush();
             }
             crate::capture_stdout_raw(&text);
           } else {
-            eprint!("{}", text);
+            eprint!("{text}");
             let _ = std::io::stderr().flush();
           }
         }
@@ -2571,7 +2566,7 @@ pub fn dispatch_io_functions(
               let registry = reg.borrow();
               registry.get(&stream_id).and_then(|s| match &s.kind {
                 StreamKind::FileStream(path) => Some(path.clone()),
-                _ => None,
+                StreamKind::StringStream(_) => None,
               })
             })
           } else {
@@ -2590,8 +2585,7 @@ pub fn dispatch_io_functions(
           .open(&path)
           .map_err(|e| {
             InterpreterError::EvaluationError(format!(
-              "WriteString: cannot open {}: {}",
-              path, e
+              "WriteString: cannot open {path}: {e}"
             ))
           }) {
           Ok(v) => v,
@@ -2604,8 +2598,7 @@ pub fn dispatch_io_functions(
           };
           if let Err(e) = file.write_all(text.as_bytes()).map_err(|e| {
             InterpreterError::EvaluationError(format!(
-              "WriteString: write error: {}",
-              e
+              "WriteString: write error: {e}"
             ))
           }) {
             return Some(Err(e));
@@ -2719,9 +2712,9 @@ pub fn dispatch_io_functions(
                 let condition = conditions.get(i).and_then(|c| c.as_ref());
 
                 let mut param_str = if let Some(h) = head {
-                  format!("{}_{}", p, h)
+                  format!("{p}_{h}")
                 } else {
-                  format!("{}_", p)
+                  format!("{p}_")
                 };
 
                 if let Some(def) = default {
@@ -2753,10 +2746,8 @@ pub fn dispatch_io_functions(
               .all(|p| p.starts_with("_dv") || p.starts_with("_lp"));
             let assign_op = if is_literal_dispatch { "=" } else { ":=" };
 
-            sym_lines.push(format!(
-              "{}[{}] {} {}",
-              sym, params_str, assign_op, body_str
-            ));
+            sym_lines
+              .push(format!("{sym}[{params_str}] {assign_op} {body_str}"));
           }
         }
 
@@ -2779,7 +2770,7 @@ pub fn dispatch_io_functions(
               format!("<|{}|>", parts.join(", "))
             }
           };
-          sym_lines.push(format!("{} = {}", sym, val_str));
+          sym_lines.push(format!("{sym} = {val_str}"));
         }
 
         // 4. Options
@@ -2793,7 +2784,7 @@ pub fn dispatch_io_functions(
             .map(crate::syntax::expr_to_string)
             .collect::<Vec<_>>()
             .join(", ");
-          sym_lines.push(format!("Options[{}] = {{{}}}", sym, opts_str));
+          sym_lines.push(format!("Options[{sym}] = {{{opts_str}}}"));
         }
 
         all_lines.extend(sym_lines);
@@ -2807,15 +2798,14 @@ pub fn dispatch_io_functions(
       };
 
       if filename == "stdout" {
-        print!("{}", content);
+        print!("{content}");
         crate::capture_stdout(content.trim_end());
       } else {
         match std::fs::write(&filename, &content) {
-          Ok(_) => {}
+          Ok(()) => {}
           Err(_e) => {
             crate::emit_message(&format!(
-              "Save::noopen: Cannot open {}.",
-              filename
+              "Save::noopen: Cannot open {filename}."
             ));
             return Some(Ok(Expr::Identifier("$Failed".to_string())));
           }
@@ -2927,14 +2917,12 @@ pub fn dispatch_io_functions(
         }
         Ok(_) => {
           return Some(Err(InterpreterError::EvaluationError(format!(
-            "SetDirectory: {} is not a directory.",
-            dir
+            "SetDirectory: {dir} is not a directory."
           ))));
         }
         Err(e) => {
           return Some(Err(InterpreterError::EvaluationError(format!(
-            "SetDirectory: {}",
-            e
+            "SetDirectory: {e}"
           ))));
         }
       }
@@ -2975,8 +2963,7 @@ pub fn dispatch_io_functions(
       };
       if !std::path::Path::new(name).exists() {
         crate::emit_message(&format!(
-          "FileFormat::nffil: File not found during FileFormat[{}].",
-          name
+          "FileFormat::nffil: File not found during FileFormat[{name}]."
         ));
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
       }
@@ -2993,8 +2980,7 @@ pub fn dispatch_io_functions(
       };
       if !std::path::Path::new(name).exists() {
         crate::emit_message(&format!(
-          "FileDate::fdnfnd: Directory or file \"{}\" not found.",
-          name
+          "FileDate::fdnfnd: Directory or file \"{name}\" not found."
         ));
       }
       return Some(Ok(unevaluated("FileDate", args)));
@@ -3037,11 +3023,12 @@ pub fn dispatch_io_functions(
         let abs = if path.is_absolute() {
           name.clone()
         } else {
-          std::env::current_dir()
-            .map(|cwd| cwd.join(path).to_string_lossy().into_owned())
-            .unwrap_or_else(|_| name.clone())
+          std::env::current_dir().map_or_else(
+            |_| name.clone(),
+            |cwd| cwd.join(path).to_string_lossy().into_owned(),
+          )
         };
-        crate::emit_message(&format!("FileHash::noopen: Cannot open {}.", abs));
+        crate::emit_message(&format!("FileHash::noopen: Cannot open {abs}."));
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
       };
       let Some(hex) =
@@ -3053,16 +3040,15 @@ pub fn dispatch_io_functions(
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
       };
       return Some(Ok(
-        match crate::functions::string_ast::format_digest(&hex, &format) {
-          Some(result) => result,
-          // A format it does not know is reported under its own name, and
-          // leaves the call standing rather than failing it.
-          None => {
-            crate::emit_message(&format!(
-              "FileHash::uform: Invalid hash format {format}."
-            ));
-            unevaluated("FileHash", args)
-          }
+        if let Some(result) =
+          crate::functions::string_ast::format_digest(&hex, &format)
+        {
+          result
+        } else {
+          crate::emit_message(&format!(
+            "FileHash::uform: Invalid hash format {format}."
+          ));
+          unevaluated("FileHash", args)
         },
       ));
     }
@@ -3106,15 +3092,13 @@ pub fn dispatch_io_functions(
         }
         Ok(meta) if meta.is_dir() => {
           crate::emit_message(&format!(
-            "FileSize::fdir: The specified path {} refers to a directory; a file path was expected.",
-            name
+            "FileSize::fdir: The specified path {name} refers to a directory; a file path was expected."
           ));
           return unevaluated();
         }
         _ => {
           crate::emit_message(&format!(
-            "FileSize::fdnfnd: Directory or file \"{}\" not found.",
-            name
+            "FileSize::fdnfnd: Directory or file \"{name}\" not found."
           ));
           return unevaluated();
         }
@@ -3133,8 +3117,7 @@ pub fn dispatch_io_functions(
         }
         _ => {
           crate::emit_message(&format!(
-            "FileByteCount::fdnfnd: Directory or file \"{}\" not found.",
-            name
+            "FileByteCount::fdnfnd: Directory or file \"{name}\" not found."
           ));
           return Some(Ok(Expr::Identifier("$Failed".to_string())));
         }
@@ -3148,18 +3131,13 @@ pub fn dispatch_io_functions(
       let Expr::String(name) = &args[0] else {
         return Some(Ok(unevaluated("AbsoluteFileName", args)));
       };
-      match crate::utils::canonicalize(name) {
-        Ok(p) => {
-          return Some(Ok(Expr::String(p.to_string_lossy().into_owned())));
-        }
-        Err(_) => {
-          crate::emit_message(&format!(
-            "AbsoluteFileName::fdnfnd: Directory or file \"{}\" not found.",
-            name
-          ));
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
-        }
+      if let Ok(p) = crate::utils::canonicalize(name) {
+        return Some(Ok(Expr::String(p.to_string_lossy().into_owned())));
       }
+      crate::emit_message(&format!(
+        "AbsoluteFileName::fdnfnd: Directory or file \"{name}\" not found."
+      ));
+      return Some(Ok(Expr::Identifier("$Failed".to_string())));
     }
     // FindFile["name"] — return the absolute path if the file exists,
     // else `$Failed`. Context strings like "VectorAnalysis`" are also
@@ -3504,8 +3482,10 @@ fn csv_cell(expr: &Expr, quote_strings: bool) -> String {
     {
       let head =
         crate::functions::predicate_ast::head_ast(std::slice::from_ref(expr))
-          .map(|h| crate::syntax::expr_to_string(&h))
-          .unwrap_or_else(|_| "Expression".to_string());
+          .map_or_else(
+            |_| "Expression".to_string(),
+            |h| crate::syntax::expr_to_string(&h),
+          );
       quoted(format!("-{head}-"))
     }
     // Symbols, rationals and the other atoms keep their text, quoted.
@@ -3529,11 +3509,11 @@ fn export_string_json(
     if !f.is_finite() {
       return None;
     }
-    let s = format!("{}", f);
+    let s = format!("{f}");
     Some(if s.contains('.') || s.contains('e') || s.contains('E') {
       s
     } else {
-      format!("{}.0", s)
+      format!("{s}.0")
     })
   }
   fn escape(s: &str) -> String {
@@ -3576,7 +3556,7 @@ fn export_string_json(
         return Some("[]".to_string());
       }
       let mut parts = Vec::with_capacity(items.len());
-      for it in items.iter() {
+      for it in items {
         parts.push(export_string_json(it, indent + 1, compact)?);
       }
       if compact {
@@ -3584,7 +3564,7 @@ fn export_string_json(
       }
       let inner = "\t".repeat(indent + 1);
       let body: Vec<String> =
-        parts.iter().map(|p| format!("{}{}", inner, p)).collect();
+        parts.iter().map(|p| format!("{inner}{p}")).collect();
       Some(format!("[\n{}\n{}]", body.join(",\n"), "\t".repeat(indent)))
     }
     Expr::Association(pairs) => {
@@ -3592,7 +3572,7 @@ fn export_string_json(
         return Some("{}".to_string());
       }
       let mut parts = Vec::with_capacity(pairs.len());
-      for (k, v) in pairs.iter() {
+      for (k, v) in pairs {
         // Only string keys exist in JSON; anything else fails the export
         // rather than being stringified into a key that was never there.
         let Expr::String(key) = k else {
@@ -3613,7 +3593,7 @@ fn export_string_json(
       }
       let inner = "\t".repeat(indent + 1);
       let body: Vec<String> =
-        parts.iter().map(|p| format!("{}{}", inner, p)).collect();
+        parts.iter().map(|p| format!("{inner}{p}")).collect();
       Some(format!(
         "{{\n{}\n{}}}",
         body.join(",\n"),
@@ -3793,9 +3773,8 @@ fn collect_files_recursive(
   recursive: bool,
   results: &mut Vec<String>,
 ) {
-  let entries = match std::fs::read_dir(path) {
-    Ok(e) => e,
-    Err(_) => return,
+  let Ok(entries) = std::fs::read_dir(path) else {
+    return;
   };
 
   for entry in entries.flatten() {
@@ -4882,7 +4861,7 @@ fn tableform_graphics_grid_svg(args: &[Expr]) -> Option<String> {
       _ => unreachable!(),
     })
     .collect();
-  if grid.iter().flatten().any(|s| s.is_empty()) {
+  if grid.iter().flatten().any(std::string::String::is_empty) {
     return None;
   }
   crate::functions::graphics::combine_graphics_svgs(&grid)
@@ -5147,8 +5126,7 @@ pub(crate) fn readlist_inputstream(
           StreamKind::FileStream(path) => std::fs::read_to_string(path)
             .map_err(|_| {
               InterpreterError::EvaluationError(format!(
-                "ReadList::noopen: Cannot open {}.",
-                path
+                "ReadList::noopen: Cannot open {path}."
               ))
             }),
         }

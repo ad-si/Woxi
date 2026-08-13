@@ -11,19 +11,16 @@ pub fn tally_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
     return tally_ast(&Expr::List(values.into()));
   }
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      let call = Expr::FunctionCall {
-        name: "Tally".to_string(),
-        args: vec![list.clone()].into(),
-      };
-      crate::emit_message(&format!(
-        "Tally::list: List expected at position 1 in {}.",
-        crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
-      ));
-      return Ok(call);
-    }
+  let Expr::List(items) = list else {
+    let call = Expr::FunctionCall {
+      name: "Tally".to_string(),
+      args: vec![list.clone()].into(),
+    };
+    crate::emit_message(&format!(
+      "Tally::list: List expected at position 1 in {}.",
+      crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(call);
   };
 
   use std::collections::HashMap;
@@ -59,14 +56,11 @@ pub fn tally_with_test_ast(
   list: &Expr,
   test: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Tally".to_string(),
-        args: vec![list.clone(), test.clone()].into(),
-      });
-    }
+  let Expr::List(items) = list else {
+    return Ok(Expr::FunctionCall {
+      name: "Tally".to_string(),
+      args: vec![list.clone(), test.clone()].into(),
+    });
   };
 
   // Representatives keep insertion order; parallel counts vector.
@@ -114,14 +108,11 @@ pub fn counts_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
     return counts_ast(&Expr::List(values.into()));
   }
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Counts".to_string(),
-        args: vec![list.clone()].into(),
-      });
-    }
+  let Expr::List(items) = list else {
+    return Ok(Expr::FunctionCall {
+      name: "Counts".to_string(),
+      args: vec![list.clone()].into(),
+    });
   };
 
   use std::collections::HashMap;
@@ -162,7 +153,7 @@ pub fn delete_duplicates_ast(
   if let Expr::Association(pairs) = list {
     if let Some(test_fn) = test {
       let mut kept: Vec<(Expr, Expr)> = Vec::new();
-      'outer: for (k, v) in pairs.iter() {
+      'outer: for (k, v) in pairs {
         for (_, rep_v) in &kept {
           let r = apply_func_to_two_args(test_fn, rep_v, v)?;
           if matches!(r, Expr::Identifier(ref s) if s == "True") {
@@ -176,7 +167,7 @@ pub fn delete_duplicates_ast(
     use std::collections::HashSet;
     let mut seen: HashSet<String> = HashSet::new();
     let mut result: Vec<(Expr, Expr)> = Vec::new();
-    for (k, v) in pairs.iter() {
+    for (k, v) in pairs {
       if seen.insert(crate::syntax::expr_to_string(v)) {
         result.push((k.clone(), v.clone()));
       }
@@ -367,7 +358,7 @@ pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut order: Vec<String> = Vec::new();
     let mut map: HashMap<String, (Expr, Expr)> = HashMap::new();
     for pairs in &assocs {
-      for (k, v) in pairs.iter() {
+      for (k, v) in *pairs {
         let ks = crate::syntax::expr_to_string(k);
         if !map.contains_key(&ks) {
           order.push(ks.clone());
@@ -427,7 +418,7 @@ pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     // all hold, while `Less` keeps every element since
     // `Less[k, 1]` is False for every later `k`.
     let mut reps: Vec<Expr> = Vec::new();
-    'outer: for item in result.into_iter() {
+    'outer: for item in result {
       for rep in &reps {
         let r = apply_func_to_two_args(test, &item, rep)?;
         if matches!(r, Expr::Identifier(ref s) if s == "True") {
@@ -497,7 +488,7 @@ pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if let Some(test) = same_test {
-    return intersection_with_same_test(&slices, test).map(wrap);
+    return Ok(wrap(intersection_with_same_test(&slices, test)));
   }
 
   use std::collections::HashSet;
@@ -539,10 +530,10 @@ pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
 fn intersection_with_same_test(
   slices: &[&[Expr]],
   test: &Expr,
-) -> Result<Vec<Expr>, InterpreterError> {
+) -> std::vec::Vec<crate::syntax::Expr> {
   let first_items: Vec<Expr> = match slices.first() {
     Some(items) => items.to_vec(),
-    None => return Ok(Vec::new()),
+    None => return Vec::new(),
   };
 
   let test_eq = |a: &Expr, b: &Expr| -> bool {
@@ -576,7 +567,7 @@ fn intersection_with_same_test(
   let mut deduped: Vec<Expr> = Vec::new();
   for item in &filtered {
     let mut replaced = false;
-    for existing in deduped.iter_mut() {
+    for existing in &mut deduped {
       if test_eq(existing, item) {
         *existing = item.clone();
         replaced = true;
@@ -588,7 +579,7 @@ fn intersection_with_same_test(
     }
   }
 
-  Ok(deduped)
+  deduped
 }
 
 /// AST-based Complement: elements in first list not in others.
@@ -675,9 +666,9 @@ fn complement_with_same_test(
     return Ok(Vec::new());
   };
   let mut kept: Vec<Expr> = Vec::new();
-  'items: for item in first_items.iter() {
+  'items: for item in *first_items {
     for other in slices.iter().skip(1) {
-      for o in other.iter() {
+      for o in *other {
         let r = apply_func_to_two_args(test, item, o)?;
         if matches!(r, Expr::Identifier(ref s) if s == "True") {
           continue 'items;
@@ -688,7 +679,7 @@ fn complement_with_same_test(
   }
   sort_canonical(&mut kept);
   let mut reps: Vec<Expr> = Vec::new();
-  'dedup: for item in kept.into_iter() {
+  'dedup: for item in kept {
     for rep in &reps {
       let r = apply_func_to_two_args(test, &item, rep)?;
       if matches!(r, Expr::Identifier(ref s) if s == "True") {
@@ -775,13 +766,12 @@ pub fn delete_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(m) if is_infinity(m) => vec![usize::MAX; elems.len()],
     Some(Expr::List(ns)) => {
       let mut out = Vec::with_capacity(ns.len());
-      for n in ns.iter() {
-        match pos_int(n) {
-          Some(v) => out.push(v),
-          None => {
-            ilsmp(n);
-            return Ok(unevaluated());
-          }
+      for n in ns {
+        if let Some(v) = pos_int(n) {
+          out.push(v);
+        } else {
+          ilsmp(n);
+          return Ok(unevaluated());
         }
       }
       // A multiplicity list pairs with the element list by index.
@@ -790,13 +780,14 @@ pub fn delete_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       out
     }
-    Some(m) => match pos_int(m) {
-      Some(v) => vec![v; elems.len()],
-      None => {
+    Some(m) => {
+      if let Some(v) = pos_int(m) {
+        vec![v; elems.len()]
+      } else {
         ilsmp(m);
         return Ok(unevaluated());
       }
-    },
+    }
   };
 
   // Map each element (by SameQ string key) to its remaining removal budget.
@@ -836,14 +827,11 @@ pub fn delete_duplicates_by_ast(
   list: &Expr,
   func: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "DeleteDuplicatesBy".to_string(),
-        args: vec![list.clone(), func.clone()].into(),
-      });
-    }
+  let Expr::List(items) = list else {
+    return Ok(Expr::FunctionCall {
+      name: "DeleteDuplicatesBy".to_string(),
+      args: vec![list.clone(), func.clone()].into(),
+    });
   };
 
   use std::collections::HashSet;
@@ -931,16 +919,11 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     new_args[0] = dense;
     return commonest_ast(&new_args);
   }
-  let items = match &args[0] {
-    Expr::List(items) => items,
-    // Commonest only accepts a list (not even an Association): any other
-    // first argument emits ::arg1 and stays unevaluated, matching WL.
-    _ => {
-      crate::emit_message(
-        "Commonest::arg1: The first argument is expected to be a list.",
-      );
-      return Ok(unevaluated("Commonest", args));
-    }
+  let Expr::List(items) = &args[0] else {
+    crate::emit_message(
+      "Commonest::arg1: The first argument is expected to be a list.",
+    );
+    return Ok(unevaluated("Commonest", args));
   };
 
   if items.is_empty() {
@@ -992,7 +975,7 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Default form returns just the top count tier.
   let limit = if tier_mode {
-    let max_count = ranked.first().map(|t| t.2).unwrap_or(0);
+    let max_count = ranked.first().map_or(0, |t| t.2);
     ranked.iter().take_while(|t| t.2 == max_count).count()
   } else {
     n.min(ranked.len())
@@ -1039,11 +1022,11 @@ pub fn unique_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // lists need not have `List` as their head.
   let mut slices: Vec<(&[Expr], Option<&str>)> =
     Vec::with_capacity(lists.len());
-  for l in lists.iter() {
+  for l in lists {
     match l {
       Expr::List(items) => slices.push((items.as_slice(), None)),
       Expr::FunctionCall { name, args: a } => {
-        slices.push((a.as_slice(), Some(name.as_str())))
+        slices.push((a.as_slice(), Some(name.as_str())));
       }
       _ => return Ok(unevaluated()),
     }
@@ -1145,11 +1128,8 @@ pub fn symmetric_difference_ast(
   let mut membership_count: HashMap<String, (usize, Expr)> = HashMap::new();
 
   for list in lists {
-    let items = match list {
-      Expr::List(items) => items,
-      _ => {
-        return Ok(unevaluated("SymmetricDifference", lists));
-      }
+    let Expr::List(items) = list else {
+      return Ok(unevaluated("SymmetricDifference", lists));
     };
 
     // Deduplicate within this list

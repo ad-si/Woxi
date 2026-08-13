@@ -166,45 +166,42 @@ fn fetch_json(url: &str) -> Result<Value, InterpreterError> {
     static CACHE: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
   }
   let cached = CACHE.with(|c| c.borrow().get(url).cloned());
-  let body = match cached {
-    Some(body) => body,
-    None => {
-      let output = std::process::Command::new("curl")
-        .args([
-          "-fsSL",
-          "--max-time",
-          "30",
-          "--retry",
-          "3",
-          "--retry-all-errors",
-          "-A",
-          USER_AGENT,
-          url,
-        ])
-        .output()
-        .map_err(|e| {
-          InterpreterError::EvaluationError(format!(
-            "WikidataData: failed to run curl: {}",
-            e
-          ))
-        })?;
-      if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(InterpreterError::EvaluationError(format!(
-          "WikidataData: failed to download \"{}\": {}",
-          url,
-          stderr.trim()
-        )));
-      }
-      let body = String::from_utf8_lossy(&output.stdout).into_owned();
-      CACHE.with(|c| c.borrow_mut().insert(url.to_string(), body.clone()));
-      body
+  let body = if let Some(body) = cached {
+    body
+  } else {
+    let output = std::process::Command::new("curl")
+      .args([
+        "-fsSL",
+        "--max-time",
+        "30",
+        "--retry",
+        "3",
+        "--retry-all-errors",
+        "-A",
+        USER_AGENT,
+        url,
+      ])
+      .output()
+      .map_err(|e| {
+        InterpreterError::EvaluationError(format!(
+          "WikidataData: failed to run curl: {e}"
+        ))
+      })?;
+    if !output.status.success() {
+      let stderr = String::from_utf8_lossy(&output.stderr);
+      return Err(InterpreterError::EvaluationError(format!(
+        "WikidataData: failed to download \"{}\": {}",
+        url,
+        stderr.trim()
+      )));
     }
+    let body = String::from_utf8_lossy(&output.stdout).into_owned();
+    CACHE.with(|c| c.borrow_mut().insert(url.to_string(), body.clone()));
+    body
   };
   serde_json::from_str(&body).map_err(|e| {
     InterpreterError::EvaluationError(format!(
-      "WikidataData: invalid API response: {}",
-      e
+      "WikidataData: invalid API response: {e}"
     ))
   })
 }
@@ -216,8 +213,7 @@ fn property_values(
   property: &str,
 ) -> Result<Expr, InterpreterError> {
   let url = format!(
-    "https://www.wikidata.org/w/api.php?action=wbgetclaims&entity={}&property={}&format=json",
-    item, property
+    "https://www.wikidata.org/w/api.php?action=wbgetclaims&entity={item}&property={property}&format=json"
   );
   let json = fetch_json(&url)?;
   let empty = Vec::new();
@@ -244,7 +240,7 @@ fn property_values(
   for claim in &truthy {
     let snak = &claim["mainsnak"];
     match snak["datatype"].as_str() {
-      Some("wikibase-item") | Some("wikibase-property") => {
+      Some("wikibase-item" | "wikibase-property") => {
         if let Some(id) = snak["datavalue"]["value"]["id"].as_str() {
           label_ids.push(id.to_string());
         }
@@ -291,8 +287,7 @@ fn fetch_labels(
       .collect::<Vec<_>>()
       .join("|");
     let url = format!(
-      "https://www.wikidata.org/w/api.php?action=wbgetentities&ids={}&props=labels%7Cdescriptions&languages=en&format=json",
-      joined
+      "https://www.wikidata.org/w/api.php?action=wbgetentities&ids={joined}&props=labels%7Cdescriptions&languages=en&format=json"
     );
     let json = fetch_json(&url)?;
     if let Some(entities) = json["entities"].as_object() {
@@ -352,11 +347,10 @@ fn snak_to_expr(
             .and_then(|(label, _)| label.clone())
             .ok_or_else(|| {
               InterpreterError::EvaluationError(format!(
-                "WikidataData: missing label for unit entity {}",
-                id
+                "WikidataData: missing label for unit entity {id}"
               ))
             })?;
-          evaluate(Expr::FunctionCall {
+          evaluate(&Expr::FunctionCall {
             name: "Quantity".to_string(),
             args: vec![magnitude, unit_to_expr(&unit)].into(),
           })
@@ -371,7 +365,7 @@ fn snak_to_expr(
       )))
     }
     Some("url") => Ok(url_expr(value.as_str().unwrap_or_default().to_string())),
-    Some("wikibase-item") | Some("wikibase-property") => {
+    Some("wikibase-item" | "wikibase-property") => {
       let id = value["id"].as_str().unwrap_or_default().to_string();
       let mut meta: Vec<(Expr, Expr)> = Vec::new();
       if let Some((label, description)) = labels.get(&id) {
@@ -405,7 +399,7 @@ fn snak_to_expr(
     Some("globe-coordinate") => {
       let lat = value["latitude"].as_f64().unwrap_or(0.0);
       let lon = value["longitude"].as_f64().unwrap_or(0.0);
-      evaluate(Expr::FunctionCall {
+      evaluate(&Expr::FunctionCall {
         name: "GeoPosition".to_string(),
         args: vec![Expr::List(vec![Expr::Real(lat), Expr::Real(lon)].into())]
           .into(),
@@ -440,8 +434,8 @@ fn url_expr(url: String) -> Expr {
 /// Run an expression through the evaluator so constructors like `Quantity`,
 /// `DateObject` and `GeoPosition` canonicalize the same way as typed input.
 #[cfg(not(target_arch = "wasm32"))]
-fn evaluate(expr: Expr) -> Result<Expr, InterpreterError> {
-  crate::evaluator::evaluate_expr_to_expr(&expr)
+fn evaluate(expr: &Expr) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_expr_to_expr(expr)
 }
 
 /// Parse a Wikidata quantity amount (`"+73.4767"`, `"-1"`, …). Amounts
@@ -487,7 +481,7 @@ fn percent_encode(name: &str) -> String {
       | b','
       | b';'
       | b'=' => out.push(byte as char),
-      _ => out.push_str(&format!("%{:02X}", byte)),
+      _ => out.push_str(&format!("%{byte:02X}")),
     }
   }
   out
@@ -538,7 +532,7 @@ fn time_to_date_object(
       parts.push(Expr::Integer(*part as i128));
     }
   }
-  evaluate(Expr::FunctionCall {
+  evaluate(&Expr::FunctionCall {
     name: "DateObject".to_string(),
     args: vec![Expr::List(parts.into())].into(),
   })
@@ -578,7 +572,7 @@ fn unit_name(label: &str) -> String {
   // name: "degree Celsius" → "DegreesCelsius".
   if words.len() > 1 && words[0].eq_ignore_ascii_case("degree") {
     let rest: String = words[1..].iter().map(|w| capitalize(w)).collect();
-    return format!("Degrees{}", rest);
+    return format!("Degrees{rest}");
   }
   // Powers keep the modifier as a prefix: "square kilometre" →
   // "SquareKilometers", "cubic metre" → "CubicMeters".
@@ -599,12 +593,12 @@ fn unit_name(label: &str) -> String {
 fn americanize(word: &str) -> String {
   for (from, to) in [("metre", "meter"), ("litre", "liter")] {
     if let Some(stem) = word.strip_suffix(from) {
-      return format!("{}{}", stem, to);
+      return format!("{stem}{to}");
     }
     // Also handle already-plural British spellings ("metres").
-    let plural = format!("{}s", from);
+    let plural = format!("{from}s");
     if let Some(stem) = word.strip_suffix(plural.as_str()) {
-      return format!("{}{}s", stem, to);
+      return format!("{stem}{to}s");
     }
   }
   word.to_string()
@@ -622,7 +616,7 @@ fn pluralize(word: &str) -> String {
     _ => {}
   }
   match word.as_bytes().last() {
-    Some(b's') | Some(b'z') | Some(b'x') => word.to_string(),
+    Some(b's' | b'z' | b'x') => word.to_string(),
     Some(b'y')
       if word.len() > 1
         && !matches!(
@@ -632,7 +626,7 @@ fn pluralize(word: &str) -> String {
     {
       format!("{}ies", &word[..word.len() - 1])
     }
-    _ => format!("{}s", word),
+    _ => format!("{word}s"),
   }
 }
 

@@ -99,10 +99,13 @@ diff-fuzz = ["cli"]
 [lints.rust]
 unreachable_pub = "warn"
 
-# CI gates on `cargo clippy -- -D warnings` (`make lint`). These three lints
-# are allowed crate-wide because following them would make this code worse,
-# not better; every other clippy lint must stay clean.
+# CI gates on `cargo clippy -- -W clippy::pedantic -D warnings` (`make lint`).
+# The lints below are allowed crate-wide because following them would make
+# this code worse, not better; every other clippy lint must stay clean.
 [lints.clippy]
+# The pedantic group is enabled as a whole; `priority = -1` makes the
+# individual `allow`s below outrank it.
+pedantic = { level = "warn", priority = -1 }
 # Numeric kernels (matrix decompositions, quadrature, image convolutions)
 # index several parallel arrays inside one loop, where `for i in 0..n` is
 # both the conventional notation and clearer than zipped iterators.
@@ -115,6 +118,84 @@ type_complexity = "allow"
 # attributes, options, precision, …) explicitly rather than through a
 # struct, so the argument counts are deliberate.
 too_many_arguments = "allow"
+
+# --- pedantic lints this codebase deliberately does not follow ---
+
+# Doc comments name Wolfram Language symbols (Plus, TagSetDelayed, HoldFirst)
+# as prose, not as Rust items. Backticking every occurrence would make the
+# documentation harder to read, and the names do not resolve as doc links.
+doc_markdown = "allow"
+# The interpreter converts constantly between the numeric tower's `i64`,
+# `usize`, `f64` and `BigInt` at boundaries where the range is already
+# established by the surrounding logic (list indices, pixel coordinates,
+# precision counts). Annotating each of those with a `try_into().unwrap()`
+# would add panics, not safety.
+cast_sign_loss = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_lossless = "allow"
+# Tables of mathematical constants, colour values and named-character code
+# points are transcribed from their sources digit for digit; inserting `_`
+# separators would obscure that correspondence.
+unreadable_literal = "allow"
+# Errors and panics are documented where they are not obvious. Requiring an
+# `# Errors` section on every `-> Result` function would add ~1500 comments
+# restating the return type.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# The evaluator's builtin dispatch is a flat match over hundreds of Wolfram
+# symbols. Splitting those on line count alone would scatter related cases.
+too_many_lines = "allow"
+# `#[must_use]` on every getter would be noise in a crate whose public API is
+# the interpreter entry points, not the internal expression helpers.
+must_use_candidate = "allow"
+# Mathematical code uses the notation of its domain: `n`, `x`, `y`, `z` for
+# coordinates, `p`/`q` for rational parts, `a`/`b`/`c` for coefficients.
+many_single_char_names = "allow"
+similar_names = "allow"
+# The interpreter must reproduce Wolfram's results bit for bit, so machine
+# reals are compared exactly on purpose (round-trip checks, integrality
+# tests, cache lookups). An epsilon comparison would change the semantics.
+float_cmp = "allow"
+# Numeric code dispatches on the sign of a value with the notation of its
+# domain — `if x < 0 … else if x > 0 … else …`. Rewriting those chains as
+# `match x.cmp(&0)` would obscure the arithmetic for no behavioural gain,
+# the same reason `needless_range_loop` is allowed above.
+comparison_chain = "allow"
+# Doc comments quote Wolfram calls such as `assoc["a", "b"]` and
+# `Quantity["Hertz"]`, which clippy reads as a malformed intra-doc link.
+# They are sample input, not links.
+doc_link_with_quotes = "allow"
+# `Option<Option<T>>` is a documented tri-state where both levels carry
+# meaning — e.g. `None` = not an infinity, `Some(None)` = ComplexInfinity
+# (direction unknown), `Some(Some(d))` = explicit direction. Naming an enum
+# per site would not make the three cases clearer than the comment does.
+option_option = "allow"
+# Wolfram snippets in the test suite are uniformly written as `r#"…"#`.
+# Dropping the hashes from just those that happen to contain no `"` would
+# make the tables inconsistent for no gain.
+needless_raw_string_hashes = "allow"
+# Symbol dispatch is written as one `match` arm per Wolfram symbol (see
+# `evaluator/dispatch/arg_count.rs`), and character tables as one arm per
+# code point. The arms are alphabetical and individually commented; merging
+# the ones that currently share a body into `|` chains would destroy both
+# properties and churn every time a single symbol's behaviour diverges.
+match_same_arms = "allow"
+# SVG, notebook and box-form emitters build their output with
+# `s.push_str(&format!(…))`. `write!` would return a `fmt::Error` that a
+# `String` sink can never produce, so every call site would grow an
+# `unwrap()` — a panic path where there is currently none.
+format_push_string = "allow"
+# Helper `fn`s and `const` tables are declared next to the statements that
+# use them rather than hoisted to the top of the enclosing function, which
+# keeps a long evaluator branch readable in one pass.
+items_after_statements = "allow"
+# Every `evaluator` and `functions` submodule opens with `use super::*` to
+# pick up the shared prelude (Expr, InterpreterError, the arg helpers). The
+# glob is the module layout, not an oversight; enumerating it per file would
+# add hundreds of import lines that need editing on every prelude change.
+wildcard_imports = "allow"
 
 [dependencies]
 anyhow = "1.0.98"

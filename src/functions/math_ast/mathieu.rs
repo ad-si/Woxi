@@ -80,15 +80,12 @@ pub fn mathieu_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Ok(unevaluated("MathieuS", args));
   }
-  let (a, q, z) = match (
+  let (Some(a), Some(q), Some(z)) = (
     try_real_f64(&args[0]),
     try_real_f64(&args[1]),
     try_real_f64(&args[2]),
-  ) {
-    (Some(a), Some(q), Some(z)) => (a, q, z),
-    _ => {
-      return Ok(unevaluated("MathieuS", args));
-    }
+  ) else {
+    return Ok(unevaluated("MathieuS", args));
   };
   if a < 0.0 {
     return Ok(unevaluated("MathieuS", args));
@@ -103,15 +100,12 @@ pub fn mathieu_s_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Ok(unevaluated("MathieuSPrime", args));
   }
-  let (a, q, z) = match (
+  let (Some(a), Some(q), Some(z)) = (
     try_real_f64(&args[0]),
     try_real_f64(&args[1]),
     try_real_f64(&args[2]),
-  ) {
-    (Some(a), Some(q), Some(z)) => (a, q, z),
-    _ => {
-      return Ok(unevaluated("MathieuSPrime", args));
-    }
+  ) else {
+    return Ok(unevaluated("MathieuSPrime", args));
   };
   if a < 0.0 {
     return Ok(unevaluated("MathieuSPrime", args));

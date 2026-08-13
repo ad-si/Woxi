@@ -67,8 +67,7 @@ pub fn flatten_alternatives_binop(expr: &Expr) -> Option<Expr> {
 fn part_take_warn(expr: &Expr, start: i64, end: i64) {
   let expr_str = crate::syntax::expr_to_string(expr);
   crate::emit_message_to_stdout(&format!(
-    "Part::take: Cannot take positions {} through {} in {}.",
-    start, end, expr_str
+    "Part::take: Cannot take positions {start} through {end} in {expr_str}."
   ));
 }
 
@@ -563,7 +562,7 @@ fn extract_part_ast_rest(
       // List index: sub-association of the selected entries
       Expr::List(idxs) => {
         let mut selected: Vec<(Expr, Expr)> = Vec::with_capacity(idxs.len());
-        for ix in idxs.iter() {
+        for ix in idxs {
           match ix {
             Expr::Integer(i) => {
               if let Some((k, v)) = entry_at(*i) {
@@ -710,7 +709,7 @@ fn extract_part_ast_rest(
           // All positions valid: extract each part and keep the head of the
           // original expression (f[a,b,c][[{1,3}]] -> f[a, c]).
           let mut results = Vec::with_capacity(indices.len());
-          for idx_expr in indices.iter() {
+          for idx_expr in indices {
             results.push(extract_part_ast(expr, idx_expr)?);
           }
           return Ok(rewrap_part_list(expr, results));
@@ -741,8 +740,7 @@ fn extract_part_ast_rest(
         // Print warning to stderr and return unevaluated Part expression
         let expr_str = crate::syntax::expr_to_string(expr);
         crate::emit_message_to_stdout(&format!(
-          "Part::partw: Part {} of {} does not exist.",
-          idx, expr_str
+          "Part::partw: Part {idx} of {expr_str} does not exist."
         ));
         Ok(part_take_unevaluated(expr, index))
       }
@@ -765,14 +763,12 @@ fn extract_part_ast_rest(
           let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
           if actual_idx >= 0 && actual_idx < len {
             return Ok(Expr::Integer(bytes[actual_idx as usize] as i128));
-          } else {
-            let expr_str = crate::syntax::expr_to_string(expr);
-            crate::emit_message_to_stdout(&format!(
-              "Part::partw: Part {} of {} does not exist.",
-              idx, expr_str
-            ));
-            return Ok(part_take_unevaluated(expr, index));
           }
+          let expr_str = crate::syntax::expr_to_string(expr);
+          crate::emit_message_to_stdout(&format!(
+            "Part::partw: Part {idx} of {expr_str} does not exist."
+          ));
+          return Ok(part_take_unevaluated(expr, index));
         }
       }
       let len = args.len() as i64;
@@ -782,8 +778,7 @@ fn extract_part_ast_rest(
       } else {
         let expr_str = crate::syntax::expr_to_string(expr);
         crate::emit_message_to_stdout(&format!(
-          "Part::partw: Part {} of {} does not exist.",
-          idx, expr_str
+          "Part::partw: Part {idx} of {expr_str} does not exist."
         ));
         Ok(part_take_unevaluated(expr, index))
       }
@@ -813,8 +808,7 @@ fn extract_part_ast_rest(
       } else {
         let expr_str = crate::syntax::expr_to_string(expr);
         crate::emit_message_to_stdout(&format!(
-          "Part::partw: Part {} of {} does not exist.",
-          idx, expr_str
+          "Part::partw: Part {idx} of {expr_str} does not exist."
         ));
         Ok(part_take_unevaluated(expr, index))
       }
@@ -867,8 +861,7 @@ fn extract_part_ast_rest(
       } else {
         let expr_str = crate::syntax::expr_to_string(expr);
         crate::emit_message_to_stdout(&format!(
-          "Part::partw: Part {} of {} does not exist.",
-          idx, expr_str
+          "Part::partw: Part {idx} of {expr_str} does not exist."
         ));
         Ok(part_take_unevaluated(expr, index))
       }
@@ -890,8 +883,7 @@ fn extract_part_ast_rest(
       } else {
         let expr_str = crate::syntax::expr_to_string(expr);
         crate::emit_message_to_stdout(&format!(
-          "Part::partw: Part {} of {} does not exist.",
-          idx, expr_str
+          "Part::partw: Part {idx} of {expr_str} does not exist."
         ));
         Ok(part_take_unevaluated(expr, index))
       }
@@ -916,8 +908,7 @@ fn extract_part_ast_rest(
       } else {
         let expr_str = crate::syntax::expr_to_string(expr);
         crate::emit_message_to_stdout(&format!(
-          "Part::partw: Part {} of {} does not exist.",
-          idx, expr_str
+          "Part::partw: Part {idx} of {expr_str} does not exist."
         ));
         Ok(part_take_unevaluated(expr, index))
       }
@@ -940,8 +931,7 @@ fn extract_part_ast_rest(
       } else {
         let expr_str = crate::syntax::expr_to_string(expr);
         crate::emit_message_to_stdout(&format!(
-          "Part::partw: Part {} of {} does not exist.",
-          idx, expr_str
+          "Part::partw: Part {idx} of {expr_str} does not exist."
         ));
         Ok(part_take_unevaluated(expr, index))
       }

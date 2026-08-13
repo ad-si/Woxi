@@ -186,7 +186,9 @@ fn max_slot_index(expr: &Expr) -> usize {
       Expr::NamedFunction { body, .. } => walk(body, max),
       Expr::CurriedCall { func, args } => {
         walk(func, max);
-        args.iter().for_each(|i| walk(i, max));
+        for i in args {
+          walk(i, max);
+        }
       }
       Expr::Rule {
         pattern,
@@ -233,8 +235,7 @@ fn emit_named_slot_messages(body: &Expr, args: &[Expr]) {
         .any(|(k, _)| matches!(k, Expr::String(s) if s == &key));
       if !filled {
         crate::emit_message(&format!(
-          "Function::slota: Named slot {} in {} &  cannot be filled from {}.",
-          key, body_str, assoc_str
+          "Function::slota: Named slot {key} in {body_str} &  cannot be filled from {assoc_str}."
         ));
       }
     }
@@ -392,13 +393,13 @@ pub fn apply_apply_ast(
     // FunctionCall nodes — notably Alternatives (`a | b | c`). Flatten
     // same-operator chains so `List @@ (a | b | c)` → {a, b, c}, matching WS.
     Expr::BinaryOp { op, left, right } => {
-      fn flatten(op: &BinaryOperator, e: &Expr, out: &mut Vec<Expr>) {
+      fn flatten(op: BinaryOperator, e: &Expr, out: &mut Vec<Expr>) {
         if let Expr::BinaryOp {
           op: inner,
           left,
           right,
         } = e
-          && inner == op
+          && *inner == op
           && !matches!(op, BinaryOperator::Power)
         {
           flatten(op, left, out);
@@ -408,8 +409,8 @@ pub fn apply_apply_ast(
         out.push(e.clone());
       }
       let mut parts = Vec::new();
-      flatten(op, left, &mut parts);
-      flatten(op, right, &mut parts);
+      flatten(*op, left, &mut parts);
+      flatten(*op, right, &mut parts);
       parts.into()
     }
     // Comparison chains: `a == b == c` is Equal[a, b, c]; `a < b <= c` is
@@ -1155,7 +1156,7 @@ pub fn apply_curried_call(
       } else {
         format!(">> {}", crate::syntax::expr_to_output(&display))
       };
-      println!("{}", line);
+      println!("{line}");
       crate::capture_stdout(&line);
       Ok(expr.clone())
     }
@@ -1170,7 +1171,7 @@ pub fn apply_curried_call(
         crate::syntax::expr_to_output(&func_args[0]),
         crate::syntax::expr_to_output(&args[0])
       );
-      println!("{}", line);
+      println!("{line}");
       crate::capture_stdout(&line);
       Ok(args[0].clone())
     }
@@ -1354,10 +1355,10 @@ pub fn apply_curried_call(
       match prop.as_str() {
         "Wavelet" => Ok(func_args[0].clone()),
         "PrimalLowpass" | "PrimalHighpass" | "DualLowpass" | "DualHighpass" => {
-          crate::functions::wavelet_ast::filters::wavelet_filter_coefficients_ast(&[
+          Ok(crate::functions::wavelet_ast::filters::wavelet_filter_coefficients_ast(&[
             func_args[0].clone(),
             args[0].clone(),
-          ])
+          ]))
         }
         _ => Ok(Expr::CurriedCall {
           func: Box::new(func.clone()),
@@ -1582,19 +1583,18 @@ pub fn apply_curried_call(
       let Expr::String(prop) = &args[0] else {
         unreachable!()
       };
-      match crate::functions::list_helpers_ast::sparse_array_property(
-        sa_args, prop,
-      ) {
-        Some(result) => Ok(result),
-        None => {
-          crate::emit_message(&format!(
-            "SparseArray::nomthd: There is no method {prop} for SparseArray objects."
-          ));
-          Ok(Expr::CurriedCall {
-            func: Box::new(func.clone()),
-            args: args.to_vec(),
-          })
-        }
+      if let Some(result) =
+        crate::functions::list_helpers_ast::sparse_array_property(sa_args, prop)
+      {
+        Ok(result)
+      } else {
+        crate::emit_message(&format!(
+          "SparseArray::nomthd: There is no method {prop} for SparseArray objects."
+        ));
+        Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        })
       }
     }
     Expr::FunctionCall {
@@ -1688,7 +1688,7 @@ pub fn apply_curried_call(
       args: func_args,
     } if name == "BezierFunction" && func_args.len() == 1 => {
       // BezierFunction[{{p1}, {p2}, ...}][t] — evaluate Bezier curve at t
-      evaluate_bezier_function(func_args, args)
+      Ok(evaluate_bezier_function(func_args, args))
     }
     Expr::FunctionCall {
       name,
@@ -1701,7 +1701,7 @@ pub fn apply_curried_call(
         && !slot.is_empty()
       {
         let pts = vec![slot[0].clone()];
-        evaluate_bezier_function(&pts, args)
+        Ok(evaluate_bezier_function(&pts, args))
       } else {
         Err(InterpreterError::EvaluationError(
           "BezierFunction: invalid structured form".into(),
@@ -1714,7 +1714,7 @@ pub fn apply_curried_call(
     } if name == "BSplineFunction" && func_args.len() == 9 => {
       // BSplineFunction[dim, ranges, degrees, closed, {net, Automatic},
       // knots, ...][params] — evaluate the spline at the given parameters.
-      evaluate_bspline_function(func_args, args)
+      Ok(evaluate_bspline_function(func_args, args))
     }
     Expr::FunctionCall {
       name,
@@ -1856,7 +1856,7 @@ pub fn apply_curried_call(
       } else if name == "RightComposition" && !func_args.is_empty() {
         // RightComposition[f, g, h][x] applies functions left-to-right: h[g[f[x]]]
         let mut result = args.to_vec();
-        for f in func_args.iter() {
+        for f in func_args {
           let intermediate = apply_curried_call(f, &result)?;
           result = vec![intermediate];
         }
@@ -2263,9 +2263,9 @@ pub fn apply_curried_call(
 fn evaluate_bezier_function(
   func_args: &[Expr],
   args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   if args.len() != 1 {
-    return Ok(unevaluated("BezierFunction", func_args));
+    return unevaluated("BezierFunction", func_args);
   }
 
   // Extract the parameter t as f64
@@ -2278,25 +2278,22 @@ fn evaluate_bezier_function(
       if let (Expr::Integer(n), Expr::Integer(d)) = (&ra[0], &ra[1]) {
         *n as f64 / *d as f64
       } else {
-        return Ok(unevaluated("BezierFunction", func_args));
+        return unevaluated("BezierFunction", func_args);
       }
     }
     _ => {
       // Symbolic t: return unevaluated
-      return Ok(unevaluated("BezierFunction", func_args));
+      return unevaluated("BezierFunction", func_args);
     }
   };
 
   // Extract control points from func_args[0] which should be a list of points
-  let points = match &func_args[0] {
-    Expr::List(pts) => pts,
-    _ => {
-      return Ok(unevaluated("BezierFunction", func_args));
-    }
+  let Expr::List(points) = &func_args[0] else {
+    return unevaluated("BezierFunction", func_args);
   };
 
   if points.is_empty() {
-    return Ok(unevaluated("BezierFunction", func_args));
+    return unevaluated("BezierFunction", func_args);
   }
 
   // Convert control points to Vec<Vec<f64>>
@@ -2315,18 +2312,18 @@ fn evaluate_bezier_function(
               if let (Expr::Integer(n), Expr::Integer(d)) = (&ra[0], &ra[1]) {
                 fcoords.push(*n as f64 / *d as f64);
               } else {
-                return Ok(unevaluated("BezierFunction", func_args));
+                return unevaluated("BezierFunction", func_args);
               }
             }
             _ => {
-              return Ok(unevaluated("BezierFunction", func_args));
+              return unevaluated("BezierFunction", func_args);
             }
           }
         }
         ctrl_pts.push(fcoords);
       }
       _ => {
-        return Ok(unevaluated("BezierFunction", func_args));
+        return unevaluated("BezierFunction", func_args);
       }
     }
   }
@@ -2343,7 +2340,7 @@ fn evaluate_bezier_function(
     }
   }
 
-  Ok(Expr::List(work[0].iter().map(|&v| Expr::Real(v)).collect()))
+  Expr::List(work[0].iter().map(|&v| Expr::Real(v)).collect())
 }
 
 /// Knot span index `k` with `knots[k] <= u < knots[k+1]` (clamped at the
@@ -2357,14 +2354,14 @@ fn bspline_find_span(n: usize, p: usize, u: f64, knots: &[f64]) -> usize {
     return p;
   }
   let (mut low, mut high) = (p, n + 1);
-  let mut mid = (low + high) / 2;
+  let mut mid = usize::midpoint(low, high);
   while u < knots[mid] || u >= knots[mid + 1] {
     if u < knots[mid] {
       high = mid;
     } else {
       low = mid;
     }
-    mid = (low + high) / 2;
+    mid = usize::midpoint(low, high);
   }
   mid
 }
@@ -2412,7 +2409,7 @@ fn bspline_point_coords(e: &Expr) -> Option<Vec<f64>> {
 fn evaluate_bspline_function(
   func_args: &[Expr],
   args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   // When the spline can't be sampled (symbolic parameters, malformed form),
   // echo the object applied to its parameters: `BSplineFunction[...][params]`.
   let unevaluated = || Expr::CurriedCall {
@@ -2422,10 +2419,10 @@ fn evaluate_bspline_function(
 
   let dim = match &func_args[0] {
     Expr::Integer(d) => *d as usize,
-    _ => return Ok(unevaluated()),
+    _ => return unevaluated(),
   };
   if args.len() != dim {
-    return Ok(unevaluated());
+    return unevaluated();
   }
 
   // Parameters must be numeric to sample the spline.
@@ -2433,9 +2430,8 @@ fn evaluate_bspline_function(
     .iter()
     .map(crate::functions::math_ast::try_eval_to_f64)
     .collect();
-  let params = match params {
-    Some(p) => p,
-    None => return Ok(unevaluated()),
+  let Some(params) = params else {
+    return unevaluated();
   };
 
   // Degrees, control net and knot vectors from the structured form.
@@ -2447,11 +2443,11 @@ fn evaluate_bspline_function(
         _ => None,
       })
       .collect(),
-    _ => return Ok(unevaluated()),
+    _ => return unevaluated(),
   };
   let net = match &func_args[4] {
     Expr::List(slot) if !slot.is_empty() => &slot[0],
-    _ => return Ok(unevaluated()),
+    _ => return unevaluated(),
   };
   let knot_sets: Vec<Vec<f64>> = match &func_args[5] {
     Expr::List(ks) => ks
@@ -2465,11 +2461,11 @@ fn evaluate_bspline_function(
       })
       .collect::<Option<Vec<_>>>()
       .unwrap_or_default(),
-    _ => return Ok(unevaluated()),
+    _ => return unevaluated(),
   };
 
   if degrees.len() != dim || knot_sets.len() != dim {
-    return Ok(unevaluated());
+    return unevaluated();
   }
 
   let result = match dim {
@@ -2480,7 +2476,7 @@ fn evaluate_bspline_function(
       };
       let ctrl = match ctrl {
         Some(c) if !c.is_empty() => c,
-        _ => return Ok(unevaluated()),
+        _ => return unevaluated(),
       };
       de_boor(degrees[0], &knot_sets[0], &ctrl, params[0])
     }
@@ -2501,7 +2497,7 @@ fn evaluate_bspline_function(
       };
       let rows = match rows {
         Some(r) if !r.is_empty() && r.iter().all(|row| !row.is_empty()) => r,
-        _ => return Ok(unevaluated()),
+        _ => return unevaluated(),
       };
       let collapsed: Vec<Vec<f64>> = rows
         .iter()
@@ -2509,10 +2505,10 @@ fn evaluate_bspline_function(
         .collect();
       de_boor(degrees[0], &knot_sets[0], &collapsed, params[0])
     }
-    _ => return Ok(unevaluated()),
+    _ => return unevaluated(),
   };
 
-  Ok(Expr::List(result.into_iter().map(Expr::Real).collect()))
+  Expr::List(result.into_iter().map(Expr::Real).collect())
 }
 
 /// Apply TransformationFunction[matrix] to a point vector.
@@ -2533,30 +2529,24 @@ fn apply_transformation_function(
     });
   }
   let point = &args[0];
-  let coords = match point {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::CurriedCall {
-        func: Box::new(Expr::FunctionCall {
-          name: "TransformationFunction".to_string(),
-          args: vec![matrix.clone()].into(),
-        }),
-        args: args.to_vec(),
-      });
-    }
+  let Expr::List(coords) = point else {
+    return Ok(Expr::CurriedCall {
+      func: Box::new(Expr::FunctionCall {
+        name: "TransformationFunction".to_string(),
+        args: vec![matrix.clone()].into(),
+      }),
+      args: args.to_vec(),
+    });
   };
 
-  let rows = match matrix {
-    Expr::List(rows) => rows,
-    _ => {
-      return Ok(Expr::CurriedCall {
-        func: Box::new(Expr::FunctionCall {
-          name: "TransformationFunction".to_string(),
-          args: vec![matrix.clone()].into(),
-        }),
-        args: args.to_vec(),
-      });
-    }
+  let Expr::List(rows) = matrix else {
+    return Ok(Expr::CurriedCall {
+      func: Box::new(Expr::FunctionCall {
+        name: "TransformationFunction".to_string(),
+        args: vec![matrix.clone()].into(),
+      }),
+      args: args.to_vec(),
+    });
   };
 
   let n = coords.len();
@@ -2567,17 +2557,14 @@ fn apply_transformation_function(
   // Multiply: take first n rows, dot with homogeneous vector
   let mut result = Vec::with_capacity(n);
   for i in 0..n {
-    let row = match &rows[i] {
-      Expr::List(r) => r,
-      _ => {
-        return Ok(Expr::CurriedCall {
-          func: Box::new(Expr::FunctionCall {
-            name: "TransformationFunction".to_string(),
-            args: vec![matrix.clone()].into(),
-          }),
-          args: args.to_vec(),
-        });
-      }
+    let Expr::List(row) = &rows[i] else {
+      return Ok(Expr::CurriedCall {
+        func: Box::new(Expr::FunctionCall {
+          name: "TransformationFunction".to_string(),
+          args: vec![matrix.clone()].into(),
+        }),
+        args: args.to_vec(),
+      });
     };
     // Dot product of row with homogeneous vector
     let dot = Expr::FunctionCall {

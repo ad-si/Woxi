@@ -1581,14 +1581,12 @@ mod negative_base_fractional_exponent {
     // N[(-1)^(1/3)] should give a complex number, not Indeterminate
     let result = interpret("N[(-1)^(1/3)]").unwrap();
     assert!(
-      result.contains("I"),
-      "Expected complex result, got: {}",
-      result
+      result.contains('I'),
+      "Expected complex result, got: {result}"
     );
     assert!(
       result.contains("0.5"),
-      "Expected real part ~0.5, got: {}",
-      result
+      "Expected real part ~0.5, got: {result}"
     );
   }
 
@@ -1596,9 +1594,8 @@ mod negative_base_fractional_exponent {
   fn n_neg1_two_thirds() {
     let result = interpret("N[(-1)^(2/3)]").unwrap();
     assert!(
-      result.contains("I"),
-      "Expected complex result, got: {}",
-      result
+      result.contains('I'),
+      "Expected complex result, got: {result}"
     );
   }
 
@@ -1607,9 +1604,8 @@ mod negative_base_fractional_exponent {
     // (-1.0)^0.5 should give I, not Indeterminate
     let result = interpret("(-1.0)^0.5").unwrap();
     assert!(
-      result.contains("I"),
-      "Expected complex result, got: {}",
-      result
+      result.contains('I'),
+      "Expected complex result, got: {result}"
     );
   }
 
@@ -1619,9 +1615,8 @@ mod negative_base_fractional_exponent {
     let result = interpret("(-2.0)^0.5").unwrap();
     assert_ne!(result, "Indeterminate");
     assert!(
-      result.contains("I"),
-      "Expected complex result, got: {}",
-      result
+      result.contains('I'),
+      "Expected complex result, got: {result}"
     );
   }
 }
@@ -1815,8 +1810,7 @@ mod exact_value_returns {
     let result = interpret("1.05^1578").unwrap();
     assert!(
       result.contains("*^"),
-      "Expected scientific notation, got: {}",
-      result
+      "Expected scientific notation, got: {result}"
     );
     assert!(result.starts_with("2.73346"));
   }
@@ -1825,7 +1819,7 @@ mod exact_value_returns {
   fn large_float_multiplication_scientific_notation() {
     // 50 * 1.05^1578 should produce scientific notation
     let result = interpret("50 * (1 + 0.05)^1578").unwrap();
-    assert!(result.contains("*^35"), "Expected *^35, got: {}", result);
+    assert!(result.contains("*^35"), "Expected *^35, got: {result}");
   }
 
   #[test]
@@ -2577,37 +2571,37 @@ mod n_constants {
   #[test]
   fn euler_gamma() {
     let r = interpret("N[EulerGamma]").unwrap();
-    assert!(r.starts_with("0.577215"), "got: {}", r);
+    assert!(r.starts_with("0.577215"), "got: {r}");
   }
 
   #[test]
   fn golden_ratio() {
     let r = interpret("N[GoldenRatio]").unwrap();
-    assert!(r.starts_with("1.61803"), "got: {}", r);
+    assert!(r.starts_with("1.61803"), "got: {r}");
   }
 
   #[test]
   fn catalan() {
     let r = interpret("N[Catalan]").unwrap();
-    assert!(r.starts_with("0.91596"), "got: {}", r);
+    assert!(r.starts_with("0.91596"), "got: {r}");
   }
 
   #[test]
   fn glaisher() {
     let r = interpret("N[Glaisher]").unwrap();
-    assert!(r.starts_with("1.28242"), "got: {}", r);
+    assert!(r.starts_with("1.28242"), "got: {r}");
   }
 
   #[test]
   fn khinchin() {
     let r = interpret("N[Khinchin]").unwrap();
-    assert!(r.starts_with("2.68545"), "got: {}", r);
+    assert!(r.starts_with("2.68545"), "got: {r}");
   }
 
   #[test]
   fn machine_precision() {
     let r = interpret("N[MachinePrecision]").unwrap();
-    assert!(r.starts_with("15.9545"), "got: {}", r);
+    assert!(r.starts_with("15.9545"), "got: {r}");
   }
 
   #[test]
@@ -3634,14 +3628,14 @@ mod expand_threading {
   fn factorial2_real_non_integer() {
     // 3.14!! ≈ 3.3477, to 6 significant figures.
     let s = interpret("Factorial2[3.14]").unwrap();
-    assert!(s.starts_with("3.347742585544"), "got {}", s);
+    assert!(s.starts_with("3.347742585544"), "got {s}");
   }
 
   #[test]
   fn factorial2_real_integer() {
     // 3.0!! should evaluate, even if subject to 1-ULP error.
     let s = interpret("Factorial2[3.0]").unwrap();
-    assert!(s.starts_with("3.0"), "got {}", s);
+    assert!(s.starts_with("3.0"), "got {s}");
   }
 
   #[test]
@@ -4999,18 +4993,15 @@ mod expand_threading {
     // Should start with correct digits and end with *I
     assert!(
       result.starts_with("1.175201193643801456882381850595600815"),
-      "N[Sin[I],100] should have correct digits, got: {}",
-      result
+      "N[Sin[I],100] should have correct digits, got: {result}"
     );
     assert!(
       result.contains("*I"),
-      "N[Sin[I],100] should be purely imaginary, got: {}",
-      result
+      "N[Sin[I],100] should be purely imaginary, got: {result}"
     );
     assert!(
-      !result.contains("+") && !result.contains("0.`"),
-      "N[Sin[I],100] should not have a real part, got: {}",
-      result
+      !result.contains('+') && !result.contains("0.`"),
+      "N[Sin[I],100] should not have a real part, got: {result}"
     );
   }
 
@@ -5019,13 +5010,11 @@ mod expand_threading {
     let result = interpret("N[Cos[I], 100]").unwrap();
     assert!(
       result.starts_with("1.543080634815243778477905620757061682"),
-      "N[Cos[I],100] digits wrong, got: {}",
-      result
+      "N[Cos[I],100] digits wrong, got: {result}"
     );
     assert!(
-      !result.contains("I"),
-      "N[Cos[I],100] should be purely real, got: {}",
-      result
+      !result.contains('I'),
+      "N[Cos[I],100] should be purely real, got: {result}"
     );
   }
 
@@ -5035,18 +5024,15 @@ mod expand_threading {
     // Both real and imaginary parts should be present
     assert!(
       result.starts_with("1.298457581415977294826042365807815"),
-      "N[Sin[1+I],100] real part wrong, got: {}",
-      result
+      "N[Sin[1+I],100] real part wrong, got: {result}"
     );
     assert!(
       result.contains("0.634963914784736108255082202991509"),
-      "N[Sin[1+I],100] imaginary part wrong, got: {}",
-      result
+      "N[Sin[1+I],100] imaginary part wrong, got: {result}"
     );
     assert!(
       result.contains("*I"),
-      "N[Sin[1+I],100] should have imaginary part, got: {}",
-      result
+      "N[Sin[1+I],100] should have imaginary part, got: {result}"
     );
   }
 
@@ -5128,11 +5114,7 @@ mod unary_minus_after_operator {
     // y = -f /@ list should parse (unary minus before /@ )
     let result = interpret("f[x_] := x^2; y = -f /@ {1,2,3}; y").unwrap();
     // -f mapped over list: (-f)[1] etc. — depends on evaluation
-    assert!(
-      result.contains("{"),
-      "Expected list result, got: {}",
-      result
-    );
+    assert!(result.contains('{'), "Expected list result, got: {result}");
   }
 
   #[test]
@@ -7973,8 +7955,7 @@ mod number_digit_extended {
       msgs.iter().any(|m| m.contains(
         "NumberDigit::rbase: Base 1 is not a real number greater than 1."
       )),
-      "expected rbase message, got {:?}",
-      msgs
+      "expected rbase message, got {msgs:?}"
     );
   }
 
@@ -8018,8 +7999,7 @@ mod number_digit_extended {
       msgs.iter().any(|m| m.contains(
         "NumberDigit::badspec: Argument 1.5 at position 2 should be an integer or a list of integers."
       )),
-      "expected badspec message, got {:?}",
-      msgs
+      "expected badspec message, got {msgs:?}"
     );
     assert_eq!(interpret("NumberDigit[x, 1]").unwrap(), "NumberDigit[x, 1]");
     let msgs = woxi::get_captured_messages_raw();
@@ -8028,8 +8008,7 @@ mod number_digit_extended {
         .iter()
         .any(|m| m
           .contains("NumberDigit::num: Argument x should be a number.")),
-      "expected num message, got {:?}",
-      msgs
+      "expected num message, got {msgs:?}"
     );
   }
 }

@@ -21,12 +21,61 @@ From a checkout of the repository:
 cargo run -p woxi-studio
 ```
 
+Or download a prebuilt binary for Linux, macOS, or Windows from
+[the latest release](https://github.com/ad-si/Woxi/releases).
+
 The last opened or saved notebook is remembered in
 `~/.config/woxi-studio/last_file` and re-opened automatically on the
 next launch, so the editor comes up where you left off.
 Opening a notebook via `File → Open` spawns a new Studio window
 instead of replacing the current one, so multiple notebooks can be
 edited side by side.
+
+
+## Verifying a download
+
+Every release archive is built by a public
+[GitHub Actions run](https://github.com/ad-si/Woxi/actions)
+and carries a signed build provenance attestation.
+[GitHub's CLI](https://cli.github.com) checks a download against it:
+
+```sh
+gh attestation verify woxi-studio-v0.3.0-x86_64-pc-windows-msvc.zip \
+  --repo ad-si/Woxi
+```
+
+This confirms that the exact file came out of this repository's release
+workflow, and names the commit it was built from.
+It is a stronger guarantee than the `SHA256SUMS.txt` published alongside
+the archives, since whoever managed to swap a binary could regenerate
+those checksums as well.
+
+
+## Antivirus false positives
+
+The Windows binaries are not yet code-signed, so Microsoft Defender's
+machine-learning heuristics occasionally flag a fresh release with a
+generic verdict such as `Trojan:Win32/Wacatac.B!ml`.
+The `!ml` suffix means that no malware signature actually matched —
+the classifier guessed, based on the fact that it is looking at a large,
+unsigned executable it has never seen before.
+That describes every new release of an independent Rust project,
+so the verdict reflects the file's lack of reputation rather than
+anything about its contents.
+
+If you run into it:
+
+1. Verify the download with the attestation command above.
+   If that check fails, the file did not come from this project and
+   should be discarded rather than reported.
+2. [Report the file to Microsoft as a false positive](https://www.microsoft.com/en-us/wdsi/filesubmission).
+   Submissions from affected users are what gets the verdict corrected
+   for everyone else.
+3. [Open an issue](https://github.com/ad-si/Woxi/issues) so the
+   submission can be made from this side too.
+
+Building from source avoids the prebuilt binary — and the heuristic —
+entirely.
 
 
 ## Cell types

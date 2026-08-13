@@ -23,13 +23,13 @@ fn channel_property(prop: &str, xs: &[f64], rate: f64) -> Option<Expr> {
 
   let real = |v: f64| Some(Expr::Real(v));
   match prop {
-    "Max" => real(xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max)),
-    "Min" => real(xs.iter().cloned().fold(f64::INFINITY, f64::min)),
+    "Max" => real(xs.iter().copied().fold(f64::NEG_INFINITY, f64::max)),
+    "Min" => real(xs.iter().copied().fold(f64::INFINITY, f64::min)),
     "MaxAbs" => real(max_abs),
     "MinAbs" => real(xs.iter().fold(f64::INFINITY, |a, x| a.min(x.abs()))),
     "MinMax" => {
-      let min = xs.iter().cloned().fold(f64::INFINITY, f64::min);
-      let max = xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+      let min = xs.iter().copied().fold(f64::INFINITY, f64::min);
+      let max = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
       Some(Expr::List(vec![Expr::Real(min), Expr::Real(max)].into()))
     }
     "Mean" => real(mean),
@@ -39,7 +39,7 @@ fn channel_property(prop: &str, xs: &[f64], rate: f64) -> Option<Expr> {
       real(if n % 2 == 1 {
         sorted[n / 2]
       } else {
-        (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+        f64::midpoint(sorted[n / 2 - 1], sorted[n / 2])
       })
     }
     "Total" => real(xs.iter().sum()),
@@ -153,7 +153,7 @@ fn spectral_property(prop: &str, xs: &[f64], rate: f64) -> Option<Expr> {
       (spread > 0.0).then(|| Expr::Real(moment(4) / spread.powi(4)))
     }
     "SpectralCrest" => {
-      let max = powers.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+      let max = powers.iter().copied().fold(f64::NEG_INFINITY, f64::max);
       Some(Expr::Real(max / (total / powers.len() as f64)))
     }
     "SpectralFlatness" => {
@@ -195,19 +195,18 @@ fn spectral_property(prop: &str, xs: &[f64], rate: f64) -> Option<Expr> {
 /// properties ("Duration") give a single value, everything else a scalar
 /// for mono and a per-channel list for multichannel audio.
 fn audio_property(prop: &str, audio: &AudioData) -> Option<Expr> {
-  match prop {
-    "Duration" => Some(quantity(audio.duration(), "Seconds")),
-    _ => {
-      let mut values = Vec::with_capacity(audio.channels.len());
-      for ch in &audio.channels {
-        values.push(channel_property(prop, ch, audio.rate)?);
-      }
-      Some(if values.len() == 1 {
-        values.pop().unwrap()
-      } else {
-        Expr::List(values.into())
-      })
+  if prop == "Duration" {
+    Some(quantity(audio.duration(), "Seconds"))
+  } else {
+    let mut values = Vec::with_capacity(audio.channels.len());
+    for ch in &audio.channels {
+      values.push(channel_property(prop, ch, audio.rate)?);
     }
+    Some(if values.len() == 1 {
+      values.pop().unwrap()
+    } else {
+      Expr::List(values.into())
+    })
   }
 }
 
@@ -230,7 +229,7 @@ pub fn audio_measurements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[1] {
     Expr::List(props) => {
       let mut out = Vec::with_capacity(props.len());
-      for p in props.iter() {
+      for p in props {
         let Some(v) = prop_name(p).and_then(|p| audio_property(p, &audio))
         else {
           return Ok(unevaluated("AudioMeasurements", args));
@@ -304,7 +303,7 @@ pub fn audio_local_measurements_ast(
   match &args[1] {
     Expr::List(props) => {
       let mut out = Vec::with_capacity(props.len());
-      for p in props.iter() {
+      for p in props {
         let Some(ts) = prop_name(p).and_then(local_ts) else {
           return Ok(unevaluated("AudioLocalMeasurements", args));
         };

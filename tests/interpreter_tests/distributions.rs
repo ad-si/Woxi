@@ -245,8 +245,7 @@ mod hypoexponential_distribution {
       interpret("Median[HypoexponentialDistribution[{3, 4}]]").unwrap();
     assert!(
       result.contains("Median"),
-      "expected unevaluated, got {}",
-      result
+      "expected unevaluated, got {result}"
     );
   }
 }
@@ -1143,7 +1142,7 @@ mod quartiles {
     let result =
       interpret("InterquartileRange[ExponentialDistribution[2.]]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.5493061443340549).abs() < 1e-12, "got {}", val);
+    assert!((val - 0.5493061443340549).abs() < 1e-12, "got {val}");
   }
 
   #[test]

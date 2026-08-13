@@ -6048,8 +6048,8 @@ mod roots {
   #[test]
   fn roots_quadratic_symbolic() {
     let result = interpret("Roots[a*x^2 + b*x + c == 0, x]").unwrap();
-    assert!(result.contains("||"), "Should have two roots: {}", result);
-    assert!(result.contains("Sqrt"), "Should have Sqrt: {}", result);
+    assert!(result.contains("||"), "Should have two roots: {result}");
+    assert!(result.contains("Sqrt"), "Should have Sqrt: {result}");
   }
 
   #[test]
@@ -6058,8 +6058,7 @@ mod roots {
     let result = interpret("Roots[x^2 + 1 == 0, x]").unwrap();
     assert!(
       result.contains("||"),
-      "Should return complex roots: {}",
-      result
+      "Should return complex roots: {result}"
     );
   }
 
@@ -6139,9 +6138,8 @@ mod nroots {
           stripped[..idx].parse().unwrap(),
           -stripped[idx + 3..].parse::<f64>().unwrap(),
         );
-      } else {
-        return (0.0, stripped.parse().unwrap());
       }
+      return (0.0, stripped.parse().unwrap());
     }
     (s.parse().unwrap(), 0.0)
   }
@@ -6189,8 +6187,8 @@ mod nroots {
       (-0.07208520690586598, 0.6383267351483765),
     ];
     for (i, (er, ei)) in expected.iter().enumerate() {
-      assert!((roots[i].0 - er).abs() < 1e-9, "Re mismatch at {}", i);
-      assert!((roots[i].1 - ei).abs() < 1e-9, "Im mismatch at {}", i);
+      assert!((roots[i].0 - er).abs() < 1e-9, "Re mismatch at {i}");
+      assert!((roots[i].1 - ei).abs() < 1e-9, "Im mismatch at {i}");
     }
   }
 
@@ -6213,8 +6211,8 @@ mod nroots {
       (1.0, 0.0),
     ];
     for (i, (er, ei)) in expected.iter().enumerate() {
-      assert!((roots[i].0 - er).abs() < 1e-9, "Re mismatch at {}", i);
-      assert!((roots[i].1 - ei).abs() < 1e-9, "Im mismatch at {}", i);
+      assert!((roots[i].0 - er).abs() < 1e-9, "Re mismatch at {i}");
+      assert!((roots[i].1 - ei).abs() < 1e-9, "Im mismatch at {i}");
     }
   }
 }
@@ -8103,8 +8101,7 @@ mod find_root {
     let result = interpret("FindRoot[BesselJ[0,x], {x,10.5}]").unwrap();
     assert!(
       result.starts_with("{x -> 18.07106396"),
-      "Expected root near 18.071..., got: {}",
-      result
+      "Expected root near 18.071..., got: {result}"
     );
   }
 
@@ -8128,8 +8125,7 @@ mod find_root {
     // accept any complex value within a small tolerance of that root.
     assert!(
       result.contains("-0.5") && result.contains("0.866"),
-      "Expected complex root near -0.5 - 0.866*I, got: {}",
-      result
+      "Expected complex root near -0.5 - 0.866*I, got: {result}"
     );
   }
 
@@ -11342,8 +11338,7 @@ mod root {
     let val: f64 = result.parse().expect("should be a number");
     assert!(
       (val + std::f64::consts::SQRT_2).abs() < 1e-10,
-      "Expected -1.414..., got {}",
-      val
+      "Expected -1.414..., got {val}"
     );
   }
 
@@ -11355,8 +11350,7 @@ mod root {
     let val: f64 = result.parse().expect("should be a number");
     assert!(
       (val - 1.1673039782614187).abs() < 1e-10,
-      "Expected 1.1673..., got {}",
-      val
+      "Expected 1.1673..., got {val}"
     );
   }
 
@@ -16307,8 +16301,7 @@ mod number_field_signature_tests {
       assert_eq!(result.result, input);
       assert!(
         result.warnings.iter().any(|w| w.contains(&format!(
-          "NumberFieldSignature::nalg: {} is not an explicit algebraic number.",
-          shown
+          "NumberFieldSignature::nalg: {shown} is not an explicit algebraic number."
         ))),
         "expected nalg for {input}, got {:?}",
         result.warnings

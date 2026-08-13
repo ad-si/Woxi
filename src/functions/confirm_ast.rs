@@ -21,7 +21,7 @@ thread_local! {
 const CONFIRMATION_TAG: &str = "System`Private`ConfirmationFailure";
 
 pub fn inside_enclose() -> bool {
-  ENCLOSE_DEPTH.with(|d| d.get()) > 0
+  ENCLOSE_DEPTH.with(std::cell::Cell::get) > 0
 }
 
 /// Runs `body` with the `Enclose` depth raised, restoring it even when the
@@ -39,13 +39,6 @@ fn string(s: &str) -> Expr {
 
 fn symbol(s: &str) -> Expr {
   Expr::Identifier(s.to_string())
-}
-
-fn call(name: &str, args: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  }
 }
 
 fn failure(tag: &str, pairs: Vec<(&str, Expr)>) -> Expr {
@@ -208,9 +201,9 @@ pub fn failure_property(args: &[Expr], property: &str) -> Option<Expr> {
         "Tag",
       ]
       .iter()
-      .map(|s| s.to_string())
+      .map(std::string::ToString::to_string)
       .collect();
-      for (k, _) in pairs.iter() {
+      for (k, _) in pairs {
         if let Expr::String(key) = k
           && !names.contains(key)
         {
@@ -291,10 +284,10 @@ pub fn success_property(args: &[Expr], property: &str) -> Option<Expr> {
     pairs
       .iter()
       .find(|(k, _)| matches!(k, Expr::String(s) if s == property))
-      .map(|(_, v)| v.clone())
-      .unwrap_or_else(|| {
-        call("Missing", vec![string("KeyAbsent"), string(property)])
-      }),
+      .map_or_else(
+        || call("Missing", vec![string("KeyAbsent"), string(property)]),
+        |(_, v)| v.clone(),
+      ),
   )
 }
 
@@ -308,10 +301,10 @@ pub fn exception_property(args: &[Expr], property: &str) -> Option<Expr> {
     pairs
       .iter()
       .find(|(k, _)| matches!(k, Expr::String(s) if s == property))
-      .map(|(_, v)| v.clone())
-      .unwrap_or_else(|| {
-        call("Missing", vec![string("NotAvailable"), string(property)])
-      }),
+      .map_or_else(
+        || call("Missing", vec![string("NotAvailable"), string(property)]),
+        |(_, v)| v.clone(),
+      ),
   )
 }
 
@@ -337,10 +330,10 @@ fn exception_object(tags: Vec<Expr>, payload: Option<Expr>) -> Expr {
   }
   pairs.push((string("ExceptionValidated"), symbol("True")));
   pairs.push((string("ExceptionSystemVersion"), string("1")));
-  Expr::FunctionCall {
-    name: "Exception".to_string(),
-    args: vec![Expr::List(tags.into()), Expr::Association(pairs)].into(),
-  }
+  call(
+    "Exception",
+    vec![Expr::List(tags.into()), Expr::Association(pairs)],
+  )
 }
 
 /// The exception wolframscript builds when the specification is not a tag:

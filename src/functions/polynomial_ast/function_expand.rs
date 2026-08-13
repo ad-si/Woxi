@@ -73,7 +73,7 @@ fn mk_id(name: &str) -> Expr {
 }
 
 fn mk_plus(a: Expr, b: Expr) -> Expr {
-  mk_call("Plus", vec![a, b])
+  call("Plus", vec![a, b])
 }
 
 /// The additive terms of `e` if its head is `Plus` (either the `Plus[…]` call
@@ -202,7 +202,7 @@ fn negate_if_negative(t: &Expr) -> Option<Expr> {
     Some(match factors.len() {
       0 => mk_int(1),
       1 => factors.into_iter().next().unwrap(),
-      _ => mk_call("Times", factors),
+      _ => call("Times", factors),
     })
   };
   match t {
@@ -373,7 +373,7 @@ fn is_exact_positive_constant(e: &Expr) -> bool {
   if !crate::functions::predicate_ast::is_numeric_q(e) || contains_real(e) {
     return false;
   }
-  let value = mk_call("N", vec![e.clone()]);
+  let value = call1("N", e.clone());
   matches!(
     crate::evaluator::evaluate_expr_to_expr(&value),
     Ok(Expr::Real(r)) if r > 0.0
@@ -450,11 +450,9 @@ fn split_sqrt_of_square_difference(radicand: &Expr) -> Option<Expr> {
     let scale = squarefree_kernel(cb.0 * cb.1);
     let scaled_b = ratio_sqrt(ratio_times(cb, (scale, 1)))?;
     let scaled_a = match ca {
-      Some(ca) => {
-        mk_call("Sqrt", vec![mk_exact_ratio(ratio_times(ca, (scale, 1)))])
-      }
-      None if scale == 1 => mk_call("Sqrt", vec![a_sq.clone()]),
-      None => mk_call("Sqrt", vec![mk_times(mk_int(scale), a_sq.clone())]),
+      Some(ca) => call1("Sqrt", mk_exact_ratio(ratio_times(ca, (scale, 1)))),
+      None if scale == 1 => call1("Sqrt", a_sq.clone()),
+      None => call1("Sqrt", mk_times(mk_int(scale), a_sq.clone())),
     };
     (
       (1, scale),
@@ -468,13 +466,12 @@ fn split_sqrt_of_square_difference(radicand: &Expr) -> Option<Expr> {
   // Each side is expanded, so `Sqrt[9 - 4 (x + 1)^2]` prints as
   // `Sqrt[1 - 2 x] Sqrt[5 + 2 x]` rather than keeping the shifted square.
   let first = split_sqrt_of_square_difference(&minus)
-    .unwrap_or_else(|| mk_call("Sqrt", vec![mk_call("Expand", vec![minus])]));
-  let split =
-    mk_times(first, mk_call("Sqrt", vec![mk_call("Expand", vec![plus])]));
+    .unwrap_or_else(|| call1("Sqrt", call1("Expand", minus)));
+  let split = mk_times(first, call1("Sqrt", call1("Expand", plus)));
   Some(if prefactor == (1, 1) {
     split
   } else {
-    mk_times(mk_call("Sqrt", vec![mk_exact_ratio(prefactor)]), split)
+    mk_times(call1("Sqrt", mk_exact_ratio(prefactor)), split)
   })
 }
 
@@ -525,9 +522,8 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     && args.len() == 1
     && is_multiple_of_inverse_trig(&args[0])
   {
-    let trig =
-      mk_call("TrigExpand", vec![mk_call(name, vec![args[0].clone()])]);
-    let expanded = mk_call("Expand", vec![trig]);
+    let trig = call1("TrigExpand", call1(name, args[0].clone()));
+    let expanded = call1("Expand", trig);
     if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&expanded) {
       if is_clean_polynomial(&result) {
         return Some(result);
@@ -544,7 +540,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
 
   // FunctionExpand[Sqrt[a^2 - b^2]] = Sqrt[a - b] Sqrt[a + b].
   {
-    let call = mk_call(name, args.to_vec());
+    let call = call(name, args.to_vec());
     if let Some(radicand) = as_sqrt_radicand(&call)
       && let Some(split) = split_sqrt_of_square_difference(radicand)
     {
@@ -560,11 +556,11 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       {
         let coeff = mk_div(
           mk_power(mk_int(-1), mk_int(*m)),
-          mk_call("Factorial", vec![mk_int(*m - 1)]),
+          call("Factorial", vec![mk_int(*m - 1)]),
         );
         Some(mk_times(
           coeff,
-          mk_call("PolyGamma", vec![mk_int(*m - 1), args[1].clone()]),
+          call("PolyGamma", vec![mk_int(*m - 1), args[1].clone()]),
         ))
       } else {
         None
@@ -576,8 +572,8 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       let a = &args[0];
       let n = &args[1];
       Some(mk_div(
-        mk_call("Gamma", vec![mk_plus(a.clone(), n.clone())]),
-        mk_call("Gamma", vec![a.clone()]),
+        call1("Gamma", mk_plus(a.clone(), n.clone())),
+        call1("Gamma", a.clone()),
       ))
     }
 
@@ -625,10 +621,10 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
         }
         // Symbolic n (2-argument form only): the Gamma-function ratio.
         _ if h.is_none() => Some(mk_div(
-          mk_call("Gamma", vec![mk_plus(mk_int(1), x.clone())]),
-          mk_call(
+          call("Gamma", vec![mk_plus(mk_int(1), x.clone())]),
+          call(
             "Gamma",
-            vec![mk_call(
+            vec![call(
               "Plus",
               vec![mk_int(1), mk_times(mk_int(-1), n.clone()), x.clone()],
             )],
@@ -643,17 +639,14 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       let a = &args[0];
       let b = &args[1];
       Some(mk_div(
-        mk_times(
-          mk_call("Gamma", vec![a.clone()]),
-          mk_call("Gamma", vec![b.clone()]),
-        ),
-        mk_call("Gamma", vec![mk_plus(a.clone(), b.clone())]),
+        mk_times(call1("Gamma", a.clone()), call1("Gamma", b.clone())),
+        call("Gamma", vec![mk_plus(a.clone(), b.clone())]),
       ))
     }
 
     // Factorial[n] (i.e. n!) → Gamma[1 + n]
     "Factorial" if args.len() == 1 => {
-      Some(mk_call("Gamma", vec![mk_plus(mk_int(1), args[0].clone())]))
+      Some(call("Gamma", vec![mk_plus(mk_int(1), args[0].clone())]))
     }
 
     // Abs[z]^(2m) → (Re[z]^2 + Im[z]^2)^m (the squared-modulus identity). Only
@@ -672,8 +665,8 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       };
       let z = &a[0];
       let sq_sum = mk_plus(
-        mk_power(mk_call("Re", vec![z.clone()]), mk_int(2)),
-        mk_power(mk_call("Im", vec![z.clone()]), mk_int(2)),
+        mk_power(call1("Re", z.clone()), mk_int(2)),
+        mk_power(call1("Im", z.clone()), mk_int(2)),
       );
       let m = e / 2;
       let result = if m == 1 {
@@ -688,20 +681,20 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     // Re[z] / Im[z] distribute over a sum: Re[a + b] → Re[a] + Re[b].
     "Re" | "Im" if args.len() == 1 => {
       let terms = as_plus_terms(&args[0])?;
-      Some(mk_call(
+      Some(call(
         "Plus",
-        terms.into_iter().map(|t| mk_call(name, vec![t])).collect(),
+        terms.into_iter().map(|t| call1(name, t)).collect(),
       ))
     }
 
     // Multinomial[a1, …, ak] = (a1 + … + ak)! / (a1! ⋯ ak!) →
     //   Gamma[1 + a1 + … + ak] / (Gamma[1 + a1] ⋯ Gamma[1 + ak]).
     "Multinomial" if !args.is_empty() => {
-      let sum = mk_call("Plus", args.to_vec());
-      let numerator = mk_call("Gamma", vec![mk_plus(mk_int(1), sum)]);
+      let sum = call("Plus", args.to_vec());
+      let numerator = call("Gamma", vec![mk_plus(mk_int(1), sum)]);
       let denominator = args
         .iter()
-        .map(|a| mk_call("Gamma", vec![mk_plus(mk_int(1), a.clone())]))
+        .map(|a| call("Gamma", vec![mk_plus(mk_int(1), a.clone())]))
         .reduce(mk_times)
         .unwrap_or_else(|| mk_int(1));
       Some(mk_div(numerator, denominator))
@@ -717,12 +710,12 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
         let n = &args[0];
         let k = &args[1];
         Some(mk_div(
-          mk_call("Gamma", vec![mk_plus(mk_int(1), n.clone())]),
+          call("Gamma", vec![mk_plus(mk_int(1), n.clone())]),
           mk_times(
-            mk_call("Gamma", vec![mk_plus(mk_int(1), k.clone())]),
-            mk_call(
+            call("Gamma", vec![mk_plus(mk_int(1), k.clone())]),
+            call(
               "Gamma",
-              vec![mk_call(
+              vec![call(
                 "Plus",
                 vec![mk_int(1), mk_times(mk_int(-1), k.clone()), n.clone()],
               )],
@@ -738,11 +731,11 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       Some(mk_div(
         mk_times(
           mk_power(mk_int(2), mk_times(mk_int(2), n.clone())),
-          mk_call("Gamma", vec![mk_plus(mk_ratio(1, 2), n.clone())]),
+          call1("Gamma", mk_plus(mk_ratio(1, 2), n.clone())),
         ),
         mk_times(
-          mk_call("Sqrt", vec![mk_id("Pi")]),
-          mk_call("Gamma", vec![mk_plus(mk_int(2), n.clone())]),
+          call1("Sqrt", mk_id("Pi")),
+          call1("Gamma", mk_plus(mk_int(2), n.clone())),
         ),
       ))
     }
@@ -751,7 +744,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     "Subfactorial" if args.len() == 1 => {
       let n = &args[0];
       Some(mk_div(
-        mk_call("Gamma", vec![mk_plus(mk_int(1), n.clone()), mk_int(-1)]),
+        call("Gamma", vec![mk_plus(mk_int(1), n.clone()), mk_int(-1)]),
         mk_id("E"),
       ))
     }
@@ -761,20 +754,20 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       mk_ratio(1, 2),
       mk_plus(
         mk_int(1),
-        mk_times(mk_int(-1), mk_call("Cos", vec![args[0].clone()])),
+        mk_times(mk_int(-1), call1("Cos", args[0].clone())),
       ),
     )),
 
     // InverseHaversine[x] → 2 * ArcSin[Sqrt[x]]
     "InverseHaversine" if args.len() == 1 => Some(mk_times(
       mk_int(2),
-      mk_call("ArcSin", vec![mk_call("Sqrt", vec![args[0].clone()])]),
+      call("ArcSin", vec![call1("Sqrt", args[0].clone())]),
     )),
 
     // InverseGudermannian[x] → Log[Tan[Pi/4 + x/2]]
-    "InverseGudermannian" if args.len() == 1 => Some(mk_call(
+    "InverseGudermannian" if args.len() == 1 => Some(call(
       "Log",
-      vec![mk_call(
+      vec![call(
         "Tan",
         vec![mk_plus(
           mk_times(mk_ratio(1, 4), mk_id("Pi")),
@@ -784,10 +777,9 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     )),
 
     // Sinc[x] → Sin[x] / x
-    "Sinc" if args.len() == 1 => Some(mk_div(
-      mk_call("Sin", vec![args[0].clone()]),
-      args[0].clone(),
-    )),
+    "Sinc" if args.len() == 1 => {
+      Some(mk_div(call1("Sin", args[0].clone()), args[0].clone()))
+    }
 
     // LogisticSigmoid[x] → 1/(1 + E^(-x)), i.e. (1 + E^(-x))^(-1).
     "LogisticSigmoid" if args.len() == 1 => Some(mk_power(
@@ -799,12 +791,9 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     )),
 
     // ChebyshevT[n, x] → Cos[n * ArcCos[x]]
-    "ChebyshevT" if args.len() == 2 => Some(mk_call(
+    "ChebyshevT" if args.len() == 2 => Some(call(
       "Cos",
-      vec![mk_times(
-        args[0].clone(),
-        mk_call("ArcCos", vec![args[1].clone()]),
-      )],
+      vec![mk_times(args[0].clone(), call1("ArcCos", args[1].clone()))],
     )),
 
     // ChebyshevU[n, x] → Sin[(1 + n) * ArcCos[x]] / (Sqrt[1 - x] * Sqrt[1 + x])
@@ -812,19 +801,16 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       let n = &args[0];
       let x = &args[1];
       Some(mk_div(
-        mk_call(
+        call(
           "Sin",
           vec![mk_times(
             mk_plus(mk_int(1), n.clone()),
-            mk_call("ArcCos", vec![x.clone()]),
+            call1("ArcCos", x.clone()),
           )],
         ),
         mk_times(
-          mk_call(
-            "Sqrt",
-            vec![mk_plus(mk_int(1), mk_times(mk_int(-1), x.clone()))],
-          ),
-          mk_call("Sqrt", vec![mk_plus(mk_int(1), x.clone())]),
+          call1("Sqrt", mk_plus(mk_int(1), mk_times(mk_int(-1), x.clone()))),
+          call1("Sqrt", mk_plus(mk_int(1), x.clone())),
         ),
       ))
     }
@@ -833,7 +819,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     // where GoldenRatio = (1 + Sqrt[5]) / 2
     "Fibonacci" if args.len() == 1 => {
       let n = &args[0];
-      let sqrt5 = mk_call("Sqrt", vec![mk_int(5)]);
+      let sqrt5 = call1("Sqrt", mk_int(5));
       let golden = mk_times(mk_ratio(1, 2), mk_plus(mk_int(1), sqrt5.clone()));
       let inv_golden = mk_times(
         mk_int(2),
@@ -846,7 +832,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
             mk_int(-1),
             mk_times(
               mk_power(inv_golden, n.clone()),
-              mk_call("Cos", vec![mk_times(n.clone(), mk_id("Pi"))]),
+              call("Cos", vec![mk_times(n.clone(), mk_id("Pi"))]),
             ),
           ),
         ),
@@ -857,7 +843,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     // LucasL[n] → GoldenRatio^n + (-1/GoldenRatio)^n * Cos[n*Pi]
     "LucasL" if args.len() == 1 => {
       let n = &args[0];
-      let sqrt5 = mk_call("Sqrt", vec![mk_int(5)]);
+      let sqrt5 = call1("Sqrt", mk_int(5));
       let golden = mk_times(mk_ratio(1, 2), mk_plus(mk_int(1), sqrt5.clone()));
       let inv_golden =
         mk_times(mk_int(2), mk_power(mk_plus(mk_int(1), sqrt5), mk_int(-1)));
@@ -865,7 +851,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
         mk_power(golden, n.clone()),
         mk_times(
           mk_power(inv_golden, n.clone()),
-          mk_call("Cos", vec![mk_times(n.clone(), mk_id("Pi"))]),
+          call("Cos", vec![mk_times(n.clone(), mk_id("Pi"))]),
         ),
       ))
     }
@@ -877,7 +863,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
         && ra.len() == 2
         && let (Expr::Integer(1), Expr::Integer(2)) = (&ra[0], &ra[1])
       {
-        return Some(mk_call("Sqrt", vec![mk_id("Pi")]));
+        return Some(call1("Sqrt", mk_id("Pi")));
       }
       None
     }
@@ -885,7 +871,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     // HarmonicNumber[n] -> EulerGamma + PolyGamma[0, 1 + n].
     "HarmonicNumber" if args.len() == 1 => Some(mk_plus(
       mk_id("EulerGamma"),
-      mk_call(
+      call(
         "PolyGamma",
         vec![mk_int(0), mk_plus(mk_int(1), args[0].clone())],
       ),
@@ -899,9 +885,9 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       let arg = mk_plus(mk_int(1), args[0].clone());
       let hurwitz =
         try_expand_function("HurwitzZeta", &[r.clone(), arg.clone()])
-          .unwrap_or_else(|| mk_call("HurwitzZeta", vec![r.clone(), arg]));
+          .unwrap_or_else(|| call("HurwitzZeta", vec![r.clone(), arg]));
       Some(mk_plus(
-        mk_call("Zeta", vec![r.clone()]),
+        call1("Zeta", r.clone()),
         mk_times(mk_int(-1), hurwitz),
       ))
     }
@@ -966,16 +952,13 @@ fn try_gamma_ratio_in_times(factors: &[Expr]) -> Option<Expr> {
     mk_times(mk_int(-1), b.clone()),
   ))
   .ok()?;
-  let k = match diff {
-    Expr::Integer(k) => k,
-    _ => return None,
-  };
+  let Expr::Integer(k) = diff else { return None };
   // Gamma[A]/Gamma[B] = Pochhammer[B, k] for k > 0, 1/Pochhammer[A, -k] for
   // k < 0, and 1 for k == 0.
   let poch = match k.cmp(&0) {
-    std::cmp::Ordering::Greater => mk_call("Pochhammer", vec![b, mk_int(k)]),
+    std::cmp::Ordering::Greater => call("Pochhammer", vec![b, mk_int(k)]),
     std::cmp::Ordering::Less => {
-      mk_power(mk_call("Pochhammer", vec![a, mk_int(-k)]), mk_int(-1))
+      mk_power(call("Pochhammer", vec![a, mk_int(-k)]), mk_int(-1))
     }
     std::cmp::Ordering::Equal => mk_int(1),
   };
@@ -989,7 +972,7 @@ fn try_gamma_ratio_in_times(factors: &[Expr]) -> Option<Expr> {
   Some(if rest.len() == 1 {
     rest.remove(0)
   } else {
-    mk_call("Times", rest)
+    call("Times", rest)
   })
 }
 

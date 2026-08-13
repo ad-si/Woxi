@@ -291,8 +291,14 @@ fn parallelogram(pts: &[Pt]) -> bool {
     return false;
   }
   // Diagonals of a parallelogram bisect each other.
-  let mid_ac = ((pts[0].0 + pts[2].0) / 2.0, (pts[0].1 + pts[2].1) / 2.0);
-  let mid_bd = ((pts[1].0 + pts[3].0) / 2.0, (pts[1].1 + pts[3].1) / 2.0);
+  let mid_ac = (
+    f64::midpoint(pts[0].0, pts[2].0),
+    f64::midpoint(pts[0].1, pts[2].1),
+  );
+  let mid_bd = (
+    f64::midpoint(pts[1].0, pts[3].0),
+    f64::midpoint(pts[1].1, pts[3].1),
+  );
   dist(mid_ac, mid_bd) <= REL * (1.0 + mag(mid_ac))
 }
 
@@ -491,7 +497,7 @@ fn extract_nd_points(expr: &Expr) -> Option<Vec<Vec<Expr>>> {
   }
   let mut pts = Vec::with_capacity(items.len());
   let mut dim = None;
-  for item in items.iter() {
+  for item in items {
     let Expr::List(coords) = item else {
       return None;
     };
@@ -714,7 +720,7 @@ fn classify_polygon_points(expr: &Expr) -> PolyPoints {
   }
   let mut pts = Vec::with_capacity(items.len());
   let mut higher_dim = false;
-  for item in items.iter() {
+  for item in items {
     let Expr::List(coords) = item else {
       return PolyPoints::Invalid;
     };
@@ -966,12 +972,12 @@ fn polyhedron_faces(expr: &Expr) -> Option<(Vec<Pt3>, Vec<Vec<usize>>)> {
         return None;
       };
       let mut faces = Vec::with_capacity(face_list.len());
-      for face in face_list.iter() {
+      for face in face_list {
         let Expr::List(indices) = face else {
           return None;
         };
         let mut resolved = Vec::with_capacity(indices.len());
-        for index in indices.iter() {
+        for index in indices {
           let Expr::Integer(i) = index else {
             return None;
           };
