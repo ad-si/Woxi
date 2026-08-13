@@ -3380,7 +3380,7 @@ pub fn interpolation_ast(
       interp_order_xy.map_or(interp_order, |(a, _)| a),
       interp_order_xy.map_or(interp_order, |(_, b)| b),
       head,
-    )?
+    )
   {
     return Ok(result);
   }
@@ -3589,26 +3589,26 @@ fn try_2d_scattered_interpolation(
   order_x: i128,
   order_y: i128,
   head: &str,
-) -> Result<Option<Expr>, InterpreterError> {
+) -> Option<Expr> {
   // At least a 2x2 grid is needed for either axis to interpolate at all.
   if data_list.len() < 4 {
-    return Ok(None);
+    return None;
   }
   let mut triples: Vec<(Expr, f64, Expr, f64, Expr, f64)> =
     Vec::with_capacity(data_list.len());
   for item in data_list {
     let Expr::List(parts) = item else {
-      return Ok(None);
+      return None;
     };
     if parts.len() != 3 {
-      return Ok(None);
+      return None;
     }
     let (Ok(x), Ok(y), Ok(z)) = (
       interp_value_to_f64(&parts[0]),
       interp_value_to_f64(&parts[1]),
       interp_value_to_f64(&parts[2]),
     ) else {
-      return Ok(None);
+      return None;
     };
     triples.push((
       parts[0].clone(),
@@ -3639,29 +3639,27 @@ fn try_2d_scattered_interpolation(
   // Fewer than 2 distinct values along an axis, or a point count that isn't
   // the full nr*nc product, means this isn't a complete rectangular grid.
   if nr < 2 || nc < 2 || nr * nc != triples.len() {
-    return Ok(None);
+    return None;
   }
 
   let mut grid: Vec<Vec<Option<Expr>>> = vec![vec![None; nc]; nr];
   for (_xe, x, _ye, y, ze, z) in &triples {
-    let Some(i) = xs_pairs.iter().position(|(xv, _)| same_coordinate(*xv, *x))
-    else {
-      return Ok(None);
-    };
-    let Some(j) = ys_pairs.iter().position(|(yv, _)| same_coordinate(*yv, *y))
-    else {
-      return Ok(None);
-    };
+    let i = xs_pairs
+      .iter()
+      .position(|(xv, _)| same_coordinate(*xv, *x))?;
+    let j = ys_pairs
+      .iter()
+      .position(|(yv, _)| same_coordinate(*yv, *y))?;
     if grid[i][j].is_some() {
       // Duplicate (x, y) — not a well-formed grid.
-      return Ok(None);
+      return None;
     }
     grid[i][j] = Some(exact_coordinate(ze, *z));
   }
   if grid.iter().flatten().any(Option::is_none) {
     // A combination of some x with some y is missing — a partial grid,
     // which is genuinely scattered data this path does not support.
-    return Ok(None);
+    return None;
   }
 
   let x_exprs: Vec<Expr> = xs_pairs
@@ -3711,10 +3709,10 @@ fn try_2d_scattered_interpolation(
     vec![Expr::List(x_exprs.into()), Expr::List(y_exprs.into())].into(),
   );
 
-  Ok(Some(Expr::FunctionCall {
+  Some(Expr::FunctionCall {
     name: "InterpolatingFunction".to_string(),
     args: vec![domain, grid_expr, orders, coords].into(),
-  }))
+  })
 }
 
 /// Evaluate a 2-D grid `InterpolatingFunction` whose coordinates are
