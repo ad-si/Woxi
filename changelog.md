@@ -2,6 +2,12 @@
 
 # Unreleased
 
+- `$VersionNumber` is a `Real` — the Wolfram Language version Woxi aims to
+    be compatible with (`15.`) — instead of the Woxi build's git version as
+    a `String`. Scripts gate language features on it
+    (`If[$VersionNumber >= 8, …]`), which only works for a number. The Woxi
+    build stays available through `$Version`.
+
 - Fixes driven by a Wolfram Demonstration that draws the shortest distance
     between two skew lines, a `Manipulate` whose `Graphics3D` is built out
     of unbounded objects:

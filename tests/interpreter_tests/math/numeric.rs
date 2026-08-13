@@ -1109,11 +1109,27 @@ mod precision {
 
   #[test]
   fn version_number() {
-    // $VersionNumber should return the git-describe output of the Woxi repo
-    // (e.g. "v0.1.0-1234-gabcdef" or similar). Just check it's non-empty.
-    let result = interpret("$VersionNumber").unwrap();
-    assert!(!result.is_empty());
-    assert_ne!(result, "$VersionNumber");
+    // $VersionNumber is the Wolfram Language version Woxi is compatible
+    // with, as a Real — not the Woxi build (that's `$Version`).
+    assert_eq!(interpret("$VersionNumber").unwrap(), "15.");
+  }
+
+  #[test]
+  fn version_number_head_is_real() {
+    assert_eq!(interpret("Head[$VersionNumber]").unwrap(), "Real");
+  }
+
+  #[test]
+  fn version_number_is_comparable() {
+    // Scripts gate language features on the version, e.g.
+    // `If[$VersionNumber >= 8, …]` — that requires a numeric value.
+    assert_eq!(interpret("$VersionNumber >= 8").unwrap(), "True");
+    assert_eq!(interpret("$VersionNumber >= 14.1").unwrap(), "True");
+    assert_eq!(interpret("NumberQ[$VersionNumber]").unwrap(), "True");
+    assert_eq!(
+      interpret("If[$VersionNumber >= 8, \"new\", \"old\"]").unwrap(),
+      "new"
+    );
   }
 
   #[test]
