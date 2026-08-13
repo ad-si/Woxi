@@ -324,9 +324,9 @@ pub fn dispatch_linear_algebra_functions(
       // A dense identity contains no structural zeros to preserve, so the
       // usual SparseArray conversion produces the same CSR form as
       // wolframscript's IdentityMatrix[n, SparseArray].
-      return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+      return Some(crate::evaluator::evaluate_expr_to_expr(&call1(
         "SparseArray",
-        vec![dense],
+        dense,
       )));
     }
     // IdentityMatrix[n, type] with an unsupported structural type (neither a
@@ -621,9 +621,9 @@ pub fn dispatch_linear_algebra_functions(
     // ScalingMatrix[{s1, …, sn}] → DiagonalMatrix of the scale factors.
     "ScalingMatrix" if args.len() == 1 => {
       if let Expr::List(_) = &args[0] {
-        return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+        return Some(crate::evaluator::evaluate_expr_to_expr(&call1(
           "DiagonalMatrix",
-          vec![args[0].clone()],
+          args[0].clone(),
         )));
       }
     }
@@ -651,7 +651,7 @@ pub fn dispatch_linear_algebra_functions(
               let frac = div2(numer, dot_vv.clone());
               let sum = plus2(delta, frac);
               // Together so e.g. 1 + (s − 1)/2 renders as (1 + s)/2.
-              row.push(call("Together", vec![sum]));
+              row.push(call1("Together", sum));
             }
             rows.push(Expr::List(row.into()));
           }
@@ -753,7 +753,7 @@ pub fn dispatch_linear_algebra_functions(
           }
         }
         // Build the Hermitian part: (m + ConjugateTranspose[m]) / 2.
-        let conj_t = call("ConjugateTranspose", vec![args[0].clone()]);
+        let conj_t = call1("ConjugateTranspose", args[0].clone());
         let herm = Expr::FunctionCall {
           name: "Divide".to_string(),
           args: vec![
@@ -1390,9 +1390,9 @@ pub fn dispatch_linear_algebra_functions(
         last_row[n] = Expr::Integer(1);
         rows.push(Expr::List(last_row.into()));
         let matrix = Expr::List(rows.into());
-        let evaluated = crate::evaluator::evaluate_expr_to_expr(&call(
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(&call1(
           "TransformationFunction",
-          vec![matrix],
+          matrix,
         ));
         return Some(evaluated);
       }
@@ -1470,9 +1470,9 @@ pub fn dispatch_linear_algebra_functions(
       last_row[n] = Expr::Integer(1);
       rows.push(Expr::List(last_row.into()));
       let matrix = Expr::List(rows.into());
-      return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+      return Some(crate::evaluator::evaluate_expr_to_expr(&call1(
         "TransformationFunction",
-        vec![matrix],
+        matrix,
       )));
     }
     // TransformationMatrix[TransformationFunction[m]] → m. Extracts the
@@ -1573,9 +1573,9 @@ pub fn dispatch_linear_algebra_functions(
           ]
           .into(),
         );
-        return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+        return Some(crate::evaluator::evaluate_expr_to_expr(&call1(
           "TransformationFunction",
-          vec![matrix],
+          matrix,
         )));
       }
       // Three-dimensional axis form RotationTransform[theta, {x, y, z}]:
@@ -1635,9 +1635,9 @@ pub fn dispatch_linear_algebra_functions(
         .into(),
       );
       // Evaluate the matrix to simplify trig functions (e.g. Cos[Pi/4] → 1/Sqrt[2])
-      let evaluated = crate::evaluator::evaluate_expr_to_expr(&call(
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(&call1(
         "TransformationFunction",
-        vec![matrix],
+        matrix,
       ));
       return Some(evaluated);
     }
@@ -1705,9 +1705,9 @@ pub fn dispatch_linear_algebra_functions(
       last_row[n] = Expr::Integer(1);
       rows.push(Expr::List(last_row.into()));
       let matrix = Expr::List(rows.into());
-      let evaluated = crate::evaluator::evaluate_expr_to_expr(&call(
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(&call1(
         "TransformationFunction",
-        vec![matrix],
+        matrix,
       ));
       return Some(evaluated);
     }
@@ -1764,16 +1764,16 @@ pub fn dispatch_linear_algebra_functions(
           last_row.push(b.clone());
           rows.push(Expr::List(last_row.into()));
           let matrix = Expr::List(rows.into());
-          return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+          return Some(crate::evaluator::evaluate_expr_to_expr(&call1(
             "TransformationFunction",
-            vec![matrix],
+            matrix,
           )));
         }
         // Plain (n+1)x(n+1) homogeneous matrix form.
         Expr::List(_) if is_matrix(&args[0]) => {
-          return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+          return Some(crate::evaluator::evaluate_expr_to_expr(&call1(
             "TransformationFunction",
-            vec![args[0].clone()],
+            args[0].clone(),
           )));
         }
         _ => return unevaluated(),
@@ -1816,9 +1816,9 @@ pub fn dispatch_linear_algebra_functions(
         last_row[n] = Expr::Integer(1);
         rows.push(Expr::List(last_row.into()));
         let matrix = Expr::List(rows.into());
-        let evaluated = crate::evaluator::evaluate_expr_to_expr(&call(
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(&call1(
           "TransformationFunction",
-          vec![matrix],
+          matrix,
         ));
         return Some(evaluated);
       }
@@ -1862,7 +1862,7 @@ pub fn dispatch_linear_algebra_functions(
       };
       // Collect each entry over a common denominator, so a symbolic factor
       // gives wolframscript's (1 + s)/2 rather than 1 + (-1 + s)/2.
-      let simplify = |e: Expr| call("Simplify", vec![e]);
+      let simplify = |e: Expr| call1("Simplify", e);
       let mut rows = Vec::with_capacity(n + 1);
       for i in 0..n {
         let mut row: Vec<Expr> =
@@ -1882,9 +1882,9 @@ pub fn dispatch_linear_algebra_functions(
       let mut last_row = vec![Expr::Integer(0); n + 1];
       last_row[n] = Expr::Integer(1);
       rows.push(Expr::List(last_row.into()));
-      return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+      return Some(crate::evaluator::evaluate_expr_to_expr(&call1(
         "TransformationFunction",
-        vec![Expr::List(rows.into())],
+        Expr::List(rows.into()),
       )));
     }
     // ReflectionTransform[v] → reflection in the hyperplane through the origin
@@ -1952,9 +1952,9 @@ pub fn dispatch_linear_algebra_functions(
       last_row[n] = Expr::Integer(1);
       rows.push(Expr::List(last_row.into()));
       let matrix = Expr::List(rows.into());
-      return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+      return Some(crate::evaluator::evaluate_expr_to_expr(&call1(
         "TransformationFunction",
-        vec![matrix],
+        matrix,
       )));
     }
     // ShearingTransform[phi, e, n] → TransformationFunction[ homogeneous shear ]
@@ -2020,7 +2020,7 @@ pub fn dispatch_linear_algebra_functions(
           .iter()
           .map(|c| times(vec![c.clone(), recip(norm_eperp.clone())]))
           .collect();
-        let tan_phi = call("Tan", vec![phi.clone()]);
+        let tan_phi = call1("Tan", phi.clone());
         // Build (d+1)x(d+1) homogeneous matrix.
         let m_entry = |i: usize, j: usize| {
           // off[i][j] = Tan[phi] * ep[i] * nhat[j]
@@ -2038,7 +2038,7 @@ pub fn dispatch_linear_algebra_functions(
           for j in 0..d {
             // Simplify so that e.g. 1 + (-1/2) collapses to 1/2 (matching
             // Wolfram), while symbolic forms like Sqrt[3/5] are preserved.
-            row.push(call("Simplify", vec![m_entry(i, j)]));
+            row.push(call1("Simplify", m_entry(i, j)));
           }
           // Translation column p - M·p, zero when there is no centre.
           row.push(match &center {
@@ -2069,9 +2069,9 @@ pub fn dispatch_linear_algebra_functions(
         if args.iter().any(is_inexact) {
           matrix = call1("N", matrix);
         }
-        let evaluated = crate::evaluator::evaluate_expr_to_expr(&call(
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(&call1(
           "TransformationFunction",
-          vec![matrix],
+          matrix,
         ));
         return Some(evaluated);
       }
@@ -2422,9 +2422,9 @@ pub fn dispatch_linear_algebra_functions(
           for i in 0..n {
             for j in i..n {
               // Check M[i][j] == Conjugate[M[j][i]]
-              let conj = evaluate_expr_to_expr(&call(
+              let conj = evaluate_expr_to_expr(&call1(
                 "Conjugate",
-                vec![matrix[j][i].clone()],
+                matrix[j][i].clone(),
               ))
               .unwrap_or(matrix[j][i].clone());
               let diff = evaluate_expr_to_expr(&plus2(
@@ -2458,9 +2458,9 @@ pub fn dispatch_linear_algebra_functions(
           for i in 0..n {
             for j in i..n {
               // Check M[i][j] == -Conjugate[M[j][i]]
-              let conj = evaluate_expr_to_expr(&call(
+              let conj = evaluate_expr_to_expr(&call1(
                 "Conjugate",
-                vec![matrix[j][i].clone()],
+                matrix[j][i].clone(),
               ))
               .unwrap_or(matrix[j][i].clone());
               let sum =
@@ -2493,9 +2493,9 @@ pub fn dispatch_linear_algebra_functions(
           let mut ct = vec![vec![Expr::Integer(0); n]; n];
           for i in 0..n {
             for j in 0..n {
-              ct[i][j] = evaluate_expr_to_expr(&call(
+              ct[i][j] = evaluate_expr_to_expr(&call1(
                 "Conjugate",
-                vec![matrix[j][i].clone()],
+                matrix[j][i].clone(),
               ))
               .unwrap_or(matrix[j][i].clone());
             }
@@ -3206,7 +3206,7 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
     let empty = Expr::List(vec![].into());
     let perm_data = Expr::List(
       vec![
-        call("Cycles", vec![Expr::List(vec![].into())]),
+        call1("Cycles", Expr::List(vec![].into())),
         Expr::Identifier("Infinity".into()),
       ]
       .into(),
@@ -3233,7 +3233,7 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
       }
       matrix.push(cols.to_vec());
     } else {
-      return Ok(call("LUDecomposition", vec![mat.clone()]));
+      return Ok(call1("LUDecomposition", mat.clone()));
     }
   }
 
@@ -3417,9 +3417,9 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
 fn lu_structured_matrix(head: &str, n: usize, payload: Expr) -> Expr {
   let dims =
     Expr::List(vec![Expr::Integer(n as i128), Expr::Integer(n as i128)].into());
-  call(
+  call1(
     head,
-    vec![call("StructuredArray`StructuredData", vec![dims, payload])],
+    call("StructuredArray`StructuredData", vec![dims, payload]),
   )
 }
 
@@ -3445,7 +3445,7 @@ fn lu_pivots_to_cycles(pivots: &[usize]) -> Expr {
       cycles.push(Expr::List(cycle.into()));
     }
   }
-  call("Cycles", vec![Expr::List(cycles.into())])
+  call1("Cycles", Expr::List(cycles.into()))
 }
 
 /// Numeric value of an expression (integer, real, or rational) via `N`.
@@ -3825,7 +3825,7 @@ fn matrix_minimal_polynomial(
       // Expand so a matrix with symbolic entries flattens to the wolframscript
       // term form (e.g. -(b c) + a d - a x - d x + x^2 rather than the factored
       // -(b c) + a d + (-a - d) x + x^2); harmless for numeric entries.
-      return Some(evaluate_expr_to_expr(&call("Expand", vec![poly])));
+      return Some(evaluate_expr_to_expr(&call1("Expand", poly)));
     }
   }
   None
@@ -4227,7 +4227,6 @@ fn rotation_transform_3d_axis(
     return None;
   }
   let int = Expr::Integer;
-  let call = |name: &str, args: Vec<Expr>| call(name, args);
   let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
   let plus = |xs: Vec<Expr>| call("Plus", xs);
   let neg = |e: Expr| times(int(-1), e);
@@ -4262,16 +4261,16 @@ fn rotation_transform_3d_axis(
         times(one_minus_cos.clone(), times(u[i].clone(), u[j].clone()));
       let cr = times(sin.clone(), cross(i, j));
       let entry = plus(vec![diag, outer, cr]);
-      row.push(call("Together", vec![entry]));
+      row.push(call1("Together", entry));
     }
     row.push(int(0));
     rows.push(Expr::List(row.into()));
   }
   rows.push(Expr::List(vec![int(0), int(0), int(0), int(1)].into()));
 
-  Some(evaluate_expr_to_expr(&call(
+  Some(evaluate_expr_to_expr(&call1(
     "TransformationFunction",
-    vec![Expr::List(rows.into())],
+    Expr::List(rows.into()),
   )))
 }
 
@@ -4291,13 +4290,12 @@ fn rotation_matrix_plane(
     Expr::List(items) => items.len(),
     _ => return Ok(Expr::Integer(0)),
   };
-  let call = |name: &str, args: Vec<Expr>| call(name, args);
   // Orthonormal frame {e1, e2} spanning the rotation plane.
-  let e1 = evaluate_expr_to_expr(&call("Normalize", vec![u.clone()]))?;
+  let e1 = evaluate_expr_to_expr(&call1("Normalize", u.clone()))?;
   let vdot = evaluate_expr_to_expr(&call("Dot", vec![v.clone(), e1.clone()]))?;
   let proj = call("Times", vec![vdot, e1.clone()]);
   let w = evaluate_expr_to_expr(&call("Subtract", vec![v.clone(), proj]))?;
-  let e2 = evaluate_expr_to_expr(&call("Normalize", vec![w]))?;
+  let e2 = evaluate_expr_to_expr(&call1("Normalize", w))?;
 
   let outer = |a: &Expr, b: &Expr| {
     call(
@@ -4310,7 +4308,7 @@ fn rotation_matrix_plane(
     call("Plus", vec![call1("Cos", theta.clone()), Expr::Integer(-1)]);
   let anti = call("Subtract", vec![outer(&e2, &e1), outer(&e1, &e2)]);
   let sym = call("Plus", vec![outer(&e1, &e1), outer(&e2, &e2)]);
-  let id = call("IdentityMatrix", vec![Expr::Integer(n as i128)]);
+  let id = call1("IdentityMatrix", Expr::Integer(n as i128));
   let r = call(
     "Plus",
     vec![
@@ -4745,7 +4743,7 @@ fn control_structure_matrix(
   ssm: &Expr,
   observability: bool,
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Ok(call(fname, vec![ssm.clone()]));
+  let unevaluated = || Ok(call1(fname, ssm.clone()));
   // Parse StateSpaceModel[{a, b, c, d}] (d optional for our purposes).
   let Expr::FunctionCall { name, args } = ssm else {
     return unevaluated();

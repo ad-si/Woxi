@@ -583,7 +583,6 @@ pub(crate) fn mixture_weighted_component_quantity(
   if weights.is_empty() || weights.len() != dists.len() {
     return Ok(None);
   }
-  let call = |name: &str, a: Vec<Expr>| call(name, a);
   // Distribute the normalizing weight into every term — Σ (w_i/W) q(d_i) —
   // rather than dividing the summed numerator, so the result matches
   // wolframscript's form (e.g. `1/(2 Sqrt[2 Pi]) + …` instead of `(… )/2`).
@@ -616,7 +615,6 @@ fn mixture_variance(dargs: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
   if weights.is_empty() || weights.len() != dists.len() {
     return Ok(None);
   }
-  let call = |name: &str, a: Vec<Expr>| call(name, a);
   let resolved = |q: &Expr| {
     !matches!(q, Expr::FunctionCall { name, .. }
       if name == "Mean" || name == "Variance")
@@ -2925,7 +2923,6 @@ fn correlation_from_covariance(cov_rows: &[Expr]) -> Option<Expr> {
     }
     cov.push(row.to_vec());
   }
-  let call = |name: &str, args: Vec<Expr>| call(name, args);
   let mut result = Vec::with_capacity(n);
   for i in 0..n {
     let mut row = Vec::with_capacity(n);
@@ -3383,10 +3380,8 @@ fn distribution_moment(
     let result = if n.rem_euclid(2) == 1 {
       Expr::Integer(0)
     } else {
-      let diff = Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![b, call("Times", vec![Expr::Integer(-1), a])].into(),
-      };
+      let diff =
+        call("Plus", vec![b, call("Times", vec![Expr::Integer(-1), a])]);
       let num = pow2(diff, Expr::Integer(n));
       // 2^n * (n + 1), kept symbolic so large n does not overflow.
       let denom = Expr::FunctionCall {
@@ -6672,7 +6667,6 @@ fn process_covariance(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = proc else {
     return None;
   };
-  let call = |n: &str, a: Vec<Expr>| call(n, a);
   let neg = |a: Expr| times2(Expr::Integer(-1), a);
   let sq = |a: &Expr| pow2(a.clone(), Expr::Integer(2));
   let min = call("Min", vec![t1.clone(), t2.clone()]);
@@ -6778,7 +6772,6 @@ pub fn biweight_midvariance_ast(
     _ => return unevaluated(),
   };
   let ev = crate::evaluator::evaluate_expr_to_expr;
-  let call = |n: &str, a: Vec<Expr>| call(n, a);
   let median = ev(&call1("Median", args[0].clone()))?;
   let deviations: Vec<Expr> = items
     .iter()
@@ -6829,7 +6822,6 @@ pub fn process_correlation(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = proc else {
     return None;
   };
-  let call = |n: &str, a: Vec<Expr>| call(n, a);
   let neg = |a: Expr| times2(Expr::Integer(-1), a);
   let sq = |a: &Expr| pow2(a.clone(), Expr::Integer(2));
   let min = call("Min", vec![t1.clone(), t2.clone()]);
@@ -6908,7 +6900,6 @@ pub fn process_absolute_correlation(
   let Expr::FunctionCall { name, args } = proc else {
     return None;
   };
-  let call = |n: &str, a: Vec<Expr>| call(n, a);
   let neg = |a: Expr| times2(Expr::Integer(-1), a);
   let sq = |a: &Expr| pow2(a.clone(), Expr::Integer(2));
   let min = call("Min", vec![t1.clone(), t2.clone()]);
@@ -7235,7 +7226,6 @@ pub fn characteristic_function_ast(
   // special cases match Identifier("I")
   let i_unit = || Expr::Identifier("I".to_string());
   let e_sym = || Expr::Identifier("E".to_string());
-  let call = |name: &str, fargs: Vec<Expr>| call(name, fargs);
   // E^(I*t) and E^(I*c*t)
   let e_it = |factors: Vec<Expr>| {
     let mut f = vec![i_unit()];
@@ -7668,7 +7658,6 @@ pub fn moment_generating_function_ast(
   let t = args[1].clone();
 
   let e_sym = || Expr::Identifier("E".to_string());
-  let call = |name: &str, fargs: Vec<Expr>| call(name, fargs);
   // E^t and E^(c*t)
   let e_t = |factors: Vec<Expr>| {
     if factors.is_empty() {
@@ -8070,8 +8059,7 @@ pub fn cumulant_generating_function_ast(
   let t = args[1].clone();
 
   let e_sym = || Expr::Identifier("E".to_string());
-  let call = |name: &str, fargs: Vec<Expr>| call(name, fargs);
-  let log = |e: Expr| call("Log", vec![e]);
+  let log = |e: Expr| call1("Log", e);
 
   let (dist_name, dargs) = match &args[0] {
     Expr::FunctionCall { name, args } => (name.as_str(), args.as_slice()),

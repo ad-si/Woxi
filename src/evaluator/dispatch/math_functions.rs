@@ -45,10 +45,10 @@ fn quartiles_with_params(
 ) -> Result<Option<Vec<Expr>>, InterpreterError> {
   let mut out = Vec::with_capacity(3);
   for (qn, qd) in [(1i128, 4i128), (1, 2), (3, 4)] {
-    let call = Expr::FunctionCall {
-      name: "Quantile".to_string(),
-      args: vec![data.clone(), make_rational(qn, qd), param.clone()].into(),
-    };
+    let call = call(
+      "Quantile",
+      vec![data.clone(), make_rational(qn, qd), param.clone()],
+    );
     let v = crate::evaluator::evaluate_expr_to_expr(&call)?;
     if matches!(&v, Expr::FunctionCall { name, .. } if name == "Quantile") {
       return Ok(None);
@@ -118,10 +118,7 @@ fn columnwise_quartile_stat(
     let col: Vec<Expr> = rows.iter().map(|r| r[c].clone()).collect();
     let mut call_args = vec![Expr::List(col.into())];
     call_args.extend(rest.iter().cloned());
-    let call = Expr::FunctionCall {
-      name: name.to_string(),
-      args: call_args.into(),
-    };
+    let call = call(name, call_args);
     match crate::evaluator::evaluate_expr_to_expr(&call) {
       // A still-symbolic result means a column wasn't numeric; leave the whole
       // call unevaluated rather than emitting a half-symbolic list.
@@ -266,10 +263,7 @@ pub fn dispatch_math_functions(
         let mut all_ok = true;
         for (qn, qd) in qs {
           let q_expr = make_rational(qn, qd);
-          let call = Expr::FunctionCall {
-            name: "Quantile".to_string(),
-            args: vec![args[0].clone(), q_expr].into(),
-          };
+          let call = call("Quantile", vec![args[0].clone(), q_expr]);
           if let Ok(v) = crate::evaluator::evaluate_expr_to_expr(&call) {
             // Treat an unevaluated Quantile[...] result as failure so we
             // leave the whole call symbolic rather than emitting a
@@ -393,10 +387,7 @@ pub fn dispatch_math_functions(
         // the right Real.
         if !matches!(&lambda, Expr::Real(_) | Expr::BigFloat(_, _)) {
           // Log[3]/λ
-          let log3 = Expr::FunctionCall {
-            name: "Log".to_string(),
-            args: vec![Expr::Integer(3)].into(),
-          };
+          let log3 = call1("Log", Expr::Integer(3));
           let iqr = div2(log3, lambda);
           return Some(crate::evaluator::evaluate_expr_to_expr(&iqr));
         }
@@ -468,10 +459,7 @@ pub fn dispatch_math_functions(
           if let Some(v) = crate::functions::math_ast::try_eval_to_f64(&args[0])
           {
             if v < 0.0 {
-              let neg = Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![Expr::Integer(-1), args[0].clone()].into(),
-              };
+              let neg = call("Times", vec![Expr::Integer(-1), args[0].clone()]);
               return Some(crate::evaluator::evaluate_expr_to_expr(&neg));
             }
             return Some(Ok(args[0].clone()));
@@ -786,10 +774,7 @@ pub fn dispatch_math_functions(
                       name: "Times".to_string(),
                       args: vec![
                         Expr::Integer(-1),
-                        Expr::FunctionCall {
-                          name: "Power".to_string(),
-                          args: vec![m, Expr::Integer(2)].into(),
-                        },
+                        call("Power", vec![m, Expr::Integer(2)]),
                       ]
                       .into(),
                     },
@@ -801,12 +786,8 @@ pub fn dispatch_math_functions(
                   return Some(Ok(v));
                 }
                 // StandardDeviation = Sqrt[Variance]
-                let sd = crate::evaluator::evaluate_expr_to_expr(
-                  &Expr::FunctionCall {
-                    name: "Sqrt".to_string(),
-                    args: vec![v].into(),
-                  },
-                );
+                let sd =
+                  crate::evaluator::evaluate_expr_to_expr(&call1("Sqrt", v));
                 if let Ok(s) = sd {
                   return Some(Ok(s));
                 }
@@ -881,10 +862,7 @@ pub fn dispatch_math_functions(
     | "MathieuGroupM23" | "MathieuGroupM24"
       if args.is_empty() =>
     {
-      return Some(Ok(Expr::FunctionCall {
-        name: name.to_string(),
-        args: vec![].into(),
-      }));
+      return Some(Ok(call(name, vec![])));
     }
     "GroupGenerators" if args.len() == 1 => {
       return Some(crate::functions::math_ast::group_generators_ast(args));
@@ -1418,9 +1396,11 @@ pub fn dispatch_math_functions(
     // and otherwise keeps the 4-argument form symbolic.
     "BetaRegularized" if args.len() == 4 => {
       if args.iter().all(is_numeric_literal) {
-        let f = |z: &Expr| Expr::FunctionCall {
-          name: "BetaRegularized".to_string(),
-          args: vec![z.clone(), args[2].clone(), args[3].clone()].into(),
+        let f = |z: &Expr| {
+          call(
+            "BetaRegularized",
+            vec![z.clone(), args[2].clone(), args[3].clone()],
+          )
         };
         let diff = minus2(f(&args[1]), f(&args[0]));
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
@@ -1455,10 +1435,8 @@ pub fn dispatch_math_functions(
       // difference GammaRegularized[a, z0] - GammaRegularized[a, z1]; exact
       // arguments stay symbolic, matching wolframscript.
       if args.iter().any(|a| matches!(a, Expr::Real(_))) {
-        let g = |z: &Expr| Expr::FunctionCall {
-          name: "GammaRegularized".to_string(),
-          args: vec![args[0].clone(), z.clone()].into(),
-        };
+        let g =
+          |z: &Expr| call("GammaRegularized", vec![args[0].clone(), z.clone()]);
         let diff = minus2(g(&args[1]), g(&args[2]));
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
       }
@@ -1467,10 +1445,7 @@ pub fn dispatch_math_functions(
           name: "Power".to_string(),
           args: vec![
             Expr::Constant("E".to_string()),
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![Expr::Integer(-1), z.clone()].into(),
-            },
+            call("Times", vec![Expr::Integer(-1), z.clone()]),
           ]
           .into(),
         };
@@ -1621,9 +1596,8 @@ pub fn dispatch_math_functions(
     // otherwise), matching wolframscript.
     "Beta" if args.len() == 4 => {
       if args.iter().all(is_numeric_literal) {
-        let f = |z: &Expr| Expr::FunctionCall {
-          name: "Beta".to_string(),
-          args: vec![z.clone(), args[2].clone(), args[3].clone()].into(),
+        let f = |z: &Expr| {
+          call("Beta", vec![z.clone(), args[2].clone(), args[3].clone()])
         };
         let diff = minus2(f(&args[1]), f(&args[0]));
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
@@ -1849,10 +1823,7 @@ pub fn dispatch_math_functions(
               name: "Times".to_string(),
               args: vec![
                 Expr::Integer(-1),
-                Expr::FunctionCall {
-                  name: "PolyGamma".to_string(),
-                  args: vec![Expr::Integer(0), args[1].clone()].into(),
-                },
+                call("PolyGamma", vec![Expr::Integer(0), args[1].clone()]),
               ]
               .into(),
             }]
@@ -1885,10 +1856,7 @@ pub fn dispatch_math_functions(
           .map(|p| {
             dispatch_math_functions("InverseCDF", &[args[0].clone(), p.clone()])
               .unwrap_or_else(|| {
-                Ok(Expr::FunctionCall {
-                  name: "InverseCDF".to_string(),
-                  args: vec![args[0].clone(), p.clone()].into(),
-                })
+                Ok(call("InverseCDF", vec![args[0].clone(), p.clone()]))
               })
           })
           .collect();
@@ -2093,10 +2061,7 @@ pub fn dispatch_math_functions(
       }
       if contains_real(&args[0]) {
         let half = div2(args[0].clone(), Expr::Integer(2));
-        let sin_expr = Expr::FunctionCall {
-          name: "Sin".to_string(),
-          args: vec![half].into(),
-        };
+        let sin_expr = call1("Sin", half);
         let expr = pow2(sin_expr, Expr::Integer(2));
         return Some(crate::evaluator::evaluate_expr_to_expr(&expr));
       }
@@ -2105,10 +2070,7 @@ pub fn dispatch_math_functions(
       // the computed value only when it reduces to a rational number — radical
       // results (e.g. Pi/4, Pi/5) are left unevaluated to avoid a canonical
       // radical-form divergence from wolframscript.
-      let cos_x = Expr::FunctionCall {
-        name: "Cos".to_string(),
-        args: vec![args[0].clone()].into(),
-      };
+      let cos_x = call1("Cos", args[0].clone());
       let half = div2(minus2(Expr::Integer(1), cos_x), Expr::Integer(2));
       if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&half) {
         let is_rational = matches!(&result, Expr::Integer(_))
@@ -2222,10 +2184,7 @@ pub fn dispatch_math_functions(
       // the symbolic InverseHaversine instead. Real (inexact) arguments always
       // numericize the ArcSin, so they are unaffected.
       let sqrt_expr = make_sqrt(args[0].clone());
-      let asin_expr = Expr::FunctionCall {
-        name: "ArcSin".to_string(),
-        args: vec![sqrt_expr].into(),
-      };
+      let asin_expr = call1("ArcSin", sqrt_expr);
       let expr = times2(Expr::Integer(2), asin_expr);
       let result = match crate::evaluator::evaluate_expr_to_expr(&expr) {
         Ok(r) => r,
@@ -2489,10 +2448,7 @@ pub fn dispatch_math_functions(
         name: "Times".to_string(),
         args: vec![
           args[0].clone(),
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![base_expr, Expr::Integer(-e)].into(),
-          },
+          call("Power", vec![base_expr, Expr::Integer(-e)]),
         ]
         .into(),
       };
@@ -2539,10 +2495,7 @@ pub fn dispatch_math_functions(
             if let Expr::List(pv) = real_factors[0]
               && let Expr::Integer(p) = &pv[0]
             {
-              return Some(Ok(Expr::FunctionCall {
-                name: "Log".to_string(),
-                args: vec![Expr::Integer(*p)].into(),
-              }));
+              return Some(Ok(call1("Log", Expr::Integer(*p))));
             }
           }
           return Some(Ok(Expr::Integer(0)));
@@ -2556,12 +2509,7 @@ pub fn dispatch_math_functions(
           .iter()
           .map(|x| {
             dispatch_math_functions("LiouvilleLambda", std::slice::from_ref(x))
-              .unwrap_or_else(|| {
-                Ok(Expr::FunctionCall {
-                  name: "LiouvilleLambda".to_string(),
-                  args: vec![x.clone()].into(),
-                })
-              })
+              .unwrap_or_else(|| Ok(call1("LiouvilleLambda", x.clone())))
           })
           .collect();
         return Some(results.map(|v| Expr::List(v.into())));
@@ -2877,10 +2825,7 @@ pub fn dispatch_math_functions(
         let shift = if num % 2 == 0 {
           Expr::Integer(num / 2)
         } else {
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(num), Expr::Integer(2)].into(),
-          }
+          call("Rational", vec![Expr::Integer(num), Expr::Integer(2)])
         };
         let y = crate::functions::math_ast::plus_ast(&[args[1].clone(), shift])
           .ok()?;
@@ -2923,10 +2868,7 @@ pub fn dispatch_math_functions(
       let factorial: i128 = (1..=d).product::<i128>().max(1);
       let result = crate::functions::math_ast::times_ast(&[
         sum,
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(factorial)].into(),
-        },
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(factorial)]),
       ])
       .ok()?;
       return Some(crate::evaluator::evaluate_expr_to_expr(&result));
@@ -3264,18 +3206,8 @@ pub fn dispatch_math_functions(
         let r = &elems[0];
         let thetas = &elems[1..];
         let n = thetas.len() + 1;
-        let sin = |t: &Expr| -> Expr {
-          Expr::FunctionCall {
-            name: "Sin".to_string(),
-            args: vec![t.clone()].into(),
-          }
-        };
-        let cos = |t: &Expr| -> Expr {
-          Expr::FunctionCall {
-            name: "Cos".to_string(),
-            args: vec![t.clone()].into(),
-          }
-        };
+        let sin = |t: &Expr| -> Expr { call1("Sin", t.clone()) };
+        let cos = |t: &Expr| -> Expr { call1("Cos", t.clone()) };
         let mut coords = Vec::with_capacity(n);
         for k in 0..n {
           // Build factors r * Sin[t_0] * ... * Sin[t_{k-1}] * (Cos[t_k] if k<n-1, else 1)
@@ -3289,10 +3221,7 @@ pub fn dispatch_math_functions(
           let product = if factors.len() == 1 {
             factors.into_iter().next().unwrap()
           } else {
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: factors.into(),
-            }
+            call("Times", factors)
           };
           coords.push(product);
         }
@@ -3313,10 +3242,7 @@ pub fn dispatch_math_functions(
             pow2(x.clone(), Expr::Integer(2)),
             pow2(y.clone(), Expr::Integer(2)),
           ));
-          let theta = Expr::FunctionCall {
-            name: "ArcTan".to_string(),
-            args: vec![x.clone(), y.clone()].into(),
-          };
+          let theta = call("ArcTan", vec![x.clone(), y.clone()]);
           let result = Expr::List(vec![r, theta].into());
           return Some(crate::evaluator::evaluate_expr_to_expr(&result));
         }
@@ -3333,15 +3259,9 @@ pub fn dispatch_math_functions(
           let sum = if squares.len() == 1 {
             squares.into_iter().next().unwrap()
           } else {
-            Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: squares.into(),
-            }
+            call("Plus", squares)
           };
-          Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![sum].into(),
-          }
+          call1("Sqrt", sum)
         };
 
         let r = radical(0);
@@ -3350,16 +3270,13 @@ pub fn dispatch_math_functions(
         for k in 0..(n - 2) {
           let denom = radical(k);
           let frac = div2(elems[k].clone(), denom);
-          result.push(Expr::FunctionCall {
-            name: "ArcCos".to_string(),
-            args: vec![frac].into(),
-          });
+          result.push(call1("ArcCos", frac));
         }
         // Final angle: 2-arg ArcTan with the last two coordinates.
-        result.push(Expr::FunctionCall {
-          name: "ArcTan".to_string(),
-          args: vec![elems[n - 2].clone(), elems[n - 1].clone()].into(),
-        });
+        result.push(call(
+          "ArcTan",
+          vec![elems[n - 2].clone(), elems[n - 1].clone()],
+        ));
         let list = Expr::List(result.into());
         return Some(crate::evaluator::evaluate_expr_to_expr(&list));
       }
@@ -3371,44 +3288,15 @@ pub fn dispatch_math_functions(
         let r = &elems[0];
         let theta = &elems[1];
         let phi = &elems[2];
-        let x = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(r.clone()),
-            right: Box::new(Expr::FunctionCall {
-              name: "Sin".to_string(),
-              args: vec![theta.clone()].into(),
-            }),
-          }),
-          right: Box::new(Expr::FunctionCall {
-            name: "Cos".to_string(),
-            args: vec![phi.clone()].into(),
-          }),
-        };
-        let y = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(r.clone()),
-            right: Box::new(Expr::FunctionCall {
-              name: "Sin".to_string(),
-              args: vec![theta.clone()].into(),
-            }),
-          }),
-          right: Box::new(Expr::FunctionCall {
-            name: "Sin".to_string(),
-            args: vec![phi.clone()].into(),
-          }),
-        };
-        let z = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(r.clone()),
-          right: Box::new(Expr::FunctionCall {
-            name: "Cos".to_string(),
-            args: vec![theta.clone()].into(),
-          }),
-        };
+        let x = times2(
+          times2(r.clone(), call1("Sin", theta.clone())),
+          call1("Cos", phi.clone()),
+        );
+        let y = times2(
+          times2(r.clone(), call1("Sin", theta.clone())),
+          call1("Sin", phi.clone()),
+        );
+        let z = times2(r.clone(), call1("Cos", theta.clone()));
         let result = Expr::List(vec![x, y, z].into());
         return Some(crate::evaluator::evaluate_expr_to_expr(&result));
       }
@@ -3432,14 +3320,8 @@ pub fn dispatch_math_functions(
           pow2(x.clone(), Expr::Integer(2)),
           pow2(y.clone(), Expr::Integer(2)),
         );
-        let theta = Expr::FunctionCall {
-          name: "ArcTan".to_string(),
-          args: vec![z.clone(), make_sqrt(xy_sq)].into(),
-        };
-        let phi_expr = Expr::FunctionCall {
-          name: "ArcTan".to_string(),
-          args: vec![x.clone(), y.clone()].into(),
-        };
+        let theta = call("ArcTan", vec![z.clone(), make_sqrt(xy_sq)]);
+        let phi_expr = call("ArcTan", vec![x.clone(), y.clone()]);
         let result = Expr::List(vec![r, theta, phi_expr].into());
         return Some(crate::evaluator::evaluate_expr_to_expr(&result));
       }
@@ -3692,10 +3574,10 @@ pub fn dispatch_math_functions(
             pow2(minus2(y1.clone(), k_eval.clone()), Expr::Integer(2)),
           ));
           let r_eval = crate::evaluator::evaluate_expr_to_expr(&r).unwrap_or(r);
-          return Some(Ok(Expr::FunctionCall {
-            name: "Circle".to_string(),
-            args: vec![Expr::List(vec![h_eval, k_eval].into()), r_eval].into(),
-          }));
+          return Some(Ok(call(
+            "Circle",
+            vec![Expr::List(vec![h_eval, k_eval].into()), r_eval],
+          )));
         }
       }
     }
@@ -3718,20 +3600,19 @@ pub fn dispatch_math_functions(
             && coords.len() == dim
           {
             for d in 0..dim {
-              let less_than_min = evaluate_expr_to_expr(&Expr::FunctionCall {
-                name: "Less".to_string(),
-                args: vec![coords[d].clone(), mins[d].clone()].into(),
-              });
+              let less_than_min = evaluate_expr_to_expr(&call(
+                "Less",
+                vec![coords[d].clone(), mins[d].clone()],
+              ));
               if let Ok(Expr::Identifier(ref s)) = less_than_min
                 && s == "True"
               {
                 mins[d] = coords[d].clone();
               }
-              let greater_than_max =
-                evaluate_expr_to_expr(&Expr::FunctionCall {
-                  name: "Greater".to_string(),
-                  args: vec![coords[d].clone(), maxs[d].clone()].into(),
-                });
+              let greater_than_max = evaluate_expr_to_expr(&call(
+                "Greater",
+                vec![coords[d].clone(), maxs[d].clone()],
+              ));
               if let Ok(Expr::Identifier(ref s)) = greater_than_max
                 && s == "True"
               {
@@ -3754,13 +3635,12 @@ pub fn dispatch_math_functions(
             && name == "Scaled"
             && args.len() == 1
           {
-            return evaluate_expr_to_expr(&Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![args[0].clone(), width.clone()].into(),
-            })
-            .unwrap_or_else(|_| Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![args[0].clone(), width.clone()].into(),
+            return evaluate_expr_to_expr(&call(
+              "Times",
+              vec![args[0].clone(), width.clone()],
+            ))
+            .unwrap_or_else(|_| {
+              call("Times", vec![args[0].clone(), width.clone()])
             });
           }
           spec.clone()
@@ -3874,10 +3754,7 @@ pub fn dispatch_math_functions(
             .into(),
           })
           .collect();
-        let max_expr = Expr::FunctionCall {
-          name: "Max".to_string(),
-          args: diffs.into(),
-        };
+        let max_expr = call("Max", diffs);
         return Some(evaluate_expr_to_expr(&max_expr));
       }
       // Scalar fallback: ChessboardDistance[a, b] = Abs[a - b]
@@ -3909,10 +3786,7 @@ pub fn dispatch_math_functions(
           )]
           .into(),
         };
-        let den = Expr::FunctionCall {
-          name: "Abs".to_string(),
-          args: vec![plus2(args[0].clone(), args[1].clone())].into(),
-        };
+        let den = call1("Abs", plus2(args[0].clone(), args[1].clone()));
         let result = div2(num, den);
         return Some(evaluate_expr_to_expr(&result));
       }
@@ -3931,19 +3805,10 @@ pub fn dispatch_math_functions(
             )]
             .into(),
           });
-          den_terms.push(Expr::FunctionCall {
-            name: "Abs".to_string(),
-            args: vec![plus2(ai.clone(), bi.clone())].into(),
-          });
+          den_terms.push(call1("Abs", plus2(ai.clone(), bi.clone())));
         }
-        let num = Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: num_terms.into(),
-        };
-        let den = Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: den_terms.into(),
-        };
+        let num = call("Plus", num_terms);
+        let den = call("Plus", den_terms);
         let result = div2(num, den);
         return Some(evaluate_expr_to_expr(&result));
       }
@@ -3962,17 +3827,8 @@ pub fn dispatch_math_functions(
           )]
           .into(),
         };
-        let den = Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::FunctionCall {
-            name: "Abs".to_string(),
-            args: vec![args[0].clone()].into(),
-          }),
-          right: Box::new(Expr::FunctionCall {
-            name: "Abs".to_string(),
-            args: vec![args[1].clone()].into(),
-          }),
-        };
+        let den =
+          plus2(call1("Abs", args[0].clone()), call1("Abs", args[1].clone()));
         let result = div2(num, den);
         return Some(evaluate_expr_to_expr(&result));
       }
@@ -3990,23 +3846,10 @@ pub fn dispatch_math_functions(
             )]
             .into(),
           };
-          let den = Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(Expr::FunctionCall {
-              name: "Abs".to_string(),
-              args: vec![ai.clone()].into(),
-            }),
-            right: Box::new(Expr::FunctionCall {
-              name: "Abs".to_string(),
-              args: vec![bi.clone()].into(),
-            }),
-          };
+          let den = plus2(call1("Abs", ai.clone()), call1("Abs", bi.clone()));
           terms.push(div2(num, den));
         }
-        let sum = Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: terms.into(),
-        };
+        let sum = call("Plus", terms);
         return Some(evaluate_expr_to_expr(&sum));
       }
     }
@@ -4055,18 +3898,9 @@ pub fn dispatch_math_functions(
         // Factor the division as (u / |u|) * (Conj(v) / |v|) so that common
         // integer factors cancel before they can accumulate in a single
         // numerator (matches wolframscript's canonical output).
-        let abs_u = Expr::FunctionCall {
-          name: "Abs".to_string(),
-          args: vec![args[0].clone()].into(),
-        };
-        let abs_v = Expr::FunctionCall {
-          name: "Abs".to_string(),
-          args: vec![args[1].clone()].into(),
-        };
-        let conj_v = Expr::FunctionCall {
-          name: "Conjugate".to_string(),
-          args: vec![args[1].clone()].into(),
-        };
+        let abs_u = call1("Abs", args[0].clone());
+        let abs_v = call1("Abs", args[1].clone());
+        let conj_v = call1("Conjugate", args[1].clone());
         let u_over_abs_u = div2(args[0].clone(), abs_u);
         let conj_v_over_abs_v = div2(conj_v, abs_v);
         let ratio = times2(u_over_abs_u, conj_v_over_abs_v);
@@ -4095,22 +3929,10 @@ pub fn dispatch_math_functions(
             Expr::Integer(0)
           }));
         }
-        let conj_b = Expr::FunctionCall {
-          name: "Conjugate".to_string(),
-          args: vec![args[1].clone()].into(),
-        };
-        let dot = Expr::FunctionCall {
-          name: "Dot".to_string(),
-          args: vec![args[0].clone(), conj_b].into(),
-        };
-        let norm_a = Expr::FunctionCall {
-          name: "Norm".to_string(),
-          args: vec![args[0].clone()].into(),
-        };
-        let norm_b = Expr::FunctionCall {
-          name: "Norm".to_string(),
-          args: vec![args[1].clone()].into(),
-        };
+        let conj_b = call1("Conjugate", args[1].clone());
+        let dot = call("Dot", vec![args[0].clone(), conj_b]);
+        let norm_a = call1("Norm", args[0].clone());
+        let norm_b = call1("Norm", args[1].clone());
         let result = plus2(
           Expr::Integer(1),
           times2(Expr::Integer(-1), div2(dot, times2(norm_a, norm_b))),
@@ -4194,10 +4016,7 @@ pub fn dispatch_math_functions(
               Expr::Real(v) => *v,
               _ => {
                 if let Ok(Expr::Real(v)) =
-                  evaluate_expr_to_expr(&Expr::FunctionCall {
-                    name: "N".to_string(),
-                    args: vec![matrix[i][j].clone()].into(),
-                  })
+                  evaluate_expr_to_expr(&call1("N", matrix[i][j].clone()))
                 {
                   v
                 } else {
@@ -4262,10 +4081,7 @@ pub fn dispatch_math_functions(
                 name: "Plus".to_string(),
                 args: vec![
                   ui.clone(),
-                  Expr::FunctionCall {
-                    name: "Times".to_string(),
-                    args: vec![Expr::Integer(-1), vi.clone()].into(),
-                  },
+                  call("Times", vec![Expr::Integer(-1), vi.clone()]),
                 ]
                 .into(),
               },
@@ -4274,19 +4090,10 @@ pub fn dispatch_math_functions(
             .into(),
           })
           .collect();
-        let numerator = Expr::FunctionCall {
-          name: "Total".to_string(),
-          args: vec![Expr::List(diff_sq.into())].into(),
-        };
+        let numerator = call1("Total", Expr::List(diff_sq.into()));
         // Variance-like terms
-        let mean_u = Expr::FunctionCall {
-          name: "Mean".to_string(),
-          args: vec![Expr::List(u.clone())].into(),
-        };
-        let mean_v = Expr::FunctionCall {
-          name: "Mean".to_string(),
-          args: vec![Expr::List(v.clone())].into(),
-        };
+        let mean_u = call1("Mean", Expr::List(u.clone()));
+        let mean_v = call1("Mean", Expr::List(v.clone()));
         let var_u: Vec<Expr> = u
           .iter()
           .map(|ui| Expr::FunctionCall {
@@ -4296,10 +4103,7 @@ pub fn dispatch_math_functions(
                 name: "Plus".to_string(),
                 args: vec![
                   ui.clone(),
-                  Expr::FunctionCall {
-                    name: "Times".to_string(),
-                    args: vec![Expr::Integer(-1), mean_u.clone()].into(),
-                  },
+                  call("Times", vec![Expr::Integer(-1), mean_u.clone()]),
                 ]
                 .into(),
               },
@@ -4317,10 +4121,7 @@ pub fn dispatch_math_functions(
                 name: "Plus".to_string(),
                 args: vec![
                   vi.clone(),
-                  Expr::FunctionCall {
-                    name: "Times".to_string(),
-                    args: vec![Expr::Integer(-1), mean_v.clone()].into(),
-                  },
+                  call("Times", vec![Expr::Integer(-1), mean_v.clone()]),
                 ]
                 .into(),
               },
@@ -4332,32 +4133,20 @@ pub fn dispatch_math_functions(
         let denominator = Expr::FunctionCall {
           name: "Plus".to_string(),
           args: vec![
-            Expr::FunctionCall {
-              name: "Total".to_string(),
-              args: vec![Expr::List(var_u.into())].into(),
-            },
-            Expr::FunctionCall {
-              name: "Total".to_string(),
-              args: vec![Expr::List(var_v.into())].into(),
-            },
+            call1("Total", Expr::List(var_u.into())),
+            call1("Total", Expr::List(var_v.into())),
           ]
           .into(),
         };
         let result = Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
-            Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-            },
+            call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
             Expr::FunctionCall {
               name: "Times".to_string(),
               args: vec![
                 numerator,
-                Expr::FunctionCall {
-                  name: "Power".to_string(),
-                  args: vec![denominator, Expr::Integer(-1)].into(),
-                },
+                call("Power", vec![denominator, Expr::Integer(-1)]),
               ]
               .into(),
             },
@@ -4370,18 +4159,13 @@ pub fn dispatch_math_functions(
     // CorrelationDistance[u, v] — 1 - Correlation[u, v]
     "CorrelationDistance" if args.len() == 2 => {
       // Build 1 - Correlation[u, v] and evaluate
-      let corr_expr = Expr::FunctionCall {
-        name: "Correlation".to_string(),
-        args: vec![args[0].clone(), args[1].clone()].into(),
-      };
+      let corr_expr =
+        call("Correlation", vec![args[0].clone(), args[1].clone()]);
       let result_expr = Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![
           Expr::Integer(1),
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), corr_expr].into(),
-          },
+          call("Times", vec![Expr::Integer(-1), corr_expr]),
         ]
         .into(),
       };
@@ -4465,10 +4249,6 @@ pub fn dispatch_math_functions(
         // v_hat the unit vector of v projected into that hyperplane
         // (v_proj = v - (v.n_hat) n_hat), the matrix is
         //   I + Tan[theta] * (v_hat outer n_hat).
-        let call = |name: &str, a: Vec<Expr>| Expr::FunctionCall {
-          name: name.to_string(),
-          args: a.into(),
-        };
         let eval = |e: Expr| evaluate_expr_to_expr(&e).unwrap_or(e);
 
         // n.n and v.n (exact where possible).
@@ -4515,9 +4295,9 @@ pub fn dispatch_math_functions(
           return Some(Ok(unevaluated("ShearingMatrix", args)));
         }
 
-        let tan = call("Tan", vec![args[0].clone()]);
-        let sqrt_vpp = call("Sqrt", vec![vpp]);
-        let sqrt_nn = call("Sqrt", vec![nn]);
+        let tan = call1("Tan", args[0].clone());
+        let sqrt_vpp = call1("Sqrt", vpp);
+        let sqrt_nn = call1("Sqrt", nn);
         let mut rows = Vec::with_capacity(dim);
         for i in 0..dim {
           let mut row = Vec::with_capacity(dim);
@@ -4641,10 +4421,10 @@ pub fn dispatch_math_functions(
             vec![
               Expr::Integer(d),
               Expr::Integer(m),
-              Expr::FunctionCall {
-                name: "Rational".to_string(),
-                args: vec![Expr::Integer(sec_num), Expr::Integer(den)].into(),
-              },
+              call(
+                "Rational",
+                vec![Expr::Integer(sec_num), Expr::Integer(den)],
+              ),
             ]
             .into(),
           )));
@@ -4670,10 +4450,7 @@ pub fn dispatch_math_functions(
           vec![
             Expr::Integer(d),
             Expr::Integer(m),
-            Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(sec_num), Expr::Integer(den)].into(),
-            },
+            call("Rational", vec![Expr::Integer(sec_num), Expr::Integer(den)]),
           ]
           .into(),
         )));
@@ -4764,10 +4541,7 @@ pub fn dispatch_math_functions(
       if let Expr::Comparison { operands, .. } = &args[0]
         && operands.len() == 2
       {
-        let neg = Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), operands[1].clone()].into(),
-        };
+        let neg = call("Times", vec![Expr::Integer(-1), operands[1].clone()]);
         if let Some(result) = apply_to_sides(&args[0], &neg, "Plus") {
           return Some(evaluate_expr_to_expr(&result));
         }
@@ -4786,10 +4560,7 @@ pub fn dispatch_math_functions(
         && !is_zero_literal(&operands[1])
       {
         let rhs = operands[1].clone();
-        let inv = Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![rhs.clone(), Expr::Integer(-1)].into(),
-        };
+        let inv = call("Power", vec![rhs.clone(), Expr::Integer(-1)]);
         if let Some(divided) = apply_to_sides(&args[0], &inv, "Times")
           && let Ok(divided) = evaluate_expr_to_expr(&divided)
         {
@@ -4801,10 +4572,10 @@ pub fn dispatch_math_functions(
             operators: vec![ComparisonOp::NotEqual],
           };
           let branch = Expr::List(vec![divided, cond].into());
-          let pw = Expr::FunctionCall {
-            name: "Piecewise".to_string(),
-            args: vec![Expr::List(vec![branch].into()), args[0].clone()].into(),
-          };
+          let pw = call(
+            "Piecewise",
+            vec![Expr::List(vec![branch].into()), args[0].clone()],
+          );
           return Some(evaluate_expr_to_expr(&pw));
         }
       }
@@ -4814,10 +4585,7 @@ pub fn dispatch_math_functions(
       if let Some(result) = pair_sides(&args[0], &args[1], SideOp::Subtract) {
         return Some(evaluate_expr_to_expr(&result));
       }
-      let neg = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), args[1].clone()].into(),
-      };
+      let neg = call("Times", vec![Expr::Integer(-1), args[1].clone()]);
       if let Some(result) = apply_to_sides(&args[0], &neg, "Plus") {
         return Some(evaluate_expr_to_expr(&result));
       }
@@ -4846,10 +4614,7 @@ pub fn dispatch_math_functions(
       if is_zero_literal(&args[1]) {
         return None;
       }
-      let inv = Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![args[1].clone(), Expr::Integer(-1)].into(),
-      };
+      let inv = call("Power", vec![args[1].clone(), Expr::Integer(-1)]);
       if let Some(result) = apply_to_sides(&args[0], &inv, "Times")
         && let Ok(scaled) = evaluate_expr_to_expr(&result)
       {
@@ -4897,10 +4662,7 @@ pub fn dispatch_math_functions(
                 name: "Times".to_string(),
                 args: vec![
                   m,
-                  Expr::FunctionCall {
-                    name: "Rational".to_string(),
-                    args: vec![Expr::Integer(1), Expr::Integer(60)].into(),
-                  },
+                  call("Rational", vec![Expr::Integer(1), Expr::Integer(60)]),
                 ]
                 .into(),
               },
@@ -4908,10 +4670,7 @@ pub fn dispatch_math_functions(
                 name: "Times".to_string(),
                 args: vec![
                   s,
-                  Expr::FunctionCall {
-                    name: "Rational".to_string(),
-                    args: vec![Expr::Integer(1), Expr::Integer(3600)].into(),
-                  },
+                  call("Rational", vec![Expr::Integer(1), Expr::Integer(3600)]),
                 ]
                 .into(),
               },
@@ -4952,10 +4711,7 @@ pub fn dispatch_math_functions(
             .filter_map(|r| {
               if let Expr::Rule { replacement, .. } = r {
                 // Apply N[] to get numeric result
-                let n_expr = Expr::FunctionCall {
-                  name: "N".to_string(),
-                  args: vec![replacement.as_ref().clone()].into(),
-                };
+                let n_expr = call1("N", replacement.as_ref().clone());
                 Some(
                   evaluate_expr_to_expr(&n_expr)
                     .unwrap_or(replacement.as_ref().clone()),
@@ -4994,10 +4750,7 @@ pub fn dispatch_math_functions(
             .iter()
             .filter_map(|r| {
               if let Expr::Rule { replacement, .. } = r {
-                let n_expr = Expr::FunctionCall {
-                  name: "N".to_string(),
-                  args: vec![replacement.as_ref().clone()].into(),
-                };
+                let n_expr = call1("N", replacement.as_ref().clone());
                 Some(
                   evaluate_expr_to_expr(&n_expr)
                     .unwrap_or(replacement.as_ref().clone()),
@@ -5079,10 +4832,8 @@ pub fn dispatch_math_functions(
             result.push(elems[idx].clone());
           } else {
             // Linear interpolation: elems[idx] + rem/t_den * (elems[idx+1] - elems[idx])
-            let frac = Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(rem), Expr::Integer(t_den)].into(),
-            };
+            let frac =
+              call("Rational", vec![Expr::Integer(rem), Expr::Integer(t_den)]);
             let interp = Expr::FunctionCall {
               name: "Plus".to_string(),
               args: vec![
@@ -5163,10 +4914,7 @@ pub fn dispatch_math_functions(
             if definite_non_integer(item) {
               Expr::Integer(0)
             } else {
-              Expr::FunctionCall {
-                name: "DiracComb".to_string(),
-                args: vec![item.clone()].into(),
-              }
+              call1("DiracComb", item.clone())
             }
           })
           .collect();
@@ -5234,12 +4982,7 @@ fn q_one(q_expr: &Expr) -> Expr {
 fn qgamma_ast(z_expr: &Expr, q_expr: &Expr) -> Result<Expr, InterpreterError> {
   use crate::functions::math_ast::{expr_to_f64, expr_to_i128};
 
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "QGamma".to_string(),
-      args: vec![z_expr.clone(), q_expr.clone()].into(),
-    })
-  };
+  let unevaluated = || Ok(call("QGamma", vec![z_expr.clone(), q_expr.clone()]));
 
   let Some(n) = expr_to_i128(z_expr) else {
     return unevaluated();
@@ -5271,21 +5014,12 @@ fn qgamma_ast(z_expr: &Expr, q_expr: &Expr) -> Result<Expr, InterpreterError> {
       .map(|j| match j {
         0 => Expr::Integer(1),
         1 => q_expr.clone(),
-        _ => Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![q_expr.clone(), Expr::Integer(j)].into(),
-        },
+        _ => call("Power", vec![q_expr.clone(), Expr::Integer(j)]),
       })
       .collect();
-    factors.push(Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    });
+    factors.push(call("Plus", terms));
   }
-  let product = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: factors.into(),
-  };
+  let product = call("Times", factors);
   crate::evaluator::evaluate_expr_to_expr(&product)
 }
 
@@ -5329,10 +5063,7 @@ fn cantor_staircase_ast(arg: &Expr) -> crate::syntax::Expr {
   }
 
   // Return unevaluated for symbolic arguments
-  Expr::FunctionCall {
-    name: "CantorStaircase".to_string(),
-    args: vec![arg.clone()].into(),
-  }
+  call("CantorStaircase", vec![arg.clone()])
 }
 
 /// Compute cantor staircase for exact rational p/q where 0 < p/q < 1
@@ -5447,23 +5178,14 @@ fn midpoint_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
         if items.len() == 2 {
           items
         } else {
-          return Ok(Expr::FunctionCall {
-            name: "Midpoint".to_string(),
-            args: vec![arg.clone()].into(),
-          });
+          return Ok(call1("Midpoint", arg.clone()));
         }
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "Midpoint".to_string(),
-          args: vec![arg.clone()].into(),
-        });
+        return Ok(call1("Midpoint", arg.clone()));
       }
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Midpoint".to_string(),
-        args: vec![arg.clone()].into(),
-      });
+      return Ok(call1("Midpoint", arg.clone()));
     }
   };
 
@@ -5471,10 +5193,7 @@ fn midpoint_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   let p2 = &points[1];
 
   // (p1 + p2) / 2 - works for both scalar and vector points
-  let sum = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![p1.clone(), p2.clone()].into(),
-  };
+  let sum = call("Plus", vec![p1.clone(), p2.clone()]);
   let result = div2(sum, Expr::Integer(2));
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
@@ -5488,10 +5207,7 @@ fn qfactorial_ast(
   let n = match crate::functions::math_ast::expr_to_i128(n_expr) {
     Some(n) if n >= 0 => n as usize,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "QFactorial".to_string(),
-        args: vec![n_expr.clone(), q_expr.clone()].into(),
-      });
+      return Ok(call("QFactorial", vec![n_expr.clone(), q_expr.clone()]));
     }
   };
 
@@ -5506,10 +5222,7 @@ fn qfactorial_ast(
   if crate::functions::math_ast::expr_to_f64(q_expr).is_none()
     && expr_to_rational(q_expr).is_none()
   {
-    return Ok(Expr::FunctionCall {
-      name: "QFactorial".to_string(),
-      args: vec![n_expr.clone(), q_expr.clone()].into(),
-    });
+    return Ok(call("QFactorial", vec![n_expr.clone(), q_expr.clone()]));
   }
 
   // Compute product of [k]_q for k = 1 to n
@@ -5523,10 +5236,7 @@ fn qfactorial_ast(
     factors.push(factor);
   }
 
-  let product = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: factors.into(),
-  };
+  let product = call("Times", factors);
 
   crate::evaluator::evaluate_expr_to_expr(&product)
 }
@@ -5542,10 +5252,10 @@ fn find_linear_recurrence_impl(seq: &[Expr]) -> crate::syntax::Expr {
     match expr_to_rational(&ev) {
       Some(r) => rats.push(r),
       None => {
-        return Expr::FunctionCall {
-          name: "FindLinearRecurrence".to_string(),
-          args: vec![Expr::List(seq.to_vec().into())].into(),
-        };
+        return call(
+          "FindLinearRecurrence",
+          vec![Expr::List(seq.to_vec().into())],
+        );
       }
     }
   }
@@ -5600,10 +5310,10 @@ fn find_linear_recurrence_impl(seq: &[Expr]) -> crate::syntax::Expr {
   }
 
   // No recurrence found
-  Expr::FunctionCall {
-    name: "FindLinearRecurrence".to_string(),
-    args: vec![Expr::List(seq.to_vec().into())].into(),
-  }
+  call(
+    "FindLinearRecurrence",
+    vec![Expr::List(seq.to_vec().into())],
+  )
 }
 
 fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
@@ -5696,23 +5406,13 @@ fn contains_any_var(expr: &Expr, vars: &[String]) -> bool {
 
 fn substitute_complex_vars(expr: &Expr, vars: &[String]) -> Expr {
   match expr {
-    Expr::Identifier(name) if vars.iter().any(|v| v == name) => {
-      Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::FunctionCall {
-          name: "Re".to_string(),
-          args: vec![Expr::Identifier(name.clone())].into(),
-        }),
-        right: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Identifier("I".to_string())),
-          right: Box::new(Expr::FunctionCall {
-            name: "Im".to_string(),
-            args: vec![Expr::Identifier(name.clone())].into(),
-          }),
-        }),
-      }
-    }
+    Expr::Identifier(name) if vars.iter().any(|v| v == name) => plus2(
+      call1("Re", Expr::Identifier(name.clone())),
+      times2(
+        Expr::Identifier("I".to_string()),
+        call1("Im", Expr::Identifier(name.clone())),
+      ),
+    ),
     // `Re[z]`, `Im[z]`, `Arg[z]` for a complex-vars `z` are
     // primitives Wolfram emits as-is. `Arg[anything-with-z]` is also
     // left alone — Wolfram has no closed-form expansion for `Arg`.
@@ -5850,10 +5550,7 @@ fn expand_log_in_complex_expand(expr: &Expr) -> Expr {
         _ => None,
       };
       if let Some(x) = sqrt_arg {
-        let log_x = Expr::FunctionCall {
-          name: "Log".to_string(),
-          args: vec![x.clone()].into(),
-        };
+        let log_x = call1("Log", x.clone());
         return ce_simplify(div2(log_x, Expr::Integer(2)));
       }
       // Log[Times[positive_const, …]] → Log[positive_const] + Log[Times[…]]
@@ -5887,34 +5584,19 @@ fn expand_log_in_complex_expand(expr: &Expr) -> Expr {
           let pos_const = if pos_const_factors.len() == 1 {
             pos_const_factors.remove(0)
           } else {
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: pos_const_factors.into(),
-            }
+            call("Times", pos_const_factors)
           };
           let rest = if other_factors.len() == 1 {
             other_factors.remove(0)
           } else {
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: other_factors.into(),
-            }
+            call("Times", other_factors)
           };
-          let log_pos = Expr::FunctionCall {
-            name: "Log".to_string(),
-            args: vec![pos_const].into(),
-          };
-          let log_rest = expand_log_in_complex_expand(&Expr::FunctionCall {
-            name: "Log".to_string(),
-            args: vec![rest].into(),
-          });
+          let log_pos = call1("Log", pos_const);
+          let log_rest = expand_log_in_complex_expand(&call1("Log", rest));
           return ce_simplify(plus2(log_pos, log_rest));
         }
       }
-      Expr::FunctionCall {
-        name: "Log".to_string(),
-        args: vec![inner].into(),
-      }
+      call1("Log", inner)
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -5973,29 +5655,20 @@ fn group_imag_terms(expr: &Expr) -> Expr {
     0 => Expr::Integer(0),
     1 => imag_parts.remove(0),
     _ => crate::evaluator::evaluate_function_call_ast("Plus", &imag_parts)
-      .unwrap_or(Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: imag_parts.into(),
-      }),
+      .unwrap_or(call("Plus", imag_parts)),
   };
   if is_expr_zero(&imag) {
     return match real_parts.len() {
       0 => Expr::Integer(0),
       1 => real_parts.remove(0),
       _ => crate::evaluator::evaluate_function_call_ast("Plus", &real_parts)
-        .unwrap_or(Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: real_parts.into(),
-        }),
+        .unwrap_or(call("Plus", real_parts)),
     };
   }
   let i_term = if matches!(imag, Expr::Integer(1)) {
     Expr::Identifier("I".to_string())
   } else {
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Identifier("I".to_string()), imag].into(),
-    }
+    call("Times", vec![Expr::Identifier("I".to_string()), imag])
   };
   if real_parts.is_empty() {
     return crate::evaluator::evaluate_expr_to_expr(&i_term).unwrap_or(i_term);
@@ -6015,10 +5688,7 @@ fn group_imag_terms(expr: &Expr) -> Expr {
   if combined_args.len() == 1 {
     return combined_args.remove(0);
   }
-  Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: combined_args.into(),
-  }
+  call("Plus", combined_args)
 }
 
 fn is_expr_zero(e: &Expr) -> bool {
@@ -6101,10 +5771,7 @@ fn strip_one_i_factor(t: &Expr) -> Option<Expr> {
     0 => Expr::Integer(1),
     1 => new_factors.remove(0),
     _ => crate::evaluator::evaluate_function_call_ast("Times", &new_factors)
-      .unwrap_or(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: new_factors.into(),
-      }),
+      .unwrap_or(call("Times", new_factors)),
   })
 }
 
@@ -6218,18 +5885,12 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
       let real = if real_parts.len() == 1 {
         real_parts.remove(0)
       } else {
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: real_parts.into(),
-        }
+        call("Plus", real_parts)
       };
       let imag = if imag_parts.len() == 1 {
         imag_parts.remove(0)
       } else {
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: imag_parts.into(),
-        }
+        call("Plus", imag_parts)
       };
       Some((ce_simplify(real), ce_simplify(imag)))
     }
@@ -6337,13 +5998,7 @@ fn power_split_real_imag(base: &Expr, exp: &Expr) -> Option<(Expr, Expr)> {
   {
     // Use the rewritten real part of the base, not the original: under
     // ComplexExpand Abs[x] becomes Sqrt[x^2], so Re[Abs[x]^2] = x^2.
-    return Some((
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![b_re, exp.clone()].into(),
-      },
-      Expr::Integer(0),
-    ));
+    return Some((call("Power", vec![b_re, exp.clone()]), Expr::Integer(0)));
   }
   // Positive real base with complex exponent:
   //   b^(a + I*c) = b^a · (Cos[c·Log[b]] + I·Sin[c·Log[b]]).
@@ -6357,23 +6012,10 @@ fn power_split_real_imag(base: &Expr, exp: &Expr) -> Option<(Expr, Expr)> {
     {
       im_e.clone()
     } else {
-      ce_simplify(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(im_e),
-        right: Box::new(Expr::FunctionCall {
-          name: "Log".to_string(),
-          args: vec![base.clone()].into(),
-        }),
-      })
+      ce_simplify(times2(im_e, call1("Log", base.clone())))
     };
-    let cos_part = Expr::FunctionCall {
-      name: "Cos".to_string(),
-      args: vec![inner_arg.clone()].into(),
-    };
-    let sin_part = Expr::FunctionCall {
-      name: "Sin".to_string(),
-      args: vec![inner_arg].into(),
-    };
+    let cos_part = call1("Cos", inner_arg.clone());
+    let sin_part = call1("Sin", inner_arg);
     let real = ce_simplify(times2(exp_a.clone(), cos_part));
     let imag = ce_simplify(times2(exp_a, sin_part));
     return Some((real, imag));
@@ -6434,10 +6076,7 @@ fn make_term(coef: i128, a: &Expr, ai: i128, b: &Expr, bi: i128) -> Expr {
   if factors.len() == 1 {
     return factors.into_iter().next().unwrap();
   }
-  ce_simplify(Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: factors.into(),
-  })
+  ce_simplify(call("Times", factors))
 }
 
 fn sum_terms(terms: Vec<Expr>) -> Expr {
@@ -6447,10 +6086,7 @@ fn sum_terms(terms: Vec<Expr>) -> Expr {
   if terms.len() == 1 {
     return terms.into_iter().next().unwrap();
   }
-  ce_simplify(Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  })
+  ce_simplify(call("Plus", terms))
 }
 
 /// Returns true when the base of a Power can be treated as a positive
@@ -6495,17 +6131,9 @@ fn abs_complex_expand_rewrite(arg: &Expr) -> Option<Expr> {
     // factor (e.g. recognising `Abs[Power[2, z]]` as `2^Re[z]`).
     let abs_factors: Vec<Expr> = factors
       .iter()
-      .map(|f| {
-        complex_expand_recursive(&Expr::FunctionCall {
-          name: "Abs".to_string(),
-          args: vec![f.clone()].into(),
-        })
-      })
+      .map(|f| complex_expand_recursive(&call1("Abs", f.clone())))
       .collect();
-    return Some(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: abs_factors.into(),
-    });
+    return Some(call("Times", abs_factors));
   }
   // Abs[Power[positive_real, c]] → Power[positive_real, Re[c]]
   let power_parts: Option<(Expr, Expr)> = match arg {
@@ -6522,15 +6150,9 @@ fn abs_complex_expand_rewrite(arg: &Expr) -> Option<Expr> {
   if let Some((base, exp)) = power_parts
     && is_complex_expand_real_base(&base)
   {
-    let re_exp = Expr::FunctionCall {
-      name: "Re".to_string(),
-      args: vec![exp].into(),
-    };
+    let re_exp = call1("Re", exp);
     let re_exp = complex_expand_recursive(&re_exp);
-    return Some(Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![base, re_exp].into(),
-    });
+    return Some(call("Power", vec![base, re_exp]));
   }
   // Abs[Log[w]] → Sqrt[Log[Abs[w]]^2 + Arg[w]^2]
   if let Expr::FunctionCall { name, args } = arg
@@ -6538,25 +6160,13 @@ fn abs_complex_expand_rewrite(arg: &Expr) -> Option<Expr> {
     && args.len() == 1
   {
     let w = &args[0];
-    let abs_w = Expr::FunctionCall {
-      name: "Abs".to_string(),
-      args: vec![w.clone()].into(),
-    };
-    let log_abs_w = Expr::FunctionCall {
-      name: "Log".to_string(),
-      args: vec![complex_expand_recursive(&abs_w)].into(),
-    };
-    let arg_w = Expr::FunctionCall {
-      name: "Arg".to_string(),
-      args: vec![w.clone()].into(),
-    };
+    let abs_w = call1("Abs", w.clone());
+    let log_abs_w = call1("Log", complex_expand_recursive(&abs_w));
+    let arg_w = call1("Arg", w.clone());
     let arg_w = complex_expand_recursive(&arg_w);
     let log_sq = pow2(log_abs_w, Expr::Integer(2));
     let arg_sq = pow2(arg_w, Expr::Integer(2));
-    return Some(Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![plus2(log_sq, arg_sq)].into(),
-    });
+    return Some(call1("Sqrt", plus2(log_sq, arg_sq)));
   }
   None
 }
@@ -6585,22 +6195,10 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
           match name.as_str() {
             // Sin[a + I*b] = Sin[a]*Cosh[b] + I*Cos[a]*Sinh[b]
             "Sin" => {
-              let sin_a = Expr::FunctionCall {
-                name: "Sin".to_string(),
-                args: vec![re.clone()].into(),
-              };
-              let cos_a = Expr::FunctionCall {
-                name: "Cos".to_string(),
-                args: vec![re].into(),
-              };
-              let cosh_b = Expr::FunctionCall {
-                name: "Cosh".to_string(),
-                args: vec![im.clone()].into(),
-              };
-              let sinh_b = Expr::FunctionCall {
-                name: "Sinh".to_string(),
-                args: vec![im].into(),
-              };
+              let sin_a = call1("Sin", re.clone());
+              let cos_a = call1("Cos", re);
+              let cosh_b = call1("Cosh", im.clone());
+              let sinh_b = call1("Sinh", im);
               return ce_simplify(plus2(
                 times2(sin_a, cosh_b),
                 times2(
@@ -6611,22 +6209,10 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
             }
             // Cos[a + I*b] = Cos[a]*Cosh[b] - I*Sin[a]*Sinh[b]
             "Cos" => {
-              let cos_a = Expr::FunctionCall {
-                name: "Cos".to_string(),
-                args: vec![re.clone()].into(),
-              };
-              let sin_a = Expr::FunctionCall {
-                name: "Sin".to_string(),
-                args: vec![re].into(),
-              };
-              let cosh_b = Expr::FunctionCall {
-                name: "Cosh".to_string(),
-                args: vec![im.clone()].into(),
-              };
-              let sinh_b = Expr::FunctionCall {
-                name: "Sinh".to_string(),
-                args: vec![im].into(),
-              };
+              let cos_a = call1("Cos", re.clone());
+              let sin_a = call1("Sin", re);
+              let cosh_b = call1("Cosh", im.clone());
+              let sinh_b = call1("Sinh", im);
               return ce_simplify(minus2(
                 times2(cos_a, cosh_b),
                 times2(
@@ -6637,22 +6223,10 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
             }
             // Sinh[a + I*b] = Sinh[a]*Cos[b] + I*Cosh[a]*Sin[b]
             "Sinh" => {
-              let sinh_a = Expr::FunctionCall {
-                name: "Sinh".to_string(),
-                args: vec![re.clone()].into(),
-              };
-              let cosh_a = Expr::FunctionCall {
-                name: "Cosh".to_string(),
-                args: vec![re].into(),
-              };
-              let cos_b = Expr::FunctionCall {
-                name: "Cos".to_string(),
-                args: vec![im.clone()].into(),
-              };
-              let sin_b = Expr::FunctionCall {
-                name: "Sin".to_string(),
-                args: vec![im].into(),
-              };
+              let sinh_a = call1("Sinh", re.clone());
+              let cosh_a = call1("Cosh", re);
+              let cos_b = call1("Cos", im.clone());
+              let sin_b = call1("Sin", im);
               return ce_simplify(plus2(
                 times2(sinh_a, cos_b),
                 times2(
@@ -6668,22 +6242,10 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
             "Tanh" => {
               let two_a = times2(Expr::Integer(2), re.clone());
               let two_b = times2(Expr::Integer(2), im.clone());
-              let sinh_2a = Expr::FunctionCall {
-                name: "Sinh".to_string(),
-                args: vec![two_a.clone()].into(),
-              };
-              let sin_2b = Expr::FunctionCall {
-                name: "Sin".to_string(),
-                args: vec![two_b.clone()].into(),
-              };
-              let cos_2b = Expr::FunctionCall {
-                name: "Cos".to_string(),
-                args: vec![two_b].into(),
-              };
-              let cosh_2a = Expr::FunctionCall {
-                name: "Cosh".to_string(),
-                args: vec![two_a].into(),
-              };
+              let sinh_2a = call1("Sinh", two_a.clone());
+              let sin_2b = call1("Sin", two_b.clone());
+              let cos_2b = call1("Cos", two_b);
+              let cosh_2a = call1("Cosh", two_a);
               let denom = plus2(cos_2b, cosh_2a);
               let real_part = div2(sinh_2a, denom.clone());
               let imag_part = div2(sin_2b, denom);
@@ -6694,22 +6256,10 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
             }
             // Cosh[a + I*b] = Cosh[a]*Cos[b] + I*Sinh[a]*Sin[b]
             "Cosh" => {
-              let cosh_a = Expr::FunctionCall {
-                name: "Cosh".to_string(),
-                args: vec![re.clone()].into(),
-              };
-              let sinh_a = Expr::FunctionCall {
-                name: "Sinh".to_string(),
-                args: vec![re].into(),
-              };
-              let cos_b = Expr::FunctionCall {
-                name: "Cos".to_string(),
-                args: vec![im.clone()].into(),
-              };
-              let sin_b = Expr::FunctionCall {
-                name: "Sin".to_string(),
-                args: vec![im].into(),
-              };
+              let cosh_a = call1("Cosh", re.clone());
+              let sinh_a = call1("Sinh", re);
+              let cos_b = call1("Cos", im.clone());
+              let sin_b = call1("Sin", im);
               return ce_simplify(plus2(
                 times2(cosh_a, cos_b),
                 times2(
@@ -6720,18 +6270,9 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
             }
             // Exp[a + I*b] = E^a*Cos[b] + I*E^a*Sin[b]
             "Exp" => {
-              let exp_a = Expr::FunctionCall {
-                name: "Exp".to_string(),
-                args: vec![re].into(),
-              };
-              let cos_b = Expr::FunctionCall {
-                name: "Cos".to_string(),
-                args: vec![im.clone()].into(),
-              };
-              let sin_b = Expr::FunctionCall {
-                name: "Sin".to_string(),
-                args: vec![im].into(),
-              };
+              let exp_a = call1("Exp", re);
+              let cos_b = call1("Cos", im.clone());
+              let sin_b = call1("Sin", im);
               return ce_simplify(plus2(
                 times2(exp_a.clone(), cos_b),
                 times2(Expr::Identifier("I".to_string()), times2(exp_a, sin_b)),
@@ -6762,22 +6303,11 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
           "Log" => {
             let mag_sq =
               plus2(pow2(re, Expr::Integer(2)), pow2(im, Expr::Integer(2)));
-            let log_term = Expr::BinaryOp {
-              op: BinaryOperator::Divide,
-              left: Box::new(Expr::FunctionCall {
-                name: "Log".to_string(),
-                args: vec![mag_sq].into(),
-              }),
-              right: Box::new(Expr::Integer(2)),
-            };
-            let arg_term = Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(Expr::Identifier("I".to_string())),
-              right: Box::new(Expr::FunctionCall {
-                name: "Arg".to_string(),
-                args: vec![arg.clone()].into(),
-              }),
-            };
+            let log_term = div2(call1("Log", mag_sq), Expr::Integer(2));
+            let arg_term = times2(
+              Expr::Identifier("I".to_string()),
+              call1("Arg", arg.clone()),
+            );
             return ce_simplify(plus2(log_term, arg_term));
           }
           // Real argument (im == 0): Abs[u] = Sqrt[u^2]. The im != 0 case is
@@ -6834,23 +6364,10 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
           {
             im.clone()
           } else {
-            ce_simplify(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(im.clone()),
-              right: Box::new(Expr::FunctionCall {
-                name: "Log".to_string(),
-                args: vec![(**base).clone()].into(),
-              }),
-            })
+            ce_simplify(times2(im.clone(), call1("Log", (**base).clone())))
           };
-          let cos_b = Expr::FunctionCall {
-            name: "Cos".to_string(),
-            args: vec![inner_arg.clone()].into(),
-          };
-          let sin_b = Expr::FunctionCall {
-            name: "Sin".to_string(),
-            args: vec![inner_arg].into(),
-          };
+          let cos_b = call1("Cos", inner_arg.clone());
+          let sin_b = call1("Sin", inner_arg);
           return ce_simplify(plus2(
             times2(exp_a.clone(), cos_b),
             times2(Expr::Identifier("I".to_string()), times2(exp_a, sin_b)),
@@ -6945,21 +6462,12 @@ fn exp_to_trig_expand(z: &Expr) -> Expr {
     Expr::FunctionCall {
       name: "Plus".to_string(),
       args: vec![
-        Expr::FunctionCall {
-          name: "Cos".to_string(),
-          args: vec![x.clone()].into(),
-        },
+        call1("Cos", x.clone()),
         Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
-            Expr::FunctionCall {
-              name: "Complex".to_string(),
-              args: vec![Expr::Integer(0), Expr::Integer(1)].into(),
-            },
-            Expr::FunctionCall {
-              name: "Sin".to_string(),
-              args: vec![x.clone()].into(),
-            },
+            call("Complex", vec![Expr::Integer(0), Expr::Integer(1)]),
+            call1("Sin", x.clone()),
           ]
           .into(),
         },
@@ -6968,20 +6476,10 @@ fn exp_to_trig_expand(z: &Expr) -> Expr {
     }
   } else {
     // Cosh[z] + Sinh[z]
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
-        Expr::FunctionCall {
-          name: "Cosh".to_string(),
-          args: vec![z.clone()].into(),
-        },
-        Expr::FunctionCall {
-          name: "Sinh".to_string(),
-          args: vec![z.clone()].into(),
-        },
-      ]
-      .into(),
-    }
+    call(
+      "Plus",
+      vec![call1("Cosh", z.clone()), call1("Sinh", z.clone())],
+    )
   }
 }
 
@@ -7017,10 +6515,7 @@ fn extract_imaginary_part(z: &Expr) -> Option<Expr> {
         if other_factors.len() == 1 {
           Some(other_factors.into_iter().next().unwrap())
         } else {
-          Some(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: other_factors.into(),
-          })
+          Some(call("Times", other_factors))
         }
       } else {
         None
@@ -7056,10 +6551,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
       let arg = trig_to_exp_recursive(&args[0]);
       let i = Expr::Identifier("I".to_string());
       let e = Expr::Constant("E".to_string());
-      let half = Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      };
+      let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
       match name.as_str() {
         // Cos[x] = E^(I*x)/2 + E^(-I*x)/2
         "Cos" => {
@@ -7331,26 +6823,17 @@ fn plus(terms: &[Expr]) -> Expr {
 }
 
 fn power(base: Expr, exp: Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![base, exp].into(),
-  }
+  call("Power", vec![base, exp])
 }
 
 fn log_of(arg: Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "Log".to_string(),
-    args: vec![arg].into(),
-  }
+  call1("Log", arg)
 }
 
 fn sqrt_of(arg: Expr) -> Expr {
   power(
     arg,
-    Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-    },
+    call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
   )
 }
 
@@ -7445,10 +6928,7 @@ fn apply_to_sides(relation: &Expr, value: &Expr, op: &str) -> Option<Expr> {
   {
     let new_operands: Vec<Expr> = operands
       .iter()
-      .map(|operand| Expr::FunctionCall {
-        name: op.to_string(),
-        args: vec![operand.clone(), value.clone()].into(),
-      })
+      .map(|operand| call(op, vec![operand.clone(), value.clone()]))
       .collect();
     Some(Expr::Comparison {
       operands: new_operands,
@@ -7504,10 +6984,10 @@ fn guard_equation_scale(
     operators: vec![ComparisonOp::NotEqual],
   };
   let branch = Expr::List(vec![scaled, cond].into());
-  let pw = Expr::FunctionCall {
-    name: "Piecewise".to_string(),
-    args: vec![Expr::List(vec![branch].into()), relation.clone()].into(),
-  };
+  let pw = call(
+    "Piecewise",
+    vec![Expr::List(vec![branch].into()), relation.clone()],
+  );
   evaluate_expr_to_expr(&pw)
 }
 
@@ -7558,33 +7038,21 @@ fn pair_sides(relation: &Expr, second: &Expr, op: SideOp) -> Option<Expr> {
 
   let combine = |a: &Expr, b: &Expr| -> Expr {
     match op {
-      SideOp::Add => Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![a.clone(), b.clone()].into(),
-      },
+      SideOp::Add => call("Plus", vec![a.clone(), b.clone()]),
       SideOp::Subtract => Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![
           a.clone(),
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), b.clone()].into(),
-          },
+          call("Times", vec![Expr::Integer(-1), b.clone()]),
         ]
         .into(),
       },
-      SideOp::Multiply => Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![a.clone(), b.clone()].into(),
-      },
+      SideOp::Multiply => call("Times", vec![a.clone(), b.clone()]),
       SideOp::Divide => Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![
           a.clone(),
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![b.clone(), Expr::Integer(-1)].into(),
-          },
+          call("Power", vec![b.clone(), Expr::Integer(-1)]),
         ]
         .into(),
       },
@@ -7608,10 +7076,10 @@ fn pair_sides(relation: &Expr, second: &Expr, op: SideOp) -> Option<Expr> {
         operators: vec![ComparisonOp::NotEqual],
       };
       let branch = Expr::List(vec![paired, cond].into());
-      Some(Expr::FunctionCall {
-        name: "Piecewise".to_string(),
-        args: vec![Expr::List(vec![branch].into()), relation.clone()].into(),
-      })
+      Some(call(
+        "Piecewise",
+        vec![Expr::List(vec![branch].into()), relation.clone()],
+      ))
     }
     _ => Some(paired),
   }
@@ -7765,18 +7233,15 @@ fn resample_axis(elems: &[Expr], n: usize) -> Vec<Expr> {
       result.push(elems[index].clone());
       continue;
     }
-    let fraction = Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(remainder), Expr::Integer(denominator)].into(),
-    };
+    let fraction = call(
+      "Rational",
+      vec![Expr::Integer(remainder), Expr::Integer(denominator)],
+    );
     let difference = Expr::FunctionCall {
       name: "Plus".to_string(),
       args: vec![
         elems[index + 1].clone(),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), elems[index].clone()].into(),
-        },
+        call("Times", vec![Expr::Integer(-1), elems[index].clone()]),
       ]
       .into(),
     };
@@ -7784,10 +7249,7 @@ fn resample_axis(elems: &[Expr], n: usize) -> Vec<Expr> {
       name: "Plus".to_string(),
       args: vec![
         elems[index].clone(),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![fraction, difference].into(),
-        },
+        call("Times", vec![fraction, difference]),
       ]
       .into(),
     };

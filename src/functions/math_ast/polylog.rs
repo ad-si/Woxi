@@ -53,10 +53,6 @@ pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// PolyLog[s, -1] = -(1 - 2^(1 - s)) Zeta[s] for a symbolic order `s`.
 fn polylog_at_neg1_symbolic(s: &Expr) -> Result<Expr, InterpreterError> {
-  let call = |name: &str, args: Vec<Expr>| Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  };
   // 2^(1 - s)
   let pow = call(
     "Power",
@@ -82,7 +78,7 @@ fn polylog_at_neg1_symbolic(s: &Expr) -> Result<Expr, InterpreterError> {
   // -(1 - 2^(1 - s)) Zeta[s]
   let result = call(
     "Times",
-    vec![Expr::Integer(-1), inner, call("Zeta", vec![s.clone()])],
+    vec![Expr::Integer(-1), inner, call1("Zeta", s.clone())],
   );
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
@@ -150,14 +146,7 @@ fn polylog_s1(z_expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::Integer(z) => {
       // 1-z is an integer, construct -Log[1-z]
       let one_minus_z = Expr::Integer(1 - z);
-      Ok(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(-1)),
-        right: Box::new(Expr::FunctionCall {
-          name: "Log".to_string(),
-          args: vec![one_minus_z].into(),
-        }),
-      })
+      Ok(times2(Expr::Integer(-1), call1("Log", one_minus_z)))
     }
     Expr::FunctionCall {
       name,
@@ -179,11 +168,7 @@ fn polylog_s1(z_expr: &Expr) -> Result<Expr, InterpreterError> {
             // -(-expr) = expr
             Ok(*right.clone())
           }
-          _ => Ok(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(-1)),
-            right: Box::new(log_val),
-          }),
+          _ => Ok(times2(Expr::Integer(-1), log_val)),
         }
       } else {
         Ok(polylog_s1_symbolic(z_expr))
@@ -198,18 +183,11 @@ fn polylog_s1(z_expr: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 fn polylog_s1_symbolic(z_expr: &Expr) -> crate::syntax::Expr {
-  let one_minus_z = Expr::BinaryOp {
-    op: BinaryOperator::Minus,
-    left: Box::new(Expr::Integer(1)),
-    right: Box::new(z_expr.clone()),
-  };
+  let one_minus_z = minus2(Expr::Integer(1), z_expr.clone());
   Expr::BinaryOp {
     op: BinaryOperator::Times,
     left: Box::new(Expr::Integer(-1)),
-    right: Box::new(Expr::FunctionCall {
-      name: "Log".to_string(),
-      args: vec![one_minus_z].into(),
-    }),
+    right: Box::new(call("Log", vec![one_minus_z])),
   }
 }
 
@@ -225,15 +203,8 @@ fn polylog_s0(z_expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::Real(f) => Ok(Expr::Real(f / (1.0 - f))),
     _ => {
       // z/(1-z)
-      let result = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(z_expr.clone()),
-        right: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(Expr::Integer(1)),
-          right: Box::new(z_expr.clone()),
-        }),
-      };
+      let result =
+        div2(z_expr.clone(), minus2(Expr::Integer(1), z_expr.clone()));
       // Fold an exact rational z (PolyLog[0, 1/2] = 1); keep symbolic z.
       if matches!(z_expr, Expr::FunctionCall { name, .. } if name == "Rational")
       {
@@ -277,20 +248,12 @@ fn polylog_negative_s(
     let x_power = if k + 1 == 1 {
       z_expr.clone()
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(z_expr.clone()),
-        right: Box::new(Expr::Integer((k + 1) as i128)),
-      }
+      pow2(z_expr.clone(), Expr::Integer((k + 1) as i128))
     };
     let term = if a == 1 {
       x_power
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(a)),
-        right: Box::new(x_power),
-      }
+      times2(Expr::Integer(a), x_power)
     };
     terms.push(term);
   }
@@ -298,29 +261,14 @@ fn polylog_negative_s(
   let numerator = if terms.len() == 1 {
     terms.into_iter().next().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    }
+    call("Plus", terms)
   };
 
   // Denominator: (1 - x)^{n+1}
-  let one_minus_x = Expr::BinaryOp {
-    op: BinaryOperator::Minus,
-    left: Box::new(Expr::Integer(1)),
-    right: Box::new(z_expr.clone()),
-  };
-  let denominator = Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(one_minus_x),
-    right: Box::new(Expr::Integer((n + 1) as i128)),
-  };
+  let one_minus_x = minus2(Expr::Integer(1), z_expr.clone());
+  let denominator = pow2(one_minus_x, Expr::Integer((n + 1) as i128));
 
-  let result = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(numerator),
-    right: Box::new(denominator),
-  };
+  let result = div2(numerator, denominator);
   // Exact numeric z: fold the rational expression to a number (e.g.
   // PolyLog[-1, 1/2] = 2). Symbolic z keeps the x/(1-x)^... display form.
   if exact_numeric {
@@ -378,9 +326,9 @@ fn polylog_at_neg1(s: i128) -> crate::syntax::Expr {
       }
 
       // Multiply by -(1 - 2^{1-s}) = (1 - 2^{s-1}) / 2^{s-1}
-      let pow2 = 1_i128 << (s_usize - 1);
-      let coeff_num = 1 - pow2; // negative
-      let coeff_den = pow2;
+      let exp2 = 1_i128 << (s_usize - 1);
+      let coeff_num = 1 - exp2; // negative
+      let coeff_den = exp2;
 
       let Some(mut final_num) = coeff_num.checked_mul(znum) else {
         return unevaluated_polylog(s, -1);
@@ -395,43 +343,22 @@ fn polylog_at_neg1(s: i128) -> crate::syntax::Expr {
       (final_num, final_den) = rat_reduce(final_num, final_den);
 
       // Build coefficient * Pi^s
-      let pi_power = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Identifier("Pi".to_string())),
-        right: Box::new(Expr::Integer(s)),
-      };
+      let pi_power = pow2(Expr::Identifier("Pi".to_string()), Expr::Integer(s));
 
       if final_num.abs() == 1 && final_den == 1 {
         if final_num == 1 {
           return pi_power;
         }
-        return Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(-1)),
-          right: Box::new(pi_power),
-        };
+        return times2(Expr::Integer(-1), pi_power);
       } else if final_num.abs() == 1 {
-        return Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(make_rational(final_num, final_den)),
-          right: Box::new(pi_power),
-        };
+        return times2(make_rational(final_num, final_den), pi_power);
       } else if final_den == 1 {
-        return Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(final_num)),
-          right: Box::new(pi_power),
-        };
+        return times2(Expr::Integer(final_num), pi_power);
       }
-      return Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(final_num)),
-          right: Box::new(pi_power),
-        }),
-        right: Box::new(Expr::Integer(final_den)),
-      };
+      return div2(
+        times2(Expr::Integer(final_num), pi_power),
+        Expr::Integer(final_den),
+      );
     }
   } else {
     // Odd s >= 3: Zeta stays symbolic
@@ -441,28 +368,13 @@ fn polylog_at_neg1(s: i128) -> crate::syntax::Expr {
     let coeff_den = pow2;
     let (cn, cd) = rat_reduce(coeff_num, coeff_den);
 
-    let zeta_expr = Expr::FunctionCall {
-      name: "Zeta".to_string(),
-      args: vec![Expr::Integer(s)].into(),
-    };
+    let zeta_expr = call("Zeta", vec![Expr::Integer(s)]);
 
     if cd == 1 {
-      return Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(cn)),
-        right: Box::new(zeta_expr),
-      };
+      return times2(Expr::Integer(cn), zeta_expr);
     }
     // Use (cn*Zeta[s])/cd format
-    return Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(cn)),
-        right: Box::new(zeta_expr),
-      }),
-      right: Box::new(Expr::Integer(cd)),
-    };
+    return div2(times2(Expr::Integer(cn), zeta_expr), Expr::Integer(cd));
   }
 
   unevaluated_polylog(s, -1)
@@ -474,92 +386,37 @@ fn polylog_at_neg1(s: i128) -> crate::syntax::Expr {
 ///   PolyLog[3, 1/2] = (-2*Pi^2*Log[2] + 4*Log[2]^3 + 21*Zeta[3])/24
 fn polylog_at_half(s: i128) -> Option<Expr> {
   let pi = Expr::Identifier("Pi".to_string());
-  let log2 = Expr::FunctionCall {
-    name: "Log".to_string(),
-    args: vec![Expr::Integer(2)].into(),
-  };
+  let log2 = call1("Log", Expr::Integer(2));
 
   if s == 2 {
     // Pi^2/12 - Log[2]^2/2
-    let pi2 = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(pi),
-      right: Box::new(Expr::Integer(2)),
-    };
-    let log2_sq = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(log2),
-      right: Box::new(Expr::Integer(2)),
-    };
-    let lhs = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(pi2),
-      right: Box::new(Expr::Integer(12)),
-    };
-    let rhs = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(log2_sq),
-      right: Box::new(Expr::Integer(2)),
-    };
-    return Some(Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(lhs),
-      right: Box::new(rhs),
-    });
+    let pi2 = pow2(pi, Expr::Integer(2));
+    let log2_sq = pow2(log2, Expr::Integer(2));
+    let lhs = div2(pi2, Expr::Integer(12));
+    let rhs = div2(log2_sq, Expr::Integer(2));
+    return Some(minus2(lhs, rhs));
   }
 
   if s == 3 {
     // (-2*Pi^2*Log[2] + 4*Log[2]^3 + 21*Zeta[3])/24
-    let pi2 = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(pi),
-      right: Box::new(Expr::Integer(2)),
-    };
+    let pi2 = pow2(pi, Expr::Integer(2));
     // -2*Pi^2*Log[2]
-    let term1 = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(-2), pi2, log2.clone()].into(),
-    };
+    let term1 = call("Times", vec![Expr::Integer(-2), pi2, log2.clone()]);
     // 4*Log[2]^3
-    let log2_cubed = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(log2),
-      right: Box::new(Expr::Integer(3)),
-    };
-    let term2 = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(4)),
-      right: Box::new(log2_cubed),
-    };
+    let log2_cubed = pow2(log2, Expr::Integer(3));
+    let term2 = times2(Expr::Integer(4), log2_cubed);
     // 21*Zeta[3]
-    let zeta3 = Expr::FunctionCall {
-      name: "Zeta".to_string(),
-      args: vec![Expr::Integer(3)].into(),
-    };
-    let term3 = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(21)),
-      right: Box::new(zeta3),
-    };
-    let numer = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![term1, term2, term3].into(),
-    };
-    return Some(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(numer),
-      right: Box::new(Expr::Integer(24)),
-    });
+    let zeta3 = call1("Zeta", Expr::Integer(3));
+    let term3 = times2(Expr::Integer(21), zeta3);
+    let numer = call("Plus", vec![term1, term2, term3]);
+    return Some(div2(numer, Expr::Integer(24)));
   }
 
   None
 }
 
 fn unevaluated_polylog(s: i128, z: i128) -> Expr {
-  Expr::FunctionCall {
-    name: "PolyLog".to_string(),
-    args: vec![Expr::Integer(s), Expr::Integer(z)].into(),
-  }
+  call("PolyLog", vec![Expr::Integer(s), Expr::Integer(z)])
 }
 
 /// Compute polylogarithm numerically using series summation

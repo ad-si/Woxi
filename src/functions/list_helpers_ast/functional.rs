@@ -15,10 +15,7 @@ pub fn fold_ast(
     Expr::List(items) => items.as_slice(),
     Expr::FunctionCall { args, .. } => args.as_slice(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Fold".to_string(),
-        args: vec![func.clone(), init.clone(), list.clone()].into(),
-      });
+      return Ok(call("Fold", vec![func.clone(), init.clone(), list.clone()]));
     }
   };
 
@@ -268,10 +265,7 @@ fn peak_parameter(
 /// unevaluated rather than answered wrongly.
 pub fn find_peaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let list = &args[0];
-  let call = || Expr::FunctionCall {
-    name: "FindPeaks".to_string(),
-    args: args.to_vec().into(),
-  };
+  let unevaluated = || unevaluated("FindPeaks", args);
   let refuse = |tag: &str, what: &str, value: &Expr, position: usize| {
     crate::emit_message(&format!(
       "FindPeaks::{}: The {} {} at position {} should be {}.",
@@ -288,7 +282,7 @@ pub fn find_peaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "a real number or a list of a real number and a non-negative scale",
       }
     ));
-    Ok(call())
+    Ok(unevaluated())
   };
 
   // The smoothing scale, and the sharpness / threshold cut-offs together with
@@ -323,7 +317,7 @@ pub fn find_peaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "FindPeaks::arg: The argument {} at position 1 is not a consistent list of real values.",
       crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
     ));
-    Ok(call())
+    Ok(unevaluated())
   };
   let items: &[Expr] = match list {
     Expr::List(items) => items.as_slice(),
@@ -339,7 +333,7 @@ pub fn find_peaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Any non-zero scale needs the scale-space pass this does not implement.
   if sigma != 0.0 || sharpness.1 != 0.0 || threshold.1 != 0.0 {
-    return Ok(call());
+    return Ok(unevaluated());
   }
 
   let n = vals.len();
@@ -385,10 +379,10 @@ pub fn find_peaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let pos = if twice_pos % 2 == 0 {
         Expr::Integer((twice_pos / 2) as i128)
       } else {
-        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "Divide".to_string(),
-          args: vec![Expr::Integer(twice_pos as i128), Expr::Integer(2)].into(),
-        })?
+        crate::evaluator::evaluate_expr_to_expr(&call(
+          "Divide",
+          vec![Expr::Integer(twice_pos as i128), Expr::Integer(2)],
+        ))?
       };
       peaks.push(Expr::List(vec![pos, items[i].clone()].into()));
     }
@@ -412,10 +406,7 @@ pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         "Accumulate",
         std::slice::from_ref(list),
       );
-      return Ok(Expr::FunctionCall {
-        name: "Accumulate".to_string(),
-        args: vec![list.clone()].into(),
-      });
+      return Ok(call1("Accumulate", list.clone()));
     }
   };
 
@@ -476,10 +467,7 @@ pub fn differences_step_ast(
   let items = match list {
     Expr::List(items) => items.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Differences".to_string(),
-        args: vec![list.clone()].into(),
-      });
+      return Ok(call1("Differences", list.clone()));
     }
   };
 
@@ -514,10 +502,7 @@ pub fn ratios_step_ast(
   let items = match list {
     Expr::List(items) => items.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Ratios".to_string(),
-        args: vec![list.clone()].into(),
-      });
+      return Ok(call1("Ratios", list.clone()));
     }
   };
 
@@ -613,10 +598,7 @@ pub fn scan_levelspec_ast(
   levelspec: &Expr,
 ) -> Result<Expr, InterpreterError> {
   // Reuse the Level machinery to enumerate the parts in the correct order.
-  let level_call = Expr::FunctionCall {
-    name: "Level".to_string(),
-    args: vec![expr.clone(), levelspec.clone()].into(),
-  };
+  let level_call = call("Level", vec![expr.clone(), levelspec.clone()]);
   let parts = crate::evaluator::evaluate_expr_to_expr(&level_call)?;
   match parts {
     Expr::List(ref items) => {
@@ -626,10 +608,10 @@ pub fn scan_levelspec_ast(
       Ok(Expr::Identifier("Null".to_string()))
     }
     // Level could not interpret the spec — keep the call unevaluated.
-    _ => Ok(Expr::FunctionCall {
-      name: "Scan".to_string(),
-      args: vec![func.clone(), expr.clone(), levelspec.clone()].into(),
-    }),
+    _ => Ok(call(
+      "Scan",
+      vec![func.clone(), expr.clone(), levelspec.clone()],
+    )),
   }
 }
 
@@ -646,10 +628,10 @@ pub fn fold_list_ast(
     Expr::List(items) => (items.as_slice(), None),
     Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.clone())),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "FoldList".to_string(),
-        args: vec![func.clone(), init.clone(), list.clone()].into(),
-      });
+      return Ok(call(
+        "FoldList",
+        vec![func.clone(), init.clone(), list.clone()],
+      ));
     }
   };
 
@@ -913,10 +895,7 @@ fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
         // a - b → Plus[a, Times[-1, b]]
         BinaryOperator::Minus => Some(vec![
           left.as_ref().clone(),
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), right.as_ref().clone()].into(),
-          },
+          call("Times", vec![Expr::Integer(-1), right.as_ref().clone()]),
         ]),
         // 1/b → Power[b, -1]; a/b → Times[a, Power[b, -1]]
         BinaryOperator::Divide => {
@@ -925,10 +904,7 @@ fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
           } else {
             Some(vec![
               left.as_ref().clone(),
-              Expr::FunctionCall {
-                name: "Power".to_string(),
-                args: vec![right.as_ref().clone(), Expr::Integer(-1)].into(),
-              },
+              call("Power", vec![right.as_ref().clone(), Expr::Integer(-1)]),
             ])
           }
         }
@@ -1141,30 +1117,26 @@ fn apply_at_level_recursive(
   // into Plus/Times/Power and other operators that the parser sometimes
   // leaves as Expr::BinaryOp rather than FunctionCall.
   let normalized: Expr = match expr {
-    Expr::BinaryOp { op, left, right } => Expr::FunctionCall {
-      name: binary_op_to_name(*op).to_string(),
-      args: vec![(**left).clone(), (**right).clone()].into(),
-    },
-    Expr::UnaryOp { op, operand } => Expr::FunctionCall {
-      name: unary_op_to_name(*op).to_string(),
-      args: vec![(**operand).clone()].into(),
-    },
+    Expr::BinaryOp { op, left, right } => call(
+      binary_op_to_name(*op),
+      vec![(**left).clone(), (**right).clone()],
+    ),
+    Expr::UnaryOp { op, operand } => {
+      call(unary_op_to_name(*op), vec![(**operand).clone()])
+    }
     // Rules and comparison chains have heads too, so a level specification
     // reaches them: Apply[f, a -> b, {0}] is f[a, b].
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::FunctionCall {
-      name: "Rule".to_string(),
-      args: vec![(**pattern).clone(), (**replacement).clone()].into(),
-    },
+    } => call("Rule", vec![(**pattern).clone(), (**replacement).clone()]),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::FunctionCall {
-      name: "RuleDelayed".to_string(),
-      args: vec![(**pattern).clone(), (**replacement).clone()].into(),
-    },
+    } => call(
+      "RuleDelayed",
+      vec![(**pattern).clone(), (**replacement).clone()],
+    ),
     Expr::Comparison {
       operands,
       operators,
@@ -1342,10 +1314,7 @@ pub fn tensor_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         rest.push(if others.len() == 1 {
           others.into_iter().next().unwrap()
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: others.into(),
-          }
+          call("Times", others)
         });
         continue;
       }
@@ -1381,10 +1350,7 @@ pub fn tensor_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let tensor_part = match factors.len() {
     0 => None,
     1 => Some(factors.into_iter().next().unwrap()),
-    _ => Some(Expr::FunctionCall {
-      name: "TensorProduct".to_string(),
-      args: factors.into(),
-    }),
+    _ => Some(call("TensorProduct", factors)),
   };
 
   // Multiply the scalar product back in (Times distributes over arrays).
@@ -1571,10 +1537,7 @@ pub fn outer_ast_with_levels(
         // Mismatched or atomic — return unevaluated.
         let mut call_args = vec![func.clone()];
         call_args.extend(lists.iter().cloned());
-        return Ok(Expr::FunctionCall {
-          name: "Outer".to_string(),
-          args: call_args.into(),
-        });
+        return Ok(call("Outer", call_args));
       }
     }
   }
@@ -1621,10 +1584,7 @@ fn wrap_in_head(head: &str, items: Vec<Expr>) -> Expr {
   if head == "List" {
     Expr::List(items.into())
   } else {
-    Expr::FunctionCall {
-      name: head.to_string(),
-      args: items.into(),
-    }
+    call(head, items)
   }
 }
 
@@ -1747,10 +1707,10 @@ pub fn inner_ast(
         l2_len,
         crate::syntax::expr_to_string(list2),
       ));
-      Ok(Expr::FunctionCall {
-        name: "Inner".to_string(),
-        args: vec![f.clone(), list1.clone(), list2.clone(), g.clone()].into(),
-      })
+      Ok(call(
+        "Inner",
+        vec![f.clone(), list1.clone(), list2.clone(), g.clone()],
+      ))
     }
     other => other,
   }
@@ -1937,10 +1897,10 @@ pub fn array_reduce_ast(
   levels: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "ArrayReduce".to_string(),
-      args: vec![func.clone(), array.clone(), levels.clone()].into(),
-    })
+    Ok(call(
+      "ArrayReduce",
+      vec![func.clone(), array.clone(), levels.clone()],
+    ))
   };
 
   let dims = match full_array_dims(array) {

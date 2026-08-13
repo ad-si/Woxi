@@ -203,10 +203,7 @@ pub fn group_by_ast(
   }
 
   let Expr::List(items) = list else {
-    return Ok(Expr::FunctionCall {
-      name: "GroupBy".to_string(),
-      args: vec![list.clone(), func.clone()].into(),
-    });
+    return Ok(call("GroupBy", vec![list.clone(), func.clone()]));
   };
 
   // `GroupBy[list, {f1, f2, ...}]` groups by `f1`, then sub-groups each result
@@ -381,19 +378,8 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
         left: Box::new(Expr::Integer(1)),
         right: Box::new(Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![
-            Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(Expr::Integer(2)),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(a),
-                right: Box::new(Expr::Integer(-1)),
-              }),
-            },
-            k,
-          ]
-          .into(),
+          args: vec![pow2(Expr::Integer(2), pow2(a, Expr::Integer(-1))), k]
+            .into(),
         }),
       };
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
@@ -406,27 +392,11 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
     "HalfNormalDistribution" if dargs.len() == 1 => {
       let theta = dargs[0].clone();
       // Median = Sqrt[Pi] * InverseErf[1/2] / theta
-      let sqrt_pi = Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Identifier("Pi".to_string())].into(),
-      };
-      let half = Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      };
-      let inverse_erf_half = Expr::FunctionCall {
-        name: "InverseErf".to_string(),
-        args: vec![half].into(),
-      };
-      let numer = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![sqrt_pi, inverse_erf_half].into(),
-      };
-      let med = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(numer),
-        right: Box::new(theta),
-      };
+      let sqrt_pi = call1("Sqrt", Expr::Identifier("Pi".to_string()));
+      let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
+      let inverse_erf_half = call1("InverseErf", half);
+      let numer = call("Times", vec![sqrt_pi, inverse_erf_half]);
+      let med = div2(numer, theta);
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
     "FrechetDistribution" if dargs.len() == 2 || dargs.len() == 3 => {
@@ -438,30 +408,12 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
         None
       };
       // Median = μ + b * Log[2]^(-1/a) ≡ μ + b / Log[2]^(1/a)
-      let log2 = Expr::FunctionCall {
-        name: "Log".to_string(),
-        args: vec![Expr::Integer(2)].into(),
-      };
-      let inv_a = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(a),
-      };
-      let denom = Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![log2, inv_a].into(),
-      };
-      let b_over = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(b),
-        right: Box::new(denom),
-      };
+      let log2 = call1("Log", Expr::Integer(2));
+      let inv_a = div2(Expr::Integer(1), a);
+      let denom = call("Power", vec![log2, inv_a]);
+      let b_over = div2(b, denom);
       let med = match mu {
-        Some(m) => Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(m),
-          right: Box::new(b_over),
-        },
+        Some(m) => plus2(m, b_over),
         None => b_over,
       };
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
@@ -473,23 +425,9 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
         _ => return None,
       };
       // Median = a - b * Log[Log[2]]
-      let log2 = Expr::FunctionCall {
-        name: "Log".to_string(),
-        args: vec![Expr::Integer(2)].into(),
-      };
-      let log_log2 = Expr::FunctionCall {
-        name: "Log".to_string(),
-        args: vec![log2].into(),
-      };
-      let med = Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(a),
-        right: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(b),
-          right: Box::new(log_log2),
-        }),
-      };
+      let log2 = call1("Log", Expr::Integer(2));
+      let log_log2 = call1("Log", log2);
+      let med = minus2(a, times2(b, log_log2));
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
     "LaplaceDistribution" if dargs.len() == 2 => {
@@ -511,51 +449,28 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       // Median[ChiDistribution[v]] =
       //   Sqrt[2] * Sqrt[InverseGammaRegularized[v/2, 0, 1/2]].
       let v = dargs[0].clone();
-      let half = Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      };
-      let v_half = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(v),
-        right: Box::new(Expr::Integer(2)),
-      };
-      let inv_gamma = Expr::FunctionCall {
-        name: "InverseGammaRegularized".to_string(),
-        args: vec![v_half, Expr::Integer(0), half].into(),
-      };
-      let sqrt_inner = Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![inv_gamma].into(),
-      };
-      let sqrt2 = Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Integer(2)].into(),
-      };
-      let med = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(sqrt2),
-        right: Box::new(sqrt_inner),
-      };
+      let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
+      let v_half = div2(v, Expr::Integer(2));
+      let inv_gamma = call(
+        "InverseGammaRegularized",
+        vec![v_half, Expr::Integer(0), half],
+      );
+      let sqrt_inner = call1("Sqrt", inv_gamma);
+      let sqrt2 = call1("Sqrt", Expr::Integer(2));
+      let med = times2(sqrt2, sqrt_inner);
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
     "BernoulliDistribution" if dargs.len() == 1 => {
       // Median[BernoulliDistribution[p]] = Piecewise[{{1, p > 1/2}}, 0].
       let p = dargs[0].clone();
-      let half = Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      };
+      let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
       let cond = Expr::Comparison {
         operands: vec![p, half],
         operators: vec![ComparisonOp::Greater],
       };
       let pair = Expr::List(vec![Expr::Integer(1), cond].into());
       let cases = Expr::List(vec![pair].into());
-      let med = Expr::FunctionCall {
-        name: "Piecewise".to_string(),
-        args: vec![cases, Expr::Integer(0)].into(),
-      };
+      let med = call("Piecewise", vec![cases, Expr::Integer(0)]);
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
     "DagumDistribution" if dargs.len() == 3 => {
@@ -564,115 +479,54 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       let p = dargs[0].clone();
       let a = dargs[1].clone();
       let b = dargs[2].clone();
-      let inv_p = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(p),
-      };
-      let two_pow = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Integer(2)),
-        right: Box::new(inv_p),
-      };
-      let base = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Integer(-1)),
-        right: Box::new(two_pow),
-      };
-      let inv_a = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(a),
-      };
-      let denom = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(base),
-        right: Box::new(inv_a),
-      };
-      let med = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(b),
-        right: Box::new(denom),
-      };
+      let inv_p = div2(Expr::Integer(1), p);
+      let two_pow = pow2(Expr::Integer(2), inv_p);
+      let base = plus2(Expr::Integer(-1), two_pow);
+      let inv_a = div2(Expr::Integer(1), a);
+      let denom = pow2(base, inv_a);
+      let med = div2(b, denom);
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
     "BetaDistribution" if dargs.len() == 2 => {
       // Median[BetaDistribution[a, b]] = InverseBetaRegularized[1/2, a, b].
-      let half = Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      };
-      Some(Expr::FunctionCall {
-        name: "InverseBetaRegularized".to_string(),
-        args: vec![half, dargs[0].clone(), dargs[1].clone()].into(),
-      })
+      let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
+      Some(call(
+        "InverseBetaRegularized",
+        vec![half, dargs[0].clone(), dargs[1].clone()],
+      ))
     }
     "ParetoDistribution" if dargs.len() == 2 => {
       // Median[ParetoDistribution[k, a]] = k * 2^(1/a)
       let k = dargs[0].clone();
       let a = dargs[1].clone();
-      let inv_a = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(a),
-      };
-      let pow_term = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Integer(2)),
-        right: Box::new(inv_a),
-      };
-      let med = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(k),
-        right: Box::new(pow_term),
-      };
+      let inv_a = div2(Expr::Integer(1), a);
+      let pow_term = pow2(Expr::Integer(2), inv_a);
+      let med = times2(k, pow_term);
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
     "WeibullDistribution" if dargs.len() == 2 => {
       let a = dargs[0].clone();
       let b = dargs[1].clone();
       // Median = b * Log[2]^(1/a)
-      let log2 = Expr::FunctionCall {
-        name: "Log".to_string(),
-        args: vec![Expr::Integer(2)].into(),
-      };
-      let inv_a = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(a),
-      };
-      let pow_term = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(log2),
-        right: Box::new(inv_a),
-      };
-      let med = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(b),
-        right: Box::new(pow_term),
-      };
+      let log2 = call1("Log", Expr::Integer(2));
+      let inv_a = div2(Expr::Integer(1), a);
+      let pow_term = pow2(log2, inv_a);
+      let med = times2(b, pow_term);
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
     "LogNormalDistribution" if dargs.len() == 2 => {
       // Median[LogNormalDistribution[mu, sigma]] = E^mu
-      let med = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Constant("E".to_string())),
-        right: Box::new(dargs[0].clone()),
-      };
+      let med = pow2(Expr::Constant("E".to_string()), dargs[0].clone());
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
     "ExponentialDistribution" if dargs.len() == 1 => {
       // Median[ExponentialDistribution[lambda]] = Log[2]/lambda. Reuses
       // the closed-form Quantile path which already returns -Log[1-p]/lambda.
-      let half = Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      };
-      let quantile_call = Expr::FunctionCall {
-        name: "Quantile".to_string(),
-        args: vec![unevaluated("ExponentialDistribution", dargs), half].into(),
-      };
+      let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
+      let quantile_call = call(
+        "Quantile",
+        vec![unevaluated("ExponentialDistribution", dargs), half],
+      );
       crate::evaluator::evaluate_expr_to_expr(&quantile_call).ok()
     }
     "UniformDistribution" | "ArcSinDistribution" if dargs.len() == 1 => {
@@ -684,16 +538,8 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       }
       // Median = (a + b)/2. ArcSinDistribution is also symmetric about
       // the midpoint of its support, so the same formula applies.
-      let sum = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(bounds[0].clone()),
-        right: Box::new(bounds[1].clone()),
-      };
-      let med = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(sum),
-        right: Box::new(Expr::Integer(2)),
-      };
+      let sum = plus2(bounds[0].clone(), bounds[1].clone());
+      let med = div2(sum, Expr::Integer(2));
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
     "StudentTDistribution" if dargs.len() == 1 => {
@@ -703,19 +549,9 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
     "RayleighDistribution" if dargs.len() == 1 => {
       let sigma = dargs[0].clone();
       // Median = sigma * Sqrt[Log[4]]
-      let log4 = Expr::FunctionCall {
-        name: "Log".to_string(),
-        args: vec![Expr::Integer(4)].into(),
-      };
-      let sqrt_log4 = Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![log4].into(),
-      };
-      let med = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(sigma),
-        right: Box::new(sqrt_log4),
-      };
+      let log4 = call1("Log", Expr::Integer(4));
+      let sqrt_log4 = call1("Sqrt", log4);
+      let med = times2(sigma, sqrt_log4);
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
     "DiscreteUniformDistribution" if dargs.len() == 1 => {
@@ -728,86 +564,32 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       let imin = bounds[0].clone();
       let imax = bounds[1].clone();
       // Median = -1 + min + Max[1, Ceiling[(1 + max - min)/2]]
-      let diff = Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(imax),
-        right: Box::new(imin.clone()),
-      };
-      let one_plus_diff = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(diff),
-      };
-      let half = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(one_plus_diff),
-        right: Box::new(Expr::Integer(2)),
-      };
-      let ceiling = Expr::FunctionCall {
-        name: "Ceiling".to_string(),
-        args: vec![half].into(),
-      };
-      let max_call = Expr::FunctionCall {
-        name: "Max".to_string(),
-        args: vec![Expr::Integer(1), ceiling].into(),
-      };
-      let med = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Integer(-1)),
-        right: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(imin),
-          right: Box::new(max_call),
-        }),
-      };
+      let diff = minus2(imax, imin.clone());
+      let one_plus_diff = plus2(Expr::Integer(1), diff);
+      let half = div2(one_plus_diff, Expr::Integer(2));
+      let ceiling = call1("Ceiling", half);
+      let max_call = call("Max", vec![Expr::Integer(1), ceiling]);
+      let med = plus2(Expr::Integer(-1), plus2(imin, max_call));
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
     "InverseGammaDistribution" if dargs.len() == 2 => {
       let a = dargs[0].clone();
       let b = dargs[1].clone();
       // Median = b / InverseGammaRegularized[a, 1/2]
-      let half = Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      };
-      let denom = Expr::FunctionCall {
-        name: "InverseGammaRegularized".to_string(),
-        args: vec![a, half].into(),
-      };
-      let med = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(b),
-        right: Box::new(denom),
-      };
+      let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
+      let denom = call("InverseGammaRegularized", vec![a, half]);
+      let med = div2(b, denom);
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
     "GompertzMakehamDistribution" if dargs.len() == 2 => {
       let lambda = dargs[0].clone();
       let xi = dargs[1].clone();
       // Median = Log[1 + Log[2]/xi] / lambda
-      let log2 = Expr::FunctionCall {
-        name: "Log".to_string(),
-        args: vec![Expr::Integer(2)].into(),
-      };
-      let log2_over_xi = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(log2),
-        right: Box::new(xi),
-      };
-      let one_plus = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Integer(1)),
-        right: Box::new(log2_over_xi),
-      };
-      let log_arg = Expr::FunctionCall {
-        name: "Log".to_string(),
-        args: vec![one_plus].into(),
-      };
-      let med = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(log_arg),
-        right: Box::new(lambda),
-      };
+      let log2 = call1("Log", Expr::Integer(2));
+      let log2_over_xi = div2(log2, xi);
+      let one_plus = plus2(Expr::Integer(1), log2_over_xi);
+      let log_arg = call1("Log", one_plus);
+      let med = div2(log_arg, lambda);
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
     // Median[dist] = Quantile[dist, 1/2]. Any distribution not matched by a
@@ -843,15 +625,8 @@ fn hypoexponential_median(arg: &Expr) -> Option<Expr> {
   // Single-rate case: HypoexponentialDistribution[{lambda}] = Exp(lambda).
   if rates.len() == 1 {
     let lambda = rates[0].clone();
-    let log2 = Expr::FunctionCall {
-      name: "Log".to_string(),
-      args: vec![Expr::Integer(2)].into(),
-    };
-    let med = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(log2),
-      right: Box::new(lambda),
-    };
+    let log2 = call1("Log", Expr::Integer(2));
+    let med = div2(log2, lambda);
     return crate::evaluator::evaluate_expr_to_expr(&med).ok();
   }
 
@@ -906,10 +681,7 @@ fn hypoexponential_median(arg: &Expr) -> Option<Expr> {
 
   // sum equals 1/2 iff 2 * sum_num == sum_den.
   if sum_num.checked_mul(2)? == sum_den {
-    return Some(Expr::FunctionCall {
-      name: "Log".to_string(),
-      args: vec![Expr::Integer(2)].into(),
-    });
+    return Some(call1("Log", Expr::Integer(2)));
   }
   None
 }
@@ -922,10 +694,7 @@ fn median_sort_key(e: &Expr) -> Option<f64> {
   if let Some(n) = crate::functions::math_ast::expr_to_num(e) {
     return Some(n);
   }
-  let n_call = Expr::FunctionCall {
-    name: "N".to_string(),
-    args: vec![e.clone()].into(),
-  };
+  let n_call = call1("N", e.clone());
   match crate::evaluator::evaluate_expr_to_expr(&n_call).ok()? {
     Expr::Real(f) => Some(f),
     Expr::Integer(n) => Some(n as f64),
@@ -950,10 +719,7 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       "Median",
       std::slice::from_ref(list),
     );
-    return Ok(Expr::FunctionCall {
-      name: "Median".to_string(),
-      args: vec![list.clone()].into(),
-    });
+    return Ok(call("Median", vec![list.clone()]));
   };
 
   // Median requires a rectangular array of real numbers; a ragged/mixed array
@@ -970,10 +736,7 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   if items.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "Median".to_string(),
-      args: vec![Expr::List(vec![].into())].into(),
-    });
+    return Ok(call1("Median", Expr::List(vec![].into())));
   }
 
   // Check for list-of-lists (matrix) input → columnwise median
@@ -1082,10 +845,7 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         Ok(Expr::Integer(sum / 2))
       } else {
         // Return as Rational
-        Ok(Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(sum), Expr::Integer(2)].into(),
-        })
+        Ok(call("Rational", vec![Expr::Integer(sum), Expr::Integer(2)]))
       }
     }
   } else {
@@ -1099,10 +859,7 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       if let Some(n) = median_sort_key(item) {
         keyed.push((n, item));
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "Median".to_string(),
-          args: vec![list.clone()].into(),
-        });
+        return Ok(call1("Median", list.clone()));
       }
     }
     keyed.sort_by(|a, b| {
@@ -1196,10 +953,7 @@ pub fn take_largest_ast(
     return result;
   }
   let Expr::List(items) = list else {
-    return Ok(Expr::FunctionCall {
-      name: "TakeLargest".to_string(),
-      args: vec![list.clone(), Expr::Integer(n)].into(),
-    });
+    return Ok(call("TakeLargest", vec![list.clone(), Expr::Integer(n)]));
   };
 
   // Extract numeric values, skipping non-numeric entries.
@@ -1212,10 +966,7 @@ pub fn take_largest_ast(
 
   // Only fail if we'd need more numeric values than the list contains.
   if n as usize > keyed.len() {
-    return Ok(Expr::FunctionCall {
-      name: "TakeLargest".to_string(),
-      args: vec![list.clone(), Expr::Integer(n)].into(),
-    });
+    return Ok(call("TakeLargest", vec![list.clone(), Expr::Integer(n)]));
   }
 
   keyed
@@ -1238,10 +989,7 @@ pub fn take_largest_excluded_ast(
   excluded_forms: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let Expr::List(items) = list else {
-    return Ok(Expr::FunctionCall {
-      name: "TakeLargest".to_string(),
-      args: vec![list.clone(), Expr::Integer(n)].into(),
-    });
+    return Ok(call("TakeLargest", vec![list.clone(), Expr::Integer(n)]));
   };
 
   let filtered: Vec<Expr> = items
@@ -1255,10 +1003,7 @@ pub fn take_largest_excluded_ast(
     .collect();
 
   if n as usize > filtered.len() {
-    return Ok(Expr::FunctionCall {
-      name: "TakeLargest".to_string(),
-      args: vec![list.clone(), Expr::Integer(n)].into(),
-    });
+    return Ok(call("TakeLargest", vec![list.clone(), Expr::Integer(n)]));
   }
 
   let mut sorted = filtered;
@@ -1274,10 +1019,7 @@ pub fn take_smallest_excluded_ast(
   excluded_forms: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let Expr::List(items) = list else {
-    return Ok(Expr::FunctionCall {
-      name: "TakeSmallest".to_string(),
-      args: vec![list.clone(), Expr::Integer(n)].into(),
-    });
+    return Ok(call("TakeSmallest", vec![list.clone(), Expr::Integer(n)]));
   };
 
   let filtered: Vec<Expr> = items
@@ -1291,10 +1033,7 @@ pub fn take_smallest_excluded_ast(
     .collect();
 
   if n as usize > filtered.len() {
-    return Ok(Expr::FunctionCall {
-      name: "TakeSmallest".to_string(),
-      args: vec![list.clone(), Expr::Integer(n)].into(),
-    });
+    return Ok(call("TakeSmallest", vec![list.clone(), Expr::Integer(n)]));
   }
 
   let mut sorted = filtered;
@@ -1317,10 +1056,7 @@ pub fn take_smallest_ast(
     return result;
   }
   let Expr::List(items) = list else {
-    return Ok(Expr::FunctionCall {
-      name: "TakeSmallest".to_string(),
-      args: vec![list.clone(), Expr::Integer(n)].into(),
-    });
+    return Ok(call("TakeSmallest", vec![list.clone(), Expr::Integer(n)]));
   };
 
   // Extract numeric values, skipping non-numeric entries.
@@ -1332,10 +1068,7 @@ pub fn take_smallest_ast(
   }
 
   if n as usize > keyed.len() {
-    return Ok(Expr::FunctionCall {
-      name: "TakeSmallest".to_string(),
-      args: vec![list.clone(), Expr::Integer(n)].into(),
-    });
+    return Ok(call("TakeSmallest", vec![list.clone(), Expr::Integer(n)]));
   }
 
   keyed
@@ -1387,10 +1120,7 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(
       vec![
         Expr::Identifier("Infinity".to_string()),
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(Expr::Identifier("Infinity".to_string())),
-        },
+        neg1(Expr::Identifier("Infinity".to_string())),
       ]
       .into(),
     ));
@@ -1425,38 +1155,25 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Plus".to_string(),
         args: vec![
           max_expr.clone(),
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), min_expr.clone()].into(),
-          },
+          call("Times", vec![Expr::Integer(-1), min_expr.clone()]),
         ]
         .into(),
       };
-      let scaled = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![a[0].clone(), range].into(),
-      };
+      let scaled = call("Times", vec![a[0].clone(), range]);
       let scaled = crate::evaluator::evaluate_expr_to_expr(&scaled)?;
       (scaled.clone(), scaled)
     }
     d => (d.clone(), d.clone()),
   };
 
-  let new_min = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![
-      min_expr,
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), d_min].into(),
-      },
-    ]
-    .into(),
-  })?;
-  let new_max = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![max_expr, d_max].into(),
-  })?;
+  let new_min = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Plus",
+    vec![min_expr, call("Times", vec![Expr::Integer(-1), d_min])],
+  ))?;
+  let new_max = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Plus",
+    vec![max_expr, d_max],
+  ))?;
 
   Ok(Expr::List(vec![new_min, new_max].into()))
 }
@@ -1465,10 +1182,7 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Emit `<F>::list: List expected at position 1 in <call>.` and build
 /// the unevaluated call (Gather/GatherBy/Tally require a List subject).
 fn list_expected_message(fname: &str, args: Vec<Expr>) -> Expr {
-  let call = Expr::FunctionCall {
-    name: fname.to_string(),
-    args: args.into(),
-  };
+  let call = call(fname, args);
   crate::emit_message(&format!(
     "{}::list: List expected at position 1 in {}.",
     fname,
@@ -1623,10 +1337,7 @@ fn split_subject<'a>(
       crate::emit_message(&format!(
         "Split::normal: Nonatomic expression expected at position 1 in {}.",
         crate::syntax::format_expr(
-          &Expr::FunctionCall {
-            name: "Split".to_string(),
-            args: call_args.into(),
-          },
+          &call("Split", call_args),
           crate::syntax::ExprForm::Output
         )
       ));
@@ -1638,10 +1349,7 @@ fn split_subject<'a>(
 fn wrap_groups(groups: Vec<Vec<Expr>>, head: Option<&str>) -> Expr {
   let wrap = |v: Vec<Expr>| -> Expr {
     match head {
-      Some(h) => Expr::FunctionCall {
-        name: h.to_string(),
-        args: v.into(),
-      },
+      Some(h) => call(h, v),
       None => Expr::List(v.into()),
     }
   };
@@ -1651,10 +1359,7 @@ fn wrap_groups(groups: Vec<Vec<Expr>>, head: Option<&str>) -> Expr {
 /// Split[list] - splits into sublists of identical consecutive elements
 pub fn split_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   let Some((items, head)) = split_subject(list, &[]) else {
-    return Ok(Expr::FunctionCall {
-      name: "Split".to_string(),
-      args: vec![list.clone()].into(),
-    });
+    return Ok(call1("Split", list.clone()));
   };
   if items.is_empty() {
     return Ok(wrap_groups(Vec::new(), head));
@@ -1680,10 +1385,7 @@ pub fn split_with_test_ast(
 ) -> Result<Expr, InterpreterError> {
   let Some((items, head)) = split_subject(list, std::slice::from_ref(test))
   else {
-    return Ok(Expr::FunctionCall {
-      name: "Split".to_string(),
-      args: vec![list.clone(), test.clone()].into(),
-    });
+    return Ok(call("Split", vec![list.clone(), test.clone()]));
   };
   if items.is_empty() {
     return Ok(wrap_groups(Vec::new(), head));
@@ -1751,10 +1453,7 @@ pub fn split_by_ast(
       show(func),
       show(func)
     ));
-    return Ok(Expr::FunctionCall {
-      name: "SplitBy".to_string(),
-      args: vec![list.clone(), func.clone()].into(),
-    });
+    return Ok(call("SplitBy", vec![list.clone(), func.clone()]));
   };
   if items.is_empty() {
     return Ok(Expr::List(vec![].into()));
@@ -2345,10 +2044,7 @@ fn pow10_multiple_expr(n: i128, e: i32) -> Option<Expr> {
     Some(if den == 1 {
       Expr::Integer(num)
     } else {
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
-      }
+      call("Rational", vec![Expr::Integer(num), Expr::Integer(den)])
     })
   }
 }
@@ -2653,10 +2349,10 @@ fn take_by_assoc(
 ) -> Result<Expr, InterpreterError> {
   let mut with_keys: Vec<(Expr, (Expr, Expr))> = Vec::new();
   for (k, v) in pairs {
-    let key = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Apply".to_string(),
-      args: vec![f.clone(), Expr::List(vec![v.clone()].into())].into(),
-    })?;
+    let key = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Apply",
+      vec![f.clone(), Expr::List(vec![v.clone()].into())],
+    ))?;
     with_keys.push((key, (k.clone(), v.clone())));
   }
   with_keys.sort_by(|a, b| {
@@ -2701,10 +2397,10 @@ pub fn take_largest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Compute f[item] for each item
   let mut with_keys: Vec<(Expr, Expr)> = Vec::new();
   for item in list {
-    let key = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Apply".to_string(),
-      args: vec![f.clone(), Expr::List(vec![item.clone()].into())].into(),
-    })?;
+    let key = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Apply",
+      vec![f.clone(), Expr::List(vec![item.clone()].into())],
+    ))?;
     with_keys.push((key, item.clone()));
   }
   // Sort descending by key (largest first)
@@ -2751,10 +2447,10 @@ pub fn take_smallest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Compute f[item] for each item
   let mut with_keys: Vec<(Expr, Expr)> = Vec::new();
   for item in list {
-    let key = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Apply".to_string(),
-      args: vec![f.clone(), Expr::List(vec![item.clone()].into())].into(),
-    })?;
+    let key = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Apply",
+      vec![f.clone(), Expr::List(vec![item.clone()].into())],
+    ))?;
     with_keys.push((key, item.clone()));
   }
   // Sort ascending by key (smallest first)
@@ -2818,10 +2514,7 @@ pub fn clustering_components_ast(
     crate::emit_message(
       "ClusteringComponents::nosup: This type of data is not supported.",
     );
-    return Ok(Expr::FunctionCall {
-      name: "ClusteringComponents".to_string(),
-      args: vec![list.clone()].into(),
-    });
+    return Ok(call("ClusteringComponents", vec![list.clone()]));
   };
   if items.is_empty() {
     return Ok(Expr::List(vec![].into()));
@@ -2831,10 +2524,7 @@ pub fn clustering_components_ast(
     if let Some(v) = expr_to_f64(item) {
       values.push(v);
     } else {
-      return Ok(Expr::FunctionCall {
-        name: "ClusteringComponents".to_string(),
-        args: vec![list.clone()].into(),
-      });
+      return Ok(call1("ClusteringComponents", list.clone()));
     }
   }
   // All identical: a single cluster.
@@ -2885,10 +2575,10 @@ pub fn clustering_components_n_ast(
   let n = match n_expr {
     Expr::Integer(k) if *k >= 1 => *k as usize,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ClusteringComponents".to_string(),
-        args: vec![list.clone(), n_expr.clone()].into(),
-      });
+      return Ok(call(
+        "ClusteringComponents",
+        vec![list.clone(), n_expr.clone()],
+      ));
     }
   };
   let items = if let Expr::List(items) = list {
@@ -2897,10 +2587,10 @@ pub fn clustering_components_n_ast(
     crate::emit_message(
       "ClusteringComponents::nosup: This type of data is not supported.",
     );
-    return Ok(Expr::FunctionCall {
-      name: "ClusteringComponents".to_string(),
-      args: vec![list.clone(), n_expr.clone()].into(),
-    });
+    return Ok(call(
+      "ClusteringComponents",
+      vec![list.clone(), n_expr.clone()],
+    ));
   };
   if items.is_empty() {
     return Ok(Expr::List(vec![].into()));
@@ -2910,10 +2600,10 @@ pub fn clustering_components_n_ast(
     if let Some(v) = expr_to_f64(item) {
       values.push(v);
     } else {
-      return Ok(Expr::FunctionCall {
-        name: "ClusteringComponents".to_string(),
-        args: vec![list.clone(), n_expr.clone()].into(),
-      });
+      return Ok(call(
+        "ClusteringComponents",
+        vec![list.clone(), n_expr.clone()],
+      ));
     }
   }
 
@@ -3021,10 +2711,7 @@ fn cluster_keys_emit_values(
     match expr_to_f64(k) {
       Some(v) => numeric_keys.push(v),
       None => {
-        return Expr::FunctionCall {
-          name: "FindClusters".to_string(),
-          args: vec![raw_input.clone()].into(),
-        };
+        return call("FindClusters", vec![raw_input.clone()]);
       }
     }
   }
@@ -3477,10 +3164,7 @@ fn find_clusters_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "FindClusters".to_string(),
-        args: vec![list.clone()].into(),
-      });
+      return Ok(call1("FindClusters", list.clone()));
     }
   };
   if items.is_empty() {
@@ -3491,10 +3175,7 @@ fn find_clusters_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   let labels = match &components {
     Expr::List(ls) if ls.len() == items.len() => ls.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "FindClusters".to_string(),
-        args: vec![list.clone()].into(),
-      });
+      return Ok(call1("FindClusters", list.clone()));
     }
   };
   // Determine the highest cluster id; group elements by id, preserving
@@ -3506,10 +3187,7 @@ fn find_clusters_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         max_id = *k;
       }
     } else {
-      return Ok(Expr::FunctionCall {
-        name: "FindClusters".to_string(),
-        args: vec![list.clone()].into(),
-      });
+      return Ok(call1("FindClusters", list.clone()));
     }
   }
   let n = max_id as usize;
