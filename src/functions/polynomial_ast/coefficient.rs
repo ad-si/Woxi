@@ -606,41 +606,55 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Collect all additive terms from an expression (flattening Plus).
+///
+/// Walked with an explicit worklist rather than by recursion: a `Plus` chain is
+/// stored as a LEFT-NESTED `BinaryOp` spine, so its nesting depth equals its
+/// term count. Expansion intermediates routinely reach hundreds of thousands of
+/// terms, and a self-recursive walk overflowed even the 512 MB interpreter stack
+/// (issue #426). `neg` counts the pending `Minus` wrappers a term inherits from
+/// the `a - b` nodes above it, so the output matches the recursive form exactly
+/// (`a - (b - c)` → `[a, -b, -(-c)]`).
 pub fn collect_additive_terms(expr: &Expr) -> Vec<Expr> {
-  match expr {
-    Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left,
-      right,
-    } => {
-      let mut terms = collect_additive_terms(left);
-      terms.extend(collect_additive_terms(right));
-      terms
-    }
-    Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left,
-      right,
-    } => {
-      let mut terms = collect_additive_terms(left);
-      let right_terms = collect_additive_terms(right);
-      for t in right_terms {
-        terms.push(Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(t),
-        });
+  let mut terms = Vec::new();
+  let mut stack: Vec<(&Expr, usize)> = vec![(expr, 0)];
+  while let Some((cur, neg)) = stack.pop() {
+    match cur {
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left,
+        right,
+      } => {
+        stack.push((right, neg));
+        stack.push((left, neg));
       }
-      terms
-    }
-    Expr::FunctionCall { name, args } if name == "Plus" => {
-      let mut terms = Vec::new();
-      for a in args {
-        terms.extend(collect_additive_terms(a));
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left,
+        right,
+      } => {
+        stack.push((right, neg + 1));
+        stack.push((left, neg));
       }
-      terms
+      Expr::FunctionCall { name, args } if name == "Plus" => {
+        for i in (0..args.len()).rev() {
+          if let Some(a) = args.get(i) {
+            stack.push((a, neg));
+          }
+        }
+      }
+      _ => {
+        let mut term = cur.clone();
+        for _ in 0..neg {
+          term = Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            operand: Box::new(term),
+          };
+        }
+        terms.push(term);
+      }
     }
-    _ => vec![expr.clone()],
   }
+  terms
 }
 
 /// From a single term, extract the coefficient of `var^power`.

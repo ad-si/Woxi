@@ -7595,6 +7595,48 @@ pub(crate) fn simplify_division_impl(
   factor_num: bool,
   extract_minus: bool,
 ) -> Expr {
+  let result = simplify_division_expanded(
+    num,
+    den,
+    canonicalize_sign,
+    factor_num,
+    extract_minus,
+  );
+  restore_power_denominator(&result, den)
+}
+
+/// A `(sum)^n` denominator that nothing cancelled against comes back in its
+/// power form. The cancellation search below runs on the EXPANDED denominator,
+/// and multivariate quotients have no polynomial-GCD path that would rebuild
+/// it, so `Simplify[(x^2+y^2)/(x^2+y^2+z^2)^3]` used to surface the degree-6
+/// expansion where wolframscript prints `(x^2 + y^2)/(x^2 + y^2 + z^2)^3`.
+/// Keeping the base also lets a later `Together` see the shared factor of
+/// `n1/(x^2+y^2+z^2)^5 + …` instead of combining over a product of
+/// coprime-looking polynomials (issue #426).
+fn restore_power_denominator(result: &Expr, original_den: &Expr) -> Expr {
+  if super::expand::sum_power_exponent(original_den).is_none() {
+    return result.clone();
+  }
+  let (res_num, res_den) = super::together::extract_num_den(result);
+  if expr_to_string(&res_den)
+    != expr_to_string(&expand_and_combine(original_den))
+  {
+    // Something cancelled — the reduced denominator stands.
+    return result.clone();
+  }
+  crate::functions::math_ast::make_divide(res_num, original_den.clone())
+}
+
+/// The quotient search itself: it works on the expanded numerator and
+/// denominator so polynomial division and cancellation can see the monomials.
+/// `simplify_division_impl` puts a `(sum)^n` denominator back afterwards.
+fn simplify_division_expanded(
+  num: &Expr,
+  den: &Expr,
+  canonicalize_sign: bool,
+  factor_num: bool,
+  extract_minus: bool,
+) -> Expr {
   // If same expression, return 1
   if expr_to_string(num) == expr_to_string(den) {
     return Expr::Integer(1);

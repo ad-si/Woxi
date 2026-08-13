@@ -25,3 +25,18 @@ Log[6]
 $ wo 'Simplify[20*Log[2] + 20*Log[3]]'
 20*Log[6]
 ```
+
+A `(sum)^n` denominator keeps its power form — expanding it is never a
+simplification, and it would hide the shared base from a later `Together`.
+
+```scrut
+$ wo 'Simplify[(x^2 + y^2)/(x^2 + y^2 + z^2)^3]'
+(x^2 + y^2)/(x^2 + y^2 + z^2)^3
+```
+
+A denominator that genuinely shares a factor with the numerator still cancels.
+
+```scrut
+$ wo 'Simplify[(x^3 + x)/(x^2 + 1)^2]'
+x/(1 + x^2)
+```

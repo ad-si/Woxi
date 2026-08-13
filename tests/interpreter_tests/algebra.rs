@@ -17157,3 +17157,83 @@ mod constrained_solve_roots {
     );
   }
 }
+
+/// `Simplify` used to expand a `(sum)^n` denominator, which both diverged from
+/// wolframscript and destroyed the shared base that `Together` needs to take
+/// the LCM of a sum's denominators. Re-simplifying its own output then combined
+/// over a *product* of coprime-looking polynomials and blew the interpreter
+/// stack (issue #426).
+mod power_denominators_survive_simplify {
+  use super::*;
+
+  /// wolframscript keeps the power form: expanding it is never a
+  /// simplification. The multivariate case has no polynomial-GCD path that
+  /// would rebuild the base, so it has to survive untouched.
+  #[test]
+  fn a_multivariate_power_denominator_stays_factored() {
+    assert_eq!(
+      interpret("Simplify[(x^2 + y^2)/(x^2 + y^2 + z^2)^3]").unwrap(),
+      "(x^2 + y^2)/(x^2 + y^2 + z^2)^3"
+    );
+    assert_eq!(
+      interpret("Simplify[(a*x^2 + b*y^2)/(x^2 + y^2 + z^2)^7]").unwrap(),
+      "(a*x^2 + b*y^2)/(x^2 + y^2 + z^2)^7"
+    );
+    assert_eq!(
+      interpret("Expand[(a + b)/(x + y)^2]").unwrap(),
+      "a/(x + y)^2 + b/(x + y)^2"
+    );
+  }
+
+  /// A denominator that genuinely shares a factor with the numerator still
+  /// cancels — the power form is only restored when nothing reduced.
+  #[test]
+  fn a_cancelling_power_denominator_still_reduces() {
+    assert_eq!(
+      interpret("Simplify[(x^2 - 1)/(x - 1)^2]").unwrap(),
+      "(1 + x)/(-1 + x)"
+    );
+    assert_eq!(
+      interpret("Simplify[(x^3 + x)/(x^2 + 1)^2]").unwrap(),
+      "x/(1 + x^2)"
+    );
+    assert_eq!(
+      interpret("Simplify[1/(x^2 + y^2)^2 + 1/(x^2 + y^2)^3]").unwrap(),
+      "(1 + x^2 + y^2)/(x^2 + y^2)^3"
+    );
+  }
+
+  /// The reported crash: `Simplify` is idempotent, so a second pass over a sum
+  /// of quotients with ascending powers of one base returns its own input
+  /// instead of combining over their degree-70 product.
+  #[test]
+  fn simplify_is_idempotent_on_a_sum_of_power_quotients() {
+    let once =
+      interpret("Simplify[D[1/(x^2 + y^2 + z^2), {x, 6}, {y, 2}]]").unwrap();
+    assert!(
+      once.contains("(x^2 + y^2 + z^2)^9"),
+      "denominators stay factored, got {once}"
+    );
+    let twice =
+      interpret("Simplify[Simplify[D[1/(x^2 + y^2 + z^2), {x, 6}, {y, 2}]]]")
+        .unwrap();
+    assert_eq!(once, twice);
+  }
+
+  /// The single-quotient shape of the same bug: `D[…, {x, 4}, {y, 2}]`
+  /// simplifies to one fraction over `(x^2 + y^2 + z^2)^7`, and a second
+  /// `Simplify` used to expand that denominator to degree 14.
+  #[test]
+  fn simplify_is_idempotent_on_a_single_power_quotient() {
+    let once =
+      interpret("Simplify[D[1/(x^2 + y^2 + z^2), {x, 4}, {y, 2}]]").unwrap();
+    let twice =
+      interpret("Simplify[Simplify[D[1/(x^2 + y^2 + z^2), {x, 4}, {y, 2}]]]")
+        .unwrap();
+    assert_eq!(once, twice);
+    assert!(
+      once.ends_with("/(x^2 + y^2 + z^2)^7"),
+      "denominator stays factored, got {once}"
+    );
+  }
+}

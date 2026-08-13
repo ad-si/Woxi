@@ -643,6 +643,38 @@ pub fn expand_expr(expr: &Expr) -> Expr {
     | Expr::Identifier(_)
     | Expr::Slot(_) => expr.clone(),
 
+    // `n/(sum)^k` becomes the canonical `n * (sum)^-k` with the base intact,
+    // instead of a quotient over the EXPANDED power. Expanding the denominator
+    // destroys the shared base `Together` needs to take the LCM of a sum's
+    // denominators: `n1/(x^2+y^2+z^2)^5 + … + n5/(x^2+y^2+z^2)^9` turned into
+    // five *coprime-looking* polynomials, so Together combined over their
+    // PRODUCT (degree 70) instead of their LCM (degree 18) and the numerator
+    // expansion overflowed even the 512 MB interpreter stack (issue #426).
+    // wolframscript leaves the denominator alone as well:
+    // `Expand[(a+b)/(x+y)^2]` is `a/(x+y)^2 + b/(x+y)^2`.
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let num_exp = expand_expr(left);
+      match sum_power_exponent(right) {
+        Some((base, n)) => distribute_product(
+          &num_exp,
+          &Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(base),
+            right: Box::new(Expr::Integer(-n)),
+          },
+        ),
+        None => Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(num_exp),
+          right: Box::new(expand_expr(right)),
+        },
+      }
+    }
+
     Expr::BinaryOp { op, left, right } => {
       let left_exp = expand_expr(left);
       let right_exp = expand_expr(right);
@@ -877,6 +909,27 @@ fn is_product(expr: &Expr) -> bool {
       true
     }
     _ => false,
+  }
+}
+
+/// `(sum)^n` with an explicit integer exponent `n >= 2` → `(sum, n)`. This is
+/// the denominator shape whose base must survive expansion (see the `Divide`
+/// arm of `expand_expr`).
+pub(crate) fn sum_power_exponent(expr: &Expr) -> Option<(Expr, i128)> {
+  let (base, exp) = match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (args.first()?, args.get(1)?)
+    }
+    _ => return None,
+  };
+  match exp {
+    Expr::Integer(n) if *n >= 2 && is_sum(base) => Some((base.clone(), *n)),
+    _ => None,
   }
 }
 
@@ -1231,13 +1284,20 @@ pub fn build_sum(terms: Vec<Expr>) -> Expr {
 pub fn combine_and_build(terms: &[Expr]) -> Expr {
   // Represent each term as (key, coefficient) where key identifies the "variable part"
   let mut term_map: Vec<(String, Vec<Expr>, Expr)> = Vec::new(); // (sort_key, var_factors, coeff)
+  // Side index from sort key to its slot in `term_map`. `term_map` stays a Vec
+  // so first-seen order is preserved for the (stable) sort below; the index
+  // only replaces the linear `find`, which made combining a dense expansion
+  // quadratic — the multi-thousand-monomial intermediates of a `Together` over
+  // high powers spent minutes here.
+  let mut index: std::collections::HashMap<String, usize> =
+    std::collections::HashMap::new();
 
   for term in terms {
     let (coeff, var_key, var_factors) = decompose_term(term);
-    // Find existing entry
-    if let Some(entry) = term_map.iter_mut().find(|(k, _, _)| *k == var_key) {
-      entry.2 = add_exprs(&entry.2, &coeff);
+    if let Some(&i) = index.get(&var_key) {
+      term_map[i].2 = add_exprs(&term_map[i].2, &coeff);
     } else {
+      index.insert(var_key.clone(), term_map.len());
       term_map.push((var_key, var_factors, coeff));
     }
   }
