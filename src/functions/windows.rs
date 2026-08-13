@@ -38,7 +38,7 @@ pub fn get_memory_status() -> Option<MEMORYSTATUSEX> {
       ullAvailExtendedVirtual: 0,
     };
 
-    if GlobalMemoryStatusEx(&mut mem_status as *mut MEMORYSTATUSEX) == 0 {
+    if GlobalMemoryStatusEx(&raw mut mem_status) == 0 {
       return None;
     }
 
@@ -86,12 +86,7 @@ pub fn get_process_memory_counters() -> Option<PROCESS_MEMORY_COUNTERS> {
       PeakPagefileUsage: 0,
     };
 
-    if GetProcessMemoryInfo(
-      -1,
-      &mut counters as *mut PROCESS_MEMORY_COUNTERS,
-      cb,
-    ) == 0
-    {
+    if GetProcessMemoryInfo(-1, &raw mut counters, cb) == 0 {
       return None;
     }
 
@@ -137,9 +132,9 @@ pub fn getppid() -> isize {
     let status = NtQueryInformationProcess(
       -1,
       0,
-      &mut info as *mut PROCESS_BASIC_INFORMATION,
+      &raw mut info,
       pbi_length,
-      &mut length as *mut u32,
+      &raw mut length,
     );
     if status >= 0 && length == pbi_length {
       info.InheritedFromUniqueProcessId
