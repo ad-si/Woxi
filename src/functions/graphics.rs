@@ -16044,7 +16044,10 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // malformed variable specs. They pass through with no message.
       // `PaneSelector[{v -> controls, …}, sel]` is the same pattern one
       // level up: a Demonstration whose modes need different controls
-      // swaps whole control panels as `sel` changes.
+      // swaps whole control panels as `sel` changes. `Item[Column[…], opts]`
+      // is the same layout pattern wrapped in a grid-alignment `Item[…]`
+      // (a Demonstration lining up its whole control panel inside an outer
+      // `Grid`), not a control itself.
       Expr::FunctionCall { name, .. }
         if matches!(
           name.as_str(),
@@ -16057,6 +16060,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             | "Spacer"
             | "PaneSelector"
             | "TabView"
+            | "Item"
         ) =>
       {
         out_args.push(spec.clone());
@@ -17514,6 +17518,16 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       _ => false,
     }
   }
+  // `Item[content, opts…]` is a grid-alignment wrapper (the Demonstrations
+  // idiom for lining up a whole control panel inside an outer `Grid`), not
+  // a layout container in its own right — unwrap it to reach the container
+  // it dresses up.
+  let spec = match spec {
+    Expr::FunctionCall { name, args } if name == "Item" && !args.is_empty() => {
+      &args[0]
+    }
+    _ => spec,
+  };
   let Expr::FunctionCall { name, args } = spec else {
     return None;
   };
