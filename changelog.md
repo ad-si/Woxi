@@ -2,6 +2,38 @@
 
 # Unreleased
 
+- Fixes driven by a Wolfram Demonstration on a cylindrical cavity resonator,
+    which locates a Bessel function's stationary points and interpolates a
+    field built on a 2-D grid:
+    - `FindRoot[eqn, {var, x0}]` evaluates `eqn` once, with `var` still a
+        free symbol, before substituting any numeric trial value. `FindRoot`
+        is `HoldAll` (so `var` isn't looked up as an OwnValue before the
+        search starts), so `eqn` used to arrive — and stay — with any held
+        computation it wrote unevaluated, most commonly a derivative:
+        `FindRoot[D[f[x], x] == 0, {x, x0}]`, the standard "extremum of f"
+        idiom (and `FindRoot[D[BesselJ[m, r], r] == 0, {r,
+        BesselJZero[n, k]}]` specifically), substituted its trial value
+        straight into the raw `D[f[x], x]`, landing the number inside `D`'s
+        variable slot (`D[f[3.8], 3.8]`) and failing with `D::ivar` on every
+        iteration. The multivariate form (`FindRoot[{eqns}, {{x, x0}, …}]`)
+        already evaluated its equations up front; the single-variable form
+        now does the same.
+    - `Interpolation[data]` accepts 2-D data given as a flat list of
+        `{x, y, z}` triples — the shape
+        `Flatten[Table[Table[{x, y, f[x, y]}, {y, ys}], {x, xs}], 1]` (or the
+        equivalent built with `Join`) produces — recovering the grid from the
+        distinct x/y coordinates and interpolating it the same way
+        `ListInterpolation`'s implicit integer grid already did (tensor-
+        product local Lagrange, any order 1–3, `InterpolationOrder ->
+        {orderX, orderY}` honoured per axis). This data shape used to reach
+        a generic numeric-conversion helper shared with `NDSolve` and fail
+        with a message that named the wrong caller
+        (`NDSolve: cannot convert {1., 1., 2.} to numeric value"`); that
+        helper's error is now caller-agnostic.
+    - Woxi Studio: `Control[{…, ControlType -> RadioButtonBar}]` forces the
+        row of buttons the way `ControlType -> SetterBar` already did, so a
+        `RadioButtonBar` with more choices than the automatic split allows
+        keeps its bar instead of silently falling back to a dropdown.
 - `$VersionNumber` is a `Real` — the Wolfram Language version Woxi aims to
     be compatible with (`15.`) — instead of the Woxi build's git version as
     a `String`. Scripts gate language features on it

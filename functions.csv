@@ -418,7 +418,7 @@ Most,Returns the list without its last element,✅,pure,5.0,379
 StringReplace,Replaces occurrences of substrings in a string; RegularExpression backreferences expand before a delayed replacement is evaluated,✅,pure,2.0,380
 ControlType,Option for specifying the type of control in Manipulate,✅,pure,6.0,381
 Pick,Picks elements from a list based on a selector,✅,pure,5.1,382
-Interpolation,Constructs an interpolation of data (an exact query point over exact data gives an exact value; outside the data range the boundary piece is extrapolated),✅,pure,2.0,383
+Interpolation,Constructs an interpolation of data — 1-D {x y} pairs/values or 2-D {x y z} triples tiling a complete grid (an exact query point over exact data gives an exact value; outside the data range the boundary piece is extrapolated),✅,pure,2.0,383
 HoldPattern,Keeps a pattern from evaluating while staying transparent to matching and to replacement rules,✅,pure,3.0,384
 Top,Symbol for top alignment,✅,pure,1.0,385
 HypergeometricPFQ,Generalized hypergeometric function pFq,✅,pure,3.0,386

@@ -10627,6 +10627,132 @@ mod list_interpolation {
   }
 }
 
+// `Interpolation` (not `ListInterpolation`, whose 3-wide rows are raw grid
+// values, not `{x, y, z}` coordinates) of a flat `{x, y, z}` triple list —
+// the shape `Flatten[Table[Table[{x, y, f[x, y]}, {y, ys}], {x, xs}], 1]`
+// (or the equivalent built with `Join`) produces. Regression: this used to
+// raise "cannot convert {1., 1., 2.} to a numeric value" because the triple
+// format wasn't recognised at all; the distinct x/y coordinates now recover
+// the grid so it interpolates the same way `ListInterpolation`'s implicit
+// integer grid does.
+mod interpolation_2d_scattered {
+  use super::*;
+
+  // f(x, y) = x + 2y is exactly linear, so both an exact grid point and an
+  // interpolated point reproduce it exactly.
+  #[test]
+  fn exact_grid_point_keeps_integer_type() {
+    assert_eq!(
+      interpret(
+        "Interpolation[Flatten[Table[{x, y, x + 2 y}, {x, 0, 3}, {y, 0, 3}], 1], \
+         InterpolationOrder -> 1][1, 1]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn bilinear_of_a_linear_function_is_exact() {
+    assert_eq!(
+      interpret(
+        "Interpolation[Flatten[Table[{x, y, x + 2 y}, {x, 0, 3}, {y, 0, 3}], 1], \
+         InterpolationOrder -> 1][2.5, 1.5]"
+      )
+      .unwrap(),
+      "5.5"
+    );
+  }
+
+  // f(x, y) = x^2 doesn't depend on y, so bilinear interpolation reduces to
+  // plain 1-D linear interpolation in x between the bracketing grid columns:
+  // at x = 2.5 that's (4 + 9)/2 = 6.5, the same at every y.
+  #[test]
+  fn bilinear_interpolates_within_a_cell() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[Flatten[Table[{x, y, x^2}, {x, 0, 4}, {y, 0, 4}], 1], \
+         InterpolationOrder -> 1]; f[2.5, 1]"
+      )
+      .unwrap(),
+      "6.5"
+    );
+    assert_eq!(
+      interpret(
+        "f = Interpolation[Flatten[Table[{x, y, x^2}, {x, 0, 4}, {y, 0, 4}], 1], \
+         InterpolationOrder -> 1]; f[2.5, 3]"
+      )
+      .unwrap(),
+      "6.5"
+    );
+  }
+
+  // Default order 3, clamped per axis to the 3x3 grid's `dim - 1 = 2` (the
+  // same reduction `grid_default_order` exercises for `ListInterpolation`),
+  // interpolates the quadratic x^2 + y^2 exactly at the midpoint.
+  #[test]
+  fn default_order_is_reduced_and_still_exact_for_a_quadratic() {
+    woxi::clear_state();
+    assert_eq!(
+      interpret(
+        "Interpolation[Flatten[Table[{x, y, x^2 + y^2}, {x, 0, 2}, {y, 0, 2}], 1]][1.5, 1.5]"
+      )
+      .unwrap(),
+      "4.5"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Interpolation::inhr: Requested order is too high; order has been reduced to {2, 2}."
+      )),
+      "expected 2-D inhr {{2, 2}}, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn property_domain() {
+    assert_eq!(
+      interpret(
+        "Interpolation[Flatten[Table[{x, y, x + y}, {x, 0, 3}, {y, 0, 3}], 1]][\"Domain\"]"
+      )
+      .unwrap(),
+      "{{0, 3}, {0, 3}}"
+    );
+  }
+
+  // A per-axis `InterpolationOrder -> {orderX, orderY}` is honoured
+  // separately for each dimension.
+  #[test]
+  fn per_axis_interpolation_order() {
+    assert_eq!(
+      interpret(
+        "Interpolation[Flatten[Table[{x, y, x + 2 y}, {x, 0, 3}, {y, 0, 3}], 1], \
+         InterpolationOrder -> {1, 1}][2, 3]"
+      )
+      .unwrap(),
+      "8"
+    );
+  }
+
+  // Fewer than four points, or a triple list whose coordinates don't tile a
+  // complete rectangular grid, isn't a shape this path supports (and isn't
+  // the `Flatten[Table[Table[…]]]` idiom that reaches it in practice); it
+  // falls back to the ordinary (non-grid) handling rather than being
+  // silently misread as one, and no longer names the wrong caller in its
+  // error when that fallback also can't make sense of it.
+  #[test]
+  fn incomplete_grid_does_not_crash_or_blame_ndsolve() {
+    let err = interpret("Interpolation[{{1, 1, 2}, {1, 2, 3}, {2, 1, 4}}]")
+      .unwrap_err()
+      .to_string();
+    assert!(
+      !err.contains("NDSolve"),
+      "a numeric-conversion failure reached from Interpolation must not \
+       blame NDSolve: {err}"
+    );
+  }
+}
+
 mod trig_expand {
   use super::*;
 

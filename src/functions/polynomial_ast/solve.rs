@@ -5,6 +5,7 @@ use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 use crate::functions::math_ast::{
   make_rational, n_ast, try_eval_to_f64, try_extract_complex_float,
 };
+use crate::{ENV, StoredValue};
 
 /// In Solve context, simplify Sqrt[expr^(2n)] → expr^n since ± handles the sign.
 /// Also simplifies products containing such terms.
@@ -5674,7 +5675,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((re0, im0)) = try_extract_complex_f64(&x_start_expr)
     && im0 != 0.0
   {
-    let func = build_find_root_func(&args[0]);
+    let func = build_find_root_func(&args[0], &[&var_name]);
     let deriv =
       crate::functions::calculus_ast::differentiate_expr(&func, &var_name)
         .ok()
@@ -5723,7 +5724,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let use_secant = use_secant || x1_opt.is_some();
 
   // Extract the function to find root of: expr or lhs - rhs for equations
-  let func = build_find_root_func(&args[0]);
+  let func = build_find_root_func(&args[0], &[&var]);
 
   // Secant method when requested
   if use_secant {
@@ -5880,9 +5881,23 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Convert FindRoot's first argument into the function whose root we
 /// seek. For equations `lhs == rhs` this is `lhs - rhs`; otherwise the
-/// expression is used directly.
-fn build_find_root_func(arg: &Expr) -> Expr {
-  match arg {
+/// expression is used directly. `vars` are every search variable the
+/// caller is solving for — see `evaluate_with_vars_localized`.
+///
+/// FindRoot is `HoldAll` (so the iteration variable isn't looked up as an
+/// OwnValue before the search starts), which means this raw `lhs - rhs`
+/// still contains any held computation the equation wrote — most commonly
+/// `D[f[x], x]`, an unevaluated derivative. Substituting a numeric trial
+/// value straight into that raw form would land the number inside `D[…]`'s
+/// variable slot (`D[f[3.8], 3.8]`) and fail with `D::ivar`. Evaluating once
+/// here — with the search variable(s) still free symbols — resolves `D`,
+/// `Integrate`, `Sum`, etc. into a plain closed-form expression first, the
+/// same way `find_root_multivariate` already does per equation; only that
+/// closed form is substituted into afterwards. An expression that fails to
+/// evaluate (e.g. it stays opaque) is used as written, matching the
+/// multivariate path's fallback.
+fn build_find_root_func(arg: &Expr, vars: &[&str]) -> Expr {
+  let raw = match arg {
     Expr::Comparison {
       operands,
       operators,
@@ -5898,7 +5913,43 @@ fn build_find_root_func(arg: &Expr) -> Expr {
       minus2(fargs[0].clone(), fargs[1].clone())
     }
     other => other.clone(),
+  };
+  evaluate_with_vars_localized(&raw, vars)
+}
+
+/// Evaluate `expr` with each of `vars`' global bindings temporarily
+/// removed, restoring them all afterward regardless of the outcome —
+/// `Block[vars, expr]`'s scoping, applied to a single speculative
+/// evaluation rather than a full dynamic-scope body.
+///
+/// `build_find_root_func` needs exactly this: FindRoot's search variable(s)
+/// must be free while the equation's held computation resolves (so
+/// `D[f[x], x]` becomes a closed form in `x`), but must not pick up
+/// whatever unrelated global value `x` happens to carry — `x = "prior
+/// result"; FindRoot[f[x] == 0, {x, x0}]` searches fresh, the same as
+/// Wolfram's `HoldAll`, rather than evaluating `f["prior result"]` and
+/// reporting `FindRoot::nlnum`.
+fn evaluate_with_vars_localized(expr: &Expr, vars: &[&str]) -> Expr {
+  let saved: Vec<(&str, Option<StoredValue>)> = vars
+    .iter()
+    .map(|v| (*v, ENV.with(|e| e.borrow_mut().remove(*v))))
+    .collect();
+  let result = crate::evaluator::evaluate_expr_to_expr(expr)
+    .unwrap_or_else(|_| expr.clone());
+  for (v, prev) in saved {
+    ENV.with(|e| {
+      let mut env = e.borrow_mut();
+      match prev {
+        Some(val) => {
+          env.insert(v.to_string(), val);
+        }
+        None => {
+          env.remove(v);
+        }
+      }
+    });
   }
+  result
 }
 
 /// Try to evaluate `expr` to a complex `(re, im)` pair using f64
@@ -6328,21 +6379,21 @@ fn find_root_multivariate(
   let n = vars.len();
 
   // Equations as f_i = lhs - rhs (or bare expression). Each side is
-  // evaluated symbolically first so user-defined functions expand through
-  // their downvalues (`r[s, t, 0, 1]` becomes its explicit formula) —
-  // FindRoot holds its arguments, so this is the first chance to do so.
-  // An expression that fails to evaluate stays as written and is handled
-  // numerically per iteration point instead.
+  // evaluated symbolically first — with every search variable localized, see
+  // `evaluate_with_vars_localized` — so user-defined functions expand
+  // through their downvalues (`r[s, t, 0, 1]` becomes its explicit formula)
+  // and a variable that happens to carry a stale global value elsewhere
+  // still searches fresh. FindRoot holds its arguments, so this is the
+  // first chance to do so. An expression that fails to evaluate stays as
+  // written and is handled numerically per iteration point instead.
+  let var_refs: Vec<&str> = vars.iter().map(String::as_str).collect();
   let eqns: Vec<Expr> = match eqns_arg {
-    Expr::List(es) => es.iter().map(build_find_root_func).collect(),
-    other => vec![build_find_root_func(other)],
+    Expr::List(es) => es
+      .iter()
+      .map(|e| build_find_root_func(e, &var_refs))
+      .collect(),
+    other => vec![build_find_root_func(other, &var_refs)],
   };
-  let eqns: Vec<Expr> = eqns
-    .iter()
-    .map(|f| {
-      crate::evaluator::evaluate_expr_to_expr(f).unwrap_or_else(|_| f.clone())
-    })
-    .collect();
   if eqns.len() != n {
     return Err(InterpreterError::EvaluationError(
       "FindRoot: number of equations must match number of variables".into(),

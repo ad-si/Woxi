@@ -3108,7 +3108,12 @@ fn exprs_match(a: &Expr, b: &Expr) -> bool {
 
 // ─── NDSolve RK4 Helpers ──────────────────────────────────────────────
 
-/// Convert Expr to f64
+/// Convert Expr to f64.
+///
+/// Shared by `NDSolve` and every other caller in this module that needs a
+/// plain numeric value from an expression (`Interpolation`, `DSolve`'s
+/// numeric fallbacks, …) — the error text below must stay caller-agnostic
+/// rather than naming any one of them.
 fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(*n as f64),
@@ -3129,7 +3134,7 @@ fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
         BinaryOperator::Divide => Ok(l / r),
         BinaryOperator::Power => Ok(l.powf(r)),
         _ => Err(InterpreterError::EvaluationError(
-          "NDSolve: cannot convert expression to numeric value".into(),
+          "cannot convert expression to a numeric value".into(),
         )),
       }
     }
@@ -3155,7 +3160,7 @@ fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
       Ok(result)
     }
     _ => Err(InterpreterError::EvaluationError(format!(
-      "NDSolve: cannot convert {} to numeric value",
+      "cannot convert {} to a numeric value",
       crate::syntax::expr_to_string(expr)
     ))),
   }
@@ -3201,10 +3206,26 @@ pub fn interpolation_ast(
     return Ok(unevaluated(head, args));
   }
 
-  // Extract InterpolationOrder option (default 3)
+  // Extract InterpolationOrder option (default 3). A 2-D grid may give one
+  // order per axis (`InterpolationOrder -> {orderX, orderY}`); a bare
+  // integer applies to both.
   let mut interp_order: i128 = 3;
+  let mut interp_order_xy: Option<(i128, i128)> = None;
   let data_arg = &args[0];
 
+  let mut apply_interpolation_order = |replacement: &Expr| {
+    if let Some(n) = crate::functions::math_ast::expr_to_i128(replacement) {
+      interp_order = n;
+    } else if let Expr::List(items) = replacement
+      && items.len() == 2
+      && let (Some(a), Some(b)) = (
+        crate::functions::math_ast::expr_to_i128(&items[0]),
+        crate::functions::math_ast::expr_to_i128(&items[1]),
+      )
+    {
+      interp_order_xy = Some((a, b));
+    }
+  };
   for opt in args.iter().skip(1) {
     match opt {
       Expr::Rule {
@@ -3213,9 +3234,8 @@ pub fn interpolation_ast(
       } => {
         if let Expr::Identifier(name) = pattern.as_ref()
           && name == "InterpolationOrder"
-          && let Some(n) = crate::functions::math_ast::expr_to_i128(replacement)
         {
-          interp_order = n;
+          apply_interpolation_order(replacement);
         }
       }
       Expr::FunctionCall {
@@ -3224,10 +3244,8 @@ pub fn interpolation_ast(
       } if name == "Rule" && rule_args.len() == 2 => {
         if let Expr::Identifier(opt_name) = &rule_args[0]
           && opt_name == "InterpolationOrder"
-          && let Some(n) =
-            crate::functions::math_ast::expr_to_i128(&rule_args[1])
         {
-          interp_order = n;
+          apply_interpolation_order(&rule_args[1]);
         }
       }
       _ => {}
@@ -3285,6 +3303,24 @@ pub fn interpolation_ast(
     && let Some(grid) = as_2d_scalar_grid(data_list)
   {
     return Ok(build_2d_list_interpolation(&grid, interp_order, head));
+  }
+
+  // `Interpolation` (not `ListInterpolation`, whose triples are raw grid
+  // rows — see above) of a flat `{x, y, z}` list — the shape
+  // `Flatten[Table[Table[{x, y, f[x, y]}, {y, ys}], {x, xs}], 1]` (or the
+  // equivalent built with `Join`) produces — is 2-D scattered data. It
+  // interpolates like `ListInterpolation`'s grid once the distinct x/y
+  // coordinates recover the grid structure; see `try_2d_scattered_interpolation`.
+  if head != "ListInterpolation"
+    && matches!(&data_list[0], Expr::List(items) if items.len() == 3)
+    && let Some(result) = try_2d_scattered_interpolation(
+      data_list,
+      interp_order_xy.map_or(interp_order, |(a, _)| a),
+      interp_order_xy.map_or(interp_order, |(_, b)| b),
+      head,
+    )?
+  {
+    return Ok(result);
   }
 
   // Determine format: list of values or list of {x, y} pairs
@@ -3464,6 +3500,374 @@ fn build_2d_list_interpolation(
   }
 }
 
+/// The relative tolerance two coordinates must fall within to count as "the
+/// same" grid line — generous enough for the roundoff two different `Table`
+/// passes over the same arithmetic can leave, tight enough not to merge
+/// genuinely distinct samples.
+fn same_coordinate(a: f64, b: f64) -> bool {
+  (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0)
+}
+
+/// Detect a flat `{x, y, z}` triple list that tiles a complete rectangular
+/// grid over its distinct x and y coordinates — the shape
+/// `Flatten[Table[Table[{x, y, f[x, y]}, {y, ys}], {x, xs}], 1]` (or the
+/// equivalent built with `Join`) produces — and build the 2-D
+/// `InterpolatingFunction` for it: `InterpolatingFunction[{{xmin, xmax},
+/// {ymin, ymax}}, grid, {orderX, orderY}, {xcoords, ycoords}]`, the explicit-
+/// coordinate counterpart of `build_2d_list_interpolation`'s implicit
+/// integer grid.
+///
+/// Returns `Ok(None)` when the data isn't in this shape (a non-triple entry,
+/// a non-numeric coordinate, or coordinates that don't tile a full grid) so
+/// the caller falls back to its other formats. Genuinely scattered, non-grid
+/// 2-D data — which Wolfram interpolates via Delaunay triangulation — is not
+/// supported here.
+fn try_2d_scattered_interpolation(
+  data_list: &[Expr],
+  order_x: i128,
+  order_y: i128,
+  head: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  // At least a 2x2 grid is needed for either axis to interpolate at all.
+  if data_list.len() < 4 {
+    return Ok(None);
+  }
+  let mut triples: Vec<(Expr, f64, Expr, f64, Expr, f64)> =
+    Vec::with_capacity(data_list.len());
+  for item in data_list {
+    let Expr::List(parts) = item else {
+      return Ok(None);
+    };
+    if parts.len() != 3 {
+      return Ok(None);
+    }
+    let (Ok(x), Ok(y), Ok(z)) = (
+      interp_value_to_f64(&parts[0]),
+      interp_value_to_f64(&parts[1]),
+      interp_value_to_f64(&parts[2]),
+    ) else {
+      return Ok(None);
+    };
+    triples.push((
+      parts[0].clone(),
+      x,
+      parts[1].clone(),
+      y,
+      parts[2].clone(),
+      z,
+    ));
+  }
+
+  // Distinct x/y values, sorted, each keeping the first expression seen for
+  // it (so an exact/integer coordinate stays exact).
+  let mut xs_pairs: Vec<(f64, Expr)> = Vec::new();
+  let mut ys_pairs: Vec<(f64, Expr)> = Vec::new();
+  for (xe, x, ye, y, _ze, _z) in &triples {
+    if !xs_pairs.iter().any(|(xv, _)| same_coordinate(*xv, *x)) {
+      xs_pairs.push((*x, xe.clone()));
+    }
+    if !ys_pairs.iter().any(|(yv, _)| same_coordinate(*yv, *y)) {
+      ys_pairs.push((*y, ye.clone()));
+    }
+  }
+  xs_pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+  ys_pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+  let nr = xs_pairs.len();
+  let nc = ys_pairs.len();
+  // Fewer than 2 distinct values along an axis, or a point count that isn't
+  // the full nr*nc product, means this isn't a complete rectangular grid.
+  if nr < 2 || nc < 2 || nr * nc != triples.len() {
+    return Ok(None);
+  }
+
+  let mut grid: Vec<Vec<Option<Expr>>> = vec![vec![None; nc]; nr];
+  for (_xe, x, _ye, y, ze, z) in &triples {
+    let Some(i) = xs_pairs.iter().position(|(xv, _)| same_coordinate(*xv, *x))
+    else {
+      return Ok(None);
+    };
+    let Some(j) = ys_pairs.iter().position(|(yv, _)| same_coordinate(*yv, *y))
+    else {
+      return Ok(None);
+    };
+    if grid[i][j].is_some() {
+      // Duplicate (x, y) — not a well-formed grid.
+      return Ok(None);
+    }
+    grid[i][j] = Some(exact_coordinate(ze, *z));
+  }
+  if grid.iter().flatten().any(Option::is_none) {
+    // A combination of some x with some y is missing — a partial grid,
+    // which is genuinely scattered data this path does not support.
+    return Ok(None);
+  }
+
+  let x_exprs: Vec<Expr> = xs_pairs
+    .iter()
+    .map(|(v, e)| exact_coordinate(e, *v))
+    .collect();
+  let y_exprs: Vec<Expr> = ys_pairs
+    .iter()
+    .map(|(v, e)| exact_coordinate(e, *v))
+    .collect();
+  let grid_exprs: Vec<Vec<Expr>> = grid
+    .into_iter()
+    .map(|row| row.into_iter().map(Option::unwrap).collect())
+    .collect();
+
+  let want_r = order_x.clamp(1, 3) as usize;
+  let want_c = order_y.clamp(1, 3) as usize;
+  let order_r = want_r.min(nr - 1);
+  let order_c = want_c.min(nc - 1);
+  if order_r < want_r || order_c < want_c {
+    crate::emit_message(&format!(
+      "{head}::inhr: Requested order is too high; order has been reduced to {{{order_r}, {order_c}}}."
+    ));
+  }
+
+  let domain = Expr::List(
+    vec![
+      Expr::List(vec![x_exprs[0].clone(), x_exprs[nr - 1].clone()].into()),
+      Expr::List(vec![y_exprs[0].clone(), y_exprs[nc - 1].clone()].into()),
+    ]
+    .into(),
+  );
+  let grid_expr = Expr::List(
+    grid_exprs
+      .into_iter()
+      .map(|row| Expr::List(row.into()))
+      .collect(),
+  );
+  let orders = Expr::List(
+    vec![
+      Expr::Integer(order_r as i128),
+      Expr::Integer(order_c as i128),
+    ]
+    .into(),
+  );
+  let coords = Expr::List(
+    vec![Expr::List(x_exprs.into()), Expr::List(y_exprs.into())].into(),
+  );
+
+  Ok(Some(Expr::FunctionCall {
+    name: "InterpolatingFunction".to_string(),
+    args: vec![domain, grid_expr, orders, coords].into(),
+  }))
+}
+
+/// Evaluate a 2-D grid `InterpolatingFunction` whose coordinates are
+/// explicit (rather than the implicit integer grid
+/// `evaluate_interpolating_function_2d` assumes) — the form
+/// `try_2d_scattered_interpolation` builds from a flat `{x, y, z}` triple
+/// list. Otherwise identical: tensor-product local Lagrange interpolation,
+/// exact at grid points.
+fn evaluate_interpolating_function_2d_explicit(
+  domain: &Expr,
+  grid_rows: &[Expr],
+  orders: &[Expr],
+  coords: &[Expr],
+  call_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let order_r = match &orders[0] {
+    Expr::Integer(n) => *n as usize,
+    _ => 1,
+  };
+  let order_c = match &orders[1] {
+    Expr::Integer(n) => *n as usize,
+    _ => 1,
+  };
+
+  let (Expr::List(x_coord_exprs), Expr::List(y_coord_exprs)) =
+    (&coords[0], &coords[1])
+  else {
+    return Err(InterpreterError::EvaluationError(
+      "InterpolatingFunction: invalid coordinates".into(),
+    ));
+  };
+  let xs: Vec<f64> = x_coord_exprs
+    .iter()
+    .map(|e| interp_value_to_f64(e).unwrap_or(f64::NAN))
+    .collect();
+  let ys: Vec<f64> = y_coord_exprs
+    .iter()
+    .map(|e| interp_value_to_f64(e).unwrap_or(f64::NAN))
+    .collect();
+  let nr = xs.len();
+  let nc = ys.len();
+
+  let mut vals: Vec<Vec<f64>> = Vec::with_capacity(nr);
+  let mut exprs: Vec<Vec<Expr>> = Vec::with_capacity(nr);
+  for row in grid_rows {
+    let Expr::List(cells) = row else {
+      return Err(InterpreterError::EvaluationError(
+        "InterpolatingFunction: invalid 2-D grid".into(),
+      ));
+    };
+    let mut rv = Vec::with_capacity(cells.len());
+    let mut re = Vec::with_capacity(cells.len());
+    for c in cells {
+      rv.push(match c {
+        Expr::Integer(n) => *n as f64,
+        Expr::Real(f) => *f,
+        _ => interp_value_to_f64(c).unwrap_or(f64::NAN),
+      });
+      re.push(c.clone());
+    }
+    vals.push(rv);
+    exprs.push(re);
+  }
+
+  let unevaluated = || Expr::CurriedCall {
+    func: Box::new(Expr::FunctionCall {
+      name: "InterpolatingFunction".to_string(),
+      args: vec![
+        domain.clone(),
+        Expr::List(grid_rows.to_vec().into()),
+        Expr::List(orders.to_vec().into()),
+        Expr::List(coords.to_vec().into()),
+      ]
+      .into(),
+    }),
+    args: call_args.to_vec(),
+  };
+
+  if nr == 0 || nc == 0 {
+    return Ok(unevaluated());
+  }
+
+  if call_args.len() == 1
+    && let Expr::String(prop) = &call_args[0]
+  {
+    match prop.as_str() {
+      "Domain" => return Ok(domain.clone()),
+      "Coordinates" => {
+        return Ok(Expr::List(
+          vec![
+            Expr::List(x_coord_exprs.clone()),
+            Expr::List(y_coord_exprs.clone()),
+          ]
+          .into(),
+        ));
+      }
+      "Grid" => {
+        let mut pts = Vec::with_capacity(nr * nc);
+        for xe in x_coord_exprs {
+          for ye in y_coord_exprs {
+            pts.push(Expr::List(vec![xe.clone(), ye.clone()].into()));
+          }
+        }
+        return Ok(Expr::List(pts.into()));
+      }
+      "ValuesOnGrid" => return Ok(Expr::List(grid_rows.to_vec().into())),
+      "InterpolationOrder" => return Ok(Expr::List(orders.to_vec().into())),
+      _ => {}
+    }
+  }
+
+  let coord_args: Vec<Expr> = match call_args {
+    [Expr::List(pair)] if pair.len() == 2 => pair.to_vec(),
+    other => other.to_vec(),
+  };
+  if coord_args.len() != 2 {
+    return Ok(unevaluated());
+  }
+  let coord_exprs: Vec<Expr> = coord_args
+    .iter()
+    .map(|a| {
+      crate::evaluator::evaluate_expr_to_expr(a).unwrap_or_else(|_| a.clone())
+    })
+    .collect();
+  let coord = |e: &Expr| -> Option<f64> {
+    match e {
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::Real(f) => Some(*f),
+      _ if is_exact_number(e) => interp_value_to_f64(e).ok(),
+      _ => None,
+    }
+  };
+  let (Some(x), Some(y)) = (coord(&coord_exprs[0]), coord(&coord_exprs[1]))
+  else {
+    return Ok(unevaluated());
+  };
+
+  // Exact grid point: return the stored entry, preserving its type only
+  // when both query coordinates were given as exact integers (matching
+  // `evaluate_interpolating_function_2d`).
+  let int_coords = coord_exprs.iter().all(|a| matches!(a, Expr::Integer(_)));
+  if let (Some(i), Some(j)) = (
+    xs.iter().position(|&xv| same_coordinate(xv, x)),
+    ys.iter().position(|&yv| same_coordinate(yv, y)),
+  ) {
+    let entry = &exprs[i][j];
+    if int_coords {
+      return Ok(entry.clone());
+    }
+    return Ok(Expr::Real(vals[i][j]));
+  }
+
+  let (x_lo, x_hi) = (xs[0].min(xs[nr - 1]), xs[0].max(xs[nr - 1]));
+  let (y_lo, y_hi) = (ys[0].min(ys[nc - 1]), ys[0].max(ys[nc - 1]));
+  if x < x_lo || x > x_hi || y < y_lo || y > y_hi {
+    crate::emit_message(&format!(
+      "InterpolatingFunction::dmval: Input value {{{}, {}}} lies outside the range of data in the interpolating function. Extrapolation will be used.",
+      crate::syntax::format_expr(
+        &coord_exprs[0],
+        crate::syntax::ExprForm::Output
+      ),
+      crate::syntax::format_expr(
+        &coord_exprs[1],
+        crate::syntax::ExprForm::Output
+      )
+    ));
+  }
+
+  let col_interp: Vec<f64> = vals
+    .iter()
+    .map(|row| interp_1d_xy_f64(&ys, row, y, order_c))
+    .collect();
+  let result = interp_1d_xy_f64(&xs, &col_interp, x, order_r);
+  Ok(Expr::Real(result))
+}
+
+/// 1-D local Lagrange interpolation of `(xs[i], ys[i])` samples at
+/// arbitrary (not necessarily unit-spaced) coordinates, evaluated at
+/// `x_val`. The explicit-coordinate counterpart of `interp_1d_f64`, which
+/// assumes samples at integer positions `1..=n`; shares its window
+/// selection (`lagrange_window`) so results agree wherever the spacing
+/// happens to be uniform.
+fn interp_1d_xy_f64(xs: &[f64], ys: &[f64], x_val: f64, order: usize) -> f64 {
+  let n = xs.len();
+  if n == 1 {
+    return ys[0];
+  }
+  // Binary search for the interval containing x_val (or nearest, for a
+  // point outside the range, so extrapolation uses the boundary stencil).
+  let mut lo = 0usize;
+  let mut hi = n - 1;
+  while lo < hi - 1 {
+    let mid = usize::midpoint(lo, hi);
+    if x_val < xs[mid] {
+      hi = mid;
+    } else {
+      lo = mid;
+    }
+  }
+  let eff_order = order.min(n - 1).max(1);
+  let (start, end) = lagrange_window(n, lo, eff_order);
+  let m = end - start;
+  let mut result = 0.0;
+  for i in 0..m {
+    let mut basis = 1.0;
+    for j in 0..m {
+      if j != i {
+        basis *= (x_val - xs[start + j]) / (xs[start + i] - xs[start + j]);
+      }
+    }
+    result += ys[start + i] * basis;
+  }
+  result
+}
+
 /// 1-D local Lagrange interpolation of `values` (sampled at positions
 /// `1..=values.len()`) at `coord`, using `order + 1` nearest samples. Mirrors
 /// the point-selection of `lagrange_interpolate` so 2-D results match the 1-D
@@ -3615,6 +4019,27 @@ pub fn evaluate_interpolating_function(
     && let Expr::List(grid_rows) = &func_args[1]
   {
     return evaluate_interpolating_function_2d(grid_rows, orders, call_args);
+  }
+
+  // 2-D grid form with explicit coordinates: InterpolatingFunction[{{xmin,
+  // xmax}, {ymin, ymax}}, grid, {orderX, orderY}, {xcoords, ycoords}] —
+  // `try_2d_scattered_interpolation`'s output.
+  if func_args.len() == 4
+    && let Expr::List(orders) = &func_args[2]
+    && orders.len() == 2
+    && let Expr::List(grid_rows) = &func_args[1]
+    && let Expr::List(coords) = &func_args[3]
+    && coords.len() == 2
+    && matches!(&coords[0], Expr::List(_))
+    && matches!(&coords[1], Expr::List(_))
+  {
+    return evaluate_interpolating_function_2d_explicit(
+      &func_args[0],
+      grid_rows,
+      orders,
+      coords,
+      call_args,
+    );
   }
 
   if !(2..=4).contains(&func_args.len()) || call_args.len() != 1 {

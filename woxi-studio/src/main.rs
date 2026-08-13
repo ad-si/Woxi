@@ -6690,6 +6690,38 @@ mod tests {
     assert_eq!(state.control_is_visible, vec![true, false, false]);
   }
 
+  /// A `PaneSelector` keyed by strings (`"a" -> …`, `"b" -> …`) rather than
+  /// integers — the Demonstrations idiom for a mode picker whose Setter
+  /// labels double as the pane keys. String comparison must be exact (a
+  /// pane keyed `"a"` is not shown when the selector reads the *symbol* `a`
+  /// or an unrelated string), so this exercises the same visibility gating
+  /// as `manipulate_pane_selector_shows_one_panel_at_a_time` with a
+  /// different key type rather than assuming it falls out for free.
+  #[test]
+  fn manipulate_pane_selector_switches_on_string_keys() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{mode, a, b}, \
+       Control[{{mode, \"first\"}, {\"first\", \"second\"}, Setter}], \
+       PaneSelector[{\"first\" -> Control[{{a, 5}, 0, 10}], \
+       \"second\" -> Control[{{b, 1}, 0, 2}]}, mode]]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["mode", "a", "b"]);
+    // The selector starts on "first", so only `a`'s row shows.
+    assert_eq!(state.control_is_visible, vec![true, true, false]);
+
+    // Switching the Setter to "second" swaps the panel to `b`.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert_eq!(state.control_is_visible, vec![true, false, true]);
+  }
+
   #[test]
   fn manipulate_untracked_control_does_not_reeval() {
     // `TrackedSymbols :> {b}`: moving `a` changes its value but must not
@@ -13584,6 +13616,45 @@ Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}
       .map(|_| Some(svg::Handle::from_memory(Vec::new())))
       .collect();
     assert!(renders_as_setter_bar(&icons, &handles));
+  }
+
+  /// An explicit `ControlType -> RadioButtonBar` keeps its row of radio
+  /// buttons even past the automatic SetterBar/PopupMenu split — the same
+  /// forcing `ControlType -> SetterBar` already gets (see
+  /// `demonstration_panel_with_escaped_glyphs_opens_live`). Six single-word
+  /// choices are past that split (`renders_as_setter_bar` is false for this
+  /// exact list above), so without the explicit type Woxi would draw a
+  /// dropdown where Wolfram always draws the bar.
+  #[test]
+  fn radio_button_bar_control_type_forces_the_bar() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[shape, {{shape, \"triangle\"}, \
+       {\"triangle\", \"square\", \"pentagon\", \"hexagon\", \"heptagon\", \
+       \"octagon\"}, ControlType -> RadioButtonBar}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          value_labels,
+          setter_bar,
+          popup,
+          ..
+        },
+      ] => {
+        assert!(
+          !renders_as_setter_bar(value_labels, &vec![None; value_labels.len()]),
+          "the automatic split must pick a dropdown for this list, so the \
+           forced bar below is actually exercising ControlType"
+        );
+        assert!(
+          *setter_bar && !*popup,
+          "ControlType -> RadioButtonBar must force the bar layout"
+        );
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
   }
 
   /// A control's caption: Wolfram writes the variable's own name when the

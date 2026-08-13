@@ -16234,9 +16234,10 @@ pub enum ManipulateControl {
     /// `ControlType -> PopupMenu`: always render a dropdown, even when the
     /// choice count is small enough for a SetterBar.
     popup: bool,
-    /// `ControlType -> SetterBar`: always render the row of buttons, even
-    /// when there are more choices than the automatic split would put in a
-    /// bar. The heuristic only decides for a spec that stays silent.
+    /// `ControlType -> SetterBar` or `-> RadioButtonBar`: always render the
+    /// row of buttons, even when there are more choices than the automatic
+    /// split would put in a bar. The heuristic only decides for a spec that
+    /// stays silent.
     setter_bar: bool,
     /// `ControlType -> Slider`: render a slider that steps through the
     /// choices by index, the way Wolfram draws a slider over a discrete
@@ -19577,7 +19578,15 @@ fn parse_manipulate_control(
           label,
           label_runs,
           popup: control_type.as_deref() == Some("PopupMenu"),
-          setter_bar: control_type.as_deref() == Some("SetterBar"),
+          // `SetterBar` and `RadioButtonBar` both always draw the full row
+          // of buttons (a row of highlighted setters, or of radio dots)
+          // regardless of choice count — unlike a spec that stays silent,
+          // which the automatic SetterBar/PopupMenu split
+          // (`renders_as_setter_bar`, in woxi-studio) only applies to.
+          setter_bar: matches!(
+            control_type.as_deref(),
+            Some("SetterBar" | "RadioButtonBar")
+          ),
           slider: matches!(
             control_type.as_deref(),
             Some("Slider" | "VerticalSlider" | "Manipulator")
