@@ -2042,6 +2042,50 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn sequence_apply_splices_into_show_and_graphics_row() {
+    // `Show`/`GraphicsRow` aren't `HoldAll` in Wolfram Language, so a
+    // `Sequence @@ list` argument must reduce to `Sequence[…]` and splice
+    // before dispatch, exactly as a literal `Sequence[…]` argument already
+    // does. These held-for-rendering-purposes functions used to see the
+    // whole `Sequence @@ list` as a single unevaluated `Apply` argument
+    // instead, so a demonstration combining several precomputed panels via
+    // `Show[Sequence @@ panels]` silently dropped every panel but the first.
+    let cases = [
+      (
+        "Head[Show[Sequence @@ {Graphics[{}], Graphics[{}]}]]",
+        "Graphics",
+      ),
+      (
+        "Head[GraphicsRow[Sequence @@ {{Graphics[{}], Graphics[{}]}}]]",
+        "Graphics",
+      ),
+      // A literal `Sequence[…]` argument keeps working alongside the
+      // Apply-shorthand form.
+      (
+        "Head[Show[Sequence[Graphics[{}], Graphics[{}]]]]",
+        "Graphics",
+      ),
+    ];
+    for (input, expected) in cases {
+      assert_eq!(
+        interpret(input).unwrap(),
+        expected,
+        "result mismatch for {input}"
+      );
+    }
+    // The spliced call must produce the same result as writing the same
+    // arguments out directly.
+    assert_eq!(
+      interpret(
+        "Show[Sequence @@ {Graphics[{Circle[]}], Graphics[{Circle[{1, 1}]}]}]"
+      )
+      .unwrap(),
+      interpret("Show[Graphics[{Circle[]}], Graphics[{Circle[{1, 1}]}]]")
+        .unwrap()
+    );
+  }
+
+  #[test]
   fn drop_shadowing_canonicalizes_with_defaults() {
     // DropShadowing arguments are matched positionally in the order
     // offset (2-element numeric list), radius (number), color (color

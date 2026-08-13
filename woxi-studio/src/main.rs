@@ -6649,6 +6649,70 @@ mod tests {
     );
   }
 
+  /// A physics-style Demonstration shape: a single labeled slider driving a
+  /// multi-statement body that stacks several precomputed `Show`/`Plot`
+  /// panels into a `GraphicsRow`, with a large `Initialization :>` block
+  /// defining helper graphics and pattern-matched functions before the
+  /// widget ever renders. This mirrors the general construct category used
+  /// by many single-parameter Wolfram Demonstrations Project notebooks
+  /// (independently written, not copied from any specific one).
+  #[test]
+  fn manipulate_multi_statement_body_with_initialization_builds_one_slider() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[\
+       line5 = Graphics[{Thick, Blue, Line[{{0, k}, {0.7, k}}]}]; \
+       p1 = Plot[barrier[k, x], {x, 0, 1}, PlotStyle -> {Thick, Blue}]; \
+       GraphicsRow[{Show[pot, p1, AspectRatio -> 1], Show[eplot, line5]}, \
+       ImageSize -> {575, 450}], \
+       {{k, 0.02, \"wavenumber\"}, 0.02, 0.85}, \
+       TrackedSymbols :> {k}, \
+       Initialization :> (\
+       v0 = 1; alpha = 10; \
+       pot = Show[Graphics[{Opacity[0.15], Rectangle[{1, 0}, {2, v0}]}], Axes -> True]; \
+       eplot = Plot[Sin[x], {x, 0, 1}]; \
+       barrier[kk_, x_] := Sin[alpha Sqrt[kk] x];\
+       )]",
+    )
+    .expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a single labeled slider should build a ManipulateState");
+
+    assert_eq!(state.controls.len(), 1, "exactly one slider control");
+    let manipulate::ControlState::Continuous {
+      name,
+      label,
+      min,
+      max,
+      current,
+      ..
+    } = &state.controls[0]
+    else {
+      panic!("expected a continuous slider for `k`");
+    };
+    assert_eq!(name, "k");
+    assert_eq!(label, "wavenumber");
+    assert_eq!(*min, 0.02);
+    assert_eq!(*max, 0.85);
+    assert_eq!(*current, 0.02);
+
+    assert!(
+      state.body.contains("GraphicsRow") && state.body.contains("Show"),
+      "body should keep the multi-statement GraphicsRow/Show chain: {}",
+      state.body
+    );
+    let init = state
+      .initialization
+      .as_deref()
+      .expect("Initialization :> block should be captured");
+    assert!(
+      init.contains("barrier")
+        && init.contains("pot")
+        && init.contains("eplot"),
+      "initialization should keep every helper definition: {init}"
+    );
+    assert!(state.error.is_none(), "unexpected error: {:?}", state.error);
+  }
+
   /// A `PaneSelector` control panel — a Demonstration whose modes each need
   /// different controls, as the closest-packing one does — shows only the
   /// pane the selector is on. The controls of the other panes are built (so
