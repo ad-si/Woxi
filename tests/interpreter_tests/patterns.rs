@@ -4658,3 +4658,31 @@ mod call_patterns_nested_in_a_list_pattern {
     }
   }
 }
+
+mod literal_left_hand_side {
+  use super::*;
+
+  /// A rule whose left side is a literal call rather than a pattern
+  /// rewrites every subexpression equal to it, brackets and all. The
+  /// "Related Rates" chapter of *Introduction to Calculus* substitutes the
+  /// radius of a cone by half its height; the squared radius used to lose
+  /// its square, so the volume came out one power of `h` short.
+  #[test]
+  fn a_compound_replacement_keeps_its_brackets() {
+    assert_eq!(
+      interpret("v[t] == (Pi r[t]^2 h[t])/3 /. r[t] -> h[t]/2").unwrap(),
+      "v[t] == (Pi*h[t]^3)/12"
+    );
+    assert_eq!(
+      interpret("r[t]^2 /. r[t] -> q[t] + 1").unwrap(),
+      "(1 + q[t])^2"
+    );
+    assert_eq!(interpret("r[t]^2 /. r[t] -> 2 q[t]").unwrap(), "4*q[t]^2");
+  }
+
+  /// Only the subexpressions that really are the left side are rewritten.
+  #[test]
+  fn other_calls_are_left_alone() {
+    assert_eq!(interpret("f[x] + f[y] /. f[x] -> 1").unwrap(), "1 + f[y]");
+  }
+}

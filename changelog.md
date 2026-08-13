@@ -42,6 +42,14 @@
         read, so a `Plot` legend written as an inline cell
         (`"\!\(\*Cell[\"f[x]\", …]\)"`) stays one string instead of ending
         at its first inner quote.
+    - `expr /. lhs -> rhs`, where `lhs` is a literal call rather than a
+        pattern, rewrites every subexpression equal to `lhs` structurally.
+        It used to fall through to a textual replacement that dropped the
+        brackets the substituted expression needs, silently changing the
+        result: `π r[t]^2 h[t]/3 /. r[t] -> h[t]/2` — the substitution the
+        "Related Rates" chapter makes — came out as `π h[t]^2/12` instead
+        of `π h[t]^3/12`, and `r[t]^2 /. r[t] -> q[t] + 1` as
+        `1 + q[t]^2` instead of `(1 + q[t])^2`.
     - `c = 4; (* c = 6 *); c` evaluates: several `;` in a row with only
         space or a comment between them separate the same two statements,
         with the empty statement `Null` between them. `;;` still parses as
