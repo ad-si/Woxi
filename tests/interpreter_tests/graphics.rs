@@ -18309,6 +18309,39 @@ mod manipulate {
     );
   }
 
+  /// `Item[Column[{…controls…}], opts]` (a Demonstration lining its whole
+  /// control panel up inside an outer `Grid` cell via `Item`'s alignment
+  /// options) is a control-grouping layout container wearing a grid-item
+  /// wrapper, not a malformed variable spec — it must not emit
+  /// `Manipulate::vsform` either.
+  #[test]
+  fn item_wrapped_controls_are_not_vsform() {
+    let res = woxi::interpret_with_stdout(
+      "Manipulate[x, Item[Column[{Control[{x, 0, 1}]}], Alignment -> Center]]",
+    )
+    .unwrap();
+    assert!(
+      !res.warnings.iter().any(|w| w.contains("vsform")),
+      "unexpected vsform message: {:?}",
+      res.warnings
+    );
+  }
+
+  /// The control inside an `Item[…]`-wrapped layout container flattens into
+  /// the widget's control panel exactly like an unwrapped `Row`/`Column`/
+  /// `Grid` would, so Woxi Studio actually renders a working slider for it.
+  #[test]
+  fn item_wrapped_controls_flatten_into_the_control_panel() {
+    let expr = interpret_to_expr(
+      "Manipulate[x, Item[Grid[{{Control[{{x, 5}, 0, 10}]}}], \
+       Alignment -> Center]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.len(), 1);
+    assert_eq!(spec.controls[0].name(), "x");
+  }
+
   /// Each `PaneSelector` pane's controls are collected into the one flat
   /// control panel, but they carry the condition under which their pane is
   /// on screen so a frontend can show one panel at a time. A variable used
