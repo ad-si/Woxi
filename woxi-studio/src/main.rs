@@ -13005,6 +13005,44 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert_ne!(at0, render("3"), "the time control must move the pendulum");
   }
 
+  /// End-to-end regression for a nonlinear-heat-conduction-style
+  /// Demonstration built on orthogonal collocation: one node of an indexed
+  /// family of functions is pinned to a fixed boundary value with
+  /// `Y[n][t_] := 1` *after* the other equations already captured a
+  /// literal, still-unresolved `Y[n][t]` call inside them (`n` bound to the
+  /// Manipulate control's numeric value). That pattern used to be slow
+  /// enough to look like a hang: the boundary reference sat outside
+  /// `NDSolve`'s own dependent variables, so the whole right-hand side fell
+  /// back to per-step symbolic evaluation for every one of the fixed grid's
+  /// 1000 steps.
+  #[test]
+  fn pinned_boundary_node_notebook_solves_without_hanging() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Module[{Y,eq,sol},eq=Y[1]'[t]==Y[n][t]-Y[1][t];Y[n][t_]:=1;sol=NDSolve[{eq,Y[1][0]==0},Y[1],{t,0,2}];Plot[Y[1][t]/.sol[[1]],{t,0,2}]],{{n,4,\"boundary index\"},3,6,1}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 4}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the pinned-boundary system must solve: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the curve must draw");
+    match &widget.controls[..] {
+      [manipulate::ControlState::Continuous { name, current, .. }] => {
+        assert_eq!((name.as_str(), *current), ("n", 4.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
   /// End-to-end regression for "Nets for Regular Spherical Models": its
   /// body is a `Pane` around either a 3D model or a 2D net template, and
   /// the export path used to write the whole thing out as source rather

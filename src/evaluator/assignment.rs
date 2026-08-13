@@ -1913,6 +1913,50 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   ))
 }
 
+/// Evaluate the non-pattern arguments of a curried assignment LHS like
+/// `Y[Np][t_]`, at every level of the chain, leaving pattern arguments
+/// (`t_`, `x_Integer`, …) untouched. Mirrors how a plain `f[a] := body`
+/// already evaluates a literal, non-pattern argument before storing the
+/// rule (see the `SameQ` condition built for that case above) — the
+/// curried form needs the same treatment so `n = 5; Y[n][t_] := 1` keys
+/// the stored rule on `Y[5]`, not on the symbol `n`.
+fn evaluate_curried_lhs_non_pattern_parts(
+  expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::CurriedCall { func, args } => {
+      let new_func = evaluate_curried_lhs_non_pattern_parts(func)?;
+      let mut new_args = Vec::with_capacity(args.len());
+      for a in args {
+        if crate::evaluator::pattern_matching::contains_pattern(a) {
+          new_args.push(a.clone());
+        } else {
+          new_args.push(evaluate_expr_to_expr(a)?);
+        }
+      }
+      Ok(Expr::CurriedCall {
+        func: Box::new(new_func),
+        args: new_args,
+      })
+    }
+    Expr::FunctionCall { name, args } => {
+      let mut new_args = Vec::with_capacity(args.len());
+      for a in args {
+        if crate::evaluator::pattern_matching::contains_pattern(a) {
+          new_args.push(a.clone());
+        } else {
+          new_args.push(evaluate_expr_to_expr(a)?);
+        }
+      }
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      })
+    }
+    other => Ok(other.clone()),
+  }
+}
+
 /// Handle SetDelayed[f[patterns...], body] — stores a function definition.
 /// This handles cases that the PEG FunctionDefinition rule doesn't parse,
 /// such as list-pattern arguments: f[{x_Integer, y_Integer}] := body.
@@ -2618,23 +2662,43 @@ pub fn set_delayed_ast(
   // SubValue form: f[a][b] := rhs (also deeper nestings like f[a][b][c])
   // Mathematica stores these under SubValues[f] and they fire when exactly
   // f[a][b] is evaluated. Record the rule keyed by the outermost head so
-  // `SubValues[f]` can return them. Dispatch (`f[1][5]` → `5`) is not yet
-  // wired up here.
-  if let Expr::CurriedCall { func, .. } = lhs {
-    let mut inner = func.as_ref();
-    let outer_head = loop {
-      match inner {
-        Expr::CurriedCall { func: f2, .. } => inner = f2.as_ref(),
-        Expr::FunctionCall { name, .. } => break Some(name.clone()),
-        _ => break None,
+  // `SubValues[f]` can return them.
+  //
+  // Like any other assignment LHS, the parts of `f[a][b]` that are not
+  // themselves patterns get evaluated before the rule is stored — this is
+  // what lets `n = 5; Y[n][t_] := 1` define a downvalue for `Y[5]` (a common
+  // idiom for building an indexed family of functions), rather than storing
+  // a rule keyed on the literal symbol `n`, which could never fire.
+  if let Expr::CurriedCall { .. } = lhs {
+    let evaluated_lhs = evaluate_curried_lhs_non_pattern_parts(lhs)?;
+    let outer_head = if let Expr::CurriedCall { func, .. } = &evaluated_lhs {
+      let mut inner = func.as_ref();
+      loop {
+        match inner {
+          Expr::CurriedCall { func: f2, .. } => inner = f2.as_ref(),
+          Expr::FunctionCall { name, .. } => break Some(name.clone()),
+          _ => break None,
+        }
       }
+    } else {
+      None
     };
     if let Some(head) = outer_head {
       SUB_VALUES.with(|m| {
-        m.borrow_mut()
-          .entry(head)
-          .or_default()
-          .push((lhs.clone(), body.clone()));
+        let mut m = m.borrow_mut();
+        let rules = m.entry(head).or_default();
+        // Redefining the same pattern replaces the old rule in place —
+        // matching `DownValues`, and how a Demonstration's Manipulate body
+        // re-evaluates on every control change, redefining each SubValue
+        // with an identical LHS on every one of those re-evaluations.
+        let lhs_str = crate::syntax::expr_to_string(&evaluated_lhs);
+        match rules
+          .iter()
+          .position(|(l, _)| crate::syntax::expr_to_string(l) == lhs_str)
+        {
+          Some(idx) => rules[idx] = (evaluated_lhs, body.clone()),
+          None => rules.push((evaluated_lhs, body.clone())),
+        }
       });
       return Ok(Expr::Identifier("Null".to_string()));
     }

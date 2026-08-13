@@ -3978,6 +3978,31 @@ mod curried_and_head_patterns {
   }
 
   #[test]
+  fn curried_subvalue_index_is_evaluated_before_storing() {
+    // `n = 5; Y[n][t_] := 1` is the common idiom for pinning one member of
+    // an indexed family of functions to a constant once its index is known
+    // numerically — a boundary node in an orthogonal-collocation scheme,
+    // say. Like any other assignment LHS, the non-pattern part (`n`) is
+    // evaluated before the rule is stored, so the SubValue is keyed on
+    // `Y[5]`, not on the literal symbol `n` (which could never dispatch).
+    assert_eq!(
+      interpret("n = 5; Y[n][t_] := 1; Y[5][t]").unwrap(),
+      "1",
+      "the stored rule must key off the evaluated index"
+    );
+    assert_eq!(
+      interpret("n = 5; Y[n][t_] := 1; SubValues[Y]").unwrap(),
+      "{HoldPattern[Y[5][t_]] :> 1}"
+    );
+    // A different index must not accidentally match.
+    assert_eq!(
+      interpret("n = 5; Y[n][t_] := 1; Y[3][t]").unwrap(),
+      "Y[3][t]",
+      "an unrelated index stays unevaluated"
+    );
+  }
+
+  #[test]
   fn head_pattern_definition_symbol_head() {
     // `f[a_[b__]] := …` binds the head pattern and the argument sequence.
     assert_eq!(
