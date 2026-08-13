@@ -15,7 +15,7 @@ fn macos_current_rss() -> i128 {
       task,
       libc::MACH_TASK_BASIC_INFO,
       info.as_mut_ptr() as libc::task_info_t,
-      &mut count,
+      &raw mut count,
     );
     if kr == libc::KERN_SUCCESS {
       let info = info.assume_init();
@@ -36,8 +36,8 @@ pub fn memory_physical() -> i128 {
     let ret = unsafe {
       libc::sysctlbyname(
         name.as_ptr(),
-        &mut size as *mut u64 as *mut libc::c_void,
-        &mut len,
+        (&raw mut size).cast::<libc::c_void>(),
+        &raw mut len,
         std::ptr::null_mut(),
         0,
       )
@@ -164,8 +164,8 @@ pub fn memory_available() -> i128 {
       libc::host_statistics64(
         host,
         libc::HOST_VM_INFO64,
-        stats.as_mut_ptr() as *mut libc::integer_t,
-        &mut count,
+        stats.as_mut_ptr().cast::<libc::integer_t>(),
+        &raw mut count,
       )
     };
     if kr != libc::KERN_SUCCESS {

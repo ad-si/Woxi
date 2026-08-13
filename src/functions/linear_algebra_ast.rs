@@ -29,7 +29,7 @@ fn transpose_matrix(m: &[Vec<Expr>]) -> Vec<Vec<Expr>> {
 fn mat_mul(a: &[Vec<Expr>], b: &[Vec<Expr>]) -> Vec<Vec<Expr>> {
   let arows = a.len();
   let acols = if arows > 0 { a[0].len() } else { 0 };
-  let bcols = if !b.is_empty() { b[0].len() } else { 0 };
+  let bcols = if b.is_empty() { 0 } else { b[0].len() };
   let mut result = vec![vec![Expr::Integer(0); bcols]; arows];
   for i in 0..arows {
     for j in 0..bcols {
@@ -84,11 +84,8 @@ pub fn pseudo_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "PseudoInverse expects exactly 1 argument".into(),
     ));
   }
-  let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      return Ok(unevaluated("PseudoInverse", args));
-    }
+  let Some(matrix) = expr_to_matrix(&args[0]) else {
+    return Ok(unevaluated("PseudoInverse", args));
   };
 
   let nrows = matrix.len();
@@ -234,9 +231,8 @@ pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return unevaluated();
   }
-  let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => return unevaluated(),
+  let Some(matrix) = expr_to_matrix(&args[0]) else {
+    return unevaluated();
   };
 
   let simplify = |e: Expr| evaluate_expr_to_expr(&e).unwrap_or(e);
@@ -485,7 +481,7 @@ pub fn structured_matrix_to_dense(e: &Expr) -> Option<Expr> {
     };
     let mut dense: Vec<Vec<Expr>> = vec![vec![Expr::Integer(0); n]; n];
     let mut offset = 0usize;
-    for block in blocks.iter() {
+    for block in blocks {
       let Expr::List(rows) = block else {
         return None;
       };
@@ -542,7 +538,7 @@ pub fn structured_matrix_to_dense(e: &Expr) -> Option<Expr> {
       return None;
     };
     let mut perm: Vec<usize> = (0..n).collect();
-    for cycle in cycles.iter() {
+    for cycle in cycles {
       let Expr::List(members) = cycle else {
         return None;
       };
@@ -564,7 +560,7 @@ pub fn structured_matrix_to_dense(e: &Expr) -> Option<Expr> {
       .map(|&j| {
         Expr::List(
           (0..n)
-            .map(|c| Expr::Integer(if c == j { 1 } else { 0 }))
+            .map(|c| Expr::Integer(i128::from(c == j)))
             .collect::<Vec<_>>()
             .into(),
         )
@@ -608,7 +604,7 @@ pub fn block_diagonal_matrix_ast(
   // Every block must be a square matrix (a list of equal-length rows whose
   // length equals the row count).
   let mut sizes: Vec<usize> = Vec::with_capacity(blocks.len());
-  for b in blocks.iter() {
+  for b in blocks {
     let Expr::List(rows) = b else {
       return unchanged();
     };
@@ -856,12 +852,11 @@ pub fn cauchy_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else if let Some(v) = expr_to_vector(&args[0]).filter(|v| !v.is_empty()) {
     (v.clone(), v)
   } else if let Some(mat) = expr_to_matrix(&args[0]) {
-    match cauchy_generating_vectors(&mat)? {
-      Some(pair) => pair,
-      None => {
-        cmat(&args[0]);
-        return unchanged();
-      }
+    if let Some(pair) = cauchy_generating_vectors(&mat)? {
+      pair
+    } else {
+      cmat(&args[0]);
+      return unchanged();
     }
   } else if matches!(&args[0], Expr::List(items) if items.is_empty()) {
     // CauchyMatrix[{}] stays unevaluated without a message.
@@ -1004,7 +999,7 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let (Some(ma), Some(vb)) =
     (expr_to_matrix(&args[0]), expr_to_vector(&args[1]))
   {
-    let ncols = ma.first().map(|r| r.len()).unwrap_or(0);
+    let ncols = ma.first().map_or(0, std::vec::Vec::len);
     if ncols != vb.len() {
       return dotsh();
     }
@@ -1027,7 +1022,7 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if va.len() != b_rows {
       return dotsh();
     }
-    let b_cols = mb.first().map(|r| r.len()).unwrap_or(0);
+    let b_cols = mb.first().map_or(0, std::vec::Vec::len);
     let mut result = Vec::with_capacity(b_cols);
     for j in 0..b_cols {
       let mut sum = Expr::Integer(0);
@@ -1043,12 +1038,12 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let (Some(ma), Some(mb)) =
     (expr_to_matrix(&args[0]), expr_to_matrix(&args[1]))
   {
-    let a_cols = ma.first().map(|r| r.len()).unwrap_or(0);
+    let a_cols = ma.first().map_or(0, std::vec::Vec::len);
     let b_rows = mb.len();
     if a_cols != b_rows {
       return dotsh();
     }
-    let b_cols = mb.first().map(|r| r.len()).unwrap_or(0);
+    let b_cols = mb.first().map_or(0, std::vec::Vec::len);
     let mut result = Vec::new();
     for i in 0..ma.len() {
       let mut row = Vec::new();
@@ -1130,9 +1125,8 @@ pub fn array_dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return unevaluated(),
   };
   let (a, b) = (&args[0], &args[1]);
-  let (da, db) = match (tensor_dims(a), tensor_dims(b)) {
-    (Some(x), Some(y)) => (x, y),
-    _ => return unevaluated(),
+  let (Some(da), Some(db)) = (tensor_dims(a), tensor_dims(b)) else {
+    return unevaluated();
   };
 
   // k may not exceed the depth (rank) of either array.
@@ -1336,9 +1330,8 @@ pub fn permanent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
     Ok(unevaluated("Permanent", args))
   };
-  let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => return matsq(),
+  let Some(matrix) = expr_to_matrix(&args[0]) else {
+    return matsq();
   };
   let n = matrix.len();
   if n == 0 || matrix.iter().any(|row| row.len() != n) {
@@ -1398,7 +1391,7 @@ fn permanent_ryser(matrix: &[Vec<Expr>]) -> Expr {
   for s in 1u64..(1u64 << n) {
     let popcount = s.count_ones() as usize;
     let mut prod = Expr::Integer(1);
-    for row in matrix.iter() {
+    for row in matrix {
       let mut rowsum = Expr::Integer(0);
       for (j, entry) in row.iter().enumerate() {
         if s & (1u64 << j) != 0 {
@@ -1431,18 +1424,15 @@ pub fn pfaffian_det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let unevaluated = || unevaluated("PfaffianDet", args);
-  let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      // A concrete non-matrix argument (scalar or ragged list) → ::matrix.
-      if is_matsq_subject(&args[0]) {
-        crate::emit_message(&format!(
-          "PfaffianDet::matrix: Argument {} at position 1 is not a nonempty rectangular matrix.",
-          crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
-        ));
-      }
-      return Ok(unevaluated());
+  let Some(matrix) = expr_to_matrix(&args[0]) else {
+    // A concrete non-matrix argument (scalar or ragged list) → ::matrix.
+    if is_matsq_subject(&args[0]) {
+      crate::emit_message(&format!(
+        "PfaffianDet::matrix: Argument {} at position 1 is not a nonempty rectangular matrix.",
+        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+      ));
     }
+    return Ok(unevaluated());
   };
   if !is_nonempty_square(&matrix) {
     return Ok(matsq_unevaluated("PfaffianDet", args));
@@ -1867,17 +1857,18 @@ pub fn companion_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let placement = match placement_arg {
     None => CoefficientPlacement::Right,
-    Some(e) => match CoefficientPlacement::from_expr(e) {
-      Some(p) => p,
-      None => {
+    Some(e) => {
+      if let Some(p) = CoefficientPlacement::from_expr(e) {
+        p
+      } else {
         crate::emit_message(&format!(
           "CompanionMatrix::plspecc: Specification {} for placement of \
-           coefficients must be Top, Bottom, Left or Right.",
+         coefficients must be Top, Bottom, Left or Right.",
           render(e)
         ));
         return unevaluated();
       }
-    },
+    }
   };
 
   let coeffs: Vec<Expr> = match variable {
@@ -2244,11 +2235,8 @@ pub fn conjugate_transpose_ast(
       "ConjugateTranspose expects exactly 1 argument".into(),
     ));
   }
-  let rows = match &args[0] {
-    Expr::List(rows) => rows,
-    _ => {
-      return Ok(unevaluated("ConjugateTranspose", args));
-    }
+  let Expr::List(rows) = &args[0] else {
+    return Ok(unevaluated("ConjugateTranspose", args));
   };
 
   // Get dimensions
@@ -2468,13 +2456,10 @@ fn extract_fit_data_multi(
   let mut x_rows = Vec::with_capacity(data.len());
   let mut ys = Vec::with_capacity(data.len());
   for item in data {
-    let row = match item {
-      Expr::List(r) => r,
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Fit: each data row must be a list of length n_vars + 1".into(),
-        ));
-      }
+    let Expr::List(row) = item else {
+      return Err(InterpreterError::EvaluationError(
+        "Fit: each data row must be a list of length n_vars + 1".into(),
+      ));
     };
     if row.len() != n_vars + 1 {
       return Err(InterpreterError::EvaluationError(format!(
@@ -2622,7 +2607,7 @@ fn solve_least_squares_min_norm(a: &[Vec<f64>], b: &[f64]) -> Vec<f64> {
 
   // x = sum over the non-degenerate singular values of (u_i . b / sigma_i) v_i.
   let sigmas: Vec<f64> = u.iter().map(|col| dot(col, col).sqrt()).collect();
-  let largest = sigmas.iter().cloned().fold(0.0f64, f64::max);
+  let largest = sigmas.iter().copied().fold(0.0f64, f64::max);
   let cutoff = largest * (rows.max(m) as f64) * f64::EPSILON;
   let mut x = vec![0.0f64; m];
   for j in 0..m {
@@ -2842,7 +2827,7 @@ pub fn characteristic_polynomial_int(
       return None;
     };
     let mut row = Vec::with_capacity(n);
-    for e in cols.iter() {
+    for e in cols {
       match e {
         Expr::Integer(v) => row.push(BigInt::from(*v)),
         Expr::BigInteger(v) => row.push(v.clone()),
@@ -2897,7 +2882,7 @@ fn divisors(n: i128) -> Vec<i128> {
     }
     i += 1;
   }
-  divs.sort();
+  divs.sort_unstable();
   divs
 }
 
@@ -2922,7 +2907,7 @@ fn synthetic_div(coeffs: &[i128], root: i128) -> Vec<i128> {
     return vec![];
   }
   // Work with descending coefficients for standard synthetic division
-  let desc: Vec<i128> = coeffs.iter().rev().cloned().collect();
+  let desc: Vec<i128> = coeffs.iter().rev().copied().collect();
   let mut result = Vec::with_capacity(n);
   result.push(desc[0]);
   for i in 1..n {
@@ -2966,10 +2951,10 @@ fn sort_eigenvalues(eigenvalues: &mut [Expr]) {
       .abs()
       .partial_cmp(&va.abs())
       .unwrap_or(std::cmp::Ordering::Equal);
-    if abs_cmp != std::cmp::Ordering::Equal {
-      abs_cmp
-    } else {
+    if abs_cmp == std::cmp::Ordering::Equal {
       va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
+    } else {
+      abs_cmp
     }
   });
 }
@@ -3290,12 +3275,11 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut out: Vec<Expr> = Vec::with_capacity(scaled_roots.len());
       let mut ok = true;
       for r in &scaled_roots {
-        match divide_exact_root(r, scale) {
-          Some(v) => out.push(v),
-          None => {
-            ok = false;
-            break;
-          }
+        if let Some(v) = divide_exact_root(r, scale) {
+          out.push(v);
+        } else {
+          ok = false;
+          break;
         }
       }
       if ok {
@@ -3322,7 +3306,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let disc = tr * tr - 4.0 * det;
     if disc >= 0.0 {
       let s = disc.sqrt();
-      let l1 = (tr + s) / 2.0;
+      let l1 = f64::midpoint(tr, s);
       let l2 = (tr - s) / 2.0;
       // Match Wolfram's ordering (largest-magnitude first).
       let (e1, e2) = if l1.abs() >= l2.abs() {
@@ -3451,12 +3435,11 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for row in &matrix {
       let mut frow: Vec<f64> = Vec::with_capacity(n);
       for cell in row {
-        match try_eval_to_f64(cell) {
-          Some(v) => frow.push(v),
-          None => {
-            all_floats = false;
-            break;
-          }
+        if let Some(v) = try_eval_to_f64(cell) {
+          frow.push(v);
+        } else {
+          all_floats = false;
+          break;
         }
       }
       if !all_floats {
@@ -3804,10 +3787,8 @@ pub fn eigenvalues_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return unevaluated(),
   };
   let all = eigenvalues_ast(&args[0..1])?;
-  let items = match &all {
-    Expr::List(items) => items,
-    // Symbolic / non-square: keep the 2-argument form unevaluated.
-    _ => return unevaluated(),
+  let Expr::List(items) = &all else {
+    return unevaluated();
   };
   let n = items.len() as i128;
   if k.abs() > n {
@@ -3852,9 +3833,8 @@ pub fn eigenvectors_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return unevaluated(),
   };
   let all = eigenvectors_ast(&args[0..1])?;
-  let items = match &all {
-    Expr::List(items) => items,
-    _ => return unevaluated(),
+  let Expr::List(items) = &all else {
+    return unevaluated();
   };
   let n = items.len() as i128;
   if k.abs() > n {
@@ -3940,12 +3920,12 @@ pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
 
   if has_real && all_numeric {
-    return numeric_eigenvectors(&matrix, n);
+    return Ok(numeric_eigenvectors(&matrix, n));
   }
 
   // Try integer matrix path
   if let Some(int_matrix) = matrix_to_i128(&matrix) {
-    let result = integer_eigenvectors(&matrix, &int_matrix, n)?;
+    let result = integer_eigenvectors(&matrix, &int_matrix, n);
     // Real 2×2 matrices with complex eigenvalues (e.g. rotations) fall
     // through to the exact complex path below instead of staying
     // unevaluated.
@@ -4092,7 +4072,7 @@ fn complex_2x2_eigenvectors(
 fn scale_to_integers(vec: &[Expr]) -> Vec<Expr> {
   let rationals: Vec<Option<(i128, i128)>> =
     vec.iter().map(expr_to_rational).collect();
-  if rationals.iter().any(|r| r.is_none()) {
+  if rationals.iter().any(std::option::Option::is_none) {
     return vec.to_vec();
   }
   let rats: Vec<(i128, i128)> =
@@ -4123,7 +4103,7 @@ fn integer_eigenvectors(
   matrix: &[Vec<Expr>],
   int_matrix: &[Vec<i128>],
   n: usize,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let coeffs = char_poly_coefficients(int_matrix);
   let mut eigenvalues = find_polynomial_roots(&coeffs);
   sort_eigenvalues(&mut eigenvalues);
@@ -4135,26 +4115,26 @@ fn integer_eigenvectors(
     // 2x2 with symbolic eigenvalues: build eigenvectors directly
     let vecs = eigenvectors_2x2_symbolic(int_matrix);
     if !vecs.is_empty() {
-      return Ok(Expr::List(
+      return Expr::List(
         vecs.into_iter().map(|v| Expr::List(v.into())).collect(),
-      ));
+      );
     }
-    return Ok(call("Eigenvectors", vec![matrix_to_expr(matrix.to_vec())]));
+    return call("Eigenvectors", vec![matrix_to_expr(matrix.to_vec())]);
   }
 
   if !all_integer && n == 3 {
     let vecs = eigenvectors_3x3_symbolic(matrix, &eigenvalues);
     if !vecs.is_empty() {
-      return Ok(Expr::List(
+      return Expr::List(
         vecs.into_iter().map(|v| Expr::List(v.into())).collect(),
-      ));
+      );
     }
-    return Ok(call("Eigenvectors", vec![matrix_to_expr(matrix.to_vec())]));
+    return call("Eigenvectors", vec![matrix_to_expr(matrix.to_vec())]);
   }
 
   if !all_integer {
     // Can't handle symbolic eigenvalues for n > 3
-    return Ok(call("Eigenvectors", vec![matrix_to_expr(matrix.to_vec())]));
+    return call("Eigenvectors", vec![matrix_to_expr(matrix.to_vec())]);
   }
 
   // All integer eigenvalues: compute null spaces
@@ -4181,7 +4161,7 @@ fn integer_eigenvectors(
     }
   }
 
-  Ok(Expr::List(eigenvectors.into()))
+  Expr::List(eigenvectors.into())
 }
 
 /// Compute null space vectors for a specific integer eigenvalue.
@@ -4307,7 +4287,7 @@ fn eigenvectors_2x2_symbolic(int_matrix: &[Vec<i128>]) -> Vec<Vec<Expr>> {
     // λ = (a+d ± sqrt(disc)) / 2
     let trace = a + d;
     let sqrt_val = (disc as f64).sqrt();
-    let l_plus = (trace as f64 + sqrt_val) / 2.0;
+    let l_plus = f64::midpoint(trace as f64, sqrt_val);
     let l_minus = (trace as f64 - sqrt_val) / 2.0;
 
     if l_plus.abs() >= l_minus.abs() {
@@ -4433,11 +4413,7 @@ fn normalize_symbolic_eigenvector(v: Vec<Expr>) -> Vec<Expr> {
     if g == 0 {
       return v;
     }
-    let leading_neg = ints
-      .iter()
-      .find(|&&x| x != 0)
-      .map(|&x| x < 0)
-      .unwrap_or(false);
+    let leading_neg = ints.iter().find(|&&x| x != 0).is_some_and(|&x| x < 0);
     let sign: i128 = if leading_neg { -1 } else { 1 };
     return ints
       .into_iter()
@@ -4465,10 +4441,7 @@ fn normalize_symbolic_eigenvector(v: Vec<Expr>) -> Vec<Expr> {
 }
 
 /// Compute eigenvectors for a numeric (f64) matrix.
-fn numeric_eigenvectors(
-  matrix: &[Vec<Expr>],
-  n: usize,
-) -> Result<Expr, InterpreterError> {
+fn numeric_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> crate::syntax::Expr {
   // Convert to f64 matrix
   let f_matrix: Vec<Vec<f64>> = matrix
     .iter()
@@ -4510,7 +4483,7 @@ fn numeric_eigenvectors(
         && let Some(&first) = normalized.iter().find(|&&v| v.abs() > 1e-12)
         && first > 0.0
       {
-        for v in normalized.iter_mut() {
+        for v in &mut normalized {
           *v = -*v;
         }
       }
@@ -4522,7 +4495,7 @@ fn numeric_eigenvectors(
     }
   }
 
-  Ok(Expr::List(eigenvectors.into()))
+  Expr::List(eigenvectors.into())
 }
 
 /// Compute eigenvalues of a f64 matrix numerically.
@@ -4536,14 +4509,13 @@ fn numeric_eigenvalues(matrix: &[Vec<f64>], n: usize) -> Vec<f64> {
     let disc = tr * tr - 4.0 * det;
     if disc >= 0.0 {
       let sq = disc.sqrt();
-      let l1 = (tr + sq) / 2.0;
+      let l1 = f64::midpoint(tr, sq);
       let l2 = (tr - sq) / 2.0;
       // Sort by absolute value descending
       if l1.abs() >= l2.abs() {
         return vec![l1, l2];
-      } else {
-        return vec![l2, l1];
       }
+      return vec![l2, l1];
     }
     // Complex eigenvalues - return empty
     return vec![];
@@ -4646,7 +4618,7 @@ fn qr_eigenvalues(h: &mut [Vec<f64>], n: usize) -> Vec<f64> {
       }
       let sq = disc.sqrt();
       eigenvalues.push((tr - sq) / 2.0);
-      eigenvalues.push((tr + sq) / 2.0);
+      eigenvalues.push(f64::midpoint(tr, sq));
       hi -= 2;
       stagnant = 0;
       continue;
@@ -4675,7 +4647,7 @@ fn qr_eigenvalues(h: &mut [Vec<f64>], n: usize) -> Vec<f64> {
       let disc = tr * tr - 4.0 * det;
       if disc >= 0.0 {
         let sq = disc.sqrt();
-        let l1 = (tr + sq) / 2.0;
+        let l1 = f64::midpoint(tr, sq);
         let l2 = (tr - sq) / 2.0;
         if (l1 - d).abs() < (l2 - d).abs() {
           l1
@@ -4795,11 +4767,8 @@ pub fn row_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "RowReduce expects exactly 1 argument".into(),
     ));
   }
-  let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      return Ok(unevaluated("RowReduce", args));
-    }
+  let Some(matrix) = expr_to_matrix(&args[0]) else {
+    return Ok(unevaluated("RowReduce", args));
   };
   Ok(matrix_to_expr(row_reduce_impl(&matrix)))
 }
@@ -4954,7 +4923,7 @@ pub fn drazin_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for &j in &pivot_cols {
       row.push(w_mat[i][j].clone());
     }
-    for nv in null_vecs.iter() {
+    for nv in null_vecs {
       let Expr::List(comp) = nv else {
         return Ok(unevaluated());
       };
@@ -4991,9 +4960,8 @@ pub fn drazin_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Simplify expression via the evaluator (with Simplify for symbolic)
 fn simplify_expr(e: &Expr) -> Expr {
-  let evaluated = match evaluate_expr_to_expr(e) {
-    Ok(r) => r,
-    Err(_) => return e.clone(),
+  let Ok(evaluated) = evaluate_expr_to_expr(e) else {
+    return e.clone();
   };
   // For symbolic expressions, also try Simplify
   match &evaluated {
@@ -5100,11 +5068,8 @@ pub fn matrix_rank_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "MatrixRank expects exactly 1 argument".into(),
     ));
   }
-  let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      return Ok(unevaluated("MatrixRank", args));
-    }
+  let Some(matrix) = expr_to_matrix(&args[0]) else {
+    return Ok(unevaluated("MatrixRank", args));
   };
   let rref = row_reduce_impl(&matrix);
   // Count non-zero rows
@@ -5122,12 +5087,9 @@ pub fn null_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "NullSpace expects exactly 1 argument".into(),
     ));
   }
-  let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      // Return empty list for non-matrix (symbolic matrix)
-      return Ok(Expr::List(vec![].into()));
-    }
+  let Some(matrix) = expr_to_matrix(&args[0]) else {
+    // Return empty list for non-matrix (symbolic matrix)
+    return Ok(Expr::List(vec![].into()));
   };
   let nrows = matrix.len();
   if nrows == 0 {
@@ -5296,7 +5258,7 @@ fn linear_solve_rectangular(
   b: &[Expr],
   ncols: usize,
   args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   // Augment [A | b] and reduce.
   let aug: Vec<Vec<Expr>> = matrix
     .iter()
@@ -5324,12 +5286,12 @@ fn linear_solve_rectangular(
         crate::emit_message(
           "LinearSolve::nosol: Linear equation encountered that has no solution.",
         );
-        return Ok(unevaluated("LinearSolve", args));
+        return unevaluated("LinearSolve", args);
       }
       None => {} // all-zero row
     }
   }
-  Ok(Expr::List(solution.into()))
+  Expr::List(solution.into())
 }
 
 pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -5339,11 +5301,8 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      return Ok(unevaluated("LinearSolve", args));
-    }
+  let Some(matrix) = expr_to_matrix(&args[0]) else {
+    return Ok(unevaluated("LinearSolve", args));
   };
 
   let b = match &args[1] {
@@ -5374,7 +5333,7 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
       return Ok(unevaluated("LinearSolve", args));
     }
-    return linear_solve_rectangular(&matrix, &b, ncols, args);
+    return Ok(linear_solve_rectangular(&matrix, &b, ncols, args));
   }
   if b.len() != n {
     crate::emit_message(
@@ -5407,10 +5366,7 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         break;
       }
     }
-    let pivot_row = match pivot_row {
-      Some(r) => r,
-      None => continue, // free column
-    };
+    let Some(pivot_row) = pivot_row else { continue };
 
     if pivot_row != next_row {
       aug.swap(next_row, pivot_row);
@@ -5449,9 +5405,8 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // but consistent systems.
   let mut x = vec![Expr::Integer(0); n];
   for i in (0..n).rev() {
-    let pivot_col = match pivot_col_of_row[i] {
-      Some(c) => c,
-      None => continue, // all-zero row, x values downstream already set
+    let Some(pivot_col) = pivot_col_of_row[i] else {
+      continue;
     };
     let mut sum = aug[i][n].clone();
     for j in (pivot_col + 1)..n {
@@ -5494,11 +5449,8 @@ pub fn minors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      return Ok(unevaluated("Minors", args));
-    }
+  let Some(matrix) = expr_to_matrix(&args[0]) else {
+    return Ok(unevaluated("Minors", args));
   };
 
   let nrows = matrix.len();
@@ -5610,11 +5562,8 @@ pub fn lattice_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Extract the matrix of integer vectors
-  let rows = match &args[0] {
-    Expr::List(rows) => rows,
-    _ => {
-      return Ok(unevaluated("LatticeReduce", args));
-    }
+  let Expr::List(rows) = &args[0] else {
+    return Ok(unevaluated("LatticeReduce", args));
   };
 
   if rows.is_empty() {
@@ -5778,11 +5727,8 @@ pub fn find_integer_null_vector_ast(
     return Ok(unevaluated("FindIntegerNullVector", args));
   }
 
-  let items = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("FindIntegerNullVector", args));
-    }
+  let Expr::List(items) = &args[0] else {
+    return Ok(unevaluated("FindIntegerNullVector", args));
   };
 
   let n = items.len();
@@ -6275,13 +6221,10 @@ fn find_fit_weighted(
 
   // Extract data points
   let data_evaluated = evaluate_expr_to_expr(data_expr)?;
-  let data_list = match &data_evaluated {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "FindFit: first argument must be a list".into(),
-      ));
-    }
+  let Expr::List(data_list) = &data_evaluated else {
+    return Err(InterpreterError::EvaluationError(
+      "FindFit: first argument must be a list".into(),
+    ));
   };
 
   let (x_vals, y_vals) = extract_fit_data(data_list)?;
@@ -6366,9 +6309,8 @@ fn find_fit_weighted(
     }
 
     // Solve J^T J delta = J^T r using QR on J
-    let mut delta = match solve_least_squares_qr(&jacobian, &residuals) {
-      Ok(d) => d,
-      Err(_) => break,
+    let Ok(mut delta) = solve_least_squares_qr(&jacobian, &residuals) else {
+      break;
     };
 
     // A parameter the step would push out of its box is held at that
@@ -6509,13 +6451,11 @@ pub fn dihedral_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => None,
     }
   };
-  let (p1, p2) = match pair(&args[0]) {
-    Some(x) => x,
-    None => return unevaluated(),
+  let Some((p1, p2)) = pair(&args[0]) else {
+    return unevaluated();
   };
-  let (v1, v2) = match pair(&args[1]) {
-    Some(x) => x,
-    None => return unevaluated(),
+  let Some((v1, v2)) = pair(&args[1]) else {
+    return unevaluated();
   };
   // All four entries must be length-3 vectors.
   let is_vec3 = |e: &Expr| matches!(e, Expr::List(items) if items.len() == 3);
@@ -6559,7 +6499,7 @@ pub fn solid_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   // Vectors from p to each u_i (each u_i an n-coordinate numeric point).
   let mut vecs: Vec<Expr> = Vec::with_capacity(us.len());
-  for u in us.iter() {
+  for u in us {
     let Expr::List(uc) = u else {
       return unevaluated();
     };
@@ -6627,7 +6567,7 @@ pub fn solid_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn upper_triangularize_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  triangularize_ast(args, true)
+  Ok(triangularize_ast(args, true))
 }
 
 /// LowerTriangularize[m] or LowerTriangularize[m, k]
@@ -6635,13 +6575,10 @@ pub fn upper_triangularize_ast(
 pub fn lower_triangularize_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  triangularize_ast(args, false)
+  Ok(triangularize_ast(args, false))
 }
 
-fn triangularize_ast(
-  args: &[Expr],
-  upper: bool,
-) -> Result<Expr, InterpreterError> {
+fn triangularize_ast(args: &[Expr], upper: bool) -> crate::syntax::Expr {
   let name = if upper {
     "UpperTriangularize"
   } else {
@@ -6649,21 +6586,18 @@ fn triangularize_ast(
   };
 
   if args.is_empty() || args.len() > 2 {
-    return Ok(unevaluated(name, args));
+    return unevaluated(name, args);
   }
 
-  let rows = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated(name, args));
-    }
+  let Expr::List(rows) = &args[0] else {
+    return unevaluated(name, args);
   };
 
   let k = if args.len() == 2 {
     match &args[1] {
       Expr::Integer(n) => *n,
       _ => {
-        return Ok(unevaluated(name, args));
+        return unevaluated(name, args);
       }
     }
   } else {
@@ -6695,12 +6629,12 @@ fn triangularize_ast(
         result_rows.push(Expr::List(new_cols.into()));
       }
       _ => {
-        return Ok(unevaluated(name, args));
+        return unevaluated(name, args);
       }
     }
   }
 
-  Ok(Expr::List(result_rows.into()))
+  Expr::List(result_rows.into())
 }
 
 // ─── LinearModelFit ────────────────────────────────────────────────────
@@ -7081,13 +7015,10 @@ fn linear_model_fit_design_matrix_form(
       ));
     }
   };
-  let y_list = match y_items {
-    Expr::List(ys) => ys,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "LinearModelFit: response must be a list".into(),
-      ));
-    }
+  let Expr::List(y_list) = y_items else {
+    return Err(InterpreterError::EvaluationError(
+      "LinearModelFit: response must be a list".into(),
+    ));
   };
   if x_matrix.len() != y_list.len() {
     return Err(InterpreterError::EvaluationError(format!(
@@ -7101,13 +7032,10 @@ fn linear_model_fit_design_matrix_form(
   let mut a_matrix: Vec<Vec<f64>> = Vec::with_capacity(n);
   let mut k: Option<usize> = None;
   for row in x_matrix {
-    let row_items = match row {
-      Expr::List(items) => items,
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "LinearModelFit: each design-matrix row must be a list".into(),
-        ));
-      }
+    let Expr::List(row_items) = row else {
+      return Err(InterpreterError::EvaluationError(
+        "LinearModelFit: each design-matrix row must be a list".into(),
+      ));
     };
     let width = row_items.len();
     match k {
@@ -7366,9 +7294,8 @@ pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     // Solve via Gaussian elimination
-    let new_beta = match solve_linear_system(&atwa, &atwz) {
-      Some(b) => b,
-      None => break,
+    let Some(new_beta) = solve_linear_system(&atwa, &atwz) else {
+      break;
     };
 
     let delta: f64 = new_beta
@@ -7542,13 +7469,10 @@ pub fn evaluate_fitted_model(
     ));
   }
 
-  let assoc = match &model_args[0] {
-    Expr::Association(pairs) => pairs,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "FittedModel: expected association argument".into(),
-      ));
-    }
+  let Expr::Association(assoc) = &model_args[0] else {
+    return Err(InterpreterError::EvaluationError(
+      "FittedModel: expected association argument".into(),
+    ));
   };
 
   // Check if the argument is a string (property query)
@@ -7570,8 +7494,7 @@ pub fn evaluate_fitted_model(
       }
     }
     return Err(InterpreterError::EvaluationError(format!(
-      "FittedModel: unknown property \"{}\"",
-      prop
+      "FittedModel: unknown property \"{prop}\""
     )));
   }
 
@@ -7616,13 +7539,10 @@ pub fn fitted_model_normal(
     ));
   }
 
-  let assoc = match &model_args[0] {
-    Expr::Association(pairs) => pairs,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "FittedModel: expected association argument".into(),
-      ));
-    }
+  let Expr::Association(assoc) = &model_args[0] else {
+    return Err(InterpreterError::EvaluationError(
+      "FittedModel: expected association argument".into(),
+    ));
   };
 
   for (key, val) in assoc {
@@ -7703,15 +7623,12 @@ pub fn cholesky_decomposition_ast(
     }
   }
 
-  let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      crate::emit_message(&format!(
-        "CholeskyDecomposition::matsq: Argument {} at position 1 is not a nonempty square matrix.",
-        expr_to_string(&args[0])
-      ));
-      return Ok(unevaluated());
-    }
+  let Some(matrix) = expr_to_matrix(&args[0]) else {
+    crate::emit_message(&format!(
+      "CholeskyDecomposition::matsq: Argument {} at position 1 is not a nonempty square matrix.",
+      expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
   };
 
   let n = matrix.len();
@@ -7840,11 +7757,8 @@ pub(crate) fn contains_imaginary_unit(e: &Expr) -> bool {
 }
 
 pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      return Ok(unevaluated("QRDecomposition", args));
-    }
+  let Some(matrix) = expr_to_matrix(&args[0]) else {
+    return Ok(unevaluated("QRDecomposition", args));
   };
 
   let n = matrix.len(); // rows
@@ -7966,11 +7880,8 @@ pub fn singular_value_decomposition_ast(
   if args.len() != 1 {
     return Ok(unevaluated("SingularValueDecomposition", args));
   }
-  let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      return Ok(unevaluated("SingularValueDecomposition", args));
-    }
+  let Some(matrix) = expr_to_matrix(&args[0]) else {
+    return Ok(unevaluated("SingularValueDecomposition", args));
   };
   let rows = matrix.len();
   if rows != 2 || matrix[0].len() != 2 {
@@ -7989,11 +7900,8 @@ pub fn singular_value_decomposition_ast(
   let b = to_f64(&matrix[0][1]);
   let c = to_f64(&matrix[1][0]);
   let d = to_f64(&matrix[1][1]);
-  let (a, b, c, d) = match (a, b, c, d) {
-    (Some(a), Some(b), Some(c), Some(d)) => (a, b, c, d),
-    _ => {
-      return Ok(unevaluated("SingularValueDecomposition", args));
-    }
+  let (Some(a), Some(b), Some(c), Some(d)) = (a, b, c, d) else {
+    return Ok(unevaluated("SingularValueDecomposition", args));
   };
   // A^T A = {{a^2 + c^2, ab + cd}, {ab + cd, b^2 + d^2}}.
   let m11 = a * a + c * c;
@@ -8003,7 +7911,7 @@ pub fn singular_value_decomposition_ast(
   let det = m11 * m22 - m12 * m12;
   let disc = (tr * tr - 4.0 * det).max(0.0);
   let sq = disc.sqrt();
-  let lambda1 = (tr + sq) / 2.0;
+  let lambda1 = f64::midpoint(tr, sq);
   let lambda2 = ((tr - sq) / 2.0).max(0.0);
   let sigma1 = lambda1.sqrt();
   let sigma2 = lambda2.sqrt();
@@ -8283,21 +8191,17 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
   }
   // Combine coefficient and radical: result = sign * (coeff_num / coeff_den) * sqrt(sqrt_num/sqrt_den)
   // = sign * sqrt(coeff_num^2 * sqrt_num / (coeff_den^2 * sqrt_den))
-  let n2 = match coeff_num.checked_mul(coeff_num) {
-    Some(v) => v,
-    None => return expr.clone(),
+  let Some(n2) = coeff_num.checked_mul(coeff_num) else {
+    return expr.clone();
   };
-  let d2 = match coeff_den.checked_mul(coeff_den) {
-    Some(v) => v,
-    None => return expr.clone(),
+  let Some(d2) = coeff_den.checked_mul(coeff_den) else {
+    return expr.clone();
   };
-  let inner_num = match n2.checked_mul(sqrt_num) {
-    Some(v) => v,
-    None => return expr.clone(),
+  let Some(inner_num) = n2.checked_mul(sqrt_num) else {
+    return expr.clone();
   };
-  let inner_den = match d2.checked_mul(sqrt_den) {
-    Some(v) => v,
-    None => return expr.clone(),
+  let Some(inner_den) = d2.checked_mul(sqrt_den) else {
+    return expr.clone();
   };
   if inner_den == 0 {
     return expr.clone();
@@ -8319,9 +8223,8 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
   } else {
     make_rational(nn, dd)
   };
-  let simplified = match sqrt_ast(&[inner_expr]) {
-    Ok(e) => e,
-    Err(_) => return expr.clone(),
+  let Ok(simplified) = sqrt_ast(&[inner_expr]) else {
+    return expr.clone();
   };
   if sign < 0 {
     match times_ast(&[Expr::Integer(-1), simplified]) {
@@ -8362,11 +8265,8 @@ pub fn principal_components_ast(
       "PrincipalComponents expects exactly 1 argument".into(),
     ));
   }
-  let data = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      return Ok(unevaluated("PrincipalComponents", args));
-    }
+  let Some(data) = expr_to_matrix(&args[0]) else {
+    return Ok(unevaluated("PrincipalComponents", args));
   };
 
   let nrows = data.len();
@@ -8422,11 +8322,8 @@ pub fn principal_components_ast(
   let eigvecs = eigenvectors_ast(&[cov_expr])?;
 
   // 5. Normalize eigenvectors to unit length
-  let eigvec_matrix = match expr_to_matrix(&eigvecs) {
-    Some(m) => m,
-    None => {
-      return Ok(unevaluated("PrincipalComponents", args));
-    }
+  let Some(eigvec_matrix) = expr_to_matrix(&eigvecs) else {
+    return Ok(unevaluated("PrincipalComponents", args));
   };
 
   let mut normalized_eigvecs = Vec::with_capacity(eigvec_matrix.len());
@@ -8456,8 +8353,7 @@ pub fn principal_components_ast(
     }
     let dot = simplify_expr(&dot);
     let should_negate = crate::functions::math_ast::try_eval_to_f64(&dot)
-      .map(|v| v < 0.0)
-      .unwrap_or(false);
+      .is_some_and(|v| v < 0.0);
     if should_negate {
       normalized = normalized
         .into_iter()
@@ -8499,25 +8395,19 @@ pub fn smith_decomposition_ast(
     ));
   }
 
-  let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      return Ok(unevaluated("SmithDecomposition", args));
-    }
+  let Some(matrix) = expr_to_matrix(&args[0]) else {
+    return Ok(unevaluated("SmithDecomposition", args));
   };
 
-  let int_matrix = match matrix_to_i128(&matrix) {
-    Some(m) => m,
-    None => {
-      // Matches wolframscript: emit SmithDecomposition::latm when an
-      // entry isn't a rational (integer-coefficient matrices satisfy
-      // this trivially; non-integer rationals would otherwise need a
-      // denominator-clearing step Woxi doesn't yet do).
-      crate::emit_message(
-        "SmithDecomposition::latm: Matrix contains an entry that is not rational.",
-      );
-      return Ok(unevaluated("SmithDecomposition", args));
-    }
+  let Some(int_matrix) = matrix_to_i128(&matrix) else {
+    // Matches wolframscript: emit SmithDecomposition::latm when an
+    // entry isn't a rational (integer-coefficient matrices satisfy
+    // this trivially; non-integer rationals would otherwise need a
+    // denominator-clearing step Woxi doesn't yet do).
+    crate::emit_message(
+      "SmithDecomposition::latm: Matrix contains an entry that is not rational.",
+    );
+    return Ok(unevaluated("SmithDecomposition", args));
   };
 
   let nrows = int_matrix.len();
@@ -8803,13 +8693,10 @@ pub fn design_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let data = match &args[0] {
-    Expr::List(rows) => rows,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "DesignMatrix: first argument must be a list of data points".into(),
-      ));
-    }
+  let Expr::List(data) = &args[0] else {
+    return Err(InterpreterError::EvaluationError(
+      "DesignMatrix: first argument must be a list of data points".into(),
+    ));
   };
 
   // Parse basis functions - can be single function or list
@@ -8836,13 +8723,10 @@ pub fn design_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut result_rows = Vec::new();
   for row_expr in data {
-    let row = match row_expr {
-      Expr::List(items) => items,
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "DesignMatrix: each data point must be a list".into(),
-        ));
-      }
+    let Expr::List(row) = row_expr else {
+      return Err(InterpreterError::EvaluationError(
+        "DesignMatrix: each data point must be a list".into(),
+      ));
     };
 
     // Predictors are all columns except the last
@@ -8932,9 +8816,8 @@ pub fn singular_value_list_ast(
     name: "Eigenvalues".to_string(),
     args: vec![call("Dot", gram_args)].into(),
   })?;
-  let eig_items = match &eigenvalues {
-    Expr::List(items) => items,
-    _ => return Ok(unevaluated(args)),
+  let Expr::List(eig_items) = &eigenvalues else {
+    return Ok(unevaluated(args));
   };
 
   // Pair each eigenvalue with its numeric value for sorting and zero-drop
@@ -9321,17 +9204,17 @@ pub fn jordan_decomposition_ast(
   }
 
   if !repeated {
-    let s = if !c_zero {
-      // ((λ - d)/c, 1) for both eigenvalues
-      let x1 = ev(div2(sub(l1.clone(), d.clone()), c.clone()))?;
-      let x2 = ev(div2(sub(l2.clone(), d.clone()), c.clone()))?;
-      matrix((x1, one.clone()), (x2, one.clone()))
-    } else {
+    let s = if c_zero {
       // Upper triangular: (1, 0) for λ = a, (b/(d - a), 1) for λ = d
       let vd = (ev(div2(b.clone(), sub(d.clone(), a.clone())))?, one.clone());
       let va = (one.clone(), zero.clone());
       let (col1, col2) = if same(&l1, &a) { (va, vd) } else { (vd, va) };
       matrix(col1, col2)
+    } else {
+      // ((λ - d)/c, 1) for both eigenvalues
+      let x1 = ev(div2(sub(l1.clone(), d.clone()), c.clone()))?;
+      let x2 = ev(div2(sub(l2.clone(), d.clone()), c.clone()))?;
+      matrix((x1, one.clone()), (x2, one.clone()))
     };
     return Ok(Expr::List(vec![s, diag(l1, l2)].into()));
   }
@@ -9345,7 +9228,11 @@ pub fn jordan_decomposition_ast(
     ]
     .into(),
   );
-  let s = if !c_zero {
+  let s = if c_zero {
+    // Upper triangular defective: v = (1, 0), w = (0, 1/b)
+    let w2 = ev(div2(one.clone(), b.clone()))?;
+    matrix((one.clone(), zero.clone()), (zero.clone(), w2))
+  } else {
     let v1 = ev(div2(sub(lam.clone(), d.clone()), c.clone()))?;
     let a_minus_lam = ev(sub(a.clone(), lam.clone()))?;
     let w1 = if same(&a_minus_lam, &zero) {
@@ -9354,10 +9241,6 @@ pub fn jordan_decomposition_ast(
       ev(div2(v1.clone(), a_minus_lam))?
     };
     matrix((v1, one.clone()), (w1, zero.clone()))
-  } else {
-    // Upper triangular defective: v = (1, 0), w = (0, 1/b)
-    let w2 = ev(div2(one.clone(), b.clone()))?;
-    matrix((one.clone(), zero.clone()), (zero.clone(), w2))
   };
   Ok(Expr::List(vec![s, j].into()))
 }
@@ -9419,7 +9302,7 @@ pub fn jordan_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for (e, m) in &distinct {
       match numeric_re_im(e) {
         Some(key) if key.0.is_finite() && key.1.is_finite() => {
-          keyed.push((key, e.clone(), *m))
+          keyed.push((key, e.clone(), *m));
         }
         _ => return Ok(unevaluated()),
       }
@@ -9439,16 +9322,14 @@ pub fn jordan_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       blocks.push((lam.clone(), 1));
       continue;
     }
-    let b = match subtract_scalar_from_diagonal(&matrix, lam) {
-      Some(b) => b,
-      None => return Ok(unevaluated()),
+    let Some(b) = subtract_scalar_from_diagonal(&matrix, lam) else {
+      return Ok(unevaluated());
     };
     let mut ranks: Vec<usize> = vec![n];
     let mut p = b.clone();
     loop {
-      let r = match matrix_rank_of(&p) {
-        Some(r) => r,
-        None => return Ok(unevaluated()),
+      let Some(r) = matrix_rank_of(&p) else {
+        return Ok(unevaluated());
       };
       ranks.push(r);
       if r <= n - mult {
@@ -9816,7 +9697,7 @@ impl PField for FpNum {
 type GPoly = Vec<GQNum>;
 
 fn gp_trim<F: PField>(mut p: Vec<F>) -> Vec<F> {
-  while p.last().is_some_and(|c| c.is_zero()) {
+  while p.last().is_some_and(PField::is_zero) {
     p.pop();
   }
   p
@@ -9910,14 +9791,14 @@ fn expr_to_gq(e: &Expr) -> Option<GQNum> {
     // a + b*I and c*I forms that survive as unevaluated arithmetic
     Expr::FunctionCall { name, args } if name == "Plus" => {
       let mut acc = GQNum::zero();
-      for a in args.iter() {
+      for a in args {
         acc = acc.add(&expr_to_gq(a)?)?;
       }
       Some(acc)
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
       let mut acc = GQNum::one();
-      for a in args.iter() {
+      for a in args {
         acc = acc.mul(&expr_to_gq(a)?)?;
       }
       Some(acc)
@@ -9982,7 +9863,7 @@ fn gp_smith_diagonal<F: PField>(
       }
       let (pi, pj) = pivot?; // xI − A is nonsingular, so a pivot exists
       p.swap(t, pi);
-      for row in p.iter_mut() {
+      for row in &mut p {
         row.swap(t, pj);
       }
 
@@ -10282,9 +10163,8 @@ pub fn frobenius_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for i in 0..n {
     let mut row: Vec<GPoly> = Vec::with_capacity(n);
     for j in 0..n {
-      let neg = match GQNum::zero().sub(&entries[i][j]) {
-        Some(v) => v,
-        None => return Ok(unevaluated()),
+      let Some(neg) = GQNum::zero().sub(&entries[i][j]) else {
+        return Ok(unevaluated());
       };
       let mut poly = vec![neg];
       if i == j {
@@ -10435,20 +10315,19 @@ pub fn ldl_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for row in &matrix {
     let mut out_row = Vec::with_capacity(n);
     for cell in row {
-      match expr_to_gq(cell) {
-        Some(v) => out_row.push(v),
-        None => {
-          let has_real = matrix
-            .iter()
-            .any(|r| r.iter().any(|e| matches!(e, Expr::Real(_))));
-          if !has_real {
-            crate::emit_message(&format!(
-              "LDLDecomposition::herm: The matrix {} is not Hermitian or real and symmetric.",
-              expr_to_string(&args[0])
-            ));
-          }
-          return Ok(unevaluated());
+      if let Some(v) = expr_to_gq(cell) {
+        out_row.push(v);
+      } else {
+        let has_real = matrix
+          .iter()
+          .any(|r| r.iter().any(|e| matches!(e, Expr::Real(_))));
+        if !has_real {
+          crate::emit_message(&format!(
+            "LDLDecomposition::herm: The matrix {} is not Hermitian or real and symmetric.",
+            expr_to_string(&args[0])
+          ));
         }
+        return Ok(unevaluated());
       }
     }
     entries.push(out_row);
@@ -10620,9 +10499,8 @@ pub fn coordinate_transform_ast(
     }
     _ => return Ok(unevaluated(args)),
   };
-  let pt = match &args[1] {
-    Expr::List(items) => items,
-    _ => return Ok(unevaluated(args)),
+  let Expr::List(pt) = &args[1] else {
+    return Ok(unevaluated(args));
   };
 
   let times = |fs: Vec<Expr>| call("Times", fs);
@@ -10717,7 +10595,7 @@ pub fn hermite_decomposition_ast(
   };
   let mut m: Vec<Vec<i128>> = Vec::with_capacity(rows.len());
   let mut width: Option<usize> = None;
-  for r in rows.iter() {
+  for r in rows {
     let Expr::List(cells) = r else {
       return Ok(unevaluated());
     };
@@ -10725,7 +10603,7 @@ pub fn hermite_decomposition_ast(
       return Ok(unevaluated());
     }
     let mut row = Vec::with_capacity(cells.len());
-    for c in cells.iter() {
+    for c in cells {
       match c {
         Expr::Integer(v) => row.push(*v),
         _ => return Ok(unevaluated()),
@@ -10875,7 +10753,7 @@ fn la_int_matrix(expr: &Expr) -> Option<Vec<Vec<i128>>> {
   }
   let mut out = Vec::with_capacity(rows.len());
   let mut width = None;
-  for row in rows.iter() {
+  for row in rows {
     let Expr::List(cells) = row else {
       return None;
     };
@@ -11545,7 +11423,7 @@ fn real_schur(a: &[Vec<f64>]) -> Option<(Vec<Vec<f64>>, Vec<Vec<f64>>)> {
         l2
       }
     } else {
-      (a1 + d1) / 2.0
+      f64::midpoint(a1, d1)
     };
     if iterations.is_multiple_of(10) {
       mu += h[hi - 1][hi - 2].abs();
@@ -11621,7 +11499,7 @@ pub fn schur_decomposition_ast(
   let n = rows.len();
   let mut matrix: Vec<Vec<f64>> = Vec::with_capacity(n);
   let mut exact = true;
-  for row in rows.iter() {
+  for row in rows {
     let Expr::List(entries) = row else {
       matrix.clear();
       break;
@@ -11631,7 +11509,7 @@ pub fn schur_decomposition_ast(
       break;
     }
     let mut values = Vec::with_capacity(n);
-    for entry in entries.iter() {
+    for entry in entries {
       match entry {
         Expr::Real(v) => {
           exact = false;
@@ -11639,21 +11517,21 @@ pub fn schur_decomposition_ast(
         }
         Expr::BigFloat(..) => {
           exact = false;
-          match crate::functions::math_ast::expr_to_num(entry) {
-            Some(v) => values.push(v),
-            None => {
-              matrix.clear();
-              break;
-            }
-          }
-        }
-        _ => match crate::functions::math_ast::expr_to_num(entry) {
-          Some(v) => values.push(v),
-          None => {
+          if let Some(v) = crate::functions::math_ast::expr_to_num(entry) {
+            values.push(v);
+          } else {
             matrix.clear();
             break;
           }
-        },
+        }
+        _ => {
+          if let Some(v) = crate::functions::math_ast::expr_to_num(entry) {
+            values.push(v);
+          } else {
+            matrix.clear();
+            break;
+          }
+        }
       }
     }
     if values.len() != n {
@@ -11757,7 +11635,7 @@ fn parse_symmetry(
     return Err(SymmetryError::Invalid);
   };
   let mut slots = Vec::with_capacity(items.len());
-  for item in items.iter() {
+  for item in items {
     let Expr::Integer(i) = item else {
       return Err(SymmetryError::Invalid);
     };
@@ -11884,9 +11762,8 @@ pub fn symmetrize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Err(SymmetryError::BeyondRank(slot)) => {
       crate::emit_message(&format!(
-        "Symmetrize::symmrank: Symmetry specification moves index {} beyond \
-         tensor rank {}.",
-        slot, rank
+        "Symmetrize::symmrank: Symmetry specification moves index {slot} beyond \
+         tensor rank {rank}."
       ));
       return Ok(unevaluated());
     }
@@ -12019,7 +11896,7 @@ fn parse_symmetrized_array(e: &Expr) -> Option<SymmetrizedParts> {
     return None;
   };
   let mut dims = Vec::with_capacity(dim_items.len());
-  for d in dim_items.iter() {
+  for d in dim_items {
     let Expr::Integer(d) = d else { return None };
     dims.push(*d as usize);
   }
@@ -12027,7 +11904,7 @@ fn parse_symmetrized_array(e: &Expr) -> Option<SymmetrizedParts> {
     return None;
   };
   let mut entries = Vec::with_capacity(rule_items.len());
-  for rule in rule_items.iter() {
+  for rule in rule_items {
     let (pos, value) = match rule {
       Expr::Rule {
         pattern,
@@ -12044,7 +11921,7 @@ fn parse_symmetrized_array(e: &Expr) -> Option<SymmetrizedParts> {
       return None;
     };
     let mut p = Vec::with_capacity(components.len());
-    for c in components.iter() {
+    for c in components {
       let Expr::Integer(c) = c else { return None };
       p.push(*c as usize - 1);
     }

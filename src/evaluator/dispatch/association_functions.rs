@@ -61,10 +61,10 @@ pub fn dispatch_association_functions(
           Err(InterpreterError::EvaluationError(msg))
             if msg.contains("same length") =>
           {
-            let keys_str = if !args.is_empty() {
-              crate::syntax::expr_to_string(&args[0])
-            } else {
+            let keys_str = if args.is_empty() {
               String::new()
+            } else {
+              crate::syntax::expr_to_string(&args[0])
             };
             let vals_str = if args.len() >= 2 {
               crate::syntax::expr_to_string(&args[1])
@@ -72,8 +72,7 @@ pub fn dispatch_association_functions(
               String::new()
             };
             crate::emit_message(&format!(
-              "AssociationThread::idim: {} and {} must have the same length.",
-              keys_str, vals_str,
+              "AssociationThread::idim: {keys_str} and {vals_str} must have the same length.",
             ));
             Ok(unevaluated("AssociationThread", args))
           }

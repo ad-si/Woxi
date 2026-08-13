@@ -114,7 +114,7 @@ fn layout_recursive(
     // Center parent over children
     let first_child_x = nodes[child_indices[0]].x;
     let last_child_x = nodes[child_indices[child_indices.len() - 1]].x;
-    nodes[idx].x = (first_child_x + last_child_x) / 2.0;
+    nodes[idx].x = f64::midpoint(first_child_x, last_child_x);
     nodes[idx].children_indices = child_indices;
   }
 

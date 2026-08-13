@@ -1209,10 +1209,10 @@ mod cross {
   fn cross_symbolic() {
     // Negated products should be parenthesized: -(c*e) not -c*e
     let result = interpret("Cross[{a, b, c}, {d, e, f}]").unwrap();
-    assert!(result.contains("-(c*e)"), "Expected -(c*e) in {}", result);
-    assert!(result.contains("b*f"), "Expected b*f in {}", result);
-    assert!(result.contains("-(b*d)"), "Expected -(b*d) in {}", result);
-    assert!(result.contains("a*e"), "Expected a*e in {}", result);
+    assert!(result.contains("-(c*e)"), "Expected -(c*e) in {result}");
+    assert!(result.contains("b*f"), "Expected b*f in {result}");
+    assert!(result.contains("-(b*d)"), "Expected -(b*d) in {result}");
+    assert!(result.contains("a*e"), "Expected a*e in {result}");
   }
 
   #[test]
@@ -1856,8 +1856,7 @@ mod eigenvalues {
       msgs.iter().any(|m| m.contains(
         "Eigenvalues::take: Cannot take eigenvalues 1 through 3 out of the total of 2 eigenvalues."
       )),
-      "expected take message, got {:?}",
-      msgs
+      "expected take message, got {msgs:?}"
     );
   }
 
@@ -1890,7 +1889,7 @@ mod eigenvalues {
     let expected = [6.606744130165772, 4.525355330602706, 0.6679005392315176];
     assert_eq!(vals.len(), 3);
     for (v, e) in vals.iter().zip(expected.iter()) {
-      assert!((v - e).abs() < 1e-9, "got {} expected {}", v, e);
+      assert!((v - e).abs() < 1e-9, "got {v} expected {e}");
     }
   }
 
@@ -2241,8 +2240,7 @@ mod fit {
     let result = interpret("Normal[LinearModelFit[{{1, 1}}, x, x]]").unwrap();
     assert!(
       result.contains("0.5"),
-      "expected the minimum-norm fit, got: {}",
-      result
+      "expected the minimum-norm fit, got: {result}"
     );
   }
 
@@ -2549,8 +2547,7 @@ mod eigenvectors {
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.iter().any(|m| m.contains("Eigenvectors::take")),
-      "expected take message, got {:?}",
-      msgs
+      "expected take message, got {msgs:?}"
     );
   }
 
@@ -2695,8 +2692,7 @@ mod eigensystem {
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.iter().any(|m| m.contains("Eigensystem::take")),
-      "expected take message, got {:?}",
-      msgs
+      "expected take message, got {msgs:?}"
     );
   }
 }
@@ -2779,8 +2775,7 @@ mod signature {
       msgs.iter().any(|m| m.contains(
         "Signature::normal: Nonatomic expression expected at position 1 in Signature[5]."
       )),
-      "expected normal message, got {:?}",
-      msgs
+      "expected normal message, got {msgs:?}"
     );
   }
 }
@@ -2987,8 +2982,7 @@ mod pseudo_inverse {
     // M+.M.M+ == M+ for a rectangular matrix
     let pi = interpret("PseudoInverse[{{1, 2, 3}, {4, 5, 6}}]").unwrap();
     let check =
-      interpret(&format!("{}.{{{{1, 2, 3}}, {{4, 5, 6}}}}.{}", pi, pi))
-        .unwrap();
+      interpret(&format!("{pi}.{{{{1, 2, 3}}, {{4, 5, 6}}}}.{pi}")).unwrap();
     assert_eq!(check, pi);
   }
 
@@ -3189,13 +3183,11 @@ mod find_fit {
     // a should be ~1.0, b should be ~0.0
     assert!(
       result.contains("a -> "),
-      "Expected a rule for a, got: {}",
-      result
+      "Expected a rule for a, got: {result}"
     );
     assert!(
       result.contains("b -> "),
-      "Expected a rule for b, got: {}",
-      result
+      "Expected a rule for b, got: {result}"
     );
     // Parse a value
     let a_val: f64 = result
@@ -3208,11 +3200,7 @@ mod find_fit {
       .trim()
       .parse()
       .unwrap();
-    assert!(
-      (a_val - 1.0).abs() < 0.001,
-      "Expected a ≈ 1.0, got {}",
-      a_val
-    );
+    assert!((a_val - 1.0).abs() < 0.001, "Expected a ≈ 1.0, got {a_val}");
   }
 
   #[test]
@@ -3221,8 +3209,7 @@ mod find_fit {
     let result = interpret("FindFit[{1,4,9}, a*x^2, {a}, x]").unwrap();
     assert!(
       result.contains("a -> 1."),
-      "Expected a -> 1., got: {}",
-      result
+      "Expected a -> 1., got: {result}"
     );
   }
 
@@ -3233,8 +3220,8 @@ mod find_fit {
     )
     .unwrap();
     // a ≈ 1, b ≈ 1
-    assert!(result.contains("a -> "), "Expected a rule, got: {}", result);
-    assert!(result.contains("b -> "), "Expected b rule, got: {}", result);
+    assert!(result.contains("a -> "), "Expected a rule, got: {result}");
+    assert!(result.contains("b -> "), "Expected b rule, got: {result}");
   }
 }
 
@@ -3752,8 +3739,8 @@ mod linear_model_fit {
     )
     .unwrap();
     // Should return something like 0.186... + 0.694...*x
-    assert!(result.contains("+"));
-    assert!(result.contains("x"));
+    assert!(result.contains('+'));
+    assert!(result.contains('x'));
   }
 
   #[test]
@@ -3772,7 +3759,7 @@ mod linear_model_fit {
       "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; lm[\"BestFitParameters\"]",
     )
     .unwrap();
-    assert!(result.starts_with("{"));
+    assert!(result.starts_with('{'));
     assert!(result.contains("0.186"));
     assert!(result.contains("0.694"));
   }
@@ -3783,7 +3770,7 @@ mod linear_model_fit {
       "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; lm[\"FitResiduals\"]",
     )
     .unwrap();
-    assert!(result.starts_with("{"));
+    assert!(result.starts_with('{'));
     assert!(result.contains("0.813"));
     assert!(result.contains("-0.881"));
   }
@@ -3805,7 +3792,7 @@ mod linear_model_fit {
       "lm = LinearModelFit[{{1, 1}, {2, 4}, {3, 9}}, {1, x, x^2}, x]; Normal[lm]",
     )
     .unwrap();
-    assert!(result.contains("x"));
+    assert!(result.contains('x'));
   }
 
   #[test]
@@ -4510,7 +4497,7 @@ mod tensor_wedge {
     let vu = interpret("TensorWedge[{4, 5, 6}, {1, 2, 3}]").unwrap();
     // Parse and check negation
     let uv_neg =
-      interpret(&format!("Map[Function[x, -x], {}, {{2}}]", uv)).unwrap();
+      interpret(&format!("Map[Function[x, -x], {uv}, {{2}}]")).unwrap();
     assert_eq!(uv_neg, vu, "TensorWedge should be antisymmetric");
   }
 
@@ -4536,7 +4523,7 @@ mod tensor_wedge {
     let result =
       interpret("TensorWedge[{1, 0, 0}, {0, 1, 0}, {0, 0, 1}]").unwrap();
     // The (0,1,2) entry should be 1 and (1,0,2) should be -1, etc.
-    assert!(result.contains("1"), "should contain nonzero entries");
+    assert!(result.contains('1'), "should contain nonzero entries");
   }
 
   #[test]
@@ -4559,8 +4546,7 @@ mod logit_model_fit {
     .unwrap();
     assert!(
       result.contains("FittedModel"),
-      "expected FittedModel, got {}",
-      result
+      "expected FittedModel, got {result}"
     );
   }
 
@@ -4578,8 +4564,7 @@ mod logit_model_fit {
     let val: f64 = result.parse().unwrap();
     assert!(
       val > 0.2 && val < 0.8,
-      "expected probability near 0.5 at transition, got {}",
-      val
+      "expected probability near 0.5 at transition, got {val}"
     );
   }
 
@@ -4594,12 +4579,12 @@ mod logit_model_fit {
     // At x=-5, should be close to 0
     let low = interpret("model[-5.0]").unwrap();
     let low_val: f64 = low.parse().unwrap();
-    assert!(low_val < 0.1, "expected p < 0.1 at x=-5, got {}", low_val);
+    assert!(low_val < 0.1, "expected p < 0.1 at x=-5, got {low_val}");
 
     // At x=10, should be close to 1
     let high = interpret("model[10.0]").unwrap();
     let high_val: f64 = high.parse().unwrap();
-    assert!(high_val > 0.9, "expected p > 0.9 at x=10, got {}", high_val);
+    assert!(high_val > 0.9, "expected p > 0.9 at x=10, got {high_val}");
   }
 
   #[test]
@@ -4613,8 +4598,7 @@ mod logit_model_fit {
     let params = interpret("model[\"BestFitParameters\"]").unwrap();
     assert!(
       params.starts_with('{'),
-      "expected list of params, got {}",
-      params
+      "expected list of params, got {params}"
     );
   }
 }

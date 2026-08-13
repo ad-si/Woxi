@@ -1624,16 +1624,14 @@ pub fn check_arg_count(
   let msg = if min == max {
     if min == 1 {
       format!(
-        "{}::argx: {} called with {} {}; 1 argument is expected.",
-        name, name, n, arg_word
+        "{name}::argx: {name} called with {n} {arg_word}; 1 argument is expected."
       )
     } else {
       // wolframscript uses the `argr` tag when called with exactly one
       // argument, and `argrx` for any other (0, 2, 3, ...) count.
       let tag = if n == 1 { "argr" } else { "argrx" };
       format!(
-        "{}::{}: {} called with {} {}; {} arguments are expected.",
-        name, tag, name, n, arg_word, min
+        "{name}::{tag}: {name} called with {n} {arg_word}; {min} arguments are expected."
       )
     }
   } else if max == usize::MAX {
@@ -1642,21 +1640,18 @@ pub fn check_arg_count(
     // wolframscript uses the `argmu` tag when called with one argument.
     let tag = if n == 1 { "argmu" } else { "argm" };
     format!(
-      "{}::{}: {} called with {} {}; {} or more arguments are expected.",
-      name, tag, name, n, arg_word, min
+      "{name}::{tag}: {name} called with {n} {arg_word}; {min} or more arguments are expected."
     )
   } else if max - min == 1 {
     // wolframscript uses the *u tag variants when called with one argument
     let tag = if n == 1 { "argtu" } else { "argt" };
     format!(
-      "{}::{}: {} called with {} {}; {} or {} arguments are expected.",
-      name, tag, name, n, arg_word, min, max
+      "{name}::{tag}: {name} called with {n} {arg_word}; {min} or {max} arguments are expected."
     )
   } else {
     let tag = if n == 1 { "argbu" } else { "argb" };
     format!(
-      "{}::{}: {} called with {} {}; between {} and {} arguments are expected.",
-      name, tag, name, n, arg_word, min, max
+      "{name}::{tag}: {name} called with {n} {arg_word}; between {min} and {max} arguments are expected."
     )
   };
 

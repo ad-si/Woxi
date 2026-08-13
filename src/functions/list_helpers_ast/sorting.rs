@@ -85,7 +85,7 @@ pub fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
       let mut imaginary_units = 0;
       let mut coefficient = 1.0;
-      for arg in args.iter() {
+      for arg in args {
         if matches!(arg, Expr::Identifier(n) | Expr::Constant(n) if n == "I") {
           imaginary_units += 1;
         } else {
@@ -696,7 +696,7 @@ pub fn position_extreme_ast(
     return unevaluated();
   }
   let mut vals = Vec::with_capacity(items.len());
-  for it in items.iter() {
+  for it in items {
     match crate::functions::math_ast::try_eval_to_f64(it) {
       Some(v) => vals.push(v),
       None => return unevaluated(),
@@ -764,9 +764,9 @@ pub fn position_extreme_ast(
   }
 
   let target = if largest {
-    vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+    vals.iter().copied().fold(f64::NEG_INFINITY, f64::max)
   } else {
-    vals.iter().cloned().fold(f64::INFINITY, f64::min)
+    vals.iter().copied().fold(f64::INFINITY, f64::min)
   };
   let positions: Vec<Expr> = vals
     .iter()
@@ -1055,50 +1055,47 @@ fn minimal_maximal_by_assoc(
     .map(|(k, v)| Ok(((k.clone(), v.clone()), apply_func_ast(func, v)?)))
     .collect::<Result<_, InterpreterError>>()?;
 
-  match n {
-    Some(n_val) => {
-      let mut indexed: Vec<(usize, &Expr)> =
-        keyed.iter().enumerate().map(|(i, (_, c))| (i, c)).collect();
-      indexed.sort_by(|(_, a), (_, b)| {
+  if let Some(n_val) = n {
+    let mut indexed: Vec<(usize, &Expr)> =
+      keyed.iter().enumerate().map(|(i, (_, c))| (i, c)).collect();
+    indexed.sort_by(|(_, a), (_, b)| {
+      if maximal {
+        by_key_cmp(b, a)
+      } else {
+        by_key_cmp(a, b)
+      }
+    });
+    let take = (n_val.max(0) as usize).min(keyed.len());
+    let result: Vec<(Expr, Expr)> = indexed
+      .into_iter()
+      .take(take)
+      .map(|(i, _)| keyed[i].0.clone())
+      .collect();
+    Ok(Expr::Association(result))
+  } else {
+    let extreme = keyed
+      .iter()
+      .map(|(_, c)| c)
+      .min_by(|a, b| {
         if maximal {
           by_key_cmp(b, a)
         } else {
           by_key_cmp(a, b)
         }
-      });
-      let take = (n_val.max(0) as usize).min(keyed.len());
-      let result: Vec<(Expr, Expr)> = indexed
-        .into_iter()
-        .take(take)
-        .map(|(i, _)| keyed[i].0.clone())
-        .collect();
-      Ok(Expr::Association(result))
-    }
-    None => {
-      let extreme = keyed
-        .iter()
-        .map(|(_, c)| c)
-        .min_by(|a, b| {
-          if maximal {
-            by_key_cmp(b, a)
-          } else {
-            by_key_cmp(a, b)
-          }
-        })
-        .cloned();
-      let result: Vec<(Expr, Expr)> = match extreme {
-        Some(ex) => {
-          let ex_str = crate::syntax::expr_to_string(&ex);
-          keyed
-            .into_iter()
-            .filter(|(_, c)| crate::syntax::expr_to_string(c) == ex_str)
-            .map(|(kv, _)| kv)
-            .collect()
-        }
-        None => vec![],
-      };
-      Ok(Expr::Association(result))
-    }
+      })
+      .cloned();
+    let result: Vec<(Expr, Expr)> = match extreme {
+      Some(ex) => {
+        let ex_str = crate::syntax::expr_to_string(&ex);
+        keyed
+          .into_iter()
+          .filter(|(_, c)| crate::syntax::expr_to_string(c) == ex_str)
+          .map(|(kv, _)| kv)
+          .collect()
+      }
+      None => vec![],
+    };
+    Ok(Expr::Association(result))
   }
 }
 
@@ -1134,38 +1131,35 @@ pub fn minimal_by_ast(
     })
     .collect::<Result<_, InterpreterError>>()?;
 
-  match n {
-    Some(n_val) => {
-      // Sort by key ascending, take n elements
-      let mut indexed: Vec<(usize, &Expr)> =
-        keyed.iter().enumerate().map(|(i, (_, k))| (i, k)).collect();
-      indexed.sort_by(|(_, a), (_, b)| by_key_cmp(a, b));
-      let take = (n_val as usize).min(keyed.len());
-      let result: Vec<Expr> = indexed
+  if let Some(n_val) = n {
+    // Sort by key ascending, take n elements
+    let mut indexed: Vec<(usize, &Expr)> =
+      keyed.iter().enumerate().map(|(i, (_, k))| (i, k)).collect();
+    indexed.sort_by(|(_, a), (_, b)| by_key_cmp(a, b));
+    let take = (n_val as usize).min(keyed.len());
+    let result: Vec<Expr> = indexed
+      .into_iter()
+      .take(take)
+      .map(|(i, _)| keyed[i].0.clone())
+      .collect();
+    Ok(Expr::List(result.into()))
+  } else {
+    let min_key = keyed
+      .iter()
+      .map(|(_, k)| k)
+      .min_by(|a, b| by_key_cmp(a, b))
+      .cloned();
+
+    if let Some(min_k) = min_key {
+      let min_str = crate::syntax::expr_to_string(&min_k);
+      let result: Vec<Expr> = keyed
         .into_iter()
-        .take(take)
-        .map(|(i, _)| keyed[i].0.clone())
+        .filter(|(_, k)| crate::syntax::expr_to_string(k) == min_str)
+        .map(|(item, _)| item)
         .collect();
       Ok(Expr::List(result.into()))
-    }
-    None => {
-      let min_key = keyed
-        .iter()
-        .map(|(_, k)| k)
-        .min_by(|a, b| by_key_cmp(a, b))
-        .cloned();
-
-      if let Some(min_k) = min_key {
-        let min_str = crate::syntax::expr_to_string(&min_k);
-        let result: Vec<Expr> = keyed
-          .into_iter()
-          .filter(|(_, k)| crate::syntax::expr_to_string(k) == min_str)
-          .map(|(item, _)| item)
-          .collect();
-        Ok(Expr::List(result.into()))
-      } else {
-        Ok(Expr::List(vec![].into()))
-      }
+    } else {
+      Ok(Expr::List(vec![].into()))
     }
   }
 }
@@ -1204,38 +1198,35 @@ pub fn maximal_by_ast(
     })
     .collect::<Result<_, InterpreterError>>()?;
 
-  match n {
-    Some(n_val) => {
-      // Sort by key descending, take n elements
-      let mut indexed: Vec<(usize, &Expr)> =
-        keyed.iter().enumerate().map(|(i, (_, k))| (i, k)).collect();
-      indexed.sort_by(|(_, a), (_, b)| by_key_cmp(b, a));
-      let take = (n_val as usize).min(keyed.len());
-      let result: Vec<Expr> = indexed
+  if let Some(n_val) = n {
+    // Sort by key descending, take n elements
+    let mut indexed: Vec<(usize, &Expr)> =
+      keyed.iter().enumerate().map(|(i, (_, k))| (i, k)).collect();
+    indexed.sort_by(|(_, a), (_, b)| by_key_cmp(b, a));
+    let take = (n_val as usize).min(keyed.len());
+    let result: Vec<Expr> = indexed
+      .into_iter()
+      .take(take)
+      .map(|(i, _)| keyed[i].0.clone())
+      .collect();
+    Ok(Expr::List(result.into()))
+  } else {
+    let max_key = keyed
+      .iter()
+      .map(|(_, k)| k)
+      .max_by(|a, b| by_key_cmp(a, b))
+      .cloned();
+
+    if let Some(max_k) = max_key {
+      let max_str = crate::syntax::expr_to_string(&max_k);
+      let result: Vec<Expr> = keyed
         .into_iter()
-        .take(take)
-        .map(|(i, _)| keyed[i].0.clone())
+        .filter(|(_, k)| crate::syntax::expr_to_string(k) == max_str)
+        .map(|(item, _)| item)
         .collect();
       Ok(Expr::List(result.into()))
-    }
-    None => {
-      let max_key = keyed
-        .iter()
-        .map(|(_, k)| k)
-        .max_by(|a, b| by_key_cmp(a, b))
-        .cloned();
-
-      if let Some(max_k) = max_key {
-        let max_str = crate::syntax::expr_to_string(&max_k);
-        let result: Vec<Expr> = keyed
-          .into_iter()
-          .filter(|(_, k)| crate::syntax::expr_to_string(k) == max_str)
-          .map(|(item, _)| item)
-          .collect();
-        Ok(Expr::List(result.into()))
-      } else {
-        Ok(Expr::List(vec![].into()))
-      }
+    } else {
+      Ok(Expr::List(vec![].into()))
     }
   }
 }
@@ -1267,10 +1258,7 @@ pub fn is_atomic_arg(e: &Expr) -> bool {
 /// message text on the baseline, exactly as wolframscript prints it.
 pub fn emit_nonatomic_normal_message(name: &str, args: &[Expr]) {
   crate::emit_message(&crate::syntax::format_message_with_expr(
-    &format!(
-      "{}::normal: Nonatomic expression expected at position 1 in ",
-      name
-    ),
+    &format!("{name}::normal: Nonatomic expression expected at position 1 in "),
     &unevaluated(name, args),
     ".",
   ));
@@ -1753,13 +1741,12 @@ pub fn numeric_base_power_cmp(
 /// Compare two exact rationals `(num, den)` with positive denominators by
 /// cross-multiplication, falling back to f64 on i128 overflow.
 fn ratio_cmp(a: (i128, i128), b: (i128, i128)) -> std::cmp::Ordering {
-  match (a.0.checked_mul(b.1), b.0.checked_mul(a.1)) {
-    (Some(l), Some(r)) => l.cmp(&r),
-    _ => {
-      let l = a.0 as f64 / a.1 as f64;
-      let r = b.0 as f64 / b.1 as f64;
-      l.partial_cmp(&r).unwrap_or(std::cmp::Ordering::Equal)
-    }
+  if let (Some(l), Some(r)) = (a.0.checked_mul(b.1), b.0.checked_mul(a.1)) {
+    l.cmp(&r)
+  } else {
+    let l = a.0 as f64 / a.1 as f64;
+    let r = b.0 as f64 / b.1 as f64;
+    l.partial_cmp(&r).unwrap_or(std::cmp::Ordering::Equal)
   }
 }
 
@@ -1834,7 +1821,7 @@ fn numeric_coeff_and_rest_expr(e: &Expr) -> ((f64, f64), Option<Expr>) {
       let mut coeff = (1.0, 0.0);
       let mut rest: Vec<Expr> = Vec::new();
       let mut stripped = false;
-      for arg in args.iter() {
+      for arg in args {
         if let Some((r, i)) = literal(arg) {
           coeff = (coeff.0 * r - coeff.1 * i, coeff.0 * i + coeff.1 * r);
           stripped = true;
@@ -1880,7 +1867,7 @@ fn sum_terms_list(e: &Expr) -> Option<Vec<Expr>> {
   fn collect(e: &Expr, negate: bool, out: &mut Vec<Expr>) {
     match e {
       Expr::FunctionCall { name, args } if name == "Plus" => {
-        for a in args.iter() {
+        for a in args {
           collect(a, negate, out);
         }
       }
@@ -2248,7 +2235,7 @@ fn times_factors_for_order(e: &Expr) -> Option<Vec<&Expr>> {
       Expr::FunctionCall { name, args }
         if name == "Times" && args.len() >= 2 =>
       {
-        for a in args.iter() {
+        for a in args {
           flatten(a, out);
         }
         true

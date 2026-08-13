@@ -25,13 +25,12 @@ fn strip_sqrt_square(expr: Expr) -> Expr {
         let half = n / 2;
         if half == 1 {
           return *base.clone();
-        } else {
-          return Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: base.clone(),
-            right: Box::new(Expr::Integer(half)),
-          };
         }
+        return Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: base.clone(),
+          right: Box::new(Expr::Integer(half)),
+        };
       }
       expr
     }
@@ -553,7 +552,7 @@ fn eval_complex_full(expr: &Expr) -> Option<(f64, f64)> {
     }
     Expr::FunctionCall { name, args } if name == "Plus" && !args.is_empty() => {
       let mut res = (0.0, 0.0);
-      for arg in args.iter() {
+      for arg in args {
         let (c, d) = eval_complex_full(arg)?;
         res = (res.0 + c, res.1 + d);
       }
@@ -1149,41 +1148,34 @@ fn solution_values(solutions: &Expr, var_spec: &Expr) -> Option<Expr> {
   }
 
   let mut out = Vec::with_capacity(solution_sets.len());
-  for branch in solution_sets.iter() {
+  for branch in solution_sets {
     let Expr::List(rules) = branch else {
       return None;
     };
-    match &vars {
-      // Multi-variable: emit the values in the requested variable order. A
-      // variable the equations do not pin down keeps its own symbol, matching
-      // wolframscript's `{{x, 2 - x}}`.
-      Some(names) => {
-        let mut branch_vals = Vec::with_capacity(names.len());
-        for name in names {
-          let value = rules.iter().find_map(|r| match r {
-            Expr::Rule {
-              pattern,
-              replacement,
-            } if matches!(pattern.as_ref(), Expr::Identifier(p) if p == name) => {
-              Some((**replacement).clone())
-            }
-            _ => None,
-          });
-          branch_vals
-            .push(value.unwrap_or_else(|| Expr::Identifier(name.clone())));
-        }
-        out.push(Expr::List(branch_vals.into()));
+    if let Some(names) = &vars {
+      let mut branch_vals = Vec::with_capacity(names.len());
+      for name in names {
+        let value = rules.iter().find_map(|r| match r {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } if matches!(pattern.as_ref(), Expr::Identifier(p) if p == name) => {
+            Some((**replacement).clone())
+          }
+          _ => None,
+        });
+        branch_vals
+          .push(value.unwrap_or_else(|| Expr::Identifier(name.clone())));
       }
-      // Single variable: one rule per branch, emit its value.
-      None => {
-        if rules.len() != 1 {
-          return None;
-        }
-        let Expr::Rule { replacement, .. } = &rules[0] else {
-          return None;
-        };
-        out.push((**replacement).clone());
+      out.push(Expr::List(branch_vals.into()));
+    } else {
+      if rules.len() != 1 {
+        return None;
       }
+      let Expr::Rule { replacement, .. } = &rules[0] else {
+        return None;
+      };
+      out.push((**replacement).clone());
     }
   }
   Some(Expr::List(out.into()))
@@ -1332,7 +1324,7 @@ fn has_inequality(expr: &Expr) -> bool {
 
 /// Report that an inverted function may have cost some solutions.
 fn report_inverse_function_use() {
-  if IFUN_SUPPRESS.with(|d| d.get()) > 0 {
+  if IFUN_SUPPRESS.with(std::cell::Cell::get) > 0 {
     return;
   }
   let head = IFUN_HEAD.with(|h| *h.borrow());
@@ -1505,7 +1497,7 @@ fn modular_solution_branches(
       Expr::FunctionCall { name, args } if name == head => {
         args.iter().flat_map(|a| parts(a, head)).collect()
       }
-      Expr::BinaryOp { op, left, right } if format!("{:?}", op) == head => {
+      Expr::BinaryOp { op, left, right } if format!("{op:?}") == head => {
         let mut out = parts(left, head);
         out.extend(parts(right, head));
         out
@@ -1622,7 +1614,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(items) => {
         let mut changed = false;
         let mut out: Vec<Expr> = Vec::new();
-        for e in items.iter() {
+        for e in items {
           match thread_list_equation(e) {
             Some(eqs) => {
               changed = true;
@@ -1759,7 +1751,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         flatten_and(right, out);
       }
       Expr::FunctionCall { name, args: aargs } if name == "And" => {
-        for a in aargs.iter() {
+        for a in aargs {
           flatten_and(a, out);
         }
       }
@@ -2145,7 +2137,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         // Sort solutions: real solutions first, then complex
-        solutions.sort_by_key(|sol| if contains_complex(sol) { 1 } else { 0 });
+        solutions.sort_by_key(|sol| i32::from(contains_complex(sol)));
       }
       return Ok(wrapped);
     }
@@ -2224,7 +2216,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut seen: std::collections::HashSet<String> =
           std::collections::HashSet::new();
         let mut specialized = false;
-        for sol in solutions.iter() {
+        for sol in solutions {
           // A single-rule solution `{var -> ConditionalExpression[...]}` may be
           // specialized into several concrete rules.
           if let Expr::List(rules) = sol
@@ -2322,8 +2314,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Constants (E, Pi, Degree) are not valid variables
     Expr::Constant(name) => {
       crate::emit_message(&format!(
-        "Solve::ivar: {} is not a valid variable.",
-        name
+        "Solve::ivar: {name} is not a valid variable."
       ));
       return Ok(unevaluated("Solve", args));
     }
@@ -2390,8 +2381,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
   if is_constant {
     crate::emit_message(&format!(
-      "Solve::ivar: {} is not a valid variable.",
-      var
+      "Solve::ivar: {var} is not a valid variable."
     ));
     return Ok(unevaluated("Solve", args));
   }
@@ -2425,8 +2415,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Solve::naqs: expr is not a quantified system of equations and inequalities.
       let expr_str = crate::syntax::expr_to_string(&args[0]);
       crate::emit_message(&format!(
-        "Solve::naqs: {} is not a quantified system of equations and inequalities.",
-        expr_str
+        "Solve::naqs: {expr_str} is not a quantified system of equations and inequalities."
       ));
       return Ok(unevaluated("Solve", args));
     }
@@ -2479,15 +2468,12 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let terms = collect_additive_terms(&expanded);
 
   // Find maximum degree
-  let degree = match max_power_int(&expanded, var) {
-    Some(d) => d,
-    None => {
-      // Non-polynomial: try factoring out common fractional-power sub-expressions
-      if let Some(result) = try_solve_factoring_powers(&expanded, var, args) {
-        return result;
-      }
-      return Ok(unevaluated("Solve", args));
+  let Some(degree) = max_power_int(&expanded, var) else {
+    // Non-polynomial: try factoring out common fractional-power sub-expressions
+    if let Some(result) = try_solve_factoring_powers(&expanded, var, args) {
+      return result;
     }
+    return Ok(unevaluated("Solve", args));
   };
 
   // A negative maximum power means a Laurent/rational expression (e.g. only
@@ -2640,203 +2626,190 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
             } else {
               Expr::List(vec![make_rule(sol1), make_rule(sol2)].into())
             });
+          }
+          // Irrational roots: (-bi ± sqrt_out*Sqrt[sqrt_in]) / (2*ai)
+          // Simplify by dividing common factors
+          let g = gcd_i128(gcd_i128(-bi, sqrt_out), 2 * ai);
+          let nb = -bi / g;
+          let so = sqrt_out / g;
+          let den = 2 * ai / g;
+          // Normalize the denominator to be positive. Only the numerator's
+          // additive term (`nb`) and the denominator flip sign; the radical
+          // coefficient `so` must stay non-negative. (Negating `so` here made
+          // `sqrt_part` negative, so the minus root came out as the
+          // unsimplified `-(-Sqrt[..])` instead of `Sqrt[..]`.) Because both
+          // ± roots are emitted, keeping `so > 0` with `den > 0` still yields
+          // the smaller (more negative) root from `make_sol(true)`, matching
+          // Wolfram's negative-root-first ordering.
+          let (nb, so, den) = if den < 0 {
+            (-nb, so, -den)
           } else {
-            // Irrational roots: (-bi ± sqrt_out*Sqrt[sqrt_in]) / (2*ai)
-            // Simplify by dividing common factors
-            let g = gcd_i128(gcd_i128(-bi, sqrt_out), 2 * ai);
-            let nb = -bi / g;
-            let so = sqrt_out / g;
-            let den = 2 * ai / g;
-            // Normalize the denominator to be positive. Only the numerator's
-            // additive term (`nb`) and the denominator flip sign; the radical
-            // coefficient `so` must stay non-negative. (Negating `so` here made
-            // `sqrt_part` negative, so the minus root came out as the
-            // unsimplified `-(-Sqrt[..])` instead of `Sqrt[..]`.) Because both
-            // ± roots are emitted, keeping `so > 0` with `den > 0` still yields
-            // the smaller (more negative) root from `make_sol(true)`, matching
-            // Wolfram's negative-root-first ordering.
-            let (nb, so, den) = if den < 0 {
-              (-nb, so, -den)
-            } else {
-              (nb, so, den)
-            };
-            let sqrt_part = if so == 1 {
-              make_sqrt(Expr::Integer(sqrt_in))
-            } else {
-              multiply_exprs(
-                &Expr::Integer(so),
-                &make_sqrt(Expr::Integer(sqrt_in)),
-              )
-            };
-            let make_sol = |sign_minus: bool| -> Expr {
-              // Special case: when nb == 0 and so == 1, absorb denominator into Sqrt
-              // E.g. Sqrt[6]/2 → Sqrt[3/2] to match Wolfram's canonical form
-              if nb == 0 && den != 1 && so == 1 {
-                let rational_arg = make_rational(sqrt_in, den * den);
-                if let Ok(simplified) =
-                  crate::functions::math_ast::sqrt_ast(&[rational_arg])
-                {
-                  return if sign_minus {
-                    negate_expr(&simplified)
-                  } else {
-                    simplified
-                  };
-                }
-              }
-              let num = if nb == 0 {
-                if sign_minus {
-                  negate_expr(&sqrt_part)
+            (nb, so, den)
+          };
+          let sqrt_part = if so == 1 {
+            make_sqrt(Expr::Integer(sqrt_in))
+          } else {
+            multiply_exprs(
+              &Expr::Integer(so),
+              &make_sqrt(Expr::Integer(sqrt_in)),
+            )
+          };
+          let make_sol = |sign_minus: bool| -> Expr {
+            // Special case: when nb == 0 and so == 1, absorb denominator into Sqrt
+            // E.g. Sqrt[6]/2 → Sqrt[3/2] to match Wolfram's canonical form
+            if nb == 0 && den != 1 && so == 1 {
+              let rational_arg = make_rational(sqrt_in, den * den);
+              if let Ok(simplified) =
+                crate::functions::math_ast::sqrt_ast(&[rational_arg])
+              {
+                return if sign_minus {
+                  negate_expr(&simplified)
                 } else {
-                  sqrt_part.clone()
-                }
-              } else {
-                let nb_expr = Expr::Integer(nb);
-                Expr::BinaryOp {
-                  op: if sign_minus {
-                    BinaryOperator::Minus
-                  } else {
-                    BinaryOperator::Plus
-                  },
-                  left: Box::new(nb_expr),
-                  right: Box::new(sqrt_part.clone()),
-                }
-              };
-              if den == 1 {
-                num
-              } else {
-                div2(num, Expr::Integer(den))
+                  simplified
+                };
               }
-            };
-            let sol1 = make_sol(true);
-            let sol2 = make_sol(false);
-            return Ok(Expr::List(
-              vec![make_rule(sol1), make_rule(sol2)].into(),
-            ));
-          }
-        } else {
-          // Check for cyclotomic polynomials before using quadratic formula
-          // x^2 + x + 1 = 0 (Φ₃): roots are (-1)^(2/3) and -(-1)^(1/3)
-          // x^2 - x + 1 = 0 (Φ₆): roots are (-1)^(1/3) and -(-1)^(2/3)
-          // Multiplying the polynomial through by -1 doesn't change the
-          // root set, so accept `(ai, ci) ∈ {(1, 1), (-1, -1)}` and pick
-          // the cyclotomic branch by `Sign[bi*ai]` rather than `bi` alone.
-          let cyclo_match = (ai == 1 && ci == 1) || (ai == -1 && ci == -1);
-          if cyclo_match && bi.abs() == ai.abs() {
-            let make_neg1_pow = |p: i128, q: i128| -> Expr {
-              Expr::FunctionCall {
-                name: "Power".to_string(),
-                args: vec![Expr::Integer(-1), make_rational(p, q)].into(),
-              }
-            };
-            // After multiplying by -1, the b/a sign flips along with a's
-            // sign — so `bi*ai > 0` corresponds to Φ₃ (`x^2 + x + 1`) and
-            // `bi*ai < 0` to Φ₆ (`x^2 - x + 1`).
-            if bi * ai > 0 {
-              // Φ₃: x^2 + x + 1 → roots: -(-1)^(1/3), (-1)^(2/3)
-              let sol1 = negate_expr(&make_neg1_pow(1, 3));
-              let sol2 = make_neg1_pow(2, 3);
-              return Ok(Expr::List(
-                vec![make_rule(sol1), make_rule(sol2)].into(),
-              ));
-            } else {
-              // Φ₆: x^2 - x + 1 → roots: (-1)^(1/3), -(-1)^(2/3)
-              let sol1 = make_neg1_pow(1, 3);
-              let sol2 = negate_expr(&make_neg1_pow(2, 3));
-              return Ok(Expr::List(
-                vec![make_rule(sol1), make_rule(sol2)].into(),
-              ));
             }
-          }
-
-          // Complex roots: (-bi ± I*Sqrt[-disc]) / (2*ai)
-          let neg_disc = -disc_int;
-          let (sqrt_out, sqrt_in) = simplify_sqrt_parts(neg_disc);
-          if sqrt_in == 1 {
-            // Gaussian integer/rational roots
-            let real_part =
-              solve_divide(&Expr::Integer(-bi), &Expr::Integer(2 * ai));
-            let imag_part =
-              solve_divide(&Expr::Integer(sqrt_out), &Expr::Integer(2 * ai));
-            let make_sol = |sign_minus: bool| -> Expr {
-              let i_part =
-                multiply_exprs(&Expr::Identifier("I".to_string()), &imag_part);
-              simplify(Expr::BinaryOp {
+            let num = if nb == 0 {
+              if sign_minus {
+                negate_expr(&sqrt_part)
+              } else {
+                sqrt_part.clone()
+              }
+            } else {
+              let nb_expr = Expr::Integer(nb);
+              Expr::BinaryOp {
                 op: if sign_minus {
                   BinaryOperator::Minus
                 } else {
                   BinaryOperator::Plus
                 },
-                left: Box::new(real_part.clone()),
-                right: Box::new(i_part),
-              })
-            };
-            let sol1 = make_sol(true);
-            let sol2 = make_sol(false);
-            return Ok(Expr::List(
-              vec![make_rule(sol1), make_rule(sol2)].into(),
-            ));
-          } else {
-            // Complex roots with irrational imaginary part
-            let g = gcd_i128(gcd_i128(-bi, sqrt_out), 2 * ai);
-            let nb = -bi / g;
-            let so = sqrt_out / g;
-            let den = 2 * ai / g;
-            // Keep the radical coefficient `so` non-negative; only `nb` and
-            // `den` flip when the denominator is negative (see the real-root
-            // branch above — negating `so` produced an unsimplified
-            // `-(I*(-Sqrt[..]))`).
-            let (nb, so, den) = if den < 0 {
-              (-nb, so, -den)
-            } else {
-              (nb, so, den)
-            };
-            let sqrt_part = multiply_exprs(
-              &Expr::Identifier("I".to_string()),
-              &if so == 1 {
-                make_sqrt(Expr::Integer(sqrt_in))
-              } else {
-                multiply_exprs(
-                  &Expr::Integer(so),
-                  &make_sqrt(Expr::Integer(sqrt_in)),
-                )
-              },
-            );
-            let make_sol = |sign_minus: bool| -> Expr {
-              let num = if nb == 0 {
-                if sign_minus {
-                  negate_expr(&sqrt_part)
-                } else {
-                  sqrt_part.clone()
-                }
-              } else {
-                Expr::BinaryOp {
-                  op: if sign_minus {
-                    BinaryOperator::Minus
-                  } else {
-                    BinaryOperator::Plus
-                  },
-                  left: Box::new(Expr::Integer(nb)),
-                  right: Box::new(sqrt_part.clone()),
-                }
-              };
-              if den == 1 {
-                num
-              } else {
-                div2(num, Expr::Integer(den))
+                left: Box::new(nb_expr),
+                right: Box::new(sqrt_part.clone()),
               }
             };
-            // Re-evaluate so a raw negation collapses (e.g. -(I*Sqrt[2]) →
-            // -I*Sqrt[2]), matching wolframscript's complex-root form.
-            let finish = |e: Expr| {
-              crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e)
-            };
-            let sol1 = finish(make_sol(true));
-            let sol2 = finish(make_sol(false));
+            if den == 1 {
+              num
+            } else {
+              div2(num, Expr::Integer(den))
+            }
+          };
+          let sol1 = make_sol(true);
+          let sol2 = make_sol(false);
+          return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()));
+        }
+        // Check for cyclotomic polynomials before using quadratic formula
+        // x^2 + x + 1 = 0 (Φ₃): roots are (-1)^(2/3) and -(-1)^(1/3)
+        // x^2 - x + 1 = 0 (Φ₆): roots are (-1)^(1/3) and -(-1)^(2/3)
+        // Multiplying the polynomial through by -1 doesn't change the
+        // root set, so accept `(ai, ci) ∈ {(1, 1), (-1, -1)}` and pick
+        // the cyclotomic branch by `Sign[bi*ai]` rather than `bi` alone.
+        let cyclo_match = (ai == 1 && ci == 1) || (ai == -1 && ci == -1);
+        if cyclo_match && bi.abs() == ai.abs() {
+          let make_neg1_pow = |p: i128, q: i128| -> Expr {
+            Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![Expr::Integer(-1), make_rational(p, q)].into(),
+            }
+          };
+          // After multiplying by -1, the b/a sign flips along with a's
+          // sign — so `bi*ai > 0` corresponds to Φ₃ (`x^2 + x + 1`) and
+          // `bi*ai < 0` to Φ₆ (`x^2 - x + 1`).
+          if bi * ai > 0 {
+            // Φ₃: x^2 + x + 1 → roots: -(-1)^(1/3), (-1)^(2/3)
+            let sol1 = negate_expr(&make_neg1_pow(1, 3));
+            let sol2 = make_neg1_pow(2, 3);
             return Ok(Expr::List(
               vec![make_rule(sol1), make_rule(sol2)].into(),
             ));
           }
+          // Φ₆: x^2 - x + 1 → roots: (-1)^(1/3), -(-1)^(2/3)
+          let sol1 = make_neg1_pow(1, 3);
+          let sol2 = negate_expr(&make_neg1_pow(2, 3));
+          return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()));
         }
+
+        // Complex roots: (-bi ± I*Sqrt[-disc]) / (2*ai)
+        let neg_disc = -disc_int;
+        let (sqrt_out, sqrt_in) = simplify_sqrt_parts(neg_disc);
+        if sqrt_in == 1 {
+          // Gaussian integer/rational roots
+          let real_part =
+            solve_divide(&Expr::Integer(-bi), &Expr::Integer(2 * ai));
+          let imag_part =
+            solve_divide(&Expr::Integer(sqrt_out), &Expr::Integer(2 * ai));
+          let make_sol = |sign_minus: bool| -> Expr {
+            let i_part =
+              multiply_exprs(&Expr::Identifier("I".to_string()), &imag_part);
+            simplify(Expr::BinaryOp {
+              op: if sign_minus {
+                BinaryOperator::Minus
+              } else {
+                BinaryOperator::Plus
+              },
+              left: Box::new(real_part.clone()),
+              right: Box::new(i_part),
+            })
+          };
+          let sol1 = make_sol(true);
+          let sol2 = make_sol(false);
+          return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()));
+        }
+        // Complex roots with irrational imaginary part
+        let g = gcd_i128(gcd_i128(-bi, sqrt_out), 2 * ai);
+        let nb = -bi / g;
+        let so = sqrt_out / g;
+        let den = 2 * ai / g;
+        // Keep the radical coefficient `so` non-negative; only `nb` and
+        // `den` flip when the denominator is negative (see the real-root
+        // branch above — negating `so` produced an unsimplified
+        // `-(I*(-Sqrt[..]))`).
+        let (nb, so, den) = if den < 0 {
+          (-nb, so, -den)
+        } else {
+          (nb, so, den)
+        };
+        let sqrt_part = multiply_exprs(
+          &Expr::Identifier("I".to_string()),
+          &if so == 1 {
+            make_sqrt(Expr::Integer(sqrt_in))
+          } else {
+            multiply_exprs(
+              &Expr::Integer(so),
+              &make_sqrt(Expr::Integer(sqrt_in)),
+            )
+          },
+        );
+        let make_sol = |sign_minus: bool| -> Expr {
+          let num = if nb == 0 {
+            if sign_minus {
+              negate_expr(&sqrt_part)
+            } else {
+              sqrt_part.clone()
+            }
+          } else {
+            Expr::BinaryOp {
+              op: if sign_minus {
+                BinaryOperator::Minus
+              } else {
+                BinaryOperator::Plus
+              },
+              left: Box::new(Expr::Integer(nb)),
+              right: Box::new(sqrt_part.clone()),
+            }
+          };
+          if den == 1 {
+            num
+          } else {
+            div2(num, Expr::Integer(den))
+          }
+        };
+        // Re-evaluate so a raw negation collapses (e.g. -(I*Sqrt[2]) →
+        // -I*Sqrt[2]), matching wolframscript's complex-root form.
+        let finish =
+          |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e);
+        let sol1 = finish(make_sol(true));
+        let sol2 = finish(make_sol(false));
+        return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)].into()));
       }
 
       // Non-integer coefficients: use general symbolic formula
@@ -3075,7 +3048,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // unity; evaluating them folds `(-1)^(2/3) 2` into `2 (-1)^(2/3)`
           // and `(-1)^(2/5) (-1)^(1/5)` into `(-1)^(3/5)`. wolframscript
           // then reports them in plain canonical order.
-          for root in roots.iter_mut() {
+          for root in &mut roots {
             if let Expr::List(rules) = root
               && rules.len() == 1
               && let Expr::Rule {
@@ -3229,7 +3202,7 @@ fn try_solve_polynomial_system(eqs: &[Expr], vars: &[String]) -> Option<Expr> {
     })
     .collect();
   // Real solutions come before complex ones, as everywhere else in Solve.
-  wrapped.sort_by_key(|sol| if contains_complex(sol) { 1 } else { 0 });
+  wrapped.sort_by_key(|sol| i32::from(contains_complex(sol)));
   Some(Expr::List(wrapped.into()))
 }
 
@@ -3530,7 +3503,7 @@ fn univariate_roots(poly: &Expr, var: &str) -> Option<Vec<Expr>> {
     return None;
   };
   let mut roots = Vec::with_capacity(solutions.len());
-  for solution in solutions.iter() {
+  for solution in solutions {
     let Expr::List(rules) = solution else {
       return None;
     };
@@ -4632,7 +4605,7 @@ fn keep_solutions_satisfying(
     return Ok(solved);
   };
   let mut kept: Vec<Expr> = Vec::new();
-  for solution in solutions.iter() {
+  for solution in solutions {
     let value = match solution {
       Expr::List(rules) => match rules.as_slice() {
         [Expr::Rule { replacement, .. }] => Some(replacement.as_ref()),
@@ -4724,7 +4697,7 @@ fn try_solve_radical_equation(
     return None;
   };
   let mut kept: Vec<Expr> = Vec::new();
-  for candidate in candidates.iter() {
+  for candidate in candidates {
     let Expr::List(rules) = candidate else {
       return None;
     };
@@ -4777,7 +4750,7 @@ fn radical_index(term: &Expr, var: &str) -> Option<i128> {
       }
       Expr::UnaryOp { operand, .. } => walk(operand, root_here, index),
       Expr::FunctionCall { args, .. } => {
-        for arg in args.iter() {
+        for arg in args {
           walk(arg, root_here, index);
         }
       }
@@ -4916,7 +4889,7 @@ fn try_solve_factoring_powers(
     .collect();
 
   // Find bases common to ALL terms
-  if all_power_factors.iter().any(|pf| pf.is_empty()) {
+  if all_power_factors.iter().any(std::vec::Vec::is_empty) {
     return None;
   }
 
@@ -5333,8 +5306,7 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // requests fast numerical evaluation — we leave it symbolic for now,
   // matching wolframscript's behaviour when it cannot simplify to a
   // closed form.
-  if args.len() == 3 && !matches!(&args[2], Expr::Integer(0) | Expr::Integer(1))
-  {
+  if args.len() == 3 && !matches!(&args[2], Expr::Integer(0 | 1)) {
     return Ok(unevaluated("Root", args));
   }
 
@@ -5374,11 +5346,8 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Extract pure function body
-  let body = match &args[0] {
-    Expr::Function { body } => body,
-    _ => {
-      return Ok(unevaluated("Root", args));
-    }
+  let Expr::Function { body } = &args[0] else {
+    return Ok(unevaluated("Root", args));
   };
 
   // Substitute Slot(1) with a temporary variable
@@ -5881,8 +5850,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !converged {
     crate::emit_message(&format!(
       "FindRoot::cvmit: Failed to converge to the requested accuracy or \
-       precision within {} iterations.",
-      max_iter
+       precision within {max_iter} iterations."
     ));
   }
 
@@ -6014,7 +5982,7 @@ fn expr_to_complex_f64(expr: &Expr) -> Option<(f64, f64)> {
     Expr::FunctionCall { name, args } if name == "Plus" => {
       let mut re = 0.0;
       let mut im = 0.0;
-      for a in args.iter() {
+      for a in args {
         let (r, i) = expr_to_complex_f64(a)?;
         re += r;
         im += i;
@@ -6024,7 +5992,7 @@ fn expr_to_complex_f64(expr: &Expr) -> Option<(f64, f64)> {
     Expr::FunctionCall { name, args } if name == "Times" => {
       let mut re = 1.0;
       let mut im = 0.0;
-      for a in args.iter() {
+      for a in args {
         let (br, bi) = expr_to_complex_f64(a)?;
         let nr = re * br - im * bi;
         let ni = re * bi + im * br;
@@ -6109,13 +6077,10 @@ fn find_root_complex_newton(
     Some(((ar * br + ai * bi) / denom, (ai * br - ar * bi) / denom))
   };
   for _ in 0..max_iter {
-    let (fr, fi) = match find_root_eval_complex_at(func, var, re, im) {
-      Some(v) => v,
-      None => {
-        return Err(InterpreterError::EvaluationError(
-          "FindRoot: cannot evaluate expression at complex point".into(),
-        ));
-      }
+    let Some((fr, fi)) = find_root_eval_complex_at(func, var, re, im) else {
+      return Err(InterpreterError::EvaluationError(
+        "FindRoot: cannot evaluate expression at complex point".into(),
+      ));
     };
     if cabs(fr, fi) < tol {
       break;
@@ -6133,14 +6098,11 @@ fn find_root_complex_newton(
       // Numerical derivative via complex finite difference along the
       // real axis. f(z+h) − f(z) over h, with small real h.
       let h = re.abs().max(1.0) * 1e-6;
-      let (fr_p, fi_p) = match find_root_eval_complex_at(func, var, re + h, im)
-      {
-        Some(v) => v,
-        None => {
-          return Err(InterpreterError::EvaluationError(
-            "FindRoot: cannot evaluate expression for derivative".into(),
-          ));
-        }
+      let Some((fr_p, fi_p)) = find_root_eval_complex_at(func, var, re + h, im)
+      else {
+        return Err(InterpreterError::EvaluationError(
+          "FindRoot: cannot evaluate expression for derivative".into(),
+        ));
       };
       ((fr_p - fr) / h, (fi_p - fi) / h)
     };
@@ -6424,27 +6386,23 @@ fn find_root_multivariate(
             .filter(|v| v.is_finite()),
           None => None,
         };
-        jm[i][j] = match entry {
-          Some(v) => v,
-          // Central finite difference for entries without a usable
-          // symbolic derivative.
-          None => {
-            let h = 1e-7 * x[j].abs().max(1.0);
-            let mut xp = x.clone();
-            xp[j] += h;
-            let mut xm = x.clone();
-            xm[j] -= h;
-            let fp = find_root_eval_multivar(&eqns[i], &vars, &xp)?;
-            let fm = find_root_eval_multivar(&eqns[i], &vars, &xm)?;
-            (fp - fm) / (2.0 * h)
-          }
+        jm[i][j] = if let Some(v) = entry {
+          v
+        } else {
+          let h = 1e-7 * x[j].abs().max(1.0);
+          let mut xp = x.clone();
+          xp[j] += h;
+          let mut xm = x.clone();
+          xm[j] -= h;
+          let fp = find_root_eval_multivar(&eqns[i], &vars, &xp)?;
+          let fm = find_root_eval_multivar(&eqns[i], &vars, &xm)?;
+          (fp - fm) / (2.0 * h)
         };
       }
     }
     let neg_f: Vec<f64> = fv.iter().map(|v| -v).collect();
-    let delta = match find_root_solve_linear(jm, neg_f) {
-      Some(d) => d,
-      None => break,
+    let Some(delta) = find_root_solve_linear(jm, neg_f) else {
+      break;
     };
     let mut max_d = 0.0f64;
     for (j, &dj) in delta.iter().enumerate() {
@@ -6570,7 +6528,7 @@ fn snap_relaxation_to_integers(
 
   // Each optimizer must be a finite real number to bracket it with integers.
   let mut ranges: Vec<(String, Vec<i64>)> = Vec::with_capacity(rules.len());
-  for rule in rules.iter() {
+  for rule in rules {
     let (Expr::Rule {
       pattern,
       replacement,
@@ -6901,26 +6859,23 @@ fn minimize_parse_vars_full(
       ))),
     }
   }
-  match expr {
-    Expr::List(items) => {
-      if items.is_empty() {
-        return Err(InterpreterError::EvaluationError(format!(
-          "{func_name}: variable list cannot be empty"
-        )));
-      }
-      let mut names = Vec::new();
-      let mut exprs = Vec::new();
-      for item in items {
-        let (n, e) = parse_one(item, func_name)?;
-        names.push(n);
-        exprs.push(e);
-      }
-      Ok((names, exprs))
+  if let Expr::List(items) = expr {
+    if items.is_empty() {
+      return Err(InterpreterError::EvaluationError(format!(
+        "{func_name}: variable list cannot be empty"
+      )));
     }
-    _ => {
-      let (n, e) = parse_one(expr, func_name)?;
-      Ok((vec![n], vec![e]))
+    let mut names = Vec::new();
+    let mut exprs = Vec::new();
+    for item in items {
+      let (n, e) = parse_one(item, func_name)?;
+      names.push(n);
+      exprs.push(e);
     }
+    Ok((names, exprs))
+  } else {
+    let (n, e) = parse_one(expr, func_name)?;
+    Ok((vec![n], vec![e]))
   }
 }
 
@@ -7443,15 +7398,14 @@ fn minimize_bounded_below_numerical(f: &Expr, var: &str) -> bool {
     for &m in mags {
       let substituted =
         crate::syntax::substitute_variable(f, var, &Expr::Real(sign * m));
-      match crate::evaluator::evaluate_expr_to_expr(&substituted)
+      if let Some(val) = crate::evaluator::evaluate_expr_to_expr(&substituted)
         .ok()
         .and_then(|e| minimize_try_f64(&e))
       {
-        Some(val) => vals.push(val),
-        None => {
-          vals.clear();
-          break;
-        }
+        vals.push(val);
+      } else {
+        vals.clear();
+        break;
       }
     }
     if vals.len() == mags.len() {
@@ -7546,7 +7500,7 @@ fn collect_abs_args(e: &Expr, var: &str, out: &mut Vec<Expr>) {
       {
         out.push(args[0].clone());
       }
-      for a in args.iter() {
+      for a in args {
         collect_abs_args(a, var, out);
       }
     }
@@ -7556,7 +7510,7 @@ fn collect_abs_args(e: &Expr, var: &str, out: &mut Vec<Expr>) {
     }
     Expr::UnaryOp { operand, .. } => collect_abs_args(operand, var, out),
     Expr::List(items) => {
-      for it in items.iter() {
+      for it in items {
         collect_abs_args(it, var, out);
       }
     }
@@ -7577,9 +7531,9 @@ fn minimize_abs_breakpoints(f: &Expr, var: &str) -> Vec<Expr> {
     };
     let solved = solve_ast(&[eq, Expr::Identifier(var.to_string())]);
     if let Ok(Expr::List(sol_sets)) = &solved {
-      for sol_set in sol_sets.iter() {
+      for sol_set in sol_sets {
         if let Expr::List(rules) = sol_set {
-          for rule in rules.iter() {
+          for rule in rules {
             if let Expr::Rule { replacement, .. } = rule {
               points.push((**replacement).clone());
             }
@@ -7621,8 +7575,7 @@ fn minimize_single_var(
     let head = if maximize { "Maximize" } else { "Minimize" };
     let kind = if maximize { "maximum" } else { "minimum" };
     crate::emit_message(&format!(
-      "{}::natt: The {} is not attained at any point satisfying the given constraints.",
-      head, kind
+      "{head}::natt: The {kind} is not attained at any point satisfying the given constraints."
     ));
     return Ok(minimize_neg_infinity_result(
       &[var.to_string()],
@@ -7698,14 +7651,11 @@ fn minimize_single_var(
     }
   }
 
-  let (min_val, min_x) = match (best_exact, best_x) {
-    (Some(v), Some(x)) => (v, x),
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: func_name.to_string(),
-        args: vec![f.clone(), Expr::Identifier(var.to_string())].into(),
-      });
-    }
+  let (Some(min_val), Some(min_x)) = (best_exact, best_x) else {
+    return Ok(Expr::FunctionCall {
+      name: func_name.to_string(),
+      args: vec![f.clone(), Expr::Identifier(var.to_string())].into(),
+    });
   };
 
   // For maximize, negate the value back
@@ -7918,25 +7868,21 @@ fn minimize_multi_var(
       operands: vec![grad[i].clone(), Expr::Integer(0)],
       operators: vec![ComparisonOp::Equal],
     };
-    match solve_ast(&[grad_eq, Expr::Identifier(var.clone())]) {
-      Ok(sol) => {
-        if let Expr::List(sol_sets) = &sol
-          && sol_sets.len() == 1
-          && let Some(Expr::List(rules)) = sol_sets.first()
-          && rules.len() == 1
-          && let Some(Expr::Rule { replacement, .. }) = rules.first()
-        {
-          solutions[i] = Some(*replacement.clone());
-          continue;
-        }
-        all_solved = false;
-        break;
+    if let Ok(sol) = solve_ast(&[grad_eq, Expr::Identifier(var.clone())]) {
+      if let Expr::List(sol_sets) = &sol
+        && sol_sets.len() == 1
+        && let Some(Expr::List(rules)) = sol_sets.first()
+        && rules.len() == 1
+        && let Some(Expr::Rule { replacement, .. }) = rules.first()
+      {
+        solutions[i] = Some(*replacement.clone());
+        continue;
       }
-      Err(_) => {
-        all_solved = false;
-        break;
-      }
+      all_solved = false;
+      break;
     }
+    all_solved = false;
+    break;
   }
 
   if all_solved {
@@ -8046,9 +7992,7 @@ fn try_solve_integer_bounded(
   constraints_arg: &Expr,
   vars_arg: &Expr,
 ) -> Option<Expr> {
-  let vars_exprs = if let Expr::List(v) = vars_arg {
-    v
-  } else {
+  let Expr::List(vars_exprs) = vars_arg else {
     return None;
   };
   let vars: Vec<String> = vars_exprs
@@ -8324,7 +8268,7 @@ fn minimize_constrained(
     .iter()
     .any(|c| matches!(c, Expr::FunctionCall { name, .. } if name == "Element"))
     && let Some(result) =
-      minimize_try_ilp(&f_inner, &constraints, vars, maximize, func_name)?
+      minimize_try_ilp(&f_inner, &constraints, vars, maximize, func_name)
   {
     return Ok(restore(result));
   }
@@ -8348,7 +8292,7 @@ fn minimize_constrained(
     vars,
     maximize,
     func_name,
-  )?))
+  )))
 }
 
 /// Try Integer Linear Programming. Returns Some(result) if ILP was solved, None if unsupported.
@@ -8358,7 +8302,7 @@ fn minimize_try_ilp(
   vars: &[String],
   maximize: bool,
   func_name: &str,
-) -> Result<Option<Expr>, InterpreterError> {
+) -> std::option::Option<crate::syntax::Expr> {
   use std::collections::HashSet;
 
   // Walk an `Element[…, Integers]` subject and collect identifier leaves.
@@ -8371,14 +8315,14 @@ fn minimize_try_ilp(
         out.insert(var.clone());
       }
       Expr::List(items) => {
-        for a in items.iter() {
+        for a in items {
           collect_element_symbols(a, out);
         }
       }
       Expr::FunctionCall { name, args }
         if name == "Alternatives" || name == "List" =>
       {
-        for a in args.iter() {
+        for a in args {
           collect_element_symbols(a, out);
         }
       }
@@ -8413,14 +8357,11 @@ fn minimize_try_ilp(
 
   // All problem variables must be integer-constrained
   if !vars.iter().all(|v| integer_vars.contains(v)) {
-    return Ok(None);
+    return None;
   }
 
   // Extract linear objective coefficients
-  let obj_coeffs = match minimize_extract_linear_expr(f, vars) {
-    Some((c, _)) => c,
-    None => return Ok(None), // non-linear objective
-  };
+  let (obj_coeffs, _) = minimize_extract_linear_expr(f, vars)?;
 
   // Extract linear constraints: one equality + bound inequalities
   let mut equalities: Vec<(Vec<f64>, f64)> = Vec::new(); // (coeffs, rhs)
@@ -8483,13 +8424,13 @@ fn minimize_try_ilp(
         _ => {}
       }
     } else {
-      return Ok(None); // non-linear constraint
+      return None; // non-linear constraint
     }
   }
 
   // Only support single equality constraint for DP
   if equalities.len() != 1 {
-    return Ok(None);
+    return None;
   }
   let (eq_coeffs, eq_rhs) = &equalities[0];
 
@@ -8503,7 +8444,7 @@ fn minimize_try_ilp(
   // All lower bounds must be non-negative integers for DP
   let lb_int: Vec<i64> = lb.iter().map(|&b| b.ceil() as i64).collect();
   if lb_int.iter().any(|&b| b < 0) {
-    return Ok(None);
+    return None;
   }
 
   // Upper bounds (default to a large number if infinite)
@@ -8520,11 +8461,11 @@ fn minimize_try_ilp(
 
   // Scale decimal coefficients to integers.
   // Find a common scale factor that makes all coefficients integers.
-  let mut all_values: Vec<f64> = eq_coeffs.to_vec();
+  let mut all_values: Vec<f64> = eq_coeffs.clone();
   all_values.push(*eq_rhs);
   let scale = find_integer_scale(&all_values);
   if scale == 0 {
-    return Ok(None);
+    return None;
   }
 
   let mut weights: Vec<i64> = Vec::with_capacity(vars.len());
@@ -8532,14 +8473,14 @@ fn minimize_try_ilp(
     let scaled = c * scale as f64;
     let ci = scaled.round() as i64;
     if (scaled - ci as f64).abs() > 1e-4 || ci <= 0 {
-      return Ok(None);
+      return None;
     }
     weights.push(ci);
   }
   let target_f = *eq_rhs * scale as f64;
   let target_i = target_f.round() as i64;
   if (target_f - target_i as f64).abs() > 1e-4 || target_i < 0 {
-    return Ok(None);
+    return None;
   }
   let target = target_i as usize;
 
@@ -8553,7 +8494,7 @@ fn minimize_try_ilp(
     // Infeasible
     // Infeasible integer program: there is no divergence direction to
     // report, so keep the -Infinity end for the variable values.
-    return Ok(Some(minimize_neg_infinity_result(vars, maximize, false)));
+    return Some(minimize_neg_infinity_result(vars, maximize, false));
   }
   let shifted_target = shifted_target as usize;
 
@@ -8569,14 +8510,14 @@ fn minimize_try_ilp(
   for &c in &obj_coeffs {
     let ci = c.round() as i64;
     if (c - ci as f64).abs() > 1e-8 || ci < 0 {
-      return Ok(None);
+      return None;
     }
     obj_int.push(ci);
   }
 
   // Guard: if the target is too large for DP (> 10M), bail out
   if shifted_target > 10_000_000 {
-    return Ok(None);
+    return None;
   }
 
   // Bounded DP: dp[t] = minimum objective to achieve shifted weight t
@@ -8597,7 +8538,12 @@ fn minimize_try_ilp(
           let new_val = dp[t - wi] + obj_int[i];
           if new_val < dp[t] {
             dp[t] = new_val;
-            dp_assign[t] = dp_assign[t - wi].clone();
+            // `clone_from` would need `&dp_assign[t - wi]` while `dp_assign[t]`
+            // is already mutably borrowed, so the clone stays explicit.
+            #[allow(clippy::assigning_clones)]
+            {
+              dp_assign[t] = dp_assign[t - wi].clone();
+            }
             dp_assign[t][i] += 1;
           }
         }
@@ -8607,14 +8553,14 @@ fn minimize_try_ilp(
 
   if dp[shifted_target] == INF {
     // Infeasible
-    return Ok(Some(Expr::FunctionCall {
+    return Some(Expr::FunctionCall {
       name: func_name.to_string(),
       args: vec![
         f.clone(),
         Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect()),
       ]
       .into(),
-    }));
+    });
   }
 
   // Recover variable assignments (add back lower bounds)
@@ -8645,9 +8591,9 @@ fn minimize_try_ilp(
       replacement: Box::new(Expr::Integer(val as i128)),
     })
     .collect();
-  Ok(Some(Expr::List(
+  Some(Expr::List(
     vec![result_val, Expr::List(rules.into())].into(),
-  )))
+  ))
 }
 
 /// Find a scale factor that makes all values close to integers.
@@ -9032,19 +8978,19 @@ fn minimize_constrained_nd(
   vars: &[String],
   maximize: bool,
   func_name: &str,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   // First try pure LP (linear objective + linear constraints)
   if vars.len() >= 2
     && let Some(result) = minimize_lp_2d(f, constraints, vars, maximize)
   {
-    return Ok(result);
+    return result;
   }
 
   // For any dimension, try boundary reduction for linear constraints
   if let Some(result) =
-    minimize_constrained_boundary(f, constraints, vars, maximize)?
+    minimize_constrained_boundary(f, constraints, vars, maximize)
   {
-    return Ok(result);
+    return result;
   }
 
   // Return unevaluated
@@ -9053,14 +8999,14 @@ fn minimize_constrained_nd(
       .chain(constraints.iter().cloned())
       .collect(),
   );
-  Ok(Expr::FunctionCall {
+  Expr::FunctionCall {
     name: func_name.to_string(),
     args: vec![
       obj_with_cons,
       Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect()),
     ]
     .into(),
-  })
+  }
 }
 
 /// Check if a point (given as var→val map) satisfies all constraints numerically.
@@ -9181,7 +9127,7 @@ fn minimize_constrained_boundary(
   constraints: &[Expr],
   vars: &[String],
   maximize: bool,
-) -> Result<Option<Expr>, InterpreterError> {
+) -> std::option::Option<crate::syntax::Expr> {
   let n = vars.len();
 
   // Collect all linear constraints
@@ -9328,7 +9274,7 @@ fn minimize_constrained_boundary(
   }
 
   if candidates.is_empty() {
-    return Ok(None);
+    return None;
   }
 
   // Find minimum candidate
@@ -9355,9 +9301,9 @@ fn minimize_constrained_boundary(
     })
     .collect();
 
-  Ok(Some(Expr::List(
+  Some(Expr::List(
     vec![result_fval, Expr::List(rules.into())].into(),
-  )))
+  ))
 }
 
 /// Try to solve a 2D linear program by enumerating vertices.
@@ -9846,14 +9792,13 @@ pub fn find_minimum_ast(
       let names = vars.join(", ");
       let vals = x
         .iter()
-        .map(|v| v.to_string())
+        .map(std::string::ToString::to_string)
         .collect::<Vec<_>>()
         .join(", ");
-      format!("{{{}}} = {{{}}}", names, vals)
+      format!("{{{names}}} = {{{vals}}}")
     };
     crate::emit_message(&format!(
-      "{func_name}::nrnum: The function value {} is not a real number at {}.",
-      value_str, var_str,
+      "{func_name}::nrnum: The function value {value_str} is not a real number at {var_str}.",
     ));
     return Ok(unevaluated(func_name, args));
   }
@@ -10092,8 +10037,8 @@ fn specialize_periodic_solution(
   if x_bounds.len() < 2 {
     return None; // not bounded on both sides
   }
-  let x_lo = x_bounds.iter().cloned().fold(f64::INFINITY, f64::min);
-  let x_hi = x_bounds.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+  let x_lo = x_bounds.iter().copied().fold(f64::INFINITY, f64::min);
+  let x_hi = x_bounds.iter().copied().fold(f64::NEG_INFINITY, f64::max);
   // Parameter range from x = a + b·C ∈ [x_lo, x_hi], with a margin so that
   // boundary integers are tested by the exact inequality check below.
   let c1 = (x_lo - a) / b;
@@ -10569,17 +10514,17 @@ pub fn nminimize_ast(
     // optimizer (which is only adopted when meaningfully better).
     let candidates: Vec<Expr> =
       [symbolic, numeric].into_iter().flatten().collect();
-    return pick_best_optimum(
+    return Ok(pick_best_optimum(
       candidates,
       &objective,
       &constraints,
       &vars,
       maximize,
-    );
+    ));
   }
 
   // Extract bounds from constraints (e.g. 0 < x < Pi/2)
-  let bounds = extract_bounds(&constraints, &vars)?;
+  let bounds = extract_bounds(&constraints, &vars);
 
   // An empty box (lower bound above upper bound) means the per-variable
   // constraints are unsatisfiable. Mirror wolframscript's infeasible result
@@ -10600,7 +10545,7 @@ pub fn nminimize_ast(
     std::collections::HashMap<*const Expr, Option<NumNode>>,
   > = std::cell::RefCell::new(std::collections::HashMap::new());
   let eval_at = |expr: &Expr, point: &[f64]| -> Result<f64, InterpreterError> {
-    let key = expr as *const Expr;
+    let key = std::ptr::from_ref::<Expr>(expr);
     if !compiled_cache.borrow().contains_key(&key) {
       let compiled = compile_numeric(expr, &vars);
       compiled_cache.borrow_mut().insert(key, compiled);
@@ -10673,7 +10618,7 @@ pub fn nminimize_ast(
       .map(|&(lo, hi)| {
         let range = hi - lo;
         if range > scale * 4.0 {
-          let mid = (lo + hi) / 2.0;
+          let mid = f64::midpoint(lo, hi);
           ((mid - scale).max(lo), (mid + scale).min(hi))
         } else {
           (lo, hi)
@@ -10692,8 +10637,7 @@ pub fn nminimize_ast(
     .iter()
     .enumerate()
     .min_by(|a, b| range_sum(a.1).total_cmp(&range_sum(b.1)))
-    .map(|(i, _)| i)
-    .unwrap_or(0);
+    .map_or(0, |(i, _)| i);
 
   for (si, sb) in scale_bounds.iter().enumerate() {
     let mut sample_points: Vec<Vec<f64>> = vec![vec![]];
@@ -10735,21 +10679,19 @@ pub fn nminimize_ast(
     let mut grads = Vec::new();
     let mut ok = true;
     for var in &vars {
-      match crate::functions::calculus_ast::differentiate_expr(&objective, var)
+      if let Ok(d) =
+        crate::functions::calculus_ast::differentiate_expr(&objective, var)
       {
-        Ok(d) => {
-          let d = simplify(d);
-          // Check for unevaluated D
-          if contains_unevaluated_d(&d) {
-            ok = false;
-            break;
-          }
-          grads.push(d);
-        }
-        Err(_) => {
+        let d = simplify(d);
+        // Check for unevaluated D
+        if contains_unevaluated_d(&d) {
           ok = false;
           break;
         }
+        grads.push(d);
+      } else {
+        ok = false;
+        break;
       }
     }
     if ok { Some(grads) } else { None }
@@ -10888,7 +10830,7 @@ pub fn nminimize_ast(
           }
         }
 
-        let new_val = (a + b) / 2.0;
+        let new_val = f64::midpoint(a, b);
         if (new_val - x[i]).abs() > tol {
           x[i] = new_val;
           improved = true;
@@ -10945,9 +10887,7 @@ pub fn nminimize_ast(
         _ => f64::INFINITY,
       }
     };
-    let cur = eval_at(&objective, &x)
-      .map(|v| sign_p * v)
-      .unwrap_or(f64::INFINITY);
+    let cur = eval_at(&objective, &x).map_or(f64::INFINITY, |v| sign_p * v);
     let polished = nelder_mead_min(&polish_obj, &x, 0.05, n);
     if polish_obj(&polished) < cur {
       x = polished;
@@ -11093,7 +11033,13 @@ pub fn nminimize_ast(
 
   let candidates: Vec<Expr> =
     [symbolic, Some(numeric)].into_iter().flatten().collect();
-  pick_best_optimum(candidates, &objective, &constraints, &vars, maximize)
+  Ok(pick_best_optimum(
+    candidates,
+    &objective,
+    &constraints,
+    &vars,
+    maximize,
+  ))
 }
 
 /// A compiled numeric expression tree over the optimization variables.
@@ -11216,7 +11162,7 @@ fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
         "ArcSin" => unary(f64::asin, args),
         "ArcCos" => unary(f64::acos, args),
         "ArcTan" if args.len() == 2 => Some(NumNode::Binary(
-          |y, x| y.atan2(x),
+          f64::atan2,
           Box::new(c(&args[0])?),
           Box::new(c(&args[1])?),
         )),
@@ -11271,7 +11217,7 @@ fn named_constant_value(name: &str) -> Option<f64> {
     "Pi" => std::f64::consts::PI,
     "E" => std::f64::consts::E,
     "Degree" => std::f64::consts::PI / 180.0,
-    "GoldenRatio" => (1.0 + 5.0_f64.sqrt()) / 2.0,
+    "GoldenRatio" => f64::midpoint(1.0, 5.0_f64.sqrt()),
     "EulerGamma" => 0.577_215_664_901_532_9,
     "Catalan" => 0.915_965_594_177_219,
     _ => return None,
@@ -11434,7 +11380,7 @@ fn pick_best_optimum(
   constraints: &[Expr],
   vars: &[String],
   maximize: bool,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let comparisons = collect_atomic_comparisons(constraints);
   let mut best: Option<(Expr, f64, bool)> = None;
 
@@ -11451,7 +11397,7 @@ fn pick_best_optimum(
     let mut ok = true;
     for (vi, var) in vars.iter().enumerate() {
       let mut found = None;
-      for r in rules.iter() {
+      for r in rules {
         let (pat, rep) = match r {
           Expr::Rule {
             pattern,
@@ -11468,12 +11414,11 @@ fn pick_best_optimum(
           found = expr_to_f64(rep).ok();
         }
       }
-      match found {
-        Some(v) => point[vi] = v,
-        None => {
-          ok = false;
-          break;
-        }
+      if let Some(v) = found {
+        point[vi] = v;
+      } else {
+        ok = false;
+        break;
       }
     }
     if !ok {
@@ -11511,8 +11456,8 @@ fn pick_best_optimum(
   // No feasible candidate from any optimizer ⇒ the constraints are
   // unsatisfiable; mirror wolframscript's infeasible result.
   match best {
-    Some((c, _, true)) => Ok(c),
-    _ => Ok(nminimize_infeasible_result(constraints, vars, maximize)),
+    Some((c, _, true)) => c,
+    _ => nminimize_infeasible_result(constraints, vars, maximize),
   }
 }
 
@@ -11637,7 +11582,7 @@ fn nminimize_penalty(
   let n = vars.len();
   let sign = if maximize { -1.0 } else { 1.0 };
   let comparisons = collect_atomic_comparisons(constraints);
-  let bounds = extract_bounds(constraints, vars)?;
+  let bounds = extract_bounds(constraints, vars);
 
   // Compile the objective and each constraint side into fast numeric closures
   // once. The optimizer evaluates these tens of thousands of times; the
@@ -11828,7 +11773,7 @@ fn nminimize_penalty(
 fn extract_bounds(
   constraints: &[Expr],
   vars: &[String],
-) -> Result<Vec<(f64, f64)>, InterpreterError> {
+) -> std::vec::Vec<(f64, f64)> {
   let mut bounds: Vec<(f64, f64)> = vars.iter().map(|_| (-1e6, 1e6)).collect();
 
   for constraint in constraints {
@@ -11836,11 +11781,11 @@ fn extract_bounds(
     let mut flat = Vec::new();
     flatten_and_constraints_ref(constraint, &mut flat);
     for c in flat {
-      extract_bound_from_comparison(c, vars, &mut bounds)?;
+      extract_bound_from_comparison(c, vars, &mut bounds);
     }
   }
 
-  Ok(bounds)
+  bounds
 }
 
 fn flatten_and_constraints_ref<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
@@ -11856,7 +11801,7 @@ fn flatten_and_constraints_ref<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
     // `a && b && c` is parsed/evaluated as a nested `And[...]` FunctionCall,
     // so flatten that form too.
     Expr::FunctionCall { name, args } if name == "And" => {
-      for a in args.iter() {
+      for a in args {
         flatten_and_constraints_ref(a, out);
       }
     }
@@ -11868,7 +11813,7 @@ fn extract_bound_from_comparison(
   expr: &Expr,
   vars: &[String],
   bounds: &mut [(f64, f64)],
-) -> Result<(), InterpreterError> {
+) {
   if let Expr::Comparison {
     operands,
     operators,
@@ -11915,7 +11860,6 @@ fn extract_bound_from_comparison(
       }
     }
   }
-  Ok(())
 }
 
 /// Try to evaluate an expression to f64.
@@ -12251,8 +12195,7 @@ fn is_rational_expr(expr: &Expr) -> bool {
     } => is_rational_expr(operand),
     e if is_rational_atom(e) => true,
     _ => crate::evaluator::evaluate_expr_to_expr(expr)
-      .map(|evaled| is_rational_atom(&evaled))
-      .unwrap_or(false),
+      .is_ok_and(|evaled| is_rational_atom(&evaled)),
   }
 }
 

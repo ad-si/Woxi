@@ -330,7 +330,7 @@ fn extract_pi_phase(arg: &Expr) -> Option<(i64, bool, (i64, i64), Vec<Expr>)> {
     term_is_negative(&rest[0])
   };
   if flip {
-    for t in rest.iter_mut() {
+    for t in &mut rest {
       *t = negate_expr(t.clone());
     }
     pn = -pn;
@@ -379,10 +379,10 @@ fn try_trig_pi_phase(
     ("Cos", 1) => ("Sin", true),
     ("Cos", 2) => ("Cos", true),
     ("Cos", 3) => ("Sin", false),
-    ("Tan", 0) | ("Tan", 2) => ("Tan", false),
-    ("Tan", 1) | ("Tan", 3) => ("Cot", true),
-    ("Cot", 0) | ("Cot", 2) => ("Cot", false),
-    ("Cot", 1) | ("Cot", 3) => ("Tan", true),
+    ("Tan", 0 | 2) => ("Tan", false),
+    ("Tan", 1 | 3) => ("Cot", true),
+    ("Cot", 0 | 2) => ("Cot", false),
+    ("Cot", 1 | 3) => ("Tan", true),
     ("Sec", 0) => ("Sec", false),
     ("Sec", 1) => ("Csc", true),
     ("Sec", 2) => ("Sec", true),
@@ -396,7 +396,7 @@ fn try_trig_pi_phase(
   // Odd functions pick up a sign from the leading-term flip.
   let neg = neg ^ (flip && matches!(head, "Sin" | "Tan" | "Cot" | "Csc"));
   if pn != 0 {
-    rest.push(lit(&format!("({}*Pi)/{}", pn, pd)));
+    rest.push(lit(&format!("({pn}*Pi)/{pd}")));
   }
   let rest_expr = if rest.len() == 1 {
     rest.pop().unwrap()
@@ -427,11 +427,11 @@ fn lit(s: &str) -> Expr {
 /// Build `head[m*Pi/d]` (e.g. `Cos[Pi/14]`, `Sin[(3*Pi)/16]`).
 fn build_trig_angle_call(head: &str, m: i64, d: i64) -> Expr {
   let angle = if m == 1 {
-    format!("Pi/{}", d)
+    format!("Pi/{d}")
   } else {
-    format!("({}*Pi)/{}", m, d)
+    format!("({m}*Pi)/{d}")
   };
-  lit(&format!("{}[{}]", head, angle))
+  lit(&format!("{head}[{angle}]"))
 }
 
 /// Canonical first-octant fallback for a trig function of `k*Pi/n` when there
@@ -839,7 +839,7 @@ fn exact_cot(k: i64, n: i64) -> Option<Expr> {
 /// 2/Sin[Pi/4]. A negated sum distributes its sign first, so Cot[-Pi/12]
 /// keeps wolframscript's "-2 - Sqrt[3]" form rather than "-(2 + Sqrt[3])".
 fn canonicalize_exact_trig_value(
-  exact: Expr,
+  exact: &Expr,
 ) -> Result<Expr, InterpreterError> {
   if let Expr::UnaryOp {
     op: UnaryOperator::Minus,
@@ -857,7 +857,7 @@ fn canonicalize_exact_trig_value(
     );
     return crate::evaluator::evaluate_expr_to_expr(&distributed);
   }
-  crate::evaluator::evaluate_expr_to_expr(&exact)
+  crate::evaluator::evaluate_expr_to_expr(exact)
 }
 
 pub fn negate_expr(mut expr: Expr) -> Expr {
@@ -1080,7 +1080,7 @@ fn imaginary_pi_coeff(term: &Expr) -> Option<(i128, i128)> {
   fn flatten(e: &Expr, out: &mut Vec<Expr>) {
     match e {
       Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
+        for a in args {
           flatten(a, out);
         }
       }
@@ -1125,7 +1125,7 @@ fn imaginary_pi_coeff(term: &Expr) -> Option<(i128, i128)> {
   let (mut num, mut den): (i128, i128) = (1, 1);
   let mut has_pi = false;
   let mut has_imag = false;
-  for f in factors.iter() {
+  for f in &factors {
     match f {
       Expr::Constant(s) | Expr::Identifier(s) if s == "Pi" => {
         if has_pi {
@@ -1759,7 +1759,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_sin(k, n)
   {
-    return canonicalize_exact_trig_value(exact);
+    return canonicalize_exact_trig_value(&exact);
   }
   // Pi/2 shift: Sin[rest + k*Pi/2] -> +/-Sin/Cos[rest].
   if let Some(r) = try_trig_pi_phase("Sin", &args[0]) {
@@ -1938,7 +1938,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_cos(k, n)
   {
-    return canonicalize_exact_trig_value(exact);
+    return canonicalize_exact_trig_value(&exact);
   }
   if let Some(r) = try_trig_pi_phase("Cos", &args[0]) {
     return r;
@@ -2067,7 +2067,7 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_tan(k, n)
   {
-    return canonicalize_exact_trig_value(exact);
+    return canonicalize_exact_trig_value(&exact);
   }
   if let Some(r) = try_trig_pi_phase("Tan", &args[0]) {
     return r;
@@ -2119,7 +2119,7 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_sec(k, n)
   {
-    return canonicalize_exact_trig_value(exact);
+    return canonicalize_exact_trig_value(&exact);
   }
   if let Some(r) = try_trig_pi_phase("Sec", &args[0]) {
     return r;
@@ -2172,7 +2172,7 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_csc(k, n)
   {
-    return canonicalize_exact_trig_value(exact);
+    return canonicalize_exact_trig_value(&exact);
   }
   if let Some(r) = try_trig_pi_phase("Csc", &args[0]) {
     return r;
@@ -2225,7 +2225,7 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_cot(k, n)
   {
-    return canonicalize_exact_trig_value(exact);
+    return canonicalize_exact_trig_value(&exact);
   }
   if let Some(r) = try_trig_pi_phase("Cot", &args[0]) {
     return r;
@@ -3144,15 +3144,14 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(Expr::Real(f.ln()));
         } else if *f == 0.0 {
           return Ok(Expr::Identifier("Indeterminate".to_string()));
-        } else {
-          // Log of negative real: return complex result
-          let re = f.abs().ln();
-          let im = std::f64::consts::PI;
-          return crate::evaluator::evaluate_function_call_ast(
-            "Complex",
-            &[Expr::Real(re), Expr::Real(im)],
-          );
         }
+        // Log of negative real: return complex result
+        let re = f.abs().ln();
+        let im = std::f64::consts::PI;
+        return crate::evaluator::evaluate_function_call_ast(
+          "Complex",
+          &[Expr::Real(re), Expr::Real(im)],
+        );
       }
       // Log of a complex floating-point number: principal value
       // = 0.5*Log[a^2 + b^2] + I*atan2(b, a)
@@ -3347,7 +3346,7 @@ fn try_complex_inverse_trig(
   // Principal complex square root and logarithm.
   let csqrt = |a: f64, b: f64| {
     let r = a.hypot(b);
-    let re = ((r + a) / 2.0).sqrt();
+    let re = f64::midpoint(r, a).sqrt();
     let im = ((r - a) / 2.0).sqrt() * if b < 0.0 { -1.0 } else { 1.0 };
     (re, im)
   };
@@ -3784,12 +3783,8 @@ fn arcsin_special_value(v: f64) -> Option<Expr> {
         });
       } else if den == 1 {
         return Some(Expr::Constant("Pi".to_string()));
-      } else {
-        return Some(div2(
-          Expr::Constant("Pi".to_string()),
-          Expr::Integer(den),
-        ));
       }
+      return Some(div2(Expr::Constant("Pi".to_string()), Expr::Integer(den)));
     }
   }
   None
@@ -4799,10 +4794,9 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if x >= -1.0 {
         // ArcCosh[x] = I*ArcCos[x] for real x in [-1, 1].
         return build_complex_float_result(0.0, x.acos());
-      } else {
-        // x < -1: ArcCosh[x] = ArcCosh[|x|] + I*Pi. (x.acos() would be NaN.)
-        return build_complex_float_result((-x).acosh(), std::f64::consts::PI);
       }
+      // x < -1: ArcCosh[x] = ArcCosh[|x|] + I*Pi. (x.acos() would be NaN.)
+      return build_complex_float_result((-x).acosh(), std::f64::consts::PI);
     }
     // ArcCosh[0``α] = (Pi/2 at α-digit accuracy) * I
     Expr::BigFloat(s, prec) if s == "0" => {
@@ -4963,21 +4957,20 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "Complex",
           &[Expr::Real(0.0), Expr::Real(std::f64::consts::FRAC_PI_2)],
         );
-      } else {
-        // |x| <= 1 and x != 0: complex result
-        // ArcCoth[x] = (1/2) * ln((x+1)/(x-1))
-        // For |x| < 1: real part = (1/2)*ln(|(x+1)/(x-1)|), imag part = ±Pi/2
-        let re = 0.5 * ((x + 1.0) / (x - 1.0)).abs().ln();
-        let im = if x > 0.0 {
-          -std::f64::consts::FRAC_PI_2
-        } else {
-          std::f64::consts::FRAC_PI_2
-        };
-        return crate::evaluator::evaluate_function_call_ast(
-          "Complex",
-          &[Expr::Real(re), Expr::Real(im)],
-        );
       }
+      // |x| <= 1 and x != 0: complex result
+      // ArcCoth[x] = (1/2) * ln((x+1)/(x-1))
+      // For |x| < 1: real part = (1/2)*ln(|(x+1)/(x-1)|), imag part = ±Pi/2
+      let re = 0.5 * ((x + 1.0) / (x - 1.0)).abs().ln();
+      let im = if x > 0.0 {
+        -std::f64::consts::FRAC_PI_2
+      } else {
+        std::f64::consts::FRAC_PI_2
+      };
+      return crate::evaluator::evaluate_function_call_ast(
+        "Complex",
+        &[Expr::Real(re), Expr::Real(im)],
+      );
     }
     // ArcCoth[0``α] = (Pi/2 at α-digit accuracy) * I
     Expr::BigFloat(s, prec) if s == "0" => {
@@ -5251,7 +5244,7 @@ fn extract_half_odd_pi_i_coefficient(e: &Expr) -> Option<i128> {
   fn flatten<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
     match e {
       Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
+        for a in args {
           flatten(a, out);
         }
       }
@@ -5576,8 +5569,7 @@ fn trig_degrees_ast(
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(format!(
-      "{} expects 1 argument",
-      degrees_name
+      "{degrees_name} expects 1 argument"
     )));
   }
   // Convert degrees to radians: x * Degree
@@ -5604,8 +5596,7 @@ fn arc_trig_degrees_ast(
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(format!(
-      "{} expects 1 argument",
-      degrees_name
+      "{degrees_name} expects 1 argument"
     )));
   }
   let radians = crate::evaluator::evaluate_function_call_ast(

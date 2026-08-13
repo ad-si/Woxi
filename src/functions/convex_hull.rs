@@ -17,9 +17,8 @@ pub fn convex_hull_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(unevaluated("ConvexHullMesh", args));
   }
-  let pts = match &args[0] {
-    Expr::List(v) => v,
-    _ => return Ok(unevaluated("ConvexHullMesh", args)),
+  let Expr::List(pts) = &args[0] else {
+    return Ok(unevaluated("ConvexHullMesh", args));
   };
   if pts.is_empty() {
     return Ok(unevaluated("ConvexHullMesh", args));
@@ -34,13 +33,10 @@ pub fn convex_hull_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("ConvexHullMesh", args));
   }
 
-  convex_hull_mesh_2d(pts, args)
+  Ok(convex_hull_mesh_2d(pts, args))
 }
 
-fn convex_hull_mesh_2d(
-  pts: &[Expr],
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+fn convex_hull_mesh_2d(pts: &[Expr], args: &[Expr]) -> crate::syntax::Expr {
   // Parse points, keeping the original coordinate expressions (to preserve
   // exact display) and tracking whether every coordinate is exact.
   let mut coords: Vec<(f64, f64)> = Vec::new();
@@ -48,14 +44,14 @@ fn convex_hull_mesh_2d(
   let mut all_exact = true;
   for p in pts {
     let Expr::List(c) = p else {
-      return Ok(unevaluated("ConvexHullMesh", args));
+      return unevaluated("ConvexHullMesh", args);
     };
     if c.len() != 2 {
-      return Ok(unevaluated("ConvexHullMesh", args));
+      return unevaluated("ConvexHullMesh", args);
     }
     let (Some(x), Some(y)) = (try_eval_to_f64(&c[0]), try_eval_to_f64(&c[1]))
     else {
-      return Ok(unevaluated("ConvexHullMesh", args));
+      return unevaluated("ConvexHullMesh", args);
     };
     if !is_exact_number(&c[0]) || !is_exact_number(&c[1]) {
       all_exact = false;
@@ -81,7 +77,7 @@ fn convex_hull_mesh_2d(
   if hull.len() < 3 {
     // Fewer than three affinely independent points: wolframscript issues a
     // message and leaves the call unevaluated.
-    return Ok(unevaluated("ConvexHullMesh", args));
+    return unevaluated("ConvexHullMesh", args);
   }
 
   // Output vertices are the hull corners in input order; assign 1-based
@@ -153,10 +149,10 @@ fn convex_hull_mesh_2d(
     });
   }
 
-  Ok(Expr::FunctionCall {
+  Expr::FunctionCall {
     name: "BoundaryMeshRegion".to_string(),
     args: mesh_args.into(),
-  })
+  }
 }
 
 const EPS: f64 = 1e-10;

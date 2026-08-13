@@ -11,8 +11,8 @@
 #[allow(unused_imports)]
 use super::*;
 
-fn eval(e: Expr) -> Result<Expr, InterpreterError> {
-  crate::evaluator::evaluate_expr_to_expr(&e)
+fn eval(e: &Expr) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_expr_to_expr(e)
 }
 
 /// The numeric value of an angle argument, when it has one.
@@ -97,27 +97,24 @@ fn emit_asm(head: &str, a1: &Expr, a2: &Expr) {
     };
   let mut push_angle =
     |top: &mut String, bot: &mut String, mid: &mut String, e: &Expr| {
-      match fraction_parts(e) {
-        Some((num, den)) => {
-          any_fraction = true;
-          let w = num.chars().count().max(den.chars().count());
-          let center = |s: &str| {
-            let pad = (w - s.chars().count()) / 2;
-            let mut out = " ".repeat(pad);
-            out.push_str(s);
-            out.push_str(&" ".repeat(w - pad - s.chars().count()));
-            out
-          };
-          top.push_str(&center(&num));
-          mid.push_str(&"-".repeat(w));
-          bot.push_str(&center(&den));
-        }
-        None => {
-          let s = expr_to_output(e);
-          mid.push_str(&s);
-          top.push_str(&" ".repeat(s.chars().count()));
-          bot.push_str(&" ".repeat(s.chars().count()));
-        }
+      if let Some((num, den)) = fraction_parts(e) {
+        any_fraction = true;
+        let w = num.chars().count().max(den.chars().count());
+        let center = |s: &str| {
+          let pad = (w - s.chars().count()) / 2;
+          let mut out = " ".repeat(pad);
+          out.push_str(s);
+          out.push_str(&" ".repeat(w - pad - s.chars().count()));
+          out
+        };
+        top.push_str(&center(&num));
+        mid.push_str(&"-".repeat(w));
+        bot.push_str(&center(&den));
+      } else {
+        let s = expr_to_output(e);
+        mid.push_str(&s);
+        top.push_str(&" ".repeat(s.chars().count()));
+        bot.push_str(&" ".repeat(s.chars().count()));
       }
     };
   push_text(
@@ -149,15 +146,15 @@ fn symbolic_angle_ok(e: &Expr) -> bool {
 }
 
 /// Vertices {{0,0}, {c,0}, {cx,cy}} as an evaluated Triangle expression.
-fn triangle(c: Expr, cx: Expr, cy: Expr) -> Result<Expr, InterpreterError> {
+fn triangle(c: &Expr, cx: &Expr, cy: &Expr) -> Result<Expr, InterpreterError> {
   let zero = || Expr::Integer(0);
   Ok(call1(
     "Triangle",
     Expr::List(
       vec![
         Expr::List(vec![zero(), zero()].into()),
-        Expr::List(vec![eval(c)?, zero()].into()),
-        Expr::List(vec![eval(cx)?, eval(cy)?].into()),
+        Expr::List(vec![eval(&c.clone())?, zero()].into()),
+        Expr::List(vec![eval(&cx.clone())?, eval(&cy.clone())?].into()),
       ]
       .into(),
     ),
@@ -257,7 +254,7 @@ fn two_angle_triangle(
       call("Times", vec![side.clone(), call1("Sin", beta.clone())]),
     )
   };
-  triangle(c, cx, cy)
+  triangle(&c, &cx, &cy)
 }
 
 /// AASTriangle[α, β, a] — angles α, β and the side a opposite α.
@@ -314,7 +311,7 @@ pub fn sas_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ],
     )],
   );
-  let c_eval = eval(c)?;
+  let c_eval = eval(&c)?;
   let inv_c = call("Power", vec![c_eval.clone(), Expr::Integer(-1)]);
   let cx = call(
     "Times",
@@ -341,7 +338,7 @@ pub fn sas_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "Times",
     vec![a.clone(), b.clone(), call1("Sin", gamma.clone()), inv_c],
   );
-  triangle(c_eval, cx, cy)
+  triangle(&c_eval, &cx, &cy)
 }
 
 /// TriangleMeasurement[tri, "prop"] — scalar measurements of a triangle
@@ -389,10 +386,10 @@ pub fn triangle_measurement_ast(
     return unevaluated();
   }
   let mut coords: Vec<(Expr, Expr)> = Vec::with_capacity(3);
-  for p in pts.iter() {
+  for p in pts {
     match p {
       Expr::List(xy) if xy.len() == 2 => {
-        coords.push((xy[0].clone(), xy[1].clone()))
+        coords.push((xy[0].clone(), xy[1].clone()));
       }
       _ => return unevaluated(),
     }
@@ -415,7 +412,7 @@ pub fn triangle_measurement_ast(
       call("Times", vec![Expr::Integer(-1), diff(cx, ax), diff(by, ay)]),
     ],
   );
-  let signed = eval(twice_signed_area.clone())?;
+  let signed = eval(&twice_signed_area.clone())?;
   if try_eval_to_f64(&signed) == Some(0.0) {
     crate::emit_message(&format!(
       "TriangleMeasurement::invtri: {} expected to specify a nondegenerate triangle in the plane.",
@@ -496,5 +493,5 @@ pub fn triangle_measurement_ast(
     ),
     _ => unreachable!(),
   };
-  eval(result)
+  eval(&result)
 }

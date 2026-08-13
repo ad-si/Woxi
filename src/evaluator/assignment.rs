@@ -116,7 +116,7 @@ pub fn register_user_print_form(name: &str) {
 }
 
 fn suppress_specificity_sort() -> bool {
-  SUPPRESS_SPECIFICITY_SORT.with(|c| c.get())
+  SUPPRESS_SPECIFICITY_SORT.with(std::cell::Cell::get)
 }
 
 /// Walk an expression and wrap each `Rule`/`RuleDelayed` pattern (LHS) in
@@ -273,14 +273,15 @@ fn rule_positions_and_guards(
   let mut guards = Vec::new();
   for i in 0..heads.len() {
     let cond = conditions.get(i).and_then(|c| c.as_ref());
-    let is_guard_slot = params.get(i).map(|p| p.is_empty()).unwrap_or(false);
+    let is_guard_slot =
+      params.get(i).is_some_and(std::string::String::is_empty);
     if is_guard_slot {
       if let Some(c) = cond {
         guards.push(c.clone());
       }
       continue;
     }
-    let is_optional = defaults.get(i).map(|d| d.is_some()).unwrap_or(false);
+    let is_optional = defaults.get(i).is_some_and(std::option::Option::is_some);
     positions.push((heads[i].clone(), blank_types[i], is_optional));
     if let Some(c) = cond {
       let is_structural_marker = matches!(
@@ -496,10 +497,10 @@ fn count_pattern_specificity(pat: &Expr) -> u32 {
 /// flattening nested applications of the same operator.
 fn collect_binary_children(
   expr: &Expr,
-  target_op: &BinaryOperator,
+  target_op: BinaryOperator,
 ) -> Vec<Expr> {
   match expr {
-    Expr::BinaryOp { op, left, right } if op == target_op => {
+    Expr::BinaryOp { op, left, right } if *op == target_op => {
       let mut parts = collect_binary_children(left, target_op);
       parts.extend(collect_binary_children(right, target_op));
       parts
@@ -570,7 +571,7 @@ pub fn constrain_repeated_params(
         blank_type: blank_types.get(i).copied().unwrap_or(1),
       },
     };
-    let synthetic = format!("__sp{}", i);
+    let synthetic = format!("__sp{i}");
     conditions[i] = Some(Expr::FunctionCall {
       name: "__StructuralPattern__".to_string(),
       args: vec![Expr::Identifier(synthetic.clone()), pattern].into(),
@@ -654,14 +655,14 @@ fn replace_patterns_with_placeholders(
   match expr {
     Expr::Pattern { name, .. } | Expr::PatternOptional { name, .. } => {
       if vars.iter().any(|(n, _, _, _)| n == name) {
-        Expr::Identifier(format!("__patvar{}__", name))
+        Expr::Identifier(format!("__patvar{name}__"))
       } else {
         expr.clone()
       }
     }
     Expr::PatternTest { name, .. } => {
       if vars.iter().any(|(n, _, _, _)| n == name) {
-        Expr::Identifier(format!("__patvar{}__", name))
+        Expr::Identifier(format!("__patvar{name}__"))
       } else {
         expr.clone()
       }
@@ -711,13 +712,12 @@ fn replace_placeholders_with_patterns(
             head: head.clone(),
             default: None, // system-determined default
           };
-        } else {
-          return Expr::Pattern {
-            name: pat_name.clone(),
-            head: head.clone(),
-            blank_type: *blank_type,
-          };
         }
+        return Expr::Pattern {
+          name: pat_name.clone(),
+          head: head.clone(),
+          blank_type: *blank_type,
+        };
       }
       expr.clone()
     }
@@ -838,13 +838,8 @@ fn reorder_orderless_pattern_args(pattern: Expr) -> Expr {
         .any(|a| matches!(a, Expr::PatternOptional { .. }))
     {
       let mut sorted_args = args.clone();
-      sorted_args.sort_by_key(|a| {
-        if matches!(a, Expr::PatternOptional { .. }) {
-          1
-        } else {
-          0
-        }
-      });
+      sorted_args
+        .sort_by_key(|a| i32::from(matches!(a, Expr::PatternOptional { .. })));
       return Expr::FunctionCall {
         name: name.clone(),
         args: sorted_args,
@@ -859,7 +854,7 @@ fn reorder_orderless_pattern_args(pattern: Expr) -> Expr {
 fn set_attributes_from_value(
   sym_name: &str,
   rhs_value: &Expr,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   // Check if symbol is locked
   let is_locked = crate::FUNC_ATTRS.with(|m| {
     m.borrow()
@@ -868,10 +863,9 @@ fn set_attributes_from_value(
   });
   if is_locked {
     crate::emit_message(&format!(
-      "Attributes::locked: Symbol {} is locked.",
-      sym_name
+      "Attributes::locked: Symbol {sym_name} is locked."
     ));
-    return Ok(rhs_value.clone());
+    return rhs_value.clone();
   }
 
   // Extract attribute names from the value
@@ -890,15 +884,14 @@ fn set_attributes_from_value(
       // Non-symbol attribute — emit warning
       let attr_str = expr_to_string(attr_expr);
       crate::emit_message(&format!(
-        "Attributes::attnf: {} is not a known attribute.",
-        attr_str
+        "Attributes::attnf: {attr_str} is not a known attribute."
       ));
       has_error = true;
     }
   }
 
   if has_error {
-    return Ok(Expr::Identifier("$Failed".to_string()));
+    return Expr::Identifier("$Failed".to_string());
   }
 
   // Replace all user-defined attributes for this symbol
@@ -906,7 +899,7 @@ fn set_attributes_from_value(
     m.borrow_mut().insert(sym_name.to_string(), valid_attrs);
   });
 
-  Ok(rhs_value.clone())
+  rhs_value.clone()
 }
 
 /// Helper for `DownValues[f] = rules` / `DownValues[f] := rules` (and the
@@ -999,7 +992,7 @@ fn set_downvalues_from_rules(rhs: &Expr) -> Result<Expr, InterpreterError> {
 fn set_options_from_value(
   sym_name: &str,
   rhs_value: &Expr,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   // Extract rules from the value
   let rules = match rhs_value {
     Expr::List(items) => items.clone(),
@@ -1010,7 +1003,7 @@ fn set_options_from_value(
     m.borrow_mut().insert(sym_name.to_string(), rules.to_vec());
   });
 
-  Ok(rhs_value.clone())
+  rhs_value.clone()
 }
 
 /// Returns true if `expr` mentions the symbol `name` anywhere in its tree.
@@ -1212,8 +1205,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     if is_symbol_protected(&var_name) {
       let rhs_value = evaluate_expr_to_expr(rhs)?;
       crate::emit_message(&format!(
-        "Part::wrsym: Symbol {} is Protected.",
-        var_name
+        "Part::wrsym: Symbol {var_name} is Protected."
       ));
       return Ok(rhs_value);
     }
@@ -1308,8 +1300,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     // Matching wolframscript: if the target has no value at all, emit a
     // 'Set::noval' warning and return the RHS (the assignment is a no-op).
     crate::emit_message(&format!(
-      "Set::noval: Symbol {} in part assignment does not have an immediate value.",
-      var_name
+      "Set::noval: Symbol {var_name} in part assignment does not have an immediate value."
     ));
     return Ok(rhs_value);
   }
@@ -1359,8 +1350,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     // Check Protected attribute
     if is_symbol_protected(var_name) {
       crate::emit_message(&format!(
-        "Set::wrsym: Symbol {} is Protected.",
-        var_name
+        "Set::wrsym: Symbol {var_name} is Protected."
       ));
       return Ok(rhs_value);
     }
@@ -1428,7 +1418,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     crate::FUNC_OPTIONS_DELAYED.with(|m| {
       m.borrow_mut().remove(sym_name);
     });
-    return result;
+    return Ok(result);
   }
 
   // Handle `N[sym, …] = value` (and `N[sym] = value`): store under
@@ -1496,7 +1486,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     && let Expr::Identifier(sym_name) = &lhs_args[0]
   {
     let rhs_value = evaluate_expr_to_expr(rhs)?;
-    return set_attributes_from_value(sym_name, &rhs_value);
+    return Ok(set_attributes_from_value(sym_name, &rhs_value));
   }
 
   // Handle DownValues[sym] = rules / SubValues[sym] = rules: replay each
@@ -1689,7 +1679,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
 
     for (i, arg) in lhs_args.iter().enumerate() {
       let arg = unwrap_longest_shortest(arg);
-      let param_name = format!("_dv{}", i);
+      let param_name = format!("_dv{i}");
 
       // Check if arg is a pattern (Blank, BlankSequence, named pattern, etc.)
       let is_pattern = match arg {
@@ -1883,13 +1873,12 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         // (the trailing `{a}` becomes `{1}` because `a` was just
         // bound to 1).
         return evaluate_expr_to_expr(&rhs_value);
-      } else {
-        crate::emit_message(&format!(
-          "Set::shape: Lists {} and {} are not the same shape.",
-          expr_to_string(lhs),
-          expr_to_string(&rhs_value)
-        ));
       }
+      crate::emit_message(&format!(
+        "Set::shape: Lists {} and {} are not the same shape.",
+        expr_to_string(lhs),
+        expr_to_string(&rhs_value)
+      ));
     } else {
       crate::emit_message(&format!(
         "Set::shape: Lists {} and {} are not the same shape.",
@@ -2016,7 +2005,7 @@ pub fn set_delayed_ast(
   {
     // SetDelayed still evaluates the RHS for Attributes
     let rhs_value = evaluate_expr_to_expr(body)?;
-    let result = set_attributes_from_value(sym_name, &rhs_value)?;
+    let result = set_attributes_from_value(sym_name, &rhs_value);
     // On success, SetDelayed returns Null (no visible output) — matching
     // wolframscript. Error paths (`$Failed`) are preserved as-is.
     if matches!(&result, Expr::Identifier(s) if s == "$Failed") {
@@ -2137,9 +2126,9 @@ pub fn set_delayed_ast(
     && let Expr::Identifier(sym_name) = &lhs_args[0]
   {
     let rhs_value = evaluate_expr_to_expr(body)?;
-    set_options_from_value(sym_name, &rhs_value)?;
+    set_options_from_value(sym_name, &rhs_value);
     crate::FUNC_OPTIONS_DELAYED.with(|m| {
-      m.borrow_mut().insert(sym_name.to_string());
+      m.borrow_mut().insert(sym_name.clone());
     });
     return Ok(Expr::Identifier("Null".to_string()));
   }
@@ -2204,8 +2193,7 @@ pub fn set_delayed_ast(
     if is_downvalue_head_protected(func_name) {
       let lhs_str = crate::syntax::expr_to_string(lhs);
       crate::emit_message(&format!(
-        "SetDelayed::write: Tag {} in {} is Protected.",
-        func_name, lhs_str
+        "SetDelayed::write: Tag {func_name} in {lhs_str} is Protected."
       ));
       return Ok(Expr::Identifier("$Failed".to_string()));
     }
@@ -2230,7 +2218,7 @@ pub fn set_delayed_ast(
           name: fn_name,
           args: op_args,
         } if fn_name == "OptionsPattern" => {
-          let param_name = format!("__opts{}", i);
+          let param_name = format!("__opts{i}");
           params.push(param_name);
           conditions.push(None);
           defaults.push(None);
@@ -2248,7 +2236,7 @@ pub fn set_delayed_ast(
         // element, which relaxes the length check and (for named sequence
         // elements) binds the sequence variable to the matching tail.
         Expr::List(patterns) => {
-          let param_name = format!("_lp{}", i);
+          let param_name = format!("_lp{i}");
           // The combined condition checks the list length and that each
           // constrained element (literal, head-constrained, or nested) matches
           // its sub-pattern; the bindings extract each leaf variable.
@@ -2273,7 +2261,7 @@ pub fn set_delayed_ast(
           ..
         } => {
           let param_name = if name.is_empty() {
-            format!("__sp{}", i)
+            format!("__sp{i}")
           } else {
             name.clone()
           };
@@ -2336,7 +2324,7 @@ pub fn set_delayed_ast(
               args: op_args,
             } if opn == "OptionsPattern" => {
               let _ = pname; // user-visible name not bound
-              let param_name = format!("__opts{}", i);
+              let param_name = format!("__opts{i}");
               params.push(param_name);
               conditions.push(None);
               defaults.push(None);
@@ -2408,7 +2396,7 @@ pub fn set_delayed_ast(
             && head.is_none()
             && matches!(arg, Expr::Identifier(name) if name.starts_with('_'));
           if is_anonymous_pattern {
-            let param_name = format!("_dv{}", i);
+            let param_name = format!("_dv{i}");
             params.push(param_name);
             conditions.push(None);
             blank_types.push(blank_type);
@@ -2416,7 +2404,7 @@ pub fn set_delayed_ast(
             if crate::evaluator::pattern_matching::contains_pattern(arg) {
               // Structural pattern (e.g., 1/x_, a_ + b_) — normalize and store
               // the pattern AST in a __StructuralPattern__ marker for dispatch-time matching.
-              let param_name = format!("__sp{}", i);
+              let param_name = format!("__sp{i}");
               let normalized = normalize_structural_pattern(arg);
               conditions.push(Some(Expr::FunctionCall {
                 name: "__StructuralPattern__".to_string(),
@@ -2428,7 +2416,7 @@ pub fn set_delayed_ast(
             } else {
               // Literal value (not a pattern) — create a SameQ condition
               // e.g., f[1] := ... should only match when arg === 1
-              let param_name = format!("_dv{}", i);
+              let param_name = format!("_dv{i}");
               let eval_arg = evaluate_expr_to_expr(arg)?;
               conditions.push(Some(Expr::Comparison {
                 operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
@@ -2495,7 +2483,7 @@ pub fn set_delayed_ast(
     // If there's a body-level condition (from /;), attach it to a condition slot
     if let Some(body_cond) = body_condition_sub.as_ref() {
       let mut attached = false;
-      for c in conditions.iter_mut() {
+      for c in &mut conditions {
         if c.is_none() {
           *c = Some(body_cond.clone());
           attached = true;
@@ -2602,8 +2590,7 @@ pub fn set_delayed_ast(
   if let Expr::Identifier(var_name) | Expr::Constant(var_name) = lhs {
     if is_symbol_protected(var_name) {
       crate::emit_message(&format!(
-        "SetDelayed::wrsym: Symbol {} is Protected.",
-        var_name
+        "SetDelayed::wrsym: Symbol {var_name} is Protected."
       ));
       // wolframscript returns `$Failed` (not `Null`) from a rejected
       // `SetDelayed`, unlike `Set`, which returns its right-hand side.
@@ -2856,13 +2843,11 @@ fn build_list_pattern_match(
 ) -> (Expr, Vec<(String, Expr)>) {
   let base = Expr::Identifier(base_name.to_string());
   // Detect a trailing sequence pattern (BlankSequence or BlankNullSequence).
-  let (trailing_seq, trailing_seq_blank) = patterns
-    .last()
-    .map(|p| {
+  let (trailing_seq, trailing_seq_blank) =
+    patterns.last().map_or((false, 0), |p| {
       let (_, _, bt) = extract_pattern_info(p);
       (bt >= 2, bt)
-    })
-    .unwrap_or((false, 0));
+    });
   // Length condition:
   // - All single-element patterns (`x_`): Length === N.
   // - Trailing `__` (BlankSequence): Length >= N (consumes ≥1).
@@ -3064,7 +3049,7 @@ fn map_part_names(pat: &Expr, path: &Expr, out: &mut Vec<(Expr, String)>) {
       let seq = seqs.first().copied();
       for (j, ip) in args.iter().enumerate() {
         match seq {
-          Some(k) if j == k => continue,
+          Some(k) if j == k => {}
           Some(k) if j > k => {
             let neg = Expr::FunctionCall {
               name: "Part".to_string(),
@@ -3101,7 +3086,7 @@ fn reconstruct_list_param(
     if let Expr::FunctionCall { name, args } = e
       && name == "And"
     {
-      for a in args.iter() {
+      for a in args {
         flatten(a, out);
       }
     } else {
@@ -3239,7 +3224,7 @@ pub fn downvalue_param_pattern(
   }
   Expr::Pattern {
     name,
-    head: heads.get(i).and_then(|h| h.clone()),
+    head: heads.get(i).and_then(std::clone::Clone::clone),
     blank_type: blank_types.get(i).copied().unwrap_or(1),
   }
 }
@@ -3269,7 +3254,7 @@ pub fn reconstruct_list_downvalue(
       for (path, name) in &part_names {
         let name_expr = Expr::Identifier(name.clone());
         display_body = replace_subexpr(&display_body, path, &name_expr);
-        for gg in g.iter_mut() {
+        for gg in &mut g {
           *gg = replace_subexpr(gg, path, &name_expr);
         }
       }
@@ -3440,14 +3425,15 @@ pub fn tag_set_delayed_ast(
     Expr::BinaryOp { op, left, right } => {
       let (name, args) = match op {
         BinaryOperator::Plus => {
-          ("Plus".to_string(), collect_binary_children(lhs, op))
+          ("Plus".to_string(), collect_binary_children(lhs, *op))
         }
         BinaryOperator::Times => {
-          ("Times".to_string(), collect_binary_children(lhs, op))
+          ("Times".to_string(), collect_binary_children(lhs, *op))
         }
-        BinaryOperator::Alternatives => {
-          ("Alternatives".to_string(), collect_binary_children(lhs, op))
-        }
+        BinaryOperator::Alternatives => (
+          "Alternatives".to_string(),
+          collect_binary_children(lhs, *op),
+        ),
         BinaryOperator::Minus => (
           "Plus".to_string(),
           vec![
@@ -3528,97 +3514,95 @@ pub fn tag_set_delayed_ast(
 
   for (i, arg) in lhs_args.iter().enumerate() {
     let arg = unwrap_longest_shortest(arg);
-    match arg {
-      Expr::FunctionCall {
-        name: arg_func_name,
-        args: inner_args,
-      } => {
-        let param_name = format!("_up{}", i);
-        heads.push(Some(arg_func_name.clone()));
+    if let Expr::FunctionCall {
+      name: arg_func_name,
+      args: inner_args,
+    } = arg
+    {
+      let param_name = format!("_up{i}");
+      heads.push(Some(arg_func_name.clone()));
 
-        if !inner_args.is_empty() {
-          conditions.push(Some(Expr::Comparison {
-            operands: vec![
-              Expr::FunctionCall {
-                name: "Length".to_string(),
-                args: vec![Expr::Identifier(param_name.clone())].into(),
-              },
-              Expr::Integer(inner_args.len() as i128),
-            ],
-            operators: vec![ComparisonOp::SameQ],
-          }));
-        } else {
-          conditions.push(None);
-        }
+      if inner_args.is_empty() {
+        conditions.push(None);
+      } else {
+        conditions.push(Some(Expr::Comparison {
+          operands: vec![
+            Expr::FunctionCall {
+              name: "Length".to_string(),
+              args: vec![Expr::Identifier(param_name.clone())].into(),
+            },
+            Expr::Integer(inner_args.len() as i128),
+          ],
+          operators: vec![ComparisonOp::SameQ],
+        }));
+      }
 
-        for (j, inner_arg) in inner_args.iter().enumerate() {
-          let (pat_name, _pat_head, _blank_type) =
-            extract_pattern_info(inner_arg);
-          if !pat_name.is_empty() {
-            let part_expr = Expr::FunctionCall {
-              name: "Part".to_string(),
-              args: vec![
-                Expr::Identifier(param_name.clone()),
-                Expr::Integer((j + 1) as i128),
-              ]
-              .into(),
-            };
-            // If this pattern variable was already seen, add a SameQ
-            // condition to ensure both occurrences match the same value.
-            if let Some(prev_expr) = seen_pattern_vars.get(&pat_name) {
-              extra_conditions.push(Expr::Comparison {
-                operands: vec![prev_expr.clone(), part_expr.clone()],
-                operators: vec![ComparisonOp::SameQ],
-              });
-            } else {
-              seen_pattern_vars.insert(pat_name.clone(), part_expr.clone());
-            }
-            final_body = crate::syntax::substitute_variable(
-              &final_body,
-              &pat_name,
-              &part_expr,
-            );
-            inner_substitutions.push((pat_name, part_expr));
+      for (j, inner_arg) in inner_args.iter().enumerate() {
+        let (pat_name, _pat_head, _blank_type) =
+          extract_pattern_info(inner_arg);
+        if !pat_name.is_empty() {
+          let part_expr = Expr::FunctionCall {
+            name: "Part".to_string(),
+            args: vec![
+              Expr::Identifier(param_name.clone()),
+              Expr::Integer((j + 1) as i128),
+            ]
+            .into(),
+          };
+          // If this pattern variable was already seen, add a SameQ
+          // condition to ensure both occurrences match the same value.
+          if let Some(prev_expr) = seen_pattern_vars.get(&pat_name) {
+            extra_conditions.push(Expr::Comparison {
+              operands: vec![prev_expr.clone(), part_expr.clone()],
+              operators: vec![ComparisonOp::SameQ],
+            });
+          } else {
+            seen_pattern_vars.insert(pat_name.clone(), part_expr.clone());
           }
+          final_body = crate::syntax::substitute_variable(
+            &final_body,
+            &pat_name,
+            &part_expr,
+          );
+          inner_substitutions.push((pat_name, part_expr));
         }
+      }
 
+      params.push(param_name);
+      defaults.push(None);
+    } else {
+      // Check if this argument is actually a pattern (contains _ or is a Pattern node)
+      // Plain identifiers like `x` are literal symbols, not patterns.
+      let is_pattern = match arg {
+        Expr::Identifier(name) => name.contains('_'),
+        Expr::Pattern { .. } | Expr::PatternOptional { .. } => true,
+        _ => crate::evaluator::pattern_matching::contains_pattern(arg),
+      };
+      if is_pattern {
+        let (pat_name, head, _blank_type) = extract_pattern_info(arg);
+        if pat_name.is_empty() && head.is_none() {
+          // Anonymous pattern — use generated name
+          let param_name = format!("_up{i}");
+          params.push(param_name);
+        } else {
+          params.push(pat_name);
+        }
+        conditions.push(None);
+        heads.push(head);
+      } else {
+        // Literal argument — must match exactly via SameQ
+        let param_name = format!("_up{i}");
+        let eval_arg = evaluate_expr_to_expr(arg)?;
+        conditions.push(Some(Expr::Comparison {
+          operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
+          operators: vec![ComparisonOp::SameQ],
+        }));
         params.push(param_name);
         defaults.push(None);
+        heads.push(None);
+        continue;
       }
-      _ => {
-        // Check if this argument is actually a pattern (contains _ or is a Pattern node)
-        // Plain identifiers like `x` are literal symbols, not patterns.
-        let is_pattern = match arg {
-          Expr::Identifier(name) => name.contains('_'),
-          Expr::Pattern { .. } | Expr::PatternOptional { .. } => true,
-          _ => crate::evaluator::pattern_matching::contains_pattern(arg),
-        };
-        if is_pattern {
-          let (pat_name, head, _blank_type) = extract_pattern_info(arg);
-          if pat_name.is_empty() && head.is_none() {
-            // Anonymous pattern — use generated name
-            let param_name = format!("_up{}", i);
-            params.push(param_name);
-          } else {
-            params.push(pat_name);
-          }
-          conditions.push(None);
-          heads.push(head);
-        } else {
-          // Literal argument — must match exactly via SameQ
-          let param_name = format!("_up{}", i);
-          let eval_arg = evaluate_expr_to_expr(arg)?;
-          conditions.push(Some(Expr::Comparison {
-            operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
-            operators: vec![ComparisonOp::SameQ],
-          }));
-          params.push(param_name);
-          defaults.push(None);
-          heads.push(None);
-          continue;
-        }
-        defaults.push(None);
-      }
+      defaults.push(None);
     }
   }
 
@@ -3650,7 +3634,7 @@ pub fn tag_set_delayed_ast(
         crate::syntax::substitute_variable(&acc, name, part)
       });
     let mut attached = false;
-    for c in conditions.iter_mut() {
+    for c in &mut conditions {
       if c.is_none() {
         *c = Some(extra_cond.clone());
         attached = true;
@@ -3805,18 +3789,18 @@ pub fn tag_unset_ast(tag: &Expr, lhs: &Expr) -> Result<Expr, InterpreterError> {
       entry.retain(
         |(
           _of,
-          _params,
+          rule_params,
           _conds,
           _defaults,
           _heads,
-          _body,
+          body,
           orig_lhs,
           _orig_body,
         )| {
           let orig_lhs_str = crate::syntax::expr_to_string(orig_lhs);
           if orig_lhs_str == lhs_str {
             removed_entries
-              .push((_params.clone(), crate::syntax::expr_to_string(_body)));
+              .push((rule_params.clone(), crate::syntax::expr_to_string(body)));
             false
           } else {
             true
@@ -3884,22 +3868,23 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   // Normalize parser-level BinaryOp/UnaryOp into FunctionCall so expressions
   // like `a + b ^= 2` (parsed as Plus[a, b] via BinaryOp) can serve as LHS.
   let normalized_lhs = normalize_lhs_for_upset(lhs);
-  let (lhs_head, lhs_args) = match &normalized_lhs {
-    Expr::FunctionCall { name, args } => (name.clone(), args.clone()),
-    _ => {
-      // Atomic LHS (e.g. `a ^= 3`): wolframscript emits UpSet::normal and
-      // leaves the call unevaluated. Match that behaviour rather than
-      // aborting with an InterpreterError.
-      crate::emit_message(&format!(
-        "UpSet::normal: Nonatomic expression expected at position 1 in {} ^= {}.",
-        crate::syntax::expr_to_string(lhs),
-        crate::syntax::expr_to_string(rhs)
-      ));
-      return Ok(Expr::FunctionCall {
-        name: "UpSet".to_string(),
-        args: vec![lhs.clone(), rhs.clone()].into(),
-      });
-    }
+  let (lhs_head, lhs_args) = if let Expr::FunctionCall { name, args } =
+    &normalized_lhs
+  {
+    (name.clone(), args.clone())
+  } else {
+    // Atomic LHS (e.g. `a ^= 3`): wolframscript emits UpSet::normal and
+    // leaves the call unevaluated. Match that behaviour rather than
+    // aborting with an InterpreterError.
+    crate::emit_message(&format!(
+      "UpSet::normal: Nonatomic expression expected at position 1 in {} ^= {}.",
+      crate::syntax::expr_to_string(lhs),
+      crate::syntax::expr_to_string(rhs)
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "UpSet".to_string(),
+      args: vec![lhs.clone(), rhs.clone()].into(),
+    });
   };
   let lhs = &normalized_lhs;
 

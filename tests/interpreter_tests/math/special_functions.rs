@@ -531,8 +531,7 @@ mod hypergeometric2f1 {
       interpret("Hypergeometric2F1[2 + I, -I, 3/4, 0.5 - 0.5 I]").unwrap();
     assert!(
       s.starts_with("-0.972166571361907") && s.contains(" - 0.181658741475730"),
-      "got: {}",
-      s
+      "got: {s}"
     );
   }
 }
@@ -590,8 +589,7 @@ mod hypergeometric_1f1 {
       s.starts_with("1.6183312284015")
         && s.contains(" + 0.3792577715004")
         && s.ends_with("*I"),
-      "got: {}",
-      s
+      "got: {s}"
     );
   }
 
@@ -1359,9 +1357,8 @@ mod dedekind_eta {
         let re = stripped[..idx].parse::<f64>().unwrap();
         let im = stripped[idx + 3..].parse::<f64>().unwrap();
         return (re, -im);
-      } else {
-        return (0.0, stripped.parse::<f64>().unwrap());
       }
+      return (0.0, stripped.parse::<f64>().unwrap());
     }
     if s == "I" {
       return (0.0, 1.0);
@@ -1816,8 +1813,7 @@ mod legendre_p {
     let s = interpret("LegendreP[1.6, 3.1, 1.5]").unwrap();
     assert!(
       s.starts_with("-0.30399816148959") && s.contains(" - 1.9193688525633"),
-      "got: {}",
-      s
+      "got: {s}"
     );
   }
 }
@@ -1868,8 +1864,7 @@ mod legendre_q {
     let s = interpret("LegendreQ[5/2, 1.5]").unwrap();
     assert!(
       s.starts_with("0.0362109671796") && s.contains(" - 6.56218879817530"),
-      "got: {}",
-      s
+      "got: {s}"
     );
   }
 
@@ -1879,7 +1874,7 @@ mod legendre_q {
     // wolframscript: LegendreQ[1.75, 1.4, 0.53] ≈ 2.0549890785760923
     let s = interpret("LegendreQ[1.75, 1.4, 0.53]").unwrap();
     let val: f64 = s.parse().unwrap();
-    assert!((val - 2.0549890785760923).abs() < 1e-10, "got: {}", s);
+    assert!((val - 2.0549890785760923).abs() < 1e-10, "got: {s}");
   }
 
   #[test]
@@ -1891,8 +1886,7 @@ mod legendre_q {
     let s = interpret("LegendreQ[1.6, 3.1, 1.5]").unwrap();
     assert!(
       s.starts_with("-1.7193129097069") && s.contains(" - 7.70273279782677"),
-      "got: {}",
-      s
+      "got: {s}"
     );
   }
 
@@ -1903,8 +1897,7 @@ mod legendre_q {
       interpret("LegendreQ[1/3, 0.5]").unwrap().parse().unwrap();
     assert!(
       (result - (-0.03995329475988949)).abs() < 1e-10,
-      "got {}",
-      result
+      "got {result}"
     );
   }
 
@@ -1915,8 +1908,7 @@ mod legendre_q {
       interpret("LegendreQ[1/2, 0.5]").unwrap().parse().unwrap();
     assert!(
       (result - (-0.26559640763727543)).abs() < 1e-10,
-      "got {}",
-      result
+      "got {result}"
     );
   }
 
@@ -1927,8 +1919,7 @@ mod legendre_q {
       interpret("LegendreQ[2.5, 0.3]").unwrap().parse().unwrap();
     assert!(
       (result - (-0.10341858691052352)).abs() < 1e-8,
-      "got {}",
-      result
+      "got {result}"
     );
   }
 }
@@ -2194,8 +2185,7 @@ mod zeta {
     assert!(
       result.contains("0.44300478250536")
         && result.contains("0.65548309832117"),
-      "Expected Zeta[1/2+13I] ≈ 0.443...-0.655...*I, got: {}",
-      result
+      "Expected Zeta[1/2+13I] ≈ 0.443...-0.655...*I, got: {result}"
     );
   }
 
@@ -2206,8 +2196,7 @@ mod zeta {
     assert!(
       result.contains("0.798021985146275")
         && result.contains("0.113744308052938"),
-      "Expected Zeta[2+3I] ≈ 0.798...-0.114...*I, got: {}",
-      result
+      "Expected Zeta[2+3I] ≈ 0.798...-0.114...*I, got: {result}"
     );
   }
 
@@ -2216,9 +2205,8 @@ mod zeta {
     // N[Zeta[1/2 + 13 I], 40] should evaluate (at machine precision)
     let result = interpret("N[Zeta[1/2 + 13 I], 40]").unwrap();
     assert!(
-      result.contains("0.443") && result.contains("I"),
-      "Expected numeric complex result, got: {}",
-      result
+      result.contains("0.443") && result.contains('I'),
+      "Expected numeric complex result, got: {result}"
     );
   }
 
@@ -2801,7 +2789,7 @@ mod jacobi_amplitude {
   #[test]
   fn inverse_of_elliptic_f() {
     let am = interpret("JacobiAmplitude[1.5, 0.3]").unwrap();
-    let check = interpret(&format!("EllipticF[{}, 0.3]", am)).unwrap();
+    let check = interpret(&format!("EllipticF[{am}, 0.3]")).unwrap();
     let val: f64 = check.parse().unwrap();
     assert!((val - 1.5).abs() < 1e-6);
   }
@@ -2862,8 +2850,7 @@ mod jacobi_p {
     let s = interpret("JacobiP[3.5 + I, 3, 2, 4 - I]").unwrap();
     assert!(
       s.starts_with("1410.020116745") && s.contains(" + 5797.298553127"),
-      "got: {}",
-      s
+      "got: {s}"
     );
   }
 
@@ -4143,8 +4130,7 @@ mod gegenbauer_c {
     let s = interpret("GegenbauerC[4 - I, 1 + 2 I, 0.7]").unwrap();
     assert!(
       s.starts_with("-3.262095952165") && s.contains(" - 24.973939745526"),
-      "got: {}",
-      s
+      "got: {s}"
     );
   }
 
@@ -4280,23 +4266,23 @@ mod fourier {
   fn two_equal_elements() {
     // All imaginary parts are exactly 0 → Real output
     let result = interpret("Fourier[{2, 2}]").unwrap();
-    assert!(result.contains("2.82842712474619"), "got: {}", result);
-    assert!(result.contains("0."), "got: {}", result);
+    assert!(result.contains("2.82842712474619"), "got: {result}");
+    assert!(result.contains("0."), "got: {result}");
     // Should not contain I (all real)
-    assert!(!result.contains("I"), "got: {}", result);
+    assert!(!result.contains('I'), "got: {result}");
   }
 
   #[test]
   fn three_elements() {
     let result = interpret("Fourier[{1, 2, 3}]").unwrap();
     // Should be complex since some elements have nonzero imaginary parts
-    assert!(result.contains("I"), "got: {}", result);
+    assert!(result.contains('I'), "got: {result}");
   }
 
   #[test]
   fn complex_input() {
     let result = interpret("Fourier[{1 + 2*I, 3 - I}]").unwrap();
-    assert!(result.contains("I"), "got: {}", result);
+    assert!(result.contains('I'), "got: {result}");
   }
 
   #[test]
@@ -4313,7 +4299,7 @@ mod fourier {
     // FourierParameters -> {-1, 1} (data analysis convention)
     let result =
       interpret("Fourier[{1, 2, 3, 4}, FourierParameters -> {-1, 1}]").unwrap();
-    assert!(result.contains("I"), "got: {}", result);
+    assert!(result.contains('I'), "got: {result}");
   }
 
   #[test]
@@ -4491,7 +4477,7 @@ mod inverse_fourier {
     let result =
       interpret("InverseFourier[{1, 2, 3, 4}, FourierParameters -> {1, -1}]")
         .unwrap();
-    assert!(result.contains("I"), "got: {}", result);
+    assert!(result.contains('I'), "got: {result}");
   }
 
   #[test]
@@ -4552,14 +4538,14 @@ mod spherical_harmonic_y {
   fn complex_result() {
     // Y_1^1(Pi/4, Pi/4) should have both real and imaginary parts
     let result = interpret("SphericalHarmonicY[1, 1, Pi/4, Pi/4]").unwrap();
-    assert!(result.contains("I"));
+    assert!(result.contains('I'));
   }
 
   #[test]
   fn negative_m() {
     // Y_1^{-1}(Pi/4, Pi/4) has imaginary part
     let result = interpret("SphericalHarmonicY[1, -1, Pi/4, Pi/4]").unwrap();
-    assert!(result.contains("I"));
+    assert!(result.contains('I'));
   }
 
   #[test]
@@ -4759,8 +4745,7 @@ mod nproduct {
       .unwrap();
     assert!(
       (result - 3.6760779100585657).abs() < 1e-3,
-      "expected ≈ 3.6760779, got {}",
-      result
+      "expected ≈ 3.6760779, got {result}"
     );
   }
 
@@ -4771,7 +4756,7 @@ mod nproduct {
       .unwrap()
       .parse()
       .unwrap();
-    assert!((result - 0.5).abs() < 1e-3, "got {}", result);
+    assert!((result - 0.5).abs() < 1e-3, "got {result}");
   }
 }
 
@@ -4848,8 +4833,7 @@ mod lerch_phi {
     let val: f64 = result.parse().expect("should be a number");
     assert!(
       (val - 1.0 / 9.0).abs() < 1e-10,
-      "LerchPhi[0, 2, 3] should be 1/9, got {}",
-      val
+      "LerchPhi[0, 2, 3] should be 1/9, got {val}"
     );
   }
 
@@ -4870,8 +4854,7 @@ mod lerch_phi {
     let val: f64 = result.parse().expect("should be a number");
     assert!(
       (val - 1.16459).abs() < 0.001,
-      "LerchPhi[0.5, 2, 1] should be near 1.16459, got {}",
-      val
+      "LerchPhi[0.5, 2, 1] should be near 1.16459, got {val}"
     );
   }
 
@@ -4901,8 +4884,7 @@ mod lerch_phi {
     let val: f64 = result.parse().expect("should be a number");
     assert!(
       val > 1.0 && val < 2.0,
-      "Should be between 1 and 2, got {}",
-      val
+      "Should be between 1 and 2, got {val}"
     );
   }
 
@@ -4940,9 +4922,7 @@ mod lerch_phi {
     let expected = pi * pi + 8.0 * catalan;
     assert!(
       (val - expected).abs() < 1e-12,
-      "LerchPhi[1, 2, 1/4] should be π²+8C ≈ {}, got {}",
-      expected,
-      val
+      "LerchPhi[1, 2, 1/4] should be π²+8C ≈ {expected}, got {val}"
     );
   }
 
@@ -5068,7 +5048,7 @@ mod weierstrass_p {
     // Numeric evaluation should return a real number
     let result = interpret("WeierstrassP[0.5, {4, 0}]").unwrap();
     let val: f64 = result.parse().expect("should be a number");
-    assert!(val.is_finite(), "Result should be finite: {}", val);
+    assert!(val.is_finite(), "Result should be finite: {val}");
   }
 
   #[test]
@@ -5080,9 +5060,7 @@ mod weierstrass_p {
     let n: f64 = neg.parse().unwrap();
     assert!(
       (p - n).abs() < 1e-10,
-      "WeierstrassP should be even: {} vs {}",
-      p,
-      n
+      "WeierstrassP should be even: {p} vs {n}"
     );
   }
 
@@ -5093,8 +5071,7 @@ mod weierstrass_p {
     let val: f64 = result.parse().unwrap();
     assert!(
       (val - 4.0).abs() < 1e-10,
-      "WeierstrassP[0.5, {{0,0}}] should be 1/0.25 = 4.0, got {}",
-      val
+      "WeierstrassP[0.5, {{0,0}}] should be 1/0.25 = 4.0, got {val}"
     );
   }
 
@@ -5115,7 +5092,7 @@ mod weierstrass_p {
     let g3 = 1.0;
     let u = 0.4;
     let h = 1e-6;
-    let p_u = interpret(&format!("WeierstrassP[{}, {{{}, {}}}]", u, g2, g3))
+    let p_u = interpret(&format!("WeierstrassP[{u}, {{{g2}, {g3}}}]"))
       .unwrap()
       .parse::<f64>()
       .unwrap();
@@ -5134,9 +5111,7 @@ mod weierstrass_p {
     let rhs = 4.0 * p_u * p_u * p_u - g2 * p_u - g3;
     assert!(
       (lhs - rhs).abs() / rhs.abs().max(1.0) < 1e-4,
-      "Should satisfy (℘')² = 4℘³ - g₂℘ - g₃: lhs={}, rhs={}",
-      lhs,
-      rhs
+      "Should satisfy (℘')² = 4℘³ - g₂℘ - g₃: lhs={lhs}, rhs={rhs}"
     );
   }
 
@@ -5166,8 +5141,7 @@ mod weierstrass_p {
       .unwrap();
     assert!(
       (v - 1.0871464472148646).abs() < 1e-12,
-      "WeierstrassP[1.0, {{1,1}}] = {} (expected 1.0871464472148646)",
-      v
+      "WeierstrassP[1.0, {{1,1}}] = {v} (expected 1.0871464472148646)"
     );
     let v2: f64 = interpret("WeierstrassP[0.5, {1, 2}]")
       .unwrap()
@@ -5196,8 +5170,7 @@ mod weierstrass_p_prime {
     let val: f64 = result.parse().expect("should be a number");
     assert!(
       (val - 8.3966).abs() < 0.01,
-      "WeierstrassPPrime[2., {{1, 2}}] should be ≈ 8.3966, got {}",
-      val
+      "WeierstrassPPrime[2., {{1, 2}}] should be ≈ 8.3966, got {val}"
     );
   }
 
@@ -5208,8 +5181,7 @@ mod weierstrass_p_prime {
     let val: f64 = result.parse().expect("should be a number");
     assert!(
       (val - (-15.914)).abs() < 0.01,
-      "WeierstrassPPrime[0.5, {{1, 2}}] should be ≈ -15.914, got {}",
-      val
+      "WeierstrassPPrime[0.5, {{1, 2}}] should be ≈ -15.914, got {val}"
     );
   }
 
@@ -5220,8 +5192,7 @@ mod weierstrass_p_prime {
     let val: f64 = result.parse().expect("should be a number");
     assert!(
       (val - (-1.5157)).abs() < 0.01,
-      "WeierstrassPPrime[1.0, {{4, 0}}] should be ≈ -1.5157, got {}",
-      val
+      "WeierstrassPPrime[1.0, {{4, 0}}] should be ≈ -1.5157, got {val}"
     );
   }
 
@@ -5234,9 +5205,7 @@ mod weierstrass_p_prime {
     let n: f64 = neg.parse().unwrap();
     assert!(
       (p + n).abs() < 1e-4,
-      "WeierstrassPPrime should be odd: {} vs {}",
-      p,
-      n
+      "WeierstrassPPrime should be odd: {p} vs {n}"
     );
   }
 
@@ -5255,22 +5224,19 @@ mod weierstrass_p_prime {
     let g2 = 4.0;
     let g3 = 1.0;
     let u = 0.4;
-    let p_u = interpret(&format!("WeierstrassP[{}, {{{}, {}}}]", u, g2, g3))
+    let p_u = interpret(&format!("WeierstrassP[{u}, {{{g2}, {g3}}}]"))
       .unwrap()
       .parse::<f64>()
       .unwrap();
-    let pp_u =
-      interpret(&format!("WeierstrassPPrime[{}, {{{}, {}}}]", u, g2, g3))
-        .unwrap()
-        .parse::<f64>()
-        .unwrap();
+    let pp_u = interpret(&format!("WeierstrassPPrime[{u}, {{{g2}, {g3}}}]"))
+      .unwrap()
+      .parse::<f64>()
+      .unwrap();
     let lhs = pp_u * pp_u;
     let rhs = 4.0 * p_u * p_u * p_u - g2 * p_u - g3;
     assert!(
       (lhs - rhs).abs() / rhs.abs().max(1.0) < 1e-4,
-      "Should satisfy (℘')² = 4℘³ - g₂℘ - g₃: lhs={}, rhs={}",
-      lhs,
-      rhs
+      "Should satisfy (℘')² = 4℘³ - g₂℘ - g₃: lhs={lhs}, rhs={rhs}"
     );
   }
 }
@@ -5286,16 +5252,12 @@ mod inverse_weierstrass_p {
     let result =
       interpret("InverseWeierstrassP[4.050208734712057, {4.0, 0.0}]").unwrap();
     // result is a list {u, pp}
-    assert!(result.starts_with('{'), "expected list, got {}", result);
+    assert!(result.starts_with('{'), "expected list, got {result}");
     let inner = &result[1..result.len() - 1];
     let parts: Vec<&str> = inner.split(", ").collect();
-    assert_eq!(parts.len(), 2, "expected 2 elements, got {:?}", parts);
+    assert_eq!(parts.len(), 2, "expected 2 elements, got {parts:?}");
     let u: f64 = parts[0].parse().unwrap();
-    assert!(
-      (u.abs() - 0.5).abs() < 1e-4,
-      "expected |u| ≈ 0.5, got {}",
-      u
-    );
+    assert!((u.abs() - 0.5).abs() < 1e-4, "expected |u| ≈ 0.5, got {u}");
   }
 
   #[test]
@@ -5307,7 +5269,7 @@ mod inverse_weierstrass_p {
     )
     .unwrap();
     let u: f64 = result.parse().unwrap();
-    assert!((u - 0.5).abs() < 1e-4, "expected u ≈ 0.5, got {}", u);
+    assert!((u - 0.5).abs() < 1e-4, "expected u ≈ 0.5, got {u}");
   }
 
   #[test]
@@ -5318,13 +5280,11 @@ mod inverse_weierstrass_p {
     let p: f64 = p_str.parse().unwrap();
     let pp: f64 = pp_str.parse().unwrap();
 
-    let inv_result = interpret(&format!(
-      "InverseWeierstrassP[{{{}, {}}}, {{2.0, 3.0}}]",
-      p, pp
-    ))
-    .unwrap();
+    let inv_result =
+      interpret(&format!("InverseWeierstrassP[{{{p}, {pp}}}, {{2.0, 3.0}}]"))
+        .unwrap();
     let u: f64 = inv_result.parse().unwrap();
-    assert!((u - 1.0).abs() < 1e-4, "expected u ≈ 1.0, got {}", u);
+    assert!((u - 1.0).abs() < 1e-4, "expected u ≈ 1.0, got {u}");
   }
 
   #[test]
@@ -5351,10 +5311,7 @@ mod inverse_jacobi {
     let result = interpret(code).unwrap().parse::<f64>().unwrap();
     assert!(
       (result - expected).abs() < tol,
-      "{} = {} (expected {})",
-      code,
-      result,
-      expected
+      "{code} = {result} (expected {expected})"
     );
   }
 
@@ -5767,9 +5724,7 @@ mod meijer_g {
     let expected = (-3.0_f64).exp();
     assert!(
       (val - expected).abs() < 1e-8,
-      "got {} expected {}",
-      val,
-      expected
+      "got {val} expected {expected}"
     );
   }
 
@@ -5781,9 +5736,7 @@ mod meijer_g {
     let expected = 0.13914993366209005;
     assert!(
       (val - expected).abs() < 1e-4,
-      "got {} expected {}",
-      val,
-      expected
+      "got {val} expected {expected}"
     );
   }
 
@@ -5795,9 +5748,7 @@ mod meijer_g {
     let expected = 0.2109579130304179;
     assert!(
       (val - expected).abs() < 1e-4,
-      "got {} expected {}",
-      val,
-      expected
+      "got {val} expected {expected}"
     );
   }
 
@@ -5808,9 +5759,7 @@ mod meijer_g {
     let expected = 0.2109579130304179;
     assert!(
       (val - expected).abs() < 1e-4,
-      "got {} expected {}",
-      val,
-      expected
+      "got {val} expected {expected}"
     );
   }
 
@@ -5821,9 +5770,7 @@ mod meijer_g {
     let expected = 0.7978845608028653;
     assert!(
       (val - expected).abs() < 1e-6,
-      "got {} expected {}",
-      val,
-      expected
+      "got {val} expected {expected}"
     );
   }
 
@@ -5835,9 +5782,7 @@ mod meijer_g {
     let expected = 0.1396674740152931;
     assert!(
       (val - expected).abs() < 1e-4,
-      "got {} expected {}",
-      val,
-      expected
+      "got {val} expected {expected}"
     );
   }
 
@@ -5849,9 +5794,7 @@ mod meijer_g {
     let expected = -0.5659599737610849;
     assert!(
       (val - expected).abs() < 1e-4,
-      "got {} expected {}",
-      val,
-      expected
+      "got {val} expected {expected}"
     );
   }
 
@@ -5864,9 +5807,7 @@ mod meijer_g {
     let expected = 1.3432934216467352;
     assert!(
       (val - expected).abs() < 1e-4,
-      "got {} expected {}",
-      val,
-      expected
+      "got {val} expected {expected}"
     );
   }
 
@@ -5921,7 +5862,7 @@ mod hypergeometric_pfq_regularized {
     let result =
       interpret("HypergeometricPFQRegularized[{1, 2}, {3}, 0.5]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.7725887222397811).abs() < 1e-10, "got {}", val);
+    assert!((val - 0.7725887222397811).abs() < 1e-10, "got {val}");
   }
 
   #[test]
@@ -5929,7 +5870,7 @@ mod hypergeometric_pfq_regularized {
     let result =
       interpret("N[HypergeometricPFQRegularized[{1/2}, {3/2}, -1]]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.8427007929497148).abs() < 1e-8, "got {}", val);
+    assert!((val - 0.8427007929497148).abs() < 1e-8, "got {val}");
   }
 
   #[test]
@@ -5946,7 +5887,7 @@ mod hypergeometric_pfq_regularized {
       interpret("N[HypergeometricPFQRegularized[{1, 2}, {3, 4}, 1/2]]")
         .unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.09083551648531873).abs() < 1e-8, "got {}", val);
+    assert!((val - 0.09083551648531873).abs() < 1e-8, "got {val}");
   }
 
   #[test]
@@ -5958,7 +5899,7 @@ mod hypergeometric_pfq_regularized {
       interpret("HypergeometricPFQRegularized[{1/3, 1/3, 1/3}, {-2, -3}, 0.5]")
         .unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 15.062110268295829).abs() < 1e-9, "got {}", val);
+    assert!((val - 15.062110268295829).abs() < 1e-9, "got {val}");
   }
 
   #[test]
@@ -5968,7 +5909,7 @@ mod hypergeometric_pfq_regularized {
     let result =
       interpret("HypergeometricPFQRegularized[{1, 2}, {-2}, 0.5]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 96.0).abs() < 1e-8, "got {}", val);
+    assert!((val - 96.0).abs() < 1e-8, "got {val}");
   }
 
   #[test]
@@ -5978,7 +5919,7 @@ mod hypergeometric_pfq_regularized {
     let result =
       interpret("HypergeometricPFQRegularized[{1}, {-2}, 0.5]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.20609015883751602).abs() < 1e-10, "got {}", val);
+    assert!((val - 0.20609015883751602).abs() < 1e-10, "got {val}");
   }
 }
 
@@ -6017,7 +5958,7 @@ mod hypergeometric_2f1_regularized {
     let result =
       interpret("Hypergeometric2F1Regularized[1.0, 2.0, 3.0, 0.5]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.7725887222397809).abs() < 1e-8, "got {}", val);
+    assert!((val - 0.7725887222397809).abs() < 1e-8, "got {val}");
   }
 
   #[test]
@@ -6025,7 +5966,7 @@ mod hypergeometric_2f1_regularized {
     let result =
       interpret("N[Hypergeometric2F1Regularized[1, 2, 3, 1/4]]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.6029131592284935).abs() < 1e-8, "got {}", val);
+    assert!((val - 0.6029131592284935).abs() < 1e-8, "got {val}");
   }
 
   #[test]
@@ -6047,7 +5988,7 @@ mod hypergeometric_2f1_regularized {
     let result =
       interpret("Hypergeometric2F1Regularized[1, 2, -3, 4.5]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 26.768438320767707).abs() < 1e-8, "got {}", val);
+    assert!((val - 26.768438320767707).abs() < 1e-8, "got {val}");
   }
 
   #[test]
@@ -6056,7 +5997,7 @@ mod hypergeometric_2f1_regularized {
     let result =
       interpret("Hypergeometric2F1Regularized[1, 2, 0, 1.5]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val + 24.0).abs() < 1e-8, "got {}", val);
+    assert!((val + 24.0).abs() < 1e-8, "got {val}");
   }
 
   #[test]
@@ -6065,7 +6006,7 @@ mod hypergeometric_2f1_regularized {
     let result =
       interpret("Hypergeometric2F1Regularized[1, 2, -1, 0.5]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 24.0).abs() < 1e-8, "got {}", val);
+    assert!((val - 24.0).abs() < 1e-8, "got {val}");
   }
 
   #[test]
@@ -6075,7 +6016,7 @@ mod hypergeometric_2f1_regularized {
     let result =
       interpret("Hypergeometric2F1Regularized[2, 3, -2, 0.25]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 31.604938271604937).abs() < 1e-8, "got {}", val);
+    assert!((val - 31.604938271604937).abs() < 1e-8, "got {val}");
   }
 
   #[test]
@@ -6131,7 +6072,7 @@ mod q_pochhammer {
     // QPochhammer[0.5, 0.25, 4] ≈ 0.4205169677734375
     let result = interpret("QPochhammer[0.5, 0.25, 4]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.4205169677734375).abs() < 1e-10, "got {}", val);
+    assert!((val - 0.4205169677734375).abs() < 1e-10, "got {val}");
   }
 
   #[test]
@@ -6188,21 +6129,21 @@ mod q_pochhammer {
   #[test]
   fn two_arg_numeric() {
     let val: f64 = interpret("QPochhammer[0.5, 0.5]").unwrap().parse().unwrap();
-    assert!((val - 0.2887880950866024).abs() < 1e-12, "got {}", val);
+    assert!((val - 0.2887880950866024).abs() < 1e-12, "got {val}");
   }
 
   #[test]
   fn two_arg_numeric_factor_vanishes() {
     // a = 2, q = 0.5: the k=1 factor (1 - 2*0.5) = 0, so the product is 0.
     let val: f64 = interpret("QPochhammer[2.0, 0.5]").unwrap().parse().unwrap();
-    assert!(val.abs() < 1e-15, "got {}", val);
+    assert!(val.abs() < 1e-15, "got {val}");
   }
 
   #[test]
   fn one_arg_numeric() {
     // QPochhammer[0.5] = QPochhammer[0.5, 0.5]
     let val: f64 = interpret("QPochhammer[0.5]").unwrap().parse().unwrap();
-    assert!((val - 0.2887880950866024).abs() < 1e-12, "got {}", val);
+    assert!((val - 0.2887880950866024).abs() < 1e-12, "got {val}");
   }
 
   #[test]
@@ -6211,7 +6152,7 @@ mod q_pochhammer {
       .unwrap()
       .parse()
       .unwrap();
-    assert!((val - 0.2887880950866024).abs() < 1e-12, "got {}", val);
+    assert!((val - 0.2887880950866024).abs() < 1e-12, "got {val}");
   }
 }
 
@@ -6283,7 +6224,7 @@ mod spherical_bessel_j {
     // SphericalBesselJ[0, 1.0] = sin(1)/1 ≈ 0.8414709848078965
     let result = interpret("SphericalBesselJ[0, 1.0]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.8414709848078965).abs() < 1e-10, "got {}", val);
+    assert!((val - 0.8414709848078965).abs() < 1e-10, "got {val}");
   }
 
   #[test]
@@ -6291,14 +6232,14 @@ mod spherical_bessel_j {
     // SphericalBesselJ[1, 1.0] ≈ 0.30116867893975674
     let result = interpret("SphericalBesselJ[1, 1.0]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.30116867893975674).abs() < 1e-10, "got {}", val);
+    assert!((val - 0.30116867893975674).abs() < 1e-10, "got {val}");
   }
 
   #[test]
   fn n_wrapper() {
     let result = interpret("N[SphericalBesselJ[2, 3]]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.2986374970757335).abs() < 1e-10, "got {}", val);
+    assert!((val - 0.2986374970757335).abs() < 1e-10, "got {val}");
   }
 
   #[test]
@@ -6348,7 +6289,7 @@ mod log_gamma {
     // LogGamma[1/2] = Log[Sqrt[Pi]] ≈ 0.5723649429247001
     let result = interpret("N[LogGamma[1/2]]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 0.5723649429247001).abs() < 1e-8, "got {}", val);
+    assert!((val - 0.5723649429247001).abs() < 1e-8, "got {val}");
   }
 
   #[test]
@@ -6365,14 +6306,14 @@ mod log_gamma {
   fn numeric_real() {
     let result = interpret("LogGamma[1.5]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - (-0.12078223763524526)).abs() < 1e-8, "got {}", val);
+    assert!((val - (-0.12078223763524526)).abs() < 1e-8, "got {val}");
   }
 
   #[test]
   fn n_wrapper() {
     let result = interpret("N[LogGamma[3/2]]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - (-0.12078223763524526)).abs() < 1e-8, "got {}", val);
+    assert!((val - (-0.12078223763524526)).abs() < 1e-8, "got {val}");
   }
 
   #[test]
@@ -6428,14 +6369,13 @@ mod anger_j_tests {
   fn integer_order_numeric() {
     // AngerJ[0, 1.0] = BesselJ[0, 1.0] ≈ 0.7651976865579666
     let result: f64 = interpret("AngerJ[0, 1.0]").unwrap().parse().unwrap();
-    assert!((result - 0.7651976865579666).abs() < 1e-8, "got {}", result);
+    assert!((result - 0.7651976865579666).abs() < 1e-8, "got {result}");
 
     // AngerJ[1, 3.0] = BesselJ[1, 3.0] ≈ 0.33905895852593644
     let result: f64 = interpret("AngerJ[1, 3.0]").unwrap().parse().unwrap();
     assert!(
       (result - 0.339_058_958_525_936_4).abs() < 1e-8,
-      "got {}",
-      result
+      "got {result}"
     );
   }
 
@@ -6445,8 +6385,7 @@ mod anger_j_tests {
     let result: f64 = interpret("AngerJ[0.5, 0]").unwrap().parse().unwrap();
     assert!(
       (result - 2.0 / std::f64::consts::PI).abs() < 1e-8,
-      "got {}",
-      result
+      "got {result}"
     );
   }
 
@@ -6454,15 +6393,11 @@ mod anger_j_tests {
   fn non_integer_order_numeric() {
     // AngerJ[0.5, 1.0] ≈ 0.8551653096792619
     let result: f64 = interpret("AngerJ[0.5, 1.0]").unwrap().parse().unwrap();
-    assert!((result - 0.8551653096792676).abs() < 1e-6, "got {}", result);
+    assert!((result - 0.8551653096792676).abs() < 1e-6, "got {result}");
 
     // AngerJ[1.5, 2.0] ≈ 0.4036548767715761
     let result: f64 = interpret("AngerJ[1.5, 2.0]").unwrap().parse().unwrap();
-    assert!(
-      (result - 0.40365487677157613).abs() < 1e-6,
-      "got {}",
-      result
-    );
+    assert!((result - 0.40365487677157613).abs() < 1e-6, "got {result}");
   }
 
   #[test]
@@ -6471,8 +6406,7 @@ mod anger_j_tests {
     let result: f64 = interpret("AngerJ[-1, 3.0]").unwrap().parse().unwrap();
     assert!(
       (result - (-0.339_058_958_525_936_4)).abs() < 1e-8,
-      "got {}",
-      result
+      "got {result}"
     );
   }
 
@@ -6482,8 +6416,7 @@ mod anger_j_tests {
     let result: f64 = interpret("N[AngerJ[0, 5]]").unwrap().parse().unwrap();
     assert!(
       (result - (-0.17759677131433826)).abs() < 1e-8,
-      "got {}",
-      result
+      "got {result}"
     );
   }
 
@@ -6507,8 +6440,7 @@ mod anger_j_tests {
     let result: f64 = interpret("AngerJ[1/2, 5.]").unwrap().parse().unwrap();
     assert!(
       (result - (-0.2857335081880813)).abs() < 1e-8,
-      "got {}",
-      result
+      "got {result}"
     );
   }
 }
@@ -6529,16 +6461,14 @@ mod weber_e_tests {
     let result: f64 = interpret("WeberE[0, 1.0]").unwrap().parse().unwrap();
     assert!(
       (result - (-0.5686566270483014)).abs() < 1e-6,
-      "got {}",
-      result
+      "got {result}"
     );
 
     // WeberE[1, 3.0] ≈ -0.38348979681886397
     let result: f64 = interpret("WeberE[1, 3.0]").unwrap().parse().unwrap();
     assert!(
       (result - (-0.38348979681886397)).abs() < 1e-6,
-      "got {}",
-      result
+      "got {result}"
     );
   }
 
@@ -6546,19 +6476,11 @@ mod weber_e_tests {
   fn non_integer_order() {
     // WeberE[0.5, 1.0] ≈ 0.09950754264004202
     let result: f64 = interpret("WeberE[0.5, 1.0]").unwrap().parse().unwrap();
-    assert!(
-      (result - 0.09950754264004202).abs() < 1e-6,
-      "got {}",
-      result
-    );
+    assert!((result - 0.09950754264004202).abs() < 1e-6, "got {result}");
 
     // WeberE[1.5, 2.0] ≈ 0.10882159808007938
     let result: f64 = interpret("WeberE[1.5, 2.0]").unwrap().parse().unwrap();
-    assert!(
-      (result - 0.10882159808007938).abs() < 1e-6,
-      "got {}",
-      result
-    );
+    assert!((result - 0.10882159808007938).abs() < 1e-6, "got {result}");
   }
 
   #[test]
@@ -6567,8 +6489,7 @@ mod weber_e_tests {
     let result: f64 = interpret("WeberE[0.5, 0]").unwrap().parse().unwrap();
     assert!(
       (result - 2.0 / std::f64::consts::PI).abs() < 1e-6,
-      "got {}",
-      result
+      "got {result}"
     );
   }
 
@@ -6576,7 +6497,7 @@ mod weber_e_tests {
   fn n_wrapper() {
     // N[WeberE[0, 5]] should force numeric evaluation
     let result: f64 = interpret("N[WeberE[0, 5]]").unwrap().parse().unwrap();
-    assert!(result.is_finite(), "got {}", result);
+    assert!(result.is_finite(), "got {result}");
   }
 
   #[test]
@@ -6593,11 +6514,7 @@ mod weber_e_tests {
   fn rational_order_audit_case() {
     // Audit case: WeberE[1/2, 5.] = 0.03336423649491385
     let result: f64 = interpret("WeberE[1/2, 5.]").unwrap().parse().unwrap();
-    assert!(
-      (result - 0.03336423649491385).abs() < 1e-8,
-      "got {}",
-      result
-    );
+    assert!((result - 0.03336423649491385).abs() < 1e-8, "got {result}");
   }
 }
 
@@ -6612,7 +6529,7 @@ mod wigner_d_tests {
       .unwrap()
       .parse()
       .unwrap();
-    assert!((result - 1.0).abs() < 1e-10, "got {}", result);
+    assert!((result - 1.0).abs() < 1e-10, "got {result}");
   }
 
   #[test]
@@ -6622,7 +6539,7 @@ mod wigner_d_tests {
       .unwrap()
       .parse()
       .unwrap();
-    assert!((result - (-1.0)).abs() < 1e-10, "got {}", result);
+    assert!((result - (-1.0)).abs() < 1e-10, "got {result}");
   }
 
   #[test]
@@ -6631,15 +6548,13 @@ mod wigner_d_tests {
     let theta: f64 = 1.0;
     let expected = (theta / 2.0).cos();
     let result: f64 =
-      interpret(&format!("WignerD[{{1/2, 1/2, 1/2}}, {}]", theta))
+      interpret(&format!("WignerD[{{1/2, 1/2, 1/2}}, {theta}]"))
         .unwrap()
         .parse()
         .unwrap();
     assert!(
       (result - expected).abs() < 1e-10,
-      "expected {}, got {}",
-      expected,
-      result
+      "expected {expected}, got {result}"
     );
   }
 
@@ -6649,15 +6564,13 @@ mod wigner_d_tests {
     let theta: f64 = 1.0;
     let expected = (theta / 2.0).sin();
     let result: f64 =
-      interpret(&format!("WignerD[{{1/2, 1/2, -1/2}}, {}]", theta))
+      interpret(&format!("WignerD[{{1/2, 1/2, -1/2}}, {theta}]"))
         .unwrap()
         .parse()
         .unwrap();
     assert!(
       (result - expected).abs() < 1e-10,
-      "expected {}, got {}",
-      expected,
-      result
+      "expected {expected}, got {result}"
     );
   }
 
@@ -7654,18 +7567,15 @@ mod bandpass_filter {
     let result = interpret("BandpassFilter[{a, b, c}, {0.1, 0.3}]").unwrap();
     assert!(
       result.contains("*a"),
-      "should contain coefficient*a: {}",
-      result
+      "should contain coefficient*a: {result}"
     );
     assert!(
       result.contains("*b"),
-      "should contain coefficient*b: {}",
-      result
+      "should contain coefficient*b: {result}"
     );
     assert!(
       result.contains("*c"),
-      "should contain coefficient*c: {}",
-      result
+      "should contain coefficient*c: {result}"
     );
   }
 
@@ -7719,9 +7629,7 @@ mod gradient_filter {
     for prefix in ["0.0702", "0.40061", "0.40061"] {
       assert!(
         result.contains(prefix),
-        "expected `{}` in result `{}`",
-        prefix,
-        result
+        "expected `{prefix}` in result `{result}`"
       );
     }
   }
@@ -7748,8 +7656,7 @@ mod gradient_filter {
     // Every value should be 0 (modulo f32 precision in the Image data).
     assert!(
       !result.contains("1.") && !result.contains("0.5"),
-      "expected near-zero values in `{}`",
-      result
+      "expected near-zero values in `{result}`"
     );
   }
 }
@@ -7802,9 +7709,7 @@ mod gaussian_filter {
     ] {
       assert!(
         result.contains(prefix),
-        "expected `{}` in result `{}`",
-        prefix,
-        result
+        "expected `{prefix}` in result `{result}`"
       );
     }
   }
@@ -8545,8 +8450,7 @@ mod polygonal_number {
     assert!(
       result == "(n*(4 + n*(-2 + r) - r))/2"
         || result == "(n*(4 - r + n*(-2 + r)))/2",
-      "Got: {}",
-      result
+      "Got: {result}"
     );
   }
 

@@ -31,7 +31,7 @@ fn index_list(expr: &Expr) -> Option<Vec<usize>> {
     return None;
   };
   let mut out = Vec::with_capacity(items.len());
-  for item in items.iter() {
+  for item in items {
     match item {
       Expr::Integer(i) if *i >= 1 => out.push(*i as usize),
       _ => return None,
@@ -62,7 +62,7 @@ pub fn parse_mesh(expr: &Expr) -> Option<Mesh> {
   };
   let mut cells: Vec<Vec<Vec<usize>>> =
     vec![Vec::new(), Vec::new(), Vec::new()];
-  for spec in cell_specs.iter() {
+  for spec in cell_specs {
     let Expr::FunctionCall {
       name: head,
       args: spec_args,
@@ -83,7 +83,7 @@ pub fn parse_mesh(expr: &Expr) -> Option<Mesh> {
     if let Some(single) = index_list(&spec_args[0]) {
       cells[dimension].push(single);
     } else if let Expr::List(groups) = &spec_args[0] {
-      for group in groups.iter() {
+      for group in groups {
         cells[dimension].push(index_list(group)?);
       }
     } else {

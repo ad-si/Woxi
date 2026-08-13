@@ -158,22 +158,22 @@ pub fn dispatch_datetime_functions(
       let mut zones: Vec<Expr> = Vec::new();
       for zone in args.iter().take(2) {
         if let Expr::String(name) = zone {
-          match crate::functions::datetime_ast::named_zone_offset_at(
-            name,
-            args.get(2),
-          ) {
-            Some(off) => zones.push(Expr::Real(off)),
-            None => {
-              if crate::functions::datetime_ast::zone_name_invalid(name) {
-                for head in ["DateObject", "TimeZoneOffset"] {
-                  crate::emit_message(&format!(
-                    "{}::zone: Time zone specification {} should be a real number, integer or time zone string.",
-                    head, name
-                  ));
-                }
+          if let Some(off) =
+            crate::functions::datetime_ast::named_zone_offset_at(
+              name,
+              args.get(2),
+            )
+          {
+            zones.push(Expr::Real(off));
+          } else {
+            if crate::functions::datetime_ast::zone_name_invalid(name) {
+              for head in ["DateObject", "TimeZoneOffset"] {
+                crate::emit_message(&format!(
+                  "{head}::zone: Time zone specification {name} should be a real number, integer or time zone string."
+                ));
               }
-              return unevaluated();
             }
+            return unevaluated();
           }
         } else if numeric(zone) {
           zones.push(zone.clone());
@@ -332,21 +332,16 @@ pub fn dispatch_datetime_functions(
               )
             },
           );
-        match components {
-          Some(components) => {
-            return Some(crate::evaluator::evaluate_function_call_ast(
-              "DateObject",
-              &[Expr::List(components.into())],
-            ));
-          }
-          None => {
-            crate::emit_message(&format!(
-              "DateObject::str: String {} cannot be interpreted as a date.",
-              s
-            ));
-            return Some(Ok(unevaluated("DateObject", args)));
-          }
+        if let Some(components) = components {
+          return Some(crate::evaluator::evaluate_function_call_ast(
+            "DateObject",
+            &[Expr::List(components.into())],
+          ));
         }
+        crate::emit_message(&format!(
+          "DateObject::str: String {s} cannot be interpreted as a date."
+        ));
+        return Some(Ok(unevaluated("DateObject", args)));
       }
 
       // DateObject[{y, ...}] adds a granularity tag based on list length.
@@ -360,8 +355,7 @@ pub fn dispatch_datetime_functions(
       {
         let normalized =
           crate::functions::datetime_ast::normalize_date_components(items)
-            .map(|c| Expr::List(c.into()))
-            .unwrap_or_else(|| args[0].clone());
+            .map_or_else(|| args[0].clone(), |c| Expr::List(c.into()));
         let mut extra: Vec<Expr> = Vec::new();
         match items.len() {
           1 => extra.push(Expr::String("Year".to_string())),

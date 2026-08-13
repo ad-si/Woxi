@@ -830,14 +830,14 @@ fn modulus_equation_system(expr: &Expr) -> Option<Vec<(Expr, Expr)>> {
     }
     Expr::List(items) => {
       let mut all = Vec::with_capacity(items.len());
-      for item in items.iter() {
+      for item in items {
         all.extend(modulus_equation_system(item)?);
       }
       (!all.is_empty()).then_some(all)
     }
     Expr::FunctionCall { name, args } if name == "And" && !args.is_empty() => {
       let mut all = Vec::with_capacity(args.len());
-      for arg in args.iter() {
+      for arg in args {
         all.extend(modulus_equation_system(arg)?);
       }
       Some(all)
@@ -882,7 +882,7 @@ fn try_reduce_modulus(expr: &Expr, vars: &Expr, opt: &Expr) -> Option<Expr> {
     Expr::Identifier(s) => vec![s.clone()],
     Expr::List(items) => {
       let mut v = Vec::with_capacity(items.len());
-      for it in items.iter() {
+      for it in items {
         match it {
           Expr::Identifier(s) => v.push(s.clone()),
           _ => return None,

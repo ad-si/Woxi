@@ -13,17 +13,17 @@ pub enum ExprForm {
 /// Format a floating-point number for FullForm display.
 fn format_real_helper(f: f64) -> String {
   if f.fract() == 0.0 && f.abs() < 1e15 {
-    format!("{:.1}", f)
+    format!("{f:.1}")
   } else {
-    format!("{}", f)
+    format!("{f}")
   }
 }
 
 /// Collect all operands for an associative binary operator (Plus, Times),
 /// flattening nested applications of the same operator.
-fn collect_children(expr: &Expr, target_op: &BinaryOperator) -> Vec<Expr> {
+fn collect_children(expr: &Expr, target_op: BinaryOperator) -> Vec<Expr> {
   match expr {
-    Expr::BinaryOp { op, left, right } if op == target_op => {
+    Expr::BinaryOp { op, left, right } if *op == target_op => {
       let mut parts = collect_children(left, target_op);
       parts.extend(collect_children(right, target_op));
       parts
@@ -62,7 +62,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
     Expr::BigFloat(digits, prec) => {
       ExprForm::Atom(crate::syntax::format_bigfloat(digits, *prec))
     }
-    Expr::String(s) => ExprForm::Atom(format!("\"{}\"", s)),
+    Expr::String(s) => ExprForm::Atom(format!("\"{s}\"")),
     // FullForm shows the internal DirectedInfinity[] representation for
     // the symbolic infinity constants, matching Wolfram.
     Expr::Identifier(s) | Expr::Constant(s) if s == "ComplexInfinity" => {
@@ -152,11 +152,11 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       // Associative: flatten nested Plus/Times
       BinaryOperator::Plus => ExprForm::Composite {
         head: "Plus".to_string(),
-        children: collect_children(expr, &BinaryOperator::Plus),
+        children: collect_children(expr, BinaryOperator::Plus),
       },
       BinaryOperator::Times => ExprForm::Composite {
         head: "Times".to_string(),
-        children: collect_children(expr, &BinaryOperator::Times),
+        children: collect_children(expr, BinaryOperator::Times),
       },
       // Canonical transformations
       BinaryOperator::Minus => ExprForm::Composite {
@@ -212,7 +212,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       },
       BinaryOperator::Alternatives => ExprForm::Composite {
         head: "Alternatives".to_string(),
-        children: collect_children(expr, &BinaryOperator::Alternatives),
+        children: collect_children(expr, BinaryOperator::Alternatives),
       },
     },
 
@@ -433,7 +433,7 @@ fn render_rational_full_form(numer: i128, denom: i128) -> String {
   if d == 1 {
     n.to_string()
   } else {
-    format!("Rational[{}, {}]", n, d)
+    format!("Rational[{n}, {d}]")
   }
 }
 
@@ -448,7 +448,7 @@ pub fn render_full_form(expr: &Expr) -> String {
   {
     let re = render_rational_full_form(rn, rd);
     let im = render_rational_full_form(in_, id);
-    return format!("Complex[{}, {}]", re, im);
+    return format!("Complex[{re}, {im}]");
   }
 
   // Machine-precision complex number: `Real + Real*I` (including
@@ -477,7 +477,7 @@ pub fn render_full_form(expr: &Expr) -> String {
   // String literals embedded in a FullForm result get backslash-escaped
   // quotes so the surrounding `ToString` produces `"\"l\""`.
   if let Expr::String(s) = expr {
-    return format!("\\\"{}\\\"", s);
+    return format!("\\\"{s}\\\"");
   }
 
   match decompose_expr(expr) {
@@ -516,6 +516,6 @@ fn format_real_full_form(f: f64) -> String {
   if f.fract() == 0.0 && f.abs() < 1e15 {
     format!("{}.`", f as i64)
   } else {
-    format!("{}`", f)
+    format!("{f}`")
   }
 }

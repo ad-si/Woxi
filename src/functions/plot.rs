@@ -339,7 +339,7 @@ fn adaptive_sample(
       };
 
       if needs_refine {
-        let xm = (x0 + x1) / 2.0;
+        let xm = f64::midpoint(x0, x1);
         new_points.push((xm, sample(xm)));
       }
     }
@@ -747,7 +747,7 @@ fn inject_log_axis_labels(
   data_max: f64,
   font_size: f64,
   fill: &str,
-  orientation: LogAxisOrientation,
+  orientation: &LogAxisOrientation,
 ) {
   // A log axis needs positive, finite bounds; otherwise no labels can be
   // placed (log10 would yield NaN positions).
@@ -1220,15 +1220,13 @@ fn inject_top_right_frame(
 
   // Top frame line.
   svg.push_str(&format!(
-    "<line x1=\"{:.1}\" y1=\"{top_y:.1}\" x2=\"{right_x:.1}\" y2=\"{top_y:.1}\" \
+    "<line x1=\"{plot_x0:.1}\" y1=\"{top_y:.1}\" x2=\"{right_x:.1}\" y2=\"{top_y:.1}\" \
        stroke=\"{color}\" stroke-width=\"{stroke_w:.0}\"/>\n",
-    plot_x0,
   ));
   // Right frame line.
   svg.push_str(&format!(
-    "<line x1=\"{right_x:.1}\" y1=\"{:.1}\" x2=\"{right_x:.1}\" y2=\"{bottom_y:.1}\" \
+    "<line x1=\"{right_x:.1}\" y1=\"{plot_y0:.1}\" x2=\"{right_x:.1}\" y2=\"{bottom_y:.1}\" \
        stroke=\"{color}\" stroke-width=\"{stroke_w:.0}\"/>\n",
-    plot_y0,
   ));
 
   // Top axis ticks (pointing upward / outward).
@@ -1553,8 +1551,7 @@ fn series_fill_target(opts: &PlotOptions, idx: usize) -> FillTarget {
       .filling_rules
       .iter()
       .find(|(i, _)| *i == idx)
-      .map(|&(_, t)| t)
-      .unwrap_or(FillTarget::Level(Filling::None))
+      .map_or(FillTarget::Level(Filling::None), |&(_, t)| t)
   }
 }
 
@@ -1756,6 +1753,9 @@ pub(crate) enum IntervalMarkers {
 }
 
 /// Options for line-based plots (Plot, ListLinePlot, etc.).
+// Each flag is an independent Wolfram option (Frame, Joined, Filling, …),
+// not a state machine, so they do not collapse into an enum.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone)]
 pub(crate) struct PlotOptions {
   pub svg_width: u32,
@@ -2421,7 +2421,7 @@ pub(crate) fn plot_labels_svg(
     let stacked = if has_top_label { 1.0 } else { 0.0 }
       + if axes_label_y.is_some() { 1.0 } else { 0.0 };
     let ty = margin_top - title_font_size * 0.5 - stacked * font_size * 1.2;
-    let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+    let fs = sl.font_size.map_or(title_font_size, |f| f * sf);
     // A stacked title grows upwards: its last line stays where a one-line
     // title would sit, so whatever shares the top margin below it (the y
     // `AxesLabel`) is not written over.
@@ -2429,8 +2429,7 @@ pub(crate) fn plot_labels_svg(
     let fill = sl
       .color
       .as_ref()
-      .map(|c| c.to_svg_rgb())
-      .unwrap_or_else(|| title_default_fill.to_string());
+      .map_or_else(|| title_default_fill.to_string(), |c| c.to_svg_rgb());
     let mut style_attrs = String::new();
     if sl.bold {
       style_attrs.push_str(" font-weight=\"bold\"");
@@ -3395,7 +3394,7 @@ fn generate_svg_with_options(
           y_max,
           font_size,
           label_color,
-          LogAxisOrientation::Y {
+          &LogAxisOrientation::Y {
             x: plot_x0 - font_size * 0.55,
             plot_top: margin_top_f,
             plot_h,
@@ -3410,7 +3409,7 @@ fn generate_svg_with_options(
           x_max,
           font_size,
           label_color,
-          LogAxisOrientation::X {
+          &LogAxisOrientation::X {
             y: margin_top_f + plot_h + font_size * 1.3,
             plot_left: plot_x0,
             plot_w,
@@ -3472,7 +3471,7 @@ fn inject_callout_labels(
   plot_area: (f64, f64, f64, f64),
 ) {
   if opts.callout_labels.is_empty()
-    || !opts.callout_labels.iter().any(|c| c.is_some())
+    || !opts.callout_labels.iter().any(std::option::Option::is_some)
   {
     return;
   }
@@ -3554,7 +3553,7 @@ fn inject_point_labels(
   if !opts
     .point_labels
     .iter()
-    .any(|series| series.iter().any(|l| l.is_some()))
+    .any(|series| series.iter().any(std::option::Option::is_some))
   {
     return;
   }
@@ -4104,7 +4103,7 @@ pub(crate) fn generate_scatter_svg_with_options(
             y_max - y_min,
           )?,
           IntervalMarkers::Bands => {
-            draw_interval_band(&mut chart, points, bars, color)?
+            draw_interval_band(&mut chart, points, bars, color)?;
           }
           IntervalMarkers::None => {}
         }
@@ -4491,7 +4490,7 @@ pub(crate) fn generate_bar_svg(
   let render_height = svg_height * RESOLUTION_SCALE;
 
   let n = groups.len(); // number of groups
-  let k = groups.iter().map(|g| g.len()).max().unwrap_or(1); // max bars per group
+  let k = groups.iter().map(std::vec::Vec::len).max().unwrap_or(1); // max bars per group
 
   // y-axis range: explicit PlotRange overrides the auto-computed extent
   // (which adds 10% headroom above the tallest bar and anchors at 0).
@@ -4501,7 +4500,7 @@ pub(crate) fn generate_bar_svg(
     let y_max_auto = groups
       .iter()
       .flat_map(|g| g.iter())
-      .cloned()
+      .copied()
       .fold(f64::NEG_INFINITY, f64::max)
       .max(0.0)
       * 1.1;
@@ -4574,8 +4573,11 @@ pub(crate) fn generate_bar_svg(
   let legend_margin_right = if chart_legends.is_empty() {
     10 * s as u32
   } else {
-    let max_label_len =
-      chart_legends.iter().map(|l| l.len()).max().unwrap_or(0);
+    let max_label_len = chart_legends
+      .iter()
+      .map(std::string::String::len)
+      .max()
+      .unwrap_or(0);
     // swatch width + gap + estimated text width + padding
     (sf * 12.0 + sf * 6.0 + max_label_len as f64 * sf * 10.0 + sf * 16.0) as u32
   };
@@ -4744,7 +4746,7 @@ pub(crate) fn generate_bar_svg(
         let cx = map_x_val(i as f64 + 0.5);
         // For Above/Center positioning, use the max value in the group
         let group_max =
-          groups[i].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+          groups[i].iter().copied().fold(f64::NEG_INFINITY, f64::max);
         // Mathematica Rotate is counterclockwise-positive; SVG is clockwise-positive
         let svg_rotation_deg = -label.rotation.to_degrees();
         let is_rotated = svg_rotation_deg.abs() > 0.01;
@@ -4758,7 +4760,7 @@ pub(crate) fn generate_bar_svg(
             // color, not white; `title_default_fill` is near-black in light
             // mode and light in dark mode for readability on the bars.
             let bar_top = map_y_val(group_max);
-            let bar_center = (bar_top + axis_y) / 2.0 + font_size * 0.4;
+            let bar_center = f64::midpoint(bar_top, axis_y) + font_size * 0.4;
             (bar_center, title_default_fill)
           }
           LabelPosition::Below => {
@@ -4896,7 +4898,7 @@ pub(crate) fn generate_bar_svg(
         } else {
           0.0
         };
-      let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+      let fs = sl.font_size.map_or(title_font_size, |f| f * sf);
       // A stacked title grows upwards: its last line stays where a one-line
       // title would sit, so whatever shares the top margin below it (the y
       // `AxesLabel`) is not written over.
@@ -4904,8 +4906,7 @@ pub(crate) fn generate_bar_svg(
       let fill = sl
         .color
         .as_ref()
-        .map(|c| c.to_svg_rgb())
-        .unwrap_or_else(|| title_default_fill.to_string());
+        .map_or_else(|| title_default_fill.to_string(), |c| c.to_svg_rgb());
       let mut style_attrs = String::new();
       if sl.bold {
         style_attrs.push_str(" font-weight=\"bold\"");
@@ -4931,22 +4932,21 @@ pub(crate) fn generate_bar_svg(
       let line_height = sf * 22.0;
 
       for (i, label) in chart_legends.iter().enumerate() {
-        let (cr, cg, cb) = if !chart_style.is_empty() {
+        let (cr, cg, cb) = if chart_style.is_empty() {
+          PLOT_COLORS[i % PLOT_COLORS.len()]
+        } else {
           let c = &chart_style[i % chart_style.len()];
           (
             (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
             (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
             (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
           )
-        } else {
-          PLOT_COLORS[i % PLOT_COLORS.len()]
         };
         let ly = legend_y_start + i as f64 * line_height;
         // Color swatch
         labels_svg.push_str(&format!(
-          "<rect x=\"{legend_x:.1}\" y=\"{:.1}\" width=\"{swatch_size:.0}\" height=\"{swatch_size:.0}\" \
-           fill=\"rgb({cr},{cg},{cb})\"/>\n",
-          ly
+          "<rect x=\"{legend_x:.1}\" y=\"{ly:.1}\" width=\"{swatch_size:.0}\" height=\"{swatch_size:.0}\" \
+           fill=\"rgb({cr},{cg},{cb})\"/>\n"
         ));
         // Label text
         labels_svg.push_str(&format!(
@@ -4985,7 +4985,7 @@ pub(crate) fn generate_horizontal_bar_svg(
   chart_legends: &[String],
   plot_range_x: Option<(f64, f64)>,
   bar_labels: &[String],
-) -> Result<String, InterpreterError> {
+) -> std::string::String {
   let sf = RESOLUTION_SCALE as f64;
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
@@ -4993,7 +4993,12 @@ pub(crate) fn generate_horizontal_bar_svg(
   let rh = render_height as f64;
 
   let n = groups.len();
-  let k = groups.iter().map(|g| g.len()).max().unwrap_or(1).max(1);
+  let k = groups
+    .iter()
+    .map(std::vec::Vec::len)
+    .max()
+    .unwrap_or(1)
+    .max(1);
 
   // Value axis (horizontal): anchored at 0 with 10% headroom unless an
   // explicit PlotRange overrides it.
@@ -5003,7 +5008,7 @@ pub(crate) fn generate_horizontal_bar_svg(
     let m = groups
       .iter()
       .flat_map(|g| g.iter())
-      .cloned()
+      .copied()
       .fold(f64::NEG_INFINITY, f64::max)
       .max(0.0)
       * 1.1;
@@ -5251,7 +5256,7 @@ pub(crate) fn generate_horizontal_bar_svg(
     let cx = plot_x0 + plot_w / 2.0;
     // Place the title near the top so a clear gap remains above the bars.
     let ty = title_font_size * 1.2;
-    let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+    let fs = sl.font_size.map_or(title_font_size, |f| f * sf);
     // A stacked title grows upwards: its last line stays where a one-line
     // title would sit, so whatever shares the top margin below it (the y
     // `AxesLabel`) is not written over.
@@ -5259,8 +5264,7 @@ pub(crate) fn generate_horizontal_bar_svg(
     let fill = sl
       .color
       .as_ref()
-      .map(|c| c.to_svg_rgb())
-      .unwrap_or_else(|| title_default_fill.to_string());
+      .map_or_else(|| title_default_fill.to_string(), |c| c.to_svg_rgb());
     let mut style_attrs = String::new();
     if sl.bold {
       style_attrs.push_str(" font-weight=\"bold\"");
@@ -5284,15 +5288,15 @@ pub(crate) fn generate_horizontal_bar_svg(
     let legend_y_start = plot_y0 + sf * 8.0;
     let line_height = sf * 22.0;
     for (i, label) in chart_legends.iter().enumerate() {
-      let (cr, cg, cb) = if !chart_style.is_empty() {
+      let (cr, cg, cb) = if chart_style.is_empty() {
+        PLOT_COLORS[i % PLOT_COLORS.len()]
+      } else {
         let c = &chart_style[i % chart_style.len()];
         (
           (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
         )
-      } else {
-        PLOT_COLORS[i % PLOT_COLORS.len()]
       };
       let ly = legend_y_start + i as f64 * line_height;
       svg.push_str(&format!(
@@ -5310,7 +5314,7 @@ pub(crate) fn generate_horizontal_bar_svg(
   }
 
   svg.push_str("</svg>");
-  Ok(svg)
+  svg
 }
 
 /// Wolfram's `"WL12DefaultVectorGradient"` color scheme — the gradient
@@ -5436,7 +5440,7 @@ pub(crate) fn generate_bubble_chart_svg(
     10 * s as u32
   } else {
     let max_label_len =
-      chart_legends.iter().map(|l| l.len()).max().unwrap_or(0);
+      chart_legends.iter().map(std::string::String::len).max().unwrap_or(0);
     (sf * 12.0 + sf * 6.0 + max_label_len as f64 * sf * 10.0 + sf * 16.0) as u32
   }
   // The count-gradient bar legend occupies a 53-display-pixel strip right
@@ -5659,15 +5663,15 @@ pub(crate) fn generate_bubble_chart_svg(
     // count gradient), which take precedence.
     let mut flat_idx = 0usize;
     for (gi, group) in groups.iter().enumerate() {
-      let (cr, cg, cb) = if !chart_style.is_empty() {
+      let (cr, cg, cb) = if chart_style.is_empty() {
+        PLOT_COLORS[gi % PLOT_COLORS.len()]
+      } else {
         let c = &chart_style[gi % chart_style.len()];
         (
           (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
         )
-      } else {
-        PLOT_COLORS[gi % PLOT_COLORS.len()]
       };
       let group_fill = RGBColor(cr, cg, cb);
       // Semi-transparent black so the underlying bubble color bleeds
@@ -5676,8 +5680,7 @@ pub(crate) fn generate_bubble_chart_svg(
       for &(x, y, z) in group {
         let fill = bubble_colors
           .and_then(|cs| cs.get(flat_idx))
-          .map(|&(r, g, b)| RGBColor(r, g, b))
-          .unwrap_or(group_fill);
+          .map_or(group_fill, |&(r, g, b)| RGBColor(r, g, b));
         flat_idx += 1;
         if !x.is_finite() || !y.is_finite() || !z.is_finite() {
           continue;
@@ -5806,7 +5809,7 @@ pub(crate) fn generate_bubble_chart_svg(
     {
       let cx = plot_x0 + plot_w / 2.0;
       let ty = margin_top - title_font_size * 0.5;
-      let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+      let fs = sl.font_size.map_or(title_font_size, |f| f * sf);
       // A stacked title grows upwards: its last line stays where a one-line
       // title would sit, so whatever shares the top margin below it (the y
       // `AxesLabel`) is not written over.
@@ -5814,8 +5817,7 @@ pub(crate) fn generate_bubble_chart_svg(
       let fill = sl
         .color
         .as_ref()
-        .map(|c| c.to_svg_rgb())
-        .unwrap_or_else(|| title_default_fill.to_string());
+        .map_or_else(|| title_default_fill.to_string(), |c| c.to_svg_rgb());
       let mut style_attrs = String::new();
       if sl.bold {
         style_attrs.push_str(" font-weight=\"bold\"");
@@ -5840,23 +5842,22 @@ pub(crate) fn generate_bubble_chart_svg(
       let line_height = sf * 22.0;
 
       for (i, label) in chart_legends.iter().enumerate() {
-        let (cr, cg, cb) = if !chart_style.is_empty() {
+        let (cr, cg, cb) = if chart_style.is_empty() {
+          PLOT_COLORS[i % PLOT_COLORS.len()]
+        } else {
           let c = &chart_style[i % chart_style.len()];
           (
             (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
             (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
             (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
           )
-        } else {
-          PLOT_COLORS[i % PLOT_COLORS.len()]
         };
         let ly = legend_y_start + i as f64 * line_height;
         // Bubbles are drawn fully opaque with a black border — mirror that
         // on the swatch so the legend color visually matches the bubbles.
         labels_svg.push_str(&format!(
-          "<rect x=\"{legend_x:.1}\" y=\"{:.1}\" width=\"{swatch_size:.0}\" height=\"{swatch_size:.0}\" \
-           fill=\"rgb({cr},{cg},{cb})\" stroke=\"#000000\" stroke-width=\"1\"/>\n",
-          ly
+          "<rect x=\"{legend_x:.1}\" y=\"{ly:.1}\" width=\"{swatch_size:.0}\" height=\"{swatch_size:.0}\" \
+           fill=\"rgb({cr},{cg},{cb})\" stroke=\"#000000\" stroke-width=\"1\"/>\n"
         ));
         labels_svg.push_str(&format!(
           "<text x=\"{:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" font-size=\"{legend_font:.0}\" \
@@ -5932,7 +5933,7 @@ pub(crate) fn generate_bubble_chart_svg(
       let x_span = x_max - x_min;
       let y_span = y_max - y_min;
       let mut idx = 0usize;
-      'outer: for group in groups.iter() {
+      'outer: for group in groups {
         for &(x, y, _z) in group {
           if idx >= chart_labels.len() {
             break 'outer;
@@ -6075,8 +6076,8 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
         let old_h: u32 = hcaps[1].parse().unwrap_or(0);
         if old_h > 0 {
           let new_display_h = (old_h as f64 * new_vb_h / vb_h).round() as u32;
-          let old_hattr = format!("height=\"{}\"", old_h);
-          let new_hattr = format!("height=\"{}\"", new_display_h);
+          let old_hattr = format!("height=\"{old_h}\"");
+          let new_hattr = format!("height=\"{new_display_h}\"");
           *buf = buf.replacen(&old_hattr, &new_hattr, 1);
         }
       }
@@ -6189,8 +6190,8 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
           let new_display_w = (old_w as f64 * render_new_w as f64
             / render_w as f64)
             .round() as u32;
-          let old_attr = format!("width=\"{}\"", old_w);
-          let new_attr = format!("width=\"{}\"", new_display_w);
+          let old_attr = format!("width=\"{old_w}\"");
+          let new_attr = format!("width=\"{new_display_w}\"");
           *buf = buf.replacen(&old_attr, &new_attr, 1);
 
           let h_re = regex::Regex::new(r#"height="(\d+)""#).unwrap();
@@ -6199,8 +6200,8 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
             if old_h > 0 {
               let new_display_h =
                 (new_display_w as f64 * vb_h / new_vb_w).round() as u32;
-              let old_hattr = format!("height=\"{}\"", old_h);
-              let new_hattr = format!("height=\"{}\"", new_display_h);
+              let old_hattr = format!("height=\"{old_h}\"");
+              let new_hattr = format!("height=\"{new_display_h}\"");
               *buf = buf.replacen(&old_hattr, &new_hattr, 1);
             }
           }
@@ -6291,7 +6292,7 @@ pub enum HistogramHeight {
 /// Compute the common bin edges for one or more datasets given a bin spec.
 fn histogram_bin_edges(
   all_values: &[f64],
-  bin_spec: &Option<BinSpec>,
+  bin_spec: Option<&BinSpec>,
 ) -> Vec<f64> {
   if let Some(BinSpec::Edges(edges)) = bin_spec {
     let mut edges = edges.clone();
@@ -6299,8 +6300,8 @@ fn histogram_bin_edges(
     return edges;
   }
 
-  let d_min = all_values.iter().cloned().fold(f64::INFINITY, f64::min);
-  let d_max = all_values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+  let d_min = all_values.iter().copied().fold(f64::INFINITY, f64::min);
+  let d_max = all_values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
   let (d_min, d_max) = if d_min.is_finite() && d_max.is_finite() {
     (d_min, d_max)
   } else {
@@ -6427,7 +6428,7 @@ fn histogram_bin_heights(
 /// as Wolfram does — the bars and any overlaid curves share the same axes.
 pub(crate) fn histogram_plot_source(
   datasets: &[Vec<f64>],
-  bin_spec: &Option<BinSpec>,
+  bin_spec: Option<&BinSpec>,
   height: HistogramHeight,
   colors: &[(u8, u8, u8)],
   image_size: (u32, u32),
@@ -6487,7 +6488,7 @@ pub(crate) fn histogram_plot_source(
 
 pub(crate) fn generate_histogram_svg(
   datasets: &[Vec<f64>],
-  bin_spec: Option<BinSpec>,
+  bin_spec: Option<&BinSpec>,
   height: HistogramHeight,
   opts: &mut ChartOptions,
 ) -> Result<String, InterpreterError> {
@@ -6500,7 +6501,7 @@ pub(crate) fn generate_histogram_svg(
   // bar heights (heights depend on the height spec: Count, PDF, …).
   let all_values: Vec<f64> =
     datasets.iter().flat_map(|d| d.iter().copied()).collect();
-  let bin_edges = histogram_bin_edges(&all_values, &bin_spec);
+  let bin_edges = histogram_bin_edges(&all_values, bin_spec);
   let num_bins = bin_edges.len().saturating_sub(1);
   if num_bins == 0 {
     return Ok("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string());
@@ -6794,7 +6795,7 @@ pub(crate) fn generate_histogram_svg(
         } else {
           0.0
         };
-      let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+      let fs = sl.font_size.map_or(title_font_size, |f| f * sf);
       // A stacked title grows upwards: its last line stays where a one-line
       // title would sit, so whatever shares the top margin below it (the y
       // `AxesLabel`) is not written over.
@@ -6802,8 +6803,7 @@ pub(crate) fn generate_histogram_svg(
       let fill = sl
         .color
         .as_ref()
-        .map(|c| c.to_svg_rgb())
-        .unwrap_or_else(|| title_default_fill.to_string());
+        .map_or_else(|| title_default_fill.to_string(), |c| c.to_svg_rgb());
       let mut style_attrs = String::new();
       if sl.bold {
         style_attrs.push_str(" font-weight=\"bold\"");
@@ -6898,19 +6898,17 @@ pub(crate) fn generate_axes_only_opts(
     let s = RESOLUTION_SCALE as i32;
     let tick = MINOR_TICK_LEN * s;
 
-    let top_margin = margins
-      .map(|m| m.top_margin)
-      .unwrap_or(10 * RESOLUTION_SCALE);
-    let x_label_area = margins.map(|m| m.x_label_area).unwrap_or(
+    let top_margin = margins.map_or(10 * RESOLUTION_SCALE, |m| m.top_margin);
+    let x_label_area = margins.map_or(
       if x_tick_positions.is_some() {
         12 * RESOLUTION_SCALE
       } else {
         40 * RESOLUTION_SCALE
       },
+      |m| m.x_label_area,
     );
-    let y_label_area = margins
-      .map(|m| m.y_label_area)
-      .unwrap_or(65 * RESOLUTION_SCALE);
+    let y_label_area =
+      margins.map_or(65 * RESOLUTION_SCALE, |m| m.y_label_area);
     let mut chart = ChartBuilder::on(&root)
       .margin_top(top_margin)
       .margin_right(10 * s as u32)
@@ -7005,15 +7003,15 @@ pub(crate) fn generate_axes_only_opts(
   // y_label_area on left. So the plot area starts at:
   let s = RESOLUTION_SCALE as f64;
   let margin = 10.0 * s;
-  let top_margin_f = margins.map(|m| m.top_margin as f64).unwrap_or(margin);
-  let y_label_area_f =
-    margins.map(|m| m.y_label_area as f64).unwrap_or(65.0 * s);
-  let x_label_area_f = margins.map(|m| m.x_label_area as f64).unwrap_or(
+  let top_margin_f = margins.map_or(margin, |m| m.top_margin as f64);
+  let y_label_area_f = margins.map_or(65.0 * s, |m| m.y_label_area as f64);
+  let x_label_area_f = margins.map_or(
     if x_tick_positions.is_some() {
       12.0 * s
     } else {
       40.0 * s
     },
+    |m| m.x_label_area as f64,
   );
   let plot_x0 = margin + y_label_area_f;
   let plot_y0 = top_margin_f;
@@ -7175,13 +7173,11 @@ pub(crate) fn rewrite_svg_header(
   if let Some(pos) = buf.find('>') {
     let new_header = if full_width {
       format!(
-        "<svg width=\"100%\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\"",
-        render_width, render_height,
+        "<svg width=\"100%\" viewBox=\"0 0 {render_width} {render_height}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\"",
       )
     } else {
       format!(
-        "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\"",
-        svg_width, svg_height, render_width, render_height,
+        "<svg width=\"{svg_width}\" height=\"{svg_height}\" viewBox=\"0 0 {render_width} {render_height}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\"",
       )
     };
     buf.replace_range(..pos, &new_header);
@@ -7217,12 +7213,10 @@ fn inject_drop_shadows(
       }
       let (r, g, b) = series_color(plot_style, idx);
       let needle = format!(
-        "<polyline fill=\"none\" opacity=\"1\" stroke=\"#{:02X}{:02X}{:02X}\"",
-        r, g, b
+        "<polyline fill=\"none\" opacity=\"1\" stroke=\"#{r:02X}{g:02X}{b:02X}\""
       );
       let replacement = format!(
-        "<polyline filter=\"url(#{})\" fill=\"none\" opacity=\"1\" stroke=\"#{:02X}{:02X}{:02X}\"",
-        id, r, g, b
+        "<polyline filter=\"url(#{id})\" fill=\"none\" opacity=\"1\" stroke=\"#{r:02X}{g:02X}{b:02X}\""
       );
       if !rules.iter().any(|(n, _)| n == &needle) {
         rules.push((needle, replacement));
@@ -7384,8 +7378,8 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
           style.thickness = Some(t);
         }
       }
-      "Dashing" if !args.is_empty() => match &args[0] {
-        Expr::List(items) => {
+      "Dashing" if !args.is_empty() => {
+        if let Expr::List(items) = &args[0] {
           let dashes: Vec<f64> = items
             .iter()
             .filter_map(|e| match e {
@@ -7402,8 +7396,7 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
           if !dashes.is_empty() {
             style.dashing = Some(dashes);
           }
-        }
-        _ => {
+        } else {
           let d = match &args[0] {
             Expr::Identifier(s) => match s.as_str() {
               "Tiny" => Some(0.005),
@@ -7418,7 +7411,7 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
             style.dashing = Some(vec![d, d]);
           }
         }
-      },
+      }
       _ => {}
     },
     Expr::List(items) => {
@@ -7529,53 +7522,48 @@ pub(crate) fn apply_markers_to_source(
 /// Parse a PlotStyle option value into a list of SeriesStyles.
 pub(crate) fn parse_plot_style(replacement: &Expr) -> Vec<SeriesStyle> {
   let val = evaluate_expr_to_expr(replacement).unwrap_or(replacement.clone());
-  match &val {
-    // PlotStyle -> {style1, style2, ...} where each may be a color,
-    // directive, or sub-list
-    Expr::List(items) => {
-      // Check if this is a list of per-series styles or a single compound style.
-      // If any item is itself a Directive or a List, treat as per-series.
-      // If all items are simple directives (colors, Thick, etc.), treat as
-      // a single compound style applied to all series.
-      let has_per_series = items.iter().any(|item| {
-        matches!(
+  if let Expr::List(items) = &val {
+    // Check if this is a list of per-series styles or a single compound style.
+    // If any item is itself a Directive or a List, treat as per-series.
+    // If all items are simple directives (colors, Thick, etc.), treat as
+    // a single compound style applied to all series.
+    let has_per_series = items.iter().any(|item| {
+      matches!(
+        item,
+        Expr::FunctionCall { name, .. } if name == "Directive"
+      ) || matches!(item, Expr::List(_))
+        || matches!(
           item,
-          Expr::FunctionCall { name, .. } if name == "Directive"
-        ) || matches!(item, Expr::List(_))
-          || matches!(
-            item,
-            Expr::FunctionCall { name, .. }
-              if name == "RGBColor"
-                || name == "Hue"
-                || name == "GrayLevel"
-                || name == "Darker"
-                || name == "Lighter"
-                || name == "Blend"
-          )
-          || matches!(item, Expr::Identifier(s) if crate::functions::graphics::named_color(s).is_some())
-      });
-      if has_per_series {
-        items.iter().map(parse_one_series_style).collect()
-      } else {
-        // Single compound style: {Purple, Thick, Dashed}
-        let mut style = SeriesStyle::default();
-        for item in items {
-          apply_style_directive(item, &mut style);
-        }
-        vec![style]
+          Expr::FunctionCall { name, .. }
+            if name == "RGBColor"
+              || name == "Hue"
+              || name == "GrayLevel"
+              || name == "Darker"
+              || name == "Lighter"
+              || name == "Blend"
+        )
+        || matches!(item, Expr::Identifier(s) if crate::functions::graphics::named_color(s).is_some())
+    });
+    if has_per_series {
+      items.iter().map(parse_one_series_style).collect()
+    } else {
+      // Single compound style: {Purple, Thick, Dashed}
+      let mut style = SeriesStyle::default();
+      for item in items {
+        apply_style_directive(item, &mut style);
       }
+      vec![style]
     }
-    _ => {
-      let style = parse_one_series_style(&val);
-      if style.color.is_some()
-        || style.thickness.is_some()
-        || style.dashing.is_some()
-        || style.shadow.is_some()
-      {
-        vec![style]
-      } else {
-        Vec::new()
-      }
+  } else {
+    let style = parse_one_series_style(&val);
+    if style.color.is_some()
+      || style.thickness.is_some()
+      || style.dashing.is_some()
+      || style.shadow.is_some()
+    {
+      vec![style]
+    } else {
+      Vec::new()
     }
   }
 }
@@ -7725,7 +7713,7 @@ pub(crate) fn parse_style_directives(value: &Expr) -> Option<SeriesStyle> {
   let mut style = SeriesStyle::default();
   match &val {
     Expr::List(items) => {
-      for item in items.iter() {
+      for item in items {
         apply_style_directive(item, &mut style);
       }
     }
@@ -7846,10 +7834,10 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
         // writes a superscript that way), so it renders like every other
         // label a plot draws rather than being escaped raw.
         let label = crate::functions::chart::expr_to_label(&pair[1])
-          .map(|text| crate::functions::graphics::box_string_to_svg(&text))
-          .unwrap_or_else(|| {
-            crate::functions::graphics::svg_escape(&format_tick(pos))
-          });
+          .map_or_else(
+            || crate::functions::graphics::svg_escape(&format_tick(pos)),
+            |text| crate::functions::graphics::box_string_to_svg(&text),
+          );
         Some((pos, label))
       }
       other => {
@@ -8223,7 +8211,7 @@ pub(crate) fn apply_common_plot_option(
     "Ticks" => match replacement {
       Expr::Identifier(s) if s == "None" => plot_opts.ticks = false,
       Expr::Identifier(s) if s == "Automatic" || s == "All" => {
-        plot_opts.ticks = true
+        plot_opts.ticks = true;
       }
       // `Ticks -> {xspec, yspec}`: each side is None, Automatic, or an
       // explicit list of positions (each optionally `{pos, label}`).
@@ -8623,7 +8611,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   fn flatten_plot_bodies<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
     match e {
       Expr::List(items) => {
-        for it in items.iter() {
+        for it in items {
           flatten_plot_bodies(it, out);
         }
       }
@@ -9024,11 +9012,11 @@ fn log_scale_plot_ast(
     .map(|(x, _)| *x)
     .collect();
 
-  let x_min_display = finite_xs.iter().cloned().fold(f64::INFINITY, f64::min);
+  let x_min_display = finite_xs.iter().copied().fold(f64::INFINITY, f64::min);
   let x_max_display =
-    finite_xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-  let y_data_min = finite_ys.iter().cloned().fold(f64::INFINITY, f64::min);
-  let y_data_max = finite_ys.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    finite_xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+  let y_data_min = finite_ys.iter().copied().fold(f64::INFINITY, f64::min);
+  let y_data_max = finite_ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
 
   let (y_auto_min, y_auto_max) = if log_y {
     // Multiplicative padding in log space (equivalent to additive 4% in log10)

@@ -404,7 +404,7 @@ fn total_parts(expr: &Expr) -> Option<(Option<&str>, &[Expr])> {
   match expr {
     Expr::List(items) => Some((None, items)),
     Expr::FunctionCall { name, args }
-      if TOTAL_ANY_HEAD.with(|f| f.get())
+      if TOTAL_ANY_HEAD.with(std::cell::Cell::get)
         && !crate::functions::list_helpers_ast::sorting::is_atomic_arg(
           expr,
         ) =>
@@ -1147,7 +1147,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let sum_sq: BigInt = int_vals.iter().map(|x| x * x).sum();
         let numer = &n * &sum_sq - &sum * &sum;
         let denom = &n * (&n - BigInt::from(1));
-        return Ok(make_rational_expr(numer, denom));
+        return Ok(make_rational_expr(&numer, &denom));
       }
       let _ = has_real;
       if !all_int {
@@ -1652,7 +1652,7 @@ fn thread_sqrt_into_piecewise(
     return Ok(None);
   };
   let mut new_pairs: Vec<Expr> = Vec::with_capacity(pairs.len());
-  for pair in pairs.iter() {
+  for pair in pairs {
     let Expr::List(vc) = pair else {
       return Ok(None);
     };
@@ -2116,10 +2116,10 @@ pub fn absolute_correlation_ast(
     let n_expr = Expr::Integer(n as i128);
     if let Expr::List(rows) = &dot {
       let mut out_rows = Vec::with_capacity(rows.len());
-      for row in rows.iter() {
+      for row in rows {
         if let Expr::List(cells) = row {
           let mut out_cells = Vec::with_capacity(cells.len());
-          for c in cells.iter() {
+          for c in cells {
             out_cells.push(evaluate_function_call_ast(
               "Divide",
               &[c.clone(), n_expr.clone()],
@@ -2493,7 +2493,7 @@ pub fn kendall_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let sx = (xf[j] - xf[i]).partial_cmp(&0.0);
       let sy = (yf[j] - yf[i]).partial_cmp(&0.0);
       if let (Some(sx), Some(sy)) = (sx, sy) {
-        use std::cmp::Ordering::*;
+        use std::cmp::Ordering::{Equal, Greater, Less};
         let sxi = match sx {
           Greater => 1i128,
           Less => -1,
@@ -2595,15 +2595,8 @@ pub fn hoeffding_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let r2 = rank2(xf);
     let s2 = rank2(yf);
     // 2φ ∈ {2 (less), 1 (tie), 0 (greater)}; Q×4 = 4 + Σ (2φx)(2φy).
-    let phi2 = |a: f64, b: f64| -> i128 {
-      if a < b {
-        2
-      } else if a == b {
-        1
-      } else {
-        0
-      }
-    };
+    let phi2 =
+      |a: f64, b: f64| -> i128 { if a < b { 2 } else { i128::from(a == b) } };
     let q4: Vec<i128> = (0..n)
       .map(|i| {
         4 + (0..n)
@@ -2877,7 +2870,7 @@ pub fn blomqvist_beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if n % 2 == 1 {
         s[n / 2]
       } else {
-        (s[n / 2 - 1] + s[n / 2]) / 2.0
+        f64::midpoint(s[n / 2 - 1], s[n / 2])
       }
     };
     let mx = median(xf);
@@ -3434,9 +3427,8 @@ fn distribution_moment(
   // CentralMoment = Sum_{k=0}^n Binomial[n, k] (-mean)^(n-k) E[x^k]
   let mut terms = Vec::with_capacity((n + 1) as usize);
   for k in 0..=n {
-    let raw = match distribution_raw_moment(dist, k, &var)? {
-      Some(r) => r,
-      None => return Ok(None),
+    let Some(raw) = distribution_raw_moment(dist, k, &var)? else {
+      return Ok(None);
     };
     let binom = Expr::Integer(crate::functions::binomial_coeff(n, k));
     // (-mean)^(n-k); guard the n==k case to avoid 0^0 when mean == 0.
@@ -4126,18 +4118,15 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Handle list of quantiles
   if let Expr::List(qs) = &args[1] {
-    let results: Result<Vec<Expr>, _> =
+    let results: Vec<Expr> =
       qs.iter().map(|q| quantile_single(&sorted, q)).collect();
-    return Ok(Expr::List(results?.into()));
+    return Ok(Expr::List(results.into()));
   }
 
-  quantile_single(&sorted, &args[1])
+  Ok(quantile_single(&sorted, &args[1]))
 }
 
-fn quantile_single(
-  sorted: &[&Expr],
-  q: &Expr,
-) -> Result<Expr, InterpreterError> {
+fn quantile_single(sorted: &[&Expr], q: &Expr) -> crate::syntax::Expr {
   let n = sorted.len();
   // Default Quantile uses Type 1 (inverse of CDF)
   // Index = Ceiling[q * n]
@@ -4150,31 +4139,31 @@ fn quantile_single(
       if let (Expr::Integer(num), Expr::Integer(den)) = (&rargs[0], &rargs[1]) {
         *num as f64 / *den as f64
       } else {
-        return Ok(Expr::FunctionCall {
+        return Expr::FunctionCall {
           name: "Quantile".to_string(),
           args: vec![
-            Expr::List(sorted.iter().cloned().cloned().collect()),
+            Expr::List(sorted.iter().copied().cloned().collect()),
             q.clone(),
           ]
           .into(),
-        });
+        };
       }
     }
     _ => {
-      return Ok(Expr::FunctionCall {
+      return Expr::FunctionCall {
         name: "Quantile".to_string(),
         args: vec![
-          Expr::List(sorted.iter().cloned().cloned().collect()),
+          Expr::List(sorted.iter().copied().cloned().collect()),
           q.clone(),
         ]
         .into(),
-      });
+      };
     }
   };
 
   let idx = (q_val * n as f64).ceil() as usize;
   let idx = idx.max(1).min(n);
-  Ok(sorted[idx - 1].clone())
+  sorted[idx - 1].clone()
 }
 
 /// Hyndman-Fan parametric quantile Quantile[list, q, {{a,b},{c,d}}].
@@ -4200,7 +4189,7 @@ fn quantile_parametric(
     return Ok(Expr::FunctionCall {
       name: "Quantile".to_string(),
       args: vec![
-        Expr::List(sorted.iter().cloned().cloned().collect()),
+        Expr::List(sorted.iter().copied().cloned().collect()),
         q.clone(),
         Expr::List(
           vec![
@@ -4221,9 +4210,7 @@ fn quantile_parametric(
   let k_expr = ev(&call("Floor", vec![x.clone()]))?;
   let k = match &k_expr {
     Expr::Integer(v) => *v,
-    other => try_eval_to_f64(other)
-      .map(|f| f.floor() as i128)
-      .unwrap_or(0),
+    other => try_eval_to_f64(other).map_or(0, |f| f.floor() as i128),
   };
   // frac = x - k
   let frac = ev(&plus(x, Expr::Integer(-k)))?;
@@ -4644,7 +4631,7 @@ pub fn location_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ));
         }
         let (t_stat, df) = two_sample_t_test(&vals1, &vals2, mu0);
-        return format_location_test_result(t_stat, df, &property, "T");
+        return Ok(format_location_test_result(t_stat, df, &property, "T"));
       }
       // One-sample t-test
       let vals = extract_numeric_list_flat(items)?;
@@ -4654,7 +4641,7 @@ pub fn location_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
       let (t_stat, df) = one_sample_t_test(&vals, mu0);
-      format_location_test_result(t_stat, df, &property, "T")
+      Ok(format_location_test_result(t_stat, df, &property, "T"))
     }
     _ => Ok(unevaluated("LocationTest", args)),
   }
@@ -4736,12 +4723,12 @@ fn format_location_test_result(
   df: f64,
   property: &str,
   test_name: &str,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   match property {
-    "TestStatistic" => Ok(num_to_expr(t_stat)),
+    "TestStatistic" => num_to_expr(t_stat),
     "PValue" => {
       let p = t_test_p_value(t_stat, df);
-      Ok(num_to_expr(p))
+      num_to_expr(p)
     }
     "TestDataTable" => {
       let p = t_test_p_value(t_stat, df);
@@ -4762,7 +4749,7 @@ fn format_location_test_result(
         ]
         .into(),
       );
-      Ok(Expr::FunctionCall {
+      Expr::FunctionCall {
         name: "Grid".to_string(),
         args: vec![
           Expr::List(vec![header, row].into()),
@@ -4818,12 +4805,12 @@ fn format_location_test_result(
           },
         ]
         .into(),
-      })
+      }
     }
     _ => {
       // Default to PValue for unknown properties
       let p = t_test_p_value(t_stat, df);
-      Ok(num_to_expr(p))
+      num_to_expr(p)
     }
   }
 }
@@ -4846,11 +4833,8 @@ pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let dist = &args[0];
-  let data = match &args[1] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("Likelihood", args));
-    }
+  let Expr::List(data) = &args[1] else {
+    return Ok(unevaluated("Likelihood", args));
   };
 
   if data.is_empty() {
@@ -5017,14 +5001,13 @@ pub fn pearson_chi_square_test_ast(
 
   let df = (k as f64 - 1.0 - estimated_params as f64).max(1.0);
 
-  match property.as_str() {
-    "TestStatistic" => Ok(num_to_expr(chi_sq)),
-    _ => {
-      // P-value from chi-square distribution: P(X > chi_sq) where X ~ ChiSquare(df)
-      // Using regularized gamma: 1 - GammaRegularized(df/2, chi_sq/2)
-      let p = 1.0 - regularized_gamma_lower(df / 2.0, chi_sq / 2.0);
-      Ok(num_to_expr(p))
-    }
+  if property.as_str() == "TestStatistic" {
+    Ok(num_to_expr(chi_sq))
+  } else {
+    // P-value from chi-square distribution: P(X > chi_sq) where X ~ ChiSquare(df)
+    // Using regularized gamma: 1 - GammaRegularized(df/2, chi_sq/2)
+    let p = 1.0 - regularized_gamma_lower(df / 2.0, chi_sq / 2.0);
+    Ok(num_to_expr(p))
   }
 }
 
@@ -5320,7 +5303,7 @@ pub fn group_generators_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall { name, args: gargs } if gargs.len() == 1 => {
       // Symmetric/Cyclic/Alternating groups accept n = 0 (trivial group);
       // DihedralGroup requires a positive degree in wolframscript.
-      let min_n = if name == "DihedralGroup" { 1 } else { 0 };
+      let min_n = i128::from(name == "DihedralGroup");
       let n = match &gargs[0] {
         Expr::Integer(n) if *n >= min_n => *n as usize,
         _ => {
@@ -5343,7 +5326,7 @@ pub fn group_generators_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn abelian_factors(expr: &Expr) -> Option<Vec<usize>> {
   if let Expr::List(items) = expr {
     let mut out = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       if let Expr::Integer(n) = item
         && *n >= 1
       {
@@ -5395,7 +5378,7 @@ pub fn group_order_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       // Symmetric/Cyclic/Alternating groups accept n = 0 (trivial group,
       // order 1); DihedralGroup requires a positive degree.
-      let min_n = if name == "DihedralGroup" { 1 } else { 0 };
+      let min_n = i128::from(name == "DihedralGroup");
       if let Expr::Integer(n) = &gargs[0]
         && *n >= min_n
       {
@@ -5445,7 +5428,7 @@ pub fn group_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated());
     };
     let mut idxs: Vec<i128> = Vec::with_capacity(positions.len());
-    for p in positions.iter() {
+    for p in positions {
       let Expr::Integer(v) = p else {
         return Ok(unevaluated());
       };
@@ -5595,7 +5578,7 @@ fn apply_cycles_to_point(cycles: &Expr, p: i128) -> i128 {
     && args.len() == 1
     && let Expr::List(cyclist) = &args[0]
   {
-    for cyc in cyclist.iter() {
+    for cyc in cyclist {
       if let Expr::List(items) = cyc {
         for (i, it) in items.iter().enumerate() {
           if let Expr::Integer(v) = it
@@ -5619,9 +5602,9 @@ fn cycles_support(cycles: &Expr) -> Vec<i128> {
     && args.len() == 1
     && let Expr::List(cyclist) = &args[0]
   {
-    for cyc in cyclist.iter() {
+    for cyc in cyclist {
       if let Expr::List(items) = cyc {
-        for it in items.iter() {
+        for it in items {
           if let Expr::Integer(v) = it {
             pts.push(*v);
           }
@@ -5690,15 +5673,14 @@ pub fn group_element_position_ast(
   let Expr::List(gelems) = &elems else {
     return Ok(unevaluated());
   };
-  match gelems.iter().position(|g| perms_equal(&args[1], g)) {
-    Some(i) => Ok(Expr::Integer(i as i128 + 1)),
-    None => {
-      crate::emit_message(&format!(
-        "GroupElementPosition::noin: Permutation {} does not belong to group.",
-        expr_to_string(&args[1])
-      ));
-      Ok(unevaluated())
-    }
+  if let Some(i) = gelems.iter().position(|g| perms_equal(&args[1], g)) {
+    Ok(Expr::Integer(i as i128 + 1))
+  } else {
+    crate::emit_message(&format!(
+      "GroupElementPosition::noin: Permutation {} does not belong to group.",
+      expr_to_string(&args[1])
+    ));
+    Ok(unevaluated())
   }
 }
 
@@ -5716,7 +5698,7 @@ pub fn group_orbits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   };
   let mut seeds: Vec<i128> = Vec::with_capacity(points.len());
-  for p in points.iter() {
+  for p in points {
     let Expr::Integer(v) = p else {
       return Ok(unevaluated());
     };
@@ -5732,7 +5714,7 @@ pub fn group_orbits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let orbit_of = |p: i128| -> Vec<i128> {
     let mut set: std::collections::BTreeSet<i128> =
       std::collections::BTreeSet::new();
-    for g in gelems.iter() {
+    for g in gelems {
       set.insert(apply_cycles_to_point(g, p));
     }
     set.into_iter().collect()
@@ -6811,7 +6793,7 @@ pub fn biweight_midvariance_ast(
   let scale = times2(c, mad);
   let mut num_terms: Vec<Expr> = Vec::new();
   let mut den_terms: Vec<Expr> = Vec::new();
-  for x in items.iter() {
+  for x in items {
     let dev = minus2(x.clone(), median.clone());
     let u = ev(&div2(dev.clone(), scale.clone()))?;
     let Some(u_f) = try_eval_to_f64(&u) else {
@@ -6853,9 +6835,7 @@ pub fn process_correlation(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
   let min = call("Min", vec![t1.clone(), t2.clone()]);
   match (name.as_str(), args.as_slice()) {
     // The scale cancels for all three counting/Brownian cases.
-    ("WienerProcess", [_, _])
-    | ("PoissonProcess", [_])
-    | ("BinomialProcess", [_]) => {
+    ("WienerProcess", [_, _]) | ("PoissonProcess" | "BinomialProcess", [_]) => {
       Some(div2(min, call1("Sqrt", times2(t1.clone(), t2.clone()))))
     }
     ("OrnsteinUhlenbeckProcess", [_, _, th]) => Some(pow2(
@@ -8601,7 +8581,7 @@ fn cycles_expr_lengths(e: &Expr) -> Option<Vec<usize>> {
     && let Expr::List(cycles) = &args[0]
   {
     let mut lengths = Vec::with_capacity(cycles.len());
-    for c in cycles.iter() {
+    for c in cycles {
       if let Expr::List(points) = c {
         lengths.push(points.len());
       } else {
@@ -8635,7 +8615,7 @@ pub fn cycle_index_polynomial_ast(
       match name.as_str() {
         "CyclicGroup" | "SymmetricGroup" | "AlternatingGroup"
         | "DihedralGroup" => {
-          let min_n = if name == "DihedralGroup" { 1 } else { 0 };
+          let min_n = i128::from(name == "DihedralGroup");
           match &gargs[0] {
             Expr::Integer(n) if *n >= min_n => {
               let n = *n as usize;
@@ -8661,29 +8641,22 @@ pub fn cycle_index_polynomial_ast(
     }
     _ => None,
   };
-  let (elements, degree) = match resolved {
-    Some(r) => r,
-    None => {
-      crate::emit_message(&format!(
-        "CycleIndexPolynomial::grp: {} is not a valid group.",
-        format_expr(&args[0], ExprForm::Output)
-      ));
-      return Ok(uneval());
-    }
+  let Some((elements, degree)) = resolved else {
+    crate::emit_message(&format!(
+      "CycleIndexPolynomial::grp: {} is not a valid group.",
+      format_expr(&args[0], ExprForm::Output)
+    ));
+    return Ok(uneval());
   };
-  let vars = match &args[1] {
-    Expr::List(v) => v,
-    _ => {
-      crate::emit_message(&format!(
-        "CycleIndexPolynomial::list: List expected at position 2 in {}.",
-        call_str()
-      ));
-      return Ok(uneval());
-    }
+  let Expr::List(vars) = &args[1] else {
+    crate::emit_message(&format!(
+      "CycleIndexPolynomial::list: List expected at position 2 in {}.",
+      call_str()
+    ));
+    return Ok(uneval());
   };
-  let element_list = match &elements {
-    Expr::List(items) => items,
-    _ => return Ok(uneval()),
+  let Expr::List(element_list) = &elements else {
+    return Ok(uneval());
   };
   let order = element_list.len() as i128;
   if order == 0 {
@@ -8692,11 +8665,10 @@ pub fn cycle_index_polynomial_ast(
 
   // Aggregate cycle types: counts of (multiplicity per cycle length)
   let mut type_counts: std::collections::BTreeMap<Vec<usize>, i128> =
-    Default::default();
-  for e in element_list.iter() {
-    let lengths = match cycles_expr_lengths(e) {
-      Some(l) => l,
-      None => return Ok(uneval()),
+    std::collections::BTreeMap::default();
+  for e in element_list {
+    let Some(lengths) = cycles_expr_lengths(e) else {
+      return Ok(uneval());
     };
     let moved: usize = lengths.iter().sum();
     let mut mult = vec![0usize; degree + 1];
@@ -8741,24 +8713,23 @@ pub fn cycle_index_polynomial_ast(
 /// Returns the elements (as Cycles exprs, ordered lexicographically by
 /// image list) and the degree (largest moved point among the generators).
 fn permutation_group_closure(gens: &Expr) -> Option<(Vec<Expr>, usize)> {
-  let gen_list = match gens {
-    Expr::List(g) => g,
-    _ => return None,
+  let Expr::List(gen_list) = gens else {
+    return None;
   };
   // Degree: largest point appearing in any generator
   let mut degree = 0usize;
   let mut gen_lengths: Vec<Vec<Vec<usize>>> = Vec::new();
-  for g in gen_list.iter() {
+  for g in gen_list {
     if let Expr::FunctionCall { name, args } = g
       && name == "Cycles"
       && args.len() == 1
       && let Expr::List(cycles) = &args[0]
     {
       let mut parsed = Vec::new();
-      for c in cycles.iter() {
+      for c in cycles {
         if let Expr::List(points) = c {
           let mut cyc = Vec::with_capacity(points.len());
-          for p in points.iter() {
+          for p in points {
             if let Expr::Integer(v) = p
               && *v >= 1
             {
@@ -8826,7 +8797,7 @@ fn cycles_to_image(e: &Expr, n: usize) -> Option<Vec<usize>> {
     && args.len() == 1
     && let Expr::List(cycles) = &args[0]
   {
-    for c in cycles.iter() {
+    for c in cycles {
       let Expr::List(points) = c else {
         return None;
       };
@@ -8863,7 +8834,7 @@ fn group_element_images(group: &Expr) -> Option<(Vec<Vec<usize>>, usize)> {
         .collect::<Option<Vec<_>>>()?;
       return Some((images, degree));
     }
-    let min_n = if name == "DihedralGroup" { 1 } else { 0 };
+    let min_n = i128::from(name == "DihedralGroup");
     if let Expr::Integer(n) = &args[0]
       && *n >= min_n
     {
@@ -8966,7 +8937,7 @@ pub fn group_stabilizer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(args[0].clone());
   }
   let mut pts: Vec<usize> = Vec::new();
-  for p in pt_items.iter() {
+  for p in pt_items {
     match p {
       Expr::Integer(v) if *v >= 1 => pts.push(*v as usize),
       _ => return Ok(unevaluated()),
@@ -9433,18 +9404,18 @@ pub fn central_feature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let idx = central_feature_index(&keys)?;
+  let idx = central_feature_index(&keys);
   Ok(values[idx].clone())
 }
 
 /// Index of the element with the smallest total distance to the others
 /// (earliest wins ties), using the automatic metric described above.
-fn central_feature_index(keys: &[Expr]) -> Result<usize, InterpreterError> {
+fn central_feature_index(keys: &[Expr]) -> usize {
   use crate::functions::list_helpers_ast::expr_to_complex_parts;
 
   let n = keys.len();
   if n == 1 {
-    return Ok(0);
+    return 0;
   }
 
   let numeric_parts = |e: &Expr| -> Option<(f64, f64)> {
@@ -9533,7 +9504,7 @@ fn central_feature_index(keys: &[Expr]) -> Result<usize, InterpreterError> {
       best = i;
     }
   }
-  Ok(best)
+  best
 }
 
 /// Levenshtein distance over Unicode scalar values.
@@ -9686,9 +9657,8 @@ pub fn trimmed_statistic_ast(
   if variance {
     if sample.len() < 2 {
       crate::emit_message(&format!(
-        "{}::insffnt: There is insufficient data to proceed with the \
-         computation.",
-        head
+        "{head}::insffnt: There is insufficient data to proceed with the \
+         computation."
       ));
       return uneval();
     }

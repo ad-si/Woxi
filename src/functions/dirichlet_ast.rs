@@ -562,12 +562,12 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   re = mul(&re, &scale);
   im = mul(&im, &scale);
 
-  let re_expr = crate::functions::make_rational_expr(re.0, re.1);
+  let re_expr = crate::functions::make_rational_expr(&re.0, &re.1);
   let im_is_zero = im.0 == BigInt::from(0);
   if im_is_zero {
     return Ok(re_expr);
   }
-  let im_expr = crate::functions::make_rational_expr(im.0, im.1);
+  let im_expr = crate::functions::make_rational_expr(&im.0, &im.1);
   crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
     name: "Plus".to_string(),
     args: vec![
@@ -626,7 +626,7 @@ fn flatten_plus(expr: &Expr, out: &mut Vec<Expr>) {
       flatten_plus(right, out);
     }
     Expr::FunctionCall { name, args } if name == "Plus" => {
-      for a in args.iter() {
+      for a in args {
         flatten_plus(a, out);
       }
     }
@@ -645,7 +645,7 @@ fn flatten_times(expr: &Expr, out: &mut Vec<Expr>) {
       flatten_times(right, out);
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
-      for a in args.iter() {
+      for a in args {
         flatten_times(a, out);
       }
     }
@@ -730,7 +730,7 @@ fn convolve_pair(
   m: &Expr,
   with_divisor_sum: bool,
 ) -> Option<Expr> {
-  use ConvAtom::*;
+  use ConvAtom::{Mu, Phi, Power, Unknown};
   match (&a.atom, &b.atom) {
     (Power(j), Power(k)) => {
       let mn = (*j).min(*k);
@@ -824,7 +824,7 @@ fn reorder_slots_last(expr: &Expr) -> Expr {
   let mut parts = Vec::new();
   if is_plus {
     flatten_plus(expr, &mut parts);
-    for p in parts.iter_mut() {
+    for p in &mut parts {
       *p = reorder_slots_last(p);
     }
   } else {
@@ -877,9 +877,8 @@ pub fn dirichlet_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if *mv < 1 {
         return Ok(unevaluated());
       }
-      let divisors = match divisors_of_i128(*mv) {
-        Some(d) => d,
-        None => return Ok(unevaluated()),
+      let Some(divisors) = divisors_of_i128(*mv) else {
+        return Ok(unevaluated());
       };
       let terms: Vec<Expr> = divisors
         .iter()
@@ -921,12 +920,11 @@ pub fn dirichlet_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut all_reduce = true;
   'outer: for ft in &f_terms {
     for gt in &g_terms {
-      match convolve_pair(ft, gt, &var, m, false) {
-        Some(core) => reduced.push(scale_by_coeffs(core, ft, gt)),
-        None => {
-          all_reduce = false;
-          break 'outer;
-        }
+      if let Some(core) = convolve_pair(ft, gt, &var, m, false) {
+        reduced.push(scale_by_coeffs(core, ft, gt));
+      } else {
+        all_reduce = false;
+        break 'outer;
       }
     }
   }

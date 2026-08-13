@@ -321,8 +321,7 @@ mod divisible {
       msgs.iter().any(|m| m.contains(
         "Divisible::exact: Argument 12. in Divisible[12., 4] is not an exact number."
       )),
-      "expected exact message, got {:?}",
-      msgs
+      "expected exact message, got {msgs:?}"
     );
   }
 }
@@ -6162,8 +6161,7 @@ mod dirichlet_convolve {
       msgs.iter().any(|m| m.contains(
         "DirichletConvolve::argrx: DirichletConvolve called with 3 arguments; 4 arguments are expected."
       )),
-      "expected argrx message, got {:?}",
-      msgs
+      "expected argrx message, got {msgs:?}"
     );
   }
 
@@ -6336,8 +6334,7 @@ mod cyclic_group_and_cycle_index {
       msgs.iter().any(
         |m| m.contains("CycleIndexPolynomial::grp: x is not a valid group.")
       ),
-      "expected grp message, got {:?}",
-      msgs
+      "expected grp message, got {msgs:?}"
     );
     assert_eq!(
       interpret("CycleIndexPolynomial[CyclicGroup[3], x]").unwrap(),
@@ -6348,8 +6345,7 @@ mod cyclic_group_and_cycle_index {
       msgs.iter().any(|m| m.contains(
         "CycleIndexPolynomial::list: List expected at position 2 in CycleIndexPolynomial[CyclicGroup[3], x]."
       )),
-      "expected list message, got {:?}",
-      msgs
+      "expected list message, got {msgs:?}"
     );
     assert_eq!(
       interpret("CycleIndexPolynomial[CyclicGroup[3]]").unwrap(),
@@ -6360,8 +6356,7 @@ mod cyclic_group_and_cycle_index {
       msgs.iter().any(|m| m.contains(
         "CycleIndexPolynomial::argtu: CycleIndexPolynomial called with 1 argument; 2 or 3 arguments are expected."
       )),
-      "expected argtu message, got {:?}",
-      msgs
+      "expected argtu message, got {msgs:?}"
     );
   }
 }
@@ -6464,8 +6459,7 @@ mod group_stabilizer_and_table {
       msgs
         .iter()
         .any(|m| m.contains("GroupStabilizer::grp: x is not a valid group.")),
-      "expected grp message, got {:?}",
-      msgs
+      "expected grp message, got {msgs:?}"
     );
   }
 
@@ -6503,8 +6497,7 @@ mod group_stabilizer_and_table {
     assert!(
       msgs.iter().any(|m| m
         .contains("GroupMultiplicationTable::grp: x is not a valid group.")),
-      "expected grp message, got {:?}",
-      msgs
+      "expected grp message, got {msgs:?}"
     );
   }
 }
@@ -6524,8 +6517,7 @@ mod integer_digits_string_messages {
       msgs.iter().any(|m| m.contains(
         "IntegerDigits::ibase: Base 1 is not an integer greater than 1."
       )),
-      "expected ibase message, got {:?}",
-      msgs
+      "expected ibase message, got {msgs:?}"
     );
     assert_eq!(
       interpret("IntegerDigits[10, 0]").unwrap(),
@@ -6543,8 +6535,7 @@ mod integer_digits_string_messages {
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.is_empty(),
-      "symbolic base must stay silent, got {:?}",
-      msgs
+      "symbolic base must stay silent, got {msgs:?}"
     );
   }
 
@@ -6560,8 +6551,7 @@ mod integer_digits_string_messages {
       msgs.iter().any(|m| m.contains(
         "IntegerDigits::int: Integer expected at position 1 in IntegerDigits[2.5]."
       )),
-      "expected int message, got {:?}",
-      msgs
+      "expected int message, got {msgs:?}"
     );
     // Integral reals are still not integers
     assert_eq!(
@@ -6577,8 +6567,7 @@ mod integer_digits_string_messages {
       msgs.iter().any(|m| m.contains(
         "IntegerString::int: Integer expected at position 1 in IntegerString[2.]."
       )),
-      "expected int message, got {:?}",
-      msgs
+      "expected int message, got {msgs:?}"
     );
   }
 
@@ -6594,8 +6583,7 @@ mod integer_digits_string_messages {
       msgs.iter().any(|m| m.contains(
         "IntegerDigits::intnm: Non-negative machine-sized integer expected at position 3 in IntegerDigits[5, 2, -1]."
       )),
-      "expected intnm message, got {:?}",
-      msgs
+      "expected intnm message, got {msgs:?}"
     );
     assert_eq!(
       interpret("IntegerDigits[5, 2, 2.5]").unwrap(),
@@ -6620,8 +6608,7 @@ mod integer_digits_string_messages {
       msgs.iter().any(|m| m.contains(
         "IntegerString::basf: Requested base 1 should be an integer between 2 and 36."
       )),
-      "expected basf message, got {:?}",
-      msgs
+      "expected basf message, got {msgs:?}"
     );
     assert_eq!(
       interpret("IntegerString[255, 40]").unwrap(),

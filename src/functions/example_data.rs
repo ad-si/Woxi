@@ -54,8 +54,8 @@ static NETWORK_GRAPHS: LazyLock<Vec<NetworkGraph>> = LazyLock::new(|| {
     let Some((key, value)) = line.split_once(' ') else {
       continue;
     };
-    match key {
-      ":name" => out.push(NetworkGraph {
+    if key == ":name" {
+      out.push(NetworkGraph {
         // Leaked so the name can be handed out as a `&'static str` for the
         // lifetime of the process, like the other bundled data tables.
         name: Box::leak(value.to_string().into_boxed_str()),
@@ -63,34 +63,33 @@ static NETWORK_GRAPHS: LazyLock<Vec<NetworkGraph>> = LazyLock::new(|| {
         source: String::new(),
         vertices: Vec::new(),
         edges: Vec::new(),
-      }),
-      _ => {
-        let Some(current) = out.last_mut() else {
-          continue;
-        };
-        match key {
-          ":description" => current.description = value.to_string(),
-          ":source" => current.source = value.to_string(),
-          ":vertices" => {
-            current.vertices = value
-              .split('|')
-              .map(|v| match v.parse::<i128>() {
-                Ok(n) => Expr::Integer(n),
-                Err(_) => Expr::String(v.to_string()),
-              })
-              .collect();
-          }
-          ":edges" => {
-            current.edges = value
-              .split(',')
-              .filter_map(|e| {
-                let (a, b) = e.split_once('-')?;
-                Some((a.parse().ok()?, b.parse().ok()?))
-              })
-              .collect();
-          }
-          _ => {}
+      });
+    } else {
+      let Some(current) = out.last_mut() else {
+        continue;
+      };
+      match key {
+        ":description" => current.description = value.to_string(),
+        ":source" => current.source = value.to_string(),
+        ":vertices" => {
+          current.vertices = value
+            .split('|')
+            .map(|v| match v.parse::<i128>() {
+              Ok(n) => Expr::Integer(n),
+              Err(_) => Expr::String(v.to_string()),
+            })
+            .collect();
         }
+        ":edges" => {
+          current.edges = value
+            .split(',')
+            .filter_map(|e| {
+              let (a, b) = e.split_once('-')?;
+              Some((a.parse().ok()?, b.parse().ok()?))
+            })
+            .collect();
+        }
+        _ => {}
       }
     }
   }

@@ -105,7 +105,7 @@ fn read_expr(data: &[u8], pos: &mut usize) -> Option<Expr> {
       for _ in 0..nargs {
         args.push(read_expr(data, pos)?);
       }
-      Some(build_normal(head, args))
+      Some(build_normal(&head, args))
     }
     b'n' => read_integer_array(data, pos),
     b'e' => read_real_array(data, pos),
@@ -117,7 +117,7 @@ fn read_expr(data: &[u8], pos: &mut usize) -> Option<Expr> {
 /// `f`-token reconstruction: a `List` head becomes [`Expr::List`], any other
 /// symbol head becomes a [`Expr::FunctionCall`]. A non-symbol head is wrapped
 /// as `head[args...]` via its rendered name so nothing is silently dropped.
-fn build_normal(head: Expr, args: Vec<Expr>) -> Expr {
+fn build_normal(head: &Expr, args: Vec<Expr>) -> Expr {
   match &head {
     Expr::Identifier(name) if name == "List" => Expr::List(args.into()),
     Expr::Identifier(name) => Expr::FunctionCall {

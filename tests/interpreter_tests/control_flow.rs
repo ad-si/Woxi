@@ -2311,7 +2311,7 @@ mod trace_scan {
     let result =
       woxi::interpret_with_stdout("Reap[TraceScan[Sow, 1 + 2 + 3]]").unwrap();
     // HoldForm wrappers are present internally but invisible in output
-    assert!(result.result.contains("6"));
+    assert!(result.result.contains('6'));
     assert!(result.result.contains("Plus"));
   }
 

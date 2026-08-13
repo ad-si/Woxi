@@ -53,7 +53,7 @@ pub fn wind_to_expr(wind: &[u8]) -> Expr {
 fn expr_to_wind(e: &Expr) -> Option<Vec<u8>> {
   let Expr::List(items) = e else { return None };
   let mut wind = Vec::new();
-  for i in items.iter() {
+  for i in items {
     match i {
       Expr::Integer(d) if (0..=7).contains(d) => wind.push(*d as u8),
       _ => return None,
@@ -180,7 +180,7 @@ impl Dwd {
       return None;
     };
     let mut rules = Vec::new();
-    for r in rule_items.iter() {
+    for r in rule_items {
       let Expr::Rule {
         pattern,
         replacement,
@@ -198,7 +198,7 @@ impl Dwd {
         return None;
       };
       let mut dims = Vec::new();
-      for d in ds.iter() {
+      for d in ds {
         match d {
           Expr::Integer(n) if *n > 0 => dims.push(*n as usize),
           _ => return None,
@@ -253,7 +253,7 @@ fn parse_wtrans(
             "BasisIndex" => {
               if let Expr::List(winds) = replacement.as_ref() {
                 let mut b = Vec::new();
-                for w in winds.iter() {
+                for w in winds {
                   b.push(expr_to_wind(w)?);
                 }
                 basis = Some(b);
@@ -475,16 +475,15 @@ pub fn wavelet_transform_ast(
     {
       match opt.as_str() {
         "Padding" if !kind.is_stationary() => {
-          match Padding::parse(replacement) {
-            Some(p) => padding = p,
-            None => {
-              crate::emit_message(&format!(
-                "{}::invpad: {} is not a valid Padding setting.",
-                fname,
-                expr_to_string(replacement)
-              ));
-              return Ok(unevaluated(fname, args));
-            }
+          if let Some(p) = Padding::parse(replacement) {
+            padding = p;
+          } else {
+            crate::emit_message(&format!(
+              "{}::invpad: {} is not a valid Padding setting.",
+              fname,
+              expr_to_string(replacement)
+            ));
+            return Ok(unevaluated(fname, args));
           }
           continue;
         }
@@ -584,9 +583,10 @@ pub fn wavelet_transform_ast(
   }
 
   let rules: Vec<(Vec<u8>, Expr)> = match &data {
-    DataArg::Symbolic(items) => match symbolic_forward(items, &spec, kind, r) {
-      Some(rules) => rules,
-      None => {
+    DataArg::Symbolic(items) => {
+      if let Some(rules) = symbolic_forward(items, &spec, kind, r) {
+        rules
+      } else {
         crate::emit_message(&format!(
           "{}::exact: Exact computation is not supported for the wavelet {}.",
           fname,
@@ -594,7 +594,7 @@ pub fn wavelet_transform_ast(
         ));
         return Ok(unevaluated(fname, args));
       }
-    },
+    }
     DataArg::Numeric(arr) => {
       if exact_requested
         && let Some(exact_input) = exact_list(positional[0])
@@ -693,7 +693,7 @@ pub fn inverse_wavelet_transform_ast(
   if let Some(Expr::Integer(rr)) = positional.get(2).copied() {
     let n = dwd.refinement() as i128;
     if *rr >= 1 && *rr < n {
-      return partial_inverse(&dwd, &filters, *rr as usize);
+      return Ok(partial_inverse(&dwd, &filters, *rr as usize));
     }
   }
 
@@ -705,9 +705,10 @@ pub fn inverse_wavelet_transform_ast(
       dwd.rules.iter().map(|(w, _)| w.clone()).collect()
     }
     Some(Expr::Integer(rr)) if *rr as usize == dwd.refinement() => dwd.basis(),
-    Some(spec_expr) => match select_winds(&dwd, spec_expr) {
-      Some(w) => w,
-      None => {
+    Some(spec_expr) => {
+      if let Some(w) = select_winds(&dwd, spec_expr) {
+        w
+      } else {
         crate::emit_message(&format!(
           "{}::invwind: {} is not a valid wavelet index specification.",
           fname,
@@ -715,13 +716,13 @@ pub fn inverse_wavelet_transform_ast(
         ));
         return Ok(unevaluated(fname, args));
       }
-    },
+    }
   };
 
   // Exact path: symbolic coefficients + exact filters.
   let all_exact = winds
     .iter()
-    .all(|w| dwd.coef(w).map(|c| exact_list(c).is_some()).unwrap_or(true));
+    .all(|w| dwd.coef(w).is_none_or(|c| exact_list(c).is_some()));
   if all_exact
     && dwd.rank() == 1
     && let Some(result) = symbolic_inverse(&dwd, &spec, &winds)
@@ -755,7 +756,7 @@ fn partial_inverse(
   dwd: &Dwd,
   filters: &super::filters::WaveletFilters,
   r: usize,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let n = dwd.refinement();
   let keep = n - r;
   let mut coeffs: BTreeMap<Vec<u8>, CoefArray> = BTreeMap::new();
@@ -812,7 +813,7 @@ fn partial_inverse(
     threshold_values: dwd.threshold_values.clone(),
     dims: dwd.dims.clone(),
   };
-  Ok(new_dwd.to_expr())
+  new_dwd.to_expr()
 }
 
 /// Symbolic inverse for exact 1D coefficient trees (Haar and the other
@@ -924,7 +925,7 @@ fn symbolic_idwt_step(
     return (0..nn)
       .map(|t| {
         let mut terms: Vec<Expr> = Vec::new();
-        for (i, c) in synth_lo.iter() {
+        for (i, c) in synth_lo {
           terms.push(Expr::FunctionCall {
             name: "Times".to_string(),
             args: vec![
@@ -934,7 +935,7 @@ fn symbolic_idwt_step(
             .into(),
           });
         }
-        for (i, c) in synth_hi.iter() {
+        for (i, c) in synth_hi {
           terms.push(Expr::FunctionCall {
             name: "Times".to_string(),
             args: vec![
@@ -959,14 +960,14 @@ fn symbolic_idwt_step(
   let d = d.to_vec();
   let mut terms: Vec<Vec<Expr>> = vec![Vec::new(); n_even];
   for (t, (at, dt)) in a.iter().zip(d.iter()).enumerate() {
-    for (i, c) in synth_lo.iter() {
+    for (i, c) in synth_lo {
       let j = (2 * t as i64 + i).rem_euclid(n_even as i64) as usize;
       terms[j].push(Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![c.clone(), at.clone()].into(),
       });
     }
-    for (i, c) in synth_hi.iter() {
+    for (i, c) in synth_hi {
       let j = (2 * t as i64 + i).rem_euclid(n_even as i64) as usize;
       terms[j].push(Expr::FunctionCall {
         name: "Times".to_string(),
@@ -1057,7 +1058,7 @@ pub fn apply_dwd(func: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // String properties.
   if let Expr::String(prop) = &args[0] {
-    return dwd_property(&dwd, prop);
+    return Ok(dwd_property(&dwd, prop));
   }
 
   let winds: Vec<Vec<u8>> = match &args[0] {
@@ -1065,9 +1066,10 @@ pub fn apply_dwd(func: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
       dwd.rules.iter().map(|(w, _)| w.clone()).collect()
     }
     Expr::Identifier(a) if a == "Automatic" => dwd.basis(),
-    spec => match select_winds(&dwd, spec) {
-      Some(w) => w,
-      None => {
+    spec => {
+      if let Some(w) = select_winds(&dwd, spec) {
+        w
+      } else {
         crate::emit_message(&format!(
           "DiscreteWaveletData::wind: {} is not a valid wavelet index specification.",
           expr_to_string(&args[0])
@@ -1077,12 +1079,10 @@ pub fn apply_dwd(func: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: args.to_vec(),
         });
       }
-    },
+    }
   };
 
-  let single_explicit = expr_to_wind(&args[0])
-    .map(|w| !w.is_empty())
-    .unwrap_or(false);
+  let single_explicit = expr_to_wind(&args[0]).is_some_and(|w| !w.is_empty());
 
   let mut out: Vec<Expr> = Vec::new();
   for w in &winds {
@@ -1127,9 +1127,9 @@ pub fn apply_dwd(func: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(out.into()))
 }
 
-fn dwd_property(dwd: &Dwd, prop: &str) -> Result<Expr, InterpreterError> {
+fn dwd_property(dwd: &Dwd, prop: &str) -> crate::syntax::Expr {
   match prop {
-    "Properties" => Ok(Expr::List(
+    "Properties" => Expr::List(
       [
         "BasisIndex",
         "DataDimensions",
@@ -1146,29 +1146,29 @@ fn dwd_property(dwd: &Dwd, prop: &str) -> Result<Expr, InterpreterError> {
       .map(|s| Expr::String(s.to_string()))
       .collect::<Vec<_>>()
       .into(),
-    )),
-    "BasisIndex" => Ok(Expr::List(
+    ),
+    "BasisIndex" => Expr::List(
       dwd
         .basis()
         .iter()
         .map(|w| wind_to_expr(w))
         .collect::<Vec<_>>()
         .into(),
-    )),
-    "WaveletIndex" => Ok(Expr::List(
+    ),
+    "WaveletIndex" => Expr::List(
       dwd
         .rules
         .iter()
         .map(|(w, _)| wind_to_expr(w))
         .collect::<Vec<_>>()
         .into(),
-    )),
-    "Refinement" => Ok(Expr::Integer(dwd.refinement() as i128)),
-    "Wavelet" => Ok(dwd.wavelet.clone()),
-    "Transform" => Ok(Expr::String(dwd.kind.name().to_string())),
-    "Padding" => Ok(dwd.padding.to_expr()),
-    "DataDimensions" => Ok(dims_to_expr(&dwd.dims)),
-    "Dimensions" => Ok(Expr::List(
+    ),
+    "Refinement" => Expr::Integer(dwd.refinement() as i128),
+    "Wavelet" => dwd.wavelet.clone(),
+    "Transform" => Expr::String(dwd.kind.name().to_string()),
+    "Padding" => dwd.padding.to_expr(),
+    "DataDimensions" => dims_to_expr(&dwd.dims),
+    "Dimensions" => Expr::List(
       dwd
         .rules
         .iter()
@@ -1180,7 +1180,7 @@ fn dwd_property(dwd: &Dwd, prop: &str) -> Result<Expr, InterpreterError> {
         })
         .collect::<Vec<_>>()
         .into(),
-    )),
+    ),
     "EnergyFraction" => {
       let basis = dwd.basis();
       let total: f64 = basis
@@ -1190,9 +1190,9 @@ fn dwd_property(dwd: &Dwd, prop: &str) -> Result<Expr, InterpreterError> {
         .map(|a| a.energy())
         .sum();
       if total <= 0.0 {
-        return Ok(Expr::List(vec![].into()));
+        return Expr::List(vec![].into());
       }
-      Ok(Expr::List(
+      Expr::List(
         dwd
           .rules
           .iter()
@@ -1204,22 +1204,20 @@ fn dwd_property(dwd: &Dwd, prop: &str) -> Result<Expr, InterpreterError> {
           })
           .collect::<Vec<_>>()
           .into(),
-      ))
+      )
     }
-    "ThresholdValues" => Ok(
-      dwd
-        .threshold_values
-        .clone()
-        .unwrap_or_else(|| Expr::List(vec![].into())),
-    ),
+    "ThresholdValues" => dwd
+      .threshold_values
+      .clone()
+      .unwrap_or_else(|| Expr::List(vec![].into())),
     _ => {
       crate::emit_message(&format!(
         "DiscreteWaveletData::prop: {prop} is not a valid property."
       ));
-      Ok(Expr::FunctionCall {
+      Expr::FunctionCall {
         name: "Missing".to_string(),
         args: vec![Expr::String("NotAvailable".into())].into(),
-      })
+      }
     }
   }
 }
@@ -1289,7 +1287,7 @@ fn median(sorted: &mut [f64]) -> f64 {
   if n % 2 == 1 {
     sorted[n / 2]
   } else {
-    (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+    f64::midpoint(sorted[n / 2 - 1], sorted[n / 2])
   }
 }
 
@@ -1345,9 +1343,10 @@ pub fn wavelet_threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(Expr::Identifier(a)) if a == "All" => {
       dwd.rules.iter().map(|(w, _)| w.clone()).collect()
     }
-    Some(spec) => match select_winds(&dwd, spec) {
-      Some(w) => w,
-      None => {
+    Some(spec) => {
+      if let Some(w) = select_winds(&dwd, spec) {
+        w
+      } else {
         crate::emit_message(&format!(
           "{}::invwind: {} is not a valid wavelet index specification.",
           fname,
@@ -1355,7 +1354,7 @@ pub fn wavelet_threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
         return Ok(unevaluated(fname, args));
       }
-    },
+    }
   };
 
   // Global noise estimate from the finest detail coefficients.
@@ -1399,8 +1398,7 @@ pub fn wavelet_threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .delta_spec
       .as_ref()
       .and_then(num)
-      .map(|v| v as usize)
-      .unwrap_or(1);
+      .map_or(1, |v| v as usize);
     let mut all: Vec<f64> = Vec::new();
     for w in &winds {
       if let Some(c) = dwd.coef(w)
@@ -1551,9 +1549,10 @@ pub fn wavelet_map_indexed_ast(
         dwd.rules.iter().map(|(w, _)| w.clone()).collect()
       }
       Some(Expr::Identifier(a)) if a == "Automatic" => dwd.basis(),
-      Some(spec) => match select_winds(&dwd, spec) {
-        Some(w) => w,
-        None => {
+      Some(spec) => {
+        if let Some(w) = select_winds(&dwd, spec) {
+          w
+        } else {
           crate::emit_message(&format!(
             "{}::invwind: {} is not a valid wavelet index specification.",
             fname,
@@ -1561,7 +1560,7 @@ pub fn wavelet_map_indexed_ast(
           ));
           return Ok(unevaluated(fname, args));
         }
-      },
+      }
     };
     let mut new_rules = dwd.rules.clone();
     for w in &winds {
@@ -1721,15 +1720,12 @@ pub fn wavelet_best_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for &d in digits {
       let mut w = wind.to_vec();
       w.push(d);
-      match best(&w, r, digits, node_cost) {
-        Some((c, b)) => {
-          child_total += c;
-          child_basis.extend(b);
-        }
-        None => {
-          have_children = false;
-          break;
-        }
+      if let Some((c, b)) = best(&w, r, digits, node_cost) {
+        child_total += c;
+        child_basis.extend(b);
+      } else {
+        have_children = false;
+        break;
       }
     }
     match (own, have_children) {

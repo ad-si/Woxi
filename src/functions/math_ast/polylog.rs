@@ -116,7 +116,7 @@ fn polylog_integer_s(
     }
     Expr::Integer(-1) => {
       // PolyLog[s, -1] = -(1 - 2^{1-s}) * Zeta[s]
-      return polylog_at_neg1(s);
+      return Ok(polylog_at_neg1(s));
     }
     Expr::Real(f) => {
       return Ok(Expr::Real(polylog_numeric(s as f64, *f)));
@@ -186,31 +186,31 @@ fn polylog_s1(z_expr: &Expr) -> Result<Expr, InterpreterError> {
           }),
         }
       } else {
-        polylog_s1_symbolic(z_expr)
+        Ok(polylog_s1_symbolic(z_expr))
       }
     }
     Expr::Real(f) => {
       let result = -(1.0 - f).ln();
       Ok(Expr::Real(result))
     }
-    _ => polylog_s1_symbolic(z_expr),
+    _ => Ok(polylog_s1_symbolic(z_expr)),
   }
 }
 
-fn polylog_s1_symbolic(z_expr: &Expr) -> Result<Expr, InterpreterError> {
+fn polylog_s1_symbolic(z_expr: &Expr) -> crate::syntax::Expr {
   let one_minus_z = Expr::BinaryOp {
     op: BinaryOperator::Minus,
     left: Box::new(Expr::Integer(1)),
     right: Box::new(z_expr.clone()),
   };
-  Ok(Expr::BinaryOp {
+  Expr::BinaryOp {
     op: BinaryOperator::Times,
     left: Box::new(Expr::Integer(-1)),
     right: Box::new(Expr::FunctionCall {
       name: "Log".to_string(),
       args: vec![one_minus_z].into(),
     }),
-  })
+  }
 }
 
 /// PolyLog[0, z] = z/(1-z)
@@ -349,14 +349,14 @@ fn eulerian_numbers(n: usize) -> Vec<i128> {
 }
 
 /// PolyLog[s, -1] = -(1 - 2^{1-s}) * Zeta[s] for s >= 2
-fn polylog_at_neg1(s: i128) -> Result<Expr, InterpreterError> {
+fn polylog_at_neg1(s: i128) -> crate::syntax::Expr {
   let s_usize = s as usize;
 
   if s % 2 == 0 {
     // Even s: Zeta[s] is exact
     if let Some((b_num, b_den)) = bernoulli_number(s_usize) {
       if b_num == 0 {
-        return Ok(Expr::Integer(0));
+        return Expr::Integer(0);
       }
 
       // Compute Zeta coefficient: |B_{2n}| * 2^{2n-1} / (2n)!
@@ -365,14 +365,14 @@ fn polylog_at_neg1(s: i128) -> Result<Expr, InterpreterError> {
       for _ in 0..(s_usize - 1) {
         znum = match znum.checked_mul(2) {
           Some(v) => v,
-          None => return Ok(unevaluated_polylog(s, -1)),
+          None => return unevaluated_polylog(s, -1),
         };
         (znum, zden) = rat_reduce(znum, zden);
       }
       for k in 1..=s_usize {
         zden = match zden.checked_mul(k as i128) {
           Some(v) => v,
-          None => return Ok(unevaluated_polylog(s, -1)),
+          None => return unevaluated_polylog(s, -1),
         };
         (znum, zden) = rat_reduce(znum, zden);
       }
@@ -382,13 +382,11 @@ fn polylog_at_neg1(s: i128) -> Result<Expr, InterpreterError> {
       let coeff_num = 1 - pow2; // negative
       let coeff_den = pow2;
 
-      let mut final_num = match coeff_num.checked_mul(znum) {
-        Some(v) => v,
-        None => return Ok(unevaluated_polylog(s, -1)),
+      let Some(mut final_num) = coeff_num.checked_mul(znum) else {
+        return unevaluated_polylog(s, -1);
       };
-      let mut final_den = match coeff_den.checked_mul(zden) {
-        Some(v) => v,
-        None => return Ok(unevaluated_polylog(s, -1)),
+      let Some(mut final_den) = coeff_den.checked_mul(zden) else {
+        return unevaluated_polylog(s, -1);
       };
       if final_den < 0 {
         final_num = -final_num;
@@ -405,37 +403,35 @@ fn polylog_at_neg1(s: i128) -> Result<Expr, InterpreterError> {
 
       if final_num.abs() == 1 && final_den == 1 {
         if final_num == 1 {
-          return Ok(pi_power);
-        } else {
-          return Ok(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(-1)),
-            right: Box::new(pi_power),
-          });
+          return pi_power;
         }
+        return Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(-1)),
+          right: Box::new(pi_power),
+        };
       } else if final_num.abs() == 1 {
-        return Ok(Expr::BinaryOp {
+        return Expr::BinaryOp {
           op: BinaryOperator::Times,
           left: Box::new(make_rational(final_num, final_den)),
           right: Box::new(pi_power),
-        });
+        };
       } else if final_den == 1 {
-        return Ok(Expr::BinaryOp {
+        return Expr::BinaryOp {
           op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(final_num)),
           right: Box::new(pi_power),
-        });
-      } else {
-        return Ok(Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(final_num)),
-            right: Box::new(pi_power),
-          }),
-          right: Box::new(Expr::Integer(final_den)),
-        });
+        };
       }
+      return Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(final_num)),
+          right: Box::new(pi_power),
+        }),
+        right: Box::new(Expr::Integer(final_den)),
+      };
     }
   } else {
     // Odd s >= 3: Zeta stays symbolic
@@ -451,14 +447,14 @@ fn polylog_at_neg1(s: i128) -> Result<Expr, InterpreterError> {
     };
 
     if cd == 1 {
-      return Ok(Expr::BinaryOp {
+      return Expr::BinaryOp {
         op: BinaryOperator::Times,
         left: Box::new(Expr::Integer(cn)),
         right: Box::new(zeta_expr),
-      });
+      };
     }
     // Use (cn*Zeta[s])/cd format
-    return Ok(Expr::BinaryOp {
+    return Expr::BinaryOp {
       op: BinaryOperator::Divide,
       left: Box::new(Expr::BinaryOp {
         op: BinaryOperator::Times,
@@ -466,10 +462,10 @@ fn polylog_at_neg1(s: i128) -> Result<Expr, InterpreterError> {
         right: Box::new(zeta_expr),
       }),
       right: Box::new(Expr::Integer(cd)),
-    });
+    };
   }
 
-  Ok(unevaluated_polylog(s, -1))
+  unevaluated_polylog(s, -1)
 }
 
 /// Known exact closed forms of `PolyLog[s, 1/2]`.

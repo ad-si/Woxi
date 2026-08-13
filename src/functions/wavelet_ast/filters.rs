@@ -265,7 +265,7 @@ impl C64 {
   }
   fn sqrt(self) -> Self {
     let r = self.abs();
-    let re = ((r + self.re) / 2.0).max(0.0).sqrt();
+    let re = f64::midpoint(r, self.re).max(0.0).sqrt();
     let im_mag = ((r - self.re) / 2.0).max(0.0).sqrt();
     Self::new(re, if self.im < 0.0 { -im_mag } else { im_mag })
   }
@@ -424,7 +424,7 @@ fn biorthogonal_spline_filters(n: u32, m: u32) -> WaveletFilters {
   let primal_poly =
     LaurentRat::term(eps, Rat::new(1, 1)).mul(&cos_half().pow(n));
   // Dual: u^eps cos^m(w/2) Sum_{j<q} C(q-1+j, j) sin^{2j}(w/2), q = (n+m)/2
-  let q = (n + m) / 2;
+  let q = u32::midpoint(n, m);
   let s2 = sin2_half();
   let mut series = LaurentRat::term(0, Rat::ZERO);
   let mut s_pow = LaurentRat::one();
@@ -640,7 +640,7 @@ fn battle_lemarie_filters(n: u32, lim: f64) -> WaveletFilters {
   let s = |w: f64| -> f64 {
     let mut acc = 0.0;
     for k in -60i64..=60 {
-      let x = (w + 2.0 * pi * k as f64) / 2.0;
+      let x = f64::midpoint(w, 2.0 * pi * k as f64);
       let sinc = if x.abs() < 1e-12 { 1.0 } else { x.sin() / x };
       acc += sinc.powi(p);
     }
@@ -699,7 +699,7 @@ pub(crate) fn wavelet_filters(spec: &WaveletSpec) -> Option<WaveletFilters> {
 /// closed-form filters; other families give machine-precision values.
 pub(crate) fn wavelet_filter_coefficients_ast(
   args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   // Strip options (WorkingPrecision) from the tail.
   let mut positional: Vec<&Expr> = Vec::new();
   let mut exact_requested = false;
@@ -723,14 +723,14 @@ pub(crate) fn wavelet_filter_coefficients_ast(
     crate::emit_message(
       "WaveletFilterCoefficients::argt: WaveletFilterCoefficients called with an invalid number of arguments.",
     );
-    return Ok(unevaluated("WaveletFilterCoefficients", args));
+    return unevaluated("WaveletFilterCoefficients", args);
   }
   let Some(spec) = parse_discrete_wavelet(positional[0]) else {
     crate::emit_message(&format!(
       "WaveletFilterCoefficients::invw: {} is not a valid wavelet.",
       expr_to_string(positional[0])
     ));
-    return Ok(unevaluated("WaveletFilterCoefficients", args));
+    return unevaluated("WaveletFilterCoefficients", args);
   };
   let default_spec = Expr::String("PrimalLowpass".to_string());
   let filt_spec = positional.get(1).copied().unwrap_or(&default_spec);
@@ -738,10 +738,10 @@ pub(crate) fn wavelet_filter_coefficients_ast(
   // A list of filter specifications maps to a list of results.
   if let Expr::List(specs) = filt_spec {
     let mut out = Vec::new();
-    for s in specs.iter() {
-      out.push(single_filter_result(&spec, s, exact_requested, args)?);
+    for s in specs {
+      out.push(single_filter_result(&spec, s, exact_requested, args));
     }
-    return Ok(Expr::List(out.into()));
+    return Expr::List(out.into());
   }
   single_filter_result(&spec, filt_spec, exact_requested, args)
 }
@@ -751,20 +751,19 @@ fn single_filter_result(
   filt_spec: &Expr,
   exact_requested: bool,
   orig_args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let Expr::String(kind) = filt_spec else {
     crate::emit_message(&format!(
       "WaveletFilterCoefficients::invspec: {} is not a valid filter specification.",
       expr_to_string(filt_spec)
     ));
-    return Ok(unevaluated("WaveletFilterCoefficients", orig_args));
+    return unevaluated("WaveletFilterCoefficients", orig_args);
   };
   if kind == "LiftingFilter" {
-    return Ok(super::transforms::lifting_filter_data(spec));
+    return super::transforms::lifting_filter_data(spec);
   }
-  let filters = match wavelet_filters(spec) {
-    Some(f) => f,
-    None => return Ok(unevaluated("WaveletFilterCoefficients", orig_args)),
+  let Some(filters) = wavelet_filters(spec) else {
+    return unevaluated("WaveletFilterCoefficients", orig_args);
   };
   // For the biorthogonal spline families Wolfram labels the longer
   // (complementary) filter "Primal" and the shorter B-spline filter "Dual" —
@@ -803,10 +802,9 @@ fn single_filter_result(
     ),
     _ => {
       crate::emit_message(&format!(
-        "WaveletFilterCoefficients::invspec: \"{}\" is not a valid filter specification.",
-        kind
+        "WaveletFilterCoefficients::invspec: \"{kind}\" is not a valid filter specification."
       ));
-      return Ok(unevaluated("WaveletFilterCoefficients", orig_args));
+      return unevaluated("WaveletFilterCoefficients", orig_args);
     }
   };
   if bior_highpass_flip {
@@ -831,5 +829,5 @@ fn single_filter_result(
       })
       .collect()
   };
-  Ok(Expr::List(pairs.into()))
+  Expr::List(pairs.into())
 }

@@ -55,11 +55,8 @@ pub fn entity_store_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut types_assoc: Vec<(Expr, Expr)> = Vec::new();
 
   for rule in &type_rules {
-    let (type_name, type_data) = match extract_rule(rule) {
-      Some(pair) => pair,
-      None => {
-        return Ok(unevaluated("EntityStore", args));
-      }
+    let Some((type_name, type_data)) = extract_rule(rule) else {
+      return Ok(unevaluated("EntityStore", args));
     };
 
     let type_name_str = match &type_name {
@@ -94,9 +91,8 @@ pub fn entity_store_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 ///                "Properties" -> <|propName -> <|"DefaultFunction" -> fn|>, ...|>
 ///                "EntityClasses" -> <|className -> <|"Entities" -> {name1, name2}|>, ...|>
 fn parse_entity_type_data(data: &Expr) -> Option<EntityTypeData> {
-  let pairs = match data {
-    Expr::Association(pairs) => pairs,
-    _ => return None,
+  let Expr::Association(pairs) = data else {
+    return None;
   };
 
   let mut entities: Vec<(String, Vec<(String, Expr)>)> = Vec::new();
@@ -448,13 +444,13 @@ pub fn entity_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && let Expr::String(prop_query) = property
       {
         if prop_query == "Properties" {
-          return entity_properties_for_type(type_name);
+          return Ok(entity_properties_for_type(type_name));
         }
         if prop_query == "Entities" {
-          return entity_list_for_type(type_name);
+          return Ok(entity_list_for_type(type_name));
         }
         if prop_query == "EntityCount" {
-          return entity_count_for_type(type_name);
+          return Ok(entity_count_for_type(type_name));
         }
       }
 
@@ -606,7 +602,7 @@ pub fn entity_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   match &args[0] {
-    Expr::String(type_name) => entity_list_for_type(type_name),
+    Expr::String(type_name) => Ok(entity_list_for_type(type_name)),
     Expr::FunctionCall { name, args: fargs }
       if name == "Entity" && fargs.len() == 1 =>
     {
@@ -615,7 +611,7 @@ pub fn entity_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::String(s) => s.clone(),
         _ => expr_to_string(&fargs[0]),
       };
-      entity_list_for_type(&type_name)
+      Ok(entity_list_for_type(&type_name))
     }
     Expr::FunctionCall { name, args: fargs }
       if name == "EntityClass" && fargs.len() == 2 =>
@@ -629,22 +625,22 @@ pub fn entity_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::String(s) => s.clone(),
         _ => expr_to_string(&fargs[1]),
       };
-      entity_list_for_class(&type_name, &class_name)
+      Ok(entity_list_for_class(&type_name, &class_name))
     }
     _ => Ok(unevaluated("EntityList", args)),
   }
 }
 
-fn entity_list_for_type(type_name: &str) -> Result<Expr, InterpreterError> {
+fn entity_list_for_type(type_name: &str) -> crate::syntax::Expr {
   if !is_type_registered(type_name) {
-    return Ok(Expr::FunctionCall {
+    return Expr::FunctionCall {
       name: "Missing".to_string(),
       args: vec![
         Expr::String("UnknownType".to_string()),
         Expr::String(type_name.to_string()),
       ]
       .into(),
-    });
+    };
   }
 
   let entities = ENTITY_STORES.with(|stores| {
@@ -669,22 +665,22 @@ fn entity_list_for_type(type_name: &str) -> Result<Expr, InterpreterError> {
     result
   });
 
-  Ok(Expr::List(entities.into()))
+  Expr::List(entities.into())
 }
 
 fn entity_list_for_class(
   type_name: &str,
   class_name: &str,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   if !is_type_registered(type_name) {
-    return Ok(Expr::FunctionCall {
+    return Expr::FunctionCall {
       name: "Missing".to_string(),
       args: vec![
         Expr::String("UnknownType".to_string()),
         Expr::String(type_name.to_string()),
       ]
       .into(),
-    });
+    };
   }
 
   let entities = ENTITY_STORES.with(|stores| {
@@ -713,19 +709,19 @@ fn entity_list_for_class(
     result
   });
 
-  Ok(Expr::List(entities.into()))
+  Expr::List(entities.into())
 }
 
-fn entity_count_for_type(type_name: &str) -> Result<Expr, InterpreterError> {
+fn entity_count_for_type(type_name: &str) -> crate::syntax::Expr {
   if !is_type_registered(type_name) {
-    return Ok(Expr::FunctionCall {
+    return Expr::FunctionCall {
       name: "Missing".to_string(),
       args: vec![
         Expr::String("UnknownType".to_string()),
         Expr::String(type_name.to_string()),
       ]
       .into(),
-    });
+    };
   }
 
   let count = ENTITY_STORES.with(|stores| {
@@ -741,7 +737,7 @@ fn entity_count_for_type(type_name: &str) -> Result<Expr, InterpreterError> {
     count
   });
 
-  Ok(Expr::Integer(count))
+  Expr::Integer(count)
 }
 
 /// EntityClassList["type"] — list all entity classes for a given type.
@@ -800,23 +796,21 @@ pub fn entity_properties_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   match &args[0] {
-    Expr::String(type_name) => entity_properties_for_type(type_name),
+    Expr::String(type_name) => Ok(entity_properties_for_type(type_name)),
     _ => Ok(unevaluated("EntityProperties", args)),
   }
 }
 
-fn entity_properties_for_type(
-  type_name: &str,
-) -> Result<Expr, InterpreterError> {
+fn entity_properties_for_type(type_name: &str) -> crate::syntax::Expr {
   if !is_type_registered(type_name) {
-    return Ok(Expr::FunctionCall {
+    return Expr::FunctionCall {
       name: "Missing".to_string(),
       args: vec![
         Expr::String("UnknownType".to_string()),
         Expr::String(type_name.to_string()),
       ]
       .into(),
-    });
+    };
   }
 
   let properties = ENTITY_STORES.with(|stores| {
@@ -844,7 +838,7 @@ fn entity_properties_for_type(
       .collect::<Vec<_>>()
   });
 
-  Ok(Expr::List(properties.into()))
+  Expr::List(properties.into())
 }
 
 /// Handle Entity["type", "name"]["property"] — property access via curried call.

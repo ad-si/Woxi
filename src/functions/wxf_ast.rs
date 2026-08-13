@@ -60,7 +60,7 @@ fn symbol_name(name: &str) -> String {
   {
     name.to_string()
   } else {
-    format!("Global`{}", name)
+    format!("Global`{name}")
   }
 }
 
@@ -201,11 +201,11 @@ fn write_expr(out: &mut Vec<u8>, expr: &Expr) -> Option<()> {
       if name == "I" {
         return None;
       }
-      write_symbol(out, name)
+      write_symbol(out, name);
     }
     Expr::List(items) => {
       write_function_header(out, "List", items.len());
-      for item in items.iter() {
+      for item in items {
         write_expr(out, item)?;
       }
     }
@@ -274,7 +274,7 @@ fn write_expr(out: &mut Vec<u8>, expr: &Expr) -> Option<()> {
           write_expr(out, arg)?;
         }
       } else {
-        for arg in args.iter() {
+        for arg in args {
           write_expr(out, arg)?;
         }
       }

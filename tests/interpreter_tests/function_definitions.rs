@@ -894,14 +894,14 @@ mod memory {
   fn max_memory_used_returns_positive_integer() {
     let result = interpret("MaxMemoryUsed[]").unwrap();
     let val: i128 = result.parse().expect("should be an integer");
-    assert!(val > 0, "MaxMemoryUsed should be positive: {}", val);
+    assert!(val > 0, "MaxMemoryUsed should be positive: {val}");
   }
 
   #[test]
   fn memory_in_use_returns_positive_integer() {
     let result = interpret("MemoryInUse[]").unwrap();
     let val: i128 = result.parse().expect("should be an integer");
-    assert!(val > 0, "MemoryInUse should be positive: {}", val);
+    assert!(val > 0, "MemoryInUse should be positive: {val}");
   }
 
   #[test]
@@ -917,7 +917,7 @@ mod memory {
   fn memory_available_returns_positive_integer() {
     let result = interpret("MemoryAvailable[]").unwrap();
     let val: i128 = result.parse().expect("should be an integer");
-    assert!(val > 0, "MemoryAvailable should be positive: {}", val);
+    assert!(val > 0, "MemoryAvailable should be positive: {val}");
   }
 
   #[test]

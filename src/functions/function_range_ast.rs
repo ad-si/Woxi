@@ -110,9 +110,8 @@ pub fn function_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Polynomials with rational coefficients
-  let coeffs = match poly_coeffs(f, &x_var) {
-    Some(c) => c,
-    None => return Ok(unevaluated(args)),
+  let Some(coeffs) = poly_coeffs(f, &x_var) else {
+    return Ok(unevaluated(args));
   };
   let degree = coeffs.len().saturating_sub(1);
   match degree {

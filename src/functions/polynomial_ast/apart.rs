@@ -58,16 +58,15 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   } else {
     // Find the variable automatically
-    match find_single_variable(&args[0]) {
-      Some(v) => v,
-      None => {
-        // A variable-free (numeric) argument is already apart:
-        // Apart[Divide[1, 2]] → 1/2, not the unevaluated call.
-        if crate::functions::predicate_ast::is_numeric_q(&args[0]) {
-          return Ok(args[0].clone());
-        }
-        return Ok(unevaluated("Apart", args));
+    if let Some(v) = find_single_variable(&args[0]) {
+      v
+    } else {
+      // A variable-free (numeric) argument is already apart:
+      // Apart[Divide[1, 2]] → 1/2, not the unevaluated call.
+      if crate::functions::predicate_ast::is_numeric_q(&args[0]) {
+        return Ok(args[0].clone());
       }
+      return Ok(unevaluated("Apart", args));
     }
   };
 
@@ -169,7 +168,7 @@ fn apart_expr_raw(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           left: Box::new(coeffs_to_expr(&rem_int, var)),
           right: Box::new(coeffs_to_expr(&den_scaled, var)),
         };
-        let apart_remainder = apart_proper_fraction(&frac, var)?;
+        let apart_remainder = apart_proper_fraction(&frac, var);
         // Splice the polynomial quotient in front of the partial-fraction
         // terms as one flat sum so the result reads `q + f1 + f2`, not the
         // parenthesized `q + (f1 + f2)`. A zero quotient is dropped rather
@@ -195,7 +194,7 @@ fn apart_expr_raw(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         left: Box::new(rem_expr),
         right: Box::new(den_expanded.clone()),
       };
-      let apart_remainder = apart_proper_fraction(&frac, var)?;
+      let apart_remainder = apart_proper_fraction(&frac, var);
       let mut parts = if matches!(quot_expr, Expr::Integer(0)) {
         Vec::new()
       } else {
@@ -205,7 +204,7 @@ fn apart_expr_raw(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
       return Ok(build_sum(parts));
     }
 
-    return apart_proper_fraction(&divide_expr, var);
+    return Ok(apart_proper_fraction(&divide_expr, var));
   }
 
   // Fall back to symbolic approach (multivariate case)
@@ -213,23 +212,19 @@ fn apart_expr_raw(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
 }
 
 /// Perform partial fraction decomposition for a proper fraction (deg(num) < deg(den))
-fn apart_proper_fraction(
-  expr: &Expr,
-  var: &str,
-) -> Result<Expr, InterpreterError> {
+fn apart_proper_fraction(expr: &Expr, var: &str) -> crate::syntax::Expr {
   let (num, den) = match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Divide,
       left,
       right,
     } => (*left.clone(), *right.clone()),
-    _ => return Ok(expr.clone()),
+    _ => return expr.clone(),
   };
 
   let den_expanded = expand_and_combine(&den);
-  let den_coeffs = match extract_poly_coeffs(&den_expanded, var) {
-    Some(c) => c,
-    None => return Ok(expr.clone()),
+  let Some(den_coeffs) = extract_poly_coeffs(&den_expanded, var) else {
+    return expr.clone();
   };
 
   // General decomposition when the denominator has an irreducible quadratic (or
@@ -241,7 +236,7 @@ fn apart_proper_fraction(
     if let Some(nc) = extract_poly_coeffs(&num_expanded, var)
       && let Some(result) = apart_general(&nc, &den_coeffs, var)
     {
-      return Ok(result);
+      return result;
     }
   }
 
@@ -252,15 +247,14 @@ fn apart_proper_fraction(
     .filter(|&c| c != 0)
     .fold(0i128, gcd_i128);
   if gcd_coeff == 0 {
-    return Ok(expr.clone());
+    return expr.clone();
   }
   let reduced: Vec<i128> = den_coeffs.iter().map(|c| c / gcd_coeff).collect();
-  let (sign, reduced) = if reduced.last().map(|&c| c < 0).unwrap_or(false) {
+  let (sign, reduced) = if reduced.last().is_some_and(|&c| c < 0) {
     (-1i128, reduced.iter().map(|c| -c).collect::<Vec<_>>())
   } else {
     (1, reduced)
   };
-  let _overall = gcd_coeff * sign;
 
   // Find roots of denominator
   let mut remaining = reduced.clone();
@@ -286,9 +280,9 @@ fn apart_proper_fraction(
       && ncs.len() < den_coeffs.len()
       && let Some(norm) = normalize_irreducible_quotient(&ncs, &den_coeffs, var)
     {
-      return Ok(norm);
+      return norm;
     }
-    return Ok(expr.clone());
+    return expr.clone();
   }
 
   // Sort roots descending so linear factors (-root + x) appear in ascending order
@@ -298,9 +292,8 @@ fn apart_proper_fraction(
   // N(x) / ((x-r1)(x-r2)...) = A1/(x-r1) + A2/(x-r2) + ...
   // where Ai = N(ri) / product of (ri - rj) for j != i
   let num_expanded = expand_and_combine(&num);
-  let num_coeffs = match extract_poly_coeffs(&num_expanded, var) {
-    Some(c) => c,
-    None => return Ok(expr.clone()),
+  let Some(num_coeffs) = extract_poly_coeffs(&num_expanded, var) else {
+    return expr.clone();
   };
 
   // If there's a remaining irreducible factor, we can't do simple partial fractions
@@ -309,9 +302,9 @@ fn apart_proper_fraction(
       && let Some(norm) =
         normalize_irreducible_quotient(&num_coeffs, &den_coeffs, var)
     {
-      return Ok(norm);
+      return norm;
     }
-    return Ok(expr.clone());
+    return expr.clone();
   }
 
   // If any root is repeated, the distinct-root residue formula below divides
@@ -319,7 +312,7 @@ fn apart_proper_fraction(
   // multiplicities (e.g. Apart[1/(x^2 (x + 1))]).
   let has_repeated = {
     let mut sorted = roots.clone();
-    sorted.sort();
+    sorted.sort_unstable();
     sorted.windows(2).any(|w| w[0] == w[1])
   };
   if has_repeated {
@@ -332,9 +325,9 @@ fn apart_proper_fraction(
     if let Some(result) =
       apart_repeated_roots(&num_coeffs, &roots, rem_const, overall_factor, var)
     {
-      return Ok(result);
+      return result;
     }
-    return Ok(expr.clone());
+    return expr.clone();
   }
 
   let mut result_terms = Vec::new();
@@ -355,7 +348,7 @@ fn apart_proper_fraction(
     den_product *= overall_factor;
 
     if den_product == 0 {
-      return Ok(expr.clone());
+      return expr.clone();
     }
 
     // A_i = num_at_root / den_product
@@ -416,9 +409,9 @@ fn apart_proper_fraction(
   }
 
   if result_terms.is_empty() {
-    Ok(expr.clone())
+    expr.clone()
   } else {
-    Ok(build_sum(result_terms))
+    build_sum(result_terms)
   }
 }
 
@@ -570,7 +563,7 @@ fn build_apart_term(
     g = gcd_i128(g, c);
   }
   if g > 1 {
-    for c in inum.iter_mut() {
+    for c in &mut inum {
       *c /= g;
     }
     l /= g;
@@ -651,12 +644,12 @@ fn apart_general(
       // below, and the content resurfaces as the term's scalar multiplier.
       let content = c.iter().fold(0i128, |acc, &v| gcd_i128(acc, v));
       if content > 1 {
-        for v in c.iter_mut() {
+        for v in &mut c {
           *v /= content;
         }
       }
-      if c.last().map(|&l| l < 0).unwrap_or(false) {
-        for v in c.iter_mut() {
+      if c.last().is_some_and(|&l| l < 0) {
+        for v in &mut c {
           *v = -*v;
         }
       }
@@ -669,8 +662,7 @@ fn apart_general(
   // 10107924694092248000). The all-monic-linear case stays on the existing
   // (well-tested) linear path.
   let needs_general = factors.iter().any(|c| {
-    c.len() >= 3
-      || (c.len() == 2 && c.last().map(|&l| l.abs() != 1) == Some(true))
+    c.len() >= 3 || (c.len() == 2 && c.last().is_some_and(|&l| l.abs() != 1))
   });
   if factors.len() < 2 || !needs_general {
     return None;
@@ -1049,23 +1041,22 @@ fn rat_coeffs_to_expr(
         args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
       }
     };
-    let term = match i {
-      0 => coeff,
-      _ => {
-        let var_pow = if i == 1 {
-          Expr::Identifier(var.to_string())
-        } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(Expr::Identifier(var.to_string())),
-            right: Box::new(Expr::Integer(i as i128)),
-          }
-        };
+    let term = if i == 0 {
+      coeff
+    } else {
+      let var_pow = if i == 1 {
+        Expr::Identifier(var.to_string())
+      } else {
         Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(coeff),
-          right: Box::new(var_pow),
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::Identifier(var.to_string())),
+          right: Box::new(Expr::Integer(i as i128)),
         }
+      };
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(coeff),
+        right: Box::new(var_pow),
       }
     };
     terms.push(term);
@@ -1193,9 +1184,8 @@ fn extract_linear_coeffs(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
 /// linear denominator factor with the focus variable on the right and a
 /// positive coefficient — the negation is folded into the term's sign.
 fn negate_if_var_coeff_negative(factor: &Expr, var: &str) -> (Expr, bool) {
-  let coeffs = match extract_linear_coeffs(factor, var) {
-    Some(c) => c,
-    None => return (factor.clone(), false),
+  let Some(coeffs) = extract_linear_coeffs(factor, var) else {
+    return (factor.clone(), false);
   };
   let coeff_negative = match &coeffs.0 {
     Expr::Integer(n) => *n < 0,
@@ -1485,7 +1475,7 @@ pub fn apart_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         collect_syntactic_factors(right, out);
       }
       Expr::FunctionCall { name, args } if name == "Times" => {
-        for a in args.iter() {
+        for a in args {
           collect_syntactic_factors(a, out);
         }
       }
@@ -1524,9 +1514,9 @@ pub fn apart_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // order given.
   let mut groups: Vec<(Vec<i128>, usize)> = Vec::new();
   for (base, mult) in &raw_factors {
-    let coeffs = match extract_poly_coeffs(&expand_and_combine(base), &var) {
-      Some(c) => c,
-      None => return unchanged(),
+    let Some(coeffs) = extract_poly_coeffs(&expand_and_combine(base), &var)
+    else {
+      return unchanged();
     };
     if coeffs.len() <= 1 {
       // Constant factor: fold its mult-th power into the scale.
@@ -1551,9 +1541,9 @@ pub fn apart_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if groups.is_empty() {
     return unchanged();
   }
-  let num_coeffs = match extract_poly_coeffs(&expand_and_combine(&num), &var) {
-    Some(c) => c,
-    None => return unchanged(),
+  let Some(num_coeffs) = extract_poly_coeffs(&expand_and_combine(&num), &var)
+  else {
+    return unchanged();
   };
 
   let mut prod_nc = vec![1i128];
@@ -1595,11 +1585,10 @@ pub fn apart_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for _ in 0..k {
         fk = poly_mul_i128(&fk, f);
       }
-      let base = match crate::functions::polynomial_ast::poly_exact_divide(
-        &prod_nc, &fk,
-      ) {
-        Some(b) => b,
-        None => return unchanged(),
+      let Some(base) =
+        crate::functions::polynomial_ast::poly_exact_divide(&prod_nc, &fk)
+      else {
+        return unchanged();
       };
       for t in 0..dfi {
         let mut col = vec![Rat::int(0); deg_d];
@@ -1625,9 +1614,8 @@ pub fn apart_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mat: Vec<Vec<Rat>> = (0..deg_d)
     .map(|r| basis.iter().map(|col| col[r]).collect())
     .collect();
-  let sol = match solve_rat_system(mat, rhs) {
-    Some(s) => s,
-    None => return unchanged(),
+  let Some(sol) = solve_rat_system(mat, rhs) else {
+    return unchanged();
   };
 
   let mut term_nums: Vec<((usize, usize), Vec<Rat>)> = Vec::new();

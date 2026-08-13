@@ -219,10 +219,10 @@ pub fn resolve_pitch_name(spec: &Expr) -> Option<String> {
       let mut name = key.to_string();
       match accidental.cmp(&0) {
         std::cmp::Ordering::Greater => {
-          name.push_str(&"#".repeat(accidental as usize))
+          name.push_str(&"#".repeat(accidental as usize));
         }
         std::cmp::Ordering::Less => {
-          name.push_str(&"b".repeat((-accidental) as usize))
+          name.push_str(&"b".repeat((-accidental) as usize));
         }
         std::cmp::Ordering::Equal => {}
       }
@@ -415,10 +415,7 @@ fn music_pitch_axes(expr: &Expr) -> Option<(i128, i128)> {
           _ => None,
         };
       };
-      let key = match key {
-        Expr::String(s) => s,
-        _ => return None,
-      };
+      let Expr::String(key) = key else { return None };
       let diatonic = letter_diatonic_index(*key.as_bytes().first()?)?;
       let accidental = match lookup("Accidental") {
         Some(Expr::Integer(n)) => *n,
@@ -690,7 +687,7 @@ fn music_summand_axes(term: &Expr) -> Option<(i128, (i128, i128), bool)> {
     Expr::FunctionCall { name, args } if name == "Times" => {
       let mut coeff = 1i128;
       let mut inner = None;
-      for arg in args.iter() {
+      for arg in args {
         if let Expr::Integer(k) = arg {
           coeff *= *k;
         } else if inner.is_none() {
@@ -1098,10 +1095,10 @@ fn pitch_spelled_name(letter: char, accidental: i128) -> String {
   let mut name = letter.to_string();
   match accidental.cmp(&0) {
     std::cmp::Ordering::Greater => {
-      name.push_str(&"♯".repeat(accidental as usize))
+      name.push_str(&"♯".repeat(accidental as usize));
     }
     std::cmp::Ordering::Less => {
-      name.push_str(&"♭".repeat((-accidental) as usize))
+      name.push_str(&"♭".repeat((-accidental) as usize));
     }
     std::cmp::Ordering::Equal => {}
   }
@@ -1676,7 +1673,7 @@ fn music_duration_summand(term: &Expr) -> Option<(Expr, Expr)> {
     Expr::FunctionCall { name, args } if name == "Times" => {
       let mut coeff: Vec<Expr> = Vec::new();
       let mut value = None;
-      for arg in args.iter() {
+      for arg in args {
         if is_music_duration(arg) {
           if value.is_some() {
             return None;
@@ -2300,7 +2297,7 @@ fn format_ratio((n, d): Ratio) -> String {
   if d == 1 {
     n.to_string()
   } else {
-    format!("{}/{}", n, d)
+    format!("{n}/{d}")
   }
 }
 
@@ -2355,7 +2352,7 @@ mod tests {
 
   /// Assert that a `music_pitch` result is the MIDI-numbered association
   /// `MusicPitch[<|"MIDINumber" -> midi|>]`.
-  fn expect_midi_pitch(result: Option<Expr>, midi: i128) {
+  fn expect_midi_pitch(result: Option<&Expr>, midi: i128) {
     match &result {
       Some(Expr::FunctionCall { name, args }) if name == "MusicPitch" => {
         match &args[..] {
@@ -2380,7 +2377,7 @@ mod tests {
 
   #[test]
   fn music_pitch_canonicalizes_midi_integer() {
-    expect_midi_pitch(music_pitch(&[Expr::Integer(60)]), 60);
+    expect_midi_pitch(music_pitch(&[Expr::Integer(60)]).as_ref(), 60);
   }
 
   #[test]
@@ -2464,14 +2461,16 @@ mod tests {
       music_pitch(&[call(
         "Quantity",
         vec![Expr::Integer(440), Expr::String("Hertz".into())],
-      )]),
+      )])
+      .as_ref(),
       69,
     );
     expect_midi_pitch(
       music_pitch(&[call(
         "Quantity",
         vec![Expr::Integer(200), Expr::String("Hertz".into())],
-      )]),
+      )])
+      .as_ref(),
       55,
     );
     // Identifier unit spelling and the "Hz" abbreviation are both accepted.
@@ -2479,7 +2478,8 @@ mod tests {
       music_pitch(&[call(
         "Quantity",
         vec![Expr::Real(440.0), Expr::Identifier("Hertz".into())],
-      )]),
+      )])
+      .as_ref(),
       69,
     );
     // A non-frequency Quantity has no pitch interpretation.
@@ -2495,13 +2495,16 @@ mod tests {
   #[test]
   fn music_pitch_canonicalizes_soundnote() {
     // SoundNote numbers pitches relative to middle C (0), so 0 -> MIDI 60.
-    expect_midi_pitch(music_pitch(&[call1("SoundNote", Expr::Integer(0))]), 60);
     expect_midi_pitch(
-      music_pitch(&[call1("SoundNote", Expr::Integer(-5))]),
+      music_pitch(&[call1("SoundNote", Expr::Integer(0))]).as_ref(),
+      60,
+    );
+    expect_midi_pitch(
+      music_pitch(&[call1("SoundNote", Expr::Integer(-5))]).as_ref(),
       55,
     );
     expect_midi_pitch(
-      music_pitch(&[call1("SoundNote", Expr::String("A4".into()))]),
+      music_pitch(&[call1("SoundNote", Expr::String("A4".into()))]).as_ref(),
       69,
     );
   }
@@ -2541,7 +2544,7 @@ mod tests {
         ),
       )]),
     );
-    expect_midi_pitch(music_pitch(&[stored]), 55);
+    expect_midi_pitch(music_pitch(&[stored]).as_ref(), 55);
   }
 
   fn named_pitch(name: &str) -> Expr {
@@ -2550,7 +2553,7 @@ mod tests {
 
   /// Assert that `try_music_pitch_plus` produced the canonical association form
   /// with the given accidental, key and MIDI number.
-  fn expect_pitch_sum(result: Option<Expr>, acc: i128, key: &str, midi: i128) {
+  fn expect_pitch_sum(result: Option<&Expr>, acc: i128, key: &str, midi: i128) {
     match &result {
       Some(Expr::FunctionCall { name, args }) if name == "MusicPitch" => {
         match &args[..] {
@@ -2590,7 +2593,7 @@ mod tests {
       named_pitch("A#"),
       call("Times", vec![Expr::Integer(-1), named_pitch("C")]),
     ]);
-    expect_pitch_sum(result, 1, "G", 80);
+    expect_pitch_sum(result.as_ref(), 1, "G", 80);
   }
 
   #[test]
@@ -2604,7 +2607,7 @@ mod tests {
     ])
     .unwrap();
     let result = try_music_pitch_plus(&[named_pitch("A#"), partial]);
-    expect_pitch_sum(result, 1, "G", 80);
+    expect_pitch_sum(result.as_ref(), 1, "G", 80);
   }
 
   #[test]
@@ -2618,7 +2621,7 @@ mod tests {
       },
       named_pitch("A4"),
     ]);
-    expect_pitch_sum(result, 0, "A", 69);
+    expect_pitch_sum(result.as_ref(), 0, "A", 69);
   }
 
   #[test]
@@ -2721,14 +2724,16 @@ mod tests {
   fn music_pitch_plus_interval_transposes() {
     // C4 + a minor third -> Eb4 (accidental -1, MIDI 63).
     expect_pitch_sum(
-      try_music_pitch_plus(&[named_pitch("C"), named_interval("MinorThird")]),
+      try_music_pitch_plus(&[named_pitch("C"), named_interval("MinorThird")])
+        .as_ref(),
       -1,
       "E",
       63,
     );
     // C4 + a perfect fifth -> G4.
     expect_pitch_sum(
-      try_music_pitch_plus(&[named_pitch("C"), named_interval("PerfectFifth")]),
+      try_music_pitch_plus(&[named_pitch("C"), named_interval("PerfectFifth")])
+        .as_ref(),
       0,
       "G",
       67,
@@ -2799,7 +2804,8 @@ mod tests {
       try_music_pitch_plus(&[
         named_pitch("C"),
         call1("MusicInterval", Expr::Integer(8)),
-      ]),
+      ])
+      .as_ref(),
       1,
       "G",
       68,
@@ -2809,7 +2815,8 @@ mod tests {
       try_music_pitch_plus(&[
         named_pitch("Eb"),
         call1("MusicInterval", Expr::Integer(8)),
-      ]),
+      ])
+      .as_ref(),
       0,
       "B",
       71,

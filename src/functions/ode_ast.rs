@@ -668,7 +668,7 @@ fn ndsolve_system(
           order: 0,
           function_form: false,
           ics: Vec::new(),
-        })
+        });
       }
       _ => return Ok(None),
     }
@@ -689,10 +689,10 @@ fn ndsolve_system(
   let mut ics: Vec<(String, usize, f64)> = Vec::new();
   for eq in &eq_items {
     let mut is_ic = false;
-    for f in funcs.iter() {
+    for f in &funcs {
       if is_initial_condition(eq, &f.name, x_name) {
         let Some((order, x_val, y_val)) =
-          parse_numeric_initial_condition(eq, &f.name)?
+          parse_numeric_initial_condition(eq, &f.name)
         else {
           return Ok(None);
         };
@@ -730,13 +730,13 @@ fn ndsolve_system(
       name: f.name.clone(),
       args: vec![Expr::Identifier(x_name.clone())].into(),
     };
-    for ode in odes.iter_mut() {
+    for ode in &mut odes {
       *ode = crate::functions::polynomial_ast::solve::substitute_expr(
         ode, &target, &solved,
       );
     }
     // A later constraint may refer to an already-eliminated function.
-    for (_, prev) in eliminated.iter_mut() {
+    for (_, prev) in &mut eliminated {
       *prev = crate::functions::polynomial_ast::solve::substitute_expr(
         prev, &target, &solved,
       );
@@ -754,7 +754,7 @@ fn ndsolve_system(
 
   // Determine each function's order from the equations.
   for ode in &odes {
-    for f in funcs.iter_mut() {
+    for f in &mut funcs {
       let order = max_derivative_order(ode, &f.name);
       f.order = f.order.max(order);
     }
@@ -764,7 +764,7 @@ fn ndsolve_system(
   }
 
   // Validate and store the initial conditions.
-  for f in funcs.iter_mut() {
+  for f in &mut funcs {
     f.ics = vec![None; f.order];
   }
   for (name, order, val) in ics {
@@ -778,7 +778,10 @@ fn ndsolve_system(
     }
     f.ics[order] = Some(val);
   }
-  if funcs.iter().any(|f| f.ics.iter().any(|ic| ic.is_none())) {
+  if funcs
+    .iter()
+    .any(|f| f.ics.iter().any(std::option::Option::is_none))
+  {
     return Ok(None);
   }
 
@@ -1224,23 +1227,22 @@ fn rk4_system_step(
   x: f64,
   h: f64,
 ) -> Result<Option<Vec<f64>>, InterpreterError> {
-  let deriv = |s: &[f64],
-               xv: f64|
-   -> Result<Option<Vec<f64>>, InterpreterError> {
-    let Some(high) = solve_highest_derivatives(residuals, funcs.len(), xv, s)?
-    else {
-      return Ok(None);
-    };
-    let mut d = vec![0.0; s.len()];
-    for (fi, f) in funcs.iter().enumerate() {
-      let off = state_offset[fi];
-      for k in 0..f.order - 1 {
-        d[off + k] = s[off + k + 1];
+  let deriv =
+    |s: &[f64], xv: f64| -> Result<Option<Vec<f64>>, InterpreterError> {
+      let Some(high) = solve_highest_derivatives(residuals, funcs.len(), xv, s)
+      else {
+        return Ok(None);
+      };
+      let mut d = vec![0.0; s.len()];
+      for (fi, f) in funcs.iter().enumerate() {
+        let off = state_offset[fi];
+        for k in 0..f.order - 1 {
+          d[off + k] = s[off + k + 1];
+        }
+        d[off + f.order - 1] = high[fi];
       }
-      d[off + f.order - 1] = high[fi];
-    }
-    Ok(Some(d))
-  };
+      Ok(Some(d))
+    };
 
   let add_scaled = |s: &[f64], d: &[f64], c: f64| -> Vec<f64> {
     s.iter().zip(d).map(|(a, b)| a + b * c).collect()
@@ -1277,7 +1279,7 @@ fn solve_highest_derivatives(
   n_funcs: usize,
   x: f64,
   state: &[f64],
-) -> Result<Option<Vec<f64>>, InterpreterError> {
+) -> std::option::Option<std::vec::Vec<f64>> {
   let n = n_funcs;
   let mut vars = Vec::with_capacity(1 + state.len() + n);
   vars.push(x);
@@ -1287,10 +1289,10 @@ fn solve_highest_derivatives(
   let mut c = vec![0.0; n];
   for (i, r) in residuals.iter().enumerate() {
     let Ok(v) = r.eval(&vars) else {
-      return Ok(None);
+      return None;
     };
     if !v.is_finite() {
-      return Ok(None);
+      return None;
     }
     c[i] = v;
   }
@@ -1299,10 +1301,10 @@ fn solve_highest_derivatives(
     vars[1 + state.len() + j] = 1.0;
     for (i, r) in residuals.iter().enumerate() {
       let Ok(v) = r.eval(&vars) else {
-        return Ok(None);
+        return None;
       };
       if !v.is_finite() {
-        return Ok(None);
+        return None;
       }
       m[i][j] = v - c[i];
     }
@@ -1317,7 +1319,7 @@ fn solve_highest_derivatives(
       .max_by(|a, b| a.1.total_cmp(&b.1))
       .unwrap();
     if pivot_abs < 1e-14 {
-      return Ok(None);
+      return None;
     }
     m.swap(col, pivot_row);
     rhs.swap(col, pivot_row);
@@ -1337,7 +1339,7 @@ fn solve_highest_derivatives(
     }
     sol[row] = acc / m[row][row];
   }
-  Ok(Some(sol))
+  Some(sol)
 }
 
 /// The synthesized variable name standing for the k-th derivative of `f`
@@ -1569,7 +1571,7 @@ fn compile_numeric(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
         "Pi" => Some(NExpr::Const(std::f64::consts::PI)),
         "E" => Some(NExpr::Const(std::f64::consts::E)),
         "Degree" => Some(NExpr::Const(std::f64::consts::PI / 180.0)),
-        "GoldenRatio" => Some(NExpr::Const((1.0 + 5.0_f64.sqrt()) / 2.0)),
+        "GoldenRatio" => Some(NExpr::Const(f64::midpoint(1.0, 5.0_f64.sqrt()))),
         _ => None,
       }
     }
@@ -1844,7 +1846,7 @@ fn nval_to_f64(expr: &Expr) -> Option<f64> {
 fn parse_numeric_initial_condition(
   expr: &Expr,
   y_name: &str,
-) -> Result<Option<(usize, f64, f64)>, InterpreterError> {
+) -> std::option::Option<(usize, f64, f64)> {
   if let Expr::Comparison {
     operands,
     operators,
@@ -1864,7 +1866,7 @@ fn parse_numeric_initial_condition(
       if let (Some(x_val), Some(rhs_val)) =
         (nval_to_f64(&args[0]), nval_to_f64(&operands[1]))
       {
-        return Ok(Some((0, x_val, rhs_val)));
+        return Some((0, x_val, rhs_val));
       }
     }
 
@@ -1874,10 +1876,10 @@ fn parse_numeric_initial_condition(
       && let (Some(x_val), Some(rhs_val)) =
         (nval_to_f64(&val_expr), nval_to_f64(&operands[1]))
     {
-      return Ok(Some((order, x_val, rhs_val)));
+      return Some((order, x_val, rhs_val));
     }
   }
-  Ok(None)
+  None
 }
 
 /// Collect all additive terms from the normalized ODE expression,
@@ -2025,8 +2027,7 @@ fn classify_single_term(
 
   // Complex y-dependent term we can't handle
   Err(InterpreterError::EvaluationError(format!(
-    "DSolve: cannot classify term involving {}",
-    y_name
+    "DSolve: cannot classify term involving {y_name}"
   )))
 }
 
@@ -2093,8 +2094,7 @@ fn classify_product_term(
     };
     if !is_free_of_y(&product, y_name) {
       return Err(InterpreterError::EvaluationError(format!(
-        "DSolve: cannot classify term involving {}",
-        y_name
+        "DSolve: cannot classify term involving {y_name}"
       )));
     }
     order = -1;
@@ -2454,13 +2454,12 @@ fn find_characteristic_roots(
         Ok(vec![(real, imag, 1)])
       }
     }
-    3 => solve_cubic_characteristic(coeffs),
-    4 => solve_quartic_characteristic(coeffs),
+    3 => Ok(solve_cubic_characteristic(coeffs)),
+    4 => Ok(solve_quartic_characteristic(coeffs)),
     _ => {
       // For higher orders, try numerical root finding
       Err(InterpreterError::EvaluationError(format!(
-        "DSolve: order {} constant-coefficient ODEs not supported",
-        max_order
+        "DSolve: order {max_order} constant-coefficient ODEs not supported"
       )))
     }
   }
@@ -2469,7 +2468,7 @@ fn find_characteristic_roots(
 /// Solve cubic characteristic polynomial
 fn solve_cubic_characteristic(
   coeffs: &[f64],
-) -> Result<Vec<(f64, f64, usize)>, InterpreterError> {
+) -> std::vec::Vec<(f64, f64, usize)> {
   let a = coeffs[3];
   let b = coeffs[2];
   let c = coeffs[1];
@@ -2535,13 +2534,13 @@ fn solve_cubic_characteristic(
     ));
   }
 
-  Ok(roots)
+  roots
 }
 
 /// Solve quartic characteristic polynomial
 fn solve_quartic_characteristic(
   coeffs: &[f64],
-) -> Result<Vec<(f64, f64, usize)>, InterpreterError> {
+) -> std::vec::Vec<(f64, f64, usize)> {
   let a = coeffs[4];
   let b = coeffs[3] / a;
   let c = coeffs[2] / a;
@@ -2556,13 +2555,12 @@ fn solve_quartic_characteristic(
   // Solve resolvent cubic: m^3 - p/2 * m^2 - r*m + (p*r/2 - q^2/8) = 0
   let resolvent_coeffs = vec![p * r / 2.0 - q * q / 8.0, -r, -p / 2.0, 1.0];
 
-  let cubic_roots = solve_cubic_characteristic(&resolvent_coeffs)?;
+  let cubic_roots = solve_cubic_characteristic(&resolvent_coeffs);
   // Pick a real root
   let m = cubic_roots
     .iter()
     .find(|(_, im, _)| im.abs() < 1e-10)
-    .map(|(re, _, _)| *re)
-    .unwrap_or(cubic_roots[0].0);
+    .map_or(cubic_roots[0].0, |(re, _, _)| *re);
 
   let disc1 = 2.0 * m - p;
   let mut roots = Vec::new();
@@ -2576,7 +2574,7 @@ fn solve_quartic_characteristic(
 
     if disc2a >= -1e-10 {
       let s = disc2a.max(0.0).sqrt();
-      roots.push(((sqrt_disc1 + s) / 2.0 + shift, 0.0, 1));
+      roots.push((f64::midpoint(sqrt_disc1, s) + shift, 0.0, 1));
       roots.push(((sqrt_disc1 - s) / 2.0 + shift, 0.0, 1));
     } else {
       let s = (-disc2a).sqrt();
@@ -2585,7 +2583,7 @@ fn solve_quartic_characteristic(
 
     if disc2b >= -1e-10 {
       let s = disc2b.max(0.0).sqrt();
-      roots.push(((-sqrt_disc1 + s) / 2.0 + shift, 0.0, 1));
+      roots.push((f64::midpoint(-sqrt_disc1, s) + shift, 0.0, 1));
       roots.push(((-sqrt_disc1 - s) / 2.0 + shift, 0.0, 1));
     } else {
       let s = (-disc2b).sqrt();
@@ -2615,7 +2613,7 @@ fn solve_quartic_characteristic(
     roots.push((shift, -sqrt_disc1 / 2.0, 1));
   }
 
-  Ok(roots)
+  roots
 }
 
 /// Build homogeneous solution from characteristic roots
@@ -2924,7 +2922,7 @@ fn apply_initial_conditions(
 ) -> Result<Expr, InterpreterError> {
   // Replace C[i] with placeholder identifiers for Solve compatibility
   let placeholders: Vec<String> =
-    (1..=max_order).map(|i| format!("__C{}", i)).collect();
+    (1..=max_order).map(|i| format!("__C{i}")).collect();
 
   // Substitute C[i] -> __Ci in the general solution
   let mut sol_with_placeholders = general_solution.clone();
@@ -3254,21 +3252,18 @@ pub fn interpolation_ast(
   // Evaluate the data argument
   let data_evaluated = crate::evaluator::evaluate_expr_to_expr(data_arg)?;
 
-  let data_list = match &data_evaluated {
-    Expr::List(items) => items,
-    _ => {
-      // A non-list first argument is not interpolatable. wolframscript emits
-      // this message tagged `Interpolation` (regardless of the actual head)
-      // and keeps the call unevaluated.
-      crate::emit_message(&format!(
-        "Interpolation::innd: First argument in {} does not contain a list of data and coordinates.",
-        crate::syntax::format_expr(
-          &data_evaluated,
-          crate::syntax::ExprForm::Output
-        )
-      ));
-      return Ok(unevaluated(head, args));
-    }
+  let Expr::List(data_list) = &data_evaluated else {
+    // A non-list first argument is not interpolatable. wolframscript emits
+    // this message tagged `Interpolation` (regardless of the actual head)
+    // and keeps the call unevaluated.
+    crate::emit_message(&format!(
+      "Interpolation::innd: First argument in {} does not contain a list of data and coordinates.",
+      crate::syntax::format_expr(
+        &data_evaluated,
+        crate::syntax::ExprForm::Output
+      )
+    ));
+    return Ok(unevaluated(head, args));
   };
 
   if data_list.is_empty() {
@@ -3289,7 +3284,7 @@ pub fn interpolation_ast(
   if head == "ListInterpolation"
     && let Some(grid) = as_2d_scalar_grid(data_list)
   {
-    return build_2d_list_interpolation(grid, interp_order, head);
+    return Ok(build_2d_list_interpolation(&grid, interp_order, head));
   }
 
   // Determine format: list of values or list of {x, y} pairs
@@ -3407,7 +3402,7 @@ fn as_2d_scalar_grid(rows: &[Expr]) -> Option<Grid> {
     }
     let mut row_e = Vec::with_capacity(cells.len());
     let mut row_v = Vec::with_capacity(cells.len());
-    for c in cells.iter() {
+    for c in cells {
       let ce = crate::evaluator::evaluate_expr_to_expr(c).unwrap_or(c.clone());
       let v = match &ce {
         Expr::Integer(n) => *n as f64,
@@ -3428,10 +3423,10 @@ fn as_2d_scalar_grid(rows: &[Expr]) -> Option<Grid> {
 /// the `{orderR, orderC}` list (rather than an integer) marks it as 2-D for the
 /// evaluator. Orders are clamped per dimension to `min(requested, dim - 1, 3)`.
 fn build_2d_list_interpolation(
-  grid: Grid,
+  grid: &Grid,
   interp_order: i128,
   head: &str,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let (exprs, _vals) = &grid;
   let nr = exprs.len();
   let nc = exprs[0].len();
@@ -3463,10 +3458,10 @@ fn build_2d_list_interpolation(
     ]
     .into(),
   );
-  Ok(Expr::FunctionCall {
+  Expr::FunctionCall {
     name: "InterpolatingFunction".to_string(),
     args: vec![domain, grid_expr, orders].into(),
-  })
+  }
 }
 
 /// 1-D local Lagrange interpolation of `values` (sampled at positions
@@ -3565,7 +3560,7 @@ fn interpolating_function_property(
   };
   let mut xs: Vec<Expr> = Vec::with_capacity(pairs.len());
   let mut ys: Vec<Expr> = Vec::with_capacity(pairs.len());
-  for p in pairs.iter() {
+  for p in pairs {
     if let Expr::List(pair) = p
       && pair.len() == 2
     {
@@ -3655,25 +3650,19 @@ pub fn evaluate_interpolating_function(
   let x_val_expr = crate::evaluator::evaluate_expr_to_expr(&call_args[0])?;
   // Rationals and other exact numbers count as arguments too, not just
   // machine numbers: Interpolation[{1, 4, 9}][5/2] is 25/4.
-  let x_val = match interp_value_to_f64(&x_val_expr) {
-    Ok(v) => v,
-    Err(_) => {
-      // Can't evaluate symbolically — return unevaluated
-      return Ok(Expr::CurriedCall {
-        func: Box::new(unevaluated("InterpolatingFunction", func_args)),
-        args: call_args.to_vec(),
-      });
-    }
+  let Ok(x_val) = interp_value_to_f64(&x_val_expr) else {
+    // Can't evaluate symbolically — return unevaluated
+    return Ok(Expr::CurriedCall {
+      func: Box::new(unevaluated("InterpolatingFunction", func_args)),
+      args: call_args.to_vec(),
+    });
   };
 
   // Data is a list of {x, y} pairs
-  let data_points = match data {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "InterpolatingFunction: invalid data format".into(),
-      ));
-    }
+  let Expr::List(data_points) = data else {
+    return Err(InterpreterError::EvaluationError(
+      "InterpolatingFunction: invalid data format".into(),
+    ));
   };
 
   let n = data_points.len();
@@ -3813,7 +3802,7 @@ fn evaluate_interpolating_function_2d(
     };
     let mut rv = Vec::with_capacity(cells.len());
     let mut re = Vec::with_capacity(cells.len());
-    for c in cells.iter() {
+    for c in cells {
       rv.push(match c {
         Expr::Integer(n) => *n as f64,
         Expr::Real(f) => *f,
@@ -3973,7 +3962,7 @@ fn find_interval(
   let mut lo = 0usize;
   let mut hi = n - 1;
   while lo < hi - 1 {
-    let mid = (lo + hi) / 2;
+    let mid = usize::midpoint(lo, hi);
     let (x_mid, _) = extract_point(&data_points[mid])?;
     if x_val < x_mid {
       hi = mid;

@@ -358,13 +358,13 @@ fn agglomerate(
     .collect();
 
   // Grow the matrix to hold distances for the merged clusters too.
-  for row in dist.iter_mut() {
+  for row in &mut dist {
     row.resize(total, 0.0);
   }
   dist.resize(total, vec![0.0; total]);
 
   if linkage.uses_squared_distances() {
-    for row in dist.iter_mut() {
+    for row in &mut dist {
       for d in row.iter_mut() {
         *d *= *d;
       }
@@ -502,7 +502,7 @@ fn render_dendrogram_svg(
   // children always have smaller ids than their parent).
   for id in 0..nodes.len() {
     if let Some((l, r)) = nodes[id].children {
-      u[id] = (u[l] + u[r]) / 2.0;
+      u[id] = f64::midpoint(u[l], u[r]);
     }
   }
   let v: Vec<f64> = nodes.iter().map(|nd| nd.height / h_max).collect();
@@ -550,8 +550,7 @@ fn render_dendrogram_svg(
 
   let mut body = String::new();
   body.push_str(&format!(
-    "<rect width=\"{:.0}\" height=\"{:.0}\" fill=\"{}\"/>\n",
-    render_width, render_height, bg_color
+    "<rect width=\"{render_width:.0}\" height=\"{render_height:.0}\" fill=\"{bg_color}\"/>\n"
   ));
 
   // Draw the elbow connector of every merge.
@@ -565,16 +564,15 @@ fn render_dendrogram_svg(
     let (x2b, y2b) = to_px(u[r], v[id]);
     let (x2, y2) = to_px(u[r], v[r]);
     body.push_str(&format!(
-      "<path d=\"M {:.1} {:.1} L {:.1} {:.1} L {:.1} {:.1} L {:.1} {:.1}\" \
-       fill=\"none\" stroke=\"{}\" stroke-width=\"{:.1}\" \
-       stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n",
-      x1, y1, x1b, y1b, x2b, y2b, x2, y2, line_color, stroke
+      "<path d=\"M {x1:.1} {y1:.1} L {x1b:.1} {y1b:.1} L {x2b:.1} {y2b:.1} L {x2:.1} {y2:.1}\" \
+       fill=\"none\" stroke=\"{line_color}\" stroke-width=\"{stroke:.1}\" \
+       stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n"
     ));
   }
 
   // Leaf labels next to the leaf tips.
   for &leaf in &order {
-    let label = labels.get(leaf).map(String::as_str).unwrap_or("");
+    let label = labels.get(leaf).map_or("", String::as_str);
     if label.is_empty() {
       continue;
     }
@@ -599,13 +597,12 @@ fn render_dendrogram_svg(
   }
 
   let mut buf = format!(
-    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {:.0} {:.0}\" \
-     xmlns=\"http://www.w3.org/2000/svg\">\n{}</svg>",
-    svg_width, svg_height, render_width, render_height, body
+    "<svg width=\"{svg_width}\" height=\"{svg_height}\" viewBox=\"0 0 {render_width:.0} {render_height:.0}\" \
+     xmlns=\"http://www.w3.org/2000/svg\">\n{body}</svg>"
   );
 
   if full_width {
-    let old = format!("width=\"{}\" height=\"{}\"", svg_width, svg_height);
+    let old = format!("width=\"{svg_width}\" height=\"{svg_height}\"");
     buf = buf.replacen(&old, "width=\"100%\"", 1);
   }
 

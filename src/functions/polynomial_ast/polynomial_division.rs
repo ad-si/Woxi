@@ -215,9 +215,8 @@ pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if guard > 100_000 {
       return Ok(unevaluated());
     }
-    let dp = match exponent(&p) {
-      Some(d) => d,
-      None => return Ok(unevaluated()),
+    let Some(dp) = exponent(&p) else {
+      return Ok(unevaluated());
     };
     let lcp = coeff(&p, dp);
 

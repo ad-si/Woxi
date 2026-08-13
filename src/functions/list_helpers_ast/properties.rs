@@ -320,7 +320,7 @@ pub fn tensor_contract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse contraction pairs. Each must be a 2-element list of 1-indexed ints.
   let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(pairs_list.len());
   let mut used = vec![false; rank];
-  for p in pairs_list.iter() {
+  for p in pairs_list {
     let Expr::List(ij) = p else {
       return Ok(unevaluated());
     };
@@ -497,7 +497,7 @@ fn tensor_shape(expr: &Expr) -> Option<Vec<usize>> {
   }
   let mut dims = vec![items.len()];
   let inner_shape = tensor_shape(&items[0])?;
-  for sub in items.iter() {
+  for sub in items {
     let s = tensor_shape(sub)?;
     if s != inner_shape {
       return None;
@@ -530,7 +530,7 @@ pub fn tensor_symmetry_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   }
   // Require a square matrix: every row is a list of length n.
   let mut matrix: Vec<Vec<&Expr>> = Vec::with_capacity(n);
-  for row in rows.iter() {
+  for row in rows {
     let Expr::List(cells) = row else {
       return Ok(unevaluated());
     };
@@ -939,7 +939,7 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(items) => {
         let mut dims = vec![items.len() as i128];
         if !items.is_empty()
-          && child_max.map(|m| m > 0).unwrap_or(true)
+          && child_max.is_none_or(|m| m > 0)
           && items.iter().all(|a| matches!(a, Expr::List(_)))
         {
           let sub_dims: Vec<Vec<i128>> = items
@@ -955,7 +955,7 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::FunctionCall { name, args } => {
         let mut dims = vec![args.len() as i128];
         if !args.is_empty()
-          && child_max.map(|m| m > 0).unwrap_or(true)
+          && child_max.is_none_or(|m| m > 0)
           && args.iter().all(
             |a| matches!(a, Expr::FunctionCall { name: n, .. } if n == name),
           )
@@ -976,7 +976,7 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Association(pairs) => {
         let mut dims = vec![pairs.len() as i128];
         if !pairs.is_empty()
-          && child_max.map(|m| m > 0).unwrap_or(true)
+          && child_max.is_none_or(|m| m > 0)
           && pairs.iter().all(|(_, v)| matches!(v, Expr::Association(_)))
         {
           let sub_dims: Vec<Vec<i128>> = pairs

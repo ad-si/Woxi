@@ -6,48 +6,37 @@ fn assert_numeric_notation(
   exponent: i32,
   expected: &str,
 ) {
-  let expression = format!("N[{}, {}]", input, precision);
+  let expression = format!("N[{input}, {precision}]");
   let result = interpret(&expression).unwrap();
   assert!(
     result.starts_with(expected),
-    "{} should start with {}: {}",
-    expression,
-    expected,
-    result
+    "{expression} should start with {expected}: {result}"
   );
 
   let trailing = if exponent == 0 {
-    format!("`{}.", precision)
+    format!("`{precision}.")
   } else {
-    format!("`10.*^{}", exponent)
+    format!("`10.*^{exponent}")
   };
   assert!(
     result.ends_with(&trailing),
-    "{} should have precision/exponent marker {}: {}",
-    expression,
-    trailing,
-    result
+    "{expression} should have precision/exponent marker {trailing}: {result}"
   );
 
   // Check digit count: should have > precision sig digits
   // since this is non-scientific notation case.
   let re = if exponent == 0 {
     regex::Regex::new(&format!(
-      "^\\-?[0-9]+\\.[0-9]{{{0},}}+`{0}\\.$",
-      precision
+      "^\\-?[0-9]+\\.[0-9]{{{precision},}}+`{precision}\\.$"
     ))
   } else {
     regex::Regex::new(&format!(
-      "^\\-?[0-9]+\\.[0-9]{{{0},}}+`10\\.\\*\\^{1}$",
-      precision, exponent
+      "^\\-?[0-9]+\\.[0-9]{{{precision},}}+`10\\.\\*\\^{exponent}$"
     ))
   };
   assert!(
     re.unwrap().is_match(&result),
-    "{} should have at least {} digits: {}",
-    expression,
-    precision,
-    result
+    "{expression} should have at least {precision} digits: {result}"
   );
 }
 
@@ -163,8 +152,7 @@ mod n_arbitrary_precision {
     let result = interpret("N[F[1.2, 2/9], $MachinePrecision]").unwrap();
     assert!(
       result.starts_with("F[1.2, 0."),
-      "expected `1.2` to stay machine-precision, got: {}",
-      result
+      "expected `1.2` to stay machine-precision, got: {result}"
     );
   }
 
@@ -177,8 +165,7 @@ mod n_arbitrary_precision {
     let result = interpret("N[F[1.2`3, 2/9], 5]").unwrap();
     assert!(
       result.starts_with("F[1.2`3., 0."),
-      "expected `1.2\\`3` to stay at precision 3, got: {}",
-      result
+      "expected `1.2\\`3` to stay at precision 3, got: {result}"
     );
   }
 
@@ -207,8 +194,7 @@ mod n_arbitrary_precision {
     let result = interpret("N[b,_]=1.2`3; N[F[b, 2/9], 5]").unwrap();
     assert!(
       result.starts_with("F[1.2`3., 0."),
-      "expected b → 1.2\\`3 substitution, got: {}",
-      result
+      "expected b → 1.2\\`3 substitution, got: {result}"
     );
   }
 

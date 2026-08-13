@@ -33,23 +33,22 @@ struct Cell {
 /// markers in the gutter between groups 2 and 3 show where the detached
 /// rows insert.
 fn element_cell(elem: &ElementLayout) -> Cell {
-  match elem.group {
-    Some(g) => Cell {
+  if let Some(g) = elem.group {
+    Cell {
       col: (g - 1) as f64,
       row: (elem.period - 1) as f64,
-    },
-    None => {
-      // f-block. Lanthanides (57–70) and actinides (89–102) each occupy a
-      // separate row below the main table, offset by half a row as a gap.
-      let (base_z, extra_row) = if elem.atomic_number <= 71 {
-        (57, 7.6)
-      } else {
-        (89, 8.6)
-      };
-      Cell {
-        col: 2.0 + (elem.atomic_number - base_z) as f64,
-        row: extra_row,
-      }
+    }
+  } else {
+    // f-block. Lanthanides (57–70) and actinides (89–102) each occupy a
+    // separate row below the main table, offset by half a row as a gap.
+    let (base_z, extra_row) = if elem.atomic_number <= 71 {
+      (57, 7.6)
+    } else {
+      (89, 8.6)
+    };
+    Cell {
+      col: 2.0 + (elem.atomic_number - base_z) as f64,
+      row: extra_row,
     }
   }
 }
@@ -199,9 +198,8 @@ fn push_phase_legend(body: &mut String, vb_w: f64, dark: bool) {
   let row_y = 10.7 * CELL;
   for (color, label) in entries {
     body.push_str(&format!(
-      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" \
-       rx=\"6\" fill=\"{}\" stroke=\"{}\" stroke-width=\"1.5\"/>\n",
-      x, row_y, SWATCH, SWATCH, color, border,
+      "<rect x=\"{x:.1}\" y=\"{row_y:.1}\" width=\"{SWATCH:.1}\" height=\"{SWATCH:.1}\" \
+       rx=\"6\" fill=\"{color}\" stroke=\"{border}\" stroke-width=\"1.5\"/>\n",
     ));
     body.push_str(&format!(
       "<text x=\"{:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" \
@@ -263,7 +261,7 @@ fn parse_highlights(first: Option<&Expr>) -> HighlightSpec {
   match first {
     Expr::List(items) => {
       let mut set = std::collections::HashSet::new();
-      for item in items.iter() {
+      for item in items {
         match element_entity_atomic_number(item) {
           Some(z) => {
             set.insert(z);
@@ -284,9 +282,8 @@ fn parse_highlights(first: Option<&Expr>) -> HighlightSpec {
           }
           if resolve_atomic_number(other).is_some() {
             crate::emit_message_to_stdout(&format!(
-              "PeriodicTablePlot::elmntav: \"{}\" is not an available \
-               \"Element\" property.",
-              s
+              "PeriodicTablePlot::elmntav: \"{s}\" is not an available \
+               \"Element\" property."
             ));
           }
           HighlightSpec::Unevaluated
@@ -380,8 +377,7 @@ pub fn periodic_table_plot_ast(
 
   let mut body = String::new();
   body.push_str(&format!(
-    "<rect width=\"{:.0}\" height=\"{:.0}\" fill=\"{}\"/>\n",
-    vb_w, vb_h, bg
+    "<rect width=\"{vb_w:.0}\" height=\"{vb_h:.0}\" fill=\"{bg}\"/>\n"
   ));
 
   for elem in &elements {
@@ -451,12 +447,11 @@ pub fn periodic_table_plot_ast(
   let width_attr = if full_width {
     "width=\"100%\"".to_string()
   } else {
-    format!("width=\"{}\" height=\"{}\"", svg_width, svg_height)
+    format!("width=\"{svg_width}\" height=\"{svg_height}\"")
   };
   let svg = format!(
-    "<svg {} viewBox=\"0 0 {:.0} {:.0}\" \
-     xmlns=\"http://www.w3.org/2000/svg\">\n{}</svg>",
-    width_attr, vb_w, vb_h, body
+    "<svg {width_attr} viewBox=\"0 0 {vb_w:.0} {vb_h:.0}\" \
+     xmlns=\"http://www.w3.org/2000/svg\">\n{body}</svg>"
   );
 
   let graphics = crate::graphics_result(svg);

@@ -45,17 +45,11 @@ pub fn resultant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Get degrees
-  let deg1 = match max_power_int(poly1, &var) {
-    Some(d) => d,
-    None => {
-      return Ok(unevaluated("Resultant", args));
-    }
+  let Some(deg1) = max_power_int(poly1, &var) else {
+    return Ok(unevaluated("Resultant", args));
   };
-  let deg2 = match max_power_int(poly2, &var) {
-    Some(d) => d,
-    None => {
-      return Ok(unevaluated("Resultant", args));
-    }
+  let Some(deg2) = max_power_int(poly2, &var) else {
+    return Ok(unevaluated("Resultant", args));
   };
 
   let m = deg1 as usize;
@@ -733,10 +727,10 @@ pub fn subresultant_polynomial_remainders_ast(
     let mut c1 = ic1.clone();
     let mut c2 = ic2.clone();
     if let Some(p) = modulus {
-      for v in c1.iter_mut() {
+      for v in &mut c1 {
         *v = v.rem_euclid(p);
       }
-      for v in c2.iter_mut() {
+      for v in &mut c2 {
         *v = v.rem_euclid(p);
       }
     }
@@ -921,7 +915,7 @@ fn int_prem(a: &[i128], b: &[i128], modulus: Option<i128>) -> Vec<i128> {
       new[i + dr - db] -= lead * c;
     }
     if let Some(p) = modulus {
-      for v in new.iter_mut() {
+      for v in &mut new {
         *v = v.rem_euclid(p);
       }
     }
@@ -930,11 +924,11 @@ fn int_prem(a: &[i128], b: &[i128], modulus: Option<i128>) -> Vec<i128> {
     e -= 1;
   }
   for _ in 0..e {
-    for v in r.iter_mut() {
+    for v in &mut r {
       *v *= lcb;
     }
     if let Some(p) = modulus {
-      for v in r.iter_mut() {
+      for v in &mut r {
         *v = v.rem_euclid(p);
       }
     }
@@ -964,7 +958,7 @@ fn sym_prem(
     }
     // The leading term cancels by construction.
     new[dr] = Expr::Integer(0);
-    for v in new.iter_mut() {
+    for v in &mut new {
       *v = simp(v)?;
     }
     trim_sym_poly(&mut new);
@@ -972,7 +966,7 @@ fn sym_prem(
     e -= 1;
   }
   for _ in 0..e {
-    for v in r.iter_mut() {
+    for v in &mut r {
       *v = simp(&sym_mul(v, &lcb))?;
     }
   }
@@ -1064,10 +1058,7 @@ fn bareiss_determinant(matrix: &mut [Vec<i128>]) -> i128 {
         break;
       }
     }
-    let pivot_row = match pivot_row {
-      Some(r) => r,
-      None => return 0, // singular matrix
-    };
+    let Some(pivot_row) = pivot_row else { return 0 };
 
     if pivot_row != k {
       matrix.swap(k, pivot_row);

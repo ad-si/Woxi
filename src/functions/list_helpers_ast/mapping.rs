@@ -521,7 +521,12 @@ fn map_at_rebuilt(
     ));
   };
   let partw = |path: &[i128]| {
-    partw_parts(&path.iter().map(|p| p.to_string()).collect::<Vec<_>>());
+    partw_parts(
+      &path
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect::<Vec<_>>(),
+    );
   };
   let psl = || {
     crate::emit_message(&format!(
@@ -760,9 +765,8 @@ fn map_at_rebuilt(
       // The empty path is the expression itself.
       return Ok(Ok(apply_func_ast(func, expr)?));
     }
-    let items = match path_parts(expr) {
-      Some(p) => p,
-      None => return Ok(Err(())),
+    let Some(items) = path_parts(expr) else {
+      return Ok(Err(()));
     };
     let len = items.len() as i128;
     let n = path[0];
@@ -832,27 +836,26 @@ fn map_at_rebuilt(
 
   // Associations take part in the positional forms too, with a level index
   // addressing their values in order.
-  let items: Vec<Expr> = match path_parts(list) {
-    Some(p) => p,
-    None => {
-      // Atomic subject: partw with the spec (when it is positional)
-      match pos_spec {
-        Expr::Integer(n) => partw(&[*n]),
-        Expr::List(parts) => {
-          if let Some(path) = parts
-            .iter()
-            .map(expr_to_i128)
-            .collect::<Option<Vec<i128>>>()
-          {
-            partw(&path);
-          } else {
-            psl();
-          }
+  let items: Vec<Expr> = if let Some(p) = path_parts(list) {
+    p
+  } else {
+    // Atomic subject: partw with the spec (when it is positional)
+    match pos_spec {
+      Expr::Integer(n) => partw(&[*n]),
+      Expr::List(parts) => {
+        if let Some(path) = parts
+          .iter()
+          .map(expr_to_i128)
+          .collect::<Option<Vec<i128>>>()
+        {
+          partw(&path);
+        } else {
+          psl();
         }
-        _ => psl(),
       }
-      return Ok(unevaluated());
+      _ => psl(),
     }
+    return Ok(unevaluated());
   };
   let items = items.as_slice();
   let len = items.len() as i128;
@@ -869,12 +872,11 @@ fn map_at_rebuilt(
     }
     Expr::Integer(_) | Expr::BigInteger(_) => {
       let n = expr_to_i128(pos_spec).unwrap();
-      match apply_path(func, list, &[n])? {
-        Ok(v) => Ok(v),
-        Err(()) => {
-          partw(&[n]);
-          Ok(unevaluated())
-        }
+      if let Ok(v) = apply_path(func, list, &[n])? {
+        Ok(v)
+      } else {
+        partw(&[n]);
+        Ok(unevaluated())
       }
     }
     // An empty position list selects nothing, so the expression is unchanged.
@@ -1480,15 +1482,12 @@ pub fn map_thread_ast(
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
-  let outer_items = match lists {
-    Expr::List(items) => items,
-    _ => {
-      crate::emit_message(&format!(
-        "MapThread::list: List expected at position 2 in {}.",
-        show(&original())
-      ));
-      return Ok(original());
-    }
+  let Expr::List(outer_items) = lists else {
+    crate::emit_message(&format!(
+      "MapThread::list: List expected at position 2 in {}.",
+      show(&original())
+    ));
+    return Ok(original());
   };
 
   // Level 0: no threading — apply the function directly to the top-level
@@ -1508,18 +1507,17 @@ pub fn map_thread_ast(
   let required = level.unwrap_or(1);
   let mut sublists: Vec<Vec<Expr>> = Vec::new();
   for (i, item) in outer_items.iter().enumerate() {
-    match item {
-      Expr::List(items) => sublists.push(items.to_vec()),
-      _ => {
-        crate::emit_message(&format!(
-          "MapThread::mptd: Object {} at position {{2, {}}} in {} has only 0 of required {} dimensions.",
-          show(item),
-          i + 1,
-          show(&original()),
-          required
-        ));
-        return Ok(original());
-      }
+    if let Expr::List(items) = item {
+      sublists.push(items.to_vec());
+    } else {
+      crate::emit_message(&format!(
+        "MapThread::mptd: Object {} at position {{2, {}}} in {} has only 0 of required {} dimensions.",
+        show(item),
+        i + 1,
+        show(&original()),
+        required
+      ));
+      return Ok(original());
     }
   }
   // Check all sublists have the same length
@@ -2033,11 +2031,8 @@ pub fn compose_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ComposeList expects exactly 2 arguments".into(),
     ));
   }
-  let funcs = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(unevaluated("ComposeList", args));
-    }
+  let Expr::List(funcs) = &args[0] else {
+    return Ok(unevaluated("ComposeList", args));
   };
 
   let mut result = vec![args[1].clone()];

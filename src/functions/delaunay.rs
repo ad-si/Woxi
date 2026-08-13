@@ -42,8 +42,8 @@ fn triangulate(points: &[[f64; 2]]) -> Option<Vec<[usize; 3]>> {
     max_y = max_y.max(p[1]);
   }
   let span = (max_x - min_x).max(max_y - min_y).max(1.0) * 1000.0;
-  let cx = (min_x + max_x) / 2.0;
-  let cy = (min_y + max_y) / 2.0;
+  let cx = f64::midpoint(min_x, max_x);
+  let cy = f64::midpoint(min_y, max_y);
   // The super-triangle's vertices sit past the end of the point list.
   let mut all: Vec<[f64; 2]> = points.to_vec();
   all.push([cx - span, cy - span]);
@@ -98,7 +98,7 @@ fn triangulate(points: &[[f64; 2]]) -> Option<Vec<[usize; 3]>> {
     return None;
   }
   // A stable order: by the vertices each triangle names.
-  for tri in out.iter_mut() {
+  for tri in &mut out {
     // Rotate so the smallest index leads, keeping the orientation.
     let smallest = (0..3).min_by_key(|k| tri[*k]).unwrap();
     *tri = [
@@ -107,7 +107,7 @@ fn triangulate(points: &[[f64; 2]]) -> Option<Vec<[usize; 3]>> {
       tri[(smallest + 2) % 3],
     ];
   }
-  out.sort();
+  out.sort_unstable();
   Some(out)
 }
 
@@ -125,7 +125,7 @@ pub fn delaunay_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let mut points: Vec<[f64; 2]> = Vec::with_capacity(items.len());
   let mut exact = true;
-  for item in items.iter() {
+  for item in items {
     let Expr::List(coords) = item else {
       return Ok(original());
     };

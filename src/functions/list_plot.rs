@@ -287,13 +287,10 @@ fn parse_list_data_err(
     return Ok(series);
   }
 
-  let items = match &data {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "ListPlot: first argument must be a list".into(),
-      ));
-    }
+  let Expr::List(items) = &data else {
+    return Err(InterpreterError::EvaluationError(
+      "ListPlot: first argument must be a list".into(),
+    ));
   };
 
   if items.is_empty() {
@@ -334,7 +331,7 @@ fn parse_list_data_err(
       let mut all_series = Vec::new();
       for item in items {
         if let Expr::List(series_items) = item {
-          let points = parse_single_series(series_items)?;
+          let points = parse_single_series(series_items);
           all_series.push(points);
         }
       }
@@ -363,7 +360,7 @@ fn parse_list_data_err(
 /// Parse a single series: either plain y-values or {x, y} pairs.
 fn parse_single_series(
   series_items: &[Expr],
-) -> Result<Vec<ErrPoint>, InterpreterError> {
+) -> std::vec::Vec<crate::functions::list_plot::ErrPoint> {
   // Check if items are {x, y} pairs
   let is_xy_pairs = !series_items.is_empty()
     && series_items
@@ -388,7 +385,7 @@ fn parse_single_series(
       }
     }
   }
-  Ok(points)
+  points
 }
 
 /// Reinterpret list data according to an explicit `DataRange` option, the
@@ -524,7 +521,11 @@ fn parse_list_data_labeled(
 fn parse_temporal_components(
   ts: &Expr,
   selector: &Expr,
-) -> Result<LabeledErrSeries, InterpreterError> {
+) -> (
+  std::vec::Vec<std::vec::Vec<crate::functions::list_plot::ErrPoint>>,
+  std::vec::Vec<std::option::Option<std::string::String>>,
+  std::vec::Vec<std::vec::Vec<std::option::Option<std::string::String>>>,
+) {
   let pairs =
     crate::functions::timeseries_ast::time_series_pairs(ts).unwrap_or_default();
   let sel =
@@ -555,7 +556,7 @@ fn parse_temporal_components(
         .collect()
     })
     .collect();
-  Ok((series, Vec::new(), Vec::new()))
+  (series, Vec::new(), Vec::new())
 }
 
 /// Parse the `ListPlot[data -> labels]` form: the left side is the data
@@ -619,7 +620,7 @@ fn parse_list_data_err_labeled(
     let lhs =
       evaluate_expr_to_expr(pattern).unwrap_or_else(|_| *pattern.clone());
     if crate::functions::timeseries_ast::time_series_pairs(&lhs).is_some() {
-      return parse_temporal_components(&lhs, replacement);
+      return Ok(parse_temporal_components(&lhs, replacement));
     }
     return parse_rule_labeled(pattern, replacement);
   }
@@ -692,7 +693,7 @@ fn parse_list_data_err_labeled(
     for (content, label) in unwrapped {
       match &content {
         Expr::List(series_items) => {
-          all_series.push(parse_single_series(series_items)?);
+          all_series.push(parse_single_series(series_items));
         }
         // A labeled scalar among datasets contributes a one-point series.
         other => match eval_to_value_err(other) {
@@ -883,14 +884,14 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         // `{{left, right}, {bottom, top}}` form. Bottom/left reuse the
         // axes-label render path; top/right get their own frame edges.
         "FrameLabel" => {
-          crate::functions::plot::apply_frame_label_option(replacement, opts)
+          crate::functions::plot::apply_frame_label_option(replacement, opts);
         }
         // `Ticks -> {xspec, yspec}` marks exactly the positions named,
         // each optionally with its own `{pos, label}` text.
         "Ticks" => match replacement {
           Expr::Identifier(v) if v == "None" => opts.ticks = false,
           Expr::Identifier(v) if v == "Automatic" || v == "All" => {
-            opts.ticks = true
+            opts.ticks = true;
           }
           Expr::List(items) if (1..=2).contains(&items.len()) => {
             opts.ticks_x =
@@ -902,7 +903,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           _ => {}
         },
         "Frame" => {
-          opts.frame = crate::functions::plot::parse_frame_option(replacement)
+          opts.frame = crate::functions::plot::parse_frame_option(replacement);
         }
         "Axes" => {
           if let Some(axes) =
@@ -913,7 +914,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         }
         "ImagePadding" => {
           opts.image_padding =
-            crate::functions::plot::parse_image_padding(replacement)
+            crate::functions::plot::parse_image_padding(replacement);
         }
         // "Fences" (capped error bars) is the default; "Bars" renders with
         // the same bar geometry. None hides the uncertainty intervals.
@@ -1201,10 +1202,8 @@ fn render_panel_layout(
     };
 
     let single = std::slice::from_ref(series);
-    let range_single = range_series
-      .get(idx)
-      .map(std::slice::from_ref)
-      .unwrap_or(single);
+    let range_single =
+      range_series.get(idx).map_or(single, std::slice::from_ref);
     let (x_range, y_range) =
       compute_ranges_scaled(range_single, opts.log_x, opts.log_y);
     let y_range = adjust_y_range_for_filling_opts(&opts, y_range);
@@ -1232,7 +1231,9 @@ fn render_panel_layout(
 /// Attach dataset labels from `Labeled` wrappers as callout labels, unless
 /// explicit Callout labels are already present.
 fn apply_dataset_labels(opts: &mut PlotOptions, labels: &[Option<String>]) {
-  if labels.iter().any(|l| l.is_some()) && opts.callout_labels.is_empty() {
+  if labels.iter().any(std::option::Option::is_some)
+    && opts.callout_labels.is_empty()
+  {
     opts.callout_labels = labels.to_vec();
   }
 }
@@ -1257,7 +1258,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let curve_transformed =
     parsed.joined && matches!(parsed.interpolation_order, Some(o) if o != 1);
   let draw_series = if curve_transformed {
-    parsed.opts.data_points = all_series.clone();
+    parsed.opts.data_points.clone_from(&all_series);
     interpolate_series(&all_series, parsed.interpolation_order.unwrap())
   } else {
     all_series
@@ -1341,13 +1342,10 @@ fn parse_complex_list_data(
   arg: &Expr,
 ) -> Result<Vec<Vec<(f64, f64)>>, InterpreterError> {
   let data = evaluate_expr_to_expr(arg)?;
-  let items = match &data {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "ComplexListPlot: first argument must be a list".into(),
-      ));
-    }
+  let Expr::List(items) = &data else {
+    return Err(InterpreterError::EvaluationError(
+      "ComplexListPlot: first argument must be a list".into(),
+    ));
   };
 
   if items.is_empty() {
@@ -1431,7 +1429,7 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let curve_transformed =
     matches!(parsed.interpolation_order, Some(o) if o != 1);
   let draw_series = if curve_transformed {
-    parsed.opts.data_points = all_series.clone();
+    parsed.opts.data_points.clone_from(&all_series);
     interpolate_series(&all_series, parsed.interpolation_order.unwrap())
   } else {
     all_series
@@ -1669,13 +1667,10 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let expr = &args[0];
 
   // Parse iteration spec: {var, min, max} or {var, min, max, step}
-  let iter_spec = match &args[1] {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
+  let Expr::List(iter_spec) = &args[1] else {
+    return Err(InterpreterError::EvaluationError(
         "DiscretePlot: second argument must be an iteration specification {var, min, max}".into(),
       ));
-    }
   };
 
   if iter_spec.len() < 2 || iter_spec.len() > 4 {
@@ -1840,7 +1835,7 @@ fn collect_audio_series(expr: &Expr) -> Option<Vec<Vec<(f64, f64)>>> {
     && !items.is_empty()
   {
     let mut out = Vec::new();
-    for item in items.iter() {
+    for item in items {
       out.extend(audio_channels(item)?);
     }
     return Some(out);

@@ -838,16 +838,14 @@ pub fn inverse_z_transform_ast(
     let mut a = matrix.clone();
     for col in 0..m {
       let pivot = (col..m).find(|&r0| a[r0][col].0 != 0);
-      let pivot = match pivot {
-        Some(p0) => p0,
-        None => return Ok(unevaluated(args)),
+      let Some(pivot) = pivot else {
+        return Ok(unevaluated(args));
       };
       a.swap(col, pivot);
       rhs.swap(col, pivot);
       for row in (col + 1)..m {
-        let factor = match frac_div(a[row][col], a[col][col]) {
-          Some(f) => f,
-          None => return Ok(unevaluated(args)),
+        let Some(factor) = frac_div(a[row][col], a[col][col]) else {
+          return Ok(unevaluated(args));
         };
         for kk in col..m {
           let sub = frac_mul(factor, a[col][kk]);
@@ -1040,9 +1038,8 @@ pub fn fourier_coefficient_ast(
   let n_arg = args[2].clone();
 
   // Polynomial in t with rational coefficients, degree <= 3
-  let coeffs = match poly_coeffs(&args[0], &t_var) {
-    Some(c) => c,
-    None => return Ok(unevaluated(args)),
+  let Some(coeffs) = poly_coeffs(&args[0], &t_var) else {
+    return Ok(unevaluated(args));
   };
   if coeffs.len() > 4 {
     return Ok(unevaluated(args));
@@ -1197,9 +1194,8 @@ pub fn fourier_sin_cos_coefficient_ast(
   }
 
   // Single monomial c*t^k with rational c, k <= 3
-  let coeffs = match poly_coeffs(&args[0], &t_var) {
-    Some(c) => c,
-    None => return Ok(unevaluated(args)),
+  let Some(coeffs) = poly_coeffs(&args[0], &t_var) else {
+    return Ok(unevaluated(args));
   };
   if coeffs.len() > 4 {
     return Ok(unevaluated(args));

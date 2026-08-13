@@ -1156,8 +1156,7 @@ mod tensor_symmetry {
     let result = interpret("TensorSymmetry[{1, 2, 3}]").unwrap();
     assert!(
       result.contains("TensorSymmetry"),
-      "expected unevaluated, got {}",
-      result
+      "expected unevaluated, got {result}"
     );
   }
 }
@@ -1492,20 +1491,20 @@ mod find_peaks {
     let v = "{1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3, 2, 4, 2, 2, 1}";
     // The plateau at 9/2 has sharpness ((6-5) + (6-4))/2 = 3/2.
     assert_eq!(
-      interpret(&format!("FindPeaks[{}, 0, 1]", v)).unwrap(),
+      interpret(&format!("FindPeaks[{v}, 0, 1]")).unwrap(),
       "{{9/2, 6}, {10, 7}, {13, 4}}"
     );
     assert_eq!(
-      interpret(&format!("FindPeaks[{}, 0, 2]", v)).unwrap(),
+      interpret(&format!("FindPeaks[{v}, 0, 2]")).unwrap(),
       "{{10, 7}, {13, 4}}"
     );
     // The peak at 13 has sharpness (4-2) + (4-2) = 4.
     assert_eq!(
-      interpret(&format!("FindPeaks[{}, 0, 4.5]", v)).unwrap(),
+      interpret(&format!("FindPeaks[{v}, 0, 4.5]")).unwrap(),
       "{{10, 7}}"
     );
     // The peak at 10 has sharpness (7-4) + (7-3) = 7.
-    assert_eq!(interpret(&format!("FindPeaks[{}, 0, 8]", v)).unwrap(), "{}");
+    assert_eq!(interpret(&format!("FindPeaks[{v}, 0, 8]")).unwrap(), "{}");
     // A wider interior plateau divides by its width.
     assert_eq!(
       interpret("FindPeaks[{0, 5, 5, 5, 0}, 0, 10/3]").unwrap(),
@@ -1539,19 +1538,19 @@ mod find_peaks {
   fn threshold_filters_peaks() {
     let v = "{1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3, 2, 4, 2, 2, 1}";
     assert_eq!(
-      interpret(&format!("FindPeaks[{}, 0, 0, 4]", v)).unwrap(),
+      interpret(&format!("FindPeaks[{v}, 0, 0, 4]")).unwrap(),
       "{{9/2, 6}, {10, 7}, {13, 4}}"
     );
     assert_eq!(
-      interpret(&format!("FindPeaks[{}, 0, 0, 4.1]", v)).unwrap(),
+      interpret(&format!("FindPeaks[{v}, 0, 0, 4.1]")).unwrap(),
       "{{9/2, 6}, {10, 7}}"
     );
     assert_eq!(
-      interpret(&format!("FindPeaks[{}, 0, 0, 6]", v)).unwrap(),
+      interpret(&format!("FindPeaks[{v}, 0, 0, 6]")).unwrap(),
       "{{9/2, 6}, {10, 7}}"
     );
     assert_eq!(
-      interpret(&format!("FindPeaks[{}, 0, 0, 7.1]", v)).unwrap(),
+      interpret(&format!("FindPeaks[{v}, 0, 0, 7.1]")).unwrap(),
       "{}"
     );
     // A negative threshold is allowed.
@@ -1561,11 +1560,11 @@ mod find_peaks {
     );
     // Sharpness and threshold combine, and either may name its scale.
     assert_eq!(
-      interpret(&format!("FindPeaks[{}, 0, 2, 5]", v)).unwrap(),
+      interpret(&format!("FindPeaks[{v}, 0, 2, 5]")).unwrap(),
       "{{10, 7}}"
     );
     assert_eq!(
-      interpret(&format!("FindPeaks[{}, 0, {{2, 0}}, {{5, 0}}]", v)).unwrap(),
+      interpret(&format!("FindPeaks[{v}, 0, {{2, 0}}, {{5, 0}}]")).unwrap(),
       "{{10, 7}}"
     );
   }
@@ -5981,7 +5980,7 @@ mod random_complex {
   fn no_args_is_complex() {
     // RandomComplex[] should be a complex number a + b*I with a, b in [0, 1)
     let s = interpret("RandomComplex[]").unwrap();
-    assert!(s.contains("I"));
+    assert!(s.contains('I'));
   }
 
   #[test]
@@ -6415,8 +6414,7 @@ mod distributions {
     // Should contain x and be a Piecewise
     assert!(
       result.contains("Piecewise") && result.contains("x > 0"),
-      "Expected Piecewise PDF: {}",
-      result
+      "Expected Piecewise PDF: {result}"
     );
   }
 
@@ -6637,7 +6635,7 @@ mod random_variate {
   fn poisson_single_is_non_negative_integer() {
     let result = interpret("RandomVariate[PoissonDistribution[3]]").unwrap();
     let val: i64 = result.parse().unwrap();
-    assert!(val >= 0, "Poisson sample must be non-negative, got {}", val);
+    assert!(val >= 0, "Poisson sample must be non-negative, got {val}");
   }
 
   #[test]
@@ -6668,7 +6666,7 @@ mod random_variate {
         .unwrap()
         .parse()
         .unwrap();
-    assert!(result > 4.0 && result < 6.0, "got {}", result);
+    assert!(result > 4.0 && result < 6.0, "got {result}");
   }
 
   #[test]
@@ -6717,7 +6715,7 @@ mod random_variate {
         .unwrap()
         .parse()
         .unwrap();
-    assert!(result > 13.0 && result < 17.0, "got {}", result);
+    assert!(result > 13.0 && result < 17.0, "got {result}");
   }
 
   #[test]
@@ -9188,8 +9186,7 @@ mod join_non_list {
       msgs.iter().any(|m| m.contains(
         "Join::heads: Heads Plus and Times at positions 1 and 2 are expected to be the same."
       )),
-      "expected Join::heads message, got {:?}",
-      msgs
+      "expected Join::heads message, got {msgs:?}"
     );
   }
 
@@ -9206,8 +9203,7 @@ mod join_non_list {
       msgs.iter().any(|m| m.contains(
         "Join::heads: Heads Plus and Times at positions 1 and 3 are expected to be the same."
       )),
-      "expected position 3 in Join::heads message, got {:?}",
-      msgs
+      "expected position 3 in Join::heads message, got {msgs:?}"
     );
   }
 
@@ -9223,8 +9219,7 @@ mod join_non_list {
       msgs.iter().any(|m| m.contains(
         "Join::heads: Heads Plus and List at positions 1 and 2 are expected to be the same."
       )),
-      "expected Plus/List heads message, got {:?}",
-      msgs
+      "expected Plus/List heads message, got {msgs:?}"
     );
   }
 
@@ -11798,33 +11793,28 @@ mod nearest {
   fn distance_function_applies_to_every_form() {
     let metric = "DistanceFunction -> (Abs[#1 - #2] &)";
     assert_eq!(
-      interpret(&format!("Nearest[{{1, 2, 3, 10}}, 4, 2, {}]", metric))
-        .unwrap(),
+      interpret(&format!("Nearest[{{1, 2, 3, 10}}, 4, 2, {metric}]")).unwrap(),
       "{3, 2}"
     );
     assert_eq!(
-      interpret(&format!("Nearest[{{1, 2, 3, 10}}, 4, All, {}]", metric))
+      interpret(&format!("Nearest[{{1, 2, 3, 10}}, 4, All, {metric}]"))
         .unwrap(),
       "{3, 2, 1, 10}"
     );
     assert_eq!(
-      interpret(&format!(
-        "Nearest[{{1, 2, 3, 10}}, 4, {{2, 2}}, {}]",
-        metric
-      ))
-      .unwrap(),
+      interpret(&format!("Nearest[{{1, 2, 3, 10}}, 4, {{2, 2}}, {metric}]"))
+        .unwrap(),
       "{3, 2}"
     );
     assert_eq!(
       interpret(&format!(
-        "Nearest[{{1, 2, 3, 10}} -> {{a, b, c, d}}, 4, {}]",
-        metric
+        "Nearest[{{1, 2, 3, 10}} -> {{a, b, c, d}}, 4, {metric}]"
       ))
       .unwrap(),
       "{c}"
     );
     assert_eq!(
-      interpret(&format!("Nearest[{{1, 2, 3, 10}}, {{4, 9}}, {}]", metric))
+      interpret(&format!("Nearest[{{1, 2, 3, 10}}, {{4, 9}}, {metric}]"))
         .unwrap(),
       "{{3}, {10}}"
     );
@@ -16313,8 +16303,7 @@ mod partition_padding_and_messages {
       msgs.iter().any(|m| m.contains(
         "Partition::pdep: Depth 2 requested in object with dimensions {6}."
       )),
-      "expected pdep message, got {:?}",
-      msgs
+      "expected pdep message, got {msgs:?}"
     );
     // Sufficient depth still works
     assert_eq!(
@@ -16330,8 +16319,7 @@ mod partition_padding_and_messages {
     assert!(
       msgs.iter().any(|m| m
         .contains("Partition::npart: The expression x cannot be partitioned.")),
-      "expected npart message, got {:?}",
-      msgs
+      "expected npart message, got {msgs:?}"
     );
     // Full argument lists survive the unevaluated reconstruction
     assert_eq!(
@@ -16364,8 +16352,7 @@ mod take_drop_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Drop::drop: Cannot drop positions 1 through 5 in {a, b, c}."
       )),
-      "expected drop message, got {:?}",
-      msgs
+      "expected drop message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Drop[{a, b, c}, -5]").unwrap(),
@@ -16376,8 +16363,7 @@ mod take_drop_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Drop::drop: Cannot drop positions -5 through -1 in {a, b, c}."
       )),
-      "expected drop message, got {:?}",
-      msgs
+      "expected drop message, got {msgs:?}"
     );
   }
 
@@ -16400,8 +16386,7 @@ mod take_drop_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Take::take: Cannot take positions 3 through 1 in {a, b, c, d}."
       )),
-      "expected take message, got {:?}",
-      msgs
+      "expected take message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Drop[{a, b, c, d}, {3, 1}]").unwrap(),
@@ -16420,8 +16405,7 @@ mod take_drop_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Take::take: Cannot take positions 0 through 0 in {a, b, c}."
       )),
-      "expected take message, got {:?}",
-      msgs
+      "expected take message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Drop[{a, b, c}, {0}]").unwrap(),
@@ -16441,8 +16425,7 @@ mod take_drop_specs_and_messages {
       msgs.iter().any(
         |m| m.contains("Take::take: Cannot take positions 1 through 2 in x.")
       ),
-      "expected take message, got {:?}",
-      msgs
+      "expected take message, got {msgs:?}"
     );
     assert_eq!(interpret("Drop[x, 2]").unwrap(), "Drop[x, 2]");
     let msgs = woxi::get_captured_messages_raw();
@@ -16450,8 +16433,7 @@ mod take_drop_specs_and_messages {
       msgs.iter().any(
         |m| m.contains("Drop::drop: Cannot drop positions 1 through 2 in x.")
       ),
-      "expected drop message, got {:?}",
-      msgs
+      "expected drop message, got {msgs:?}"
     );
   }
 }
@@ -16488,8 +16470,7 @@ mod insert_positions_and_messages {
     assert!(
       msgs.iter().any(|m| m
         .contains("Insert::ins: Cannot insert at position {5} in {a, b, c}")),
-      "expected ins message, got {:?}",
-      msgs
+      "expected ins message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Insert[{a, b, c}, x, 0]").unwrap(),
@@ -16510,8 +16491,7 @@ mod insert_positions_and_messages {
         .iter()
         .any(|m| m
           .contains("Insert::ins: Cannot insert at position {5} in {a, b}")),
-      "expected ins message, got {:?}",
-      msgs
+      "expected ins message, got {msgs:?}"
     );
     // Non-expression targets too
     assert_eq!(interpret("Insert[y, x, 1]").unwrap(), "Insert[y, x, 1]");
@@ -16528,8 +16508,7 @@ mod insert_positions_and_messages {
       msgs.iter().any(|m| m.contains(
         "Insert::psl: Position specification y in Insert[{a, b}, x, y] is not a machine-sized integer or a list of machine-sized integers."
       )),
-      "expected psl message, got {:?}",
-      msgs
+      "expected psl message, got {msgs:?}"
     );
   }
 
@@ -16600,8 +16579,7 @@ mod delete_positions_and_messages {
     assert!(
       msgs.iter().any(|m| m
         .contains("Delete::partw: Part {1, 5} of {{a, b}} does not exist.")),
-      "expected partw message, got {:?}",
-      msgs
+      "expected partw message, got {msgs:?}"
     );
     // Descent into an atom: the inner subject, scalar position
     assert_eq!(
@@ -16613,8 +16591,7 @@ mod delete_positions_and_messages {
       msgs
         .iter()
         .any(|m| m.contains("Delete::partw: Part 1 of b does not exist.")),
-      "expected partw message, got {:?}",
-      msgs
+      "expected partw message, got {msgs:?}"
     );
     // Atomic subject
     assert_eq!(interpret("Delete[y, 1]").unwrap(), "Delete[y, 1]");
@@ -16623,8 +16600,7 @@ mod delete_positions_and_messages {
       msgs
         .iter()
         .any(|m| m.contains("Delete::partw: Part 1 of y does not exist.")),
-      "expected partw message, got {:?}",
-      msgs
+      "expected partw message, got {msgs:?}"
     );
   }
 
@@ -16639,8 +16615,7 @@ mod delete_positions_and_messages {
       msgs.iter().any(|m| m.contains(
         "Delete::pkspec: The expression y cannot be used as a part specification. Use Key[y] instead."
       )),
-      "expected pkspec message, got {:?}",
-      msgs
+      "expected pkspec message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Delete[{a, b, c}, 2.5]").unwrap(),
@@ -16726,8 +16701,7 @@ mod replace_part_rules_and_patterns {
       msgs.iter().any(|m| m.contains(
         "ReplacePart::reps: x is neither a list of replacement rules nor a valid dispatch table, and so cannot be used for replacing."
       )),
-      "expected reps message, got {:?}",
-      msgs
+      "expected reps message, got {msgs:?}"
     );
   }
 }
@@ -16747,8 +16721,7 @@ mod map_at_specs_and_messages {
       msgs.iter().any(
         |m| m.contains("MapAt::partw: Part {5} of {a, b, c} does not exist.")
       ),
-      "expected partw message, got {:?}",
-      msgs
+      "expected partw message, got {msgs:?}"
     );
   }
 
@@ -16764,8 +16737,7 @@ mod map_at_specs_and_messages {
         .iter()
         .any(|m| m
           .contains("MapAt::partw: Part {1, 5} of {{a, b}} does not exist.")),
-      "expected partw message, got {:?}",
-      msgs
+      "expected partw message, got {msgs:?}"
     );
   }
 
@@ -16780,8 +16752,7 @@ mod map_at_specs_and_messages {
     assert!(
       msgs.iter().any(|m| m
         .contains("MapAt::partw: Part {2, 1} of {a, b, c, d} does not exist.")),
-      "expected partw message, got {:?}",
-      msgs
+      "expected partw message, got {msgs:?}"
     );
   }
 
@@ -16793,8 +16764,7 @@ mod map_at_specs_and_messages {
       msgs
         .iter()
         .any(|m| m.contains("MapAt::partw: Part {1} of y does not exist.")),
-      "expected partw message, got {:?}",
-      msgs
+      "expected partw message, got {msgs:?}"
     );
   }
 
@@ -16809,8 +16779,7 @@ mod map_at_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "MapAt::psl: Position specification x in MapAt[f, {a, b, c}, x] is not a machine-sized integer or a list of machine-sized integers."
       )),
-      "expected psl message, got {:?}",
-      msgs
+      "expected psl message, got {msgs:?}"
     );
   }
 
@@ -17009,8 +16978,7 @@ mod pad_left_right_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "PadLeft::normal: Nonatomic expression expected at position 1 in PadLeft[y, 3]."
       )),
-      "expected normal message, got {:?}",
-      msgs
+      "expected normal message, got {msgs:?}"
     );
   }
 
@@ -17025,8 +16993,7 @@ mod pad_left_right_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "PadLeft::ilsm: List of machine-sized integers expected at position 2 in PadLeft[{a, b, c}, x]."
       )),
-      "expected ilsm message, got {:?}",
-      msgs
+      "expected ilsm message, got {msgs:?}"
     );
     // Reals and mixed lists are not machine integers either
     assert_eq!(interpret("PadLeft[{a}, 3.5]").unwrap(), "PadLeft[{a}, 3.5]");
@@ -17047,8 +17014,7 @@ mod pad_left_right_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "PadLeft::ilsm: List of machine-sized integers expected at position 4 in PadLeft[{a, b, c}, 5, y, x]."
       )),
-      "expected ilsm message, got {:?}",
-      msgs
+      "expected ilsm message, got {msgs:?}"
     );
   }
 
@@ -17063,8 +17029,7 @@ mod pad_left_right_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "PadLeft::level: The padding specification {2, 2} involves 2 levels; the list {a, b, c} has only 1 level."
       )),
-      "expected level message, got {:?}",
-      msgs
+      "expected level message, got {msgs:?}"
     );
     // A level with a non-list element caps the depth
     assert_eq!(
@@ -17079,8 +17044,7 @@ mod pad_left_right_specs_and_messages {
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.iter().any(|m| m.contains("has only 2 level.")),
-      "expected singular level message, got {:?}",
-      msgs
+      "expected singular level message, got {msgs:?}"
     );
   }
 }
@@ -17129,8 +17093,7 @@ mod riffle_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Riffle::inclen: The start and end positions and the spacing between riffled elements given in 1 cannot be satisfied for the input list of length 4."
       )),
-      "expected inclen message, got {:?}",
-      msgs
+      "expected inclen message, got {msgs:?}"
     );
     // A list shorter than n - 1 cannot reach position n
     assert_eq!(
@@ -17176,8 +17139,7 @@ mod riffle_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Riffle::inclen: The start and end positions and the spacing between riffled elements given in {5, 10, 2} cannot be satisfied for the input list of length 3."
       )),
-      "expected inclen message, got {:?}",
-      msgs
+      "expected inclen message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Riffle[{a, b, c}, x, {1, 7, 3}]").unwrap(),
@@ -17197,8 +17159,7 @@ mod riffle_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Riffle::rspec: The third argument -2 should be a positive integer or a list with three integers."
       )),
-      "expected rspec message, got {:?}",
-      msgs
+      "expected rspec message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Riffle[{a, b, c, d}, x, {3}]").unwrap(),
@@ -17221,8 +17182,7 @@ mod riffle_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Riffle::sepos: The start and end positions in {0, 4, 2} should be nonzero machine-sized integers."
       )),
-      "expected sepos message, got {:?}",
-      msgs
+      "expected sepos message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Riffle[{a, b, c}, x, {2, 4, 0}]").unwrap(),
@@ -17233,8 +17193,7 @@ mod riffle_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Riffle::npos: The spacing between riffled elements given in {2, 4, 0} should be a positive machine-sized integer."
       )),
-      "expected npos message, got {:?}",
-      msgs
+      "expected npos message, got {msgs:?}"
     );
   }
 
@@ -17247,8 +17206,7 @@ mod riffle_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Riffle::listrp: List, SparseArray object, or structured array expected at position 1 in Riffle[y, x]."
       )),
-      "expected listrp message, got {:?}",
-      msgs
+      "expected listrp message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Riffle[f[a, b], x]").unwrap(),
@@ -17278,8 +17236,7 @@ mod rotate_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "RotateLeft::normal: Nonatomic expression expected at position 1 in RotateLeft[x, 2]."
       )),
-      "expected normal message, got {:?}",
-      msgs
+      "expected normal message, got {msgs:?}"
     );
     assert_eq!(interpret("RotateRight[y, 1]").unwrap(), "RotateRight[y, 1]");
     // The one-argument form keeps its original shape too
@@ -17298,8 +17255,7 @@ mod rotate_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "RotateLeft::rspec: Rotation specification {x} should be a machine-sized integer or list of machine-sized integers."
       )),
-      "expected rspec message, got {:?}",
-      msgs
+      "expected rspec message, got {msgs:?}"
     );
     assert_eq!(
       interpret("RotateLeft[{a, b, c}, 1.5]").unwrap(),
@@ -17331,17 +17287,12 @@ mod rotate_specs_and_messages {
       })
       .count();
     // At most three ::rotate messages, then one General::stop
-    assert_eq!(
-      rotate_count, 3,
-      "expected 3 rotate messages, got {:?}",
-      msgs
-    );
+    assert_eq!(rotate_count, 3, "expected 3 rotate messages, got {msgs:?}");
     assert!(
       msgs.iter().any(|m| m.contains(
         "General::stop: Further output of RotateLeft::rotate will be suppressed during this calculation."
       )),
-      "expected stop message, got {:?}",
-      msgs
+      "expected stop message, got {msgs:?}"
     );
     // Five atoms still emit only three messages
     assert_eq!(
@@ -17353,11 +17304,7 @@ mod rotate_specs_and_messages {
       .iter()
       .filter(|m| m.contains("RotateLeft::rotate:"))
       .count();
-    assert_eq!(
-      rotate_count, 3,
-      "expected 3 rotate messages, got {:?}",
-      msgs
-    );
+    assert_eq!(rotate_count, 3, "expected 3 rotate messages, got {msgs:?}");
     // A single atom emits one message and no stop
     assert_eq!(
       interpret("RotateLeft[{{a, b}, c}, {1, 1}]").unwrap(),
@@ -17367,13 +17314,11 @@ mod rotate_specs_and_messages {
     assert!(
       msgs.iter().any(|m| m
         .contains("RotateLeft::rotate: Cannot rotate atomic expression c.")),
-      "expected rotate message for c, got {:?}",
-      msgs
+      "expected rotate message for c, got {msgs:?}"
     );
     assert!(
       !msgs.iter().any(|m| m.contains("General::stop")),
-      "expected no stop message, got {:?}",
-      msgs
+      "expected no stop message, got {msgs:?}"
     );
   }
 
@@ -17415,8 +17360,7 @@ mod flatten_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Flatten::flpi: Levels to be flattened together in {{0}, {1}} should be lists of positive integers."
       )),
-      "expected flpi message, got {:?}",
-      msgs
+      "expected flpi message, got {msgs:?}"
     );
   }
 
@@ -17429,8 +17373,7 @@ mod flatten_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Flatten::normal: Nonatomic expression expected at position 1 in Flatten[x]."
       )),
-      "expected normal message, got {:?}",
-      msgs
+      "expected normal message, got {msgs:?}"
     );
     // Associations are atomic for Flatten
     assert_eq!(
@@ -17451,8 +17394,7 @@ mod flatten_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Flatten::flev: The level argument -1 in position 2 of Flatten[{a, b}, -1] should be a non-negative integer or Infinity giving the levels to flatten through or a list of lists of levels to flatten together."
       )),
-      "expected flev message, got {:?}",
-      msgs
+      "expected flev message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Flatten[{a, b}, x]").unwrap(),
@@ -17476,8 +17418,7 @@ mod flatten_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Flatten::fldep: Level 3 specified in {{1}, {2}, {3}} exceeds the levels, 2, which can be flattened together in {{a, b}, {c, d}}."
       )),
-      "expected fldep message, got {:?}",
-      msgs
+      "expected fldep message, got {msgs:?}"
     );
     // The flattenable depth respects the head argument
     assert_eq!(
@@ -17487,8 +17428,7 @@ mod flatten_specs_and_messages {
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.iter().any(|m| m.contains("exceeds the levels, 0,")),
-      "expected fldep with depth 0, got {:?}",
-      msgs
+      "expected fldep with depth 0, got {msgs:?}"
     );
     // Ragged branches cap the depth (and must not be dropped)
     assert_eq!(
@@ -17509,8 +17449,7 @@ mod flatten_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Flatten::flrep: Level 1 specified in {{1, 1}} should not be repeated."
       )),
-      "expected flrep message, got {:?}",
-      msgs
+      "expected flrep message, got {msgs:?}"
     );
     // Bare-integer specs are displayed in wrapped form
     assert_eq!(
@@ -17522,8 +17461,7 @@ mod flatten_specs_and_messages {
       msgs
         .iter()
         .any(|m| m.contains("Level 1 specified in {{1, 1}}")),
-      "expected wrapped spec display, got {:?}",
-      msgs
+      "expected wrapped spec display, got {msgs:?}"
     );
   }
 
@@ -17704,8 +17642,7 @@ mod position_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Position::level: Level specification x is not of the form n, {n} or {m, n}."
       )),
-      "expected level message, got {:?}",
-      msgs
+      "expected level message, got {msgs:?}"
     );
   }
 
@@ -17720,8 +17657,7 @@ mod position_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Position::innf: Non-negative integer or Infinity expected at position 4 in Position[{a, b, a}, a, {1}, -1]."
       )),
-      "expected innf message, got {:?}",
-      msgs
+      "expected innf message, got {msgs:?}"
     );
   }
 }
@@ -17805,8 +17741,7 @@ mod cases_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Cases::level: Level specification x is not of the form n, {n} or {m, n}."
       )),
-      "expected level message, got {:?}",
-      msgs
+      "expected level message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Cases[{1, 2, 3}, _, {1}, -1]").unwrap(),
@@ -17817,8 +17752,7 @@ mod cases_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Cases::innf: Non-negative integer or Infinity expected at position 4 in Cases[{1, 2, 3}, _, {1}, -1]."
       )),
-      "expected innf message, got {:?}",
-      msgs
+      "expected innf message, got {msgs:?}"
     );
   }
 
@@ -17877,8 +17811,7 @@ mod count_delete_cases_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Count::level: Level specification x is not of the form n, {n} or {m, n}."
       )),
-      "expected level message, got {:?}",
-      msgs
+      "expected level message, got {msgs:?}"
     );
     // A non-option fourth argument emits nonopt
     assert_eq!(
@@ -17890,8 +17823,7 @@ mod count_delete_cases_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Count::nonopt: Options expected (instead of 5) beyond position 3 in Count[{1}, _, {1}, 5]. An option must be a rule or a list of rules."
       )),
-      "expected nonopt message, got {:?}",
-      msgs
+      "expected nonopt message, got {msgs:?}"
     );
   }
 
@@ -17948,8 +17880,7 @@ mod count_delete_cases_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "DeleteCases::level: Level specification y is not of the form n, {n} or {m, n}."
       )),
-      "expected level message, got {:?}",
-      msgs
+      "expected level message, got {msgs:?}"
     );
     assert_eq!(
       interpret("DeleteCases[{1, 2, 3}, _, {1}, -1]").unwrap(),
@@ -17960,8 +17891,7 @@ mod count_delete_cases_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "DeleteCases::innf: Non-negative integer or Infinity expected at position 4 in DeleteCases[{1, 2, 3}, _, {1}, -1]."
       )),
-      "expected innf message, got {:?}",
-      msgs
+      "expected innf message, got {msgs:?}"
     );
   }
 
@@ -18025,8 +17955,7 @@ mod level_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Level::level: Level specification x is not of the form n, {n} or {m, n}."
       )),
-      "expected level message, got {:?}",
-      msgs
+      "expected level message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Level[{a, b}, {1, 2, 3}]").unwrap(),
@@ -18069,8 +17998,7 @@ mod extract_specs_and_messages {
       msgs.iter().any(
         |m| m.contains("Extract::keyw: Key z does not exist in <|x -> 1|>.")
       ),
-      "expected keyw message, got {:?}",
-      msgs
+      "expected keyw message, got {msgs:?}"
     );
   }
 
@@ -18124,8 +18052,7 @@ mod extract_specs_and_messages {
       msgs.iter().any(
         |m| m.contains("Extract::partw: Part 5 of {a, b, c} does not exist.")
       ),
-      "expected partw message, got {:?}",
-      msgs
+      "expected partw message, got {msgs:?}"
     );
     // partw always reports the first path component
     assert_eq!(
@@ -18136,8 +18063,7 @@ mod extract_specs_and_messages {
     assert!(
       msgs.iter().any(|m| m
         .contains("Extract::partw: Part 2 of {{a, b}, {c}} does not exist.")),
-      "expected partw with first component, got {:?}",
-      msgs
+      "expected partw with first component, got {msgs:?}"
     );
     // Descending below the depth emits partd with the inner path
     assert_eq!(
@@ -18149,8 +18075,7 @@ mod extract_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Extract::partd: Part specification {1, 1} is longer than depth of object."
       )),
-      "expected partd message, got {:?}",
-      msgs
+      "expected partd message, got {msgs:?}"
     );
     // Non-position specs emit psl1
     assert_eq!(
@@ -18162,8 +18087,7 @@ mod extract_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Extract::psl1: Position specification {x} in Extract[{a, b, c}, {x}] is not applicable."
       )),
-      "expected psl1 message, got {:?}",
-      msgs
+      "expected psl1 message, got {msgs:?}"
     );
   }
 }
@@ -18183,8 +18107,7 @@ mod flatten_at_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "FlattenAt::flatp: Expression a at position {1} of {a, {b, c}} has no parts and cannot be flattened."
       )),
-      "expected flatp message, got {:?}",
-      msgs
+      "expected flatp message, got {msgs:?}"
     );
     // Position 0 reports the head expression
     assert_eq!(
@@ -18196,8 +18119,7 @@ mod flatten_at_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "FlattenAt::flatp: Expression List at position {0} of {a, {b, c}} has no parts and cannot be flattened."
       )),
-      "expected flatp message for head, got {:?}",
-      msgs
+      "expected flatp message for head, got {msgs:?}"
     );
   }
 
@@ -18212,8 +18134,7 @@ mod flatten_at_specs_and_messages {
     assert!(
       msgs.iter().any(|m| m
         .contains("FlattenAt::partw: Part {5} of {a, {b}} does not exist.")),
-      "expected partw message, got {:?}",
-      msgs
+      "expected partw message, got {msgs:?}"
     );
     // Deep paths report the full path
     assert_eq!(
@@ -18224,8 +18145,7 @@ mod flatten_at_specs_and_messages {
     assert!(
       msgs.iter().any(|m| m
         .contains("FlattenAt::partw: Part {2, 5} of {a, {b}} does not exist.")),
-      "expected deep partw message, got {:?}",
-      msgs
+      "expected deep partw message, got {msgs:?}"
     );
     // Atomic subjects and associations are not indexable
     assert_eq!(interpret("FlattenAt[x, 1]").unwrap(), "FlattenAt[x, 1]");
@@ -18260,8 +18180,7 @@ mod flatten_at_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "FlattenAt::psl: Position specification x in {a, b} is not a machine-sized integer or a list of machine-sized integers."
       )),
-      "expected psl message, got {:?}",
-      msgs
+      "expected psl message, got {msgs:?}"
     );
     assert_eq!(
       interpret("FlattenAt[{a, b}, 2.5]").unwrap(),
@@ -18333,8 +18252,7 @@ mod subsets_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Subsets::take: Warning: not all elements were found when attempting to take the sequence {1, 10, 1} from Subsets[{a, b, c}, {2}], which has length 3."
       )),
-      "expected take warning, got {:?}",
-      msgs
+      "expected take warning, got {msgs:?}"
     );
     assert_eq!(interpret("Subsets[{a, b, c}, {2}, {10}]").unwrap(), "{}");
   }
@@ -18351,8 +18269,7 @@ mod subsets_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Subsets::nninfseq: Position 2 of Subsets[{a, b, c}, -1] must be All, Infinity, nmax, {nmin}, {nmin, nmax} or {nmin, nmax, dn}, where nmin is a non-negative integer, nmax is non-negative integer or Infinity and dn is a nonzero integer."
       )),
-      "expected nninfseq message, got {:?}",
-      msgs
+      "expected nninfseq message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Subsets[{a, b, c}, {2}, x]").unwrap(),
@@ -18363,8 +18280,7 @@ mod subsets_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Subsets::seq: Position 3 of Subsets[{a, b, c}, {2}, x] must be All, None, m, {m}, {m, n} or {m, n, s}, where m and n are integers, and s is a nonzero integer."
       )),
-      "expected seq message, got {:?}",
-      msgs
+      "expected seq message, got {msgs:?}"
     );
     assert_eq!(interpret("Subsets[x, 2]").unwrap(), "Subsets[x, 2]");
     let msgs = woxi::get_captured_messages_raw();
@@ -18372,8 +18288,7 @@ mod subsets_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Subsets::normal: Nonatomic expression expected at position 1 in Subsets[x, 2]."
       )),
-      "expected normal message, got {:?}",
-      msgs
+      "expected normal message, got {msgs:?}"
     );
   }
 }
@@ -18393,8 +18308,7 @@ mod permutations_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Permutations::nninfseq: Position 2 of Permutations[{a, b, c}, -1] must be All, Infinity, nmax, {nmin}, {nmin, nmax} or {nmin, nmax, dn}, where nmin is a non-negative integer, nmax is non-negative integer or Infinity and dn is a nonzero integer."
       )),
-      "expected nninfseq message, got {:?}",
-      msgs
+      "expected nninfseq message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Permutations[{a, b, c}, x]").unwrap(),
@@ -18410,8 +18324,7 @@ mod permutations_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Permutations::normal: Nonatomic expression expected at position 1 in Permutations[x]."
       )),
-      "expected normal message, got {:?}",
-      msgs
+      "expected normal message, got {msgs:?}"
     );
     assert_eq!(interpret("Permutations[3]").unwrap(), "Permutations[3]");
   }
@@ -18477,8 +18390,7 @@ mod tuples_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Tuples::ilsmn: Single or list of non-negative machine-sized integers expected at position 2 of Tuples[{a, b}, -1]."
       )),
-      "expected ilsmn message, got {:?}",
-      msgs
+      "expected ilsmn message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Tuples[{a, b}, 2.0]").unwrap(),
@@ -18499,8 +18411,7 @@ mod tuples_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Tuples::normal: Nonatomic expression expected at position 1 in Tuples[x]."
       )),
-      "expected normal message, got {:?}",
-      msgs
+      "expected normal message, got {msgs:?}"
     );
     assert_eq!(interpret("Tuples[x, 2]").unwrap(), "Tuples[x, 2]");
     // Atomic elements in the one-argument form report their {1, i} position
@@ -18510,8 +18421,7 @@ mod tuples_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Tuples::normal: Nonatomic expression expected at position {1, 1} in Tuples[{a, b}]."
       )),
-      "expected positional normal message, got {:?}",
-      msgs
+      "expected positional normal message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Tuples[{{a, b}, c}]").unwrap(),
@@ -18522,8 +18432,7 @@ mod tuples_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Tuples::normal: Nonatomic expression expected at position {1, 2} in Tuples[{{a, b}, c}]."
       )),
-      "expected positional normal message, got {:?}",
-      msgs
+      "expected positional normal message, got {msgs:?}"
     );
   }
 
@@ -18577,8 +18486,7 @@ mod partition_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Partition::ilsmp: Single or list of positive machine-sized integers expected at position 2 of Partition[{a, b, c}, 0]."
       )),
-      "expected ilsmp message, got {:?}",
-      msgs
+      "expected ilsmp message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Partition[{a, b, c}, -1]").unwrap(),
@@ -18606,8 +18514,7 @@ mod partition_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Partition::ilsmp: Single or list of positive machine-sized integers expected at position 3 of Partition[{a, b, c}, 2, 0]."
       )),
-      "expected ilsmp message, got {:?}",
-      msgs
+      "expected ilsmp message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Partition[{a, b, c}, 2, x]").unwrap(),
@@ -18626,8 +18533,7 @@ mod partition_specs_and_messages {
     assert!(
       msgs.iter().any(|m| m
         .contains("Partition::npart: The expression x cannot be partitioned.")),
-      "expected npart message, got {:?}",
-      msgs
+      "expected npart message, got {msgs:?}"
     );
   }
 
@@ -18642,8 +18548,7 @@ mod partition_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Partition::ilsmp: Single or list of positive machine-sized integers expected at position 2 of Partition[{a, b, c}, 0]."
       )),
-      "expected ilsmp message with unwrapped UpTo, got {:?}",
-      msgs
+      "expected ilsmp message with unwrapped UpTo, got {msgs:?}"
     );
   }
 }
@@ -18698,8 +18603,7 @@ mod take_drop_upto_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Take::seqs: Sequence specification (+n, -n, {+n}, {-n}, {m, n} or {m, n, s}) expected at position 2 in Take[{a, b, c}, x]."
       )),
-      "expected seqs message, got {:?}",
-      msgs
+      "expected seqs message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Drop[{a, b, c}, x]").unwrap(),
@@ -18710,8 +18614,7 @@ mod take_drop_upto_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Drop::seqs: Sequence specification (+n, -n, {+n}, {-n}, {m, n} or {m, n, s}) expected at position 2 in Drop[{a, b, c}, x]."
       )),
-      "expected seqs message, got {:?}",
-      msgs
+      "expected seqs message, got {msgs:?}"
     );
     // Zero step, reals, and a single-element UpTo list are invalid
     assert_eq!(
@@ -18743,8 +18646,7 @@ mod take_drop_upto_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "Take::seqs: Sequence specification (+n, -n, {+n}, {-n}, {m, n} or {m, n, s}) expected at position 3 in Take[{{a, b, c}, {d, e, f}}, 2, x]."
       )),
-      "expected position-3 seqs message, got {:?}",
-      msgs
+      "expected position-3 seqs message, got {msgs:?}"
     );
   }
 
@@ -18757,8 +18659,7 @@ mod take_drop_upto_specs_and_messages {
       msgs.iter().any(|m| m.contains(
         "UpTo::innf: Non-negative integer or Infinity expected at position 1 in UpTo[-1]."
       )),
-      "expected innf message, got {:?}",
-      msgs
+      "expected innf message, got {msgs:?}"
     );
     assert_eq!(interpret("UpTo[1.5]").unwrap(), "UpTo[1.5]");
     // A symbolic argument is not validated
@@ -18766,8 +18667,7 @@ mod take_drop_upto_specs_and_messages {
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       !msgs.iter().any(|m| m.contains("UpTo::innf")),
-      "UpTo[x] must not emit innf, got {:?}",
-      msgs
+      "UpTo[x] must not emit innf, got {msgs:?}"
     );
     // Inside Take, the UpTo argument message precedes Take::seqs
     assert_eq!(
@@ -18780,8 +18680,7 @@ mod take_drop_upto_specs_and_messages {
         && msgs.iter().any(|m| m.contains(
           "Take::seqs: Sequence specification (+n, -n, {+n}, {-n}, {m, n} or {m, n, s}) expected at position 2 in Take[{a, b, c}, UpTo[-1]]."
         )),
-      "expected innf followed by seqs, got {:?}",
-      msgs
+      "expected innf followed by seqs, got {msgs:?}"
     );
   }
 }
@@ -18798,8 +18697,7 @@ mod first_last_rest_most_messages {
     assert!(
       msgs.iter().any(|m| m
         .contains("First::nofirst: {} has zero length and no first element.")),
-      "expected nofirst message, got {:?}",
-      msgs
+      "expected nofirst message, got {msgs:?}"
     );
     assert_eq!(interpret("Last[{}]").unwrap(), "Last[{}]");
     let msgs = woxi::get_captured_messages_raw();
@@ -18808,8 +18706,7 @@ mod first_last_rest_most_messages {
         .iter()
         .any(|m| m
           .contains("Last::nolast: {} has zero length and no last element.")),
-      "expected nolast message, got {:?}",
-      msgs
+      "expected nolast message, got {msgs:?}"
     );
     assert_eq!(interpret("Rest[{}]").unwrap(), "Rest[{}]");
     let msgs = woxi::get_captured_messages_raw();
@@ -18817,8 +18714,7 @@ mod first_last_rest_most_messages {
       msgs.iter().any(|m| m.contains(
         "Rest::norest: Cannot take Rest of expression {} with length zero."
       )),
-      "expected norest message, got {:?}",
-      msgs
+      "expected norest message, got {msgs:?}"
     );
     assert_eq!(interpret("Most[{}]").unwrap(), "Most[{}]");
     let msgs = woxi::get_captured_messages_raw();
@@ -18826,8 +18722,7 @@ mod first_last_rest_most_messages {
       msgs.iter().any(|m| m.contains(
         "Most::nomost: Cannot take Most of expression {} with length zero."
       )),
-      "expected nomost message, got {:?}",
-      msgs
+      "expected nomost message, got {msgs:?}"
     );
     // General heads and empty associations use the same messages
     assert_eq!(interpret("First[f[]]").unwrap(), "First[f[]]");
@@ -18835,8 +18730,7 @@ mod first_last_rest_most_messages {
     assert!(
       msgs.iter().any(|m| m
         .contains("First::nofirst: f[] has zero length and no first element.")),
-      "expected nofirst message for f[], got {:?}",
-      msgs
+      "expected nofirst message for f[], got {msgs:?}"
     );
     assert_eq!(interpret("First[<||>]").unwrap(), "First[<||>]");
     let msgs = woxi::get_captured_messages_raw();
@@ -18844,8 +18738,7 @@ mod first_last_rest_most_messages {
       msgs.iter().any(|m| m.contains(
         "First::nofirst: <||> has zero length and no first element."
       )),
-      "expected nofirst message for <||>, got {:?}",
-      msgs
+      "expected nofirst message for <||>, got {msgs:?}"
     );
   }
 
@@ -18854,18 +18747,15 @@ mod first_last_rest_most_messages {
     // Regression: atoms returned silently (First/Last/Most) or raised a
     // hard error (Rest)
     for f in ["First", "Last", "Rest", "Most"] {
-      let input = format!("{}[x]", f);
+      let input = format!("{f}[x]");
       assert_eq!(interpret(&input).unwrap(), input);
       let msgs = woxi::get_captured_messages_raw();
       let expected = format!(
-        "{}::normal: Nonatomic expression expected at position 1 in {}[x].",
-        f, f
+        "{f}::normal: Nonatomic expression expected at position 1 in {f}[x]."
       );
       assert!(
         msgs.iter().any(|m| m.contains(&expected)),
-        "expected {:?}, got {:?}",
-        expected,
-        msgs
+        "expected {expected:?}, got {msgs:?}"
       );
     }
     // Strings are atoms and display unquoted in the message
@@ -18875,8 +18765,7 @@ mod first_last_rest_most_messages {
       msgs.iter().any(|m| m.contains(
         "First::normal: Nonatomic expression expected at position 1 in First[abc]."
       )),
-      "expected normal message for string, got {:?}",
-      msgs
+      "expected normal message for string, got {msgs:?}"
     );
   }
 
@@ -18888,8 +18777,7 @@ mod first_last_rest_most_messages {
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.is_empty(),
-      "default form must not emit messages, got {:?}",
-      msgs
+      "default form must not emit messages, got {msgs:?}"
     );
   }
 
@@ -18947,8 +18835,7 @@ mod canonical_order_and_set_operations {
       msgs.iter().any(|m| m.contains(
         "Union::normal: Nonatomic expression expected at position 1 in Union[x, {a}]."
       )),
-      "expected normal message, got {:?}",
-      msgs
+      "expected normal message, got {msgs:?}"
     );
     assert_eq!(interpret("Union[{a}, x]").unwrap(), "Union[{a}, x]");
     let msgs = woxi::get_captured_messages_raw();
@@ -18956,8 +18843,7 @@ mod canonical_order_and_set_operations {
       msgs
         .iter()
         .any(|m| m.contains("position 2 in Union[{a}, x]")),
-      "expected position-2 normal message, got {:?}",
-      msgs
+      "expected position-2 normal message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Intersection[x, {a}]").unwrap(),
@@ -18977,8 +18863,7 @@ mod canonical_order_and_set_operations {
       msgs.iter().any(|m| m.contains(
         "Union::heads: Heads f and List at positions 2 and 1 are expected to be the same."
       )),
-      "expected heads message, got {:?}",
-      msgs
+      "expected heads message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Complement[f[a, b], g[b]]").unwrap(),
@@ -18989,8 +18874,7 @@ mod canonical_order_and_set_operations {
       msgs.iter().any(|m| m.contains(
         "Complement::heads: Heads g and f at positions 2 and 1 are expected to be the same."
       )),
-      "expected heads message, got {:?}",
-      msgs
+      "expected heads message, got {msgs:?}"
     );
   }
 
@@ -19023,8 +18907,7 @@ mod canonical_order_and_set_operations {
       msgs.iter().any(|m| m.contains(
         "Reverse::normal: Nonatomic expression expected at position 1 in Reverse[x]."
       )),
-      "expected normal message, got {:?}",
-      msgs
+      "expected normal message, got {msgs:?}"
     );
     assert_eq!(interpret("Ordering[x]").unwrap(), "Ordering[x]");
     let msgs = woxi::get_captured_messages_raw();
@@ -19032,8 +18915,7 @@ mod canonical_order_and_set_operations {
       msgs.iter().any(|m| m.contains(
         "Ordering::normal: Nonatomic expression expected at position 1 in Ordering[x]."
       )),
-      "expected normal message, got {:?}",
-      msgs
+      "expected normal message, got {msgs:?}"
     );
     // Ordering works on general heads
     assert_eq!(interpret("Ordering[f[c, a, b]]").unwrap(), "{2, 3, 1}");
@@ -19051,8 +18933,7 @@ mod gather_split_tally_messages {
     assert!(
       msgs.iter().any(|m| m
         .contains("Gather::list: List expected at position 1 in Gather[x].")),
-      "expected list message, got {:?}",
-      msgs
+      "expected list message, got {msgs:?}"
     );
     // Unlike Split, Gather and Tally reject general heads too
     assert_eq!(
@@ -19066,8 +18947,7 @@ mod gather_split_tally_messages {
         .iter()
         .any(|m| m
           .contains("Tally::list: List expected at position 1 in Tally[x].")),
-      "expected list message, got {:?}",
-      msgs
+      "expected list message, got {msgs:?}"
     );
     assert_eq!(interpret("Tally[f[a, b, a]]").unwrap(), "Tally[f[a, b, a]]");
     assert_eq!(interpret("GatherBy[x, g]").unwrap(), "GatherBy[x, g]");
@@ -19076,8 +18956,7 @@ mod gather_split_tally_messages {
       msgs.iter().any(|m| m.contains(
         "GatherBy::list: List expected at position 1 in GatherBy[x, g]."
       )),
-      "expected list message, got {:?}",
-      msgs
+      "expected list message, got {msgs:?}"
     );
   }
 
@@ -19099,8 +18978,7 @@ mod gather_split_tally_messages {
       msgs.iter().any(|m| m.contains(
         "Split::normal: Nonatomic expression expected at position 1 in Split[x]."
       )),
-      "expected normal message, got {:?}",
-      msgs
+      "expected normal message, got {msgs:?}"
     );
     assert_eq!(interpret("Split[x, SameQ]").unwrap(), "Split[x, SameQ]");
     // SplitBy delegates to Split, so the message shows the desugared test
@@ -19110,8 +18988,7 @@ mod gather_split_tally_messages {
       msgs.iter().any(|m| m.contains(
         "Split::normal: Nonatomic expression expected at position 1 in Split[x, g[#1] === g[#2] & ]."
       )),
-      "expected desugared normal message, got {:?}",
-      msgs
+      "expected desugared normal message, got {msgs:?}"
     );
   }
 
@@ -19123,16 +19000,14 @@ mod gather_split_tally_messages {
       msgs.iter().any(|m| m.contains(
         "Accumulate::normal: Nonatomic expression expected at position 1 in Accumulate[x]."
       )),
-      "expected normal message, got {:?}",
-      msgs
+      "expected normal message, got {msgs:?}"
     );
     // Differences stays silent on atoms in wolframscript
     assert_eq!(interpret("Differences[x]").unwrap(), "Differences[x]");
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.is_empty(),
-      "Differences[x] must stay silent, got {:?}",
-      msgs
+      "Differences[x] must stay silent, got {msgs:?}"
     );
   }
 }
@@ -19150,8 +19025,7 @@ mod nest_array_range_messages {
       msgs.iter().any(|m| m.contains(
         "Nest::intnm: Non-negative machine-sized integer expected at position 3 in Nest[f, x, -1]."
       )),
-      "expected intnm message, got {:?}",
-      msgs
+      "expected intnm message, got {msgs:?}"
     );
     assert_eq!(
       interpret("NestList[f, x, -1]").unwrap(),
@@ -19162,8 +19036,7 @@ mod nest_array_range_messages {
       msgs.iter().any(|m| m.contains(
         "NestList::intnm: Non-negative machine-sized integer expected at position 3 in NestList[f, x, -1]."
       )),
-      "expected intnm message, got {:?}",
-      msgs
+      "expected intnm message, got {msgs:?}"
     );
     assert_eq!(interpret("Nest[f, x, 2.5]").unwrap(), "Nest[f, x, 2.5]");
     // Nest rejects Infinity, unlike FixedPoint
@@ -19185,8 +19058,7 @@ mod nest_array_range_messages {
       msgs.iter().any(|m| m.contains(
         "FixedPoint::intnm: Non-negative machine-sized integer expected at position 3 in FixedPoint[f, x, -1]."
       )),
-      "expected intnm message, got {:?}",
-      msgs
+      "expected intnm message, got {msgs:?}"
     );
     assert_eq!(
       interpret("FixedPoint[Function[x, Floor[x/2]], 100, Infinity]").unwrap(),
@@ -19195,8 +19067,7 @@ mod nest_array_range_messages {
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.is_empty(),
-      "FixedPoint with Infinity must stay silent, got {:?}",
-      msgs
+      "FixedPoint with Infinity must stay silent, got {msgs:?}"
     );
   }
 
@@ -19209,8 +19080,7 @@ mod nest_array_range_messages {
       msgs.iter().any(|m| m.contains(
         "Range::range: Range specification in Range[1, 5, 0] does not have appropriate bounds."
       )),
-      "expected range message, got {:?}",
-      msgs
+      "expected range message, got {msgs:?}"
     );
     assert_eq!(
       interpret("Range[1.0, 5.0, 0.0]").unwrap(),
@@ -19221,8 +19091,7 @@ mod nest_array_range_messages {
       msgs.iter().any(|m| m.contains(
         "Range::range: Range specification in Range[1., 5., 0.] does not have appropriate bounds."
       )),
-      "expected range message for reals, got {:?}",
-      msgs
+      "expected range message for reals, got {msgs:?}"
     );
   }
 
@@ -19243,8 +19112,7 @@ mod nest_array_range_messages {
       msgs.iter().any(|m| m.contains(
         "Array::ilsmn: Single or list of non-negative machine-sized integers expected at position 2 of Array[f, {2, -1}]."
       )),
-      "expected ilsmn message, got {:?}",
-      msgs
+      "expected ilsmn message, got {msgs:?}"
     );
     // Valid forms still work
     assert_eq!(interpret("Array[f, 0]").unwrap(), "{}");
@@ -19311,8 +19179,7 @@ mod quantifier_semantics {
       msgs.iter().any(|m| m.contains(
         "AllTrue::intnm: Non-negative machine-sized integer expected at position 3 in AllTrue[{1, 2}, EvenQ, x]."
       )),
-      "expected intnm message, got {:?}",
-      msgs
+      "expected intnm message, got {msgs:?}"
     );
     assert_eq!(
       interpret("AllTrue[{1, 2}, EvenQ, {2}]").unwrap(),

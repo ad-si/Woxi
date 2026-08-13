@@ -67,7 +67,12 @@ pub fn parse_tsv(content: &str) -> Vec<Vec<String>> {
   } else {
     trimmed
       .split('\n')
-      .map(|line| line.split('\t').map(|s| s.to_string()).collect())
+      .map(|line| {
+        line
+          .split('\t')
+          .map(std::string::ToString::to_string)
+          .collect()
+      })
       .collect()
   }
 }
@@ -502,8 +507,7 @@ pub fn csv_import_data_spec(
 fn read_csv_file(path: &str) -> Result<Vec<Vec<String>>, InterpreterError> {
   let content = std::fs::read_to_string(path).map_err(|e| {
     InterpreterError::EvaluationError(format!(
-      "Import: cannot open \"{}\": {}",
-      path, e
+      "Import: cannot open \"{path}\": {e}"
     ))
   })?;
   Ok(parse_csv(&content))
@@ -542,8 +546,7 @@ pub fn csv_import_from_url(
     .output()
     .map_err(|e| {
       InterpreterError::EvaluationError(format!(
-        "Import: failed to run curl: {}",
-        e
+        "Import: failed to run curl: {e}"
       ))
     })?;
   if !output.status.success() {
@@ -556,8 +559,7 @@ pub fn csv_import_from_url(
   }
   let content = String::from_utf8(output.stdout).map_err(|e| {
     InterpreterError::EvaluationError(format!(
-      "Import: downloaded CSV is not valid UTF-8: {}",
-      e
+      "Import: downloaded CSV is not valid UTF-8: {e}"
     ))
   })?;
   let rows = parse_csv(&content);

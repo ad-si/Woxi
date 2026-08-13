@@ -140,7 +140,7 @@ mod tests {
     let inputs = vec!["(+q)", "+x", "+5", "1 + +2", "+x^2"];
     for input in inputs {
       let pair = parse(input).unwrap().next().unwrap();
-      assert_eq!(pair.as_rule(), Rule::Program, "Failed to parse: {}", input);
+      assert_eq!(pair.as_rule(), Rule::Program, "Failed to parse: {input}");
     }
   }
 
@@ -151,7 +151,7 @@ mod tests {
     // `ψ`, not fail at the trailing `[`.
     for input in ["\\[Psi][x, t]", "\\[Phi][r]", "\\[CapitalGamma][z]"] {
       let pair = parse(input).unwrap().next().unwrap();
-      assert_eq!(pair.as_rule(), Rule::Program, "Failed to parse: {}", input);
+      assert_eq!(pair.as_rule(), Rule::Program, "Failed to parse: {input}");
     }
     assert_eq!(
       woxi::interpret("\\[Psi][x, t]").unwrap(),
@@ -173,11 +173,10 @@ mod tests {
     ];
     for input in &cases {
       let start = std::time::Instant::now();
-      assert!(parse(input).is_err(), "should not parse: {:?}", input);
+      assert!(parse(input).is_err(), "should not parse: {input:?}");
       assert!(
-        start.elapsed() < std::time::Duration::from_secs(60),
-        "rejection took too long for: {:?}",
-        input
+        start.elapsed() < std::time::Duration::from_mins(1),
+        "rejection took too long for: {input:?}"
       );
     }
   }
@@ -192,7 +191,7 @@ mod tests {
     for depth in 1..=25 {
       for (open, close) in [("{", "}"), ("(", ")"), ("<|a -> ", "|>")] {
         let input = format!("{}1{}", open.repeat(depth), close.repeat(depth));
-        assert!(parse(&input).is_ok(), "should parse: {:?}", input);
+        assert!(parse(&input).is_ok(), "should parse: {input:?}");
       }
     }
   }
@@ -228,7 +227,7 @@ mod tests {
       "f[a (* [ *) ;; 2]",
       "f[a (* -> *) -> b]",
     ] {
-      assert!(parse(input).is_ok(), "should parse: {:?}", input);
+      assert!(parse(input).is_ok(), "should parse: {input:?}");
     }
     // The comment is still only a comment: what it holds never changes the
     // expression the parser builds.
@@ -257,7 +256,7 @@ mod tests {
          { For[j = 1, j < 2, j++, {a = i j}] } (* endof For[ j *) \
        ]; (* endof For[ i *) \
        a]]";
-    assert!(parse(code).is_ok(), "should parse: {:?}", code);
+    assert!(parse(code).is_ok(), "should parse: {code:?}");
   }
 
   #[test]

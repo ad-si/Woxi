@@ -93,7 +93,7 @@ pub fn get_builtin_function_info(
 /// Get all built-in function names from functions.csv.
 pub fn get_builtin_function_names() -> Vec<&'static str> {
   let mut names: Vec<&str> = BUILTIN_FUNCTION_INFO.keys().copied().collect();
-  names.sort();
+  names.sort_unstable();
   names
 }
 
@@ -101,7 +101,7 @@ pub fn get_builtin_function_names() -> Vec<&'static str> {
 /// `functions.csv` — whether or not Woxi has implemented it.
 pub fn known_wolfram_function_names() -> Vec<&'static str> {
   let mut names: Vec<&str> = KNOWN_WOLFRAM_FUNCTIONS.iter().copied().collect();
-  names.sort();
+  names.sort_unstable();
   names
 }
 
@@ -123,12 +123,12 @@ static DOC_URL_MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
     let path = cap.get(2).unwrap().as_str();
     map
       .entry(name)
-      .or_insert_with(|| format!("https://woxi.ad-si.com/docs/{}", path));
+      .or_insert_with(|| format!("https://woxi.ad-si.com/docs/{path}"));
   }
   map
 });
 
 /// Look up the public documentation URL for a built-in symbol, if one exists.
 pub fn get_doc_url(name: &str) -> Option<&'static str> {
-  DOC_URL_MAP.get(name).map(|s| s.as_str())
+  DOC_URL_MAP.get(name).map(std::string::String::as_str)
 }

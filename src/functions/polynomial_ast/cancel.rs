@@ -144,7 +144,7 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
         extract_poly_coeffs(&num_exp, &var),
         extract_poly_coeffs(pow_base, &var),
       )
-      && poly_gcd(&nc, &bc).map(|g| g.len() <= 1).unwrap_or(false)
+      && poly_gcd(&nc, &bc).is_some_and(|g| g.len() <= 1)
     {
       return expr.clone();
     }
@@ -189,7 +189,7 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
               }
             }
             // Normalize sign: keep denominator positive
-            if new_den.last().map(|&c| c < 0).unwrap_or(false) {
+            if new_den.last().is_some_and(|&c| c < 0) {
               new_num = new_num.iter().map(|c| -c).collect();
               new_den = new_den.iter().map(|c| -c).collect();
             }
@@ -227,7 +227,7 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
           let mut new_den: Vec<i128> =
             den_coeffs.iter().map(|c| c / g).collect();
           if canonicalize_sign
-            && new_den.last().map(|&c| c < 0).unwrap_or(false)
+            && new_den.last().is_some_and(|&c| c < 0)
             && new_num != [1]
           {
             new_num = new_num.iter().map(|c| -c).collect();
@@ -559,11 +559,10 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
       // quotients keep the fallback's display normalization
       // (-(1/Sqrt[1-x^2]) etc.), where no re-factoring occurs.
       let is_int_poly_quotient = find_single_variable_both(&num, &den)
-        .map(|v| {
+        .is_some_and(|v| {
           extract_poly_coeffs(&num, &v).is_some()
             && extract_poly_coeffs(&den, &v).is_some()
-        })
-        .unwrap_or(false);
+        });
       // …and only when the input was already in expanded shape (a power's
       // base counts): 1/(1+2*(1+n)) must still normalize to (3+2*n)^(-1).
       fn already_expanded(e: &Expr) -> bool {
@@ -818,8 +817,8 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
 
   // Cancel common factors
   let mut changed = false;
-  for (_, num_base_str, num_exp) in num_map.iter_mut() {
-    for (_, den_base_str, den_exp) in den_map.iter_mut() {
+  for (_, num_base_str, num_exp) in &mut num_map {
+    for (_, den_base_str, den_exp) in &mut den_map {
       if *num_base_str == *den_base_str
         && rat_positive(*num_exp)
         && rat_positive(*den_exp)
@@ -907,7 +906,7 @@ pub fn poly_gcd(a: &[i128], b: &[i128]) -> Option<Vec<i128>> {
       let g = r0.iter().copied().filter(|&c| c != 0).fold(0i128, gcd_i128);
       if g > 0 {
         let result: Vec<i128> = r0.iter().map(|c| c / g).collect();
-        if result.last().map(|&c| c < 0).unwrap_or(false) {
+        if result.last().is_some_and(|&c| c < 0) {
           return Some(result.iter().map(|c| -c).collect());
         }
         return Some(result);

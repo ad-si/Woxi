@@ -7,7 +7,7 @@ use super::*;
 fn flatten_times(expr: &Expr, out: &mut Vec<Expr>) {
   match expr {
     Expr::FunctionCall { name, args } if name == "Times" => {
-      for a in args.iter() {
+      for a in args {
         flatten_times(a, out);
       }
     }
@@ -443,7 +443,7 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         let mut factors: Vec<Expr> = Vec::with_capacity(b_list.len() + 1);
         factors.push(Expr::Integer(k + 1));
-        for bj in b_list.iter() {
+        for bj in &b_list {
           factors.push(Expr::FunctionCall {
             name: "Plus".to_string(),
             args: vec![bj.clone(), Expr::Integer(k)].into(),
@@ -812,9 +812,8 @@ fn try_pfq_regularized_with_b_poles(
   z_arg: &Expr,
 ) -> Option<Expr> {
   let z = expr_to_f64_real(z_arg)?;
-  let a_list = match a_arg {
-    Expr::List(v) => v,
-    _ => return None,
+  let Expr::List(a_list) = a_arg else {
+    return None;
   };
   let a_vals: Vec<f64> =
     a_list.iter().map(expr_to_f64_real).collect::<Option<_>>()?;
@@ -1434,7 +1433,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let z_max = z.pow(max_pow as u32);
     let mut e_num = BigInt::from(0);
     let mut const_num = BigInt::from(0);
-    for k in 0..=(b - a - 1) {
+    for k in 0..(b - a) {
       let n_idx = (a - 1 + k) as usize;
       let scale_pow = (max_pow - 1 - n_idx as i128) as u32;
       let scale = z.pow(scale_pow);
@@ -1453,20 +1452,20 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Reduce by the gcd shared between numerator e^z coefficient, the
     // numerator constant, and the denominator.
     let g_all = gcd_bigint(&gcd_bigint(&e_num, &const_num), &z_max);
-    let denom = if g_all != BigInt::from(0) {
-      &z_max / &g_all
-    } else {
+    let denom = if g_all == BigInt::from(0) {
       z_max.clone()
-    };
-    let mut e_n = if g_all != BigInt::from(0) {
-      e_num / &g_all
     } else {
+      &z_max / &g_all
+    };
+    let mut e_n = if g_all == BigInt::from(0) {
       e_num
-    };
-    let mut c_n = if g_all != BigInt::from(0) {
-      const_num / &g_all
     } else {
+      e_num / &g_all
+    };
+    let mut c_n = if g_all == BigInt::from(0) {
       const_num
+    } else {
+      const_num / &g_all
     };
     // Wolfram displays `e_n·E^z + c_n` as `(g · (e_n/g · E^z + c_n/g))`
     // when the numerator has a common factor — pull that factor out so
@@ -1474,7 +1473,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut outer_factor = BigInt::from(1);
     let g_num = gcd_bigint(&e_n, &c_n);
     if g_num > BigInt::from(1) {
-      outer_factor = g_num.clone();
+      outer_factor.clone_from(&g_num);
       e_n /= &g_num;
       c_n /= &g_num;
     }
@@ -1730,7 +1729,7 @@ fn hypergeometric_u_pos_int_b(a: f64, b: f64, z: f64) -> Option<f64> {
     }
     let nm1_fact = {
       let mut f = 1.0;
-      for i in 1..=(n - 1) {
+      for i in 1..n {
         f *= i as f64;
       }
       f
@@ -2096,9 +2095,9 @@ fn hypergeometric_u_f64(a: f64, b: f64, z: f64) -> f64 {
     let u4 = hypergeometric_u_nonint(a, b - 2.0 * h, z);
     let u5 = hypergeometric_u_nonint(a, b + 3.0 * h, z);
     let u6 = hypergeometric_u_nonint(a, b - 3.0 * h, z);
-    let avg1 = (u1 + u2) / 2.0;
-    let avg2 = (u3 + u4) / 2.0;
-    let avg3 = (u5 + u6) / 2.0;
+    let avg1 = f64::midpoint(u1, u2);
+    let avg2 = f64::midpoint(u3, u4);
+    let avg3 = f64::midpoint(u5, u6);
     // 6th-order Richardson on the symmetric averages
     //   avg(k·h) = U + c2 (k·h)² + c4 (k·h)⁴ + O(h⁶)
     // Solving the 3×3 system at k = 1, 2, 3 for U eliminates the c2 and c4
@@ -2349,7 +2348,7 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let has_real = args.iter().any(|a| matches!(a, Expr::Real(_)));
 
-  if vals.iter().all(|v| v.is_some()) && has_real {
+  if vals.iter().all(std::option::Option::is_some) && has_real {
     let a = vals[0].unwrap();
     let b = vals[1].unwrap();
     let c = vals[2].unwrap();
@@ -3232,7 +3231,7 @@ fn hypergeometric_u_complex(
     let eval = |eps: f64| {
       let u1 = hypergeometric_u_complex_nonint(a, (bi, eps), z);
       let u2 = hypergeometric_u_complex_nonint(a, (bi, -eps), z);
-      ((u1.0 + u2.0) / 2.0, (u1.1 + u2.1) / 2.0)
+      (f64::midpoint(u1.0, u2.0), f64::midpoint(u1.1, u2.1))
     };
     let e1 = eval(1e-3);
     let e2 = eval(2e-3);

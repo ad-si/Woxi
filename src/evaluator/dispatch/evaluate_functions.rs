@@ -238,7 +238,7 @@ fn distribute_args_to_params_impl(
 
   if bt >= 2 {
     // Sequence param: consume min..max args
-    let min_count: usize = if bt == 2 { 1 } else { 0 };
+    let min_count: usize = usize::from(bt == 2);
     let rest_min: usize = blank_types[param_idx + 1..]
       .iter()
       .zip(param_defaults[param_idx + 1..].iter())
@@ -246,7 +246,7 @@ fn distribute_args_to_params_impl(
         if d.is_some() {
           0
         } else if t >= 2 {
-          if t == 2 { 1 } else { 0 }
+          usize::from(t == 2)
         } else {
           1
         }
@@ -789,7 +789,7 @@ fn evaluate_function_call_ast_inner(
           .map(|(&bt, d)| {
             // Optional params and BlankNullSequence (bt == 3) match zero
             // arguments; Blank and BlankSequence need at least one.
-            if d.is_some() || bt == 3 { 0 } else { 1 }
+            usize::from(!(d.is_some() || bt == 3))
           })
           .sum();
         if args.len() < min_args {
@@ -1078,7 +1078,6 @@ fn evaluate_function_call_ast_inner(
           vec![args.to_vec()]
         };
 
-      let mut overload_matched = false;
       for perm_args in &arg_orderings {
         // Build the effective argument list by matching provided args to params.
         // Optional params are filled left-to-right; when there are fewer args than params,
@@ -1097,7 +1096,7 @@ fn evaluate_function_call_ast_inner(
           if !head_ok {
             continue;
           }
-          perm_args.to_vec()
+          perm_args.clone()
         } else {
           // Fewer args than params - fill optional params with defaults
           let num_optional_to_default = total_count - perm_args.len();
@@ -1292,7 +1291,6 @@ fn evaluate_function_call_ast_inner(
         if !conditions_met {
           continue; // try next permutation (or next overload if no more permutations)
         }
-        overload_matched = true;
         // All conditions met - substitute parameters with arguments and evaluate body
         // Use simultaneous substitution to prevent variable name leakage
         promote_lists_for_substitution(&mut effective_args);
@@ -1355,15 +1353,13 @@ fn evaluate_function_call_ast_inner(
               Ok(Expr::Identifier(ref s)) if s == "True" => {
                 return evaluate_expr_to_expr(&cond_args[0]);
               }
-              _ => continue, // condition not met, try next permutation
+              _ => {} // condition not met, try next permutation
             }
           }
           _ => return result,
         }
       } // end permutation loop
-      if !overload_matched {
-        continue; // no permutation matched, try next overload
-      }
+      // No permutation matched; fall through to the next overload.
     }
   }
 
@@ -1718,7 +1714,7 @@ fn evaluate_function_call_ast_inner(
       crate::StoredValue::Raw(val_str) => {
         crate::syntax::string_to_expr(val_str).ok()
       }
-      _ => None,
+      crate::StoredValue::Association(_) => None,
     };
     if let Some(Expr::Function { body }) = &parsed {
       let substituted = crate::syntax::substitute_slots(body, args);
@@ -1750,7 +1746,7 @@ fn evaluate_function_call_ast_inner(
     let resolved = if let Some(rel) = ctx.strip_prefix('`') {
       let parent = crate::current_context();
       let parent_trimmed = parent.trim_end_matches('`');
-      format!("{}`{}", parent_trimmed, rel)
+      format!("{parent_trimmed}`{rel}")
     } else {
       ctx.clone()
     };
@@ -1799,7 +1795,7 @@ fn evaluate_function_call_ast_inner(
       // The pushed path is `[pkg, extras..., "System`"]`; the prepend
       // list is everything before that trailing baseline entry.
       let prepend: Vec<String> =
-        if active.last().map(|s| s == "System`").unwrap_or(false) {
+        if active.last().is_some_and(|s| s == "System`") {
           active[..active.len() - 1].to_vec()
         } else {
           active.clone()
@@ -1852,7 +1848,7 @@ fn evaluate_function_call_ast_inner(
           Expr::Identifier(s) => s.clone(),
           _ => continue,
         };
-        let key = format!("{}::{}", head, tag_str);
+        let key = format!("{head}::{tag_str}");
         if name == "Off" {
           crate::off_message(&key);
         } else {
@@ -1964,8 +1960,7 @@ fn evaluate_function_call_ast_inner(
     for (key, _, _) in &updates {
       if !current.iter().any(|rule| names_option(rule, key)) {
         crate::emit_message(&format!(
-          "SetOptions::optnf: {} is not a known option for {}.",
-          key, head
+          "SetOptions::optnf: {key} is not a known option for {head}."
         ));
         return Ok(unevaluated("SetOptions", args));
       }
@@ -1984,7 +1979,7 @@ fn evaluate_function_call_ast_inner(
           replacement,
         }
       };
-      for slot in current.iter_mut() {
+      for slot in &mut current {
         if names_option(slot, &key) {
           *slot = rule.clone();
         }
@@ -2612,7 +2607,7 @@ fn evaluate_function_call_ast_inner(
       {
         if let Expr::List(cycle_list) = &cargs[0] {
           valid_perm = true;
-          for cycle in cycle_list.iter() {
+          for cycle in cycle_list {
             if let Expr::List(c) = cycle {
               let indices: Vec<i128> = c
                 .iter()
@@ -3062,7 +3057,7 @@ fn evaluate_function_call_ast_inner(
         }
         // Closing edge between the first and last rim vertices.
         cyc.push((2, n));
-        cyc.sort();
+        cyc.sort_unstable();
         for (a, b) in cyc {
           edges.push(mk_edge(a, b));
         }
@@ -3387,7 +3382,7 @@ fn evaluate_function_call_ast_inner(
     let extra = n % k;
     let mut idx = 0;
     for p in 0..k {
-      let size = base + if p < extra { 1 } else { 0 };
+      let size = base + usize::from(p < extra);
       for _ in 0..size {
         if idx < n {
           partition[idx] = p;
@@ -3940,7 +3935,7 @@ fn evaluate_function_call_ast_inner(
         // mean(|x - median|)
         let abs_diffs = if let Expr::List(items) = &data {
           let mut out = Vec::with_capacity(items.len());
-          for x in items.iter() {
+          for x in items {
             let diff = Expr::BinaryOp {
               op: BinaryOperator::Minus,
               left: Box::new(x.clone()),
@@ -3968,7 +3963,7 @@ fn evaluate_function_call_ast_inner(
         // population variance: sum((x - mean)^2) / n
         let (n, squared_diffs) = if let Expr::List(items) = &data {
           let mut out = Vec::with_capacity(items.len());
-          for x in items.iter() {
+          for x in items {
             let diff = Expr::BinaryOp {
               op: BinaryOperator::Minus,
               left: Box::new(x.clone()),
@@ -4154,7 +4149,7 @@ fn evaluate_function_call_ast_inner(
           if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "GraphLayout"))
       });
       if !has_layout {
-        for opt in forwarded.iter_mut() {
+        for opt in &mut forwarded {
           if let Expr::Rule { pattern, .. } = opt
             && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method")
           {
@@ -4486,27 +4481,25 @@ fn evaluate_function_call_ast_inner(
           }
         };
         for e in edges {
-          match e {
-            Expr::Rule {
-              pattern,
-              replacement,
-            } => {
-              let src = (**pattern).clone();
-              let dst = (**replacement).clone();
-              push_vertex(&src, &mut vertex_set);
-              push_vertex(&dst, &mut vertex_set);
-              out_edges.push(Expr::FunctionCall {
-                name: "DirectedEdge".to_string(),
-                args: vec![src, dst].into(),
-              });
+          if let Expr::Rule {
+            pattern,
+            replacement,
+          } = e
+          {
+            let src = (**pattern).clone();
+            let dst = (**replacement).clone();
+            push_vertex(&src, &mut vertex_set);
+            push_vertex(&dst, &mut vertex_set);
+            out_edges.push(Expr::FunctionCall {
+              name: "DirectedEdge".to_string(),
+              args: vec![src, dst].into(),
+            });
+          } else {
+            if let Some((src, dst)) = edge_vertices(e) {
+              push_vertex(src, &mut vertex_set);
+              push_vertex(dst, &mut vertex_set);
             }
-            _ => {
-              if let Some((src, dst)) = edge_vertices(e) {
-                push_vertex(src, &mut vertex_set);
-                push_vertex(dst, &mut vertex_set);
-              }
-              out_edges.push(e.clone());
-            }
+            out_edges.push(e.clone());
           }
         }
         // Vertices are kept in first-appearance order (matching
@@ -5305,7 +5298,7 @@ fn evaluate_function_call_ast_inner(
       && let Expr::List(edges) = &gargs[1]
     {
       let mut rules: Vec<Expr> = Vec::with_capacity(edges.len());
-      for edge in edges.iter() {
+      for edge in edges {
         let (from, to) = match edge {
           Expr::FunctionCall { name, args: eargs }
             if (name == "DirectedEdge" || name == "UndirectedEdge")
@@ -5476,7 +5469,7 @@ fn evaluate_function_call_ast_inner(
       let mut seen: std::collections::HashSet<String> =
         std::collections::HashSet::new();
       let mut multi = false;
-      for e in edges.iter() {
+      for e in edges {
         if let Expr::FunctionCall { name: en, args: ea } = e
           && ea.len() == 2
         {
@@ -5659,22 +5652,21 @@ fn evaluate_function_call_ast_inner(
           }
           .to_string(),
         ));
-      } else {
-        // Undirected: connected + all vertices have even degree
-        let (pg_graph, _pg_idx) = build_undirected_graph(vertices, edges);
-        let all_even = pg_graph
-          .node_indices()
-          .all(|ni| pg_graph.neighbors(ni).count() % 2 == 0);
-        let connected = is_connected_pg(&pg_graph);
-        return Ok(Expr::Identifier(
-          if all_even && connected {
-            "True"
-          } else {
-            "False"
-          }
-          .to_string(),
-        ));
       }
+      // Undirected: connected + all vertices have even degree
+      let (pg_graph, _pg_idx) = build_undirected_graph(vertices, edges);
+      let all_even = pg_graph
+        .node_indices()
+        .all(|ni| pg_graph.neighbors(ni).count() % 2 == 0);
+      let connected = is_connected_pg(&pg_graph);
+      return Ok(Expr::Identifier(
+        if all_even && connected {
+          "True"
+        } else {
+          "False"
+        }
+        .to_string(),
+      ));
     }
     return Ok(bool_expr(false));
   }
@@ -5707,7 +5699,7 @@ fn evaluate_function_call_ast_inner(
     // a 2-arg edge that is not DirectedEdge/Rule) go both ways; directed
     // edges (DirectedEdge or Rule) go one way only.
     let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for edge in edges.iter() {
+    for edge in edges {
       let (directed, src, dst) = match edge {
         Expr::FunctionCall {
           name: ename,
@@ -5881,7 +5873,7 @@ fn evaluate_function_call_ast_inner(
     // Build a directed adjacency list. Undirected edges go both ways;
     // directed edges (DirectedEdge or Rule) go one way only.
     let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for edge in edges.iter() {
+    for edge in edges {
       let (directed, src, dst) = match edge {
         Expr::FunctionCall {
           name: ename,
@@ -6048,7 +6040,7 @@ fn evaluate_function_call_ast_inner(
         .collect();
       // Directed adjacency: undirected edges point both ways.
       let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
-      for edge in edges.iter() {
+      for edge in edges {
         if let Expr::FunctionCall { name: en, args: ea } = edge
           && ea.len() == 2
           && let (Some(&u), Some(&v)) =
@@ -6230,19 +6222,19 @@ fn evaluate_function_call_ast_inner(
     let mut vertex_seen = std::collections::HashSet::new();
     let mut edges: Vec<Expr> = Vec::new();
     let mut edge_seen = std::collections::HashSet::new();
-    for g in args.iter() {
+    for g in args {
       let Expr::FunctionCall { args: ga, .. } = g else {
         unreachable!()
       };
       if let Expr::List(vs) = &ga[0] {
-        for v in vs.iter() {
+        for v in vs {
           if vertex_seen.insert(expr_to_string(v)) {
             vertices.push(v.clone());
           }
         }
       }
       if let Expr::List(es) = &ga[1] {
-        for edge in es.iter() {
+        for edge in es {
           if let Expr::FunctionCall { args: ea, .. } = edge
             && ea.len() == 2
           {
@@ -6488,7 +6480,7 @@ fn evaluate_function_call_ast_inner(
       // outside it — and every vertex of an acyclic graph — get 0.
       let mut in_adj = vec![vec![0.0_f64; n]; n];
       let mut has_self = vec![false; n];
-      for e in edges.iter() {
+      for e in edges {
         if let Some((u, v, _)) = crate::functions::graph::edge_endpoints(e)
           && let (Some(&i), Some(&j)) =
             (idx.get(&expr_to_string(&u)), idx.get(&expr_to_string(&v)))
@@ -6545,7 +6537,7 @@ fn evaluate_function_call_ast_inner(
         }
         let total: f64 = result.iter().sum();
         if total != 0.0 {
-          for x in result.iter_mut() {
+          for x in &mut result {
             *x /= total;
           }
         }
@@ -6560,7 +6552,7 @@ fn evaluate_function_call_ast_inner(
     }
 
     let mut adj = vec![vec![0.0_f64; n]; n];
-    for e in edges.iter() {
+    for e in edges {
       if let Some((u, v, _directed)) =
         crate::functions::graph::edge_endpoints(e)
         && let (Some(&i), Some(&j)) =
@@ -6626,7 +6618,7 @@ fn evaluate_function_call_ast_inner(
     // centrality from its in-neighbours. Edge u -> v therefore contributes to
     // adj[v][u]; undirected edges contribute both ways.
     let mut adj = vec![vec![0.0_f64; n]; n];
-    for e in edges.iter() {
+    for e in edges {
       if let Some((u, v, directed)) = crate::functions::graph::edge_endpoints(e)
         && let (Some(&i), Some(&j)) =
           (idx.get(&expr_to_string(&u)), idx.get(&expr_to_string(&v)))
@@ -6674,7 +6666,7 @@ fn evaluate_function_call_ast_inner(
       idx.insert(expr_to_string(v), i);
     }
     let mut adj = vec![vec![0.0_f64; n]; n];
-    for e in edges.iter() {
+    for e in edges {
       if let Some((u, v, directed)) = crate::functions::graph::edge_endpoints(e)
         && let (Some(&i), Some(&j)) =
           (idx.get(&expr_to_string(&u)), idx.get(&expr_to_string(&v)))
@@ -6731,7 +6723,7 @@ fn evaluate_function_call_ast_inner(
         stack.push(v);
         for w in pg_graph
           .neighbors(petgraph::graph::NodeIndex::new(v))
-          .map(|ni| ni.index())
+          .map(petgraph::prelude::NodeIndex::index)
         {
           if dist[w] < 0 {
             dist[w] = dist[v] + 1;
@@ -6781,7 +6773,7 @@ fn evaluate_function_call_ast_inner(
       idx.insert(expr_to_string(v), i);
     }
     let mut edge_pairs: Vec<(usize, usize)> = Vec::new();
-    for e in edges.iter() {
+    for e in edges {
       if let Some((u, v, _directed)) =
         crate::functions::graph::edge_endpoints(e)
         && let (Some(&i), Some(&j)) =
@@ -6835,7 +6827,7 @@ fn evaluate_function_call_ast_inner(
       .map(|v| {
         pg_graph
           .neighbors(petgraph::graph::NodeIndex::new(v))
-          .map(|ni| ni.index())
+          .map(petgraph::prelude::NodeIndex::index)
           .collect()
       })
       .collect();
@@ -6851,7 +6843,7 @@ fn evaluate_function_call_ast_inner(
         let mut triangles = 0i128;
         let neighbors: Vec<usize> = pg_graph
           .neighbors(petgraph::graph::NodeIndex::new(v))
-          .map(|ni| ni.index())
+          .map(petgraph::prelude::NodeIndex::index)
           .collect();
         for i in 0..neighbors.len() {
           for j in (i + 1)..neighbors.len() {
@@ -6914,7 +6906,7 @@ fn evaluate_function_call_ast_inner(
       }
     }
     // Deduplicate edges
-    edge_pairs.sort();
+    edge_pairs.sort_unstable();
     edge_pairs.dedup();
 
     // Compute chromatic polynomial coefficients using deletion-contraction
@@ -7430,8 +7422,7 @@ fn evaluate_function_call_ast_inner(
         let mut components: Vec<(usize, Vec<Expr>)> = kosaraju
           .into_iter()
           .map(|comp| {
-            let rank =
-              comp.first().map(|ni| tarjan_rank[&ni.index()]).unwrap_or(0);
+            let rank = comp.first().map_or(0, |ni| tarjan_rank[&ni.index()]);
             let verts = comp
               .into_iter()
               .map(|ni| vertices[ni.index()].clone())
@@ -7736,7 +7727,9 @@ fn evaluate_function_call_ast_inner(
     && let Expr::List(verts) = &gargs[0]
     && let Expr::List(edges) = &gargs[1]
   {
-    return find_maximum_flow_impl(verts, edges, &args[1], &args[2], args);
+    return Ok(find_maximum_flow_impl(
+      verts, edges, &args[1], &args[2], args,
+    ));
   }
 
   // VertexDegree[graph] or VertexDegree[graph, vertex] — vertex degree(s)
@@ -7817,16 +7810,13 @@ fn evaluate_function_call_ast_inner(
           }
         };
         let mut ok = !edges.is_empty();
-        for e in edges.iter() {
-          match edge_endpoints(e) {
-            Some((src, dst)) => {
-              push(&src, &mut verts);
-              push(&dst, &mut verts);
-            }
-            None => {
-              ok = false;
-              break;
-            }
+        for e in edges {
+          if let Some((src, dst)) = edge_endpoints(e) {
+            push(&src, &mut verts);
+            push(&dst, &mut verts);
+          } else {
+            ok = false;
+            break;
           }
         }
         if ok {
@@ -7921,16 +7911,13 @@ fn evaluate_function_call_ast_inner(
           }
         };
         let mut ok = !edges.is_empty();
-        for e in edges.iter() {
-          match edge_endpoints(e) {
-            Some((src, dst)) => {
-              push(&src, &mut verts);
-              push(&dst, &mut verts);
-            }
-            None => {
-              ok = false;
-              break;
-            }
+        for e in edges {
+          if let Some((src, dst)) = edge_endpoints(e) {
+            push(&src, &mut verts);
+            push(&dst, &mut verts);
+          } else {
+            ok = false;
+            break;
           }
         }
         if ok {
@@ -8050,7 +8037,7 @@ fn evaluate_function_call_ast_inner(
     && gargs.len() >= 2
     && let (Expr::List(verts), Expr::List(edges)) = (&gargs[0], &gargs[1])
   {
-    return find_spanning_tree_impl(verts, edges);
+    return Ok(find_spanning_tree_impl(verts, edges));
   }
 
   // GraphPropertyDistribution[property[g], Distributed[g, graphDist]]
@@ -8217,7 +8204,7 @@ fn evaluate_function_call_ast_inner(
               let formal_name = if var_name.len() == 1 {
                 let ch = var_name.chars().next().unwrap();
                 let formal_ch = ch.to_uppercase().next().unwrap_or(ch);
-                format!("\\[Formal{}]", formal_ch)
+                format!("\\[Formal{formal_ch}]")
               } else {
                 var_name.clone()
               };
@@ -9160,8 +9147,7 @@ fn evaluate_function_call_ast_inner(
       for path in &paths {
         if std::fs::remove_file(path).is_err() {
           crate::emit_message(&format!(
-            "DeleteFile::fdnfnd: Directory or file \"{}\" not found.",
-            path
+            "DeleteFile::fdnfnd: Directory or file \"{path}\" not found."
           ));
           return Ok(Expr::Identifier("$Failed".to_string()));
         }
@@ -9173,8 +9159,7 @@ fn evaluate_function_call_ast_inner(
     // unevaluated.
     let arg_str = crate::syntax::expr_to_string(&args[0]);
     crate::emit_message(&format!(
-      "DeleteFile::strs: A string or nonempty list of strings is expected at position 1 in DeleteFile[{}].",
-      arg_str
+      "DeleteFile::strs: A string or nonempty list of strings is expected at position 1 in DeleteFile[{arg_str}]."
     ));
     return Ok(unevaluated("DeleteFile", args));
   }
@@ -9195,13 +9180,13 @@ fn evaluate_function_call_ast_inner(
         let abs = if path.is_absolute() {
           source.clone()
         } else {
-          std::env::current_dir()
-            .map(|cwd| cwd.join(path).to_string_lossy().into_owned())
-            .unwrap_or_else(|_| source.clone())
+          std::env::current_dir().map_or_else(
+            |_| source.clone(),
+            |cwd| cwd.join(path).to_string_lossy().into_owned(),
+          )
         };
         crate::emit_message(&format!(
-          "RenameFile::fdnfnd: Directory or file \"{}\" not found.",
-          abs
+          "RenameFile::fdnfnd: Directory or file \"{abs}\" not found."
         ));
         return Ok(Expr::Identifier("$Failed".to_string()));
       }
@@ -9220,9 +9205,10 @@ fn evaluate_function_call_ast_inner(
         if path.is_absolute() {
           p.to_string()
         } else {
-          std::env::current_dir()
-            .map(|cwd| cwd.join(path).to_string_lossy().into_owned())
-            .unwrap_or_else(|_| p.to_string())
+          std::env::current_dir().map_or_else(
+            |_| p.to_string(),
+            |cwd| cwd.join(path).to_string_lossy().into_owned(),
+          )
         }
       };
       if !std::path::Path::new(source).exists() {
@@ -9234,8 +9220,7 @@ fn evaluate_function_call_ast_inner(
       }
       if std::path::Path::new(dest).exists() {
         crate::emit_message(&format!(
-          "RenameDirectory::eexist: {} already exists.",
-          dest
+          "RenameDirectory::eexist: {dest} already exists."
         ));
         return Ok(Expr::Identifier("$Failed".to_string()));
       }
@@ -9251,22 +9236,19 @@ fn evaluate_function_call_ast_inner(
   // wolframscript's error paths: non-string args emit `strs`, missing
   // directories emit `dirnf`, non-empty dirs emit `dirne`.
   if name == "DeleteDirectory" && args.len() == 1 {
-    let path = match &args[0] {
-      Expr::String(s) => s.clone(),
-      _ => {
-        let arg_str = crate::syntax::expr_to_string(&args[0]);
-        crate::emit_message(&format!(
-          "DeleteDirectory::strs: A string or nonempty list of strings is expected at position 1 in DeleteDirectory[{}].",
-          arg_str
-        ));
-        return Ok(unevaluated("DeleteDirectory", args));
-      }
+    let path = if let Expr::String(s) = &args[0] {
+      s.clone()
+    } else {
+      let arg_str = crate::syntax::expr_to_string(&args[0]);
+      crate::emit_message(&format!(
+        "DeleteDirectory::strs: A string or nonempty list of strings is expected at position 1 in DeleteDirectory[{arg_str}]."
+      ));
+      return Ok(unevaluated("DeleteDirectory", args));
     };
     let p = std::path::Path::new(&path);
     if !p.exists() {
       crate::emit_message(&format!(
-        "DeleteDirectory::dirnf: Directory {} not found.",
-        path
+        "DeleteDirectory::dirnf: Directory {path} not found."
       ));
       return Ok(Expr::Identifier("$Failed".to_string()));
     }
@@ -9289,27 +9271,24 @@ fn evaluate_function_call_ast_inner(
       let abs = if path.is_absolute() {
         source.clone()
       } else {
-        std::env::current_dir()
-          .map(|cwd| cwd.join(path).to_string_lossy().into_owned())
-          .unwrap_or_else(|_| source.clone())
+        std::env::current_dir().map_or_else(
+          |_| source.clone(),
+          |cwd| cwd.join(path).to_string_lossy().into_owned(),
+        )
       };
       crate::emit_message(&format!(
-        "CopyFile::fdnfnd: Directory or file \"{}\" not found.",
-        abs
+        "CopyFile::fdnfnd: Directory or file \"{abs}\" not found."
       ));
       return Ok(Expr::Identifier("$Failed".to_string()));
     }
     if std::path::Path::new(dest).exists() {
-      crate::emit_message(&format!(
-        "CopyFile::eexist: {} already exists.",
-        dest
-      ));
+      crate::emit_message(&format!("CopyFile::eexist: {dest} already exists."));
       return Ok(Expr::Identifier("$Failed".to_string()));
     }
     match std::fs::copy(source, dest) {
       Ok(_) => return Ok(Expr::String(dest.clone())),
       Err(e) => {
-        crate::emit_message(&format!("CopyFile::failed: {}", e));
+        crate::emit_message(&format!("CopyFile::failed: {e}"));
         return Ok(Expr::Identifier("$Failed".to_string()));
       }
     }
@@ -9340,16 +9319,17 @@ fn evaluate_function_call_ast_inner(
           Ok(()) => {
             return Ok(Expr::String(path.to_string_lossy().into_owned()));
           }
-          Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+          Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
           Err(e) => {
             last_err = Some(e);
             break;
           }
         }
       }
-      let message = last_err
-        .map(|e| e.to_string())
-        .unwrap_or_else(|| "no free directory name".to_string());
+      let message = last_err.map_or_else(
+        || "no free directory name".to_string(),
+        |e| e.to_string(),
+      );
       crate::emit_message(&format!("CreateDirectory::failed: {message}"));
       return Ok(Expr::Identifier("$Failed".to_string()));
     }
@@ -9358,22 +9338,20 @@ fn evaluate_function_call_ast_inner(
         let p = std::path::Path::new(path);
         if p.exists() {
           crate::emit_message(&format!(
-            "CreateDirectory::eexist: {} already exists.",
-            path
+            "CreateDirectory::eexist: {path} already exists."
           ));
           return Ok(Expr::Identifier("$Failed".to_string()));
         }
         match std::fs::create_dir_all(path) {
           Ok(()) => return Ok(Expr::String(path.clone())),
           Err(e) => {
-            crate::emit_message(&format!("CreateDirectory::failed: {}", e));
+            crate::emit_message(&format!("CreateDirectory::failed: {e}"));
             return Ok(Expr::Identifier("$Failed".to_string()));
           }
         }
-      } else {
-        // Non-string argument
-        return Ok(Expr::Identifier("$Failed".to_string()));
       }
+      // Non-string argument
+      return Ok(Expr::Identifier("$Failed".to_string()));
     }
   }
 
@@ -9808,8 +9786,7 @@ fn evaluate_function_call_ast_inner(
     let r = window.len();
     if r > n {
       crate::emit_message(&format!(
-        "MovingAverage::arg2: The second argument {} must be a positive integer less than or equal to the length {} of the first argument, or a vector of length less than or equal to the length of the first argument.",
-        r, n
+        "MovingAverage::arg2: The second argument {r} must be a positive integer less than or equal to the length {n} of the first argument, or a vector of length less than or equal to the length of the first argument."
       ));
       return Ok(unevaluated(name, args));
     }
@@ -10433,7 +10410,7 @@ fn evaluate_function_call_ast_inner(
       && let Some(t_f) = crate::functions::math_ast::try_eval_to_f64(t)
     {
       let mut factors: Vec<Expr> = vec![s.clone()];
-      for r in rates.iter() {
+      for r in rates {
         if let Expr::List(pair) = r {
           let tk =
             crate::functions::math_ast::try_eval_to_f64(&pair[0]).unwrap();
@@ -10475,25 +10452,23 @@ fn evaluate_function_call_ast_inner(
     {
       let mut nodes: Vec<(f64, f64)> = Vec::new();
       let mut ok = true;
-      for r in rules.iter() {
-        match r {
-          Expr::Rule {
-            pattern,
-            replacement,
-          } => {
-            let tk = crate::functions::math_ast::try_eval_to_f64(pattern);
-            let rk = crate::functions::math_ast::try_eval_to_f64(replacement);
-            if let (Some(t_v), Some(r_v)) = (tk, rk) {
-              nodes.push((t_v, r_v));
-            } else {
-              ok = false;
-              break;
-            }
-          }
-          _ => {
+      for r in rules {
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = r
+        {
+          let tk = crate::functions::math_ast::try_eval_to_f64(pattern);
+          let rk = crate::functions::math_ast::try_eval_to_f64(replacement);
+          if let (Some(t_v), Some(r_v)) = (tk, rk) {
+            nodes.push((t_v, r_v));
+          } else {
             ok = false;
             break;
           }
+        } else {
+          ok = false;
+          break;
         }
       }
       let t_start = crate::functions::math_ast::try_eval_to_f64(&span[0]);
@@ -10737,7 +10712,7 @@ fn evaluate_function_call_ast_inner(
 
   // FunctionInterpolation[expr, {x, xmin, xmax}]
   if name == "FunctionInterpolation" && args.len() >= 2 {
-    return function_interpolation_ast(args);
+    return Ok(function_interpolation_ast(args));
   }
 
   // PermutationProduct[Cycles[…], Cycles[…], …]
@@ -10766,19 +10741,15 @@ fn evaluate_function_call_ast_inner(
     && args.len() == 1
     && let Expr::String(path) = &args[0]
   {
-    match std::fs::read_to_string(path) {
-      Ok(contents) => {
-        if !crate::is_quiet_print() {
-          print!("{}", contents);
-        }
-        crate::capture_stdout(contents.trim_end_matches('\n'));
-        return Ok(Expr::Identifier("Null".to_string()));
+    if let Ok(contents) = std::fs::read_to_string(path) {
+      if !crate::is_quiet_print() {
+        print!("{contents}");
       }
-      Err(_) => {
-        crate::emit_message(&format!("General::noopen: Cannot open {}.", path));
-        return Ok(unevaluated("FilePrint", args));
-      }
+      crate::capture_stdout(contents.trim_end_matches('\n'));
+      return Ok(Expr::Identifier("Null".to_string()));
     }
+    crate::emit_message(&format!("General::noopen: Cannot open {path}."));
+    return Ok(unevaluated("FilePrint", args));
   }
 
   // FileType[path] — return the type of a file/directory
@@ -10830,8 +10801,7 @@ fn evaluate_function_call_ast_inner(
     && args.len() == 1
   {
     crate::emit_message(&format!(
-      "{}::argr: {} called with 1 argument; 2 arguments are expected.",
-      name, name
+      "{name}::argr: {name} called with 1 argument; 2 arguments are expected."
     ));
     return Ok(unevaluated(name, args));
   }
@@ -11232,7 +11202,7 @@ fn evaluate_function_call_ast_inner(
       .map(expr_to_string)
       .collect::<Vec<_>>()
       .join(", ");
-    let call_str = format!("{}[{}]", name, args_str);
+    let call_str = format!("{name}[{args_str}]");
     crate::capture_unimplemented_call(&call_str);
   }
 
@@ -11335,7 +11305,7 @@ fn is_well_formed_xml(input: &str) -> bool {
     SelfClose,
     Skip, // comment / PI / CDATA — no impact on tag stack
   }
-  fn parse_tag<'a>(b: &'a [u8], i: usize) -> Option<(usize, TagKind<'a>)> {
+  fn parse_tag(b: &[u8], i: usize) -> Option<(usize, TagKind<'_>)> {
     if i >= b.len() || b[i] != b'<' {
       return None;
     }
@@ -11412,7 +11382,7 @@ fn is_well_formed_xml(input: &str) -> bool {
       let c = b[j];
       match (quote, c) {
         (Some(q), x) if x == q => quote = None,
-        (None, b'"') | (None, b'\'') => quote = Some(c),
+        (None, b'"' | b'\'') => quote = Some(c),
         (None, b'/') if j + 1 < b.len() && b[j + 1] == b'>' => {
           return Some((j + 2, TagKind::SelfClose));
         }
@@ -11428,9 +11398,8 @@ fn is_well_formed_xml(input: &str) -> bool {
 
   // Read the root element (and everything inside it).
   let mut stack: Vec<&[u8]> = Vec::new();
-  let (mut next, kind) = match parse_tag(bytes, i) {
-    Some(v) => v,
-    None => return false,
+  let Some((mut next, kind)) = parse_tag(bytes, i) else {
+    return false;
   };
   match kind {
     TagKind::Open(name) => stack.push(name),
@@ -11455,9 +11424,8 @@ fn is_well_formed_xml(input: &str) -> bool {
       }
       continue;
     }
-    let (j, k) = match parse_tag(bytes, i) {
-      Some(v) => v,
-      None => return false,
+    let Some((j, k)) = parse_tag(bytes, i) else {
+      return false;
     };
     match k {
       TagKind::Open(name) => {
@@ -11568,7 +11536,7 @@ fn graph_directed_distances(
     .map(|(i, v)| (expr_to_string(v), i))
     .collect();
   let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
-  for edge in edges.iter() {
+  for edge in edges {
     if let Expr::FunctionCall { name: en, args: ea } = edge
       && ea.len() == 2
       && let (Some(&u), Some(&v)) = (
@@ -11970,7 +11938,13 @@ fn evaluate_blend(args: &[Expr]) -> Option<Expr> {
 
     if n == 2 {
       // Simple case: c1*(1-t) + c2*t
-      blend_two_rational(&rgbs[0], &rgbs[1], t_num, t_den, all_graylevel)
+      Some(blend_two_rational(
+        &rgbs[0],
+        &rgbs[1],
+        t_num,
+        t_den,
+        all_graylevel,
+      ))
     } else {
       // Multi-color: map t in [0,1] to segments
       // t=0 → first color, t=1 → last color
@@ -11993,13 +11967,13 @@ fn evaluate_blend(args: &[Expr]) -> Option<Expr> {
       let local_t_num = pos_num - (seg_idx as i128) * pos_den;
       let local_t_den = pos_den;
 
-      blend_two_rational(
+      Some(blend_two_rational(
         &rgbs[seg_idx],
         &rgbs[seg_idx + 1],
         local_t_num,
         local_t_den,
         all_graylevel,
-      )
+      ))
     }
   }
 }
@@ -12086,13 +12060,13 @@ fn evaluate_blend_positioned(pairs: &[Expr], t_arg: &Expr) -> Option<Expr> {
     }
     let lt_num = num_diff * den_span;
     let lt_den = den_diff * num_span;
-    return blend_two_rational(
+    return Some(blend_two_rational(
       &rgbs[seg],
       &rgbs[seg + 1],
       lt_num,
       lt_den,
       all_graylevel,
-    );
+    ));
   }
 
   // Inexact: interpolate the two segment colors in f64.
@@ -12237,7 +12211,7 @@ fn blend_two_rational(
   t_num: i128,
   t_den: i128,
   as_graylevel: bool,
-) -> Option<Expr> {
+) -> crate::syntax::Expr {
   // (1-t) = (t_den - t_num) / t_den
   let one_minus_t_num = t_den - t_num;
 
@@ -12252,21 +12226,21 @@ fn blend_two_rational(
   };
 
   if as_graylevel {
-    Some(Expr::FunctionCall {
+    Expr::FunctionCall {
       name: "GrayLevel".to_string(),
       args: vec![build_channel(0)].into(),
-    })
+    }
   } else {
-    Some(Expr::FunctionCall {
+    Expr::FunctionCall {
       name: "RGBColor".to_string(),
       args: (0..3).map(build_channel).collect(),
-    })
+    }
   }
 }
 
 /// FunctionInterpolation[expr, {x, xmin, xmax}] — sample a function and build
 /// an InterpolatingFunction with cubic spline interpolation.
-fn function_interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+fn function_interpolation_ast(args: &[Expr]) -> crate::syntax::Expr {
   if let Expr::List(spec) = &args[1]
     && spec.len() == 3
     && let Expr::Identifier(var_name) = &spec[0]
@@ -12325,7 +12299,7 @@ fn function_interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             vec![Expr::List(vec![Expr::Real(xmin), Expr::Real(xmax)].into())]
               .into(),
           );
-          return Ok(Expr::FunctionCall {
+          return Expr::FunctionCall {
             name: "InterpolatingFunction".to_string(),
             args: vec![
               domain,
@@ -12333,12 +12307,12 @@ fn function_interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               Expr::Integer(3),
             ]
             .into(),
-          });
+          };
         }
       }
     }
   }
-  Ok(unevaluated("FunctionInterpolation", args))
+  unevaluated("FunctionInterpolation", args)
 }
 
 /// Compute chromatic polynomial coefficients via deletion-contraction.
@@ -12382,7 +12356,7 @@ fn chromatic_poly_coeffs(n: usize, edges: &[(usize, usize)]) -> Vec<i128> {
       contracted_edges.push((x, y));
     }
   }
-  contracted_edges.sort();
+  contracted_edges.sort_unstable();
   contracted_edges.dedup();
 
   let con_coeffs = chromatic_poly_coeffs(n - 1, &contracted_edges);
@@ -12828,24 +12802,18 @@ fn find_maximum_flow_impl(
   source: &Expr,
   sink: &Expr,
   args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   let vertex_idx = |v: &Expr| -> Option<usize> {
     verts
       .iter()
       .position(|vert| crate::evaluator::pattern_matching::expr_equal(vert, v))
   };
 
-  let s = match vertex_idx(source) {
-    Some(i) => i,
-    None => {
-      return Ok(unevaluated("FindMaximumFlow", args));
-    }
+  let Some(s) = vertex_idx(source) else {
+    return unevaluated("FindMaximumFlow", args);
   };
-  let t = match vertex_idx(sink) {
-    Some(i) => i,
-    None => {
-      return Ok(unevaluated("FindMaximumFlow", args));
-    }
+  let Some(t) = vertex_idx(sink) else {
+    return unevaluated("FindMaximumFlow", args);
   };
 
   let (pg_graph, _) = crate::functions::graph::build_flow_graph(verts, edges);
@@ -12855,7 +12823,7 @@ fn find_maximum_flow_impl(
   let (max_flow, _flow_map) =
     petgraph::algo::ford_fulkerson(&pg_graph, source_idx, sink_idx);
 
-  Ok(Expr::Integer(max_flow as i128))
+  Expr::Integer(max_flow as i128)
 }
 
 /// FindGraphIsomorphism implementation using backtracking
@@ -13047,12 +13015,12 @@ fn find_graph_isomorphism_impl(
 fn find_spanning_tree_impl(
   verts: &[Expr],
   edges: &[Expr],
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   if verts.is_empty() {
-    return Ok(Expr::FunctionCall {
+    return Expr::FunctionCall {
       name: "Graph".to_string(),
       args: vec![Expr::List(vec![].into()), Expr::List(vec![].into())].into(),
-    });
+    };
   }
 
   let (pg_graph, _) = build_undirected_graph(verts, edges);
@@ -13096,14 +13064,14 @@ fn find_spanning_tree_impl(
     }
   }
 
-  Ok(Expr::FunctionCall {
+  Expr::FunctionCall {
     name: "Graph".to_string(),
     args: vec![
       Expr::List(verts.to_vec().into()),
       Expr::List(tree_edges.into()),
     ]
     .into(),
-  })
+  }
 }
 
 /// Built-in message template lookup.
@@ -13126,10 +13094,10 @@ fn cycles_expr_to_map(
     return None;
   };
   let mut map = std::collections::HashMap::new();
-  for cycle in cycle_list.iter() {
+  for cycle in cycle_list {
     let Expr::List(c) = cycle else { return None };
     let mut ints: Vec<i128> = Vec::with_capacity(c.len());
-    for entry in c.iter() {
+    for entry in c {
       let Expr::Integer(n) = entry else { return None };
       ints.push(*n);
     }
@@ -13152,7 +13120,7 @@ fn map_to_cycles_expr(map: &std::collections::HashMap<i128, i128>) -> Expr {
   let mut visited = std::collections::HashSet::<i128>::new();
   let mut cycles: Vec<Vec<i128>> = Vec::new();
   let mut keys: Vec<i128> = map.keys().copied().collect();
-  keys.sort();
+  keys.sort_unstable();
   for &start in &keys {
     if visited.contains(&start) {
       continue;
@@ -13176,8 +13144,7 @@ fn map_to_cycles_expr(map: &std::collections::HashMap<i128, i128>) -> Expr {
         .iter()
         .enumerate()
         .min_by_key(|(_, v)| *v)
-        .map(|(i, _)| i)
-        .unwrap_or(0);
+        .map_or(0, |(i, _)| i);
       cycle.rotate_left(min_idx);
       cycles.push(cycle);
     }
@@ -13211,7 +13178,7 @@ fn compose_permutation_lists(args: &[Expr]) -> Option<Expr> {
   for a in args {
     let Expr::List(items) = a else { return None };
     let mut p: Vec<i128> = Vec::with_capacity(items.len());
-    for it in items.iter() {
+    for it in items {
       match it {
         Expr::Integer(n) if *n >= 1 => p.push(*n),
         _ => return None,
@@ -13232,7 +13199,7 @@ fn compose_permutation_lists(args: &[Expr]) -> Option<Expr> {
     }
     perms.push(p);
   }
-  let n = perms.iter().map(|p| p.len()).max().unwrap_or(0);
+  let n = perms.iter().map(std::vec::Vec::len).max().unwrap_or(0);
   let mut result: Vec<Expr> = Vec::with_capacity(n);
   for i in 1..=n as i128 {
     let mut cur = i;
@@ -13340,8 +13307,7 @@ fn bspline_point_to_real(e: &Expr) -> Expr {
         .iter()
         .map(|c| {
           crate::functions::math_ast::try_eval_to_f64(c)
-            .map(Expr::Real)
-            .unwrap_or_else(|| c.clone())
+            .map_or_else(|| c.clone(), Expr::Real)
         })
         .collect(),
     ),
@@ -13467,7 +13433,7 @@ fn two_d_substitution_blocks(
   for (from, to) in rules {
     let Expr::List(rows) = to else { return None };
     let mut block = Vec::with_capacity(rows.len());
-    for row in rows.iter() {
+    for row in rows {
       let Expr::List(cells) = row else { return None };
       block.push(cells.to_vec());
     }
@@ -13537,7 +13503,7 @@ fn flatten_nested_piecewise(
       return None;
     };
     let mut out = Vec::with_capacity(clauses.len());
-    for clause in clauses.iter() {
+    for clause in clauses {
       let Expr::List(pair) = clause else {
         return None;
       };
@@ -13638,12 +13604,12 @@ fn collect_condition_symbols(expr: &Expr, out: &mut Vec<Expr>) {
       }
     }
     Expr::FunctionCall { args, .. } => {
-      for a in args.iter() {
+      for a in args {
         collect_condition_symbols(a, out);
       }
     }
     Expr::List(items) => {
-      for i in items.iter() {
+      for i in items {
         collect_condition_symbols(i, out);
       }
     }

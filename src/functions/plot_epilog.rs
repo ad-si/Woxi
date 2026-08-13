@@ -98,7 +98,7 @@ impl EpilogStyle {
     }
     let alpha = self.color.a * self.opacity;
     if alpha < 1.0 {
-      s.push_str(&format!(" opacity=\"{:.3}\"", alpha));
+      s.push_str(&format!(" opacity=\"{alpha:.3}\""));
     }
     s
   }
@@ -107,7 +107,7 @@ impl EpilogStyle {
     let mut s = format!("fill=\"{}\"", self.color.to_svg_rgb());
     let alpha = self.color.a * self.opacity;
     if alpha < 1.0 {
-      s.push_str(&format!(" fill-opacity=\"{:.3}\"", alpha));
+      s.push_str(&format!(" fill-opacity=\"{alpha:.3}\""));
     }
     s
   }
@@ -165,7 +165,7 @@ fn anchor_component(expr: &Expr, min: f64, max: f64) -> Option<f64> {
     return match name.as_str() {
       "Left" | "Bottom" => Some(min),
       "Right" | "Top" => Some(max),
-      "Center" => Some((min + max) / 2.0),
+      "Center" => Some(f64::midpoint(min, max)),
       // The axis of the *other* coordinate: zero when it is in range, and
       // the nearer edge otherwise, which is where Wolfram draws it.
       "Axis" => Some(0.0_f64.clamp(min, max)),
@@ -431,9 +431,10 @@ fn render_item(
           // A label carrying structure (`Subscript[N, D]`) is typeset into
           // SVG markup; a plain one goes through the same path, which
           // escapes it.
-          let label = styled.as_ref().map(|s| s.svg()).unwrap_or_else(|| {
-            svg_escape_text(&crate::syntax::expr_to_output(body))
-          });
+          let label = styled.as_ref().map_or_else(
+            || svg_escape_text(&crate::syntax::expr_to_output(body)),
+            super::chart::StyledLabel::svg,
+          );
           let font_size =
             styled.as_ref().and_then(|s| s.font_size).unwrap_or(13.0)
               * area.scale;
@@ -443,15 +444,16 @@ fn render_item(
           };
           let (px, py) = (area.px(x), area.py(y));
           if is_framed {
-            let text_w =
-              styled.as_ref().map(|s| s.text.chars().count()).unwrap_or(0)
-                as f64
-                * font_size
-                * 0.6;
+            let text_w = styled.as_ref().map_or(0, |s| s.text.chars().count())
+              as f64
+              * font_size
+              * 0.6;
             let background = option_value(frame_opts, "Background")
               .and_then(parse_color)
-              .map(|c| c.to_svg_rgb())
-              .unwrap_or_else(|| "none".to_string());
+              .map_or_else(
+                || "none".to_string(),
+                super::graphics::Color::to_svg_rgb,
+              );
             // Wolfram draws the box with a thin border unless the label
             // asks for none; `FrameStyle -> colour` recolours it.
             let stroke = match option_value(frame_opts, "FrameStyle") {
@@ -482,8 +484,8 @@ fn render_item(
       // natural size.
       "Inset" if !args.is_empty() => {
         let anchor = args.get(1).and_then(|p| anchor2(p, area)).unwrap_or((
-          (area.x_min + area.x_max) / 2.0,
-          (area.y_min + area.y_max) / 2.0,
+          f64::midpoint(area.x_min, area.x_max),
+          f64::midpoint(area.y_min, area.y_max),
         ));
         let svg = crate::evaluator::expr_to_svg(&args[0]);
         if let Some((w, h)) = crate::functions::graphics::svg_natural_size(&svg)
@@ -554,13 +556,9 @@ fn render_circle_like(
   if let Some((a1, a2)) = angles {
     let (sx, sy) = (pcx + prx * a1.cos(), pcy - pry * a1.sin());
     let (ex, ey) = (pcx + prx * a2.cos(), pcy - pry * a2.sin());
-    let large = if (a2 - a1).abs() % (2.0 * std::f64::consts::PI)
-      > std::f64::consts::PI
-    {
-      1
-    } else {
-      0
-    };
+    let large = i32::from(
+      (a2 - a1).abs() % (2.0 * std::f64::consts::PI) > std::f64::consts::PI,
+    );
     // SVG y grows downward, so a counter-clockwise data-space arc is
     // sweep-flag 0.
     if filled {

@@ -203,10 +203,7 @@ pub fn partition_multi_dim_ast(
   offsets: &[i128],
 ) -> Result<Expr, InterpreterError> {
   fn partition_one_dim(list: &Expr, n: usize, d: usize) -> Option<Vec<Expr>> {
-    let items = match list {
-      Expr::List(v) => v,
-      _ => return None,
-    };
+    let Expr::List(items) = list else { return None };
     let mut chunks: Vec<Expr> = Vec::new();
     let mut i = 0;
     while i + n <= items.len() {
@@ -233,10 +230,7 @@ pub fn partition_multi_dim_ast(
     for chunk in &outer {
       // chunk is `Expr::List(rows)`; we want to partition each row's
       // deeper dimensions, then reassemble.
-      let rows = match chunk {
-        Expr::List(v) => v,
-        _ => return None,
-      };
+      let Expr::List(rows) = chunk else { return None };
       let per_row: Option<Vec<Expr>> = rows
         .iter()
         .map(|r| recurse(r, rest_sizes, rest_offsets))
@@ -286,21 +280,20 @@ pub fn partition_multi_dim_ast(
 
   let sizes_u: Vec<usize> = sizes.iter().map(|&x| x as usize).collect();
   let offsets_u: Vec<usize> = offsets.iter().map(|&x| x as usize).collect();
-  match recurse(expr, &sizes_u, &offsets_u) {
-    Some(r) => Ok(r),
-    None => {
-      let mut call_args = vec![expr.clone()];
-      call_args.push(Expr::List(
-        sizes.iter().map(|&x| Expr::Integer(x)).collect(),
-      ));
-      call_args.push(Expr::List(
-        offsets.iter().map(|&x| Expr::Integer(x)).collect(),
-      ));
-      Ok(Expr::FunctionCall {
-        name: "Partition".to_string(),
-        args: call_args.into(),
-      })
-    }
+  if let Some(r) = recurse(expr, &sizes_u, &offsets_u) {
+    Ok(r)
+  } else {
+    let mut call_args = vec![expr.clone()];
+    call_args.push(Expr::List(
+      sizes.iter().map(|&x| Expr::Integer(x)).collect(),
+    ));
+    call_args.push(Expr::List(
+      offsets.iter().map(|&x| Expr::Integer(x)).collect(),
+    ));
+    Ok(Expr::FunctionCall {
+      name: "Partition".to_string(),
+      args: call_args.into(),
+    })
   }
 }
 
@@ -309,7 +302,7 @@ fn flatten_head_ast(
   list: &Expr,
   depth: i128,
   head: &str,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   fn flatten_with_head(
     expr: &Expr,
     depth: i128,
@@ -344,17 +337,17 @@ fn flatten_head_ast(
       for item in args {
         flatten_with_head(item, depth, head, &mut result);
       }
-      Ok(Expr::FunctionCall {
+      Expr::FunctionCall {
         name: head.to_string(),
         args: result.into(),
-      })
+      }
     }
     Expr::List(items) if head == "List" => {
       let mut result = Vec::new();
       for item in items {
         flatten_with_head(item, depth, head, &mut result);
       }
-      Ok(Expr::List(result.into()))
+      Expr::List(result.into())
     }
     Expr::FunctionCall { name, args } => {
       // Outer head doesn't match: flatten matching children into parent
@@ -362,10 +355,10 @@ fn flatten_head_ast(
       for item in args {
         flatten_with_head(item, depth, head, &mut result);
       }
-      Ok(Expr::FunctionCall {
+      Expr::FunctionCall {
         name: name.clone(),
         args: result.into(),
-      })
+      }
     }
     Expr::List(items) => {
       // Outer is List but target is not List: flatten matching children
@@ -373,9 +366,9 @@ fn flatten_head_ast(
       for item in items {
         flatten_with_head(item, depth, head, &mut result);
       }
-      Ok(Expr::List(result.into()))
+      Expr::List(result.into())
     }
-    _ => Ok(list.clone()),
+    _ => list.clone(),
   }
 }
 
@@ -418,7 +411,7 @@ fn flatten_dims_ast(
   list: &Expr,
   dim_spec: &[Vec<usize>],
   head: &str,
-) -> Result<Expr, InterpreterError> {
+) -> crate::syntax::Expr {
   // Access element at given multi-index, returns None if out of bounds
   fn access(expr: &Expr, indices: &[usize], head: &str) -> Option<Expr> {
     if indices.is_empty() {
@@ -595,8 +588,8 @@ fn flatten_dims_ast(
     max_level,
     head,
   ) {
-    Some(result) => Ok(result),
-    None => Ok(list.clone()),
+    Some(result) => result,
+    None => list.clone(),
   }
 }
 
@@ -740,7 +733,7 @@ pub fn flatten_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // A non-symbol head flattens nothing.
         return Ok(subject.clone());
       };
-      flatten_head_ast(subject, n, head)
+      Ok(flatten_head_ast(subject, n, head))
     }
     LevelSpec::Groups(groups, spec_display) => {
       if groups.is_empty() {
@@ -762,7 +755,7 @@ pub fn flatten_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
         return Ok(original());
       }
-      flatten_dims_ast(subject, &groups, head.unwrap_or("List"))
+      Ok(flatten_dims_ast(subject, &groups, head.unwrap_or("List")))
     }
   }
 }
@@ -1020,8 +1013,7 @@ pub fn transpose_perm_ast(
   for &s in &sigma {
     if s > k {
       crate::emit_message(&format!(
-        "Transpose::perm2: Entry {} in {} is out of bounds for a permutation of length {}.",
-        s, perm_str, k
+        "Transpose::perm2: Entry {s} in {perm_str} is out of bounds for a permutation of length {k}."
       ));
       return unevaluated();
     }
@@ -1057,8 +1049,7 @@ pub fn transpose_perm_ast(
   for r in 1..=m {
     if !sigma.contains(&r) {
       crate::emit_message(&format!(
-        "Transpose::newdims: Level rearrangement {} does not specify destination for level {}.",
-        perm_str, r
+        "Transpose::newdims: Level rearrangement {perm_str} does not specify destination for level {r}."
       ));
       return unevaluated();
     }
@@ -1084,8 +1075,7 @@ pub fn transpose_perm_ast(
           None => d = Some(dim),
           Some(prev) if prev != dim => {
             crate::emit_message(&format!(
-              "Transpose::diagnl: Level rearrangement {} would require collapsing dimensions of unequal lengths.",
-              perm_str
+              "Transpose::diagnl: Level rearrangement {perm_str} would require collapsing dimensions of unequal lengths."
             ));
             return unevaluated();
           }
@@ -1184,14 +1174,11 @@ pub fn tensor_transpose_ast(
 }
 
 pub fn transpose_ast(list: &Expr) -> Result<Expr, InterpreterError> {
-  let rows = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Transpose".to_string(),
-        args: vec![list.clone()].into(),
-      });
-    }
+  let Expr::List(rows) = list else {
+    return Ok(Expr::FunctionCall {
+      name: "Transpose".to_string(),
+      args: vec![list.clone()].into(),
+    });
   };
 
   if rows.is_empty() {
@@ -1286,15 +1273,14 @@ pub fn riffle_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
 
-  let items: &[Expr] = match &args[0] {
-    Expr::List(items) => items.as_slice(),
-    _ => {
-      crate::emit_message(&format!(
-        "Riffle::listrp: List, SparseArray object, or structured array expected at position 1 in {}.",
-        show(&original())
-      ));
-      return Ok(original());
-    }
+  let items: &[Expr] = if let Expr::List(items) = &args[0] {
+    items.as_slice()
+  } else {
+    crate::emit_message(&format!(
+      "Riffle::listrp: List, SparseArray object, or structured array expected at position 1 in {}.",
+      show(&original())
+    ));
+    return Ok(original());
   };
   let sep = &args[1];
   let len = items.len() as i128;
@@ -1341,9 +1327,8 @@ pub fn riffle_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if len == 1 {
         return Ok(args[0].clone());
       }
-      let k = match (1..=len + 2).find(|k| (len + k) / n == *k) {
-        Some(k) => k,
-        None => return inclen(),
+      let Some(k) = (1..=len + 2).find(|k| (len + k) / n == *k) else {
+        return inclen();
       };
       let positions: Vec<i128> = (1..=k).map(|i| i * n).collect();
       Ok(riffle_build(items, sep, &positions))
@@ -1495,8 +1480,7 @@ fn rotate_rec(
         ));
         if *msg_count == 3 {
           crate::emit_message(&format!(
-            "General::stop: Further output of {}::rotate will be suppressed during this calculation.",
-            fname
+            "General::stop: Further output of {fname}::rotate will be suppressed during this calculation."
           ));
         }
       }
@@ -1551,28 +1535,29 @@ pub fn rotate_unified_ast(
       other => show(&Expr::List(vec![other.clone()].into())),
     };
     crate::emit_message(&format!(
-      "{}::rspec: Rotation specification {} should be a machine-sized integer or list of machine-sized integers.",
-      fname, display
+      "{fname}::rspec: Rotation specification {display} should be a machine-sized integer or list of machine-sized integers."
     ));
   };
   let shifts: Vec<i128> = match args.get(1) {
     None => vec![1],
     Some(Expr::List(items)) => {
-      match items.iter().map(strict_int).collect::<Option<Vec<i128>>>() {
-        Some(ns) => ns,
-        None => {
-          rspec(&args[1]);
-          return Ok(original());
-        }
+      if let Some(ns) =
+        items.iter().map(strict_int).collect::<Option<Vec<i128>>>()
+      {
+        ns
+      } else {
+        rspec(&args[1]);
+        return Ok(original());
       }
     }
-    Some(other) => match strict_int(other) {
-      Some(n) => vec![n],
-      None => {
+    Some(other) => {
+      if let Some(n) = strict_int(other) {
+        vec![n]
+      } else {
         rspec(other);
         return Ok(original());
       }
-    },
+    }
   };
   let shifts: Vec<i128> = shifts
     .into_iter()
@@ -1891,21 +1876,23 @@ pub fn pad_ast(fname: &str, args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Length specification: a machine integer or a list of them.
   let (spec, spec_is_list): (Vec<i128>, bool) = match &args[1] {
     Expr::List(items) => {
-      match items.iter().map(strict_int).collect::<Option<Vec<i128>>>() {
-        Some(ns) => (ns, true),
-        None => {
-          ilsm(2);
-          return Ok(original());
-        }
-      }
-    }
-    other => match strict_int(other) {
-      Some(n) => (vec![n], false),
-      None => {
+      if let Some(ns) =
+        items.iter().map(strict_int).collect::<Option<Vec<i128>>>()
+      {
+        (ns, true)
+      } else {
         ilsm(2);
         return Ok(original());
       }
-    },
+    }
+    other => {
+      if let Some(n) = strict_int(other) {
+        (vec![n], false)
+      } else {
+        ilsm(2);
+        return Ok(original());
+      }
+    }
   };
 
   let pad = args.get(2).cloned().unwrap_or(Expr::Integer(0));
@@ -1914,21 +1901,23 @@ pub fn pad_ast(fname: &str, args: &[Expr]) -> Result<Expr, InterpreterError> {
   let margins: Vec<i128> = if args.len() >= 4 {
     match &args[3] {
       Expr::List(items) => {
-        match items.iter().map(strict_int).collect::<Option<Vec<i128>>>() {
-          Some(ms) => ms,
-          None => {
-            ilsm(4);
-            return Ok(original());
-          }
-        }
-      }
-      other => match strict_int(other) {
-        Some(m) => vec![m; spec.len()],
-        None => {
+        if let Some(ms) =
+          items.iter().map(strict_int).collect::<Option<Vec<i128>>>()
+        {
+          ms
+        } else {
           ilsm(4);
           return Ok(original());
         }
-      },
+      }
+      other => {
+        if let Some(m) = strict_int(other) {
+          vec![m; spec.len()]
+        } else {
+          ilsm(4);
+          return Ok(original());
+        }
+      }
     }
   } else {
     Vec::new()
@@ -2093,9 +2082,8 @@ pub fn join_at_level_ast(
 
   // For level > 1, all lists must have the same outer structure.
   // Get the items from the first list to determine the outer length.
-  let first_items = match &lists[0] {
-    Expr::List(items) => items,
-    _ => return join_ast(lists),
+  let Expr::List(first_items) = &lists[0] else {
+    return join_ast(lists);
   };
   let outer_len = first_items.len();
 

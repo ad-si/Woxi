@@ -320,10 +320,7 @@ pub fn thread_listable(
     }
   }
 
-  let len = match list_len {
-    Some(n) => n,
-    None => return Ok(None),
-  };
+  let Some(len) = list_len else { return Ok(None) };
 
   // Thread element-wise
   let mut results = Vec::with_capacity(len);
@@ -435,7 +432,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     "$MachineName" => {
       let mut buf = [0u8; 256];
       let ret = unsafe {
-        libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len())
+        libc::gethostname(buf.as_mut_ptr().cast::<libc::c_char>(), buf.len())
       };
       if ret == 0 {
         let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
@@ -510,7 +507,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       } else {
         std::env::consts::ARCH
       };
-      Some(Expr::String(format!("{}-{}", os, arch)))
+      Some(Expr::String(format!("{os}-{arch}")))
     }
     "$OperatingSystem" => {
       // wolframscript returns "MacOSX", "Unix", or "Windows".
@@ -547,7 +544,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         .chain(std::iter::repeat_n('0', 477))
         .collect();
       let suffix = "4741994566655706294890138869165136649510315974360597429933393392703942354819024473254400806573416326";
-      let digits = format!("{}{}", prefix, suffix);
+      let digits = format!("{prefix}{suffix}");
       let big = num_bigint::BigInt::parse_bytes(digits.as_bytes(), 10)?;
       Some(Expr::BigInteger(big))
     }
@@ -583,7 +580,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         .and_then(|sv| match sv {
           crate::StoredValue::ExprVal(e) => Some(e),
           crate::StoredValue::Raw(s) => crate::syntax::string_to_expr(&s).ok(),
-          _ => None,
+          crate::StoredValue::Association(_) => None,
         })
         .unwrap_or_else(|| {
           Expr::List(
@@ -651,7 +648,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         .and_then(|sv| match sv {
           crate::StoredValue::ExprVal(e) => Some(e),
           crate::StoredValue::Raw(s) => crate::syntax::string_to_expr(&s).ok(),
-          _ => None,
+          crate::StoredValue::Association(_) => None,
         })
         .unwrap_or_else(|| {
           Expr::List(
@@ -837,7 +834,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     #[cfg(not(target_arch = "wasm32"))]
     "$InstallationDirectory" => std::env::current_exe()
       .ok()
-      .and_then(|p| p.parent().map(|pp| pp.to_path_buf()))
+      .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
       .map(|p| Expr::String(p.to_string_lossy().into_owned())),
     // `$Path` — the package search path. Modeled after wolframscript's
     // list but rooted at Woxi's directories since we don't ship the full
@@ -910,7 +907,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     "$Context" => Some(Expr::String(crate::current_context())),
     // $Input is the name of the currently evaluating input source. In
     // wolframscript's -code mode it's the empty string.
-    "$Input" => Some(Expr::String("".to_string())),
+    "$Input" => Some(Expr::String(String::new())),
     "$ContextPath" => Some(Expr::List(
       crate::current_context_path()
         .into_iter()

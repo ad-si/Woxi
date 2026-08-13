@@ -216,7 +216,7 @@ where
       }
       for (left, right) in [(&triple[0], &triple[1]), (&triple[1], &triple[2])]
       {
-        let mid = (left.0 + right.0) / 2.0;
+        let mid = f64::midpoint(left.0, right.0);
         // Neighbouring triples share an interval, so the same midpoint
         // comes up twice; skipping it saves evaluating the body again.
         if mid > left.0
@@ -244,7 +244,7 @@ fn samples_to_series(samples: Vec<Sample>) -> Vec<Vec<(f64, f64)>> {
   // The curve count comes from the first sample that evaluated.
   let n_curves = samples
     .iter()
-    .find_map(|(_, row)| row.as_ref().map(|r| r.len()))
+    .find_map(|(_, row)| row.as_ref().map(std::vec::Vec::len))
     .unwrap_or(1);
   let mut series = vec![Vec::with_capacity(samples.len()); n_curves];
   for (_, row) in samples {
@@ -255,7 +255,7 @@ fn samples_to_series(samples: Vec<Sample>) -> Vec<Vec<(f64, f64)>> {
         }
       }
       _ => {
-        for curve in series.iter_mut() {
+        for curve in &mut series {
           curve.push((f64::NAN, f64::NAN));
         }
       }
@@ -567,8 +567,7 @@ fn parametric_region_ast(
     .plot_style
     .first()
     .and_then(|s| s.color.as_ref())
-    .map(|c| (c.r, c.g, c.b))
-    .unwrap_or((0.24, 0.6, 0.8));
+    .map_or((0.24, 0.6, 0.8), |c| (c.r, c.g, c.b));
   let color = Expr::FunctionCall {
     name: "RGBColor".to_string(),
     args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),

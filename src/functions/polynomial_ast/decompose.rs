@@ -24,12 +24,9 @@ pub fn decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let expanded = expand_and_combine(&args[0]);
 
   // Extract polynomial coefficients as rationals
-  let coeffs = match extract_rational_poly_coeffs(&expanded, &var) {
-    Some(c) => c,
-    None => {
-      // Not a polynomial, return unevaluated
-      return Ok(unevaluated("Decompose", args));
-    }
+  let Some(coeffs) = extract_rational_poly_coeffs(&expanded, &var) else {
+    // Not a polynomial, return unevaluated
+    return Ok(unevaluated("Decompose", args));
   };
 
   let n = poly_degree(&coeffs);

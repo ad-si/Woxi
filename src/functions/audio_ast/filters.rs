@@ -18,12 +18,12 @@ fn numeric_rows(expr: &Expr) -> Option<(Vec<Vec<f64>>, bool)> {
   }
   if items.iter().all(|i| matches!(i, Expr::List(_))) {
     let mut rows = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       let Expr::List(cols) = item else {
         unreachable!()
       };
       let mut row = Vec::with_capacity(cols.len());
-      for c in cols.iter() {
+      for c in cols {
         row.push(try_eval_to_f64(c)?);
       }
       rows.push(row);
@@ -35,7 +35,7 @@ fn numeric_rows(expr: &Expr) -> Option<(Vec<Vec<f64>>, bool)> {
     Some((rows, true))
   } else {
     let mut row = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       row.push(try_eval_to_f64(item)?);
     }
     Some((vec![row], false))
@@ -338,7 +338,7 @@ pub fn lowpass_filter_audio_ast(
     match call {
       Ok(Expr::List(ref items)) => {
         let mut out = Vec::with_capacity(items.len());
-        for item in items.iter() {
+        for item in items {
           out.push(try_eval_to_f64(item)?);
         }
         channels.push(out);

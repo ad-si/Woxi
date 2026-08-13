@@ -156,8 +156,7 @@ mod singular_argument_tags {
       msgs.iter().any(|m| m.contains(
         "Insert::argtu: Insert called with 1 argument; 2 or 3 arguments are expected."
       )),
-      "expected argtu message, got {:?}",
-      msgs
+      "expected argtu message, got {msgs:?}"
     );
   }
 
@@ -169,8 +168,7 @@ mod singular_argument_tags {
       msgs.iter().any(|m| m.contains(
         "Array::argbu: Array called with 1 argument; between 2 and 4 arguments are expected."
       )),
-      "expected argbu message, got {:?}",
-      msgs
+      "expected argbu message, got {msgs:?}"
     );
   }
 
@@ -180,7 +178,7 @@ mod singular_argument_tags {
     // warned Insert::argrx
     assert_eq!(interpret("Insert[a, b]").unwrap(), "Insert[a, b]");
     let msgs = woxi::get_captured_messages_raw();
-    assert!(msgs.is_empty(), "expected no messages, got {:?}", msgs);
+    assert!(msgs.is_empty(), "expected no messages, got {msgs:?}");
   }
 
   #[test]
@@ -202,8 +200,7 @@ mod singular_argument_tags {
       );
       assert!(
         msgs.iter().any(|m| m.contains(&expected)),
-        "expected argbu message for {f}, got {:?}",
-        msgs
+        "expected argbu message for {f}, got {msgs:?}"
       );
 
       // Zero arguments → argb (plural form).
@@ -216,8 +213,7 @@ mod singular_argument_tags {
       );
       assert!(
         msgs.iter().any(|m| m.contains(&expected)),
-        "expected argb message for {f}, got {:?}",
-        msgs
+        "expected argb message for {f}, got {msgs:?}"
       );
     }
   }

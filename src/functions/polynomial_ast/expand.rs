@@ -116,9 +116,8 @@ fn expand_with_pattern_top(expr: &Expr, pat: &Expr, var: Option<&str>) -> Expr {
     ]),
     _ => None,
   };
-  let v = match var {
-    Some(s) => s,
-    None => return expand_with_pattern(expr, pat),
+  let Some(v) = var else {
+    return expand_with_pattern(expr, pat);
   };
   let Some(terms) = plus_args else {
     let exp = expand_with_pattern(expr, pat);
@@ -631,7 +630,7 @@ fn build_mod_sum(terms: Vec<Expr>) -> Expr {
 pub fn expand_and_combine(expr: &Expr) -> Expr {
   let expanded = expand_expr(expr);
   let terms = collect_additive_terms(&expanded);
-  combine_and_build(terms)
+  combine_and_build(&terms)
 }
 
 /// Recursively expand an expression.
@@ -757,7 +756,7 @@ pub fn expand_expr(expr: &Expr) -> Expr {
             terms.into_iter().map(|t| negate_term(&t)).collect();
           build_sum(negated)
         }
-        _ => Expr::UnaryOp {
+        UnaryOperator::Not => Expr::UnaryOp {
           op: *op,
           operand: Box::new(operand_exp),
         },
@@ -951,7 +950,7 @@ fn multiply_terms(a: &Expr, b: &Expr) -> Expr {
       let mut a_factors = collect_multiplicative_factors(a);
       let b_factors = collect_multiplicative_factors(b);
       a_factors.extend(b_factors);
-      combine_product_factors(a_factors)
+      combine_product_factors(&a_factors)
     }
   }
 }
@@ -1102,12 +1101,12 @@ fn is_numeric_radical(e: &Expr) -> bool {
   }
 }
 
-fn combine_product_factors(factors: Vec<Expr>) -> Expr {
+fn combine_product_factors(factors: &[Expr]) -> Expr {
   // Group factors by base, sum exponents
   let mut base_exps: Vec<(String, Expr, Expr)> = Vec::new(); // (sort_key, base, exponent)
   let mut numeric_coeff = Expr::Integer(1);
 
-  for f in &factors {
+  for f in factors {
     match f {
       Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
         numeric_coeff = multiply_exprs(&numeric_coeff, f);
@@ -1134,7 +1133,8 @@ fn combine_product_factors(factors: Vec<Expr>) -> Expr {
     let exp = simplify(exp);
     if matches!(&exp, Expr::Integer(0)) {
       continue; // x^0 = 1, skip
-    } else if matches!(&exp, Expr::Integer(1)) {
+    }
+    if matches!(&exp, Expr::Integer(1)) {
       result_factors.push(base);
     } else {
       // Try to evaluate the power (e.g. I^2 → -1)
@@ -1204,7 +1204,7 @@ fn expand_power(base: &Expr, n: i128) -> Expr {
     result = distribute_product(&result, base);
     // Combine like terms to keep expression manageable
     let terms = collect_additive_terms(&result);
-    result = combine_and_build(terms);
+    result = combine_and_build(&terms);
   }
   result
 }
@@ -1228,11 +1228,11 @@ pub fn build_sum(terms: Vec<Expr>) -> Expr {
 }
 
 /// Combine like terms and sort, then build the final expression.
-pub fn combine_and_build(terms: Vec<Expr>) -> Expr {
+pub fn combine_and_build(terms: &[Expr]) -> Expr {
   // Represent each term as (key, coefficient) where key identifies the "variable part"
   let mut term_map: Vec<(String, Vec<Expr>, Expr)> = Vec::new(); // (sort_key, var_factors, coeff)
 
-  for term in &terms {
+  for term in terms {
     let (coeff, var_key, var_factors) = decompose_term(term);
     // Find existing entry
     if let Some(entry) = term_map.iter_mut().find(|(k, _, _)| *k == var_key) {

@@ -199,7 +199,7 @@ fn write_track(out: &mut Vec<u8>, channel: u8, notes: &[Note]) {
   // following event reuses it via running status. A note sounds for one tick
   // less than its slot, leaving a one-tick gap before the next note.
   for (i, note) in notes.iter().enumerate() {
-    let on_delta = if i == 0 { 0 } else { 1 };
+    let on_delta = u32::from(i != 0);
     write_varlen(&mut data, on_delta);
     if i == 0 {
       data.push(0x90 | channel);

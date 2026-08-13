@@ -149,7 +149,7 @@ fn wrap_leaves(
   }
   if let Expr::List(items) = &expr {
     let mut out = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for item in items {
       out.push(wrap_leaves(item.clone(), head)?);
     }
     return Ok(Expr::List(out.into()));
@@ -199,7 +199,7 @@ pub fn keys_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Association(items) => {
       let mut keys = Vec::with_capacity(items.len());
-      for (k, _) in items.iter() {
+      for (k, _) in items {
         keys.push(apply_optional_head(head, k.clone())?);
       }
       Ok(Expr::List(keys.into()))
@@ -239,7 +239,7 @@ pub fn values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Association(items) => {
       let mut values = Vec::with_capacity(items.len());
-      for (_, v) in items.iter() {
+      for (_, v) in items {
         values.push(apply_optional_head(head, v.clone())?);
       }
       Ok(Expr::List(values.into()))
@@ -290,8 +290,7 @@ pub fn key_drop_from_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Identifier(sym) => {
       crate::emit_message(&format!(
-        "KeyDropFrom::blnoval: The symbol {} at position 1 should have an immediate value defined.",
-        sym
+        "KeyDropFrom::blnoval: The symbol {sym} at position 1 should have an immediate value defined."
       ));
       Ok(unevaluated("KeyDropFrom", args))
     }
@@ -332,7 +331,7 @@ pub fn key_exists_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items)
       if items.iter().all(|e| extract_rule_key(e).is_some()) =>
     {
-      for item in items.iter() {
+      for item in items {
         if let Some(k) = extract_rule_key(item) {
           let k_str = crate::syntax::expr_to_string(&k);
           if k_str.as_str() == key_cmp {
@@ -669,7 +668,7 @@ pub fn merge_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         push_pair(&mut key_values, k, v);
       }
       Expr::List(items) if items.iter().all(|i| rule_parts(i).is_some()) => {
-        for i in items.iter() {
+        for i in items {
           let (k, v) = rule_parts(i).unwrap();
           push_pair(&mut key_values, k, v);
         }
@@ -917,17 +916,14 @@ pub fn key_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let assocs = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(invalid_subject_message(
-        "KeyUnion",
-        "invar",
-        "list of Associations or rules",
-        &args[0],
-        args,
-      ));
-    }
+  let Expr::List(assocs) = &args[0] else {
+    return Ok(invalid_subject_message(
+      "KeyUnion",
+      "invar",
+      "list of Associations or rules",
+      &args[0],
+      args,
+    ));
   };
 
   let default_fn = if args.len() >= 2 {
@@ -977,25 +973,24 @@ pub fn key_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .find(|(k, _)| crate::syntax::expr_to_string(k) == key_str)
         .map(|(_, v)| v.clone());
-      match value {
-        Some(v) => new_items.push((key.clone(), v)),
-        None => {
-          let missing = match default_fn {
-            Some(func) => {
-              let call = Expr::FunctionCall {
-                name: crate::syntax::expr_to_string(func),
-                args: vec![key.clone()].into(),
-              };
-              crate::evaluator::evaluate_expr_to_expr(&call)?
-            }
-            None => Expr::FunctionCall {
-              name: "Missing".to_string(),
-              args: vec![Expr::String("KeyAbsent".to_string()), key.clone()]
-                .into(),
-            },
-          };
-          new_items.push((key.clone(), missing));
-        }
+      if let Some(v) = value {
+        new_items.push((key.clone(), v));
+      } else {
+        let missing = match default_fn {
+          Some(func) => {
+            let call = Expr::FunctionCall {
+              name: crate::syntax::expr_to_string(func),
+              args: vec![key.clone()].into(),
+            };
+            crate::evaluator::evaluate_expr_to_expr(&call)?
+          }
+          None => Expr::FunctionCall {
+            name: "Missing".to_string(),
+            args: vec![Expr::String("KeyAbsent".to_string()), key.clone()]
+              .into(),
+          },
+        };
+        new_items.push((key.clone(), missing));
       }
     }
     result.push(Expr::Association(new_items));
@@ -1011,17 +1006,14 @@ fn key_set_op_assocs(
   fname: &str,
   args: &[Expr],
 ) -> Result<Vec<Vec<(Expr, Expr)>>, Expr> {
-  let assocs = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Err(invalid_subject_message(
-        fname,
-        "invar",
-        "list of Associations or rules",
-        &args[0],
-        args,
-      ));
-    }
+  let Expr::List(assocs) = &args[0] else {
+    return Err(invalid_subject_message(
+      fname,
+      "invar",
+      "list of Associations or rules",
+      &args[0],
+      args,
+    ));
   };
   let mut all_assocs: Vec<Vec<(Expr, Expr)>> = Vec::new();
   for assoc in assocs {

@@ -510,7 +510,7 @@ pub fn get_captured_warnings() -> Vec<String> {
     } else {
       "are built-in Wolfram Language functions"
     };
-    warnings.push(format!("{} {} not yet implemented in Woxi.", joined, verb));
+    warnings.push(format!("{joined} {verb} not yet implemented in Woxi."));
   }
 
   // Include messages (used by Check[] to detect message generation)
@@ -534,7 +534,7 @@ fn get_warnings_for_display() -> Vec<String> {
     } else {
       "are built-in Wolfram Language functions"
     };
-    warnings.push(format!("{} {} not yet implemented in Woxi.", joined, verb));
+    warnings.push(format!("{joined} {verb} not yet implemented in Woxi."));
   }
 
   warnings
@@ -752,23 +752,23 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
   let trace = format_stack_trace();
   if to_stdout {
     println!();
-    println!("{}", msg);
+    println!("{msg}");
     if let Some(trace) = trace {
-      println!("{}", trace);
+      println!("{trace}");
     }
     if let Some(stop) = &stop_line {
       println!();
-      println!("{}", stop);
+      println!("{stop}");
     }
   } else {
     eprintln!();
-    eprintln!("{}", msg);
+    eprintln!("{msg}");
     if let Some(trace) = trace {
-      eprintln!("{}", trace);
+      eprintln!("{trace}");
     }
     if let Some(stop) = &stop_line {
       eprintln!();
-      eprintln!("{}", stop);
+      eprintln!("{stop}");
     }
   }
   (true, stop_line)
@@ -1175,15 +1175,14 @@ pub fn down_values_with_memo(
         .into_iter()
         .map(|(_key, (arg_exprs, value))| {
           let n = arg_exprs.len();
-          let params: Vec<String> =
-            (0..n).map(|i| format!("_dv{}", i)).collect();
+          let params: Vec<String> = (0..n).map(|i| format!("_dv{i}")).collect();
           let conditions: Vec<Option<syntax::Expr>> = arg_exprs
             .iter()
             .enumerate()
             .map(|(i, a)| {
               Some(syntax::Expr::Comparison {
                 operands: vec![
-                  syntax::Expr::Identifier(format!("_dv{}", i)),
+                  syntax::Expr::Identifier(format!("_dv{i}")),
                   a.clone(),
                 ],
                 operators: vec![syntax::ComparisonOp::SameQ],
@@ -1304,7 +1303,7 @@ pub fn set_script_command_line(args: &[String]) {
     "{{{}}}",
     args
       .iter()
-      .map(|s| format!("\"{}\"", s))
+      .map(|s| format!("\"{s}\""))
       .collect::<Vec<_>>()
       .join(", ")
   );
@@ -1784,7 +1783,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         stmts.push(ProgramStmt::Expr(expr));
       }
       Rule::FunctionDefinition => {
-        stmts.push(ProgramStmt::FunctionDefinition(node))
+        stmts.push(ProgramStmt::FunctionDefinition(node));
       }
       Rule::TagSetDelayed => stmts.push(ProgramStmt::TagSetDelayed(node)),
       Rule::TagSet => stmts.push(ProgramStmt::TagSet(node)),
@@ -1872,8 +1871,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
               }
               let tag_str = syntax::expr_to_string(&tag);
               emit_message(&format!(
-                "Goto::nolabel: Label {} not found.",
-                tag_str
+                "Goto::nolabel: Label {tag_str} not found."
               ));
               syntax::Expr::Identifier("Null".to_string())
             }
@@ -1957,7 +1955,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         any_nonempty = true;
       }
       ProgramStmt::TagUnset(node) => {
-        execute_tag_unset(node.clone())?;
+        execute_tag_unset(node.clone());
         last_result = Some(StmtOutcome::Text("\0".to_string()));
         any_nonempty = true;
       }
@@ -1987,7 +1985,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   // Uses get_warnings_for_display() to avoid re-printing messages already shown by emit_message.
   if depth == 0 {
     for w in get_warnings_for_display() {
-      eprintln!("{}", w);
+      eprintln!("{w}");
     }
   }
 
@@ -2080,7 +2078,7 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
     // passes below see the wrapped content (e.g. Pane[Column[{…,
     // Graphics[…]}]] renders the column with its embedded graphic). CLI
     // mode keeps the symbolic Pane[…] echo to match wolframscript.
-    let result_expr = unwrap_display_pass_through(result_expr);
+    let result_expr = unwrap_display_pass_through(&result_expr);
     let result_expr = render_interactive_pane_if_needed(result_expr);
     let result_expr = render_labeled_if_needed(result_expr);
     let result_expr = render_dynamic_if_needed(result_expr);
@@ -2833,8 +2831,8 @@ pub(crate) fn render_traditionalform_list_if_needed(
 /// actually draws — a `Framed[…]` inside a `Text@TraditionalForm@…` is
 /// still a framed box, and `Pane[Column[{…, Graphics[…]}]]` (the shape of
 /// many Manipulate bodies) is still the column underneath.
-fn unwrap_display_pass_through(expr: syntax::Expr) -> syntax::Expr {
-  functions::graphics::unwrap_display_wrappers(&expr)
+fn unwrap_display_pass_through(expr: &syntax::Expr) -> syntax::Expr {
+  functions::graphics::unwrap_display_wrappers(expr)
 }
 
 /// In visual (notebook) display mode, `ClickPane[expr, …]` and
@@ -2872,7 +2870,7 @@ fn render_labeled_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// as real `Expr::Graphics` sub-SVGs when embedded into a parent layout
 /// (e.g. items of a `Column[…]`). Plain text / numeric items are returned
 /// unchanged.
-fn render_inline_display_wrapper(expr: syntax::Expr) -> syntax::Expr {
+fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   // The top-level pipeline transformations don't recurse into nested
   // wrapper arguments, so we apply the relevant ones here for a single
   // sub-expression.
@@ -2933,11 +2931,8 @@ fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
       // rather than the raw `TableForm[…]` text.
       let mut new_args: Vec<syntax::Expr> = args.to_vec();
       if let syntax::Expr::List(items) = &args[0] {
-        let new_items: Vec<syntax::Expr> = items
-          .iter()
-          .cloned()
-          .map(render_inline_display_wrapper)
-          .collect();
+        let new_items: Vec<syntax::Expr> =
+          items.iter().map(render_inline_display_wrapper).collect();
         new_args[0] = syntax::Expr::List(new_items.into());
       }
       if let Some(svg) = functions::graphics::column_to_svg(&new_args) {
@@ -3013,11 +3008,8 @@ pub(crate) fn row_svg_with_rendered_items(
 ) -> Option<String> {
   let mut new_args: Vec<syntax::Expr> = args.to_vec();
   if let syntax::Expr::List(items) = &args[0] {
-    let new_items: Vec<syntax::Expr> = items
-      .iter()
-      .cloned()
-      .map(render_inline_display_wrapper)
-      .collect();
+    let new_items: Vec<syntax::Expr> =
+      items.iter().map(render_inline_display_wrapper).collect();
     new_args[0] = syntax::Expr::List(new_items.into());
   }
   functions::graphics::row_to_svg(&new_args)
@@ -3418,7 +3410,7 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
           // stack blocks vertically
           let mut rows = Vec::new();
           for block in &svg_3d {
-            let dim3 = block.iter().map(|r| r.len()).max().unwrap_or(0);
+            let dim3 = block.iter().map(std::vec::Vec::len).max().unwrap_or(0);
             for k in 0..dim3 {
               let row: Vec<String> = block
                 .iter()
@@ -3761,7 +3753,7 @@ fn precision_number_display(token: &str) -> Option<String> {
     }
     Err(_) => drop_trailing_frac_zeros(&round_significant(mantissa, 6)),
   };
-  Some(format!("{}{}", body, suffix))
+  Some(format!("{body}{suffix}"))
 }
 
 /// Round the unsigned decimal `mantissa` (e.g. `"3.1415926"`, `"0.00123"`, no
@@ -3840,7 +3832,7 @@ pub(crate) fn round_significant(mantissa: &str, prec: usize) -> String {
       frac_str.push(digit_at(exp));
     }
   }
-  format!("{}.{}", int_str, frac_str)
+  format!("{int_str}.{frac_str}")
 }
 
 /// Drop trailing zeros from the fractional part of an `int.frac` decimal string
@@ -4670,9 +4662,8 @@ fn try_fast_function_call(
       let list_str = args[0].trim();
 
       // Evaluate the element expression
-      let target = match interpret(elem_expr) {
-        Ok(v) => v,
-        Err(_) => return None,
+      let Ok(target) = interpret(elem_expr) else {
+        return None;
       };
 
       // Parse the list
@@ -4794,7 +4785,7 @@ pub fn interpret_to_expr(
   let normalized = insert_statement_separators(normalized.trim());
 
   let mut pairs = parse(&normalized).map_err(|e| {
-    InterpreterError::EvaluationError(format!("Parse error: {}", e))
+    InterpreterError::EvaluationError(format!("Parse error: {e}"))
   })?;
   let program = pairs.next().ok_or(InterpreterError::EmptyInput)?;
   if program.as_rule() != Rule::Program {
@@ -4888,8 +4879,7 @@ fn store_function_definition(
     let span = pair.as_span().as_str();
     span
       .split_once(":=")
-      .map(|(l, _)| l.trim().to_string())
-      .unwrap_or_else(|| span.trim().to_string())
+      .map_or_else(|| span.trim().to_string(), |(l, _)| l.trim().to_string())
   };
   let mut inner = pair.into_inner();
   let func_name = inner.next().unwrap().as_str().to_owned(); // Identifier
@@ -4929,8 +4919,7 @@ fn store_function_definition(
       ("SetDelayed::wrsym", None)
     };
     emit_message(&format!(
-      "{}: Tag {} in {} is Protected.",
-      tag, func_name, raw_lhs
+      "{tag}: Tag {func_name} in {raw_lhs} is Protected."
     ));
     return Ok(ret);
   }
@@ -5036,11 +5025,10 @@ fn store_function_definition(
         // `(x_)?test` — the brackets only group, so read the pattern they
         // hold and treat it as if it had been written without them.
         if first.as_rule() == Rule::PatternTestLhsParen {
-          let inner = first
-            .into_inner()
-            .next()
-            .map(syntax::pair_to_expr)
-            .unwrap_or(syntax::Expr::Identifier(String::new()));
+          let inner = first.into_inner().next().map_or(
+            syntax::Expr::Identifier(String::new()),
+            syntax::pair_to_expr,
+          );
           let test_expr = syntax::pair_to_expr(pat_inner.next().unwrap());
           let (param_name, head, bt) = match &inner {
             syntax::Expr::Pattern {
@@ -5163,7 +5151,7 @@ fn store_function_definition(
     &blank_types,
   );
   let has_any_condition =
-    has_any_condition || conditions.iter().any(|c| c.is_some());
+    has_any_condition || conditions.iter().any(std::option::Option::is_some);
 
   FUNC_DEFS.with(|m| {
     let mut defs = m.borrow_mut();
@@ -5202,9 +5190,9 @@ fn store_function_definition(
           // and `f[x_, y_:0]` are separate DownValues, so keep an existing rule
           // whose optional-arg pattern differs from the new one's.
           || d.iter()
-            .map(|x| x.is_some())
-            .ne(defaults.iter().map(|x| x.is_some()))
-          || conds.iter().any(|c| c.is_some())
+            .map(std::option::Option::is_some)
+            .ne(defaults.iter().map(std::option::Option::is_some))
+          || conds.iter().any(std::option::Option::is_some)
           || matches!(
             body,
             syntax::Expr::FunctionCall { name, .. } if name == "Condition"
@@ -5304,73 +5292,69 @@ fn store_tag_set_delayed(
   let mut final_body = body_expr.clone();
 
   for (i, arg) in lhs_args.iter().enumerate() {
-    match arg {
-      // Function call argument like g[x_] — extract inner patterns
-      syntax::Expr::FunctionCall {
-        name: arg_func_name,
-        args: inner_args,
-      } => {
-        let param_name = format!("_up{}", i);
-        heads.push(Some(arg_func_name.clone()));
+    if let syntax::Expr::FunctionCall {
+      name: arg_func_name,
+      args: inner_args,
+    } = arg
+    {
+      let param_name = format!("_up{i}");
+      heads.push(Some(arg_func_name.clone()));
 
-        // Add length condition to ensure correct number of inner args
-        if !inner_args.is_empty() {
-          conditions.push(Some(syntax::Expr::Comparison {
-            operands: vec![
-              syntax::Expr::FunctionCall {
-                name: "Length".to_string(),
-                args: vec![syntax::Expr::Identifier(param_name.clone())].into(),
-              },
-              syntax::Expr::Integer(inner_args.len() as i128),
-            ],
-            operators: vec![syntax::ComparisonOp::SameQ],
-          }));
-        } else {
-          conditions.push(None);
-        }
-
-        // Substitute inner pattern names in the body with Part[param, index]
-        for (j, inner_arg) in inner_args.iter().enumerate() {
-          let (pat_name, _pat_head) = extract_pattern_info_from_expr(inner_arg);
-          if !pat_name.is_empty() {
-            let part_expr = syntax::Expr::FunctionCall {
-              name: "Part".to_string(),
-              args: vec![
-                syntax::Expr::Identifier(param_name.clone()),
-                syntax::Expr::Integer((j + 1) as i128),
-              ]
-              .into(),
-            };
-            final_body =
-              syntax::substitute_variable(&final_body, &pat_name, &part_expr);
-          }
-        }
-
-        params.push(param_name);
-        defaults.push(None);
+      // Add length condition to ensure correct number of inner args
+      if inner_args.is_empty() {
+        conditions.push(None);
+      } else {
+        conditions.push(Some(syntax::Expr::Comparison {
+          operands: vec![
+            syntax::Expr::FunctionCall {
+              name: "Length".to_string(),
+              args: vec![syntax::Expr::Identifier(param_name.clone())].into(),
+            },
+            syntax::Expr::Integer(inner_args.len() as i128),
+          ],
+          operators: vec![syntax::ComparisonOp::SameQ],
+        }));
       }
-      // Simple pattern like x_ or x_Head
-      _ => {
-        let (pat_name, head) = extract_pattern_info_from_expr(arg);
-        if pat_name.is_empty() && head.is_none() {
-          // Literal value — create SameQ condition
-          let param_name = format!("_up{}", i);
-          let eval_arg = evaluator::evaluate_expr_to_expr(arg)?;
-          conditions.push(Some(syntax::Expr::Comparison {
-            operands: vec![
+
+      // Substitute inner pattern names in the body with Part[param, index]
+      for (j, inner_arg) in inner_args.iter().enumerate() {
+        let (pat_name, _pat_head) = extract_pattern_info_from_expr(inner_arg);
+        if !pat_name.is_empty() {
+          let part_expr = syntax::Expr::FunctionCall {
+            name: "Part".to_string(),
+            args: vec![
               syntax::Expr::Identifier(param_name.clone()),
-              eval_arg,
-            ],
-            operators: vec![syntax::ComparisonOp::SameQ],
-          }));
-          params.push(param_name);
-        } else {
-          params.push(pat_name);
-          conditions.push(None);
+              syntax::Expr::Integer((j + 1) as i128),
+            ]
+            .into(),
+          };
+          final_body =
+            syntax::substitute_variable(&final_body, &pat_name, &part_expr);
         }
-        defaults.push(None);
-        heads.push(head);
       }
+
+      params.push(param_name);
+      defaults.push(None);
+    } else {
+      let (pat_name, head) = extract_pattern_info_from_expr(arg);
+      if pat_name.is_empty() && head.is_none() {
+        // Literal value — create SameQ condition
+        let param_name = format!("_up{i}");
+        let eval_arg = evaluator::evaluate_expr_to_expr(arg)?;
+        conditions.push(Some(syntax::Expr::Comparison {
+          operands: vec![
+            syntax::Expr::Identifier(param_name.clone()),
+            eval_arg,
+          ],
+          operators: vec![syntax::ComparisonOp::SameQ],
+        }));
+        params.push(param_name);
+      } else {
+        params.push(pat_name);
+        conditions.push(None);
+      }
+      defaults.push(None);
+      heads.push(head);
     }
   }
 
@@ -5435,7 +5419,7 @@ fn store_tag_set_delayed(
 }
 
 /// Handle TagUnset: tag /: f[args...] =.  (removes an upvalue)
-fn execute_tag_unset(pair: Pair<Rule>) -> Result<(), InterpreterError> {
+fn execute_tag_unset(pair: Pair<Rule>) {
   let mut inner = pair.into_inner();
 
   // First child: tag identifier
@@ -5452,10 +5436,10 @@ fn execute_tag_unset(pair: Pair<Rule>) -> Result<(), InterpreterError> {
       if let syntax::Expr::FunctionCall { name, .. } = func.as_ref() {
         name.clone()
       } else {
-        return Ok(());
+        return;
       }
     }
-    _ => return Ok(()),
+    _ => return,
   };
 
   let lhs_str = syntax::expr_to_string(&func_call_expr);
@@ -5469,18 +5453,18 @@ fn execute_tag_unset(pair: Pair<Rule>) -> Result<(), InterpreterError> {
       entry.retain(
         |(
           _of,
-          _params,
+          rule_params,
           _conds,
           _defaults,
           _heads,
-          _body,
+          body,
           orig_lhs,
           _orig_body,
         )| {
           let orig_lhs_str = syntax::expr_to_string(orig_lhs);
           if orig_lhs_str == lhs_str {
             removed_entries
-              .push((_params.clone(), syntax::expr_to_string(_body)));
+              .push((rule_params.clone(), syntax::expr_to_string(body)));
             false
           } else {
             true
@@ -5509,8 +5493,6 @@ fn execute_tag_unset(pair: Pair<Rule>) -> Result<(), InterpreterError> {
       }
     });
   }
-
-  Ok(())
 }
 
 /// Extract pattern name and head from an Expr (for TagSetDelayed processing).

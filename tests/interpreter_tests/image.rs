@@ -1653,30 +1653,28 @@ mod image_processing {
     clear_state();
     let img = "Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}]";
     assert_eq!(
-      interpret(&format!("ImageData[ImageRotate[{}, Top]]", img)).unwrap(),
-      interpret(&format!("ImageData[{}]", img)).unwrap()
+      interpret(&format!("ImageData[ImageRotate[{img}, Top]]")).unwrap(),
+      interpret(&format!("ImageData[{img}]")).unwrap()
     );
     assert_eq!(
-      interpret(&format!("ImageData[ImageRotate[{}, Left]]", img)).unwrap(),
-      interpret(&format!("ImageData[ImageRotate[{}, Pi/2]]", img)).unwrap()
+      interpret(&format!("ImageData[ImageRotate[{img}, Left]]")).unwrap(),
+      interpret(&format!("ImageData[ImageRotate[{img}, Pi/2]]")).unwrap()
     );
     assert_eq!(
-      interpret(&format!("ImageData[ImageRotate[{}, Bottom]]", img)).unwrap(),
-      interpret(&format!("ImageData[ImageRotate[{}, Pi]]", img)).unwrap()
+      interpret(&format!("ImageData[ImageRotate[{img}, Bottom]]")).unwrap(),
+      interpret(&format!("ImageData[ImageRotate[{img}, Pi]]")).unwrap()
     );
     assert_eq!(
-      interpret(&format!("ImageData[ImageRotate[{}, Right]]", img)).unwrap(),
-      interpret(&format!("ImageData[ImageRotate[{}, -Pi/2]]", img)).unwrap()
+      interpret(&format!("ImageData[ImageRotate[{img}, Right]]")).unwrap(),
+      interpret(&format!("ImageData[ImageRotate[{img}, -Pi/2]]")).unwrap()
     );
     // A quarter turn transposes the dimensions.
     assert_eq!(
-      interpret(&format!("ImageDimensions[ImageRotate[{}, Left]]", img))
-        .unwrap(),
+      interpret(&format!("ImageDimensions[ImageRotate[{img}, Left]]")).unwrap(),
       "{2, 3}"
     );
     assert_eq!(
-      interpret(&format!("ImageDimensions[ImageRotate[{}, Top]]", img))
-        .unwrap(),
+      interpret(&format!("ImageDimensions[ImageRotate[{img}, Top]]")).unwrap(),
       "{3, 2}"
     );
   }
@@ -1691,7 +1689,7 @@ mod image_processing {
       "ImageRotate[Image[{{0.}}], \"x\"]",
     ] {
       let r = interpret_with_stdout(call).unwrap();
-      assert_eq!(r.result, "ImageRotate[-Image-, x]", "for {}", call);
+      assert_eq!(r.result, "ImageRotate[-Image-, x]", "for {call}");
       assert!(
         r.warnings.iter().any(|w| w
           == "ImageRotate::imgang: Angle x should be a real number; one of \
@@ -1737,11 +1735,10 @@ mod image_processing {
       ),
     ] {
       let r = interpret_with_stdout(call).unwrap();
-      assert_eq!(r.result, shown, "for {}", call);
+      assert_eq!(r.result, shown, "for {call}");
       let expected = format!(
-        "ImageResize::imgrssz: The size {} is not a valid image size \
-         specification.",
-        size
+        "ImageResize::imgrssz: The size {size} is not a valid image size \
+         specification."
       );
       assert!(
         r.warnings.contains(&expected),
@@ -1763,18 +1760,15 @@ mod image_processing {
     // Fractional sizes round, with a floor of one pixel.
     let img = "Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}]";
     assert_eq!(
-      interpret(&format!("ImageDimensions[ImageResize[{}, 0.5]]", img))
-        .unwrap(),
+      interpret(&format!("ImageDimensions[ImageResize[{img}, 0.5]]")).unwrap(),
       "{1, 1}"
     );
     assert_eq!(
-      interpret(&format!("ImageDimensions[ImageResize[{}, 1.6]]", img))
-        .unwrap(),
+      interpret(&format!("ImageDimensions[ImageResize[{img}, 1.6]]")).unwrap(),
       "{2, 1}"
     );
     assert_eq!(
-      interpret(&format!("ImageDimensions[ImageResize[{}, 2.4]]", img))
-        .unwrap(),
+      interpret(&format!("ImageDimensions[ImageResize[{img}, 2.4]]")).unwrap(),
       "{2, 1}"
     );
     // The ordinary specifications are untouched.
@@ -2419,7 +2413,7 @@ mod image_processing {
       .nth(1)
       .unwrap();
     let v: f64 = middle.parse().unwrap();
-    assert!((v - 0.5).abs() < 1e-6, "expected ~0.5, got {}", v);
+    assert!((v - 0.5).abs() < 1e-6, "expected ~0.5, got {v}");
   }
 
   // Sharpen is the unsharp mask `image + 2 (image - Blur[image, r])`, so
@@ -2432,7 +2426,7 @@ mod image_processing {
     let impulse =
       "Image[{{0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0.}}]";
     assert_eq!(
-      interpret(&format!("ImageData[Sharpen[{}, 1]]", impulse)).unwrap(),
+      interpret(&format!("ImageData[Sharpen[{impulse}, 1]]")).unwrap(),
       "{{0., 0., 0., 0., 0., 0., -0.1987609714269638, 1.39752197265625, \
        -0.1987609714269638, 0., 0., 0., 0., 0., 0.}}"
     );
@@ -2442,16 +2436,16 @@ mod image_processing {
                        -0.42367663979530334, -0.10176447033882141, \
                        0., 0., 0., 0., 0.}}";
     assert_eq!(
-      interpret(&format!("ImageData[Sharpen[{}, 2]]", impulse)).unwrap(),
+      interpret(&format!("ImageData[Sharpen[{impulse}, 2]]")).unwrap(),
       radius_two
     );
     assert_eq!(
-      interpret(&format!("ImageData[Sharpen[{}]]", impulse)).unwrap(),
+      interpret(&format!("ImageData[Sharpen[{impulse}]]")).unwrap(),
       radius_two
     );
     // A fractional radius sharpens less than the integer above it.
     assert_eq!(
-      interpret(&format!("ImageData[Sharpen[{}, 0.5]]", impulse)).unwrap(),
+      interpret(&format!("ImageData[Sharpen[{impulse}, 0.5]]")).unwrap(),
       "{{0., 0., 0., 0., 0., 0., -0.058796513825654984, \
        1.1175930500030518, -0.058796513825654984, 0., 0., 0., 0., 0., 0.}}"
     );
@@ -2475,13 +2469,11 @@ mod image_processing {
     for radius in ["1", "5", "10"] {
       assert_eq!(
         interpret(&format!(
-          "ImageData[Sharpen[Image[{{{{1., 0.}}}}], {}]]",
-          radius
+          "ImageData[Sharpen[Image[{{{{1., 0.}}}}], {radius}]]"
         ))
         .unwrap(),
         "{{1.198760986328125, -0.1987609714269638}}",
-        "for radius {}",
-        radius
+        "for radius {radius}"
       );
     }
     assert_eq!(
@@ -2497,18 +2489,17 @@ mod image_processing {
     use woxi::interpret_with_stdout;
     clear_state();
     for spec in ["x", "-1", "{1, -2}", "{1, 2, 3}"] {
-      let call = format!("Sharpen[Image[{{{{0.1, 0.2}}}}], {}]", spec);
+      let call = format!("Sharpen[Image[{{{{0.1, 0.2}}}}], {spec}]");
       let r = interpret_with_stdout(&call).unwrap();
       assert_eq!(
         r.result,
-        format!("Sharpen[-Image-, {}]", spec),
+        format!("Sharpen[-Image-, {spec}]"),
         "for {}",
         spec
       );
       let expected = format!(
-        "Sharpen::bdrad: The specified radius {} should be either a \
-         non-negative number or a list of 2 non-negative numbers.",
-        spec
+        "Sharpen::bdrad: The specified radius {spec} should be either a \
+         non-negative number or a list of 2 non-negative numbers."
       );
       assert!(
         r.warnings.contains(&expected),
@@ -2529,12 +2520,12 @@ mod image_processing {
     clear_state();
     let byte = "Image[{{100, 120, 140, 160, 180}}, \"Byte\"]";
     assert_eq!(
-      interpret(&format!("ImageData[Blur[{}, 1]]", byte)).unwrap(),
+      interpret(&format!("ImageData[Blur[{byte}, 1]]")).unwrap(),
       "{{0.4, 0.47058823529411764, 0.5490196078431373, \
        0.6274509803921569, 0.6980392156862745}}"
     );
     assert_eq!(
-      interpret(&format!("ImageData[Sharpen[{}, 1]]", byte)).unwrap(),
+      interpret(&format!("ImageData[Sharpen[{byte}, 1]]")).unwrap(),
       "{{0.3764705882352941, 0.47058823529411764, 0.5490196078431373, \
        0.6274509803921569, 0.7215686274509804}}"
     );
@@ -2544,7 +2535,7 @@ mod image_processing {
       "{{0., 0., 1., 0., 0.}}"
     );
     assert_eq!(
-      interpret(&format!("ImageData[GaussianFilter[{}, 1]]", byte)).unwrap(),
+      interpret(&format!("ImageData[GaussianFilter[{byte}, 1]]")).unwrap(),
       "{{0.39995139837265015, 0.47058823704719543, 0.5490196347236633, \
        0.6274510025978088, 0.6980878114700317}}"
     );
@@ -2557,21 +2548,18 @@ mod image_processing {
       ("Real32", "Real32", "Real32"),
       ("Real64", "Real64", "Real64"),
     ] {
-      let image = format!("Image[{{{{0, 1, 0, 1, 0}}}}, \"{}\"]", image_type);
+      let image = format!("Image[{{{{0, 1, 0, 1, 0}}}}, \"{image_type}\"]");
       for head in ["Blur", "Sharpen"] {
         assert_eq!(
-          interpret(&format!("ImageType[{}[{}, 1]]", head, image)).unwrap(),
+          interpret(&format!("ImageType[{head}[{image}, 1]]")).unwrap(),
           blurred,
-          "{} of a {} image",
-          head,
-          image_type
+          "{head} of a {image_type} image"
         );
       }
       assert_eq!(
-        interpret(&format!("ImageType[GaussianFilter[{}, 1]]", image)).unwrap(),
+        interpret(&format!("ImageType[GaussianFilter[{image}, 1]]")).unwrap(),
         filtered,
-        "GaussianFilter of a {} image",
-        image_type
+        "GaussianFilter of a {image_type} image"
       );
     }
   }
@@ -3084,7 +3072,7 @@ mod image_processing {
       .nth(1)
       .unwrap();
     let v: f64 = middle.parse().unwrap();
-    assert!((v - 0.5).abs() < 1e-6, "expected ~0.5, got {}", v);
+    assert!((v - 0.5).abs() < 1e-6, "expected ~0.5, got {v}");
   }
 
   // Edge pixels should not be unchanged (a uniform interior + edge gives
@@ -3136,7 +3124,7 @@ mod image_processing {
     let impulse =
       "Image[{{0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0.}}]";
     assert_eq!(
-      interpret(&format!("ImageData[Blur[{}, 2]]", impulse)).unwrap(),
+      interpret(&format!("ImageData[Blur[{impulse}, 2]]")).unwrap(),
       "{{0., 0., 0., 0., 0., 0.050882235169410706, 0.21183831989765167, \
        0.47455888986587524, 0.21183831989765167, 0.050882235169410706, \
        0., 0., 0., 0., 0.}}"
@@ -3144,15 +3132,14 @@ mod image_processing {
     // A fractional radius keeps its own standard deviation and widens the
     // support to Ceiling[r] taps -- five here, not the three of r = 1.
     assert_eq!(
-      interpret(&format!("ImageData[Blur[{}, 1.5]]", impulse)).unwrap(),
+      interpret(&format!("ImageData[Blur[{impulse}, 1.5]]")).unwrap(),
       "{{0., 0., 0., 0., 0., 0.023243052884936333, 0.1674487441778183, \
        0.6186164021492004, 0.1674487441778183, 0.023243052884936333, \
        0., 0., 0., 0., 0.}}"
     );
     // A radius below one still filters.
     assert_eq!(
-      interpret(&format!("ImageData[GaussianFilter[{}, 0.5]]", impulse))
-        .unwrap(),
+      interpret(&format!("ImageData[GaussianFilter[{impulse}, 0.5]]")).unwrap(),
       "{{0., 0., 0., 0., 0., 0., 0.029398256912827492, 0.9412034749984741, \
        0.029398256912827492, 0., 0., 0., 0., 0., 0.}}"
     );
@@ -3167,13 +3154,13 @@ mod image_processing {
                {0., 0., 1., 0., 0.}, {0., 0., 0., 0., 0.}, \
                {0., 0., 0., 0., 0.}}]";
     assert_eq!(
-      interpret(&format!("ImageData[Blur[{}, {{0, 1}}]]", dot)).unwrap(),
+      interpret(&format!("ImageData[Blur[{dot}, {{0, 1}}]]")).unwrap(),
       "{{0., 0., 0., 0., 0.}, {0., 0., 0., 0., 0.}, \
        {0., 0.0993804857134819, 0.801239013671875, 0.0993804857134819, 0.}, \
        {0., 0., 0., 0., 0.}, {0., 0., 0., 0., 0.}}"
     );
     assert_eq!(
-      interpret(&format!("ImageData[Blur[{}, {{1, 0}}]]", dot)).unwrap(),
+      interpret(&format!("ImageData[Blur[{dot}, {{1, 0}}]]")).unwrap(),
       "{{0., 0., 0., 0., 0.}, {0., 0., 0.0993804857134819, 0., 0.}, \
        {0., 0., 0.801239013671875, 0., 0.}, \
        {0., 0., 0.0993804857134819, 0., 0.}, {0., 0., 0., 0., 0.}}"
@@ -3192,14 +3179,13 @@ mod image_processing {
     // Ceiling[6/2] = 3, so every radius from 3 up gives the r = 3 blur.
     for radius in ["3", "4", "10"] {
       assert_eq!(
-        interpret(&format!("ImageData[Blur[{}, {}]]", six, radius)).unwrap(),
+        interpret(&format!("ImageData[Blur[{six}, {radius}]]")).unwrap(),
         capped,
-        "for radius {}",
-        radius
+        "for radius {radius}"
       );
     }
     assert_eq!(
-      interpret(&format!("ImageData[GaussianFilter[{}, 4]]", six)).unwrap(),
+      interpret(&format!("ImageData[GaussianFilter[{six}, 4]]")).unwrap(),
       "{{0.6062763333320618, 0.39372366666793823, 0.21017961204051971, \
        0.08939896523952484, 0.02663557603955269, 0.}}"
     );
@@ -3209,16 +3195,16 @@ mod image_processing {
     let saturated = "{{0.12981414794921875, 0.20993804931640625}, \
                       {0.29006195068359375, 0.37018585205078125}}";
     assert_eq!(
-      interpret(&format!("ImageData[Blur[{}]]", gradient)).unwrap(),
+      interpret(&format!("ImageData[Blur[{gradient}]]")).unwrap(),
       saturated
     );
     assert_eq!(
-      interpret(&format!("ImageData[Blur[{}, 2.5]]", gradient)).unwrap(),
+      interpret(&format!("ImageData[Blur[{gradient}, 2.5]]")).unwrap(),
       saturated
     );
     // An exact rational radius is a number like any other.
     assert_eq!(
-      interpret(&format!("ImageData[Blur[{}, 1/2]]", gradient)).unwrap(),
+      interpret(&format!("ImageData[Blur[{gradient}, 1/2]]")).unwrap(),
       "{{0.10881947726011276, 0.20293982326984406}, \
        {0.29706016182899475, 0.39118051528930664}}"
     );
@@ -3231,8 +3217,7 @@ mod image_processing {
     use woxi::interpret_with_stdout;
     clear_state();
     for spec in ["x", "-1", "I", "{1, -2}", "{1, 2, 3}", "\"1\""] {
-      let call =
-        format!("Blur[Image[{{{{0.1, 0.2}}, {{0.3, 0.4}}}}], {}]", spec);
+      let call = format!("Blur[Image[{{{{0.1, 0.2}}, {{0.3, 0.4}}}}], {spec}]");
       let r = interpret_with_stdout(&call).unwrap();
       assert_eq!(
         r.result,
@@ -3498,22 +3483,22 @@ mod image_advanced {
     let impulse =
       "Image[{{0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0.}}]";
     assert_eq!(
-      interpret(&format!("ImageData[EdgeDetect[{}, 4]]", impulse)).unwrap(),
+      interpret(&format!("ImageData[EdgeDetect[{impulse}, 4]]")).unwrap(),
       "{{0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0}}"
     );
     assert_eq!(
-      interpret(&format!("ImageData[EdgeDetect[{}, 0]]", impulse)).unwrap(),
+      interpret(&format!("ImageData[EdgeDetect[{impulse}, 0]]")).unwrap(),
       "{{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}"
     );
     // The range may be a pair, and then each axis is differentiated on
     // its own scale: {0, r} finds only the edges across the columns.
     let dot = "Image[{{0., 0., 0.}, {0., 1., 0.}, {0., 0., 0.}}]";
     assert_eq!(
-      interpret(&format!("ImageData[EdgeDetect[{}, {{0, 2}}]]", dot)).unwrap(),
+      interpret(&format!("ImageData[EdgeDetect[{dot}, {{0, 2}}]]")).unwrap(),
       "{{0, 0, 0}, {1, 0, 1}, {0, 0, 0}}"
     );
     assert_eq!(
-      interpret(&format!("ImageData[EdgeDetect[{}, {{2, 0}}]]", dot)).unwrap(),
+      interpret(&format!("ImageData[EdgeDetect[{dot}, {{2, 0}}]]")).unwrap(),
       "{{0, 1, 0}, {0, 0, 0}, {0, 1, 0}}"
     );
   }
@@ -3528,11 +3513,11 @@ mod image_advanced {
     let bars = "Image[{{0., 0., 0., 0.3, 0.3, 0.3, 0., 0., 0., \
                 1., 1., 1., 0., 0., 0.}}]";
     assert_eq!(
-      interpret(&format!("ImageData[EdgeDetect[{}]]", bars)).unwrap(),
+      interpret(&format!("ImageData[EdgeDetect[{bars}]]")).unwrap(),
       "{{0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0}}"
     );
     assert_eq!(
-      interpret(&format!("ImageData[EdgeDetect[{}, 2, 0.1]]", bars)).unwrap(),
+      interpret(&format!("ImageData[EdgeDetect[{bars}, 2, 0.1]]")).unwrap(),
       "{{0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 0}}"
     );
   }
@@ -3546,13 +3531,11 @@ mod image_advanced {
     let image = "Image[{{0., 0., 0.}, {0., 1., 0.}, {0., 0., 0.}}]";
     for spec in ["x", "-1", "{1, 2, 3}"] {
       let r =
-        interpret_with_stdout(&format!("EdgeDetect[{}, {}]", image, spec))
-          .unwrap();
-      assert_eq!(r.result, format!("EdgeDetect[-Image-, {}]", spec));
+        interpret_with_stdout(&format!("EdgeDetect[{image}, {spec}]")).unwrap();
+      assert_eq!(r.result, format!("EdgeDetect[-Image-, {spec}]"));
       let expected = format!(
-        "EdgeDetect::bdrad: The specified radius {} should be either a \
-         non-negative number or a list of 2 non-negative numbers.",
-        spec
+        "EdgeDetect::bdrad: The specified radius {spec} should be either a \
+         non-negative number or a list of 2 non-negative numbers."
       );
       assert!(
         r.warnings.contains(&expected),
@@ -3563,7 +3546,7 @@ mod image_advanced {
       );
     }
     let r =
-      interpret_with_stdout(&format!("EdgeDetect[{}, 2, x]", image)).unwrap();
+      interpret_with_stdout(&format!("EdgeDetect[{image}, 2, x]")).unwrap();
     assert_eq!(r.result, "EdgeDetect[-Image-, 2, x]");
     assert!(
       r.warnings.contains(
@@ -3636,11 +3619,7 @@ mod image_advanced {
     .unwrap();
     // Should detect at least 8 edge pixels (the inner ring)
     let total: f64 = result.parse().unwrap();
-    assert!(
-      total >= 8.0,
-      "Expected at least 8 edge pixels, got {}",
-      total
-    );
+    assert!(total >= 8.0, "Expected at least 8 edge pixels, got {total}");
   }
 
   #[test]
@@ -3672,8 +3651,7 @@ mod image_advanced {
       .unwrap();
     assert!(
       (16.0..=30.0).contains(&total),
-      "Expected 16-30 edge pixels for rectangle, got {}",
-      total
+      "Expected 16-30 edge pixels for rectangle, got {total}"
     );
   }
 
@@ -3710,8 +3688,7 @@ mod image_advanced {
     let total: f64 = result.parse().unwrap();
     assert!(
       total <= 4.0,
-      "High threshold should suppress most edges, got {}",
-      total
+      "High threshold should suppress most edges, got {total}"
     );
   }
 
@@ -4096,9 +4073,9 @@ mod image_io {
     let result =
       interpret("ImageDimensions[Import[\"images/parrot.jpeg\"]]").unwrap();
     // Check that dimensions are non-zero
-    assert!(result.starts_with("{"));
+    assert!(result.starts_with('{'));
     assert!(result.contains(", "));
-    assert!(result.ends_with("}"));
+    assert!(result.ends_with('}'));
   }
 
   #[test]

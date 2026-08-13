@@ -30,7 +30,7 @@ fn bench_string_cases_repeat_pattern(c: &mut Criterion) {
       {line, lines}]
   "#;
   c.bench_function("string_cases_repeat_pattern", |b| {
-    b.iter(|| run(black_box(prog)))
+    b.iter(|| run(black_box(prog)));
   });
 }
 
@@ -40,7 +40,7 @@ fn bench_string_split_repeat_pattern(c: &mut Criterion) {
     Do[StringSplit[line, ","], {line, lines}]
   "#;
   c.bench_function("string_split_repeat_pattern", |b| {
-    b.iter(|| run(black_box(prog)))
+    b.iter(|| run(black_box(prog)));
   });
 }
 
@@ -50,7 +50,7 @@ fn bench_string_replace_repeat_pattern(c: &mut Criterion) {
     Do[StringReplace[line, "bar" -> "BAR"], {line, lines}]
   "#;
   c.bench_function("string_replace_repeat_pattern", |b| {
-    b.iter(|| run(black_box(prog)))
+    b.iter(|| run(black_box(prog)));
   });
 }
 
@@ -67,7 +67,7 @@ fn bench_string_join_many_args(c: &mut Criterion) {
   // we add a fast path for `var = var <> rhs`.
   let prog = r#"StringJoin @@ Table["x", {50000}]"#;
   c.bench_function("string_join_many_args", |b| {
-    b.iter(|| run(black_box(prog)))
+    b.iter(|| run(black_box(prog)));
   });
 }
 
@@ -101,14 +101,14 @@ fn bench_sort_with_user_comparator(c: &mut Criterion) {
     Sort[names, asciiLess]
   "#;
   c.bench_function("sort_with_user_comparator", |b| {
-    b.iter(|| run(black_box(prog)))
+    b.iter(|| run(black_box(prog)));
   });
 }
 
 fn bench_to_character_code_loop(c: &mut Criterion) {
   let prog = r#"Do[ToCharacterCode["some-filename.md"], {20000}]"#;
   c.bench_function("to_character_code_loop", |b| {
-    b.iter(|| run(black_box(prog)))
+    b.iter(|| run(black_box(prog)));
   });
 }
 
@@ -164,7 +164,7 @@ fn bench_script_build_summary(c: &mut Criterion) {
   c.bench_function("script_build_summary", |b| {
     b.iter(|| {
       woxi::clear_state();
-      woxi::set_system_variable("$InputFileName", &format!("\"{}\"", abs_str));
+      woxi::set_system_variable("$InputFileName", &format!("\"{abs_str}\""));
       // Refresh the per-iteration mutable inputs so each iteration starts
       // from a clean baseline.
       std::fs::copy(&summary_src, tmp.join("tests/SUMMARY.md")).unwrap();
@@ -172,7 +172,7 @@ fn bench_script_build_summary(c: &mut Criterion) {
       // Capture stdout so the script's `Print["wrote …"]` calls don't
       // contaminate criterion's output.
       let _ = woxi::interpret_with_stdout(black_box(&script_str));
-    })
+    });
   });
 }
 
@@ -200,14 +200,14 @@ fn bench_script_egyptian_fractions(c: &mut Criterion) {
   // The heaviest snapshot: builds the 99- and 999-denominator tables
   // (~500k memoized fraction expansions). Pure allocation-throughput canary.
   c.bench_function("script_egyptian_fractions", |b| {
-    b.iter(|| run_script_file("egyptian_fractions.wls"))
+    b.iter(|| run_script_file("egyptian_fractions.wls"));
   });
 }
 
 fn bench_script_aliquot_sequence_classifications(c: &mut Criterion) {
   // Factorization-bound: repeated DivisorSum over growing sequences.
   c.bench_function("script_aliquot_sequence_classifications", |b| {
-    b.iter(|| run_script_file("aliquot_sequence_classifications.wls"))
+    b.iter(|| run_script_file("aliquot_sequence_classifications.wls"));
   });
 }
 
