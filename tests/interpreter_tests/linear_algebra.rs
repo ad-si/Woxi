@@ -5287,6 +5287,21 @@ mod cases {
     );
   }
   #[test]
+  fn eigenvectors_larger_matrix_with_close_eigenvalues() {
+    // A banded 7x7 matrix whose weak off-diagonal coupling (0.05) splits
+    // otherwise-repeated diagonal values (9, 4, 1) into pairs of close but
+    // distinct eigenvalues (e.g. 9.00031... and 9.00031...). The null-space
+    // search behind Eigenvectors used a fixed pivot tolerance that missed
+    // the true free column for eigenvalues past the first couple once the
+    // matrix got large enough (or eigenvalues close enough) for ordinary
+    // floating-point roundoff to exceed it, silently returning the zero
+    // vector instead of a unit eigenvector for most of the spectrum.
+    assert_case(
+      r#"Round[Map[Norm, Eigenvectors[{{9., 0., 0.05, 0., 0., 0., 0.}, {0., 4., 0., 0.05, 0., 0., 0.}, {0.05, 0., 1., 0., 0.05, 0., 0.}, {0., 0.05, 0., 0., 0., 0.05, 0.}, {0., 0., 0.05, 0., 1., 0., 0.05}, {0., 0., 0., 0.05, 0., 4., 0.}, {0., 0., 0., 0., 0.05, 0., 9.}}]], 0.001]"#,
+      r#"{1., 1., 1., 1., 1., 1., 1.}"#,
+    );
+  }
+  #[test]
   fn inverse_1() {
     assert_case(
       r#"Inverse[{{1, 2, 0}, {2, 3, 0}, {3, 4, 1}}]"#,

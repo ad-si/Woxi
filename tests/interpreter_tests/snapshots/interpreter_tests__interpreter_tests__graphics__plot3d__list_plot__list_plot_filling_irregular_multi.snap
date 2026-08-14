@@ -1053,9 +1053,29 @@ expression: "export_svg(\"ListPlot[{Sort@First@Last[Reap[Plot[Sin[x], {x, 0, 2 P
 <circle cx="3377" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
 <circle cx="3381" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
 <circle cx="3382" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
-<circle cx="3383" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
-<circle cx="3383" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
 <circle cx="3384" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3385" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3387" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3389" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3389" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3390" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3391" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3392" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3393" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3393" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3393" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3394" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3394" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3395" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3395" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3395" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3395" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3395" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3396" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3396" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3396" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3396" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="3396" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
 <circle cx="3397" cy="162" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
 <line x1="851.9" y1="1790.0" x2="851.9" y2="1820.0" stroke="#666" stroke-width="10"/>
 <line x1="1662.4" y1="1790.0" x2="1662.4" y2="1820.0" stroke="#666" stroke-width="10"/>

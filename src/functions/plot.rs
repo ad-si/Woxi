@@ -325,8 +325,27 @@ fn adaptive_sample(
         } else {
           true
         }
+      } else if i >= 1 {
+        // This is the rightmost interval in the current point list (no
+        // `i + 2` neighbor yet), which is structurally true of the last
+        // interval on every refinement pass — without this branch it would
+        // never be curvature-checked at all and a fast-oscillating tail
+        // (e.g. a high-frequency Sin) would stay a single straight segment
+        // no matter how many `MaxRecursion` passes ran. Mirror the
+        // look-ahead check using the point *before* x0 instead.
+        let (xm1, ym1) = points[i - 1];
+        if ym1.is_finite() {
+          let y_interp = ym1 + (y1 - ym1) * (x0 - xm1) / (x1 - xm1);
+          let y_range = (y1 - ym1).abs().max(1e-10);
+          let deviation = (y0 - y_interp).abs() / y_range;
+          deviation > 0.05
+        } else {
+          true
+        }
       } else {
-        false
+        // Fewer than 3 points in the whole domain: no neighbor on either
+        // side to assess curvature against, so refine to be safe.
+        true
       };
 
       if needs_refine {
