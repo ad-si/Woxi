@@ -585,10 +585,10 @@ fn expr_mentions_function(expr: &Expr, fname: &str) -> bool {
 /// of the single solution. `None` when it does not solve uniquely.
 fn solve_for_function(eq: &Expr, fname: &str) -> Option<Expr> {
   let unknown = find_function_call(eq, fname)?;
-  let solved = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Solve".to_string(),
-    args: vec![eq.clone(), unknown].into(),
-  })
+  let solved = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Solve",
+    vec![eq.clone(), unknown],
+  ))
   .ok()?;
   let Expr::List(ref sols) = solved else {
     return None;
@@ -898,11 +898,10 @@ fn ndsolve_system(
         })
         .collect(),
     );
-    let interp = Expr::FunctionCall {
-      name: "InterpolatingFunction".to_string(),
-      args: vec![domain, data, Expr::Integer(NDSOLVE_INTERPOLATION_ORDER)]
-        .into(),
-    };
+    let interp = call(
+      "InterpolatingFunction",
+      vec![domain, data, Expr::Integer(NDSOLVE_INTERPOLATION_ORDER)],
+    );
     rules.push(if f.function_form {
       Expr::Rule {
         pattern: Box::new(Expr::Identifier(f.name.clone())),
@@ -947,11 +946,10 @@ fn ndsolve_system(
     let domain = Expr::List(
       vec![Expr::List(vec![Expr::Real(x_lo), Expr::Real(x_hi)].into())].into(),
     );
-    let interp = Expr::FunctionCall {
-      name: "InterpolatingFunction".to_string(),
-      args: vec![domain, data, Expr::Integer(NDSOLVE_INTERPOLATION_ORDER)]
-        .into(),
-    };
+    let interp = call(
+      "InterpolatingFunction",
+      vec![domain, data, Expr::Integer(NDSOLVE_INTERPOLATION_ORDER)],
+    );
     rules.push(if f.function_form {
       Expr::Rule {
         pattern: Box::new(Expr::Identifier(f.name.clone())),
@@ -2756,10 +2754,7 @@ fn build_homogeneous_solution(
 
 /// Create C[n] constant expression
 fn make_c(n: usize) -> Expr {
-  Expr::FunctionCall {
-    name: "C".to_string(),
-    args: vec![Expr::Integer(n as i128)].into(),
-  }
+  call1("C", Expr::Integer(n as i128))
 }
 
 /// Create E^(r*x) expression, simplifying for special values
@@ -2783,10 +2778,7 @@ fn make_trig_term(func: &str, beta: f64, x_name: &str) -> Expr {
   } else {
     times2(beta_expr, x)
   };
-  Expr::FunctionCall {
-    name: func.to_string(),
-    args: vec![arg].into(),
-  }
+  call1(func, arg)
 }
 
 /// Convert f64 to a nice Expr: integer if whole, fraction if rational, otherwise Real
@@ -3247,10 +3239,7 @@ fn interp_value_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
   }
   // Fall back to N[...] for exact symbolic values that do not reduce to a
   // number on their own (Sin[1] stays symbolic until numericised).
-  let n_expr = Expr::FunctionCall {
-    name: "N".to_string(),
-    args: vec![evaluated].into(),
-  };
+  let n_expr = call1("N", evaluated);
   let numericized = crate::evaluator::evaluate_expr_to_expr(&n_expr)
     .unwrap_or_else(|_| expr.clone());
   expr_to_f64(&numericized)
@@ -3470,10 +3459,10 @@ pub fn interpolation_ast(
   );
 
   // Store the interpolation order as a third argument
-  let interp_func = Expr::FunctionCall {
-    name: "InterpolatingFunction".to_string(),
-    args: vec![domain, data_expr, Expr::Integer(order as i128)].into(),
-  };
+  let interp_func = call(
+    "InterpolatingFunction",
+    vec![domain, data_expr, Expr::Integer(order as i128)],
+  );
 
   Ok(interp_func)
 }
@@ -3556,10 +3545,7 @@ fn build_2d_list_interpolation(
     ]
     .into(),
   );
-  Expr::FunctionCall {
-    name: "InterpolatingFunction".to_string(),
-    args: vec![domain, grid_expr, orders].into(),
-  }
+  call("InterpolatingFunction", vec![domain, grid_expr, orders])
 }
 
 /// The relative tolerance two coordinates must fall within to count as "the
@@ -3709,10 +3695,10 @@ fn try_2d_scattered_interpolation(
     vec![Expr::List(x_exprs.into()), Expr::List(y_exprs.into())].into(),
   );
 
-  Some(Expr::FunctionCall {
-    name: "InterpolatingFunction".to_string(),
-    args: vec![domain, grid_expr, orders, coords].into(),
-  })
+  Some(call(
+    "InterpolatingFunction",
+    vec![domain, grid_expr, orders, coords],
+  ))
 }
 
 /// Evaluate a 2-D grid `InterpolatingFunction` whose coordinates are
@@ -3778,16 +3764,15 @@ fn evaluate_interpolating_function_2d_explicit(
   }
 
   let unevaluated = || Expr::CurriedCall {
-    func: Box::new(Expr::FunctionCall {
-      name: "InterpolatingFunction".to_string(),
-      args: vec![
+    func: Box::new(call(
+      "InterpolatingFunction",
+      vec![
         domain.clone(),
         Expr::List(grid_rows.to_vec().into()),
         Expr::List(orders.to_vec().into()),
         Expr::List(coords.to_vec().into()),
-      ]
-      .into(),
-    }),
+      ],
+    )),
     args: call_args.to_vec(),
   };
 
@@ -4056,10 +4041,7 @@ fn interpolating_function_property(
     "DerivativeOrder" => Some(if derivative_order == 0 {
       Expr::Integer(0)
     } else {
-      Expr::FunctionCall {
-        name: "Derivative".to_string(),
-        args: vec![Expr::Integer(derivative_order as i128)].into(),
-      }
+      call("Derivative", vec![Expr::Integer(derivative_order as i128)])
     }),
     _ => None,
   }
@@ -4310,15 +4292,14 @@ fn evaluate_interpolating_function_2d(
     )
   };
   let unevaluated = || Expr::CurriedCall {
-    func: Box::new(Expr::FunctionCall {
-      name: "InterpolatingFunction".to_string(),
-      args: vec![
+    func: Box::new(call(
+      "InterpolatingFunction",
+      vec![
         domain2d(),
         Expr::List(grid_rows.to_vec().into()),
         Expr::List(orders.to_vec().into()),
-      ]
-      .into(),
-    }),
+      ],
+    )),
     args: call_args.to_vec(),
   };
 
@@ -4510,15 +4491,9 @@ fn lagrange_polynomial(
       }
     }
     factors.retain(|f| !matches!(f, Expr::Integer(1)));
-    terms.push(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: factors.into(),
-    });
+    terms.push(call("Times", factors));
   }
-  Some(Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  })
+  Some(call("Plus", terms))
 }
 
 /// Lagrange interpolation over the stencil carried out in exact arithmetic.
@@ -4554,10 +4529,10 @@ fn interpolating_derivative_value(
   };
   let mut expr = crate::evaluator::evaluate_expr_to_expr(&poly)?;
   for _ in 0..derivative_order {
-    expr = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "D".to_string(),
-      args: vec![expr, var.clone()].into(),
-    })?;
+    expr = crate::evaluator::evaluate_expr_to_expr(&call(
+      "D",
+      vec![expr, var.clone()],
+    ))?;
   }
   let substituted =
     crate::syntax::substitute_variable(&expr, "\u{2620}ifderiv\u{2620}", x);
@@ -4669,10 +4644,7 @@ fn try_linear_first_order_pde_body(
     plus2(bx, n_var(yn))
   };
   let c1_applied = Expr::CurriedCall {
-    func: Box::new(Expr::FunctionCall {
-      name: "C".to_string(),
-      args: vec![Expr::Integer(1)].into(),
-    }),
+    func: Box::new(call1("C", Expr::Integer(1))),
     args: vec![c1_arg],
   };
   let body = if matches!(&exp_part, Expr::Integer(1)) {
@@ -4736,10 +4708,7 @@ fn try_direct_linear_pde_body(
     plus2(n_var(yn), bx)
   };
   let c1_applied = Expr::CurriedCall {
-    func: Box::new(Expr::FunctionCall {
-      name: "C".to_string(),
-      args: vec![Expr::Integer(1)].into(),
-    }),
+    func: Box::new(call1("C", Expr::Integer(1))),
     args: vec![c1_arg],
   };
   // Inhomogeneous head term: (c/a)*x.
@@ -4875,16 +4844,10 @@ fn try_euler_pde_body(
   };
   let n_var = |s: &str| Expr::Identifier(s.to_string());
   // Build c*Log[x] + C[1][y/x].
-  let log_x = Expr::FunctionCall {
-    name: "Log".to_string(),
-    args: vec![n_var(xn)].into(),
-  };
+  let log_x = call1("Log", n_var(xn));
   let y_over_x = div2(n_var(yn), n_var(xn));
   let c1_applied = Expr::CurriedCall {
-    func: Box::new(Expr::FunctionCall {
-      name: "C".to_string(),
-      args: vec![Expr::Integer(1)].into(),
-    }),
+    func: Box::new(call1("C", Expr::Integer(1))),
     args: vec![y_over_x],
   };
   // `c == 0` drops the logarithm entirely; keeping `0*Log[x]` would leak an
@@ -4984,19 +4947,16 @@ fn wrap_pde_solution(
   let n_var = |s: &str| Expr::Identifier(s.to_string());
   let rule = if return_call_form {
     Expr::Rule {
-      pattern: Box::new(Expr::FunctionCall {
-        name: fname.to_string(),
-        args: vec![n_var(xn), n_var(yn)].into(),
-      }),
+      pattern: Box::new(call(fname, vec![n_var(xn), n_var(yn)])),
       replacement: Box::new(body),
     }
   } else {
     Expr::Rule {
       pattern: Box::new(Expr::Identifier(fname.to_string())),
-      replacement: Box::new(Expr::FunctionCall {
-        name: "Function".to_string(),
-        args: vec![Expr::List(vec![n_var(xn), n_var(yn)].into()), body].into(),
-      }),
+      replacement: Box::new(call(
+        "Function",
+        vec![Expr::List(vec![n_var(xn), n_var(yn)].into()), body],
+      )),
     }
   };
   Expr::List(vec![Expr::List(vec![rule].into())].into())

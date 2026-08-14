@@ -761,7 +761,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     // InverseHaversine[x] → 2 * ArcSin[Sqrt[x]]
     "InverseHaversine" if args.len() == 1 => Some(mk_times(
       mk_int(2),
-      call("ArcSin", vec![call1("Sqrt", args[0].clone())]),
+      call1("ArcSin", call1("Sqrt", args[0].clone())),
     )),
 
     // InverseGudermannian[x] → Log[Tan[Pi/4 + x/2]]
@@ -832,7 +832,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
             mk_int(-1),
             mk_times(
               mk_power(inv_golden, n.clone()),
-              call("Cos", vec![mk_times(n.clone(), mk_id("Pi"))]),
+              call1("Cos", mk_times(n.clone(), mk_id("Pi"))),
             ),
           ),
         ),
@@ -851,7 +851,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
         mk_power(golden, n.clone()),
         mk_times(
           mk_power(inv_golden, n.clone()),
-          call("Cos", vec![mk_times(n.clone(), mk_id("Pi"))]),
+          call1("Cos", mk_times(n.clone(), mk_id("Pi"))),
         ),
       ))
     }

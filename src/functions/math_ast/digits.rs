@@ -742,10 +742,7 @@ fn extract_quadratic_irrational(
       let inner = match remaining.len() {
         0 => return None,
         1 => remaining.into_iter().next().unwrap(),
-        _ => Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: remaining.into(),
-        },
+        _ => call("Times", remaining),
       };
       (inner, scale_n, scale_d)
     }
@@ -1288,10 +1285,7 @@ fn periodic_continued_fraction(
     return Some(if q == 1 {
       Expr::Integer(pn)
     } else {
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(pn), Expr::Integer(q)].into(),
-      }
+      call("Rational", vec![Expr::Integer(pn), Expr::Integer(q)])
     });
   }
   // rn*sqrt(disc) = sign(rn) * sqrt(rn^2 * disc) = sign(rn) * f * sqrt(d).
@@ -1305,10 +1299,7 @@ fn periodic_continued_fraction(
     return Some(if q == 1 {
       Expr::Integer(total)
     } else {
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(total), Expr::Integer(q)].into(),
-      }
+      call("Rational", vec![Expr::Integer(total), Expr::Integer(q)])
     });
   }
   // Reduce (P, S, Q) by their common factor so D stays square-free and the
@@ -1317,25 +1308,16 @@ fn periodic_continued_fraction(
   let (pn, s, q) = (pn / g, s / g, q / g);
 
   // Build (pn + s*Sqrt[d])/q and let the evaluator canonicalize the surd.
-  let sqrt_d = Expr::FunctionCall {
-    name: "Sqrt".to_string(),
-    args: vec![Expr::Integer(d)].into(),
-  };
+  let sqrt_d = call1("Sqrt", Expr::Integer(d));
   let s_sqrt = if s == 1 {
     sqrt_d
   } else {
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(s), sqrt_d].into(),
-    }
+    call("Times", vec![Expr::Integer(s), sqrt_d])
   };
   let numer = if pn == 0 {
     s_sqrt
   } else {
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![Expr::Integer(pn), s_sqrt].into(),
-    }
+    call("Plus", vec![Expr::Integer(pn), s_sqrt])
   };
   let value = if q == 1 {
     numer
@@ -1344,10 +1326,7 @@ fn periodic_continued_fraction(
       name: "Times".to_string(),
       args: vec![
         numer,
-        Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![Expr::Integer(q), Expr::Integer(-1)].into(),
-        },
+        call("Power", vec![Expr::Integer(q), Expr::Integer(-1)]),
       ]
       .into(),
     }
@@ -1432,10 +1411,10 @@ pub fn from_continued_fraction_ast(
   if den == 1 {
     Ok(Expr::Integer(num))
   } else {
-    Ok(Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
-    })
+    Ok(call(
+      "Rational",
+      vec![Expr::Integer(num), Expr::Integer(den)],
+    ))
   }
 }
 
@@ -2040,10 +2019,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let abs_expr = if is_negative {
-    Expr::FunctionCall {
-      name: "Abs".to_string(),
-      args: vec![expr.clone()].into(),
-    }
+    call1("Abs", expr.clone())
   } else {
     expr.clone()
   };
@@ -2421,16 +2397,13 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if weights[i] == BigInt::from(1) {
         terms.push(digit.clone());
       } else {
-        terms.push(Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![digit.clone(), bigint_to_expr(weights[i].clone())].into(),
-        });
+        terms.push(call(
+          "Times",
+          vec![digit.clone(), bigint_to_expr(weights[i].clone())],
+        ));
       }
     }
-    let sum = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    };
+    let sum = call("Plus", terms);
     return crate::evaluator::evaluate_expr_to_expr(&sum);
   }
 
@@ -2458,22 +2431,13 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let base_pow = if power == 1 {
           base_expr.clone()
         } else {
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![base_expr.clone(), Expr::Integer(power)].into(),
-          }
+          call("Power", vec![base_expr.clone(), Expr::Integer(power)])
         };
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![item.clone(), base_pow].into(),
-        }
+        call("Times", vec![item.clone(), base_pow])
       };
       terms.push(term);
     }
-    let sum = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    };
+    let sum = call("Plus", terms);
     return crate::evaluator::evaluate_expr_to_expr(&sum);
   }
 
@@ -2550,10 +2514,10 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if den == BigInt::from(1) {
       return Ok(bigint_to_expr(num));
     }
-    return Ok(Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![bigint_to_expr(num), bigint_to_expr(den)].into(),
-    });
+    return Ok(call(
+      "Rational",
+      vec![bigint_to_expr(num), bigint_to_expr(den)],
+    ));
   }
 
   // Check if all items are numeric
@@ -2576,10 +2540,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       result = Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![base_expr.clone(), result].into(),
-          },
+          call("Times", vec![base_expr.clone(), result]),
           item.clone(),
         ]
         .into(),
@@ -3395,20 +3356,12 @@ fn make_rational_expr(num: i128, den: i128) -> Expr {
       if -d == 1 {
         Expr::Integer(-n)
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(Expr::Integer(-n)),
-          right: Box::new(Expr::Integer(-d)),
-        }
+        div2(Expr::Integer(-n), Expr::Integer(-d))
       }
     } else if d == 1 {
       Expr::Integer(n)
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(n)),
-        right: Box::new(Expr::Integer(d)),
-      }
+      div2(Expr::Integer(n), Expr::Integer(d))
     }
   }
 }

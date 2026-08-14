@@ -1053,7 +1053,7 @@ fn try_dirac_delta_integral(
   // Sifted value g(x0)/|c|. Defined symbolically so it also works when the
   // root is symbolic.
   let g_at_root = eval(at(&g, root.clone()))?;
-  let sifted = eval(call("Divide", vec![g_at_root, call("Abs", vec![c])]))?;
+  let sifted = eval(call("Divide", vec![g_at_root, call1("Abs", c)]))?;
 
   match crate::functions::math_ast::try_eval_to_f64(&root) {
     // Numeric root: position it relative to the (numeric) bounds.
@@ -1127,7 +1127,7 @@ fn try_definite_integral(
       || matches!(&slope, Expr::Real(f) if *f == 0.0);
     if !contains_var(&slope, var) && !slope_is_zero {
       let u = args[0].clone();
-      let abs_u = call("Abs", vec![u.clone()]);
+      let abs_u = call1("Abs", u.clone());
       // u * Abs[u] / (2 a)
       let antideriv = div2(times2(u, abs_u), times2(Expr::Integer(2), slope));
       let at_hi = crate::syntax::substitute_variable(&antideriv, var, hi);
@@ -1251,7 +1251,7 @@ fn try_definite_integral(
       name: "Times".to_string(),
       args: vec![
         Expr::Constant("Pi".to_string()),
-        call("Log", vec![Expr::Integer(2)]),
+        call1("Log", Expr::Integer(2)),
       ]
       .into(),
     };
@@ -2155,7 +2155,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             // d/dx[a^g(x)] = a^g(x) * ln(a) * g'(x)
             let dg = differentiate(right, var)?;
             Ok(simplify(times2(
-              times2(expr.clone(), call("Log", vec![*left.clone()])),
+              times2(expr.clone(), call1("Log", *left.clone())),
               dg,
             )))
           } else {
@@ -2773,28 +2773,20 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let df = differentiate(&args[0], var)?;
           let one_plus_f_sq =
             plus2(Expr::Integer(1), pow2(args[0].clone(), Expr::Integer(2)));
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(df),
-            right: Box::new(call(
-              "Power",
-              vec![one_plus_f_sq, Expr::Integer(-1)],
-            )),
-          }))
+          Ok(simplify(times2(
+            df,
+            call("Power", vec![one_plus_f_sq, Expr::Integer(-1)]),
+          )))
         }
         "ArcCot" if args.len() == 1 => {
           // d/dx[arccot(f(x))] = -f'(x) / (1 + f(x)^2)
           let df = differentiate(&args[0], var)?;
           let one_plus_f_sq =
             plus2(Expr::Integer(1), pow2(args[0].clone(), Expr::Integer(2)));
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(neg1(df)),
-            right: Box::new(call(
-              "Power",
-              vec![one_plus_f_sq, Expr::Integer(-1)],
-            )),
-          }))
+          Ok(simplify(times2(
+            neg1(df),
+            call("Power", vec![one_plus_f_sq, Expr::Integer(-1)]),
+          )))
         }
         "ArcSinh" if args.len() == 1 => {
           // d/dx[arcsinh(f(x))] = f'(x) / sqrt(1 + f(x)^2)
@@ -2829,14 +2821,10 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             Expr::Integer(1),
             neg1(pow2(args[0].clone(), Expr::Integer(2))),
           );
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(df),
-            right: Box::new(call(
-              "Power",
-              vec![one_minus_f_sq, Expr::Integer(-1)],
-            )),
-          }))
+          Ok(simplify(times2(
+            df,
+            call("Power", vec![one_minus_f_sq, Expr::Integer(-1)]),
+          )))
         }
         "ArcCoth" if args.len() == 1 => {
           // d/dx[arccoth(f(x))] = f'(x) / (1 - f(x)^2) (same as ArcTanh)
@@ -2845,14 +2833,10 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             Expr::Integer(1),
             neg1(pow2(args[0].clone(), Expr::Integer(2))),
           );
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(df),
-            right: Box::new(call(
-              "Power",
-              vec![one_minus_f_sq, Expr::Integer(-1)],
-            )),
-          }))
+          Ok(simplify(times2(
+            df,
+            call("Power", vec![one_minus_f_sq, Expr::Integer(-1)]),
+          )))
         }
         "Exp" if args.len() == 1 => {
           // d/dx[e^f(x)] = e^f(x) * f'(x)
@@ -3092,7 +3076,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           if matches!(dz, Expr::Integer(0)) {
             return Ok(Expr::Integer(0));
           }
-          let sinc = call("Sinc", vec![args[0].clone()]);
+          let sinc = call1("Sinc", args[0].clone());
           if matches!(dz, Expr::Integer(1)) {
             Ok(sinc)
           } else {
@@ -3226,11 +3210,11 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             Expr::Integer(1),
             times2(
               args[1].clone(),
-              pow2(call("Sin", vec![args[0].clone()]), Expr::Integer(2)),
+              pow2(call1("Sin", args[0].clone()), Expr::Integer(2)),
             ),
           ))
           .unwrap_or_else(|_| args[0].clone());
-          let sqrt = call("Sqrt", vec![inner]);
+          let sqrt = call1("Sqrt", inner);
           let deriv = if name == "EllipticF" {
             div2(Expr::Integer(1), sqrt)
           } else {
@@ -3280,7 +3264,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }
             "LogIntegral" => Expr::FunctionCall {
               name: "Power".to_string(),
-              args: vec![call("Log", vec![args[0].clone()]), Expr::Integer(-1)]
+              args: vec![call1("Log", args[0].clone()), Expr::Integer(-1)]
                 .into(),
             },
             "AiryAi" => Expr::FunctionCall {
@@ -3475,7 +3459,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               name: "Times".to_string(),
               args: vec![
                 pow2(Expr::Constant("E".to_string()), f_sq),
-                call("Sqrt", vec![Expr::Constant("Pi".to_string())]),
+                call1("Sqrt", Expr::Constant("Pi".to_string())),
               ]
               .into(),
             }),
@@ -4409,8 +4393,8 @@ fn try_integrate_exp_trig_product(
     }
 
     let times = |x: Expr, y: Expr| call("Times", vec![x, y]);
-    let cos = call("Cos", vec![arg.clone()]);
-    let sin = call("Sin", vec![arg.clone()]);
+    let cos = call1("Cos", arg.clone());
+    let sin = call1("Sin", arg.clone());
     // Numerator combination (Cos term first, matching wolframscript):
     //   Sin → -b Cos + a Sin ; Cos → a Cos + b Sin
     let combo = if trig == "Sin" {
@@ -4507,7 +4491,7 @@ fn try_integrate_sin_cos_product(factors: &[&Expr], var: &str) -> Option<Expr> {
     };
     if coeff_is_nontrivial {
       let double_arg = simplify(times2(Expr::Integer(2), arg.clone()));
-      let cos_double = call("Cos", vec![double_arg]);
+      let cos_double = call1("Cos", double_arg);
       let divisor = simplify(times2(Expr::Integer(4), coeff.clone()));
       return Some(make_neg_divided(cos_double, divisor));
     }
@@ -4522,7 +4506,7 @@ fn try_integrate_sin_cos_product(factors: &[&Expr], var: &str) -> Option<Expr> {
   // When sin_power == 1: ∫ Sin[f] * Cos[f]^n dx = -Cos[f]^(n+1) / ((n+1)*a)
   if sin_power == 1 {
     let new_power = cos_power + 1;
-    let cos_expr = call("Cos", vec![arg.clone()]);
+    let cos_expr = call1("Cos", arg.clone());
     let power_expr = pow2(cos_expr, Expr::Integer(new_power as i128));
     // divisor = (n+1) * a
     let total_divisor =
@@ -4533,7 +4517,7 @@ fn try_integrate_sin_cos_product(factors: &[&Expr], var: &str) -> Option<Expr> {
   // When cos_power == 1: ∫ Sin[f]^m * Cos[f] dx = Sin[f]^(m+1) / ((m+1)*a)
   if cos_power == 1 {
     let new_power = sin_power + 1;
-    let sin_expr = call("Sin", vec![arg.clone()]);
+    let sin_expr = call1("Sin", arg.clone());
     let power_expr = pow2(sin_expr, Expr::Integer(new_power as i128));
     // divisor = (m+1) * a
     let total_divisor =
@@ -4547,7 +4531,7 @@ fn try_integrate_sin_cos_product(factors: &[&Expr], var: &str) -> Option<Expr> {
     // Sin[f]^m * Cos[f]^n = Sin[f] * (1-Cos[f]^2)^((m-1)/2) * Cos[f]^n
     // Expand (1-Cos[f]^2)^k and integrate each term with the sin_power=1 rule
     let k = (sin_power - 1) / 2;
-    let cos_f = call("Cos", vec![arg.clone()]);
+    let cos_f = call1("Cos", arg.clone());
     // Expand (1-u^2)^k using binomial theorem
     // = sum_{j=0}^{k} C(k,j) * (-1)^j * u^(2j)
     // So integral = sum_{j=0}^{k} C(k,j) * (-1)^j * ∫ Sin[f] * Cos[f]^(n+2j) dx
@@ -4587,7 +4571,7 @@ fn try_integrate_sin_cos_product(factors: &[&Expr], var: &str) -> Option<Expr> {
   // If cos_power is odd: reduce using Cos^2 = 1 - Sin^2
   if cos_power % 2 == 1 {
     let k = (cos_power - 1) / 2;
-    let sin_f = call("Sin", vec![arg.clone()]);
+    let sin_f = call1("Sin", arg.clone());
     let mut terms: Vec<Expr> = Vec::new();
     for j in 0..=k {
       let binom = crate::functions::binomial_coeff(k as i128, j as i128);
@@ -4733,25 +4717,14 @@ fn try_integrate_trig_quotient(
       times2(make_divided(Expr::Integer(n), divisor), expr)
     }
   };
-  let wrap_call = |name: &str, inner: Expr| -> Expr { call(name, vec![inner]) };
 
   if cos_pow == -1 && sin_pow == 1 {
     // ∫ Sin[u]/Cos[u] dx = -Log[Cos[u]]/a
-    return Some(coeff_term(
-      -1,
-      1,
-      wrap_call("Log", trig_pow("Cos", 1)),
-      &coeff,
-    ));
+    return Some(coeff_term(-1, 1, call1("Log", trig_pow("Cos", 1)), &coeff));
   }
   if sin_pow == -1 && cos_pow == 1 {
     // ∫ Cos[u]/Sin[u] dx = Log[Sin[u]]/a
-    return Some(coeff_term(
-      1,
-      1,
-      wrap_call("Log", trig_pow("Sin", 1)),
-      &coeff,
-    ));
+    return Some(coeff_term(1, 1, call1("Log", trig_pow("Sin", 1)), &coeff));
   }
 
   if cos_pow == -1 && sin_pow >= 2 {
@@ -4762,7 +4735,7 @@ fn try_integrate_trig_quotient(
       terms.push(coeff_term(
         1,
         1,
-        wrap_call("ArcTanh", trig_pow("Sin", 1)),
+        call1("ArcTanh", trig_pow("Sin", 1)),
         &coeff,
       ));
       let mut j = 1;
@@ -4773,12 +4746,7 @@ fn try_integrate_trig_quotient(
     } else {
       // -Log[Cos[u]]/a + Σ (-1)^(j+1) C(k,j) Cos[u]^(2j)/(2j a)
       let k = (p - 1) / 2;
-      terms.push(coeff_term(
-        -1,
-        1,
-        wrap_call("Log", trig_pow("Cos", 1)),
-        &coeff,
-      ));
+      terms.push(coeff_term(-1, 1, call1("Log", trig_pow("Cos", 1)), &coeff));
       for j in 1..=k {
         let binom = crate::functions::binomial_coeff(k as i128, j as i128);
         let denom = 2 * j as i128;
@@ -4802,17 +4770,12 @@ fn try_integrate_trig_quotient(
       // Cos[u]/a + Log[Tan[u/2]]/a
       terms.push(coeff_term(1, 1, trig_pow("Cos", 1), &coeff));
       let half_arg = simplify(div2(arg.clone(), Expr::Integer(2)));
-      let tan_half = call("Tan", vec![half_arg]);
-      terms.push(coeff_term(1, 1, wrap_call("Log", tan_half), &coeff));
+      let tan_half = call1("Tan", half_arg);
+      terms.push(coeff_term(1, 1, call1("Log", tan_half), &coeff));
     } else if p % 2 == 1 {
       // Log[Sin[u]]/a + Σ (-1)^j C(k,j) Sin[u]^(2j)/(2j a)
       let k = (p - 1) / 2;
-      terms.push(coeff_term(
-        1,
-        1,
-        wrap_call("Log", trig_pow("Sin", 1)),
-        &coeff,
-      ));
+      terms.push(coeff_term(1, 1, call1("Log", trig_pow("Sin", 1)), &coeff));
       for j in 1..=k {
         let binom = crate::functions::binomial_coeff(k as i128, j as i128);
         let denom = 2 * j as i128;
@@ -5283,7 +5246,7 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
     if name == "Sinh" || name == "Cosh" {
       let coeff = try_match_linear_arg(&args[0], var)?;
       let double_arg = simplify(times2(Expr::Integer(2), args[0].clone()));
-      let sinh_double = call("Sinh", vec![double_arg]);
+      let sinh_double = call1("Sinh", double_arg);
       let four_a = simplify(times2(Expr::Integer(4), coeff));
       let sinh_term = div2(sinh_double, four_a);
       let x_half = div2(Expr::Identifier(var.to_string()), Expr::Integer(2));
@@ -5305,7 +5268,7 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
     // Build: 2*a*x
     let double_arg = simplify(times2(Expr::Integer(2), args[0].clone()));
     // sin(2*a*x)
-    let sin_double = call("Sin", vec![double_arg]);
+    let sin_double = call1("Sin", double_arg);
     // 4*a
     let four_a = simplify(times2(Expr::Integer(4), coeff));
     // x/2
@@ -5700,18 +5663,18 @@ fn try_integrate_inverse_sqrt(base: &Expr, var: &str) -> Option<Expr> {
     // ∫ (a - |b|*x^2)^(-1/2) dx = (1/sqrt(|b|)) * ArcSin[x * sqrt(|b|/a)]
     let abs_b = simplify(neg1(b.clone()));
     let ratio = simplify(div2(abs_b.clone(), a.clone()));
-    let sqrt_ratio = simplify(call("Sqrt", vec![ratio]));
-    let sqrt_abs_b = simplify(call("Sqrt", vec![abs_b]));
+    let sqrt_ratio = simplify(call1("Sqrt", ratio));
+    let sqrt_abs_b = simplify(call1("Sqrt", abs_b));
     let arg = simplify(times2(Expr::Identifier(var.to_string()), sqrt_ratio));
-    let arcsin = call("ArcSin", vec![arg]);
+    let arcsin = call1("ArcSin", arg);
     Some(make_divided(arcsin, sqrt_abs_b))
   } else {
     // ∫ (a + b*x^2)^(-1/2) dx = (1/sqrt(b)) * ArcSinh[x * sqrt(b/a)]
     let ratio = simplify(div2(b.clone(), a.clone()));
-    let sqrt_ratio = simplify(call("Sqrt", vec![ratio]));
-    let sqrt_b = simplify(call("Sqrt", vec![b.clone()]));
+    let sqrt_ratio = simplify(call1("Sqrt", ratio));
+    let sqrt_b = simplify(call1("Sqrt", b.clone()));
     let arg = simplify(times2(Expr::Identifier(var.to_string()), sqrt_ratio));
-    let arcsinh = call("ArcSinh", vec![arg]);
+    let arcsinh = call1("ArcSinh", arg);
     Some(make_divided(arcsinh, sqrt_b))
   }
 }
@@ -5978,7 +5941,7 @@ fn try_integrate_rational(
       plus2(Expr::Integer(-root), Expr::Identifier(var.to_string()))
     };
 
-    let log_expr = call("Log", vec![log_arg]);
+    let log_expr = call1("Log", log_arg);
 
     // Build coefficient * Log[...]
     let term = if ad == 1 {
@@ -6112,8 +6075,8 @@ fn try_integrate_rational(
         acc
       };
 
-      let log_a = call("Log", vec![arg_a]);
-      let log_b = call("Log", vec![arg_b]);
+      let log_a = call1("Log", arg_a);
+      let log_b = call1("Log", arg_b);
       // `Log[arg_a] - Log[arg_b]`, then multiplied by `n` and divided by
       // `k * Sqrt[m]`.
       let log_diff = minus2(log_a, log_b);
@@ -6323,7 +6286,7 @@ fn try_integrate_rational(
     let (log_num, log_den) = rat_reduce(log_total_num, log_total_den);
 
     if log_num != 0 {
-      let log_expr = call("Log", vec![quad_log_arg.clone()]);
+      let log_expr = call1("Log", quad_log_arg.clone());
       let log_term = build_coeff_times_expr(log_num, log_den, log_expr);
       quad_terms.push(log_term);
     }
@@ -6401,7 +6364,7 @@ fn try_integrate_rational(
         arctan_numerator
       };
 
-      let arctan_expr = call("ArcTan", vec![arctan_inner]);
+      let arctan_expr = call1("ArcTan", arctan_inner);
 
       // Full coefficient: arctan_coeff_num / (common_den * k_reduced * sqrt(m))
       // Reduce: arctan_coeff_num / common_den first
@@ -6680,7 +6643,7 @@ fn try_integrate_one_over_poly_rootsum(expr: &Expr, var: &str) -> Option<Expr> {
   // Inner function body: Log[x - #1] / p'(#1).
   let var_expr = Expr::Identifier(var.to_string());
   let log_arg = minus2(var_expr, Expr::Slot(1));
-  let log_term = call("Log", vec![log_arg]);
+  let log_term = call1("Log", log_arg);
   let body = div2(log_term, pprime_in_slot);
   let log_fn = Expr::Function {
     body: Box::new(body),
@@ -6706,7 +6669,7 @@ fn try_integrate_poly_times_const_exp(
   let rate = if matches!(base, Expr::Constant(c) if c == "E") {
     simplify(coeff.clone())
   } else {
-    let log_base = call("Log", vec![base.clone()]);
+    let log_base = call1("Log", base.clone());
     simplify(times2(coeff.clone(), log_base))
   };
 
@@ -6866,8 +6829,8 @@ fn try_u_substitution_binary(
     // Compute G(h(x)) directly based on the outer function.
     let antideriv_of_h = match outer_fn {
       "Exp" => composite.clone(), // G(Exp) = Exp, so G(h(x)) = Exp[h(x)]
-      "Sin" => call("Cos", vec![inner.clone()]), // ∫ Sin = -Cos → handle sign below
-      "Cos" => call("Sin", vec![inner.clone()]),
+      "Sin" => call1("Cos", inner.clone()), // ∫ Sin = -Cos → handle sign below
+      "Cos" => call1("Sin", inner.clone()),
       _ => {
         continue; // Other functions: skip for now
       }
@@ -7245,7 +7208,7 @@ fn try_integrate_log_derivative(expr: &Expr, var: &str) -> Option<Expr> {
     if matches!(&ratio_val, Expr::Integer(0)) {
       continue;
     }
-    let log_g = call("Log", vec![g]);
+    let log_g = call1("Log", g);
     // n = -1: integrand = c·g'/g → c·Log[g].
     if is_constant_wrt(&ratio_val, var) {
       return Some(if matches!(&ratio_val, Expr::Integer(1)) {
@@ -7799,7 +7762,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             let n = *n;
             let fact = |m: i128| -> i128 { (1..=m).product() };
             let nf = fact(n);
-            let logx = call("Log", vec![Expr::Identifier(var.to_string())]);
+            let logx = call1("Log", Expr::Identifier(var.to_string()));
             let mut sum: Option<Expr> = None;
             for k in 0..=n {
               let mag = nf / fact(k);
@@ -7942,7 +7905,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           // where a is any constant base (not E, which is handled above)
           if is_constant_wrt(left, var) && !is_constant_wrt(right, var) {
             let exp_arg = right.as_ref();
-            let log_a = call("Log", vec![*left.clone()]);
+            let log_a = call1("Log", *left.clone());
             // ∫ a^x dx = a^x / Log[a]
             if let Expr::Identifier(n) = exp_arg
               && n == var
@@ -8135,7 +8098,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         // for real arguments, away from 0).
         "RealSign" if args.len() == 1 => {
           if matches!(&args[0], Expr::Identifier(n) if n == var) {
-            Some(call("Abs", vec![Expr::Identifier(var.to_string())]))
+            Some(call1("Abs", Expr::Identifier(var.to_string())))
           } else {
             None
           }
@@ -8183,7 +8146,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             let x = Expr::Identifier(var.to_string());
             let x_sq = pow2(x.clone(), Expr::Integer(2));
             let one_plus = plus2(Expr::Integer(1), x_sq);
-            let log_term = call("Log", vec![one_plus]);
+            let log_term = call1("Log", one_plus);
             // x ArcTan[x] - Log[1 + x^2] / 2
             return Some(Expr::BinaryOp {
               op: BinaryOperator::Minus,
@@ -8245,7 +8208,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             && n == var
           {
             let x = Expr::Identifier(var.to_string());
-            let sqrt = |e: Expr| call("Sqrt", vec![e]);
+            let sqrt = |e: Expr| call1("Sqrt", e);
             let x_sq = pow2(x.clone(), Expr::Integer(2));
             let correction = match name.as_str() {
               // -Sqrt[1 + x^2]
@@ -8295,7 +8258,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           {
             let x = Expr::Identifier(var.to_string());
             let x_sq = pow2(x.clone(), Expr::Integer(2));
-            let sqrt_pi = call("Sqrt", vec![Expr::Constant("Pi".to_string())]);
+            let sqrt_pi = call1("Sqrt", Expr::Constant("Pi".to_string()));
             let neg = |e: Expr| times2(Expr::Integer(-1), e);
             // exp(-x^2)/Sqrt[Pi] used by Erf/Erfc.
             let gauss = || {
@@ -8322,11 +8285,11 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
                 sqrt_pi.clone(),
               )),
               "FresnelS" => div2(
-                call("Cos", vec![fresnel_arg()]),
+                call1("Cos", fresnel_arg()),
                 Expr::Constant("Pi".to_string()),
               ),
               _ => neg(div2(
-                call("Sin", vec![fresnel_arg()]),
+                call1("Sin", fresnel_arg()),
                 Expr::Constant("Pi".to_string()),
               )),
             };
@@ -8414,7 +8377,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               name: "Cos".to_string(),
               args: args.clone(),
             };
-            let log_cos = call("Log", vec![cos_expr]);
+            let log_cos = call1("Log", cos_expr);
             return Some(make_neg_divided(log_cos, coeff));
           }
           None
@@ -8426,7 +8389,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               name: "Sin".to_string(),
               args: args.clone(),
             };
-            let log_sin = call("Log", vec![sin_expr]);
+            let log_sin = call1("Log", sin_expr);
             return Some(make_divided(log_sin, coeff));
           }
           None
@@ -8438,7 +8401,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               name: "Cosh".to_string(),
               args: args.clone(),
             };
-            let log_cosh = call("Log", vec![cosh_expr]);
+            let log_cosh = call1("Log", cosh_expr);
             return Some(make_divided(log_cosh, coeff));
           }
           None
@@ -8450,7 +8413,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               name: "Sinh".to_string(),
               args: args.clone(),
             };
-            let log_sinh = call("Log", vec![sinh_expr]);
+            let log_sinh = call1("Log", sinh_expr);
             return Some(make_divided(log_sinh, coeff));
           }
           None
@@ -8462,7 +8425,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               name: "Sin".to_string(),
               args: args.clone(),
             };
-            let arccoth = call("ArcCoth", vec![sin_expr]);
+            let arccoth = call1("ArcCoth", sin_expr);
             return Some(make_divided(arccoth, coeff));
           }
           None
@@ -8474,7 +8437,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               name: "Cos".to_string(),
               args: args.clone(),
             };
-            let arctanh = call("ArcTanh", vec![cos_expr]);
+            let arctanh = call1("ArcTanh", cos_expr);
             return Some(make_neg_divided(arctanh, coeff));
           }
           None
@@ -8486,7 +8449,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               name: "Sinh".to_string(),
               args: args.clone(),
             };
-            let arccot = call("ArcCot", vec![sinh_expr]);
+            let arccot = call1("ArcCot", sinh_expr);
             return Some(make_neg_divided(arccot, coeff));
           }
           None
@@ -8498,7 +8461,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               name: "Cosh".to_string(),
               args: args.clone(),
             };
-            let arctanh = call("ArcTanh", vec![cosh_expr]);
+            let arctanh = call1("ArcTanh", cosh_expr);
             return Some(make_neg_divided(arctanh, coeff));
           }
           None
@@ -8572,7 +8535,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               } else {
                 make_divided(times2(u.clone(), log_log), coeff.clone())
               };
-              let li = call("LogIntegral", vec![u]);
+              let li = call1("LogIntegral", u);
               return Some(plus2(first, make_neg_divided(li, coeff)));
             }
           }
@@ -9094,7 +9057,7 @@ fn harmonic_asymptotic(g: &Expr) -> Expr {
   Expr::FunctionCall {
     name: "Plus".to_string(),
     args: vec![
-      call("Log", vec![g.clone()]),
+      call1("Log", g.clone()),
       Expr::Identifier("EulerGamma".to_string()),
       term(1, 2, -1),
       term(-1, 12, -2),
@@ -10006,7 +9969,7 @@ fn limit_sqrt_difference(expr: &Expr, var: &str, point: &Expr) -> Option<Expr> {
       left: Box::new(minus2(ca[d - 1].clone(), cb[d - 1].clone())),
       right: Box::new(call(
         "Times",
-        vec![Expr::Integer(2), call("Sqrt", vec![ca[d].clone()])],
+        vec![Expr::Integer(2), call1("Sqrt", ca[d].clone())],
       )),
     };
     return crate::evaluator::evaluate_expr_to_expr(&result).ok();
@@ -10615,7 +10578,7 @@ fn bounded_trig_extremum(
     return Ok(None);
   }
   // The argument oscillates without settling iff its magnitude diverges.
-  let abs_arg = call("Abs", vec![fargs[0].clone()]);
+  let abs_arg = call1("Abs", fargs[0].clone());
   let abs_limit = limit_ast(&[abs_arg, rule.clone()])?;
   let unbounded = matches!(&abs_limit, Expr::Identifier(s) if s == "Infinity");
   if !unbounded {
@@ -11625,7 +11588,7 @@ fn limit_power_form(
   }
 
   // L = Limit[g * Log[f], x -> x0]; the power limit is Exp[L].
-  let g_log_f = call("Times", vec![exp, call("Log", vec![base])]);
+  let g_log_f = call("Times", vec![exp, call1("Log", base)]);
   LIMIT_POWER_DEPTH.with(|d| d.set(depth + 1));
   let l = limit_ast(&inner_args(g_log_f));
   LIMIT_POWER_DEPTH.with(|d| d.set(depth));
@@ -11664,7 +11627,7 @@ fn abs_deriv_to_sign(expr: &Expr) -> Expr {
     && order.len() == 1
     && matches!(&order[0], Expr::Integer(1))
   {
-    return call("Sign", vec![abs_deriv_to_sign(&args[0])]);
+    return call1("Sign", abs_deriv_to_sign(&args[0]));
   }
   match expr {
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
@@ -14750,7 +14713,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Plus".to_string(),
         args: vec![
           Expr::Identifier("EulerGamma".to_string()),
-          call("Log", vec![log_arg]),
+          call1("Log", log_arg),
         ]
         .into(),
       };
@@ -14873,7 +14836,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Times".to_string(),
         args: vec![
           Expr::Integer(2),
-          call("Log", vec![Expr::Identifier(var_name.clone())]),
+          call1("Log", Expr::Identifier(var_name.clone())),
         ]
         .into(),
       };
@@ -15170,10 +15133,10 @@ fn gaussian_closed_form_integral(
   // evaluation later doesn't suffer f64-to-Real downcasting.
   let neg_alpha = call("Times", vec![Expr::Integer(-1), alpha.clone()]);
   let neg_alpha_eval = crate::evaluator::evaluate_expr_to_expr(&neg_alpha)?;
-  let sqrt_neg_alpha = call("Sqrt", vec![neg_alpha_eval.clone()]);
+  let sqrt_neg_alpha = call1("Sqrt", neg_alpha_eval.clone());
   let pi_over_neg_alpha =
     div2(Expr::Constant("Pi".to_string()), neg_alpha_eval.clone());
-  let sqrt_pi_over = call("Sqrt", vec![pi_over_neg_alpha]);
+  let sqrt_pi_over = call1("Sqrt", pi_over_neg_alpha);
 
   let bound_expr = |v: f64| -> Expr {
     // Bounds come in as f64; turn integer-valued ones back into exact
@@ -15743,7 +15706,7 @@ fn adaptive_simpson_rec(
 /// for an unknown system or a mismatched variable count.
 fn coord_scale_factors(cs: &str, vars: &[Expr]) -> Option<Vec<Expr>> {
   let one = || Expr::Integer(1);
-  let sin = |e: &Expr| call("Sin", vec![e.clone()]);
+  let sin = |e: &Expr| call1("Sin", e.clone());
   let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
   match cs {
     // h_i = 1 for every Cartesian axis.
@@ -17885,8 +17848,8 @@ fn try_trig_delta(expr: &Expr, var: &str, step: &Expr) -> Option<Expr> {
     name: "Times".to_string(),
     args: vec![
       coeff,
-      call("Sin", vec![half_delta]),
-      call("Sin", vec![second_arg_expr]),
+      call1("Sin", half_delta),
+      call1("Sin", second_arg_expr),
     ]
     .into(),
   };
@@ -18320,7 +18283,7 @@ fn barnes_g_series_coefficient(k: i128) -> Expr {
   let constant = |s: &str| Expr::Constant(s.to_string());
   let plus = |args: Vec<Expr>| call("Plus", args);
   let times = |args: Vec<Expr>| call("Times", args);
-  let log = |arg: Expr| call("Log", vec![arg]);
+  let log = |arg: Expr| call1("Log", arg);
   let rational = |p: i128, q: i128| call("Rational", vec![int(p), int(q)]);
   let two_pi = times(vec![int(2), constant("Pi")]);
   let log_2pi = log(two_pi);
@@ -18486,7 +18449,7 @@ fn factorial2_series_at_zero(var_name: &str, order: i128) -> Expr {
   let times = |args: Vec<Expr>| call("Times", args);
   let power = |base: Expr, exp: Expr| call("Power", vec![base, exp]);
   let rational = |p: i128, q: i128| call("Rational", vec![int(p), int(q)]);
-  let log = |arg: Expr| call("Log", vec![arg]);
+  let log = |arg: Expr| call1("Log", arg);
 
   let mut coeffs: Vec<Expr> = Vec::with_capacity(order.max(0) as usize + 1);
   for k in 0..=order {
@@ -18576,8 +18539,8 @@ fn pochhammer_half_series_at_zero(var_name: &str, order: i128) -> Expr {
   let int = |n: i128| Expr::Integer(n);
   let constant = |s: &str| Expr::Constant(s.to_string());
   let times = |args: Vec<Expr>| call("Times", args);
-  let sqrt_pi = call("Sqrt", vec![constant("Pi")]);
-  let log = |arg: Expr| call("Log", vec![arg]);
+  let sqrt_pi = call1("Sqrt", constant("Pi"));
+  let log = |arg: Expr| call1("Log", arg);
 
   // Coefficients starting at x^1 (so SeriesData min = 1).
   let mut coeffs: Vec<Expr> = Vec::with_capacity(order.max(0) as usize);
@@ -18611,7 +18574,7 @@ fn hyperfactorial_series_at_zero(var_name: &str, order: i128) -> Expr {
   let times = |args: Vec<Expr>| call("Times", args);
   let power = |base: Expr, exp: Expr| call("Power", vec![base, exp]);
   let rational = |p: i128, q: i128| call("Rational", vec![int(p), int(q)]);
-  let log = |arg: Expr| call("Log", vec![arg]);
+  let log = |arg: Expr| call1("Log", arg);
   let two_pi = times(vec![int(2), constant("Pi")]);
   let log_2pi = log(two_pi);
 
@@ -18828,7 +18791,7 @@ fn big_o(f: &Expr, g: &Expr, rule: &Expr) -> Result<Verdict, InterpreterError> {
   if is_literal_zero(g) {
     return Ok(Verdict::False);
   }
-  let abs_ratio = call("Abs", vec![ratio(f, g)]);
+  let abs_ratio = call1("Abs", ratio(f, g));
   // As with the quotient itself, `MaxLimit` sees much more of the structure
   // once `Abs` has been pushed through it (`Abs[1/Sin[x]]` → `1/Abs[Sin[x]]`).
   let abs_ratio =

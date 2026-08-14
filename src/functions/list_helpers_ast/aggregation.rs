@@ -719,7 +719,7 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       "Median",
       std::slice::from_ref(list),
     );
-    return Ok(call("Median", vec![list.clone()]));
+    return Ok(call1("Median", list.clone()));
   };
 
   // Median requires a rectangular array of real numbers; a ragged/mixed array
@@ -2514,7 +2514,7 @@ pub fn clustering_components_ast(
     crate::emit_message(
       "ClusteringComponents::nosup: This type of data is not supported.",
     );
-    return Ok(call("ClusteringComponents", vec![list.clone()]));
+    return Ok(call1("ClusteringComponents", list.clone()));
   };
   if items.is_empty() {
     return Ok(Expr::List(vec![].into()));
@@ -2711,7 +2711,7 @@ fn cluster_keys_emit_values(
     match expr_to_f64(k) {
       Some(v) => numeric_keys.push(v),
       None => {
-        return call("FindClusters", vec![raw_input.clone()]);
+        return call1("FindClusters", raw_input.clone());
       }
     }
   }

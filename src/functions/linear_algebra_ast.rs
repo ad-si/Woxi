@@ -3128,7 +3128,7 @@ fn quadratic_eigenvalues(b_coeff: i128, c_coeff: i128) -> Vec<Expr> {
       }
       factors.push(Expr::Constant("I".to_string()));
       if inner != 1 {
-        factors.push(call("Sqrt", vec![Expr::Integer(inner as i128)]));
+        factors.push(call1("Sqrt", Expr::Integer(inner as i128)));
       }
       if factors.len() == 1 {
         factors.remove(0)
@@ -3395,7 +3395,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ]
       .into(),
     };
-    let sqrt_disc = call("Sqrt", vec![disc]);
+    let sqrt_disc = call1("Sqrt", disc);
     let trace = call("Plus", vec![a, d]);
     let lambda_minus = Expr::BinaryOp {
       op: BinaryOperator::Divide,
@@ -6423,7 +6423,7 @@ pub fn vector_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Times".to_string(),
     args: vec![dot_expr, call("Power", vec![denom, Expr::Integer(-1)])].into(),
   };
-  let result = call("ArcCos", vec![ratio]);
+  let result = call1("ArcCos", ratio);
   evaluate_expr_to_expr(&result)
 }
 
@@ -8845,7 +8845,7 @@ pub fn singular_value_list_ast(
     // Use the Sqrt head (not make_sqrt's Power form): the Power
     // simplifier splits Sqrt[a*b/c] into radical products, while
     // wolframscript keeps the nested Sqrt[(a*b)/c] form
-    values.push(evaluate_expr_to_expr(&call("Sqrt", vec![e.clone()]))?);
+    values.push(evaluate_expr_to_expr(&call1("Sqrt", e.clone()))?);
   }
 
   match take {
@@ -10516,8 +10516,8 @@ pub fn coordinate_transform_ast(
     ("Polar", "Cartesian", 2) => {
       let (r, t) = (&pt[0], &pt[1]);
       vec![
-        times(vec![r.clone(), call("Cos", vec![t.clone()])]),
-        times(vec![r.clone(), call("Sin", vec![t.clone()])]),
+        times(vec![r.clone(), call1("Cos", t.clone())]),
+        times(vec![r.clone(), call1("Sin", t.clone())]),
       ]
     }
     ("Cartesian", "Polar", 2) => {
@@ -10529,15 +10529,15 @@ pub fn coordinate_transform_ast(
       vec![
         times(vec![
           r.clone(),
-          call("Cos", vec![p.clone()]),
-          call("Sin", vec![t.clone()]),
+          call1("Cos", p.clone()),
+          call1("Sin", t.clone()),
         ]),
         times(vec![
           r.clone(),
-          call("Sin", vec![p.clone()]),
-          call("Sin", vec![t.clone()]),
+          call1("Sin", p.clone()),
+          call1("Sin", t.clone()),
         ]),
-        times(vec![r.clone(), call("Cos", vec![t.clone()])]),
+        times(vec![r.clone(), call1("Cos", t.clone())]),
       ]
     }
     ("Cartesian", "Spherical", 3) => {
@@ -10551,8 +10551,8 @@ pub fn coordinate_transform_ast(
     ("Cylindrical", "Cartesian", 3) => {
       let (r, t, z) = (&pt[0], &pt[1], &pt[2]);
       vec![
-        times(vec![r.clone(), call("Cos", vec![t.clone()])]),
-        times(vec![r.clone(), call("Sin", vec![t.clone()])]),
+        times(vec![r.clone(), call1("Cos", t.clone())]),
+        times(vec![r.clone(), call1("Sin", t.clone())]),
         z.clone(),
       ]
     }

@@ -30,10 +30,7 @@ fn distribute_re_im(
   head: &str,
   expr: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  let apply = |x: Expr| Expr::FunctionCall {
-    name: head.to_string(),
-    args: vec![x].into(),
-  };
+  let apply = |x: Expr| call1(head, x);
   // Times: Re[real_factors * rest] = (real_factors) * Re[rest].
   if let Expr::FunctionCall { name, args } = expr
     && name == "Times"
@@ -49,15 +46,9 @@ fn distribute_re_im(
       let other = if other_f.len() == 1 {
         other_f.into_iter().next().unwrap()
       } else {
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: other_f.into(),
-        }
+        call("Times", other_f)
       };
-      let combined = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![real_prod, apply(other)].into(),
-      };
+      let combined = call("Times", vec![real_prod, apply(other)]);
       return Some(crate::evaluator::evaluate_expr_to_expr(&combined));
     }
   }
@@ -74,20 +65,14 @@ fn distribute_re_im(
       let rest_expr = if rest.len() == 1 {
         rest.into_iter().next().unwrap()
       } else {
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: rest.into(),
-        }
+        call("Plus", rest)
       };
       parts.push(apply(rest_expr));
     }
     for it in i_terms {
       parts.push(apply(it));
     }
-    let combined = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: parts.into(),
-    };
+    let combined = call("Plus", parts);
     return Some(crate::evaluator::evaluate_expr_to_expr(&combined));
   }
   None
@@ -359,10 +344,7 @@ fn product_of(mut factors: Vec<Expr>) -> Expr {
   if factors.len() == 1 {
     factors.pop().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: factors.into(),
-    }
+    call("Times", factors)
   }
 }
 
@@ -450,10 +432,7 @@ fn try_extract_complex_bigfloat(expr: &Expr) -> Option<(Expr, Expr)> {
     let im_part = if others.len() == 1 {
       others.into_iter().next().unwrap()
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: others.into(),
-      }
+      call("Times", others)
     };
     Some((None, Some(im_part)))
   };
@@ -582,10 +561,7 @@ fn collect_plus_terms(expr: &Expr) -> Option<Vec<Expr>> {
     } => {
       let mut t =
         collect_plus_terms(left).unwrap_or_else(|| vec![(**left).clone()]);
-      t.push(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), (**right).clone()].into(),
-      });
+      t.push(call("Times", vec![Expr::Integer(-1), (**right).clone()]));
       Some(t)
     }
     _ => None,
@@ -622,15 +598,9 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
     let neg_imag = match &args[1] {
       Expr::Integer(n) => Expr::Integer(-*n),
       Expr::Real(f) => Expr::Real(-*f),
-      other => Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(other.clone()),
-      },
+      other => neg1(other.clone()),
     };
-    return Ok(Expr::FunctionCall {
-      name: "Complex".to_string(),
-      args: vec![args[0].clone(), neg_imag].into(),
-    });
+    return Ok(call("Complex", vec![args[0].clone(), neg_imag]));
   }
 
   // Try exact integer/rational complex extraction: handles numeric a + b*I patterns
@@ -663,10 +633,7 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   //   Conjugate[a + b + 2 I]  -> -2 I + Conjugate[a + b]
   //   Conjugate[2 a + b + c]  -> 2 Conjugate[a] + Conjugate[b + c]
   if let Some(terms) = collect_plus_terms(expr) {
-    let conj_wrap = |t: &Expr| Expr::FunctionCall {
-      name: "Conjugate".to_string(),
-      args: vec![t.clone()].into(),
-    };
+    let conj_wrap = |t: &Expr| call1("Conjugate", t.clone());
     let mut simplified: Vec<Expr> = Vec::new();
     let mut bare: Vec<Expr> = Vec::new();
     for t in &terms {
@@ -748,10 +715,7 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
       } else if symbolic_factors.len() == 1 {
         Some(conjugate_one(&symbolic_factors[0])?)
       } else {
-        Some(conjugate_one(&Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: symbolic_factors.into(),
-        })?)
+        Some(conjugate_one(&call("Times", symbolic_factors))?)
       };
 
       // Combine: real_factors * i_factor * conj_symbolic
@@ -773,10 +737,7 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   } = expr
   {
     // Convert to flattened form and handle there
-    let flat = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![*left.clone(), *right.clone()].into(),
-    };
+    let flat = call("Times", vec![*left.clone(), *right.clone()]);
     return conjugate_one(&flat);
   }
 
@@ -795,11 +756,7 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
     let clean =
       |e: &Expr| !crate::syntax::expr_to_string(e).contains("Conjugate[");
     if clean(&num) && clean(&den) {
-      return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(num),
-        right: Box::new(den),
-      });
+      return crate::evaluator::evaluate_expr_to_expr(&div2(num, den));
     }
   }
 
@@ -814,10 +771,7 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   {
     let conj_args: Vec<Expr> =
       args.iter().map(conjugate_one).collect::<Result<_, _>>()?;
-    return Ok(Expr::FunctionCall {
-      name: "List".to_string(),
-      args: conj_args.into(),
-    });
+    return Ok(call("List", conj_args));
   }
 
   // UnaryOp Minus: Conjugate[-x] = -Conjugate[x]
@@ -848,26 +802,15 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   };
   if let Some((base, exp)) = power_parts {
     if is_strictly_positive_real(base) {
-      return Ok(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(base.clone()),
-        right: Box::new(conjugate_one(exp)?),
-      });
+      return Ok(pow2(base.clone(), conjugate_one(exp)?));
     }
     if matches!(exp, Expr::Integer(_)) {
-      return Ok(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(conjugate_one(base)?),
-        right: Box::new(exp.clone()),
-      });
+      return Ok(pow2(conjugate_one(base)?, exp.clone()));
     }
   }
 
   // Default: return unevaluated Conjugate[expr]
-  Ok(Expr::FunctionCall {
-    name: "Conjugate".to_string(),
-    args: vec![expr.clone()].into(),
-  })
+  Ok(call1("Conjugate", expr.clone()))
 }
 
 /// Conjugate[z] - Complex conjugate (for real numbers, returns the number itself)
@@ -1104,10 +1047,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (used by ComplexExpand) back to Arg[v] when both pieces refer to the
   // same symbol.
   if let Some(v) = match_re_plus_i_im(&args[0]) {
-    return Ok(Expr::FunctionCall {
-      name: "Arg".to_string(),
-      args: vec![Expr::Identifier(v)].into(),
-    });
+    return Ok(call1("Arg", Expr::Identifier(v)));
   }
 
   // Arg[Abs[z]] = 0: Abs is always a non-negative real, so its argument is 0.
@@ -1153,10 +1093,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let remaining = if kept.len() == 1 {
       kept.into_iter().next().unwrap()
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: kept.into(),
-      }
+      call("Times", kept)
     };
     return arg_ast(&[remaining]);
   }
@@ -1257,10 +1194,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // ArcTan doesn't simplify to exact Pi fraction
       // Build ArcTan[ratio] expression
       let ratio_expr = make_rational(ratio_n, ratio_d);
-      let arctan_expr = Expr::FunctionCall {
-        name: "ArcTan".to_string(),
-        args: vec![ratio_expr].into(),
-      };
+      let arctan_expr = call1("ArcTan", ratio_expr);
 
       let re_positive = (rn > 0 && rd > 0) || (rn < 0 && rd < 0);
 
@@ -1275,17 +1209,9 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // re < 0, im < 0: -Pi + ArcTan[|ratio|]
       let pi = Expr::Identifier("Pi".to_string());
       if in_ > 0 {
-        return Ok(Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(pi),
-          right: Box::new(arctan_expr),
-        });
+        return Ok(minus2(pi, arctan_expr));
       }
-      return Ok(Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(negate_expr(pi)),
-        right: Box::new(arctan_expr),
-      });
+      return Ok(plus2(negate_expr(pi), arctan_expr));
     }
   }
 
@@ -1325,19 +1251,11 @@ pub fn make_rational_times_pi(n: i128, d: i128) -> Expr {
     } else if n == -1 {
       negate_expr(Expr::Identifier("Pi".to_string()))
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(n)),
-        right: Box::new(Expr::Identifier("Pi".to_string())),
-      }
+      times2(Expr::Integer(n), Expr::Identifier("Pi".to_string()))
     }
   } else {
     let coeff = make_rational(n, d);
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(coeff),
-      right: Box::new(Expr::Identifier("Pi".to_string())),
-    }
+    times2(coeff, Expr::Identifier("Pi".to_string()))
   }
 }
 
@@ -1426,10 +1344,7 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Plus",
       &[
         re_c,
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![im_c, Expr::Identifier("I".to_string())].into(),
-        },
+        call("Times", vec![im_c, Expr::Identifier("I".to_string())]),
       ],
     );
   }
@@ -1544,10 +1459,9 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // (differential fuzzer, seed 15336548261066338105).
     match rationalize_machine_default(x) {
       Some((n, d)) if d == num_bigint::BigInt::from(1) => Ok(bigint_to_expr(n)),
-      Some((n, d)) => Ok(Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![bigint_to_expr(n), bigint_to_expr(d)].into(),
-      }),
+      Some((n, d)) => {
+        Ok(call("Rational", vec![bigint_to_expr(n), bigint_to_expr(d)]))
+      }
       None => Ok(num_to_expr(x)),
     }
   }
@@ -1895,10 +1809,7 @@ pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         0 => Ok(Expr::Integer(1)),
         1 => Ok(num_factors.into_iter().next().unwrap()),
         _ => {
-          let product = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: num_factors.into(),
-          };
+          let product = call("Times", num_factors);
           crate::evaluator::evaluate_expr_to_expr(&product)
         }
       }
@@ -1964,11 +1875,7 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if matches!(neg_exp, Expr::Integer(1)) {
             denom_factors.push(base);
           } else {
-            denom_factors.push(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(base),
-              right: Box::new(neg_exp),
-            });
+            denom_factors.push(pow2(base, neg_exp));
           }
         } else if let Some((_, den_part)) = split_rational_power(factor) {
           // Sqrt[3/11] contributes Sqrt[11] to the denominator
@@ -1990,10 +1897,7 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         0 => Ok(Expr::Integer(1)),
         1 => Ok(denom_factors.into_iter().next().unwrap()),
         _ => {
-          let product = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: denom_factors.into(),
-          };
+          let product = call("Times", denom_factors);
           crate::evaluator::evaluate_expr_to_expr(&product)
         }
       }
@@ -2005,11 +1909,7 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if matches!(pos_exp, Expr::Integer(1)) {
           Ok(base)
         } else {
-          Ok(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(base),
-            right: Box::new(pos_exp),
-          })
+          Ok(pow2(base, pos_exp))
         }
       } else if let Some((_, den_part)) = split_rational_power(other) {
         // Denominator[Sqrt[3/11]] → Sqrt[11]
@@ -2066,25 +1966,13 @@ fn numerator_trig(expr: &Expr) -> Option<Expr> {
       args: vec![arg].into(),
     }),
     // Tan[x] = Sin[x]/Cos[x]; Sec[x] = 1/Cos[x] -> numerator 1.
-    "Tan" => Some(Expr::FunctionCall {
-      name: "Sin".to_string(),
-      args: vec![arg].into(),
-    }),
+    "Tan" => Some(call1("Sin", arg)),
     "Sec" | "Csc" => Some(Expr::Integer(1)),
-    "Tanh" => Some(Expr::FunctionCall {
-      name: "Sinh".to_string(),
-      args: vec![arg].into(),
-    }),
+    "Tanh" => Some(call1("Sinh", arg)),
     "Sech" | "Csch" => Some(Expr::Integer(1)),
     // Cot[x] = Cos[x]/Sin[x]
-    "Cot" => Some(Expr::FunctionCall {
-      name: "Cos".to_string(),
-      args: vec![arg].into(),
-    }),
-    "Coth" => Some(Expr::FunctionCall {
-      name: "Cosh".to_string(),
-      args: vec![arg].into(),
-    }),
+    "Cot" => Some(call1("Cos", arg)),
+    "Coth" => Some(call1("Cosh", arg)),
     _ => None,
   }
 }
@@ -2102,22 +1990,10 @@ fn denominator_trig(expr: &Expr) -> Option<Expr> {
   let arg = args[0].clone();
   match name.as_str() {
     "Sin" | "Cos" | "Sinh" | "Cosh" => Some(Expr::Integer(1)),
-    "Tan" | "Sec" => Some(Expr::FunctionCall {
-      name: "Cos".to_string(),
-      args: vec![arg].into(),
-    }),
-    "Cot" | "Csc" => Some(Expr::FunctionCall {
-      name: "Sin".to_string(),
-      args: vec![arg].into(),
-    }),
-    "Tanh" | "Sech" => Some(Expr::FunctionCall {
-      name: "Cosh".to_string(),
-      args: vec![arg].into(),
-    }),
-    "Coth" | "Csch" => Some(Expr::FunctionCall {
-      name: "Sinh".to_string(),
-      args: vec![arg].into(),
-    }),
+    "Tan" | "Sec" => Some(call1("Cos", arg)),
+    "Cot" | "Csc" => Some(call1("Sin", arg)),
+    "Tanh" | "Sech" => Some(call1("Cosh", arg)),
+    "Coth" | "Csch" => Some(call1("Sinh", arg)),
     _ => None,
   }
 }
@@ -2172,16 +2048,11 @@ fn split_rational_power(expr: &Expr) -> Option<(Expr, Expr)> {
     return None;
   }
   let pow = |b: i128| {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::Integer(b)),
-      right: Box::new(exp.clone()),
-    })
-    .unwrap_or_else(|_| Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::Integer(b)),
-      right: Box::new(exp.clone()),
-    })
+    crate::evaluator::evaluate_expr_to_expr(&pow2(
+      Expr::Integer(b),
+      exp.clone(),
+    ))
+    .unwrap_or_else(|_| pow2(Expr::Integer(b), exp.clone()))
   };
   Some((pow(*p), pow(*q)))
 }
@@ -2214,10 +2085,7 @@ fn negate_if_negative(exp: &Expr) -> Option<Expr> {
         && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
     {
       if let Expr::Integer(n) = &args[0] {
-        Some(Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(-n), args[1].clone()].into(),
-        })
+        Some(call("Rational", vec![Expr::Integer(-n), args[1].clone()]))
       } else {
         None
       }
@@ -2234,10 +2102,7 @@ fn negate_if_negative(exp: &Expr) -> Option<Expr> {
         Some(if args.len() == 2 {
           args[1].clone()
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: args[1..].to_vec().into(),
-          }
+          call("Times", args[1..].to_vec())
         })
       } else {
         None

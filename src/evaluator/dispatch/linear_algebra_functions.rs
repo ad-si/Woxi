@@ -720,10 +720,8 @@ pub fn dispatch_linear_algebra_functions(
         && let Expr::List(eigenvals) = &list_expr
       {
         for ev in eigenvals {
-          let n_val = crate::evaluator::evaluate_expr_to_expr(&call(
-            "N",
-            vec![ev.clone()],
-          ));
+          let n_val =
+            crate::evaluator::evaluate_expr_to_expr(&call1("N", ev.clone()));
           match n_val {
             Ok(Expr::Real(f)) if f > 0.0 => {}
             Ok(Expr::Integer(n)) if n > 0 => {}
@@ -770,10 +768,8 @@ pub fn dispatch_linear_algebra_functions(
           let mut has_pos = false;
           let mut has_neg = false;
           for ev in eigenvals {
-            let n_val = evaluate_expr_to_expr(&call(
-              "N",
-              vec![call("Re", vec![ev.clone()])],
-            ));
+            let n_val =
+              evaluate_expr_to_expr(&call1("N", call1("Re", ev.clone())));
             match n_val {
               Ok(Expr::Real(f)) if f > 0.0 => has_pos = true,
               Ok(Expr::Real(f)) if f < 0.0 => has_neg = true,
@@ -3198,7 +3194,7 @@ fn hadamard_sylvester(n: usize) -> Vec<Vec<i128>> {
 /// and U (on and above diagonal), and pivots is the row permutation (1-indexed).
 fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
   let Expr::List(rows) = mat else {
-    return Ok(call("LUDecomposition", vec![mat.clone()]));
+    return Ok(call1("LUDecomposition", mat.clone()));
   };
 
   let n = rows.len();
@@ -3475,7 +3471,7 @@ fn lu_infinity_condition(matrix: &[Vec<Expr>]) -> Expr {
   );
   let norm_a = lu_infinity_norm(matrix);
 
-  let Ok(inv) = evaluate_expr_to_expr(&call("Inverse", vec![orig])) else {
+  let Ok(inv) = evaluate_expr_to_expr(&call1("Inverse", orig)) else {
     return Expr::Identifier("Infinity".into());
   };
   let mut inv_mat: Vec<Vec<Expr>> = Vec::with_capacity(n);

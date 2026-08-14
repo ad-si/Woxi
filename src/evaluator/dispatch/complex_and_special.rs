@@ -9248,7 +9248,7 @@ fn stadium_length(p1: &[Expr], p2: &[Expr]) -> Expr {
       .into(),
     })
     .collect();
-  call("Sqrt", vec![call("Plus", squares)])
+  call1("Sqrt", call("Plus", squares))
 }
 
 /// Stadium area 2 L r + Pi r^2. `hoist` factors the numeric content out
@@ -12368,7 +12368,7 @@ fn normalize_region(expr: &Expr) -> Option<Expr> {
 /// a rotation/order-independent comparison.
 fn normalize_polygon_vertices(mut vertices: Vec<Expr>) -> crate::syntax::Expr {
   vertices.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
-  call("Polygon", vec![Expr::List(vertices.into())])
+  call1("Polygon", Expr::List(vertices.into()))
 }
 
 /// Compute RegionEqual[r1, r2, ...].
@@ -13231,15 +13231,14 @@ fn compute_angle_bisector(expr: &Expr) -> Result<Expr, InterpreterError> {
       ]
       .into(),
     );
-    call("Normalize", vec![diff])
+    call1("Normalize", diff)
   };
 
   // dir = Simplify[Normalize[q1 - p] + Normalize[q2 - p]]. Simplify reaches
   // wolframscript's canonical radical form (e.g. 1/Sqrt[2] + 1/Sqrt[2] ->
   // Sqrt[2]), which plain Plus evaluation leaves as 2/Sqrt[2].
   let sum = call("Plus", vec![normalized_leg(q1), normalized_leg(q2)]);
-  let dir =
-    crate::evaluator::evaluate_expr_to_expr(&call("Simplify", vec![sum]))?;
+  let dir = crate::evaluator::evaluate_expr_to_expr(&call1("Simplify", sum))?;
 
   Ok(call("InfiniteLine", vec![Expr::List(p.clone()), dir]))
 }
@@ -14795,7 +14794,6 @@ fn parallelotope_region(origin: &[Expr], vectors: &[Vec<Expr>]) -> Expr {
 /// The Cartesian product of two regions, when Wolfram names the result. The
 /// coordinates of the first region come before those of the second.
 fn region_product_pair(a: &Expr, b: &Expr) -> Option<Expr> {
-  let call = |name: &str, args: Vec<Expr>| call(name, args);
   // A disk swept along a segment is a cylinder, a triangle swept along one a
   // prism — neither side of which is a parallelotope.
   for (disk, segment, disk_first) in [(a, b, true), (b, a, false)] {

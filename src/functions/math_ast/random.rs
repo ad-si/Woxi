@@ -396,15 +396,10 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   fn make_complex(re: f64, im: f64) -> Expr {
-    Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(Expr::Real(re)),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Real(im)),
-        right: Box::new(Expr::Identifier("I".to_string())),
-      }),
-    }
+    plus2(
+      Expr::Real(re),
+      times2(Expr::Real(im), Expr::Identifier("I".to_string())),
+    )
   }
 
   // Parse the range from the first argument (default: 0 to 1+I).
@@ -451,15 +446,10 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       rng.gen_range(im_lo..im_hi)
     };
-    Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(Expr::Real(re)),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Real(im)),
-        right: Box::new(Expr::Identifier("I".to_string())),
-      }),
-    }
+    plus2(
+      Expr::Real(re),
+      times2(Expr::Real(im), Expr::Identifier("I".to_string())),
+    )
   }
 
   let _ = make_complex; // silence unused warning if code paths change
@@ -530,10 +520,10 @@ pub fn random_color_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         rng.gen_range(0.0..1.0),
       )
     });
-    Expr::FunctionCall {
-      name: "RGBColor".to_string(),
-      args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
-    }
+    call(
+      "RGBColor",
+      vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+    )
   }
 
   match args.len() {
@@ -1226,10 +1216,7 @@ fn random_permutation_cycles(n: usize) -> Expr {
       Expr::List(c.into_iter().map(Expr::Integer).collect::<Vec<_>>().into())
     })
     .collect();
-  Expr::FunctionCall {
-    name: "Cycles".to_string(),
-    args: vec![Expr::List(cycle_exprs.into())].into(),
-  }
+  call1("Cycles", Expr::List(cycle_exprs.into()))
 }
 
 /// RandomPermutation[n] — a random permutation of `n` points as a `Cycles`
@@ -1875,9 +1862,8 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (1..=n).map(|v| Expr::Integer(v as i128)).collect();
     let edge_list: Vec<Expr> = edges
       .into_iter()
-      .map(|(a, b)| Expr::FunctionCall {
-        name: "UndirectedEdge".to_string(),
-        args: vec![Expr::Integer(a), Expr::Integer(b)].into(),
+      .map(|(a, b)| {
+        call("UndirectedEdge", vec![Expr::Integer(a), Expr::Integer(b)])
       })
       .collect();
     let mut graph_args =
@@ -1885,10 +1871,7 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if !options.is_empty() {
       graph_args.push(Expr::List(options.into()));
     }
-    return Ok(Expr::FunctionCall {
-      name: "Graph".to_string(),
-      args: graph_args.into(),
-    });
+    return Ok(call("Graph", graph_args));
   }
 
   let (n, m) = match positional[0] {
@@ -1934,9 +1917,8 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (1..=n).map(|v| Expr::Integer(v as i128)).collect();
     let edge_list: Vec<Expr> = edges
       .into_iter()
-      .map(|(a, b)| Expr::FunctionCall {
-        name: "UndirectedEdge".to_string(),
-        args: vec![Expr::Integer(a), Expr::Integer(b)].into(),
+      .map(|(a, b)| {
+        call("UndirectedEdge", vec![Expr::Integer(a), Expr::Integer(b)])
       })
       .collect();
     let mut graph_args =
@@ -1944,10 +1926,7 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(opts) = &opts_list {
       graph_args.push(opts.clone());
     }
-    Expr::FunctionCall {
-      name: "Graph".to_string(),
-      args: graph_args.into(),
-    }
+    call("Graph", graph_args)
   };
 
   let one_graph = |all_edges: &[(i128, i128)]| -> Expr {

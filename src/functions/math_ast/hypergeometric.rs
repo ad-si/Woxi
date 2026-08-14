@@ -2391,7 +2391,7 @@ fn hypergeometric2f1_1_n_np1(
     ]
     .into(),
   };
-  let log_1mz = call("Log", vec![one_minus_z]);
+  let log_1mz = call1("Log", one_minus_z);
 
   // Build the polynomial sum: sum_{k=1}^{n-1} z^k / k
   let mut inner_terms: Vec<Expr> = Vec::new();

@@ -184,11 +184,7 @@ fn polylog_s1(z_expr: &Expr) -> Result<Expr, InterpreterError> {
 
 fn polylog_s1_symbolic(z_expr: &Expr) -> crate::syntax::Expr {
   let one_minus_z = minus2(Expr::Integer(1), z_expr.clone());
-  Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(Expr::Integer(-1)),
-    right: Box::new(call("Log", vec![one_minus_z])),
-  }
+  times2(Expr::Integer(-1), call1("Log", one_minus_z))
 }
 
 /// PolyLog[0, z] = z/(1-z)
@@ -336,10 +332,6 @@ fn polylog_at_neg1(s: i128) -> crate::syntax::Expr {
       let Some(mut final_den) = coeff_den.checked_mul(zden) else {
         return unevaluated_polylog(s, -1);
       };
-      if final_den < 0 {
-        final_num = -final_num;
-        final_den = -final_den;
-      }
       (final_num, final_den) = rat_reduce(final_num, final_den);
 
       // Build coefficient * Pi^s
@@ -363,12 +355,12 @@ fn polylog_at_neg1(s: i128) -> crate::syntax::Expr {
   } else {
     // Odd s >= 3: Zeta stays symbolic
     // PolyLog[s, -1] = cn/cd * Zeta[s] where cn < 0
-    let pow2 = 1_i128 << (s_usize - 1);
-    let coeff_num = 1 - pow2;
-    let coeff_den = pow2;
+    let exp2 = 1_i128 << (s_usize - 1);
+    let coeff_num = 1 - exp2;
+    let coeff_den = exp2;
     let (cn, cd) = rat_reduce(coeff_num, coeff_den);
 
-    let zeta_expr = call("Zeta", vec![Expr::Integer(s)]);
+    let zeta_expr = call1("Zeta", Expr::Integer(s));
 
     if cd == 1 {
       return times2(Expr::Integer(cn), zeta_expr);

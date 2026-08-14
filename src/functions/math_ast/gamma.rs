@@ -973,10 +973,8 @@ fn incomplete_beta_ast(
           call("Times", vec![Expr::Integer(-1), z.clone()]),
         ],
       );
-      let result = call(
-        "Times",
-        vec![Expr::Integer(-1), call("Log", vec![one_minus_z])],
-      );
+      let result =
+        call("Times", vec![Expr::Integer(-1), call1("Log", one_minus_z)]);
       let result = crate::evaluator::evaluate_expr_to_expr(&result)?;
       return if inexact {
         crate::evaluator::evaluate_function_call_ast("N", &[result])

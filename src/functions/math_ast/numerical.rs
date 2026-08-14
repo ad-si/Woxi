@@ -2691,11 +2691,7 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // like Mathematica does for Normalize[{a, b}] → {a/Sqrt[a^2+b^2], b/Sqrt[a^2+b^2]}
           let squared_terms: Vec<Expr> = items
             .iter()
-            .map(|e| Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(call("Abs", vec![e.clone()])),
-              right: Box::new(Expr::Integer(2)),
-            })
+            .map(|e| pow2(call1("Abs", e.clone()), Expr::Integer(2)))
             .collect();
           let sum_of_squares = if squared_terms.len() == 1 {
             squared_terms.into_iter().next().unwrap()

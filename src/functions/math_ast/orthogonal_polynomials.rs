@@ -897,8 +897,8 @@ pub fn spherical_harmonic_y_ast(
         return Ok(unevaluated("SphericalHarmonicY", args));
       };
       // Normalization: Sqrt[(2ℓ+1)/(4π) · Γ(ℓ−m+1)/Γ(ℓ+m+1)]
-      let g_num_call = call("Gamma", vec![Expr::Real(lf - mf + 1.0)]);
-      let g_den_call = call("Gamma", vec![Expr::Real(lf + mf + 1.0)]);
+      let g_num_call = call1("Gamma", Expr::Real(lf - mf + 1.0));
+      let g_den_call = call1("Gamma", Expr::Real(lf + mf + 1.0));
       let Ok(Expr::Real(g_num)) =
         crate::evaluator::evaluate_expr_to_expr(&g_num_call)
       else {
@@ -1575,8 +1575,7 @@ fn legendre_q_symbolic_ast(
     }]
     .into(),
   };
-  let log_1px =
-    call("Log", vec![call("Plus", vec![Expr::Integer(1), x.clone()])]);
+  let log_1px = call1("Log", call("Plus", vec![Expr::Integer(1), x.clone()]));
   let q0 = Expr::FunctionCall {
     name: "Plus".to_string(),
     args: vec![
@@ -3101,7 +3100,6 @@ fn generalized_laguerre_l_ast(
       vec![n_expr.clone(), a_expr.clone(), x_expr.clone()],
     ));
   };
-  let call = |name: &str, args: Vec<Expr>| call(name, args);
   let pow = |b: Expr, e: i128| call("Power", vec![b, Expr::Integer(e)]);
   let mut sum_terms: Vec<Expr> = Vec::with_capacity(n + 1);
   for k in 0..=n {
