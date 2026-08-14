@@ -847,7 +847,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     // Wolfram layout.
     #[cfg(not(target_arch = "wasm32"))]
     "$Path" => Some(Expr::List(
-      crate::utils::search_path()
+      crate::utils::default_search_path()
         .into_iter()
         .map(Expr::String)
         .collect(),
@@ -893,6 +893,11 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         .map(Expr::String)
         .collect(),
     )),
+    // `$ContextAliases` maps a short context onto the long one it stands
+    // for. It starts out empty; `Needs["ctx`" -> "alias`"]` and plain
+    // assignment both fill it in, and the value then lives in the variable
+    // store (which takes precedence over this default).
+    "$ContextAliases" => Some(Expr::Association(Vec::new())),
     // Woxi only tracks the System`/Global` baseline plus any contexts
     // registered by `BeginPackage[]`; wolframscript lists many kernel
     // packages here, but `MemberQ[$Packages, "System`"]` and

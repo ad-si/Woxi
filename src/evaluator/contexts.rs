@@ -60,6 +60,33 @@ pub fn contexts_active() -> bool {
   crate::current_context() != "Global`"
     || crate::current_context_path()
       != vec!["System`".to_string(), "Global`".to_string()]
+    || crate::has_context_aliases()
+}
+
+/// Expand a `$ContextAliases` prefix: with `mp`` aliased to `MyPkg``, the
+/// name `mp`Foo` is read as `MyPkg`Foo`. Only the first segment is an alias,
+/// and the rest of the name rides along — `mp`Sub`Foo` becomes
+/// `MyPkg`Sub`Foo`. A name that no alias claims comes back unchanged.
+pub fn expand_alias(name: &str) -> String {
+  if !crate::has_context_aliases() {
+    return name.to_string();
+  }
+  let Some(first) = name.find('`') else {
+    return name.to_string();
+  };
+  // A name that starts with a backtick is relative to `$Context`; there is no
+  // leading segment for an alias to match.
+  if first == 0 {
+    return name.to_string();
+  }
+  let prefix = &name[..=first];
+  crate::context_aliases()
+    .into_iter()
+    .find(|(alias, _)| alias == prefix)
+    .map_or_else(
+      || name.to_string(),
+      |(_, target)| format!("{target}{}", &name[first + 1..]),
+    )
 }
 
 thread_local! {
@@ -98,6 +125,40 @@ impl Drop for ReadContext {
       r.borrow_mut().pop();
     });
   }
+}
+
+/// Report every `$ContextAliases` entry that cannot do its job.
+///
+/// An alias claims a context name for itself, so a context that already holds
+/// symbols of its own becomes unreachable once its name is an alias, and one
+/// that is on `$ContextPath` would be searched under a name that no longer
+/// means it. The Wolfram Language warns about both, and re-checks the whole
+/// mapping every time it changes — so a warning repeats until the entry that
+/// caused it is taken back out.
+pub fn validate_aliases() {
+  let path = crate::current_context_path();
+  let symbols = known_symbols();
+  for (alias, target) in crate::context_aliases() {
+    if path.contains(&alias) {
+      crate::emit_message_to_stdout(&format!(
+        "$ContextAliases::cxconflict: Warning: the alias {alias} -> {target} \
+         conflicts with the value of $ContextPath."
+      ));
+    }
+    if symbols.iter().any(|(context, _)| *context == alias) {
+      crate::emit_message_to_stdout(&format!(
+        "$ContextAliases::cxinuse: Warning: Symbols already exist in the \
+         context {alias}. These symbols will not be able to be accessed \
+         while {alias} is in $ContextAliases."
+      ));
+    }
+  }
+}
+
+/// Record `alias` as standing for `target` in `$ContextAliases`.
+pub fn set_alias(alias: &str, target: &str) {
+  crate::set_context_alias(alias, Some(target));
+  validate_aliases();
 }
 
 /// The store key for `name` in `context`. `Global`` symbols are keyed by
@@ -231,8 +292,9 @@ pub fn resolve(name: &str) -> String {
     return full;
   }
   if name.contains('`') {
-    create_symbol(name);
-    return name.to_string();
+    let full = expand_alias(name);
+    create_symbol(&full);
+    return full;
   }
   let (current, path) = read_context();
   for context in path {
@@ -250,8 +312,11 @@ pub fn resolve(name: &str) -> String {
 /// print a symbol under its visible short name, so anything that looks state
 /// up from a rendered name has to map it back first.
 pub fn resolve_existing(name: &str) -> String {
-  if !contexts_active() || name.contains('`') || !is_user_symbol(name) {
+  if !contexts_active() || !is_user_symbol(name) {
     return name.to_string();
+  }
+  if name.contains('`') {
+    return expand_alias(name);
   }
   crate::current_context_path()
     .into_iter()

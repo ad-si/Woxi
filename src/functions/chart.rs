@@ -208,6 +208,46 @@ fn text_wrapper_content(expr: &Expr) -> Option<&Expr> {
   }
 }
 
+/// Extract the bold/italic flags, color, and font size from a list of style
+/// directives — `Style[…]`'s trailing arguments, `Directive[…]`'s arguments,
+/// or a bare `LabelStyle -> {…}` list, all of which share this shape.
+pub(crate) fn parse_style_directive_args(
+  args: &[Expr],
+) -> (bool, bool, Option<Color>, Option<f64>) {
+  let mut bold = false;
+  let mut italic = false;
+  let mut color = None;
+  let mut font_size = None;
+  for arg in args {
+    match arg {
+      Expr::Identifier(s) if s == "Bold" => bold = true,
+      Expr::Identifier(s) if s == "Italic" => italic = true,
+      _ => {
+        if let Some(c) = parse_color(arg) {
+          color = Some(c);
+        } else if let Some(f) = try_eval_to_f64(arg) {
+          font_size = Some(f);
+        }
+      }
+    }
+  }
+  (bold, italic, color, font_size)
+}
+
+/// Parse a `LabelStyle -> …` option value into a text color and font size.
+/// Accepts a single style item (`Black`, `17`, `Directive[…]`) or a list of
+/// them (`{17, Black}`) — the same shapes `Style[…]`'s trailing arguments
+/// take.
+pub(crate) fn parse_label_style(expr: &Expr) -> (Option<Color>, Option<f64>) {
+  let items: Vec<Expr> = match expr {
+    Expr::List(items) => items.to_vec(),
+    Expr::FunctionCall { name, args } if name == "Directive" => args.to_vec(),
+    other => vec![other.clone()],
+  };
+  let (_, _, color, font_size) = parse_style_directive_args(&items);
+  (color, font_size)
+}
+
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
 pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   // `Text[…]` sets its content in the graphic's own text style, so the font
@@ -290,23 +330,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           (svg_markup_visible_text(&markup), Some(markup))
         }
       };
-      let mut bold = false;
-      let mut italic = false;
-      let mut color = None;
-      let mut font_size = None;
-      for arg in &args[1..] {
-        match arg {
-          Expr::Identifier(s) if s == "Bold" => bold = true,
-          Expr::Identifier(s) if s == "Italic" => italic = true,
-          _ => {
-            if let Some(c) = parse_color(arg) {
-              color = Some(c);
-            } else if let Some(f) = try_eval_to_f64(arg) {
-              font_size = Some(f);
-            }
-          }
-        }
-      }
+      let (bold, italic, color, font_size) =
+        parse_style_directive_args(&args[1..]);
       Some(StyledLabel {
         text,
         markup,

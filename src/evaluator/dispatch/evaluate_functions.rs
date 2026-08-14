@@ -1819,10 +1819,17 @@ fn evaluate_function_call_ast_inner(
   }
 
   // Needs["pkg`"] loads the file providing the context — from a paclet in a
-  // directory registered with `PacletDirectoryLoad`, or from `$Path`.
-  // `Needs["pkg`", "file"]` reads the named file instead. A package that
-  // ships with the Wolfram Language loads as a no-op, because Woxi keeps
-  // every built-in in one namespace.
+  // directory registered with `PacletDirectoryLoad`, or from `$Path` — and
+  // leaves the context on `$ContextPath`, so its symbols can be named
+  // unqualified. `Needs["pkg`", "file"]` reads the named file instead.
+  //
+  // The rule forms load the same way but keep `$ContextPath` as they found
+  // it: `Needs["pkg`" -> "p`"]` records `p`` as an alias for the context in
+  // `$ContextAliases`, so its symbols are reachable as `p`sym`, and
+  // `Needs["pkg`" -> None]` records nothing, leaving only the full name.
+  //
+  // A package that ships with the Wolfram Language loads as a no-op, because
+  // Woxi keeps every built-in in one namespace.
   if name == "Needs" && (args.len() == 1 || args.len() == 2) {
     let call = || {
       crate::syntax::format_expr(
@@ -1830,13 +1837,46 @@ fn evaluate_function_call_ast_inner(
         crate::syntax::ExprForm::Output,
       )
     };
-    let Expr::String(ctx) = &args[0] else {
+    let cxru = || {
       crate::emit_message_to_stdout(&format!(
         "Needs::cxru: Context or appropriately structured rule expected at \
          position 1 in {}.",
         call()
       ));
-      return Ok(unevaluated("Needs", args));
+    };
+    // An alias is a context of a single segment: `p``, never `p`q``.
+    let is_alias = |name: &str| {
+      crate::utils::context_segments(name).is_some_and(|s| s.len() == 1)
+    };
+    // `None` means "no rule given"; `Some(None)` is `-> None`, which asks for
+    // neither a context-path entry nor an alias.
+    let (ctx, alias) = match &args[0] {
+      Expr::String(ctx) => (ctx, None),
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => match (pattern.as_ref(), replacement.as_ref()) {
+        (Expr::String(ctx), Expr::String(alias))
+          if crate::utils::context_segments(ctx).is_some()
+            && is_alias(alias) =>
+        {
+          (ctx, Some(Some(alias)))
+        }
+        (Expr::String(ctx), Expr::Identifier(none))
+          if none == "None"
+            && crate::utils::context_segments(ctx).is_some() =>
+        {
+          (ctx, Some(None))
+        }
+        _ => {
+          cxru();
+          return Ok(unevaluated("Needs", args));
+        }
+      },
+      _ => {
+        cxru();
+        return Ok(unevaluated("Needs", args));
+      }
     };
     if crate::utils::context_segments(ctx).is_none() {
       crate::emit_message_to_stdout(&format!(
@@ -1846,6 +1886,23 @@ fn evaluate_function_call_ast_inner(
       ));
       return Ok(unevaluated("Needs", args));
     }
+    // The alias is recorded as soon as the rule has been read, so that even a
+    // call that goes on to fail on its second argument leaves it behind; only
+    // a *load* that does not produce the context takes it back out again,
+    // restoring whatever the alias stood for before.
+    let previous_alias = match alias {
+      Some(Some(alias)) => {
+        let previous = crate::context_alias_target(alias);
+        crate::evaluator::contexts::set_alias(alias, ctx);
+        Some((alias, previous))
+      }
+      _ => None,
+    };
+    let forget_alias = || {
+      if let Some((alias, previous)) = &previous_alias {
+        crate::set_context_alias(alias, previous.as_deref());
+      }
+    };
     if let Some(file) = args.get(1)
       && !matches!(file, Expr::String(_))
     {
@@ -1871,6 +1928,15 @@ fn evaluate_function_call_ast_inner(
         Some(Expr::String(file)) => file,
         _ => ctx,
       };
+      // A rule form reaches the package by alias or by full name, so whatever
+      // the file did to `$ContextPath` — its own `EndPackage[]` above all —
+      // is undone once it has been read.
+      let saved_path = alias.is_some().then(crate::save_context_path);
+      let restore_path = || {
+        if let Some(saved) = saved_path.clone() {
+          crate::restore_context_path(saved);
+        }
+      };
       let loaded = resolve_get_target(requested)
         .as_deref()
         .and_then(evaluate_file);
@@ -1878,16 +1944,20 @@ fn evaluate_function_call_ast_inner(
         "Needs::nocont: Context {ctx} was not created when Needs was evaluated."
       );
       let Some(result) = loaded else {
+        restore_path();
+        forget_alias();
         crate::emit_message_to_stdout(&format!(
           "Get::noopen: Cannot open {requested}."
         ));
         crate::emit_message_to_stdout(&nocont);
         return Ok(Expr::Identifier("$Failed".to_string()));
       };
+      restore_path();
       result?;
       // The file loaded but never opened the context it was supposed to
       // provide — wolframscript reports that and still returns Null.
       if !crate::packages_list().iter().any(|pkg| pkg == ctx) {
+        forget_alias();
         crate::emit_message_to_stdout(&nocont);
       }
       return Ok(Expr::Identifier("Null".to_string()));

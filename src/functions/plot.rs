@@ -4,7 +4,7 @@ use plotters::prelude::{Color, *};
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::chart::{
-  ChartLabel, ChartOptions, LabelPosition, StyledLabel,
+  ChartLabel, ChartOptions, LabelPosition, StyledLabel, parse_label_style,
 };
 use crate::functions::graphics::{Color as WoxiColor, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
@@ -1866,6 +1866,17 @@ pub(crate) struct PlotOptions {
   /// `PlotMarkers -> …`: the glyph each series' points are drawn with,
   /// cycled over the series. Empty = plain round points.
   pub plot_markers: Vec<Option<PlotMarker>>,
+  /// `LabelStyle -> …`: font size / color applied to the `FrameLabel`,
+  /// `AxesLabel`, and `PlotLabel` text. `None` keeps the theme default.
+  pub label_style: Option<LabelStyleSpec>,
+}
+
+/// Font size / color parsed from a `LabelStyle -> …` option. Either field
+/// may be absent — an unset one keeps the theme default for that property.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct LabelStyleSpec {
+  pub color: Option<WoxiColor>,
+  pub font_size: Option<f64>,
 }
 
 impl Default for PlotOptions {
@@ -1914,6 +1925,7 @@ impl Default for PlotOptions {
       image_padding: None,
       aspect_ratio: None,
       plot_markers: Vec::new(),
+      label_style: None,
     }
   }
 }
@@ -2330,8 +2342,21 @@ pub(crate) fn plot_labels_svg(
   title_default_fill: &str,
 ) -> String {
   let axis_y = margin_top + plot_h;
-  let font_size = sf * 14.0;
-  let title_font_size = sf * 17.0;
+  // `LabelStyle` overrides the frame/axes/title text's default size and
+  // color; either half may be absent, in which case that property keeps
+  // the theme default.
+  let label_style_font_size = opts.label_style.and_then(|s| s.font_size);
+  let label_style_color = opts.label_style.and_then(|s| s.color);
+  let font_size = label_style_font_size.map_or(sf * 14.0, |pt| sf * pt);
+  let title_font_size = label_style_font_size.map_or(sf * 17.0, |pt| sf * pt);
+  let label_fill_owned =
+    label_style_color.map(super::graphics::Color::to_svg_rgb);
+  let label_fill = label_fill_owned.as_deref().unwrap_or(label_fill);
+  let title_default_fill_owned =
+    label_style_color.map(super::graphics::Color::to_svg_rgb);
+  let title_default_fill = title_default_fill_owned
+    .as_deref()
+    .unwrap_or(title_default_fill);
   let has_top_label =
     opts.frame_label_top.as_ref().is_some_and(|t| !t.is_empty());
   let axes_label_y = opts
@@ -8208,6 +8233,14 @@ pub(crate) fn apply_common_plot_option(
       plot_opts.image_padding = parse_image_padding(replacement);
     }
     "FrameLabel" => apply_frame_label_option(replacement, plot_opts),
+    "LabelStyle" => {
+      let val = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.clone());
+      let (color, font_size) = parse_label_style(&val);
+      if color.is_some() || font_size.is_some() {
+        plot_opts.label_style = Some(LabelStyleSpec { color, font_size });
+      }
+    }
     "Ticks" => match replacement {
       Expr::Identifier(s) if s == "None" => plot_opts.ticks = false,
       Expr::Identifier(s) if s == "Automatic" || s == "All" => {

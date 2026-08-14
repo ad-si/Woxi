@@ -249,7 +249,7 @@ Sort,Sorts a list in ascending order or by an ordering function which leaves a p
 Series,Computes a power series expansion about a point or at Infinity,✅,pure,1.0,195
 Return,Returns a value from a definition body Do or Scan — anywhere else it stands as Return[value] and is collected like any other,✅,pure,1.0,196
 Appearance,Option symbol for specifying visual appearance,✅,pure,6.0,197
-Needs,Loads the file providing a context from a loaded paclet directory or from $Path,✅,effectful,1.0,198
+Needs,Loads the file providing a context from a loaded paclet directory or from $Path; a rule right-hand side aliases the context in $ContextAliases or (None) records nothing,✅,effectful,1.0,198
 Center,Symbol for centering alignment,✅,pure,1.0,199
 UndirectedEdge,Undirected graph edge,✅,pure,8.0,201
 Filling,Option for filling areas under curves in plots,✅,pure,6.0,202

@@ -1362,7 +1362,9 @@ pub fn dispatch_predicate_functions(
     }
     "Contexts" if args.len() == 1 => {
       let pattern = match &args[0] {
-        Expr::String(s) => s.clone(),
+        // A pattern may name a context by its `$ContextAliases` alias, which
+        // stands in for the context's real name here as everywhere else.
+        Expr::String(s) => crate::evaluator::contexts::expand_alias(s),
         _ => {
           return Some(Ok(unevaluated("Contexts", args)));
         }
