@@ -3128,6 +3128,37 @@ mod tests {
       assert!(!boxes.contains("Derivative"), "head hidden: {boxes}");
     }
 
+    /// StandardForm — what an evaluated cell shows in Woxi Studio — hides
+    /// the `Derivative` head too. Every derivative of an undefined function
+    /// in *Introduction to Calculus* (`D[f[g[x]], x]` → `f′[g[x]] g′[x]`)
+    /// used to read as `Derivative[1][f][g[x]]` there.
+    #[test]
+    fn standard_form_derivative_sets_as_prime_marks() {
+      let boxes = |code: &str| {
+        format!(
+          "{:?}",
+          woxi::evaluator::dispatch::complex_and_special::expr_to_box_form(
+            &woxi::interpret_to_expr(code).expect("eval")
+          )
+        )
+      };
+      let one = boxes("D[f[x], x]");
+      assert!(one.contains('\u{2032}'), "one prime mark: {one}");
+      assert!(one.contains("\"[\""), "square brackets: {one}");
+      assert!(!one.contains("Derivative"), "head hidden: {one}");
+
+      let two = boxes("f''[x]");
+      assert!(two.contains("\u{2032}\u{2032}"), "two prime marks: {two}");
+
+      // Past three the order is spelled out, as is the multivariate order.
+      let fourth = boxes("Derivative[4][f][x]");
+      assert!(fourth.contains("\"4\""), "order shown: {fourth}");
+      assert!(!fourth.contains('\u{2032}'), "no prime marks: {fourth}");
+      let partial = boxes("D[f[x, y], x]");
+      assert!(!partial.contains("Derivative"), "head hidden: {partial}");
+      assert!(partial.contains("\"0\""), "each order shown: {partial}");
+    }
+
     #[test]
     fn high_order_derivative_uses_a_parenthesised_order() {
       // Past three, the marks stop being countable and Wolfram spells the

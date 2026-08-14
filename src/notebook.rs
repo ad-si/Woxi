@@ -709,6 +709,16 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     // positional-argument matches below see the box's real arity.
     args.retain(|a| !is_option_arg(a));
     let conv = |a: &str| extract_cell_content(a);
+    // The `⎧` brace a `Piecewise` is typeset with is a `GridBox` holding the
+    // `\[Piecewise]` character beside a `GridBox` of value/condition rows —
+    // reading it as a plain nested list would hand a plot a list where it
+    // expects a function.
+    if head == "GridBox"
+      && let Some(piecewise) =
+        args.first().and_then(|rows| piecewise_from_grid(rows))
+    {
+      return Some(piecewise);
+    }
     return Some(match head {
       // `FractionBox[a, b]` → `(a)/(b)`. The parentheses preserve operator
       // precedence around composite numerators / denominators.
@@ -974,6 +984,121 @@ fn big_operator_head(base: &str) -> Option<&'static str> {
   }
 }
 
+/// The items of a `{a, b, …}` list literal, unwrapped and trimmed.
+fn braced_list_items(s: &str) -> Option<Vec<&str>> {
+  let inner = s.trim().strip_prefix('{')?.strip_suffix('}')?;
+  Some(
+    split_top_level_commas(inner)
+      .into_iter()
+      .map(str::trim)
+      .collect(),
+  )
+}
+
+/// `Piecewise[{{v1, c1}, …}]` from the rows of the `GridBox` a piecewise
+/// function is typeset as: one row holding the `\[Piecewise]` brace beside
+/// an inner `GridBox` of value/condition pairs. The pair tagged
+/// `PiecewiseDefault` is the value outside every condition — Wolfram writes
+/// an unset default as `Null`, which is its own default (`0`) and so is
+/// dropped rather than passed on.
+fn piecewise_from_grid(rows_text: &str) -> Option<String> {
+  let [row] = braced_list_items(rows_text)?[..] else {
+    return None;
+  };
+  let [brace, grid] = braced_list_items(row)?[..] else {
+    return None;
+  };
+  if brace.trim().trim_matches('"').trim() != r"\[Piecewise]" {
+    return None;
+  }
+  let inner = positional_box_args("GridBox", grid)?;
+  let mut pieces = Vec::new();
+  let mut default = None;
+  for pair in braced_list_items(inner.first()?)? {
+    let [value, condition] = braced_list_items(pair)?[..] else {
+      return None;
+    };
+    if condition.contains("PiecewiseDefault") {
+      let value = extract_cell_content(value);
+      if value.trim() != "Null" {
+        default = Some(value);
+      }
+      continue;
+    }
+    pieces.push(format!(
+      "{{{}, {}}}",
+      extract_cell_content(value),
+      extract_cell_content(condition)
+    ));
+  }
+  let pieces = pieces.join(", ");
+  Some(match default {
+    Some(default) => format!("Piecewise[{{{pieces}}}, {default}]"),
+    None => format!("Piecewise[{{{pieces}}}]"),
+  })
+}
+
+/// Is this box the typeset integral sign?
+fn is_integral_sign(s: &str) -> bool {
+  let s = s.trim();
+  let s = s
+    .strip_prefix('"')
+    .and_then(|b| b.strip_suffix('"'))
+    .unwrap_or(s)
+    .trim();
+  s == r"\[Integral]" || s == "\u{222B}"
+}
+
+/// The limits of a typeset integral sign, when `s` is one: `None` for the
+/// indefinite `∫`, `Some((lo, hi))` for the `SubsuperscriptBox["∫", lo, hi]`
+/// a definite integral is written as. `None` for anything that is not an
+/// integral sign at all.
+fn integral_limits(s: &str) -> Option<Option<(String, String)>> {
+  if let Some(args) =
+    positional_box_args("SubsuperscriptBox", s).filter(|a| a.len() == 3)
+  {
+    return is_integral_sign(&args[0]).then(|| {
+      Some((
+        extract_cell_content(&args[1]),
+        extract_cell_content(&args[2]),
+      ))
+    });
+  }
+  is_integral_sign(s).then_some(None)
+}
+
+/// The variable of a `RowBox[{"\[DifferentialD]", x}]` — the typeset `ⅆx`
+/// that closes an integral body and names its integration variable.
+fn differential_variable(s: &str) -> Option<String> {
+  let inner = s.trim().strip_prefix("RowBox[")?.strip_suffix(']')?;
+  let inner = inner.trim().strip_prefix('{')?.strip_suffix('}')?;
+  let args = split_top_level_commas(inner);
+  if args.len() != 2 {
+    return None;
+  }
+  let head = args[0].trim().trim_matches('"').trim();
+  (head == r"\[DifferentialD]" || head == "\u{2146}" || head == "\u{F74C}")
+    .then(|| extract_cell_content(args[1]))
+}
+
+/// Split the boxes that follow an integral sign into the integrand and the
+/// variable of the `ⅆx` that closes them. The FrontEnd normally groups the
+/// whole body in a row of its own, so a single `RowBox` is unwrapped first.
+fn split_integral_body(parts: &[&str]) -> Option<(String, String)> {
+  if let [only] = parts
+    && let Some(inner) = only.trim().strip_prefix("RowBox[")
+    && let Some(inner) = inner.strip_suffix(']')
+    && let Some(inner) = inner.trim().strip_prefix('{')
+    && let Some(inner) = inner.strip_suffix('}')
+  {
+    return split_integral_body(&split_top_level_commas(inner));
+  }
+  let (last, rest) = parts.split_last()?;
+  let var = differential_variable(last)?;
+  let integrand = extract_rowbox_content(&rest.join(","));
+  (!integrand.trim().is_empty()).then_some((integrand, var))
+}
+
 /// Split an iterator underscript (`n=1`) at its top-level `=`, ignoring
 /// the two-character operators that merely end in `=` (`==`, `<=`, …).
 fn split_iterator_assignment(s: &str) -> Option<(&str, &str)> {
@@ -1061,6 +1186,22 @@ fn extract_rowbox_content(s: &str) -> String {
       result.push_str(&format!("{head}[{body}, {iterator}]"));
       break;
     }
+    // The integral sign also takes the rest of the row as its body; the `ⅆx`
+    // that closes the body names the integration variable, and a
+    // `SubsuperscriptBox` sign carries the limits of a definite integral.
+    if i + 1 < parts.len()
+      && let Some(limits) = integral_limits(part)
+      && let Some((integrand, var)) = split_integral_body(&parts[i + 1..])
+    {
+      let iterator = match limits {
+        Some((lo, hi)) => {
+          format!("{{{}, {}, {}}}", var.trim(), lo.trim(), hi.trim())
+        }
+        None => var.trim().to_string(),
+      };
+      result.push_str(&format!("Integrate[{integrand}, {iterator}]"));
+      break;
+    }
     // The partial-derivative operator takes the rest of the row as its
     // operand, the same way a big operator does.
     if i + 1 < parts.len()
@@ -1082,7 +1223,7 @@ fn extract_rowbox_content(s: &str) -> String {
         // to the ASCII operator `>=` the way a bare `"\[GreaterEqual]"`
         // element between two operands does.
         if inner.starts_with("\\\"") {
-          unescape_string(inner)
+          string_literal_source(inner)
         } else {
           unescape_code_string(inner)
         }
@@ -1513,6 +1654,23 @@ fn extract_string_content(s: &str) -> String {
     }
   } else {
     s.to_string()
+  }
+}
+
+/// The cell source for a box element that is itself a quoted string.
+///
+/// Unescaping such an element yields the string's *value*; any quote inside
+/// that value has to be escaped again for the result to read back as a single
+/// literal. A `Plot` legend written as an inline cell — `"\!\(\*Cell[\"f[x]\",
+/// ExpressionUUID->\"…\"]\)"` — otherwise ends its string at the first inner
+/// quote and leaves the rest of the option as stray tokens.
+fn string_literal_source(inner: &str) -> String {
+  let value = unescape_string(inner);
+  match value.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
+    Some(body) if body.contains('"') => {
+      format!("\"{}\"", body.replace('"', "\\\""))
+    }
+    _ => value,
   }
 }
 
@@ -3903,6 +4061,130 @@ Cell[BoxData["2"], "Output", ExpressionUUID -> "bbb"]
       }
       CellEntry::Single(_) => panic!("Expected cell group"),
     }
+  }
+
+  /// `∫ (1/y) ⅆy == ∫ x ⅆx + c`, the way the "Separable Differential
+  /// Equations" chapter of *Introduction to Calculus* writes it. The
+  /// integral sign takes the rest of its row as the body, and the `ⅆy`
+  /// closing that body names the integration variable.
+  #[test]
+  fn indefinite_integral_boxes_become_integrate() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"\[Integral]",
+   RowBox[{
+    RowBox[{"(", RowBox[{"1", "/", "y"}], ")"}],
+    RowBox[{"\[DifferentialD]", "y"}]}]}], "\[Equal]",
+  RowBox[{
+   RowBox[{"\[Integral]",
+    RowBox[{"x", RowBox[{"\[DifferentialD]", "x"}]}]}], "+", "c"}]}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    let CellEntry::Single(cell) = &parsed.cells[0] else {
+      panic!("expected a single cell");
+    };
+    assert_eq!(
+      cell.content, "Integrate[(1/y), y]==Integrate[x, x]+c",
+      "the ⅆ-closed integral body must name the integration variable"
+    );
+  }
+
+  /// A definite integral writes its limits on the sign itself:
+  /// `∫_0^2 (x^2 + 1) ⅆx` is `Integrate[x^2 + 1, {x, 0, 2}]`.
+  #[test]
+  fn definite_integral_boxes_carry_their_limits() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  SubsuperscriptBox["\[Integral]", "0", "2"],
+  RowBox[{
+   RowBox[{"(", RowBox[{SuperscriptBox["x", "2"], "+", "1"}], ")"}],
+   RowBox[{"\[DifferentialD]", "x"}]}]}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    let CellEntry::Single(cell) = &parsed.cells[0] else {
+      panic!("expected a single cell");
+    };
+    assert_eq!(cell.content, "Integrate[((x)^(2)+1), {x, 0, 2}]");
+  }
+
+  /// Without an integral sign the differential is content of its own:
+  /// `ⅆarea == 2 π r ⅆr` is an equation between differentials, so the
+  /// `ⅆ` has to survive into the cell's source.
+  #[test]
+  fn bare_differential_survives_the_conversion() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"\[DifferentialD]", "area"}], "==",
+  RowBox[{"2", "\[Pi]", " ", "r", " ",
+   RowBox[{"\[DifferentialD]", "r"}]}]}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    let CellEntry::Single(cell) = &parsed.cells[0] else {
+      panic!("expected a single cell");
+    };
+    assert!(
+      cell.content.matches('\u{F74C}').count() == 2,
+      "both differentials must survive: {}",
+      cell.content
+    );
+  }
+
+  /// The `⎧` brace of a typeset `Piecewise` must come back as a
+  /// `Piecewise[…]` call — `RevolutionPlot3D` of a nested list has no
+  /// function to sample.
+  #[test]
+  fn piecewise_brace_becomes_a_piecewise_call() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{"RevolutionPlot3D", "[",
+  RowBox[{
+   TagBox[GridBox[{
+      {"\[Piecewise]", GridBox[{
+         {RowBox[{"f", "[", RowBox[{"x", "+", "6"}], "]"}],
+          RowBox[{RowBox[{"-", "6"}], "<=", "x", "<=", RowBox[{"-", "2"}]}]},
+         {"Null", TagBox["True", "PiecewiseDefault", AutoDelete->True]}
+        }, Selectable->True]}
+     }, Selectable->True], "Piecewise", DeleteWithContents->True], ",",
+   RowBox[{"{", RowBox[{"x", ",", RowBox[{"-", "6"}], ",", "6"}], "}"}]}],
+  "]"}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    let CellEntry::Single(cell) = &parsed.cells[0] else {
+      panic!("expected a single cell");
+    };
+    assert_eq!(
+      cell.content,
+      "RevolutionPlot3D[Piecewise[{{f[x+6], -6<=x<=-2}}],{x,-6,6}]"
+    );
+  }
+
+  /// A `Plot` legend written as an inline cell carries quotes inside its
+  /// string; they have to stay escaped or the option reads as stray tokens.
+  #[test]
+  fn quotes_inside_a_string_literal_stay_escaped() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{"Plot", "[",
+  RowBox[{"x", ",",
+   RowBox[{"{", RowBox[{"x", ",", "0", ",", "1"}], "}"}], ",",
+   RowBox[{"PlotLegends", "\[Rule]",
+    RowBox[{"{", "\"\<\!\(\*Cell[\"f[x]\",ExpressionUUID->\"abc\"]\)\>\"", "}"}]}]}],
+  "]"}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    let CellEntry::Single(cell) = &parsed.cells[0] else {
+      panic!("expected a single cell");
+    };
+    assert!(
+      cell
+        .content
+        .contains(r#"{"\!\(\*Cell[\"f[x]\",ExpressionUUID->\"abc\"]\)"}"#),
+      "the legend must stay one string literal: {}",
+      cell.content
+    );
   }
 
   #[test]

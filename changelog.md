@@ -52,6 +52,55 @@
     - Woxi Studio: a `Dynamic[…]` wrapped around a control's own label (a
         step-counter button framing a live `Dynamic[Row[…]]`) now typesets
         the wrapped content instead of the `Dynamic[…]` call's own source.
+- Fixes driven by opening Wolfram's *Introduction to Calculus* ebook (41
+    notebooks) in Woxi Studio. Every cell that could not be read or run is
+    now read and run; what remains are computations Woxi does not carry out
+    as far as Wolfram does.
+    - `∫ f ⅆx` and `∫_a^b f ⅆx` are read back as `Integrate[f, x]` and
+        `Integrate[f, {x, a, b}]`. The integral sign takes the rest of its
+        row as the body, the way the `∑`/`∏` operators already did, and the
+        `ⅆx` closing that body names the integration variable. The whole
+        "Separable Differential Equations", "Indefinite Integrals" and
+        "Average Value of a Function" chapters are written this way and
+        every such cell used to fail to parse.
+    - `ⅆx` on its own is the differential `DifferentialD[x]`, so the
+        differentials the "Linear Approximations" chapter states its error
+        estimates in (`ⅆarea == 2 π r ⅆr`, then `sol /. {r -> 50,
+        ⅆr -> 0.1}`) stay symbolic and can be replaced. The character is a
+        Unicode *letter*, so `ⅆarea` used to read as one symbol name.
+    - A typeset `Piecewise` — the `⎧` brace, stored as a `GridBox` of
+        value/condition rows — comes back as a `Piecewise[…]` call instead
+        of a nested list, so `RevolutionPlot3D` of one has a function to
+        sample.
+    - A quote inside a cell's string literal stays escaped when the cell is
+        read, so a `Plot` legend written as an inline cell
+        (`"\!\(\*Cell[\"f[x]\", …]\)"`) stays one string instead of ending
+        at its first inner quote.
+    - `expr /. lhs -> rhs`, where `lhs` is a literal call rather than a
+        pattern, rewrites every subexpression equal to `lhs` structurally.
+        It used to fall through to a textual replacement that dropped the
+        brackets the substituted expression needs, silently changing the
+        result: `π r[t]^2 h[t]/3 /. r[t] -> h[t]/2` — the substitution the
+        "Related Rates" chapter makes — came out as `π h[t]^2/12` instead
+        of `π h[t]^3/12`, and `r[t]^2 /. r[t] -> q[t] + 1` as
+        `1 + q[t]^2` instead of `(1 + q[t])^2`.
+    - `c = 4; (* c = 6 *); c` evaluates: several `;` in a row with only
+        space or a comment between them separate the same two statements,
+        with the empty statement `Null` between them. `;;` still parses as
+        `Span`.
+    - `DifferenceDelta[Cos[f], …]` — and so `Limit[DifferenceQuotient[
+        Cos[x], {x, h}], h -> 0]` — is the cosine's own. The sine of the
+        mean was given the half-turn phase shift that only the `Sin` case
+        needs (to write its cosine as a sine), which turned the result back
+        into the *sine's* difference: the derivative of `Cos` came out as
+        `Cos[x]`, and the intermediate quotient was numerically wrong.
+    - Woxi Studio: a derivative sets as prime marks (`f′[x]`, `f″[x]`,
+        `f⁽⁴⁾[x]`, `f⁽¹˒⁰⁾[x, y]`) in an evaluated cell, the way a notebook
+        shows it. `TraditionalForm` already hid the `Derivative` head;
+        StandardForm — what a cell's result is typeset with — did not, so
+        every derivative of an undefined function read as
+        `Derivative[1][f][x]`.
+
 - Fixes driven by a Wolfram Demonstration on a cylindrical cavity resonator,
     which locates a Bessel function's stationary points and interpolates a
     field built on a 2-D grid:

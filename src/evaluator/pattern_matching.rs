@@ -2405,6 +2405,19 @@ pub fn apply_replace_all_ast(
     {
       return Ok(result);
     }
+    // A rule whose left side is a literal expression rather than a pattern
+    // (`r[t] -> h[t]/2`, the substitution a related-rates problem writes)
+    // rewrites every subexpression equal to it. Without this the rewrite fell
+    // through to the textual replacement below, which drops the brackets the
+    // replacement needs: `π r[t]^2 h[t]/3 /. r[t] -> h[t]/2` came out as
+    // `π h[t]^2/12` — the substituted radius silently lost its square.
+    if !matches!(stripped, Expr::Identifier(_))
+      && !contains_pattern(&stripped)
+      && let Some(result) =
+        replace_literal_subexpr(expr, &stripped, replacement)
+    {
+      return Ok(result);
+    }
   }
 
   // Extract pattern and replacement strings for string-based matching
@@ -2515,6 +2528,27 @@ pub fn apply_replace_repeated_ast_with_max(
     }
   }
   Ok(current)
+}
+
+/// Replace every subexpression structurally equal to `target` with
+/// `replacement`. `None` when `target` occurs nowhere, so the caller can fall
+/// through to the other matching strategies.
+fn replace_literal_subexpr(
+  expr: &Expr,
+  target: &Expr,
+  replacement: &Expr,
+) -> Option<Expr> {
+  let hit = std::cell::Cell::new(false);
+  let result =
+    crate::functions::string_ast::map_expr_tree(expr, &|node: &Expr| {
+      if expr_equal(node, target) {
+        hit.set(true);
+        Some(replacement.clone())
+      } else {
+        None
+      }
+    });
+  hit.get().then_some(result)
 }
 
 /// Check if two Expr values are structurally equal
