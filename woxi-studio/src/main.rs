@@ -14870,6 +14870,155 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl1$$ = 1}, \"\\[Ellipsis]\"]"], 
     }
   }
 
+  /// End-to-end regression for the shape of the "Generating a Rotating
+  /// Field by Superposition of Three Alternating Fields" Demonstration: a
+  /// stored Manipulate whose `SaveDefinitions -> True` Initialization
+  /// defines a family of pattern-matched helper functions built from
+  /// complex exponentials (`Exp[I …]`, `Re`, `Im`, `Abs`), a `Module` body
+  /// that combines a `ParametricPlot` with a `Show`'d `Graphics` overlay
+  /// of `Dashed` `Circle`s and `Arrow`s, laid out side by side with
+  /// `GraphicsRow`, driven by three `Appearance -> "Labeled"` sliders.
+  #[test]
+  fn demonstration_three_phase_field_manipulate_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Module[{trace, combined},
+   trace = ParametricPlot[{Re[totalFieldErr[t, ampErr, phErr]], Im[totalFieldErr[t, ampErr, phErr]]}, {t, 0, 2 Pi}, PlotStyle -> Orange, PlotRange -> 3, Axes -> False];
+   combined = Show[{trace, Graphics[{{Orange, Dashed, Circle[{0, 0}, Abs[totalField[angle]]]}, Black, Arrow[{{0, 0}, {Re[totalFieldErr[angle, ampErr, phErr]], Im[totalFieldErr[angle, ampErr, phErr]]}}]}]}, PlotLabel -> \"Combined field\"];
+   GraphicsRow[{trace, combined}, ImageSize -> {600, 300}]
+ ],
+ {{angle, 0, \"phase angle\"}, 0, 2 Pi, 0.01, Appearance -> \"Labeled\"},
+ {{ampErr, 0, \"amplitude error\"}, 0, 1, Appearance -> \"Labeled\"},
+ {{phErr, 0, \"phase error\"}, 0, 1, Appearance -> \"Labeled\"},
+ SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = 0, $CellContext`ampErr$$ = 0, $CellContext`phErr$$ = 0}, DynamicBox[\[Ellipsis]], Initialization:>(($CellContext`compFwd[
+     Pattern[$CellContext`t, Blank[]]] := Cos[$CellContext`t]; $CellContext`shift2 = \
+2 (Pi/3); $CellContext`shift3 = 4 (Pi/3); $CellContext`rot2 = \
+Exp[I $CellContext`shift2]; $CellContext`rot3 = \
+Exp[I $CellContext`shift3]; $CellContext`phase2[
+     Pattern[$CellContext`t, Blank[]]] := \
+$CellContext`rot2 $CellContext`compFwd[$CellContext`t + $CellContext`shift2]; \
+$CellContext`phase3[
+     Pattern[$CellContext`t, Blank[]]] := \
+$CellContext`rot3 $CellContext`compFwd[$CellContext`t + $CellContext`shift3]; \
+$CellContext`totalField[
+     Pattern[$CellContext`t, Blank[]]] := \
+$CellContext`compFwd[$CellContext`t] + $CellContext`phase2[$CellContext`t] + \
+$CellContext`phase3[$CellContext`t]; $CellContext`totalFieldErr[
+     Pattern[$CellContext`t, Blank[]], Pattern[$CellContext`ampErr, Blank[]], \
+Pattern[$CellContext`phErr, Blank[]]] := (
+     1 + $CellContext`ampErr) $CellContext`compFwd[$CellContext`t + \
+$CellContext`phErr Pi] + $CellContext`phase2[$CellContext`t] + \
+$CellContext`phase3[$CellContext`t]; Null))]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the ParametricPlot/Show GraphicsRow must draw"
+    );
+
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: angle,
+          label: angle_label,
+          min: angle_min,
+          max: angle_max,
+          current: angle_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: amp,
+          label: amp_label,
+          min: amp_min,
+          max: amp_max,
+          current: amp_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: ph,
+          label: ph_label,
+          min: ph_min,
+          max: ph_max,
+          current: ph_now,
+          ..
+        },
+      ] => {
+        assert_eq!(angle.as_str(), "angle");
+        assert_eq!(angle_label.as_str(), "phase angle");
+        assert_eq!(*angle_min, 0.0);
+        assert!((*angle_max - std::f64::consts::TAU).abs() < 1e-9);
+        assert_eq!(*angle_now, 0.0);
+        assert_eq!(
+          (
+            amp.as_str(),
+            amp_label.as_str(),
+            *amp_min,
+            *amp_max,
+            *amp_now
+          ),
+          ("ampErr", "amplitude error", 0.0, 1.0, 0.0)
+        );
+        assert_eq!(
+          (ph.as_str(), ph_label.as_str(), *ph_min, *ph_max, *ph_now),
+          ("phErr", "phase error", 0.0, 1.0, 0.0)
+        );
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    // The three fields sum to a constant-magnitude phasor rotating with
+    // `angle`; moving the slider must move the arrow and so the render.
+    // The iced handle doesn't expose its bytes, so re-render the body
+    // through the widget's own bindings to inspect the SVG.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let code = match w.initialization.as_deref() {
+        Some(init) => format!("{init}; {}", w.body),
+        None => w.body.clone(),
+      };
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&code)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the pieces must render")
+    };
+
+    let unmoved = render(&widget);
+    match &mut widget.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => {
+        *current = std::f64::consts::PI / 2.0;
+      }
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    assert!(widget.graphics_handle.is_some());
+    assert_ne!(
+      unmoved,
+      render(&widget),
+      "rotating the phase angle must change the rendered graphic"
+    );
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook (a
   /// diffusion-driven release-profile visualizer) against Woxi Studio's
   /// Manipulate pipeline. Its shape: a `Setter` swaps between two `Plot`s
