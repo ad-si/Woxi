@@ -14869,4 +14869,114 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl1$$ = 1}, \"\\[Ellipsis]\"]"], 
       other => panic!("expected waveT0 as a Continuous control: {other:?}"),
     }
   }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook (a
+  /// diffusion-driven release-profile visualizer) against Woxi Studio's
+  /// Manipulate pipeline. Its shape: a `Setter` swaps between two `Plot`s
+  /// selected by `Which`, a `RadioButtonBar` picks a discrete rate
+  /// multiplier consumed by another `Which`, a `PaneSelector` shows a
+  /// labeled `Slider` only on one of the two panes, an `Animator` drives
+  /// elapsed time, and the body's helper functions lean on `Quiet[Sum[...
+  /// Exp[...]]]` truncated-series formulas feeding `Plot`s styled with
+  /// `PlotTheme`, dashed `PlotStyle`, `LabelStyle`, `FrameLabel`, `Filling`/
+  /// `FillingStyle`, wrapped in a `Show` with `Frame`, `LabelStyle`,
+  /// `ImageSize`, and `AspectRatio -> Full`.
+  ///
+  /// This is a self-authored, construct-equivalent example (a made-up
+  /// "signal attenuation" scenario) — not the notebook's own code, data, or
+  /// wording, which is copyrighted. It doubles as a regression test for the
+  /// `LabelStyle` option, which used to be silently dropped by `Plot`.
+  #[test]
+  fn attenuation_manipulate_switches_panes_and_honors_label_style() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[ \
+         Module[{rateB, envFn, spatialFn, curve1, curve2}, \
+           rateB = Which[bankPick == 1, 0.5, bankPick == 2, 1, bankPick == 3, 2]; \
+           envFn[r_, k_, t_] := Quiet[100 Exp[-t (k Pi/r)^2]]; \
+           spatialFn[r_, x_, t_] := Quiet[If[t < 0.01, 100, \
+             100 (2/Pi) Sum[((-1)^(m + 1)/m) Sin[m Pi x/r] Exp[-t (m Pi/r)^2], {m, 40}]]]; \
+           curve1 = Plot[{envFn[lenA, 4, elapsed], envFn[lenA, rateB, elapsed]}, \
+             {elapsed, 0, 30}, PlotTheme -> \"Detailed\", \
+             PlotStyle -> {{Gray, Thick}, {Orange, Thick, Dashed}}, \
+             LabelStyle -> {17, Black}, PlotLegends -> False, \
+             FrameLabel -> {\"elapsed (s)\", \"signal (%)\"}]; \
+           curve2 = Plot[spatialFn[lenA, xPos, 0.05], {xPos, 0, lenA}, \
+             PlotTheme -> \"Detailed\", PlotStyle -> {Gray, Thick}, \
+             Filling -> Axis, FillingStyle -> Directive[Opacity[0.25]], \
+             FrameLabel -> {\"position\", \"signal (%)\"}]; \
+           Show[Which[viewPick == 1, curve1, viewPick == 2, curve2], \
+             Frame -> True, LabelStyle -> {17, Black}, \
+             ImageSize -> {600, 360}, AspectRatio -> Full] \
+         ], \
+         Control[{{viewPick, 1}, {1 -> \"vs time\", 2 -> \"vs position\"}, Setter}], \
+         {{bankPick, 2}, {1 -> \"low\", 2 -> \"mid\", 3 -> \"high\"}, \
+          ControlType -> RadioButtonBar}, \
+         {{elapsed, 0, \"elapsed (s)\"}, 0, 30, 0.5, \
+          ControlType -> Animator, AnimationRunning -> False}, \
+         PaneSelector[{1 -> Control[{{lenA, 5, \"length A\"}, 1, 10, 0.5, \
+           ControlType -> Slider, Appearance -> \"Labeled\"}], 2 -> \" \"}, \
+           viewPick]]",
+    )
+    .expect("the Manipulate source must parse and evaluate");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the Manipulate must build a widget");
+
+    assert!(
+      state.error.is_none(),
+      "initial body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial Which branch (curve1) must render a graphic"
+    );
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["viewPick", "bankPick", "elapsed", "lenA"]);
+
+    // viewPick starts at 1 ("vs time"): the PaneSelector shows lenA's row;
+    // the always-visible bankPick/elapsed rows show regardless.
+    assert_eq!(
+      state.control_is_visible,
+      vec![true, true, true, true],
+      "pane 1 must show the length slider too"
+    );
+
+    // Switching the Setter to "vs position" swaps both the selected curve
+    // and the PaneSelector's visible row.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert_eq!(
+      state.control_is_visible,
+      vec![true, true, true, false],
+      "pane 2 must hide the length slider"
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the second Which branch (curve2) must also render"
+    );
+
+    // The body's own text — not just Woxi Studio's live widget — must
+    // reflect the LabelStyle fix: FrameLabel text drawn at the requested
+    // size/color rather than silently defaulting to the theme's small gray.
+    let render_code = format!(
+      "viewPick = 1; bankPick = 2; elapsed = 12; lenA = 5;\n{}",
+      state.body
+    );
+    let render = woxi::interpret_with_stdout(&render_code)
+      .expect("the extracted body must re-render standalone");
+    let svg = render.graphics.expect("Show[...] must produce a graphic");
+    assert!(
+      svg.contains("font-size=\"170\""),
+      "LabelStyle size 17 must scale to font-size 170 at the default 10x \
+       render scale: {svg}"
+    );
+    assert!(
+      svg.contains("fill=\"rgb(0,0,0)\""),
+      "LabelStyle color Black must reach the frame label: {svg}"
+    );
+  }
 }
