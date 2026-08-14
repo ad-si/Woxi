@@ -47,8 +47,29 @@ fn join_path(base: &str, sub: &str) -> String {
 /// `FindFile` look through for a context's file. Modeled after
 /// wolframscript's list but rooted at Woxi's directories since we don't ship
 /// the full Wolfram layout.
+///
+/// `$Path` is an ordinary variable, and the usual way to make a package
+/// findable is `AppendTo[$Path, dir]`, so a value that has been assigned wins
+/// over the built-in list.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn search_path() -> Vec<String> {
+  if let Some(value) = crate::variable_value("$Path")
+    && let crate::syntax::Expr::List(entries) = &value
+  {
+    return entries
+      .iter()
+      .filter_map(|entry| match entry {
+        crate::syntax::Expr::String(dir) => Some(dir.clone()),
+        _ => None,
+      })
+      .collect();
+  }
+  default_search_path()
+}
+
+/// The `$Path` value Woxi starts a session with.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn default_search_path() -> Vec<String> {
   let home = std::env::var("HOME")
     .or_else(|_| std::env::var("USERPROFILE"))
     .unwrap_or_default();
@@ -140,6 +161,7 @@ const STANDARD_DISTRIBUTION_CONTEXTS: &[&str] = &[
   "Calendar",
   "Combinatorica",
   "ComputationalGeometry",
+  "ComputerArithmetic",
   "DatabaseLink",
   "Developer",
   "DifferentialEquations",

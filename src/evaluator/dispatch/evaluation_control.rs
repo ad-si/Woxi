@@ -759,7 +759,9 @@ pub fn dispatch_evaluation_control(
         // pattern without a backtick looks in the contexts on
         // `$ContextPath`, which is why `Names["List*"]` finds the built-ins
         // (they are `System`` symbols) and `Names["S`*"]` does not reach
-        // into `S`Private``.
+        // into `S`Private``. A leading `$ContextAliases` alias names the
+        // context it stands for, here as anywhere else.
+        let pattern = &crate::evaluator::contexts::expand_alias(pattern);
         let (context_pattern, name_pattern) = match pattern.rfind('`') {
           Some(last) => (
             Some(pattern[..=last].to_string()),

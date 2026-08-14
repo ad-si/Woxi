@@ -1052,6 +1052,61 @@ fn normalize_symbol_lhs(lhs: &Expr) -> Expr {
   lhs.clone()
 }
 
+/// The symbol an assignment ultimately writes to: `a`, `a[[1]]`, `a[k]` and
+/// `a[[1, 2]]` all target `a`.
+fn assignment_target_symbol(lhs: &Expr) -> Option<&str> {
+  match lhs {
+    Expr::Identifier(name) | Expr::Constant(name) => Some(name),
+    Expr::Part { expr, .. } => assignment_target_symbol(expr),
+    Expr::FunctionCall { name, .. } => Some(name),
+    _ => None,
+  }
+}
+
+/// Re-checks `$ContextAliases` once the assignment that touched it is done.
+struct AliasCheck(bool);
+
+impl Drop for AliasCheck {
+  fn drop(&mut self) {
+    if self.0 {
+      crate::evaluator::contexts::validate_aliases();
+    }
+  }
+}
+
+/// Give a `$…` system variable that only has a built-in default an entry in
+/// the variable store, so that a *part* assignment has something to modify.
+///
+/// The Wolfram Language keeps these values as own-values, so
+/// `$ContextAliases["c`"] = "Long`"` extends the association the variable
+/// already holds. Woxi computes the defaults on demand instead, and without
+/// this the assignment would fall through to defining a down-value. Only
+/// container defaults are seeded — a scalar one (`$Assumptions` is `True`)
+/// has no part to assign to, and wolframscript reports that as an error on
+/// the value rather than on the variable.
+fn seed_system_variable(name: &str) {
+  if !name.starts_with('$')
+    || crate::ENV.with(|e| e.borrow().contains_key(name))
+  {
+    return;
+  }
+  let Some(value) = crate::evaluator::listable::get_system_variable(name)
+  else {
+    return;
+  };
+  let stored = match &value {
+    Expr::Association(items) => StoredValue::Association(
+      items
+        .iter()
+        .map(|(k, v)| (crate::syntax::expr_to_string(k), v.clone()))
+        .collect(),
+    ),
+    Expr::List(_) => StoredValue::ExprVal(value.clone()),
+    _ => return,
+  };
+  crate::ENV.with(|e| e.borrow_mut().insert(name.to_string(), stored));
+}
+
 /// Heads whose `head[sym, …] = value` assignment is redirected into a
 /// per-symbol storage slot (NValues, Messages, Format rules, Options, …).
 /// wolframscript permits these even though the head itself is Protected,
@@ -1115,6 +1170,13 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     (lhs, None)
   };
 
+  // Assigning `$ContextAliases`, whole or by key, re-checks the mapping the
+  // way the Wolfram Language does — the warnings belong after the assignment
+  // has landed, so they ride on the way out of every return path here.
+  let _alias_check = AliasCheck(
+    assignment_target_symbol(lhs).is_some_and(|s| s == "$ContextAliases"),
+  );
+
   // Handle Entity property mutation: Entity["type", "name"]["property"] = value
   if let Expr::CurriedCall { func, args } = lhs
     && let Expr::FunctionCall {
@@ -1142,6 +1204,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   } = lhs
     && head_args.len() == 1
   {
+    seed_system_variable(head_name);
     let is_assoc = crate::ENV.with(|e| {
       let env = e.borrow();
       matches!(env.get(head_name), Some(StoredValue::Association(_)))
@@ -1209,6 +1272,8 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       ));
       return Ok(rhs_value);
     }
+
+    seed_system_variable(&var_name);
 
     // Evaluate indices
     let mut eval_indices = Vec::new();

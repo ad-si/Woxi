@@ -72,6 +72,10 @@ thread_local! {
     // currently-active path; an empty stack falls back to the System`/Global`
     // default.
     static CONTEXT_PATH_STACK: RefCell<Vec<Vec<String>>> = const { RefCell::new(Vec::new()) };
+    // `$ContextPath` while no `BeginPackage[]` is open. The stack is empty
+    // then, so an assignment made at top level needs somewhere of its own to
+    // live; `EndPackage[]` falls back to it once the stack drains.
+    static CONTEXT_PATH_BASE: RefCell<Option<Vec<String>>> = const { RefCell::new(None) };
     // Extra packages registered by `BeginPackage[]` (and the explicit second
     // argument). `$Packages` returns these prepended to the canonical
     // `{"System`", "Global`"}` baseline.
@@ -1135,25 +1139,61 @@ pub fn current_context() -> String {
   })
 }
 
+/// Fold a `$ContextPath` that was assigned to the variable into the path
+/// Woxi resolves symbols against.
+///
+/// `$ContextPath` is an ordinary variable in the Wolfram Language, and
+/// `AppendTo[$ContextPath, "C`"]` is a normal way to make a context's symbols
+/// reachable. Woxi keeps the path on a stack that `BeginPackage[]` and
+/// `EndPackage[]` maintain, so an assignment has to be moved onto whichever
+/// entry is current when it happens — otherwise the two disagree, and which
+/// one answers depends on who is asking.
+fn absorb_assigned_context_path() {
+  let assigned = match &variable_value("$ContextPath") {
+    Some(syntax::Expr::List(entries)) => entries
+      .iter()
+      .map(|entry| match entry {
+        syntax::Expr::String(context) => Some(context.clone()),
+        _ => None,
+      })
+      .collect::<Option<Vec<String>>>(),
+    _ => None,
+  };
+  // A value that is not a list of contexts is left where it is: it is not a
+  // path, and dropping it would lose whatever the user stored.
+  let Some(path) = assigned else {
+    return;
+  };
+  ENV.with(|e| e.borrow_mut().remove("$ContextPath"));
+  CONTEXT_PATH_STACK.with(|s| {
+    let mut stack = s.borrow_mut();
+    match stack.last_mut() {
+      Some(top) => *top = path,
+      None => CONTEXT_PATH_BASE.with(|b| *b.borrow_mut() = Some(path)),
+    }
+  });
+}
+
 /// The currently active `$ContextPath` — the top of the
 /// `CONTEXT_PATH_STACK`, or the `["System`", "Global`"]` default
 /// when nothing has been pushed by `BeginPackage[]`.
 pub fn current_context_path() -> Vec<String> {
-  CONTEXT_PATH_STACK.with(|s| {
-    s.borrow()
-      .last()
-      .cloned()
-      .unwrap_or_else(|| vec!["System`".to_string(), "Global`".to_string()])
-  })
+  absorb_assigned_context_path();
+  CONTEXT_PATH_STACK
+    .with(|s| s.borrow().last().cloned())
+    .or_else(|| CONTEXT_PATH_BASE.with(|b| b.borrow().clone()))
+    .unwrap_or_else(|| vec!["System`".to_string(), "Global`".to_string()])
 }
 
 /// Push a new `$ContextPath` value (used by `BeginPackage[]`).
 pub fn push_context_path(path: Vec<String>) {
+  absorb_assigned_context_path();
   CONTEXT_PATH_STACK.with(|s| s.borrow_mut().push(path));
 }
 
 /// Pop the topmost `$ContextPath` value (used by `EndPackage[]`).
 pub fn pop_context_path() -> Option<Vec<String>> {
+  absorb_assigned_context_path();
   CONTEXT_PATH_STACK.with(|s| s.borrow_mut().pop())
 }
 
@@ -1162,6 +1202,129 @@ pub fn pop_context_path() -> Option<Vec<String>> {
 /// between popping and emitting `EndPackage::noctx`.
 pub fn has_package_context() -> bool {
   CONTEXT_PATH_STACK.with(|s| !s.borrow().is_empty())
+}
+
+/// Everything that decides what `$ContextPath` is right now. Paired with
+/// [`restore_context_path`] to undo whatever a file did to the path while it
+/// was being read — `Needs["ctx`" -> alias]` leaves `$ContextPath` exactly as
+/// it found it.
+pub type ContextPathState = (Vec<Vec<String>>, Option<Vec<String>>);
+
+/// Snapshot the `$ContextPath` state.
+pub fn save_context_path() -> ContextPathState {
+  absorb_assigned_context_path();
+  (
+    CONTEXT_PATH_STACK.with(|s| s.borrow().clone()),
+    CONTEXT_PATH_BASE.with(|b| b.borrow().clone()),
+  )
+}
+
+/// Put the `$ContextPath` state back the way [`save_context_path`] found it.
+pub fn restore_context_path(saved: ContextPathState) {
+  let (stack, base) = saved;
+  ENV.with(|e| e.borrow_mut().remove("$ContextPath"));
+  CONTEXT_PATH_STACK.with(|s| *s.borrow_mut() = stack);
+  CONTEXT_PATH_BASE.with(|b| *b.borrow_mut() = base);
+}
+
+/// The value a variable is bound to in the store, as an expression. `None`
+/// when nothing has been assigned to it — a system variable then still has
+/// its built-in default, which `get_system_variable` supplies.
+pub fn variable_value(name: &str) -> Option<syntax::Expr> {
+  // A store that is mid-update is borrowed mutably by the evaluator; a lookup
+  // that lands there (resolving a context alias while a value is being
+  // assigned, say) reads it as "unbound" rather than panicking.
+  let stored =
+    ENV.with(|e| e.try_borrow().ok().and_then(|env| env.get(name).cloned()))?;
+  match stored {
+    StoredValue::ExprVal(expr) => Some(expr),
+    StoredValue::Raw(raw) => syntax::string_to_expr(&raw).ok(),
+    StoredValue::Association(items) => Some(syntax::Expr::Association(
+      items
+        .into_iter()
+        .map(|(k, v)| {
+          let key = syntax::string_to_expr(&k)
+            .unwrap_or_else(|_| syntax::Expr::String(k.clone()));
+          (key, v)
+        })
+        .collect(),
+    )),
+  }
+}
+
+/// Whether any context alias is in force. Kept to a single lookup: this sits
+/// on the path every symbol resolution takes, while [`context_aliases`] has
+/// to decode the association.
+pub fn has_context_aliases() -> bool {
+  ENV.with(|e| {
+    e.try_borrow()
+      .is_ok_and(|env| match env.get("$ContextAliases") {
+        Some(StoredValue::Association(items)) => !items.is_empty(),
+        Some(StoredValue::ExprVal(syntax::Expr::Association(items))) => {
+          !items.is_empty()
+        }
+        Some(_) => true,
+        None => false,
+      })
+  })
+}
+
+/// The `$ContextAliases` mapping as `(alias, target)` pairs, in the order the
+/// association holds them. Aliases live in the ordinary variable store, so a
+/// plain `$ContextAliases["c`"] = "LongContext`"` sets one just as
+/// `Needs["LongContext`" -> "c`"]` does.
+pub fn context_aliases() -> Vec<(String, String)> {
+  let Some(value) = variable_value("$ContextAliases") else {
+    return Vec::new();
+  };
+  let syntax::Expr::Association(pairs) = &value else {
+    return Vec::new();
+  };
+  pairs
+    .iter()
+    .filter_map(|(k, v)| match (k, v) {
+      (syntax::Expr::String(alias), syntax::Expr::String(target)) => {
+        Some((alias.clone(), target.clone()))
+      }
+      _ => None,
+    })
+    .collect()
+}
+
+/// The context `alias` currently stands for, if any.
+pub fn context_alias_target(alias: &str) -> Option<String> {
+  context_aliases()
+    .into_iter()
+    .find(|(name, _)| name == alias)
+    .map(|(_, target)| target)
+}
+
+/// Record `alias` as standing for `target` in `$ContextAliases`, replacing an
+/// entry that already maps that alias. `None` drops the entry instead.
+pub fn set_context_alias(alias: &str, target: Option<&str>) {
+  let mut aliases = context_aliases();
+  match (target, aliases.iter_mut().find(|(name, _)| name == alias)) {
+    (Some(target), Some(entry)) => entry.1 = target.to_string(),
+    (Some(target), None) => {
+      aliases.push((alias.to_string(), target.to_string()));
+    }
+    (None, _) => aliases.retain(|(name, _)| name != alias),
+  }
+  let items = aliases
+    .into_iter()
+    .map(|(name, target)| {
+      (
+        syntax::expr_to_string(&syntax::Expr::String(name)),
+        syntax::Expr::String(target),
+      )
+    })
+    .collect();
+  ENV.with(|e| {
+    e.borrow_mut().insert(
+      "$ContextAliases".to_string(),
+      StoredValue::Association(items),
+    )
+  });
 }
 
 /// Register an additional package context to be reported by `$Packages`.
@@ -1319,6 +1482,8 @@ pub fn clear_state() {
   SOW_STACK.with(|s| s.borrow_mut().clear());
   CONTEXT_STACK.with(|s| s.borrow_mut().clear());
   CONTEXT_PATH_STACK.with(|s| s.borrow_mut().clear());
+  CONTEXT_PATH_BASE.with(|b| *b.borrow_mut() = None);
+  evaluator::contexts::clear_symbol_table();
   PACKAGES_EXTRA.with(|s| s.borrow_mut().clear());
   RECURSION_DEPTH.with(|d| d.set(0));
   EVAL_STACK.with(|s| s.borrow_mut().clear());
@@ -1535,6 +1700,12 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       let needs_eval = trimmed[1..trimmed.len() - 1].split(',').any(|item| {
         let item = item.trim();
         evaluator::named_color_expr(item).is_some()
+          // A name that stands for something — a `$…` system variable, or a
+          // symbol this session has assigned to — has to be looked up;
+          // echoing the name back would report the symbol instead of its
+          // value.
+          || item.starts_with('$')
+          || ENV.with(|e| e.borrow().contains_key(item))
           || matches!(
             item,
             "Now"

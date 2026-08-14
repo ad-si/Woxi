@@ -9001,4 +9001,282 @@ mod paclet {
     );
     assert_eq!(interpret("pacletFun[]").unwrap(), "from Get");
   }
+
+  // `AppendTo[$Path, dir]` is the usual way to make a package findable, so
+  // `Needs` has to search the value the variable actually holds.
+  #[test]
+  fn needs_searches_an_assigned_path() {
+    clear_state();
+    let dir = temp_file("woxi_needs_path");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+      std::path::Path::new(&dir).join("WoxiPathPkg.wl"),
+      package("WoxiPathPkg`", "from $Path"),
+    )
+    .unwrap();
+    assert_eq!(
+      interpret(&format!(
+        "AppendTo[$Path, \"{}\"]\nNeeds[\"WoxiPathPkg`\"]\npacletFun[]",
+        unixify(&dir)
+      ))
+      .unwrap(),
+      "from $Path"
+    );
+  }
+
+  // `Needs["ctx`"]` leaves the context on `$ContextPath`, so its exported
+  // symbols can be named without qualification.
+  #[test]
+  fn needs_puts_the_context_on_the_context_path() {
+    clear_state();
+    let dir = write_paclet(
+      "context_path",
+      "{{\"Kernel\", \"Root\" -> \"Kernel\", \"Context\" -> {\"WoxiPacletL`\"}}}",
+      &[("Kernel/WoxiPacletL.wl", &package("WoxiPacletL`", "plain"))],
+    );
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{dir}\"]; Needs[\"WoxiPacletL`\"]; $ContextPath"
+      ))
+      .unwrap(),
+      "{WoxiPacletL`, System`, Global`}"
+    );
+    assert_eq!(interpret("pacletFun[]").unwrap(), "plain");
+    assert_eq!(interpret("$ContextAliases").unwrap(), "<||>");
+  }
+
+  /// A paclet whose package also appends to `$ContextPath` on its own, so a
+  /// test can tell a restored path from one that merely lost the package.
+  fn write_alias_paclet(name: &str, context: &str, marker: &str) -> String {
+    write_paclet(
+      name,
+      &format!(
+        "{{{{\"Kernel\", \"Root\" -> \"Kernel\", \"Context\" -> {{\"{context}\"}}}}}}"
+      ),
+      &[(
+        &format!("Kernel/{}.wl", context.trim_end_matches('`')),
+        &format!(
+          "{}AppendTo[$ContextPath, \"WoxiJunk`\"];\n",
+          package(context, marker)
+        ),
+      )],
+    )
+  }
+
+  // `Needs["ctx`" -> "alias`"]` records the alias, and reaches the package
+  // through it rather than through `$ContextPath` — which it leaves exactly
+  // as it found it, undoing even what the package file did to it.
+  #[test]
+  fn needs_with_an_alias_leaves_the_context_path_alone() {
+    clear_state();
+    let dir = write_alias_paclet("alias", "WoxiPacletM`", "aliased");
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{dir}\"]; \
+         Needs[\"WoxiPacletM`\" -> \"wm`\"]; $ContextPath"
+      ))
+      .unwrap(),
+      "{System`, Global`}"
+    );
+    assert_eq!(
+      interpret("$ContextAliases").unwrap(),
+      "<|wm` -> WoxiPacletM`|>"
+    );
+    // The alias names the context wherever the context's own name would:
+    // in a symbol, and in a `Names` pattern.
+    assert_eq!(interpret("wm`pacletFun[]").unwrap(), "aliased");
+    assert_eq!(
+      interpret("Names[\"wm`*\"]").unwrap(),
+      "{WoxiPacletM`pacletFun}"
+    );
+    assert_eq!(interpret("Context[wm`pacletFun]").unwrap(), "WoxiPacletM`");
+    // The unqualified name is not the package's — nothing put it on the path.
+    assert_eq!(interpret("pacletFun[]").unwrap(), "pacletFun[]");
+    // The context did load, so a second Needs is still a no-op.
+    assert_eq!(
+      interpret("MemberQ[$Packages, \"WoxiPacletM`\"]").unwrap(),
+      "True"
+    );
+  }
+
+  // `Needs["ctx`" -> None]` loads the same way but records nothing: neither
+  // a context-path entry nor an alias, so only the full name reaches it.
+  #[test]
+  fn needs_with_none_records_neither_path_nor_alias() {
+    clear_state();
+    let dir = write_alias_paclet("none", "WoxiPacletN`", "unaliased");
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{dir}\"]; \
+         Needs[\"WoxiPacletN`\" -> None]; $ContextPath"
+      ))
+      .unwrap(),
+      "{System`, Global`}"
+    );
+    assert_eq!(interpret("$ContextAliases").unwrap(), "<||>");
+    assert_eq!(interpret("WoxiPacletN`pacletFun[]").unwrap(), "unaliased");
+    assert_eq!(interpret("pacletFun[]").unwrap(), "pacletFun[]");
+  }
+
+  // An alias asked for a context that is already loaded is still recorded —
+  // the file is simply not read a second time.
+  #[test]
+  fn an_alias_is_recorded_for_an_already_loaded_context() {
+    clear_state();
+    let dir = write_paclet(
+      "alias_again",
+      "{{\"Kernel\", \"Root\" -> \"Kernel\", \"Context\" -> {\"WoxiPacletO`\"}}}",
+      &[("Kernel/WoxiPacletO.wl", &package("WoxiPacletO`", "twice"))],
+    );
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{dir}\"]; Needs[\"WoxiPacletO`\"]; \
+         Needs[\"WoxiPacletO`\" -> \"wo`\"]; $ContextAliases"
+      ))
+      .unwrap(),
+      "<|wo` -> WoxiPacletO`|>"
+    );
+    assert_eq!(interpret("wo`pacletFun[]").unwrap(), "twice");
+  }
+
+  // A package that ships with the Wolfram Language loads as a no-op in Woxi,
+  // but the alias it was asked for is recorded all the same.
+  #[test]
+  fn a_standard_package_still_takes_an_alias() {
+    clear_state();
+    assert_eq!(
+      interpret("Needs[\"ComputerArithmetic`\" -> \"ca`\"]; $ContextAliases")
+        .unwrap(),
+      "<|ca` -> ComputerArithmetic`|>"
+    );
+  }
+
+  // A rule whose right-hand side is neither `None` nor a single-segment
+  // context is not a `Needs` argument at all.
+  #[test]
+  fn a_malformed_alias_rule_is_reported() {
+    clear_state();
+    for (call, shown) in [
+      (
+        "Needs[\"WoxiPacletP`\" -> \"wp\"]",
+        "Needs[WoxiPacletP` -> wp]",
+      ),
+      (
+        "Needs[\"WoxiPacletP`\" -> \"a`b`\"]",
+        "Needs[WoxiPacletP` -> a`b`]",
+      ),
+      ("Needs[\"WoxiPacletP`\" -> 5]", "Needs[WoxiPacletP` -> 5]"),
+      ("Needs[\"nocontext\" -> \"wp`\"]", "Needs[nocontext -> wp`]"),
+    ] {
+      let result = interpret_with_stdout(call).unwrap();
+      assert_eq!(result.result, shown);
+      assert_eq!(
+        result.stdout,
+        format!(
+          "\nNeeds::cxru: Context or appropriately structured rule expected \
+           at position 1 in {shown}.\n"
+        )
+      );
+      assert_eq!(interpret("$ContextAliases").unwrap(), "<||>");
+    }
+  }
+
+  // The alias is recorded as soon as the rule has been read, so a call that
+  // goes on to fail on its *second* argument still leaves it behind.
+  #[test]
+  fn an_alias_survives_a_bad_second_argument() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Needs[\"WoxiPacletQ`\" -> \"wq`\", 5]").unwrap();
+    assert_eq!(result.result, "Needs[WoxiPacletQ` -> wq`, 5]");
+    assert_eq!(
+      result.stdout,
+      "\nNeeds::string: String expected at position 2 in \
+       Needs[WoxiPacletQ` -> wq`, 5].\n"
+    );
+    assert_eq!(
+      interpret("$ContextAliases").unwrap(),
+      "<|wq` -> WoxiPacletQ`|>"
+    );
+  }
+
+  // A load that never produces the context takes the alias back out again,
+  // restoring what that alias stood for before.
+  #[test]
+  fn a_failed_load_takes_its_alias_back_out() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "$ContextAliases[\"wr`\"] = \"WoxiKept`\"; \
+         Needs[\"WoxiPacletR`\" -> \"wr`\"]"
+      )
+      .unwrap(),
+      "$Failed"
+    );
+    assert_eq!(
+      interpret("$ContextAliases").unwrap(),
+      "<|wr` -> WoxiKept`|>"
+    );
+    // Same for a file that loads but opens no context.
+    let file = temp_file("woxi_alias_no_context.wl");
+    std::fs::write(&file, "aliasNoContextVar = 7;\n").unwrap();
+    assert_eq!(
+      interpret(&format!(
+        "Needs[\"WoxiPacletS`\" -> \"ws`\", \"{file}\"]; $ContextAliases"
+      ))
+      .unwrap(),
+      "<|wr` -> WoxiKept`|>"
+    );
+    std::fs::remove_file(file).ok();
+  }
+
+  // An alias whose own name is already a context in use cannot do its job,
+  // and the Wolfram Language says so — re-checking the whole mapping every
+  // time it changes.
+  #[test]
+  fn a_conflicting_alias_is_reported() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "WoxiTaken`sym = 1; $ContextAliases[\"WoxiTaken`\"] = \"WoxiOther`\"",
+    )
+    .unwrap();
+    assert_eq!(
+      result.stdout,
+      "\n$ContextAliases::cxinuse: Warning: Symbols already exist in the \
+       context WoxiTaken`. These symbols will not be able to be accessed \
+       while WoxiTaken` is in $ContextAliases.\n"
+    );
+    let result = interpret_with_stdout(
+      "$ContextPath = Append[$ContextPath, \"WoxiOnPath`\"]; \
+       $ContextAliases = <|\"WoxiOnPath`\" -> \"WoxiOther`\"|>",
+    )
+    .unwrap();
+    assert_eq!(
+      result.stdout,
+      "\n$ContextAliases::cxconflict: Warning: the alias WoxiOnPath` -> \
+       WoxiOther` conflicts with the value of $ContextPath.\n"
+    );
+  }
+
+  // An alias stands for its context anywhere a context name may appear, and
+  // only the leading segment of a name is one. Like every context construct
+  // an alias takes effect for the *next* input unit, not the rest of the one
+  // that set it.
+  #[test]
+  fn an_alias_expands_only_its_leading_segment() {
+    clear_state();
+    interpret("$ContextAliases[\"a`\"] = \"WoxiX`WoxiY`\"").unwrap();
+    assert_eq!(interpret("a`foo").unwrap(), "WoxiX`WoxiY`foo");
+    assert_eq!(interpret("a`b`foo").unwrap(), "WoxiX`WoxiY`b`foo");
+    assert_eq!(
+      interpret("Contexts[\"a`*\"]").unwrap(),
+      "{WoxiX`WoxiY`, WoxiX`WoxiY`b`}"
+    );
+    // Assigning through the alias creates the symbol in the real context.
+    interpret("a`bar = 7").unwrap();
+    assert_eq!(interpret("WoxiX`WoxiY`bar").unwrap(), "7");
+    // Replacing the whole mapping drops the alias with it.
+    interpret("$ContextAliases = <||>").unwrap();
+    assert_eq!(interpret("a`foo").unwrap(), "a`foo");
+  }
 }
