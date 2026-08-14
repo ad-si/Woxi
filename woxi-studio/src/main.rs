@@ -14590,4 +14590,125 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl1$$ = 1}, \"\\[Ellipsis]\"]"], 
       "the Epilog marker must be drawn"
     );
   }
+
+  #[test]
+  fn spectrum_band_manipulate_builds_with_nested_animate_and_graphics_row() {
+    // Checked a randomly-sampled Wolfram Demonstrations Project notebook
+    // (a wavelength-band visualizer) against Woxi Studio's Manipulate
+    // pipeline. Its shape: a `PopupMenu`-controlled mode switch plus a
+    // discrete-list "level" control drive a `Text[Which[...]]` body whose
+    // branches are `Pane[Column[{...}]]` layouts mixing a `Module`-built
+    // indicator bar (`Riffle`/`Partition`/`ConstantArray`/`Table` of
+    // `Rectangle`s), a `Dynamic`-wrapped nested `Animate` showing an
+    // orbiting `Disk`, and a `GraphicsRow` of two `Graphics` built from
+    // `Table`-generated `Arrow`s `Append`ed onto a shared mark list. Colors
+    // come from a piecewise `RGBColor` built with chained `If`.
+    //
+    // This is a self-authored construct-equivalent example, not the
+    // notebook's own code or wording.
+    woxi::interpret(
+      "demoBandColor[v_] := If[v < 2, RGBColor[1, 0, 0], \
+       If[v < 4, RGBColor[0, 1, 0], \
+       If[v < 6, RGBColor[0, 0, 1], RGBColor[0, 0, 0]]]]; \
+       demoVals = {1.5, 3.0, 5.5, 7.0}; \
+       demoMarks = {{Line[{{0, -10}, {20, -10}}], \
+         Inset[Style[\"A\", 8], {21, -10}]}, \
+        {Line[{{0, -20}, {20, -20}}], Inset[Style[\"B\", 8], {21, -20}]}}; \
+       demoBand[x_] := Module[{grid, pos}, \
+         grid = Table[k, {k, 0, 8, 0.5}]; \
+         pos = Table[Part[Position[grid, Part[x, k]], 1, 1], \
+           {k, 1, Length[x]}]; \
+         Graphics[Join[ \
+           Partition[Riffle[ConstantArray[Black, 17], \
+             Table[Rectangle[{k - 0.25, 0}, {k, 10}], {k, 0.5, 8.5, 0.5}]], \
+            2], \
+           Table[{demoBandColor[Part[x, k]], \
+             Rectangle[{Part[pos, k]*0.5 - 0.5, 0}, \
+              {Part[pos, k]*0.5 + 0.5, 10}]}, {k, 1, Length[x]}]], \
+          ImageSize -> Large]]; \
+       demoRing[n_] := Graphics[{Circle[{0, 0}, n*3], \
+         Text[ToString[n], {0, n*3 + 2}]}]; \
+       demoOrbit[n_] := Animate[ \
+         Pane[Show[ \
+           Graphics[{White, Opacity[0], Rectangle[{-40, -40}, {40, 40}]}], \
+           demoRing[n], \
+           Graphics[{demoBandColor[n], Arrow[{{4, 0}, {n^2/4, 0}}]}], \
+           Graphics[{Blue, Disk[{n, 0}, 1.5]}]], {200, 180}], \
+         {t, 0, 6 Pi, ControlPlacement -> Top}, \
+         AnimationRunning -> False, Alignment -> Center]; \
+       demoArrow1[i_, j_] := {demoBandColor[i], Arrowheads[0.075], \
+         Arrow[{{15 - j*i, 0 - 150/i^2}, {15 - j*i, 0 - 150/4}}]}; \
+       demoArrow2[i_, j_] := {demoBandColor[i], Arrowheads[0.075], \
+         Arrow[{{15 - j*i, 0 - 150/4}, {15 - j*i, 0 - 150/i^2}}]};",
+    )
+    .expect("the helper definitions must evaluate");
+
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[ \
+         Text[Which[ \
+           demoMode == 1, \
+           Pane[Column[{\"low band\", demoBand[demoVals], \"single value\", \
+              Dynamic[demoBandColor[demoLevel - 2]], \
+              Row[{Column[{\"levels\", \
+                  Pane[Dynamic[demoRing[demoLevel]], {200, 250}]}, \
+                 Alignment -> Center], \
+                Column[{\"orbit\", Dynamic[demoOrbit[demoLevel]]}, \
+                 Alignment -> Center]}]}, Alignment -> Center], {600, 420}], \
+           demoMode == 2, \
+           Pane[Column[{\"high band\", demoBand[demoVals]}, \
+             Alignment -> Center], {600, 420}], \
+           demoMode == 3, \
+           Pane[Column[{\"low band\", demoBand[demoVals], \"high band\", \
+              demoBand[demoVals], \
+              GraphicsRow[{ \
+                Graphics[{Append[ \
+                  Table[demoArrow1[demoLevel, 2], {demoLevel, 3, 6}], \
+                  demoMarks]}], \
+                Graphics[{Append[ \
+                  Table[demoArrow2[demoLevel, 2], {demoLevel, 3, 6}], \
+                  demoMarks]}]}, Spacings -> 300, \
+               ImageSize -> {400, 400*2/3}]}, Alignment -> Center], \
+            {600, 420}]]], \
+         {{demoMode, 1, \"display\"}, \
+          {1 -> \"low\", 2 -> \"high\", 3 -> \"both\"}, \
+          ControlType -> PopupMenu}, \
+         {{demoLevel, 3, Row[{\"level \", Style[\"n\", Italic]}]}, \
+          {3, 4, 5, 6}}]",
+    )
+    .expect("the Manipulate source must parse and evaluate");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the Manipulate must build a widget");
+
+    assert!(
+      state.error.is_none(),
+      "initial body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial Which branch must render a graphic"
+    );
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["demoMode", "demoLevel"]);
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete { popup, .. } => {
+        assert!(*popup, "ControlType -> PopupMenu must force the dropdown");
+      }
+      other => panic!("expected demoMode as a Discrete control: {other:?}"),
+    }
+
+    // Switching to the GraphicsRow branch (mode 3) must still render, and
+    // the nested-Animate branch (mode 1, already the default) plus the
+    // high-band-only branch (mode 2) must each render too.
+    for mode in [1, 2, 3] {
+      let render_code =
+        format!("demoMode = {mode}; demoLevel = 4;\n{}", state.body);
+      let render = woxi::interpret_with_stdout(&render_code)
+        .unwrap_or_else(|e| panic!("mode {mode} must render: {e:?}"));
+      assert!(
+        render.graphics.is_some(),
+        "mode {mode} must produce a graphic"
+      );
+    }
+  }
 }
