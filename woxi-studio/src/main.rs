@@ -568,18 +568,27 @@ impl WoxiStudio {
           while i < cells.len() {
             let cell = &cells[i];
             if matches!(cell.style, CellStyle::Input | CellStyle::Code) {
-              // Collect following Output/Print cells
+              // Collect following Output/Print cells. Source notebooks
+              // downloaded from the Wolfram Demonstrations Project
+              // sometimes carry a stray *Input*-styled cell between the
+              // real source and its cached Output — a leftover evaluation
+              // snapshot whose content is itself a raw FrontEnd widget
+              // dump (`DynamicModuleBox[…]`), never meaningful as code.
+              // Treat such a cell the same as a stored Output so it is
+              // absorbed here instead of rendered as a broken, empty
+              // "code" cell of its own.
               let mut output = None;
               let mut stdout = None;
               let mut j = i + 1;
               while j < cells.len()
-                && matches!(
+                && (matches!(
                   cells[j].style,
                   CellStyle::Output | CellStyle::Print
-                )
+                ) || (cells[j].style == CellStyle::Input
+                  && is_dynamic_box_dump(&cells[j].content)))
               {
                 match cells[j].style {
-                  CellStyle::Output => {
+                  CellStyle::Output | CellStyle::Input => {
                     output = Some(cells[j].content.clone());
                   }
                   CellStyle::Print => {
@@ -7261,6 +7270,40 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"…\"]"], "Output"]
       widget.graphics_handle.is_some(),
       "initPlot from the initialization cell must be in scope, \
        so the first render produces the plot"
+    );
+  }
+
+  /// Wolfram Demonstrations Project "source" notebooks (the authoring
+  /// copy downloaded from demonstrations.wolfram.com, as opposed to the
+  /// deployed cloud embed) sometimes carry a stray *Input*-styled cell
+  /// between the real `Manipulate[…]` source and its cached Output — a
+  /// leftover evaluation snapshot whose content is itself a raw
+  /// FrontEnd widget dump (`DynamicModuleBox[…]`), never meaningful as
+  /// code. That extra cell must be absorbed rather than rendered as its
+  /// own broken, empty "code" cell, and must not be mistaken for the
+  /// real source when the live widget is instantiated.
+  #[test]
+  fn stray_input_styled_widget_dump_between_source_and_output_is_absorbed() {
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[x^2, {x, 1, 10}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`x$$ = 5}, \"…\"]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`x$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    // The stray widget-dump Input cell is absorbed into the real source
+    // cell's editor, not rendered as its own (broken, empty) entry.
+    assert_eq!(editors.len(), 1);
+    let widget = editors[0]
+      .manipulate_state
+      .as_ref()
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
     );
   }
 
