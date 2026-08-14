@@ -7366,6 +7366,64 @@ mod ndsolve {
     );
   }
 
+  /// `f'`/`f''` on machine-precision interpolation data takes a fast
+  /// numeric path (Newton divided differences expanded to monomial
+  /// coefficients) rather than building and simplifying a symbolic
+  /// Lagrange polynomial through the general evaluator — the latter turned
+  /// every sample in an adaptively-plotted phase portrait into a
+  /// multi-millisecond symbolic evaluation. The data here is exactly `x^2`
+  /// (`f = x^2`, `f' = 2x`, `f'' = 2`), including a query exactly at a grid
+  /// node — the classic singularity for a naive log-derivative Lagrange
+  /// formula — to guard the replacement algorithm's correctness there too.
+  #[test]
+  fn interpolation_derivative_numeric_path_matches_analytic_derivative() {
+    let result = interpret(
+      "f = Interpolation[{{0., 0.}, {1., 1.}, {2., 4.}, {3., 9.}}]; \
+       {f[1.5], f'[1.5], f''[1.5], f[1.0], f'[1.0], f''[1.0]}",
+    )
+    .unwrap();
+    let nums: Vec<f64> = result
+      .trim_matches(['{', '}'])
+      .split(", ")
+      .map(|s| s.parse().expect("all entries are numbers"))
+      .collect();
+    let expected = [2.25, 3.0, 2.0, 1.0, 2.0, 2.0];
+    for (got, want) in nums.iter().zip(expected.iter()) {
+      assert!(
+        (got - want).abs() < 1e-9,
+        "expected {expected:?}, got {result}"
+      );
+    }
+  }
+
+  /// A derivative order at or beyond the local interpolating polynomial's
+  /// degree is exactly zero, not a numerical artifact from over-differentiating
+  /// the expanded monomial coefficients.
+  #[test]
+  fn interpolation_derivative_beyond_polynomial_degree_is_zero() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0., 0.}, {1., 1.}, {2., 4.}, {3., 9.}}]; \
+         Derivative[3][f][1.5]"
+      )
+      .unwrap(),
+      "0."
+    );
+  }
+
+  /// The derivative path shares the value path's extrapolation window, so a
+  /// query outside the data range still differentiates the boundary piece
+  /// instead of panicking or returning nonsense.
+  #[test]
+  fn interpolation_derivative_extrapolates_past_data_range() {
+    let result = interpret(
+      "f = Interpolation[{{0., 0.}, {1., 1.}, {2., 4.}, {3., 9.}}]; f'[5.0]",
+    )
+    .unwrap();
+    let value: f64 = result.parse().expect("a number");
+    assert!((value - 10.0).abs() < 1e-9, "expected 10., got {result}");
+  }
+
   #[test]
   fn exponential_growth() {
     // NDSolve y'=y, y(0)=1, check y(0.5) ≈ E^0.5
