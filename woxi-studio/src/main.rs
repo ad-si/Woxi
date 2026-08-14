@@ -14711,4 +14711,119 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl1$$ = 1}, \"\\[Ellipsis]\"]"], 
       );
     }
   }
+
+  #[test]
+  fn wave_pulse_manipulate_tracks_dynamic_animator_bound_and_which_regions() {
+    // Checked a randomly-sampled Wolfram Demonstrations Project notebook
+    // (a two-medium wave-pulse animation) against Woxi Studio's Manipulate
+    // pipeline. Its shape: two `Appearance -> "Labeled"` sliders feed a
+    // derived reflection/transmission pair, hidden `ControlType -> None`
+    // state variables expose that pair to the body, and a `ControlType ->
+    // Animator` time control whose *upper bound* is itself an `If` on one
+    // of the sliders (so the animator's range must track a sibling
+    // control's live value, not just its initial one) drives a `Which`
+    // body that mixes bare comparisons with compound `a < t <= b`
+    // (`Inequality`) conditions across four `Graphics` branches.
+    //
+    // This is a self-authored construct-equivalent example, not the
+    // notebook's own code or wording.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[ \
+         waveA = 1.0; \
+         waveB = ratioD*ratioV; \
+         waveR = (waveB - waveA)/(waveB + waveA); \
+         waveT = 2*waveA/(waveB + waveA); \
+         waveNull = Line[{{0, 0}, {0, 0}}]; \
+         Which[ \
+           waveT0 <= 4, \
+           Graphics[{Line[{{-5, 0}, {5, 0}}], \
+             Line[{{-5 + waveT0, 0}, {-5 + waveT0, 1}}]}, \
+            ImageSize -> {400, 250}], \
+           4 < waveT0 <= 4.5, \
+           Graphics[{Line[{{-5, 0}, {5, 0}}], \
+             Line[{{4 - waveT0, 1}, {4 - waveT0, 1 + waveR}}]}, \
+            ImageSize -> {400, 250}], \
+           4.5 < waveT0 <= 5, \
+           Graphics[{Line[{{-5, 0}, {5, 0}}], \
+             Line[{{waveT0 - 5, waveR}, {waveT0 - 5, 1 + waveR}}]}, \
+            ImageSize -> {400, 250}], \
+           waveT0 >= 5, \
+           Graphics[{Line[{{-5, 0}, {5, 0}}], \
+             If[waveT0 < 10, \
+               Line[{{5 - waveT0, waveR}, {5 - waveT0, 0}}], waveNull]}, \
+            ImageSize -> {400, 250}]], \
+         {{ratioD, 1.5, \"density ratio\"}, 0, 2, Appearance -> \"Labeled\"}, \
+         {{ratioV, 0.5, \"velocity ratio\"}, 0, 2, Appearance -> \"Labeled\"}, \
+         {{waveT0, 0, \"time\"}, 0, \
+          If[ratioV > 0, 5 + (5 - ratioV)/ratioV, 9], \
+          ControlType -> Animator, AnimationRunning -> False}, \
+         {{waveA, 1.0}, ControlType -> None}, \
+         {waveB, ControlType -> None}, \
+         {waveR, ControlType -> None}, \
+         {waveT, ControlType -> None}]",
+    )
+    .expect("the Manipulate source must parse and evaluate");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the Manipulate must build a widget");
+
+    assert!(
+      state.error.is_none(),
+      "initial body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial Which branch must render a graphic"
+    );
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["ratioD", "ratioV", "waveT0"]);
+    match &state.controls[2] {
+      manipulate::ControlState::Continuous { min, max, .. } => {
+        // ratioV starts at 0.5: max = 5 + (5 - 0.5)/0.5 = 14.
+        assert_eq!(*min, 0.0);
+        assert!(
+          (*max - 14.0).abs() < 1e-9,
+          "the animator's max must resolve the If against ratioV's \
+           initial value, got {max}"
+        );
+      }
+      other => panic!("expected waveT0 as a Continuous control: {other:?}"),
+    }
+
+    // Each Which region (plain `<=`, both halves of the compound
+    // `4 < t <= 4.5` / `4.5 < t <= 5`, and `>= 5`) must render.
+    for wave_t0 in [0.0, 2.0, 4.25, 4.75, 6.0] {
+      let render_code = format!(
+        "ratioD = 1.5; ratioV = 0.5; waveT0 = {wave_t0};\n{}",
+        state.body
+      );
+      let render = woxi::interpret_with_stdout(&render_code)
+        .unwrap_or_else(|e| panic!("time {wave_t0} must render: {e:?}"));
+      assert!(
+        render.graphics.is_some(),
+        "time {wave_t0} must produce a graphic"
+      );
+    }
+
+    // Changing the density-ratio slider (the sibling the animator's upper
+    // bound depends on) must move the resolved bound on re-evaluation, not
+    // just at construction time.
+    let mut state = state;
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[1]
+    {
+      *current = 1.0;
+    }
+    state.reevaluate();
+    match &state.controls[2] {
+      manipulate::ControlState::Continuous { max, .. } => {
+        // ratioV = 1.0: max = 5 + (5 - 1)/1 = 9.
+        assert!(
+          (*max - 9.0).abs() < 1e-9,
+          "the animator's max must track ratioV's live value, got {max}"
+        );
+      }
+      other => panic!("expected waveT0 as a Continuous control: {other:?}"),
+    }
+  }
 }
