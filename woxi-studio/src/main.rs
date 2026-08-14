@@ -7068,6 +7068,80 @@ mod tests {
     assert!(!state.playing);
   }
 
+  /// A phase-portrait Demonstration — sliders for a nonlinear oscillator's
+  /// parameters driving a `Module` that solves several initial conditions
+  /// with `NDSolve`, then overlays the vector field (`StreamPlot`) with the
+  /// solution trajectories (a multi-curve `ParametricPlot[Evaluate[Table[…
+  /// /. sol]]]`, each curve pairing a position with its `InterpolatingFunction`
+  /// derivative). This pattern used to make every slider drag stall for
+  /// seconds: `f'[t]` on an `NDSolve`-produced `InterpolatingFunction` built
+  /// and simplified a symbolic Lagrange polynomial through the general
+  /// evaluator on every sampled point instead of computing the local
+  /// derivative directly in machine arithmetic. Regression coverage for
+  /// that fix lives with `InterpolatingFunction` in
+  /// `tests/interpreter_tests/calculus.rs`; this test guards the widget
+  /// built from it keeps working end to end, including after a slider
+  /// changes and the body re-runs.
+  #[test]
+  fn phase_portrait_manipulate_builds_and_redraws() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[\
+        Module[{esol}, \
+          esol = Table[NDSolve[{x''[t] + delta x'[t] + alpha x[t] + beta x[t]^3 == 0, x[0] == x0, x'[0] == 0}, x, {t, 0, tmax}][[1]], {x0, -2, 2, 1}]; \
+          Show[ \
+            StreamPlot[{y, -delta y - alpha x - beta x^3}, {x, -2.5, 2.5}, {y, -2.5, 2.5}], \
+            ParametricPlot[Evaluate[Table[{x[t], x'[t]} /. esol[[i]], {i, Length[esol]}]], {t, 0, tmax}] \
+          ] \
+        ], \
+        {{delta, 0.2, \"damping\"}, 0, 1}, \
+        {{alpha, 1, \"stiffness\"}, -2, 2}, \
+        {{beta, 0.5, \"nonlinearity\"}, -2, 2}, \
+        {{tmax, 20, \"time\"}, 5, 60} \
+      ]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("Manipulate builds a widget");
+    assert_eq!(
+      state.controls.iter().map(|c| c.name()).collect::<Vec<_>>(),
+      vec!["delta", "alpha", "beta", "tmax"]
+    );
+    assert!(
+      state.error.is_none(),
+      "manipulate body errored: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "expected a rendered graphic, got text_output={:?}",
+      state.text_output
+    );
+
+    // Dragging the `alpha` slider (stiffness) must re-solve and re-render
+    // without error, matching a user interacting with the widget.
+    let alpha_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "alpha")
+      .unwrap();
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[alpha_idx]
+    {
+      *current = -1.5;
+    }
+    state.request_reeval(alpha_idx);
+    state.run_scheduled_reeval();
+    assert!(
+      state.error.is_none(),
+      "manipulate body errored after slider drag: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "expected a rendered graphic after slider drag"
+    );
+  }
+
   #[test]
   fn dynamic_box_dump_is_recognized() {
     // The saved box form of a live Manipulate (what Mathematica writes

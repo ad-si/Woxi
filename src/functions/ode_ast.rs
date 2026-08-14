@@ -4196,11 +4196,25 @@ pub fn evaluate_interpolating_function(
   let (start, end) = lagrange_window(n, idx, eff_order);
 
   // `f'` differentiates the local polynomial piece, so the derivative is
-  // exact wherever the interpolation itself is.
+  // exact wherever the interpolation itself is. Exact data and an exact
+  // query point take the symbolic route to preserve exactness; anything
+  // else (machine-precision NDSolve output, the common case) takes the
+  // fast numeric route so sampling a phase portrait's velocity stays cheap.
   if derivative_order > 0 {
-    return interpolating_derivative_value(
+    if is_exact_number(&x_val_expr)
+      && let Some(exact) = interpolating_derivative_value_exact(
+        data_points,
+        &x_val_expr,
+        start,
+        end,
+        derivative_order,
+      )?
+    {
+      return Ok(exact);
+    }
+    return interpolating_derivative_value_numeric(
       data_points,
-      &x_val_expr,
+      x_val,
       start,
       end,
       derivative_order,
@@ -4512,20 +4526,20 @@ fn lagrange_interpolate_exact(
 }
 
 /// The `derivative_order`-th derivative of the local polynomial piece,
-/// evaluated at `x`. Exact data and an exact point give an exact derivative.
-fn interpolating_derivative_value(
+/// evaluated at `x`, carried out in exact arithmetic. Returns `None` when a
+/// coordinate in the stencil (or `x` itself) is not an exact number, leaving
+/// [`interpolating_derivative_value_numeric`] to handle it.
+fn interpolating_derivative_value_exact(
   data_points: &[Expr],
   x: &Expr,
   start: usize,
   end: usize,
   derivative_order: usize,
-) -> Result<Expr, InterpreterError> {
+) -> Result<Option<Expr>, InterpreterError> {
   let var = Expr::Identifier("\u{2620}ifderiv\u{2620}".to_string());
-  let Some(poly) = lagrange_polynomial(data_points, &var, start, end, false)
+  let Some(poly) = lagrange_polynomial(data_points, &var, start, end, true)
   else {
-    return Err(InterpreterError::EvaluationError(
-      "InterpolatingFunction: invalid data point format".into(),
-    ));
+    return Ok(None);
   };
   let mut expr = crate::evaluator::evaluate_expr_to_expr(&poly)?;
   for _ in 0..derivative_order {
@@ -4536,7 +4550,77 @@ fn interpolating_derivative_value(
   }
   let substituted =
     crate::syntax::substitute_variable(&expr, "\u{2620}ifderiv\u{2620}", x);
-  crate::evaluator::evaluate_expr_to_expr(&substituted)
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&substituted)?))
+}
+
+/// The `derivative_order`-th derivative of the local polynomial piece,
+/// evaluated at `x_val`, computed directly in machine arithmetic (Newton
+/// divided differences expanded to monomial coefficients, then
+/// differentiated and evaluated by Horner's method).
+///
+/// This is the hot path for `f'[t]`/`f''[t]` on an `NDSolve`-produced
+/// `InterpolatingFunction` — e.g. sampling a phase portrait's velocity
+/// alongside its position. Building and simplifying a symbolic Lagrange
+/// polynomial through the general evaluator for every sample point (the
+/// exact-arithmetic path above) is thousands of times slower and turns a
+/// `Manipulate` slider drag into a multi-second stall, so machine-precision
+/// data — the overwhelmingly common case — never takes that path.
+fn interpolating_derivative_value_numeric(
+  data_points: &[Expr],
+  x_val: f64,
+  start: usize,
+  end: usize,
+  derivative_order: usize,
+) -> Result<Expr, InterpreterError> {
+  let mut xs = Vec::with_capacity(end - start);
+  let mut coeffs = Vec::with_capacity(end - start);
+  for pt in &data_points[start..end] {
+    let (x, y) = extract_point(pt)?;
+    xs.push(x);
+    coeffs.push(y);
+  }
+  let m = xs.len();
+
+  // Newton divided differences: coeffs[k] becomes f[x_0, ..., x_k].
+  for j in 1..m {
+    for i in (j..m).rev() {
+      coeffs[i] = (coeffs[i] - coeffs[i - 1]) / (xs[i] - xs[i - j]);
+    }
+  }
+
+  // Expand the nested Newton form
+  // c[0] + (x-x0)(c[1] + (x-x1)(c[2] + ...))
+  // into ascending-power monomial coefficients, via repeated polynomial
+  // multiplication by (x - x_k) — cheap since m is a handful of points.
+  let mut monomial = vec![coeffs[m - 1]];
+  for k in (0..m - 1).rev() {
+    // monomial *= (x - xs[k])
+    let mut shifted = vec![0.0; monomial.len() + 1];
+    for (i, c) in monomial.iter().enumerate() {
+      shifted[i + 1] += c;
+      shifted[i] -= c * xs[k];
+    }
+    monomial = shifted;
+    // monomial += coeffs[k] (constant term)
+    monomial[0] += coeffs[k];
+  }
+
+  if derivative_order >= monomial.len() {
+    return Ok(Expr::Real(0.0));
+  }
+  // Differentiate `derivative_order` times: term c*x^p -> c*p*x^(p-1).
+  for _ in 0..derivative_order {
+    monomial = monomial
+      .iter()
+      .enumerate()
+      .skip(1)
+      .map(|(p, c)| c * p as f64)
+      .collect();
+  }
+
+  // Horner evaluation of the (now differentiated) monomial polynomial.
+  let value = monomial.iter().rev().fold(0.0, |acc, c| acc * x_val + c);
+  Ok(Expr::Real(value))
 }
 
 /// Lagrange polynomial interpolation using (order+1) nearest points.
