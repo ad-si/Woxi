@@ -8755,7 +8755,7 @@ mod paclet {
     );
     assert_eq!(
       interpret(&format!(
-        "PacletDirectoryLoad[\"{parent}\"]; Needs[\"WoxiPacletB`\"]; pacletFun[]"
+        "PacletDirectoryLoad[\"{parent}\"]\nNeeds[\"WoxiPacletB`\"]\npacletFun[]"
       ))
       .unwrap(),
       "from subdirectory"
@@ -8776,7 +8776,7 @@ mod paclet {
     );
     assert_eq!(
       interpret(&format!(
-        "PacletDirectoryLoad[\"{dir}\"]; Needs[\"WoxiPacletC`\"]; pacletFun[]"
+        "PacletDirectoryLoad[\"{dir}\"]\nNeeds[\"WoxiPacletC`\"]\npacletFun[]"
       ))
       .unwrap(),
       "from paclet root"
@@ -8806,7 +8806,7 @@ mod paclet {
     );
     assert_eq!(
       interpret(&format!(
-        "PacletDirectoryLoad[\"{dir}\"]; Needs[\"WoxiPacletD`\"]; pacletFun[]"
+        "PacletDirectoryLoad[\"{dir}\"]\nNeeds[\"WoxiPacletD`\"]\npacletFun[]"
       ))
       .unwrap(),
       "from declared file"
@@ -8831,7 +8831,7 @@ mod paclet {
     );
     assert_eq!(
       interpret(&format!(
-        "PacletDirectoryLoad[\"{dir}\"]; Needs[\"WoxiPacletE`\"]; pacletFun[]"
+        "PacletDirectoryLoad[\"{dir}\"]\nNeeds[\"WoxiPacletE`\"]\npacletFun[]"
       ))
       .unwrap(),
       "from init"
@@ -8853,7 +8853,7 @@ mod paclet {
     );
     assert_eq!(
       interpret(&format!(
-        "PacletDirectoryLoad[\"{dir}\"]; Needs[\"WoxiPacletF`Sub`\"]; pacletFun[]"
+        "PacletDirectoryLoad[\"{dir}\"]\nNeeds[\"WoxiPacletF`Sub`\"]\npacletFun[]"
       ))
       .unwrap(),
       "from nested context"
@@ -8874,7 +8874,7 @@ mod paclet {
     );
     assert_eq!(
       interpret(&format!(
-        "PacletDirectoryLoad[\"{dir}\"]; Needs[\"WoxiPacletG`\"]; pacletFun[]"
+        "PacletDirectoryLoad[\"{dir}\"]\nNeeds[\"WoxiPacletG`\"]\npacletFun[]"
       ))
       .unwrap(),
       "from dot m"

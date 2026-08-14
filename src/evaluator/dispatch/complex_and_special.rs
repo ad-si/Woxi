@@ -498,6 +498,17 @@ pub fn dispatch_complex_and_special(
       // on a never-defined user symbol, but the bare `Information[sym]`
       // form returns a default `InformationData` record. Distinguish the
       // two paths by whether the original argument was wrapped.
+      // `Information[sym, "Property"]` answers with that one field of the
+      // record rather than the record itself. An unknown property name is
+      // `Missing["UnknownProperty", name]`, as in wolframscript.
+      if args.len() == 2
+        && let Expr::String(property) = &args[1]
+        && property != "Full"
+        && let Expr::Identifier(sym) = &args[0]
+      {
+        return Some(Ok(information_property(sym, property)));
+      }
+
       let was_unevaluated_wrap = matches!(&args[0],
         Expr::FunctionCall { name: n, args: ua }
           if n == "Unevaluated" && ua.len() == 1);
@@ -2449,7 +2460,7 @@ fn format_user_information(
       .collect();
     format!(
       "Information`InformationValueForm[DownValues, {}, {{{}}}]",
-      sym,
+      crate::evaluator::contexts::display_name(sym),
       rules.join(", ")
     )
   } else {
@@ -2472,7 +2483,13 @@ fn format_user_information(
   // shows when no usage has been set.
   let usage_str = match lookup_usage_message(sym) {
     Some(text) => text,
-    None => format!("Global`{sym}"),
+    None => {
+      if sym.contains('`') {
+        sym.to_string()
+      } else {
+        format!("Global`{sym}")
+      }
+    }
   };
 
   // UpValues from `g[…sym…] ^:= …` style assignments.
@@ -2495,7 +2512,14 @@ fn format_user_information(
     display_fields.push(InfoField::text("DownValues", &down_str));
   }
   display_fields.push(InfoField::text("Attributes", &attrs_str));
-  display_fields.push(InfoField::text("FullName", format!("Global`{sym}")));
+  // `FullName` is the symbol's name in its own context, which is `Global``
+  // only for a symbol that was read outside any package.
+  let full_name = if sym.contains('`') {
+    sym.to_string()
+  } else {
+    format!("Global`{sym}")
+  };
+  display_fields.push(InfoField::text("FullName", &full_name));
   if let Some(svg) =
     crate::functions::information_render::render_information_card_svg(
       sym,
@@ -2536,7 +2560,7 @@ fn format_user_information(
        FormatValues -> None, \
        Options -> {opts_str}, \
        Attributes -> {attrs_str}, \
-       FullName -> Global`{sym}|>]"
+       FullName -> {full_name}|>]"
     );
     information_record(result_str)
   } else {
@@ -2553,7 +2577,7 @@ fn format_user_information(
        FormatValues -> None, \
        Options -> None, \
        Attributes -> {attrs_str}, \
-       FullName -> Global`{sym}|>]"
+       FullName -> {full_name}|>]"
     );
     information_record(result_str)
   }
@@ -14913,6 +14937,13 @@ fn number_list(values: &[f64], source: &Expr) -> Expr {
 /// the symbol's own rules, one per paragraph. `None` when the symbol
 /// carries nothing at all (wolframscript shows a blank panel then).
 pub fn definition_text(sym: &str) -> Option<String> {
+  // The symbol arrives under the name it is *written* with, which is the
+  // short one while its context is on `$ContextPath`; its definitions are
+  // filed under its full name.
+  let full = crate::evaluator::contexts::resolve_existing(sym);
+  // Looked up under the full name, printed under the visible one.
+  let printed = crate::evaluator::contexts::display_name(&full);
+  let sym = &full;
   let mut lines: Vec<String> = Vec::new();
 
   // 1. Show user-set attributes if present, otherwise fall back to
@@ -14930,7 +14961,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
   if !attrs_to_show.is_empty() {
     lines.push(format!(
       "Attributes[{}] = {{{}}}",
-      sym,
+      printed,
       attrs_to_show.join(", ")
     ));
   }
@@ -14956,7 +14987,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
         expr_to_string(&Expr::Association(items_expr))
       }
     };
-    lines.push(format!("{sym} = {val_str}"));
+    lines.push(format!("{printed} = {val_str}"));
   }
 
   // ReadProtected hides the symbol's implementation details
@@ -15043,7 +15074,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
           .join(", ");
         lines.push(format!(
           "{}[{}] := {}",
-          sym,
+          printed,
           params_str,
           expr_to_string(&display_body)
         ));
@@ -15080,7 +15111,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
           .collect();
         lines.push(format!(
           "{}[{}] = {}",
-          sym,
+          printed,
           args_strs.join(", "),
           expr_to_string(body)
         ));
@@ -15101,7 +15132,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
           .collect();
         lines.push(format!(
           "{}[{}] := {}",
-          sym,
+          printed,
           params_str.join(", "),
           expr_to_string(body)
         ));
@@ -15133,7 +15164,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
     if !builtin_attrs.is_empty() {
       lines.push(format!(
         "Attributes[{}] = {{{}}}",
-        sym,
+        printed,
         builtin_attrs.join(", ")
       ));
     }
@@ -15157,7 +15188,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
     // Reconstruct the inner Default[sym, …] arguments. The first
     // arg is the literal symbol; trailing slot-literal conditions
     // give the additional args (e.g. `1` for `Default[r, 1]`).
-    let mut default_args = vec![sym.to_string()];
+    let mut default_args = vec![sym.clone()];
     for p in params.iter().skip(1) {
       // Skip the param name; the actual literal lives in the
       // SameQ condition on this slot. Reconstruct via the same
@@ -15184,7 +15215,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
     }
     lines.push(format!(
       "{} /: Default[{}] := {}",
-      sym,
+      printed,
       default_args.join(", "),
       expr_to_string(body)
     ));
@@ -15234,6 +15265,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
 /// followed by the definitions of every symbol it refers to. `None` when
 /// nothing is defined (wolframscript shows a blank panel then).
 pub fn full_definition_text(sym: &str) -> Option<String> {
+  let sym = &crate::evaluator::contexts::resolve_existing(sym);
   // Helper: collect all Identifier names referenced in an expression
   fn collect_identifiers(expr: &Expr, out: &mut Vec<String>) {
     match expr {
@@ -15475,7 +15507,7 @@ pub fn full_definition_text(sym: &str) -> Option<String> {
   let mut all_sections: Vec<String> = vec![main_lines.join("\n \n")];
   let mut seen: std::collections::HashSet<String> =
     std::collections::HashSet::new();
-  seen.insert(sym.to_string());
+  seen.insert(sym.clone());
 
   // BFS for dependent symbols
   let mut queue: std::collections::VecDeque<String> =
@@ -15526,4 +15558,85 @@ pub fn full_definition_text(sym: &str) -> Option<String> {
     return None;
   }
   Some(all_sections.join("\n \n"))
+}
+
+/// One field of a symbol's `Information` record, as
+/// `Information[sym, "Property"]` reports it.
+fn information_property(sym: &str, property: &str) -> Expr {
+  // A built-in's record is assembled from functions.csv rather than from
+  // the user stores. (Its `Usage` is Woxi's own description; wolframscript
+  // answers with the Wolfram Language's documentation text, which Woxi
+  // does not ship.)
+  if let Some(info) = crate::evaluator::get_builtin_function_info(sym) {
+    return match property {
+      "Usage" => Expr::String(info.description.to_string()),
+      "Attributes" => Expr::List(
+        crate::evaluator::attributes::get_builtin_attributes(sym)
+          .into_iter()
+          .map(|a| Expr::Identifier(a.to_string()))
+          .collect(),
+      ),
+      "FullName" => Expr::String(format!("System`{sym}")),
+      _ => Expr::FunctionCall {
+        name: "Missing".to_string(),
+        args: vec![
+          Expr::String("UnknownProperty".to_string()),
+          Expr::String(property.to_string()),
+        ]
+        .into(),
+      },
+    };
+  }
+  let record = format_user_information(
+    sym,
+    crate::ENV.with(|e| e.borrow().get(sym).cloned()),
+    crate::down_values_with_memo(sym),
+    crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned()),
+    true,
+  );
+  let rendered = expr_to_string(&record);
+  let fields = rendered
+    .trim_start_matches("InformationData[<|")
+    .trim_end_matches("|>]");
+  // The record is one flat `key -> value` list; split on the separators that
+  // are not nested inside a value.
+  let mut depth = 0i32;
+  let mut entries: Vec<String> = Vec::new();
+  let mut current = String::new();
+  for c in fields.chars() {
+    match c {
+      // Only brackets nest: the `->` in every entry would otherwise read
+      // as a closing angle.
+      '[' | '{' => depth += 1,
+      ']' | '}' => depth -= 1,
+      ',' if depth == 0 => {
+        entries.push(std::mem::take(&mut current));
+        continue;
+      }
+      _ => {}
+    }
+    current.push(c);
+  }
+  entries.push(current);
+  for entry in entries {
+    if let Some((key, value)) = entry.split_once(" -> ")
+      && key.trim() == property
+    {
+      let value = value.trim();
+      // `Usage` and `FullName` are text; the rest are expressions.
+      if property == "Usage" || property == "FullName" {
+        return Expr::String(value.to_string());
+      }
+      return crate::syntax::string_to_expr(value)
+        .unwrap_or_else(|_| Expr::Raw(value.to_string()));
+    }
+  }
+  Expr::FunctionCall {
+    name: "Missing".to_string(),
+    args: vec![
+      Expr::String("UnknownProperty".to_string()),
+      Expr::String(property.to_string()),
+    ]
+    .into(),
+  }
 }

@@ -4090,3 +4090,26 @@ pub fn upset_delayed_ast(
   // UpSetDelayed returns Null
   Ok(Expr::Identifier("Null".to_string()))
 }
+
+/// Drop every message (`sym::tag = "…"`) declared on `sym`. Messages live as
+/// `MessageName` down-values keyed by the symbol in their first slot, so
+/// removing the symbol has to reach in and take them out.
+pub fn remove_messages_of(sym: &str) {
+  crate::FUNC_DEFS.with(|m| {
+    let mut map = m.borrow_mut();
+    let Some(defs) = map.get_mut("MessageName") else {
+      return;
+    };
+    defs.retain(|(params, conds, ..)| {
+      !conds.iter().any(|c| {
+        matches!(c, Some(Expr::Comparison { operands, operators })
+          if operators.len() == 1
+            && matches!(operators[0], ComparisonOp::SameQ)
+            && operands.len() == 2
+            && matches!(&operands[0], Expr::Identifier(name)
+              if params.first() == Some(name))
+            && matches!(&operands[1], Expr::Identifier(s) if s == sym))
+      })
+    });
+  });
+}

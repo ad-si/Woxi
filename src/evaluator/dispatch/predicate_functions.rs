@@ -520,8 +520,10 @@ pub fn dispatch_predicate_functions(
         // existing OwnValue resolves (matching wolframscript, where
         // `x = 7; Symbol["x"]` returns 7). An unbound symbol evaluates to
         // itself.
+        // The name is resolved against the contexts open right now, exactly
+        // as it would be had it been read from source.
         return Some(crate::evaluator::evaluate_expr_to_expr(
-          &Expr::Identifier(name.clone()),
+          &Expr::Identifier(crate::evaluator::contexts::resolve(name)),
         ));
       }
       return Some(Ok(unevaluated("Symbol", args)));
@@ -1300,13 +1302,20 @@ pub fn dispatch_predicate_functions(
     // Context[] - return current context
     // Context[symbol] - return context of a symbol
     "Context" if args.is_empty() => {
-      return Some(Ok(Expr::String("Global`".to_string())));
+      return Some(Ok(Expr::String(crate::current_context())));
     }
     "Context" if args.len() == 1 => {
       let (sym_name, from_string) = match &args[0] {
         Expr::Identifier(name) => (name.clone(), false),
         Expr::String(name) => (name.clone(), true),
-        _ => {
+        // `Context` is HoldFirst, so anything else arrives unevaluated and
+        // is simply not a symbol.
+        other => {
+          crate::emit_message_to_stdout(&format!(
+            "Context::ssle: Symbol or string expected at position 1 in \
+             Context[{}].",
+            crate::syntax::expr_to_output(other)
+          ));
           return Some(Ok(unevaluated("Context", args)));
         }
       };
@@ -1321,12 +1330,22 @@ pub fn dispatch_predicate_functions(
       if !builtin.is_empty() {
         return Some(Ok(Expr::String("System`".to_string())));
       }
-      // For string arguments, check if symbol exists; if not, return unevaluated
+      // A name given as a string resolves like one that was read: it names
+      // whichever symbol `$ContextPath` makes visible.
       if from_string {
+        let resolved = crate::evaluator::contexts::resolve(&sym_name);
+        if resolved != sym_name {
+          return Some(Ok(Expr::String(
+            crate::evaluator::contexts::context_of(&resolved),
+          )));
+        }
         let exists = crate::ENV.with(|e| e.borrow().contains_key(&sym_name))
           || crate::FUNC_DEFS.with(|m| m.borrow().contains_key(&sym_name))
           || crate::FUNC_ATTRS.with(|m| m.borrow().contains_key(&sym_name));
         if !exists {
+          crate::emit_message_to_stdout(&format!(
+            "Context::notfound: Symbol {sym_name} not found."
+          ));
           return Some(Ok(unevaluated("Context", args)));
         }
       }
@@ -1338,11 +1357,7 @@ pub fn dispatch_predicate_functions(
     // pattern matches none.
     "Contexts" if args.is_empty() => {
       return Some(Ok(Expr::List(
-        vec![
-          Expr::String("System`".to_string()),
-          Expr::String("Global`".to_string()),
-        ]
-        .into(),
+        known_contexts().into_iter().map(Expr::String).collect(),
       )));
     }
     "Contexts" if args.len() == 1 => {
@@ -1390,11 +1405,10 @@ pub fn dispatch_predicate_functions(
           name == pattern
         }
       };
-      let all = ["System`", "Global`"];
-      let matches: Vec<Expr> = all
-        .iter()
+      let matches: Vec<Expr> = known_contexts()
+        .into_iter()
         .filter(|n| glob_match(n))
-        .map(|n| Expr::String(n.to_string()))
+        .map(Expr::String)
         .collect();
       return Some(Ok(Expr::List(matches.into())));
     }
@@ -2124,4 +2138,28 @@ pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
     ],
     _ => vec![],
   }
+}
+
+/// Every context this session knows about: the two a fresh session starts
+/// with plus every context a `Begin`/`BeginPackage` (or a qualified symbol
+/// name) has since created. wolframscript also lists the contexts of the
+/// Wolfram Language's own implementation, which Woxi has no equivalent for.
+fn known_contexts() -> Vec<String> {
+  // A context exists once it holds a symbol: wolframscript does not list a
+  // package context whose file defined nothing, even though `BeginPackage`
+  // put it on `$Packages`.
+  let mut contexts: Vec<String> = vec!["Global`".to_string()];
+  contexts.extend(
+    crate::evaluator::contexts::known_symbols()
+      .into_iter()
+      .map(|(context, _)| context),
+  );
+  // wolframscript orders contexts case-insensitively with the backticks
+  // ignored, so `GIS`GeoSettingsDump`` precedes `Global`` and `Global``
+  // precedes `System``.
+  contexts.sort_by_key(|c| {
+    crate::evaluator::contexts::name_sort_key(&c.replace('`', ""))
+  });
+  contexts.dedup();
+  contexts
 }

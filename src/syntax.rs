@@ -7518,8 +7518,45 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
   // doesn't overflow. Mirrors the guard on evaluate_expr_to_expr; the recursion
   // re-enters through this public entry, so every level is checked.
   stacker::maybe_grow(2 * 1024 * 1024, 4 * 1024 * 1024, || {
-    format_expr_impl(expr, form)
+    // A symbol is stored under its full context name but written under the
+    // short one wherever that reads back as the same symbol — `P`pub` is
+    // `pub` while `P`` is on `$ContextPath`. Doing that once, at the
+    // outermost call, keeps every renderer consistent without each of them
+    // having to know about contexts. Formatting re-enters this function for
+    // sub-expressions, so the guard keeps it to a single pass.
+    with_display_names(expr, |e| format_expr_impl(e, form))
   })
+}
+
+thread_local! {
+  /// Set while a formatting call is already showing context-resolved
+  /// symbols under their visible names.
+  static DISPLAY_PASS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Render `expr` with every symbol written the way it reads back: `P`pub`
+/// as `pub` while `P`` is on `$ContextPath`, and under its full name once it
+/// is not. Renderers re-enter each other, so the rewrite runs once, at the
+/// outermost call, and the inner ones format what it produced.
+pub(crate) fn with_display_names(
+  expr: &Expr,
+  render: impl FnOnce(&Expr) -> String,
+) -> String {
+  if !crate::evaluator::contexts::contexts_active()
+    || DISPLAY_PASS.with(std::cell::Cell::get)
+  {
+    return render(expr);
+  }
+  struct DisplayPass;
+  impl Drop for DisplayPass {
+    fn drop(&mut self) {
+      DISPLAY_PASS.with(|p| p.set(false));
+    }
+  }
+  let displayed = crate::evaluator::contexts::to_display(expr);
+  DISPLAY_PASS.with(|p| p.set(true));
+  let _guard = DisplayPass;
+  render(&displayed)
 }
 
 /// Whether `e` prints with a leading `!`. `Not` binds looser than arithmetic,
@@ -11451,7 +11488,7 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
   // not overflow. The recursion re-enters this public entry, so every level is
   // checked. Mirrors the guard on format_expr / evaluate_expr_to_expr.
   stacker::maybe_grow(2 * 1024 * 1024, 4 * 1024 * 1024, || {
-    expr_to_input_form_impl(expr)
+    with_display_names(expr, expr_to_input_form_impl)
   })
 }
 
@@ -15220,8 +15257,7 @@ fn render_times_textbox(args: &[Expr]) -> TextBox {
 
 /// Render an expression in 2D OutputForm.
 pub fn expr_to_output_form_2d(expr: &Expr) -> String {
-  let tb = expr_to_textbox(expr);
-  tb.to_string()
+  with_display_names(expr, |e| expr_to_textbox(e).to_string())
 }
 
 /// Render a box tree (`RowBox`, `FractionBox`, `SuperscriptBox`, …) as the

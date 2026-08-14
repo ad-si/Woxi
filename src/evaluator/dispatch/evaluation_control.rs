@@ -747,51 +747,71 @@ pub fn dispatch_evaluation_control(
       }
       // Match wolframscript's case-insensitive alphabetical sort so
       // `Listable` sorts between `List` and `ListAnimate`, not last.
-      all_names.sort_by_key(|n| n.to_lowercase());
+      all_names.sort_by_key(|n| crate::evaluator::contexts::name_sort_key(n));
       if args.is_empty() {
         let items: Vec<Expr> =
           all_names.into_iter().map(Expr::String).collect();
         return Some(Ok(Expr::List(items.into())));
       }
       if let Expr::String(pattern) = &args[0] {
-        // Strip a leading `Global`` context — Woxi stores user symbols
-        // without a context prefix, so `Global`foo` refers to the same
-        // symbol as `foo`. `System`` context narrows to built-ins.
-        let (effective_pattern, scope) =
-          if let Some(rest) = pattern.strip_prefix("Global`") {
-            (rest.to_string(), Some("Global"))
-          } else if let Some(rest) = pattern.strip_prefix("System`") {
-            (rest.to_string(), Some("System"))
-          } else {
-            (pattern.clone(), None)
-          };
-        let user_names: std::collections::HashSet<String> =
-          crate::get_defined_names().into_iter().collect();
+        // A name pattern is matched in two parts: everything up to the last
+        // backtick selects the context, the rest selects the symbol. A
+        // pattern without a backtick looks in the contexts on
+        // `$ContextPath`, which is why `Names["List*"]` finds the built-ins
+        // (they are `System`` symbols) and `Names["S`*"]` does not reach
+        // into `S`Private``.
+        let (context_pattern, name_pattern) = match pattern.rfind('`') {
+          Some(last) => (
+            Some(pattern[..=last].to_string()),
+            pattern[last + 1..].to_string(),
+          ),
+          None => (None, pattern.clone()),
+        };
         // Wolfram name patterns: `*` matches any run of characters (0+);
         // `@` matches one or more lowercase letters (so `List@` matches
         // `Listable`, `Listen`, but not `List` itself).
-        let regex_pattern = format!(
-          "^{}$",
-          effective_pattern
-            .replace('.', "\\.")
-            .replace('*', ".*")
-            .replace('@', "[a-z]+")
-        );
-        let re = regex::Regex::new(&regex_pattern);
-        if let Ok(re) = re {
-          let items: Vec<Expr> = all_names
+        let to_regex = |glob: &str| {
+          regex::Regex::new(&format!(
+            "^{}$",
+            glob
+              .replace('.', "\\.")
+              .replace('*', ".*")
+              .replace('@', "[a-z]+")
+          ))
+        };
+        let (Ok(name_re), Some(context_re)) = (
+          to_regex(&name_pattern),
+          match &context_pattern {
+            None => Some(None),
+            Some(ctx) => to_regex(ctx).ok().map(Some),
+          },
+        ) else {
+          return Some(Ok(Expr::List(vec![].into())));
+        };
+        let path = crate::current_context_path();
+        let mut names: Vec<String> =
+          crate::evaluator::contexts::known_symbols()
             .into_iter()
-            .filter(|n| re.is_match(n))
-            .filter(|n| match scope {
-              None => true,
-              Some("Global") => user_names.contains(n),
-              Some("System") => !user_names.contains(n),
-              _ => true,
+            .filter(|(context, name)| {
+              name_re.is_match(name)
+                && match &context_re {
+                  Some(re) => re.is_match(context),
+                  // Without a context in the pattern, only symbols visible
+                  // on `$ContextPath` are listed.
+                  None => path.contains(context),
+                }
             })
-            .map(Expr::String)
+            .map(|(context, name)| {
+              crate::evaluator::contexts::display_name(
+                &crate::evaluator::contexts::full_name(&context, &name),
+              )
+            })
             .collect();
-          return Some(Ok(Expr::List(items.into())));
-        }
+        names.sort_by_key(|n| crate::evaluator::contexts::name_sort_key(n));
+        names.dedup();
+        return Some(Ok(Expr::List(
+          names.into_iter().map(Expr::String).collect(),
+        )));
       }
       return Some(Ok(Expr::List(vec![].into())));
     }

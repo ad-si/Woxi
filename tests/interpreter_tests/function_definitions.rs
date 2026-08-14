@@ -978,9 +978,13 @@ mod context {
     assert_eq!(interpret("Head[$Input]").unwrap(), "String");
   }
 
+  // wolframscript orders contexts case-insensitively with the backticks
+  // ignored, so `Global`` comes before `System``. (Its own list also holds
+  // the hundreds of contexts the Wolfram Language implementation itself
+  // uses, which Woxi has no equivalent for.)
   #[test]
-  fn contexts_no_args_returns_system_and_global() {
-    assert_eq!(interpret("Contexts[]").unwrap(), "{System`, Global`}");
+  fn contexts_no_args_returns_global_then_system() {
+    assert_eq!(interpret("Contexts[]").unwrap(), "{Global`, System`}");
   }
 
   #[test]
@@ -995,7 +999,32 @@ mod context {
 
   #[test]
   fn contexts_pattern_matches_all() {
-    assert_eq!(interpret(r#"Contexts["*"]"#).unwrap(), "{System`, Global`}");
+    assert_eq!(interpret(r#"Contexts["*"]"#).unwrap(), "{Global`, System`}");
+  }
+
+  // A context exists once it holds a symbol. A package that defines
+  // nothing leaves no context behind, as in wolframscript.
+  #[test]
+  fn contexts_lists_package_contexts_that_hold_symbols() {
+    clear_state();
+    interpret(
+      "BeginPackage[\"Ctx`\"]; Begin[\"`Private`\"]; End[]; EndPackage[]",
+    )
+    .unwrap();
+    assert_eq!(interpret(r#"Contexts["Ctx*"]"#).unwrap(), "{}");
+    clear_state();
+    // Written as separate lines: the Wolfram Language resolves each input
+    // unit before evaluating it, so a package squeezed onto one line files
+    // its symbols in the context that was open before the line.
+    interpret(
+      "BeginPackage[\"Ctx`\"]\nctxPub::usage = \"u\";\n\
+       Begin[\"`Private`\"]\nctxPriv[] := 1\nEnd[]\nEndPackage[]\n",
+    )
+    .unwrap();
+    assert_eq!(
+      interpret(r#"Contexts["Ctx*"]"#).unwrap(),
+      "{Ctx`, Ctx`Private`}"
+    );
   }
 }
 

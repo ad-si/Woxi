@@ -2,6 +2,27 @@
 
 # Unreleased
 
+- Contexts are real: a symbol's name is resolved when its input is *read*,
+    against `$Context` and `$ContextPath`, and the symbol is stored under its
+    full name. A package's `Begin["`Private`"]` helpers are therefore private
+    — two packages can each define a `helper` without colliding — while a name
+    declared before it (the `f::usage` idiom) is exported and becomes visible
+    once `EndPackage[]` puts the context on `$ContextPath`. Resolution happens
+    per input unit, as in the Wolfram Language: a whole package written on one
+    line resolves before any of it runs, the same way wolframscript does it.
+    - `Context`, `Contexts`, `Names`, `Remove`, `Symbol`, `ToExpression`,
+        `Definition`, `DownValues` and `Information` all speak contexts now.
+        `Names["P`*"]` lists a package's exports without reaching into
+        `P`Private``, and symbols print under their short name wherever that
+        reads back as the same symbol and under their full name otherwise.
+    - Creating a symbol whose short name already lives in another visible
+        context reports `::shdw`, and `Context` reports `::ssle` / `::notfound`
+        for arguments that name no symbol.
+    - `Context` is `HoldFirst`, so it reports the context of a symbol rather
+        than of its value.
+    - `Information[sym, "Property"]` returns that one field (`Missing[
+        "UnknownProperty", …]` for an unknown one), and a package symbol's
+        `FullName` names its own context.
 - `PacletDirectoryLoad` and `PacletDirectoryUnload` register the directories
     the paclet manager searches. A registered directory may be a paclet
     itself — a directory with a `PacletInfo.wl` — or a directory collecting

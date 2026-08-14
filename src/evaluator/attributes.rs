@@ -618,6 +618,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "ClearAttributes" | "AssociateTo" | "KeyDropFrom" | "Inactivate" => {
       vec!["HoldFirst", "Protected"]
     }
+    // `Context` reports the context a *symbol* belongs to, so it must not
+    // look at the symbol's value: `x = 1; Context[x]` is `Global``.
+    "Context" => vec!["HoldFirst", "Protected"],
     "ApplyTo" => vec!["HoldFirst", "Protected"],
     "Set" => vec!["HoldFirst", "Protected", "SequenceHold"],
     "SetDelayed" | "TagSetDelayed" | "UpSetDelayed" => {
@@ -950,7 +953,6 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Precision"
     | "Accuracy"
     | "MachinePrecision"
-    | "Context"
     | "Contexts"
     | "Abort"
     | "Interrupt"

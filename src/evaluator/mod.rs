@@ -10,6 +10,7 @@ use crate::{ENV, InterpreterError, PART_DEPTH, StoredValue, interpret};
 pub(crate) mod assignment;
 mod attributes;
 mod binary_ops;
+pub mod contexts;
 mod core_eval;
 pub mod dispatch;
 pub(crate) mod function_application;

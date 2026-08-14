@@ -2301,6 +2301,7 @@ mod interpreter_tests {
   mod calculus;
   mod cellular_automaton;
   mod column;
+  mod contexts;
   mod control_flow;
   mod dataset;
   mod datetime;

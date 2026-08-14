@@ -307,7 +307,7 @@ Assumptions,Specify assumptions for symbolic computation,✅,none,3.0,262
 Ticks,Option for tick marks on plot axes,✅,pure,1.0,264
 MapThread,Applies a function to corresponding elements of multiple lists,✅,pure,2.0,265
 Smaller,Font size directive for making text smaller,✅,none,6.0,266
-Symbol,Creates a symbol from a string,✅,pure,1.0,267
+Symbol,Creates a symbol from a string resolving the name against the open contexts,✅,pure,1.0,267
 OptionValue,Retrieves the value of a named option — from the enclosing OptionsPattern or from a head's Options list with an explicit rule list taking precedence — for one name or a list of them,✅,pure,6.0,268
 LabelStyle,Option for specifying the style of labels in graphics,✅,none,6.0,269
 Boxed,Option for boxed axes in 3D plots,✅,pure,1.0,270
@@ -349,7 +349,7 @@ Sign,Returns the sign of a number,✅,pure,1.0,313
 Rotate,Rotates a graphics object,✅,pure,6.0,315
 TraditionalForm,Displays expressions in traditional mathematical notation,✅,pure,3.0,317
 IntegerQ,Tests if the expression evaluates to an integer,✅,pure,1.0,319
-Information,Displays information about a symbol,✅,pure,1.0,320
+Information,Displays information about a symbol; a second argument selects one property,✅,pure,1.0,320
 ToExpression,Converts a string to an evaluated expression; definitions in the string take effect,✅,pure,1.0,321
 Identity,Returns its argument unchanged,✅,pure,1.0,322
 TestID,Option symbol for specifying a test identifier in testing functions,✅,pure,10.0,323
@@ -545,7 +545,7 @@ EvenQ,Checks if a number is even,✅,pure,1.0,510
 OddQ,Checks if a number is odd,✅,pure,1.0,635
 Lighting,Option for 3D lighting,✅,pure,1.0,511
 CoefficientList,Returns the list of coefficients of a polynomial,✅,pure,1.0,513
-Remove,Removes a symbol (no-op in Woxi),✅,effectful,1.0,514
+Remove,Removes a symbol entirely so its context no longer has it,✅,effectful,1.0,514
 LegendreP,Legendre polynomial of the first kind,✅,pure,1.0,515
 MakeBoxes,Construct box form of an expression,✅,pure,3.0,516
 TableHeadings,Option specifying headings for table rows and columns,✅,none,2.0,517
@@ -610,14 +610,14 @@ Subtract,Subtracts one number from another,✅,pure,1.0,567
 Listable,Attribute for automatic threading over lists,✅,pure,1.0,568
 ExpIntegralEi,Exponential integral Ei,✅,pure,1.0,569
 HoldFirst,Attribute specifying first arg is held,✅,pure,1.0,570
-End,Ends a private context (no-op in Woxi),✅,effectful,1.0,571
+End,Ends the context begun by Begin and returns it,✅,effectful,1.0,571
 Divide,Divide numbers,✅,pure,1.0,572
 Around,Represent a value with uncertainty,✅,pure,12.0,573
 SaveDefinitions,Option to save definitions with output,✅,none,6.0,574
 Insert,Inserts an element at a specified position in a list,✅,pure,1.0,575
 Specularity,Specifies the specular highlight of 3D surfaces,✅,pure,6.0,576
 Minimize,Global symbolic minimization of a function over variables with optional constraints and an optional Reals or Integers domain,✅,pure,5.0,577
-Begin,Begins a private context (no-op in Woxi),✅,effectful,1.0,578
+Begin,Switches $Context so names read afterwards belong to that context,✅,effectful,1.0,578
 RepeatedTiming,Time expression evaluation with repeated sampling,✅,effectful,10.1,579
 GraphData,,🚫,,6.0,580
 FileNameJoin,Join file path components,✅,pure,7.0,582
@@ -626,7 +626,7 @@ InverseFunction,Represents the inverse of a function or geometric transform,✅,
 Residue,Computes the residue of an expression at a point,✅,pure,2.0,585
 PieChart,Creates a pie chart from data,✅,pure,7.0,586
 NMinimize,Numerical global minimization with constraints using sampling and gradient refinement,✅,pure,5.0,587
-BeginPackage,Begins a package context (no-op in Woxi),✅,effectful,1.0,588
+BeginPackage,Begins a package: sets $Context and narrows $ContextPath to the package and System`,✅,effectful,1.0,588
 Throw,Throws a value to be caught by Catch,✅,pure,1.0,589
 Eigensystem,Eigenvalues and eigenvectors of a matrix; the two-arg form takes the k largest-magnitude pairs,✅,pure,1.0,590
 KroneckerDelta,Returns 1 if all arguments are equal and 0 otherwise,✅,pure,4.0,591
@@ -635,7 +635,7 @@ Pane,Fixed-size display pane,✅,none,6.0,594
 PlotLabels,Option for labeling plot curves,✅,none,10.4,597
 Scale,Scales a graphics object,✅,pure,6.0,597
 Log10,Returns the base-10 logarithm of a number,✅,pure,7.0,598
-EndPackage,Ends a package context (no-op in Woxi),✅,effectful,1.0,599
+EndPackage,Ends a package and puts its context on $ContextPath so its exports become visible,✅,effectful,1.0,599
 PolyhedronData,Properties of named polyhedra (Platonic solids plus the icosahedral Archimedean solids and their duals),🚧,pure,6.0,601
 Nearest,Find the nearest elements in a list to a given value (numbers/vectors by Euclidean distance; strings by edit distance) — DistanceFunction supplies another metric; empty or non-list data reports ::near1,✅,pure,6.0,602
 RegionPlot3D,plots the 3D region where a condition is true,✅,pure,6.0,603
@@ -909,7 +909,7 @@ MinMax,Returns the minimum and maximum of a list an association values or an int
 MachinePrecision,Machine-precision number (~15.95 digits),✅,pure,5.0,886
 AbsoluteOptions,,🚫,,4.0,888
 GraphLayout,,🚫,,8.0,888
-Names,Lists symbol names matching a string pattern with wildcards,✅,pure,1.0,889
+Names,Lists symbol names matching a string pattern whose context part selects the context,✅,pure,1.0,889
 RotateLabel,,🚫,,2.0,890
 TimeZone,,🚫,,2.0,892
 InfiniteLine,Geometric primitive representing an infinite line; drawn in Graphics3D clipped to the plot range,✅,none,10.0,893
@@ -1041,7 +1041,7 @@ SameTest,,🚫,,2.0,1024
 Below,Symbol for below alignment,✅,pure,1.0,1025
 PlanetaryMoonData,,🚫,,10.0,1026
 ToRules,Convert logical equation combinations to lists of rules,✅,pure,1.0,1027
-Context,Return the context (namespace) of a symbol,✅,pure,1.0,1029
+Context,Returns the context a symbol belongs to; Context[] gives the current one,✅,pure,1.0,1029
 Placeholder,,🚫,,7.0,1029
 StudentTDistribution,Represents a Student t-distribution with nu degrees of freedom,✅,1,6.0,1030
 AppearanceElements,Option specifying which interface elements appear,✅,pure,6.0,1031

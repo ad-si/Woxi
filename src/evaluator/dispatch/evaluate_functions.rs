@@ -1793,15 +1793,19 @@ fn evaluate_function_call_ast_inner(
     }
     crate::pop_context();
     if let Some(active) = crate::pop_context_path() {
-      // The pushed path is `[pkg, extras..., "System`"]`; the prepend
-      // list is everything before that trailing baseline entry.
-      let prepend: Vec<String> =
-        if active.last().is_some_and(|s| s == "System`") {
-          active[..active.len() - 1].to_vec()
-        } else {
-          active.clone()
-        };
+      // The package's own context is prepended to the path that was in force
+      // before it. A context named in `BeginPackage["P`", {…}]` joins the
+      // path too, but only if it is not already on it: one that is keeps
+      // whatever position it had. (Verified against wolframscript: reading
+      // `O9`` after `M1`` and `N9`` gives `{O9`, N9`, M1`, …}`, while a
+      // freshly needed context lands right behind the package.)
       let base = crate::current_context_path();
+      let prepend: Vec<String> = active
+        .iter()
+        .take(active.len().saturating_sub(1))
+        .filter(|ctx| Some(*ctx) == active.first() || !base.contains(ctx))
+        .cloned()
+        .collect();
       let mut merged: Vec<String> =
         Vec::with_capacity(prepend.len() + base.len());
       for entry in prepend.into_iter().chain(base) {
@@ -1936,6 +1940,11 @@ fn evaluate_function_call_ast_inner(
         crate::FUNC_ATTRS.with(|m| m.borrow_mut().remove(sym));
         crate::FUNC_OPTIONS.with(|m| m.borrow_mut().remove(sym));
         crate::UPVALUES.with(|m| m.borrow_mut().remove(sym));
+        // A Removed symbol stops existing, so its context no longer claims
+        // the name and `Names` no longer reports it — including through the
+        // messages it declared, which go with it.
+        crate::evaluator::contexts::forget_symbol(sym);
+        crate::evaluator::assignment::remove_messages_of(sym);
       }
     }
     return Ok(Expr::Identifier("Null".to_string()));

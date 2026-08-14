@@ -132,3 +132,11 @@ static DOC_URL_MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
 pub fn get_doc_url(name: &str) -> Option<&'static str> {
   DOC_URL_MAP.get(name).map(std::string::String::as_str)
 }
+
+/// Every `System`` symbol name, whether or not Woxi implements it — what
+/// `Names` enumerates and what context resolution must leave unqualified.
+pub fn all_builtin_symbol_names() -> Vec<&'static str> {
+  let mut names: Vec<&str> = ALL_BUILTIN_NAMES.iter().copied().collect();
+  names.sort_unstable();
+  names
+}

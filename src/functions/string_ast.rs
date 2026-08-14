@@ -8658,7 +8658,9 @@ fn parse_and_evaluate_program(src: &str) -> Result<Expr, InterpreterError> {
     // silently threw the definition away.
     for node in program.into_inner() {
       if crate::is_statement_rule(node.as_rule()) {
-        let expr = pair_to_expr(node);
+        // Text turned into an expression is read now, so its symbols
+        // resolve against the contexts open now.
+        let expr = crate::evaluator::contexts::rewrite(&pair_to_expr(node));
         last = Some(crate::evaluator::evaluate_expr_to_expr(&expr)?);
       }
     }
@@ -8667,7 +8669,9 @@ fn parse_and_evaluate_program(src: &str) -> Result<Expr, InterpreterError> {
     }
   }
   // Fallback path for inputs the program grammar rejected.
-  let parsed = crate::syntax::string_to_expr(&normalized)?;
+  let parsed = crate::evaluator::contexts::rewrite(
+    &crate::syntax::string_to_expr(&normalized)?,
+  );
   crate::evaluator::evaluate_expr_to_expr(&parsed)
 }
 

@@ -1827,9 +1827,15 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   let mut stmts: Vec<ProgramStmt> = Vec::new();
   // Also collect the Expr ASTs separately (with indices) for Label lookup
   let mut expr_asts: Vec<syntax::Expr> = Vec::new();
+  // The source line each statement was read from. The Wolfram Language
+  // resolves symbol names per *input unit* — a line here — so everything on
+  // one line is resolved together, before any of it evaluates. See
+  // `evaluator::contexts`.
+  let mut stmt_lines: Vec<usize> = Vec::new();
   // Keep in step with `is_statement_rule`; this arm needs the pest pair
   // rather than an `Expr`, so it cannot use the predicate directly.
   for node in program.into_inner() {
+    let line = node.as_span().start_pos().line_col().0;
     match node.as_rule() {
       Rule::Expression | Rule::TopLevelSpan => {
         let expr = syntax::pair_to_expr(node);
@@ -1843,9 +1849,15 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       Rule::TagSet => stmts.push(ProgramStmt::TagSet(node)),
       Rule::TagUnset => stmts.push(ProgramStmt::TagUnset(node)),
       Rule::TrailingSemicolon => stmts.push(ProgramStmt::TrailingSemicolon),
-      _ => {} // ignore EOI, etc.
+      _ => continue, // ignore EOI, etc.
     }
+    stmt_lines.push(line);
   }
+  // Statements already resolved (see the per-line pass in the loop below).
+  let mut resolved: Vec<bool> = vec![false; stmts.len()];
+  // The contexts open when the current line started being read, which is
+  // what the definitions on it resolve against.
+  let mut line_read_context = evaluator::contexts::read_context();
 
   // The outcome of the most recently executed statement. Expression results
   // are kept as bare `Expr`s during the loop; the display pipeline (render
@@ -1865,6 +1877,24 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   'goto_loop: loop {
     if stmt_idx >= stmts.len() {
       break;
+    }
+    // Read the whole line before evaluating any of it: the Wolfram Language
+    // resolves every name in an input unit up front, so
+    // `BeginPackage["P`"]; f[] := 1` written on one line files `f` in the
+    // context that was open *before* the line, while the same two lines
+    // written separately file it in `P``. Outside packages this is a no-op.
+    if !resolved[stmt_idx] {
+      line_read_context = evaluator::contexts::read_context();
+      let line = stmt_lines[stmt_idx];
+      for i in stmt_idx..stmts.len() {
+        if stmt_lines[i] != line {
+          break;
+        }
+        if let ProgramStmt::Expr(expr) = &stmts[i] {
+          stmts[i] = ProgramStmt::Expr(evaluator::contexts::rewrite(expr));
+        }
+        resolved[i] = true;
+      }
     }
     match &stmts[stmt_idx] {
       ProgramStmt::Expr(expr) => {
@@ -1989,6 +2019,8 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         }
       }
       ProgramStmt::FunctionDefinition(node) => {
+        let _read =
+          evaluator::contexts::ReadContext::install(&line_read_context);
         match store_function_definition(node.clone())? {
           Some(s) => last_result = Some(StmtOutcome::Text(s)),
           None => last_result = Some(StmtOutcome::Text("\0".to_string())),
@@ -1996,11 +2028,15 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         any_nonempty = true;
       }
       ProgramStmt::TagSetDelayed(node) => {
+        let _read =
+          evaluator::contexts::ReadContext::install(&line_read_context);
         store_tag_set_delayed(node.clone(), false)?;
         last_result = Some(StmtOutcome::Text("\0".to_string()));
         any_nonempty = true;
       }
       ProgramStmt::TagSet(node) => {
+        let _read =
+          evaluator::contexts::ReadContext::install(&line_read_context);
         if let Some(rhs_str) = store_tag_set_delayed(node.clone(), true)? {
           last_result = Some(StmtOutcome::Text(rhs_str));
         } else {
@@ -5282,6 +5318,26 @@ fn store_function_definition(
   );
   let has_any_condition =
     has_any_condition || conditions.iter().any(std::option::Option::is_some);
+
+  // Resolve the definition's symbols against the contexts open while the
+  // line is read: the head, the pattern variables (symbols of their own in
+  // the Wolfram Language), the head constraints and everything in the body.
+  // Outside a package every one of these resolves to itself.
+  let (func_name, params, conditions, defaults, heads, body_expr) = {
+    use evaluator::contexts::{resolve, rewrite};
+    let rewrite_opt = |e: &Option<syntax::Expr>| e.as_ref().map(rewrite);
+    (
+      resolve(&func_name),
+      params.iter().map(|p| resolve(p)).collect::<Vec<_>>(),
+      conditions.iter().map(rewrite_opt).collect::<Vec<_>>(),
+      defaults.iter().map(rewrite_opt).collect::<Vec<_>>(),
+      heads
+        .iter()
+        .map(|h| h.as_ref().map(|h| resolve(h)))
+        .collect::<Vec<_>>(),
+      rewrite(&body_expr),
+    )
+  };
 
   FUNC_DEFS.with(|m| {
     let mut defs = m.borrow_mut();

@@ -548,3 +548,67 @@ fn paclet_directory_load_makes_a_paclet_context_available() {
   assert!(output.status.success(), "woxi run failed: stderr={stderr}");
   assert_eq!(stdout, ">> Hello from Paclet Package\n");
 }
+
+// Two paclets that each keep a private `helper` do not collide: symbols are
+// resolved per context, so each package's API calls its own helper. Under a
+// flat namespace the second paclet's helper would have replaced the first's.
+#[test]
+fn paclets_keep_their_private_helpers_to_themselves() {
+  let dir = std::env::temp_dir().join("woxi_cli_paclet_contexts");
+  std::fs::remove_dir_all(&dir).ok();
+  for n in ["1", "2"] {
+    let paclet = dir.join(format!("Pac{n}"));
+    std::fs::create_dir_all(paclet.join("Kernel")).expect("create paclet dir");
+    std::fs::write(
+      paclet.join("PacletInfo.wl"),
+      format!(
+        "PacletObject[<|\"Name\" -> \"Pac{n}\", \"Version\" -> \"1.0.0\", \
+         \"Extensions\" -> {{{{\"Kernel\", \"Root\" -> \"Kernel\", \
+         \"Context\" -> {{\"Pac{n}`\"}}}}}}|>]\n"
+      ),
+    )
+    .expect("write PacletInfo.wl");
+    std::fs::write(
+      paclet.join(format!("Kernel/Pac{n}.wl")),
+      format!(
+        "BeginPackage[\"Pac{n}`\"]\n\
+         api{n}::usage = \"api{n}[x] uses a private helper\";\n\
+         Begin[\"`Private`\"]\n\
+         helper[x_] := x * {n}\n\
+         api{n}[x_] := helper[x] + 100\n\
+         End[]\n\
+         EndPackage[]\n"
+      ),
+    )
+    .expect("write package file");
+  }
+  let script = dir.join("main.wl");
+  std::fs::write(
+    &script,
+    "PacletDirectoryLoad[Directory[]]\n\
+     Needs[\"Pac1`\"]\n\
+     Needs[\"Pac2`\"]\n\
+     Print[{api1[10], api2[10]}]\n\
+     Print[{Context[api1], Context[helper]}]\n\
+     Print[ToString[Names[\"*`helper\"], InputForm]]\n",
+  )
+  .expect("write script");
+
+  let output = Command::new(woxi_bin())
+    .arg("run")
+    .arg(&script)
+    .current_dir(&dir)
+    .output()
+    .expect("failed to spawn woxi");
+  let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+  let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+  std::fs::remove_dir_all(&dir).ok();
+
+  assert!(output.status.success(), "woxi run failed: stderr={stderr}");
+  assert_eq!(
+    stdout,
+    "{110, 120}\n\
+     {Pac1`, Global`}\n\
+     {\"helper\", \"Pac1`Private`helper\", \"Pac2`Private`helper\"}\n"
+  );
+}
