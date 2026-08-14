@@ -1084,7 +1084,14 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PolygonCoordinates" => Some((1, 1)),
     "Plot" => Some((2, usize::MAX)),
     "Pochhammer" => Some((2, 2)),
-    "Point" => Some((1, 1)),
+    // Unrestricted, like the other graphics primitive heads (`Line`,
+    // `Polygon`, `Arrow`, …) that also carry no entry here: a Demonstrations
+    // idiom applies a control-variable head directly to a point list plus a
+    // trailing option, e.g. `renderMode[pts, VertexNormals -> Automatic]`
+    // where `renderMode` may be bound to `Point`. Graphics/Graphics3D parsing
+    // already reads only the first argument and ignores the rest, so `Point`
+    // must accept them the same way instead of raising a spurious argx
+    // message and staying unevaluated.
     "PoissonDistribution" => Some((1, 1)),
     "PoissonProcess" => Some((1, 1)),
     "PolarPlot" => Some((2, usize::MAX)),
