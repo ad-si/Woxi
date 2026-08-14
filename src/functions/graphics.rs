@@ -21002,6 +21002,18 @@ fn display_expr_to_node(
     }
     // Literal prose in a caption row.
     Expr::String(_) => styled_text_node(expr, bindings),
+    // Releasing a `Dynamic[…]` hold (above) can fully evaluate its content
+    // into an already-rendered graphic rather than a layout container (e.g.
+    // `Dynamic[GraphicsRow[…]]` used directly as a Specifications entry, a
+    // common Demonstrations idiom for a live preview beside the sliders).
+    // Route the SVG straight through instead of falling into the generic
+    // leaf path below, which round-trips through `InputForm` text — and
+    // `Expr::Graphics` has no source form, only the `-Graphics-` /
+    // `-Graphics3D-` display placeholder, which does not re-parse.
+    Expr::Graphics { svg, .. } => DisplayNode::Static {
+      svg: Some(svg.clone()),
+      text: String::new(),
+    },
     _ => static_leaf_node(expr, bindings),
   }
 }

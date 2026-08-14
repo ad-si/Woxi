@@ -19640,6 +19640,32 @@ mod manipulate {
     );
   }
 
+  #[test]
+  fn display_bare_dynamic_graphics_row_renders_svg() {
+    // A Demonstrations idiom: a live preview placed directly among the
+    // Specifications (not wrapped in Panel/Grid/…), e.g. a small
+    // `Dynamic[GraphicsRow[{…}]]` shown beside the sliders. Releasing the
+    // `Dynamic` hold fully evaluates the `GraphicsRow` into an
+    // already-rendered graphic rather than a layout container; that must
+    // still surface as SVG, not silently blank out.
+    use woxi::functions::graphics::build_manipulate_display;
+    let code = "Manipulate[r, {r, 0, 1}, \
+      Dynamic[GraphicsRow[{Graphics[Circle[{0, 0}, r]], \
+      Graphics[Disk[{0, 0}, r]]}]]]";
+    let expr = interpret_to_expr(code).unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    assert_eq!(spec.displays.len(), 1, "one trailing display element");
+    let bindings = manipulate_initial_bindings(&spec);
+    let tree = build_manipulate_display(&spec.displays[0], &bindings);
+    let DisplayNode::Static { svg, text } = tree else {
+      panic!("expected a Static leaf, got {tree:?}");
+    };
+    assert!(
+      svg.as_deref().is_some_and(|s| s.contains("<svg")),
+      "GraphicsRow display should render SVG, got svg={svg:?} text={text:?}"
+    );
+  }
+
   // ── Buttons, spacers and styled prose in a Dynamic caption ──
 
   /// A Demonstration-style caption: two stepping buttons, spacers and a
