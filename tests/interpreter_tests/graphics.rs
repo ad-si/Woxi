@@ -6825,6 +6825,27 @@ mod plot3d {
       );
     }
 
+    // Regression test: the adaptive sampler's curvature check looked ahead
+    // to `points[i + 2]` to decide whether to refine interval `i`, which is
+    // never available for the rightmost interval of the domain — a
+    // structural blind spot present on every refinement pass, not just the
+    // first. A fast-oscillating tail (like the second half of `Sin[13 x]`
+    // here, with only 4 initial `PlotPoints`) used to stay a single
+    // straight segment no matter how many `MaxRecursion` passes ran; it
+    // should instead keep getting refined like the rest of the domain.
+    #[test]
+    fn plot_adaptive_sampling_refines_rightmost_interval() {
+      assert_eq!(
+        interpret(
+          "Length[Select[First@Last[Reap[Plot[Sin[13 x], {x, -Pi, Pi}, \
+           PlotPoints -> 4, MaxRecursion -> 6, EvaluationMonitor :> Sow[x]]]], \
+           # > 2 &]] > 10"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
     #[test]
     fn list_step_plot() {
       insta::assert_snapshot!(export_svg("ListStepPlot[{1, 3, 2, 4}]"));

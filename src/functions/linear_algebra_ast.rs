@@ -4469,7 +4469,24 @@ fn numeric_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> crate::syntax::Expr {
     }
 
     // Find null space via Gaussian elimination
-    let vec = numeric_null_vector(&m, n);
+    let mut vec = numeric_null_vector(&m, n);
+
+    // The fixed pivot tolerance inside `numeric_null_vector` is tuned for
+    // well-conditioned small matrices; for a larger matrix (or one with
+    // several eigenvalues close enough together to leave only a small gap
+    // between them) the residual along the true null direction can sit
+    // above that tolerance, so no column gets recognized as free and the
+    // search comes back with a zero vector instead of an eigenvector.
+    // Recover it via inverse iteration instead: solving `(A - λI) y = x`
+    // amplifies whatever component of `x` lies along the (near-)singular
+    // direction every time, regardless of the matrix's scale, and a couple
+    // of iterations are enough since the shift already sits at the
+    // converged eigenvalue.
+    if vec.iter().all(|x| x.abs() < 1e-15)
+      && let Some(v) = inverse_iteration_eigenvector(&f_matrix, lambda, n)
+    {
+      vec = v;
+    }
 
     // Normalize to unit length
     let norm: f64 = vec.iter().map(|x| x * x).sum::<f64>().sqrt();
@@ -4696,6 +4713,43 @@ fn qr_eigenvalues(h: &mut [Vec<f64>], n: usize) -> Vec<f64> {
   }
 
   eigenvalues
+}
+
+/// Refine an eigenvalue's eigenvector via (shifted) inverse iteration:
+/// repeatedly solving `(A - λI) y = x` for `y` amplifies whatever component
+/// of `x` lies along `A`'s (near-)singular direction at shift `λ`, since
+/// that direction's effective eigenvalue of `(A - λI)` is close to zero. A
+/// tiny extra shift keeps the system from being *exactly* singular (which
+/// would make its own pivoting degenerate) while staying far smaller than
+/// the gap to any other eigenvalue, so it still converges to `λ`'s own
+/// eigenvector in a couple of iterations — including when `λ` sits close to
+/// another eigenvalue, which is exactly the case `numeric_null_vector`'s
+/// fixed pivot tolerance can miss for larger or near-degenerate matrices.
+fn inverse_iteration_eigenvector(
+  a: &[Vec<f64>],
+  lambda: f64,
+  n: usize,
+) -> Option<Vec<f64>> {
+  let scale = a
+    .iter()
+    .flat_map(|row| row.iter())
+    .fold(1.0f64, |acc, v| acc.max(v.abs()));
+  let mut shifted = a.to_vec();
+  for i in 0..n {
+    shifted[i][i] -= lambda + scale * 1e-10;
+  }
+  let mut x = vec![1.0; n];
+  let mut result = None;
+  for _ in 0..3 {
+    let y = solve_linear_system(&shifted, &x)?;
+    let norm: f64 = y.iter().map(|v| v * v).sum::<f64>().sqrt();
+    if norm < 1e-300 {
+      return result;
+    }
+    x = y.iter().map(|v| v / norm).collect();
+    result = Some(x.clone());
+  }
+  result
 }
 
 /// Find a null space vector for a numeric matrix via Gaussian elimination.
