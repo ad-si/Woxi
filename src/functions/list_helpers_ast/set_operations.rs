@@ -12,10 +12,7 @@ pub fn tally_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     return tally_ast(&Expr::List(values.into()));
   }
   let Expr::List(items) = list else {
-    let call = Expr::FunctionCall {
-      name: "Tally".to_string(),
-      args: vec![list.clone()].into(),
-    };
+    let call = call1("Tally", list.clone());
     crate::emit_message(&format!(
       "Tally::list: List expected at position 1 in {}.",
       crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
@@ -57,10 +54,7 @@ pub fn tally_with_test_ast(
   test: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let Expr::List(items) = list else {
-    return Ok(Expr::FunctionCall {
-      name: "Tally".to_string(),
-      args: vec![list.clone(), test.clone()].into(),
-    });
+    return Ok(call("Tally", vec![list.clone(), test.clone()]));
   };
 
   // Representatives keep insertion order; parallel counts vector.
@@ -109,10 +103,7 @@ pub fn counts_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     return counts_ast(&Expr::List(values.into()));
   }
   let Expr::List(items) = list else {
-    return Ok(Expr::FunctionCall {
-      name: "Counts".to_string(),
-      args: vec![list.clone()].into(),
-    });
+    return Ok(call1("Counts", list.clone()));
   };
 
   use std::collections::HashMap;
@@ -189,10 +180,7 @@ pub fn delete_duplicates_ast(
       if is_atomic_arg(list) {
         emit_nonatomic_normal_message("DeleteDuplicates", &call_args);
       }
-      return Ok(Expr::FunctionCall {
-        name: "DeleteDuplicates".to_string(),
-        args: call_args.into(),
-      });
+      return Ok(call("DeleteDuplicates", call_args));
     }
   };
 
@@ -377,10 +365,7 @@ pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let wrap = |v: Vec<Expr>| -> Expr {
     match head {
-      Some(h) => Expr::FunctionCall {
-        name: h.to_string(),
-        args: v.into(),
-      },
+      Some(h) => call(h, v),
       None => Expr::List(v.into()),
     }
   };
@@ -479,10 +464,7 @@ pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   let wrap = |v: Vec<Expr>| -> Expr {
     match head {
-      Some(h) => Expr::FunctionCall {
-        name: h.to_string(),
-        args: v.into(),
-      },
+      Some(h) => call(h, v),
       None => Expr::List(v.into()),
     }
   };
@@ -537,11 +519,10 @@ fn intersection_with_same_test(
   };
 
   let test_eq = |a: &Expr, b: &Expr| -> bool {
-    let call = Expr::FunctionCall {
-      name: "Apply".to_string(),
-      args: vec![test.clone(), Expr::List(vec![a.clone(), b.clone()].into())]
-        .into(),
-    };
+    let call = call(
+      "Apply",
+      vec![test.clone(), Expr::List(vec![a.clone(), b.clone()].into())],
+    );
     matches!(
       crate::evaluator::evaluate_expr_to_expr(&call).ok(),
       Some(Expr::Identifier(ref s)) if s == "True"
@@ -611,10 +592,7 @@ pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(test) = same_test {
     let result = complement_with_same_test(&slices, test)?;
     return Ok(match head {
-      Some(name) => Expr::FunctionCall {
-        name: name.to_string(),
-        args: result.into(),
-      },
+      Some(name) => call(name, result),
       None => Expr::List(result.into()),
     });
   }
@@ -647,10 +625,7 @@ pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   sort_canonical(&mut result);
 
   match head {
-    Some(name) => Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: result.into(),
-    }),
+    Some(name) => Ok(call(name, result)),
     None => Ok(Expr::List(result.into())),
   }
 }
@@ -814,10 +789,7 @@ pub fn delete_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   Ok(match head {
-    Some(name) => Expr::FunctionCall {
-      name: name.to_string(),
-      args: result.into(),
-    },
+    Some(name) => call(name, result),
     None => Expr::List(result.into()),
   })
 }
@@ -828,10 +800,7 @@ pub fn delete_duplicates_by_ast(
   func: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let Expr::List(items) = list else {
-    return Ok(Expr::FunctionCall {
-      name: "DeleteDuplicatesBy".to_string(),
-      args: vec![list.clone(), func.clone()].into(),
-    });
+    return Ok(call("DeleteDuplicatesBy", vec![list.clone(), func.clone()]));
   };
 
   use std::collections::HashSet;
@@ -1034,10 +1003,7 @@ pub fn unique_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let wrap = |items: Vec<Expr>, head: Option<&str>| -> Expr {
     match head {
-      Some(h) => Expr::FunctionCall {
-        name: h.to_string(),
-        args: items.into(),
-      },
+      Some(h) => call(h, items),
       None => Expr::List(items.into()),
     }
   };

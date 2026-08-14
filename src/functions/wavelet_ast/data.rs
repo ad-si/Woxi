@@ -156,16 +156,15 @@ impl Dwd {
       items.extend(extras);
       Expr::List(items.into())
     };
-    Expr::FunctionCall {
-      name: "DiscreteWaveletData".to_string(),
-      args: vec![
+    call(
+      "DiscreteWaveletData",
+      vec![
         Expr::List(rules.into()),
         self.wavelet.clone(),
         wtrans,
         dims_to_expr(&self.dims),
-      ]
-      .into(),
-    }
+      ],
+    )
   }
 
   /// Parse a DiscreteWaveletData[…] expression (3 or 4 args).
@@ -275,10 +274,7 @@ fn parse_wtrans(
 // ---------------------------------------------------------------------------
 
 fn sqrt2() -> Expr {
-  Expr::FunctionCall {
-    name: "Sqrt".to_string(),
-    args: vec![Expr::Integer(2)].into(),
-  }
+  call1("Sqrt", Expr::Integer(2))
 }
 
 fn eval(e: Expr) -> Expr {
@@ -289,23 +285,14 @@ fn eval(e: Expr) -> Expr {
 fn symbolic_dot_plain(pairs: Vec<(Expr, Expr)>) -> Expr {
   let terms: Vec<Expr> = pairs
     .into_iter()
-    .map(|(c, x)| Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![c, x].into(),
-    })
+    .map(|(c, x)| call("Times", vec![c, x]))
     .collect();
-  eval(Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.into(),
-  })
+  eval(call("Plus", terms))
 }
 
 /// Sqrt[2] * Sum coef_i * x_i, evaluated to canonical form.
 fn symbolic_dot(pairs: Vec<(Expr, Expr)>) -> Expr {
-  eval(Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![sqrt2(), symbolic_dot_plain(pairs)].into(),
-  })
+  eval(call("Times", vec![sqrt2(), symbolic_dot_plain(pairs)]))
 }
 
 /// Exact filters of a wavelet as (index, Expr) pairs, if available.
@@ -513,10 +500,7 @@ pub fn wavelet_transform_ast(
     ));
     return Ok(unevaluated(fname, args));
   };
-  let default_wavelet = Expr::FunctionCall {
-    name: "HaarWavelet".to_string(),
-    args: vec![].into(),
-  };
+  let default_wavelet = call("HaarWavelet", vec![]);
   let wavelet_expr = match positional.get(1) {
     Some(Expr::Identifier(a)) if a == "Automatic" => default_wavelet,
     Some(w) => {
@@ -926,29 +910,24 @@ fn symbolic_idwt_step(
       .map(|t| {
         let mut terms: Vec<Expr> = Vec::new();
         for (i, c) in synth_lo {
-          terms.push(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
+          terms.push(call(
+            "Times",
+            vec![
               c.clone(),
               a[(t + dilation * i).rem_euclid(nn) as usize].clone(),
-            ]
-            .into(),
-          });
+            ],
+          ));
         }
         for (i, c) in synth_hi {
-          terms.push(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
+          terms.push(call(
+            "Times",
+            vec![
               c.clone(),
               d[(t + dilation * i).rem_euclid(nn) as usize].clone(),
-            ]
-            .into(),
-          });
+            ],
+          ));
         }
-        eval(Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: terms.into(),
-        })
+        eval(call("Plus", terms))
       })
       .collect();
   }
@@ -962,34 +941,16 @@ fn symbolic_idwt_step(
   for (t, (at, dt)) in a.iter().zip(d.iter()).enumerate() {
     for (i, c) in synth_lo {
       let j = (2 * t as i64 + i).rem_euclid(n_even as i64) as usize;
-      terms[j].push(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![c.clone(), at.clone()].into(),
-      });
+      terms[j].push(call("Times", vec![c.clone(), at.clone()]));
     }
     for (i, c) in synth_hi {
       let j = (2 * t as i64 + i).rem_euclid(n_even as i64) as usize;
-      terms[j].push(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![c.clone(), dt.clone()].into(),
-      });
+      terms[j].push(call("Times", vec![c.clone(), dt.clone()]));
     }
   }
   let mut out: Vec<Expr> = terms
     .into_iter()
-    .map(|ts| {
-      eval(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
-          sqrt2(),
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: ts.into(),
-          },
-        ]
-        .into(),
-      })
-    })
+    .map(|ts| eval(call("Times", vec![sqrt2(), call("Plus", ts)])))
     .collect();
   out.truncate(n);
   out
@@ -1214,10 +1175,7 @@ fn dwd_property(dwd: &Dwd, prop: &str) -> crate::syntax::Expr {
       crate::emit_message(&format!(
         "DiscreteWaveletData::prop: {prop} is not a valid property."
       ));
-      Expr::FunctionCall {
-        name: "Missing".to_string(),
-        args: vec![Expr::String("NotAvailable".into())].into(),
-      }
+      call1("Missing", Expr::String("NotAvailable".into()))
     }
   }
 }

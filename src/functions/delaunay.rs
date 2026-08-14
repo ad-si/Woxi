@@ -190,8 +190,5 @@ pub fn delaunay_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       replacement: Box::new(Expr::Identifier("Infinity".to_string())),
     });
   }
-  Ok(Expr::FunctionCall {
-    name: "MeshRegion".to_string(),
-    args: mesh_args.into(),
-  })
+  Ok(call("MeshRegion", mesh_args))
 }

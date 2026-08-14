@@ -28,10 +28,7 @@ pub fn apply_func_value(
   arg: &Expr,
 ) -> Result<Expr, InterpreterError> {
   match apply_func_ast(func, arg) {
-    Err(InterpreterError::ReturnValue(val)) => Ok(Expr::FunctionCall {
-      name: "Return".to_string(),
-      args: vec![*val].into(),
-    }),
+    Err(InterpreterError::ReturnValue(val)) => Ok(call1("Return", *val)),
     other => other,
   }
 }

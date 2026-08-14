@@ -1234,18 +1234,12 @@ mod tests {
 
   /// A bare `MusicPitch` (pitch only, no rhythmic value).
   fn note(name: &str) -> Expr {
-    Expr::FunctionCall {
-      name: "MusicPitch".to_string(),
-      args: vec![Expr::String(name.to_string())].into(),
-    }
+    call1("MusicPitch", Expr::String(name.to_string()))
   }
 
   /// A `MusicNote` wrapping a pitch — a rhythmic event that does render.
   fn music_note(name: &str) -> Expr {
-    Expr::FunctionCall {
-      name: "MusicNote".to_string(),
-      args: vec![note(name)].into(),
-    }
+    call1("MusicNote", note(name))
   }
 
   #[test]
@@ -1275,21 +1269,17 @@ mod tests {
   fn non_music_expressions_do_not_render() {
     assert!(music_to_svg(&Expr::Integer(3)).is_none());
     assert!(
-      music_to_svg(&Expr::FunctionCall {
-        name: "MusicDuration".to_string(),
-        args: vec![Expr::String("Half".to_string())].into(),
-      })
-      .is_none()
+      music_to_svg(&call1("MusicDuration", Expr::String("Half".to_string())))
+        .is_none()
     );
   }
 
   #[test]
   fn chord_renders_multiple_heads() {
-    let chord = Expr::FunctionCall {
-      name: "MusicChord".to_string(),
-      args: vec![Expr::List(vec![note("C4"), note("E4"), note("G4")].into())]
-        .into(),
-    };
+    let chord = call1(
+      "MusicChord",
+      Expr::List(vec![note("C4"), note("E4"), note("G4")].into()),
+    );
     let svg = music_to_svg(&chord).unwrap();
     assert_eq!(svg.matches("class=\"notehead\"").count(), 3);
   }
@@ -1319,15 +1309,11 @@ mod tests {
     // `MusicChord[<|"PitchList" -> {MusicPitch[…], …}|>]`; it must still render
     // every tone (the playground draws it as one chord).
     let chord = crate::functions::plus_ast(&[
-      Expr::FunctionCall {
-        name: "MusicChord".to_string(),
-        args: vec![Expr::List(vec![note("C4"), note("E4"), note("G4")].into())]
-          .into(),
-      },
-      Expr::FunctionCall {
-        name: "MusicInterval".to_string(),
-        args: vec![Expr::Integer(5)].into(),
-      },
+      call1(
+        "MusicChord",
+        Expr::List(vec![note("C4"), note("E4"), note("G4")].into()),
+      ),
+      call1("MusicInterval", Expr::Integer(5)),
     ])
     .expect("chord + interval should evaluate");
     assert!(matches!(
@@ -1424,10 +1410,10 @@ mod tests {
 
   #[test]
   fn scale_expands_to_eight_notes() {
-    let scale = Expr::FunctionCall {
-      name: "MusicScale".to_string(),
-      args: vec![Expr::String("Major".to_string()), note("C4")].into(),
-    };
+    let scale = call(
+      "MusicScale",
+      vec![Expr::String("Major".to_string()), note("C4")],
+    );
     let mut glyphs = Vec::new();
     collect(&scale, &mut glyphs, &mut None);
     let notes = glyphs
@@ -1458,11 +1444,10 @@ mod tests {
 
   #[test]
   fn measure_appends_a_barline() {
-    let measure = Expr::FunctionCall {
-      name: "MusicMeasure".to_string(),
-      args: vec![Expr::List(vec![music_note("C4"), music_note("D4")].into())]
-        .into(),
-    };
+    let measure = call1(
+      "MusicMeasure",
+      Expr::List(vec![music_note("C4"), music_note("D4")].into()),
+    );
     let mut glyphs = Vec::new();
     assert!(collect(&measure, &mut glyphs, &mut None));
     // A time signature, the two notes, then a closing barline.
@@ -1489,15 +1474,15 @@ mod tests {
       args: vec![Expr::List(
         vec![
           Expr::String("C".to_string()),
-          Expr::FunctionCall {
-            name: "MusicTimeSignature".to_string(),
-            args: vec![Expr::Integer(3), Expr::Integer(4)].into(),
-          },
+          call(
+            "MusicTimeSignature",
+            vec![Expr::Integer(3), Expr::Integer(4)],
+          ),
           Expr::String("D".to_string()),
-          Expr::FunctionCall {
-            name: "MusicTimeSignature".to_string(),
-            args: vec![Expr::Integer(3), Expr::Integer(4)].into(),
-          },
+          call(
+            "MusicTimeSignature",
+            vec![Expr::Integer(3), Expr::Integer(4)],
+          ),
           Expr::String("E".to_string()),
         ]
         .into(),
@@ -1526,15 +1511,12 @@ mod tests {
       let mut args =
         vec![Expr::List(vec![music_note("C4"), music_note("D4")].into())];
       if let Some((n, d)) = ts {
-        args.push(Expr::FunctionCall {
-          name: "MusicTimeSignature".to_string(),
-          args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
-        });
+        args.push(call(
+          "MusicTimeSignature",
+          vec![Expr::Integer(n), Expr::Integer(d)],
+        ));
       }
-      Expr::FunctionCall {
-        name: "MusicMeasure".to_string(),
-        args: args.into(),
-      }
+      call("MusicMeasure", args)
     };
     let voice = Expr::FunctionCall {
       name: "MusicVoice".to_string(),

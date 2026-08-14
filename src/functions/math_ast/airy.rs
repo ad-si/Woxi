@@ -356,11 +356,10 @@ pub fn airy_bi_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ]
       .into(),
     };
-    let gamma = Expr::FunctionCall {
-      name: "Gamma".to_string(),
-      args: vec![call("Rational", vec![Expr::Integer(1), Expr::Integer(3)])]
-        .into(),
-    };
+    let gamma = call1(
+      "Gamma",
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(3)]),
+    );
     let result = div2(power_3, gamma);
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
@@ -442,23 +441,20 @@ fn airy_build_value(
     name: "Power".to_string(),
     args: vec![
       Expr::Integer(3),
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(power_frac.0), Expr::Integer(power_frac.1)]
-          .into(),
-      },
+      call(
+        "Rational",
+        vec![Expr::Integer(power_frac.0), Expr::Integer(power_frac.1)],
+      ),
     ]
     .into(),
   };
-  let gamma = Expr::FunctionCall {
-    name: "Gamma".to_string(),
-    args: vec![Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(gamma_frac.0), Expr::Integer(gamma_frac.1)]
-        .into(),
-    }]
-    .into(),
-  };
+  let gamma = call1(
+    "Gamma",
+    call(
+      "Rational",
+      vec![Expr::Integer(gamma_frac.0), Expr::Integer(gamma_frac.1)],
+    ),
+  );
   let denom = if with_extra_3 {
     call("Times", vec![Expr::Integer(3), gamma])
   } else {

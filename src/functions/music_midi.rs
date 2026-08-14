@@ -43,10 +43,7 @@ fn element_midi(expr: &Expr) -> Option<i128> {
   match expr {
     // A bare pitch-name string: resolve through a `MusicPitch` so an octaveless
     // name such as "A" lands in the default register (A4 = 69).
-    Expr::String(_) => music_pitch_midi(&Expr::FunctionCall {
-      name: "MusicPitch".to_string(),
-      args: vec![expr.clone()].into(),
-    }),
+    Expr::String(_) => music_pitch_midi(&call1("MusicPitch", expr.clone())),
     Expr::FunctionCall { name, args } => match name.as_str() {
       "MusicPitch" => music_pitch_midi(expr),
       // A note carries its pitch as the first argument or as the `"Pitch"` entry

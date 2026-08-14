@@ -322,10 +322,7 @@ fn univariate_int_coeffs(
 ) -> Result<Option<(String, Vec<i128>)>, InterpreterError> {
   use crate::functions::math_ast::expr_to_i128;
   let expanded =
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Expand".to_string(),
-      args: vec![expr.clone()].into(),
-    })?;
+    crate::evaluator::evaluate_expr_to_expr(&call1("Expand", expr.clone()))?;
   let vars =
     crate::functions::math_ast::variables_ast(std::slice::from_ref(&expanded))?;
   let Expr::List(ref vars) = vars else {
@@ -374,22 +371,10 @@ fn gf_poly_to_expr(
     let pow = match i {
       0 => Expr::Integer(1),
       1 => var_expr.clone(),
-      _ => Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(var_expr.clone()),
-        right: Box::new(Expr::Integer(i as i128)),
-      },
+      _ => pow2(var_expr.clone(), Expr::Integer(i as i128)),
     };
-    let term = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(c)),
-      right: Box::new(pow),
-    };
-    sum = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(sum),
-      right: Box::new(term),
-    };
+    let term = times2(Expr::Integer(c), pow);
+    sum = plus2(sum, term);
   }
   crate::evaluator::evaluate_expr_to_expr(&sum)
 }
@@ -410,17 +395,9 @@ fn gf_factored_expr(
     let factor = if *m == 1 {
       base
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(base),
-        right: Box::new(Expr::Integer(*m as i128)),
-      }
+      pow2(base, Expr::Integer(*m as i128))
     };
-    product = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(product),
-      right: Box::new(factor),
-    };
+    product = times2(product, factor);
   }
   crate::evaluator::evaluate_expr_to_expr(&product)
 }
@@ -598,31 +575,18 @@ pub fn polynomial_lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // For more than 2 args, fold pairwise.
   let mut result = pos[0].clone();
   for arg in &pos[1..] {
-    let gcd = Expr::FunctionCall {
-      name: "PolynomialGCD".to_string(),
-      args: vec![result.clone(), arg.clone()].into(),
-    };
+    let gcd = call("PolynomialGCD", vec![result.clone(), arg.clone()]);
     let quotient = Expr::FunctionCall {
       name: "Cancel".to_string(),
       args: vec![Expr::FunctionCall {
         name: "Times".to_string(),
-        args: vec![
-          result,
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![gcd, Expr::Integer(-1)].into(),
-          },
-        ]
-        .into(),
+        args: vec![result, call("Power", vec![gcd, Expr::Integer(-1)])].into(),
       }]
       .into(),
     };
     let quotient = crate::evaluator::evaluate_expr_to_expr(&quotient)
       .unwrap_or_else(|_| quotient.clone());
-    let lcm = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![quotient, arg.clone()].into(),
-    };
+    let lcm = call("Times", vec![quotient, arg.clone()]);
     result = crate::evaluator::evaluate_expr_to_expr(&lcm).unwrap_or(lcm);
   }
   Ok(result)
@@ -658,10 +622,6 @@ fn polynomial_lcm_modulus(
   }
   let g = poly_gcd(&ca, &cb, p);
   let q = poly_div_exact(&ca, &g, p);
-  let product = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(gf_poly_to_expr(&q, &var)?),
-    right: Box::new(gf_poly_to_expr(&cb, &var)?),
-  };
+  let product = times2(gf_poly_to_expr(&q, &var)?, gf_poly_to_expr(&cb, &var)?);
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&product)?))
 }

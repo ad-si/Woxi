@@ -376,11 +376,10 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       let med = Expr::BinaryOp {
         op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(1)),
-        right: Box::new(Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![pow2(Expr::Integer(2), pow2(a, Expr::Integer(-1))), k]
-            .into(),
-        }),
+        right: Box::new(call(
+          "Times",
+          vec![pow2(Expr::Integer(2), pow2(a, Expr::Integer(-1))), k],
+        )),
       };
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
@@ -805,11 +804,10 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       }
       let avg = Expr::BinaryOp {
         op: BinaryOperator::Divide,
-        left: Box::new(Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![sorted[len / 2 - 1].clone(), sorted[len / 2].clone()]
-            .into(),
-        }),
+        left: Box::new(call(
+          "Plus",
+          vec![sorted[len / 2 - 1].clone(), sorted[len / 2].clone()],
+        )),
         right: Box::new(Expr::Integer(2)),
       };
       return crate::evaluator::evaluate_expr_to_expr(&avg);
@@ -878,11 +876,10 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     } else {
       let avg = Expr::BinaryOp {
         op: BinaryOperator::Divide,
-        left: Box::new(Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![keyed[len / 2 - 1].1.clone(), keyed[len / 2].1.clone()]
-            .into(),
-        }),
+        left: Box::new(call(
+          "Plus",
+          vec![keyed[len / 2 - 1].1.clone(), keyed[len / 2].1.clone()],
+        )),
         right: Box::new(Expr::Integer(2)),
       };
       crate::evaluator::evaluate_expr_to_expr(&avg)
@@ -1151,14 +1148,13 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if name == "Scaled" && a.len() == 1 =>
     {
       // Scale the expansion by the data range r = max - min.
-      let range = Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
+      let range = call(
+        "Plus",
+        vec![
           max_expr.clone(),
           call("Times", vec![Expr::Integer(-1), min_expr.clone()]),
-        ]
-        .into(),
-      };
+        ],
+      );
       let scaled = call("Times", vec![a[0].clone(), range]);
       let scaled = crate::evaluator::evaluate_expr_to_expr(&scaled)?;
       (scaled.clone(), scaled)
@@ -2149,14 +2145,13 @@ pub(crate) fn wl_user_binning_n(values: &[f64], n: i128) -> Option<NBinEdges> {
     if centered && single {
       // Single point: granularity is the exact integer 1 (and so is delta),
       // so the half-bin offset stays exact: m - 1/2 = (2m - 1)/2.
-      exprs.push(Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![
+      exprs.push(call(
+        "Rational",
+        vec![
           Expr::Integer(num.checked_mul(2)?.checked_sub(1)?),
           Expr::Integer(2),
-        ]
-        .into(),
-      });
+        ],
+      ));
       f64s.push(ef - 0.5);
     } else if centered {
       let o = gran / 2.0;

@@ -243,10 +243,10 @@ fn logistic_parameter(
   let sym = format!("{func_name}$Logistic${var_name}");
   let poly_y = replace_func0_with_symbol(poly, func_name, var_name, &sym);
 
-  let clist = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "CoefficientList".to_string(),
-    args: vec![poly_y, Expr::Identifier(sym)].into(),
-  })
+  let clist = crate::evaluator::evaluate_expr_to_expr(&call(
+    "CoefficientList",
+    vec![poly_y, Expr::Identifier(sym)],
+  ))
   .ok()?;
 
   let Expr::List(items) = &clist else {
@@ -305,18 +305,12 @@ fn solve_logistic_map(
   }
 
   let n_var = Expr::Identifier(var_name.to_string());
-  let cos = |arg: Expr| Expr::FunctionCall {
-    name: "Cos".to_string(),
-    args: vec![arg].into(),
-  };
+  let cos = |arg: Expr| call1("Cos", arg);
 
   match ics.len() {
     0 => {
       // 1/2 - Cos[2^n*C[1]]/2
-      let c1 = Expr::FunctionCall {
-        name: "C".to_string(),
-        args: vec![Expr::Integer(1)].into(),
-      };
+      let c1 = call1("C", Expr::Integer(1));
       let exp2 = pow2(Expr::Integer(2), n_var);
       let body = times2(
         crate::functions::math_ast::make_rational(-1, 2),
@@ -333,11 +327,8 @@ fn solve_logistic_map(
       ))
       .ok()?;
       let theta =
-        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "ArcCos".to_string(),
-          args: vec![inner].into(),
-        })
-        .ok()?;
+        crate::evaluator::evaluate_expr_to_expr(&call1("ArcCos", inner))
+          .ok()?;
       // Exponent n (k0 == 0) or `-k0 + n` (constant first, matching display).
       let exponent = if *k0 == 0 {
         n_var.clone()
@@ -544,10 +535,7 @@ fn solve_first_order_arithmetic(
   match ics.len() {
     0 => {
       // d*n + C[1]
-      let c1 = Expr::FunctionCall {
-        name: "C".to_string(),
-        args: vec![Expr::Integer(1)].into(),
-      };
+      let c1 = call1("C", Expr::Integer(1));
       if matches!(&dn, Expr::Integer(0)) {
         return Some(c1);
       }
@@ -583,10 +571,7 @@ fn wrap_rsolve_result(
   return_as_func_call: bool,
 ) -> Expr {
   let pattern = if return_as_func_call {
-    Expr::FunctionCall {
-      name: func_name.to_string(),
-      args: vec![Expr::Identifier(var_name.to_string())].into(),
-    }
+    call1(func_name, Expr::Identifier(var_name.to_string()))
   } else {
     Expr::Identifier(func_name.to_string())
   };
@@ -675,10 +660,10 @@ pub fn rsolve_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Otherwise substitute the solution into the requested expression
   // (e.g. a[n] or a[3]) and evaluate.
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "ReplaceAll".to_string(),
-    args: vec![args[1].clone(), rule].into(),
-  })
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    "ReplaceAll",
+    vec![args[1].clone(), rule],
+  ))
 }
 
 /// Extract lhs and rhs from an equation (Comparison or FunctionCall Equal)
@@ -969,14 +954,8 @@ fn build_fib_lucas_combination(
   }
 
   let n_var = Expr::Identifier(var_name.to_string());
-  let base = |name: &str| Expr::FunctionCall {
-    name: name.to_string(),
-    args: vec![n_var.clone()].into(),
-  };
-  let c = |i: i128| Expr::FunctionCall {
-    name: "C".to_string(),
-    args: vec![Expr::Integer(i)].into(),
-  };
+  let base = |name: &str| call1(name, n_var.clone());
+  let c = |i: i128| call1("C", Expr::Integer(i));
 
   // (coefficient, optional C[k] factor, basis function)
   let specs = [
@@ -1125,10 +1104,7 @@ fn build_partial_solution(
   }
 
   let n_var = Expr::Identifier(var_name.to_string());
-  let c1 = Expr::FunctionCall {
-    name: "C".to_string(),
-    args: vec![Expr::Integer(1)].into(),
-  };
+  let c1 = call1("C", Expr::Integer(1));
 
   fn root_pow(r: i128, n_var: &Expr) -> Expr {
     if r == 1 {
@@ -1184,10 +1160,7 @@ fn build_general_solution(
   let single_root = roots.len() == 1;
   let mut terms = Vec::new();
   for (i, &(rn, rd)) in roots.iter().enumerate() {
-    let const_expr = Expr::FunctionCall {
-      name: "C".to_string(),
-      args: vec![Expr::Integer((i + 1) as i128)].into(),
-    };
+    let const_expr = call1("C", Expr::Integer((i + 1) as i128));
     // Occurrence index of this root among the earlier roots — its power of `n`.
     let mult_index = roots[..i].iter().filter(|&&r| r == (rn, rd)).count();
 

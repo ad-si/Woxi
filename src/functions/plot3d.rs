@@ -543,10 +543,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // so their own outlines are suppressed and the mesh is drawn as
         // lines below — otherwise a shown surface turns into a wireframe.
         if !matches!(mesh_mode, MeshMode::All) {
-          content.push(Expr::FunctionCall {
-            name: "EdgeForm".to_string(),
-            args: Vec::new().into(),
-          });
+          content.push(call("EdgeForm", Vec::new()));
         }
         for i in 0..GRID_N {
           for j in 0..GRID_N {
@@ -626,23 +623,13 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if !segments.is_empty() {
             content.push(Expr::List(
               vec![
-                Expr::FunctionCall {
-                  name: "Opacity".to_string(),
-                  args: vec![Expr::Real(0.63)].into(),
-                },
-                Expr::FunctionCall {
-                  name: "RGBColor".to_string(),
-                  args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)]
-                    .into(),
-                },
-                Expr::FunctionCall {
-                  name: "AbsoluteThickness".to_string(),
-                  args: vec![Expr::Real(0.5)].into(),
-                },
-                Expr::FunctionCall {
-                  name: "Line".to_string(),
-                  args: vec![Expr::List(segments.into())].into(),
-                },
+                call1("Opacity", Expr::Real(0.63)),
+                call(
+                  "RGBColor",
+                  vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+                ),
+                call1("AbsoluteThickness", Expr::Real(0.5)),
+                call1("Line", Expr::List(segments.into())),
               ]
               .into(),
             ));
@@ -689,10 +676,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         )),
       });
     }
-    Expr::FunctionCall {
-      name: "Graphics3D".to_string(),
-      args: structure_args.into(),
-    }
+    call("Graphics3D", structure_args)
   };
 
   for (surface_idx, grid) in grids.iter().enumerate() {
@@ -1939,10 +1923,7 @@ fn expand_unbounded_3d(expr: &Expr, bounds: &[(f64, f64); 3]) -> Expr {
 /// A `Line` with no points: the drawn form of an unbounded primitive that
 /// lies entirely outside the picture's box.
 fn empty_line3d() -> Expr {
-  Expr::FunctionCall {
-    name: "Line".to_string(),
-    args: vec![Expr::List(Vec::new().into())].into(),
-  }
+  call1("Line", Expr::List(Vec::new().into()))
 }
 
 fn v_sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
@@ -6427,19 +6408,14 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some(other) => content.push(other.clone()),
       None => {}
     }
-    content.push(Expr::FunctionCall {
-      name: "Polygon".to_string(),
-      args: vec![Expr::List(quads.into())].into(),
-    });
-    Expr::FunctionCall {
-      name: "Graphics3D".to_string(),
-      args: vec![Expr::FunctionCall {
-        name: "GraphicsComplex".to_string(),
-        args: vec![Expr::List(point_exprs.into()), Expr::List(content.into())]
-          .into(),
-      }]
-      .into(),
-    }
+    content.push(call1("Polygon", Expr::List(quads.into())));
+    call1(
+      "Graphics3D",
+      call(
+        "GraphicsComplex",
+        vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
+      ),
+    )
   };
 
   let (z_lo, z_hi) = z_clip.unwrap_or((global_z_min, global_z_max));
@@ -8656,10 +8632,7 @@ fn parametric_plot3d_curve_ast(
   if let Some(ps) = &plot_style {
     // Wrap whatever PlotStyle holds into a Directive[…] so that
     // collect_3d_primitives picks up nested colors/Thickness/etc.
-    prim_items.push(Expr::FunctionCall {
-      name: "Directive".to_string(),
-      args: vec![ps.clone()].into(),
-    });
+    prim_items.push(call1("Directive", ps.clone()));
   }
 
   let mut produced_any = false;
@@ -8676,10 +8649,7 @@ fn parametric_plot3d_curve_ast(
               .collect::<Vec<_>>()
               .into(),
           },
-          None => Expr::FunctionCall {
-            name: "Line".to_string(),
-            args: vec![points].into(),
-          },
+          None => call1("Line", points),
         });
       } else {
         seg.clear();
@@ -8721,10 +8691,7 @@ fn parametric_plot3d_curve_ast(
   let mut g3d_args = vec![content];
   g3d_args.extend(forwarded_opts);
 
-  Ok(Expr::FunctionCall {
-    name: "Graphics3D".to_string(),
-    args: g3d_args.into(),
-  })
+  Ok(call("Graphics3D", g3d_args))
 }
 
 /// Evaluate a parametric triple {fx(t), fy(t), fz(t)} at a given t value.

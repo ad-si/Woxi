@@ -34,10 +34,7 @@ static ATOMIC_WEIGHT_PRECISIONS: &[f64] = &[
 ];
 
 pub(crate) fn make_quantity(magnitude: Expr, unit: &str) -> Expr {
-  Expr::FunctionCall {
-    name: "Quantity".to_string(),
-    args: vec![magnitude, Expr::String(unit.to_string())].into(),
-  }
+  call("Quantity", vec![magnitude, Expr::String(unit.to_string())])
 }
 
 fn make_bigfloat(value: f64, precision: f64) -> Expr {
@@ -60,24 +57,15 @@ fn format_real_for_precision(value: f64, _sig_digits: usize) -> String {
 }
 
 fn missing_not_available() -> Expr {
-  Expr::FunctionCall {
-    name: "Missing".to_string(),
-    args: vec![Expr::String("NotAvailable".to_string())].into(),
-  }
+  call1("Missing", Expr::String("NotAvailable".to_string()))
 }
 
 fn missing_not_applicable() -> Expr {
-  Expr::FunctionCall {
-    name: "Missing".to_string(),
-    args: vec![Expr::String("NotApplicable".to_string())].into(),
-  }
+  call1("Missing", Expr::String("NotApplicable".to_string()))
 }
 
 fn missing_not_found() -> Expr {
-  Expr::FunctionCall {
-    name: "Missing".to_string(),
-    args: vec![Expr::String("NotFound".to_string())].into(),
-  }
+  call1("Missing", Expr::String("NotFound".to_string()))
 }
 
 static ELEMENTS: &[Element] = &[
@@ -2325,10 +2313,7 @@ fn get_property(elem: &Element, property: &str) -> Expr {
     }
     "Group" => match elem.group {
       Some(g) => Expr::Integer(g),
-      None => Expr::FunctionCall {
-        name: "Missing".to_string(),
-        args: vec![Expr::String("Undefined".to_string())].into(),
-      },
+      None => call1("Missing", Expr::String("Undefined".to_string())),
     },
     "Period" => Expr::Integer(elem.period),
     "Block" => Expr::String(elem.block.to_string()),
@@ -2534,10 +2519,7 @@ fn format_electron_configuration_row(elem: &Element) -> Expr {
       .into(),
     });
   }
-  Expr::FunctionCall {
-    name: "Row".to_string(),
-    args: vec![Expr::List(parts.into())].into(),
-  }
+  call1("Row", Expr::List(parts.into()))
 }
 
 fn format_electron_configuration(elem: &Element) -> String {

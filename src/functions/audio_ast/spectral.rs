@@ -171,16 +171,15 @@ pub fn short_time_fourier_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Expr::Real(rate)
   };
-  Ok(Expr::FunctionCall {
-    name: "ShortTimeFourierData".to_string(),
-    args: vec![
+  Ok(call(
+    "ShortTimeFourierData",
+    vec![
       Expr::List(frames.into()),
       rate_expr,
       Expr::Integer(m as i128),
       Expr::Integer(o as i128),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 /// Property access on a ShortTimeFourierData object:

@@ -213,11 +213,10 @@ pub fn jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // JacobiSN[-u, m] = -JacobiSN[u, m] (odd function)
   if let Some(inner) = extract_negated_expr(u) {
-    return Ok(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(-1)),
-      right: Box::new(call("JacobiSN", vec![inner, m.clone()])),
-    });
+    return Ok(times2(
+      Expr::Integer(-1),
+      call("JacobiSN", vec![inner, m.clone()]),
+    ));
   }
 
   // Numeric evaluation only when an argument is inexact (a machine number);

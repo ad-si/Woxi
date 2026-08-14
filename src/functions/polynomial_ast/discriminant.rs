@@ -67,10 +67,7 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if is_zero_const(&leading_coeff) {
       return Ok(Expr::Integer(0));
     }
-    let inv_sq = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![leading_coeff, Expr::Integer(-2)].into(),
-    };
+    let inv_sq = call("Power", vec![leading_coeff, Expr::Integer(-2)]);
     let simplified = crate::evaluator::evaluate_expr_to_expr(&inv_sq)?;
     return match super::cancel_ast(std::slice::from_ref(&simplified)) {
       Ok(c) => Ok(c),
@@ -91,10 +88,7 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Result = sign * Resultant / a_n
   let signed_res = if sign == -1 {
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), res].into(),
-    }
+    call("Times", vec![Expr::Integer(-1), res])
   } else {
     res
   };
@@ -103,10 +97,7 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Times".to_string(),
     args: vec![
       signed_res,
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![leading_coeff, Expr::Integer(-1)].into(),
-      },
+      call("Power", vec![leading_coeff, Expr::Integer(-1)]),
     ]
     .into(),
   };

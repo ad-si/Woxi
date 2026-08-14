@@ -88,10 +88,10 @@ impl Rat {
     if self.den.is_one() {
       bigint_to_expr(&self.num)
     } else {
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![bigint_to_expr(&self.num), bigint_to_expr(&self.den)].into(),
-      }
+      call(
+        "Rational",
+        vec![bigint_to_expr(&self.num), bigint_to_expr(&self.den)],
+      )
     }
   }
 }

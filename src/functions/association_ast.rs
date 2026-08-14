@@ -173,10 +173,7 @@ fn try_dataset_subject(
   }
   let mut inner = vec![ds[0].clone()];
   inner.extend(args[1..].iter().cloned());
-  let result = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: head.to_string(),
-    args: inner.into(),
-  })?;
+  let result = crate::evaluator::evaluate_expr_to_expr(&call(head, inner))?;
   if matches!(&result, Expr::FunctionCall { name, .. } if name == head) {
     return Ok(None);
   }
@@ -399,11 +396,10 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(args[2].clone());
       }
       // Return Missing["KeyAbsent", key]
-      Ok(Expr::FunctionCall {
-        name: "Missing".to_string(),
-        args: vec![Expr::String("KeyAbsent".to_string()), args[1].clone()]
-          .into(),
-      })
+      Ok(call(
+        "Missing",
+        vec![Expr::String("KeyAbsent".to_string()), args[1].clone()],
+      ))
     }
     Expr::List(items) => {
       // Thread Lookup over a list of associations
@@ -886,10 +882,10 @@ pub fn key_value_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             new_args.push(value.clone());
             crate::evaluator::evaluate_function_call_ast(name, &new_args)
           }
-          _ => Ok(Expr::FunctionCall {
-            name: "KeyValueMap".to_string(),
-            args: vec![func.clone(), Expr::Association(items.clone())].into(),
-          }),
+          _ => Ok(call(
+            "KeyValueMap",
+            vec![func.clone(), Expr::Association(items.clone())],
+          )),
         })
         .collect();
       Ok(Expr::List(results?.into()))
@@ -984,11 +980,10 @@ pub fn key_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             };
             crate::evaluator::evaluate_expr_to_expr(&call)?
           }
-          None => Expr::FunctionCall {
-            name: "Missing".to_string(),
-            args: vec![Expr::String("KeyAbsent".to_string()), key.clone()]
-              .into(),
-          },
+          None => call(
+            "Missing",
+            vec![Expr::String("KeyAbsent".to_string()), key.clone()],
+          ),
         };
         new_items.push((key.clone(), missing));
       }

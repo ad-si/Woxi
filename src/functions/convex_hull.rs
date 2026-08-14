@@ -119,10 +119,7 @@ fn convex_hull_mesh_2d(pts: &[Expr], args: &[Expr]) -> crate::syntax::Expr {
     })
     .collect();
 
-  let line = Expr::FunctionCall {
-    name: "Line".to_string(),
-    args: vec![Expr::List(edges.into())].into(),
-  };
+  let line = call1("Line", Expr::List(edges.into()));
 
   // Options. Method -> {"SeparateBoundaries" -> False} always; exact inputs also
   // carry WorkingPrecision -> Infinity.
@@ -149,10 +146,7 @@ fn convex_hull_mesh_2d(pts: &[Expr], args: &[Expr]) -> crate::syntax::Expr {
     });
   }
 
-  Expr::FunctionCall {
-    name: "BoundaryMeshRegion".to_string(),
-    args: mesh_args.into(),
-  }
+  call("BoundaryMeshRegion", mesh_args)
 }
 
 const EPS: f64 = 1e-10;

@@ -6443,11 +6443,10 @@ fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
       name: "Plus".to_string(),
       args: vec![
         Expr::Real(sum_re),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Real(sum_im), Expr::Identifier("I".to_string())]
-            .into(),
-        },
+        call(
+          "Times",
+          vec![Expr::Real(sum_im), Expr::Identifier("I".to_string())],
+        ),
       ]
       .into(),
     })
@@ -7069,11 +7068,10 @@ pub fn list_z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Times".to_string(),
       args: vec![
         a.clone(),
-        Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![args[1].clone(), Expr::Integer(-(k as i128) - shift)]
-            .into(),
-        },
+        call(
+          "Power",
+          vec![args[1].clone(), Expr::Integer(-(k as i128) - shift)],
+        ),
       ]
       .into(),
     })

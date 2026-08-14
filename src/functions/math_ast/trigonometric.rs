@@ -1397,11 +1397,10 @@ fn imaginary_arg_reduction(
   let result = match factor {
     0 => inner,
     1 => call("Times", vec![Expr::Identifier("I".to_string()), inner]),
-    _ => Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), Expr::Identifier("I".to_string()), inner]
-        .into(),
-    },
+    _ => call(
+      "Times",
+      vec![Expr::Integer(-1), Expr::Identifier("I".to_string()), inner],
+    ),
   };
   Some(crate::evaluator::evaluate_expr_to_expr(&result))
 }
@@ -4714,11 +4713,10 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Plus".to_string(),
       args: vec![
         Expr::Real(result_re),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Real(result_im), Expr::Identifier("I".to_string())]
-            .into(),
-        },
+        call(
+          "Times",
+          vec![Expr::Real(result_im), Expr::Identifier("I".to_string())],
+        ),
       ]
       .into(),
     });
@@ -5353,11 +5351,10 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Plus".to_string(),
       args: vec![
         Expr::Real(result_re),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Real(result_im), Expr::Identifier("I".to_string())]
-            .into(),
-        },
+        call(
+          "Times",
+          vec![Expr::Real(result_im), Expr::Identifier("I".to_string())],
+        ),
       ]
       .into(),
     });
@@ -5901,19 +5898,17 @@ fn make_plus(a: &Expr, b: &Expr) -> Expr {
 }
 
 fn make_minus(a: &Expr, b: &Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])]
-      .into(),
-  }
+  call(
+    "Plus",
+    vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])],
+  )
 }
 
 fn make_divide(a: &Expr, b: &Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![a.clone(), call("Power", vec![b.clone(), Expr::Integer(-1)])]
-      .into(),
-  }
+  call(
+    "Times",
+    vec![a.clone(), call("Power", vec![b.clone(), Expr::Integer(-1)])],
+  )
 }
 
 fn make_power(base: &Expr, exp: i128) -> Expr {

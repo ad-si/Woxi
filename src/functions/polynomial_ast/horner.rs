@@ -47,11 +47,7 @@ pub fn horner_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((num, denom)) = extract_fraction(expr) {
     let horner_num = horner_form_expr(&num, &var_name)?;
     let horner_denom = horner_form_expr(&denom, &var_name)?;
-    return Ok(Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(horner_num),
-      right: Box::new(horner_denom),
-    });
+    return Ok(div2(horner_num, horner_denom));
   }
 
   horner_form_expr(expr, &var_name)
@@ -93,22 +89,14 @@ fn horner_form_expr(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
   // Nest from degree-1 down to 0
   for i in (0..degree as usize).rev() {
     // result = c_i + var * result
-    let times_part = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(var_expr.clone()),
-      right: Box::new(result),
-    };
+    let times_part = times2(var_expr.clone(), result);
 
     let coeff = &coeffs[i];
     if matches!(coeff, Expr::Integer(0)) {
       // c_i is 0, just use var * result
       result = times_part;
     } else {
-      result = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(coeff.clone()),
-        right: Box::new(times_part),
-      };
+      result = plus2(coeff.clone(), times_part);
     }
   }
 
@@ -167,10 +155,7 @@ fn extract_fraction(expr: &Expr) -> Option<(Expr, Expr)> {
         let num = if num_args.len() == 1 {
           num_args.into_iter().next().unwrap()
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: num_args.into(),
-          }
+          call("Times", num_args)
         };
         Some((num, denom))
       } else {

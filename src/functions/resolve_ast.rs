@@ -71,11 +71,10 @@ pub fn resolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match head {
     "Exists" => {
-      let reduced =
-        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "Reduce".to_string(),
-          args: vec![cond.clone(), Expr::Identifier(var.clone())].into(),
-        })?;
+      let reduced = crate::evaluator::evaluate_expr_to_expr(&call(
+        "Reduce",
+        vec![cond.clone(), Expr::Identifier(var.clone())],
+      ))?;
       match &reduced {
         Expr::Identifier(s) if s == "False" => truth(false),
         Expr::Identifier(s) if s == "True" => truth(true),
@@ -97,11 +96,10 @@ pub fn resolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let Some(negated) = negate_comparison(&cond) else {
         return Ok(unevaluated(args));
       };
-      let reduced =
-        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "Reduce".to_string(),
-          args: vec![negated, Expr::Identifier(var.clone())].into(),
-        })?;
+      let reduced = crate::evaluator::evaluate_expr_to_expr(&call(
+        "Reduce",
+        vec![negated, Expr::Identifier(var.clone())],
+      ))?;
       match &reduced {
         Expr::Identifier(s) if s == "False" => truth(true),
         Expr::Identifier(s) if s == "True" => truth(false),
@@ -368,15 +366,9 @@ fn resolve_multivar(
   };
 
   // Move everything to one side: `lhs - rhs` compared against 0.
-  let diff = Expr::FunctionCall {
-    name: "Subtract".to_string(),
-    args: vec![operands[0].clone(), operands[1].clone()].into(),
-  };
-  let expanded = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Expand".to_string(),
-    args: vec![diff].into(),
-  })
-  .ok()?;
+  let diff = call("Subtract", vec![operands[0].clone(), operands[1].clone()]);
+  let expanded =
+    crate::evaluator::evaluate_expr_to_expr(&call1("Expand", diff)).ok()?;
 
   // Free (non-bound) symbols ⇒ a parametric multivariate form: leave it.
   if has_free_symbol_multi(&expanded, vars) {

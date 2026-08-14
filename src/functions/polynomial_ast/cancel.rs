@@ -329,11 +329,7 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
                 if *exp == 1 {
                   base.clone()
                 } else {
-                  Expr::BinaryOp {
-                    op: BinaryOperator::Power,
-                    left: Box::new(base.clone()),
-                    right: Box::new(Expr::Integer(*exp)),
-                  }
+                  pow2(base.clone(), Expr::Integer(*exp))
                 }
               })
               .collect();
@@ -444,11 +440,7 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
                       remaining -= reduce;
                       let new_exp = exp - reduce;
                       if new_exp > 1 {
-                        new_factors.push(Expr::BinaryOp {
-                          op: BinaryOperator::Power,
-                          left: Box::new(base),
-                          right: Box::new(Expr::Integer(new_exp)),
-                        });
+                        new_factors.push(pow2(base, Expr::Integer(new_exp)));
                       } else if new_exp == 1 {
                         new_factors.push(base);
                       }
@@ -484,11 +476,7 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
               }
               for (_, base, exp) in &den_map {
                 if *exp > 1 {
-                  new_den_factors.push(Expr::BinaryOp {
-                    op: BinaryOperator::Power,
-                    left: Box::new(base.clone()),
-                    right: Box::new(Expr::Integer(*exp)),
-                  });
+                  new_den_factors.push(pow2(base.clone(), Expr::Integer(*exp)));
                 } else if *exp == 1 {
                   new_den_factors.push(base.clone());
                 }
@@ -724,11 +712,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
     } else if d == 1 && n == 1 {
       Some(base.clone())
     } else if d == 1 {
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(base.clone()),
-        right: Box::new(Expr::Integer(n)),
-      })
+      Some(pow2(base.clone(), Expr::Integer(n)))
     } else if n == 1 && d == 2 {
       // exp = 1/2: use Sqrt[base]
       Some(make_sqrt(base.clone()))
@@ -737,10 +721,10 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
       Some(Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: Box::new(base.clone()),
-        right: Box::new(Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
-        }),
+        right: Box::new(call(
+          "Rational",
+          vec![Expr::Integer(n), Expr::Integer(d)],
+        )),
       })
     }
   }

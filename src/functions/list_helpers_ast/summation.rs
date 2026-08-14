@@ -715,15 +715,14 @@ fn infinite_integer_root_product(
   // coefficients of the original (un-cleared) numerator and denominator.
   let deg = Expr::Integer((cn.len() - 1) as i128);
   let coeff = |p: &Expr| {
-    eval(&Expr::FunctionCall {
-      name: "Coefficient".to_string(),
-      args: vec![
+    eval(&call(
+      "Coefficient",
+      vec![
         p.clone(),
         Expr::Identifier(var_name.to_string()),
         deg.clone(),
-      ]
-      .into(),
-    })
+      ],
+    ))
   };
   let lead_diff = eval(&minus2(coeff(&num)?, coeff(&den)?))?;
   if !matches!(lead_diff, Expr::Integer(0)) {
@@ -992,16 +991,14 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if !crate::functions::polynomial_ast::contains_var(body, &var_name)
             && !max_is_infinity
           {
-            let count =
-              crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![
-                  Expr::Integer(1),
-                  max_expr.clone(),
-                  call("Times", vec![Expr::Integer(-1), min_expr.clone()]),
-                ]
-                .into(),
-              })?;
+            let count = crate::evaluator::evaluate_expr_to_expr(&call(
+              "Plus",
+              vec![
+                Expr::Integer(1),
+                max_expr.clone(),
+                call("Times", vec![Expr::Integer(-1), min_expr.clone()]),
+              ],
+            ))?;
             let power = pow2(body.clone(), count);
             return crate::evaluator::evaluate_expr_to_expr(&power);
           }
@@ -1034,18 +1031,17 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             } else if max_concrete.is_none() {
               // Product[k, {k, sym_min, sym_max}]
               // = Pochhammer[min, 1 - min + max]
-              return Ok(Expr::FunctionCall {
-                name: "Pochhammer".to_string(),
-                args: vec![
+              return Ok(call(
+                "Pochhammer",
+                vec![
                   min_expr.clone(),
                   // 1 - min + max
                   plus2(
                     minus2(Expr::Integer(1), min_expr.clone()),
                     max_expr.clone(),
                   ),
-                ]
-                .into(),
-              });
+                ],
+              ));
             }
           }
 
@@ -1168,19 +1164,17 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               )
           {
             // p = (d body / d var) * var / body — the exponent of a monomial.
-            let p_expr = Expr::FunctionCall {
-              name: "Simplify".to_string(),
-              args: vec![Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![
+            let p_expr = call1(
+              "Simplify",
+              call(
+                "Times",
+                vec![
                   dbody,
                   Expr::Identifier(var_name.clone()),
                   call("Power", vec![body.clone(), Expr::Integer(-1)]),
-                ]
-                .into(),
-              }]
-              .into(),
-            };
+                ],
+              ),
+            );
             let p_val = crate::evaluator::evaluate_expr_to_expr(&p_expr).ok();
             if let Some(p) = p_val.as_ref().and_then(expr_to_i128)
               && p != 0
@@ -1199,11 +1193,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 let base = if c_is_one {
                   call1("Factorial", max_expr.clone())
                 } else {
-                  Expr::FunctionCall {
-                    name: "Gamma".to_string(),
-                    args: vec![plus2(Expr::Integer(1), max_expr.clone())]
-                      .into(),
-                  }
+                  call("Gamma", vec![plus2(Expr::Integer(1), max_expr.clone())])
                 };
                 let pow_part = if p == 1 {
                   base
@@ -1843,11 +1833,10 @@ fn regularized_infinite_sum(
         name: "Times".to_string(),
         args: vec![
           Expr::Integer(-1),
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(-(1i128 << (k + 1)))]
-              .into(),
-          },
+          call(
+            "Plus",
+            vec![Expr::Integer(1), Expr::Integer(-(1i128 << (k + 1)))],
+          ),
           zeta,
         ]
         .into(),
@@ -2706,14 +2695,14 @@ fn try_symbolic_sum(
     if let Some(s) = match_reciprocal_power(body, var_name)
       && s >= 1
     {
-      return Ok(Some(Expr::FunctionCall {
-        name: "HarmonicNumber".to_string(),
-        args: if s == 1 {
-          vec![max_expr.clone()].into()
+      return Ok(Some(call(
+        "HarmonicNumber",
+        if s == 1 {
+          vec![max_expr.clone()]
         } else {
-          vec![max_expr.clone(), Expr::Integer(s as i128)].into()
+          vec![max_expr.clone(), Expr::Integer(s as i128)]
         },
-      }));
+      )));
     }
 
     // Sum[c^i, {i, 1, n}] = c*(c^n - 1)/(c - 1) (geometric series)
@@ -3293,14 +3282,10 @@ fn match_log_geometric(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
       Expr::FunctionCall { name, args }
         if name == "Power" && args.len() == 2 =>
       {
-        out.push(Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![
-            args[0].clone(),
-            times2(Expr::Integer(-1), args[1].clone()),
-          ]
-          .into(),
-        });
+        out.push(call(
+          "Power",
+          vec![args[0].clone(), times2(Expr::Integer(-1), args[1].clone())],
+        ));
       }
       other => out.push(pow2(other.clone(), Expr::Integer(-1))),
     }
@@ -3973,10 +3958,7 @@ fn try_infinite_sum(
   {
     let one_minus_base =
       plus2(Expr::Integer(1), times2(Expr::Integer(-1), base.clone()));
-    let closed = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![coeff, div2(base, one_minus_base)].into(),
-    };
+    let closed = call("Times", vec![coeff, div2(base, one_minus_base)]);
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&closed)?));
   }
 
@@ -4129,11 +4111,10 @@ fn try_infinite_sum(
       return Ok(None);
     }
     // -coeff * Log[1 - base]
-    let log_term = Expr::FunctionCall {
-      name: "Log".to_string(),
-      args: vec![plus2(Expr::Integer(1), times2(Expr::Integer(-1), base))]
-        .into(),
-    };
+    let log_term = call1(
+      "Log",
+      plus2(Expr::Integer(1), times2(Expr::Integer(-1), base)),
+    );
     let closed = call("Times", vec![Expr::Integer(-1), coeff, log_term]);
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&closed)?));
   }

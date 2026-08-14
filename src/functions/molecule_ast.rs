@@ -608,10 +608,7 @@ fn atom_to_expr(atom: &AtomData) -> Expr {
   if let Some(mass) = atom.mass_number {
     args.push(rule("MassNumber", Expr::Integer(mass as i128)));
   }
-  Expr::FunctionCall {
-    name: "Atom".to_string(),
-    args: args.into(),
-  }
+  call("Atom", args)
 }
 
 /// Render an atom for the canonical `Molecule[…]` form: a bare element string
@@ -635,10 +632,7 @@ fn atom_to_molecule_expr(atom: &AtomData) -> Expr {
   if let Some(h) = hcount {
     args.push(rule("HydrogenCount", Expr::Integer(h as i128)));
   }
-  Expr::FunctionCall {
-    name: "Atom".to_string(),
-    args: args.into(),
-  }
+  call("Atom", args)
 }
 
 fn bond_to_expr(bond: &(usize, usize, BondKind)) -> Expr {
@@ -951,19 +945,13 @@ fn molecular_formula(graph: &MolGraph) -> Expr {
     .map(|(symbol, count)| {
       let el = Expr::String(symbol.clone());
       if *count > 1 {
-        Expr::FunctionCall {
-          name: "Subscript".to_string(),
-          args: vec![el, Expr::Integer(*count as i128)].into(),
-        }
+        call("Subscript", vec![el, Expr::Integer(*count as i128)])
       } else {
         el
       }
     })
     .collect();
-  let row = Expr::FunctionCall {
-    name: "Row".to_string(),
-    args: vec![Expr::List(items.into())].into(),
-  };
+  let row = call1("Row", Expr::List(items.into()));
   let net_charge: i64 = graph.atoms.iter().map(|a| a.formal_charge).sum();
   let charge_label = match net_charge {
     0 => return row,
@@ -972,10 +960,7 @@ fn molecular_formula(graph: &MolGraph) -> Expr {
     c if c > 1 => format!("{c}+"),
     c => format!("{}-", -c),
   };
-  Expr::FunctionCall {
-    name: "Superscript".to_string(),
-    args: vec![row, Expr::String(charge_label)].into(),
-  }
+  call("Superscript", vec![row, Expr::String(charge_label)])
 }
 
 // ---------------------------------------------------------------------------

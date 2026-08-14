@@ -63,10 +63,7 @@ pub fn eliminate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(eqs.into_iter().next().unwrap())
   } else {
     // Multiple equations: join with And
-    Ok(Expr::FunctionCall {
-      name: "And".to_string(),
-      args: eqs.into(),
-    })
+    Ok(call("And", eqs))
   }
 }
 
@@ -77,11 +74,7 @@ fn solve_for_var(eq: &Expr, var: &str) -> Option<Expr> {
   let (lhs, rhs) = extract_eq_sides(eq)?;
 
   // Convert to standard form: lhs - rhs = 0
-  let poly = Expr::BinaryOp {
-    op: BinaryOperator::Minus,
-    left: Box::new(lhs),
-    right: Box::new(rhs),
-  };
+  let poly = minus2(lhs, rhs);
   let expanded = expand_and_combine(&poly);
 
   // Check degree
@@ -170,11 +163,7 @@ fn eliminate_one_variable(
 
   for (i, eq) in equations.iter().enumerate() {
     if let Some((lhs, rhs)) = extract_eq_sides(eq) {
-      let diff = Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(lhs),
-        right: Box::new(rhs),
-      };
+      let diff = minus2(lhs, rhs);
       let expanded = expand_and_combine(&diff);
       if contains_var(&expanded, var)
         && let Some(d) = max_power_int(&expanded, var)
@@ -612,11 +601,7 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
   };
 
   // Convert to standard form: lhs - rhs = 0
-  let diff = Expr::BinaryOp {
-    op: BinaryOperator::Minus,
-    left: Box::new(lhs.clone()),
-    right: Box::new(rhs.clone()),
-  };
+  let diff = minus2(lhs.clone(), rhs.clone());
   let expanded = simplify(expand_and_combine(&diff));
 
   // Collect free variables in the result
@@ -671,11 +656,7 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
       let lhs = if c == 1 {
         Expr::Identifier(var.clone())
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(c)),
-          right: Box::new(Expr::Identifier(var.clone())),
-        }
+        times2(Expr::Integer(c), Expr::Identifier(var.clone()))
       };
       return Expr::Comparison {
         operands: vec![lhs, Expr::Integer(-r)],
@@ -740,11 +721,7 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
     } else {
       let mut result = lhs_terms[0].clone();
       for term in &lhs_terms[1..] {
-        result = Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(result),
-          right: Box::new(term.clone()),
-        };
+        result = plus2(result, term.clone());
       }
       simplify(expand_and_combine(&result))
     };
@@ -755,11 +732,7 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
     } else {
       let mut result = rhs_neg_terms[0].clone();
       for term in &rhs_neg_terms[1..] {
-        result = Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(result),
-          right: Box::new(term.clone()),
-        };
+        result = plus2(result, term.clone());
       }
       result
     };
@@ -772,11 +745,7 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
   }
 
   // Non-linear: (rhs - lhs) == 0
-  let neg_diff = Expr::BinaryOp {
-    op: BinaryOperator::Minus,
-    left: Box::new(rhs),
-    right: Box::new(lhs),
-  };
+  let neg_diff = minus2(rhs, lhs);
   let expanded_neg = simplify(expand_and_combine(&neg_diff));
 
   Expr::Comparison {

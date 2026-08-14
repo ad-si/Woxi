@@ -89,11 +89,7 @@ fn reduce_coefficients(expr: &Expr, m: i128) -> Result<Expr, InterpreterError> {
           if new_coeff == 1 {
             new_terms.push(mon);
           } else {
-            new_terms.push(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(Expr::Integer(new_coeff)),
-              right: Box::new(mon),
-            });
+            new_terms.push(times2(Expr::Integer(new_coeff), mon));
           }
         }
         None => new_terms.push(Expr::Integer(new_coeff)),
@@ -107,10 +103,7 @@ fn reduce_coefficients(expr: &Expr, m: i128) -> Result<Expr, InterpreterError> {
   let result = if new_terms.len() == 1 {
     new_terms.pop().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: new_terms.into(),
-    }
+    call("Plus", new_terms)
   };
   evaluate_expr_to_expr(&result)
 }
@@ -137,11 +130,7 @@ fn collect_sum_terms(expr: &Expr) -> Vec<Expr> {
       for t in collect_sum_terms(right) {
         let (coeff, mon) = extract_coefficient(&t);
         match mon {
-          Some(m) => terms.push(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(-coeff)),
-            right: Box::new(m),
-          }),
+          Some(m) => terms.push(times2(Expr::Integer(-coeff), m)),
           None => terms.push(Expr::Integer(-coeff)),
         }
       }
@@ -186,10 +175,7 @@ fn extract_coefficient(expr: &Expr) -> (i128, Option<Expr>) {
           let monomial = if remaining.len() == 1 {
             remaining.into_iter().next().unwrap()
           } else {
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: remaining.into(),
-            }
+            call("Times", remaining)
           };
           return (*n, Some(monomial));
         }

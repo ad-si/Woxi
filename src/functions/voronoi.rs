@@ -30,18 +30,12 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       continue;
     }
     // Non-numeric or malformed points: return EmptyRegion[2]
-    return Ok(Expr::FunctionCall {
-      name: "EmptyRegion".to_string(),
-      args: vec![Expr::Integer(2)].into(),
-    });
+    return Ok(call1("EmptyRegion", Expr::Integer(2)));
   }
 
   let n = sites.len();
   if n < 2 {
-    return Ok(Expr::FunctionCall {
-      name: "EmptyRegion".to_string(),
-      args: vec![Expr::Integer(2)].into(),
-    });
+    return Ok(call1("EmptyRegion", Expr::Integer(2)));
   }
 
   // Special case: 2 points — split bounding box by the perpendicular bisector
@@ -534,10 +528,7 @@ fn build_mesh_region(
     })
     .collect();
 
-  let polygon = Expr::FunctionCall {
-    name: "Polygon".to_string(),
-    args: vec![Expr::List(faces.into())].into(),
-  };
+  let polygon = call1("Polygon", Expr::List(faces.into()));
 
   Expr::FunctionCall {
     name: "MeshRegion".to_string(),

@@ -49,18 +49,12 @@ pub fn partition_ast(
       if let Some(p) = pad {
         full_args.push(p.clone());
       }
-      return Ok(Expr::FunctionCall {
-        name: "Partition".to_string(),
-        args: full_args.into(),
-      });
+      return Ok(call("Partition", full_args));
     }
   };
   let wrap = |elems: Vec<Expr>| -> Expr {
     match head {
-      Some(h) => Expr::FunctionCall {
-        name: h.to_string(),
-        args: elems.into(),
-      },
+      Some(h) => call(h, elems),
       None => Expr::List(elems.into()),
     }
   };
@@ -290,10 +284,7 @@ pub fn partition_multi_dim_ast(
     call_args.push(Expr::List(
       offsets.iter().map(|&x| Expr::Integer(x)).collect(),
     ));
-    Ok(Expr::FunctionCall {
-      name: "Partition".to_string(),
-      args: call_args.into(),
-    })
+    Ok(call("Partition", call_args))
   }
 }
 
@@ -337,10 +328,7 @@ fn flatten_head_ast(
       for item in args {
         flatten_with_head(item, depth, head, &mut result);
       }
-      Expr::FunctionCall {
-        name: head.to_string(),
-        args: result.into(),
-      }
+      call(head, result)
     }
     Expr::List(items) if head == "List" => {
       let mut result = Vec::new();
@@ -447,10 +435,7 @@ fn flatten_dims_ast(
     if head == "List" {
       Expr::List(items.into())
     } else {
-      Expr::FunctionCall {
-        name: head.to_string(),
-        args: items.into(),
-      }
+      call(head, items)
     }
   }
 
@@ -797,10 +782,7 @@ pub fn reverse_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         "Reverse",
         std::slice::from_ref(list),
       );
-      Ok(Expr::FunctionCall {
-        name: "Reverse".to_string(),
-        args: vec![list.clone()].into(),
-      })
+      Ok(call1("Reverse", list.clone()))
     }
   }
 }
@@ -825,10 +807,7 @@ pub fn reverse_level_ast(
       crate::syntax::format_expr(list, crate::syntax::ExprForm::Output),
       crate::syntax::format_expr(level_spec, crate::syntax::ExprForm::Output)
     ));
-    return Ok(Expr::FunctionCall {
-      name: "Reverse".to_string(),
-      args: vec![list.clone(), level_spec.clone()].into(),
-    });
+    return Ok(call("Reverse", vec![list.clone(), level_spec.clone()]));
   }
   // Parse level spec: integer n means reverse at level n,
   // {n1, n2} means reverse at levels n1 through n2
@@ -986,12 +965,8 @@ pub fn transpose_perm_ast(
   // The literal call, used for messages and the unevaluated return value.
   let perm_list = Expr::List(perm.to_vec().into());
   let perm_str = crate::syntax::expr_to_string(&perm_list);
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "Transpose".to_string(),
-      args: vec![list.clone(), perm_list.clone()].into(),
-    })
-  };
+  let unevaluated =
+    || Ok(call("Transpose", vec![list.clone(), perm_list.clone()]));
 
   // perm[s] gives the result level that input level s is moved to. Entries must
   // be positive machine integers (perm1) within 1..=k (perm2): at most k
@@ -1175,10 +1150,7 @@ pub fn tensor_transpose_ast(
 
 pub fn transpose_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   let Expr::List(rows) = list else {
-    return Ok(Expr::FunctionCall {
-      name: "Transpose".to_string(),
-      args: vec![list.clone()].into(),
-    });
+    return Ok(call1("Transpose", list.clone()));
   };
 
   if rows.is_empty() {
@@ -1980,17 +1952,14 @@ pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Rule {
           pattern,
           replacement,
-        } => Expr::FunctionCall {
-          name: "Rule".to_string(),
-          args: vec![(**pattern).clone(), (**replacement).clone()].into(),
-        },
+        } => call("Rule", vec![(**pattern).clone(), (**replacement).clone()]),
         Expr::RuleDelayed {
           pattern,
           replacement,
-        } => Expr::FunctionCall {
-          name: "RuleDelayed".to_string(),
-          args: vec![(**pattern).clone(), (**replacement).clone()].into(),
-        },
+        } => call(
+          "RuleDelayed",
+          vec![(**pattern).clone(), (**replacement).clone()],
+        ),
         other => other.clone(),
       })
       .collect();
@@ -2127,10 +2096,7 @@ pub fn append_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
         result.push((k, v));
         Ok(Expr::Association(result))
       } else {
-        Ok(Expr::FunctionCall {
-          name: "Append".to_string(),
-          args: vec![list.clone(), elem.clone()].into(),
-        })
+        Ok(call("Append", vec![list.clone(), elem.clone()]))
       }
     }
     Expr::List(items) => {
@@ -2146,10 +2112,7 @@ pub fn append_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
         args: new_args,
       })
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Append".to_string(),
-      args: vec![list.clone(), elem.clone()].into(),
-    }),
+    _ => Ok(call("Append", vec![list.clone(), elem.clone()])),
   }
 }
 
@@ -2170,10 +2133,7 @@ pub fn prepend_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
         );
         Ok(Expr::Association(result))
       } else {
-        Ok(Expr::FunctionCall {
-          name: "Prepend".to_string(),
-          args: vec![list.clone(), elem.clone()].into(),
-        })
+        Ok(call("Prepend", vec![list.clone(), elem.clone()]))
       }
     }
     // O(log N) per call once the list has upgraded to its tree-backed
@@ -2193,19 +2153,13 @@ pub fn prepend_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
         args: new_args,
       })
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Prepend".to_string(),
-      args: vec![list.clone(), elem.clone()].into(),
-    }),
+    _ => Ok(call("Prepend", vec![list.clone(), elem.clone()])),
   }
 }
 
 /// Catenate[{list1, list2, ...}] - concatenates lists or associations
 pub fn catenate_ast(list_of_lists: &Expr) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "Catenate".to_string(),
-    args: vec![list_of_lists.clone()].into(),
-  };
+  let unevaluated = || call1("Catenate", list_of_lists.clone());
   // The outer container is iterated by its elements (a list) or by its values
   // (an association). `Catenate[<|a -> {1}, b -> {2, 3}|>]` -> `{1, 2, 3}`.
   let outer: Vec<Expr> = match list_of_lists {

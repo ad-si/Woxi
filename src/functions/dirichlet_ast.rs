@@ -281,10 +281,7 @@ fn assemble_value(quarter: i128, num: i128, den: i128) -> Expr {
       0 => Expr::Integer(1),
       1 => Expr::Identifier("I".to_string()),
       2 => Expr::Integer(-1),
-      _ => Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(Expr::Identifier("I".to_string())),
-      },
+      _ => neg1(Expr::Identifier("I".to_string())),
     };
   }
   // Principal branch: the printed multiple of Pi is m = a/b = 2*num/den
@@ -381,10 +378,10 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if k == 1 {
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Zeta".to_string(),
-      args: vec![Expr::Integer(s)].into(),
-    });
+    return crate::evaluator::evaluate_expr_to_expr(&call1(
+      "Zeta",
+      Expr::Integer(s),
+    ));
   }
   if j == 1 {
     // Principal characters never evaluate (the s = 1 series diverges
@@ -430,10 +427,10 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
-            Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(a as i128 + 1), Expr::Integer(k)].into(),
-            },
+            call(
+              "Rational",
+              vec![Expr::Integer(a as i128 + 1), Expr::Integer(k)],
+            ),
             Expr::Constant("Pi".to_string()),
           ]
           .into(),
@@ -443,32 +440,22 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       terms.push(if num == 0 {
         cot
       } else {
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), cot].into(),
-        }
+        call("Times", vec![Expr::Integer(-1), cot])
       });
     }
-    let sum = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    };
+    let sum = call("Plus", terms);
     let product = Expr::FunctionCall {
       name: "Times".to_string(),
       args: vec![
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(2 * k)].into(),
-        },
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(2 * k)]),
         Expr::Constant("Pi".to_string()),
         sum,
       ]
       .into(),
     };
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Simplify".to_string(),
-      args: vec![product].into(),
-    });
+    return crate::evaluator::evaluate_expr_to_expr(&call1(
+      "Simplify", product,
+    ));
   }
 
   if s > 1 {
@@ -572,10 +559,7 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Plus".to_string(),
     args: vec![
       re_expr,
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![im_expr, Expr::Identifier("I".to_string())].into(),
-      },
+      call("Times", vec![im_expr, Expr::Identifier("I".to_string())]),
     ]
     .into(),
   })
@@ -701,10 +685,7 @@ fn classify_term(term: &Expr, var: &str) -> ConvTerm {
   } else if var_factors.len() == 1 {
     var_factors[0].clone()
   } else {
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: var_factors.into(),
-    }
+    call("Times", var_factors)
   };
   ConvTerm {
     coeff,
@@ -714,10 +695,7 @@ fn classify_term(term: &Expr, var: &str) -> ConvTerm {
 }
 
 fn divisor_sigma_expr(k: i128, m: &Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "DivisorSigma".to_string(),
-    args: vec![Expr::Integer(k), m.clone()].into(),
-  }
+  call("DivisorSigma", vec![Expr::Integer(k), m.clone()])
 }
 
 /// Closed form for a pair of classified atoms, or None when the pair has
@@ -739,15 +717,7 @@ fn convolve_pair(
       if mn > 0 {
         Some(Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![
-            Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(m.clone()),
-              right: Box::new(Expr::Integer(mn)),
-            },
-            sigma,
-          ]
-          .into(),
+          args: vec![pow2(m.clone(), Expr::Integer(mn)), sigma].into(),
         })
       } else {
         Some(sigma)
@@ -759,19 +729,13 @@ fn convolve_pair(
         name: "Plus".to_string(),
         args: vec![
           Expr::Integer(1),
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), m.clone()].into(),
-          },
+          call("Times", vec![Expr::Integer(-1), m.clone()]),
         ]
         .into(),
       }]
       .into(),
     }),
-    (Mu, Power(1)) | (Power(1), Mu) => Some(Expr::FunctionCall {
-      name: "EulerPhi".to_string(),
-      args: vec![m.clone()].into(),
-    }),
+    (Mu, Power(1)) | (Power(1), Mu) => Some(call1("EulerPhi", m.clone())),
     (Phi, Power(0)) | (Power(0), Phi) => Some(m.clone()),
     (Unknown, Power(0)) if with_divisor_sum => {
       Some(divisor_sum_expr(&a.atom_expr, var, m))
@@ -852,10 +816,7 @@ fn scale_by_coeffs(core: Expr, a: &ConvTerm, b: &ConvTerm) -> Expr {
     return core;
   }
   factors.push(core);
-  Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: factors.into(),
-  }
+  call("Times", factors)
 }
 
 pub fn dirichlet_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -887,16 +848,10 @@ pub fn dirichlet_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             crate::syntax::substitute_variable(f, &var, &Expr::Integer(*d));
           let gq =
             crate::syntax::substitute_variable(g, &var, &Expr::Integer(mv / d));
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![fd, gq].into(),
-          }
+          call("Times", vec![fd, gq])
         })
         .collect();
-      return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: terms.into(),
-      });
+      return crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms));
     }
     Expr::Real(_) | Expr::BigInteger(_) | Expr::BigFloat(_, _) => {
       return Ok(unevaluated());
@@ -929,10 +884,7 @@ pub fn dirichlet_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   if all_reduce {
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: reduced.into(),
-    });
+    return crate::evaluator::evaluate_expr_to_expr(&call("Plus", reduced));
   }
 
   // 2. g == 1: the convolution is a plain divisor sum over f (whole f,
@@ -971,10 +923,7 @@ pub fn dirichlet_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       parts.push(scale_by_coeffs(core, at, bt));
     }
   }
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: parts.into(),
-  })
+  crate::evaluator::evaluate_expr_to_expr(&call("Plus", parts))
 }
 
 /// All positive divisors of n in ascending order.

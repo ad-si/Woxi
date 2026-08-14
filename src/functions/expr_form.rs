@@ -347,10 +347,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
         head: "Pattern".to_string(),
         children: vec![
           Expr::Identifier(name.clone()),
-          Expr::FunctionCall {
-            name: blank_func_name.to_string(),
-            args: blank_args.into(),
-          },
+          call(blank_func_name, blank_args),
         ],
       }
     }
@@ -371,10 +368,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       let pattern = if name.is_empty() {
         blank
       } else {
-        Expr::FunctionCall {
-          name: "Pattern".to_string(),
-          args: vec![Expr::Identifier(name.clone()), blank].into(),
-        }
+        call("Pattern", vec![Expr::Identifier(name.clone()), blank])
       };
       let mut children = vec![pattern];
       if let Some(d) = default {
@@ -401,19 +395,13 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
         None => vec![],
       };
       let blank_part = if name.is_empty() {
-        Expr::FunctionCall {
-          name: blank_name.to_string(),
-          args: blank_args.into(),
-        }
+        call(blank_name, blank_args)
       } else {
         Expr::FunctionCall {
           name: "Pattern".to_string(),
           args: vec![
             Expr::Identifier(name.clone()),
-            Expr::FunctionCall {
-              name: blank_name.to_string(),
-              args: blank_args.into(),
-            },
+            call(blank_name, blank_args),
           ]
           .into(),
         }

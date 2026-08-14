@@ -356,12 +356,11 @@ fn rat_from_expr(e: &Expr) -> Option<Rat> {
 /// Extract ascending rational coefficients of `f` in `var` via CoefficientList;
 /// None if `f` is not a univariate polynomial with rational coefficients.
 fn poly_from(f: &Expr, var: &str) -> Option<Poly> {
-  let coeff_list =
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "CoefficientList".to_string(),
-      args: vec![f.clone(), Expr::Identifier(var.to_string())].into(),
-    })
-    .ok()?;
+  let coeff_list = crate::evaluator::evaluate_expr_to_expr(&call(
+    "CoefficientList",
+    vec![f.clone(), Expr::Identifier(var.to_string())],
+  ))
+  .ok()?;
   let Expr::List(items) = &coeff_list else {
     return None;
   };

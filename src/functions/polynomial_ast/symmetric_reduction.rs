@@ -28,11 +28,7 @@ fn pow(base: Expr, e: i128) -> Expr {
   if e == 1 {
     return base;
   }
-  Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(base),
-    right: Box::new(Expr::Integer(e)),
-  }
+  pow2(base, Expr::Integer(e))
 }
 
 /// Extract `(exponent vector, coefficient)` pairs from
@@ -135,11 +131,7 @@ pub fn power_symmetric_polynomial_ast(
     _ => return unevaluated(),
   };
 
-  let power = |base: &Expr, exp: &Expr| Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(base.clone()),
-    right: Box::new(exp.clone()),
-  };
+  let power = |base: &Expr, exp: &Expr| pow2(base.clone(), exp.clone());
 
   match &rspec {
     Expr::List(rs) => {

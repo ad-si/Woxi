@@ -688,10 +688,10 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut prev: Expr = Expr::Integer(2);
     let mut curr: Expr = x.clone();
     for _ in 2..=n {
-      let next = Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![call("Times", vec![x.clone(), curr.clone()]), prev].into(),
-      };
+      let next = call(
+        "Plus",
+        vec![call("Times", vec![x.clone(), curr.clone()]), prev],
+      );
       let expanded =
         crate::evaluator::evaluate_function_call_ast("Expand", &[next])?;
       prev = curr;
@@ -2110,10 +2110,7 @@ pub fn hyper_harmonic_number_ast(
   if r == 0 {
     let n_pow = pow2(Expr::Integer(n), neg_s(&s));
     let term = match x {
-      Some(x) => Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![pow2(x.clone(), Expr::Integer(n)), n_pow].into(),
-      },
+      Some(x) => call("Times", vec![pow2(x.clone(), Expr::Integer(n)), n_pow]),
       None => n_pow,
     };
     return crate::evaluator::evaluate_expr_to_expr(&term);

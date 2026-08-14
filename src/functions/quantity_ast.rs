@@ -1141,10 +1141,7 @@ fn components_to_unit_expr(components: &[(String, i64)]) -> Expr {
   } else if numer_parts.len() == 1 {
     numer_parts.remove(0)
   } else {
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: numer_parts.into(),
-    }
+    call("Times", numer_parts)
   };
 
   if denom_parts.is_empty() {
@@ -1153,10 +1150,7 @@ fn components_to_unit_expr(components: &[(String, i64)]) -> Expr {
     let denom = if denom_parts.len() == 1 {
       denom_parts.remove(0)
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: denom_parts.into(),
-      }
+      call("Times", denom_parts)
     };
     div2(numer, denom)
   }
@@ -1337,10 +1331,10 @@ fn format_expand_compound_unit(name: &str) -> Option<Expr> {
 /// Build the unit expression `"<length>"^2` (e.g. Meters^2) used to canonicalize
 /// "Square…" area aliases.
 fn squared_length_unit(length: &str) -> Expr {
-  Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![Expr::String(length.to_string()), Expr::Integer(2)].into(),
-  }
+  call(
+    "Power",
+    vec![Expr::String(length.to_string()), Expr::Integer(2)],
+  )
 }
 
 /// Try to produce the plural form of a singular unit name.
@@ -1529,10 +1523,7 @@ fn is_pure_number(expr: &Expr) -> bool {
 
 fn make_quantity(magnitude: Expr, unit: Expr) -> Expr {
   let unit = normalize_unit(unit);
-  Expr::FunctionCall {
-    name: "Quantity".to_string(),
-    args: vec![magnitude, unit].into(),
-  }
+  call("Quantity", vec![magnitude, unit])
 }
 
 /// Convert a magnitude from `from_unit` to `to_unit` (must be same dimension).
@@ -1646,10 +1637,7 @@ pub fn quantity_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // When the unit is a pure number (Integer, Real, or Rational), Quantity[m, n]
       // reduces to the product m*n to match Mathematica's behavior.
       if is_pure_number(&unit) {
-        let product = Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![magnitude, unit].into(),
-        };
+        let product = call("Times", vec![magnitude, unit]);
         return crate::evaluator::evaluate_expr_to_expr(&product);
       }
       Ok(make_quantity(magnitude, unit))
@@ -1900,40 +1888,24 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
         if *e == 1 {
           base
         } else {
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![base, Expr::Integer(*e as i128)].into(),
-          }
+          call("Power", vec![base, Expr::Integer(*e as i128)])
         }
       })
       .collect();
     if terms.len() == 1 {
       terms.pop()
     } else {
-      Some(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: terms.into(),
-      })
+      Some(call("Times", terms))
     }
   };
   let numer = build_product(&positives);
   let denom = build_product(&negatives);
   match (numer, denom) {
     (Some(n), None) => n,
-    (None, Some(d)) => Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![d, Expr::Integer(-1)].into(),
-    },
+    (None, Some(d)) => call("Power", vec![d, Expr::Integer(-1)]),
     (Some(n), Some(d)) => Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![
-        n,
-        Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![d, Expr::Integer(-1)].into(),
-        },
-      ]
-      .into(),
+      args: vec![n, call("Power", vec![d, Expr::Integer(-1)])].into(),
     },
     (None, None) => Expr::Integer(1),
   }
@@ -2011,10 +1983,10 @@ fn try_temperature_convert(
   let result = div2(times2(shifted, int(mtd)), int(mtn));
   let new_mag = crate::evaluator::evaluate_expr_to_expr(&result)?;
 
-  Ok(Some(Expr::FunctionCall {
-    name: "Quantity".to_string(),
-    args: vec![new_mag, Expr::String(temp_output_unit(tgt).to_string())].into(),
-  }))
+  Ok(Some(call(
+    "Quantity",
+    vec![new_mag, Expr::String(temp_output_unit(tgt).to_string())],
+  )))
 }
 
 pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -2033,10 +2005,10 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let target = si_base_unit_expr(&from.dimensions);
       // Evaluate the 2-argument call so the freshly-built target unit is
       // normalized the same way a typed unit specification would be.
-      return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "UnitConvert".to_string(),
-        args: vec![args[0].clone(), target].into(),
-      });
+      return crate::evaluator::evaluate_expr_to_expr(&call(
+        "UnitConvert",
+        vec![args[0].clone(), target],
+      ));
     }
     // A dimensionless numeric argument (a plain number, Pi, Sqrt[2], 1 + I, …)
     // is already "converted": it passes through unchanged, matching
@@ -2084,10 +2056,7 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // (preserves the user's target unit naming)
       // UnitConvert normalizes the target to canonical form
       let norm_target = normalize_unit_for_output(target.clone());
-      Ok(Expr::FunctionCall {
-        name: "Quantity".to_string(),
-        args: vec![new_mag, norm_target].into(),
-      })
+      Ok(call("Quantity", vec![new_mag, norm_target]))
     } else {
       // Fallback: return unevaluated
       Ok(unevaluated("UnitConvert", args))
@@ -2207,10 +2176,7 @@ pub fn try_quantity_plus(
       let mut sorted_args = args.to_vec();
       sorted_args
         .sort_by(crate::functions::list_helpers_ast::sorting::canonical_cmp);
-      return Some(Ok(Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: sorted_args.into(),
-      }));
+      return Some(Ok(call("Plus", sorted_args)));
     }
   }
 
@@ -2298,10 +2264,7 @@ pub fn try_quantity_plus(
     // Mix of Quantity and non-Quantity — return unevaluated Plus with quantities combined
     other_args.push(result);
     // Sort: non-quantity first, quantity last (matching Wolfram behavior)
-    Some(Ok(Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: other_args.into(),
-    }))
+    Some(Ok(call("Plus", other_args)))
   }
 }
 
@@ -2348,10 +2311,7 @@ pub fn try_quantity_times(
     let raw_compound = if unit_parts.len() == 1 {
       unit_parts.remove(0)
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: unit_parts.into(),
-      }
+      call("Times", unit_parts)
     };
 
     // Try to simplify compound unit (merge same-dimension units)
@@ -2551,10 +2511,7 @@ fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
   } else if numer_parts.len() == 1 {
     numer_parts.remove(0)
   } else {
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: numer_parts.into(),
-    }
+    call("Times", numer_parts)
   };
 
   if denom_parts.is_empty() {
@@ -2563,10 +2520,7 @@ fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
     let denom = if denom_parts.len() == 1 {
       denom_parts.remove(0)
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: denom_parts.into(),
-      }
+      call("Times", denom_parts)
     };
     Some(div2(numer, denom))
   }
@@ -2933,10 +2887,7 @@ fn unit_has_named_power(unit: &Expr) -> bool {
 fn unit_power(base: &Expr, exponent: &Expr) -> Expr {
   match exponent {
     Expr::Integer(-1) => base.clone(),
-    Expr::Integer(n) => Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![base.clone(), Expr::Integer(-n)].into(),
-    },
+    Expr::Integer(n) => call("Power", vec![base.clone(), Expr::Integer(-n)]),
     _ => base.clone(),
   }
 }

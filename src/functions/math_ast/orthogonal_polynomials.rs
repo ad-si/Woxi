@@ -886,11 +886,10 @@ pub fn spherical_harmonic_y_ast(
       try_eval_to_f64(&args[3]),
     ) {
       let cos_theta = theta.cos();
-      let leg_call = Expr::FunctionCall {
-        name: "LegendreP".to_string(),
-        args: vec![Expr::Real(lf), Expr::Real(mf), Expr::Real(cos_theta)]
-          .into(),
-      };
+      let leg_call = call(
+        "LegendreP",
+        vec![Expr::Real(lf), Expr::Real(mf), Expr::Real(cos_theta)],
+      );
       let Ok(Expr::Real(leg_val)) =
         crate::evaluator::evaluate_expr_to_expr(&leg_call)
       else {
@@ -984,11 +983,10 @@ pub fn spherical_harmonic_y_ast(
   //      = Sqrt[(2l+1) / (Pi * fact_ratio_den)] / 2
   // Pulling out the 4 factor matches Wolfram's canonical Sqrt-based form.
   let two_l_plus_1 = 2 * l_u + 1;
-  let norm_inner = Expr::FunctionCall {
-    name: "Rational".to_string(),
-    args: vec![Expr::Integer(two_l_plus_1), Expr::Integer(fact_ratio_den)]
-      .into(),
-  };
+  let norm_inner = call(
+    "Rational",
+    vec![Expr::Integer(two_l_plus_1), Expr::Integer(fact_ratio_den)],
+  );
   // Sqrt[Rational[2l+1, fact_ratio_den] / Pi] = Sqrt[arg]
   let sqrt_arg = Expr::FunctionCall {
     name: "Times".to_string(),
@@ -1197,11 +1195,10 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
       name: "Times".to_string(),
       args: vec![
         new_radicand_rat,
-        Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)]
-            .into(),
-        },
+        call(
+          "Power",
+          vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)],
+        ),
       ]
       .into(),
     };
@@ -3295,11 +3292,10 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let r = crate::evaluator::evaluate_expr_to_expr(&e).ok()?;
           try_eval_to_f64(&r)
         };
-        let h1 = eval_real(Expr::FunctionCall {
-          name: "Hypergeometric1F1".to_string(),
-          args: vec![Expr::Real(-nu / 2.0), Expr::Real(0.5), Expr::Real(x2)]
-            .into(),
-        });
+        let h1 = eval_real(call(
+          "Hypergeometric1F1",
+          vec![Expr::Real(-nu / 2.0), Expr::Real(0.5), Expr::Real(x2)],
+        ));
         let h2 = eval_real(Expr::FunctionCall {
           name: "Hypergeometric1F1".to_string(),
           args: vec![

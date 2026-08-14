@@ -411,10 +411,7 @@ pub fn apply_interpreter(
 
   // Unhandled domain/arguments: keep the curried form unevaluated.
   Ok(Expr::CurriedCall {
-    func: Box::new(Expr::FunctionCall {
-      name: "Interpreter".to_string(),
-      args: vec![domain.clone()].into(),
-    }),
+    func: Box::new(call1("Interpreter", domain.clone())),
     args: applied.to_vec(),
   })
 }

@@ -375,10 +375,7 @@ pub fn calendar_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(cal) = calendar {
       oargs.push(Expr::String(cal.to_string()));
     }
-    Ok(Expr::FunctionCall {
-      name: "DateObject".to_string(),
-      args: oargs.into(),
-    })
+    Ok(call("DateObject", oargs))
   };
 
   match target {
@@ -900,10 +897,7 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             return Ok(Expr::Real(total));
           }
         }
-        Ok(Expr::FunctionCall {
-          name: "AbsoluteTime".to_string(),
-          args: vec![arg].into(),
-        })
+        Ok(call1("AbsoluteTime", arg))
       }
     }
     Expr::String(s) => {
@@ -911,20 +905,14 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let total = date_to_absolute_seconds(y, m, d, 0, 0, 0.0);
         Ok(Expr::Integer(total as i128))
       } else {
-        Ok(Expr::FunctionCall {
-          name: "AbsoluteTime".to_string(),
-          args: vec![arg].into(),
-        })
+        Ok(call1("AbsoluteTime", arg))
       }
     }
     Expr::Integer(n) => {
       // AbsoluteTime[n] returns n (already absolute time)
       Ok(Expr::Integer(*n))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "AbsoluteTime".to_string(),
-      args: vec![arg].into(),
-    }),
+    _ => Ok(call1("AbsoluteTime", arg)),
   }
 }
 
@@ -983,10 +971,7 @@ pub fn date_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             return Ok(make_date_list(y, m, d, 0, 0, 0.0));
           }
         }
-        Ok(Expr::FunctionCall {
-          name: "DateList".to_string(),
-          args: vec![arg].into(),
-        })
+        Ok(call1("DateList", arg))
       }
     }
     Expr::String(s) => {
@@ -1012,10 +997,7 @@ pub fn date_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some((y, m, d)) = parse_date_string(s) {
         Ok(make_date_list(y, m, d, 0, 0, 0.0))
       } else {
-        Ok(Expr::FunctionCall {
-          name: "DateList".to_string(),
-          args: vec![arg].into(),
-        })
+        Ok(call1("DateList", arg))
       }
     }
     Expr::FunctionCall {
@@ -1025,16 +1007,10 @@ pub fn date_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(date_list) = resolve_date_to_list(&arg) {
         Ok(date_list)
       } else {
-        Ok(Expr::FunctionCall {
-          name: "DateList".to_string(),
-          args: vec![arg].into(),
-        })
+        Ok(call1("DateList", arg))
       }
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "DateList".to_string(),
-      args: vec![arg].into(),
-    }),
+    _ => Ok(call1("DateList", arg)),
   }
 }
 
@@ -1260,10 +1236,10 @@ fn date_interval_endpoint(iargs: &[Expr], want_max: bool) -> Option<Expr> {
       }
     })
     .collect();
-  Some(Expr::FunctionCall {
-    name: "DateObject".to_string(),
-    args: vec![Expr::List(trimmed.into()), Expr::String(granularity)].into(),
-  })
+  Some(call(
+    "DateObject",
+    vec![Expr::List(trimmed.into()), Expr::String(granularity)],
+  ))
 }
 
 /// MaxDate[{d1, d2, …}] / MinDate[...] give the latest / earliest date,
@@ -1578,10 +1554,7 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let input_is_date_object = matches!(&date_arg, Expr::FunctionCall { name, .. } if name == "DateObject");
 
   let Some(components) = extract_date_components(&date_arg) else {
-    return Ok(Expr::FunctionCall {
-      name: "DatePlus".to_string(),
-      args: vec![date_arg, delta_arg].into(),
-    });
+    return Ok(call("DatePlus", vec![date_arg, delta_arg]));
   };
   // A date needs at least a year; an empty specification has none, and
   // indexing it used to abort the whole evaluation.
@@ -1762,18 +1735,12 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
              specification for DatePlus.",
             quantity_increment_text(&qargs[0], &unit)
           ));
-          return Ok(Expr::FunctionCall {
-            name: "DatePlus".to_string(),
-            args: vec![date_arg, delta_arg].into(),
-          });
+          return Ok(call("DatePlus", vec![date_arg, delta_arg]));
         }
       }
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "DatePlus".to_string(),
-        args: vec![date_arg, delta_arg].into(),
-      });
+      return Ok(call("DatePlus", vec![date_arg, delta_arg]));
     }
   };
 
@@ -2002,10 +1969,7 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Expr::Real(diff_days)
     };
-    return Ok(Expr::FunctionCall {
-      name: "Quantity".to_string(),
-      args: vec![n, Expr::String("Days".to_string())].into(),
-    });
+    return Ok(call("Quantity", vec![n, Expr::String("Days".to_string())]));
   }
 
   // With unit specification
@@ -2074,10 +2038,10 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => (real_or_int(diff_days), "Days"),
   };
 
-  Ok(Expr::FunctionCall {
-    name: "Quantity".to_string(),
-    args: vec![n, Expr::String(unit_name.to_string())].into(),
-  })
+  Ok(call(
+    "Quantity",
+    vec![n, Expr::String(unit_name.to_string())],
+  ))
 }
 
 fn date_difference_multi_unit(
@@ -2168,14 +2132,8 @@ fn date_difference_multi_unit(
   Expr::FunctionCall {
     name: "Quantity".to_string(),
     args: vec![
-      Expr::FunctionCall {
-        name: "MixedMagnitude".to_string(),
-        args: vec![Expr::List(magnitudes.into())].into(),
-      },
-      Expr::FunctionCall {
-        name: "MixedUnit".to_string(),
-        args: vec![Expr::List(plurals.into())].into(),
-      },
+      call1("MixedMagnitude", Expr::List(magnitudes.into())),
+      call1("MixedUnit", Expr::List(plurals.into())),
     ]
     .into(),
   }
@@ -2195,10 +2153,10 @@ fn unevaluated_date_difference(c1: &[f64], c2: &[f64], units: &Expr) -> Expr {
         .collect(),
     )
   };
-  Expr::FunctionCall {
-    name: "DateDifference".to_string(),
-    args: vec![to_list(c1), to_list(c2), units.clone()].into(),
-  }
+  call(
+    "DateDifference",
+    vec![to_list(c1), to_list(c2), units.clone()],
+  )
 }
 
 /// DateString[date, format] — format a date as a string
@@ -2817,10 +2775,7 @@ fn day_round_result(
     date_args.push(Expr::String("Gregorian".to_string()));
     date_args.push(tz);
   }
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "DateObject".to_string(),
-    args: date_args.into(),
-  })
+  crate::evaluator::evaluate_expr_to_expr(&call("DateObject", date_args))
 }
 
 /// DayRound[date, daytype] — round `date` to the nearest day of the given day
@@ -3910,10 +3865,11 @@ fn instant_to_granular_date_object(seconds: f64, gran: &str) -> Expr {
     ]
     .into(),
   };
-  let date_only = |fields: Vec<Expr>, gran: &str| Expr::FunctionCall {
-    name: "DateObject".to_string(),
-    args: vec![Expr::List(fields.into()), Expr::String(gran.to_string())]
-      .into(),
+  let date_only = |fields: Vec<Expr>, gran: &str| {
+    call(
+      "DateObject",
+      vec![Expr::List(fields.into()), Expr::String(gran.to_string())],
+    )
   };
   match gran {
     "Year" => date_only(vec![int(y)], "Year"),
@@ -4390,10 +4346,10 @@ pub fn date_select_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Filtering is exactly Select.
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Select".to_string(),
-    args: vec![list, args[1].clone()].into(),
-  })
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    "Select",
+    vec![list, args[1].clone()],
+  ))
 }
 
 /// DateOverlapsQ[date1, date2] — True when the calendar spans of two
@@ -4639,10 +4595,10 @@ pub fn from_julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Plus".to_string(),
       args: vec![
         Expr::Integer(sec_whole),
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(rem_num / g), Expr::Integer(sd / g)].into(),
-        },
+        call(
+          "Rational",
+          vec![Expr::Integer(rem_num / g), Expr::Integer(sd / g)],
+        ),
       ]
       .into(),
     })?

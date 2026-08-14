@@ -116,11 +116,10 @@ impl Color {
     if (self.r - self.g).abs() < 1e-14 && (self.g - self.b).abs() < 1e-14 {
       call1("GrayLevel", Expr::Real(self.r))
     } else {
-      Expr::FunctionCall {
-        name: "RGBColor".to_string(),
-        args: vec![Expr::Real(self.r), Expr::Real(self.g), Expr::Real(self.b)]
-          .into(),
-      }
+      call(
+        "RGBColor",
+        vec![Expr::Real(self.r), Expr::Real(self.g), Expr::Real(self.b)],
+      )
     }
   }
 
@@ -10237,15 +10236,14 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       let (fr, fg, fb) = sd.fill_color.unwrap_or(sd.color);
       let mut fill_prims: Vec<Expr> = vec![
         call1("Opacity", Expr::Real(sd.fill_opacity.unwrap_or(0.2))),
-        Expr::FunctionCall {
-          name: "RGBColor".to_string(),
-          args: vec![
+        call(
+          "RGBColor",
+          vec![
             Expr::Real(fr as f64 / 255.0),
             Expr::Real(fg as f64 / 255.0),
             Expr::Real(fb as f64 / 255.0),
-          ]
-          .into(),
-        },
+          ],
+        ),
       ];
       for seg in &crate::functions::plot::split_into_segments(&sd.points) {
         if seg.len() < 2 {
@@ -10268,15 +10266,14 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       series_prims.push(Expr::List(fill_prims.into()));
     }
     // Color directive
-    series_prims.push(Expr::FunctionCall {
-      name: "RGBColor".to_string(),
-      args: vec![
+    series_prims.push(call(
+      "RGBColor",
+      vec![
         Expr::Real(sd.color.0 as f64 / 255.0),
         Expr::Real(sd.color.1 as f64 / 255.0),
         Expr::Real(sd.color.2 as f64 / 255.0),
-      ]
-      .into(),
-    });
+      ],
+    ));
     if sd.is_scatter {
       series_prims.push(call1("PointSize", Expr::Real(0.012)));
       let coords: Vec<Expr> = sd

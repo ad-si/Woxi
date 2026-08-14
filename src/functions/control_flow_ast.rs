@@ -182,10 +182,7 @@ pub fn piecewise_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let cond = if conds.len() == 1 {
       conds.into_iter().next().unwrap()
     } else {
-      evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Or".to_string(),
-        args: conds.into(),
-      })?
+      evaluate_expr_to_expr(&call("Or", conds))?
     };
     clauses.push(Expr::List(vec![val, cond].into()));
   }
@@ -205,10 +202,10 @@ pub fn piecewise_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(default_val);
   }
 
-  Ok(Expr::FunctionCall {
-    name: "Piecewise".to_string(),
-    args: vec![Expr::List(clauses.into()), default_val].into(),
-  })
+  Ok(call(
+    "Piecewise",
+    vec![Expr::List(clauses.into()), default_val],
+  ))
 }
 
 /// Parse the message-off specification for Quiet.
@@ -378,10 +375,7 @@ pub fn quiet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Wrap an expression in HoldForm.
 fn hold_form(expr: &Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "HoldForm".to_string(),
-    args: vec![expr.clone()].into(),
-  }
+  call1("HoldForm", expr.clone())
 }
 
 /// Call the trace function on an expression, unconditionally.

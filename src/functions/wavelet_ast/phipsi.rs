@@ -82,10 +82,7 @@ fn wavelet_phi_psi_ast(args: &[Expr], phi: bool) -> crate::syntax::Expr {
     let result = continuous_psi(&cspec, x);
     // Inexact input gives a fully numeric result.
     if num(x).is_some() && matches!(x, Expr::Real(_) | Expr::BigFloat(_, _)) {
-      return eval(Expr::FunctionCall {
-        name: "N".to_string(),
-        args: vec![result.clone()].into(),
-      });
+      return eval(call1("N", result.clone()));
     }
     return result;
   }
@@ -166,17 +163,10 @@ fn continuous_psi(spec: &ContinuousWaveletSpec, x: &Expr) -> Expr {
       // (-1)^(n+1)/Sqrt[Gamma[n + 1/2]] D[Exp[-t^2/2], {t, n}]; the
       // derivative needs an explicit integer order.
       let Expr::Integer(n) = order else {
-        return Expr::FunctionCall {
-          name: "WaveletPsi".to_string(),
-          args: vec![
-            Expr::FunctionCall {
-              name: "DGaussianWavelet".to_string(),
-              args: vec![order.clone()].into(),
-            },
-            x.clone(),
-          ]
-          .into(),
-        };
+        return call(
+          "WaveletPsi",
+          vec![call1("DGaussianWavelet", order.clone()), x.clone()],
+        );
       };
       let template = format!(
         "(-1)^({n}+1)/Sqrt[Gamma[{n} + 1/2]] * (D[Exp[-wpsivar^2/2], {{wpsivar, {n}}}] /. wpsivar -> #x#)"

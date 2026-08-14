@@ -1108,11 +1108,10 @@ fn date_object_instant(jd: f64) -> Expr {
 }
 
 fn angle_quantity(deg: f64) -> Expr {
-  Expr::FunctionCall {
-    name: "Quantity".to_string(),
-    args: vec![Expr::Real(deg), Expr::String("AngularDegrees".to_string())]
-      .into(),
-  }
+  call(
+    "Quantity",
+    vec![Expr::Real(deg), Expr::String("AngularDegrees".to_string())],
+  )
 }
 
 /// Right ascension is reported in hours, not degrees — the same unit
@@ -1125,13 +1124,6 @@ fn right_ascension_quantity(hours: f64) -> Expr {
       Expr::String("HoursOfRightAscension".to_string()),
     ]
     .into(),
-  }
-}
-
-fn unevaluated(name: &str, args: &[Expr]) -> crate::syntax::Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
   }
 }
 
@@ -1425,10 +1417,7 @@ fn sun_event_ast(name: &str, rise: bool, args: &[Expr]) -> crate::syntax::Expr {
     // The event on the given UTC calendar day
     match sun_rise_set(jd, lat, lon) {
       Some((r, s)) => date_object_instant(if rise { r } else { s }),
-      None => Expr::FunctionCall {
-        name: "Missing".to_string(),
-        args: vec![Expr::String("NotApplicable".to_string())].into(),
-      },
+      None => call1("Missing", Expr::String("NotApplicable".to_string())),
     }
   } else {
     // No date given: the next event after now (skipping polar
@@ -1442,10 +1431,7 @@ fn sun_event_ast(name: &str, rise: bool, args: &[Expr]) -> crate::syntax::Expr {
         // Event already passed today; the loop moves on to the next day.
       }
     }
-    Expr::FunctionCall {
-      name: "Missing".to_string(),
-      args: vec![Expr::String("NotApplicable".to_string())].into(),
-    }
+    call1("Missing", Expr::String("NotApplicable".to_string()))
   }
 }
 

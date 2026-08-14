@@ -351,10 +351,10 @@ impl<'a> Parser<'a> {
           })
           .collect();
         prolog.push(Expr::CurriedCall {
-          func: Box::new(Expr::FunctionCall {
-            name: "XMLObject".to_string(),
-            args: vec![Expr::String("Declaration".to_string())].into(),
-          }),
+          func: Box::new(call1(
+            "XMLObject",
+            Expr::String("Declaration".to_string()),
+          )),
           args: renamed,
         });
         continue;
@@ -394,15 +394,14 @@ fn namespaced_name(uri: &str, local: &str) -> Expr {
 }
 
 fn xml_element(name: Expr, attributes: Vec<Expr>, children: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: "XMLElement".to_string(),
-    args: vec![
+  call(
+    "XMLElement",
+    vec![
       name,
       Expr::List(attributes.into()),
       Expr::List(children.into()),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// Parse a whole XML document into wolframscript's symbolic form.
@@ -423,10 +422,7 @@ pub fn parse_xml_document(source: &str) -> Result<Expr, XmlError> {
     return parser.error();
   }
   Ok(Expr::CurriedCall {
-    func: Box::new(Expr::FunctionCall {
-      name: "XMLObject".to_string(),
-      args: vec![Expr::String("Document".to_string())].into(),
-    }),
+    func: Box::new(call1("XMLObject", Expr::String("Document".to_string()))),
     args: vec![Expr::List(prolog.into()), root, Expr::List(epilog.into())],
   })
 }

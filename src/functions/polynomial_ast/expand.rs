@@ -157,10 +157,7 @@ fn expand_with_pattern_top(expr: &Expr, pat: &Expr, var: Option<&str>) -> Expr {
   if final_terms.len() == 1 {
     return final_terms.remove(0);
   }
-  Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: final_terms.into(),
-  }
+  call("Plus", final_terms)
 }
 
 /// True when the 2nd argument to `Expand[expr, …]` is a value to match
@@ -234,10 +231,7 @@ fn expand_with_pattern(expr: &Expr, pat: &Expr) -> Expr {
       let exp = expand_with_pattern(t, pat);
       flatten_plus_into(&exp, &mut flat);
     }
-    return Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: flat.into(),
-    };
+    return call("Plus", flat);
   }
   let times_args: Option<Vec<Expr>> = match expr {
     Expr::FunctionCall { name, args } if name == "Times" => Some(args.to_vec()),
@@ -292,19 +286,13 @@ fn expand_with_pattern(expr: &Expr, pat: &Expr) -> Expr {
       for t in &plus_terms {
         let mut new_factors = other_factors.clone();
         new_factors.push(t.clone());
-        let times = Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: new_factors.into(),
-        };
+        let times = call("Times", new_factors);
         let evaluated =
           crate::evaluator::evaluate_expr_to_expr(&times).unwrap_or(times);
         let exp = expand_with_pattern(&evaluated, pat);
         flatten_plus_into(&exp, &mut new_terms);
       }
-      return Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: new_terms.into(),
-      };
+      return call("Plus", new_terms);
     }
     return expr.clone();
   }
@@ -470,11 +458,7 @@ fn reduce_coefficients_mod(expr: &Expr, m: i128) -> Expr {
       if is_zero_expr(&l) || is_zero_expr(&r) {
         return Expr::Integer(0);
       }
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(l),
-        right: Box::new(r),
-      }
+      times2(l, r)
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
       let reduced: Vec<Expr> =
@@ -482,10 +466,7 @@ fn reduce_coefficients_mod(expr: &Expr, m: i128) -> Expr {
       if reduced.iter().any(is_zero_expr) {
         return Expr::Integer(0);
       }
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: reduced.into(),
-      }
+      call("Times", reduced)
     }
     // Power: only reduce the base (the exponent is a structural integer).
     Expr::BinaryOp {
@@ -498,11 +479,10 @@ fn reduce_coefficients_mod(expr: &Expr, m: i128) -> Expr {
       right: right.clone(),
     },
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![reduce_coefficients_mod(&args[0], m), args[1].clone()]
-          .into(),
-      }
+      call(
+        "Power",
+        vec![reduce_coefficients_mod(&args[0], m), args[1].clone()],
+      )
     }
     _ => reduce_term_mod(expr, m),
   }
@@ -533,11 +513,7 @@ fn reduce_term_mod(term: &Expr, m: i128) -> Expr {
         if r == 1 {
           return right_reduced;
         }
-        return Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(r)),
-          right: Box::new(right_reduced),
-        };
+        return times2(Expr::Integer(r), right_reduced);
       }
       // Non-Integer leading factor: just recurse into both sides.
       let l = reduce_coefficients_mod(left, m);
@@ -545,11 +521,7 @@ fn reduce_term_mod(term: &Expr, m: i128) -> Expr {
       if is_zero_expr(&l) || is_zero_expr(&r) {
         return Expr::Integer(0);
       }
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(l),
-        right: Box::new(r),
-      }
+      times2(l, r)
     }
     Expr::FunctionCall { name, args }
       if name == "Times" && !args.is_empty() =>
@@ -570,16 +542,10 @@ fn reduce_term_mod(term: &Expr, m: i128) -> Expr {
           if new_args.len() == 1 {
             return new_args.into_iter().next().unwrap();
           }
-          return Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: new_args.into(),
-          };
+          return call("Times", new_args);
         }
         new_args.insert(0, Expr::Integer(r));
-        return Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: new_args.into(),
-        };
+        return call("Times", new_args);
       }
       // Non-Integer leading factor: recurse into each arg.
       let reduced: Vec<Expr> =
@@ -587,10 +553,7 @@ fn reduce_term_mod(term: &Expr, m: i128) -> Expr {
       if reduced.iter().any(is_zero_expr) {
         return Expr::Integer(0);
       }
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: reduced.into(),
-      }
+      call("Times", reduced)
     }
     // Plus or Power (which can contain integer coefficients in a subtree)
     // → defer to the recursive mod reducer.
@@ -619,11 +582,7 @@ fn build_mod_sum(terms: Vec<Expr>) -> Expr {
   }
   let mut iter = terms.into_iter();
   let first = iter.next().unwrap();
-  iter.fold(first, |acc, t| Expr::BinaryOp {
-    op: BinaryOperator::Plus,
-    left: Box::new(acc),
-    right: Box::new(t),
-  })
+  iter.fold(first, plus2)
 }
 
 /// Expand an expression and combine like terms.
@@ -659,19 +618,10 @@ pub fn expand_expr(expr: &Expr) -> Expr {
     } => {
       let num_exp = expand_expr(left);
       match sum_power_exponent(right) {
-        Some((base, n)) => distribute_product(
-          &num_exp,
-          &Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(base),
-            right: Box::new(Expr::Integer(-n)),
-          },
-        ),
-        None => Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(num_exp),
-          right: Box::new(expand_expr(right)),
-        },
+        Some((base, n)) => {
+          distribute_product(&num_exp, &pow2(base, Expr::Integer(-n)))
+        }
+        None => div2(num_exp, expand_expr(right)),
       }
     }
 
@@ -679,16 +629,8 @@ pub fn expand_expr(expr: &Expr) -> Expr {
       let left_exp = expand_expr(left);
       let right_exp = expand_expr(right);
       match op {
-        BinaryOperator::Plus => Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(left_exp),
-          right: Box::new(right_exp),
-        },
-        BinaryOperator::Minus => Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(left_exp),
-          right: Box::new(right_exp),
-        },
+        BinaryOperator::Plus => plus2(left_exp, right_exp),
+        BinaryOperator::Minus => minus2(left_exp, right_exp),
         BinaryOperator::Times => distribute_product(&left_exp, &right_exp),
         BinaryOperator::Power => {
           // (sum)^n where n is positive integer
@@ -719,11 +661,7 @@ pub fn expand_expr(expr: &Expr) -> Expr {
             });
             return distribute_product(
               &num_expanded,
-              &Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(den_power),
-                right: Box::new(Expr::Integer(-1)),
-              },
+              &pow2(den_power, Expr::Integer(-1)),
             );
           }
           // (product)^n → distribute power to each factor: (a*b)^n → a^n * b^n
@@ -734,13 +672,7 @@ pub fn expand_expr(expr: &Expr) -> Expr {
             let factors = collect_multiplicative_factors(&left_exp);
             let powered: Vec<Expr> = factors
               .into_iter()
-              .map(|f| {
-                expand_and_combine(&Expr::BinaryOp {
-                  op: BinaryOperator::Power,
-                  left: Box::new(f),
-                  right: Box::new(Expr::Integer(*n)),
-                })
-              })
+              .map(|f| expand_and_combine(&pow2(f, Expr::Integer(*n))))
               .collect();
             let mut result = powered[0].clone();
             for f in &powered[1..] {
@@ -764,11 +696,7 @@ pub fn expand_expr(expr: &Expr) -> Expr {
               return simplified;
             }
           }
-          Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(left_exp),
-            right: Box::new(right_exp),
-          }
+          pow2(left_exp, right_exp)
         }
         _ => Expr::BinaryOp {
           op: *op,
@@ -857,11 +785,7 @@ pub fn expand_expr(expr: &Expr) -> Expr {
           });
           return distribute_product(
             &num_expanded,
-            &Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(den_power),
-              right: Box::new(Expr::Integer(-1)),
-            },
+            &pow2(den_power, Expr::Integer(-1)),
           );
         }
         // (product)^n → distribute power to each factor: (a*b)^n → a^n * b^n
@@ -872,13 +796,7 @@ pub fn expand_expr(expr: &Expr) -> Expr {
           let factors = collect_multiplicative_factors(&base);
           let powered: Vec<Expr> = factors
             .into_iter()
-            .map(|f| {
-              expand_and_combine(&Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(f),
-                right: Box::new(Expr::Integer(*n)),
-              })
-            })
+            .map(|f| expand_and_combine(&pow2(f, Expr::Integer(*n))))
             .collect();
           let mut result = powered[0].clone();
           for f in &powered[1..] {
@@ -886,10 +804,7 @@ pub fn expand_expr(expr: &Expr) -> Expr {
           }
           return result;
         }
-        Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![base, exp].into(),
-        }
+        call("Power", vec![base, exp])
       }
       _ => expr.clone(),
     },
@@ -1040,11 +955,7 @@ fn fold_term_numerics(expr: &Expr) -> Expr {
       left,
       right,
     } => {
-      let folded = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(fold_term_numerics(left)),
-        right: Box::new(fold_term_numerics(right)),
-      };
+      let folded = plus2(fold_term_numerics(left), fold_term_numerics(right));
       resort_radical_sum(&folded)
     }
     Expr::FunctionCall { name, args } if name == "Plus" => {
@@ -1196,11 +1107,7 @@ fn combine_product_factors(factors: &[Expr]) -> Expr {
       {
         result_factors.push(simplified);
       } else {
-        result_factors.push(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(base),
-          right: Box::new(exp),
-        });
+        result_factors.push(pow2(base, exp));
       }
     }
   }
@@ -1236,10 +1143,7 @@ pub fn negate_term(t: &Expr) -> Expr {
       op: UnaryOperator::Minus,
       operand,
     } => *operand.clone(),
-    _ => Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(t.clone()),
-    },
+    _ => neg1(t.clone()),
   }
 }
 
@@ -1271,11 +1175,7 @@ pub fn build_sum(terms: Vec<Expr>) -> Expr {
   let mut result = iter.next().unwrap();
   for t in iter {
     // Handle negative terms: a + (-b) stays as BinaryOp::Plus with UnaryOp::Minus
-    result = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(result),
-      right: Box::new(t),
-    };
+    result = plus2(result, t);
   }
   result
 }
@@ -1546,11 +1446,7 @@ pub fn build_product(factors: Vec<Expr>) -> Expr {
   let mut iter = factors.into_iter();
   let mut result = iter.next().unwrap();
   for f in iter {
-    result = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(result),
-      right: Box::new(f),
-    };
+    result = times2(result, f);
   }
   result
 }
@@ -1622,10 +1518,7 @@ fn expand_all_recursive(expr: &Expr) -> Expr {
           _ => unreachable!(),
         };
         let expanded = expand_power(&left_exp, pos_exp);
-        return Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![expanded, Expr::Integer(-1)].into(),
-        };
+        return call("Power", vec![expanded, Expr::Integer(-1)]);
       }
       // After recursively expanding sub-expressions, expand at this level
       expand_and_combine(&Expr::BinaryOp {
@@ -1695,10 +1588,7 @@ fn expand_all_recursive(expr: &Expr) -> Expr {
             _ => unreachable!(),
           };
           let expanded = expand_power(&expanded_args[0], pos_exp);
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![expanded, Expr::Integer(-1)].into(),
-          }
+          call("Power", vec![expanded, Expr::Integer(-1)])
         }
         "Plus" | "Times" | "Power" => expand_and_combine(&Expr::FunctionCall {
           name: name.clone(),
@@ -1745,20 +1635,18 @@ fn expand_numerator_recursive(expr: &Expr) -> Expr {
       op: BinaryOperator::Plus,
       left,
       right,
-    } => Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(expand_numerator_recursive(left)),
-      right: Box::new(expand_numerator_recursive(right)),
-    },
+    } => plus2(
+      expand_numerator_recursive(left),
+      expand_numerator_recursive(right),
+    ),
     Expr::BinaryOp {
       op: BinaryOperator::Minus,
       left,
       right,
-    } => Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(expand_numerator_recursive(left)),
-      right: Box::new(expand_numerator_recursive(right)),
-    },
+    } => minus2(
+      expand_numerator_recursive(left),
+      expand_numerator_recursive(right),
+    ),
     Expr::FunctionCall { name, args } if name == "Plus" => Expr::FunctionCall {
       name: "Plus".to_string(),
       args: args.iter().map(expand_numerator_recursive).collect(),
@@ -1786,20 +1674,13 @@ fn expand_numerator_recursive(expr: &Expr) -> Expr {
     } => {
       let left_result = expand_numerator_in_product(left);
       let right_result = expand_numerator_in_product(right);
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(left_result),
-        right: Box::new(right_result),
-      }
+      times2(left_result, right_result)
     }
 
     Expr::FunctionCall { name, args } if name == "Times" => {
       let new_args: Vec<Expr> =
         args.iter().map(expand_numerator_in_product).collect();
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: new_args.into(),
-      }
+      call("Times", new_args)
     }
 
     // base^n where n > 0: expand
@@ -1852,11 +1733,10 @@ fn expand_numerator_in_product(factor: &Expr) -> Expr {
       op: BinaryOperator::Times,
       left,
       right,
-    } => Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(expand_numerator_in_product(left)),
-      right: Box::new(expand_numerator_in_product(right)),
-    },
+    } => times2(
+      expand_numerator_in_product(left),
+      expand_numerator_in_product(right),
+    ),
     _ => factor.clone(),
   }
 }
@@ -1891,20 +1771,18 @@ fn expand_denominator_recursive(expr: &Expr) -> Expr {
       op: BinaryOperator::Plus,
       left,
       right,
-    } => Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(expand_denominator_recursive(left)),
-      right: Box::new(expand_denominator_recursive(right)),
-    },
+    } => plus2(
+      expand_denominator_recursive(left),
+      expand_denominator_recursive(right),
+    ),
     Expr::BinaryOp {
       op: BinaryOperator::Minus,
       left,
       right,
-    } => Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(expand_denominator_recursive(left)),
-      right: Box::new(expand_denominator_recursive(right)),
-    },
+    } => minus2(
+      expand_denominator_recursive(left),
+      expand_denominator_recursive(right),
+    ),
     Expr::FunctionCall { name, args } if name == "Plus" => Expr::FunctionCall {
       name: "Plus".to_string(),
       args: args.iter().map(expand_denominator_recursive).collect(),
@@ -1949,10 +1827,7 @@ fn expand_denominator_recursive(expr: &Expr) -> Expr {
         right: Box::new(pos_exp),
       });
       // The expansion absorbs the positive exponent, so always use -1
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![expanded, Expr::Integer(-1)].into(),
-      }
+      call("Power", vec![expanded, Expr::Integer(-1)])
     }
 
     Expr::FunctionCall { name, args }
@@ -1961,15 +1836,10 @@ fn expand_denominator_recursive(expr: &Expr) -> Expr {
         && is_negative_integer(&args[1]) =>
     {
       let pos_exp = negate_expr(&args[1]);
-      let expanded = expand_and_combine(&Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![args[0].clone(), pos_exp].into(),
-      });
+      let expanded =
+        expand_and_combine(&call("Power", vec![args[0].clone(), pos_exp]));
       // The expansion absorbs the positive exponent, so always use -1
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![expanded, Expr::Integer(-1)].into(),
-      }
+      call("Power", vec![expanded, Expr::Integer(-1)])
     }
 
     _ => expr.clone(),
@@ -1984,11 +1854,7 @@ fn expand_denominator_via_split(expr: &Expr) -> Expr {
     return expr.clone();
   }
   let expanded_den = expand_and_combine(&den);
-  Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(num),
-    right: Box::new(expanded_den),
-  }
+  div2(num, expanded_den)
 }
 
 fn is_negative_integer(expr: &Expr) -> bool {
@@ -2009,9 +1875,6 @@ fn negate_expr(expr: &Expr) -> Expr {
       op: UnaryOperator::Minus,
       operand,
     } => operand.as_ref().clone(),
-    _ => Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(expr.clone()),
-    },
+    _ => neg1(expr.clone()),
   }
 }

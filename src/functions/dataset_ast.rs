@@ -9,10 +9,10 @@ fn infer_type(expr: &Expr) -> Expr {
     Expr::String(_) => ts_atom("String"),
     Expr::Identifier(name) if name == "True" || name == "False" => {
       // TypeSystem`Atom[TypeSystem`Boolean]
-      Expr::FunctionCall {
-        name: "TypeSystem`Atom".to_string(),
-        args: vec![Expr::Identifier("TypeSystem`Boolean".to_string())].into(),
-      }
+      call1(
+        "TypeSystem`Atom",
+        Expr::Identifier("TypeSystem`Boolean".to_string()),
+      )
     }
     Expr::Identifier(name) if name == "Null" => ts_atom("Null"),
     Expr::Identifier(_) => ts_atom("String"),
@@ -25,20 +25,17 @@ fn infer_type(expr: &Expr) -> Expr {
 
 /// Create TypeSystem`Atom[<name>]
 fn ts_atom(name: &str) -> Expr {
-  Expr::FunctionCall {
-    name: "TypeSystem`Atom".to_string(),
-    args: vec![Expr::Identifier(name.to_string())].into(),
-  }
+  call1("TypeSystem`Atom", Expr::Identifier(name.to_string()))
 }
 
 /// Infer the type for a list of items.
 fn infer_list_type(items: &[Expr]) -> Expr {
   if items.is_empty() {
     // Empty list: Vector[Atom[Expression], 0]
-    return Expr::FunctionCall {
-      name: "TypeSystem`Vector".to_string(),
-      args: vec![ts_atom("Expression"), Expr::Integer(0)].into(),
-    };
+    return call(
+      "TypeSystem`Vector",
+      vec![ts_atom("Expression"), Expr::Integer(0)],
+    );
   }
 
   let types: Vec<Expr> = items.iter().map(infer_type).collect();
@@ -49,16 +46,13 @@ fn infer_list_type(items: &[Expr]) -> Expr {
 
   if all_same {
     // Vector[type, count]
-    Expr::FunctionCall {
-      name: "TypeSystem`Vector".to_string(),
-      args: vec![types[0].clone(), Expr::Integer(items.len() as i128)].into(),
-    }
+    call(
+      "TypeSystem`Vector",
+      vec![types[0].clone(), Expr::Integer(items.len() as i128)],
+    )
   } else {
     // Tuple[{type1, type2, ...}]
-    Expr::FunctionCall {
-      name: "TypeSystem`Tuple".to_string(),
-      args: vec![Expr::List(types.into())].into(),
-    }
+    call1("TypeSystem`Tuple", Expr::List(types.into()))
   }
 }
 
@@ -67,10 +61,10 @@ fn infer_list_type(items: &[Expr]) -> Expr {
 /// (affects whether we use Assoc vs Struct for homogeneous values).
 fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
   if pairs.is_empty() {
-    return Expr::FunctionCall {
-      name: "TypeSystem`Struct".to_string(),
-      args: vec![Expr::List(vec![].into()), Expr::List(vec![].into())].into(),
-    };
+    return call(
+      "TypeSystem`Struct",
+      vec![Expr::List(vec![].into()), Expr::List(vec![].into())],
+    );
   }
 
   let keys: Vec<Expr> = pairs.iter().map(|(k, _)| k.clone()).collect();
@@ -117,14 +111,10 @@ fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
             other => other.clone(),
           })
           .collect();
-        Expr::FunctionCall {
-          name: "TypeSystem`Atom".to_string(),
-          args: vec![Expr::FunctionCall {
-            name: "TypeSystem`Enumeration".to_string(),
-            args: key_names.into(),
-          }]
-          .into(),
-        }
+        call(
+          "TypeSystem`Atom",
+          vec![call("TypeSystem`Enumeration", key_names)],
+        )
       }
     };
 
@@ -148,11 +138,10 @@ fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
       })
       .collect();
 
-    Expr::FunctionCall {
-      name: "TypeSystem`Struct".to_string(),
-      args: vec![Expr::List(key_names.into()), Expr::List(value_types.into())]
-        .into(),
-    }
+    call(
+      "TypeSystem`Struct",
+      vec![Expr::List(key_names.into()), Expr::List(value_types.into())],
+    )
   }
 }
 
@@ -266,10 +255,7 @@ pub fn dataset_ast(args: &[Expr]) -> Expr {
     let type_expr = infer_type(data);
     let metadata = Expr::Association(vec![]);
 
-    Expr::FunctionCall {
-      name: "Dataset".to_string(),
-      args: vec![data.clone(), type_expr, metadata].into(),
-    }
+    call("Dataset", vec![data.clone(), type_expr, metadata])
   } else {
     // Already has type info or other args — return as-is
     unevaluated("Dataset", args)

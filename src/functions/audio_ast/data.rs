@@ -153,17 +153,16 @@ pub fn make_audio(audio: &AudioData) -> Expr {
   } else {
     Expr::Real(audio.rate)
   };
-  Expr::FunctionCall {
-    name: "Audio".to_string(),
-    args: vec![
+  call(
+    "Audio",
+    vec![
       data,
       Expr::Rule {
         pattern: Box::new(Expr::Identifier("SampleRate".to_string())),
         replacement: Box::new(rate_expr),
       },
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// Convert a time specification to seconds: a plain number, or
@@ -192,10 +191,10 @@ pub fn time_to_seconds(expr: &Expr) -> Option<f64> {
 
 /// `Quantity[value, unit]` expression.
 pub fn quantity(value: f64, unit: &str) -> Expr {
-  Expr::FunctionCall {
-    name: "Quantity".to_string(),
-    args: vec![Expr::Real(value), Expr::String(unit.to_string())].into(),
-  }
+  call(
+    "Quantity",
+    vec![Expr::Real(value), Expr::String(unit.to_string())],
+  )
 }
 
 /// Linear-interpolation resampling of one channel to `new_len` samples,
@@ -249,14 +248,10 @@ pub fn import_audio_file(path: &str) -> Result<Expr, InterpreterError> {
       "Import: cannot open \"{path}\": file not found"
     )));
   }
-  Ok(Expr::FunctionCall {
-    name: "Audio".to_string(),
-    args: vec![Expr::FunctionCall {
-      name: "File".to_string(),
-      args: vec![Expr::String(path.to_string())].into(),
-    }]
-    .into(),
-  })
+  Ok(call1(
+    "Audio",
+    call1("File", Expr::String(path.to_string())),
+  ))
 }
 
 // ---------------------------------------------------------------------------
@@ -356,9 +351,8 @@ pub fn duration_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unev();
   }
   let ev = crate::evaluator::evaluate_expr_to_expr;
-  let seconds = |value: Expr| Expr::FunctionCall {
-    name: "Quantity".to_string(),
-    args: vec![value, Expr::String("Seconds".to_string())].into(),
+  let seconds = |value: Expr| {
+    call("Quantity", vec![value, Expr::String("Seconds".to_string())])
   };
   let durinv = |e: &Expr| {
     crate::emit_message(&format!(
@@ -413,17 +407,13 @@ pub fn duration_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             hi = *k;
           }
         }
-        let span = ev(&Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
+        let span = ev(&call(
+          "Plus",
+          vec![
             hi.1.clone(),
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![Expr::Integer(-1), lo.1.clone()].into(),
-            },
-          ]
-          .into(),
-        })
+            call("Times", vec![Expr::Integer(-1), lo.1.clone()]),
+          ],
+        ))
         .ok()?;
         Some(seconds(span))
       })
@@ -486,10 +476,7 @@ pub fn duration_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unev();
   };
   if args.len() == 2 {
-    return ev(&Expr::FunctionCall {
-      name: "UnitConvert".to_string(),
-      args: vec![quantity, args[1].clone()].into(),
-    });
+    return ev(&call("UnitConvert", vec![quantity, args[1].clone()]));
   }
   ev(&quantity)
 }
@@ -522,10 +509,7 @@ fn audio_quantity(magnitude: f64, unit: &str) -> Expr {
   } else {
     Expr::Real(magnitude)
   };
-  Expr::FunctionCall {
-    name: "Quantity".to_string(),
-    args: vec![value, Expr::String(unit.to_string())].into(),
-  }
+  call("Quantity", vec![value, Expr::String(unit.to_string())])
 }
 
 /// `AudioQ[expr]` — whether `expr` is an audio object. A `Sound` is not one,

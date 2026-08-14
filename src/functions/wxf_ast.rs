@@ -432,10 +432,7 @@ pub fn binary_serialize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   use base64::Engine;
   let b64 = base64::engine::general_purpose::STANDARD.encode(&out);
-  Ok(Expr::FunctionCall {
-    name: "ByteArray".to_string(),
-    args: vec![Expr::String(b64)].into(),
-  })
+  Ok(call1("ByteArray", Expr::String(b64)))
 }
 
 fn read_exact<'a>(
@@ -545,10 +542,7 @@ fn read_expr(bytes: &[u8], pos: &mut usize) -> Option<Expr> {
       let data = read_exact(bytes, pos, len)?;
       use base64::Engine;
       let b64 = base64::engine::general_purpose::STANDARD.encode(data);
-      Some(Expr::FunctionCall {
-        name: "ByteArray".to_string(),
-        args: vec![Expr::String(b64)].into(),
-      })
+      Some(call1("ByteArray", Expr::String(b64)))
     }
     T_PACKED => {
       let dtype = *bytes.get(*pos)?;

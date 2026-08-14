@@ -602,10 +602,7 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "StringJoin::string: String expected at position {pos} in {infix}."
       ));
     }
-    return Ok(Expr::FunctionCall {
-      name: "StringJoin".to_string(),
-      args: leaves.into(),
-    });
+    return Ok(call("StringJoin", leaves));
   }
 
   let mut joined = String::new();
@@ -1980,10 +1977,7 @@ pub fn string_replace_list_ast(
 /// `StringExpression["a", 5, "c"]`.
 fn join_replacement_segments(segments: Vec<Expr>) -> Expr {
   if segments.iter().any(|e| !matches!(e, Expr::String(_))) {
-    return Expr::FunctionCall {
-      name: "StringExpression".to_string(),
-      args: segments.into(),
-    };
+    return call("StringExpression", segments);
   }
   let mut joined = String::new();
   for seg in &segments {
@@ -5298,11 +5292,10 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // MakeBoxes only fires on `Format[…, TeXForm]` rules. User
         // MakeBoxes patterns use `fmt_` and match any form, so they
         // still apply.
-        let mb_call = Expr::FunctionCall {
-          name: "MakeBoxes".to_string(),
-          args: vec![inner.clone(), Expr::Identifier("TeXForm".to_string())]
-            .into(),
-        };
+        let mb_call = call(
+          "MakeBoxes",
+          vec![inner.clone(), Expr::Identifier("TeXForm".to_string())],
+        );
         if let Ok(box_ast) = crate::evaluator::evaluate_expr_to_expr(&mb_call) {
           return Ok(Expr::String(box_ast_to_tex(&box_ast)));
         }
@@ -6164,10 +6157,7 @@ fn negated_numeric_exponent(exp: &Expr) -> Option<Expr> {
       let Expr::Integer(n) = &args[0] else {
         return None;
       };
-      Some(Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(-n), args[1].clone()].into(),
-      })
+      Some(call("Rational", vec![Expr::Integer(-n), args[1].clone()]))
     }
     Expr::BinaryOp {
       op: BinaryOperator::Divide,
@@ -8432,10 +8422,7 @@ pub fn apply_string_template(
     Expr::String(s) => s.clone(),
     _ => {
       return Ok(Expr::CurriedCall {
-        func: Box::new(Expr::FunctionCall {
-          name: "StringTemplate".to_string(),
-          args: vec![template.clone()].into(),
-        }),
+        func: Box::new(call1("StringTemplate", template.clone())),
         args: args.to_vec(),
       });
     }
@@ -8576,10 +8563,7 @@ pub(crate) fn parse_program_to_expr(
       0 => {}
       1 => return Ok(exprs.into_iter().next().unwrap()),
       _ => {
-        return Ok(Expr::FunctionCall {
-          name: "CompoundExpression".to_string(),
-          args: exprs.into(),
-        });
+        return Ok(call("CompoundExpression", exprs));
       }
     }
   }
@@ -9605,10 +9589,7 @@ pub fn from_letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .map(|item| match item {
           Expr::Integer(n) => Ok(letter_from_int(*n)),
-          _ => Ok(Expr::FunctionCall {
-            name: "FromLetterNumber".to_string(),
-            args: vec![item.clone()].into(),
-          }),
+          _ => Ok(call1("FromLetterNumber", item.clone())),
         })
         .collect();
       Ok(Expr::List(results?.into()))
@@ -11795,10 +11776,7 @@ pub fn format_digest(hex_string: &str, format: &str) -> Option<Expr> {
     "ByteArray" => {
       use base64::Engine;
       let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-      Some(Expr::FunctionCall {
-        name: "ByteArray".to_string(),
-        args: vec![Expr::String(b64)].into(),
-      })
+      Some(call1("ByteArray", Expr::String(b64)))
     }
     // The integer, zero-padded to the fixed width of the digest size — the
     // number of decimal digits of 256^nbytes (matching wolframscript).
@@ -11926,10 +11904,7 @@ pub fn uncompress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let s = match &evaluated {
     Expr::String(s) => s.clone(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Uncompress".to_string(),
-        args: vec![evaluated].into(),
-      });
+      return Ok(call1("Uncompress", evaluated));
     }
   };
   decompress_to_expr(&s)
@@ -11944,10 +11919,7 @@ pub fn compressed_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
   match &evaluated {
     Expr::String(s) => decompress_to_expr(s),
-    _ => Ok(Expr::FunctionCall {
-      name: "CompressedData".to_string(),
-      args: vec![evaluated].into(),
-    }),
+    _ => Ok(call1("CompressedData", evaluated)),
   }
 }
 
@@ -12252,10 +12224,7 @@ fn c_like_times(args: &[Expr], fortran: bool) -> String {
       if e == 1 {
         den.push(c_like_factor(base, fortran));
       } else {
-        let pos = Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![base.clone(), Expr::Integer(e)].into(),
-        };
+        let pos = call("Power", vec![base.clone(), Expr::Integer(e)]);
         den.push(render(&pos));
       }
       continue;
@@ -12411,10 +12380,7 @@ fn negated_term(expr: &Expr) -> Option<Expr> {
       Some(if rest.len() == 1 {
         rest.remove(0)
       } else {
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: rest.into(),
-        }
+        call("Times", rest)
       })
     }
     Expr::BinaryOp {
@@ -12916,10 +12882,9 @@ pub(crate) fn map_expr_tree(
 /// `#key` (parsed as `Slot["key"]`) → `TemplateSlot[key]`.
 fn slots_to_template_slots(expr: &Expr) -> Expr {
   map_expr_tree(expr, &|e| match e {
-    Expr::Slot(n) => Some(Expr::FunctionCall {
-      name: "TemplateSlot".to_string(),
-      args: vec![Expr::Integer(*n as i128)].into(),
-    }),
+    Expr::Slot(n) => {
+      Some(call("TemplateSlot", vec![Expr::Integer(*n as i128)]))
+    }
     Expr::FunctionCall { name, args } if name == "Slot" && args.len() == 1 => {
       let key = match &args[0] {
         // Named slots use a string key (`TemplateSlot["name"]`).
@@ -12927,10 +12892,7 @@ fn slots_to_template_slots(expr: &Expr) -> Expr {
         Expr::Integer(n) => Expr::Integer(*n),
         other => other.clone(),
       };
-      Some(Expr::FunctionCall {
-        name: "TemplateSlot".to_string(),
-        args: vec![key].into(),
-      })
+      Some(call1("TemplateSlot", key))
     }
     _ => None,
   })
@@ -12989,10 +12951,7 @@ fn parse_template_parts(template: &str) -> Vec<Expr> {
           if !literal.is_empty() {
             parts.push(Expr::String(std::mem::take(&mut literal)));
           }
-          parts.push(Expr::FunctionCall {
-            name: "TemplateExpression".to_string(),
-            args: vec![expr].into(),
-          });
+          parts.push(call1("TemplateExpression", expr));
         }
         i = end + 2;
         continue;
@@ -13032,10 +12991,7 @@ fn parse_template_parts(template: &str) -> Vec<Expr> {
         // `TemplateSlot["name"]`).
         Expr::String(key)
       };
-      parts.push(Expr::FunctionCall {
-        name: "TemplateSlot".to_string(),
-        args: vec![key_expr].into(),
-      });
+      parts.push(call1("TemplateSlot", key_expr));
       i = j + 1;
       continue;
     }
@@ -13083,10 +13039,7 @@ pub fn build_template_object(
   };
   object_args.push(option("InsertionFunction", insertion_value));
   object_args.push(option("MetaInformation", Expr::Association(Vec::new())));
-  Expr::FunctionCall {
-    name: "TemplateObject".to_string(),
-    args: object_args.into(),
-  }
+  call("TemplateObject", object_args)
 }
 
 /// Look up the bound value for a `TemplateSlot[key]`: an integer key indexes a
@@ -13241,10 +13194,7 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(match parts.len() {
         1 => parts.into_iter().next().unwrap(),
         // Nothing left, or several spliced pieces, is a Sequence.
-        _ => Expr::FunctionCall {
-          name: "Sequence".to_string(),
-          args: parts.into(),
-        },
+        _ => call("Sequence", parts),
       });
     }
   };
@@ -13653,10 +13603,7 @@ pub fn string_to_byte_array_ast(
   use base64::Engine;
   let engine = base64::engine::general_purpose::STANDARD;
   let b64 = engine.encode(bytes);
-  Ok(Expr::FunctionCall {
-    name: "ByteArray".to_string(),
-    args: vec![Expr::String(b64)].into(),
-  })
+  Ok(call1("ByteArray", Expr::String(b64)))
 }
 
 /// ByteArrayToString[bytearray] - convert a ByteArray to a string (UTF-8 decoding)
@@ -13761,10 +13708,9 @@ pub fn base_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let engine = base64::engine::general_purpose::STANDARD;
       match engine.decode(s) {
         // Store the (canonicalised) base64 — Woxi's ByteArray representation.
-        Ok(bytes) => Ok(Expr::FunctionCall {
-          name: "ByteArray".to_string(),
-          args: vec![Expr::String(engine.encode(&bytes))].into(),
-        }),
+        Ok(bytes) => {
+          Ok(call1("ByteArray", Expr::String(engine.encode(&bytes))))
+        }
         Err(_) => unevaluated(),
       }
     }
@@ -14673,15 +14619,8 @@ fn number_form_family_inner(
       left,
       right,
     } => match product_factors(&[(**left).clone(), (**right).clone()]) {
-      Some(args) => Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: args.into(),
-      },
-      None => Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(recurse(left)),
-        right: Box::new(recurse(right)),
-      },
+      Some(args) => call("Times", args),
+      None => times2(recurse(left), recurse(right)),
     },
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),

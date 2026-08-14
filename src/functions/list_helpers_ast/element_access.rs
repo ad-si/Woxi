@@ -43,10 +43,8 @@ pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
         ),
         BinaryOperator::Minus => {
           // a - b  =  Plus[a, Times[-1, b]]
-          let neg_right = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), *right.clone()].into(),
-          };
+          let neg_right =
+            call("Times", vec![Expr::Integer(-1), *right.clone()]);
           // Still flatten any further chained Plus on the left.
           let mut args = flatten_assoc_one(BinaryOperator::Plus, left.as_ref());
           args.push(neg_right);
@@ -58,10 +56,8 @@ pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
         ),
         BinaryOperator::Divide => {
           // a / b  =  Times[a, Power[b, -1]]
-          let inv_right = Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![*right.clone(), Expr::Integer(-1)].into(),
-          };
+          let inv_right =
+            call("Power", vec![*right.clone(), Expr::Integer(-1)]);
           let mut args =
             flatten_assoc_one(BinaryOperator::Times, left.as_ref());
           args.push(inv_right);
@@ -137,10 +133,7 @@ fn atomic_arg_result(
     return Some(Ok(d.clone()));
   }
   nonatomic_message(fname, list);
-  Some(Ok(Expr::FunctionCall {
-    name: fname.to_string(),
-    args: vec![list.clone()].into(),
-  }))
+  Some(Ok(call1(fname, list.clone())))
 }
 
 /// If `expr` is a one-dimensional SparseArray, return its dense vector form
@@ -190,10 +183,7 @@ pub fn first_ast(
           "First::nofirst: {} has zero length and no first element.",
           crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
         ));
-        return Ok(Expr::FunctionCall {
-          name: "First".to_string(),
-          args: vec![list.clone()].into(),
-        });
+        return Ok(call1("First", list.clone()));
       }
       Ok(pairs[0].1.clone())
     }
@@ -206,10 +196,7 @@ pub fn first_ast(
             "First::nofirst: {} has zero length and no first element.",
             crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
           ));
-          Ok(Expr::FunctionCall {
-            name: "First".to_string(),
-            args: vec![list.clone()].into(),
-          })
+          Ok(call1("First", list.clone()))
         }
       } else {
         Ok(items[0].clone())
@@ -235,10 +222,7 @@ pub fn first_ast(
             && args.len() == 2
             && matches!(elem, Expr::List(_))
           {
-            return Ok(Expr::FunctionCall {
-              name: "NumericArray".to_string(),
-              args: vec![elem, args[1].clone()].into(),
-            });
+            return Ok(call("NumericArray", vec![elem, args[1].clone()]));
           }
           return Ok(elem);
         }
@@ -251,10 +235,7 @@ pub fn first_ast(
             "First::nofirst: {} has zero length and no first element.",
             crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
           ));
-          Ok(Expr::FunctionCall {
-            name: "First".to_string(),
-            args: vec![list.clone()].into(),
-          })
+          Ok(call1("First", list.clone()))
         }
       } else {
         Ok(args[0].clone())
@@ -271,10 +252,7 @@ pub fn first_ast(
             "First::nofirst: {} has zero length and no first element.",
             crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
           ));
-          return Ok(Expr::FunctionCall {
-            name: "First".to_string(),
-            args: vec![list.clone()].into(),
-          });
+          return Ok(call1("First", list.clone()));
         }
         return Ok(args[0].clone());
       }
@@ -282,10 +260,7 @@ pub fn first_ast(
         Ok(d.clone())
       } else {
         nonatomic_message("First", list);
-        Ok(Expr::FunctionCall {
-          name: "First".to_string(),
-          args: vec![list.clone()].into(),
-        })
+        Ok(call1("First", list.clone()))
       }
     }
   }
@@ -318,10 +293,7 @@ pub fn last_ast(
           "Last::nolast: {} has zero length and no last element.",
           crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
         ));
-        return Ok(Expr::FunctionCall {
-          name: "Last".to_string(),
-          args: vec![list.clone()].into(),
-        });
+        return Ok(call1("Last", list.clone()));
       }
       Ok(pairs[pairs.len() - 1].1.clone())
     }
@@ -334,10 +306,7 @@ pub fn last_ast(
             "Last::nolast: {} has zero length and no last element.",
             crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
           ));
-          Ok(Expr::FunctionCall {
-            name: "Last".to_string(),
-            args: vec![list.clone()].into(),
-          })
+          Ok(call1("Last", list.clone()))
         }
       } else {
         Ok(items[items.len() - 1].clone())
@@ -363,10 +332,7 @@ pub fn last_ast(
             && args.len() == 2
             && matches!(elem, Expr::List(_))
           {
-            return Ok(Expr::FunctionCall {
-              name: "NumericArray".to_string(),
-              args: vec![elem, args[1].clone()].into(),
-            });
+            return Ok(call("NumericArray", vec![elem, args[1].clone()]));
           }
           return Ok(elem);
         }
@@ -379,10 +345,7 @@ pub fn last_ast(
             "Last::nolast: {} has zero length and no last element.",
             crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
           ));
-          Ok(Expr::FunctionCall {
-            name: "Last".to_string(),
-            args: vec![list.clone()].into(),
-          })
+          Ok(call1("Last", list.clone()))
         }
       } else {
         Ok(args[args.len() - 1].clone())
@@ -399,10 +362,7 @@ pub fn last_ast(
             "Last::nolast: {} has zero length and no last element.",
             crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
           ));
-          return Ok(Expr::FunctionCall {
-            name: "Last".to_string(),
-            args: vec![list.clone()].into(),
-          });
+          return Ok(call1("Last", list.clone()));
         }
         return Ok(args[args.len() - 1].clone());
       }
@@ -410,10 +370,7 @@ pub fn last_ast(
         Ok(d.clone())
       } else {
         nonatomic_message("Last", list);
-        Ok(Expr::FunctionCall {
-          name: "Last".to_string(),
-          args: vec![list.clone()].into(),
-        })
+        Ok(call1("Last", list.clone()))
       }
     }
   }
@@ -429,10 +386,7 @@ pub fn rest_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       "Rest::norest: Cannot take Rest of expression {} with length zero.",
       crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
     ));
-    Ok(Expr::FunctionCall {
-      name: "Rest".to_string(),
-      args: vec![list.clone()].into(),
-    })
+    Ok(call1("Rest", list.clone()))
   };
   match list {
     Expr::Association(pairs) => {
@@ -467,10 +421,7 @@ pub fn rest_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         return crate::evaluator::evaluate_function_call_ast(&head, &args[1..]);
       }
       nonatomic_message("Rest", list);
-      Ok(Expr::FunctionCall {
-        name: "Rest".to_string(),
-        args: vec![list.clone()].into(),
-      })
+      Ok(call1("Rest", list.clone()))
     }
   }
 }
@@ -485,10 +436,7 @@ pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       "Most::nomost: Cannot take Most of expression {} with length zero.",
       crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
     ));
-    Ok(Expr::FunctionCall {
-      name: "Most".to_string(),
-      args: vec![list.clone()].into(),
-    })
+    Ok(call1("Most", list.clone()))
   };
   match list {
     Expr::Association(pairs) => {
@@ -527,10 +475,7 @@ pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         );
       }
       nonatomic_message("Most", list);
-      Ok(Expr::FunctionCall {
-        name: "Most".to_string(),
-        args: vec![list.clone()].into(),
-      })
+      Ok(call1("Most", list.clone()))
     }
   }
 }
@@ -754,20 +699,14 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       if let Some((from, to)) = spec_range(n) {
         take_drop_message("Take", from, to, list);
       }
-      return Ok(Expr::FunctionCall {
-        name: "Take".to_string(),
-        args: vec![list.clone(), n.clone()].into(),
-      });
+      return Ok(call("Take", vec![list.clone(), n.clone()]));
     }
   };
 
   // Helper to wrap result in the original head.
   let wrap = |v: Vec<Expr>| -> Expr {
     match head {
-      Some(h) => Expr::FunctionCall {
-        name: h.to_string(),
-        args: v.into(),
-      },
+      Some(h) => call(h, v),
       None => Expr::List(v.into()),
     }
   };
@@ -792,10 +731,7 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
           return Ok(wrap(vec![items[(real_idx - 1) as usize].clone()]));
         }
         take_drop_message("Take", idx, idx, list);
-        return Ok(Expr::FunctionCall {
-          name: "Take".to_string(),
-          args: vec![list.clone(), n.clone()].into(),
-        });
+        return Ok(call("Take", vec![list.clone(), n.clone()]));
       }
     } else if spec.len() >= 2 {
       let len = items.len() as i128;
@@ -845,17 +781,11 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         }
         if step != 0 {
           take_drop_message("Take", start, end, list);
-          return Ok(Expr::FunctionCall {
-            name: "Take".to_string(),
-            args: vec![list.clone(), n.clone()].into(),
-          });
+          return Ok(call("Take", vec![list.clone(), n.clone()]));
         }
       }
     }
-    return Ok(Expr::FunctionCall {
-      name: "Take".to_string(),
-      args: vec![list.clone(), n.clone()].into(),
-    });
+    return Ok(call("Take", vec![list.clone(), n.clone()]));
   }
 
   // Handle UpTo[n]: take up to n elements (clamp to list length)
@@ -865,10 +795,7 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   let Some(count) = expr_to_i128(n) else {
-    return Ok(Expr::FunctionCall {
-      name: "Take".to_string(),
-      args: vec![list.clone(), n.clone()].into(),
-    });
+    return Ok(call("Take", vec![list.clone(), n.clone()]));
   };
 
   let len = items.len() as i128;
@@ -879,10 +806,7 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "Take::take: Cannot take positions 1 through {count} in {list_str}."
       ));
-      return Ok(Expr::FunctionCall {
-        name: "Take".to_string(),
-        args: vec![list.clone(), n.clone()].into(),
-      });
+      return Ok(call("Take", vec![list.clone(), n.clone()]));
     }
     Ok(wrap(items[..count as usize].to_vec()))
   } else {
@@ -892,10 +816,7 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "Take::take: Cannot take positions {count} through -1 in {list_str}."
       ));
-      return Ok(Expr::FunctionCall {
-        name: "Take".to_string(),
-        args: vec![list.clone(), n.clone()].into(),
-      });
+      return Ok(call("Take", vec![list.clone(), n.clone()]));
     }
     Ok(wrap(items[items.len() - (-count) as usize..].to_vec()))
   }
@@ -951,19 +872,13 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       if let Some((from, to)) = spec_range(n) {
         take_drop_message("Drop", from, to, list);
       }
-      return Ok(Expr::FunctionCall {
-        name: "Drop".to_string(),
-        args: vec![list.clone(), n.clone()].into(),
-      });
+      return Ok(call("Drop", vec![list.clone(), n.clone()]));
     }
   };
 
   let wrap_drop = |v: Vec<Expr>| -> Expr {
     match drop_head {
-      Some(h) => Expr::FunctionCall {
-        name: h.to_string(),
-        args: v.into(),
-      },
+      Some(h) => call(h, v),
       None => Expr::List(v.into()),
     }
   };
@@ -1011,10 +926,7 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         || real_end < real_start
       {
         take_drop_message("Drop", m, n_end, list);
-        return Ok(Expr::FunctionCall {
-          name: "Drop".to_string(),
-          args: vec![list.clone(), n.clone()].into(),
-        });
+        return Ok(call("Drop", vec![list.clone(), n.clone()]));
       }
       let start = (real_start - 1) as usize;
       let end = real_end as usize;
@@ -1029,10 +941,7 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       let idx = if n_val > 0 { n_val - 1 } else { len + n_val };
       if idx < 0 || idx >= len {
         take_drop_message("Drop", n_val, n_val, list);
-        return Ok(Expr::FunctionCall {
-          name: "Drop".to_string(),
-          args: vec![list.clone(), n.clone()].into(),
-        });
+        return Ok(call("Drop", vec![list.clone(), n.clone()]));
       }
       let idx = idx as usize;
       let mut result = items[..idx].to_vec();
@@ -1094,10 +1003,7 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         .collect();
       return Ok(wrap_drop(result));
     }
-    return Ok(Expr::FunctionCall {
-      name: "Drop".to_string(),
-      args: vec![list.clone(), n.clone()].into(),
-    });
+    return Ok(call("Drop", vec![list.clone(), n.clone()]));
   }
 
   // Handle UpTo[n]: drop min(n, len) elements from the front.
@@ -1107,19 +1013,13 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   let Some(count) = expr_to_i128(n) else {
-    return Ok(Expr::FunctionCall {
-      name: "Drop".to_string(),
-      args: vec![list.clone(), n.clone()].into(),
-    });
+    return Ok(call("Drop", vec![list.clone(), n.clone()]));
   };
 
   if count.unsigned_abs() > len.unsigned_abs() {
     let (from, to) = if count >= 0 { (1, count) } else { (count, -1) };
     take_drop_message("Drop", from, to, list);
-    return Ok(Expr::FunctionCall {
-      name: "Drop".to_string(),
-      args: vec![list.clone(), n.clone()].into(),
-    });
+    return Ok(call("Drop", vec![list.clone(), n.clone()]));
   }
   if count >= 0 {
     Ok(wrap_drop(items[count as usize..].to_vec()))
@@ -1156,10 +1056,7 @@ pub fn drop_multi_ast(
       }
       Ok(Expr::List(result.into()))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Drop".to_string(),
-      args: vec![list.clone(), rows.clone(), cols.clone()].into(),
-    }),
+    _ => Ok(call("Drop", vec![list.clone(), rows.clone(), cols.clone()])),
   }
 }
 
@@ -1274,10 +1171,8 @@ pub fn insert_ast(
   elem: &Expr,
   pos: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "Insert".to_string(),
-    args: vec![list.clone(), elem.clone(), pos.clone()].into(),
-  };
+  let unevaluated =
+    || call("Insert", vec![list.clone(), elem.clone(), pos.clone()]);
 
   // Association subject: the inserted element must be a `key -> value` rule,
   // and the position (an integer or `Key[k]`) gives where the new pair is
@@ -1634,10 +1529,7 @@ pub fn extract_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ExtractOutcome::Partw => {
         let first = match path.first() {
           Some(ExtractComp::Idx(n)) => Expr::Integer(*n),
-          Some(ExtractComp::Key(k)) => Expr::FunctionCall {
-            name: "Key".to_string(),
-            args: vec![k.clone()].into(),
-          },
+          Some(ExtractComp::Key(k)) => call1("Key", k.clone()),
           None => Expr::Integer(0),
         };
         crate::emit_message(&format!(
@@ -1653,10 +1545,7 @@ pub fn extract_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .iter()
             .map(|c| match c {
               ExtractComp::Idx(n) => Expr::Integer(*n),
-              ExtractComp::Key(k) => Expr::FunctionCall {
-                name: "Key".to_string(),
-                args: vec![k.clone()].into(),
-              },
+              ExtractComp::Key(k) => call1("Key", k.clone()),
             })
             .collect(),
         );
@@ -1674,14 +1563,8 @@ pub fn extract_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
         let missing = Expr::FunctionCall {
           name: "Missing".to_string(),
-          args: vec![
-            Expr::String("KeyAbsent".to_string()),
-            Expr::FunctionCall {
-              name: "Key".to_string(),
-              args: vec![key].into(),
-            },
-          ]
-          .into(),
+          args: vec![Expr::String("KeyAbsent".to_string()), call1("Key", key)]
+            .into(),
         };
         Ok(Some(missing))
       }
@@ -1786,10 +1669,8 @@ pub fn replace_part_positional_ast(
   new: &Expr,
   pos: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "ReplacePart".to_string(),
-    args: vec![expr.clone(), new.clone(), pos.clone()].into(),
-  };
+  let unevaluated =
+    || call("ReplacePart", vec![expr.clone(), new.clone(), pos.clone()]);
   let int_of = |e: &Expr| match e {
     Expr::Integer(n) => Some(*n),
     Expr::BigInteger(n) => {
@@ -1911,10 +1792,7 @@ pub fn replace_part_ast(
           "ReplacePart::reps: {} is neither a list of replacement rules nor a valid dispatch table, and so cannot be used for replacing.",
           crate::syntax::format_expr(rule, crate::syntax::ExprForm::Output)
         ));
-        return Ok(Expr::FunctionCall {
-          name: "ReplacePart".to_string(),
-          args: vec![expr.clone(), rule.clone()].into(),
-        });
+        return Ok(call("ReplacePart", vec![expr.clone(), rule.clone()]));
       }
     }
   };
@@ -2339,10 +2217,7 @@ fn delete_at_position_general(
 ) -> crate::syntax::Expr {
   let wrap = |result_items: Vec<Expr>| -> Expr {
     match head_name {
-      Some(h) => Expr::FunctionCall {
-        name: h.to_string(),
-        args: result_items.into(),
-      },
+      Some(h) => call(h, result_items),
       None => Expr::List(result_items.into()),
     }
   };
@@ -2393,10 +2268,7 @@ fn delete_at_deep_position(
   // "unheaded" argument list into the parent by turning it into a
   // Sequence so the outer head absorbs it.
   if pos[0] == 0 {
-    let unheaded = Expr::FunctionCall {
-      name: "Sequence".to_string(),
-      args: items.into(),
-    };
+    let unheaded = call("Sequence", items);
     if pos.len() == 1 {
       return Ok(Ok(unheaded));
     }
