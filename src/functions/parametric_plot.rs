@@ -568,18 +568,12 @@ fn parametric_region_ast(
     .first()
     .and_then(|s| s.color.as_ref())
     .map_or((0.24, 0.6, 0.8), |c| (c.r, c.g, c.b));
-  let color = Expr::FunctionCall {
-    name: "RGBColor".to_string(),
-    args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
-  };
-  let opacity = Expr::FunctionCall {
-    name: "Opacity".to_string(),
-    args: vec![Expr::Real(0.3)].into(),
-  };
-  let no_edges = Expr::FunctionCall {
-    name: "EdgeForm".to_string(),
-    args: vec![].into(),
-  };
+  let color = call(
+    "RGBColor",
+    vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+  );
+  let opacity = call1("Opacity", Expr::Real(0.3));
+  let no_edges = call("EdgeForm", vec![]);
 
   let mut face_group = vec![no_edges, color.clone(), opacity];
   face_group.append(&mut quads);
@@ -588,14 +582,8 @@ fn parametric_region_ast(
     items.push(Expr::List(
       vec![
         color,
-        Expr::FunctionCall {
-          name: "AbsoluteThickness".to_string(),
-          args: vec![Expr::Real(2.0)].into(),
-        },
-        Expr::FunctionCall {
-          name: "Line".to_string(),
-          args: vec![Expr::List(border.into())].into(),
-        },
+        call1("AbsoluteThickness", Expr::Real(2.0)),
+        call1("Line", Expr::List(border.into())),
       ]
       .into(),
     ));
@@ -618,10 +606,7 @@ fn parametric_region_ast(
   // together with the other layers of a composite figure instead of
   // dropping it for having no plot data.
   if let Expr::Graphics { structure, .. } = &mut result {
-    *structure = Some(Box::new(Expr::FunctionCall {
-      name: "Graphics".to_string(),
-      args: graphics_args.into(),
-    }));
+    *structure = Some(Box::new(call("Graphics", graphics_args)));
   }
   Ok(result)
 }

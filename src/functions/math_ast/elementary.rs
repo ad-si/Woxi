@@ -660,11 +660,10 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Plus".to_string(),
         args: vec![
           Expr::Real(re / abs),
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Real(im / abs), Expr::Identifier("I".to_string())]
-              .into(),
-          },
+          call(
+            "Times",
+            vec![Expr::Real(im / abs), Expr::Identifier("I".to_string())],
+          ),
         ]
         .into(),
       });

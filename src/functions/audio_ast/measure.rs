@@ -83,10 +83,7 @@ fn channel_property(prop: &str, xs: &[f64], rate: f64) -> Option<Expr> {
     }
     "FundamentalFrequency" => Some(match fundamental_frequency(xs, rate) {
       Some(f) => quantity(f, "Hertz"),
-      None => Expr::FunctionCall {
-        name: "Missing".to_string(),
-        args: vec![Expr::String("NotAvailable".to_string())].into(),
-      },
+      None => call1("Missing", Expr::String("NotAvailable".to_string())),
     }),
     "SpectralCentroid" | "SpectralSpread" | "SpectralSkewness"
     | "SpectralKurtosis" | "SpectralCrest" | "SpectralFlatness"
@@ -294,10 +291,7 @@ pub fn audio_local_measurements_ast(
       };
       pairs.push(Expr::List(vec![Expr::Real(t), value].into()));
     }
-    Some(Expr::FunctionCall {
-      name: "TimeSeries".to_string(),
-      args: vec![Expr::List(pairs.into())].into(),
-    })
+    Some(call1("TimeSeries", Expr::List(pairs.into())))
   };
 
   match &args[1] {

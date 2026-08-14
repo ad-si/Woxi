@@ -1662,13 +1662,7 @@ fn music_duration_summand(term: &Expr) -> Option<(Expr, Expr)> {
       operand,
     } => {
       let (coeff, value) = music_duration_summand(operand)?;
-      Some((
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(coeff),
-        },
-        value,
-      ))
+      Some((neg1(coeff), value))
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
       let mut coeff: Vec<Expr> = Vec::new();
@@ -2615,10 +2609,7 @@ mod tests {
     // A - A + A == A, exercising the UnaryOp::Minus summand path.
     let result = try_music_pitch_plus(&[
       named_pitch("A4"),
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(named_pitch("A4")),
-      },
+      neg1(named_pitch("A4")),
       named_pitch("A4"),
     ]);
     expect_pitch_sum(result.as_ref(), 0, "A", 69);

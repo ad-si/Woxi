@@ -1205,10 +1205,7 @@ fn insphere(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
     vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(0)].into(),
   );
   let radius = eval_wl(info.inradius)?;
-  Ok(Expr::FunctionCall {
-    name: "Sphere".to_string(),
-    args: vec![center, radius].into(),
-  })
+  Ok(call("Sphere", vec![center, radius]))
 }
 
 /// The faces of a polyhedron as 1-based vertex index lists, in Wolfram's
@@ -1225,10 +1222,7 @@ fn faces_complex(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
     name: "GraphicsComplex".to_string(),
     args: vec![
       eval_wl(info.vertices_src)?,
-      Expr::FunctionCall {
-        name: "Polygon".to_string(),
-        args: vec![face_indices(info)?].into(),
-      },
+      call1("Polygon", face_indices(info)?),
     ]
     .into(),
   })
@@ -1290,16 +1284,10 @@ fn polyhedron_graphics(
           )
         })
         .collect();
-      Expr::FunctionCall {
-        name: "Polygon".to_string(),
-        args: vec![Expr::List(pts.into())].into(),
-      }
+      call1("Polygon", Expr::List(pts.into()))
     })
     .collect();
-  let graphics = Expr::FunctionCall {
-    name: "Graphics3D".to_string(),
-    args: vec![Expr::List(polygons.into())].into(),
-  };
+  let graphics = call1("Graphics3D", Expr::List(polygons.into()));
   crate::evaluator::evaluate_expr_to_expr(&graphics)
 }
 

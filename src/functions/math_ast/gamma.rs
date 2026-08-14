@@ -411,11 +411,10 @@ fn gamma_half_expr(numer: &BigInt, denom: &BigInt, is_neg: bool) -> Expr {
     }
     return call("Times", vec![bigint_to_expr(coeff_num), sqrt_pi]);
   }
-  let coeff = Expr::FunctionCall {
-    name: "Rational".to_string(),
-    args: vec![bigint_to_expr(coeff_num), bigint_to_expr(den_simplified)]
-      .into(),
-  };
+  let coeff = call(
+    "Rational",
+    vec![bigint_to_expr(coeff_num), bigint_to_expr(den_simplified)],
+  );
   call("Times", vec![coeff, sqrt_pi])
 }
 
@@ -1647,10 +1646,10 @@ pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ]
       .into(),
     };
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![e_pow, call("Plus", terms)].into(),
-    });
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "Times",
+      vec![e_pow, call("Plus", terms)],
+    ));
   }
 
   // Unevaluated

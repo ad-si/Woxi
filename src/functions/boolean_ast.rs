@@ -1407,11 +1407,10 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
               name: "Or".to_string(),
               args: vec![
                 call("And", vec![a.clone(), b.clone()]),
-                Expr::FunctionCall {
-                  name: "And".to_string(),
-                  args: vec![call1("Not", a.clone()), call1("Not", b.clone())]
-                    .into(),
-                },
+                call(
+                  "And",
+                  vec![call1("Not", a.clone()), call1("Not", b.clone())],
+                ),
               ]
               .into(),
             }
@@ -1419,11 +1418,10 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             // Pairwise: And[Equivalent[a1,a2], Equivalent[a2,a3], ...]
             let mut pairs = Vec::new();
             for i in 0..elim_args.len() - 1 {
-              pairs.push(eliminate_connectives(&Expr::FunctionCall {
-                name: "Equivalent".to_string(),
-                args: vec![elim_args[i].clone(), elim_args[i + 1].clone()]
-                  .into(),
-              }));
+              pairs.push(eliminate_connectives(&call(
+                "Equivalent",
+                vec![elim_args[i].clone(), elim_args[i + 1].clone()],
+              )));
             }
             call("And", pairs)
           }
@@ -1471,11 +1469,10 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
           let b = eliminate_connectives(&args[1]);
           let c = eliminate_connectives(&args[2]);
           let not_a = call1("Not", a.clone());
-          Expr::FunctionCall {
-            name: "Or".to_string(),
-            args: vec![call("And", vec![a, b]), call("And", vec![not_a, c])]
-              .into(),
-          }
+          call(
+            "Or",
+            vec![call("And", vec![a, b]), call("And", vec![not_a, c])],
+          )
         }
         // Majority[e₁, …, eₙ] holds when more than half its arguments do,
         // which is the Or of every conjunction of ⌊n/2⌋ + 1 of them.

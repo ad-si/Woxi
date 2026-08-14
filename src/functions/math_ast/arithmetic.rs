@@ -1684,11 +1684,10 @@ impl Coeff {
         } else if let (Some(ni), Some(di)) = (n.to_i128(), d.to_i128()) {
           make_rational(ni, di)
         } else {
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![bigint_to_expr(n.clone()), bigint_to_expr(d.clone())]
-              .into(),
-          }
+          call(
+            "Rational",
+            vec![bigint_to_expr(n.clone()), bigint_to_expr(d.clone())],
+          )
         }
       }
       Self::Real(f) => Expr::Real(*f),
@@ -11242,17 +11241,15 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         let im_part = if im == 1.0 {
           Expr::Identifier("I".to_string())
         } else if im == -1.0 {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), Expr::Identifier("I".to_string())]
-              .into(),
-          }
+          call(
+            "Times",
+            vec![Expr::Integer(-1), Expr::Identifier("I".to_string())],
+          )
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Real(im), Expr::Identifier("I".to_string())]
-              .into(),
-          }
+          call(
+            "Times",
+            vec![Expr::Real(im), Expr::Identifier("I".to_string())],
+          )
         };
         if re == 0.0 {
           Ok(im_part)

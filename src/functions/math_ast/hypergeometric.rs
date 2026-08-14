@@ -1382,11 +1382,10 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       e_n /= &g_num;
       c_n /= &g_num;
     }
-    let exp_part = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![Expr::Identifier("E".to_string()), Expr::Integer(z_int)]
-        .into(),
-    };
+    let exp_part = call(
+      "Power",
+      vec![Expr::Identifier("E".to_string()), Expr::Integer(z_int)],
+    );
     let e_term = if e_n == BigInt::from(0) {
       Expr::Integer(0)
     } else if e_n == BigInt::from(1) {

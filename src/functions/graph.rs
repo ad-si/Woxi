@@ -397,10 +397,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let default_applied_edge_color =
     *edge_style.as_ref().unwrap_or(&default_edge_color);
   primitives.push(default_applied_edge_color.to_expr());
-  primitives.push(Expr::FunctionCall {
-    name: "AbsoluteThickness".to_string(),
-    args: vec![Expr::Real(1.5)].into(),
-  });
+  primitives.push(call1("AbsoluteThickness", Expr::Real(1.5)));
 
   // Group parallel (including antiparallel) non-loop edges by unordered
   // vertex pair so that multi-edges can be rendered as separate curves
@@ -636,21 +633,14 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         f64::midpoint(y1, y2)
       };
       // Force labels to black so they don't inherit the edge color.
-      primitives.push(Expr::FunctionCall {
-        name: "RGBColor".to_string(),
-        args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)].into(),
-      });
-      primitives.push(Expr::FunctionCall {
-        name: "Text".to_string(),
-        args: vec![
-          Expr::FunctionCall {
-            name: "Style".to_string(),
-            args: vec![Expr::String(lbl.clone()), Expr::Integer(10)].into(),
-          },
-          Expr::List(vec![Expr::Real(mx), Expr::Real(my)].into()),
-        ]
-        .into(),
-      });
+      primitives.push(call(
+        "RGBColor",
+        vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+      ));
+      let styled =
+        call("Style", vec![Expr::String(lbl.clone()), Expr::Integer(10)]);
+      let point = Expr::List(vec![Expr::Real(mx), Expr::Real(my)].into());
+      primitives.push(call("Text", vec![styled, point]));
     }
   }
 
@@ -666,15 +656,11 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "EdgeForm".to_string(),
       args: vec![Expr::List(
         vec![
-          Expr::FunctionCall {
-            name: "RGBColor".to_string(),
-            args: vec![Expr::Real(0.15), Expr::Real(0.27), Expr::Real(0.43)]
-              .into(),
-          },
-          Expr::FunctionCall {
-            name: "AbsoluteThickness".to_string(),
-            args: vec![Expr::Real(1.0)].into(),
-          },
+          call(
+            "RGBColor",
+            vec![Expr::Real(0.15), Expr::Real(0.27), Expr::Real(0.43)],
+          ),
+          call1("AbsoluteThickness", Expr::Real(1.0)),
         ]
         .into(),
       )]
@@ -745,23 +731,16 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Strip any Style wrapper so the label shows the underlying vertex
       // name (e.g. `3`, not `Style[3, Red]`).
       let label_text = expr_to_output(unwrap_vertex_style(&vertices[i]).0);
-      primitives.push(Expr::FunctionCall {
-        name: "RGBColor".to_string(),
-        args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)].into(),
-      });
-      primitives.push(Expr::FunctionCall {
-        name: "Text".to_string(),
-        args: vec![
-          Expr::FunctionCall {
-            name: "Style".to_string(),
-            args: vec![Expr::String(label_text), Expr::Integer(10)].into(),
-          },
-          Expr::List(
-            vec![Expr::Real(x), Expr::Real(y + vertex_radius + 0.08)].into(),
-          ),
-        ]
-        .into(),
-      });
+      primitives.push(call(
+        "RGBColor",
+        vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+      ));
+      let styled =
+        call("Style", vec![Expr::String(label_text), Expr::Integer(10)]);
+      let point = Expr::List(
+        vec![Expr::Real(x), Expr::Real(y + vertex_radius + 0.08)].into(),
+      );
+      primitives.push(call("Text", vec![styled, point]));
     }
   }
 
@@ -787,31 +766,24 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         label_expr.clone()
       }
-      _ => Expr::FunctionCall {
-        name: "Style".to_string(),
-        args: vec![
+      _ => call(
+        "Style",
+        vec![
           Expr::String(expr_to_output(&label_expr)),
           Expr::Integer(16),
           Expr::Identifier("Bold".to_string()),
-        ]
-        .into(),
-      },
+        ],
+      ),
     };
 
     // Force black text regardless of any preceding directive (edges may
     // have set a different color last).
-    primitives.push(Expr::FunctionCall {
-      name: "RGBColor".to_string(),
-      args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)].into(),
-    });
-    primitives.push(Expr::FunctionCall {
-      name: "Text".to_string(),
-      args: vec![
-        styled,
-        Expr::List(vec![Expr::Real(cx), Expr::Real(label_y)].into()),
-      ]
-      .into(),
-    });
+    primitives.push(call(
+      "RGBColor",
+      vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+    ));
+    let point = Expr::List(vec![Expr::Real(cx), Expr::Real(label_y)].into());
+    primitives.push(call("Text", vec![styled, point]));
   }
 
   let content = Expr::List(primitives.into());
@@ -2039,10 +2011,7 @@ pub fn contract_vertices_in_graph(
     Expr::List(new_edges.into()),
   ];
   result_args.extend(gargs[2..].iter().cloned());
-  Some(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: result_args.into(),
-  })
+  Some(call("Graph", result_args))
 }
 
 /// Parse the FindCycle input (first argument) into a vertex list (in first-
@@ -2559,19 +2528,16 @@ pub fn undirected_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       continue;
     }
     seen.push(pair);
-    out.push(Expr::FunctionCall {
-      name: "UndirectedEdge".to_string(),
-      args: vec![vertices[pair.0].clone(), vertices[pair.1].clone()].into(),
-    });
+    out.push(call(
+      "UndirectedEdge",
+      vec![vertices[pair.0].clone(), vertices[pair.1].clone()],
+    ));
   }
 
   let mut graph_args =
     vec![Expr::List(vertices.into()), Expr::List(out.into())];
   graph_args.extend(extra);
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: graph_args.into(),
-  })
+  Ok(call("Graph", graph_args))
 }
 
 pub fn find_hamiltonian_cycle_ast(
@@ -2805,9 +2771,11 @@ pub fn find_eulerian_cycle_ast(
   };
   let cycle: Vec<Expr> = circuit
     .windows(2)
-    .map(|w| Expr::FunctionCall {
-      name: edge_kind.to_string(),
-      args: vec![vertices[w[0]].clone(), vertices[w[1]].clone()].into(),
+    .map(|w| {
+      call(
+        edge_kind,
+        vec![vertices[w[0]].clone(), vertices[w[1]].clone()],
+      )
     })
     .collect();
   Ok(Expr::List(vec![Expr::List(cycle.into())].into()))
@@ -2976,9 +2944,11 @@ pub fn find_postman_tour_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let tour: Vec<Expr> = circuit
     .windows(2)
-    .map(|w| Expr::FunctionCall {
-      name: "UndirectedEdge".to_string(),
-      args: vec![vertices[w[0]].clone(), vertices[w[1]].clone()].into(),
+    .map(|w| {
+      call(
+        "UndirectedEdge",
+        vec![vertices[w[0]].clone(), vertices[w[1]].clone()],
+      )
     })
     .collect();
   Ok(Expr::List(vec![Expr::List(tour.into())].into()))
@@ -3035,11 +3005,10 @@ pub fn mean_neighbor_degree_ast(
     }
     let sum: i128 = nb.iter().map(|&u| deg[u] as i128).sum();
     let cnt = nb.len() as i128;
-    out.push(crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(Expr::Integer(sum)),
-      right: Box::new(Expr::Integer(cnt)),
-    })?);
+    out.push(crate::evaluator::evaluate_expr_to_expr(&div2(
+      Expr::Integer(sum),
+      Expr::Integer(cnt),
+    ))?);
   }
   Ok(Expr::List(out.into()))
 }
@@ -3097,10 +3066,7 @@ fn apply_style_rule(
   };
   let mut args = vec![part.clone()];
   args.extend(collect_directives(style));
-  Expr::FunctionCall {
-    name: "Style".to_string(),
-    args: args.into(),
-  }
+  call("Style", args)
 }
 
 fn parse_vertex_style(
@@ -3254,10 +3220,10 @@ pub fn find_fundamental_cycles_ast(
   }
 
   let render_edge = |s: usize, d: usize| -> Expr {
-    Expr::FunctionCall {
-      name: "UndirectedEdge".to_string(),
-      args: vec![vertices[s].clone(), vertices[d].clone()].into(),
-    }
+    call(
+      "UndirectedEdge",
+      vec![vertices[s].clone(), vertices[d].clone()],
+    )
   };
   let chain_to_root = |mut x: usize| -> Vec<usize> {
     let mut c = vec![x];
@@ -3524,12 +3490,10 @@ pub fn transitive_closure_graph_ast(
   }
   // Accept raw edge lists like wolframscript does
   let graph = match &args[0] {
-    Expr::List(_) => {
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Graph".to_string(),
-        args: vec![args[0].clone()].into(),
-      })?
-    }
+    Expr::List(_) => crate::evaluator::evaluate_expr_to_expr(&call(
+      "Graph",
+      vec![args[0].clone()],
+    ))?,
     other => other.clone(),
   };
   let (vertices, edges) = match &graph {
@@ -3599,17 +3563,17 @@ pub fn transitive_closure_graph_ast(
     let j_start = if any_directed { 0 } else { i + 1 };
     for j in j_start..n {
       if i != j && reach[i][j] {
-        closure_edges.push(Expr::FunctionCall {
-          name: edge_head.to_string(),
-          args: vec![vertices[i].clone(), vertices[j].clone()].into(),
-        });
+        closure_edges.push(call(
+          edge_head,
+          vec![vertices[i].clone(), vertices[j].clone()],
+        ));
       }
     }
   }
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: vec![Expr::List(vertices), Expr::List(closure_edges.into())].into(),
-  })
+  Ok(call(
+    "Graph",
+    vec![Expr::List(vertices), Expr::List(closure_edges.into())],
+  ))
 }
 
 /// TransitiveReductionGraph[graph | edgeList] → the minimal graph with the
@@ -3628,12 +3592,10 @@ pub fn transitive_reduction_graph_ast(
   }
   // Accept raw edge lists like wolframscript does.
   let graph = match &args[0] {
-    Expr::List(_) => {
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Graph".to_string(),
-        args: vec![args[0].clone()].into(),
-      })?
-    }
+    Expr::List(_) => crate::evaluator::evaluate_expr_to_expr(&call(
+      "Graph",
+      vec![args[0].clone()],
+    ))?,
     other => other.clone(),
   };
   let (vertices, edges) = match &graph {
@@ -3708,18 +3670,18 @@ pub fn transitive_reduction_graph_ast(
       let redundant =
         (0..n).any(|w| w != i && w != j && reach[i][w] && reach[w][j]);
       if !redundant {
-        reduced_edges.push(Expr::FunctionCall {
-          name: "DirectedEdge".to_string(),
-          args: vec![vertices[i].clone(), vertices[j].clone()].into(),
-        });
+        reduced_edges.push(call(
+          "DirectedEdge",
+          vec![vertices[i].clone(), vertices[j].clone()],
+        ));
       }
     }
   }
 
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: vec![Expr::List(vertices), Expr::List(reduced_edges.into())].into(),
-  })
+  Ok(call(
+    "Graph",
+    vec![Expr::List(vertices), Expr::List(reduced_edges.into())],
+  ))
 }
 
 /// ReverseGraph[g] - the graph with every directed edge reversed (undirected
@@ -3777,10 +3739,9 @@ pub fn reverse_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => return not_a_graph(),
     };
     let flipped = match head {
-      "DirectedEdge" | "Rule" => Expr::FunctionCall {
-        name: "DirectedEdge".to_string(),
-        args: vec![to.clone(), from.clone()].into(),
-      },
+      "DirectedEdge" | "Rule" => {
+        call("DirectedEdge", vec![to.clone(), from.clone()])
+      }
       "UndirectedEdge" => edge.clone(),
       _ => return not_a_graph(),
     };
@@ -3800,10 +3761,7 @@ pub fn reverse_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(reversed.into_iter().map(|(_, _, e)| e).collect()),
   ];
   new_args.extend(extra);
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: new_args.into(),
-  })
+  Ok(call("Graph", new_args))
 }
 
 /// DirectedGraph[g] - the directed version of `g`. Each undirected edge
@@ -3869,14 +3827,13 @@ pub fn directed_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     for (from, to) in orientations {
       match (index.get(&key(from)), index.get(&key(to))) {
-        (Some(&s), Some(&d)) => out.push((
-          s,
-          d,
-          Expr::FunctionCall {
-            name: "DirectedEdge".to_string(),
-            args: vec![from.clone(), to.clone()].into(),
-          },
-        )),
+        (Some(&s), Some(&d)) => {
+          out.push((
+            s,
+            d,
+            call("DirectedEdge", vec![from.clone(), to.clone()]),
+          ));
+        }
         _ => return not_a_graph(),
       }
     }
@@ -3888,10 +3845,7 @@ pub fn directed_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(out.into_iter().map(|(_, _, e)| e).collect()),
   ];
   new_args.extend(extra);
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: new_args.into(),
-  })
+  Ok(call("Graph", new_args))
 }
 
 /// FindIndependentVertexSet[g] - one maximum independent vertex set,
@@ -3908,12 +3862,10 @@ pub fn find_independent_vertex_set_ast(
     return Ok(unevaluated(args));
   }
   let graph = match &args[0] {
-    Expr::List(_) => {
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Graph".to_string(),
-        args: vec![args[0].clone()].into(),
-      })?
-    }
+    Expr::List(_) => crate::evaluator::evaluate_expr_to_expr(&call(
+      "Graph",
+      vec![args[0].clone()],
+    ))?,
     other => other.clone(),
   };
   let (vertices, edges) = match &graph {
@@ -4000,12 +3952,10 @@ pub fn vertex_component_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated(args));
   }
   let graph = match &args[0] {
-    Expr::List(_) => {
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Graph".to_string(),
-        args: vec![args[0].clone()].into(),
-      })?
-    }
+    Expr::List(_) => crate::evaluator::evaluate_expr_to_expr(&call(
+      "Graph",
+      vec![args[0].clone()],
+    ))?,
     other => other.clone(),
   };
   let (vertices, edges) = match &graph {
@@ -4061,10 +4011,10 @@ pub fn vertex_component_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "VertexComponent::inv: The argument {} in {} is not a valid vertex.",
         key(seed),
-        crate::syntax::expr_to_string(&Expr::FunctionCall {
-          name: "VertexComponent".to_string(),
-          args: vec![graph.clone(), args[1].clone()].into(),
-        })
+        crate::syntax::expr_to_string(&call(
+          "VertexComponent",
+          vec![graph.clone(), args[1].clone()]
+        ))
       ));
       return Ok(unevaluated(&[graph, args[1].clone()]));
     }
@@ -4116,12 +4066,10 @@ pub fn vertex_reach_component_ast(
   };
 
   let graph = match &args[0] {
-    Expr::List(_) => {
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Graph".to_string(),
-        args: vec![args[0].clone()].into(),
-      })?
-    }
+    Expr::List(_) => crate::evaluator::evaluate_expr_to_expr(&call(
+      "Graph",
+      vec![args[0].clone()],
+    ))?,
     other => other.clone(),
   };
   let (vertices, edges) = match &graph {
@@ -4181,10 +4129,10 @@ pub fn vertex_reach_component_ast(
         "{}::inv: The argument {} in {} is not a valid vertex.",
         name,
         key(seed),
-        crate::syntax::expr_to_string(&Expr::FunctionCall {
-          name: name.to_string(),
-          args: vec![graph.clone(), args[1].clone()].into(),
-        })
+        crate::syntax::expr_to_string(&call(
+          name,
+          vec![graph.clone(), args[1].clone()]
+        ))
       ));
       return Ok(unevaluated());
     }
@@ -4553,15 +4501,14 @@ pub fn nearest_neighbor_graph_ast(
   }
   let edges: Vec<Expr> = pair_set
     .into_iter()
-    .map(|(a, b)| Expr::FunctionCall {
-      name: "UndirectedEdge".to_string(),
-      args: vec![points[a].clone(), points[b].clone()].into(),
+    .map(|(a, b)| {
+      call("UndirectedEdge", vec![points[a].clone(), points[b].clone()])
     })
     .collect();
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: vec![Expr::List(points.clone()), Expr::List(edges.into())].into(),
-  })
+  Ok(call(
+    "Graph",
+    vec![Expr::List(points.clone()), Expr::List(edges.into())],
+  ))
 }
 
 // ---------------------------------------------------------------------------
@@ -5217,10 +5164,7 @@ fn collect_highlight_items(
       let style = if args.len() == 2 {
         args[1].clone()
       } else {
-        Expr::FunctionCall {
-          name: "Directive".to_string(),
-          args: args[1..].to_vec().into(),
-        }
+        call("Directive", args[1..].to_vec())
       };
       collect_highlight_items(&args[0], &style, out);
     }
@@ -5328,10 +5272,7 @@ pub fn highlight_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   graph_args.extend(merged);
   graph_args.extend(args[2..].iter().cloned());
 
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: graph_args.into(),
-  })
+  Ok(call("Graph", graph_args))
 }
 
 // ---------------------------------------------------------------------------
@@ -5389,10 +5330,7 @@ pub fn subgraph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       edges.push((
         (pa.max(pb), pa.min(pb)),
-        Expr::FunctionCall {
-          name: "UndirectedEdge".to_string(),
-          args: vec![first, second].into(),
-        },
+        call("UndirectedEdge", vec![first, second]),
       ));
     }
   }
@@ -5442,10 +5380,10 @@ pub fn kirchhoff_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(&format!(
       "KirchhoffGraph::inv: The argument {} in {} is not a valid Kirchhoff matrix.",
       crate::syntax::expr_to_output(matrix_expr),
-      crate::syntax::expr_to_string(&Expr::FunctionCall {
-        name: "KirchhoffGraph".to_string(),
-        args: vec![matrix_expr.clone()].into(),
-      })
+      crate::syntax::expr_to_string(&call(
+        "KirchhoffGraph",
+        vec![matrix_expr.clone()]
+      ))
     ));
     Ok(unevaluated())
   };
@@ -5506,20 +5444,14 @@ pub fn kirchhoff_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "DirectedEdge"
       };
       for _ in 0..(-matrix[i][j]) {
-        edges.push(Expr::FunctionCall {
-          name: head.to_string(),
-          args: vec![vertices[i].clone(), vertices[j].clone()].into(),
-        });
+        edges.push(call(head, vec![vertices[i].clone(), vertices[j].clone()]));
       }
     }
   }
   let mut graph_args =
     vec![Expr::List(vertices.into()), Expr::List(edges.into())];
   graph_args.extend(extra.iter().cloned());
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: graph_args.into(),
-  })
+  Ok(call("Graph", graph_args))
 }
 
 /// IncidenceGraph[m] / IncidenceGraph[vertices, m] — build the graph whose
@@ -5597,9 +5529,8 @@ pub fn incidence_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => (1..=n as i128).map(Expr::Integer).collect(),
   };
 
-  let edge = |head: &str, i: usize, j: usize| Expr::FunctionCall {
-    name: head.to_string(),
-    args: vec![vertices[i].clone(), vertices[j].clone()].into(),
+  let edge = |head: &str, i: usize, j: usize| {
+    call(head, vec![vertices[i].clone(), vertices[j].clone()])
   };
   let mut directed: Vec<Expr> = Vec::new();
   let mut undirected: Vec<Expr> = Vec::new();
@@ -5621,10 +5552,10 @@ pub fn incidence_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut edges = directed;
   edges.append(&mut undirected);
   edges.append(&mut loops);
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
-  })
+  Ok(call(
+    "Graph",
+    vec![Expr::List(vertices.into()), Expr::List(edges.into())],
+  ))
 }
 
 // LineGraph[g] — the line graph: one vertex per edge of g (numbered by
@@ -5678,10 +5609,10 @@ pub fn line_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: vec![Expr::List(vertices.into()), Expr::List(edges.into())].into(),
-  })
+  Ok(call(
+    "Graph",
+    vec![Expr::List(vertices.into()), Expr::List(edges.into())],
+  ))
 }
 
 // ---------------------------------------------------------------------------
@@ -5797,9 +5728,11 @@ pub fn neighborhood_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut emitted: std::collections::BTreeSet<(usize, usize)> =
     std::collections::BTreeSet::new();
   let mut edges: Vec<Expr> = Vec::new();
-  let mk_edge = |a: usize, b: usize| Expr::FunctionCall {
-    name: "UndirectedEdge".to_string(),
-    args: vec![vertices[a].clone(), vertices[b].clone()].into(),
+  let mk_edge = |a: usize, b: usize| {
+    call(
+      "UndirectedEdge",
+      vec![vertices[a].clone(), vertices[b].clone()],
+    )
   };
   for &c in &centers {
     for &w in &adj[c] {
@@ -6385,10 +6318,7 @@ pub fn planar_graph_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 // fewer than two vertices (where the formulas degenerate) stay unevaluated.
 
 fn make_rational(num: i128, den: i128) -> Expr {
-  Expr::FunctionCall {
-    name: "Rational".to_string(),
-    args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
-  }
+  call("Rational", vec![Expr::Integer(num), Expr::Integer(den)])
 }
 
 /// GraphDensity for a graph containing directed edges: the fraction of the
@@ -6767,22 +6697,17 @@ pub fn graph_metric_ast(
     {
       return Ok(unevaluated());
     }
-    let ec = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "EdgeCount".to_string(),
-      args: vec![args[0].clone()].into(),
-    })?;
+    let ec = crate::evaluator::evaluate_expr_to_expr(&call(
+      "EdgeCount",
+      vec![args[0].clone()],
+    ))?;
     if !matches!(&ec, Expr::Integer(m) if *m > 0) {
       return Ok(unevaluated());
     }
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(Expr::Integer(1)),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(mgd),
-        right: Box::new(ec),
-      }),
-    });
+    return crate::evaluator::evaluate_expr_to_expr(&minus2(
+      Expr::Integer(1),
+      div2(mgd, ec),
+    ));
   }
   let Some((n, pairs)) = parse_undirected_graph_pairs(&args[0]) else {
     // Only undirected graphs take the shared path; the metrics with a
@@ -6822,14 +6747,8 @@ pub fn graph_metric_ast(
           }
         })
         .collect();
-      let sum = Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: terms.into(),
-      };
-      let mean = Expr::FunctionCall {
-        name: "Divide".to_string(),
-        args: vec![sum, Expr::Integer(local.len() as i128)].into(),
-      };
+      let sum = call("Plus", terms);
+      let mean = call("Divide", vec![sum, Expr::Integer(local.len() as i128)]);
       return Ok(
         crate::evaluator::evaluate_expr_to_expr(&mean)
           .unwrap_or_else(|_| unevaluated()),
@@ -6908,10 +6827,10 @@ pub fn graph_metric_ast(
         num = num * vden + links * den;
         den *= vden;
       }
-      evaluated(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![make_rational(num, den), make_rational(1, n as i128)].into(),
-      })
+      evaluated(call(
+        "Times",
+        vec![make_rational(num, den), make_rational(1, n as i128)],
+      ))
     }
     "MeanDegreeConnectivity" => {
       if n == 0 {
@@ -7281,10 +7200,7 @@ pub fn vertex_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(new_edges.into()),
   ];
   graph_args.extend(options);
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: graph_args.into(),
-  })
+  Ok(call("Graph", graph_args))
 }
 
 /// `EdgeWeightedGraphQ` / `VertexWeightedGraphQ` — whether the graph carries
@@ -7488,12 +7404,11 @@ fn item_annotation_value(
   }
   // Every vertex has coordinates, whether or not the graph spells them out.
   if property == "VertexCoordinates" {
-    let embedding =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "GraphEmbedding".to_string(),
-        args: vec![graph.clone()].into(),
-      })
-      .ok()?;
+    let embedding = crate::evaluator::evaluate_expr_to_expr(&call(
+      "GraphEmbedding",
+      vec![graph.clone()],
+    ))
+    .ok()?;
     if let Expr::List(points) = &embedding {
       return points.get(index).cloned();
     }
@@ -7798,10 +7713,7 @@ pub fn graph_annotation_delete_ast(
   let mut graph_args =
     vec![Expr::List(vertices.into()), Expr::List(edges.into())];
   graph_args.extend(kept);
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: graph_args.into(),
-  })
+  Ok(call("Graph", graph_args))
 }
 
 /// `SetProperty[{graph, item}, property -> value]` — the graph with that
@@ -7872,10 +7784,7 @@ pub fn graph_set_property_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut graph_args =
     vec![Expr::List(vertices.into()), Expr::List(edges.into())];
   graph_args.extend(new_options);
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: graph_args.into(),
-  })
+  Ok(call("Graph", graph_args))
 }
 
 /// `Options[graph]` / `Options[graph, name]` — the annotations the graph
@@ -8084,18 +7993,12 @@ pub fn edge_tagged_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       Expr::Integer(count as i128)
     });
-    tagged.push(Expr::FunctionCall {
-      name: head.to_string(),
-      args: vec![a, b, tag].into(),
-    });
+    tagged.push(call(head, vec![a, b, tag]));
   }
   let mut graph_args =
     vec![Expr::List(vertices.into()), Expr::List(tagged.into())];
   graph_args.extend(options);
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: graph_args.into(),
-  })
+  Ok(call("Graph", graph_args))
 }
 
 /// `EdgeTaggedGraphQ[graph]` — whether every edge carries a tag.

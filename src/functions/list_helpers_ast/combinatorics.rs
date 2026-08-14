@@ -345,10 +345,7 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let spec_display = Expr::List(
             vec![Expr::Integer(m), Expr::Integer(n), Expr::Integer(s)].into(),
           );
-          let two_arg = Expr::FunctionCall {
-            name: "Subsets".to_string(),
-            args: vec![args[0].clone(), args[1].clone()].into(),
-          };
+          let two_arg = call("Subsets", vec![args[0].clone(), args[1].clone()]);
           crate::emit_message(&format!(
             "Subsets::take: Warning: not all elements were found when attempting to take the sequence {} from {}, which has length {}.",
             show(&spec_display),
@@ -590,10 +587,7 @@ fn rewrap_lists(expr: &Expr, head: &str) -> Expr {
     Expr::List(items) => {
       let new_items: Vec<Expr> =
         items.iter().map(|i| rewrap_lists(i, head)).collect();
-      Expr::FunctionCall {
-        name: head.to_string(),
-        args: new_items.into(),
-      }
+      call(head, new_items)
     }
     _ => expr.clone(),
   }

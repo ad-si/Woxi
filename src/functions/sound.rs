@@ -407,14 +407,13 @@ pub fn list_play(args: &[Expr]) -> Option<Expr> {
   };
   let rate =
     option_sample_rate(&args[1..], LIST_PLAY_SAMPLE_RATE).round() as i128;
-  Some(Expr::FunctionCall {
-    name: "Sound".to_string(),
-    args: vec![Expr::FunctionCall {
-      name: "SampledSoundList".to_string(),
-      args: vec![Expr::List(normalized.into()), Expr::Integer(rate)].into(),
-    }]
-    .into(),
-  })
+  Some(call(
+    "Sound",
+    vec![call(
+      "SampledSoundList",
+      vec![Expr::List(normalized.into()), Expr::Integer(rate)],
+    )],
+  ))
 }
 
 /// File extensions recognized as audio sources for `Audio["path.ext"]`

@@ -41,10 +41,7 @@ fn bound_to_count(e: &Expr) -> Option<i128> {
 
 /// The unevaluated single-iterator `Table[body, iter_spec]`.
 fn table_unevaluated(body: &Expr, iter_spec: &Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "Table".to_string(),
-    args: vec![body.clone(), iter_spec.clone()].into(),
-  }
+  call("Table", vec![body.clone(), iter_spec.clone()])
 }
 
 /// If any iterator in a `Table`/`Do`-style call has bounds that don't resolve
@@ -259,10 +256,7 @@ pub fn table_ast(
             "Table::itraw: Raw object {} cannot be used as an iterator.",
             crate::syntax::expr_to_string(other)
           ));
-          return Ok(Expr::FunctionCall {
-            name: "Table".to_string(),
-            args: vec![body.clone(), iter_spec.clone()].into(),
-          });
+          return Ok(call("Table", vec![body.clone(), iter_spec.clone()]));
         }
       };
 
@@ -447,11 +441,10 @@ pub fn table_ast(
             if !is_nothing(&val) {
               results.push(val);
             }
-            current_expr =
-              crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![current_expr, step_expr.clone()].into(),
-              })?;
+            current_expr = crate::evaluator::evaluate_expr_to_expr(&call(
+              "Plus",
+              vec![current_expr, step_expr.clone()],
+            ))?;
             safety_counter += 1;
             if safety_counter > 1_000_000 {
               return Err(InterpreterError::EvaluationError(
@@ -482,11 +475,10 @@ pub fn table_ast(
             if !is_nothing(&val) {
               results.push(val);
             }
-            current_expr =
-              crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![current_expr, step_expr.clone()].into(),
-              })?;
+            current_expr = crate::evaluator::evaluate_expr_to_expr(&call(
+              "Plus",
+              vec![current_expr, step_expr.clone()],
+            ))?;
             safety_counter += 1;
             if safety_counter > 1_000_000 {
               return Err(InterpreterError::EvaluationError(
@@ -618,10 +610,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Some(f);
     }
     // Try evaluating N[expr] to get a float
-    let n_expr = Expr::FunctionCall {
-      name: "N".to_string(),
-      args: vec![e.clone()].into(),
-    };
+    let n_expr = call1("N", e.clone());
     if let Ok(evaled) = crate::evaluator::evaluate_expr_to_expr(&n_expr) {
       return expr_to_f64(&evaled);
     }
@@ -669,17 +658,11 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             name: "Plus".to_string(),
             args: vec![
               max_expr.clone(),
-              Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![Expr::Integer(-1), min_expr.clone()].into(),
-              },
+              call("Times", vec![Expr::Integer(-1), min_expr.clone()]),
             ]
             .into(),
           },
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![step_expr.clone(), Expr::Integer(-1)].into(),
-          },
+          call("Power", vec![step_expr.clone(), Expr::Integer(-1)]),
         ]
         .into(),
       };
@@ -710,14 +693,9 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let elem = if k == 0 {
             min_expr.clone()
           } else {
-            let k_times_step = Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![Expr::Integer(k), step_expr.clone()].into(),
-            };
-            let sum = Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: vec![min_expr.clone(), k_times_step].into(),
-            };
+            let k_times_step =
+              call("Times", vec![Expr::Integer(k), step_expr.clone()]);
+            let sum = call("Plus", vec![min_expr.clone(), k_times_step]);
             crate::evaluator::evaluate_expr_to_expr(&sum)?
           };
           results.push(elem);
@@ -755,16 +733,8 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let elem = if k == 0 {
           min_expr.clone()
         } else {
-          let k_times_step = Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(k)),
-            right: Box::new(step_expr.clone()),
-          };
-          let sum = Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(min_expr.clone()),
-            right: Box::new(k_times_step),
-          };
+          let k_times_step = times2(Expr::Integer(k), step_expr.clone());
+          let sum = plus2(min_expr.clone(), k_times_step);
           crate::evaluator::evaluate_expr_to_expr(&sum)?
         };
         results.push(elem);
@@ -924,12 +894,8 @@ pub fn constant_array_ast(
   elem: &Expr,
   dims: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "ConstantArray".to_string(),
-      args: vec![elem.clone(), dims.clone()].into(),
-    })
-  };
+  let unevaluated =
+    || Ok(call("ConstantArray", vec![elem.clone(), dims.clone()]));
   // A dimension must be a non-negative machine integer; anything else
   // (negative, non-integer, symbolic, or too large for i128) leaves the call
   // unevaluated rather than raising an error — matching wolframscript, which
@@ -966,10 +932,10 @@ pub fn constant_array_ast(
       if crate::functions::predicate_ast::is_numeric_q(d) {
         crate::emit_message(&format!(
           "ConstantArray::ilsmn: Single or list of non-negative machine-sized integers expected at position 2 of {}.",
-          crate::syntax::expr_to_string(&Expr::FunctionCall {
-            name: "ConstantArray".to_string(),
-            args: vec![elem.clone(), dims.clone()].into(),
-          })
+          crate::syntax::expr_to_string(&call(
+            "ConstantArray",
+            vec![elem.clone(), dims.clone()]
+          ))
         ));
         return unevaluated();
       }
@@ -992,21 +958,11 @@ pub fn constant_array_ast(
   //   ConstantArray[1, dims] -> SymbolicOnesArray[dims]
   //   ConstantArray[c, dims] -> c*SymbolicOnesArray[dims]
   let dims_list = Expr::List(dim_exprs.into());
-  let ones = || Expr::FunctionCall {
-    name: "SymbolicOnesArray".to_string(),
-    args: vec![dims_list.clone()].into(),
-  };
+  let ones = || call1("SymbolicOnesArray", dims_list.clone());
   let result = match elem {
-    Expr::Integer(0) => Expr::FunctionCall {
-      name: "SymbolicZerosArray".to_string(),
-      args: vec![dims_list.clone()].into(),
-    },
+    Expr::Integer(0) => call1("SymbolicZerosArray", dims_list.clone()),
     Expr::Integer(1) => ones(),
-    _ => Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(elem.clone()),
-      right: Box::new(ones()),
-    },
+    _ => times2(elem.clone(), ones()),
   };
   Ok(result)
 }
@@ -1173,10 +1129,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
             "Do::itraw: Raw object {} cannot be used as an iterator.",
             crate::syntax::expr_to_string(other)
           ));
-          return Ok(Expr::FunctionCall {
-            name: "Do".to_string(),
-            args: vec![body.clone(), iter_spec.clone()].into(),
-          });
+          return Ok(call("Do", vec![body.clone(), iter_spec.clone()]));
         }
       };
 
@@ -1689,10 +1642,7 @@ fn build_offset_indices(
 ) -> Result<Vec<Expr>, InterpreterError> {
   let mut result = Vec::with_capacity(n.max(0) as usize);
   for i in 0..n {
-    let val = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![start.clone(), Expr::Integer(i)].into(),
-    };
+    let val = call("Plus", vec![start.clone(), Expr::Integer(i)]);
     result.push(crate::evaluator::evaluate_expr_to_expr(&val)?);
   }
   Ok(result)
@@ -1712,20 +1662,10 @@ fn build_range_indices(
   if n == 1 {
     // Wolfram gives the midpoint (a + b) / 2 when requesting a single
     // sample over a range, matching Array[f, 1, {a, b}] → {f[(a+b)/2]}.
-    let half = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![Expr::Integer(2), Expr::Integer(-1)].into(),
-    };
+    let half = call("Power", vec![Expr::Integer(2), Expr::Integer(-1)]);
     let mid = Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![
-        half,
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![a.clone(), b.clone()].into(),
-        },
-      ]
-      .into(),
+      args: vec![half, call("Plus", vec![a.clone(), b.clone()])].into(),
     };
     return Ok(vec![crate::evaluator::evaluate_expr_to_expr(&mid)?]);
   }
@@ -1733,28 +1673,16 @@ fn build_range_indices(
   // value_i = a + i * (b - a) / (n - 1)
   let diff = Expr::FunctionCall {
     name: "Plus".to_string(),
-    args: vec![
-      b.clone(),
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), a.clone()].into(),
-      },
-    ]
-    .into(),
+    args: vec![b.clone(), call("Times", vec![Expr::Integer(-1), a.clone()])]
+      .into(),
   };
-  let inv_denom = Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![Expr::Integer(n - 1), Expr::Integer(-1)].into(),
-  };
+  let inv_denom = call("Power", vec![Expr::Integer(n - 1), Expr::Integer(-1)]);
   for i in 0..n {
-    let term = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(i), diff.clone(), inv_denom.clone()].into(),
-    };
-    let val = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![a.clone(), term].into(),
-    };
+    let term = call(
+      "Times",
+      vec![Expr::Integer(i), diff.clone(), inv_denom.clone()],
+    );
+    let val = call("Plus", vec![a.clone(), term]);
     result.push(crate::evaluator::evaluate_expr_to_expr(&val)?);
   }
   Ok(result)
@@ -2058,10 +1986,7 @@ fn expand_pattern_rule(data: &Expr, dims: &[usize]) -> Option<Expr> {
       rem /= dims[k];
     }
     let pos_list = Expr::List(pos.iter().map(|&p| Expr::Integer(p)).collect());
-    let match_q = Expr::FunctionCall {
-      name: "MatchQ".to_string(),
-      args: vec![pos_list.clone(), lhs.clone()].into(),
-    };
+    let match_q = call("MatchQ", vec![pos_list.clone(), lhs.clone()]);
     let matched = matches!(
       crate::evaluator::evaluate_expr_to_expr(&match_q),
       Ok(Expr::Identifier(ref s)) if s == "True"
@@ -2069,10 +1994,7 @@ fn expand_pattern_rule(data: &Expr, dims: &[usize]) -> Option<Expr> {
     if !matched {
       continue;
     }
-    let replaced = Expr::FunctionCall {
-      name: "Replace".to_string(),
-      args: vec![pos_list.clone(), data.clone()].into(),
-    };
+    let replaced = call("Replace", vec![pos_list.clone(), data.clone()]);
     let val = crate::evaluator::evaluate_expr_to_expr(&replaced).ok()?;
     rules.push(Expr::Rule {
       pattern: Box::new(pos_list),
@@ -2197,10 +2119,7 @@ fn expand_pattern_rule_list(data: &Expr, dims: &[usize]) -> Option<Expr> {
           ) {
             continue;
           }
-          let replaced = Expr::FunctionCall {
-            name: "Replace".to_string(),
-            args: vec![pos_list, rule.clone()].into(),
-          };
+          let replaced = call("Replace", vec![pos_list, rule.clone()]);
           let val = crate::evaluator::evaluate_expr_to_expr(&replaced).ok()?;
           rules.push(explicit_rule(&pos, val));
         }
@@ -2595,13 +2514,7 @@ pub fn sparse_array_extract_rules(
       if marker == "Pattern" && structure.len() == 2 =>
     {
       match &structure[1] {
-        Expr::List(inner) => Some(vec![
-          Expr::FunctionCall {
-            name: "Blank".to_string(),
-            args: vec![].into(),
-          };
-          inner.len()
-        ]),
+        Expr::List(inner) => Some(vec![call("Blank", vec![]); inner.len()]),
         _ => None,
       }
     }
@@ -2816,11 +2729,7 @@ pub fn try_sparse_array_arithmetic(head: &str, args: &[Expr]) -> Option<Expr> {
   }
 
   let apply = |operands: Vec<Expr>| -> Option<Expr> {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: head.to_string(),
-      args: operands.into(),
-    })
-    .ok()
+    crate::evaluator::evaluate_expr_to_expr(&call(head, operands)).ok()
   };
 
   // Like Wolfram, evaluate the head once on the backgrounds and once per
@@ -2880,10 +2789,10 @@ pub fn try_sparse_array_divide(a: &Expr, b: &Expr) -> Option<Expr> {
   let inverse = if is_sparse(b) {
     try_sparse_array_arithmetic("Power", &[b.clone(), minus_one])?
   } else {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![b.clone(), minus_one].into(),
-    })
+    crate::evaluator::evaluate_expr_to_expr(&call(
+      "Power",
+      vec![b.clone(), minus_one],
+    ))
     .ok()?
   };
   try_sparse_array_arithmetic("Times", &[a.clone(), inverse])
@@ -2896,10 +2805,7 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let sa_args = match &normalized {
     Expr::FunctionCall { name, args } if name == "SparseArray" => args,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Normal".to_string(),
-        args: vec![normalized].into(),
-      });
+      return Ok(call1("Normal", normalized));
     }
   };
   // After normalize, either canonical (4 args starting with Automatic) or
@@ -2907,10 +2813,7 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if sa_args.len() != 4
     || !matches!(&sa_args[0], Expr::Identifier(s) if s == "Automatic")
   {
-    return Ok(Expr::FunctionCall {
-      name: "Normal".to_string(),
-      args: vec![normalized].into(),
-    });
+    return Ok(call1("Normal", normalized));
   }
   let dims: Vec<usize> = match &sa_args[1] {
     Expr::List(items) => {
@@ -2919,20 +2822,14 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         match expr_to_i128(it) {
           Some(n) if n >= 0 => d.push(n as usize),
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "Normal".to_string(),
-              args: vec![normalized.clone()].into(),
-            });
+            return Ok(call1("Normal", normalized.clone()));
           }
         }
       }
       d
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Normal".to_string(),
-        args: vec![normalized].into(),
-      });
+      return Ok(call1("Normal", normalized));
     }
   };
   let default = &sa_args[2];
@@ -2970,10 +2867,7 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let wrap = |head: Option<&str>, elems: Vec<Expr>| -> Expr {
     match head {
-      Some(h) => Expr::FunctionCall {
-        name: h.to_string(),
-        args: elems.into(),
-      },
+      Some(h) => call(h, elems),
       None => Expr::List(elems.into()),
     }
   };

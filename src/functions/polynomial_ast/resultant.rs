@@ -147,10 +147,7 @@ pub(super) fn reduce_coeffs_modulus(
   expr: &Expr,
   p: i128,
 ) -> Result<Expr, InterpreterError> {
-  let reduced = Expr::FunctionCall {
-    name: "PolynomialMod".to_string(),
-    args: vec![expr.clone(), Expr::Integer(p)].into(),
-  };
+  let reduced = call("PolynomialMod", vec![expr.clone(), Expr::Integer(p)]);
   crate::evaluator::evaluate_expr_to_expr(&reduced)
 }
 
@@ -484,11 +481,7 @@ pub fn subresultant_polynomials_ast(
     match k {
       0 => Expr::Integer(1),
       1 => var_expr.clone(),
-      _ => Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(var_expr.clone()),
-        right: Box::new(Expr::Integer(k as i128)),
-      },
+      _ => pow2(var_expr.clone(), Expr::Integer(k as i128)),
     }
   };
 
@@ -534,10 +527,7 @@ pub fn subresultant_polynomials_ast(
     // Symbolic determinants come out as nested products; wolframscript
     // prints the fully expanded polynomial.
     if !integer_path {
-      sum = Expr::FunctionCall {
-        name: "Expand".to_string(),
-        args: vec![sum].into(),
-      };
+      sum = call1("Expand", sum);
     }
     entries.push(crate::evaluator::evaluate_expr_to_expr(&sum)?);
   }
@@ -558,15 +548,7 @@ pub fn subresultant_polynomials_ast(
     q_expanded = sym_add(&q_expanded, &sym_mul(c, &var_pow(i)));
   }
   let last = if m == n {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(lc),
-        right: Box::new(Expr::Integer(-1)),
-      }),
-      right: Box::new(q_expanded),
-    }
+    times2(pow2(lc, Expr::Integer(-1)), q_expanded)
   } else if let Some(ic2) = &int_coeffs2 {
     let lc_int = ic2[n];
     let mut scale = 1i128;
@@ -583,19 +565,13 @@ pub fn subresultant_polynomials_ast(
     }
     sum
   } else {
-    Expr::FunctionCall {
-      name: "Expand".to_string(),
-      args: vec![Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(lc),
-          right: Box::new(Expr::Integer((m - n - 1) as i128)),
-        }),
-        right: Box::new(q_expanded),
-      }]
-      .into(),
-    }
+    call(
+      "Expand",
+      vec![times2(
+        pow2(lc, Expr::Integer((m - n - 1) as i128)),
+        q_expanded,
+      )],
+    )
   };
   entries.push(crate::evaluator::evaluate_expr_to_expr(&last)?);
   Ok(Expr::List(entries.into()))
@@ -674,11 +650,7 @@ pub fn subresultant_polynomial_remainders_ast(
     match k {
       0 => Expr::Integer(1),
       1 => var_expr.clone(),
-      _ => Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(var_expr.clone()),
-        right: Box::new(Expr::Integer(k as i128)),
-      },
+      _ => pow2(var_expr.clone(), Expr::Integer(k as i128)),
     }
   };
   let poly_expr = |coeffs: &[Expr]| -> Result<Expr, InterpreterError> {
@@ -688,10 +660,7 @@ pub fn subresultant_polynomial_remainders_ast(
     }
     // Symbolic coefficients are multi-term sums; wolframscript prints the
     // fully expanded flat polynomial.
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Expand".to_string(),
-      args: vec![sum].into(),
-    })
+    crate::evaluator::evaluate_expr_to_expr(&call1("Expand", sum))
   };
 
   let mut coeff1 = Vec::with_capacity(m + 1);
@@ -798,10 +767,7 @@ pub fn subresultant_polynomial_remainders_ast(
   // detected as Integer(0); beta divisions are exact by the subresultant
   // theory, so Cancel removes the divisor completely.
   let simp = |e: &Expr| -> Result<Expr, InterpreterError> {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Expand".to_string(),
-      args: vec![e.clone()].into(),
-    })
+    crate::evaluator::evaluate_expr_to_expr(&call1("Expand", e.clone()))
   };
   let exact_div = |num: &Expr, den: &Expr| -> Result<Expr, InterpreterError> {
     if matches!(den, Expr::Integer(1)) {
@@ -810,19 +776,10 @@ pub fn subresultant_polynomial_remainders_ast(
     if matches!(den, Expr::Integer(-1)) {
       return simp(&sym_mul(&Expr::Integer(-1), num));
     }
-    let quotient = Expr::FunctionCall {
-      name: "Cancel".to_string(),
-      args: vec![Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(num.clone()),
-        right: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(den.clone()),
-          right: Box::new(Expr::Integer(-1)),
-        }),
-      }]
-      .into(),
-    };
+    let quotient = call(
+      "Cancel",
+      vec![times2(num.clone(), pow2(den.clone(), Expr::Integer(-1)))],
+    );
     simp(&quotient)
   };
   let sym_pow = |base: &Expr, k: usize| -> Result<Expr, InterpreterError> {
@@ -1129,28 +1086,16 @@ fn sym_add(a: &Expr, b: &Expr) -> Expr {
     (Expr::Integer(0), _) => b.clone(),
     (_, Expr::Integer(0)) => a.clone(),
     (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x + y),
-    _ => Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(a.clone()),
-      right: Box::new(b.clone()),
-    },
+    _ => plus2(a.clone(), b.clone()),
   }
 }
 
 fn sym_sub(a: &Expr, b: &Expr) -> Expr {
   match (a, b) {
     (_, Expr::Integer(0)) => a.clone(),
-    (Expr::Integer(0), _) => Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(-1)),
-      right: Box::new(b.clone()),
-    },
+    (Expr::Integer(0), _) => times2(Expr::Integer(-1), b.clone()),
     (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x - y),
-    _ => Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(a.clone()),
-      right: Box::new(b.clone()),
-    },
+    _ => minus2(a.clone(), b.clone()),
   }
 }
 
@@ -1160,10 +1105,6 @@ fn sym_mul(a: &Expr, b: &Expr) -> Expr {
     (Expr::Integer(1), _) => b.clone(),
     (_, Expr::Integer(1)) => a.clone(),
     (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x * y),
-    _ => Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(a.clone()),
-      right: Box::new(b.clone()),
-    },
+    _ => times2(a.clone(), b.clone()),
   }
 }

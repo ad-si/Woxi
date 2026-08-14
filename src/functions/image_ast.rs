@@ -2812,10 +2812,11 @@ pub fn dominant_colors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Return as list of RGBColor[r, g, b]
       let colors: Vec<Expr> = centers
         .iter()
-        .map(|c| Expr::FunctionCall {
-          name: "RGBColor".to_string(),
-          args: vec![Expr::Real(c[0]), Expr::Real(c[1]), Expr::Real(c[2])]
-            .into(),
+        .map(|c| {
+          call(
+            "RGBColor",
+            vec![Expr::Real(c[0]), Expr::Real(c[1]), Expr::Real(c[2])],
+          )
         })
         .collect();
 

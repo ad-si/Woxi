@@ -724,10 +724,10 @@ fn reduce_single_var(
   }
 
   // If expression is already a simple passthrough (like x > 0)
-  Ok(Expr::FunctionCall {
-    name: "Reduce".to_string(),
-    args: vec![expr.clone(), Expr::Identifier(var.to_string())].into(),
-  })
+  Ok(call(
+    "Reduce",
+    vec![expr.clone(), Expr::Identifier(var.to_string())],
+  ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -852,11 +852,10 @@ fn try_reduce_linear_parametric(
   // Solution branch: cond_var != 0 && var == -c0/c1  (the solution keeps the
   // full coefficient c1, e.g. b/(2*a)). Use the full evaluator so the quotient
   // is canonicalized the same way Solve reports it (e.g. b/(-a) -> -(b/a)).
-  let sol_value = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(negate_expr(&c0)),
-    right: Box::new(c1.clone()),
-  })?;
+  let sol_value = crate::evaluator::evaluate_expr_to_expr(&div2(
+    negate_expr(&c0),
+    c1.clone(),
+  ))?;
   let solution = and_results(
     &make_comparison(&cond_var, &Expr::Integer(0), CompOp::NotEqual),
     &make_equality(&var_expr, &sol_value),
@@ -930,11 +929,7 @@ fn reduce_equation(
   domain: Option<&str>,
 ) -> Result<Expr, InterpreterError> {
   // Build lhs - rhs
-  let poly = Expr::BinaryOp {
-    op: BinaryOperator::Minus,
-    left: Box::new(lhs.clone()),
-    right: Box::new(rhs.clone()),
-  };
+  let poly = minus2(lhs.clone(), rhs.clone());
 
   let expanded = expand_and_combine(&poly);
 
@@ -1064,11 +1059,7 @@ fn reduce_not_equal(
   }
 
   // For simple cases, just return the inequality
-  let poly = Expr::BinaryOp {
-    op: BinaryOperator::Minus,
-    left: Box::new(lhs.clone()),
-    right: Box::new(rhs.clone()),
-  };
+  let poly = minus2(lhs.clone(), rhs.clone());
   let expanded = expand_and_combine(&poly);
   if is_constant_wrt(&expanded, var) {
     let simplified = simplify(expanded);
@@ -1128,17 +1119,11 @@ fn try_reduce_arc_degrees(
     args: vec![
       rhs.clone(),
       Expr::Identifier("Pi".to_string()),
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(180)].into(),
-      },
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(180)]),
     ]
     .into(),
   };
-  let threshold_expr = Expr::FunctionCall {
-    name: trig_name.to_string(),
-    args: vec![radians].into(),
-  };
+  let threshold_expr = call1(trig_name, radians);
   let threshold = crate::evaluator::evaluate_expr_to_expr(&threshold_expr)?;
 
   // Helper: build a 3-way bounded interval `low op1 var op2 high`.
@@ -1220,11 +1205,7 @@ fn reduce_inequality(
   }
 
   // Move everything to one side: lhs - rhs op 0
-  let poly = Expr::BinaryOp {
-    op: BinaryOperator::Minus,
-    left: Box::new(lhs.clone()),
-    right: Box::new(rhs.clone()),
-  };
+  let poly = minus2(lhs.clone(), rhs.clone());
   let expanded = expand_and_combine(&poly);
 
   // Check if variable is present
@@ -1299,10 +1280,7 @@ fn extract_abs_term(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
   let coeff = match consts.len() {
     0 => Expr::Integer(1),
     1 => consts.into_iter().next().unwrap(),
-    _ => simplify(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: consts.into(),
-    }),
+    _ => simplify(call("Times", consts)),
   };
   Some((coeff, inner))
 }
@@ -1342,12 +1320,7 @@ fn try_reduce_abs_inequality(
   let op = if coeff_val < 0.0 { flip_op(op) } else { op };
   // Evaluate (not just simplify) so `6/2` collapses to `3` and `5/2` to the
   // exact Rational — `expr_to_number` only reads literal number forms.
-  let c = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(bound),
-    right: Box::new(coeff),
-  })
-  .ok()?;
+  let c = crate::evaluator::evaluate_expr_to_expr(&div2(bound, coeff)).ok()?;
   let neg_c = negate_expr(&c);
   let cval = expr_to_number(&c)?;
   let zero = Expr::Integer(0);
@@ -1438,12 +1411,7 @@ fn try_reduce_abs_not_equal(
   if coeff_val == 0.0 {
     return None;
   }
-  let c = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(bound),
-    right: Box::new(coeff),
-  })
-  .ok()?;
+  let c = crate::evaluator::evaluate_expr_to_expr(&div2(bound, coeff)).ok()?;
   let cval = expr_to_number(&c)?;
 
   // |f| != c is vacuously true when c < 0 (Abs is never negative).
@@ -1563,15 +1531,7 @@ fn reduce_linear_inequality(
     name: "Reduce".to_string(),
     args: vec![
       make_comparison(
-        &Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(a),
-            right: Box::new(Expr::Identifier(var.to_string())),
-          }),
-          right: Box::new(b),
-        },
+        &plus2(times2(a, Expr::Identifier(var.to_string())), b),
         &Expr::Integer(0),
         op,
       ),
@@ -1773,11 +1733,7 @@ fn reduce_quadratic_inequality(
     Expr::FunctionCall {
       name: "Reduce".to_string(),
       args: vec![
-        Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(poly.clone()),
-          right: Box::new(Expr::Integer(0)),
-        },
+        minus2(poly.clone(), Expr::Integer(0)),
         Expr::Identifier(var.to_string()),
       ]
       .into(),
@@ -1802,10 +1758,7 @@ fn make_quadratic_root(nb: i128, so: i128, si: i128, den: i128) -> Expr {
   } else if so == 1 {
     make_sqrt(Expr::Integer(si))
   } else if so == -1 {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(make_sqrt(Expr::Integer(si))),
-    }
+    neg1(make_sqrt(Expr::Integer(si)))
   } else {
     multiply_exprs(&Expr::Integer(so), &make_sqrt(Expr::Integer(si)))
   };
@@ -1819,11 +1772,7 @@ fn make_quadratic_root(nb: i128, so: i128, si: i128, den: i128) -> Expr {
   if den == 1 {
     num
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(num),
-      right: Box::new(Expr::Integer(den)),
-    }
+    div2(num, Expr::Integer(den))
   }
 }
 
@@ -1894,11 +1843,7 @@ fn try_factor_and_reduce_inequality(
     }
 
     // Determine the sign in each interval by testing a point
-    let poly = Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(lhs.clone()),
-      right: Box::new(rhs.clone()),
-    };
+    let poly = minus2(lhs.clone(), rhs.clone());
 
     let mut intervals: Vec<Expr> = Vec::new();
 
@@ -2115,11 +2060,8 @@ fn reduce_and(
               crate::syntax::substitute_variable(&other_eq.0, var, &rhs_val);
             let subst_rhs =
               crate::syntax::substitute_variable(&other_eq.1, var, &rhs_val);
-            let diff = simplify(Expr::BinaryOp {
-              op: BinaryOperator::Minus,
-              left: Box::new(simplify(subst_lhs)),
-              right: Box::new(simplify(subst_rhs)),
-            });
+            let diff =
+              simplify(minus2(simplify(subst_lhs), simplify(subst_rhs)));
             if !matches!(diff, Expr::Integer(0))
               && let Some(n) = expr_to_number(&diff)
               && n.abs() > 1e-12
@@ -2493,11 +2435,7 @@ pub fn reduce_multi_var_and(
   for (i, constraint) in constraints.iter().enumerate() {
     if let Some((lhs, rhs, CompOp::Equal)) = extract_comparison(constraint) {
       for (vi, var) in vars.iter().enumerate() {
-        let poly = Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(lhs.clone()),
-          right: Box::new(rhs.clone()),
-        };
+        let poly = minus2(lhs.clone(), rhs.clone());
         let expanded = expand_and_combine(&poly);
         if is_constant_wrt(&expanded, var) {
           continue;
@@ -2914,10 +2852,7 @@ fn rational_to_expr(r: &Rat) -> Expr {
   if r.den == 1 {
     Expr::Integer(r.num)
   } else {
-    Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(r.num), Expr::Integer(r.den)].into(),
-    }
+    call("Rational", vec![Expr::Integer(r.num), Expr::Integer(r.den)])
   }
 }
 
@@ -3030,11 +2965,7 @@ fn is_linear_in(e: &Expr, vars: &[String]) -> bool {
 fn comparison_max_degree(e: &Expr, var: &str) -> Option<i128> {
   let lhs_minus_rhs = match e {
     Expr::Comparison { operands, .. } if operands.len() == 2 => {
-      Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(operands[0].clone()),
-        right: Box::new(operands[1].clone()),
-      }
+      minus2(operands[0].clone(), operands[1].clone())
     }
     _ => return None,
   };

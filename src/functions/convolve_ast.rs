@@ -24,10 +24,7 @@ fn frac_to_expr(f: Frac) -> Expr {
   if f.1 == 1 {
     Expr::Integer(f.0)
   } else {
-    Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(f.0), Expr::Integer(f.1)].into(),
-    }
+    call("Rational", vec![Expr::Integer(f.0), Expr::Integer(f.1)])
   }
 }
 
@@ -62,20 +59,11 @@ pub fn convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // UnitBox[x] ⊛ UnitBox[x] → UnitTriangle[y]
   if is_call_on_x(&args[0], "UnitBox") && is_call_on_x(&args[1], "UnitBox") {
-    return Ok(Expr::FunctionCall {
-      name: "UnitTriangle".to_string(),
-      args: vec![y].into(),
-    });
+    return Ok(call1("UnitTriangle", y));
   }
 
-  let unit_step_y = || Expr::FunctionCall {
-    name: "UnitStep".to_string(),
-    args: vec![y.clone()].into(),
-  };
-  let times = |factors: Vec<Expr>| Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: factors.into(),
-  };
+  let unit_step_y = || call1("UnitStep", y.clone());
+  let times = |factors: Vec<Expr>| call("Times", factors);
   let e_sym = || Expr::Identifier("E".to_string());
 
   // UnitStep[x] ⊛ UnitStep[x] → y*UnitStep[y]
@@ -90,11 +78,10 @@ pub fn convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ) {
     let s = frac(a.0 * b.1 + b.0 * a.1, a.1 * b.1); // a + b
     let q = frac(a.0 * b.0 * s.1, a.1 * b.1 * s.0); // a*b/(a + b)
-    let sqrt_part = Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![div2(Expr::Constant("Pi".to_string()), frac_to_expr(s))]
-        .into(),
-    };
+    let sqrt_part = call1(
+      "Sqrt",
+      div2(Expr::Constant("Pi".to_string()), frac_to_expr(s)),
+    );
     let y_sq = pow2(y.clone(), Expr::Integer(2));
     let exponent = match q {
       (1, 1) => y_sq,

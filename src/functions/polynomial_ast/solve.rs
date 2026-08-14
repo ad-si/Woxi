@@ -43,19 +43,12 @@ fn strip_sqrt_square(expr: Expr) -> Expr {
     } => {
       let new_left = strip_sqrt_square(*left.clone());
       let new_right = strip_sqrt_square(*right.clone());
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(new_left),
-        right: Box::new(new_right),
-      }
+      times2(new_left, new_right)
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
       let new_args: Vec<Expr> =
         args.iter().map(|a| strip_sqrt_square(a.clone())).collect();
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: new_args.into(),
-      }
+      call("Times", new_args)
     }
     _ => expr,
   }
@@ -708,10 +701,7 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if conditions.len() == 1 {
         Ok(conditions.into_iter().next().unwrap())
       } else {
-        Ok(Expr::FunctionCall {
-          name: "Or".to_string(),
-          args: conditions.into(),
-        })
+        Ok(call("Or", conditions))
       }
     }
     // Solve returned unevaluated
@@ -823,10 +813,7 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if conds.len() == 1 {
     return Ok(conds.into_iter().next().unwrap());
   }
-  Ok(Expr::FunctionCall {
-    name: "Or".to_string(),
-    args: conds.into(),
-  })
+  Ok(call("Or", conds))
 }
 
 /// Find all roots of polynomial (coeffs[i] is coefficient of x^i) using
@@ -1030,10 +1017,7 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         })
         .collect();
-      Ok(Expr::FunctionCall {
-        name: "Sequence".to_string(),
-        args: result.into(),
-      })
+      Ok(call("Sequence", result))
     }
     // BinaryOp::Or tree (used by reduce_multi_var_and for multiple solutions)
     Expr::BinaryOp {
@@ -1052,10 +1036,7 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         })
         .collect();
-      Ok(Expr::FunctionCall {
-        name: "Sequence".to_string(),
-        args: result.into(),
-      })
+      Ok(call("Sequence", result))
     }
     // And[x == a, y == b] → {x -> a, y -> b}
     Expr::FunctionCall { name, .. } if name == "And" => {
@@ -1078,15 +1059,9 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // True → {} (trivially satisfied, no constraints)
     Expr::Identifier(s) if s == "True" => Ok(Expr::List(vec![].into())),
     // False → Sequence[] (no solutions, matches Wolfram: splices to nothing in context)
-    Expr::Identifier(s) if s == "False" => Ok(Expr::FunctionCall {
-      name: "Sequence".to_string(),
-      args: vec![].into(),
-    }),
+    Expr::Identifier(s) if s == "False" => Ok(call("Sequence", vec![])),
     // Anything else: return unevaluated
-    _ => Ok(Expr::FunctionCall {
-      name: "ToRules".to_string(),
-      args: vec![input.clone()].into(),
-    }),
+    _ => Ok(call1("ToRules", input.clone())),
   }
 }
 
@@ -2254,12 +2229,11 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
             // settle symbolically (`0 <= Root[…] <= 1` stays as written), so
             // the bound is decided on the root's numeric value — which is
             // what wolframscript reports for a constrained polynomial.
-            let numeric =
-              crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-                name: "N".to_string(),
-                args: vec![replacement.clone()].into(),
-              })
-              .unwrap_or_else(|_| replacement.clone());
+            let numeric = crate::evaluator::evaluate_expr_to_expr(&call1(
+              "N",
+              replacement.clone(),
+            ))
+            .unwrap_or_else(|_| replacement.clone());
             if let Some(verdict) = decide(&numeric) {
               return verdict;
             }
@@ -2707,10 +2681,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let cyclo_match = (ai == 1 && ci == 1) || (ai == -1 && ci == -1);
         if cyclo_match && bi.abs() == ai.abs() {
           let make_neg1_pow = |p: i128, q: i128| -> Expr {
-            Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![Expr::Integer(-1), make_rational(p, q)].into(),
-            }
+            call("Power", vec![Expr::Integer(-1), make_rational(p, q)])
           };
           // After multiplying by -1, the b/a sign flips along with a's
           // sign — so `bi*ai > 0` corresponds to Φ₃ (`x^2 + x + 1`) and
@@ -2944,10 +2915,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
               name: "Power".to_string(),
               args: vec![
                 value.clone(),
-                Expr::FunctionCall {
-                  name: "Rational".to_string(),
-                  args: vec![Expr::Integer(1), Expr::Integer(n)].into(),
-                },
+                call("Rational", vec![Expr::Integer(1), Expr::Integer(n)]),
               ]
               .into(),
             };
@@ -2982,18 +2950,11 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   name: "Power".to_string(),
                   args: vec![
                     Expr::Integer(-1),
-                    Expr::FunctionCall {
-                      name: "Rational".to_string(),
-                      args: vec![Expr::Integer(p), Expr::Integer(q)].into(),
-                    },
+                    call("Rational", vec![Expr::Integer(p), Expr::Integer(q)]),
                   ]
                   .into(),
                 };
-                let product = Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(multiplier),
-                  right: Box::new(val_root.clone()),
-                };
+                let product = times2(multiplier, val_root.clone());
                 if j % 2 == 1 {
                   // Negative: -((-1)^(j/n) * val^(1/n))
                   negate_expr(&product)
@@ -3026,19 +2987,15 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     name: "Power".to_string(),
                     args: vec![
                       Expr::Integer(-1),
-                      Expr::FunctionCall {
-                        name: "Rational".to_string(),
-                        args: vec![Expr::Integer(p), Expr::Integer(q)].into(),
-                      },
+                      call(
+                        "Rational",
+                        vec![Expr::Integer(p), Expr::Integer(q)],
+                      ),
                     ]
                     .into(),
                   }
                 };
-                let product = Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(multiplier),
-                  right: Box::new(val_root.clone()),
-                };
+                let product = times2(multiplier, val_root.clone());
                 roots.push(make_rule(negate_expr(&product)));
                 roots.push(make_rule(product));
               }
@@ -3677,28 +3634,19 @@ fn make_root_solutions(coeffs: &[Expr], var: &str) -> Option<Expr> {
     let var_pow = match i {
       0 => None,
       1 => Some(slot.clone()),
-      _ => Some(Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![slot.clone(), Expr::Integer(i as i128)].into(),
-      }),
+      _ => Some(call("Power", vec![slot.clone(), Expr::Integer(i as i128)])),
     };
     let term = match (var_pow, c) {
       (None, c) => c.clone(),
       (Some(p), Expr::Integer(1)) => p,
-      (Some(p), c) => Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![c.clone(), p].into(),
-      },
+      (Some(p), c) => call("Times", vec![c.clone(), p]),
     };
     terms.push(term);
   }
   let body = match terms.len() {
     0 => return None,
     1 => terms.remove(0),
-    _ => Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    },
+    _ => call("Plus", terms),
   };
   let body = crate::evaluator::evaluate_expr_to_expr(&body).ok()?;
   let func = Expr::Function {
@@ -3706,11 +3654,10 @@ fn make_root_solutions(coeffs: &[Expr], var: &str) -> Option<Expr> {
   };
   let mut solutions = Vec::with_capacity(degree);
   for k in 1..=degree {
-    let root = Expr::FunctionCall {
-      name: "Root".to_string(),
-      args: vec![func.clone(), Expr::Integer(k as i128), Expr::Integer(0)]
-        .into(),
-    };
+    let root = call(
+      "Root",
+      vec![func.clone(), Expr::Integer(k as i128), Expr::Integer(0)],
+    );
     solutions.push(Expr::List(
       vec![Expr::Rule {
         pattern: Box::new(Expr::Identifier(var.to_string())),
@@ -3919,11 +3866,7 @@ fn factor_out_constant_factors(expr: &Expr, var: &str) -> Expr {
       (0, _) => Expr::Integer(0),
       (1, Some(v)) => v,
       (-1, Some(v)) => negate_term(&v),
-      (c, Some(v)) => Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(c)),
-        right: Box::new(v),
-      },
+      (c, Some(v)) => times2(Expr::Integer(c), v),
       (c, None) => Expr::Integer(c),
     };
     new_terms.push(term);
@@ -3996,10 +3939,7 @@ fn extract_abs_factor(e: &Expr, var: &str) -> Option<(Expr, Expr)> {
   let coeff = match coeff_factors.len() {
     0 => Expr::Integer(1),
     1 => coeff_factors.pop().unwrap(),
-    _ => Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: coeff_factors.into(),
-    },
+    _ => call("Times", coeff_factors),
   };
   Some((coeff, inner))
 }
@@ -4170,38 +4110,21 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
 
   let var_expr = Expr::Identifier(var.to_string());
   let pi = Expr::Constant("Pi".to_string());
-  let c1 = Expr::FunctionCall {
-    name: "C".to_string(),
-    args: vec![Expr::Integer(1)].into(),
-  };
-  let element_c1_integers = Expr::FunctionCall {
-    name: "Element".to_string(),
-    args: vec![c1.clone(), Expr::Identifier("Integers".to_string())].into(),
-  };
-  let two_pi_c1 = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(Expr::Integer(2)),
-    right: Box::new(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(pi.clone()),
-      right: Box::new(c1.clone()),
-    }),
-  };
-  let pi_c1 = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(pi.clone()),
-    right: Box::new(c1.clone()),
-  };
-  let neg_half_pi = Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(make_rational(-1, 2)),
-    right: Box::new(pi.clone()),
-  };
+  let c1 = call1("C", Expr::Integer(1));
+  let element_c1_integers = call(
+    "Element",
+    vec![c1.clone(), Expr::Identifier("Integers".to_string())],
+  );
+  let two_pi_c1 = times2(Expr::Integer(2), times2(pi.clone(), c1.clone()));
+  let pi_c1 = times2(pi.clone(), c1.clone());
+  let neg_half_pi = times2(make_rational(-1, 2), pi.clone());
   let half_pi = div2(pi.clone(), Expr::Integer(2));
   // Helper: build `ConditionalExpression[expr, Element[C[1], Integers]]`.
-  let cond = |body: Expr| Expr::FunctionCall {
-    name: "ConditionalExpression".to_string(),
-    args: vec![body, element_c1_integers.clone()].into(),
+  let cond = |body: Expr| {
+    call(
+      "ConditionalExpression",
+      vec![body, element_c1_integers.clone()],
+    )
   };
   let make_rule_list = |bodies: Vec<Expr>| -> Expr {
     Expr::List(
@@ -4226,12 +4149,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   let eval = |e: Expr| {
     crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or_else(|_| e.clone())
   };
-  let inverse = |head: &str| {
-    eval(Expr::FunctionCall {
-      name: head.to_string(),
-      args: vec![rhs.clone()].into(),
-    })
-  };
+  let inverse = |head: &str| eval(call1(head, rhs.clone()));
   let negate = |e: Expr| eval(neg1(e));
 
   let solutions: Vec<Expr> = match (trig_name, rhs_special) {
@@ -4395,27 +4313,18 @@ fn try_solve_inverse_function(
       if matches!(&exp, Expr::Identifier(n) if n == var) && base_gets_period {
         // Log[base] (evaluates to 1 for E).
         let log_base =
-          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-            name: "Log".to_string(),
-            args: vec![base.clone()].into(),
-          })
-          .ok()?;
+          crate::evaluator::evaluate_expr_to_expr(&call1("Log", base.clone()))
+            .ok()?;
         // Principal part: Log[val] / Log[base].
         let principal =
           crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
             op: BinaryOperator::Divide,
-            left: Box::new(Expr::FunctionCall {
-              name: "Log".to_string(),
-              args: vec![val.clone()].into(),
-            }),
+            left: Box::new(call1("Log", val.clone())),
             right: Box::new(log_base.clone()),
           })
           .ok()?;
         // Periodic part: (2*Pi*I*C[1]) / Log[base].
-        let c1 = Expr::FunctionCall {
-          name: "C".to_string(),
-          args: vec![Expr::Integer(1)].into(),
-        };
+        let c1 = call1("C", Expr::Integer(1));
         let periodic =
           crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
             op: BinaryOperator::Divide,
@@ -4442,19 +4351,16 @@ fn try_solve_inverse_function(
         let general = if principal_is_zero {
           periodic
         } else {
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![periodic, principal].into(),
-          }
+          call("Plus", vec![periodic, principal])
         };
         let cond = Expr::FunctionCall {
           name: "ConditionalExpression".to_string(),
           args: vec![
             general,
-            Expr::FunctionCall {
-              name: "Element".to_string(),
-              args: vec![c1, Expr::Identifier("Integers".to_string())].into(),
-            },
+            call(
+              "Element",
+              vec![c1, Expr::Identifier("Integers".to_string())],
+            ),
           ]
           .into(),
         };
@@ -4473,14 +4379,8 @@ fn try_solve_inverse_function(
       // → exp == Log[val] / Log[base]
       let inverse_rhs = Expr::BinaryOp {
         op: BinaryOperator::Divide,
-        left: Box::new(Expr::FunctionCall {
-          name: "Log".to_string(),
-          args: vec![val.clone()].into(),
-        }),
-        right: Box::new(Expr::FunctionCall {
-          name: "Log".to_string(),
-          args: vec![base].into(),
-        }),
+        left: Box::new(call1("Log", val.clone())),
+        right: Box::new(call1("Log", base)),
       };
       let simplified_rhs =
         crate::evaluator::evaluate_expr_to_expr(&inverse_rhs).ok()?;
@@ -4509,31 +4409,19 @@ fn try_solve_inverse_function(
       }
       "Exp" => {
         // Exp[inner] == val → inner == Log[val]
-        Expr::FunctionCall {
-          name: "Log".to_string(),
-          args: vec![val.clone()].into(),
-        }
+        call1("Log", val.clone())
       }
       "ArcSin" => {
         // ArcSin[inner] == val → inner == Sin[val]
-        Expr::FunctionCall {
-          name: "Sin".to_string(),
-          args: vec![val.clone()].into(),
-        }
+        call1("Sin", val.clone())
       }
       "ArcCos" => {
         // ArcCos[inner] == val → inner == Cos[val]
-        Expr::FunctionCall {
-          name: "Cos".to_string(),
-          args: vec![val.clone()].into(),
-        }
+        call1("Cos", val.clone())
       }
       "ArcTan" => {
         // ArcTan[inner] == val → inner == Tan[val]
-        Expr::FunctionCall {
-          name: "Tan".to_string(),
-          args: vec![val.clone()].into(),
-        }
+        call1("Tan", val.clone())
       }
       // ArcXxxDegrees[inner] == val → inner == Xxx[val Degree]. The
       // degree-flavoured arc functions invert to ordinary trig functions
@@ -4549,15 +4437,8 @@ fn try_solve_inverse_function(
           "ArcCscDegrees" => "Csc",
           _ => unreachable!(),
         };
-        let val_deg = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(val.clone()),
-          right: Box::new(Expr::Constant("Degree".to_string())),
-        };
-        Expr::FunctionCall {
-          name: inverse_name.to_string(),
-          args: vec![val_deg].into(),
-        }
+        let val_deg = times2(val.clone(), Expr::Constant("Degree".to_string()));
+        call1(inverse_name, val_deg)
       }
       "Log10" => {
         // Log10[inner] == val → inner == 10^val
@@ -5002,11 +4883,10 @@ fn try_solve_factoring_powers(
                 let new_exp = if new_den == 1 {
                   Expr::Integer(new_num)
                 } else {
-                  Expr::FunctionCall {
-                    name: "Rational".to_string(),
-                    args: vec![Expr::Integer(new_num), Expr::Integer(new_den)]
-                      .into(),
-                  }
+                  call(
+                    "Rational",
+                    vec![Expr::Integer(new_num), Expr::Integer(new_den)],
+                  )
                 };
                 remaining_factors[idx] = pow2(base_expr, new_exp);
               }
@@ -5073,11 +4953,7 @@ fn build_eq_from_coeffs(coeffs: &[Expr], var: &str) -> Expr {
     let term = if i == 0 {
       c.clone()
     } else if i == 1 {
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(c.clone()),
-        right: Box::new(Expr::Identifier(var.to_string())),
-      }
+      times2(c.clone(), Expr::Identifier(var.to_string()))
     } else {
       Expr::BinaryOp {
         op: BinaryOperator::Times,
@@ -5427,10 +5303,10 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         },
         _ => args[0].clone(),
       };
-      return Ok(Expr::FunctionCall {
-        name: "Root".to_string(),
-        args: vec![canonical_body, args[1].clone(), Expr::Integer(0)].into(),
-      });
+      return Ok(call(
+        "Root",
+        vec![canonical_body, args[1].clone(), Expr::Integer(0)],
+      ));
     }
   }
 
@@ -5473,10 +5349,10 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       _ => args[0].clone(),
     };
-    return Ok(Expr::FunctionCall {
-      name: "Root".to_string(),
-      args: vec![canonical_body, args[1].clone(), Expr::Integer(0)].into(),
-    });
+    return Ok(call(
+      "Root",
+      vec![canonical_body, args[1].clone(), Expr::Integer(0)],
+    ));
   }
 
   // Sort roots: real roots first (ascending), then complex roots
@@ -6089,10 +5965,7 @@ fn find_root_eval_complex_at(
   let value = if im == 0.0 {
     Expr::Real(re)
   } else {
-    Expr::FunctionCall {
-      name: "Complex".to_string(),
-      args: vec![Expr::Real(re), Expr::Real(im)].into(),
-    }
+    call("Complex", vec![Expr::Real(re), Expr::Real(im)])
   };
   let substituted = crate::syntax::substitute_variable(expr, var, &value);
   let evaled = crate::evaluator::evaluate_expr_to_expr(&substituted).ok()?;
@@ -6171,11 +6044,8 @@ fn find_root_complex_newton(
   let value = if im.abs() < 1e-14 {
     Expr::Real(re)
   } else {
-    let im_term = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Real(im.abs())),
-      right: Box::new(Expr::Identifier("I".to_string())),
-    };
+    let im_term =
+      times2(Expr::Real(im.abs()), Expr::Identifier("I".to_string()));
     let combined = if im >= 0.0 {
       plus2(Expr::Real(re), im_term)
     } else {
@@ -6266,10 +6136,7 @@ fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
         Expr::Real(r) => Ok(*r),
         _ => {
           // Try N[] to convert symbolic expressions (e.g. Pi/4) to numeric
-          let n_expr = Expr::FunctionCall {
-            name: "N".to_string(),
-            args: vec![evaled.clone()].into(),
-          };
+          let n_expr = call1("N", evaled.clone());
           let n_result = crate::evaluator::evaluate_expr_to_expr(&n_expr)?;
           match &n_result {
             Expr::Real(r) => Ok(*r),
@@ -7047,10 +6914,7 @@ fn minimize_recognize_exact(v: f64) -> Expr {
       return if rd == 1 {
         Expr::Integer(rn)
       } else {
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(rn), Expr::Integer(rd)].into(),
-        }
+        call("Rational", vec![Expr::Integer(rn), Expr::Integer(rd)])
       };
     }
   }
@@ -7147,10 +7011,7 @@ fn minimize_poly_roots_int(coeffs: &[i128], var: &str) -> Vec<Expr> {
         let root = if den == 1 {
           Expr::Integer(num)
         } else {
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(num), Expr::Integer(den)].into(),
-          }
+          call("Rational", vec![Expr::Integer(num), Expr::Integer(den)])
         };
         roots.push(root);
       }
@@ -7171,19 +7032,13 @@ fn minimize_poly_roots_int(coeffs: &[i128], var: &str) -> Vec<Expr> {
             roots.push(if d1 == 1 {
               Expr::Integer(n1)
             } else {
-              Expr::FunctionCall {
-                name: "Rational".to_string(),
-                args: vec![Expr::Integer(n1), Expr::Integer(d1)].into(),
-              }
+              call("Rational", vec![Expr::Integer(n1), Expr::Integer(d1)])
             });
             if n1 != n2 || d1 != d2 {
               roots.push(if d2 == 1 {
                 Expr::Integer(n2)
               } else {
-                Expr::FunctionCall {
-                  name: "Rational".to_string(),
-                  args: vec![Expr::Integer(n2), Expr::Integer(d2)].into(),
-                }
+                call("Rational", vec![Expr::Integer(n2), Expr::Integer(d2)])
               });
             }
           } else {
@@ -7303,10 +7158,7 @@ fn minimize_poly_roots_int(coeffs: &[i128], var: &str) -> Vec<Expr> {
               let root = if rd == 1 {
                 Expr::Integer(rn)
               } else {
-                Expr::FunctionCall {
-                  name: "Rational".to_string(),
-                  args: vec![Expr::Integer(rn), Expr::Integer(rd)].into(),
-                }
+                call("Rational", vec![Expr::Integer(rn), Expr::Integer(rd)])
               };
               roots.push(root);
 
@@ -7669,10 +7521,10 @@ fn minimize_single_var(
 
   if critical_points.is_empty() {
     // Bounded function with no critical points: return unevaluated
-    return Ok(Expr::FunctionCall {
-      name: func_name.to_string(),
-      args: vec![f.clone(), Expr::Identifier(var.to_string())].into(),
-    });
+    return Ok(call(
+      func_name,
+      vec![f.clone(), Expr::Identifier(var.to_string())],
+    ));
   }
 
   // Evaluate f at each critical point, find the minimum
@@ -7703,10 +7555,10 @@ fn minimize_single_var(
   }
 
   let (Some(min_val), Some(min_x)) = (best_exact, best_x) else {
-    return Ok(Expr::FunctionCall {
-      name: func_name.to_string(),
-      args: vec![f.clone(), Expr::Identifier(var.to_string())].into(),
-    });
+    return Ok(call(
+      func_name,
+      vec![f.clone(), Expr::Identifier(var.to_string())],
+    ));
   };
 
   // For maximize, negate the value back
@@ -8868,10 +8720,10 @@ fn minimize_constrained_1d(
         .chain(constraints.iter().cloned())
         .collect(),
     );
-    return Ok(Expr::FunctionCall {
-      name: func_name.to_string(),
-      args: vec![obj_with_cons, Expr::Identifier(var.to_string())].into(),
-    });
+    return Ok(call(
+      func_name,
+      vec![obj_with_cons, Expr::Identifier(var.to_string())],
+    ));
   }
 
   // An unbounded feasible direction can carry the objective off to infinity,
@@ -8930,10 +8782,10 @@ fn minimize_constrained_1d(
         .chain(constraints.iter().cloned())
         .collect(),
     );
-    return Ok(Expr::FunctionCall {
-      name: func_name.to_string(),
-      args: vec![obj_with_cons, Expr::Identifier(var.to_string())].into(),
-    });
+    return Ok(call(
+      func_name,
+      vec![obj_with_cons, Expr::Identifier(var.to_string())],
+    ));
   }
 
   // Find the minimum among candidates
@@ -9253,11 +9105,8 @@ fn minimize_constrained_boundary(
     let mut elim_expr: Expr = Expr::Real(*rhs);
     for (j, var_j) in vars.iter().enumerate() {
       if j != elim_idx && coeffs[j].abs() > 1e-12 {
-        let term = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Real(coeffs[j])),
-          right: Box::new(Expr::Identifier(var_j.clone())),
-        };
+        let term =
+          times2(Expr::Real(coeffs[j]), Expr::Identifier(var_j.clone()));
         elim_expr = minus2(elim_expr, term);
       }
     }
@@ -9502,10 +9351,7 @@ fn minimize_lp_2d(
           return if rd == 1 {
             Expr::Integer(rn)
           } else {
-            Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(rn), Expr::Integer(rd)].into(),
-            }
+            call("Rational", vec![Expr::Integer(rn), Expr::Integer(rd)])
           };
         }
       }
@@ -9527,10 +9373,7 @@ fn minimize_lp_2d(
           let e = if rd == 1 {
             Expr::Integer(rn)
           } else {
-            Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(rn), Expr::Integer(rd)].into(),
-            }
+            call("Rational", vec![Expr::Integer(rn), Expr::Integer(rd)])
           };
           return Some(Expr::List(
             vec![
@@ -10062,10 +9905,10 @@ fn specialize_periodic_solution(
   };
   // Linear coefficients: a = body | C=0, b = Coefficient[body, C, 1].
   let a = try_eval_to_f64(&subst_param(Expr::Integer(0))?)?;
-  let b_expr = eval(Expr::FunctionCall {
-    name: "Coefficient".to_string(),
-    args: vec![body.clone(), param.clone(), Expr::Integer(1)].into(),
-  })?;
+  let b_expr = eval(call(
+    "Coefficient",
+    vec![body.clone(), param.clone(), Expr::Integer(1)],
+  ))?;
   let b = try_eval_to_f64(&b_expr)?;
   if b.abs() < 1e-12 {
     return None;
@@ -10553,11 +10396,7 @@ pub fn nminimize_ast(
         .ok()
         .filter(|sym| matches!(sym, Expr::List(items) if items.len() == 2))
         .and_then(|sym| {
-          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-            name: "N".to_string(),
-            args: vec![sym].into(),
-          })
-          .ok()
+          crate::evaluator::evaluate_expr_to_expr(&call1("N", sym)).ok()
         });
 
     // Symbolic first: when it produces an exact, optimal answer we want to
@@ -11075,11 +10914,7 @@ pub fn nminimize_ast(
       .ok()
       .filter(|sym| matches!(sym, Expr::List(items) if items.len() == 2))
       .and_then(|sym| {
-        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "N".to_string(),
-          args: vec![sym].into(),
-        })
-        .ok()
+        crate::evaluator::evaluate_expr_to_expr(&call1("N", sym)).ok()
       });
 
   let candidates: Vec<Expr> =
@@ -11920,10 +11755,7 @@ fn eval_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
     Expr::Real(r) => Ok(*r),
     _ => {
       // Try evaluating via N[]
-      let n_expr = Expr::FunctionCall {
-        name: "N".to_string(),
-        args: vec![expr.clone()].into(),
-      };
+      let n_expr = call1("N", expr.clone());
       let evaled = crate::evaluator::evaluate_expr_to_expr(&n_expr)?;
       match &evaled {
         Expr::Real(r) => Ok(*r),
@@ -12066,10 +11898,7 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::List(vec![].into()));
     }
     // Search exhausted without proving emptiness: leave unevaluated.
-    return Ok(Expr::FunctionCall {
-      name: "FindInstance".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(call("FindInstance", args.to_vec()));
   }
 
   // Filter by domain if specified
@@ -12095,10 +11924,7 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // A partial (e.g. numerically found) solution set that the domain
     // filter emptied proves nothing: leave unevaluated.
-    return Ok(Expr::FunctionCall {
-      name: "FindInstance".to_string(),
-      args: args.to_vec().into(),
-    });
+    return Ok(call("FindInstance", args.to_vec()));
   }
 
   // Take at most n solutions from the end (Wolfram picks the largest solutions first)

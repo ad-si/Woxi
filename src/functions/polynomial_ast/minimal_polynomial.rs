@@ -108,10 +108,10 @@ pub fn root_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if coeffs.len() < 2 || coeffs[1] == 0 {
       return Ok(alpha.clone());
     }
-    let val = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(-coeffs[0]), Expr::Integer(coeffs[1])].into(),
-    })?;
+    let val = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Rational",
+      vec![Expr::Integer(-coeffs[0]), Expr::Integer(coeffs[1])],
+    ))?;
     match (target, root_reduce_numeric(&val)) {
       (Some(t), Some(v)) if !complex_close(t, v) => return Ok(alpha.clone()),
       _ => {}
@@ -125,34 +125,16 @@ pub fn root_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (c0, c1, c2) = (coeffs[0], coeffs[1], coeffs[2]);
     let disc = c1 * c1 - 4 * c0 * c2;
     for sign in [1i128, -1] {
-      let sqrt_disc = Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Integer(disc)].into(),
-      };
+      let sqrt_disc = call1("Sqrt", Expr::Integer(disc));
       let signed = if sign == 1 {
         sqrt_disc
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(-1)),
-          right: Box::new(sqrt_disc),
-        }
+        times2(Expr::Integer(-1), sqrt_disc)
       };
-      let numerator = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Integer(-c1)),
-        right: Box::new(signed),
-      };
-      let candidate = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(numerator),
-        right: Box::new(Expr::Integer(2 * c2)),
-      };
+      let numerator = plus2(Expr::Integer(-c1), signed);
+      let candidate = div2(numerator, Expr::Integer(2 * c2));
       let simplified =
-        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "Simplify".to_string(),
-          args: vec![candidate].into(),
-        })?;
+        crate::evaluator::evaluate_expr_to_expr(&call1("Simplify", candidate))?;
       match (target, root_reduce_numeric(&simplified)) {
         (Some(t), Some(v)) if complex_close(t, v) => return Ok(simplified),
         // With no numeric handle fall back to the principal (+) root.
@@ -174,17 +156,14 @@ pub fn root_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if let Some(target) = target {
     for k in 1..=degree {
-      let root_k = Expr::FunctionCall {
-        name: "Root".to_string(),
-        args: vec![pure.clone(), Expr::Integer(k as i128)].into(),
-      };
+      let root_k = call("Root", vec![pure.clone(), Expr::Integer(k as i128)]);
       if let Some(v) = root_reduce_numeric(&root_k)
         && complex_close(target, v)
       {
-        return Ok(Expr::FunctionCall {
-          name: "Root".to_string(),
-          args: vec![pure, Expr::Integer(k as i128), Expr::Integer(0)].into(),
-        });
+        return Ok(call(
+          "Root",
+          vec![pure, Expr::Integer(k as i128), Expr::Integer(0)],
+        ));
       }
     }
   }
@@ -194,10 +173,7 @@ pub fn root_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Numerically evaluate `expr` to a complex `(re, im)` pair via `N`, or `None`
 /// when it does not reduce to a number.
 fn root_reduce_numeric(expr: &Expr) -> Option<(f64, f64)> {
-  let n = Expr::FunctionCall {
-    name: "N".to_string(),
-    args: vec![expr.clone()].into(),
-  };
+  let n = call1("N", expr.clone());
   let ev = crate::evaluator::evaluate_expr_to_expr(&n).ok()?;
   if let Some(r) = crate::functions::math_ast::try_eval_to_f64(&ev) {
     return Some((r, 0.0));
@@ -222,10 +198,7 @@ fn refine_minimal_coeffs(alpha: &Expr, coeffs: &[i128]) -> Vec<i128> {
   let var = "WoxiRootReduceFactorVar";
   let poly = coeffs_to_expr(coeffs, var);
   let Ok(factored) =
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Factor".to_string(),
-      args: vec![poly].into(),
-    })
+    crate::evaluator::evaluate_expr_to_expr(&call1("Factor", poly))
   else {
     return coeffs.to_vec();
   };
@@ -320,10 +293,10 @@ fn substitute_identifier(expr: &Expr, name: &str, replacement: &Expr) -> Expr {
 /// via `CoefficientList`, normalized to a positive leading coefficient with
 /// content 1. Returns None when any coefficient is not an integer.
 fn factor_int_coeffs(factor: &Expr, var: &str) -> Option<Vec<i128>> {
-  let clist = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "CoefficientList".to_string(),
-    args: vec![factor.clone(), Expr::Identifier(var.to_string())].into(),
-  })
+  let clist = crate::evaluator::evaluate_expr_to_expr(&call(
+    "CoefficientList",
+    vec![factor.clone(), Expr::Identifier(var.to_string())],
+  ))
   .ok()?;
   let Expr::List(ref items) = clist else {
     return None;
@@ -470,16 +443,8 @@ fn compute_minpoly_coeffs(
       left,
       right,
     } => {
-      let recip = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new((**right).clone()),
-        right: Box::new(Expr::Integer(-1)),
-      };
-      let product = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new((**left).clone()),
-        right: Box::new(recip),
-      };
+      let recip = pow2((**right).clone(), Expr::Integer(-1));
+      let product = times2((**left).clone(), recip);
       compute_minpoly_coeffs(&product)
     }
 
@@ -508,10 +473,10 @@ fn compute_minpoly_coeffs(
       let power_expr = Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: Box::new(sqrt_arg.clone()),
-        right: Box::new(Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-        }),
+        right: Box::new(call(
+          "Rational",
+          vec![Expr::Integer(1), Expr::Integer(2)],
+        )),
       };
       compute_minpoly_coeffs(&power_expr)
     }
@@ -574,15 +539,8 @@ fn compute_minpoly_coeffs(
       right,
     } => {
       // a - b = a + (-b)
-      let neg_right = Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new((**right).clone()),
-      };
-      let sum_expr = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new((**left).clone()),
-        right: Box::new(neg_right),
-      };
+      let neg_right = neg1((**right).clone());
+      let sum_expr = plus2((**left).clone(), neg_right);
       compute_minpoly_coeffs(&sum_expr)
     }
 
@@ -1545,11 +1503,7 @@ fn char_poly_of_rational_matrix(
     if r.1 == 1 {
       Expr::Integer(r.0)
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(r.0)),
-        right: Box::new(Expr::Integer(r.1)),
-      }
+      div2(Expr::Integer(r.0), Expr::Integer(r.1))
     }
   };
   let mut rows = Vec::with_capacity(n);
@@ -1557,26 +1511,21 @@ fn char_poly_of_rational_matrix(
     let mut row = Vec::with_capacity(n);
     for (j, &entry) in mat_row.iter().enumerate() {
       row.push(if i == j {
-        Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(var.clone()),
-          right: Box::new(rat_expr(entry)),
-        }
+        minus2(var.clone(), rat_expr(entry))
       } else {
         rat_expr(rat_mul(entry, (-1, 1)))
       });
     }
     rows.push(Expr::List(row.into()));
   }
-  let det = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Det".to_string(),
-    args: vec![Expr::List(rows.into())].into(),
-  })?;
-  let coeff_list =
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "CoefficientList".to_string(),
-      args: vec![det, var].into(),
-    })?;
+  let det = crate::evaluator::evaluate_expr_to_expr(&call1(
+    "Det",
+    Expr::List(rows.into()),
+  ))?;
+  let coeff_list = crate::evaluator::evaluate_expr_to_expr(&call(
+    "CoefficientList",
+    vec![det, var],
+  ))?;
   let Expr::List(ref items) = coeff_list else {
     return Ok(None);
   };
@@ -2168,10 +2117,7 @@ fn numeric_value_of(expr: &Expr) -> Option<f64> {
   if let Some(v) = expr_to_f64(expr) {
     return Some(v);
   }
-  match crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "N".to_string(),
-    args: vec![expr.clone()].into(),
-  }) {
+  match crate::evaluator::evaluate_expr_to_expr(&call1("N", expr.clone())) {
     Ok(Expr::Real(v)) => Some(v),
     Ok(Expr::Integer(n)) => Some(n as f64),
     _ => None,
@@ -2259,11 +2205,10 @@ pub fn algebraic_number_norm_ast(
   };
   let n = c.len() - 1;
   let sign = if n % 2 == 0 { 1 } else { -1 };
-  crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(Expr::Integer(sign * c[0])),
-    right: Box::new(Expr::Integer(*c.last().unwrap())),
-  })
+  crate::evaluator::evaluate_expr_to_expr(&div2(
+    Expr::Integer(sign * c[0]),
+    Expr::Integer(*c.last().unwrap()),
+  ))
 }
 
 /// AlgebraicNumberTrace[a] — the sum of all conjugates of a over Q:
@@ -2275,11 +2220,10 @@ pub fn algebraic_number_trace_ast(
     return Ok(nalg_unevaluated("AlgebraicNumberTrace", args));
   };
   let n = c.len() - 1;
-  crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(Expr::Integer(-c[n - 1])),
-    right: Box::new(Expr::Integer(c[n])),
-  })
+  crate::evaluator::evaluate_expr_to_expr(&div2(
+    Expr::Integer(-c[n - 1]),
+    Expr::Integer(c[n]),
+  ))
 }
 
 /// AlgebraicNumberDenominator[a] — the smallest positive integer d such
@@ -2432,10 +2376,10 @@ pub fn number_field_discriminant_ast(
   }
   let ev = crate::evaluator::evaluate_expr_to_expr;
   let var = Expr::Identifier("NumberFieldDiscriminant$x".to_string());
-  let mp = ev(&Expr::FunctionCall {
-    name: "MinimalPolynomial".to_string(),
-    args: vec![args[0].clone(), var.clone()].into(),
-  })?;
+  let mp = ev(&call(
+    "MinimalPolynomial",
+    vec![args[0].clone(), var.clone()],
+  ))?;
   if matches!(&mp, Expr::FunctionCall { name, .. } if name == "MinimalPolynomial")
   {
     crate::emit_message(&format!(
@@ -2445,10 +2389,7 @@ pub fn number_field_discriminant_ast(
     return unevaluated();
   }
   // Integer coefficient list, constant first.
-  let coeff_expr = ev(&Expr::FunctionCall {
-    name: "CoefficientList".to_string(),
-    args: vec![mp.clone(), var.clone()].into(),
-  })?;
+  let coeff_expr = ev(&call("CoefficientList", vec![mp.clone(), var.clone()]))?;
   let coeffs: Vec<i128> = match &coeff_expr {
     Expr::List(items) => {
       let cs: Option<Vec<i128>> = items
@@ -2490,10 +2431,7 @@ pub fn number_field_discriminant_ast(
   if coeffs[degree] != 1 {
     return unevaluated();
   }
-  let disc = ev(&Expr::FunctionCall {
-    name: "Discriminant".to_string(),
-    args: vec![mp, var].into(),
-  })?;
+  let disc = ev(&call("Discriminant", vec![mp, var]))?;
   let Expr::Integer(disc) = disc else {
     return unevaluated();
   };

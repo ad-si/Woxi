@@ -879,10 +879,7 @@ fn contour_band_primitives(
       // Edged in its own colour, so neighbouring bands meet without an
       // antialiasing seam — the same trick the SVG renderer plays with a
       // stroke in the fill colour.
-      items.push(Expr::FunctionCall {
-        name: "EdgeForm".to_string(),
-        args: vec![rgb.clone()].into(),
-      });
+      items.push(call1("EdgeForm", rgb.clone()));
       items.push(rgb);
       last_color = Some(color);
     }
@@ -899,10 +896,7 @@ fn contour_band_primitives(
         )
       })
       .collect();
-    items.push(Expr::FunctionCall {
-      name: "Polygon".to_string(),
-      args: vec![Expr::List(points.into())].into(),
-    });
+    items.push(call1("Polygon", Expr::List(points.into())));
   }
   items
 }
@@ -1381,14 +1375,8 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let step_x = (x_max - x_min) / FIELD_GRID as f64;
     let step_y = (y_max - y_min) / FIELD_GRID as f64;
     let mut mesh_items: Vec<Expr> = vec![
-      Expr::FunctionCall {
-        name: "GrayLevel".to_string(),
-        args: vec![Expr::Real(0.69)].into(),
-      },
-      Expr::FunctionCall {
-        name: "AbsoluteThickness".to_string(),
-        args: vec![Expr::Real(0.4)].into(),
-      },
+      call1("GrayLevel", Expr::Real(0.69)),
+      call1("AbsoluteThickness", Expr::Real(0.4)),
     ];
     for mesh_grid in &mesh_grids {
       for &level in &mesh_grid.levels {
@@ -1407,10 +1395,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into())
             })
             .collect();
-          mesh_items.push(Expr::FunctionCall {
-            name: "Line".to_string(),
-            args: vec![Expr::List(points.into())].into(),
-          });
+          mesh_items.push(call1("Line", Expr::List(points.into())));
         }
       }
     }
@@ -1436,10 +1421,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .iter()
           .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
           .collect();
-        structure_items.push(Expr::FunctionCall {
-          name: "Line".to_string(),
-          args: vec![Expr::List(points.into())].into(),
-        });
+        structure_items.push(call1("Line", Expr::List(points.into())));
       }
     }
   }
@@ -1460,10 +1442,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
   structure_args.extend(explicit);
-  let structure = Expr::FunctionCall {
-    name: "Graphics".to_string(),
-    args: structure_args.into(),
-  };
+  let structure = call("Graphics", structure_args);
 
   // Use plotters for axes
   let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;
@@ -1684,15 +1663,9 @@ fn contour_plot_equations(
       .iter()
       .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
       .collect();
-    structure_items.push(Expr::FunctionCall {
-      name: "Line".to_string(),
-      args: vec![Expr::List(points.into())].into(),
-    });
+    structure_items.push(call1("Line", Expr::List(points.into())));
   }
-  let structure = Expr::FunctionCall {
-    name: "Graphics".to_string(),
-    args: vec![Expr::List(structure_items.into())].into(),
-  };
+  let structure = call1("Graphics", Expr::List(structure_items.into()));
   let source = crate::syntax::PlotSource {
     series,
     x_range: (x_min, x_max),
@@ -1921,10 +1894,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   svg.push_str("</svg>");
   Ok(crate::graphics_result_with_structure(
     svg,
-    Expr::FunctionCall {
-      name: "Graphics".to_string(),
-      args: vec![Expr::List(primitives.into())].into(),
-    },
+    call1("Graphics", Expr::List(primitives.into())),
   ))
 }
 
@@ -2045,10 +2015,7 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   svg.push_str("</svg>");
   Ok(crate::graphics_result_with_structure(
     svg,
-    Expr::FunctionCall {
-      name: "Graphics".to_string(),
-      args: vec![Expr::List(primitives.into())].into(),
-    },
+    call1("Graphics", Expr::List(primitives.into())),
   ))
 }
 
@@ -2061,16 +2028,7 @@ fn styled_line(coords: Vec<(f64, f64)>, color: (u8, u8, u8)) -> Expr {
       .map(|(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
       .collect(),
   );
-  Expr::List(
-    vec![
-      rgb_color(color),
-      Expr::FunctionCall {
-        name: "Line".to_string(),
-        args: vec![points].into(),
-      },
-    ]
-    .into(),
-  )
+  Expr::List(vec![rgb_color(color), call1("Line", points)].into())
 }
 
 /// `RGBColor[r, g, b]` from 8-bit channel values.

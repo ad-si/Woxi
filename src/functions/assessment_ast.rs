@@ -97,10 +97,7 @@ fn result_object(score: f64, correct: bool) -> Expr {
     ),
     (Expr::String("Score".to_string()), score_expr(score)),
   ]);
-  Expr::FunctionCall {
-    name: "AssessmentResultObject".to_string(),
-    args: vec![assoc].into(),
-  }
+  call1("AssessmentResultObject", assoc)
 }
 
 /// Extract the assessment specification embedded in an `AssessmentFunction`.

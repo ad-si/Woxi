@@ -121,10 +121,7 @@ pub(crate) fn build_schema(
 /// Tabular[data, schema] — constructs with explicit schema.
 pub fn tabular_ast(args: &[Expr]) -> Expr {
   if args.is_empty() {
-    return Expr::FunctionCall {
-      name: "Tabular".to_string(),
-      args: vec![].into(),
-    };
+    return call("Tabular", vec![]);
   }
 
   // If already has schema (2+ args where the second is a TabularSchema), return as-is
@@ -217,10 +214,7 @@ fn tabular_from_list_of_associations(rows: &[Expr], args: &[Expr]) -> Expr {
 
   let schema = build_schema(&col_keys, &col_types, rows.len());
 
-  Expr::FunctionCall {
-    name: "Tabular".to_string(),
-    args: vec![args[0].clone(), schema].into(),
-  }
+  call("Tabular", vec![args[0].clone(), schema])
 }
 
 /// Construct Tabular from a list of lists (matrix-style data).
@@ -268,10 +262,7 @@ fn tabular_from_list_of_lists(rows: &[Expr], args: &[Expr]) -> Expr {
 
   let schema = build_schema(&col_keys, &col_types, rows.len());
 
-  Expr::FunctionCall {
-    name: "Tabular".to_string(),
-    args: vec![args[0].clone(), schema].into(),
-  }
+  call("Tabular", vec![args[0].clone(), schema])
 }
 
 /// Construct Tabular from a flat list (single column).
@@ -291,10 +282,7 @@ fn tabular_from_flat_list(items: &[Expr], args: &[Expr]) -> Expr {
 
   let schema = build_schema(&col_keys, &col_types, items.len());
 
-  Expr::FunctionCall {
-    name: "Tabular".to_string(),
-    args: vec![args[0].clone(), schema].into(),
-  }
+  call("Tabular", vec![args[0].clone(), schema])
 }
 
 /// ToTabular[data, "Columns"] — converts a list of rules to a column-oriented Tabular.
@@ -393,8 +381,5 @@ fn tabular_from_column_association(
 
   let schema = build_schema(&col_keys, &col_types, num_rows);
 
-  Expr::FunctionCall {
-    name: "Tabular".to_string(),
-    args: vec![args[0].clone(), schema].into(),
-  }
+  call("Tabular", vec![args[0].clone(), schema])
 }

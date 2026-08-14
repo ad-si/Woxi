@@ -3610,11 +3610,10 @@ fn cumulant_from_raw_moments(
     for m in 1..nn {
       let binom =
         crate::functions::binomial_coeff((nn - 1) as i128, (m - 1) as i128);
-      let term = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(binom), k[m].clone(), mu[nn - m].clone()]
-          .into(),
-      };
+      let term = call(
+        "Times",
+        vec![Expr::Integer(binom), k[m].clone(), mu[nn - m].clone()],
+      );
       acc = minus2(acc, term);
       acc = crate::evaluator::evaluate_expr_to_expr(&acc)?;
     }
@@ -3892,11 +3891,10 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .map(|item| call("Power", vec![item.clone(), Expr::Integer(2)]))
         .collect();
-      let mean_square = Expr::FunctionCall {
-        name: "Divide".to_string(),
-        args: vec![call("Plus", squares), Expr::Integer(items.len() as i128)]
-          .into(),
-      };
+      let mean_square = call(
+        "Divide",
+        vec![call("Plus", squares), Expr::Integer(items.len() as i128)],
+      );
       Ok(crate::evaluator::evaluate_expr_to_expr(&make_sqrt(
         mean_square,
       ))?)
@@ -6135,11 +6133,10 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
             .into(),
           },
           // Sqrt[2*Pi]
-          make_sqrt(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())]
-              .into(),
-          }),
+          make_sqrt(call(
+            "Times",
+            vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
+          )),
           // E^(-n)
           Expr::FunctionCall {
             name: "Power".to_string(),
@@ -8243,11 +8240,10 @@ pub fn central_moment_generating_function_ast(
         .into(),
       },
       times(vec![
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![times(vec![Expr::Integer(-1), a.clone()]), b.clone()]
-            .into(),
-        },
+        call(
+          "Plus",
+          vec![times(vec![Expr::Integer(-1), a.clone()]), b.clone()],
+        ),
         e_pow(times(vec![half, call("Plus", vec![a, b]), t.clone()])),
         t,
       ]),

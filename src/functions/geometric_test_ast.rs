@@ -538,17 +538,11 @@ fn expr_is_zero(e: &Expr) -> Option<bool> {
 }
 
 fn sub_expr(a: &Expr, b: &Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "Subtract".to_string(),
-    args: vec![a.clone(), b.clone()].into(),
-  }
+  call("Subtract", vec![a.clone(), b.clone()])
 }
 
 fn mul_expr(a: &Expr, b: &Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![a.clone(), b.clone()].into(),
-  }
+  call("Times", vec![a.clone(), b.clone()])
 }
 
 /// CollinearPoints[{p1, p2, …}] — `True`/`False` when every coordinate is

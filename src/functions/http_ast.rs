@@ -34,10 +34,7 @@ struct UrlParts {
 /// and a `URL["…"]` wrapper is unwrapped to the plain URL string. The
 /// association forms are already canonical and stay as given.
 pub fn http_request_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let rebuild = |new_args: Vec<Expr>| Expr::FunctionCall {
-    name: "HTTPRequest".to_string(),
-    args: new_args.into(),
-  };
+  let rebuild = |new_args: Vec<Expr>| call("HTTPRequest", new_args);
   match args.len() {
     1 => match unwrap_url(&args[0]) {
       url @ Expr::String(_) => {
@@ -600,12 +597,7 @@ fn query_to_expr(query: &[(String, String)]) -> Expr {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn url_read_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   use base64::Engine as _;
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "URLRead".to_string(),
-      args: vec![arg.clone()].into(),
-    })
-  };
+  let unevaluated = || Ok(call1("URLRead", arg.clone()));
   let func_args: Vec<Expr> = match &unwrap_url(arg) {
     Expr::String(u) => vec![Expr::String(u.clone())],
     Expr::FunctionCall { name, args } if name == "HTTPRequest" => args.to_vec(),

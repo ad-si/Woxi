@@ -350,10 +350,7 @@ fn snak_to_expr(
                 "WikidataData: missing label for unit entity {id}"
               ))
             })?;
-          evaluate(&Expr::FunctionCall {
-            name: "Quantity".to_string(),
-            args: vec![magnitude, unit_to_expr(&unit)].into(),
-          })
+          evaluate(&call("Quantity", vec![magnitude, unit_to_expr(&unit)]))
         }
       }
     }
@@ -399,11 +396,10 @@ fn snak_to_expr(
     Some("globe-coordinate") => {
       let lat = value["latitude"].as_f64().unwrap_or(0.0);
       let lon = value["longitude"].as_f64().unwrap_or(0.0);
-      evaluate(&Expr::FunctionCall {
-        name: "GeoPosition".to_string(),
-        args: vec![Expr::List(vec![Expr::Real(lat), Expr::Real(lon)].into())]
-          .into(),
-      })
+      evaluate(&call(
+        "GeoPosition",
+        vec![Expr::List(vec![Expr::Real(lat), Expr::Real(lon)].into())],
+      ))
     }
     Some("monolingualtext") => Ok(Expr::String(
       value["text"].as_str().unwrap_or_default().to_string(),
@@ -416,19 +412,13 @@ fn snak_to_expr(
 /// `Missing["reason"]`.
 #[cfg(not(target_arch = "wasm32"))]
 fn missing(reason: &str) -> Expr {
-  Expr::FunctionCall {
-    name: "Missing".to_string(),
-    args: vec![Expr::String(reason.to_string())].into(),
-  }
+  call1("Missing", Expr::String(reason.to_string()))
 }
 
 /// `URL["…"]`.
 #[cfg(not(target_arch = "wasm32"))]
 fn url_expr(url: String) -> Expr {
-  Expr::FunctionCall {
-    name: "URL".to_string(),
-    args: vec![Expr::String(url)].into(),
-  }
+  call1("URL", Expr::String(url))
 }
 
 /// Run an expression through the evaluator so constructors like `Quantity`,
@@ -532,10 +522,7 @@ fn time_to_date_object(
       parts.push(Expr::Integer(*part as i128));
     }
   }
-  evaluate(&Expr::FunctionCall {
-    name: "DateObject".to_string(),
-    args: vec![Expr::List(parts.into())].into(),
-  })
+  evaluate(&call1("DateObject", Expr::List(parts.into())))
 }
 
 // ─── Wikidata unit label → Wolfram unit name ────────────────────────────────
@@ -548,11 +535,9 @@ fn time_to_date_object(
 #[cfg(not(target_arch = "wasm32"))]
 fn unit_to_expr(label: &str) -> Expr {
   match label.split_once(" per ") {
-    Some((num, den)) => Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(Expr::String(unit_name(num))),
-      right: Box::new(Expr::String(unit_name(den))),
-    },
+    Some((num, den)) => {
+      div2(Expr::String(unit_name(num)), Expr::String(unit_name(den)))
+    }
     None => Expr::String(unit_name(label)),
   }
 }

@@ -1129,10 +1129,10 @@ pub fn geo_region_value_plot_ast(
   for (entity, v) in &pairs {
     let t = if hi > lo { (v - lo) / (hi - lo) } else { 0.5 };
     let (r, g, b) = choropleth_color(t);
-    items.push(Expr::FunctionCall {
-      name: "RGBColor".to_string(),
-      args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
-    });
+    items.push(call(
+      "RGBColor",
+      vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+    ));
     items.push(entity.clone());
   }
   // Render the shaded map with a color-scale legend on the right.
@@ -1529,10 +1529,10 @@ pub fn geo_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for ((ring, _), v) in bins.iter().zip(&values) {
     let t = if vmax > 0.0 { v / vmax } else { 1.0 };
     let (r, g, b) = heat_color(t);
-    items.push(Expr::FunctionCall {
-      name: "RGBColor".to_string(),
-      args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
-    });
+    items.push(call(
+      "RGBColor",
+      vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+    ));
     items.push(Expr::FunctionCall {
       name: "Woxi`GeoHistogramBin".to_string(),
       args: vec![Expr::List(

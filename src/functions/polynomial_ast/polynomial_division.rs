@@ -151,26 +151,19 @@ pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
   let var_id = Expr::Identifier(var.clone());
   let expand = |e: &Expr| -> Expr {
-    eval(Expr::FunctionCall {
-      name: "Expand".to_string(),
-      args: vec![e.clone()].into(),
-    })
-    .unwrap_or_else(|_| e.clone())
+    eval(call1("Expand", e.clone())).unwrap_or_else(|_| e.clone())
   };
   let exponent = |e: &Expr| -> Option<i128> {
-    match eval(Expr::FunctionCall {
-      name: "Exponent".to_string(),
-      args: vec![e.clone(), var_id.clone()].into(),
-    }) {
+    match eval(call("Exponent", vec![e.clone(), var_id.clone()])) {
       Ok(Expr::Integer(n)) => Some(n),
       _ => None,
     }
   };
   let coeff = |e: &Expr, d: i128| -> Expr {
-    eval(Expr::FunctionCall {
-      name: "Coefficient".to_string(),
-      args: vec![e.clone(), var_id.clone(), Expr::Integer(d)].into(),
-    })
+    eval(call(
+      "Coefficient",
+      vec![e.clone(), var_id.clone(), Expr::Integer(d)],
+    ))
     .unwrap_or(Expr::Integer(0))
   };
   let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
@@ -180,10 +173,7 @@ pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else if d == 1 {
       var_id.clone()
     } else {
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![var_id.clone(), Expr::Integer(d)].into(),
-      }
+      call("Power", vec![var_id.clone(), Expr::Integer(d)])
     }
   };
 
@@ -231,11 +221,9 @@ pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let ratio = build_div(&lcp, dlc);
         let t = eval(build_mul(&ratio, &var_pow(dp - ddeg)))
           .unwrap_or_else(|_| build_mul(&ratio, &var_pow(dp - ddeg)));
-        quotients[i] = eval(Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![quotients[i].clone(), t.clone()].into(),
-        })
-        .unwrap_or_else(|_| quotients[i].clone());
+        quotients[i] =
+          eval(call("Plus", vec![quotients[i].clone(), t.clone()]))
+            .unwrap_or_else(|_| quotients[i].clone());
         p = expand(&build_sub(&p, &build_mul(&t, de)));
         reduced = true;
         break;
@@ -245,11 +233,8 @@ pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Move the leading term of p into the remainder.
       let lt = eval(build_mul(&lcp, &var_pow(dp)))
         .unwrap_or_else(|_| build_mul(&lcp, &var_pow(dp)));
-      remainder = eval(Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![remainder.clone(), lt.clone()].into(),
-      })
-      .unwrap_or_else(|_| remainder.clone());
+      remainder = eval(call("Plus", vec![remainder.clone(), lt.clone()]))
+        .unwrap_or_else(|_| remainder.clone());
       p = expand(&build_sub(&p, &lt));
     }
   }
@@ -355,33 +340,20 @@ fn build_div(a: &Expr, b: &Expr) -> Expr {
   if expr_to_string(b) == "1" {
     return a.clone();
   }
-  Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(a.clone()),
-    right: Box::new(b.clone()),
-  }
+  div2(a.clone(), b.clone())
 }
 
 /// Build a multiplication expression
 pub fn build_mul(a: &Expr, b: &Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![a.clone(), b.clone()].into(),
-  }
+  call("Times", vec![a.clone(), b.clone()])
 }
 
 /// Build a subtraction expression
 pub fn build_sub(a: &Expr, b: &Expr) -> Expr {
   Expr::FunctionCall {
     name: "Plus".to_string(),
-    args: vec![
-      a.clone(),
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), b.clone()].into(),
-      },
-    ]
-    .into(),
+    args: vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])]
+      .into(),
   }
 }
 
@@ -399,24 +371,20 @@ fn coeffs_to_expr_symbolic(coeffs: &[Expr], var: &str) -> Expr {
       if c_str == "1" {
         Expr::Identifier(var.to_string())
       } else {
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![coeff.clone(), Expr::Identifier(var.to_string())].into(),
-        }
+        call(
+          "Times",
+          vec![coeff.clone(), Expr::Identifier(var.to_string())],
+        )
       }
     } else {
-      let var_power = Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![Expr::Identifier(var.to_string()), Expr::Integer(i as i128)]
-          .into(),
-      };
+      let var_power = call(
+        "Power",
+        vec![Expr::Identifier(var.to_string()), Expr::Integer(i as i128)],
+      );
       if c_str == "1" {
         var_power
       } else {
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![coeff.clone(), var_power].into(),
-        }
+        call("Times", vec![coeff.clone(), var_power])
       }
     };
     terms.push(term);
@@ -427,9 +395,6 @@ fn coeffs_to_expr_symbolic(coeffs: &[Expr], var: &str) -> Expr {
   } else if terms.len() == 1 {
     terms.into_iter().next().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    }
+    call("Plus", terms)
   }
 }

@@ -56,10 +56,10 @@ impl Rat {
     if self.d == 1 {
       Expr::Integer(self.n)
     } else {
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(self.n), Expr::Integer(self.d)].into(),
-      }
+      call(
+        "Rational",
+        vec![Expr::Integer(self.n), Expr::Integer(self.d)],
+      )
     }
   }
 }
@@ -131,10 +131,7 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Exponent[0, x] -> -Infinity
   if matches!(&args[0], Expr::Integer(0)) {
-    return Ok(Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(Expr::Identifier("Infinity".to_string())),
-    });
+    return Ok(neg1(Expr::Identifier("Infinity".to_string())));
   }
 
   // Expand and combine like terms first to handle things like (x^2+1)^3-1
@@ -337,10 +334,7 @@ fn add_exponents(a: Expr, b: Expr) -> Expr {
     return a;
   }
   // Defer to the evaluator so numeric exponents collapse.
-  let sum = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![a.clone(), b.clone()].into(),
-  };
+  let sum = call("Plus", vec![a.clone(), b.clone()]);
   crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum)
 }
 
@@ -355,10 +349,7 @@ fn build_max_expr(mut exprs: Vec<Expr>) -> Expr {
   });
   // Defer to Max's own evaluator: it will pick the max when all entries are
   // comparable numerically, and stay as `Max[…]` otherwise.
-  let call = Expr::FunctionCall {
-    name: "Max".to_string(),
-    args: exprs.into(),
-  };
+  let call = call("Max", exprs);
   crate::evaluator::evaluate_expr_to_expr(&call).unwrap_or(call)
 }
 

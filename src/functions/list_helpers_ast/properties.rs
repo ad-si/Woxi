@@ -231,18 +231,12 @@ pub fn tensor_rank_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
       .iter()
       .all(|p| matches!(p, Expr::List(inner) if inner.len() == 2))
   {
-    let inner_rank = Expr::FunctionCall {
-      name: "TensorRank".to_string(),
-      args: vec![args[0].clone()].into(),
-    };
+    let inner_rank = call1("TensorRank", args[0].clone());
     let reduction = Expr::Integer(2 * pairs.len() as i128);
     let result = Expr::FunctionCall {
       name: "Plus".to_string(),
       args: vec![
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), reduction].into(),
-        },
+        call("Times", vec![Expr::Integer(-1), reduction]),
         inner_rank,
       ]
       .into(),
@@ -270,10 +264,7 @@ pub fn tensor_rank_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
     {
       Ok(Expr::Integer(0))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "TensorRank".to_string(),
-      args: vec![expr.clone()].into(),
-    }),
+    _ => Ok(call1("TensorRank", expr.clone())),
   }
 }
 
@@ -421,10 +412,7 @@ fn build_contracted(
     if terms.len() == 1 {
       return Ok(terms.remove(0));
     }
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    })
+    crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms))
   };
 
   if free_slots.is_empty() {
@@ -517,10 +505,7 @@ fn expr_as_pos_int(e: &Expr) -> Option<usize> {
 }
 
 pub fn tensor_symmetry_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "TensorSymmetry".to_string(),
-    args: vec![expr.clone()].into(),
-  };
+  let unevaluated = || call1("TensorSymmetry", expr.clone());
   let Expr::List(rows) = expr else {
     return Ok(unevaluated());
   };
@@ -556,34 +541,21 @@ pub fn tensor_symmetry_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
   if all_zero {
-    return Ok(Expr::FunctionCall {
-      name: "ZeroSymmetric".to_string(),
-      args: vec![Expr::List(Vec::new().into())].into(),
-    });
+    return Ok(call1("ZeroSymmetric", Expr::List(Vec::new().into())));
   }
 
   // Equality check on Expr — use canonical evaluation so e.g. (-5) == (-5).
   let eq = |a: &Expr, b: &Expr| -> bool {
-    let cmp = Expr::FunctionCall {
-      name: "Equal".to_string(),
-      args: vec![a.clone(), b.clone()].into(),
-    };
+    let cmp = call("Equal", vec![a.clone(), b.clone()]);
     matches!(
       crate::evaluator::evaluate_expr_to_expr(&cmp),
       Ok(Expr::Identifier(ref s)) if s == "True"
     )
   };
   let neg = |e: &Expr| -> Expr {
-    let e = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), e.clone()].into(),
-    };
-    crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or_else(|_| {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), e.clone()].into(),
-      }
-    })
+    let e = call("Times", vec![Expr::Integer(-1), e.clone()]);
+    crate::evaluator::evaluate_expr_to_expr(&e)
+      .unwrap_or_else(|_| call("Times", vec![Expr::Integer(-1), e.clone()]))
   };
 
   let mut is_symmetric = true;
@@ -613,16 +585,10 @@ pub fn tensor_symmetry_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
 
   let slot_list = Expr::List(vec![Expr::Integer(1), Expr::Integer(2)].into());
   if is_symmetric {
-    return Ok(Expr::FunctionCall {
-      name: "Symmetric".to_string(),
-      args: vec![slot_list].into(),
-    });
+    return Ok(call1("Symmetric", slot_list));
   }
   if is_antisymmetric {
-    return Ok(Expr::FunctionCall {
-      name: "Antisymmetric".to_string(),
-      args: vec![slot_list].into(),
-    });
+    return Ok(call1("Antisymmetric", slot_list));
   }
   Ok(Expr::List(Vec::new().into()))
 }
@@ -786,11 +752,10 @@ pub fn matrix_q_with_test_ast(
             crate::evaluator::evaluate_expr_to_expr(&test_call)?
           } else {
             // Apply test as a function
-            let apply = Expr::FunctionCall {
-              name: "Apply".to_string(),
-              args: vec![test.clone(), Expr::List(vec![elem.clone()].into())]
-                .into(),
-            };
+            let apply = call(
+              "Apply",
+              vec![test.clone(), Expr::List(vec![elem.clone()].into())],
+            );
             crate::evaluator::evaluate_expr_to_expr(&apply)?
           };
           match &result {

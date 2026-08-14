@@ -45,10 +45,10 @@ pub fn destination(lat: f64, lon: f64, az_deg: f64, dist_m: f64) -> (f64, f64) {
 // ── Wolfram-Language entry points ─────────────────────────────────────────
 
 fn quantity(magnitude: f64, unit: &str) -> Expr {
-  Expr::FunctionCall {
-    name: "Quantity".to_string(),
-    args: vec![Expr::Real(magnitude), Expr::String(unit.to_string())].into(),
-  }
+  call(
+    "Quantity",
+    vec![Expr::Real(magnitude), Expr::String(unit.to_string())],
+  )
 }
 
 /// Wrap a geodesic distance (in meters) as a `Quantity`, picking the unit the
@@ -63,11 +63,10 @@ fn distance_quantity(m: f64) -> Expr {
 }
 
 fn geo_position(lat: f64, lon: f64) -> Expr {
-  Expr::FunctionCall {
-    name: "GeoPosition".to_string(),
-    args: vec![Expr::List(vec![Expr::Real(lat), Expr::Real(lon)].into())]
-      .into(),
-  }
+  call(
+    "GeoPosition",
+    vec![Expr::List(vec![Expr::Real(lat), Expr::Real(lon)].into())],
+  )
 }
 
 /// `GeoDistance[p1, p2]` — geodesic distance as `Quantity[km, "Kilometers"]`.
@@ -229,10 +228,7 @@ pub fn geo_antipode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let new_lon = antipode_longitude(&items[1])?;
       let result = Expr::List(vec![new_lat, new_lon].into());
       return Ok(if wrapped {
-        Expr::FunctionCall {
-          name: "GeoPosition".to_string(),
-          args: vec![result].into(),
-        }
+        call1("GeoPosition", result)
       } else {
         result
       });
@@ -627,10 +623,7 @@ mod tests {
     // Eastern longitude wraps past +180 to a negative value.
     assert_eq!(render(list(40, 100)), "{-40, -80}");
     // GeoPosition wrapper round-trips.
-    let wrapped = Expr::FunctionCall {
-      name: "GeoPosition".to_string(),
-      args: vec![list(40, -100)].into(),
-    };
+    let wrapped = call("GeoPosition", vec![list(40, -100)]);
     assert_eq!(render(wrapped), "GeoPosition[{-40, 80}]");
   }
 }

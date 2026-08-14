@@ -127,10 +127,7 @@ pub fn function_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let v_expr = if v.1 == 1 {
         Expr::Integer(v.0)
       } else {
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(v.0), Expr::Integer(v.1)].into(),
-        }
+        call("Rational", vec![Expr::Integer(v.0), Expr::Integer(v.1)])
       };
       if a.0 > 0 {
         Ok(y_ge(v_expr))
@@ -170,12 +167,11 @@ fn as_power(expr: &Expr) -> Option<(Expr, Expr)> {
 /// Ascending rational coefficients of a polynomial in `var`; None for
 /// non-polynomial input.
 fn poly_coeffs(expr: &Expr, var: &str) -> Option<Vec<(i128, i128)>> {
-  let coeff_list =
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "CoefficientList".to_string(),
-      args: vec![expr.clone(), Expr::Identifier(var.to_string())].into(),
-    })
-    .ok()?;
+  let coeff_list = crate::evaluator::evaluate_expr_to_expr(&call(
+    "CoefficientList",
+    vec![expr.clone(), Expr::Identifier(var.to_string())],
+  ))
+  .ok()?;
   let items = match &coeff_list {
     Expr::List(items) if items.len() >= 2 => items,
     _ => return None,

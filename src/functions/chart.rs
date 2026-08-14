@@ -287,10 +287,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   {
     let mut restyled: Vec<Expr> = vec![inner.clone()];
     restyled.extend(args[1..].iter().cloned());
-    let outer = Expr::FunctionCall {
-      name: "Style".to_string(),
-      args: restyled.into(),
-    };
+    let outer = call("Style", restyled);
     let inner_label = parse_styled_label(inner)?;
     let mut label = parse_styled_label(&outer)?;
     label.bold = inner_label.bold;
@@ -551,10 +548,7 @@ fn applied_label(e: &Expr) -> Option<String> {
       let (order, rest) = args.split_first()?;
       let (func, arg) = (rest.first()?, rest.get(1)?);
       let derivative = Expr::CurriedCall {
-        func: Box::new(Expr::FunctionCall {
-          name: "Derivative".to_string(),
-          args: vec![order.clone()].into(),
-        }),
+        func: Box::new(call1("Derivative", order.clone())),
         args: vec![func.clone()],
       };
       return Some(format!(

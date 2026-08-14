@@ -126,10 +126,7 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let coeff = if coeffs.len() == 1 {
         coeffs.into_iter().next().unwrap()
       } else {
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: coeffs.into(),
-        }
+        call("Plus", coeffs)
       };
       // Build the var^power part.
       let var_part = if power == 0 {
@@ -137,11 +134,10 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if power == 1 {
         Some(Expr::Identifier(var.to_string()))
       } else {
-        Some(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::Identifier(var.to_string())),
-          right: Box::new(Expr::Integer(power)),
-        })
+        Some(pow2(
+          Expr::Identifier(var.to_string()),
+          Expr::Integer(power),
+        ))
       };
       // Assemble outer * coeff * var_part as a Times list, then sort
       // canonically via times_ast. Use `Plus[…]` for the coefficient
@@ -159,10 +155,7 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if factors.len() == 1 {
         factors.into_iter().next().unwrap()
       } else {
-        times_ast(&factors).unwrap_or_else(|_| Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: factors.into(),
-        })
+        times_ast(&factors).unwrap_or_else(|_| call("Times", factors))
       };
       result_terms.push(term);
     }
@@ -226,11 +219,10 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else if power == 1 {
       Some(Expr::Identifier(var.to_string()))
     } else {
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Identifier(var.to_string())),
-        right: Box::new(Expr::Integer(power)),
-      })
+      Some(pow2(
+        Expr::Identifier(var.to_string()),
+        Expr::Integer(power),
+      ))
     };
 
     let term = match (combined_coeff.clone(), var_part) {
@@ -312,10 +304,7 @@ fn extract_var_free_outer_factors(
   let inner_expr = if inner.len() == 1 {
     inner.remove(0)
   } else {
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: inner.into(),
-    }
+    call("Times", inner)
   };
   Some((outer, inner_expr))
 }
@@ -343,10 +332,7 @@ fn as_plus_terms(expr: &Expr) -> Option<Vec<Expr>> {
 /// a Plus, so grouped coefficients stay intact. Falls back to a plain Plus
 /// chain if evaluation fails.
 fn plus_ast_canonical(terms: Vec<Expr>) -> Expr {
-  let sum = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: terms.clone().into(),
-  };
+  let sum = call("Plus", terms.clone());
   crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or_else(|_| {
     crate::functions::math_ast::plus_ast(&terms)
       .unwrap_or_else(|_| build_sum(terms))
@@ -410,11 +396,7 @@ fn collect_in_coefficients(
     } else if power == 1 {
       Some(collected_var.clone())
     } else {
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(collected_var.clone()),
-        right: Box::new(Expr::Integer(power)),
-      })
+      Some(pow2(collected_var.clone(), Expr::Integer(power)))
     };
 
     let rebuilt = match (collected_coeff, var_part) {
@@ -617,11 +599,7 @@ fn build_times_chain(factors: &[Expr]) -> Expr {
   let mut iter = factors.iter();
   let mut result = iter.next().unwrap().clone();
   for f in iter {
-    result = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(result),
-      right: Box::new(f.clone()),
-    };
+    result = times2(result, f.clone());
   }
   result
 }
@@ -731,11 +709,7 @@ fn collect_in_coefficients_with_head(
     } else if power == 1 {
       Some(collected_var.clone())
     } else {
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(collected_var.clone()),
-        right: Box::new(Expr::Integer(power)),
-      })
+      Some(pow2(collected_var.clone(), Expr::Integer(power)))
     };
 
     let rebuilt = match (collected_coeff, var_part) {

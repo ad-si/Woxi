@@ -692,11 +692,10 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
       let i_factor: Option<Expr> = match i_mod {
         1 => {
           // Conjugate[I] = -I
-          Some(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), Expr::Identifier("I".to_string())]
-              .into(),
-          })
+          Some(call(
+            "Times",
+            vec![Expr::Integer(-1), Expr::Identifier("I".to_string())],
+          ))
         }
         2 => {
           // I*I = -1, Conjugate[-1] = -1
@@ -1441,11 +1440,10 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if denom == 1 {
       Ok(Expr::Integer(num as i128))
     } else {
-      Ok(Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(num as i128), Expr::Integer(denom as i128)]
-          .into(),
-      })
+      Ok(call(
+        "Rational",
+        vec![Expr::Integer(num as i128), Expr::Integer(denom as i128)],
+      ))
     }
   } else {
     // Rationalize[x] with no tolerance: walk the continued-fraction
@@ -1724,11 +1722,10 @@ fn exact_complex_rational_numden(expr: &Expr) -> Option<(Expr, Expr)> {
       name: "Plus".to_string(),
       args: vec![
         Expr::Integer(re_num),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(im_num), Expr::Identifier("I".to_string())]
-            .into(),
-        },
+        call(
+          "Times",
+          vec![Expr::Integer(im_num), Expr::Identifier("I".to_string())],
+        ),
       ]
       .into(),
     }

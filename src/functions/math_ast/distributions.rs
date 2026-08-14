@@ -17115,11 +17115,10 @@ pub fn truncated_mean_variance(
     if matches!(&density, Expr::FunctionCall { name, .. } if name == "PDF") {
       return Ok(None);
     }
-    let integrand = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![call("Power", vec![x.clone(), Expr::Integer(k)]), density]
-        .into(),
-    };
+    let integrand = call(
+      "Times",
+      vec![call("Power", vec![x.clone(), Expr::Integer(k)]), density],
+    );
     let integral =
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Integrate".to_string(),
@@ -17142,11 +17141,10 @@ pub fn truncated_mean_variance(
   let (Some(m1), Some(m2)) = (moment(1)?, moment(2)?) else {
     return Ok(None);
   };
-  let variance =
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Subtract".to_string(),
-      args: vec![m2, call("Power", vec![m1.clone(), Expr::Integer(2)])].into(),
-    })?;
+  let variance = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Subtract",
+    vec![m2, call("Power", vec![m1.clone(), Expr::Integer(2)])],
+  ))?;
   Ok(Some((m1, variance)))
 }
 

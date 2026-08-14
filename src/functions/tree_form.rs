@@ -125,10 +125,7 @@ fn layout_recursive(
 /// Generates a tree diagram rendered as Graphics primitives.
 pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "TreeForm".to_string(),
-      args: vec![].into(),
-    });
+    return Ok(call("TreeForm", vec![]));
   }
 
   let expr = &args[0];
@@ -228,10 +225,10 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Draw edges first (so they appear behind boxes and text)
   // Edge color: gray
-  primitives.push(Expr::FunctionCall {
-    name: "RGBColor".to_string(),
-    args: vec![Expr::Real(0.6), Expr::Real(0.6), Expr::Real(0.6)].into(),
-  });
+  primitives.push(call(
+    "RGBColor",
+    vec![Expr::Real(0.6), Expr::Real(0.6), Expr::Real(0.6)],
+  ));
 
   for node in &layout {
     for &child_idx in &node.children_indices {
@@ -258,33 +255,30 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     if is_leaf {
       // Leaf nodes: white fill, black border
-      primitives.push(Expr::FunctionCall {
-        name: "EdgeForm".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "RGBColor".to_string(),
-          args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)].into(),
-        }]
-        .into(),
-      });
-      primitives.push(Expr::FunctionCall {
-        name: "RGBColor".to_string(),
-        args: vec![Expr::Real(1.0), Expr::Real(1.0), Expr::Real(1.0)].into(),
-      });
+      primitives.push(call(
+        "EdgeForm",
+        vec![call(
+          "RGBColor",
+          vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+        )],
+      ));
+      primitives.push(call(
+        "RGBColor",
+        vec![Expr::Real(1.0), Expr::Real(1.0), Expr::Real(1.0)],
+      ));
     } else {
       // Internal nodes: light orange fill, orange border
-      primitives.push(Expr::FunctionCall {
-        name: "EdgeForm".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "RGBColor".to_string(),
-          args: vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)]
-            .into(),
-        }]
-        .into(),
-      });
-      primitives.push(Expr::FunctionCall {
-        name: "RGBColor".to_string(),
-        args: vec![Expr::Real(1.0), Expr::Real(0.95), Expr::Real(0.85)].into(),
-      });
+      primitives.push(call(
+        "EdgeForm",
+        vec![call(
+          "RGBColor",
+          vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)],
+        )],
+      ));
+      primitives.push(call(
+        "RGBColor",
+        vec![Expr::Real(1.0), Expr::Real(0.95), Expr::Real(0.85)],
+      ));
     }
 
     primitives.push(Expr::FunctionCall {
@@ -302,26 +296,23 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Second pass: text labels for all nodes (on top of boxes)
-  primitives.push(Expr::FunctionCall {
-    name: "EdgeForm".to_string(),
-    args: vec![].into(),
-  });
+  primitives.push(call("EdgeForm", vec![]));
 
   for node in &layout {
     let is_leaf = node.children_indices.is_empty();
 
     if is_leaf {
       // Leaf nodes: black text
-      primitives.push(Expr::FunctionCall {
-        name: "RGBColor".to_string(),
-        args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)].into(),
-      });
+      primitives.push(call(
+        "RGBColor",
+        vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+      ));
     } else {
       // Internal nodes: dark orange text
-      primitives.push(Expr::FunctionCall {
-        name: "RGBColor".to_string(),
-        args: vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)].into(),
-      });
+      primitives.push(call(
+        "RGBColor",
+        vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)],
+      ));
     }
 
     primitives.push(Expr::FunctionCall {
@@ -355,10 +346,7 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Takes a list of DirectedEdge/UndirectedEdge and renders as a tree diagram.
 pub fn tree_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "TreeGraph".to_string(),
-      args: vec![].into(),
-    });
+    return Ok(call("TreeGraph", vec![]));
   }
 
   // Extract edges list — could be first arg directly or from Graph[vertices, edges]
@@ -474,10 +462,7 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
   let layout = layout_tree(tree, leaf_step);
 
   if layout.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "TreeGraph".to_string(),
-      args: vec![].into(),
-    });
+    return Ok(call("TreeGraph", vec![]));
   }
 
   let coord_x_min = layout
@@ -525,10 +510,10 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
   let mut primitives: Vec<Expr> = Vec::new();
 
   // Edge color: gray
-  primitives.push(Expr::FunctionCall {
-    name: "RGBColor".to_string(),
-    args: vec![Expr::Real(0.6), Expr::Real(0.6), Expr::Real(0.6)].into(),
-  });
+  primitives.push(call(
+    "RGBColor",
+    vec![Expr::Real(0.6), Expr::Real(0.6), Expr::Real(0.6)],
+  ));
 
   for node in &layout {
     for &child_idx in &node.children_indices {
@@ -554,32 +539,29 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
     let hh = box_half_height;
 
     if is_leaf {
-      primitives.push(Expr::FunctionCall {
-        name: "EdgeForm".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "RGBColor".to_string(),
-          args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)].into(),
-        }]
-        .into(),
-      });
-      primitives.push(Expr::FunctionCall {
-        name: "RGBColor".to_string(),
-        args: vec![Expr::Real(1.0), Expr::Real(1.0), Expr::Real(1.0)].into(),
-      });
+      primitives.push(call(
+        "EdgeForm",
+        vec![call(
+          "RGBColor",
+          vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+        )],
+      ));
+      primitives.push(call(
+        "RGBColor",
+        vec![Expr::Real(1.0), Expr::Real(1.0), Expr::Real(1.0)],
+      ));
     } else {
-      primitives.push(Expr::FunctionCall {
-        name: "EdgeForm".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "RGBColor".to_string(),
-          args: vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)]
-            .into(),
-        }]
-        .into(),
-      });
-      primitives.push(Expr::FunctionCall {
-        name: "RGBColor".to_string(),
-        args: vec![Expr::Real(1.0), Expr::Real(0.95), Expr::Real(0.85)].into(),
-      });
+      primitives.push(call(
+        "EdgeForm",
+        vec![call(
+          "RGBColor",
+          vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)],
+        )],
+      ));
+      primitives.push(call(
+        "RGBColor",
+        vec![Expr::Real(1.0), Expr::Real(0.95), Expr::Real(0.85)],
+      ));
     }
 
     primitives.push(Expr::FunctionCall {
@@ -597,23 +579,20 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
   }
 
   // Text labels
-  primitives.push(Expr::FunctionCall {
-    name: "EdgeForm".to_string(),
-    args: vec![].into(),
-  });
+  primitives.push(call("EdgeForm", vec![]));
 
   for node in &layout {
     let is_leaf = node.children_indices.is_empty();
     if is_leaf {
-      primitives.push(Expr::FunctionCall {
-        name: "RGBColor".to_string(),
-        args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)].into(),
-      });
+      primitives.push(call(
+        "RGBColor",
+        vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+      ));
     } else {
-      primitives.push(Expr::FunctionCall {
-        name: "RGBColor".to_string(),
-        args: vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)].into(),
-      });
+      primitives.push(call(
+        "RGBColor",
+        vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)],
+      ));
     }
 
     primitives.push(Expr::FunctionCall {

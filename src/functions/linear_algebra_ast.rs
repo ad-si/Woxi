@@ -299,11 +299,10 @@ pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // for an irrational norm, where components carry nested radicals.
       let norm_rational = is_rational(&normsq);
       // e = w / Sqrt[normsq] = w * normsq^(-1/2).
-      let inv_norm = Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![normsq, crate::functions::math_ast::make_rational(-1, 2)]
-          .into(),
-      };
+      let inv_norm = call(
+        "Power",
+        vec![normsq, crate::functions::math_ast::make_rational(-1, 2)],
+      );
       let e: Vec<Expr> = w
         .iter()
         .map(|wi| {
@@ -707,11 +706,10 @@ fn cauchy_generating_vectors(
   }
 
   let sub = |a: &Expr, b: &Expr| -> Result<Expr, InterpreterError> {
-    evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])]
-        .into(),
-    })
+    evaluate_expr_to_expr(&call(
+      "Plus",
+      vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])],
+    ))
   };
 
   let x: Vec<Expr> = s.iter().map(|r| r[0].clone()).collect();
@@ -911,14 +909,13 @@ fn cauchy_dense(x: &[Expr], y: &[Expr]) -> Result<Expr, InterpreterError> {
   for xi in x {
     let mut row = Vec::with_capacity(y.len());
     for yj in y {
-      row.push(evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
+      row.push(evaluate_expr_to_expr(&call(
+        "Power",
+        vec![
           call("Plus", vec![xi.clone(), yj.clone()]),
           Expr::Integer(-1),
-        ]
-        .into(),
-      })?);
+        ],
+      ))?);
     }
     rows.push(Expr::List(row.into()));
   }
@@ -3385,35 +3382,29 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let c = matrix[1][0].clone();
     let d = matrix[1][1].clone();
     // discriminant: a² + 4 b c - 2 a d + d²
-    let disc = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    let disc = call(
+      "Plus",
+      vec![
         call("Power", vec![a.clone(), Expr::Integer(2)]),
         call("Times", vec![Expr::Integer(4), b.clone(), c.clone()]),
         call("Times", vec![Expr::Integer(-2), a.clone(), d.clone()]),
         call("Power", vec![d.clone(), Expr::Integer(2)]),
-      ]
-      .into(),
-    };
+      ],
+    );
     let sqrt_disc = call1("Sqrt", disc);
     let trace = call("Plus", vec![a, d]);
-    let lambda_minus = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
+    let lambda_minus = div2(
+      call(
+        "Plus",
+        vec![
           trace.clone(),
           call("Times", vec![Expr::Integer(-1), sqrt_disc.clone()]),
-        ]
-        .into(),
-      }),
-      right: Box::new(Expr::Integer(2)),
-    };
-    let lambda_plus = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(call("Plus", vec![trace, sqrt_disc])),
-      right: Box::new(Expr::Integer(2)),
-    };
+        ],
+      ),
+      Expr::Integer(2),
+    );
+    let lambda_plus =
+      div2(call("Plus", vec![trace, sqrt_disc]), Expr::Integer(2));
     let lm = crate::evaluator::evaluate_expr_to_expr(&lambda_minus)?;
     let lp = crate::evaluator::evaluate_expr_to_expr(&lambda_plus)?;
     let mut result = vec![lm, lp];
@@ -3767,10 +3758,11 @@ fn make_root_exprs(coeffs: &[i128]) -> Vec<Expr> {
     body: Box::new(body),
   };
   (1..=degree)
-    .map(|k| Expr::FunctionCall {
-      name: "Root".to_string(),
-      args: vec![func.clone(), Expr::Integer(k as i128), Expr::Integer(0)]
-        .into(),
+    .map(|k| {
+      call(
+        "Root",
+        vec![func.clone(), Expr::Integer(k as i128), Expr::Integer(0)],
+      )
     })
     .collect()
 }
@@ -3992,18 +3984,16 @@ fn complex_2x2_eigenvectors(
   // component scaled to clear its denominator.
   let quotient_vector =
     |num_minuend: &Expr, num_subtrahend: &Expr, den: &Expr| {
-      let x = evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
+      let x = evaluate_expr_to_expr(&div2(
+        call(
+          "Plus",
+          vec![
             num_minuend.clone(),
             call("Times", vec![Expr::Integer(-1), num_subtrahend.clone()]),
-          ]
-          .into(),
-        }),
-        right: Box::new(den.clone()),
-      })?;
+          ],
+        ),
+        den.clone(),
+      ))?;
       if let Some(gq) = expr_to_gq(&x) {
         let q = (gq.re.d / gcd_i128(gq.re.d, gq.im.d)).checked_mul(gq.im.d);
         if let Some(q) = q
@@ -4035,14 +4025,10 @@ fn complex_2x2_eigenvectors(
       Ok(basis(true))
     } else {
       quotient_vector(b, &Expr::Integer(0), &{
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
-            d.clone(),
-            call("Times", vec![Expr::Integer(-1), a.clone()]),
-          ]
-          .into(),
-        }
+        call(
+          "Plus",
+          vec![d.clone(), call("Times", vec![Expr::Integer(-1), a.clone()])],
+        )
       })
     }
   };
@@ -6419,10 +6405,10 @@ pub fn vector_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let norm_u = call("Norm", vec![args[0].clone()]);
   let norm_v = call("Norm", vec![args[1].clone()]);
   let denom = call("Times", vec![norm_u, norm_v]);
-  let ratio = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![dot_expr, call("Power", vec![denom, Expr::Integer(-1)])].into(),
-  };
+  let ratio = call(
+    "Times",
+    vec![dot_expr, call("Power", vec![denom, Expr::Integer(-1)])],
+  );
   let result = call1("ArcCos", ratio);
   evaluate_expr_to_expr(&result)
 }
@@ -6530,27 +6516,17 @@ pub fn solid_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let norm = |a: &Expr| call("Norm", vec![a.clone()]);
       let times = |factors: Vec<Expr>| call("Times", factors);
       let (v1, v2, v3) = (&vecs[0], &vecs[1], &vecs[2]);
-      let num = Expr::FunctionCall {
-        name: "Abs".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "Det".to_string(),
-          args: vec![Expr::List(
-            vec![v1.clone(), v2.clone(), v3.clone()].into(),
-          )]
-          .into(),
-        }]
-        .into(),
-      };
-      let den = Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
+      let matrix = Expr::List(vec![v1.clone(), v2.clone(), v3.clone()].into());
+      let num = call1("Abs", call1("Det", matrix));
+      let den = call(
+        "Plus",
+        vec![
           times(vec![norm(v1), norm(v2), norm(v3)]),
           times(vec![dot(v1, v2), norm(v3)]),
           times(vec![dot(v1, v3), norm(v2)]),
           times(vec![dot(v2, v3), norm(v1)]),
-        ]
-        .into(),
-      };
+        ],
+      );
       evaluate_expr_to_expr(&times(vec![
         Expr::Integer(2),
         call("ArcTan", vec![den, num]),
@@ -7336,32 +7312,28 @@ pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Build logistic: 1 / (1 + Exp[-linear])
-  let fitted_expr = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
+  let fitted_expr = call(
+    "Times",
+    vec![
       Expr::Integer(1),
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
+      call(
+        "Power",
+        vec![
+          call(
+            "Plus",
+            vec![
               Expr::Integer(1),
-              Expr::FunctionCall {
-                name: "Exp".to_string(),
-                args: vec![call("Times", vec![Expr::Integer(-1), linear_expr])]
-                  .into(),
-              },
-            ]
-            .into(),
-          },
+              call(
+                "Exp",
+                vec![call("Times", vec![Expr::Integer(-1), linear_expr])],
+              ),
+            ],
+          ),
           Expr::Integer(-1),
-        ]
-        .into(),
-      },
-    ]
-    .into(),
-  };
+        ],
+      ),
+    ],
+  );
 
   let input_data = Expr::List(
     x_vals
@@ -8812,10 +8784,8 @@ pub fn singular_value_list_ast(
   } else {
     vec![ct, args[0].clone()]
   };
-  let eigenvalues = evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Eigenvalues".to_string(),
-    args: vec![call("Dot", gram_args)].into(),
-  })?;
+  let eigenvalues =
+    evaluate_expr_to_expr(&call("Eigenvalues", vec![call("Dot", gram_args)]))?;
   let Expr::List(eig_items) = &eigenvalues else {
     return Ok(unevaluated(args));
   };
@@ -9169,9 +9139,8 @@ pub fn jordan_decomposition_ast(
   let c_zero = same(&c, &zero);
   let repeated = same(&l1, &l2);
 
-  let sub = |x: Expr, y: Expr| Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![x, call("Times", vec![Expr::Integer(-1), y])].into(),
+  let sub = |x: Expr, y: Expr| {
+    call("Plus", vec![x, call("Times", vec![Expr::Integer(-1), y])])
   };
   let matrix = |c1: (Expr, Expr), c2: (Expr, Expr)| {
     Expr::List(
@@ -9414,14 +9383,13 @@ fn subtract_scalar_from_diagonal(
     let mut new_row: Vec<Expr> = Vec::with_capacity(row.len());
     for (j, cell) in row.iter().enumerate() {
       if i == j {
-        let diff = Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
+        let diff = call(
+          "Plus",
+          vec![
             cell.clone(),
             call("Times", vec![Expr::Integer(-1), lam.clone()]),
-          ]
-          .into(),
-        };
+          ],
+        );
         new_row.push(crate::evaluator::evaluate_expr_to_expr(&diff).ok()?);
       } else {
         new_row.push(cell.clone());
@@ -10185,11 +10153,10 @@ pub fn frobenius_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn structured_matrix(head: &str, n: usize, payload: Expr) -> Expr {
   let dims =
     Expr::List(vec![Expr::Integer(n as i128), Expr::Integer(n as i128)].into());
-  Expr::FunctionCall {
-    name: head.to_string(),
-    args: vec![call("StructuredArray`StructuredData", vec![dims, payload])]
-      .into(),
-  }
+  call(
+    head,
+    vec![call("StructuredArray`StructuredData", vec![dims, payload])],
+  )
 }
 
 /// `SparseArray[Automatic, {n, n}, 0, {1, {rowptr, colidx}, vals}]` in the
@@ -11836,14 +11803,13 @@ pub fn symmetrize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let count = terms.len() as i128;
     let sum = call("Plus", terms);
-    let average = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    let average = call(
+      "Times",
+      vec![
         call("Rational", vec![Expr::Integer(1), Expr::Integer(count)]),
         sum,
-      ]
-      .into(),
-    };
+      ],
+    );
     let value = evaluate_expr_to_expr(&average)?;
     if matches!(&value, Expr::Integer(0)) {
       continue;

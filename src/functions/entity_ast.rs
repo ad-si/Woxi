@@ -80,10 +80,7 @@ pub fn entity_store_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let outer =
     Expr::Association(vec![(Expr::String("Types".to_string()), types_inner)]);
 
-  Ok(Expr::FunctionCall {
-    name: "EntityStore".to_string(),
-    args: vec![outer].into(),
-  })
+  Ok(call1("EntityStore", outer))
 }
 
 /// Parse entity type data from an association.
@@ -360,10 +357,7 @@ pub fn entity_stores_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::String("Types".to_string()),
           types_inner,
         )]);
-        Expr::FunctionCall {
-          name: "EntityStore".to_string(),
-          args: vec![outer].into(),
-        }
+        call1("EntityStore", outer)
       })
       .collect::<Vec<_>>()
   });
@@ -402,17 +396,17 @@ fn lookup_entity_property(
                   );
                   // Apply the function: func[entity_assoc]
                   // We return a marker so the caller can evaluate it
-                  return Some(Expr::FunctionCall {
-                    name: "__entity_computed__".to_string(),
-                    args: vec![func.clone(), entity_assoc].into(),
-                  });
+                  return Some(call(
+                    "__entity_computed__",
+                    vec![func.clone(), entity_assoc],
+                  ));
                 }
               }
               // Entity found but property missing
-              return Some(Expr::FunctionCall {
-                name: "Missing".to_string(),
-                args: vec![Expr::String("NotAvailable".to_string())].into(),
-              });
+              return Some(call1(
+                "Missing",
+                Expr::String("NotAvailable".to_string()),
+              ));
             }
           }
         }
@@ -779,9 +773,11 @@ pub fn entity_class_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     class_names.sort();
     class_names
       .into_iter()
-      .map(|cname| Expr::FunctionCall {
-        name: "EntityClass".to_string(),
-        args: vec![Expr::String(type_name.clone()), Expr::String(cname)].into(),
+      .map(|cname| {
+        call(
+          "EntityClass",
+          vec![Expr::String(type_name.clone()), Expr::String(cname)],
+        )
       })
       .collect::<Vec<_>>()
   });
@@ -949,10 +945,10 @@ pub fn entity_store_property_access(
                     return Ok(pval.clone());
                   }
                 }
-                return Ok(Expr::FunctionCall {
-                  name: "Missing".to_string(),
-                  args: vec![Expr::String("NotAvailable".to_string())].into(),
-                });
+                return Ok(call1(
+                  "Missing",
+                  Expr::String("NotAvailable".to_string()),
+                ));
               }
             }
           }

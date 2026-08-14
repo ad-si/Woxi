@@ -19,11 +19,7 @@ fn key_extractor_strings(op: &Expr) -> Expr {
     {
       Expr::FunctionCall {
         name: name.clone(),
-        args: vec![Expr::FunctionCall {
-          name: "Key".to_string(),
-          args: vec![args[0].clone()].into(),
-        }]
-        .into(),
+        args: vec![call1("Key", args[0].clone())].into(),
       }
     }
     other => other.clone(),
@@ -80,17 +76,11 @@ fn apply_query_inner(
   match op {
     Expr::Identifier(s) if s == "All" => map_rest(rest, data),
     Expr::Integer(_) => {
-      let part = eval(&Expr::FunctionCall {
-        name: "Part".to_string(),
-        args: vec![data.clone(), op.clone()].into(),
-      })?;
+      let part = eval(&call("Part", vec![data.clone(), op.clone()]))?;
       apply_query_inner(rest, &part)
     }
     Expr::String(_) => {
-      let value = eval(&Expr::FunctionCall {
-        name: "Lookup".to_string(),
-        args: vec![data.clone(), op.clone()].into(),
-      })?;
+      let value = eval(&call("Lookup", vec![data.clone(), op.clone()]))?;
       apply_query_inner(rest, &value)
     }
     // `Query[{s1, s2, …}]` picks several parts at this level, keeping the
@@ -147,10 +137,10 @@ fn apply_query_inner(
 
 /// `Missing[tag, detail]`.
 fn missing(tag: &str, detail: &Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "Missing".to_string(),
-    args: vec![Expr::String(tag.to_string()), detail.clone()].into(),
-  }
+  call(
+    "Missing",
+    vec![Expr::String(tag.to_string()), detail.clone()],
+  )
 }
 
 /// Resolve a 1-based (possibly negative) index against a container of `len`
@@ -257,10 +247,7 @@ fn map_rest(rest: &[Expr], data: &Expr) -> Result<Expr, InterpreterError> {
           other => Ok(other.clone()),
         })
         .collect();
-      Ok(Expr::FunctionCall {
-        name: "Association".to_string(),
-        args: mapped?.into(),
-      })
+      Ok(call("Association", mapped?))
     }
     other => apply_query_inner(rest, other),
   }

@@ -149,10 +149,10 @@ fn complex_to_expr(c: (f64, f64)) -> Expr {
   if c.1 == 0.0 {
     Expr::Real(c.0)
   } else {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Complex".to_string(),
-      args: vec![Expr::Real(c.0), Expr::Real(c.1)].into(),
-    })
+    crate::evaluator::evaluate_expr_to_expr(&call(
+      "Complex",
+      vec![Expr::Real(c.0), Expr::Real(c.1)],
+    ))
     .unwrap_or(Expr::Real(c.0))
   }
 }
@@ -168,18 +168,12 @@ fn expr_to_complex(e: &Expr) -> Option<(f64, f64)> {
     return Some((num(&args[0])?, num(&args[1])?));
   }
   // Fall back to Re/Im through the evaluator for canonical complex forms.
-  let re = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Re".to_string(),
-    args: vec![e.clone()].into(),
-  })
-  .ok()
-  .and_then(|r| num(&r))?;
-  let im = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Im".to_string(),
-    args: vec![e.clone()].into(),
-  })
-  .ok()
-  .and_then(|r| num(&r))?;
+  let re = crate::evaluator::evaluate_expr_to_expr(&call1("Re", e.clone()))
+    .ok()
+    .and_then(|r| num(&r))?;
+  let im = crate::evaluator::evaluate_expr_to_expr(&call1("Im", e.clone()))
+    .ok()
+    .and_then(|r| num(&r))?;
   Some((re, im))
 }
 
@@ -232,10 +226,10 @@ impl Cwd {
       ]
       .into(),
     );
-    Expr::FunctionCall {
-      name: "ContinuousWaveletData".to_string(),
-      args: vec![Expr::List(rules.into()), self.wavelet.clone(), opts].into(),
-    }
+    call(
+      "ContinuousWaveletData",
+      vec![Expr::List(rules.into()), self.wavelet.clone(), opts],
+    )
   }
 
   pub fn from_expr(e: &Expr) -> Option<Self> {
@@ -373,10 +367,7 @@ pub fn continuous_wavelet_transform_ast(
   };
   // The default continuous wavelet is reported in its canonical form
   // MexicanHatWavelet[1] (the sigma-1 Mexican hat), matching Wolfram.
-  let default_wavelet = Expr::FunctionCall {
-    name: "MexicanHatWavelet".to_string(),
-    args: vec![Expr::Integer(1)].into(),
-  };
+  let default_wavelet = call1("MexicanHatWavelet", Expr::Integer(1));
   let wavelet_expr = match positional.get(1) {
     None => default_wavelet,
     Some(Expr::Identifier(a)) if a == "Automatic" => default_wavelet,
@@ -782,10 +773,7 @@ fn cwd_property(cwd: &Cwd, prop: &str) -> crate::syntax::Expr {
       crate::emit_message(&format!(
         "ContinuousWaveletData::prop: {prop} is not a valid property."
       ));
-      Expr::FunctionCall {
-        name: "Missing".to_string(),
-        args: vec![Expr::String("NotAvailable".into())].into(),
-      }
+      call1("Missing", Expr::String("NotAvailable".into()))
     }
   }
 }

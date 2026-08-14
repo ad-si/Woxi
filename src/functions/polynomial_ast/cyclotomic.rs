@@ -116,38 +116,18 @@ fn build_polynomial_expr(
       if c == 1 {
         x.clone()
       } else if c == -1 {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(-1)),
-          right: Box::new(x.clone()),
-        }
+        times2(Expr::Integer(-1), x.clone())
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(c)),
-          right: Box::new(x.clone()),
-        }
+        times2(Expr::Integer(c), x.clone())
       }
     } else {
-      let x_pow = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(x.clone()),
-        right: Box::new(Expr::Integer(i as i128)),
-      };
+      let x_pow = pow2(x.clone(), Expr::Integer(i as i128));
       if c == 1 {
         x_pow
       } else if c == -1 {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(-1)),
-          right: Box::new(x_pow),
-        }
+        times2(Expr::Integer(-1), x_pow)
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(c)),
-          right: Box::new(x_pow),
-        }
+        times2(Expr::Integer(c), x_pow)
       }
     };
     terms.push(term);
@@ -160,11 +140,7 @@ fn build_polynomial_expr(
   // Evaluate to get proper canonical form
   let mut result = terms.remove(0);
   for t in terms {
-    result = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(result),
-      right: Box::new(t),
-    };
+    result = plus2(result, t);
   }
 
   // Evaluate to simplify and canonicalize

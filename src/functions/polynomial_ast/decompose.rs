@@ -257,11 +257,10 @@ fn rational_coeffs_to_expr(coeffs: &[Rat], var: &str) -> Expr {
     } else if i == 1 {
       Some(Expr::Identifier(var.to_string()))
     } else {
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Identifier(var.to_string())),
-        right: Box::new(Expr::Integer(i as i128)),
-      })
+      Some(pow2(
+        Expr::Identifier(var.to_string()),
+        Expr::Integer(i as i128),
+      ))
     };
 
     let term = match var_part {
@@ -272,17 +271,9 @@ fn rational_coeffs_to_expr(coeffs: &[Rat], var: &str) -> Expr {
           v
         } else if n == -d {
           // coefficient is -1
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(-1)),
-            right: Box::new(v),
-          }
+          times2(Expr::Integer(-1), v)
         } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(coeff_expr),
-            right: Box::new(v),
-          }
+          times2(coeff_expr, v)
         }
       }
     };
@@ -296,11 +287,7 @@ fn rational_coeffs_to_expr(coeffs: &[Rat], var: &str) -> Expr {
   // Build the expression and evaluate to get canonical ordering
   let mut result = terms[0].clone();
   for term in &terms[1..] {
-    result = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(result),
-      right: Box::new(term.clone()),
-    };
+    result = plus2(result, term.clone());
   }
   crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result)
 }

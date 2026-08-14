@@ -83,10 +83,7 @@ fn auto_convert(s: &str) -> Expr {
   // An empty field has no value at all, which wolframscript reports as
   // Missing["NotAvailable"] rather than an empty string.
   if trimmed.is_empty() {
-    return Expr::FunctionCall {
-      name: "Missing".to_string(),
-      args: vec![Expr::String("NotAvailable".to_string())].into(),
-    };
+    return call1("Missing", Expr::String("NotAvailable".to_string()));
   }
 
   // Try integer
@@ -237,10 +234,7 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
       "Tabular" => {
         super::tabular_ast::tabular_ast(&[Expr::List(vec![].into())])
       }
-      _ => Expr::FunctionCall {
-        name: "$Failed".to_string(),
-        args: vec![].into(),
-      },
+      _ => call("$Failed", vec![]),
     };
   }
 
@@ -389,10 +383,7 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
       ),
     ]),
 
-    _ => Expr::FunctionCall {
-      name: "$Failed".to_string(),
-      args: vec![].into(),
-    },
+    _ => call("$Failed", vec![]),
   }
 }
 

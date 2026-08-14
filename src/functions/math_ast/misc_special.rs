@@ -1862,11 +1862,10 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Plus".to_string(),
         args: vec![
           Expr::Real(re),
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Real(im), Expr::Identifier("I".to_string())]
-              .into(),
-          },
+          call(
+            "Times",
+            vec![Expr::Real(im), Expr::Identifier("I".to_string())],
+          ),
         ]
         .into(),
       })
@@ -1914,11 +1913,10 @@ fn wigner_d_symbolic(
       let num = (2.0 * coef).round() as i128;
       Some(call("Rational", vec![Expr::Integer(num), Expr::Integer(2)]))?
     };
-    let exponent = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Identifier("I".to_string()), coef_expr, ang.clone()]
-        .into(),
-    };
+    let exponent = call(
+      "Times",
+      vec![Expr::Identifier("I".to_string()), coef_expr, ang.clone()],
+    );
     Some(call(
       "Power",
       vec![Expr::Constant("E".to_string()), exponent],

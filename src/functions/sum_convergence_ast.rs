@@ -27,13 +27,7 @@ pub fn sum_convergence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && matches!(&base, Expr::Identifier(b) if *b != n_var)
   {
     return Ok(Expr::Comparison {
-      operands: vec![
-        Expr::FunctionCall {
-          name: "Abs".to_string(),
-          args: vec![base.clone()].into(),
-        },
-        Expr::Integer(1),
-      ],
+      operands: vec![call1("Abs", base.clone()), Expr::Integer(1)],
       operators: vec![ComparisonOp::Less],
     });
   }
@@ -43,13 +37,7 @@ pub fn sum_convergence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(p) = negated_symbol(&exp, &n_var)
   {
     return Ok(Expr::Comparison {
-      operands: vec![
-        Expr::FunctionCall {
-          name: "Re".to_string(),
-          args: vec![p].into(),
-        },
-        Expr::Integer(1),
-      ],
+      operands: vec![call1("Re", p), Expr::Integer(1)],
       operators: vec![ComparisonOp::Greater],
     });
   }
@@ -248,12 +236,11 @@ fn poly_degree(expr: &Expr, var: &str) -> Option<i128> {
   if crate::functions::calculus_ast::is_constant_wrt(expr, var) {
     return None; // constants handled by the caller
   }
-  let coeff_list =
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "CoefficientList".to_string(),
-      args: vec![expr.clone(), Expr::Identifier(var.to_string())].into(),
-    })
-    .ok()?;
+  let coeff_list = crate::evaluator::evaluate_expr_to_expr(&call(
+    "CoefficientList",
+    vec![expr.clone(), Expr::Identifier(var.to_string())],
+  ))
+  .ok()?;
   match &coeff_list {
     Expr::List(items) if items.len() >= 2 => {
       let numeric = |e: &Expr| {

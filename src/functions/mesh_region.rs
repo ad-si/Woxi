@@ -123,20 +123,14 @@ impl Mesh {
       return self.cells[2]
         .iter()
         .filter_map(|face| self.points(face))
-        .map(|pts| Expr::FunctionCall {
-          name: "Polygon".to_string(),
-          args: vec![Expr::List(pts.into())].into(),
-        })
+        .map(|pts| call1("Polygon", Expr::List(pts.into())))
         .collect();
     }
     if self.boundary
       && let Some(loop_indices) = self.boundary_loop()
       && let Some(pts) = self.points(&loop_indices)
     {
-      return vec![Expr::FunctionCall {
-        name: "Polygon".to_string(),
-        args: vec![Expr::List(pts.into())].into(),
-      }];
+      return vec![call1("Polygon", Expr::List(pts.into()))];
     }
     Vec::new()
   }
@@ -204,10 +198,7 @@ impl Mesh {
     if d == 0 && self.cells[0].is_empty() {
       return Some(
         (1..=self.coordinates.len())
-          .map(|i| Expr::FunctionCall {
-            name: "Point".to_string(),
-            args: vec![Expr::Integer(i as i128)].into(),
-          })
+          .map(|i| call1("Point", Expr::Integer(i as i128)))
           .collect(),
       );
     }
@@ -339,10 +330,7 @@ pub fn mesh_perimeter(mesh: &Mesh) -> Option<Expr> {
   let mut lengths = Vec::with_capacity(edges.len());
   for [a, b] in edges {
     let pts = mesh.points(&[a, b])?;
-    let line = Expr::FunctionCall {
-      name: "Line".to_string(),
-      args: vec![Expr::List(pts.into())].into(),
-    };
+    let line = call1("Line", Expr::List(pts.into()));
     lengths.push(
       crate::evaluator::evaluate_function_call_ast(
         "ArcLength",

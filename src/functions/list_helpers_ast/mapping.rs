@@ -87,11 +87,10 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
           ]
           .into(),
         );
-        return Ok(Expr::FunctionCall {
-          name: "SparseArray".to_string(),
-          args: vec![ca[0].clone(), ca[1].clone(), new_default, new_structure]
-            .into(),
-        });
+        return Ok(call(
+          "SparseArray",
+          vec![ca[0].clone(), ca[1].clone(), new_default, new_structure],
+        ));
       }
       // Rank >= 2 (or an unrecognized structure): densify and map as a list.
       let dense =
@@ -150,10 +149,10 @@ pub fn map_with_level_ast(
       } else if let Some(n) = expr_to_i128(&items[0]) {
         (n as i64, n as i64, false)
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "Map".to_string(),
-          args: vec![func.clone(), expr.clone(), level_spec.clone()].into(),
-        });
+        return Ok(call(
+          "Map",
+          vec![func.clone(), expr.clone(), level_spec.clone()],
+        ));
       }
     }
     Expr::List(items) if items.len() == 2 => {
@@ -175,10 +174,10 @@ pub fn map_with_level_ast(
       {
         return map_with_heads(func, expr);
       }
-      return Ok(Expr::FunctionCall {
-        name: "Map".to_string(),
-        args: vec![func.clone(), expr.clone(), level_spec.clone()].into(),
-      });
+      return Ok(call(
+        "Map",
+        vec![func.clone(), expr.clone(), level_spec.clone()],
+      ));
     }
     // Also handle FunctionCall("Rule", ...) form
     Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
@@ -188,16 +187,16 @@ pub fn map_with_level_ast(
       {
         return map_with_heads(func, expr);
       }
-      return Ok(Expr::FunctionCall {
-        name: "Map".to_string(),
-        args: vec![func.clone(), expr.clone(), level_spec.clone()].into(),
-      });
+      return Ok(call(
+        "Map",
+        vec![func.clone(), expr.clone(), level_spec.clone()],
+      ));
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Map".to_string(),
-        args: vec![func.clone(), expr.clone(), level_spec.clone()].into(),
-      });
+      return Ok(call(
+        "Map",
+        vec![func.clone(), expr.clone(), level_spec.clone()],
+      ));
     }
   };
 
@@ -256,10 +255,7 @@ fn rewrap(head: &str, children: Vec<Expr>) -> Expr {
   if head == "List" {
     Expr::List(children.into())
   } else {
-    Expr::FunctionCall {
-      name: head.to_string(),
-      args: children.into(),
-    }
+    call(head, children)
   }
 }
 
@@ -507,10 +503,8 @@ fn map_at_rebuilt(
   list: &Expr,
   pos_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Expr::FunctionCall {
-    name: "MapAt".to_string(),
-    args: vec![func.clone(), list.clone(), pos_spec.clone()].into(),
-  };
+  let unevaluated =
+    || call("MapAt", vec![func.clone(), list.clone(), pos_spec.clone()]);
   // The reported part is the specification as written, so an `All` or a Span
   // is echoed rather than one of the positions it expanded to.
   let partw_parts = |parts: &[String]| {
@@ -987,13 +981,7 @@ pub fn map_indexed_ast(
       let new_pairs: Result<Vec<(Expr, Expr)>, _> = pairs
         .iter()
         .map(|(k, v)| {
-          let index = Expr::List(
-            vec![Expr::FunctionCall {
-              name: "Key".to_string(),
-              args: vec![k.clone()].into(),
-            }]
-            .into(),
-          );
+          let index = Expr::List(vec![call1("Key", k.clone())].into());
           apply_func_to_two_args(func, v, &index).map(|r| (k.clone(), r))
         })
         .collect();
@@ -1007,10 +995,7 @@ pub fn map_indexed_ast(
     | Expr::BigFloat(_, _)
     | Expr::String(_) => return Ok(list.clone()),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "MapIndexed".to_string(),
-        args: vec![func.clone(), list.clone()].into(),
-      });
+      return Ok(call("MapIndexed", vec![func.clone(), list.clone()]));
     }
   };
 
@@ -1086,10 +1071,10 @@ pub fn map_indexed_with_level_ast(
     }
   };
   let uneval = || {
-    Ok(Expr::FunctionCall {
-      name: "MapIndexed".to_string(),
-      args: vec![func.clone(), expr.clone(), level_spec.clone()].into(),
-    })
+    Ok(call(
+      "MapIndexed",
+      vec![func.clone(), expr.clone(), level_spec.clone()],
+    ))
   };
   // Parse level spec: n = {1, n}, {n} = exactly level n, {min, max}.
   let (min_level, max_level) = match level_spec {
@@ -1474,10 +1459,7 @@ pub fn map_thread_ast(
     if let Some(n) = level {
       args.push(Expr::Integer(n as i128));
     }
-    Expr::FunctionCall {
-      name: "MapThread".to_string(),
-      args: args.into(),
-    }
+    call("MapThread", args)
   };
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
@@ -1922,10 +1904,7 @@ pub fn through_ast(
         Expr::List(items) => ("List", items.as_slice()),
         _ => {
           // Not a compound head - return unevaluated
-          return Ok(Expr::FunctionCall {
-            name: "Through".to_string(),
-            args: vec![expr.clone()].into(),
-          });
+          return Ok(call1("Through", expr.clone()));
         }
       };
 
@@ -1953,10 +1932,7 @@ pub fn through_ast(
       if head_name == "List" {
         Ok(Expr::List(threaded.into()))
       } else {
-        Ok(Expr::FunctionCall {
-          name: head_name.to_string(),
-          args: threaded.into(),
-        })
+        Ok(call(head_name, threaded))
       }
     }
     _ => {
@@ -1965,10 +1941,7 @@ pub fn through_ast(
         Ok(expr.clone())
       } else {
         // Not a curried call - return unevaluated
-        Ok(Expr::FunctionCall {
-          name: "Through".to_string(),
-          args: vec![expr.clone()].into(),
-        })
+        Ok(call1("Through", expr.clone()))
       }
     }
   }
@@ -2016,10 +1989,7 @@ pub fn comap_apply_ast(
 ) -> Result<Expr, InterpreterError> {
   // Synthetic pure function `Apply[#1, args]` applied to each element of `funs`.
   let applier = Expr::Function {
-    body: Box::new(Expr::FunctionCall {
-      name: "Apply".to_string(),
-      args: vec![Expr::Slot(1), args.clone()].into(),
-    }),
+    body: Box::new(call("Apply", vec![Expr::Slot(1), args.clone()])),
   };
   map_ast(&applier, funs)
 }

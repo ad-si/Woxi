@@ -170,52 +170,30 @@ fn poly_to_expr(p: &Poly, vars: &[String]) -> Expr {
       if e == 1 {
         factors.push(Expr::Identifier(vars[j].clone()));
       } else if e > 1 {
-        factors.push(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::Identifier(vars[j].clone())),
-          right: Box::new(Expr::Integer(e as i128)),
-        });
+        factors.push(pow2(
+          Expr::Identifier(vars[j].clone()),
+          Expr::Integer(e as i128),
+        ));
       }
     }
     let coeff = if d == 1 {
       Expr::Integer(n)
     } else {
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(n), Expr::Integer(d)].into(),
-      }
+      call("Rational", vec![Expr::Integer(n), Expr::Integer(d)])
     };
     let term = if factors.is_empty() {
       coeff
     } else {
-      let mono_expr = factors
-        .into_iter()
-        .reduce(|a, b| Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(a),
-          right: Box::new(b),
-        })
-        .unwrap();
+      let mono_expr = factors.into_iter().reduce(times2).unwrap();
       if n == 1 && d == 1 {
         mono_expr
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(coeff),
-          right: Box::new(mono_expr),
-        }
+        times2(coeff, mono_expr)
       }
     };
     terms.push(term);
   }
-  let sum = terms
-    .into_iter()
-    .reduce(|a, b| Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(a),
-      right: Box::new(b),
-    })
-    .unwrap();
+  let sum = terms.into_iter().reduce(plus2).unwrap();
   crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum)
 }
 
@@ -233,11 +211,8 @@ pub fn polynomial_reduce_multivar(
     return None;
   }
   let expand = |e: &Expr| -> Expr {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Expand".to_string(),
-      args: vec![e.clone()].into(),
-    })
-    .unwrap_or_else(|_| e.clone())
+    crate::evaluator::evaluate_expr_to_expr(&call1("Expand", e.clone()))
+      .unwrap_or_else(|_| e.clone())
   };
 
   let mut p = expr_to_poly(&expand(dividend), vars)?;
@@ -370,10 +345,7 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut basis: Vec<Poly> = Vec::new();
   for p in &polys_in {
     let expanded =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Expand".to_string(),
-        args: vec![p.clone()].into(),
-      })?;
+      crate::evaluator::evaluate_expr_to_expr(&call1("Expand", p.clone()))?;
     match expr_to_poly(&expanded, &vars) {
       Some(poly) if !poly.is_empty() => basis.push(poly),
       Some(_) => {} // zero polynomial contributes nothing
@@ -517,28 +489,21 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if e == 1 {
             factors.push(Expr::Identifier(vars[vi].clone()));
           } else if e > 1 {
-            factors.push(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(Expr::Identifier(vars[vi].clone())),
-              right: Box::new(Expr::Integer(e as i128)),
-            });
+            factors.push(pow2(
+              Expr::Identifier(vars[vi].clone()),
+              Expr::Integer(e as i128),
+            ));
           }
         }
         terms.push(match factors.len() {
           1 => factors.remove(0),
-          _ => Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: factors.into(),
-          },
+          _ => call("Times", factors),
         });
       }
       let sum = if terms.len() == 1 {
         terms.remove(0)
       } else {
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: terms.into(),
-        }
+        call("Plus", terms)
       };
       crate::evaluator::evaluate_expr_to_expr(&sum).ok()
     })();

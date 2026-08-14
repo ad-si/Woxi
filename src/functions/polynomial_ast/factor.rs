@@ -77,10 +77,7 @@ fn reorder_factored_product(result: Expr) -> Expr {
     operand,
   } = &result
   {
-    return Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(reorder_factored_product(operand.as_ref().clone())),
-    };
+    return neg1(reorder_factored_product(operand.as_ref().clone()));
   }
   let is_times = matches!(
     &result,
@@ -165,11 +162,7 @@ fn reorder_factored_product(result: Expr) -> Expr {
   }
   factors
     .into_iter()
-    .reduce(|acc, f| Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(acc),
-      right: Box::new(f),
-    })
+    .reduce(times2)
     .expect("non-empty factor list")
 }
 
@@ -223,11 +216,10 @@ fn factor_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if !matches!(&den, Expr::Integer(1)) {
       let factored_num = factor_ast(&[num])?;
       let factored_den = factor_ast(&[den])?;
-      return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(factored_num),
-        right: Box::new(factored_den),
-      });
+      return crate::evaluator::evaluate_expr_to_expr(&div2(
+        factored_num,
+        factored_den,
+      ));
     }
   }
 
@@ -259,11 +251,10 @@ fn factor_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if !matches!(&den, Expr::Integer(1)) {
       let factored_num = factor_ast(&[num])?;
       let factored_den = factor_ast(&[den])?;
-      return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(factored_num),
-        right: Box::new(factored_den),
-      });
+      return crate::evaluator::evaluate_expr_to_expr(&div2(
+        factored_num,
+        factored_den,
+      ));
     }
   }
 
@@ -281,11 +272,10 @@ fn factor_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if !matches!(&den, Expr::Integer(1)) {
       let factored_num = factor_ast(&[num])?;
       let factored_den = factor_ast(&[den])?;
-      return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(factored_num),
-        right: Box::new(factored_den),
-      });
+      return crate::evaluator::evaluate_expr_to_expr(&div2(
+        factored_num,
+        factored_den,
+      ));
     }
   }
 
@@ -365,11 +355,7 @@ fn factor_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if count == 1 {
           factor
         } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(factor),
-            right: Box::new(Expr::Integer(count)),
-          }
+          pow2(factor, Expr::Integer(count))
         }
       })
       .collect()
@@ -397,10 +383,7 @@ fn factor_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // overall == -1: wolframscript negates the whole factored product,
   // e.g. -((2 + x)*(3 + x)) and -(1 + x)^2.
   if overall == -1 {
-    return Ok(Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(product),
-    });
+    return Ok(neg1(product));
   }
 
   // overall == 1: just the factored product.
@@ -497,11 +480,10 @@ pub fn factor_integer_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
     // Try rational root theorem
     if let Some(root) = find_integer_root(&remaining) {
       // Factor out (x - root) which in canonical form is (root_neg + x) → (-root + x)
-      factors.push(Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Integer(-root)),
-        right: Box::new(Expr::Identifier(var.to_string())),
-      });
+      factors.push(plus2(
+        Expr::Integer(-root),
+        Expr::Identifier(var.to_string()),
+      ));
       remaining = divide_by_root(&remaining, root);
     } else {
       // No integer root. Try a non-integer rational root p/q: factor out the
@@ -667,26 +649,14 @@ fn linear_to_expr(c0: i128, c1: i128, var: &str) -> Expr {
     if c0 == 0 {
       Expr::Identifier(var.to_string())
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Integer(c0)),
-        right: Box::new(Expr::Identifier(var.to_string())),
-      }
+      plus2(Expr::Integer(c0), Expr::Identifier(var.to_string()))
     }
   } else {
-    let var_part = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(c1)),
-      right: Box::new(Expr::Identifier(var.to_string())),
-    };
+    let var_part = times2(Expr::Integer(c1), Expr::Identifier(var.to_string()));
     if c0 == 0 {
       var_part
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Integer(c0)),
-        right: Box::new(var_part),
-      }
+      plus2(Expr::Integer(c0), var_part)
     }
   }
 }
@@ -1160,11 +1130,10 @@ fn factor_sub_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
   let mut remaining = coeffs.to_vec();
   let mut factors: Vec<Expr> = Vec::new();
   while let Some(root) = find_integer_root(&remaining) {
-    factors.push(Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(Expr::Integer(-root)),
-      right: Box::new(Expr::Identifier(var.to_string())),
-    });
+    factors.push(plus2(
+      Expr::Integer(-root),
+      Expr::Identifier(var.to_string()),
+    ));
     remaining = divide_by_root(&remaining, root);
     if remaining.len() <= 1 {
       break;
@@ -1845,11 +1814,7 @@ fn divide_terms_by(
     } else {
       let mut product = var_factors[0].clone();
       for f in &var_factors[1..] {
-        product = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(product),
-          right: Box::new(f.clone()),
-        };
+        product = times2(product, f.clone());
       }
       Some(product)
     };
@@ -1861,15 +1826,8 @@ fn divide_terms_by(
       None => Expr::Integer(new_n),
       Some(v) => match new_n {
         1 => v,
-        -1 => Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(v),
-        },
-        _ => Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(new_n)),
-          right: Box::new(v),
-        },
+        -1 => neg1(v),
+        _ => times2(Expr::Integer(new_n), v),
       },
     };
 
@@ -1910,21 +1868,17 @@ pub(crate) fn factor_terms_numeric(
   let factor = if den_lcm == 1 {
     Expr::Integer(num_gcd)
   } else {
-    Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(num_gcd), Expr::Integer(den_lcm)].into(),
-    }
+    call(
+      "Rational",
+      vec![Expr::Integer(num_gcd), Expr::Integer(den_lcm)],
+    )
   };
 
   // Return factor * inner (or just inner if factor is 1)
   if matches!(&factor, Expr::Integer(1)) {
     inner
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(factor),
-      right: Box::new(inner),
-    }
+    times2(factor, inner)
   }
 }
 
@@ -2029,21 +1983,12 @@ fn factor_terms_wrt_var(expr: &Expr, var: &str) -> crate::syntax::Expr {
             let var_power = if *power == 0 {
               q_expr
             } else if *power == 1 {
-              Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(q_expr),
-                right: Box::new(Expr::Identifier(var.to_string())),
-              }
+              times2(q_expr, Expr::Identifier(var.to_string()))
             } else {
-              Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(q_expr),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Power,
-                  left: Box::new(Expr::Identifier(var.to_string())),
-                  right: Box::new(Expr::Integer(*power)),
-                }),
-              }
+              times2(
+                q_expr,
+                pow2(Expr::Identifier(var.to_string()), Expr::Integer(*power)),
+              )
             };
             new_terms.push(var_power);
           }
@@ -2058,11 +2003,7 @@ fn factor_terms_wrt_var(expr: &Expr, var: &str) -> crate::syntax::Expr {
         let inner_terms = collect_additive_terms(&inner);
         let factored_inner = factor_terms_numeric(&inner, &inner_terms);
 
-        return Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(factored_gcd),
-          right: Box::new(factored_inner),
-        };
+        return times2(factored_gcd, factored_inner);
       }
     }
   }
@@ -2223,11 +2164,7 @@ fn multivariate_square_free(
       out.push(Some(if exp == 1 {
         base
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(base),
-          right: Box::new(Expr::Integer(exp)),
-        }
+        pow2(base, Expr::Integer(exp))
       }));
       continue;
     }
@@ -2256,11 +2193,7 @@ fn multivariate_square_free(
     out[slot] = Some(if e == 1 {
       prod
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(prod),
-        right: Box::new(Expr::Integer(e)),
-      }
+      pow2(prod, Expr::Integer(e))
     });
   }
   let mut out_factors: Vec<Expr> = out.into_iter().flatten().collect();
@@ -2269,14 +2202,7 @@ fn multivariate_square_free(
   } else {
     build_product(out_factors)
   };
-  Ok(if negated {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(result),
-    }
-  } else {
-    result
-  })
+  Ok(if negated { neg1(result) } else { result })
 }
 
 /// FactorSquareFree[poly] - Square-free factorization via Yun's algorithm
@@ -2542,10 +2468,10 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
   if negate {
     // handled by a UnaryOp wrapper below
   } else if cden != 1 {
-    factors.push(Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(cnum), Expr::Integer(cden)].into(),
-    });
+    factors.push(call(
+      "Rational",
+      vec![Expr::Integer(cnum), Expr::Integer(cden)],
+    ));
   } else if cnum != 1 {
     factors.push(Expr::Integer(cnum));
   }
@@ -2553,11 +2479,7 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
     factors.push(if exp == 1 {
       base
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(base),
-        right: Box::new(Expr::Integer(exp)),
-      }
+      pow2(base, Expr::Integer(exp))
     });
   }
   if factors.is_empty() {
@@ -2569,14 +2491,7 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
     build_product(factors)
   };
   let product = reorder_factored_product(product);
-  Ok(Some(if negate {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(product),
-    }
-  } else {
-    product
-  }))
+  Ok(Some(if negate { neg1(product) } else { product }))
 }
 
 pub fn factor_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -2688,11 +2603,7 @@ fn factor_square_free_ast_impl(
     if *mult == 1 {
       result_factors.push(factor_expr);
     } else {
-      result_factors.push(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(factor_expr),
-        right: Box::new(Expr::Integer(*mult)),
-      });
+      result_factors.push(pow2(factor_expr, Expr::Integer(*mult)));
     }
   }
 
@@ -2705,14 +2616,7 @@ fn factor_square_free_ast_impl(
   } else {
     build_product(result_factors)
   };
-  Ok(if negate {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(product),
-    }
-  } else {
-    product
-  })
+  Ok(if negate { neg1(product) } else { product })
 }
 
 /// FactorSquareFreeList[poly] - returns {{f1, e1}, {f2, e2}, ...}
@@ -3046,12 +2950,8 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
         operand,
       } => {
         let inner = divide_term(operand, div);
-        times_ast(&[Expr::Integer(-1), inner]).unwrap_or_else(|_| {
-          Expr::UnaryOp {
-            op: UnaryOperator::Minus,
-            operand: Box::new(divide_term(operand, div)),
-          }
-        })
+        times_ast(&[Expr::Integer(-1), inner])
+          .unwrap_or_else(|_| neg1(divide_term(operand, div)))
       }
       Expr::FunctionCall { name, args } if name == "Times" => {
         let mut new_args = Vec::with_capacity(args.len());
@@ -3191,10 +3091,10 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           content = if den_lcm == 1 {
             Expr::Integer(num_gcd)
           } else {
-            Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(num_gcd), Expr::Integer(den_lcm)].into(),
-            }
+            call(
+              "Rational",
+              vec![Expr::Integer(num_gcd), Expr::Integer(den_lcm)],
+            )
           };
         }
       }
@@ -3249,10 +3149,10 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let content = if den_lcm == 1 {
         Expr::Integer(num_gcd)
       } else {
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(num_gcd), Expr::Integer(den_lcm)].into(),
-        }
+        call(
+          "Rational",
+          vec![Expr::Integer(num_gcd), Expr::Integer(den_lcm)],
+        )
       };
       if args.len() == 2 {
         // The var-dependent primitive goes in the third slot; a
@@ -3281,10 +3181,7 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if var_factors.len() == 1 {
         var_factors.into_iter().next().unwrap()
       } else {
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: var_factors.into(),
-        }
+        call("Times", var_factors)
       };
       return Ok(Expr::List(
         vec![num_coeff, non_var, Expr::Integer(1)].into(),
@@ -3347,26 +3244,14 @@ fn int_coeffs_to_canonical_expr(coeffs: &[i128], var: &str) -> Expr {
       let x_pow = if i == 1 {
         var_expr.clone()
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(var_expr.clone()),
-          right: Box::new(Expr::Integer(i as i128)),
-        }
+        pow2(var_expr.clone(), Expr::Integer(i as i128))
       };
       if c == 1 {
         x_pow
       } else if c == -1 {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(-1)),
-          right: Box::new(x_pow),
-        }
+        times2(Expr::Integer(-1), x_pow)
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(c)),
-          right: Box::new(x_pow),
-        }
+        times2(Expr::Integer(c), x_pow)
       }
     };
     terms.push(term);
@@ -3382,11 +3267,7 @@ fn int_coeffs_to_canonical_expr(coeffs: &[i128], var: &str) -> Expr {
   // Combine into Plus
   let mut result = terms.remove(0);
   for t in terms {
-    result = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(result),
-      right: Box::new(t),
-    };
+    result = plus2(result, t);
   }
 
   // Evaluate to canonical form
@@ -3513,21 +3394,19 @@ fn homogeneous_cyclotomic(d: u64, a: &str, b: &str) -> Expr {
     let a_pow = match k {
       0 => None,
       1 => Some(Expr::Identifier(a.to_string())),
-      _ => Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Identifier(a.to_string())),
-        right: Box::new(Expr::Integer(k as i128)),
-      }),
+      _ => Some(pow2(
+        Expr::Identifier(a.to_string()),
+        Expr::Integer(k as i128),
+      )),
     };
     let b_exp = deg - k;
     let b_pow = match b_exp {
       0 => None,
       1 => Some(Expr::Identifier(b.to_string())),
-      _ => Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Identifier(b.to_string())),
-        right: Box::new(Expr::Integer(b_exp as i128)),
-      }),
+      _ => Some(pow2(
+        Expr::Identifier(b.to_string()),
+        Expr::Integer(b_exp as i128),
+      )),
     };
     let mut factors: Vec<Expr> = Vec::new();
     if c.abs() != 1 {
@@ -3546,14 +3425,7 @@ fn homogeneous_cyclotomic(d: u64, a: &str, b: &str) -> Expr {
     } else {
       build_product(factors)
     };
-    let signed = if c < 0 {
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(body),
-      }
-    } else {
-      body
-    };
+    let signed = if c < 0 { neg1(body) } else { body };
     terms.push(signed);
   }
   let sum = if terms.len() == 1 {
@@ -3630,14 +3502,7 @@ fn try_factor_homogeneous_binomial(expr: &Expr) -> Option<Expr> {
   } else {
     build_product(factors)
   };
-  Some(if negated {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(product),
-    }
-  } else {
-    product
-  })
+  Some(if negated { neg1(product) } else { product })
 }
 
 /// Minimum integer coefficient across all additive terms of `expr`.
@@ -3967,11 +3832,10 @@ fn reverse_kronecker_coeffs(
       if primary_exp == 1 {
         factors.push(Expr::Identifier(primary.clone()));
       } else {
-        factors.push(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::Identifier(primary.clone())),
-          right: Box::new(Expr::Integer(primary_exp as i128)),
-        });
+        factors.push(pow2(
+          Expr::Identifier(primary.clone()),
+          Expr::Integer(primary_exp as i128),
+        ));
       }
     }
 
@@ -3983,11 +3847,10 @@ fn reverse_kronecker_coeffs(
         if exp == 1 {
           factors.push(Expr::Identifier(sec_var.clone()));
         } else {
-          factors.push(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(Expr::Identifier(sec_var.clone())),
-            right: Box::new(Expr::Integer(exp as i128)),
-          });
+          factors.push(pow2(
+            Expr::Identifier(sec_var.clone()),
+            Expr::Integer(exp as i128),
+          ));
         }
       }
     }
@@ -4052,11 +3915,10 @@ fn recombine_factors(
     let powered = if mult == 1 {
       candidate_expanded.clone()
     } else {
-      expand_and_combine(&Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(candidate_expanded.clone()),
-        right: Box::new(Expr::Integer(mult as i128)),
-      })
+      expand_and_combine(&pow2(
+        candidate_expanded.clone(),
+        Expr::Integer(mult as i128),
+      ))
     };
     if exprs_equal(&powered, &original_expanded) {
       return Some(vec![(candidate, mult)]);
@@ -4098,11 +3960,8 @@ fn recombine_factors(
           reverse_kronecker_coeffs(&right_coeffs, sorted_vars, d);
 
         // Verify: expand(left * right) == original
-        let product = expand_and_combine(&Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(left_expr.clone()),
-          right: Box::new(right_expr.clone()),
-        });
+        let product =
+          expand_and_combine(&times2(left_expr.clone(), right_expr.clone()));
 
         if exprs_equal(&product, &original_expanded) {
           // Valid partition! Now recursively try to factor each side.
@@ -4285,11 +4144,10 @@ fn extract_common_monomial(
           if reduced_exp == 1 {
             factors.push(Expr::Identifier(sorted_vars[i].clone()));
           } else {
-            factors.push(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(Expr::Identifier(sorted_vars[i].clone())),
-              right: Box::new(Expr::Integer(reduced_exp)),
-            });
+            factors.push(pow2(
+              Expr::Identifier(sorted_vars[i].clone()),
+              Expr::Integer(reduced_exp),
+            ));
           }
         }
       }
@@ -4492,11 +4350,7 @@ fn build_multivariate_result(overall: i128, factors: &[(Expr, usize)]) -> Expr {
     if *mult == 1 {
       result_factors.push(factor.clone());
     } else {
-      result_factors.push(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(factor.clone()),
-        right: Box::new(Expr::Integer(*mult as i128)),
-      });
+      result_factors.push(pow2(factor.clone(), Expr::Integer(*mult as i128)));
     }
   }
 

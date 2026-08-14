@@ -157,11 +157,7 @@ pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Sum all coefficient contributions
     let mut result = coeff_sum.remove(0);
     for c in coeff_sum {
-      result = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(result),
-        right: Box::new(c),
-      };
+      result = plus2(result, c);
     }
     Ok(simplify(result))
   }
@@ -277,10 +273,7 @@ fn negate_factor(expr: &Expr) -> Expr {
   match expr {
     Expr::Integer(n) => Expr::Integer(-n),
     Expr::Real(r) => Expr::Real(-r),
-    _ => Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(expr.clone()),
-    },
+    _ => neg1(expr.clone()),
   }
 }
 
@@ -334,11 +327,7 @@ fn coefficient_of_general_form(
   }
   let mut result = contributions.remove(0);
   for c in contributions {
-    result = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(result),
-      right: Box::new(c),
-    };
+    result = plus2(result, c);
   }
   simplify(result)
 }
@@ -382,11 +371,7 @@ fn coefficient_of_monomial(
   } else {
     let mut result = coeff_sum.remove(0);
     for c in coeff_sum {
-      result = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(result),
-        right: Box::new(c),
-      };
+      result = plus2(result, c);
     }
     simplify(result)
   }
@@ -645,10 +630,7 @@ pub fn collect_additive_terms(expr: &Expr) -> Vec<Expr> {
       _ => {
         let mut term = cur.clone();
         for _ in 0..neg {
-          term = Expr::UnaryOp {
-            op: UnaryOperator::Minus,
-            operand: Box::new(term),
-          };
+          term = neg1(term);
         }
         terms.push(term);
       }
@@ -725,13 +707,7 @@ pub fn term_var_power_and_coeff(term: &Expr, var: &str) -> (i128, Expr) {
       operand,
     } => {
       let (p, c) = term_var_power_and_coeff(operand, var);
-      (
-        p,
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(c),
-        },
-      )
+      (p, neg1(c))
     }
     // c / x^k → exponent -k with coefficient c (2/x → (-1, 2)); only a
     // pure var-power denominator with a constant numerator is safe —
@@ -821,24 +797,14 @@ pub fn term_var_power_and_coeff(term: &Expr, var: &str) -> (i128, Expr) {
 /// BigInteger-aware fallback when an i128 product overflows (e.g. the binomial
 /// coefficients of `Expand[(1 + x)^200]` exceed i128).
 fn times_via_ast(a: &Expr, b: &Expr) -> Expr {
-  crate::functions::math_ast::times_ast(&[a.clone(), b.clone()]).unwrap_or_else(
-    |_| Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(a.clone()),
-      right: Box::new(b.clone()),
-    },
-  )
+  crate::functions::math_ast::times_ast(&[a.clone(), b.clone()])
+    .unwrap_or_else(|_| times2(a.clone(), b.clone()))
 }
 
 /// BigInteger-aware fallback when an i128 sum overflows.
 fn plus_via_ast(a: &Expr, b: &Expr) -> Expr {
-  crate::functions::math_ast::plus_ast(&[a.clone(), b.clone()]).unwrap_or_else(
-    |_| Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(a.clone()),
-      right: Box::new(b.clone()),
-    },
-  )
+  crate::functions::math_ast::plus_ast(&[a.clone(), b.clone()])
+    .unwrap_or_else(|_| plus2(a.clone(), b.clone()))
 }
 
 /// True for an integer scalar (machine or BigInteger).
@@ -859,11 +825,7 @@ pub fn multiply_exprs(a: &Expr, b: &Expr) -> Expr {
     },
     // Any other pair of integers (involving BigInteger) multiplies exactly.
     _ if is_int_scalar(a) && is_int_scalar(b) => times_via_ast(a, b),
-    _ => Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(a.clone()),
-      right: Box::new(b.clone()),
-    },
+    _ => times2(a.clone(), b.clone()),
   }
 }
 
@@ -879,11 +841,7 @@ pub fn add_exprs(a: &Expr, b: &Expr) -> Expr {
     },
     // Any other pair of integers (involving BigInteger) adds exactly.
     _ if is_int_scalar(a) && is_int_scalar(b) => plus_via_ast(a, b),
-    _ => Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(a.clone()),
-      right: Box::new(b.clone()),
-    },
+    _ => plus2(a.clone(), b.clone()),
   }
 }
 
@@ -1080,10 +1038,10 @@ pub fn coefficient_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Variables[poly] (whose ordering already matches Wolfram) and delegates to
   // the two-argument form.
   if args.len() == 1 {
-    let vars = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Variables".to_string(),
-      args: vec![args[0].clone()].into(),
-    })?;
+    let vars = crate::evaluator::evaluate_expr_to_expr(&call1(
+      "Variables",
+      args[0].clone(),
+    ))?;
     return coefficient_rules_ast(&[args[0].clone(), vars]);
   }
   if args.len() != 2 {
@@ -1244,22 +1202,11 @@ pub fn from_coefficient_rules_ast(
       let factor = if e == 1 {
         var.clone()
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(var.clone()),
-          right: Box::new(Expr::Integer(e)),
-        }
+        pow2(var.clone(), Expr::Integer(e))
       };
       factors.push(factor);
     }
-    let term = factors
-      .into_iter()
-      .reduce(|a, b| Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(a),
-        right: Box::new(b),
-      })
-      .unwrap();
+    let term = factors.into_iter().reduce(times2).unwrap();
     terms.push(term);
   }
 
@@ -1267,14 +1214,7 @@ pub fn from_coefficient_rules_ast(
     return Ok(Expr::Integer(0));
   }
 
-  let sum = terms
-    .into_iter()
-    .reduce(|a, b| Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(a),
-      right: Box::new(b),
-    })
-    .unwrap();
+  let sum = terms.into_iter().reduce(plus2).unwrap();
   crate::evaluator::evaluate_expr_to_expr(&sum)
 }
 
@@ -1289,10 +1229,8 @@ pub fn from_coefficient_rules_ast(
 /// expression is returned unchanged. CoefficientArrays extracts coefficients
 /// from the difference so that equations and plain polynomials behave alike.
 fn equation_to_poly(e: &Expr) -> Expr {
-  let subtract = |lhs: &Expr, rhs: &Expr| Expr::FunctionCall {
-    name: "Subtract".to_string(),
-    args: vec![lhs.clone(), rhs.clone()].into(),
-  };
+  let subtract =
+    |lhs: &Expr, rhs: &Expr| call("Subtract", vec![lhs.clone(), rhs.clone()]);
   match e {
     Expr::Comparison {
       operands,
@@ -1654,10 +1592,7 @@ fn build_sparse_array_multi(
       // c_0's stored value is `Plus[0, coef]` — wolframscript's quirk
       // surfaces this accumulator as `0 + value` in the printed form.
       let value = if d == 0 {
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![Expr::Integer(0), coef.clone()].into(),
-        }
+        call("Plus", vec![Expr::Integer(0), coef.clone()])
       } else {
         coef.clone()
       };

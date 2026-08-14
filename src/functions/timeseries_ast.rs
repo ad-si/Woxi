@@ -252,14 +252,10 @@ pub fn time_series_moving_average_ast(
   let mut out = Vec::with_capacity(pairs.len() + 1 - n);
   for window in pairs.windows(n) {
     let values: Vec<Expr> = window.iter().map(|(_, v)| v.clone()).collect();
-    let mean = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "N".to_string(),
-      args: vec![Expr::FunctionCall {
-        name: "Mean".to_string(),
-        args: vec![Expr::List(values.into())].into(),
-      }]
-      .into(),
-    })?;
+    let mean = crate::evaluator::evaluate_expr_to_expr(&call(
+      "N",
+      vec![call1("Mean", Expr::List(values.into()))],
+    ))?;
     out.push(Expr::List(vec![window[n - 1].0.clone(), mean].into()));
   }
   Ok(rebuild_series(&args[0], out))
@@ -283,11 +279,7 @@ pub fn try_series_arithmetic(head: &str, args: &[Expr]) -> Option<Expr> {
       }
     }
     let combined =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: head.to_string(),
-        args: point_args.into(),
-      })
-      .ok()?;
+      crate::evaluator::evaluate_expr_to_expr(&call(head, point_args)).ok()?;
     out.push(Expr::List(vec![time.clone(), combined].into()));
   }
   Some(rebuild_series(&args[first], out))
@@ -606,17 +598,11 @@ fn rebuild_series(source: &Expr, path: Vec<Expr>) -> Expr {
     Expr::FunctionCall { name, .. } if name == "EventSeries" => "EventSeries",
     _ => "TimeSeries",
   };
-  Expr::FunctionCall {
-    name: head.to_string(),
-    args: vec![Expr::List(path.into())].into(),
-  }
+  call1(head, Expr::List(path.into()))
 }
 
 fn time_series(pairs: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: "TimeSeries".to_string(),
-    args: vec![Expr::List(pairs.into())].into(),
-  }
+  call1("TimeSeries", Expr::List(pairs.into()))
 }
 
 /// Return the `{{date, value}, ...}` pairs of a canonical `TimeSeries`.
@@ -780,10 +766,7 @@ pub fn time_series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             };
             key(a).total_cmp(&key(b))
           });
-          return Ok(Expr::FunctionCall {
-            name: "TimeSeries".to_string(),
-            args: vec![Expr::List(pairs.into())].into(),
-          });
+          return Ok(call1("TimeSeries", Expr::List(pairs.into())));
         }
         return Ok(echo());
       }
@@ -962,10 +945,10 @@ fn minimum_increment(pairs: &[(Expr, Expr)]) -> Option<Expr> {
 /// Evaluate a two-argument arithmetic head on expressions, so resampled times
 /// and interpolated values stay exact when the inputs are.
 fn arith(head: &str, a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: head.to_string(),
-    args: vec![a.clone(), b.clone()].into(),
-  })
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    head,
+    vec![a.clone(), b.clone()],
+  ))
 }
 
 /// The sample times a resampling specification asks for. `None` for the spec
@@ -1083,12 +1066,10 @@ fn interpolate_exact(
   if let Some(i) = times.iter().position(|t| (t - qt).abs() < 1e-9) {
     let value = &pairs[i].1;
     if matches!(q, Expr::Real(_)) {
-      return Ok(Some(crate::evaluator::evaluate_expr_to_expr(
-        &Expr::FunctionCall {
-          name: "N".to_string(),
-          args: vec![value.clone()].into(),
-        },
-      )?));
+      return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&call1(
+        "N",
+        value.clone(),
+      ))?));
     }
     return Ok(Some(value.clone()));
   }
@@ -1518,10 +1499,7 @@ pub fn event_series_accumulate_ast(
       Expr::List(vec![stamp, Expr::Integer(i as i128 + 1)].into())
     })
     .collect();
-  Ok(Expr::FunctionCall {
-    name: "TimeSeries".to_string(),
-    args: vec![Expr::List(counted.into())].into(),
-  })
+  Ok(call1("TimeSeries", Expr::List(counted.into())))
 }
 
 #[cfg(test)]

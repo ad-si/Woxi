@@ -319,10 +319,7 @@ pub(super) fn coeffs_to_poly(coeffs: &[i128], var: &str, p: i128) -> Expr {
       if c == 1 {
         pow
       } else {
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(c), pow].into(),
-        }
+        call("Times", vec![Expr::Integer(c), pow])
       }
     };
     terms.push(term);
@@ -333,10 +330,7 @@ pub(super) fn coeffs_to_poly(coeffs: &[i128], var: &str, p: i128) -> Expr {
   let expr = if terms.len() == 1 {
     terms.into_iter().next().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: terms.into(),
-    }
+    call("Plus", terms)
   };
   crate::evaluator::evaluate_expr_to_expr(&expr).unwrap_or(expr)
 }
@@ -420,10 +414,7 @@ fn poly_gcd_pair(
     return Ok(a_prim);
   }
 
-  let result = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![content_gcd, a_prim].into(),
-  };
+  let result = call("Times", vec![content_gcd, a_prim]);
   crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(
     &crate::evaluator::evaluate_expr_to_expr(&result)?,
   ))
@@ -451,10 +442,7 @@ fn poly_integer_content(
       // Only include if it's a pure integer or rational
       match &c {
         Expr::Integer(_) | Expr::BigInteger(_) => {
-          let abs = Expr::FunctionCall {
-            name: "Abs".to_string(),
-            args: vec![c].into(),
-          };
+          let abs = call1("Abs", c);
           int_coeffs.push(crate::evaluator::evaluate_expr_to_expr(&abs)?);
         }
         Expr::BinaryOp {
@@ -462,10 +450,7 @@ fn poly_integer_content(
           ..
         } => {
           // Rational number - include it
-          let abs = Expr::FunctionCall {
-            name: "Abs".to_string(),
-            args: vec![c].into(),
-          };
+          let abs = call1("Abs", c);
           int_coeffs.push(crate::evaluator::evaluate_expr_to_expr(&abs)?);
         }
         _ => {
@@ -503,10 +488,7 @@ fn poly_divide_by_constant(
   let div = Expr::FunctionCall {
     name: "Times".to_string(),
     args: vec![
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![constant.clone(), Expr::Integer(-1)].into(),
-      },
+      call("Power", vec![constant.clone(), Expr::Integer(-1)]),
       poly.clone(),
     ]
     .into(),
@@ -556,10 +538,7 @@ fn normalize_poly_sign(
   };
 
   if is_negative {
-    let neg = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), poly.clone()].into(),
-    };
+    let neg = call("Times", vec![Expr::Integer(-1), poly.clone()]);
     crate::evaluator::evaluate_expr_to_expr(&neg)
   } else {
     Ok(poly.clone())
@@ -597,9 +576,6 @@ fn integer_gcd_multi(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute GCD of two integer/rational expressions
 fn integer_gcd_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
-  let gcd_expr = Expr::FunctionCall {
-    name: "GCD".to_string(),
-    args: vec![a.clone(), b.clone()].into(),
-  };
+  let gcd_expr = call("GCD", vec![a.clone(), b.clone()]);
   crate::evaluator::evaluate_expr_to_expr(&gcd_expr)
 }

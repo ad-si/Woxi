@@ -585,10 +585,7 @@ pub fn sort_by_with_ordering_ast(
           &[list.clone(), func.clone(), p.clone()],
         );
       }
-      Ok(Expr::FunctionCall {
-        name: "SortBy".to_string(),
-        args: vec![list.clone(), func.clone(), p.clone()].into(),
-      })
+      Ok(call("SortBy", vec![list.clone(), func.clone(), p.clone()]))
     }
   }
 }
@@ -666,10 +663,7 @@ pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
       if is_atomic_arg(other) {
         emit_nonatomic_normal_message("SortBy", &[list.clone(), func.clone()]);
       }
-      Ok(Expr::FunctionCall {
-        name: "SortBy".to_string(),
-        args: vec![list.clone(), func.clone()].into(),
-      })
+      Ok(call("SortBy", vec![list.clone(), func.clone()]))
     }
   }
 }
@@ -1116,10 +1110,7 @@ pub fn minimal_by_ast(
       if let Some(nv) = n {
         args.push(Expr::Integer(nv));
       }
-      return Ok(Expr::FunctionCall {
-        name: "MinimalBy".to_string(),
-        args: args.into(),
-      });
+      return Ok(call("MinimalBy", args));
     }
   };
 
@@ -1183,10 +1174,7 @@ pub fn maximal_by_ast(
       if let Some(nv) = n {
         args.push(Expr::Integer(nv));
       }
-      return Ok(Expr::FunctionCall {
-        name: "MaximalBy".to_string(),
-        args: args.into(),
-      });
+      return Ok(call("MaximalBy", args));
     }
   };
 
@@ -1319,10 +1307,7 @@ pub fn sort_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       if is_atomic_arg(other) {
         emit_nonatomic_normal_message("Sort", std::slice::from_ref(other));
       }
-      Ok(Expr::FunctionCall {
-        name: "Sort".to_string(),
-        args: vec![list.clone()].into(),
-      })
+      Ok(call1("Sort", list.clone()))
     }
   }
 }
@@ -1447,10 +1432,7 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
     } else {
       vec![Expr::Integer(1)]
     };
-    Some(Expr::FunctionCall {
-      name: "DirectedInfinity".to_string(),
-      args: dir.into(),
-    })
+    Some(call("DirectedInfinity", dir))
   };
   let a_inf = normalize_infinity(a);
   let b_inf = normalize_infinity(b);
@@ -1683,10 +1665,7 @@ fn int_base_power(e: &Expr) -> Option<((i128, i128), f64)> {
   let (base, exp) = match e {
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => (
       args[0].clone(),
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      },
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
     ),
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       (args[0].clone(), args[1].clone())
@@ -1757,10 +1736,7 @@ fn power_parts(e: &Expr) -> Option<(Expr, Expr)> {
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
       Some((
         args[0].clone(),
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-        },
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
       ))
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
@@ -1887,14 +1863,7 @@ fn sum_terms_list(e: &Expr) -> Option<Vec<Expr>> {
         collect(left, negate, out);
         collect(right, !negate, out);
       }
-      _ => out.push(if negate {
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand: Box::new(e.clone()),
-        }
-      } else {
-        e.clone()
-      }),
+      _ => out.push(if negate { neg1(e.clone()) } else { e.clone() }),
     }
   }
   if !matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")

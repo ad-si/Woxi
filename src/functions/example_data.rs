@@ -18,6 +18,8 @@
 
 use std::sync::LazyLock;
 
+#[allow(unused_imports)]
+use super::*;
 use crate::InterpreterError;
 use crate::syntax::{Expr, unevaluated};
 
@@ -132,9 +134,11 @@ fn network_graph_expr(g: &NetworkGraph) -> Expr {
   let edges: Vec<Expr> = g
     .edges
     .iter()
-    .map(|&(a, b)| Expr::FunctionCall {
-      name: "UndirectedEdge".to_string(),
-      args: vec![g.vertices[a].clone(), g.vertices[b].clone()].into(),
+    .map(|&(a, b)| {
+      call(
+        "UndirectedEdge",
+        vec![g.vertices[a].clone(), g.vertices[b].clone()],
+      )
     })
     .collect();
   Expr::FunctionCall {

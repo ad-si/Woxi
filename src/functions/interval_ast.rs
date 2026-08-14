@@ -249,11 +249,8 @@ pub fn coth_csch_interval(head: &str, expr: &Expr) -> Option<Expr> {
     return None;
   }
   let inf = || Expr::Identifier("Infinity".to_string());
-  let neg_inf = || Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(Expr::Integer(-1)),
-    right: Box::new(Expr::Identifier("Infinity".to_string())),
-  };
+  let neg_inf =
+    || times2(Expr::Integer(-1), Expr::Identifier("Infinity".to_string()));
   let eps = 1e-9;
   let spans = is_interval(expr)?;
   let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(spans.len());
@@ -329,11 +326,8 @@ pub fn tan_cot_interval(head: &str, expr: &Expr) -> Option<Expr> {
   };
   let period = std::f64::consts::PI;
   let inf = || Expr::Identifier("Infinity".to_string());
-  let neg_inf = || Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(Expr::Integer(-1)),
-    right: Box::new(Expr::Identifier("Infinity".to_string())),
-  };
+  let neg_inf =
+    || times2(Expr::Integer(-1), Expr::Identifier("Infinity".to_string()));
 
   let spans = is_interval(expr)?;
   let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(spans.len());
@@ -392,11 +386,8 @@ pub fn sec_csc_interval(head: &str, expr: &Expr) -> Option<Expr> {
     _ => return None,
   };
   let inf = || Expr::Identifier("Infinity".to_string());
-  let neg_inf = || Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left: Box::new(Expr::Integer(-1)),
-    right: Box::new(Expr::Identifier("Infinity".to_string())),
-  };
+  let neg_inf =
+    || times2(Expr::Integer(-1), Expr::Identifier("Infinity".to_string()));
   let fold_min =
     |v: &[Expr]| v.iter().cloned().reduce(|a, b| numeric_min(&a, &b));
   let fold_max =
@@ -571,10 +562,7 @@ fn make_interval(spans: Vec<(Expr, Expr)>) -> Expr {
     .into_iter()
     .map(|(lo, hi)| Expr::List(vec![lo, hi].into()))
     .collect();
-  Expr::FunctionCall {
-    name: "Interval".to_string(),
-    args: args.into(),
-  }
+  call("Interval", args)
 }
 
 /// Evaluate an arithmetic expression on two endpoints using the evaluator.
@@ -603,10 +591,7 @@ fn max_of_four(a: &Expr, b: &Expr, c: &Expr, d: &Expr) -> Expr {
 pub fn interval_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Interval[] → Interval[] (empty interval)
   if args.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "Interval".to_string(),
-      args: vec![].into(),
-    });
+    return Ok(call("Interval", vec![]));
   }
 
   let mut spans = Vec::new();
@@ -632,10 +617,7 @@ pub fn interval_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The union of nothing is the empty interval. The CenteredInterval branch
   // below is vacuously true for no arguments, so this has to come first.
   if args.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "Interval".to_string(),
-      args: vec![].into(),
-    });
+    return Ok(call("Interval", vec![]));
   }
 
   // CenteredInterval inputs: combine into the smallest enclosing
@@ -666,10 +648,7 @@ pub fn interval_intersection_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "Interval".to_string(),
-      args: vec![].into(),
-    });
+    return Ok(call("Interval", vec![]));
   }
 
   // CenteredInterval inputs: take the per-axis intersection of the
@@ -903,10 +882,7 @@ pub fn try_interval_divide(
   // A same-sign span reciprocates as usual (and reverses orientation).
   let recip_spans = if let Some(spans) = &b_int {
     let pos_inf = Expr::Identifier("Infinity".to_string());
-    let neg_inf = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), pos_inf.clone()].into(),
-    };
+    let neg_inf = call("Times", vec![Expr::Integer(-1), pos_inf.clone()]);
     let recip_one = |x: &Expr| eval_binop(&Expr::Integer(1), x, "Divide").ok();
     let mut recip = Vec::new();
     for (lo, hi) in spans {
@@ -1232,10 +1208,7 @@ fn centered_interval_box_op(args: &[Expr], op: BoxOp) -> Expr {
     if compare_numeric(&re_lo, &re_hi) == Some(Ordering::Greater)
       || compare_numeric(&im_lo, &im_hi) == Some(Ordering::Greater)
     {
-      return Expr::FunctionCall {
-        name: "Interval".to_string(),
-        args: vec![].into(),
-      };
+      return call("Interval", vec![]);
     }
   }
   let two = Expr::Integer(2);
@@ -1245,10 +1218,7 @@ fn centered_interval_box_op(args: &[Expr], op: BoxOp) -> Expr {
   let rim = eval_divide(&eval_sub(&im_hi, &im_lo), &two);
   let centre = combine_complex(&cre, &cim);
   let radius = combine_complex(&rre, &rim);
-  Expr::FunctionCall {
-    name: "CenteredInterval".to_string(),
-    args: vec![centre, radius].into(),
-  }
+  call("CenteredInterval", vec![centre, radius])
 }
 
 /// The largest (or smallest) of `xs`. An empty list has no extremum, so it
@@ -1284,10 +1254,7 @@ fn combine_complex(re: &Expr, im: &Expr) -> Expr {
 
 fn eval_add(a: &Expr, b: &Expr) -> Expr {
   crate::evaluator::evaluate_function_call_ast("Plus", &[a.clone(), b.clone()])
-    .unwrap_or_else(|_| Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![a.clone(), b.clone()].into(),
-    })
+    .unwrap_or_else(|_| call("Plus", vec![a.clone(), b.clone()]))
 }
 
 fn eval_sub(a: &Expr, b: &Expr) -> Expr {
@@ -1295,19 +1262,13 @@ fn eval_sub(a: &Expr, b: &Expr) -> Expr {
     "Times",
     &[Expr::Integer(-1), b.clone()],
   )
-  .unwrap_or_else(|_| Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![Expr::Integer(-1), b.clone()].into(),
-  });
+  .unwrap_or_else(|_| call("Times", vec![Expr::Integer(-1), b.clone()]));
   eval_add(a, &neg_b)
 }
 
 fn eval_mul(a: &Expr, b: &Expr) -> Expr {
   crate::evaluator::evaluate_function_call_ast("Times", &[a.clone(), b.clone()])
-    .unwrap_or_else(|_| Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![a.clone(), b.clone()].into(),
-    })
+    .unwrap_or_else(|_| call("Times", vec![a.clone(), b.clone()]))
 }
 
 fn eval_divide(num: &Expr, den: &Expr) -> Expr {
@@ -1315,9 +1276,6 @@ fn eval_divide(num: &Expr, den: &Expr) -> Expr {
     "Power",
     &[den.clone(), Expr::Integer(-1)],
   )
-  .unwrap_or_else(|_| Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![den.clone(), Expr::Integer(-1)].into(),
-  });
+  .unwrap_or_else(|_| call("Power", vec![den.clone(), Expr::Integer(-1)]));
   eval_mul(num, &inv)
 }

@@ -4441,16 +4441,12 @@ fn scatter_overlay_primitives(
   if let Some(ref_y) = series_filling_to_filling(series.filling)
     .and_then(|f| f.reference_y(y_range.0, y_range.1))
   {
-    prims.push(Expr::FunctionCall {
-      name: "AbsoluteThickness".to_string(),
-      args: vec![Expr::Real(1.0)].into(),
-    });
+    prims.push(call1("AbsoluteThickness", Expr::Real(1.0)));
     for &(x, y) in &finite {
-      prims.push(Expr::FunctionCall {
-        name: "Line".to_string(),
-        args: vec![Expr::List(vec![point((x, y)), point((x, ref_y))].into())]
-          .into(),
-      });
+      prims.push(call1(
+        "Line",
+        Expr::List(vec![point((x, y)), point((x, ref_y))].into()),
+      ));
     }
   }
   // A `PlotMarkers` series draws its glyph at every point instead of a dot.
@@ -4468,22 +4464,13 @@ fn scatter_overlay_primitives(
       });
     }
     styled.push(Expr::Real(marker.size));
-    let content = Expr::FunctionCall {
-      name: "Style".to_string(),
-      args: styled.into(),
-    };
+    let content = call("Style", styled);
     for &(x, y) in &finite {
-      prims.push(Expr::FunctionCall {
-        name: "Text".to_string(),
-        args: vec![content.clone(), point((x, y))].into(),
-      });
+      prims.push(call("Text", vec![content.clone(), point((x, y))]));
     }
     return prims;
   }
-  prims.push(Expr::FunctionCall {
-    name: "AbsolutePointSize".to_string(),
-    args: vec![Expr::Real(6.0)].into(),
-  });
+  prims.push(call1("AbsolutePointSize", Expr::Real(6.0)));
   prims.push(Expr::FunctionCall {
     name: "Point".to_string(),
     args: vec![Expr::List(
@@ -8278,19 +8265,13 @@ pub(crate) fn apply_common_plot_option(
 /// Build the compactifying substitution `Tan[Pi*inner/2]`, the bijection
 /// used to fold an infinite plot range into a finite display coordinate.
 fn tan_compactify(inner: Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "Tan".to_string(),
-    args: vec![Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Identifier("Pi".to_string())),
-        right: Box::new(inner),
-      }),
-      right: Box::new(Expr::Integer(2)),
-    }]
-    .into(),
-  }
+  call1(
+    "Tan",
+    div2(
+      times2(Expr::Identifier("Pi".to_string()), inner),
+      Expr::Integer(2),
+    ),
+  )
 }
 
 /// Given the (possibly infinite) raw endpoints of a `Plot` range, return the
@@ -8324,31 +8305,15 @@ fn compactify_plot_range(
     // {a, Infinity}: x = a + Tan[Pi (u-a)/2] over u in [a, a+1]
     (false, true) => {
       let a = raw_min;
-      let inner = Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(u()),
-        right: Box::new(Expr::Real(a)),
-      };
-      let transform = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Real(a)),
-        right: Box::new(tan_compactify(inner)),
-      };
+      let inner = minus2(u(), Expr::Real(a));
+      let transform = plus2(Expr::Real(a), tan_compactify(inner));
       Ok((a, a + 1.0, Some(transform)))
     }
     // {-Infinity, b}: x = b - Tan[Pi (b-u)/2] over u in [b-1, b]
     (true, false) => {
       let b = raw_max;
-      let inner = Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(Expr::Real(b)),
-        right: Box::new(u()),
-      };
-      let transform = Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(Expr::Real(b)),
-        right: Box::new(tan_compactify(inner)),
-      };
+      let inner = minus2(Expr::Real(b), u());
+      let transform = minus2(Expr::Real(b), tan_compactify(inner));
       Ok((b - 1.0, b, Some(transform)))
     }
   }

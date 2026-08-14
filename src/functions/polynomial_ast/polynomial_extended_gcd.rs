@@ -169,10 +169,7 @@ fn poly_divide_by_const(
   if expr_to_string(c) == "1" {
     return crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(poly));
   }
-  let inv = Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![c.clone(), Expr::Integer(-1)].into(),
-  };
+  let inv = call("Power", vec![c.clone(), Expr::Integer(-1)]);
   let prod = build_mul(&inv, poly);
   let result = crate::evaluator::evaluate_expr_to_expr(&prod)?;
   crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(&result))
