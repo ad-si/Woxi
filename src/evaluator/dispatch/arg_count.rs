@@ -1587,7 +1587,9 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "WignerD" => Some((2, 4)),
     "WinsorizedMean" => Some((1, 2)),
     "WinsorizedVariance" => Some((1, 2)),
-    "With" => Some((2, 2)),
+    // With[spec, …, body] takes any number of local variable specifications,
+    // each scoped inside the ones before it.
+    "With" => Some((2, usize::MAX)),
     "WordCount" => Some((1, 1)),
     "WordCounts" => Some((1, 2)),
     "WordFrequency" => Some((2, 3)),

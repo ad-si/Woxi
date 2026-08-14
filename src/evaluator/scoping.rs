@@ -1,6 +1,16 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Report a `With`/`Module`/`Block` whose local variable specification is not
+/// a List (`With[y, 3]`), and hand back the unevaluated call like Wolfram.
+fn non_list_local_spec(head: &str, args: &[Expr]) -> Expr {
+  crate::emit_message(&format!(
+    "{head}::lvlist: Local variable specification {} is not a List.",
+    crate::syntax::expr_to_string(&args[0])
+  ));
+  unevaluated(head, args)
+}
+
 /// AST-based Module implementation to avoid interpret() recursion
 pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -71,12 +81,7 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       vars
     }
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Module expects a list of variable declarations as first argument"
-          .into(),
-      ));
-    }
+    _ => return Ok(non_list_local_spec("Module", args)),
   };
 
   // Module scopes lexically: each local is renamed to a fresh var$n
@@ -191,12 +196,7 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       vars
     }
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Block expects a list of variable declarations as first argument"
-          .into(),
-      ));
-    }
+    _ => return Ok(non_list_local_spec("Block", args)),
   };
 
   // Save previous bindings and set up new ones
@@ -960,6 +960,19 @@ pub fn for_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// AST-based With implementation - substitutes bindings into body before evaluation.
 /// With[{x = val, y = val2}, body] replaces x and y in body with evaluated values.
 pub fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // With[{x = 1}, {y = x + 1}, …, body] scopes each specification inside the
+  // ones before it, so it is exactly the nested form
+  // With[{x = 1}, With[{y = x + 1}, …, body]]. Desugaring keeps a single
+  // implementation for every arity, and makes the unevaluated form of a
+  // malformed specification nest the way wolframscript's does.
+  if args.len() > 2 {
+    let inner = Expr::FunctionCall {
+      name: "With".to_string(),
+      args: args[1..].to_vec().into(),
+    };
+    return with_ast(&[args[0].clone(), inner]);
+  }
+
   let vars_expr = &args[0];
   let body_expr = &args[1];
 
@@ -992,11 +1005,7 @@ pub fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       vars
     }
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "With expects a list of variable declarations as first argument".into(),
-      ));
-    }
+    _ => return Ok(non_list_local_spec("With", args)),
   };
 
   // Substitute all bindings into the body simultaneously

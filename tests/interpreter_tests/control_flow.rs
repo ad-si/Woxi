@@ -175,6 +175,127 @@ mod block_scoping {
   }
 }
 
+mod with_scoping {
+  use super::*;
+
+  // With takes any number of local variable specifications, each scoped
+  // inside the ones before it, so a later one can build on an earlier one.
+  #[test]
+  fn several_variable_specifications() {
+    clear_state();
+    assert_eq!(interpret("With[{x = 5}, {y = x + 1}, y^2]").unwrap(), "36");
+    clear_state();
+    assert_eq!(
+      interpret("With[{x = 5}, {y = x + 1}, {z = y + 1}, z^2]").unwrap(),
+      "49"
+    );
+  }
+
+  // Only the last argument is the body: two lists means one binding
+  // specification and a list-valued body.
+  #[test]
+  fn last_argument_is_the_body() {
+    clear_state();
+    assert_eq!(interpret("With[{x = 5}, {y = x + 1}]").unwrap(), "{6}");
+  }
+
+  #[test]
+  fn a_later_specification_shadows_an_earlier_one() {
+    clear_state();
+    assert_eq!(interpret("With[{x = 5}, {x = x + 1}, x^2]").unwrap(), "36");
+    clear_state();
+    assert_eq!(
+      interpret("With[{x = 5}, {y = x}, {x = 1}, {x, y}]").unwrap(),
+      "{1, 5}"
+    );
+  }
+
+  // Regression: an inner With used to be substituted into blindly, so its
+  // own local was replaced by the outer value (`With[{5 = 5 + 1}, 5^2]`).
+  #[test]
+  fn a_nested_scoping_construct_shadows_the_outer_value() {
+    clear_state();
+    assert_eq!(
+      interpret("With[{x = 5}, With[{x = x + 1}, x^2]]").unwrap(),
+      "36"
+    );
+    clear_state();
+    assert_eq!(interpret("With[{x = 5}, With[{x = 1}, x]]").unwrap(), "1");
+    clear_state();
+    assert_eq!(
+      interpret("With[{x = 5}, Module[{x = x + 1}, x^2]]").unwrap(),
+      "36"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Function[{x}, With[{x = 1}, x]][7]").unwrap(),
+      "1"
+    );
+  }
+
+  // A value carried into an inner scope keeps its own meaning: the inner
+  // local is renamed rather than capturing the incoming symbol.
+  #[test]
+  fn an_incoming_value_is_not_captured() {
+    clear_state();
+    assert_eq!(
+      interpret("With[{x = y}, With[{y = 2}, x + y]]").unwrap(),
+      "2 + y"
+    );
+  }
+
+  // Bindings of one specification are parallel, not sequential: `b` takes
+  // the outer `a`, not the one being bound alongside it.
+  #[test]
+  fn bindings_of_one_specification_are_parallel() {
+    clear_state();
+    assert_eq!(interpret("With[{a = 1, b = a}, {a, b}]").unwrap(), "{1, a}");
+  }
+
+  #[test]
+  fn too_few_arguments() {
+    clear_state();
+    let result = interpret_with_stdout("With[{x = 5}]").unwrap();
+    assert_eq!(result.result, "With[{x = 5}]");
+    assert!(result.warnings[0].contains(
+      "With::argmu: With called with 1 argument; 2 or more arguments are expected."
+    ));
+    clear_state();
+    let result = interpret_with_stdout("With[]").unwrap();
+    assert_eq!(result.result, "With[]");
+    assert!(result.warnings[0].contains(
+      "With::argm: With called with 0 arguments; 2 or more arguments are expected."
+    ));
+  }
+
+  // A specification that is not a List is reported, and the call stays
+  // unevaluated in the nested form the several-specification syntax means.
+  #[test]
+  fn a_specification_must_be_a_list() {
+    for (code, expected, head) in [
+      ("With[y, 3]", "With[y, 3]", "With"),
+      (
+        "With[{x = 5}, y, {z = 1}, z]",
+        "With[y, With[{z = 1}, z]]",
+        "With",
+      ),
+      ("Module[y, 3]", "Module[y, 3]", "Module"),
+      ("Block[y, 3]", "Block[y, 3]", "Block"),
+    ] {
+      clear_state();
+      let result = interpret_with_stdout(code).unwrap();
+      assert_eq!(result.result, expected, "{code}");
+      assert!(
+        result.warnings[0].contains(&format!(
+          "{head}::lvlist: Local variable specification y is not a List."
+        )),
+        "{code}: {:?}",
+        result.warnings
+      );
+    }
+  }
+}
+
 mod return_value {
   use super::*;
 

@@ -13893,6 +13893,147 @@ fn resolve_function_params<'a>(
   Some((new_params, filtered, new_body))
 }
 
+/// The local names a `With`/`Module` variable specification binds.
+/// Items that bind nothing (`With[{1 + 1}, …]`) contribute no name; the
+/// scoping construct itself reports them.
+fn scoping_binder_names(spec: &Expr) -> Vec<String> {
+  let Expr::List(items) = spec else {
+    return Vec::new();
+  };
+  items
+    .iter()
+    .filter_map(|item| match item {
+      Expr::FunctionCall {
+        name,
+        args: set_args,
+      } if name == "Set" && set_args.len() == 2 => match &set_args[0] {
+        Expr::Identifier(var_name) => Some(var_name.clone()),
+        _ => None,
+      },
+      Expr::Rule { pattern, .. } => match pattern.as_ref() {
+        Expr::Identifier(var_name) => Some(var_name.clone()),
+        _ => None,
+      },
+      Expr::Identifier(var_name) => Some(var_name.clone()),
+      _ => None,
+    })
+    .collect()
+}
+
+/// Substitute into one local variable specification: the initializers see the
+/// enclosing bindings, the bound names themselves are only alpha-renamed.
+fn substitute_scoping_spec(
+  spec: &Expr,
+  bindings: &[(&str, &Expr)],
+  renames: &[(String, String)],
+) -> Expr {
+  let Expr::List(items) = spec else {
+    return substitute_variables_impl(spec, bindings, false);
+  };
+  let renamed = |var_name: &str| {
+    renames
+      .iter()
+      .find(|(old, _)| old == var_name)
+      .map_or_else(|| var_name.to_string(), |(_, new)| new.clone())
+  };
+  Expr::List(
+    items
+      .iter()
+      .map(|item| match item {
+        Expr::FunctionCall {
+          name,
+          args: set_args,
+        } if name == "Set"
+          && set_args.len() == 2
+          && matches!(set_args[0], Expr::Identifier(_)) =>
+        {
+          let Expr::Identifier(var_name) = &set_args[0] else {
+            unreachable!()
+          };
+          Expr::FunctionCall {
+            name: "Set".to_string(),
+            args: vec![
+              Expr::Identifier(renamed(var_name)),
+              substitute_variables_impl(&set_args[1], bindings, false),
+            ]
+            .into(),
+          }
+        }
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::Identifier(_)) => {
+          let Expr::Identifier(var_name) = pattern.as_ref() else {
+            unreachable!()
+          };
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier(renamed(var_name))),
+            replacement: Box::new(substitute_variables_impl(
+              replacement,
+              bindings,
+              false,
+            )),
+          }
+        }
+        Expr::Identifier(var_name) => Expr::Identifier(renamed(var_name)),
+        other => substitute_variables_impl(other, bindings, false),
+      })
+      .collect(),
+  )
+}
+
+/// Capture-avoiding substitution into `With[spec, …, body]` /
+/// `Module[spec, body]`. Every leading specification of a multi-clause `With`
+/// scopes the ones after it, so they are walked in order: each one's
+/// initializers are substituted with the bindings that still reach it, its own
+/// names then drop out of the bindings, and a name that would capture a value
+/// still heading for the body is alpha-renamed to `name$` — Wolfram's own
+/// rename, e.g. `With[{x = y}, With[{y = 2}, x + y]]` ⇒ `2 + y`.
+fn substitute_into_scoping_construct(
+  head: &str,
+  args: &[Expr],
+  bindings: &[(&str, &Expr)],
+) -> Expr {
+  // Only With takes more than one specification; Module's extra arguments
+  // (DynamicModule's options) are part of the body region.
+  let spec_count = if head == "With" { args.len() - 1 } else { 1 };
+  let mut active: Vec<(&str, &Expr)> = bindings.to_vec();
+  let mut tail: Vec<Expr> = args.to_vec();
+  let mut new_args: Vec<Expr> = Vec::with_capacity(args.len());
+  for i in 0..spec_count {
+    let binder_names = scoping_binder_names(&tail[i]);
+    // Bindings that survive this specification: the shadowed ones stop here.
+    let inner: Vec<(&str, &Expr)> = active
+      .iter()
+      .filter(|(var_name, _)| !binder_names.iter().any(|b| b == var_name))
+      .copied()
+      .collect();
+    let mut value_names = std::collections::HashSet::new();
+    for (_, value) in &inner {
+      collect_identifier_names(value, &mut value_names);
+    }
+    let renames: Vec<(String, String)> = binder_names
+      .iter()
+      .filter(|b| value_names.contains(b.as_str()))
+      .map(|b| (b.clone(), format!("{b}$")))
+      .collect();
+    for expr in tail.iter_mut().skip(i + 1) {
+      for (old, new) in &renames {
+        *expr = rename_symbol(expr, old, new);
+      }
+    }
+    new_args.push(substitute_scoping_spec(&tail[i], &active, &renames));
+    active = inner;
+  }
+  for expr in tail.iter().skip(spec_count) {
+    new_args.push(substitute_variables_impl(expr, &active, false));
+  }
+  Expr::FunctionCall {
+    name: head.to_string(),
+    args: new_args.into(),
+  }
+}
+
 fn substitute_variables_impl(
   expr: &Expr,
   bindings: &[(&str, &Expr)],
@@ -13959,6 +14100,22 @@ fn substitute_variables_impl(
             args: vec![new_params_arg, substituted_body].into(),
           };
         }
+      }
+      // `With[{x = v}, …, body]` and `Module[{x = v}, body]` bind their local
+      // names lexically, so an outer binding of the same name must not reach
+      // the body: `With[{x = 5}, With[{x = x + 1}, x^2]]` is 36, not 25. The
+      // initializers still evaluate in the enclosing scope and keep being
+      // substituted. Block is deliberately absent — it scopes dynamically and
+      // Wolfram substitutes straight through it, binder name included.
+      // In template mode the same names are pattern slots the caller filled
+      // in, and Wolfram substitutes those through as well
+      // (`f[x_] := With[{x = 1}, x]` called as `f[7]` gives `With[{7 = 1}, 7]`).
+      if !template
+        && matches!(name.as_str(), "With" | "Module" | "DynamicModule")
+        && args.len() >= 2
+        && matches!(args[0], Expr::List(_))
+      {
+        return substitute_into_scoping_construct(name, args, bindings);
       }
       let new_args: Vec<Expr> = args
         .iter()
