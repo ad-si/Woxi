@@ -115,7 +115,7 @@ thread_local! {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn virtual_current_dir() -> String {
+pub(crate) fn virtual_current_dir() -> String {
   DIRECTORY_STACK
     .with(|s| s.borrow().last().cloned())
     .unwrap_or_else(|| {
@@ -123,6 +123,52 @@ fn virtual_current_dir() -> String {
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default()
     })
+}
+
+/// The file a `Get` / `Needs` argument names.
+///
+/// A context name — `"MyPaclet`"` — is looked up in the loaded paclet
+/// directories and then along `$Path`; anything else is a file name, resolved
+/// against the virtual working directory so a preceding `SetDirectory` is
+/// honoured the way it is in wolframscript. `None` when no such file exists.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn resolve_get_target(name: &str) -> Option<std::path::PathBuf> {
+  if name.ends_with('`') {
+    return crate::functions::paclet::resolve_context(name);
+  }
+  let requested = std::path::Path::new(name);
+  let resolved = if requested.is_absolute() {
+    requested.to_path_buf()
+  } else {
+    std::path::PathBuf::from(virtual_current_dir()).join(requested)
+  };
+  resolved.is_file().then_some(resolved)
+}
+
+/// Read and evaluate the file at `path`, returning its last result.
+/// `None` when the file cannot be read.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn evaluate_file(
+  path: &std::path::Path,
+) -> Option<Result<Expr, InterpreterError>> {
+  let content = std::fs::read_to_string(path).ok()?;
+  // The read file is the input file for the duration of the read, so
+  // `$InputFileName` must point at it and not at the enclosing script.
+  let _input_file_name = InputFileNameGuard::install(path);
+  // Use interpret to evaluate the file content (handles all node types
+  // including FunctionDefinition, Expression, etc.)
+  let result_str = match crate::interpret(&content) {
+    Ok(v) => v,
+    Err(e) => return Some(Err(e)),
+  };
+  // `interpret` reports a `Null` result as the "\0" display-suppression
+  // sentinel; as the value of `Get` it is the symbol `Null` again.
+  if result_str == "\0" {
+    return Some(Ok(Expr::Identifier("Null".to_string())));
+  }
+  let result = crate::syntax::string_to_expr(&result_str)
+    .unwrap_or(Expr::Identifier(result_str));
+  Some(Ok(result))
 }
 
 /// Scopes `$InputFileName` to the file a `Get` is currently reading.
@@ -580,15 +626,9 @@ pub fn dispatch_io_functions(
       if crate::utils::is_standard_distribution_context(&filename) {
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
-      // A relative name resolves against the virtual working directory, so a
-      // preceding `SetDirectory` is honoured the way it is in wolframscript.
-      let requested = std::path::Path::new(&filename);
-      let resolved = if requested.is_absolute() {
-        requested.to_path_buf()
-      } else {
-        std::path::PathBuf::from(virtual_current_dir()).join(requested)
-      };
-      let Ok(content) = std::fs::read_to_string(&resolved) else {
+      let resolved = resolve_get_target(&filename);
+      let loaded = resolved.as_deref().and_then(evaluate_file);
+      let Some(result) = loaded else {
         // wolframscript prints this message to stdout (verified with
         // `wolframscript -file`), so mirror it into the captured buffer to
         // keep snapshot/playground/Jupyter output byte-for-byte consistent.
@@ -597,18 +637,50 @@ pub fn dispatch_io_functions(
         ));
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
       };
-      // The read file is the input file for the duration of the read, so
-      // `$InputFileName` must point at it and not at the enclosing script.
-      let _input_file_name = InputFileNameGuard::install(&resolved);
-      // Use interpret to evaluate the file content (handles all node types
-      // including FunctionDefinition, Expression, etc.)
-      let result_str = match crate::interpret(&content) {
-        Ok(v) => v,
-        Err(e) => return Some(Err(e)),
+      return Some(result);
+    }
+    // PacletDirectoryLoad[] / PacletDirectoryLoad[dir1, dir2, …] /
+    // PacletDirectoryLoad[{dir1, dir2, …}] — register directories the
+    // paclet manager searches, and return every directory now loaded.
+    // `PacletDirectoryUnload` takes the same arguments and unregisters them.
+    // Directory names have to be given either all as separate arguments or
+    // all in one list; a mixture stays unevaluated, as in wolframscript.
+    #[cfg(not(target_arch = "wasm32"))]
+    "PacletDirectoryLoad" | "PacletDirectoryUnload" => {
+      let string_dir = |e: &Expr| match e {
+        Expr::String(dir) => Some(dir.clone()),
+        _ => None,
       };
-      let result = crate::syntax::string_to_expr(&result_str)
-        .unwrap_or(Expr::Identifier(result_str));
-      return Some(Ok(result));
+      let requested: Vec<String> = if let [Expr::List(dirs)] = args {
+        let Some(dirs) =
+          dirs.iter().map(string_dir).collect::<Option<Vec<_>>>()
+        else {
+          return Some(Ok(unevaluated(name, args)));
+        };
+        // Unloading a *list* of directories unregisters only its last
+        // entry in wolframscript — verified against 14.1; Woxi mirrors
+        // that so scripts see identical `PacletDirectoryLoad[]` output.
+        if name == "PacletDirectoryUnload" {
+          dirs.last().into_iter().cloned().collect()
+        } else {
+          dirs
+        }
+      } else {
+        let Some(dirs) =
+          args.iter().map(string_dir).collect::<Option<Vec<_>>>()
+        else {
+          return Some(Ok(unevaluated(name, args)));
+        };
+        dirs
+      };
+      let loaded = if name == "PacletDirectoryLoad" {
+        crate::functions::paclet::load_directories(&requested)
+      } else {
+        crate::functions::paclet::unload_directories(&requested)
+      };
+      return Some(Ok(Expr::List(
+        loaded.into_iter().map(Expr::String).collect(),
+      )));
     }
     // Put[expr1, expr2, ..., "file"] — write expressions to a file
     #[cfg(not(target_arch = "wasm32"))]
@@ -3140,15 +3212,23 @@ pub fn dispatch_io_functions(
       return Some(Ok(Expr::Identifier("$Failed".to_string())));
     }
     // FindFile["name"] — return the absolute path if the file exists,
-    // else `$Failed`. Context strings like "VectorAnalysis`" are also
-    // accepted but always fail (no package loader).
+    // else `$Failed`. A context string like "MyPaclet`" resolves through
+    // the loaded paclet directories and `$Path`, just as `Get` does.
     #[cfg(not(target_arch = "wasm32"))]
     "FindFile" if args.len() == 1 => {
       let Expr::String(name) = &args[0] else {
         return Some(Ok(unevaluated("FindFile", args)));
       };
-      // Context names end with a backtick and can't be resolved to a file
-      // on disk. Match wolframscript's `$Failed` return.
+      if name.ends_with('`') {
+        return Some(Ok(
+          match crate::functions::paclet::resolve_context(name) {
+            Some(path) => Expr::String(path.to_string_lossy().into_owned()),
+            None => Expr::Identifier("$Failed".to_string()),
+          },
+        ));
+      }
+      // Any other context-ish name can't be resolved to a file on disk.
+      // Match wolframscript's `$Failed` return.
       if name.contains('`') {
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
       }

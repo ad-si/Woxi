@@ -488,3 +488,63 @@ fn repl_does_not_round_digits_inside_strings() {
     )
   );
 }
+
+// Regression test for #444: the paclet scenario from the issue — a script
+// registers its own directory with `PacletDirectoryLoad`, then `Needs` finds
+// the paclet's `PacletInfo.wl`, loads the declared kernel file and the
+// package's function becomes callable.
+#[test]
+fn paclet_directory_load_makes_a_paclet_context_available() {
+  let dir = std::env::temp_dir().join("woxi_cli_paclet");
+  std::fs::remove_dir_all(&dir).ok();
+  std::fs::create_dir_all(dir.join("Kernel")).expect("create paclet dir");
+  std::fs::write(
+    dir.join("PacletInfo.wl"),
+    r#"PacletObject[
+  <|
+    "Name" -> "MyPaclet",
+    "Version" -> "1.0.0",
+    "WolframVersion" -> "15+",
+    "Extensions" -> {
+      {
+        "Kernel",
+        "Root" -> "Kernel",
+        "Context" -> {"MyPaclet`"}
+      }
+    }
+  |>
+]
+"#,
+  )
+  .expect("write PacletInfo.wl");
+  std::fs::write(
+    dir.join("Kernel/MyPaclet.wl"),
+    "BeginPackage[\"MyPaclet`\"]\n\
+     MyFunction::usage = \"MyFunction[] greets.\";\n\
+     Begin[\"`Private`\"]\n\
+     MyFunction[] := Echo[\"Hello from Paclet Package\"]\n\
+     End[]\n\
+     EndPackage[]\n",
+  )
+  .expect("write package file");
+  let script = dir.join("testpaclet.wl");
+  std::fs::write(
+    &script,
+    "PacletDirectoryLoad[Directory[]]\nNeeds[\"MyPaclet`\"]\nMyFunction[]\n",
+  )
+  .expect("write script");
+
+  // `Directory[]` is the process working directory, so run from the paclet.
+  let output = Command::new(woxi_bin())
+    .arg("run")
+    .arg(&script)
+    .current_dir(&dir)
+    .output()
+    .expect("failed to spawn woxi");
+  let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+  let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+  std::fs::remove_dir_all(&dir).ok();
+
+  assert!(output.status.success(), "woxi run failed: stderr={stderr}");
+  assert_eq!(stdout, ">> Hello from Paclet Package\n");
+}

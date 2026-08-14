@@ -1328,6 +1328,8 @@ pub fn clear_state() {
   evaluator::assignment::SUB_VALUES.with(|m| m.borrow_mut().clear());
   evaluator::assignment::N_VALUES.with(|m| m.borrow_mut().clear());
   functions::entity_ast::clear_entity_stores();
+  #[cfg(not(target_arch = "wasm32"))]
+  functions::paclet::clear_loaded_directories();
   unseed_rng();
   clear_captured_stdout();
   reset_message_stop_counts();

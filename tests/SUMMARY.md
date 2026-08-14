@@ -1586,6 +1586,8 @@
   - [`OpenRead`](file_system/OpenRead.md)
   - [`OpenWrite`](file_system/OpenWrite.md)
   - [`PNG`](file_system/PNG.md)
+  - [`PacletDirectoryLoad`](file_system/PacletDirectoryLoad.md)
+  - [`PacletDirectoryUnload`](file_system/PacletDirectoryUnload.md)
   - [`ParentDirectory`](file_system/ParentDirectory.md)
   - [`Put`](file_system/Put.md)
   - [`PutAppend`](file_system/PutAppend.md)

@@ -1814,15 +1814,81 @@ fn evaluate_function_call_ast_inner(
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
-  // Needs["pkg`"] returns $Failed (packages not supported in Woxi) — except
-  // for a package that ships with the Wolfram Language, which loads as a
-  // no-op because Woxi keeps every built-in in one namespace.
-  if name == "Needs" && args.len() == 1 {
-    if let Expr::String(ctx) | Expr::Identifier(ctx) = &args[0]
-      && crate::utils::is_standard_distribution_context(ctx)
+  // Needs["pkg`"] loads the file providing the context — from a paclet in a
+  // directory registered with `PacletDirectoryLoad`, or from `$Path`.
+  // `Needs["pkg`", "file"]` reads the named file instead. A package that
+  // ships with the Wolfram Language loads as a no-op, because Woxi keeps
+  // every built-in in one namespace.
+  if name == "Needs" && (args.len() == 1 || args.len() == 2) {
+    let call = || {
+      crate::syntax::format_expr(
+        &unevaluated("Needs", args),
+        crate::syntax::ExprForm::Output,
+      )
+    };
+    let Expr::String(ctx) = &args[0] else {
+      crate::emit_message_to_stdout(&format!(
+        "Needs::cxru: Context or appropriately structured rule expected at \
+         position 1 in {}.",
+        call()
+      ));
+      return Ok(unevaluated("Needs", args));
+    };
+    if crate::utils::context_segments(ctx).is_none() {
+      crate::emit_message_to_stdout(&format!(
+        "Needs::cxt: Invalid context specified at position 1 in {}. A context \
+         must consist of valid symbol names separated by and ending with `.",
+        call()
+      ));
+      return Ok(unevaluated("Needs", args));
+    }
+    if let Some(file) = args.get(1)
+      && !matches!(file, Expr::String(_))
     {
+      crate::emit_message_to_stdout(&format!(
+        "Needs::string: String expected at position 2 in {}.",
+        call()
+      ));
+      return Ok(unevaluated("Needs", args));
+    }
+    if crate::utils::is_standard_distribution_context(ctx) {
       return Ok(Expr::Identifier("Null".to_string()));
     }
+    // An already-loaded context is not read a second time.
+    if crate::packages_list().iter().any(|pkg| pkg == ctx) {
+      return Ok(Expr::Identifier("Null".to_string()));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+      use crate::evaluator::dispatch::io_functions::{
+        evaluate_file, resolve_get_target,
+      };
+      let requested = match args.get(1) {
+        Some(Expr::String(file)) => file,
+        _ => ctx,
+      };
+      let loaded = resolve_get_target(requested)
+        .as_deref()
+        .and_then(evaluate_file);
+      let nocont = format!(
+        "Needs::nocont: Context {ctx} was not created when Needs was evaluated."
+      );
+      let Some(result) = loaded else {
+        crate::emit_message_to_stdout(&format!(
+          "Get::noopen: Cannot open {requested}."
+        ));
+        crate::emit_message_to_stdout(&nocont);
+        return Ok(Expr::Identifier("$Failed".to_string()));
+      };
+      result?;
+      // The file loaded but never opened the context it was supposed to
+      // provide — wolframscript reports that and still returns Null.
+      if !crate::packages_list().iter().any(|pkg| pkg == ctx) {
+        crate::emit_message_to_stdout(&nocont);
+      }
+      return Ok(Expr::Identifier("Null".to_string()));
+    }
+    #[cfg(target_arch = "wasm32")]
     return Ok(Expr::Identifier("$Failed".to_string()));
   }
 

@@ -32,6 +32,56 @@ pub fn create_file(
     .map(|_| file_path)
 }
 
+/// Join `sub` onto `base` with the platform's path separator.
+#[cfg(not(target_arch = "wasm32"))]
+fn join_path(base: &str, sub: &str) -> String {
+  let sep = std::path::MAIN_SEPARATOR_STR;
+  format!(
+    "{}{sep}{}",
+    base.trim_end_matches(['/', std::path::MAIN_SEPARATOR]),
+    sub.replace('/', sep)
+  )
+}
+
+/// The `$Path` package search path — the directories `Needs`, `Get` and
+/// `FindFile` look through for a context's file. Modeled after
+/// wolframscript's list but rooted at Woxi's directories since we don't ship
+/// the full Wolfram layout.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn search_path() -> Vec<String> {
+  let home = std::env::var("HOME")
+    .or_else(|_| std::env::var("USERPROFILE"))
+    .unwrap_or_default();
+  let user_sub = if cfg!(target_os = "macos") {
+    "Library/Wolfram"
+  } else if cfg!(target_os = "windows") {
+    "AppData\\Roaming\\Wolfram"
+  } else {
+    ".Wolfram"
+  };
+  let base_root = if cfg!(target_os = "macos") {
+    "/Library/Wolfram"
+  } else if cfg!(target_os = "windows") {
+    "C:\\ProgramData\\Wolfram"
+  } else {
+    "/usr/share/Wolfram"
+  };
+  let user_base = join_path(&home, user_sub);
+  let mut entries: Vec<String> = vec![
+    join_path(&user_base, "Kernel"),
+    join_path(&user_base, "Autoload"),
+    join_path(&user_base, "Applications"),
+    join_path(base_root, "Kernel"),
+    join_path(base_root, "Autoload"),
+    join_path(base_root, "Applications"),
+    ".".to_string(),
+  ];
+  if !home.is_empty() {
+    entries.push(home);
+  }
+  entries
+}
+
 /// Canonicalize `path` the way Wolfram spells paths.
 ///
 /// Identical to [`std::fs::canonicalize`] except on Windows, where that
@@ -90,6 +140,7 @@ const STANDARD_DISTRIBUTION_CONTEXTS: &[&str] = &[
   "Calendar",
   "Combinatorica",
   "ComputationalGeometry",
+  "DatabaseLink",
   "Developer",
   "DifferentialEquations",
   "ErrorBarPlots",
@@ -104,6 +155,7 @@ const STANDARD_DISTRIBUTION_CONTEXTS: &[&str] = &[
   "JLink",
   "LinearAlgebra",
   "MultivariateStatistics",
+  "NETLink",
   "Notation",
   "NumericalCalculus",
   "NumericalDifferentialEquationAnalysis",
@@ -122,27 +174,28 @@ const STANDARD_DISTRIBUTION_CONTEXTS: &[&str] = &[
   "WaveletScalogram",
 ];
 
-/// Whether `name` is a context name — `Foo\`` or `Foo\`Bar\`` — belonging to
-/// a package that ships with the Wolfram Language. Only full context names
-/// qualify: `"Units.m"` is an ordinary file path and must still be read.
-pub fn is_standard_distribution_context(name: &str) -> bool {
-  let Some(body) = name.strip_suffix('`') else {
-    return false;
-  };
+/// The symbol segments of a context name — `"Foo\`Bar\`"` gives
+/// `["Foo", "Bar"]`. `None` for anything that is not a context name: a
+/// context consists of valid symbol names separated by and ending with a
+/// backtick, so `"Units.m"` is an ordinary file path rather than one.
+pub fn context_segments(name: &str) -> Option<Vec<&str>> {
+  let body = name.strip_suffix('`')?;
   if body.is_empty() {
-    return false;
+    return None;
   }
-  let mut segments = body.split('`');
-  let Some(top) = segments.next() else {
-    return false;
-  };
-  let is_symbol = |s: &str| {
+  let segments: Vec<&str> = body.split('`').collect();
+  let is_symbol = |s: &&str| {
     !s.is_empty()
       && s.starts_with(|c: char| c.is_ascii_alphabetic() || c == '$')
       && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '$')
   };
-  if !is_symbol(top) || !segments.all(is_symbol) {
-    return false;
-  }
-  STANDARD_DISTRIBUTION_CONTEXTS.contains(&top)
+  segments.iter().all(is_symbol).then_some(segments)
+}
+
+/// Whether `name` is a context name — `Foo\`` or `Foo\`Bar\`` — belonging to
+/// a package that ships with the Wolfram Language.
+pub fn is_standard_distribution_context(name: &str) -> bool {
+  context_segments(name).is_some_and(|segments| {
+    STANDARD_DISTRIBUTION_CONTEXTS.contains(&segments[0])
+  })
 }

@@ -846,39 +846,12 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     // list but rooted at Woxi's directories since we don't ship the full
     // Wolfram layout.
     #[cfg(not(target_arch = "wasm32"))]
-    "$Path" => {
-      let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_default();
-      let user_sub = if cfg!(target_os = "macos") {
-        "Library/Wolfram"
-      } else if cfg!(target_os = "windows") {
-        "AppData\\Roaming\\Wolfram"
-      } else {
-        ".Wolfram"
-      };
-      let base_root = if cfg!(target_os = "macos") {
-        "/Library/Wolfram"
-      } else if cfg!(target_os = "windows") {
-        "C:\\ProgramData\\Wolfram"
-      } else {
-        "/usr/share/Wolfram"
-      };
-      let user_base = join_path(&home, user_sub);
-      let mut entries: Vec<String> = vec![
-        join_path(&user_base, "Kernel"),
-        join_path(&user_base, "Autoload"),
-        join_path(&user_base, "Applications"),
-        join_path(base_root, "Kernel"),
-        join_path(base_root, "Autoload"),
-        join_path(base_root, "Applications"),
-        ".".to_string(),
-      ];
-      if !home.is_empty() {
-        entries.push(home);
-      }
-      Some(Expr::List(entries.into_iter().map(Expr::String).collect()))
-    }
+    "$Path" => Some(Expr::List(
+      crate::utils::search_path()
+        .into_iter()
+        .map(Expr::String)
+        .collect(),
+    )),
     "$RootDirectory" => {
       // Filesystem root: "/" on Unix/Mac, "C:\" (or similar) on Windows.
       let root = if cfg!(target_os = "windows") {

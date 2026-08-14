@@ -2,6 +2,19 @@
 
 # Unreleased
 
+- `PacletDirectoryLoad` and `PacletDirectoryUnload` register the directories
+    the paclet manager searches. A registered directory may be a paclet
+    itself — a directory with a `PacletInfo.wl` — or a directory collecting
+    several of them.
+- `Needs["MyPaclet`"]` loads the file a context comes from instead of always
+    returning `$Failed`: the `"Kernel"` extensions of the paclets in the
+    loaded paclet directories are searched first, then `$Path`. `Get` and
+    `FindFile` resolve a context the same way, and a context that no file
+    provides reports `Get::noopen` and `Needs::nocont` as wolframscript does.
+    `Needs` also validates its arguments now (`Needs::cxt`, `Needs::cxru`,
+    `Needs::string`) and skips a context that is already loaded.
+- `Get` on a file whose last expression is `Null` returns `Null` rather than
+    the internal display-suppression marker.
 - Fixes driven by a Wolfram Demonstration on cellular-automaton patch
     reentry, whose interactive widget sets a control's per-choice appearance
     with a small `Grid` and drives a step-counter button's label with a

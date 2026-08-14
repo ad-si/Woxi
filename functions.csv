@@ -249,7 +249,7 @@ Sort,Sorts a list in ascending order or by an ordering function which leaves a p
 Series,Computes a power series expansion about a point or at Infinity,✅,pure,1.0,195
 Return,Returns a value from a definition body Do or Scan — anywhere else it stands as Return[value] and is collected like any other,✅,pure,1.0,196
 Appearance,Option symbol for specifying visual appearance,✅,pure,6.0,197
-Needs,Loads a package (no-op in Woxi),✅,effectful,1.0,198
+Needs,Loads the file providing a context from a loaded paclet directory or from $Path,✅,effectful,1.0,198
 Center,Symbol for centering alignment,✅,pure,1.0,199
 UndirectedEdge,Undirected graph edge,✅,pure,8.0,201
 Filling,Option for filling areas under curves in plots,✅,pure,6.0,202
@@ -1756,7 +1756,7 @@ TakeList,Take successive sublists of given lengths,✅,computation,11.2,1762
 ExportForm,Export form wrapper,,unevaluated,10.0,1763
 ParallelSubmit,Submit parallel task,,unevaluated,7.0,1764
 Application,Application wrapper,,unevaluated,12.2,1766
-FindFile,Find file,✅,unevaluated,7.0,1766
+FindFile,Finds the file or context file that Get would read,✅,effectful,7.0,1766
 DistanceTransform,Euclidean distance transform of an image,✅,pure,7.0,1768
 DialogInput,Dialog input,,unevaluated,6.0,1770
 TimelinePlot,Plots dates and date intervals as events on a horizontal timeline,✅,pure,10.1,1770
@@ -4091,7 +4091,7 @@ ListFormat,,,,10.0,4204
 Listen,,,,8.0,4204
 MeanGraphDistance,Average shortest-path distance (Infinity when disconnected),✅,pure,9.0,4204
 NextDate,Next occurrence of a given day of the week after a date,✅,pure,11.1,4204
-PacletDirectoryLoad,,🚫,,12.1,4204
+PacletDirectoryLoad,Registers directories in which the paclet manager looks for paclets and returns all loaded paclet directories,✅,effectful,12.1,4204
 ParallelAxisPlot,,🚫,,12.2,4204
 ShowSelection,,🚫,,4.0,4204
 StandardAtmosphereData,,🚫,,10.0,4204
@@ -5831,7 +5831,7 @@ OrthogonalMatrix,,,,14.0,
 OuterPolyhedron,,,,12.0,
 OverlayVideo,,🚫,,13.0,
 PacletDataRebuild,,🚫,,12.1,
-PacletDirectoryUnload,,🚫,,12.1,
+PacletDirectoryUnload,Unregisters paclet directories and returns the ones still loaded,✅,effectful,12.1,
 PacletDisable,,🚫,,12.1,
 PacletEnable,,🚫,,12.1,
 PacletInstallSubmit,,🚫,,12.1,

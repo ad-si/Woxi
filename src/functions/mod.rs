@@ -61,6 +61,8 @@ pub mod music_midi;
 pub mod music_render;
 pub mod number_line_plot;
 pub mod ode_ast;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod paclet;
 pub mod parametric_plot;
 pub mod periodic_table_plot;
 pub mod plot;

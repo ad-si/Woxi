@@ -614,6 +614,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "GeometricMean" => Some((1, 1)),
     "GeometricTest" => Some((2, usize::MAX)),
     "Get" => Some((1, 1)),
+    "Needs" => Some((1, 2)),
     "GompertzMakehamDistribution" => Some((2, 2)),
     "Grad" => Some((2, 3)),
     // A comparison of 0 or 1 element is vacuously True (Greater[] = Greater[5]

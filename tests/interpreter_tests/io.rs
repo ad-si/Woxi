@@ -8563,3 +8563,442 @@ mod csv_header_inference {
     );
   }
 }
+
+/// Paclets: the `PacletDirectoryLoad` registry and the context → file
+/// resolution `Needs`, `Get` and `FindFile` do through it.
+/// Every expectation here was verified against wolframscript.
+mod paclet {
+  use super::*;
+
+  /// Build a paclet named `name` below the temp directory, with the given
+  /// `PacletInfo.wl` extensions and `(relative path, content)` files.
+  /// Returns the paclet's base directory.
+  fn write_paclet(
+    name: &str,
+    extensions: &str,
+    files: &[(&str, &str)],
+  ) -> String {
+    write_paclet_in(
+      &temp_file(&format!("woxi_paclet_{name}")),
+      name,
+      extensions,
+      files,
+    )
+  }
+
+  /// Like [`write_paclet`], but with the paclet directory spelled out.
+  fn write_paclet_in(
+    directory: &str,
+    name: &str,
+    extensions: &str,
+    files: &[(&str, &str)],
+  ) -> String {
+    let base = std::path::PathBuf::from(directory);
+    std::fs::remove_dir_all(&base).ok();
+    std::fs::create_dir_all(&base).unwrap();
+    std::fs::write(
+      base.join("PacletInfo.wl"),
+      format!(
+        "PacletObject[<|\"Name\" -> \"{name}\", \"Version\" -> \"1.0.0\", \
+         \"Extensions\" -> {extensions}|>]\n"
+      ),
+    )
+    .unwrap();
+    for (path, content) in files {
+      let file = base.join(path);
+      std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+      std::fs::write(file, content).unwrap();
+    }
+    unixify(&base.display().to_string())
+  }
+
+  /// A package file defining `<context>fun[] := marker`.
+  fn package(context: &str, marker: &str) -> String {
+    format!(
+      "BeginPackage[\"{context}\"]\n\
+       pacletFun::usage = \"u\";\n\
+       Begin[\"`Private`\"]\n\
+       pacletFun[] := \"{marker}\"\n\
+       End[]\n\
+       EndPackage[]\n"
+    )
+  }
+
+  #[test]
+  fn a_fresh_session_has_no_paclet_directories() {
+    clear_state();
+    assert_eq!(interpret("PacletDirectoryLoad[]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn loading_reports_the_absolute_directory_once() {
+    clear_state();
+    let dir = temp_dir();
+    assert_eq!(
+      interpret(&format!("PacletDirectoryLoad[\"{dir}\"] === {{\"{dir}\"}}"))
+        .unwrap(),
+      "True"
+    );
+    // A directory already registered keeps its single entry.
+    assert_eq!(
+      interpret(&format!("PacletDirectoryLoad[\"{dir}\"] === {{\"{dir}\"}}"))
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn a_missing_directory_is_reported_and_not_loaded() {
+    clear_state();
+    let missing = temp_file("woxi_paclet_missing_dir");
+    let result =
+      interpret_with_stdout(&format!("PacletDirectoryLoad[\"{missing}\"]"))
+        .unwrap();
+    assert_eq!(result.result, "{}");
+    assert_eq!(
+      result.stdout,
+      format!("\nPacletDirectoryLoad::nodir: Directory {missing} not found.\n")
+    );
+  }
+
+  #[test]
+  fn unloading_removes_the_directory() {
+    clear_state();
+    let dir = temp_dir();
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{dir}\"]; PacletDirectoryUnload[\"{dir}\"]"
+      ))
+      .unwrap(),
+      "{}"
+    );
+  }
+
+  // wolframscript unloads only the last entry of a *list* of directories
+  // (separate arguments unload all of them); Woxi mirrors that.
+  #[test]
+  fn unloading_a_list_drops_only_its_last_entry() {
+    clear_state();
+    let one = write_paclet("unload_one", "{}", &[]);
+    let two = write_paclet("unload_two", "{}", &[]);
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{one}\", \"{two}\"]; \
+         PacletDirectoryUnload[{{\"{one}\", \"{two}\"}}] === {{\"{one}\"}}"
+      ))
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(&format!("PacletDirectoryUnload[\"{one}\", \"{two}\"]"))
+        .unwrap(),
+      "{}"
+    );
+  }
+
+  // Mixing separate arguments and a list leaves the call unevaluated.
+  #[test]
+  fn mixed_arguments_stay_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("PacletDirectoryLoad[{\"a\"}, \"b\"]").unwrap(),
+      "PacletDirectoryLoad[{a}, b]"
+    );
+    assert_eq!(
+      interpret("PacletDirectoryLoad[5]").unwrap(),
+      "PacletDirectoryLoad[5]"
+    );
+  }
+
+  // The issue-444 scenario: a paclet directory holding `PacletInfo.wl` and
+  // a `Kernel` root, loaded by name through `Needs`.
+  #[test]
+  fn needs_loads_a_context_from_a_paclet() {
+    clear_state();
+    let dir = write_paclet(
+      "kernel_root",
+      "{{\"Kernel\", \"Root\" -> \"Kernel\", \"Context\" -> {\"WoxiPacletA`\"}}}",
+      &[(
+        "Kernel/WoxiPacletA.wl",
+        &package("WoxiPacletA`", "from paclet"),
+      )],
+    );
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{dir}\"]; Needs[\"WoxiPacletA`\"]"
+      ))
+      .unwrap(),
+      "\0"
+    );
+    assert_eq!(interpret("pacletFun[]").unwrap(), "from paclet");
+    // The loaded context is listed in $Packages, so a second Needs is a
+    // no-op rather than a second read of the file.
+    assert_eq!(
+      interpret("MemberQ[$Packages, \"WoxiPacletA`\"]").unwrap(),
+      "True"
+    );
+  }
+
+  // A paclet may also sit in a *subdirectory* of the loaded directory.
+  #[test]
+  fn needs_finds_a_paclet_below_the_loaded_directory() {
+    clear_state();
+    let parent = temp_file("woxi_paclet_collection");
+    write_paclet_in(
+      &format!("{parent}/WoxiPacletB"),
+      "sub",
+      "{{\"Kernel\", \"Root\" -> \"Kernel\", \"Context\" -> {\"WoxiPacletB`\"}}}",
+      &[(
+        "Kernel/WoxiPacletB.wl",
+        &package("WoxiPacletB`", "from subdirectory"),
+      )],
+    );
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{parent}\"]; Needs[\"WoxiPacletB`\"]; pacletFun[]"
+      ))
+      .unwrap(),
+      "from subdirectory"
+    );
+  }
+
+  // Without a "Root" the extension is rooted at the paclet directory itself.
+  #[test]
+  fn an_extension_without_a_root_reads_from_the_paclet_directory() {
+    clear_state();
+    let dir = write_paclet(
+      "no_root",
+      "{{\"Kernel\", \"Context\" -> {\"WoxiPacletC`\"}}}",
+      &[(
+        "WoxiPacletC.wl",
+        &package("WoxiPacletC`", "from paclet root"),
+      )],
+    );
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{dir}\"]; Needs[\"WoxiPacletC`\"]; pacletFun[]"
+      ))
+      .unwrap(),
+      "from paclet root"
+    );
+  }
+
+  // `{"Context`", "File.wl"}` names the file explicitly — it wins over both
+  // `init.wl` and a file named after the context.
+  #[test]
+  fn an_explicitly_declared_file_wins() {
+    clear_state();
+    let dir = write_paclet(
+      "explicit_file",
+      "{{\"Kernel\", \"Root\" -> \"Kernel\", \
+        \"Context\" -> {{\"WoxiPacletD`\", \"Other.wl\"}}}}",
+      &[
+        (
+          "Kernel/Other.wl",
+          &package("WoxiPacletD`", "from declared file"),
+        ),
+        ("Kernel/init.wl", &package("WoxiPacletD`", "from init")),
+        (
+          "Kernel/WoxiPacletD.wl",
+          &package("WoxiPacletD`", "from named file"),
+        ),
+      ],
+    );
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{dir}\"]; Needs[\"WoxiPacletD`\"]; pacletFun[]"
+      ))
+      .unwrap(),
+      "from declared file"
+    );
+  }
+
+  // Without an explicit file the extension's `init.wl` is read before a file
+  // named after the context.
+  #[test]
+  fn init_is_read_before_the_context_named_file() {
+    clear_state();
+    let dir = write_paclet(
+      "init_first",
+      "{{\"Kernel\", \"Root\" -> \"Kernel\", \"Context\" -> {\"WoxiPacletE`\"}}}",
+      &[
+        ("Kernel/init.wl", &package("WoxiPacletE`", "from init")),
+        (
+          "Kernel/WoxiPacletE.wl",
+          &package("WoxiPacletE`", "from named file"),
+        ),
+      ],
+    );
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{dir}\"]; Needs[\"WoxiPacletE`\"]; pacletFun[]"
+      ))
+      .unwrap(),
+      "from init"
+    );
+  }
+
+  // A multi-segment context maps to nested directories: `A`B`` is `A/B.wl`.
+  #[test]
+  fn a_nested_context_maps_to_a_nested_file() {
+    clear_state();
+    let dir = write_paclet(
+      "nested",
+      "{{\"Kernel\", \"Root\" -> \"Kernel\", \
+        \"Context\" -> {\"WoxiPacletF`Sub`\"}}}",
+      &[(
+        "Kernel/WoxiPacletF/Sub.wl",
+        &package("WoxiPacletF`Sub`", "from nested context"),
+      )],
+    );
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{dir}\"]; Needs[\"WoxiPacletF`Sub`\"]; pacletFun[]"
+      ))
+      .unwrap(),
+      "from nested context"
+    );
+  }
+
+  // A `.m` file is read just like a `.wl` one.
+  #[test]
+  fn a_dot_m_package_file_is_found() {
+    clear_state();
+    let dir = write_paclet(
+      "dot_m",
+      "{{\"Kernel\", \"Root\" -> \"Kernel\", \"Context\" -> {\"WoxiPacletG`\"}}}",
+      &[(
+        "Kernel/WoxiPacletG.m",
+        &package("WoxiPacletG`", "from dot m"),
+      )],
+    );
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{dir}\"]; Needs[\"WoxiPacletG`\"]; pacletFun[]"
+      ))
+      .unwrap(),
+      "from dot m"
+    );
+  }
+
+  // A context no paclet declares is reported the way wolframscript reports
+  // it — `Get::noopen`, then `Needs::nocont` — and `Needs` gives `$Failed`.
+  #[test]
+  fn an_unprovided_context_fails_with_both_messages() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Needs[\"WoxiNoSuchPacletContext`\"]").unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert_eq!(
+      result.stdout,
+      "\nGet::noopen: Cannot open WoxiNoSuchPacletContext`.\n\
+       \nNeeds::nocont: Context WoxiNoSuchPacletContext` was not created \
+       when Needs was evaluated.\n"
+    );
+  }
+
+  // A file that loads but never opens the context is reported too, though
+  // `Needs` still returns Null.
+  #[test]
+  fn a_file_that_creates_no_context_is_reported() {
+    clear_state();
+    let file = temp_file("woxi_paclet_no_context.wl");
+    std::fs::write(&file, "pacletNoContextVar = 7;\n").unwrap();
+    let result =
+      interpret_with_stdout(&format!("Needs[\"WoxiPacletH`\", \"{file}\"]"))
+        .unwrap();
+    assert_eq!(result.result, "\0");
+    assert_eq!(
+      result.stdout,
+      "\nNeeds::nocont: Context WoxiPacletH` was not created when Needs was \
+       evaluated.\n"
+    );
+    assert_eq!(interpret("pacletNoContextVar").unwrap(), "7");
+    std::fs::remove_file(file).ok();
+  }
+
+  // `FindFile` resolves a context through the same search as `Get`.
+  #[test]
+  fn find_file_resolves_a_paclet_context() {
+    clear_state();
+    let dir = write_paclet(
+      "find_file",
+      "{{\"Kernel\", \"Root\" -> \"Kernel\", \"Context\" -> {\"WoxiPacletI`\"}}}",
+      &[("Kernel/WoxiPacletI.wl", &package("WoxiPacletI`", "found"))],
+    );
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{dir}\"]; \
+         FindFile[\"WoxiPacletI`\"] === FileNameJoin[{{\"{dir}\", \"Kernel\", \
+         \"WoxiPacletI.wl\"}}]"
+      ))
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("FindFile[\"WoxiNoSuchPacletContext`\"]").unwrap(),
+      "$Failed"
+    );
+  }
+
+  // A first argument that is not a context is reported and the call stays
+  // unevaluated, the way wolframscript reports it.
+  #[test]
+  fn an_invalid_context_is_reported() {
+    clear_state();
+    let result = interpret_with_stdout("Needs[\"NotAContext\"]").unwrap();
+    assert_eq!(result.result, "Needs[NotAContext]");
+    assert_eq!(
+      result.stdout,
+      "\nNeeds::cxt: Invalid context specified at position 1 in \
+       Needs[NotAContext]. A context must consist of valid symbol names \
+       separated by and ending with `.\n"
+    );
+  }
+
+  #[test]
+  fn a_non_string_context_is_reported() {
+    clear_state();
+    let result = interpret_with_stdout("Needs[5]").unwrap();
+    assert_eq!(result.result, "Needs[5]");
+    assert_eq!(
+      result.stdout,
+      "\nNeeds::cxru: Context or appropriately structured rule expected at \
+       position 1 in Needs[5].\n"
+    );
+  }
+
+  #[test]
+  fn a_non_string_file_is_reported() {
+    clear_state();
+    let result = interpret_with_stdout("Needs[\"WoxiPacletK`\", 5]").unwrap();
+    assert_eq!(result.result, "Needs[WoxiPacletK`, 5]");
+    assert_eq!(
+      result.stdout,
+      "\nNeeds::string: String expected at position 2 in \
+       Needs[WoxiPacletK`, 5].\n"
+    );
+  }
+
+  // `Get` takes a context too, and returns the file's last result.
+  #[test]
+  fn get_reads_a_paclet_context() {
+    clear_state();
+    let dir = write_paclet(
+      "get_context",
+      "{{\"Kernel\", \"Root\" -> \"Kernel\", \"Context\" -> {\"WoxiPacletJ`\"}}}",
+      &[(
+        "Kernel/WoxiPacletJ.wl",
+        &package("WoxiPacletJ`", "from Get"),
+      )],
+    );
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{dir}\"]; Get[\"WoxiPacletJ`\"]"
+      ))
+      .unwrap(),
+      "\0"
+    );
+    assert_eq!(interpret("pacletFun[]").unwrap(), "from Get");
+  }
+}
