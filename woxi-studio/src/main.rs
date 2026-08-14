@@ -14701,7 +14701,8 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl1$$ = 1}, \"\\[Ellipsis]\"]"], 
     // the nested-Animate branch (mode 1, already the default) plus the
     // high-band-only branch (mode 2) must each render too.
     for mode in [1, 2, 3] {
-      let render_code = format!("demoMode = {mode}; demoLevel = 4;\n{}", state.body);
+      let render_code =
+        format!("demoMode = {mode}; demoLevel = 4;\n{}", state.body);
       let render = woxi::interpret_with_stdout(&render_code)
         .unwrap_or_else(|e| panic!("mode {mode} must render: {e:?}"));
       assert!(
