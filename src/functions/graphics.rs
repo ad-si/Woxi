@@ -18400,6 +18400,42 @@ fn layout_parts(arg: Option<&Expr>) -> Option<Vec<Expr>> {
   }
 }
 
+/// Renders a `Grid`/`TableForm`/`TextGrid` row list as label runs: each
+/// row's non-blank cells joined by a space, rows joined by a newline.
+fn grid_label_runs(rows: &[Expr], italic: bool) -> Vec<LabelRun> {
+  let mut out = Vec::new();
+  for row in rows {
+    let cells = layout_parts(Some(row)).unwrap_or_else(|| vec![row.clone()]);
+    let mut row_runs: Vec<LabelRun> = Vec::new();
+    for cell in &cells {
+      let cell_runs = manipulate_label_runs(cell, italic);
+      if flatten_label_runs(&cell_runs).trim().is_empty() {
+        continue;
+      }
+      if !row_runs.is_empty() {
+        row_runs.push(LabelRun {
+          text: " ".to_string(),
+          italic,
+          ..Default::default()
+        });
+      }
+      row_runs.extend(cell_runs);
+    }
+    if row_runs.is_empty() {
+      continue;
+    }
+    if !out.is_empty() {
+      out.push(LabelRun {
+        text: "\n".to_string(),
+        italic,
+        ..Default::default()
+      });
+    }
+    out.extend(row_runs);
+  }
+  out
+}
+
 fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
   let mut runs = manipulate_label_runs_inner(expr, italic);
   // A label is text a widget draws, so the private-use code points Wolfram
@@ -18487,11 +18523,41 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // displays its label (the tip only appears on hover in the Wolfram
       // FrontEnd), so a control spec like
       // `{{v, True, Tooltip["source", "Show source"]}, {True, False}}`
-      // labels the control "source".
-      "Text" | "DisplayForm" | "TraditionalForm" | "Tooltip" => args
+      // labels the control "source". `Framed[content, …]` keeps only its
+      // content — the frame itself has no text to typeset.
+      // `Dynamic[content]` inside a label (a Demonstration's step counter
+      // buttons often frame one) only exists to keep `content` live; a
+      // static label typesets `content` itself rather than the `Dynamic[…]`
+      // wrapper's own source.
+      "Text" | "DisplayForm" | "TraditionalForm" | "Tooltip" | "Framed"
+      | "Dynamic" => args
         .first()
         .map(|a| manipulate_label_runs(a, italic))
         .unwrap_or_default(),
+      // `Labeled[content, label, …]` draws its label alongside the content
+      // (by default below it); a Demonstration's setter option can pair a
+      // picture with a caption this way. Placement specs (a 3rd argument, or
+      // a list of labels) are ignored — only the first label is shown.
+      "Labeled" => {
+        let mut runs = args
+          .first()
+          .map(|a| manipulate_label_runs(a, italic))
+          .unwrap_or_default();
+        if let Some(label_arg) = args.get(1) {
+          let label_runs = manipulate_label_runs(label_arg, italic);
+          if !flatten_label_runs(&label_runs).trim().is_empty() {
+            if !runs.is_empty() {
+              runs.push(LabelRun {
+                text: "\n".to_string(),
+                italic,
+                ..Default::default()
+              });
+            }
+            runs.extend(label_runs);
+          }
+        }
+        runs
+      }
       // Row[{a, b, …}] — concatenate the (recursively rendered) parts.
       "Row" => match layout_parts(args.first()) {
         Some(parts) => parts
@@ -18519,6 +18585,16 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
             runs
           })
           .collect(),
+        _ => output_run(italic),
+      },
+      // Grid[{{a, b, …}, …}, …] / TableForm / TextGrid — a Demonstration
+      // uses a small grid as a setter's per-choice appearance function (e.g.
+      // marking which edge of a patch a rule reflects). Cells render as
+      // their own label runs, joined by a space within a row and by a
+      // newline between rows; blank cells (Grid pads a ragged table with
+      // `""`) drop out rather than leaving stray spaces.
+      "Grid" | "TableForm" | "TextGrid" => match layout_parts(args.first()) {
+        Some(rows) => grid_label_runs(&rows, italic),
         _ => output_run(italic),
       },
       "Subscript" => script_runs(args, italic, false),
@@ -19816,7 +19892,13 @@ fn discrete_choice_label(expr: &Expr) -> String {
     }
     other => {
       let flat = flatten_label_runs(&manipulate_label_runs(other, false));
-      if flat.is_empty() {
+      // A structural head (Grid/Row/Column/…) can legitimately typeset to
+      // nothing — e.g. a Grid whose cells are all `""`, marking "no flag
+      // set" among a family of choices that each flip one cell on. Only an
+      // unrecognized head's empty result means "couldn't render", which
+      // falls back to its source so the choice still shows something.
+      let structural = matches!(other, Expr::FunctionCall { name, .. } if is_text_layout_head(name));
+      if flat.is_empty() && !structural {
         crate::syntax::expr_to_input_form(other)
       } else {
         flat
