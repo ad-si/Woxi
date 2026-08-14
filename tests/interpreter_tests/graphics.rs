@@ -2624,6 +2624,80 @@ mod plot3d {
       ));
     }
 
+    /// `Point`, like the other graphics-primitive heads (`Line`, `Polygon`,
+    /// `Arrow`, …), carries no built-in downvalue restricting its arity, so
+    /// a trailing option such as `VertexNormals -> Automatic` (harmless —
+    /// only `Polygon`/`Line` meshes actually use it) must pass straight
+    /// through instead of tripping a spurious `Point::argx` message and
+    /// leaving the call unevaluated. Regression for a bug found while
+    /// checking a `Manipulate` control variable that binds `Point` and
+    /// applies it as `renderMode[pts, VertexNormals -> Automatic]`.
+    #[test]
+    fn point_accepts_trailing_options_like_line_and_polygon() {
+      assert_eq!(
+        interpret("Point[{1, 2, 3}, VertexNormals -> Automatic]").unwrap(),
+        "Point[{1, 2, 3}, VertexNormals -> Automatic]"
+      );
+      // The plain single-argument form still works unchanged.
+      assert_eq!(interpret("Point[{1, 2, 3}]").unwrap(), "Point[{1, 2, 3}]");
+    }
+
+    /// A `Manipulate`/`Control` variable can be bound to a graphics-primitive
+    /// head symbol (`Line`, `Point`, or `Polygon`) and applied directly as a
+    /// function head — the pattern the Demonstrations site uses to let one
+    /// popup menu switch how a mesh renders: `Polygon[pts_] :> If[render ===
+    /// Point, Point[Apply[Join, pts], …], render[pts, …]]`. Covers `/.`
+    /// dispatching to a dynamically bound head for all three choices.
+    #[test]
+    fn replace_all_applies_dynamically_bound_head_symbol() {
+      let rule = "Polygon[pts_] :> If[render === Point, \
+        Point[Apply[Join, pts], VertexNormals -> Automatic], \
+        render[pts, VertexNormals -> Automatic]]";
+      let poly = "Polygon[{{1, 2}, {3, 4}}]";
+
+      assert_eq!(
+        interpret(&format!(
+          "Block[{{render = Line}}, ReplaceAll[{poly}, {rule}]]"
+        ))
+        .unwrap(),
+        "Line[{{1, 2}, {3, 4}}, VertexNormals -> Automatic]"
+      );
+      assert_eq!(
+        interpret(&format!(
+          "Block[{{render = Polygon}}, ReplaceAll[{poly}, {rule}]]"
+        ))
+        .unwrap(),
+        "Polygon[{{1, 2}, {3, 4}}, VertexNormals -> Automatic]"
+      );
+      // The `render === Point` branch additionally flattens the point-lists
+      // with `Apply[Join, pts]` before handing them to `Point`.
+      assert_eq!(
+        interpret(&format!(
+          "Block[{{render = Point}}, ReplaceAll[{poly}, {rule}]]"
+        ))
+        .unwrap(),
+        "Point[{1, 2, 3, 4}, VertexNormals -> Automatic]"
+      );
+    }
+
+    /// End-to-end regression for the same idiom rendered through
+    /// `Graphics3D`/`Show`/`SphericalRegion`: a small hand-built polygon
+    /// mesh redirected to `Point` rendering must still produce real SVG
+    /// point markers, not an empty picture.
+    #[test]
+    fn manipulate_style_polygon_to_point_redirect_renders_svg() {
+      let svg = export_svg(
+        "Show[Graphics3D[Polygon[{{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, \
+         {{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}}]] /. \
+         Polygon[pts_] :> Point[Apply[Join, pts], VertexNormals -> Automatic], \
+         SphericalRegion -> True]",
+      );
+      assert!(
+        svg.contains("<circle"),
+        "expected rendered point markers: {svg}"
+      );
+    }
+
     /// The unbounded primitives — `InfiniteLine`, `HalfLine`,
     /// `InfinitePlane`, `HalfPlane` — show the part of themselves that
     /// falls inside the picture's box. They used to draw nothing at all in
