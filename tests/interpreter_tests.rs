@@ -1404,6 +1404,54 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plot_label_style_sets_frame_label_size_and_color() {
+    // LabelStyle -> {size, color} must restyle the FrameLabel/AxesLabel/
+    // PlotLabel text; it used to be accepted and silently dropped, so a
+    // Demonstration asking for large, high-contrast labels rendered them at
+    // the default small gray size instead.
+    clear_state();
+    let plain = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, \
+         FrameLabel -> {\"t\", \"y\"}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !plain.contains("fill=\"rgb(255,0,0)\""),
+      "an unstyled frame label must not already be red"
+    );
+
+    clear_state();
+    let styled = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, \
+         FrameLabel -> {\"t\", \"y\"}, LabelStyle -> {20, Red}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      styled.contains("font-size=\"200\""),
+      "LabelStyle size 20 must scale to font-size 200 at the default 10x \
+       render scale: {styled}"
+    );
+    assert!(
+      styled.contains("fill=\"rgb(255,0,0)\""),
+      "LabelStyle color Red must reach the frame label: {styled}"
+    );
+
+    // The same option reaches a Plot wrapped in Show, the way a
+    // Demonstration typically applies it to a Which-selected sub-plot.
+    clear_state();
+    let via_show = interpret(
+      "ExportString[Show[Plot[Sin[x], {x, 0, 2 Pi}, \
+         FrameLabel -> {\"t\", \"y\"}], LabelStyle -> {20, Red}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      via_show.contains("font-size=\"200\"")
+        && via_show.contains("fill=\"rgb(255,0,0)\""),
+      "LabelStyle applied via Show must still restyle the frame label: {via_show}"
+    );
+  }
+
+  #[test]
   fn test_audio_missing_file_still_renders_player_chrome() {
     // A file-backed Audio whose file cannot be read (missing here; any local
     // path in the browser playground) still renders the player chrome: the
