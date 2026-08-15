@@ -2286,6 +2286,10 @@ pub fn evaluate_expr_to_expr_inner(
         // un-applied function until fed a click position.
         || name == "LocatorPane"
         || name == "ClickPane"
+        // GeometricScene holds its point-definition rules and primitives:
+        // the primitives reference point *symbols*, not values, and must
+        // stay symbolic until a `["Graphics"]` property substitutes them in.
+        || name == "GeometricScene"
         {
           // Show/GraphicsRow/GraphicsColumn/GraphicsGrid/PlotGrid/
           // BooleanTable aren't actually HoldAll in Wolfram Language, so a

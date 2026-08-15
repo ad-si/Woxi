@@ -1101,6 +1101,34 @@ pub fn apply_curried_call(
       // Entity["type", "name"]["property"] — property access on entities
       crate::functions::entity_ast::entity_property_access(func_args, args)
     }
+    // GeometricScene[{sym -> value, ...}, {primitives...}]["Graphics"] —
+    // substitute point symbols into the primitives and return an ordinary
+    // Graphics[{...}] expression. ["Elements"] returns the resolved point
+    // definitions. Unknown properties keep the curried form unevaluated.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "GeometricScene"
+      && (func_args.len() == 2 || func_args.len() == 3)
+      && args.len() == 1
+      && matches!(&args[0], Expr::String(_)) =>
+    {
+      let Expr::String(prop) = &args[0] else {
+        unreachable!();
+      };
+      match prop.as_str() {
+        "Graphics" => {
+          crate::functions::graphics::geometric_scene_graphics(func_args)
+        }
+        "Elements" => {
+          crate::functions::graphics::geometric_scene_elements(func_args)
+        }
+        _ => Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        }),
+      }
+    }
     // Around[x, δ]["Value"] / ["Uncertainty"] — property extraction on an
     // uncertain value. Unknown properties keep the curried form unevaluated.
     Expr::FunctionCall {
