@@ -15094,6 +15094,177 @@ $CellContext`phase3[$CellContext`t]; Null))]"], "Output"]
   }
 
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook (a
+  /// binary-mixture phase-equilibrium diagram visualizer) against Woxi
+  /// Studio's Manipulate pipeline. Its shape: a `Module` body defines a
+  /// couple of `Exp[…]`-based activity-style helper functions of one
+  /// variable, then a `While[i < n, {…, i++}]` loop whose body is a
+  /// comma-separated *list* (not a `CompoundExpression`) repeatedly calls
+  /// `FindRoot` to solve a nonlinear equation and stores the results into
+  /// indexed assignments (`arr[i] = …`); the resulting tables feed
+  /// `Interpolation[…, InterpolationOrder -> 1]` to build a few
+  /// `InterpolatingFunction`s; a `Switch` on an integer control then picks
+  /// between two rendered views — a `Show` of a `Plot` of one interpolated
+  /// curve overlaid with a `Graphics` of `Table`-generated tie-line
+  /// `Line`s and `Style[Text[Row[{ToString[NumberForm[…]], "…"}], pos,
+  /// Automatic, direction], size]` labels tilted to follow each tie line,
+  /// versus a `Plot` of another interpolated curve with an `Epilog` marking
+  /// a reference point — driven by a rule-list discrete control (`{{ctrl,
+  /// 1, ""}, {1 -> "…", 2 -> "…"}}`) and a labeled slider, tracked via
+  /// `TrackedSymbols`.
+  ///
+  /// This is a self-authored, construct-equivalent example (a made-up
+  /// binary system with invented coefficients) — not the notebook's own
+  /// code, data, or wording, which is copyrighted. It doubles as a
+  /// regression test for `Text`'s fourth (`direction`) argument, which
+  /// used to be silently dropped instead of tilting the label.
+  #[test]
+  fn demonstration_phase_diagram_manipulate_solves_and_interpolates_tables() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Module[{i, x, xL, pL, yV, fL, fV, fEQ, tblL, tblV, tblEQ, sol, p, kA, kB, mm, psA, psB, px, py},
+  kA = 1.8; kB = 1.3; mm = 0.15;
+  psA = 0.82 P; psB = 0.64 P;
+  gA[u_] := Exp[kA (1 - u)^2 (1 + mm u)];
+  gB[u_] := Exp[kB u^2 (1 - mm (1 - u))];
+  i = 0;
+  While[i < 21, {x = i*0.05, xL[i] = x, sol = FindRoot[gA[x] x psA + gB[x] (1 - x) psB == p, {p, 500}], pL[i] = (p /. sol), yV[i] = gA[x] psA x/pL[i], i++}];
+  tblL = Table[{xL[i], pL[i]}, {i, 0, 20}];
+  tblV = Table[{yV[i], pL[i]}, {i, 0, 20}];
+  tblEQ = Table[{xL[i], yV[i]}, {i, 0, 20}];
+  fL = Interpolation[tblL, InterpolationOrder -> 1];
+  fV = Interpolation[tblV, InterpolationOrder -> 1];
+  fEQ = Interpolation[tblEQ, InterpolationOrder -> 1];
+  px = 0.5; py = fEQ[px];
+  Switch[ctrl,
+   1,
+    Show[
+     Plot[fL[xv], {xv, 0, 1}, Frame -> True, FrameLabel -> {Style[\"liquid mole fraction\", 14], Style[\"pressure (mmHg)\", 14]}, GridLines -> Automatic, ImageSize -> {600, 350}, PlotStyle -> Thick, PlotRange -> {{0, 1}, {0, 700}}],
+     Graphics[{Thick, Green, Table[Line[{{a, fL[a]}, {fEQ[a], fV[fEQ[a]]}}], {a, 0.1, 0.9, 0.1}], Red, Table[Style[Text[Row[{ToString[NumberForm[fL[a], {4, 2}]], \" mmHg\"}], {(a + fEQ[a])/2, fL[a]}, Automatic, {1000, (fV[fEQ[a]] - fL[a])}], 10], {a, 0.1, 0.9, 0.1}]}]
+    ],
+   2,
+    Plot[fEQ[t], {t, 0, 1}, Epilog -> {Green, Line[{{0, 0}, {1, 1}}], Red, PointSize[0.025], Point[{px, py}]}, ImageSize -> {600, 350}, Frame -> True, GridLines -> Automatic, PlotStyle -> Thick, FrameLabel -> {Style[\"liquid mole fraction\", 14], Style[\"vapor mole fraction\", 14]}]
+  ]
+ ],
+ Control[{{ctrl, 1, \"\"}, {1 -> \"Pressure Curve\", 2 -> \"Equilibrium Curve\"}}],
+ {{P, 760, \"system pressure (mmHg)\"}, 50, 1200, 10, Appearance -> \"Labeled\"},
+ TrackedSymbols :> {P, ctrl}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl$$ = 1, $CellContext`P$$ = 760}, DynamicBox[\[Ellipsis]]]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the Switch's first branch (Show of Plot + Graphics overlay) must draw"
+    );
+
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name: ctrl_name,
+          values: ctrl_values,
+          value_labels: ctrl_labels,
+          current_index: ctrl_idx,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: p_name,
+          label: p_label,
+          min: p_min,
+          max: p_max,
+          step: p_step,
+          current: p_now,
+          ..
+        },
+      ] => {
+        assert_eq!(ctrl_name.as_str(), "ctrl");
+        assert_eq!(ctrl_values.as_slice(), ["1", "2"]);
+        assert_eq!(
+          ctrl_labels.as_slice(),
+          ["Pressure Curve", "Equilibrium Curve"]
+        );
+        assert_eq!(*ctrl_idx, 0, "ctrl starts at its initial value 1");
+
+        assert_eq!(p_name.as_str(), "P");
+        assert_eq!(p_label.as_str(), "system pressure (mmHg)");
+        assert_eq!(*p_min, 50.0);
+        assert_eq!(*p_max, 1200.0);
+        assert_eq!(*p_step, 10.0);
+        assert_eq!(*p_now, 760.0);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    // Re-render the extracted body directly to inspect the two Switch
+    // branches and the tilted tie-line labels the fourth Text argument
+    // draws — the same technique the other demonstration regressions use.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the pieces must render")
+    };
+    let pressure_view = render(&widget);
+    assert!(
+      pressure_view.contains("rotate("),
+      "the tie-line labels' direction vector must tilt the text: \
+       {pressure_view}"
+    );
+
+    // Moving the pressure slider re-solves the `FindRoot`/`Interpolation`
+    // table and must change the rendered pressure curve.
+    match &mut widget.controls[1] {
+      manipulate::ControlState::Continuous { current, .. } => {
+        *current = 1100.0;
+      }
+      other => panic!("expected P as a Continuous control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    assert!(widget.graphics_handle.is_some());
+    assert_ne!(
+      pressure_view,
+      render(&widget),
+      "raising the system pressure must change the re-solved curve"
+    );
+
+    // Switching `ctrl` to the second rule-list choice must render the
+    // other Switch branch (the Plot with an Epilog point) instead.
+    match &mut widget.controls[0] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 1;
+      }
+      other => panic!("expected ctrl as a Discrete control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    assert!(widget.graphics_handle.is_some());
+    assert_ne!(
+      pressure_view,
+      render(&widget),
+      "the Switch must render a different picture for the other choice"
+    );
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook (a
   /// diffusion-driven release-profile visualizer) against Woxi Studio's
   /// Manipulate pipeline. Its shape: a `Setter` swaps between two `Plot`s
   /// selected by `Which`, a `RadioButtonBar` picks a discrete rate
