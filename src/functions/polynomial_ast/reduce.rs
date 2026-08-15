@@ -2,6 +2,10 @@ use super::together::negate_expr;
 #[allow(unused_imports)]
 use super::*;
 
+use super::reduce_backend::{
+  BackendMode, ReduceRoute, backend_mode, classify_reduce_request,
+  normalize_real_reduce, shape_smtrat_result, try_smtrat_reduce,
+};
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 use crate::functions::math_ast::try_eval_to_f64;
 
@@ -11,6 +15,80 @@ use crate::functions::math_ast::try_eval_to_f64;
 ///
 /// Reduces equations and inequalities to a canonical disjunctive form.
 pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mode = backend_mode();
+  let route = classify_reduce_request(args);
+
+  // The systematic backend is a decision procedure for exact formulas over
+  // the reals.  Keep every other theory on its own established route: bounded
+  // Presburger-style integer enumeration, rational/complex algebra via Solve,
+  // and the local transcendental/Abs heuristics.  In particular, a default-
+  // domain equation must not silently become a real equation.
+  if mode == BackendMode::Internal || route != ReduceRoute::RealAlgebraic {
+    return reduce_internal_ast(args);
+  }
+
+  let normalized = normalize_real_reduce(args);
+
+  // Explicit SMT-RAT mode always delegates supported exact-real requests.
+  // In automatic mode, quantified formulas also go to the systematic engine
+  // first; the local reducer only contains a deliberately narrow Exists case.
+  let systematic_first = mode == BackendMode::SmtRat
+    || (mode == BackendMode::Auto
+      && normalized.as_ref().is_some_and(
+        super::reduce_backend::NormalizedReduce::contains_quantifier,
+      ));
+  if systematic_first && let Some(request) = &normalized {
+    match try_smtrat_reduce(request) {
+      Ok(result) => return Ok(shape_smtrat_result(&result, request)),
+      Err(error) if mode == BackendMode::SmtRat => {
+        return Err(InterpreterError::EvaluationError(format!(
+          "Reduce SMT-RAT backend failed: {error}"
+        )));
+      }
+      Err(_) => {}
+    }
+  }
+
+  let internal = reduce_internal_ast(args)?;
+
+  // Auto mode preserves the established fast paths and asks CAlC only when
+  // the internal reducer has explicitly left some Reduce call unresolved.
+  if mode == BackendMode::Auto
+    && contains_reduce_call(&internal)
+    && let Some(request) = &normalized
+    && let Ok(result) = try_smtrat_reduce(request)
+  {
+    return Ok(shape_smtrat_result(&result, request));
+  }
+  Ok(internal)
+}
+
+fn contains_reduce_call(expression: &Expr) -> bool {
+  match expression {
+    Expr::FunctionCall { name, args } => {
+      name == "Reduce" || args.iter().any(contains_reduce_call)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_reduce_call(left) || contains_reduce_call(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_reduce_call(operand),
+    Expr::Comparison { operands, .. } | Expr::CompoundExpr(operands) => {
+      operands.iter().any(contains_reduce_call)
+    }
+    Expr::List(operands) => operands.iter().any(contains_reduce_call),
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => contains_reduce_call(pattern) || contains_reduce_call(replacement),
+    _ => false,
+  }
+}
+
+fn reduce_internal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "Reduce expects 2 or 3 arguments".into(),
@@ -1267,8 +1345,13 @@ fn reduce_inequality(
   if is_constant_wrt(&expanded, var) {
     // No variable — evaluate the comparison numerically
     let val = simplify(expanded);
-    let result = evaluate_constant_ineq(&val, op);
-    return Ok(result);
+    if let Some(result) = evaluate_constant_ineq(&val, op) {
+      return Ok(result);
+    }
+    // The constraint is independent of the requested variable but still
+    // constrains a parameter.  Preserve it instead of treating every
+    // non-numeric condition as True (e.g. Reduce[a > 0, x] -> a > 0).
+    return Ok(make_comparison(&val, &Expr::Integer(0), op));
   }
 
   // Try to find the degree
@@ -1503,7 +1586,7 @@ fn try_reduce_abs_not_equal(
 }
 
 /// Evaluate a constant inequality (no variable present).
-fn evaluate_constant_ineq(val: &Expr, op: CompOp) -> Expr {
+fn evaluate_constant_ineq(val: &Expr, op: CompOp) -> Option<Expr> {
   // Try to get a numeric value
   if let Some(n) = expr_to_number(val) {
     let result = match op {
@@ -1514,10 +1597,9 @@ fn evaluate_constant_ineq(val: &Expr, op: CompOp) -> Expr {
       CompOp::Equal => n == 0.0,
       CompOp::NotEqual => n != 0.0,
     };
-    return bool_expr(result);
+    return Some(bool_expr(result));
   }
-  // Can't evaluate
-  bool_expr(true)
+  None
 }
 
 /// Try to extract a numeric value from an expression.

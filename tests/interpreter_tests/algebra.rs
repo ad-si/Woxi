@@ -6489,6 +6489,12 @@ mod reduce {
     assert_eq!(interpret("Reduce[True, x]").unwrap(), "True");
   }
 
+  #[test]
+  fn target_independent_parameter_condition_is_preserved() {
+    assert_eq!(interpret("Reduce[a > 0, x]").unwrap(), "a > 0");
+    assert_eq!(interpret("Reduce[a^2 < 4, x]").unwrap(), "-4 + a^2 < 0");
+  }
+
   // A linear equation with a symbolic leading coefficient must include the
   // degenerate case where that coefficient vanishes. Expected strings verified
   // against wolframscript.
