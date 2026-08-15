@@ -7,6 +7,28 @@ use std::path::PathBuf;
 use woxi::notebook::{CellStyle, parse_notebook};
 use woxi::{interpret, set_script_command_line, without_shebang};
 
+fn run_script(file: &PathBuf, args: Vec<String>) {
+  let absolute_path = if file.is_absolute() {
+    file.clone()
+  } else {
+    env::current_dir()
+      .unwrap_or_else(|_| PathBuf::from("."))
+      .join(file)
+  };
+
+  // Set $InputFileName and $ScriptCommandLine
+  let abs_str = absolute_path
+    .to_string_lossy()
+    .to_string()
+    .replace('\\', "/");
+  woxi::set_system_variable("$InputFileName", &format!("\"{abs_str}\""));
+  let mut cmd_line = vec![abs_str];
+  cmd_line.extend(args);
+  set_script_command_line(&cmd_line);
+
+  run_script_file(&absolute_path);
+}
+
 /// Execute a script file referenced by `absolute_path`.
 ///
 /// `.nb` notebook files are parsed and their Input/Code cells are
@@ -261,22 +283,7 @@ fn run(cli: Cli) {
       // A script owns stdin, so `Input[]` / `InputString[]` read from it.
       woxi::set_stdin_input(true);
 
-      let absolute_path = if file.is_absolute() {
-        file.clone()
-      } else {
-        env::current_dir()
-          .unwrap_or_else(|_| PathBuf::from("."))
-          .join(&file)
-      };
-
-      // Set $InputFileName and $ScriptCommandLine
-      let abs_str = absolute_path.to_string_lossy().to_string();
-      woxi::set_system_variable("$InputFileName", &format!("\"{abs_str}\""));
-      let mut cmd_line = vec![abs_str];
-      cmd_line.extend(args);
-      set_script_command_line(&cmd_line);
-
-      run_script_file(&absolute_path);
+      run_script(&file, args);
     }
     Commands::Jupyter { connection_file } => {
       if let Err(e) = jupyter::run(connection_file.as_deref()) {
@@ -301,22 +308,7 @@ fn run(cli: Cli) {
         return;
       }
       let file = PathBuf::from(&args[0]);
-      let absolute_path = if file.is_absolute() {
-        file.clone()
-      } else {
-        env::current_dir()
-          .unwrap_or_else(|_| PathBuf::from("."))
-          .join(&file)
-      };
-
-      // Set $InputFileName and $ScriptCommandLine
-      let abs_str = absolute_path.to_string_lossy().to_string();
-      woxi::set_system_variable("$InputFileName", &format!("\"{abs_str}\""));
-      let mut cmd_line = vec![abs_str];
-      cmd_line.extend(args.into_iter().skip(1));
-      set_script_command_line(&cmd_line);
-
-      run_script_file(&absolute_path);
+      run_script(&file, args.into_iter().skip(1).collect());
     }
   }
 }
