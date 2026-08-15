@@ -48,10 +48,7 @@ pub fn dispatch_plotting(
       .skip(1)
       .any(|a| crate::functions::plot::degenerate_iterator(name, a))
   {
-    return Some(Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec().into(),
-    }));
+    return Some(Ok(call(name, args.to_vec())));
   }
   match name {
     #[cfg(not(target_arch = "wasm32"))]
@@ -82,10 +79,10 @@ pub fn dispatch_plotting(
     // Full visual rendering of substitution rules, CellularAutomaton
     // rules, etc. isn't implemented.
     "RulePlot" if !args.is_empty() => Some(quiet_plot(|| {
-      crate::functions::graphics::show_ast(&[Expr::FunctionCall {
-        name: "Graphics".to_string(),
-        args: vec![Expr::List(vec![].into())].into(),
-      }])
+      crate::functions::graphics::show_ast(&[call1(
+        "Graphics",
+        Expr::List(vec![].into()),
+      )])
     })),
     // ReImPlot[f, {x, xmin, xmax}, opts...] plots Re[f] and Im[f] on the
     // same axes. We forward to Plot[{Re[f], Im[f]}, …]. When f is a list,
@@ -103,29 +100,13 @@ pub fn dispatch_plotting(
         Expr::List(items) => {
           let mut out: Vec<Expr> = Vec::with_capacity(items.len() * 2);
           for it in items {
-            out.push(Expr::FunctionCall {
-              name: "Re".to_string(),
-              args: vec![it.clone()].into(),
-            });
-            out.push(Expr::FunctionCall {
-              name: "Im".to_string(),
-              args: vec![it.clone()].into(),
-            });
+            out.push(call1("Re", it.clone()));
+            out.push(call1("Im", it.clone()));
           }
           Expr::List(out.into())
         }
         f => Expr::List(
-          vec![
-            Expr::FunctionCall {
-              name: "Re".to_string(),
-              args: vec![f.clone()].into(),
-            },
-            Expr::FunctionCall {
-              name: "Im".to_string(),
-              args: vec![f.clone()].into(),
-            },
-          ]
-          .into(),
+          vec![call1("Re", f.clone()), call1("Im", f.clone())].into(),
         ),
       };
       let mut new_args = Vec::with_capacity(args.len());
@@ -323,28 +304,20 @@ pub fn dispatch_plotting(
       let xv = "x".to_string();
       let yv = "y".to_string();
       // Substitute z -> x + I*y in f.
-      let xy_expr = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Identifier(xv.clone())),
-        right: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Identifier("I".to_string())),
-          right: Box::new(Expr::Identifier(yv.clone())),
-        }),
-      };
+      let xy_expr = plus2(
+        Expr::Identifier(xv.clone()),
+        times2(
+          Expr::Identifier("I".to_string()),
+          Expr::Identifier(yv.clone()),
+        ),
+      );
       let body = crate::syntax::substitute_variable(&args[0], &zvar, &xy_expr);
-      let modulus = Expr::FunctionCall {
-        name: "Abs".to_string(),
-        args: vec![body].into(),
-      };
+      let modulus = call1("Abs", body);
       // Plot ranges: Re(zmin)..Re(zmax) and Im(zmin)..Im(zmax).
       // Evaluate them to concrete numbers so Plot3D's iterator parser
       // accepts them.
       let eval_part = |e: &Expr, part: &str| -> Expr {
-        let wrapped = Expr::FunctionCall {
-          name: part.to_string(),
-          args: vec![e.clone()].into(),
-        };
+        let wrapped = call1(part, e.clone());
         crate::evaluator::evaluate_expr_to_expr(&wrapped).unwrap_or(wrapped)
       };
       let mut plot_args = vec![
@@ -408,28 +381,13 @@ pub fn dispatch_plotting(
             } else {
               // {z, r} → corners (-r - r·I, r + r·I)
               let r = items[1].clone();
-              let neg_r = Expr::FunctionCall {
-                name: "Minus".to_string(),
-                args: vec![r.clone()].into(),
-              };
-              let corner_lo = Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(neg_r.clone()),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(neg_r.clone()),
-                  right: Box::new(Expr::Identifier("I".to_string())),
-                }),
-              };
-              let corner_hi = Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(r.clone()),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(r),
-                  right: Box::new(Expr::Identifier("I".to_string())),
-                }),
-              };
+              let neg_r = call1("Minus", r.clone());
+              let corner_lo = plus2(
+                neg_r.clone(),
+                times2(neg_r.clone(), Expr::Identifier("I".to_string())),
+              );
+              let corner_hi =
+                plus2(r.clone(), times2(r, Expr::Identifier("I".to_string())));
               (name.clone(), corner_lo, corner_hi)
             }
           }
@@ -439,21 +397,16 @@ pub fn dispatch_plotting(
       };
       let xv = "x".to_string();
       let yv = "y".to_string();
-      let xy_expr = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Identifier(xv.clone())),
-        right: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Identifier("I".to_string())),
-          right: Box::new(Expr::Identifier(yv.clone())),
-        }),
-      };
+      let xy_expr = plus2(
+        Expr::Identifier(xv.clone()),
+        times2(
+          Expr::Identifier("I".to_string()),
+          Expr::Identifier(yv.clone()),
+        ),
+      );
       let pred = crate::syntax::substitute_variable(&args[0], &zvar, &xy_expr);
       let eval_part = |e: &Expr, part: &str| -> Expr {
-        let wrapped = Expr::FunctionCall {
-          name: part.to_string(),
-          args: vec![e.clone()].into(),
-        };
+        let wrapped = call1(part, e.clone());
         crate::evaluator::evaluate_expr_to_expr(&wrapped).unwrap_or(wrapped)
       };
       let mut region_args = vec![

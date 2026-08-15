@@ -382,10 +382,9 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     // access wolframscript returns Missing["NotAvailable"] (message
     // $GeoLocation::dloff) rather than inventing a location, and Woxi —
     // being offline — matches that.
-    "$GeoLocation" => Some(Expr::FunctionCall {
-      name: "Missing".to_string(),
-      args: vec![Expr::String("NotAvailable".to_string())].into(),
-    }),
+    "$GeoLocation" => {
+      Some(call1("Missing", Expr::String("NotAvailable".to_string())))
+    }
     "$MachineEpsilon" => Some(Expr::Real(2.220446049250313e-16)),
     "$MaxMachineNumber" => Some(Expr::Real(f64::MAX)),
     // Wolfram's $MinMachineNumber is the smallest normalized double
@@ -412,10 +411,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         // keeps it the very expression `sym::tag` writes, so releasing the
         // hold yields the message text as it does in wolframscript.
         .filter_map(|name| crate::syntax::string_to_expr(name).ok())
-        .map(|message_name| Expr::FunctionCall {
-          name: "HoldForm".to_string(),
-          args: vec![message_name].into(),
-        })
+        .map(|message_name| call1("HoldForm", message_name))
         .collect::<Vec<_>>()
         .into(),
     )),

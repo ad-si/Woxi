@@ -52,21 +52,18 @@ pub(super) fn dispatch_timeseries_functions(
       if args.len() == 1 =>
     {
       let values = timeseries_ast::time_series_values(&args[0])?;
-      Some(crate::evaluator::evaluate_expr_to_expr(
-        &Expr::FunctionCall {
-          name: name.to_string(),
-          args: vec![values].into(),
-        },
-      ))
+      Some(crate::evaluator::evaluate_expr_to_expr(&call1(
+        name, values,
+      )))
     }
     // EventSeries[{{t, v}, …}] stays inert like TimeSeries; its property
     // queries are answered by the shared path handler.
     "EventSeries"
       if args.len() == 1
-        && timeseries_ast::series_pairs_of(&Expr::FunctionCall {
-          name: "EventSeries".to_string(),
-          args: vec![args[0].clone()].into(),
-        })
+        && timeseries_ast::series_pairs_of(&call1(
+          "EventSeries",
+          args[0].clone(),
+        ))
         .is_some() =>
     {
       Some(Ok(crate::syntax::unevaluated("EventSeries", args)))

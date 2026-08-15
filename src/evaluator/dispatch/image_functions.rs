@@ -66,10 +66,10 @@ const SCHEME_3: [(f64, f64, f64); 10] = [
 /// (see `apply_curried_call`).
 fn gradient_color_function(scheme: &str) -> Expr {
   let blend = Expr::Function {
-    body: Box::new(Expr::FunctionCall {
-      name: "Blend".to_string(),
-      args: vec![Expr::String(scheme.to_string()), Expr::Slot(1)].into(),
-    }),
+    body: Box::new(call(
+      "Blend",
+      vec![Expr::String(scheme.to_string()), Expr::Slot(1)],
+    )),
   };
   Expr::FunctionCall {
     name: "ColorDataFunction".to_string(),
@@ -847,10 +847,10 @@ pub fn dispatch_image_functions(
             Expr::Real(v)
           }
         };
-        return Some(Ok(Expr::FunctionCall {
-          name: "RGBColor".to_string(),
-          args: vec![channel(r), channel(g), channel(b)].into(),
-        }));
+        return Some(Ok(call(
+          "RGBColor",
+          vec![channel(r), channel(g), channel(b)],
+        )));
       }
       // ColorData[name, t]: sample the named gradient at parameter t
       // (clamped to [0, 1]), and ColorData[name, "Image"]: a horizontal
@@ -882,20 +882,20 @@ pub fn dispatch_image_functions(
         {
           let (r, g, b) =
             crate::functions::chart::gradient_color_at(controls, t);
-          return Some(Ok(Expr::FunctionCall {
-            name: "RGBColor".to_string(),
-            args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
-          }));
+          return Some(Ok(call(
+            "RGBColor",
+            vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+          )));
         }
       }
       // ColorData[n, k]: the k-th color of indexed scheme n.
       if let (Expr::Integer(n), Expr::Integer(k)) = (&args[0], &args[1])
         && let Some((r, g, b)) = indexed_scheme_color(*n, *k)
       {
-        return Some(Ok(Expr::FunctionCall {
-          name: "RGBColor".to_string(),
-          args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
-        }));
+        return Some(Ok(call(
+          "RGBColor",
+          vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+        )));
       }
       if let (Expr::Integer(n), Expr::String(prop)) = (&args[0], &args[1])
         && prop == "ColorList"
@@ -904,9 +904,11 @@ pub fn dispatch_image_functions(
         return Some(Ok(Expr::List(
           (1..=15)
             .filter_map(|k| indexed_scheme_color(1, k))
-            .map(|(r, g, b)| Expr::FunctionCall {
-              name: "RGBColor".to_string(),
-              args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
+            .map(|(r, g, b)| {
+              call(
+                "RGBColor",
+                vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+              )
             })
             .collect(),
         )));
@@ -918,9 +920,11 @@ pub fn dispatch_image_functions(
         return Some(Ok(Expr::List(
           colors
             .iter()
-            .map(|&(r, g, b)| Expr::FunctionCall {
-              name: "RGBColor".to_string(),
-              args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
+            .map(|&(r, g, b)| {
+              call(
+                "RGBColor",
+                vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+              )
             })
             .collect(),
         )));

@@ -193,11 +193,10 @@ pub fn association_nested_access(
         } else {
           // Key not found — match wolframscript by returning
           // Missing["KeyAbsent", key].
-          return Ok(Expr::FunctionCall {
-            name: "Missing".to_string(),
-            args: vec![Expr::String("KeyAbsent".to_string()), key.clone()]
-              .into(),
-          });
+          return Ok(call(
+            "Missing",
+            vec![Expr::String("KeyAbsent".to_string()), key.clone()],
+          ));
         }
       }
 
@@ -512,10 +511,7 @@ fn try_ast_pattern_replace_impl(
           } else {
             vec![(**left).clone(), (**right).clone()]
           };
-        let as_call = Expr::FunctionCall {
-          name: func_name.to_string(),
-          args: args.into(),
-        };
+        let as_call = call(func_name, args);
         if let Some(result) = try_ast_pattern_replace_single(
           &as_call,
           pattern,
@@ -740,10 +736,7 @@ fn lookup_user_default(
     ],
     vec![Expr::Identifier(func_name.to_string())],
   ] {
-    let call = Expr::FunctionCall {
-      name: "Default".to_string(),
-      args: default_args.into(),
-    };
+    let call = call("Default", default_args);
     if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&call) {
       // If evaluation produced something other than the unevaluated form,
       // a user-defined Default fired.
@@ -932,10 +925,7 @@ fn try_ast_pattern_replace_single(
     (Some(s), None) => crate::syntax::string_to_expr(s).ok(),
     (None, Some(e)) => Some(e.clone()),
     (Some(s), Some(e)) => match crate::syntax::string_to_expr(s) {
-      Ok(parsed) => Some(Expr::FunctionCall {
-        name: "And".to_string(),
-        args: vec![parsed, e.clone()].into(),
-      }),
+      Ok(parsed) => Some(call("And", vec![parsed, e.clone()])),
       Err(_) => Some(e.clone()),
     },
   };
@@ -1160,10 +1150,10 @@ pub fn apply_replace_with_level_ast(
       if let Some(n) = level_val(&items[0]) {
         (n, n)
       } else {
-        return Ok(Expr::FunctionCall {
-          name: "Replace".to_string(),
-          args: vec![expr.clone(), rules.clone(), level_spec.clone()].into(),
-        });
+        return Ok(call(
+          "Replace",
+          vec![expr.clone(), rules.clone(), level_spec.clone()],
+        ));
       }
     }
     Expr::List(items) if items.len() == 2 => {
@@ -1174,10 +1164,10 @@ pub fn apply_replace_with_level_ast(
     _ => match level_val(level_spec) {
       Some(n) => (0, n),
       None => {
-        return Ok(Expr::FunctionCall {
-          name: "Replace".to_string(),
-          args: vec![expr.clone(), rules.clone(), level_spec.clone()].into(),
-        });
+        return Ok(call(
+          "Replace",
+          vec![expr.clone(), rules.clone(), level_spec.clone()],
+        ));
       }
     },
   };
@@ -1498,10 +1488,7 @@ fn try_align_groups(
       }
       // A sequence binds to Sequence[…] even when it matched a single
       // element, so that splicing it back keeps the flattening semantics.
-      let value = Expr::FunctionCall {
-        name: "Sequence".to_string(),
-        args: elements.into(),
-      };
+      let value = call("Sequence", elements);
       if !seq_info.name.is_empty()
         && !merge_bindings(&mut bindings, vec![(seq_info.name, value)])
       {
@@ -1628,10 +1615,7 @@ fn find_orderless_subset_match(
     // Try all permutations of the selected subset against pattern args
     let perms = permutations(&sub_args);
     for perm in perms {
-      let sub_expr = Expr::FunctionCall {
-        name: func_name.to_string(),
-        args: perm.into(),
-      };
+      let sub_expr = call(func_name, perm);
       if let Some(bindings) =
         match_pattern(&sub_expr, &unevaluated(func_name, pat_args))
       {
@@ -3188,10 +3172,7 @@ fn match_args_with_sequences(
           // Add binding for this sequence name (if any)
           if !seq.name.is_empty() {
             let bound_value = if count == 0 {
-              Expr::FunctionCall {
-                name: "Sequence".to_string(),
-                args: vec![].into(),
-              }
+              call0("Sequence")
             } else if count == 1 {
               seq_args[0].clone()
             } else {
@@ -3226,10 +3207,7 @@ fn match_args_with_sequences(
         // Add binding for this sequence
         if !seq.name.is_empty() {
           let bound_value = if count == 0 {
-            Expr::FunctionCall {
-              name: "Sequence".to_string(),
-              args: vec![].into(),
-            }
+            call0("Sequence")
           } else if count == 1 {
             seq_args[0].clone()
           } else {
@@ -3646,17 +3624,17 @@ fn match_pattern_impl(
       Expr::Rule {
         pattern,
         replacement,
-      } => Some(Expr::FunctionCall {
-        name: "Rule".to_string(),
-        args: vec![(**pattern).clone(), (**replacement).clone()].into(),
-      }),
+      } => Some(call(
+        "Rule",
+        vec![(**pattern).clone(), (**replacement).clone()],
+      )),
       Expr::RuleDelayed {
         pattern,
         replacement,
-      } => Some(Expr::FunctionCall {
-        name: "RuleDelayed".to_string(),
-        args: vec![(**pattern).clone(), (**replacement).clone()].into(),
-      }),
+      } => Some(call(
+        "RuleDelayed",
+        vec![(**pattern).clone(), (**replacement).clone()],
+      )),
       _ => None,
     }
   };
@@ -4330,10 +4308,10 @@ fn match_pattern_impl(
           } = expr
             && expr_name == func_name
           {
-            let pat_as_call = Expr::FunctionCall {
-              name: func_name.to_string(),
-              args: vec![(**pat_left).clone(), (**pat_right).clone()].into(),
-            };
+            let pat_as_call = call(
+              func_name,
+              vec![(**pat_left).clone(), (**pat_right).clone()],
+            );
             if let Some(b) = match_pattern(expr, &pat_as_call) {
               return Some(b);
             }
@@ -4381,10 +4359,7 @@ fn match_pattern_impl(
 /// for an already-explicit DirectedInfinity[…], which needs no rewriting).
 fn directed_infinity_canonical(expr: &Expr) -> Option<Expr> {
   let is_inf = |e: &Expr| matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity");
-  let di = |dir: Vec<Expr>| Expr::FunctionCall {
-    name: "DirectedInfinity".to_string(),
-    args: dir.into(),
-  };
+  let di = |dir: Vec<Expr>| call("DirectedInfinity", dir);
   match expr {
     Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => {
       Some(di(vec![Expr::Integer(1)]))
@@ -4425,17 +4400,9 @@ fn complex_atom_canonical(expr: &Expr) -> Option<Expr> {
   if !crate::functions::predicate_ast::is_complex_number(expr) {
     return None;
   }
-  let part = |head: &str| {
-    evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: head.to_string(),
-      args: vec![expr.clone()].into(),
-    })
-    .ok()
-  };
-  Some(Expr::FunctionCall {
-    name: "Complex".to_string(),
-    args: vec![part("Re")?, part("Im")?].into(),
-  })
+  let part =
+    |head: &str| evaluate_expr_to_expr(&call1(head, expr.clone())).ok();
+  Some(call("Complex", vec![part("Re")?, part("Im")?]))
 }
 
 pub fn get_expr_head(expr: &Expr) -> String {

@@ -976,20 +976,14 @@ fn try_reduce_modulus(expr: &Expr, vars: &Expr, opt: &Expr) -> Option<Expr> {
     let clause = if eqs.len() == 1 {
       eqs.into_iter().next().unwrap()
     } else {
-      Expr::FunctionCall {
-        name: "And".to_string(),
-        args: eqs.into(),
-      }
+      call("And", eqs)
     };
     clauses.push(clause);
   }
   let result = if clauses.len() == 1 {
     clauses.into_iter().next().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "Or".to_string(),
-      args: clauses.into(),
-    }
+    call("Or", clauses)
   };
   Some(result)
 }
@@ -1398,12 +1392,7 @@ fn try_constrained_linear_disk_symbolic(
   let div = |x: Expr, y: Expr| -> Expr { eval(div2(x, y)) };
   let neg = |x: Expr| -> Expr { eval(minus2(Expr::Integer(0), x)) };
   let square = |x: Expr| -> Expr { times(x.clone(), x) };
-  let sqrt_e = |e: Expr| -> Expr {
-    eval(Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![e].into(),
-    })
-  };
+  let sqrt_e = |e: Expr| -> Expr { eval(call1("Sqrt", e)) };
 
   let radius = sqrt_e(r2_expr);
   let norm_sq = plus(square(a_expr.clone()), square(b_expr.clone()));
@@ -1429,10 +1418,7 @@ fn try_constrained_linear_disk_symbolic(
   };
 
   let rule = |var: &str, val: Expr| -> Expr {
-    Expr::FunctionCall {
-      name: "Rule".to_string(),
-      args: vec![Expr::Identifier(var.to_string()), val].into(),
-    }
+    call("Rule", vec![Expr::Identifier(var.to_string()), val])
   };
   let argmap = Expr::List(vec![rule(&v1, px), rule(&v2, py)].into());
   Some(Expr::List(vec![value, argmap].into()))

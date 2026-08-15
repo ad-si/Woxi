@@ -188,11 +188,10 @@ pub fn dispatch_datetime_functions(
       if args.len() == 1 {
         return Some(Ok(zones[0].clone()));
       }
-      return Some(crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(zones[0].clone()),
-        right: Box::new(zones[1].clone()),
-      }));
+      return Some(crate::evaluator::evaluate_expr_to_expr(&minus2(
+        zones[0].clone(),
+        zones[1].clone(),
+      )));
     }
     "DayMatchQ" if args.len() == 2 => {
       return Some(crate::functions::datetime_ast::day_match_q_ast(args));
@@ -377,10 +376,7 @@ pub fn dispatch_datetime_functions(
         }
         let mut new_args = vec![normalized];
         new_args.extend(extra);
-        return Some(Ok(Expr::FunctionCall {
-          name: "DateObject".to_string(),
-          args: new_args.into(),
-        }));
+        return Some(Ok(call("DateObject", new_args)));
       }
       // DateObject[{…}, granularity] keeps only the components that
       // granularity names — `DateObject[{2024, 2, 29}, "Month"]` is the whole
@@ -414,10 +410,7 @@ pub fn dispatch_datetime_functions(
             new_args.push(Expr::String("Gregorian".to_string()));
             new_args.push(Expr::Real(0.0));
           }
-          return Some(Ok(Expr::FunctionCall {
-            name: "DateObject".to_string(),
-            args: new_args.into(),
-          }));
+          return Some(Ok(call("DateObject", new_args)));
         }
       }
       // Explicit-granularity forms (and evaluated DateObjects passing
@@ -432,10 +425,7 @@ pub fn dispatch_datetime_functions(
       {
         let mut new_args = vec![Expr::List(normalized.into())];
         new_args.extend(args[1..].iter().cloned());
-        return Some(Ok(Expr::FunctionCall {
-          name: "DateObject".to_string(),
-          args: new_args.into(),
-        }));
+        return Some(Ok(call("DateObject", new_args)));
       }
       return Some(Ok(unevaluated("DateObject", args)));
     }

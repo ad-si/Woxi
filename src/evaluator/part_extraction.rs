@@ -55,10 +55,7 @@ pub fn flatten_alternatives_binop(expr: &Expr) -> Option<Expr> {
   }
   let mut parts = Vec::new();
   if gather(expr, &mut parts) {
-    Some(Expr::FunctionCall {
-      name: "Alternatives".to_string(),
-      args: parts.into(),
-    })
+    Some(call("Alternatives", parts))
   } else {
     None
   }
@@ -424,10 +421,7 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
         Expr::List(vec![color, draw].into())
       })
       .collect();
-    return Some(Expr::FunctionCall {
-      name: "Graphics".to_string(),
-      args: vec![Expr::List(series.into())].into(),
-    });
+    return Some(call1("Graphics", Expr::List(series.into())));
   }
   None
 }
@@ -483,9 +477,11 @@ fn extract_part_ast_rest(
       };
       items.get(idx)
     };
-    let missing_for = |key: &Expr| Expr::FunctionCall {
-      name: "Missing".to_string(),
-      args: vec![Expr::String("KeyAbsent".to_string()), key.clone()].into(),
+    let missing_for = |key: &Expr| {
+      call(
+        "Missing",
+        vec![Expr::String("KeyAbsent".to_string()), key.clone()],
+      )
     };
     // Key-based lookup shared by the string, Key[...], and list-index forms.
     // String indices match only string keys; Key[k] matches any key exactly.
@@ -821,10 +817,8 @@ fn extract_part_ast_rest(
         BinaryOperator::Plus => ("Plus", vec![*left.clone(), *right.clone()]),
         BinaryOperator::Minus => {
           // a - b = Plus[a, Times[-1, b]]
-          let neg_right = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), *right.clone()].into(),
-          };
+          let neg_right =
+            call("Times", vec![Expr::Integer(-1), *right.clone()]);
           ("Plus", vec![*left.clone(), neg_right])
         }
         BinaryOperator::Times => ("Times", vec![*left.clone(), *right.clone()]),
@@ -834,10 +828,8 @@ fn extract_part_ast_rest(
             ("Power", vec![*right.clone(), Expr::Integer(-1)])
           } else {
             // a/b = Times[a, Power[b, -1]]
-            let inv_right = Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![*right.clone(), Expr::Integer(-1)].into(),
-            };
+            let inv_right =
+              call("Power", vec![*right.clone(), Expr::Integer(-1)]);
             ("Times", vec![*left.clone(), inv_right])
           }
         }

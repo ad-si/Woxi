@@ -438,11 +438,8 @@ pub fn dispatch_string_functions(
             return Some(v);
           }
           let n =
-            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-              name: "N".to_string(),
-              args: vec![e.clone()].into(),
-            })
-            .ok()?;
+            crate::evaluator::evaluate_expr_to_expr(&call1("N", e.clone()))
+              .ok()?;
           crate::functions::math_ast::expr_to_f64(&n)
         }
         // Compare by numeric value; vectors compare component-wise. Non-numeric

@@ -47,10 +47,7 @@ pub fn dispatch_evaluation_control(
           return Some(Ok(prev));
         }
         let normalized = if k <= 0 { 0 } else { k };
-        return Some(Ok(Expr::FunctionCall {
-          name: "Out".to_string(),
-          args: vec![Expr::Integer(normalized)].into(),
-        }));
+        return Some(Ok(call1("Out", Expr::Integer(normalized))));
       }
     }
     "Evaluate" if args.len() == 1 => {
@@ -71,10 +68,7 @@ pub fn dispatch_evaluation_control(
       } else {
         args.to_vec()
       };
-      return Some(Ok(Expr::FunctionCall {
-        name: "UniformDistribution".to_string(),
-        args: uni_args.into(),
-      }));
+      return Some(Ok(call("UniformDistribution", uni_args)));
     }
     "NormalDistribution" => {
       let norm_args = if args.is_empty() {
@@ -82,10 +76,7 @@ pub fn dispatch_evaluation_control(
       } else {
         args.to_vec()
       };
-      return Some(Ok(Expr::FunctionCall {
-        name: "NormalDistribution".to_string(),
-        args: norm_args.into(),
-      }));
+      return Some(Ok(call("NormalDistribution", norm_args)));
     }
     "ExponentialDistribution" if args.len() == 1 => {
       return Some(Ok(unevaluated("ExponentialDistribution", args)));
@@ -201,10 +192,7 @@ pub fn dispatch_evaluation_control(
       } else {
         args.to_vec()
       };
-      return Some(Ok(Expr::FunctionCall {
-        name: "LogisticDistribution".to_string(),
-        args: logistic_args.into(),
-      }));
+      return Some(Ok(call("LogisticDistribution", logistic_args)));
     }
     "GompertzMakehamDistribution" if args.len() == 2 => {
       return Some(Ok(unevaluated("GompertzMakehamDistribution", args)));
@@ -223,10 +211,7 @@ pub fn dispatch_evaluation_control(
       } else {
         return None;
       };
-      return Some(Ok(Expr::FunctionCall {
-        name: "ExtremeValueDistribution".to_string(),
-        args: evd_args.into(),
-      }));
+      return Some(Ok(call("ExtremeValueDistribution", evd_args)));
     }
     "InverseChiSquareDistribution" if args.len() == 1 => {
       return Some(Ok(unevaluated("InverseChiSquareDistribution", args)));
@@ -264,10 +249,7 @@ pub fn dispatch_evaluation_control(
       } else {
         args.to_vec()
       };
-      return Some(Ok(Expr::FunctionCall {
-        name: "CauchyDistribution".to_string(),
-        args: cauchy_args.into(),
-      }));
+      return Some(Ok(call("CauchyDistribution", cauchy_args)));
     }
     "DiscreteUniformDistribution" if args.len() == 1 => {
       return Some(Ok(unevaluated("DiscreteUniformDistribution", args)));
@@ -280,10 +262,7 @@ pub fn dispatch_evaluation_control(
       } else {
         return None;
       };
-      return Some(Ok(Expr::FunctionCall {
-        name: "LaplaceDistribution".to_string(),
-        args: laplace_args.into(),
-      }));
+      return Some(Ok(call("LaplaceDistribution", laplace_args)));
     }
     "RayleighDistribution" if args.len() == 1 => {
       return Some(Ok(unevaluated("RayleighDistribution", args)));
@@ -300,10 +279,10 @@ pub fn dispatch_evaluation_control(
     // WienerProcess[] normalizes to WienerProcess[0, 1]
     // (wolframscript-verified).
     "WienerProcess" if args.is_empty() => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "WienerProcess".to_string(),
-        args: vec![Expr::Integer(0), Expr::Integer(1)].into(),
-      }));
+      return Some(Ok(call(
+        "WienerProcess",
+        vec![Expr::Integer(0), Expr::Integer(1)],
+      )));
     }
     // BrownianBridgeProcess[] and the two-point form normalize with the
     // default variance scale 1; a single argument is an arity error
@@ -327,10 +306,7 @@ pub fn dispatch_evaluation_control(
         }
         _ => args.to_vec(),
       };
-      return Some(Ok(Expr::FunctionCall {
-        name: "BrownianBridgeProcess".to_string(),
-        args: normalized.into(),
-      }));
+      return Some(Ok(call("BrownianBridgeProcess", normalized)));
     }
     // Random-process objects are symbolic; their time slices proc[t]
     // are consumed by PDF/CDF/Mean/Variance.
@@ -410,11 +386,10 @@ pub fn dispatch_evaluation_control(
             vec![Expr::Integer(i as i128 + 1), kv[1].clone()].into(),
           ));
         }
-        return Some(Ok(Expr::FunctionCall {
-          name: "FailureDistribution".to_string(),
-          args: vec![substitute(&args[0], &map), Expr::List(new_pairs.into())]
-            .into(),
-        }));
+        return Some(Ok(call(
+          "FailureDistribution",
+          vec![substitute(&args[0], &map), Expr::List(new_pairs.into())],
+        )));
       }
       return Some(Ok(unevaluated("FailureDistribution", args)));
     }
@@ -442,10 +417,10 @@ pub fn dispatch_evaluation_control(
           rest.iter().map(&rate).collect::<Option<Vec<Expr>>>()
       {
         rates.insert(0, r1);
-        return Some(Ok(Expr::FunctionCall {
-          name: "HypoexponentialDistribution".to_string(),
-          args: vec![Expr::List(rates.into())].into(),
-        }));
+        return Some(Ok(call1(
+          "HypoexponentialDistribution",
+          Expr::List(rates.into()),
+        )));
       }
       return Some(Ok(unevaluated("StandbyDistribution", args)));
     }
@@ -462,10 +437,10 @@ pub fn dispatch_evaluation_control(
     }
     // HalfSpace[n] normalizes to HalfSpace[n, 0] (wolframscript-verified).
     "HalfSpace" if args.len() == 1 && matches!(&args[0], Expr::List(_)) => {
-      return Some(Ok(Expr::FunctionCall {
-        name: "HalfSpace".to_string(),
-        args: vec![args[0].clone(), Expr::Integer(0)].into(),
-      }));
+      return Some(Ok(call(
+        "HalfSpace",
+        vec![args[0].clone(), Expr::Integer(0)],
+      )));
     }
     // SphericalShell normalizes to its full form
     // SphericalShell[center, {rinner, router}]: the default shell is
@@ -482,10 +457,7 @@ pub fn dispatch_evaluation_control(
           origin(),
           Expr::List(
             vec![
-              Expr::FunctionCall {
-                name: "Rational".to_string(),
-                args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-              },
+              call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
               Expr::Integer(1),
             ]
             .into(),
@@ -495,11 +467,10 @@ pub fn dispatch_evaluation_control(
           Some((origin(), args[0].clone()))
         }
         [r] if !matches!(r, Expr::List(_)) => {
-          let half = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(r.clone()),
-            right: Box::new(Expr::Integer(2)),
-          });
+          let half = crate::evaluator::evaluate_expr_to_expr(&div2(
+            r.clone(),
+            Expr::Integer(2),
+          ));
           match half {
             Ok(half) => {
               Some((origin(), Expr::List(vec![half, r.clone()].into())))
@@ -510,10 +481,7 @@ pub fn dispatch_evaluation_control(
         _ => None,
       };
       return Some(Ok(match normalized {
-        Some((center, radii)) => Expr::FunctionCall {
-          name: "SphericalShell".to_string(),
-          args: vec![center, radii].into(),
-        },
+        Some((center, radii)) => call("SphericalShell", vec![center, radii]),
         None => unevaluated("SphericalShell", args),
       }));
     }
@@ -533,10 +501,7 @@ pub fn dispatch_evaluation_control(
         _ => None,
       };
       return Some(Ok(match normalized {
-        Some((points, r)) => Expr::FunctionCall {
-          name: "StadiumShape".to_string(),
-          args: vec![points, r].into(),
-        },
+        Some((points, r)) => call("StadiumShape", vec![points, r]),
         None => unevaluated("StadiumShape", args),
       }));
     }
@@ -559,20 +524,16 @@ pub fn dispatch_evaluation_control(
         _ => None,
       };
       return Some(Ok(match normalized {
-        Some((points, r)) => Expr::FunctionCall {
-          name: "CapsuleShape".to_string(),
-          args: vec![points, r].into(),
-        },
+        Some((points, r)) => call("CapsuleShape", vec![points, r]),
         None => unevaluated("CapsuleShape", args),
       }));
     }
     "ArcSinDistribution" if args.is_empty() => {
       // Default: ArcSinDistribution[{0, 1}]
-      return Some(Ok(Expr::FunctionCall {
-        name: "ArcSinDistribution".to_string(),
-        args: vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into())]
-          .into(),
-      }));
+      return Some(Ok(call(
+        "ArcSinDistribution",
+        vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into())],
+      )));
     }
     "ArcSinDistribution" if args.len() == 1 => {
       return Some(Ok(unevaluated("ArcSinDistribution", args)));
@@ -607,10 +568,7 @@ pub fn dispatch_evaluation_control(
         ],
         _ => args.to_vec(), // 5-param, already canonical
       };
-      return Some(Ok(Expr::FunctionCall {
-        name: "StableDistribution".to_string(),
-        args: canonical_args.into(),
-      }));
+      return Some(Ok(call("StableDistribution", canonical_args)));
     }
     // DistributionParameterQ[dist] — test if a distribution's parameters are valid
     "DistributionParameterQ" if args.len() == 1 => {
@@ -648,20 +606,14 @@ pub fn dispatch_evaluation_control(
             }
           }
           let b64 = engine.encode(&raw_bytes);
-          return Some(Ok(Expr::FunctionCall {
-            name: "ByteArray".to_string(),
-            args: vec![Expr::String(b64)].into(),
-          }));
+          return Some(Ok(call1("ByteArray", Expr::String(b64))));
         }
         Expr::String(s) => {
           // Validate base64 string, then store as-is
           use base64::Engine;
           let engine = base64::engine::general_purpose::STANDARD;
           if engine.decode(s).is_ok() {
-            return Some(Ok(Expr::FunctionCall {
-              name: "ByteArray".to_string(),
-              args: vec![Expr::String(s.clone())].into(),
-            }));
+            return Some(Ok(call1("ByteArray", Expr::String(s.clone()))));
           }
           crate::emit_message(
             "ByteArray::lend: The argument at position 1 in ByteArray[...] should be a vector of unsigned byte values or a Base64-encoded string.",
@@ -706,10 +658,10 @@ pub fn dispatch_evaluation_control(
       };
       match dtype {
         Some(t) => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "NumericArray".to_string(),
-            args: vec![payload.clone(), Expr::String(t)].into(),
-          }));
+          return Some(Ok(call(
+            "NumericArray",
+            vec![payload.clone(), Expr::String(t)],
+          )));
         }
         None => {
           return Some(Ok(unevaluated("NumericArray", args)));
@@ -723,10 +675,7 @@ pub fn dispatch_evaluation_control(
         .unwrap_or_else(|_| args[1].clone());
       let bounds = crate::evaluator::evaluate_expr_to_expr(&args[0])
         .unwrap_or_else(|_| args[0].clone());
-      return Some(Ok(Expr::FunctionCall {
-        name: "CensoredDistribution".to_string(),
-        args: vec![bounds, dist].into(),
-      }));
+      return Some(Ok(call("CensoredDistribution", vec![bounds, dist])));
     }
     "Names" if args.len() <= 1 => {
       // Include both user-defined names and built-in function names

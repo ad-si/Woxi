@@ -58,10 +58,7 @@ fn root_of_unity_q(z: &Expr) -> bool {
     return false;
   }
   // Numeric complex value via N[z]; non-numeric inputs (symbols) → False.
-  let n_call = Expr::FunctionCall {
-    name: "N".to_string(),
-    args: vec![z.clone()].into(),
-  };
+  let n_call = call1("N", z.clone());
   let Ok(num) = evaluate_expr_to_expr(&n_call) else {
     return false;
   };
@@ -84,14 +81,8 @@ fn root_of_unity_q(z: &Expr) -> bool {
     pi = ni;
     if (pr - 1.0).abs() < 1e-9 && pi.abs() < 1e-9 {
       // Candidate order n found; confirm exactly with PossibleZeroQ[z^n - 1].
-      let zn = Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![z.clone(), Expr::Integer(n as i128)].into(),
-      };
-      let diff = Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![zn, Expr::Integer(-1)].into(),
-      };
+      let zn = call("Power", vec![z.clone(), Expr::Integer(n as i128)]);
+      let diff = call("Plus", vec![zn, Expr::Integer(-1)]);
       if let Ok(result) = crate::functions::predicate_ast::possible_zero_q_ast(
         std::slice::from_ref(&diff),
       ) && matches!(&result, Expr::Identifier(s) if s == "True")
@@ -325,10 +316,10 @@ pub fn dispatch_predicate_functions(
       }
       // A fresh variable avoids any collision with symbols in the input.
       let var = Expr::Identifier("AlgebraicIntegerQ$x".to_string());
-      let mp = match evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "MinimalPolynomial".to_string(),
-        args: vec![args[0].clone(), var.clone()].into(),
-      }) {
+      let mp = match evaluate_expr_to_expr(&call(
+        "MinimalPolynomial",
+        vec![args[0].clone(), var.clone()],
+      )) {
         Ok(p) => p,
         Err(e) => return Some(Err(e)),
       };
@@ -340,17 +331,17 @@ pub fn dispatch_predicate_functions(
         return false_result();
       }
       // Leading coefficient = Coefficient[mp, var, Exponent[mp, var]].
-      let degree = match evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Exponent".to_string(),
-        args: vec![mp.clone(), var.clone()].into(),
-      }) {
+      let degree = match evaluate_expr_to_expr(&call(
+        "Exponent",
+        vec![mp.clone(), var.clone()],
+      )) {
         Ok(d) => d,
         Err(e) => return Some(Err(e)),
       };
-      let lead = match evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Coefficient".to_string(),
-        args: vec![mp, var, degree].into(),
-      }) {
+      let lead = match evaluate_expr_to_expr(&call(
+        "Coefficient",
+        vec![mp, var, degree],
+      )) {
         Ok(l) => l,
         Err(e) => return Some(Err(e)),
       };
@@ -736,10 +727,7 @@ pub fn dispatch_predicate_functions(
             });
           }
           if shape_ok {
-            let disj = Expr::FunctionCall {
-              name: "Or".to_string(),
-              args: clauses.into(),
-            };
+            let disj = call("Or", clauses);
             return Some(crate::evaluator::evaluate_expr_to_expr(&disj));
           }
         }
@@ -822,10 +810,10 @@ pub fn dispatch_predicate_functions(
         if let Some(v) = value_expr {
           return Some(Ok(Expr::List(
             vec![Expr::RuleDelayed {
-              pattern: Box::new(Expr::FunctionCall {
-                name: "HoldPattern".to_string(),
-                args: vec![Expr::Identifier(name.clone())].into(),
-              }),
+              pattern: Box::new(call1(
+                "HoldPattern",
+                Expr::Identifier(name.clone()),
+              )),
               replacement: Box::new(v),
             }]
             .into(),
@@ -894,14 +882,10 @@ pub fn dispatch_predicate_functions(
               }
             })?;
             Some(Expr::RuleDelayed {
-              pattern: Box::new(Expr::FunctionCall {
-                name: "HoldPattern".to_string(),
-                args: vec![Expr::FunctionCall {
-                  name: "MessageName".to_string(),
-                  args: vec![slot0_literal, slot1_literal].into(),
-                }]
-                .into(),
-              }),
+              pattern: Box::new(call(
+                "HoldPattern",
+                vec![call("MessageName", vec![slot0_literal, slot1_literal])],
+              )),
               replacement: Box::new(body.clone()),
             })
           },
@@ -923,10 +907,7 @@ pub fn dispatch_predicate_functions(
             entries
               .iter()
               .map(|(lhs, rhs)| Expr::RuleDelayed {
-                pattern: Box::new(Expr::FunctionCall {
-                  name: "HoldPattern".to_string(),
-                  args: vec![lhs.clone()].into(),
-                }),
+                pattern: Box::new(call1("HoldPattern", lhs.clone())),
                 replacement: Box::new(rhs.clone()),
               })
               .collect()
@@ -948,10 +929,7 @@ pub fn dispatch_predicate_functions(
               entries
                 .iter()
                 .map(|(lhs, rhs)| Expr::RuleDelayed {
-                  pattern: Box::new(Expr::FunctionCall {
-                    name: "HoldPattern".to_string(),
-                    args: vec![lhs.clone()].into(),
-                  }),
+                  pattern: Box::new(call1("HoldPattern", lhs.clone())),
                   replacement: Box::new(rhs.clone()),
                 })
                 .collect()
@@ -979,17 +957,13 @@ pub fn dispatch_predicate_functions(
                   let pattern_inner = if form == "OutputForm" {
                     lhs.clone()
                   } else {
-                    Expr::FunctionCall {
-                      name: "MakeBoxes".to_string(),
-                      args: vec![lhs.clone(), Expr::Identifier(form.clone())]
-                        .into(),
-                    }
+                    call(
+                      "MakeBoxes",
+                      vec![lhs.clone(), Expr::Identifier(form.clone())],
+                    )
                   };
                   Expr::RuleDelayed {
-                    pattern: Box::new(Expr::FunctionCall {
-                      name: "HoldPattern".to_string(),
-                      args: vec![pattern_inner].into(),
-                    }),
+                    pattern: Box::new(call1("HoldPattern", pattern_inner)),
                     replacement: Box::new(rhs.clone()),
                   }
                 })
@@ -1005,19 +979,13 @@ pub fn dispatch_predicate_functions(
     // returns {}.
     "DefaultValues" if args.len() == 1 => {
       let rule = |pat: Expr, val: Expr| Expr::RuleDelayed {
-        pattern: Box::new(Expr::FunctionCall {
-          name: "HoldPattern".to_string(),
-          args: vec![pat].into(),
-        }),
+        pattern: Box::new(call1("HoldPattern", pat)),
         replacement: Box::new(val),
       };
       let default_of = |sym: &str, extra: Vec<Expr>| {
         let mut default_args = vec![Expr::Identifier(sym.to_string())];
         default_args.extend(extra);
-        Expr::FunctionCall {
-          name: "Default".to_string(),
-          args: default_args.into(),
-        }
+        call("Default", default_args)
       };
       if let Expr::Identifier(sym) = &args[0] {
         // Built-in defaults: Plus → 0, Times → 1, Power slot 2 → 1.
@@ -1071,10 +1039,7 @@ pub fn dispatch_predicate_functions(
               pat_args.push(lit);
             }
           }
-          let pattern = Expr::FunctionCall {
-            name: "Default".to_string(),
-            args: pat_args.into(),
-          };
+          let pattern = call("Default", pat_args);
           values.push(rule(pattern, body.clone()));
         }
         return Some(Ok(Expr::List(values.into())));
@@ -1217,10 +1182,7 @@ pub fn dispatch_predicate_functions(
               orig_body,
             )| {
               Expr::RuleDelayed {
-                pattern: Box::new(Expr::FunctionCall {
-                  name: "HoldPattern".to_string(),
-                  args: vec![orig_lhs.clone()].into(),
-                }),
+                pattern: Box::new(call1("HoldPattern", orig_lhs.clone())),
                 replacement: Box::new(orig_body.clone()),
               }
             },
@@ -1432,10 +1394,7 @@ pub fn dispatch_predicate_functions(
       let func_name = match &func_arg {
         Expr::Identifier(name) => name.clone(),
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "Options".to_string(),
-            args: vec![func_arg].into(),
-          }));
+          return Some(Ok(call1("Options", func_arg)));
         }
       };
       let stored =
@@ -1492,10 +1451,7 @@ pub fn dispatch_predicate_functions(
           if in_context {
             return Some(Ok(opt_arg));
           }
-          return Some(Ok(Expr::FunctionCall {
-            name: "OptionValue".to_string(),
-            args: vec![opt_arg].into(),
-          }));
+          return Some(Ok(call1("OptionValue", opt_arg)));
         }
       };
       // Look up in the current option value context stack (innermost first).
@@ -1528,10 +1484,7 @@ pub fn dispatch_predicate_functions(
           return Some(Ok(Expr::Identifier(opt_name)));
         }
         None => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "OptionValue".to_string(),
-            args: vec![opt_arg].into(),
-          }));
+          return Some(Ok(call1("OptionValue", opt_arg)));
         }
       }
     }
@@ -1734,12 +1687,7 @@ pub fn dispatch_predicate_functions(
 /// definitively False (mismatched lengths count as False); stays unevaluated
 /// when some comparison is symbolic and none is False.
 fn vector_order_ast(name: &str, arg: &Expr) -> Result<Expr, InterpreterError> {
-  let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: vec![arg.clone()].into(),
-    })
-  };
+  let unevaluated = || Ok(call1(name, arg.clone()));
   let op = match name {
     "VectorGreater" => "Greater",
     "VectorGreaterEqual" => "GreaterEqual",
@@ -1897,10 +1845,7 @@ pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
       make_rule("AlignmentPoint", id("Center")),
       make_rule(
         "AspectRatio",
-        Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![id("GoldenRatio"), Expr::Integer(-1)].into(),
-        },
+        call("Power", vec![id("GoldenRatio"), Expr::Integer(-1)]),
       ),
       make_rule("Axes", id("True")),
       make_rule("AxesLabel", id("None")),
