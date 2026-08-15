@@ -1051,6 +1051,57 @@ mod graphics {
       assert!(svg.contains("rgb(255,0,0)"), "the disk stays red:\n{svg}");
     }
 
+    /// `Text[expr, pos, offset, direction]`'s fourth argument tilts the
+    /// label's baseline to run parallel to `direction`. Regression: it used
+    /// to be silently dropped, so the label always came out horizontal.
+    #[test]
+    fn text_with_direction_rotates_the_label() {
+      let svg = export_svg(
+        "Graphics[{Text[\"diag\", {0.5, 0.5}, Automatic, {1, 1}]}, \
+          PlotRange -> {{0, 1}, {0, 1}}]",
+      );
+      let line = svg
+        .lines()
+        .find(|l| l.starts_with("<text"))
+        .unwrap_or_else(|| panic!("no text element in {svg}"));
+      // A square plot range makes data space and pixel space agree up to
+      // the y-flip, so a 45-degree data-space direction is a -45-degree
+      // (clockwise-negative, i.e. counterclockwise) screen rotation.
+      assert!(
+        line.contains("rotate(-45"),
+        "a {{1, 1}} direction rotates the label -45 degrees: {line}"
+      );
+    }
+
+    /// `Automatic` (or an omitted) direction leaves the label unrotated,
+    /// and a `{1, 0}` (purely horizontal) direction is a no-op rotation.
+    #[test]
+    fn text_without_direction_is_not_rotated() {
+      let automatic = export_svg(
+        "Graphics[{Text[\"flat\", {0.5, 0.5}, Automatic, Automatic]}]",
+      );
+      let omitted = export_svg("Graphics[{Text[\"flat\", {0.5, 0.5}]}]");
+      for svg in [&automatic, &omitted] {
+        let line = svg
+          .lines()
+          .find(|l| l.starts_with("<text"))
+          .unwrap_or_else(|| panic!("no text element in {svg}"));
+        assert!(!line.contains("rotate("), "must stay unrotated: {line}");
+      }
+      // A horizontal direction is a legal rotation request too — just one
+      // whose angle happens to be (approximately) zero.
+      let horizontal =
+        export_svg("Graphics[{Text[\"flat\", {0.5, 0.5}, Automatic, {1, 0}]}]");
+      let line = horizontal
+        .lines()
+        .find(|l| l.starts_with("<text"))
+        .unwrap_or_else(|| panic!("no text element in {horizontal}"));
+      assert!(
+        line.contains("rotate(-0.000") || line.contains("rotate(0.000"),
+        "a horizontal direction is a ~0-degree rotation: {line}"
+      );
+    }
+
     /// `Inset[graphic, pos, opos, size]` draws the picture inside this
     /// one — scaled into its box and moved to `pos` — instead of writing
     /// the object's text form. `{Automatic, dir}` turns it to face `dir`.

@@ -672,6 +672,12 @@ enum Primitive {
     /// `x`/`y` are `Scaled[…]` fractions of the plot range, resolved when
     /// the range is known — see [`resolve_anchor`].
     scaled: bool,
+    /// `Text[expr, pos, offset, direction]`'s fourth argument: a data-space
+    /// vector the label's baseline is rotated to run parallel to (e.g. the
+    /// local tangent of a curve it annotates). `None` for the unrotated
+    /// (horizontal) default — including when the argument is omitted or
+    /// written `Automatic`.
+    direction: Option<(f64, f64)>,
     style: StyleState,
   },
   BezierCurvePrim {
@@ -3070,6 +3076,10 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     (0.0, 0.0, false)
   };
   let offset = args.get(2).and_then(text_offset).unwrap_or((0.0, 0.0));
+  // `Text[expr, pos, offset, direction]`: rotate the label so its baseline
+  // runs parallel to `direction`, a vector in the same data coordinates as
+  // `pos`. Left `None` for the common `Automatic`/omitted case.
+  let direction = args.get(3).and_then(text_direction);
   // `Background -> colour`, written either as a trailing option of the
   // `Text` or as a directive of the `Style` it wraps.
   fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
@@ -3120,8 +3130,21 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     background,
     frame,
     scaled,
+    direction,
     style: local_style,
   });
+}
+
+/// The rotation direction of `Text[expr, pos, offset, direction]`: a plain
+/// `{dx, dy}` vector, or `None` for `Automatic` (no rotation) or anything
+/// else that isn't a 2-vector.
+fn text_direction(spec: &Expr) -> Option<(f64, f64)> {
+  match spec {
+    Expr::List(items) if items.len() == 2 => {
+      Some((expr_to_f64(&items[0])?, expr_to_f64(&items[1])?))
+    }
+    _ => None,
+  }
 }
 
 /// The alignment offset of `Text[expr, pos, offset]` / `Inset[…]`: a pair
@@ -3961,6 +3984,7 @@ fn rotate_primitive(
       background,
       frame,
       scaled,
+      direction,
       style,
     } => {
       let (nx, ny) = if *scaled { (*x, *y) } else { rp(*x, *y) };
@@ -3972,6 +3996,7 @@ fn rotate_primitive(
         background: *background,
         frame: *frame,
         scaled: *scaled,
+        direction: direction.map(|(dx, dy)| rv(dx, dy)),
         style: style.clone(),
       }
     }
@@ -4145,6 +4170,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       background,
       frame,
       scaled,
+      direction,
       style,
     } => Primitive::TextPrim {
       text: text.clone(),
@@ -4154,6 +4180,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       background: *background,
       frame: *frame,
       scaled: *scaled,
+      direction: *direction,
       style: style.clone(),
     },
     Primitive::RasterPrim {
@@ -4372,6 +4399,7 @@ fn scale_primitive(
       background,
       frame,
       scaled,
+      direction,
       style,
     } => {
       let (nx, ny) = if *scaled { (*x, *y) } else { sp(*x, *y) };
@@ -4383,6 +4411,7 @@ fn scale_primitive(
         background: *background,
         frame: *frame,
         scaled: *scaled,
+        direction: direction.map(|(dx, dy)| (dx * sx, dy * sy)),
         style: style.clone(),
       }
     }
@@ -5884,6 +5913,7 @@ fn render_primitive(
       background,
       frame,
       scaled,
+      direction,
       style,
     } => {
       let color = style.effective_color();
@@ -5903,6 +5933,22 @@ fn render_primitive(
       let (ax, ay) = resolve_anchor(*x, *y, *scaled, bb);
       let sx = coord_x(ax, bb, svg_w) - offset.0 * text_w / 2.0;
       let sy = coord_y(ay, bb, svg_h) + offset.1 * text_h / 2.0;
+      // A fourth `direction` argument tilts the label's baseline to match
+      // that vector — carried in data coordinates, so it has to go through
+      // the same x/y pixel-per-unit scaling `coord_x`/`coord_y` apply (and
+      // the same y-flip) before it becomes a screen-space angle for SVG's
+      // `rotate()`.
+      let rotate_attr = match direction {
+        Some((dx, dy)) if *dx != 0.0 || *dy != 0.0 => {
+          let px = dx * svg_w / bb.width();
+          let py = -dy * svg_h / bb.height();
+          format!(
+            " transform=\"rotate({:.3} {sx:.2} {sy:.2})\"",
+            py.atan2(px).to_degrees()
+          )
+        }
+        _ => String::new(),
+      };
       // `Background -> colour` paints a panel behind the label, which is
       // what keeps a value readable over whatever it is placed on; a
       // `Framed` label additionally gets the border drawn around it.
@@ -5931,7 +5977,7 @@ fn render_primitive(
         // Multi-line text with tspan
         let lines: Vec<&str> = text.split('\n').collect();
         out.push_str(&format!(
-          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{}>",
+          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{}{rotate_attr}>",
           color.to_svg_rgb(),
           style.font_weight,
           style.font_style,
@@ -5953,7 +5999,7 @@ fn render_primitive(
         out.push_str("</text>\n");
       } else {
         out.push_str(&format!(
-          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{}>{}</text>\n",
+          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{}{rotate_attr}>{}</text>\n",
           color.to_svg_rgb(),
           style.font_weight,
           style.font_style,

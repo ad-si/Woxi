@@ -14,6 +14,16 @@ slow-timeout = { period = "20s", terminate-after = 1 }
 filter = 'test(high_order_derivative_of_x_x_does_not_panic)'
 slow-timeout = { period = "60s", terminate-after = 1 }
 
+# `demonstration_three_phase_field_manipulate_opens_with_its_widget` builds
+# its widget from a stored `SaveDefinitions -> True` Manipulate and renders
+# a `ParametricPlot`/`Show`/`GraphicsRow` twice (initial render plus one
+# after moving a slider): ~13s standalone in debug builds, close enough to
+# the default 20s timeout to time out under full parallel load. Give it a
+# wider window.
+[[profile.default.overrides]]
+filter = 'test(demonstration_three_phase_field_manipulate_opens_with_its_widget)'
+slow-timeout = { period = "60s", terminate-after = 1 }
+
 # `axial_dispersion_manipulate_builds_widget` integrates a ten-equation
 # finite-difference system twice (once to build the widget, once after moving
 # the slider), and the tracer pulse in its forcing term makes NDSolve bisect
