@@ -10395,6 +10395,61 @@ mod unicode_part_brackets {
   }
 }
 
+/// Every bracket group of a Part suffix but the last is held in `Part[…]`
+/// call form so `m[[a]][[b]]` stays distinct from `m[[a, b]]`. That is an
+/// internal representation: wolframscript prints a `Part` call with double
+/// brackets, so a chained Part must echo as `m[[a]][[b]]`, not
+/// `Part[m, a][[b]]`.
+mod chained_part_groups_print_with_double_brackets {
+  use super::*;
+
+  #[test]
+  fn a_chain_of_part_groups_keeps_its_brackets() {
+    assert_eq!(interpret("Hold[a[[1]][[2]]]").unwrap(), "Hold[a[[1]][[2]]]");
+    assert_eq!(
+      interpret("Hold[a[[1]][[2]][[3]]]").unwrap(),
+      "Hold[a[[1]][[2]][[3]]]"
+    );
+    // A multi-spec group stays one group; only whole groups chain.
+    assert_eq!(
+      interpret("Hold[a[[1,2]][[3]]]").unwrap(),
+      "Hold[a[[1,2]][[3]]]"
+    );
+  }
+
+  #[test]
+  fn an_explicit_part_call_prints_the_same_way() {
+    assert_eq!(interpret("Hold[Part[a, 1]]").unwrap(), "Hold[a[[1]]]");
+    assert_eq!(
+      interpret("Hold[Part[Part[a, 1], 2]]").unwrap(),
+      "Hold[a[[1]][[2]]]"
+    );
+    assert_eq!(interpret("Hold[Part[a]]").unwrap(), "Hold[a[[]]]");
+  }
+
+  #[test]
+  fn a_chained_part_base_keeps_the_parens_it_needs() {
+    // `[[…]]` binds tighter than every infix operator, so an operator base
+    // must stay parenthesized through the whole chain.
+    assert_eq!(
+      interpret("Hold[({9, 8} /. 8 -> 5)[[1]][[2]]]").unwrap(),
+      "Hold[({9, 8} /. 8 -> 5)[[1]][[2]]]"
+    );
+    assert_eq!(
+      interpret("Hold[Part[a + b, 1]]").unwrap(),
+      "Hold[(a + b)[[1]]]"
+    );
+  }
+
+  #[test]
+  fn input_form_keeps_strings_quoted_in_a_chain() {
+    assert_eq!(
+      interpret("ToString[Hold[{{\"x\"}}[[1]][[1]]], InputForm]").unwrap(),
+      "Hold[{{\"x\"}}[[1]][[1]]]"
+    );
+  }
+}
+
 /// Wolfram reads the two brackets of `[[…]]` as separate tokens, so
 /// whitespace, newlines and comments may sit between them: `m[ [1] ]` is
 /// `Part[m, 1]`. A lone `[…]` can never start an expression, so there is no

@@ -7704,6 +7704,24 @@ fn part_base_needs_parens(base: &Expr) -> bool {
     || matches!(base, Expr::Real(f) if *f < 0.0)
 }
 
+/// Render a Part application as `base[[i,j,…]]`, parenthesizing the base when
+/// it needs it. Part reaches the renderers in two shapes — `Expr::Part` (the
+/// final bracket group of a Part suffix) and a `Part`-headed `FunctionCall`
+/// (every earlier group, kept in call form so `m[[a]][[b]]` stays distinct
+/// from `m[[a, b]]`) — and wolframscript prints both with double brackets.
+fn format_part_brackets(
+  base: &Expr,
+  base_str: &str,
+  indices: &[String],
+) -> String {
+  let joined = indices.join(",");
+  if part_base_needs_parens(base) {
+    format!("({base_str})[[{joined}]]")
+  } else {
+    format!("{base_str}[[{joined}]]")
+  }
+}
+
 /// Whether an operand of an infix comparison (`==`, `<`, `=!=`, …) must be
 /// parenthesized so the printed form re-parses to the same tree. Comparison
 /// binds looser than `+`, `*`, `^`, `.`, `/@` and `@@`, so those print bare,
@@ -7881,6 +7899,18 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         && key.chars().all(|c| c.is_ascii_alphanumeric())
       {
         return format!("#{key}");
+      }
+      // `Part[base, i, …]` prints with double brackets, not as a call.
+      if name == "Part" && !args.is_empty() {
+        let indices: Vec<String> = args[1..]
+          .iter()
+          .map(|a| expr_to_part_index_string(a, form))
+          .collect();
+        return format_part_brackets(
+          &args[0],
+          &format_expr(&args[0], form),
+          &indices,
+        );
       }
       // Sound[...] always renders as -Sound- (matching wolframscript REPL),
       // regardless of what primitives it wraps.
@@ -10941,12 +10971,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         base = inner_expr.as_ref();
       }
       indices.reverse();
-      let base_str = format_expr(base, form);
-      if part_base_needs_parens(base) {
-        format!("({})[[{}]]", base_str, indices.join(","))
-      } else {
-        format!("{}[[{}]]", base_str, indices.join(","))
-      }
+      format_part_brackets(base, &format_expr(base, form), &indices)
     }
     Expr::Function { body } => {
       // Wolfram shows anonymous functions with trailing space: "f & " (not "f &")
@@ -12196,6 +12221,15 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     // Generic FunctionCall: render as name[arg1, arg2, ...] with InputForm for args.
     // Known infix operators (Plus, Times, Power, etc.) fall through to expr_to_output
     // since they rarely contain string literals and need infix rendering.
+    // `Part[base, i, …]` prints with double brackets, keeping string bases
+    // and indices quoted (InputForm). Mirrors the format_expr arm.
+    Expr::FunctionCall { name, args } if name == "Part" && !args.is_empty() => {
+      let indices: Vec<String> = args[1..]
+        .iter()
+        .map(|a| expr_to_part_index_string(a, ExprForm::Input))
+        .collect();
+      format_part_brackets(&args[0], &expr_to_input_form(&args[0]), &indices)
+    }
     Expr::FunctionCall { name, args }
       if !matches!(
         name.as_str(),
@@ -12690,12 +12724,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         base = inner_expr.as_ref();
       }
       indices.reverse();
-      let base_str = expr_to_input_form(base);
-      if part_base_needs_parens(base) {
-        format!("({})[[{}]]", base_str, indices.join(","))
-      } else {
-        format!("{}[[{}]]", base_str, indices.join(","))
-      }
+      format_part_brackets(base, &expr_to_input_form(base), &indices)
     }
     // For all other cases (infix operators, simple literals), delegate to expr_to_output
     _ => expr_to_output(expr),
