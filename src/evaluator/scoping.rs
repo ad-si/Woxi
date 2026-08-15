@@ -115,10 +115,7 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // so e.g. `Module[{}, Return[1]]` evaluates to `Return[1]`. The top-level
   // display path in interpret() unwraps it back to `1` for the REPL.
   let result = match evaluate_expr_to_expr(body_expr) {
-    Err(InterpreterError::ReturnValue(val)) => Ok(Expr::FunctionCall {
-      name: "Return".to_string(),
-      args: vec![*val].into(),
-    }),
+    Err(InterpreterError::ReturnValue(val)) => Ok(call1("Return", *val)),
     other => other,
   };
 
@@ -132,10 +129,7 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(Expr::Identifier(ref s)) if s == "True" => {
           evaluate_expr_to_expr(&args[0])
         }
-        Ok(test_val) => Ok(Expr::FunctionCall {
-          name: "Condition".to_string(),
-          args: vec![args[0].clone(), test_val].into(),
-        }),
+        Ok(test_val) => Ok(call("Condition", vec![args[0].clone(), test_val])),
         Err(e) => Err(e),
       }
     }
@@ -226,10 +220,7 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // wolframscript: `Block[{}, Return[42]]` ⇒ `Return[42]`. The top-level
   // display path unwraps it for the REPL.
   let result = match evaluate_expr_to_expr(body_expr) {
-    Err(InterpreterError::ReturnValue(val)) => Ok(Expr::FunctionCall {
-      name: "Return".to_string(),
-      args: vec![*val].into(),
-    }),
+    Err(InterpreterError::ReturnValue(val)) => Ok(call1("Return", *val)),
     other => other,
   };
 
@@ -242,10 +233,7 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(Expr::Identifier(ref s)) if s == "True" => {
           evaluate_expr_to_expr(&args[0])
         }
-        Ok(test_val) => Ok(Expr::FunctionCall {
-          name: "Condition".to_string(),
-          args: vec![args[0].clone(), test_val].into(),
-        }),
+        Ok(test_val) => Ok(call("Condition", vec![args[0].clone(), test_val])),
         Err(e) => Err(e),
       }
     }
@@ -557,10 +545,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
   let domain_name = match domain {
     Expr::Identifier(name) => name.as_str(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Element".to_string(),
-        args: vec![x.clone(), domain.clone()].into(),
-      });
+      return Ok(call("Element", vec![x.clone(), domain.clone()]));
     }
   };
 
@@ -569,10 +554,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
     crate::emit_message(&format!(
       "Element::bset: The second argument {domain_name} of Element should be one of: Primes, Integers, Rationals, Algebraics, Reals, Complexes or Booleans."
     ));
-    return Ok(Expr::FunctionCall {
-      name: "Element".to_string(),
-      args: vec![x.clone(), domain.clone()].into(),
-    });
+    return Ok(call("Element", vec![x.clone(), domain.clone()]));
   }
 
   // Handle Alternatives: Element[a | b | c, dom]. `a | b | c` evaluates to a
@@ -609,10 +591,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
         right: Box::new(e),
       })
       .unwrap();
-    return Ok(Expr::FunctionCall {
-      name: "Element".to_string(),
-      args: vec![alt_expr, domain.clone()].into(),
-    });
+    return Ok(call("Element", vec![alt_expr, domain.clone()]));
   }
 
   // Handle lists: Element[{a, b, c}, dom] → Element[a | b | c, dom]
@@ -665,10 +644,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
       let reduced = if remaining.len() == 1 {
         remaining.into_iter().next().unwrap()
       } else {
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: remaining.into(),
-        }
+        call("Plus", remaining)
       };
       return element_ast(&reduced, domain);
     }
@@ -678,10 +654,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
   match is_member_of_domain(x, domain_name) {
     Some(true) => Ok(bool_expr(true)),
     Some(false) => Ok(bool_expr(false)),
-    None => Ok(Expr::FunctionCall {
-      name: "Element".to_string(),
-      args: vec![x.clone(), domain.clone()].into(),
-    }),
+    None => Ok(call("Element", vec![x.clone(), domain.clone()])),
   }
 }
 
@@ -696,10 +669,7 @@ pub fn not_element_ast(
     Expr::Identifier(name) if name == "False" => Ok(bool_expr(true)),
     _ => {
       // Element returned unevaluated, so NotElement stays unevaluated too
-      Ok(Expr::FunctionCall {
-        name: "NotElement".to_string(),
-        args: vec![x.clone(), domain.clone()].into(),
-      })
+      Ok(call("NotElement", vec![x.clone(), domain.clone()]))
     }
   }
 }
@@ -859,10 +829,7 @@ pub fn filter_rules_ast(
   keys: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let Expr::List(rule_list) = rules else {
-    return Ok(Expr::FunctionCall {
-      name: "FilterRules".to_string(),
-      args: vec![rules.clone(), keys.clone()].into(),
-    });
+    return Ok(call("FilterRules", vec![rules.clone(), keys.clone()]));
   };
 
   // Build set of key names to keep
@@ -934,10 +901,7 @@ pub fn for_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Err(InterpreterError::BreakSignal) => break,
         Err(InterpreterError::ContinueSignal) => {}
         Err(InterpreterError::ReturnValue(val)) => {
-          return Ok(Expr::FunctionCall {
-            name: "Return".to_string(),
-            args: vec![*val].into(),
-          });
+          return Ok(call1("Return", *val));
         }
         Err(e) => return Err(e),
       }
@@ -966,10 +930,7 @@ pub fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // implementation for every arity, and makes the unevaluated form of a
   // malformed specification nest the way wolframscript's does.
   if args.len() > 2 {
-    let inner = Expr::FunctionCall {
-      name: "With".to_string(),
-      args: args[1..].to_vec().into(),
-    };
+    let inner = call("With", args[1..].to_vec());
     return with_ast(&[args[0].clone(), inner]);
   }
 

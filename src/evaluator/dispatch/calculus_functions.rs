@@ -193,10 +193,7 @@ pub fn extract_var_power_factor(
     let factor = match const_factors.len() {
       0 => Expr::Integer(1),
       1 => const_factors.into_iter().next().unwrap(),
-      _ => Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: const_factors.into(),
-      },
+      _ => call("Times", const_factors),
     };
     return Some((factor, p));
   }
@@ -215,10 +212,7 @@ fn apply_derivative_of_value(
   point: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
   let derivative = match evaluate_expr_to_expr(&Expr::CurriedCall {
-    func: Box::new(Expr::FunctionCall {
-      name: "Derivative".to_string(),
-      args: vec![order.clone()].into(),
-    }),
+    func: Box::new(call1("Derivative", order.clone())),
     args: vec![value.clone()],
   }) {
     Ok(d) => d,
@@ -359,10 +353,7 @@ pub fn dispatch_calculus_functions(
         && let Expr::Integer(n) = &inner_args[0]
       {
         return Some(Ok(Expr::CurriedCall {
-          func: Box::new(Expr::FunctionCall {
-            name: "Derivative".to_string(),
-            args: vec![Expr::Integer(*m + *n)].into(),
-          }),
+          func: Box::new(call("Derivative", vec![Expr::Integer(*m + *n)])),
           args: vec![inner_args[1].clone()],
         }));
       }
@@ -382,10 +373,7 @@ pub fn dispatch_calculus_functions(
           | Expr::BigInteger(_)
       ) {
         return Some(Ok(Expr::CurriedCall {
-          func: Box::new(Expr::FunctionCall {
-            name: "Derivative".to_string(),
-            args: vec![args[0].clone()].into(),
-          }),
+          func: Box::new(call1("Derivative", args[0].clone())),
           args: vec![args[1].clone()],
         }));
       }
@@ -872,16 +860,12 @@ pub fn dispatch_calculus_functions(
         && tf_name == "TransformationFunction"
         && tf_args.len() == 1
       {
-        let inverse =
-          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-            name: "Inverse".to_string(),
-            args: vec![tf_args[0].clone()].into(),
-          });
+        let inverse = crate::evaluator::evaluate_expr_to_expr(&call1(
+          "Inverse",
+          tf_args[0].clone(),
+        ));
         if let Ok(matrix @ Expr::List(_)) = inverse {
-          return Some(Ok(Expr::FunctionCall {
-            name: "TransformationFunction".to_string(),
-            args: vec![matrix].into(),
-          }));
+          return Some(Ok(call1("TransformationFunction", matrix)));
         }
       }
 
@@ -939,10 +923,10 @@ fn laplace_transform(
   let t = match t_expr {
     Expr::Identifier(name) => name.as_str(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "LaplaceTransform".to_string(),
-        args: vec![expr.clone(), t_expr.clone(), s_expr.clone()].into(),
-      });
+      return Ok(call(
+        "LaplaceTransform",
+        vec![expr.clone(), t_expr.clone(), s_expr.clone()],
+      ));
     }
   };
 
@@ -950,10 +934,10 @@ fn laplace_transform(
     crate::evaluator::evaluate_expr_to_expr(&result)
   } else {
     // Return unevaluated
-    Ok(Expr::FunctionCall {
-      name: "LaplaceTransform".to_string(),
-      args: vec![expr.clone(), t_expr.clone(), s_expr.clone()].into(),
-    })
+    Ok(call(
+      "LaplaceTransform",
+      vec![expr.clone(), t_expr.clone(), s_expr.clone()],
+    ))
   }
 }
 
@@ -1074,10 +1058,7 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       name: "Times".to_string(),
       args: vec![
         expr.clone(),
-        Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![s.clone(), Expr::Integer(-1)].into(),
-        },
+        call("Power", vec![s.clone(), Expr::Integer(-1)]),
       ]
       .into(),
     });
@@ -1087,10 +1068,7 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
   if let Expr::Identifier(name) = expr
     && name == t
   {
-    return Some(Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![s.clone(), Expr::Integer(-2)].into(),
-    });
+    return Some(call("Power", vec![s.clone(), Expr::Integer(-2)]));
   }
 
   if let Some((fname, fargs)) = as_func_args(expr) {
@@ -1117,14 +1095,10 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
         return Some(Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
-            Expr::FunctionCall {
-              name: "Gamma".to_string(),
-              args: vec![Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![n.clone(), Expr::Integer(1)].into(),
-              }]
-              .into(),
-            },
+            call(
+              "Gamma",
+              vec![call("Plus", vec![n.clone(), Expr::Integer(1)])],
+            ),
             Expr::FunctionCall {
               name: "Power".to_string(),
               args: vec![
@@ -1133,10 +1107,7 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
                   name: "Plus".to_string(),
                   args: vec![
                     Expr::Integer(-1),
-                    Expr::FunctionCall {
-                      name: "Times".to_string(),
-                      args: vec![Expr::Integer(-1), n.clone()].into(),
-                    },
+                    call("Times", vec![Expr::Integer(-1), n.clone()]),
                   ]
                   .into(),
                 },
@@ -1154,17 +1125,10 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
         return Some(Expr::FunctionCall {
           name: "Power".to_string(),
           args: vec![
-            Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: vec![
-                s.clone(),
-                Expr::FunctionCall {
-                  name: "Times".to_string(),
-                  args: vec![Expr::Integer(-1), a].into(),
-                },
-              ]
-              .into(),
-            },
+            call(
+              "Plus",
+              vec![s.clone(), call("Times", vec![Expr::Integer(-1), a])],
+            ),
             Expr::Integer(-1),
           ]
           .into(),
@@ -1187,14 +1151,8 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
               Expr::FunctionCall {
                 name: "Plus".to_string(),
                 args: vec![
-                  Expr::FunctionCall {
-                    name: "Power".to_string(),
-                    args: vec![s.clone(), Expr::Integer(2)].into(),
-                  },
-                  Expr::FunctionCall {
-                    name: "Power".to_string(),
-                    args: vec![a, Expr::Integer(2)].into(),
-                  },
+                  call("Power", vec![s.clone(), Expr::Integer(2)]),
+                  call("Power", vec![a, Expr::Integer(2)]),
                 ]
                 .into(),
               },
@@ -1222,14 +1180,8 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
               Expr::FunctionCall {
                 name: "Plus".to_string(),
                 args: vec![
-                  Expr::FunctionCall {
-                    name: "Power".to_string(),
-                    args: vec![s.clone(), Expr::Integer(2)].into(),
-                  },
-                  Expr::FunctionCall {
-                    name: "Power".to_string(),
-                    args: vec![a, Expr::Integer(2)].into(),
-                  },
+                  call("Power", vec![s.clone(), Expr::Integer(2)]),
+                  call("Power", vec![a, Expr::Integer(2)]),
                 ]
                 .into(),
               },
@@ -1259,18 +1211,12 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       let denom = Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![s.clone(), Expr::Integer(2)].into(),
-          },
+          call("Power", vec![s.clone(), Expr::Integer(2)]),
           Expr::FunctionCall {
             name: "Times".to_string(),
             args: vec![
               Expr::Integer(-1),
-              Expr::FunctionCall {
-                name: "Power".to_string(),
-                args: vec![a.clone(), Expr::Integer(2)].into(),
-              },
+              call("Power", vec![a.clone(), Expr::Integer(2)]),
             ]
             .into(),
           },
@@ -1278,17 +1224,10 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
         .into(),
       };
       let numerator = if fname == "Cosh" { s.clone() } else { a };
-      return Some(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
-          numerator,
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![denom, Expr::Integer(-1)].into(),
-          },
-        ]
-        .into(),
-      });
+      return Some(call(
+        "Times",
+        vec![numerator, call("Power", vec![denom, Expr::Integer(-1)])],
+      ));
     }
 
     // L[BesselJ[n, a*t], t, s] = a^n / (Sqrt[a^2 + s^2] * (s + Sqrt[a^2 + s^2])^n)
@@ -1305,21 +1244,12 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
           Expr::FunctionCall {
             name: "Plus".to_string(),
             args: vec![
-              Expr::FunctionCall {
-                name: "Power".to_string(),
-                args: vec![a.clone(), Expr::Integer(2)].into(),
-              },
-              Expr::FunctionCall {
-                name: "Power".to_string(),
-                args: vec![s.clone(), Expr::Integer(2)].into(),
-              },
+              call("Power", vec![a.clone(), Expr::Integer(2)]),
+              call("Power", vec![s.clone(), Expr::Integer(2)]),
             ]
             .into(),
           },
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-          },
+          call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
         ]
         .into(),
       };
@@ -1328,25 +1258,13 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       return Some(Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![a, n.clone()].into(),
-          },
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![sqrt_term.clone(), Expr::Integer(-1)].into(),
-          },
+          call("Power", vec![a, n.clone()]),
+          call("Power", vec![sqrt_term.clone(), Expr::Integer(-1)]),
           Expr::FunctionCall {
             name: "Power".to_string(),
             args: vec![
-              Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![s.clone(), sqrt_term].into(),
-              },
-              Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![Expr::Integer(-1), n.clone()].into(),
-              },
+              call("Plus", vec![s.clone(), sqrt_term]),
+              call("Times", vec![Expr::Integer(-1), n.clone()]),
             ]
             .into(),
           },
@@ -1361,10 +1279,7 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       for arg in &fargs {
         terms.push(laplace_transform_inner(arg, t, s)?);
       }
-      return Some(Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: terms.into(),
-      });
+      return Some(call("Plus", terms));
     }
 
     // s-shifting theorem: L[E^(c t) g(t), t, s] = (L[g, t, s])(s - c). Because
@@ -1396,29 +1311,16 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
         let c_sum = if exp_coeffs.len() == 1 {
           exp_coeffs.remove(0)
         } else {
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: exp_coeffs.into(),
-          }
+          call("Plus", exp_coeffs)
         };
-        let s_shifted = Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
-            s.clone(),
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![Expr::Integer(-1), c_sum].into(),
-            },
-          ]
-          .into(),
-        };
+        let s_shifted = call(
+          "Plus",
+          vec![s.clone(), call("Times", vec![Expr::Integer(-1), c_sum])],
+        );
         let g = if rest.len() == 1 {
           rest.remove(0)
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: rest.into(),
-          }
+          call("Times", rest)
         };
         if let Some(res) = laplace_transform_inner(&g, t, &s_shifted) {
           return Some(res);
@@ -1441,17 +1343,11 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
         let t_part = if t_dependent.len() == 1 {
           t_dependent[0].clone()
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: t_dependent.into(),
-          }
+          call("Times", t_dependent)
         };
         if let Some(lt) = laplace_transform_inner(&t_part, t, s) {
           constants.push(lt);
-          return Some(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: constants.into(),
-          });
+          return Some(call("Times", constants));
         }
       }
     }
@@ -1500,10 +1396,7 @@ fn extract_exp_coeff(factor: &Expr, t: &str) -> Option<Expr> {
     && is_e(inner[0])
   {
     let a = extract_linear_coeff(inner[1], t)?;
-    return Some(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), a].into(),
-    });
+    return Some(call("Times", vec![Expr::Integer(-1), a]));
   }
   None
 }
@@ -1548,10 +1441,7 @@ fn extract_linear_coeff(expr: &Expr, t: &str) -> Option<Expr> {
           return Some(if rest.len() == 1 {
             rest.remove(0)
           } else {
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: rest.into(),
-            }
+            call("Times", rest)
           });
         }
       }
@@ -1581,24 +1471,26 @@ fn inverse_laplace_transform(
     if let Some(result) = inverse_laplace_2d(&normalized, p, q, x, y) {
       return crate::evaluator::evaluate_expr_to_expr(&result);
     }
-    return Ok(Expr::FunctionCall {
-      name: "InverseLaplaceTransform".to_string(),
-      args: vec![expr.clone(), s_expr.clone(), t_expr.clone()].into(),
-    });
+    return Ok(call(
+      "InverseLaplaceTransform",
+      vec![expr.clone(), s_expr.clone(), t_expr.clone()],
+    ));
   }
 
   let s = match s_expr {
     Expr::Identifier(name) => name.as_str(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "InverseLaplaceTransform".to_string(),
-        args: vec![expr.clone(), s_expr.clone(), t_expr.clone()].into(),
-      });
+      return Ok(call(
+        "InverseLaplaceTransform",
+        vec![expr.clone(), s_expr.clone(), t_expr.clone()],
+      ));
     }
   };
-  let unevaluated = || Expr::FunctionCall {
-    name: "InverseLaplaceTransform".to_string(),
-    args: vec![expr.clone(), s_expr.clone(), t_expr.clone()].into(),
+  let unevaluated = || {
+    call(
+      "InverseLaplaceTransform",
+      vec![expr.clone(), s_expr.clone(), t_expr.clone()],
+    )
   };
   let t = if let Expr::Identifier(name) = t_expr {
     name.as_str()
@@ -1634,10 +1526,10 @@ fn inverse_laplace_transform(
   if let Some(result) = inverse_laplace_inner(&normalized, s, t) {
     crate::evaluator::evaluate_expr_to_expr(&result)
   } else {
-    Ok(Expr::FunctionCall {
-      name: "InverseLaplaceTransform".to_string(),
-      args: vec![expr.clone(), s_expr.clone(), t_expr.clone()].into(),
-    })
+    Ok(call(
+      "InverseLaplaceTransform",
+      vec![expr.clone(), s_expr.clone(), t_expr.clone()],
+    ))
   }
 }
 
@@ -1750,14 +1642,8 @@ fn inverse_laplace_2d(
     has_one && has_pq
   };
 
-  let sqrt_x = || Expr::FunctionCall {
-    name: "Sqrt".to_string(),
-    args: vec![Expr::Identifier(x.to_string())].into(),
-  };
-  let sqrt_y = || Expr::FunctionCall {
-    name: "Sqrt".to_string(),
-    args: vec![Expr::Identifier(y.to_string())].into(),
-  };
+  let sqrt_x = || call1("Sqrt", Expr::Identifier(x.to_string()));
+  let sqrt_y = || call1("Sqrt", Expr::Identifier(y.to_string()));
 
   // Case 1: F = 1/(p*q) → 1.
   if matches!(&num, Expr::Integer(1)) && is_product_pq(&den) {
@@ -1771,11 +1657,10 @@ fn inverse_laplace_2d(
       args: vec![Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), Expr::Identifier(x.to_string())]
-              .into(),
-          },
+          call(
+            "Times",
+            vec![Expr::Integer(-1), Expr::Identifier(x.to_string())],
+          ),
           Expr::Identifier(y.to_string()),
         ]
         .into(),
@@ -1790,10 +1675,7 @@ fn inverse_laplace_2d(
       name: "BesselJ".to_string(),
       args: vec![
         Expr::Integer(0),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(2), sqrt_x(), sqrt_y()].into(),
-        },
+        call("Times", vec![Expr::Integer(2), sqrt_x(), sqrt_y()]),
       ]
       .into(),
     });
@@ -1833,25 +1715,12 @@ fn inverse_laplace_2d(
       ]
       .into(),
     };
-    let cosh_arg = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
-        Expr::Integer(2),
-        Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![neg_xy].into(),
-        },
-      ]
-      .into(),
-    };
-    let cosh = Expr::FunctionCall {
-      name: "Cosh".to_string(),
-      args: vec![cosh_arg].into(),
-    };
-    let pi_sqrt_xy = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Constant("Pi".to_string()), sqrt_x(), sqrt_y()].into(),
-    };
+    let cosh_arg = call("Times", vec![Expr::Integer(2), call1("Sqrt", neg_xy)]);
+    let cosh = call1("Cosh", cosh_arg);
+    let pi_sqrt_xy = call(
+      "Times",
+      vec![Expr::Constant("Pi".to_string()), sqrt_x(), sqrt_y()],
+    );
     return Some(div2(cosh, pi_sqrt_xy));
   }
 
@@ -1862,17 +1731,11 @@ fn inverse_laplace_2d(
 fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
   // L^-1[c] = c * DiracDelta[t] for c independent of s.
   if !depends_on(expr, s) {
-    let dirac = Expr::FunctionCall {
-      name: "DiracDelta".to_string(),
-      args: vec![Expr::Identifier(t.to_string())].into(),
-    };
+    let dirac = call1("DiracDelta", Expr::Identifier(t.to_string()));
     if matches!(expr, Expr::Integer(1)) {
       return Some(dirac);
     }
-    return Some(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![expr.clone(), dirac].into(),
-    });
+    return Some(call("Times", vec![expr.clone(), dirac]));
   }
 
   if let Some((fname, fargs)) = as_func_args(expr) {
@@ -1903,17 +1766,10 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
                 ]
                 .into(),
               },
-              Expr::FunctionCall {
-                name: "Power".to_string(),
-                args: vec![
-                  Expr::FunctionCall {
-                    name: "Gamma".to_string(),
-                    args: vec![Expr::Integer(n)].into(),
-                  },
-                  Expr::Integer(-1),
-                ]
-                .into(),
-              },
+              call(
+                "Power",
+                vec![call1("Gamma", Expr::Integer(n)), Expr::Integer(-1)],
+              ),
             ]
             .into(),
           });
@@ -1937,14 +1793,10 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
         && !exponent_is_sum
         && let Some(k) = extract_linear_coeff(fargs[1], s)
       {
-        return Some(Expr::FunctionCall {
-          name: "DiracDelta".to_string(),
-          args: vec![Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![Expr::Identifier(t.to_string()), k].into(),
-          }]
-          .into(),
-        });
+        return Some(call(
+          "DiracDelta",
+          vec![call("Plus", vec![Expr::Identifier(t.to_string()), k])],
+        ));
       }
 
       // L^-1[(s^2 + a^2)^(-1)] = Sin[a*t] / a, and the hyperbolic counterpart
@@ -1959,18 +1811,11 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
         return Some(Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
-            Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![a.clone(), Expr::Integer(-1)].into(),
-            },
-            Expr::FunctionCall {
-              name: func.to_string(),
-              args: vec![Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![a, Expr::Identifier(t.to_string())].into(),
-              }]
-              .into(),
-            },
+            call("Power", vec![a.clone(), Expr::Integer(-1)]),
+            call(
+              func,
+              vec![call("Times", vec![a, Expr::Identifier(t.to_string())])],
+            ),
           ]
           .into(),
         });
@@ -1990,10 +1835,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
           name: func.to_string(),
           args: vec![
             Expr::Integer(0),
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![a, Expr::Identifier(t.to_string())].into(),
-            },
+            call("Times", vec![a, Expr::Identifier(t.to_string())]),
           ]
           .into(),
         });
@@ -2013,10 +1855,10 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
             ]
             .into(),
           };
-          return Some(Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![Expr::Constant("E".to_string()), exponent].into(),
-          });
+          return Some(call(
+            "Power",
+            vec![Expr::Constant("E".to_string()), exponent],
+          ));
         }
       }
     }
@@ -2046,14 +1888,10 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
             && n == s
           {
             // s / (s^2 + a^2) → Cos[a t]  (or Cosh[a t])
-            return Some(Expr::FunctionCall {
-              name: cos_name.to_string(),
-              args: vec![Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![a, Expr::Identifier(t.to_string())].into(),
-              }]
-              .into(),
-            });
+            return Some(call(
+              cos_name,
+              vec![call("Times", vec![a, Expr::Identifier(t.to_string())])],
+            ));
           }
           // For numerator/(s^2 + a^2) → (numerator/a) * Sin[a*t]
           if !depends_on(numerator, s) {
@@ -2061,18 +1899,11 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
               name: "Times".to_string(),
               args: vec![
                 numerator.clone(),
-                Expr::FunctionCall {
-                  name: "Power".to_string(),
-                  args: vec![a.clone(), Expr::Integer(-1)].into(),
-                },
-                Expr::FunctionCall {
-                  name: sin_name.to_string(),
-                  args: vec![Expr::FunctionCall {
-                    name: "Times".to_string(),
-                    args: vec![a, Expr::Identifier(t.to_string())].into(),
-                  }]
-                  .into(),
-                },
+                call("Power", vec![a.clone(), Expr::Integer(-1)]),
+                call(
+                  sin_name,
+                  vec![call("Times", vec![a, Expr::Identifier(t.to_string())])],
+                ),
               ]
               .into(),
             });
@@ -2087,10 +1918,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
       for arg in &fargs {
         terms.push(inverse_laplace_inner(arg, s, t)?);
       }
-      return Some(Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: terms.into(),
-      });
+      return Some(call("Plus", terms));
     }
 
     // Linearity: L^-1[c * F(s)] = c * L^-1[F(s)] where c doesn't depend on s
@@ -2108,17 +1936,11 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
         let s_part = if s_dependent.len() == 1 {
           s_dependent[0].clone()
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: s_dependent.into(),
-          }
+          call("Times", s_dependent)
         };
         if let Some(inv) = inverse_laplace_inner(&s_part, s, t) {
           constants.push(inv);
-          return Some(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: constants.into(),
-          });
+          return Some(call("Times", constants));
         }
       }
     }
@@ -2146,10 +1968,7 @@ fn negative_const_magnitude(c: &Expr) -> Option<Expr> {
         && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
     {
       if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
-        Some(Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(-p), Expr::Integer(*q)].into(),
-        })
+        Some(call("Rational", vec![Expr::Integer(-p), Expr::Integer(*q)]))
       } else {
         None
       }
@@ -2223,10 +2042,7 @@ fn sqrt_of_expr(expr: &Expr) -> Expr {
     name: "Power".to_string(),
     args: vec![
       expr.clone(),
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      },
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
     ]
     .into(),
   }
@@ -2276,40 +2092,17 @@ fn normalize_to_func_calls(expr: &Expr) -> Expr {
       let left = normalize_to_func_calls(left);
       let right = normalize_to_func_calls(right);
       match op {
-        BinaryOperator::Plus => Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![left, right].into(),
-        },
-        BinaryOperator::Minus => Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
-            left,
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![Expr::Integer(-1), right].into(),
-            },
-          ]
-          .into(),
-        },
-        BinaryOperator::Times => Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![left, right].into(),
-        },
-        BinaryOperator::Divide => Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
-            left,
-            Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![right, Expr::Integer(-1)].into(),
-            },
-          ]
-          .into(),
-        },
-        BinaryOperator::Power => Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![left, right].into(),
-        },
+        BinaryOperator::Plus => call("Plus", vec![left, right]),
+        BinaryOperator::Minus => call(
+          "Plus",
+          vec![left, call("Times", vec![Expr::Integer(-1), right])],
+        ),
+        BinaryOperator::Times => call("Times", vec![left, right]),
+        BinaryOperator::Divide => call(
+          "Times",
+          vec![left, call("Power", vec![right, Expr::Integer(-1)])],
+        ),
+        BinaryOperator::Power => call("Power", vec![left, right]),
         _ => expr.clone(),
       }
     }
@@ -2318,10 +2111,7 @@ fn normalize_to_func_calls(expr: &Expr) -> Expr {
       operand,
     } => {
       let inner = normalize_to_func_calls(operand);
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), inner].into(),
-      }
+      call("Times", vec![Expr::Integer(-1), inner])
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -2355,10 +2145,7 @@ fn make_sqrt(expr: Expr) -> Expr {
     name: "Power".to_string(),
     args: vec![
       expr,
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      },
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
     ]
     .into(),
   }
@@ -2369,10 +2156,7 @@ fn make_times(args: Vec<Expr>) -> Expr {
   if args.len() == 1 {
     args.into_iter().next().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: args.into(),
-    }
+    call("Times", args)
   }
 }
 
@@ -2381,27 +2165,18 @@ fn make_plus(args: Vec<Expr>) -> Expr {
   if args.len() == 1 {
     args.into_iter().next().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: args.into(),
-    }
+    call("Plus", args)
   }
 }
 
 /// Helper to build Power[base, exp]
 fn make_power(base: Expr, exp: Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![base, exp].into(),
-  }
+  call("Power", vec![base, exp])
 }
 
 /// Helper to build DiracDelta[x]
 fn make_dirac_delta(arg: Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "DiracDelta".to_string(),
-    args: vec![arg].into(),
-  }
+  call1("DiracDelta", arg)
 }
 
 /// Collect like terms that share the same DiracDelta and structural factors.
@@ -2542,10 +2317,10 @@ fn mellin_transform(
   s_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "MellinTransform".to_string(),
-      args: vec![expr.clone(), x_expr.clone(), s_expr.clone()].into(),
-    })
+    Ok(call(
+      "MellinTransform",
+      vec![expr.clone(), x_expr.clone(), s_expr.clone()],
+    ))
   };
   let Expr::Identifier(x) = x_expr else {
     // A non-symbol "variable" makes every integrand a constant, so the
@@ -2587,10 +2362,10 @@ fn inverse_mellin_transform(
   x_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "InverseMellinTransform".to_string(),
-      args: vec![expr.clone(), s_expr.clone(), x_expr.clone()].into(),
-    })
+    Ok(call(
+      "InverseMellinTransform",
+      vec![expr.clone(), s_expr.clone(), x_expr.clone()],
+    ))
   };
   let Expr::Identifier(sv) = s_expr else {
     return unevaluated();
@@ -2708,10 +2483,7 @@ fn inverse_mellin_inner(
         unreachable!()
       };
       for f in inner {
-        out.push(Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![f.clone(), Expr::Integer(-1)].into(),
-        });
+        out.push(call("Power", vec![f.clone(), Expr::Integer(-1)]));
       }
     } else {
       out.push(e.clone());
@@ -2780,10 +2552,8 @@ fn inverse_mellin_inner(
           && let Expr::Integer(nn) = &args[1]
         {
           // The 1/n prefactor must be among the constants.
-          let inv_n = Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(*nn)].into(),
-          };
+          let inv_n =
+            call("Rational", vec![Expr::Integer(1), Expr::Integer(*nn)]);
           let pos = consts.iter().position(|c| {
             crate::syntax::expr_to_string(c)
               == crate::syntax::expr_to_string(&inv_n)
@@ -2823,10 +2593,10 @@ fn inverse_mellin_inner(
       && matches!(fs[1], Expr::Integer(-1))
       && is_s(fs[0])
     {
-      let result = Expr::FunctionCall {
-        name: "HeavisideTheta".to_string(),
-        args: vec![make_plus(vec![Expr::Integer(1), neg(x.clone())])].into(),
-      };
+      let result = call(
+        "HeavisideTheta",
+        vec![make_plus(vec![Expr::Integer(1), neg(x.clone())])],
+      );
       return Some(with_consts(result, &consts));
     }
     // Pi Csc[Pi s] → Pi/(Pi + Pi x), returned unsimplified like
@@ -2864,10 +2634,7 @@ fn inverse_mellin_inner(
         && fs.len() == 1
         && is_half_pi_s(fs[0])
       {
-        let result = Expr::FunctionCall {
-          name: n.to_string(),
-          args: vec![x.clone()].into(),
-        };
+        let result = call1(n, x.clone());
         return Some(with_consts(result, &consts));
       }
       // Gamma[s] * a^(-s) → E^(-(a x)).
@@ -2908,17 +2675,10 @@ fn inverse_mellin_inner(
         };
         if neg_s_ok && !depends_on(a_part, sv) {
           // Require the 1/Gamma[a] constant.
-          let inv_gamma = crate::syntax::expr_to_string(&Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
-              Expr::FunctionCall {
-                name: "Gamma".to_string(),
-                args: vec![a_part.clone()].into(),
-              },
-              Expr::Integer(-1),
-            ]
-            .into(),
-          });
+          let inv_gamma = crate::syntax::expr_to_string(&call(
+            "Power",
+            vec![call1("Gamma", a_part.clone()), Expr::Integer(-1)],
+          ));
           let pos = consts
             .iter()
             .position(|c| crate::syntax::expr_to_string(c) == inv_gamma)?;
@@ -2972,19 +2732,13 @@ fn mellin_inner(expr: &Expr, x: &str, s: &Expr) -> Option<Expr> {
     make_times(vec![
       Expr::Integer(2),
       Expr::Identifier("Pi".to_string()),
-      Expr::FunctionCall {
-        name: "DiracDelta".to_string(),
-        args: vec![make_times(vec![Expr::Identifier("I".to_string()), arg])]
-          .into(),
-      },
+      call(
+        "DiracDelta",
+        vec![make_times(vec![Expr::Identifier("I".to_string()), arg])],
+      ),
     ])
   };
-  let gamma = |arg: Expr| -> Expr {
-    Expr::FunctionCall {
-      name: "Gamma".to_string(),
-      args: vec![arg].into(),
-    }
-  };
+  let gamma = |arg: Expr| -> Expr { call1("Gamma", arg) };
   let neg = |e: Expr| make_times(vec![Expr::Integer(-1), e]);
 
   // Constants: M[c] = c 2 Pi DiracDelta[I s].
@@ -3178,10 +2932,7 @@ fn mellin_inner(expr: &Expr, x: &str, s: &Expr) -> Option<Expr> {
           let half_pi_s = make_times(vec![
             Expr::Identifier("Pi".to_string()),
             s.clone(),
-            Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-            },
+            call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
           ]);
           let mut factors = vec![
             gamma(s.clone()),
@@ -3285,10 +3036,7 @@ fn mellin_inner(expr: &Expr, x: &str, s: &Expr) -> Option<Expr> {
           if !matches!(u, Expr::Identifier(b) if b == x) {
             return None;
           }
-          let half = Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-          };
+          let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
           Some(make_times(vec![
             gamma(make_plus(vec![
               half.clone(),
@@ -3313,10 +3061,7 @@ fn mellin_inner(expr: &Expr, x: &str, s: &Expr) -> Option<Expr> {
         && matches!(&args[1], Expr::Identifier(b) if b == x) =>
     {
       let n = args[0].clone();
-      let half = Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-      };
+      let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
       Some(make_times(vec![
         make_power(
           Expr::Integer(2),
@@ -3389,10 +3134,10 @@ fn fourier_transform(
   let t = match t_expr {
     Expr::Identifier(name) => name.as_str(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "FourierTransform".to_string(),
-        args: vec![expr.clone(), t_expr.clone(), w_expr.clone()].into(),
-      });
+      return Ok(call(
+        "FourierTransform",
+        vec![expr.clone(), t_expr.clone(), w_expr.clone()],
+      ));
     }
   };
 
@@ -3404,10 +3149,10 @@ fn fourier_transform(
   if let Some(result) = fourier_transform_inner(&normalized, t, w_expr) {
     crate::evaluator::evaluate_expr_to_expr(&result)
   } else {
-    Ok(Expr::FunctionCall {
-      name: "FourierTransform".to_string(),
-      args: vec![expr.clone(), t_expr.clone(), w_expr.clone()].into(),
-    })
+    Ok(call(
+      "FourierTransform",
+      vec![expr.clone(), t_expr.clone(), w_expr.clone()],
+    ))
   }
 }
 
@@ -3601,14 +3346,7 @@ fn fourier_lorentzian(expr: &Expr, var: &str, out: &Expr) -> Option<Expr> {
   let b = make_sqrt(make_times(vec![p, make_power(q, Expr::Integer(-1))]));
   let exp_part = make_power(
     Expr::Constant("E".to_string()),
-    make_times(vec![
-      Expr::Integer(-1),
-      b,
-      Expr::FunctionCall {
-        name: "Abs".to_string(),
-        args: vec![out.clone()].into(),
-      },
-    ]),
+    make_times(vec![Expr::Integer(-1), b, call1("Abs", out.clone())]),
   );
   Some(make_times(vec![sqrt_pi_2, inv_sqrt_pq, exp_part]))
 }
@@ -3641,10 +3379,7 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
     {
       return Some(make_power(
         make_times(vec![Expr::Integer(2), Expr::Constant("Pi".to_string())]),
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
-        },
+        call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
       ));
     }
     // F[DiracDelta[t - a]] = E^(i*a*w) / Sqrt[2*Pi]
@@ -3662,10 +3397,7 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
         ),
         make_power(
           make_times(vec![Expr::Integer(2), Expr::Constant("Pi".to_string())]),
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
-          },
+          call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
         ),
       ]));
     }
@@ -3712,17 +3444,11 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
       } else {
         // av*w/2 stays as fraction
         make_times(vec![
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(av), Expr::Integer(2)].into(),
-          },
+          call("Rational", vec![Expr::Integer(av), Expr::Integer(2)]),
           w.clone(),
         ])
       };
-      let sinc = Expr::FunctionCall {
-        name: "Sinc".to_string(),
-        args: vec![half_aw].into(),
-      };
+      let sinc = call1("Sinc", half_aw);
       // Prefactor
       let prefactor = if av % 2 == 0 {
         // av/Sqrt[2π] = (av/2) * Sqrt[2/π]
@@ -3757,25 +3483,16 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
       let arg = if c_val == 1 {
         // w/2
         make_times(vec![
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-          },
+          call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
           w.clone(),
         ])
       } else {
         make_times(vec![
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(2 * c_val)].into(),
-          },
+          call("Rational", vec![Expr::Integer(1), Expr::Integer(2 * c_val)]),
           w.clone(),
         ])
       };
-      let sinc = Expr::FunctionCall {
-        name: "Sinc".to_string(),
-        args: vec![arg].into(),
-      };
+      let sinc = call1("Sinc", arg);
       let sqrt_2pi = make_sqrt(make_times(vec![
         Expr::Integer(2),
         Expr::Constant("Pi".to_string()),
@@ -3785,10 +3502,7 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
         inv_sqrt
       } else {
         make_times(vec![
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(c_val)].into(),
-          },
+          call("Rational", vec![Expr::Integer(1), Expr::Integer(c_val)]),
           inv_sqrt,
         ])
       };
@@ -3818,10 +3532,7 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
             ),
             make_power(
               make_times(vec![Expr::Integer(2), a]),
-              Expr::FunctionCall {
-                name: "Rational".to_string(),
-                args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
-              },
+              call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
             ),
           ]));
         }
@@ -3909,16 +3620,10 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
       return Some(make_times(vec![
         Expr::Constant("I".to_string()),
         Expr::Constant("Pi".to_string()),
-        Expr::FunctionCall {
-          name: "Sign".to_string(),
-          args: vec![w.clone()].into(),
-        },
+        call1("Sign", w.clone()),
         make_power(
           make_times(vec![Expr::Integer(2), Expr::Constant("Pi".to_string())]),
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
-          },
+          call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
         ),
       ]));
     }
@@ -3955,10 +3660,7 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
         let t_part = if t_dependent.len() == 1 {
           t_dependent[0].clone()
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: t_dependent.into(),
-          }
+          call("Times", t_dependent)
         };
         if let Some(ft) = fourier_transform_inner(&t_part, t, w) {
           constants.push(ft);
@@ -4014,10 +3716,7 @@ fn match_neg_a_t_squared(exp: &Expr, t: &str) -> Option<Expr> {
         let coeff = if rest.len() == 1 {
           rest[0].clone()
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: rest.into(),
-          }
+          call("Times", rest)
         };
         // a = -coeff (negate)
         return Some(make_times(vec![Expr::Integer(-1), coeff]));
@@ -4055,10 +3754,7 @@ fn match_neg_a_abs_t(exp: &Expr, t: &str) -> Option<Expr> {
         let coeff = if rest.len() == 1 {
           rest[0].clone()
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: rest.into(),
-          }
+          call("Times", rest)
         };
         return Some(make_times(vec![Expr::Integer(-1), coeff]));
       }
@@ -4078,10 +3774,10 @@ fn inverse_fourier_transform(
   let w = match w_expr {
     Expr::Identifier(name) => name.as_str(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "InverseFourierTransform".to_string(),
-        args: vec![expr.clone(), w_expr.clone(), t_expr.clone()].into(),
-      });
+      return Ok(call(
+        "InverseFourierTransform",
+        vec![expr.clone(), w_expr.clone(), t_expr.clone()],
+      ));
     }
   };
 
@@ -4092,10 +3788,10 @@ fn inverse_fourier_transform(
   if let Some(result) = inverse_fourier_inner(&normalized, w, t_expr) {
     crate::evaluator::evaluate_expr_to_expr(&result)
   } else {
-    Ok(Expr::FunctionCall {
-      name: "InverseFourierTransform".to_string(),
-      args: vec![expr.clone(), w_expr.clone(), t_expr.clone()].into(),
-    })
+    Ok(call(
+      "InverseFourierTransform",
+      vec![expr.clone(), w_expr.clone(), t_expr.clone()],
+    ))
   }
 }
 
@@ -4127,10 +3823,7 @@ fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
   {
     return Some(make_power(
       make_times(vec![Expr::Integer(2), Expr::Constant("Pi".to_string())]),
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
-      },
+      call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
     ));
   }
 
@@ -4155,10 +3848,8 @@ fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
         ])]
         .into(),
       };
-      let sign_1_plus_t = Expr::FunctionCall {
-        name: "Sign".to_string(),
-        args: vec![make_plus(vec![Expr::Integer(1), t.clone()])].into(),
-      };
+      let sign_1_plus_t =
+        call("Sign", vec![make_plus(vec![Expr::Integer(1), t.clone()])]);
       let sum = make_plus(vec![sign_1_minus_t, sign_1_plus_t]);
       let numer = make_times(vec![sqrt_pi_half, sum]);
       return Some(make_times(vec![
@@ -4187,10 +3878,7 @@ fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
           ),
           make_power(
             make_times(vec![Expr::Integer(2), a]),
-            Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
-            },
+            call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
           ),
         ]));
       }
@@ -4219,10 +3907,7 @@ fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
         let w_part = if w_dependent.len() == 1 {
           w_dependent[0].clone()
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: w_dependent.into(),
-          }
+          call("Times", w_dependent)
         };
         if let Some(inv) = inverse_fourier_inner(&w_part, w, t) {
           constants.push(inv);
@@ -4300,10 +3985,7 @@ fn function_domain_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     let mut combined = simplified[0].clone();
     for c in &simplified[1..] {
-      combined = Expr::FunctionCall {
-        name: "And".to_string(),
-        args: vec![combined, c.clone()].into(),
-      };
+      combined = call("And", vec![combined, c.clone()]);
     }
     combined
   };
@@ -4526,10 +4208,7 @@ fn simplify_domain_constraint(constraint: &Expr, var: &str) -> Expr {
             if intervals.len() == 1 {
               return intervals.pop().unwrap();
             }
-            return Expr::FunctionCall {
-              name: "Or".to_string(),
-              args: intervals.into(),
-            };
+            return call("Or", intervals);
           }
         }
 
@@ -4677,11 +4356,10 @@ fn symbolic_series_coefficient(f: &Expr, spec: &Expr) -> Option<Expr> {
   let is_int = |e: &Expr, v: i128| matches!(e, Expr::Integer(k) if *k == v);
   // Coefficient[e, x, deg].
   let coeff = |e: &Expr, deg: i128| -> Option<Expr> {
-    ev(Expr::FunctionCall {
-      name: "Coefficient".to_string(),
-      args: vec![e.clone(), Expr::Identifier(x.clone()), Expr::Integer(deg)]
-        .into(),
-    })
+    ev(call(
+      "Coefficient",
+      vec![e.clone(), Expr::Identifier(x.clone()), Expr::Integer(deg)],
+    ))
   };
   // Extract `a` when `arg == a*x` exactly (linear monomial, no constant term).
   let linear = |arg: &Expr| -> Option<Expr> {
@@ -4736,10 +4414,7 @@ fn symbolic_series_coefficient(f: &Expr, spec: &Expr) -> Option<Expr> {
         return None;
       }
       let neg_a = coeff(base, 1)?; // = -a
-      let a = ev(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), neg_a].into(),
-      })?;
+      let a = ev(call("Times", vec![Expr::Integer(-1), neg_a]))?;
       let residual = ev(Expr::FunctionCall {
         name: "Expand".to_string(),
         args: vec![Expr::BinaryOp {
@@ -4871,26 +4546,26 @@ fn generating_function(
       {
         return generating_function_multivariate(expr, ns, xs);
       }
-      return Ok(Expr::FunctionCall {
-        name: "GeneratingFunction".to_string(),
-        args: vec![expr.clone(), n_expr.clone(), x_expr.clone()].into(),
-      });
+      return Ok(call(
+        "GeneratingFunction",
+        vec![expr.clone(), n_expr.clone(), x_expr.clone()],
+      ));
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "GeneratingFunction".to_string(),
-        args: vec![expr.clone(), n_expr.clone(), x_expr.clone()].into(),
-      });
+      return Ok(call(
+        "GeneratingFunction",
+        vec![expr.clone(), n_expr.clone(), x_expr.clone()],
+      ));
     }
   };
 
   if let Some(result) = gf_inner(expr, n, x_expr)? {
     crate::evaluator::evaluate_expr_to_expr(&result)
   } else {
-    Ok(Expr::FunctionCall {
-      name: "GeneratingFunction".to_string(),
-      args: vec![expr.clone(), n_expr.clone(), x_expr.clone()].into(),
-    })
+    Ok(call(
+      "GeneratingFunction",
+      vec![expr.clone(), n_expr.clone(), x_expr.clone()],
+    ))
   }
 }
 
@@ -5042,10 +4717,10 @@ fn gf_inner(
       name: fname.clone(),
       args: vec![Expr::Identifier(inner_var.to_string())].into(),
     };
-    let gf_base = Expr::FunctionCall {
-      name: "GeneratingFunction".to_string(),
-      args: vec![base_expr, Expr::Identifier(n.to_string()), x.clone()].into(),
-    };
+    let gf_base = call(
+      "GeneratingFunction",
+      vec![base_expr, Expr::Identifier(n.to_string()), x.clone()],
+    );
     // Subtract the first k terms
     let mut subtract_terms = Vec::new();
     for i in 0..shift {
@@ -5425,10 +5100,10 @@ fn gf_binomial(
             Expr::Integer(1),
             times2(Expr::Integer(4), x.clone()),
           )),
-          right: Box::new(Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
-          }),
+          right: Box::new(call(
+            "Rational",
+            vec![Expr::Integer(-1), Expr::Integer(2)],
+          )),
         });
       }
     }
@@ -5533,20 +5208,20 @@ fn exponential_generating_function(
   let n = match n_expr {
     Expr::Identifier(name) => name.as_str(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "ExponentialGeneratingFunction".to_string(),
-        args: vec![expr.clone(), n_expr.clone(), x_expr.clone()].into(),
-      });
+      return Ok(call(
+        "ExponentialGeneratingFunction",
+        vec![expr.clone(), n_expr.clone(), x_expr.clone()],
+      ));
     }
   };
 
   if let Some(result) = egf_inner(expr, n, x_expr)? {
     crate::evaluator::evaluate_expr_to_expr(&result)
   } else {
-    Ok(Expr::FunctionCall {
-      name: "ExponentialGeneratingFunction".to_string(),
-      args: vec![expr.clone(), n_expr.clone(), x_expr.clone()].into(),
-    })
+    Ok(call(
+      "ExponentialGeneratingFunction",
+      vec![expr.clone(), n_expr.clone(), x_expr.clone()],
+    ))
   }
 }
 
@@ -5605,10 +5280,7 @@ fn egf_poly_part(
         let sum = if poly_parts.len() == 1 {
           poly_parts.remove(0)
         } else {
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: poly_parts.into(),
-          }
+          call("Plus", poly_parts)
         };
         return Ok(Some(sum));
       }
@@ -5760,28 +5432,13 @@ fn egf_inner(
           && matches!(fargs[0], Expr::Identifier(name) if name == n) =>
       {
         // Build: Sin[x*Sin[1]] * (Cosh[x*Cos[1]] + Sinh[x*Cos[1]])
-        let cos1 = Expr::FunctionCall {
-          name: "Cos".to_string(),
-          args: vec![Expr::Integer(1)].into(),
-        };
-        let sin1 = Expr::FunctionCall {
-          name: "Sin".to_string(),
-          args: vec![Expr::Integer(1)].into(),
-        };
+        let cos1 = call1("Cos", Expr::Integer(1));
+        let sin1 = call1("Sin", Expr::Integer(1));
         let x_cos1 = times2(x.clone(), cos1);
         let x_sin1 = times2(x.clone(), sin1);
-        let sin_part = Expr::FunctionCall {
-          name: "Sin".to_string(),
-          args: vec![x_sin1].into(),
-        };
-        let cosh_part = Expr::FunctionCall {
-          name: "Cosh".to_string(),
-          args: vec![x_cos1.clone()].into(),
-        };
-        let sinh_part = Expr::FunctionCall {
-          name: "Sinh".to_string(),
-          args: vec![x_cos1].into(),
-        };
+        let sin_part = call1("Sin", x_sin1);
+        let cosh_part = call1("Cosh", x_cos1.clone());
+        let sinh_part = call1("Sinh", x_cos1);
         let exp_part = plus2(cosh_part, sinh_part);
         return Ok(Some(times2(sin_part, exp_part)));
       }
@@ -5790,28 +5447,13 @@ fn egf_inner(
         if fargs.len() == 1
           && matches!(fargs[0], Expr::Identifier(name) if name == n) =>
       {
-        let cos1 = Expr::FunctionCall {
-          name: "Cos".to_string(),
-          args: vec![Expr::Integer(1)].into(),
-        };
-        let sin1 = Expr::FunctionCall {
-          name: "Sin".to_string(),
-          args: vec![Expr::Integer(1)].into(),
-        };
+        let cos1 = call1("Cos", Expr::Integer(1));
+        let sin1 = call1("Sin", Expr::Integer(1));
         let x_cos1 = times2(x.clone(), cos1);
         let x_sin1 = times2(x.clone(), sin1);
-        let cos_part = Expr::FunctionCall {
-          name: "Cos".to_string(),
-          args: vec![x_sin1].into(),
-        };
-        let cosh_part = Expr::FunctionCall {
-          name: "Cosh".to_string(),
-          args: vec![x_cos1.clone()].into(),
-        };
-        let sinh_part = Expr::FunctionCall {
-          name: "Sinh".to_string(),
-          args: vec![x_cos1].into(),
-        };
+        let cos_part = call1("Cos", x_sin1);
+        let cosh_part = call1("Cosh", x_cos1.clone());
+        let sinh_part = call1("Sinh", x_cos1);
         let exp_part = plus2(cosh_part, sinh_part);
         return Ok(Some(times2(cos_part, exp_part)));
       }
@@ -6013,10 +5655,7 @@ fn egf_stirling_polynomial(k: usize, x: &Expr) -> Expr {
   let inner = if inner_terms.len() == 1 {
     inner_terms.remove(0)
   } else {
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: inner_terms.into(),
-    }
+    call("Plus", inner_terms)
   };
 
   // x * inner (or just x if inner is 1)
@@ -6055,10 +5694,10 @@ fn fourier_sin_transform(
   let t = match t_expr {
     Expr::Identifier(name) => name.as_str(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "FourierSinTransform".to_string(),
-        args: vec![expr.clone(), t_expr.clone(), w_expr.clone()].into(),
-      });
+      return Ok(call(
+        "FourierSinTransform",
+        vec![expr.clone(), t_expr.clone(), w_expr.clone()],
+      ));
     }
   };
 
@@ -6074,10 +5713,10 @@ fn fourier_sin_transform(
   {
     crate::evaluator::evaluate_expr_to_expr(&result)
   } else {
-    Ok(Expr::FunctionCall {
-      name: "FourierSinTransform".to_string(),
-      args: vec![expr.clone(), t_expr.clone(), w_expr.clone()].into(),
-    })
+    Ok(call(
+      "FourierSinTransform",
+      vec![expr.clone(), t_expr.clone(), w_expr.clone()],
+    ))
   }
 }
 
@@ -6102,10 +5741,10 @@ fn inverse_fourier_sin_cos_transform(
     fourier_cos_transform(expr, w_expr, t_expr)?
   };
   if matches!(&result, Expr::FunctionCall { name, .. } if name == fwd_name) {
-    return Ok(Expr::FunctionCall {
-      name: inv_name.to_string(),
-      args: vec![expr.clone(), w_expr.clone(), t_expr.clone()].into(),
-    });
+    return Ok(call(
+      inv_name,
+      vec![expr.clone(), w_expr.clone(), t_expr.clone()],
+    ));
   }
   Ok(result)
 }
@@ -6128,10 +5767,10 @@ fn fourier_cos_transform(
   let t = match t_expr {
     Expr::Identifier(name) => name.as_str(),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "FourierCosTransform".to_string(),
-        args: vec![expr.clone(), t_expr.clone(), w_expr.clone()].into(),
-      });
+      return Ok(call(
+        "FourierCosTransform",
+        vec![expr.clone(), t_expr.clone(), w_expr.clone()],
+      ));
     }
   };
 
@@ -6145,10 +5784,10 @@ fn fourier_cos_transform(
   {
     crate::evaluator::evaluate_expr_to_expr(&result)
   } else {
-    Ok(Expr::FunctionCall {
-      name: "FourierCosTransform".to_string(),
-      args: vec![expr.clone(), t_expr.clone(), w_expr.clone()].into(),
-    })
+    Ok(call(
+      "FourierCosTransform",
+      vec![expr.clone(), t_expr.clone(), w_expr.clone()],
+    ))
   }
 }
 
@@ -6188,10 +5827,7 @@ fn fourier_sin_cos_transform_inner(
               unreachable!()
             };
             for f in factors {
-              out.push(Expr::FunctionCall {
-                name: "Power".to_string(),
-                args: vec![f.clone(), Expr::Integer(-1)].into(),
-              });
+              out.push(call("Power", vec![f.clone(), Expr::Integer(-1)]));
             }
           } else {
             out.push((*a).clone());
@@ -6282,15 +5918,9 @@ fn fourier_sin_cos_transform_inner(
     return Some(make_times(vec![
       make_sqrt(make_times(vec![
         Expr::Constant("Pi".to_string()),
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-        },
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
       ])),
-      Expr::FunctionCall {
-        name: "Sign".to_string(),
-        args: vec![w.clone()].into(),
-      },
+      call1("Sign", w.clone()),
     ]));
   }
 
@@ -6372,10 +6002,7 @@ fn fourier_sin_cos_transform_inner(
       return Some(Expr::Integer(0));
     }
     // Symbolic path: (Pi - Pi*Sign[c-w]) / (2*Sqrt[2*Pi]).
-    let sign = Expr::FunctionCall {
-      name: "Sign".to_string(),
-      args: vec![c_minus_w].into(),
-    };
+    let sign = call1("Sign", c_minus_w);
     let numer = make_plus(vec![
       Expr::Constant("Pi".to_string()),
       make_times(vec![
@@ -6450,10 +6077,7 @@ fn fourier_sin_cos_transform_inner(
         );
         let sqrt_pi_half = make_sqrt(make_times(vec![
           Expr::Constant("Pi".to_string()),
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-          },
+          call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
         ]));
         let mut factors = vec![sqrt_pi_half, decay];
         if !is_sin {
@@ -6498,10 +6122,7 @@ fn fourier_sin_cos_transform_inner(
         make_sqrt(Expr::Integer(2)),
         make_power(
           a,
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(3), Expr::Integer(2)].into(),
-          },
+          call("Rational", vec![Expr::Integer(3), Expr::Integer(2)]),
         ),
       ]);
       return Some(make_times(vec![
@@ -6692,10 +6313,7 @@ fn invert_pure_function(body: &Expr) -> Option<Expr> {
     crate::syntax::substitute_slots(body, std::slice::from_ref(&x_expr));
 
   // Build `Equal[body_x, y]` and solve for x.
-  let eq = Expr::FunctionCall {
-    name: "Equal".to_string(),
-    args: vec![body_x, y_expr.clone()].into(),
-  };
+  let eq = call("Equal", vec![body_x, y_expr.clone()]);
   let solve_result =
     crate::functions::polynomial_ast::solve_ast(&[eq, x_expr.clone()]).ok()?;
 

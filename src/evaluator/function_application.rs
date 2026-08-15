@@ -296,11 +296,7 @@ fn differentiate_function_body(body: &Expr, orders: &[i128]) -> Option<Expr> {
       current = if matches!(chain, Expr::Integer(0)) {
         Expr::Integer(0)
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(factor),
-          right: Box::new(chain),
-        }
+        times2(factor, chain)
       };
       continue;
     }
@@ -1887,11 +1883,10 @@ pub fn apply_curried_call(
               }
             }
             // Key not found: return Missing["KeyAbsent", k]
-            Ok(Expr::FunctionCall {
-              name: "Missing".to_string(),
-              args: vec![Expr::String("KeyAbsent".to_string()), key.clone()]
-                .into(),
-            })
+            Ok(call(
+              "Missing",
+              vec![Expr::String("KeyAbsent".to_string()), key.clone()],
+            ))
           }
           _ => {
             // Not an association: return unevaluated
@@ -2065,10 +2060,7 @@ pub fn apply_curried_call(
           } else {
             new_args.push(Expr::Integer(total));
           }
-          return Ok(Expr::FunctionCall {
-            name: "InterpolatingFunction".to_string(),
-            args: new_args.into(),
-          });
+          return Ok(call("InterpolatingFunction", new_args));
         }
         if name == "Derivative" && func_args.len() == 1 && args.len() == 1 {
           let arg0 = &args[0];
@@ -2195,11 +2187,10 @@ pub fn apply_curried_call(
           }
         }
         // Key not found: return Missing["KeyAbsent", key]
-        Ok(Expr::FunctionCall {
-          name: "Missing".to_string(),
-          args: vec![Expr::String("KeyAbsent".to_string()), args[0].clone()]
-            .into(),
-        })
+        Ok(call(
+          "Missing",
+          vec![Expr::String("KeyAbsent".to_string()), args[0].clone()],
+        ))
       } else {
         Ok(Expr::CurriedCall {
           func: Box::new(func.clone()),
@@ -2521,30 +2512,21 @@ fn apply_transformation_function(
 ) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(Expr::CurriedCall {
-      func: Box::new(Expr::FunctionCall {
-        name: "TransformationFunction".to_string(),
-        args: vec![matrix.clone()].into(),
-      }),
+      func: Box::new(call1("TransformationFunction", matrix.clone())),
       args: args.to_vec(),
     });
   }
   let point = &args[0];
   let Expr::List(coords) = point else {
     return Ok(Expr::CurriedCall {
-      func: Box::new(Expr::FunctionCall {
-        name: "TransformationFunction".to_string(),
-        args: vec![matrix.clone()].into(),
-      }),
+      func: Box::new(call1("TransformationFunction", matrix.clone())),
       args: args.to_vec(),
     });
   };
 
   let Expr::List(rows) = matrix else {
     return Ok(Expr::CurriedCall {
-      func: Box::new(Expr::FunctionCall {
-        name: "TransformationFunction".to_string(),
-        args: vec![matrix.clone()].into(),
-      }),
+      func: Box::new(call1("TransformationFunction", matrix.clone())),
       args: args.to_vec(),
     });
   };
@@ -2559,10 +2541,7 @@ fn apply_transformation_function(
   for i in 0..n {
     let Expr::List(row) = &rows[i] else {
       return Ok(Expr::CurriedCall {
-        func: Box::new(Expr::FunctionCall {
-          name: "TransformationFunction".to_string(),
-          args: vec![matrix.clone()].into(),
-        }),
+        func: Box::new(call1("TransformationFunction", matrix.clone())),
         args: args.to_vec(),
       });
     };
@@ -2572,10 +2551,7 @@ fn apply_transformation_function(
       args: row
         .iter()
         .zip(hom.iter())
-        .map(|(a, b)| Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![a.clone(), b.clone()].into(),
-        })
+        .map(|(a, b)| call("Times", vec![a.clone(), b.clone()]))
         .collect(),
     };
     result.push(evaluate_expr_to_expr(&dot)?);
@@ -2594,20 +2570,13 @@ fn apply_transformation_function(
       args: last
         .iter()
         .zip(hom.iter())
-        .map(|(a, b)| Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![a.clone(), b.clone()].into(),
-        })
+        .map(|(a, b)| call("Times", vec![a.clone(), b.clone()]))
         .collect(),
     })?;
     // Only rescale when the homogeneous coordinate is not the constant 1.
     if !matches!(&h, Expr::Integer(1)) {
       for comp in &mut result {
-        *comp = evaluate_expr_to_expr(&Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(comp.clone()),
-          right: Box::new(h.clone()),
-        })?;
+        *comp = evaluate_expr_to_expr(&div2(comp.clone(), h.clone()))?;
       }
     }
   }

@@ -767,16 +767,14 @@ pub fn dispatch_io_functions(
     "Streams" if args.is_empty() => {
       return Some(Ok(Expr::List(
         vec![
-          Expr::FunctionCall {
-            name: "OutputStream".to_string(),
-            args: vec![Expr::String("stdout".to_string()), Expr::Integer(1)]
-              .into(),
-          },
-          Expr::FunctionCall {
-            name: "OutputStream".to_string(),
-            args: vec![Expr::String("stderr".to_string()), Expr::Integer(2)]
-              .into(),
-          },
+          call(
+            "OutputStream",
+            vec![Expr::String("stdout".to_string()), Expr::Integer(1)],
+          ),
+          call(
+            "OutputStream",
+            vec![Expr::String("stderr".to_string()), Expr::Integer(2)],
+          ),
         ]
         .into(),
       )));
@@ -788,9 +786,11 @@ pub fn dispatch_io_functions(
         let matching: Vec<Expr> = all_streams
           .iter()
           .filter(|(n, _)| *n == name_filter.as_str())
-          .map(|(n, id)| Expr::FunctionCall {
-            name: "OutputStream".to_string(),
-            args: vec![Expr::String(n.to_string()), Expr::Integer(*id)].into(),
+          .map(|(n, id)| {
+            call(
+              "OutputStream",
+              vec![Expr::String(n.to_string()), Expr::Integer(*id)],
+            )
           })
           .collect();
         return Some(Ok(Expr::List(matching.into())));
@@ -2256,10 +2256,7 @@ pub fn dispatch_io_functions(
       let filename = match filename_arg {
         Some(Expr::String(s)) => s.clone(),
         Some(other) => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "OpenRead".to_string(),
-            args: vec![other.clone()].into(),
-          }));
+          return Some(Ok(call1("OpenRead", other.clone())));
         }
         None => {
           return Some(Ok(unevaluated("OpenRead", args)));
@@ -2286,10 +2283,10 @@ pub fn dispatch_io_functions(
         StreamKind::File(filename.clone())
       };
       let id = register_stream(filename.clone(), kind);
-      return Some(Ok(Expr::FunctionCall {
-        name: "InputStream".to_string(),
-        args: vec![Expr::String(filename), Expr::Integer(id as i128)].into(),
-      }));
+      return Some(Ok(call(
+        "InputStream",
+        vec![Expr::String(filename), Expr::Integer(id as i128)],
+      )));
     }
     // OpenWrite[file] — open a file for writing, return OutputStream[name, id]
     // OpenWrite[BinaryFormat -> True] — same, options pass-through.
@@ -2299,10 +2296,7 @@ pub fn dispatch_io_functions(
       let filename = match filename_arg {
         Some(Expr::String(s)) => s.clone(),
         Some(other) => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "OpenWrite".to_string(),
-            args: vec![other.clone()].into(),
-          }));
+          return Some(Ok(call1("OpenWrite", other.clone())));
         }
         None => {
           let path = match crate::utils::create_file(None)
@@ -2336,10 +2330,10 @@ pub fn dispatch_io_functions(
         StreamKind::File(filename.clone())
       };
       let id = register_stream(filename.clone(), kind);
-      return Some(Ok(Expr::FunctionCall {
-        name: "OutputStream".to_string(),
-        args: vec![Expr::String(filename), Expr::Integer(id as i128)].into(),
-      }));
+      return Some(Ok(call(
+        "OutputStream",
+        vec![Expr::String(filename), Expr::Integer(id as i128)],
+      )));
     }
     // BinaryWrite[stream, bytes]              — write bytes (Integers in 0..255)
     // BinaryWrite[stream, bytes, type]        — write with explicit type spec
@@ -2575,10 +2569,7 @@ pub fn dispatch_io_functions(
         match &args[0] {
           Expr::String(s) => s.clone(),
           other => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "OpenAppend".to_string(),
-              args: vec![other.clone()].into(),
-            }));
+            return Some(Ok(call1("OpenAppend", other.clone())));
           }
         }
       };
@@ -2609,10 +2600,10 @@ pub fn dispatch_io_functions(
         StreamKind::File(filename.clone())
       };
       let id = register_stream(filename.clone(), kind);
-      return Some(Ok(Expr::FunctionCall {
-        name: "OutputStream".to_string(),
-        args: vec![Expr::String(filename), Expr::Integer(id as i128)].into(),
-      }));
+      return Some(Ok(call(
+        "OutputStream",
+        vec![Expr::String(filename), Expr::Integer(id as i128)],
+      )));
     }
     // StringToStream["text"] — create an input stream from a string
     "StringToStream" if args.len() == 1 => {
@@ -4411,10 +4402,8 @@ fn locator_marker(
   point: &Expr,
   span: f64,
 ) -> Option<Expr> {
-  let translate = |prims: &Expr| Expr::FunctionCall {
-    name: "Translate".to_string(),
-    args: vec![prims.clone(), point.clone()].into(),
-  };
+  let translate =
+    |prims: &Expr| call("Translate", vec![prims.clone(), point.clone()]);
   // The primitives of an `Appearance` picture: `Graphics[prims, opts…]`
   // contributes `prims`; anything else is drawn as given.
   let primitives = |g: &Expr| match g {
@@ -4435,16 +4424,11 @@ fn locator_marker(
       let r = span * 0.015;
       let arm = span * 0.03;
       let offset = |dx: f64, dy: f64| Expr::List(vec![num(dx), num(dy)].into());
-      let line = |a: Expr, b: Expr| Expr::FunctionCall {
-        name: "Line".to_string(),
-        args: vec![Expr::List(vec![a, b].into())].into(),
-      };
+      let line =
+        |a: Expr, b: Expr| call("Line", vec![Expr::List(vec![a, b].into())]);
       Some(translate(&Expr::List(
         vec![
-          Expr::FunctionCall {
-            name: "Circle".to_string(),
-            args: vec![offset(0.0, 0.0), num(r)].into(),
-          },
+          call("Circle", vec![offset(0.0, 0.0), num(r)]),
           line(offset(-arm, 0.0), offset(arm, 0.0)),
           line(offset(0.0, -arm), offset(0.0, arm)),
         ]
@@ -4569,10 +4553,7 @@ fn locator_pane_graphic(args: &[Expr]) -> Option<Expr> {
   }
   let mut graphics_args = vec![Expr::List(prims.into())];
   graphics_args.extend(body_opts);
-  Some(Expr::FunctionCall {
-    name: "Graphics".to_string(),
-    args: graphics_args.into(),
-  })
+  Some(call("Graphics", graphics_args))
 }
 
 /// A string shown through `Text` loses the quotation marks its own
@@ -5256,10 +5237,7 @@ fn distribute_format_over_tableform(expr: &Expr) -> Option<Expr> {
         });
         let mut new_args = vec![new_data];
         new_args.extend(args[1..].iter().cloned());
-        return Some(Expr::FunctionCall {
-          name: "TableForm".to_string(),
-          args: new_args.into(),
-        });
+        return Some(call("TableForm", new_args));
       }
       _ => return None,
     }

@@ -69,10 +69,10 @@ pub fn dispatch_structural(
       // survive: `{s, _Integer, 0}` must bind an integer, not the Real every
       // argument used to be coerced to. A bare-name spec list (`{x, y}`) is
       // already its own name list, so the untyped form is unchanged.
-      return Some(Ok(Expr::FunctionCall {
-        name: "CompiledFunction".to_string(),
-        args: vec![args[0].clone(), args[1].clone()].into(),
-      }));
+      return Some(Ok(call(
+        "CompiledFunction",
+        vec![args[0].clone(), args[1].clone()],
+      )));
     }
     "Rational" if args.len() == 2 => {
       if let (Some(n), Some(d)) =

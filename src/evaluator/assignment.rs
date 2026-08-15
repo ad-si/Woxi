@@ -133,10 +133,7 @@ fn wrap_rule_lhs_in_holdpattern(expr: &Expr) -> Expr {
     if already_held(p) {
       p.clone()
     } else {
-      Expr::FunctionCall {
-        name: "HoldPattern".to_string(),
-        args: vec![p.clone()].into(),
-      }
+      call1("HoldPattern", p.clone())
     }
   }
   match expr {
@@ -572,10 +569,10 @@ pub fn constrain_repeated_params(
       },
     };
     let synthetic = format!("__sp{i}");
-    conditions[i] = Some(Expr::FunctionCall {
-      name: "__StructuralPattern__".to_string(),
-      args: vec![Expr::Identifier(synthetic.clone()), pattern].into(),
-    });
+    conditions[i] = Some(call(
+      "__StructuralPattern__",
+      vec![Expr::Identifier(synthetic.clone()), pattern],
+    ));
     params[i] = synthetic;
   }
 }
@@ -792,18 +789,10 @@ pub fn canonicalize_divide_in_expr(expr: &Expr) -> Expr {
             den_inv
           } else {
             crate::functions::math_ast::times_ast(&[left.clone(), den_inv])
-              .unwrap_or_else(|_| Expr::BinaryOp {
-                op: BinaryOperator::Divide,
-                left: Box::new(left),
-                right: Box::new(right),
-              })
+              .unwrap_or_else(|_| div2(left, right))
           }
         }
-        Err(_) => Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(left),
-          right: Box::new(right),
-        },
+        Err(_) => div2(left, right),
       }
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
@@ -1526,10 +1515,8 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         .into(),
       )
     };
-    let canonical_lhs = Expr::FunctionCall {
-      name: "N".to_string(),
-      args: vec![Expr::Identifier(sym_name.clone()), prec_part].into(),
-    };
+    let canonical_lhs =
+      call("N", vec![Expr::Identifier(sym_name.clone()), prec_part]);
     N_VALUES.with(|m| {
       let mut map = m.borrow_mut();
       let entries = map.entry(sym_name.clone()).or_default();
@@ -2096,10 +2083,7 @@ pub fn set_delayed_ast(
   let combined = match all_conditions.len() {
     0 => None,
     1 => Some(all_conditions.into_iter().next().unwrap()),
-    _ => Some(Expr::FunctionCall {
-      name: "And".to_string(),
-      args: all_conditions.into(),
-    }),
+    _ => Some(call("And", all_conditions)),
   };
   let body_condition = combined.as_ref();
 
@@ -2374,11 +2358,10 @@ pub fn set_delayed_ast(
           } else {
             name.clone()
           };
-          conditions.push(Some(Expr::FunctionCall {
-            name: "__StructuralPattern__".to_string(),
-            args: vec![Expr::Identifier(param_name.clone()), arg.clone()]
-              .into(),
-          }));
+          conditions.push(Some(call(
+            "__StructuralPattern__",
+            vec![Expr::Identifier(param_name.clone()), arg.clone()],
+          )));
           params.push(param_name);
           defaults.push(None);
           heads.push(head.clone());
@@ -2412,10 +2395,10 @@ pub fn set_delayed_ast(
                 blank_type: *blank_type,
                 test: test.clone(),
               };
-              conditions.push(Some(Expr::FunctionCall {
-                name: "__StructuralPattern__".to_string(),
-                args: vec![Expr::Identifier(pname.clone()), normalized].into(),
-              }));
+              conditions.push(Some(call(
+                "__StructuralPattern__",
+                vec![Expr::Identifier(pname.clone()), normalized],
+              )));
               params.push(pname);
               defaults.push(None);
               heads.push(head.clone());
@@ -2486,10 +2469,10 @@ pub fn set_delayed_ast(
             // previously the constraint was silently dropped, so
             // s[x : (_Integer | _Real)] matched any argument at all.
             _ => {
-              conditions.push(Some(Expr::FunctionCall {
-                name: "__StructuralPattern__".to_string(),
-                args: vec![Expr::Identifier(pname.clone()), arg.clone()].into(),
-              }));
+              conditions.push(Some(call(
+                "__StructuralPattern__",
+                vec![Expr::Identifier(pname.clone()), arg.clone()],
+              )));
               params.push(pname);
               defaults.push(None);
               heads.push(None);
@@ -2515,11 +2498,10 @@ pub fn set_delayed_ast(
               // the pattern AST in a __StructuralPattern__ marker for dispatch-time matching.
               let param_name = format!("__sp{i}");
               let normalized = normalize_structural_pattern(arg);
-              conditions.push(Some(Expr::FunctionCall {
-                name: "__StructuralPattern__".to_string(),
-                args: vec![Expr::Identifier(param_name.clone()), normalized]
-                  .into(),
-              }));
+              conditions.push(Some(call(
+                "__StructuralPattern__",
+                vec![Expr::Identifier(param_name.clone()), normalized],
+              )));
               params.push(param_name);
               blank_types.push(1);
             } else {
@@ -2609,10 +2591,8 @@ pub fn set_delayed_ast(
         });
         if let Some(idx) = combine_idx {
           let existing = conditions[idx].take().unwrap();
-          conditions[idx] = Some(Expr::FunctionCall {
-            name: "And".to_string(),
-            args: vec![existing, body_cond.clone()].into(),
-          });
+          conditions[idx] =
+            Some(call("And", vec![existing, body_cond.clone()]));
         } else {
           // All conditions are structural patterns — append as extra condition
           conditions.push(Some(body_cond.clone()));
@@ -2710,10 +2690,7 @@ pub fn set_delayed_ast(
     // guard at access time and skip the rule when it fails (matching
     // Wolfram's `a /; b > 0 := 3` semantics).
     let stored_body = match body_condition {
-      Some(cond) => Expr::FunctionCall {
-        name: "Condition".to_string(),
-        args: vec![body.clone(), cond.clone()].into(),
-      },
+      Some(cond) => call("Condition", vec![body.clone(), cond.clone()]),
       None => body.clone(),
     };
     // Store the unevaluated body — it will be re-evaluated each time the symbol is accessed
@@ -2770,10 +2747,7 @@ pub fn set_delayed_ast(
   }
 
   // Fallback: return symbolic form
-  Ok(Expr::FunctionCall {
-    name: "SetDelayed".to_string(),
-    args: vec![lhs.clone(), body.clone()].into(),
-  })
+  Ok(call("SetDelayed", vec![lhs.clone(), body.clone()]))
 }
 
 /// Whether a list-pattern element needs an explicit `MatchQ` guard at
@@ -2802,18 +2776,12 @@ fn list_element_accessor(
       name: "Apply".to_string(),
       args: vec![
         Expr::Identifier("Sequence".to_string()),
-        Expr::FunctionCall {
-          name: "Drop".to_string(),
-          args: vec![base.clone(), Expr::Integer(idx as i128)].into(),
-        },
+        call("Drop", vec![base.clone(), Expr::Integer(idx as i128)]),
       ]
       .into(),
     }
   } else {
-    Expr::FunctionCall {
-      name: "Part".to_string(),
-      args: vec![base.clone(), Expr::Integer((idx + 1) as i128)].into(),
-    }
+    call("Part", vec![base.clone(), Expr::Integer((idx + 1) as i128)])
   }
 }
 
@@ -2929,11 +2897,10 @@ fn collect_element_bindings(
                     name: "Apply".to_string(),
                     args: vec![
                       Expr::Identifier("Sequence".to_string()),
-                      Expr::FunctionCall {
-                        name: "Drop".to_string(),
-                        args: vec![accessor.clone(), Expr::Integer(k as i128)]
-                          .into(),
-                      },
+                      call(
+                        "Drop",
+                        vec![accessor.clone(), Expr::Integer(k as i128)],
+                      ),
                     ]
                     .into(),
                   },
@@ -2945,10 +2912,8 @@ fn collect_element_bindings(
           Some(k) if j > k => -((n - j) as i128),
           _ => (j + 1) as i128,
         };
-        let arg_accessor = Expr::FunctionCall {
-          name: "Part".to_string(),
-          args: vec![accessor.clone(), Expr::Integer(index)].into(),
-        };
+        let arg_accessor =
+          call("Part", vec![accessor.clone(), Expr::Integer(index)]);
         collect_element_bindings(arg, &arg_accessor, out);
       }
     }
@@ -2989,13 +2954,7 @@ fn build_list_pattern_match(
     (ComparisonOp::GreaterEqual, (patterns.len() - 1) as i128)
   };
   let mut rule_conds: Vec<Expr> = vec![Expr::Comparison {
-    operands: vec![
-      Expr::FunctionCall {
-        name: "Length".to_string(),
-        args: vec![base.clone()].into(),
-      },
-      Expr::Integer(len_cmp.1),
-    ],
+    operands: vec![call1("Length", base.clone()), Expr::Integer(len_cmp.1)],
     operators: vec![len_cmp.0],
   }];
   let last_pat_idx = patterns.len().saturating_sub(1);
@@ -3010,10 +2969,10 @@ fn build_list_pattern_match(
     // always True but keeps the element's surface pattern (and name) on record
     // so `DownValues` can reconstruct the original `{…}` pattern. Specificity
     // scoring (`count_specificity_clauses`) ignores the always-true ones.
-    rule_conds.push(Expr::FunctionCall {
-      name: "MatchQ".to_string(),
-      args: vec![list_element_accessor(&base, eidx, false), pat.clone()].into(),
-    });
+    rule_conds.push(call(
+      "MatchQ",
+      vec![list_element_accessor(&base, eidx, false), pat.clone()],
+    ));
   }
   let mut bindings = Vec::new();
   collect_list_pattern_bindings(patterns, &base, &mut bindings);
@@ -3022,10 +2981,7 @@ fn build_list_pattern_match(
   let combined = if rule_conds.len() == 1 {
     rule_conds.pop().unwrap()
   } else {
-    Expr::FunctionCall {
-      name: "And".to_string(),
-      args: rule_conds.into(),
-    }
+    call("And", rule_conds)
   };
   (combined, bindings)
 }
@@ -3131,9 +3087,8 @@ fn replace_subexpr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
 /// that extracts it, recursing through nested list patterns. Used to undo the
 /// element-accessor substitution when displaying a list-pattern rule.
 fn map_part_names(pat: &Expr, path: &Expr, out: &mut Vec<(Expr, String)>) {
-  let part = |p: &Expr, j: usize| Expr::FunctionCall {
-    name: "Part".to_string(),
-    args: vec![p.clone(), Expr::Integer(j as i128)].into(),
+  let part = |p: &Expr, j: usize| {
+    call("Part", vec![p.clone(), Expr::Integer(j as i128)])
   };
   match pat {
     Expr::Pattern { name, .. }
@@ -3180,11 +3135,10 @@ fn map_part_names(pat: &Expr, path: &Expr, out: &mut Vec<(Expr, String)>) {
         match seq {
           Some(k) if j == k => {}
           Some(k) if j > k => {
-            let neg = Expr::FunctionCall {
-              name: "Part".to_string(),
-              args: vec![path.clone(), Expr::Integer(-((n - j) as i128))]
-                .into(),
-            };
+            let neg = call(
+              "Part",
+              vec![path.clone(), Expr::Integer(-((n - j) as i128))],
+            );
             map_part_names(ip, &neg, out);
           }
           _ => map_part_names(ip, &part(path, j + 1), out),
@@ -3413,15 +3367,9 @@ pub fn reconstruct_list_downvalue(
     let guard = if guards.len() == 1 {
       guards.pop().unwrap()
     } else {
-      Expr::FunctionCall {
-        name: "And".to_string(),
-        args: guards.into(),
-      }
+      call("And", guards)
     };
-    Expr::FunctionCall {
-      name: "Condition".to_string(),
-      args: vec![display_body, guard].into(),
-    }
+    call("Condition", vec![display_body, guard])
   };
   Some((pattern_args, final_body))
 }
@@ -3656,10 +3604,7 @@ pub fn tag_set_delayed_ast(
       } else {
         conditions.push(Some(Expr::Comparison {
           operands: vec![
-            Expr::FunctionCall {
-              name: "Length".to_string(),
-              args: vec![Expr::Identifier(param_name.clone())].into(),
-            },
+            call1("Length", Expr::Identifier(param_name.clone())),
             Expr::Integer(inner_args.len() as i128),
           ],
           operators: vec![ComparisonOp::SameQ],
@@ -3747,10 +3692,7 @@ pub fn tag_set_delayed_ast(
     let combined = if all_conds.len() == 1 {
       all_conds.remove(0)
     } else {
-      Expr::FunctionCall {
-        name: "And".to_string(),
-        args: all_conds.into(),
-      }
+      call("And", all_conds)
     };
     conditions[last_idx] = Some(combined);
   }
@@ -3783,10 +3725,8 @@ pub fn tag_set_delayed_ast(
         })
         .unwrap_or(0);
       let existing = conditions[combine_idx].take().unwrap();
-      conditions[combine_idx] = Some(Expr::FunctionCall {
-        name: "And".to_string(),
-        args: vec![existing, extra_cond.clone()].into(),
-      });
+      conditions[combine_idx] =
+        Some(call("And", vec![existing, extra_cond.clone()]));
     } else if !attached {
       // No condition slots at all — add a new one
       conditions.push(Some(extra_cond.clone()));
@@ -3972,20 +3912,15 @@ fn normalize_lhs_for_upset(lhs: &Expr) -> Expr {
         _ => return lhs.clone(),
       };
       let right_expr = match op {
-        BinaryOperator::Minus => Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), (**right).clone()].into(),
-        },
-        BinaryOperator::Divide => Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![(**right).clone(), Expr::Integer(-1)].into(),
-        },
+        BinaryOperator::Minus => {
+          call("Times", vec![Expr::Integer(-1), (**right).clone()])
+        }
+        BinaryOperator::Divide => {
+          call("Power", vec![(**right).clone(), Expr::Integer(-1)])
+        }
         _ => (**right).clone(),
       };
-      Expr::FunctionCall {
-        name: head.to_string(),
-        args: vec![(**left).clone(), right_expr].into(),
-      }
+      call(head, vec![(**left).clone(), right_expr])
     }
     _ => lhs.clone(),
   }
@@ -4010,10 +3945,7 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       crate::syntax::expr_to_string(lhs),
       crate::syntax::expr_to_string(rhs)
     ));
-    return Ok(Expr::FunctionCall {
-      name: "UpSet".to_string(),
-      args: vec![lhs.clone(), rhs.clone()].into(),
-    });
+    return Ok(call("UpSet", vec![lhs.clone(), rhs.clone()]));
   };
   let lhs = &normalized_lhs;
 
@@ -4058,10 +3990,8 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         .into(),
       )
     };
-    let canonical_lhs = Expr::FunctionCall {
-      name: "N".to_string(),
-      args: vec![Expr::Identifier(sym_name.clone()), prec_part].into(),
-    };
+    let canonical_lhs =
+      call("N", vec![Expr::Identifier(sym_name.clone()), prec_part]);
     N_VALUES.with(|m| {
       let mut map = m.borrow_mut();
       let entries = map.entry(sym_name.clone()).or_default();

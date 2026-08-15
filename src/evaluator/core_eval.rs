@@ -221,10 +221,7 @@ fn unwrap_top_level_evaluate(arg: &Expr) -> Result<Expr, InterpreterError> {
     }
     let evaluated: Result<Vec<Expr>, _> =
       args.iter().map(evaluate_expr_to_expr).collect();
-    return Ok(Expr::FunctionCall {
-      name: "Sequence".to_string(),
-      args: evaluated?.into(),
-    });
+    return Ok(call("Sequence", evaluated?));
   }
   Ok(arg.clone())
 }
@@ -258,10 +255,7 @@ fn rgb_color_expr(r: f64, g: f64, b: f64) -> Expr {
       Expr::Real(v)
     }
   }
-  Expr::FunctionCall {
-    name: "RGBColor".to_string(),
-    args: vec![num(r), num(g), num(b)].into(),
-  }
+  call("RGBColor", vec![num(r), num(g), num(b)])
 }
 
 /// Helper to construct a GrayLevel Expr.
@@ -275,10 +269,7 @@ fn gray_level_expr(g: f64) -> Expr {
       Expr::Real(v)
     }
   }
-  Expr::FunctionCall {
-    name: "GrayLevel".to_string(),
-    args: vec![num(g)].into(),
-  }
+  call1("GrayLevel", num(g))
 }
 
 /// Map named color identifiers to their Wolfram Language evaluation result.
@@ -320,15 +311,11 @@ pub fn named_color_expr(name: &str) -> Option<Expr> {
 /// to. `Thick` is `Thickness[Large]`, `Dotted` is `Dashing[{0, Small}]`, and
 /// so on — the same relationship [`named_color_expr`] captures for colors.
 pub fn style_directive_expr(name: &str) -> Option<Expr> {
-  let thickness = |size: &str| Expr::FunctionCall {
-    name: "Thickness".to_string(),
-    args: vec![Expr::Identifier(size.to_string())].into(),
-  };
+  let thickness =
+    |size: &str| call1("Thickness", Expr::Identifier(size.to_string()));
   let small = || Expr::Identifier("Small".to_string());
-  let dashing = |segments: Vec<Expr>| Expr::FunctionCall {
-    name: "Dashing".to_string(),
-    args: vec![Expr::List(segments.into())].into(),
-  };
+  let dashing =
+    |segments: Vec<Expr>| call1("Dashing", Expr::List(segments.into()));
   Some(match name {
     "Thick" => thickness("Large"),
     "Thin" => thickness("Tiny"),
@@ -569,10 +556,7 @@ pub(crate) fn reject_invalid_replace_rules(head: &str, rules: &Expr) -> bool {
 /// expression it names — the same wrapping `Module` and `Block` already do.
 pub fn evaluate_value(expr: &Expr) -> Result<Expr, InterpreterError> {
   match evaluate_expr_to_expr(expr) {
-    Err(InterpreterError::ReturnValue(val)) => Ok(Expr::FunctionCall {
-      name: "Return".to_string(),
-      args: vec![*val].into(),
-    }),
+    Err(InterpreterError::ReturnValue(val)) => Ok(call1("Return", *val)),
     other => other,
   }
 }
@@ -1073,11 +1057,8 @@ pub fn evaluate_expr_to_expr_inner(
             } else {
               Expr::Integer(-1)
             };
-            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(current_val.clone()),
-              right: Box::new(delta),
-            })?;
+            let new_val =
+              evaluate_expr_to_expr(&plus2(current_val.clone(), delta))?;
             ENV.with(|e| {
               e.borrow_mut().insert(
                 var_name.clone(),
@@ -1099,11 +1080,8 @@ pub fn evaluate_expr_to_expr_inner(
             } else {
               Expr::Integer(-1)
             };
-            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(current_val.clone()),
-              right: Box::new(delta),
-            })?;
+            let new_val =
+              evaluate_expr_to_expr(&plus2(current_val.clone(), delta))?;
             // Use Set to assign the new value back to the part
             crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
             if name == "PreIncrement" || name == "PreDecrement" {
@@ -1131,10 +1109,7 @@ pub fn evaluate_expr_to_expr_inner(
           if let Expr::List(items) = &args[0] {
             let mut results = Vec::with_capacity(items.len());
             for it in items {
-              let r = evaluate_expr_to_expr(&Expr::FunctionCall {
-                name: "Unset".to_string(),
-                args: vec![it.clone()].into(),
-              })?;
+              let r = evaluate_expr_to_expr(&call1("Unset", it.clone()))?;
               results.push(r);
             }
             return Ok(Expr::List(results.into()));
@@ -1718,10 +1693,7 @@ pub fn evaluate_expr_to_expr_inner(
           let mut new_pairs: Vec<(Expr, Expr)> = Vec::new();
           if !collect_pairs(&rule, &mut new_pairs) {
             // Not a recognized key-value form — return unevaluated.
-            return Ok(Expr::FunctionCall {
-              name: "AssociateTo".to_string(),
-              args: vec![args[0].clone(), rule].into(),
-            });
+            return Ok(call("AssociateTo", vec![args[0].clone(), rule]));
           }
           let current = ENV.with(|e| e.borrow().get(var_name).cloned());
           let mut items = match &current {
@@ -1740,18 +1712,12 @@ pub fn evaluate_expr_to_expr_inner(
               match crate::syntax::string_to_expr(s) {
                 Ok(Expr::Association(ref items)) => items.clone(),
                 _ => {
-                  return Ok(Expr::FunctionCall {
-                    name: "AssociateTo".to_string(),
-                    args: vec![args[0].clone(), rule].into(),
-                  });
+                  return Ok(call("AssociateTo", vec![args[0].clone(), rule]));
                 }
               }
             }
             _ => {
-              return Ok(Expr::FunctionCall {
-                name: "AssociateTo".to_string(),
-                args: vec![args[0].clone(), rule].into(),
-              });
+              return Ok(call("AssociateTo", vec![args[0].clone(), rule]));
             }
           };
           for (key, val) in new_pairs {
@@ -1800,10 +1766,7 @@ pub fn evaluate_expr_to_expr_inner(
               match crate::syntax::string_to_expr(s) {
                 Ok(Expr::Association(ref items)) => items.clone(),
                 _ => {
-                  return Ok(Expr::FunctionCall {
-                    name: "KeyDropFrom".to_string(),
-                    args: vec![args[0].clone(), key].into(),
-                  });
+                  return Ok(call("KeyDropFrom", vec![args[0].clone(), key]));
                 }
               }
             }
@@ -1812,10 +1775,7 @@ pub fn evaluate_expr_to_expr_inner(
               crate::emit_message(&format!(
                 "KeyDropFrom::blnoval: The symbol {var_name} at position 1 should have an immediate value defined."
               ));
-              return Ok(Expr::FunctionCall {
-                name: "KeyDropFrom".to_string(),
-                args: vec![args[0].clone(), key].into(),
-              });
+              return Ok(call("KeyDropFrom", vec![args[0].clone(), key]));
             }
           };
           let filtered: Vec<(Expr, Expr)> = items
@@ -2114,17 +2074,11 @@ pub fn evaluate_expr_to_expr_inner(
             _ => {
               let shown = evaluated.as_ref().unwrap_or(&args[0]);
               let call_str =
-                crate::syntax::expr_to_string(&Expr::FunctionCall {
-                  name: "Pause".to_string(),
-                  args: vec![shown.clone()].into(),
-                });
+                crate::syntax::expr_to_string(&call1("Pause", shown.clone()));
               crate::emit_message(&format!(
                 "Pause::numnm: Non-negative machine-sized number expected at position 1 in {call_str}."
               ));
-              return Ok(Expr::FunctionCall {
-                name: "Pause".to_string(),
-                args: vec![shown.clone()].into(),
-              });
+              return Ok(call1("Pause", shown.clone()));
             }
           }
         }
@@ -2245,12 +2199,10 @@ pub fn evaluate_expr_to_expr_inner(
               .map(crate::evaluator::evaluate_expr_to_expr)
               .collect::<Result<_, _>>()?;
             if evaluated.iter().all(is_normalizable_assoc_arg) {
-              return crate::evaluator::evaluate_expr_to_expr(
-                &Expr::FunctionCall {
-                  name: "Association".to_string(),
-                  args: evaluated.into(),
-                },
-              );
+              return crate::evaluator::evaluate_expr_to_expr(&call(
+                "Association",
+                evaluated,
+              ));
             }
             return Ok(unevaluated(name, args));
           }
@@ -2542,14 +2494,8 @@ pub fn evaluate_expr_to_expr_inner(
       {
         let is_seq = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Sequence");
         if is_seq(&left_val) || is_seq(&right_val) {
-          let neg = |e: Expr| Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), e].into(),
-          };
-          let recip = |e: Expr| Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![e, Expr::Integer(-1)].into(),
-          };
+          let neg = |e: Expr| call("Times", vec![Expr::Integer(-1), e]);
+          let recip = |e: Expr| call("Power", vec![e, Expr::Integer(-1)]);
           let spliced: Option<(&str, Expr, Expr)> = match op {
             BinaryOperator::Plus => {
               Some(("Plus", left_val.clone(), right_val.clone()))
@@ -2572,10 +2518,7 @@ pub fn evaluate_expr_to_expr_inner(
             _ => None,
           };
           if let Some((name, l, r)) = spliced {
-            return evaluate_expr_to_expr(&Expr::FunctionCall {
-              name: name.to_string(),
-              args: vec![l, r].into(),
-            });
+            return evaluate_expr_to_expr(&call(name, vec![l, r]));
           }
         }
       }
@@ -2734,10 +2677,7 @@ pub fn evaluate_expr_to_expr_inner(
           let mut parts = Vec::new();
           push_alt(&left_val, &mut parts);
           push_alt(&right_val, &mut parts);
-          Ok(Expr::FunctionCall {
-            name: "Alternatives".to_string(),
-            args: parts.into(),
-          })
+          Ok(call("Alternatives", parts))
         }
       }
     }
@@ -2787,10 +2727,7 @@ pub fn evaluate_expr_to_expr_inner(
             operators: vec![operators[i]],
           });
         }
-        let and_expr = Expr::FunctionCall {
-          name: "And".to_string(),
-          args: terms.into(),
-        };
+        let and_expr = call("And", terms);
         return evaluate_expr_to_expr(&and_expr);
       }
 
@@ -3612,10 +3549,7 @@ pub fn evaluate_expr_to_expr_inner(
               evaluated_args.push(evaluate_expr_to_expr(arg)?);
             }
           }
-          indices.push(Expr::FunctionCall {
-            name: "Span".to_string(),
-            args: evaluated_args.into(),
-          });
+          indices.push(call("Span", evaluated_args));
         } else {
           indices.push(evaluate_expr_to_expr(idx)?);
         }

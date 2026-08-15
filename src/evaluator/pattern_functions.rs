@@ -27,10 +27,7 @@ pub fn evaluate_pattern_function_ast(
       head: head.clone(),
       blank_type: *blank_type,
     }),
-    _ => Ok(Expr::FunctionCall {
-      name: "Pattern".to_string(),
-      args: vec![args[0].clone(), blank].into(),
-    }),
+    _ => Ok(call("Pattern", vec![args[0].clone(), blank])),
   }
 }
 
