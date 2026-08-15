@@ -19469,63 +19469,65 @@ fn parse_manipulate_control(
     })
     .collect();
 
-  // A `ControlType -> Trigger` (or bare `Trigger` marker) with an
-  // *infinite* sweep end (`{time, 0, Infinity, 1, …}` — the Demonstrations
-  // "run/stop simulation" control) cannot drive a finite slider; it becomes
-  // a dedicated play/pause control that never wraps. A finite Trigger falls
-  // through to the continuous path below (Kepler pairs one with a plain
-  // slider on the same variable).
+  // A `ControlType -> Trigger` (or bare `Trigger` marker) becomes a
+  // dedicated play/pause control sweeping its variable from `min` towards
+  // `max` — whether that end is infinite (`{time, 0, Infinity, 1, …}`, the
+  // Demonstrations "run/stop simulation" control) or finite (`{{t, 0, ""},
+  // 0, tmax, .01, Trigger, DefaultDuration -> tmax}`, the "play once over a
+  // fixed duration" pattern). When this variable already has a visible row
+  // from an earlier spec (Kepler pairs a `Trigger` with a plain slider on
+  // the same `t`), the row built here is dropped by the caller's dedup
+  // check and only this control's `animate` field takes effect, so building
+  // the dedicated widget here is safe either way.
   if control_type.as_deref() == Some("Trigger") {
+    let min = bounds
+      .first()
+      .and_then(|e| {
+        crate::functions::math_ast::try_eval_to_f64_with_infinity(e)
+      })
+      .unwrap_or(0.0);
     let max = bounds
       .get(1)
       .and_then(|e| {
         crate::functions::math_ast::try_eval_to_f64_with_infinity(e)
       })
       .unwrap_or(f64::INFINITY);
-    if !max.is_finite() {
-      let min = bounds
-        .first()
-        .and_then(|e| {
-          crate::functions::math_ast::try_eval_to_f64_with_infinity(e)
-        })
-        .unwrap_or(0.0);
-      let step = bounds
-        .get(2)
-        .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))
-        .unwrap_or(1.0);
-      let initial = explicit_initial
-        .as_ref()
-        .and_then(crate::functions::math_ast::try_eval_to_f64)
-        .unwrap_or(min);
-      // Wolfram's Trigger sits paused until pressed; only an explicit
-      // `AnimationRunning -> True` starts it sweeping immediately.
-      let running = items.iter().any(|it| {
-        matches!(
-          it,
-          Expr::Rule { pattern, replacement }
-          | Expr::RuleDelayed { pattern, replacement }
-            if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
-              && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True")
-        )
-      });
-      return Some(ParsedControl::Visible {
-        control: ManipulateControl::Trigger {
-          name,
-          min,
-          max,
-          step,
-          initial,
-          running,
-          label,
-          label_runs,
-        },
-        enabled,
-        min_code: None,
-        max_code: None,
-        values_code: None,
-        animate: Some(running),
-      });
-    }
+    let step = bounds
+      .get(2)
+      .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))
+      .unwrap_or(1.0);
+    let initial = explicit_initial
+      .as_ref()
+      .and_then(crate::functions::math_ast::try_eval_to_f64)
+      .unwrap_or(min);
+    // Wolfram's Trigger sits paused until pressed; only an explicit
+    // `AnimationRunning -> True` starts it sweeping immediately.
+    let running = items.iter().any(|it| {
+      matches!(
+        it,
+        Expr::Rule { pattern, replacement }
+        | Expr::RuleDelayed { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
+            && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True")
+      )
+    });
+    return Some(ParsedControl::Visible {
+      control: ManipulateControl::Trigger {
+        name,
+        min,
+        max,
+        step,
+        initial,
+        running,
+        label,
+        label_runs,
+      },
+      enabled,
+      min_code: None,
+      max_code: None,
+      values_code: None,
+      animate: Some(running),
+    });
   }
 
   // 2D control: either an explicit `ControlType -> Slider2D`, or a range

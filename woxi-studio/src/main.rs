@@ -6938,6 +6938,67 @@ mod tests {
   }
 
   #[test]
+  fn sole_finite_trigger_builds_a_dedicated_trigger_row() {
+    // A Demonstrations "play once over a fixed duration" control: unlike
+    // Kepler's Trigger (a *second* spec for a variable that already has a
+    // plain slider, so it only steals the animation without a row of its
+    // own), this Trigger is the *only* spec for its variable and its sweep
+    // end is finite — `AppearanceElements` even asks for player buttons
+    // instead of a thumb. That must still build a dedicated `Trigger` row
+    // (play/pause + step buttons), not fall back to an ordinary slider.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Rotate[Square[], angle Degree], \
+       {{angle, 0, \"spin\"}, 0, 360, 1, Trigger, \
+       AppearanceElements -> {\"PlayPauseButton\", \"ResetButton\"}}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(
+      state.animated,
+      "a Trigger control makes the widget animatable"
+    );
+    assert!(!state.playing, "a Trigger sits paused until pressed");
+    assert_eq!(state.controls.len(), 1);
+    match &state.controls[0] {
+      manipulate::ControlState::Trigger {
+        name,
+        min,
+        max,
+        step,
+        current,
+        ..
+      } => {
+        assert_eq!(name, "angle");
+        assert_eq!(*min, 0.0);
+        assert_eq!(*max, 360.0);
+        assert_eq!(*step, 1.0);
+        assert_eq!(*current, 0.0);
+      }
+      other => panic!("expected a dedicated Trigger row, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn sole_finite_trigger_animation_wraps_at_its_end() {
+    // The dedicated Trigger row must still wrap back to its start once the
+    // sweep passes `max`, exactly like a plain finite slider would — a
+    // finite Trigger is a bounded loop, not an indefinite run.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[disk = Disk[{0, 0}, r], \
+       {{r, 3, \"grow\"}, 1, 3, 1, Trigger}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let current = |s: &manipulate::ManipulateState| match &s.controls[0] {
+      manipulate::ControlState::Trigger { current, .. } => *current,
+      other => panic!("expected a Trigger control, got {other:?}"),
+    };
+    assert_eq!(current(&state), 3.0, "starts at its explicit initial value");
+    state.advance_animation();
+    assert_eq!(current(&state), 1.0, "steps past max wrap back to min");
+  }
+
+  #[test]
   fn locator_manipulate_builds_a_draggable_widget() {
     // The "Center of Mass of a Polygon" Demonstration pattern: a Locator
     // bound to a point list drives the polygon, with icon-labelled

@@ -1019,7 +1019,7 @@ SphericalBesselJ,Spherical Bessel function of the first kind,✅,pure,6.0,1001
 BoxWhiskerChart,Creates a box-and-whisker chart from data,✅,pure,8.0,1002
 GridGraph,Constructs an m by n grid graph,✅,pure,8.0,1005
 ToUpperCase,Converts a string to uppercase,✅,pure,2.0,1005
-ViewAngle,,🚫,,6.0,1005
+ViewAngle,Option specifying the camera field of view for 3D graphics,✅,pure,6.0,1005
 ChartLegends,Specifies legend labels for chart elements,✅,pure,7.0,1006
 SystemOpen,Requires external services or GUI infrastructure,🚫,io,7.0,1007
 TemporalData,Represents temporal data and builds a time series from values and a date specification,✅,pure,9.0,1008

@@ -580,8 +580,8 @@ impl ManipulateState {
   /// once it passes the end, then re-render. Called from the app's
   /// animation-tick subscription while `playing` is set. The target is the
   /// `ControlType -> Trigger`/`Animator` variable when the spec named one
-  /// (a slider row for a finite sweep, a dedicated `Trigger` row for an
-  /// infinite one — which never wraps), else the first continuous control.
+  /// (always a dedicated `Trigger` row, which wraps for a finite sweep and
+  /// runs forever for an infinite one), else the first continuous control.
   pub fn advance_animation(&mut self) {
     let target = self.animation_var.clone();
     let ctrl = self.controls.iter_mut().find(|c| match &target {
