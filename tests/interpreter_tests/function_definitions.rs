@@ -4266,3 +4266,90 @@ mod repeated_pattern_variables {
     );
   }
 }
+
+/// Anonymous head-constrained patterns — `f[_String] := …`. The name in
+/// `PatternName? ~ PatternBlanks ~ Identifier` is optional, so the head is
+/// the only child of the parse node and the definition must not assume a
+/// name is present (issue #459: the missing child panicked the interpreter).
+/// All expectations match wolframscript.
+mod anonymous_head_patterns {
+  use super::*;
+
+  #[test]
+  fn anonymous_head_pattern_dispatches_by_head() {
+    clear_state();
+    let (out, res) = {
+      let r = interpret_with_stdout(
+        "f[_String] := Echo[\"It is a string\"]\n\
+         f[_Integer] := Echo[\"It is an integer\"]\n\
+         f[1]",
+      )
+      .unwrap();
+      (r.stdout, r.result)
+    };
+    assert_eq!(out, ">> It is an integer\n");
+    assert_eq!(res, "It is an integer");
+    clear_state();
+  }
+
+  #[test]
+  fn anonymous_head_patterns_are_separate_downvalues() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[_String] := \"s\"; f[_Integer] := \"i\"; {f[1], f[\"a\"], f[1.5]}"
+      )
+      .unwrap(),
+      "{i, s, f[1.5]}"
+    );
+    clear_state();
+  }
+
+  #[test]
+  fn anonymous_head_pattern_downvalues() {
+    clear_state();
+    assert_eq!(
+      interpret("f[_String] := \"s\"; f[_Integer] := \"i\"; DownValues[f]")
+        .unwrap(),
+      "{HoldPattern[f[_String]] :> s, HoldPattern[f[_Integer]] :> i}"
+    );
+    clear_state();
+  }
+
+  #[test]
+  fn anonymous_head_sequence_patterns() {
+    clear_state();
+    assert_eq!(
+      interpret("q[__Integer] := \"one or more\"; {q[1], q[1, 2, 3], q[]}")
+        .unwrap(),
+      "{one or more, one or more, q[]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("z[___Integer] := \"any number\"; {z[], z[1, 2], z[a]}")
+        .unwrap(),
+      "{any number, any number, z[a]}"
+    );
+    clear_state();
+  }
+
+  #[test]
+  fn anonymous_head_pattern_mixed_with_named_parameters() {
+    clear_state();
+    assert_eq!(
+      interpret("m[_Integer, y_] := y * 2; {m[1, 5], m[\"a\", 5]}").unwrap(),
+      "{10, m[a, 5]}"
+    );
+    clear_state();
+  }
+
+  #[test]
+  fn anonymous_head_pattern_with_pattern_test() {
+    clear_state();
+    assert_eq!(
+      interpret("k[_Integer?Positive] := \"pos\"; {k[3], k[-3]}").unwrap(),
+      "{pos, k[-3]}"
+    );
+    clear_state();
+  }
+}
