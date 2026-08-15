@@ -573,7 +573,7 @@ fn parametric_region_ast(
     vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
   );
   let opacity = call1("Opacity", Expr::Real(0.3));
-  let no_edges = call("EdgeForm", vec![]);
+  let no_edges = call0("EdgeForm");
 
   let mut face_group = vec![no_edges, color.clone(), opacity];
   face_group.append(&mut quads);

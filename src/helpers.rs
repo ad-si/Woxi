@@ -43,6 +43,10 @@ pub fn call(name: &str, args: Vec<Expr>) -> Expr {
   }
 }
 
+pub fn call0(name: &str) -> Expr {
+  call(name, vec![])
+}
+
 pub fn call1(name: &str, arg: Expr) -> Expr {
   call(name, vec![arg])
 }

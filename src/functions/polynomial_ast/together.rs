@@ -146,11 +146,7 @@ fn hoist_numerator_content(expr: &Expr) -> Expr {
     return expr.clone();
   };
   let prim = call("Plus", divided);
-  Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(call("Times", vec![Expr::Integer(content), prim])),
-    right: Box::new(den),
-  }
+  div2(call("Times", vec![Expr::Integer(content), prim]), den)
 }
 
 /// A unit-negative numerator coefficient distributes into a single sum

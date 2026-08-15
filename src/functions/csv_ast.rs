@@ -234,7 +234,7 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
       "Tabular" => {
         super::tabular_ast::tabular_ast(&[Expr::List(vec![].into())])
       }
-      _ => call("$Failed", vec![]),
+      _ => call0("$Failed"),
     };
   }
 
@@ -383,7 +383,7 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
       ),
     ]),
 
-    _ => call("$Failed", vec![]),
+    _ => call0("$Failed"),
   }
 }
 

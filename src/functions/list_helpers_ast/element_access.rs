@@ -1561,11 +1561,10 @@ pub fn extract_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           show(&key),
           show(&container)
         ));
-        let missing = Expr::FunctionCall {
-          name: "Missing".to_string(),
-          args: vec![Expr::String("KeyAbsent".to_string()), call1("Key", key)]
-            .into(),
-        };
+        let missing = call(
+          "Missing",
+          vec![Expr::String("KeyAbsent".to_string()), call1("Key", key)],
+        );
         Ok(Some(missing))
       }
     }

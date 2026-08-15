@@ -500,7 +500,7 @@ pub fn wavelet_transform_ast(
     ));
     return Ok(unevaluated(fname, args));
   };
-  let default_wavelet = call("HaarWavelet", vec![]);
+  let default_wavelet = call0("HaarWavelet");
   let wavelet_expr = match positional.get(1) {
     Some(Expr::Identifier(a)) if a == "Automatic" => default_wavelet,
     Some(w) => {

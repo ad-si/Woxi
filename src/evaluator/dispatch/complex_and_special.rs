@@ -795,7 +795,7 @@ pub fn dispatch_complex_and_special(
                 f,
                 &[tag, vals_list],
               )
-              .unwrap_or(call("List", vec![]))
+              .unwrap_or(call0("List"))
             } else {
               vals_list
             }
@@ -3191,10 +3191,7 @@ fn derivative_boxes(expr: &Expr) -> Option<Expr> {
     parts.push(Expr::String(")".to_string()));
     call1("RowBox", Expr::List(parts.into()))
   };
-  let primed = Expr::FunctionCall {
-    name: "SuperscriptBox".to_string(),
-    args: vec![expr_to_box_form(func), script].into(),
-  };
+  let primed = call("SuperscriptBox", vec![expr_to_box_form(func), script]);
   if applied.is_empty() {
     return Some(primed);
   }
@@ -3804,11 +3801,10 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           .into(),
         };
       }
-      Expr::FunctionCall {
-        name: "SuperscriptBox".to_string(),
-        args: vec![box_with_paren_if_needed(left), expr_to_box_form(right)]
-          .into(),
-      }
+      call(
+        "SuperscriptBox",
+        vec![box_with_paren_if_needed(left), expr_to_box_form(right)],
+      )
     }
     // List → RowBox[{"{", RowBox[{elem, ",", elem, ...}], "}"}]
     Expr::List(items) => {
@@ -4046,7 +4042,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       } else {
         "GraphicsBox"
       };
-      call(box_head, vec![])
+      call0(box_head)
     }
     // MakeBoxes[OutputForm[expr], _]: InterpretationBox[PaneBox[<2D
     // string with literal quotes>, BaselinePosition -> Baseline], <2D

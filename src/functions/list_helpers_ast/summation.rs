@@ -4920,7 +4920,7 @@ fn zeta_even(s: i64) -> Result<Expr, InterpreterError> {
       match n.to_i128() {
         Some(v) => (v, 1i128),
         None => {
-          return Ok(call("Sum", vec![]));
+          return Ok(call0("Sum"));
         }
       }
     }
@@ -4930,12 +4930,12 @@ fn zeta_even(s: i64) -> Result<Expr, InterpreterError> {
       match (expr_to_i128(&args[0]), expr_to_i128(&args[1])) {
         (Some(n), Some(d)) => (n, d),
         _ => {
-          return Ok(call("Sum", vec![]));
+          return Ok(call0("Sum"));
         }
       }
     }
     _ => {
-      return Ok(call("Sum", vec![]));
+      return Ok(call0("Sum"));
     }
   };
 

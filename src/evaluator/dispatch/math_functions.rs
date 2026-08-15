@@ -862,7 +862,7 @@ pub fn dispatch_math_functions(
     | "MathieuGroupM23" | "MathieuGroupM24"
       if args.is_empty() =>
     {
-      return Some(Ok(call(name, vec![])));
+      return Some(Ok(call0(name)));
     }
     "GroupGenerators" if args.len() == 1 => {
       return Some(crate::functions::math_ast::group_generators_ast(args));
@@ -4846,11 +4846,10 @@ pub fn dispatch_math_functions(
                       name: "Plus".to_string(),
                       args: vec![
                         elems[idx + 1].clone(),
-                        Expr::FunctionCall {
-                          name: "Times".to_string(),
-                          args: vec![Expr::Integer(-1), elems[idx].clone()]
-                            .into(),
-                        },
+                        call(
+                          "Times",
+                          vec![Expr::Integer(-1), elems[idx].clone()],
+                        ),
                       ]
                       .into(),
                     },

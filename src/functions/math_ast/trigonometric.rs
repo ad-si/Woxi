@@ -2208,7 +2208,7 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // models — still collapse to 0 instead of breaking on Overflow[].
       if f.abs() >= 1.0e15 {
         crate::emit_message("General::ovfl: Overflow occurred in computation.");
-        return Ok(call("Overflow", vec![]));
+        return Ok(call0("Overflow"));
       }
       Ok(Expr::Real(f.exp()))
     }
@@ -2697,7 +2697,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !args.is_empty()
     && matches!(&args[0], Expr::FunctionCall { name, args } if name == "Overflow" && args.is_empty())
   {
-    return Ok(call("Overflow", vec![]));
+    return Ok(call0("Overflow"));
   }
   match args.len() {
     1 => {

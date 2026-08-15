@@ -576,14 +576,13 @@ pub fn polynomial_lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut result = pos[0].clone();
   for arg in &pos[1..] {
     let gcd = call("PolynomialGCD", vec![result.clone(), arg.clone()]);
-    let quotient = Expr::FunctionCall {
-      name: "Cancel".to_string(),
-      args: vec![Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![result, call("Power", vec![gcd, Expr::Integer(-1)])].into(),
-      }]
-      .into(),
-    };
+    let quotient = call(
+      "Cancel",
+      vec![call(
+        "Times",
+        vec![result, call("Power", vec![gcd, Expr::Integer(-1)])],
+      )],
+    );
     let quotient = crate::evaluator::evaluate_expr_to_expr(&quotient)
       .unwrap_or_else(|_| quotient.clone());
     let lcm = call("Times", vec![quotient, arg.clone()]);

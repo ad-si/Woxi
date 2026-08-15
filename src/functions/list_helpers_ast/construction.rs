@@ -1663,19 +1663,18 @@ fn build_range_indices(
     // Wolfram gives the midpoint (a + b) / 2 when requesting a single
     // sample over a range, matching Array[f, 1, {a, b}] → {f[(a+b)/2]}.
     let half = call("Power", vec![Expr::Integer(2), Expr::Integer(-1)]);
-    let mid = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![half, call("Plus", vec![a.clone(), b.clone()])].into(),
-    };
+    let mid = call(
+      "Times",
+      vec![half, call("Plus", vec![a.clone(), b.clone()])],
+    );
     return Ok(vec![crate::evaluator::evaluate_expr_to_expr(&mid)?]);
   }
   let mut result = Vec::with_capacity(n as usize);
   // value_i = a + i * (b - a) / (n - 1)
-  let diff = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![b.clone(), call("Times", vec![Expr::Integer(-1), a.clone()])]
-      .into(),
-  };
+  let diff = call(
+    "Plus",
+    vec![b.clone(), call("Times", vec![Expr::Integer(-1), a.clone()])],
+  );
   let inv_denom = call("Power", vec![Expr::Integer(n - 1), Expr::Integer(-1)]);
   for i in 0..n {
     let term = call(
@@ -2514,7 +2513,7 @@ pub fn sparse_array_extract_rules(
       if marker == "Pattern" && structure.len() == 2 =>
     {
       match &structure[1] {
-        Expr::List(inner) => Some(vec![call("Blank", vec![]); inner.len()]),
+        Expr::List(inner) => Some(vec![call0("Blank"); inner.len()]),
         _ => None,
       }
     }

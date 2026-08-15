@@ -316,7 +316,7 @@ pub fn lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(
       "LCM::argm: LCM called with 0 arguments; 1 or more arguments are expected.",
     );
-    return Ok(call("LCM", vec![]));
+    return Ok(call0("LCM"));
   }
 
   // Gaussian-integer LCM: when at least one argument is a complex (Gaussian)

@@ -12881,7 +12881,7 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
             pairs
               .iter()
               .find(|(k, _)| expr_to_svg_markup(k) == *h)
-              .map_or(call("Missing", vec![]), |(_, v)| v.clone())
+              .map_or(call0("Missing"), |(_, v)| v.clone())
           })
           .collect()
       } else {
@@ -14273,7 +14273,7 @@ fn tabular_list_of_assocs_to_svg(
             pairs
               .iter()
               .find(|(k, _)| expr_to_svg_markup(k) == *h)
-              .map_or(call("Missing", vec![]), |(_, v)| v.clone())
+              .map_or(call0("Missing"), |(_, v)| v.clone())
           })
           .collect()
       } else {
@@ -14350,11 +14350,11 @@ fn tabular_column_assoc_to_svg(
       .iter()
       .map(|(_, v)| {
         if let Expr::List(items) = v {
-          items.get(i).cloned().unwrap_or(call("Missing", vec![]))
+          items.get(i).cloned().unwrap_or(call0("Missing"))
         } else if i == 0 {
           v.clone()
         } else {
-          call("Missing", vec![])
+          call0("Missing")
         }
       })
       .collect();

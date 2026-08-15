@@ -715,10 +715,10 @@ fn convolve_pair(
       let diff = (*j - *k).abs();
       let sigma = divisor_sigma_expr(diff, m);
       if mn > 0 {
-        Some(Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![pow2(m.clone(), Expr::Integer(mn)), sigma].into(),
-        })
+        Some(call(
+          "Times",
+          vec![pow2(m.clone(), Expr::Integer(mn)), sigma],
+        ))
       } else {
         Some(sigma)
       }

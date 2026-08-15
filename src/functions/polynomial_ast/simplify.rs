@@ -1189,11 +1189,10 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
           if reduced == 1 {
             return call1("Abs", base.as_ref().clone());
           }
-          return Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(call1("Abs", base.as_ref().clone())),
-            right: Box::new(Expr::Integer(reduced)),
-          };
+          return pow2(
+            call1("Abs", base.as_ref().clone()),
+            Expr::Integer(reduced),
+          );
         }
       }
       // Handle product base: (x^2 * y^2 * ...)^(1/m) → refine each factor
@@ -2673,11 +2672,7 @@ fn refine_log(
   } = arg
     && is_var_in_open_range(exp, -1, 1, info)
   {
-    return Some(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(*exp.clone()),
-      right: Box::new(call1("Log", *base.clone())),
-    });
+    return Some(times2(*exp.clone(), call1("Log", *base.clone())));
   }
 
   None
@@ -5230,11 +5225,10 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
               }
             })
             .collect();
-          Some(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(signed), sqrt_of(g), call("Plus", inner)]
-              .into(),
-          })
+          Some(call(
+            "Times",
+            vec![Expr::Integer(signed), sqrt_of(g), call("Plus", inner)],
+          ))
         })()
       } else {
         None
@@ -5256,19 +5250,17 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
         let divided: Result<Vec<Expr>, _> = terms
           .iter()
           .map(|t| {
-            crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-              op: BinaryOperator::Divide,
-              left: Box::new(t.clone()),
-              right: Box::new(call1("Sqrt", Expr::Integer(g))),
-            })
+            crate::evaluator::evaluate_expr_to_expr(&div2(
+              t.clone(),
+              call1("Sqrt", Expr::Integer(g)),
+            ))
           })
           .collect();
         if let Ok(divided) = divided {
-          let candidate = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![call1("Sqrt", Expr::Integer(g)), call("Plus", divided)]
-              .into(),
-          };
+          let candidate = call(
+            "Times",
+            vec![call1("Sqrt", Expr::Integer(g)), call("Plus", divided)],
+          );
           if wl_simplify_count(&candidate) < wl_simplify_count(&best) {
             best = candidate;
           }
@@ -5728,11 +5720,10 @@ fn try_complementary_inverse_trig(expr: &Expr) -> Option<Expr> {
     return None;
   }
   // c * Pi / 2
-  let result = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(call("Times", vec![c0, Expr::Constant("Pi".to_string())])),
-    right: Box::new(Expr::Integer(2)),
-  };
+  let result = div2(
+    call("Times", vec![c0, Expr::Constant("Pi".to_string())]),
+    Expr::Integer(2),
+  );
   crate::evaluator::evaluate_expr_to_expr(&result).ok()
 }
 
@@ -6238,10 +6229,10 @@ fn extract_gamma_ratio(expr: &Expr) -> Option<(Expr, Expr)> {
 /// `(x+1)+1` collapses to `x+2`), but the product itself is left factored.
 fn gamma_ratio_product(expr: &Expr) -> Option<Expr> {
   let (a, b) = extract_gamma_ratio(expr)?;
-  let diff = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![a, call("Times", vec![Expr::Integer(-1), b.clone()])].into(),
-  })
+  let diff = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Plus",
+    vec![a, call("Times", vec![Expr::Integer(-1), b.clone()])],
+  ))
   .ok()?;
   // wolframscript reduces the rising-factorial product only for k <= 3 and
   // leaves larger ratios (e.g. Gamma[n+4]/Gamma[n]) unevaluated.
@@ -8565,10 +8556,10 @@ fn radical_quotient_num_content(num: &Expr, den: &Expr) -> Option<Expr> {
   let divided = divided.ok()?;
   Some(Expr::BinaryOp {
     op: BinaryOperator::Divide,
-    left: Box::new(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(signed), call("Plus", divided)].into(),
-    }),
+    left: Box::new(call(
+      "Times",
+      vec![Expr::Integer(signed), call("Plus", divided)],
+    )),
     right: Box::new(den.clone()),
   })
 }
@@ -8616,10 +8607,10 @@ fn extract_numeric_content(e: &Expr) -> Option<Expr> {
     })
     .collect();
   let divided = divided.ok()?;
-  Some(Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![Expr::Integer(content), call("Plus", divided)].into(),
-  })
+  Some(call(
+    "Times",
+    vec![Expr::Integer(content), call("Plus", divided)],
+  ))
 }
 
 /// Final Simplify sign normalization for a quotient (see
