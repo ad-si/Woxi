@@ -1609,6 +1609,7 @@
   - [`URLBuild`](file_system/URLBuild.md)
   - [`URLFetch`](file_system/URLFetch.md)
   - [`Write`](file_system/Write.md)
+  - [`WriteLine`](file_system/WriteLine.md)
   - [`WriteString`](file_system/WriteString.md)
   - [`XMLTemplate`](file_system/XMLTemplate.md)
 - [Contexts & Packages](contexts.md)

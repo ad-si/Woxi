@@ -291,6 +291,61 @@ fn io_write_target(expr: &Expr) -> Option<WriteTarget> {
   }
 }
 
+/// Shared body of `WriteString` and `WriteLine`. `args[0]` is the channel and
+/// `args[1..]` the things to write; they are concatenated, `terminator` is
+/// appended, and the result goes out in a single write. `WriteLine` is just
+/// `WriteString` with a newline terminator, so both come through here.
+#[cfg(not(target_arch = "wasm32"))]
+fn write_string_to_channel(
+  args: &[Expr],
+  terminator: &str,
+  caller: &str,
+) -> Result<Expr, InterpreterError> {
+  // A `"!command"` named directly runs once per call, so the whole
+  // argument list has to reach it in a single write.
+  let mut text = String::new();
+  for arg in &args[1..] {
+    match arg {
+      Expr::String(s) => text.push_str(s),
+      other => text.push_str(&crate::syntax::expr_to_string(other)),
+    }
+  }
+  text.push_str(terminator);
+
+  // Special-case the standard streams so `WriteString["stdout", …]` and
+  // `WriteString[$Output, …]` write to the process's stdout, matching
+  // wolframscript. `$Output`/`"stdout"` map to stdout, `$Messages`/
+  // `"stderr"` to stderr. Stdout writes also go through the captured
+  // buffer (like Print) so they appear in `interpret_with_stdout`.
+  let std_target = match &args[0] {
+    Expr::String(name) if name == "stdout" => Some(true),
+    Expr::String(name) if name == "stderr" => Some(false),
+    Expr::Identifier(name) if name == "$Output" => Some(true),
+    Expr::Identifier(name) if name == "$Messages" => Some(false),
+    _ => None,
+  };
+  if let Some(is_stdout) = std_target {
+    use std::io::Write;
+    if is_stdout {
+      if !crate::is_quiet_print() {
+        print!("{text}");
+        let _ = std::io::stdout().flush();
+      }
+      crate::capture_stdout_raw(&text);
+    } else {
+      eprint!("{text}");
+      let _ = std::io::stderr().flush();
+    }
+    return Ok(Expr::Identifier("Null".to_string()));
+  }
+
+  let Some(target) = io_write_target(&args[0]) else {
+    return Ok(unevaluated(caller, args));
+  };
+  write_target_bytes(&target, text.as_bytes(), caller)?;
+  Ok(Expr::Identifier("Null".to_string()))
+}
+
 /// Send `bytes` to a write target, appending for files. `caller` only names
 /// the function in the error message.
 #[cfg(not(target_arch = "wasm32"))]
@@ -2976,57 +3031,12 @@ pub fn dispatch_io_functions(
     // WriteString[stream, "text1", "text2", ...] — write strings to a stream
     #[cfg(not(target_arch = "wasm32"))]
     "WriteString" if args.len() >= 2 => {
-      let stream = &args[0];
-      // Special-case the standard streams so `WriteString["stdout", …]` and
-      // `WriteString[$Output, …]` write to the process's stdout, matching
-      // wolframscript. `$Output`/`"stdout"` map to stdout, `$Messages`/
-      // `"stderr"` to stderr. Stdout writes also go through the captured
-      // buffer (like Print) so they appear in `interpret_with_stdout`.
-      let std_target = match stream {
-        Expr::String(name) if name == "stdout" => Some(true),
-        Expr::String(name) if name == "stderr" => Some(false),
-        Expr::Identifier(name) if name == "$Output" => Some(true),
-        Expr::Identifier(name) if name == "$Messages" => Some(false),
-        _ => None,
-      };
-      if let Some(is_stdout) = std_target {
-        use std::io::Write;
-        for arg in &args[1..] {
-          let text = match arg {
-            Expr::String(s) => s.clone(),
-            other => crate::syntax::expr_to_string(other),
-          };
-          if is_stdout {
-            if !crate::is_quiet_print() {
-              print!("{text}");
-              let _ = std::io::stdout().flush();
-            }
-            crate::capture_stdout_raw(&text);
-          } else {
-            eprint!("{text}");
-            let _ = std::io::stderr().flush();
-          }
-        }
-        return Some(Ok(Expr::Identifier("Null".to_string())));
-      }
-      let Some(target) = io_write_target(stream) else {
-        return Some(Ok(unevaluated("WriteString", args)));
-      };
-      // A `"!command"` named directly runs once per call, so the whole
-      // argument list has to reach it in a single write.
-      let mut text = String::new();
-      for arg in &args[1..] {
-        match arg {
-          Expr::String(s) => text.push_str(s),
-          other => text.push_str(&crate::syntax::expr_to_string(other)),
-        }
-      }
-      if let Err(e) =
-        write_target_bytes(&target, text.as_bytes(), "WriteString")
-      {
-        return Some(Err(e));
-      }
-      return Some(Ok(Expr::Identifier("Null".to_string())));
+      return Some(write_string_to_channel(args, "", "WriteString"));
+    }
+    // WriteLine[stream, "text"] — write a string plus a newline to a stream
+    #[cfg(not(target_arch = "wasm32"))]
+    "WriteLine" if args.len() == 2 => {
+      return Some(write_string_to_channel(args, "\n", "WriteLine"));
     }
     // Save["filename", symbol] or Save["filename", {sym1, sym2, ...}]
     // Saves symbol definitions (OwnValues, DownValues, Attributes, Options) to a file
