@@ -233,6 +233,50 @@ pub fn is_quiet_print() -> bool {
   QUIET_PRINT.with(|q| *q.borrow())
 }
 
+// Interactive-stdin mode — lets `Input[]` / `InputString[]` consume the
+// process's standard input, the way `wolframscript -file` does. Off by
+// default so embedders that don't own stdin (the wasm playground, the
+// Jupyter kernel, the Python bindings, unit tests) keep the
+// non-interactive `EndOfFile` behaviour instead of blocking on a stream
+// that will never deliver a line.
+thread_local! {
+    static STDIN_INPUT: RefCell<bool> = const { RefCell::new(false) };
+}
+
+/// Enable/disable reading `Input[]` / `InputString[]` from standard input.
+pub fn set_stdin_input(enabled: bool) {
+  STDIN_INPUT.with(|s| *s.borrow_mut() = enabled);
+}
+
+/// Check whether `Input[]` / `InputString[]` may read from standard input.
+pub fn is_stdin_input() -> bool {
+  STDIN_INPUT.with(|s| *s.borrow())
+}
+
+/// Read one line from standard input for `Input[]` / `InputString[]`,
+/// with the trailing newline stripped. Returns `None` at end of input, or
+/// when interactive stdin is disabled — both of which the callers turn
+/// into `EndOfFile`.
+pub fn read_stdin_line() -> Option<String> {
+  if !is_stdin_input() {
+    return None;
+  }
+  use std::io::BufRead as _;
+  let mut line = String::new();
+  match std::io::stdin().lock().read_line(&mut line) {
+    Ok(0) | Err(_) => None,
+    Ok(_) => {
+      if line.ends_with('\n') {
+        line.pop();
+        if line.ends_with('\r') {
+          line.pop();
+        }
+      }
+      Some(line)
+    }
+  }
+}
+
 // Visual display mode flag — set by interpret_with_stdout to enable
 // rendering of display wrappers like TableForm as SVG grids
 thread_local! {

@@ -5506,8 +5506,11 @@ mod directory_stack {
 mod input_function {
   use super::*;
 
-  // In script mode (non-interactive), Input/InputString return EndOfFile
-  // — matching wolframscript's behaviour when stdin is closed.
+  // Embedders of the library (this harness, the wasm playground, the Jupyter
+  // kernel) don't hand stdin to the interpreter, so Input/InputString return
+  // EndOfFile — matching wolframscript's behaviour when stdin is closed. The
+  // CLI does enable stdin reading; that path is covered by the
+  // `input_string_*` / `run_script_prompts_*` tests in tests/cli_tests.rs.
 
   #[test]
   fn input_no_args_returns_end_of_file() {

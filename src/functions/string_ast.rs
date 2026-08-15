@@ -8482,6 +8482,16 @@ pub fn apply_string_template(
 ///   is accepted but the parser is the same regardless.
 /// - With `h`, apply `h` to the evaluated expression before returning.
 pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  to_expression_ast_as(args, "ToExpression")
+}
+
+/// `to_expression_ast` with the symbol that owns the `sntxi` / `sntx` syntax
+/// messages made explicit. `Input[]` reuses the whole parse-and-evaluate
+/// path but reports syntax problems as `Syntax::…`, the way the reader does.
+pub fn to_expression_ast_as(
+  args: &[Expr],
+  message_symbol: &str,
+) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "ToExpression expects 1 to 3 arguments".into(),
@@ -8514,7 +8524,7 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Syntactically invalid input yields $Failed with a Wolfram syntax message
   // (sntxi/sntx), rather than leaking the internal parser error.
-  if let Some(msg) = to_expression_syntax_error(&s) {
+  if let Some(msg) = to_expression_syntax_error(&s, message_symbol) {
     crate::emit_message(&msg);
     return Ok(Expr::Identifier("$Failed".to_string()));
   }
@@ -8575,7 +8585,7 @@ pub(crate) fn parse_program_to_expr(
 /// parse failed at end of input) or `sntx` for invalid syntax elsewhere.
 /// Returns `None` when the input parses — it may still fail at evaluation
 /// time, which is handled by the normal evaluation path.
-fn to_expression_syntax_error(src: &str) -> Option<String> {
+fn to_expression_syntax_error(src: &str, symbol: &str) -> Option<String> {
   use crate::Rule;
   let normalized = if src.contains('\r') {
     src.replace("\r\n", "\n").replace('\r', "\n")
@@ -8605,14 +8615,13 @@ fn to_expression_syntax_error(src: &str) -> Option<String> {
     Ok(_) => return None,
   };
   if offset >= preprocessed.trim_end().len() {
-    Some(
-      "ToExpression::sntxi: Incomplete expression; more input is needed."
-        .to_string(),
-    )
+    Some(format!(
+      "{symbol}::sntxi: Incomplete expression; more input is needed."
+    ))
   } else {
     let snippet = preprocessed[offset..].trim();
     Some(format!(
-      "ToExpression::sntx: Invalid syntax in or before \"{snippet}\"."
+      "{symbol}::sntx: Invalid syntax in or before \"{snippet}\"."
     ))
   }
 }
