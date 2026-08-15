@@ -2784,32 +2784,62 @@ mod traditional_form {
   // and re-parses it on every frame; without the read side a
   // `TraditionalForm[…]` in the body came back as an opaque `HoldComplete`
   // of its own source and printed as that.
+  //
+  // What comes back is the expression the boxes *typeset*: `FormBox` is a
+  // display-only wrapper and does not survive the read, the same way the
+  // `StyleBox` in `\!\(\*StyleBox["x", Bold]\)` does not.
+  //
+  // Note the displayed part is always *boxes*, never plain source —
+  // Wolfram's `\*` reader only accepts box heads, so `\!\(\*FormBox[x + y,
+  // TraditionalForm]\)` is a `Syntax::sntxi` error there and must not be
+  // used as a conformance case.
   #[test]
   fn input_form_box_escape_round_trips() {
-    assert_eq!(
-      interpret(r"\!\(\*FormBox[Sin[x] + 1, TraditionalForm]\)").unwrap(),
-      "TraditionalForm[1 + Sin[x]]"
-    );
-    // The displayed part may itself be boxes rather than plain source —
-    // a 2-D box head, or the `RowBox` a flat run of source typesets to.
+    // A 2-D box head, and the `RowBox` a flat run of source typesets to.
     assert_eq!(
       interpret(r#"\!\(\*FormBox[SqrtBox["x"], TraditionalForm]\)"#).unwrap(),
-      "TraditionalForm[Sqrt[x]]"
+      "Sqrt[x]"
     );
     assert_eq!(
       interpret(
         r#"\!\(\*FormBox[RowBox[{"ArcSin[", "y", "]"}], TraditionalForm]\)"#
       )
       .unwrap(),
-      "TraditionalForm[ArcSin[y]]"
+      "ArcSin[y]"
     );
-    // Inside a layout the wrapper survives, so the item stays typeset
-    // instead of degrading to a line of source text.
+    // `StandardForm` reads the same way, and a bare string atom is a box
+    // in its own right.
     assert_eq!(
-      interpret(r#"Column[{"a", \!\(\*FormBox[x + y, TraditionalForm]\)}]"#)
-        .unwrap(),
-      "Column[{a, TraditionalForm[x + y]}]"
+      interpret(r#"\!\(\*FormBox[SqrtBox["x"], StandardForm]\)"#).unwrap(),
+      "Sqrt[x]"
     );
+    assert_eq!(
+      interpret(r#"\!\(\*FormBox["3", TraditionalForm]\)"#).unwrap(),
+      "3"
+    );
+    // Inside a layout the item becomes that expression instead of
+    // degrading to a line of source text.
+    assert_eq!(
+      interpret(
+        r#"Column[{"a", \!\(\*FormBox[RowBox[{"x", "+", "y"}], TraditionalForm]\)}]"#
+      )
+      .unwrap(),
+      "Column[{a, x + y}]"
+    );
+  }
+
+  // Only a `$BoxForms` member is a box formatting type; `OutputForm` is
+  // not one, so Wolfram answers `MakeExpression::boxfmt` and then fails to
+  // parse the line at all. Woxi has no parse-time messages, so it keeps
+  // the escape as the literal source it could not interpret rather than
+  // inventing an `OutputForm[…]` wrapper for it.
+  //
+  // Written through a binding on purpose: an unparseable line has no
+  // reference output, so this must not be lifted into a conformance case.
+  #[test]
+  fn input_form_box_escape_rejects_non_box_form() {
+    let src = r#"\!\(\*FormBox[SqrtBox["x"], OutputForm]\)"#;
+    assert_eq!(interpret(src).unwrap(), format!("HoldComplete[{src}]"));
   }
 
   // A `TraditionalForm` of a symbolic product typesets to a `RowBox` of
@@ -2819,8 +2849,8 @@ mod traditional_form {
   // Manipulate body on every frame. The box-source readers expect the bare
   // `"` delimiters real `.nb` box data uses, so without undoing that
   // escaping first, reading the text back degraded to an opaque
-  // `HoldComplete` dump of its own source instead of the original
-  // `TraditionalForm[…]`.
+  // `HoldComplete` dump of its own source instead of the expression the
+  // boxes typeset.
   #[test]
   fn input_form_box_escape_round_trips_escaped_string_atoms() {
     let serialized =
@@ -2829,7 +2859,7 @@ mod traditional_form {
       serialized.contains("\\\"Pi\\\""),
       "expected escaped string atoms in: {serialized}"
     );
-    assert_eq!(interpret(&serialized).unwrap(), "TraditionalForm[p*Pi*q]");
+    assert_eq!(interpret(&serialized).unwrap(), "p*Pi*q");
   }
 }
 

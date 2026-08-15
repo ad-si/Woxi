@@ -1678,9 +1678,14 @@ fn is_assoc_item_delayed(s: &str) -> bool {
 /// `InputForm` writes a typeset expression this way, so this is the read
 /// side of that round trip — without it `TraditionalForm[expr]` serialized
 /// into a string (as Woxi Studio does with a Manipulate body) parsed back
-/// as an opaque `HoldComplete` of its own source. A `FormBox[boxes, form]`
-/// keeps its form wrapper, since that is exactly what `form[expr]` writes;
-/// any other box head converts through the notebook box reader.
+/// as an opaque `HoldComplete` of its own source.
+///
+/// The escape yields the expression the boxes *typeset*, with every
+/// display-only wrapper gone: `\!\(\*FormBox[SqrtBox["x"], TraditionalForm]\)`
+/// is `Sqrt[x]`, not `TraditionalForm[Sqrt[x]]`, just as `\!\(\*StyleBox["x",
+/// Bold]\)` is plain `x`. The form tag only has to name a member of
+/// `$BoxForms`; anything else is a `MakeExpression::boxfmt` error in
+/// Wolfram, so the escape is left as literal source here.
 fn box_escape_to_expr(box_src: &str) -> Option<Expr> {
   let src = box_src.trim();
   if let Some(rest) = src.strip_prefix("FormBox[")
@@ -1689,16 +1694,11 @@ fn box_escape_to_expr(box_src: &str) -> Option<Expr> {
     // The form name is the last top-level argument; everything before it
     // is the boxes being displayed.
     let (boxes, form) = split_last_top_level_comma(inner)?;
-    let form = form.trim();
-    if !matches!(form, "TraditionalForm" | "StandardForm" | "OutputForm") {
+    if !matches!(form.trim(), "TraditionalForm" | "StandardForm") {
       return None;
     }
-    let inner_expr = box_escape_to_expr(boxes)
-      .or_else(|| string_to_expr(boxes.trim()).ok())?;
-    return Some(Expr::FunctionCall {
-      name: form.to_string(),
-      args: vec![inner_expr].into(),
-    });
+    return box_escape_to_expr(boxes)
+      .or_else(|| string_to_expr(boxes.trim()).ok());
   }
   let text = crate::notebook::box_source_to_expression(src)?;
   string_to_expr(&text).ok()
