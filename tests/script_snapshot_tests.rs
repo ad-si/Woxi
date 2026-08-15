@@ -1535,6 +1535,8 @@ script_test!(
   "read_a_specific_line_from_a_file.wls"
 );
 script_test!(script_input_loop, "input_loop.wls");
+script_test!(script_read_from_command, "read_from_command.wls");
+script_test!(script_write_to_command, "write_to_command.wls");
 script_test!(script_a_b, "a_b.wls");
 script_test!(script_dynamic_variable_names, "dynamic_variable_names.wls");
 script_test!(script_mad_libs, "mad_libs.wls");

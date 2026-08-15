@@ -205,6 +205,23 @@ mod find {
     std::fs::remove_file(path).ok();
   }
 
+  // A `"!command"` name searches the command's output.
+  #[test]
+  #[cfg(unix)]
+  fn find_command_spec() {
+    let result =
+      interpret(r#"Find["!printf 'alpha\nbeta\ngamma\n'", "bet"]"#).unwrap();
+    assert_eq!(result, "beta");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn find_command_spec_no_match() {
+    let result =
+      interpret(r#"Find["!printf 'alpha\nbeta\n'", "zeta"]"#).unwrap();
+    assert_eq!(result, "EndOfFile");
+  }
+
   #[test]
   fn find_string_stream_with_list_of_terms() {
     // Find on a StringToStream-backed stream, with a list of search
@@ -233,6 +250,31 @@ mod find {
 mod get {
   use super::*;
   use std::io::Write;
+
+  // `"!command"` evaluates the code the command writes to standard output.
+  #[test]
+  #[cfg(unix)]
+  fn get_command_spec() {
+    clear_state();
+    assert_eq!(interpret(r#"Get["!echo 1+2"]"#).unwrap(), "3");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn get_command_spec_shorthand() {
+    clear_state();
+    assert_eq!(interpret(r#"<< "!echo 6*7""#).unwrap(), "42");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn get_command_spec_defines_symbols() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Get["!printf 'sq[x_] := x^2;\nsq[5]\n'"]"#).unwrap(),
+      "25"
+    );
+  }
 
   fn write_temp(name: &str, content: &str) -> String {
     let path = temp_file(&format!("woxi_test_{name}.txt"));
@@ -461,6 +503,277 @@ mod streams {
     let path = missing_file();
     let result = interpret(&format!(r#"OpenRead["{path}"]"#)).unwrap();
     assert_eq!(result, "$Failed");
+  }
+
+  // A file specification starting with `!` names an external command whose
+  // standard output is what the stream reads.
+  #[test]
+  #[cfg(unix)]
+  fn open_read_command_returns_input_stream() {
+    clear_state();
+    let result = interpret(r#"OpenRead["!echo hi"]"#).unwrap();
+    assert!(
+      result.starts_with("InputStream[!echo hi, "),
+      "expected a command input stream, got {result}"
+    );
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn open_read_command_read_lines() {
+    clear_state();
+    let result = interpret(
+      r#"s = OpenRead["!printf 'a\nb\nc\n'"]; l = {ReadLine[s], ReadLine[s], ReadLine[s], ReadLine[s]}; Close[s]; l"#,
+    )
+    .unwrap();
+    assert_eq!(result, "{a, b, c, EndOfFile}");
+  }
+
+  // Regression test for the reported issue: reading a command stream in a
+  // While loop used to spin forever because OpenRead["!cat"] returned
+  // $Failed and ReadLine[$Failed] never reached EndOfFile.
+  #[test]
+  #[cfg(unix)]
+  fn open_read_command_while_loop_terminates() {
+    clear_state();
+    let result = interpret(
+      r#"s = OpenRead["!printf 'one\ntwo\n' | cat"]; n = 0; While[True, line = ReadLine[s]; If[line === EndOfFile, Break[]]; n = n + 1]; Close[s]; n"#,
+    )
+    .unwrap();
+    assert_eq!(result, "2");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn open_read_command_read_string() {
+    clear_state();
+    let result = interpret(
+      r#"s = OpenRead["!printf 'x y'"]; r = ReadString[s]; Close[s]; r"#,
+    )
+    .unwrap();
+    assert_eq!(result, "x y");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn open_read_command_read_number() {
+    clear_state();
+    let result = interpret(
+      r#"s = OpenRead["!printf '11 22\n'"]; r = {Read[s, Number], Read[s, Number], Read[s, Number]}; Close[s]; r"#,
+    )
+    .unwrap();
+    assert_eq!(result, "{11, 22, EndOfFile}");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn open_read_command_read_list() {
+    clear_state();
+    let result = interpret(
+      r#"s = OpenRead["!printf '1\n2\n3\n'"]; r = ReadList[s, Number]; Close[s]; r"#,
+    )
+    .unwrap();
+    assert_eq!(result, "{1, 2, 3}");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn close_command_stream_returns_spec() {
+    clear_state();
+    let result = interpret(r#"s = OpenRead["!echo hi"]; Close[s]"#).unwrap();
+    assert_eq!(result, "!echo hi");
+  }
+
+  // Closing while the command still has output pending must not hang.
+  #[test]
+  #[cfg(unix)]
+  fn close_command_stream_before_end_of_output() {
+    clear_state();
+    let result =
+      interpret(r#"s = OpenRead["!yes woxi"]; l = ReadLine[s]; Close[s]; l"#)
+        .unwrap();
+    assert_eq!(result, "woxi");
+  }
+
+  // A command that cannot be run still opens: the shell reports the error
+  // and the stream is simply empty.
+  #[test]
+  #[cfg(unix)]
+  fn open_read_command_not_found_is_empty() {
+    clear_state();
+    let result = interpret(
+      r#"s = OpenRead["!woxi-no-such-command 2>/dev/null"]; r = ReadLine[s]; Close[s]; r"#,
+    )
+    .unwrap();
+    assert_eq!(result, "EndOfFile");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn read_line_command_spec() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ReadLine["!printf 'first\nsecond\n'"]"#).unwrap(),
+      "first"
+    );
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn read_string_command_spec() {
+    clear_state();
+    assert_eq!(interpret(r#"ReadString["!printf 'abc'"]"#).unwrap(), "abc");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn read_list_command_spec() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ReadList["!printf '1\n2\n3\n'", Number]"#).unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn binary_read_list_command_spec() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"BinaryReadList["!printf 'AB'"]"#).unwrap(),
+      "{65, 66}"
+    );
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn binary_read_command_stream() {
+    clear_state();
+    let result = interpret(
+      r#"s = OpenRead["!printf 'AB'", BinaryFormat -> True]; r = {BinaryRead[s], BinaryRead[s], BinaryRead[s]}; Close[s]; r"#,
+    )
+    .unwrap();
+    assert_eq!(result, "{65, 66, EndOfFile}");
+  }
+
+  // The write end of the same convention: OpenWrite["!cmd"] feeds what is
+  // written to it into the command's standard input. The command inherits
+  // the real stdout rather than Woxi's capture buffer, so these tests have
+  // the shell redirect its output into a file and read that back.
+  #[test]
+  #[cfg(unix)]
+  fn open_write_command_returns_output_stream() {
+    clear_state();
+    let result =
+      interpret(r#"s = OpenWrite["!cat"]; r = ToString[s]; Close[s]; r"#)
+        .unwrap();
+    assert!(
+      result.starts_with("OutputStream[!cat, "),
+      "expected a command output stream, got {result}"
+    );
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn write_string_to_command_stream() {
+    clear_state();
+    let path = temp_file("woxi_pipe_write_string.txt");
+    let result = interpret(&format!(
+      r#"s = OpenWrite["!tr a-z A-Z > {path}"]; WriteString[s, "hello ", "pipe\n"]; c = Close[s]; {{c, ReadString["{path}"]}}"#
+    ))
+    .unwrap();
+    assert_eq!(
+      result,
+      "{!tr a-z A-Z > ".to_owned() + &path + ", HELLO PIPE\n}"
+    );
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn write_to_command_stream() {
+    clear_state();
+    let path = temp_file("woxi_pipe_write.txt");
+    let result = interpret(&format!(
+      r#"s = OpenWrite["!cat > {path}"]; Write[s, 1 + 1]; Close[s]; ReadString["{path}"]"#
+    ))
+    .unwrap();
+    assert_eq!(result, "2\n");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn binary_write_to_command_stream() {
+    clear_state();
+    let path = temp_file("woxi_pipe_binary_write.txt");
+    let result = interpret(&format!(
+      r#"s = OpenWrite["!cat > {path}"]; BinaryWrite[s, {{104, 105}}]; Close[s]; ReadString["{path}"]"#
+    ))
+    .unwrap();
+    assert_eq!(result, "hi");
+  }
+
+  // A command named directly rather than through an open stream runs once
+  // for that call, so every argument has to reach it in one write.
+  #[test]
+  #[cfg(unix)]
+  fn write_string_to_command_spec() {
+    clear_state();
+    let path = temp_file("woxi_pipe_write_string_spec.txt");
+    let result = interpret(&format!(
+      r#"WriteString["!tr a-z A-Z > {path}", "a", "b"]; ReadString["{path}"]"#
+    ))
+    .unwrap();
+    assert_eq!(result, "AB");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn open_append_command_writes_like_open_write() {
+    clear_state();
+    let path = temp_file("woxi_pipe_append.txt");
+    let result = interpret(&format!(
+      r#"s = OpenAppend["!cat > {path}"]; WriteString[s, "appended"]; Close[s]; ReadString["{path}"]"#
+    ))
+    .unwrap();
+    assert_eq!(result, "appended");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn put_to_command_spec() {
+    clear_state();
+    let path = temp_file("woxi_pipe_put.txt");
+    let result = interpret(&format!(
+      r#"Put[1 + 1, "!cat > {path}"]; ReadString["{path}"]"#
+    ))
+    .unwrap();
+    assert_eq!(result, "2\n");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn put_append_to_command_spec() {
+    clear_state();
+    let path = temp_file("woxi_pipe_put_append.txt");
+    let result = interpret(&format!(
+      r#"PutAppend[3 + 4, "!cat > {path}"]; ReadString["{path}"]"#
+    ))
+    .unwrap();
+    assert_eq!(result, "7\n");
+  }
+
+  // Closing the write end is what tells the command its input has ended,
+  // so a filter that only produces output at EOF still gets there.
+  #[test]
+  #[cfg(unix)]
+  fn close_command_sink_ends_the_commands_input() {
+    clear_state();
+    let path = temp_file("woxi_pipe_sort.txt");
+    let result = interpret(&format!(
+      r#"s = OpenWrite["!sort > {path}"]; WriteString[s, "b\na\n"]; c = Close[s]; {{c, ReadList["{path}", String]}}"#
+    ))
+    .unwrap();
+    assert_eq!(result, "{!sort > ".to_owned() + &path + ", {a, b}}");
   }
 
   #[test]
@@ -7550,6 +7863,16 @@ mod find_list_tests {
     }
   }
 
+  // A `"!command"` entry searches that command's output.
+  #[test]
+  #[cfg(unix)]
+  fn command_spec_lines() {
+    assert_eq!(
+      interpret(r#"FindList["!printf 'a1\nb2\na3\n'", "a"]"#).unwrap(),
+      "{a1, a3}"
+    );
+  }
+
   // Missing files emit `noopen` and yield $Failed — as the whole result
   // for a single file, as one element inside a file-list result.
   #[test]
@@ -9281,5 +9604,108 @@ mod paclet {
     // Replacing the whole mapping drops the alias with it.
     interpret("$ContextAliases = <||>").unwrap();
     assert_eq!(interpret("a`foo").unwrap(), "a`foo");
+  }
+}
+
+// A file name starting with `!` names an external command in the Wolfram
+// Language. These cover the functions that take a file name without going
+// through an open stream.
+mod command_file_specs {
+  use super::*;
+
+  #[test]
+  #[cfg(unix)]
+  fn file_print_command_spec() {
+    clear_state();
+    let result =
+      interpret_with_stdout(r#"FilePrint["!printf 'one\ntwo\n'"]"#).unwrap();
+    assert_eq!(result.stdout, "one\ntwo\n");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn file_print_command_spec_with_no_output() {
+    clear_state();
+    let result = interpret_with_stdout(r#"FilePrint["!true"]"#).unwrap();
+    assert_eq!(result.stdout, "\n");
+  }
+
+  // Import defaults a command's output to text, the format a pipe carries
+  // unless the caller names another one.
+  #[test]
+  #[cfg(unix)]
+  fn import_command_spec_defaults_to_text() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Import["!printf 'plain text\n'"]"#).unwrap(),
+      "plain text"
+    );
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn import_command_spec_text() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Import["!printf 'plain text\n'", "Text"]"#).unwrap(),
+      "plain text"
+    );
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn import_command_spec_csv() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Import["!printf 'a,b\n1,2\n'", "CSV"]"#).unwrap(),
+      "{{a, b}, {1, 2}}"
+    );
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn import_command_spec_csv_element() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Import["!printf 'a,b\n1,2\n'", {"CSV", "ColumnLabels"}]"#)
+        .unwrap(),
+      "{a, b}"
+    );
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn import_command_spec_json() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Import["!printf '{\"k\": 5}'", "JSON"]"#).unwrap(),
+      "{k -> 5}"
+    );
+  }
+
+  // Naming a file's own format selects no element, so it imports exactly
+  // as the format-less call does. This used to yield `$Failed[]` because
+  // the format name travelled on as an element name.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn import_format_name_is_not_an_element() {
+    clear_state();
+    let path = temp_file("woxi_import_format_name.csv");
+    std::fs::write(&path, "a,b\n1,2\n").unwrap();
+    assert_eq!(
+      interpret(&format!(r#"Import["{path}", "CSV"]"#)).unwrap(),
+      "{{a, b}, {1, 2}}"
+    );
+    assert_eq!(
+      interpret(&format!(r#"Import["{path}", {{"CSV", "ColumnLabels"}}]"#))
+        .unwrap(),
+      "{a, b}"
+    );
+    // An element name still selects an element.
+    assert_eq!(
+      interpret(&format!(r#"Import["{path}", "ColumnLabels"]"#)).unwrap(),
+      "{a, b}"
+    );
+    std::fs::remove_file(path).ok();
   }
 }

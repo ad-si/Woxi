@@ -24,12 +24,31 @@ pub fn create_file(
     None => std::env::temp_dir().join(rand_str(16)),
   };
 
+  create_new_file(file_path)
+}
+
+/// Create a uniquely named empty file in the system temp directory carrying
+/// `extension`, for callers that need the name to say what the bytes are.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn create_temp_file(
+  extension: &str,
+) -> Result<std::path::PathBuf, std::io::Error> {
+  create_new_file(
+    std::env::temp_dir().join(format!("{}.{extension}", rand_str(16))),
+  )
+}
+
+/// Create `path`, failing if something is already there.
+#[cfg(not(target_arch = "wasm32"))]
+fn create_new_file(
+  path: std::path::PathBuf,
+) -> Result<std::path::PathBuf, std::io::Error> {
   std::fs::OpenOptions::new()
     .create_new(true)
     .write(true)
     .truncate(true)
-    .open(&file_path)
-    .map(|_| file_path)
+    .open(&path)
+    .map(|_| path)
 }
 
 /// Join `sub` onto `base` with the platform's path separator.

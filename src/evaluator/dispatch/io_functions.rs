@@ -6,11 +6,329 @@ use std::collections::HashMap;
 // Stream registry for open streams (InputStream/OutputStream)
 #[derive(Clone, Debug)]
 enum StreamKind {
-  StringStream(String), // content of the string
+  Text(String), // content of the string
   // Only the native build opens files: `OpenRead`/`OpenWrite`/`OpenAppend`
   // are compiled out on wasm, where there is no local filesystem.
   #[cfg(not(target_arch = "wasm32"))]
-  FileStream(String), // file path
+  File(String), // file path
+  // A file specification starting with `!` names an external command
+  // instead of a file; the command runs through the shell and its
+  // standard output is what the stream reads.
+  #[cfg(not(target_arch = "wasm32"))]
+  Command(std::rc::Rc<RefCell<CommandStreamState>>),
+  // The write end of the same convention: `OpenWrite["!command"]` feeds
+  // what is written to it into the command's standard input.
+  #[cfg(not(target_arch = "wasm32"))]
+  CommandSink(std::rc::Rc<RefCell<CommandSinkState>>),
+}
+
+/// State of a `"!command"` stream: the running child process plus the part
+/// of its standard output consumed so far. Output already handed out has to
+/// stay addressable because streams are position-indexed, so it is kept in
+/// `buffer` rather than discarded.
+///
+/// The buffer holds raw bytes so `BinaryRead` sees the command's output
+/// unaltered; text reads decode it lossily, which leaves byte offsets and
+/// string offsets in step for the valid UTF-8 that text reads assume.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug)]
+struct CommandStreamState {
+  child: Option<std::process::Child>,
+  reader: Option<std::io::BufReader<std::process::ChildStdout>>,
+  buffer: Vec<u8>,
+  eof: bool,
+}
+
+/// State of a `"!command"` output stream: the running child process and the
+/// handle on its standard input. Closing the stream drops the handle, which
+/// is the command's end-of-input, and then waits for it to finish.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug)]
+struct CommandSinkState {
+  child: Option<std::process::Child>,
+  stdin: Option<std::process::ChildStdin>,
+}
+
+/// Build the shell invocation that runs `command`.
+#[cfg(not(target_arch = "wasm32"))]
+fn shell_command(command: &str) -> std::process::Command {
+  let mut cmd = if cfg!(target_os = "windows") {
+    std::process::Command::new("cmd")
+  } else {
+    std::process::Command::new("sh")
+  };
+  cmd.arg(if cfg!(target_os = "windows") {
+    "/C"
+  } else {
+    "-c"
+  });
+  cmd.arg(command);
+  cmd
+}
+
+/// Start `command` through the shell, with its standard output piped back
+/// to us. Standard input and standard error are inherited so that filters
+/// like `"!cat"` or `"!grep foo"` read the script's own input and report
+/// their errors on the terminal, as they do in wolframscript.
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_command_stream(command: &str) -> std::io::Result<CommandStreamState> {
+  use std::process::Stdio;
+  let mut child = shell_command(command)
+    .stdin(Stdio::inherit())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::inherit())
+    .spawn()?;
+  let reader = child.stdout.take().map(std::io::BufReader::new);
+  Ok(CommandStreamState {
+    child: Some(child),
+    reader,
+    buffer: Vec::new(),
+    eof: false,
+  })
+}
+
+/// Start `command` through the shell with its standard input piped from us.
+/// Its output streams straight to the terminal, as it does in wolframscript.
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_command_sink(command: &str) -> std::io::Result<CommandSinkState> {
+  use std::process::Stdio;
+  let mut child = shell_command(command)
+    .stdin(Stdio::piped())
+    .stdout(Stdio::inherit())
+    .stderr(Stdio::inherit())
+    .spawn()?;
+  let stdin = child.stdin.take();
+  Ok(CommandSinkState {
+    child: Some(child),
+    stdin,
+  })
+}
+
+/// Feed `bytes` to an open command sink. `false` if the command is gone —
+/// it exited early, or the stream has already been closed.
+#[cfg(not(target_arch = "wasm32"))]
+fn command_sink_write(state: &RefCell<CommandSinkState>, bytes: &[u8]) -> bool {
+  use std::io::Write;
+  let mut state = state.borrow_mut();
+  let Some(stdin) = state.stdin.as_mut() else {
+    return false;
+  };
+  stdin.write_all(bytes).is_ok() && stdin.flush().is_ok()
+}
+
+/// Close a command sink: drop the pipe so the command sees end-of-input,
+/// then wait for it to finish so its output lands before evaluation goes on.
+#[cfg(not(target_arch = "wasm32"))]
+fn command_sink_close(state: &RefCell<CommandSinkState>) {
+  let mut state = state.borrow_mut();
+  drop(state.stdin.take());
+  if let Some(mut child) = state.child.take() {
+    let _ = child.wait();
+  }
+}
+
+/// Run `command` through the shell, feed it `input`, and wait for it.
+/// `false` if the shell could not be started at all.
+#[cfg(not(target_arch = "wasm32"))]
+fn run_command_with_input(command: &str, input: &[u8]) -> bool {
+  let Ok(state) = spawn_command_sink(command) else {
+    return false;
+  };
+  let state = RefCell::new(state);
+  command_sink_write(&state, input);
+  command_sink_close(&state);
+  true
+}
+
+/// Release the pipe and reap the child once its output is exhausted.
+#[cfg(not(target_arch = "wasm32"))]
+fn command_stream_finish(state: &mut CommandStreamState) {
+  state.eof = true;
+  state.reader = None;
+  if let Some(mut child) = state.child.take() {
+    let _ = child.wait();
+  }
+}
+
+/// Pull one more line of the child's output into the buffer.
+/// Returns `false` once the command's output is exhausted.
+#[cfg(not(target_arch = "wasm32"))]
+fn command_stream_read_line(state: &mut CommandStreamState) -> bool {
+  use std::io::BufRead;
+  if state.eof {
+    return false;
+  }
+  let Some(reader) = state.reader.as_mut() else {
+    command_stream_finish(state);
+    return false;
+  };
+  let mut chunk: Vec<u8> = Vec::new();
+  match reader.read_until(b'\n', &mut chunk) {
+    Ok(0) | Err(_) => {
+      command_stream_finish(state);
+      false
+    }
+    Ok(_) => {
+      state.buffer.extend_from_slice(&chunk);
+      true
+    }
+  }
+}
+
+/// Pull the rest of the child's output into the buffer.
+#[cfg(not(target_arch = "wasm32"))]
+fn command_stream_read_all(state: &mut CommandStreamState) {
+  while command_stream_read_line(state) {}
+}
+
+/// Stop a command stream that is closed before its output ran out, so a
+/// still-running command (`"!yes"`, an interactive filter) does not keep
+/// the interpreter waiting.
+#[cfg(not(target_arch = "wasm32"))]
+fn command_stream_close(state: &RefCell<CommandStreamState>) {
+  let mut state = state.borrow_mut();
+  state.reader = None;
+  if let Some(mut child) = state.child.take() {
+    let _ = child.kill();
+    let _ = child.wait();
+  }
+  state.eof = true;
+}
+
+/// Run `command` through the shell and return the bytes it writes to
+/// standard output. `None` if the shell could not be started at all.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn run_command_capture_bytes(command: &str) -> Option<Vec<u8>> {
+  let mut state = spawn_command_stream(command).ok()?;
+  command_stream_read_all(&mut state);
+  Some(state.buffer)
+}
+
+/// Run `command` through the shell and return everything it writes to
+/// standard output as text. `None` if the shell could not be started at all.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn run_command_capture(command: &str) -> Option<String> {
+  run_command_capture_bytes(command)
+    .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// Split a Wolfram file specification into the external command it names.
+/// `"!sort -u"` runs `sort -u`; anything without the leading `!` is a
+/// plain file path.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn command_file_spec(spec: &str) -> Option<&str> {
+  spec.strip_prefix('!')
+}
+
+/// The registry id of an `InputStream[name, id]` / `OutputStream[name, id]`.
+fn io_stream_id(expr: &Expr) -> Option<usize> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if (name != "InputStream" && name != "OutputStream") || args.len() != 2 {
+    return None;
+  }
+  match &args[1] {
+    Expr::Integer(id) => Some(*id as usize),
+    _ => None,
+  }
+}
+
+/// Bytes for a binary read. An open stream is served from the registry, so
+/// a `"!command"` pipe reads the command's output; `path` (the stream's
+/// name) is the fallback for a stream that is no longer open.
+#[cfg(not(target_arch = "wasm32"))]
+fn io_binary_bytes(expr: &Expr, path: &str) -> std::io::Result<Vec<u8>> {
+  if let Some(id) = io_stream_id(expr)
+    && let Some(bytes) = get_stream_bytes(id)
+  {
+    return Ok(bytes);
+  }
+  match command_file_spec(path) {
+    Some(command) => run_command_capture_bytes(command)
+      .ok_or_else(|| std::io::Error::other("cannot start the shell")),
+    None => std::fs::read(path),
+  }
+}
+
+/// Where a write function sends its bytes.
+#[cfg(not(target_arch = "wasm32"))]
+enum WriteTarget {
+  /// Append to a file.
+  File(String),
+  /// The standard input of an open `OpenWrite["!command"]` stream.
+  Sink(std::rc::Rc<RefCell<CommandSinkState>>),
+  /// A `"!command"` named directly instead of through an open stream: the
+  /// command runs for this one write and is fed exactly its bytes.
+  Command(String),
+}
+
+/// Resolve the first argument of `Write`/`WriteString`/`BinaryWrite` to the
+/// thing that receives the bytes. `None` for anything unwritable, which
+/// leaves the call unevaluated.
+#[cfg(not(target_arch = "wasm32"))]
+fn io_write_target(expr: &Expr) -> Option<WriteTarget> {
+  match expr {
+    Expr::String(spec) => Some(match command_file_spec(spec) {
+      Some(command) => WriteTarget::Command(command.to_string()),
+      None => WriteTarget::File(spec.clone()),
+    }),
+    Expr::FunctionCall { name, args }
+      if (name == "OutputStream" || name == "InputStream")
+        && args.len() == 2 =>
+    {
+      let Expr::Integer(id) = &args[1] else {
+        return None;
+      };
+      match get_stream_kind(*id as usize)?.0 {
+        StreamKind::File(path) => Some(WriteTarget::File(path)),
+        StreamKind::CommandSink(state) => Some(WriteTarget::Sink(state)),
+        // Neither a string stream nor the read end of a pipe is writable.
+        StreamKind::Text(_) | StreamKind::Command(_) => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Send `bytes` to a write target, appending for files. `caller` only names
+/// the function in the error message.
+#[cfg(not(target_arch = "wasm32"))]
+fn write_target_bytes(
+  target: &WriteTarget,
+  bytes: &[u8],
+  caller: &str,
+) -> Result<(), InterpreterError> {
+  match target {
+    WriteTarget::File(path) => {
+      use std::io::Write;
+      let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| {
+          InterpreterError::EvaluationError(format!(
+            "{caller}: cannot open {path}: {e}"
+          ))
+        })?;
+      file.write_all(bytes).map_err(|e| {
+        InterpreterError::EvaluationError(format!("{caller}: write error: {e}"))
+      })
+    }
+    WriteTarget::Sink(state) => {
+      command_sink_write(state, bytes);
+      Ok(())
+    }
+    WriteTarget::Command(command) => {
+      if run_command_with_input(command, bytes) {
+        Ok(())
+      } else {
+        Err(InterpreterError::EvaluationError(format!(
+          "{caller}: cannot open !{command}."
+        )))
+      }
+    }
+  }
 }
 
 #[derive(Clone, Debug)]
@@ -58,21 +376,69 @@ fn is_stream_open(id: usize) -> bool {
   STREAM_REGISTRY.with(|reg| reg.borrow().contains_key(&id))
 }
 
+/// Look up a stream's kind and current read position.
+/// The kind is cloned so the registry is not kept borrowed across a read,
+/// which for a command stream can block on the child process.
+fn get_stream_kind(id: usize) -> Option<(StreamKind, usize)> {
+  STREAM_REGISTRY
+    .with(|reg| reg.borrow().get(&id).map(|s| (s.kind.clone(), s.position)))
+}
+
 /// Get the remaining content of a stream (for reading)
 fn get_stream_content(id: usize) -> Option<(String, usize)> {
-  STREAM_REGISTRY.with(|reg| {
-    let registry = reg.borrow();
-    registry.get(&id).map(|s| {
-      let content = match &s.kind {
-        StreamKind::StringStream(text) => text.clone(),
-        #[cfg(not(target_arch = "wasm32"))]
-        StreamKind::FileStream(path) => {
-          std::fs::read_to_string(path).unwrap_or_default()
-        }
-      };
-      (content, s.position)
-    })
-  })
+  let (kind, position) = get_stream_kind(id)?;
+  let content = match &kind {
+    StreamKind::Text(text) => text.clone(),
+    #[cfg(not(target_arch = "wasm32"))]
+    StreamKind::File(path) => std::fs::read_to_string(path).unwrap_or_default(),
+    // Whole-stream reads have to wait for the command to finish.
+    #[cfg(not(target_arch = "wasm32"))]
+    StreamKind::Command(state) => {
+      let mut state = state.borrow_mut();
+      command_stream_read_all(&mut state);
+      String::from_utf8_lossy(&state.buffer).into_owned()
+    }
+    // Nothing was ever read into a command sink.
+    #[cfg(not(target_arch = "wasm32"))]
+    StreamKind::CommandSink(_) => String::new(),
+  };
+  Some((content, position))
+}
+
+/// The raw bytes behind a stream, for `BinaryRead`. Command streams are
+/// drained to the end, like any other whole-stream read.
+#[cfg(not(target_arch = "wasm32"))]
+fn get_stream_bytes(id: usize) -> Option<Vec<u8>> {
+  match get_stream_kind(id)?.0 {
+    StreamKind::Text(text) => Some(text.into_bytes()),
+    StreamKind::File(path) => std::fs::read(path).ok(),
+    StreamKind::Command(state) => {
+      let mut state = state.borrow_mut();
+      command_stream_read_all(&mut state);
+      Some(state.buffer.clone())
+    }
+    StreamKind::CommandSink(_) => Some(Vec::new()),
+  }
+}
+
+/// Content for a line-oriented read. A command stream only pulls as much of
+/// its child's output as the next line needs, so `ReadLine` keeps working
+/// line by line on a live pipe instead of blocking until the command exits.
+#[cfg(not(target_arch = "wasm32"))]
+fn get_stream_line_content(id: usize) -> Option<(String, usize)> {
+  if let Some((StreamKind::Command(state), position)) = get_stream_kind(id) {
+    let mut state = state.borrow_mut();
+    while !state.eof
+      && !state.buffer[position.min(state.buffer.len())..].contains(&b'\n')
+    {
+      command_stream_read_line(&mut state);
+    }
+    return Some((
+      String::from_utf8_lossy(&state.buffer).into_owned(),
+      position,
+    ));
+  }
+  get_stream_content(id)
 }
 
 /// Get the current read position of a stream
@@ -155,20 +521,25 @@ pub(crate) fn evaluate_file(
   // The read file is the input file for the duration of the read, so
   // `$InputFileName` must point at it and not at the enclosing script.
   let _input_file_name = InputFileNameGuard::install(path);
-  // Use interpret to evaluate the file content (handles all node types
+  Some(evaluate_source(&content))
+}
+
+/// Evaluate Wolfram source, returning its last result — what `Get` yields
+/// for whatever it read, be that a file or a command's output.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn evaluate_source(content: &str) -> Result<Expr, InterpreterError> {
+  // Use interpret to evaluate the content (handles all node types
   // including FunctionDefinition, Expression, etc.)
-  let result_str = match crate::interpret(&content) {
-    Ok(v) => v,
-    Err(e) => return Some(Err(e)),
-  };
+  let result_str = crate::interpret(content)?;
   // `interpret` reports a `Null` result as the "\0" display-suppression
   // sentinel; as the value of `Get` it is the symbol `Null` again.
   if result_str == "\0" {
-    return Some(Ok(Expr::Identifier("Null".to_string())));
+    return Ok(Expr::Identifier("Null".to_string()));
   }
-  let result = crate::syntax::string_to_expr(&result_str)
-    .unwrap_or(Expr::Identifier(result_str));
-  Some(Ok(result))
+  Ok(
+    crate::syntax::string_to_expr(&result_str)
+      .unwrap_or(Expr::Identifier(result_str)),
+  )
 }
 
 /// Scopes `$InputFileName` to the file a `Get` is currently reading.
@@ -476,7 +847,11 @@ pub fn dispatch_io_functions(
 
       let (content, position, stream_id) = match &args[0] {
         Expr::String(path) => {
-          if let Ok(c) = std::fs::read_to_string(path) {
+          let content = match command_file_spec(path) {
+            Some(command) => run_command_capture(command),
+            None => std::fs::read_to_string(path).ok(),
+          };
+          if let Some(c) = content {
             (c, 0usize, None)
           } else {
             crate::emit_message(&format!(
@@ -626,6 +1001,17 @@ pub fn dispatch_io_functions(
       if crate::utils::is_standard_distribution_context(&filename) {
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
+      // `"!command"` evaluates the code the command writes to its standard
+      // output, the read counterpart of `Put["!command"]`.
+      if let Some(command) = command_file_spec(&filename) {
+        let Some(content) = run_command_capture(command) else {
+          crate::emit_message_to_stdout(&format!(
+            "Get::noopen: Cannot open {filename}."
+          ));
+          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        };
+        return Some(evaluate_source(&content));
+      }
       let resolved = resolve_get_target(&filename);
       let loaded = resolved.as_deref().and_then(evaluate_file);
       let Some(result) = loaded else {
@@ -702,6 +1088,14 @@ pub fn dispatch_io_functions(
       } else {
         format!("{content}\n")
       };
+      // `"!command"` feeds the expressions to a command instead of a file.
+      if let Some(command) = command_file_spec(&filename) {
+        if run_command_with_input(command, to_write.as_bytes()) {
+          return Some(Ok(Expr::Identifier("Null".to_string())));
+        }
+        crate::emit_message(&format!("Put::noopen: Cannot open {filename}."));
+        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+      }
       match std::fs::write(&filename, to_write) {
         Ok(()) => return Some(Ok(Expr::Identifier("Null".to_string()))),
         Err(_e) => {
@@ -728,6 +1122,16 @@ pub fn dispatch_io_functions(
       if !exprs.is_empty() {
         use std::io::Write;
         let to_write = format!("{content}\n");
+        // A pipe has nothing to append to, so `"!command"` just runs.
+        if let Some(command) = command_file_spec(&filename) {
+          if run_command_with_input(command, to_write.as_bytes()) {
+            return Some(Ok(Expr::Identifier("Null".to_string())));
+          }
+          crate::emit_message(&format!(
+            "PutAppend::noopen: Cannot open {filename}."
+          ));
+          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        }
         if let Ok(mut file) = std::fs::OpenOptions::new()
           .create(true)
           .append(true)
@@ -1323,16 +1727,22 @@ pub fn dispatch_io_functions(
 
       // (content, start_pos, optional stream id for position advance)
       let (content, start_pos, stream_id) = match &args[0] {
+        // A `"!command"` name searches the command's output.
         Expr::String(path) => {
-          let body = match std::fs::read_to_string(path) {
-            Ok(c) => c,
-            Err(e) => {
-              return Some(Err(InterpreterError::EvaluationError(format!(
-                "Find: {e}"
-              ))));
-            }
+          let body = match command_file_spec(path) {
+            Some(command) => run_command_capture(command).ok_or_else(|| {
+              InterpreterError::EvaluationError(format!(
+                "Find: cannot run {command}"
+              ))
+            }),
+            None => std::fs::read_to_string(path).map_err(|e| {
+              InterpreterError::EvaluationError(format!("Find: {e}"))
+            }),
           };
-          (body, 0usize, None)
+          match body {
+            Ok(c) => (c, 0usize, None),
+            Err(e) => return Some(Err(e)),
+          }
         }
         Expr::FunctionCall {
           name: stream_head,
@@ -1477,8 +1887,13 @@ pub fn dispatch_io_functions(
           out.push(Expr::Identifier("$Failed".to_string()));
           continue;
         };
-        match std::fs::read_to_string(path) {
-          Err(_) => {
+        // A `"!command"` entry searches that command's output.
+        let read = match command_file_spec(path) {
+          Some(command) => run_command_capture(command).ok_or(()),
+          None => std::fs::read_to_string(path).map_err(|_| ()),
+        };
+        match read {
+          Err(()) => {
             crate::emit_message(&format!(
               "FindList::noopen: Cannot open {path}."
             ));
@@ -1850,16 +2265,27 @@ pub fn dispatch_io_functions(
           return Some(Ok(unevaluated("OpenRead", args)));
         }
       };
-      if !std::path::Path::new(&filename).exists() {
-        crate::emit_message_to_stdout(&format!(
-          "OpenRead::noopen: Cannot open {filename}."
-        ));
-        return Some(Ok(Expr::Identifier("$Failed".to_string())));
-      }
-      let id = register_stream(
-        filename.clone(),
-        StreamKind::FileStream(filename.clone()),
-      );
+      // `"!command"` opens a pipe from an external command instead of a
+      // file: the command runs through the shell and the stream reads its
+      // standard output.
+      let kind = if let Some(command) = command_file_spec(&filename) {
+        let Ok(state) = spawn_command_stream(command) else {
+          crate::emit_message_to_stdout(&format!(
+            "OpenRead::noopen: Cannot open {filename}."
+          ));
+          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        };
+        StreamKind::Command(std::rc::Rc::new(RefCell::new(state)))
+      } else {
+        if !std::path::Path::new(&filename).exists() {
+          crate::emit_message_to_stdout(&format!(
+            "OpenRead::noopen: Cannot open {filename}."
+          ));
+          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        }
+        StreamKind::File(filename.clone())
+      };
+      let id = register_stream(filename.clone(), kind);
       return Some(Ok(Expr::FunctionCall {
         name: "InputStream".to_string(),
         args: vec![Expr::String(filename), Expr::Integer(id as i128)].into(),
@@ -1888,18 +2314,28 @@ pub fn dispatch_io_functions(
           path.to_string_lossy().into_owned()
         }
       };
-      // Create or truncate the file
-      if let Err(e) = std::fs::File::create(&filename).map_err(|e| {
-        InterpreterError::EvaluationError(format!(
-          "OpenWrite: cannot open {filename}: {e}"
-        ))
-      }) {
-        return Some(Err(e));
-      }
-      let id = register_stream(
-        filename.clone(),
-        StreamKind::FileStream(filename.clone()),
-      );
+      // `"!command"` opens a pipe *into* an external command: whatever is
+      // written to the stream becomes the command's standard input.
+      let kind = if let Some(command) = command_file_spec(&filename) {
+        let Ok(state) = spawn_command_sink(command) else {
+          crate::emit_message_to_stdout(&format!(
+            "OpenWrite::noopen: Cannot open {filename}."
+          ));
+          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        };
+        StreamKind::CommandSink(std::rc::Rc::new(RefCell::new(state)))
+      } else {
+        // Create or truncate the file
+        if let Err(e) = std::fs::File::create(&filename).map_err(|e| {
+          InterpreterError::EvaluationError(format!(
+            "OpenWrite: cannot open {filename}: {e}"
+          ))
+        }) {
+          return Some(Err(e));
+        }
+        StreamKind::File(filename.clone())
+      };
+      let id = register_stream(filename.clone(), kind);
       return Some(Ok(Expr::FunctionCall {
         name: "OutputStream".to_string(),
         args: vec![Expr::String(filename), Expr::Integer(id as i128)].into(),
@@ -1914,7 +2350,7 @@ pub fn dispatch_io_functions(
     // infers the type from the value (Integer → Byte, String → Character8).
     #[cfg(not(target_arch = "wasm32"))]
     "BinaryWrite" if (2..=3).contains(&args.len()) => {
-      let Some(path) = io_stream_path(&args[0]) else {
+      let Some(target) = io_write_target(&args[0]) else {
         return Some(Ok(unevaluated("BinaryWrite", args)));
       };
       // Render a single value at the given type into the byte buffer.
@@ -1985,23 +2421,8 @@ pub fn dispatch_io_functions(
           _ => return Some(Ok(unevaluated())),
         }
       };
-      use std::io::Write;
-      let mut f = match std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-      {
-        Ok(f) => f,
-        Err(e) => {
-          return Some(Err(InterpreterError::EvaluationError(format!(
-            "BinaryWrite: cannot open {path}: {e}"
-          ))));
-        }
-      };
-      if let Err(e) = f.write_all(&bytes) {
-        return Some(Err(InterpreterError::EvaluationError(format!(
-          "BinaryWrite: write failed on {path}: {e}"
-        ))));
+      if let Err(e) = write_target_bytes(&target, &bytes, "BinaryWrite") {
+        return Some(Err(e));
       }
       return Some(Ok(args[0].clone()));
     }
@@ -2019,22 +2440,10 @@ pub fn dispatch_io_functions(
       let Some(path) = io_stream_path(&args[0]) else {
         return Some(Ok(unevaluated("BinaryRead", args)));
       };
-      // Extract stream id (second arg of InputStream[path, id]) so we can
-      // track and advance the read position. Falls back to id-less reads
-      // (always from offset 0) when the structure doesn't match.
-      let stream_id = if let Expr::FunctionCall {
-        name: sname,
-        args: sargs,
-      } = &args[0]
-        && (sname == "InputStream" || sname == "OutputStream")
-        && sargs.len() == 2
-        && let Expr::Integer(id) = &sargs[1]
-      {
-        Some(*id as usize)
-      } else {
-        None
-      };
-      let bytes = match std::fs::read(&path) {
+      // The stream id lets consecutive reads advance the position; an
+      // id-less stream always reads from offset 0.
+      let stream_id = io_stream_id(&args[0]);
+      let bytes = match io_binary_bytes(&args[0], &path) {
         Ok(b) => b,
         Err(e) => {
           return Some(Err(InterpreterError::EvaluationError(format!(
@@ -2137,7 +2546,7 @@ pub fn dispatch_io_functions(
           return Some(Ok(unevaluated("BinaryReadList", args)));
         }
       }
-      let bytes = match std::fs::read(&path) {
+      let bytes = match io_binary_bytes(&args[0], &path) {
         Ok(b) => b,
         Err(e) => {
           return Some(Err(InterpreterError::EvaluationError(format!(
@@ -2173,23 +2582,33 @@ pub fn dispatch_io_functions(
           }
         }
       };
-      // Open for appending (create if not exists)
-      if let Err(e) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&filename)
-        .map_err(|e| {
-          InterpreterError::EvaluationError(format!(
-            "OpenAppend: cannot open {filename}: {e}"
-          ))
-        })
-      {
-        return Some(Err(e));
-      }
-      let id = register_stream(
-        filename.clone(),
-        StreamKind::FileStream(filename.clone()),
-      );
+      // A pipe has no contents to append to, so `"!command"` opens the same
+      // stream `OpenWrite` would.
+      let kind = if let Some(command) = command_file_spec(&filename) {
+        let Ok(state) = spawn_command_sink(command) else {
+          crate::emit_message_to_stdout(&format!(
+            "OpenAppend::noopen: Cannot open {filename}."
+          ));
+          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        };
+        StreamKind::CommandSink(std::rc::Rc::new(RefCell::new(state)))
+      } else {
+        // Open for appending (create if not exists)
+        if let Err(e) = std::fs::OpenOptions::new()
+          .create(true)
+          .append(true)
+          .open(&filename)
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!(
+              "OpenAppend: cannot open {filename}: {e}"
+            ))
+          })
+        {
+          return Some(Err(e));
+        }
+        StreamKind::File(filename.clone())
+      };
+      let id = register_stream(filename.clone(), kind);
       return Some(Ok(Expr::FunctionCall {
         name: "OutputStream".to_string(),
         args: vec![Expr::String(filename), Expr::Integer(id as i128)].into(),
@@ -2206,8 +2625,7 @@ pub fn dispatch_io_functions(
           ))));
         }
       };
-      let id =
-        register_stream("String".to_string(), StreamKind::StringStream(text));
+      let id = register_stream("String".to_string(), StreamKind::Text(text));
       // Use Symbol `String` (not the string literal "String") so the
       // formatted form matches wolframscript: `InputStream[String, id]`.
       return Some(Ok(Expr::FunctionCall {
@@ -2239,11 +2657,25 @@ pub fn dispatch_io_functions(
           match close_stream(id) {
             // Close[FileStream] returns the file path as a String;
             // Close[StringToStream[…]] returns the symbol `String`.
-            Some((_, StreamKind::StringStream(_))) => {
+            Some((_, StreamKind::Text(_))) => {
               return Some(Ok(Expr::Identifier("String".to_string())));
             }
             #[cfg(not(target_arch = "wasm32"))]
-            Some((name, StreamKind::FileStream(_))) => {
+            Some((name, StreamKind::File(_))) => {
+              return Some(Ok(Expr::String(name)));
+            }
+            // Close[OpenRead["!cmd"]] returns the `"!cmd"` spec, and stops
+            // the command if it is still producing output.
+            #[cfg(not(target_arch = "wasm32"))]
+            Some((name, StreamKind::Command(state))) => {
+              command_stream_close(&state);
+              return Some(Ok(Expr::String(name)));
+            }
+            // Closing the write end is what tells the command its input has
+            // ended, so it runs to completion here.
+            #[cfg(not(target_arch = "wasm32"))]
+            Some((name, StreamKind::CommandSink(state))) => {
+              command_sink_close(&state);
               return Some(Ok(Expr::String(name)));
             }
             None => {
@@ -2365,9 +2797,14 @@ pub fn dispatch_io_functions(
     #[cfg(not(target_arch = "wasm32"))]
     "ReadLine" if args.len() == 1 => {
       let (content, position, stream_id) = match &args[0] {
+        // ReadLine["file"] — read the first line from a file directly;
+        // ReadLine["!cmd"] — the first line of the command's output.
         Expr::String(path) => {
-          // ReadLine["file"] - read first line from file directly
-          if let Ok(content) = std::fs::read_to_string(path) {
+          let content = match command_file_spec(path) {
+            Some(command) => run_command_capture(command),
+            None => std::fs::read_to_string(path).ok(),
+          };
+          if let Some(content) = content {
             (content, 0usize, None)
           } else {
             crate::emit_message(&format!(
@@ -2382,7 +2819,7 @@ pub fn dispatch_io_functions(
         } if stream_head == "InputStream" && stream_args.len() == 2 => {
           if let Expr::Integer(id) = &stream_args[1] {
             let id = *id as usize;
-            match get_stream_content(id) {
+            match get_stream_line_content(id) {
               Some((content, pos)) => (content, pos, Some(id)),
               None => {
                 return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
@@ -2532,60 +2969,18 @@ pub fn dispatch_io_functions(
     // Write[stream, expr1, expr2, ...] — write expressions to a stream in OutputForm
     #[cfg(not(target_arch = "wasm32"))]
     "Write" if args.len() >= 2 => {
-      let stream = &args[0];
-      let file_path = match stream {
-        Expr::FunctionCall {
-          name: stream_head,
-          args: stream_args,
-        } if (stream_head == "OutputStream"
-          || stream_head == "InputStream")
-          && stream_args.len() == 2 =>
-        {
-          if let Expr::Integer(id) = &stream_args[1] {
-            let stream_id = *id as usize;
-            STREAM_REGISTRY.with(|reg| {
-              let registry = reg.borrow();
-              registry.get(&stream_id).and_then(|s| match &s.kind {
-                StreamKind::FileStream(path) => Some(path.clone()),
-                StreamKind::StringStream(_) => None,
-              })
-            })
-          } else {
-            None
-          }
-        }
-        Expr::String(path) => Some(path.clone()),
-        _ => None,
+      let Some(target) = io_write_target(&args[0]) else {
+        return Some(Ok(unevaluated("Write", args)));
       };
-
-      if let Some(path) = file_path {
-        use std::io::Write;
-        let mut file = match std::fs::OpenOptions::new()
-          .create(true)
-          .append(true)
-          .open(&path)
-          .map_err(|e| {
-            InterpreterError::EvaluationError(format!(
-              "Write: cannot open {path}: {e}"
-            ))
-          }) {
-          Ok(v) => v,
-          Err(e) => return Some(Err(e)),
-        };
-        let mut content = String::new();
-        for arg in &args[1..] {
-          content.push_str(&crate::syntax::expr_to_string(arg));
-        }
-        content.push('\n');
-        if let Err(e) = file.write_all(content.as_bytes()).map_err(|e| {
-          InterpreterError::EvaluationError(format!("Write: write error: {e}"))
-        }) {
-          return Some(Err(e));
-        }
-        return Some(Ok(Expr::Identifier("Null".to_string())));
+      let mut content = String::new();
+      for arg in &args[1..] {
+        content.push_str(&crate::syntax::expr_to_string(arg));
       }
-
-      return Some(Ok(unevaluated("Write", args)));
+      content.push('\n');
+      if let Err(e) = write_target_bytes(&target, content.as_bytes(), "Write") {
+        return Some(Err(e));
+      }
+      return Some(Ok(Expr::Identifier("Null".to_string())));
     }
     // WriteString[stream, "text1", "text2", ...] — write strings to a stream
     #[cfg(not(target_arch = "wasm32"))]
@@ -2623,63 +3018,24 @@ pub fn dispatch_io_functions(
         }
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
-      // Extract stream info
-      let file_path = match stream {
-        Expr::FunctionCall {
-          name: stream_head,
-          args: stream_args,
-        } if (stream_head == "OutputStream"
-          || stream_head == "InputStream")
-          && stream_args.len() == 2 =>
-        {
-          if let Expr::Integer(id) = &stream_args[1] {
-            let stream_id = *id as usize;
-            STREAM_REGISTRY.with(|reg| {
-              let registry = reg.borrow();
-              registry.get(&stream_id).and_then(|s| match &s.kind {
-                StreamKind::FileStream(path) => Some(path.clone()),
-                StreamKind::StringStream(_) => None,
-              })
-            })
-          } else {
-            None
-          }
-        }
-        Expr::String(path) => Some(path.clone()),
-        _ => None,
+      let Some(target) = io_write_target(stream) else {
+        return Some(Ok(unevaluated("WriteString", args)));
       };
-
-      if let Some(path) = file_path {
-        use std::io::Write;
-        let mut file = match std::fs::OpenOptions::new()
-          .create(true)
-          .append(true)
-          .open(&path)
-          .map_err(|e| {
-            InterpreterError::EvaluationError(format!(
-              "WriteString: cannot open {path}: {e}"
-            ))
-          }) {
-          Ok(v) => v,
-          Err(e) => return Some(Err(e)),
-        };
-        for arg in &args[1..] {
-          let text = match arg {
-            Expr::String(s) => s.clone(),
-            other => crate::syntax::expr_to_string(other),
-          };
-          if let Err(e) = file.write_all(text.as_bytes()).map_err(|e| {
-            InterpreterError::EvaluationError(format!(
-              "WriteString: write error: {e}"
-            ))
-          }) {
-            return Some(Err(e));
-          }
+      // A `"!command"` named directly runs once per call, so the whole
+      // argument list has to reach it in a single write.
+      let mut text = String::new();
+      for arg in &args[1..] {
+        match arg {
+          Expr::String(s) => text.push_str(s),
+          other => text.push_str(&crate::syntax::expr_to_string(other)),
         }
-        return Some(Ok(Expr::Identifier("Null".to_string())));
       }
-
-      return Some(Ok(unevaluated("WriteString", args)));
+      if let Err(e) =
+        write_target_bytes(&target, text.as_bytes(), "WriteString")
+      {
+        return Some(Err(e));
+      }
+      return Some(Ok(Expr::Identifier("Null".to_string())));
     }
     // Save["filename", symbol] or Save["filename", {sym1, sym2, ...}]
     // Saves symbol definitions (OwnValues, DownValues, Attributes, Options) to a file
@@ -5208,30 +5564,27 @@ fn read_string_chunk(
 pub(crate) fn readlist_inputstream(
   args: &[Expr],
 ) -> Result<String, InterpreterError> {
-  if let Expr::Integer(id) = &args[1] {
-    let stream_id = *id as usize;
-    STREAM_REGISTRY.with(|reg| {
-      let registry = reg.borrow();
-      if let Some(stream) = registry.get(&stream_id) {
-        match &stream.kind {
-          StreamKind::StringStream(text) => Ok(text.clone()),
-          #[cfg(not(target_arch = "wasm32"))]
-          StreamKind::FileStream(path) => std::fs::read_to_string(path)
-            .map_err(|_| {
-              InterpreterError::EvaluationError(format!(
-                "ReadList::noopen: Cannot open {path}."
-              ))
-            }),
-        }
-      } else {
-        Err(InterpreterError::EvaluationError(
-          "ReadList: stream is not open".into(),
-        ))
-      }
-    })
-  } else {
-    Err(InterpreterError::EvaluationError(
+  let Expr::Integer(id) = &args[1] else {
+    return Err(InterpreterError::EvaluationError(
       "ReadList: invalid stream object".into(),
-    ))
+    ));
+  };
+  let stream_id = *id as usize;
+  let Some((kind, _)) = get_stream_kind(stream_id) else {
+    return Err(InterpreterError::EvaluationError(
+      "ReadList: stream is not open".into(),
+    ));
+  };
+  // A file that cannot be read is the one case with its own message; every
+  // other kind (including a command's output) is drained by
+  // `get_stream_content`, which reads it whole.
+  #[cfg(not(target_arch = "wasm32"))]
+  if let StreamKind::File(path) = &kind
+    && !std::path::Path::new(path).is_file()
+  {
+    return Err(InterpreterError::EvaluationError(format!(
+      "ReadList::noopen: Cannot open {path}."
+    )));
   }
+  Ok(get_stream_content(stream_id).map_or_else(String::new, |(c, _)| c))
 }

@@ -11971,12 +11971,26 @@ fn readlist_get_text(source: &Expr) -> Result<String, InterpreterError> {
         path
       ))),
     },
+    // A `"!command"` spec reads the output of an external command instead
+    // of a file.
     #[cfg(not(target_arch = "wasm32"))]
-    Expr::String(path) => std::fs::read_to_string(path).map_err(|_| {
-      InterpreterError::EvaluationError(format!(
-        "ReadList::noopen: Cannot open {path}."
-      ))
-    }),
+    Expr::String(path) => {
+      let content =
+        match crate::evaluator::dispatch::io_functions::command_file_spec(path)
+        {
+          Some(command) => {
+            crate::evaluator::dispatch::io_functions::run_command_capture(
+              command,
+            )
+          }
+          None => std::fs::read_to_string(path).ok(),
+        };
+      content.ok_or_else(|| {
+        InterpreterError::EvaluationError(format!(
+          "ReadList::noopen: Cannot open {path}."
+        ))
+      })
+    }
     _ => Err(InterpreterError::EvaluationError(
       "ReadList expects a filename string or StringToStream[\"text\"]".into(),
     )),

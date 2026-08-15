@@ -1,6 +1,6 @@
 # Dispatched functions still without scrut-tested docs
 
-Generated from `src/evaluator/dispatch/`. Total: **288**.
+Generated from `src/evaluator/dispatch/`. Total: **285**.
 
 These are functions that are reachable in Woxi's evaluator but don't yet have a `## \`Fn\``
 section with a working scrut example in `tests/cli/`. Most fall into categories that resist
@@ -56,7 +56,7 @@ syntactic forms (`UpSet`, `Span`), and special functions that stay symbolic for 
 - `TimeRemaining` — Returns the time remaining in a TimeConstrained evaluation
 - `Trace` — Returns a minimal evaluation trace as a two-element list
 
-## I/O & Streams (34)
+## I/O & Streams (32)
 
 - `AbsoluteFileName`
 - `AnimationRate`
@@ -72,11 +72,9 @@ syntactic forms (`UpSet`, `Span`), and special functions that stay symbolic for 
 - `FileHash`
 - `Find` — Finds a file on the search path
 - `FindFile` — Find file
-- `Get` — Reads and evaluates a file returning the last result
 - `GetEnvironment` — Returns rule(s) mapping env variable names to their values
 - `ImageResolution` — Option for image resolution in DPI
 - `Message` — Issues a message (no-op in Woxi)
-- `OpenRead` — Opens a file for reading
 - `PNG`
 - `ParentDirectory` — Parent directory path
 - `PutAppend` — Append expressions to a file
@@ -143,7 +141,7 @@ syntactic forms (`UpSet`, `Span`), and special functions that stay symbolic for 
 - `TensorWedge` — Exterior (wedge) product of vectors/tensors
 - `YuleDissimilarity` — Yule dissimilarity between binary vectors
 
-## Lists (4)
+## Lists (3)
 
 - `List` — Represents a list of elements
 - `Nearest` — Find the nearest elements in a list to a given value
