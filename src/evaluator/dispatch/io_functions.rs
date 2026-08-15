@@ -3327,9 +3327,13 @@ pub fn dispatch_io_functions(
       return Some(Ok(unevaluated("FileNameTake", args)));
     }
     // Input[] / Input[prompt] / InputString[] / InputString[prompt] —
-    // wolframscript in script mode prints the prompt to stdout (no trailing
-    // newline) and returns `EndOfFile` since interactive stdin isn't
-    // available. Match that so non-interactive scripts behave identically.
+    // wolframscript prints the prompt to stdout (no trailing newline) and
+    // then reads one line from stdin, returning `EndOfFile` once stdin is
+    // exhausted. `InputString` yields the raw line; `Input` parses and
+    // evaluates it as a Wolfram expression (blank line → Null, syntax error
+    // → $Failed with the usual message), exactly like ToExpression.
+    // Embedders that don't own stdin never get a line, so they keep the
+    // non-interactive `EndOfFile` result.
     "Input" | "InputString" if args.len() <= 1 => {
       if let Some(arg) = args.first() {
         let prompt = match arg {
@@ -3343,7 +3347,16 @@ pub fn dispatch_io_functions(
         }
         crate::capture_stdout_raw(&prompt);
       }
-      return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
+      let Some(line) = crate::read_stdin_line() else {
+        return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
+      };
+      if name == "InputString" {
+        return Some(Ok(Expr::String(line)));
+      }
+      return Some(crate::functions::string_ast::to_expression_ast_as(
+        &[Expr::String(line)],
+        "Syntax",
+      ));
     }
     _ => {}
   }

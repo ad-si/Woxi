@@ -117,6 +117,171 @@ fn eval_stdin_handles_large_image_input() {
   assert_eq!(stdout.trim(), "Image");
 }
 
+/// Run `woxi eval <expression>` with `input` piped to stdin, so `Input[]` and
+/// `InputString[]` have something to read.
+fn run_eval_with_input(
+  expression: &str,
+  input: &str,
+) -> (String, String, bool) {
+  use std::io::Write;
+  use std::process::Stdio;
+  let mut child = Command::new(woxi_bin())
+    .arg("eval")
+    .arg(expression)
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .expect("failed to spawn woxi");
+  child
+    .stdin
+    .as_mut()
+    .expect("no stdin")
+    .write_all(input.as_bytes())
+    .expect("failed to write stdin");
+  let output = child.wait_with_output().expect("failed to wait");
+  (
+    String::from_utf8_lossy(&output.stdout).into_owned(),
+    String::from_utf8_lossy(&output.stderr).into_owned(),
+    output.status.success(),
+  )
+}
+
+#[test]
+fn input_string_reads_a_line_from_stdin() {
+  // Regression for #462: `InputString[prompt]` must consume a line of stdin
+  // instead of immediately returning `EndOfFile`, so scripts that prompt for
+  // a value actually get one.
+  let (stdout, stderr, ok) =
+    run_eval_with_input(r#"InputString["Please enter your name:"]"#, "Alice\n");
+  assert!(ok, "woxi eval failed: stderr={stderr}");
+  assert_eq!(stdout, "Please enter your name:Alice\n");
+}
+
+#[test]
+fn input_string_reads_successive_lines() {
+  // Each call advances through stdin rather than re-reading the first line.
+  let (stdout, stderr, ok) =
+    run_eval_with_input("Table[InputString[], {3}]", "a\nb\nc\n");
+  assert!(ok, "woxi eval failed: stderr={stderr}");
+  assert_eq!(stdout.trim(), "{a, b, c}");
+}
+
+#[test]
+fn input_string_returns_end_of_file_when_stdin_is_exhausted() {
+  // Past the last line — and with a closed stdin — the result is `EndOfFile`,
+  // the behaviour wolframscript shows when there is nothing left to read.
+  let (stdout, stderr, ok) =
+    run_eval_with_input("{InputString[], InputString[]}", "only\n");
+  assert!(ok, "woxi eval failed: stderr={stderr}");
+  assert_eq!(stdout.trim(), "{only, EndOfFile}");
+}
+
+#[test]
+fn input_string_keeps_a_blank_line_as_empty_string() {
+  // A bare newline is an empty string, not `EndOfFile`.
+  let (stdout, stderr, ok) =
+    run_eval_with_input("StringLength[InputString[]]", "\n");
+  assert!(ok, "woxi eval failed: stderr={stderr}");
+  assert_eq!(stdout.trim(), "0");
+}
+
+#[test]
+fn input_parses_the_line_as_an_expression() {
+  // `Input[]` evaluates what it reads, unlike `InputString[]`.
+  let (stdout, stderr, ok) = run_eval_with_input(r#"Input["n: "]"#, "2 + 3\n");
+  assert!(ok, "woxi eval failed: stderr={stderr}");
+  assert_eq!(stdout, "n: 5\n");
+}
+
+#[test]
+fn input_reports_syntax_errors_as_failed() {
+  // An unparsable line yields `$Failed` with a Syntax message — the message
+  // is owned by `Syntax`, not by the shared `ToExpression` implementation.
+  let (stdout, stderr, ok) = run_eval_with_input("Input[]", "1 +\n");
+  assert!(ok, "woxi eval failed: stderr={stderr}");
+  assert!(
+    stdout.contains("Syntax::sntxi:"),
+    "expected a Syntax message, got: {stdout}"
+  );
+  assert!(
+    !stdout.contains("ToExpression::"),
+    "message should not leak ToExpression: {stdout}"
+  );
+  assert_eq!(stdout.trim_end().lines().last().unwrap(), "$Failed");
+}
+
+#[test]
+fn input_returns_null_for_a_blank_line() {
+  let (stdout, stderr, ok) = run_eval_with_input("Input[]", "\n");
+  assert!(ok, "woxi eval failed: stderr={stderr}");
+  assert_eq!(stdout.trim(), "Null");
+}
+
+#[test]
+fn eval_from_stdin_still_returns_end_of_file_for_input() {
+  // `woxi eval -` consumes stdin for the expression itself, so there is
+  // nothing left for `InputString[]` to read.
+  let (stdout, stderr, ok) = run_eval_stdin("InputString[]");
+  assert!(ok, "woxi eval - failed: stderr={stderr}");
+  assert_eq!(stdout.trim(), "EndOfFile");
+}
+
+/// Run `woxi run <file>` with `input` piped to stdin.
+fn run_file_with_input(
+  path: &std::path::Path,
+  input: &str,
+) -> (String, String, bool) {
+  use std::io::Write;
+  use std::process::Stdio;
+  let mut child = Command::new(woxi_bin())
+    .arg("run")
+    .arg(path)
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .expect("failed to spawn woxi");
+  child
+    .stdin
+    .as_mut()
+    .expect("no stdin")
+    .write_all(input.as_bytes())
+    .expect("failed to write stdin");
+  let output = child.wait_with_output().expect("failed to wait");
+  (
+    String::from_utf8_lossy(&output.stdout).into_owned(),
+    String::from_utf8_lossy(&output.stderr).into_owned(),
+    output.status.success(),
+  )
+}
+
+#[test]
+fn run_script_prompts_and_reads_stdin() {
+  // The exact script from #462: it must greet the name it was given.
+  let script = "userName = InputString[\"Please enter your name:\"];\n\
+                Echo[StringJoin[\"Hello \", userName]];\n";
+  let path = std::env::temp_dir().join("woxi_cli_input_string.wls");
+  std::fs::write(&path, script).expect("write script");
+  let (stdout, stderr, ok) = run_file_with_input(&path, "Alice\n");
+  let _ = std::fs::remove_file(&path);
+  assert!(ok, "woxi run failed: stderr={stderr}");
+  assert_eq!(stdout, "Please enter your name:>> Hello Alice\n");
+}
+
+#[test]
+fn run_script_falls_back_to_end_of_file_without_stdin() {
+  // With stdin closed immediately the script still terminates rather than
+  // hanging, and `InputString[]` reports `EndOfFile`.
+  let script = "Print[InputString[]];\n";
+  let path = std::env::temp_dir().join("woxi_cli_input_string_eof.wls");
+  std::fs::write(&path, script).expect("write script");
+  let (stdout, stderr, ok) = run_file_with_input(&path, "");
+  let _ = std::fs::remove_file(&path);
+  assert!(ok, "woxi run failed: stderr={stderr}");
+  assert_eq!(stdout, "EndOfFile\n");
+}
+
 /// Run `woxi run <file>` and return (stdout, stderr, success).
 fn run_file(path: &std::path::Path) -> (String, String, bool) {
   let output = Command::new(woxi_bin())

@@ -2,6 +2,14 @@
 
 # Unreleased
 
+- `InputString[]` and `Input[]` actually read from standard input when `woxi`
+    owns it — `woxi run script.wls`, a shebang script, and `woxi eval` — so a
+    script that prompts for a value now waits for one instead of running
+    straight through. `InputString` returns the line as a string,
+    `Input` parses and evaluates it, and both return `EndOfFile` once input is
+    exhausted. Embedders that don't own stdin (the wasm playground, the
+    Jupyter kernel, `woxi eval -`, which reads its expression from stdin) keep
+    the previous `EndOfFile` behaviour.
 - Contexts are real: a symbol's name is resolved when its input is *read*,
     against `$Context` and `$ContextPath`, and the symbol is stored under its
     full name. A package's `Begin["`Private`"]` helpers are therefore private

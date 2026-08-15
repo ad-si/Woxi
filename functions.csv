@@ -675,7 +675,7 @@ FourierTransform,Computes the symbolic Fourier transform of an expression,✅,pu
 InverseFourierTransform,Computes the symbolic inverse Fourier transform of an expression,✅,pure,4.0,1124
 PowerExpand,Expands powers and logarithms assuming positive reals,✅,pure,2.0,640
 Fit,Performs a least-squares fit of data to a linear combination of basis functions — a design matrix without full column rank gives the minimum-norm solution,✅,pure,1.0,641
-Input,Reads user input (inert in Woxi),✅,effectful,1.0,642
+Input,Reads and evaluates a line of user input,✅,effectful,1.0,642
 UnitConvert,Converts a quantity to a different unit; with one argument converts to SI base units,✅,pure,9.0,643
 BoundaryStyle,Option for boundary styling in plots,✅,none,6.0,644
 StandardDeviation,Returns the standard deviation of a list or an association's values — exact unless a machine number is among them,✅,pure,5.0,645
@@ -2037,7 +2037,7 @@ Wednesday,Day of the week symbol,✅,unevaluated,9.0,2045
 PieChart3D,3D pie chart,✅,pure,7.0,2048
 Tuesday,Day of the week symbol,✅,unevaluated,9.0,2048
 WindowElements,Window UI elements option,🚫,,3.0,2048
-InputString,Symbol specifying input string type for Input,✅,pure,1.0,2051
+InputString,Reads a line of user input as a string,✅,effectful,1.0,2051
 LinkRead,Read from WSTP link,🚫,,3.0,2051
 SelectionEvaluate,Evaluate selected notebook content,🚫,,3.0,2051
 Annulus,Symbolic annular region; stays unevaluated and is consumed by region functions (RegionDimension/RegionMeasure/…),✅,unevaluated,10.2,2054

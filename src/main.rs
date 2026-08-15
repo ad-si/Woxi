@@ -218,6 +218,9 @@ fn run(cli: Cli) {
         }
         buf
       } else {
+        // Only when the expression didn't come from stdin is stdin still
+        // free for `Input[]` / `InputString[]` to read from.
+        woxi::set_stdin_input(true);
         expression
       };
       match interpret(&expression) {
@@ -255,6 +258,8 @@ fn run(cli: Cli) {
       // `wolframscript -file` writes messages (e.g. `Get::noopen`,
       // `Power::infy`) to stdout, so match it: route diagnostics there too.
       woxi::set_messages_to_stdout(true);
+      // A script owns stdin, so `Input[]` / `InputString[]` read from it.
+      woxi::set_stdin_input(true);
 
       let absolute_path = if file.is_absolute() {
         file.clone()
@@ -288,6 +293,8 @@ fn run(cli: Cli) {
       // Shebang scripts run like `wolframscript -file`; send messages to
       // stdout to match it (see the `Run` arm above).
       woxi::set_messages_to_stdout(true);
+      // A script owns stdin, so `Input[]` / `InputString[]` read from it.
+      woxi::set_stdin_input(true);
 
       if args.is_empty() {
         eprintln!("Error: no script file supplied");
