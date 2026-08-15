@@ -31,6 +31,16 @@
     - `Information[sym, "Property"]` returns that one field (`Missing[
         "UnknownProperty", …]` for an unknown one), and a package symbol's
         `FullName` names its own context.
+- A file name starting with `!` names an external command, as in the Wolfram
+    Language: `OpenRead["!cat"]` runs the command through the shell and reads
+    its standard output instead of reporting `OpenRead::noopen` and returning
+    `$Failed`. The command's standard input and standard error stay connected
+    to the interpreter's, so filters like `"!cat"` or `"!grep foo"` read the
+    script's own input. `ReadLine` pulls one line at a time, so a `While` loop
+    over a live pipe advances as its command produces output rather than
+    waiting for the command to exit, and `Close` stops a command that is still
+    running. `ReadLine["!cmd"]`, `ReadString["!cmd"]` and `ReadList["!cmd"]`
+    take the same specification without an explicit stream.
 - `PacletDirectoryLoad` and `PacletDirectoryUnload` register the directories
     the paclet manager searches. A registered directory may be a paclet
     itself — a directory with a `PacletInfo.wl` — or a directory collecting

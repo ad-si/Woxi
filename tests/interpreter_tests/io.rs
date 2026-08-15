@@ -463,6 +463,136 @@ mod streams {
     assert_eq!(result, "$Failed");
   }
 
+  // A file specification starting with `!` names an external command whose
+  // standard output is what the stream reads.
+  #[test]
+  #[cfg(unix)]
+  fn open_read_command_returns_input_stream() {
+    clear_state();
+    let result = interpret(r#"OpenRead["!echo hi"]"#).unwrap();
+    assert!(
+      result.starts_with("InputStream[!echo hi, "),
+      "expected a command input stream, got {result}"
+    );
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn open_read_command_read_lines() {
+    clear_state();
+    let result = interpret(
+      r#"s = OpenRead["!printf 'a\nb\nc\n'"]; l = {ReadLine[s], ReadLine[s], ReadLine[s], ReadLine[s]}; Close[s]; l"#,
+    )
+    .unwrap();
+    assert_eq!(result, "{a, b, c, EndOfFile}");
+  }
+
+  // Regression test for the reported issue: reading a command stream in a
+  // While loop used to spin forever because OpenRead["!cat"] returned
+  // $Failed and ReadLine[$Failed] never reached EndOfFile.
+  #[test]
+  #[cfg(unix)]
+  fn open_read_command_while_loop_terminates() {
+    clear_state();
+    let result = interpret(
+      r#"s = OpenRead["!printf 'one\ntwo\n' | cat"]; n = 0; While[True, line = ReadLine[s]; If[line === EndOfFile, Break[]]; n = n + 1]; Close[s]; n"#,
+    )
+    .unwrap();
+    assert_eq!(result, "2");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn open_read_command_read_string() {
+    clear_state();
+    let result = interpret(
+      r#"s = OpenRead["!printf 'x y'"]; r = ReadString[s]; Close[s]; r"#,
+    )
+    .unwrap();
+    assert_eq!(result, "x y");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn open_read_command_read_number() {
+    clear_state();
+    let result = interpret(
+      r#"s = OpenRead["!printf '11 22\n'"]; r = {Read[s, Number], Read[s, Number], Read[s, Number]}; Close[s]; r"#,
+    )
+    .unwrap();
+    assert_eq!(result, "{11, 22, EndOfFile}");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn open_read_command_read_list() {
+    clear_state();
+    let result = interpret(
+      r#"s = OpenRead["!printf '1\n2\n3\n'"]; r = ReadList[s, Number]; Close[s]; r"#,
+    )
+    .unwrap();
+    assert_eq!(result, "{1, 2, 3}");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn close_command_stream_returns_spec() {
+    clear_state();
+    let result = interpret(r#"s = OpenRead["!echo hi"]; Close[s]"#).unwrap();
+    assert_eq!(result, "!echo hi");
+  }
+
+  // Closing while the command still has output pending must not hang.
+  #[test]
+  #[cfg(unix)]
+  fn close_command_stream_before_end_of_output() {
+    clear_state();
+    let result =
+      interpret(r#"s = OpenRead["!yes woxi"]; l = ReadLine[s]; Close[s]; l"#)
+        .unwrap();
+    assert_eq!(result, "woxi");
+  }
+
+  // A command that cannot be run still opens: the shell reports the error
+  // and the stream is simply empty.
+  #[test]
+  #[cfg(unix)]
+  fn open_read_command_not_found_is_empty() {
+    clear_state();
+    let result = interpret(
+      r#"s = OpenRead["!woxi-no-such-command 2>/dev/null"]; r = ReadLine[s]; Close[s]; r"#,
+    )
+    .unwrap();
+    assert_eq!(result, "EndOfFile");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn read_line_command_spec() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ReadLine["!printf 'first\nsecond\n'"]"#).unwrap(),
+      "first"
+    );
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn read_string_command_spec() {
+    clear_state();
+    assert_eq!(interpret(r#"ReadString["!printf 'abc'"]"#).unwrap(), "abc");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn read_list_command_spec() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ReadList["!printf '1\n2\n3\n'", Number]"#).unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn open_write_and_close() {
