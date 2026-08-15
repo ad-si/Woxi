@@ -7316,6 +7316,56 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`glyph$$ = \"pick a letter\"}, \"…
     }
   }
 
+  /// A Demonstration whose `Initialization :> (Get["HypothesisTesting`"];)`
+  /// loads the legacy `Statistics`HypothesisTests`` compatibility package
+  /// and whose body extracts a named property with
+  /// `TwoSidedPValue /. MeanTest[data, mu, TwoSided -> True]` must open
+  /// live: the context-qualified `HypothesisTesting`MeanTest` call has to
+  /// evaluate to a proper rule list (not merely echo unevaluated) so the
+  /// `ReplaceAll` actually extracts a p-value for the plot.
+  #[test]
+  fn demonstration_with_legacy_hypothesis_testing_mean_test_opens_live() {
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Module[{p, x, repCount},
+  SeedRandom[seed];
+  repCount = {50, 100}[[reps]];
+  p = Quiet@Table[
+    x = RandomReal[NormalDistribution[0, 1], n];
+    HypothesisTesting`TwoSidedPValue /. HypothesisTesting`MeanTest[x, 0, HypothesisTesting`TwoSided -> True],
+    {repCount}];
+  If[graph == 1, Histogram[p, 10, \"Probability\"], ListPlot[Sort[p]]]],
+ {{n, 20, \"sample size\"}, 10, 50, 10, Appearance -> \"Labeled\"},
+ {{seed, 1, \"seed\"}, 1, 100, 1, Appearance -> \"Labeled\"},
+ {{reps, 1, \"reps\"}, {1 -> \"50\", 2 -> \"100\"}},
+ {{graph, 1, \"graph\"}, {1 -> \"histogram\", 2 -> \"scatter\"}},
+ TrackedSymbols :> {n, seed, reps, graph},
+ SynchronousUpdating -> False,
+ Initialization :> (Get[\"HypothesisTesting`\"];)]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 20}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some() && widget.text_output.is_none(),
+      "the histogram of extracted p-values must draw, not echo the \
+       unevaluated MeanTest/ReplaceAll: {:?}",
+      widget.text_output
+    );
+    assert_eq!(widget.controls.len(), 4);
+  }
+
   /// A stored Manipulate whose body calls helpers from earlier Input
   /// cells (the Demonstrations "Initialization Code" section) must open
   /// live: `editors_from_notebook` replays the preceding inputs before
