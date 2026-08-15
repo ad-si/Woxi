@@ -1903,10 +1903,9 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
   match (numer, denom) {
     (Some(n), None) => n,
     (None, Some(d)) => call("Power", vec![d, Expr::Integer(-1)]),
-    (Some(n), Some(d)) => Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![n, call("Power", vec![d, Expr::Integer(-1)])].into(),
-    },
+    (Some(n), Some(d)) => {
+      call("Times", vec![n, call("Power", vec![d, Expr::Integer(-1)])])
+    }
     (None, None) => Expr::Integer(1),
   }
 }

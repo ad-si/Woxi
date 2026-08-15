@@ -7,7 +7,7 @@ use crate::functions::math_ast::{
   gcd_i128, is_sqrt, lcm_i128, make_sqrt, rat_reduce, rat_reduce_bigint,
 };
 use crate::helpers::{
-  bool_expr, call, call1, div2, minus2, neg1, plus2, pow2, times2,
+  bool_expr, call, call0, call1, div2, minus2, neg1, plus2, pow2, times2,
 };
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,

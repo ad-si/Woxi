@@ -1332,7 +1332,7 @@ pub fn level_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(original());
   };
 
-  let blank = call("Blank", vec![]);
+  let blank = call0("Blank");
   let mut out: Vec<Expr> = Vec::new();
   // A packed array object, a tree or a dataset is an atom: nothing inside it
   // is a level. The object itself sits at level 0 counted from the top and at
@@ -1523,7 +1523,7 @@ pub fn delete_cases_unified_ast(
     &mut remaining,
   ) {
     Some(result) => Ok(result),
-    None => Ok(call("Sequence", vec![])),
+    None => Ok(call0("Sequence")),
   }
 }
 

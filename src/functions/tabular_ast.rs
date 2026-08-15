@@ -121,7 +121,7 @@ pub(crate) fn build_schema(
 /// Tabular[data, schema] — constructs with explicit schema.
 pub fn tabular_ast(args: &[Expr]) -> Expr {
   if args.is_empty() {
-    return call("Tabular", vec![]);
+    return call0("Tabular");
   }
 
   // If already has schema (2+ args where the second is a TabularSchema), return as-is

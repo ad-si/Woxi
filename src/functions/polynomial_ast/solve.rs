@@ -1059,7 +1059,7 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // True → {} (trivially satisfied, no constraints)
     Expr::Identifier(s) if s == "True" => Ok(Expr::List(vec![].into())),
     // False → Sequence[] (no solutions, matches Wolfram: splices to nothing in context)
-    Expr::Identifier(s) if s == "False" => Ok(call("Sequence", vec![])),
+    Expr::Identifier(s) if s == "False" => Ok(call0("Sequence")),
     // Anything else: return unevaluated
     _ => Ok(call1("ToRules", input.clone())),
   }
@@ -4316,13 +4316,11 @@ fn try_solve_inverse_function(
           crate::evaluator::evaluate_expr_to_expr(&call1("Log", base.clone()))
             .ok()?;
         // Principal part: Log[val] / Log[base].
-        let principal =
-          crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(call1("Log", val.clone())),
-            right: Box::new(log_base.clone()),
-          })
-          .ok()?;
+        let principal = crate::evaluator::evaluate_expr_to_expr(&div2(
+          call1("Log", val.clone()),
+          log_base.clone(),
+        ))
+        .ok()?;
         // Periodic part: (2*Pi*I*C[1]) / Log[base].
         let c1 = call1("C", Expr::Integer(1));
         let periodic =
@@ -4377,11 +4375,7 @@ fn try_solve_inverse_function(
       }
       // base^exp == val where base is constant, exp contains var
       // → exp == Log[val] / Log[base]
-      let inverse_rhs = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(call1("Log", val.clone())),
-        right: Box::new(call1("Log", base)),
-      };
+      let inverse_rhs = div2(call1("Log", val.clone()), call1("Log", base));
       let simplified_rhs =
         crate::evaluator::evaluate_expr_to_expr(&inverse_rhs).ok()?;
       let new_eq = Expr::Comparison {

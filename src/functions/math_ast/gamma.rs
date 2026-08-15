@@ -316,7 +316,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // out here anyway.
       if f >= 1.0e14 {
         crate::emit_message("General::ovfl: Overflow occurred in computation.");
-        return Ok(call("Overflow", vec![]));
+        return Ok(call0("Overflow"));
       }
       // Use Stirling's approximation via the standard library's tgamma equivalent
       // Rust doesn't have tgamma in std, but we can compute via the Lanczos approximation

@@ -2327,9 +2327,9 @@ mod tests {
   #[test]
   fn music_object_q_rejects_non_objects() {
     assert!(is_false(&music_object_q(&[Expr::Integer(3)])));
-    assert!(is_false(&music_object_q(&[call("List", vec![])])));
+    assert!(is_false(&music_object_q(&[call0("List")])));
     // MusicPlot/MusicTransform/MusicMeasurements are operations, not objects.
-    assert!(is_false(&music_object_q(&[call("MusicPlot", vec![])])));
+    assert!(is_false(&music_object_q(&[call0("MusicPlot")])));
   }
 
   #[test]

@@ -591,7 +591,7 @@ fn max_of_four(a: &Expr, b: &Expr, c: &Expr, d: &Expr) -> Expr {
 pub fn interval_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Interval[] → Interval[] (empty interval)
   if args.is_empty() {
-    return Ok(call("Interval", vec![]));
+    return Ok(call0("Interval"));
   }
 
   let mut spans = Vec::new();
@@ -617,7 +617,7 @@ pub fn interval_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The union of nothing is the empty interval. The CenteredInterval branch
   // below is vacuously true for no arguments, so this has to come first.
   if args.is_empty() {
-    return Ok(call("Interval", vec![]));
+    return Ok(call0("Interval"));
   }
 
   // CenteredInterval inputs: combine into the smallest enclosing
@@ -648,7 +648,7 @@ pub fn interval_intersection_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
-    return Ok(call("Interval", vec![]));
+    return Ok(call0("Interval"));
   }
 
   // CenteredInterval inputs: take the per-axis intersection of the
@@ -1208,7 +1208,7 @@ fn centered_interval_box_op(args: &[Expr], op: BoxOp) -> Expr {
     if compare_numeric(&re_lo, &re_hi) == Some(Ordering::Greater)
       || compare_numeric(&im_lo, &im_hi) == Some(Ordering::Greater)
     {
-      return call("Interval", vec![]);
+      return call0("Interval");
     }
   }
   let two = Expr::Integer(2);

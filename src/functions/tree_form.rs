@@ -125,7 +125,7 @@ fn layout_recursive(
 /// Generates a tree diagram rendered as Graphics primitives.
 pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
-    return Ok(call("TreeForm", vec![]));
+    return Ok(call0("TreeForm"));
   }
 
   let expr = &args[0];
@@ -296,7 +296,7 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Second pass: text labels for all nodes (on top of boxes)
-  primitives.push(call("EdgeForm", vec![]));
+  primitives.push(call0("EdgeForm"));
 
   for node in &layout {
     let is_leaf = node.children_indices.is_empty();
@@ -346,7 +346,7 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Takes a list of DirectedEdge/UndirectedEdge and renders as a tree diagram.
 pub fn tree_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
-    return Ok(call("TreeGraph", vec![]));
+    return Ok(call0("TreeGraph"));
   }
 
   // Extract edges list — could be first arg directly or from Graph[vertices, edges]
@@ -462,7 +462,7 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
   let layout = layout_tree(tree, leaf_step);
 
   if layout.is_empty() {
-    return Ok(call("TreeGraph", vec![]));
+    return Ok(call0("TreeGraph"));
   }
 
   let coord_x_min = layout
@@ -579,7 +579,7 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
   }
 
   // Text labels
-  primitives.push(call("EdgeForm", vec![]));
+  primitives.push(call0("EdgeForm"));
 
   for node in &layout {
     let is_leaf = node.children_indices.is_empty();

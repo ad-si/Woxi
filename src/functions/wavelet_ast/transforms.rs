@@ -954,7 +954,7 @@ pub fn lifting_filter_data(spec: &WaveletSpec) -> Expr {
 fn spec_to_expr(spec: &WaveletSpec) -> Expr {
   let int = |n: i128| Expr::Integer(n);
   match spec {
-    WaveletSpec::Haar => call("HaarWavelet", vec![]),
+    WaveletSpec::Haar => call0("HaarWavelet"),
     WaveletSpec::Daubechies(n) => call1("DaubechiesWavelet", int(*n as i128)),
     WaveletSpec::Symlet(n) => call1("SymletWavelet", int(*n as i128)),
     WaveletSpec::Coiflet(n) => call1("CoifletWavelet", int(*n as i128)),

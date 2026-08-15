@@ -350,11 +350,10 @@ pub fn build_mul(a: &Expr, b: &Expr) -> Expr {
 
 /// Build a subtraction expression
 pub fn build_sub(a: &Expr, b: &Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])]
-      .into(),
-  }
+  call(
+    "Plus",
+    vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])],
+  )
 }
 
 /// Build polynomial from symbolic coefficients

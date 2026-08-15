@@ -543,7 +543,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // so their own outlines are suppressed and the mesh is drawn as
         // lines below — otherwise a shown surface turns into a wireframe.
         if !matches!(mesh_mode, MeshMode::All) {
-          content.push(call("EdgeForm", Vec::new()));
+          content.push(call0("EdgeForm"));
         }
         for i in 0..GRID_N {
           for j in 0..GRID_N {

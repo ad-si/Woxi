@@ -7320,7 +7320,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         "Underflow"
       };
-      return Ok(call(tag, vec![]));
+      return Ok(call0(tag));
     }
   }
 
@@ -9876,10 +9876,10 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && inner.is_empty()
   {
     if name == "Underflow" {
-      return Ok(call("Overflow", vec![]));
+      return Ok(call0("Overflow"));
     }
     if name == "Overflow" {
-      return Ok(call("Underflow", vec![]));
+      return Ok(call0("Underflow"));
     }
   }
 
