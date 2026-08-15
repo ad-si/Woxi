@@ -10395,6 +10395,66 @@ mod unicode_part_brackets {
   }
 }
 
+/// Wolfram reads the two brackets of `[[…]]` as separate tokens, so
+/// whitespace, newlines and comments may sit between them: `m[ [1] ]` is
+/// `Part[m, 1]`. A lone `[…]` can never start an expression, so there is no
+/// ambiguity with a function call taking a bracketed first argument.
+/// Regression for <https://github.com/ad-si/Woxi/issues/458>.
+mod spaced_part_brackets {
+  use super::*;
+
+  #[test]
+  fn spaces_between_the_brackets_still_extract_a_part() {
+    assert_eq!(
+      interpret("myList = {10, 20, 30}; myList[ [ {1, 2} ] ]").unwrap(),
+      "{10, 20}"
+    );
+    assert_eq!(interpret("{10, 20, 30}[ [2] ]").unwrap(), "20");
+    assert_eq!(interpret("{10, 20, 30}[[ 2 ]]").unwrap(), "20");
+  }
+
+  #[test]
+  fn only_one_side_needs_to_be_spaced() {
+    assert_eq!(
+      interpret("Hold[a[ [1]]] // FullForm").unwrap(),
+      "FullForm[Hold[a[[1]]]]"
+    );
+    assert_eq!(
+      interpret("Hold[a[[1] ]] // FullForm").unwrap(),
+      "FullForm[Hold[a[[1]]]]"
+    );
+  }
+
+  #[test]
+  fn newlines_and_comments_may_separate_the_brackets() {
+    assert_eq!(interpret("{1, 2, 3}[\n  [2]\n]").unwrap(), "2");
+    assert_eq!(interpret("{1, 2, 3}[ (* part *) [2] ]").unwrap(), "2");
+  }
+
+  #[test]
+  fn spaced_part_specs_compose_and_nest() {
+    // Two groups in a row are still applied one after the other.
+    assert_eq!(interpret("{{1, 2}, {3, 4}}[ [2] ][ [1] ]").unwrap(), "3");
+    // Multiple specs in one spaced group index into successive levels.
+    assert_eq!(interpret("{{1, 2}, {3, 4}}[ [2, 1] ]").unwrap(), "3");
+    // A spaced Part inside a spaced Part keeps its brackets balanced.
+    assert_eq!(
+      interpret("a = {{1, 2}, {3, 4}}; a[ [ a[ [1, 1] ], 2 ] ]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn a_spaced_nested_function_call_is_still_a_function_call() {
+    // `f[ g[x] ]` closes with `] ]`, which must not read as a Part close.
+    assert_eq!(interpret("Length[ Range[3] ]").unwrap(), "3");
+    assert_eq!(
+      interpret("Hold[ f[ g[1] ] ] // FullForm").unwrap(),
+      "FullForm[Hold[f[g[1]]]]"
+    );
+  }
+}
+
 /// A precision-tagged real may carry a `*^` exponent after its tag —
 /// `1.5`*^-16` is how the Wolfram Language writes a tiny machine real in
 /// InputForm, and a Demonstration's coordinate list is full of them. Each

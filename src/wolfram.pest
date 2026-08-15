@@ -24,8 +24,11 @@ PartIndex = _{ &HasSpanSep ~ SpanExpr | Expression }
 // as well as the CJK-aligned LEFT/RIGHT WHITE SQUARE BRACKETs 〚 (U+301A)
 // / 〛 (U+301B) for compatibility. Silent rules so the existing
 // PartIndexSuffix structure is unchanged.
-PartOpen  = _{ "[[" | "\u{27E6}" | "\u{301A}" }
-PartClose = _{ "]]" | "\u{27E7}" | "\u{301B}" }
+// The ASCII forms are spelled as two separate brackets so whitespace and
+// comments may sit between them: Wolfram reads `m[ [1] ]` as `m[[1]]`
+// because a lone `[…]` can never start an expression.
+PartOpen  = _{ "[" ~ "[" | "\u{27E6}" | "\u{301A}" }
+PartClose = _{ "]" ~ "]" | "\u{27E7}" | "\u{301B}" }
 
 // Part extraction suffix: [[expr, ...]] or 〚expr, ...〛 for indexing
 // One bracket group is its own node so the AST can tell `m[[a, b]]` (one

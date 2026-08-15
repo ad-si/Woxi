@@ -123,6 +123,23 @@ FullForm[a[[1,2,3]]]
 ```
 
 
+## Spaces inside the Part brackets (`x[ [i] ]`)
+
+The two brackets of `[[…]]` are separate tokens, so whitespace, newlines
+and comments may sit between them — a lone `[…]` can never start an
+expression, so `x[ [i] ]` is unambiguously `Part[x, i]`.
+
+```scrut
+$ wo 'myList = {10, 20, 30}; myList[ [ {1, 2} ] ]'
+{10, 20}
+```
+
+```scrut
+$ wo 'ToString[Hold[a[ (* index *) [1] ]], InputForm]'
+Hold[a[[1]]]
+```
+
+
 ## Part of an operator expression (`(a /. b)[[i]]`)
 
 `[[…]]` binds tighter than every infix operator, so a parenthesized
