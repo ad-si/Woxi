@@ -1769,6 +1769,26 @@ fn split_last_top_level_comma(s: &str) -> Option<(&str, &str)> {
   last.map(|i| (&s[..i], &s[i + 1..]))
 }
 
+/// Strip the `\(` … `\)` delimiters off a box-notation literal. Both
+/// spellings of the pair are accepted: the backslash escapes source is
+/// written with, and the private-use markers `ToString[InputForm[…]]`
+/// writes for a typeset expression (see the `BoxLeft`/`BoxRight` rules in
+/// wolfram.pest). Returns the input unchanged when it carries no
+/// delimiters.
+fn strip_box_delimiters(raw: &str) -> &str {
+  use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN};
+  let Some(inner) = raw
+    .strip_prefix("\\(")
+    .or_else(|| raw.strip_prefix(BOX_OPEN))
+  else {
+    return raw;
+  };
+  inner
+    .strip_suffix("\\)")
+    .or_else(|| inner.strip_suffix(BOX_CLOSE))
+    .unwrap_or(raw)
+}
+
 /// Parse a `\(...\)` box-notation literal into an explicit *Box AST. Atoms
 /// inside become String literals; `\^`, `\_`, `\+`, `\&`, `\@`, `\%`
 /// translate to SuperscriptBox/SubscriptBox/UnderscriptBox/OverscriptBox/
@@ -1777,11 +1797,8 @@ fn split_last_top_level_comma(s: &str) -> Option<(&str, &str)> {
 /// UnderoverscriptBox. Returns None on unrecognised shapes so the caller
 /// can fall back to a HoldComplete wrapper.
 fn parse_box_notation_str(raw: &str) -> Option<Expr> {
-  let inner = raw
-    .strip_prefix("\\(")
-    .and_then(|s| s.strip_suffix("\\)"))
-    .unwrap_or(raw)
-    .trim();
+  let stripped = strip_box_delimiters(raw);
+  let inner = stripped.trim();
   if inner.is_empty() {
     return None;
   }
@@ -2675,10 +2692,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         let raw = inner_pair.as_str();
         // Strip the leading `\(` and trailing `\)` and translate the
         // pairwise box-prefix operators to ordinary math operators.
-        let inner = raw
-          .strip_prefix("\\(")
-          .and_then(|s| s.strip_suffix("\\)"))
-          .unwrap_or(raw)
+        let inner = strip_box_delimiters(raw)
           .replace("\\^", "^")
           .replace("\\_", "_")
           .replace("\\+", "+")
@@ -2689,14 +2703,18 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
           return expr;
         }
         // `\!\(\*boxes\)` — the FrontEnd's "interpret these boxes" escape,
-        // which is what `InputForm` writes for a typeset expression. Its
-        // string literals are `\"`-escaped (the way `escape_string_for_
-        // input_form` writes them, so the whole `\!\(…\)` token survives
-        // being re-tokenized as source); undo that before handing the text
-        // to the box-source readers, which expect the bare `"` delimiters
-        // real `.nb` box data uses.
-        if let Some(box_src) = inner.trim_start().strip_prefix("\\*")
-          && let Some(expr) = box_escape_to_expr(&unescape_box_source(box_src))
+        // which is what `InputForm` writes for a typeset expression, in
+        // either delimiter spelling (`\*` or the `BOX_SEP` marker). The
+        // backslash spelling carries `\"`-escaped string literals — that is
+        // what makes the whole `\!\(…\)` token survive being re-tokenized as
+        // source — so undo that before handing the text to the box-source
+        // readers, which expect the bare `"` delimiters real `.nb` box data
+        // and the marker spelling both use.
+        let trimmed = inner.trim_start();
+        if let Some(box_src) = trimmed.strip_prefix("\\*").or_else(|| {
+          trimmed.strip_prefix(crate::functions::string_ast::BOX_SEP)
+        }) && let Some(expr) =
+          box_escape_to_expr(&unescape_box_source(box_src))
         {
           return expr;
         }
@@ -11957,7 +11975,15 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       format!("{}[{}]", name, parts.join(", "))
     }
-    // TraditionalForm[expr] → \!\(\*FormBox[boxes, TraditionalForm]\) in InputForm
+    // `TraditionalForm[expr]` becomes a box segment in InputForm text —
+    // the *marker* form, not the `\!\(\*…\)` escape. Wolfram's
+    // `ToString[InputForm[TraditionalForm[x + y]]]` is 53 characters
+    // long and its first three are U+F7C1/F7C9/F7C8; the backslash
+    // escape is what the *string* InputForm renderer writes for those
+    // markers (`escape_string_for_input_form`, one arm below), so
+    // producing it here escaped it twice over. A segment embeds inline,
+    // so `Row[{1, TraditionalForm[x^2], "a"}]` keeps its surrounding
+    // source text.
     Expr::FunctionCall { name, args }
       if name == "TraditionalForm" && args.len() == 1 =>
     {
@@ -11965,10 +11991,9 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START,
       };
       let box_str = crate::functions::string_ast::expr_to_boxes(&args[0]);
-      let s = format!(
+      format!(
         "{BOX_START}{BOX_OPEN}{BOX_SEP}FormBox[{box_str}, TraditionalForm]{BOX_CLOSE}"
-      );
-      escape_string_for_input_form(&s)
+      )
     }
     // Or[a, b, ...] in InputForm: render as a || b || ... using InputForm for children
     Expr::FunctionCall { name, args } if name == "Or" && args.len() >= 2 => {

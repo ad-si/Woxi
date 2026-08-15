@@ -509,19 +509,29 @@ SlotCall = { Slot ~ BracketArgs+ }
 // `\!\(2+2\)` evaluates to `4`. When the inner has box operators
 // (`\^`, `\_`, …) we fall through to the box-notation form, which is
 // surfaced as HoldComplete[<source>].
-DisplayedBoxes = { "\\!" ~ ("\\(" ~ Expression ~ "\\)" | BoxNotation) }
+DisplayedBoxes = { BoxBang ~ (BoxLeft ~ Expression ~ BoxRight | BoxNotation) }
 
 // BoxNotation: `\(...\)` raw box-notation literal. Woxi doesn't
 // implement the box AST; we accept and skip the inner content so that
 // scripts mixing box notation with regular expressions still parse.
 // Inner content can include nested `\(...\)` plus the box operators
 // `\^` `\_` `\+` `\&` `\%` `\@`.
-BoxNotation = { "\\(" ~ BoxInner* ~ "\\)" }
+BoxNotation = { BoxLeft ~ BoxInner* ~ BoxRight }
 BoxInner = _{
     BoxNotation
   | "\\^" | "\\_" | "\\+" | "\\&" | "\\%" | "\\@" | "\\/" | "\\`"
-  | !"\\)" ~ ANY
+  | !BoxRight ~ ANY
 }
+
+// The same four delimiters have a second spelling: `ToString[InputForm[…]]`
+// of a typeset expression writes the box segment with Wolfram's private-use
+// marker characters rather than the backslash escapes (that is what makes
+// the InputForm text of `TraditionalForm[x + y]` 53 characters long), and
+// that text has to read back. They are `BOX_START`/`BOX_OPEN`/`BOX_SEP`/
+// `BOX_CLOSE` in src/functions/string_ast.rs.
+BoxBang = _{ "\\!" | "\u{F7C1}" }
+BoxLeft = _{ "\\(" | "\u{F7C9}" }
+BoxRight = _{ "\\)" | "\u{F7C0}" }
 
 Term = _{
     DisplayedBoxes

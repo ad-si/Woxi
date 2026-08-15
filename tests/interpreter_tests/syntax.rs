@@ -2843,23 +2843,72 @@ mod traditional_form {
   }
 
   // A `TraditionalForm` of a symbolic product typesets to a `RowBox` of
-  // *string* atoms ("Pi", " ", "p", …), and `InputForm` `\"`-escapes those
-  // quotes so the whole `\!\(…\)` token survives being re-tokenized as
-  // source — exactly what Woxi Studio does to serialize and re-evaluate a
-  // Manipulate body on every frame. The box-source readers expect the bare
-  // `"` delimiters real `.nb` box data uses, so without undoing that
-  // escaping first, reading the text back degraded to an opaque
-  // `HoldComplete` dump of its own source instead of the expression the
-  // boxes typeset.
+  // *string* atoms ("Pi", " ", "p", …). Writing that box segment out as
+  // source — which is what the `\!\(…\)` spelling is for — `\"`-escapes
+  // those quotes so the whole token survives being re-tokenized. The
+  // box-source readers expect the bare `"` delimiters real `.nb` box data
+  // uses, so without undoing that escaping first, reading the text back
+  // degraded to an opaque `HoldComplete` dump of its own source instead of
+  // the expression the boxes typeset.
   #[test]
   fn input_form_box_escape_round_trips_escaped_string_atoms() {
-    let serialized =
-      interpret("ToString[InputForm[TraditionalForm[Pi*p*q]]]").unwrap();
+    let quoted = interpret(
+      "ToString[ToString[InputForm[TraditionalForm[Pi*p*q]]], InputForm]",
+    )
+    .unwrap();
     assert!(
-      serialized.contains("\\\"Pi\\\""),
-      "expected escaped string atoms in: {serialized}"
+      quoted.contains("\\\"Pi\\\""),
+      "expected escaped string atoms in: {quoted}"
     );
-    assert_eq!(interpret(&serialized).unwrap(), "p*Pi*q");
+    // Drop the `"` delimiters `InputForm` put around the string to get
+    // back at the source text itself.
+    assert_eq!(interpret(quoted.trim_matches('"')).unwrap(), "p*Pi*q");
+  }
+
+  // The other spelling of the same segment: `ToString[InputForm[…]]` is
+  // the private-use marker form, and that text has to read back too —
+  // Woxi Studio serializes a Manipulate body that way and re-parses it on
+  // every frame, so a `TraditionalForm[…]` inside it used to come back as
+  // an opaque `HoldComplete` of its own source and print as that.
+  #[test]
+  fn input_form_box_markers_round_trip() {
+    assert_eq!(
+      interpret("ToExpression[ToString[InputForm[TraditionalForm[x + y]]]]")
+        .unwrap(),
+      "x + y"
+    );
+    assert_eq!(
+      interpret("ToExpression[ToString[InputForm[TraditionalForm[Pi*p*q]]]]")
+        .unwrap(),
+      "p*Pi*q"
+    );
+  }
+
+  // `InputForm` of a typeset expression is the box segment in its marker
+  // spelling: 53 characters starting U+F7C1 U+F7C9 U+F7C8, not the
+  // 63-character backslash escape. The escape is what the *string*
+  // `InputForm` renderer writes for those markers, so producing it here
+  // as well escaped the segment twice over.
+  #[test]
+  fn input_form_of_traditional_form_is_the_marker_segment() {
+    assert_eq!(
+      interpret("StringLength[ToString[InputForm[TraditionalForm[x + y]]]]")
+        .unwrap(),
+      "53"
+    );
+    assert_eq!(
+      interpret(
+        "Take[ToCharacterCode[ToString[InputForm[TraditionalForm[x + y]]]], 3]"
+      )
+      .unwrap(),
+      "{63425, 63433, 63432}"
+    );
+    // Displaying that string renders the segment, so the printed form is
+    // the `DisplayForm` Wolfram shows in a terminal.
+    assert_eq!(
+      interpret("ToString[InputForm[TraditionalForm[x + y]]]").unwrap(),
+      "DisplayForm[FormBox[RowBox[{x, +, y}], TraditionalForm]]"
+    );
   }
 }
 
