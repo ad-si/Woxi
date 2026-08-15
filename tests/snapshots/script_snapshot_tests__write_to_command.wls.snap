@@ -1,0 +1,10 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+{alpha, beta, gamma}
+5
+
+{{a, b}, {1, 2}}
+42
+beta

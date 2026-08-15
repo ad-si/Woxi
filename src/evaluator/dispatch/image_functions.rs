@@ -203,6 +203,54 @@ fn import_extension(path: &str) -> String {
   cleaned.rsplit('.').next().unwrap_or("").to_lowercase()
 }
 
+/// The file extension a Wolfram import *format* name stands for, or `None`
+/// when the name is an element (`"Data"`, `"Elements"`, …) instead.
+fn import_format_name(name: &str) -> Option<&'static str> {
+  Some(match name {
+    "CSV" => "csv",
+    "TSV" => "tsv",
+    "JSON" | "RawJSON" => "json",
+    "SVG" => "svg",
+    "XLSX" => "xlsx",
+    "XLS" => "xls",
+    "ODS" => "ods",
+    "ROOT" => "root",
+    "PNG" => "png",
+    "JPEG" => "jpg",
+    "GIF" => "gif",
+    "BMP" => "bmp",
+    "TIFF" => "tiff",
+    "PPM" => "ppm",
+    "PGM" => "pgm",
+    "PBM" => "pbm",
+    "PNM" => "pnm",
+    "Text" => "txt",
+    _ => return None,
+  })
+}
+
+/// The format an `Import` spec names, for the `"FMT"` and `{"FMT", elem…}`
+/// shapes alike.
+fn import_spec_format(spec: &Expr) -> Option<&'static str> {
+  match spec {
+    Expr::String(fmt) => import_format_name(fmt),
+    Expr::List(items) => match items.first() {
+      Some(Expr::String(fmt)) => import_format_name(fmt),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// The file extension standing in for an explicit `Import` format, so a
+/// command's output is dispatched the way the same bytes in a file would
+/// be. Text is the fallback: it is what a pipe carries unless the caller
+/// says otherwise.
+#[cfg(not(target_arch = "wasm32"))]
+fn import_format_extension(format: Option<&Expr>) -> &'static str {
+  format.and_then(import_spec_format).unwrap_or("txt")
+}
+
 /// Resolve `Import`'s first argument to a path string: a plain string or a
 /// `URL["…"]` wrapper (which wolframscript accepts interchangeably).
 fn import_path_spec(expr: &Expr) -> Option<String> {
@@ -982,6 +1030,42 @@ pub fn dispatch_image_functions(
     "Rasterize" if !args.is_empty() => {
       return Some(crate::functions::image_ast::rasterize_ast(args));
     }
+    // Import["!command"] / Import["!command", format] — run the command and
+    // import what it writes to standard output. Its bytes are materialized
+    // in a temporary file so every format below reads them exactly as it
+    // reads a real file; the file carries the extension that stands for the
+    // requested format (text when none is given).
+    #[cfg(not(target_arch = "wasm32"))]
+    "Import"
+      if (1..=2).contains(&args.len())
+        && import_path_spec(&args[0]).is_some_and(|p| p.starts_with('!')) =>
+    {
+      use crate::evaluator::dispatch::io_functions::{
+        command_file_spec, run_command_capture_bytes,
+      };
+      let path = import_path_spec(&args[0]).unwrap_or_default();
+      let command = command_file_spec(&path).unwrap_or_default();
+      let failed = || {
+        crate::emit_message(&format!("Import::nffil: Cannot open {path}."));
+        Some(Ok(Expr::Identifier("$Failed".to_string())))
+      };
+      let Some(bytes) = run_command_capture_bytes(command) else {
+        return failed();
+      };
+      let ext = import_format_extension(args.get(1));
+      let Ok(temp) = crate::utils::create_temp_file(ext) else {
+        return failed();
+      };
+      if std::fs::write(&temp, &bytes).is_err() {
+        let _ = std::fs::remove_file(&temp);
+        return failed();
+      }
+      let mut piped = args.to_vec();
+      piped[0] = Expr::String(temp.to_string_lossy().into_owned());
+      let result = dispatch_image_functions("Import", &piped);
+      let _ = std::fs::remove_file(&temp);
+      return result;
+    }
     "Import" if args.len() == 1 => {
       let Some(path) = import_path_spec(&args[0]) else {
         return Some(Ok(unevaluated("Import", args)));
@@ -1301,6 +1385,29 @@ pub fn dispatch_image_functions(
             )));
           }
         }
+      }
+
+      // Formats with handling of their own have claimed the call by now.
+      // What is left is a second argument that names a format, an element,
+      // or both — and naming the format the file already has says nothing
+      // about *what* to extract, so `Import[f, "CSV"]` is `Import[f]` and
+      // `Import[f, {"CSV", elem}]` is `Import[f, elem]`. Without this the
+      // format name would travel on as an element name that no importer
+      // recognizes.
+      if import_spec_format(&args[1]) == Some(ext.as_str()) {
+        let reduced: Vec<Expr> = match &args[1] {
+          Expr::List(items) if items.len() > 1 => {
+            let mut rest: Vec<Expr> = items.iter().skip(1).cloned().collect();
+            let elem = if rest.len() == 1 {
+              rest.remove(0)
+            } else {
+              Expr::List(rest.into())
+            };
+            vec![args[0].clone(), elem]
+          }
+          _ => vec![args[0].clone()],
+        };
+        return dispatch_image_functions("Import", &reduced);
       }
 
       if ext == "csv" {

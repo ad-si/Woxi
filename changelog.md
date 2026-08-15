@@ -39,8 +39,24 @@
     script's own input. `ReadLine` pulls one line at a time, so a `While` loop
     over a live pipe advances as its command produces output rather than
     waiting for the command to exit, and `Close` stops a command that is still
-    running. `ReadLine["!cmd"]`, `ReadString["!cmd"]` and `ReadList["!cmd"]`
-    take the same specification without an explicit stream.
+    running.
+    - `OpenWrite["!cmd"]` and `OpenAppend["!cmd"]` open the other end: what
+        `Write`, `WriteString` and `BinaryWrite` send to the stream becomes
+        the command's standard input, and `Close` is what tells the command
+        its input has ended — so a filter that only answers at end-of-input,
+        like `"!sort"`, gets there.
+    - Every function that takes a file name takes a command instead:
+        `ReadLine`, `ReadString`, `ReadList`, `BinaryReadList`, `Find`,
+        `FindList`, `FilePrint` and `Import` read what the command writes,
+        `Get["!cmd"]` (and `<< "!cmd"`) evaluates it as Wolfram code, and
+        `Put`/`PutAppend` feed the command their expressions.
+- `Import[file, "FMT"]` where `"FMT"` is the file's own format imports it
+    the way the format-less call does, instead of failing: naming a format
+    selects no element, so `Import["data.csv", "CSV"]` is `Import["data.csv"]`
+    and `Import["data.csv", {"CSV", "ColumnLabels"}]` is
+    `Import["data.csv", "ColumnLabels"]`. The format name used to travel on
+    as an element name, which no importer recognized, and the call returned
+    `$Failed[]`.
 - `PacletDirectoryLoad` and `PacletDirectoryUnload` register the directories
     the paclet manager searches. A registered directory may be a paclet
     itself — a directory with a `PacletInfo.wl` — or a directory collecting

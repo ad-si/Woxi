@@ -10887,7 +10887,19 @@ fn evaluate_function_call_ast_inner(
     && args.len() == 1
     && let Expr::String(path) = &args[0]
   {
-    if let Ok(contents) = std::fs::read_to_string(path) {
+    // A `"!command"` name prints the command's output rather than a file.
+    #[cfg(not(target_arch = "wasm32"))]
+    let read =
+      match crate::evaluator::dispatch::io_functions::command_file_spec(path) {
+        Some(command) => {
+          crate::evaluator::dispatch::io_functions::run_command_capture(command)
+            .ok_or(())
+        }
+        None => std::fs::read_to_string(path).map_err(|_| ()),
+      };
+    #[cfg(target_arch = "wasm32")]
+    let read = std::fs::read_to_string(path).map_err(|_| ());
+    if let Ok(contents) = read {
       if !crate::is_quiet_print() {
         print!("{contents}");
       }
