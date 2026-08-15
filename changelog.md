@@ -414,6 +414,10 @@
         printing their source next to a slash. Operands with nothing to
         typeset stay on the OutputForm path, which already knows this
         arithmetic's precedence and sign conventions.
+- A head-restricted blank without a name — `f[_String] := …` — defines a
+    function instead of panicking the interpreter. The name in `name_Head` is
+    optional, and the anonymous form dispatches on the head just like the
+    named one, so `f[_String]` and `f[_Integer]` are two overloads of `f`.
 
 # 2026-08-06 - 0.3.0
 

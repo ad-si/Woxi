@@ -5339,15 +5339,22 @@ fn store_function_definition(
       }
       Rule::PatternWithHead => {
         // Extract parameter name and head (e.g., "x_List" -> name="x", head="List")
+        // The name is optional (`PatternName? ~ PatternBlanks ~ Identifier`),
+        // so an anonymous `_String` yields the head as the only child.
         let full = item.as_str();
-        let mut pat_inner = item.into_inner();
-        let pat_name_str = pat_inner.next().unwrap().as_str();
-        let blank_count = full[pat_name_str.len()..]
+        let children: Vec<_> = item.into_inner().collect();
+        let (param_name, head_name) = match children.as_slice() {
+          [name, head, ..] => {
+            (name.as_str().to_owned(), head.as_str().to_owned())
+          }
+          [head] => (String::new(), head.as_str().to_owned()),
+          [] => (String::new(), String::new()),
+        };
+        let blank_count = full[param_name.len()..]
+          .trim_start()
           .chars()
           .take_while(|&c| c == '_')
           .count();
-        let param_name = pat_name_str.to_owned();
-        let head_name = pat_inner.next().unwrap().as_str().to_owned();
         params.push(param_name);
         conditions.push(None);
         defaults.push(None);

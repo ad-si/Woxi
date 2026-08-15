@@ -221,6 +221,27 @@ $ wo '(# + 1 &) /@ {10, 20, 30}'
 ```
 
 
+## Head-Constrained Patterns (`_Head`)
+
+A blank can be restricted to a head, with or without a name. Each head is a
+separate definition, so the argument's head selects which one fires.
+
+```scrut
+$ wo 'f[_String] := "a string"; f[_Integer] := "an integer"; f[1]'
+an integer
+```
+
+```scrut
+$ wo 'f[_String] := "a string"; f[_Integer] := "an integer"; {f[2], f["a"]}'
+{an integer, a string}
+```
+
+```scrut
+$ wo 'g[x_Integer] := x^2; g[_] := "other"; {g[3], g[a]}'
+{9, other}
+```
+
+
 ## Alternatives (`|`)
 
 The `|` operator represents alternatives in pattern matching.
