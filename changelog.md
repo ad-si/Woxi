@@ -2,6 +2,13 @@
 
 # Unreleased
 
+- `FileNames` takes a string pattern, not just a literal wildcard string:
+    `FileNames["*.md" | "*.txt"]` and `FileNames[{"*.md", "*.txt"}]` list the
+    files matching any of the given patterns (nested arbitrarily), and pattern
+    objects such as `RegularExpression["…"]` or `__ ~~ ".txt"` work too.
+    Matching goes through `StringMatchQ`, so `*` and `@` are the only
+    metacharacters — `?` is a literal question mark, as in the Wolfram
+    Language.
 - Every file function honours the working directory `SetDirectory` sets, not
     the one the process was started in. `FileNames[]` after
     `SetDirectory["subfolder"]` lists that folder rather than the script's own
