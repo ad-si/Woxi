@@ -855,6 +855,60 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_piechart_plotlabel_string() {
+    // Regression: PieChart silently ignored PlotLabel (unlike Plot/BarChart).
+    clear_state();
+    let with_label =
+      interpret_with_stdout("PieChart[{1, 2, 3}, PlotLabel -> \"Split\"]")
+        .unwrap()
+        .graphics
+        .expect("PieChart should produce a graphics SVG");
+    assert!(
+      with_label.contains(">Split</text>"),
+      "PieChart SVG missing PlotLabel text:\n{with_label}"
+    );
+
+    // The frame grows taller to fit the label, while an unlabeled chart
+    // keeps its default square size.
+    clear_state();
+    let without_label = interpret_with_stdout("PieChart[{1, 2, 3}]")
+      .unwrap()
+      .graphics
+      .expect("PieChart should produce a graphics SVG");
+    let height_of = |svg: &str| -> u32 {
+      let start = svg.find("height=\"").unwrap() + "height=\"".len();
+      let rest = &svg[start..];
+      rest[..rest.find('"').unwrap()].parse().unwrap()
+    };
+    assert!(
+      height_of(&with_label) > height_of(&without_label),
+      "PieChart with a PlotLabel must reserve extra headroom:\nlabeled: {with_label}\nunlabeled: {without_label}"
+    );
+  }
+
+  #[test]
+  fn test_piechart_plotlabel_grid_stacks_lines() {
+    // Regression: a Grid/Column PlotLabel (as Demonstrations commonly build,
+    // e.g. a two-row table of names and computed values) stacks its rows as
+    // separate lines above the pie, matching Plot/BarChart.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "PieChart[{1, 2}, PlotLabel -> Grid[{{\"A\", \"B\"}, {1, 2}}]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("PieChart should produce a graphics SVG");
+    assert!(
+      svg.contains(">A B<"),
+      "PieChart SVG missing first PlotLabel line:\n{svg}"
+    );
+    assert!(
+      svg.contains("<tspan") && svg.contains(">1 2</tspan>"),
+      "PieChart SVG missing stacked second PlotLabel line:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_column_with_nested_tableform_renders_as_graphics() {
     // In visual mode (playground / woxi-studio), a Column containing a
     // TableForm must pre-render the table as a sub-SVG instead of falling
