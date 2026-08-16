@@ -184,6 +184,9 @@ mod polyhedron_data_tests {
       "Octahedron",
       "Dodecahedron",
       "Icosahedron",
+      "TruncatedTetrahedron",
+      "TruncatedOctahedron",
+      "SmallRhombicuboctahedron",
     ] {
       let result = interpret(&format!(
         r#"Length[PolyhedronData["{name}", "EdgeIndices"]] ==
@@ -298,6 +301,9 @@ mod polyhedron_data_tests {
       "Dodecahedron",
       "Icosahedron",
       "RhombicDodecahedron",
+      "TruncatedTetrahedron",
+      "TruncatedOctahedron",
+      "SmallRhombicuboctahedron",
     ] {
       assert_eq!(
         interpret(&format!(
@@ -372,8 +378,9 @@ mod polyhedron_data_tests {
        Dodecahedron, GreatRhombicosidodecahedron, Icosahedron, \
        Icosidodecahedron, Octahedron, PentakisDodecahedron, \
        RhombicDodecahedron, RhombicTriacontahedron, \
-       SmallRhombicosidodecahedron, Tetrahedron, TruncatedDodecahedron, \
-       TruncatedIcosahedron}"
+       SmallRhombicosidodecahedron, SmallRhombicuboctahedron, \
+       Tetrahedron, TruncatedDodecahedron, TruncatedIcosahedron, \
+       TruncatedOctahedron, TruncatedTetrahedron}"
     );
   }
 
@@ -463,6 +470,90 @@ mod polyhedron_data_tests {
     // Every solid still draws.
     assert_eq!(
       interpret(r#"PolyhedronData["GreatRhombicosidodecahedron"]"#).unwrap(),
+      "-Graphics3D-"
+    );
+  }
+
+  // The Archimedean solids with cubic (octahedral) symmetry: each is a
+  // Platonic solid with its corners truncated.
+  #[test]
+  fn polyhedron_data_cubic_archimedean_solids() {
+    assert_eq!(
+      interpret(
+        r#"Table[{PolyhedronData[s, "VertexCount"],
+                  PolyhedronData[s, "EdgeCount"],
+                  PolyhedronData[s, "FaceCount"]},
+             {s, {"TruncatedTetrahedron", "TruncatedOctahedron",
+                  "SmallRhombicuboctahedron"}}]"#
+      )
+      .unwrap(),
+      "{{12, 18, 8}, {24, 36, 14}, {24, 48, 26}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["TruncatedTetrahedron", "Volume"],
+            PolyhedronData["TruncatedOctahedron", "Volume"],
+            PolyhedronData["SmallRhombicuboctahedron", "Volume"]}"#
+      )
+      .unwrap(),
+      "{(23*Sqrt[2])/12, 8*Sqrt[2], (12 + 10*Sqrt[2])/3}"
+    );
+    // None has a true insphere: their two face types sit at different
+    // distances from the center.
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["TruncatedTetrahedron", "Inradius"],
+            PolyhedronData["TruncatedOctahedron", "Inradius"],
+            PolyhedronData["SmallRhombicuboctahedron", "Inradius"]}"#
+      )
+      .unwrap(),
+      "{Missing[NotApplicable], Missing[NotApplicable], \
+       Missing[NotApplicable]}"
+    );
+    // Face shapes: a truncated tetrahedron is 4 triangles + 4 hexagons, a
+    // truncated octahedron is 6 squares + 8 hexagons, and a (small)
+    // rhombicuboctahedron is 8 triangles + 18 squares.
+    assert_eq!(
+      interpret(
+        r#"Tally[Length /@ PolyhedronData["TruncatedTetrahedron",
+             "FaceIndices"]]"#
+      )
+      .unwrap(),
+      "{{3, 4}, {6, 4}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Tally[Length /@ PolyhedronData["TruncatedOctahedron",
+             "FaceIndices"]]"#
+      )
+      .unwrap(),
+      "{{4, 6}, {6, 8}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Tally[Length /@ PolyhedronData["SmallRhombicuboctahedron",
+             "FaceIndices"]]"#
+      )
+      .unwrap(),
+      "{{3, 8}, {4, 18}}"
+    );
+    // All vertices sit at the same distance from the center (they are
+    // vertex-transitive), matching the exact "Circumradius".
+    assert_eq!(
+      interpret(
+        r#"Union @ Table[
+             Max[Abs[
+               N[Norm /@ PolyhedronData[s, "VertexCoordinates"]] -
+                 N[PolyhedronData[s, "Circumradius"]]]] < 10^-10,
+             {s, {"TruncatedTetrahedron", "TruncatedOctahedron",
+                  "SmallRhombicuboctahedron"}}]"#
+      )
+      .unwrap(),
+      "{True}"
+    );
+    // Every solid still draws.
+    assert_eq!(
+      interpret(r#"PolyhedronData["SmallRhombicuboctahedron"]"#).unwrap(),
       "-Graphics3D-"
     );
   }

@@ -636,7 +636,7 @@ PlotLabels,Option for labeling plot curves,✅,none,10.4,597
 Scale,Scales a graphics object,✅,pure,6.0,597
 Log10,Returns the base-10 logarithm of a number,✅,pure,7.0,598
 EndPackage,Ends a package and puts its context on $ContextPath so its exports become visible,✅,effectful,1.0,599
-PolyhedronData,Properties of named polyhedra (Platonic solids plus the icosahedral Archimedean solids and their duals),🚧,pure,6.0,601
+PolyhedronData,Properties of named polyhedra (Platonic solids plus the icosahedral and cubic Archimedean solids and their duals),🚧,pure,6.0,601
 Nearest,Find the nearest elements in a list to a given value (numbers/vectors by Euclidean distance; strings by edit distance) — DistanceFunction supplies another metric; empty or non-list data reports ::near1,✅,pure,6.0,602
 RegionPlot3D,plots the 3D region where a condition is true,✅,pure,6.0,603
 IntervalMemberQ,Tests if a point or sub-interval is contained in an interval,✅,pure,3.0,605
@@ -2261,7 +2261,7 @@ VectorDensityPlot,Visualization,🚫,None,7.0,2278
 GeoProjectionData,,🚫,,7.0,2282
 KeyExistsQ,Checks if a key exists in an association,✅,pure,10.0,2282
 ReadString,Read a file or stream as a string up to an optional terminator,✅,effectful,10.0,2282
-WriteLine,File I O,🚫,None,10.0,2282
+WriteLine,Write a string to an output stream followed by a newline,✅,effectful,10.0,2282
 BoundingRegion,Smallest bounding region of a point list or region — box by default and MinBall/MinDisk/FastBall/FastDisk/MinCuboid/MinRectangle on request,✅,pure,10.4,2286
 CellDingbat,Notebook UI,🚫,None,3.0,2286
 DistributionParameterAssumptions,Probability distribution,🚫,None,8.0,2286

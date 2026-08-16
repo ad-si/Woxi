@@ -11,6 +11,10 @@
     Language.
 - `FileNames[patt, ".", Infinity]` keeps the intermediate directories in the
     names it returns, instead of reporting a nested file under its bare name.
+- `WriteLine[channel, string]` writes a line to an output channel: it is
+    `WriteString` plus a newline, and takes the same channels — an open
+    `OpenWrite`/`OpenAppend` stream, a file name, a `"!command"` pipe, and the
+    standard streams `"stdout"`/`$Output` and `"stderr"`/`$Messages`.
 - `InputString[]` and `Input[]` actually read from standard input when `woxi`
     owns it — `woxi run script.wls`, a shebang script, and `woxi eval` — so a
     script that prompts for a value now waits for one instead of running
