@@ -3239,6 +3239,8 @@ pub fn dispatch_io_functions(
     // FileNames[{p1, p2}] / FileNames[p1 | p2] — any of several patterns
     // FileNames["pattern", "dir"] — list files in dir matching pattern
     // FileNames["pattern", "dir", n] — descend n directory levels
+    // FileNames["pattern", "dir", {n}] — only the n-th level
+    // FileNames["pattern", "dir", {n1, n2}] — levels n1 through n2
     // FileNames["pattern", "dir", Infinity] — recursive search
     #[cfg(not(target_arch = "wasm32"))]
     "FileNames" if args.len() <= 3 => {
@@ -3250,16 +3252,17 @@ pub fn dispatch_io_functions(
         collected
       };
 
-      // Third argument: how many directory levels to include. `1` (the
+      // Third argument: which directory levels to include. `1` (the
       // default) searches only the given directories, `2` also their
       // immediate subdirectories, and `Infinity` descends without limit.
+      // A list restricts the search to a range of levels instead.
       let levels = if args.len() >= 3 {
         match file_names_levels(&args[2]) {
-          Some(n) => n,
+          Some(range) => range,
           None => return Some(Ok(unevaluated("FileNames", args))),
         }
       } else {
-        1
+        FileNameLevels { min: 1, max: 1 }
       };
 
       let dir = if args.len() >= 2 {
@@ -4235,23 +4238,42 @@ fn file_name_matches(patterns: &[Expr], file_name: &str) -> bool {
 fn collect_file_names(
   patterns: &[Expr],
   dir: &str,
-  levels: usize,
+  levels: FileNameLevels,
 ) -> Vec<String> {
   let root = crate::vfs::resolve(dir);
-  if levels == 0 || !root.is_dir() {
+  if levels.is_empty() || !root.is_dir() {
     return Vec::new();
   }
 
   let mut results = Vec::new();
-  collect_files_recursive(&root, &root, dir, patterns, levels, &mut results);
+  collect_files_recursive(&root, &root, dir, patterns, levels, 1, &mut results);
   results
 }
 
-/// Number of directory levels the third `FileNames` argument asks for.
-/// `Infinity` means "no limit"; a non-positive count matches nothing.
-/// Returns `None` for arguments that aren't a level specification.
+/// The range of directory levels a `FileNames` search reports, with level
+/// `1` standing for the searched directories themselves. An empty range —
+/// one whose `min` exceeds its `max` — matches nothing.
 #[cfg(not(target_arch = "wasm32"))]
-fn file_names_levels(spec: &Expr) -> Option<usize> {
+#[derive(Clone, Copy)]
+struct FileNameLevels {
+  min: usize,
+  max: usize,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl FileNameLevels {
+  /// Whether the range cannot contain any level at all.
+  fn is_empty(self) -> bool {
+    self.min > self.max || self.max == 0
+  }
+}
+
+/// A single level number in a `FileNames` level specification.
+/// `Infinity` stands for "no limit"; a non-positive count is clamped to
+/// zero, which is a level no file ever sits on.
+/// Returns `None` for expressions that aren't a level number.
+#[cfg(not(target_arch = "wasm32"))]
+fn file_names_level_number(spec: &Expr) -> Option<usize> {
   match spec {
     Expr::Identifier(s) if s == "Infinity" => Some(usize::MAX),
     Expr::Integer(n) => Some(usize::try_from(*n).unwrap_or(0)),
@@ -4262,9 +4284,36 @@ fn file_names_levels(spec: &Expr) -> Option<usize> {
   }
 }
 
+/// The directory levels the third `FileNames` argument asks for, following
+/// the usual level specifications: `n` searches levels `1` through `n`,
+/// `{n}` only level `n`, and `{n1, n2}` the levels from `n1` to `n2`.
+/// `Infinity` stands for "no limit" wherever a level number is allowed.
+/// Returns `None` for arguments that aren't a level specification.
+#[cfg(not(target_arch = "wasm32"))]
+fn file_names_levels(spec: &Expr) -> Option<FileNameLevels> {
+  match spec {
+    Expr::List(items) => match items.as_slice() {
+      [only] => {
+        let n = file_names_level_number(only)?;
+        Some(FileNameLevels { min: n, max: n })
+      }
+      [from, to] => Some(FileNameLevels {
+        min: file_names_level_number(from)?,
+        max: file_names_level_number(to)?,
+      }),
+      _ => None,
+    },
+    other => Some(FileNameLevels {
+      min: 1,
+      max: file_names_level_number(other)?,
+    }),
+  }
+}
+
 /// Walk `path`, collecting entries whose name matches any of `patterns`.
-/// `levels` counts the directory levels still to visit, so `1` stops at
-/// `path` itself and `usize::MAX` stands in for `Infinity`.
+/// `depth` is the level the entries of `path` sit on, counting the searched
+/// directory itself as level `1`; only entries within `levels` are reported
+/// and the walk stops once `levels.max` is reached.
 ///
 /// Every match is reported as `base_dir` spells it: entries are named
 /// relative to `root` (the resolved `base_dir`) and prefixed with
@@ -4277,7 +4326,8 @@ fn collect_files_recursive(
   root: &std::path::Path,
   base_dir: &str,
   patterns: &[Expr],
-  levels: usize,
+  levels: FileNameLevels,
+  depth: usize,
   results: &mut Vec<String>,
 ) {
   let Ok(entries) = std::fs::read_dir(path) else {
@@ -4290,7 +4340,7 @@ fn collect_files_recursive(
     let file_type = entry.file_type();
 
     if let Ok(ft) = file_type {
-      if file_name_matches(patterns, &file_name) {
+      if depth >= levels.min && file_name_matches(patterns, &file_name) {
         let relative = entry_path.strip_prefix(root).unwrap_or(&entry_path);
         let named = if base_dir == "." {
           relative.to_path_buf()
@@ -4299,13 +4349,14 @@ fn collect_files_recursive(
         };
         results.push(named.to_string_lossy().into_owned());
       }
-      if ft.is_dir() && levels > 1 {
+      if ft.is_dir() && depth < levels.max {
         collect_files_recursive(
           &entry_path,
           root,
           base_dir,
           patterns,
-          levels - 1,
+          levels,
+          depth + 1,
           results,
         );
       }

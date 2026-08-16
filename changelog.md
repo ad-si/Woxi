@@ -30,6 +30,11 @@
     specification now leaves the call unevaluated. Recursing below `"."` also
     keeps each hit's path relative to the current directory rather than
     collapsing it to a bare file name.
+- `FileNames[form, dirs, levelspec]` accepts a level specification in braces:
+    `{n}` searches only the `n`-th directory level, and `{n1, n2}` the levels
+    from `n1` to `n2`, with `Infinity` allowed as the upper end. So
+    `FileNames["f.txt", dir, {2}]` reports the matches in `dir`'s
+    subdirectories without the ones in `dir` itself.
 - `InputString[]` and `Input[]` actually read from standard input when `woxi`
     owns it — `woxi run script.wls`, a shebang script, and `woxi eval` — so a
     script that prompts for a value now waits for one instead of running

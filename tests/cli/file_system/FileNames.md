@@ -60,6 +60,27 @@ $ wo 'FileNames["report.txt", "docs", Infinity]'
 {docs/inner/deeper/report.txt, docs/inner/report.txt, docs/report.txt}
 ```
 
+A level in braces restricts the search to exactly that level:
+
+```scrut
+$ wo 'FileNames["report.txt", "docs", {2}]'
+{docs/inner/report.txt}
+```
+
+Two levels in braces give the range of levels to search:
+
+```scrut
+$ wo 'FileNames["report.txt", "docs", {2, 3}]'
+{docs/inner/deeper/report.txt, docs/inner/report.txt}
+```
+
+`Infinity` works as the upper end of the range as well:
+
+```scrut
+$ wo 'FileNames["report.txt", "docs", {2, Infinity}]'
+{docs/inner/deeper/report.txt, docs/inner/report.txt}
+```
+
 The current directory is the one `SetDirectory` last set,
 not the one the script was started from.
 
