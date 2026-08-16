@@ -15485,6 +15485,156 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl$$ = 1, $CellContext`P$$ = 760}
     );
   }
 
+  /// End-to-end regression for the shape of the "Leverage Ratios"
+  /// Wolfram Demonstration: a `Setter` whose choice rules are
+  /// `key -> Tooltip[displayValue, hoverText]` (so the button shows the
+  /// tooltip's *first* argument, not the whole `Tooltip[…]` source), a
+  /// `Switch` that maps the setter's value onto one of several
+  /// pre-defined reference records, and a body that lays out computed
+  /// values next to those references in a `Grid` with a bold header row
+  /// (`Style[…, Bold]`), `SpanFromLeft`, `Dividers`, `Spacings` and
+  /// `ItemSize`, wrapped in a `Pane`. Heading rows built from
+  /// `Row[{Style[…, Bold], " …"}]` and `Style[…, Medium]` sit between the
+  /// sliders, the way the Demonstrations site captions groups of
+  /// "enter values" controls.
+  #[test]
+  fn demonstration_setter_tooltip_choices_and_grid_reference_table() {
+    woxi::interpret(
+      "small = {1.1, 0.35}; medium = {1.3, 0.42}; large = {1.5, 0.5};",
+    )
+    .expect("the reference records must define");
+
+    let code = "Manipulate[\
+      Module[{ref, valRatio, spreadRatio}, \
+        ref = Switch[batch, 1, small, 2, medium, 3, large]; \
+        valRatio = N[flour/water, 3]; \
+        spreadRatio = N[sugar/total, 3]; \
+        Pane[\
+          Grid[\
+            Join[\
+              {{Style[\"Recipe Ratios\", Bold], SpanFromLeft}, \
+               {Style[\"parameter\", Bold], Style[\"value\", Bold], \
+                Style[\"reference\", Bold]}}, \
+              {{\"flour to water\", valRatio, ref[[1]]}, \
+               {\"sugar share\", spreadRatio, ref[[2]]}}], \
+            Dividers -> {{True, True, True, True}, \
+              {True, True, True, True}}, \
+            Spacings -> {Automatic, 1.2}, ItemSize -> 10], \
+          ImageSize -> {300, 200}, Alignment -> {Center, Center}]\
+      ], \
+      {{batch, 1, \"select the recipe size\"}, \
+       {3 -> Tooltip[301, \"large batch multiplier\"], \
+        2 -> Tooltip[202, \"medium batch multiplier\"], \
+        1 -> Tooltip[101, \"small batch multiplier\"]}, \
+       ControlType -> Setter, ControlPlacement -> Top}, \
+      Row[{Style[\"flour\", Bold], \" in (g)\"}], \
+      Style[\"enter values from the recipe\", Medium], \
+      {{flour, 300, \"flour amount\"}, 100, 1000, 0.01, \
+       Appearance -> \"Labeled\", ImageSize -> Tiny}, \
+      Row[{Style[\"water\", Bold], \" in (g)\"}], \
+      Style[\"enter values from the recipe\", Medium], \
+      {{water, 300, \"water amount\"}, 10, 1000, 0.01, \
+       Appearance -> \"Labeled\", ImageSize -> Tiny}, \
+      {{sugar, 500, \"sugar amount\"}, 100, 1000, 0.01, \
+       Appearance -> \"Labeled\", ImageSize -> Tiny}, \
+      {{total, 500, \"total weight\"}, 100, 1000, 0.01, \
+       Appearance -> \"Labeled\", ImageSize -> Tiny}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the recipe-ratios Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    // A `Pane[Grid[…]]` of plain text/numbers (no embedded picture) is left
+    // to the text renderer rather than composed into an SVG — matching
+    // `a_pane_without_pictures_is_not_composed` in svg_rendering.rs.
+    assert!(
+      state.graphics_handle.is_none(),
+      "a text-only reference table composes no picture: {:?}",
+      state.graphics_handle
+    );
+    let initial_text = state
+      .text_output
+      .clone()
+      .expect("the reference table must render as text");
+    assert!(
+      initial_text.contains("flour to water")
+        && initial_text.contains("sugar share"),
+      "the ratio rows must appear in the rendered table: {initial_text}"
+    );
+
+    // The Setter's buttons show each choice's Tooltip *display* value
+    // (532111-style numbers in the original), not the whole
+    // `Tooltip[value, "…"]` source — the hover text never appears on the
+    // button. Order follows the spec list, not numeric order.
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        values,
+        value_labels,
+        current_index,
+        popup,
+        ..
+      } => {
+        assert_eq!(values, &["3", "2", "1"]);
+        assert_eq!(value_labels, &["301", "202", "101"]);
+        assert_eq!(
+          *current_index, 2,
+          "initial batch value 1 is the third choice"
+        );
+        assert!(!popup, "ControlType -> Setter must not force a dropdown");
+      }
+      other => panic!("expected the batch Setter, got {other:?}"),
+    }
+
+    // Heading rows between the sliders carry their bold/medium styled text
+    // as plain, readable labels.
+    match &state.controls[1] {
+      manipulate::ControlState::Heading { label, .. } => {
+        assert_eq!(label, "flour in (g)");
+      }
+      other => panic!("expected a heading row, got {other:?}"),
+    }
+    match &state.controls[2] {
+      manipulate::ControlState::Heading { label, .. } => {
+        assert_eq!(label, "enter values from the recipe");
+      }
+      other => panic!("expected a heading row, got {other:?}"),
+    }
+    match &state.controls[3] {
+      manipulate::ControlState::Continuous {
+        name,
+        min,
+        max,
+        current,
+        ..
+      } => {
+        assert_eq!(name, "flour");
+        assert_eq!((*min, *max, *current), (100.0, 1000.0, 300.0));
+      }
+      other => panic!("expected the flour slider, got {other:?}"),
+    }
+
+    // Picking a different industry-like reference (batch = "3", the first
+    // Setter choice) must swap the Switch branch and re-render the table
+    // without touching the ratios (the sliders haven't moved).
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 0; // "3" -> large
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_none());
+    let switched_text = state
+      .text_output
+      .expect("the reference table must still render as text");
+    assert_ne!(
+      initial_text, switched_text,
+      "switching the reference record must change the rendered table"
+    );
+  }
+
   // A stored Manipulate whose body draws named Archimedean solids side by
   // side — the pattern a polyhedron-focused Demonstration's Initialization
   // Code + Manipulate cells reduce to once the boilerplate is stripped away.
