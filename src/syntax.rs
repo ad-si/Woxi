@@ -3861,7 +3861,14 @@ fn parse_postfix_function(pair: Pair<Rule>) -> Expr {
   let has_ampersand = pair.as_str().trim_end().ends_with('&');
   // The inner children are the same (BaseFunctionCall or Identifier);
   // the "&" is an anonymous literal in the grammar and doesn't appear as a child.
-  let func = pair_to_expr(pair.into_inner().next().unwrap());
+  let inner = pair.into_inner().next().unwrap();
+  // SimpleAnonymousFunction (`#&`, `#+1&`) already parses itself into a
+  // Function{body} and consumes its own trailing "&" — wrapping it again
+  // would nest a second Slot scope and break `#` binding.
+  if matches!(inner.as_rule(), Rule::SimpleAnonymousFunction) {
+    return pair_to_expr(inner);
+  }
+  let func = pair_to_expr(inner);
   if has_ampersand {
     Expr::Function {
       body: Box::new(func),

@@ -280,9 +280,13 @@ Operator = @{
 // Optional trailing & allows "x // f &" to parse as x // (f &), matching Wolfram precedence.
 // Parenthesised expressions and List literals can also serve as the postfix
 // operator, supporting `expr // (#1+1&)` and `expr // {#1, Precision[#1]}&`.
+// A bare Slot-based body (`expr // #&`, `expr // #+1&`) is its own
+// alternative: SimpleAnonymousFunction already parses `# op term &` and
+// unlike the other branches doesn't start with `(`, a list, or an
+// identifier, so it needs an explicit path here.
 PostfixFunction = {
-    ("(" ~ Expression ~ ")" | List | BaseFunctionCall | Identifier)
-  ~ ("&" ~ !"&")?
+    SimpleAnonymousFunction
+  | ("(" ~ Expression ~ ")" | List | BaseFunctionCall | Identifier) ~ ("&" ~ !"&")?
 }
 
 // Increment/Decrement: x++ or x-- (postfix operators)
