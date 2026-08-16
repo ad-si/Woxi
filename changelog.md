@@ -2,6 +2,17 @@
 
 # Unreleased
 
+- Every file function honours the working directory `SetDirectory` sets, not
+    the one the process was started in. `FileNames[]` after
+    `SetDirectory["subfolder"]` lists that folder rather than the script's own
+    directory, and the same goes for every other relative file name:
+    `FileExistsQ`, `DirectoryQ`, `FileType`, `Import`, `Export`, `OpenRead`,
+    `OpenWrite`, `OpenAppend`, `ReadString`, `ReadList`, `FilePrint`, `Find`,
+    `FindList`, `Put`, `PutAppend`, `Save`, `CopyFile`, `RenameFile`,
+    `DeleteFile`, `CreateDirectory`, `DeleteDirectory`, `RenameDirectory`,
+    `FileSize`, `FileByteCount`, `FileHash`, `FileDate` and `FileFormat`.
+    A recursive `FileNames[…, dir, Infinity]` also names a nested match by its
+    path below `dir` instead of by its bare file name.
 - `InputString[]` and `Input[]` actually read from standard input when `woxi`
     owns it — `woxi run script.wls`, a shebang script, and `woxi eval` — so a
     script that prompts for a value now waits for one instead of running

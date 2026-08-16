@@ -108,7 +108,7 @@ pub fn parse_audio(expr: &Expr) -> Option<AudioData> {
         });
       }
       let path = sound::audio_file_source(&args[0])?;
-      let bytes = std::fs::read(&path).ok()?;
+      let bytes = std::fs::read(crate::vfs::resolve(&path)).ok()?;
       decode_wav(&bytes)
     }
     Expr::FunctionCall { name, .. } if name == "Sound" || name == "Play" => {
@@ -231,7 +231,7 @@ pub fn import_audio_file(path: &str) -> Result<Expr, InterpreterError> {
     .map(|e| e.to_string_lossy().to_lowercase())
     .unwrap_or_default();
   if matches!(ext.as_str(), "wav" | "wave") {
-    let bytes = std::fs::read(path).map_err(|e| {
+    let bytes = std::fs::read(crate::vfs::resolve(path)).map_err(|e| {
       InterpreterError::EvaluationError(format!(
         "Import: cannot open \"{path}\": {e}"
       ))
@@ -243,7 +243,7 @@ pub fn import_audio_file(path: &str) -> Result<Expr, InterpreterError> {
       "Import: \"{path}\" is not a valid WAV file"
     )));
   }
-  if !std::path::Path::new(path).exists() {
+  if !crate::vfs::exists(path) {
     return Err(InterpreterError::EvaluationError(format!(
       "Import: cannot open \"{path}\": file not found"
     )));

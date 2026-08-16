@@ -9094,7 +9094,7 @@ fn evaluate_function_call_ast_inner(
     && args.len() == 1
     && let Expr::String(path) = &args[0]
   {
-    let exists = std::path::Path::new(path).exists();
+    let exists = crate::vfs::exists(path);
     return Ok(bool_expr(exists));
   }
 
@@ -9104,7 +9104,7 @@ fn evaluate_function_call_ast_inner(
   if name == "FileInformation"
     && args.len() == 1
     && let Expr::String(path) = &args[0]
-    && !std::path::Path::new(path).exists()
+    && !crate::vfs::exists(path)
   {
     return Ok(Expr::List(vec![].into()));
   }
@@ -9127,7 +9127,7 @@ fn evaluate_function_call_ast_inner(
     };
     if let Some(paths) = paths {
       for path in &paths {
-        if std::fs::remove_file(path).is_err() {
+        if std::fs::remove_file(crate::vfs::resolve(path)).is_err() {
           crate::emit_message(&format!(
             "DeleteFile::fdnfnd: Directory or file \"{path}\" not found."
           ));
@@ -9152,21 +9152,16 @@ fn evaluate_function_call_ast_inner(
     && let Expr::String(source) = &args[0]
     && let Expr::String(dest) = &args[1]
   {
-    match std::fs::rename(source, dest) {
+    match std::fs::rename(
+      crate::vfs::resolve(source),
+      crate::vfs::resolve(dest),
+    ) {
       Ok(()) => return Ok(Expr::String(dest.clone())),
       Err(_e) => {
         // wolframscript reports the absolute path; resolve relative
         // paths against the current working directory so the message
         // matches exactly.
-        let path = std::path::Path::new(source);
-        let abs = if path.is_absolute() {
-          source.clone()
-        } else {
-          std::env::current_dir().map_or_else(
-            |_| source.clone(),
-            |cwd| cwd.join(path).to_string_lossy().into_owned(),
-          )
-        };
+        let abs = crate::vfs::resolve(source).to_string_lossy().into_owned();
         crate::emit_message(&format!(
           "RenameFile::fdnfnd: Directory or file \"{abs}\" not found."
         ));
@@ -9182,31 +9177,25 @@ fn evaluate_function_call_ast_inner(
   // arguments stay unevaluated without a message.
   if name == "RenameDirectory" && args.len() == 2 {
     if let (Expr::String(source), Expr::String(dest)) = (&args[0], &args[1]) {
-      let to_abs = |p: &str| {
-        let path = std::path::Path::new(p);
-        if path.is_absolute() {
-          p.to_string()
-        } else {
-          std::env::current_dir().map_or_else(
-            |_| p.to_string(),
-            |cwd| cwd.join(path).to_string_lossy().into_owned(),
-          )
-        }
-      };
-      if !std::path::Path::new(source).exists() {
+      let to_abs =
+        |p: &str| crate::vfs::resolve(p).to_string_lossy().into_owned();
+      if !crate::vfs::exists(source) {
         crate::emit_message(&format!(
           "RenameDirectory::fdnfnd: Directory or file \"{}\" not found.",
           to_abs(source)
         ));
         return Ok(Expr::Identifier("$Failed".to_string()));
       }
-      if std::path::Path::new(dest).exists() {
+      if crate::vfs::exists(dest) {
         crate::emit_message(&format!(
           "RenameDirectory::eexist: {dest} already exists."
         ));
         return Ok(Expr::Identifier("$Failed".to_string()));
       }
-      match std::fs::rename(source, dest) {
+      match std::fs::rename(
+        crate::vfs::resolve(source),
+        crate::vfs::resolve(dest),
+      ) {
         Ok(()) => return Ok(Expr::String(to_abs(dest))),
         Err(_) => return Ok(Expr::Identifier("$Failed".to_string())),
       }
@@ -9227,14 +9216,14 @@ fn evaluate_function_call_ast_inner(
       ));
       return Ok(unevaluated("DeleteDirectory", args));
     };
-    let p = std::path::Path::new(&path);
-    if !p.exists() {
+    let resolved = crate::vfs::resolve(&path);
+    if !resolved.exists() {
       crate::emit_message(&format!(
         "DeleteDirectory::dirnf: Directory {path} not found."
       ));
       return Ok(Expr::Identifier("$Failed".to_string()));
     }
-    match std::fs::remove_dir(&path) {
+    match std::fs::remove_dir(&resolved) {
       Ok(()) => return Ok(Expr::Identifier("Null".to_string())),
       Err(_) => {
         return Ok(Expr::Identifier("$Failed".to_string()));
@@ -9247,27 +9236,20 @@ fn evaluate_function_call_ast_inner(
     && args.len() == 2
     && let (Expr::String(source), Expr::String(dest)) = (&args[0], &args[1])
   {
-    if !std::path::Path::new(source).exists() {
+    if !crate::vfs::exists(source) {
       // Match wolframscript's message, which reports the absolute path.
-      let path = std::path::Path::new(source);
-      let abs = if path.is_absolute() {
-        source.clone()
-      } else {
-        std::env::current_dir().map_or_else(
-          |_| source.clone(),
-          |cwd| cwd.join(path).to_string_lossy().into_owned(),
-        )
-      };
+      let abs = crate::vfs::resolve(source).to_string_lossy().into_owned();
       crate::emit_message(&format!(
         "CopyFile::fdnfnd: Directory or file \"{abs}\" not found."
       ));
       return Ok(Expr::Identifier("$Failed".to_string()));
     }
-    if std::path::Path::new(dest).exists() {
+    if crate::vfs::exists(dest) {
       crate::emit_message(&format!("CopyFile::eexist: {dest} already exists."));
       return Ok(Expr::Identifier("$Failed".to_string()));
     }
-    match std::fs::copy(source, dest) {
+    match std::fs::copy(crate::vfs::resolve(source), crate::vfs::resolve(dest))
+    {
       Ok(_) => return Ok(Expr::String(dest.clone())),
       Err(e) => {
         crate::emit_message(&format!("CopyFile::failed: {e}"));
@@ -9317,14 +9299,13 @@ fn evaluate_function_call_ast_inner(
     }
     if args.len() == 1 {
       if let Expr::String(path) = &args[0] {
-        let p = std::path::Path::new(path);
-        if p.exists() {
+        if crate::vfs::exists(path) {
           crate::emit_message(&format!(
             "CreateDirectory::eexist: {path} already exists."
           ));
           return Ok(Expr::Identifier("$Failed".to_string()));
         }
-        match std::fs::create_dir_all(path) {
+        match std::fs::create_dir_all(crate::vfs::resolve(path)) {
           Ok(()) => return Ok(Expr::String(path.clone())),
           Err(e) => {
             crate::emit_message(&format!("CreateDirectory::failed: {e}"));
@@ -10523,10 +10504,13 @@ fn evaluate_function_call_ast_inner(
           crate::evaluator::dispatch::io_functions::run_command_capture(command)
             .ok_or(())
         }
-        None => std::fs::read_to_string(path).map_err(|_| ()),
+        None => {
+          std::fs::read_to_string(crate::vfs::resolve(path)).map_err(|_| ())
+        }
       };
     #[cfg(target_arch = "wasm32")]
-    let read = std::fs::read_to_string(path).map_err(|_| ());
+    let read =
+      std::fs::read_to_string(crate::vfs::resolve(path)).map_err(|_| ());
     if let Ok(contents) = read {
       if !crate::is_quiet_print() {
         print!("{contents}");
@@ -10543,7 +10527,7 @@ fn evaluate_function_call_ast_inner(
     && args.len() == 1
     && let Expr::String(path) = &args[0]
   {
-    let p = std::path::Path::new(path);
+    let p = crate::vfs::resolve(path);
     let result = if !p.exists() {
       "None"
     } else if p.is_dir() {
@@ -10559,7 +10543,7 @@ fn evaluate_function_call_ast_inner(
   // DirectoryQ[path] — check if path is a directory
   if name == "DirectoryQ" && args.len() == 1 {
     if let Expr::String(path) = &args[0] {
-      let is_dir = std::path::Path::new(path).is_dir();
+      let is_dir = crate::vfs::is_dir(path);
       return Ok(bool_expr(is_dir));
     }
     return Ok(bool_expr(false));

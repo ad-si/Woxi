@@ -71,15 +71,7 @@ pub fn unload_directories(dirs: &[String]) -> Vec<String> {
 /// wolframscript reports `PacletDirectoryLoad["/tmp"]` as `/tmp`, not as
 /// the directory `/tmp` links to.
 fn expand_directory(dir: &str) -> String {
-  let requested = Path::new(dir);
-  let joined = if requested.is_absolute() {
-    requested.to_path_buf()
-  } else {
-    PathBuf::from(
-      crate::evaluator::dispatch::io_functions::virtual_current_dir(),
-    )
-    .join(requested)
-  };
+  let joined = crate::vfs::resolve(dir);
   let mut normalized = PathBuf::new();
   for component in joined.components() {
     match component {

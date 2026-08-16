@@ -525,7 +525,7 @@ pub fn audio_to_output(expr: &Expr) -> Option<AudioOutput> {
 
   if let Some(path) = audio_file_source(&args[0]) {
     let mime = audio_mime_for_path(&path).to_string();
-    let base64 = std::fs::read(&path)
+    let base64 = std::fs::read(crate::vfs::resolve(&path))
       .map(|bytes| base64::engine::general_purpose::STANDARD.encode(&bytes))
       .unwrap_or_default();
     let label = std::path::Path::new(&path)

@@ -5647,6 +5647,215 @@ mod file_names {
     let result = interpret(r#"MemberQ[FileNames[], "src"]"#).unwrap();
     assert_eq!(result, "True");
   }
+
+  /// A scratch tree `<temp>/woxi_filenames_<name>/sub/{one,two}.txt` plus
+  /// `sub/deep/three.txt`, removed by the caller.
+  fn sandbox(name: &str) -> String {
+    let dir = std::env::temp_dir().join(format!("woxi_filenames_{name}"));
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::create_dir_all(dir.join("sub").join("deep")).unwrap();
+    for file in ["sub/one.txt", "sub/two.txt", "sub/deep/three.txt"] {
+      std::fs::write(dir.join(file), "x").unwrap();
+    }
+    unixify(&dir.display().to_string())
+  }
+
+  // Regression (issue #476): FileNames listed the process working
+  // directory, ignoring a preceding SetDirectory.
+  #[test]
+  fn no_args_follows_set_directory() {
+    let dir = sandbox("no_args");
+    let result = interpret(&format!(
+      r#"SetDirectory["{dir}/sub"]; r = FileNames[]; ResetDirectory[]; r"#
+    ))
+    .unwrap();
+    assert_eq!(result, "{deep, one.txt, two.txt}");
+    std::fs::remove_dir_all(&dir).ok();
+  }
+
+  // A relative directory argument is resolved against the same virtual
+  // working directory, and keeps its spelling in the result.
+  #[test]
+  fn relative_directory_follows_set_directory() {
+    let dir = sandbox("relative_dir");
+    let result = interpret(&format!(
+      r#"SetDirectory["{dir}"]; r = FileNames["*.txt", "sub"]; ResetDirectory[]; r"#
+    ))
+    .unwrap();
+    assert_eq!(
+      result,
+      format!(
+        "{{sub{0}one.txt, sub{0}two.txt}}",
+        std::path::MAIN_SEPARATOR_STR
+      )
+    );
+    std::fs::remove_dir_all(&dir).ok();
+  }
+
+  // A recursive listing names nested matches by their path below the
+  // searched directory, not by their bare file name.
+  #[test]
+  fn recursive_names_keep_their_subdirectory() {
+    let dir = sandbox("recursive");
+    let result = interpret(&format!(
+      r#"SetDirectory["{dir}/sub"]; r = FileNames["*.txt", ".", Infinity]; ResetDirectory[]; r"#
+    ))
+    .unwrap();
+    assert_eq!(
+      result,
+      format!(
+        "{{deep{0}three.txt, one.txt, two.txt}}",
+        std::path::MAIN_SEPARATOR_STR
+      )
+    );
+    std::fs::remove_dir_all(&dir).ok();
+  }
+
+  // An absolute directory argument is unaffected by SetDirectory and keeps
+  // reporting absolute names.
+  #[test]
+  fn absolute_directory_is_independent_of_set_directory() {
+    let dir = sandbox("absolute");
+    let result = interpret(&format!(
+      r#"SetDirectory["{dir}/sub/deep"]; r = FileNames["*.txt", "{dir}/sub"]; ResetDirectory[]; r"#
+    ))
+    .unwrap();
+    let sep = std::path::MAIN_SEPARATOR_STR;
+    assert_eq!(
+      result,
+      format!("{{{dir}/sub{sep}one.txt, {dir}/sub{sep}two.txt}}")
+    );
+    std::fs::remove_dir_all(&dir).ok();
+  }
+}
+
+// Every file function resolves a relative name against the working
+// directory that `SetDirectory` sets, not the process working directory
+// (issue #476, which surfaced through FileNames).
+mod relative_paths_follow_set_directory {
+  use super::*;
+
+  /// A scratch directory holding `data.txt`, removed by the caller.
+  fn sandbox(name: &str) -> String {
+    let dir = std::env::temp_dir().join(format!("woxi_relative_{name}"));
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("data.txt"), "hello").unwrap();
+    unixify(&dir.display().to_string())
+  }
+
+  /// Evaluate `code` with the working directory set to a fresh sandbox.
+  fn in_sandbox(name: &str, code: &str) -> (String, String) {
+    let dir = sandbox(name);
+    let result = interpret(&format!(
+      r#"SetDirectory["{dir}"]; r = {code}; ResetDirectory[]; r"#
+    ))
+    .unwrap();
+    (result, dir)
+  }
+
+  #[test]
+  fn file_exists_q_finds_the_file() {
+    let (result, dir) = in_sandbox("exists", r#"FileExistsQ["data.txt"]"#);
+    assert_eq!(result, "True");
+    std::fs::remove_dir_all(&dir).ok();
+  }
+
+  #[test]
+  fn directory_q_finds_the_directory() {
+    let (result, dir) = in_sandbox("dirq", r#"DirectoryQ["."]"#);
+    assert_eq!(result, "True");
+    std::fs::remove_dir_all(&dir).ok();
+  }
+
+  #[test]
+  fn file_type_reads_the_file() {
+    let (result, dir) = in_sandbox("filetype", r#"FileType["data.txt"]"#);
+    assert_eq!(result, "File");
+    std::fs::remove_dir_all(&dir).ok();
+  }
+
+  #[test]
+  fn import_reads_the_file() {
+    let (result, dir) = in_sandbox("import", r#"Import["data.txt", "Text"]"#);
+    assert_eq!(result, "hello");
+    std::fs::remove_dir_all(&dir).ok();
+  }
+
+  #[test]
+  fn file_byte_count_measures_the_file() {
+    let (result, dir) = in_sandbox("bytecount", r#"FileByteCount["data.txt"]"#);
+    assert_eq!(result, "5");
+    std::fs::remove_dir_all(&dir).ok();
+  }
+
+  #[test]
+  fn export_writes_into_the_directory() {
+    let (result, dir) =
+      in_sandbox("export", r#"Export["written.txt", "content"]"#);
+    assert_eq!(result, "written.txt");
+    assert_eq!(
+      std::fs::read_to_string(std::path::Path::new(&dir).join("written.txt"))
+        .unwrap()
+        .trim_end(),
+      "content"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+  }
+
+  #[test]
+  fn open_write_creates_the_file_in_the_directory() {
+    let (result, dir) = in_sandbox(
+      "openwrite",
+      r#"Module[{s = OpenWrite["stream.txt"]}, WriteString[s, "streamed"]; Close[s]]"#,
+    );
+    assert_eq!(result, "stream.txt");
+    assert_eq!(
+      std::fs::read_to_string(std::path::Path::new(&dir).join("stream.txt"))
+        .unwrap(),
+      "streamed"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+  }
+
+  #[test]
+  fn create_directory_creates_below_the_directory() {
+    let (result, dir) = in_sandbox("createdir", r#"CreateDirectory["made"]"#);
+    assert_eq!(result, "made");
+    assert!(std::path::Path::new(&dir).join("made").is_dir());
+    std::fs::remove_dir_all(&dir).ok();
+  }
+
+  #[test]
+  fn delete_file_removes_from_the_directory() {
+    let (result, dir) = in_sandbox(
+      "delete",
+      r#"(DeleteFile["data.txt"]; FileExistsQ["data.txt"])"#,
+    );
+    assert_eq!(result, "False");
+    assert!(!std::path::Path::new(&dir).join("data.txt").exists());
+    std::fs::remove_dir_all(&dir).ok();
+  }
+
+  #[test]
+  fn copy_file_copies_within_the_directory() {
+    let (result, dir) =
+      in_sandbox("copy", r#"CopyFile["data.txt", "copy.txt"]"#);
+    assert_eq!(result, "copy.txt");
+    assert_eq!(
+      std::fs::read_to_string(std::path::Path::new(&dir).join("copy.txt"))
+        .unwrap(),
+      "hello"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+  }
+
+  #[test]
+  fn read_string_reads_the_file() {
+    let (result, dir) = in_sandbox("readstring", r#"ReadString["data.txt"]"#);
+    assert_eq!(result, "hello");
+    std::fs::remove_dir_all(&dir).ok();
+  }
 }
 
 mod set_directory {
