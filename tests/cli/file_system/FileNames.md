@@ -6,3 +6,33 @@ Returns a list of file names matching a pattern in the current directory.
 $ wo 'ListQ[FileNames["*"]]'
 True
 ```
+
+A third argument sets how many directory levels to include.
+Set up a `docs` directory with a `report.txt` on three levels:
+
+```scrut
+$ wo 'CreateDirectory["docs/inner/deeper"]; CreateFile["docs/report.txt"]; CreateFile["docs/inner/report.txt"]; CreateFile["docs/inner/deeper/report.txt"]; FileNames["*", "docs"]'
+{docs/inner, docs/report.txt}
+```
+
+The default, `1`, only looks at `docs` itself,
+so the copies further down are not reported:
+
+```scrut
+$ wo 'FileNames["report.txt", "docs"]'
+{docs/report.txt}
+```
+
+With `2`, the immediate subdirectories are searched as well:
+
+```scrut
+$ wo 'FileNames["report.txt", "docs", 2]'
+{docs/inner/report.txt, docs/report.txt}
+```
+
+`Infinity` descends without a limit:
+
+```scrut
+$ wo 'FileNames["report.txt", "docs", Infinity]'
+{docs/inner/deeper/report.txt, docs/inner/report.txt, docs/report.txt}
+```
