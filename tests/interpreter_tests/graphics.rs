@@ -20242,20 +20242,22 @@ mod manipulate {
   }
 
   #[test]
-  fn spec_standalone_trigger_keeps_its_slider() {
-    // A Trigger that is its variable's only control still binds it (and
-    // shows a slider row the user can also drag directly).
+  fn spec_standalone_trigger_builds_a_trigger_row() {
+    // A Trigger that is its variable's only control still binds it, as a
+    // dedicated Trigger (play/pause) row rather than an ordinary slider —
+    // Wolfram draws player buttons for `ControlType -> Trigger` regardless
+    // of whether the sweep end is finite or infinite.
     let expr =
       interpret_to_expr("Manipulate[u^2, {u, 0, 1, ControlType -> Trigger}]")
         .unwrap();
     let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
     assert_eq!(spec.controls.len(), 1);
     match &spec.controls[0] {
-      ManipulateControl::Continuous { name, min, max, .. } => {
+      ManipulateControl::Trigger { name, min, max, .. } => {
         assert_eq!(name, "u");
         assert_eq!((*min, *max), (0.0, 1.0));
       }
-      other => panic!("expected continuous control, got {other:?}"),
+      other => panic!("expected a Trigger control, got {other:?}"),
     }
     assert!(spec.animated && !spec.animation_running);
     assert_eq!(spec.animation_var.as_deref(), Some("u"));
