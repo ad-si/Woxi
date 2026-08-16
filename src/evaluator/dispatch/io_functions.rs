@@ -234,6 +234,16 @@ fn io_stream_id(expr: &Expr) -> Option<usize> {
   }
 }
 
+/// The path an open file stream keeps: the name resolved against the
+/// working directory in force when the stream was opened, so reads and
+/// writes stay pointed at the same file no matter where `SetDirectory`
+/// moves afterwards. The stream's *name* keeps the spelling the caller
+/// used.
+#[cfg(not(target_arch = "wasm32"))]
+fn stream_file_path(filename: &str) -> String {
+  crate::vfs::resolve(filename).to_string_lossy().into_owned()
+}
+
 /// Bytes for a binary read. An open stream is served from the registry, so
 /// a `"!command"` pipe reads the command's output; `path` (the stream's
 /// name) is the fallback for a stream that is no longer open.
@@ -247,7 +257,7 @@ fn io_binary_bytes(expr: &Expr, path: &str) -> std::io::Result<Vec<u8>> {
   match command_file_spec(path) {
     Some(command) => run_command_capture_bytes(command)
       .ok_or_else(|| std::io::Error::other("cannot start the shell")),
-    None => std::fs::read(path),
+    None => std::fs::read(crate::vfs::resolve(path)),
   }
 }
 
@@ -360,7 +370,7 @@ fn write_target_bytes(
       let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(path)
+        .open(crate::vfs::resolve(path))
         .map_err(|e| {
           InterpreterError::EvaluationError(format!(
             "{caller}: cannot open {path}: {e}"
@@ -445,7 +455,9 @@ fn get_stream_content(id: usize) -> Option<(String, usize)> {
   let content = match &kind {
     StreamKind::Text(text) => text.clone(),
     #[cfg(not(target_arch = "wasm32"))]
-    StreamKind::File(path) => std::fs::read_to_string(path).unwrap_or_default(),
+    StreamKind::File(path) => {
+      std::fs::read_to_string(crate::vfs::resolve(path)).unwrap_or_default()
+    }
     // Whole-stream reads have to wait for the command to finish.
     #[cfg(not(target_arch = "wasm32"))]
     StreamKind::Command(state) => {
@@ -466,7 +478,7 @@ fn get_stream_content(id: usize) -> Option<(String, usize)> {
 fn get_stream_bytes(id: usize) -> Option<Vec<u8>> {
   match get_stream_kind(id)?.0 {
     StreamKind::Text(text) => Some(text.into_bytes()),
-    StreamKind::File(path) => std::fs::read(path).ok(),
+    StreamKind::File(path) => std::fs::read(crate::vfs::resolve(path)).ok(),
     StreamKind::Command(state) => {
       let mut state = state.borrow_mut();
       command_stream_read_all(&mut state);
@@ -521,31 +533,6 @@ fn advance_stream_position(id: usize, new_position: usize) {
   });
 }
 
-// Virtual working-directory stack used by SetDirectory / ResetDirectory.
-//
-// We deliberately do NOT call `std::env::set_current_dir` here: that mutates
-// process-wide state, and cargo runs tests in parallel threads within a
-// single process. Mutating the real CWD from one test races against any
-// other test that resolves relative paths (Import, FileNames, etc.), causing
-// flaky failures in CI. Instead we track a per-thread virtual stack; the top
-// of the stack is what `Directory[]` reports, and the process CWD is used as
-// the fallback when the stack is empty.
-#[cfg(not(target_arch = "wasm32"))]
-thread_local! {
-  static DIRECTORY_STACK: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn virtual_current_dir() -> String {
-  DIRECTORY_STACK
-    .with(|s| s.borrow().last().cloned())
-    .unwrap_or_else(|| {
-      std::env::current_dir()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default()
-    })
-}
-
 /// The file a `Get` / `Needs` argument names.
 ///
 /// A context name — `"MyPaclet`"` — is looked up in the loaded paclet
@@ -557,12 +544,7 @@ pub(crate) fn resolve_get_target(name: &str) -> Option<std::path::PathBuf> {
   if name.ends_with('`') {
     return crate::functions::paclet::resolve_context(name);
   }
-  let requested = std::path::Path::new(name);
-  let resolved = if requested.is_absolute() {
-    requested.to_path_buf()
-  } else {
-    std::path::PathBuf::from(virtual_current_dir()).join(requested)
-  };
+  let resolved = crate::vfs::resolve(name);
   resolved.is_file().then_some(resolved)
 }
 
@@ -904,7 +886,7 @@ pub fn dispatch_io_functions(
         Expr::String(path) => {
           let content = match command_file_spec(path) {
             Some(command) => run_command_capture(command),
-            None => std::fs::read_to_string(path).ok(),
+            None => std::fs::read_to_string(crate::vfs::resolve(path)).ok(),
           };
           if let Some(c) = content {
             (c, 0usize, None)
@@ -968,12 +950,7 @@ pub fn dispatch_io_functions(
         }
       };
       // Resolve relative paths against the virtual working directory.
-      let requested = std::path::Path::new(&filename);
-      let resolved = if requested.is_absolute() {
-        requested.to_path_buf()
-      } else {
-        std::path::PathBuf::from(virtual_current_dir()).join(requested)
-      };
+      let resolved = crate::vfs::resolve(&filename);
       let Ok(content) = std::fs::read_to_string(&resolved) else {
         crate::emit_message_to_stdout(&format!(
           "StringTemplate::fnfnd: File \"{filename}\" not found."
@@ -1008,12 +985,7 @@ pub fn dispatch_io_functions(
             Expr::String(s) => s.clone(),
             _ => unreachable!(),
           };
-          let requested = std::path::Path::new(&filename);
-          let resolved = if requested.is_absolute() {
-            requested.to_path_buf()
-          } else {
-            std::path::PathBuf::from(virtual_current_dir()).join(requested)
-          };
+          let resolved = crate::vfs::resolve(&filename);
           if let Ok(c) = std::fs::read_to_string(&resolved) {
             c
           } else {
@@ -1151,7 +1123,7 @@ pub fn dispatch_io_functions(
         crate::emit_message(&format!("Put::noopen: Cannot open {filename}."));
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
       }
-      match std::fs::write(&filename, to_write) {
+      match std::fs::write(crate::vfs::resolve(&filename), to_write) {
         Ok(()) => return Some(Ok(Expr::Identifier("Null".to_string()))),
         Err(_e) => {
           crate::emit_message(&format!("Put::noopen: Cannot open {filename}."));
@@ -1190,7 +1162,7 @@ pub fn dispatch_io_functions(
         if let Ok(mut file) = std::fs::OpenOptions::new()
           .create(true)
           .append(true)
-          .open(&filename)
+          .open(crate::vfs::resolve(&filename))
         {
           if file.write_all(to_write.as_bytes()).is_err() {
             crate::emit_message(&format!(
@@ -1257,9 +1229,11 @@ pub fn dispatch_io_functions(
           let svg = crate::functions::image_ast::image_to_svg_document(
             *width, *height, *channels, data,
           );
-          if let Err(e) = std::fs::write(&filename, &svg).map_err(|e| {
-            InterpreterError::EvaluationError(format!("Export: {e}"))
-          }) {
+          if let Err(e) = std::fs::write(crate::vfs::resolve(&filename), &svg)
+            .map_err(|e| {
+              InterpreterError::EvaluationError(format!("Export: {e}"))
+            })
+          {
             return Some(Err(e));
           }
           return Some(Ok(Expr::String(filename)));
@@ -1285,9 +1259,12 @@ pub fn dispatch_io_functions(
         let svg = expr_to_svg(&args[1]);
         match svg_to_pdf_bytes(&svg) {
           Ok(pdf_bytes) => {
-            if let Err(e) = std::fs::write(&filename, &pdf_bytes).map_err(|e| {
-              InterpreterError::EvaluationError(format!("Export: {e}"))
-            }) {
+            if let Err(e) =
+              std::fs::write(crate::vfs::resolve(&filename), &pdf_bytes)
+                .map_err(|e| {
+                  InterpreterError::EvaluationError(format!("Export: {e}"))
+                })
+            {
               return Some(Err(e));
             }
             return Some(Ok(Expr::String(filename)));
@@ -1306,9 +1283,11 @@ pub fn dispatch_io_functions(
           svg
         };
         let svg = embed_used_fonts(&svg);
-        if let Err(e) = std::fs::write(&filename, &svg).map_err(|e| {
-          InterpreterError::EvaluationError(format!("Export: {e}"))
-        }) {
+        if let Err(e) = std::fs::write(crate::vfs::resolve(&filename), &svg)
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("Export: {e}"))
+          })
+        {
           return Some(Err(e));
         }
         return Some(Ok(Expr::String(filename)));
@@ -1427,9 +1406,11 @@ pub fn dispatch_io_functions(
         && let Some(bytes) =
           crate::functions::sound::expr_to_wav_bytes(&args[1])
       {
-        if let Err(e) = std::fs::write(&filename, &bytes).map_err(|e| {
-          InterpreterError::EvaluationError(format!("Export: {e}"))
-        }) {
+        if let Err(e) = std::fs::write(crate::vfs::resolve(&filename), &bytes)
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("Export: {e}"))
+          })
+        {
           return Some(Err(e));
         }
         return Some(Ok(Expr::String(filename)));
@@ -1440,9 +1421,11 @@ pub fn dispatch_io_functions(
         && let Some(bytes) =
           crate::functions::music_midi::music_to_midi(&args[1])
       {
-        if let Err(e) = std::fs::write(&filename, &bytes).map_err(|e| {
-          InterpreterError::EvaluationError(format!("Export: {e}"))
-        }) {
+        if let Err(e) = std::fs::write(crate::vfs::resolve(&filename), &bytes)
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("Export: {e}"))
+          })
+        {
           return Some(Err(e));
         }
         return Some(Ok(Expr::String(filename)));
@@ -1469,7 +1452,7 @@ pub fn dispatch_io_functions(
         Expr::String(s) => s.clone(),
         other => crate::syntax::expr_to_string(other),
       };
-      if let Err(e) = std::fs::write(&filename, &content)
+      if let Err(e) = std::fs::write(crate::vfs::resolve(&filename), &content)
         .map_err(|e| InterpreterError::EvaluationError(format!("Export: {e}")))
       {
         return Some(Err(e));
@@ -1790,9 +1773,11 @@ pub fn dispatch_io_functions(
                 "Find: cannot run {command}"
               ))
             }),
-            None => std::fs::read_to_string(path).map_err(|e| {
-              InterpreterError::EvaluationError(format!("Find: {e}"))
-            }),
+            None => {
+              std::fs::read_to_string(crate::vfs::resolve(path)).map_err(|e| {
+                InterpreterError::EvaluationError(format!("Find: {e}"))
+              })
+            }
           };
           match body {
             Ok(c) => (c, 0usize, None),
@@ -1945,7 +1930,9 @@ pub fn dispatch_io_functions(
         // A `"!command"` entry searches that command's output.
         let read = match command_file_spec(path) {
           Some(command) => run_command_capture(command).ok_or(()),
-          None => std::fs::read_to_string(path).map_err(|_| ()),
+          None => {
+            std::fs::read_to_string(crate::vfs::resolve(path)).map_err(|_| ())
+          }
         };
         match read {
           Err(()) => {
@@ -1990,7 +1977,7 @@ pub fn dispatch_io_functions(
     }
     #[cfg(not(target_arch = "wasm32"))]
     "Directory" if args.is_empty() => {
-      return Some(Ok(Expr::String(virtual_current_dir())));
+      return Some(Ok(Expr::String(crate::vfs::current_dir())));
     }
     "NotebookDirectory" if args.is_empty() => {
       return Some(if let Some(dir) = crate::get_notebook_directory() {
@@ -2005,7 +1992,7 @@ pub fn dispatch_io_functions(
     #[cfg(not(target_arch = "wasm32"))]
     "ParentDirectory" if args.is_empty() || args.len() == 1 => {
       let base = if args.is_empty() {
-        virtual_current_dir()
+        crate::vfs::current_dir()
       } else if let Expr::String(s) = &args[0] {
         s.clone()
       } else {
@@ -2329,13 +2316,15 @@ pub fn dispatch_io_functions(
         };
         StreamKind::Command(std::rc::Rc::new(RefCell::new(state)))
       } else {
-        if !std::path::Path::new(&filename).exists() {
+        if !crate::vfs::exists(&filename) {
           crate::emit_message_to_stdout(&format!(
             "OpenRead::noopen: Cannot open {filename}."
           ));
           return Some(Ok(Expr::Identifier("$Failed".to_string())));
         }
-        StreamKind::File(filename.clone())
+        // The stream is bound to the file the name resolves to now, so a
+        // later `SetDirectory` cannot redirect reads from it.
+        StreamKind::File(stream_file_path(&filename))
       };
       let id = register_stream(filename.clone(), kind);
       return Some(Ok(call(
@@ -2375,14 +2364,16 @@ pub fn dispatch_io_functions(
         StreamKind::CommandSink(std::rc::Rc::new(RefCell::new(state)))
       } else {
         // Create or truncate the file
-        if let Err(e) = std::fs::File::create(&filename).map_err(|e| {
-          InterpreterError::EvaluationError(format!(
-            "OpenWrite: cannot open {filename}: {e}"
-          ))
-        }) {
+        if let Err(e) = std::fs::File::create(crate::vfs::resolve(&filename))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!(
+              "OpenWrite: cannot open {filename}: {e}"
+            ))
+          })
+        {
           return Some(Err(e));
         }
-        StreamKind::File(filename.clone())
+        StreamKind::File(stream_file_path(&filename))
       };
       let id = register_stream(filename.clone(), kind);
       return Some(Ok(call(
@@ -2643,7 +2634,7 @@ pub fn dispatch_io_functions(
         if let Err(e) = std::fs::OpenOptions::new()
           .create(true)
           .append(true)
-          .open(&filename)
+          .open(crate::vfs::resolve(&filename))
           .map_err(|e| {
             InterpreterError::EvaluationError(format!(
               "OpenAppend: cannot open {filename}: {e}"
@@ -2652,7 +2643,7 @@ pub fn dispatch_io_functions(
         {
           return Some(Err(e));
         }
-        StreamKind::File(filename.clone())
+        StreamKind::File(stream_file_path(&filename))
       };
       let id = register_stream(filename.clone(), kind);
       return Some(Ok(call(
@@ -2848,7 +2839,7 @@ pub fn dispatch_io_functions(
         Expr::String(path) => {
           let content = match command_file_spec(path) {
             Some(command) => run_command_capture(command),
-            None => std::fs::read_to_string(path).ok(),
+            None => std::fs::read_to_string(crate::vfs::resolve(path)).ok(),
           };
           if let Some(content) = content {
             (content, 0usize, None)
@@ -3230,7 +3221,7 @@ pub fn dispatch_io_functions(
         print!("{content}");
         crate::capture_stdout(content.trim_end());
       } else {
-        match std::fs::write(&filename, &content) {
+        match std::fs::write(crate::vfs::resolve(&filename), &content) {
           Ok(()) => {}
           Err(_e) => {
             crate::emit_message(&format!(
@@ -3314,7 +3305,7 @@ pub fn dispatch_io_functions(
       match crate::utils::canonicalize(&home) {
         Ok(canonical) if canonical.is_dir() => {
           let new_dir = canonical.to_string_lossy().into_owned();
-          DIRECTORY_STACK.with(|s| s.borrow_mut().push(new_dir.clone()));
+          crate::vfs::push_dir(new_dir.clone());
           return Some(Ok(Expr::String(new_dir)));
         }
         _ => {
@@ -3325,7 +3316,7 @@ pub fn dispatch_io_functions(
       }
     }
     // SetDirectory["dir"] — push "dir" onto the virtual directory stack.
-    // Does not mutate the process CWD; see the note on DIRECTORY_STACK.
+    // Does not mutate the process CWD; see the note in `crate::vfs`.
     #[cfg(not(target_arch = "wasm32"))]
     "SetDirectory" if args.len() == 1 => {
       let dir = match &args[0] {
@@ -3336,17 +3327,12 @@ pub fn dispatch_io_functions(
       };
       // Resolve the requested path against the current virtual directory so
       // that relative paths behave like the real Wolfram SetDirectory.
-      let requested = std::path::Path::new(&dir);
-      let resolved = if requested.is_absolute() {
-        requested.to_path_buf()
-      } else {
-        std::path::PathBuf::from(virtual_current_dir()).join(requested)
-      };
+      let resolved = crate::vfs::resolve(&dir);
       // Canonicalize both to validate existence and normalize the result.
       match crate::utils::canonicalize(&resolved) {
         Ok(canonical) if canonical.is_dir() => {
           let new_dir = canonical.to_string_lossy().into_owned();
-          DIRECTORY_STACK.with(|s| s.borrow_mut().push(new_dir.clone()));
+          crate::vfs::push_dir(new_dir.clone());
           return Some(Ok(Expr::String(new_dir)));
         }
         Ok(_) => {
@@ -3364,27 +3350,25 @@ pub fn dispatch_io_functions(
     // ResetDirectory[] — pop the virtual directory stack and return the
     // restored directory (or the process CWD if the stack becomes empty).
     #[cfg(not(target_arch = "wasm32"))]
-    "ResetDirectory" if args.is_empty() => {
-      let popped = DIRECTORY_STACK.with(|s| s.borrow_mut().pop());
-      match popped {
-        Some(_) => {
-          return Some(Ok(Expr::String(virtual_current_dir())));
-        }
-        None => {
-          return Some(Err(InterpreterError::EvaluationError(
-            "ResetDirectory: directory stack is empty.".into(),
-          )));
-        }
+    "ResetDirectory" if args.is_empty() => match crate::vfs::pop_dir() {
+      Some(_) => {
+        return Some(Ok(Expr::String(crate::vfs::current_dir())));
       }
-    }
+      None => {
+        return Some(Err(InterpreterError::EvaluationError(
+          "ResetDirectory: directory stack is empty.".into(),
+        )));
+      }
+    },
     // DirectoryStack[] — return the directory stack maintained by
     // SetDirectory/ResetDirectory. Fresh sessions report `{}`.
     #[cfg(not(target_arch = "wasm32"))]
     "DirectoryStack" if args.is_empty() => {
-      let stack = DIRECTORY_STACK
-        .with(|s| s.borrow().iter().cloned().collect::<Vec<_>>());
       return Some(Ok(Expr::List(
-        stack.into_iter().map(Expr::String).collect(),
+        crate::vfs::directory_stack()
+          .into_iter()
+          .map(Expr::String)
+          .collect(),
       )));
     }
     // FileFormat["name"] — return the format string for a file, or
@@ -3395,7 +3379,7 @@ pub fn dispatch_io_functions(
       let Expr::String(name) = &args[0] else {
         return Some(Ok(unevaluated("FileFormat", args)));
       };
-      if !std::path::Path::new(name).exists() {
+      if !crate::vfs::exists(name) {
         crate::emit_message(&format!(
           "FileFormat::nffil: File not found during FileFormat[{name}]."
         ));
@@ -3412,7 +3396,7 @@ pub fn dispatch_io_functions(
       let Expr::String(name) = &args[0] else {
         return Some(Ok(unevaluated("FileDate", args)));
       };
-      if !std::path::Path::new(name).exists() {
+      if !crate::vfs::exists(name) {
         crate::emit_message(&format!(
           "FileDate::fdnfnd: Directory or file \"{name}\" not found."
         ));
@@ -3452,16 +3436,9 @@ pub fn dispatch_io_functions(
       };
       // wolframscript reports the absolute path, so resolve relative paths
       // against the current working directory.
-      let path = std::path::Path::new(&name);
-      let Ok(data) = std::fs::read(path) else {
-        let abs = if path.is_absolute() {
-          name.clone()
-        } else {
-          std::env::current_dir().map_or_else(
-            |_| name.clone(),
-            |cwd| cwd.join(path).to_string_lossy().into_owned(),
-          )
-        };
+      let path = crate::vfs::resolve(&name);
+      let Ok(data) = std::fs::read(&path) else {
+        let abs = path.to_string_lossy();
         crate::emit_message(&format!("FileHash::noopen: Cannot open {abs}."));
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
       };
@@ -3513,7 +3490,7 @@ pub fn dispatch_io_functions(
           return unevaluated();
         }
       };
-      match std::fs::metadata(&name) {
+      match std::fs::metadata(crate::vfs::resolve(&name)) {
         Ok(meta) if meta.is_file() => {
           return Some(Ok(Expr::FunctionCall {
             name: "Quantity".to_string(),
@@ -3545,7 +3522,7 @@ pub fn dispatch_io_functions(
       let Expr::String(name) = &args[0] else {
         return Some(Ok(unevaluated("FileByteCount", args)));
       };
-      match std::fs::metadata(name) {
+      match std::fs::metadata(crate::vfs::resolve(name)) {
         Ok(meta) if meta.is_file() => {
           return Some(Ok(Expr::Integer(meta.len() as i128)));
         }
@@ -4247,22 +4224,26 @@ fn file_name_matches(patterns: &[Expr], file_name: &str) -> bool {
   })
 }
 
-/// Collect file names matching any of the given patterns in a directory.
+/// The names `FileNames` reports for `patterns` under `dir`, searching
+/// `levels` directory levels.
+///
+/// `dir` is resolved against the working directory that `Directory[]`
+/// reports, so a preceding `SetDirectory` is honoured, but it keeps its
+/// spelling in the result: `FileNames["*", "sub"]` reports `sub/a.txt`,
+/// while the current directory reports the bare name.
 #[cfg(not(target_arch = "wasm32"))]
 fn collect_file_names(
   patterns: &[Expr],
   dir: &str,
   levels: usize,
 ) -> Vec<String> {
-  use std::path::Path;
-
-  let dir_path = Path::new(dir);
-  if levels == 0 || !dir_path.is_dir() {
+  let root = crate::vfs::resolve(dir);
+  if levels == 0 || !root.is_dir() {
     return Vec::new();
   }
 
   let mut results = Vec::new();
-  collect_files_recursive(dir_path, dir, patterns, levels, &mut results);
+  collect_files_recursive(&root, &root, dir, patterns, levels, &mut results);
   results
 }
 
@@ -4284,9 +4265,16 @@ fn file_names_levels(spec: &Expr) -> Option<usize> {
 /// Walk `path`, collecting entries whose name matches any of `patterns`.
 /// `levels` counts the directory levels still to visit, so `1` stops at
 /// `path` itself and `usize::MAX` stands in for `Infinity`.
+///
+/// Every match is reported as `base_dir` spells it: entries are named
+/// relative to `root` (the resolved `base_dir`) and prefixed with
+/// `base_dir` again, so the reported names stay relative wherever the
+/// working directory happens to be, and a `"."` base — spelled implicitly
+/// by `FileNames["pat"]` — reports the bare relative name.
 #[cfg(not(target_arch = "wasm32"))]
 fn collect_files_recursive(
   path: &std::path::Path,
+  root: &std::path::Path,
   base_dir: &str,
   patterns: &[Expr],
   levels: usize,
@@ -4297,23 +4285,24 @@ fn collect_files_recursive(
   };
 
   for entry in entries.flatten() {
+    let entry_path = entry.path();
     let file_name = entry.file_name().to_string_lossy().to_string();
     let file_type = entry.file_type();
 
     if let Ok(ft) = file_type {
       if file_name_matches(patterns, &file_name) {
-        let rel_str = entry.path().to_string_lossy().to_string();
-        // A "." base is spelled implicitly, matching `FileNames["pat"]`,
-        // so drop the leading "./" that joining the base introduces.
-        results.push(if base_dir == "." {
-          strip_dot_prefix(&rel_str).to_string()
+        let relative = entry_path.strip_prefix(root).unwrap_or(&entry_path);
+        let named = if base_dir == "." {
+          relative.to_path_buf()
         } else {
-          rel_str
-        });
+          std::path::Path::new(base_dir).join(relative)
+        };
+        results.push(named.to_string_lossy().into_owned());
       }
       if ft.is_dir() && levels > 1 {
         collect_files_recursive(
-          &entry.path(),
+          &entry_path,
+          root,
           base_dir,
           patterns,
           levels - 1,
@@ -4322,16 +4311,6 @@ fn collect_files_recursive(
       }
     }
   }
-}
-
-/// Strip the leading `./` (or `.\` on Windows) from a path built by
-/// joining onto the "." base directory.
-#[cfg(not(target_arch = "wasm32"))]
-fn strip_dot_prefix(path: &str) -> &str {
-  path
-    .strip_prefix('.')
-    .and_then(|rest| rest.strip_prefix(['/', '\\']))
-    .unwrap_or(path)
 }
 
 /// Render a text-mode SVG fallback for non-graphics expressions.
@@ -5618,7 +5597,7 @@ pub(crate) fn readlist_inputstream(
   // `get_stream_content`, which reads it whole.
   #[cfg(not(target_arch = "wasm32"))]
   if let StreamKind::File(path) = &kind
-    && !std::path::Path::new(path).is_file()
+    && !crate::vfs::is_file(path)
   {
     return Err(InterpreterError::EvaluationError(format!(
       "ReadList::noopen: Cannot open {path}."

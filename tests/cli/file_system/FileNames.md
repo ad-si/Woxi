@@ -59,3 +59,11 @@ $ wo 'FileNames["report.txt", "docs", 2]'
 $ wo 'FileNames["report.txt", "docs", Infinity]'
 {docs/inner/deeper/report.txt, docs/inner/report.txt, docs/report.txt}
 ```
+
+The current directory is the one `SetDirectory` last set,
+not the one the script was started from.
+
+```scrut
+$ wo 'dir = CreateDirectory[]; Export[FileNameJoin[{dir, "hello.txt"}], "x"]; SetDirectory[dir]; FileNames[]'
+{hello.txt}
+```

@@ -76,15 +76,7 @@ pub fn unload_directories(dirs: &[String]) -> Vec<String> {
 /// `C:\dir` on Windows, which no longer compares equal to what the caller
 /// passed in and cannot be re-used as a string literal.
 fn expand_directory(dir: &str) -> String {
-  let requested = Path::new(dir);
-  let joined = if requested.is_absolute() {
-    requested.to_path_buf()
-  } else {
-    PathBuf::from(
-      crate::evaluator::dispatch::io_functions::virtual_current_dir(),
-    )
-    .join(requested)
-  };
+  let joined = crate::vfs::resolve(dir);
   let mut normalized = PathBuf::new();
   for component in joined.components() {
     match component {

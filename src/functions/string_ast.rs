@@ -11983,7 +11983,7 @@ fn readlist_get_text(source: &Expr) -> Result<String, InterpreterError> {
               command,
             )
           }
-          None => std::fs::read_to_string(path).ok(),
+          None => std::fs::read_to_string(crate::vfs::resolve(path)).ok(),
         };
       content.ok_or_else(|| {
         InterpreterError::EvaluationError(format!(

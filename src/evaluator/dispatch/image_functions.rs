@@ -291,7 +291,7 @@ fn import_data_spec_args(elem: &Expr) -> Option<(&Expr, Option<&Expr>)> {
 /// and renders as the SVG itself in visual hosts).
 #[cfg(not(target_arch = "wasm32"))]
 fn import_svg(path: &str, is_url: bool) -> Result<Expr, InterpreterError> {
-  if !is_url && !std::path::Path::new(path).exists() {
+  if !is_url && !crate::vfs::exists(path) {
     crate::emit_message(&format!(
       "Import::nffil: File {path} not found during Import."
     ));
@@ -312,7 +312,7 @@ fn import_read_text(
     crate::functions::xlsx_ast::download_url(path)
       .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
   } else {
-    std::fs::read_to_string(path).map_err(|e| {
+    std::fs::read_to_string(crate::vfs::resolve(path)).map_err(|e| {
       InterpreterError::EvaluationError(format!(
         "Import: cannot open \"{path}\": {e}"
       ))
@@ -346,14 +346,14 @@ fn import_json(
 /// message, mirroring wolframscript's silent success on a valid file.
 #[cfg(not(target_arch = "wasm32"))]
 fn import_netpbm(path: &str) -> crate::syntax::Expr {
-  if !std::path::Path::new(path).exists() {
+  if !crate::vfs::exists(path) {
     // wolframscript prints Import::nffil to stdout for a missing file.
     crate::emit_message_to_stdout(&format!(
       "Import::nffil: File {path} not found during Import."
     ));
     return Expr::Identifier("$Failed".to_string());
   }
-  let Ok(bytes) = std::fs::read(path) else {
+  let Ok(bytes) = std::fs::read(crate::vfs::resolve(path)) else {
     return Expr::Identifier("$Failed".to_string());
   };
   // A valid Netpbm stream starts with `P1`..`P6` followed by whitespace.
@@ -1175,7 +1175,7 @@ pub fn dispatch_image_functions(
           }
           "txt" => {
             return Some(
-              std::fs::read_to_string(&path)
+              std::fs::read_to_string(crate::vfs::resolve(&path))
                 .map(|s| {
                   Expr::String(
                     crate::functions::txt_ast::strip_trailing_newline(s),
@@ -1201,7 +1201,7 @@ pub fn dispatch_image_functions(
           // gives.
           "xml" => {
             return Some(
-              std::fs::read_to_string(&path)
+              std::fs::read_to_string(crate::vfs::resolve(&path))
                 .map_err(|e| {
                   InterpreterError::EvaluationError(format!(
                     "Import: cannot open \"{path}\": {e}"
@@ -1493,7 +1493,7 @@ pub fn dispatch_image_functions(
               Err(e) => return Some(Err(e)),
             }
           } else {
-            match std::fs::read_to_string(&path) {
+            match std::fs::read_to_string(crate::vfs::resolve(&path)) {
               Ok(s) => s,
               Err(e) => {
                 return Some(Err(InterpreterError::EvaluationError(format!(

@@ -496,11 +496,12 @@ pub fn csv_import_data_spec(
 /// Read and parse a CSV file from disk.
 #[cfg(not(target_arch = "wasm32"))]
 fn read_csv_file(path: &str) -> Result<Vec<Vec<String>>, InterpreterError> {
-  let content = std::fs::read_to_string(path).map_err(|e| {
-    InterpreterError::EvaluationError(format!(
-      "Import: cannot open \"{path}\": {e}"
-    ))
-  })?;
+  let content =
+    std::fs::read_to_string(crate::vfs::resolve(path)).map_err(|e| {
+      InterpreterError::EvaluationError(format!(
+        "Import: cannot open \"{path}\": {e}"
+      ))
+    })?;
   Ok(parse_csv(&content))
 }
 

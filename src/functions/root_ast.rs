@@ -84,7 +84,7 @@ const MAX_OBJECT_CELLS: usize = 10_000_000;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn root_import_file(path: &str) -> Result<Expr, InterpreterError> {
-  let bytes = std::fs::read(path).map_err(|e| {
+  let bytes = std::fs::read(crate::vfs::resolve(path)).map_err(|e| {
     InterpreterError::EvaluationError(format!(
       "Import: cannot open \"{path}\": {e}"
     ))
@@ -102,7 +102,7 @@ pub fn root_import_file_element(
   path: &str,
   elements: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let bytes = std::fs::read(path).map_err(|e| {
+  let bytes = std::fs::read(crate::vfs::resolve(path)).map_err(|e| {
     InterpreterError::EvaluationError(format!(
       "Import: cannot open \"{path}\": {e}"
     ))
