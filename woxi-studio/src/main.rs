@@ -15423,4 +15423,146 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl$$ = 1, $CellContext`P$$ = 760}
       "LabelStyle color Black must reach the frame label: {svg}"
     );
   }
+
+  /// End-to-end regression for the shape of the "Primitive Relation for
+  /// Elliptic Geometry" Demonstration: a separate `InitializationCell`
+  /// defines a great-circle-arc helper built from `With`, `Normalize`,
+  /// `Cross`, and `RotationTransform` composed with `ParametricPlot3D`
+  /// (extracting its curve via `[[1]]`), and a stored `Manipulate` whose
+  /// `Module` body assembles a `Graphics3D` of `Sphere[]`, `Opacity`,
+  /// `Line`s and `Text[Style[...], point, offset]` labels, picking between
+  /// two point-pair layouts with `Switch` and toggling a set of axis
+  /// `Line`s on and off with `If`, driven by a continuous rotation slider
+  /// alongside two discrete (`Setter`/checkbox) controls.
+  #[test]
+  fn demonstration_great_circle_pair_manipulate_switches_and_toggles() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["greatCircle3D[a_, b_] := With[{axis = Normalize[Cross[a, b]]}, ParametricPlot3D[RotationTransform[t, axis][a], {t, 0, 2 Pi}, PlotStyle -> {Purple}][[1]]]"], "Input",
+ InitializationCell->True],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Module[{ptA = {Cos[theta], Sin[theta], 0}, ptB = {0, 1, 0}, ptC = {0, 0, 1}},
+   Graphics3D[{
+     Opacity[0.5], Sphere[],
+     If[showAxes, {Line[{{-1, 0, 0}, {1, 0, 0}}], Line[{{0, -1, 0}, {0, 1, 0}}], Line[{{0, 0, -1}, {0, 0, 1}}]}, {}],
+     Switch[view,
+       1, {greatCircle3D[ptA, ptB], Line[{{0, 0, 0}, ptA}], Line[{{0, 0, 0}, ptB}],
+           Text[Style[\"A\", 16], ptA, {0, 1}], Text[Style[\"B\", 16], ptB, {0, 1}]},
+       2, {greatCircle3D[ptB, ptC], Line[{{0, 0, 0}, ptB}], Line[{{0, 0, 0}, ptC}],
+           Text[Style[\"B\", 16], ptB, {0, 1}], Text[Style[\"C\", 16], ptC, {0, 1}]}]
+   }]
+ ],
+ {{theta, 0, \"rotation\"}, 0, 2 Pi},
+ {{view, 1, \"pair\"}, {1, 2}},
+ {{showAxes, True, \"axes\"}, {True, False}}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`theta$$ = 0, $CellContext`view$$ = 1, $CellContext`showAxes$$ = True}, DynamicBox[\[Ellipsis]]]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the Switch's first branch (Sphere + great circle + labels) must draw"
+    );
+
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: theta_name,
+          label: theta_label,
+          min: theta_min,
+          max: theta_max,
+          current: theta_now,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: view_name,
+          values: view_values,
+          current_index: view_idx,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: axes_name,
+          values: axes_values,
+          current_index: axes_idx,
+          ..
+        },
+      ] => {
+        assert_eq!(theta_name.as_str(), "theta");
+        assert_eq!(theta_label.as_str(), "rotation");
+        assert_eq!(*theta_min, 0.0);
+        assert!((*theta_max - std::f64::consts::TAU).abs() < 1e-9);
+        assert_eq!(*theta_now, 0.0);
+        assert_eq!(view_name.as_str(), "view");
+        assert_eq!(view_values.as_slice(), ["1", "2"]);
+        assert_eq!(*view_idx, 0);
+        assert_eq!(axes_name.as_str(), "showAxes");
+        assert_eq!(axes_values.as_slice(), ["True", "False"]);
+        assert_eq!(*axes_idx, 0);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    // The great-circle helper was defined in the separate Initialization
+    // cell (run once before the widget's body first evaluates), so the
+    // stored body can be re-rendered on its own to inspect the SVG.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the pieces must render")
+    };
+
+    let pair_one = render(&widget);
+
+    // Switching `view` to the second pair swaps which two points the great
+    // circle and its labels connect, so the render must change.
+    match &mut widget.controls[1] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 1;
+      }
+      other => panic!("expected discrete control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    assert!(widget.graphics_handle.is_some());
+    let pair_two = render(&widget);
+    assert_ne!(
+      pair_one, pair_two,
+      "switching the Switch selector must change the rendered pair"
+    );
+
+    // Toggling the axes checkbox off must drop the three axis Lines from
+    // this same view, changing the render again.
+    match &mut widget.controls[2] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 1;
+      }
+      other => panic!("expected discrete control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    let pair_two_no_axes = render(&widget);
+    assert_ne!(
+      pair_two, pair_two_no_axes,
+      "unchecking the axes toggle must hide the axis lines"
+    );
+  }
 }
