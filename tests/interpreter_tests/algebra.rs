@@ -4809,6 +4809,24 @@ mod solve {
     );
   }
 
+  // Regression: a multi-equation system combined with an inequality (as an
+  // And expression, not a list) used to fall through to Solve's
+  // non-identifier-target branch and return unevaluated, because only the
+  // single-variable path recognized "equation && inequality". The equality
+  // system is solved first and the inequality then filters the result.
+  #[test]
+  fn system_with_trailing_inequality() {
+    assert_eq!(
+      interpret("Solve[x + y == 3 && x - y == 1 && x > 0, {x, y}]").unwrap(),
+      "{{x -> 2, y -> 1}}"
+    );
+    // The inequality rules out every solution of the equality system.
+    assert_eq!(
+      interpret("Solve[x + y == 3 && x - y == 1 && x > 5, {x, y}]").unwrap(),
+      "{}"
+    );
+  }
+
   #[test]
   fn linear_system_with_and_in_list() {
     // Solve[{eq1 && eq2}, {x, y}] should behave like
@@ -7315,6 +7333,32 @@ mod nsolve {
       .unwrap(),
       "{{x -> 1.7055408794701485, y -> -0.8090169943749475}, \
        {x -> -0.16669911088252198, y -> -0.8090169943749475}}"
+    );
+  }
+
+  // Regression: solving a parametrized-line/plane intersection for a system
+  // of coordinate equations plus a bound on the line parameter (a common
+  // pattern for clipping a segment to a face) used to return unevaluated
+  // rather than the numeric rules, because the multi-equation-plus-
+  // inequality path only existed for a single variable.
+  #[test]
+  fn system_with_parameter_bound() {
+    assert_eq!(
+      interpret(
+        "NSolve[z == -1. + 2.*t && x == -1. && y == -1. && z == 0. && \
+         0. < t < 1., {t, x, y, z}]"
+      )
+      .unwrap(),
+      "{{t -> 0.5, x -> -1., y -> -1., z -> 0.}}"
+    );
+    // Out of bounds for t: no solution survives the filter.
+    assert_eq!(
+      interpret(
+        "NSolve[z == -1. + 2.*t && x == -1. && y == -1. && z == 5. && \
+         0. < t < 1., {t, x, y, z}]"
+      )
+      .unwrap(),
+      "{}"
     );
   }
 

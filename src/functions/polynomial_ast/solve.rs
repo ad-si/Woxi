@@ -2119,6 +2119,66 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Handle a system of equations combined with inequality constraints when
+  // solving for a list of variables: Solve[eq1 && eq2 && ... && ineq, {v1,
+  // v2, ...}]. The pre-pass above only flattens an And into a List of
+  // equations when every conjunct is an equality, so a mixed system with two
+  // or more equalities plus an inequality is still a single And expression
+  // here, and would otherwise be treated as one non-list "equation" by the
+  // block below. Split it into its equalities and inequalities, solve the
+  // equalities as a system, then discard any solution an inequality rules
+  // out.
+  if let Expr::List(var_items) = &args[1]
+    && !var_items.is_empty()
+  {
+    let mut constraints = Vec::new();
+    collect_and_constraints(&args[0], &mut constraints);
+    let is_equality = |e: &Expr| -> bool {
+      matches!(e, Expr::Comparison { operators, .. }
+          if operators.len() == 1 && operators[0] == ComparisonOp::Equal)
+        || matches!(e, Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2)
+    };
+    let (eqs, ineqs): (Vec<Expr>, Vec<Expr>) =
+      constraints.into_iter().partition(|e| is_equality(e));
+    if eqs.len() >= 2 && !ineqs.is_empty() {
+      let eq_solutions = solve_ast(&[Expr::List(eqs.into()), args[1].clone()])?;
+      return Ok(match &eq_solutions {
+        Expr::List(solutions) => Expr::List(
+          solutions
+            .iter()
+            .filter(|sol| {
+              let Expr::List(rules) = sol else {
+                return true;
+              };
+              !ineqs.iter().any(|ineq| {
+                let substituted =
+                  rules.iter().fold(ineq.clone(), |acc, rule| {
+                    let Expr::Rule {
+                      pattern,
+                      replacement,
+                    } = rule
+                    else {
+                      return acc;
+                    };
+                    let Expr::Identifier(name) = pattern.as_ref() else {
+                      return acc;
+                    };
+                    crate::syntax::substitute_variable(&acc, name, replacement)
+                  });
+                matches!(
+                  crate::evaluator::evaluate_expr_to_expr(&substituted),
+                  Ok(Expr::Identifier(ref s)) if s == "False"
+                )
+              })
+            })
+            .cloned()
+            .collect(),
+        ),
+        _ => eq_solutions,
+      });
+    }
+  }
+
   // Handle single equation with list of variables: Solve[eq, {var1, var2, ...}]
   if let Expr::List(vars_exprs) = &args[1] {
     if vars_exprs.len() == 1 {
