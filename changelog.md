@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `WriteLine[channel, string]` writes a line to an output channel: it is
+    `WriteString` plus a newline, and takes the same channels — an open
+    `OpenWrite`/`OpenAppend` stream, a file name, a `"!command"` pipe, and the
+    standard streams `"stdout"`/`$Output` and `"stderr"`/`$Messages`.
 - `FileNames[form, dirs, n]` honours the level count instead of only
     searching `dirs` themselves: `n` includes files up to `n` directory levels
     down, so `FileNames["f.txt", dir, 2]` also reports the matches in `dir`'s
