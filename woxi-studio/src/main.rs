@@ -1677,6 +1677,7 @@ impl WoxiStudio {
           && let manipulate::ControlState::Continuous { current, .. } = control
         {
           *current = value;
+          state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
@@ -1696,6 +1697,7 @@ impl WoxiStudio {
           && let Some(idx) = value_labels.iter().position(|v| *v == choice)
         {
           *current_index = idx;
+          state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
@@ -1710,6 +1712,7 @@ impl WoxiStudio {
           // Routes through the control's write-back callback (if any), so
           // e.g. Locator-promoted controls round/validate the candidate.
           state.slider2d_change(ctrl_idx, axis, value);
+          state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
@@ -1736,6 +1739,7 @@ impl WoxiStudio {
           } else {
             *high = value.max(*low);
           }
+          state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
@@ -1761,6 +1765,7 @@ impl WoxiStudio {
           } else {
             point.1 = value;
           }
+          state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
@@ -1783,6 +1788,7 @@ impl WoxiStudio {
         {
           // New points appear at the range centre, ready to drag.
           points.push(((*x_min + *x_max) / 2.0, (*y_min + *y_max) / 2.0));
+          state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
@@ -1798,6 +1804,7 @@ impl WoxiStudio {
           && point_idx < points.len()
         {
           points.remove(point_idx);
+          state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
@@ -6633,6 +6640,54 @@ mod tests {
     state.run_scheduled_reeval();
     state.run_scheduled_reeval();
     assert!(state.request_reeval(0), "flag must clear on an empty fire");
+  }
+
+  /// A discrete control's `TrackingFunction -> f` resets a companion
+  /// control when the picker changes — the Demonstrations idiom of
+  /// rewinding a step/time slider whenever the selected mode changes.
+  /// Independently written, not copied from any specific Demonstration.
+  #[test]
+  fn manipulate_tracking_function_resets_companion_control() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[If[mode == 1, step^2, step + 1], \
+       {{mode, 1, \"\"}, {1 -> \"square\", 2 -> \"increment\"}, \
+        TrackingFunction -> (mode = #; step = 0; &)}, \
+       {{step, 3, \"step\"}, 0, 5, 1}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let mode_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .unwrap();
+    let step_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "step")
+      .unwrap();
+
+    // Move `step` away from its initial value so the reset is observable.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[step_idx]
+    {
+      *current = 4.0;
+    }
+
+    // Pick the other choice in the `mode` popup.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[mode_idx]
+    {
+      *current_index = 1;
+    }
+    state.apply_tracking(mode_idx);
+
+    let manipulate::ControlState::Continuous { current, .. } =
+      &state.controls[step_idx]
+    else {
+      panic!("expected step to remain a continuous slider");
+    };
+    assert_eq!(*current, 0.0, "TrackingFunction should reset step to 0");
   }
 
   /// A control panel written as a `Grid` — the Demonstrations layout for a

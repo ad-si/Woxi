@@ -8517,6 +8517,27 @@ mod anonymous_function_precedence {
       "{11, 13, 17, 19}"
     );
   }
+
+  #[test]
+  fn amp_after_trailing_semicolon_wraps_whole_compound_expression() {
+    // A trailing `;` with no statement between it and `&` wraps the whole
+    // preceding statement sequence in a Function — the idiom
+    // `TrackingFunction -> (a = #; b = 0; &)` needs for a multi-statement
+    // callback (used by Manipulate's `TrackingFunction` option to reset a
+    // companion control). Without a statement following the last `;`, `&`
+    // cannot bind to it the way `a; b &` binds to just `b`, so it must
+    // instead close out the whole `CompoundExpression` built so far.
+    assert_eq!(
+      interpret("FullForm[Hold[(a = #; b = 0; &)]]").unwrap(),
+      "FullForm[Hold[(a = #1; b = 0; Null) & ]]"
+    );
+    // The trailing `;` before `&` also appends an implicit `Null` as the
+    // function's own last statement (same as any other trailing `;`), so
+    // calling it returns `Null` — what matters is that both assignments
+    // ran, in order, as side effects.
+    let _ = interpret("(trackPrecA = #; trackPrecB = 0; &)[5]").unwrap();
+    assert_eq!(interpret("{trackPrecA, trackPrecB}").unwrap(), "{5, 0}");
+  }
 }
 
 mod out_shortcut {
