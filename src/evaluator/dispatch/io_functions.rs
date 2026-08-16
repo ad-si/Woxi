@@ -3236,6 +3236,7 @@ pub fn dispatch_io_functions(
     // FileNames[] — list all files in current directory
     // FileNames["pattern"] — list files matching pattern
     // FileNames["pattern", "dir"] — list files in dir matching pattern
+    // FileNames["pattern", "dir", n] — descend n directory levels
     // FileNames["pattern", "dir", Infinity] — recursive search
     #[cfg(not(target_arch = "wasm32"))]
     "FileNames" if args.len() <= 3 => {
@@ -3250,18 +3251,27 @@ pub fn dispatch_io_functions(
         }
       };
 
+      // Third argument: how many directory levels to include. `1` (the
+      // default) searches only the given directories, `2` also their
+      // immediate subdirectories, and `Infinity` descends without limit.
+      let levels = if args.len() >= 3 {
+        match file_names_levels(&args[2]) {
+          Some(n) => n,
+          None => return Some(Ok(unevaluated("FileNames", args))),
+        }
+      } else {
+        1
+      };
+
       let dir = if args.len() >= 2 {
         match &args[1] {
           Expr::String(s) => s.clone(),
           Expr::List(dirs) => {
             // FileNames["pat", {"dir1", "dir2"}] — search multiple dirs
             let mut all_files = Vec::new();
-            let recursive = args.len() >= 3
-              && matches!(&args[2], Expr::Identifier(s) if s == "Infinity");
             for d in dirs {
               if let Expr::String(dir_str) = d {
-                let mut files =
-                  collect_file_names(&pattern, dir_str, recursive);
+                let mut files = collect_file_names(&pattern, dir_str, levels);
                 all_files.append(&mut files);
               }
             }
@@ -3276,10 +3286,7 @@ pub fn dispatch_io_functions(
         ".".to_string()
       };
 
-      let recursive = args.len() >= 3
-        && matches!(&args[2], Expr::Identifier(s) if s == "Infinity");
-
-      let mut files = collect_file_names(&pattern, &dir, recursive);
+      let mut files = collect_file_names(&pattern, &dir, levels);
       files.sort();
       return Some(Ok(Expr::List(
         files.into_iter().map(Expr::String).collect(),
@@ -4188,29 +4195,43 @@ fn export_string_csv(
 
 /// Collect file names matching a glob pattern in a directory.
 #[cfg(not(target_arch = "wasm32"))]
-fn collect_file_names(
-  pattern: &str,
-  dir: &str,
-  recursive: bool,
-) -> Vec<String> {
+fn collect_file_names(pattern: &str, dir: &str, levels: usize) -> Vec<String> {
   use std::path::Path;
 
   let dir_path = Path::new(dir);
-  if !dir_path.is_dir() {
+  if levels == 0 || !dir_path.is_dir() {
     return Vec::new();
   }
 
   let mut results = Vec::new();
-  collect_files_recursive(dir_path, dir, pattern, recursive, &mut results);
+  collect_files_recursive(dir_path, dir, pattern, levels, &mut results);
   results
 }
 
+/// Number of directory levels the third `FileNames` argument asks for.
+/// `Infinity` means "no limit"; a non-positive count matches nothing.
+/// Returns `None` for arguments that aren't a level specification.
+#[cfg(not(target_arch = "wasm32"))]
+fn file_names_levels(spec: &Expr) -> Option<usize> {
+  match spec {
+    Expr::Identifier(s) if s == "Infinity" => Some(usize::MAX),
+    Expr::Integer(n) => Some(usize::try_from(*n).unwrap_or(0)),
+    Expr::Real(r) if r.fract() == 0.0 => {
+      Some(if *r <= 0.0 { 0 } else { *r as usize })
+    }
+    _ => None,
+  }
+}
+
+/// Walk `path`, collecting entries whose name matches `pattern`. `levels`
+/// counts the directory levels still to visit, so `1` stops at `path`
+/// itself and `usize::MAX` stands in for `Infinity`.
 #[cfg(not(target_arch = "wasm32"))]
 fn collect_files_recursive(
   path: &std::path::Path,
   base_dir: &str,
   pattern: &str,
-  recursive: bool,
+  levels: usize,
   results: &mut Vec<String>,
 ) {
   let Ok(entries) = std::fs::read_dir(path) else {
@@ -4223,25 +4244,36 @@ fn collect_files_recursive(
 
     if let Ok(ft) = file_type {
       if glob_match(pattern, &file_name) {
-        if base_dir == "." {
-          results.push(file_name.clone());
+        let rel_str = entry.path().to_string_lossy().to_string();
+        // A "." base is spelled implicitly, matching `FileNames["pat"]`,
+        // so drop the leading "./" that joining the base introduces.
+        results.push(if base_dir == "." {
+          strip_dot_prefix(&rel_str).to_string()
         } else {
-          let rel = entry.path();
-          let rel_str = rel.to_string_lossy().to_string();
-          results.push(rel_str);
-        }
+          rel_str
+        });
       }
-      if ft.is_dir() && recursive {
+      if ft.is_dir() && levels > 1 {
         collect_files_recursive(
           &entry.path(),
           base_dir,
           pattern,
-          true,
+          levels - 1,
           results,
         );
       }
     }
   }
+}
+
+/// Strip the leading `./` (or `.\` on Windows) from a path built by
+/// joining onto the "." base directory.
+#[cfg(not(target_arch = "wasm32"))]
+fn strip_dot_prefix(path: &str) -> &str {
+  path
+    .strip_prefix('.')
+    .and_then(|rest| rest.strip_prefix(['/', '\\']))
+    .unwrap_or(path)
 }
 
 /// Simple glob pattern matching supporting * and ?

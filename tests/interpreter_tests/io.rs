@@ -5647,6 +5647,109 @@ mod file_names {
     let result = interpret(r#"MemberQ[FileNames[], "src"]"#).unwrap();
     assert_eq!(result, "True");
   }
+
+  /// Build `<temp>/<name>/sub/sub/sub` with a `target.txt` on every level
+  /// and return the unix-style path of the tree's root directory.
+  fn nested_tree(name: &str) -> String {
+    let root = std::env::temp_dir().join(format!("woxi_file_names_{name}"));
+    std::fs::remove_dir_all(&root).ok();
+    let mut dir = root.clone();
+    loop {
+      std::fs::create_dir_all(&dir).unwrap();
+      std::fs::write(dir.join("target.txt"), "x").unwrap();
+      match dir.strip_prefix(&root).unwrap().components().count() {
+        3 => break,
+        _ => dir = dir.join("sub"),
+      }
+    }
+    unixify(&root.display().to_string())
+  }
+
+  /// The reported names, relative to the tree root, joined with `|`.
+  fn relative_hits(root: &str, levels: &str) -> String {
+    let names = interpret(&format!(
+      r#"StringRiffle[
+        StringDrop[FileNames["target.txt", "{root}", {levels}], {}],
+        "|"
+      ]"#,
+      root.chars().count() + 1
+    ))
+    .unwrap();
+    names.replace('\\', "/")
+  }
+
+  // The default depth of one level only reports the directory itself.
+  #[test]
+  fn default_depth_stays_in_the_given_directory() {
+    let root = nested_tree("default_depth");
+    let names = interpret(&format!(
+      r#"FileNames["target.txt", "{root}"] === {{FileNameJoin[{{"{root}", "target.txt"}}]}}"#
+    ))
+    .unwrap();
+    assert_eq!(names, "True");
+    std::fs::remove_dir_all(&root).ok();
+  }
+
+  // Regression test for #479: an explicit level count has to descend into
+  // subdirectories instead of being ignored.
+  #[test]
+  fn level_count_descends_that_many_directories() {
+    let root = nested_tree("level_count");
+    assert_eq!(relative_hits(&root, "1"), "target.txt");
+    assert_eq!(relative_hits(&root, "2"), "sub/target.txt|target.txt");
+    assert_eq!(
+      relative_hits(&root, "3"),
+      "sub/sub/target.txt|sub/target.txt|target.txt"
+    );
+    assert_eq!(
+      relative_hits(&root, "4"),
+      "sub/sub/sub/target.txt|sub/sub/target.txt|sub/target.txt|target.txt"
+    );
+    std::fs::remove_dir_all(&root).ok();
+  }
+
+  // A level count past the deepest directory behaves like Infinity, and
+  // level zero matches nothing at all.
+  #[test]
+  fn level_count_saturates_and_zero_matches_nothing() {
+    let root = nested_tree("level_bounds");
+    assert_eq!(relative_hits(&root, "99"), relative_hits(&root, "Infinity"));
+    assert_eq!(relative_hits(&root, "0"), "");
+    std::fs::remove_dir_all(&root).ok();
+  }
+
+  // A list of directories honours the level count as well.
+  #[test]
+  fn level_count_applies_to_a_list_of_directories() {
+    let root = nested_tree("level_list");
+    let count = interpret(&format!(
+      r#"Length[FileNames["target.txt", {{"{root}", FileNameJoin[{{"{root}", "sub"}}]}}, 2]]"#
+    ))
+    .unwrap();
+    // Two levels below the root plus two below "sub", with
+    // "sub/target.txt" reported once per directory spec it came through.
+    assert_eq!(count, "4");
+    std::fs::remove_dir_all(&root).ok();
+  }
+
+  // Recursing below "." keeps the path relative to the current directory
+  // instead of collapsing every hit to its bare file name.
+  #[test]
+  fn dot_directory_keeps_relative_paths() {
+    let result = interpret(
+      r#"MemberQ[FileNames["lib.rs", ".", Infinity], "src/lib.rs" | "src\\lib.rs"]"#,
+    )
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+
+  // A third argument that is not a level specification leaves the call
+  // unevaluated rather than silently searching a single level.
+  #[test]
+  fn non_level_third_argument_stays_unevaluated() {
+    let result = interpret(r#"FileNames["*.rs", "src", foo]"#).unwrap();
+    assert_eq!(result, "FileNames[*.rs, src, foo]");
+  }
 }
 
 mod set_directory {
