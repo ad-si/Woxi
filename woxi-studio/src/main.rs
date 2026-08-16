@@ -10101,6 +10101,92 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn sphere_cooling_manipulate_builds_widget() {
+    // End-to-end regression for a "transient conduction in a sphere"
+    // Demonstration: a `Do` loop walks `FindRoot` along the branches of the
+    // sphere's eigenvalue equation `1 - x Cot[x] == Bi` to build the root
+    // list a `Subscript`-indexed helper then looks up, and the resulting
+    // truncated Fourier-Bessel series is plotted against two `Labeled`
+    // sliders laid out in a `Row` with a `Spacer` between them.
+    let code = "Manipulate[\
+      Module[{roots, guess = 1, count = 8}, \
+        roots = {}; \
+        Do[\
+          AppendTo[roots, w /. FindRoot[1 - w Cot[w] == bi, {w, guess}]]; \
+          guess = guess + Pi, \
+          {n, 1, count}\
+        ]; \
+        Subscript[eig, k_] := roots[[k]]; \
+        Plot[\
+          Sum[\
+            (4 (Sin[Subscript[eig, k]] - Subscript[eig, k] Cos[Subscript[eig, k]])) / \
+              (2 Subscript[eig, k] - Sin[2 Subscript[eig, k]]) * \
+              Exp[-Subscript[eig, k]^2 fo], \
+            {k, 1, count}\
+          ], \
+          {fo, 0, fomax}, \
+          PlotRange -> {{0, fomax}, {0, 1.05}}, \
+          PlotStyle -> {Blue, Thick}, \
+          Frame -> True, \
+          FrameLabel -> {\"Fourier number\", \"center temperature ratio\"}, \
+          GridLines -> Automatic, \
+          ImageSize -> {500, 320}\
+        ]\
+      ], \
+      Row[{\
+        Control[{{fomax, 0.3, \"Fourier number range\"}, 0.1, 1.0, 0.05, \
+          Appearance -> \"Labeled\", ImageSize -> Small}], \
+        Spacer[40], \
+        Control[{{bi, 5, \"Biot number\"}, 0.5, 20, 1, \
+          Appearance -> \"Labeled\", ImageSize -> Small}]\
+      }], \
+      ControlPlacement -> Top, \
+      TrackedSymbols :> {fomax, bi}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the sphere-cooling Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the decay curve"
+    );
+
+    // Two labeled continuous sliders, in notebook order, laid out via Row.
+    let labels: Vec<(&str, f64, f64)> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous {
+          label, min, max, ..
+        } => (label.as_str(), *min, *max),
+        other => panic!("expected a continuous slider, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      labels,
+      vec![
+        ("Fourier number range", 0.1, 1.0),
+        ("Biot number", 0.5, 20.0),
+      ]
+    );
+
+    // Raising the Biot number re-solves the eigenvalue equation and
+    // re-renders without error.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[1]
+    {
+      *current = 15.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn oscilloscope_manipulate_builds_full_widget() {
     // End-to-end regression for the "Oscilloscope with Two Signal Inputs"
     // Demonstration: the loaded Input cell must build a live widget with
