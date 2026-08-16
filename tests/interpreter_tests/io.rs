@@ -5647,6 +5647,78 @@ mod file_names {
     let result = interpret(r#"MemberQ[FileNames[], "src"]"#).unwrap();
     assert_eq!(result, "True");
   }
+
+  #[test]
+  fn alternatives_pattern() {
+    // Regression for #478: `patt1 | patt2` matches either name.
+    let result =
+      interpret(r#"FileNames["Cargo.toml" | "does-not-exist.txt"]"#).unwrap();
+    assert_eq!(result, "{Cargo.toml}");
+  }
+
+  #[test]
+  fn list_of_patterns() {
+    // Regression for #478: a list of patterns matches any of them.
+    let result =
+      interpret(r#"FileNames[{"does-not-exist.txt", "Cargo.toml"}]"#).unwrap();
+    assert_eq!(result, "{Cargo.toml}");
+  }
+
+  #[test]
+  fn alternatives_with_wildcards() {
+    // Wildcards keep working inside alternatives, and a file matching more
+    // than one alternative is still listed only once.
+    let result =
+      interpret(r#"Count[FileNames["Cargo.*" | "*.toml"], "Cargo.toml"]"#)
+        .unwrap();
+    assert_eq!(result, "1");
+  }
+
+  #[test]
+  fn nested_alternatives_and_lists() {
+    // Lists and alternatives nest arbitrarily.
+    let result = interpret(
+      r#"FileNames[{"does-not-exist.txt" | "also-missing.txt", {"Cargo.toml"}}]"#,
+    )
+    .unwrap();
+    assert_eq!(result, "{Cargo.toml}");
+  }
+
+  #[test]
+  fn alternatives_with_directory() {
+    let result =
+      interpret(r#"FileNames["lib.rs" | "does-not-exist.rs", "src"]"#).unwrap();
+    assert_eq!(
+      result,
+      format!("{{src{0}lib.rs}}", std::path::MAIN_SEPARATOR)
+    );
+  }
+
+  #[test]
+  fn question_mark_is_not_a_wildcard() {
+    // Only `*` and `@` are metacharacters in a file name pattern.
+    let result = interpret(r#"FileNames["Cargo.tom?"]"#).unwrap();
+    assert_eq!(result, "{}");
+  }
+
+  #[test]
+  fn string_pattern_object() {
+    // Any string pattern works, not just literal strings with wildcards.
+    let result =
+      interpret(r#"FileNames[RegularExpression["Cargo\\.toml"]]"#).unwrap();
+    assert_eq!(result, "{Cargo.toml}");
+  }
+
+  #[test]
+  fn recursive_from_current_directory_keeps_subdirectories() {
+    // A recursive search below "." reports where each file lives.
+    let result = interpret(&format!(
+      r#"MemberQ[FileNames["lib.rs", ".", Infinity], "src{0}lib.rs"]"#,
+      std::path::MAIN_SEPARATOR_STR
+    ))
+    .unwrap();
+    assert_eq!(result, "True");
+  }
 }
 
 mod set_directory {

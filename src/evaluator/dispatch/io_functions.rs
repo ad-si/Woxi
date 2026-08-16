@@ -3235,19 +3235,17 @@ pub fn dispatch_io_functions(
     }
     // FileNames[] — list all files in current directory
     // FileNames["pattern"] — list files matching pattern
+    // FileNames[{p1, p2}] / FileNames[p1 | p2] — any of several patterns
     // FileNames["pattern", "dir"] — list files in dir matching pattern
     // FileNames["pattern", "dir", Infinity] — recursive search
     #[cfg(not(target_arch = "wasm32"))]
     "FileNames" if args.len() <= 3 => {
-      let pattern = if args.is_empty() {
-        "*".to_string()
+      let patterns = if args.is_empty() {
+        vec![Expr::String("*".to_string())]
       } else {
-        match &args[0] {
-          Expr::String(s) => s.clone(),
-          _ => {
-            return Some(Ok(unevaluated("FileNames", args)));
-          }
-        }
+        let mut collected = Vec::new();
+        flatten_file_patterns(&args[0], &mut collected);
+        collected
       };
 
       let dir = if args.len() >= 2 {
@@ -3261,7 +3259,7 @@ pub fn dispatch_io_functions(
             for d in dirs {
               if let Expr::String(dir_str) = d {
                 let mut files =
-                  collect_file_names(&pattern, dir_str, recursive);
+                  collect_file_names(&patterns, dir_str, recursive);
                 all_files.append(&mut files);
               }
             }
@@ -3279,7 +3277,7 @@ pub fn dispatch_io_functions(
       let recursive = args.len() >= 3
         && matches!(&args[2], Expr::Identifier(s) if s == "Infinity");
 
-      let mut files = collect_file_names(&pattern, &dir, recursive);
+      let mut files = collect_file_names(&patterns, &dir, recursive);
       files.sort();
       return Some(Ok(Expr::List(
         files.into_iter().map(Expr::String).collect(),
@@ -4186,10 +4184,54 @@ fn export_string_csv(
   out
 }
 
-/// Collect file names matching a glob pattern in a directory.
+/// Flatten a `FileNames` pattern argument into the individual patterns it
+/// stands for. Both `{p1, p2}` and `p1 | p2` mean "any of these" and may be
+/// nested arbitrarily; every other expression is a pattern in its own right
+/// (a literal string, `RegularExpression[…]`, `__ ~~ ".txt"`, …).
+#[cfg(not(target_arch = "wasm32"))]
+fn flatten_file_patterns(pattern: &Expr, out: &mut Vec<Expr>) {
+  match pattern {
+    Expr::List(items) => {
+      for item in items {
+        flatten_file_patterns(item, out);
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Alternatives" => {
+      for arg in args {
+        flatten_file_patterns(arg, out);
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Alternatives,
+      left,
+      right,
+    } => {
+      flatten_file_patterns(left, out);
+      flatten_file_patterns(right, out);
+    }
+    other => out.push(other.clone()),
+  }
+}
+
+/// Whether a file name matches any of the given `FileNames` patterns.
+/// Matching is delegated to `StringMatchQ`, so file name patterns support
+/// the same string patterns everywhere else in Woxi does — including the
+/// `*` and `@` metacharacters of a bare string pattern.
+#[cfg(not(target_arch = "wasm32"))]
+fn file_name_matches(patterns: &[Expr], file_name: &str) -> bool {
+  patterns.iter().any(|pattern| {
+    let args = [Expr::String(file_name.to_string()), pattern.clone()];
+    matches!(
+      crate::functions::string_ast::string_match_q_ast(&args),
+      Ok(Expr::Identifier(ref s)) if s == "True"
+    )
+  })
+}
+
+/// Collect file names matching any of the given patterns in a directory.
 #[cfg(not(target_arch = "wasm32"))]
 fn collect_file_names(
-  pattern: &str,
+  patterns: &[Expr],
   dir: &str,
   recursive: bool,
 ) -> Vec<String> {
@@ -4201,7 +4243,7 @@ fn collect_file_names(
   }
 
   let mut results = Vec::new();
-  collect_files_recursive(dir_path, dir, pattern, recursive, &mut results);
+  collect_files_recursive(dir_path, dir, patterns, recursive, &mut results);
   results
 }
 
@@ -4209,7 +4251,7 @@ fn collect_file_names(
 fn collect_files_recursive(
   path: &std::path::Path,
   base_dir: &str,
-  pattern: &str,
+  patterns: &[Expr],
   recursive: bool,
   results: &mut Vec<String>,
 ) {
@@ -4222,55 +4264,32 @@ fn collect_files_recursive(
     let file_type = entry.file_type();
 
     if let Ok(ft) = file_type {
-      if glob_match(pattern, &file_name) {
+      if file_name_matches(patterns, &file_name) {
+        let rel = entry.path();
+        let mut rel_str = rel.to_string_lossy().to_string();
+        // Names below the current directory are reported without the
+        // leading `./` — but the directories in between are kept, so a
+        // recursive search still says where each file lives.
         if base_dir == "." {
-          results.push(file_name.clone());
-        } else {
-          let rel = entry.path();
-          let rel_str = rel.to_string_lossy().to_string();
-          results.push(rel_str);
+          for prefix in ["./", ".\\"] {
+            if let Some(stripped) = rel_str.strip_prefix(prefix) {
+              rel_str = stripped.to_string();
+              break;
+            }
+          }
         }
+        results.push(rel_str);
       }
       if ft.is_dir() && recursive {
         collect_files_recursive(
           &entry.path(),
           base_dir,
-          pattern,
+          patterns,
           true,
           results,
         );
       }
     }
-  }
-}
-
-/// Simple glob pattern matching supporting * and ?
-#[cfg(not(target_arch = "wasm32"))]
-fn glob_match(pattern: &str, text: &str) -> bool {
-  let p: Vec<char> = pattern.chars().collect();
-  let t: Vec<char> = text.chars().collect();
-  glob_match_impl(&p, &t)
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn glob_match_impl(pattern: &[char], text: &[char]) -> bool {
-  if pattern.is_empty() {
-    return text.is_empty();
-  }
-  if pattern[0] == '*' {
-    // Try matching * with 0 or more characters
-    for i in 0..=text.len() {
-      if glob_match_impl(&pattern[1..], &text[i..]) {
-        return true;
-      }
-    }
-    false
-  } else if text.is_empty() {
-    false
-  } else if pattern[0] == '?' || pattern[0] == text[0] {
-    glob_match_impl(&pattern[1..], &text[1..])
-  } else {
-    false
   }
 }
 

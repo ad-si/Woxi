@@ -2,6 +2,15 @@
 
 # Unreleased
 
+- `FileNames` takes a string pattern, not just a literal wildcard string:
+    `FileNames["*.md" | "*.txt"]` and `FileNames[{"*.md", "*.txt"}]` list the
+    files matching any of the given patterns (nested arbitrarily), and pattern
+    objects such as `RegularExpression["…"]` or `__ ~~ ".txt"` work too.
+    Matching goes through `StringMatchQ`, so `*` and `@` are the only
+    metacharacters — `?` is a literal question mark, as in the Wolfram
+    Language.
+- `FileNames[patt, ".", Infinity]` keeps the intermediate directories in the
+    names it returns, instead of reporting a nested file under its bare name.
 - `InputString[]` and `Input[]` actually read from standard input when `woxi`
     owns it — `woxi run script.wls`, a shebang script, and `woxi eval` — so a
     script that prompts for a value now waits for one instead of running
