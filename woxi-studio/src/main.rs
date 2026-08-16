@@ -8615,6 +8615,60 @@ Cell[BoxData[
     assert_eq!(discrete(&state, 0).0.len(), 6);
   }
 
+  /// Probe: a single continuous time slider drives a `Which` of several
+  /// `Graphics3D` scenes assembled from a helper (built on
+  /// `RevolutionPlot3D[…][[1]]`) and combined with axis+pivot `Rotate`.
+  /// This shape mirrors a class of "morphing surface" Demonstrations.
+  #[test]
+  fn probe_time_sliced_rotation_scene() {
+    woxi::interpret(
+      "band[a1_, a2_, z1_] := {RevolutionPlot3D[{Sin[u] + 2, Cos[u]}, \
+         {u, a1*Pi, a2*Pi}, {z, 0, z1*Pi}, Mesh -> None][[1]]}",
+    )
+    .expect("the helper must define");
+
+    let code = "Manipulate[\
+      piece = band[0, 2, 1]; \
+      Graphics3D[{\
+        Which[\
+          s <= 1, band[0, 2, s], \
+          1 < s <= 2, Rotate[piece, (s - 1)*Pi, {0, 0, 1}, {-1, 0, 0}], \
+          True, Rotate[Rotate[piece, Pi, {0, 0, 1}, {-1, 0, 0}], \
+            (s - 2)*Pi/2, {1, 0, 0}]\
+        ]\
+      }, Boxed -> False], \
+      {{s, 0, \"time\"}, 0, 3}, \
+      SaveDefinitions -> True, TrackedSymbols -> Manipulate]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the time-sliced rotation Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly at s=0: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the scene must render");
+
+    for probe in [0.5_f64, 1.5, 2.5] {
+      if let manipulate::ControlState::Continuous { current, .. } =
+        &mut state.controls[0]
+      {
+        *current = probe;
+      } else {
+        panic!("expected a continuous control");
+      }
+      state.reevaluate();
+      assert!(
+        state.error.is_none(),
+        "body must evaluate cleanly at s={probe}: {:?}",
+        state.error
+      );
+      assert!(
+        state.graphics_handle.is_some(),
+        "the scene must render at s={probe}"
+      );
+    }
+  }
+
   /// A selected choice that the narrowed list no longer offers falls back
   /// to the last one it does, and the body is rendered again for it — so
   /// the graphic on screen always matches the control below it.
