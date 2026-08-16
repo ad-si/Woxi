@@ -1623,6 +1623,143 @@ mod triangle_center {
   }
 }
 
+mod geometric_scene {
+  use super::*;
+  use woxi::interpret_to_expr;
+  use woxi::syntax::expr_to_input_form;
+
+  /// A basic point substitution: the symbol in a single primitive is
+  /// replaced by its bound coordinate value, and the result is an ordinary
+  /// `Graphics[{...}]` expression.
+  #[test]
+  fn substitutes_point_symbol_in_primitive() {
+    let expr = interpret_to_expr(
+      "GeometricScene[{p -> {2, 3}}, {Point[p]}][\"Graphics\"]",
+    )
+    .unwrap();
+    assert_eq!(expr_to_input_form(&expr), "Graphics[{Point[{2, 3}]}]");
+  }
+
+  /// The general shape of the returned expression is `Graphics[{...}]`
+  /// (a `FunctionCall` headed by `Graphics`, wrapping a `List`).
+  #[test]
+  fn graphics_property_returns_graphics_head() {
+    let expr = interpret_to_expr(
+      "GeometricScene[{p -> {0, 0}, q -> {1, 1}}, {Line[{p, q}]}][\"Graphics\"]",
+    )
+    .unwrap();
+    match &expr {
+      woxi::syntax::Expr::FunctionCall { name, args } => {
+        assert_eq!(name, "Graphics");
+        assert_eq!(args.len(), 1);
+        assert!(matches!(&args[0], woxi::syntax::Expr::List(_)));
+      }
+      other => panic!("expected Graphics[...], got {other:?}"),
+    }
+  }
+
+  /// A later point may be derived from earlier ones — the right-hand side
+  /// of a later rule can reference symbols bound by earlier rules, and
+  /// those references are substituted with the already-evaluated values
+  /// before the later rule's own right-hand side is evaluated.
+  #[test]
+  fn later_point_can_depend_on_earlier_points() {
+    let held = interpret(
+      "GeometricScene[{p -> {1, 1}, q -> {5, 3}, m -> Mean[{p, q}]}, \
+       {Point[m]}]",
+    )
+    .unwrap();
+    // The dependent rule resolves to a concrete value, not a symbolic
+    // Mean[{p, q}] — proof that p and q were substituted in before Mean
+    // was evaluated.
+    assert!(
+      held.contains("m -> {3, 2}"),
+      "expected m to resolve to {{3, 2}}, got {held}"
+    );
+
+    let graphics = interpret_to_expr(
+      "GeometricScene[{p -> {1, 1}, q -> {5, 3}, m -> Mean[{p, q}]}, \
+       {Point[m]}][\"Graphics\"]",
+    )
+    .unwrap();
+    assert_eq!(expr_to_input_form(&graphics), "Graphics[{Point[{3, 2}]}]");
+  }
+
+  /// A primitive wrapped in styling (`Style[..., Dashed]`) still has its
+  /// point symbols substituted, wherever in the wrapper they occur.
+  #[test]
+  fn substitutes_inside_style_wrapper() {
+    let expr = interpret_to_expr(
+      "GeometricScene[{p -> {0, 0}, q -> {2, 2}}, \
+       {Style[Line[{p, q}], Dashed]}][\"Graphics\"]",
+    )
+    .unwrap();
+    let code = expr_to_input_form(&expr);
+    assert!(
+      code.contains("Line[{{0, 0}, {2, 2}}]"),
+      "expected substituted coordinates, got {code}"
+    );
+    assert!(
+      !code.contains("Line[{p, q}]"),
+      "point symbols should have been substituted, got {code}"
+    );
+  }
+
+  /// Regression test resembling the shape that originally motivated this
+  /// feature: three named vertex points plus a fourth point computed from
+  /// them via a function call (here `TriangleCenter`), referenced by
+  /// several primitives including a styled one.
+  #[test]
+  fn triangle_scene_with_derived_center_point() {
+    let expr = interpret_to_expr(
+      "GeometricScene[{v1 -> {0, 0}, v2 -> {6, 0}, v3 -> {0, 4}, \
+       ctr -> TriangleCenter[{v1, v2, v3}, \"Centroid\"]}, \
+       {Triangle[{v1, v2, v3}], Style[Line[{v1, ctr}], Dashed], \
+       Style[Line[{v2, ctr}], Dashed], Style[Line[{v3, ctr}], Dashed], \
+       Point[ctr]}][\"Graphics\"]",
+    )
+    .unwrap();
+    let code = expr_to_input_form(&expr);
+    assert!(code.starts_with("Graphics[{"), "got {code}");
+    // TriangleCenter[{{0,0},{6,0},{0,4}}, "Centroid"] is the mean of the
+    // three vertices: {2, 4/3}.
+    assert!(
+      code.contains("Point[{2, 4/3}]"),
+      "expected the derived centroid point substituted in, got {code}"
+    );
+    assert!(
+      code.contains("Triangle[{{0, 0}, {6, 0}, {0, 4}}]"),
+      "expected the vertex points substituted into Triangle, got {code}"
+    );
+    assert!(
+      code.contains("Line[{{0, 0}, {2, 4/3}}]"),
+      "expected a dashed line from v1 to the centroid, got {code}"
+    );
+  }
+
+  /// A malformed / missing property call keeps the curried form
+  /// unevaluated, matching the idiom used by other constructor objects
+  /// (`Entity[...]["prop"]`, `Around[...]["prop"]`).
+  #[test]
+  fn unknown_property_stays_unevaluated() {
+    assert_eq!(
+      interpret("GeometricScene[{p -> {1, 1}}, {Point[p]}][\"Bogus\"]")
+        .unwrap(),
+      "GeometricScene[{p -> {1, 1}}, {Point[p]}][Bogus]"
+    );
+  }
+
+  /// The resolved point definitions are available via `["Elements"]`.
+  #[test]
+  fn elements_property_returns_resolved_points() {
+    assert_eq!(
+      interpret("GeometricScene[{p -> {1, 1}}, {Point[p]}][\"Elements\"]")
+        .unwrap(),
+      "{p -> {1, 1}}"
+    );
+  }
+}
+
 mod circle_points {
   use super::*;
 

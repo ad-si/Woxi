@@ -6938,6 +6938,67 @@ mod tests {
   }
 
   #[test]
+  fn sole_finite_trigger_builds_a_dedicated_trigger_row() {
+    // A Demonstrations "play once over a fixed duration" control: unlike
+    // Kepler's Trigger (a *second* spec for a variable that already has a
+    // plain slider, so it only steals the animation without a row of its
+    // own), this Trigger is the *only* spec for its variable and its sweep
+    // end is finite — `AppearanceElements` even asks for player buttons
+    // instead of a thumb. That must still build a dedicated `Trigger` row
+    // (play/pause + step buttons), not fall back to an ordinary slider.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Rotate[Square[], angle Degree], \
+       {{angle, 0, \"spin\"}, 0, 360, 1, Trigger, \
+       AppearanceElements -> {\"PlayPauseButton\", \"ResetButton\"}}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(
+      state.animated,
+      "a Trigger control makes the widget animatable"
+    );
+    assert!(!state.playing, "a Trigger sits paused until pressed");
+    assert_eq!(state.controls.len(), 1);
+    match &state.controls[0] {
+      manipulate::ControlState::Trigger {
+        name,
+        min,
+        max,
+        step,
+        current,
+        ..
+      } => {
+        assert_eq!(name, "angle");
+        assert_eq!(*min, 0.0);
+        assert_eq!(*max, 360.0);
+        assert_eq!(*step, 1.0);
+        assert_eq!(*current, 0.0);
+      }
+      other => panic!("expected a dedicated Trigger row, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn sole_finite_trigger_animation_wraps_at_its_end() {
+    // The dedicated Trigger row must still wrap back to its start once the
+    // sweep passes `max`, exactly like a plain finite slider would — a
+    // finite Trigger is a bounded loop, not an indefinite run.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[disk = Disk[{0, 0}, r], \
+       {{r, 3, \"grow\"}, 1, 3, 1, Trigger}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let current = |s: &manipulate::ManipulateState| match &s.controls[0] {
+      manipulate::ControlState::Trigger { current, .. } => *current,
+      other => panic!("expected a Trigger control, got {other:?}"),
+    };
+    assert_eq!(current(&state), 3.0, "starts at its explicit initial value");
+    state.advance_animation();
+    assert_eq!(current(&state), 1.0, "steps past max wrap back to min");
+  }
+
+  #[test]
   fn locator_manipulate_builds_a_draggable_widget() {
     // The "Center of Mass of a Polygon" Demonstration pattern: a Locator
     // bound to a point list drives the polygon, with icon-labelled
@@ -7314,6 +7375,56 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`glyph$$ = \"pick a letter\"}, \"…
       }
       other => panic!("unexpected controls: {other:?}"),
     }
+  }
+
+  /// A Demonstration whose `Initialization :> (Get["HypothesisTesting`"];)`
+  /// loads the legacy `Statistics`HypothesisTests`` compatibility package
+  /// and whose body extracts a named property with
+  /// `TwoSidedPValue /. MeanTest[data, mu, TwoSided -> True]` must open
+  /// live: the context-qualified `HypothesisTesting`MeanTest` call has to
+  /// evaluate to a proper rule list (not merely echo unevaluated) so the
+  /// `ReplaceAll` actually extracts a p-value for the plot.
+  #[test]
+  fn demonstration_with_legacy_hypothesis_testing_mean_test_opens_live() {
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Module[{p, x, repCount},
+  SeedRandom[seed];
+  repCount = {50, 100}[[reps]];
+  p = Quiet@Table[
+    x = RandomReal[NormalDistribution[0, 1], n];
+    HypothesisTesting`TwoSidedPValue /. HypothesisTesting`MeanTest[x, 0, HypothesisTesting`TwoSided -> True],
+    {repCount}];
+  If[graph == 1, Histogram[p, 10, \"Probability\"], ListPlot[Sort[p]]]],
+ {{n, 20, \"sample size\"}, 10, 50, 10, Appearance -> \"Labeled\"},
+ {{seed, 1, \"seed\"}, 1, 100, 1, Appearance -> \"Labeled\"},
+ {{reps, 1, \"reps\"}, {1 -> \"50\", 2 -> \"100\"}},
+ {{graph, 1, \"graph\"}, {1 -> \"histogram\", 2 -> \"scatter\"}},
+ TrackedSymbols :> {n, seed, reps, graph},
+ SynchronousUpdating -> False,
+ Initialization :> (Get[\"HypothesisTesting`\"];)]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 20}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some() && widget.text_output.is_none(),
+      "the histogram of extracted p-values must draw, not echo the \
+       unevaluated MeanTest/ReplaceAll: {:?}",
+      widget.text_output
+    );
+    assert_eq!(widget.controls.len(), 4);
   }
 
   /// A stored Manipulate whose body calls helpers from earlier Input
@@ -15458,6 +15569,148 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`gap$$ = 3}, DynamicBox[\[Ellipsis]]
       three_solids_view,
       render(&widget),
       "showing only one solid must change the rendered scene"
+    );
+  }
+
+  /// End-to-end regression for the shape of the "Primitive Relation for
+  /// Elliptic Geometry" Demonstration: a separate `InitializationCell`
+  /// defines a great-circle-arc helper built from `With`, `Normalize`,
+  /// `Cross`, and `RotationTransform` composed with `ParametricPlot3D`
+  /// (extracting its curve via `[[1]]`), and a stored `Manipulate` whose
+  /// `Module` body assembles a `Graphics3D` of `Sphere[]`, `Opacity`,
+  /// `Line`s and `Text[Style[...], point, offset]` labels, picking between
+  /// two point-pair layouts with `Switch` and toggling a set of axis
+  /// `Line`s on and off with `If`, driven by a continuous rotation slider
+  /// alongside two discrete (`Setter`/checkbox) controls.
+  #[test]
+  fn demonstration_great_circle_pair_manipulate_switches_and_toggles() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["greatCircle3D[a_, b_] := With[{axis = Normalize[Cross[a, b]]}, ParametricPlot3D[RotationTransform[t, axis][a], {t, 0, 2 Pi}, PlotStyle -> {Purple}][[1]]]"], "Input",
+ InitializationCell->True],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Module[{ptA = {Cos[theta], Sin[theta], 0}, ptB = {0, 1, 0}, ptC = {0, 0, 1}},
+   Graphics3D[{
+     Opacity[0.5], Sphere[],
+     If[showAxes, {Line[{{-1, 0, 0}, {1, 0, 0}}], Line[{{0, -1, 0}, {0, 1, 0}}], Line[{{0, 0, -1}, {0, 0, 1}}]}, {}],
+     Switch[view,
+       1, {greatCircle3D[ptA, ptB], Line[{{0, 0, 0}, ptA}], Line[{{0, 0, 0}, ptB}],
+           Text[Style[\"A\", 16], ptA, {0, 1}], Text[Style[\"B\", 16], ptB, {0, 1}]},
+       2, {greatCircle3D[ptB, ptC], Line[{{0, 0, 0}, ptB}], Line[{{0, 0, 0}, ptC}],
+           Text[Style[\"B\", 16], ptB, {0, 1}], Text[Style[\"C\", 16], ptC, {0, 1}]}]
+   }]
+ ],
+ {{theta, 0, \"rotation\"}, 0, 2 Pi},
+ {{view, 1, \"pair\"}, {1, 2}},
+ {{showAxes, True, \"axes\"}, {True, False}}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`theta$$ = 0, $CellContext`view$$ = 1, $CellContext`showAxes$$ = True}, DynamicBox[\[Ellipsis]]]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the Switch's first branch (Sphere + great circle + labels) must draw"
+    );
+
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: theta_name,
+          label: theta_label,
+          min: theta_min,
+          max: theta_max,
+          current: theta_now,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: view_name,
+          values: view_values,
+          current_index: view_idx,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: axes_name,
+          values: axes_values,
+          current_index: axes_idx,
+          ..
+        },
+      ] => {
+        assert_eq!(theta_name.as_str(), "theta");
+        assert_eq!(theta_label.as_str(), "rotation");
+        assert_eq!(*theta_min, 0.0);
+        assert!((*theta_max - std::f64::consts::TAU).abs() < 1e-9);
+        assert_eq!(*theta_now, 0.0);
+        assert_eq!(view_name.as_str(), "view");
+        assert_eq!(view_values.as_slice(), ["1", "2"]);
+        assert_eq!(*view_idx, 0);
+        assert_eq!(axes_name.as_str(), "showAxes");
+        assert_eq!(axes_values.as_slice(), ["True", "False"]);
+        assert_eq!(*axes_idx, 0);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    // The great-circle helper was defined in the separate Initialization
+    // cell (run once before the widget's body first evaluates), so the
+    // stored body can be re-rendered on its own to inspect the SVG.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the pieces must render")
+    };
+
+    let pair_one = render(&widget);
+
+    // Switching `view` to the second pair swaps which two points the great
+    // circle and its labels connect, so the render must change.
+    match &mut widget.controls[1] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 1;
+      }
+      other => panic!("expected discrete control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    assert!(widget.graphics_handle.is_some());
+    let pair_two = render(&widget);
+    assert_ne!(
+      pair_one, pair_two,
+      "switching the Switch selector must change the rendered pair"
+    );
+
+    // Toggling the axes checkbox off must drop the three axis Lines from
+    // this same view, changing the render again.
+    match &mut widget.controls[2] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 1;
+      }
+      other => panic!("expected discrete control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    let pair_two_no_axes = render(&widget);
+    assert_ne!(
+      pair_two, pair_two_no_axes,
+      "unchecking the axes toggle must hide the axis lines"
     );
   }
 }

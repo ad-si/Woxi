@@ -16221,6 +16221,140 @@ pub fn control_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// GeometricScene
+// ─────────────────────────────────────────────────────────────────
+
+/// Pull the bound symbol name out of a point-definition rule's
+/// left-hand side (`sym -> value`); anything else isn't a point rule.
+fn geometric_scene_point_name(pattern: &Expr) -> Option<String> {
+  match pattern {
+    Expr::Identifier(name) => Some(name.clone()),
+    _ => None,
+  }
+}
+
+/// Held evaluation of `GeometricScene[{sym -> value, ...}, {primitives...}]`
+/// (an optional third constraints-list argument is accepted and, like the
+/// primitives, held for later use). The point-definition rules are
+/// evaluated in order, left to right, with every earlier point symbol
+/// substituted into later right-hand sides first — so a later point may be
+/// derived from earlier ones, e.g. `centroid -> TriangleCenter[{a, b, c},
+/// "Centroid"]`. The primitives (and constraints) stay symbolic, still
+/// referencing the point *names*, until `["Graphics"]` resolves them.
+pub fn geometric_scene_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mut out_args: Vec<Expr> = Vec::with_capacity(args.len());
+
+  let mut bindings: Vec<(String, Expr)> = Vec::new();
+  match args.first() {
+    Some(Expr::List(items)) => {
+      let mut evaluated_rules: Vec<Expr> = Vec::with_capacity(items.len());
+      for item in items {
+        let rule_parts = match item {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => Some((pattern.as_ref(), replacement.as_ref())),
+          Expr::FunctionCall { name, args: rargs }
+            if (name == "Rule" || name == "RuleDelayed")
+              && rargs.len() == 2 =>
+          {
+            Some((&rargs[0], &rargs[1]))
+          }
+          _ => None,
+        };
+        if let Some((name, replacement)) =
+          rule_parts.and_then(|(pattern, replacement)| {
+            geometric_scene_point_name(pattern).map(|name| (name, replacement))
+          })
+        {
+          let binding_refs: Vec<(&str, &Expr)> =
+            bindings.iter().map(|(n, v)| (n.as_str(), v)).collect();
+          let substituted =
+            crate::syntax::substitute_variables(replacement, &binding_refs);
+          let value = evaluate_expr_to_expr(&substituted)?;
+          evaluated_rules.push(Expr::Rule {
+            pattern: Box::new(Expr::Identifier(name.clone())),
+            replacement: Box::new(value.clone()),
+          });
+          bindings.push((name, value));
+        } else {
+          // Not a recognizable `symbol -> value` point rule; evaluate it
+          // on its own (with points bound so far in scope) and keep it as-is.
+          let binding_refs: Vec<(&str, &Expr)> =
+            bindings.iter().map(|(n, v)| (n.as_str(), v)).collect();
+          let substituted =
+            crate::syntax::substitute_variables(item, &binding_refs);
+          evaluated_rules.push(evaluate_expr_to_expr(&substituted)?);
+        }
+      }
+      out_args.push(Expr::List(evaluated_rules.into()));
+    }
+    Some(other) => out_args.push(other.clone()),
+    None => {}
+  }
+
+  // Primitives (args[1]) and any optional constraints (args[2]) reference
+  // the point symbols by name rather than by value, so they stay held
+  // until a `["Graphics"]` (or similar) property substitutes them in.
+  for extra in args.iter().skip(1) {
+    out_args.push(extra.clone());
+  }
+
+  Ok(call("GeometricScene", out_args))
+}
+
+/// `GeometricScene[{sym -> value, ...}, {primitives...}][ "Graphics" ]` —
+/// substitute every point symbol occurring anywhere in the primitives
+/// (including inside wrappers like `Style[...]`/`Directive[...]`) with its
+/// bound coordinate value, then evaluate the result as an ordinary
+/// `Graphics[{...}]` expression.
+pub fn geometric_scene_graphics(
+  func_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let bindings: Vec<(String, Expr)> = match func_args.first() {
+    Some(Expr::List(items)) => items
+      .iter()
+      .filter_map(|item| match item {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => geometric_scene_point_name(pattern)
+          .map(|name| (name, replacement.as_ref().clone())),
+        _ => None,
+      })
+      .collect(),
+    _ => Vec::new(),
+  };
+  let binding_refs: Vec<(&str, &Expr)> =
+    bindings.iter().map(|(n, v)| (n.as_str(), v)).collect();
+
+  let primitives = func_args
+    .get(1)
+    .cloned()
+    .unwrap_or(Expr::List(Vec::new().into()));
+  let substituted =
+    crate::syntax::substitute_variables(&primitives, &binding_refs);
+  evaluate_expr_to_expr(&call("Graphics", vec![substituted]))
+}
+
+/// `GeometricScene[{sym -> value, ...}, ...][ "Elements" ]` — the resolved
+/// list of `sym -> value` point definitions, i.e. `args[0]` as-is.
+pub fn geometric_scene_elements(
+  func_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  Ok(
+    func_args
+      .first()
+      .cloned()
+      .unwrap_or(Expr::List(Vec::new().into())),
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Interactive Manipulate support (for Woxi Playground / Woxi Studio)
 // ─────────────────────────────────────────────────────────────────
 
@@ -19469,63 +19603,65 @@ fn parse_manipulate_control(
     })
     .collect();
 
-  // A `ControlType -> Trigger` (or bare `Trigger` marker) with an
-  // *infinite* sweep end (`{time, 0, Infinity, 1, …}` — the Demonstrations
-  // "run/stop simulation" control) cannot drive a finite slider; it becomes
-  // a dedicated play/pause control that never wraps. A finite Trigger falls
-  // through to the continuous path below (Kepler pairs one with a plain
-  // slider on the same variable).
+  // A `ControlType -> Trigger` (or bare `Trigger` marker) becomes a
+  // dedicated play/pause control sweeping its variable from `min` towards
+  // `max` — whether that end is infinite (`{time, 0, Infinity, 1, …}`, the
+  // Demonstrations "run/stop simulation" control) or finite (`{{t, 0, ""},
+  // 0, tmax, .01, Trigger, DefaultDuration -> tmax}`, the "play once over a
+  // fixed duration" pattern). When this variable already has a visible row
+  // from an earlier spec (Kepler pairs a `Trigger` with a plain slider on
+  // the same `t`), the row built here is dropped by the caller's dedup
+  // check and only this control's `animate` field takes effect, so building
+  // the dedicated widget here is safe either way.
   if control_type.as_deref() == Some("Trigger") {
+    let min = bounds
+      .first()
+      .and_then(|e| {
+        crate::functions::math_ast::try_eval_to_f64_with_infinity(e)
+      })
+      .unwrap_or(0.0);
     let max = bounds
       .get(1)
       .and_then(|e| {
         crate::functions::math_ast::try_eval_to_f64_with_infinity(e)
       })
       .unwrap_or(f64::INFINITY);
-    if !max.is_finite() {
-      let min = bounds
-        .first()
-        .and_then(|e| {
-          crate::functions::math_ast::try_eval_to_f64_with_infinity(e)
-        })
-        .unwrap_or(0.0);
-      let step = bounds
-        .get(2)
-        .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))
-        .unwrap_or(1.0);
-      let initial = explicit_initial
-        .as_ref()
-        .and_then(crate::functions::math_ast::try_eval_to_f64)
-        .unwrap_or(min);
-      // Wolfram's Trigger sits paused until pressed; only an explicit
-      // `AnimationRunning -> True` starts it sweeping immediately.
-      let running = items.iter().any(|it| {
-        matches!(
-          it,
-          Expr::Rule { pattern, replacement }
-          | Expr::RuleDelayed { pattern, replacement }
-            if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
-              && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True")
-        )
-      });
-      return Some(ParsedControl::Visible {
-        control: ManipulateControl::Trigger {
-          name,
-          min,
-          max,
-          step,
-          initial,
-          running,
-          label,
-          label_runs,
-        },
-        enabled,
-        min_code: None,
-        max_code: None,
-        values_code: None,
-        animate: Some(running),
-      });
-    }
+    let step = bounds
+      .get(2)
+      .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))
+      .unwrap_or(1.0);
+    let initial = explicit_initial
+      .as_ref()
+      .and_then(crate::functions::math_ast::try_eval_to_f64)
+      .unwrap_or(min);
+    // Wolfram's Trigger sits paused until pressed; only an explicit
+    // `AnimationRunning -> True` starts it sweeping immediately.
+    let running = items.iter().any(|it| {
+      matches!(
+        it,
+        Expr::Rule { pattern, replacement }
+        | Expr::RuleDelayed { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
+            && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True")
+      )
+    });
+    return Some(ParsedControl::Visible {
+      control: ManipulateControl::Trigger {
+        name,
+        min,
+        max,
+        step,
+        initial,
+        running,
+        label,
+        label_runs,
+      },
+      enabled,
+      min_code: None,
+      max_code: None,
+      values_code: None,
+      animate: Some(running),
+    });
   }
 
   // 2D control: either an explicit `ControlType -> Slider2D`, or a range

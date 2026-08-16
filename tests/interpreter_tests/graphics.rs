@@ -20242,20 +20242,22 @@ mod manipulate {
   }
 
   #[test]
-  fn spec_standalone_trigger_keeps_its_slider() {
-    // A Trigger that is its variable's only control still binds it (and
-    // shows a slider row the user can also drag directly).
+  fn spec_standalone_trigger_builds_a_trigger_row() {
+    // A Trigger that is its variable's only control still binds it, as a
+    // dedicated Trigger (play/pause) row rather than an ordinary slider —
+    // Wolfram draws player buttons for `ControlType -> Trigger` regardless
+    // of whether the sweep end is finite or infinite.
     let expr =
       interpret_to_expr("Manipulate[u^2, {u, 0, 1, ControlType -> Trigger}]")
         .unwrap();
     let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
     assert_eq!(spec.controls.len(), 1);
     match &spec.controls[0] {
-      ManipulateControl::Continuous { name, min, max, .. } => {
+      ManipulateControl::Trigger { name, min, max, .. } => {
         assert_eq!(name, "u");
         assert_eq!((*min, *max), (0.0, 1.0));
       }
-      other => panic!("expected continuous control, got {other:?}"),
+      other => panic!("expected a Trigger control, got {other:?}"),
     }
     assert!(spec.animated && !spec.animation_running);
     assert_eq!(spec.animation_var.as_deref(), Some("u"));
@@ -20478,6 +20480,84 @@ mod manipulate {
       svg.contains("area = 0.68 AU<tspan baseline-shift=\"super\""),
       "PlotLabel must render the superscript box: {}",
       &svg[..svg.len().min(400)]
+    );
+  }
+
+  // The "level curves of a surface" Demonstration pattern: a prior cell
+  // defines a list of `Function[{x, y}, …]` surfaces, and the Manipulate
+  // body picks one by `Part` indexing (`surfaces[[choice]]`) into a local
+  // variable before plotting it, with three `Appearance -> "Labeled"`
+  // sliders driving `MeshFunctions`/`Mesh` cutting planes on the surface and
+  // a fourth control switching which surface is shown via a pick list whose
+  // choices are `TraditionalForm[Row[{…}]]`-labelled formulas.
+  #[test]
+  fn spec_surface_mesh_planes_with_function_list_picker() {
+    let expr = interpret_to_expr(
+      "surfaces = {Function[{u, v}, Sin[u^2 + v^2]], \
+       Function[{u, v}, u^2 - v^2], \
+       Function[{u, v}, Exp[-u^2 - v^2]]}; \
+       Manipulate[\
+       g = surfaces[[choice]]; \
+       With[{px = px0, py = py0, pz = pz0}, \
+       Plot3D[g[u, v], {u, -2, 2}, {v, -2, 2}, \
+       MeshFunctions -> {#1 & , #2 & , #3 & }, \
+       Mesh -> {{px}, {py}, {pz}}, \
+       MeshStyle -> {{Red, Thickness[0.006]}, {Blue, Thickness[0.006]}, \
+       {Darker[Green], Thickness[0.006]}}, \
+       AxesLabel -> {Style[\"u\", Italic], Style[\"v\", Italic], \
+       Style[\"g\", Italic]}, ImageSize -> {300, 300}]], \
+       {px0, -3, 3, Appearance -> \"Labeled\"}, \
+       {py0, -3, 3, Appearance -> \"Labeled\"}, \
+       {pz0, -3, 3, Appearance -> \"Labeled\"}, \
+       {{choice, 1, \"surface\"}, \
+       {1 -> TraditionalForm[Row[{Sin[U^2 + V^2]}]], \
+       2 -> TraditionalForm[Row[{U^2 - V^2}]], \
+       3 -> TraditionalForm[Row[{Exp[-U^2 - V^2]}]]}, \
+       FieldSize -> {10, 1.8}, ControlPlacement -> Left}, \
+       SaveDefinitions -> True, TrackedSymbols -> True]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+
+    // Three plain continuous sliders, then the discrete surface picker.
+    assert_eq!(spec.controls.len(), 4);
+    for c in &spec.controls[..3] {
+      assert!(
+        matches!(c, ManipulateControl::Continuous { .. }),
+        "expected a continuous slider, got {c:?}"
+      );
+    }
+    match &spec.controls[3] {
+      ManipulateControl::Discrete {
+        name,
+        values,
+        value_labels,
+        ..
+      } => {
+        assert_eq!(name, "choice");
+        assert_eq!(
+          values,
+          &vec!["1".to_string(), "2".to_string(), "3".to_string()]
+        );
+        // `Row[{…}]` around a single element collapses to that element, so
+        // the TraditionalForm label renders the bare formula.
+        assert_eq!(value_labels.len(), 3);
+        for label in value_labels {
+          assert!(!label.is_empty(), "surface picker label must not be empty");
+        }
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+
+    // The initial bindings (px0=py0=pz0=-3, choice=1) render a surface —
+    // the `funcs[[choice]]` indirection inside the body must resolve.
+    let bindings = manipulate_initial_bindings(&spec);
+    let code = manipulate_block_code(&spec.body_code, &bindings);
+    let result = woxi::interpret_with_stdout(&code).unwrap();
+    assert!(
+      result.graphics.is_some(),
+      "Plot3D through a Part-indexed function list must still render: {:?}",
+      result.result
     );
   }
 }
