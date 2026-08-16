@@ -1439,6 +1439,19 @@ fn typeset_constant_glyph(name: &str) -> Option<&'static str> {
   })
 }
 
+/// Whether an expression is a plain-assignment target: a bare symbol, or a
+/// (possibly nested) list of them — `{{xmin, xmax}, {ymin, ymax}}` is the
+/// left side of the list-destructuring form `{{xmin, xmax}, {ymin, ymax}} =
+/// {{-2, 2}, {-2, 2}}`, which `Set` threads element-wise the same way it
+/// does a plain `{a, b} = {1, 2}`.
+fn is_assignment_target(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(_) => true,
+    Expr::List(items) => items.iter().all(is_assignment_target),
+    _ => false,
+  }
+}
+
 /// The run of plain assignments a Manipulate body opens with. A body that
 /// sets up its own bounds does so first (`tmin = 0; tmax = 2 Pi; …`), and
 /// stopping at the first statement that is not a `Set` keeps this to
@@ -1453,7 +1466,7 @@ fn leading_assignments(body: &Expr) -> Vec<&Expr> {
     .take_while(|stmt| {
       matches!(stmt, Expr::FunctionCall { name, args }
         if name == "Set" && args.len() == 2
-          && matches!(&args[0], Expr::Identifier(_)))
+          && is_assignment_target(&args[0]))
     })
     .collect()
 }
@@ -18495,11 +18508,19 @@ fn manipulate_value_to_input_form(expr: &Expr) -> String {
 /// Interpret an expression as a 2-element numeric list `{a, b}`, evaluating
 /// each element to an `f64`. Returns `None` for anything that isn't a
 /// 2-vector of numbers.
+///
+/// A corner point may name a symbol a leading body assignment sets rather
+/// than carry a literal number — `{{u, {1, 1}, ""}, {xmin, ymin}, {xmax,
+/// ymax}, ControlType -> Slider2D}` bounds a 2D control by the same `xmin`
+/// leading assignments resolve for a 1D slider (`eval_manipulate_bound`
+/// falls back to a full evaluation for exactly this reason). Each element
+/// gets the same fallback here so a `Slider2D` corner point resolves a
+/// symbolic bound the way a plain slider's `min`/`max` already does.
 fn list2_f64(e: &Expr) -> Option<(f64, f64)> {
   match e {
     Expr::List(l) if l.len() == 2 => {
-      let a = crate::functions::math_ast::try_eval_to_f64(&l[0])?;
-      let b = crate::functions::math_ast::try_eval_to_f64(&l[1])?;
+      let a = eval_manipulate_bound(&l[0])?.0;
+      let b = eval_manipulate_bound(&l[1])?.0;
       Some((a, b))
     }
     _ => None,
