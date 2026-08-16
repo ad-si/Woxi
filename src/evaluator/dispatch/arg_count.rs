@@ -660,6 +660,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "HilbertMatrix" => Some((1, 1)),
     "HistogramDistribution" => Some((1, 2)),
     "HistogramList" => Some((1, 2)),
+    "HypothesisTesting`MeanTest" => Some((1, usize::MAX)),
     "HoldForm" => Some((1, 1)),
     "Hyperfactorial" => Some((1, 1)),
     "BinormalDistribution" => Some((1, 3)),
