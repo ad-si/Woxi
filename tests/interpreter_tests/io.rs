@@ -3013,6 +3013,120 @@ mod write {
   }
 }
 
+mod write_line {
+  use super::*;
+
+  // Regression test for https://github.com/ad-si/Woxi/issues/475
+  #[test]
+  fn write_line_to_open_stream() {
+    clear_state();
+    let path = temp_file("woxi_test_write_line_stream.txt");
+    interpret(&format!(
+      "str = OpenWrite[\"{path}\"]; WriteLine[str, \"Some log text\"]; Close[str]"
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(content, "Some log text\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn write_line_multiple_calls_append() {
+    clear_state();
+    let path = temp_file("woxi_test_write_line_multi.txt");
+    interpret(&format!(
+      "str = OpenWrite[\"{path}\"]; WriteLine[str, \"a\"]; WriteLine[str, \"b\"]; Close[str]"
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(content, "a\nb\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  // A file name is a channel of its own, no open stream needed.
+  #[test]
+  fn write_line_to_file_name() {
+    clear_state();
+    let path = temp_file("woxi_test_write_line_file_name.txt");
+    interpret(&format!(
+      "WriteLine[\"{path}\", \"first\"]; WriteLine[\"{path}\", \"second\"]"
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(content, "first\nsecond\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  // Non-string arguments are written in OutputForm, like WriteString does.
+  #[test]
+  fn write_line_converts_non_strings() {
+    clear_state();
+    let path = temp_file("woxi_test_write_line_expr.txt");
+    interpret(&format!(
+      "str = OpenWrite[\"{path}\"]; WriteLine[str, 1 + b^2]; Close[str]"
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(content, "1 + b^2\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn write_line_returns_null() {
+    clear_state();
+    let path = temp_file("woxi_test_write_line_null.txt");
+    let result = interpret(&format!(
+      "str = OpenWrite[\"{path}\"]; r = WriteLine[str, \"x\"]; Close[str]; r"
+    ))
+    .unwrap();
+    assert_eq!(result, "\0");
+    std::fs::remove_file(&path).ok();
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn write_line_to_stdout() {
+    clear_state();
+    let result =
+      interpret_with_stdout(r#"WriteLine["stdout", "hello"]"#).unwrap();
+    assert_eq!(result.stdout, "hello\n");
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn write_line_to_output_channel() {
+    clear_state();
+    let result = interpret_with_stdout(
+      r#"WriteLine[$Output, "a"]; WriteLine[$Output, "b"]"#,
+    )
+    .unwrap();
+    assert_eq!(result.stdout, "a\nb\n");
+  }
+
+  #[test]
+  #[cfg(unix)]
+  fn write_line_to_command_stream() {
+    clear_state();
+    let path = temp_file("woxi_pipe_write_line.txt");
+    let result = interpret(&format!(
+      r#"s = OpenWrite["!tr a-z A-Z > {path}"]; WriteLine[s, "hello pipe"]; Close[s]; ReadString["{path}"]"#
+    ))
+    .unwrap();
+    assert_eq!(result, "HELLO PIPE\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  // An unwritable channel leaves the call unevaluated, like WriteString.
+  #[test]
+  fn write_line_with_invalid_channel_stays_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"WriteLine[3, "x"]"#).unwrap(),
+      "WriteLine[3, x]"
+    );
+  }
+}
+
 mod read {
   use super::*;
 
