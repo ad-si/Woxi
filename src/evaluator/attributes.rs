@@ -583,6 +583,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // its argument via the explicit name-match in core_eval.rs rather than a
     // HoldAll attribute.
     "Control" => vec!["Protected"],
+    // GeometricScene: Protected + ReadProtected (matches wolframscript). Like
+    // Manipulate it holds its arguments via the explicit name-match in
+    // core_eval.rs rather than a HoldAll attribute.
+    "GeometricScene" => vec!["Protected", "ReadProtected"],
     // PfaffianDet: Protected + ReadProtected (matches wolframscript).
     "PfaffianDet" => vec!["Protected", "ReadProtected"],
     // Parallel* combinators: Protected + ReadProtected. This matches a COLD

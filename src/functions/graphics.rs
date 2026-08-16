@@ -16221,6 +16221,140 @@ pub fn control_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// GeometricScene
+// ─────────────────────────────────────────────────────────────────
+
+/// Pull the bound symbol name out of a point-definition rule's
+/// left-hand side (`sym -> value`); anything else isn't a point rule.
+fn geometric_scene_point_name(pattern: &Expr) -> Option<String> {
+  match pattern {
+    Expr::Identifier(name) => Some(name.clone()),
+    _ => None,
+  }
+}
+
+/// Held evaluation of `GeometricScene[{sym -> value, ...}, {primitives...}]`
+/// (an optional third constraints-list argument is accepted and, like the
+/// primitives, held for later use). The point-definition rules are
+/// evaluated in order, left to right, with every earlier point symbol
+/// substituted into later right-hand sides first — so a later point may be
+/// derived from earlier ones, e.g. `centroid -> TriangleCenter[{a, b, c},
+/// "Centroid"]`. The primitives (and constraints) stay symbolic, still
+/// referencing the point *names*, until `["Graphics"]` resolves them.
+pub fn geometric_scene_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mut out_args: Vec<Expr> = Vec::with_capacity(args.len());
+
+  let mut bindings: Vec<(String, Expr)> = Vec::new();
+  match args.first() {
+    Some(Expr::List(items)) => {
+      let mut evaluated_rules: Vec<Expr> = Vec::with_capacity(items.len());
+      for item in items {
+        let rule_parts = match item {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => Some((pattern.as_ref(), replacement.as_ref())),
+          Expr::FunctionCall { name, args: rargs }
+            if (name == "Rule" || name == "RuleDelayed")
+              && rargs.len() == 2 =>
+          {
+            Some((&rargs[0], &rargs[1]))
+          }
+          _ => None,
+        };
+        if let Some((name, replacement)) =
+          rule_parts.and_then(|(pattern, replacement)| {
+            geometric_scene_point_name(pattern).map(|name| (name, replacement))
+          })
+        {
+          let binding_refs: Vec<(&str, &Expr)> =
+            bindings.iter().map(|(n, v)| (n.as_str(), v)).collect();
+          let substituted =
+            crate::syntax::substitute_variables(replacement, &binding_refs);
+          let value = evaluate_expr_to_expr(&substituted)?;
+          evaluated_rules.push(Expr::Rule {
+            pattern: Box::new(Expr::Identifier(name.clone())),
+            replacement: Box::new(value.clone()),
+          });
+          bindings.push((name, value));
+        } else {
+          // Not a recognizable `symbol -> value` point rule; evaluate it
+          // on its own (with points bound so far in scope) and keep it as-is.
+          let binding_refs: Vec<(&str, &Expr)> =
+            bindings.iter().map(|(n, v)| (n.as_str(), v)).collect();
+          let substituted =
+            crate::syntax::substitute_variables(item, &binding_refs);
+          evaluated_rules.push(evaluate_expr_to_expr(&substituted)?);
+        }
+      }
+      out_args.push(Expr::List(evaluated_rules.into()));
+    }
+    Some(other) => out_args.push(other.clone()),
+    None => {}
+  }
+
+  // Primitives (args[1]) and any optional constraints (args[2]) reference
+  // the point symbols by name rather than by value, so they stay held
+  // until a `["Graphics"]` (or similar) property substitutes them in.
+  for extra in args.iter().skip(1) {
+    out_args.push(extra.clone());
+  }
+
+  Ok(call("GeometricScene", out_args))
+}
+
+/// `GeometricScene[{sym -> value, ...}, {primitives...}][ "Graphics" ]` —
+/// substitute every point symbol occurring anywhere in the primitives
+/// (including inside wrappers like `Style[...]`/`Directive[...]`) with its
+/// bound coordinate value, then evaluate the result as an ordinary
+/// `Graphics[{...}]` expression.
+pub fn geometric_scene_graphics(
+  func_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let bindings: Vec<(String, Expr)> = match func_args.first() {
+    Some(Expr::List(items)) => items
+      .iter()
+      .filter_map(|item| match item {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => geometric_scene_point_name(pattern)
+          .map(|name| (name, replacement.as_ref().clone())),
+        _ => None,
+      })
+      .collect(),
+    _ => Vec::new(),
+  };
+  let binding_refs: Vec<(&str, &Expr)> =
+    bindings.iter().map(|(n, v)| (n.as_str(), v)).collect();
+
+  let primitives = func_args
+    .get(1)
+    .cloned()
+    .unwrap_or(Expr::List(Vec::new().into()));
+  let substituted =
+    crate::syntax::substitute_variables(&primitives, &binding_refs);
+  evaluate_expr_to_expr(&call("Graphics", vec![substituted]))
+}
+
+/// `GeometricScene[{sym -> value, ...}, ...][ "Elements" ]` — the resolved
+/// list of `sym -> value` point definitions, i.e. `args[0]` as-is.
+pub fn geometric_scene_elements(
+  func_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  Ok(
+    func_args
+      .first()
+      .cloned()
+      .unwrap_or(Expr::List(Vec::new().into())),
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Interactive Manipulate support (for Woxi Playground / Woxi Studio)
 // ─────────────────────────────────────────────────────────────────
 
