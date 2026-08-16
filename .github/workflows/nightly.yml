@@ -95,9 +95,12 @@ jobs:
       # -rss_limit_mb is raised above the 2048 default because some corpus
       # seeds (tests/scripts/*.wls) are legitimately memory-hungry
       # computations, and ASan roughly triples their footprint.
-      # -timeout=60 (not the 20 the parse target uses) because seeds and
-      # mutants can be heavy-but-terminating computations under ASan;
-      # true infinite loops are still caught.
+      # -timeout=60 (not the 10 the parse target uses) because a mutant can
+      # still be a heavy-but-terminating computation under ASan; true
+      # infinite loops are caught all the same. Seeds that cannot fit in
+      # that budget are dropped by `make fuzz-corpus` (see
+      # scripts/prune_fuzz_corpus.sh), so a timeout here means the fuzzer
+      # found a hang rather than that a test script is slow.
       run: cargo fuzz run interpret --target "$HOST_TARGET" -- -timeout=60 -max_len=2048 -max_total_time=300 -rss_limit_mb=8192
     - name: Upload crashing inputs
       if: failure()

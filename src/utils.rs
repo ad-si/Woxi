@@ -144,6 +144,24 @@ pub fn canonicalize(
   Ok(canonical)
 }
 
+/// The way Woxi spells a filesystem path inside a Wolfram Language string.
+///
+/// On Windows the native separator is `\`, which Woxi's string layer reads
+/// back as an escape: a path through `C:\new\table` comes apart into
+/// control characters the moment it is spliced into another expression, so
+/// the result cannot be handed to `Get`, `FileNameSplit` or a comparison.
+/// Paths are therefore surfaced with forward slashes — accepted by the
+/// Windows API just as well, and the spelling `$InputFileName` already
+/// uses. Elsewhere `\` is an ordinary filename character and is kept.
+pub fn wolfram_path_string(path: &std::path::Path) -> String {
+  let spelled = path.to_string_lossy().into_owned();
+  if cfg!(target_os = "windows") {
+    spelled.replace('\\', "/")
+  } else {
+    spelled
+  }
+}
+
 /// The plain spelling of a Windows extended-length path, or `None` when
 /// `path` has no verbatim prefix or cannot lose it.
 ///

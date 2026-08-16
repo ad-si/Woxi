@@ -5920,6 +5920,26 @@ mod verbatim_paths {
   }
 }
 
+// How a path built with the host separator is spelled once it reaches a
+// Wolfram Language string. Forward slashes everywhere: on Windows a `\`
+// would be read back as an escape by the string layer. Exercised on every
+// host so the mapping cannot rot between nightly Windows runs.
+mod path_spelling {
+  use std::path::Path;
+  use woxi::utils::wolfram_path_string as spell;
+
+  #[test]
+  fn separators_are_forward_slashes() {
+    let native = Path::new("dir").join("sub").join("file.wl");
+    assert_eq!(spell(&native), "dir/sub/file.wl");
+  }
+
+  #[test]
+  fn a_path_that_is_already_unix_spelled_is_unchanged() {
+    assert_eq!(spell(Path::new("/home/me/file.wl")), "/home/me/file.wl");
+  }
+}
+
 mod directory_stack {
   use super::*;
 
@@ -9087,6 +9107,19 @@ mod paclet {
     );
   }
 
+  // Regression: absolutizing the argument folded its components back
+  // together with the host separator, so on Windows `C:/dir` came back as
+  // `C:\dir` — no longer equal to what was passed in, and unusable as a
+  // string literal because `\d` reads as an escape.
+  #[test]
+  fn a_loaded_directory_keeps_the_spelling_it_was_given() {
+    clear_state();
+    let dir = write_paclet("spelling", "{}", &[]);
+    let loaded = interpret(&format!("PacletDirectoryLoad[\"{dir}\"]")).unwrap();
+    assert_eq!(loaded, format!("{{{dir}}}"));
+    assert!(!loaded.contains('\\'), "backslash in {loaded}");
+  }
+
   #[test]
   fn a_missing_directory_is_reported_and_not_loaded() {
     clear_state();
@@ -9366,11 +9399,14 @@ mod paclet {
       "{{\"Kernel\", \"Root\" -> \"Kernel\", \"Context\" -> {\"WoxiPacletI`\"}}}",
       &[("Kernel/WoxiPacletI.wl", &package("WoxiPacletI`", "found"))],
     );
+    // `OperatingSystem -> "Unix"` because Woxi spells the paths it hands
+    // back in strings with forward slashes on every platform (see
+    // `wolfram_path_string`); on Unix it is the default anyway.
     assert_eq!(
       interpret(&format!(
         "PacletDirectoryLoad[\"{dir}\"]; \
          FindFile[\"WoxiPacletI`\"] === FileNameJoin[{{\"{dir}\", \"Kernel\", \
-         \"WoxiPacletI.wl\"}}]"
+         \"WoxiPacletI.wl\"}}, OperatingSystem -> \"Unix\"]"
       ))
       .unwrap(),
       "True"

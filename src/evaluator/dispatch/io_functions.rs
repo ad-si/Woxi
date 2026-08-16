@@ -3579,7 +3579,9 @@ pub fn dispatch_io_functions(
       if name.ends_with('`') {
         return Some(Ok(
           match crate::functions::paclet::resolve_context(name) {
-            Some(path) => Expr::String(path.to_string_lossy().into_owned()),
+            Some(path) => {
+              Expr::String(crate::utils::wolfram_path_string(&path))
+            }
             None => Expr::Identifier("$Failed".to_string()),
           },
         ));
@@ -3590,7 +3592,7 @@ pub fn dispatch_io_functions(
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
       }
       return Some(Ok(match crate::utils::canonicalize(name) {
-        Ok(p) => Expr::String(p.to_string_lossy().into_owned()),
+        Ok(p) => Expr::String(crate::utils::wolfram_path_string(&p)),
         Err(_) => Expr::Identifier("$Failed".to_string()),
       }));
     }
