@@ -3561,13 +3561,14 @@ pub fn evaluate_expr_to_expr_inner(
 
       // Check if any index needs the recursive apply_part_indices path:
       // - `All` always needs it (even alone, to return the expression itself)
-      // - `List` / `Span` in non-last position need it (to map remaining
-      //   indices over each extracted element rather than extract sequentially)
+      // - `List` / `Span` / `UpTo` in non-last position need it (to map
+      //   remaining indices over each extracted element rather than extract
+      //   sequentially)
       let needs_mapping = indices.iter().enumerate().any(|(i, idx)| {
         matches!(idx, Expr::Identifier(s) if s == "All")
           || (i + 1 < indices.len()
             && (matches!(idx, Expr::List(_))
-              || matches!(idx, Expr::FunctionCall { name, .. } if name == "Span")))
+              || matches!(idx, Expr::FunctionCall { name, .. } if name == "Span" || name == "UpTo")))
       });
 
       // Fast path for a chain of integer positions into a variable's stored

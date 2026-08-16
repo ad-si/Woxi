@@ -223,11 +223,12 @@ pub fn apply_part_indices(
     }
     Ok(Expr::List(results.into()))
   } else if let Expr::FunctionCall { name, .. } = idx
-    && name == "Span"
+    && (name == "Span" || name == "UpTo")
     && !rest.is_empty()
   {
-    // Part[expr, Span[...], rest...] → map remaining indices over each
-    // element of the span-extracted sub-list.
+    // Part[expr, Span[...] | UpTo[...], rest...] → map remaining indices
+    // over each element of the extracted sub-list, the same way a bare
+    // list-of-positions index does.
     let extracted = extract_part_ast(expr, idx)?;
     match &extracted {
       Expr::List(items) => {
@@ -455,6 +456,40 @@ fn extract_part_ast_rest(
     crate::functions::linear_algebra_ast::structured_matrix_to_dense(expr)
   {
     return extract_part_ast(&dense, index);
+  }
+
+  // UpTo[n]: the first Min[n, len] parts, matching Take[expr, UpTo[n]] —
+  // "give me up to n parts" for a mediant-style approximation loop that
+  // wants a bounded prefix without knowing exactly how long the list is.
+  // Reduces to the equivalent {1, 2, ..., k} list-of-positions spec so the
+  // existing per-head list-index logic (List, Association, FunctionCall,
+  // Rule/RuleDelayed, …) does the actual extraction — no separate UpTo path
+  // to keep in sync with it.
+  if let Expr::FunctionCall { name, args } = index
+    && name == "UpTo"
+    && args.len() == 1
+  {
+    let len = match expr {
+      Expr::List(items) => Some(items.len() as i128),
+      Expr::Association(items) => Some(items.len() as i128),
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } => Some(2),
+      Expr::FunctionCall { name: h, args } if h != "ByteArray" => {
+        Some(args.len() as i128)
+      }
+      _ => None,
+    };
+    if let (Some(len), Some(n)) =
+      (len, crate::functions::list_helpers_ast::upto_count(index))
+    {
+      let k = n.min(len);
+      let positions: Vec<Expr> = (1..=k).map(Expr::Integer).collect();
+      return extract_part_ast(expr, &Expr::List(positions.into()));
+    }
+    crate::emit_message_to_stdout(&format!(
+      "Part::pkspec1: The expression {} cannot be used as a part specification.",
+      crate::syntax::format_expr(index, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(part_take_unevaluated(expr, index));
   }
 
   // For associations, handle key-based lookup and integer position indexing

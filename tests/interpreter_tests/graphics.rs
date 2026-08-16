@@ -16847,6 +16847,58 @@ mod manipulate {
     );
   }
 
+  // A Demonstration-style control panel combining a `RadioButtonBar`
+  // (picking a target constant) with a `ButtonBar` (a row of held-action
+  // buttons, e.g. incrementing a counter) side by side: both control kinds
+  // extract cleanly and the panel renders without erroring.
+  #[test]
+  fn spec_radio_button_bar_and_button_bar_together() {
+    let expr = interpret_to_expr(
+      "Manipulate[{c, n}, \
+       {{c, Pi}, {Pi, E, GoldenRatio}, ControlType -> RadioButtonBar}, \
+       ButtonBar[{\"Increment\" :> (n = n + 1), \"Reset\" :> (n = 0)}], \
+       {{n, 0}, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let has_radio_button_bar = spec.controls.iter().any(|c| {
+      matches!(
+        c,
+        ManipulateControl::Discrete {
+          setter_bar: true,
+          ..
+        }
+      )
+    });
+    assert!(
+      has_radio_button_bar,
+      "expected a setter-bar-style discrete control, got {:?}",
+      spec.controls
+    );
+    let buttons: Vec<&str> = spec
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Button { label, .. } => Some(label.as_str()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(buttons, vec!["Increment", "Reset"]);
+  }
+
+  // The same combined panel renders to a complete SVG document, matching
+  // how every other control kind is confirmed to render.
+  #[test]
+  fn export_string_svg_radio_button_bar_and_button_bar_together() {
+    let svg = export_svg(
+      "Manipulate[{c, n}, \
+       {{c, Pi}, {Pi, E, GoldenRatio}, ControlType -> RadioButtonBar}, \
+       ButtonBar[{\"Increment\" :> (n = n + 1), \"Reset\" :> (n = 0)}], \
+       {{n, 0}, ControlType -> None}]",
+    );
+    assert!(svg.contains("Increment") && svg.contains("Reset"));
+  }
+
   #[test]
   fn spec_locator_pane_binds_point_over_graphic() {
     // LocatorPane[Dynamic[p], body] is a draggable 2D point driving `body`.

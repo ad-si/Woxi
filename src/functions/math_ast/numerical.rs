@@ -1537,6 +1537,16 @@ pub fn expr_to_bigfloat(
           let d = expr_to_bigfloat(&args[1], bits, rm, cc)?;
           Ok(n.div(&d, bits, rm))
         }
+        // Root[f, k] / Root[f, k, 0] — Newton-refine the (real) k-th root
+        // to `bits` of precision, e.g. `N[Root[#^3 - # - 1 &, 1], 30]` (the
+        // plastic constant).
+        "Root" if args.len() == 2 || args.len() == 3 => {
+          root_n_eval_arbitrary(&args[0], &args[1], bits, rm).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "N: cannot evaluate Root[…] to arbitrary precision".into(),
+            )
+          })
+        }
         "Sqrt" if args.len() == 1 => {
           let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
           Ok(v.sqrt(bits, rm))
@@ -6453,12 +6463,20 @@ fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
   }
 }
 
-/// `N[Root[poly &, k]]`: the k-th root of the polynomial `poly`, ordered as
-/// wolframscript does — real roots first in increasing order, then the
-/// non-real roots by increasing real part and then increasing imaginary part.
-/// Returns the root as a `Real` (or `Plus[Real, Times[Real, I]]` for complex
-/// roots), or `None` when the shape doesn't fit.
-pub(crate) fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
+/// Shared by the machine- and arbitrary-precision `Root[f, k]` evaluators:
+/// extracts the integer coefficients of the polynomial `f` (in whichever
+/// single variable it names — a Slot-bodied pure function or a named
+/// symbol), finds every root at machine precision, sorts them the way
+/// `Root`'s index `k` expects (real roots first in ascending order, then
+/// complex roots ordered by real then imaginary part), and returns the
+/// `k`-th one as a machine-precision seed for whichever precision the
+/// caller ultimately wants. Both evaluators therefore agree on which root
+/// `k` names — refining the same seed to more digits, not risking a
+/// different root at high precision.
+fn root_coeffs_and_seed(
+  poly_arg: &Expr,
+  k_arg: &Expr,
+) -> Option<(Vec<i128>, bool, f64, f64)> {
   use crate::functions::polynomial_ast::extract_poly_coeffs;
   let k = expr_to_i128(k_arg)?;
   if k < 1 {
@@ -6512,7 +6530,17 @@ pub(crate) fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
     }
   });
   let (re, im) = roots[(k - 1) as usize];
-  if is_real(re, im) {
+  Some((coeffs_i, is_real(re, im), re, im))
+}
+
+/// `N[Root[poly &, k]]`: the k-th root of the polynomial `poly`, ordered as
+/// wolframscript does — real roots first in increasing order, then the
+/// non-real roots by increasing real part and then increasing imaginary part.
+/// Returns the root as a `Real` (or `Plus[Real, Times[Real, I]]` for complex
+/// roots), or `None` when the shape doesn't fit.
+pub(crate) fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
+  let (_, is_real, re, im) = root_coeffs_and_seed(poly_arg, k_arg)?;
+  if is_real {
     Some(Expr::Real(re))
   } else {
     Some(Expr::FunctionCall {
@@ -6527,6 +6555,61 @@ pub(crate) fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
       .into(),
     })
   }
+}
+
+/// Arbitrary-precision `Root[f, k]` — Newton-refines the machine-precision
+/// seed from `root_coeffs_and_seed` to `bits` of working precision using
+/// `astro_float::BigFloat` arithmetic. Real roots only (a complex result
+/// falls back to `expr_to_complex_bigfloat`'s caller, same as any other
+/// expression it doesn't special-case); `N[Root[#^3 - # - 1 &, 1], 30]`
+/// (the plastic constant) is the motivating case.
+pub(crate) fn root_n_eval_arbitrary(
+  poly_arg: &Expr,
+  k_arg: &Expr,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+) -> Option<astro_float::BigFloat> {
+  use astro_float::BigFloat;
+  let (coeffs_i, is_real, re0, _im0) = root_coeffs_and_seed(poly_arg, k_arg)?;
+  if !is_real {
+    return None;
+  }
+  // A couple of guard words above the target precision so the Newton
+  // iterates (and the Horner evaluation of p/p' at each step) don't lose
+  // the last few bits to rounding before the final result is rounded down
+  // to `bits`.
+  let wbits = bits + 64;
+  let coeffs_bf: Vec<BigFloat> = coeffs_i
+    .iter()
+    .map(|&c| BigFloat::from_i128(c, wbits))
+    .collect();
+  let n = coeffs_bf.len() - 1;
+  let eval = |x: &BigFloat| -> (BigFloat, BigFloat) {
+    // Horner's method for p(x) and, alongside it, p'(x) via the standard
+    // simultaneous evaluation (b_n = a_n, b_{k} = a_k + x*b_{k+1}; p' is
+    // built from the b's excluding the constant term).
+    let mut p = coeffs_bf[n].clone();
+    let mut dp = BigFloat::from_i32(0, wbits);
+    for k in (0..n).rev() {
+      dp = dp.mul(x, wbits, rm).add(&p, wbits, rm);
+      p = p.mul(x, wbits, rm).add(&coeffs_bf[k], wbits, rm);
+    }
+    (p, dp)
+  };
+  let mut x = BigFloat::from_f64(re0, wbits);
+  // Newton's method roughly doubles the number of correct digits per step;
+  // starting from a machine-precision (~53-bit) seed, enough steps to
+  // double past `wbits` covers any working precision this function is
+  // called with.
+  let iterations = (wbits as f64 / 40.0).log2().ceil().max(1.0) as usize + 4;
+  for _ in 0..iterations {
+    let (p, dp) = eval(&x);
+    if dp.is_zero() {
+      break;
+    }
+    x = x.sub(&p.div(&dp, wbits, rm), wbits, rm);
+  }
+  Some(x)
 }
 
 /// Collect the free symbol names in `expr` (skipping the boolean/null

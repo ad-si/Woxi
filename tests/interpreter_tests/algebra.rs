@@ -11463,6 +11463,50 @@ mod root {
   fn out_of_range_error() {
     assert!(interpret("Root[#^2 - 1 &, 3]").is_err());
   }
+
+  // `N[Root[…], prec]` — arbitrary-precision evaluation of a root with no
+  // closed radical form (the "casus irreducibilis" cubic case). Digits
+  // beyond machine precision must be correct, not garbage padding: this is
+  // the plastic constant, the real root of x^3 - x - 1.
+  #[test]
+  fn arbitrary_precision_casus_irreducibilis() {
+    assert_eq!(
+      interpret("N[Root[#^3 - # - 1 &, 1], 10]").unwrap(),
+      "1.32471795724474602596090885447809734073`10."
+    );
+    assert_eq!(
+      interpret("N[Root[#^3 - # - 1 &, 1], 30]").unwrap(),
+      "1.324717957244746025960908854478097340734404056901733364534`30."
+    );
+  }
+
+  // A higher precision request keeps agreeing with the machine-precision
+  // value on their shared leading digits.
+  #[test]
+  fn arbitrary_precision_matches_machine_precision_prefix() {
+    let machine = interpret("N[Root[#^3 - # - 1 &, 1]]").unwrap();
+    let arbitrary = interpret("N[Root[#^3 - # - 1 &, 1], 12]").unwrap();
+    let arbitrary_digits = arbitrary.split('`').next().unwrap();
+    assert!(
+      arbitrary_digits.starts_with(&machine[..machine.len() - 3]),
+      "machine={machine} arbitrary={arbitrary}"
+    );
+  }
+
+  // Arbitrary precision agrees with the closed radical form for a
+  // quadratic root, and with the machine-precision digits for a quartic
+  // with an irrational real root.
+  #[test]
+  fn arbitrary_precision_quadratic_and_quartic() {
+    assert_eq!(
+      interpret("N[Root[#^2 - 2 &, 1], 15]").unwrap(),
+      "-1.41421356237309504880168872420969807857`15."
+    );
+    assert_eq!(
+      interpret("N[Root[#^4 - # - 1 &, 1], 15]").unwrap(),
+      "-0.72449195900051561158837228218703656579`15."
+    );
+  }
 }
 
 mod root_sum {
