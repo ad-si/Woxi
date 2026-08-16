@@ -22011,7 +22011,7 @@ mod manipulate_dynamic_control_list_tests {
   }
 
   fn names(spec: &ManipulateSpec) -> Vec<&str> {
-    spec.controls.iter().map(|c| c.name()).collect()
+    spec.controls.iter().map(ManipulateControl::name).collect()
   }
 
   /// The whole control-spec list wrapped in `Dynamic[…]` (the
