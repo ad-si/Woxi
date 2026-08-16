@@ -6554,7 +6554,8 @@ mod tests {
         ];
       )
     ]"#;
-    let expr = woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
     let state = manipulate::ManipulateState::from_expr(&expr)
       .expect("a single 2D-slider control should build a ManipulateState");
 
@@ -6563,7 +6564,11 @@ mod tests {
       matches!(state.controls[0], manipulate::ControlState::Slider2D { .. }),
       "the {{var, {{x, y}}, label}} spec builds a 2D slider, not a plain slider"
     );
-    assert!(state.error.is_none(), "body should evaluate cleanly: {:?}", state.error);
+    assert!(
+      state.error.is_none(),
+      "body should evaluate cleanly: {:?}",
+      state.error
+    );
     assert!(
       state.graphics_handle.is_some(),
       "Show of ParametricPlot3D + Plot3D should render a graphic"
