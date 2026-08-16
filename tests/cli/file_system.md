@@ -70,4 +70,5 @@ so the expected lines use scrut's `(regex)` annotation.
 - [`StreamPosition`](file_system/StreamPosition.md)
 - [`URLFetch`](file_system/URLFetch.md)
 - [`Write`](file_system/Write.md)
+- [`WriteLine`](file_system/WriteLine.md)
 - [`WriteString`](file_system/WriteString.md)
