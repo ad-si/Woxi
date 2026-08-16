@@ -44,6 +44,11 @@ writeText[file_String, content_String] := Module[{strm},
   BinaryWrite[strm, ToCharacterCode[content, "UTF8"]];
   Close[strm];];
 
+writeTextIfChanged[file_String, newText_String, text_String] :=
+  If[newText =!= text,
+    writeText[file, newText]; Print["wrote ", file],
+    Print[file, " unchanged"]];
+
 (* Split text into lines, preserving empty lines, dropping a single
    trailing empty line if the text ends with "\n" — same semantics as
    Python's str.splitlines(). *)
@@ -91,11 +96,10 @@ danglingQ[target_String] := Module[{targetPath},
   targetPath = FileNameJoin[{docsDir, target}];
   !FileExistsQ[targetPath] || FileType[targetPath] =!= File];
 
-updateSummary[] := Module[{
+updateSummary[text_String] := Module[{
     text, lines, referenced, out, ent, indent, target,
     targetPath, siblingDir, children, childIndent, rel, newText
   },
-  text = readText[summaryFile];
   lines = splitLines[text];
   referenced = Association[];
   Do[
@@ -129,7 +133,6 @@ updateSummary[] := Module[{
       {child, children}],
     {line, lines}];
   newText = StringRiffle[out, "\n"] <> "\n";
-  writeText[summaryFile, newText];
   newText];
 
 (* ----- Outline -> tree -------------------------------------------- *)
@@ -225,15 +228,13 @@ spliceNav[tomlText_String, navBlock_String] := Module[
 
 (* ----- Main ------------------------------------------------------- *)
 
-summaryText = updateSummary[];
-Print["wrote ", summaryFile];
+summaryText = readText[summaryFile];
+newSummary = updateSummary[summaryText];
+writeTextIfChanged[summaryFile, newSummary, summaryText];
 
-tree = parseOutline[summaryText];
+tree = parseOutline[newSummary];
 navBlock = renderNavBlock[tree];
 
 tomlText = readText[zensicalFile];
 newToml = spliceNav[tomlText, navBlock];
-If[newToml =!= tomlText,
-  writeText[zensicalFile, newToml];
-  Print["wrote ", zensicalFile],
-  Print[zensicalFile, " unchanged"]];
+writeTextIfChanged[zensicalFile, newToml, tomlText];
