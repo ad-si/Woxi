@@ -16797,34 +16797,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       None => arg_items.push(spec.clone()),
     }
   }
-  let arg_items: Vec<Expr> = arg_items
-    .into_iter()
-    .map(|spec| {
-      // `Dynamic[Control[…]]` (the Demonstrations idiom
-      // `Dynamic@Control@{…}`) is the Control it wraps — the Dynamic
-      // only adds FrontEnd update hints, so it unwraps first.
-      let spec = match &spec {
-        Expr::FunctionCall { name, args }
-          if name == "Dynamic"
-            && matches!(
-              args.first(),
-              Some(Expr::FunctionCall { name: inner, .. }) if inner == "Control"
-            ) =>
-        {
-          args[0].clone()
-        }
-        _ => spec,
-      };
-      match &spec {
-        Expr::FunctionCall { name, args }
-          if name == "Control" && !args.is_empty() =>
-        {
-          args[0].clone()
-        }
-        _ => spec,
-      }
-    })
-    .collect();
+  let arg_items: Vec<Expr> =
+    arg_items.into_iter().map(unwrap_control_wrapper).collect();
   // A `ControlType -> …` given to the Manipulate itself sets the type of every
   // control that does not choose one; push it into the specs now that they are
   // flattened, so they parse through the single per-spec path below.
@@ -16836,6 +16810,18 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // while the specs are parsed, so those bounds resolve to their build-time
   // numbers regardless of declaration order.
   let initial_bindings = manipulate_initial_value_bindings(&arg_items);
+  // `Sequence@@If[cond, ctrlSpec, {}]` (the Demonstrations idiom for a
+  // control that only appears under some condition on another control, e.g.
+  // an extra slider shown only in one mode) is not itself a control spec —
+  // it is code that *produces* zero or more of them once evaluated. Resolve
+  // every such entry against the controls' initial values, the way Wolfram
+  // evaluates the spec list once up front, and splice whatever list it
+  // produces into the flat control list in its place.
+  let arg_items: Vec<Expr> =
+    expand_conditional_control_items(arg_items, &initial_bindings)
+      .into_iter()
+      .map(unwrap_control_wrapper)
+      .collect();
   // The same names, as the set a control's choice list is checked against
   // to tell a static list from one that follows another control.
   let sibling_names: Vec<String> =
@@ -17698,6 +17684,12 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
         pattern,
         replacement,
       } => contains_control(pattern) || contains_control(replacement),
+      // `Sequence@@If[cond, Control[…], {}]`: the condition/branches may
+      // hide the only control a Dynamic-wrapped list declares, so look
+      // inside the `f@@expr` the same way a plain function call is scanned.
+      Expr::Apply { func, list } => {
+        contains_control(func) || contains_control(list)
+      }
       _ => false,
     }
   }
@@ -17714,9 +17706,17 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   let Expr::FunctionCall { name, args } = spec else {
     return None;
   };
+  // `Dynamic[{ctrl1, ctrl2, …}]` (the Demonstrations idiom for a control
+  // panel whose row set itself needs to react to another control, e.g. a
+  // control only shown for some mode) flattens the same way a `Column` of
+  // controls would — the `Dynamic` just marks that the list is recomputed
+  // reactively, which the panel already does on every re-evaluation. A
+  // `Dynamic` wrapping anything other than a bare list (a live picture, a
+  // `Panel[…]` of checkboxes, …) is a display element instead and falls
+  // through via the `contains_control` guard below.
   if !matches!(
     name.as_str(),
-    "Row" | "Column" | "Grid" | "TabView" | "PaneSelector"
+    "Row" | "Column" | "Grid" | "TabView" | "PaneSelector" | "Dynamic"
   ) || args.is_empty()
   {
     return None;
@@ -17764,6 +17764,79 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     }
   }
   Some(out)
+}
+
+/// `Dynamic[Control[…]]` (the Demonstrations idiom `Dynamic@Control@{…}`)
+/// is the `Control` it wraps — the `Dynamic` only adds FrontEnd update
+/// hints — and a bare `Control[spec, opts…]` wrapper is its ordinary
+/// variable specification, so both unwrap to the plain spec that parses
+/// through the standard control path. Anything else passes through
+/// unchanged. Applied both to the top-level control-spec arguments and to
+/// whatever `expand_conditional_control_items` splices in, since a spliced
+/// control is just as likely to arrive `Control`-wrapped.
+fn unwrap_control_wrapper(spec: Expr) -> Expr {
+  let spec = match &spec {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic"
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: inner, .. }) if inner == "Control"
+        ) =>
+    {
+      args[0].clone()
+    }
+    _ => spec,
+  };
+  match &spec {
+    Expr::FunctionCall { name, args }
+      if name == "Control" && !args.is_empty() =>
+    {
+      args[0].clone()
+    }
+    _ => spec,
+  }
+}
+
+/// Resolve `Sequence@@expr` entries in a flattened control list (the
+/// Demonstrations idiom `Sequence@@If[cond, ctrlSpec, {}]` for a control
+/// only shown under some condition on another control) by evaluating each
+/// one against `bindings` — the other controls' initial values — and
+/// splicing whatever list the evaluation produces in its place, the way
+/// Wolfram evaluates the whole spec list once before laying out the panel.
+/// A splice may itself be a layout container or contain further
+/// `Sequence@@…` entries (nested conditions), so both are re-resolved
+/// recursively. Non-`Sequence` entries pass through unchanged.
+fn expand_conditional_control_items(
+  items: Vec<Expr>,
+  bindings: &[(String, String)],
+) -> Vec<Expr> {
+  let mut out = Vec::with_capacity(items.len());
+  for item in items {
+    let Expr::Apply { func, list } = &item else {
+      out.push(item);
+      continue;
+    };
+    if !matches!(func.as_ref(), Expr::Identifier(s) if s == "Sequence") {
+      out.push(item);
+      continue;
+    }
+    let evaluated =
+      crate::with_scoped_globals(bindings, || evaluate_expr_to_expr(list))
+        .unwrap_or_else(|_| (**list).clone());
+    let spliced: Vec<Expr> = match &evaluated {
+      Expr::List(inner) => inner.iter().cloned().collect(),
+      _ => vec![evaluated.clone()],
+    };
+    let flattened: Vec<Expr> = spliced
+      .into_iter()
+      .flat_map(|s| match control_group_items(&s) {
+        Some(nested) => nested,
+        None => vec![s],
+      })
+      .collect();
+    out.extend(expand_conditional_control_items(flattened, bindings));
+  }
+  out
 }
 
 /// Record, for every control declared inside a `PaneSelector[{v -> content,
@@ -21925,5 +21998,53 @@ mod manipulate_label_tests {
       vec![Expr::Integer(1), Expr::Identifier("y".into())],
     );
     assert_eq!(flatten_label_runs(&runs(&flat)), "y\u{2032}");
+  }
+}
+
+#[cfg(test)]
+mod manipulate_dynamic_control_list_tests {
+  use super::*;
+
+  fn spec(code: &str) -> ManipulateSpec {
+    let expr = crate::parse_to_expr(code).expect("parse");
+    extract_manipulate_spec(&expr).expect("extract spec")
+  }
+
+  fn names(spec: &ManipulateSpec) -> Vec<&str> {
+    spec.controls.iter().map(|c| c.name()).collect()
+  }
+
+  /// The whole control-spec list wrapped in `Dynamic[…]` (the
+  /// Demonstrations idiom for a panel that reacts to another control)
+  /// flattens like a plain `Column` of controls instead of being
+  /// mistaken for a static display element.
+  #[test]
+  fn dynamic_wrapped_control_list_flattens_to_controls() {
+    let s = spec("Manipulate[x, Dynamic[{Control[{{x, 0}, -1, 1}]}]]");
+    assert_eq!(names(&s), vec!["x"]);
+    assert!(s.displays.is_empty());
+  }
+
+  /// `Sequence@@If[cond, ctrlSpec, {}]` inside a Dynamic control list
+  /// splices in the extra control when the condition — evaluated against
+  /// the other controls' initial values — holds.
+  #[test]
+  fn sequence_apply_if_splices_control_when_condition_holds() {
+    let s = spec(
+      "Manipulate[x + y, Dynamic[{Control[{{mode, 1}, -1, 1}], \
+       Sequence@@If[mode == 1, {Control[{{y, 0}, -1, 1}]}, {}]}]]",
+    );
+    assert_eq!(names(&s), vec!["mode", "y"]);
+  }
+
+  /// The same conditional control is omitted when its condition — the
+  /// other control's initial value — does not hold.
+  #[test]
+  fn sequence_apply_if_omits_control_when_condition_fails() {
+    let s = spec(
+      "Manipulate[x + y, Dynamic[{Control[{{mode, 0}, -1, 1}], \
+       Sequence@@If[mode == 1, {Control[{{y, 0}, -1, 1}]}, {}]}]]",
+    );
+    assert_eq!(names(&s), vec!["mode"]);
   }
 }
