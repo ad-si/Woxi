@@ -70,6 +70,11 @@ pub fn unload_directories(dirs: &[String]) -> Vec<String> {
 /// `.` and `..` segments. Symbolic links are deliberately left alone:
 /// wolframscript reports `PacletDirectoryLoad["/tmp"]` as `/tmp`, not as
 /// the directory `/tmp` links to.
+///
+/// The result is spelled the way Woxi spells paths in strings — folding the
+/// components back together would otherwise turn a `C:/dir` argument into
+/// `C:\dir` on Windows, which no longer compares equal to what the caller
+/// passed in and cannot be re-used as a string literal.
 fn expand_directory(dir: &str) -> String {
   let joined = crate::vfs::resolve(dir);
   let mut normalized = PathBuf::new();
@@ -82,7 +87,7 @@ fn expand_directory(dir: &str) -> String {
       other => normalized.push(other.as_os_str()),
     }
   }
-  normalized.to_string_lossy().into_owned()
+  crate::utils::wolfram_path_string(&normalized)
 }
 
 /// The file that provides `context`, or `None` when nothing does.

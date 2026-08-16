@@ -5841,6 +5841,109 @@ mod file_names {
     );
     std::fs::remove_dir_all(&dir).ok();
   }
+
+  /// Build `<temp>/<name>/sub/sub/sub` with a `target.txt` on every level
+  /// and return the unix-style path of the tree's root directory.
+  fn nested_tree(name: &str) -> String {
+    let root = std::env::temp_dir().join(format!("woxi_file_names_{name}"));
+    std::fs::remove_dir_all(&root).ok();
+    let mut dir = root.clone();
+    loop {
+      std::fs::create_dir_all(&dir).unwrap();
+      std::fs::write(dir.join("target.txt"), "x").unwrap();
+      match dir.strip_prefix(&root).unwrap().components().count() {
+        3 => break,
+        _ => dir = dir.join("sub"),
+      }
+    }
+    unixify(&root.display().to_string())
+  }
+
+  /// The reported names, relative to the tree root, joined with `|`.
+  fn relative_hits(root: &str, levels: &str) -> String {
+    let names = interpret(&format!(
+      r#"StringRiffle[
+        StringDrop[FileNames["target.txt", "{root}", {levels}], {}],
+        "|"
+      ]"#,
+      root.chars().count() + 1
+    ))
+    .unwrap();
+    names.replace('\\', "/")
+  }
+
+  // The default depth of one level only reports the directory itself.
+  #[test]
+  fn default_depth_stays_in_the_given_directory() {
+    let root = nested_tree("default_depth");
+    let names = interpret(&format!(
+      r#"FileNames["target.txt", "{root}"] === {{FileNameJoin[{{"{root}", "target.txt"}}]}}"#
+    ))
+    .unwrap();
+    assert_eq!(names, "True");
+    std::fs::remove_dir_all(&root).ok();
+  }
+
+  // Regression test for #479: an explicit level count has to descend into
+  // subdirectories instead of being ignored.
+  #[test]
+  fn level_count_descends_that_many_directories() {
+    let root = nested_tree("level_count");
+    assert_eq!(relative_hits(&root, "1"), "target.txt");
+    assert_eq!(relative_hits(&root, "2"), "sub/target.txt|target.txt");
+    assert_eq!(
+      relative_hits(&root, "3"),
+      "sub/sub/target.txt|sub/target.txt|target.txt"
+    );
+    assert_eq!(
+      relative_hits(&root, "4"),
+      "sub/sub/sub/target.txt|sub/sub/target.txt|sub/target.txt|target.txt"
+    );
+    std::fs::remove_dir_all(&root).ok();
+  }
+
+  // A level count past the deepest directory behaves like Infinity, and
+  // level zero matches nothing at all.
+  #[test]
+  fn level_count_saturates_and_zero_matches_nothing() {
+    let root = nested_tree("level_bounds");
+    assert_eq!(relative_hits(&root, "99"), relative_hits(&root, "Infinity"));
+    assert_eq!(relative_hits(&root, "0"), "");
+    std::fs::remove_dir_all(&root).ok();
+  }
+
+  // A list of directories honours the level count as well.
+  #[test]
+  fn level_count_applies_to_a_list_of_directories() {
+    let root = nested_tree("level_list");
+    let count = interpret(&format!(
+      r#"Length[FileNames["target.txt", {{"{root}", FileNameJoin[{{"{root}", "sub"}}]}}, 2]]"#
+    ))
+    .unwrap();
+    // Two levels below the root plus two below "sub", with
+    // "sub/target.txt" reported once per directory spec it came through.
+    assert_eq!(count, "4");
+    std::fs::remove_dir_all(&root).ok();
+  }
+
+  // Recursing below "." keeps the path relative to the current directory
+  // instead of collapsing every hit to its bare file name.
+  #[test]
+  fn dot_directory_keeps_relative_paths() {
+    let result = interpret(
+      r#"MemberQ[FileNames["lib.rs", ".", Infinity], "src/lib.rs" | "src\\lib.rs"]"#,
+    )
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+
+  // A third argument that is not a level specification leaves the call
+  // unevaluated rather than silently searching a single level.
+  #[test]
+  fn non_level_third_argument_stays_unevaluated() {
+    let result = interpret(r#"FileNames["*.rs", "src", foo]"#).unwrap();
+    assert_eq!(result, "FileNames[*.rs, src, foo]");
+  }
 }
 
 // Every file function resolves a relative name against the working
@@ -6126,6 +6229,26 @@ mod verbatim_paths {
     assert_eq!(strip(r"C:\Users\me"), None);
     assert_eq!(strip("/home/me"), None);
     assert_eq!(strip(r"\\server\share"), None);
+  }
+}
+
+// How a path built with the host separator is spelled once it reaches a
+// Wolfram Language string. Forward slashes everywhere: on Windows a `\`
+// would be read back as an escape by the string layer. Exercised on every
+// host so the mapping cannot rot between nightly Windows runs.
+mod path_spelling {
+  use std::path::Path;
+  use woxi::utils::wolfram_path_string as spell;
+
+  #[test]
+  fn separators_are_forward_slashes() {
+    let native = Path::new("dir").join("sub").join("file.wl");
+    assert_eq!(spell(&native), "dir/sub/file.wl");
+  }
+
+  #[test]
+  fn a_path_that_is_already_unix_spelled_is_unchanged() {
+    assert_eq!(spell(Path::new("/home/me/file.wl")), "/home/me/file.wl");
   }
 }
 
@@ -9296,6 +9419,19 @@ mod paclet {
     );
   }
 
+  // Regression: absolutizing the argument folded its components back
+  // together with the host separator, so on Windows `C:/dir` came back as
+  // `C:\dir` — no longer equal to what was passed in, and unusable as a
+  // string literal because `\d` reads as an escape.
+  #[test]
+  fn a_loaded_directory_keeps_the_spelling_it_was_given() {
+    clear_state();
+    let dir = write_paclet("spelling", "{}", &[]);
+    let loaded = interpret(&format!("PacletDirectoryLoad[\"{dir}\"]")).unwrap();
+    assert_eq!(loaded, format!("{{{dir}}}"));
+    assert!(!loaded.contains('\\'), "backslash in {loaded}");
+  }
+
   #[test]
   fn a_missing_directory_is_reported_and_not_loaded() {
     clear_state();
@@ -9575,11 +9711,14 @@ mod paclet {
       "{{\"Kernel\", \"Root\" -> \"Kernel\", \"Context\" -> {\"WoxiPacletI`\"}}}",
       &[("Kernel/WoxiPacletI.wl", &package("WoxiPacletI`", "found"))],
     );
+    // `OperatingSystem -> "Unix"` because Woxi spells the paths it hands
+    // back in strings with forward slashes on every platform (see
+    // `wolfram_path_string`); on Unix it is the default anyway.
     assert_eq!(
       interpret(&format!(
         "PacletDirectoryLoad[\"{dir}\"]; \
          FindFile[\"WoxiPacletI`\"] === FileNameJoin[{{\"{dir}\", \"Kernel\", \
-         \"WoxiPacletI.wl\"}}]"
+         \"WoxiPacletI.wl\"}}, OperatingSystem -> \"Unix\"]"
       ))
       .unwrap(),
       "True"

@@ -3237,6 +3237,7 @@ pub fn dispatch_io_functions(
     // FileNames[] — list all files in current directory
     // FileNames["pattern"] — list files matching pattern
     // FileNames["pattern", "dir"] — list files in dir matching pattern
+    // FileNames["pattern", "dir", n] — descend n directory levels
     // FileNames["pattern", "dir", Infinity] — recursive search
     #[cfg(not(target_arch = "wasm32"))]
     "FileNames" if args.len() <= 3 => {
@@ -3251,18 +3252,27 @@ pub fn dispatch_io_functions(
         }
       };
 
+      // Third argument: how many directory levels to include. `1` (the
+      // default) searches only the given directories, `2` also their
+      // immediate subdirectories, and `Infinity` descends without limit.
+      let levels = if args.len() >= 3 {
+        match file_names_levels(&args[2]) {
+          Some(n) => n,
+          None => return Some(Ok(unevaluated("FileNames", args))),
+        }
+      } else {
+        1
+      };
+
       let dir = if args.len() >= 2 {
         match &args[1] {
           Expr::String(s) => s.clone(),
           Expr::List(dirs) => {
             // FileNames["pat", {"dir1", "dir2"}] — search multiple dirs
             let mut all_files = Vec::new();
-            let recursive = args.len() >= 3
-              && matches!(&args[2], Expr::Identifier(s) if s == "Infinity");
             for d in dirs {
               if let Expr::String(dir_str) = d {
-                let mut files =
-                  collect_file_names(&pattern, dir_str, recursive);
+                let mut files = collect_file_names(&pattern, dir_str, levels);
                 all_files.append(&mut files);
               }
             }
@@ -3277,10 +3287,7 @@ pub fn dispatch_io_functions(
         ".".to_string()
       };
 
-      let recursive = args.len() >= 3
-        && matches!(&args[2], Expr::Identifier(s) if s == "Infinity");
-
-      let mut files = collect_file_names(&pattern, &dir, recursive);
+      let mut files = collect_file_names(&pattern, &dir, levels);
       files.sort();
       return Some(Ok(Expr::List(
         files.into_iter().map(Expr::String).collect(),
@@ -3556,7 +3563,9 @@ pub fn dispatch_io_functions(
       if name.ends_with('`') {
         return Some(Ok(
           match crate::functions::paclet::resolve_context(name) {
-            Some(path) => Expr::String(path.to_string_lossy().into_owned()),
+            Some(path) => {
+              Expr::String(crate::utils::wolfram_path_string(&path))
+            }
             None => Expr::Identifier("$Failed".to_string()),
           },
         ));
@@ -3567,7 +3576,7 @@ pub fn dispatch_io_functions(
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
       }
       return Some(Ok(match crate::utils::canonicalize(name) {
-        Ok(p) => Expr::String(p.to_string_lossy().into_owned()),
+        Ok(p) => Expr::String(crate::utils::wolfram_path_string(&p)),
         Err(_) => Expr::Identifier("$Failed".to_string()),
       }));
     }
@@ -4173,40 +4182,56 @@ fn export_string_csv(
   out
 }
 
-/// Collect file names matching a glob pattern in a directory.
-#[cfg(not(target_arch = "wasm32"))]
-/// The names `FileNames` reports for `pattern` under `dir`.
+/// The names `FileNames` reports for `pattern` under `dir`, searching
+/// `levels` directory levels.
 ///
 /// `dir` is resolved against the working directory that `Directory[]`
 /// reports, so a preceding `SetDirectory` is honoured, but it keeps its
 /// spelling in the result: `FileNames["*", "sub"]` reports `sub/a.txt`,
 /// while the current directory reports the bare name.
-fn collect_file_names(
-  pattern: &str,
-  dir: &str,
-  recursive: bool,
-) -> Vec<String> {
+#[cfg(not(target_arch = "wasm32"))]
+fn collect_file_names(pattern: &str, dir: &str, levels: usize) -> Vec<String> {
   let root = crate::vfs::resolve(dir);
-  if !root.is_dir() {
+  if levels == 0 || !root.is_dir() {
     return Vec::new();
   }
 
   let mut results = Vec::new();
-  collect_files_recursive(&root, &root, dir, pattern, recursive, &mut results);
+  collect_files_recursive(&root, &root, dir, pattern, levels, &mut results);
   results
 }
 
+/// Number of directory levels the third `FileNames` argument asks for.
+/// `Infinity` means "no limit"; a non-positive count matches nothing.
+/// Returns `None` for arguments that aren't a level specification.
 #[cfg(not(target_arch = "wasm32"))]
-/// Walk `path`, reporting every match as `base_dir` spells it: entries are
-/// named relative to `root` (the resolved `base_dir`) and prefixed with
+fn file_names_levels(spec: &Expr) -> Option<usize> {
+  match spec {
+    Expr::Identifier(s) if s == "Infinity" => Some(usize::MAX),
+    Expr::Integer(n) => Some(usize::try_from(*n).unwrap_or(0)),
+    Expr::Real(r) if r.fract() == 0.0 => {
+      Some(if *r <= 0.0 { 0 } else { *r as usize })
+    }
+    _ => None,
+  }
+}
+
+/// Walk `path`, collecting entries whose name matches `pattern`. `levels`
+/// counts the directory levels still to visit, so `1` stops at `path`
+/// itself and `usize::MAX` stands in for `Infinity`.
+///
+/// Every match is reported as `base_dir` spells it: entries are named
+/// relative to `root` (the resolved `base_dir`) and prefixed with
 /// `base_dir` again, so the reported names stay relative wherever the
-/// working directory happens to be.
+/// working directory happens to be, and a `"."` base — spelled implicitly
+/// by `FileNames["pat"]` — reports the bare relative name.
+#[cfg(not(target_arch = "wasm32"))]
 fn collect_files_recursive(
   path: &std::path::Path,
   root: &std::path::Path,
   base_dir: &str,
   pattern: &str,
-  recursive: bool,
+  levels: usize,
   results: &mut Vec<String>,
 ) {
   let Ok(entries) = std::fs::read_dir(path) else {
@@ -4228,13 +4253,13 @@ fn collect_files_recursive(
         };
         results.push(named.to_string_lossy().into_owned());
       }
-      if ft.is_dir() && recursive {
+      if ft.is_dir() && levels > 1 {
         collect_files_recursive(
           &entry_path,
           root,
           base_dir,
           pattern,
-          true,
+          levels - 1,
           results,
         );
       }

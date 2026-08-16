@@ -132,20 +132,27 @@ test-conformance: test-unit-wolframscript test-cli-wolframscript test-scripts-wo
 # Seed the libFuzzer corpora from the existing test scripts (plus generated
 # expressions for the interpret target) so the fuzzer starts from valid
 # Wolfram Language programs instead of random bytes.
+#
+# Parsing any script is fast, so the parse corpus keeps all of them.
+# Evaluating one is not: `tests/scripts/` holds programs that compute for
+# seconds to minutes (and a few that never terminate by design), which the
+# interpret target's libFuzzer -timeout hang detector reports as crashes.
+# Every interpret seed is therefore timed and the slow ones are dropped —
+# measured rather than listed, so a newly added heavy script cannot break
+# the nightly fuzz run. FUZZ_SEED_BUDGET is the wall-clock second(s) a seed
+# may take in a release build; ASan makes that ~25× slower, which has to
+# stay well inside the -timeout below.
+FUZZ_SEED_BUDGET ?= 1
+
 .PHONY: fuzz-corpus
 fuzz-corpus:
 	mkdir -p fuzz/corpus/parse fuzz/corpus/interpret
 	cp tests/scripts/*.wls fuzz/corpus/parse/
 	cp tests/scripts/*.wls fuzz/corpus/interpret/
-	# The slow_script_test! scripts legitimately run for tens of seconds,
-	# which the interpret target's libFuzzer -timeout hang detector would
-	# report as a crash. Keep them out of the interpret corpus; parsing them
-	# is fast, so the parse corpus keeps all scripts.
-	grep -A 2 'slow_script_test!' tests/script_snapshot_tests.rs \
-		| grep -o '"[^"]*\.wls"' | tr -d '"' | sort -u \
-		| (cd fuzz/corpus/interpret && xargs rm -f)
 	cargo run --features diff-fuzz --bin woxi-diff-fuzz -- --print-cases --cases 200 --seed 0 \
 		| split -l 1 - fuzz/corpus/interpret/gen-
+	cargo build --release --bin woxi
+	scripts/prune_fuzz_corpus.sh fuzz/corpus/interpret $(FUZZ_SEED_BUDGET)
 
 # Coverage-guided crash fuzzing (requires a nightly toolchain and
 # cargo-fuzz). Runs until interrupted; crash inputs land in fuzz/artifacts/.

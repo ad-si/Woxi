@@ -36,9 +36,16 @@ Details:
 
 - The corpora are seeded from `tests/scripts/*.wls` plus generated
   expressions (`make fuzz-corpus`), so the fuzzer starts from valid
-  programs instead of random bytes. The `slow_script_test!` scripts are
-  excluded from the `interpret` corpus: they legitimately run for tens of
-  seconds, which the `-timeout` hang detector would misreport as crashes.
+  programs instead of random bytes.
+- The `interpret` corpus is then pruned by `scripts/prune_fuzz_corpus.sh`,
+  which drops the seeds that target would skip anyway (oversized or
+  side-effecting) and *times* the rest, dropping any that needs more than
+  `FUZZ_SEED_BUDGET` seconds (default 1) in a release build. Many test
+  scripts legitimately compute for seconds — and a few never terminate by
+  design — which the `-timeout` hang detector would misreport as crashes;
+  ASan multiplies those seconds by roughly 25. Measuring instead of
+  maintaining a list means a newly added heavy script cannot break the
+  nightly fuzz run.
 - The `interpret` target skips inputs containing filesystem/network heads
   (`Export`, `Import`, `Run`, …) so fuzzing has no side effects; see
   `SIDE_EFFECT_DENYLIST` in `fuzz_targets/interpret.rs`.
