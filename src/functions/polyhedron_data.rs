@@ -175,6 +175,119 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       \"PlatonicDual\", \"Rigid\", \"Rupert\", \"Simple\", \
       \"Uniform\", \"UniformDual\"}",
   },
+  // Truncating a Platonic solid's corners gives an Archimedean solid with
+  // two face types (a polygon per original face, plus one new polygon per
+  // truncated vertex). None of the three below has a true insphere — the
+  // two face types sit at different distances from the center — so
+  // "Inradius" reports Missing["NotApplicable"], matching the icosahedral
+  // Archimedean entries below.
+  PolyhedronInfo {
+    name: "TruncatedTetrahedron",
+    vertex_count: 12,
+    edge_count: 18,
+    face_count: 8,
+    volume: "23*Sqrt[2]/12",
+    surface_area: "7*Sqrt[3]",
+    circumradius: "Sqrt[22]/4",
+    inradius: "Missing[\"NotApplicable\"]",
+    // A regular tetrahedron (cube corners with an even number of minus
+    // signs) with each corner cut off a third of the way along every
+    // incident edge — exactly the ratio that makes the new hexagonal
+    // faces regular.
+    vertices_src: "{\
+      {3*Sqrt[2]/4, Sqrt[2]/4, Sqrt[2]/4}, \
+      {Sqrt[2]/4, 3*Sqrt[2]/4, Sqrt[2]/4}, \
+      {Sqrt[2]/4, Sqrt[2]/4, 3*Sqrt[2]/4}, \
+      {3*Sqrt[2]/4, -Sqrt[2]/4, -Sqrt[2]/4}, \
+      {Sqrt[2]/4, -Sqrt[2]/4, -3*Sqrt[2]/4}, \
+      {Sqrt[2]/4, -3*Sqrt[2]/4, -Sqrt[2]/4}, \
+      {-Sqrt[2]/4, 3*Sqrt[2]/4, -Sqrt[2]/4}, \
+      {-Sqrt[2]/4, Sqrt[2]/4, -3*Sqrt[2]/4}, \
+      {-3*Sqrt[2]/4, Sqrt[2]/4, -Sqrt[2]/4}, \
+      {-Sqrt[2]/4, -Sqrt[2]/4, 3*Sqrt[2]/4}, \
+      {-Sqrt[2]/4, -3*Sqrt[2]/4, Sqrt[2]/4}, \
+      {-3*Sqrt[2]/4, -Sqrt[2]/4, Sqrt[2]/4}}",
+    faces_src: "{{1, 2, 3}, {4, 6, 5}, {7, 8, 9}, {11, 10, 12}, \
+      {2, 1, 4, 5, 8, 7}, {3, 2, 7, 9, 12, 10}, \
+      {5, 6, 11, 12, 9, 8}, {6, 4, 1, 3, 10, 11}}",
+    classes_src: "\
+      {\"Amphichiral\", \"Archimedean\", \"Canonical\", \"Convex\", \
+      \"Equilateral\", \"Rigid\", \"Rupert\", \"Simple\", \
+      \"Uniform\", \"Zalgaller\"}",
+  },
+  PolyhedronInfo {
+    name: "TruncatedOctahedron",
+    vertex_count: 24,
+    edge_count: 36,
+    face_count: 14,
+    volume: "8*Sqrt[2]",
+    surface_area: "6 + 12*Sqrt[3]",
+    circumradius: "Sqrt[10]/2",
+    inradius: "Missing[\"NotApplicable\"]",
+    // All permutations of {0, ±Sqrt[2]/2, ±Sqrt[2]} — the space-filling
+    // truncation of the octahedron (Kelvin's tetrakaidecahedron).
+    vertices_src: "{\
+      {0, Sqrt[2], Sqrt[2]/2}, {0, Sqrt[2], -Sqrt[2]/2}, \
+      {0, -Sqrt[2], Sqrt[2]/2}, {0, -Sqrt[2], -Sqrt[2]/2}, \
+      {Sqrt[2]/2, Sqrt[2], 0}, {Sqrt[2]/2, -Sqrt[2], 0}, \
+      {-Sqrt[2]/2, Sqrt[2], 0}, {-Sqrt[2]/2, -Sqrt[2], 0}, \
+      {Sqrt[2], Sqrt[2]/2, 0}, {Sqrt[2], -Sqrt[2]/2, 0}, \
+      {-Sqrt[2], Sqrt[2]/2, 0}, {-Sqrt[2], -Sqrt[2]/2, 0}, \
+      {Sqrt[2], 0, Sqrt[2]/2}, {Sqrt[2], 0, -Sqrt[2]/2}, \
+      {-Sqrt[2], 0, Sqrt[2]/2}, {-Sqrt[2], 0, -Sqrt[2]/2}, \
+      {0, Sqrt[2]/2, Sqrt[2]}, {0, Sqrt[2]/2, -Sqrt[2]}, \
+      {0, -Sqrt[2]/2, Sqrt[2]}, {0, -Sqrt[2]/2, -Sqrt[2]}, \
+      {Sqrt[2]/2, 0, Sqrt[2]}, {Sqrt[2]/2, 0, -Sqrt[2]}, \
+      {-Sqrt[2]/2, 0, Sqrt[2]}, {-Sqrt[2]/2, 0, -Sqrt[2]}}",
+    faces_src: "{{5, 2, 7, 1}, {6, 3, 8, 4}, {9, 13, 10, 14}, \
+      {11, 16, 12, 15}, {21, 17, 23, 19}, {22, 20, 24, 18}, \
+      {7, 2, 18, 24, 16, 11}, {8, 3, 19, 23, 15, 12}, \
+      {9, 14, 22, 18, 2, 5}, {10, 13, 21, 19, 3, 6}, \
+      {17, 1, 7, 11, 15, 23}, {20, 4, 8, 12, 16, 24}, \
+      {21, 13, 9, 5, 1, 17}, {22, 14, 10, 6, 4, 20}}",
+    classes_src: "\
+      {\"Amphichiral\", \"Archimedean\", \"Canonical\", \"Convex\", \
+      \"Equilateral\", \"Rigid\", \"Rupert\", \"Simple\", \
+      \"SpaceFilling\", \"Uniform\", \"Zalgaller\"}",
+  },
+  PolyhedronInfo {
+    name: "SmallRhombicuboctahedron",
+    vertex_count: 24,
+    edge_count: 48,
+    face_count: 26,
+    volume: "(12 + 10*Sqrt[2])/3",
+    surface_area: "18 + 2*Sqrt[3]",
+    circumradius: "Sqrt[5 + 2*Sqrt[2]]/2",
+    inradius: "Missing[\"NotApplicable\"]",
+    // All permutations of {±1/2, ±1/2, ±(1 + Sqrt[2])/2} — the cuboctahedron
+    // with its square faces pulled apart and re-joined through a new square
+    // at every vertex and edge.
+    vertices_src: "{\
+      {1/2, (1 + Sqrt[2])/2, 1/2}, {1/2, (1 + Sqrt[2])/2, -1/2}, \
+      {1/2, -(1 + Sqrt[2])/2, 1/2}, {1/2, -(1 + Sqrt[2])/2, -1/2}, \
+      {-1/2, (1 + Sqrt[2])/2, 1/2}, {-1/2, (1 + Sqrt[2])/2, -1/2}, \
+      {-1/2, -(1 + Sqrt[2])/2, 1/2}, {-1/2, -(1 + Sqrt[2])/2, -1/2}, \
+      {(1 + Sqrt[2])/2, 1/2, 1/2}, {(1 + Sqrt[2])/2, 1/2, -1/2}, \
+      {(1 + Sqrt[2])/2, -1/2, 1/2}, {(1 + Sqrt[2])/2, -1/2, -1/2}, \
+      {-(1 + Sqrt[2])/2, 1/2, 1/2}, {-(1 + Sqrt[2])/2, 1/2, -1/2}, \
+      {-(1 + Sqrt[2])/2, -1/2, 1/2}, {-(1 + Sqrt[2])/2, -1/2, -1/2}, \
+      {1/2, 1/2, (1 + Sqrt[2])/2}, {1/2, 1/2, -(1 + Sqrt[2])/2}, \
+      {1/2, -1/2, (1 + Sqrt[2])/2}, {1/2, -1/2, -(1 + Sqrt[2])/2}, \
+      {-1/2, 1/2, (1 + Sqrt[2])/2}, {-1/2, 1/2, -(1 + Sqrt[2])/2}, \
+      {-1/2, -1/2, (1 + Sqrt[2])/2}, {-1/2, -1/2, -(1 + Sqrt[2])/2}}",
+    faces_src: "{{6, 22, 14}, {7, 23, 15}, {9, 1, 17}, {10, 18, 2}, \
+      {11, 19, 3}, {12, 4, 20}, {21, 5, 13}, {24, 8, 16}, \
+      {1, 2, 6, 5}, {2, 18, 22, 6}, {3, 19, 23, 7}, {4, 3, 7, 8}, \
+      {5, 6, 14, 13}, {8, 7, 15, 16}, {9, 10, 2, 1}, \
+      {10, 9, 11, 12}, {10, 12, 20, 18}, {11, 9, 17, 19}, \
+      {12, 11, 3, 4}, {13, 14, 16, 15}, {17, 1, 5, 21}, \
+      {18, 20, 24, 22}, {19, 17, 21, 23}, {20, 4, 8, 24}, \
+      {22, 24, 16, 14}, {23, 21, 13, 15}}",
+    classes_src: "\
+      {\"Amphichiral\", \"Archimedean\", \"Canonical\", \"Convex\", \
+      \"Equilateral\", \"Rigid\", \"Rupert\", \"Simple\", \
+      \"Uniform\", \"Zalgaller\"}",
+  },
   // The rhombic dodecahedron is the one Catalan solid here: its faces are
   // rhombi, not regular polygons, so it has no circumradius (its vertices
   // are not all the same distance from the center).
