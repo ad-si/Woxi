@@ -123,6 +123,13 @@ pub fn dispatch_plotting(
     // with the variable spec's bounds evaluated. Playground / Studio detect
     // the held Control[…] and render an interactive control widget.
     "Control" => Some(crate::functions::graphics::control_ast(args)),
+    // GeometricScene holds its arguments (see core_eval.rs) and evaluates
+    // the point-definition rules in order, leaving the primitives symbolic
+    // until a `["Graphics"]` property call resolves them (see
+    // apply_curried_call in function_application.rs).
+    "GeometricScene" if args.len() == 2 || args.len() == 3 => {
+      Some(crate::functions::graphics::geometric_scene_ast(args))
+    }
     "Plot3D" if args.len() >= 3 => {
       Some(quiet_plot(|| crate::functions::plot3d::plot3d_ast(args)))
     }

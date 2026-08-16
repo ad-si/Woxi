@@ -4918,6 +4918,157 @@ mod location_test {
   }
 }
 
+mod hypothesis_testing_mean_test {
+  use super::*;
+
+  // `HypothesisTesting`MeanTest` is the legacy `Statistics`HypothesisTests``
+  // / `HypothesisTesting`` compatibility-package mean test, loaded via
+  // `Get["HypothesisTesting`"]` (or `Needs["HypothesisTesting`"]`) in older
+  // notebooks. Unlike `LocationTest`, it reports a list of context-qualified
+  // rules so callers pull out a property with
+  // `property /. MeanTest[data, mu0, opts]`. It shares its t-statistic and
+  // degrees-of-freedom computation with `LocationTest`, so the numbers below
+  // match that suite's `location_test` module exactly.
+
+  #[test]
+  fn get_hypothesis_testing_context_is_a_noop() {
+    clear_state();
+    assert_eq!(interpret("Get[\"HypothesisTesting`\"]").unwrap(), "\0");
+  }
+
+  #[test]
+  fn one_sample_rule_list_shape() {
+    clear_state();
+    let result = interpret(
+      "HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0]",
+    )
+    .unwrap();
+    assert!(
+      result.contains("HypothesisTesting`TestStatistic ->"),
+      "got: {result}"
+    );
+    assert!(
+      result.contains("HypothesisTesting`DegreesOfFreedom ->"),
+      "got: {result}"
+    );
+    assert!(
+      result.contains("HypothesisTesting`OneSidedPValue ->"),
+      "got: {result}"
+    );
+    assert!(
+      result.contains("HypothesisTesting`TwoSidedPValue ->"),
+      "got: {result}"
+    );
+  }
+
+  #[test]
+  fn two_sided_p_value_matches_location_test() {
+    clear_state();
+    let result = interpret(
+      "HypothesisTesting`TwoSidedPValue /. HypothesisTesting`MeanTest[\
+       {1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0, HypothesisTesting`TwoSided -> True]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 0.0033200264871519245).abs() < 1e-8,
+      "Expected ~0.00332 (LocationTest's PValue), got {val}"
+    );
+  }
+
+  #[test]
+  fn one_sided_p_value_is_half_two_sided() {
+    clear_state();
+    let two_sided: f64 = interpret(
+      "HypothesisTesting`TwoSidedPValue /. HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0]",
+    )
+    .unwrap()
+    .parse()
+    .unwrap();
+    let one_sided: f64 = interpret(
+      "HypothesisTesting`OneSidedPValue /. HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0]",
+    )
+    .unwrap()
+    .parse()
+    .unwrap();
+    assert!(
+      (one_sided - two_sided / 2.0).abs() < 1e-12,
+      "OneSidedPValue ({one_sided}) should be half of TwoSidedPValue ({two_sided})"
+    );
+  }
+
+  #[test]
+  fn test_statistic_matches_location_test() {
+    clear_state();
+    let result = interpret(
+      "HypothesisTesting`TestStatistic /. HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 5.252257314388901).abs() < 1e-10,
+      "Expected ~5.2523 (LocationTest's TestStatistic), got {val}"
+    );
+  }
+
+  #[test]
+  fn nonzero_mu0() {
+    clear_state();
+    let result = interpret(
+      "HypothesisTesting`TwoSidedPValue /. HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 1]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 0.2461912778840749).abs() < 1e-8,
+      "Expected ~0.2462 (LocationTest's PValue at mu0=1), got {val}"
+    );
+  }
+
+  #[test]
+  fn automatic_mu0_defaults_to_zero() {
+    clear_state();
+    let result = interpret(
+      "HypothesisTesting`TwoSidedPValue /. HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, Automatic]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 0.0033200264871519245).abs() < 1e-8,
+      "Expected ~0.00332, got {val}"
+    );
+  }
+
+  #[test]
+  fn two_sample_test() {
+    clear_state();
+    let result = interpret(
+      "HypothesisTesting`TwoSidedPValue /. HypothesisTesting`MeanTest[{{1.2, 0.5, 1.9}, {2.1, 0.8, 1.5}}, 0]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 0.6541475396789262).abs() < 1e-3,
+      "Expected ~0.654 (LocationTest's two-sample PValue), got {val}"
+    );
+  }
+
+  #[test]
+  fn extraction_pattern_used_in_demonstrations() {
+    // The exact idiom Wolfram Demonstrations Project notebooks use after
+    // `Needs["HypothesisTesting`"]`: extract a single named property from
+    // the returned rule list.
+    clear_state();
+    let result = interpret(
+      "x = RandomReal[NormalDistribution[0, 1], 30]; \
+       p = HypothesisTesting`TwoSidedPValue /. HypothesisTesting`MeanTest[x, 0, HypothesisTesting`TwoSided -> True]; \
+       0 <= p <= 1",
+    )
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+}
+
 mod discrete_asymptotic {
   use super::*;
 

@@ -4794,6 +4794,85 @@ fn format_location_test_result(
   }
 }
 
+/// `HypothesisTesting`MeanTest[data, mu0, opts]` - the legacy
+/// `Statistics`HypothesisTests`` / `HypothesisTesting`` compatibility-package
+/// one- or two-sample mean test. Unlike the modern `LocationTest`, which
+/// returns a single requested property, the legacy function reports a list
+/// of context-qualified rules (`HypothesisTesting`TwoSidedPValue`, etc.) so
+/// that callers extract results with `property /. MeanTest[...]`. The
+/// underlying t-statistic and degrees of freedom are computed by the same
+/// helpers `LocationTest` uses, so the two never drift apart.
+pub fn hypothesis_testing_mean_test_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "MeanTest expects at least 1 argument".into(),
+    ));
+  }
+
+  let mu0 = if args.len() >= 2 {
+    match &args[1] {
+      Expr::Identifier(s) if s == "Automatic" => 0.0,
+      other => match try_eval_to_f64(other) {
+        Some(v) => v,
+        None => {
+          return Ok(unevaluated("HypothesisTesting`MeanTest", args));
+        }
+      },
+    }
+  } else {
+    0.0
+  };
+
+  let (t_stat, df) = match &args[0] {
+    Expr::List(items) if !items.is_empty() => {
+      if items.len() == 2
+        && matches!(&items[0], Expr::List(_))
+        && matches!(&items[1], Expr::List(_))
+      {
+        let vals1 = extract_numeric_list(&items[0])?;
+        let vals2 = extract_numeric_list(&items[1])?;
+        if vals1.len() < 2 || vals2.len() < 2 {
+          return Err(InterpreterError::EvaluationError(
+            "MeanTest: each sample needs at least 2 elements".into(),
+          ));
+        }
+        two_sample_t_test(&vals1, &vals2, mu0)
+      } else {
+        let vals = extract_numeric_list_flat(items)?;
+        if vals.len() < 2 {
+          return Err(InterpreterError::EvaluationError(
+            "MeanTest: need at least 2 elements".into(),
+          ));
+        }
+        one_sample_t_test(&vals, mu0)
+      }
+    }
+    _ => return Ok(unevaluated("HypothesisTesting`MeanTest", args)),
+  };
+
+  let two_sided_p = t_test_p_value(t_stat, df);
+  let one_sided_p = two_sided_p / 2.0;
+
+  let rule = |head: &str, value: Expr| -> Expr {
+    Expr::Rule {
+      pattern: Box::new(Expr::Identifier(head.to_string())),
+      replacement: Box::new(value),
+    }
+  };
+
+  Ok(Expr::List(
+    vec![
+      rule("HypothesisTesting`TestStatistic", num_to_expr(t_stat)),
+      rule("HypothesisTesting`DegreesOfFreedom", num_to_expr(df)),
+      rule("HypothesisTesting`OneSidedPValue", num_to_expr(one_sided_p)),
+      rule("HypothesisTesting`TwoSidedPValue", num_to_expr(two_sided_p)),
+    ]
+    .into(),
+  ))
+}
+
 fn t_test_p_value(t_stat: f64, df: f64) -> f64 {
   // Two-tailed p-value: p = I(df/(df+t^2), df/2, 1/2)
   if t_stat.is_infinite() {

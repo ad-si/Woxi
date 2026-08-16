@@ -1019,7 +1019,7 @@ SphericalBesselJ,Spherical Bessel function of the first kind,✅,pure,6.0,1001
 BoxWhiskerChart,Creates a box-and-whisker chart from data,✅,pure,8.0,1002
 GridGraph,Constructs an m by n grid graph,✅,pure,8.0,1005
 ToUpperCase,Converts a string to uppercase,✅,pure,2.0,1005
-ViewAngle,,🚫,,6.0,1005
+ViewAngle,Option specifying the camera field of view for 3D graphics,✅,pure,6.0,1005
 ChartLegends,Specifies legend labels for chart elements,✅,pure,7.0,1006
 SystemOpen,Requires external services or GUI infrastructure,🚫,io,7.0,1007
 TemporalData,Represents temporal data and builds a time series from values and a date specification,✅,pure,9.0,1008
@@ -1732,7 +1732,7 @@ FindFormula,Find formula fitting data,,unevaluated,10.2,1740
 Graph3D,3D graph visualization,,unevaluated,10.0,1740
 NotebookDelete,Delete notebook cells,,unevaluated,3.0,1740
 WhittakerW,Whittaker W function E^(-z/2) z^(m+1/2) HypergeometricU[m-k+1/2 2m+1 z],✅,pure,6.0,1741
-GeometricScene,Geometric scene,,unevaluated,12.0,1743
+GeometricScene,Geometric scene,✅,pure,12.0,1743
 MaxDetect,Gives a 0/1 mask marking the regional maxima of a numeric list or matrix,✅,pure,8.0,1743
 FactorList,List irreducible factors of a polynomial with exponents,✅,pure,1.0,1745
 Parallelize,Evaluates an expression and returns the same result as the sequential evaluation (single Woxi kernel),✅,pure,7.0,1745
