@@ -6530,6 +6530,53 @@ mod tests {
   use super::*;
 
   #[test]
+  fn probe_catastrophe_demo() {
+    let code = r#"Manipulate[
+      Show[
+        ss[-phi[[2]], phi[[1]]],
+        sing[-phi[[2]], phi[[1]]],
+        pl,
+        ssing[-phi[[2]], phi[[1]]],
+        PlotRange -> {{-1, 1}, {-1, 1}, {-2, 1}},
+        BoxRatios -> {1, 1, 2},
+        ImageSize -> {400, 400}
+      ],
+      {{phi, {4.5, 0}, ""}, {1, -Pi/3}, {8, Pi/3}},
+      Initialization :> (
+        pl = Plot3D[-2, {x, -1, 1}, {y, -1, 1}, Mesh -> False];
+        s[x_, u_, th_, ph_] := {
+          u Cos[ph] - 2 x (u - 2 x^2) Sin[ph],
+          -x Sin[th] + Cos[th] (2 x (u - 2 x^2) Cos[ph] + u Sin[ph]),
+          x Cos[th] + Sin[th] (2 x (u - 2 x^2) Cos[ph] + u Sin[ph])
+        };
+        ss[th_, ph_] := ParametricPlot3D[s[x, u, th, ph], {u, -1.2, 1.2}, {x, -1.2, 1.2}, Boxed -> False, Axes -> False, Mesh -> False, PlotStyle -> Opacity[0.5]];
+        sing[th_, ph_] := ParametricPlot3D[s[x, (1/2) Cos[ph] Tan[th] + x (6 x - Sin[ph] Tan[th]), th, ph], {x, -1, 1}, Boxed -> False, Axes -> False, PlotStyle -> Blue];
+        ssing[th_, ph_] := ParametricPlot3D[{
+          (1/2) Cos[ph]^2 Tan[th] + 2 x Cos[ph] (3 x - Sin[ph] Tan[th]) + 2 x^2 Sin[ph] (-4 x + Sin[ph] Tan[th]),
+          2 x^2 Cos[th] (4 x Cos[ph] + 3 Sin[ph]) + (1/2) Sin[th] Sin[ph] (Cos[ph] - 4 x^2 Cos[ph] - 4 x Sin[ph]),
+          -2
+        }, {x, -1, 1}, Boxed -> False, Axes -> False, PlotStyle -> Hue[0]]
+      )
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr);
+    match &state {
+      Some(s) => {
+        eprintln!(
+          "controls: {:?}",
+          s.controls.iter().map(|c| c.name()).collect::<Vec<_>>()
+        );
+        eprintln!("error: {:?}", s.error);
+        eprintln!("graphics_handle is_some: {}", s.graphics_handle.is_some());
+        eprintln!("text_output: {:?}", s.text_output);
+      }
+      None => eprintln!("from_expr returned None"),
+    }
+    assert!(state.is_some());
+    assert!(state.unwrap().error.is_none());
+  }
+
+  #[test]
   fn collapsed_chapter_hides_following_until_next_chapter() {
     let states = &[
       (CellStyle::Chapter, true), // collapsed
