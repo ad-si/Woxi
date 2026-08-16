@@ -14,6 +14,7 @@ pub mod helpers;
 pub mod notebook;
 pub mod syntax;
 pub mod utils;
+pub mod vfs;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 

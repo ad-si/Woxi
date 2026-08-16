@@ -2,6 +2,15 @@
 
 # Unreleased
 
+- Every file function honours the working directory `SetDirectory` sets, not
+    the one the process was started in. `FileNames[]` after
+    `SetDirectory["subfolder"]` lists that folder rather than the script's own
+    directory, and the same goes for every other relative file name:
+    `FileExistsQ`, `DirectoryQ`, `FileType`, `Import`, `Export`, `OpenRead`,
+    `OpenWrite`, `OpenAppend`, `ReadString`, `ReadList`, `FilePrint`, `Find`,
+    `FindList`, `Put`, `PutAppend`, `Save`, `CopyFile`, `RenameFile`,
+    `DeleteFile`, `CreateDirectory`, `DeleteDirectory`, `RenameDirectory`,
+    `FileSize`, `FileByteCount`, `FileHash`, `FileDate` and `FileFormat`.
 - `WriteLine[channel, string]` writes a line to an output channel: it is
     `WriteString` plus a newline, and takes the same channels — an open
     `OpenWrite`/`OpenAppend` stream, a file name, a `"!command"` pipe, and the

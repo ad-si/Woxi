@@ -52,11 +52,12 @@ fn sheet_to_expr(range: &calamine::Range<Data>) -> Expr {
 fn load_sheets(
   path: &str,
 ) -> Result<(Vec<String>, Vec<Expr>), InterpreterError> {
-  let workbook = open_workbook_auto(path).map_err(|e| {
-    InterpreterError::EvaluationError(format!(
-      "Import: cannot open \"{path}\": {e}"
-    ))
-  })?;
+  let workbook =
+    open_workbook_auto(crate::vfs::resolve(path)).map_err(|e| {
+      InterpreterError::EvaluationError(format!(
+        "Import: cannot open \"{path}\": {e}"
+      ))
+    })?;
   collect_sheets(workbook)
 }
 

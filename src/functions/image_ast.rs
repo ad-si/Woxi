@@ -7862,13 +7862,13 @@ pub fn import_image(path: &str) -> Result<Expr, InterpreterError> {
   // Match wolframscript: emit Import::nffil before returning $Failed for a
   // missing file. Other failures (e.g. corrupt image) still return $Failed
   // but without the not-found message.
-  if !std::path::Path::new(path).exists() {
+  if !crate::vfs::exists(path) {
     crate::emit_message(&format!(
       "Import::nffil: File {path} not found during Import."
     ));
     return Ok(Expr::Identifier("$Failed".to_string()));
   }
-  let Ok(img) = image::open(path) else {
+  let Ok(img) = image::open(crate::vfs::resolve(path)) else {
     // Wolfram returns $Failed when the file cannot be opened
     return Ok(Expr::Identifier("$Failed".to_string()));
   };
@@ -8119,7 +8119,7 @@ pub fn export_animated_gif(
 
   let (canvas_w, canvas_h) = frames[0].image.dimensions();
 
-  let file = File::create(path).map_err(|e| {
+  let file = File::create(crate::vfs::resolve(path)).map_err(|e| {
     InterpreterError::EvaluationError(format!(
       "Export: cannot save \"{path}\": {e}"
     ))
