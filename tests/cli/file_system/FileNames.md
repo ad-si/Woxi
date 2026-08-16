@@ -7,29 +7,55 @@ $ wo 'ListQ[FileNames["*"]]'
 True
 ```
 
-The pattern is a string pattern, in which `*` stands for any sequence
-of characters:
+The first argument is a string pattern, in which `*` stands for any
+sequence of characters.
+Set up a `notes` directory to search:
 
 ```scrut
-$ mkdir -p "$TMPDIR/wildcard" && cd "$TMPDIR/wildcard" &&
-> touch report.txt notes.txt readme.md && wo 'FileNames["*.txt"]'
-{notes.txt, report.txt}
+$ wo 'CreateDirectory["notes"]; CreateFile["notes/report.txt"]; CreateFile["notes/notes.txt"]; CreateFile["notes/readme.md"]; FileNames["*.txt", "notes"]'
+{notes/notes.txt, notes/report.txt}
 ```
 
-A list of patterns matches file names matching any of them:
+A list of patterns matches the file names matching any of them:
 
 ```scrut
-$ mkdir -p "$TMPDIR/list" && cd "$TMPDIR/list" &&
-> touch report.txt notes.txt readme.md &&
-> wo 'FileNames[{"*.md", "notes.txt"}]'
-{notes.txt, readme.md}
+$ wo 'FileNames[{"*.md", "notes.txt"}, "notes"]'
+{notes/notes.txt, notes/readme.md}
 ```
 
 Patterns joined with `|` mean the same thing:
 
 ```scrut
-$ mkdir -p "$TMPDIR/alternatives" && cd "$TMPDIR/alternatives" &&
-> touch report.txt notes.txt &&
-> wo 'FileNames["report.txt" | "missing.txt"]'
-{report.txt}
+$ wo 'FileNames["report.txt" | "missing.txt", "notes"]'
+{notes/report.txt}
+```
+
+A third argument sets how many directory levels to include.
+Set up a `docs` directory with a `report.txt` on three levels:
+
+```scrut
+$ wo 'CreateDirectory["docs/inner/deeper"]; CreateFile["docs/report.txt"]; CreateFile["docs/inner/report.txt"]; CreateFile["docs/inner/deeper/report.txt"]; FileNames["*", "docs"]'
+{docs/inner, docs/report.txt}
+```
+
+The default, `1`, only looks at `docs` itself,
+so the copies further down are not reported:
+
+```scrut
+$ wo 'FileNames["report.txt", "docs"]'
+{docs/report.txt}
+```
+
+With `2`, the immediate subdirectories are searched as well:
+
+```scrut
+$ wo 'FileNames["report.txt", "docs", 2]'
+{docs/inner/report.txt, docs/report.txt}
+```
+
+`Infinity` descends without a limit:
+
+```scrut
+$ wo 'FileNames["report.txt", "docs", Infinity]'
+{docs/inner/deeper/report.txt, docs/inner/report.txt, docs/report.txt}
 ```

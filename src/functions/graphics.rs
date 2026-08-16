@@ -10948,8 +10948,13 @@ pub(crate) fn is_style_wrapper(name: &str) -> bool {
 /// annotation row rather than a variable specification: a styled or plain
 /// text label sitting between the controls, which Wolfram tags
 /// ``Manipulate`Dump`ThisIsNotAControl`` instead of reporting as malformed.
+/// `Row`/`Column` cover the Demonstrations idiom for a captioned section
+/// header (`Row[{Style["assets", Bold], " in ($K)"}]`) — a bare `Row`/
+/// `Column` reaches here only once any actual controls it grouped have
+/// already been flattened out by `control_group_items`, so what is left is
+/// always plain text layout, never a control panel.
 pub(crate) fn is_manipulate_annotation_head(name: &str) -> bool {
-  is_style_wrapper(name) || name == "Text"
+  is_style_wrapper(name) || matches!(name, "Text" | "Row" | "Column")
 }
 
 /// Peel a display-only `Invisible[expr]` wrapper, returning the content it

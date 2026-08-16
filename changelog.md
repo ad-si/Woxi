@@ -9,12 +9,18 @@
     Matching goes through `StringMatchQ`, so `*` and `@` are the only
     metacharacters — `?` is a literal question mark, as in the Wolfram
     Language.
-- `FileNames[patt, ".", Infinity]` keeps the intermediate directories in the
-    names it returns, instead of reporting a nested file under its bare name.
 - `WriteLine[channel, string]` writes a line to an output channel: it is
     `WriteString` plus a newline, and takes the same channels — an open
     `OpenWrite`/`OpenAppend` stream, a file name, a `"!command"` pipe, and the
     standard streams `"stdout"`/`$Output` and `"stderr"`/`$Messages`.
+- `FileNames[form, dirs, n]` honours the level count instead of only
+    searching `dirs` themselves: `n` includes files up to `n` directory levels
+    down, so `FileNames["f.txt", dir, 2]` also reports the matches in `dir`'s
+    immediate subdirectories. `Infinity` keeps descending without a limit,
+    and `n <= 0` matches nothing. A third argument that is not a level
+    specification now leaves the call unevaluated. Recursing below `"."` also
+    keeps each hit's path relative to the current directory rather than
+    collapsing it to a bare file name.
 - `InputString[]` and `Input[]` actually read from standard input when `woxi`
     owns it — `woxi run script.wls`, a shebang script, and `woxi eval` — so a
     script that prompts for a value now waits for one instead of running
