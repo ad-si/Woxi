@@ -15635,6 +15635,93 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl$$ = 1, $CellContext`P$$ = 760}
     );
   }
 
+  // A stored Manipulate whose body draws named Archimedean solids side by
+  // side — the pattern a polyhedron-focused Demonstration's Initialization
+  // Code + Manipulate cells reduce to once the boilerplate is stripped away.
+  // Regression for the cubic-symmetry entities `PolyhedronData` was missing
+  // (`TruncatedTetrahedron`, `TruncatedOctahedron`,
+  // `SmallRhombicuboctahedron`): the Manipulate's body must evaluate and
+  // render cleanly, and moving the slider must change the rendered scene.
+  #[test]
+  fn demonstration_polyhedron_manipulate_draws_cubic_archimedean_solids() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Module[{solids = {\"TruncatedTetrahedron\", \"TruncatedOctahedron\", \"SmallRhombicuboctahedron\"}},
+  Graphics3D[
+   Table[
+    Translate[PolyhedronData[solids[[k]], \"Faces\"], {2.5 (k - 2), 0, 0}],
+    {k, 1, gap}],
+   Boxed -> False, ViewPoint -> {1.3, -2.4, 2}]],
+ {{gap, 3, \"solids shown\"}, 1, 3, 1}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`gap$$ = 3}, DynamicBox[\[Ellipsis]]]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "PolyhedronData[...] must draw all three cubic Archimedean solids"
+    );
+
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          min,
+          max,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name.as_str(), "gap");
+        assert_eq!(*min, 1.0);
+        assert_eq!(*max, 3.0);
+        assert_eq!(*current, 3.0);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    };
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the solids must render")
+    };
+    let three_solids_view = render(&widget);
+
+    // Dropping to one solid must re-render a visibly different scene.
+    match &mut widget.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 1.0,
+      other => panic!("expected gap as a Continuous control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    assert!(widget.graphics_handle.is_some());
+    assert_ne!(
+      three_solids_view,
+      render(&widget),
+      "showing only one solid must change the rendered scene"
+    );
+  }
+
   /// End-to-end regression for the shape of the "Primitive Relation for
   /// Elliptic Geometry" Demonstration: a separate `InitializationCell`
   /// defines a great-circle-arc helper built from `With`, `Normalize`,
