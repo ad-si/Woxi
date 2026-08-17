@@ -9860,14 +9860,24 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     // Part 1 of a field plot is its graphics content, so a Demonstration can
     // lift the field into a `Graphics[{Opacity[…], StreamPlot[…][[1]]}]` of
     // its own instead of showing the plot on its own.
+    // How deep the primitives sit, and whether a streamline carries its
+    // arrowheads as part of the curve, is each renderer's own business —
+    // wolframscript nests them differently again. What a Demonstration
+    // relies on is that part 1 is a list of drawable primitives.
     #[test]
-    fn stream_plot_part_one_yields_line_primitives() {
+    fn stream_plot_part_one_yields_drawable_primitives() {
+      assert_eq!(
+        interpret("Head[StreamPlot[{1, x}, {x, -1, 1}, {y, -1, 1}][[1]]]")
+          .unwrap(),
+        "List"
+      );
       assert_eq!(
         interpret(
-          "Head[StreamPlot[{1, x}, {x, -1, 1}, {y, -1, 1}][[1, 1, 2]]]"
+          "Length[Cases[StreamPlot[{1, x}, {x, -1, 1}, {y, -1, 1}][[1]], \
+             _Line | _Arrow, Infinity]] > 0"
         )
         .unwrap(),
-        "Line"
+        "True"
       );
       assert_eq!(
         interpret(
@@ -9880,13 +9890,19 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
-    fn vector_plot_part_one_yields_arrow_primitives() {
+    fn vector_plot_part_one_yields_drawable_primitives() {
+      assert_eq!(
+        interpret("Head[VectorPlot[{1, x}, {x, -1, 1}, {y, -1, 1}][[1]]]")
+          .unwrap(),
+        "List"
+      );
       assert_eq!(
         interpret(
-          "Head[VectorPlot[{1, x}, {x, -1, 1}, {y, -1, 1}][[1, 1, 2]]]"
+          "Length[Cases[VectorPlot[{1, x}, {x, -1, 1}, {y, -1, 1}][[1]], \
+             _Line | _Arrow, Infinity]] > 0"
         )
         .unwrap(),
-        "Arrow"
+        "True"
       );
     }
 
