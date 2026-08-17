@@ -3421,6 +3421,20 @@ fn date_expr_to_absolute_time(expr: &Expr) -> Option<f64> {
 /// Dates can be date lists ({y,m,d}), DateObject[{...}], or AbsoluteTime values.
 /// Multiple datasets are supported: DateListPlot[{data1, data2, ...}].
 pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  date_list_plot_ast_impl(args, false)
+}
+
+/// DateListLogPlot[{{date, y}, ...}] - like [`date_list_plot_ast`] but with
+/// a logarithmic y-axis, matching how `ListLogPlot` relates to `ListPlot`.
+/// Non-positive y values are dropped since they have no log-space position.
+pub fn date_list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  date_list_plot_ast_impl(args, true)
+}
+
+fn date_list_plot_ast_impl(
+  args: &[Expr],
+  log_y: bool,
+) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
   // A TimeSeries plots as its {date, value} path.
   let data = match crate::functions::timeseries_ast::time_series_pairs(&data) {
@@ -3433,9 +3447,14 @@ pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => data,
   };
   let Expr::List(items) = &data else {
-    return Err(InterpreterError::EvaluationError(
-      "DateListPlot: first argument must be a list".into(),
-    ));
+    return Err(InterpreterError::EvaluationError(format!(
+      "{}: first argument must be a list",
+      if log_y {
+        "DateListLogPlot"
+      } else {
+        "DateListPlot"
+      }
+    )));
   };
 
   // `DateListPlot[{y1, y2, …}, datespec]` — plain values plus a starting
@@ -3471,7 +3490,7 @@ pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     let mut new_args = vec![Expr::List(pair_items.into())];
     new_args.extend(args[2..].iter().cloned());
-    return date_list_plot_ast(&new_args);
+    return date_list_plot_ast_impl(&new_args, log_y);
   }
 
   // Detect whether this is multiple datasets or a single dataset.
@@ -3517,7 +3536,9 @@ pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let y = try_eval_to_f64(
           &evaluate_expr_to_expr(&pair[1]).unwrap_or(pair[1].clone()),
         );
-        if let (Some(x), Some(y)) = (x, y) {
+        if let (Some(x), Some(y)) = (x, y)
+          && (!log_y || y > 0.0)
+        {
           points.push((x, y));
         }
       }
@@ -3529,7 +3550,14 @@ pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if all_series.is_empty() {
     // Return unevaluated (like Wolfram does for invalid data)
-    return Ok(unevaluated("DateListPlot", args));
+    return Ok(unevaluated(
+      if log_y {
+        "DateListLogPlot"
+      } else {
+        "DateListPlot"
+      },
+      args,
+    ));
   }
 
   let chart_opts = parse_chart_options(args);
@@ -3547,14 +3575,28 @@ pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       y_max = y_max.max(y);
     }
   }
-  let yp = (y_max - y_min) * 0.04;
-  let yp = if yp.abs() < f64::EPSILON { 1.0 } else { yp };
 
   // Compute x range with padding
   let xp = (x_max - x_min) * 0.04;
   let xp = if xp.abs() < f64::EPSILON { 86400.0 } else { xp };
   let x_range_min = x_min - xp;
   let x_range_max = x_max + xp;
+
+  // Compute y range with padding: multiplicatively in log space for
+  // DateListLogPlot (matching ListLogPlot), additively otherwise.
+  let (y_range_min, y_range_max) = if log_y {
+    let log_range = (y_max / y_min).ln();
+    let factor = if log_range.abs() < f64::EPSILON {
+      std::f64::consts::E
+    } else {
+      (log_range * 0.04).exp()
+    };
+    (y_min / factor, y_max * factor)
+  } else {
+    let yp = (y_max - y_min) * 0.04;
+    let yp = if yp.abs() < f64::EPSILON { 1.0 } else { yp };
+    (y_min - yp, y_max + yp)
+  };
 
   // Compute nice date tick positions
   let date_ticks =
@@ -3567,13 +3609,14 @@ pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_height: chart_opts.svg_height,
     full_width: chart_opts.full_width,
     date_axis: true,
+    log_y,
     ..Default::default()
   };
 
   let svg = crate::functions::plot::generate_svg_with_filling(
     &all_series,
     (x_range_min, x_range_max),
-    (y_min - yp, y_max + yp),
+    (y_range_min, y_range_max),
     &plot_opts,
   )?;
 
