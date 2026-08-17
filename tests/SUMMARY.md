@@ -1253,6 +1253,7 @@
     - [`TableForm`](expressions/TableForm.md)
     - [`TagBox`](expressions/TagBox.md)
     - [`TagSet`](expressions/TagSet.md)
+    - [`TagSetDelayed`](expressions/TagSetDelayed.md)
     - [`TensorDimensions`](expressions/TensorDimensions.md)
     - [`Trace`](expressions/Trace.md)
     - [`Undefined`](expressions/Undefined.md)
