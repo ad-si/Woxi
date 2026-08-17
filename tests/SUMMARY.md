@@ -76,6 +76,7 @@
       - [`AlphabeticSort`](strings/conversion/AlphabeticSort.md)
       - [`CharacterCounts`](strings/conversion/CharacterCounts.md)
       - [`CharacterName`](strings/conversion/CharacterName.md)
+      - [`DeleteStopwords`](strings/conversion/DeleteStopwords.md)
       - [`FromCharacterCode`](strings/conversion/FromCharacterCode.md)
       - [`FromLetterNumber`](strings/conversion/FromLetterNumber.md)
       - [`Hash`](strings/conversion/Hash.md)

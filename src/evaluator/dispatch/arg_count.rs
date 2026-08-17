@@ -345,6 +345,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DeleteAdjacentDuplicates" => Some((1, 2)),
     "DeleteCases" => Some((1, 4)),
     "DeleteElements" => Some((2, 2)),
+    "DeleteStopwords" => Some((1, 1)),
     "UniqueElements" => Some((1, 2)),
     // 1-arg form is the operator form Discard[crit][data].
     "Discard" => Some((1, 3)),
