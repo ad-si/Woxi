@@ -220,6 +220,60 @@ pub(crate) fn command_file_spec(spec: &str) -> Option<&str> {
   spec.strip_prefix('!')
 }
 
+/// The two standard output streams, as `(name, id)`. Both are open for the
+/// whole session and keep these fixed ids, which is why `register_stream`
+/// hands out ids starting after them.
+pub(crate) const STANDARD_STREAMS: [(&str, i128); 2] =
+  [("stdout", 1), ("stderr", 2)];
+
+/// The `OutputStream[name, id]` expression for a standard stream:
+/// `OutputStream["stdout", 1]` for stdout, `OutputStream["stderr", 2]` for
+/// stderr. This is what `$StandardOutputStream`, `$StandardErrorStream` and
+/// `Streams[]` all hand out.
+pub(crate) fn standard_stream_expr(is_stdout: bool) -> Expr {
+  let (name, id) = STANDARD_STREAMS[usize::from(!is_stdout)];
+  call(
+    "OutputStream",
+    vec![Expr::String(name.to_string()), Expr::Integer(id)],
+  )
+}
+
+/// Recognize a channel that names one of the process's standard streams:
+/// `Some(true)` for stdout, `Some(false)` for stderr. Covers the stream
+/// names, the `$Output`/`$Messages` symbols and the `OutputStream[…]`
+/// expressions `$StandardOutputStream` / `Streams[]` return.
+///
+/// Only the write functions ask, and those are native-only — the browser
+/// has no process streams to write to.
+#[cfg(not(target_arch = "wasm32"))]
+fn standard_stream_channel(expr: &Expr) -> Option<bool> {
+  let is_stdout = |name: &str| match name {
+    "stdout" | "$Output" => Some(true),
+    "stderr" | "$Messages" => Some(false),
+    _ => None,
+  };
+  match expr {
+    Expr::String(name) => is_stdout(name),
+    Expr::Identifier(name) => is_stdout(name),
+    // Only the standard streams' own ids count: a file stream that
+    // happens to be named "stdout" is still a file.
+    Expr::FunctionCall { name, args }
+      if name == "OutputStream" && args.len() == 2 =>
+    {
+      let (Expr::String(stream_name), Expr::Integer(id)) = (&args[0], &args[1])
+      else {
+        return None;
+      };
+      STANDARD_STREAMS
+        .iter()
+        .any(|(n, i)| n == stream_name && i == id)
+        .then(|| is_stdout(stream_name))
+        .flatten()
+    }
+    _ => None,
+  }
+}
+
 /// The registry id of an `InputStream[name, id]` / `OutputStream[name, id]`.
 fn io_stream_id(expr: &Expr) -> Option<usize> {
   let Expr::FunctionCall { name, args } = expr else {
@@ -264,6 +318,9 @@ fn io_binary_bytes(expr: &Expr, path: &str) -> std::io::Result<Vec<u8>> {
 /// Where a write function sends its bytes.
 #[cfg(not(target_arch = "wasm32"))]
 enum WriteTarget {
+  /// One of the process's standard streams: `true` for stdout, `false`
+  /// for stderr.
+  Standard(bool),
   /// Append to a file.
   File(String),
   /// The standard input of an open `OpenWrite["!command"]` stream.
@@ -278,6 +335,11 @@ enum WriteTarget {
 /// leaves the call unevaluated.
 #[cfg(not(target_arch = "wasm32"))]
 fn io_write_target(expr: &Expr) -> Option<WriteTarget> {
+  // `"stdout"`, `$Output`, `OutputStream["stdout", 1]` and their stderr
+  // counterparts name the process's own streams, never a file of that name.
+  if let Some(is_stdout) = standard_stream_channel(expr) {
+    return Some(WriteTarget::Standard(is_stdout));
+  }
   match expr {
     Expr::String(spec) => Some(match command_file_spec(spec) {
       Some(command) => WriteTarget::Command(command.to_string()),
@@ -301,6 +363,31 @@ fn io_write_target(expr: &Expr) -> Option<WriteTarget> {
   }
 }
 
+/// The targets a channel argument names. A list of channels — what
+/// `Streams["stderr"]` and `$Output` style variables hand over — writes to
+/// every one of them, as in wolframscript. `None` if any element is not
+/// writable, which leaves the whole call unevaluated.
+#[cfg(not(target_arch = "wasm32"))]
+fn io_write_targets(expr: &Expr) -> Option<Vec<WriteTarget>> {
+  match expr {
+    Expr::List(items) => items.iter().map(io_write_target).collect(),
+    _ => io_write_target(expr).map(|target| vec![target]),
+  }
+}
+
+/// Send `bytes` to every target of a channel, in order.
+#[cfg(not(target_arch = "wasm32"))]
+fn write_targets_bytes(
+  targets: &[WriteTarget],
+  bytes: &[u8],
+  caller: &str,
+) -> Result<(), InterpreterError> {
+  for target in targets {
+    write_target_bytes(target, bytes, caller)?;
+  }
+  Ok(())
+}
+
 /// Shared body of `WriteString` and `WriteLine`. `args[0]` is the channel and
 /// `args[1..]` the things to write; they are concatenated, `terminator` is
 /// appended, and the result goes out in a single write. `WriteLine` is just
@@ -322,37 +409,10 @@ fn write_string_to_channel(
   }
   text.push_str(terminator);
 
-  // Special-case the standard streams so `WriteString["stdout", …]` and
-  // `WriteString[$Output, …]` write to the process's stdout, matching
-  // wolframscript. `$Output`/`"stdout"` map to stdout, `$Messages`/
-  // `"stderr"` to stderr. Stdout writes also go through the captured
-  // buffer (like Print) so they appear in `interpret_with_stdout`.
-  let std_target = match &args[0] {
-    Expr::String(name) if name == "stdout" => Some(true),
-    Expr::String(name) if name == "stderr" => Some(false),
-    Expr::Identifier(name) if name == "$Output" => Some(true),
-    Expr::Identifier(name) if name == "$Messages" => Some(false),
-    _ => None,
-  };
-  if let Some(is_stdout) = std_target {
-    use std::io::Write;
-    if is_stdout {
-      if !crate::is_quiet_print() {
-        print!("{text}");
-        let _ = std::io::stdout().flush();
-      }
-      crate::capture_stdout_raw(&text);
-    } else {
-      eprint!("{text}");
-      let _ = std::io::stderr().flush();
-    }
-    return Ok(Expr::Identifier("Null".to_string()));
-  }
-
-  let Some(target) = io_write_target(&args[0]) else {
+  let Some(targets) = io_write_targets(&args[0]) else {
     return Ok(unevaluated(caller, args));
   };
-  write_target_bytes(&target, text.as_bytes(), caller)?;
+  write_targets_bytes(&targets, text.as_bytes(), caller)?;
   Ok(Expr::Identifier("Null".to_string()))
 }
 
@@ -365,6 +425,27 @@ fn write_target_bytes(
   caller: &str,
 ) -> Result<(), InterpreterError> {
   match target {
+    // Stdout writes also go through the captured buffer (like Print) so
+    // they appear in `interpret_with_stdout`.
+    WriteTarget::Standard(is_stdout) => {
+      use std::io::Write;
+      // The bytes go out unaltered — `BinaryWrite` may hand over data that
+      // is not valid UTF-8 — while the capture buffer, being text, gets a
+      // lossy decoding of the same bytes.
+      if *is_stdout {
+        if !crate::is_quiet_print() {
+          let mut stdout = std::io::stdout();
+          let _ = stdout.write_all(bytes);
+          let _ = stdout.flush();
+        }
+        crate::capture_stdout_raw(&String::from_utf8_lossy(bytes));
+      } else {
+        let mut stderr = std::io::stderr();
+        let _ = stderr.write_all(bytes);
+        let _ = stderr.flush();
+      }
+      Ok(())
+    }
     WriteTarget::File(path) => {
       use std::io::Write;
       let mut file = std::fs::OpenOptions::new()
@@ -407,7 +488,10 @@ struct OpenStream {
 
 thread_local! {
     static STREAM_REGISTRY: RefCell<HashMap<usize, OpenStream>> = RefCell::new(HashMap::new());
-    static STREAM_COUNTER: RefCell<usize> = const { RefCell::new(1) };
+    // The standard streams already occupy ids 1 and 2, so — as in
+    // wolframscript — the first stream a script opens gets id 3.
+    static STREAM_COUNTER: RefCell<usize> =
+      const { RefCell::new(STANDARD_STREAMS.len() + 1) };
 }
 
 /// Register a new open stream and return its ID
@@ -803,32 +887,16 @@ pub fn dispatch_io_functions(
     // Streams[] — return list of open streams (stdout and stderr)
     "Streams" if args.is_empty() => {
       return Some(Ok(Expr::List(
-        vec![
-          call(
-            "OutputStream",
-            vec![Expr::String("stdout".to_string()), Expr::Integer(1)],
-          ),
-          call(
-            "OutputStream",
-            vec![Expr::String("stderr".to_string()), Expr::Integer(2)],
-          ),
-        ]
-        .into(),
+        vec![standard_stream_expr(true), standard_stream_expr(false)].into(),
       )));
     }
     // Streams["name"] — filter streams by name
     "Streams" if args.len() == 1 => {
       if let Expr::String(name_filter) = &args[0] {
-        let all_streams = [("stdout", 1), ("stderr", 2)];
-        let matching: Vec<Expr> = all_streams
+        let matching: Vec<Expr> = STANDARD_STREAMS
           .iter()
           .filter(|(n, _)| *n == name_filter.as_str())
-          .map(|(n, id)| {
-            call(
-              "OutputStream",
-              vec![Expr::String(n.to_string()), Expr::Integer(*id)],
-            )
-          })
+          .map(|(n, _)| standard_stream_expr(*n == "stdout"))
           .collect();
         return Some(Ok(Expr::List(matching.into())));
       }
@@ -2390,7 +2458,7 @@ pub fn dispatch_io_functions(
     // infers the type from the value (Integer → Byte, String → Character8).
     #[cfg(not(target_arch = "wasm32"))]
     "BinaryWrite" if (2..=3).contains(&args.len()) => {
-      let Some(target) = io_write_target(&args[0]) else {
+      let Some(targets) = io_write_targets(&args[0]) else {
         return Some(Ok(unevaluated("BinaryWrite", args)));
       };
       // Render a single value at the given type into the byte buffer.
@@ -2461,7 +2529,7 @@ pub fn dispatch_io_functions(
           _ => return Some(Ok(unevaluated())),
         }
       };
-      if let Err(e) = write_target_bytes(&target, &bytes, "BinaryWrite") {
+      if let Err(e) = write_targets_bytes(&targets, &bytes, "BinaryWrite") {
         return Some(Err(e));
       }
       return Some(Ok(args[0].clone()));
@@ -3006,7 +3074,7 @@ pub fn dispatch_io_functions(
     // Write[stream, expr1, expr2, ...] — write expressions to a stream in OutputForm
     #[cfg(not(target_arch = "wasm32"))]
     "Write" if args.len() >= 2 => {
-      let Some(target) = io_write_target(&args[0]) else {
+      let Some(targets) = io_write_targets(&args[0]) else {
         return Some(Ok(unevaluated("Write", args)));
       };
       let mut content = String::new();
@@ -3014,7 +3082,8 @@ pub fn dispatch_io_functions(
         content.push_str(&crate::syntax::expr_to_string(arg));
       }
       content.push('\n');
-      if let Err(e) = write_target_bytes(&target, content.as_bytes(), "Write") {
+      if let Err(e) = write_targets_bytes(&targets, content.as_bytes(), "Write")
+      {
         return Some(Err(e));
       }
       return Some(Ok(Expr::Identifier("Null".to_string())));

@@ -10,3 +10,21 @@ trailing streams.
 $ wo 'Streams[]'
 \{OutputStream\[stdout, 1\], OutputStream\[stderr, 2\].*\} (regex)
 ```
+
+The two always-open ones are also available as `$StandardOutputStream` and
+`$StandardErrorStream`:
+
+```scrut
+$ wo '$StandardOutputStream'
+OutputStream[stdout, 1]
+```
+
+```scrut
+$ wo '$StandardErrorStream'
+OutputStream[stderr, 2]
+```
+
+```scrut
+$ wo '{$StandardOutputStream, $StandardErrorStream} === Take[Streams[], 2]'
+True
+```

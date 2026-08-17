@@ -1299,6 +1299,11 @@ script_test!(
   script_hello_world_newline_omission,
   "hello_world_newline_omission.wls"
 );
+// === Unlocked by $StandardOutputStream naming the process's stdout ===
+script_test!(
+  script_hello_world_standard_output_stream,
+  "hello_world_standard_output_stream.wls"
+);
 // === Unlocked by the DayRange weekday filter + DatePlus multi-unit fix
 //     (uses a warm-up shim to swallow wolframscript's CalendarData init Print) ===
 script_test!(

@@ -385,6 +385,16 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     "$GeoLocation" => {
       Some(call1("Missing", Expr::String("NotAvailable".to_string())))
     }
+    // The process's standard streams, always open and always carrying the
+    // ids `Streams[]` reports: `OutputStream[stdout, 1]` and
+    // `OutputStream[stderr, 2]`. Writing to them — `WriteString[
+    // $StandardOutputStream, "hi"]` — goes to the process's stdout/stderr.
+    "$StandardOutputStream" => {
+      Some(crate::evaluator::dispatch::io_functions::standard_stream_expr(true))
+    }
+    "$StandardErrorStream" => Some(
+      crate::evaluator::dispatch::io_functions::standard_stream_expr(false),
+    ),
     "$MachineEpsilon" => Some(Expr::Real(2.220446049250313e-16)),
     "$MaxMachineNumber" => Some(Expr::Real(f64::MAX)),
     // Wolfram's $MinMachineNumber is the smallest normalized double
