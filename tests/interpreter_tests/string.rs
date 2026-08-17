@@ -4718,48 +4718,56 @@ mod string_form {
     assert_eq!(interpret("ToString[255, InputForm]").unwrap(), "255");
   }
 
-  // `ToString[expr, TraditionalForm]` typesets rather than prints: a known
-  // function takes its roman name and round brackets, a `HoldForm`-headed
-  // application shows as the head applied to its argument, and a quotient
-  // still spans three lines the way OutputForm's fraction does.
-  // Demonstrations paste such pieces together with `StringJoin` to build
-  // their plot labels.
+  // `ToString[expr, TraditionalForm]` typesets rather than prints: it hands
+  // back the boxes in the box-syntax escape notation, the way
+  // `ToString[expr, StandardForm]` does — a String that *displays* as the
+  // typeset expression. A known function takes its roman name and round
+  // brackets, `HoldForm` leaves its `TagBox` mark, `Style` its `StyleBox`
+  // with the directives, a string's box is its quoted source, and a quotient
+  // sets as a `FractionBox`. The escape characters are invisible, so the
+  // assertions compare the `InputForm` of the returned String.
   #[test]
   fn to_string_traditional_form_typesets_functions() {
     assert_eq!(
-      interpret("ToString[Sin[x], TraditionalForm]").unwrap(),
-      "sin(x)"
+      interpret("ToString[ToString[Sin[x], TraditionalForm], InputForm]")
+        .unwrap(),
+      r#""\!\(\*FormBox[RowBox[{\"sin\", \"(\", \"x\", \")\"}], TraditionalForm]\)""#
     );
-    assert_eq!(
-      interpret("ToString[HoldForm[g][HoldForm[x]], TraditionalForm]").unwrap(),
-      "g(x)"
-    );
-    // A `Style` wrapper only colours the result; the text is what it holds.
     assert_eq!(
       interpret(
-        "ToString[Style[HoldForm[f][HoldForm[x]], Red], TraditionalForm]"
+        "ToString[ToString[HoldForm[g][HoldForm[x]], TraditionalForm], InputForm]"
       )
       .unwrap(),
-      "f(x)"
+      r#""\!\(\*FormBox[RowBox[{TagBox[\"g\", HoldForm], \"(\", TagBox[\"x\", HoldForm], \")\"}], TraditionalForm]\)""#
     );
-    // A string displays unquoted, so joined label pieces read as prose.
+    // A `Style` wrapper carries its directives into the box tree.
     assert_eq!(
-      interpret("ToString[\" = \", TraditionalForm]").unwrap(),
-      " = "
+      interpret(
+        "ToString[ToString[Style[HoldForm[f][HoldForm[x]], Red], TraditionalForm], InputForm]"
+      )
+      .unwrap(),
+      r#""\!\(\*FormBox[StyleBox[RowBox[{TagBox[\"f\", HoldForm], \"(\", TagBox[\"x\", HoldForm], \")\"}], RGBColor[1, 0, 0], Rule[StripOnInput, False]], TraditionalForm]\)""#
+    );
+    // A string's box is its quoted source; it still draws without the quotes.
+    assert_eq!(
+      interpret("ToString[ToString[\" = \", TraditionalForm], InputForm]")
+        .unwrap(),
+      r#""\!\(\*FormBox[\"\\\" = \\\"\", TraditionalForm]\)""#
     );
   }
 
   #[test]
   fn to_string_traditional_form_stacks_quotients() {
     assert_eq!(
-      interpret("ToString[a/b, TraditionalForm]").unwrap(),
-      "a\n-\nb"
+      interpret("ToString[ToString[a/b, TraditionalForm], InputForm]").unwrap(),
+      r#""\!\(\*FormBox[FractionBox[\"a\", \"b\"], TraditionalForm]\)""#
     );
     // The evaluated `Times[a, Power[b, -1]]` shape sets as a fraction too,
     // rather than as a factor with a negative exponent.
     assert_eq!(
-      interpret("ToString[Sin[x]/2, TraditionalForm]").unwrap(),
-      "sin(x)\n------\n  2"
+      interpret("ToString[ToString[Sin[x]/2, TraditionalForm], InputForm]")
+        .unwrap(),
+      r#""\!\(\*FormBox[FractionBox[RowBox[{\"sin\", \"(\", \"x\", \")\"}], \"2\"], TraditionalForm]\)""#
     );
   }
 
