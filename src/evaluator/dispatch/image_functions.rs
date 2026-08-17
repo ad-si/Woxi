@@ -1064,6 +1064,16 @@ pub fn dispatch_image_functions(
         command_file_spec, run_command_capture_bytes,
       };
       let path = import_path_spec(&args[0]).unwrap_or_default();
+      // A pipe carries no file name to guess a format from, so wolframscript
+      // refuses to guess: `Import["!printf hi"]` is `$Failed`, and only
+      // `Import["!printf hi", "Text"]` reads it.
+      if args.len() == 1 {
+        crate::emit_message_to_stdout(
+          "Import::general: A format must be specified when importing \
+           from a pipe.",
+        );
+        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+      }
       let command = command_file_spec(&path).unwrap_or_default();
       let failed = || {
         crate::emit_message(&format!("Import::nffil: Cannot open {path}."));

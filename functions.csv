@@ -988,7 +988,7 @@ ArrayReshape,Reshapes a list into specified dimensions,✅,pure,9.0,965
 Key,Operator form for extracting values from associations by key,✅,none,10.0,966
 ProbabilityDistribution,Defines a custom probability distribution,✅,1,8.0,967
 MeshCells,Cells of a mesh region of a given dimension as index primitives,✅,pure,10.0,968
-VertexStyle,,🚫,,8.0,969
+VertexStyle,Option for styling vertices in graphs,✅,none,8.0,969
 OverHat,Display form with a hat accent,✅,none,6.0,970
 ListLogLogPlot,Plots data with logarithmic x and y axes,✅,pure,6.0,971
 SetAccuracy,Set every numeric leaf of an expression to a fixed accuracy (precision = accuracy + Log10[|x|] per leaf),✅,pure,2.0,972
@@ -1002,7 +1002,7 @@ GammaDistribution,Gamma probability distribution,✅,pure,6.0,981
 FrontEndExecute,Requires external services or GUI infrastructure,🚫,io,3.0,982
 ScientificForm,Displays number in scientific notation,✅,pure,1.0,983
 LocatorPane,Draggable locator over a graphic; renders as an interactive 2D pane,✅,unevaluated,6.0,984
-DirectedEdges,,🚫,,6.0,986
+DirectedEdges,Option saying whether graph edges are drawn as arrows,✅,none,6.0,986
 ViewVertical,,🚫,,2.0,986
 StyleDefinitions,,🚫,,3.0,987
 RoundingRadius,,🚫,,7.0,988
@@ -1186,10 +1186,11 @@ DistanceFunction,Option naming the metric a nearest-neighbour or clustering func
 IgnoreCase,,🚫,,2.0,1172
 GaussianFilter,Gaussian filter for images and arrays,✅,pure,7.0,1173
 FixedPointList,Returns the list of results from applying a function repeatedly until fixed point,✅,pure,2.0,1174
-EdgeShapeFunction,,🚫,,8.0,1175
+EdgeShapeFunction,Option giving the function that draws each edge of a graph plot,✅,none,8.0,1175
 BSplineFunction,Evaluate B-spline curves and surfaces from control points using de Boor algorithm,✅,pure,7.0,1176
-VertexShapeFunction,,🚫,,8.0,1177
+VertexShapeFunction,Option naming the shape each vertex of a graph is drawn as,✅,none,8.0,1177
 CosIntegral,Cosine integral Ci(z),✅,pure,2.0,1178
+VertexRenderingFunction,Option giving the function that draws each vertex of a graph plot,✅,none,6.0,1179
 GeoListPlot,,🚫,,10.0,1180
 Volume,Volume (3-dimensional measure) of a solid region,✅,pure,2.0,1180
 TimeConstrained,Runs computation with time limit (no-op in Woxi),✅,effectful,1.0,1182

@@ -374,6 +374,11 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     // the input-line counter — always reads as 1 regardless of how many
     // statements have been evaluated.
     "$Line" => Some(Expr::Integer(1)),
+    // Outside a `Get`/`Needs` and outside a script, nothing is being read,
+    // which wolframscript reports as the empty string rather than leaving
+    // the symbol unassigned. `main` and `Get` override this while a file is
+    // actually being read.
+    "$InputFileName" => Some(Expr::String(String::new())),
     "$MachinePrecision" => Some(Expr::Real(15.954589770191003)),
     // Woxi's whole datetime layer works in UTC (DateObject instants carry
     // TimeZone 0.), so $TimeZone reads as 0. too.

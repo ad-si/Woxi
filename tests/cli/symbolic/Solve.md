@@ -182,17 +182,25 @@ $ wo 'Solve[{x^2 + y^2 == 1, (x - 1)^2 + (y - 1)^2 == 1}, {x, y}]'
 {{x -> 0, y -> 1}, {x -> 1, y -> 0}}
 ```
 
-Circles that only touch meet in one point, which counts twice, and circles
+Circles that only touch meet in the one point they share, and circles
 too far apart to meet at all still meet over the complex numbers:
 
 ```scrut
 $ wo 'Solve[{x^2 + y^2 == 1, (x - 2)^2 + y^2 == 1}, {x, y}]'
-{{x -> 1, y -> 0}, {x -> 1, y -> 0}}
+{{x -> 1, y -> 0}}
 ```
 
 ```scrut
 $ wo 'Solve[{x^2 + y^2 == 1, (x - 5)^2 + y^2 == 1}, {x, y}]'
-{{x -> 5/2, y -> -1/2*I*Sqrt[21]}, {x -> 5/2, y -> I/2*Sqrt[21]}}
+{{x -> 5/2, y -> (-1/2*I)*Sqrt[21]}, {x -> 5/2, y -> I/2*Sqrt[21]}}
+```
+
+A root's multiplicity only survives where the system falls apart into
+separate one-variable problems:
+
+```scrut
+$ wo 'Solve[{x^2 == 0, y == 1}, {x, y}]'
+{{x -> 0, y -> 1}, {x -> 0, y -> 1}}
 ```
 
 An equation carrying a root of the unknown is raised to that root's index,

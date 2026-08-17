@@ -3202,7 +3202,8 @@ fn try_solve_polynomial_system(eqs: &[Expr], vars: &[String]) -> Option<Expr> {
     polys.push(poly);
   }
 
-  let solutions = poly_system_solutions(&polys, vars)?;
+  let coupled = coupled_variables(&polys, vars);
+  let solutions = poly_system_solutions(&polys, vars, &coupled)?;
   if solutions.is_empty() {
     return Some(Expr::List(Vec::new().into()));
   }
@@ -3227,6 +3228,59 @@ fn try_solve_polynomial_system(eqs: &[Expr], vars: &[String]) -> Option<Expr> {
   Some(Expr::List(wrapped.into()))
 }
 
+/// The unknowns that some equation ties to another unknown, directly or
+/// through a chain of equations.
+///
+/// Whether a solution counts more than once depends on it: wolframscript
+/// keeps a root's multiplicity only where the system falls apart into
+/// separate one-variable problems — `Solve[{x^2 == 0, y == 1}, {x, y}]`
+/// lists its solution twice — and reports the plain intersection points as
+/// soon as a variable has to be eliminated, however tangential the meeting:
+/// `Solve[{x^2 + y^2 == 1, (x - 2)^2 + y^2 == 1}, {x, y}]` is one point,
+/// not two, and `Solve[{x^3 == 0, y == x}, {x, y}]` one, not three. Mixed
+/// systems mix the two rules per group: `Solve[{x^2 == 0, y^2 == 0,
+/// z == x}, {x, y, z}]` is `y`'s double root times the single `(x, z)`
+/// point.
+fn coupled_variables(
+  polys: &[Expr],
+  vars: &[String],
+) -> std::collections::HashSet<String> {
+  use std::collections::HashMap;
+  // Union-find over the unknowns: every equation merges the groups of all
+  // the unknowns it mentions.
+  let mut group: Vec<usize> = (0..vars.len()).collect();
+  fn find(group: &mut [usize], mut i: usize) -> usize {
+    while group[i] != i {
+      group[i] = group[group[i]];
+      i = group[i];
+    }
+    i
+  }
+  for poly in polys {
+    let present: Vec<usize> = (0..vars.len())
+      .filter(|i| max_power_int(poly, &vars[*i]).unwrap_or(0) > 0)
+      .collect();
+    for pair in present.windows(2) {
+      let (a, b) = (find(&mut group, pair[0]), find(&mut group, pair[1]));
+      if a != b {
+        group[a] = b;
+      }
+    }
+  }
+  let mut size: HashMap<usize, usize> = HashMap::new();
+  for i in 0..vars.len() {
+    let root = find(&mut group, i);
+    *size.entry(root).or_insert(0) += 1;
+  }
+  (0..vars.len())
+    .filter(|i| {
+      let root = find(&mut group, *i);
+      size.get(&root).copied().unwrap_or(1) > 1
+    })
+    .map(|i| vars[i].clone())
+    .collect()
+}
+
 /// More variables than this and the eliminations multiply out of hand.
 const MAX_SYSTEM_VARS: usize = 4;
 
@@ -3245,6 +3299,7 @@ const MAX_SYLVESTER_SIZE: i128 = 8;
 fn poly_system_solutions(
   polys: &[Expr],
   vars: &[String],
+  coupled: &std::collections::HashSet<String>,
 ) -> Option<Vec<Vec<Expr>>> {
   let (var, outer_vars) = vars.split_last()?;
 
@@ -3286,7 +3341,7 @@ fn poly_system_solutions(
     }
     let mut result: Vec<Vec<Expr>> = Vec::new();
     for value in roots_of_last_variable(polys, solved_for_var, var)? {
-      for _ in 0..root_multiplicity(polys, &value, var) {
+      for _ in 0..solution_multiplicity(polys, &value, var, coupled) {
         result.push(vec![value.clone()]);
       }
     }
@@ -3296,7 +3351,7 @@ fn poly_system_solutions(
   if reduced.is_empty() {
     return None;
   }
-  let outer_solutions = poly_system_solutions(&reduced, outer_vars)?;
+  let outer_solutions = poly_system_solutions(&reduced, outer_vars, coupled)?;
 
   let mut result: Vec<Vec<Expr>> = Vec::new();
   let mut index = 0;
@@ -3322,8 +3377,8 @@ fn poly_system_solutions(
       .filter(|p| max_power_int(p, var).unwrap_or(0) > 0)
       .min_by_key(|p| max_power_int(p, var).unwrap_or(i128::MAX))?;
     for value in roots_of_last_variable(&substituted, pivot, var)? {
-      for _ in
-        0..outer_multiplicity * root_multiplicity(&substituted, &value, var)
+      for _ in 0..outer_multiplicity
+        * solution_multiplicity(&substituted, &value, var, coupled)
       {
         let mut full = outer.clone();
         full.push(value.clone());
@@ -3345,8 +3400,12 @@ fn poly_system_solutions(
 /// transversally. A transversal crossing is exactly one where the
 /// system's Jacobian is nonsingular (the implicit function theorem), so
 /// any extra copies of such a point are the artifact, not a real
-/// multiplicity — unlike an actual tangency (`two_circles_touching`),
-/// where the Jacobian is singular and every copy is kept.
+/// multiplicity — where the Jacobian is singular, every copy is kept.
+///
+/// A second line of defence: a system whose variables have to be
+/// eliminated against each other no longer reports a multiplicity at all
+/// (see `coupled_variables`), so nothing should reach here with copies to
+/// drop.
 fn drop_spurious_multiplicities(
   polys: &[Expr],
   vars: &[String],
@@ -3433,6 +3492,24 @@ fn determinant_f64(matrix: &[Vec<f64>]) -> f64 {
         sign * matrix[0][c] * determinant_f64(&minor)
       })
       .sum(),
+  }
+}
+
+/// How often the solution at `value` counts, given which unknowns the
+/// system ties together. A variable that had to be eliminated against
+/// another one contributes each of its values once — see
+/// `coupled_variables` — and only a variable standing on its own carries
+/// its root's multiplicity.
+fn solution_multiplicity(
+  polys: &[Expr],
+  value: &Expr,
+  var: &str,
+  coupled: &std::collections::HashSet<String>,
+) -> usize {
+  if coupled.contains(var) {
+    1
+  } else {
+    root_multiplicity(polys, value, var)
   }
 }
 

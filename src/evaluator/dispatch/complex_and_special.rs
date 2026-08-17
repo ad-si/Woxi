@@ -5071,17 +5071,32 @@ fn tf_generic_call(name: &str, args: &[Expr]) -> Expr {
 /// Dispatch a function call to its TraditionalForm rendering.
 fn tf_call(name: &str, args: &[Expr]) -> Expr {
   match name {
+    // `HoldForm` leaves a mark on the box tree — a `TagBox` naming it — so
+    // the boxes still say the expression was held; it draws as its content.
+    "HoldForm" if args.len() == 1 => call(
+      "TagBox",
+      vec![tf(&args[0]), Expr::Identifier("HoldForm".into())],
+    ),
     // Wrappers that only hold or re-label their content: typeset what is
-    // inside them. `Style` keeps its directives outside the box tree — the
-    // enclosing cell/label already carries size and colour.
-    "HoldForm" | "HoldComplete" | "HoldCompleteForm" | "Defer" | "Identity"
+    // inside them.
+    "HoldComplete" | "HoldCompleteForm" | "Defer" | "Identity"
     | "TraditionalForm" | "StandardForm" | "DisplayForm" | "OutputForm"
     | "Text"
       if args.len() == 1 =>
     {
       tf(&args[0])
     }
-    "Style" | "StyleForm" if !args.is_empty() => tf_display(&args[0]),
+    // `Style` carries its directives into the box tree as a `StyleBox`,
+    // with `StripOnInput -> False` so they survive being read back.
+    "Style" | "StyleForm" if !args.is_empty() => {
+      let mut style_args = vec![tf_display(&args[0])];
+      style_args.extend(args[1..].iter().cloned());
+      style_args.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier("StripOnInput".into())),
+        replacement: Box::new(Expr::Identifier("False".into())),
+      });
+      call("StyleBox", style_args)
+    }
     // `Row[{a, b, …}]` concatenates its parts; `Row[{…}, sep]` joins them
     // with the separator. A row *displays* its parts, so a string item
     // contributes its text — that is what makes
@@ -5264,9 +5279,12 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
 fn tf(expr: &Expr) -> Expr {
   match expr {
     Expr::Identifier(s) | Expr::Constant(s) => tf_string(&tf_symbol(s)),
-    // TraditionalForm *displays* a string, so it contributes its text
-    // without the quotes InputForm would show.
-    Expr::String(s) => tf_string(s),
+    // A string's box is its quoted source — that is what makes the box
+    // tree read back as the string. It still *draws* without the quotes,
+    // which the box renderers take care of; the places where a string
+    // contributes bare display text (a `Row` item, a `Style` body) go
+    // through `tf_display`.
+    Expr::String(s) => tf_string(&format!("\"{s}\"")),
     Expr::FunctionCall { name, args } => tf_call(name, args),
     // A computed head — `HoldForm[f][x]`, which is how a Demonstration
     // writes a function name it wants displayed but not applied. The head

@@ -43,6 +43,17 @@ pub fn clear_symbol_table() {
   SYMBOL_TABLE.with(|t| t.borrow_mut().clear());
 }
 
+/// Record a symbol that spells its own context out (`a`foo`). Merely
+/// mentioning such a name brings its context into being, so
+/// `Contexts["a`*"]` lists `a`` even in a session that never opened a
+/// package — which is where the contexts machinery otherwise stays out of
+/// the way entirely.
+pub fn note_qualified_symbol(name: &str) {
+  if name.contains('`') && !name.starts_with('`') && is_user_symbol(name) {
+    create_symbol(&expand_alias(name));
+  }
+}
+
 /// Drop a symbol from the table — `Remove` makes a symbol stop existing.
 pub fn forget_symbol(full_name: &str) {
   SYMBOL_TABLE.with(|t| t.borrow_mut().remove(full_name));

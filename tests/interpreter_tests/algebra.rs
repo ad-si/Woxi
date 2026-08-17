@@ -1596,7 +1596,7 @@ mod factor {
   fn large_coefficient_sextics() {
     assert_eq!(
       interpret("Factor[5184 x^6 - 153 x^4 + 130 x^2 - 9]").unwrap(),
-      "(-3 + 2*x + 21*x^2 + 72*x^3)*(3 + 2*x - 21*x^2 + 72*x^3)"
+      "(3 + 2*x - 21*x^2 + 72*x^3)*(-3 + 2*x + 21*x^2 + 72*x^3)"
     );
     assert_eq!(
       interpret("Factor[5184 x^6 - 18729 x^4 + 23992 x^2 - 8464]").unwrap(),
@@ -4744,13 +4744,52 @@ mod solve {
     );
   }
 
-  // Touching circles meet in one point, which counts twice.
+  // Touching circles meet in one point, reported once: a system whose
+  // variables have to be eliminated against each other gives the plain
+  // intersection points, however tangential the meeting.
   #[test]
   fn two_circles_touching() {
     assert_eq!(
       interpret("Solve[{x^2 + y^2 == 1, (x - 2)^2 + y^2 == 1}, {x, y}]")
         .unwrap(),
-      "{{x -> 1, y -> 0}, {x -> 1, y -> 0}}"
+      "{{x -> 1, y -> 0}}"
+    );
+    // Same for a circle touching a line, and for a triple root that only
+    // reaches the second variable through a substitution.
+    assert_eq!(
+      interpret("Solve[{x^2 + y^2 == 1, x == 1}, {x, y}]").unwrap(),
+      "{{x -> 1, y -> 0}}"
+    );
+    assert_eq!(
+      interpret("Solve[{x^3 == 0, y == x}, {x, y}]").unwrap(),
+      "{{x -> 0, y -> 0}}"
+    );
+  }
+
+  // A system that falls apart into separate one-variable problems keeps
+  // each root's multiplicity, one factor per group — wolframscript-verified.
+  #[test]
+  fn uncoupled_system_keeps_root_multiplicities() {
+    assert_eq!(
+      interpret("Solve[{x^2 == 0, y == 1}, {x, y}]").unwrap(),
+      "{{x -> 0, y -> 1}, {x -> 0, y -> 1}}"
+    );
+    assert_eq!(
+      interpret("Solve[{x^2 == 0, y^2 == 0}, {x, y}]").unwrap(),
+      "{{x -> 0, y -> 0}, {x -> 0, y -> 0}, {x -> 0, y -> 0}, \
+       {x -> 0, y -> 0}}"
+    );
+    // Redundant equations in the same unknown count the smallest
+    // multiplicity, not their product.
+    assert_eq!(
+      interpret("Solve[{x^2 == 0, x^3 == 0, y == 1}, {x, y}]").unwrap(),
+      "{{x -> 0, y -> 1}, {x -> 0, y -> 1}}"
+    );
+    // Mixed: `y` stands on its own and counts twice, `x` and `z` are tied
+    // together and count once.
+    assert_eq!(
+      interpret("Solve[{x^2 == 0, y^2 == 0, z == x}, {x, y, z}]").unwrap(),
+      "{{x -> 0, y -> 0, z -> 0}, {x -> 0, y -> 0, z -> 0}}"
     );
   }
 
@@ -4797,7 +4836,7 @@ mod solve {
     assert_eq!(
       interpret("Solve[{x^2 + y^2 == 1, (x - 5)^2 + y^2 == 1}, {x, y}]")
         .unwrap(),
-      "{{x -> 5/2, y -> -1/2*I*Sqrt[21]}, {x -> 5/2, y -> I/2*Sqrt[21]}}"
+      "{{x -> 5/2, y -> (-1/2*I)*Sqrt[21]}, {x -> 5/2, y -> I/2*Sqrt[21]}}"
     );
   }
 
@@ -4836,13 +4875,12 @@ mod solve {
     );
   }
 
-  // A circle and a parabola touching: the tangency counts twice even
-  // though each equation on its own has a simple root there.
+  // Two parabolas touching: the tangency is still one point.
   #[test]
   fn parabolas_touching() {
     assert_eq!(
       interpret("Solve[{y == x^2, y == 2 x^2}, {x, y}]").unwrap(),
-      "{{x -> 0, y -> 0}, {x -> 0, y -> 0}}"
+      "{{x -> 0, y -> 0}}"
     );
   }
 
