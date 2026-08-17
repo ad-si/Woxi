@@ -4914,6 +4914,40 @@ mod plot3d {
       );
     }
 
+    /// The `Abs`/`Norm` bar characters are private use too, and were
+    /// missing from the substitution table entirely (not just drawing the
+    /// wrong glyph): a caption written with them drew the literal
+    /// `\[LeftBracketingBar]`/`\[RightBracketingBar]` escape text.
+    #[test]
+    fn bracketing_bar_glyphs_are_drawn_as_standard_characters() {
+      let svg = export_svg(
+        r#"Graphics[{Text["\[LeftBracketingBar]x\[RightBracketingBar]", {0, 0}],
+           Text["\[LeftDoubleBracketingBar]x\[RightDoubleBracketingBar]", {0, 1}]},
+           PlotRange -> {{-1, 1}, {-1, 2}}]"#,
+      );
+      assert!(svg.contains(">|x|</text>"), "bars not drawn: {svg}");
+      assert!(
+        svg.contains(">\u{2016}x\u{2016}</text>"),
+        "double bars not drawn: {svg}"
+      );
+      assert!(
+        !svg.contains('\u{F603}')
+          && !svg.contains('\u{F604}')
+          && !svg.contains('\u{F605}')
+          && !svg.contains('\u{F606}'),
+        "private-use code point drawn: {svg}"
+      );
+      assert!(
+        !svg.contains("LeftBracketingBar"),
+        "literal escape text drawn: {svg}"
+      );
+      // The strings themselves are unchanged.
+      assert_eq!(
+        woxi::interpret(r#"ToCharacterCode["\[LeftBracketingBar]"]"#).unwrap(),
+        "{62979}"
+      );
+    }
+
     /// A constant inside a larger label is typeset too: `Text[50 Degree]`
     /// reads "50 °", the way Wolfram draws it, not "50 Degree".
     #[test]
