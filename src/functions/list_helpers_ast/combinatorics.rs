@@ -132,6 +132,64 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(result.into()))
 }
 
+/// `Combinatorica\`UnrankPermutation[r, l]` / `Combinatorica\`UnrankPermutation[r, n]`
+/// — the legacy Combinatorica package's permutation unranking: the `r`-th
+/// permutation of `l` (or of `Range[n]`) in lexicographic order, where `r`
+/// runs from 1 (the list itself) to `Length[l]!` (its reverse) and each
+/// factorial-number-system digit of `r - 1` selects how many of the
+/// still-unused elements, taken in `l`'s own order, to skip before picking
+/// the next one. A non-list/non-integer second argument or an `r` outside
+/// `1..Length[l]!` is left symbolic, matching that Combinatorica itself only
+/// defines the function on that domain.
+pub fn combinatorica_unrank_permutation_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use num_bigint::{BigInt, Sign};
+  use num_traits::ToPrimitive;
+
+  let original = || unevaluated("Combinatorica`UnrankPermutation", args);
+  if args.len() != 2 {
+    return Ok(original());
+  }
+
+  let rank = match &args[0] {
+    Expr::Integer(r) if *r >= 1 => BigInt::from(*r),
+    Expr::BigInteger(r) if r.sign() == Sign::Plus => r.clone(),
+    _ => return Ok(original()),
+  };
+
+  let items: Vec<Expr> = match &args[1] {
+    Expr::List(items) => items.to_vec(),
+    Expr::Integer(n) if *n >= 0 => (1..=*n).map(Expr::Integer).collect(),
+    _ => return Ok(original()),
+  };
+
+  let n = items.len();
+  let mut n_factorial = BigInt::from(1u32);
+  for k in 2..=n {
+    n_factorial *= k as u64;
+  }
+  if rank > n_factorial {
+    return Ok(original());
+  }
+
+  let mut remaining = items;
+  let mut result = Vec::with_capacity(n);
+  let mut rem_rank = rank - 1;
+  for i in 0..n {
+    let remaining_len = n - i;
+    let mut weight = BigInt::from(1u32);
+    for k in 2..remaining_len {
+      weight *= k as u64;
+    }
+    let quotient: BigInt = &rem_rank / &weight;
+    let idx: usize = quotient.to_usize().unwrap_or(0);
+    rem_rank -= &weight * BigInt::from(idx);
+    result.push(remaining.remove(idx));
+  }
+  Ok(Expr::List(result.into()))
+}
+
 /// Helper to generate k-permutations.
 ///
 /// When the input contains duplicate elements, only distinct permutations
