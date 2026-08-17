@@ -3489,6 +3489,39 @@ mod plot3d {
       assert_ne!(default_view, top_view);
     }
 
+    // Regression: `ViewPoint -> Dynamic[view]` — the shape a Manipulate
+    // control's binding takes (e.g. `ViewPoint -> Dynamic@vp`) — must read
+    // the value inside Dynamic instead of silently falling back to the
+    // default camera, since Dynamic is HoldFirst and doesn't auto-reduce
+    // to its value under plain evaluation.
+    #[test]
+    fn graphics3d_view_point_accepts_dynamic_wrapper() {
+      let literal_view = export_svg(
+        "Graphics3D[Polygon[{{0,0,0},{1,0,0},{0,1,0}}], \
+         ViewPoint -> {0, 0, 10}]",
+      );
+      let dynamic_view = export_svg(
+        "Graphics3D[Polygon[{{0,0,0},{1,0,0},{0,1,0}}], \
+         ViewPoint -> Dynamic[{0, 0, 10}]]",
+      );
+      assert_eq!(literal_view, dynamic_view);
+    }
+
+    // Regression: `ViewAngle -> Dynamic[angle]` must likewise read the
+    // value inside Dynamic rather than being ignored.
+    #[test]
+    fn graphics3d_view_angle_accepts_dynamic_wrapper() {
+      let literal_angle = export_svg(
+        "Graphics3D[Sphere[], ViewPoint -> {2, -2, 2}, \
+         ViewAngle -> 0.3]",
+      );
+      let dynamic_angle = export_svg(
+        "Graphics3D[Sphere[], ViewPoint -> {2, -2, 2}, \
+         ViewAngle -> Dynamic[0.3]]",
+      );
+      assert_eq!(literal_angle, dynamic_angle);
+    }
+
     // Regression: the "Icosahedron Ball" Demonstration body — a
     // SphericalPlot3D mesh reused via [[1]], transformed with
     // Translate/Rotate copies, and combined with PolyhedronData's

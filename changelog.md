@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- `ParametricPlot3D`/`Plot3D`/`Graphics3D`'s `ViewPoint` and `ViewAngle`
+    options accept a `Dynamic[…]` wrapper (e.g. `ViewPoint -> Dynamic@vp`, the
+    shape a `Manipulate` control's binding takes) instead of silently
+    falling back to the default camera — `Dynamic` is `HoldFirst`, so it
+    needs its hold released before the wrapped vector/angle can be read.
 - `TracePrint[expr]` prints every sub-expression used while evaluating `expr`,
     wrapped in `HoldCompleteForm` and indented by one space per level of the
     evaluation, and returns the result.
