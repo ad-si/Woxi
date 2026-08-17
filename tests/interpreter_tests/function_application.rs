@@ -613,6 +613,36 @@ mod operator_precedence_at_map_apply {
     // x & /@ {1, 2} — single identifier before & with Map continuation
     assert_eq!(interpret("42 & /@ {1, 2, 3}").unwrap(), "{42, 42, 42}");
   }
+
+  #[test]
+  fn anon_func_map_then_replace_all() {
+    // f[#] & /@ list /. rules — Map's pure-function body, then /@, then
+    // /. must all chain after the single &, matching the extremely common
+    // Wolfram idiom `pureFunction & /@ list /. rules`.
+    assert_eq!(
+      interpret("f[#] & /@ {1, 2, 3} /. f[x_] -> x + 1").unwrap(),
+      "{2, 3, 4}"
+    );
+  }
+
+  #[test]
+  fn anon_func_map_then_replace_all_full_form() {
+    assert_eq!(
+      interpret("FullForm[Hold[f & /@ g /. h -> k]]").unwrap(),
+      "FullForm[Hold[(f & ) /@ g /. h -> k]]"
+    );
+  }
+
+  #[test]
+  fn anon_func_map_then_replace_repeated() {
+    // & followed by /@ (Map) and then //. (ReplaceRepeated) — the same
+    // interleaving as anon_func_map_then_replace_all, but with the
+    // repeated-replacement variant.
+    assert_eq!(
+      interpret("f[#] & /@ {1, 2, 3} //. f[x_] -> x + 1").unwrap(),
+      "{2, 3, 4}"
+    );
+  }
 }
 
 mod variable_as_function_head {
