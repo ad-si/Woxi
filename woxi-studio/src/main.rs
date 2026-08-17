@@ -17560,4 +17560,116 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
     );
     assert!(state.graphics_handle.is_some());
   }
+
+  /// End-to-end regression for the shape of the "Crane Model" Demonstration:
+  /// a `Module` that positions a pivoting boom and a mast whose lean is
+  /// derived with a single-argument `ArcTan` of a ratio, then builds the
+  /// scene from several `Graphics3D[Cylinder[...]]` pieces plus a
+  /// `FaceForm[RGBColor[...]]`-colored `Sphere` hook weight and an
+  /// `AbsoluteThickness`/`Line` cable, combined with `Show` (rather than one
+  /// `Graphics3D` list) and driven by three labeled continuous sliders with
+  /// `ImageSize -> Tiny`, `ControlPlacement -> Left`, and `TrackedSymbols`.
+  #[test]
+  fn demonstration_crane_boom_manipulate_moves_hook_and_mast() {
+    let code = "Manipulate[\
+      Module[{pivot, boomTip, mastAngle, mastTop, hook, boom, mast, cable, weight}, \
+        pivot = {0, 0, 0}; \
+        boomTip = {reach Cos[lift], 0, reach Sin[lift]}; \
+        mastAngle = ArcTan[boomTip[[3]] / (boomTip[[1]] + 0.001)]; \
+        mastTop = {0.6 Cos[mastAngle], 0, 0.6 Sin[mastAngle]}; \
+        hook = {boomTip[[1]], 0, boomTip[[3]] - slack}; \
+        boom = Graphics3D[Cylinder[{pivot, boomTip}, 0.1]]; \
+        mast = Graphics3D[Cylinder[{pivot, mastTop}, 0.06]]; \
+        cable = Graphics3D[{AbsoluteThickness[2], Line[{boomTip, hook}]}]; \
+        weight = Graphics3D[{FaceForm[RGBColor[0.9, 0.6, 0.1]], Sphere[hook, 0.12]}]; \
+        Show[boom, mast, cable, weight, \
+          Boxed -> False, SphericalRegion -> True, \
+          ImageSize -> {320, 360}, \
+          ViewPoint -> {0.3, -2, 0.3}, \
+          PlotRange -> {{-1, 3}, {-1, 1}, {-1, 3}}, \
+          ViewAngle -> Pi/6]\
+      ], \
+      {{lift, Pi/5, \"boom angle\"}, Pi/8, 1.4, ImageSize -> Tiny}, \
+      {{reach, 1.6, \"boom reach\"}, 0.8, 2.4, ImageSize -> Tiny}, \
+      {{slack, 0.5, \"cable slack\"}, 0.1, 1.5, ImageSize -> Tiny}, \
+      ControlPlacement -> Left, \
+      TrackedSymbols -> {lift, reach, slack}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the crane-boom Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the boom, mast, cable, and hook weight must render"
+    );
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the crane pieces must render")
+    };
+    let initial = render(&state);
+
+    match &mut state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: lift_name,
+          label: lift_label,
+          min: lift_min,
+          max: lift_max,
+          current: lift_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: reach_name,
+          label: reach_label,
+          current: reach_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: slack_name,
+          label: slack_label,
+          current: slack_now,
+          ..
+        },
+      ] => {
+        assert_eq!(lift_name.as_str(), "lift");
+        assert_eq!(lift_label.as_str(), "boom angle");
+        assert!((*lift_min - std::f64::consts::PI / 8.0).abs() < 1e-9);
+        assert_eq!(*lift_max, 1.4);
+        assert!((*lift_now - std::f64::consts::PI / 5.0).abs() < 1e-9);
+        assert_eq!(reach_name.as_str(), "reach");
+        assert_eq!(reach_label.as_str(), "boom reach");
+        assert_eq!(*reach_now, 1.6);
+        assert_eq!(slack_name.as_str(), "slack");
+        assert_eq!(slack_label.as_str(), "cable slack");
+        assert_eq!(*slack_now, 0.5);
+        *lift_now = 1.0;
+        *reach_now = 2.2;
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+    let moved = render(&state);
+    assert_ne!(
+      initial, moved,
+      "raising the boom and extending its reach must move the hook and change the render"
+    );
+  }
 }
