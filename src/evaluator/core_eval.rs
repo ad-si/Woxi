@@ -89,6 +89,102 @@ fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
   }
 }
 
+/// Check whether user-defined rules (DownValues, or upvalues installed via
+/// TagSetDelayed) are attached to the given head.
+fn has_user_rules(name: &str) -> bool {
+  crate::FUNC_DEFS.with(|m| m.borrow().contains_key(name))
+}
+
+/// Whether user-defined rules attached to `head` could apply to `args`.
+///
+/// An upvalue only fires when the symbol it is tagged on appears among the
+/// operands, so unrelated upvalues must not divert an operation from its
+/// built-in path (`Divide[37, 1.8]` stays a single IEEE division even while
+/// some `mytag` carries upvalues on Times). A plain DownValue on the head
+/// itself (`Unprotect[Times]; Times[x_, y_] := …`) has no such restriction and
+/// always counts.
+fn arith_rules_may_apply(head: &str, args: &[Expr]) -> bool {
+  let rule_count =
+    crate::FUNC_DEFS.with(|m| m.borrow().get(head).map_or(0, Vec::len));
+  if rule_count == 0 {
+    return false;
+  }
+  let tags_with_upvalues: Vec<String> = crate::UPVALUES.with(|m| {
+    m.borrow()
+      .iter()
+      .filter(|(_, entries)| entries.iter().any(|e| e.0 == head))
+      .map(|(tag, _)| tag.clone())
+      .collect()
+  });
+  let upvalue_count = crate::UPVALUES.with(|m| {
+    m.borrow()
+      .values()
+      .flatten()
+      .filter(|entry| entry.0 == head)
+      .count()
+  });
+  // More rules than accounted-for upvalues means at least one is a DownValue
+  // on the head; those can match anything.
+  if rule_count > upvalue_count {
+    return true;
+  }
+  args.iter().any(|arg| {
+    let arg_head = match arg {
+      Expr::FunctionCall { name, .. } => name.as_str(),
+      Expr::Identifier(s) => s.as_str(),
+      _ => return false,
+    };
+    tags_with_upvalues.iter().any(|tag| tag == arg_head)
+  })
+}
+
+/// `-a`, `a - b` and `a / b` are shorthand for `Times[-1, a]`,
+/// `Plus[a, Times[-1, b]]` and `Times[a, Power[b, -1]]`. When any head such a
+/// shorthand expands to carries user-defined rules (typically upvalues
+/// installed with TagSetDelayed), the expanded form has to be evaluated
+/// through the rule-aware function-call path so those rules get a chance to
+/// fire. Without it `mytag[3] - mytag[3]` collapses numerically to `0` instead
+/// of reaching the `mytag` upvalues via `mytag[3] + mytag[-3]` and producing
+/// `mytag[0]`.
+///
+/// Returns `None` when no such rule could apply (see `arith_rules_may_apply`),
+/// leaving the built-in arithmetic path in charge. `head` is `"Minus"`,
+/// `"Subtract"` or `"Divide"` with the matching arity; anything else is `None`.
+pub fn expand_arith_shorthand(
+  head: &str,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  // The inner call wraps the last operand; the outer one combines the result
+  // with the remaining operand (absent for the unary `Minus`).
+  let (inner_head, outer_head) = match (head, args.len()) {
+    ("Minus", 1) => ("Times", None),
+    ("Subtract", 2) => ("Times", Some("Plus")),
+    ("Divide", 2) => ("Power", Some("Times")),
+    _ => return None,
+  };
+  if !arith_rules_may_apply(inner_head, args)
+    && !outer_head.is_some_and(|h| arith_rules_may_apply(h, args))
+  {
+    return None;
+  }
+  let last = args[args.len() - 1].clone();
+  let inner_args = if inner_head == "Power" {
+    [last, Expr::Integer(-1)]
+  } else {
+    [Expr::Integer(-1), last]
+  };
+  Some(
+    evaluate_function_call_ast(inner_head, &inner_args).and_then(|inner| {
+      match outer_head {
+        Some(outer) => {
+          evaluate_function_call_ast(outer, &[args[0].clone(), inner])
+        }
+        None => Ok(inner),
+      }
+    }),
+  )
+}
+
 /// Check if a function has a specific Hold attribute (built-in or user-defined).
 fn has_hold_attribute(name: &str, attr: &str) -> bool {
   get_builtin_attributes(name).contains(&attr)
@@ -2538,9 +2634,7 @@ pub fn evaluate_expr_to_expr_inner(
         _ => None,
       };
       if let Some(name) = func_name {
-        let has_user_rules =
-          crate::FUNC_DEFS.with(|m| m.borrow().contains_key(name));
-        if has_user_rules {
+        if has_user_rules(name) {
           return evaluate_function_call_ast(name, &[left_val, right_val]);
         }
         // If the head symbol has an OwnValue (e.g. `Unprotect[Plus]; Plus=Q`),
@@ -2566,6 +2660,20 @@ pub fn evaluate_expr_to_expr_inner(
         {
           return evaluate_function_call_ast(&new_head, &[left_val, right_val]);
         }
+      }
+
+      // `a - b` / `a / b` expand to Plus/Times/Power; let user-defined rules
+      // on those heads apply before the built-in arithmetic below.
+      let shorthand_head = match op {
+        BinaryOperator::Minus => Some("Subtract"),
+        BinaryOperator::Divide => Some("Divide"),
+        _ => None,
+      };
+      if let Some(head) = shorthand_head
+        && let Some(result) =
+          expand_arith_shorthand(head, &[left_val.clone(), right_val.clone()])
+      {
+        return result;
       }
 
       // Check for list threading (arithmetic operations thread over lists)
@@ -2689,6 +2797,13 @@ pub fn evaluate_expr_to_expr_inner(
       let val = evaluate_expr_to_expr(operand)?;
       match op {
         UnaryOperator::Minus => {
+          // `-x` is `Times[-1, x]`; let user-defined rules on Times apply
+          // before the built-in path.
+          if let Some(result) =
+            expand_arith_shorthand("Minus", std::slice::from_ref(&val))
+          {
+            return result;
+          }
           // Use times_ast for proper distribution: -(a+b) → -a - b
           crate::functions::math_ast::times_ast(&[Expr::Integer(-1), val])
         }
