@@ -3905,6 +3905,7 @@ fn render_manipulate_widget<'a>(
         popup,
         setter_bar: force_setter_bar,
         slider: as_slider,
+        vertical: is_vertical,
       } => {
         let label_widget =
           manipulate_label_widget(label_runs, label, label_col_width, enabled);
@@ -3981,7 +3982,8 @@ fn render_manipulate_widget<'a>(
         let control: Element<Message> = if *force_setter_bar
           || (renders_as_setter_bar(value_labels, value_label_svgs) && !*popup)
         {
-          let mut bar = Row::new().spacing(0).align_y(Center);
+          let is_vertical = *is_vertical;
+          let mut buttons = Vec::with_capacity(value_labels.len());
           for (i, choice_label) in value_labels.iter().enumerate() {
             let is_selected = i == *current_index;
             let choice = choice_label.clone();
@@ -4004,6 +4006,7 @@ fn render_manipulate_widget<'a>(
                   i,
                   count,
                   enabled,
+                  is_vertical,
                 )
               },
             );
@@ -4012,9 +4015,18 @@ fn render_manipulate_widget<'a>(
                 cell_idx, ctrl_idx, choice,
               ));
             }
-            bar = bar.push(btn);
+            buttons.push(btn.into());
           }
-          bar.into()
+          // `Appearance -> "Vertical"` stacks the segments in a column
+          // instead of Wolfram's default horizontal bar.
+          if is_vertical {
+            Column::with_children(buttons).spacing(0).into()
+          } else {
+            Row::with_children(buttons)
+              .spacing(0)
+              .align_y(Center)
+              .into()
+          }
         } else {
           let selected = value_labels.get(*current_index).cloned();
           let on_select = move |choice: String| {
@@ -5261,6 +5273,7 @@ fn setter_button_style(
   index: usize,
   count: usize,
   enabled: bool,
+  vertical: bool,
 ) -> button::Style {
   use iced::border::Radius;
   let is_dark = !matches!(theme, Theme::Light);
@@ -5273,15 +5286,26 @@ fn setter_button_style(
   };
   let accent_hover = Color::from_rgb(0.30, 0.56, 0.98);
 
-  // Round only the outer corners of the first and last segment.
+  // Round only the outer corners of the first and last segment — the left
+  // pair/right pair for a horizontal bar, the top pair/bottom pair for a
+  // `Appearance -> "Vertical"` column of segments.
   let r = 6.0;
   let first = index == 0;
   let last = index + 1 == count;
-  let radius = Radius {
-    top_left: if first { r } else { 0.0 },
-    bottom_left: if first { r } else { 0.0 },
-    top_right: if last { r } else { 0.0 },
-    bottom_right: if last { r } else { 0.0 },
+  let radius = if vertical {
+    Radius {
+      top_left: if first { r } else { 0.0 },
+      top_right: if first { r } else { 0.0 },
+      bottom_left: if last { r } else { 0.0 },
+      bottom_right: if last { r } else { 0.0 },
+    }
+  } else {
+    Radius {
+      top_left: if first { r } else { 0.0 },
+      bottom_left: if first { r } else { 0.0 },
+      top_right: if last { r } else { 0.0 },
+      bottom_right: if last { r } else { 0.0 },
+    }
   };
 
   let (idle_bg, idle_text, border_color) = if is_dark {
@@ -14466,6 +14490,51 @@ Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}
           *setter_bar && !*popup,
           "ControlType -> RadioButtonBar must force the bar layout"
         );
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// `Appearance -> "Vertical"` on a `RadioButtonBar`/`SetterBar` stacks its
+  /// segments in a column instead of Wolfram's default horizontal bar. The
+  /// spec's option threads through as `ControlState::Discrete::vertical`,
+  /// which the render loop reads to swap the `Row` for a `Column`.
+  #[test]
+  fn appearance_vertical_marks_the_bar_a_column() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[level, {{level, \"low\"}, {\"low\", \"medium\", \"high\"}, \
+       ControlType -> SetterBar, Appearance -> \"Vertical\"}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          setter_bar,
+          vertical,
+          ..
+        },
+      ] => {
+        assert!(*setter_bar);
+        assert!(*vertical, "Appearance -> \"Vertical\" must set vertical");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// Without `Appearance -> "Vertical"` the bar stays the default horizontal
+  /// row — the flag must not default to `true`.
+  #[test]
+  fn horizontal_bar_stays_the_default_without_appearance_vertical() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[level, {{level, \"low\"}, {\"low\", \"medium\", \"high\"}, \
+       ControlType -> SetterBar}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    match &state.controls[..] {
+      [manipulate::ControlState::Discrete { vertical, .. }] => {
+        assert!(!*vertical);
       }
       other => panic!("unexpected controls: {other:?}"),
     }

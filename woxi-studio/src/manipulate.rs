@@ -62,6 +62,10 @@ pub enum ControlState {
     /// `ControlType -> Slider`: render a slider stepping through the
     /// choices by index rather than a setter bar or dropdown.
     slider: bool,
+    /// `Appearance -> "Vertical"`: stack the SetterBar/RadioButtonBar
+    /// choices in a column instead of a row. Ignored by the dropdown and
+    /// index-slider layouts.
+    vertical: bool,
   },
   /// A 2D slider binding its variable to a `{x, y}` pair.
   Slider2D {
@@ -982,6 +986,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         popup,
         setter_bar,
         slider,
+        vertical,
       } => ControlState::Discrete {
         name: name.clone(),
         label: label.clone(),
@@ -999,6 +1004,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         popup: *popup,
         setter_bar: *setter_bar,
         slider: *slider,
+        vertical: *vertical,
       },
       ManipulateControl::Slider2D {
         name,

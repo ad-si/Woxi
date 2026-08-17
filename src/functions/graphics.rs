@@ -16478,6 +16478,11 @@ pub enum ManipulateControl {
     /// choices by index, the way Wolfram draws a slider over a discrete
     /// domain. Without it a twenty-entry list would become a dropdown.
     slider: bool,
+    /// `Appearance -> "Vertical"` (or the bare symbol `Vertical`): stack the
+    /// choice row in a column instead of Wolfram's default horizontal bar.
+    /// Only affects the SetterBar/RadioButtonBar bar layout; a dropdown or
+    /// index slider ignores it.
+    vertical: bool,
   },
   /// A 2D control (`ControlType -> Slider2D`, or a 2D range spec
   /// `{u, {xmin, ymin}, {xmax, ymax}}`). Binds its variable to a 2-vector
@@ -19823,6 +19828,26 @@ fn parse_manipulate_control(
     })
     .collect();
 
+  // `Appearance -> "Vertical"` (or the bare symbol `Vertical`) stacks a
+  // SetterBar/RadioButtonBar/CheckboxBar in a column instead of Wolfram's
+  // default horizontal bar.
+  let appearance_vertical = items.iter().any(|it| {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = it
+    else {
+      return false;
+    };
+    matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Appearance")
+      && (matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Vertical")
+        || matches!(replacement.as_ref(), Expr::String(s) if s == "Vertical"))
+  });
+
   // A `ControlType -> Trigger` (or bare `Trigger` marker) becomes a
   // dedicated play/pause control sweeping its variable from `min` towards
   // `max` — whether that end is infinite (`{time, 0, Infinity, 1, …}`, the
@@ -20003,10 +20028,17 @@ fn parse_manipulate_control(
       Some(init) => manipulate_value_to_input_form(init),
       None => "{}".to_string(),
     };
-    let display = format!(
-      "TogglerBar[Dynamic[{name}], {}]",
-      crate::syntax::expr_to_input_form(&choices)
-    );
+    let display = if appearance_vertical {
+      format!(
+        "TogglerBar[Dynamic[{name}], {}, Appearance -> \"Vertical\"]",
+        crate::syntax::expr_to_input_form(&choices)
+      )
+    } else {
+      format!(
+        "TogglerBar[Dynamic[{name}], {}]",
+        crate::syntax::expr_to_input_form(&choices)
+      )
+    };
     return Some(ParsedControl::StateWithDisplay {
       name,
       value,
@@ -20083,6 +20115,7 @@ fn parse_manipulate_control(
             control_type.as_deref(),
             Some("Slider" | "VerticalSlider" | "Manipulator")
           ),
+          vertical: appearance_vertical,
         },
         enabled,
         min_code: None,
@@ -20937,6 +20970,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         popup,
         setter_bar,
         slider,
+        vertical,
       } => {
         let value_parts: Vec<String> = values
           .iter()
@@ -20953,6 +20987,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           ""
         };
         let slider_json = if *slider { r#","slider":true"# } else { "" };
+        let vertical_json = if *vertical { r#","vertical":true"# } else { "" };
         // Icon labels (rule right sides that are graphics) ride along as
         // rendered SVG, parallel to `values`; omitted when all-text.
         let svg_json = if value_label_svgs.iter().any(Option::is_some) {
@@ -20970,7 +21005,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           String::new()
         };
         ctrl_parts.push(format!(
-          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}{}}}"#,
+          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}{}{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
           label_runs_to_json(label_runs),
@@ -20980,6 +21015,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           popup_json,
           setter_bar_json,
           slider_json,
+          vertical_json,
           svg_json,
         ));
       }
@@ -21651,7 +21687,30 @@ fn togglerbar_node(
       selected,
     });
   }
-  Some(DisplayNode::Row(buttons))
+  // A trailing `Appearance -> "Vertical"` (added by the CheckboxBar/TogglerBar
+  // branch of `parse_manipulate_control`) stacks the toggles in a column
+  // instead of Wolfram's default horizontal bar.
+  let vertical = args[2..].iter().any(|it| {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = it
+    else {
+      return false;
+    };
+    matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Appearance")
+      && (matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Vertical")
+        || matches!(replacement.as_ref(), Expr::String(s) if s == "Vertical"))
+  });
+  Some(if vertical {
+    DisplayNode::Column(buttons)
+  } else {
+    DisplayNode::Row(buttons)
+  })
 }
 
 /// Fill in each checkbox's `checked` flag from the batched probe results, in
