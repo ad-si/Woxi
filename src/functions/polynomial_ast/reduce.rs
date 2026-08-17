@@ -29,7 +29,12 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(out);
   }
 
-  let expr = &args[0];
+  // Thread vector equalities (`{a1, b1} == {a2, b2}` standing for the
+  // element-wise scalar equations) the same way Solve does, so
+  // `Reduce[{x, y} == {1, 2}, {x, y}]` sees `x == 1 && y == 2` instead of
+  // treating the list comparison as an opaque, unsolvable constraint.
+  let threaded_expr = thread_reduce_list_equations(&args[0]);
+  let expr = &threaded_expr;
   let domain = if args.len() == 3 {
     match &args[2] {
       Expr::Identifier(d) => Some(d.as_str()),
@@ -92,6 +97,60 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(result)
+}
+
+/// Thread top-level vector equalities in `expr` into element-wise scalar
+/// equations, exactly as `Solve` does for its first argument: a comparison
+/// whose operands are equal-length lists (`{a1, b1} == {a2, b2}`) stands for
+/// the conjunction of the componentwise equations. Only equations at the top
+/// level or directly inside a top-level `&&`/`And[...]` are threaded — deeper
+/// structure (inside `Or`, etc.) is left untouched, matching the scope Solve
+/// itself threads.
+fn thread_reduce_list_equations(expr: &Expr) -> Expr {
+  fn collect_conjuncts(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::And,
+        left,
+        right,
+      } => {
+        collect_conjuncts(left, out);
+        collect_conjuncts(right, out);
+      }
+      Expr::FunctionCall { name, args } if name == "And" => {
+        for a in args {
+          collect_conjuncts(a, out);
+        }
+      }
+      _ => out.push(e.clone()),
+    }
+  }
+
+  let mut conjuncts = Vec::new();
+  collect_conjuncts(expr, &mut conjuncts);
+
+  let mut changed = false;
+  let mut out: Vec<Expr> = Vec::new();
+  for c in &conjuncts {
+    match super::solve::thread_list_equation(c) {
+      Some(eqs) => {
+        changed = true;
+        out.extend(eqs);
+      }
+      None => out.push(c.clone()),
+    }
+  }
+  if !changed {
+    return expr.clone();
+  }
+  out
+    .into_iter()
+    .reduce(|acc, e| Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left: Box::new(acc),
+      right: Box::new(e),
+    })
+    .unwrap_or_else(|| bool_expr(true))
 }
 
 /// Does `e` contain any inexact (Real / BigFloat) literal? Such bounds make
@@ -2411,11 +2470,299 @@ fn reduce_multi_var(
   vars: &[String],
   domain: Option<&str>,
 ) -> Result<Expr, InterpreterError> {
+  // Reduce[a1 x1 + ... + an xn == c, {x1, ..., xn}, Integers]: a single linear
+  // Diophantine equation. Solving for one variable and leaving the others
+  // free (as the general elimination path below does) only gives integer
+  // values for every free assignment when every remaining coefficient is a
+  // multiple of the eliminated one, which is not true in general — so handle
+  // this shape with the extended-Euclidean parametrization first.
+  if let Some(result) = try_reduce_linear_diophantine(expr, vars, domain)? {
+    return Ok(result);
+  }
+
   // Collect all constraints
   let mut constraints = Vec::new();
   collect_and_constraints(expr, &mut constraints);
 
   reduce_multi_var_and(&constraints, vars, domain)
+}
+
+/// An affine combination of the free integer parameters `C[1], ..., C[n]`:
+/// `const_term + Σ coeffs[i] * C[i+1]`.
+#[derive(Clone)]
+struct Affine {
+  const_term: i128,
+  coeffs: Vec<i128>,
+}
+
+impl Affine {
+  fn constant(c: i128, nparams: usize) -> Self {
+    Affine {
+      const_term: c,
+      coeffs: vec![0; nparams],
+    }
+  }
+
+  fn scale(&self, k: i128) -> Self {
+    Affine {
+      const_term: self.const_term * k,
+      coeffs: self.coeffs.iter().map(|c| c * k).collect(),
+    }
+  }
+
+  fn with_param(&self, slot: usize, k: i128) -> Self {
+    let mut out = self.clone();
+    out.coeffs[slot] += k;
+    out
+  }
+
+  fn to_expr(&self) -> Expr {
+    let mut result = Expr::Integer(self.const_term);
+    for (slot, coeff) in self.coeffs.iter().enumerate() {
+      if *coeff == 0 {
+        continue;
+      }
+      let param = Expr::FunctionCall {
+        name: "C".to_string(),
+        args: vec![Expr::Integer((slot + 1) as i128)].into(),
+      };
+      let term = if *coeff == 1 {
+        param
+      } else {
+        times2(Expr::Integer(*coeff), param)
+      };
+      result = if matches!(result, Expr::Integer(0)) {
+        term
+      } else {
+        plus2(result, term)
+      };
+    }
+    crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result)
+  }
+}
+
+/// Extended Euclidean algorithm on plain integers: returns `(g, s, t)` with
+/// `g = gcd(|a|, |b|) >= 0` and `s*a + t*b == g`.
+fn extended_gcd_i128(a: i128, b: i128) -> (i128, i128, i128) {
+  let (mut old_r, mut r) = (a, b);
+  let (mut old_s, mut s) = (1i128, 0i128);
+  let (mut old_t, mut t) = (0i128, 1i128);
+  while r != 0 {
+    let q = old_r / r;
+    (old_r, r) = (r, old_r - q * r);
+    (old_s, s) = (s, old_s - q * s);
+    (old_t, t) = (t, old_t - q * t);
+  }
+  if old_r < 0 {
+    (-old_r, -old_s, -old_t)
+  } else {
+    (old_r, old_s, old_t)
+  }
+}
+
+/// Solve `coeffs[0]*x0 + coeffs[1]*x1 + ... == target` over the integers,
+/// where every entry of `coeffs` is nonzero. Returns `None` when no integer
+/// solution exists (the gcd of the coefficients doesn't divide `target`);
+/// otherwise returns one `Affine` per variable, expressed in terms of
+/// `coeffs.len() - 1` free integer parameters `C[1], ..., C[n-1]`.
+///
+/// Standard successive-elimination construction: track the running gcd
+/// `g[j]` of `coeffs[0..=j]` together with Bezout coefficients, then
+/// back-substitute from the top, introducing one fresh parameter per step.
+fn solve_linear_diophantine(
+  coeffs: &[i128],
+  target: i128,
+) -> Option<Vec<Affine>> {
+  let n = coeffs.len();
+  debug_assert!(coeffs.iter().all(|c| *c != 0));
+  if n == 0 {
+    return None;
+  }
+  if n == 1 {
+    return if target % coeffs[0] == 0 {
+      Some(vec![Affine::constant(target / coeffs[0], 0)])
+    } else {
+      None
+    };
+  }
+
+  let nparams = n - 1;
+  let mut g = vec![0i128; n];
+  let mut u = vec![0i128; n];
+  let mut v = vec![0i128; n];
+  g[0] = coeffs[0];
+  for j in 1..n {
+    let (gg, uu, vv) = extended_gcd_i128(g[j - 1], coeffs[j]);
+    g[j] = gg;
+    u[j] = uu;
+    v[j] = vv;
+  }
+
+  let gn = g[n - 1];
+  if gn == 0 || target % gn != 0 {
+    return None;
+  }
+
+  let mut m = Affine::constant(target / gn, nparams);
+  let mut x: Vec<Affine> = vec![Affine::constant(0, nparams); n];
+  for j in (1..n).rev() {
+    let slot = j - 1;
+    x[j] = m.scale(v[j]).with_param(slot, -(g[j - 1] / g[j]));
+    m = m.scale(u[j]).with_param(slot, coeffs[j] / g[j]);
+  }
+  x[0] = m;
+  Some(x)
+}
+
+/// Reduce[eq, {vars}, Integers] where `eq` (after collecting `&&` conjuncts)
+/// is a single linear equation with integer coefficients in some or all of
+/// `vars`. Produces the general parametrized integer solution, e.g.
+/// `Reduce[2 x == 4 y, {x, y}, Integers]` ->
+/// `C[1] \[Element] Integers && x == 2*C[1] && y == C[1]`.
+/// Returns `None` when the shape doesn't apply, so the caller falls back to
+/// the general elimination path.
+fn try_reduce_linear_diophantine(
+  expr: &Expr,
+  vars: &[String],
+  domain: Option<&str>,
+) -> Result<Option<Expr>, InterpreterError> {
+  if domain != Some("Integers") || vars.len() < 2 {
+    return Ok(None);
+  }
+
+  let mut constraints = Vec::new();
+  collect_and_constraints(expr, &mut constraints);
+  if constraints.len() != 1 {
+    return Ok(None);
+  }
+  let Some((lhs, rhs, CompOp::Equal)) = extract_comparison(&constraints[0])
+  else {
+    return Ok(None);
+  };
+  let poly = expand_and_combine(&minus2(lhs, rhs));
+
+  // Extract an integer linear coefficient for every var; bail on anything
+  // nonlinear so the general elimination path handles it instead.
+  let mut coeffs: Vec<i128> = Vec::with_capacity(vars.len());
+  for v in vars {
+    match max_power_int(&poly, v) {
+      None | Some(0) => coeffs.push(0),
+      Some(1) => {
+        let c = coefficient_ast(&[
+          poly.clone(),
+          Expr::Identifier(v.clone()),
+          Expr::Integer(1),
+        ])?;
+        match c {
+          Expr::Integer(n) => coeffs.push(n),
+          _ => return Ok(None),
+        }
+      }
+      _ => return Ok(None),
+    }
+  }
+  if coeffs.iter().all(|c| *c == 0) {
+    return Ok(None);
+  }
+
+  // Verify `poly` really is `const + Σ coeffs[i]*vars[i]` with no cross
+  // terms, by zeroing every variable to read off the constant and comparing
+  // the reconstruction against the original.
+  let const_term = {
+    let zeroed = vars.iter().fold(poly.clone(), |acc, v| {
+      crate::syntax::substitute_variable(&acc, v, &Expr::Integer(0))
+    });
+    match crate::evaluator::evaluate_expr_to_expr(&zeroed)? {
+      Expr::Integer(n) => n,
+      _ => return Ok(None),
+    }
+  };
+  let mut reconstructed = Expr::Integer(const_term);
+  for (v, c) in vars.iter().zip(&coeffs) {
+    if *c != 0 {
+      reconstructed = plus2(
+        reconstructed,
+        times2(Expr::Integer(*c), Expr::Identifier(v.clone())),
+      );
+    }
+  }
+  let diff = simplify(expand_and_combine(&minus2(poly, reconstructed)));
+  if !matches!(diff, Expr::Integer(0)) {
+    return Ok(None);
+  }
+
+  let present: Vec<(usize, i128)> = coeffs
+    .iter()
+    .enumerate()
+    .filter(|(_, c)| **c != 0)
+    .map(|(i, c)| (i, *c))
+    .collect();
+  let present_coeffs: Vec<i128> = present.iter().map(|(_, c)| *c).collect();
+  let target = -const_term;
+
+  let Some(present_solution) =
+    solve_linear_diophantine(&present_coeffs, target)
+  else {
+    return Ok(Some(bool_expr(false)));
+  };
+
+  let dio_params = present_coeffs.len() - 1;
+  let absent_count = vars.len() - present.len();
+  let total_params = dio_params + absent_count;
+
+  // Re-slot each present variable's Affine (built over `dio_params` slots)
+  // into the combined `total_params`-slot space, then give every absent
+  // variable its own fresh trailing slot.
+  let mut eqs: Vec<Expr> = Vec::new();
+  for ((idx, _), sol) in present.iter().zip(&present_solution) {
+    let mut widened = Affine::constant(sol.const_term, total_params);
+    widened.coeffs[..dio_params].copy_from_slice(&sol.coeffs);
+    eqs.push(make_equality(
+      &Expr::Identifier(vars[*idx].clone()),
+      &widened.to_expr(),
+    ));
+  }
+  let mut next_slot = dio_params;
+  for (idx, c) in coeffs.iter().enumerate() {
+    if *c == 0 {
+      let param = Affine::constant(0, total_params).with_param(next_slot, 1);
+      eqs.push(make_equality(
+        &Expr::Identifier(vars[idx].clone()),
+        &param.to_expr(),
+      ));
+      next_slot += 1;
+    }
+  }
+
+  if total_params == 0 {
+    eqs.sort_by(compare_exprs);
+    let combined = eqs
+      .into_iter()
+      .reduce(|acc, e| and_results(&acc, &e))
+      .unwrap_or_else(|| bool_expr(true));
+    return Ok(Some(combined));
+  }
+
+  eqs.sort_by(compare_exprs);
+  let mut result = eqs
+    .into_iter()
+    .reduce(|acc, e| and_results(&acc, &e))
+    .unwrap_or_else(|| bool_expr(true));
+  for slot in (0..total_params).rev() {
+    let elem = Expr::FunctionCall {
+      name: "Element".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "C".to_string(),
+          args: vec![Expr::Integer((slot + 1) as i128)].into(),
+        },
+        Expr::Identifier("Integers".to_string()),
+      ]
+      .into(),
+    };
+    result = and_results(&elem, &result);
+  }
+  Ok(Some(result))
 }
 
 /// Solve a multi-variable system by sequential elimination.

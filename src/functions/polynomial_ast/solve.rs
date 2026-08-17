@@ -1526,7 +1526,7 @@ fn modular_solution_branches(
 /// broadcast across the list, so `{a, b} == 0` → `[a == 0, b == 0]` — the
 /// shape `Solve[N[Table[…] == 0, 10]]` produces. All list operands must
 /// have the same length. Returns `None` when no operand is a list.
-fn thread_list_equation(eq: &Expr) -> Option<Vec<Expr>> {
+pub(super) fn thread_list_equation(eq: &Expr) -> Option<Vec<Expr>> {
   let operands: Vec<&Expr> = match eq {
     Expr::Comparison {
       operands,

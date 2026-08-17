@@ -7144,6 +7144,77 @@ mod reduce {
     );
   }
 
+  // A single equation compared as equal-length lists threads into the
+  // conjunction of componentwise equations, matching how Solve already
+  // handles `{a, b} == {c, d}`.
+  #[test]
+  fn vector_equation_threads_into_scalar_equations() {
+    assert_eq!(
+      interpret("Reduce[{x, y} == {1, 2}, {x, y}]").unwrap(),
+      "x == 1 && y == 2"
+    );
+  }
+
+  #[test]
+  fn vector_equation_threads_and_solves() {
+    assert_eq!(
+      interpret("Reduce[{x + y, x - y} == {5, 1}, {x, y}]").unwrap(),
+      "x == 3 && y == 2"
+    );
+  }
+
+  // ── Linear Diophantine equations over Integers ──
+  //
+  // A single linear equation with more unknowns than equations is
+  // underdetermined: expressing one variable directly in terms of the others
+  // (as the general elimination path does for unrestricted domains) only
+  // yields integer values for every integer assignment to the free variables
+  // when every coefficient divides evenly, which isn't true in general. Over
+  // Integers, Reduce must instead parametrize the full solution lattice with
+  // fresh integer parameters `C[1], C[2], ...`.
+
+  #[test]
+  fn diophantine_homogeneous_two_var() {
+    // 2x == 4y has general solution x = 2t, y = t for integer t — not
+    // y == x/2, which is non-integral for odd x.
+    assert_eq!(
+      interpret("Reduce[2 x == 4 y, {x, y}, Integers]").unwrap(),
+      "Element[C[1], Integers] && x == -2*C[1] && y == -C[1]"
+    );
+  }
+
+  #[test]
+  fn diophantine_coprime_coefficients() {
+    assert_eq!(
+      interpret("Reduce[3 x + 5 y == 1, {x, y}, Integers]").unwrap(),
+      "Element[C[1], Integers] && y == -1 - 3*C[1] && x == 2 + 5*C[1]"
+    );
+  }
+
+  #[test]
+  fn diophantine_three_variables() {
+    assert_eq!(
+      interpret("Reduce[2 x + 3 y == 5 z, {x, y, z}, Integers]").unwrap(),
+      "Element[C[1], Integers] && Element[C[2], Integers] && y == -2*C[1] - 5*C[2] && z == -C[2] && x == 3*C[1] + 5*C[2]"
+    );
+  }
+
+  #[test]
+  fn diophantine_no_solution_when_gcd_does_not_divide_target() {
+    // gcd(2, 4) = 2 does not divide 5, so no integer x, y satisfy this.
+    assert_eq!(
+      interpret("Reduce[2 x + 4 y == 5, {x, y}, Integers]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn diophantine_unrestricted_domain_still_solves_directly() {
+    // Without the Integers domain, expressing y directly in terms of x is
+    // correct — only the integer-parametrized form is required over Integers.
+    assert_eq!(interpret("Reduce[2 x == 4 y, {x, y}]").unwrap(), "y == x/2");
+  }
+
   // ── Multi-variable nonlinear ──
 
   #[test]
