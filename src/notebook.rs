@@ -690,6 +690,8 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     "SuperscriptBox",
     "SubscriptBox",
     "SubsuperscriptBox",
+    "OverscriptBox",
+    "UnderscriptBox",
     "SqrtBox",
     "RadicalBox",
     "TagBox",
@@ -773,6 +775,27 @@ fn extract_typeset_box(s: &str) -> Option<String> {
           conv(&args[0]),
           conv(&args[1]),
           conv(&args[2])
+        )
+      }
+      // `OverscriptBox[a, b]` / `UnderscriptBox[a, b]` → `Overscript[a, "b"]`
+      // / `Underscript[a, "b"]` (Wolfram's evaluable forms, which — like
+      // `Subscript` — stay symbolic rather than evaluating away). The mark
+      // is a display annotation (a hat, bar, tilde, or a rate constant over
+      // a reaction arrow), not code, so it is quoted as a string literal
+      // rather than left bare: an unquoted `_` would otherwise parse as the
+      // `Blank[]` pattern instead of the macron mark it typesets.
+      "OverscriptBox" if args.len() == 2 => {
+        format!(
+          "Overscript[{}, \"{}\"]",
+          conv(&args[0]),
+          escape_string(&conv(&args[1]))
+        )
+      }
+      "UnderscriptBox" if args.len() == 2 => {
+        format!(
+          "Underscript[{}, \"{}\"]",
+          conv(&args[0]),
+          escape_string(&conv(&args[1]))
         )
       }
       // `SqrtBox[a]` → `Sqrt[a]`.
@@ -1552,7 +1575,7 @@ fn render_boxes_text(s: &str) -> String {
 /// `OverscriptBox` — `OverHat[x]`, `OverBar[x]`, `OverVector[x]` and friends
 /// all typeset that way. `None` for anything that reads as a script rather
 /// than a diacritic (a rate constant over a reaction arrow, say).
-fn combining_accent(over: &str) -> Option<&'static str> {
+pub(crate) fn combining_accent(over: &str) -> Option<&'static str> {
   match over.trim() {
     "^" | "\\[Hat]" | "\u{F759}" => Some("\u{0302}"),
     "~" | "\\[Tilde]" | "\u{223C}" => Some("\u{0303}"),
@@ -3479,6 +3502,23 @@ Cell["Chapter 2", "Chapter"]
     // An ordinary subscript is still `Subscript`.
     let s = r#"BoxData[SubscriptBox["c", "1"]]"#;
     assert_eq!(extract_cell_content(s), "Subscript[c, 1]");
+  }
+
+  /// `OverscriptBox`/`UnderscriptBox` become the evaluable `Overscript`/
+  /// `Underscript` forms — Wolfram's own typesetting heads, which (like
+  /// `Subscript`) stay symbolic rather than evaluating away. Regression: an
+  /// antiquark label (`OverscriptBox["u", "_"]`, from a physics
+  /// Demonstration's quark-content picker) came back with its mark left
+  /// bare, which parses as the `Blank[]` pattern rather than the macron
+  /// mark it typesets.
+  #[test]
+  fn test_overscript_box_becomes_evaluable_overscript() {
+    let s = r#"BoxData[OverscriptBox["u", "_"]]"#;
+    assert_eq!(extract_cell_content(s), "Overscript[u, \"_\"]");
+    let s = r#"BoxData[OverscriptBox["x", "^"]]"#;
+    assert_eq!(extract_cell_content(s), "Overscript[x, \"^\"]");
+    let s = r#"BoxData[UnderscriptBox["x", "k"]]"#;
+    assert_eq!(extract_cell_content(s), "Underscript[x, \"k\"]");
   }
 
   /// `SubscriptBox["\\[PartialD]", vars]` is the typeset partial-derivative

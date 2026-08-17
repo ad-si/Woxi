@@ -19166,6 +19166,16 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       },
       "Subscript" => script_runs(args, italic, false),
       "Superscript" => script_runs(args, italic, true),
+      // `Underscript[base, mark]` — the limit written under a base, e.g. a
+      // sum's index. No diacritic reads as an under-mark in practice, so
+      // the mark simply sits in subscript position like `Subscript` does.
+      "Underscript" if args.len() == 2 => script_runs(args, italic, false),
+      // `Overscript[base, mark]`, the evaluable form `OverscriptBox` reads
+      // as. A diacritic mark (a hat, bar, tilde, dot, …) draws directly on
+      // the base's last glyph — `Overscript[u, "_"]` is the antiquark ū in
+      // a Demonstration's quark-content picker; anything else (a rate
+      // constant over a reaction arrow) hangs above the base instead.
+      "Overscript" if args.len() == 2 => overscript_runs(args, italic),
       // `Power[b, e]`, which is what a label's typeset `SuperscriptBox`
       // reads as: a Demonstration writes its gravity slider's unit as
       // `m/\!\(\*SuperscriptBox[\(s\), \(2\)]\)`, and it must show as
@@ -19511,6 +19521,40 @@ fn script_runs(
       italic: false,
       ..Default::default()
     });
+  }
+  runs
+}
+
+/// Build the runs for an `Overscript[base, mark]`. A diacritic mark
+/// (recognized by [`crate::notebook::combining_accent`]) is appended as a
+/// Unicode combining character onto the base's last run, so `Overscript[u,
+/// "_"]` reads as `ū` rather than `u_`. Anything else is a script the base
+/// carries above it — a rate constant over a reaction arrow — which has no
+/// combining form, so it is written out in parentheses instead.
+fn overscript_runs(args: &[Expr], italic: bool) -> Vec<LabelRun> {
+  let mut runs = args
+    .first()
+    .map(|a| manipulate_label_runs(a, italic))
+    .unwrap_or_default();
+  let Some(mark_arg) = args.get(1) else {
+    return runs;
+  };
+  let mark = flatten_label_runs(&manipulate_label_runs(mark_arg, false));
+  match crate::notebook::combining_accent(&mark) {
+    Some(combining) => match runs.last_mut() {
+      Some(last) => last.text.push_str(combining),
+      None => runs.push(LabelRun {
+        text: combining.to_string(),
+        italic,
+        ..Default::default()
+      }),
+    },
+    None if !mark.is_empty() => runs.push(LabelRun {
+      text: format!("^({mark})"),
+      italic: false,
+      ..Default::default()
+    }),
+    None => {}
   }
   runs
 }
@@ -20548,11 +20592,18 @@ fn discrete_choice_rule(item: &Expr) -> Option<(&Expr, &Expr)> {
 /// anything that renders empty falls back to its InputForm.
 fn discrete_choice_label(expr: &Expr) -> String {
   match expr {
-    // The label is drawn, so it shows glyphs rather than the private-use
-    // code points the string itself keeps.
-    Expr::String(s) => {
-      crate::syntax::substitute_private_use_glyphs(s).into_owned()
-    }
+    // A string may carry inline typeset boxes the FrontEnd wrote as
+    // `\!\(\*…\)` — an antiquark's `\!\(\*OverscriptBox[\(u\), \(_\)]\)`
+    // reads as `ū`, not the private-use box markers it's stored with.
+    // A plain string just needs its remaining private-use code points
+    // (e.g. `\[WarningSign]`) swapped for real glyphs.
+    Expr::String(s) => match inline_box_label_runs(s, false) {
+      Some(runs) => crate::syntax::substitute_private_use_glyphs(
+        &flatten_label_runs(&runs),
+      )
+      .into_owned(),
+      None => crate::syntax::substitute_private_use_glyphs(s).into_owned(),
+    },
     other => {
       let flat = flatten_label_runs(&manipulate_label_runs(other, false));
       // A structural head (Grid/Row/Column/…) can legitimately typeset to

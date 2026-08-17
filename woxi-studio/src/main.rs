@@ -9333,6 +9333,42 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn popup_menu_choice_labels_typeset_inline_overscript_boxes() {
+    // Regression: a PopupMenu whose per-choice labels carry an inline
+    // `\!\(\*OverscriptBox[…]\)` — as a particle/antiparticle picker marks
+    // the antiparticle with an overbar — came back showing the box's raw
+    // private-use markers instead of the accent it typesets. A diacritic
+    // mark (`_`, `^`) becomes a combining accent on the base glyph; any
+    // other mark is not a diacritic and hangs above the base as a plain
+    // superscript instead.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[x, \
+       {{x, 1, \"particle\"}, \
+        {1 -> \"\\!\\(\\*OverscriptBox[\\(x\\), \\(_\\)]\\)\", \
+         2 -> \"\\!\\(\\*OverscriptBox[\\(x\\), \\(^\\)]\\)\", \
+         3 -> \"\\!\\(\\*OverscriptBox[\\(x\\), \\(k\\)]\\)\"}, \
+        ControlType -> PopupMenu}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the overscript-labelled Manipulate must build a widget");
+    assert!(state.error.is_none(), "body must evaluate cleanly: {:?}", state.error);
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete { value_labels, .. } => {
+        assert_eq!(
+          value_labels,
+          &[
+            "x\u{0304}".to_string(), // macron -> combining accent: x̄
+            "x\u{0302}".to_string(), // hat -> combining accent: x̂
+            "x^(k)".to_string(),     // not a diacritic -> a plain superscript
+          ]
+        );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  #[test]
   fn parametric_curves_manipulate_lays_out_its_plots() {
     // End-to-end regression for "Parametric Curves in 2D": four plots are
     // `Inset` into one picture, and the `t` slider is bounded by symbols
