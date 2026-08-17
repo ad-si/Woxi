@@ -4353,3 +4353,113 @@ mod anonymous_head_patterns {
     clear_state();
   }
 }
+
+/// Upvalues on Plus/Times/Power have to fire for the arithmetic shorthands
+/// too: `a - b` is `Plus[a, Times[-1, b]]`, `a / b` is `Times[a, Power[b, -1]]`
+/// and `-a` is `Times[-1, a]`. Woxi used to evaluate those numerically before
+/// consulting the upvalues, so `mytag[3] - mytag[3]` collapsed to `0` instead
+/// of `mytag[0]` (issue #505). All expectations match wolframscript.
+mod upvalues_for_arithmetic_shorthands {
+  use super::*;
+
+  const MYTAG: &str = "mytag /: mytag[a_] + mytag[b_] := mytag[a + b]\n\
+                       mytag /: i_Integer mytag[a_] := mytag[a i]\n";
+
+  #[test]
+  fn subtraction_reaches_plus_and_times_upvalues() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!("{MYTAG}mytag[3] - mytag[3]")).unwrap(),
+      "mytag[0]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(&format!("{MYTAG}mytag[8] - mytag[3]")).unwrap(),
+      "mytag[5]"
+    );
+    clear_state();
+    // The explicit head behaves the same as the `-` shorthand
+    assert_eq!(
+      interpret(&format!("{MYTAG}Subtract[mytag[3], mytag[3]]")).unwrap(),
+      "mytag[0]"
+    );
+    clear_state();
+  }
+
+  #[test]
+  fn unary_minus_reaches_times_upvalues() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!("{MYTAG}-mytag[3]")).unwrap(),
+      "mytag[-3]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(&format!("{MYTAG}Minus[mytag[3]]")).unwrap(),
+      "mytag[-3]"
+    );
+    clear_state();
+  }
+
+  #[test]
+  fn division_reaches_times_and_power_upvalues() {
+    clear_state();
+    let q = "q /: q[a_] q[b_] := q[a b]\n\
+             q /: q[a_]^n_Integer := q[a^n]\n";
+    assert_eq!(interpret(&format!("{q}q[6] / q[3]")).unwrap(), "q[2]");
+    clear_state();
+    assert_eq!(
+      interpret(&format!("{q}Divide[q[6], q[3]]")).unwrap(),
+      "q[2]"
+    );
+    clear_state();
+  }
+
+  /// The "Implement modular arithmetic" example from the TagSetDelayed
+  /// reference page, which is what surfaced the bug.
+  #[test]
+  fn modular_arithmetic_example() {
+    clear_state();
+    let m = "m /: m[a_, n_] + m[b_, n_] := m[Mod[a + b, n], n]\n\
+             m /: m[a_, n_] m[b_, n_] := m[Mod[a b, n], n]\n\
+             m /: c_Integer m[a_, n_] := m[Mod[c a, n], n]\n";
+    assert_eq!(
+      interpret(&format!("{m}m[3, 7] + m[6, 7]")).unwrap(),
+      "m[2, 7]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(&format!("{m}m[3, 7] - m[6, 7]")).unwrap(),
+      "m[4, 7]"
+    );
+    clear_state();
+    assert_eq!(interpret(&format!("{m}-m[3, 7]")).unwrap(), "m[4, 7]");
+    clear_state();
+  }
+
+  /// Unrelated upvalues on Plus/Times must not change ordinary arithmetic.
+  #[test]
+  fn plain_arithmetic_is_unaffected_by_unrelated_upvalues() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{MYTAG}{{1.5 - 0.5, 3 - 5, 2/4, 6/3, x - x, {{1, 2, 3}} - 1}}"
+      ))
+      .unwrap(),
+      "{1., -2, 1/2, 2, 0, {0, 1, 2}}"
+    );
+    clear_state();
+    // Upvalues only fire for the symbol they are tagged on, so operands
+    // unrelated to `mytag` keep the head-specific built-in behaviour: the
+    // explicit `Divide` head is one IEEE division while `/` multiplies by
+    // the rounded reciprocal, and complex quotients stay exact.
+    let quotients =
+      "{Divide[37, 1.8], 37/1.8, (2 + 3 I)/(1 - I), Divide[3. + 4. I, 5.]}";
+    let expected =
+      "{20.555555555555554, 20.555555555555557, -1/2 + (5*I)/2, 0.6 + 0.8*I}";
+    assert_eq!(interpret(quotients).unwrap(), expected);
+    clear_state();
+    assert_eq!(interpret(&format!("{MYTAG}{quotients}")).unwrap(), expected);
+    clear_state();
+  }
+}
