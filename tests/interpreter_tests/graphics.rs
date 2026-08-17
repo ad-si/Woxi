@@ -9066,6 +9066,50 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn date_list_log_plot_date_list() {
+      insta::assert_snapshot!(export_svg(
+        "DateListLogPlot[{{{2000, 1, 1}, 1}, {{2005, 6, 15}, 100}, {{2010, 12, 31}, 10}}]"
+      ));
+    }
+
+    #[test]
+    fn date_list_log_plot_multiple_series() {
+      insta::assert_snapshot!(export_svg(
+        "DateListLogPlot[{{{{2000, 1, 1}, 1}, {{2010, 1, 1}, 1000}}, {{{2000, 1, 1}, 500}, {{2010, 1, 1}, 5}}}]"
+      ));
+    }
+
+    #[test]
+    fn date_list_log_plot_drops_non_positive_values() {
+      // Non-positive y values have no log-space position, so they are
+      // dropped and the plot renders from the remaining positive points.
+      assert_eq!(
+        interpret(
+          "Head[DateListLogPlot[{{{2000, 1, 1}, 1}, {{2005, 1, 1}, -3}, {{2010, 1, 1}, 2}}]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+    }
+
+    #[test]
+    fn date_list_log_plot_invalid_returns_unevaluated() {
+      assert_eq!(
+        interpret("DateListLogPlot[{1, 3, 2, 5, 4}]").unwrap(),
+        "DateListLogPlot[{1, 3, 2, 5, 4}]"
+      );
+    }
+
+    #[test]
+    fn date_list_log_plot_values_with_start_date() {
+      assert_eq!(
+        interpret("Head[DateListLogPlot[{1, 10, 100, 1000}, {2000, 8}]]")
+          .unwrap(),
+        "Graphics"
+      );
+    }
+
+    #[test]
     fn bar_chart_chart_labels() {
       insta::assert_snapshot!(export_svg(
         r#"BarChart[{5, 9, 24}, ChartLabels -> {"Anna", "Ben", "Carl"}]"#
