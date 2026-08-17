@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `PolyhedronData["RhombicHexecontahedron", …]` supports the nonconvex
+    stellation of the rhombic triacontahedron: 62 vertices, 120 edges, and 60
+    golden-rhombus faces, plus its exact `Volume`, `SurfaceArea`, `Inradius`,
+    `VertexCoordinates`, `FaceIndices`, and `Classes`.
 - `HoldCompleteForm[expr]` keeps `expr` completely unevaluated for display:
     `HoldCompleteForm[2 + 3]` stays `HoldCompleteForm[2 + 3]` and
     `Attributes[HoldCompleteForm]` is `{HoldAllComplete, Protected}`. It is the

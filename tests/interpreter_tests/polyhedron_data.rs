@@ -377,10 +377,10 @@ mod polyhedron_data_tests {
       "{Cube, DeltoidalHexecontahedron, DisdyakisTriacontahedron, \
        Dodecahedron, GreatRhombicosidodecahedron, Icosahedron, \
        Icosidodecahedron, Octahedron, PentakisDodecahedron, \
-       RhombicDodecahedron, RhombicTriacontahedron, \
-       SmallRhombicosidodecahedron, SmallRhombicuboctahedron, \
-       Tetrahedron, TruncatedDodecahedron, TruncatedIcosahedron, \
-       TruncatedOctahedron, TruncatedTetrahedron}"
+       RhombicDodecahedron, RhombicHexecontahedron, \
+       RhombicTriacontahedron, SmallRhombicosidodecahedron, \
+       SmallRhombicuboctahedron, Tetrahedron, TruncatedDodecahedron, \
+       TruncatedIcosahedron, TruncatedOctahedron, TruncatedTetrahedron}"
     );
   }
 
@@ -470,6 +470,91 @@ mod polyhedron_data_tests {
     // Every solid still draws.
     assert_eq!(
       interpret(r#"PolyhedronData["GreatRhombicosidodecahedron"]"#).unwrap(),
+      "-Graphics3D-"
+    );
+  }
+
+  // The rhombic hexecontahedron: a nonconvex stellation of the rhombic
+  // triacontahedron with 60 congruent golden-rhombus faces. Its exact
+  // metrics were cross-checked against dmccooey.com/polyhedra's
+  // independent data (Volume, SurfaceArea, and the three vertex radii),
+  // since it is nonconvex and not one of the classic Platonic/Archimedean/
+  // Catalan families.
+  #[test]
+  fn polyhedron_data_rhombic_hexecontahedron() {
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["RhombicHexecontahedron", "VertexCount"],
+            PolyhedronData["RhombicHexecontahedron", "EdgeCount"],
+            PolyhedronData["RhombicHexecontahedron", "FaceCount"]}"#
+      )
+      .unwrap(),
+      "{62, 120, 60}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["RhombicHexecontahedron", "SurfaceArea"]"#)
+        .unwrap(),
+      "24*Sqrt[5]"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["RhombicHexecontahedron", "Volume"]"#)
+        .unwrap(),
+      "4*Sqrt[2*(5 + Sqrt[5])]"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["RhombicHexecontahedron", "Circumradius"]"#)
+        .unwrap(),
+      "Missing[NotApplicable]"
+    );
+    // Three vertex "shells": the 12 pulled-in dodecahedron face centers, the
+    // 30 unmoved dodecahedron edge midpoints, and the 20 pulled-out
+    // dodecahedron vertices — a nonconvex solid has no single circumradius.
+    assert_eq!(
+      interpret(
+        r#"With[{v = N[PolyhedronData["RhombicHexecontahedron",
+               "VertexCoordinates"]]},
+             {Length[v], Length[Union[Round[10^6 * Norm /@ v]]]}]"#
+      )
+      .unwrap(),
+      "{62, 3}"
+    );
+    // Every face is a golden rhombus: all 4 sides equal, and the ratio of
+    // the diagonals is the golden ratio.
+    assert_eq!(
+      interpret(
+        r#"With[{v = N[PolyhedronData["RhombicHexecontahedron",
+               "VertexCoordinates"]],
+              faces = PolyhedronData["RhombicHexecontahedron",
+                "FaceIndices"]},
+             Union @ Flatten @ Table[
+               With[{q = v[[f]]},
+                 Round[10^6 * {
+                   Norm[q[[1]] - q[[2]]], Norm[q[[2]] - q[[3]]],
+                   Norm[q[[3]] - q[[4]]], Norm[q[[4]] - q[[1]]],
+                   Norm[q[[1]] - q[[3]]] / Norm[q[[2]] - q[[4]]]}]],
+               {f, faces}]]"#
+      )
+      .unwrap(),
+      "{1000000, 1618034}"
+    );
+    // Nonconvex, but still isohedral: every face plane sits at the same
+    // distance from the center, so a well-defined insphere exists even
+    // though the solid is not convex.
+    assert_eq!(
+      interpret(r#"PolyhedronData["RhombicHexecontahedron", "Inradius"]"#)
+        .unwrap(),
+      "Sqrt[(5 + Sqrt[5])/10]"
+    );
+    assert_eq!(
+      interpret(
+        r#"MemberQ[PolyhedronData["RhombicHexecontahedron", "Classes"],
+             "Convex"]"#
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["RhombicHexecontahedron"]"#).unwrap(),
       "-Graphics3D-"
     );
   }

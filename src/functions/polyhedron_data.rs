@@ -1219,6 +1219,93 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       \"Convex\", \"Equilateral\", \"Isohedron\", \"Rigid\", \
       \"Rupert\", \"Simple\", \"UniformDual\", \"Zonohedron\"}",
   },
+  PolyhedronInfo {
+    name: "RhombicHexecontahedron",
+    vertex_count: 62,
+    edge_count: 120,
+    face_count: 60,
+    volume: "4*Sqrt[2*(5 + Sqrt[5])]",
+    surface_area: "24*Sqrt[5]",
+    circumradius: "Missing[\"NotApplicable\"]",
+    inradius: "Sqrt[(5 + Sqrt[5])/10]",
+    // A nonconvex stellation of the rhombic triacontahedron: take a unit
+    // dodecahedron and move its 20 vertices, 12 face centers, and 30 edge
+    // midpoints radially to circumradius*(GoldenRatio+1)/2, inradius*
+    // (3-GoldenRatio)/2, and midradius (unchanged) respectively, then join
+    // each face center to its face's vertices and edge midpoints. Every
+    // face is then a planar golden rhombus (diagonal ratio GoldenRatio).
+    // Scaled here to unit edge length and cross-checked (Volume,
+    // SurfaceArea, and the three vertex radii) against dmccooey.com's
+    // independent exact-form polyhedron data.
+    vertices_src: "\
+      {{(-5 - 3*Sqrt[5])/5, 0, Sqrt[5]/5}, {(5 + 3*Sqrt[5])/5, 0, \
+      -Sqrt[5]/5}, {(-5 - Sqrt[5])/10, -Sqrt[(25 + 11*Sqrt[5])/10], \
+      Sqrt[5]/5}, {(-5 - Sqrt[5])/10, Sqrt[(25 + 11*Sqrt[5])/10], Sqrt[5]/5}, \
+      {(5 + 2*Sqrt[5])/5, -Sqrt[(5 + 2*Sqrt[5])/5], Sqrt[5]/5}, {(5 + \
+      2*Sqrt[5])/5, Sqrt[(5 + 2*Sqrt[5])/5], Sqrt[5]/5}, {-Sqrt[5]/5, \
+      -Sqrt[(5 + 2*Sqrt[5])/5], (5 + 2*Sqrt[5])/5}, {-Sqrt[5]/5, Sqrt[(5 + \
+      2*Sqrt[5])/5], (5 + 2*Sqrt[5])/5}, {(-5 - 3*Sqrt[5])/10, -Sqrt[(5 + \
+      Sqrt[5])/10], (-5 - 2*Sqrt[5])/5}, {(-5 - 3*Sqrt[5])/10, Sqrt[(5 + \
+      Sqrt[5])/10], (-5 - 2*Sqrt[5])/5}, {(5 + 3*Sqrt[5])/10, -Sqrt[(5 + \
+      Sqrt[5])/10], (5 + 2*Sqrt[5])/5}, {(5 + 3*Sqrt[5])/10, Sqrt[(5 + \
+      Sqrt[5])/10], (5 + 2*Sqrt[5])/5}, {(5 + Sqrt[5])/5, 0, (-5 - \
+      2*Sqrt[5])/5}, {(-5 - 2*Sqrt[5])/5, -Sqrt[(5 + 2*Sqrt[5])/5], \
+      -Sqrt[5]/5}, {(-5 - 2*Sqrt[5])/5, Sqrt[(5 + 2*Sqrt[5])/5], -Sqrt[5]/5}, \
+      {(-5 - Sqrt[5])/5, 0, (5 + 2*Sqrt[5])/5}, {Sqrt[5]/5, -Sqrt[(5 + \
+      2*Sqrt[5])/5], (-5 - 2*Sqrt[5])/5}, {Sqrt[5]/5, Sqrt[(5 + \
+      2*Sqrt[5])/5], (-5 - 2*Sqrt[5])/5}, {(5 + Sqrt[5])/10, -Sqrt[(25 + \
+      11*Sqrt[5])/10], -Sqrt[5]/5}, {(5 + Sqrt[5])/10, Sqrt[(25 + \
+      11*Sqrt[5])/10], -Sqrt[5]/5}, {-2*Sqrt[5]/5, 0, -Sqrt[5]/5}, \
+      {2*Sqrt[5]/5, 0, Sqrt[5]/5}, {(5 - Sqrt[5])/10, -Sqrt[(5 + \
+      Sqrt[5])/10], Sqrt[5]/5}, {0, 0, 1}, {(5 - Sqrt[5])/10, Sqrt[(5 + \
+      Sqrt[5])/10], Sqrt[5]/5}, {(5 + Sqrt[5])/10, Sqrt[(5 - Sqrt[5])/10], \
+      -Sqrt[5]/5}, {(5 + Sqrt[5])/10, -Sqrt[(5 - Sqrt[5])/10], -Sqrt[5]/5}, \
+      {(-5 + Sqrt[5])/10, Sqrt[(5 + Sqrt[5])/10], -Sqrt[5]/5}, {0, 0, -1}, \
+      {(-5 + Sqrt[5])/10, -Sqrt[(5 + Sqrt[5])/10], -Sqrt[5]/5}, {(-5 - \
+      Sqrt[5])/10, -Sqrt[(5 - Sqrt[5])/10], Sqrt[5]/5}, {(-5 - Sqrt[5])/10, \
+      Sqrt[(5 - Sqrt[5])/10], Sqrt[5]/5}, {(-1 - Sqrt[5])/2, -Sqrt[(5 - \
+      Sqrt[5])/10], 0}, {(-1 - Sqrt[5])/2, Sqrt[(5 - Sqrt[5])/10], 0}, {(-5 - \
+      Sqrt[5])/5, 0, 2*Sqrt[5]/5}, {(1 + Sqrt[5])/2, -Sqrt[(5 - Sqrt[5])/10], \
+      0}, {(1 + Sqrt[5])/2, Sqrt[(5 - Sqrt[5])/10], 0}, {(5 + Sqrt[5])/5, 0, \
+      -2*Sqrt[5]/5}, {-Sqrt[5]/5, -Sqrt[(5 + 2*Sqrt[5])/5], 2*Sqrt[5]/5}, \
+      {-1, -Sqrt[(5 + 2*Sqrt[5])/5], 0}, {0, -Sqrt[(10 + 2*Sqrt[5])/5], 0}, \
+      {-Sqrt[5]/5, Sqrt[(5 + 2*Sqrt[5])/5], 2*Sqrt[5]/5}, {-1, Sqrt[(5 + \
+      2*Sqrt[5])/5], 0}, {0, Sqrt[(10 + 2*Sqrt[5])/5], 0}, {(5 + \
+      3*Sqrt[5])/10, -Sqrt[(5 + Sqrt[5])/10], 2*Sqrt[5]/5}, {1, -Sqrt[(5 + \
+      2*Sqrt[5])/5], 0}, {(5 + 3*Sqrt[5])/10, Sqrt[(5 + Sqrt[5])/10], \
+      2*Sqrt[5]/5}, {1, Sqrt[(5 + 2*Sqrt[5])/5], 0}, {(5 - Sqrt[5])/10, \
+      -Sqrt[(5 + Sqrt[5])/10], (5 + Sqrt[5])/5}, {(-5 - Sqrt[5])/10, -Sqrt[(5 \
+      - Sqrt[5])/10], (5 + Sqrt[5])/5}, {(5 - Sqrt[5])/10, Sqrt[(5 + \
+      Sqrt[5])/10], (5 + Sqrt[5])/5}, {(-5 - Sqrt[5])/10, Sqrt[(5 - \
+      Sqrt[5])/10], (5 + Sqrt[5])/5}, {-2*Sqrt[5]/5, 0, (-5 - Sqrt[5])/5}, \
+      {(-5 - 3*Sqrt[5])/10, -Sqrt[(5 + Sqrt[5])/10], -2*Sqrt[5]/5}, {(-5 + \
+      Sqrt[5])/10, -Sqrt[(5 + Sqrt[5])/10], (-5 - Sqrt[5])/5}, {(-5 - \
+      3*Sqrt[5])/10, Sqrt[(5 + Sqrt[5])/10], -2*Sqrt[5]/5}, {(-5 + \
+      Sqrt[5])/10, Sqrt[(5 + Sqrt[5])/10], (-5 - Sqrt[5])/5}, {2*Sqrt[5]/5, \
+      0, (5 + Sqrt[5])/5}, {(5 + Sqrt[5])/10, -Sqrt[(5 - Sqrt[5])/10], (-5 - \
+      Sqrt[5])/5}, {(5 + Sqrt[5])/10, Sqrt[(5 - Sqrt[5])/10], (-5 - \
+      Sqrt[5])/5}, {Sqrt[5]/5, -Sqrt[(5 + 2*Sqrt[5])/5], -2*Sqrt[5]/5}, \
+      {Sqrt[5]/5, Sqrt[(5 + 2*Sqrt[5])/5], -2*Sqrt[5]/5}}",
+    faces_src: "\
+      {{21, 34, 15, 56}, {21, 56, 10, 53}, {21, 53, 9, 54}, {21, 54, 14, 33}, \
+      {21, 33, 1, 34}, {22, 36, 2, 37}, {22, 37, 6, 47}, {22, 47, 12, 58}, \
+      {22, 58, 11, 45}, {22, 45, 5, 36}, {23, 46, 5, 45}, {23, 45, 11, 49}, \
+      {23, 49, 7, 39}, {23, 39, 3, 41}, {23, 41, 19, 46}, {24, 49, 11, 58}, \
+      {24, 58, 12, 51}, {24, 51, 8, 52}, {24, 52, 16, 50}, {24, 50, 7, 49}, \
+      {25, 51, 12, 47}, {25, 47, 6, 48}, {25, 48, 20, 44}, {25, 44, 4, 42}, \
+      {25, 42, 8, 51}, {26, 48, 6, 37}, {26, 37, 2, 38}, {26, 38, 13, 60}, \
+      {26, 60, 18, 62}, {26, 62, 20, 48}, {27, 38, 2, 36}, {27, 36, 5, 46}, \
+      {27, 46, 19, 61}, {27, 61, 17, 59}, {27, 59, 13, 38}, {28, 43, 4, 44}, \
+      {28, 44, 20, 62}, {28, 62, 18, 57}, {28, 57, 10, 56}, {28, 56, 15, 43}, \
+      {29, 57, 18, 60}, {29, 60, 13, 59}, {29, 59, 17, 55}, {29, 55, 9, 53}, \
+      {29, 53, 10, 57}, {30, 55, 17, 61}, {30, 61, 19, 41}, {30, 41, 3, 40}, \
+      {30, 40, 14, 54}, {30, 54, 9, 55}, {31, 40, 3, 39}, {31, 39, 7, 50}, \
+      {31, 50, 16, 35}, {31, 35, 1, 33}, {31, 33, 14, 40}, {32, 35, 16, 52}, \
+      {32, 52, 8, 42}, {32, 42, 4, 43}, {32, 43, 15, 34}, {32, 34, 1, 35}}",
+    classes_src: "\
+      {\"Amphichiral\", \"Equilateral\", \"Isohedron\", \
+      \"Zonohedron\"}",
+  },
 ];
 
 fn find_polyhedron(name: &str) -> Option<&'static PolyhedronInfo> {
