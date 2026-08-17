@@ -100,3 +100,12 @@ several-hundred functions added in each
 are not (yet) implemented.
 [The full list](mathematica/missing_features.md) highlights the marquee
 feature areas of each version that Woxi does **not** support.
+
+
+## Conformance gaps
+
+Where a function *is* implemented, its output should match `wolframscript`
+character for character.
+[The known exceptions](mathematica/conformance_gaps.md) are catalogued
+separately — each one verified against the Wolfram Language, but not fixed
+yet.
