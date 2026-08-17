@@ -2897,6 +2897,37 @@ mod once_wrapper {
   }
 }
 
+// NCache[expr, value] tags expr with a numeric approximation and evaluates
+// to expr, discarding the cached value.
+mod ncache_wrapper {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_first_argument() {
+    assert_eq!(interpret("NCache[1/3, 0.3333333333333333]").unwrap(), "1/3");
+    assert_eq!(
+      interpret("NCache[Pi/4, 0.7853981633974483]").unwrap(),
+      "Pi/4"
+    );
+  }
+
+  #[test]
+  fn preserves_exact_head() {
+    assert_eq!(
+      interpret("Head[NCache[1/3, 0.3333333333333333]]").unwrap(),
+      "Rational"
+    );
+  }
+
+  #[test]
+  fn works_inside_a_list_of_slider_bounds() {
+    assert_eq!(
+      interpret("{0, NCache[2/45, 0.044444], 1}").unwrap(),
+      "{0, 2/45, 1}"
+    );
+  }
+}
+
 // ApplyTo[x, f] / x //= f: applies f to the held variable's value,
 // reassigns, and returns the new value. Verified against wolframscript.
 mod apply_to {
