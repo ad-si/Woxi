@@ -9352,6 +9352,82 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn manipulate_row_with_dynamic_shows_live_value_not_frozen_text() {
+    // Regression for "Water Colors Puzzle": a Demonstration's live move
+    // counter is often written directly among the control-panel arguments as
+    // `Row[{Style["moves: "], Dynamic[moves]}]`. `Row`/`Column`/`Style` are
+    // normally treated as a static caption row (Wolfram's
+    // `ThisIsNotAControl`), but one that embeds a `Dynamic[…]` must track
+    // that variable's live value every frame instead of freezing into a
+    // `Heading` that echoes the bare `Dynamic[moves]` source as literal text.
+    let code = "Manipulate[\n\
+      moves = moves + go;\n\
+      go,\n\
+      {{go, 0}, ControlType -> None},\n\
+      Row[{Style[\"moves: \"], Dynamic[moves]}],\n\
+      {{moves, 0}, ControlType -> None}\n\
+      ]";
+    let mut state =
+      instantiate_stored_manipulate(code, "").expect("must build a widget");
+    assert!(state.error.is_none(), "body must evaluate cleanly");
+
+    // The Dynamic row must not show up as a frozen `Heading` echoing the
+    // `Dynamic[moves]` source.
+    assert!(
+      !state
+        .controls
+        .iter()
+        .any(|c| matches!(c, manipulate::ControlState::Heading { .. })),
+      "the Row[{{…, Dynamic[moves]}}] must not freeze into a Heading, got {:?}",
+      state.controls
+    );
+
+    // It renders live instead, starting at `moves`'s initial value (0).
+    fn row_text(node: &woxi::functions::graphics::DisplayNode) -> String {
+      use woxi::functions::graphics::DisplayNode;
+      match node {
+        DisplayNode::Row(children) | DisplayNode::Column(children) => {
+          children.iter().map(row_text).collect()
+        }
+        DisplayNode::Text { runs } => {
+          runs.iter().map(|r| r.text.as_str()).collect()
+        }
+        DisplayNode::Static { text, .. } => text.clone(),
+        _ => String::new(),
+      }
+    }
+    let moves_row = state
+      .display_trees
+      .iter()
+      .find(|t| row_text(t).contains("moves:"))
+      .unwrap_or_else(|| {
+        panic!(
+          "no display tree has the moves row: {:?}",
+          state.display_trees
+        )
+      });
+    assert_eq!(row_text(moves_row), "moves: 0");
+
+    // Bumping `go` and re-rendering must move the live counter, not the
+    // frozen text a `Heading` would have kept forever.
+    if let Some(slot) = state.state.iter_mut().find(|(n, _)| n == "go") {
+      slot.1 = "1".to_string();
+    }
+    state.reevaluate();
+    let moves_row = state
+      .display_trees
+      .iter()
+      .find(|t| row_text(t).contains("moves:"))
+      .unwrap_or_else(|| {
+        panic!(
+          "no display tree has the moves row: {:?}",
+          state.display_trees
+        )
+      });
+    assert_eq!(row_text(moves_row), "moves: 1");
+  }
+
+  #[test]
   fn solar_panel_manipulate_folds_its_array() {
     // End-to-end regression for "Solar Panel of NASA's Phoenix Mars
     // Lander": two sliders fold a fan of triangular panels around a shaft.

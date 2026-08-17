@@ -10970,6 +10970,24 @@ pub(crate) fn is_manipulate_annotation_head(name: &str) -> bool {
   is_style_wrapper(name) || matches!(name, "Text" | "Row" | "Column")
 }
 
+/// Whether an annotation row (`Style[…]`, `Row[{…}]`, `Column[{…}]`, …) has a
+/// `Dynamic[…]` anywhere inside it — a Demonstration's live step counter is
+/// often written `Row[{Style["moves: "], Dynamic[moves]}]` right in the
+/// control-panel argument list. Such a row is not "plain text layout" (see
+/// [`is_manipulate_annotation_head`]): the `Dynamic` part must track its
+/// variable and update every frame, so it needs the same live "display"
+/// treatment as a bare `Dynamic[…]` argument rather than being frozen into a
+/// static `Heading` at parse time.
+fn annotation_contains_dynamic(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == "Dynamic" || args.iter().any(annotation_contains_dynamic)
+    }
+    Expr::List(items) => items.iter().any(annotation_contains_dynamic),
+    _ => false,
+  }
+}
+
 /// Peel a display-only `Invisible[expr]` wrapper, returning the content it
 /// hides. `Invisible` keeps exactly the space `expr` would take but paints
 /// nothing — Demonstrations use it to hold a layout's shape steady while an
@@ -16978,13 +16996,27 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         continue;
       }
       Expr::FunctionCall { name, .. }
-        if is_manipulate_annotation_head(name) =>
+        if is_manipulate_annotation_head(name)
+          && !annotation_contains_dynamic(spec) =>
       {
         let label_runs = manipulate_label_runs(spec, false);
         controls.push(ManipulateControl::Heading {
           label: flatten_label_runs(&label_runs),
           label_runs,
         });
+        continue;
+      }
+      // A `Row`/`Column`/`Style`/`Text` annotation with a `Dynamic[…]`
+      // somewhere inside (a live step counter, e.g.
+      // `Row[{Style["moves: "], Dynamic[moves]}]`) is not static text: fall
+      // through to the generic "extra display element" handling below so it
+      // re-renders from the live bindings every frame instead of being
+      // frozen into a `Heading` with the `Dynamic` wrapper's bare source.
+      Expr::FunctionCall { name, .. }
+        if is_manipulate_annotation_head(name)
+          && annotation_contains_dynamic(spec) =>
+      {
+        displays.push(crate::syntax::expr_to_input_form(spec));
         continue;
       }
       // `Button[label, action, opts…]`: a pressable control row whose
