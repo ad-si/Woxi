@@ -79,6 +79,7 @@ Output is always in [FullForm].
 - [`SystemColor`](expressions/SystemColor.md)
 - [`TableForm`](expressions/TableForm.md)
 - [`TagSet`](expressions/TagSet.md)
+- [`TagSetDelayed`](expressions/TagSetDelayed.md)
 - [`TensorDimensions`](expressions/TensorDimensions.md)
 - [`ThemeColor`](expressions/ThemeColor.md)
 - [`Unevaluated`](expressions/Unevaluated.md)

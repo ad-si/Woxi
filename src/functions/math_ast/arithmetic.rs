@@ -8379,6 +8379,12 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// (use Subtract for that)
 pub fn minus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 1 {
+    // Minus[a] = -1 * a; user-defined rules on Times apply first.
+    if let Some(result) =
+      crate::evaluator::expand_arith_shorthand("Minus", args)
+    {
+      return result;
+    }
     // Use times_ast for proper distribution: -(a+b) → -a - b
     times_ast(&[Expr::Integer(-1), args[0].clone()])
   } else {
@@ -8393,6 +8399,13 @@ pub fn divide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Divide expects exactly 2 arguments".into(),
     ));
+  }
+
+  // Divide[a, b] = a * b^-1; user-defined rules on Times/Power win over the
+  // built-in quotient handling.
+  if let Some(result) = crate::evaluator::expand_arith_shorthand("Divide", args)
+  {
+    return result;
   }
 
   // Check for list threading
@@ -8467,6 +8480,14 @@ pub fn divide_head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // constants like Pi still evaluate through the reciprocal, and lists
   // thread element-wise with the same head semantics.
   if args.len() == 2 {
+    // Divide[a, b] = a * b^-1: user-defined rules on Times/Power apply before
+    // the built-in quotient handling (but after the `Divide::infy` /
+    // `Divide::indet` messages above, which are specific to this head).
+    if let Some(result) =
+      crate::evaluator::expand_arith_shorthand("Divide", args)
+    {
+      return result;
+    }
     if args.iter().any(|a| matches!(a, Expr::List(_))) {
       return thread_binary_over_lists(args, divide_two_head);
     }
@@ -11917,6 +11938,11 @@ pub fn subtract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("Subtract", args));
   }
   // Subtract[a, b] = a + (-1 * b)
+  if let Some(result) =
+    crate::evaluator::expand_arith_shorthand("Subtract", args)
+  {
+    return result;
+  }
   let negated_b = times_ast(&[Expr::Integer(-1), args[1].clone()])?;
   plus_ast(&[args[0].clone(), negated_b])
 }
