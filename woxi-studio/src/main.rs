@@ -16301,4 +16301,148 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`grow$$ = 1.5, $CellContext`spin$$ =
       "moving the rotation slider must change the rendered picture"
     );
   }
+
+  /// End-to-end regression for the shape of the "Phase Matching of SHG in
+  /// Nonlinear Optics" Demonstration: several `InitializationCell`s each
+  /// define a per-harmonic function with `If`, a stored `Manipulate` whose
+  /// body `Switch`es between three `Plot` calls (raw harmonics, their sum
+  /// with `Filling -> {1 -> Axis}`, and the squared sum), a rule-labeled
+  /// popup-style control (`{{view, 1, "view"}, {1 -> "…", 2 -> "…", 3 ->
+  /// "…"}}`) picking the view, and a continuous slider driving a shared
+  /// phase-mismatch parameter, with `SaveDefinitions -> True` and
+  /// `TrackedSymbols :> {view, k}`.
+  #[test]
+  fn demonstration_harmonic_sum_manipulate_switches_views() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["y1[x_, k_] := If[x > Pi/8, Sin[(3 + k) x - k Pi/8], 0]"], "Input", InitializationCell->True],
+Cell[BoxData["y2[x_, k_] := If[x > 2 Pi/8, Sin[(3 + k) x - k 2 Pi/8], 0]"], "Input", InitializationCell->True],
+Cell[BoxData["y3[x_, k_] := If[x > 3 Pi/8, Sin[(3 + k) x - k 3 Pi/8], 0]"], "Input", InitializationCell->True],
+Cell[BoxData["ysum[x_, k_] := y1[x, k] + y2[x, k] + y3[x, k]"], "Input", InitializationCell->True],
+Cell[BoxData["ypow[x_, k_] := ysum[x, k]^2"], "Input", InitializationCell->True],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Switch[view,
+   1, Plot[{y1[x, k], y2[x, k], y3[x, k]}, {x, 0, 6}, AxesLabel -> {Style[\"x\", Italic], Style[\"y\", Italic]}, PlotRange -> 1.2, PlotLabel -> \"harmonics\", ImageSize -> {400, 300}, ImagePadding -> {{25, 25}, {10, 10}}],
+   2, Plot[{ysum[x, k], y1[x, k], y2[x, k], y3[x, k]}, {x, 0, 6}, PlotRange -> 3.5, Filling -> {1 -> Axis}, PlotLabel -> \"sum of amplitudes\", ImageSize -> {400, 300}],
+   3, Plot[{ypow[x, k], y1[x, k]}, {x, 0, 6}, PlotRange -> 12, Filling -> {1 -> Axis}, PlotLabel -> \"sum of intensities\", ImageSize -> {400, 300}]
+ ],
+ {{view, 1, \"view\"}, {1 -> \"harmonics vs mismatch\", 2 -> \"amplitude sum\", 3 -> \"intensity sum\"}},
+ {{k, 0.2}, 0, 2 Pi},
+ SaveDefinitions -> True,
+ TrackedSymbols :> {view, k}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`view$$ = 1, $CellContext`k$$ = 0.2}, DynamicBox[\[Ellipsis]]]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the Switch's first branch (raw harmonics Plot) must draw"
+    );
+
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name: view_name,
+          label: view_label,
+          values: view_values,
+          value_labels: view_labels,
+          current_index: view_idx,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: k_name,
+          min: k_min,
+          max: k_max,
+          current: k_now,
+          ..
+        },
+      ] => {
+        assert_eq!(view_name.as_str(), "view");
+        assert_eq!(view_label.as_str(), "view");
+        assert_eq!(view_values.as_slice(), ["1", "2", "3"]);
+        assert_eq!(
+          view_labels.as_slice(),
+          ["harmonics vs mismatch", "amplitude sum", "intensity sum"]
+        );
+        assert_eq!(*view_idx, 0);
+        assert_eq!(k_name.as_str(), "k");
+        assert_eq!(*k_min, 0.0);
+        assert!((*k_max - std::f64::consts::TAU).abs() < 1e-9);
+        assert_eq!(*k_now, 0.2);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the selected Switch branch must render")
+    };
+
+    let harmonics_view = render(&widget);
+
+    // Picking the second popup choice switches to the filled amplitude-sum
+    // Plot, which must render a visibly different picture.
+    match &mut widget.controls[0] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 1
+      }
+      other => panic!("expected view as a Discrete control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    let amplitude_view = render(&widget);
+    assert_ne!(
+      harmonics_view, amplitude_view,
+      "switching to the amplitude-sum view must change the rendered picture"
+    );
+
+    // Picking the third popup choice switches to the squared-intensity Plot.
+    match &mut widget.controls[0] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 2
+      }
+      other => panic!("expected view as a Discrete control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    let intensity_view = render(&widget);
+    assert_ne!(
+      amplitude_view, intensity_view,
+      "switching to the intensity-sum view must change the rendered picture"
+    );
+
+    // Moving the phase-mismatch slider re-renders the current (intensity)
+    // view with a different mismatch parameter.
+    match &mut widget.controls[1] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 1.5,
+      other => panic!("expected k as a Continuous control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    let mismatched_view = render(&widget);
+    assert_ne!(
+      intensity_view, mismatched_view,
+      "moving the phase-mismatch slider must change the rendered picture"
+    );
+  }
 }
