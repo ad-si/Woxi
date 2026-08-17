@@ -48,3 +48,24 @@ Graphics
 $ wo 'Head[GraphPlot[{1 -> 2, 2 -> 3}, EdgeShapeFunction -> {DirectedEdge[1, 2] -> ({Red, Line[#1]} &)}]]'
 Graphics
 ```
+
+`VertexRenderingFunction -> f` draws each vertex with `f[{x, y}, name]`
+instead of the built-in disk. The first argument is the vertex's
+coordinate, the second its name:
+
+```scrut
+$ wo 'Head[GraphPlot[{1 -> 2, 2 -> 3}, VertexRenderingFunction -> (Point[#] &)]]'
+Graphics
+```
+
+```scrut
+$ wo 'Head[GraphPlot[{1 -> 2, 2 -> 3}, VertexRenderingFunction -> (Text[#2, #] &)]]'
+Graphics
+```
+
+`VertexRenderingFunction -> None` leaves the vertices undrawn:
+
+```scrut
+$ wo 'Head[GraphPlot[{1 -> 2, 2 -> 3}, VertexRenderingFunction -> None]]'
+Graphics
+```

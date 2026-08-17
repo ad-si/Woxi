@@ -14364,6 +14364,118 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`fam$$ = 1}, \"\\[Ellipsis]\"]"], "O
     assert_ne!(net, render(1, 1), "the view control must matter");
   }
 
+  /// End-to-end regression for the shape a "state transition diagram for
+  /// modular multiplication" Demonstration has: a `Manipulate` whose body
+  /// is a `GraphPlot` over `Table[i -> Mod[a i, m], {i, 0, m - 1}]`, with
+  /// two `Appearance -> "Labeled"` sliders for the modulus and the
+  /// multiplier, a `Delimiter`, and a Boolean picklist that switches the
+  /// nodes between labelled `Text` and plain `Tooltip`-ed `Point`s through
+  /// `VertexRenderingFunction`.
+  ///
+  /// The Manipulate is written here rather than lifted from the published
+  /// notebook. The modulus range is kept small so the test draws a graph
+  /// it can count the parts of.
+  #[test]
+  fn modular_multiplication_diagram_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nGraphPlot[Table[i -> Mod[a i, m], {i, 0, m - 1}],\n  ImageSize -> {500, 375},\n  PlotLabel -> Style[Row[{n -> a n, \" mod \", m}], 14],\n  VertexRenderingFunction -> If[label,\n    (Text[#2, #, Background -> White] &),\n    (Tooltip[{Darker[Blue, .7], Point[#]}, #2] &)],\n  DirectedEdges -> True],\n{{m, 8, \"modulus\"}, 2, 20, 1, Appearance -> \"Labeled\"},\n{{a, 3, \"multiplier\"}, 2, 20, 1, Appearance -> \"Labeled\"},\nDelimiter,\n{{label, False, \"label nodes\"}, {True, False}},\nAutorunSequencing -> {1, 2}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 8}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the diagram must evaluate: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the diagram must draw");
+
+    // Two labelled sliders, the `Delimiter` separator row, then the
+    // Boolean picklist.
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: m_name,
+          label: m_label,
+          current: m_current,
+          min: m_min,
+          max: m_max,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: a_name,
+          label: a_label,
+          current: a_current,
+          ..
+        },
+        manipulate::ControlState::Divider,
+        manipulate::ControlState::Discrete {
+          name: l_name,
+          label: l_label,
+          values,
+          current_index,
+          ..
+        },
+      ] => {
+        assert_eq!((m_name.as_str(), m_label.as_str()), ("m", "modulus"));
+        assert_eq!((*m_current, *m_min, *m_max), (8.0, 2.0, 20.0));
+        assert_eq!((a_name.as_str(), a_label.as_str()), ("a", "multiplier"));
+        assert_eq!(*a_current, 3.0);
+        assert_eq!(
+          (l_name.as_str(), l_label.as_str()),
+          ("label", "label nodes")
+        );
+        assert_eq!(values, &["True", "False"]);
+        assert_eq!(*current_index, 1, "the published default is False");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    let render = |m: u32, a: u32, label: &str| {
+      woxi::interpret_with_stdout(&format!(
+        "m = {m}; a = {a}; label = {label};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+
+    // Unlabelled, every one of the `m` residues is drawn as a point in
+    // the function's own dark blue — not as the default vertex disk.
+    let points = render(8, 3, "False");
+    assert_eq!(
+      points.matches(r#"fill="rgb(0,0,77)""#).count(),
+      8,
+      "each residue is a Darker[Blue, .7] point: {points}"
+    );
+    // Labelled, each node is its own residue's numeral instead.
+    let labelled = render(8, 3, "True");
+    for residue in 0..8 {
+      assert!(
+        labelled.contains(&format!(">{residue}<")),
+        "residue {residue} is labelled: {labelled}"
+      );
+    }
+    // Both controls reach the graph: a different modulus draws a
+    // different number of nodes, a different multiplier a different
+    // shape.
+    assert_eq!(
+      render(12, 3, "False")
+        .matches(r#"fill="rgb(0,0,77)""#)
+        .count(),
+      12,
+      "the modulus control must matter"
+    );
+    assert_ne!(points, render(8, 5, "False"), "the multiplier must matter");
+  }
+
   /// End-to-end regression for the "Chaos and Order in the Damped Forced
   /// Pendulum in a Plane" Demonstration: it integrates the damped driven
   /// pendulum `θ'' == -(g/l) Sin[θ] - γ θ' + a Cos[ω t]` from a grid of
