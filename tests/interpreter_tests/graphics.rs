@@ -17253,6 +17253,63 @@ mod manipulate {
     }
   }
 
+  /// `{{u, uinit}, colour}` — the Demonstrations idiom for a two-swatch
+  /// colour toggle (`ColorSetter`) — becomes a real discrete control whose
+  /// two choices are the initial colour and the listed one, each rendered
+  /// as a colour swatch icon rather than its `RGBColor[…]` InputForm.
+  #[test]
+  fn spec_two_color_swatch_form_becomes_a_discrete_control() {
+    let expr = interpret_to_expr(
+      "Manipulate[ringColor, \
+       {{ringColor, RGBColor[0.88, 0.63, 0.23]}, RGBColor[0.49, 0, 0]}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete {
+        name,
+        values,
+        initial_index,
+        value_label_svgs,
+        setter_bar,
+        ..
+      } => {
+        assert_eq!(name, "ringColor");
+        assert_eq!(
+          values,
+          &["RGBColor[0.88, 0.63, 0.23]", "RGBColor[0.49, 0, 0]"]
+        );
+        assert_eq!(*initial_index, 0);
+        assert!(
+          value_label_svgs.iter().all(Option::is_some),
+          "both swatches should render as colour icons: {value_label_svgs:?}"
+        );
+        assert!(*setter_bar, "a colour toggle always shows its swatches");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// `{u, colour}` with no explicit initial has only one possible value —
+  /// the variable is baked into the body as a fixed binding rather than
+  /// building a one-swatch control with nothing to pick between.
+  #[test]
+  fn spec_single_color_form_without_explicit_initial_stays_fixed() {
+    let expr =
+      interpret_to_expr("Manipulate[c, {c, RGBColor[0.49, 0, 0]}]").unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert!(
+      spec.controls.is_empty(),
+      "a single fixed colour is baked into the body, not a visible control: {:?}",
+      spec.controls
+    );
+    assert!(
+      spec.body_code.contains("0.49"),
+      "the fixed colour should be baked into the body: {}",
+      spec.body_code
+    );
+  }
+
   /// A control panel laid out as a `Grid` marks its stretched cells with
   /// `SpanFromLeft` / `SpanFromAbove`. Once the grid is flattened into
   /// control rows those markers name nothing, so they are dropped — they
