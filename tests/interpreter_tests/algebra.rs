@@ -4754,6 +4754,43 @@ mod solve {
     );
   }
 
+  // Each equation is a product of two lines (a reducible, degenerate
+  // "conic"), so eliminating one variable divides through by the other
+  // equation's leading coefficient in that variable — which vanishes along
+  // one of those lines. That used to inflate the multiplicity reported for
+  // the corner solutions sitting on the vanishing branch, duplicating them
+  // even though every one of the four intersections here is transversal
+  // (a two-species competition model's population Manipulate hits exactly
+  // this shape when solving for equilibria: two logistic-growth factors
+  // each split into a trivial and a nontrivial branch).
+  #[test]
+  fn factored_conics_meet_transversally_without_duplicates() {
+    assert_eq!(
+      interpret(
+        "Solve[{p*(1 - p/100 - 3/500*q) == 0, \
+         q*(1 - q/100 - 1/200*p) == 0}, {p, q}]"
+      )
+      .unwrap(),
+      "{{p -> 0, q -> 0}, {p -> 0, q -> 100}, {p -> 400/7, q -> 500/7}, \
+       {p -> 100, q -> 0}}"
+    );
+    // The same system with inexact coefficients, as a slider-driven
+    // Manipulate would hand Solve, must not duplicate either. (The
+    // near-zero noise in the last pair's `q` is a pre-existing
+    // floating-point elimination artifact, unrelated to the duplication
+    // this test targets.)
+    assert_eq!(
+      interpret(
+        "Solve[{0.5*p*(1 - p/100 - 0.6*q/100) == 0, \
+         0.5*q*(1 - q/100 - 0.5*p/100) == 0}, {p, q}, Reals]"
+      )
+      .unwrap(),
+      "{{p -> 0., q -> 0.}, {p -> 0., q -> 100.}, \
+       {p -> 57.14285714285711, q -> 71.42857142857149}, \
+       {p -> 100.00000000000004, q -> -9.473903143467998*^-14}}"
+    );
+  }
+
   // Circles too far apart to meet still meet over the complex numbers.
   #[test]
   fn two_circles_meeting_nowhere_real() {

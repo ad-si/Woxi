@@ -1,7 +1,7 @@
 use super::together::negate_expr;
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::calculus_ast::{is_constant_wrt, simplify};
+use crate::functions::calculus_ast::{differentiate_expr, is_constant_wrt, simplify};
 use crate::functions::math_ast::{
   make_rational, n_ast, try_eval_to_f64, try_extract_complex_float,
 };
@@ -3204,6 +3204,7 @@ fn try_solve_polynomial_system(eqs: &[Expr], vars: &[String]) -> Option<Expr> {
   if solutions.is_empty() {
     return Some(Expr::List(Vec::new().into()));
   }
+  let solutions = drop_spurious_multiplicities(&polys, vars, solutions);
   let mut wrapped: Vec<Expr> = solutions
     .into_iter()
     .map(|values| {
@@ -3329,6 +3330,104 @@ fn poly_system_solutions(
     }
   }
   Some(result)
+}
+
+/// Drops duplicate copies of a common root that eliminating a variable
+/// spuriously multiplied up.
+///
+/// Elimination divides one equation's higher-degree-in-`var` terms down
+/// using another's, and when that divisor's leading coefficient in `var`
+/// happens to vanish at a candidate point, the division has effectively
+/// multiplied through by (a factor that vanishes there), inflating the
+/// point's reported multiplicity even though the two curves cross it
+/// transversally. A transversal crossing is exactly one where the
+/// system's Jacobian is nonsingular (the implicit function theorem), so
+/// any extra copies of such a point are the artifact, not a real
+/// multiplicity — unlike an actual tangency (`two_circles_touching`),
+/// where the Jacobian is singular and every copy is kept.
+fn drop_spurious_multiplicities(
+  polys: &[Expr],
+  vars: &[String],
+  solutions: Vec<Vec<Expr>>,
+) -> Vec<Vec<Expr>> {
+  if polys.len() != vars.len() || solutions.len() < 2 {
+    return solutions;
+  }
+  let mut result: Vec<Vec<Expr>> = Vec::with_capacity(solutions.len());
+  for point in solutions {
+    let already_kept = result
+      .iter()
+      .any(|kept| solution_values_equal(kept, &point));
+    if already_kept && jacobian_is_nonsingular(polys, vars, &point) {
+      continue;
+    }
+    result.push(point);
+  }
+  result
+}
+
+/// Whether the Jacobian of `polys` with respect to `vars`, evaluated at
+/// `point`, is nonsingular. Falls back to `false` (i.e. "treat as a real
+/// multiplicity, don't drop it") whenever the entries cannot be pinned down
+/// to real numbers, since that is the safe direction — it only ever costs
+/// a duplicate that should have been dropped, never drops a genuine one.
+fn jacobian_is_nonsingular(polys: &[Expr], vars: &[String], point: &[Expr]) -> bool {
+  let n = vars.len();
+  let mut matrix = vec![vec![0.0_f64; n]; n];
+  for (i, poly) in polys.iter().enumerate() {
+    for (j, var) in vars.iter().enumerate() {
+      let Ok(derivative) = differentiate_expr(poly, var) else {
+        return false;
+      };
+      let value = substitute_values(&derivative, vars, point);
+      let Some((re, im)) = try_extract_complex_f64(&value) else {
+        return false;
+      };
+      if im.abs() > 1e-9 * (1.0 + re.abs()) {
+        return false;
+      }
+      matrix[i][j] = re;
+    }
+  }
+  // Compare the determinant against the Hadamard bound (the product of the
+  // row norms) rather than an absolute epsilon, so the test scales with
+  // the size of the entries instead of being fooled by them.
+  let row_norms: Vec<f64> = matrix
+    .iter()
+    .map(|row| row.iter().map(|v| v * v).sum::<f64>().sqrt())
+    .collect();
+  let hadamard_bound: f64 = row_norms.iter().product();
+  if hadamard_bound <= 1e-12 {
+    return false;
+  }
+  (determinant_f64(&matrix) / hadamard_bound).abs() > 1e-6
+}
+
+/// Determinant of a small square matrix via Laplace expansion (`vars` is
+/// capped at `MAX_SYSTEM_VARS`, so this never sees more than a few rows).
+fn determinant_f64(matrix: &[Vec<f64>]) -> f64 {
+  match matrix.len() {
+    0 => 1.0,
+    1 => matrix[0][0],
+    2 => matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0],
+    n => (0..n)
+      .map(|c| {
+        let minor: Vec<Vec<f64>> = matrix[1..]
+          .iter()
+          .map(|row| {
+            row
+              .iter()
+              .enumerate()
+              .filter(|(cc, _)| *cc != c)
+              .map(|(_, v)| *v)
+              .collect()
+          })
+          .collect();
+        let sign = if c % 2 == 0 { 1.0 } else { -1.0 };
+        sign * matrix[0][c] * determinant_f64(&minor)
+      })
+      .sum(),
+  }
 }
 
 /// How often the solution at `value` counts.
