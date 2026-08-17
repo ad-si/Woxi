@@ -16301,4 +16301,79 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`grow$$ = 1.5, $CellContext`spin$$ =
       "moving the rotation slider must change the rendered picture"
     );
   }
+
+  /// A `With[]`-wrapped `Graphics[]` body driven by two plain continuous
+  /// sliders, whose primitive list nests a `{color, primitive, color,
+  /// primitive}` sublist and includes a `Text[Style[Column[{Row[...]]]]]`
+  /// caption built from `Sqrt` and division — the general shape used by
+  /// many physics-demo Wolfram Demonstrations Project notebooks
+  /// (independently written, not copied from any specific one).
+  #[test]
+  fn manipulate_with_wrapped_graphics_body_and_two_sliders() {
+    let code = r#"Manipulate[
+      With[{tilt = If[extend > 0.6, Pi/2 + extend - 0.6, Pi/2]},
+        Graphics[{
+          Line[{{0, 0}, {Cos[tilt], Sin[tilt] - 0.3}}],
+          {Orange, Disk[{Cos[tilt], Sin[tilt] - 0.3}, 0.2],
+           GrayLevel[0.4], Polygon[{{-1, -1.5}, {-0.9, -1.3}, {-0.8, -1.5}}]},
+          Black, Rectangle[{-0.6, -0.2}, {-0.5, -0.15}],
+          Text[
+            Style[
+              Column[{
+                Row[{"speed 1 ", Sqrt[2 9.8 0.2], " m/s"}],
+                Row[{"speed 2 ", ((mass + 0.01) Sqrt[2 9.8 0.2]) / 0.01, " m/s"}]
+              }],
+              12
+            ],
+            {-0.4, -0.4}
+          ],
+          Arrow[{{-0.5, -1.5}, {1, -1.5}}],
+          Thickness[0.004]
+        }, PlotRange -> {{-1.2, 1.2}, {-1.8, 0.3}}, Background -> LightBlue,
+           ImageSize -> {260, 260}]
+      ],
+      {{extend, 0, "release"}, 0, 1.5},
+      {{mass, 1, "target mass"}, 1, 4}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("two plain continuous controls should build a ManipulateState");
+
+    assert_eq!(state.controls.len(), 2, "exactly two control rows");
+    assert!(
+      state
+        .controls
+        .iter()
+        .all(|c| matches!(c, manipulate::ControlState::Continuous { .. })),
+      "both {{{{var, default, label}}, min, max}} specs build plain sliders"
+    );
+    assert!(
+      state.error.is_none(),
+      "With-wrapped Graphics body should evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the With-wrapped Graphics body should render a graphic"
+    );
+
+    // Move both sliders past the `If` branch point and confirm the widget
+    // keeps rendering without error.
+    match &mut state.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 1.2,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    match &mut state.controls[1] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 3.0,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "body should still evaluate after moving both sliders: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some());
+  }
 }
