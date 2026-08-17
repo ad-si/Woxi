@@ -16184,6 +16184,92 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`theta$$ = 0, $CellContext`view$$ = 
     );
   }
 
+  /// A `Manipulate[Plot[Evaluate[Sum[…]]], …]` demonstration in the style of
+  /// the Demonstrations site's nowhere-differentiable-function examples:
+  /// a filled partial-sum trig series with a `Delimiter`-separated group of
+  /// Greek-letter-named sliders, one of which (the term count) carries an
+  /// explicit label and step.
+  #[test]
+  fn demonstration_trig_partial_sum_manipulate_fills_and_delimits_controls() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Plot[Evaluate[
+   Sum[((1 - \[Alpha]) Sin[k^\[Beta] Pi x] + \[Alpha] Cos[k^\[Beta] Pi x])/k^\[Beta], {k, 1, terms}]],
+  {x, 0, 1}, PlotRange -> {{0, 1}, {-3/2, 3/2}}, Filling -> Axis,
+  MaxRecursion -> ControlActive[1, 6]],
+ {{terms, 24, \"number of terms\"}, 1, 120, 1}, Delimiter,
+ {{\[Beta], 2, \"exponent \[Beta]\"}, 2, 6},
+ {{\[Alpha], 0, \"cosine fraction \[Alpha]\"}, 0, 1}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`terms$$ = 24, $CellContext`\[Beta]$$ = 2, $CellContext`\[Alpha]$$ = 0}, DynamicBox[\[Ellipsis]]]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the filled partial-sum curve must draw"
+    );
+
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: terms_name,
+          label: terms_label,
+          min: terms_min,
+          max: terms_max,
+          step: terms_step,
+          current: terms_now,
+          ..
+        },
+        manipulate::ControlState::Divider,
+        manipulate::ControlState::Continuous {
+          name: beta_name,
+          label: beta_label,
+          min: beta_min,
+          max: beta_max,
+          current: beta_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: alpha_name,
+          label: alpha_label,
+          min: alpha_min,
+          max: alpha_max,
+          current: alpha_now,
+          ..
+        },
+      ] => {
+        assert_eq!(terms_name.as_str(), "terms");
+        assert_eq!(terms_label.as_str(), "number of terms");
+        assert_eq!(*terms_min, 1.0);
+        assert_eq!(*terms_max, 120.0);
+        assert_eq!(*terms_step, 1.0);
+        assert_eq!(*terms_now, 24.0);
+        assert_eq!(beta_name.as_str(), "\u{3b2}");
+        assert_eq!(beta_label.as_str(), "exponent \u{3b2}");
+        assert_eq!(*beta_min, 2.0);
+        assert_eq!(*beta_max, 6.0);
+        assert_eq!(*beta_now, 2.0);
+        assert_eq!(alpha_name.as_str(), "\u{3b1}");
+        assert_eq!(alpha_label.as_str(), "cosine fraction \u{3b1}");
+        assert_eq!(*alpha_min, 0.0);
+        assert_eq!(*alpha_max, 1.0);
+        assert_eq!(*alpha_now, 0.0);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
   /// End-to-end regression for the shape of the "Compound of Two
   /// Icosahedra" Demonstration: a stored `Manipulate` whose body is a
   /// flat sequence of `;`-separated assignments (no `Module`) building
