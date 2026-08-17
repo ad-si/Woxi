@@ -1344,6 +1344,47 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_text_renders_inline_box_notation() {
+    // A notebook `Text[…]` label can carry its typeset content as inline
+    // `\!\(\*…\)` box notation — the front end's linear-syntax form for a
+    // sub/superscript, e.g. `Text["\!\(\*SubscriptBox[\(X\), \(3\)]\)",
+    // pos]` for "X₃". Regression: this used to draw the private-use box
+    // markers and box source literally instead of the Unicode glyph.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[Text[\"\\!\\(\\*SubscriptBox[\\(X\\), \\(3\\)]\\)\", {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">X₃<"), "expected X₃ in SVG, got: {svg}");
+    assert!(
+      !svg.contains("SubscriptBox"),
+      "raw box source leaked into SVG: {svg}"
+    );
+
+    clear_state();
+    let svg_super = interpret(
+      "ExportString[Graphics[Text[\"\\!\\(\\*SuperscriptBox[\\(x\\), \\(2\\)]\\)\", {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg_super.contains(">x²<"),
+      "expected x² in SVG, got: {svg_super}"
+    );
+
+    // The same escape nested inside a `Row` label (how a Demonstration
+    // typically mixes plain text with a typeset sub-expression).
+    clear_state();
+    let svg_row = interpret(
+      "ExportString[Graphics[Text[Row[{\"d\", \"\\!\\(\\*SubscriptBox[\\(X\\), \\(6\\)]\\)\"}], {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg_row.contains(">dX₆<"),
+      "expected dX₆ in SVG, got: {svg_row}"
+    );
+  }
+
+  #[test]
   fn test_plot_aspect_ratio_sizes_frame_not_canvas() {
     // AspectRatio sets the height/width ratio of the plotting *area* (the data
     // frame), not the whole image. A short ratio must therefore NOT squash the

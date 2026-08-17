@@ -2634,6 +2634,15 @@ fn point_along_path(pts: &[(f64, f64)], t: f64) -> (f64, f64) {
 /// else falls back to `ToString`'s default form.
 fn graphics_text_content(expr: &Expr) -> String {
   match expr {
+    // A string carrying inline `\!\(\*…\)` box notation — the front end's
+    // linear-syntax form for a typeset sub-expression, e.g. the label a
+    // Demonstration writes as `Text["\!\(\*SubscriptBox[\(X\), \(3\)]\)",
+    // pos]` for "X₃". Fold each box segment into the Unicode glyphs it
+    // typesets to, the same as `Subscript`/`Superscript` below, instead of
+    // drawing the private-use markers and box source literally.
+    Expr::String(s) if s.contains(crate::functions::string_ast::BOX_START) => {
+      inline_box_label_runs(s, false).map_or_else(|| s.clone(), |runs| flatten_label_runs(&runs))
+    }
     Expr::String(s) => s.clone(),
     // Text inside a picture is typeset, not printed: a mathematical
     // constant shows as its glyph there, the way it does in a notebook.
