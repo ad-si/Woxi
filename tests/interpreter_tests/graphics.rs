@@ -1874,6 +1874,147 @@ mod plot3d {
         "the box must stop at the range asked for, not at the domain: {svg}"
       );
     }
+
+    /// Every `<polygon>` fill colour appearing in the SVG, as `(r, g, b)`
+    /// triples — parsed straight out of the `fill="rgb(r,g,b)"` attribute so
+    /// a test can check the lit colours a surface actually rendered with.
+    fn fill_colors(svg: &str) -> Vec<(u32, u32, u32)> {
+      svg
+        .split("<polygon ")
+        .skip(1)
+        .filter_map(|tag| {
+          let tag = tag.split('>').next()?;
+          let inner = tag.split("fill=\"rgb(").nth(1)?.split(')').next()?;
+          let mut parts =
+            inner.split(',').filter_map(|n| n.trim().parse().ok());
+          Some((parts.next()?, parts.next()?, parts.next()?))
+        })
+        .collect()
+    }
+
+    /// Without `PlotStyle`, `Plot3D` colours a surface by height (a rainbow
+    /// gradient); this must stay the *only* thing that produces colour, so
+    /// this baseline call is the regression guard the `PlotStyle` tests
+    /// below diff against — any accidental change to the no-`PlotStyle`
+    /// path would also show up in the `paraboloid`/`trig_function` snapshots
+    /// above.
+    fn no_plotstyle_svg() -> String {
+      export_svg("Plot3D[Sin[x*y], {x, 0, 3}, {y, 0, 3}]")
+    }
+
+    /// `PlotStyle -> RGBColor[...]` used to be silently ignored by the
+    /// rendered surface (only the symbolic `GraphicsComplex` structure used
+    /// it): the picture stayed the default height-based rainbow no matter
+    /// what colour was asked for. The rendered fills must now be shaded
+    /// versions of the requested colour instead.
+    #[test]
+    fn plotstyle_color_changes_rendered_fill() {
+      let styled = export_svg(
+        "Plot3D[Sin[x*y], {x, 0, 3}, {y, 0, 3}, \
+         PlotStyle -> RGBColor[0.6, 0.73, 0.36]]",
+      );
+      assert_ne!(
+        no_plotstyle_svg(),
+        styled,
+        "PlotStyle must change the rendered SVG"
+      );
+      // Diffuse+ambient lighting attenuates the requested colour but keeps
+      // its channel ordering (green brightest, blue darkest), so check the
+      // ratio rather than an exact unlit RGBColor[0.6, 0.73, 0.36] byte match.
+      let colors = fill_colors(&styled);
+      assert!(!colors.is_empty(), "expected shaded fills: {styled}");
+      assert!(
+        colors.iter().all(|&(r, g, b)| g >= r && r >= b && g > 0),
+        "expected every fill tinted toward the requested green, got {colors:?}"
+      );
+    }
+
+    /// `PlotStyle -> {c1, c2}` on a multi-surface `Plot3D[{f1, f2}, ...]`
+    /// gives each surface its own colour, cycling through the list.
+    #[test]
+    fn plotstyle_list_gives_each_surface_its_own_color() {
+      let svg = export_svg(
+        "Plot3D[{Sin[x*y], Cos[x*y]}, {x, 0, 3}, {y, 0, 3}, \
+         PlotStyle -> {Red, Blue}]",
+      );
+      let colors = fill_colors(&svg);
+      assert!(
+        colors.iter().any(|&(r, g, b)| r > g && r > b),
+        "expected a red-tinted surface, got {colors:?}"
+      );
+      assert!(
+        colors.iter().any(|&(r, g, b)| b > r && b > g),
+        "expected a blue-tinted surface, got {colors:?}"
+      );
+    }
+
+    /// `Opacity[...]` inside `PlotStyle` must flow through to the rendered
+    /// triangles' fill opacity.
+    #[test]
+    fn plotstyle_opacity_sets_fill_opacity() {
+      let svg = export_svg(
+        "Plot3D[Sin[x*y], {x, 0, 3}, {y, 0, 3}, PlotStyle -> Opacity[0.4]]",
+      );
+      assert!(
+        svg.contains("opacity=\"0.4\""),
+        "expected PlotStyle -> Opacity[0.4] to set fill opacity: {svg}"
+      );
+    }
+
+    /// A `Specularity` directive mixed into `PlotStyle` adds a highlight on
+    /// top of the requested colour rather than repainting the surface with
+    /// the highlight's own colour (mirrors the `Graphics3D` behaviour). A
+    /// rippled surface's facet normals rarely line up with the exact
+    /// light/view bisector the way a full sphere's do, so this checks for a
+    /// clear brightening rather than the near-white peak the `Graphics3D`
+    /// sphere test can rely on.
+    #[test]
+    fn plotstyle_directive_adds_specular_highlight() {
+      let plain = export_svg(
+        "Plot3D[Sin[x*y], {x, 0, 3}, {y, 0, 3}, PlotStyle -> GrayLevel[.25]]",
+      );
+      let shiny = export_svg(
+        "Plot3D[Sin[x*y], {x, 0, 3}, {y, 0, 3}, \
+         PlotStyle -> Directive[GrayLevel[.25], Specularity[White, 20]]]",
+      );
+      let brightest = |svg: &str| {
+        fill_colors(svg).into_iter().map(|c| c.0).max().unwrap_or(0)
+      };
+      let plain_max = brightest(&plain);
+      let shiny_max = brightest(&shiny);
+      assert!(
+        plain_max < 128,
+        "matte GrayLevel[.25] surface should stay dark, got {plain_max}"
+      );
+      assert!(
+        shiny_max > plain_max + 30,
+        "Specularity[White, …] should brighten some facet well past the \
+         matte surface's own colour, got {plain_max} -> {shiny_max}"
+      );
+    }
+
+    /// No `PlotStyle` must render byte-identically to before it was
+    /// supported at all — the height-based rainbow default is load-bearing
+    /// for every other Plot3D snapshot test. (The axis grid legitimately
+    /// draws its lines at `opacity="0.4"`, so only the surface's own
+    /// `<polygon>` fills are checked here.)
+    #[test]
+    fn no_plotstyle_is_unchanged() {
+      let a = no_plotstyle_svg();
+      let b = no_plotstyle_svg();
+      assert_eq!(a, b);
+      assert!(
+        a.split("<polygon ").skip(1).all(|tag| {
+          !tag
+            .split('>')
+            .next()
+            .unwrap_or_default()
+            .contains("opacity=")
+        }),
+        "the default render's surface fills must not carry a translucency \
+         attribute: {a}"
+      );
+    }
   }
 
   mod errors {
@@ -2228,6 +2369,55 @@ mod plot3d {
         insta::assert_snapshot!(export_svg(
           "RevolutionPlot3D[{t^2, t}, {t, 0, 2}, PlotRange -> {0, 1.5}]"
         ));
+      }
+
+      /// Every `<polygon>` fill colour in the SVG, as `(r, g, b)` triples —
+      /// see the identical helper documented in `plot3d::options`.
+      fn fill_colors(svg: &str) -> Vec<(u32, u32, u32)> {
+        svg
+          .split("<polygon ")
+          .skip(1)
+          .filter_map(|tag| {
+            let tag = tag.split('>').next()?;
+            let inner = tag.split("fill=\"rgb(").nth(1)?.split(')').next()?;
+            let mut parts =
+              inner.split(',').filter_map(|n| n.trim().parse().ok());
+            Some((parts.next()?, parts.next()?, parts.next()?))
+          })
+          .collect()
+      }
+
+      /// `PlotStyle -> RGBColor[...]` used to be silently ignored by the
+      /// rendered surface: only `First[RevolutionPlot3D[...]]`'s symbolic
+      /// `GraphicsComplex` respected it, so the picture stayed the default
+      /// height-based rainbow no matter what colour was requested.
+      #[test]
+      fn plotstyle_color_changes_rendered_fill() {
+        let baseline = export_svg("RevolutionPlot3D[{t^2, t}, {t, 0, 2}]");
+        let styled = export_svg(
+          "RevolutionPlot3D[{t^2, t}, {t, 0, 2}, \
+           PlotStyle -> RGBColor[0.9, 0.1, 0.1]]",
+        );
+        assert_ne!(baseline, styled, "PlotStyle must change the rendered SVG");
+        let colors = fill_colors(&styled);
+        assert!(!colors.is_empty(), "expected shaded fills: {styled}");
+        assert!(
+          colors.iter().all(|&(r, g, b)| r >= g && r >= b && r > 0),
+          "expected every fill tinted toward the requested red, got {colors:?}"
+        );
+      }
+
+      /// `Opacity[...]` inside `PlotStyle` must flow through to the
+      /// rendered triangles' fill opacity.
+      #[test]
+      fn plotstyle_opacity_sets_fill_opacity() {
+        let svg = export_svg(
+          "RevolutionPlot3D[{t^2, t}, {t, 0, 2}, PlotStyle -> Opacity[0.4]]",
+        );
+        assert!(
+          svg.contains("opacity=\"0.4\""),
+          "expected PlotStyle -> Opacity[0.4] to set fill opacity: {svg}"
+        );
       }
     }
 
@@ -15857,6 +16047,77 @@ mod parametric_plot3d {
       interpret("Head[ParametricPlot3D[{u, v, u + v}, {u, 0, 1}, {v, 0, 1}]]")
         .unwrap();
     assert_eq!(result, "Graphics3D");
+  }
+
+  /// Every `<polygon>` fill colour in the SVG, as `(r, g, b)` triples — see
+  /// the identical helper documented in `plot3d::options`.
+  fn fill_colors(svg: &str) -> Vec<(u32, u32, u32)> {
+    svg
+      .split("<polygon ")
+      .skip(1)
+      .filter_map(|tag| {
+        let tag = tag.split('>').next()?;
+        let inner = tag.split("fill=\"rgb(").nth(1)?.split(')').next()?;
+        let mut parts = inner.split(',').filter_map(|n| n.trim().parse().ok());
+        Some((parts.next()?, parts.next()?, parts.next()?))
+      })
+      .collect()
+  }
+
+  /// `PlotStyle -> RGBColor[...]` used to be silently ignored by the
+  /// rendered surface (the 2-iterator form): the picture stayed the default
+  /// height-based rainbow no matter what colour was requested.
+  #[test]
+  fn plotstyle_color_changes_rendered_fill() {
+    let baseline = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u] + Cos[v], Sin[v]}, {u, 0, 2 Pi}, \
+       {v, -Pi, Pi}]",
+    );
+    let styled = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u] + Cos[v], Sin[v]}, {u, 0, 2 Pi}, \
+       {v, -Pi, Pi}, PlotStyle -> RGBColor[0.1, 0.2, 0.9]]",
+    );
+    assert_ne!(baseline, styled, "PlotStyle must change the rendered SVG");
+    let colors = fill_colors(&styled);
+    assert!(!colors.is_empty(), "expected shaded fills: {styled}");
+    assert!(
+      colors.iter().all(|&(r, g, b)| b >= g && b >= r && b > 0),
+      "expected every fill tinted toward the requested blue, got {colors:?}"
+    );
+  }
+
+  /// `PlotStyle -> {c1, c2}` on `ParametricPlot3D[{{...}, {...}}, ...]`
+  /// (multiple surfaces) gives each surface its own colour, cycling
+  /// through the list.
+  #[test]
+  fn plotstyle_list_gives_each_surface_its_own_color() {
+    let svg = export_svg(
+      "ParametricPlot3D[{{Cos[u], Sin[u], v}, {Cos[u] + 3, Sin[u], v}}, \
+       {u, 0, 2 Pi}, {v, 0, 1}, PlotStyle -> {Red, Blue}]",
+    );
+    let colors = fill_colors(&svg);
+    assert!(
+      colors.iter().any(|&(r, g, b)| r > g && r > b),
+      "expected a red-tinted surface, got {colors:?}"
+    );
+    assert!(
+      colors.iter().any(|&(r, g, b)| b > r && b > g),
+      "expected a blue-tinted surface, got {colors:?}"
+    );
+  }
+
+  /// `Opacity[...]` inside `PlotStyle` must flow through to the rendered
+  /// triangles' fill opacity.
+  #[test]
+  fn plotstyle_opacity_sets_fill_opacity() {
+    let svg = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, 0, 1}, \
+       PlotStyle -> Opacity[0.4]]",
+    );
+    assert!(
+      svg.contains("opacity=\"0.4\""),
+      "expected PlotStyle -> Opacity[0.4] to set fill opacity: {svg}"
+    );
   }
 }
 
