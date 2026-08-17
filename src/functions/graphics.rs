@@ -20371,6 +20371,7 @@ fn parse_manipulate_control(
           // never a dropdown.
           setter_bar: true,
           slider: false,
+          vertical: appearance_vertical,
         },
         enabled,
         min_code: None,
