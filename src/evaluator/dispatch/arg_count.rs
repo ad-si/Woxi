@@ -345,6 +345,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DeleteAdjacentDuplicates" => Some((1, 2)),
     "DeleteCases" => Some((1, 4)),
     "DeleteElements" => Some((2, 2)),
+    "DeleteStopwords" => Some((1, 1)),
     "UniqueElements" => Some((1, 2)),
     // 1-arg form is the operator form Discard[crit][data].
     "Discard" => Some((1, 3)),
@@ -1072,6 +1073,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PermutationPower" => Some((2, 2)),
     "Permutations" => Some((1, 2)),
     "PermutationSupport" => Some((1, 1)),
+    "Combinatorica`UnrankPermutation" => Some((2, 2)),
     "PerpendicularBisector" => Some((1, 2)),
     "PerfectNumber" => Some((1, 1)),
     "RamanujanTau" => Some((1, 1)),

@@ -272,7 +272,7 @@ While,Evaluates an expression repeatedly while a condition is true,✅,pure,1.0,
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2.0,221
 FindRoot,Numerically finds a root of an equation using a damped Newton iteration — the derivative is symbolic where that reduces to a number and a difference quotient otherwise; honours MaxIterations and reports non-convergence or a singular derivative (WorkingPrecision and the accuracy goals are accepted but ignored),✅,pure,1.0,222
 Image,Constructs an image from pixel data,✅,pure,7.0,223
-ColorData,"Named color data: the categories; the CSS colours of the ""HTML"" scheme; the colors of indexed schemes 1 (generated) 2 3 and 97; named gradients give a ColorDataFunction sampling the scheme (e.g. ColorData[""TemperatureMap""][0.5]), sample directly via ColorData[name, t], read the ""ColorFunction"" and ""Range"" properties, and render ""Image"" swatches (Rainbow-family control points sampled from Wolfram; the remaining gradients are approximations)",✅,pure,6.0,224
+ColorData,"Named color data: the categories; the CSS colours of the ""HTML"" scheme; the colors of indexed schemes 1 (generated) 2 3 30 35 and 97; named gradients give a ColorDataFunction sampling the scheme (e.g. ColorData[""TemperatureMap""][0.5]), sample directly via ColorData[name, t], read the ""ColorFunction"" and ""Range"" properties, and render ""Image"" swatches (Rainbow-family control points sampled from Wolfram; the remaining gradients are approximations)",✅,pure,6.0,224
 Binomial,Returns the binomial coefficient,✅,pure,1.0,225
 Which,Evaluates conditions and returns the value for the first true one,✅,pure,1.0,226
 Replace,Applies transformation rules to an expression,✅,pure,1.0,227
@@ -637,6 +637,8 @@ Scale,Scales a graphics object,✅,pure,6.0,597
 Log10,Returns the base-10 logarithm of a number,✅,pure,7.0,598
 EndPackage,Ends a package and puts its context on $ContextPath so its exports become visible,✅,effectful,1.0,599
 PolyhedronData,Properties of named polyhedra (Platonic solids plus the icosahedral and cubic Archimedean solids and their duals),🚧,pure,6.0,601
+PolyhedronOperations`Truncate,Corner-cuts each Polygon face of a graphics expression to a ratio (default 3/10) of its edge length; resolves Rotate/Translate-wrapped faces first,✅,pure,3.0,
+PolyhedronOperations`Stellate,Replaces each Polygon face of a graphics expression with a pyramid to a ratio (default 2) of the face's centroid distance; resolves Rotate/Translate-wrapped faces first,✅,pure,3.0,
 Nearest,Find the nearest elements in a list to a given value (numbers/vectors by Euclidean distance; strings by edit distance) — DistanceFunction supplies another metric; empty or non-list data reports ::near1,✅,pure,6.0,602
 RegionPlot3D,plots the 3D region where a condition is true,✅,pure,6.0,603
 IntervalMemberQ,Tests if a point or sub-interval is contained in an interval,✅,pure,3.0,605
@@ -2000,7 +2002,7 @@ WaveletPsi,Wavelet function psi of a wavelet family evaluated at a point,✅,pur
 FindCurvePath,Find smooth path through points (computational geometry),🚫,,7.0,2008
 Shallow,Control output depth display (notebook display),🚫,,2.0,2008
 BooleanCountingFunction,Boolean function from a count specification (k; {k}; {kmin; kmax} or {{k1; k2; ...}}); applied to boolean arguments it counts their Trues and with a variable list it writes out the expression in an optional form,✅,pure,7.0,2012
-DeleteStopwords,Remove stopwords from text (NLP),🚫,,10.1,2012
+DeleteStopwords,Removes common stopwords (articles; prepositions; pronouns; etc.) from a string; a list of words; or the keys of an association,✅,pure,10.1,2012
 Downsample,Take every n-th element from a list,✅,none,9.0,2012
 SliceContourPlot3D,3D contour slice plot (plotting),🚫,,10.2,2012
 FieldHint,Input field hint text option (GUI),🚫,,8.0,2015
@@ -2014,7 +2016,7 @@ UnitSimplify,Simplify physical units (unit system),🚫,,9.0,2020
 AirTemperatureData,,🚫,,10.0,2024
 ListVectorPlot,Vector field plot from list data (plotting),🚫,,7.0,2024
 OrderDistribution,Order statistics distribution (complex statistics),🚫,,8.0,2024
-TracePrint,Print evaluation trace (debugging/tracing),🚫,,2.0,2025
+TracePrint,Print all sub-expressions used during an evaluation indented by depth,✅,effectful,2.0,2025
 Circumsphere,Circumsphere of a simplex (computational geometry),✅,pure,10.0,2026
 AnyTrue,Checks if any element in a list is true,✅,pure,10.0,2031
 Convergents,List of convergents of a continued fraction representation,✅,none,6.0,2031
@@ -2272,7 +2274,7 @@ SystemsModelLabels,Control systems,🚫,None,8.0,2289
 JoinAcross,Joins lists of associations on a common key,✅,None,10.0,2292
 MeshCellMeasure,mesh computation option,🚫,None,10.0,2292
 AlignmentPoint,typesetting option,🚫,None,6.0,2294
-DateListLogPlot,date visualization,🚫,None,7.0,2294
+DateListLogPlot,Plots date-valued data with a logarithmic y-axis,✅,pure,7.0,2294
 AbsoluteCurrentValue,dynamic content,🚫,None,6.0,2299
 BatchSize,machine learning option,🚫,None,11.0,2299
 DaubechiesWavelet,Daubechies wavelet family of order n,✅,pure,8.0,2299
@@ -5218,7 +5220,7 @@ FindMaximumCut,,,,12.1,5486
 GeneratedDocumentBinding,,🚫,,10.0,5486
 GeoBoundary,,🚫,,12.2,5486
 GeoResolution,,🚫,,12.0,5486
-GreaterSlantEqual,,,,3.0,5486
+GreaterSlantEqual,Checks if one value is greater than or equal to another (slanted-equal glyph variant of GreaterEqual),✅,pure,3.0,5486
 HeatOutflowValue,,,,12.2,5486
 HeatSymmetryValue,,,,12.2,5486
 HelmholtzPDEComponent,,,,12.2,5486
@@ -5230,7 +5232,7 @@ IncludeQuantities,,,,10.0,5486
 IncludeWindowTimes,,,,10.0,5486
 InflationMethod,,🚫,,10.0,5486
 KeyComplement,Returns the first association restricted to keys absent from the rest,✅,pure,10.1,5486
-LessSlantEqual,,,,3.0,5486
+LessSlantEqual,Checks if one value is less than or equal to another (slanted-equal glyph variant of LessEqual),✅,pure,3.0,5486
 LibraryFunctionInformation,,,,8.0,5486
 LinearFractionalOptimization,,,,12.0,5486
 MarcumQ,Generalized Marcum Q function (symbolic rules and numeric series),✅,pure,8.0,5486

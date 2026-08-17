@@ -62,6 +62,10 @@ pub enum ControlState {
     /// `ControlType -> Slider`: render a slider stepping through the
     /// choices by index rather than a setter bar or dropdown.
     slider: bool,
+    /// `Appearance -> "Vertical"`: stack the SetterBar/RadioButtonBar
+    /// choices in a column instead of a row. Ignored by the dropdown and
+    /// index-slider layouts.
+    vertical: bool,
   },
   /// A 2D slider binding its variable to a `{x, y}` pair.
   Slider2D {
@@ -468,13 +472,39 @@ impl ManipulateState {
     self.reevaluate();
   }
 
+  /// Copy the control at `ctrl_idx`'s just-changed value into every other
+  /// control sharing its variable name. Wolfram lets more than one widget
+  /// row bind the same Manipulate variable — e.g. a coarse and a fine
+  /// `SetterBar` preset row for one count, as in "Polypath Iterations" —
+  /// and moving either must move the other, since both are just different
+  /// views onto the same underlying value.
+  fn sync_named_siblings(&mut self, ctrl_idx: usize) {
+    let Some(control) = self.controls.get(ctrl_idx) else {
+      return;
+    };
+    let name = control.name().to_string();
+    if name.is_empty() {
+      return;
+    }
+    let code = control.current_code();
+    for (i, ctrl) in self.controls.iter_mut().enumerate() {
+      if i != ctrl_idx && ctrl.name() == name {
+        ctrl.set_current_from_code(&code);
+      }
+    }
+  }
+
   /// Run the control at `ctrl_idx`'s `TrackingFunction -> f` (if it has
   /// one) against its *new* current value, folding back whatever `f`
   /// assigns (e.g. a companion control it resets) into state/controls.
   /// Called right after a control's value is updated, before the caller
   /// requests a re-evaluation, so the tracking function's writes are
-  /// already part of the binding set the re-render uses.
+  /// already part of the binding set the re-render uses. Also keeps any
+  /// sibling row bound to the same variable in sync (see
+  /// `sync_named_siblings`), regardless of whether a tracking function
+  /// is present.
   pub fn apply_tracking(&mut self, ctrl_idx: usize) {
+    self.sync_named_siblings(ctrl_idx);
     let Some(control) = self.controls.get(ctrl_idx) else {
       return;
     };
@@ -797,10 +827,12 @@ impl ManipulateState {
         slot.1 = value;
         continue;
       }
+      // Every row bound to this name (a body may reassign a variable that
+      // has more than one widget row, e.g. a shared SetterBar pair) moves
+      // together — not just the first.
       for ctrl in &mut self.controls {
         if ctrl.name() == name {
           ctrl.set_current_from_code(&value);
-          break;
         }
       }
     }
@@ -982,6 +1014,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         popup,
         setter_bar,
         slider,
+        vertical,
       } => ControlState::Discrete {
         name: name.clone(),
         label: label.clone(),
@@ -999,6 +1032,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         popup: *popup,
         setter_bar: *setter_bar,
         slider: *slider,
+        vertical: *vertical,
       },
       ManipulateControl::Slider2D {
         name,

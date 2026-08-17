@@ -2,6 +2,23 @@
 
 # Unreleased
 
+- `TracePrint[expr]` prints every sub-expression used while evaluating `expr`,
+    wrapped in `HoldCompleteForm` and indented by one space per level of the
+    evaluation, and returns the result.
+    `TracePrint[expr, form]` restricts the printing to sub-expressions matching
+    `form`. Tracing now also respects `Hold` attributes, so
+    `TracePrint[x = x + 1]` no longer evaluates the assignment target —
+    the same fix applies to `TraceScan`, which additionally used to print the
+    rebuilt step of a list in `List[…]` instead of `{…}` form.
+- Upvalues on `Plus`, `Times` and `Power` also fire for the arithmetic
+    shorthands that expand to those heads. `-a` is `Times[-1, a]`, `a - b` is
+    `Plus[a, Times[-1, b]]` and `a / b` is `Times[a, Power[b, -1]]`, so with
+    `mytag /: mytag[a_] + mytag[b_] := mytag[a + b]` and
+    `mytag /: i_Integer mytag[a_] := mytag[a i]` the expression
+    `mytag[3] - mytag[3]` is `mytag[0]` instead of collapsing numerically to
+    `0`. This applies to the `Minus`, `Subtract` and `Divide` heads as well,
+    and makes the modular-arithmetic example from the `TagSetDelayed`
+    documentation work.
 - `FileNames` takes a string pattern, not just a literal wildcard string:
     `FileNames["*.md" | "*.txt"]` and `FileNames[{"*.md", "*.txt"}]` list the
     files matching any of the given patterns (nested arbitrarily), and pattern
