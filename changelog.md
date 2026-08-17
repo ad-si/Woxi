@@ -8,10 +8,11 @@
     `HoldAllComplete` sibling of `HoldForm`, so an inner `Evaluate` does not
     break through the hold and a `Sequence` argument keeps its wrapper. This is
     the head `TracePrint` already used for its output.
-- `Manipulate` colour controls compile again — the two-swatch `ColorSetter`
-    control was built without the `Appearance -> "Vertical"` field added
-    alongside it, which broke the build. The swatch row now honours
-    `Appearance -> "Vertical"` like every other button bar.
+- `ParametricPlot3D`/`Plot3D`/`Graphics3D`'s `ViewPoint` and `ViewAngle`
+    options accept a `Dynamic[…]` wrapper (e.g. `ViewPoint -> Dynamic@vp`, the
+    shape a `Manipulate` control's binding takes) instead of silently
+    falling back to the default camera — `Dynamic` is `HoldFirst`, so it
+    needs its hold released before the wrapped vector/angle can be read.
 - `TracePrint[expr]` prints every sub-expression used while evaluating `expr`,
     wrapped in `HoldCompleteForm` and indented by one space per level of the
     evaluation, and returns the result.
