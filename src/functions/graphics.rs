@@ -20598,10 +20598,10 @@ fn discrete_choice_label(expr: &Expr) -> String {
     // A plain string just needs its remaining private-use code points
     // (e.g. `\[WarningSign]`) swapped for real glyphs.
     Expr::String(s) => match inline_box_label_runs(s, false) {
-      Some(runs) => crate::syntax::substitute_private_use_glyphs(
-        &flatten_label_runs(&runs),
-      )
-      .into_owned(),
+      Some(runs) => {
+        crate::syntax::substitute_private_use_glyphs(&flatten_label_runs(&runs))
+          .into_owned()
+      }
       None => crate::syntax::substitute_private_use_glyphs(s).into_owned(),
     },
     other => {

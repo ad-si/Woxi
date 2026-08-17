@@ -9352,7 +9352,11 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     .unwrap();
     let state = manipulate::ManipulateState::from_expr(&expr)
       .expect("the overscript-labelled Manipulate must build a widget");
-    assert!(state.error.is_none(), "body must evaluate cleanly: {:?}", state.error);
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
     match &state.controls[0] {
       manipulate::ControlState::Discrete { value_labels, .. } => {
         assert_eq!(
