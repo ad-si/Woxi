@@ -10356,15 +10356,19 @@ mod command_file_specs {
     assert_eq!(result.stdout, "\n");
   }
 
-  // Import defaults a command's output to text, the format a pipe carries
-  // unless the caller names another one.
+  // A pipe carries no file name to guess a format from, so an `Import`
+  // that names none is refused rather than defaulted to text.
   #[test]
   #[cfg(unix)]
-  fn import_command_spec_defaults_to_text() {
+  fn import_command_spec_needs_an_explicit_format() {
     clear_state();
+    let result =
+      interpret_with_stdout(r#"Import["!printf 'plain text\n'"]"#).unwrap();
+    assert_eq!(result.result, "$Failed");
     assert_eq!(
-      interpret(r#"Import["!printf 'plain text\n'"]"#).unwrap(),
-      "plain text"
+      result.stdout,
+      "\nImport::general: A format must be specified when importing \
+       from a pipe.\n"
     );
   }
 
