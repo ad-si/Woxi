@@ -3,6 +3,8 @@
 - [Introduction](index.md)
 - [Comparison](comparison.md)
   - [Mathematica](comparison/mathematica.md)
+    - [Missing features by release](comparison/mathematica/missing_features.md)
+    - [Conformance gaps](comparison/mathematica/conformance_gaps.md)
   - [Mathics](comparison/mathics.md)
 - [Syntax](syntax.md)
   - [Basics](basics.md)

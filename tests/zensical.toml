@@ -27,7 +27,11 @@ nav = [
   { "Introduction" = "index.md" },
   { "Comparison" = [
     "comparison.md",
-    { "Mathematica" = "comparison/mathematica.md" },
+    { "Mathematica" = [
+      "comparison/mathematica.md",
+      { "Missing features by release" = "comparison/mathematica/missing_features.md" },
+      { "Conformance gaps" = "comparison/mathematica/conformance_gaps.md" },
+    ] },
     { "Mathics" = "comparison/mathics.md" },
   ] },
   { "Syntax" = [
@@ -1343,6 +1347,7 @@ nav = [
       { "TableForm" = "expressions/TableForm.md" },
       { "TagBox" = "expressions/TagBox.md" },
       { "TagSet" = "expressions/TagSet.md" },
+      { "TagSetDelayed" = "expressions/TagSetDelayed.md" },
       { "TensorDimensions" = "expressions/TensorDimensions.md" },
       { "Trace" = "expressions/Trace.md" },
       { "TracePrint" = "expressions/TracePrint.md" },

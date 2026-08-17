@@ -97,7 +97,7 @@ danglingQ[target_String] := Module[{targetPath},
   !FileExistsQ[targetPath] || FileType[targetPath] =!= File];
 
 updateSummary[text_String] := Module[{
-    text, lines, referenced, out, ent, indent, target,
+    lines, referenced, out, ent, indent, target,
     targetPath, siblingDir, children, childIndent, rel, newText
   },
   lines = splitLines[text];

@@ -18070,6 +18070,107 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 3, $CellContext`spread$$ = 0,
     );
   }
 
+  #[test]
+  fn demonstration_discrete_compounding_manipulate_tracks_two_sliders() {
+    let code = "Manipulate[\
+      Module[{pts, approx, exact}, \
+        pts = Table[{k (xVal/nSteps), (1 + xVal/nSteps)^k}, {k, 0, nSteps}]; \
+        approx = pts[[-1, 2]]; \
+        exact = Exp[xVal]; \
+        Show[\
+          Plot[Exp[t], {t, -1, Max[xVal + 1, 1]}, \
+            PlotStyle -> {Thick, Dashed, Black}, GridLines -> Automatic, \
+            PlotRange -> {-1, Max[exact + xVal, 2]}], \
+          ListPlot[pts, PlotMarkers -> {\"+\", Large}, PlotStyle -> Green], \
+          ListLinePlot[pts, PlotStyle -> {Thick, Red}], \
+          Graphics[{\
+            {Dashed, Purple, Line[{{xVal, 0}, {xVal, exact}}]}, \
+            {Dashed, Purple, Line[{{0, exact}, {xVal, exact}}]}, \
+            {Blue, PointSize[Medium], Point[{xVal, exact}]}\
+          }], \
+          PlotLabel -> Column[{\
+            Style[Row[{\"approx \\[TildeTilde] \", NumberForm[N[approx], {8, 6}]}], 14], \
+            Style[Row[{\"exact \\[TildeTilde] \", NumberForm[N[exact], {8, 6}]}], 14]\
+          }], \
+          ImageSize -> {550, 400}\
+        ]\
+      ], \
+      {{xVal, 1., \"x\"}, -1, 10, 0.01}, \
+      {{nSteps, 3, \"approximation step\"}, 1, 1000, 1}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the discrete-compounding Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the exponential curve, point path, and guide lines must render"
+    );
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the plot must render")
+    };
+    let initial = render(&state);
+
+    match &mut state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: x_name,
+          label: x_label,
+          min: x_min,
+          max: x_max,
+          current: x_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: n_name,
+          label: n_label,
+          min: n_min,
+          max: n_max,
+          current: n_now,
+          ..
+        },
+      ] => {
+        assert_eq!(x_name.as_str(), "xVal");
+        assert_eq!(x_label.as_str(), "x");
+        assert_eq!(*x_min, -1.0);
+        assert_eq!(*x_max, 10.0);
+        assert_eq!(*x_now, 1.0);
+        assert_eq!(n_name.as_str(), "nSteps");
+        assert_eq!(n_label.as_str(), "approximation step");
+        assert_eq!(*n_min, 1.0);
+        assert_eq!(*n_max, 1000.0);
+        assert_eq!(*n_now, 3.0);
+        *x_now = 4.0;
+        *n_now = 25.0;
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+    let moved = render(&state);
+    assert_ne!(
+      initial, moved,
+      "moving x and refining the step count must change the render"
+    );
+  }
+
   /// Regression for the shape of the "Equality of a Segment and an Arc in
   /// Archimedes's Spiral" Demonstration: a `Module` that derives a point
   /// from a slider parameter and reports its distance from the origin in a
@@ -18169,6 +18270,160 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 3, $CellContext`spread$$ = 0,
     assert!(
       moved.contains("|d| = "),
       "caption must keep drawing the bars after re-render: {moved}"
+    );
+  }
+
+  /// End-to-end regression for the shape of the "Non-Euclidean Triangle
+  /// Continuum" Demonstration: a `Module` that clamps its triangle's vertices
+  /// with `Table[If[…, v[[i]] = …]]`, derives per-edge weights with
+  /// `Dot @@ Drop[…]`, picks a triangle center with `Switch`, and draws the
+  /// result over a `LightBlue` `Disk` — driven by `Row`-grouped `Control`
+  /// rows (a `Column`-labeled `Appearance -> "Labeled"` slider, checkbox
+  /// pairs, and a rule-labeled `PopupMenu`) plus three `Locator` controls
+  /// with `Appearance -> None`, under `SaveDefinitions`,
+  /// `AutorunSequencing`, and `SynchronousInitialization`.
+  ///
+  /// The weighted-hub branch is the reason this notebook used to fail: its
+  /// scale factor is written as `Sum[…] Times @@ weights`, an implicit
+  /// product whose left factor is a function call.
+  #[test]
+  fn demonstration_non_euclidean_triangle_manipulate_switches_centers() {
+    let code = "Manipulate[\
+      Module[{tri = {p1, p2, p3}, weights, hub}, \
+        Table[If[Norm[tri[[i]]] >= 1, tri[[i]] = Normalize[tri[[i]]]], {i, 1, 3}]; \
+        weights = Table[Dot @@ Drop[tri, {i}], {i, 1, 3}]; \
+        hub = Switch[center, \
+          1, Plus @@ tri/3, \
+          2, Sum[tri[[1 + Mod[i, 3]]]/weights[[i]], {i, 1, 3}] Times @@ weights, \
+          _, {0, 0}]; \
+        Graphics[{\
+          {LightBlue, Disk[{0, 0}, 1]}, \
+          {Blue, Dashed, Circle[{0, 0}, 1/Sqrt[Abs[k]]]}, \
+          {Red, PointSize[0.02], Point[hub]}, \
+          {PointSize[0.015], Point[tri]}, \
+          Table[Line[Drop[tri, {i}]], {i, 1, 3}], \
+          If[showdata, Text[NumberForm[Total[weights], 4], {-1.2, 1.05}, {-1, 0}], {}]}, \
+          PlotRange -> {{-1.5, 1.5}, {-1.1, 1.1}}, \
+          AspectRatio -> Automatic, ImageSize -> 320]], \
+      Row[{\
+        Control[{{k, 1, Column[{\"Gaussian\", \"curvature\"}]}, -1, 1, 0.0001, \
+          Appearance -> \"Labeled\", ImageSize -> Large}], \
+        Spacer[10], \
+        Control[{{showdata, True, Column[{\"show\", \"data\"}]}, {False, True}}]}], \
+      Row[{Control[{{center, 1, \"center\"}, \
+        {0 -> \"none\", 1 -> \"centroid\", 2 -> \"weighted hub\"}, \
+        ControlType -> PopupMenu}]}], \
+      {{p1, {0.5, 0.2}}, {-1, -1}, {1, 1}, Locator, Appearance -> None}, \
+      {{p2, {-0.2, 0.7}}, {-1, -1}, {1, 1}, Locator, Appearance -> None}, \
+      {{p3, {-0.3, -0.4}}, {-1, -1}, {1, 1}, Locator, Appearance -> None}, \
+      SaveDefinitions -> True, AutorunSequencing -> {1}, \
+      SynchronousInitialization -> False\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the triangle-continuum Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the disk, triangle, and centroid must render"
+    );
+
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: k_name,
+          label: k_label,
+          min: k_min,
+          max: k_max,
+          step: k_step,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: data_name,
+          values: data_values,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: center_name,
+          value_labels: center_labels,
+          popup: center_popup,
+          ..
+        },
+        manipulate::ControlState::Slider2D { name: p1_name, .. },
+        manipulate::ControlState::Slider2D { name: p2_name, .. },
+        manipulate::ControlState::Slider2D { name: p3_name, .. },
+      ] => {
+        assert_eq!(k_name.as_str(), "k");
+        assert_eq!(k_label.as_str(), "Gaussian\ncurvature");
+        assert_eq!(*k_min, -1.0);
+        assert_eq!(*k_max, 1.0);
+        assert_eq!(*k_step, 0.0001);
+        assert_eq!(data_name.as_str(), "showdata");
+        assert_eq!(data_values, &["False", "True"]);
+        assert_eq!(center_name.as_str(), "center");
+        assert!(*center_popup, "the center picker is a PopupMenu");
+        assert_eq!(
+          center_labels,
+          &["none", "centroid", "weighted hub"],
+          "rule-labeled popup values keep their labels"
+        );
+        assert_eq!(p1_name.as_str(), "p1");
+        assert_eq!(p2_name.as_str(), "p2");
+        assert_eq!(p3_name.as_str(), "p3");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the triangle and its center must render")
+    };
+    let centroid = render(&state);
+
+    // Switching to the weighted hub takes the `Sum[…] Times @@ weights`
+    // branch. Its center has to be drawn like the centroid was — a scale
+    // factor that parses as `(Sum[…] Times) @@ weights` leaves `hub`
+    // unevaluated and silently drops the point.
+    for control in &mut state.controls {
+      if let manipulate::ControlState::Discrete {
+        name,
+        current_index,
+        ..
+      } = control
+        && name == "center"
+      {
+        *current_index = 2;
+      }
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "the weighted-hub branch must evaluate: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some());
+    let hub = render(&state);
+    assert_eq!(
+      hub.matches("<circle").count(),
+      centroid.matches("<circle").count(),
+      "the weighted hub must be plotted like the centroid was"
+    );
+    assert_ne!(
+      centroid, hub,
+      "the weighted hub sits elsewhere than the centroid"
     );
   }
 }
