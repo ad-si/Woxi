@@ -3,7 +3,8 @@
 # Unreleased
 
 - `TracePrint[expr]` prints every sub-expression used while evaluating `expr`,
-    indented by one space per level of the evaluation, and returns the result.
+    wrapped in `HoldCompleteForm` and indented by one space per level of the
+    evaluation, and returns the result.
     `TracePrint[expr, form]` restricts the printing to sub-expressions matching
     `form`. Tracing now also respects `Hold` attributes, so
     `TracePrint[x = x + 1]` no longer evaluates the assignment target —

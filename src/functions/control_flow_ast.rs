@@ -382,8 +382,8 @@ fn hold_form(expr: &Expr) -> Expr {
 enum TraceSink<'a> {
   /// TraceScan[f, …] — apply `f` to the HoldForm-wrapped sub-expression.
   Apply(&'a Expr),
-  /// TracePrint[…] — print the sub-expression, indented by its depth in the
-  /// evaluation, matching the nesting `Trace` would produce.
+  /// TracePrint[…] — print the sub-expression wrapped in HoldCompleteForm,
+  /// indented by its depth in the evaluation (the nesting `Trace` produces).
   Print,
 }
 
@@ -401,10 +401,13 @@ fn do_trace(
       apply_function_to_arg(f, &wrapped)?;
     }
     TraceSink::Print => {
+      // Each step is printed wrapped in HoldCompleteForm, the same way
+      // TraceScan's steps reach the scanning function wrapped in HoldForm.
+      let wrapped = call1("HoldCompleteForm", expr.clone());
       let line = format!(
         "{}{}",
         " ".repeat(depth),
-        crate::syntax::expr_to_output(expr)
+        crate::syntax::expr_to_output(&wrapped)
       );
       if !crate::is_quiet_print() {
         println!("{line}");

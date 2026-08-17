@@ -2480,9 +2480,15 @@ mod trace_print {
     clear_state();
     let result = woxi::interpret_with_stdout("TracePrint[2 + 3]").unwrap();
     assert_eq!(result.result, "5");
-    // Every sub-expression is printed, indented by one space per level of
-    // the evaluation, matching `wolframscript -code 'TracePrint[2 + 3]'`.
-    assert_eq!(result.stdout, " 2 + 3\n  Plus\n  2\n  3\n 5\n");
+    // Every sub-expression is printed wrapped in HoldCompleteForm and
+    // indented by one space per level of the evaluation, matching
+    // `wolframscript -code 'TracePrint[2 + 3]'`.
+    assert_eq!(
+      result.stdout,
+      " HoldCompleteForm[2 + 3]\n  HoldCompleteForm[Plus]\n  \
+       HoldCompleteForm[2]\n  HoldCompleteForm[3]\n \
+       HoldCompleteForm[5]\n"
+    );
   }
 
   #[test]
@@ -2493,7 +2499,11 @@ mod trace_print {
     assert_eq!(result.result, "13");
     assert_eq!(
       result.stdout,
-      " 2^3 + 5\n  Plus\n  2^3\n   Power\n   2\n   3\n  8\n  5\n 8 + 5\n 13\n"
+      " HoldCompleteForm[2^3 + 5]\n  HoldCompleteForm[Plus]\n  \
+       HoldCompleteForm[2^3]\n   HoldCompleteForm[Power]\n   \
+       HoldCompleteForm[2]\n   HoldCompleteForm[3]\n  \
+       HoldCompleteForm[8]\n  HoldCompleteForm[5]\n \
+       HoldCompleteForm[8 + 5]\n HoldCompleteForm[13]\n"
     );
   }
 
@@ -2502,7 +2512,7 @@ mod trace_print {
     clear_state();
     let result = woxi::interpret_with_stdout("TracePrint[3]").unwrap();
     assert_eq!(result.result, "3");
-    assert_eq!(result.stdout, " 3\n");
+    assert_eq!(result.stdout, " HoldCompleteForm[3]\n");
   }
 
   #[test]
@@ -2510,7 +2520,11 @@ mod trace_print {
     clear_state();
     let result = woxi::interpret_with_stdout("TracePrint[f[1, 2]]").unwrap();
     assert_eq!(result.result, "f[1, 2]");
-    assert_eq!(result.stdout, " f[1, 2]\n  f\n  1\n  2\n");
+    assert_eq!(
+      result.stdout,
+      " HoldCompleteForm[f[1, 2]]\n  HoldCompleteForm[f]\n  \
+       HoldCompleteForm[1]\n  HoldCompleteForm[2]\n"
+    );
   }
 
   #[test]
@@ -2522,8 +2536,13 @@ mod trace_print {
     assert_eq!(result.result, "{2, 4}");
     assert_eq!(
       result.stdout,
-      " {1 + 1, 2 + 2}\n  List\n  1 + 1\n   Plus\n   1\n   1\n  2\n  \
-       2 + 2\n   Plus\n   2\n   2\n  4\n {2, 4}\n"
+      " HoldCompleteForm[{1 + 1, 2 + 2}]\n  HoldCompleteForm[List]\n  \
+       HoldCompleteForm[1 + 1]\n   HoldCompleteForm[Plus]\n   \
+       HoldCompleteForm[1]\n   HoldCompleteForm[1]\n  \
+       HoldCompleteForm[2]\n  HoldCompleteForm[2 + 2]\n   \
+       HoldCompleteForm[Plus]\n   HoldCompleteForm[2]\n   \
+       HoldCompleteForm[2]\n  HoldCompleteForm[4]\n \
+       HoldCompleteForm[{2, 4}]\n"
     );
   }
 
@@ -2535,7 +2554,12 @@ mod trace_print {
     let result =
       woxi::interpret_with_stdout("TracePrint[2^3 + 5, _Integer]").unwrap();
     assert_eq!(result.result, "13");
-    assert_eq!(result.stdout, "   2\n   3\n  8\n  5\n 13\n");
+    assert_eq!(
+      result.stdout,
+      "   HoldCompleteForm[2]\n   HoldCompleteForm[3]\n  \
+       HoldCompleteForm[8]\n  HoldCompleteForm[5]\n \
+       HoldCompleteForm[13]\n"
+    );
   }
 
   #[test]
