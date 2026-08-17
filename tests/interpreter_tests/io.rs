@@ -870,6 +870,136 @@ mod streams {
         .unwrap();
     assert_eq!(result.stdout, "Goodbye, World!");
   }
+
+  // Regression test for issue #530: the stream `$StandardOutputStream`
+  // stands for is writable, just like the `"stdout"` name.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn write_string_standard_output_stream() {
+    clear_state();
+    let result = interpret_with_stdout(
+      r#"WriteString[$StandardOutputStream, "hello world\n"]"#,
+    )
+    .unwrap();
+    assert_eq!(result.stdout, "hello world\n");
+  }
+
+  // The `OutputStream[…]` expression itself is what carries the stream,
+  // so writing to a literal one works the same way.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn write_string_stdout_output_stream_expression() {
+    clear_state();
+    let result =
+      interpret_with_stdout(r#"WriteString[OutputStream["stdout", 1], "hi"]"#)
+        .unwrap();
+    assert_eq!(result.stdout, "hi");
+  }
+
+  // An `OutputStream` named "stdout" but carrying another id is some other
+  // stream — a file of that name — and must not reach the process's stdout.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn write_string_stdout_name_with_foreign_id_is_a_file() {
+    clear_state();
+    let path = temp_file("woxi_stdout_named_file");
+    let _ = std::fs::remove_file(&path);
+    let result = interpret_with_stdout(&format!(
+      r#"s = OpenWrite["{path}"]; WriteString[OutputStream["stdout", Last[s]], "to the file"]; Close[s]; ReadString["{path}"]"#
+    ))
+    .unwrap();
+    assert_eq!(result.stdout, "");
+    assert_eq!(result.result, "to the file");
+    let _ = std::fs::remove_file(&path);
+  }
+}
+
+mod standard_streams {
+  use super::*;
+
+  // A channel can be a list of streams — `Streams["stdout"]` is one — and
+  // the text then goes to each of them.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn write_string_to_a_list_of_channels() {
+    clear_state();
+    let result = interpret_with_stdout(
+      r#"WriteString[Streams["stdout"], "once "]; WriteString[{$StandardOutputStream, "stdout"}, "twice"]"#,
+    )
+    .unwrap();
+    assert_eq!(result.stdout, "once twicetwice");
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn write_to_a_list_of_channels() {
+    clear_state();
+    let result =
+      interpret_with_stdout(r#"Write[Streams["stdout"], 1 + 1]"#).unwrap();
+    assert_eq!(result.stdout, "2\n");
+  }
+
+  // An unwritable element leaves the whole call unevaluated rather than
+  // writing to the writable ones.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn write_string_to_a_list_with_an_unwritable_channel() {
+    clear_state();
+    let result =
+      interpret_with_stdout(r#"WriteString[{$StandardOutputStream, 5}, "x"]"#)
+        .unwrap();
+    assert_eq!(result.stdout, "");
+    assert_eq!(
+      result.result,
+      "WriteString[{OutputStream[stdout, 1], 5}, x]"
+    );
+  }
+
+  // Issue #530: the standard streams are ordinary `OutputStream[…]`
+  // expressions with the fixed ids `Streams[]` reports.
+  #[test]
+  fn standard_output_stream() {
+    assert_eq!(
+      interpret("$StandardOutputStream").unwrap(),
+      "OutputStream[stdout, 1]"
+    );
+  }
+
+  #[test]
+  fn standard_error_stream() {
+    assert_eq!(
+      interpret("$StandardErrorStream").unwrap(),
+      "OutputStream[stderr, 2]"
+    );
+  }
+
+  #[test]
+  fn standard_output_stream_is_the_first_open_stream() {
+    assert_eq!(
+      interpret("$StandardOutputStream === First[Streams[]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn head_is_output_stream() {
+    assert_eq!(
+      interpret("Head[$StandardOutputStream]").unwrap(),
+      "OutputStream"
+    );
+  }
+
+  // Ids 1 and 2 belong to the standard streams, so a newly opened stream
+  // starts at 3 — as it does in wolframscript.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn opened_streams_do_not_reuse_standard_ids() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"StringToStream["abc"]"#).unwrap(),
+      "InputStream[String, 3]"
+    );
+  }
 }
 
 mod find_file {
@@ -2667,7 +2797,7 @@ mod read_string {
   fn a_non_string_terminator_reports_iterm() {
     assert_eq!(
       interpret(r#"ReadString[StringToStream["abc"], 2]"#).unwrap(),
-      "ReadString[InputStream[String, 1], 2]"
+      "ReadString[InputStream[String, 3], 2]"
     );
     let msgs = woxi::get_captured_messages_raw();
     assert!(
@@ -3244,7 +3374,7 @@ mod read {
         .unwrap();
     assert_eq!(
       result,
-      "ReadList[InputStream[String, 1], {Word, Number}, -1]"
+      "ReadList[InputStream[String, 3], {Word, Number}, -1]"
     );
   }
 }

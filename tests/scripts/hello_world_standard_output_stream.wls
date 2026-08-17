@@ -1,0 +1,1 @@
+WriteString[$StandardOutputStream, "Goodbye, World!"]
