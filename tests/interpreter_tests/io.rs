@@ -363,13 +363,21 @@ mod get {
     std::fs::remove_file(path).ok();
   }
 
+  // With nothing being read, `$InputFileName` is the empty string — both
+  // before a `Get` and after it hands the value back.
   #[test]
-  fn input_file_name_stays_unset_when_it_was_unset() {
+  fn input_file_name_is_empty_outside_a_read() {
     clear_state();
+    assert_eq!(
+      interpret("ToString[$InputFileName, InputForm]").unwrap(),
+      "\"\""
+    );
     let path = write_temp("get_ifn_unset", "1 + 1");
-    let result =
-      interpret(&format!("Get[\"{path}\"]; $InputFileName")).unwrap();
-    assert_eq!(result, "$InputFileName");
+    let result = interpret(&format!(
+      "Get[\"{path}\"]; ToString[$InputFileName, InputForm]"
+    ))
+    .unwrap();
+    assert_eq!(result, "\"\"");
     std::fs::remove_file(path).ok();
   }
 
