@@ -4831,9 +4831,11 @@ fn parse_expression_inner(
           | "<"
           | "<="
           | "\u{2264}"
+          | "\u{2A7D}"
           | ">"
           | ">="
           | "\u{2265}"
+          | "\u{2A7E}"
           | "==="
           | "=!="
       )
@@ -4847,9 +4849,9 @@ fn parse_expression_inner(
           "==" | "\u{2A75}" => ComparisonOp::Equal,
           "!=" | "\u{2260}" => ComparisonOp::NotEqual,
           "<" => ComparisonOp::Less,
-          "<=" | "\u{2264}" => ComparisonOp::LessEqual,
+          "<=" | "\u{2264}" | "\u{2A7D}" => ComparisonOp::LessEqual,
           ">" => ComparisonOp::Greater,
-          ">=" | "\u{2265}" => ComparisonOp::GreaterEqual,
+          ">=" | "\u{2265}" | "\u{2A7E}" => ComparisonOp::GreaterEqual,
           "===" => ComparisonOp::SameQ,
           "=!=" => ComparisonOp::UnsameQ,
           _ => ComparisonOp::Equal,
@@ -5666,8 +5668,8 @@ fn operator_precedence(op: &str) -> u8 {
     // the right operand absorbs y, y = 1, y /; z, y -> 1. Place at TagSet
     // level so its rhs stays maximally permissive.
     "\\[Function]" | "\u{F4A1}" | "|->" => 3,
-    "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">" | ">="
-    | "\u{2265}" | "===" | "=!=" => 21, // Comparisons
+    "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | "\u{2A7D}" | ">"
+    | ">=" | "\u{2265}" | "\u{2A7E}" | "===" | "=!=" => 21, // Comparisons
     "~~" => 24,      // StringExpression (lower than Alternatives)
     "|" => 27, // Alternatives (higher than StringExpression, Or, And, Rule)
     "+" | "-" => 30, // Plus/Minus
@@ -6299,15 +6301,15 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
         }
       }
     }
-    "==" | "\u{2A75}" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">"
-    | ">=" | "\u{2265}" | "===" | "=!=" => {
+    "==" | "\u{2A75}" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}"
+    | "\u{2A7D}" | ">" | ">=" | "\u{2265}" | "\u{2A7E}" | "===" | "=!=" => {
       let comp_op = match op_str {
         "==" | "\u{2A75}" => ComparisonOp::Equal,
         "!=" | "\u{2260}" => ComparisonOp::NotEqual,
         "<" => ComparisonOp::Less,
-        "<=" | "\u{2264}" => ComparisonOp::LessEqual,
+        "<=" | "\u{2264}" | "\u{2A7D}" => ComparisonOp::LessEqual,
         ">" => ComparisonOp::Greater,
-        ">=" | "\u{2265}" => ComparisonOp::GreaterEqual,
+        ">=" | "\u{2265}" | "\u{2A7E}" => ComparisonOp::GreaterEqual,
         "===" => ComparisonOp::SameQ,
         "=!=" => ComparisonOp::UnsameQ,
         _ => ComparisonOp::Equal,

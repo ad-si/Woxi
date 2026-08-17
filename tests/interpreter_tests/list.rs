@@ -9931,6 +9931,89 @@ mod join_non_list {
   }
 
   #[test]
+  fn combinatorica_unrank_permutation_matches_lexicographic_order() {
+    // Combinatorica`UnrankPermutation[r, l] gives the r-th permutation of
+    // `l` in lexicographic order, 1-indexed (r runs from 1 through
+    // Length[l]!, so the sequence below must line up with what
+    // `Permutations` itself already produces in lexicographic order).
+    assert_eq!(
+      interpret(
+        "Table[Combinatorica`UnrankPermutation[r, {1, 2, 3}], {r, 1, 6}]"
+      )
+      .unwrap(),
+      interpret("Permutations[{1, 2, 3}]").unwrap()
+    );
+  }
+
+  #[test]
+  fn combinatorica_unrank_permutation_boundaries() {
+    assert_eq!(
+      interpret("Combinatorica`UnrankPermutation[1, {1, 2, 3}]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("Combinatorica`UnrankPermutation[6, {1, 2, 3}]").unwrap(),
+      "{3, 2, 1}"
+    );
+    // Out of the valid 1..Length[l]! range, the call stays symbolic rather
+    // than silently wrapping or erroring.
+    assert_eq!(
+      interpret("Combinatorica`UnrankPermutation[0, {1, 2, 3}]").unwrap(),
+      "Combinatorica`UnrankPermutation[0, {1, 2, 3}]"
+    );
+    assert_eq!(
+      interpret("Combinatorica`UnrankPermutation[7, {1, 2, 3}]").unwrap(),
+      "Combinatorica`UnrankPermutation[7, {1, 2, 3}]"
+    );
+  }
+
+  #[test]
+  fn combinatorica_unrank_permutation_integer_second_arg() {
+    // UnrankPermutation[r, n] for an integer n is UnrankPermutation[r, Range[n]].
+    assert_eq!(
+      interpret("Combinatorica`UnrankPermutation[1, 4]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+    assert_eq!(
+      interpret("Combinatorica`UnrankPermutation[24, 4]").unwrap(),
+      "{4, 3, 2, 1}"
+    );
+  }
+
+  #[test]
+  fn combinatorica_unrank_permutation_is_a_bijection() {
+    // Every rank from 1 to n! must produce a distinct permutation.
+    assert_eq!(
+      interpret(
+        "Length[Union[Table[Combinatorica`UnrankPermutation[r, {1, 2, 3, 4, \
+         5}], {r, 1, 120}]]]"
+      )
+      .unwrap(),
+      "120"
+    );
+  }
+
+  #[test]
+  fn combinatorica_unrank_permutation_handles_large_factorial_rank() {
+    // The rank can exceed machine-integer range (12! = 479001600) — the
+    // last permutation at exactly n! must still resolve, and one past it
+    // must stay symbolic rather than silently wrapping.
+    assert_eq!(
+      interpret("Combinatorica`UnrankPermutation[12!, Range[12]]").unwrap(),
+      "{12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}"
+    );
+    assert_eq!(
+      interpret("Combinatorica`UnrankPermutation[1, Range[12]]").unwrap(),
+      "{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}"
+    );
+    assert_eq!(
+      interpret("Combinatorica`UnrankPermutation[12! + 1, Range[12]]").unwrap(),
+      "Combinatorica`UnrankPermutation[479001601, {1, 2, 3, 4, 5, 6, 7, 8, 9, \
+       10, 11, 12}]"
+    );
+  }
+
+  #[test]
   fn permutations_with_duplicates() {
     // Permutations of a multiset should return only distinct permutations.
     // Wolfram: Permutations[{1, 1, 2}] -> {{1, 1, 2}, {1, 2, 1}, {2, 1, 1}}

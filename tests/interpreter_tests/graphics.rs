@@ -6843,8 +6843,9 @@ mod plot3d {
       ));
     }
 
-    // The `{i -> {{j}, style}}` form parses; the style itself is not
-    // rendered yet, but the between-series fill must still be drawn.
+    // The `{i -> {{j}, style}}` form parses, and the between-series fill
+    // is drawn in the given style (`Directive[Orange]`), not the series'
+    // own color.
     #[test]
     fn list_plot_filling_between_series_styled() {
       insta::assert_snapshot!(export_svg(
@@ -9095,6 +9096,50 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(
         interpret("DateListPlot[{1.5, 2.3, 3.1}, {2020, 6, 1}]").unwrap(),
         "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn date_list_log_plot_date_list() {
+      insta::assert_snapshot!(export_svg(
+        "DateListLogPlot[{{{2000, 1, 1}, 1}, {{2005, 6, 15}, 100}, {{2010, 12, 31}, 10}}]"
+      ));
+    }
+
+    #[test]
+    fn date_list_log_plot_multiple_series() {
+      insta::assert_snapshot!(export_svg(
+        "DateListLogPlot[{{{{2000, 1, 1}, 1}, {{2010, 1, 1}, 1000}}, {{{2000, 1, 1}, 500}, {{2010, 1, 1}, 5}}}]"
+      ));
+    }
+
+    #[test]
+    fn date_list_log_plot_drops_non_positive_values() {
+      // Non-positive y values have no log-space position, so they are
+      // dropped and the plot renders from the remaining positive points.
+      assert_eq!(
+        interpret(
+          "Head[DateListLogPlot[{{{2000, 1, 1}, 1}, {{2005, 1, 1}, -3}, {{2010, 1, 1}, 2}}]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+    }
+
+    #[test]
+    fn date_list_log_plot_invalid_returns_unevaluated() {
+      assert_eq!(
+        interpret("DateListLogPlot[{1, 3, 2, 5, 4}]").unwrap(),
+        "DateListLogPlot[{1, 3, 2, 5, 4}]"
+      );
+    }
+
+    #[test]
+    fn date_list_log_plot_values_with_start_date() {
+      assert_eq!(
+        interpret("Head[DateListLogPlot[{1, 10, 100, 1000}, {2000, 8}]]")
+          .unwrap(),
+        "Graphics"
       );
     }
 
@@ -17242,6 +17287,63 @@ mod manipulate {
     }
   }
 
+  /// `{{u, uinit}, colour}` — the Demonstrations idiom for a two-swatch
+  /// colour toggle (`ColorSetter`) — becomes a real discrete control whose
+  /// two choices are the initial colour and the listed one, each rendered
+  /// as a colour swatch icon rather than its `RGBColor[…]` InputForm.
+  #[test]
+  fn spec_two_color_swatch_form_becomes_a_discrete_control() {
+    let expr = interpret_to_expr(
+      "Manipulate[ringColor, \
+       {{ringColor, RGBColor[0.88, 0.63, 0.23]}, RGBColor[0.49, 0, 0]}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete {
+        name,
+        values,
+        initial_index,
+        value_label_svgs,
+        setter_bar,
+        ..
+      } => {
+        assert_eq!(name, "ringColor");
+        assert_eq!(
+          values,
+          &["RGBColor[0.88, 0.63, 0.23]", "RGBColor[0.49, 0, 0]"]
+        );
+        assert_eq!(*initial_index, 0);
+        assert!(
+          value_label_svgs.iter().all(Option::is_some),
+          "both swatches should render as colour icons: {value_label_svgs:?}"
+        );
+        assert!(*setter_bar, "a colour toggle always shows its swatches");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// `{u, colour}` with no explicit initial has only one possible value —
+  /// the variable is baked into the body as a fixed binding rather than
+  /// building a one-swatch control with nothing to pick between.
+  #[test]
+  fn spec_single_color_form_without_explicit_initial_stays_fixed() {
+    let expr =
+      interpret_to_expr("Manipulate[c, {c, RGBColor[0.49, 0, 0]}]").unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert!(
+      spec.controls.is_empty(),
+      "a single fixed colour is baked into the body, not a visible control: {:?}",
+      spec.controls
+    );
+    assert!(
+      spec.body_code.contains("0.49"),
+      "the fixed colour should be baked into the body: {}",
+      spec.body_code
+    );
+  }
+
   /// A control panel laid out as a `Grid` marks its stretched cells with
   /// `SpanFromLeft` / `SpanFromAbove`. Once the grid is flattened into
   /// control rows those markers name nothing, so they are dropped — they
@@ -17834,6 +17936,39 @@ mod manipulate {
     assert_eq!(json.matches("\"selected\":true").count(), 2, "{json}");
     assert_eq!(json.matches("\"selected\":false").count(), 1, "{json}");
     assert!(json.contains("MemberQ[picks, psin]"), "{json}");
+  }
+
+  /// `Appearance -> "Vertical"` on a `CheckboxBar` stacks its toggle buttons
+  /// in a column instead of Wolfram's default horizontal bar: the generated
+  /// `TogglerBar[…]` display carries the option through, and
+  /// `build_manipulate_display` renders a `DisplayNode::Column` rather than
+  /// a `DisplayNode::Row` for it.
+  #[test]
+  fn spec_checkbox_bar_appearance_vertical_stacks_the_toggles() {
+    let expr = interpret_to_expr(
+      "Manipulate[picks, \
+       {{picks, {pcos}, \"\"}, {psin -> \" sine\", pcos -> \" cosine\"}, \
+        ControlType -> CheckboxBar, Appearance -> Vertical}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("checkbox bar");
+    assert_eq!(spec.displays.len(), 1);
+    assert!(
+      spec.displays[0].contains("Appearance -> \"Vertical\""),
+      "{}",
+      spec.displays[0]
+    );
+    let bindings = manipulate_initial_bindings(&spec);
+    let node = woxi::with_scoped_globals(&bindings, || {
+      woxi::functions::graphics::build_manipulate_display(
+        &spec.displays[0],
+        &[],
+      )
+    });
+    assert!(
+      matches!(node, woxi::functions::graphics::DisplayNode::Column(_)),
+      "{node:?}"
+    );
   }
 
   /// A bare `None` in the control-type slot after the bounds says the
@@ -24704,5 +24839,102 @@ fn the_default_stroke_is_one_pixel_at_every_size() {
   assert!(
     relative.contains("stroke-width=\"10.00\""),
     "Thickness is a fraction of the width: {relative}"
+  );
+}
+
+/// Regression coverage for the combination of constructs a Wolfram
+/// Demonstrations "region transform" widget uses together: a `Manipulate`
+/// whose body is a `Module`/`Which` that picks an `AffineTransform` from the
+/// slider position, draws the transformed copy via `GeometricTransformation`
+/// inside `Prolog`, toggles an `Epilog` label from a `Checkbox`, and titles
+/// the plot with a `Row` mixing `Style` and a held `TraditionalForm`
+/// integral. Each piece has its own tests elsewhere; this locks in that they
+/// still cooperate when nested exactly this way.
+#[test]
+fn manipulate_module_which_affine_prolog_checkbox_and_traditional_plot_label() {
+  let body = "Module[{t, u, pause = 0.3, base, shifted}, \
+     Which[w <= 1, t = w; u = 0, w <= 1 + pause, t = 1; u = 0, True, t = 1; u = 1]; \
+     base = First[Plot[x^2, {x, 0, 1}, Filling -> {1 -> {0, Opacity[0.4, Red]}}]]; \
+     shifted = GeometricTransformation[base, \
+       AffineTransform[{{{1, 0}, {-u, 1}}, {-(u/2), u^2/4}}]]; \
+     Plot[x^2, {x, -1, 1}, \
+       Prolog -> {shifted}, \
+       Epilog -> If[labels, {Text[\"A\", {0.8, 0.3}]}, {}], \
+       PlotLabel -> Row[{Style[\"A\", Italic], \" = \", \
+         TraditionalForm[HoldForm[Integrate[x^2, {x, 0, 1}]]]}]]]";
+
+  // The Manipulate spec exposes exactly the slider and the checkbox, under
+  // their own variable names — `AutorunSequencing` is a display-only hint
+  // and must not be mistaken for a third control.
+  let manipulate_src = format!(
+    "Manipulate[{body}, {{{{w, 0, \"shift\"}}, 1.5, 0}}, \
+     {{{{labels, True, \"show labels\"}}, {{True, False}}, Checkbox}}, \
+     AutorunSequencing -> {{{{1, 5}}, {{2, 2}}}}]"
+  );
+  let expr = woxi::interpret_to_expr(&manipulate_src).unwrap();
+  let spec = woxi::functions::graphics::extract_manipulate_spec(&expr)
+    .expect("well-formed manipulate");
+  assert_eq!(spec.controls.len(), 2);
+  match &spec.controls[0] {
+    woxi::functions::graphics::ManipulateControl::Continuous {
+      name, ..
+    } => {
+      assert_eq!(name, "w");
+    }
+    other => panic!("expected a continuous control for w, got {other:?}"),
+  }
+  match &spec.controls[1] {
+    woxi::functions::graphics::ManipulateControl::Discrete {
+      name,
+      values,
+      ..
+    } => {
+      assert_eq!(name, "labels");
+      assert_eq!(values, &["True".to_string(), "False".to_string()]);
+    }
+    other => {
+      panic!("expected a discrete checkbox control for labels, got {other:?}")
+    }
+  }
+
+  // Re-evaluating the body under bound control values (what the frontend
+  // does on every slider/checkbox change) must still render a complete
+  // picture: the affine-shifted red-filled region, the toggled Epilog
+  // label, and the held integral in the plot title.
+  let render = |w: &str, labels: &str| {
+    let code = format!(
+      "Block[{{w = {w}, labels = {labels}}}, ExportString[{body}, \"SVG\"]]"
+    );
+    let svg = interpret(&code).unwrap();
+    assert!(
+      svg.starts_with("<svg"),
+      "expected SVG for w={w}, labels={labels}: {svg}"
+    );
+    svg
+  };
+
+  let with_label = render("1.2", "True");
+  assert!(
+    with_label.contains("fill=\"rgb(255,0,0)\""),
+    "the Filling->Opacity[.., Red] region should still tint red: {with_label}"
+  );
+  assert!(
+    // The Epilog's plain `Text["A", …]` draws as a bare `<text>A</text>`
+    // (unlike the italic "A" in `PlotLabel`, which is a `<tspan>` inside a
+    // larger `<text>` element) — check for that specific shape so this
+    // doesn't also match the "A" in "A = ∫…" up top.
+    with_label.contains(">A</text>"),
+    "Epilog should draw the \"A\" label when labels is True: {with_label}"
+  );
+  assert!(
+    with_label.contains("\u{222b}") && with_label.contains("\u{2146}"),
+    "PlotLabel should typeset the held integral (\u{222b} \u{2026} \u{2146}x), not raw \
+     TraditionalForm/HoldForm source: {with_label}"
+  );
+
+  let without_label = render("1.2", "False");
+  assert!(
+    !without_label.contains(">A</text>"),
+    "Epilog's \"A\" label must not draw when labels is False: {without_label}"
   );
 }

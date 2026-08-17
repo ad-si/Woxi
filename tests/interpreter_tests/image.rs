@@ -7007,6 +7007,32 @@ mod color_data_gradients {
     }
   }
 
+  /// Indexed scheme 35, the orange-to-red palette (by way of yellow-green
+  /// and indigo) a Demonstration's `ListPlot` colors its series with. Like
+  /// scheme 30 it is a fixed ten-colour palette that cycles. Every value is
+  /// cross-checked byte-for-byte between Wolfram's own `ColorData`
+  /// documentation gallery and a Demonstration's rendered snapshot, two
+  /// independent Wolfram-produced renders that agree exactly.
+  #[test]
+  fn color_data_indexed_scheme_35() {
+    clear_state();
+    assert_eq!(
+      woxi::interpret("ColorData[35, 5]").unwrap(),
+      "RGBColor[0.4117647058823529, 0.592156862745098, 0.4]"
+    );
+    assert_eq!(
+      woxi::interpret("Length[ColorData[35, \"ColorList\"]]").unwrap(),
+      "10"
+    );
+    // Past its end it wraps, and index 0 is the last colour.
+    for pair in [
+      "ColorData[35, 11] === ColorData[35, 1]",
+      "ColorData[35, 0] === ColorData[35, 10]",
+    ] {
+      assert_eq!(woxi::interpret(pair).unwrap(), "True", "{pair}");
+    }
+  }
+
   #[test]
   fn color_data_named_gradient_is_a_color_function() {
     clear_state();

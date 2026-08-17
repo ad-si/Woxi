@@ -2872,6 +2872,11 @@ pub fn dispatch_list_operations(
     "Permutations" if !args.is_empty() && args.len() <= 2 => {
       return Some(list_helpers_ast::permutations_ast(args));
     }
+    "Combinatorica`UnrankPermutation" if args.len() == 2 => {
+      return Some(list_helpers_ast::combinatorica_unrank_permutation_ast(
+        args,
+      ));
+    }
     "Signature" if args.len() == 1 => {
       use crate::functions::list_helpers_ast::sorting::canonical_cmp;
       // Signature operates on any non-atomic expression: it treats the

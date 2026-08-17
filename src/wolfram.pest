@@ -257,7 +257,7 @@ Operator = @{
   | "||"     // Or operator (must be before single |)
   | "|"      // Alternatives operator
   | "===" | "=!=" | "==" | "\u{2A75}" | "!=" | "\u{2260}"  // SameQ, UnsameQ (must be before == and !=), Equal, ⩵, Unequal, ≠
-  | "<=" | ">=" | "\u{2264}" | "\u{2265}"  // LessEqual, GreaterEqual, ≤, ≥
+  | "<=" | ">=" | "\u{2264}" | "\u{2265}" | "\u{2A7D}" | "\u{2A7E}"  // LessEqual, GreaterEqual, ≤, ≥, ⩽, ⩾
   | ">>>" ~ !(">" | "=")   // PutAppend operator (must be before >> and >)
   | ">>" ~ !(">" | "=")    // Put operator (must be before > and >=)
   | "/*" ~ !(")")  // RightComposition operator (must be before / ; avoid matching /* in comments)
@@ -715,7 +715,7 @@ ConditionOp = @{
   | "===" | "=!=" | "==" | "\u{2A75}" | "!=" | "\u{2260}"  // Comparison, ⩵, ≠
   | "<->"                         // TwoWayRule (must be before <>, <=, <)
   | "<>"                          // StringJoin (must be before < to avoid partial match)
-  | "<=" | ">=" | "\u{2264}" | "\u{2265}" | "<" | ">"       // Order comparison, ≤, ≥
+  | "<=" | ">=" | "\u{2264}" | "\u{2265}" | "\u{2A7D}" | "\u{2A7E}" | "<" | ">"       // Order comparison, ≤, ≥, ⩽, ⩾
   | "/@"                          // Map (must be before the bare "/" of Arithmetic)
   | "@@@"                         // MapApply (must be before @@)
   | "@@"                          // Apply (must be before @)
