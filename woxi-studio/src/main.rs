@@ -6579,7 +6579,7 @@ mod tests {
         manipulate::ControlState::Discrete { name, values, .. }
           if name == "hint" && values == &["False", "True"]
       ),
-      "a {False, True} domain builds a two-choice discrete control, not a slider: {:?}",
+      "a {{False, True}} domain builds a two-choice discrete control, not a slider: {:?}",
       state.controls[0]
     );
     for (i, label) in ["op", "k1", "k2", "k3"].iter().enumerate() {
