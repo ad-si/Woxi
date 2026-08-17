@@ -498,6 +498,13 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "RightFloor" => Some("\u{230B}"),
     "LeftDoubleBracket" => Some("\u{301A}"),
     "RightDoubleBracket" => Some("\u{301B}"),
+    // Abs/Norm bars. Wolfram has no public Unicode code point for these
+    // (unlike the ASCII `|` they visually resemble), so like `Rule` and
+    // `Equal` above they live in the private use area.
+    "LeftBracketingBar" => Some("\u{F603}"),
+    "RightBracketingBar" => Some("\u{F604}"),
+    "LeftDoubleBracketingBar" => Some("\u{F605}"),
+    "RightDoubleBracketingBar" => Some("\u{F606}"),
     // Whitespace control characters (Wolfram treats these as the raw chars).
     // `\[IndentingNewLine]` is the FrontEnd's own newline, so it carries a
     // private-use code point instead of U+000A.
@@ -671,6 +678,8 @@ fn private_use_glyph(c: char) -> Option<&'static str> {
     '\u{F725}' => "\u{26A0}",              // WarningSign: ⚠
     '\u{F3DF}' => "\u{2641}",              // Earth: ♁
     '\u{F431}' => "=",                     // Equal
+    '\u{F603}' | '\u{F604}' => "|",        // Left/RightBracketingBar: |
+    '\u{F605}' | '\u{F606}' => "\u{2016}", // Left/RightDoubleBracketingBar: ‖
     '\u{F74B}' => "\u{2145}",              // CapitalDifferentialD: ⅅ
     '\u{F74C}' => "\u{2146}",              // DifferentialD: ⅆ
     '\u{F74D}' => "\u{212F}",              // ExponentialE: ℯ

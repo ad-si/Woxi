@@ -5304,6 +5304,30 @@ mod unknown_function_no_args {
     assert_eq!(interpret("\\[ImaginaryI]").unwrap(), "I");
   }
 
+  /// `\[LeftBracketingBar]`/`\[RightBracketingBar]` (the bars `Abs`/`Norm`
+  /// typeset with) and their double-bar counterparts have no public
+  /// Unicode code point, so like `\[Rule]` they live in Wolfram's private
+  /// use area. Regression: they were missing from the parse table
+  /// entirely, so a string built with them kept the literal `\[...]`
+  /// escape text instead of resolving to a private-use code point.
+  #[test]
+  fn bracketing_bar_named_chars_parse_to_private_use_code_points() {
+    assert_eq!(
+      interpret(
+        "ToCharacterCode[\"\\[LeftBracketingBar]a\\[RightBracketingBar]\"]"
+      )
+      .unwrap(),
+      "{62979, 97, 62980}"
+    );
+    assert_eq!(
+      interpret(
+        "ToCharacterCode[\"\\[LeftDoubleBracketingBar]a\\[RightDoubleBracketingBar]\"]"
+      )
+      .unwrap(),
+      "{62981, 97, 62982}"
+    );
+  }
+
   /// A named character that is a letter spells a symbol with that letter,
   /// not with its own name: `\[AAcute]` is `á`, and `\[ScriptX]` is the
   /// letter of Wolfram's private-use script alphabet (U+F6C9). Regression:

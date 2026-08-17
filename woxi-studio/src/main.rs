@@ -17672,4 +17672,106 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
       "raising the boom and extending its reach must move the hook and change the render"
     );
   }
+
+  /// Regression for the shape of the "Equality of a Segment and an Arc in
+  /// Archimedes's Spiral" Demonstration: a `Module` that derives a point
+  /// from a slider parameter and reports its distance from the origin in a
+  /// `Text[Style[Row[{...}], ...]]` caption written with the
+  /// `\[LeftBracketingBar]`/`\[RightBracketingBar]` bar characters (the
+  /// notation `Abs`/`Norm` are typeset with). Those two named characters
+  /// were missing from both the parse table and the private-use-glyph
+  /// substitution table, so the caption drew the literal escape text
+  /// (`\[LeftBracketingBar]d\[RightBracketingBar] = ...`) instead of
+  /// `|d| = ...`.
+  #[test]
+  fn demonstration_spiral_gap_manipulate_draws_bracketing_bars() {
+    let code = "Manipulate[\
+      Module[{origin, tip, gap}, \
+        origin = {0, 0}; \
+        tip = {r Cos[r], r Sin[r]}; \
+        gap = Norm[tip - origin]; \
+        Column[{\
+          Graphics[{Blue, Line[{origin, tip}], Red, PointSize[0.02], \
+            Point[{origin, tip}]}, \
+            PlotRange -> {{-3, 3}, {-3, 3}}, Axes -> True], \
+          Text[Style[Row[{\"\\[LeftBracketingBar]d\\[RightBracketingBar] = \", \
+            NumberForm[gap, {4, 3}]}], 14]]\
+        }]\
+      ], \
+      {{r, 1.5, \"reach\"}, 0.5, 3, Appearance -> \"Labeled\"}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the spiral-gap Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the segment and its caption must render"
+    );
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the segment and caption must render")
+    };
+    let initial = render(&state);
+    assert!(
+      initial.contains("|d| = "),
+      "caption must draw the bars as `|d| = ...`, not the raw escape: {initial}"
+    );
+    assert!(
+      !initial.contains("LeftBracketingBar")
+        && !initial.contains("RightBracketingBar"),
+      "caption must not draw the literal named-character escape: {initial}"
+    );
+    assert!(
+      !initial.contains('\u{F603}') && !initial.contains('\u{F604}'),
+      "caption must not draw the raw private-use code points: {initial}"
+    );
+
+    match &mut state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name.as_str(), "r");
+        assert_eq!(label.as_str(), "reach");
+        assert_eq!(*min, 0.5);
+        assert_eq!(*max, 3.0);
+        assert_eq!(*current, 1.5);
+        *current = 2.5;
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let moved = render(&state);
+    assert_ne!(
+      initial, moved,
+      "moving the reach slider must change the point and the reported gap"
+    );
+    assert!(
+      moved.contains("|d| = "),
+      "caption must keep drawing the bars after re-render: {moved}"
+    );
+  }
 }
