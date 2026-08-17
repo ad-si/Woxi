@@ -2471,6 +2471,7 @@ mod interpreter_tests {
   mod music;
   mod patterns;
   mod polyhedron_data;
+  mod polyhedron_operations;
   mod property;
   mod quantity;
   mod rosetta_script_fixes;
