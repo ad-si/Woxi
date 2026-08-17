@@ -6537,13 +6537,71 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 mod tests {
   use super::*;
 
-  /// A single 2D-slider control (`{{var, {x0, y0}, label}, {xmin, ymin},
-  /// {xmax, ymax}}`) driving a Greek-lettered rotation/tilt pair, whose
-  /// components are split apart with `Part` and fed into several
-  /// `Initialization`-defined helper surfaces that a `Show` combines. This
-  /// mirrors the general construct category used by many rotating-3D-surface
+  /// A dissection Manipulate assembling colored polygon pieces with
+  /// `Translate`/`Rotate`, a boolean checkbox control (`{False, True}`
+  /// domain) toggling a hint overlay, and several `Tiny` step sliders with
+  /// `ControlPlacement -> Left` and `SaveDefinitions -> True`. This mirrors
+  /// the general construct category used by many piece-rearrangement
   /// Wolfram Demonstrations Project notebooks (independently written, not
   /// copied from any specific one).
+  #[test]
+  fn manipulate_dissection_checkbox_and_step_sliders() {
+    let code = r#"Manipulate[
+      Graphics[{
+        Opacity[op],
+        Translate[piece1, k1 {1, 0}],
+        Rotate[Translate[piece2, k2 {0, -1}], k3 Pi, pivot],
+        If[hint, guide, {}]
+      }, PlotRange -> {{-2, 2}, {-2, 2}}, AspectRatio -> Automatic],
+      {{hint, False, "show hint"}, {False, True}},
+      {{op, 0.7, "opacity"}, 0, 1, ImageSize -> Tiny},
+      {{k1, 0, "step 1"}, 0, 1, ImageSize -> Tiny},
+      {{k2, 0, "step 2"}, 0, 1, ImageSize -> Tiny},
+      {{k3, 0, "step 3"}, 0, 1, ImageSize -> Tiny},
+      SaveDefinitions -> True,
+      ControlPlacement -> Left,
+      Initialization :> (
+        piece1 = {RGBColor[0.2, 0.4, 0.8], Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}]};
+        piece2 = {RGBColor[0.8, 0.3, 0.1], Polygon[{{0, 0}, {-1, 0}, {-1, -1}, {0, -1}}]};
+        pivot = {0, 0};
+        guide = {Line[{{0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, 0}}], Text["A", {0, 0}], Text["B", {1, 1}]};
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a checkbox + four Tiny sliders should build a ManipulateState");
+
+    assert_eq!(state.controls.len(), 5, "hint, op, k1, k2, k3");
+    assert!(
+      matches!(
+        &state.controls[0],
+        manipulate::ControlState::Discrete { name, values, .. }
+          if name == "hint" && values == &["False", "True"]
+      ),
+      "a {{False, True}} domain builds a two-choice discrete control, not a slider: {:?}",
+      state.controls[0]
+    );
+    for (i, label) in ["op", "k1", "k2", "k3"].iter().enumerate() {
+      assert!(
+        matches!(
+          &state.controls[i + 1],
+          manipulate::ControlState::Continuous { name, .. } if name == label
+        ),
+        "control {i} should be the continuous slider {label:?}: {:?}",
+        state.controls[i + 1]
+      );
+    }
+    assert!(
+      state.error.is_none(),
+      "body should evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "Graphics of translated/rotated pieces should render"
+    );
+  }
   #[test]
   fn manipulate_2d_angle_slider_combines_initialization_surfaces() {
     let code = r#"Manipulate[
