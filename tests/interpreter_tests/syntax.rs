@@ -5350,6 +5350,30 @@ mod unknown_function_no_args {
     assert_eq!(interpret("\\[ImaginaryI]").unwrap(), "I");
   }
 
+  /// `\[LeftBracketingBar]`/`\[RightBracketingBar]` (the bars `Abs`/`Norm`
+  /// typeset with) and their double-bar counterparts have no public
+  /// Unicode code point, so like `\[Rule]` they live in Wolfram's private
+  /// use area. Regression: they were missing from the parse table
+  /// entirely, so a string built with them kept the literal `\[...]`
+  /// escape text instead of resolving to a private-use code point.
+  #[test]
+  fn bracketing_bar_named_chars_parse_to_private_use_code_points() {
+    assert_eq!(
+      interpret(
+        "ToCharacterCode[\"\\[LeftBracketingBar]a\\[RightBracketingBar]\"]"
+      )
+      .unwrap(),
+      "{62979, 97, 62980}"
+    );
+    assert_eq!(
+      interpret(
+        "ToCharacterCode[\"\\[LeftDoubleBracketingBar]a\\[RightDoubleBracketingBar]\"]"
+      )
+      .unwrap(),
+      "{62981, 97, 62982}"
+    );
+  }
+
   /// A named character that is a letter spells a symbol with that letter,
   /// not with its own name: `\[AAcute]` is `á`, and `\[ScriptX]` is the
   /// letter of Wolfram's private-use script alphabet (U+F6C9). Regression:
@@ -7147,6 +7171,124 @@ mod line_continuation {
     );
     // A named character that is not an operator likewise ends the statement.
     assert_eq!(interpret("\\[Alpha]\n{5, 6}").unwrap(), "{5, 6}");
+  }
+}
+
+/// `\[Rule]`, `\[RuleDelayed]`, `\[Equal]`, `\[NotEqual]`, `\[LessEqual]`,
+/// and `\[GreaterEqual]` are legitimate ASCII spellings of the same
+/// operators as `->`, `:>`, `==`, `!=`, `<=`, `>=`: Wolfram-authored source
+/// (`.wl`/`.wls` files, `ToExpression["..."]`, literal REPL input) may use
+/// either. Previously only some named-character operators (`\[Element]`,
+/// `\[And]`, …) were recognised by the grammar; this comparison/rule family
+/// fell through to `NamedCharIdentifier`, so `Mesh \[Rule] None` parsed as
+/// implicit multiplication `Mesh * None * Rule` instead of `Rule[Mesh,
+/// None]`. (Note this never affected `.nb` notebook loading, which
+/// flattens box-form names to ASCII operators before the code reaches the
+/// parser.)
+mod comparison_and_rule_named_char_operators {
+  use super::*;
+
+  #[test]
+  fn rule_escape_matches_ascii_infix() {
+    assert_eq!(
+      interpret("Mesh \\[Rule] None").unwrap(),
+      interpret("Mesh -> None").unwrap()
+    );
+  }
+
+  #[test]
+  fn rule_escape_matches_ascii_prefix() {
+    assert_eq!(
+      interpret("a \\[Rule] b").unwrap(),
+      interpret("Rule[a, b]").unwrap()
+    );
+  }
+
+  #[test]
+  fn rule_delayed_escape_matches_ascii_infix() {
+    assert_eq!(
+      interpret("Head[a \\[RuleDelayed] b]").unwrap(),
+      interpret("Head[a :> b]").unwrap()
+    );
+    assert_eq!(
+      interpret("Head[a \\[RuleDelayed] b]").unwrap(),
+      "RuleDelayed"
+    );
+  }
+
+  #[test]
+  fn rule_delayed_escape_matches_ascii_prefix() {
+    assert_eq!(
+      interpret("a \\[RuleDelayed] b").unwrap(),
+      interpret("RuleDelayed[a, b]").unwrap()
+    );
+  }
+
+  #[test]
+  fn equal_escape_matches_ascii_infix() {
+    assert_eq!(interpret("3 \\[Equal] 3").unwrap(), "True");
+    assert_eq!(
+      interpret("3 \\[Equal] 3").unwrap(),
+      interpret("3 == 3").unwrap()
+    );
+    assert_eq!(interpret("3 \\[Equal] 4").unwrap(), "False");
+  }
+
+  #[test]
+  fn equal_escape_matches_ascii_prefix() {
+    assert_eq!(
+      interpret("a \\[Equal] b").unwrap(),
+      interpret("Equal[a, b]").unwrap()
+    );
+  }
+
+  #[test]
+  fn not_equal_escape_matches_ascii_infix() {
+    assert_eq!(interpret("3 \\[NotEqual] 4").unwrap(), "True");
+    assert_eq!(
+      interpret("3 \\[NotEqual] 4").unwrap(),
+      interpret("3 != 4").unwrap()
+    );
+    assert_eq!(interpret("3 \\[NotEqual] 3").unwrap(), "False");
+  }
+
+  #[test]
+  fn less_equal_escape_matches_ascii_infix() {
+    assert_eq!(interpret("3 \\[LessEqual] 4").unwrap(), "True");
+    assert_eq!(
+      interpret("3 \\[LessEqual] 4").unwrap(),
+      interpret("3 <= 4").unwrap()
+    );
+    assert_eq!(interpret("4 \\[LessEqual] 3").unwrap(), "False");
+  }
+
+  #[test]
+  fn greater_equal_escape_matches_ascii_infix() {
+    assert_eq!(interpret("4 \\[GreaterEqual] 3").unwrap(), "True");
+    assert_eq!(
+      interpret("4 \\[GreaterEqual] 3").unwrap(),
+      interpret("4 >= 3").unwrap()
+    );
+    assert_eq!(interpret("3 \\[GreaterEqual] 4").unwrap(), "False");
+  }
+
+  /// A chained comparison spelled with the escape form must build the same
+  /// flat `Comparison` chain as the ASCII spelling, not a nested one.
+  #[test]
+  fn chained_comparison_escape_matches_ascii() {
+    assert_eq!(
+      interpret("1 \\[LessEqual] x \\[LessEqual] 10 /. x -> 5").unwrap(),
+      interpret("1 <= x <= 10 /. x -> 5").unwrap()
+    );
+  }
+
+  /// `\[Rule]`/`\[RuleDelayed]` must not be swallowed as bare identifiers
+  /// named `Rule`/`RuleDelayed` — the regression this whole family guards
+  /// against (`Mesh \[Rule] None` used to become `Mesh*None*Rule`).
+  #[test]
+  fn escape_forms_are_not_parsed_as_identifiers() {
+    assert_eq!(interpret("Head[Mesh \\[Rule] None]").unwrap(), "Rule");
+    assert_eq!(interpret("Head[3 \\[Equal] 3]").unwrap(), "Symbol");
   }
 }
 
