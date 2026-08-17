@@ -16169,6 +16169,50 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(call("Manipulate", out_args))
 }
 
+/// Whether `expr` still mentions a free symbol after evaluation — i.e. it
+/// did not reduce to a concrete value. A control bound evaluated on its own
+/// (outside the Manipulate's own variable scope) stays symbolic when it
+/// depends on another control's variable (`Range[y]`); a call like
+/// `RGBColor[0.49, 0, 0]` that evaluates to itself has no such dependency.
+/// Named mathematical constants don't count as free — they're already
+/// concrete values in disguise.
+fn expr_is_symbolic(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(name) => !matches!(
+      name.as_str(),
+      "Pi"
+        | "E"
+        | "Degree"
+        | "I"
+        | "Infinity"
+        | "ComplexInfinity"
+        | "True"
+        | "False"
+        | "None"
+        | "Automatic"
+        | "All"
+        | "Null"
+        | "GoldenRatio"
+        | "EulerGamma"
+        | "Catalan"
+    ),
+    Expr::FunctionCall { args, .. } => args.iter().any(expr_is_symbolic),
+    Expr::List(items) => items.iter().any(expr_is_symbolic),
+    Expr::Association(pairs) => pairs
+      .iter()
+      .any(|(k, v)| expr_is_symbolic(k) || expr_is_symbolic(v)),
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => expr_is_symbolic(pattern) || expr_is_symbolic(replacement),
+    _ => false,
+  }
+}
+
 /// Process a single Manipulate/Control variable specification list,
 /// evaluating trailing bounds/step/discrete values while keeping the head
 /// (variable symbol or `{u, uinit, ulbl}`) intact. A 2-item spec
@@ -16201,6 +16245,12 @@ fn process_manipulate_var_spec(items: &[Expr]) -> Expr {
     && let needs_dynamic = match &new_items[1] {
       Expr::Integer(_) | Expr::Real(_) | Expr::List(_) => false,
       Expr::FunctionCall { name, .. } if name == "Dynamic" => false,
+      // Any other call (e.g. `RGBColor[0.49, 0, 0]`) only needs wrapping
+      // when it stayed symbolic after evaluation — i.e. it still mentions a
+      // free symbol such as another control's variable. A call that
+      // evaluated down to a concrete value is already stable and needs no
+      // live re-resolution.
+      Expr::FunctionCall { args, .. } => args.iter().any(expr_is_symbolic),
       // A trailing control option such as `ControlType -> None` is not a
       // range, so it must not be wrapped in Dynamic[…].
       Expr::Rule { .. } | Expr::RuleDelayed { .. } => false,
@@ -18191,6 +18241,12 @@ fn discrete_choice_columns(
         discrete_choice_label(label)
       });
       svgs.push(svg);
+    } else if let Some(color) = crate::functions::graphics::parse_color(item) {
+      // A plain colour choice (no Rule label) renders as a swatch icon —
+      // the ColorSetter idiom — rather than its `RGBColor[…]` InputForm.
+      values.push(crate::syntax::expr_to_input_form(item));
+      labels.push(discrete_choice_label(item));
+      svgs.push(Some(color_swatch_svg(&color)));
     } else {
       values.push(crate::syntax::expr_to_input_form(item));
       labels.push(discrete_choice_label(item));
@@ -20143,21 +20199,48 @@ fn parse_manipulate_control(
     });
   }
 
-  // Colour form: `{{u, uinit, ulbl}, colour}` — a single colour where the
-  // bounds go. wolframscript renders a `ColorSlider`; Woxi has no colour
-  // widget yet, so the variable is bound to its initial colour and the
-  // other controls stay live. Without this the whole Manipulate failed to
-  // build, taking every control with it.
+  // Colour form: `{{u, uinit, ulbl}, colour}` — wolframscript renders a
+  // ColorSetter whose swatches are the initial colour and the listed
+  // alternate(s), matching the Demonstrations idiom of toggling between a
+  // couple of fixed colours. With an explicit initial colour that differs
+  // from `colour`, the two form a real 2-swatch choice; without one there is
+  // only a single possible value, so the variable stays fixed at it (there
+  // is nothing to pick between).
   if bounds.len() == 1
     && crate::functions::graphics::parse_color(bounds[0]).is_some()
   {
-    let value = explicit_initial
-      .as_ref()
-      .filter(|init| parse_color(init).is_some())
-      .map_or_else(
-        || crate::syntax::expr_to_input_form(bounds[0]),
-        crate::syntax::expr_to_input_form,
-      );
+    let alt_code = crate::syntax::expr_to_input_form(bounds[0]);
+    if let Some(init) = explicit_initial.as_ref().filter(|init| {
+      parse_color(init).is_some()
+        && crate::syntax::expr_to_input_form(init) != alt_code
+    }) {
+      let value_items = vec![init.clone(), bounds[0].clone()];
+      let (values, value_labels, value_label_svgs) =
+        discrete_choice_columns(&value_items);
+      return Some(ParsedControl::Visible {
+        control: ManipulateControl::Discrete {
+          name,
+          values,
+          value_labels,
+          value_label_svgs,
+          initial_index: 0,
+          label,
+          label_runs,
+          popup: false,
+          // A ColorSetter always shows its swatches as a row of buttons,
+          // never a dropdown.
+          setter_bar: true,
+          slider: false,
+        },
+        enabled,
+        min_code: None,
+        max_code: None,
+        values_code: None,
+        animate: None,
+        tracking: tracking.clone(),
+      });
+    }
+    let value = crate::syntax::expr_to_input_form(bounds[0]);
     return Some(ParsedControl::Fixed { name, value });
   }
 
