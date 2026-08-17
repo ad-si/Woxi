@@ -146,10 +146,10 @@ expression: "export_svg(\"ListPlot[{{1, 2, 3, 4}, {2, 3, 4, 5}}, Filling -> {1 -
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3227,1750 3227,1790 "/>
-<polyline fill="none" opacity="0.2" stroke="#5E81B5" stroke-width="10" points="851,1688 851,1307 "/>
-<polyline fill="none" opacity="0.2" stroke="#5E81B5" stroke-width="10" points="1700,1307 1700,925 "/>
-<polyline fill="none" opacity="0.2" stroke="#5E81B5" stroke-width="10" points="2548,925 2548,543 "/>
-<polyline fill="none" opacity="0.2" stroke="#5E81B5" stroke-width="10" points="3397,543 3397,162 "/>
+<polyline fill="none" opacity="0.2" stroke="#FF8000" stroke-width="10" points="851,1688 851,1307 "/>
+<polyline fill="none" opacity="0.2" stroke="#FF8000" stroke-width="10" points="1700,1307 1700,925 "/>
+<polyline fill="none" opacity="0.2" stroke="#FF8000" stroke-width="10" points="2548,925 2548,543 "/>
+<polyline fill="none" opacity="0.2" stroke="#FF8000" stroke-width="10" points="3397,543 3397,162 "/>
 <circle cx="851" cy="1688" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
 <circle cx="1700" cy="1307" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
 <circle cx="2548" cy="925" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>

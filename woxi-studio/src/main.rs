@@ -3905,6 +3905,7 @@ fn render_manipulate_widget<'a>(
         popup,
         setter_bar: force_setter_bar,
         slider: as_slider,
+        vertical: is_vertical,
       } => {
         let label_widget =
           manipulate_label_widget(label_runs, label, label_col_width, enabled);
@@ -3981,7 +3982,8 @@ fn render_manipulate_widget<'a>(
         let control: Element<Message> = if *force_setter_bar
           || (renders_as_setter_bar(value_labels, value_label_svgs) && !*popup)
         {
-          let mut bar = Row::new().spacing(0).align_y(Center);
+          let is_vertical = *is_vertical;
+          let mut buttons = Vec::with_capacity(value_labels.len());
           for (i, choice_label) in value_labels.iter().enumerate() {
             let is_selected = i == *current_index;
             let choice = choice_label.clone();
@@ -4004,6 +4006,7 @@ fn render_manipulate_widget<'a>(
                   i,
                   count,
                   enabled,
+                  is_vertical,
                 )
               },
             );
@@ -4012,9 +4015,18 @@ fn render_manipulate_widget<'a>(
                 cell_idx, ctrl_idx, choice,
               ));
             }
-            bar = bar.push(btn);
+            buttons.push(btn.into());
           }
-          bar.into()
+          // `Appearance -> "Vertical"` stacks the segments in a column
+          // instead of Wolfram's default horizontal bar.
+          if is_vertical {
+            Column::with_children(buttons).spacing(0).into()
+          } else {
+            Row::with_children(buttons)
+              .spacing(0)
+              .align_y(Center)
+              .into()
+          }
         } else {
           let selected = value_labels.get(*current_index).cloned();
           let on_select = move |choice: String| {
@@ -5261,6 +5273,7 @@ fn setter_button_style(
   index: usize,
   count: usize,
   enabled: bool,
+  vertical: bool,
 ) -> button::Style {
   use iced::border::Radius;
   let is_dark = !matches!(theme, Theme::Light);
@@ -5273,15 +5286,26 @@ fn setter_button_style(
   };
   let accent_hover = Color::from_rgb(0.30, 0.56, 0.98);
 
-  // Round only the outer corners of the first and last segment.
+  // Round only the outer corners of the first and last segment — the left
+  // pair/right pair for a horizontal bar, the top pair/bottom pair for a
+  // `Appearance -> "Vertical"` column of segments.
   let r = 6.0;
   let first = index == 0;
   let last = index + 1 == count;
-  let radius = Radius {
-    top_left: if first { r } else { 0.0 },
-    bottom_left: if first { r } else { 0.0 },
-    top_right: if last { r } else { 0.0 },
-    bottom_right: if last { r } else { 0.0 },
+  let radius = if vertical {
+    Radius {
+      top_left: if first { r } else { 0.0 },
+      top_right: if first { r } else { 0.0 },
+      bottom_left: if last { r } else { 0.0 },
+      bottom_right: if last { r } else { 0.0 },
+    }
+  } else {
+    Radius {
+      top_left: if first { r } else { 0.0 },
+      bottom_left: if first { r } else { 0.0 },
+      top_right: if last { r } else { 0.0 },
+      bottom_right: if last { r } else { 0.0 },
+    }
   };
 
   let (idle_bg, idle_text, border_color) = if is_dark {
@@ -6638,6 +6662,91 @@ mod tests {
     assert!(
       state.graphics_handle.is_some(),
       "Show of ParametricPlot3D + Plot3D should render a graphic"
+    );
+  }
+
+  /// A discrete `SetterBar`-style term-count picker (`{{n, 2, "terms"},
+  /// {2, 3, 4}}`) that `Take`s that many sliders and folds them through a
+  /// recursive, pattern-matched, `Module`-based extended-GCD helper (mixing
+  /// `Blank[]` and `BlankSequence[]` heads, tuple-destructuring assignment,
+  /// and `Prepend`) defined in `Initialization`, with the result laid out via
+  /// `Grid`/`Labeled`/`Row`/`Dot`/`Subscript`/`Style`. This mirrors the
+  /// general construct category used by number-theory Wolfram
+  /// Demonstrations Project notebooks that expose a "how many terms" picker
+  /// over a recursive multi-argument algorithm (independently written, not
+  /// copied from any specific one).
+  #[test]
+  fn manipulate_term_count_picker_drives_recursive_xgcd_helper() {
+    let code = r#"Manipulate[
+      Module[{terms, result, coeffs, capLabels},
+        terms = Take[{b1, b2, b3}, count];
+        result = combine[terms];
+        coeffs = result[[2]];
+        capLabels = Take[{Subscript[Style["c", Italic], 1],
+          Subscript[Style["c", Italic], 2],
+          Subscript[Style["c", Italic], 3]}, count];
+        Text[Labeled[
+          Grid[{{"gcd", result[[1]]}, {"coeffs", coeffs}}],
+          Row[{Dot[terms, coeffs], " = ", result[[1]], ", where ",
+            capLabels, " = ", coeffs}],
+          Top
+        ]]
+      ],
+      {{count, 3, "terms"}, {2, 3, 4}},
+      {{b1, 12}, 1, 100, 1},
+      {{b2, 18}, 1, 100, 1},
+      {{b3, 30}, 1, 100, 1},
+      Initialization :> (
+        xgcd2[a_, b_] := Module[{q, r, sub, d, s, t},
+          If[b == 0, {a, {1, 0}},
+            q = Quotient[a, b]; r = Mod[a, b];
+            sub = xgcd2[b, r];
+            d = sub[[1]]; s = sub[[2, 2]]; t = sub[[2, 1]] - q sub[[2, 2]];
+            {d, {s, t}}
+          ]
+        ];
+        combine[{a_}] := {a, {1}};
+        combine[{a_, rest__}] := Module[{d1, c1, xg, d, s, t, restCoeffs},
+          {d1, c1} = combine[{rest}];
+          xg = xgcd2[a, d1];
+          d = xg[[1]]; s = xg[[2, 1]]; t = xg[[2, 2]];
+          restCoeffs = t * c1;
+          {d, Prepend[restCoeffs, s]}
+        ];
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a discrete picker plus three sliders should build a ManipulateState",
+    );
+
+    assert!(
+      state.error.is_none(),
+      "body should evaluate cleanly: {:?}",
+      state.error
+    );
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        name,
+        values,
+        current_index,
+        ..
+      } => {
+        assert_eq!(name, "count");
+        assert_eq!(values, &["2", "3", "4"]);
+        assert_eq!(*current_index, 1, "default 3 is the second choice");
+      }
+      other => panic!("expected a discrete term-count picker, got {other:?}"),
+    }
+    assert_eq!(state.controls.len(), 4, "picker plus three sliders");
+    // gcd(12, 18, 30) = 6, with Bezout coefficients {0, 2, -1}: the default
+    // rendering must reflect the correct fold over all three terms, not
+    // just the first one or two.
+    let text = state.text_output.as_deref().unwrap_or("");
+    assert!(
+      text.contains('6'),
+      "gcd(12, 18, 30) = 6 must appear in the rendered text: {text:?}"
     );
   }
 
@@ -9815,6 +9924,138 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn polypath_iterations_manipulate_folds_its_quadrilateral() {
+    // End-to-end regression for "Polypath Iterations": two draggable
+    // vertices seed a quadrilateral that gets iteratively reflected via
+    // complex-number `Conjugate`, `NestList` builds the fold history, and
+    // `Partition[…, 2, 1, {1, 1}]` turns each fold into a cyclic chain of
+    // segments colored by `ColorData`. The fold count is exposed through
+    // *two* SetterBars bound to the same variable — a coarse and a fine
+    // preset row sharing one `reps$$` — plus a `Button` that reassigns
+    // both locator-bound variables at once via list-destructuring.
+    let code = "Manipulate[\
+      Graphics[{\
+        MapIndexed[{ColorData[\"Rainbow\"][(#2[[1]] - 1)/(reps + \
+            $MachineEpsilon)], AbsoluteThickness[1.5], Line[#]} &, \
+          Partition[\
+            Map[{Re[#], Im[#]} &, \
+              NestList[{#[[2]], #[[3]], #[[4]], \
+                  Conjugate[(#[[1]] - #[[2]])/(#[[4]] - #[[2]])] (#[[4]] - \
+                      #[[2]]) + #[[2]]} &, \
+                {u1[[1]] + I u1[[2]], u2[[1]] + I u2[[2]], -u2[[1]] - \
+                    I u2[[2]], -u1[[1]] - I u1[[2]]}, reps]], \
+            2, 1, {1, 1}]], \
+        Directive[Opacity[If[showPts == 1, 1, 0], White]], \
+        AbsolutePointSize[6], \
+        Point[{u1, u2}]}, \
+        Background -> Black, ImagePadding -> 4, ImageSize -> {380, 380}, \
+        PlotRange -> range], \
+      {{showPts, 1, \"\"}, {0 -> \"hide\", 1 -> \"show\"}, \
+        ControlType -> SetterBar}, \
+      Button[\"randomize\", \
+        {u1, u2} = Table[{RandomReal[{-1, 1}], RandomReal[{-1, 1}]}, {2}]], \
+      Delimiter, \
+      {{u1, {-0.3, 0.9}}, {-1, -1}, {1, 1}, ControlType -> Locator}, \
+      {{u2, {0.6, 1}}, {-1, -1}, {1, 1}, ControlType -> Locator}, \
+      Style[\"fold count\", Bold], \
+      {{reps, 40, \"\"}, {0, 1, 2, 5, 10}, ControlType -> SetterBar}, \
+      {{reps, 40, \"\"}, {20, 40, 80}, ControlType -> SetterBar}, \
+      Delimiter, \
+      Style[\"plot range\", Bold], \
+      {{range, All, \"\"}, {All, 1, 5, 10}, ControlType -> SetterBar}\
+      ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the polypath-iterations Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the folded quadrilateral"
+    );
+
+    // Two locators, plus two independent SetterBar rows both bound to
+    // `reps` (a coarse preset row and a fine preset row sharing one
+    // variable) — dragging or clicking either must move the other.
+    let reps_rows: Vec<usize> = state
+      .controls
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| c.name() == "reps")
+      .map(|(i, _)| i)
+      .collect();
+    assert_eq!(
+      reps_rows.len(),
+      2,
+      "expected two SetterBar rows sharing the `reps` variable, got {:?}",
+      state.controls
+    );
+
+    let locators: Vec<&str> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Slider2D { name, .. } => Some(name.as_str()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(locators, vec!["u1", "u2"]);
+
+    // Clicking a preset in the fine SetterBar must move the coarse one too.
+    let fine_idx = reps_rows[1];
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[fine_idx]
+    {
+      *current_index = 1; // picks "40"
+    }
+    state.apply_tracking(fine_idx);
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "re-render after picking a fold-count preset failed: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some());
+
+    // Dragging a locator re-folds the quadrilateral from its new corner.
+    let u1_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "u1")
+      .expect("a locator for u1");
+    if let manipulate::ControlState::Slider2D { x, y, .. } =
+      &mut state.controls[u1_idx]
+    {
+      *x = -0.7;
+      *y = 0.4;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+
+    // The randomize Button reassigns both locator variables at once via
+    // list-destructuring; both must move together and the widget must
+    // still render afterwards.
+    let randomize = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("a randomize button");
+    state.apply_button_action(&randomize);
+    assert!(
+      state.error.is_none(),
+      "randomize button failed: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn constraint_tiling_manipulate_switches_net_and_solid() {
     // End-to-end regression for "Constraint Tiling on a Truncated
     // Icosahedron": a setter bar picks one of six constraint sets and a
@@ -10327,6 +10568,54 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn indexed_color_scheme_plot_manipulate_builds_widget() {
+    // A labeled slider drives how many series a `ListPlot` shows, each
+    // series colored from `ColorData[35, "ColorList"]` — the shape a
+    // Demonstration reaches for when it wants its plotted series to cycle
+    // through a named indexed palette instead of the default one.
+    let code = "Manipulate[\
+      ListPlot[Table[{k, Mod[k^2, 13]}, {k, m}], \
+       PlotStyle -> ColorData[35, \"ColorList\"], \
+       PlotRange -> {{0, m}, {0, 13}}, AspectRatio -> 1, \
+       ImageSize -> {300, 300}], \
+      {{m, 40, \"count\"}, 5, 100, 1, Appearance -> \"Labeled\"}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the indexed-color-scheme Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must produce the scatter plot"
+    );
+    match &state.controls[0] {
+      manipulate::ControlState::Continuous {
+        label,
+        current,
+        min,
+        max,
+        ..
+      } => {
+        assert_eq!(label, "count");
+        assert_eq!((*current, *min, *max), (40.0, 5.0, 100.0));
+      }
+      other => panic!("expected a continuous slider, got {other:?}"),
+    }
+
+    // Moving the slider re-renders without error.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 75.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn compass_construction_manipulate_builds_widget() {
     // End-to-end regression for a Demonstration that constructs with
     // compasses alone: the initialization crosses two circles through
@@ -10470,6 +10759,91 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       &mut state.controls[1]
     {
       *current = 15.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
+  fn switch_selected_multi_plot_manipulate_builds_widget() {
+    // End-to-end regression for a Manipulate whose body picks a color and a
+    // pair of curve coefficients via `Switch` on a `PopupMenu` selector,
+    // then `Show`s two `Plot`s together with a `Row`/`Style`/`Subscript`
+    // text `Epilog`, a scaled `ImageSize` list, and `LabelStyle`.
+    let code = "Manipulate[\
+      Module[{coeffA, coeffB, curveColor}, \
+        {coeffA, coeffB, curveColor} = Switch[material, \
+          1, {1.2, 0.4, Red}, \
+          2, {2.1, 0.9, Blue}, \
+          3, {0.6, 1.5, Darker[Green]}\
+        ]; \
+        Show[\
+          Plot[coeffA*Sin[coeffB*x + shift], {x, 0, 10}, \
+            PlotStyle -> {Thick, curveColor}, \
+            PlotRange -> {{0, 10}, {-3, 3}}, \
+            Frame -> True, \
+            FrameLabel -> {\"x\", \"amplitude\"}, \
+            Epilog -> {\
+              Text[Row[{Style[\"material\", Italic, Larger], \" = \", \
+                Part[{\"Alpha\", \"Beta\", \"Gamma\"}, material]}], {5, 2.5}], \
+              Text[Row[{Style[Subscript[\"A\", \"0\"], Italic, Larger], \
+                \" = \", coeffA}], {5, 2.1}]\
+            }\
+          ], \
+          Plot[coeffA*Cos[coeffB*x], {x, 0, 10}, PlotStyle -> {Dashed, Gray}], \
+          ImageSize -> 1.2*{400, 260}, \
+          LabelStyle -> 12\
+        ]\
+      ], \
+      {{material, 1, \"material\"}, {1 -> \"Alpha\", 2 -> \"Beta\", 3 -> \"Gamma\"}, \
+        ControlType -> PopupMenu}, \
+      {{shift, 0, \"phase shift\"}, 0, 6, Appearance -> \"Labeled\"}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Switch-selected multi-plot Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the Show'n curves"
+    );
+
+    // A popup selector (in notebook order) followed by a labeled slider.
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        label,
+        value_labels,
+        popup,
+        current_index,
+        ..
+      } => {
+        assert_eq!(label, "material");
+        assert_eq!(value_labels, &["Alpha", "Beta", "Gamma"]);
+        assert!(*popup, "ControlType -> PopupMenu must render a dropdown");
+        assert_eq!(*current_index, 0);
+      }
+      other => panic!("expected a discrete popup control, got {other:?}"),
+    }
+    match &state.controls[1] {
+      manipulate::ControlState::Continuous {
+        label, min, max, ..
+      } => {
+        assert_eq!(label, "phase shift");
+        assert_eq!((*min, *max), (0.0, 6.0));
+      }
+      other => panic!("expected a continuous slider, got {other:?}"),
+    }
+
+    // Switching material re-selects the Switch branch (a different curve
+    // color and coefficients) and must still render without error.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 2;
     }
     state.reevaluate();
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
@@ -14471,6 +14845,51 @@ Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}
     }
   }
 
+  /// `Appearance -> "Vertical"` on a `RadioButtonBar`/`SetterBar` stacks its
+  /// segments in a column instead of Wolfram's default horizontal bar. The
+  /// spec's option threads through as `ControlState::Discrete::vertical`,
+  /// which the render loop reads to swap the `Row` for a `Column`.
+  #[test]
+  fn appearance_vertical_marks_the_bar_a_column() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[level, {{level, \"low\"}, {\"low\", \"medium\", \"high\"}, \
+       ControlType -> SetterBar, Appearance -> \"Vertical\"}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          setter_bar,
+          vertical,
+          ..
+        },
+      ] => {
+        assert!(*setter_bar);
+        assert!(*vertical, "Appearance -> \"Vertical\" must set vertical");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// Without `Appearance -> "Vertical"` the bar stays the default horizontal
+  /// row — the flag must not default to `true`.
+  #[test]
+  fn horizontal_bar_stays_the_default_without_appearance_vertical() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[level, {{level, \"low\"}, {\"low\", \"medium\", \"high\"}, \
+       ControlType -> SetterBar}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    match &state.controls[..] {
+      [manipulate::ControlState::Discrete { vertical, .. }] => {
+        assert!(!*vertical);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
   /// A control's caption: Wolfram writes the variable's own name when the
   /// spec gives no label, and writes nothing when the spec gives `""`. The
   /// two must not collapse into one another — a Demonstration suppresses a
@@ -16534,6 +16953,91 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
     );
   }
 
+  /// End-to-end regression for a "wire cutting through ice" style
+  /// Demonstration: a translucent `Cuboid` block, a `Tube` looped through
+  /// it standing in for a loaded wire, and a pair of `Cylinder` weights
+  /// hung from its ends, all positioned from a single time slider so the
+  /// wire's depth inside the block animates. Exercises `CapForm`,
+  /// `EdgeForm`, `Opacity`, and the 3D-specific `Boxed`/`PlotRange`/
+  /// `SphericalRegion`/`ImageSize` options together with a `Labeled`
+  /// continuous control.
+  #[test]
+  fn wire_through_ice_manipulate_animates_its_depth_slider() {
+    let code = "Manipulate[\
+      Graphics3D[{\
+        Opacity[0.4], EdgeForm[Gray], LightBlue, \
+        Cuboid[{0, 0, 0}, {1, 1, 1}], \
+        Opacity[1], CapForm[\"Round\"], Orange, \
+        Tube[{{0.5, -0.2, 1 - depth}, {0.5, 1.2, 1 - depth}}, 0.02], \
+        Gray, \
+        Cylinder[{{0.5, -0.2, 1 - depth}, {0.5, -0.2, 0.4 - depth}}, 0.08], \
+        Cylinder[{{0.5, 1.2, 1 - depth}, {0.5, 1.2, 0.4 - depth}}, 0.08]\
+      }, \
+        Boxed -> False, \
+        PlotRange -> {{-0.2, 1.2}, {-0.2, 1.2}, {-0.6, 1.2}}, \
+        SphericalRegion -> True, \
+        ImageSize -> {360, 360}\
+      ], \
+      {{depth, 0.3, \"wire depth\"}, 0, 1, Appearance -> \"Labeled\"}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the wire-through-ice Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the block, wire, and weights"
+    );
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the block, wire, and weights must render")
+    };
+    let initial = render(&state);
+
+    match &mut state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name.as_str(), "depth");
+        assert_eq!(label.as_str(), "wire depth");
+        assert_eq!(*min, 0.0);
+        assert_eq!(*max, 1.0);
+        assert_eq!(*current, 0.3);
+        *current = 0.8;
+      }
+      other => panic!("expected a single continuous slider, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+    let moved = render(&state);
+    assert_ne!(
+      initial, moved,
+      "moving the depth slider must change the rendered picture"
+    );
+  }
+
   #[test]
   fn sturms_theorem_manipulate_builds_widget() {
     // End-to-end regression for a "Sturm's theorem for polynomials"
@@ -16671,6 +17175,81 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
       .expect("the randomize button");
     state.apply_button_action(&action);
     assert!(state.error.is_none(), "button failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  /// A `With[]`-wrapped `Graphics[]` body driven by two plain continuous
+  /// sliders, whose primitive list nests a `{color, primitive, color,
+  /// primitive}` sublist and includes a `Text[Style[Column[{Row[...]]]]]`
+  /// caption built from `Sqrt` and division — the general shape used by
+  /// many physics-demo Wolfram Demonstrations Project notebooks
+  /// (independently written, not copied from any specific one).
+  #[test]
+  fn manipulate_with_wrapped_graphics_body_and_two_sliders() {
+    let code = r#"Manipulate[
+      With[{tilt = If[extend > 0.6, Pi/2 + extend - 0.6, Pi/2]},
+        Graphics[{
+          Line[{{0, 0}, {Cos[tilt], Sin[tilt] - 0.3}}],
+          {Orange, Disk[{Cos[tilt], Sin[tilt] - 0.3}, 0.2],
+           GrayLevel[0.4], Polygon[{{-1, -1.5}, {-0.9, -1.3}, {-0.8, -1.5}}]},
+          Black, Rectangle[{-0.6, -0.2}, {-0.5, -0.15}],
+          Text[
+            Style[
+              Column[{
+                Row[{"speed 1 ", Sqrt[2 9.8 0.2], " m/s"}],
+                Row[{"speed 2 ", ((mass + 0.01) Sqrt[2 9.8 0.2]) / 0.01, " m/s"}]
+              }],
+              12
+            ],
+            {-0.4, -0.4}
+          ],
+          Arrow[{{-0.5, -1.5}, {1, -1.5}}],
+          Thickness[0.004]
+        }, PlotRange -> {{-1.2, 1.2}, {-1.8, 0.3}}, Background -> LightBlue,
+           ImageSize -> {260, 260}]
+      ],
+      {{extend, 0, "release"}, 0, 1.5},
+      {{mass, 1, "target mass"}, 1, 4}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("two plain continuous controls should build a ManipulateState");
+
+    assert_eq!(state.controls.len(), 2, "exactly two control rows");
+    assert!(
+      state
+        .controls
+        .iter()
+        .all(|c| matches!(c, manipulate::ControlState::Continuous { .. })),
+      "both {{{{var, default, label}}, min, max}} specs build plain sliders"
+    );
+    assert!(
+      state.error.is_none(),
+      "With-wrapped Graphics body should evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the With-wrapped Graphics body should render a graphic"
+    );
+
+    // Move both sliders past the `If` branch point and confirm the widget
+    // keeps rendering without error.
+    match &mut state.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 1.2,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    match &mut state.controls[1] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 3.0,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "body should still evaluate after moving both sliders: {:?}",
+      state.error
+    );
     assert!(state.graphics_handle.is_some());
   }
 }

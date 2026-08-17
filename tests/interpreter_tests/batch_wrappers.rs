@@ -3784,6 +3784,53 @@ mod batch_unevaluated_wrappers_2 {
   fn word_counts_ngram_too_long() {
     assert_eq!(interpret("WordCounts[\"hi\", 5]").unwrap(), "<||>");
   }
+  #[test]
+  fn delete_stopwords_string_keeps_punctuation() {
+    assert_eq!(
+      interpret(
+        "DeleteStopwords[\"A long time ago, in a galaxy far, far away\"]"
+      )
+      .unwrap(),
+      "long time ago, galaxy far, far away"
+    );
+  }
+  #[test]
+  fn delete_stopwords_string_is_case_insensitive() {
+    assert_eq!(
+      interpret("DeleteStopwords[\"THE Quick Brown Fox\"]").unwrap(),
+      "Quick Brown Fox"
+    );
+  }
+  #[test]
+  fn delete_stopwords_list_of_words() {
+    assert_eq!(
+      interpret("DeleteStopwords[{\"a\", \"list\", \"of\", \"words\"}]")
+        .unwrap(),
+      "{list, words}"
+    );
+  }
+  #[test]
+  fn delete_stopwords_list_keeps_non_stopwords() {
+    assert_eq!(
+      interpret("DeleteStopwords[{\"cat\", \"dog\", \"is\"}]").unwrap(),
+      "{cat, dog}"
+    );
+  }
+  #[test]
+  fn delete_stopwords_association_drops_stopword_keys() {
+    assert_eq!(
+      interpret("DeleteStopwords[WordCounts[\"the cat sat on the mat\"]]")
+        .unwrap(),
+      "<|mat -> 1, sat -> 1, cat -> 1|>"
+    );
+  }
+  #[test]
+  fn delete_stopwords_no_stopwords_present() {
+    assert_eq!(
+      interpret("DeleteStopwords[\"cats dogs birds\"]").unwrap(),
+      "cats dogs birds"
+    );
+  }
   // WordFrequency[text, word] gives the fraction of words equal to `word`.
   #[test]
   fn word_frequency_basic() {

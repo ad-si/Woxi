@@ -259,6 +259,14 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
         if let Some(o) = try_eval_to_f64(&args[0]) {
           style.opacity = o.clamp(0.0, 1.0);
         }
+        // `Opacity[a, color]` also sets the fill/stroke color, not just
+        // the alpha — the same two-argument form `FillingStyle` and a
+        // plain `Opacity[a, color]` graphics directive both accept.
+        if args.len() >= 2
+          && let Some(c) = parse_color(&args[1])
+        {
+          style.color = c;
+        }
       }
       "Thickness" if args.len() == 1 => match &args[0] {
         Expr::Identifier(s) => match s.as_str() {
@@ -311,6 +319,44 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
     _ => return false,
   }
   true
+}
+
+/// Map every data-space point in a primitive expression through an affine
+/// transform `p -> m.p + v`, leaving everything else (heads, strings,
+/// directives, non-point numeric args) untouched. A "point" is any 2-element
+/// list of two numbers, which is how a point shows up wherever a primitive
+/// takes one — `Line[{pt, pt, …}]`, `Polygon[{pt, …}]`, `Point[pt]`,
+/// `Text[label, pt]`, `Rectangle[pt, pt]` — so this single recursive walk
+/// covers every primitive `render_item` knows about without special-casing
+/// each one's argument shape.
+fn affine_map_points(expr: &Expr, m: [[f64; 2]; 2], v: (f64, f64)) -> Expr {
+  if let Expr::List(items) = expr
+    && items.len() == 2
+    && let (Some(x), Some(y)) =
+      (try_eval_to_f64(&items[0]), try_eval_to_f64(&items[1]))
+  {
+    return Expr::List(
+      vec![
+        Expr::Real(m[0][0] * x + m[0][1] * y + v.0),
+        Expr::Real(m[1][0] * x + m[1][1] * y + v.1),
+      ]
+      .into(),
+    );
+  }
+  match expr {
+    Expr::List(items) => {
+      Expr::List(items.iter().map(|it| affine_map_points(it, m, v)).collect())
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| affine_map_points(a, m, v))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    other => other.clone(),
+  }
 }
 
 /// Render one Epilog item (directive, primitive, or nested scoped list).
@@ -409,6 +455,23 @@ fn render_item(
             style.fill_attrs(),
             polyline_points(&pts, area),
           ));
+        }
+      }
+      // `GeometricTransformation[content, transform]` maps `content`
+      // through an affine transform before drawing it — a Demonstration
+      // reuses a plot's own curve or filled region this way (extracted via
+      // `First[Plot[…]]`) as a shape to shift, scale or reflect inside its
+      // own Prolog/Epilog. A list of transforms draws one mapped copy per
+      // entry, matching `Graphics[GeometricTransformation[…]]`.
+      "GeometricTransformation" if args.len() == 2 => {
+        let transforms =
+          crate::functions::graphics::parse_affine_transforms(&args[1]);
+        if transforms.is_empty() {
+          render_item(&args[0], style, area, out);
+        } else {
+          for (m, v) in transforms {
+            render_item(&affine_map_points(&args[0], m, v), style, area, out);
+          }
         }
       }
       "Text" if args.len() >= 2 => {

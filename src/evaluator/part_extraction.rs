@@ -395,7 +395,7 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
     let series: Vec<Expr> = source
       .series
       .iter()
-      .map(|s| {
+      .flat_map(|s| {
         let points = Expr::List(
           s.points
             .iter()
@@ -405,13 +405,12 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
             })
             .collect(),
         );
-        let (r, g, b) = s.color;
-        let color = Expr::FunctionCall {
+        let rgb_expr = |(r, g, b): (u8, u8, u8)| Expr::FunctionCall {
           name: "RGBColor".to_string(),
           args: vec![
-            Expr::Real(r as f64 / 255.0),
-            Expr::Real(g as f64 / 255.0),
-            Expr::Real(b as f64 / 255.0),
+            Expr::Real(f64::from(r) / 255.0),
+            Expr::Real(f64::from(g) / 255.0),
+            Expr::Real(f64::from(b) / 255.0),
           ]
           .into(),
         };
@@ -419,12 +418,77 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
           name: if s.is_scatter { "Point" } else { "Line" }.to_string(),
           args: vec![points].into(),
         };
-        Expr::List(vec![color, draw].into())
+        let mut prims = vec![Expr::List(vec![rgb_expr(s.color), draw].into())];
+        // `Filling` draws a shaded region under the curve — bake it in as
+        // an explicit `Polygon` primitive alongside the `Line`, the way
+        // Wolfram does. Without this, a Demonstration's `region =
+        // First[Plot[…, Filling -> …]]` (extracting the drawing to
+        // transform and redraw elsewhere, e.g. with
+        // `GeometricTransformation`) silently loses the shading.
+        if let Some(polygon_points) = series_fill_polygon(s) {
+          let fill_color = s.fill_color.unwrap_or(s.color);
+          let opacity = s.fill_opacity.unwrap_or(0.2);
+          let styled_fill = Expr::FunctionCall {
+            name: "Opacity".to_string(),
+            args: vec![Expr::Real(opacity), rgb_expr(fill_color)].into(),
+          };
+          let polygon = Expr::FunctionCall {
+            name: "Polygon".to_string(),
+            args: vec![Expr::List(
+              polygon_points
+                .into_iter()
+                .map(|(x, y)| {
+                  Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
+                })
+                .collect(),
+            )]
+            .into(),
+          };
+          prims.push(Expr::List(vec![styled_fill, polygon].into()));
+        }
+        prims
       })
       .collect();
     return Some(call1("Graphics", Expr::List(series.into())));
   }
   None
+}
+
+/// The polygon points for a `PlotSeriesData`'s `Filling` level: the curve's
+/// points followed by the same x-values back along the reference level, so
+/// the closed loop matches what `AreaSeries` draws when rendering the SVG.
+/// `None` for unfilled or scatter series (a scatter plot's `Filling` draws
+/// per-point stems, not a shaded area, so it has no single polygon).
+fn series_fill_polygon(
+  s: &crate::syntax::PlotSeriesData,
+) -> Option<Vec<(f64, f64)>> {
+  if s.is_scatter {
+    return None;
+  }
+  let finite: Vec<(f64, f64)> = s
+    .points
+    .iter()
+    .copied()
+    .filter(|(x, y)| x.is_finite() && y.is_finite())
+    .collect();
+  if finite.len() < 2 {
+    return None;
+  }
+  let (y_min, y_max) = finite
+    .iter()
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &(_, y)| {
+      (lo.min(y), hi.max(y))
+    });
+  let ref_y = match s.filling {
+    crate::syntax::SeriesFilling::None => return None,
+    crate::syntax::SeriesFilling::Axis => 0.0,
+    crate::syntax::SeriesFilling::Bottom => y_min,
+    crate::syntax::SeriesFilling::Top => y_max,
+    crate::syntax::SeriesFilling::Value(v) => v,
+  };
+  let mut polygon = finite.clone();
+  polygon.extend(finite.iter().rev().map(|&(x, _)| (x, ref_y)));
+  Some(polygon)
 }
 
 /// The rest of `extract_part_ast`, after the graphics and Tree atoms have
