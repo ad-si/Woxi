@@ -3807,6 +3807,94 @@ mod tests {
       );
     }
 
+    /// `VertexRenderingFunction -> f` draws every vertex with
+    /// `f[{x, y}, name]` instead of the built-in disk. A Demonstration
+    /// uses this to swap the plain node for a coloured point.
+    #[test]
+    fn vertex_rendering_function_replaces_the_drawn_vertex() {
+      let svg = svg_of(
+        r#"GraphPlot[{1 -> 2, 2 -> 3},
+           VertexRenderingFunction -> ({Red, Rectangle[# - 0.05, # + 0.05]} &)]"#,
+      );
+      assert!(
+        circle_centres(&svg).is_empty(),
+        "the default disks are gone once the shape is ours: {svg}"
+      );
+      assert_eq!(
+        svg.matches("<rect").count(),
+        3,
+        "each of the three vertices is drawn by the function: {svg}"
+      );
+      assert_eq!(
+        svg.matches(r#"fill="rgb(255,0,0)""#).count(),
+        3,
+        "and each takes the colour the function set: {svg}"
+      );
+    }
+
+    /// The first argument is the vertex's own coordinate, so the drawn
+    /// shapes land where the default disks would have.
+    #[test]
+    fn vertex_rendering_function_is_given_the_vertex_coordinate() {
+      let plain = svg_of(r#"GraphPlot[{1 -> 2, 2 -> 3}]"#);
+      let drawn = svg_of(
+        r#"GraphPlot[{1 -> 2, 2 -> 3},
+           VertexRenderingFunction -> (Disk[#, 0.05] &)]"#,
+      );
+      let defaults = circle_centres(&plain);
+      let points = circle_centres(&drawn);
+      assert_eq!(points.len(), defaults.len(), "{drawn}");
+      for (p, d) in points.iter().zip(&defaults) {
+        assert!(
+          (p.0 - d.0).abs() < 3.0 && (p.1 - d.1).abs() < 3.0,
+          "the function draws at the vertex's own position: {points:?} vs {defaults:?}"
+        );
+      }
+    }
+
+    /// The second argument is the vertex name, which is what a
+    /// Demonstration labels its nodes with.
+    #[test]
+    fn vertex_rendering_function_is_given_the_vertex_name() {
+      let svg = svg_of(
+        r#"GraphPlot[{1 -> 2, 2 -> 3},
+           VertexRenderingFunction -> (Text[#2, #] &)]"#,
+      );
+      for name in ["1", "2", "3"] {
+        assert!(
+          svg.contains(&format!(">{name}<")),
+          "every vertex is labelled with its own name: {svg}"
+        );
+      }
+    }
+
+    /// Directives the rendering function sets are scoped to its own
+    /// vertex and do not bleed into the next one.
+    #[test]
+    fn vertex_rendering_function_directives_do_not_bleed_between_vertices() {
+      let svg = svg_of(
+        r#"GraphPlot[{1 -> 2, 2 -> 3},
+           VertexRenderingFunction -> (If[#2 === 1,
+             {Red, Disk[#, 0.05]}, Disk[#, 0.05]] &)]"#,
+      );
+      assert_eq!(
+        svg.matches(r#"fill="rgb(255,0,0)""#).count(),
+        1,
+        "only the vertex that asked for it is red: {svg}"
+      );
+    }
+
+    /// `VertexRenderingFunction -> None` leaves the edges without any
+    /// vertices drawn on their ends.
+    #[test]
+    fn vertex_rendering_function_none_draws_no_vertices() {
+      let svg = svg_of(
+        r#"GraphPlot[{1 -> 2, 2 -> 3}, VertexRenderingFunction -> None]"#,
+      );
+      assert!(circle_centres(&svg).is_empty(), "no vertex is drawn: {svg}");
+      assert!(svg.contains("<polyline"), "the edges stay: {svg}");
+    }
+
     /// A graph plot is sized by its `ImageSize`, so a Demonstration can ask
     /// for a wide, short strip.
     #[test]
