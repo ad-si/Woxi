@@ -461,7 +461,13 @@ PostfixApplication = { PostfixBase ~ ("//" ~ PostfixFunction)+ }
 // free to follow a separator (`... ; ;;`). parse_compound_expression counts the
 // `;` separators from the source to reinsert omitted (Null) statements.
 CompoundStatement = _{ TopLevelSpan | Expression }
-CompoundExpression = { CompoundStatement ~ (";" ~ CompoundStatement?)+ }
+// An optional trailing `&` (no expression between it and the last `;`) turns
+// the whole statement sequence into a pure function body — the idiom
+// `(a = #; t = 0; &)` Options like `TrackingFunction` commonly use for a
+// multi-statement callback. Without a statement between the final `;` and
+// `&`, `&` cannot attach to a `CompoundStatement` (there isn't one), so it
+// must be consumed here instead, at the CompoundExpression level.
+CompoundExpression = { CompoundStatement ~ (";" ~ CompoundStatement?)+ ~ AnonymousFunctionSuffix? }
 
 // DerivativeNumeric: numeric literal followed by '...' (e.g. 1', (-1.4)', I via Constant)
 DerivativeNumeric = { (PrecisionReal | Real | IntegerScientific | Integer | Constant) ~ DerivativePrime }

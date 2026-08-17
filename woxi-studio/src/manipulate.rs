@@ -297,6 +297,13 @@ pub struct ManipulateState {
   /// `advance_animation` targets this control instead of defaulting to the
   /// first continuous one.
   animation_var: Option<String>,
+  /// Per-control `TrackingFunction -> f` callback (InputForm code), as
+  /// `(control name, function code)`. Run against the control's new value
+  /// whenever the user moves it (see [`apply_tracking`]), so a Demonstration
+  /// can reset a companion control the way Wolfram does.
+  ///
+  /// [`apply_tracking`]: Self::apply_tracking
+  tracking: Vec<(String, String)>,
   /// Continuous-control bounds that reference other control variables, as
   /// `(control name, min code, max code)`. Re-resolved against the live
   /// bindings on every re-evaluation so a slider range can follow another
@@ -392,6 +399,7 @@ impl ManipulateState {
       appearance_none: spec.appearance_none,
       tracked_symbols: spec.tracked_symbols,
       animation_var: spec.animation_var,
+      tracking: spec.tracking,
       dynamic_bounds: spec.dynamic_bounds,
       dynamic_values: spec.dynamic_values,
       control_enabled,
@@ -444,6 +452,39 @@ impl ManipulateState {
       }
     }
     self.reevaluate();
+  }
+
+  /// Run the control at `ctrl_idx`'s `TrackingFunction -> f` (if it has
+  /// one) against its *new* current value, folding back whatever `f`
+  /// assigns (e.g. a companion control it resets) into state/controls.
+  /// Called right after a control's value is updated, before the caller
+  /// requests a re-evaluation, so the tracking function's writes are
+  /// already part of the binding set the re-render uses.
+  pub fn apply_tracking(&mut self, ctrl_idx: usize) {
+    let Some(control) = self.controls.get(ctrl_idx) else {
+      return;
+    };
+    let Some((_, code)) =
+      self.tracking.iter().find(|(n, _)| n == control.name())
+    else {
+      return;
+    };
+    let action = format!("({code})[{}]", control.current_code());
+    let updated = woxi::functions::graphics::apply_manipulate_button_action(
+      &self.bindings(),
+      &action,
+    );
+    for (name, value) in updated {
+      if let Some(slot) = self.state.iter_mut().find(|(n, _)| *n == name) {
+        slot.1 = value;
+        continue;
+      }
+      for ctrl in &mut self.controls {
+        if ctrl.name() == name {
+          ctrl.set_current_from_code(&value);
+        }
+      }
+    }
   }
 
   /// The full binding set (visible controls + mutable state) used to

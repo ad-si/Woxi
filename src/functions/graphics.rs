@@ -16643,6 +16643,14 @@ pub struct ManipulateSpec {
   /// means every variable is tracked, which is Wolfram's default and also
   /// what `TrackedSymbols -> All` / `-> Manipulate` ask for.
   pub tracked_symbols: Option<Vec<String>>,
+  /// Per-control `TrackingFunction -> f` callbacks, as `(control name,
+  /// function code)`. Whenever the named control's value changes, `f` runs
+  /// with the new value as `#` — typically to reset a *different* control
+  /// (an Electrophilic Aromatic Substitution demonstration resets its time
+  /// slider to `0` whenever the reaction step picker changes: `{{a, 1, ""},
+  /// choices, TrackingFunction -> (a = #; t = 0; &)}`). Controls with no
+  /// `TrackingFunction` option do not appear here.
+  pub tracking: Vec<(String, String)>,
 }
 
 /// Result of parsing a single list-shaped Manipulate argument.
@@ -16664,6 +16672,9 @@ enum ParsedControl {
     /// (re-resolved live by the frontend, like `min_code`/`max_code`).
     values_code: Option<String>,
     animate: Option<bool>,
+    /// `TrackingFunction -> f` (InputForm code), run with the control's new
+    /// value whenever it changes.
+    tracking: Option<String>,
   },
   /// A `Locator` control with no widget. It contributes a fixed `name =
   /// value` binding that is baked directly into the body so the variable is
@@ -16745,6 +16756,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     mut dynamic_bounds,
     mut dynamic_values,
     mut animation_var,
+    mut tracking,
   ) = if let Some(inner) = inner {
     animated = true;
     animation_running = inner.animation_running;
@@ -16759,6 +16771,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       inner.dynamic_bounds,
       inner.dynamic_values,
       inner.animation_var,
+      inner.tracking,
     )
   } else {
     // `TogglerBar[Dynamic[var], …]` inside the body moves into the
@@ -16783,6 +16796,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       Vec::new(),
       Vec::new(),
       None,
+      Vec::new(),
     )
   };
   // `Locator[Dynamic[var, cb], …]` markers inside the body drive their
@@ -17114,6 +17128,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         max_code,
         values_code,
         animate,
+        tracking: tracking_fn,
       } => {
         if let Some((orig, orig_form, synth)) = &rename {
           patch_default_label(&mut c, orig, synth);
@@ -17138,6 +17153,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         }
         if let Some(cond) = enabled {
           control_enabled.push((c.name().to_string(), cond));
+        }
+        if let Some(code) = tracking_fn {
+          tracking.push((c.name().to_string(), code));
         }
         if min_code.is_some() || max_code.is_some() {
           dynamic_bounds.push((c.name().to_string(), min_code, max_code));
@@ -17347,6 +17365,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_running,
     appearance_none,
     tracked_symbols,
+    tracking,
   })
 }
 
@@ -18331,6 +18350,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_running: true,
     appearance_none: false,
     tracked_symbols: None,
+    tracking: Vec::new(),
   })
 }
 
@@ -18408,6 +18428,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_running: true,
     appearance_none: false,
     tracked_symbols: None,
+    tracking: Vec::new(),
   })
 }
 
@@ -18483,6 +18504,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_running: true,
     appearance_none: false,
     tracked_symbols: None,
+    tracking: Vec::new(),
   })
 }
 
@@ -18534,6 +18556,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_running: true,
     appearance_none: false,
     tracked_symbols: None,
+    tracking: Vec::new(),
   })
 }
 
@@ -18596,6 +18619,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_running: animate.unwrap_or(true),
     appearance_none: false,
     tracked_symbols: None,
+    tracking: Vec::new(),
   })
 }
 
@@ -19547,6 +19571,24 @@ fn parse_manipulate_control(
     _ => None,
   });
 
+  // `TrackingFunction -> f` / `:> f` runs `f[newValue]` whenever this
+  // control's value changes, so a Demonstration can reset a companion
+  // control (e.g. rewinding a time slider when the reaction step changes).
+  let tracking: Option<String> = items.iter().find_map(|it| match it {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "TrackingFunction") =>
+    {
+      Some(crate::syntax::expr_to_input_form(replacement))
+    }
+    _ => None,
+  });
+
   // `Locator` controls (`{{p, init}, pmin, pmax, Locator}`, as a bare
   // marker or `ControlType -> Locator`) and hidden `ControlType -> None`
   // variables (`{{v, init}, ControlType -> None}`).
@@ -19672,6 +19714,7 @@ fn parse_manipulate_control(
         max_code: None,
         values_code: None,
         animate: None,
+        tracking: tracking.clone(),
       });
     }
     if let Some(points) = point_list_f64(&evaluated) {
@@ -19692,6 +19735,7 @@ fn parse_manipulate_control(
         max_code: None,
         values_code: None,
         animate: None,
+        tracking: tracking.clone(),
       });
     }
     let value = manipulate_value_to_input_form(&value_expr);
@@ -19792,6 +19836,7 @@ fn parse_manipulate_control(
       max_code: None,
       values_code: None,
       animate: Some(running),
+      tracking: tracking.clone(),
     });
   }
 
@@ -19836,6 +19881,7 @@ fn parse_manipulate_control(
       max_code: None,
       values_code: None,
       animate: None,
+      tracking: tracking.clone(),
     });
   }
 
@@ -19871,6 +19917,7 @@ fn parse_manipulate_control(
       max_code: None,
       values_code: None,
       animate: None,
+      tracking: tracking.clone(),
     });
   }
 
@@ -19997,6 +20044,7 @@ fn parse_manipulate_control(
         max_code: None,
         values_code,
         animate: None,
+        tracking: tracking.clone(),
       });
     }
   }
@@ -20137,6 +20185,7 @@ fn parse_manipulate_control(
     max_code,
     values_code: None,
     animate,
+    tracking,
   })
 }
 

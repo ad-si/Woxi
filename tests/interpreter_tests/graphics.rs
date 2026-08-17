@@ -18857,6 +18857,68 @@ mod manipulate {
   }
 
   #[test]
+  fn spec_tracking_function_captured() {
+    // A popup-menu control's `TrackingFunction -> f` runs `f[newValue]`
+    // whenever the picker changes — Demonstrations commonly use this to
+    // reset a companion slider (e.g. rewinding a step counter whenever the
+    // selected mode changes).
+    let expr = interpret_to_expr(
+      "Manipulate[If[mode == 1, step^2, step + 1], \
+       {{mode, 1, \"\"}, {1 -> \"square\", 2 -> \"increment\"}, \
+        TrackingFunction -> (mode = #; step = 0; &)}, \
+       {{step, 0, \"step\"}, 0, 5, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(
+      spec.tracking,
+      vec![(
+        "mode".to_string(),
+        "(mode = #1; step = 0; Null) & ".to_string()
+      )]
+    );
+    // The `step` control carries no `TrackingFunction` of its own.
+    assert!(spec.tracking.iter().all(|(n, _)| n != "step"));
+  }
+
+  /// End to end: the tracking function captured above actually resets the
+  /// companion control when run against the live bindings — the same
+  /// runtime path (`apply_manipulate_button_action`) the frontends use to
+  /// fold a control's `TrackingFunction` writes back into the widget state.
+  #[test]
+  fn tracking_function_resets_companion_control() {
+    use woxi::functions::graphics::apply_manipulate_button_action;
+    let expr = interpret_to_expr(
+      "Manipulate[If[mode == 1, step^2, step + 1], \
+       {{mode, 1, \"\"}, {1 -> \"square\", 2 -> \"increment\"}, \
+        TrackingFunction -> (mode = #; step = 0; &)}, \
+       {{step, 0, \"step\"}, 0, 5, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let (_, tracking_code) = spec
+      .tracking
+      .iter()
+      .find(|(n, _)| n == "mode")
+      .expect("mode has a TrackingFunction");
+    // Bindings as they stand right after the user picks "increment" (2),
+    // with the step slider still wherever it was left.
+    let bindings = vec![
+      ("mode".to_string(), "2".to_string()),
+      ("step".to_string(), "4".to_string()),
+    ];
+    let action = format!("({tracking_code})[2]");
+    let updated = apply_manipulate_button_action(&bindings, &action);
+    assert_eq!(
+      updated,
+      vec![
+        ("mode".to_string(), "2".to_string()),
+        ("step".to_string(), "0".to_string()),
+      ]
+    );
+  }
+
+  #[test]
   fn spec_json_includes_enabled_when() {
     let expr = interpret_to_expr(
       "Manipulate[a, {{a, 0.5}, 0.1, 0.9, Enabled -> Dynamic[Not[b]]}, {b, {1, 2}}]",

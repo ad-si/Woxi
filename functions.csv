@@ -2113,7 +2113,7 @@ PercentForm,Formats a non-negative real number as a percentage,✅,pure,12.0,212
 GroupOrder,Order of a group,✅,pure,8.0,2129
 QueueingProcess,Queueing theory process,🚫,,9.0,2129
 RegionProduct,Cartesian product of regions — named as a box cylinder prism or parallelotope where one exists,✅,pure,10.0,2129
-TrackingFunction,Tracking callback option,🚫,,10.0,2129
+TrackingFunction,Tracking callback option,✅,none,10.0,2129
 MathieuCharacteristicB,Mathieu characteristic value,🚫,,3.0,2131
 PowerRange,List of values from xmin by successive multiplication while their magnitude stays within xmax,✅,pure,10.0,2131
 ParentDirectory,Parent directory path,✅,none,2.0,2132

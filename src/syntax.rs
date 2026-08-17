@@ -5193,7 +5193,22 @@ fn parse_compound_expression(pair: &Pair<Rule>) -> Expr {
   // by scanning the source string for top-level `;`s between children.
   let src = pair.as_str();
   let src_start = pair.as_span().start();
-  let children: Vec<_> = pair.clone().into_inner().collect();
+  let mut children: Vec<_> = pair.clone().into_inner().collect();
+  // A trailing `&` with no statement between it and the last `;` (the
+  // `(a = #; t = 0; &)` idiom — see the grammar comment on
+  // `CompoundExpression`) turns the whole sequence into a pure function
+  // body. It rides along as a final `AnonymousFunctionSuffix` child; pull
+  // it out before the statement loop below so it isn't mistaken for one.
+  let anon_func_suffix = children
+    .last()
+    .is_some_and(|p| p.as_rule() == Rule::AnonymousFunctionSuffix)
+    .then(|| children.pop().unwrap());
+  // Stop the trailing-`;` scan at the suffix (if any) rather than the end
+  // of the whole match, so its `&`/`[…]` text is never mistaken for
+  // statement content.
+  let stmts_end = anon_func_suffix
+    .as_ref()
+    .map_or(src_start + src.len(), |s| s.as_span().start());
   let mut exprs: Vec<Expr> = Vec::new();
   // Count the number of top-level `;` separators between `lo` and `hi`
   // (absolute offsets into the original input). `;;` is treated as a
@@ -5250,16 +5265,33 @@ fn parse_compound_expression(pair: &Pair<Rule>) -> Expr {
     prev_end = span.end();
   }
   // Trailing separators after the last child → each is a Null.
-  let end_offset = src_start + src.len();
-  let trailing = count_separators(prev_end, end_offset);
+  let trailing = count_separators(prev_end, stmts_end);
   for _ in 0..trailing {
     exprs.push(Expr::Identifier("Null".to_string()));
   }
-  if exprs.len() == 1 {
+  let mut result = if exprs.len() == 1 {
     exprs.into_iter().next().unwrap()
   } else {
     Expr::CompoundExpr(exprs)
+  };
+  // Wrap in a pure function and apply any immediately-chained call
+  // (`(a = #; t = 0; &)[2]`), mirroring how a bare `expr &` is handled in
+  // `parse_expression`.
+  if let Some(suffix) = anon_func_suffix {
+    result = Expr::Function {
+      body: Box::new(result),
+    };
+    for bracket in suffix
+      .into_inner()
+      .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+    {
+      result = Expr::CurriedCall {
+        func: Box::new(result),
+        args: bracket.into_inner().map(pair_to_expr).collect(),
+      };
+    }
   }
+  result
 }
 
 fn parse_association_extended(pair: Pair<Rule>) -> Expr {
