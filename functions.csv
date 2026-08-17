@@ -2000,7 +2000,7 @@ WaveletPsi,Wavelet function psi of a wavelet family evaluated at a point,✅,pur
 FindCurvePath,Find smooth path through points (computational geometry),🚫,,7.0,2008
 Shallow,Control output depth display (notebook display),🚫,,2.0,2008
 BooleanCountingFunction,Boolean function from a count specification (k; {k}; {kmin; kmax} or {{k1; k2; ...}}); applied to boolean arguments it counts their Trues and with a variable list it writes out the expression in an optional form,✅,pure,7.0,2012
-DeleteStopwords,Removes common stopwords (articles, prepositions, pronouns, ...) from a string, a list of words, or the keys of an association,✅,pure,10.1,2012
+DeleteStopwords,Removes common stopwords (articles; prepositions; pronouns; etc.) from a string; a list of words; or the keys of an association,✅,pure,10.1,2012
 Downsample,Take every n-th element from a list,✅,none,9.0,2012
 SliceContourPlot3D,3D contour slice plot (plotting),🚫,,10.2,2012
 FieldHint,Input field hint text option (GUI),🚫,,8.0,2015
