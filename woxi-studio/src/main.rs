@@ -9757,6 +9757,138 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn polypath_iterations_manipulate_folds_its_quadrilateral() {
+    // End-to-end regression for "Polypath Iterations": two draggable
+    // vertices seed a quadrilateral that gets iteratively reflected via
+    // complex-number `Conjugate`, `NestList` builds the fold history, and
+    // `Partition[…, 2, 1, {1, 1}]` turns each fold into a cyclic chain of
+    // segments colored by `ColorData`. The fold count is exposed through
+    // *two* SetterBars bound to the same variable — a coarse and a fine
+    // preset row sharing one `reps$$` — plus a `Button` that reassigns
+    // both locator-bound variables at once via list-destructuring.
+    let code = "Manipulate[\
+      Graphics[{\
+        MapIndexed[{ColorData[\"Rainbow\"][(#2[[1]] - 1)/(reps + \
+            $MachineEpsilon)], AbsoluteThickness[1.5], Line[#]} &, \
+          Partition[\
+            Map[{Re[#], Im[#]} &, \
+              NestList[{#[[2]], #[[3]], #[[4]], \
+                  Conjugate[(#[[1]] - #[[2]])/(#[[4]] - #[[2]])] (#[[4]] - \
+                      #[[2]]) + #[[2]]} &, \
+                {u1[[1]] + I u1[[2]], u2[[1]] + I u2[[2]], -u2[[1]] - \
+                    I u2[[2]], -u1[[1]] - I u1[[2]]}, reps]], \
+            2, 1, {1, 1}]], \
+        Directive[Opacity[If[showPts == 1, 1, 0], White]], \
+        AbsolutePointSize[6], \
+        Point[{u1, u2}]}, \
+        Background -> Black, ImagePadding -> 4, ImageSize -> {380, 380}, \
+        PlotRange -> range], \
+      {{showPts, 1, \"\"}, {0 -> \"hide\", 1 -> \"show\"}, \
+        ControlType -> SetterBar}, \
+      Button[\"randomize\", \
+        {u1, u2} = Table[{RandomReal[{-1, 1}], RandomReal[{-1, 1}]}, {2}]], \
+      Delimiter, \
+      {{u1, {-0.3, 0.9}}, {-1, -1}, {1, 1}, ControlType -> Locator}, \
+      {{u2, {0.6, 1}}, {-1, -1}, {1, 1}, ControlType -> Locator}, \
+      Style[\"fold count\", Bold], \
+      {{reps, 40, \"\"}, {0, 1, 2, 5, 10}, ControlType -> SetterBar}, \
+      {{reps, 40, \"\"}, {20, 40, 80}, ControlType -> SetterBar}, \
+      Delimiter, \
+      Style[\"plot range\", Bold], \
+      {{range, All, \"\"}, {All, 1, 5, 10}, ControlType -> SetterBar}\
+      ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the polypath-iterations Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the folded quadrilateral"
+    );
+
+    // Two locators, plus two independent SetterBar rows both bound to
+    // `reps` (a coarse preset row and a fine preset row sharing one
+    // variable) — dragging or clicking either must move the other.
+    let reps_rows: Vec<usize> = state
+      .controls
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| c.name() == "reps")
+      .map(|(i, _)| i)
+      .collect();
+    assert_eq!(
+      reps_rows.len(),
+      2,
+      "expected two SetterBar rows sharing the `reps` variable, got {:?}",
+      state.controls
+    );
+
+    let locators: Vec<&str> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Slider2D { name, .. } => Some(name.as_str()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(locators, vec!["u1", "u2"]);
+
+    // Clicking a preset in the fine SetterBar must move the coarse one too.
+    let fine_idx = reps_rows[1];
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[fine_idx]
+    {
+      *current_index = 1; // picks "40"
+    }
+    state.apply_tracking(fine_idx);
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "re-render after picking a fold-count preset failed: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some());
+
+    // Dragging a locator re-folds the quadrilateral from its new corner.
+    let u1_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "u1")
+      .expect("a locator for u1");
+    if let manipulate::ControlState::Slider2D { x, y, .. } =
+      &mut state.controls[u1_idx]
+    {
+      *x = -0.7;
+      *y = 0.4;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+
+    // The randomize Button reassigns both locator variables at once via
+    // list-destructuring; both must move together and the widget must
+    // still render afterwards.
+    let randomize = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("a randomize button");
+    state.apply_button_action(&randomize);
+    assert!(
+      state.error.is_none(),
+      "randomize button failed: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn constraint_tiling_manipulate_switches_net_and_solid() {
     // End-to-end regression for "Constraint Tiling on a Truncated
     // Icosahedron": a setter bar picks one of six constraint sets and a

@@ -16862,6 +16862,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   }
   let arg_items: Vec<Expr> =
     arg_items.into_iter().map(unwrap_control_wrapper).collect();
+  let pane_governed_names = pane_or_tab_governed_names(&args[1..]);
   // A `ControlType -> …` given to the Manipulate itself sets the type of every
   // control that does not choose one; push it into the specs now that they are
   // flattened, so they parse through the single per-spec path below.
@@ -17160,11 +17161,22 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           animation_running = running;
           animation_var = Some(c.name().to_string());
         }
-        // A second spec for an already-bound variable (Kepler pairs a time
-        // slider with a `Trigger` on the same `t`) must not bind twice —
-        // the first spec keeps the widget row, later duplicates only
-        // contribute their animation/enabled semantics above.
-        if !c.name().is_empty()
+        // A second spec for an already-bound variable merges into the
+        // earlier row — contributing only the animation/enabled semantics
+        // captured above — in the two cases Wolfram itself collapses: a
+        // `Trigger` pairing with an existing slider (Kepler's time slider
+        // plus a `Trigger` on the same `t`), and a variable declared inside
+        // a `PaneSelector`/`TabView` pane (only one pane is ever on screen,
+        // so a shared widget — or a per-pane variant of one, with its own
+        // bounds or choice list — still gets a single row; see
+        // `pane_or_tab_governed_names`). Two *different* ordinary specs
+        // sharing a variable outside any pane (e.g. a coarse and a fine
+        // SetterBar preset row for the same count, as in "Polypath
+        // Iterations") are a real Wolfram pattern instead: both stay
+        // visible, independently interactive, and read/write the same
+        // binding, so those get their own rows.
+        if (animate.is_some() || pane_governed_names.contains(c.name()))
+          && !c.name().is_empty()
           && controls.iter().any(|prev| prev.name() == c.name())
         {
           continue;
@@ -17972,6 +17984,54 @@ fn collect_pane_visibility(spec: &Expr, out: &mut Vec<(String, String)>) {
       }
     }
   }
+}
+
+/// The Manipulate variable names declared inside a `PaneSelector`/`TabView`
+/// pane or tab, anywhere among `args` (a Manipulate's control-spec
+/// arguments). Only one pane/tab is ever on screen at a time, so a
+/// duplicate spec for one of these names — the same widget shared across
+/// panes, or a per-pane variant of it (different bounds, different choice
+/// list) — must still collapse to a single row; see the merge check where
+/// this is used, alongside `collect_pane_visibility` which computes the
+/// same panes' *display* condition for the row that does get built.
+fn pane_or_tab_governed_names(
+  args: &[Expr],
+) -> std::collections::HashSet<String> {
+  fn walk(e: &Expr, out: &mut std::collections::HashSet<String>) {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        if (name == "PaneSelector" || name == "TabView")
+          && let Some(Expr::List(panes)) = args.first()
+        {
+          for pane in panes {
+            if let Expr::Rule { replacement, .. }
+            | Expr::RuleDelayed { replacement, .. } = pane
+            {
+              out.extend(pane_control_variables(replacement));
+            }
+          }
+        }
+        for a in args {
+          walk(a, out);
+        }
+      }
+      // A `PaneSelector`/`TabView` may sit inside a `Row[{…}]`/`Column[{…}]`
+      // layout, whose single argument is itself a list of the grouped
+      // items — walk has to descend into that list too, not just a
+      // function call's own arguments, or a pane nested that way is missed.
+      Expr::List(items) => {
+        for it in items {
+          walk(it, out);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut out = std::collections::HashSet::new();
+  for a in args {
+    walk(a, &mut out);
+  }
+  out
 }
 
 /// The control variables a `PaneSelector` pane declares: the variable of
