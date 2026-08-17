@@ -1677,6 +1677,7 @@ impl WoxiStudio {
           && let manipulate::ControlState::Continuous { current, .. } = control
         {
           *current = value;
+          state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
@@ -1696,6 +1697,7 @@ impl WoxiStudio {
           && let Some(idx) = value_labels.iter().position(|v| *v == choice)
         {
           *current_index = idx;
+          state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
@@ -1710,6 +1712,7 @@ impl WoxiStudio {
           // Routes through the control's write-back callback (if any), so
           // e.g. Locator-promoted controls round/validate the candidate.
           state.slider2d_change(ctrl_idx, axis, value);
+          state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
@@ -1736,6 +1739,7 @@ impl WoxiStudio {
           } else {
             *high = value.max(*low);
           }
+          state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
@@ -1761,6 +1765,7 @@ impl WoxiStudio {
           } else {
             point.1 = value;
           }
+          state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
@@ -1783,6 +1788,7 @@ impl WoxiStudio {
         {
           // New points appear at the range centre, ready to drag.
           points.push(((*x_min + *x_max) / 2.0, (*y_min + *y_max) / 2.0));
+          state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
@@ -1798,6 +1804,7 @@ impl WoxiStudio {
           && point_idx < points.len()
         {
           points.remove(point_idx);
+          state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
           }
@@ -3862,6 +3869,7 @@ fn render_manipulate_widget<'a>(
         max,
         step,
         current,
+        ..
       } => {
         let label_widget =
           manipulate_label_widget(label_runs, label, label_col_width, enabled);
@@ -6529,6 +6537,52 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 mod tests {
   use super::*;
 
+  /// A single 2D-slider control (`{{var, {x0, y0}, label}, {xmin, ymin},
+  /// {xmax, ymax}}`) driving a Greek-lettered rotation/tilt pair, whose
+  /// components are split apart with `Part` and fed into several
+  /// `Initialization`-defined helper surfaces that a `Show` combines. This
+  /// mirrors the general construct category used by many rotating-3D-surface
+  /// Wolfram Demonstrations Project notebooks (independently written, not
+  /// copied from any specific one).
+  #[test]
+  fn manipulate_2d_angle_slider_combines_initialization_surfaces() {
+    let code = r#"Manipulate[
+      Show[
+        base,
+        ribbon[θ[[1]], θ[[2]]],
+        PlotRange -> {{-2, 2}, {-2, 2}, {-2, 2}},
+        BoxRatios -> {1, 1, 1}
+      ],
+      {{θ, {1, 0.5}, "tilt"}, {0, -Pi}, {2 Pi, Pi}},
+      Initialization :> (
+        base = Plot3D[0, {x, -2, 2}, {y, -2, 2}, Mesh -> False];
+        ribbon[spin_, tilt_] := ParametricPlot3D[
+          {Cos[u] Cos[spin] - tilt Sin[u], Cos[u] Sin[spin] + tilt Cos[u], Sin[u]},
+          {u, 0, 2 Pi}, Boxed -> False, Axes -> False, PlotStyle -> Hue[0.6]
+        ];
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a single 2D-slider control should build a ManipulateState");
+
+    assert_eq!(state.controls.len(), 1, "exactly one control row");
+    assert!(
+      matches!(state.controls[0], manipulate::ControlState::Slider2D { .. }),
+      "the {{var, {{x, y}}, label}} spec builds a 2D slider, not a plain slider"
+    );
+    assert!(
+      state.error.is_none(),
+      "body should evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "Show of ParametricPlot3D + Plot3D should render a graphic"
+    );
+  }
+
   #[test]
   fn collapsed_chapter_hides_following_until_next_chapter() {
     let states = &[
@@ -6633,6 +6687,54 @@ mod tests {
     state.run_scheduled_reeval();
     state.run_scheduled_reeval();
     assert!(state.request_reeval(0), "flag must clear on an empty fire");
+  }
+
+  /// A discrete control's `TrackingFunction -> f` resets a companion
+  /// control when the picker changes — the Demonstrations idiom of
+  /// rewinding a step/time slider whenever the selected mode changes.
+  /// Independently written, not copied from any specific Demonstration.
+  #[test]
+  fn manipulate_tracking_function_resets_companion_control() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[If[mode == 1, step^2, step + 1], \
+       {{mode, 1, \"\"}, {1 -> \"square\", 2 -> \"increment\"}, \
+        TrackingFunction -> (mode = #; step = 0; &)}, \
+       {{step, 3, \"step\"}, 0, 5, 1}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let mode_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .unwrap();
+    let step_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "step")
+      .unwrap();
+
+    // Move `step` away from its initial value so the reset is observable.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[step_idx]
+    {
+      *current = 4.0;
+    }
+
+    // Pick the other choice in the `mode` popup.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[mode_idx]
+    {
+      *current_index = 1;
+    }
+    state.apply_tracking(mode_idx);
+
+    let manipulate::ControlState::Continuous { current, .. } =
+      &state.controls[step_idx]
+    else {
+      panic!("expected step to remain a continuous slider");
+    };
+    assert_eq!(*current, 0.0, "TrackingFunction should reset step to 0");
   }
 
   /// A control panel written as a `Grid` — the Demonstrations layout for a
@@ -8615,6 +8717,60 @@ Cell[BoxData[
     assert_eq!(discrete(&state, 0).0.len(), 6);
   }
 
+  /// Probe: a single continuous time slider drives a `Which` of several
+  /// `Graphics3D` scenes assembled from a helper (built on
+  /// `RevolutionPlot3D[…][[1]]`) and combined with axis+pivot `Rotate`.
+  /// This shape mirrors a class of "morphing surface" Demonstrations.
+  #[test]
+  fn probe_time_sliced_rotation_scene() {
+    woxi::interpret(
+      "band[a1_, a2_, z1_] := {RevolutionPlot3D[{Sin[u] + 2, Cos[u]}, \
+         {u, a1*Pi, a2*Pi}, {z, 0, z1*Pi}, Mesh -> None][[1]]}",
+    )
+    .expect("the helper must define");
+
+    let code = "Manipulate[\
+      piece = band[0, 2, 1]; \
+      Graphics3D[{\
+        Which[\
+          s <= 1, band[0, 2, s], \
+          1 < s <= 2, Rotate[piece, (s - 1)*Pi, {0, 0, 1}, {-1, 0, 0}], \
+          True, Rotate[Rotate[piece, Pi, {0, 0, 1}, {-1, 0, 0}], \
+            (s - 2)*Pi/2, {1, 0, 0}]\
+        ]\
+      }, Boxed -> False], \
+      {{s, 0, \"time\"}, 0, 3}, \
+      SaveDefinitions -> True, TrackedSymbols -> Manipulate]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the time-sliced rotation Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly at s=0: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the scene must render");
+
+    for probe in [0.5_f64, 1.5, 2.5] {
+      if let manipulate::ControlState::Continuous { current, .. } =
+        &mut state.controls[0]
+      {
+        *current = probe;
+      } else {
+        panic!("expected a continuous control");
+      }
+      state.reevaluate();
+      assert!(
+        state.error.is_none(),
+        "body must evaluate cleanly at s={probe}: {:?}",
+        state.error
+      );
+      assert!(
+        state.graphics_handle.is_some(),
+        "the scene must render at s={probe}"
+      );
+    }
+  }
+
   /// A selected choice that the narrowed list no longer offers falls back
   /// to the last one it does, and the body is rendered again for it — so
   /// the graphic on screen always matches the control below it.
@@ -9295,6 +9451,82 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     state.reevaluate();
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
     assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
+  fn manipulate_row_with_dynamic_shows_live_value_not_frozen_text() {
+    // Regression for "Water Colors Puzzle": a Demonstration's live move
+    // counter is often written directly among the control-panel arguments as
+    // `Row[{Style["moves: "], Dynamic[moves]}]`. `Row`/`Column`/`Style` are
+    // normally treated as a static caption row (Wolfram's
+    // `ThisIsNotAControl`), but one that embeds a `Dynamic[…]` must track
+    // that variable's live value every frame instead of freezing into a
+    // `Heading` that echoes the bare `Dynamic[moves]` source as literal text.
+    let code = "Manipulate[\n\
+      moves = moves + go;\n\
+      go,\n\
+      {{go, 0}, ControlType -> None},\n\
+      Row[{Style[\"moves: \"], Dynamic[moves]}],\n\
+      {{moves, 0}, ControlType -> None}\n\
+      ]";
+    let mut state =
+      instantiate_stored_manipulate(code, "").expect("must build a widget");
+    assert!(state.error.is_none(), "body must evaluate cleanly");
+
+    // The Dynamic row must not show up as a frozen `Heading` echoing the
+    // `Dynamic[moves]` source.
+    assert!(
+      !state
+        .controls
+        .iter()
+        .any(|c| matches!(c, manipulate::ControlState::Heading { .. })),
+      "the Row[{{…, Dynamic[moves]}}] must not freeze into a Heading, got {:?}",
+      state.controls
+    );
+
+    // It renders live instead, starting at `moves`'s initial value (0).
+    fn row_text(node: &woxi::functions::graphics::DisplayNode) -> String {
+      use woxi::functions::graphics::DisplayNode;
+      match node {
+        DisplayNode::Row(children) | DisplayNode::Column(children) => {
+          children.iter().map(row_text).collect()
+        }
+        DisplayNode::Text { runs } => {
+          runs.iter().map(|r| r.text.as_str()).collect()
+        }
+        DisplayNode::Static { text, .. } => text.clone(),
+        _ => String::new(),
+      }
+    }
+    let moves_row = state
+      .display_trees
+      .iter()
+      .find(|t| row_text(t).contains("moves:"))
+      .unwrap_or_else(|| {
+        panic!(
+          "no display tree has the moves row: {:?}",
+          state.display_trees
+        )
+      });
+    assert_eq!(row_text(moves_row), "moves: 0");
+
+    // Bumping `go` and re-rendering must move the live counter, not the
+    // frozen text a `Heading` would have kept forever.
+    if let Some(slot) = state.state.iter_mut().find(|(n, _)| n == "go") {
+      slot.1 = "1".to_string();
+    }
+    state.reevaluate();
+    let moves_row = state
+      .display_trees
+      .iter()
+      .find(|t| row_text(t).contains("moves:"))
+      .unwrap_or_else(|| {
+        panic!(
+          "no display tree has the moves row: {:?}",
+          state.display_trees
+        )
+      });
+    assert_eq!(row_text(moves_row), "moves: 1");
   }
 
   #[test]
@@ -10101,6 +10333,92 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn sphere_cooling_manipulate_builds_widget() {
+    // End-to-end regression for a "transient conduction in a sphere"
+    // Demonstration: a `Do` loop walks `FindRoot` along the branches of the
+    // sphere's eigenvalue equation `1 - x Cot[x] == Bi` to build the root
+    // list a `Subscript`-indexed helper then looks up, and the resulting
+    // truncated Fourier-Bessel series is plotted against two `Labeled`
+    // sliders laid out in a `Row` with a `Spacer` between them.
+    let code = "Manipulate[\
+      Module[{roots, guess = 1, count = 8}, \
+        roots = {}; \
+        Do[\
+          AppendTo[roots, w /. FindRoot[1 - w Cot[w] == bi, {w, guess}]]; \
+          guess = guess + Pi, \
+          {n, 1, count}\
+        ]; \
+        Subscript[eig, k_] := roots[[k]]; \
+        Plot[\
+          Sum[\
+            (4 (Sin[Subscript[eig, k]] - Subscript[eig, k] Cos[Subscript[eig, k]])) / \
+              (2 Subscript[eig, k] - Sin[2 Subscript[eig, k]]) * \
+              Exp[-Subscript[eig, k]^2 fo], \
+            {k, 1, count}\
+          ], \
+          {fo, 0, fomax}, \
+          PlotRange -> {{0, fomax}, {0, 1.05}}, \
+          PlotStyle -> {Blue, Thick}, \
+          Frame -> True, \
+          FrameLabel -> {\"Fourier number\", \"center temperature ratio\"}, \
+          GridLines -> Automatic, \
+          ImageSize -> {500, 320}\
+        ]\
+      ], \
+      Row[{\
+        Control[{{fomax, 0.3, \"Fourier number range\"}, 0.1, 1.0, 0.05, \
+          Appearance -> \"Labeled\", ImageSize -> Small}], \
+        Spacer[40], \
+        Control[{{bi, 5, \"Biot number\"}, 0.5, 20, 1, \
+          Appearance -> \"Labeled\", ImageSize -> Small}]\
+      }], \
+      ControlPlacement -> Top, \
+      TrackedSymbols :> {fomax, bi}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the sphere-cooling Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the decay curve"
+    );
+
+    // Two labeled continuous sliders, in notebook order, laid out via Row.
+    let labels: Vec<(&str, f64, f64)> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous {
+          label, min, max, ..
+        } => (label.as_str(), *min, *max),
+        other => panic!("expected a continuous slider, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      labels,
+      vec![
+        ("Fourier number range", 0.1, 1.0),
+        ("Biot number", 0.5, 20.0),
+      ]
+    );
+
+    // Raising the Biot number re-solves the eigenvalue equation and
+    // re-renders without error.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[1]
+    {
+      *current = 15.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn oscilloscope_manipulate_builds_full_widget() {
     // End-to-end regression for the "Oscilloscope with Two Signal Inputs"
     // Demonstration: the loaded Input cell must build a live widget with
@@ -10675,6 +10993,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       max: 1.0,
       step: 0.1,
       current: 0.0,
+      is_real: false,
     };
     let empty = manipulate::ControlState::Continuous {
       name: "theta".to_string(),
@@ -10684,6 +11003,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       max: 1.0,
       step: 0.1,
       current: 0.0,
+      is_real: false,
     };
     assert_eq!(manipulate_label_char_count(&m1), 2);
     assert_eq!(manipulate_label_char_count(&empty), 0);
@@ -15948,5 +16268,123 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`terms$$ = 24, $CellContext`\[Beta]$
       }
       other => panic!("unexpected controls: {other:?}"),
     }
+  }
+
+  /// End-to-end regression for the shape of the "Compound of Two
+  /// Icosahedra" Demonstration: a stored `Manipulate` whose body is a
+  /// flat sequence of `;`-separated assignments (no `Module`) building
+  /// two `GraphicsComplex`es from `PolyhedronData[name, "VertexCoordinates"]`
+  /// / `Polygon[PolyhedronData[name, "FaceIndices"]]`, rotating one by a
+  /// fixed `ArcTan[...]` angle around one axis and then by a
+  /// slider-controlled angle around another, scaling both by a
+  /// `factor*{1, 1, 1}` triple (one a near-1 constant nudge, the other
+  /// driven by a second slider), and combining the colored pieces in a
+  /// `Graphics3D` with `ViewPoint`/`ViewAngle`/`SphericalRegion`/`Boxed`/
+  /// `PlotRange` options. Driven by two continuous sliders with text
+  /// labels, one ascending and one descending (`max` to `min`), plus a
+  /// `TrackedSymbols` option.
+  #[test]
+  fn demonstration_polyhedron_compound_manipulate_rotates_and_scales() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[p1 = GraphicsComplex[PolyhedronData[\"Tetrahedron\", \"VertexCoordinates\"], Polygon[PolyhedronData[\"Tetrahedron\", \"FaceIndices\"]]]; p1a = Rotate[p1, ArcTan[1/2], {1, 0, 0}]; p1b = Scale[Rotate[p1a, -spin, {0, 1, 0}], 1.002*{1, 1, 1}, {0, 0, 0}]; p2 = Scale[GraphicsComplex[PolyhedronData[\"Cube\", \"VertexCoordinates\"], Polygon[PolyhedronData[\"Cube\", \"FaceIndices\"]]], grow*{1, 1, 1}, {0, 0, 0}]; Graphics3D[{p1a, {Blue, p1b}, {Orange, p2}}, Boxed -> False, SphericalRegion -> True, ViewAngle -> Pi/24, ImageSize -> {380, 380}, ViewPoint -> {3, -8, 3}, PlotRange -> 1.3*{{-1, 1}, {-1, 1}, {-1, 1}}], {{grow, 1.5, \"cube size\"}, 0.4, 2.0}, {{spin, Pi/2, \"rotate tetrahedron\"}, Pi/2, 0}, TrackedSymbols :> {grow, spin}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`grow$$ = 1.5, $CellContext`spin$$ = Pi/2}, DynamicBox[\[Ellipsis]]]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the two rotated/scaled polyhedron pieces must draw"
+    );
+
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: grow_name,
+          label: grow_label,
+          min: grow_min,
+          max: grow_max,
+          current: grow_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: spin_name,
+          label: spin_label,
+          min: spin_min,
+          max: spin_max,
+          current: spin_now,
+          ..
+        },
+      ] => {
+        assert_eq!(grow_name.as_str(), "grow");
+        assert_eq!(grow_label.as_str(), "cube size");
+        assert_eq!(*grow_min, 0.4);
+        assert_eq!(*grow_max, 2.0);
+        assert_eq!(*grow_now, 1.5);
+        assert_eq!(spin_name.as_str(), "spin");
+        assert_eq!(spin_label.as_str(), "rotate tetrahedron");
+        // The spin slider's spec range descends (max to min), matching
+        // the source demonstration's rotation control.
+        assert!((*spin_min - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+        assert_eq!(*spin_max, 0.0);
+        assert!((*spin_now - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the pieces must render")
+    };
+
+    let initial = render(&widget);
+
+    // Dragging the cube-size slider changes the cube's scale.
+    match &mut widget.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 2.0,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    let grown_render = render(&widget);
+    assert_ne!(
+      initial, grown_render,
+      "moving the cube-size slider must change the rendered picture"
+    );
+
+    // Dragging the rotation slider to its other end rotates the
+    // tetrahedron piece around a different axis, also changing the
+    // picture again.
+    match &mut widget.controls[1] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 0.0,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    let spun_render = render(&widget);
+    assert_ne!(
+      grown_render, spun_render,
+      "moving the rotation slider must change the rendered picture"
+    );
   }
 }

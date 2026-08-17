@@ -16847,6 +16847,58 @@ mod manipulate {
     );
   }
 
+  // A Demonstration-style control panel combining a `RadioButtonBar`
+  // (picking a target constant) with a `ButtonBar` (a row of held-action
+  // buttons, e.g. incrementing a counter) side by side: both control kinds
+  // extract cleanly and the panel renders without erroring.
+  #[test]
+  fn spec_radio_button_bar_and_button_bar_together() {
+    let expr = interpret_to_expr(
+      "Manipulate[{c, n}, \
+       {{c, Pi}, {Pi, E, GoldenRatio}, ControlType -> RadioButtonBar}, \
+       ButtonBar[{\"Increment\" :> (n = n + 1), \"Reset\" :> (n = 0)}], \
+       {{n, 0}, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let has_radio_button_bar = spec.controls.iter().any(|c| {
+      matches!(
+        c,
+        ManipulateControl::Discrete {
+          setter_bar: true,
+          ..
+        }
+      )
+    });
+    assert!(
+      has_radio_button_bar,
+      "expected a setter-bar-style discrete control, got {:?}",
+      spec.controls
+    );
+    let buttons: Vec<&str> = spec
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Button { label, .. } => Some(label.as_str()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(buttons, vec!["Increment", "Reset"]);
+  }
+
+  // The same combined panel renders to a complete SVG document, matching
+  // how every other control kind is confirmed to render.
+  #[test]
+  fn export_string_svg_radio_button_bar_and_button_bar_together() {
+    let svg = export_svg(
+      "Manipulate[{c, n}, \
+       {{c, Pi}, {Pi, E, GoldenRatio}, ControlType -> RadioButtonBar}, \
+       ButtonBar[{\"Increment\" :> (n = n + 1), \"Reset\" :> (n = 0)}], \
+       {{n, 0}, ControlType -> None}]",
+    );
+    assert!(svg.contains("Increment") && svg.contains("Reset"));
+  }
+
   #[test]
   fn spec_locator_pane_binds_point_over_graphic() {
     // LocatorPane[Dynamic[p], body] is a draggable 2D point driving `body`.
@@ -17481,6 +17533,71 @@ mod manipulate {
     assert_eq!(woxi::interpret("Length[Flatten[tree]]").unwrap(), "7");
   }
 
+  /// A leading assignment may destructure a nested list in one `Set` —
+  /// `{{xmin, xmax}, {ymin, ymax}} = {{-2, 2}, {-2, 2}}` threads element-wise
+  /// the same way a plain `{a, b} = {1, 2}` does. `leading_assignments` only
+  /// recognized a single bare symbol on the left, so a body opening with a
+  /// destructuring bound-setup line was cut from the leading run entirely —
+  /// every name it introduces stayed unresolved for the rest of the body.
+  #[test]
+  fn spec_leading_assignments_include_list_destructuring() {
+    let expr = interpret_to_expr(
+      "Manipulate[{{xmin, xmax}, {ymin, ymax}} = {{-2, 2}, {-3, 3}}; g[x, y], \
+       {{pt, {1, 1}, \"\"}, {xmin, ymin}, {xmax, ymax}, ControlType -> Slider2D}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } => {
+        assert_eq!(*x_min, -2.0);
+        assert_eq!(*x_max, 2.0);
+        assert_eq!(*y_min, -3.0);
+        assert_eq!(*y_max, 3.0);
+      }
+      other => panic!("expected a Slider2D control, got {other:?}"),
+    }
+  }
+
+  /// `Slider2D`'s corner-point bounds (`{xmin, ymin}, {xmax, ymax}`) may name
+  /// symbols a leading body assignment sets, exactly as a plain slider's
+  /// scalar `min`/`max` already could (see the test above this one).
+  /// `list2_f64`, which reads each corner point, only accepted literal
+  /// numbers — a symbolic corner point made the control panel fail
+  /// structurally rather than just widen: `is_2d_range` came back false, and
+  /// the scalar-bounds fallback then tried to evaluate a whole `{xmin,
+  /// ymin}` list as one bound and gave up on the entire Manipulate.
+  #[test]
+  fn spec_slider2d_corner_bounds_see_leading_assignments() {
+    let expr = interpret_to_expr(
+      "Manipulate[umin = -5; umax = 5; g[x, y], \
+       {{pt, {0, 0}, \"\"}, {umin, umin}, {umax, umax}, \
+        ControlType -> Slider2D}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } => {
+        assert_eq!(*x_min, -5.0);
+        assert_eq!(*x_max, 5.0);
+        assert_eq!(*y_min, -5.0);
+        assert_eq!(*y_max, 5.0);
+      }
+      other => panic!("expected a Slider2D control, got {other:?}"),
+    }
+  }
+
   /// `ControlType -> Slider` over a *choice list* keeps the choices but
   /// asks for a slider that steps through them by index — how Wolfram
   /// draws a twenty-entry colour-scheme picker. Without the flag the
@@ -17907,6 +18024,7 @@ mod manipulate {
         initial,
         label,
         label_runs,
+        is_real,
       } => {
         assert_eq!(name, "x");
         assert_eq!(*min, 0.0);
@@ -17918,9 +18036,67 @@ mod manipulate {
         assert_eq!(label_runs.len(), 1);
         assert_eq!(label_runs[0].text, "x");
         assert!(!label_runs[0].italic);
+        // {x, 0, 10} is all exact integers, so x stays exact throughout.
+        assert!(!is_real);
       }
       _ => panic!("expected continuous control"),
     }
+  }
+
+  // Wolfram keeps a Manipulate slider's variable machine-real for its whole
+  // lifetime once any of `{min, max, step, initial}` was written as an
+  // inexact number — even while the slider sits at a "round" position, so
+  // `rq = 0.` (Real), never the exact integer `0`. That distinction matters
+  // once a caption formats the value with `NumberForm[…, {n, f}]`, which
+  // pads a real's fraction but leaves an exact integer unchanged. Regression
+  // for a Reaction-Engineering-style Demonstration whose title row showed a
+  // real-valued parameter with two forced decimal places even when it
+  // dragged to exactly zero.
+  #[test]
+  fn spec_continuous_is_real_tracks_inexact_bounds() {
+    let is_real_of = |code: &str| {
+      let expr = interpret_to_expr(code).unwrap();
+      let spec =
+        extract_manipulate_spec(&expr).expect("well-formed manipulate");
+      match &spec.controls[0] {
+        ManipulateControl::Continuous { is_real, .. } => *is_real,
+        other => panic!("expected continuous control, got {other:?}"),
+      }
+    };
+    // An inexact step makes the variable real-valued even though every
+    // other term (min, max, and the default initial = min) is an integer.
+    assert!(is_real_of("Manipulate[rq, {{rq, 0, \"RQ\"}, 0, 1, 0.01}]"));
+    // Likewise for an inexact min or max alone.
+    assert!(is_real_of("Manipulate[u, {u, 0., 1}]"));
+    assert!(is_real_of("Manipulate[u, {u, 0, 1.}]"));
+    // Or an inexact explicit initial value.
+    assert!(is_real_of("Manipulate[u, {{u, 0.5, \"u\"}, 0, 1}]"));
+    // All-exact-integer specs (the common integer-slider idiom) stay exact.
+    assert!(!is_real_of(
+      "Manipulate[u, {{alpha, 20, \"\\[Alpha]\"}, 1, 50, 1}]"
+    ));
+    // An exact rational bound/initial is still exact, not inexact.
+    assert!(!is_real_of("Manipulate[u, {{u, 1/2, \"u\"}, 0, 1}]"));
+  }
+
+  // End-to-end: a caption built from `NumberForm[…, {n, f}]` on a real-
+  // valued slider must show the padded fraction even when the slider is at
+  // its exact-integer-looking initial position, matching the real Wolfram
+  // Demonstrations Project rendering this was checked against.
+  #[test]
+  fn manipulate_real_slider_number_form_caption_at_zero() {
+    let expr = interpret_to_expr(
+      "Manipulate[ToString[Row[{\"rq = \", NumberForm[rq, {3, 2}]}]], \
+       {{rq, 0, \"RQ\"}, 0, 1, 0.01}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let bindings = manipulate_initial_bindings(&spec);
+    // The slider starts at its min (0), the "round" value the bug hid.
+    assert_eq!(bindings, vec![("rq".to_string(), "0.".to_string())]);
+    let code = manipulate_block_code(&spec.body_code, &bindings);
+    let result = interpret_with_stdout(&code).unwrap();
+    assert_eq!(result.result, "rq = 0.00");
   }
 
   #[test]
@@ -18433,6 +18609,7 @@ mod manipulate {
           initial: got_initial,
           label,
           label_runs,
+          ..
         } => {
           assert_eq!(got, name);
           assert_eq!((*min, *max), (-10.0, 10.0));
@@ -18789,6 +18966,68 @@ mod manipulate {
       &[("YinYang".to_string(), "False".to_string())],
     );
     assert_eq!(states, vec![false, true, true, true]);
+  }
+
+  #[test]
+  fn spec_tracking_function_captured() {
+    // A popup-menu control's `TrackingFunction -> f` runs `f[newValue]`
+    // whenever the picker changes — Demonstrations commonly use this to
+    // reset a companion slider (e.g. rewinding a step counter whenever the
+    // selected mode changes).
+    let expr = interpret_to_expr(
+      "Manipulate[If[mode == 1, step^2, step + 1], \
+       {{mode, 1, \"\"}, {1 -> \"square\", 2 -> \"increment\"}, \
+        TrackingFunction -> (mode = #; step = 0; &)}, \
+       {{step, 0, \"step\"}, 0, 5, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(
+      spec.tracking,
+      vec![(
+        "mode".to_string(),
+        "(mode = #1; step = 0; Null) & ".to_string()
+      )]
+    );
+    // The `step` control carries no `TrackingFunction` of its own.
+    assert!(spec.tracking.iter().all(|(n, _)| n != "step"));
+  }
+
+  /// End to end: the tracking function captured above actually resets the
+  /// companion control when run against the live bindings — the same
+  /// runtime path (`apply_manipulate_button_action`) the frontends use to
+  /// fold a control's `TrackingFunction` writes back into the widget state.
+  #[test]
+  fn tracking_function_resets_companion_control() {
+    use woxi::functions::graphics::apply_manipulate_button_action;
+    let expr = interpret_to_expr(
+      "Manipulate[If[mode == 1, step^2, step + 1], \
+       {{mode, 1, \"\"}, {1 -> \"square\", 2 -> \"increment\"}, \
+        TrackingFunction -> (mode = #; step = 0; &)}, \
+       {{step, 0, \"step\"}, 0, 5, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let (_, tracking_code) = spec
+      .tracking
+      .iter()
+      .find(|(n, _)| n == "mode")
+      .expect("mode has a TrackingFunction");
+    // Bindings as they stand right after the user picks "increment" (2),
+    // with the step slider still wherever it was left.
+    let bindings = vec![
+      ("mode".to_string(), "2".to_string()),
+      ("step".to_string(), "4".to_string()),
+    ];
+    let action = format!("({tracking_code})[2]");
+    let updated = apply_manipulate_button_action(&bindings, &action);
+    assert_eq!(
+      updated,
+      vec![
+        ("mode".to_string(), "2".to_string()),
+        ("step".to_string(), "0".to_string()),
+      ]
+    );
   }
 
   #[test]

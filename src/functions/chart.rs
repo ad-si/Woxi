@@ -6,7 +6,7 @@ use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   BinSpec, DEFAULT_HEIGHT, DEFAULT_WIDTH, HistogramHeight, MarginOverrides,
   PLOT_COLORS, RESOLUTION_SCALE, generate_bar_svg, generate_histogram_svg,
-  html_escape, parse_image_size, svg_header,
+  html_escape, parse_image_size, plot_label_extra_lines, svg_header,
 };
 
 /// Extract grouped values from the first argument.
@@ -1678,13 +1678,25 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !explicit_dims {
     opts.svg_height = opts.svg_width;
   }
-  let (svg_width, svg_height, full_width) =
-    (opts.svg_width, opts.svg_height, opts.full_width);
+  // A `PlotLabel` sits above the pie in extra headroom, matching wolframscript:
+  // the pie itself keeps its size, and the frame grows taller to fit the title.
+  let has_plot_label = opts
+    .plot_label
+    .as_ref()
+    .is_some_and(|sl| !sl.text.is_empty());
+  let title_font_size = 16.0;
+  let top_margin: f64 = if has_plot_label {
+    30.0 + plot_label_extra_lines(opts.plot_label.as_ref()) as f64 * 20.0
+  } else {
+    0.0
+  };
+  let (svg_width, full_width) = (opts.svg_width, opts.full_width);
+  let svg_height = opts.svg_height + top_margin.round() as u32;
 
   let w = svg_width as f64;
-  let h = svg_height as f64;
+  let h = opts.svg_height as f64;
   let cx = w / 2.0;
-  let cy = h / 2.0;
+  let cy = top_margin + h / 2.0;
 
   // `LabelingFunction -> f` labels every slice with `f[value]`. The result
   // may be wrapped in `Placed[…, position]`, which decides how far out along
@@ -1832,6 +1844,31 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       start_angle = end_angle;
     }
+  }
+
+  // PlotLabel: centered above the pie, in the headroom reserved above.
+  if let Some(sl) = &opts.plot_label
+    && !sl.text.is_empty()
+  {
+    let ty = top_margin - title_font_size * 0.5;
+    let fs = sl.font_size.unwrap_or(title_font_size);
+    let fill = sl
+      .color
+      .as_ref()
+      .map_or_else(|| "black".to_string(), |c| c.to_svg_rgb());
+    let mut style_attrs = String::new();
+    if sl.bold {
+      style_attrs.push_str(" font-weight=\"bold\"");
+    }
+    if sl.italic {
+      style_attrs.push_str(" font-style=\"italic\"");
+    }
+    labels_svg.push_str(&format!(
+      "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
+       font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
+       fill=\"{fill}\"{style_attrs}>{}</text>\n",
+      sl.svg_scaled_stacked(1.0, cx, fs * 1.2)
+    ));
   }
 
   svg.push_str(&labels_svg);

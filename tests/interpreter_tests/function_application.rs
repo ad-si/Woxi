@@ -613,6 +613,36 @@ mod operator_precedence_at_map_apply {
     // x & /@ {1, 2} — single identifier before & with Map continuation
     assert_eq!(interpret("42 & /@ {1, 2, 3}").unwrap(), "{42, 42, 42}");
   }
+
+  #[test]
+  fn anon_func_map_then_replace_all() {
+    // f[#] & /@ list /. rules — Map's pure-function body, then /@, then
+    // /. must all chain after the single &, matching the extremely common
+    // Wolfram idiom `pureFunction & /@ list /. rules`.
+    assert_eq!(
+      interpret("f[#] & /@ {1, 2, 3} /. f[x_] -> x + 1").unwrap(),
+      "{2, 3, 4}"
+    );
+  }
+
+  #[test]
+  fn anon_func_map_then_replace_all_full_form() {
+    assert_eq!(
+      interpret("FullForm[Hold[f & /@ g /. h -> k]]").unwrap(),
+      "FullForm[Hold[(f & ) /@ g /. h -> k]]"
+    );
+  }
+
+  #[test]
+  fn anon_func_map_then_replace_repeated() {
+    // & followed by /@ (Map) and then //. (ReplaceRepeated) — the same
+    // interleaving as anon_func_map_then_replace_all, but with the
+    // repeated-replacement variant.
+    assert_eq!(
+      interpret("f[#] & /@ {1, 2, 3} //. f[x_] -> x + 1").unwrap(),
+      "{2, 3, 4}"
+    );
+  }
 }
 
 mod variable_as_function_head {
@@ -2834,6 +2864,22 @@ mod arithmetic_head_application {
     assert_eq!(interpret("x // (f + g)").unwrap(), "(f + g)[x]");
   }
 
+  // A bare Slot-based pure function as the right operand of `//` — no
+  // enclosing parens — must parse the same as the parenthesized form.
+  #[test]
+  fn postfix_slashslash_bare_slot_function() {
+    assert_eq!(interpret("5 // #&").unwrap(), "5");
+    assert_eq!(interpret("5 // #+1&").unwrap(), "6");
+    assert_eq!(interpret("{1, 2} // #&").unwrap(), "{1, 2}");
+    // Must match the already-supported parenthesized form exactly — if the
+    // bare form were double-wrapped in an extra Function, {3, 4} would bind
+    // to an unused outer slot and #1/#2 would stay unevaluated inside it.
+    assert_eq!(
+      interpret("{3, 4} // #1+#2&").unwrap(),
+      interpret("{3, 4} // (#1+#2)&").unwrap()
+    );
+  }
+
   #[test]
   fn map_and_apply() {
     assert_eq!(
@@ -2864,6 +2910,37 @@ mod once_wrapper {
   fn two_argument_form() {
     // Once[expr, loc] caches at a location; the returned value is the same.
     assert_eq!(interpret("Once[5 + 5, \"KernelSession\"]").unwrap(), "10");
+  }
+}
+
+// NCache[expr, value] tags expr with a numeric approximation and evaluates
+// to expr, discarding the cached value.
+mod ncache_wrapper {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_first_argument() {
+    assert_eq!(interpret("NCache[1/3, 0.3333333333333333]").unwrap(), "1/3");
+    assert_eq!(
+      interpret("NCache[Pi/4, 0.7853981633974483]").unwrap(),
+      "Pi/4"
+    );
+  }
+
+  #[test]
+  fn preserves_exact_head() {
+    assert_eq!(
+      interpret("Head[NCache[1/3, 0.3333333333333333]]").unwrap(),
+      "Rational"
+    );
+  }
+
+  #[test]
+  fn works_inside_a_list_of_slider_bounds() {
+    assert_eq!(
+      interpret("{0, NCache[2/45, 0.044444], 1}").unwrap(),
+      "{0, 2/45, 1}"
+    );
   }
 }
 

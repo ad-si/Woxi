@@ -5987,6 +5987,71 @@ mod file_names {
     std::fs::remove_dir_all(&root).ok();
   }
 
+  // Regression test for #499: a level specification in braces asks for
+  // exactly that level, instead of leaving the call unevaluated.
+  #[test]
+  fn brace_level_reports_only_that_level() {
+    let root = nested_tree("exact_level");
+    assert_eq!(relative_hits(&root, "{1}"), "target.txt");
+    assert_eq!(relative_hits(&root, "{2}"), "sub/target.txt");
+    assert_eq!(relative_hits(&root, "{3}"), "sub/sub/target.txt");
+    assert_eq!(relative_hits(&root, "{4}"), "sub/sub/sub/target.txt");
+    // No directory sits that deep, and level zero holds no files at all.
+    assert_eq!(relative_hits(&root, "{5}"), "");
+    assert_eq!(relative_hits(&root, "{0}"), "");
+    std::fs::remove_dir_all(&root).ok();
+  }
+
+  // A two-element level specification reports the levels in between,
+  // with `Infinity` as an open upper end.
+  #[test]
+  fn level_range_reports_the_levels_in_between() {
+    let root = nested_tree("level_range");
+    assert_eq!(
+      relative_hits(&root, "{2, 3}"),
+      "sub/sub/target.txt|sub/target.txt"
+    );
+    assert_eq!(relative_hits(&root, "{1, 4}"), relative_hits(&root, "4"));
+    assert_eq!(
+      relative_hits(&root, "{2, Infinity}"),
+      "sub/sub/sub/target.txt|sub/sub/target.txt|sub/target.txt"
+    );
+    // A range whose start is past its end matches nothing.
+    assert_eq!(relative_hits(&root, "{3, 2}"), "");
+    std::fs::remove_dir_all(&root).ok();
+  }
+
+  // A level specification applies to a list of directories as well —
+  // the shape the issue report used.
+  #[test]
+  fn brace_level_applies_to_a_list_of_directories() {
+    let root = nested_tree("exact_level_list");
+    let names = interpret(&format!(
+      r#"FileNames["target.txt", {{"{root}"}}, {{2}}] === {{FileNameJoin[{{"{root}", "sub", "target.txt"}}]}}"#
+    ))
+    .unwrap();
+    assert_eq!(names, "True");
+    std::fs::remove_dir_all(&root).ok();
+  }
+
+  // A list that is not a level specification leaves the call unevaluated,
+  // just like any other non-level third argument.
+  #[test]
+  fn non_level_list_stays_unevaluated() {
+    assert_eq!(
+      interpret(r#"FileNames["*.rs", "src", {1, 2, 3}]"#).unwrap(),
+      "FileNames[*.rs, src, {1, 2, 3}]"
+    );
+    assert_eq!(
+      interpret(r#"FileNames["*.rs", "src", {foo}]"#).unwrap(),
+      "FileNames[*.rs, src, {foo}]"
+    );
+    assert_eq!(
+      interpret(r#"FileNames["*.rs", "src", {}]"#).unwrap(),
+      "FileNames[*.rs, src, {}]"
+    );
+  }
+
   // Recursing below "." keeps the path relative to the current directory
   // instead of collapsing every hit to its bare file name.
   #[test]

@@ -4639,6 +4639,86 @@ mod part_noninteger_spec {
   }
 }
 
+mod part_upto {
+  use super::*;
+  use woxi::interpret_with_stdout;
+
+  // `Part[expr, UpTo[n]]` (the `[[UpTo[n]]]` sugar included) takes the
+  // first Min[n, Length[expr]] parts, matching `Take[expr, UpTo[n]]` —
+  // used to grab a bounded-length prefix without knowing exactly how long
+  // the underlying list is.
+  #[test]
+  fn list_within_bound() {
+    assert_eq!(
+      interpret("{1, 2, 3, 4, 5}[[UpTo[3]]]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn list_clamps_past_length() {
+    assert_eq!(
+      interpret("{1, 2, 3, 4, 5}[[UpTo[10]]]").unwrap(),
+      "{1, 2, 3, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn zero_takes_nothing() {
+    assert_eq!(interpret("{1, 2, 3}[[UpTo[0]]]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn function_call_keeps_head() {
+    assert_eq!(interpret("f[a, b, c][[UpTo[2]]]").unwrap(), "f[a, b]");
+  }
+
+  #[test]
+  fn association_within_bound() {
+    assert_eq!(
+      interpret(r#"<|"a" -> 1, "b" -> 2, "c" -> 3|>[[UpTo[2]]]"#).unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+  }
+
+  #[test]
+  fn rule_within_bound() {
+    assert_eq!(interpret("(a -> b)[[UpTo[1]]]").unwrap(), "{a}");
+  }
+
+  #[test]
+  fn infinity_takes_everything() {
+    assert_eq!(
+      interpret("{1, 2, 3}[[UpTo[Infinity]]]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn maps_remaining_index_over_selection() {
+    // Part[expr, UpTo[n], rest…] maps the remaining indices over each of
+    // the selected elements, the same way a bare list-of-positions or a
+    // Span index does.
+    assert_eq!(
+      interpret("{{1, 2}, {3, 4}, {5, 6}}[[UpTo[2], 1]]").unwrap(),
+      "{1, 3}"
+    );
+  }
+
+  #[test]
+  fn negative_count_errors() {
+    let r = interpret_with_stdout("{1, 2, 3}[[UpTo[-1]]]").unwrap();
+    assert_eq!(r.result, "{1, 2, 3}[[UpTo[-1]]]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "Part::pkspec1: The expression UpTo[-1] cannot be used as a part specification."
+      )),
+      "warnings={:?}",
+      r.warnings
+    );
+  }
+}
+
 mod take_out_of_bounds {
   use super::*;
 

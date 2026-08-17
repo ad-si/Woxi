@@ -855,6 +855,60 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_piechart_plotlabel_string() {
+    // Regression: PieChart silently ignored PlotLabel (unlike Plot/BarChart).
+    clear_state();
+    let with_label =
+      interpret_with_stdout("PieChart[{1, 2, 3}, PlotLabel -> \"Split\"]")
+        .unwrap()
+        .graphics
+        .expect("PieChart should produce a graphics SVG");
+    assert!(
+      with_label.contains(">Split</text>"),
+      "PieChart SVG missing PlotLabel text:\n{with_label}"
+    );
+
+    // The frame grows taller to fit the label, while an unlabeled chart
+    // keeps its default square size.
+    clear_state();
+    let without_label = interpret_with_stdout("PieChart[{1, 2, 3}]")
+      .unwrap()
+      .graphics
+      .expect("PieChart should produce a graphics SVG");
+    let height_of = |svg: &str| -> u32 {
+      let start = svg.find("height=\"").unwrap() + "height=\"".len();
+      let rest = &svg[start..];
+      rest[..rest.find('"').unwrap()].parse().unwrap()
+    };
+    assert!(
+      height_of(&with_label) > height_of(&without_label),
+      "PieChart with a PlotLabel must reserve extra headroom:\nlabeled: {with_label}\nunlabeled: {without_label}"
+    );
+  }
+
+  #[test]
+  fn test_piechart_plotlabel_grid_stacks_lines() {
+    // Regression: a Grid/Column PlotLabel (as Demonstrations commonly build,
+    // e.g. a two-row table of names and computed values) stacks its rows as
+    // separate lines above the pie, matching Plot/BarChart.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "PieChart[{1, 2}, PlotLabel -> Grid[{{\"A\", \"B\"}, {1, 2}}]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("PieChart should produce a graphics SVG");
+    assert!(
+      svg.contains(">A B<"),
+      "PieChart SVG missing first PlotLabel line:\n{svg}"
+    );
+    assert!(
+      svg.contains("<tspan") && svg.contains(">1 2</tspan>"),
+      "PieChart SVG missing stacked second PlotLabel line:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_column_with_nested_tableform_renders_as_graphics() {
     // In visual mode (playground / woxi-studio), a Column containing a
     // TableForm must pre-render the table as a sub-SVG instead of falling
@@ -1340,6 +1394,47 @@ mod interpreter_tests {
     assert!(
       !svg.contains("@font-face"),
       "fonts embedded into a text-free graphic"
+    );
+  }
+
+  #[test]
+  fn test_graphics_text_renders_inline_box_notation() {
+    // A notebook `Text[…]` label can carry its typeset content as inline
+    // `\!\(\*…\)` box notation — the front end's linear-syntax form for a
+    // sub/superscript, e.g. `Text["\!\(\*SubscriptBox[\(X\), \(3\)]\)",
+    // pos]` for "X₃". Regression: this used to draw the private-use box
+    // markers and box source literally instead of the Unicode glyph.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[Text[\"\\!\\(\\*SubscriptBox[\\(X\\), \\(3\\)]\\)\", {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">X₃<"), "expected X₃ in SVG, got: {svg}");
+    assert!(
+      !svg.contains("SubscriptBox"),
+      "raw box source leaked into SVG: {svg}"
+    );
+
+    clear_state();
+    let svg_super = interpret(
+      "ExportString[Graphics[Text[\"\\!\\(\\*SuperscriptBox[\\(x\\), \\(2\\)]\\)\", {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg_super.contains(">x²<"),
+      "expected x² in SVG, got: {svg_super}"
+    );
+
+    // The same escape nested inside a `Row` label (how a Demonstration
+    // typically mixes plain text with a typeset sub-expression).
+    clear_state();
+    let svg_row = interpret(
+      "ExportString[Graphics[Text[Row[{\"d\", \"\\!\\(\\*SubscriptBox[\\(X\\), \\(6\\)]\\)\"}], {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg_row.contains(">dX₆<"),
+      "expected dX₆ in SVG, got: {svg_row}"
     );
   }
 

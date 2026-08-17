@@ -280,9 +280,13 @@ Operator = @{
 // Optional trailing & allows "x // f &" to parse as x // (f &), matching Wolfram precedence.
 // Parenthesised expressions and List literals can also serve as the postfix
 // operator, supporting `expr // (#1+1&)` and `expr // {#1, Precision[#1]}&`.
+// A bare Slot-based body (`expr // #&`, `expr // #+1&`) is its own
+// alternative: SimpleAnonymousFunction already parses `# op term &` and
+// unlike the other branches doesn't start with `(`, a list, or an
+// identifier, so it needs an explicit path here.
 PostfixFunction = {
-    ("(" ~ Expression ~ ")" | List | BaseFunctionCall | Identifier)
-  ~ ("&" ~ !"&")?
+    SimpleAnonymousFunction
+  | ("(" ~ Expression ~ ")" | List | BaseFunctionCall | Identifier) ~ ("&" ~ !"&")?
 }
 
 // Increment/Decrement: x++ or x-- (postfix operators)
@@ -439,7 +443,7 @@ Expression = {
     (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)*
     ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
-    ~ (AnonymousFunctionSuffix ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)* ~ ((Operator | TildeInfix) ~ (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)*  // Function: expr & (lowest precedence), then optional continuation — repeated for chains like `f & [x] & [y]`
+    ~ (AnonymousFunctionSuffix ~ ((ReplaceRepeatedSuffix | ReplaceAllSuffix) | (Operator | TildeInfix) ~ (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)*  // Function: expr & (lowest precedence), then optional continuation (Operator/ReplaceAll/ReplaceRepeated may interleave in any order, e.g. `f & /@ list /. rules`) — repeated for chains like `f & [x] & [y]`
 }
 
 // Legacy rules kept for backward compatibility in evaluation code
@@ -457,7 +461,13 @@ PostfixApplication = { PostfixBase ~ ("//" ~ PostfixFunction)+ }
 // free to follow a separator (`... ; ;;`). parse_compound_expression counts the
 // `;` separators from the source to reinsert omitted (Null) statements.
 CompoundStatement = _{ TopLevelSpan | Expression }
-CompoundExpression = { CompoundStatement ~ (";" ~ CompoundStatement?)+ }
+// An optional trailing `&` (no expression between it and the last `;`) turns
+// the whole statement sequence into a pure function body — the idiom
+// `(a = #; t = 0; &)` Options like `TrackingFunction` commonly use for a
+// multi-statement callback. Without a statement between the final `;` and
+// `&`, `&` cannot attach to a `CompoundStatement` (there isn't one), so it
+// must be consumed here instead, at the CompoundExpression level.
+CompoundExpression = { CompoundStatement ~ (";" ~ CompoundStatement?)+ ~ AnonymousFunctionSuffix? }
 
 // DerivativeNumeric: numeric literal followed by '...' (e.g. 1', (-1.4)', I via Constant)
 DerivativeNumeric = { (PrecisionReal | Real | IntegerScientific | Integer | Constant) ~ DerivativePrime }

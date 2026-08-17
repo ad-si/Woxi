@@ -3538,6 +3538,41 @@ mod radio_button_bar {
   }
 }
 
+mod button_bar {
+  use super::*;
+
+  // `ButtonBar[…]` has no interactive frontend in script mode, so — like
+  // `Button`, `SetterBar` and `RadioButtonBar` — it stays symbolic rather
+  // than firing any of its held actions, and is not "unimplemented" for
+  // returning that canonical unevaluated form.
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret(r#"ButtonBar[{"A" :> Print["a"], "B" :> Print["b"]}]"#)
+        .unwrap(),
+      r#"ButtonBar[{A :> Print[a], B :> Print[b]}]"#
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[ButtonBar]").unwrap(), "Symbol");
+  }
+
+  // A bare ButtonBar call must not be reported as an unimplemented
+  // built-in — it is a recognized (if inert, in script mode) control head.
+  #[test]
+  fn not_reported_unimplemented() {
+    let r =
+      interpret_with_stdout(r#"ButtonBar[{"A" :> 1, "B" :> 2}]"#).unwrap();
+    assert!(
+      !r.warnings.iter().any(|w| w.contains("not yet implemented")),
+      "warnings={:?}",
+      r.warnings
+    );
+  }
+}
+
 mod step_monitor {
   use super::*;
 

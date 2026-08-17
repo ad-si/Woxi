@@ -1439,6 +1439,19 @@ fn typeset_constant_glyph(name: &str) -> Option<&'static str> {
   })
 }
 
+/// Whether an expression is a plain-assignment target: a bare symbol, or a
+/// (possibly nested) list of them — `{{xmin, xmax}, {ymin, ymax}}` is the
+/// left side of the list-destructuring form `{{xmin, xmax}, {ymin, ymax}} =
+/// {{-2, 2}, {-2, 2}}`, which `Set` threads element-wise the same way it
+/// does a plain `{a, b} = {1, 2}`.
+fn is_assignment_target(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(_) => true,
+    Expr::List(items) => items.iter().all(is_assignment_target),
+    _ => false,
+  }
+}
+
 /// The run of plain assignments a Manipulate body opens with. A body that
 /// sets up its own bounds does so first (`tmin = 0; tmax = 2 Pi; …`), and
 /// stopping at the first statement that is not a `Set` keeps this to
@@ -1453,7 +1466,7 @@ fn leading_assignments(body: &Expr) -> Vec<&Expr> {
     .take_while(|stmt| {
       matches!(stmt, Expr::FunctionCall { name, args }
         if name == "Set" && args.len() == 2
-          && matches!(&args[0], Expr::Identifier(_)))
+          && is_assignment_target(&args[0]))
     })
     .collect()
 }
@@ -2621,6 +2634,15 @@ fn point_along_path(pts: &[(f64, f64)], t: f64) -> (f64, f64) {
 /// else falls back to `ToString`'s default form.
 fn graphics_text_content(expr: &Expr) -> String {
   match expr {
+    // A string carrying inline `\!\(\*…\)` box notation — the front end's
+    // linear-syntax form for a typeset sub-expression, e.g. the label a
+    // Demonstration writes as `Text["\!\(\*SubscriptBox[\(X\), \(3\)]\)",
+    // pos]` for "X₃". Fold each box segment into the Unicode glyphs it
+    // typesets to, the same as `Subscript`/`Superscript` below, instead of
+    // drawing the private-use markers and box source literally.
+    Expr::String(s) if s.contains(crate::functions::string_ast::BOX_START) => {
+      inline_box_label_runs(s, false).map_or_else(|| s.clone(), |runs| flatten_label_runs(&runs))
+    }
     Expr::String(s) => s.clone(),
     // Text inside a picture is typeset, not printed: a mathematical
     // constant shows as its glyph there, the way it does in a notebook.
@@ -10957,6 +10979,24 @@ pub(crate) fn is_manipulate_annotation_head(name: &str) -> bool {
   is_style_wrapper(name) || matches!(name, "Text" | "Row" | "Column")
 }
 
+/// Whether an annotation row (`Style[…]`, `Row[{…}]`, `Column[{…}]`, …) has a
+/// `Dynamic[…]` anywhere inside it — a Demonstration's live step counter is
+/// often written `Row[{Style["moves: "], Dynamic[moves]}]` right in the
+/// control-panel argument list. Such a row is not "plain text layout" (see
+/// [`is_manipulate_annotation_head`]): the `Dynamic` part must track its
+/// variable and update every frame, so it needs the same live "display"
+/// treatment as a bare `Dynamic[…]` argument rather than being frozen into a
+/// static `Heading` at parse time.
+fn annotation_contains_dynamic(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == "Dynamic" || args.iter().any(annotation_contains_dynamic)
+    }
+    Expr::List(items) => items.iter().any(annotation_contains_dynamic),
+    _ => false,
+  }
+}
+
 /// Peel a display-only `Invisible[expr]` wrapper, returning the content it
 /// hides. `Invisible` keeps exactly the space `expr` would take but paints
 /// nothing — Demonstrations use it to hold a layout's shape steady while an
@@ -16397,6 +16437,15 @@ pub enum ManipulateControl {
     label: String,
     /// The label split into styled runs for rich-text rendering.
     label_runs: Vec<LabelRun>,
+    /// Whether the control's variable is machine-real by construction — any
+    /// of its `min`/`max`/step/initial was written as an inexact number
+    /// (e.g. `{{rq, 0, "RQ"}, 0, 1, 0.01}`). Wolfram keeps such a variable
+    /// real-valued even while the slider sits at a "round" value (`0.`, not
+    /// `0`), which matters once a caption formats it with `NumberForm[…, {n,
+    /// f}]` — that wrapper pads a real's fraction but leaves an exact
+    /// integer unchanged. A control whose whole spec is exact integers
+    /// (`{{n, 5, "n"}, 1, 10, 1}`) keeps binding exact integers throughout.
+    is_real: bool,
   },
   Discrete {
     name: String,
@@ -16612,6 +16661,14 @@ pub struct ManipulateSpec {
   /// means every variable is tracked, which is Wolfram's default and also
   /// what `TrackedSymbols -> All` / `-> Manipulate` ask for.
   pub tracked_symbols: Option<Vec<String>>,
+  /// Per-control `TrackingFunction -> f` callbacks, as `(control name,
+  /// function code)`. Whenever the named control's value changes, `f` runs
+  /// with the new value as `#` — typically to reset a *different* control
+  /// (an Electrophilic Aromatic Substitution demonstration resets its time
+  /// slider to `0` whenever the reaction step picker changes: `{{a, 1, ""},
+  /// choices, TrackingFunction -> (a = #; t = 0; &)}`). Controls with no
+  /// `TrackingFunction` option do not appear here.
+  pub tracking: Vec<(String, String)>,
 }
 
 /// Result of parsing a single list-shaped Manipulate argument.
@@ -16633,6 +16690,9 @@ enum ParsedControl {
     /// (re-resolved live by the frontend, like `min_code`/`max_code`).
     values_code: Option<String>,
     animate: Option<bool>,
+    /// `TrackingFunction -> f` (InputForm code), run with the control's new
+    /// value whenever it changes.
+    tracking: Option<String>,
   },
   /// A `Locator` control with no widget. It contributes a fixed `name =
   /// value` binding that is baked directly into the body so the variable is
@@ -16714,6 +16774,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     mut dynamic_bounds,
     mut dynamic_values,
     mut animation_var,
+    mut tracking,
   ) = if let Some(inner) = inner {
     animated = true;
     animation_running = inner.animation_running;
@@ -16728,6 +16789,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       inner.dynamic_bounds,
       inner.dynamic_values,
       inner.animation_var,
+      inner.tracking,
     )
   } else {
     // `TogglerBar[Dynamic[var], …]` inside the body moves into the
@@ -16752,6 +16814,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       Vec::new(),
       Vec::new(),
       None,
+      Vec::new(),
     )
   };
   // `Locator[Dynamic[var, cb], …]` markers inside the body drive their
@@ -16797,34 +16860,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       None => arg_items.push(spec.clone()),
     }
   }
-  let arg_items: Vec<Expr> = arg_items
-    .into_iter()
-    .map(|spec| {
-      // `Dynamic[Control[…]]` (the Demonstrations idiom
-      // `Dynamic@Control@{…}`) is the Control it wraps — the Dynamic
-      // only adds FrontEnd update hints, so it unwraps first.
-      let spec = match &spec {
-        Expr::FunctionCall { name, args }
-          if name == "Dynamic"
-            && matches!(
-              args.first(),
-              Some(Expr::FunctionCall { name: inner, .. }) if inner == "Control"
-            ) =>
-        {
-          args[0].clone()
-        }
-        _ => spec,
-      };
-      match &spec {
-        Expr::FunctionCall { name, args }
-          if name == "Control" && !args.is_empty() =>
-        {
-          args[0].clone()
-        }
-        _ => spec,
-      }
-    })
-    .collect();
+  let arg_items: Vec<Expr> =
+    arg_items.into_iter().map(unwrap_control_wrapper).collect();
   // A `ControlType -> …` given to the Manipulate itself sets the type of every
   // control that does not choose one; push it into the specs now that they are
   // flattened, so they parse through the single per-spec path below.
@@ -16836,6 +16873,18 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // while the specs are parsed, so those bounds resolve to their build-time
   // numbers regardless of declaration order.
   let initial_bindings = manipulate_initial_value_bindings(&arg_items);
+  // `Sequence@@If[cond, ctrlSpec, {}]` (the Demonstrations idiom for a
+  // control that only appears under some condition on another control, e.g.
+  // an extra slider shown only in one mode) is not itself a control spec —
+  // it is code that *produces* zero or more of them once evaluated. Resolve
+  // every such entry against the controls' initial values, the way Wolfram
+  // evaluates the spec list once up front, and splice whatever list it
+  // produces into the flat control list in its place.
+  let arg_items: Vec<Expr> =
+    expand_conditional_control_items(arg_items, &initial_bindings)
+      .into_iter()
+      .map(unwrap_control_wrapper)
+      .collect();
   // The same names, as the set a control's choice list is checked against
   // to tell a static list from one that follows another control.
   let sibling_names: Vec<String> =
@@ -16965,13 +17014,27 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         continue;
       }
       Expr::FunctionCall { name, .. }
-        if is_manipulate_annotation_head(name) =>
+        if is_manipulate_annotation_head(name)
+          && !annotation_contains_dynamic(spec) =>
       {
         let label_runs = manipulate_label_runs(spec, false);
         controls.push(ManipulateControl::Heading {
           label: flatten_label_runs(&label_runs),
           label_runs,
         });
+        continue;
+      }
+      // A `Row`/`Column`/`Style`/`Text` annotation with a `Dynamic[…]`
+      // somewhere inside (a live step counter, e.g.
+      // `Row[{Style["moves: "], Dynamic[moves]}]`) is not static text: fall
+      // through to the generic "extra display element" handling below so it
+      // re-renders from the live bindings every frame instead of being
+      // frozen into a `Heading` with the `Dynamic` wrapper's bare source.
+      Expr::FunctionCall { name, .. }
+        if is_manipulate_annotation_head(name)
+          && annotation_contains_dynamic(spec) =>
+      {
+        displays.push(crate::syntax::expr_to_input_form(spec));
         continue;
       }
       // `Button[label, action, opts…]`: a pressable control row whose
@@ -17083,6 +17146,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         max_code,
         values_code,
         animate,
+        tracking: tracking_fn,
       } => {
         if let Some((orig, orig_form, synth)) = &rename {
           patch_default_label(&mut c, orig, synth);
@@ -17107,6 +17171,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         }
         if let Some(cond) = enabled {
           control_enabled.push((c.name().to_string(), cond));
+        }
+        if let Some(code) = tracking_fn {
+          tracking.push((c.name().to_string(), code));
         }
         if min_code.is_some() || max_code.is_some() {
           dynamic_bounds.push((c.name().to_string(), min_code, max_code));
@@ -17316,6 +17383,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_running,
     appearance_none,
     tracked_symbols,
+    tracking,
   })
 }
 
@@ -17698,6 +17766,12 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
         pattern,
         replacement,
       } => contains_control(pattern) || contains_control(replacement),
+      // `Sequence@@If[cond, Control[…], {}]`: the condition/branches may
+      // hide the only control a Dynamic-wrapped list declares, so look
+      // inside the `f@@expr` the same way a plain function call is scanned.
+      Expr::Apply { func, list } => {
+        contains_control(func) || contains_control(list)
+      }
       _ => false,
     }
   }
@@ -17714,9 +17788,17 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   let Expr::FunctionCall { name, args } = spec else {
     return None;
   };
+  // `Dynamic[{ctrl1, ctrl2, …}]` (the Demonstrations idiom for a control
+  // panel whose row set itself needs to react to another control, e.g. a
+  // control only shown for some mode) flattens the same way a `Column` of
+  // controls would — the `Dynamic` just marks that the list is recomputed
+  // reactively, which the panel already does on every re-evaluation. A
+  // `Dynamic` wrapping anything other than a bare list (a live picture, a
+  // `Panel[…]` of checkboxes, …) is a display element instead and falls
+  // through via the `contains_control` guard below.
   if !matches!(
     name.as_str(),
-    "Row" | "Column" | "Grid" | "TabView" | "PaneSelector"
+    "Row" | "Column" | "Grid" | "TabView" | "PaneSelector" | "Dynamic"
   ) || args.is_empty()
   {
     return None;
@@ -17764,6 +17846,79 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     }
   }
   Some(out)
+}
+
+/// `Dynamic[Control[…]]` (the Demonstrations idiom `Dynamic@Control@{…}`)
+/// is the `Control` it wraps — the `Dynamic` only adds FrontEnd update
+/// hints — and a bare `Control[spec, opts…]` wrapper is its ordinary
+/// variable specification, so both unwrap to the plain spec that parses
+/// through the standard control path. Anything else passes through
+/// unchanged. Applied both to the top-level control-spec arguments and to
+/// whatever `expand_conditional_control_items` splices in, since a spliced
+/// control is just as likely to arrive `Control`-wrapped.
+fn unwrap_control_wrapper(spec: Expr) -> Expr {
+  let spec = match &spec {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic"
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: inner, .. }) if inner == "Control"
+        ) =>
+    {
+      args[0].clone()
+    }
+    _ => spec,
+  };
+  match &spec {
+    Expr::FunctionCall { name, args }
+      if name == "Control" && !args.is_empty() =>
+    {
+      args[0].clone()
+    }
+    _ => spec,
+  }
+}
+
+/// Resolve `Sequence@@expr` entries in a flattened control list (the
+/// Demonstrations idiom `Sequence@@If[cond, ctrlSpec, {}]` for a control
+/// only shown under some condition on another control) by evaluating each
+/// one against `bindings` — the other controls' initial values — and
+/// splicing whatever list the evaluation produces in its place, the way
+/// Wolfram evaluates the whole spec list once before laying out the panel.
+/// A splice may itself be a layout container or contain further
+/// `Sequence@@…` entries (nested conditions), so both are re-resolved
+/// recursively. Non-`Sequence` entries pass through unchanged.
+fn expand_conditional_control_items(
+  items: Vec<Expr>,
+  bindings: &[(String, String)],
+) -> Vec<Expr> {
+  let mut out = Vec::with_capacity(items.len());
+  for item in items {
+    let Expr::Apply { func, list } = &item else {
+      out.push(item);
+      continue;
+    };
+    if !matches!(func.as_ref(), Expr::Identifier(s) if s == "Sequence") {
+      out.push(item);
+      continue;
+    }
+    let evaluated =
+      crate::with_scoped_globals(bindings, || evaluate_expr_to_expr(list))
+        .unwrap_or_else(|_| (**list).clone());
+    let spliced: Vec<Expr> = match &evaluated {
+      Expr::List(inner) => inner.iter().cloned().collect(),
+      _ => vec![evaluated.clone()],
+    };
+    let flattened: Vec<Expr> = spliced
+      .into_iter()
+      .flat_map(|s| match control_group_items(&s) {
+        Some(nested) => nested,
+        None => vec![s],
+      })
+      .collect();
+    out.extend(expand_conditional_control_items(flattened, bindings));
+  }
+  out
 }
 
 /// Record, for every control declared inside a `PaneSelector[{v -> content,
@@ -17965,6 +18120,28 @@ fn eval_manipulate_bound(expr: &Expr) -> Option<(f64, bool)> {
   let evaluated = crate::evaluator::evaluate_expr_to_expr(expr).ok()?;
   crate::functions::math_ast::try_eval_to_f64_with_infinity(&evaluated)
     .map(|v| (v, true))
+}
+
+/// Whether a Manipulate bound expression (a `min`/`max`/step/initial-value
+/// term) is an inexact (machine-real) number rather than an exact integer or
+/// rational — `0.01` or `N[Pi]`, not `1` or `1/2`. Mirrors
+/// [`eval_manipulate_bound`]'s own resolution (static first, then against
+/// the live environment) so a bound naming another control's variable
+/// (`{{t, 0, …}, 0, P, .01}`) sees the same value. Used to decide whether a
+/// continuous control's variable stays real-valued even at a "round" slider
+/// position (see [`ManipulateControl::Continuous::is_real`]).
+fn manipulate_bound_is_inexact(expr: &Expr) -> bool {
+  let (expr, _) = manipulate_bound_expr(expr);
+  // Fast path for a literal: no need to round-trip through the evaluator.
+  match expr {
+    Expr::Real(_) | Expr::BigFloat(_, _) => return true,
+    Expr::Integer(_) | Expr::BigInteger(_) => return false,
+    _ => {}
+  }
+  matches!(
+    crate::evaluator::evaluate_expr_to_expr(expr),
+    Ok(Expr::Real(_) | Expr::BigFloat(_, _))
+  )
 }
 
 /// Re-resolve a dynamic bound's code fragment against the interpreter's
@@ -18197,6 +18374,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       italic: false,
       ..Default::default()
     }],
+    is_real: false,
   };
   Some(ManipulateSpec {
     body_code,
@@ -18213,6 +18391,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_running: true,
     appearance_none: false,
     tracked_symbols: None,
+    tracking: Vec::new(),
   })
 }
 
@@ -18241,7 +18420,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     var.clone_from(s);
     idx = 1;
   }
-  let (min, max, step, initial) = match args.get(idx) {
+  let (min, max, step, initial, is_real) = match args.get(idx) {
     Some(Expr::List(items)) if !items.is_empty() => {
       let min = crate::functions::math_ast::try_eval_to_f64(&items[0])?;
       let max = items
@@ -18251,15 +18430,18 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
       let step = items
         .get(2)
         .and_then(crate::functions::math_ast::try_eval_to_f64);
-      (min, max, step, min)
+      let is_real = manipulate_bound_is_inexact(&items[0])
+        || items.get(1).is_some_and(manipulate_bound_is_inexact)
+        || items.get(2).is_some_and(manipulate_bound_is_inexact);
+      (min, max, step, min, is_real)
     }
     // A single number is the initial value over the default 0..1 range.
     Some(other) if idx == 0 => {
       let init = crate::functions::math_ast::try_eval_to_f64(other)?;
-      (0.0, 1.0, None, init)
+      (0.0, 1.0, None, init, manipulate_bound_is_inexact(other))
     }
     // `Animator[]` / `Animator[Dynamic[v]]`: default 0..1 range.
-    None => (0.0, 1.0, None, 0.0),
+    None => (0.0, 1.0, None, 0.0, false),
     _ => return None,
   };
   let control = ManipulateControl::Continuous {
@@ -18274,6 +18456,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
       italic: false,
       ..Default::default()
     }],
+    is_real,
   };
   Some(ManipulateSpec {
     body_code: var,
@@ -18290,6 +18473,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_running: true,
     appearance_none: false,
     tracked_symbols: None,
+    tracking: Vec::new(),
   })
 }
 
@@ -18365,6 +18549,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_running: true,
     appearance_none: false,
     tracked_symbols: None,
+    tracking: Vec::new(),
   })
 }
 
@@ -18416,6 +18601,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_running: true,
     appearance_none: false,
     tracked_symbols: None,
+    tracking: Vec::new(),
   })
 }
 
@@ -18478,6 +18664,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     animation_running: animate.unwrap_or(true),
     appearance_none: false,
     tracked_symbols: None,
+    tracking: Vec::new(),
   })
 }
 
@@ -18495,11 +18682,19 @@ fn manipulate_value_to_input_form(expr: &Expr) -> String {
 /// Interpret an expression as a 2-element numeric list `{a, b}`, evaluating
 /// each element to an `f64`. Returns `None` for anything that isn't a
 /// 2-vector of numbers.
+///
+/// A corner point may name a symbol a leading body assignment sets rather
+/// than carry a literal number — `{{u, {1, 1}, ""}, {xmin, ymin}, {xmax,
+/// ymax}, ControlType -> Slider2D}` bounds a 2D control by the same `xmin`
+/// leading assignments resolve for a 1D slider (`eval_manipulate_bound`
+/// falls back to a full evaluation for exactly this reason). Each element
+/// gets the same fallback here so a `Slider2D` corner point resolves a
+/// symbolic bound the way a plain slider's `min`/`max` already does.
 fn list2_f64(e: &Expr) -> Option<(f64, f64)> {
   match e {
     Expr::List(l) if l.len() == 2 => {
-      let a = crate::functions::math_ast::try_eval_to_f64(&l[0])?;
-      let b = crate::functions::math_ast::try_eval_to_f64(&l[1])?;
+      let a = eval_manipulate_bound(&l[0])?.0;
+      let b = eval_manipulate_bound(&l[1])?.0;
       Some((a, b))
     }
     _ => None,
@@ -19421,6 +19616,24 @@ fn parse_manipulate_control(
     _ => None,
   });
 
+  // `TrackingFunction -> f` / `:> f` runs `f[newValue]` whenever this
+  // control's value changes, so a Demonstration can reset a companion
+  // control (e.g. rewinding a time slider when the reaction step changes).
+  let tracking: Option<String> = items.iter().find_map(|it| match it {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "TrackingFunction") =>
+    {
+      Some(crate::syntax::expr_to_input_form(replacement))
+    }
+    _ => None,
+  });
+
   // `Locator` controls (`{{p, init}, pmin, pmax, Locator}`, as a bare
   // marker or `ControlType -> Locator`) and hidden `ControlType -> None`
   // variables (`{{v, init}, ControlType -> None}`).
@@ -19546,6 +19759,7 @@ fn parse_manipulate_control(
         max_code: None,
         values_code: None,
         animate: None,
+        tracking: tracking.clone(),
       });
     }
     if let Some(points) = point_list_f64(&evaluated) {
@@ -19566,6 +19780,7 @@ fn parse_manipulate_control(
         max_code: None,
         values_code: None,
         animate: None,
+        tracking: tracking.clone(),
       });
     }
     let value = manipulate_value_to_input_form(&value_expr);
@@ -19666,6 +19881,7 @@ fn parse_manipulate_control(
       max_code: None,
       values_code: None,
       animate: Some(running),
+      tracking: tracking.clone(),
     });
   }
 
@@ -19710,6 +19926,7 @@ fn parse_manipulate_control(
       max_code: None,
       values_code: None,
       animate: None,
+      tracking: tracking.clone(),
     });
   }
 
@@ -19745,6 +19962,7 @@ fn parse_manipulate_control(
       max_code: None,
       values_code: None,
       animate: None,
+      tracking: tracking.clone(),
     });
   }
 
@@ -19871,6 +20089,7 @@ fn parse_manipulate_control(
         max_code: None,
         values_code,
         animate: None,
+        tracking: tracking.clone(),
       });
     }
   }
@@ -19986,6 +20205,18 @@ fn parse_manipulate_control(
     Some(init) => eval_manipulate_bound(init).map_or(min, |(v, _)| v),
     None => min,
   };
+  // The variable stays machine-real for the widget's whole lifetime once any
+  // of its spec terms was inexact — even a slider that happens to sit at a
+  // "round" position (e.g. `rq = 0` on a `0, 1, 0.01` range) binds `0.`, not
+  // the exact integer `0`.
+  let is_real = manipulate_bound_is_inexact(bounds[0])
+    || manipulate_bound_is_inexact(bounds[1])
+    || bounds
+      .get(2)
+      .is_some_and(|e| manipulate_bound_is_inexact(e))
+    || explicit_initial
+      .as_ref()
+      .is_some_and(manipulate_bound_is_inexact);
 
   // A `Trigger`/`Animator` control is a play button sweeping its variable
   // over the range: the widget animates that variable (a Trigger starts
@@ -20005,12 +20236,14 @@ fn parse_manipulate_control(
       initial,
       label,
       label_runs,
+      is_real,
     },
     enabled,
     min_code,
     max_code,
     values_code: None,
     animate,
+    tracking,
   })
 }
 
@@ -20177,8 +20410,20 @@ pub fn manipulate_initial_bindings(
       ManipulateControl::Heading { .. }
       | ManipulateControl::Divider
       | ManipulateControl::Button { .. } => None,
-      ManipulateControl::Continuous { name, initial, .. }
-      | ManipulateControl::Trigger { name, initial, .. } => {
+      ManipulateControl::Continuous {
+        name,
+        initial,
+        is_real,
+        ..
+      } => Some((
+        name.clone(),
+        if *is_real {
+          format_f64_real(*initial)
+        } else {
+          format_f64_input(*initial)
+        },
+      )),
+      ManipulateControl::Trigger { name, initial, .. } => {
         Some((name.clone(), format_f64_input(*initial)))
       }
       ManipulateControl::Discrete {
@@ -20664,6 +20909,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         initial,
         label,
         label_runs,
+        ..
       } => {
         let step_json = match step {
           Some(s) => format!(r#","step":{s}"#),
@@ -21925,5 +22171,53 @@ mod manipulate_label_tests {
       vec![Expr::Integer(1), Expr::Identifier("y".into())],
     );
     assert_eq!(flatten_label_runs(&runs(&flat)), "y\u{2032}");
+  }
+}
+
+#[cfg(test)]
+mod manipulate_dynamic_control_list_tests {
+  use super::*;
+
+  fn spec(code: &str) -> ManipulateSpec {
+    let expr = crate::parse_to_expr(code).expect("parse");
+    extract_manipulate_spec(&expr).expect("extract spec")
+  }
+
+  fn names(spec: &ManipulateSpec) -> Vec<&str> {
+    spec.controls.iter().map(ManipulateControl::name).collect()
+  }
+
+  /// The whole control-spec list wrapped in `Dynamic[…]` (the
+  /// Demonstrations idiom for a panel that reacts to another control)
+  /// flattens like a plain `Column` of controls instead of being
+  /// mistaken for a static display element.
+  #[test]
+  fn dynamic_wrapped_control_list_flattens_to_controls() {
+    let s = spec("Manipulate[x, Dynamic[{Control[{{x, 0}, -1, 1}]}]]");
+    assert_eq!(names(&s), vec!["x"]);
+    assert!(s.displays.is_empty());
+  }
+
+  /// `Sequence@@If[cond, ctrlSpec, {}]` inside a Dynamic control list
+  /// splices in the extra control when the condition — evaluated against
+  /// the other controls' initial values — holds.
+  #[test]
+  fn sequence_apply_if_splices_control_when_condition_holds() {
+    let s = spec(
+      "Manipulate[x + y, Dynamic[{Control[{{mode, 1}, -1, 1}], \
+       Sequence@@If[mode == 1, {Control[{{y, 0}, -1, 1}]}, {}]}]]",
+    );
+    assert_eq!(names(&s), vec!["mode", "y"]);
+  }
+
+  /// The same conditional control is omitted when its condition — the
+  /// other control's initial value — does not hold.
+  #[test]
+  fn sequence_apply_if_omits_control_when_condition_fails() {
+    let s = spec(
+      "Manipulate[x + y, Dynamic[{Control[{{mode, 0}, -1, 1}], \
+       Sequence@@If[mode == 1, {Control[{{y, 0}, -1, 1}]}, {}]}]]",
+    );
+    assert_eq!(names(&s), vec!["mode"]);
   }
 }
