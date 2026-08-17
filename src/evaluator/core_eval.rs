@@ -207,6 +207,23 @@ pub(crate) fn head_holds_arguments(expr: &Expr) -> bool {
     .any(|attr| has_hold_attribute(name, attr))
 }
 
+/// Whether `name` holds the argument at the 0-based position `index`.
+/// Mirrors the Hold-attribute logic of `evaluate_args_with_hold`, including
+/// its `Association` exception, for callers that walk arguments themselves
+/// (the tracing functions).
+pub(crate) fn holds_argument_at(name: &str, index: usize) -> bool {
+  if has_hold_attribute(name, "HoldAll")
+    || (name != "Association" && has_hold_attribute(name, "HoldAllComplete"))
+  {
+    return true;
+  }
+  if index == 0 {
+    has_hold_attribute(name, "HoldFirst")
+  } else {
+    has_hold_attribute(name, "HoldRest")
+  }
+}
+
 /// Evaluate function arguments respecting Hold attributes.
 /// Returns the evaluated (or held) arguments based on the function's attributes.
 /// Held arguments still honour `Evaluate[expr]`: it forces evaluation of the
@@ -2326,6 +2343,10 @@ pub fn evaluate_expr_to_expr_inner(
         // Special handling for TraceScan - traces evaluation of sub-expressions
         if name == "TraceScan" && args.len() >= 2 && args.len() <= 3 {
           return crate::functions::control_flow_ast::trace_scan_ast(args);
+        }
+        // Special handling for TracePrint - prints the evaluation trace
+        if name == "TracePrint" && !args.is_empty() && args.len() <= 2 {
+          return crate::functions::control_flow_ast::trace_print_ast(args);
         }
         // Special handling for Table, Do, With - don't evaluate args (body needs iteration/bindings)
         // These functions take unevaluated expressions as first argument
