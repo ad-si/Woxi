@@ -17481,6 +17481,71 @@ mod manipulate {
     assert_eq!(woxi::interpret("Length[Flatten[tree]]").unwrap(), "7");
   }
 
+  /// A leading assignment may destructure a nested list in one `Set` —
+  /// `{{xmin, xmax}, {ymin, ymax}} = {{-2, 2}, {-2, 2}}` threads element-wise
+  /// the same way a plain `{a, b} = {1, 2}` does. `leading_assignments` only
+  /// recognized a single bare symbol on the left, so a body opening with a
+  /// destructuring bound-setup line was cut from the leading run entirely —
+  /// every name it introduces stayed unresolved for the rest of the body.
+  #[test]
+  fn spec_leading_assignments_include_list_destructuring() {
+    let expr = interpret_to_expr(
+      "Manipulate[{{xmin, xmax}, {ymin, ymax}} = {{-2, 2}, {-3, 3}}; g[x, y], \
+       {{pt, {1, 1}, \"\"}, {xmin, ymin}, {xmax, ymax}, ControlType -> Slider2D}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } => {
+        assert_eq!(*x_min, -2.0);
+        assert_eq!(*x_max, 2.0);
+        assert_eq!(*y_min, -3.0);
+        assert_eq!(*y_max, 3.0);
+      }
+      other => panic!("expected a Slider2D control, got {other:?}"),
+    }
+  }
+
+  /// `Slider2D`'s corner-point bounds (`{xmin, ymin}, {xmax, ymax}`) may name
+  /// symbols a leading body assignment sets, exactly as a plain slider's
+  /// scalar `min`/`max` already could (see the test above this one).
+  /// `list2_f64`, which reads each corner point, only accepted literal
+  /// numbers — a symbolic corner point made the control panel fail
+  /// structurally rather than just widen: `is_2d_range` came back false, and
+  /// the scalar-bounds fallback then tried to evaluate a whole `{xmin,
+  /// ymin}` list as one bound and gave up on the entire Manipulate.
+  #[test]
+  fn spec_slider2d_corner_bounds_see_leading_assignments() {
+    let expr = interpret_to_expr(
+      "Manipulate[umin = -5; umax = 5; g[x, y], \
+       {{pt, {0, 0}, \"\"}, {umin, umin}, {umax, umax}, \
+        ControlType -> Slider2D}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } => {
+        assert_eq!(*x_min, -5.0);
+        assert_eq!(*x_max, 5.0);
+        assert_eq!(*y_min, -5.0);
+        assert_eq!(*y_max, 5.0);
+      }
+      other => panic!("expected a Slider2D control, got {other:?}"),
+    }
+  }
+
   /// `ControlType -> Slider` over a *choice list* keeps the choices but
   /// asks for a slider that steps through them by index — how Wolfram
   /// draws a twenty-entry colour-scheme picker. Without the flag the
