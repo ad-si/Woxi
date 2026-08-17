@@ -521,6 +521,41 @@ mod operator_shorthand_parens {
     assert_eq!(interpret("-2 x /. x -> 3").unwrap(), "-6");
   }
 
+  // The left factor of an implicit product may itself be a function call
+  // (`Sum[…] Times @@ dp`), which the grammar reaches through
+  // `FunctionCallExtended`'s implicit suffix rather than `ImplicitTimes`.
+  // Regression: that path did not split, so the tighter operator swallowed
+  // the whole product — `Sum[i, {i, 0, 2}] Times @@ {3, 4}` parsed as
+  // `(3 Times) @@ {3, 4}`, applying a list as a head instead of scaling the
+  // product.
+  #[test]
+  fn function_call_implicit_product_yields_to_tighter_operators() {
+    assert_eq!(
+      interpret("Sum[i, {i, 0, 2}] Times @@ {3, 4}").unwrap(),
+      "36"
+    );
+    assert_eq!(interpret("Length[{a, b}] Plus @@ {3, 4}").unwrap(), "14");
+    assert_eq!(
+      interpret("Hold[f[1] Times @@ {3, 4}]").unwrap(),
+      "Hold[f[1]*Times @@ {3, 4}]"
+    );
+    assert_eq!(
+      interpret("Length[{a}] f /@ {x, y}").unwrap(),
+      "{f[x], f[y]}"
+    );
+    assert_eq!(interpret("Length[{a, b}] List @@@ {{1}}").unwrap(), "{{2}}");
+    // Dot and Power reach the adjacent factor through a call head too.
+    assert_eq!(interpret("Length[{a, b}] {1, 2} . {3, 4}").unwrap(), "22");
+    assert_eq!(interpret("Length[{a, b}] x^3 /. x -> 2").unwrap(), "16");
+    // A power on the call itself still belongs to the call, not the product.
+    assert_eq!(
+      interpret("f[2]^2 Times @@ {3, 4} /. f -> Identity").unwrap(),
+      "48"
+    );
+    // Without a tighter neighbour the product is unchanged.
+    assert_eq!(interpret("Length[{a, b}] x /. x -> 5").unwrap(), "10");
+  }
+
   #[test]
   fn held_subtraction_keeps_additive_operand_parens() {
     // Subtraction is left-associative, so a parenthesized additive right

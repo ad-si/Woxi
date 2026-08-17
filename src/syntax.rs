@@ -4757,12 +4757,23 @@ fn parse_expression_inner(
           }
           leading_minus = false;
         }
-        // When an `ImplicitTimes` follows a Divide operator (`/`), splice
-        // its factors into the running term/operator vectors so that the
-        // implicit factors stay at multiplicative precedence — `a/b c`
-        // must parse as `(a*c)/b`, not `a/(b*c)`. Without this, the whole
-        // ImplicitTimes is consumed as a single divisor.
-        let is_implicit_times = matches!(item.as_rule(), Rule::ImplicitTimes);
+        // `f[x] y` is an implicit product as much as `x y` is; the grammar
+        // just reaches it through `FunctionCallExtended`'s implicit suffix
+        // instead of `ImplicitTimes`. Both have to be spliceable, or a
+        // neighbouring tighter operator takes the whole product as one
+        // operand — `f[x] Times @@ list` would read as
+        // `Apply[f[x] Times, list]`.
+        let is_implicit_times = matches!(item.as_rule(), Rule::ImplicitTimes)
+          || (matches!(item.as_rule(), Rule::FunctionCallExtended)
+            && item
+              .clone()
+              .into_inner()
+              .any(|p| p.as_rule() == Rule::FunctionCallImplicitSuffix));
+        // When such a product follows a Divide operator (`/`), splice its
+        // factors into the running term/operator vectors so that they stay
+        // at multiplicative precedence — `a/b c` must parse as `(a*c)/b`,
+        // not `a/(b*c)`. Without this, the whole product is consumed as a
+        // single divisor.
         let split_implicit =
           is_implicit_times && operators.last().is_some_and(|o| o == "/");
         let expr = pair_to_expr(item);

@@ -79,6 +79,28 @@ False
 ```
 
 
+## Apply (`@@`) and Map (`/@`) inside an implicit product
+
+`@@`, `@@@` and `/@` bind tighter than multiplication, so in `a b @@ c` the
+operator reaches only the factor next to it — whether the leading factor is a
+number or a function call:
+
+```scrut
+$ wo '2 Times @@ {3, 4}'
+24
+```
+
+```scrut
+$ wo 'Sum[i, {i, 0, 2}] Times @@ {3, 4}'
+36
+```
+
+```scrut
+$ wo 'Length[{a, b}] f /@ {x, y}'
+{2*f[x], 2*f[y]}
+```
+
+
 ## Rule (`->`) and RuleDelayed (`:>`) as general operators
 
 `->` creates a rule, and `:>` creates a delayed rule.

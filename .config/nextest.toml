@@ -50,6 +50,14 @@ slow-timeout = { period = "90s", terminate-after = 1 }
 filter = 'test(two_species_competition_manipulate_builds_widget)'
 slow-timeout = { period = "120s", terminate-after = 1 }
 
+# `rolling_polygon_on_catenary_notebook_rolls_its_polygon` re-solves the
+# rolling polygon's contact geometry and rasterizes the traced curve for every
+# animation step: ~12s standalone in debug builds, which the 20s default does
+# not survive under parallel load. Give it a wider window.
+[[profile.default.overrides]]
+filter = 'test(rolling_polygon_on_catenary_notebook_rolls_its_polygon)'
+slow-timeout = { period = "120s", terminate-after = 1 }
+
 # The remaining (non-`#[ignore]`d) RosettaCode script snapshots run a few
 # seconds in debug builds; under full parallel load they can brush past the
 # default 20s timeout. Give them a safety ceiling. The genuinely heavy

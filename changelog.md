@@ -2,6 +2,12 @@
 
 # Unreleased
 
+- An implicit product whose left factor is a function call now yields to a
+    tighter operator the same way `2 Times @@ {3, 4}` already did:
+    `Sum[…] Times @@ dp` is `Sum[…] (Times @@ dp)`. It used to parse as
+    `(Sum[…] Times) @@ dp`, which applies a list as a head — the reason the
+    spherical `orthocenter` branch of the "Non-Euclidean Triangle Continuum"
+    Wolfram Demonstration drew no center point.
 - `PolyhedronData["RhombicHexecontahedron", …]` supports the nonconvex
     stellation of the rhombic triacontahedron: 62 vertices, 120 edges, and 60
     golden-rhombus faces, plus its exact `Volume`, `SurfaceArea`, `Inradius`,
