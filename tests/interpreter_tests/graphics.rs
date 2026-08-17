@@ -17803,6 +17803,39 @@ mod manipulate {
     assert!(json.contains("MemberQ[picks, psin]"), "{json}");
   }
 
+  /// `Appearance -> "Vertical"` on a `CheckboxBar` stacks its toggle buttons
+  /// in a column instead of Wolfram's default horizontal bar: the generated
+  /// `TogglerBar[…]` display carries the option through, and
+  /// `build_manipulate_display` renders a `DisplayNode::Column` rather than
+  /// a `DisplayNode::Row` for it.
+  #[test]
+  fn spec_checkbox_bar_appearance_vertical_stacks_the_toggles() {
+    let expr = interpret_to_expr(
+      "Manipulate[picks, \
+       {{picks, {pcos}, \"\"}, {psin -> \" sine\", pcos -> \" cosine\"}, \
+        ControlType -> CheckboxBar, Appearance -> Vertical}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("checkbox bar");
+    assert_eq!(spec.displays.len(), 1);
+    assert!(
+      spec.displays[0].contains("Appearance -> \"Vertical\""),
+      "{}",
+      spec.displays[0]
+    );
+    let bindings = manipulate_initial_bindings(&spec);
+    let node = woxi::with_scoped_globals(&bindings, || {
+      woxi::functions::graphics::build_manipulate_display(
+        &spec.displays[0],
+        &[],
+      )
+    });
+    assert!(
+      matches!(node, woxi::functions::graphics::DisplayNode::Column(_)),
+      "{node:?}"
+    );
+  }
+
   /// A bare `None` in the control-type slot after the bounds says the
   /// variable has no widget — how a puzzle Demonstration declares the state
   /// its buttons drive. It used to be read as a bound, so the variable
