@@ -70,6 +70,7 @@ pub mod plot3d;
 pub mod plot_epilog;
 pub mod polygon_holes;
 pub mod polyhedron_data;
+pub mod polyhedron_operations;
 pub mod polynomial_ast;
 pub mod predicate_ast;
 pub mod quantity_ast;

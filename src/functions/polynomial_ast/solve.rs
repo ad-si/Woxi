@@ -5536,6 +5536,27 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return find_root_multivariate(&args[0], specs);
   }
 
+  // Multivariate form: FindRoot[{eqns}, {x, x0}, {y, y0}, ...] — the
+  // documented form (used throughout Wolfram's own examples) where each
+  // variable spec is its own trailing argument instead of being wrapped in
+  // one outer list. Collect every leading trailing argument that looks like
+  // a {var, start} pair; two or more means this is the multivariate form
+  // rather than the single-variable {var, x0} / {var, x0, x1} form handled
+  // below.
+  if args.len() >= 3 {
+    let candidate_specs: Vec<Expr> = args[1..]
+      .iter()
+      .take_while(|s| {
+        matches!(s, Expr::List(p)
+        if p.len() == 2 && matches!(&p[0], Expr::Identifier(_)))
+      })
+      .cloned()
+      .collect();
+    if candidate_specs.len() >= 2 {
+      return find_root_multivariate(&args[0], &candidate_specs);
+    }
+  }
+
   // Parse the options we honour: Method -> "Secant" picks the secant iteration,
   // and MaxIterations caps the number of steps. The rest are accepted and
   // ignored (see the note on AccuracyGoal/PrecisionGoal below).
@@ -10071,6 +10092,19 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
       let mut valid = true;
       for (j, var) in var_names.iter().enumerate() {
         let (power, coeff) = term_var_power_and_coeff(term, var);
+        // A factor this function cannot decompose (e.g. the `1/(1+z)` inside
+        // `z/(1+z)`) reports itself back as a "coefficient" that still
+        // contains `var` — its (-1)-power sentinel, meant to signal
+        // "unrecognised structure", is indistinguishable from a genuine
+        // negative power once it has combined multiplicatively with a real
+        // `var^1` factor elsewhere in the same term (1 + -1 = 0, disguising a
+        // rational term as a constant one). Requiring the reported
+        // coefficient to actually be free of `var` catches that collision
+        // for both the constant (power 0) and linear (power 1) cases.
+        if (power == 0 || power == 1) && !is_constant_wrt(&coeff, var) {
+          valid = false;
+          break;
+        }
         if power == 1 {
           if found_var.is_some() {
             valid = false; // product of two variables → nonlinear

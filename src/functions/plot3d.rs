@@ -2520,6 +2520,40 @@ fn parse_specularity(args: &[Expr]) -> Option<((u8, u8, u8), f64)> {
   Some((rgb, exponent))
 }
 
+/// The linear part of a rotation by `angle` around the axis direction `w`
+/// (Rodrigues' formula), `None` for a degenerate (zero-length) axis. Shared
+/// with [`crate::functions::polyhedron_operations`], which rotates raw
+/// points the same way `Rotate` rotates rendered primitives.
+pub(crate) fn rotation_matrix(
+  angle: f64,
+  w: [f64; 3],
+) -> Option<[[f64; 3]; 3]> {
+  let len = (w[0] * w[0] + w[1] * w[1] + w[2] * w[2]).sqrt();
+  if !len.is_finite() || len < 1e-12 {
+    return None;
+  }
+  let (ux, uy, uz) = (w[0] / len, w[1] / len, w[2] / len);
+  let (s, c) = angle.sin_cos();
+  let ic = 1.0 - c;
+  Some([
+    [
+      c + ux * ux * ic,
+      ux * uy * ic - uz * s,
+      ux * uz * ic + uy * s,
+    ],
+    [
+      uy * ux * ic + uz * s,
+      c + uy * uy * ic,
+      uy * uz * ic - ux * s,
+    ],
+    [
+      uz * ux * ic - uy * s,
+      uz * uy * ic + ux * s,
+      c + uz * uz * ic,
+    ],
+  ])
+}
+
 /// Collect 3D primitives from an expression.
 /// An affine 3D transform (`p ↦ m·p + t`) built from `Translate`, `Rotate`,
 /// or `Scale` wrappers and applied to already-collected primitives.
@@ -2592,30 +2626,7 @@ impl Affine3 {
   /// Rotation by `angle` around the axis direction `w` through `anchor`
   /// (Rodrigues' formula).
   fn rotation(angle: f64, w: [f64; 3], anchor: [f64; 3]) -> Option<Self> {
-    let len = (w[0] * w[0] + w[1] * w[1] + w[2] * w[2]).sqrt();
-    if !len.is_finite() || len < 1e-12 {
-      return None;
-    }
-    let (ux, uy, uz) = (w[0] / len, w[1] / len, w[2] / len);
-    let (s, c) = angle.sin_cos();
-    let ic = 1.0 - c;
-    let m = [
-      [
-        c + ux * ux * ic,
-        ux * uy * ic - uz * s,
-        ux * uz * ic + uy * s,
-      ],
-      [
-        uy * ux * ic + uz * s,
-        c + uy * uy * ic,
-        uy * uz * ic - ux * s,
-      ],
-      [
-        uz * ux * ic - uy * s,
-        uz * uy * ic + ux * s,
-        c + uz * uz * ic,
-      ],
-    ];
+    let m = rotation_matrix(angle, w)?;
     // Conjugate with the anchor so the axis passes through it:
     // p ↦ m·(p - anchor) + anchor.
     let t = [

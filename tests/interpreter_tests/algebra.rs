@@ -7554,6 +7554,35 @@ mod nsolve {
     );
   }
 
+  // A rational equation (one side divided by an expression that contains
+  // the variable) inside a multi-variable system must not be mistaken for
+  // a constant. The variable-power/coefficient extractor reports a factor
+  // it cannot decompose, like `(1 + z)^-1`, with a sentinel power of -1;
+  // multiplying that by a genuine `z^1` factor elsewhere in the same term
+  // summed the powers to 0 (1 + -1) and disguised the still-z-dependent
+  // `(1 + z)^-1` as a constant coefficient. The symbolic linear solver then
+  // built a bogus augmented matrix and reported the (solvable) system as
+  // inconsistent instead of falling back to the general solver.
+  #[test]
+  fn solve_system_with_rational_equation() {
+    assert_eq!(
+      interpret("Solve[{z/(1 + z) == 1/2, y == 3}, {z, y}]").unwrap(),
+      "{{z -> 1, y -> 3}}"
+    );
+    assert_eq!(
+      interpret("NSolve[{z/(1 + z) == 0.5, y == 3}, {z, y}]").unwrap(),
+      "{{z -> 1., y -> 3.}}"
+    );
+    // The same collision can chain across more than two variables.
+    assert_eq!(
+      interpret(
+        "NSolve[{z/(1 + z) == 0.5, y == z + 1, w == y + 1}, {z, y, w}]"
+      )
+      .unwrap(),
+      "{{z -> 1., y -> 2., w -> 3.}}"
+    );
+  }
+
   // A polynomial with no radical solution falls back to numeric roots, which
   // previously arrived unfiltered — the Reals domain must still drop the
   // complex roots. Verified against wolframscript.
@@ -8136,6 +8165,27 @@ mod find_root {
       )
       .unwrap(),
       "{s -> 1.618033988749895, t -> 0.6180339887498949}"
+    );
+  }
+
+  // Regression: the documented multivariate calling convention —
+  // `FindRoot[{eqns}, {x, x0}, {y, y0}, ...]`, each variable spec its own
+  // trailing argument — was not recognised as multivariate at all. Only the
+  // single-list form `{{x, x0}, {y, y0}}` was detected, so this call fell
+  // through to the single-variable path, which built a "function" out of
+  // the whole two-equation list and failed with FindRoot::nlnum ("not a
+  // number") on evaluating it.
+  #[test]
+  fn multivariate_separate_trailing_specs() {
+    assert_eq!(
+      interpret("FindRoot[{x + y == 3, x - y == 1}, {x, 0}, {y, 0}]").unwrap(),
+      "{x -> 2., y -> 1.}"
+    );
+    // Must agree with the equivalent single-list form.
+    assert_eq!(
+      interpret("FindRoot[{x + y == 3, x - y == 1}, {x, 0}, {y, 0}]").unwrap(),
+      interpret("FindRoot[{x + y == 3, x - y == 1}, {{x, 0}, {y, 0}}]")
+        .unwrap()
     );
   }
 

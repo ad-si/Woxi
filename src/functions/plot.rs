@@ -1472,8 +1472,18 @@ pub(crate) enum FillTarget {
 }
 
 /// Parse the rule-list form `Filling -> {i -> spec, …}`, where `spec` is
-/// `{j}` (fill between series i and j), `{{j}, style}` (the style is not
-/// rendered yet), or a constant level (`Axis`, `Bottom`, `Top`, a number).
+/// `{j}` (fill between series i and j), `{{j}, style}` (a series target with
+/// a style), a constant level (`Axis`, `Bottom`, `Top`, a number), or
+/// `{level, style}` (a level with a style, e.g. `{0, Opacity[.4, Red]}` to
+/// fill down to the x-axis in translucent red). A series target is only a
+/// bare integer when it is the sole element of its list (`{j}`) or nested
+/// one level deeper alongside a style (`{{j}, style}`); a two-or-more-element
+/// list whose first element is a plain number is a level, not a series
+/// index, so `{0, style}` doesn't get mistaken for "fill to series 0"
+/// (which isn't even a valid 1-based series index) and silently drop the
+/// whole option. Each rule's style, when given, is returned alongside its
+/// target — the caller stores it by series index for `series_filling_style`
+/// to pick up.
 /// Returns `None` when `replacement` is not a list of rules keyed by
 /// 1-based series indices, so the caller can fall back to `parse_filling`.
 ///
@@ -1482,7 +1492,9 @@ pub(crate) enum FillTarget {
 /// first. Only the list scaffolding around the rules is flattened; a rule's
 /// own right-hand side (`{j}`, the brace form that names a target series)
 /// stays as written.
-fn parse_filling_rules(replacement: &Expr) -> Option<Vec<(usize, FillTarget)>> {
+fn parse_filling_rules(
+  replacement: &Expr,
+) -> Option<Vec<(usize, FillTarget, Option<FillStyle>)>> {
   fn flatten_rules<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
     match e {
       Expr::List(items) => items.iter().for_each(|i| flatten_rules(i, out)),
@@ -1511,29 +1523,43 @@ fn parse_filling_rules(replacement: &Expr) -> Option<Vec<(usize, FillTarget)>> {
       Expr::Integer(n) if *n >= 1 => *n as usize - 1,
       _ => return None,
     };
-    let target = match rhs {
-      // Braces mark a series target: `{j}` or `{{j}, style}`.
+    let (target, style) = match rhs {
+      // A lone `{j}` is a bare series target, with no style.
+      Expr::List(spec) if spec.len() == 1 => (
+        match &spec[0] {
+          Expr::Integer(j) if *j >= 1 => FillTarget::Series(*j as usize - 1),
+          other => FillTarget::Level(parse_filling(other)),
+        },
+        None,
+      ),
+      // `{target, style, …}`: a series target is nested one level deeper
+      // (`{{j}, style}`) so it isn't confused with a level that happens to
+      // be a positive integer (`{2, style}` fills to level 2, not series 2).
       Expr::List(spec) => {
-        let target_idx = match spec.first()? {
-          Expr::Integer(j) if *j >= 1 => *j as usize - 1,
-          Expr::List(inner) => match inner.first()? {
-            Expr::Integer(j) if *j >= 1 => *j as usize - 1,
-            _ => return None,
-          },
-          _ => return None,
+        let target = match spec.first()? {
+          Expr::List(inner) => {
+            let target_idx = match inner.first()? {
+              Expr::Integer(j) if *j >= 1 => *j as usize - 1,
+              _ => return None,
+            };
+            FillTarget::Series(target_idx)
+          }
+          level => FillTarget::Level(parse_filling(level)),
         };
-        FillTarget::Series(target_idx)
+        let style = spec.get(1).and_then(parse_filling_style);
+        (target, style)
       }
-      other => FillTarget::Level(parse_filling(other)),
+      other => (FillTarget::Level(parse_filling(other)), None),
     };
-    rules.push((series_idx, target));
+    rules.push((series_idx, target, style));
   }
   Some(rules)
 }
 
 /// Apply a `Filling` option value to `opts`: either the per-series rule
-/// list `{i -> spec, …}` (stored in `filling_rules`) or a global mode
-/// (stored in `filling`).
+/// list `{i -> spec, …}` (stored in `filling_rules`, with any per-rule
+/// style stored in the corresponding slot of `filling_styles`) or a global
+/// mode (stored in `filling`).
 pub(crate) fn apply_filling_option(replacement: &Expr, opts: &mut PlotOptions) {
   // The value may be computed rather than named — a Demonstration switches
   // its shading with `Filling -> If[b === Axis, Axis, None]` — so read it
@@ -1542,7 +1568,19 @@ pub(crate) fn apply_filling_option(replacement: &Expr, opts: &mut PlotOptions) {
   let value =
     evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
   if let Some(rules) = parse_filling_rules(&value) {
-    opts.filling_rules = rules;
+    if let Some(max_idx) = rules.iter().map(|(i, ..)| *i).max() {
+      let mut styles = vec![None; max_idx + 1];
+      for (i, _, style) in &rules {
+        if style.is_some() {
+          styles[*i] = *style;
+        }
+      }
+      opts.filling_styles = styles;
+    }
+    opts.filling_rules = rules
+      .into_iter()
+      .map(|(i, target, _)| (i, target))
+      .collect();
   } else {
     opts.filling = parse_filling(&value);
   }
@@ -1856,6 +1894,10 @@ pub(crate) struct PlotOptions {
   /// `Epilog -> {…}` graphics primitives (already evaluated), drawn on top
   /// of the plotted data in data coordinates.
   pub epilog: Vec<Expr>,
+  /// `Prolog -> {…}` graphics primitives (already evaluated), drawn
+  /// underneath the plotted data in data coordinates — the mirror of
+  /// `epilog`, painted first instead of last.
+  pub prolog: Vec<Expr>,
   /// Per-series error bars from `Around` data values, parallel to the
   /// series' points: each entry is ((dx_minus, dx_plus), (dy_minus,
   /// dy_plus)) in data units. Empty when the data has no uncertainties.
@@ -1937,6 +1979,7 @@ impl Default for PlotOptions {
       log_y: false,
       stacked: false,
       epilog: Vec::new(),
+      prolog: Vec::new(),
       error_bars: Vec::new(),
       interval_markers: IntervalMarkers::default(),
       data_points: Vec::new(),
@@ -2526,6 +2569,43 @@ fn inject_epilog(
     crate::functions::plot_epilog::render_epilog_svg(&opts.epilog, &area);
   if let Some(pos) = buf.rfind("</svg>") {
     buf.insert_str(pos, &epilog_svg);
+  }
+}
+
+/// Draw a `Prolog`'s primitives under a finished plot — the mirror of
+/// [`inject_epilog`]: same primitive-to-SVG rendering and the same `area`/
+/// `ranges`/`scale` meaning, but spliced in right after the opening `<svg
+/// …>` tag instead of before `</svg>`, so later-painted content (axes, the
+/// curve itself, any epilog) draws on top of it rather than the reverse.
+fn inject_prolog(
+  buf: &mut String,
+  opts: &PlotOptions,
+  area: (f64, f64, f64, f64),
+  ranges: (f64, f64, f64, f64),
+  scale: f64,
+) {
+  if opts.prolog.is_empty() {
+    return;
+  }
+  let (x0, y0, w, h) = area;
+  let (x_min, x_max, y_min, y_max) = ranges;
+  let area = crate::functions::plot_epilog::PlotArea {
+    x0,
+    y0,
+    w,
+    h,
+    x_min,
+    x_max,
+    y_min,
+    y_max,
+    scale,
+  };
+  let prolog_svg =
+    crate::functions::plot_epilog::render_epilog_svg(&opts.prolog, &area);
+  if let Some(tag_start) = buf.find("<svg")
+    && let Some(tag_end) = buf[tag_start..].find('>')
+  {
+    buf.insert_str(tag_start + tag_end + 1, &prolog_svg);
   }
 }
 
@@ -3285,26 +3365,23 @@ fn generate_svg_with_options(
     }
   }
 
-  // Draw Epilog primitives over the plotted data, using the same
-  // data→pixel transform as the dash overlays above.
-  inject_epilog(
-    &mut buf,
-    opts,
-    (
-      margin_left as f64 + y_label_area as f64,
-      top_margin as f64,
-      render_width as f64
-        - margin_left as f64
-        - margin_right as f64
-        - y_label_area as f64,
-      render_height as f64
-        - top_margin as f64
-        - margin_bottom as f64
-        - x_label_area as f64,
-    ),
-    (x_min, x_max, y_min, y_max),
-    sf,
+  // Draw Prolog primitives under the plotted data, and Epilog primitives
+  // over it, using the same data→pixel transform as the dash overlays
+  // above.
+  let plot_area = (
+    margin_left as f64 + y_label_area as f64,
+    top_margin as f64,
+    render_width as f64
+      - margin_left as f64
+      - margin_right as f64
+      - y_label_area as f64,
+    render_height as f64
+      - top_margin as f64
+      - margin_bottom as f64
+      - x_label_area as f64,
   );
+  inject_prolog(&mut buf, opts, plot_area, (x_min, x_max, y_min, y_max), sf);
+  inject_epilog(&mut buf, opts, plot_area, (x_min, x_max, y_min, y_max), sf);
 
   // Extend labeled (major) ticks so they appear slightly longer than the
   // unlabeled minor ticks drawn by plotters. Only applies when ticks are
@@ -4230,7 +4307,15 @@ pub(crate) fn generate_scatter_svg_with_options(
     buf.insert_str(pos, &overlay_svg);
   }
 
-  // Epilog primitives sit over the points, as in the line renderer.
+  // Prolog primitives sit under the points and Epilog primitives over them,
+  // as in the line renderer.
+  inject_prolog(
+    &mut buf,
+    opts,
+    (plot_x0, plot_y0, plot_w, plot_h),
+    (x_min, x_max, y_min, y_max),
+    sf,
+  );
   inject_epilog(
     &mut buf,
     opts,
@@ -8276,6 +8361,16 @@ pub(crate) fn apply_common_plot_option(
         other => vec![other],
       };
     }
+    "Prolog" => {
+      // Same evaluate-now treatment as `Epilog` — see above.
+      let val = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.clone());
+      plot_opts.prolog = match val {
+        Expr::List(ref items) => items.to_vec(),
+        Expr::Identifier(ref s) if s == "None" => Vec::new(),
+        other => vec![other],
+      };
+    }
     _ => return false,
   }
   true
@@ -8759,7 +8854,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::capture_graphicsbox(&graphicsbox);
 
   // Build source data for Show merging
-  let source = build_plot_source(
+  let mut source = build_plot_source(
     &all_points,
     &plot_opts.plot_style,
     (x_display_min, x_display_max),
@@ -8770,6 +8865,25 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     plot_opts.filling_style,
     crate::functions::plot::explicit_options(args),
   );
+  // `build_plot_source` only knows the single global `Filling` mode; a
+  // per-series `Filling -> {i -> spec, …}` rule list is resolved here
+  // instead, so `source.series[i].filling` (which `Part`/`First` reads to
+  // reconstitute the plot's primitives, and which `Show` reads to re-render
+  // it) reflects each series' own target rather than staying unfilled.
+  // A curve-to-curve target (`{i -> {j}}`) isn't representable as a single
+  // series' fill level, so it's left unfilled here — the SVG rendering
+  // above still draws it directly from `plot_opts.filling_rules`.
+  if !plot_opts.filling_rules.is_empty() {
+    for (i, s) in source.series.iter_mut().enumerate() {
+      if let FillTarget::Level(level) = series_fill_target(&plot_opts, i) {
+        s.filling = level.to_series_filling();
+        if let Some(style) = series_filling_style(&plot_opts, i) {
+          s.fill_color = style.color;
+          s.fill_opacity = style.opacity;
+        }
+      }
+    }
+  }
 
   // Return -Graphics- as the text representation
   Ok(crate::graphics_result_with_source(svg, source))
