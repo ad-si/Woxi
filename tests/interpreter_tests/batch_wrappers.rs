@@ -3819,10 +3819,8 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn delete_stopwords_association_drops_stopword_keys() {
     assert_eq!(
-      interpret(
-        "DeleteStopwords[WordCounts[\"the cat sat on the mat\"]]"
-      )
-      .unwrap(),
+      interpret("DeleteStopwords[WordCounts[\"the cat sat on the mat\"]]")
+        .unwrap(),
       "<|mat -> 1, sat -> 1, cat -> 1|>"
     );
   }
