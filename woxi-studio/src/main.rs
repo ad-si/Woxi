@@ -16301,4 +16301,144 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`grow$$ = 1.5, $CellContext`spin$$ =
       "moving the rotation slider must change the rendered picture"
     );
   }
+
+  #[test]
+  fn sturms_theorem_manipulate_builds_widget() {
+    // End-to-end regression for a "Sturm's theorem for polynomials"
+    // Demonstration: a `SetterBar`-chosen degree plus a `Button` that
+    // redraws a fresh random polynomial into a `ControlType -> None`
+    // hidden coefficient list, whose body builds the Sturm chain via a
+    // `While`/`AppendTo` polynomial-remainder walk, counts sign
+    // variations of the chain at two interval-endpoint sliders with
+    // `Split`/`DeleteCases`, and plots the polynomial with the interval
+    // marked in the `Epilog`.
+    let code = "Manipulate[\
+      Module[{p, dp, chain, signsA, signsB, va, vb}, \
+        p = Take[PadRight[coeffs, deg + 1], deg + 1] . \
+          Table[x^k, {k, deg, 0, -1}]; \
+        dp = D[p, x]; \
+        chain = {p, dp}; \
+        While[Exponent[Last[chain], x] > 0, \
+          AppendTo[chain, \
+            Expand[-PolynomialRemainder[chain[[-2]], chain[[-1]], x]]]\
+        ]; \
+        signsA = (Sign[#1 /. x -> a] &) /@ chain; \
+        signsB = (Sign[#1 /. x -> b] &) /@ chain; \
+        va = Length[Split[DeleteCases[signsA, 0]]] - 1; \
+        vb = Length[Split[DeleteCases[signsB, 0]]] - 1; \
+        Column[{\
+          Row[{\"p(x) = \", p}], \
+          Row[{\"p'(x) = \", dp}], \
+          Grid[\
+            Prepend[Transpose[{chain, signsA, signsB}], \
+              {\"p_i\", \"sign@a\", \"sign@b\"}], \
+            Frame -> All\
+          ], \
+          Row[{\"V(a) = \", va, \",  V(b) = \", vb, \
+            \",  real roots in [a,b] = \", va - vb}], \
+          Plot[p, {x, a - 2, b + 2}, \
+            Epilog -> {Red, PointSize[Medium], Point[{{a, 0}, {b, 0}}]}, \
+            ImageSize -> {360, 240}]\
+        }]\
+      ], \
+      Row[{\
+        Control@{{deg, 3, \"degree\"}, Range[2, 5], SetterBar}, \
+        Spacer[10], \
+        Button[\"new polynomial\", \
+          coeffs = Table[RandomInteger[{-5, 5}], {deg + 1}]]\
+      }], \
+      {coeffs, {{1, 0, -2, 1}}, ControlType -> None}, \
+      {{a, -3, \"a\"}, -6, 0, 1}, \
+      {{b, 3, \"b\"}, 0, 6, 1}, \
+      Initialization :> (coeffs = {1, 0, -2, 1};)\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Sturm's-theorem Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the polynomial plot"
+    );
+
+    // A degree setter, a randomize button, and two interval-endpoint
+    // sliders, in notebook order; `coeffs` stays hidden control-side
+    // state since it carries `ControlType -> None`.
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        label,
+        values,
+        current_index,
+        ..
+      } => {
+        assert_eq!(label, "degree");
+        assert_eq!(values, &vec!["2", "3", "4", "5"]);
+        assert_eq!(*current_index, 1, "initial degree 3");
+      }
+      other => panic!("expected the degree setter bar, got {other:?}"),
+    }
+    match &state.controls[1] {
+      manipulate::ControlState::Button { label, .. } => {
+        assert_eq!(label, "new polynomial");
+      }
+      other => panic!("expected the randomize button, got {other:?}"),
+    }
+    match &state.controls[2] {
+      manipulate::ControlState::Continuous {
+        label,
+        min,
+        max,
+        current,
+        ..
+      } => {
+        assert_eq!(label, "a");
+        assert_eq!((*min, *max, *current), (-6.0, 0.0, -3.0));
+      }
+      other => panic!("expected the 'a' slider, got {other:?}"),
+    }
+    match &state.controls[3] {
+      manipulate::ControlState::Continuous {
+        label,
+        min,
+        max,
+        current,
+        ..
+      } => {
+        assert_eq!(label, "b");
+        assert_eq!((*min, *max, *current), (0.0, 6.0, 3.0));
+      }
+      other => panic!("expected the 'b' slider, got {other:?}"),
+    }
+    assert_eq!(
+      state.state,
+      vec![("coeffs".to_string(), "{1, 0, -2, 1}".to_string())]
+    );
+
+    // Narrowing the interval re-solves the Sturm chain and re-renders.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[2]
+    {
+      *current = -1.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+
+    // Pressing the button draws a fresh random polynomial of the same
+    // degree into the hidden `coeffs` state and re-renders cleanly.
+    let action = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("the randomize button");
+    state.apply_button_action(&action);
+    assert!(state.error.is_none(), "button failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
 }
