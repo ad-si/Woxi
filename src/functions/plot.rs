@@ -13,7 +13,7 @@ use crate::syntax::PlotMarker;
 /// How many lines below the first a stacked `PlotLabel` (a `Grid`/`Column`
 /// title) occupies — the extra top margin every renderer has to reserve for
 /// it. Zero for the ordinary single-line title and for no title at all.
-fn plot_label_extra_lines(label: Option<&StyledLabel>) -> usize {
+pub(crate) fn plot_label_extra_lines(label: Option<&StyledLabel>) -> usize {
   label
     .filter(|sl| !sl.text.is_empty())
     .map_or(0, StyledLabel::extra_line_count)
