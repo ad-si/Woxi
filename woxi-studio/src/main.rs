@@ -6665,6 +6665,91 @@ mod tests {
     );
   }
 
+  /// A discrete `SetterBar`-style term-count picker (`{{n, 2, "terms"},
+  /// {2, 3, 4}}`) that `Take`s that many sliders and folds them through a
+  /// recursive, pattern-matched, `Module`-based extended-GCD helper (mixing
+  /// `Blank[]` and `BlankSequence[]` heads, tuple-destructuring assignment,
+  /// and `Prepend`) defined in `Initialization`, with the result laid out via
+  /// `Grid`/`Labeled`/`Row`/`Dot`/`Subscript`/`Style`. This mirrors the
+  /// general construct category used by number-theory Wolfram
+  /// Demonstrations Project notebooks that expose a "how many terms" picker
+  /// over a recursive multi-argument algorithm (independently written, not
+  /// copied from any specific one).
+  #[test]
+  fn manipulate_term_count_picker_drives_recursive_xgcd_helper() {
+    let code = r#"Manipulate[
+      Module[{terms, result, coeffs, capLabels},
+        terms = Take[{b1, b2, b3}, count];
+        result = combine[terms];
+        coeffs = result[[2]];
+        capLabels = Take[{Subscript[Style["c", Italic], 1],
+          Subscript[Style["c", Italic], 2],
+          Subscript[Style["c", Italic], 3]}, count];
+        Text[Labeled[
+          Grid[{{"gcd", result[[1]]}, {"coeffs", coeffs}}],
+          Row[{Dot[terms, coeffs], " = ", result[[1]], ", where ",
+            capLabels, " = ", coeffs}],
+          Top
+        ]]
+      ],
+      {{count, 3, "terms"}, {2, 3, 4}},
+      {{b1, 12}, 1, 100, 1},
+      {{b2, 18}, 1, 100, 1},
+      {{b3, 30}, 1, 100, 1},
+      Initialization :> (
+        xgcd2[a_, b_] := Module[{q, r, sub, d, s, t},
+          If[b == 0, {a, {1, 0}},
+            q = Quotient[a, b]; r = Mod[a, b];
+            sub = xgcd2[b, r];
+            d = sub[[1]]; s = sub[[2, 2]]; t = sub[[2, 1]] - q sub[[2, 2]];
+            {d, {s, t}}
+          ]
+        ];
+        combine[{a_}] := {a, {1}};
+        combine[{a_, rest__}] := Module[{d1, c1, xg, d, s, t, restCoeffs},
+          {d1, c1} = combine[{rest}];
+          xg = xgcd2[a, d1];
+          d = xg[[1]]; s = xg[[2, 1]]; t = xg[[2, 2]];
+          restCoeffs = t * c1;
+          {d, Prepend[restCoeffs, s]}
+        ];
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a discrete picker plus three sliders should build a ManipulateState",
+    );
+
+    assert!(
+      state.error.is_none(),
+      "body should evaluate cleanly: {:?}",
+      state.error
+    );
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        name,
+        values,
+        current_index,
+        ..
+      } => {
+        assert_eq!(name, "count");
+        assert_eq!(values, &["2", "3", "4"]);
+        assert_eq!(*current_index, 1, "default 3 is the second choice");
+      }
+      other => panic!("expected a discrete term-count picker, got {other:?}"),
+    }
+    assert_eq!(state.controls.len(), 4, "picker plus three sliders");
+    // gcd(12, 18, 30) = 6, with Bezout coefficients {0, 2, -1}: the default
+    // rendering must reflect the correct fold over all three terms, not
+    // just the first one or two.
+    let text = state.text_output.as_deref().unwrap_or("");
+    assert!(
+      text.contains('6'),
+      "gcd(12, 18, 30) = 6 must appear in the rendered text: {text:?}"
+    );
+  }
+
   #[test]
   fn collapsed_chapter_hides_following_until_next_chapter() {
     let states = &[
