@@ -12274,12 +12274,21 @@ mod difference_delta {
 
   #[test]
   fn cos_function() {
-    // Δ Cos[x] = Cos[1 + x] - Cos[x] = -2 Sin[1/2] Sin[1/2 + x]. The sine of
-    // the mean takes no phase shift — adding one (as the Sin case needs to
-    // turn its cosine into a sine) gave back the *sine's* difference instead.
+    // Δ Cos[x] = Cos[1 + x] - Cos[x] = -2 Sin[1/2] Sin[1/2 + x], which
+    // wolframscript writes with the quarter turn kept inside the argument as
+    // one fraction — `2 Sin[d] Cos[(2d + Pi)/2 + f]` — the same shape as the
+    // sine's difference.
     assert_eq!(
       interpret("DifferenceDelta[Cos[x], x]").unwrap(),
-      "-2*Sin[1/2]*Sin[1/2 + x]"
+      "2*Cos[(1 + Pi)/2 + x]*Sin[1/2]"
+    );
+    assert_eq!(
+      interpret("DifferenceDelta[Cos[2*x], x]").unwrap(),
+      "2*Cos[(2 + Pi)/2 + 2*x]*Sin[1]"
+    );
+    assert_eq!(
+      interpret("DifferenceDelta[Cos[x], {x, 1, h}]").unwrap(),
+      "2*Cos[(h + Pi)/2 + x]*Sin[h/2]"
     );
     // The derivative it defines has to come out as the cosine's own.
     assert_eq!(
