@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "woxi-studio", "woxi-py"]
+members = [".", "crates/woxi-reduce", "woxi-studio", "woxi-py"]
 # Unscoped commands at the root (`cargo build`, `make test`, CI) build only
 # the interpreter; woxi-studio (iced → wgpu/winit, 100+ extra crates) is
 # built explicitly via `-p woxi-studio` / `make install-macos-app`.
@@ -226,6 +226,7 @@ num-bigint = "0.4.6"
 num-prime = "0.5"
 plotters = { version = "0.3", default-features = false, features = ["svg_backend", "line_series", "area_series"] }
 num-traits = "0.2.19"
+woxi-reduce = { version = "0.1.0", path = "crates/woxi-reduce" }
 pest = "2.5"
 pest_derive = "2.5"
 petgraph = "0.8.3"

@@ -9,19 +9,34 @@ x == -2 || x == 2
 ```
 
 Woxi keeps specialized built-in paths for polynomial equations, integer
-intervals, complex algebra, and common transcendental forms. On native builds,
-exact polynomial constraints over the reals can additionally use SMT-RAT's
-CAlC quantifier elimination when the `smtrat-shared` executable is available.
-Set `WOXI_SMTRAT` to a different executable path when necessary.
+intervals, complex algebra, and common transcendental forms. Exact linear
+formulas over the reals and rationals use Woxi's self-contained exact
+Fourier-Motzkin engine, including nested quantifiers:
 
-`WOXI_REDUCE_BACKEND` controls selection:
+```scrut
+$ wo 'Reduce[Exists[y, x < y && y < 1], x, Reals]'
+x < 1
+```
 
-- `auto` (the default) keeps fast built-in reductions and invokes SMT-RAT for
-  quantified formulas or exact real formulas left unresolved by Woxi.
-- `internal` disables subprocess use. WebAssembly builds use this behavior in
-  `auto` mode because they cannot start native subprocesses.
-- `smtrat` requires SMT-RAT for supported exact-real formulas and reports a
-  backend error if it cannot run.
+Exact linear integer formulas use Woxi's self-contained Presburger engine.
+Unbounded solution sets are represented symbolically rather than searched up
+to an arbitrary cap:
 
-The subprocess timeout defaults to 30 seconds and can be changed with
-`WOXI_SMTRAT_TIMEOUT_MS`.
+```scrut
+$ wo 'Reduce[Exists[y, x == 2 y + 1], x, Integers]'
+Element[x, Integers] && Mod[x, 2] == 1
+```
+
+Neither engine invokes Wolfram, an SMT solver, or another subprocess. Inputs
+outside the documented exact-linear fragment continue to use Woxi's
+specialized internal fallback routes.
+
+The systematic fragment accepts exact rational affine terms (constants,
+variables, constant multiples, sums, and differences); `==`, `!=`, `<`, `<=`,
+`>`, and `>=`; arbitrary `And`, `Or`, `Not`, and `Xor`; and nested `Exists` and
+`ForAll`. Integer formulas additionally accept `Divisible` and
+`Mod[affine, positiveInteger] == residue` (or its negation). Target domains are
+explicit `Reals`, `Rationals`, or `Integers`. Nonlinear products/powers,
+approximate coefficients, mixed integer/real theories, algebraic-number
+coefficients, and transcendental atoms are outside this systematic fragment;
+some retain separate specialized Woxi behavior.

@@ -9230,6 +9230,101 @@ mod solve_with_domain {
       "{{x -> 1, y -> 4}, {x -> 2, y -> 3}, {x -> 3, y -> 2}, {x -> 4, y -> 1}, {x -> 5, y -> 0}}"
     );
   }
+
+  #[test]
+  fn integers_single_variable_interval() {
+    assert_eq!(
+      interpret("Solve[-2 <= s <= 2, s, Integers]").unwrap(),
+      "{{s -> -2}, {s -> -1}, {s -> 0}, {s -> 1}, {s -> 2}}"
+    );
+  }
+
+  #[test]
+  fn integers_affine_congruence_system() {
+    assert_eq!(
+      interpret(
+        "Solve[0 <= x <= 5 && 0 <= y <= 5 && Mod[x + 2 y, 4] == 3, {x, y}, Integers]"
+      )
+      .unwrap(),
+      "{{x -> 1, y -> 1}, {x -> 1, y -> 3}, {x -> 1, y -> 5}, {x -> 3, y -> 0}, {x -> 3, y -> 2}, {x -> 3, y -> 4}, {x -> 5, y -> 1}, {x -> 5, y -> 3}, {x -> 5, y -> 5}}"
+    );
+  }
+
+  #[test]
+  fn integers_unary_congruence_uses_exact_residue_class() {
+    assert_eq!(
+      interpret("Solve[0 <= x <= 20 && Mod[6 x + 4, 10] == 0, x, Integers]")
+        .unwrap(),
+      "{{x -> 1}, {x -> 6}, {x -> 11}, {x -> 16}}"
+    );
+    assert_eq!(
+      interpret("Solve[0 <= x <= 20 && Mod[2 x + 1, 4] == 0, x, Integers]")
+        .unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn integers_boolean_disjunction_and_disequality() {
+    assert_eq!(
+      interpret(
+        "Solve[0 <= x <= 3 && x != 1 && (x == 0 || x >= 2), x, Integers]"
+      )
+      .unwrap(),
+      "{{x -> 0}, {x -> 2}, {x -> 3}}"
+    );
+  }
+
+  #[test]
+  fn integers_derive_bounds_through_equalities() {
+    assert_eq!(
+      interpret(
+        "Solve[r == 0 && g >= 0 && h >= 0 && h <= 8 && m >= 0 && g + h == 4 && 2 m == g && Mod[g + 2 h, 4] == 0 && m != 1, {r, g, h, m}, Integers]"
+      )
+      .unwrap(),
+      "{{r -> 0, g -> 0, h -> 4, m -> 0}, {r -> 0, g -> 4, h -> 0, m -> 2}}"
+    );
+  }
+
+  #[test]
+  fn integers_exact_beyond_binary64() {
+    assert_eq!(
+      interpret(
+        "Solve[9007199254740993 x == 9007199254740993 && 0 <= x <= 2, x, Integers]"
+      )
+      .unwrap(),
+      "{{x -> 1}}"
+    );
+  }
+
+  #[test]
+  fn integers_consume_finite_reduce_disjunction() {
+    assert_eq!(
+      interpret(
+        "Solve[Reduce[-2 <= s <= 2, s, Integers] && -100 <= s <= 100, s, Integers]"
+      )
+      .unwrap(),
+      "{{s -> -2}, {s -> -1}, {s -> 0}, {s -> 1}, {s -> 2}}"
+    );
+  }
+
+  #[test]
+  fn integers_unbounded_affine_is_not_false_empty() {
+    assert_eq!(
+      interpret("Solve[x >= 0, x, Integers]").unwrap(),
+      "Solve[x >= 0, x, Integers]"
+    );
+    assert_eq!(
+      interpret("Head[Solve[0 <= x <= 1000001, x, Integers]]").unwrap(),
+      "Solve"
+    );
+  }
+
+  #[test]
+  fn integers_preserve_trivial_truth_values() {
+    assert_eq!(interpret("Solve[False, x, Integers]").unwrap(), "{}");
+    assert_eq!(interpret("Solve[True, x, Integers]").unwrap(), "{{}}");
+  }
 }
 
 // Modulus -> n solves over the integers modulo n. Without it Solve answered
