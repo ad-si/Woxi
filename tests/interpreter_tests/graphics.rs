@@ -10075,6 +10075,46 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn list_vector_plot_basic() {
+      insta::assert_snapshot!(export_svg(
+        "ListVectorPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}, {{-1, 1}, {-1, 0}}}]"
+      ));
+    }
+
+    #[test]
+    fn list_vector_plot_part_one_yields_drawable_primitives() {
+      assert_eq!(
+        interpret(
+          "Head[ListVectorPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}}][[1]]]"
+        )
+        .unwrap(),
+        "List"
+      );
+      assert_eq!(
+        interpret(
+          "Length[Cases[ListVectorPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}}][[1]], \
+             _Line | _Arrow, Infinity]] > 0"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    // Demonstrations from before `ListVectorPlot` existed (Wolfram Language
+    // 9) load `VectorFieldPlots`` and call its qualified
+    // `ListVectorFieldPlot` — same data shape, so it draws the same picture
+    // as the modern name instead of being silently dropped by `Show`.
+    #[test]
+    fn legacy_list_vector_field_plot_matches_list_vector_plot() {
+      assert_eq!(
+        export_svg(
+          "VectorFieldPlots`ListVectorFieldPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}}]"
+        ),
+        export_svg("ListVectorPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}}]")
+      );
+    }
+
+    #[test]
     fn stream_plot_basic() {
       insta::assert_snapshot!(export_svg(
         "StreamPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}]"

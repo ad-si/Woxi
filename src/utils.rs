@@ -230,6 +230,7 @@ const STANDARD_DISTRIBUTION_CONTEXTS: &[&str] = &[
   "Units",
   "VariationalMethods",
   "VectorAnalysis",
+  "VectorFieldPlots",
   "WaveletScalogram",
 ];
 

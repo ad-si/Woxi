@@ -1748,6 +1748,109 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
+/// Draws arrows for a set of `(x, y, vx, vy, magnitude)` vectors onto `svg`,
+/// scaled so the largest arrow spans about `cell_size * 0.4` pixels, and
+/// returns the `{color, Arrow[...]}` primitives drawn (so callers can hand
+/// them back as `Graphics[{…}]`, e.g. for `VectorPlot[…][[1]]`).
+///
+/// Shared by `VectorPlot` (vectors sampled from a symbolic field over a
+/// regular grid) and `ListVectorPlot` (vectors supplied as literal data), so
+/// both draw identically instead of maintaining two arrow renderers.
+fn render_vector_arrows(
+  vectors: &[(f64, f64, f64, f64, f64)],
+  max_mag: f64,
+  cell_size: f64,
+  area: &crate::functions::plot::PlotArea,
+  svg: &mut String,
+) -> Vec<Expr> {
+  let mut primitives: Vec<Expr> = Vec::new();
+  if max_mag <= 0.0 {
+    return primitives;
+  }
+
+  let to_px = |x: f64, y: f64| -> (f64, f64) {
+    let sx =
+      area.plot_x0 + (x - area.x_min) / (area.x_max - area.x_min) * area.plot_w;
+    let sy =
+      area.plot_y0 + (area.y_max - y) / (area.y_max - area.y_min) * area.plot_h;
+    (sx, sy)
+  };
+
+  let arrow_scale = cell_size * 0.4 / max_mag;
+  let stroke_w = area.render_width as f64 / 1000.0 * 1.5;
+  // The pixel-space arrow length maps back to a data-space length so the
+  // symbolic arrows have the same footprint as the drawn ones.
+  let data_scale_x = arrow_scale * (area.x_max - area.x_min) / area.plot_w;
+  let data_scale_y = arrow_scale * (area.y_max - area.y_min) / area.plot_h;
+  for &(x, y, vx, vy, mag) in vectors {
+    if mag < 1e-15 {
+      continue;
+    }
+
+    let (sx, sy) = to_px(x, y);
+    let dx = vx * arrow_scale;
+    let dy = -vy * arrow_scale; // SVG y is flipped
+
+    let ex = sx + dx;
+    let ey = sy + dy;
+
+    // Color based on magnitude
+    let t = (mag / max_mag).clamp(0.0, 1.0);
+    let r = (t * 200.0) as u8 + 50;
+    let g = ((1.0 - t) * 150.0) as u8 + 50;
+    let b = 100_u8;
+
+    primitives.push(Expr::List(
+      vec![
+        rgb_color((r, g, b)),
+        Expr::FunctionCall {
+          name: "Arrow".to_string(),
+          args: vec![Expr::List(
+            vec![
+              Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+              Expr::List(
+                vec![
+                  Expr::Real(x + vx * data_scale_x),
+                  Expr::Real(y + vy * data_scale_y),
+                ]
+                .into(),
+              ),
+            ]
+            .into(),
+          )]
+          .into(),
+        },
+      ]
+      .into(),
+    ));
+
+    // Arrow shaft
+    svg.push_str(&format!(
+      "<line x1=\"{sx:.1}\" y1=\"{sy:.1}\" x2=\"{ex:.1}\" y2=\"{ey:.1}\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"{stroke_w:.1}\"/>\n"
+    ));
+
+    // Arrowhead
+    let len = (dx * dx + dy * dy).sqrt();
+    if len > 2.0 {
+      let ux = dx / len;
+      let uy = dy / len;
+      let head_len = len * 0.3;
+      let head_w = head_len * 0.4;
+      let px = -uy;
+      let py = ux;
+      let bx1 = ex - ux * head_len + px * head_w;
+      let by1 = ey - uy * head_len + py * head_w;
+      let bx2 = ex - ux * head_len - px * head_w;
+      let by2 = ey - uy * head_len - py * head_w;
+      svg.push_str(&format!(
+        "<polygon points=\"{ex:.1},{ey:.1} {bx1:.1},{by1:.1} {bx2:.1},{by2:.1}\" fill=\"rgb({r},{g},{b})\"/>\n"
+      ));
+    }
+  }
+
+  primitives
+}
+
 /// VectorPlot[{vx, vy}, {x, xmin, xmax}, {y, ymin, ymax}]
 pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "VectorPlot")?;
@@ -1781,7 +1884,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Use plotters for axes
-  let area = generate_axes_only(
+  let mut area = generate_axes_only(
     (x_min, x_max),
     (y_min, y_max),
     svg_width,
@@ -1789,107 +1892,119 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
   )?;
 
-  // Extract coordinate transform fields before moving svg
-  let plot_x0 = area.plot_x0;
-  let plot_y0 = area.plot_y0;
-  let plot_w = area.plot_w;
-  let plot_h = area.plot_h;
-  let render_w = area.render_width;
-  let ax_min = area.x_min;
-  let ax_max = area.x_max;
-  let ay_min = area.y_min;
-  let ay_max = area.y_max;
-
-  let mut svg = area.svg;
+  let mut svg = std::mem::take(&mut area.svg);
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
   }
 
-  let to_px = |x: f64, y: f64| -> (f64, f64) {
-    let sx = plot_x0 + (x - ax_min) / (ax_max - ax_min) * plot_w;
-    let sy = plot_y0 + (ay_max - y) / (ay_max - ay_min) * plot_h;
-    (sx, sy)
-  };
-
   let cell_size =
-    (plot_w / VECTOR_GRID as f64).min(plot_h / VECTOR_GRID as f64);
+    (area.plot_w / VECTOR_GRID as f64).min(area.plot_h / VECTOR_GRID as f64);
 
   // Arrows in data coordinates, kept so `VectorPlot[…][[1]]` yields the
   // primitives a surrounding `Graphics[{…}]` can redraw.
-  let mut primitives: Vec<Expr> = Vec::new();
-  if max_mag > 0.0 {
-    let arrow_scale = cell_size * 0.4 / max_mag;
-    let stroke_w = render_w as f64 / 1000.0 * 1.5;
-    // The pixel-space arrow length maps back to a data-space length so the
-    // symbolic arrows have the same footprint as the drawn ones.
-    let data_scale_x = arrow_scale * (ax_max - ax_min) / plot_w;
-    let data_scale_y = arrow_scale * (ay_max - ay_min) / plot_h;
-    for &(x, y, vx, vy, mag) in &vectors {
-      if mag < 1e-15 {
-        continue;
-      }
+  let primitives =
+    render_vector_arrows(&vectors, max_mag, cell_size, &area, &mut svg);
 
-      let (sx, sy) = to_px(x, y);
-      let dx = vx * arrow_scale;
-      let dy = -vy * arrow_scale; // SVG y is flipped
+  svg.push_str("</svg>");
+  Ok(crate::graphics_result_with_structure(
+    svg,
+    call1("Graphics", Expr::List(primitives.into())),
+  ))
+}
 
-      let ex = sx + dx;
-      let ey = sy + dy;
-
-      // Color based on magnitude
-      let t = (mag / max_mag).clamp(0.0, 1.0);
-      let r = (t * 200.0) as u8 + 50;
-      let g = ((1.0 - t) * 150.0) as u8 + 50;
-      let b = 100_u8;
-
-      primitives.push(Expr::List(
-        vec![
-          rgb_color((r, g, b)),
-          Expr::FunctionCall {
-            name: "Arrow".to_string(),
-            args: vec![Expr::List(
-              vec![
-                Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
-                Expr::List(
-                  vec![
-                    Expr::Real(x + vx * data_scale_x),
-                    Expr::Real(y + vy * data_scale_y),
-                  ]
-                  .into(),
-                ),
-              ]
-              .into(),
-            )]
-            .into(),
-          },
-        ]
-        .into(),
-      ));
-
-      // Arrow shaft
-      svg.push_str(&format!(
-        "<line x1=\"{sx:.1}\" y1=\"{sy:.1}\" x2=\"{ex:.1}\" y2=\"{ey:.1}\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"{stroke_w:.1}\"/>\n"
-      ));
-
-      // Arrowhead
-      let len = (dx * dx + dy * dy).sqrt();
-      if len > 2.0 {
-        let ux = dx / len;
-        let uy = dy / len;
-        let head_len = len * 0.3;
-        let head_w = head_len * 0.4;
-        let px = -uy;
-        let py = ux;
-        let bx1 = ex - ux * head_len + px * head_w;
-        let by1 = ey - uy * head_len + py * head_w;
-        let bx2 = ex - ux * head_len - px * head_w;
-        let by2 = ey - uy * head_len - py * head_w;
-        svg.push_str(&format!(
-          "<polygon points=\"{ex:.1},{ey:.1} {bx1:.1},{by1:.1} {bx2:.1},{by2:.1}\" fill=\"rgb({r},{g},{b})\"/>\n"
-        ));
-      }
-    }
+/// Reads a literal `{x, y}` point/vector pair, evaluating each coordinate.
+fn as_xy_pair(expr: &Expr) -> Option<(f64, f64)> {
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  if items.len() != 2 {
+    return None;
   }
+  let x = try_eval_to_f64(&items[0])?;
+  let y = try_eval_to_f64(&items[1])?;
+  Some((x, y))
+}
+
+/// ListVectorPlot[{{{x1, y1}, {vx1, vy1}}, {{x2, y2}, {vx2, vy2}}, ...}]
+///
+/// Draws arrows from literal `{position, vector}` data, rather than sampling
+/// a symbolic field over a grid the way `VectorPlot` does. This is also the
+/// modern name for the legacy `VectorFieldPlots\`ListVectorFieldPlot`, whose
+/// calls are normalized to `ListVectorPlot` before dispatch (see
+/// `evaluate_function_call_ast`) since the two take identical data.
+pub fn list_vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = evaluate_expr_to_expr(&args[0])?;
+  let Expr::List(rows) = &data else {
+    return Err(InterpreterError::EvaluationError(
+      "ListVectorPlot: first argument must be a list of {position, vector} pairs"
+        .into(),
+    ));
+  };
+
+  let mut vectors = Vec::new();
+  let mut max_mag = 0.0_f64;
+  let (mut x_min, mut x_max, mut y_min, mut y_max) = (
+    f64::INFINITY,
+    f64::NEG_INFINITY,
+    f64::INFINITY,
+    f64::NEG_INFINITY,
+  );
+  for row in rows {
+    let Expr::List(pair) = row else { continue };
+    if pair.len() != 2 {
+      continue;
+    }
+    let Some((x, y)) = as_xy_pair(&pair[0]) else {
+      continue;
+    };
+    let Some((vx, vy)) = as_xy_pair(&pair[1]) else {
+      continue;
+    };
+    x_min = x_min.min(x);
+    x_max = x_max.max(x);
+    y_min = y_min.min(y);
+    y_max = y_max.max(y);
+    let mag = (vx * vx + vy * vy).sqrt();
+    max_mag = max_mag.max(mag);
+    vectors.push((x, y, vx, vy, mag));
+  }
+
+  if vectors.is_empty() || !x_min.is_finite() || !y_min.is_finite() {
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+  // A single row/column of data (or all-equal coordinates) has zero span;
+  // pad it so the axes aren't degenerate.
+  if (x_max - x_min).abs() < 1e-12 {
+    x_min -= 1.0;
+    x_max += 1.0;
+  }
+  if (y_max - y_min).abs() < 1e-12 {
+    y_min -= 1.0;
+    y_max += 1.0;
+  }
+
+  let (svg_width, svg_height, full_width) = parse_field_options(args, 1);
+  let mut area = generate_axes_only(
+    (x_min, x_max),
+    (y_min, y_max),
+    svg_width,
+    svg_height,
+    full_width,
+  )?;
+  let mut svg = std::mem::take(&mut area.svg);
+  if let Some(pos) = svg.rfind("</svg>") {
+    svg.truncate(pos);
+  }
+
+  // Data points aren't laid out on a regular grid, so the arrow scale is
+  // based on the average spacing implied by the plot area and point count
+  // instead of `VectorPlot`'s fixed sampling grid.
+  let cell_size =
+    (area.plot_w * area.plot_h / vectors.len().max(1) as f64).sqrt();
+  let primitives =
+    render_vector_arrows(&vectors, max_mag, cell_size, &area, &mut svg);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result_with_structure(

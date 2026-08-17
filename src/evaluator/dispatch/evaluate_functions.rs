@@ -484,6 +484,16 @@ fn evaluate_function_call_ast_inner(
 ) -> Result<Expr, InterpreterError> {
   use crate::functions::list_helpers_ast;
 
+  // Legacy standard-distribution package functions whose modern built-in
+  // equivalent lives under a different name. Woxi keeps every built-in in
+  // one flat namespace (see `is_standard_distribution_context`), so a
+  // qualified call to one of these is normalized to its modern name before
+  // dispatch rather than reimplementing the legacy function separately.
+  let name = match name {
+    "VectorFieldPlots`ListVectorFieldPlot" => "ListVectorPlot",
+    other => other,
+  };
+
   // Thread Listable functions over list arguments
   let is_listable = is_builtin_listable(name)
     || crate::FUNC_ATTRS.with(|m| {
