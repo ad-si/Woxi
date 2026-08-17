@@ -16944,6 +16944,94 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`grow$$ = 1.5, $CellContext`spin$$ =
     );
   }
 
+  // Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  // (a per-`n` numeric square, memoized via `f[n_] := f[n] = …` inside
+  // `Initialization :> (…)`, laid out with row/column totals appended
+  // into a bordered `Grid`, wrapped in `Pane[Text@Style[…]]`, driven by
+  // a `{n, min, max, step, ControlType -> Setter}` numeric-range
+  // control) against Woxi Studio's real `.nb` box-form parsing and
+  // Manipulate pipeline. Self-authored, construct-equivalent body (a
+  // multiplication table, not the notebook's own Stirling/Eulerian
+  // number computation or wording, which is copyrighted).
+  #[test]
+  fn demonstration_setter_grid_totals_manipulate_switches_table_size() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Pane[
+  Text@Style[
+   Grid[
+    Module[{withRowTotal, withBothTotals},
+     withRowTotal = Append[squareTable[n], Total[squareTable[n]]];
+     withBothTotals = Transpose[Append[Transpose[withRowTotal], Total[Transpose[withRowTotal]]]];
+     withBothTotals],
+    Background -> {{{{LightBlue, LightBlue}}, -1 -> LightGray}, {-1 -> LightGray}},
+    ItemSize -> {{1, 2, 2, 2, 2, 2, 2, 2}, Automatic},
+    Alignment -> Right],
+   16],
+  ImageSize -> 1.45*{400, 220}, Alignment -> Center],
+ {n, 1, 7, 1, ControlType -> Setter},
+ Initialization :> (squareTable[m_] := squareTable[m] = Table[i*j, {i, m}, {j, m}])]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name,
+          values,
+          current_index,
+          popup,
+          setter_bar,
+          ..
+        },
+      ] => {
+        assert_eq!(name.as_str(), "n");
+        assert_eq!(values.as_slice(), ["1", "2", "3", "4", "5", "6", "7"]);
+        assert_eq!(*current_index, 0);
+        assert!(!popup, "ControlType -> Setter must not force a dropdown");
+        assert!(!setter_bar, "an unforced Setter is not a SetterBar");
+      }
+      other => panic!("expected a single Setter control, got {other:?}"),
+    }
+
+    let initial_text = widget.text_output.clone();
+    assert!(
+      initial_text.is_some() || widget.graphics_handle.is_some(),
+      "the totals table must render as text or a picture"
+    );
+
+    // Stepping the Setter to a larger table size must change the
+    // rendered totals.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut widget.controls[0]
+    {
+      *current_index = 4; // n = 5
+    }
+    widget.reevaluate();
+    assert!(
+      widget.error.is_none(),
+      "re-render failed: {:?}",
+      widget.error
+    );
+    assert_ne!(
+      widget.text_output, initial_text,
+      "switching the table size must change the rendered totals"
+    );
+  }
+
   /// End-to-end regression for a "wire cutting through ice" style
   /// Demonstration: a translucent `Cuboid` block, a `Tube` looped through
   /// it standing in for a loaded wire, and a pair of `Cylinder` weights
