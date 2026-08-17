@@ -1,7 +1,9 @@
 use super::together::negate_expr;
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::calculus_ast::{differentiate_expr, is_constant_wrt, simplify};
+use crate::functions::calculus_ast::{
+  differentiate_expr, is_constant_wrt, simplify,
+};
 use crate::functions::math_ast::{
   make_rational, n_ast, try_eval_to_f64, try_extract_complex_float,
 };
@@ -3371,7 +3373,11 @@ fn drop_spurious_multiplicities(
 /// multiplicity, don't drop it") whenever the entries cannot be pinned down
 /// to real numbers, since that is the safe direction — it only ever costs
 /// a duplicate that should have been dropped, never drops a genuine one.
-fn jacobian_is_nonsingular(polys: &[Expr], vars: &[String], point: &[Expr]) -> bool {
+fn jacobian_is_nonsingular(
+  polys: &[Expr],
+  vars: &[String],
+  point: &[Expr],
+) -> bool {
   let n = vars.len();
   let mut matrix = vec![vec![0.0_f64; n]; n];
   for (i, poly) in polys.iter().enumerate() {
