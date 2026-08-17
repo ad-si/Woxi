@@ -5218,7 +5218,7 @@ FindMaximumCut,,,,12.1,5486
 GeneratedDocumentBinding,,🚫,,10.0,5486
 GeoBoundary,,🚫,,12.2,5486
 GeoResolution,,🚫,,12.0,5486
-GreaterSlantEqual,,,,3.0,5486
+GreaterSlantEqual,Checks if one value is greater than or equal to another (slanted-equal glyph variant of GreaterEqual),✅,pure,3.0,5486
 HeatOutflowValue,,,,12.2,5486
 HeatSymmetryValue,,,,12.2,5486
 HelmholtzPDEComponent,,,,12.2,5486
@@ -5230,7 +5230,7 @@ IncludeQuantities,,,,10.0,5486
 IncludeWindowTimes,,,,10.0,5486
 InflationMethod,,🚫,,10.0,5486
 KeyComplement,Returns the first association restricted to keys absent from the rest,✅,pure,10.1,5486
-LessSlantEqual,,,,3.0,5486
+LessSlantEqual,Checks if one value is less than or equal to another (slanted-equal glyph variant of LessEqual),✅,pure,3.0,5486
 LibraryFunctionInformation,,,,8.0,5486
 LinearFractionalOptimization,,,,12.0,5486
 MarcumQ,Generalized Marcum Q function (symbolic rules and numeric series),✅,pure,8.0,5486

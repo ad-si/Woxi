@@ -1732,7 +1732,19 @@ fn collect_primitives(
           }
         }
         "Text" if !args.is_empty() => {
-          parse_text(args, style, prims);
+          // `Text[picture, pos]` embeds an already-rendered `Graphics` or
+          // `Image` the same way `Inset` does — either primitive can hold a
+          // picture, not just a string label — instead of printing the
+          // object's `-Graphics-`/`-Image-` short form as literal text.
+          match peel_style_wrapper(&args[0]) {
+            Expr::Graphics { .. } | Expr::Image { .. } => {
+              match inset_primitives(args, errors) {
+                Some(inner) => prims.extend(inner),
+                None => parse_text(args, style, prims),
+              }
+            }
+            _ => parse_text(args, style, prims),
+          }
         }
         "BezierCurve" if !args.is_empty() => {
           let before = prims.len();
@@ -2819,6 +2831,23 @@ fn button_plate_svg(label: &str) -> String {
   )
 }
 
+/// Peel a top-level `Style[content, dirs…]`/`StyleForm[…]` wrapper so
+/// callers can pattern-match the payload underneath — e.g. `Inset[Style[img,
+/// Magnification -> .2], pos]` still embeds `img` as a picture rather than
+/// falling through to the plain-text path just because it is styled. The
+/// style directives themselves (font, magnification, …) are not applied;
+/// getting the picture on screen at all matters more than honoring them.
+fn peel_style_wrapper(expr: &Expr) -> &Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      peel_style_wrapper(&args[0])
+    }
+    other => other,
+  }
+}
+
 fn inset_primitives(
   args: &[Expr],
   errors: &mut Vec<String>,
@@ -2836,7 +2865,8 @@ fn inset_primitives(
   // from falling through to the text path and printing `-Graphics3D-`.
   let anchor = args.get(1).and_then(expr_to_anchor);
   let rendered;
-  let embedded = match &args[0] {
+  let image_svg;
+  let embedded = match peel_style_wrapper(&args[0]) {
     Expr::Graphics {
       svg,
       structure: None,
@@ -2845,6 +2875,21 @@ fn inset_primitives(
     Expr::Graphics {
       svg, is_3d: true, ..
     } => Some(svg),
+    // A rasterized picture (e.g. from `Rasterize[…]` or `Import`) draws at
+    // its own pixel size, the same as a rendered `Graphics` above — there is
+    // no symbolic content to fold into this picture's coordinate system.
+    Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      ..
+    } => {
+      image_svg = crate::functions::image_ast::image_to_html_img(
+        *width, *height, *channels, data,
+      );
+      Some(&image_svg)
+    }
     // A picture given symbolically normally has its primitives folded into
     // this one (below), which is what lets it share the coordinate system.
     // That cannot be done from a `Scaled` anchor — the range it names is

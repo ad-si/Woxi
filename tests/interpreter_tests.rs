@@ -1439,6 +1439,90 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_greater_less_slant_equal_operators() {
+    // `\[GreaterSlantEqual]` (⩾, U+2A7E) and `\[LessSlantEqual]` (⩽,
+    // U+2A7D) are glyph variants of GreaterEqual/LessEqual that a
+    // Demonstration's box notation resolves to literal Unicode characters
+    // once extracted from a notebook cell. Regression: the parser only
+    // recognized the plain ≥/≤ (U+2265/U+2264) forms as comparison
+    // operators, so `q⩾q1` failed to parse at all.
+    clear_state();
+    assert_eq!(interpret("3\u{2A7E}2").unwrap(), "True");
+    assert_eq!(interpret("2\u{2A7E}3").unwrap(), "False");
+    assert_eq!(interpret("2\u{2A7E}2").unwrap(), "True");
+    clear_state();
+    assert_eq!(interpret("2\u{2A7D}3").unwrap(), "True");
+    assert_eq!(interpret("3\u{2A7D}2").unwrap(), "False");
+    assert_eq!(interpret("2\u{2A7D}2").unwrap(), "True");
+    // The chained/mixed form parses as a Comparison, same as `<=`/`>=`.
+    clear_state();
+    assert_eq!(interpret("1\u{2A7D}2\u{2A7D}3").unwrap(), "True");
+    clear_state();
+    assert_eq!(interpret("If[3\u{2A7E}2, \"yes\", \"no\"]").unwrap(), "yes");
+  }
+
+  #[test]
+  fn test_inset_and_text_embed_rasterized_image() {
+    // `Inset[img, pos]` and `Text[img, pos]` with `img` an already-rasterized
+    // `Image[…]` (e.g. from `Rasterize[Graphics[…]]`) must draw the picture
+    // itself, the way a Demonstration composites a small rendered icon into
+    // a larger scene. Regression: both fell through to the plain-text path
+    // and printed the object's `-Image-` short form as literal text instead.
+    clear_state();
+    let inset_svg = interpret(
+      "h = Rasterize[Graphics[Disk[]]]; ExportString[Graphics[{Inset[h, {0, 0}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      inset_svg.contains("data:image/png;base64,"),
+      "Inset of a rasterized image did not embed a PNG: {inset_svg}"
+    );
+    assert!(
+      !inset_svg.contains("-Image-"),
+      "Inset fell back to the -Image- text placeholder: {inset_svg}"
+    );
+
+    clear_state();
+    let text_svg = interpret(
+      "h = Rasterize[Graphics[Disk[]]]; ExportString[Graphics[{Text[h, {0, 0}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      text_svg.contains("data:image/png;base64,"),
+      "Text of a rasterized image did not embed a PNG: {text_svg}"
+    );
+    assert!(
+      !text_svg.contains("-Image-"),
+      "Text fell back to the -Image- text placeholder: {text_svg}"
+    );
+
+    // A `Style[…]`-wrapped image (as a Demonstration writes to scale an
+    // icon down with `Magnification`) still embeds instead of falling
+    // through just because it is styled.
+    clear_state();
+    let styled_svg = interpret(
+      "h = Rasterize[Graphics[Disk[]]]; ExportString[Graphics[{Inset[Style[h, Magnification -> .5], {0, 0}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      styled_svg.contains("data:image/png;base64,"),
+      "Style-wrapped Inset did not embed a PNG: {styled_svg}"
+    );
+
+    // Plain text content is unaffected — still drawn as a label, not
+    // mistaken for a picture.
+    clear_state();
+    let plain_svg =
+      interpret("ExportString[Graphics[{Text[\"hello\", {0, 0}]}], \"SVG\"]")
+        .unwrap();
+    assert!(
+      plain_svg.contains("hello"),
+      "plain text label lost: {plain_svg}"
+    );
+    assert!(!plain_svg.contains("data:image/png;base64,"));
+  }
+
+  #[test]
   fn test_plot_aspect_ratio_sizes_frame_not_canvas() {
     // AspectRatio sets the height/width ratio of the plotting *area* (the data
     // frame), not the whole image. A short ratio must therefore NOT squash the
