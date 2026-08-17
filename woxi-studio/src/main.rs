@@ -17673,6 +17673,154 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
     assert!(state.graphics_handle.is_some());
   }
 
+  // Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  // (a 2D Fourier-transform amplitude/phase explorer) against Woxi
+  // Studio's Manipulate pipeline. Self-authored, construct-equivalent
+  // body — its own complex-exponential kernel and locator schematic, not
+  // the notebook's own formula presentation or wording, which is
+  // copyrighted — exercising the general shape: two `InitializationCell`
+  // helper functions returning complex values, a `Module`-wrapped
+  // `GraphicsGrid` mixing a schematic `Graphics` panel with two
+  // `DensityPlot`s (one taking `Abs`, one `Arg`, of the same complex
+  // kernel) that use `ColorFunction -> "SunsetColors"` and a
+  // `Dynamic[…]`-wrapped `PlotPoints` option, driven by three
+  // `Appearance -> "Labeled"` continuous sliders with
+  // `SaveDefinitions -> True`.
+  #[test]
+  fn demonstration_gaussian_kernel_manipulate_renders_amplitude_and_phase_grid()
+  {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["kernel[u_, v_, dx_, dy_, w_] := (Exp[I u dx + I v dy - u^2 w/2 - v^2 w/2] w) / (2 Pi)"], "Input", InitializationCell->True],
+Cell[BoxData["kernelAbs[u_, v_, w_] := Exp[-(u^2 + v^2) w/2] Abs[w] / (2 Pi)"], "Input", InitializationCell->True],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Module[{lim, shrink},
+  lim = 8; shrink = 0.95;
+  GraphicsGrid[{{
+    Graphics[{Black, Rectangle[{-lim shrink, -lim shrink}, {lim shrink, lim shrink}], Gray, Line[{{0, -lim}, {0, lim}}], Gray, Line[{{-lim, 0}, {lim, 0}}], White, Line[{{0, 0}, {px, py}}], Orange, Disk[{px, py}, width]}, PlotRange -> {{-lim, lim}, {-lim, lim}}, Frame -> True, PlotLabel -> Text[Row[{Style[\"f\", Italic], \"(\", Style[\"x\", Italic], \", \", Style[\"y\", Italic], \")\"}]]],
+    DensityPlot[kernelAbs[u, v, width], {u, -lim, lim}, {v, -lim, lim}, ColorFunction -> \"SunsetColors\", PlotPoints -> Dynamic[Floor[20 Max[1, width]]], PlotLabel -> Text[Row[{\"magnitude of \", Style[\"F\", Italic]}]], PlotRange -> All],
+    DensityPlot[Arg[kernel[u, v, px, py, width]], {u, -lim, lim}, {v, -lim, lim}, ColorFunction -> \"SunsetColors\", PlotRange -> {-Pi, Pi}, PlotLabel -> Text[Row[{\"phase of \", Style[\"F\", Italic]}]]]
+  }}, ImageSize -> {550, 180}]
+ ],
+ {{px, 0, \"x offset\"}, -3, 3, Appearance -> \"Labeled\"},
+ {{py, 0, \"y offset\"}, -3, 3, Appearance -> \"Labeled\"},
+ {{width, 0.25, \"width\"}, 0.1, 2, Appearance -> \"Labeled\"},
+ SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`px$$ = 0, $CellContext`py$$ = 0, $CellContext`width$$ = 0.25}, DynamicBox[\[Ellipsis]]]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the three-panel GraphicsGrid (schematic + two DensityPlots) must draw"
+    );
+
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: px_name,
+          label: px_label,
+          min: px_min,
+          max: px_max,
+          current: px_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: py_name,
+          label: py_label,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: width_name,
+          label: width_label,
+          min: width_min,
+          max: width_max,
+          current: width_now,
+          ..
+        },
+      ] => {
+        assert_eq!(px_name.as_str(), "px");
+        assert_eq!(px_label.as_str(), "x offset");
+        assert_eq!(*px_min, -3.0);
+        assert_eq!(*px_max, 3.0);
+        assert_eq!(*px_now, 0.0);
+        assert_eq!(py_name.as_str(), "py");
+        assert_eq!(py_label.as_str(), "y offset");
+        assert_eq!(width_name.as_str(), "width");
+        assert_eq!(width_label.as_str(), "width");
+        assert_eq!(*width_min, 0.1);
+        assert_eq!(*width_max, 2.0);
+        assert_eq!(*width_now, 0.25);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the GraphicsGrid must render")
+    };
+
+    let centered_view = render(&widget);
+
+    // Moving the offset sliders shifts the schematic locator and the
+    // phase panel (which depends on `px`/`py`), so the rendered picture
+    // must change.
+    match &mut widget.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 2.0,
+      other => panic!("expected px as a Continuous control, got {other:?}"),
+    }
+    match &mut widget.controls[1] {
+      manipulate::ControlState::Continuous { current, .. } => *current = -1.5,
+      other => panic!("expected py as a Continuous control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    let offset_view = render(&widget);
+    assert_ne!(
+      centered_view, offset_view,
+      "moving the x/y offset sliders must change the rendered picture"
+    );
+
+    // Widening the kernel width changes both DensityPlot panels (and the
+    // `Dynamic[…]`-wrapped `PlotPoints` option must not error out even
+    // though `DensityPlot` doesn't special-case that option).
+    match &mut widget.controls[2] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 1.5,
+      other => panic!("expected width as a Continuous control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(
+      widget.error.is_none(),
+      "body should still evaluate after widening the kernel: {:?}",
+      widget.error
+    );
+    let widened_view = render(&widget);
+    assert_ne!(
+      offset_view, widened_view,
+      "widening the kernel must change the rendered picture"
+    );
+  }
+
   /// End-to-end regression for the shape of a "sphere peeled into lune
   /// segments that spread into a torus" Demonstration: an
   /// `InitializationCell` defines a `Module`-based helper mapping a
