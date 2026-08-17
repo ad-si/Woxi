@@ -135,6 +135,7 @@ Entity,Symbolic representation of a real-world entity,✅,pure,10.0,76
 Sum,Computes a sum over one or more ranges — accepts trailing options and gives a divergent sum a value under Regularization -> Dirichlet or Abel,✅,pure,1.0,77
 Product,Computes the product of an expression over one or more ranges — accepts trailing options,✅,pure,1.0,376
 HoldComplete,Holds arguments completely unevaluated,✅,pure,3.0,78
+HoldCompleteForm,Holds an expression completely unevaluated for display,✅,pure,3.0,
 Word,Symbol representing a word in string patterns,✅,none,2.0,79
 First,Returns the first element of a list or the given default which is only evaluated when used,✅,pure,1.0,80
 Last,Returns the last element of a list or the given default which is only evaluated when used,✅,pure,1.0,140

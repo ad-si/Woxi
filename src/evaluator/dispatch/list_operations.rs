@@ -8068,7 +8068,12 @@ fn normal_with_heads(expr: &Expr, heads: &[String]) -> Expr {
   let is_hold = |name: &str| {
     matches!(
       name,
-      "Hold" | "HoldForm" | "HoldComplete" | "HoldPattern" | "HoldAllComplete"
+      "Hold"
+        | "HoldForm"
+        | "HoldComplete"
+        | "HoldCompleteForm"
+        | "HoldPattern"
+        | "HoldAllComplete"
     )
   };
   match expr {
