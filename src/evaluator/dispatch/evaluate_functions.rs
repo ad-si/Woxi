@@ -1577,6 +1577,43 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::polyhedron_data::polyhedron_data_ast(args);
   }
 
+  // The legacy `PolyhedronOperations` package: Truncate/Stellate a
+  // graphics expression's Polygon faces, corner-cutting or pyramiding
+  // each one to a ratio (`Needs["PolyhedronOperations`"]` has nothing to
+  // load — see `evaluator::contexts` — so the fully-qualified names work
+  // unconditionally, as they do for every context Woxi recognizes).
+  if name == "PolyhedronOperations`Truncate"
+    && (args.len() == 1 || args.len() == 2)
+  {
+    let ratio = match args.get(1) {
+      Some(r) => match crate::functions::math_ast::try_eval_to_f64(r) {
+        Some(v) => v,
+        None => return Ok(unevaluated(name, args)),
+      },
+      None => crate::functions::polyhedron_operations::DEFAULT_TRUNCATE_RATIO,
+    };
+    if !(ratio > 0.0 && ratio < 0.5) {
+      return Ok(unevaluated(name, args));
+    }
+    return Ok(crate::functions::polyhedron_operations::truncate(
+      &args[0], ratio,
+    ));
+  }
+  if name == "PolyhedronOperations`Stellate"
+    && (args.len() == 1 || args.len() == 2)
+  {
+    let ratio = match args.get(1) {
+      Some(r) => match crate::functions::math_ast::try_eval_to_f64(r) {
+        Some(v) => v,
+        None => return Ok(unevaluated(name, args)),
+      },
+      None => crate::functions::polyhedron_operations::DEFAULT_STELLATE_RATIO,
+    };
+    return Ok(crate::functions::polyhedron_operations::stellate(
+      &args[0], ratio,
+    ));
+  }
+
   // Chemistry: molecules and their properties
   match name {
     "Molecule" => {

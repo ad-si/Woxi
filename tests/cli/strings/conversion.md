@@ -20,6 +20,7 @@ Converting between strings and other data types, character codes, and encoded fo
 - [`LetterCounts`](conversion/LetterCounts.md)
 - [`WordCount`](conversion/WordCount.md)
 - [`WordCounts`](conversion/WordCounts.md)
+- [`DeleteStopwords`](conversion/DeleteStopwords.md)
 - [`Hash`](conversion/Hash.md)
 - [`Uncompress`](conversion/Uncompress.md)
 - [`URLDecode`](conversion/URLDecode.md)

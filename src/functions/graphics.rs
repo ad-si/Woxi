@@ -1732,7 +1732,19 @@ fn collect_primitives(
           }
         }
         "Text" if !args.is_empty() => {
-          parse_text(args, style, prims);
+          // `Text[picture, pos]` embeds an already-rendered `Graphics` or
+          // `Image` the same way `Inset` does — either primitive can hold a
+          // picture, not just a string label — instead of printing the
+          // object's `-Graphics-`/`-Image-` short form as literal text.
+          match peel_style_wrapper(&args[0]) {
+            Expr::Graphics { .. } | Expr::Image { .. } => {
+              match inset_primitives(args, errors) {
+                Some(inner) => prims.extend(inner),
+                None => parse_text(args, style, prims),
+              }
+            }
+            _ => parse_text(args, style, prims),
+          }
         }
         "BezierCurve" if !args.is_empty() => {
           let before = prims.len();
@@ -2819,6 +2831,23 @@ fn button_plate_svg(label: &str) -> String {
   )
 }
 
+/// Peel a top-level `Style[content, dirs…]`/`StyleForm[…]` wrapper so
+/// callers can pattern-match the payload underneath — e.g. `Inset[Style[img,
+/// Magnification -> .2], pos]` still embeds `img` as a picture rather than
+/// falling through to the plain-text path just because it is styled. The
+/// style directives themselves (font, magnification, …) are not applied;
+/// getting the picture on screen at all matters more than honoring them.
+fn peel_style_wrapper(expr: &Expr) -> &Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      peel_style_wrapper(&args[0])
+    }
+    other => other,
+  }
+}
+
 fn inset_primitives(
   args: &[Expr],
   errors: &mut Vec<String>,
@@ -2836,7 +2865,8 @@ fn inset_primitives(
   // from falling through to the text path and printing `-Graphics3D-`.
   let anchor = args.get(1).and_then(expr_to_anchor);
   let rendered;
-  let embedded = match &args[0] {
+  let image_svg;
+  let embedded = match peel_style_wrapper(&args[0]) {
     Expr::Graphics {
       svg,
       structure: None,
@@ -2845,6 +2875,21 @@ fn inset_primitives(
     Expr::Graphics {
       svg, is_3d: true, ..
     } => Some(svg),
+    // A rasterized picture (e.g. from `Rasterize[…]` or `Import`) draws at
+    // its own pixel size, the same as a rendered `Graphics` above — there is
+    // no symbolic content to fold into this picture's coordinate system.
+    Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      ..
+    } => {
+      image_svg = crate::functions::image_ast::image_to_html_img(
+        *width, *height, *channels, data,
+      );
+      Some(&image_svg)
+    }
     // A picture given symbolically normally has its primitives folded into
     // this one (below), which is what lets it share the coordinate system.
     // That cannot be done from a `Scaled` anchor — the range it names is
@@ -3758,7 +3803,9 @@ fn rotate_point(
 /// homogeneous `TransformationFunction[…]` itself, and a list of any of
 /// those — a list draws one transformed copy per entry. Empty when nothing
 /// numeric can be read out.
-fn parse_affine_transforms(expr: &Expr) -> Vec<([[f64; 2]; 2], (f64, f64))> {
+pub(crate) fn parse_affine_transforms(
+  expr: &Expr,
+) -> Vec<([[f64; 2]; 2], (f64, f64))> {
   // {{a, b}, {c, d}} — a 2×2 linear map.
   fn matrix2(expr: &Expr) -> Option<[[f64; 2]; 2]> {
     let Expr::List(rows) = expr else { return None };
@@ -16169,6 +16216,50 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(call("Manipulate", out_args))
 }
 
+/// Whether `expr` still mentions a free symbol after evaluation — i.e. it
+/// did not reduce to a concrete value. A control bound evaluated on its own
+/// (outside the Manipulate's own variable scope) stays symbolic when it
+/// depends on another control's variable (`Range[y]`); a call like
+/// `RGBColor[0.49, 0, 0]` that evaluates to itself has no such dependency.
+/// Named mathematical constants don't count as free — they're already
+/// concrete values in disguise.
+fn expr_is_symbolic(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(name) => !matches!(
+      name.as_str(),
+      "Pi"
+        | "E"
+        | "Degree"
+        | "I"
+        | "Infinity"
+        | "ComplexInfinity"
+        | "True"
+        | "False"
+        | "None"
+        | "Automatic"
+        | "All"
+        | "Null"
+        | "GoldenRatio"
+        | "EulerGamma"
+        | "Catalan"
+    ),
+    Expr::FunctionCall { args, .. } => args.iter().any(expr_is_symbolic),
+    Expr::List(items) => items.iter().any(expr_is_symbolic),
+    Expr::Association(pairs) => pairs
+      .iter()
+      .any(|(k, v)| expr_is_symbolic(k) || expr_is_symbolic(v)),
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => expr_is_symbolic(pattern) || expr_is_symbolic(replacement),
+    _ => false,
+  }
+}
+
 /// Process a single Manipulate/Control variable specification list,
 /// evaluating trailing bounds/step/discrete values while keeping the head
 /// (variable symbol or `{u, uinit, ulbl}`) intact. A 2-item spec
@@ -16201,6 +16292,12 @@ fn process_manipulate_var_spec(items: &[Expr]) -> Expr {
     && let needs_dynamic = match &new_items[1] {
       Expr::Integer(_) | Expr::Real(_) | Expr::List(_) => false,
       Expr::FunctionCall { name, .. } if name == "Dynamic" => false,
+      // Any other call (e.g. `RGBColor[0.49, 0, 0]`) only needs wrapping
+      // when it stayed symbolic after evaluation — i.e. it still mentions a
+      // free symbol such as another control's variable. A call that
+      // evaluated down to a concrete value is already stable and needs no
+      // live re-resolution.
+      Expr::FunctionCall { args, .. } => args.iter().any(expr_is_symbolic),
       // A trailing control option such as `ControlType -> None` is not a
       // range, so it must not be wrapped in Dynamic[…].
       Expr::Rule { .. } | Expr::RuleDelayed { .. } => false,
@@ -16478,6 +16575,11 @@ pub enum ManipulateControl {
     /// choices by index, the way Wolfram draws a slider over a discrete
     /// domain. Without it a twenty-entry list would become a dropdown.
     slider: bool,
+    /// `Appearance -> "Vertical"` (or the bare symbol `Vertical`): stack the
+    /// choice row in a column instead of Wolfram's default horizontal bar.
+    /// Only affects the SetterBar/RadioButtonBar bar layout; a dropdown or
+    /// index slider ignores it.
+    vertical: bool,
   },
   /// A 2D control (`ControlType -> Slider2D`, or a 2D range spec
   /// `{u, {xmin, ymin}, {xmax, ymax}}`). Binds its variable to a 2-vector
@@ -16862,6 +16964,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   }
   let arg_items: Vec<Expr> =
     arg_items.into_iter().map(unwrap_control_wrapper).collect();
+  let pane_governed_names = pane_or_tab_governed_names(&args[1..]);
   // A `ControlType -> …` given to the Manipulate itself sets the type of every
   // control that does not choose one; push it into the specs now that they are
   // flattened, so they parse through the single per-spec path below.
@@ -17160,11 +17263,22 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           animation_running = running;
           animation_var = Some(c.name().to_string());
         }
-        // A second spec for an already-bound variable (Kepler pairs a time
-        // slider with a `Trigger` on the same `t`) must not bind twice —
-        // the first spec keeps the widget row, later duplicates only
-        // contribute their animation/enabled semantics above.
-        if !c.name().is_empty()
+        // A second spec for an already-bound variable merges into the
+        // earlier row — contributing only the animation/enabled semantics
+        // captured above — in the two cases Wolfram itself collapses: a
+        // `Trigger` pairing with an existing slider (Kepler's time slider
+        // plus a `Trigger` on the same `t`), and a variable declared inside
+        // a `PaneSelector`/`TabView` pane (only one pane is ever on screen,
+        // so a shared widget — or a per-pane variant of one, with its own
+        // bounds or choice list — still gets a single row; see
+        // `pane_or_tab_governed_names`). Two *different* ordinary specs
+        // sharing a variable outside any pane (e.g. a coarse and a fine
+        // SetterBar preset row for the same count, as in "Polypath
+        // Iterations") are a real Wolfram pattern instead: both stay
+        // visible, independently interactive, and read/write the same
+        // binding, so those get their own rows.
+        if (animate.is_some() || pane_governed_names.contains(c.name()))
+          && !c.name().is_empty()
           && controls.iter().any(|prev| prev.name() == c.name())
         {
           continue;
@@ -17974,6 +18088,54 @@ fn collect_pane_visibility(spec: &Expr, out: &mut Vec<(String, String)>) {
   }
 }
 
+/// The Manipulate variable names declared inside a `PaneSelector`/`TabView`
+/// pane or tab, anywhere among `args` (a Manipulate's control-spec
+/// arguments). Only one pane/tab is ever on screen at a time, so a
+/// duplicate spec for one of these names — the same widget shared across
+/// panes, or a per-pane variant of it (different bounds, different choice
+/// list) — must still collapse to a single row; see the merge check where
+/// this is used, alongside `collect_pane_visibility` which computes the
+/// same panes' *display* condition for the row that does get built.
+fn pane_or_tab_governed_names(
+  args: &[Expr],
+) -> std::collections::HashSet<String> {
+  fn walk(e: &Expr, out: &mut std::collections::HashSet<String>) {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        if (name == "PaneSelector" || name == "TabView")
+          && let Some(Expr::List(panes)) = args.first()
+        {
+          for pane in panes {
+            if let Expr::Rule { replacement, .. }
+            | Expr::RuleDelayed { replacement, .. } = pane
+            {
+              out.extend(pane_control_variables(replacement));
+            }
+          }
+        }
+        for a in args {
+          walk(a, out);
+        }
+      }
+      // A `PaneSelector`/`TabView` may sit inside a `Row[{…}]`/`Column[{…}]`
+      // layout, whose single argument is itself a list of the grouped
+      // items — walk has to descend into that list too, not just a
+      // function call's own arguments, or a pane nested that way is missed.
+      Expr::List(items) => {
+        for it in items {
+          walk(it, out);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut out = std::collections::HashSet::new();
+  for a in args {
+    walk(a, &mut out);
+  }
+  out
+}
+
 /// The control variables a `PaneSelector` pane declares: the variable of
 /// every `Control[…]` in it, plus — when the pane *is* a bare variable
 /// specification — that spec's own variable.
@@ -18191,6 +18353,12 @@ fn discrete_choice_columns(
         discrete_choice_label(label)
       });
       svgs.push(svg);
+    } else if let Some(color) = crate::functions::graphics::parse_color(item) {
+      // A plain colour choice (no Rule label) renders as a swatch icon —
+      // the ColorSetter idiom — rather than its `RGBColor[…]` InputForm.
+      values.push(crate::syntax::expr_to_input_form(item));
+      labels.push(discrete_choice_label(item));
+      svgs.push(Some(color_swatch_svg(&color)));
     } else {
       values.push(crate::syntax::expr_to_input_form(item));
       labels.push(discrete_choice_label(item));
@@ -19823,6 +19991,26 @@ fn parse_manipulate_control(
     })
     .collect();
 
+  // `Appearance -> "Vertical"` (or the bare symbol `Vertical`) stacks a
+  // SetterBar/RadioButtonBar/CheckboxBar in a column instead of Wolfram's
+  // default horizontal bar.
+  let appearance_vertical = items.iter().any(|it| {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = it
+    else {
+      return false;
+    };
+    matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Appearance")
+      && (matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Vertical")
+        || matches!(replacement.as_ref(), Expr::String(s) if s == "Vertical"))
+  });
+
   // A `ControlType -> Trigger` (or bare `Trigger` marker) becomes a
   // dedicated play/pause control sweeping its variable from `min` towards
   // `max` — whether that end is infinite (`{time, 0, Infinity, 1, …}`, the
@@ -20003,10 +20191,17 @@ fn parse_manipulate_control(
       Some(init) => manipulate_value_to_input_form(init),
       None => "{}".to_string(),
     };
-    let display = format!(
-      "TogglerBar[Dynamic[{name}], {}]",
-      crate::syntax::expr_to_input_form(&choices)
-    );
+    let display = if appearance_vertical {
+      format!(
+        "TogglerBar[Dynamic[{name}], {}, Appearance -> \"Vertical\"]",
+        crate::syntax::expr_to_input_form(&choices)
+      )
+    } else {
+      format!(
+        "TogglerBar[Dynamic[{name}], {}]",
+        crate::syntax::expr_to_input_form(&choices)
+      )
+    };
     return Some(ParsedControl::StateWithDisplay {
       name,
       value,
@@ -20083,6 +20278,7 @@ fn parse_manipulate_control(
             control_type.as_deref(),
             Some("Slider" | "VerticalSlider" | "Manipulator")
           ),
+          vertical: appearance_vertical,
         },
         enabled,
         min_code: None,
@@ -20143,21 +20339,49 @@ fn parse_manipulate_control(
     });
   }
 
-  // Colour form: `{{u, uinit, ulbl}, colour}` — a single colour where the
-  // bounds go. wolframscript renders a `ColorSlider`; Woxi has no colour
-  // widget yet, so the variable is bound to its initial colour and the
-  // other controls stay live. Without this the whole Manipulate failed to
-  // build, taking every control with it.
+  // Colour form: `{{u, uinit, ulbl}, colour}` — wolframscript renders a
+  // ColorSetter whose swatches are the initial colour and the listed
+  // alternate(s), matching the Demonstrations idiom of toggling between a
+  // couple of fixed colours. With an explicit initial colour that differs
+  // from `colour`, the two form a real 2-swatch choice; without one there is
+  // only a single possible value, so the variable stays fixed at it (there
+  // is nothing to pick between).
   if bounds.len() == 1
     && crate::functions::graphics::parse_color(bounds[0]).is_some()
   {
-    let value = explicit_initial
-      .as_ref()
-      .filter(|init| parse_color(init).is_some())
-      .map_or_else(
-        || crate::syntax::expr_to_input_form(bounds[0]),
-        crate::syntax::expr_to_input_form,
-      );
+    let alt_code = crate::syntax::expr_to_input_form(bounds[0]);
+    if let Some(init) = explicit_initial.as_ref().filter(|init| {
+      parse_color(init).is_some()
+        && crate::syntax::expr_to_input_form(init) != alt_code
+    }) {
+      let value_items = vec![init.clone(), bounds[0].clone()];
+      let (values, value_labels, value_label_svgs) =
+        discrete_choice_columns(&value_items);
+      return Some(ParsedControl::Visible {
+        control: ManipulateControl::Discrete {
+          name,
+          values,
+          value_labels,
+          value_label_svgs,
+          initial_index: 0,
+          label,
+          label_runs,
+          popup: false,
+          // A ColorSetter always shows its swatches as a row of buttons,
+          // never a dropdown.
+          setter_bar: true,
+          slider: false,
+          vertical: false,
+        },
+        enabled,
+        min_code: None,
+        max_code: None,
+        values_code: None,
+        animate: None,
+        tracking: tracking.clone(),
+      });
+    }
+    let value = crate::syntax::expr_to_input_form(bounds[0]);
     return Some(ParsedControl::Fixed { name, value });
   }
 
@@ -20937,6 +21161,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         popup,
         setter_bar,
         slider,
+        vertical,
       } => {
         let value_parts: Vec<String> = values
           .iter()
@@ -20953,6 +21178,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           ""
         };
         let slider_json = if *slider { r#","slider":true"# } else { "" };
+        let vertical_json = if *vertical { r#","vertical":true"# } else { "" };
         // Icon labels (rule right sides that are graphics) ride along as
         // rendered SVG, parallel to `values`; omitted when all-text.
         let svg_json = if value_label_svgs.iter().any(Option::is_some) {
@@ -20970,7 +21196,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           String::new()
         };
         ctrl_parts.push(format!(
-          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}{}}}"#,
+          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}{}{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
           label_runs_to_json(label_runs),
@@ -20980,6 +21206,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           popup_json,
           setter_bar_json,
           slider_json,
+          vertical_json,
           svg_json,
         ));
       }
@@ -21424,6 +21651,18 @@ fn display_expr_to_node(
           None => static_leaf_node(expr, bindings),
         }
       }
+      // `PaneSelector[{v1 -> content1, v2 -> content2, …}, sel]` used as a
+      // caption/heading row (e.g. a "set the isothermal temperature" label
+      // that swaps to "choose a nonisothermal temperature profile" as a
+      // toggle flips): evaluate `sel` against the live bindings and render
+      // only the matching pane's content, like the Wolfram front end does,
+      // instead of falling through to the raw source text.
+      "PaneSelector" if args.len() >= 2 => {
+        match pane_selector_content(args, bindings) {
+          Some(content) => display_expr_to_node(content, bindings, probes, ons),
+          None => DisplayNode::Column(Vec::new()),
+        }
+      }
       _ => static_leaf_node(expr, bindings),
     },
     // A bare list of display elements stacks vertically, like `Column`.
@@ -21470,6 +21709,40 @@ fn styled_text_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
     },
     None => static_leaf_node(expr, bindings),
   }
+}
+
+/// The content of the pane a `PaneSelector[{v1 -> content1, …}, sel]`
+/// display element is currently showing: `sel` is evaluated against the
+/// live bindings and matched against each rule's (unevaluated) pattern by
+/// its InputForm text, mirroring the equality test the Wolfram front end
+/// performs. `None` when the panes list is malformed or no rule matches
+/// (Wolfram shows nothing in that case, absent a `Default` option).
+fn pane_selector_content<'a>(
+  args: &'a [Expr],
+  bindings: &[(String, String)],
+) -> Option<&'a Expr> {
+  let Expr::List(panes) = args.first()? else {
+    return None;
+  };
+  let selector = eval_display_in_scope(&args[1], bindings).map_or_else(
+    || crate::syntax::expr_to_input_form(&args[1]),
+    |e| crate::syntax::expr_to_input_form(&e),
+  );
+  panes.iter().find_map(|pane| {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = pane
+    else {
+      return None;
+    };
+    (crate::syntax::expr_to_input_form(pattern) == selector)
+      .then_some(replacement.as_ref())
+  })
 }
 
 /// Render the children of a `Column[{…}]` / `Row[{…}]` (or a bare list).
@@ -21605,7 +21878,30 @@ fn togglerbar_node(
       selected,
     });
   }
-  Some(DisplayNode::Row(buttons))
+  // A trailing `Appearance -> "Vertical"` (added by the CheckboxBar/TogglerBar
+  // branch of `parse_manipulate_control`) stacks the toggles in a column
+  // instead of Wolfram's default horizontal bar.
+  let vertical = args[2..].iter().any(|it| {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = it
+    else {
+      return false;
+    };
+    matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Appearance")
+      && (matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Vertical")
+        || matches!(replacement.as_ref(), Expr::String(s) if s == "Vertical"))
+  });
+  Some(if vertical {
+    DisplayNode::Column(buttons)
+  } else {
+    DisplayNode::Row(buttons)
+  })
 }
 
 /// Fill in each checkbox's `checked` flag from the batched probe results, in
@@ -22219,5 +22515,61 @@ mod manipulate_dynamic_control_list_tests {
        Sequence@@If[mode == 1, {Control[{{y, 0}, -1, 1}]}, {}]}]]",
     );
     assert_eq!(names(&s), vec!["mode"]);
+  }
+}
+
+#[cfg(test)]
+mod manipulate_display_pane_selector_tests {
+  use super::*;
+
+  /// A `PaneSelector[…]` caption row (the Demonstrations idiom for a label
+  /// that swaps text as a toggle flips) renders only the pane matching the
+  /// selector's current value, as styled text — not the raw
+  /// `PaneSelector[…]` source.
+  #[test]
+  fn renders_matching_pane_as_text() {
+    let code = r#"PaneSelector[{True -> Style["on", Bold], False -> Style["off", Bold]}, flag]"#;
+    let on = build_manipulate_display(code, &[("flag".into(), "True".into())]);
+    match on {
+      DisplayNode::Text { runs } => {
+        assert_eq!(flatten_label_runs(&runs), "on");
+      }
+      other => panic!("expected a text node, got {other:?}"),
+    }
+
+    let off =
+      build_manipulate_display(code, &[("flag".into(), "False".into())]);
+    match off {
+      DisplayNode::Text { runs } => {
+        assert_eq!(flatten_label_runs(&runs), "off");
+      }
+      other => panic!("expected a text node, got {other:?}"),
+    }
+  }
+
+  /// A pane's content can itself be a layout container (the shelf-life
+  /// Demonstration wraps its label in `Row[{Spacer[…], Style[…], …}]`);
+  /// the selected pane recurses through the normal display machinery
+  /// instead of being treated as an opaque leaf.
+  #[test]
+  fn renders_matching_pane_as_row() {
+    let code = r#"PaneSelector[{1 -> Row[{Style["a"], Style["b"]}], 2 -> Style["c"]}, mode]"#;
+    let node = build_manipulate_display(code, &[("mode".into(), "1".into())]);
+    match node {
+      DisplayNode::Row(children) => assert_eq!(children.len(), 2),
+      other => panic!("expected a row node, got {other:?}"),
+    }
+  }
+
+  /// No pane matches the selector's current value: nothing is shown,
+  /// rather than the unevaluated `PaneSelector[…]` source leaking through.
+  #[test]
+  fn no_matching_pane_renders_nothing() {
+    let code = r#"PaneSelector[{1 -> Style["a"], 2 -> Style["b"]}, mode]"#;
+    let node = build_manipulate_display(code, &[("mode".into(), "3".into())]);
+    match node {
+      DisplayNode::Column(children) => assert!(children.is_empty()),
+      other => panic!("expected an empty column, got {other:?}"),
+    }
   }
 }
