@@ -16446,7 +16446,18 @@ pub fn geometric_scene_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     out_args.push(extra.clone());
   }
 
-  Ok(call("GeometricScene", out_args))
+  // A scene always reports itself in the same three-argument shape:
+  // `GeometricScene[{points, quantities}, primitives, constraints]`, with
+  // the slots a two-argument call leaves open filled by empty lists.
+  let empty = || Expr::List(Vec::new().into());
+  let points = out_args.first().cloned().unwrap_or_else(empty);
+  let canonical = vec![
+    Expr::List(vec![points, empty()].into()),
+    out_args.get(1).cloned().unwrap_or_else(empty),
+    out_args.get(2).cloned().unwrap_or_else(empty),
+  ];
+
+  Ok(call("GeometricScene", canonical))
 }
 
 /// `GeometricScene[{sym -> value, ...}, {primitives...}][ "Graphics" ]` —
@@ -16457,8 +16468,8 @@ pub fn geometric_scene_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn geometric_scene_graphics(
   func_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let bindings: Vec<(String, Expr)> = match func_args.first() {
-    Some(Expr::List(items)) => items
+  let bindings: Vec<(String, Expr)> = match scene_point_rules(func_args) {
+    Some(items) => items
       .iter()
       .filter_map(|item| match item {
         Expr::Rule {
@@ -16483,17 +16494,28 @@ pub fn geometric_scene_graphics(
   evaluate_expr_to_expr(&call("Graphics", vec![substituted]))
 }
 
-/// `GeometricScene[{sym -> value, ...}, ...][ "Elements" ]` — the resolved
-/// list of `sym -> value` point definitions, i.e. `args[0]` as-is.
-pub fn geometric_scene_elements(
+/// The point-definition rules of a scene: the first element of the
+/// `{points, quantities}` list a canonical `GeometricScene` keeps in its
+/// first slot.
+fn scene_point_rules(func_args: &[Expr]) -> Option<&crate::ExprList> {
+  match func_args.first() {
+    Some(Expr::List(slots)) => match slots.first() {
+      Some(Expr::List(points)) => Some(points),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// `GeometricScene[{{sym -> value, ...}, {}}, ...][ "Points" ]` — the
+/// list of point definitions the scene was built from.
+pub fn geometric_scene_points(
   func_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  Ok(
-    func_args
-      .first()
-      .cloned()
-      .unwrap_or(Expr::List(Vec::new().into())),
-  )
+  Ok(scene_point_rules(func_args).map_or_else(
+    || Expr::List(Vec::new().into()),
+    |points| Expr::List(points.clone()),
+  ))
 }
 
 // ─────────────────────────────────────────────────────────────────

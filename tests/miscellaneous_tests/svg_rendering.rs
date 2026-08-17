@@ -3032,13 +3032,19 @@ mod tests {
         .expect("output_svg")
     }
 
+    // `HoldForm` leaves a `TagBox` naming it — the same mark wolframscript
+    // keeps — but the tag draws nothing of its own, so the typeset output
+    // is the held expression and only that.
     #[test]
-    fn hold_form_is_invisible() {
+    fn hold_form_tags_its_content_and_draws_nothing() {
       let boxes = tf("HoldForm[a + b]");
       assert!(
-        !boxes.contains("HoldForm"),
-        "HoldForm should vanish: {boxes}"
+        boxes.contains("TagBox") && boxes.contains("HoldForm"),
+        "expected a HoldForm TagBox: {boxes}"
       );
+      let svg = tf_svg("TraditionalForm[HoldForm[a + b]]");
+      assert!(!svg.contains("HoldForm"), "HoldForm should not draw: {svg}");
+      assert!(svg.contains('a') && svg.contains('b'), "{svg}");
     }
 
     #[test]

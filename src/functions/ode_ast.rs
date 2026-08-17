@@ -115,6 +115,11 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(body) = try_euler_pde_body(eqns_arg, &fname, xn, yn) {
         return Ok(wrap_pde_solution(body, &fname, xn, yn, return_call_form));
       }
+      if let Some(body) =
+        try_second_order_constant_pde_body(eqns_arg, &fname, xn, yn)
+      {
+        return Ok(wrap_pde_solution(body, &fname, xn, yn, return_call_form));
+      }
     }
   }
 
@@ -5174,6 +5179,237 @@ fn classify_pde_term(
     }
   }
   None
+}
+
+/// The derivative order `Derivative[i, j][f][x, y]` names, for a call on
+/// exactly `f[x, y]`. `None` for anything else.
+fn derivative_order_of(
+  expr: &Expr,
+  fname: &str,
+  xn: &str,
+  yn: &str,
+) -> Option<(i128, i128)> {
+  if let Expr::CurriedCall {
+    func,
+    args: call_args,
+  } = expr
+    && call_args.len() == 2
+    && let Expr::Identifier(x_arg) = &call_args[0]
+    && let Expr::Identifier(y_arg) = &call_args[1]
+    && x_arg == xn
+    && y_arg == yn
+    && let Expr::CurriedCall {
+      func: deriv,
+      args: f_args,
+    } = func.as_ref()
+    && f_args.len() == 1
+    && let Expr::Identifier(fa) = &f_args[0]
+    && fa == fname
+    && let Expr::FunctionCall {
+      name: dn,
+      args: dargs,
+    } = deriv.as_ref()
+    && dn == "Derivative"
+    && dargs.len() == 2
+    && let (Expr::Integer(di), Expr::Integer(dj)) = (&dargs[0], &dargs[1])
+  {
+    return Some((*di, *dj));
+  }
+  None
+}
+
+/// Recognise the homogeneous second-order PDE with constant coefficients
+/// `a*D[f, x, x] + b*D[f, x, y] + c*D[f, y, y] == 0` and return the body of
+/// its general solution.
+///
+/// A solution `f = C[λ*x + y]` turns the equation into `a λ² + b λ + c = 0`
+/// for the characteristic slope λ, so the general solution is one arbitrary
+/// function per root. Wolfram reports the two in the order their
+/// *reciprocals* μ = 1/λ take in canonical order — the roots of the
+/// reversed polynomial `c μ² + b μ + a` — which is what decides whether
+/// `C[1]` gets `I*x + y` or `(-I)*x + y`:
+///
+/// ```wolfram
+/// DSolveValue[D[u[x, y], x, x] + D[u[x, y], y, y] == 0, u, {x, y}]
+/// (* Function[{x, y}, C[1][I*x + y] + C[2][(-I)*x + y]] *)
+/// ```
+///
+/// A repeated root gives `C[1][λ*x + y] + x*C[2][λ*x + y]`. Equations with
+/// no `D[f, x, x]` or no `D[f, y, y]` term have a characteristic along an
+/// axis, which Wolfram writes in a different (unnormalised) shape; those are
+/// left to the caller's other recognisers.
+fn try_second_order_constant_pde_body(
+  eqn: &Expr,
+  fname: &str,
+  xn: &str,
+  yn: &str,
+) -> Option<Expr> {
+  let (lhs, rhs) = pde_split_equation(eqn)?;
+  // Everything moves to the left: each derivative contributes its signed
+  // coefficient, and anything else at all disqualifies the equation.
+  let mut coeffs: [Expr; 3] =
+    [Expr::Integer(0), Expr::Integer(0), Expr::Integer(0)];
+  collect_second_order_pde_terms(&lhs, fname, xn, yn, false, &mut coeffs)?;
+  collect_second_order_pde_terms(&rhs, fname, xn, yn, true, &mut coeffs)?;
+  let [a, b, c] = coeffs;
+  let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
+  if is_zero(&a) || is_zero(&c) {
+    return None;
+  }
+
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e);
+  let disc = eval(minus2(
+    pow2(b.clone(), Expr::Integer(2)),
+    times2(Expr::Integer(4), times2(c.clone(), a.clone())),
+  ));
+  let sqrt_disc = eval(call1("Sqrt", disc.clone()));
+  // The quadratic formula, over the leading coefficient of whichever
+  // polynomial is asked for: `a λ² + b λ + c` for the slopes themselves,
+  // `c μ² + b μ + a` for their reciprocals.
+  let root = |lead: &Expr, sign: i128| {
+    eval(div2(
+      plus2(
+        times2(Expr::Integer(-1), b.clone()),
+        times2(Expr::Integer(sign), sqrt_disc.clone()),
+      ),
+      times2(Expr::Integer(2), lead.clone()),
+    ))
+  };
+  // `λ*x + y`, with the coefficient folded in by the evaluator so that
+  // λ = 1 leaves a bare `x`.
+  let arg_of = |lambda: Expr| {
+    eval(plus2(
+      times2(lambda, Expr::Identifier(xn.to_string())),
+      Expr::Identifier(yn.to_string()),
+    ))
+  };
+  let c_of = |k: i128, arg: Expr| Expr::CurriedCall {
+    func: Box::new(call1("C", Expr::Integer(k))),
+    args: vec![arg],
+  };
+
+  if is_zero(&disc) {
+    // A repeated root: the second solution picks up a factor of x.
+    let arg = arg_of(root(&a, 1));
+    return Some(plus2(
+      c_of(1, arg.clone()),
+      times2(Expr::Identifier(xn.to_string()), c_of(2, arg)),
+    ));
+  }
+  // Taking the reciprocal turns the `+` root into the `-` one, so the
+  // canonical order of the reciprocals decides which slope `C[1]` gets.
+  let mu_plus_first = crate::functions::list_helpers_ast::compare_exprs(
+    &root(&c, 1),
+    &root(&c, -1),
+  ) > 0;
+  let (first, second) = if mu_plus_first { (-1, 1) } else { (1, -1) };
+  Some(plus2(
+    c_of(1, arg_of(root(&a, first))),
+    c_of(2, arg_of(root(&a, second))),
+  ))
+}
+
+/// Walk a Plus chain, adding each term's coefficient to the `xx`, `xy` and
+/// `yy` slots of `coeffs`. `negate` flips the sign (for the right-hand side
+/// of the equation). `None` for a term that is not a constant multiple of
+/// one of those three second derivatives.
+fn collect_second_order_pde_terms(
+  expr: &Expr,
+  fname: &str,
+  xn: &str,
+  yn: &str,
+  negate: bool,
+  coeffs: &mut [Expr; 3],
+) -> Option<()> {
+  match expr {
+    Expr::Integer(0) => Some(()),
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      for arg in args {
+        collect_second_order_pde_terms(arg, fname, xn, yn, negate, coeffs)?;
+      }
+      Some(())
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      collect_second_order_pde_terms(left, fname, xn, yn, negate, coeffs)?;
+      collect_second_order_pde_terms(right, fname, xn, yn, negate, coeffs)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      collect_second_order_pde_terms(left, fname, xn, yn, negate, coeffs)?;
+      collect_second_order_pde_terms(right, fname, xn, yn, !negate, coeffs)
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      collect_second_order_pde_terms(operand, fname, xn, yn, !negate, coeffs)
+    }
+    _ => {
+      // A bare derivative, or a product of one with constant factors.
+      let mut factors: Vec<&Expr> = Vec::new();
+      match expr {
+        Expr::FunctionCall { name, args } if name == "Times" => {
+          factors.extend(args.iter());
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left,
+          right,
+        } => {
+          factors.push(left);
+          factors.push(right);
+        }
+        other => factors.push(other),
+      }
+      let mut order: Option<(i128, i128)> = None;
+      let mut coeff = Expr::Integer(1);
+      for factor in factors {
+        if let Some(o) = derivative_order_of(factor, fname, xn, yn) {
+          if order.is_some() {
+            return None; // Two derivatives multiplied — not linear.
+          }
+          order = Some(o);
+          continue;
+        }
+        // Every other factor has to be free of the unknown function and of
+        // both variables, or the coefficients are not constant.
+        if expr_mentions(factor, fname)
+          || expr_mentions(factor, xn)
+          || expr_mentions(factor, yn)
+        {
+          return None;
+        }
+        coeff = times2(coeff, factor.clone());
+      }
+      let slot = match order? {
+        (2, 0) => 0,
+        (1, 1) => 1,
+        (0, 2) => 2,
+        _ => return None,
+      };
+      if negate {
+        coeff = times2(Expr::Integer(-1), coeff);
+      }
+      let sum = plus2(coeffs[slot].clone(), coeff);
+      coeffs[slot] =
+        crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum);
+      Some(())
+    }
+  }
+}
+
+/// Whether `name` occurs anywhere in `expr` as a symbol.
+fn expr_mentions(expr: &Expr, name: &str) -> bool {
+  crate::syntax::expr_to_string(expr)
+    .split(|c: char| !(c.is_alphanumeric() || c == '$'))
+    .any(|tok| tok == name)
 }
 
 /// Match `Derivative[1,0][f][x, y] / f[x, y]` (and the (0,1) variant)

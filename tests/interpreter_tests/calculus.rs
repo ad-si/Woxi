@@ -9586,18 +9586,15 @@ mod ndsolve_value {
     assert_eq!(result, "1.");
   }
 
-  /// An equation the numeric solver can't handle (a PDE) stays unevaluated
-  /// under its own head — it used to come back as the `NDSolve` that
-  /// `NDSolveValue` delegates to.
+  /// An equation the numeric solver can't handle (here one with no initial
+  /// condition to start from) stays unevaluated under its own head — it used
+  /// to come back as the `NDSolve` that `NDSolveValue` delegates to.
   #[test]
   fn unsolvable_keeps_its_own_head() {
     assert_eq!(
-      interpret(
-        "NDSolveValue[{D[u[x, t], t] == D[u[x, t], x, x]}, u, {x, 0, 1}, {t, 0, 1}]"
-      )
-      .unwrap(),
-      "NDSolveValue[{Derivative[0, 1][u][x, t] == Derivative[2, 0][u][x, t]}, \
-       u, {x, 0, 1}, {t, 0, 1}]"
+      interpret("NDSolveValue[{y'[x] == Sin[y[x]^2 + x]}, y, {x, 0, 1}]")
+        .unwrap(),
+      "NDSolveValue[{Derivative[1][y][x] == Sin[x + y[x]^2]}, y, {x, 0, 1}]"
     );
   }
 }
@@ -9610,12 +9607,88 @@ mod dsolve_value_unevaluated {
   #[test]
   fn unsolvable_keeps_its_own_head() {
     assert_eq!(
+      interpret("DSolveValue[y'[x] == Sin[y[x]^2 + x], y, x]").unwrap(),
+      "DSolveValue[Derivative[1][y][x] == Sin[x + y[x]^2], y, x]"
+    );
+  }
+}
+
+/// A homogeneous second-order PDE with constant coefficients has one
+/// arbitrary function per characteristic slope — the roots of
+/// `a λ² + b λ + c`, in the order their reciprocals take canonically.
+mod second_order_constant_pde {
+  use super::*;
+
+  #[test]
+  fn laplace_equation() {
+    assert_eq!(
       interpret(
         "DSolveValue[D[u[x, y], x, x] + D[u[x, y], y, y] == 0, u, {x, y}]"
       )
       .unwrap(),
-      "DSolveValue[Derivative[0, 2][u][x, y] + Derivative[2, 0][u][x, y] == 0, \
-       u, {x, y}]"
+      "Function[{x, y}, C[1][I*x + y] + C[2][-I*x + y]]"
+    );
+    // The rule forms report the same body.
+    assert_eq!(
+      interpret(
+        "DSolve[D[u[x, y], x, x] + D[u[x, y], y, y] == 0, u[x, y], {x, y}]"
+      )
+      .unwrap(),
+      "{{u[x, y] -> C[1][I*x + y] + C[2][-I*x + y]}}"
+    );
+  }
+
+  #[test]
+  fn real_and_rational_slopes() {
+    assert_eq!(
+      interpret(
+        "DSolveValue[D[u[x, y], x, x] - D[u[x, y], y, y] == 0, u, {x, y}]"
+      )
+      .unwrap(),
+      "Function[{x, y}, C[1][-x + y] + C[2][x + y]]"
+    );
+    assert_eq!(
+      interpret(
+        "DSolveValue[D[u[x, y], x, x] - 5*D[D[u[x, y], x], y] + \
+         6*D[u[x, y], y, y] == 0, u, {x, y}]"
+      )
+      .unwrap(),
+      "Function[{x, y}, C[1][3*x + y] + C[2][2*x + y]]"
+    );
+    assert_eq!(
+      interpret(
+        "DSolveValue[4*D[u[x, y], x, x] - D[u[x, y], y, y] == 0, u, {x, y}]"
+      )
+      .unwrap(),
+      "Function[{x, y}, C[1][-1/2*x + y] + C[2][x/2 + y]]"
+    );
+  }
+
+  /// A repeated slope: the second solution picks up a factor of `x`.
+  #[test]
+  fn repeated_root() {
+    assert_eq!(
+      interpret(
+        "DSolveValue[D[u[x, y], x, x] + 4*D[D[u[x, y], x], y] + \
+         4*D[u[x, y], y, y] == 0, u, {x, y}]"
+      )
+      .unwrap(),
+      "Function[{x, y}, C[1][-2*x + y] + x*C[2][-2*x + y]]"
+    );
+  }
+
+  /// The coefficients have to be constants for the characteristic slopes to
+  /// be constants; a variable one leaves the equation unsolved, as it does
+  /// in wolframscript.
+  #[test]
+  fn a_variable_coefficient_is_not_handled() {
+    assert_eq!(
+      interpret(
+        "DSolveValue[x*D[u[x, y], x, x] + D[u[x, y], y, y] == 0, u, {x, y}]"
+      )
+      .unwrap(),
+      "DSolveValue[Derivative[0, 2][u][x, y] + x*Derivative[2, 0][u][x, y] \
+       == 0, u, {x, y}]"
     );
   }
 }
@@ -12274,12 +12347,21 @@ mod difference_delta {
 
   #[test]
   fn cos_function() {
-    // Δ Cos[x] = Cos[1 + x] - Cos[x] = -2 Sin[1/2] Sin[1/2 + x]. The sine of
-    // the mean takes no phase shift — adding one (as the Sin case needs to
-    // turn its cosine into a sine) gave back the *sine's* difference instead.
+    // Δ Cos[x] = Cos[1 + x] - Cos[x] = -2 Sin[1/2] Sin[1/2 + x], which
+    // wolframscript writes with the quarter turn kept inside the argument as
+    // one fraction — `2 Sin[d] Cos[(2d + Pi)/2 + f]` — the same shape as the
+    // sine's difference.
     assert_eq!(
       interpret("DifferenceDelta[Cos[x], x]").unwrap(),
-      "-2*Sin[1/2]*Sin[1/2 + x]"
+      "2*Cos[(1 + Pi)/2 + x]*Sin[1/2]"
+    );
+    assert_eq!(
+      interpret("DifferenceDelta[Cos[2*x], x]").unwrap(),
+      "2*Cos[(2 + Pi)/2 + 2*x]*Sin[1]"
+    );
+    assert_eq!(
+      interpret("DifferenceDelta[Cos[x], {x, 1, h}]").unwrap(),
+      "2*Cos[(h + Pi)/2 + x]*Sin[h/2]"
     );
     // The derivative it defines has to come out as the cosine's own.
     assert_eq!(

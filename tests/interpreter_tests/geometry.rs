@@ -1745,15 +1745,36 @@ mod geometric_scene {
     assert_eq!(
       interpret("GeometricScene[{p -> {1, 1}}, {Point[p]}][\"Bogus\"]")
         .unwrap(),
-      "GeometricScene[{p -> {1, 1}}, {Point[p]}][Bogus]"
+      "GeometricScene[{{p -> {1, 1}}, {}}, {Point[p]}, {}][Bogus]"
+    );
+    // `Elements` is not one of the scene's properties either.
+    assert_eq!(
+      interpret("GeometricScene[{p -> {1, 1}}, {Point[p]}][\"Elements\"]")
+        .unwrap(),
+      "GeometricScene[{{p -> {1, 1}}, {}}, {Point[p]}, {}][Elements]"
     );
   }
 
-  /// The resolved point definitions are available via `["Elements"]`.
+  /// A scene reports itself in the three-argument shape wolframscript
+  /// canonicalizes it to — `{points, quantities}`, primitives, constraints —
+  /// whichever of those a call spells out.
   #[test]
-  fn elements_property_returns_resolved_points() {
+  fn scene_takes_its_canonical_three_argument_shape() {
     assert_eq!(
-      interpret("GeometricScene[{p -> {1, 1}}, {Point[p]}][\"Elements\"]")
+      interpret("GeometricScene[{p -> {1, 1}}, {Point[p]}]").unwrap(),
+      "GeometricScene[{{p -> {1, 1}}, {}}, {Point[p]}, {}]"
+    );
+    assert_eq!(
+      interpret("GeometricScene[{p -> {1, 1}}, {Point[p]}, {x > 0}]").unwrap(),
+      "GeometricScene[{{p -> {1, 1}}, {}}, {Point[p]}, {x > 0}]"
+    );
+  }
+
+  /// The point definitions are available via `["Points"]`.
+  #[test]
+  fn points_property_returns_the_point_definitions() {
+    assert_eq!(
+      interpret("GeometricScene[{p -> {1, 1}}, {Point[p]}][\"Points\"]")
         .unwrap(),
       "{p -> {1, 1}}"
     );
