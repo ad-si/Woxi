@@ -16446,6 +16446,91 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`grow$$ = 1.5, $CellContext`spin$$ =
     );
   }
 
+  /// End-to-end regression for a "wire cutting through ice" style
+  /// Demonstration: a translucent `Cuboid` block, a `Tube` looped through
+  /// it standing in for a loaded wire, and a pair of `Cylinder` weights
+  /// hung from its ends, all positioned from a single time slider so the
+  /// wire's depth inside the block animates. Exercises `CapForm`,
+  /// `EdgeForm`, `Opacity`, and the 3D-specific `Boxed`/`PlotRange`/
+  /// `SphericalRegion`/`ImageSize` options together with a `Labeled`
+  /// continuous control.
+  #[test]
+  fn wire_through_ice_manipulate_animates_its_depth_slider() {
+    let code = "Manipulate[\
+      Graphics3D[{\
+        Opacity[0.4], EdgeForm[Gray], LightBlue, \
+        Cuboid[{0, 0, 0}, {1, 1, 1}], \
+        Opacity[1], CapForm[\"Round\"], Orange, \
+        Tube[{{0.5, -0.2, 1 - depth}, {0.5, 1.2, 1 - depth}}, 0.02], \
+        Gray, \
+        Cylinder[{{0.5, -0.2, 1 - depth}, {0.5, -0.2, 0.4 - depth}}, 0.08], \
+        Cylinder[{{0.5, 1.2, 1 - depth}, {0.5, 1.2, 0.4 - depth}}, 0.08]\
+      }, \
+        Boxed -> False, \
+        PlotRange -> {{-0.2, 1.2}, {-0.2, 1.2}, {-0.6, 1.2}}, \
+        SphericalRegion -> True, \
+        ImageSize -> {360, 360}\
+      ], \
+      {{depth, 0.3, \"wire depth\"}, 0, 1, Appearance -> \"Labeled\"}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the wire-through-ice Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the block, wire, and weights"
+    );
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the block, wire, and weights must render")
+    };
+    let initial = render(&state);
+
+    match &mut state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name.as_str(), "depth");
+        assert_eq!(label.as_str(), "wire depth");
+        assert_eq!(*min, 0.0);
+        assert_eq!(*max, 1.0);
+        assert_eq!(*current, 0.3);
+        *current = 0.8;
+      }
+      other => panic!("expected a single continuous slider, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+    let moved = render(&state);
+    assert_ne!(
+      initial, moved,
+      "moving the depth slider must change the rendered picture"
+    );
+  }
+
   #[test]
   fn sturms_theorem_manipulate_builds_widget() {
     // End-to-end regression for a "Sturm's theorem for polynomials"
