@@ -11328,7 +11328,7 @@ pub fn delete_stopwords_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::String(s) if is_stopword(s) => {}
           Expr::String(_) => kept.push(item.clone()),
           other => {
-            kept.push(delete_stopwords_ast(std::slice::from_ref(other))?)
+            kept.push(delete_stopwords_ast(std::slice::from_ref(other))?);
           }
         }
       }
