@@ -17291,6 +17291,29 @@ mod manipulate {
     }
   }
 
+  /// A two-swatch colour toggle honors `Appearance -> "Vertical"` the same
+  /// way a `SetterBar`/`RadioButtonBar` does, stacking its swatches in a
+  /// column instead of Wolfram's default horizontal row.
+  #[test]
+  fn spec_two_color_swatch_form_honors_vertical_appearance() {
+    let expr = interpret_to_expr(
+      "Manipulate[ringColor, \
+       {{ringColor, RGBColor[0.88, 0.63, 0.23]}, RGBColor[0.49, 0, 0], \
+       Appearance -> \"Vertical\"}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete { vertical, .. } => {
+        assert!(
+          *vertical,
+          "Appearance -> \"Vertical\" must stack the colour swatches"
+        );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
   /// `{u, colour}` with no explicit initial has only one possible value —
   /// the variable is baked into the body as a fixed binding rather than
   /// building a one-swatch control with nothing to pick between.
