@@ -21424,6 +21424,18 @@ fn display_expr_to_node(
           None => static_leaf_node(expr, bindings),
         }
       }
+      // `PaneSelector[{v1 -> content1, v2 -> content2, …}, sel]` used as a
+      // caption/heading row (e.g. a "set the isothermal temperature" label
+      // that swaps to "choose a nonisothermal temperature profile" as a
+      // toggle flips): evaluate `sel` against the live bindings and render
+      // only the matching pane's content, like the Wolfram front end does,
+      // instead of falling through to the raw source text.
+      "PaneSelector" if args.len() >= 2 => {
+        match pane_selector_content(args, bindings) {
+          Some(content) => display_expr_to_node(content, bindings, probes, ons),
+          None => DisplayNode::Column(Vec::new()),
+        }
+      }
       _ => static_leaf_node(expr, bindings),
     },
     // A bare list of display elements stacks vertically, like `Column`.
@@ -21470,6 +21482,40 @@ fn styled_text_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
     },
     None => static_leaf_node(expr, bindings),
   }
+}
+
+/// The content of the pane a `PaneSelector[{v1 -> content1, …}, sel]`
+/// display element is currently showing: `sel` is evaluated against the
+/// live bindings and matched against each rule's (unevaluated) pattern by
+/// its InputForm text, mirroring the equality test the Wolfram front end
+/// performs. `None` when the panes list is malformed or no rule matches
+/// (Wolfram shows nothing in that case, absent a `Default` option).
+fn pane_selector_content<'a>(
+  args: &'a [Expr],
+  bindings: &[(String, String)],
+) -> Option<&'a Expr> {
+  let Expr::List(panes) = args.first()? else {
+    return None;
+  };
+  let selector = eval_display_in_scope(&args[1], bindings).map_or_else(
+    || crate::syntax::expr_to_input_form(&args[1]),
+    |e| crate::syntax::expr_to_input_form(&e),
+  );
+  panes.iter().find_map(|pane| {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = pane
+    else {
+      return None;
+    };
+    (crate::syntax::expr_to_input_form(pattern) == selector)
+      .then_some(replacement.as_ref())
+  })
 }
 
 /// Render the children of a `Column[{…}]` / `Row[{…}]` (or a bare list).
@@ -22219,5 +22265,61 @@ mod manipulate_dynamic_control_list_tests {
        Sequence@@If[mode == 1, {Control[{{y, 0}, -1, 1}]}, {}]}]]",
     );
     assert_eq!(names(&s), vec!["mode"]);
+  }
+}
+
+#[cfg(test)]
+mod manipulate_display_pane_selector_tests {
+  use super::*;
+
+  /// A `PaneSelector[…]` caption row (the Demonstrations idiom for a label
+  /// that swaps text as a toggle flips) renders only the pane matching the
+  /// selector's current value, as styled text — not the raw
+  /// `PaneSelector[…]` source.
+  #[test]
+  fn renders_matching_pane_as_text() {
+    let code = r#"PaneSelector[{True -> Style["on", Bold], False -> Style["off", Bold]}, flag]"#;
+    let on = build_manipulate_display(code, &[("flag".into(), "True".into())]);
+    match on {
+      DisplayNode::Text { runs } => {
+        assert_eq!(flatten_label_runs(&runs), "on");
+      }
+      other => panic!("expected a text node, got {other:?}"),
+    }
+
+    let off =
+      build_manipulate_display(code, &[("flag".into(), "False".into())]);
+    match off {
+      DisplayNode::Text { runs } => {
+        assert_eq!(flatten_label_runs(&runs), "off");
+      }
+      other => panic!("expected a text node, got {other:?}"),
+    }
+  }
+
+  /// A pane's content can itself be a layout container (the shelf-life
+  /// Demonstration wraps its label in `Row[{Spacer[…], Style[…], …}]`);
+  /// the selected pane recurses through the normal display machinery
+  /// instead of being treated as an opaque leaf.
+  #[test]
+  fn renders_matching_pane_as_row() {
+    let code = r#"PaneSelector[{1 -> Row[{Style["a"], Style["b"]}], 2 -> Style["c"]}, mode]"#;
+    let node = build_manipulate_display(code, &[("mode".into(), "1".into())]);
+    match node {
+      DisplayNode::Row(children) => assert_eq!(children.len(), 2),
+      other => panic!("expected a row node, got {other:?}"),
+    }
+  }
+
+  /// No pane matches the selector's current value: nothing is shown,
+  /// rather than the unevaluated `PaneSelector[…]` source leaking through.
+  #[test]
+  fn no_matching_pane_renders_nothing() {
+    let code = r#"PaneSelector[{1 -> Style["a"], 2 -> Style["b"]}, mode]"#;
+    let node = build_manipulate_display(code, &[("mode".into(), "3".into())]);
+    match node {
+      DisplayNode::Column(children) => assert!(children.is_empty()),
+      other => panic!("expected an empty column, got {other:?}"),
+    }
   }
 }
