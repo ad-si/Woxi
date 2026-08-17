@@ -17950,6 +17950,126 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 3, $CellContext`spread$$ = 0,
     );
   }
 
+  /// A `PopupMenu` whose choices are literal function symbols (not integer
+  /// tags dispatched through `Switch`), each drawing a different view of
+  /// prime density: a `DiscretePlot` of `Prime[k]`, a `ListLinePlot` of
+  /// consecutive-prime gaps, and a `Module`-based residue-bias plot that
+  /// folds a `Switch` over `Mod[Prime[k], m]` with `FoldList`, labeled via
+  /// `TraditionalForm[PrimePi[n]]`. Two sliders are only `Enabled` for the
+  /// view that uses them. Independently written, not copied from any
+  /// specific Demonstration.
+  ///
+  /// Regression coverage for a bug this run found: `process_manipulate_var_spec`
+  /// eagerly evaluated every trailing spec item, including `Enabled -> cond`,
+  /// at spec-registration time — before `Initialization` had defined the
+  /// picker's function choices and with no control bindings in scope. That
+  /// froze the condition at whatever it folded to with nothing bound (here,
+  /// `False`, since the two bare symbols compared unequal) instead of
+  /// leaving it held for `parse_manipulate_control` to re-resolve on every
+  /// frame, so the gap-width and modulus sliders never enabled no matter
+  /// which view was selected.
+  #[test]
+  fn prime_density_picker_switches_view_and_enables_matching_slider() {
+    let code = "Manipulate[\
+      view[upTo, gapWidth, baseMod], \
+      {{view, densityCount, \"display\"}, \
+        {densityCount -> \"prime count\", densityGap -> \"prime gaps\", \
+          densityResidue -> \"residue balance\"}, \
+        ControlType -> PopupMenu}, \
+      {{upTo, 200, \"range\"}, 30, 2000, 1}, \
+      {{gapWidth, 3, \"gap width\"}, 1, 40, 1, Enabled -> (view === densityGap)}, \
+      {{baseMod, 5, \"modulus\"}, 3, 25, 1, Enabled -> (view === densityResidue)}, \
+      Initialization :> (\
+        densityCount[n_, g_, m_] := DiscretePlot[Prime[k], {k, 1, n}, \
+          PlotLabel -> Row[{\"prime \", Subscript[\"p\", \"k\"]}], Filling -> Axis]; \
+        densityGap[n_, g_, m_] := ListLinePlot[\
+          Table[Prime[k + g] - Prime[k], {k, 1, n}], \
+          AspectRatio -> 1/6, Filling -> Axis, \
+          PlotLabel -> Row[{\"gap of width \", g}]]; \
+        densityResidue[n_, g_, m_] := Module[{lo, hi}, \
+          lo = Mod[-1, m]; hi = Mod[1, m]; \
+          ListLinePlot[\
+            FoldList[Plus, 0, \
+              Table[Switch[Mod[Prime[k], m], lo, 1, hi, -1, _, 0], {k, 2, n}]], \
+            AspectRatio -> 1/6, Filling -> Axis, \
+            PlotLabel -> Column[{Row[{\"bias for modulus \", m}], \
+              TraditionalForm[PrimePi[n]]}]]\
+        ]\
+      )\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the prime-density picker Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the default DiscretePlot view must render"
+    );
+    assert_eq!(state.controls.len(), 4, "picker plus three sliders");
+
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        label,
+        value_labels,
+        popup,
+        current_index,
+        ..
+      } => {
+        assert_eq!(label, "display");
+        assert_eq!(
+          value_labels,
+          &["prime count", "prime gaps", "residue balance"]
+        );
+        assert!(*popup, "ControlType -> PopupMenu must render a dropdown");
+        assert_eq!(*current_index, 0);
+      }
+      other => panic!("expected a discrete popup control, got {other:?}"),
+    }
+
+    // Only the range slider is enabled while the default (count) view is
+    // selected; the gap-width and modulus sliders are inert.
+    assert_eq!(
+      state.control_is_enabled,
+      vec![true, true, false, false],
+      "only range is enabled under the default count view"
+    );
+
+    // Switching the picker to the gap view must re-evaluate cleanly, keep
+    // rendering, and flip which slider is enabled.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+    assert_eq!(
+      state.control_is_enabled,
+      vec![true, true, true, false],
+      "gap width becomes enabled, modulus stays disabled, under the gap view"
+    );
+
+    // Switching to the residue-bias view (Module/Switch/FoldList) must
+    // likewise re-evaluate cleanly and enable the modulus slider instead.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 2;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+    assert_eq!(
+      state.control_is_enabled,
+      vec![true, true, false, true],
+      "modulus becomes enabled, gap width disabled again, under the residue view"
+    );
+  }
+
   #[test]
   fn demonstration_discrete_compounding_manipulate_tracks_two_sliders() {
     let code = "Manipulate[\

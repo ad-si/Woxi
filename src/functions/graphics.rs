@@ -16270,6 +16270,18 @@ fn process_manipulate_var_spec(items: &[Expr]) -> Expr {
   let mut new_items: Vec<Expr> = Vec::with_capacity(items.len());
   new_items.push(items[0].clone());
   for item in &items[1..] {
+    // `Enabled -> cond` / `TrackingFunction -> f` must stay held: `cond`
+    // references other controls' variables (and often symbols an
+    // `Initialization` block — processed after every spec here — hasn't
+    // defined yet), so evaluating it now would freeze it at whatever it
+    // happens to fold to with nothing bound, instead of the live condition
+    // `parse_manipulate_control` re-resolves on every frame.
+    if let Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } = item
+      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Enabled" || s == "TrackingFunction")
+    {
+      new_items.push(item.clone());
+      continue;
+    }
     // Try to evaluate bounds; if evaluation fails, keep the original so
     // the echoed form still round-trips. A bound stated in terms of another
     // control's variable (`{{p, init}, {r[[1]], s[[1]]}, …}`) cannot resolve
