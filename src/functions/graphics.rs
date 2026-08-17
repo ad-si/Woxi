@@ -16437,6 +16437,15 @@ pub enum ManipulateControl {
     label: String,
     /// The label split into styled runs for rich-text rendering.
     label_runs: Vec<LabelRun>,
+    /// Whether the control's variable is machine-real by construction — any
+    /// of its `min`/`max`/step/initial was written as an inexact number
+    /// (e.g. `{{rq, 0, "RQ"}, 0, 1, 0.01}`). Wolfram keeps such a variable
+    /// real-valued even while the slider sits at a "round" value (`0.`, not
+    /// `0`), which matters once a caption formats it with `NumberForm[…, {n,
+    /// f}]` — that wrapper pads a real's fraction but leaves an exact
+    /// integer unchanged. A control whose whole spec is exact integers
+    /// (`{{n, 5, "n"}, 1, 10, 1}`) keeps binding exact integers throughout.
+    is_real: bool,
   },
   Discrete {
     name: String,
@@ -18113,6 +18122,28 @@ fn eval_manipulate_bound(expr: &Expr) -> Option<(f64, bool)> {
     .map(|v| (v, true))
 }
 
+/// Whether a Manipulate bound expression (a `min`/`max`/step/initial-value
+/// term) is an inexact (machine-real) number rather than an exact integer or
+/// rational — `0.01` or `N[Pi]`, not `1` or `1/2`. Mirrors
+/// [`eval_manipulate_bound`]'s own resolution (static first, then against
+/// the live environment) so a bound naming another control's variable
+/// (`{{t, 0, …}, 0, P, .01}`) sees the same value. Used to decide whether a
+/// continuous control's variable stays real-valued even at a "round" slider
+/// position (see [`ManipulateControl::Continuous::is_real`]).
+fn manipulate_bound_is_inexact(expr: &Expr) -> bool {
+  let (expr, _) = manipulate_bound_expr(expr);
+  // Fast path for a literal: no need to round-trip through the evaluator.
+  match expr {
+    Expr::Real(_) | Expr::BigFloat(_, _) => return true,
+    Expr::Integer(_) | Expr::BigInteger(_) => return false,
+    _ => {}
+  }
+  matches!(
+    crate::evaluator::evaluate_expr_to_expr(expr),
+    Ok(Expr::Real(_) | Expr::BigFloat(_, _))
+  )
+}
+
 /// Re-resolve a dynamic bound's code fragment against the interpreter's
 /// current globals (the caller installs the live bindings via
 /// `with_scoped_globals`). Returns `None` when the code doesn't evaluate to
@@ -18343,6 +18374,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       italic: false,
       ..Default::default()
     }],
+    is_real: false,
   };
   Some(ManipulateSpec {
     body_code,
@@ -18388,7 +18420,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     var.clone_from(s);
     idx = 1;
   }
-  let (min, max, step, initial) = match args.get(idx) {
+  let (min, max, step, initial, is_real) = match args.get(idx) {
     Some(Expr::List(items)) if !items.is_empty() => {
       let min = crate::functions::math_ast::try_eval_to_f64(&items[0])?;
       let max = items
@@ -18398,15 +18430,18 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
       let step = items
         .get(2)
         .and_then(crate::functions::math_ast::try_eval_to_f64);
-      (min, max, step, min)
+      let is_real = manipulate_bound_is_inexact(&items[0])
+        || items.get(1).is_some_and(manipulate_bound_is_inexact)
+        || items.get(2).is_some_and(manipulate_bound_is_inexact);
+      (min, max, step, min, is_real)
     }
     // A single number is the initial value over the default 0..1 range.
     Some(other) if idx == 0 => {
       let init = crate::functions::math_ast::try_eval_to_f64(other)?;
-      (0.0, 1.0, None, init)
+      (0.0, 1.0, None, init, manipulate_bound_is_inexact(other))
     }
     // `Animator[]` / `Animator[Dynamic[v]]`: default 0..1 range.
-    None => (0.0, 1.0, None, 0.0),
+    None => (0.0, 1.0, None, 0.0, false),
     _ => return None,
   };
   let control = ManipulateControl::Continuous {
@@ -18421,6 +18456,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
       italic: false,
       ..Default::default()
     }],
+    is_real,
   };
   Some(ManipulateSpec {
     body_code: var,
@@ -20169,6 +20205,18 @@ fn parse_manipulate_control(
     Some(init) => eval_manipulate_bound(init).map_or(min, |(v, _)| v),
     None => min,
   };
+  // The variable stays machine-real for the widget's whole lifetime once any
+  // of its spec terms was inexact — even a slider that happens to sit at a
+  // "round" position (e.g. `rq = 0` on a `0, 1, 0.01` range) binds `0.`, not
+  // the exact integer `0`.
+  let is_real = manipulate_bound_is_inexact(bounds[0])
+    || manipulate_bound_is_inexact(bounds[1])
+    || bounds
+      .get(2)
+      .is_some_and(|e| manipulate_bound_is_inexact(e))
+    || explicit_initial
+      .as_ref()
+      .is_some_and(manipulate_bound_is_inexact);
 
   // A `Trigger`/`Animator` control is a play button sweeping its variable
   // over the range: the widget animates that variable (a Trigger starts
@@ -20188,6 +20236,7 @@ fn parse_manipulate_control(
       initial,
       label,
       label_runs,
+      is_real,
     },
     enabled,
     min_code,
@@ -20361,8 +20410,20 @@ pub fn manipulate_initial_bindings(
       ManipulateControl::Heading { .. }
       | ManipulateControl::Divider
       | ManipulateControl::Button { .. } => None,
-      ManipulateControl::Continuous { name, initial, .. }
-      | ManipulateControl::Trigger { name, initial, .. } => {
+      ManipulateControl::Continuous {
+        name,
+        initial,
+        is_real,
+        ..
+      } => Some((
+        name.clone(),
+        if *is_real {
+          format_f64_real(*initial)
+        } else {
+          format_f64_input(*initial)
+        },
+      )),
+      ManipulateControl::Trigger { name, initial, .. } => {
         Some((name.clone(), format_f64_input(*initial)))
       }
       ManipulateControl::Discrete {
@@ -20848,6 +20909,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         initial,
         label,
         label_runs,
+        ..
       } => {
         let step_json = match step {
           Some(s) => format!(r#","step":{s}"#),

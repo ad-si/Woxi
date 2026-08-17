@@ -18024,6 +18024,7 @@ mod manipulate {
         initial,
         label,
         label_runs,
+        is_real,
       } => {
         assert_eq!(name, "x");
         assert_eq!(*min, 0.0);
@@ -18035,9 +18036,67 @@ mod manipulate {
         assert_eq!(label_runs.len(), 1);
         assert_eq!(label_runs[0].text, "x");
         assert!(!label_runs[0].italic);
+        // {x, 0, 10} is all exact integers, so x stays exact throughout.
+        assert!(!is_real);
       }
       _ => panic!("expected continuous control"),
     }
+  }
+
+  // Wolfram keeps a Manipulate slider's variable machine-real for its whole
+  // lifetime once any of `{min, max, step, initial}` was written as an
+  // inexact number — even while the slider sits at a "round" position, so
+  // `rq = 0.` (Real), never the exact integer `0`. That distinction matters
+  // once a caption formats the value with `NumberForm[…, {n, f}]`, which
+  // pads a real's fraction but leaves an exact integer unchanged. Regression
+  // for a Reaction-Engineering-style Demonstration whose title row showed a
+  // real-valued parameter with two forced decimal places even when it
+  // dragged to exactly zero.
+  #[test]
+  fn spec_continuous_is_real_tracks_inexact_bounds() {
+    let is_real_of = |code: &str| {
+      let expr = interpret_to_expr(code).unwrap();
+      let spec =
+        extract_manipulate_spec(&expr).expect("well-formed manipulate");
+      match &spec.controls[0] {
+        ManipulateControl::Continuous { is_real, .. } => *is_real,
+        other => panic!("expected continuous control, got {other:?}"),
+      }
+    };
+    // An inexact step makes the variable real-valued even though every
+    // other term (min, max, and the default initial = min) is an integer.
+    assert!(is_real_of("Manipulate[rq, {{rq, 0, \"RQ\"}, 0, 1, 0.01}]"));
+    // Likewise for an inexact min or max alone.
+    assert!(is_real_of("Manipulate[u, {u, 0., 1}]"));
+    assert!(is_real_of("Manipulate[u, {u, 0, 1.}]"));
+    // Or an inexact explicit initial value.
+    assert!(is_real_of("Manipulate[u, {{u, 0.5, \"u\"}, 0, 1}]"));
+    // All-exact-integer specs (the common integer-slider idiom) stay exact.
+    assert!(!is_real_of(
+      "Manipulate[u, {{alpha, 20, \"\\[Alpha]\"}, 1, 50, 1}]"
+    ));
+    // An exact rational bound/initial is still exact, not inexact.
+    assert!(!is_real_of("Manipulate[u, {{u, 1/2, \"u\"}, 0, 1}]"));
+  }
+
+  // End-to-end: a caption built from `NumberForm[…, {n, f}]` on a real-
+  // valued slider must show the padded fraction even when the slider is at
+  // its exact-integer-looking initial position, matching the real Wolfram
+  // Demonstrations Project rendering this was checked against.
+  #[test]
+  fn manipulate_real_slider_number_form_caption_at_zero() {
+    let expr = interpret_to_expr(
+      "Manipulate[ToString[Row[{\"rq = \", NumberForm[rq, {3, 2}]}]], \
+       {{rq, 0, \"RQ\"}, 0, 1, 0.01}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let bindings = manipulate_initial_bindings(&spec);
+    // The slider starts at its min (0), the "round" value the bug hid.
+    assert_eq!(bindings, vec![("rq".to_string(), "0.".to_string())]);
+    let code = manipulate_block_code(&spec.body_code, &bindings);
+    let result = interpret_with_stdout(&code).unwrap();
+    assert_eq!(result.result, "rq = 0.00");
   }
 
   #[test]
@@ -18550,6 +18609,7 @@ mod manipulate {
           initial: got_initial,
           label,
           label_runs,
+          ..
         } => {
           assert_eq!(got, name);
           assert_eq!((*min, *max), (-10.0, 10.0));

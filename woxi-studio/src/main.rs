@@ -3869,6 +3869,7 @@ fn render_manipulate_widget<'a>(
         max,
         step,
         current,
+        ..
       } => {
         let label_widget =
           manipulate_label_widget(label_runs, label, label_col_width, enabled);
@@ -10946,6 +10947,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       max: 1.0,
       step: 0.1,
       current: 0.0,
+      is_real: false,
     };
     let empty = manipulate::ControlState::Continuous {
       name: "theta".to_string(),
@@ -10955,6 +10957,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       max: 1.0,
       step: 0.1,
       current: 0.0,
+      is_real: false,
     };
     assert_eq!(manipulate_label_char_count(&m1), 2);
     assert_eq!(manipulate_label_char_count(&empty), 0);

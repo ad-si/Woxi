@@ -30,6 +30,12 @@ pub enum ControlState {
     /// we pick `(max - min) / 100`.
     step: f64,
     current: f64,
+    /// Whether the variable is machine-real by construction (see
+    /// `woxi::functions::graphics::ManipulateControl::Continuous::is_real`).
+    /// A round current value (`0`, `20`) still substitutes as the real `0.`
+    /// rather than the exact integer, matching Wolfram — which matters for
+    /// a caption that formats it with `NumberForm[…, {n, f}]`.
+    is_real: bool,
   },
   Discrete {
     name: String,
@@ -155,8 +161,16 @@ impl ControlState {
   /// `Block[{name = <value>}, …]` binding.
   pub fn current_code(&self) -> String {
     match self {
-      ControlState::Continuous { current, .. }
-      | ControlState::Trigger { current, .. } => format_f64(*current),
+      ControlState::Continuous {
+        current, is_real, ..
+      } => {
+        if *is_real {
+          format_f64_real(*current)
+        } else {
+          format_f64(*current)
+        }
+      }
+      ControlState::Trigger { current, .. } => format_f64(*current),
       ControlState::Discrete {
         values,
         current_index,
@@ -940,6 +954,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         max,
         step,
         initial,
+        is_real,
       } => {
         let step = step.unwrap_or_else(|| {
           let span = (*max - *min).abs();
@@ -953,6 +968,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           max: *max,
           step,
           current: *initial,
+          is_real: *is_real,
         }
       }
       ManipulateControl::Discrete {
@@ -1092,5 +1108,20 @@ fn format_f64(v: f64) -> String {
     format!("{}", v as i64)
   } else {
     format!("{}", v)
+  }
+}
+
+/// Format a f64 as a Wolfram machine-real InputForm literal: a whole number
+/// keeps a trailing dot (`0.`, `20.`) so it substitutes as Real rather than
+/// Integer. Used for a continuous control whose spec was written with an
+/// inexact bound/step — Wolfram keeps such a variable real-valued even while
+/// the slider sits at a "round" position, which a caption formatting it with
+/// `NumberForm[…, {n, f}]` depends on (that wrapper pads a real's fraction
+/// but leaves an exact integer unchanged).
+fn format_f64_real(v: f64) -> String {
+  if v.is_finite() && v.fract() == 0.0 && v.abs() < 1e15 {
+    format!("{}.", v as i64)
+  } else {
+    format!("{v}")
   }
 }
