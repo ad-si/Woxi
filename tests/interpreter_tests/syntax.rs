@@ -4361,6 +4361,9 @@ mod needs_function {
     );
     assert_eq!(interpret("Needs[\"Combinatorica`\"]").unwrap(), "\0");
     assert_eq!(interpret("Get[\"Units`\"]").unwrap(), "\0");
+    // `VectorFieldPlots` is the legacy package Demonstrations load via
+    // `Get["VectorFieldPlots`"]` before calling `ListVectorFieldPlot`.
+    assert_eq!(interpret("Get[\"VectorFieldPlots`\"]").unwrap(), "\0");
   }
 
   #[test]
