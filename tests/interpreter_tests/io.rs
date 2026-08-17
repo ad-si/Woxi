@@ -6017,7 +6017,7 @@ mod file_names {
     assert_eq!(
       result,
       format!(
-        "{{deep{0}three.txt, one.txt, two.txt}}",
+        "{{.{0}deep{0}three.txt, .{0}one.txt, .{0}two.txt}}",
         std::path::MAIN_SEPARATOR_STR
       )
     );
@@ -6184,21 +6184,40 @@ mod file_names {
       interpret(r#"FileNames["*.rs", "src", {foo}]"#).unwrap(),
       "FileNames[*.rs, src, {foo}]"
     );
+  }
+
+  // `{}` names no level in particular, which is the default level — the
+  // searched directory itself.
+  #[test]
+  fn empty_level_list_is_the_default_level() {
     assert_eq!(
-      interpret(r#"FileNames["*.rs", "src", {}]"#).unwrap(),
-      "FileNames[*.rs, src, {}]"
+      interpret(
+        r#"FileNames["*.rs", "src", {}] === FileNames["*.rs", "src", {1}]"#
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"FileNames["*.rs", "src", {}] === FileNames["*.rs", "src"]"#)
+        .unwrap(),
+      "True"
     );
   }
 
   // Recursing below "." keeps the path relative to the current directory
-  // instead of collapsing every hit to its bare file name.
+  // instead of collapsing every hit to its bare file name, and a directory
+  // spelled out as "." prefixes every name with it.
   #[test]
   fn dot_directory_keeps_relative_paths() {
     let result = interpret(
-      r#"MemberQ[FileNames["lib.rs", ".", Infinity], "src/lib.rs" | "src\\lib.rs"]"#,
+      r#"MemberQ[FileNames["lib.rs", ".", Infinity], "./src/lib.rs" | ".\\src\\lib.rs"]"#,
     )
     .unwrap();
     assert_eq!(result, "True");
+    // Naming no directory at all reports the bare relative name.
+    let bare =
+      interpret(r#"MemberQ[FileNames["*.toml"], "Cargo.toml"]"#).unwrap();
+    assert_eq!(bare, "True");
   }
 
   // A third argument that is not a level specification leaves the call

@@ -3334,6 +3334,10 @@ pub fn dispatch_io_functions(
         FileNameLevels { min: 1, max: 1 }
       };
 
+      // With no directory named at all the matches are reported by their
+      // bare relative names; a directory spelled out — even `"."` — prefixes
+      // every match, so `FileNames["*.toml", "."]` is `{"./Cargo.toml"}`
+      // where `FileNames["*.toml"]` is `{"Cargo.toml"}`.
       let dir = if args.len() >= 2 {
         match &args[1] {
           Expr::String(s) => s.clone(),
@@ -3351,10 +3355,10 @@ pub fn dispatch_io_functions(
               all_files.into_iter().map(Expr::String).collect(),
             )));
           }
-          _ => ".".to_string(),
+          _ => String::new(),
         }
       } else {
-        ".".to_string()
+        String::new()
       };
 
       let mut files = collect_file_names(&patterns, &dir, levels);
@@ -4309,7 +4313,7 @@ fn collect_file_names(
   dir: &str,
   levels: FileNameLevels,
 ) -> Vec<String> {
-  let root = crate::vfs::resolve(dir);
+  let root = crate::vfs::resolve(if dir.is_empty() { "." } else { dir });
   if levels.is_empty() || !root.is_dir() {
     return Vec::new();
   }
@@ -4362,6 +4366,10 @@ fn file_names_level_number(spec: &Expr) -> Option<usize> {
 fn file_names_levels(spec: &Expr) -> Option<FileNameLevels> {
   match spec {
     Expr::List(items) => match items.as_slice() {
+      // `{}` asks for no particular level, which is the default: the
+      // searched directories themselves (wolframscript-verified,
+      // `FileNames[p, d, {}] === FileNames[p, d, {1}]`).
+      [] => Some(FileNameLevels { min: 1, max: 1 }),
       [only] => {
         let n = file_names_level_number(only)?;
         Some(FileNameLevels { min: n, max: n })
@@ -4387,8 +4395,9 @@ fn file_names_levels(spec: &Expr) -> Option<FileNameLevels> {
 /// Every match is reported as `base_dir` spells it: entries are named
 /// relative to `root` (the resolved `base_dir`) and prefixed with
 /// `base_dir` again, so the reported names stay relative wherever the
-/// working directory happens to be, and a `"."` base — spelled implicitly
-/// by `FileNames["pat"]` — reports the bare relative name.
+/// working directory happens to be. An empty `base_dir` — how
+/// `FileNames["pat"]`, which names no directory, arrives here — reports the
+/// bare relative name; a directory spelled out as `"."` prefixes `./`.
 #[cfg(not(target_arch = "wasm32"))]
 fn collect_files_recursive(
   path: &std::path::Path,
@@ -4411,7 +4420,7 @@ fn collect_files_recursive(
     if let Ok(ft) = file_type {
       if depth >= levels.min && file_name_matches(patterns, &file_name) {
         let relative = entry_path.strip_prefix(root).unwrap_or(&entry_path);
-        let named = if base_dir == "." {
+        let named = if base_dir.is_empty() {
           relative.to_path_buf()
         } else {
           std::path::Path::new(base_dir).join(relative)
