@@ -26,9 +26,10 @@ repository = "https://github.com/ad-si/Woxi"
 default-run = "woxi"
 # Keep packages built from this crate (crates.io and the PyPI sdist,
 # which vendors this crate via maturin) down to what's needed to
-# compile it. tests/SUMMARY.md, functions.csv, and resources/ are
-# embedded via include_str!/include_bytes! and must stay, as must
-# benches/interpreter.rs (an explicitly declared [[bench]] target).
+# compile it. tests/SUMMARY.md, functions.csv, resources/ and
+# kernelspec/ are embedded via include_str!/include_bytes! and must
+# stay, as must benches/interpreter.rs (an explicitly declared
+# [[bench]] target).
 exclude = [
   "/tests/*/",
   "/tests/woxi",
@@ -39,7 +40,6 @@ exclude = [
   "/examples",
   "/entity_types",
   "/jupyterlite-woxi-kernel",
-  "/kernelspec",
   "/scripts",
   "/woxi-studio",
   "/woxi-py",
