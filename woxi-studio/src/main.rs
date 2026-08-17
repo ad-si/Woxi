@@ -10327,6 +10327,54 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn indexed_color_scheme_plot_manipulate_builds_widget() {
+    // A labeled slider drives how many series a `ListPlot` shows, each
+    // series colored from `ColorData[35, "ColorList"]` — the shape a
+    // Demonstration reaches for when it wants its plotted series to cycle
+    // through a named indexed palette instead of the default one.
+    let code = "Manipulate[\
+      ListPlot[Table[{k, Mod[k^2, 13]}, {k, m}], \
+       PlotStyle -> ColorData[35, \"ColorList\"], \
+       PlotRange -> {{0, m}, {0, 13}}, AspectRatio -> 1, \
+       ImageSize -> {300, 300}], \
+      {{m, 40, \"count\"}, 5, 100, 1, Appearance -> \"Labeled\"}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the indexed-color-scheme Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must produce the scatter plot"
+    );
+    match &state.controls[0] {
+      manipulate::ControlState::Continuous {
+        label,
+        current,
+        min,
+        max,
+        ..
+      } => {
+        assert_eq!(label, "count");
+        assert_eq!((*current, *min, *max), (40.0, 5.0, 100.0));
+      }
+      other => panic!("expected a continuous slider, got {other:?}"),
+    }
+
+    // Moving the slider re-renders without error.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 75.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn compass_construction_manipulate_builds_widget() {
     // End-to-end regression for a Demonstration that constructs with
     // compasses alone: the initialization crosses two circles through

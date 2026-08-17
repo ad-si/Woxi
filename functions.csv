@@ -272,7 +272,7 @@ While,Evaluates an expression repeatedly while a condition is true,✅,pure,1.0,
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2.0,221
 FindRoot,Numerically finds a root of an equation using a damped Newton iteration — the derivative is symbolic where that reduces to a number and a difference quotient otherwise; honours MaxIterations and reports non-convergence or a singular derivative (WorkingPrecision and the accuracy goals are accepted but ignored),✅,pure,1.0,222
 Image,Constructs an image from pixel data,✅,pure,7.0,223
-ColorData,"Named color data: the categories; the CSS colours of the ""HTML"" scheme; the colors of indexed schemes 1 (generated) 2 3 and 97; named gradients give a ColorDataFunction sampling the scheme (e.g. ColorData[""TemperatureMap""][0.5]), sample directly via ColorData[name, t], read the ""ColorFunction"" and ""Range"" properties, and render ""Image"" swatches (Rainbow-family control points sampled from Wolfram; the remaining gradients are approximations)",✅,pure,6.0,224
+ColorData,"Named color data: the categories; the CSS colours of the ""HTML"" scheme; the colors of indexed schemes 1 (generated) 2 3 30 35 and 97; named gradients give a ColorDataFunction sampling the scheme (e.g. ColorData[""TemperatureMap""][0.5]), sample directly via ColorData[name, t], read the ""ColorFunction"" and ""Range"" properties, and render ""Image"" swatches (Rainbow-family control points sampled from Wolfram; the remaining gradients are approximations)",✅,pure,6.0,224
 Binomial,Returns the binomial coefficient,✅,pure,1.0,225
 Which,Evaluates conditions and returns the value for the first true one,✅,pure,1.0,226
 Replace,Applies transformation rules to an expression,✅,pure,1.0,227
