@@ -4576,7 +4576,10 @@ fn apply_replace_all_multi_ast(
 }
 
 fn is_hold_head(name: &str) -> bool {
-  matches!(name, "Hold" | "HoldComplete" | "HoldForm" | "HoldPattern")
+  matches!(
+    name,
+    "Hold" | "HoldComplete" | "HoldCompleteForm" | "HoldForm" | "HoldPattern"
+  )
 }
 
 /// Internal: `held` is true when we are recursing inside a Hold/HoldComplete/

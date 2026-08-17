@@ -2,6 +2,16 @@
 
 # Unreleased
 
+- `HoldCompleteForm[expr]` keeps `expr` completely unevaluated for display:
+    `HoldCompleteForm[2 + 3]` stays `HoldCompleteForm[2 + 3]` and
+    `Attributes[HoldCompleteForm]` is `{HoldAllComplete, Protected}`. It is the
+    `HoldAllComplete` sibling of `HoldForm`, so an inner `Evaluate` does not
+    break through the hold and a `Sequence` argument keeps its wrapper. This is
+    the head `TracePrint` already used for its output.
+- `Manipulate` colour controls compile again — the two-swatch `ColorSetter`
+    control was built without the `Appearance -> "Vertical"` field added
+    alongside it, which broke the build. The swatch row now honours
+    `Appearance -> "Vertical"` like every other button bar.
 - `TracePrint[expr]` prints every sub-expression used while evaluating `expr`,
     wrapped in `HoldCompleteForm` and indented by one space per level of the
     evaluation, and returns the result.

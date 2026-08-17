@@ -20371,6 +20371,9 @@ fn parse_manipulate_control(
           // never a dropdown.
           setter_bar: true,
           slider: false,
+          // The swatches are a setter bar, so `Appearance -> "Vertical"`
+          // stacks them the same way it stacks any other button bar.
+          vertical: appearance_vertical,
         },
         enabled,
         min_code: None,

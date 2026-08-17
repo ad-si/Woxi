@@ -15,6 +15,14 @@ pub fn dispatch_evaluation_control(
     "HoldComplete" if !args.is_empty() => {
       return Some(Ok(unevaluated("HoldComplete", args)));
     }
+    // `HoldCompleteForm` is `HoldForm`'s HoldAllComplete sibling: it keeps its
+    // argument unevaluated for display (`HoldCompleteForm[2 + 3]` prints as
+    // `HoldCompleteForm[2 + 3]`) and, unlike `HoldForm`, does not honour a
+    // wrapping `Evaluate` — see the HoldAllComplete attribute in
+    // `attributes.rs`, which is what suppresses argument evaluation.
+    "HoldCompleteForm" if !args.is_empty() => {
+      return Some(Ok(unevaluated("HoldCompleteForm", args)));
+    }
     "Unevaluated" if !args.is_empty() => {
       return Some(Ok(unevaluated("Unevaluated", args)));
     }

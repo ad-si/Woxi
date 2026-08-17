@@ -5074,8 +5074,9 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     // Wrappers that only hold or re-label their content: typeset what is
     // inside them. `Style` keeps its directives outside the box tree — the
     // enclosing cell/label already carries size and colour.
-    "HoldForm" | "HoldComplete" | "Defer" | "Identity" | "TraditionalForm"
-    | "StandardForm" | "DisplayForm" | "OutputForm" | "Text"
+    "HoldForm" | "HoldComplete" | "HoldCompleteForm" | "Defer" | "Identity"
+    | "TraditionalForm" | "StandardForm" | "DisplayForm" | "OutputForm"
+    | "Text"
       if args.len() == 1 =>
     {
       tf(&args[0])

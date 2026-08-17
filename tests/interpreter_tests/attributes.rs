@@ -1364,6 +1364,13 @@ mod cases {
     );
   }
   #[test]
+  fn attributes_hold_complete_form() {
+    assert_case(
+      r#"Attributes[HoldCompleteForm]"#,
+      r#"{HoldAllComplete, Protected}"#,
+    );
+  }
+  #[test]
   fn f_14() {
     assert_case(r#"SetAttributes[f, HoldAll]; f[1 + 2]"#, r#"f[1 + 2]"#);
   }
@@ -1386,6 +1393,41 @@ mod cases {
     assert_case(
       r#"SetAttributes[f, HoldAll]; f[1 + 2]; f[Evaluate[1 + 2]]; Hold[Evaluate[1 + 2]]; HoldComplete[Evaluate[1 + 2]]"#,
       r#"HoldComplete[Evaluate[1 + 2]]"#,
+    );
+  }
+  #[test]
+  fn hold_complete_form() {
+    // HoldCompleteForm is HoldForm's HoldAllComplete sibling: it keeps its
+    // argument unevaluated for display, and — unlike HoldForm — an inner
+    // `Evaluate` does not break through the hold.
+    assert_case(r#"HoldCompleteForm[2 + 3]"#, r#"HoldCompleteForm[2 + 3]"#);
+    assert_case(
+      r#"HoldCompleteForm[Evaluate[1 + 2]]"#,
+      r#"HoldCompleteForm[Evaluate[1 + 2]]"#,
+    );
+    assert_case(r#"HoldForm[Evaluate[1 + 2]]"#, r#"HoldForm[3]"#);
+    // HoldAllComplete also carries SequenceHold, so a `Sequence` argument
+    // keeps its wrapper instead of splicing.
+    assert_case(
+      r#"HoldCompleteForm[Sequence[1, 2]]"#,
+      r#"HoldCompleteForm[Sequence[1, 2]]"#,
+    );
+    // …and `Unevaluated` is not stripped inside it.
+    assert_case(
+      r#"HoldCompleteForm[Unevaluated[1 + 1]]"#,
+      r#"HoldCompleteForm[Unevaluated[1 + 1]]"#,
+    );
+    // An assigned symbol keeps its name inside the wrapper.
+    assert_case(r#"x = 2; HoldCompleteForm[x]"#, r#"HoldCompleteForm[x]"#);
+    // Nested and wrapped forms keep the wrapper in the output, like
+    // `Hold[HoldForm[…]]` does.
+    assert_case(
+      r#"Hold[HoldCompleteForm[1 + 2]]"#,
+      r#"Hold[HoldCompleteForm[1 + 2]]"#,
+    );
+    assert_case(
+      r#"FullForm[HoldCompleteForm[1 + 2]]"#,
+      r#"FullForm[HoldCompleteForm[1 + 2]]"#,
     );
   }
   #[test]

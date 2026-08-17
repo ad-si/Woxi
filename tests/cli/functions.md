@@ -41,6 +41,7 @@ icon: lucide/square-function
 - [`HalfNormalDistribution`](functions/HalfNormalDistribution.md)
 - [`CensoredDistribution`](functions/CensoredDistribution.md)
 - [`TruncatedDistribution`](functions/TruncatedDistribution.md)
+- [`HoldCompleteForm`](functions/HoldCompleteForm.md)
 - [`HoldForm`](functions/HoldForm.md)
 - [`If`](functions/If.md)
 - [`Increment`](functions/Increment.md)
