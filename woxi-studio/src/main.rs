@@ -17950,6 +17950,107 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 3, $CellContext`spread$$ = 0,
     );
   }
 
+  #[test]
+  fn demonstration_discrete_compounding_manipulate_tracks_two_sliders() {
+    let code = "Manipulate[\
+      Module[{pts, approx, exact}, \
+        pts = Table[{k (xVal/nSteps), (1 + xVal/nSteps)^k}, {k, 0, nSteps}]; \
+        approx = pts[[-1, 2]]; \
+        exact = Exp[xVal]; \
+        Show[\
+          Plot[Exp[t], {t, -1, Max[xVal + 1, 1]}, \
+            PlotStyle -> {Thick, Dashed, Black}, GridLines -> Automatic, \
+            PlotRange -> {-1, Max[exact + xVal, 2]}], \
+          ListPlot[pts, PlotMarkers -> {\"+\", Large}, PlotStyle -> Green], \
+          ListLinePlot[pts, PlotStyle -> {Thick, Red}], \
+          Graphics[{\
+            {Dashed, Purple, Line[{{xVal, 0}, {xVal, exact}}]}, \
+            {Dashed, Purple, Line[{{0, exact}, {xVal, exact}}]}, \
+            {Blue, PointSize[Medium], Point[{xVal, exact}]}\
+          }], \
+          PlotLabel -> Column[{\
+            Style[Row[{\"approx \\[TildeTilde] \", NumberForm[N[approx], {8, 6}]}], 14], \
+            Style[Row[{\"exact \\[TildeTilde] \", NumberForm[N[exact], {8, 6}]}], 14]\
+          }], \
+          ImageSize -> {550, 400}\
+        ]\
+      ], \
+      {{xVal, 1., \"x\"}, -1, 10, 0.01}, \
+      {{nSteps, 3, \"approximation step\"}, 1, 1000, 1}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the discrete-compounding Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the exponential curve, point path, and guide lines must render"
+    );
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the plot must render")
+    };
+    let initial = render(&state);
+
+    match &mut state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: x_name,
+          label: x_label,
+          min: x_min,
+          max: x_max,
+          current: x_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: n_name,
+          label: n_label,
+          min: n_min,
+          max: n_max,
+          current: n_now,
+          ..
+        },
+      ] => {
+        assert_eq!(x_name.as_str(), "xVal");
+        assert_eq!(x_label.as_str(), "x");
+        assert_eq!(*x_min, -1.0);
+        assert_eq!(*x_max, 10.0);
+        assert_eq!(*x_now, 1.0);
+        assert_eq!(n_name.as_str(), "nSteps");
+        assert_eq!(n_label.as_str(), "approximation step");
+        assert_eq!(*n_min, 1.0);
+        assert_eq!(*n_max, 1000.0);
+        assert_eq!(*n_now, 3.0);
+        *x_now = 4.0;
+        *n_now = 25.0;
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+    let moved = render(&state);
+    assert_ne!(
+      initial, moved,
+      "moving x and refining the step count must change the render"
+    );
+  }
+
   /// Regression for the shape of the "Equality of a Segment and an Arc in
   /// Archimedes's Spiral" Demonstration: a `Module` that derives a point
   /// from a slider parameter and reports its distance from the origin in a
