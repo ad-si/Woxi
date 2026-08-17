@@ -2295,6 +2295,18 @@ pub fn dispatch_list_operations(
     "Cases" | "ParallelCases" if args.len() >= 2 && args.len() <= 5 => {
       return Some(list_helpers_ast::cases_unified_ast(args));
     }
+    // A call the serial function itself cannot make sense of has nothing to
+    // parallelize: wolframscript reports `::nopar1` and hands the arguments
+    // to that serial function, which then stays unevaluated.
+    "ParallelCases" | "ParallelSelect" if args.len() == 1 => {
+      let serial = name.trim_start_matches("Parallel");
+      crate::emit_message_to_stdout(&format!(
+        "{name}::nopar1: {} cannot be parallelized; proceeding with \
+         sequential evaluation.",
+        crate::syntax::expr_to_string(&unevaluated(serial, args))
+      ));
+      return Some(Ok(unevaluated(serial, args)));
+    }
     // FirstCase[list, pattern] or FirstCase[list, pattern, default]
     // FirstCase[list, pattern :> rhs] or FirstCase[list, pattern :> rhs, default]
     "FirstCase" if args.len() >= 2 && args.len() <= 4 => {
