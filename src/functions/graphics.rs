@@ -20371,7 +20371,7 @@ fn parse_manipulate_control(
           // never a dropdown, and that row is always horizontal.
           setter_bar: true,
           slider: false,
-          vertical: false,
+          vertical: appearance_vertical,
         },
         enabled,
         min_code: None,
