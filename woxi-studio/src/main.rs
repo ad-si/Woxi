@@ -6537,13 +6537,71 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 mod tests {
   use super::*;
 
-  /// A single 2D-slider control (`{{var, {x0, y0}, label}, {xmin, ymin},
-  /// {xmax, ymax}}`) driving a Greek-lettered rotation/tilt pair, whose
-  /// components are split apart with `Part` and fed into several
-  /// `Initialization`-defined helper surfaces that a `Show` combines. This
-  /// mirrors the general construct category used by many rotating-3D-surface
+  /// A dissection Manipulate assembling colored polygon pieces with
+  /// `Translate`/`Rotate`, a boolean checkbox control (`{False, True}`
+  /// domain) toggling a hint overlay, and several `Tiny` step sliders with
+  /// `ControlPlacement -> Left` and `SaveDefinitions -> True`. This mirrors
+  /// the general construct category used by many piece-rearrangement
   /// Wolfram Demonstrations Project notebooks (independently written, not
   /// copied from any specific one).
+  #[test]
+  fn manipulate_dissection_checkbox_and_step_sliders() {
+    let code = r#"Manipulate[
+      Graphics[{
+        Opacity[op],
+        Translate[piece1, k1 {1, 0}],
+        Rotate[Translate[piece2, k2 {0, -1}], k3 Pi, pivot],
+        If[hint, guide, {}]
+      }, PlotRange -> {{-2, 2}, {-2, 2}}, AspectRatio -> Automatic],
+      {{hint, False, "show hint"}, {False, True}},
+      {{op, 0.7, "opacity"}, 0, 1, ImageSize -> Tiny},
+      {{k1, 0, "step 1"}, 0, 1, ImageSize -> Tiny},
+      {{k2, 0, "step 2"}, 0, 1, ImageSize -> Tiny},
+      {{k3, 0, "step 3"}, 0, 1, ImageSize -> Tiny},
+      SaveDefinitions -> True,
+      ControlPlacement -> Left,
+      Initialization :> (
+        piece1 = {RGBColor[0.2, 0.4, 0.8], Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}]};
+        piece2 = {RGBColor[0.8, 0.3, 0.1], Polygon[{{0, 0}, {-1, 0}, {-1, -1}, {0, -1}}]};
+        pivot = {0, 0};
+        guide = {Line[{{0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, 0}}], Text["A", {0, 0}], Text["B", {1, 1}]};
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a checkbox + four Tiny sliders should build a ManipulateState");
+
+    assert_eq!(state.controls.len(), 5, "hint, op, k1, k2, k3");
+    assert!(
+      matches!(
+        &state.controls[0],
+        manipulate::ControlState::Discrete { name, values, .. }
+          if name == "hint" && values == &["False", "True"]
+      ),
+      "a {{False, True}} domain builds a two-choice discrete control, not a slider: {:?}",
+      state.controls[0]
+    );
+    for (i, label) in ["op", "k1", "k2", "k3"].iter().enumerate() {
+      assert!(
+        matches!(
+          &state.controls[i + 1],
+          manipulate::ControlState::Continuous { name, .. } if name == label
+        ),
+        "control {i} should be the continuous slider {label:?}: {:?}",
+        state.controls[i + 1]
+      );
+    }
+    assert!(
+      state.error.is_none(),
+      "body should evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "Graphics of translated/rotated pieces should render"
+    );
+  }
   #[test]
   fn manipulate_2d_angle_slider_combines_initialization_surfaces() {
     let code = r#"Manipulate[
@@ -16184,6 +16242,92 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`theta$$ = 0, $CellContext`view$$ = 
     );
   }
 
+  /// A `Manipulate[Plot[Evaluate[Sum[…]]], …]` demonstration in the style of
+  /// the Demonstrations site's nowhere-differentiable-function examples:
+  /// a filled partial-sum trig series with a `Delimiter`-separated group of
+  /// Greek-letter-named sliders, one of which (the term count) carries an
+  /// explicit label and step.
+  #[test]
+  fn demonstration_trig_partial_sum_manipulate_fills_and_delimits_controls() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Plot[Evaluate[
+   Sum[((1 - \[Alpha]) Sin[k^\[Beta] Pi x] + \[Alpha] Cos[k^\[Beta] Pi x])/k^\[Beta], {k, 1, terms}]],
+  {x, 0, 1}, PlotRange -> {{0, 1}, {-3/2, 3/2}}, Filling -> Axis,
+  MaxRecursion -> ControlActive[1, 6]],
+ {{terms, 24, \"number of terms\"}, 1, 120, 1}, Delimiter,
+ {{\[Beta], 2, \"exponent \[Beta]\"}, 2, 6},
+ {{\[Alpha], 0, \"cosine fraction \[Alpha]\"}, 0, 1}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`terms$$ = 24, $CellContext`\[Beta]$$ = 2, $CellContext`\[Alpha]$$ = 0}, DynamicBox[\[Ellipsis]]]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the filled partial-sum curve must draw"
+    );
+
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: terms_name,
+          label: terms_label,
+          min: terms_min,
+          max: terms_max,
+          step: terms_step,
+          current: terms_now,
+          ..
+        },
+        manipulate::ControlState::Divider,
+        manipulate::ControlState::Continuous {
+          name: beta_name,
+          label: beta_label,
+          min: beta_min,
+          max: beta_max,
+          current: beta_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: alpha_name,
+          label: alpha_label,
+          min: alpha_min,
+          max: alpha_max,
+          current: alpha_now,
+          ..
+        },
+      ] => {
+        assert_eq!(terms_name.as_str(), "terms");
+        assert_eq!(terms_label.as_str(), "number of terms");
+        assert_eq!(*terms_min, 1.0);
+        assert_eq!(*terms_max, 120.0);
+        assert_eq!(*terms_step, 1.0);
+        assert_eq!(*terms_now, 24.0);
+        assert_eq!(beta_name.as_str(), "\u{3b2}");
+        assert_eq!(beta_label.as_str(), "exponent \u{3b2}");
+        assert_eq!(*beta_min, 2.0);
+        assert_eq!(*beta_max, 6.0);
+        assert_eq!(*beta_now, 2.0);
+        assert_eq!(alpha_name.as_str(), "\u{3b1}");
+        assert_eq!(alpha_label.as_str(), "cosine fraction \u{3b1}");
+        assert_eq!(*alpha_min, 0.0);
+        assert_eq!(*alpha_max, 1.0);
+        assert_eq!(*alpha_now, 0.0);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
   /// End-to-end regression for the shape of the "Compound of Two
   /// Icosahedra" Demonstration: a stored `Manipulate` whose body is a
   /// flat sequence of `;`-separated assignments (no `Module`) building
@@ -16388,5 +16532,145 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
       widget.text_output, initial_text,
       "switching the table size must change the rendered totals"
     );
+  }
+
+  #[test]
+  fn sturms_theorem_manipulate_builds_widget() {
+    // End-to-end regression for a "Sturm's theorem for polynomials"
+    // Demonstration: a `SetterBar`-chosen degree plus a `Button` that
+    // redraws a fresh random polynomial into a `ControlType -> None`
+    // hidden coefficient list, whose body builds the Sturm chain via a
+    // `While`/`AppendTo` polynomial-remainder walk, counts sign
+    // variations of the chain at two interval-endpoint sliders with
+    // `Split`/`DeleteCases`, and plots the polynomial with the interval
+    // marked in the `Epilog`.
+    let code = "Manipulate[\
+      Module[{p, dp, chain, signsA, signsB, va, vb}, \
+        p = Take[PadRight[coeffs, deg + 1], deg + 1] . \
+          Table[x^k, {k, deg, 0, -1}]; \
+        dp = D[p, x]; \
+        chain = {p, dp}; \
+        While[Exponent[Last[chain], x] > 0, \
+          AppendTo[chain, \
+            Expand[-PolynomialRemainder[chain[[-2]], chain[[-1]], x]]]\
+        ]; \
+        signsA = (Sign[#1 /. x -> a] &) /@ chain; \
+        signsB = (Sign[#1 /. x -> b] &) /@ chain; \
+        va = Length[Split[DeleteCases[signsA, 0]]] - 1; \
+        vb = Length[Split[DeleteCases[signsB, 0]]] - 1; \
+        Column[{\
+          Row[{\"p(x) = \", p}], \
+          Row[{\"p'(x) = \", dp}], \
+          Grid[\
+            Prepend[Transpose[{chain, signsA, signsB}], \
+              {\"p_i\", \"sign@a\", \"sign@b\"}], \
+            Frame -> All\
+          ], \
+          Row[{\"V(a) = \", va, \",  V(b) = \", vb, \
+            \",  real roots in [a,b] = \", va - vb}], \
+          Plot[p, {x, a - 2, b + 2}, \
+            Epilog -> {Red, PointSize[Medium], Point[{{a, 0}, {b, 0}}]}, \
+            ImageSize -> {360, 240}]\
+        }]\
+      ], \
+      Row[{\
+        Control@{{deg, 3, \"degree\"}, Range[2, 5], SetterBar}, \
+        Spacer[10], \
+        Button[\"new polynomial\", \
+          coeffs = Table[RandomInteger[{-5, 5}], {deg + 1}]]\
+      }], \
+      {coeffs, {{1, 0, -2, 1}}, ControlType -> None}, \
+      {{a, -3, \"a\"}, -6, 0, 1}, \
+      {{b, 3, \"b\"}, 0, 6, 1}, \
+      Initialization :> (coeffs = {1, 0, -2, 1};)\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Sturm's-theorem Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the polynomial plot"
+    );
+
+    // A degree setter, a randomize button, and two interval-endpoint
+    // sliders, in notebook order; `coeffs` stays hidden control-side
+    // state since it carries `ControlType -> None`.
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        label,
+        values,
+        current_index,
+        ..
+      } => {
+        assert_eq!(label, "degree");
+        assert_eq!(values, &vec!["2", "3", "4", "5"]);
+        assert_eq!(*current_index, 1, "initial degree 3");
+      }
+      other => panic!("expected the degree setter bar, got {other:?}"),
+    }
+    match &state.controls[1] {
+      manipulate::ControlState::Button { label, .. } => {
+        assert_eq!(label, "new polynomial");
+      }
+      other => panic!("expected the randomize button, got {other:?}"),
+    }
+    match &state.controls[2] {
+      manipulate::ControlState::Continuous {
+        label,
+        min,
+        max,
+        current,
+        ..
+      } => {
+        assert_eq!(label, "a");
+        assert_eq!((*min, *max, *current), (-6.0, 0.0, -3.0));
+      }
+      other => panic!("expected the 'a' slider, got {other:?}"),
+    }
+    match &state.controls[3] {
+      manipulate::ControlState::Continuous {
+        label,
+        min,
+        max,
+        current,
+        ..
+      } => {
+        assert_eq!(label, "b");
+        assert_eq!((*min, *max, *current), (0.0, 6.0, 3.0));
+      }
+      other => panic!("expected the 'b' slider, got {other:?}"),
+    }
+    assert_eq!(
+      state.state,
+      vec![("coeffs".to_string(), "{1, 0, -2, 1}".to_string())]
+    );
+
+    // Narrowing the interval re-solves the Sturm chain and re-renders.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[2]
+    {
+      *current = -1.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+
+    // Pressing the button draws a fresh random polynomial of the same
+    // degree into the hidden `coeffs` state and re-renders cleanly.
+    let action = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("the randomize button");
+    state.apply_button_action(&action);
+    assert!(state.error.is_none(), "button failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
   }
 }
