@@ -393,6 +393,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut mesh_mode = MeshMode::Default;
   let mut show_axes = true;
   let mut z_clip: Option<(f64, f64)> = None;
+  let mut plot_style_expr: Option<&Expr> = None;
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -401,6 +402,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } = opt
     {
       match pattern.as_ref() {
+        Expr::Identifier(name) if name == "PlotStyle" => {
+          plot_style_expr = Some(replacement.as_ref());
+        }
         Expr::Identifier(name) if name == "ImageSize" => {
           if let Some((w, h, fw)) =
             parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
@@ -463,7 +467,20 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => vec![body],
   };
 
+  // `PlotStyle`, one style per surface (cycling); empty means it was not
+  // given, so the height-based rainbow default is used unchanged.
+  let plot_styles: Vec<StyleState3D> = plot_style_expr
+    .map(|e| parse_plot_style_3d(e, bodies.len()))
+    .unwrap_or_default();
+
   let camera = Camera::default();
+  // Direction from the scene towards the viewer, used to place a
+  // `Specularity` highlight from `PlotStyle`.
+  let view_dir = {
+    let (sa, ca) = camera.azimuth.sin_cos();
+    let (se, ce) = camera.elevation.sin_cos();
+    [ce * ca, ce * sa, se]
+  };
   let x_step = (x_max - x_min) / GRID_N as f64;
   let y_step = (y_max - y_min) / GRID_N as f64;
 
@@ -718,10 +735,12 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             + (cz10 - z_lo) / z_range
             + (cz01 - z_lo) / z_range)
             / 3.0;
-          let base_color =
+          let default_color =
             surface_height_color(avg_z_norm, surface_idx, num_surfaces);
           let normal = triangle_normal(v0, v1, v2);
-          let color = apply_lighting(base_color, normal);
+          let style = plot_style_for_surface(&plot_styles, surface_idx);
+          let (color, opacity) =
+            shade_facet(default_color, style, normal, view_dir);
 
           let p0 = project(v0, &camera);
           let p1 = project(v1, &camera);
@@ -738,7 +757,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             projected: [p0, p1, p2],
             depth: depth(center, &camera),
             color,
-            opacity: 1.0,
+            opacity,
           });
         }
 
@@ -768,10 +787,12 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             + (cz01 - z_lo) / z_range
             + (cz10 - z_lo) / z_range)
             / 3.0;
-          let base_color =
+          let default_color =
             surface_height_color(avg_z_norm, surface_idx, num_surfaces);
           let normal = triangle_normal(v0, v1, v2);
-          let color = apply_lighting(base_color, normal);
+          let style = plot_style_for_surface(&plot_styles, surface_idx);
+          let (color, opacity) =
+            shade_facet(default_color, style, normal, view_dir);
 
           let p0 = project(v0, &camera);
           let p1 = project(v1, &camera);
@@ -788,7 +809,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             projected: [p0, p1, p2],
             depth: depth(center, &camera),
             color,
-            opacity: 1.0,
+            opacity,
           });
         }
       }
@@ -1004,13 +1025,18 @@ fn generate_svg(
       let (x1, y1) = to_svg(tri.projected[1].0, tri.projected[1].1);
       let (x2, y2) = to_svg(tri.projected[2].0, tri.projected[2].1);
       let (r, g, b) = tri.color;
+      let opacity_attr = if tri.opacity < 1.0 {
+        format!(" opacity=\"{}\"", tri.opacity)
+      } else {
+        String::new()
+      };
       if mesh_mode == MeshMode::All {
         svg.push_str(&format!(
-          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"#00000060\" stroke-width=\"0.5\"/>\n"
+          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"#00000060\" stroke-width=\"0.5\"{opacity_attr}/>\n"
         ));
       } else {
         svg.push_str(&format!(
-          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"0.5\"/>\n"
+          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"0.5\"{opacity_attr}/>\n"
         ));
       }
     }
@@ -2518,6 +2544,92 @@ fn parse_specularity(args: &[Expr]) -> Option<((u8, u8, u8), f64)> {
     .filter(|n| *n > 0.0)
     .unwrap_or(1.0);
   Some((rgb, exponent))
+}
+
+/// Resolve which entry of a `PlotStyle` style list a surface uses, cycling
+/// through fewer styles than surfaces (`PlotStyle -> {Red, Blue}` on three
+/// surfaces gives Red, Blue, Red). `None` — an absent or empty list — means
+/// `PlotStyle` was not given, so callers keep their default colouring.
+fn plot_style_for_surface(
+  styles: &[StyleState3D],
+  surface_idx: usize,
+) -> Option<&StyleState3D> {
+  if styles.is_empty() {
+    None
+  } else {
+    Some(&styles[surface_idx % styles.len()])
+  }
+}
+
+/// Parse a `PlotStyle` option value into one style per surface, mirroring
+/// [`crate::functions::plot::parse_plot_style`]'s disambiguation for 2D
+/// `Plot`: with more than one surface, a flat list of colours/directives is
+/// read as one style per surface (`PlotStyle -> {Red, Blue}`), cycling when
+/// there are fewer styles than surfaces; a single style — one bare
+/// directive, or a list that mixes directives for a single style, like
+/// `{RGBColor[...], Opacity[.5]}` — applies to every surface alike. An
+/// empty result means `PlotStyle` was not given (or produced nothing
+/// applicable), so callers keep drawing the height-based rainbow default.
+fn parse_plot_style_3d(
+  replacement: &Expr,
+  num_surfaces: usize,
+) -> Vec<StyleState3D> {
+  use crate::functions::graphics::parse_color;
+
+  let val =
+    evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  let items: Vec<Expr> = match &val {
+    Expr::List(list_items) if num_surfaces > 1 => {
+      let per_surface = list_items.iter().any(|item| {
+        matches!(item, Expr::FunctionCall { name, .. } if name == "Directive")
+          || matches!(item, Expr::List(_))
+          || parse_color(item).is_some()
+      });
+      if per_surface {
+        list_items.to_vec()
+      } else {
+        vec![val.clone()]
+      }
+    }
+    _ => vec![val.clone()],
+  };
+
+  items
+    .into_iter()
+    .map(|item| {
+      let mut style = StyleState3D::default();
+      apply_3d_directive(&item, &mut style);
+      style
+    })
+    .collect()
+}
+
+/// Shade one triangle facet, folding in a `PlotStyle` override:
+/// `default_color` is the plot's ordinary colour for this facet (height-
+/// based, as today) and is used unchanged — through the same diffuse +
+/// ambient lighting as before — when `style` is `None`, so a plot without
+/// `PlotStyle` renders byte-identically to before this existed. When a
+/// style is given, its own colour (falling back to `default_color` if the
+/// style set no colour of its own, e.g. `PlotStyle -> Opacity[.5]`) is
+/// shaded instead, with any `Specularity` the style carries layered on top,
+/// and the style's opacity is returned alongside the colour for the
+/// triangle to draw translucently.
+fn shade_facet(
+  default_color: (u8, u8, u8),
+  style: Option<&StyleState3D>,
+  normal: [f64; 3],
+  view_dir: [f64; 3],
+) -> ((u8, u8, u8), f64) {
+  match style {
+    Some(s) => {
+      let base = s.color.unwrap_or(default_color);
+      (
+        apply_lighting_specular(base, normal, s.specular, view_dir),
+        s.opacity,
+      )
+    }
+    None => (apply_lighting(default_color, normal), 1.0),
+  }
 }
 
 /// The linear part of a rotation by `angle` around the axis direction `w`
@@ -6460,6 +6572,21 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     global_r_max
   };
 
+  // `RevolutionPlot3D` draws a single surface, so `PlotStyle` is one style
+  // rather than a per-surface list.
+  let render_style: Option<StyleState3D> = plot_style.as_ref().map(|ps| {
+    let mut style = StyleState3D::default();
+    apply_3d_directive(ps, &mut style);
+    style
+  });
+  // Direction from the scene towards the viewer, used to place a
+  // `Specularity` highlight from `PlotStyle`.
+  let view_dir = {
+    let (sa, ca) = camera.azimuth.sin_cos();
+    let (se, ce) = camera.elevation.sin_cos();
+    [ce * ca, ce * sa, se]
+  };
+
   let nz = |z: f64| -> f64 {
     let cz = z.clamp(z_lo, z_hi);
     ((cz - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE
@@ -6495,9 +6622,10 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
         let avg_z_norm =
           (z_norm_of(pp00) + z_norm_of(pp10) + z_norm_of(pp01)) / 3.0;
-        let base_color = height_color(avg_z_norm);
+        let default_color = height_color(avg_z_norm);
         let normal = triangle_normal(v0, v1, v2);
-        let color = apply_lighting(base_color, normal);
+        let (color, opacity) =
+          shade_facet(default_color, render_style.as_ref(), normal, view_dir);
 
         let proj0 = project(v0, &camera);
         let proj1 = project(v1, &camera);
@@ -6514,7 +6642,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           projected: [proj0, proj1, proj2],
           depth: depth(center, &camera),
           color,
-          opacity: 1.0,
+          opacity,
         });
       }
 
@@ -6526,9 +6654,10 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
         let avg_z_norm =
           (z_norm_of(pp11) + z_norm_of(pp01) + z_norm_of(pp10)) / 3.0;
-        let base_color = height_color(avg_z_norm);
+        let default_color = height_color(avg_z_norm);
         let normal = triangle_normal(v0, v1, v2);
-        let color = apply_lighting(base_color, normal);
+        let (color, opacity) =
+          shade_facet(default_color, render_style.as_ref(), normal, view_dir);
 
         let proj0 = project(v0, &camera);
         let proj1 = project(v1, &camera);
@@ -6545,7 +6674,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           projected: [proj0, proj1, proj2],
           depth: depth(center, &camera),
           color,
-          opacity: 1.0,
+          opacity,
         });
       }
     }
@@ -8808,6 +8937,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut full_width = false;
   let mut mesh_mode = MeshMode::Default;
   let mut show_axes = true;
+  let mut plot_style_expr: Option<&Expr> = None;
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -8816,6 +8946,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } = opt
     {
       match pattern.as_ref() {
+        Expr::Identifier(name) if name == "PlotStyle" => {
+          plot_style_expr = Some(replacement.as_ref());
+        }
         Expr::Identifier(name) if name == "ImageSize" => {
           if let Some((w, h, fw)) =
             parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
@@ -8892,7 +9025,20 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // `PlotStyle`, one style per surface (cycling); empty means it was not
+  // given, so the height-based rainbow default is used unchanged.
+  let plot_styles: Vec<StyleState3D> = plot_style_expr
+    .map(|e| parse_plot_style_3d(e, surfaces.len()))
+    .unwrap_or_default();
+
   let camera = Camera::default();
+  // Direction from the scene towards the viewer, used to place a
+  // `Specularity` highlight from `PlotStyle`.
+  let view_dir = {
+    let (sa, ca) = camera.azimuth.sin_cos();
+    let (se, ce) = camera.elevation.sin_cos();
+    [ce * ca, ce * sa, se]
+  };
   let u_step = (u_max - u_min) / GRID_N as f64;
   let v_step = (v_max - v_min) / GRID_N as f64;
 
@@ -8953,7 +9099,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Phase 2: Build triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
 
-  for sg in &all_surface_points {
+  for (surface_idx, sg) in all_surface_points.iter().enumerate() {
+    let style = plot_style_for_surface(&plot_styles, surface_idx);
     for i in 0..GRID_N {
       for j in 0..GRID_N {
         let p00 = sg[i][j];
@@ -8977,9 +9124,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v1 = normalize(b);
           let v2 = normalize(c);
           let avg_z_norm = (z_norm(a.2) + z_norm(b.2) + z_norm(c.2)) / 3.0;
-          let base_color = height_color(avg_z_norm);
+          let default_color = height_color(avg_z_norm);
           let normal = triangle_normal(v0, v1, v2);
-          let color = apply_lighting(base_color, normal);
+          let (color, opacity) =
+            shade_facet(default_color, style, normal, view_dir);
           let center = Point3D {
             x: (v0.x + v1.x + v2.x) / 3.0,
             y: (v0.y + v1.y + v2.y) / 3.0,
@@ -8995,7 +9143,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ],
             depth: depth(center, &camera),
             color,
-            opacity: 1.0,
+            opacity,
           });
         }
 
@@ -9005,9 +9153,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v1 = normalize(b);
           let v2 = normalize(c);
           let avg_z_norm = (z_norm(a.2) + z_norm(b.2) + z_norm(c.2)) / 3.0;
-          let base_color = height_color(avg_z_norm);
+          let default_color = height_color(avg_z_norm);
           let normal = triangle_normal(v0, v1, v2);
-          let color = apply_lighting(base_color, normal);
+          let (color, opacity) =
+            shade_facet(default_color, style, normal, view_dir);
           let center = Point3D {
             x: (v0.x + v1.x + v2.x) / 3.0,
             y: (v0.y + v1.y + v2.y) / 3.0,
@@ -9023,7 +9172,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ],
             depth: depth(center, &camera),
             color,
-            opacity: 1.0,
+            opacity,
           });
         }
       }

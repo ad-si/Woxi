@@ -4835,16 +4835,21 @@ fn parse_expression_inner(
         op.as_str(),
         "=="
           | "\u{2A75}"
+          | "\\[Equal]"
+          | "\u{F431}"
           | "!="
           | "\u{2260}"
+          | "\\[NotEqual]"
           | "<"
           | "<="
           | "\u{2264}"
           | "\u{2A7D}"
+          | "\\[LessEqual]"
           | ">"
           | ">="
           | "\u{2265}"
           | "\u{2A7E}"
+          | "\\[GreaterEqual]"
           | "==="
           | "=!="
       )
@@ -4855,12 +4860,16 @@ fn parse_expression_inner(
       let comp_ops: Vec<ComparisonOp> = operators
         .iter()
         .map(|op| match op.as_str() {
-          "==" | "\u{2A75}" => ComparisonOp::Equal,
-          "!=" | "\u{2260}" => ComparisonOp::NotEqual,
+          "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" => ComparisonOp::Equal,
+          "!=" | "\u{2260}" | "\\[NotEqual]" => ComparisonOp::NotEqual,
           "<" => ComparisonOp::Less,
-          "<=" | "\u{2264}" | "\u{2A7D}" => ComparisonOp::LessEqual,
+          "<=" | "\u{2264}" | "\u{2A7D}" | "\\[LessEqual]" => {
+            ComparisonOp::LessEqual
+          }
           ">" => ComparisonOp::Greater,
-          ">=" | "\u{2265}" | "\u{2A7E}" => ComparisonOp::GreaterEqual,
+          ">=" | "\u{2265}" | "\u{2A7E}" | "\\[GreaterEqual]" => {
+            ComparisonOp::GreaterEqual
+          }
           "===" => ComparisonOp::SameQ,
           "=!=" => ComparisonOp::UnsameQ,
           _ => ComparisonOp::Equal,
@@ -5621,6 +5630,15 @@ pub const CONTINUING_NAMED_OPERATORS: &[&str] = &[
   "\u{221A}",
   "\\[CubeRoot]",
   "\u{221B}",
+  "\\[Rule]",
+  "\u{F522}",
+  "\\[RuleDelayed]",
+  "\u{F51F}",
+  "\\[Equal]",
+  "\u{F431}",
+  "\\[NotEqual]",
+  "\\[LessEqual]",
+  "\\[GreaterEqual]",
 ];
 
 /// Does this line's code (whitespace already squeezed out) end with a named
@@ -5645,15 +5663,16 @@ fn operator_precedence(op: &str) -> u8 {
     // so `lhs /; test :> rhs` is `RuleDelayed[Condition[lhs, test], rhs]` and
     // `lhs :> rhs /; test` is `RuleDelayed[lhs, Condition[rhs, test]]`.
     "/;" => 12,
-    "->" | "\u{2192}" | ":>" => 11, // Rule/RuleDelayed (lower than boolean operators)
-    "||" => 15,                     // Or
-    "&&" => 18,                     // And
-    "\\[And]" | "\u{2227}" => 18,   // \[And] (same as &&)
-    "\\[Nand]" | "\u{22BC}" => 18,  // \[Nand] (And level)
-    "\\[Xor]" | "\u{22BB}" => 16,   // \[Xor] (between Or and And)
-    "\\[Or]" | "\u{2228}" => 15,    // \[Or] (same as ||)
-    "\\[Nor]" | "\u{22BD}" => 15,   // \[Nor] (Or level)
-    "\\[Equivalent]" | "\u{29E6}" => 14, // \[Equivalent] (below Or)
+    "->" | "\u{2192}" | "\\[Rule]" | "\u{F522}" | ":>" | "\\[RuleDelayed]"
+    | "\u{F51F}" => 11, // Rule/RuleDelayed (lower than boolean operators)
+    "||" => 15,                              // Or
+    "&&" => 18,                              // And
+    "\\[And]" | "\u{2227}" => 18,            // \[And] (same as &&)
+    "\\[Nand]" | "\u{22BC}" => 18,           // \[Nand] (And level)
+    "\\[Xor]" | "\u{22BB}" => 16,            // \[Xor] (between Or and And)
+    "\\[Or]" | "\u{2228}" => 15,             // \[Or] (same as ||)
+    "\\[Nor]" | "\u{22BD}" => 15,            // \[Nor] (Or level)
+    "\\[Equivalent]" | "\u{29E6}" => 14,     // \[Equivalent] (below Or)
     "\\[Implies]" | "\u{F523}" => 13, // \[Implies] (lowest logical, right-assoc)
     "\\[NotElement]" | "\u{2209}" => 21, // NotElement (same level as comparisons)
     "\\[ReverseElement]" | "\u{220B}" => 21, // ReverseElement (same level as comparisons)
@@ -5677,8 +5696,10 @@ fn operator_precedence(op: &str) -> u8 {
     // the right operand absorbs y, y = 1, y /; z, y -> 1. Place at TagSet
     // level so its rhs stays maximally permissive.
     "\\[Function]" | "\u{F4A1}" | "|->" => 3,
-    "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | "\u{2A7D}" | ">"
-    | ">=" | "\u{2265}" | "\u{2A7E}" | "===" | "=!=" => 21, // Comparisons
+    "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "!=" | "\u{2260}"
+    | "\\[NotEqual]" | "<" | "<=" | "\u{2264}" | "\u{2A7D}"
+    | "\\[LessEqual]" | ">" | ">=" | "\u{2265}" | "\u{2A7E}"
+    | "\\[GreaterEqual]" | "===" | "=!=" => 21, // Comparisons
     "~~" => 24,      // StringExpression (lower than Alternatives)
     "|" => 27, // Alternatives (higher than StringExpression, Or, And, Rule)
     "+" | "-" => 30, // Plus/Minus
@@ -5770,7 +5791,11 @@ fn build_expr_with_precedence(
       || op_str == "/*"
       || op_str == "->"
       || op_str == "\u{2192}"
+      || op_str == "\\[Rule]"
+      || op_str == "\u{F522}"
       || op_str == ":>"
+      || op_str == "\\[RuleDelayed]"
+      || op_str == "\u{F51F}"
       || op_str == "\\[RightTee]"
       || op_str == "\u{22A2}"
       || op_str == "\\[Implies]"
@@ -6223,11 +6248,11 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       name: "Dot".to_string(),
       args: vec![left.clone(), right.clone()].into(),
     },
-    "->" | "\u{2192}" => Expr::Rule {
+    "->" | "\u{2192}" | "\\[Rule]" | "\u{F522}" => Expr::Rule {
       pattern: Box::new(left.clone()),
       replacement: Box::new(right.clone()),
     },
-    ":>" => Expr::RuleDelayed {
+    ":>" | "\\[RuleDelayed]" | "\u{F51F}" => Expr::RuleDelayed {
       pattern: Box::new(left.clone()),
       replacement: Box::new(right.clone()),
     },
@@ -6310,15 +6335,21 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
         }
       }
     }
-    "==" | "\u{2A75}" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}"
-    | "\u{2A7D}" | ">" | ">=" | "\u{2265}" | "\u{2A7E}" | "===" | "=!=" => {
+    "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "!=" | "\u{2260}"
+    | "\\[NotEqual]" | "<" | "<=" | "\u{2264}" | "\u{2A7D}"
+    | "\\[LessEqual]" | ">" | ">=" | "\u{2265}" | "\u{2A7E}"
+    | "\\[GreaterEqual]" | "===" | "=!=" => {
       let comp_op = match op_str {
-        "==" | "\u{2A75}" => ComparisonOp::Equal,
-        "!=" | "\u{2260}" => ComparisonOp::NotEqual,
+        "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" => ComparisonOp::Equal,
+        "!=" | "\u{2260}" | "\\[NotEqual]" => ComparisonOp::NotEqual,
         "<" => ComparisonOp::Less,
-        "<=" | "\u{2264}" | "\u{2A7D}" => ComparisonOp::LessEqual,
+        "<=" | "\u{2264}" | "\u{2A7D}" | "\\[LessEqual]" => {
+          ComparisonOp::LessEqual
+        }
         ">" => ComparisonOp::Greater,
-        ">=" | "\u{2265}" | "\u{2A7E}" => ComparisonOp::GreaterEqual,
+        ">=" | "\u{2265}" | "\u{2A7E}" | "\\[GreaterEqual]" => {
+          ComparisonOp::GreaterEqual
+        }
         "===" => ComparisonOp::SameQ,
         "=!=" => ComparisonOp::UnsameQ,
         _ => ComparisonOp::Equal,
