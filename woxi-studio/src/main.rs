@@ -15863,4 +15863,122 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`theta$$ = 0, $CellContext`view$$ = 
       "unchecking the axes toggle must hide the axis lines"
     );
   }
+
+  /// End-to-end regression for the shape of the "Compound of Two
+  /// Icosahedra" Demonstration: a stored `Manipulate` whose body is a
+  /// flat sequence of `;`-separated assignments (no `Module`) building
+  /// two `GraphicsComplex`es from `PolyhedronData[name, "VertexCoordinates"]`
+  /// / `Polygon[PolyhedronData[name, "FaceIndices"]]`, rotating one by a
+  /// fixed `ArcTan[...]` angle around one axis and then by a
+  /// slider-controlled angle around another, scaling both by a
+  /// `factor*{1, 1, 1}` triple (one a near-1 constant nudge, the other
+  /// driven by a second slider), and combining the colored pieces in a
+  /// `Graphics3D` with `ViewPoint`/`ViewAngle`/`SphericalRegion`/`Boxed`/
+  /// `PlotRange` options. Driven by two continuous sliders with text
+  /// labels, one ascending and one descending (`max` to `min`), plus a
+  /// `TrackedSymbols` option.
+  #[test]
+  fn demonstration_polyhedron_compound_manipulate_rotates_and_scales() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[p1 = GraphicsComplex[PolyhedronData[\"Tetrahedron\", \"VertexCoordinates\"], Polygon[PolyhedronData[\"Tetrahedron\", \"FaceIndices\"]]]; p1a = Rotate[p1, ArcTan[1/2], {1, 0, 0}]; p1b = Scale[Rotate[p1a, -spin, {0, 1, 0}], 1.002*{1, 1, 1}, {0, 0, 0}]; p2 = Scale[GraphicsComplex[PolyhedronData[\"Cube\", \"VertexCoordinates\"], Polygon[PolyhedronData[\"Cube\", \"FaceIndices\"]]], grow*{1, 1, 1}, {0, 0, 0}]; Graphics3D[{p1a, {Blue, p1b}, {Orange, p2}}, Boxed -> False, SphericalRegion -> True, ViewAngle -> Pi/24, ImageSize -> {380, 380}, ViewPoint -> {3, -8, 3}, PlotRange -> 1.3*{{-1, 1}, {-1, 1}, {-1, 1}}], {{grow, 1.5, \"cube size\"}, 0.4, 2.0}, {{spin, Pi/2, \"rotate tetrahedron\"}, Pi/2, 0}, TrackedSymbols :> {grow, spin}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`grow$$ = 1.5, $CellContext`spin$$ = Pi/2}, DynamicBox[\[Ellipsis]]]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the two rotated/scaled polyhedron pieces must draw"
+    );
+
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: grow_name,
+          label: grow_label,
+          min: grow_min,
+          max: grow_max,
+          current: grow_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: spin_name,
+          label: spin_label,
+          min: spin_min,
+          max: spin_max,
+          current: spin_now,
+          ..
+        },
+      ] => {
+        assert_eq!(grow_name.as_str(), "grow");
+        assert_eq!(grow_label.as_str(), "cube size");
+        assert_eq!(*grow_min, 0.4);
+        assert_eq!(*grow_max, 2.0);
+        assert_eq!(*grow_now, 1.5);
+        assert_eq!(spin_name.as_str(), "spin");
+        assert_eq!(spin_label.as_str(), "rotate tetrahedron");
+        // The spin slider's spec range descends (max to min), matching
+        // the source demonstration's rotation control.
+        assert!((*spin_min - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+        assert_eq!(*spin_max, 0.0);
+        assert!((*spin_now - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the pieces must render")
+    };
+
+    let initial = render(&widget);
+
+    // Dragging the cube-size slider changes the cube's scale.
+    match &mut widget.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 2.0,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    let grown_render = render(&widget);
+    assert_ne!(
+      initial, grown_render,
+      "moving the cube-size slider must change the rendered picture"
+    );
+
+    // Dragging the rotation slider to its other end rotates the
+    // tetrahedron piece around a different axis, also changing the
+    // picture again.
+    match &mut widget.controls[1] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 0.0,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    let spun_render = render(&widget);
+    assert_ne!(
+      grown_render, spun_render,
+      "moving the rotation slider must change the rendered picture"
+    );
+  }
 }
