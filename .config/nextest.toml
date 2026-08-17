@@ -41,6 +41,26 @@ slow-timeout = { period = "120s", terminate-after = 1 }
 filter = 'test(fourier_matrix_boundary_materializes)'
 slow-timeout = { period = "90s", terminate-after = 1 }
 
+# `two_species_competition_manipulate_builds_widget` solves for equilibria
+# with `Solve`, classifies their stability, and integrates a phase portrait
+# of streamlines with `NDSolve` to build its widget: ~38s standalone in
+# debug builds on this machine, already past the default 20s timeout with
+# no contention at all (a pre-existing gap — this test had no override).
+# Give it a wider window.
+[[profile.default.overrides]]
+filter = 'test(two_species_competition_manipulate_builds_widget)'
+slow-timeout = { period = "90s", terminate-after = 1 }
+
+# `demonstration_sphere_torus_segments_manipulate_reshapes_and_spreads`
+# renders a `Table` of `ParametricPlot3D` lune surfaces three times (initial
+# render, after toggling full-torus, after moving the spread slider), each
+# doubled by a direct re-evaluation to compare pictures: ~14s standalone in
+# debug builds, close enough to the default 20s timeout to time out under
+# full parallel load. Give it a wider window.
+[[profile.default.overrides]]
+filter = 'test(demonstration_sphere_torus_segments_manipulate_reshapes_and_spreads)'
+slow-timeout = { period = "60s", terminate-after = 1 }
+
 # The remaining (non-`#[ignore]`d) RosettaCode script snapshots run a few
 # seconds in debug builds; under full parallel load they can brush past the
 # default 20s timeout. Give them a safety ceiling. The genuinely heavy
