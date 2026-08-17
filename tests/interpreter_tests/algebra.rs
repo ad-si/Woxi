@@ -1596,7 +1596,7 @@ mod factor {
   fn large_coefficient_sextics() {
     assert_eq!(
       interpret("Factor[5184 x^6 - 153 x^4 + 130 x^2 - 9]").unwrap(),
-      "(-3 + 2*x + 21*x^2 + 72*x^3)*(3 + 2*x - 21*x^2 + 72*x^3)"
+      "(3 + 2*x - 21*x^2 + 72*x^3)*(-3 + 2*x + 21*x^2 + 72*x^3)"
     );
     assert_eq!(
       interpret("Factor[5184 x^6 - 18729 x^4 + 23992 x^2 - 8464]").unwrap(),

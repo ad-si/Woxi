@@ -132,6 +132,19 @@ fn reorder_factored_product(result: Expr) -> Expr {
     extract_poly_coeffs(base, &var).map(|c| c.len() - 1)
   }
 
+  // A sum written out as such — not a power of one. The canonical tie-break
+  // below only applies between two plain sums; a repeated factor keeps its
+  // construction position (`(-1 + x)*(1 + x)^2`).
+  fn is_bare_sum(e: &Expr) -> bool {
+    matches!(
+      e,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
+        ..
+      }
+    ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+  }
+
   let mut swapped_any = false;
   loop {
     let mut swapped = false;
@@ -142,10 +155,18 @@ fn reorder_factored_product(result: Expr) -> Expr {
         order_monomial_vs_sum(b, a) == Some(Ordering::Less)
         // monomial before sum, but the sum sorts first
         || order_monomial_vs_sum(a, b) == Some(Ordering::Greater)
-        // both sums with known degrees: ascending degree
+        // both sums with known degrees: ascending degree, and on a tie the
+        // canonical order of the two sums — which compares them from their
+        // leading term backwards, so `Factor[5184*x^6 - 153*x^4 + 130*x^2
+        // - 9]` writes the `-21*x^2` cubic before the `+21*x^2` one.
         || matches!(
           (sum_degree(a), sum_degree(b)),
-          (Some(da), Some(db)) if da > db
+          (Some(da), Some(db))
+            if da > db
+              || (da == db
+                && is_bare_sum(a)
+                && is_bare_sum(b)
+                && crate::functions::list_helpers_ast::compare_exprs(a, b) < 0)
         );
       if should_swap {
         factors.swap(i, i + 1);

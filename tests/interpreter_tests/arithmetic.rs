@@ -569,6 +569,30 @@ mod arithmetic {
       assert_eq!(interpret("Order[2*x, x]").unwrap(), "-1");
     }
 
+    // Two sums compare from their LAST term backwards, so the leading term
+    // decides and the constant only breaks a tie — all wolframscript-verified.
+    #[test]
+    fn order_sums_compare_from_the_leading_term() {
+      assert_eq!(interpret("Order[-3 + x^2, 3 + x]").unwrap(), "-1");
+      assert_eq!(interpret("Order[2 + x^3, 1 + x^4]").unwrap(), "1");
+      // Element-wise comparison beats the shorter length.
+      assert_eq!(interpret("Order[3 + x^5, 1 + x + x^2]").unwrap(), "-1");
+      // Running out of terms first sorts first.
+      assert_eq!(interpret("Order[x + x^2, 1 + x + x^2]").unwrap(), "1");
+      assert_eq!(interpret("Order[1 + x^2, 1 + x + x^2]").unwrap(), "1");
+      assert_eq!(
+        interpret(
+          "Order[3 + 2*x - 21*x^2 + 72*x^3, -3 + 2*x + 21*x^2 + 72*x^3]"
+        )
+        .unwrap(),
+        "1"
+      );
+      assert_eq!(
+        interpret("Sort[{-3 + x^2, 3 + x}]").unwrap(),
+        "{3 + x, -3 + x^2}"
+      );
+    }
+
     #[test]
     fn bare_identifier_keeps_first_when_keys_tie() {
       // Plus[x, y].sort_key = "y" ties with `y`; bare identifier wins

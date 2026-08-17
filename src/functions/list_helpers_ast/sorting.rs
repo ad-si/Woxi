@@ -1462,6 +1462,31 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
     return 0;
   }
 
+  // Two sums: like products, Wolfram compares them from their LAST term
+  // backwards, so the leading (highest) terms decide and the constant only
+  // breaks a tie — Order[-3 + x^2, 3 + x] = -1 (x < x^2), Order[2 + x^3,
+  // 1 + x^4] = 1, Order[3 + x^5, 1 + x + x^2] = -1 (element-wise beats the
+  // shorter length). A sum that runs out of terms first comes first:
+  // Order[x + x^2, 1 + x + x^2] = 1. All wolframscript-verified.
+  if let (Some(ta), Some(tb)) =
+    (plus_terms_for_order(a), plus_terms_for_order(b))
+  {
+    let mut i = ta.len();
+    let mut j = tb.len();
+    while i > 0 && j > 0 {
+      let ord = compare_exprs(ta[i - 1], tb[j - 1]);
+      if ord != 0 {
+        return ord;
+      }
+      i -= 1;
+      j -= 1;
+    }
+    if i != j {
+      return if i < j { 1 } else { -1 };
+    }
+    return 0;
+  }
+
   // Wolfram's canonical order compares terms with their number-literal
   // coefficients stripped first — Order[2*Sqrt[2], Sqrt[11]] = 1 because
   // Sqrt[2] < Sqrt[11], Order[-Sqrt[11], 2*Sqrt[6]] = -1 — and only breaks
@@ -2192,6 +2217,44 @@ pub fn wolfram_string_order(a: &str, b: &str) -> i64 {
 fn expr_le(a: &Expr, b: &Expr) -> bool {
   // Use canonical_cmp for consistency with Sort
   !matches!(canonical_cmp(a, b), std::cmp::Ordering::Greater)
+}
+
+/// The terms of a sum, flattened, for the canonical order's
+/// last-term-first comparison. `None` for anything that is not a sum. A
+/// `a - b` binary node is rejected rather than flattened: its second term
+/// carries an implicit negation that the borrowed terms cannot express, and
+/// evaluated sums always arrive as `Plus[...]` with explicit `-1` factors.
+fn plus_terms_for_order(e: &Expr) -> Option<Vec<&Expr>> {
+  fn flatten<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) -> bool {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Plus" && args.len() >= 2 =>
+      {
+        for a in args {
+          flatten(a, out);
+        }
+        true
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left,
+        right,
+      } => {
+        flatten(left, out);
+        flatten(right, out);
+        true
+      }
+      other => {
+        out.push(other);
+        false
+      }
+    }
+  }
+  let mut terms = Vec::new();
+  if !flatten(e, &mut terms) || terms.len() < 2 {
+    return None;
+  }
+  Some(terms)
 }
 
 /// The factors of a product, flattened, for the canonical order's
