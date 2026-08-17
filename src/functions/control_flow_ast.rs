@@ -378,62 +378,107 @@ fn hold_form(expr: &Expr) -> Expr {
   call1("HoldForm", expr.clone())
 }
 
-/// Call the trace function on an expression, unconditionally.
-fn do_trace(expr: &Expr, f: &Expr) -> Result<(), InterpreterError> {
-  let wrapped = hold_form(expr);
-  apply_function_to_arg(f, &wrapped)?;
+/// What to do with each sub-expression a trace visits.
+enum TraceSink<'a> {
+  /// TraceScan[f, …] — apply `f` to the HoldForm-wrapped sub-expression.
+  Apply(&'a Expr),
+  /// TracePrint[…] — print the sub-expression, indented by its depth in the
+  /// evaluation, matching the nesting `Trace` would produce.
+  Print,
+}
+
+/// Deliver an expression to the trace sink, unconditionally.
+/// `depth` is the expression's nesting level in the evaluation (1 for the
+/// traced expression itself) and is only used for TracePrint's indentation.
+fn do_trace(
+  expr: &Expr,
+  sink: &TraceSink,
+  depth: usize,
+) -> Result<(), InterpreterError> {
+  match sink {
+    TraceSink::Apply(f) => {
+      let wrapped = hold_form(expr);
+      apply_function_to_arg(f, &wrapped)?;
+    }
+    TraceSink::Print => {
+      let line = format!(
+        "{}{}",
+        " ".repeat(depth),
+        crate::syntax::expr_to_output(expr)
+      );
+      if !crate::is_quiet_print() {
+        println!("{line}");
+      }
+      crate::capture_stdout(&line);
+    }
+  }
   Ok(())
 }
 
-/// Call the trace function on an expression if it matches the form filter.
+/// Deliver an expression to the trace sink if it matches the form filter.
 /// Returns true if the expression was traced.
 fn maybe_trace(
   expr: &Expr,
-  f: &Expr,
+  sink: &TraceSink,
   form: Option<&Expr>,
+  depth: usize,
 ) -> Result<bool, InterpreterError> {
   if let Some(form_pat) = form
     && crate::evaluator::match_pattern(expr, form_pat).is_none()
   {
     return Ok(false);
   }
-  do_trace(expr, f)?;
+  do_trace(expr, sink, depth)?;
   Ok(true)
 }
 
-/// Rebuild an expression from a head name and children as a FunctionCall.
+/// Rebuild an expression from a head name and its evaluated children.
+/// Uses the canonical `Expr` variant for the head so the rebuilt step prints
+/// like the original (`{2, 4}`, not `List[2, 4]`).
 fn rebuild_from_head(head: &str, children: &[Expr]) -> Expr {
-  unevaluated(head, children)
+  crate::functions::expr_form::compose_expr(head, children)
 }
 
-/// Recursively trace-evaluate an expression, calling f on each sub-expression.
+/// Recursively trace-evaluate an expression, handing every sub-expression to
+/// `sink`. `depth` is the nesting level of `expr` in the evaluation; the head
+/// and the arguments sit one level deeper, while the rebuilt expression and
+/// the result stay at the same level (mirroring the list nesting of `Trace`).
 fn trace_eval(
   expr: &Expr,
-  f: &Expr,
+  sink: &TraceSink,
   form: Option<&Expr>,
+  depth: usize,
 ) -> Result<Expr, InterpreterError> {
   // Trace the input expression
-  maybe_trace(expr, f, form)?;
+  maybe_trace(expr, sink, form, depth)?;
 
   match decompose_expr(expr) {
     ExprForm::Atom(_) => {
       // Atoms evaluate to themselves (or to their value)
       let result = evaluate_expr_to_expr(expr)?;
       if expr_to_string(&result) != expr_to_string(expr) {
-        maybe_trace(&result, f, form)?;
+        maybe_trace(&result, sink, form, depth)?;
       }
       Ok(result)
     }
     ExprForm::Composite { head, children } => {
       // Trace the head; remember if it matched the form
       let head_expr = Expr::Identifier(head.clone());
-      let head_matched = maybe_trace(&head_expr, f, form)?;
+      let head_matched = maybe_trace(&head_expr, sink, form, depth + 1)?;
 
-      // Recursively trace-evaluate each child
+      // Recursively trace-evaluate each child. Arguments the head holds are
+      // reported but left untouched — evaluating them here would defeat the
+      // Hold attribute (`TracePrint[x = x + 1]` must not turn the assignment
+      // target into `0 = 1`).
       let mut evaluated_children = Vec::new();
       let mut children_changed = false;
-      for child in &children {
-        let eval_child = trace_eval(child, f, form)?;
+      for (index, child) in children.iter().enumerate() {
+        let eval_child = if crate::evaluator::holds_argument_at(&head, index) {
+          maybe_trace(child, sink, form, depth + 1)?;
+          child.clone()
+        } else {
+          trace_eval(child, sink, form, depth + 1)?
+        };
         if expr_to_string(&eval_child) != expr_to_string(child) {
           children_changed = true;
         }
@@ -445,9 +490,9 @@ fn trace_eval(
       if children_changed {
         // When head matched, always trace rebuilt; otherwise check form
         if head_matched {
-          do_trace(&rebuilt, f)?;
+          do_trace(&rebuilt, sink, depth)?;
         } else {
-          maybe_trace(&rebuilt, f, form)?;
+          maybe_trace(&rebuilt, sink, form, depth)?;
         }
       }
 
@@ -458,9 +503,9 @@ fn trace_eval(
       if result_str != rebuilt_str {
         // When head matched, always trace result; otherwise check form
         if head_matched {
-          do_trace(&result, f)?;
+          do_trace(&result, sink, depth)?;
         } else {
-          maybe_trace(&result, f, form)?;
+          maybe_trace(&result, sink, form, depth)?;
         }
       }
 
@@ -482,5 +527,16 @@ pub fn trace_scan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
-  trace_eval(expr, &f, form)
+  trace_eval(expr, &TraceSink::Apply(&f), form, 1)
+}
+
+/// TracePrint[expr] — print every sub-expression used while evaluating expr,
+/// indented by one space per level of the evaluation.
+/// TracePrint[expr, form] — print only sub-expressions matching form.
+/// Returns the evaluated result of expr.
+pub fn trace_print_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let expr = &args[0];
+  let form = args.get(1);
+
+  trace_eval(expr, &TraceSink::Print, form, 1)
 }

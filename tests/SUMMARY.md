@@ -1256,6 +1256,7 @@
     - [`TagSetDelayed`](expressions/TagSetDelayed.md)
     - [`TensorDimensions`](expressions/TensorDimensions.md)
     - [`Trace`](expressions/Trace.md)
+    - [`TracePrint`](expressions/TracePrint.md)
     - [`Undefined`](expressions/Undefined.md)
     - [`UnderoverscriptBox`](expressions/UnderoverscriptBox.md)
     - [`UnderscriptBox`](expressions/UnderscriptBox.md)

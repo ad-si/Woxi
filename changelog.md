@@ -2,6 +2,13 @@
 
 # Unreleased
 
+- `TracePrint[expr]` prints every sub-expression used while evaluating `expr`,
+    indented by one space per level of the evaluation, and returns the result.
+    `TracePrint[expr, form]` restricts the printing to sub-expressions matching
+    `form`. Tracing now also respects `Hold` attributes, so
+    `TracePrint[x = x + 1]` no longer evaluates the assignment target —
+    the same fix applies to `TraceScan`, which additionally used to print the
+    rebuilt step of a list in `List[…]` instead of `{…}` form.
 - Upvalues on `Plus`, `Times` and `Power` also fire for the arithmetic
     shorthands that expand to those heads. `-a` is `Times[-1, a]`, `a - b` is
     `Plus[a, Times[-1, b]]` and `a / b` is `Times[a, Power[b, -1]]`, so with

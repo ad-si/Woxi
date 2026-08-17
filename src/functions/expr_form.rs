@@ -414,6 +414,73 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
   }
 }
 
+/// Rebuild an expression from the `head` / `children` pair that
+/// `decompose_expr` produces, restoring the dedicated `Expr` variant whenever
+/// one exists.
+///
+/// `Expr::FunctionCall` is the generic fallback, but it is not always
+/// interchangeable with the dedicated variant: `FunctionCall { name: "List" }`
+/// renders as `List[1, 2]` while `Expr::List` renders as `{1, 2}`. Rebuilding
+/// through this function keeps a recomposed expression printing exactly like
+/// the original one.
+///
+/// Associative arithmetic (`Plus`, `Times`, `Power`, …) is deliberately left
+/// as a `FunctionCall`: `decompose_expr` flattens those, so there is no unique
+/// binary tree to restore, and the flat form already renders in operator
+/// notation (`Plus[8, 5]` → `8 + 5`).
+pub fn compose_expr(head: &str, children: &[Expr]) -> Expr {
+  let two = |f: fn(Box<Expr>, Box<Expr>) -> Expr| {
+    f(Box::new(children[0].clone()), Box::new(children[1].clone()))
+  };
+  let comparison = |op: ComparisonOp| Expr::Comparison {
+    operands: children.to_vec(),
+    operators: vec![op; children.len() - 1],
+  };
+
+  match (head, children.len()) {
+    ("List", _) => Expr::List(children.to_vec().into()),
+    ("CompoundExpression", _) => Expr::CompoundExpr(children.to_vec()),
+    ("Rule", 2) => two(|pattern, replacement| Expr::Rule {
+      pattern,
+      replacement,
+    }),
+    ("RuleDelayed", 2) => two(|pattern, replacement| Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }),
+    ("ReplaceAll", 2) => two(|expr, rules| Expr::ReplaceAll { expr, rules }),
+    ("ReplaceRepeated", 2) => {
+      two(|expr, rules| Expr::ReplaceRepeated { expr, rules })
+    }
+    ("Map", 2) => two(|func, list| Expr::Map { func, list }),
+    ("Apply", 2) => two(|func, list| Expr::Apply { func, list }),
+    ("MapApply", 2) => two(|func, list| Expr::MapApply { func, list }),
+    ("Not", 1) => Expr::UnaryOp {
+      op: UnaryOperator::Not,
+      operand: Box::new(children[0].clone()),
+    },
+    // Part[expr, i, j, …] re-nests into expr[[i]][[j]]…, the shape
+    // `flatten_part` collapsed.
+    ("Part", n) if n >= 2 => {
+      children[1..]
+        .iter()
+        .fold(children[0].clone(), |base, index| Expr::Part {
+          expr: Box::new(base),
+          index: Box::new(index.clone()),
+        })
+    }
+    ("Equal", n) if n >= 2 => comparison(ComparisonOp::Equal),
+    ("Unequal", n) if n >= 2 => comparison(ComparisonOp::NotEqual),
+    ("Less", n) if n >= 2 => comparison(ComparisonOp::Less),
+    ("LessEqual", n) if n >= 2 => comparison(ComparisonOp::LessEqual),
+    ("Greater", n) if n >= 2 => comparison(ComparisonOp::Greater),
+    ("GreaterEqual", n) if n >= 2 => comparison(ComparisonOp::GreaterEqual),
+    ("SameQ", n) if n >= 2 => comparison(ComparisonOp::SameQ),
+    ("UnsameQ", n) if n >= 2 => comparison(ComparisonOp::UnsameQ),
+    _ => unevaluated(head, children),
+  }
+}
+
 /// Helper: render a rational (num, denom) pair in FullForm notation.
 fn render_rational_full_form(numer: i128, denom: i128) -> String {
   // Reduce to lowest terms

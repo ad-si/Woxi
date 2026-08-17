@@ -2452,6 +2452,125 @@ mod trace_scan {
     assert_eq!(result.result, "3");
     assert_eq!(result.stdout.trim(), "");
   }
+
+  #[test]
+  fn trace_scan_rebuilds_list_canonically() {
+    clear_state();
+    // The rebuilt step is a list, so it must print as `{2, 4}` and not as
+    // `List[2, 4]` — and must therefore coincide with the result, which is
+    // printed only once.
+    let result =
+      woxi::interpret_with_stdout("TraceScan[Print, {1 + 1, 2 + 2}]").unwrap();
+    assert_eq!(result.result, "{2, 4}");
+    assert_eq!(
+      result.stdout.trim(),
+      "HoldForm[{1 + 1, 2 + 2}]\nHoldForm[List]\n\
+       HoldForm[1 + 1]\nHoldForm[Plus]\nHoldForm[1]\nHoldForm[1]\n\
+       HoldForm[2]\nHoldForm[2 + 2]\nHoldForm[Plus]\nHoldForm[2]\n\
+       HoldForm[2]\nHoldForm[4]\nHoldForm[{2, 4}]"
+    );
+  }
+}
+
+mod trace_print {
+  use super::*;
+
+  #[test]
+  fn basic_trace_print_addition() {
+    clear_state();
+    let result = woxi::interpret_with_stdout("TracePrint[2 + 3]").unwrap();
+    assert_eq!(result.result, "5");
+    // Every sub-expression is printed, indented by one space per level of
+    // the evaluation, matching `wolframscript -code 'TracePrint[2 + 3]'`.
+    assert_eq!(result.stdout, " 2 + 3\n  Plus\n  2\n  3\n 5\n");
+  }
+
+  #[test]
+  fn trace_print_nested_indentation() {
+    clear_state();
+    // The nested Power is one level deeper than the enclosing Plus.
+    let result = woxi::interpret_with_stdout("TracePrint[2^3 + 5]").unwrap();
+    assert_eq!(result.result, "13");
+    assert_eq!(
+      result.stdout,
+      " 2^3 + 5\n  Plus\n  2^3\n   Power\n   2\n   3\n  8\n  5\n 8 + 5\n 13\n"
+    );
+  }
+
+  #[test]
+  fn trace_print_atom() {
+    clear_state();
+    let result = woxi::interpret_with_stdout("TracePrint[3]").unwrap();
+    assert_eq!(result.result, "3");
+    assert_eq!(result.stdout, " 3\n");
+  }
+
+  #[test]
+  fn trace_print_undefined_function() {
+    clear_state();
+    let result = woxi::interpret_with_stdout("TracePrint[f[1, 2]]").unwrap();
+    assert_eq!(result.result, "f[1, 2]");
+    assert_eq!(result.stdout, " f[1, 2]\n  f\n  1\n  2\n");
+  }
+
+  #[test]
+  fn trace_print_list() {
+    clear_state();
+    // The rebuilt list prints as `{2, 4}`, not `List[2, 4]`.
+    let result =
+      woxi::interpret_with_stdout("TracePrint[{1 + 1, 2 + 2}]").unwrap();
+    assert_eq!(result.result, "{2, 4}");
+    assert_eq!(
+      result.stdout,
+      " {1 + 1, 2 + 2}\n  List\n  1 + 1\n   Plus\n   1\n   1\n  2\n  \
+       2 + 2\n   Plus\n   2\n   2\n  4\n {2, 4}\n"
+    );
+  }
+
+  #[test]
+  fn trace_print_with_form() {
+    clear_state();
+    // Only sub-expressions matching the form are printed, but each keeps
+    // the indentation of its actual evaluation level.
+    let result =
+      woxi::interpret_with_stdout("TracePrint[2^3 + 5, _Integer]").unwrap();
+    assert_eq!(result.result, "13");
+    assert_eq!(result.stdout, "   2\n   3\n  8\n  5\n 13\n");
+  }
+
+  #[test]
+  fn trace_print_non_matching_form() {
+    clear_state();
+    let result =
+      woxi::interpret_with_stdout("TracePrint[1 + 2, _String]").unwrap();
+    assert_eq!(result.result, "3");
+    assert_eq!(result.stdout, "");
+  }
+
+  #[test]
+  fn trace_print_returns_evaluated_result() {
+    clear_state();
+    assert_eq!(interpret("TracePrint[2 + 3]").unwrap(), "5");
+  }
+
+  #[test]
+  fn trace_print_holds_its_argument() {
+    clear_state();
+    // HoldAll is what lets TracePrint see the unevaluated input.
+    assert_eq!(
+      interpret("Attributes[TracePrint]").unwrap(),
+      "{HoldAll, Protected}"
+    );
+  }
+
+  #[test]
+  fn trace_print_side_effects_run_once() {
+    clear_state();
+    // A traced side effect must not be evaluated twice.
+    let result =
+      woxi::interpret_with_stdout("x = 0; TracePrint[x = x + 1]; x").unwrap();
+    assert_eq!(result.result, "1");
+  }
 }
 
 mod piecewise {
