@@ -10501,6 +10501,91 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn switch_selected_multi_plot_manipulate_builds_widget() {
+    // End-to-end regression for a Manipulate whose body picks a color and a
+    // pair of curve coefficients via `Switch` on a `PopupMenu` selector,
+    // then `Show`s two `Plot`s together with a `Row`/`Style`/`Subscript`
+    // text `Epilog`, a scaled `ImageSize` list, and `LabelStyle`.
+    let code = "Manipulate[\
+      Module[{coeffA, coeffB, curveColor}, \
+        {coeffA, coeffB, curveColor} = Switch[material, \
+          1, {1.2, 0.4, Red}, \
+          2, {2.1, 0.9, Blue}, \
+          3, {0.6, 1.5, Darker[Green]}\
+        ]; \
+        Show[\
+          Plot[coeffA*Sin[coeffB*x + shift], {x, 0, 10}, \
+            PlotStyle -> {Thick, curveColor}, \
+            PlotRange -> {{0, 10}, {-3, 3}}, \
+            Frame -> True, \
+            FrameLabel -> {\"x\", \"amplitude\"}, \
+            Epilog -> {\
+              Text[Row[{Style[\"material\", Italic, Larger], \" = \", \
+                Part[{\"Alpha\", \"Beta\", \"Gamma\"}, material]}], {5, 2.5}], \
+              Text[Row[{Style[Subscript[\"A\", \"0\"], Italic, Larger], \
+                \" = \", coeffA}], {5, 2.1}]\
+            }\
+          ], \
+          Plot[coeffA*Cos[coeffB*x], {x, 0, 10}, PlotStyle -> {Dashed, Gray}], \
+          ImageSize -> 1.2*{400, 260}, \
+          LabelStyle -> 12\
+        ]\
+      ], \
+      {{material, 1, \"material\"}, {1 -> \"Alpha\", 2 -> \"Beta\", 3 -> \"Gamma\"}, \
+        ControlType -> PopupMenu}, \
+      {{shift, 0, \"phase shift\"}, 0, 6, Appearance -> \"Labeled\"}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Switch-selected multi-plot Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the Show'n curves"
+    );
+
+    // A popup selector (in notebook order) followed by a labeled slider.
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        label,
+        value_labels,
+        popup,
+        current_index,
+        ..
+      } => {
+        assert_eq!(label, "material");
+        assert_eq!(value_labels, &["Alpha", "Beta", "Gamma"]);
+        assert!(*popup, "ControlType -> PopupMenu must render a dropdown");
+        assert_eq!(*current_index, 0);
+      }
+      other => panic!("expected a discrete popup control, got {other:?}"),
+    }
+    match &state.controls[1] {
+      manipulate::ControlState::Continuous {
+        label, min, max, ..
+      } => {
+        assert_eq!(label, "phase shift");
+        assert_eq!((*min, *max), (0.0, 6.0));
+      }
+      other => panic!("expected a continuous slider, got {other:?}"),
+    }
+
+    // Switching material re-selects the Switch branch (a different curve
+    // color and coefficients) and must still render without error.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 2;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn oscilloscope_manipulate_builds_full_widget() {
     // End-to-end regression for the "Oscilloscope with Two Signal Inputs"
     // Demonstration: the loaded Input cell must build a live widget with
