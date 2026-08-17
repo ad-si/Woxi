@@ -2813,9 +2813,20 @@ mod traditional_form {
       interpret(r#"\!\(\*FormBox[SqrtBox["x"], StandardForm]\)"#).unwrap(),
       "Sqrt[x]"
     );
+    // A bare string box is source text, so its content is read as an
+    // expression: the box `"3"` is the number 3, and only a box whose text
+    // is itself quoted is the string "3".
     assert_eq!(
-      interpret(r#"\!\(\*FormBox["3", TraditionalForm]\)"#).unwrap(),
-      "3"
+      interpret(r#"Head[\!\(\*FormBox["3", TraditionalForm]\)]"#).unwrap(),
+      "Integer"
+    );
+    assert_eq!(
+      interpret(r#"\!\(\*FormBox["x + 1", TraditionalForm]\)"#).unwrap(),
+      "1 + x"
+    );
+    assert_eq!(
+      interpret(r#"Head[\!\(\*FormBox["\"3\"", TraditionalForm]\)]"#).unwrap(),
+      "String"
     );
     // Inside a layout the item becomes that expression instead of
     // degrading to a line of source text.

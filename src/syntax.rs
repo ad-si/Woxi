@@ -1700,6 +1700,15 @@ fn box_escape_to_expr(box_src: &str) -> Option<Expr> {
     return box_escape_to_expr(boxes)
       .or_else(|| string_to_expr(boxes.trim()).ok());
   }
+  // A bare string box carries source *text*, not a string value: the box
+  // `"3"` is the number 3, `"x + 1"` the sum, and only a box whose text is
+  // itself quoted (`"\"3\""`) is the string "3". Text that does not parse
+  // on its own falls through to the box readers below.
+  if let Some(inner) = src.strip_prefix('"').and_then(|r| r.strip_suffix('"'))
+    && let Ok(parsed) = string_to_expr(inner)
+  {
+    return Some(parsed);
+  }
   let text = crate::notebook::box_source_to_expression(src)?;
   string_to_expr(&text).ok()
 }
