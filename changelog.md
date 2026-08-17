@@ -2,6 +2,11 @@
 
 # Unreleased
 
+- `ParametricPlot3D`/`Plot3D`/`Graphics3D`'s `ViewPoint` and `ViewAngle`
+    options accept a `Dynamic[…]` wrapper (e.g. `ViewPoint -> Dynamic@vp`, the
+    shape a `Manipulate` control's binding takes) instead of silently
+    falling back to the default camera — `Dynamic` is `HoldFirst`, so it
+    needs its hold released before the wrapped vector/angle can be read.
 - `FileNames` takes a string pattern, not just a literal wildcard string:
     `FileNames["*.md" | "*.txt"]` and `FileNames[{"*.md", "*.txt"}]` list the
     files matching any of the given patterns (nested arbitrarily), and pattern

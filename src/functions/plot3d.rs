@@ -2646,8 +2646,25 @@ impl Affine3 {
 }
 
 /// Numeric `{x, y, z}` from an expression, evaluating each component.
+/// `Dynamic[expr, …]` in an option position (e.g. `ViewPoint ->
+/// Dynamic[var]` inside a `Manipulate`) stands for the current value of
+/// `expr` — Dynamic is HoldFirst, so the generic evaluator leaves it
+/// symbolic. Release the hold before evaluating so the option reads the
+/// control's value instead of silently falling back to the default.
+fn strip_dynamic(expr: &Expr) -> &Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      &args[0]
+    }
+    _ => expr,
+  }
+}
+
 fn eval_vec3(expr: &Expr) -> Option<[f64; 3]> {
-  let Expr::List(items) = &evaluate_expr_to_expr(expr).ok()? else {
+  let Expr::List(items) = &evaluate_expr_to_expr(strip_dynamic(expr)).ok()?
+  else {
     return None;
   };
   if items.len() != 3 {
@@ -4710,9 +4727,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         // `ViewAngle -> θ` (radians, or a `Quantity`/`Degree` product).
         "ViewAngle" => {
+          let replacement = strip_dynamic(replacement);
           if let Some(a) = try_eval_to_f64(
             &evaluate_expr_to_expr(replacement)
-              .unwrap_or_else(|_| replacement.as_ref().clone()),
+              .unwrap_or_else(|_| replacement.clone()),
           ) && a > 0.0
             && a < std::f64::consts::PI
           {
