@@ -41,15 +41,14 @@ slow-timeout = { period = "120s", terminate-after = 1 }
 filter = 'test(fourier_matrix_boundary_materializes)'
 slow-timeout = { period = "90s", terminate-after = 1 }
 
-# `two_species_competition_manipulate_builds_widget` solves for equilibria
-# with `Solve`, classifies their stability, and integrates a phase portrait
-# of streamlines with `NDSolve` to build its widget: ~38s standalone in
-# debug builds on this machine, already past the default 20s timeout with
-# no contention at all (a pre-existing gap — this test had no override).
+# `two_species_competition_manipulate_builds_widget` solves a two-equation
+# `Solve[..., Reals]` system, integrates it with `NDSolve`, and rasterizes a
+# `StreamPlot` vector field alongside the trajectory `Plot`: ~37s standalone
+# in debug builds, well past the default 20s timeout under parallel load.
 # Give it a wider window.
 [[profile.default.overrides]]
 filter = 'test(two_species_competition_manipulate_builds_widget)'
-slow-timeout = { period = "90s", terminate-after = 1 }
+slow-timeout = { period = "120s", terminate-after = 1 }
 
 # `demonstration_sphere_torus_segments_manipulate_reshapes_and_spreads`
 # renders a `Table` of `ParametricPlot3D` lune surfaces three times (initial
