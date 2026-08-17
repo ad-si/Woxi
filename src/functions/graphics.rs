@@ -20368,7 +20368,7 @@ fn parse_manipulate_control(
           label_runs,
           popup: false,
           // A ColorSetter always shows its swatches as a row of buttons,
-          // never a dropdown.
+          // never a dropdown, and that row is always horizontal.
           setter_bar: true,
           slider: false,
           vertical: appearance_vertical,

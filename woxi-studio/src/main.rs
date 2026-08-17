@@ -10766,6 +10766,92 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn two_species_competition_manipulate_builds_widget() {
+    // End-to-end regression for the general category of two-species
+    // Lotka–Volterra *competition* Demonstrations (independently written,
+    // not copied from any specific one): a `Module` solves for the
+    // interior and boundary equilibria of a logistic competition system
+    // with `Solve`, classifies their stability from the sign of the
+    // Jacobian's determinant, integrates a sample trajectory with
+    // `NDSolve`, and combines a `StreamPlot` phase portrait (with
+    // `PercentForm`-labeled ticks) and the trajectory's `Plot` in a
+    // `GraphicsRow`, driven by six labeled sliders.
+    let code = "Manipulate[\
+      Module[{sys, jac, eqPts, stab, tMax = 60, sol, tick}, \
+        sys = {gA*p*(1 - p/capA - cAB*(capB/capA)*q/capB), \
+          gB*q*(1 - q/capB - cBA*(capA/capB)*p/capA)}; \
+        eqPts = Quiet[Solve[sys == {0, 0}, {p, q}, Reals]]; \
+        jac = D[sys, {{p, q}}]; \
+        stab = Table[Sign[Det[jac /. eqPts[[i]]]], {i, Length[eqPts]}]; \
+        sol = NDSolve[{\
+          p'[t] == (sys[[1]] /. {p -> p[t], q -> q[t]}), \
+          q'[t] == (sys[[2]] /. {p -> p[t], q -> q[t]}), \
+          p[0] == 0.3*capA, q[0] == 0.3*capB\
+        }, {p, q}, {t, 0, tMax}]; \
+        tick = Table[{f, PercentForm[f]}, {f, 0, 1, 0.25}]; \
+        GraphicsRow[{\
+          StreamPlot[\
+            sys /. {p -> x*capA, q -> y*capB}, {x, 0, 1}, {y, 0, 1}, \
+            FrameTicks -> {{tick, None}, {tick, None}}, \
+            PlotLabel -> If[AllTrue[stab, #1 < 0 &], \"stable coexistence\", \
+              \"one species dominates\"]\
+          ], \
+          Plot[Evaluate[{p[t]/capA, q[t]/capB} /. sol], {t, 0, tMax}, \
+            PlotRange -> {0, 1.05}, PlotStyle -> {Blue, Red}]\
+        }]\
+      ], \
+      {{gA, 0.5, \"growth rate species A\"}, 0.05, 1.5, 0.05}, \
+      {{gB, 0.5, \"growth rate species B\"}, 0.05, 1.5, 0.05}, \
+      {{capA, 100, \"carrying capacity A\"}, 20, 250, 5}, \
+      {{capB, 100, \"carrying capacity B\"}, 20, 250, 5}, \
+      {{cAB, 0.6, \"effect of B on A\"}, 0, 2, 0.01}, \
+      {{cBA, 0.5, \"effect of A on B\"}, 0, 2, 0.01}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the two-species competition Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the phase portrait and trajectory plot must draw"
+    );
+
+    let labels: Vec<&str> = state
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { label, .. } => label.as_str(),
+        other => panic!("expected a continuous slider, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      labels,
+      vec![
+        "growth rate species A",
+        "growth rate species B",
+        "carrying capacity A",
+        "carrying capacity B",
+        "effect of B on A",
+        "effect of A on B",
+      ]
+    );
+
+    // Raising the B-on-A competition coefficient re-solves the equilibria
+    // and re-renders without error.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[4]
+    {
+      *current = 1.2;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
   fn switch_selected_multi_plot_manipulate_builds_widget() {
     // End-to-end regression for a Manipulate whose body picks a color and a
     // pair of curve coefficients via `Switch` on a `PopupMenu` selector,
