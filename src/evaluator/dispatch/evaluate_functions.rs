@@ -10929,6 +10929,7 @@ fn evaluate_function_call_ast_inner(
         | "ControllerManipulate"
         | "Trigger"
         | "SetterBar"
+        | "ButtonBar"
         | "CheckboxBar"
         | "TogglerBar"
         | "RadioButton"

@@ -2537,7 +2537,7 @@ DeleteContents,option for DeleteDirectory,✅,Symbolic,2.0,2565
 PaletteNotebook,,🚫,,6.0,2565
 ValueDimensions,Option symbol specifying the number of value dimensions in temporal data,✅,pure,10.0,2565
 AdjustmentBox,,🚫,,3.0,2570
-ButtonBar,,🚫,,7.0,2570
+ButtonBar,Row of buttons with held actions (stays symbolic in script mode),✅,unevaluated,7.0,2570
 ColumnSpacings,option for column spacing in grids,✅,Symbolic,3.0,2570
 DiagonalizableMatrixQ,Test whether a matrix is diagonalizable,✅,none,10.0,2570
 StreamPosition,Returns the current position in an open stream,✅,io,2.0,2570

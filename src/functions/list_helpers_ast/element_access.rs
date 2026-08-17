@@ -501,7 +501,7 @@ fn take_drop_message(fname: &str, from: i128, to: i128, list: &Expr) {
 /// The (from, to) display range of a Take/Drop spec, for messages.
 /// The count carried by a valid `UpTo[n]` wrapper: a non-negative
 /// integer, or effectively unbounded for `UpTo[Infinity]`.
-fn upto_count(e: &Expr) -> Option<i128> {
+pub(crate) fn upto_count(e: &Expr) -> Option<i128> {
   if let Expr::FunctionCall { name, args } = e
     && name == "UpTo"
     && args.len() == 1
