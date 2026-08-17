@@ -84,7 +84,7 @@ Line,Represents a line graphics primitive,✅,pure,1.0,59
 Apply,Applies a function to the elements of an expression by replacing its head (a compound head like g[x] counts as the head),✅,pure,1.0,60
 Style,Applies styling to an expression for display,✅,pure,6.0,61
 Solve,Solves an equation or system of equations (unknowns may be applied functions like y[x] treated as generalized variables; x^n == c is solved in radicals times the n-th roots of unity; Modulus solves over the integers mod n and MaxRoots caps the solution count),✅,pure,1.0,62
-Reduce,Reduces equations and inequalities to canonical disjunctive form; over the Integers domain a bounded two-sided interval is enumerated as a disjunction of the contained integers (filtered by extra constraints such as Mod[x n]==k or x!=v) and a one-sided bound is tightened to the nearest integer with an Element membership conjunct,✅,pure,1.0,213
+Reduce,Reduces equations and inequalities to canonical disjunctive form; over the Integers domain a bounded two-sided interval is enumerated as a disjunction of the contained integers (filtered by extra constraints such as Mod[x n]==k or x!=v) and a one-sided bound is tightened to the nearest integer with an Element membership conjunct; a single underdetermined linear equation over Integers is parametrized with fresh C[k] integer parameters via the extended Euclidean algorithm; vector equalities (list == list) are threaded into their componentwise scalar equations before solving,✅,pure,1.0,213
 Eliminate,Eliminates variables from a system of equations,✅,pure,1.0,891
 Out,Gives the expression on the nth output line in an interactive session,✅,contextual,1.0,63
 In,Returns a previous input expression,✅,contextual,1.0,248
@@ -135,6 +135,7 @@ Entity,Symbolic representation of a real-world entity,✅,pure,10.0,76
 Sum,Computes a sum over one or more ranges — accepts trailing options and gives a divergent sum a value under Regularization -> Dirichlet or Abel,✅,pure,1.0,77
 Product,Computes the product of an expression over one or more ranges — accepts trailing options,✅,pure,1.0,376
 HoldComplete,Holds arguments completely unevaluated,✅,pure,3.0,78
+HoldCompleteForm,Holds an expression completely unevaluated for display,✅,pure,3.0,
 Word,Symbol representing a word in string patterns,✅,none,2.0,79
 First,Returns the first element of a list or the given default which is only evaluated when used,✅,pure,1.0,80
 Last,Returns the last element of a list or the given default which is only evaluated when used,✅,pure,1.0,140

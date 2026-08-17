@@ -2,6 +2,12 @@
 
 # Unreleased
 
+- `HoldCompleteForm[expr]` keeps `expr` completely unevaluated for display:
+    `HoldCompleteForm[2 + 3]` stays `HoldCompleteForm[2 + 3]` and
+    `Attributes[HoldCompleteForm]` is `{HoldAllComplete, Protected}`. It is the
+    `HoldAllComplete` sibling of `HoldForm`, so an inner `Evaluate` does not
+    break through the hold and a `Sequence` argument keeps its wrapper. This is
+    the head `TracePrint` already used for its output.
 - `ParametricPlot3D`/`Plot3D`/`Graphics3D`'s `ViewPoint` and `ViewAngle`
     options accept a `Dynamic[…]` wrapper (e.g. `ViewPoint -> Dynamic@vp`, the
     shape a `Manipulate` control's binding takes) instead of silently

@@ -15793,7 +15793,8 @@ pub fn top_level_output(expr: &Expr) -> String {
               // postfix-operator InputForm inside the FullForm wrapper.
               | "Factorial"
               | "Factorial2"
-              // `Hold`/`HoldForm`/`HoldComplete`/`HoldPattern`/`Defer`
+              // `Hold`/`HoldForm`/`HoldComplete`/`HoldCompleteForm`/
+              // `HoldPattern`/`Defer`
               // preserve the FullForm wrapper and render their argument
               // in InputForm — wolframscript prints `FullForm[Hold[1+2]]`
               // as `FullForm[Hold[1 + 2]]`, not the bare
@@ -15802,6 +15803,7 @@ pub fn top_level_output(expr: &Expr) -> String {
               | "Hold"
               | "HoldForm"
               | "HoldComplete"
+              | "HoldCompleteForm"
               | "HoldPattern"
               | "Defer"
           )

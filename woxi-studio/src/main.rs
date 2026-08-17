@@ -17009,6 +17009,85 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`view$$ = 1, $CellContext`k$$ = 0.2}
     );
   }
 
+  /// A Diophantine-style Demonstration shape: two `ControlType -> None`
+  /// integer coefficients randomized by a "new example" `Button`, a
+  /// `{{var, False, label}, {True, False}}` checkbox toggling whether a
+  /// computed integer relation is shown, and a body that calls
+  /// `Reduce[…, Integers]` and wraps the result in `If[show, …,
+  /// Invisible[…]]`. This mirrors the general construct category used by
+  /// several Wolfram Demonstrations Project notebooks that let a user
+  /// reveal a computed integer relation on demand (independently written,
+  /// not copied from any specific one).
+  #[test]
+  fn manipulate_button_and_checkbox_reveal_diophantine_solution() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[\
+       Pane[If[show, Reduce[a x == b y, {x, y}, Integers], Invisible[\"hidden\"]], ImageSize -> {300, 60}], \
+       {a, 2, ControlType -> None}, \
+       {b, 4, ControlType -> None}, \
+       Button[\"new example\", a = RandomInteger[{1, 9}]; b = RandomInteger[{1, 9}]; show = False], \
+       {{show, False, \"reveal\"}, {True, False}}\
+       ]",
+    )
+    .expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("hidden vars + checkbox + button should build a ManipulateState");
+
+    // The `ControlType -> None` coefficients stay off the visible panel;
+    // only the button row (binds no variable) and the checkbox appear.
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(
+      names,
+      vec!["", "show"],
+      "hidden a/b are state, not panel rows: {names:?}"
+    );
+    assert_eq!(
+      state
+        .state
+        .iter()
+        .map(|(n, _)| n.as_str())
+        .collect::<Vec<_>>(),
+      vec!["a", "b"],
+      "a and b should live in the hidden state list"
+    );
+    assert!(
+      state.error.is_none(),
+      "initial render failed: {:?}",
+      state.error
+    );
+
+    // Press the "new example" button: it reassigns the hidden coefficients
+    // and resets the checkbox — the panel must still re-evaluate cleanly
+    // with the freshly randomized values (exercising the Integers-domain
+    // `Reduce` call this test guards against regressing).
+    let action = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("a Button row should be present");
+    state.apply_button_action(&action);
+    assert!(
+      state.error.is_none(),
+      "body should evaluate cleanly after the button reassigns a/b: {:?}",
+      state.error
+    );
+    let new_a: i64 = state
+      .state
+      .iter()
+      .find(|(n, _)| n == "a")
+      .expect("a should still be tracked as hidden state")
+      .1
+      .parse()
+      .expect("a should hold a plain integer after the button runs");
+    assert!(
+      (1..=9).contains(&new_a),
+      "RandomInteger[{{1, 9}}] should land a within its declared range, got {new_a}"
+    );
+  }
+
   // Checked a randomly-sampled Wolfram Demonstrations Project notebook
   // (a per-`n` numeric square, memoized via `f[n_] := f[n] = …` inside
   // `Initialization :> (…)`, laid out with row/column totals appended
