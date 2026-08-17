@@ -4836,7 +4836,7 @@ mod solve {
     assert_eq!(
       interpret("Solve[{x^2 + y^2 == 1, (x - 5)^2 + y^2 == 1}, {x, y}]")
         .unwrap(),
-      "{{x -> 5/2, y -> -1/2*I*Sqrt[21]}, {x -> 5/2, y -> I/2*Sqrt[21]}}"
+      "{{x -> 5/2, y -> (-1/2*I)*Sqrt[21]}, {x -> 5/2, y -> I/2*Sqrt[21]}}"
     );
   }
 

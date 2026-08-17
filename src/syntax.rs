@@ -10418,6 +10418,29 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             return frac;
           }
         }
+        // A product carrying the imaginary unit inside a nested product —
+        // `Times[-1/2, Times[I, Sqrt[21]]]`, as Solve builds it — has to be
+        // seen as one flat product for the coefficient grouping below to
+        // apply, or it prints as `-1/2*I*Sqrt[21]` where wolframscript
+        // writes `(-1/2*I)*Sqrt[21]`. Times is Flat, so re-rendering the
+        // flattened form is the same expression.
+        let mut flat: Vec<Expr> = Vec::with_capacity(factor_refs.len());
+        for f in &factor_refs {
+          flatten_times_recursive(f, &mut flat);
+        }
+        let is_i_unit = |a: &Expr| {
+          matches!(a, Expr::Identifier(n) | Expr::Constant(n) if n == "I")
+            || matches!(a, Expr::FunctionCall { name, args }
+            if name == "Complex"
+              && args.len() == 2
+              && matches!(
+                (&args[0], &args[1]),
+                (Expr::Integer(0), Expr::Integer(1))
+              ))
+        };
+        if flat.len() > factor_refs.len() && flat.iter().any(is_i_unit) {
+          return fmt(&unevaluated("Times", &flat));
+        }
       }
 
       // Mathematica uses no spaces for *, /, ^ but spaces for +, -, &&, ||
