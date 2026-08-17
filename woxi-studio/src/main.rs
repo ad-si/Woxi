@@ -6537,6 +6537,52 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 mod tests {
   use super::*;
 
+  /// A single 2D-slider control (`{{var, {x0, y0}, label}, {xmin, ymin},
+  /// {xmax, ymax}}`) driving a Greek-lettered rotation/tilt pair, whose
+  /// components are split apart with `Part` and fed into several
+  /// `Initialization`-defined helper surfaces that a `Show` combines. This
+  /// mirrors the general construct category used by many rotating-3D-surface
+  /// Wolfram Demonstrations Project notebooks (independently written, not
+  /// copied from any specific one).
+  #[test]
+  fn manipulate_2d_angle_slider_combines_initialization_surfaces() {
+    let code = r#"Manipulate[
+      Show[
+        base,
+        ribbon[θ[[1]], θ[[2]]],
+        PlotRange -> {{-2, 2}, {-2, 2}, {-2, 2}},
+        BoxRatios -> {1, 1, 1}
+      ],
+      {{θ, {1, 0.5}, "tilt"}, {0, -Pi}, {2 Pi, Pi}},
+      Initialization :> (
+        base = Plot3D[0, {x, -2, 2}, {y, -2, 2}, Mesh -> False];
+        ribbon[spin_, tilt_] := ParametricPlot3D[
+          {Cos[u] Cos[spin] - tilt Sin[u], Cos[u] Sin[spin] + tilt Cos[u], Sin[u]},
+          {u, 0, 2 Pi}, Boxed -> False, Axes -> False, PlotStyle -> Hue[0.6]
+        ];
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a single 2D-slider control should build a ManipulateState");
+
+    assert_eq!(state.controls.len(), 1, "exactly one control row");
+    assert!(
+      matches!(state.controls[0], manipulate::ControlState::Slider2D { .. }),
+      "the {{var, {{x, y}}, label}} spec builds a 2D slider, not a plain slider"
+    );
+    assert!(
+      state.error.is_none(),
+      "body should evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "Show of ParametricPlot3D + Plot3D should render a graphic"
+    );
+  }
+
   #[test]
   fn collapsed_chapter_hides_following_until_next_chapter() {
     let states = &[
