@@ -2864,6 +2864,22 @@ mod arithmetic_head_application {
     assert_eq!(interpret("x // (f + g)").unwrap(), "(f + g)[x]");
   }
 
+  // A bare Slot-based pure function as the right operand of `//` — no
+  // enclosing parens — must parse the same as the parenthesized form.
+  #[test]
+  fn postfix_slashslash_bare_slot_function() {
+    assert_eq!(interpret("5 // #&").unwrap(), "5");
+    assert_eq!(interpret("5 // #+1&").unwrap(), "6");
+    assert_eq!(interpret("{1, 2} // #&").unwrap(), "{1, 2}");
+    // Must match the already-supported parenthesized form exactly — if the
+    // bare form were double-wrapped in an extra Function, {3, 4} would bind
+    // to an unused outer slot and #1/#2 would stay unevaluated inside it.
+    assert_eq!(
+      interpret("{3, 4} // #1+#2&").unwrap(),
+      interpret("{3, 4} // (#1+#2)&").unwrap()
+    );
+  }
+
   #[test]
   fn map_and_apply() {
     assert_eq!(
