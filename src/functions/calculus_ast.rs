@@ -17798,40 +17798,30 @@ fn try_trig_delta(expr: &Expr, var: &str, step: &Expr) -> Option<Expr> {
   let half_delta =
     crate::evaluator::evaluate_expr_to_expr(&half_delta_raw).ok()?;
 
-  // Build the second Sin argument. The mean of the two arguments is
+  // Build the second factor's argument. The mean of the two arguments is
   // `arg + half_delta`, so:
   //   Δ Sin[f] = 2 Sin[d] Cos[f + d]   with d = half_delta
   //   Δ Cos[f] = -2 Sin[d] Sin[f + d]
-  // Wolfram writes that cosine as `Sin[Pi/2 + …]`, hence the extra half-turn
-  // for `Sin` — `arg + (2*half_delta + Pi)/2` as one combined fraction. `Cos`
-  // is already a sine and takes no phase shift; giving it one turned the
-  // result back into the derivative of the *sine* (`Sin[θ - Pi/2]` is
-  // `-Cos[θ]`, not `-Sin[θ]`).
-  let const_part = if fn_name == "Sin" {
-    div2(
-      plus2(
-        times2(Expr::Integer(2), half_delta.clone()),
-        Expr::Constant("Pi".to_string()),
-      ),
-      Expr::Integer(2),
-    )
-  } else {
-    half_delta.clone()
-  };
+  // Wolfram writes both of those quarter-turn-shifted, keeping the shift
+  // inside the argument as the one combined fraction `(2*d + Pi)/2` — which
+  // is why it survives as written instead of collapsing back through the
+  // trigonometric phase rules: `Δ Sin[f] = 2 Sin[d] Sin[(2d + Pi)/2 + f]`
+  // and `Δ Cos[f] = 2 Sin[d] Cos[(2d + Pi)/2 + f]`.
+  let const_part = div2(
+    plus2(
+      times2(Expr::Integer(2), half_delta.clone()),
+      Expr::Constant("Pi".to_string()),
+    ),
+    Expr::Integer(2),
+  );
   let second_arg_expr = plus2(const_part, arg.clone());
-
-  let coeff = if fn_name == "Sin" {
-    Expr::Integer(2)
-  } else {
-    Expr::Integer(-2)
-  };
 
   let result = Expr::FunctionCall {
     name: "Times".to_string(),
     args: vec![
-      coeff,
+      Expr::Integer(2),
       call1("Sin", half_delta),
-      call1("Sin", second_arg_expr),
+      call1(fn_name, second_arg_expr),
     ]
     .into(),
   };

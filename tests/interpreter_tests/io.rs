@@ -363,13 +363,21 @@ mod get {
     std::fs::remove_file(path).ok();
   }
 
+  // With nothing being read, `$InputFileName` is the empty string — both
+  // before a `Get` and after it hands the value back.
   #[test]
-  fn input_file_name_stays_unset_when_it_was_unset() {
+  fn input_file_name_is_empty_outside_a_read() {
     clear_state();
+    assert_eq!(
+      interpret("ToString[$InputFileName, InputForm]").unwrap(),
+      "\"\""
+    );
     let path = write_temp("get_ifn_unset", "1 + 1");
-    let result =
-      interpret(&format!("Get[\"{path}\"]; $InputFileName")).unwrap();
-    assert_eq!(result, "$InputFileName");
+    let result = interpret(&format!(
+      "Get[\"{path}\"]; ToString[$InputFileName, InputForm]"
+    ))
+    .unwrap();
+    assert_eq!(result, "\"\"");
     std::fs::remove_file(path).ok();
   }
 
@@ -6009,7 +6017,7 @@ mod file_names {
     assert_eq!(
       result,
       format!(
-        "{{deep{0}three.txt, one.txt, two.txt}}",
+        "{{.{0}deep{0}three.txt, .{0}one.txt, .{0}two.txt}}",
         std::path::MAIN_SEPARATOR_STR
       )
     );
@@ -6176,21 +6184,40 @@ mod file_names {
       interpret(r#"FileNames["*.rs", "src", {foo}]"#).unwrap(),
       "FileNames[*.rs, src, {foo}]"
     );
+  }
+
+  // `{}` names no level in particular, which is the default level — the
+  // searched directory itself.
+  #[test]
+  fn empty_level_list_is_the_default_level() {
     assert_eq!(
-      interpret(r#"FileNames["*.rs", "src", {}]"#).unwrap(),
-      "FileNames[*.rs, src, {}]"
+      interpret(
+        r#"FileNames["*.rs", "src", {}] === FileNames["*.rs", "src", {1}]"#
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"FileNames["*.rs", "src", {}] === FileNames["*.rs", "src"]"#)
+        .unwrap(),
+      "True"
     );
   }
 
   // Recursing below "." keeps the path relative to the current directory
-  // instead of collapsing every hit to its bare file name.
+  // instead of collapsing every hit to its bare file name, and a directory
+  // spelled out as "." prefixes every name with it.
   #[test]
   fn dot_directory_keeps_relative_paths() {
     let result = interpret(
-      r#"MemberQ[FileNames["lib.rs", ".", Infinity], "src/lib.rs" | "src\\lib.rs"]"#,
+      r#"MemberQ[FileNames["lib.rs", ".", Infinity], "./src/lib.rs" | ".\\src\\lib.rs"]"#,
     )
     .unwrap();
     assert_eq!(result, "True");
+    // Naming no directory at all reports the bare relative name.
+    let bare =
+      interpret(r#"MemberQ[FileNames["*.toml"], "Cargo.toml"]"#).unwrap();
+    assert_eq!(bare, "True");
   }
 
   // A third argument that is not a level specification leaves the call
@@ -10348,15 +10375,19 @@ mod command_file_specs {
     assert_eq!(result.stdout, "\n");
   }
 
-  // Import defaults a command's output to text, the format a pipe carries
-  // unless the caller names another one.
+  // A pipe carries no file name to guess a format from, so an `Import`
+  // that names none is refused rather than defaulted to text.
   #[test]
   #[cfg(unix)]
-  fn import_command_spec_defaults_to_text() {
+  fn import_command_spec_needs_an_explicit_format() {
     clear_state();
+    let result =
+      interpret_with_stdout(r#"Import["!printf 'plain text\n'"]"#).unwrap();
+    assert_eq!(result.result, "$Failed");
     assert_eq!(
-      interpret(r#"Import["!printf 'plain text\n'"]"#).unwrap(),
-      "plain text"
+      result.stdout,
+      "\nImport::general: A format must be specified when importing \
+       from a pipe.\n"
     );
   }
 

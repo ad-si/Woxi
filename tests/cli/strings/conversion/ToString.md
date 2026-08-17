@@ -32,18 +32,21 @@ $ wo 'ToString[NumberForm[3.0, {5, 2}]]'
 3.00
 ```
 
-A second argument names the form to render in. `TraditionalForm` typesets:
-a known function takes its roman name and round brackets.
+A second argument names the form to render in. `TraditionalForm` typesets
+into boxes and hands them back in the box-syntax escape notation, which
+displays as the typeset expression: a known function takes its roman name
+and round brackets.
 
 ```scrut
 $ wo 'ToString[Sin[x], TraditionalForm]'
-sin(x)
+DisplayForm[FormBox[RowBox[{sin, (, x, )}], TraditionalForm]]
 ```
 
 `HoldForm` keeps a symbol from evaluating while still displaying it, so a
-label can name a function and apply it without computing anything.
+label can name a function and apply it without computing anything. The boxes
+keep a `TagBox` recording that it was held; the tag draws nothing.
 
 ```scrut
 $ wo 'ToString[HoldForm[g][HoldForm[x]], TraditionalForm]'
-g(x)
+DisplayForm[FormBox[RowBox[{TagBox[g, HoldForm], (, TagBox[x, HoldForm], )}], TraditionalForm]]
 ```

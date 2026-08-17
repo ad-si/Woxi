@@ -1101,9 +1101,9 @@ pub fn apply_curried_call(
       // Entity["type", "name"]["property"] — property access on entities
       crate::functions::entity_ast::entity_property_access(func_args, args)
     }
-    // GeometricScene[{sym -> value, ...}, {primitives...}]["Graphics"] —
-    // substitute point symbols into the primitives and return an ordinary
-    // Graphics[{...}] expression. ["Elements"] returns the resolved point
+    // GeometricScene[{{sym -> value, ...}, {}}, {primitives...}, {}]
+    // ["Graphics"] — substitute point symbols into the primitives and return
+    // an ordinary Graphics[{...}] expression. ["Points"] returns the point
     // definitions. Unknown properties keep the curried form unevaluated.
     Expr::FunctionCall {
       name,
@@ -1120,8 +1120,8 @@ pub fn apply_curried_call(
         "Graphics" => {
           crate::functions::graphics::geometric_scene_graphics(func_args)
         }
-        "Elements" => {
-          crate::functions::graphics::geometric_scene_elements(func_args)
+        "Points" => {
+          crate::functions::graphics::geometric_scene_points(func_args)
         }
         _ => Ok(Expr::CurriedCall {
           func: Box::new(func.clone()),

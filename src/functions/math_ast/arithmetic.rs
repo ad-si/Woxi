@@ -6841,6 +6841,46 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return result;
   }
 
+  // Times is Flat: a factor that is itself a product splices into the outer
+  // one. Nested products reach here whenever a factor simplifies into a
+  // product of its own, and a `Times[-1/2, Times[I, Sqrt[21]]]` that
+  // survived would go on to print (and compare, and sort) as something no
+  // canonical product ever is.
+  if args.iter().any(|a| {
+    matches!(a, Expr::FunctionCall { name, .. } if name == "Times")
+      || matches!(
+        a,
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          ..
+        }
+      )
+  }) {
+    let mut flat: Vec<Expr> = Vec::with_capacity(args.len() + 2);
+    fn splice(e: &Expr, out: &mut Vec<Expr>) {
+      match e {
+        Expr::FunctionCall { name, args } if name == "Times" => {
+          for a in args {
+            splice(a, out);
+          }
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left,
+          right,
+        } => {
+          splice(left, out);
+          splice(right, out);
+        }
+        other => out.push(other.clone()),
+      }
+    }
+    for a in args {
+      splice(a, &mut flat);
+    }
+    return times_ast(&flat);
+  }
+
   // Exact numeric product: when every factor is an Integer, BigInteger, or
   // Rational, multiply them with BigInt-aware Coeff arithmetic and return a
   // single reduced number. Without this, a product of rationals whose parts

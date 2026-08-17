@@ -14364,6 +14364,118 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`fam$$ = 1}, \"\\[Ellipsis]\"]"], "O
     assert_ne!(net, render(1, 1), "the view control must matter");
   }
 
+  /// End-to-end regression for the shape a "state transition diagram for
+  /// modular multiplication" Demonstration has: a `Manipulate` whose body
+  /// is a `GraphPlot` over `Table[i -> Mod[a i, m], {i, 0, m - 1}]`, with
+  /// two `Appearance -> "Labeled"` sliders for the modulus and the
+  /// multiplier, a `Delimiter`, and a Boolean picklist that switches the
+  /// nodes between labelled `Text` and plain `Tooltip`-ed `Point`s through
+  /// `VertexRenderingFunction`.
+  ///
+  /// The Manipulate is written here rather than lifted from the published
+  /// notebook. The modulus range is kept small so the test draws a graph
+  /// it can count the parts of.
+  #[test]
+  fn modular_multiplication_diagram_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nGraphPlot[Table[i -> Mod[a i, m], {i, 0, m - 1}],\n  ImageSize -> {500, 375},\n  PlotLabel -> Style[Row[{n -> a n, \" mod \", m}], 14],\n  VertexRenderingFunction -> If[label,\n    (Text[#2, #, Background -> White] &),\n    (Tooltip[{Darker[Blue, .7], Point[#]}, #2] &)],\n  DirectedEdges -> True],\n{{m, 8, \"modulus\"}, 2, 20, 1, Appearance -> \"Labeled\"},\n{{a, 3, \"multiplier\"}, 2, 20, 1, Appearance -> \"Labeled\"},\nDelimiter,\n{{label, False, \"label nodes\"}, {True, False}},\nAutorunSequencing -> {1, 2}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 8}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the diagram must evaluate: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the diagram must draw");
+
+    // Two labelled sliders, the `Delimiter` separator row, then the
+    // Boolean picklist.
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: m_name,
+          label: m_label,
+          current: m_current,
+          min: m_min,
+          max: m_max,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: a_name,
+          label: a_label,
+          current: a_current,
+          ..
+        },
+        manipulate::ControlState::Divider,
+        manipulate::ControlState::Discrete {
+          name: l_name,
+          label: l_label,
+          values,
+          current_index,
+          ..
+        },
+      ] => {
+        assert_eq!((m_name.as_str(), m_label.as_str()), ("m", "modulus"));
+        assert_eq!((*m_current, *m_min, *m_max), (8.0, 2.0, 20.0));
+        assert_eq!((a_name.as_str(), a_label.as_str()), ("a", "multiplier"));
+        assert_eq!(*a_current, 3.0);
+        assert_eq!(
+          (l_name.as_str(), l_label.as_str()),
+          ("label", "label nodes")
+        );
+        assert_eq!(values, &["True", "False"]);
+        assert_eq!(*current_index, 1, "the published default is False");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    let render = |m: u32, a: u32, label: &str| {
+      woxi::interpret_with_stdout(&format!(
+        "m = {m}; a = {a}; label = {label};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+
+    // Unlabelled, every one of the `m` residues is drawn as a point in
+    // the function's own dark blue — not as the default vertex disk.
+    let points = render(8, 3, "False");
+    assert_eq!(
+      points.matches(r#"fill="rgb(0,0,77)""#).count(),
+      8,
+      "each residue is a Darker[Blue, .7] point: {points}"
+    );
+    // Labelled, each node is its own residue's numeral instead.
+    let labelled = render(8, 3, "True");
+    for residue in 0..8 {
+      assert!(
+        labelled.contains(&format!(">{residue}<")),
+        "residue {residue} is labelled: {labelled}"
+      );
+    }
+    // Both controls reach the graph: a different modulus draws a
+    // different number of nodes, a different multiplier a different
+    // shape.
+    assert_eq!(
+      render(12, 3, "False")
+        .matches(r#"fill="rgb(0,0,77)""#)
+        .count(),
+      12,
+      "the modulus control must matter"
+    );
+    assert_ne!(points, render(8, 5, "False"), "the multiplier must matter");
+  }
+
   /// End-to-end regression for the "Chaos and Order in the Damped Forced
   /// Pendulum in a Plane" Demonstration: it integrates the damped driven
   /// pendulum `θ'' == -(g/l) Sin[θ] - γ θ' + a Cos[ω t]` from a grid of
@@ -17709,6 +17821,171 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`px$$ = 0, $CellContext`py$$ = 0, $C
     );
   }
 
+  /// End-to-end regression for the shape of a "sphere peeled into lune
+  /// segments that spread into a torus" Demonstration: an
+  /// `InitializationCell` defines a `Module`-based helper mapping a
+  /// segment index and two surface parameters onto either a sphere lune or
+  /// a torus-tube lune (picked with `If`) and displaces it outward along
+  /// its own segment direction, and a stored `Manipulate` assembles the
+  /// scene from a `Table` of `ParametricPlot3D` surfaces combined with
+  /// `Show`, driven by a `SetterBar`-shaped segment-count control, two
+  /// continuous sliders (spread offset, segment width), a torus/sphere
+  /// checkbox, and a torus-diameter slider. Self-authored, construct-
+  /// equivalent body — not the sampled notebook's own code or wording,
+  /// which is copyrighted.
+  #[test]
+  fn demonstration_sphere_torus_segments_manipulate_reshapes_and_spreads() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["segmentPoint[k_, u_, v_, n_, spread_, width_, torusQ_, torusDiam_] := Module[{theta, phi, dir, base}, theta = 2 Pi k/n; phi = theta + width (v - 1/2) (2 Pi/n); dir = {Cos[theta], Sin[theta], 0}; base = If[torusQ, {(torusDiam + Cos[2 u]) Cos[phi], (torusDiam + Cos[2 u]) Sin[phi], Sin[2 u]}, {Sin[u] Cos[phi], Sin[u] Sin[phi], Cos[u]}]; base + spread dir]"], "Input",
+ InitializationCell->True],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Show[
+  Table[
+   ParametricPlot3D[segmentPoint[k, u, v, n, spread, width, fullTorus, torusDiam],
+    {u, 0, Pi}, {v, 0, 1},
+    PlotStyle -> ColorData[\"Rainbow\"][k/(n - 1)], Mesh -> None],
+   {k, 0, n - 1}],
+  Boxed -> False, Axes -> False, PlotRange -> {{-6, 6}, {-6, 6}, {-6, 6}}, ImageSize -> 350],
+ {{n, 3, \"n\"}, {3, 4, 5, 6, 7, 8, 9, 10}},
+ {{spread, 0, \"move in direction x\"}, 0, 3},
+ {{width, 0.8, \"segment width\"}, 0.3, 1},
+ {{fullTorus, False, \"full torus\"}, {True, False}},
+ {{torusDiam, 3, \"torus diameter\"}, 1.5, 6}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 3, $CellContext`spread$$ = 0, $CellContext`width$$ = 0.8, $CellContext`fullTorus$$ = False, $CellContext`torusDiam$$ = 3}, DynamicBox[\[Ellipsis]]]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the sphere-mode Table of ParametricPlot3D lunes must draw"
+    );
+
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name: n_name,
+          values: n_values,
+          current_index: n_idx,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: spread_name,
+          label: spread_label,
+          min: spread_min,
+          max: spread_max,
+          current: spread_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: width_name,
+          min: width_min,
+          max: width_max,
+          current: width_now,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: torus_name,
+          values: torus_values,
+          current_index: torus_idx,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: diam_name,
+          min: diam_min,
+          max: diam_max,
+          current: diam_now,
+          ..
+        },
+      ] => {
+        assert_eq!(n_name.as_str(), "n");
+        assert_eq!(
+          n_values.as_slice(),
+          ["3", "4", "5", "6", "7", "8", "9", "10"]
+        );
+        assert_eq!(*n_idx, 0, "default n = 3 is the first choice");
+        assert_eq!(spread_name.as_str(), "spread");
+        assert_eq!(spread_label.as_str(), "move in direction x");
+        assert_eq!(*spread_min, 0.0);
+        assert_eq!(*spread_max, 3.0);
+        assert_eq!(*spread_now, 0.0);
+        assert_eq!(width_name.as_str(), "width");
+        assert_eq!(*width_min, 0.3);
+        assert_eq!(*width_max, 1.0);
+        assert_eq!(*width_now, 0.8);
+        assert_eq!(torus_name.as_str(), "fullTorus");
+        assert_eq!(torus_values.as_slice(), ["True", "False"]);
+        assert_eq!(
+          *torus_idx, 1,
+          "default fullTorus = False is the second choice"
+        );
+        assert_eq!(diam_name.as_str(), "torusDiam");
+        assert_eq!(*diam_min, 1.5);
+        assert_eq!(*diam_max, 6.0);
+        assert_eq!(*diam_now, 3.0);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the lune segments must render")
+    };
+    let sphere_view = render(&widget);
+
+    // Checking "full torus" must switch every segment from a sphere lune to
+    // a torus-tube lune, changing the picture.
+    match &mut widget.controls[3] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 0
+      }
+      other => {
+        panic!("expected fullTorus as a Discrete control, got {other:?}")
+      }
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    let torus_view = render(&widget);
+    assert_ne!(
+      sphere_view, torus_view,
+      "toggling full torus must change the rendered scene"
+    );
+
+    // Pulling the "move in direction x" slider must spread the torus
+    // segments apart, changing the picture again.
+    match &mut widget.controls[1] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 1.5,
+      other => panic!("expected spread as a Continuous control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    let spread_view = render(&widget);
+    assert_ne!(
+      torus_view, spread_view,
+      "spreading the segments apart must change the rendered scene"
+    );
+  }
+
   /// End-to-end regression for the shape of the "Crane Model" Demonstration:
   /// a `Module` that positions a pivoting boom and a mast whose lean is
   /// derived with a single-argument `ArcTan` of a ratio, then builds the
@@ -17818,6 +18095,108 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`px$$ = 0, $CellContext`py$$ = 0, $C
     assert_ne!(
       initial, moved,
       "raising the boom and extending its reach must move the hook and change the render"
+    );
+  }
+
+  /// Regression for the shape of the "Equality of a Segment and an Arc in
+  /// Archimedes's Spiral" Demonstration: a `Module` that derives a point
+  /// from a slider parameter and reports its distance from the origin in a
+  /// `Text[Style[Row[{...}], ...]]` caption written with the
+  /// `\[LeftBracketingBar]`/`\[RightBracketingBar]` bar characters (the
+  /// notation `Abs`/`Norm` are typeset with). Those two named characters
+  /// were missing from both the parse table and the private-use-glyph
+  /// substitution table, so the caption drew the literal escape text
+  /// (`\[LeftBracketingBar]d\[RightBracketingBar] = ...`) instead of
+  /// `|d| = ...`.
+  #[test]
+  fn demonstration_spiral_gap_manipulate_draws_bracketing_bars() {
+    let code = "Manipulate[\
+      Module[{origin, tip, gap}, \
+        origin = {0, 0}; \
+        tip = {r Cos[r], r Sin[r]}; \
+        gap = Norm[tip - origin]; \
+        Column[{\
+          Graphics[{Blue, Line[{origin, tip}], Red, PointSize[0.02], \
+            Point[{origin, tip}]}, \
+            PlotRange -> {{-3, 3}, {-3, 3}}, Axes -> True], \
+          Text[Style[Row[{\"\\[LeftBracketingBar]d\\[RightBracketingBar] = \", \
+            NumberForm[gap, {4, 3}]}], 14]]\
+        }]\
+      ], \
+      {{r, 1.5, \"reach\"}, 0.5, 3, Appearance -> \"Labeled\"}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the spiral-gap Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the segment and its caption must render"
+    );
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the segment and caption must render")
+    };
+    let initial = render(&state);
+    assert!(
+      initial.contains("|d| = "),
+      "caption must draw the bars as `|d| = ...`, not the raw escape: {initial}"
+    );
+    assert!(
+      !initial.contains("LeftBracketingBar")
+        && !initial.contains("RightBracketingBar"),
+      "caption must not draw the literal named-character escape: {initial}"
+    );
+    assert!(
+      !initial.contains('\u{F603}') && !initial.contains('\u{F604}'),
+      "caption must not draw the raw private-use code points: {initial}"
+    );
+
+    match &mut state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name.as_str(), "r");
+        assert_eq!(label.as_str(), "reach");
+        assert_eq!(*min, 0.5);
+        assert_eq!(*max, 3.0);
+        assert_eq!(*current, 1.5);
+        *current = 2.5;
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let moved = render(&state);
+    assert_ne!(
+      initial, moved,
+      "moving the reach slider must change the point and the reported gap"
+    );
+    assert!(
+      moved.contains("|d| = "),
+      "caption must keep drawing the bars after re-render: {moved}"
     );
   }
 }

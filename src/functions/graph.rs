@@ -230,6 +230,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut edge_shape_rules: Vec<(Expr, EdgeShape)> = Vec::new();
   let mut vertex_labels = false;
   let mut vertex_shape: Option<String> = None;
+  // `VertexRenderingFunction -> f` hands the drawing of each vertex to
+  // `f`, applied as `f[{x, y}, name]`.
+  let mut vertex_render: Option<VertexRender> = None;
   let mut vertex_size_scale: f64 = 1.0;
   let mut plot_label: Option<Expr> = None;
   let mut layered: Option<LayerDirection> = None;
@@ -272,6 +275,12 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if let Expr::String(s) = replacement.as_ref() {
             vertex_shape = Some(s.clone());
           }
+        }
+        "VertexRenderingFunction" => {
+          vertex_render = Some(match replacement.as_ref() {
+            Expr::Identifier(s) if s == "None" => VertexRender::Hidden,
+            other => VertexRender::Func(other.clone()),
+          });
         }
         "VertexSize" => {
           // Named sizes use progressively larger gaps so a Table over
@@ -679,6 +688,27 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let i = node_idx.index();
     let (x, y) = positions[i];
 
+    // `VertexRenderingFunction` replaces the shape, the fill colour and
+    // the label alike: whatever it returns is the whole vertex.
+    match &vertex_render {
+      Some(VertexRender::Hidden) => continue,
+      Some(VertexRender::Func(f)) => {
+        let point = Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+        let name = unwrap_vertex_style(&vertices[i]).0.clone();
+        if let Ok(drawn) =
+          crate::functions::list_helpers_ast::apply_func_to_two_args(
+            f, &point, &name,
+          )
+        {
+          // Wrapped in a list so any directives it sets stay scoped to
+          // this vertex.
+          primitives.push(Expr::List(vec![drawn].into()));
+          continue;
+        }
+      }
+      None => {}
+    }
+
     // Emit this vertex's fill color: per-vertex Style[] override wins over
     // the VertexStyle option, which itself wins over the Wolfram default.
     let fill_for_v: &Color = vertex_colors[i]
@@ -926,6 +956,16 @@ enum EdgeShape {
   Named(String),
   /// A function applied as `f[{pt, …}, edge]` whose result is used as
   /// the graphics for that edge.
+  Func(Expr),
+}
+
+/// How a vertex is drawn, as `VertexRenderingFunction -> …` asks for it.
+#[derive(Clone, Debug)]
+enum VertexRender {
+  /// `VertexRenderingFunction -> None` — the vertex is not drawn.
+  Hidden,
+  /// A function applied as `f[{x, y}, name]` whose result is used as the
+  /// graphics for that vertex.
   Func(Expr),
 }
 

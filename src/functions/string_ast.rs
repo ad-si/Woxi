@@ -4820,9 +4820,15 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let is_input_form = args.len() == 2
     && matches!(&args[1], Expr::Identifier(f) if f == "InputForm");
   // TeXForm must not take the 2D-OutputForm intercepts below (e.g. Subscript):
-  // it is rendered by the dedicated TeX path further down.
+  // it is rendered by the dedicated TeX path further down. TraditionalForm
+  // is the same story — it typesets into boxes rather than into 2D text, so
+  // a display wrapper has to reach its own box rule instead of being
+  // flattened to text on the way.
+  // (`is_tex_form` reads as "a form that typesets" — the name predates
+  // TraditionalForm joining it.)
   let is_tex_form = args.len() == 2
-    && matches!(&args[1], Expr::Identifier(f) if f == "TeXForm");
+    && matches!(&args[1], Expr::Identifier(f) if
+      f == "TeXForm" || f == "TraditionalForm");
 
   // TableForm[matrix] — render as an aligned text grid (left-aligned columns
   // padded to the widest cell, three-space separators, blank line between rows).
@@ -4879,7 +4885,8 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name,
     args: inner_args,
   } = &args[0]
-    && ((name == "Column" && !is_input_form) || name == "ColumnForm")
+    && ((name == "Column" && !is_input_form && !is_tex_form)
+      || (name == "ColumnForm" && !is_tex_form))
     && !inner_args.is_empty()
     && let Expr::List(items) = &inner_args[0]
   {
@@ -5418,11 +5425,12 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::String(s));
       }
       "TraditionalForm" => {
-        // Typeset into TraditionalForm boxes and lay them out as 2D text:
-        // `Sin[x]` reads `sin(x)`, `HoldForm[f][HoldForm[x]]` reads `f(x)`,
-        // and a quotient still spans three lines the way OutputForm's
-        // fraction does. Demonstrations build their plot labels this way,
-        // pasting the pieces together with `StringJoin`.
+        // Typeset into TraditionalForm boxes and hand them back in the
+        // box-syntax escape notation `\!\(\*FormBox[…, TraditionalForm]\)`,
+        // the same way `ToString[expr, StandardForm]` returns its boxes —
+        // a String that displays as the typeset expression rather than as
+        // its own source. `Sin[x]` becomes
+        // `RowBox[{"sin", "(", "x", ")"}]`, a quotient a `FractionBox`.
         let formatted =
           crate::evaluator::dispatch::complex_and_special::apply_format_recursively(
             &args[0],
@@ -5432,8 +5440,10 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
             &formatted,
           );
-        return Ok(Expr::String(crate::syntax::boxes_to_output_form_2d(
-          &boxes,
+        let box_text = linear_syntax_box_text(&boxes);
+        return Ok(Expr::String(format!(
+          "{BOX_START}{BOX_OPEN}{BOX_SEP}FormBox[{box_text}, \
+           TraditionalForm]{BOX_CLOSE}"
         )));
       }
       "StandardForm" => {
@@ -5452,7 +5462,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let box_ast = crate::evaluator::evaluate_expr_to_expr(&make_boxes_call)
           .unwrap_or_else(|_| args[0].clone());
-        let box_inner_text = crate::syntax::expr_to_input_form(&box_ast);
+        let box_inner_text = linear_syntax_box_text(&box_ast);
         return Ok(Expr::String(format!(
           "{BOX_START}{BOX_OPEN}{BOX_SEP}{box_inner_text}{BOX_CLOSE}"
         )));
@@ -7983,6 +7993,44 @@ fn mathml_escape_str(s: &str) -> String {
 
 // Wolfram private-use Unicode characters for box syntax.
 // These are used internally in strings; InputForm converts them to \!, \(, \*, \).
+/// Render a box tree the way the box-syntax escape notation spells it:
+/// like `InputForm`, except that a rule inside a box — the shape every box
+/// option takes — is written out as `Rule[lhs, rhs]` rather than with the
+/// `->` operator, matching wolframscript's
+/// `ToString[Style[…], TraditionalForm]`.
+pub fn linear_syntax_box_text(expr: &Expr) -> String {
+  let parts = |args: &[Expr]| -> String {
+    args
+      .iter()
+      .map(linear_syntax_box_text)
+      .collect::<Vec<_>>()
+      .join(", ")
+  };
+  match expr {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => format!(
+      "Rule[{}, {}]",
+      linear_syntax_box_text(pattern),
+      linear_syntax_box_text(replacement)
+    ),
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => format!(
+      "RuleDelayed[{}, {}]",
+      linear_syntax_box_text(pattern),
+      linear_syntax_box_text(replacement)
+    ),
+    Expr::FunctionCall { name, args } => {
+      format!("{name}[{}]", parts(args))
+    }
+    Expr::List(items) => format!("{{{}}}", parts(items)),
+    other => crate::syntax::expr_to_input_form(other),
+  }
+}
+
 pub const BOX_START: char = '\u{f7c1}'; // \!
 pub const BOX_OPEN: char = '\u{f7c9}'; // \(
 pub const BOX_SEP: char = '\u{f7c8}'; // \*

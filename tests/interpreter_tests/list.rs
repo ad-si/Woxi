@@ -11660,12 +11660,20 @@ mod parallel_cases {
     );
   }
 
+  // A call the serial `Cases` cannot make sense of has nothing to
+  // parallelize, so it is handed to `Cases` — which leaves it alone — after
+  // the warning wolframscript prints.
   #[test]
-  fn single_argument_stays_unevaluated() {
+  fn single_argument_falls_back_to_the_serial_head() {
+    let result = interpret_with_stdout("ParallelCases[{1, 2}]").unwrap();
+    assert_eq!(result.result, "Cases[{1, 2}]");
     assert_eq!(
-      interpret("ParallelCases[{1, 2}]").unwrap(),
-      "ParallelCases[{1, 2}]"
+      result.stdout,
+      "\nParallelCases::nopar1: Cases[{1, 2}] cannot be parallelized; \
+       proceeding with sequential evaluation.\n"
     );
+    let sel = interpret_with_stdout("ParallelSelect[{1, 2}]").unwrap();
+    assert_eq!(sel.result, "Select[{1, 2}]");
   }
 
   #[test]

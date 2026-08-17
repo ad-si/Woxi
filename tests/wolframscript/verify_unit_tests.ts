@@ -29,9 +29,12 @@ interface TestCase {
   setup?: string[];
 }
 
-/** Unescape Rust string escapes: \" → ", \\ → \, \n → newline */
+/** Unescape Rust string escapes: \" → ", \\ → \, \n → newline.
+ * A backslash at the end of a line is Rust's line continuation: it and the
+ * following indentation are not part of the string. */
 function unescapeRust(s: string): string {
   return s
+    .replace(/\\\r?\n[ \t]*/g, "")
     .replace(/\\"/g, '"')
     .replace(/\\n/g, "\n")
     .replace(/\\u\{([0-9a-fA-F]+)\}/g, (_, hex) =>
@@ -100,6 +103,20 @@ function extractTestCases(filePath: string): TestCase[] {
   const cases: TestCase[] = [];
   const relPath = filePath.replace(ROOT + "/", "");
 
+  // File-level `const NAME: &str = "…";` definitions. Tests set the stage
+  // with `interpret(PACKAGE)` and then assert on a follow-up expression, so
+  // the const's text has to become setup code or the follow-up is compared
+  // against a session that never saw the package.
+  const consts = new Map<string, string>();
+  {
+    const constRe = /const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*&'?\w*\s*str\s*=\s*/g;
+    let m: RegExpExecArray | null;
+    while ((m = constRe.exec(content)) !== null) {
+      const value = extractRustString(content, m.index + m[0].length);
+      if (value) consts.set(m[1], value[0]);
+    }
+  }
+
   // Track expressions within the current test function for stateful follow-ups.
   let priorExprsInFn: string[] = [];
   let lastInterpretEnd = 0;
@@ -125,6 +142,36 @@ function extractTestCases(filePath: string): TestCase[] {
     const isLetForm = letVar !== null;
 
     if (!isAssertEqForm && !isLetForm) {
+      // A bare `interpret(…).unwrap();` statement, not asserted on: its
+      // expression is state the next assertion in the same test depends on.
+      // Either spelled out (`interpret("x = 1")`) or naming one of the
+      // file's string consts (`interpret(PACKAGE)`).
+      const literal = extractRustString(content, idx + interpretMarker.length);
+      const named = content
+        .substring(idx + interpretMarker.length)
+        .match(/^([A-Za-z_][A-Za-z0-9_]*)\s*\)/);
+      let setupText: string | null = null;
+      let setupEnd = idx + 1;
+      if (literal && /^\s*,?\s*\)/.test(content.substring(literal[1]))) {
+        setupText = literal[0];
+        setupEnd = literal[1];
+      } else if (named && consts.has(named[1])) {
+        setupText = consts.get(named[1])!;
+        setupEnd = idx + interpretMarker.length + named[0].length;
+      }
+      if (setupText !== null) {
+        const between = content.substring(lastInterpretEnd, idx);
+        if (
+          /\bfn\s+\w+\s*\(\s*\)/.test(between)
+          || /\bclear_state\s*\(\s*\)/.test(between)
+        ) {
+          priorExprsInFn = [];
+        }
+        priorExprsInFn.push(setupText);
+        lastInterpretEnd = setupEnd;
+        searchPos = setupEnd;
+        continue;
+      }
       searchPos = idx + 1;
       continue;
     }
@@ -365,35 +412,71 @@ function buildWolframScript(
   // and the calendar/time-zone tail are ignored); everything else must share
   // the same number-blanked skeleton, then each number is compared within a
   // relative/absolute tolerance.
-  lines.push("wxDateTol$$ = 90");
-  lines.push("wxRelTol$$ = 0.02");
-  lines.push("wxAbsTol$$ = 0.01");
+  // The helpers live in their own context: every case starts with
+  // `ClearAll["Global`*"]`, which would take them with it.
+  lines.push("WX`DateTol = 90");
+  lines.push("WX`RelTol = 0.02");
+  lines.push("WX`AbsTol = 0.01");
   lines.push(
-    "wxNums$$[s$_] := ToExpression /@ StringCases[s$, NumberString]"
+    "WX`Nums[s$_] := ToExpression /@ StringCases[s$, NumberString]"
   );
   lines.push(
-    'wxSkeleton$$[s$_] := StringReplace[s$, NumberString -> "#"]'
+    'WX`Skeleton[s$_] := StringReplace[s$, NumberString -> "#"]'
   );
   lines.push(
-    'wxDateTime$$[s$_] := AbsoluteTime[ToExpression /@ StringCases[' +
+    'WX`DateTime[s$_] := AbsoluteTime[ToExpression /@ StringCases[' +
       'StringTake[s$, First[StringPosition[s$, "{"]][[1]] ;; ' +
       'First[StringPosition[s$, "}"]][[1]]], NumberString]]'
   );
   lines.push(
-    "wxApproxQ$$[woxi$_, ws$_] := Module[{a$, b$}," +
+    "WX`ApproxQ[woxi$_, ws$_] := Module[{a$, b$}," +
       ' If[StringContainsQ[woxi$, "DateObject"] && StringContainsQ[ws$, "DateObject"],' +
       " Return[TrueQ[Quiet[Check[" +
-      "Abs[wxDateTime$$[woxi$] - wxDateTime$$[ws$]] <= wxDateTol$$, False]]]]];" +
-      " If[wxSkeleton$$[woxi$] =!= wxSkeleton$$[ws$], Return[False]];" +
-      " a$ = wxNums$$[woxi$]; b$ = wxNums$$[ws$];" +
+      "Abs[WX`DateTime[woxi$] - WX`DateTime[ws$]] <= WX`DateTol, False]]]]];" +
+      " If[WX`Skeleton[woxi$] =!= WX`Skeleton[ws$], Return[False]];" +
+      " a$ = WX`Nums[woxi$]; b$ = WX`Nums[ws$];" +
       " If[Length[a$] =!= Length[b$] || Length[a$] == 0, Return[False]];" +
       " TrueQ[And @@ MapThread[" +
-      "Abs[#1 - #2] <= Max[wxAbsTol$$, wxRelTol$$*Max[Abs[#1], Abs[#2]]] &," +
+      "Abs[#1 - #2] <= Max[WX`AbsTol, WX`RelTol*Max[Abs[#1], Abs[#2]]] &," +
       " {a$, b$}]]]"
   );
 
+  // Cases that unprotect a symbol and then define it (`Unprotect[Red];
+  // Red = 42`) change what that name means for the rest of the batch, where
+  // Woxi runs each case in a fresh process. Collect every name any case in
+  // this batch unprotects, remember its definitions once up front, and put
+  // them back before each case. Restoring — rather than clearing — is what
+  // keeps `Red` the colour it was born as.
+  const unprotected = new Set<string>();
+  for (const { expr } of cases) {
+    for (const m of expr.matchAll(/\bUnprotect\[([^\]]*)\]/g)) {
+      for (const name of m[1].split(",")) {
+        const trimmed = name.trim();
+        if (/^[A-Za-z$][A-Za-z0-9$]*$/.test(trimmed)) unprotected.add(trimmed);
+      }
+    }
+  }
+  const restores: string[] = [];
+  for (const name of unprotected) {
+    lines.push(
+      'WX`Own["' + name + '"] = Quiet[OwnValues[' + name + "]]",
+      'WX`Down["' + name + '"] = Quiet[DownValues[' + name + "]]"
+    );
+    restores.push(
+      "Quiet[Unprotect[" + name + "];" +
+        " OwnValues[" + name + '] = WX`Own["' + name + '"];' +
+        " DownValues[" + name + '] = WX`Down["' + name + '"];' +
+        " Protect[" + name + "]]"
+    );
+  }
+
   for (const { expr, woxiResult, idx } of cases) {
     lines.push('ClearAll["Global`*"]');
+    // Woxi runs every case in a fresh process, so the session state a case
+    // leaves behind must not reach the next one. `ClearAll` above only
+    // empties `Global``; the context machinery keeps its own state.
+    lines.push("$ContextAliases = <||>");
+    lines.push(...restores);
 
     const exprEscaped = escapeForWolfram(expr);
     const expectedEscaped = escapeForWolfram(woxiResult);
@@ -420,7 +503,7 @@ function buildWolframScript(
     // Approx cases compare within a numeric tolerance; all others by exact
     // string equality.
     const mismatchTest = APPROX_MATCH.has(expr)
-      ? "!wxApproxQ$$[ee$$, rr$$]"
+      ? "!WX`ApproxQ[ee$$, rr$$]"
       : "rr$$ =!= ee$$";
     // Wrap in CheckAbort so Abort[]/Interrupt[] calls inside test cases
     // don't kill the entire script run.
@@ -473,8 +556,8 @@ function listRustFiles(dir: string): string[] {
 // reported digits, which no rewrite of a truncated series can reproduce
 // (Sunrise/Sunset additionally use Woxi's deliberate Minute granularity versus
 // Wolfram's Instant). Rather than skip these outright, compare them numerically
-// with a tolerance (see wxApproxQ$$ in buildWolframScript): DateObjects within
-// wxDateTol$$ seconds, other numbers within a relative/absolute tolerance, once
+// with a tolerance (see WX`ApproxQ in buildWolframScript): DateObjects within
+// WX`DateTol seconds, other numbers within a relative/absolute tolerance, once
 // the non-numeric "skeleton" of the two InputForms matches. A real regression
 // (wrong structure, or a value off by more than the tolerance) still fails.
 const APPROX_MATCH = new Set([
@@ -490,6 +573,12 @@ const APPROX_MATCH = new Set([
   "Sunset[{0, 0}, {2024, 3, 20}]",
   "SolarEclipse[DateObject[{2024, 4, 1}]]",
   "LunarEclipse[DateObject[{2025, 1, 1}]]",
+  // An iterated root differs in the last digit or two: where the two solvers
+  // stop is their own business. The root of `J0'` is 3.8317059702075123156…,
+  // which Woxi reports as 3.831705970207513 and Wolfram as
+  // 3.831705970207511 — one and three units in the last place off the
+  // correctly rounded double, in opposite directions.
+  "FindRoot[D[BesselJ[0, r], r] == 0, {r, 3}]",
 ]);
 
 /**
@@ -1676,6 +1765,11 @@ function main() {
     "ToBoxes[TraditionalForm[Row[{2, x, t}]]]",
   ]);
 
+  /** Names whose meaning depends on where one input unit ends and the next
+   * begins — see the filter below. */
+  const CONTEXT_SENSITIVE =
+    /\$Context|\$Packages|BeginPackage\[|EndPackage\[|Begin\[|End\[|Needs\[/;
+
   // Filter out multiline expressions (they break the generated scripts).
   // Also skip Interrupt[] — it sends a kernel interrupt that crashes wolframscript
   // even inside CheckAbort, so it cannot be tested via batch conformance.
@@ -1684,6 +1778,18 @@ function main() {
   const cases = allCases.filter(
     (c) =>
       !c.expr.includes("\n") &&
+      // A follow-up whose setup is itself multiline (a package definition,
+      // where the line breaks are what separates the inputs) cannot be
+      // joined into the one-liner both sides run. Comparing it without that
+      // setup would test a different expression than the unit test does.
+      !(c.setup ?? []).some((s) => s.includes("\n")) &&
+      // Context constructs take effect for the *next* input unit, so a case
+      // whose setup was a separate `interpret()` call means something else
+      // once the two are joined with a semicolon into one unit.
+      !(
+        (c.setup?.length ?? 0) > 0 &&
+        CONTEXT_SENSITIVE.test([...(c.setup ?? []), c.expr].join("; "))
+      ) &&
       !c.expr.includes("Interrupt[]") &&
       !/[^\x00-\x7F]/.test(c.expr) && // Non-ASCII chars get garbled by wolframscript encoding
       !(c.expr.match(/^Goto\[/) && !c.expr.includes("Label[")) &&
