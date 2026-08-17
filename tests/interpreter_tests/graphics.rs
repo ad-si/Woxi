@@ -6810,8 +6810,9 @@ mod plot3d {
       ));
     }
 
-    // The `{i -> {{j}, style}}` form parses; the style itself is not
-    // rendered yet, but the between-series fill must still be drawn.
+    // The `{i -> {{j}, style}}` form parses, and the between-series fill
+    // is drawn in the given style (`Directive[Orange]`), not the series'
+    // own color.
     #[test]
     fn list_plot_filling_between_series_styled() {
       insta::assert_snapshot!(export_svg(
@@ -24805,5 +24806,102 @@ fn the_default_stroke_is_one_pixel_at_every_size() {
   assert!(
     relative.contains("stroke-width=\"10.00\""),
     "Thickness is a fraction of the width: {relative}"
+  );
+}
+
+/// Regression coverage for the combination of constructs a Wolfram
+/// Demonstrations "region transform" widget uses together: a `Manipulate`
+/// whose body is a `Module`/`Which` that picks an `AffineTransform` from the
+/// slider position, draws the transformed copy via `GeometricTransformation`
+/// inside `Prolog`, toggles an `Epilog` label from a `Checkbox`, and titles
+/// the plot with a `Row` mixing `Style` and a held `TraditionalForm`
+/// integral. Each piece has its own tests elsewhere; this locks in that they
+/// still cooperate when nested exactly this way.
+#[test]
+fn manipulate_module_which_affine_prolog_checkbox_and_traditional_plot_label() {
+  let body = "Module[{t, u, pause = 0.3, base, shifted}, \
+     Which[w <= 1, t = w; u = 0, w <= 1 + pause, t = 1; u = 0, True, t = 1; u = 1]; \
+     base = First[Plot[x^2, {x, 0, 1}, Filling -> {1 -> {0, Opacity[0.4, Red]}}]]; \
+     shifted = GeometricTransformation[base, \
+       AffineTransform[{{{1, 0}, {-u, 1}}, {-(u/2), u^2/4}}]]; \
+     Plot[x^2, {x, -1, 1}, \
+       Prolog -> {shifted}, \
+       Epilog -> If[labels, {Text[\"A\", {0.8, 0.3}]}, {}], \
+       PlotLabel -> Row[{Style[\"A\", Italic], \" = \", \
+         TraditionalForm[HoldForm[Integrate[x^2, {x, 0, 1}]]]}]]]";
+
+  // The Manipulate spec exposes exactly the slider and the checkbox, under
+  // their own variable names — `AutorunSequencing` is a display-only hint
+  // and must not be mistaken for a third control.
+  let manipulate_src = format!(
+    "Manipulate[{body}, {{{{w, 0, \"shift\"}}, 1.5, 0}}, \
+     {{{{labels, True, \"show labels\"}}, {{True, False}}, Checkbox}}, \
+     AutorunSequencing -> {{{{1, 5}}, {{2, 2}}}}]"
+  );
+  let expr = woxi::interpret_to_expr(&manipulate_src).unwrap();
+  let spec = woxi::functions::graphics::extract_manipulate_spec(&expr)
+    .expect("well-formed manipulate");
+  assert_eq!(spec.controls.len(), 2);
+  match &spec.controls[0] {
+    woxi::functions::graphics::ManipulateControl::Continuous {
+      name, ..
+    } => {
+      assert_eq!(name, "w");
+    }
+    other => panic!("expected a continuous control for w, got {other:?}"),
+  }
+  match &spec.controls[1] {
+    woxi::functions::graphics::ManipulateControl::Discrete {
+      name,
+      values,
+      ..
+    } => {
+      assert_eq!(name, "labels");
+      assert_eq!(values, &["True".to_string(), "False".to_string()]);
+    }
+    other => {
+      panic!("expected a discrete checkbox control for labels, got {other:?}")
+    }
+  }
+
+  // Re-evaluating the body under bound control values (what the frontend
+  // does on every slider/checkbox change) must still render a complete
+  // picture: the affine-shifted red-filled region, the toggled Epilog
+  // label, and the held integral in the plot title.
+  let render = |w: &str, labels: &str| {
+    let code = format!(
+      "Block[{{w = {w}, labels = {labels}}}, ExportString[{body}, \"SVG\"]]"
+    );
+    let svg = interpret(&code).unwrap();
+    assert!(
+      svg.starts_with("<svg"),
+      "expected SVG for w={w}, labels={labels}: {svg}"
+    );
+    svg
+  };
+
+  let with_label = render("1.2", "True");
+  assert!(
+    with_label.contains("fill=\"rgb(255,0,0)\""),
+    "the Filling->Opacity[.., Red] region should still tint red: {with_label}"
+  );
+  assert!(
+    // The Epilog's plain `Text["A", …]` draws as a bare `<text>A</text>`
+    // (unlike the italic "A" in `PlotLabel`, which is a `<tspan>` inside a
+    // larger `<text>` element) — check for that specific shape so this
+    // doesn't also match the "A" in "A = ∫…" up top.
+    with_label.contains(">A</text>"),
+    "Epilog should draw the \"A\" label when labels is True: {with_label}"
+  );
+  assert!(
+    with_label.contains("\u{222b}") && with_label.contains("\u{2146}"),
+    "PlotLabel should typeset the held integral (\u{222b} \u{2026} \u{2146}x), not raw \
+     TraditionalForm/HoldForm source: {with_label}"
+  );
+
+  let without_label = render("1.2", "False");
+  assert!(
+    !without_label.contains(">A</text>"),
+    "Epilog's \"A\" label must not draw when labels is False: {without_label}"
   );
 }

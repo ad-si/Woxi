@@ -3803,7 +3803,9 @@ fn rotate_point(
 /// homogeneous `TransformationFunction[…]` itself, and a list of any of
 /// those — a list draws one transformed copy per entry. Empty when nothing
 /// numeric can be read out.
-fn parse_affine_transforms(expr: &Expr) -> Vec<([[f64; 2]; 2], (f64, f64))> {
+pub(crate) fn parse_affine_transforms(
+  expr: &Expr,
+) -> Vec<([[f64; 2]; 2], (f64, f64))> {
   // {{a, b}, {c, d}} — a 2×2 linear map.
   fn matrix2(expr: &Expr) -> Option<[[f64; 2]; 2]> {
     let Expr::List(rows) = expr else { return None };
