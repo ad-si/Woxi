@@ -820,7 +820,7 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Find all roots of polynomial (coeffs[i] is coefficient of x^i) using
 /// the Durand-Kerner (Weierstrass) method on complex doubles.
-fn durand_kerner_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
+pub(crate) fn durand_kerner_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
   let n = coeffs.len() - 1;
   if n == 0 {
     return vec![];

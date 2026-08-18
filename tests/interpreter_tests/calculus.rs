@@ -9341,6 +9341,59 @@ mod inverse_laplace_transform {
     );
   }
 
+  // ─── Partial-fraction fallback (numeric-coefficient rational functions
+  // past a quadratic denominator, e.g. a control-system transfer function
+  // with a Manipulate slider's value substituted in) ───────────────────
+
+  // Three distinct real poles: the textbook partial-fraction expansion of
+  // 1/((s+1)(s+2)(s+3)) is (1/2)E^-t - E^-2t + (1/2)E^-3t.
+  #[test]
+  fn partial_fractions_three_real_poles() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/((s + 1)(s + 2)(s + 3)), s, t]")
+        .unwrap(),
+      "0.5/E^(3.*t) - 1./E^(2.*t) + 0.5/E^(1.*t)"
+    );
+  }
+
+  // A real pole at s = 0 plus a complex-conjugate pair (-1 ± 2 I) from
+  // s^2 + 2 s + 5: the real pole contributes a constant, the pair an
+  // exponentially damped oscillation.
+  #[test]
+  fn partial_fractions_real_and_complex_poles() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s^3 + 2 s^2 + 5 s), s, t]")
+        .unwrap(),
+      "0.2 + (-0.2*Cos[2.*t] - 0.1*Sin[2.*t])/E^(1.*t)"
+    );
+  }
+
+  // A repeated pole needs `t^k E^(r t)` terms the simple-pole residue sum
+  // doesn't produce — it must stay unevaluated rather than silently return
+  // a wrong answer.
+  #[test]
+  fn partial_fractions_repeated_pole_stays_unevaluated() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s + 1)^3, s, t]").unwrap(),
+      "InverseLaplaceTransform[(1 + s)^(-3), s, t]"
+    );
+  }
+
+  // At t = 0 the three-real-pole case above must reproduce the exact
+  // partial-fraction coefficients (1/2 - 1 + 1/2 = 0), a quick numeric
+  // sanity check independent of the exact printed form.
+  #[test]
+  fn partial_fractions_value_at_zero() {
+    assert_eq!(
+      interpret(
+        "Chop[InverseLaplaceTransform[1/((s + 1)(s + 2)(s + 3)), s, t] \
+         /. t -> 0]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
   // ─── Two-variable InverseLaplaceTransform ───────────────────────────
   // wolframscript:
   //   InverseLaplaceTransform[1/(p*q), {p, q}, {x, y}]      -> 1
