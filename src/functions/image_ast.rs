@@ -735,6 +735,17 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ImageData expects 1 or 2 arguments".into(),
     ));
   }
+  let coerced;
+  let args: &[Expr] = if !matches!(&args[0], Expr::Image { .. })
+    && let Some(img) = coerce_graphics_to_image(&args[0])
+  {
+    let mut v = args.to_vec();
+    v[0] = img;
+    coerced = v;
+    &coerced
+  } else {
+    args
+  };
   let requested_type: Option<&str> = if args.len() == 2 {
     match &args[1] {
       Expr::String(s) => Some(s.as_str()),
@@ -1491,6 +1502,17 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ImageAdjust expects 1 or 2 arguments".into(),
     ));
   }
+  let coerced;
+  let args: &[Expr] = if !matches!(&args[0], Expr::Image { .. })
+    && let Some(img) = coerce_graphics_to_image(&args[0])
+  {
+    let mut v = args.to_vec();
+    v[0] = img;
+    coerced = v;
+    &coerced
+  } else {
+    args
+  };
 
   let Expr::Image {
     color_space: _,
@@ -1522,6 +1544,11 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && items.len() == 2
   {
     Adjust::BrightnessContrast(expr_to_f64(&items[0])?, expr_to_f64(&items[1])?)
+  } else if let Expr::List(_) = &args[1] {
+    // A list shape other than the {c, b} pair (e.g. a gamma-correction
+    // {c, b, γ} triple) isn't implemented — leave the call unevaluated
+    // rather than crashing on the failed numeric conversion below.
+    return Ok(unevaluated("ImageAdjust", args));
   } else {
     Adjust::Contrast(expr_to_f64(&args[1])?)
   };
@@ -1924,6 +1951,18 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ImageResize[img, {w, h}] or ImageResize[img, w] - Resize to target dimensions
 pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let coerced;
+  let args: &[Expr] = if !matches!(&args[0], Expr::Image { .. })
+    && let Some(img) = coerce_graphics_to_image(&args[0])
+  {
+    let mut v = args.to_vec();
+    v[0] = img;
+    coerced = v;
+    &coerced
+  } else {
+    args
+  };
+
   if !matches!(&args[0], Expr::Image { .. }) {
     crate::emit_message(&format!(
       "ImageResize::imginv: Expecting an image or graphics instead of {}.",
@@ -7940,6 +7979,43 @@ fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
   fontdb.set_fantasy_family("Atkinson Hyperlegible Next");
 }
 
+/// Extract an SVG rendering of `expr` when it is a `Graphics`/`Graphics3D`
+/// expression, evaluated or still a bare `FunctionCall`. Returns `None`
+/// for anything else.
+fn graphics_svg(expr: &Expr) -> Option<String> {
+  match expr {
+    Expr::Graphics { svg, .. } => Some(svg.clone()),
+    Expr::FunctionCall { name, args }
+      if name == "Graphics" || name == "Graphics3D" =>
+    {
+      match crate::functions::graphics::graphics_ast(args) {
+        Ok(Expr::Graphics { ref svg, .. }) => Some(svg.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Coerce a `Graphics`/`Graphics3D` expression into an `Image` by
+/// rasterizing it, matching wolframscript's image-processing functions
+/// (`ImageResize`, `ImageData`, `ImageAdjust`, ...), which transparently
+/// accept graphics wherever an image is expected. Returns `None` for
+/// anything that isn't a renderable graphics expression, or on the
+/// wasm32 target where the SVG rasterizer is unavailable — callers fall
+/// back to their existing `imginv` handling in that case.
+fn coerce_graphics_to_image(expr: &Expr) -> Option<Expr> {
+  #[cfg(target_arch = "wasm32")]
+  {
+    let _ = expr;
+    None
+  }
+  #[cfg(not(target_arch = "wasm32"))]
+  {
+    rasterize_svg(&graphics_svg(expr)?, 96.0).ok()
+  }
+}
+
 /// Rasterize[expr] or Rasterize[expr, ImageResolution -> n]
 /// Converts a Graphics, Grid, or other visual expression to a raster image.
 #[cfg(not(target_arch = "wasm32"))]
@@ -7968,35 +8044,25 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Get SVG string from the expression
-  let svg_str = match &args[0] {
-    Expr::Graphics { svg, .. } => svg.clone(),
-    Expr::FunctionCall { name, args: fargs }
-      if name == "Graphics" || name == "Graphics3D" =>
-    {
-      if let Ok(Expr::Graphics { ref svg, .. }) =
-        crate::functions::graphics::graphics_ast(fargs)
-      {
-        svg.clone()
-      } else {
+  let svg_str = if let Some(svg) = graphics_svg(&args[0]) {
+    svg
+  } else {
+    match &args[0] {
+      Expr::FunctionCall { name, args: fargs } if name == "Grid" => {
+        crate::functions::graphics::grid_svg_with_gaps(fargs, &[])?
+      }
+      Expr::FunctionCall { name, args: fargs } if name == "Column" => {
+        crate::functions::graphics::column_to_svg(fargs).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "Rasterize: failed to render Column".into(),
+          )
+        })?
+      }
+      _ => {
         return Err(InterpreterError::EvaluationError(
-          "Rasterize: failed to render Graphics".into(),
+          "Rasterize: unsupported expression type".into(),
         ));
       }
-    }
-    Expr::FunctionCall { name, args: fargs } if name == "Grid" => {
-      crate::functions::graphics::grid_svg_with_gaps(fargs, &[])?
-    }
-    Expr::FunctionCall { name, args: fargs } if name == "Column" => {
-      crate::functions::graphics::column_to_svg(fargs).ok_or_else(|| {
-        InterpreterError::EvaluationError(
-          "Rasterize: failed to render Column".into(),
-        )
-      })?
-    }
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Rasterize: unsupported expression type".into(),
-      ));
     }
   };
 

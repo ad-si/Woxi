@@ -530,6 +530,61 @@ mod protect_unprotect {
   }
 
   #[test]
+  fn set_on_times_lhs_is_rejected_not_fatal() {
+    // `2 x = 5` parses as `Set[Times[2, x], 5]` since `=` binds looser than
+    // implicit multiplication. wolframscript rejects this with a message
+    // (not a fatal error) and returns the right-hand side, leaving `x`
+    // unassigned. Regression for a Times/Plus/Power-headed Set target
+    // aborting the whole interpretation instead of just failing softly.
+    clear_state();
+    let result = interpret_with_stdout("2 x = 5").unwrap();
+    assert_eq!(result.result, "5");
+    assert!(
+      result.warnings[0].contains("Set::write: Tag Times in 2*x is Protected."),
+      "unexpected warnings: {:?}",
+      result.warnings
+    );
+    assert_eq!(interpret("x").unwrap(), "x");
+  }
+
+  #[test]
+  fn set_after_null_statement_without_semicolon_assigns_target() {
+    // A `While`/`For`/etc. statement followed by another statement with no
+    // separating `;` parses as implicit multiplication: `While[...] y = v`
+    // becomes `Set[Times[While[...], y], v]`. wolframscript still runs the
+    // `While` for its side effects and, since it evaluates to `Null`
+    // (contributing no coefficient), assigns `v` to `y` directly rather
+    // than rejecting the Times-headed target. This is the exact shape a
+    // missing `;` between two Module statements produces.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Module[{n = 0, total}, While[n < 3, n = n + 1] total = n * 10; total]"
+      )
+      .unwrap(),
+      "30"
+    );
+  }
+
+  #[test]
+  fn set_after_null_statement_runs_side_effects_of_both_factors() {
+    // Same shape as above, but confirms the `While` loop's side effects
+    // (not just the final assignment) actually ran — a naive fix that
+    // only patched the error message without evaluating the held Times
+    // factors would leave `acc` empty.
+    clear_state();
+    assert_eq!(
+      interpret(concat!(
+        "Module[{acc = {}, i = 1, len},",
+        "  While[i <= 3, acc = Append[acc, i]; i++] len = Length[acc];",
+        "  {acc, len}]"
+      ))
+      .unwrap(),
+      "{{1, 2, 3}, 3}"
+    );
+  }
+
+  #[test]
   fn clear_protected_symbol_keeps_definitions() {
     clear_state();
     let result =
