@@ -241,6 +241,10 @@ pub fn contains_pattern(expr: &Expr) -> bool {
     // variable number of args without themselves being Expr::Pattern.
     // OptionsPattern[…] is also a sequence pattern (matches zero or more
     // Rule/RuleDelayed args).
+    // Except[c] and PatternTest[p, f] constrain what matches without
+    // necessarily holding a blank themselves — `Except[3]` and
+    // `Except[0]?NumericQ` are patterns even though every argument is a
+    // literal, so the head has to be recognized on its own.
     Expr::FunctionCall { name, .. }
       if matches!(
         name.as_str(),
@@ -249,6 +253,8 @@ pub fn contains_pattern(expr: &Expr) -> bool {
           | "BlankSequence"
           | "BlankNullSequence"
           | "OptionsPattern"
+          | "Except"
+          | "PatternTest"
       ) =>
     {
       true
@@ -1666,8 +1672,87 @@ pub fn permutations(items: &[Expr]) -> Vec<Vec<Expr>> {
   result
 }
 
-/// Check if a pattern tree contains any PatternOptional nodes.
+/// The inner pattern and default of a general `Optional[p]` / `Optional[p, d]`
+/// call. `canonicalize_pattern` lowers `Optional[x_, d]` to `PatternOptional`,
+/// but anything richer than a named blank (`_?NumericQ : 2`,
+/// `x : _Symbol | _Integer : 2`, …) stays in call form, so every place that
+/// reasons about optional argument slots has to see both shapes.
+pub fn optional_call_parts(pat: &Expr) -> Option<(&Expr, Option<&Expr>)> {
+  match pat {
+    Expr::FunctionCall { name, args }
+      if name == "Optional" && (args.len() == 1 || args.len() == 2) =>
+    {
+      Some((&args[0], args.get(1)))
+    }
+    _ => None,
+  }
+}
+
+/// Is `pat` an argument slot that may be omitted (either representation)?
+pub fn is_optional_slot(pat: &Expr) -> bool {
+  matches!(pat, Expr::PatternOptional { .. })
+    || optional_call_parts(pat).is_some()
+}
+
+/// Every pattern variable bound inside `pat`, in first-seen order.
+///
+/// Used when an `Optional[…]` slot is omitted: Wolfram binds the names in the
+/// skipped pattern to the default value without re-testing the pattern, so
+/// `f[x : _?NumericQ : 2] := x^2` gives `f[] == 4` even though the default
+/// never runs through `NumericQ`.
+fn pattern_binding_names(pat: &Expr, out: &mut Vec<String>) {
+  let push = |name: &String, out: &mut Vec<String>| {
+    if !name.is_empty() && !out.contains(name) {
+      out.push(name.clone());
+    }
+  };
+  match pat {
+    Expr::Pattern { name, .. }
+    | Expr::PatternOptional { name, .. }
+    | Expr::PatternTest { name, .. } => push(name, out),
+    Expr::FunctionCall { name, args }
+      if name == "Pattern" && args.len() == 2 =>
+    {
+      if let Expr::Identifier(n) = &args[0] {
+        push(n, out);
+      }
+      pattern_binding_names(&args[1], out);
+    }
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        pattern_binding_names(a, out);
+      }
+    }
+    Expr::List(items) => {
+      for a in items {
+        pattern_binding_names(a, out);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      pattern_binding_names(left, out);
+      pattern_binding_names(right, out);
+    }
+    Expr::UnaryOp { operand, .. } => pattern_binding_names(operand, out),
+    _ => {}
+  }
+}
+
+/// Bindings produced when an optional slot is omitted: every pattern variable
+/// inside it takes the default value.
+fn bindings_for_omitted_optional(
+  inner: &Expr,
+  default: &Expr,
+) -> Vec<(String, Expr)> {
+  let mut names = Vec::new();
+  pattern_binding_names(inner, &mut names);
+  names.into_iter().map(|n| (n, default.clone())).collect()
+}
+
+/// Check if a pattern tree contains any optional argument slots.
 fn pattern_contains_optional(pat: &Expr) -> bool {
+  if optional_call_parts(pat).is_some() {
+    return true;
+  }
   match pat {
     Expr::PatternOptional { .. } => true,
     Expr::FunctionCall { args, .. } => {
@@ -3518,6 +3603,15 @@ fn try_skip_optional_subsets(
     let mut expr_iter = expr_args.iter();
     for (i, p) in pat_args.iter().enumerate() {
       if skip.contains(&i) {
+        // General `Optional[p, d]` slot: bind every name inside `p` to the
+        // default. Without an explicit default the slot cannot fire (there
+        // is no `Default[f]` fallback for these richer forms in Wolfram
+        // either), so the partial fill fails.
+        if let Some((inner, default)) = optional_call_parts(p) {
+          let d = default?;
+          bindings.extend(bindings_for_omitted_optional(inner, d));
+          continue;
+        }
         if let Expr::PatternOptional { name, default, .. } = p {
           let def = match default {
             Some(d) => Some(*d.clone()),
@@ -3657,6 +3751,14 @@ fn match_pattern_impl(
         }
       }
       Some(vec![(name.clone(), expr.clone())])
+    }
+    // `Optional[p]` / `Optional[p, d]` in call form (the shapes
+    // `canonicalize_pattern` leaves alone, e.g. `_?NumericQ : 2`). When a
+    // value is present the default is irrelevant — match the inner pattern.
+    Expr::FunctionCall { name, args }
+      if name == "Optional" && (args.len() == 1 || args.len() == 2) =>
+    {
+      match_pattern_impl(expr, &args[0])
     }
     Expr::PatternOptional { name, head, .. } => {
       // When a value is present, PatternOptional matches like a regular Pattern
@@ -3905,6 +4007,20 @@ fn match_pattern_impl(
       }
       match_args_with_sequences(&expr_args, pat_args)
     }
+    // PatternTest[p, f] — the general `p?f` form, where `p` is any pattern
+    // rather than a blank (`Except[0]?NumericQ`, `Alternatives[1, 2]?IntegerQ`).
+    // Blank forms are `Expr::PatternTest` and handled above.
+    Expr::FunctionCall {
+      name: pat_name,
+      args: pat_args,
+    } if pat_name == "PatternTest" && pat_args.len() == 2 => {
+      let bindings = match_pattern(expr, &pat_args[0])?;
+      if apply_pattern_test(&pat_args[1], expr) {
+        Some(bindings)
+      } else {
+        None
+      }
+    }
     // Except[c] - matches anything that doesn't match c
     // Except[c, pattern] - matches pattern but not c
     Expr::FunctionCall {
@@ -4079,7 +4195,7 @@ fn match_pattern_impl(
               let opt_positions: Vec<usize> = pat_args
                 .iter()
                 .enumerate()
-                .filter(|(_, p)| matches!(p, Expr::PatternOptional { .. }))
+                .filter(|(_, p)| is_optional_slot(p))
                 .map(|(i, _)| i)
                 .collect();
               if opt_positions.len() >= missing {

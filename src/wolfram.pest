@@ -274,6 +274,13 @@ Operator = @{
   | "." ~ !ASCII_DIGIT ~ !"."  // Dot operator (not decimal point, not .. or ...)
   | "<" | ">"
   | "=" | "@"
+  // Bare ":" — Pattern / Optional. Must come after "::", ":>", ":=" and
+  // "/:" so those keep ownership of their spellings. `Term` already takes
+  // the pattern forms that start with a name (`x_:v`, `x:body`), so this
+  // only fires for a `:` that follows a complete term — the trailing
+  // default in `x : pat : v`, or `pat : v` where `pat` is not a bare name
+  // (`x_?NumericQ : 2`, `_Integer | _Symbol : 2`).
+  | ":" ~ !("=" | ">" | ":")
 }
 
 // PostfixFunction: function used in postfix application (x // f or x // Map[f])
@@ -439,7 +446,7 @@ ConjugateTransposeSuffix = @{ "\\[ConjugateTranspose]" | "\u{F3C6}" | "\u{F3C8}"
 // TermSuffix: postfix suffix tokens that can follow a Term (after
 // FactorialSuffix). Silent choice rule — the underlying named rules
 // are the ones that appear in the parse tree.
-TermSuffix = _{ TransposeSuffix | ConjugateTransposeSuffix }
+TermSuffix = _{ TransposeSuffix | ConjugateTransposeSuffix | PatternTestSuffix }
 Expression = {
     (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)*
@@ -683,11 +690,19 @@ PatternTest = {
   | PatternTestLhsParen ~ "?" ~ !"?" ~ PatternTestFunc ~ BracketArgs*
   | PatternTestLhsBare ~ "?" ~ !"?" ~ PatternTestFunc ~ BracketArgs*
 }
+// Every other left side — a function call (`Except[0]?NumericQ`), a list
+// (`{_, _}?VectorQ`), a literal (`"a"?StringQ`) or a bracketed expression
+// (`(1 | 2)?EvenQ`) — is picked up as a suffix on the term that precedes it,
+// so `?` needs no left-side rule of its own and an ordinary term is never
+// parsed twice looking for one. The `BracketArgs*` keeps `?` binding before a
+// trailing `[…]`, exactly as in the bare-infix branch above.
+PatternTestSuffix = { "?" ~ !"?" ~ PatternTestFunc ~ BracketArgs* }
 // A parenthesized left side — `(r_)?Positive` is the same pattern as
 // `r_?Positive`, and a Demonstration writes its argument tests that way.
 // Only a *pattern* may be bracketed here: letting it be any expression
 // makes every parenthesized group try this branch, and a deeply nested one
-// then runs the parser out of its call budget.
+// then runs the parser out of its call budget. `(1 | 2)?EvenQ` and friends
+// go through `PatternTestSuffix` instead.
 PatternTestLhsParen = { "(" ~ (PatternWithHead | PatternSimple) ~ ")" }
 // LHS for the bare-infix form: an Identifier that does NOT end with an
 // underscore — `!"_"` after Identifier ensures the pattern branch above
@@ -754,7 +769,7 @@ PatternSimple = { PatternName? ~ PatternBlanks ~ !("_" | "?" | ".") }
 // where the body is any expression the pattern should match. Distinct
 // from `name_:default` (Optional with default) and `name::tag`
 // (MessageName); the negative lookaheads keep those forms intact.
-PatternNamed = { PatternName ~ ":" ~ !("=" | ">" | ":") ~ Term ~ (RepeatedNullSuffix | RepeatedSuffix)? }
+PatternNamed = { PatternName ~ ":" ~ !("=" | ">" | ":") ~ Term ~ PatternTestSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? }
 Pattern = { PatternCondition | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalAnonBlank | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
 
 // Replacement rule: pattern -> replacement or pattern :> replacement (RuleDelayed)
@@ -909,7 +924,13 @@ BracketArgs = { "[" ~ (FunctionArgOrOmitted ~ ("," ~ FunctionArgOrOmittedLast)*)
 FunctionCall = { (Identifier | NamedCharIdentifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+ ~ DerivativePrime? }
 
 // FunctionDefinition supports multiple pattern arguments: f[a_, b_] := ...
-FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalAnonBlank | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
+// `PatternOptionalNamedBlank` (`x:_:v`) and `PatternOptionalAnonBlank`
+// (`_:v`) are deliberately absent: `store_function_definition` has no
+// reader for them, so listing them here let the parameter be swallowed
+// (`f[x:_:2] := x^2` filed as `f[] := x^2`). Leaving them out makes the
+// definition fall through to the general `Expression` path, which builds
+// the same `Optional[…]` pattern the `Hold`ed form does.
+FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
 // Body is a simple ExpressionNoImplicit (we removed CompoundExpression option to prevent
 // greedy parsing of subsequent statements as part of the function body)
 // Compound expressions in function bodies should use explicit parentheses: f[x_] := (a; b)

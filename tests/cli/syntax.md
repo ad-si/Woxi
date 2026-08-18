@@ -296,6 +296,38 @@ $ wo 'Cases[{1, 2, 3, 4, 5}, Except[2 | 4]]'
 ```
 
 
+## Optional Pattern Defaults (`:`)
+
+Writing `pattern : value` gives an argument a default, so the argument may
+be left out. The short form names a blank (`x_ : 2`):
+
+```scrut
+$ wo 'f[x_ : 2] := x^2; {f[3], f[]}'
+{9, 4}
+```
+
+The default may be written on any pattern, not just a named blank — on a
+pattern test, or on a whole alternation (`|` binds tighter than `:`):
+
+```scrut
+$ wo 'f[x_?NumericQ : 2] := x^2; {f[3], f[], f[a]}'
+{9, 4, f[a]}
+```
+
+```scrut
+$ wo 'f[x : _Symbol | _Integer : 2] := x^2; {f[3], f[a], f[]}'
+{9, a^2, 4}
+```
+
+The default value is taken as written — it is not checked against the
+pattern it stands in for:
+
+```scrut
+$ wo 'f[x : x_?NumericQ : 2] := x^2; {f[3], f[]}'
+{9, 4}
+```
+
+
 ## Comments (`(* … *)`)
 
 A comment is skipped wherever whitespace is, and what it holds is never

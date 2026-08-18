@@ -577,11 +577,30 @@ pub fn constrain_repeated_params(
   }
 }
 
-/// Collect all pattern variable names from an expression.
-/// Returns tuples of (name, head, is_optional) for each Pattern/PatternOptional node found.
+/// The key a pattern node is tracked under while it stands in for a
+/// placeholder identifier. A named pattern keys on its name, so every
+/// occurrence of `x_` collapses onto one variable. An anonymous blank has no
+/// name to key on, and keying them all on the empty string made distinct
+/// blanks collide — `_Symbol | _Integer` was stored as `_Symbol | _Symbol` —
+/// so an anonymous one keys on its own written shape instead, which is
+/// exactly what tells two of them apart.
+fn pattern_var_key(name: &str, expr: &Expr) -> String {
+  if !name.is_empty() {
+    return name.to_string();
+  }
+  let shape: String = crate::syntax::expr_to_string(expr)
+    .chars()
+    .map(|c| if c.is_ascii_alphanumeric() { c } else { 'x' })
+    .collect();
+  format!("anon{shape}")
+}
+
+/// Collect all pattern variables from an expression.
+/// Returns tuples of (key, name, head, is_optional, blank_type) for each
+/// Pattern/PatternOptional node found.
 fn collect_pattern_vars(
   expr: &Expr,
-) -> Vec<(String, Option<String>, bool, u8)> {
+) -> Vec<(String, String, Option<String>, bool, u8)> {
   let mut vars = Vec::new();
   collect_pattern_vars_inner(expr, &mut vars);
   vars
@@ -589,23 +608,33 @@ fn collect_pattern_vars(
 
 fn collect_pattern_vars_inner(
   expr: &Expr,
-  vars: &mut Vec<(String, Option<String>, bool, u8)>,
+  vars: &mut Vec<(String, String, Option<String>, bool, u8)>,
 ) {
   match expr {
     Expr::Pattern {
       name,
       head,
       blank_type,
-    } if !vars.iter().any(|(n, _, _, _)| n == name) => {
-      vars.push((name.clone(), head.clone(), false, *blank_type));
+    } if !vars
+      .iter()
+      .any(|(k, _, _, _, _)| *k == pattern_var_key(name, expr)) =>
+    {
+      vars.push((
+        pattern_var_key(name, expr),
+        name.clone(),
+        head.clone(),
+        false,
+        *blank_type,
+      ));
     }
     Expr::PatternOptional {
       name,
       head,
       default,
     } => {
-      if !vars.iter().any(|(n, _, _, _)| n == name) {
-        vars.push((name.clone(), head.clone(), true, 1));
+      let key = pattern_var_key(name, expr);
+      if !vars.iter().any(|(k, _, _, _, _)| *k == key) {
+        vars.push((key, name.clone(), head.clone(), true, 1));
       }
       if let Some(d) = default {
         collect_pattern_vars_inner(d, vars);
@@ -617,8 +646,9 @@ fn collect_pattern_vars_inner(
       blank_type,
       ..
     } => {
-      if !vars.iter().any(|(n, _, _, _)| n == name) {
-        vars.push((name.clone(), None, false, *blank_type));
+      let key = pattern_var_key(name, expr);
+      if !vars.iter().any(|(k, _, _, _, _)| *k == key) {
+        vars.push((key, name.clone(), None, false, *blank_type));
       }
       collect_pattern_vars_inner(test, vars);
     }
@@ -647,19 +677,15 @@ fn collect_pattern_vars_inner(
 /// Returns the substituted expression.
 fn replace_patterns_with_placeholders(
   expr: &Expr,
-  vars: &[(String, Option<String>, bool, u8)],
+  vars: &[(String, String, Option<String>, bool, u8)],
 ) -> Expr {
   match expr {
-    Expr::Pattern { name, .. } | Expr::PatternOptional { name, .. } => {
-      if vars.iter().any(|(n, _, _, _)| n == name) {
-        Expr::Identifier(format!("__patvar{name}__"))
-      } else {
-        expr.clone()
-      }
-    }
-    Expr::PatternTest { name, .. } => {
-      if vars.iter().any(|(n, _, _, _)| n == name) {
-        Expr::Identifier(format!("__patvar{name}__"))
+    Expr::Pattern { name, .. }
+    | Expr::PatternOptional { name, .. }
+    | Expr::PatternTest { name, .. } => {
+      let key = pattern_var_key(name, expr);
+      if vars.iter().any(|(k, _, _, _, _)| *k == key) {
+        Expr::Identifier(format!("__patvar{key}__"))
       } else {
         expr.clone()
       }
@@ -693,15 +719,15 @@ fn replace_patterns_with_placeholders(
 /// Replace placeholder identifiers back with Pattern or PatternOptional nodes.
 fn replace_placeholders_with_patterns(
   expr: &Expr,
-  vars: &[(String, Option<String>, bool, u8)],
+  vars: &[(String, String, Option<String>, bool, u8)],
 ) -> Expr {
   match expr {
     Expr::Identifier(name) => {
       if let Some(stripped) = name
         .strip_prefix("__patvar")
         .and_then(|s| s.strip_suffix("__"))
-        && let Some((pat_name, head, is_optional, blank_type)) =
-          vars.iter().find(|(n, _, _, _)| n == stripped)
+        && let Some((_, pat_name, head, is_optional, blank_type)) =
+          vars.iter().find(|(k, _, _, _, _)| k == stripped)
       {
         if *is_optional {
           return Expr::PatternOptional {
@@ -2305,6 +2331,19 @@ pub fn set_delayed_ast(
 
     for (i, arg) in lhs_args.iter().enumerate() {
       let arg = unwrap_longest_shortest(arg);
+      // `Optional[p, d]` in call form — the shape a default written on
+      // anything richer than a named blank parses to (`x_?NumericQ : 2`,
+      // `x : _Symbol | _Integer : 2`, …). The slot itself is described by
+      // `p`, so describe that and attach the default afterwards; the
+      // `PatternOptional` node (`x_ : 2`) keeps its own handling below.
+      let (arg, optional_default) =
+        match crate::evaluator::pattern_matching::optional_call_parts(arg) {
+          Some((inner, default)) => {
+            (unwrap_longest_shortest(inner), default.cloned())
+          }
+          None => (arg, None),
+        };
+      let slot_start = params.len();
       match arg {
         // OptionsPattern[] or OptionsPattern[{defaults...}] — matches zero or more Rule arguments
         Expr::FunctionCall {
@@ -2543,6 +2582,11 @@ pub fn set_delayed_ast(
           };
           defaults.push(default_for_slot);
           heads.push(head);
+        }
+      }
+      if let Some(d) = optional_default {
+        for slot in defaults.iter_mut().skip(slot_start) {
+          *slot = Some(d.clone());
         }
       }
     }

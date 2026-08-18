@@ -2571,12 +2571,3 @@ mod interpreter_tests {
   mod wavelets;
   mod wxf;
 }
-
-#[cfg(test)]
-mod tmp_dbg4 {
-  #[test]
-  fn t() {
-    woxi::clear_state();
-    let _ = woxi::interpret_with_stdout("{1, 2, 3}");
-  }
-}
