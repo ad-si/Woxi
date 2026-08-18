@@ -19747,6 +19747,25 @@ fn unicode_script_char(c: char, superscript: bool) -> Option<char> {
   Some(mapped)
 }
 
+/// A discrete control's choice list may be written `Dynamic[expr, opts…]`
+/// (e.g. `Dynamic[# -> data[[#]] & /@ Range[Length[data]], SynchronousUpdating -> False]`)
+/// so the front end refreshes it as other state changes. The trailing
+/// options only govern *when* Wolfram redraws the popup, not what the list
+/// contains, so unwrapping to `expr` and evaluating it once already matches
+/// what Wolfram renders. `Dynamic` is `HoldFirst` and has no evaluation rule
+/// of its own, so without this the wrapped expression is never reached and
+/// the control fails to parse.
+fn unwrap_dynamic_choices(expr: &Expr) -> &Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      &args[0]
+    }
+    _ => expr,
+  }
+}
+
 /// Parse a single variable-spec list into a `ParsedControl`. `siblings`
 /// names the Manipulate's other control variables, so a choice list built
 /// from one of them can be marked for live re-resolution; pass an empty
@@ -20215,7 +20234,7 @@ fn parse_manipulate_control(
   // multiple-choice bar rather than a one-of picker.
   if matches!(control_type.as_deref(), Some("CheckboxBar" | "TogglerBar"))
     && bounds.len() == 1
-    && let Some(choices) = match bounds[0] {
+    && let Some(choices) = match unwrap_dynamic_choices(bounds[0]) {
       l @ Expr::List(_) => Some(l.clone()),
       other => crate::evaluator::evaluate_expr_to_expr(other).ok(),
     }
@@ -20244,7 +20263,7 @@ fn parse_manipulate_control(
   }
   {
     let value_items: Option<Vec<Expr>> = if bounds.len() == 1 {
-      match bounds[0] {
+      match unwrap_dynamic_choices(bounds[0]) {
         Expr::List(vs) => Some(vs.iter().cloned().collect()),
         other => match crate::evaluator::evaluate_expr_to_expr(other) {
           Ok(Expr::List(ref vs)) => Some(vs.iter().cloned().collect()),
@@ -20285,10 +20304,13 @@ fn parse_manipulate_control(
       // A choice list built from another control's variable (`Range[1,
       // If[flat, 3, 6], 1]`) only holds for that variable's current value;
       // keep its code so the frontend can rebuild the choices whenever the
-      // other control moves.
+      // other control moves. A `Dynamic[…]` wrapper is stripped first (see
+      // `unwrap_dynamic_choices`) so the kept code re-evaluates cleanly too.
       let values_code = (bounds.len() == 1
-        && expr_references_any(bounds[0], siblings))
-      .then(|| crate::syntax::expr_to_input_form(bounds[0]));
+        && expr_references_any(unwrap_dynamic_choices(bounds[0]), siblings))
+      .then(|| {
+        crate::syntax::expr_to_input_form(unwrap_dynamic_choices(bounds[0]))
+      });
       return Some(ParsedControl::Visible {
         control: ManipulateControl::Discrete {
           name,
@@ -22549,6 +22571,43 @@ mod manipulate_dynamic_control_list_tests {
        Sequence@@If[mode == 1, {Control[{{y, 0}, -1, 1}]}, {}]}]]",
     );
     assert_eq!(names(&s), vec!["mode"]);
+  }
+
+  /// A discrete control's own *choice list* (not the whole control-spec
+  /// list) can be written `Dynamic[expr, opts…]` — the shape a PopupMenu
+  /// built from a lookup table uses so the front end can refresh it as
+  /// other state changes (e.g. `Dynamic[# -> data[[#, 2]] & /@
+  /// Range[Length[data]], SynchronousUpdating -> False]`). `Dynamic` is
+  /// `HoldFirst` with no evaluation rule of its own, so the wrapper must be
+  /// stripped before the wrapped expression is evaluated to a list of
+  /// choices; previously the control silently failed to parse at all.
+  #[test]
+  fn dynamic_wrapped_choice_list_still_offers_its_options() {
+    let _ = crate::interpret_with_stdout(
+      "presetTable = {{1, \"a\"}, {2, \"b\"}, {3, \"c\"}};",
+    );
+    let s = spec(
+      "Manipulate[pick, {{pick, 2, \"preset\"}, \
+       Dynamic[#\
+        -> presetTable[[#, 2]] & /@ Range[Length[presetTable]], \
+        SynchronousUpdating -> False], ControlType -> PopupMenu}]",
+    );
+    assert_eq!(names(&s), vec!["pick"]);
+    match &s.controls[0] {
+      ManipulateControl::Discrete {
+        values,
+        value_labels,
+        initial_index,
+        popup,
+        ..
+      } => {
+        assert_eq!(values, &["1", "2", "3"]);
+        assert_eq!(value_labels, &["a", "b", "c"]);
+        assert_eq!(*initial_index, 1);
+        assert!(popup, "ControlType -> PopupMenu must render as a dropdown");
+      }
+      other => panic!("expected a Discrete control, got {other:?}"),
+    }
   }
 }
 

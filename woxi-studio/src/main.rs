@@ -18574,4 +18574,93 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 3, $CellContext`spread$$ = 0,
       "the weighted hub sits elsewhere than the centroid"
     );
   }
+
+  /// Regression for a Manipulate whose selector's *choice list itself* is
+  /// wrapped in `Dynamic[…]` — the shape a Demonstration built from a preset
+  /// table uses so a `PopupMenu` can be assembled from data instead of
+  /// literal choices (`Dynamic[# -> presetNames[[#]] & /@
+  /// Range[Length[presetShapes]], SynchronousUpdating -> False]`). `Dynamic`
+  /// is `HoldFirst` with no evaluation rule of its own, so the wrapper used
+  /// to reach the control-spec parser unevaluated and the whole choice list
+  /// (and with it, the whole widget) failed to build.
+  #[test]
+  fn demonstration_preset_popup_choices_wrapped_in_dynamic_still_builds() {
+    let _ = woxi::interpret_with_stdout(
+      "presetShapes = {{{1, 0}, {0, 1}, {-1, 0}, {0, -1}}, \
+       {{1, 1}, {-1, 1}, {-1, -1}, {1, -1}}, \
+       {{2, 0}, {0, 1}, {-2, 0}, {0, -1}}}; \
+       presetNames = {\"diamond\", \"square\", \"kite\"};",
+    );
+    let code = "Manipulate[\
+      Module[{corners}, \
+        corners = presetShapes[[shapeIndex]]; \
+        Graphics[{Blue, Line[Append[corners, First[corners]]]}, \
+          PlotRange -> 3, ImageSize -> 250]], \
+      {{shapeIndex, 1, \"shape\"}, \
+        Dynamic[#\
+         -> presetNames[[#]] & /@ Range[Length[presetShapes]], \
+         SynchronousUpdating -> False], ControlType -> PopupMenu}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Dynamic-wrapped popup choices must still build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the selected preset's outline must render"
+    );
+
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name,
+          values,
+          value_labels,
+          current_index,
+          popup,
+          ..
+        },
+      ] => {
+        assert_eq!(name.as_str(), "shapeIndex");
+        assert_eq!(values, &["1", "2", "3"]);
+        assert_eq!(value_labels, &["diamond", "square", "kite"]);
+        assert_eq!(*current_index, 0);
+        assert!(*popup, "ControlType -> PopupMenu must render as a dropdown");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the outline must render")
+    };
+    let diamond = render(&state);
+
+    match &mut state.controls[..] {
+      [manipulate::ControlState::Discrete { current_index, .. }] => {
+        *current_index = 2;
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let kite = render(&state);
+    assert_ne!(
+      diamond, kite,
+      "picking a different preset must change the outline drawn"
+    );
+  }
 }
