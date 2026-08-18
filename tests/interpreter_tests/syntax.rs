@@ -6682,6 +6682,63 @@ mod unevaluated {
       "{HoldAllComplete, Protected}"
     );
   }
+
+  // Regression: a pure function whose body wraps a Sequence in Unevaluated
+  // (the standard Demonstrations idiom for conditionally splicing several
+  // items into a list) must substitute its Slot without prematurely
+  // splicing the Sequence into Unevaluated's own argument list — that would
+  // turn `Unevaluated[Sequence[3, 9]]` into the wrong `Unevaluated[3, 9]`.
+  #[test]
+  fn pure_function_keeps_sequence_as_single_argument() {
+    assert_eq!(
+      interpret("(Unevaluated[Sequence[#, #^2]]) & [3]").unwrap(),
+      "Unevaluated[Sequence[3, 3^2]]"
+    );
+  }
+
+  #[test]
+  fn pure_function_splices_into_enclosing_list() {
+    assert_eq!(
+      interpret("{0, (Unevaluated[Sequence[#, #^2]]) & [3], 9}").unwrap(),
+      "{0, 3, 9, 9}"
+    );
+  }
+
+  #[test]
+  fn pure_function_conditional_splice_via_if() {
+    assert_eq!(
+      interpret("{0, (If[# > 0, Unevaluated[Sequence[#, #^2]], {}]) & [3], 9}")
+        .unwrap(),
+      "{0, 3, 9, 9}"
+    );
+    assert_eq!(
+      interpret(
+        "{0, (If[# > 0, Unevaluated[Sequence[#, #^2]], {}]) & [-3], 9}"
+      )
+      .unwrap(),
+      "{0, {}, 9}"
+    );
+  }
+
+  // A literal `Unevaluated[...]` written directly as a list element keeps
+  // its wrapper (Wolfram only strips/splices the wrapper when it is
+  // produced by evaluation, not when written as-is).
+  #[test]
+  fn literal_in_list_keeps_wrapper() {
+    assert_eq!(
+      interpret("{0, Unevaluated[1 + 1], 9}").unwrap(),
+      "{0, Unevaluated[1 + 1], 9}"
+    );
+  }
+
+  #[test]
+  fn if_producing_unevaluated_still_splices() {
+    assert_eq!(
+      interpret("{0, If[True, Unevaluated[Sequence[1, 2 + 3]], {}], 9}")
+        .unwrap(),
+      "{0, 1, 5, 9}"
+    );
+  }
 }
 
 mod v2_option_symbols {

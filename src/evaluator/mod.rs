@@ -15,7 +15,7 @@ mod core_eval;
 pub mod dispatch;
 pub(crate) mod function_application;
 pub mod functions;
-mod listable;
+pub(crate) mod listable;
 pub(crate) mod part_extraction;
 mod pattern_functions;
 pub(crate) mod pattern_matching;

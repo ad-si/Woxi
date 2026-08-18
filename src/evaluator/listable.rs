@@ -1421,14 +1421,11 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
   }
 }
 
-pub fn flatten_sequences<'a>(
-  name: &str,
-  args: &'a [Expr],
-) -> std::borrow::Cow<'a, [Expr]> {
-  // Check for SequenceHold attribute. HoldAllComplete implicitly carries
-  // SequenceHold semantics (Wolfram Language: HoldAllComplete = HoldAll
-  // + SequenceHold + ... ).
-  let has_sequence_hold = matches!(
+/// Check for SequenceHold attribute. HoldAllComplete implicitly carries
+/// SequenceHold semantics (Wolfram Language: HoldAllComplete = HoldAll
+/// + SequenceHold + ... ).
+pub(crate) fn has_sequence_hold(name: &str) -> bool {
+  matches!(
     name,
     "Set"
       | "SetDelayed"
@@ -1441,11 +1438,15 @@ pub fn flatten_sequences<'a>(
       attrs.contains(&"SequenceHold".to_string())
         || attrs.contains(&"HoldAllComplete".to_string())
     })
-  })
-    || crate::evaluator::attributes::get_builtin_attributes(name)
-      .contains(&"HoldAllComplete");
+  }) || crate::evaluator::attributes::get_builtin_attributes(name)
+    .contains(&"HoldAllComplete")
+}
 
-  if has_sequence_hold {
+pub fn flatten_sequences<'a>(
+  name: &str,
+  args: &'a [Expr],
+) -> std::borrow::Cow<'a, [Expr]> {
+  if has_sequence_hold(name) {
     return std::borrow::Cow::Borrowed(args);
   }
 

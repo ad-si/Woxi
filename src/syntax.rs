@@ -13458,6 +13458,27 @@ fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
         expr.clone()
       }
     }
+    // `Unevaluated`, `Hold`, `HoldComplete` and other SequenceHold /
+    // HoldAllComplete heads must keep a `Sequence[...]` produced by slot
+    // substitution as a single argument rather than splicing it into their
+    // own argument list — splicing is an evaluation-time rule that doesn't
+    // apply to their (permanently unevaluated) contents. This matters for
+    // the common Demonstrations idiom
+    // `(If[cond, Unevaluated[Sequence[a, b]], {}]) & [x]`, where splicing
+    // here would turn `Unevaluated[Sequence[a, b]]` into the wrong
+    // `Unevaluated[a, b]`.
+    Expr::FunctionCall { name, args }
+      if crate::evaluator::listable::has_sequence_hold(name) =>
+    {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args
+          .iter()
+          .map(|a| substitute_slots(a, values))
+          .collect::<Vec<_>>()
+          .into(),
+      }
+    }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: substitute_slots_expand(args, values).into(),
