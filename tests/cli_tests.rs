@@ -5,7 +5,7 @@
 //! command-line argument handling (e.g. `woxi eval -12` should accept a
 //! leading-hyphen value rather than treating it as a flag).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn woxi_bin() -> PathBuf {
@@ -776,4 +776,255 @@ fn paclets_keep_their_private_helpers_to_themselves() {
      {Pac1`, Global`}\n\
      {\"helper\", \"Pac1`Private`helper\", \"Pac2`Private`helper\"}\n"
   );
+}
+
+// --- `woxi install-kernel` ------------------------------------------------
+
+/// Scratch directory for an `install-kernel` test, laid out as
+/// `bin/` (the process `PATH`), `data/` (`JUPYTER_DATA_DIR`) and `tmp/`.
+fn kernel_test_dir(name: &str) -> PathBuf {
+  let dir = std::env::temp_dir().join(format!("woxi_cli_{name}"));
+  std::fs::remove_dir_all(&dir).ok();
+  for sub in ["bin", "tmp"] {
+    std::fs::create_dir_all(dir.join(sub)).expect("create test dir");
+  }
+  dir
+}
+
+/// Run `woxi install-kernel` with a `PATH` holding only `dir/bin`, a private
+/// Jupyter data directory and a working directory without a `kernelspec/`
+/// subdirectory — i.e. every invocation outside a source checkout.
+fn run_install_kernel(
+  dir: &Path,
+  extra_args: &[&str],
+) -> (String, String, bool) {
+  let output = Command::new(woxi_bin())
+    .arg("install-kernel")
+    .args(extra_args)
+    .current_dir(dir)
+    .env("PATH", dir.join("bin"))
+    .env("JUPYTER_DATA_DIR", dir.join("data"))
+    .env("TMPDIR", dir.join("tmp"))
+    .output()
+    .expect("failed to spawn woxi");
+  (
+    String::from_utf8_lossy(&output.stdout).into_owned(),
+    String::from_utf8_lossy(&output.stderr).into_owned(),
+    output.status.success(),
+  )
+}
+
+/// Regression test for issue #547: the kernelspec used to be read from
+/// `./kernelspec/woxi`, so installing from anywhere but a source checkout
+/// crashed with `No such file or directory`.
+#[test]
+fn install_kernel_works_outside_a_source_checkout() {
+  let dir = kernel_test_dir("install_kernel_no_checkout");
+  let (stdout, stderr, ok) = run_install_kernel(&dir, &[]);
+  assert!(ok, "woxi install-kernel failed: stderr={stderr}");
+  assert!(
+    !stderr.contains("No such file or directory"),
+    "install-kernel read the kernelspec from disk: stderr={stderr}"
+  );
+
+  let installed = dir.join("data").join("kernels").join("woxi");
+  let spec = std::fs::read_to_string(installed.join("kernel.json"))
+    .expect("kernel.json installed");
+  assert!(
+    installed.join("logo-32x32.png").is_file(),
+    "32px logo missing"
+  );
+  assert!(
+    installed.join("logo-64x64.png").is_file(),
+    "64px logo missing"
+  );
+  assert!(
+    stdout.contains(&installed.display().to_string()),
+    "install location not reported: stdout={stdout}"
+  );
+
+  // `argv[0]` must be an absolute path to the running binary so the kernel
+  // also starts when the Jupyter server's PATH has no `woxi` in it.
+  let argv0 = spec
+    .lines()
+    .find(|line| line.contains("woxi"))
+    .and_then(|line| line.split('"').nth(1).map(ToString::to_string))
+    .expect("argv[0] in kernel.json");
+  assert!(
+    Path::new(&argv0).is_absolute() && Path::new(&argv0).is_file(),
+    "argv[0] is not an existing absolute path: {argv0}"
+  );
+  assert!(spec.contains("\"jupyter\""), "kernel.json: {spec}");
+  assert!(
+    spec.contains("\"{connection_file}\""),
+    "kernel.json: {spec}"
+  );
+  assert!(
+    spec.contains("Woxi (Wolfram Language)"),
+    "kernel.json: {spec}"
+  );
+  assert!(
+    spec.contains("\"language\": \"wolfram\""),
+    "kernel.json: {spec}"
+  );
+
+  // The staged copy is a temporary and must not be left behind.
+  let leftovers: Vec<_> = std::fs::read_dir(dir.join("tmp"))
+    .map(|entries| entries.filter_map(Result::ok).map(|e| e.path()).collect())
+    .unwrap_or_default();
+  assert!(
+    leftovers.is_empty(),
+    "staging directories left behind: {leftovers:?}"
+  );
+
+  std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A second run replaces the previously installed spec instead of failing.
+#[test]
+fn install_kernel_replaces_an_existing_installation() {
+  let dir = kernel_test_dir("install_kernel_replace");
+  let installed = dir.join("data").join("kernels").join("woxi");
+  std::fs::create_dir_all(&installed).expect("create stale spec");
+  std::fs::write(installed.join("stale.json"), "{}").expect("write stale file");
+
+  let (_stdout, stderr, ok) = run_install_kernel(&dir, &[]);
+  assert!(ok, "woxi install-kernel failed: stderr={stderr}");
+  assert!(
+    installed.join("kernel.json").is_file(),
+    "kernel.json missing"
+  );
+  assert!(
+    !installed.join("stale.json").exists(),
+    "stale file survived the reinstall"
+  );
+
+  std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Write an executable `jupyter` stub into `dir/bin` that logs its arguments
+/// to `dir/args.txt`, copies the kernelspec it was pointed at to `dir/staged`
+/// and exits with `exit_code`.
+#[cfg(unix)]
+fn write_jupyter_stub(dir: &Path, exit_code: i32) {
+  use std::os::unix::fs::PermissionsExt;
+  let stub = dir.join("bin").join("jupyter");
+  // `woxi` is run with a PATH that only contains the stub, so the stub
+  // restores the test process' PATH to reach `cp`.
+  let path = std::env::var("PATH").unwrap_or_default();
+  std::fs::write(
+    &stub,
+    format!(
+      "#!/bin/sh\n\
+       PATH='{path}'\n\
+       for arg in \"$@\"; do\n\
+       printf '%s\\n' \"$arg\" >> '{dir}/args.txt'\n\
+       last=\"$arg\"\n\
+       done\n\
+       cp -r \"$last\" '{dir}/staged'\n\
+       exit {exit_code}\n",
+      dir = dir.display()
+    ),
+  )
+  .expect("write jupyter stub");
+  std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755))
+    .expect("chmod jupyter stub");
+}
+
+/// When the `jupyter` CLI is available it performs the installation, and it
+/// is handed a complete kernelspec directory.
+#[cfg(unix)]
+#[test]
+fn install_kernel_hands_a_complete_spec_to_jupyter() {
+  let dir = kernel_test_dir("install_kernel_via_jupyter");
+  write_jupyter_stub(&dir, 0);
+
+  let (stdout, stderr, ok) = run_install_kernel(&dir, &[]);
+  assert!(ok, "woxi install-kernel failed: stderr={stderr}");
+  assert!(
+    stdout.contains("installed successfully"),
+    "stdout={stdout} stderr={stderr}"
+  );
+
+  let logged = std::fs::read_to_string(dir.join("args.txt")).expect("ran");
+  let args: Vec<&str> = logged.lines().collect();
+  assert_eq!(
+    args[..args.len() - 1],
+    [
+      "kernelspec",
+      "install",
+      "--replace",
+      "--name",
+      "woxi",
+      "--user"
+    ]
+  );
+  let source_dir = Path::new(args.last().expect("source directory argument"));
+  assert_eq!(
+    source_dir.file_name().and_then(|name| name.to_str()),
+    Some("woxi"),
+    "jupyter derives the kernel name from the directory name: {source_dir:?}"
+  );
+
+  // The staged directory jupyter was pointed at held the whole spec.
+  let staged = dir.join("staged");
+  assert!(
+    staged.join("kernel.json").is_file(),
+    "staged kernel.json missing"
+  );
+  assert!(
+    staged.join("logo-32x32.png").is_file(),
+    "staged 32px logo missing"
+  );
+  assert!(
+    staged.join("logo-64x64.png").is_file(),
+    "staged 64px logo missing"
+  );
+
+  // Nothing is written directly when jupyter handles the installation.
+  assert!(
+    !dir.join("data").exists(),
+    "the spec was also installed directly"
+  );
+
+  std::fs::remove_dir_all(&dir).ok();
+}
+
+/// `--system` is forwarded to `jupyter kernelspec install`.
+#[cfg(unix)]
+#[test]
+fn install_kernel_forwards_the_system_scope() {
+  let dir = kernel_test_dir("install_kernel_system_scope");
+  write_jupyter_stub(&dir, 0);
+
+  let (_stdout, stderr, ok) = run_install_kernel(&dir, &["--system"]);
+  assert!(ok, "woxi install-kernel --system failed: stderr={stderr}");
+  let logged = std::fs::read_to_string(dir.join("args.txt")).expect("ran");
+  assert!(
+    logged.lines().any(|arg| arg == "--system"),
+    "--system not forwarded: {logged}"
+  );
+  assert!(
+    !logged.lines().any(|arg| arg == "--user"),
+    "--user forwarded alongside --system: {logged}"
+  );
+
+  std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A failing `jupyter kernelspec install` is reported and exits non-zero.
+#[cfg(unix)]
+#[test]
+fn install_kernel_fails_when_jupyter_fails() {
+  let dir = kernel_test_dir("install_kernel_jupyter_error");
+  write_jupyter_stub(&dir, 1);
+
+  let (stdout, stderr, ok) = run_install_kernel(&dir, &[]);
+  assert!(!ok, "expected a non-zero exit: stdout={stdout}");
+  assert!(
+    stderr.contains("Error installing kernel"),
+    "stderr={stderr}"
+  );
+
+  std::fs::remove_dir_all(&dir).ok();
 }

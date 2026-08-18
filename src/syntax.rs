@@ -3400,45 +3400,54 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       // Combined ReplacementRule + optional anonymous function suffix (&),
       // then any postfix applications: `f[a -> 5 // Head]` hands the whole
       // rule to Head, because `//` binds looser than `->`.
-      let inner_pairs: Vec<_> = pair.into_inner().collect();
-      let rule_expr = pair_to_expr(inner_pairs[0].clone());
-      let has_anon = inner_pairs
+      let mut inner_pairs: Vec<_> = pair.into_inner().collect();
+      let rule_expr = pair_to_expr(inner_pairs.remove(0));
+      let anon_idx = inner_pairs
         .iter()
-        .any(|p| matches!(p.as_rule(), Rule::RuleAnonSuffix));
-      let mut result = if has_anon {
-        Expr::Function {
+        .position(|p| matches!(p.as_rule(), Rule::RuleAnonSuffix));
+      if let Some(idx) = anon_idx {
+        // Everything after the `&` is a continuation on the pure function
+        // it just produced — operator/tilde-infix chains (`pat -> repl &
+        // /@ list`, the idiom for building a PopupMenu's choices from a
+        // lookup table), `/.`/`//.`, and trailing `//` — shared with a
+        // plain Expression's own post-& handling.
+        let post_pairs: Vec<_> = inner_pairs.split_off(idx + 1);
+        let func = Expr::Function {
           body: Box::new(rule_expr),
-        }
+        };
+        apply_anon_continuation(func, post_pairs)
       } else {
-        rule_expr
-      };
-      for p in &inner_pairs {
-        match p.as_rule() {
-          Rule::RuleReplaceSuffix => {
-            let repeated = p.as_str().trim_start().starts_with("//.");
-            let rules = pair_to_expr(p.clone().into_inner().next().unwrap());
-            result = if repeated {
-              Expr::ReplaceRepeated {
+        // No `&`: only `/.`/`//.` (RuleReplaceSuffix) and trailing `//`
+        // can follow the bare rule.
+        let mut result = rule_expr;
+        for p in inner_pairs {
+          match p.as_rule() {
+            Rule::RuleReplaceSuffix => {
+              let repeated = p.as_str().trim_start().starts_with("//.");
+              let rules = pair_to_expr(p.into_inner().next().unwrap());
+              result = if repeated {
+                Expr::ReplaceRepeated {
+                  expr: Box::new(result),
+                  rules: Box::new(rules),
+                }
+              } else {
+                Expr::ReplaceAll {
+                  expr: Box::new(result),
+                  rules: Box::new(rules),
+                }
+              };
+            }
+            Rule::PostfixFunction => {
+              result = Expr::Postfix {
                 expr: Box::new(result),
-                rules: Box::new(rules),
-              }
-            } else {
-              Expr::ReplaceAll {
-                expr: Box::new(result),
-                rules: Box::new(rules),
-              }
-            };
+                func: Box::new(parse_postfix_function(p)),
+              };
+            }
+            _ => {}
           }
-          Rule::PostfixFunction => {
-            result = Expr::Postfix {
-              expr: Box::new(result),
-              func: Box::new(parse_postfix_function(p.clone())),
-            };
-          }
-          _ => {}
         }
+        result
       }
-      result
     }
     Rule::PartExtract => {
       let mut inner = pair.into_inner();
@@ -5038,20 +5047,6 @@ fn parse_expression_inner(
 
     // Apply continuation operators after & (e.g., #^2& @ 3)
     if !post_anon_pairs.is_empty() {
-      let mut post_terms: Vec<Expr> = Vec::new();
-      let mut post_ops: Vec<String> = Vec::new();
-      let mut post_postfix: Vec<Pair<Rule>> = Vec::new();
-
-      // Collect postfix functions from the end of post-& pairs
-      let mut post_pairs = post_anon_pairs;
-      while post_pairs
-        .last()
-        .is_some_and(|p| p.as_rule() == Rule::PostfixFunction)
-      {
-        post_postfix.push(post_pairs.pop().unwrap());
-      }
-      post_postfix.reverse();
-
       // If the pre-& result is an assignment (`a = body &`), the post-&
       // continuation operators (e.g. `/@ newlist`) almost always bind
       // tighter than `=`, so they should be applied to the RHS only.
@@ -5079,138 +5074,7 @@ fn parse_expression_inner(
         result
       };
 
-      // Parse continuation as operator-term pairs
-      post_terms.push(starting_term);
-      // Each `&` chain may be followed by `/.` / `//.` suffixes, which
-      // apply to the *result* of the application: `f & [x] /. rules`.
-      #[allow(clippy::type_complexity)]
-      let mut pending_anon_chains: Vec<(
-        Vec<Vec<Expr>>,
-        Vec<(Expr, bool)>,
-      )> = Vec::new();
-      let mut leading_replaces: Vec<(Expr, bool)> = Vec::new();
-      let mut iter = post_pairs.into_iter();
-      while let Some(op_pair) = iter.next() {
-        if op_pair.as_rule() == Rule::Operator {
-          post_ops.push(op_pair.as_str().to_string());
-          // Check for LeadingMinus after operator
-          if let Some(next_pair) = iter.next() {
-            if next_pair.as_rule() == Rule::LeadingMinus {
-              // Use `^_NEG` for `^-` (see comment in main expression branch).
-              if post_ops.last().is_some_and(|o| o == "^") {
-                post_ops.pop();
-                post_ops.push("^_NEG".to_string());
-              } else {
-                post_terms.push(Expr::Integer(0));
-                post_ops.push("NEGATE".to_string());
-              }
-              if let Some(term_pair) = iter.next() {
-                post_terms.push(pair_to_expr(term_pair));
-              }
-            } else {
-              post_terms.push(pair_to_expr(next_pair));
-            }
-          }
-        } else if op_pair.as_rule() == Rule::TildeInfix {
-          let inner = op_pair.into_inner().next().unwrap();
-          let func_expr = pair_to_expr(inner);
-          let func_str = match &func_expr {
-            Expr::Identifier(name) => format!("~{name}~"),
-            _ => format!("~{}~", expr_to_string(&func_expr)),
-          };
-          post_ops.push(func_str);
-          if let Some(next_pair) = iter.next() {
-            if next_pair.as_rule() == Rule::LeadingMinus {
-              post_terms.push(Expr::Integer(0));
-              post_ops.push("NEGATE".to_string());
-              if let Some(term_pair) = iter.next() {
-                post_terms.push(pair_to_expr(term_pair));
-              }
-            } else {
-              post_terms.push(pair_to_expr(next_pair));
-            }
-          }
-        } else if op_pair.as_rule() == Rule::AnonymousFunctionSuffix {
-          // (TildeInfix doesn't need `^_NEG` handling — Power is never the
-          // operator immediately preceding a tilde infix.)
-          // A second `&` after the first: wrap the accumulated infix chain
-          // built so far (including any infix continuation) in a Function
-          // and apply its BracketArgs. Matches Wolfram's `f & [x] & [y]`
-          // ≡ `((f &)[x] &)[y]`.
-          let bracket_args: Vec<Vec<Expr>> = op_pair
-            .into_inner()
-            .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
-            .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
-            .collect();
-          pending_anon_chains.push((bracket_args, Vec::new()));
-        } else if matches!(
-          op_pair.as_rule(),
-          Rule::ReplaceAllSuffix | Rule::ReplaceRepeatedSuffix
-        ) {
-          // `f & [x] /. rules` replaces in the *result* of the
-          // application. Before any further `&`, that result is the term
-          // chain built so far; after one, it is that chain's own result.
-          let repeated = op_pair.as_rule() == Rule::ReplaceRepeatedSuffix;
-          let rules = pair_to_expr(op_pair.into_inner().next().unwrap());
-          match pending_anon_chains.last_mut() {
-            Some((_, replaces)) => replaces.push((rules, repeated)),
-            None => leading_replaces.push((rules, repeated)),
-          }
-        }
-      }
-
-      // Build expression tree with precedence
-      result = build_binary_tree(post_terms, &post_ops);
-
-      // A `/.` between the first `&` application and any further one.
-      for (rules, repeated) in leading_replaces {
-        result = if repeated {
-          Expr::ReplaceRepeated {
-            expr: Box::new(result),
-            rules: Box::new(rules),
-          }
-        } else {
-          Expr::ReplaceAll {
-            expr: Box::new(result),
-            rules: Box::new(rules),
-          }
-        };
-      }
-
-      // Apply any additional `& [...]` chains that followed the first one.
-      for (bracket_args, replaces) in pending_anon_chains {
-        result = Expr::Function {
-          body: Box::new(result),
-        };
-        for args in bracket_args {
-          result = Expr::CurriedCall {
-            func: Box::new(result),
-            args,
-          };
-        }
-        for (rules, repeated) in replaces {
-          result = if repeated {
-            Expr::ReplaceRepeated {
-              expr: Box::new(result),
-              rules: Box::new(rules),
-            }
-          } else {
-            Expr::ReplaceAll {
-              expr: Box::new(result),
-              rules: Box::new(rules),
-            }
-          };
-        }
-      }
-
-      // Apply post-& postfix functions
-      for func_pair in post_postfix {
-        let func = parse_postfix_function(func_pair);
-        result = Expr::Postfix {
-          expr: Box::new(result),
-          func: Box::new(func),
-        };
-      }
+      result = apply_anon_continuation(starting_term, post_anon_pairs);
 
       // Re-wrap the assignment around the now-extended RHS.
       if let Some((name, lhs)) = assignment_lhs {
@@ -5220,6 +5084,170 @@ fn parse_expression_inner(
         };
       }
     }
+  }
+
+  result
+}
+
+/// Apply the continuation that can follow a `&`-terminated pure function:
+/// operator/tilde-infix chains (`f & /@ list`), a further `&[args]`
+/// application chained after (`f & [x] & [y]`), `/.`/`//.` replacements,
+/// and trailing `// g` postfix, interleaved in any order. `starting_term`
+/// is the pure function itself (already `Expr::Function`-wrapped);
+/// `post_pairs` is everything the grammar captured after the `&`.
+///
+/// Shared by `Expression`'s own post-& handling and by
+/// `ListItemRule`/`FunctionArgRule`, whose `pattern -> replacement &` is
+/// exactly such a pure function and can take the same continuation —
+/// `pattern -> replacement & /@ list` is the idiom for building a
+/// `PopupMenu`'s choices from a lookup table.
+fn apply_anon_continuation(
+  starting_term: Expr,
+  post_pairs: Vec<Pair<Rule>>,
+) -> Expr {
+  let mut post_terms: Vec<Expr> = Vec::new();
+  let mut post_ops: Vec<String> = Vec::new();
+  let mut post_postfix: Vec<Pair<Rule>> = Vec::new();
+
+  // Collect postfix functions from the end of post-& pairs
+  let mut post_pairs = post_pairs;
+  while post_pairs
+    .last()
+    .is_some_and(|p| p.as_rule() == Rule::PostfixFunction)
+  {
+    post_postfix.push(post_pairs.pop().unwrap());
+  }
+  post_postfix.reverse();
+
+  // Parse continuation as operator-term pairs
+  post_terms.push(starting_term);
+  // Each `&` chain may be followed by `/.` / `//.` suffixes, which
+  // apply to the *result* of the application: `f & [x] /. rules`.
+  #[allow(clippy::type_complexity)]
+  let mut pending_anon_chains: Vec<(Vec<Vec<Expr>>, Vec<(Expr, bool)>)> =
+    Vec::new();
+  let mut leading_replaces: Vec<(Expr, bool)> = Vec::new();
+  let mut iter = post_pairs.into_iter();
+  while let Some(op_pair) = iter.next() {
+    if op_pair.as_rule() == Rule::Operator {
+      post_ops.push(op_pair.as_str().to_string());
+      // Check for LeadingMinus after operator
+      if let Some(next_pair) = iter.next() {
+        if next_pair.as_rule() == Rule::LeadingMinus {
+          // Use `^_NEG` for `^-` (see comment in main expression branch).
+          if post_ops.last().is_some_and(|o| o == "^") {
+            post_ops.pop();
+            post_ops.push("^_NEG".to_string());
+          } else {
+            post_terms.push(Expr::Integer(0));
+            post_ops.push("NEGATE".to_string());
+          }
+          if let Some(term_pair) = iter.next() {
+            post_terms.push(pair_to_expr(term_pair));
+          }
+        } else {
+          post_terms.push(pair_to_expr(next_pair));
+        }
+      }
+    } else if op_pair.as_rule() == Rule::TildeInfix {
+      let inner = op_pair.into_inner().next().unwrap();
+      let func_expr = pair_to_expr(inner);
+      let func_str = match &func_expr {
+        Expr::Identifier(name) => format!("~{name}~"),
+        _ => format!("~{}~", expr_to_string(&func_expr)),
+      };
+      post_ops.push(func_str);
+      if let Some(next_pair) = iter.next() {
+        if next_pair.as_rule() == Rule::LeadingMinus {
+          post_terms.push(Expr::Integer(0));
+          post_ops.push("NEGATE".to_string());
+          if let Some(term_pair) = iter.next() {
+            post_terms.push(pair_to_expr(term_pair));
+          }
+        } else {
+          post_terms.push(pair_to_expr(next_pair));
+        }
+      }
+    } else if op_pair.as_rule() == Rule::AnonymousFunctionSuffix {
+      // (TildeInfix doesn't need `^_NEG` handling — Power is never the
+      // operator immediately preceding a tilde infix.)
+      // A second `&` after the first: wrap the accumulated infix chain
+      // built so far (including any infix continuation) in a Function
+      // and apply its BracketArgs. Matches Wolfram's `f & [x] & [y]`
+      // ≡ `((f &)[x] &)[y]`.
+      let bracket_args: Vec<Vec<Expr>> = op_pair
+        .into_inner()
+        .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+        .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
+        .collect();
+      pending_anon_chains.push((bracket_args, Vec::new()));
+    } else if matches!(
+      op_pair.as_rule(),
+      Rule::ReplaceAllSuffix | Rule::ReplaceRepeatedSuffix
+    ) {
+      // `f & [x] /. rules` replaces in the *result* of the
+      // application. Before any further `&`, that result is the term
+      // chain built so far; after one, it is that chain's own result.
+      let repeated = op_pair.as_rule() == Rule::ReplaceRepeatedSuffix;
+      let rules = pair_to_expr(op_pair.into_inner().next().unwrap());
+      match pending_anon_chains.last_mut() {
+        Some((_, replaces)) => replaces.push((rules, repeated)),
+        None => leading_replaces.push((rules, repeated)),
+      }
+    }
+  }
+
+  // Build expression tree with precedence
+  let mut result = build_binary_tree(post_terms, &post_ops);
+
+  // A `/.` between the first `&` application and any further one.
+  for (rules, repeated) in leading_replaces {
+    result = if repeated {
+      Expr::ReplaceRepeated {
+        expr: Box::new(result),
+        rules: Box::new(rules),
+      }
+    } else {
+      Expr::ReplaceAll {
+        expr: Box::new(result),
+        rules: Box::new(rules),
+      }
+    };
+  }
+
+  // Apply any additional `& [...]` chains that followed the first one.
+  for (bracket_args, replaces) in pending_anon_chains {
+    result = Expr::Function {
+      body: Box::new(result),
+    };
+    for args in bracket_args {
+      result = Expr::CurriedCall {
+        func: Box::new(result),
+        args,
+      };
+    }
+    for (rules, repeated) in replaces {
+      result = if repeated {
+        Expr::ReplaceRepeated {
+          expr: Box::new(result),
+          rules: Box::new(rules),
+        }
+      } else {
+        Expr::ReplaceAll {
+          expr: Box::new(result),
+          rules: Box::new(rules),
+        }
+      };
+    }
+  }
+
+  // Apply post-& postfix functions
+  for func_pair in post_postfix {
+    let func = parse_postfix_function(func_pair);
+    result = Expr::Postfix {
+      expr: Box::new(result),
+      func: Box::new(func),
+    };
   }
 
   result

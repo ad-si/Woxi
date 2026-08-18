@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 mod jupyter;
+mod kernelspec;
 mod repl;
 use std::env;
 use std::fs;
@@ -161,42 +162,6 @@ enum Commands {
   Script(Vec<String>), // invoked by a shebang:  woxi <file> [...]
 }
 
-fn install_kernel(user: bool, system: bool) -> std::io::Result<()> {
-  let user_flag = if user {
-    "--user"
-  } else if system {
-    "--system"
-  } else {
-    "--user"
-  };
-
-  // Get the path to the kernelspec directory
-  let kernelspec_dir = env::current_dir()?.join("kernelspec/woxi");
-
-  // Use jupyter kernelspec to install the kernel
-  let status = std::process::Command::new("jupyter")
-    .args([
-      "kernelspec",
-      "install",
-      "--replace",
-      user_flag,
-      kernelspec_dir.to_str().unwrap(),
-    ])
-    .status()?;
-
-  if status.success() {
-    println!("Woxi kernel installed successfully!");
-    println!(
-      "You can now use it in Jupyter Lab or Notebook by selecting 'Woxi' from the kernel list."
-    );
-    Ok(())
-  } else {
-    Err(std::io::Error::other(format!(
-      "Failed to install kernel. Exit code: {status}"
-    )))
-  }
-}
-
 fn main() {
   let cli = Cli::parse();
   // Run all work on a worker thread with a large stack. The interpreter and
@@ -291,8 +256,9 @@ fn run(cli: Cli) {
       }
     }
     Commands::InstallKernel { user, system } => {
-      if let Err(e) = install_kernel(user, system) {
+      if let Err(e) = kernelspec::install(user, system) {
         eprintln!("Error installing kernel: {e}");
+        std::process::exit(1);
       }
     }
     //  shebang / direct script execution  ---------------------------------
