@@ -884,6 +884,80 @@ mod graphics {
       insta::assert_snapshot!(export_svg("Graphics[{EdgeForm[Red], Disk[]}]"));
     }
 
+    /// `FaceForm` sets only the fill of area primitives (Disk, Polygon,
+    /// Rectangle); unlike a bare colour directive, it must not recolour a
+    /// `Text` that follows it. A random Wolfram Demonstration notebook
+    /// (Stapler Puzzle) hit this: `{FaceForm[Yellow], Disk[...],
+    /// Text[Style[1, Bold], ...]}` rendered the digit in the disk's own
+    /// fill colour, making it invisible against the disk.
+    #[test]
+    fn face_form_does_not_recolor_text() {
+      let svg = export_svg(
+        "Graphics[{FaceForm[Yellow], Disk[{0, 0}], Text[Style[1, Bold], {0, 0}]}]",
+      );
+      let disk = svg
+        .lines()
+        .find(|l| l.starts_with("<ellipse"))
+        .expect("a disk");
+      assert!(
+        disk.contains("fill=\"rgb(255,255,0)\""),
+        "Disk should still take FaceForm's fill: {disk}"
+      );
+      let text = svg
+        .lines()
+        .find(|l| l.starts_with("<text"))
+        .expect("a text label");
+      assert!(
+        text.contains("fill=\"rgb(0,0,0)\""),
+        "Text after FaceForm should keep the default black, not the disk's fill: {text}"
+      );
+    }
+
+    /// A bare colour directive (not wrapped in `FaceForm`) is the general
+    /// "current colour" and does recolour the `Text` that follows it,
+    /// unlike `FaceForm`.
+    #[test]
+    fn bare_color_directive_does_recolor_text() {
+      let svg = export_svg(
+        "Graphics[{Blue, Disk[{0, 0}], Text[Style[1, Bold], {0, 0}]}]",
+      );
+      let text = svg
+        .lines()
+        .find(|l| l.starts_with("<text"))
+        .expect("a text label");
+      assert!(
+        text.contains("fill=\"rgb(0,0,255)\""),
+        "Text after a bare colour directive should take that colour: {text}"
+      );
+    }
+
+    /// `FaceForm` also governs `Polygon` and `Rectangle` fills, not just
+    /// `Disk`.
+    #[test]
+    fn face_form_fills_polygon_and_rectangle() {
+      let poly_svg =
+        export_svg("Graphics[{FaceForm[Green], Polygon[{{0,0},{1,0},{0,1}}]}]");
+      let poly = poly_svg
+        .lines()
+        .find(|l| l.starts_with("<polygon"))
+        .expect("a polygon");
+      assert!(
+        poly.contains("fill=\"rgb(0,255,0)\""),
+        "Polygon should take FaceForm's fill: {poly}"
+      );
+
+      let rect_svg =
+        export_svg("Graphics[{FaceForm[Orange], Rectangle[{0,0},{1,1}]}]");
+      let rect = rect_svg
+        .lines()
+        .find(|l| l.starts_with("<rect"))
+        .expect("a rectangle");
+      assert!(
+        rect.contains("fill=\"rgb(255,128,0)\""),
+        "Rectangle should take FaceForm's fill: {rect}"
+      );
+    }
+
     /// What an `EdgeForm` leaves unsaid comes from Wolfram's defaults: a
     /// width alone strokes black, a colour alone strokes at width 1, and
     /// an `EdgeForm` that names neither draws no edge at all — which is
