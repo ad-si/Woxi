@@ -18960,4 +18960,165 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
       "raising the stiffness must change the stiff spring's curve"
     );
   }
+
+  /// End-to-end regression for the shape of a "shock at a fixed time"
+  /// Demonstration: a `Module` builds two arrays with `Table`, perturbs a
+  /// hidden `ControlType -> None` noise list at one index with the slider's
+  /// value (`w[[150]] = shock`), then fills both arrays in a single `Do`
+  /// loop via recursive `Part`-assignment (`a1[[i]] = … a1[[i - 1]] …`)
+  /// before plotting them with `ListLinePlot` and an `Epilog` of `Point`s
+  /// marking the shock. A `Button` resamples the noise list — reassigned
+  /// through `RandomReal[NormalDistribution[…], …]`, the same expression
+  /// the `Initialization :> …` option uses to seed it — and the visible
+  /// slider's label is a `Row` of mixed plain and `Style[…, Italic]` parts.
+  #[test]
+  fn demonstration_shock_at_fixed_time_manipulate_reruns_do_loop() {
+    let code = "Manipulate[\
+      Module[{n = 300, a1, a2}, \
+        a1 = Table[0, {i, 1, n}]; \
+        a2 = Table[0, {i, 1, n}]; \
+        w[[150]] = shock; \
+        Do[\
+          a1[[i]] = 0.2 + 0.8 a1[[i - 1]] + w[[i]]; \
+          a2[[i]] = 0.2 + a2[[i - 1]] + w[[i]], \
+          {i, 2, n}]; \
+        ListLinePlot[{a1, a2}, \
+          PlotRange -> {{50, 300}, {-10, 40}}, \
+          PlotStyle -> {Blue, Brown}, \
+          ImageSize -> {550, 350}, \
+          Epilog -> {PointSize[Large], Red, \
+            Point[{150, a1[[150]]}], \
+            Point[{150, a2[[150]]}]}]], \
+      {{shock, 0, \
+        Row[{\"impulse \", Style[\"e\", Italic], \" at time \", \
+          Style[\"t\", Italic], \" = 150\"}]}, -4, 4, 0.1, \
+        Appearance -> \"Labeled\"}, \
+      {w, {}, ControlType -> None}, \
+      Button[\"resample noise\", \
+        {w = RandomReal[NormalDistribution[0, 1], 300]}, ImageSize -> 120], \
+      TrackedSymbols :> {shock, w}, \
+      AutorunSequencing -> {1}, \
+      Initialization :> (w = RandomReal[NormalDistribution[0, 1], 300])\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the shock-at-fixed-time Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "the Do loop of Part-assignments must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the two-series line plot must render"
+    );
+    match &state.state[..] {
+      [(w_name, w_value)] => {
+        assert_eq!(w_name, "w");
+        // `Initialization :> (w = RandomReal[…])` must have actually seeded
+        // the hidden noise list before the first render — not left it at
+        // the control spec's placeholder domain (`{}`).
+        assert_ne!(
+          w_value, "{}",
+          "the hidden state variable must keep the value Initialization \
+           gave it, not the spec's empty-list placeholder"
+        );
+      }
+      other => panic!("expected one hidden state variable, got {other:?}"),
+    }
+
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: shock_name,
+          label: shock_label,
+          label_runs: shock_runs,
+          min: shock_min,
+          max: shock_max,
+          current: shock_now,
+          ..
+        },
+        manipulate::ControlState::Button {
+          label: button_label,
+          action: button_action,
+          ..
+        },
+      ] => {
+        assert_eq!(shock_name.as_str(), "shock");
+        assert_eq!(shock_label.as_str(), "impulse e at time t = 150");
+        assert!(
+          shock_runs.len() > 1,
+          "the Style[…, Italic] runs inside the Row label must not \
+           collapse to one plain run: {shock_runs:?}"
+        );
+        assert_eq!((*shock_min, *shock_max, *shock_now), (-4.0, 4.0, 0.0));
+        assert_eq!(button_label.as_str(), "resample noise");
+        assert!(button_action.contains("RandomReal"));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let mut bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      bindings.extend(w.state.iter().cloned());
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the shock and no-shock series must both draw")
+    };
+    let no_shock = render(&state);
+    assert!(
+      no_shock.contains("<polyline") || no_shock.contains("<path"),
+      "{no_shock}"
+    );
+
+    // Moving the shock slider re-perturbs `w[[150]]` inside the Do loop, so
+    // every later point of both series shifts and the picture changes.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 3.0;
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "re-render after moving the shock slider failed: {:?}",
+      state.error
+    );
+    let shocked = render(&state);
+    assert_ne!(
+      no_shock, shocked,
+      "a nonzero shock must move both series from their unperturbed shapes"
+    );
+
+    // Pressing the button reassigns the whole hidden noise list; the widget
+    // must keep rendering afterwards.
+    let resample = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("a resample-noise button");
+    state.apply_button_action(&resample);
+    assert!(
+      state.error.is_none(),
+      "resample button failed: {:?}",
+      state.error
+    );
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "re-render after resampling failed: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some());
+  }
 }

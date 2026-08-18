@@ -436,6 +436,20 @@ impl ManipulateState {
     // single run keeps them in scope for every later re-evaluation.
     if let Some(init) = state.initialization.as_deref() {
       let _ = woxi::interpret_with_stdout(init);
+      // A hidden `ControlType -> None` variable the Initialization just
+      // seeded (e.g. `Initialization :> (v = RandomReal[…])` filling the
+      // noise list a Demonstration's body perturbs) must keep that value,
+      // not the spec's placeholder default (`v`'s declared domain, often
+      // `{}`) — `reevaluate` below installs `state.state` as scoped
+      // globals, which would otherwise immediately overwrite what
+      // Initialization just wrote with the stale placeholder.
+      let names: Vec<String> =
+        state.state.iter().map(|(n, _)| n.clone()).collect();
+      for (name, value) in read_manipulate_state(&names) {
+        if let Some(slot) = state.state.iter_mut().find(|(n, _)| *n == name) {
+          slot.1 = value;
+        }
+      }
     }
     state.reevaluate();
     Some(state)
