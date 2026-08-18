@@ -8705,15 +8705,29 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // `Plot[Table[f[i, x], {i, …}], …]` names its curves only after the
   // generator runs; expand it so each element becomes its own curve
-  // instead of being sampled as one expression yielding a list.
-  let generated_storage;
-  let body: &Expr = match expand_generated_bodies(body, &var_name) {
-    Some(expanded) => {
-      generated_storage = expanded;
-      &generated_storage
+  // instead of being sampled as one expression yielding a list. This has
+  // to recurse into an explicit `{f, g, …}` list too — `NDSolve` returns a
+  // list of solution sets even when there is only one, so an element like
+  // `y[t] /. sol` (or `Evaluate[y[t] /. sol]`, the same thing one Hold
+  // level up) evaluates to a one-element list, not a bare number, exactly
+  // like the bare `Table[…]` case below. Resolving it here — before the
+  // list is split into per-curve bodies — turns that one element into its
+  // own singleton list, which the flattening step below unwraps same as
+  // any other nested list; left unresolved, every sample point comes back
+  // as an unconvertible list and the curve silently plots as nothing.
+  fn resolve_generated_bodies_deep(body: &Expr, var: &str) -> Expr {
+    match body {
+      Expr::List(items) => Expr::List(
+        items
+          .iter()
+          .map(|it| resolve_generated_bodies_deep(it, var))
+          .collect(),
+      ),
+      _ => expand_generated_bodies(body, var).unwrap_or_else(|| body.clone()),
     }
-    None => body,
-  };
+  }
+  let generated_storage = resolve_generated_bodies_deep(body, &var_name);
+  let body: &Expr = &generated_storage;
 
   // Collect function bodies: a single function or a (possibly nested) list of
   // functions. Wolfram flattens nested lists into individual curves, so
