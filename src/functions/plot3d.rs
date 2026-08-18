@@ -4205,7 +4205,6 @@ fn side_subdivision_steps(len: f64, radius: f64, sides: usize) -> usize {
 }
 
 /// Tessellate a cylinder along its axis.
-
 fn tessellate_cylinder(
   p1: &Point3D,
   p2: &Point3D,
