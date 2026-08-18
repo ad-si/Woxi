@@ -18703,4 +18703,105 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 3, $CellContext`spread$$ = 0,
       "picking a different preset must change the outline drawn"
     );
   }
+
+  // Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  // (an asymptotic-formula-vs-exact-sequence explorer) against Woxi
+  // Studio's Manipulate pipeline. Self-authored, construct-equivalent
+  // body — Fibonacci numbers against Binet's closed form, not the
+  // notebook's own sequence or wording, which is copyrighted —
+  // exercising the general shape: a single `Manipulate` wrapping a
+  // `DiscretePlot` of *two* series (`Joined -> True`, distinct
+  // `PlotStyle` colors), driven by one `Appearance -> "Labeled"`
+  // integer slider that controls the upper end of the sampled range.
+  //
+  // `DiscretePlot[{f, g}, {n, min, max}]` used to substitute `n` into
+  // the whole `{f, g}` list and try to convert that *list* result to a
+  // single number, which always failed silently — so every point was
+  // dropped and the Demonstration rendered an empty plot. `Joined` was
+  // also accepted but never read, so even a single-series `DiscretePlot`
+  // always scattered points instead of connecting them.
+  #[test]
+  fn demonstration_fibonacci_binet_discrete_plot_renders_two_joined_series() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ DiscretePlot[{
+ Fibonacci[n],
+ GoldenRatio^n/Sqrt[5]
+ },{n,1,nmax,1},Joined->True,PlotStyle->{Red,Blue}],
+ {{nmax,10,\"n max\"},5,30,1,Appearance->\"Labeled\"}
+ ]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis]]]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the two-series DiscretePlot must draw"
+    );
+
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name.as_str(), "nmax");
+        assert_eq!(label.as_str(), "n max");
+        assert_eq!(*min, 5.0);
+        assert_eq!(*max, 30.0);
+        assert_eq!(*current, 10.0);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the two-series plot must render")
+    };
+    let short_range = render(&widget);
+    // Both series must actually have been sampled: the exact Fibonacci
+    // series (red) and Binet's approximation (blue) each draw their own
+    // connected curve, not a single merged (and previously empty) one.
+    assert_eq!(short_range.matches("stroke=\"#FF0000\"").count(), 1);
+    assert_eq!(short_range.matches("stroke=\"#0000FF\"").count(), 1);
+    assert!(!short_range.contains("<circle"), "Joined must not scatter");
+
+    match &mut widget.controls[..] {
+      [manipulate::ControlState::Continuous { current, .. }] => *current = 25.0,
+      other => panic!("expected nmax as a Continuous control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(widget.error.is_none());
+    let wide_range = render(&widget);
+    assert_ne!(
+      short_range, wide_range,
+      "moving the n-max slider must change the rendered picture"
+    );
+  }
 }
