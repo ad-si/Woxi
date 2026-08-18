@@ -5839,11 +5839,14 @@ fn axis_label_markup(expr: &Expr) -> Option<String> {
 /// and a labelled `Graphics3D` set their titles at the same height.
 const PLOT_LABEL_STRIP: u32 = 26;
 
-/// The typeset markup of the `PlotLabel` an option list carries, or `None`
+/// The typeset label of the `PlotLabel` an option list carries, or `None`
 /// when it carries none (`PlotLabel -> None` included). Any expression can
-/// label a plot — a string, a `Style[…]`, a `Row[…]` of computed values —
-/// so it is typeset the way every other label is rather than printed.
-fn plot_label_markup(opts: &[Expr]) -> Option<String> {
+/// label a plot — a string, a `Style[…]`, a `Grid`/`Column` that stacks
+/// several lines — so it is typeset the way every other label is rather
+/// than printed.
+fn plot_label_styled(
+  opts: &[Expr],
+) -> Option<crate::functions::chart::StyledLabel> {
   for opt in opts {
     let (pattern, replacement): (&Expr, &Expr) = match opt {
       Expr::Rule {
@@ -5865,9 +5868,8 @@ fn plot_label_markup(opts: &[Expr]) -> Option<String> {
     if matches!(&value, Expr::Identifier(s) if s == "None" || s == "Null") {
       return None;
     }
-    let markup = crate::functions::graphics::expr_to_svg_markup(&value);
-    if !markup.is_empty() {
-      return Some(markup);
+    if let Some(label) = crate::functions::chart::parse_styled_label(&value) {
+      return Some(label);
     }
   }
   None
@@ -5884,10 +5886,18 @@ fn with_plot_label(
   width: u32,
   height: u32,
 ) -> String {
-  let Some(label) = plot_label_markup(opts) else {
+  let Some(styled) = plot_label_styled(opts) else {
     return svg;
   };
-  let total = height + PLOT_LABEL_STRIP;
+  // A `FontSize` directive on the label resizes it, same as a 2-D title;
+  // otherwise it keeps the default 16pt.
+  let font_size = styled.font_size.unwrap_or(16.0);
+  // A stacked title (`Grid`/`Column`) needs one more line height per extra
+  // row, on top of the strip a single-line title reserves.
+  let line_height = font_size * 1.2;
+  let extra_lines = styled.extra_line_count() as f64;
+  let strip = PLOT_LABEL_STRIP + (extra_lines * line_height).round() as u32;
+  let total = height + strip;
   // The strip is painted in the picture's own background so the two read
   // as one canvas — an explicit `Background` reaches it too.
   let bg = opts
@@ -5923,12 +5933,24 @@ fn with_plot_label(
     )
   };
   let cx = width as f64 / 2.0;
+  let fill = styled
+    .color
+    .as_ref()
+    .map_or_else(|| "#333333".to_string(), |c| c.to_svg_rgb());
+  let mut style_attrs = String::new();
+  if styled.bold {
+    style_attrs.push_str(" font-weight=\"bold\"");
+  }
+  if styled.italic {
+    style_attrs.push_str(" font-style=\"italic\"");
+  }
+  let label = styled.svg_scaled_stacked(1.0, cx, line_height);
   format!(
     "<svg {sizing} xmlns=\"http://www.w3.org/2000/svg\">\n\
      <rect width=\"{width}\" height=\"{total}\" fill=\"rgb({},{},{})\"/>\n\
      <text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
-     font-family=\"sans-serif\" font-size=\"16\" fill=\"#333333\">{label}</text>\n\
-     <g transform=\"translate(0,{PLOT_LABEL_STRIP})\">{svg}</g>\n\
+     font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{fill}\"{style_attrs}>{label}</text>\n\
+     <g transform=\"translate(0,{strip})\">{svg}</g>\n\
      </svg>",
     bg.0, bg.1, bg.2,
   )

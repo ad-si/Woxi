@@ -222,6 +222,37 @@ pub(crate) fn parse_style_directive_args(
     match arg {
       Expr::Identifier(s) if s == "Bold" => bold = true,
       Expr::Identifier(s) if s == "Italic" => italic = true,
+      // The same directives may be written as rules instead of bare values
+      // (`Style[expr, FontSize -> 18, FontColor -> Blue]`), the form
+      // `StyleBox`/`expr_to_svg_markup` already accepts.
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => match pattern.as_ref() {
+        Expr::Identifier(n) if n == "FontSize" => {
+          if let Some(f) = try_eval_to_f64(replacement) {
+            font_size = Some(f);
+          }
+        }
+        Expr::Identifier(n) if n == "FontColor" => {
+          if let Some(c) = parse_color(replacement) {
+            color = Some(c);
+          }
+        }
+        Expr::Identifier(n) if n == "FontSlant" => {
+          if matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Italic")
+          {
+            italic = true;
+          }
+        }
+        Expr::Identifier(n) if n == "FontWeight" => {
+          if matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Bold")
+          {
+            bold = true;
+          }
+        }
+        _ => {}
+      },
       _ => {
         if let Some(c) = parse_color(arg) {
           color = Some(c);
@@ -292,6 +323,24 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     let mut label = parse_styled_label(&outer)?;
     label.bold = inner_label.bold;
     label.italic = inner_label.italic;
+    return Some(label);
+  }
+  // `Style[Grid[…]/Column[…], …]` — the stacking still applies with the
+  // enclosing `Style`'s weight, slant, color and size layered on top, the
+  // way a Demonstration writes `Style[Column[{…}], "Label"]`.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Style"
+    && !args.is_empty()
+    && matches!(&args[0], Expr::FunctionCall { name, args }
+        if (name == "Grid" || name == "Column") && !args.is_empty())
+  {
+    let mut label = parse_styled_label(&args[0])?;
+    let (bold, italic, color, font_size) =
+      parse_style_directive_args(&args[1..]);
+    label.bold = bold;
+    label.italic = italic;
+    label.color = color;
+    label.font_size = font_size;
     return Some(label);
   }
   match expr {
