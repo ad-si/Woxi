@@ -10923,3 +10923,104 @@ mod empty_statements {
     assert_eq!(interpret("1 ;; 4").unwrap(), "Span[1, 4]");
   }
 }
+
+/// `;;` binds tighter than `->` and `:>` (Wolfram gives Span precedence 305
+/// and Rule 120), so a Span may stand on either side of a rule operator:
+/// `"--" -> 3 ;;` is `Rule["--", Span[3, All]]` and `1 ;; 2 -> b` is
+/// `Rule[Span[1, 2], b]`.
+mod span_as_a_rule_operand {
+  use super::*;
+
+  /// The reported case: `StringExtract` takes `delimiter -> spec`, and the
+  /// spec is a Span picking the parts from the third on.
+  /// https://github.com/ad-si/Woxi/issues/555
+  #[test]
+  fn a_span_on_the_right_of_a_rule_is_a_string_extract_spec() {
+    assert_eq!(
+      interpret(r#"StringExtract["a--bbb--ccc--dddd", "--" -> 3 ;;]"#).unwrap(),
+      "{ccc, dddd}"
+    );
+    assert_eq!(
+      interpret(r#"StringExtract["a--bbb--ccc--dddd", "--" -> 2 ;; 3]"#)
+        .unwrap(),
+      "{bbb, ccc}"
+    );
+    assert_eq!(
+      interpret(r#"StringExtract["a--bbb--ccc--dddd", "--" -> ;; 2]"#).unwrap(),
+      "{a, bbb}"
+    );
+  }
+
+  #[test]
+  fn every_span_form_is_allowed_on_the_right_of_a_rule() {
+    assert_eq!(interpret("a -> 3 ;; 5").unwrap(), "a -> Span[3, 5]");
+    assert_eq!(interpret("a -> 3 ;;").unwrap(), "a -> Span[3, All]");
+    assert_eq!(interpret("a -> ;; 3").unwrap(), "a -> Span[1, 3]");
+    assert_eq!(interpret("a -> ;;").unwrap(), "a -> Span[1, All]");
+    assert_eq!(interpret("a -> 1 ;; 6 ;; 2").unwrap(), "a -> Span[1, 6, 2]");
+    assert_eq!(interpret("a :> 2 ;;").unwrap(), "a :> Span[2, All]");
+  }
+
+  #[test]
+  fn a_span_on_the_left_of_a_rule_is_the_pattern() {
+    assert_eq!(interpret("1 ;; 2 -> b").unwrap(), "Span[1, 2] -> b");
+    assert_eq!(interpret("Head[1 ;; 2 -> b]").unwrap(), "Rule");
+    assert_eq!(interpret("{1 ;; 2 -> b}[[1, 1]]").unwrap(), "Span[1, 2]");
+  }
+
+  /// `->` is right-associative, so the span groups with the rule that
+  /// follows it: `x -> 1 ;; 2 -> c` is `Rule[x, Rule[Span[1, 2], c]]`.
+  #[test]
+  fn a_span_binds_tighter_than_a_chain_of_rules() {
+    assert_eq!(
+      interpret("(x -> 1 ;; 2 -> c)[[2]]").unwrap(),
+      "Span[1, 2] -> c"
+    );
+  }
+
+  #[test]
+  fn a_rule_with_a_span_works_in_every_context() {
+    // List item
+    assert_eq!(
+      interpret("{a -> 1 ;; 3, c}").unwrap(),
+      "{a -> Span[1, 3], c}"
+    );
+    // Function argument
+    assert_eq!(
+      interpret("f[1 ;; 2 -> b, x]").unwrap(),
+      "f[Span[1, 2] -> b, x]"
+    );
+    // Association value and key
+    assert_eq!(
+      interpret(r#"<|"a" -> 1 ;; 2|>["a"]"#).unwrap(),
+      "Span[1, 2]"
+    );
+    assert_eq!(interpret("Keys[<|1 ;; 2 -> b|>]").unwrap(), "{Span[1, 2]}");
+    // Parenthesized
+    assert_eq!(interpret("(1 ;; 2 -> b) // Head").unwrap(), "Rule");
+    // Replacement
+    assert_eq!(interpret("x /. x -> 1 ;; 3").unwrap(), "Span[1, 3]");
+    // Delayed rule in a transformation
+    assert_eq!(
+      interpret("Cases[{1, 2}, x_ :> x ;;]").unwrap(),
+      "{Span[1, All], Span[2, All]}"
+    );
+  }
+
+  /// A Span without a rule keeps its greedy operands: nothing else changes.
+  #[test]
+  fn a_span_without_a_rule_is_unchanged() {
+    assert_eq!(interpret("1 ;; 2 + 3").unwrap(), "Span[1, 5]");
+    assert_eq!(interpret("Range[10][[3 ;; 6]]").unwrap(), "{3, 4, 5, 6}");
+    assert_eq!(interpret("Range[5][[3 ;;]]").unwrap(), "{3, 4, 5}");
+    assert_eq!(interpret("1 ;; 3; y -> 2").unwrap(), "y -> 2");
+  }
+
+  /// A parenthesized Span can be indexed like any other expression —
+  /// `(a ;; b)[[2]]` is the Span's second part.
+  #[test]
+  fn a_parenthesized_span_takes_a_part_index() {
+    assert_eq!(interpret("(1 ;; 3)[[1]]").unwrap(), "1");
+    assert_eq!(interpret("(a ;; b)[[2]]").unwrap(), "b");
+  }
+}
