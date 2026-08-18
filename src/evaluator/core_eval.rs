@@ -1253,7 +1253,10 @@ pub fn evaluate_expr_to_expr_inner(
             return Ok(Expr::Identifier("Null".to_string()));
           }
           // SubValues[sym] =. and DownValues[sym] =. clear the corresponding
-          // function definitions for sym.
+          // function definitions for sym. A SubValue rule (from `f[a][b] =
+          // …`/`f[a][b] := …`) lives in SUB_VALUES rather than FUNC_DEFS, so
+          // both maps need clearing for `SubValues[sym] =.` to actually undo
+          // a curried definition.
           if let Expr::FunctionCall {
             name: head,
             args: lhs_args,
@@ -1265,6 +1268,11 @@ pub fn evaluate_expr_to_expr_inner(
             crate::FUNC_DEFS.with(|m| {
               m.borrow_mut().remove(sym_name);
             });
+            if head == "SubValues" {
+              crate::evaluator::assignment::SUB_VALUES.with(|m| {
+                m.borrow_mut().remove(sym_name);
+              });
+            }
             return Ok(Expr::Identifier("Null".to_string()));
           }
           // UpValues[sym] =. removes every upvalue rule attached to
