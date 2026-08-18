@@ -1946,7 +1946,165 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
     }
   }
 
+  // Last resort: a general partial-fraction inversion for a proper
+  // rational function with purely numeric coefficients, e.g. a
+  // Demonstrations transfer function whose denominator is a cubic or
+  // higher — past what the specific pole shapes above cover.
+  if let Some(result) = inverse_laplace_partial_fractions(expr, s, t) {
+    return Some(result);
+  }
+
   None
+}
+
+/// General numeric partial-fraction inversion for a proper rational
+/// function `P(s)/Q(s)` with purely numeric coefficients — the case that
+/// remains once a Manipulate control's numeric value has been substituted
+/// into a transfer function, so none of `s`, `s^2 + a^2`, etc. patterns
+/// above match a plain `1/(s+1)` or `1/(s^2+a^2)` shape.
+///
+/// Finds `Q`'s roots numerically (the same Durand-Kerner solver behind
+/// `Roots`/`NRoots`) and sums simple-pole residues: a real root `r`
+/// contributes `Residue * E^(r t)`, and each complex-conjugate pair
+/// `a ± b i` contributes `E^(a t) (2 Re[Residue] Cos[b t] - 2
+/// Im[Residue] Sin[b t])` (the residues of a conjugate pair are
+/// themselves conjugates, so summing `Residue * E^((a+bi) t)` with its
+/// conjugate term collapses to that real oscillation).
+///
+/// Returns `None` — leaving the call unevaluated, as before — whenever the
+/// assumption doesn't hold: a coefficient isn't a plain number, the
+/// fraction is improper, or `Q` has a repeated (or near-repeated) root,
+/// which needs the different `t^k E^(r t)` term this simple-pole formula
+/// doesn't produce.
+fn inverse_laplace_partial_fractions(
+  expr: &Expr,
+  s: &str,
+  t: &str,
+) -> Option<Expr> {
+  let combined =
+    crate::functions::together_ast(std::slice::from_ref(expr)).ok()?;
+  let num_expr =
+    crate::functions::numerator_ast(std::slice::from_ref(&combined)).ok()?;
+  let den_expr = crate::functions::denominator_ast(&[combined]).ok()?;
+  if !depends_on(&den_expr, s) {
+    return None;
+  }
+
+  let s_id = Expr::Identifier(s.to_string());
+  let num_coeffs = polynomial_f64_coeffs(&num_expr, &s_id)?;
+  let den_coeffs = polynomial_f64_coeffs(&den_expr, &s_id)?;
+  let den_degree = den_coeffs.len().checked_sub(1)?;
+  if den_degree < 1 || num_coeffs.len() > den_coeffs.len() {
+    // A constant "denominator" (not actually rational in s) or an
+    // improper fraction (needing polynomial division first) — leave
+    // unevaluated rather than guess.
+    return None;
+  }
+
+  let roots =
+    crate::functions::polynomial_ast::solve::durand_kerner_roots(&den_coeffs);
+  let scale = roots
+    .iter()
+    .fold(1.0_f64, |m, &(re, im)| m.max(re.hypot(im)));
+  for i in 0..roots.len() {
+    for j in (i + 1)..roots.len() {
+      let (ar, ai) = roots[i];
+      let (br, bi) = roots[j];
+      if (ar - br).hypot(ai - bi) < 1e-6 * scale {
+        return None;
+      }
+    }
+  }
+
+  let deriv_coeffs: Vec<f64> = (1..den_coeffs.len())
+    .map(|k| den_coeffs[k] * k as f64)
+    .collect();
+
+  let e_const = || Expr::Constant("E".to_string());
+  let t_id = || Expr::Identifier(t.to_string());
+
+  let mut terms: Vec<Expr> = Vec::new();
+  let mut consumed = vec![false; roots.len()];
+  for i in 0..roots.len() {
+    if consumed[i] {
+      continue;
+    }
+    let (re, im) = roots[i];
+    let (pr, pi) = eval_poly_complex(&num_coeffs, re, im);
+    let (qr, qi) = eval_poly_complex(&deriv_coeffs, re, im);
+    if qr == 0.0 && qi == 0.0 {
+      return None;
+    }
+    let (rr, ri) = complex_div(pr, pi, qr, qi);
+    let exp_part = call(
+      "Power",
+      vec![e_const(), call("Times", vec![Expr::Real(re), t_id()])],
+    );
+    if im.abs() < 1e-9 * scale.max(1.0) {
+      terms.push(call("Times", vec![Expr::Real(rr), exp_part]));
+      continue;
+    }
+    let j = ((i + 1)..roots.len()).find(|&j| {
+      let (br, bi) = roots[j];
+      !consumed[j]
+        && (br - re).abs() < 1e-6 * scale
+        && (bi + im).abs() < 1e-6 * scale
+    })?;
+    consumed[j] = true;
+    let cos_part =
+      call("Cos", vec![call("Times", vec![Expr::Real(im), t_id()])]);
+    let sin_part =
+      call("Sin", vec![call("Times", vec![Expr::Real(im), t_id()])]);
+    let oscillation = call(
+      "Plus",
+      vec![
+        call("Times", vec![Expr::Real(2.0 * rr), cos_part]),
+        call("Times", vec![Expr::Real(-2.0 * ri), sin_part]),
+      ],
+    );
+    terms.push(call("Times", vec![exp_part, oscillation]));
+  }
+
+  Some(call("Plus", terms))
+}
+
+/// `CoefficientList[poly, var]`, converted to `f64`s from lowest to highest
+/// degree. `None` if any coefficient isn't a plain number once evaluated,
+/// which routes the caller back to leaving the call unevaluated.
+fn polynomial_f64_coeffs(poly: &Expr, var: &Expr) -> Option<Vec<f64>> {
+  let list =
+    crate::functions::coefficient_list_ast(&[poly.clone(), var.clone()])
+      .ok()?;
+  let Expr::List(ref items) = list else {
+    return None;
+  };
+  items
+    .iter()
+    .map(|item| {
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(item).ok()?;
+      expr_to_f64(&evaluated)
+    })
+    .collect()
+}
+
+/// Evaluate a real-coefficient polynomial (lowest-degree-first, as from
+/// `CoefficientList`) at a complex point via Horner's method.
+fn eval_poly_complex(coeffs: &[f64], zr: f64, zi: f64) -> (f64, f64) {
+  let mut re = 0.0;
+  let mut im = 0.0;
+  for &c in coeffs.iter().rev() {
+    let nr = re * zr - im * zi + c;
+    let ni = re * zi + im * zr;
+    re = nr;
+    im = ni;
+  }
+  (re, im)
+}
+
+/// Complex division `(ar + ai i) / (br + bi i)`.
+fn complex_div(ar: f64, ai: f64, br: f64, bi: f64) -> (f64, f64) {
+  let denom = br * br + bi * bi;
+  ((ar * br + ai * bi) / denom, (ai * br - ar * bi) / denom)
 }
 
 /// If `c` is a negative constant (a negative number, `Times[-1, X]`, or a

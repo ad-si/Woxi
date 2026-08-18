@@ -19164,4 +19164,79 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     );
     assert!(state.graphics_handle.is_some());
   }
+
+  /// A synthetic "throw a dart at a target" Manipulate in the shape the
+  /// "Dart Practice" Demonstration uses: the interactive picture lives in a
+  /// `DynamicModule` wrapping the Manipulate body, and a `Button` embedded
+  /// directly in that body's `Column` (not given as its own Manipulate
+  /// control-spec argument) flips a DynamicModule-local variable on every
+  /// press. Two things must both work for the widget to be usable: the
+  /// body-drawn `Button` must render as a live, clickable element (not get
+  /// baked into the static picture), and its write to the DynamicModule
+  /// local must survive the next re-render — `DynamicModule` locals persist
+  /// for the widget's life, unlike `Module`'s fresh scope every call.
+  #[test]
+  fn body_button_flips_a_dynamic_module_local_and_it_sticks() {
+    let code = r#"Manipulate[
+      DynamicModule[{hit = "miss"},
+        Dynamic[Column[{
+          Graphics[{}, ImageSize -> 10],
+          hit,
+          Button["throw", hit = If[hit == "miss", "hit", "miss"]]
+        }]]
+      ],
+      {n, 1, 5}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let hit = |state: &manipulate::ManipulateState| -> String {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == "hit")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    assert_eq!(
+      hit(&state),
+      "\"miss\"",
+      "the DynamicModule local's initial value should be hoisted into state"
+    );
+
+    // The body-drawn Button must render as a live display element, not
+    // disappear into the static picture.
+    let buttons = collect_display_buttons(&state.display_trees);
+    let (action, label) = buttons
+      .into_iter()
+      .find(|(_, label)| label == "throw")
+      .expect("the body's Button should render as a clickable display");
+    assert_eq!(label, "throw");
+
+    // Pressing it moves the DynamicModule local, and that write survives
+    // this re-render — it must not snap back to "miss".
+    state.apply_button_action(&action);
+    assert!(state.error.is_none(), "button failed: {:?}", state.error);
+    assert_eq!(
+      hit(&state),
+      "\"hit\"",
+      "the button's write to the DynamicModule local should stick"
+    );
+
+    // An unrelated control changing and re-rendering again must not reset
+    // it either — a fresh `Module` scope would silently revert to "miss".
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 3.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert_eq!(
+      hit(&state),
+      "\"hit\"",
+      "the DynamicModule local must stay put across an unrelated re-render"
+    );
+  }
 }
