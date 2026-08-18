@@ -2,6 +2,12 @@
 
 # Unreleased
 
+- `;;` binds tighter than `->` and `:>`, so a `Span` can stand on either side
+    of a rule: `StringExtract["a--bbb--ccc", "--" -> 3 ;;]` and
+    `1 ;; 2 -> b` used to fail with a parse error or, where they did parse,
+    read as `Span[1, Rule[2, b]]` instead of `Rule[Span[1, 2], b]`.
+- A parenthesized `Span` takes a part index: `(1 ;; 3)[[1]]` is `1`, which
+    used to be a parse error.
 - A default value can be written on any pattern, not just a named blank:
     `f[x_?NumericQ : 2]`, `f[x : _Symbol | _Integer : 2]` and
     `f[x : x_?NumericQ : 2]` now parse as `Optional[…]` patterns instead of

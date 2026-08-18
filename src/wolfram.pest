@@ -13,9 +13,21 @@ COMMENT = _{ "(*" ~ (COMMENT | (!"(*" ~ !"*)" ~ ANY))* ~ "*)" }
 // SpanSep is a visible token so the parser can count separators and determine positions.
 // Atomic (`@`) so whitespace is not skipped between `;;` and any trailing check.
 SpanSep = @{ ";;" }
-SpanExpr = { Expression? ~ SpanSep ~ Expression? ~ (SpanSep ~ Expression?)? }
+SpanExpr = { SpanOperand? ~ SpanSep ~ SpanOperand? ~ (SpanSep ~ SpanOperand?)? }
+// A Span operand. `;;` binds tighter than `->` and `:>` in Wolfram
+// (precedence 305 vs 120), so `1 ;; 2 -> b` is Rule[Span[1, 2], b] and not
+// Span[1, Rule[2, b]] — an operand must stop at a rule operator. Only when
+// one actually follows at this depth is the operand narrowed to a
+// ConditionExpr (an Expression that stops before `->` and `:>`); otherwise
+// the full Expression stays available, so `a ;; b // f` is unaffected.
+SpanOperand = _{ !HasRuleOperator ~ Expression | ConditionExpr }
+// A `;;` expression that may itself be one side of a rule: with `;;`
+// binding tighter, the rule is the outer expression (`1 ;; 2 -> b`), so it
+// has to be tried before the bare Span. Used wherever a Span is reached
+// without a rule alternative already having been attempted.
+SpanOrRule = _{ &HasRuleOperator ~ ReplacementRule | SpanExpr }
 // PartIndex: an index inside [[ ]] — can be a SpanExpr or a plain Expression
-PartIndex = _{ &HasSpanSep ~ SpanExpr | Expression }
+PartIndex = _{ &HasSpanSep ~ SpanOrRule | Expression }
 
 // Part bracket openers/closers: both ASCII "[[" / "]]" and the Unicode
 // double-struck brackets. We accept the MATHEMATICAL LEFT/RIGHT WHITE
@@ -198,7 +210,7 @@ ListExtended = {
 ParenCallSuffix = { BracketArgs+ }
 ParenExtended = {
     &("(" ~ NestedContent ~ ")" ~ (DerivativePrime | PartOpen | "["))
-    ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
+    ~ "(" ~ (&HasSemicolon ~ CompoundExpression | &HasSpanSep ~ SpanOrRule | Expression) ~ ")"
     ~ (DerivativePrime ~ ParenCallSuffix? | PartIndexSuffix | ParenCallSuffix)
 }
 // RuleAnonymousFunction handles ReplacementRule& - for expressions like {#, First@#2} -> "Q" &
@@ -590,7 +602,7 @@ Term = _{
   | AssociationExtended
   | Association
   | ParenExtended
-  | "(" ~ (&HasSemicolon ~ CompoundExpression | &HasSpanSep ~ SpanExpr | Expression) ~ ")"
+  | "(" ~ (&HasSemicolon ~ CompoundExpression | &HasSpanSep ~ SpanOrRule | Expression) ~ ")"
 }
 
 // SimpleTerm is used for implicit multiplication - doesn't include ImplicitTimes to avoid recursion
@@ -631,7 +643,7 @@ SimpleTerm = _{
   | List
   | StringCall
   | String
-  | "(" ~ (&HasSpanSep ~ SpanExpr | Expression) ~ ")"
+  | "(" ~ (&HasSpanSep ~ SpanOrRule | Expression) ~ ")"
 }
 
 // TermNoImplicit is like Term but without ImplicitTimes - used for function bodies
@@ -777,7 +789,10 @@ Pattern = { PatternCondition | PatternTest | PatternOptionalNamedBlank | Pattern
 // Patterns (x_, x_Head, etc.) can appear as terms within the LHS expression.
 // The replacement side recurses so rule chains parse right-associatively:
 // a -> b -> c is Rule[a, Rule[b, c]] (matching wolframscript).
-ReplacementRule = { ConditionExpr ~ ("/;" ~ ConditionExpr)? ~ ("->" | "\u{2192}" | ":>") ~ (ReplacementRule | ConditionExpr) }
+// Either side may be a Span (`"--" -> 3 ;;` is Rule["--", Span[3, All]]),
+// which binds tighter than the rule operator.
+RuleOperand = _{ &HasSpanSep ~ SpanExpr | ConditionExpr }
+ReplacementRule = { RuleOperand ~ ("/;" ~ ConditionExpr)? ~ ("->" | "\u{2192}" | ":>") ~ (ReplacementRule | RuleOperand) }
 
 // Replacement expressions: expr /. rule or expr //. rule
 ReplaceAllExpr = { Term ~ "/." ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }
@@ -889,7 +904,7 @@ HasSemicolon = @{ (
 )* ~ ";" ~ !";" }
 ListItem = _{ &HasRuleOperator ~ ListItemRule | &HasSemicolon ~ CompoundExpression | &HasSpanSep ~ SpanExpr | Expression }
 
-AssociationItem = { ConditionExpr ~ ("->" | "\u{2192}" | ":>") ~ ConditionExpr }
+AssociationItem = { RuleOperand ~ ("->" | "\u{2192}" | ":>") ~ RuleOperand }
 // Non-rule items inside <|...|> are rare but legal — Wolfram parses <|a, b|>
 // as Association[a, b] and AssociationQ returns False.
 AssociationNonRuleItem = { Expression }
@@ -946,7 +961,7 @@ TagUnset = { Identifier ~ "/:" ~ BaseFunctionCall ~ "=." }
 Statement = _{ TagSetDelayed | TagUnset | TagSet | FunctionDefinition | TopLevelSpan | Expression }
 // Top-level Span: allows bare `;;` / `a;;b` / `;;4` / `a;;b;;c` as a
 // statement, with optional postfix applications (e.g. `1;;4 // FullForm`).
-TopLevelSpan = { &HasSpanSep ~ SpanExpr ~ ("//" ~ PostfixFunction)* }
+TopLevelSpan = { &HasSpanSep ~ SpanOrRule ~ ("//" ~ PostfixFunction)* }
 
 // StatementSeparator can be a semicolon (traditional) or empty (relying on whitespace/newlines)
 // Atomic so the `!";"` lookahead checks the *immediate* next character.
