@@ -7684,7 +7684,7 @@ mod ndsolve {
   fn derivative_of_a_part_extracted_solution() {
     // `solutions[[i]][[2]]'[t]` — the prime differentiates the
     // InterpolatingFunction the rule was carrying. It used to be a parse
-    // error ("expected SpanSep").
+    // error (the parser demanded a `;;` after the part index).
     let result = interpret(
       "s = Flatten[NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}]]; \
        s[[1]][[2]]'[2.0]",

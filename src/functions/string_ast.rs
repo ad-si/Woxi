@@ -8675,7 +8675,7 @@ fn to_expression_syntax_error(src: &str, symbol: &str) -> Option<String> {
 }
 
 /// Parse `src` as a Wolfram program and evaluate every top-level
-/// Expression/TopLevelSpan statement in order, returning the last result.
+/// Expression statement in order, returning the last result.
 /// Falls back to `string_to_expr` + evaluate for inputs the parser treats as
 /// a single expression.
 fn parse_and_evaluate_program(src: &str) -> Result<Expr, InterpreterError> {
