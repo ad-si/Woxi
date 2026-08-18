@@ -10,24 +10,27 @@ COMMENT = _{ "(*" ~ (COMMENT | (!"(*" ~ !"*)" ~ ANY))* ~ "*)" }
 
 // Span expression: a;;b or a;;b;;c (with optional operands: ;;b, a;;, ;;;;c)
 // Produces Span[a, b] or Span[a, b, c] with defaults (1 for start, All for end)
-// SpanSep is a visible token so the parser can count separators and determine positions.
-// Atomic (`@`) so whitespace is not skipped between `;;` and any trailing check.
-SpanSep = @{ ";;" }
-SpanExpr = { SpanOperand? ~ SpanSep ~ SpanOperand? ~ (SpanSep ~ SpanOperand?)? }
-// A Span operand. `;;` binds tighter than `->` and `:>` in Wolfram
-// (precedence 305 vs 120), so `1 ;; 2 -> b` is Rule[Span[1, 2], b] and not
-// Span[1, Rule[2, b]] — an operand must stop at a rule operator. Only when
-// one actually follows at this depth is the operand narrowed to a
-// ConditionExpr (an Expression that stops before `->` and `:>`); otherwise
-// the full Expression stays available, so `a ;; b // f` is unaffected.
-SpanOperand = _{ !HasRuleOperator ~ Expression | ConditionExpr }
-// A `;;` expression that may itself be one side of a rule: with `;;`
-// binding tighter, the rule is the outer expression (`1 ;; 2 -> b`), so it
-// has to be tried before the bare Span. Used wherever a Span is reached
-// without a rule alternative already having been attempted.
-SpanOrRule = _{ &HasRuleOperator ~ ReplacementRule | SpanExpr }
-// PartIndex: an index inside [[ ]] — can be a SpanExpr or a plain Expression
-PartIndex = _{ &HasSpanSep ~ SpanOrRule | Expression }
+//
+// `;;` is an ordinary infix operator of the expression chain (see `Operator`),
+// so the precedence climbing in the AST builder places it against every other
+// operator at once: it binds looser than `+`, `*`, `^` and `.` but tighter
+// than `=`, `:=`, `==`, `&&`, `||`, `|`, `~~`, `/;` and `->` — Wolfram's
+// precedence 305. Building it as a rule of its own could not do that: its
+// operands were whole `Expression`s, so every operator below `;;` ended up
+// *inside* the Span instead of around it.
+//
+// Wolfram lets either operand be left out, and a chain needs an operand for
+// every operator, so each spelling that leaves one out gets a `;;` token of
+// its own — the AST builder reads the token to know which operand is missing.
+// They are ordinary (non-empty) rules: a zero-width operand would let
+// `Expression` match nothing at all.
+// Atomic (`@`) so the two characters are one token.
+SpanNoLhsSep     = @{ ";;" }   // nothing before the `;;`: `;;3`
+SpanNoRhsSep     = @{ ";;" }   // nothing after it: `3;;`, the gap in `1;;;;3`
+SpanNoOperandSep = @{ ";;" }   // nothing on either side: `;;`, `;; ;; 2`
+// PartIndex: an index inside [[ ]] — an ordinary Expression, which covers
+// `m[[2 ;; 5]]` because `;;` is one of its operators.
+PartIndex = _{ Expression }
 
 // Part bracket openers/closers: both ASCII "[[" / "]]" and the Unicode
 // double-struck brackets. We accept the MATHEMATICAL LEFT/RIGHT WHITE
@@ -210,7 +213,7 @@ ListExtended = {
 ParenCallSuffix = { BracketArgs+ }
 ParenExtended = {
     &("(" ~ NestedContent ~ ")" ~ (DerivativePrime | PartOpen | "["))
-    ~ "(" ~ (&HasSemicolon ~ CompoundExpression | &HasSpanSep ~ SpanOrRule | Expression) ~ ")"
+    ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
     ~ (DerivativePrime ~ ParenCallSuffix? | PartIndexSuffix | ParenCallSuffix)
 }
 // RuleAnonymousFunction handles ReplacementRule& - for expressions like {#, First@#2} -> "Q" &
@@ -260,6 +263,7 @@ Operator = @{
   | "\\[And]" | "\u{2227}" // And operator (named form of &&)
   | "\\[Or]" | "\u{2228}" // Or operator (named form of ||)
   | "/@"     // keep first
+  | ";;"     // Span (Wolfram precedence 305: tighter than =, ==, &&, |, ~~ and ->, looser than + and *)
   | "@@@"    // MapApply operator (must be before @@)
   | "@@"     // Apply operator (must be before single @)
   | "@*"     // Composition operator (must be before single @)
@@ -459,11 +463,23 @@ ConjugateTransposeSuffix = @{ "\\[ConjugateTranspose]" | "\u{F3C6}" | "\u{F3C8}"
 // FactorialSuffix). Silent choice rule — the underlying named rules
 // are the ones that appear in the parse tree.
 TermSuffix = _{ TransposeSuffix | ConjugateTransposeSuffix | PatternTestSuffix }
+// One operand of an expression chain: an optional prefix operator, a Term and
+// the suffixes that bind to it. Spelled out as one alternative per prefix
+// rather than `(LeadingNot | LeadingPlus | LeadingMinus)? ~ Term ~ …` because
+// a PEG never backtracks into a `?` it has already matched.
+ExprOperand = _{ LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? }
+// The same operand with `;;`'s omitted left one allowed in front of it, so
+// `x = ;; 3` reads as `Set[x, Span[1, 3]]`.
+SpanOrExprOperand = _{ SpanNoLhsSep ~ ExprOperand | SpanNoOperandSep | ExprOperand }
+// `ExpressionNoImplicit`'s operand: as above, over `TermNoImplicit`.
+ExprOperandNoImplicit = _{ LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? }
+SpanOrExprOperandNoImplicit = _{ SpanNoLhsSep ~ ExprOperandNoImplicit | SpanNoOperandSep | ExprOperandNoImplicit }
+
 Expression = {
-    (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
+    SpanOrExprOperand ~ (UnsetSuffix | (Operator | TildeInfix) ~ SpanOrExprOperand | SpanNoRhsSep)*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)*
     ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
-    ~ (AnonymousFunctionSuffix ~ ((ReplaceRepeatedSuffix | ReplaceAllSuffix) | (Operator | TildeInfix) ~ (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)*  // Function: expr & (lowest precedence), then optional continuation (Operator/ReplaceAll/ReplaceRepeated may interleave in any order, e.g. `f & /@ list /. rules`) — repeated for chains like `f & [x] & [y]`
+    ~ (AnonymousFunctionSuffix ~ ((ReplaceRepeatedSuffix | ReplaceAllSuffix) | (Operator | TildeInfix) ~ SpanOrExprOperand)*  ~ ("//" ~ PostfixFunction)*)*  // Function: expr & (lowest precedence), then optional continuation (Operator/ReplaceAll/ReplaceRepeated may interleave in any order, e.g. `f & /@ list /. rules`) — repeated for chains like `f & [x] & [y]`
 }
 
 // Legacy rules kept for backward compatibility in evaluation code
@@ -475,12 +491,12 @@ PostfixApplication = { PostfixBase ~ ("//" ~ PostfixFunction)+ }
 // A trailing ; means the result is Null (e.g. "a;" is CompoundExpression[a, Null])
 // Allows consecutive `;` separators with empty expressions between them,
 // matching Wolfram's `a ; ; c` → `CompoundExpression[a, Null, c]`.
-// Each statement may itself be a Span (`5 ;; 2; 1 ;; 10 ;; 2`): a Span operand
+// Each statement may itself be a Span (`5 ;; 2; 1 ;; 10 ;; 2`): an Expression
 // greedily consumes its own `;;`, so every remaining top-level `;` is a genuine
 // CompoundExpression separator — no `;;` guard is needed and a `;;` statement is
 // free to follow a separator (`... ; ;;`). parse_compound_expression counts the
 // `;` separators from the source to reinsert omitted (Null) statements.
-CompoundStatement = _{ TopLevelSpan | Expression }
+CompoundStatement = _{ Expression }
 // An optional trailing `&` (no expression between it and the last `;`) turns
 // the whole statement sequence into a pure function body — the idiom
 // `(a = #; t = 0; &)` Options like `TrackingFunction` commonly use for a
@@ -602,7 +618,7 @@ Term = _{
   | AssociationExtended
   | Association
   | ParenExtended
-  | "(" ~ (&HasSemicolon ~ CompoundExpression | &HasSpanSep ~ SpanOrRule | Expression) ~ ")"
+  | "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
 }
 
 // SimpleTerm is used for implicit multiplication - doesn't include ImplicitTimes to avoid recursion
@@ -643,7 +659,7 @@ SimpleTerm = _{
   | List
   | StringCall
   | String
-  | "(" ~ (&HasSpanSep ~ SpanOrRule | Expression) ~ ")"
+  | "(" ~ Expression ~ ")"
 }
 
 // TermNoImplicit is like Term but without ImplicitTimes - used for function bodies
@@ -684,10 +700,10 @@ TermNoImplicit = _{
 
 // ExpressionNoImplicit is like Expression but uses TermNoImplicit
 ExpressionNoImplicit = {
-    (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
+    SpanOrExprOperandNoImplicit ~ (UnsetSuffix | (Operator | TildeInfix) ~ SpanOrExprOperandNoImplicit | SpanNoRhsSep)*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)*
     ~ ("//" ~ PostfixFunction)*
-    ~ (AnonymousFunctionSuffix ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)* ~ ((Operator | TildeInfix) ~ (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?
+    ~ (AnonymousFunctionSuffix ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)* ~ ((Operator | TildeInfix) ~ SpanOrExprOperandNoImplicit)*  ~ ("//" ~ PostfixFunction)*)?
 }
 
 // Pattern: x_ or x_Head or x_?test or x_ /; condition or x_:default or x_Head:default
@@ -723,8 +739,11 @@ PatternTestLhsBare = @{ Identifier ~ !"_" }
 PatternTestHead = { !("_") ~ Identifier }
 // ConditionExpr is like Expression but stops before -> and :> (rule operators)
 // This prevents the condition from consuming the replacement part of a rule
+// `ConditionExpr`'s operand: as `ExprOperand`, without the `..`/`...` suffixes.
+CondOperand = _{ LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* | Term ~ FactorialSuffix? ~ TermSuffix* }
+SpanOrCondOperand = _{ SpanNoLhsSep ~ CondOperand | SpanNoOperandSep | CondOperand }
 ConditionExpr = {
-    (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* | Term ~ FactorialSuffix? ~ TermSuffix*) ~ ((ConditionOp | TildeInfix) ~ (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* | Term ~ FactorialSuffix? ~ TermSuffix*))*
+    SpanOrCondOperand ~ ((ConditionOp | TildeInfix) ~ SpanOrCondOperand | SpanNoRhsSep)*
 }
 // Operators allowed in conditions - excludes -> and :> which mark rule boundaries
 // Atomic so that WHITESPACE/COMMENT tokens are not consumed within the operator span.
@@ -744,6 +763,7 @@ ConditionOp = @{
   | "<->"                         // TwoWayRule (must be before <>, <=, <)
   | "<>"                          // StringJoin (must be before < to avoid partial match)
   | "<=" | "\u{2264}" | "\u{2A7D}" | "\\[LessEqual]" | ">=" | "\u{2265}" | "\u{2A7E}" | "\\[GreaterEqual]" | "<" | ">"       // Order comparison, ≤, ≥, ⩽, ⩾
+  | ";;"                          // Span
   | "/@"                          // Map (must be before the bare "/" of Arithmetic)
   | "@@@"                         // MapApply (must be before @@)
   | "@@"                          // Apply (must be before @)
@@ -789,9 +809,10 @@ Pattern = { PatternCondition | PatternTest | PatternOptionalNamedBlank | Pattern
 // Patterns (x_, x_Head, etc.) can appear as terms within the LHS expression.
 // The replacement side recurses so rule chains parse right-associatively:
 // a -> b -> c is Rule[a, Rule[b, c]] (matching wolframscript).
-// Either side may be a Span (`"--" -> 3 ;;` is Rule["--", Span[3, All]]),
-// which binds tighter than the rule operator.
-RuleOperand = _{ &HasSpanSep ~ SpanExpr | ConditionExpr }
+// Either side may be a Span (`"--" -> 3 ;;` is Rule["--", Span[3, All]]):
+// `;;` is one of `ConditionExpr`'s own operators and binds tighter than the
+// rule operator.
+RuleOperand = _{ ConditionExpr }
 ReplacementRule = { RuleOperand ~ ("/;" ~ ConditionExpr)? ~ ("->" | "\u{2192}" | ":>") ~ (ReplacementRule | RuleOperand) }
 
 // Replacement expressions: expr /. rule or expr //. rule
@@ -871,23 +892,6 @@ HasRuleOperator = _{ (
   | "<->"                       // skip TwoWayRule (don't match its "->" substring as a rule operator)
   | !("->" | "\u{2192}" | ":>" | "<|" | "|>" | "}" | "," | "]" | ")" | "\u{27E7}" | "\u{301B}" | "\"") ~ ANY
 )* ~ ("->" | "\u{2192}" | ":>") }
-// Scan forward looking for ;; (span separator) at the current nesting depth.
-// Used as a zero-width lookahead to avoid expensive SpanExpr backtracking.
-// Ends with an atomic check so that `;; ;;` (second ;; separated by whitespace)
-// is correctly detected — otherwise the non-atomic trailing `~` would skip the
-// whitespace and the `!(";"|"=")` lookahead would falsely reject the next `;`.
-HasSpanSep = _{ (
-    ScanComment
-  | "<|" ~ NestedContent ~ "|>"
-  | "{" ~ NestedContent ~ "}"
-  | "[" ~ NestedContent ~ "]"
-  | "(" ~ NestedContent ~ ")"
-  | "\u{27E6}" ~ NestedContent ~ "\u{27E7}"
-  | "\u{301A}" ~ NestedContent ~ "\u{301B}"
-  | "\"" ~ (!("\"") ~ ANY)* ~ "\""
-  | ";" ~ !";"                  // skip lone semicolons (not ;;)
-  | !(";" | "<|" | "|>" | "}" | "," | "]" | ")" | "\u{27E7}" | "\u{301B}" | "\"") ~ ANY
-)* ~ SpanSep }
 // Scan forward looking for ; (compound separator, not ;;) at the current nesting depth.
 // Used as a zero-width lookahead to avoid expensive CompoundExpression backtracking.
 HasSemicolon = @{ (
@@ -902,7 +906,7 @@ HasSemicolon = @{ (
   | "\"" ~ (!("\"") ~ ANY)* ~ "\""
   | !(";" | "<|" | "|>" | "}" | "," | "]" | ")" | "\u{27E7}" | "\u{301B}" | "\"") ~ ANY
 )* ~ ";" ~ !";" }
-ListItem = _{ &HasRuleOperator ~ ListItemRule | &HasSemicolon ~ CompoundExpression | &HasSpanSep ~ SpanExpr | Expression }
+ListItem = _{ &HasRuleOperator ~ ListItemRule | &HasSemicolon ~ CompoundExpression | Expression }
 
 AssociationItem = { RuleOperand ~ ("->" | "\u{2192}" | ":>") ~ RuleOperand }
 // Non-rule items inside <|...|> are rare but legal — Wolfram parses <|a, b|>
@@ -931,7 +935,7 @@ AssociationExtended = {
 // See ListItemRule's comment: RuleAnonSuffix gates the extra Operator
 // continuation so `pat -> repl & /@ list` parses as an argument too.
 FunctionArgRule = { ReplacementRule ~ (RuleAnonSuffix ~ ((ReplaceRepeatedSuffix | ReplaceAllSuffix) | (Operator | TildeInfix) ~ RuleOperatorTerm)* | RuleReplaceSuffix*) ~ ("//" ~ PostfixFunction)* }
-FunctionArg = _{ &HasRuleOperator ~ FunctionArgRule | &HasSemicolon ~ CompoundExpression | &HasSpanSep ~ SpanExpr | Expression }
+FunctionArg = _{ &HasRuleOperator ~ FunctionArgRule | &HasSemicolon ~ CompoundExpression | Expression }
 // BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
 FunctionArgOrOmitted = _{ FunctionArg | OmittedArg }
 FunctionArgOrOmittedLast = _{ FunctionArg | OmittedArg | OmittedTrailingArg }
@@ -958,10 +962,10 @@ TagSetDelayed = { Identifier ~ "/:" ~ BaseFunctionCall ~ ":=" ~ ExpressionNoImpl
 TagSet = { Identifier ~ "/:" ~ BaseFunctionCall ~ "=" ~ !("." | "=" | "!") ~ ExpressionNoImplicit }
 TagUnset = { Identifier ~ "/:" ~ BaseFunctionCall ~ "=." }
 
-Statement = _{ TagSetDelayed | TagUnset | TagSet | FunctionDefinition | TopLevelSpan | Expression }
-// Top-level Span: allows bare `;;` / `a;;b` / `;;4` / `a;;b;;c` as a
-// statement, with optional postfix applications (e.g. `1;;4 // FullForm`).
-TopLevelSpan = { &HasSpanSep ~ SpanOrRule ~ ("//" ~ PostfixFunction)* }
+// A bare `;;` / `a;;b` / `;;4` / `a;;b;;c` statement needs no rule of its
+// own: `;;` is an operator of `Expression`, and `//` sits at the end of that
+// rule, so `1;;4 // FullForm` is `FullForm[Span[1, 4]]` without any hoisting.
+Statement = _{ TagSetDelayed | TagUnset | TagSet | FunctionDefinition | Expression }
 
 // StatementSeparator can be a semicolon (traditional) or empty (relying on whitespace/newlines)
 // Atomic so the `!";"` lookahead checks the *immediate* next character.
