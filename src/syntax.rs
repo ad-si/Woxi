@@ -2943,53 +2943,6 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       // But if encountered standalone, treat as a sentinel
       Expr::Integer(0) // Should not be reached
     }
-    Rule::SpanExpr => {
-      // SpanExpr: Expression? ~ SpanSep ~ Expression? ~ (SpanSep ~ Expression?)?
-      // SpanSep tokens act as position markers to distinguish ;;b from b;;
-      // Produces Span[start, end] or Span[start, end, step]
-      // Defaults: start=1, end=All
-      let one = Expr::Integer(1);
-      let all = Expr::Identifier("All".to_string());
-
-      // Collect children as slots separated by SpanSep markers
-      // slots[0] = before first ;;, slots[1] = between ;; and ;;, slots[2] = after second ;;
-      let mut slots: Vec<Option<Expr>> = vec![None];
-      for child in pair.into_inner() {
-        if child.as_rule() == Rule::SpanSep {
-          slots.push(None);
-        } else {
-          let last = slots.last_mut().unwrap();
-          *last = Some(pair_to_expr(child));
-        }
-      }
-
-      let start = slots
-        .first()
-        .and_then(std::clone::Clone::clone)
-        .unwrap_or(one);
-      let end = slots
-        .get(1)
-        .and_then(std::clone::Clone::clone)
-        .unwrap_or(all);
-
-      if slots.len() >= 3 {
-        // 3-part Span: a;;b;;c
-        let step = slots
-          .get(2)
-          .and_then(std::clone::Clone::clone)
-          .unwrap_or_else(|| Expr::Integer(1));
-        Expr::FunctionCall {
-          name: "Span".to_string(),
-          args: vec![start, end, step].into(),
-        }
-      } else {
-        // 2-part Span: a;;b
-        Expr::FunctionCall {
-          name: "Span".to_string(),
-          args: vec![start, end].into(),
-        }
-      }
-    }
     Rule::CompoundExpression => parse_compound_expression(&pair),
     Rule::AssociationExtended => parse_association_extended(pair),
     Rule::Association => parse_association(pair),
@@ -3773,30 +3726,6 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       }
       result
     }
-    Rule::TopLevelSpan => {
-      // Wrap the inner SpanExpr, then apply any trailing `// f` postfix
-      // applications left-to-right using the same Expr::Postfix node the
-      // main PostfixApplication rule produces.
-      //
-      // The inner SpanExpr's trailing Expression may itself have consumed
-      // `// f` applications — e.g. `a;;b;;c // f` parses as
-      // `Span[a, b, c // f]` because Expression's `//` postfix is greedy.
-      // Wolfram semantics bind `//` looser than `;;`, so hoist any
-      // postfix chain on the last Span arg up to the outer level.
-      let mut inner = pair.into_inner();
-      let mut expr = pair_to_expr(inner.next().unwrap());
-      expr = hoist_last_arg_postfix(expr);
-      for child in inner {
-        if child.as_rule() == Rule::PostfixFunction {
-          let func = parse_postfix_function(child);
-          expr = Expr::Postfix {
-            expr: Box::new(expr),
-            func: Box::new(func),
-          };
-        }
-      }
-      expr
-    }
     Rule::PostfixBase => {
       let inner = pair.into_inner().next().unwrap();
       pair_to_expr(inner)
@@ -3828,36 +3757,6 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       Expr::Raw(pair.as_str().to_string())
     }
   }
-}
-
-/// For a `Span[args…]` whose last arg is `Expr::Postfix { expr, func }`,
-/// walk the trailing Postfix chain outward: the Span keeps only the base
-/// expression, and each Postfix wraps the whole Span.
-/// This makes `a;;b // f` parse as `f[Span[a, b]]`, matching wolframscript's
-/// precedence where `//` binds looser than `;;`.
-fn hoist_last_arg_postfix(expr: Expr) -> Expr {
-  let (name, args) = match &expr {
-    Expr::FunctionCall { name, args } if name == "Span" && !args.is_empty() => {
-      (name.clone(), args.clone())
-    }
-    _ => return expr,
-  };
-  let mut args = args;
-  let mut postfix_chain: Vec<Expr> = Vec::new();
-  let last_idx = args.len() - 1;
-  while let Expr::Postfix { expr: inner, func } = &args[last_idx] {
-    postfix_chain.push((**func).clone());
-    let new_last = (**inner).clone();
-    args[last_idx] = new_last;
-  }
-  let mut result = Expr::FunctionCall { name, args };
-  for func in postfix_chain.into_iter().rev() {
-    result = Expr::Postfix {
-      expr: Box::new(result),
-      func: Box::new(func),
-    };
-  }
-  result
 }
 
 /// Parse a PostfixFunction pair into an Expr, wrapping in Function if & is present.
@@ -4504,8 +4403,13 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   // Popped from the end, so restore left-to-right application order.
   replace_rules.reverse();
 
-  // Single term case (no operators, no replace, no post-& continuation)
-  if inner.len() == 1 && replace_rules.is_empty() && post_anon_pairs.is_empty()
+  // Single term case (no operators, no replace, no post-& continuation).
+  // A lone `;;` is not a term — it is `Span[1, All]`, built from the two
+  // omitted operands by `parse_expression_inner`.
+  if inner.len() == 1
+    && inner[0].as_rule() != Rule::SpanNoOperandSep
+    && replace_rules.is_empty()
+    && post_anon_pairs.is_empty()
   {
     let mut result = pair_to_expr(inner.remove(0));
     for func_pair in postfix_funcs {
@@ -4623,6 +4527,33 @@ fn parse_expression_inner(
         );
         operators.push("=.".to_string());
         terms.push(Expr::Identifier("Null".to_string())); // dummy right operand
+        term_was_implicit_times.push(false);
+      }
+      Rule::SpanNoOperandSep => {
+        // `;;` on its own (`f[;;]`, `;; ;; 2`) — neither operand written.
+        terms.push(Expr::Identifier(SPAN_OMITTED.to_string()));
+        term_was_implicit_times.push(false);
+        operators.push(";;".to_string());
+        terms.push(Expr::Identifier(SPAN_OMITTED.to_string()));
+        term_was_implicit_times.push(false);
+      }
+      Rule::SpanNoLhsSep => {
+        // `;; 3` — a `;;` the chain has no left operand for. Stand the
+        // omitted one in explicitly; `build_span` turns it into the `1`
+        // default.
+        terms.push(Expr::Identifier(SPAN_OMITTED.to_string()));
+        term_was_implicit_times.push(false);
+        operators.push(";;".to_string());
+      }
+      Rule::SpanNoRhsSep => {
+        // `3 ;;`, and the gap in `1 ;;;; 3` — a `;;` with no right operand.
+        flush_pending_not(
+          &mut pending_not_on_last,
+          &mut terms,
+          &mut term_was_implicit_times,
+        );
+        operators.push(";;".to_string());
+        terms.push(Expr::Identifier(SPAN_OMITTED.to_string()));
         term_was_implicit_times.push(false);
       }
       Rule::TildeInfix => {
@@ -5738,6 +5669,11 @@ fn operator_precedence(op: &str) -> u8 {
     | "\\[NotEqual]" | "<" | "<=" | "\u{2264}" | "\u{2A7D}"
     | "\\[LessEqual]" | ">" | ">=" | "\u{2265}" | "\u{2A7E}"
     | "\\[GreaterEqual]" | "===" | "=!=" => 21, // Comparisons
+    // `;;` (Span, Wolfram precedence 305) sits just below `+` (310) and
+    // above every operator Wolfram places under it — `|` (160), `~~` (135),
+    // the comparisons, `&&`, `||`, `->`, `/;` and the assignments. Without a
+    // slot here those operators end up *inside* the Span (issue #564).
+    ";;" => 29,
     "~~" => 24, // StringExpression (lower than Alternatives)
     // Pattern/Optional `:` sits between StringExpression and Alternatives,
     // as in Wolfram (135 < 150 < 160): `x : a | b : v` is
@@ -5780,6 +5716,55 @@ fn operator_precedence(op: &str) -> u8 {
   }
 }
 
+/// Placeholder term for a `Span` operand the source left out — the `1` of
+/// `1 ;; 3` when it is written `;; 3`, or the `3` when it is written `1 ;;`.
+/// Which value fills the gap depends on the slot it sits in, so the omission
+/// has to survive precedence climbing and is resolved by [`build_span`]. The
+/// leading control character keeps the marker distinct from every symbol a
+/// program could spell.
+const SPAN_OMITTED: &str = "\u{1}SpanOmitted";
+
+/// Is this term an omitted `Span` operand?
+fn is_span_omitted(expr: &Expr) -> bool {
+  matches!(expr, Expr::Identifier(name) if name == SPAN_OMITTED)
+}
+
+/// The stand-in for an omitted `Span` operand that never reached
+/// [`build_span`]; see the `;;` arm of [`make_binary_op`].
+fn span_omitted_fallback(expr: &Expr) -> Expr {
+  if is_span_omitted(expr) {
+    Expr::Integer(1)
+  } else {
+    expr.clone()
+  }
+}
+
+/// Assemble `Span[…]` from the operands of one `;;` chain, filling in the
+/// default for every operand the source left out: `1` for the start, `All`
+/// for the end and `1` for the step — `;;3` is `Span[1, 3]`, `3;;` is
+/// `Span[3, All]` and `1;;;;3` is `Span[1, All, 3]`.
+fn build_span(parts: Vec<Expr>) -> Expr {
+  let args: Vec<Expr> = parts
+    .into_iter()
+    .enumerate()
+    .map(|(slot, part)| {
+      if is_span_omitted(&part) {
+        if slot == 1 {
+          Expr::Identifier("All".to_string())
+        } else {
+          Expr::Integer(1)
+        }
+      } else {
+        part
+      }
+    })
+    .collect();
+  Expr::FunctionCall {
+    name: "Span".to_string(),
+    args: args.into(),
+  }
+}
+
 /// Build a binary operation tree from terms and operators with correct precedence
 fn build_binary_tree(terms: Vec<Expr>, operators: &[String]) -> Expr {
   if terms.len() == 1 {
@@ -5817,6 +5802,40 @@ fn build_expr_with_precedence(
 
     if prec < min_prec {
       break;
+    }
+
+    // `;;` groups n-ary: `1 ;; 2 ;; 3` is one `Span[1, 2, 3]`, never
+    // `Span[Span[1, 2], 3]`. The whole run of `;;` operators at this level is
+    // taken at once, which keeps a Span that came from parentheses nested —
+    // `(1 ;; 2) ;; 3` has only one `;;` here, the other one is inside a term.
+    if op_str == ";;" {
+      // Left-associative, like every other operator without its own case.
+      let next_min_prec = prec + 1;
+      let mut parts = vec![result];
+      loop {
+        parts.push(build_expr_with_precedence(
+          terms,
+          operators,
+          op_idx + 1,
+          next_min_prec,
+        ));
+        // Skip past the terms the right operand consumed, as below.
+        let mut right_terms = 1;
+        let mut i = op_idx + 1;
+        while i < operators.len()
+          && operator_precedence(&operators[i]) >= next_min_prec
+        {
+          right_terms += 1;
+          i += 1;
+        }
+        op_idx += right_terms;
+        if operators.get(op_idx).map(String::as_str) != Some(";;") {
+          break;
+        }
+      }
+      result = build_span(parts);
+      in_cross_chain = false;
+      continue;
     }
 
     // For right-associative operators, use prec, otherwise use prec + 1
@@ -5909,6 +5928,18 @@ fn build_flat_op(head: &str, left: &Expr, right: &Expr) -> Expr {
 
 fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
   match op_str {
+    // A two-operand Span. Chains (`a ;; b ;; c`) are collected into a single
+    // n-ary `Span` by `build_expr_with_precedence` before they get here.
+    ";;" => build_span(vec![left.clone(), right.clone()]),
+    // An omitted `;;` operand that an operator binding tighter than `;;`
+    // claimed first — `a + ;; 3`, where `+` (310) takes the operand `;;`
+    // (305) left out. Only `build_span` can fill such a gap in properly, so
+    // read the omission as the `1` a written-out `Span[1, …]` would have.
+    _ if is_span_omitted(left) || is_span_omitted(right) => make_binary_op(
+      &span_omitted_fallback(left),
+      op_str,
+      &span_omitted_fallback(right),
+    ),
     "=." => {
       // Unset (postfix): f[x] =. → Unset[f[x]], right operand is a dummy
       Expr::FunctionCall {

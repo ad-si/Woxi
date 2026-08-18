@@ -347,6 +347,8 @@ fn parse_pde_domain(expr: &Expr) -> Option<PdeDomain> {
   };
   let min = nval_to_f64(&items[1])?;
   let max = nval_to_f64(&items[2])?;
+  // NaN bounds must bail out too, so compare via `partial_cmp` rather than
+  // a negated float comparison.
   if max.partial_cmp(&min) != Some(std::cmp::Ordering::Greater) {
     return None;
   }

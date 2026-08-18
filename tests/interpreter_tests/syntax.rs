@@ -7175,6 +7175,22 @@ mod line_continuation {
   }
 
   #[test]
+  fn a_line_ending_in_a_span_separator_is_its_own_statement() {
+    // Regression: `;;` and `;` are both spelled with `;`, and the statement
+    // splitter took any trailing `;` for a separator that was already
+    // there — so `x = 3;;` ran into the next line and the following
+    // statement became the Span's end operand.
+    assert_eq!(interpret("x = 3;;\nRange[6][[x]]").unwrap(), "{3, 4, 5, 6}");
+    assert_eq!(interpret("1 ;;\n2 ;;").unwrap(), "Span[2, All]");
+    // An odd run of `;` still ends with a genuine separator.
+    assert_eq!(
+      interpret("x = 3;;;\nRange[6][[x]]").unwrap(),
+      "{3, 4, 5, 6}"
+    );
+    assert_eq!(interpret("x = 3;\nRange[6][[x ;; 4]]").unwrap(), "{3, 4}");
+  }
+
+  #[test]
   fn replace_all_across_newline() {
     // Regression: `/.` (ReplaceAll) at end of line must continue on the
     // next line. Previously insert_statement_separators didn't recognise
@@ -11022,5 +11038,115 @@ mod span_as_a_rule_operand {
   fn a_parenthesized_span_takes_a_part_index() {
     assert_eq!(interpret("(1 ;; 3)[[1]]").unwrap(), "1");
     assert_eq!(interpret("(a ;; b)[[2]]").unwrap(), "b");
+  }
+}
+
+/// `;;` is Wolfram's precedence 305: every operator below it — `=`, `:=`,
+/// `==`, `&&`, `||`, `|`, `~~`, `/;`, `->` — is the *outer* expression, and
+/// every operator above it (`+`, `*`, `^`, `.`, `@`) is part of an operand.
+/// https://github.com/ad-si/Woxi/issues/564
+mod span_precedence {
+  use super::*;
+
+  /// The reported case: the assignment is the outer expression, so the
+  /// symbol holds the whole Span and not just its first operand.
+  #[test]
+  fn an_assignment_stores_the_whole_span() {
+    assert_eq!(interpret("x = 1 ;; 3; Head[x]").unwrap(), "Span");
+    assert_eq!(interpret("x = 1 ;; 3; x").unwrap(), "Span[1, 3]");
+    assert_eq!(interpret("y := 1 ;; 3; y").unwrap(), "Span[1, 3]");
+    assert_eq!(interpret("x = 1 ;; 6 ;; 2; x").unwrap(), "Span[1, 6, 2]");
+    // A stored Span is a Part specification like any other.
+    assert_eq!(
+      interpret("s = 2 ;; ; Range[5][[s]]").unwrap(),
+      "{2, 3, 4, 5}"
+    );
+    assert_eq!(interpret("s = ;; 3; Range[5][[s]]").unwrap(), "{1, 2, 3}");
+  }
+
+  #[test]
+  fn a_comparison_holds_the_span() {
+    assert_eq!(interpret("a == 1 ;; 3").unwrap(), "a == Span[1, 3]");
+    assert_eq!(interpret("Head[a == 1 ;; 3]").unwrap(), "Equal");
+    assert_eq!(interpret("a != 1 ;; 3").unwrap(), "a != Span[1, 3]");
+    assert_eq!(interpret("1 ;; 3 == a").unwrap(), "Span[1, 3] == a");
+  }
+
+  #[test]
+  fn the_logical_operators_hold_the_span() {
+    assert_eq!(interpret("a && 1 ;; 3").unwrap(), "a && Span[1, 3]");
+    assert_eq!(interpret("Head[a && 1 ;; 3]").unwrap(), "And");
+    assert_eq!(interpret("a || 1 ;; 3").unwrap(), "a || Span[1, 3]");
+  }
+
+  #[test]
+  fn alternatives_and_string_expression_hold_the_span() {
+    assert_eq!(interpret("a | 1 ;; 3").unwrap(), "a | Span[1, 3]");
+    assert_eq!(interpret("Head[a | 1 ;; 3]").unwrap(), "Alternatives");
+    assert_eq!(
+      interpret("a ~~ 1 ;; 3").unwrap(),
+      "StringExpression[a, Span[1, 3]]"
+    );
+    assert_eq!(interpret("Head[a ~~ 1 ;; 3]").unwrap(), "StringExpression");
+  }
+
+  #[test]
+  fn a_condition_holds_the_span() {
+    assert_eq!(interpret("x /; y ;; 3").unwrap(), "x /; Span[y, 3]");
+    assert_eq!(interpret("Head[x /; y ;; 3]").unwrap(), "Condition");
+  }
+
+  /// `//` and `&` bind looser still, so they wrap the finished Span.
+  #[test]
+  fn postfix_application_and_a_pure_function_wrap_the_span() {
+    assert_eq!(interpret("1 ;; 4 // Head").unwrap(), "Span");
+    assert_eq!(interpret("a ;; b // f").unwrap(), "f[Span[a, b]]");
+    assert_eq!(interpret("(1 ;; 3 &)[]").unwrap(), "Span[1, 3]");
+  }
+
+  /// Operators *above* `;;` stay inside its operands.
+  #[test]
+  fn the_tighter_operators_stay_inside_the_span() {
+    assert_eq!(interpret("1 ;; 2 + 3").unwrap(), "Span[1, 5]");
+    assert_eq!(interpret("2 ;; 3 * 4").unwrap(), "Span[2, 12]");
+    assert_eq!(interpret("1 ;; 2 ^ 3").unwrap(), "Span[1, 8]");
+    assert_eq!(interpret("1 + 1 ;; 3").unwrap(), "Span[2, 3]");
+    assert_eq!(
+      interpret("Range[10][[2 ;; 3 + 4]]").unwrap(),
+      "{2, 3, 4, 5, 6, 7}"
+    );
+  }
+
+  /// Every spelling with an omitted operand keeps its default — `1` for the
+  /// start, `All` for the end — wherever the Span stands.
+  #[test]
+  fn an_omitted_operand_keeps_its_default() {
+    assert_eq!(interpret(";; 3").unwrap(), "Span[1, 3]");
+    assert_eq!(interpret("3 ;;").unwrap(), "Span[3, All]");
+    assert_eq!(interpret(";;").unwrap(), "Span[1, All]");
+    assert_eq!(interpret("1 ;;;; 3").unwrap(), "Span[1, All, 3]");
+    assert_eq!(interpret("a == ;; 3").unwrap(), "a == Span[1, 3]");
+    assert_eq!(interpret("a == 3 ;;").unwrap(), "a == Span[3, All]");
+    assert_eq!(
+      interpret("{;;, 2 ;;}").unwrap(),
+      "{Span[1, All], Span[2, All]}"
+    );
+    assert_eq!(interpret("f[;;]").unwrap(), "f[Span[1, All]]");
+    assert_eq!(interpret("Range[5][[;;]]").unwrap(), "{1, 2, 3, 4, 5}");
+    assert_eq!(interpret("Range[5][[;; 3]]").unwrap(), "{1, 2, 3}");
+    assert_eq!(interpret("Range[5][[3 ;;]]").unwrap(), "{3, 4, 5}");
+    assert_eq!(interpret("Range[6][[;; ;; 2]]").unwrap(), "{1, 3, 5}");
+  }
+
+  /// A `;;` chain is one n-ary Span; parentheses still nest it.
+  #[test]
+  fn a_chain_of_separators_is_a_single_span() {
+    assert_eq!(interpret("1 ;; 6 ;; 2").unwrap(), "Span[1, 6, 2]");
+    assert_eq!(interpret("(1 ;; 2) ;; 3").unwrap(), "Span[Span[1, 2], 3]");
+    assert_eq!(interpret("1 ;; (2 ;; 3)").unwrap(), "Span[1, Span[2, 3]]");
+    assert_eq!(
+      interpret("Range[10][[1 ;; 10 ;; 3]]").unwrap(),
+      "{1, 4, 7, 10}"
+    );
   }
 }

@@ -28,3 +28,29 @@ $ wo 'StringExtract["a--bbb--ccc--dddd", "--" -> 3 ;;]'
 $ wo 'Head[1 ;; 2 -> b]'
 Rule
 ```
+
+Every operator Wolfram places below `;;` — assignment, comparison, the
+logical operators, `|`, `~~` and `->` — keeps the whole span as its operand,
+so a symbol set to a span holds the span itself:
+
+```scrut
+$ wo 'x = 2 ;; 4; Range[6][[x]]'
+{2, 3, 4}
+```
+
+```scrut
+$ wo 'a == 1 ;; 3'
+a == Span[1, 3]
+```
+
+```scrut
+$ wo 'a && 1 ;; 3'
+a && Span[1, 3]
+```
+
+The arithmetic operators bind tighter and stay inside the span's operands:
+
+```scrut
+$ wo '1 ;; 2 + 3'
+Span[1, 5]
+```

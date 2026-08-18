@@ -2053,7 +2053,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   for node in program.into_inner() {
     let line = node.as_span().start_pos().line_col().0;
     match node.as_rule() {
-      Rule::Expression | Rule::TopLevelSpan => {
+      Rule::Expression => {
         let expr = syntax::pair_to_expr(node);
         expr_asts.push(expr.clone());
         stmts.push(ProgramStmt::Expr(expr));
@@ -4475,6 +4475,15 @@ fn expand_char_escapes(input: &str) -> String {
   result
 }
 
+/// Does the code on this line end in a `;;` (a complete `Span`) rather than
+/// in a statement separator? Both are spelled with `;`, so the trailing run
+/// decides: an even run is `;;` (or `;;;;`) and the line still needs a
+/// separator after it, an odd one ends in a `;` that already separates.
+fn ends_with_span_separator(code_tail: &str) -> bool {
+  let semicolons = code_tail.chars().rev().take_while(|c| *c == ';').count();
+  semicolons > 0 && semicolons % 2 == 0
+}
+
 /// Append a code character to a line's rolling tail, keeping the tail bounded.
 /// Whitespace is skipped, so `f[x] \[Star]` ends in `\[Star]` either way.
 fn push_code_tail(tail: &mut String, ch: char) {
@@ -4658,7 +4667,8 @@ pub fn insert_statement_separators(input: &str) -> String {
           )
         );
       let needs_semi = line_has_code
-        && last_code_char != Some(';')
+        && (last_code_char != Some(';')
+          || ends_with_span_separator(&code_tail))
         && !ends_with_set_delayed
         && !ends_with_tag_set
         && !ends_with_operator
@@ -5085,7 +5095,6 @@ pub(crate) fn is_statement_rule(rule: Rule) -> bool {
   matches!(
     rule,
     Rule::Expression
-      | Rule::TopLevelSpan
       | Rule::FunctionDefinition
       | Rule::TagSetDelayed
       | Rule::TagSet
