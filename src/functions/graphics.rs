@@ -16944,21 +16944,29 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       inner.tracking,
     )
   } else {
-    // `TogglerBar[Dynamic[var], …]` inside the body moves into the
-    // display list (replaced by `Nothing` in the body): a front-end
-    // renders displays as live widgets, whereas inside the rendered
-    // output it would only be a static picture.
+    // `DynamicModule[{locals…}, …]` wrapping the body: unlike `Module`, a
+    // DynamicModule's locals live for the widget's whole lifetime, so a
+    // `Button` inside it that writes one (a Demonstration's "throw"/"step"
+    // action) must have that write survive the next re-render. Hoist them
+    // into the widget's hidden state — the same mechanism a Manipulate's
+    // own `ControlType -> None` variables use — and drop the wrapper, so
+    // `reevaluate` installs them as ordinary globals instead of Module
+    // re-creating fresh ones every frame.
+    let mut dynamic_module_state = Vec::new();
+    let unwrapped =
+      unwrap_dynamic_module_locals(&args[0], &mut dynamic_module_state);
+    // `TogglerBar[Dynamic[var], …]` and a bare `Button[label, action]`
+    // inside the body move into the display list (replaced by `Nothing` in
+    // the body): a front-end renders displays as live widgets, whereas
+    // inside the rendered output they would only be an inert picture.
     let mut body_displays = Vec::new();
-    let body_expr = extract_body_togglerbars(
-      unwrap_dynamic_body(&args[0]),
-      &mut body_displays,
-    );
+    let body_expr = extract_body_togglerbars(&unwrapped, &mut body_displays);
     let body_code = crate::syntax::expr_to_input_form(&body_expr);
     body_expr_kept = Some(body_expr);
     (
       body_code,
       Vec::with_capacity(args.len() - 1),
-      Vec::new(),
+      dynamic_module_state,
       body_displays,
       None,
       Vec::new(),
@@ -17842,6 +17850,18 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
       displays.push(crate::syntax::expr_to_input_form(expr));
       Expr::Identifier("Nothing".to_string())
     }
+    // A bare `Button[label, action, opts…]` drawn directly by the body (a
+    // Demonstration's "throw"/"step" action mixed into a `Column` of
+    // graphics and captions), distinct from a `Button` given as its own
+    // Manipulate control-spec argument (handled in `manipulate_controls`).
+    // Moves into the display list, replaced by `Nothing`, so it renders as
+    // a live, clickable element instead of an inert picture.
+    Expr::FunctionCall { name, args }
+      if name == "Button" && args.len() >= 2 =>
+    {
+      displays.push(crate::syntax::expr_to_input_form(expr));
+      Expr::Identifier("Nothing".to_string())
+    }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: args
@@ -17904,6 +17924,91 @@ fn unwrap_dynamic_body(body: &Expr) -> &Expr {
       &args[0]
     }
     other => other,
+  }
+}
+
+/// Peel `Dynamic[…]` wrappers and any top-level `DynamicModule[{locals…},
+/// …]` off a Manipulate body, pushing each local's `(name, initial value)`
+/// onto `state`. A `DynamicModule` local without an initializer (`{tf,
+/// soln}`, computed fresh each frame) is seeded as `Null`.
+///
+/// Wolfram keeps a `DynamicModule`'s locals alive for the widget's whole
+/// lifetime — that is the entire point of `DynamicModule` over `Module` —
+/// so a `Button` inside it that writes one (a Demonstration's "throw" or
+/// "step" action) must have that write survive the next re-render. Hoisting
+/// the locals into the widget's hidden state, the same mechanism a
+/// Manipulate's own `ControlType -> None` variables use, gets that for
+/// free: `reevaluate` installs `state` as scoped globals before every
+/// render, and writes the body (or a button action) makes to any of those
+/// names get read back afterwards.
+fn unwrap_dynamic_module_locals(
+  body: &Expr,
+  state: &mut Vec<(String, String)>,
+) -> Expr {
+  let mut cur = body;
+  loop {
+    match cur {
+      Expr::FunctionCall { name, args }
+        if name == "Dynamic" && !args.is_empty() =>
+      {
+        cur = &args[0];
+      }
+      // Only a `DynamicModule` whose own body is *itself* an explicit
+      // `Dynamic[…]` gets its locals hoisted: that inner `Dynamic` is the
+      // author's own re-render boundary, marking everything outside it —
+      // the locals — as evaluated once and persisted, exactly what
+      // `DynamicModule` (vs. `Module`) is for. A `DynamicModule` whose body
+      // is plain code (`DynamicModule[{p = a x^2+b x+c}, RegionPlot[…]]`,
+      // no inner `Dynamic`) has no such boundary: Manipulate's own
+      // (implicit, outer) dynamic wrapping re-evaluates the whole
+      // `DynamicModule` — including the local's initializer — on every
+      // control change, so `p` must keep tracking `a`/`b`/`c` fresh each
+      // frame rather than freezing at its first value.
+      Expr::FunctionCall { name, args }
+        if name == "DynamicModule"
+          && args.len() >= 2
+          && matches!(
+            &args[1],
+            Expr::FunctionCall { name: inner, args: iargs }
+              if inner == "Dynamic" && !iargs.is_empty()
+          ) =>
+      {
+        if let Expr::List(locals) = &args[0] {
+          for local in locals {
+            match local {
+              Expr::FunctionCall {
+                name: set_name,
+                args: set_args,
+              } if set_name == "Set" && set_args.len() == 2 => {
+                if let Expr::Identifier(var_name) = &set_args[0] {
+                  state.push((
+                    var_name.clone(),
+                    crate::syntax::expr_to_input_form(&set_args[1]),
+                  ));
+                }
+              }
+              Expr::Rule {
+                pattern,
+                replacement,
+              } => {
+                if let Expr::Identifier(var_name) = pattern.as_ref() {
+                  state.push((
+                    var_name.clone(),
+                    crate::syntax::expr_to_input_form(replacement),
+                  ));
+                }
+              }
+              Expr::Identifier(var_name) => {
+                state.push((var_name.clone(), "Null".to_string()));
+              }
+              _ => {}
+            }
+          }
+        }
+        cur = &args[1];
+      }
+      _ => return cur.clone(),
+    }
   }
 }
 
