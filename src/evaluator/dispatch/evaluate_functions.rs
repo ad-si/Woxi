@@ -4466,6 +4466,15 @@ fn evaluate_function_call_ast_inner(
     return Ok(graph);
   }
 
+  // Combinatorica`FromUnorderedPairs[pairs] — the legacy Combinatorica
+  // package's graph constructor; builds a Graph[...] on vertices
+  // 1 .. Max[Flatten[pairs]] from a list of unordered vertex-index pairs.
+  if name == "Combinatorica`FromUnorderedPairs" {
+    return crate::functions::graph::combinatorica_from_unordered_pairs_ast(
+      args,
+    );
+  }
+
   // Graph[{rule1, rule2, ...}] or Graph[{edge1, edge2, ...}]
   // → Graph[{sorted vertices}, {DirectedEdge/UndirectedEdge[...], ...}]
   if name == "Graph" {
@@ -4703,6 +4712,14 @@ fn evaluate_function_call_ast_inner(
   // shortest weighted path (Dijkstra).
   if name == "FindShortestPath" && args.len() >= 3 {
     return crate::functions::graph::find_shortest_path_ast(args);
+  }
+
+  // GraphPath[graph, src, dst] — the legacy GraphUtilities package's name
+  // for a shortest path between two vertices; same graph, same result as
+  // FindShortestPath. (GraphUtilities predates Wolfram Language's built-in
+  // Graph type and was absorbed into the language core in Version 8.)
+  if name == "GraphPath" && args.len() == 3 {
+    return evaluate_function_call_ast_inner("FindShortestPath", args);
   }
 
   // EdgeList[Graph[vertices, edges]] → edges list
@@ -5911,6 +5928,12 @@ fn evaluate_function_call_ast_inner(
       return Ok(Expr::List(dist.into_iter().map(dist_to_expr).collect()));
     }
     // Fall through to unevaluated when a vertex argument is invalid.
+  }
+
+  // GraphUtilities`GraphDistanceMatrix[g] — the legacy GraphUtilities
+  // package's name for GraphDistanceMatrix; same graph, same result.
+  if name == "GraphUtilities`GraphDistanceMatrix" && args.len() == 1 {
+    return evaluate_function_call_ast_inner("GraphDistanceMatrix", args);
   }
 
   // GraphDistanceMatrix[g] — matrix whose (i, j) entry is the shortest-path
@@ -7434,6 +7457,12 @@ fn evaluate_function_call_ast_inner(
       }
     }
     return Ok(bool_expr(false));
+  }
+
+  // Combinatorica`ConnectedComponents[g] — the legacy Combinatorica
+  // package's name for ConnectedComponents; same graph, same result.
+  if name == "Combinatorica`ConnectedComponents" && args.len() == 1 {
+    return evaluate_function_call_ast_inner("ConnectedComponents", args);
   }
 
   // ConnectedComponents[Graph[{vertices}, {edges}]]

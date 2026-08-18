@@ -188,6 +188,58 @@ fn build_render_graph(
   (graph, index_map)
 }
 
+/// `Combinatorica\`FromUnorderedPairs[pairs]` — the legacy Combinatorica
+/// package's graph constructor: builds an undirected graph on vertices
+/// `1 .. Max[Flatten[pairs]]` (including any vertex that never appears in an
+/// edge) from a list of unordered vertex-index pairs `{v1, v2}`, returned in
+/// the canonical `Graph[{vertices}, {edges}]` form so it feeds directly into
+/// `ConnectedComponents`, `GraphDistanceMatrix`, `FindShortestPath`, etc.
+/// Anything that is not a list of two-element positive-integer pairs is left
+/// symbolic.
+pub fn combinatorica_from_unordered_pairs_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("Combinatorica`FromUnorderedPairs", args);
+  if args.len() != 1 {
+    return Ok(original());
+  }
+  let pairs = match &args[0] {
+    Expr::List(items) => items,
+    _ => return Ok(original()),
+  };
+
+  let mut max_vertex: i128 = 0;
+  let mut edges = Vec::with_capacity(pairs.len());
+  for p in pairs {
+    let Expr::List(pair) = p else {
+      return Ok(original());
+    };
+    if pair.len() != 2 {
+      return Ok(original());
+    }
+    let (Expr::Integer(a), Expr::Integer(b)) = (&pair[0], &pair[1]) else {
+      return Ok(original());
+    };
+    if *a < 1 || *b < 1 {
+      return Ok(original());
+    }
+    max_vertex = max_vertex.max(*a).max(*b);
+    edges.push(call(
+      "UndirectedEdge",
+      vec![Expr::Integer(*a), Expr::Integer(*b)],
+    ));
+  }
+  if max_vertex == 0 {
+    return Ok(original());
+  }
+
+  let vertices: Vec<Expr> = (1..=max_vertex).map(Expr::Integer).collect();
+  Ok(call(
+    "Graph",
+    vec![Expr::List(vertices.into()), Expr::List(edges.into())],
+  ))
+}
+
 /// Render a Graph[{vertices}, {edges}, options...] expression to SVG
 /// via the Graphics pipeline, using petgraph as the underlying data structure.
 pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

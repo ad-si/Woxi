@@ -6300,3 +6300,4 @@ SetProperty,Graph with an annotation set for one of its vertices or edges,✅,pu
 Evaluated,Option for whether to evaluate a plot's function once symbolically,✅,pure,6.0,
 ParallelSelect,Parallel version of Select (evaluated sequentially),✅,pure,14.2,
 ParallelCases,Parallel version of Cases (evaluated sequentially),✅,pure,14.2,
+GraphPath,Shortest path between two vertices — legacy GraphUtilities package name for FindShortestPath,✅,pure,8.0,

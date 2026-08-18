@@ -2392,6 +2392,98 @@ mod find_shortest_path {
   }
 }
 
+mod combinatorica_legacy_graph_functions {
+  use super::*;
+
+  // Combinatorica`FromUnorderedPairs / Combinatorica`ConnectedComponents /
+  // GraphUtilities`GraphPath (bare, from that package's context) / bare
+  // GraphPath: the pre-Version-8 Combinatorica and GraphUtilities packages'
+  // graph API, superseded by the built-in Graph type but still used by
+  // notebooks written against them. They delegate to the modern
+  // FromUnorderedPairs-built Graph, ConnectedComponents, GraphDistanceMatrix
+  // and FindShortestPath so there is exactly one implementation of each
+  // algorithm.
+
+  #[test]
+  fn from_unordered_pairs_builds_a_graph() {
+    assert_eq!(
+      interpret("Combinatorica`FromUnorderedPairs[{{1, 2}, {2, 3}, {3, 1}}]")
+        .unwrap(),
+      interpret("Graph[{1, 2, 3}, {1 <-> 2, 2 <-> 3, 3 <-> 1}]").unwrap()
+    );
+  }
+
+  #[test]
+  fn from_unordered_pairs_includes_isolated_vertices() {
+    // Vertex 4 never appears as an edge endpoint but is still within
+    // 1 .. Max[Flatten[pairs]], so it must be included as an isolated vertex.
+    assert_eq!(
+      interpret(
+        "VertexList[Combinatorica`FromUnorderedPairs[{{1, 2}, {2, 4}}]]"
+      )
+      .unwrap(),
+      "{1, 2, 3, 4}"
+    );
+  }
+
+  #[test]
+  fn from_unordered_pairs_invalid_args_stay_symbolic() {
+    assert_eq!(
+      interpret("Combinatorica`FromUnorderedPairs[{{1, 2, 3}}]").unwrap(),
+      "Combinatorica`FromUnorderedPairs[{{1, 2, 3}}]"
+    );
+    assert_eq!(
+      interpret("Combinatorica`FromUnorderedPairs[{}]").unwrap(),
+      "Combinatorica`FromUnorderedPairs[{}]"
+    );
+  }
+
+  #[test]
+  fn combinatorica_connected_components_matches_modern() {
+    assert_eq!(
+      interpret(
+        "Combinatorica`ConnectedComponents[\
+         Combinatorica`FromUnorderedPairs[{{1, 2}, {2, 3}, {4, 5}}]]"
+      )
+      .unwrap(),
+      "{{1, 2, 3}, {4, 5}}"
+    );
+  }
+
+  #[test]
+  fn graph_utilities_graph_distance_matrix_matches_modern() {
+    assert_eq!(
+      interpret(
+        "GraphUtilities`GraphDistanceMatrix[\
+         Combinatorica`FromUnorderedPairs[{{1, 2}, {2, 3}, {3, 4}}]]"
+      )
+      .unwrap(),
+      interpret(
+        "GraphDistanceMatrix[Graph[{1, 2, 3, 4}, \
+         {1 <-> 2, 2 <-> 3, 3 <-> 4}]]"
+      )
+      .unwrap()
+    );
+  }
+
+  #[test]
+  fn bare_graph_path_matches_find_shortest_path() {
+    assert_eq!(
+      interpret(
+        "GraphPath[Combinatorica`FromUnorderedPairs[\
+         {{1, 2}, {2, 3}, {3, 4}}], 1, 4]"
+      )
+      .unwrap(),
+      "{1, 2, 3, 4}"
+    );
+    assert_eq!(
+      interpret("GraphPath[Combinatorica`FromUnorderedPairs[{{1, 2}}], 1, 3]")
+        .unwrap(),
+      "{}"
+    );
+  }
+}
+
 mod transitive_closure_graph {
   use super::*;
 

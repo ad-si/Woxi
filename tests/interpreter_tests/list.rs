@@ -10014,6 +10014,56 @@ mod join_non_list {
   }
 
   #[test]
+  fn combinatorica_random_permutation_of_integer_is_permutation_of_range() {
+    // Combinatorica`RandomPermutation[n] differs from the modern
+    // RandomPermutation[n] (which returns a Cycles[...] object): it returns
+    // a plain list that is some permutation of Range[n].
+    for n in [0, 1, 5, 20] {
+      assert_eq!(
+        interpret(&format!("Sort[Combinatorica`RandomPermutation[{n}]]"))
+          .unwrap(),
+        interpret(&format!("Range[{n}]")).unwrap()
+      );
+    }
+  }
+
+  #[test]
+  fn combinatorica_random_permutation_of_list_is_permutation_of_list() {
+    // Combinatorica`RandomPermutation[list] shuffles the list itself
+    // (used in the wild on arbitrary lists, not just Range[n]).
+    assert_eq!(
+      interpret(
+        "Sort[Combinatorica`RandomPermutation[{\"a\", \"b\", \"c\", \"d\"}]]"
+      )
+      .unwrap(),
+      "{a, b, c, d}"
+    );
+    assert_eq!(
+      interpret(
+        "Sort[Combinatorica`RandomPermutation[{{1, 2}, {3, 4}, {5, 6}}]]"
+      )
+      .unwrap(),
+      "{{1, 2}, {3, 4}, {5, 6}}"
+    );
+  }
+
+  #[test]
+  fn combinatorica_random_permutation_invalid_args_stay_symbolic() {
+    assert_eq!(
+      interpret("Combinatorica`RandomPermutation[-1]").unwrap(),
+      "Combinatorica`RandomPermutation[-1]"
+    );
+    assert_eq!(
+      interpret("Combinatorica`RandomPermutation[\"x\"]").unwrap(),
+      "Combinatorica`RandomPermutation[x]"
+    );
+    assert_eq!(
+      interpret("Combinatorica`RandomPermutation[1, 2]").unwrap(),
+      "Combinatorica`RandomPermutation[1, 2]"
+    );
+  }
+
+  #[test]
   fn permutations_with_duplicates() {
     // Permutations of a multiset should return only distinct permutations.
     // Wolfram: Permutations[{1, 1, 2}] -> {{1, 1, 2}, {1, 2, 1}, {2, 1, 1}}

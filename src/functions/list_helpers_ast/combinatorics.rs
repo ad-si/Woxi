@@ -190,6 +190,31 @@ pub fn combinatorica_unrank_permutation_ast(
   Ok(Expr::List(result.into()))
 }
 
+/// `Combinatorica\`RandomPermutation[n]` / `Combinatorica\`RandomPermutation[l]`
+/// — the legacy Combinatorica package's permutation generator, distinct from
+/// the modern `RandomPermutation[n]` (which returns a `Cycles[...]` object
+/// representing the permutation): `RandomPermutation[n_Integer]` returns a
+/// uniformly random permutation of `Range[n]` as a plain list, and
+/// `RandomPermutation[l_List]` returns a uniformly random shuffle of `l`
+/// itself, elements unchanged. Anything else is left symbolic.
+pub fn combinatorica_random_permutation_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use rand::seq::SliceRandom;
+
+  let original = || unevaluated("Combinatorica`RandomPermutation", args);
+  if args.len() != 1 {
+    return Ok(original());
+  }
+  let mut items: Vec<Expr> = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => (1..=*n).map(Expr::Integer).collect(),
+    Expr::List(items) => items.to_vec(),
+    _ => return Ok(original()),
+  };
+  crate::with_rng(|rng| items.shuffle(rng));
+  Ok(Expr::List(items.into()))
+}
+
 /// Helper to generate k-permutations.
 ///
 /// When the input contains duplicate elements, only distinct permutations

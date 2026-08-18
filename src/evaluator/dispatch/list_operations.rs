@@ -2889,6 +2889,11 @@ pub fn dispatch_list_operations(
         args,
       ));
     }
+    "Combinatorica`RandomPermutation" if args.len() == 1 => {
+      return Some(list_helpers_ast::combinatorica_random_permutation_ast(
+        args,
+      ));
+    }
     "Signature" if args.len() == 1 => {
       use crate::functions::list_helpers_ast::sorting::canonical_cmp;
       // Signature operates on any non-atomic expression: it treats the
