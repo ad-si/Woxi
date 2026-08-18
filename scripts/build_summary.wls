@@ -138,6 +138,8 @@ updateSummary[text_String] := Module[{
 (* ----- Outline -> tree -------------------------------------------- *)
 
 (* Tree node: <|"label" -> _, "target" -> _, "children" -> {...}|> *)
+createNode[lbl_String, tgt_String, ch_List] :=
+  <|"label" -> lbl, "target" -> tgt, "children" -> ch|>;
 
 parseOutline[text_String] := Module[{entries},
   entries = DeleteCases[
@@ -154,16 +156,12 @@ parseOutline[text_String] := Module[{entries},
    {nodeList, leftoverEntries}. *)
 parseLevel[{}, _] := {{}, {}};
 parseLevel[entries_List, minDepth_Integer] := Module[
-  {first, rest, ch, after, restNodes, finalAfter},
+  {first, rest, ch, after},
   first = First[entries];
   If[first[[1]] <= minDepth, Return[{{}, entries}]];
-  rest = Rest[entries];
-  {ch, after} = parseLevel[rest, first[[1]]];
-  {restNodes, finalAfter} = parseLevel[after, minDepth];
-  {Prepend[restNodes,
-    <|"label" -> first[[2]], "target" -> first[[3]],
-      "children" -> ch|>],
-   finalAfter}];
+  {ch, after} = parseLevel[Rest[entries], first[[1]]];
+  {rest, after} = parseLevel[after, minDepth];
+  {Prepend[rest, createNode[first[[2]], first[[3]], ch]], after}];
 
 (* ----- Tree -> TOML ----------------------------------------------- *)
 

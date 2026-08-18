@@ -2,6 +2,17 @@
 
 # Unreleased
 
+- `;;` no longer swallows the operators that bind looser than it. `Span` has
+    Wolfram precedence 305, so `=`, `:=`, `==`, `&&`, `||`, `|`, `~~` and
+    `/;` are the *outer* expression: `x = 1 ;; 3` stores `Span[1, 3]` in `x`
+    (it used to store `1`, the assignment happening inside the span), and
+    `a == 1 ;; 3` is `Equal[a, Span[1, 3]]` rather than `Span[a == 1, 3]`.
+    Operators above `;;` are unchanged — `1 ;; 2 + 3` is still `Span[1, 5]`.
+- An omitted span operand is allowed on the right of an operator:
+    `x = ;; 3` is `Set[x, Span[1, 3]]`, which used to be a parse error.
+- A line ending in `;;` is a statement of its own. The statement splitter read
+    any trailing `;` as a separator that was already there, so `x = 3;;`
+    ran into the next line and swallowed it as the span's end.
 - `;;` binds tighter than `->` and `:>`, so a `Span` can stand on either side
     of a rule: `StringExtract["a--bbb--ccc", "--" -> 3 ;;]` and
     `1 ;; 2 -> b` used to fail with a parse error or, where they did parse,
