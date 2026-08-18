@@ -1981,8 +1981,10 @@ fn inverse_laplace_partial_fractions(
   s: &str,
   t: &str,
 ) -> Option<Expr> {
-  let combined = crate::functions::together_ast(&[expr.clone()]).ok()?;
-  let num_expr = crate::functions::numerator_ast(&[combined.clone()]).ok()?;
+  let combined =
+    crate::functions::together_ast(std::slice::from_ref(expr)).ok()?;
+  let num_expr =
+    crate::functions::numerator_ast(std::slice::from_ref(&combined)).ok()?;
   let den_expr = crate::functions::denominator_ast(&[combined]).ok()?;
   if !depends_on(&den_expr, s) {
     return None;
