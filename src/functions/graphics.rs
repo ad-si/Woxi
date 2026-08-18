@@ -245,6 +245,11 @@ pub(crate) fn named_color(name: &str) -> Option<Color> {
 #[derive(Debug, Clone)]
 struct StyleState {
   color: Color,
+  /// `FaceForm[…]` sets only this — the fill color of area primitives
+  /// (Disk, Polygon, Rectangle, …) — leaving `color` (which Text, Line,
+  /// Point and everything else read) untouched. `None` means those
+  /// primitives fall back to `color` too, matching a bare color directive.
+  face_color: Option<Color>,
   opacity: f64,
   thickness: f64, // fraction of plot width; negative = absolute pixels
   point_size: f64, // fraction of plot width, default ~0.012
@@ -424,6 +429,7 @@ impl Default for StyleState {
   fn default() -> Self {
     Self {
       color: BLACK,
+      face_color: None,
       opacity: 1.0,
       // Wolfram strokes an undirected primitive 1 pixel wide whatever the
       // image size — measured from wolframscript at four sizes — so the
@@ -522,6 +528,14 @@ fn parse_arrowheads(spec: &Expr) -> Option<Vec<ArrowHead>> {
 impl StyleState {
   fn effective_color(&self) -> Color {
     self.color.with_alpha(self.color.a * self.opacity)
+  }
+
+  /// The fill color for area primitives (Disk, Polygon, Rectangle, …):
+  /// `FaceForm`'s color when one was set, otherwise the general color —
+  /// the same fallback a bare color directive gives every primitive.
+  fn effective_face_color(&self) -> Color {
+    let c = self.face_color.unwrap_or(self.color);
+    c.with_alpha(c.a * self.opacity)
   }
 }
 
@@ -1297,9 +1311,11 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         true
       }
       "FaceForm" if !args.is_empty() => {
-        // FaceForm[color] sets fill color
+        // FaceForm[color] sets the fill color of area primitives only —
+        // unlike a bare color directive, it must not recolor Text, Line
+        // or Point primitives that follow it.
         if let Some(c) = parse_color(&args[0]) {
-          style.color = c;
+          style.face_color = Some(c);
         }
         true
       }
@@ -5578,7 +5594,7 @@ fn render_primitive(
       let scy = coord_y(*cy, bb, svg_h);
       let srx = *rx / bb.width() * svg_w;
       let sry = *ry / bb.height() * svg_h;
-      let color = style.effective_color();
+      let color = style.effective_face_color();
       // Edge form for stroke
       let (stroke_color, stroke_width) =
         match edge_stroke(style.edge_form.as_ref(), bb, svg_w) {
@@ -5637,7 +5653,7 @@ fn render_primitive(
       // need sweep-flag=0 (counter-clockwise in SVG y-down) to trace the
       // correct half of the ellipse.
       let sweep_flag = 0;
-      let color = style.effective_color();
+      let color = style.effective_face_color();
       let fill_opacity = if color.a < 1.0 {
         format!(" fill-opacity=\"{}\"", color.a)
       } else {
@@ -5677,7 +5693,7 @@ fn render_primitive(
       let sy = coord_y(*y_max, bb, svg_h); // y_max maps to top (lower SVG y)
       let sw = (*x_max - *x_min) / bb.width() * svg_w;
       let sh = (*y_max - *y_min) / bb.height() * svg_h;
-      let color = style.effective_color();
+      let color = style.effective_face_color();
       // Edge form
       let (stroke_color, stroke_width) =
         match edge_stroke(style.edge_form.as_ref(), bb, svg_w) {
@@ -5714,7 +5730,7 @@ fn render_primitive(
       holes,
       style,
     } => {
-      let color = style.effective_color();
+      let color = style.effective_face_color();
       let pts: Vec<String> = points
         .iter()
         .map(|&(x, y)| {
