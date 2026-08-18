@@ -241,6 +241,10 @@ pub fn contains_pattern(expr: &Expr) -> bool {
     // variable number of args without themselves being Expr::Pattern.
     // OptionsPattern[…] is also a sequence pattern (matches zero or more
     // Rule/RuleDelayed args).
+    // Except[c] and PatternTest[p, f] constrain what matches without
+    // necessarily holding a blank themselves — `Except[3]` and
+    // `Except[0]?NumericQ` are patterns even though every argument is a
+    // literal, so the head has to be recognized on its own.
     Expr::FunctionCall { name, .. }
       if matches!(
         name.as_str(),
@@ -249,6 +253,8 @@ pub fn contains_pattern(expr: &Expr) -> bool {
           | "BlankSequence"
           | "BlankNullSequence"
           | "OptionsPattern"
+          | "Except"
+          | "PatternTest"
       ) =>
     {
       true
@@ -4000,6 +4006,20 @@ fn match_pattern_impl(
         return None;
       }
       match_args_with_sequences(&expr_args, pat_args)
+    }
+    // PatternTest[p, f] — the general `p?f` form, where `p` is any pattern
+    // rather than a blank (`Except[0]?NumericQ`, `Alternatives[1, 2]?IntegerQ`).
+    // Blank forms are `Expr::PatternTest` and handled above.
+    Expr::FunctionCall {
+      name: pat_name,
+      args: pat_args,
+    } if pat_name == "PatternTest" && pat_args.len() == 2 => {
+      let bindings = match_pattern(expr, &pat_args[0])?;
+      if apply_pattern_test(&pat_args[1], expr) {
+        Some(bindings)
+      } else {
+        None
+      }
     }
     // Except[c] - matches anything that doesn't match c
     // Except[c, pattern] - matches pattern but not c

@@ -3119,6 +3119,15 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       let mut inner = pair.into_inner();
       let name = inner.next().unwrap().as_str().to_string();
       let mut body = pair_to_expr(inner.next().unwrap());
+      let mut rest = inner.peekable();
+      if rest
+        .peek()
+        .is_some_and(|p| p.as_rule() == Rule::PatternTestSuffix)
+      {
+        let suffix = rest.next().unwrap();
+        body = build_pattern_test(body, suffix.into_inner());
+      }
+      let mut inner = rest;
       // Optional trailing `..` / `...` postfix: wrap body in
       // Repeated[…] / RepeatedNull[…] before the Pattern so e.g.
       // `s:0..` parses as `Pattern[s, Repeated[0]]` (Wolfram's binding)
@@ -3255,39 +3264,8 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         Some(Rule::PatternTestLhsBare)
       ) {
         let mut iter = inner_pairs.into_iter();
-        let lhs_pair = iter.next().unwrap();
-        let lhs = Expr::Identifier(lhs_pair.as_str().to_string());
-        let rhs = pair_to_expr(iter.next().unwrap());
-        let bracket_sequences: Vec<Vec<Expr>> = iter
-          .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
-          .map(|bracket| {
-            bracket
-              .into_inner()
-              .filter(|p| {
-                p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
-              })
-              .map(pair_to_expr)
-              .collect()
-          })
-          .collect();
-        let pt = Expr::FunctionCall {
-          name: "PatternTest".to_string(),
-          args: vec![lhs, rhs].into(),
-        };
-        if bracket_sequences.is_empty() {
-          return pt;
-        }
-        let mut result = Expr::CurriedCall {
-          func: Box::new(pt),
-          args: bracket_sequences[0].clone(),
-        };
-        for args in bracket_sequences.into_iter().skip(1) {
-          result = Expr::CurriedCall {
-            func: Box::new(result),
-            args,
-          };
-        }
-        return result;
+        let lhs = Expr::Identifier(iter.next().unwrap().as_str().to_string());
+        return build_pattern_test(lhs, iter);
       }
       // Pattern form (existing): optional PatternName, optional PatternTestHead, then test
       let mut inner = inner_pairs.into_iter();
@@ -4726,6 +4704,18 @@ fn parse_expression_inner(
             name: "Transpose".to_string(),
             args: vec![last].into(),
           });
+          term_was_implicit_times.push(false);
+        }
+      }
+      Rule::PatternTestSuffix => {
+        // expr?test → PatternTest[expr, test]. The left side is whatever
+        // term precedes the `?` — a function call (`Except[0]?NumericQ`), a
+        // list, a literal or a bracketed expression. Blank patterns
+        // (`x_?test`) and the bare-infix form (`a?b`) never get here: their
+        // own `PatternTest` rule consumes the `?` first.
+        if let Some(last) = terms.pop() {
+          term_was_implicit_times.pop();
+          terms.push(build_pattern_test(last, item.into_inner()));
           term_was_implicit_times.push(false);
         }
       }
@@ -8658,11 +8648,15 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         let pat = fmt(&args[0]);
         let test = fmt(&args[1]);
         // Bare blanks `_`/`__`/`___` and simple Identifiers like `A`
-        // print without parens, matching wolframscript.
+        // print without parens, matching wolframscript. Everything else is
+        // parenthesized unless it is self-delimiting (`Except[0]`, `{1, 2}`,
+        // `"s"`), because `?` binds tighter than any infix operator: `x_`
+        // prints as `(x_)?IntegerQ` but `Except[0]` needs no brackets.
         let pat_atomic = pat == "_"
           || pat == "__"
           || pat == "___"
-          || matches!(&args[0], Expr::Identifier(_));
+          || matches!(&args[0], Expr::Identifier(_))
+          || is_self_delimiting_form(&pat);
         if pat_atomic {
           return format!("{pat}?{test}");
         }
@@ -16119,4 +16113,74 @@ pub fn unevaluated(name: &str, args: &[Expr]) -> Expr {
     name: name.to_string(),
     args: args.to_vec().into(),
   }
+}
+
+/// True when an already-formatted expression carries no operator at bracket
+/// depth 0, i.e. it reads back as one unit no matter how tightly the
+/// surrounding operator binds. `Except[0]`, `{1, 2}` and `"s"` qualify; `x_`,
+/// `-1` and `a + b` do not.
+fn is_self_delimiting_form(s: &str) -> bool {
+  let mut depth: i32 = 0;
+  let mut chars = s.chars().peekable();
+  while let Some(c) = chars.next() {
+    match c {
+      '"' => {
+        // Skip the whole string literal, escapes included.
+        loop {
+          match chars.next() {
+            Some('\\') => {
+              chars.next();
+            }
+            Some('"') | None => break,
+            Some(_) => {}
+          }
+        }
+      }
+      '<' if chars.peek() == Some(&'|') => {
+        chars.next();
+        depth += 1;
+      }
+      '|' if chars.peek() == Some(&'>') => {
+        chars.next();
+        depth -= 1;
+      }
+      '[' | '{' | '(' | '\u{27E6}' | '\u{301A}' => depth += 1,
+      ']' | '}' | ')' | '\u{27E7}' | '\u{301B}' => depth -= 1,
+      _ if depth == 0 && !(c.is_alphanumeric() || c == '$' || c == '`') => {
+        return false;
+      }
+      _ => {}
+    }
+    if depth < 0 {
+      return false;
+    }
+  }
+  depth == 0 && !s.is_empty()
+}
+
+/// Build `PatternTest[lhs, test]` from the pairs following an infix `?`:
+/// the test function, then any trailing `[args]` groups. `?` binds before
+/// those brackets, so `a?b[c]` is `PatternTest[a, b][c]`, not
+/// `PatternTest[a, b[c]]`.
+fn build_pattern_test<'i>(
+  lhs: Expr,
+  mut rest: impl Iterator<Item = pest::iterators::Pair<'i, Rule>>,
+) -> Expr {
+  let test = pair_to_expr(rest.next().expect("pattern test function"));
+  let mut result = Expr::FunctionCall {
+    name: "PatternTest".to_string(),
+    args: vec![lhs, test].into(),
+  };
+  for bracket in rest.filter(|p| p.as_rule() == Rule::BracketArgs) {
+    let args = bracket
+      .into_inner()
+      .filter(|p| p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ",")
+      .map(pair_to_expr)
+      .collect();
+    result = Expr::CurriedCall {
+      func: Box::new(result),
+      args,
+    };
+  }
+  result
 }

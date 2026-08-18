@@ -7743,6 +7743,61 @@ mod ndsolve {
       );
     }
   }
+
+  /// `{t, tmax}` (no explicit `tmin`) integrates from the initial
+  /// conditions' t-value out to `tmax` — the shorthand used throughout the
+  /// Wolfram Demonstrations Project for time-only integration. It must
+  /// match the explicit three-argument form exactly, and it must also work
+  /// backward when `tmax` is on the other side of the initial point.
+  #[test]
+  fn two_argument_domain_matches_explicit_bounds() {
+    let explicit =
+      interpret("s = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 2}]; (y /. s[[1]])[2]")
+        .unwrap();
+    let shorthand = interpret(
+      "s = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 2}]; (y /. s[[1]])[2]",
+    )
+    .unwrap();
+    assert_eq!(explicit, shorthand);
+
+    // Backward: tmax below the initial point integrates the other way.
+    let backward = interpret(
+      "s = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, -2}]; (y /. s[[1]])[-2]",
+    )
+    .unwrap();
+    let val: f64 = backward.parse().expect("should be a number");
+    let expected = 2.0_f64.exp();
+    assert!(
+      (val - expected).abs() < 1e-3,
+      "y(-2) should be about {expected}, got {val}"
+    );
+  }
+
+  /// A coupled linear system whose coefficients are astronomically larger
+  /// than the state (an oscillator with a huge angular frequency, as in
+  /// models working in natural units far from 1) used to come back
+  /// unevaluated: the Jacobian used to advance each step was recovered by
+  /// perturbing the highest-derivative slot by a fixed `1.0` and
+  /// subtracting the unperturbed residual, and when that residual is
+  /// already of order `1e16` the `+1.0` rounds away in `f64`, so every
+  /// entry of that column reads as exactly zero — a falsely singular
+  /// pivot. Scaling the perturbation to the residual's own magnitude fixes
+  /// it. `x'' = -omega^2 x` with `omega = 10^9` has the closed form
+  /// `x(t) = A Cos[omega t]`.
+  #[test]
+  fn coupled_system_survives_a_huge_coefficient() {
+    let result = interpret(
+      "s = NDSolve[{x'[t] == v[t], v'[t] == -(10^9)^2 x[t], \
+       x[0] == 1, v[0] == 0}, {x, v}, {t, 10^-9}]; (x /. s[[1]])[10^-9]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = 1.0_f64.cos(); // Cos[omega * t] at t = 1/omega.
+    assert!(
+      (val - expected).abs() < 1e-3,
+      "x(1/omega) should be about {expected}, got {val}"
+    );
+  }
 }
 
 mod sinh_cosh {

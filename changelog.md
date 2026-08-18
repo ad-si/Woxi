@@ -13,6 +13,17 @@
 - Two anonymous blanks in one pattern no longer collapse onto each other, so
     `f[_Symbol | _Integer] := …` is stored (and matches) as written rather than
     as `f[_Symbol | _Symbol]`.
+- The left side of a pattern test may now be any self-delimiting expression,
+    not just a blank: `Except[0]?NumericQ`, `{_, _}?VectorQ`, `"a"?StringQ`
+    and `1?NumericQ` parse as `PatternTest[…]` the way `x_?NumericQ` always
+    did, so `f[x : Except[0]?NumericQ] := 1/x` and
+    `Cases[list, x : Except[7]?Positive]` no longer fail with a parse error.
+- `Except[c]` is recognized as a pattern in replacement rules and in
+    `MemberQ`, which compared it literally before: `1 /. Except[3] -> x` is
+    `x`, and `MemberQ[{1, 2, 3}, Except[2]]` is `True`.
+- `MemberQ` finds a string element again: `MemberQ[{"x", "y"}, "y"]` compared
+    the element's source text against the evaluated target and returned
+    `False`.
 - An implicit product whose left factor is a function call now yields to a
     tighter operator the same way `2 Times @@ {3, 4}` already did:
     `Sum[…] Times @@ dp` is `Sum[…] (Times @@ dp)`. It used to parse as

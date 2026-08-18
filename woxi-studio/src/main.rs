@@ -7867,6 +7867,59 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`base$$ = 1000, $CellContext`pct$$ =
     }
   }
 
+  /// A stored Manipulate with a reversed-direction slider — `{u, umin,
+  /// umax}` written with `umin > umax`, the way a Demonstrations angle
+  /// control counts down from a positive start to a negative end — must
+  /// still open with its initial value intact rather than snapped to one
+  /// end of the range. `ManipulateState` is built from a `min <= max`
+  /// pair (see `parse_manipulate_control`'s sort), so the slider widget's
+  /// `RangeInclusive` never sees the reversed order that broke the initial
+  /// clamp.
+  #[test]
+  fn demonstration_reversed_range_slider_keeps_its_initial_value() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Graphics[{Circle[{0, 0}, 1], PointSize[Large], Point[{Cos[angle], Sin[angle]}]}],
+ {{angle, -1.2, \"angle\"}, 0.02, -2.5, 0.02, Appearance -> \"Labeled\"},
+ SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = -1.2}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the point-on-circle graphic must draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          min,
+          max,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name, "angle");
+        assert!(min <= max, "min ({min}) must not exceed max ({max})");
+        assert_eq!((*min, *max), (-2.5, 0.02));
+        assert_eq!(*current, -1.2, "initial value must not be clamped");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
   #[test]
   fn demonstration_compatibility_checkboxes_render_as_a_card() {
     // The metadata cells at the end of every Demonstration submission
@@ -16996,8 +17049,8 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`terms$$ = 24, $CellContext`\[Beta]$
   /// driven by a second slider), and combining the colored pieces in a
   /// `Graphics3D` with `ViewPoint`/`ViewAngle`/`SphericalRegion`/`Boxed`/
   /// `PlotRange` options. Driven by two continuous sliders with text
-  /// labels, one ascending and one descending (`max` to `min`), plus a
-  /// `TrackedSymbols` option.
+  /// labels, one written ascending and one written descending (`max` to
+  /// `min` — a reversed-direction slider), plus a `TrackedSymbols` option.
   #[test]
   fn demonstration_polyhedron_compound_manipulate_rotates_and_scales() {
     let nb_src = r##"Notebook[{
@@ -17048,10 +17101,14 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`grow$$ = 1.5, $CellContext`spin$$ =
         assert_eq!(*grow_now, 1.5);
         assert_eq!(spin_name.as_str(), "spin");
         assert_eq!(spin_label.as_str(), "rotate tetrahedron");
-        // The spin slider's spec range descends (max to min), matching
-        // the source demonstration's rotation control.
-        assert!((*spin_min - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
-        assert_eq!(*spin_max, 0.0);
+        // The spin slider's spec is written descending (`Pi/2` down to
+        // `0`, matching the source demonstration's rotation control), but
+        // the parsed control sorts `min <= max` — the slider widget's
+        // `RangeInclusive` cannot represent a reversed pair, and an
+        // unsorted one clamps the initial value to the wrong end. The
+        // initial value itself is unaffected by the sort.
+        assert_eq!(*spin_min, 0.0);
+        assert!((*spin_max - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
         assert!((*spin_now - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
       }
       other => panic!("unexpected controls: {other:?}"),
@@ -18701,6 +18758,105 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 3, $CellContext`spread$$ = 0,
     assert_ne!(
       diamond, kite,
       "picking a different preset must change the outline drawn"
+    );
+  }
+
+  /// A `Module`-local pair of `NDSolve` calls compared against each other
+  /// and plotted through a `Which`-branched view picker — the shape of a
+  /// physical-model-vs-reference-model Demonstration (independently
+  /// written, not copied from any specific one). One system's restoring
+  /// coefficient is squared from a large stiffness constant, and the time
+  /// domain is given as `{t, span}` (no explicit start), the shorthand
+  /// that integrates from the initial conditions out to `span`.
+  ///
+  /// Regression coverage for two bugs this run found in `NDSolve`:
+  /// the two-argument domain form came back entirely unevaluated (only
+  /// `{t, tmin, tmax}` was accepted), and even with an explicit domain a
+  /// large coefficient (here `stiffness^2 = 10^18`) made the per-step
+  /// Jacobian probe — which perturbed the highest-derivative slot by a
+  /// fixed `1.0` and subtracted the unperturbed residual — round away to
+  /// exactly zero in `f64`, reading as a falsely singular system.
+  #[test]
+  fn stiff_vs_soft_spring_picker_solves_with_large_coefficient() {
+    let code = "Manipulate[\
+      Module[{stiff, soft}, \
+        stiff = NDSolve[{p'[t] == q[t], q'[t] == -stiffness^2 p[t], \
+          p[0] == amp, q[0] == 0}, {p, q}, {t, span}]; \
+        soft = NDSolve[{p'[t] == q[t], q'[t] == -p[t], \
+          p[0] == amp, q[0] == 0}, {p, q}, {t, span}]; \
+        Which[\
+          view == \"position\", Plot[{Evaluate[p[t] /. stiff], \
+            Evaluate[p[t] /. soft]}, {t, 0, span}, PlotRange -> All], \
+          view == \"velocity\", Plot[{Evaluate[q[t] /. stiff], \
+            Evaluate[q[t] /. soft]}, {t, 0, span}, PlotRange -> All]\
+        ]\
+      ], \
+      {{view, \"position\", \"quantity\"}, {\"position\", \"velocity\"}}, \
+      {{stiffness, 10^9, \"stiffness\"}, 10^8, 10^10}, \
+      {{amp, 1, \"amplitude\"}, 0.5, 2}, \
+      {{span, 10^-9, \"duration\"}, 10^-10, 10^-8}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the stiff/soft spring picker Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the default position view must render"
+    );
+    assert_eq!(state.controls.len(), 4, "picker plus three sliders");
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("both curves must render")
+    };
+    let position_view = render(&state);
+
+    // Switching the picker to the velocity view must re-evaluate cleanly
+    // (both NDSolve calls still solved, in particular the large-stiffness
+    // one) and change the picture.
+    match &mut state.controls[0] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 1;
+      }
+      other => panic!("expected view as a Discrete control, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+    let velocity_view = render(&state);
+    assert_ne!(
+      position_view, velocity_view,
+      "switching the picker must change the rendered curves"
+    );
+
+    // Pulling the stiffness slider further changes the stiff spring's
+    // curve, so the picture changes again.
+    match &mut state.controls[1] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 5e9,
+      other => {
+        panic!("expected stiffness as a Continuous control, got {other:?}")
+      }
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let restiffened_view = render(&state);
+    assert_ne!(
+      velocity_view, restiffened_view,
+      "raising the stiffness must change the stiff spring's curve"
     );
   }
 }
