@@ -1172,6 +1172,24 @@ fn is_downvalue_head_protected(name: &str) -> bool {
     })
 }
 
+/// Flatten a left-associative chain of `BinaryOp { op: Times, .. }` into
+/// its factors, in left-to-right source order. A non-`Times` expression
+/// flattens to the single-element list `[expr]`.
+fn flatten_times_chain(expr: &Expr) -> Vec<Expr> {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let mut factors = flatten_times_chain(left);
+      factors.push((**right).clone());
+      factors
+    }
+    other => vec![other.clone()],
+  }
+}
+
 pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   let lhs = &normalize_symbol_lhs(lhs);
   // Unwrap Condition on LHS: f[x_] /; test = body is parsed as
@@ -1983,6 +2001,72 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         }
         _ => break,
       }
+    }
+  }
+
+  // A `Times` chain on the LHS most often isn't an attempt at real
+  // algebra — it's two statements a missing `;` glued together (e.g.
+  // `While[…]\nvecLEN = Length[vecBASIS];` parses as
+  // `Times[While[…], vecLEN] = Length[vecBASIS]` since `=` binds looser
+  // than implicit multiplication). wolframscript evaluates every factor
+  // left to right (for side effects, e.g. running that `While`) and, when
+  // all but one factor comes back `Null`, assigns the right-hand side to
+  // the remaining factor directly — treating the `Null`s as contributing
+  // no coefficient rather than as an error. Only a bare identifier
+  // qualifies as that remaining factor; anything else (a number, a Part
+  // extract, …) falls through to the generic Protected-tag rejection
+  // below.
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    ..
+  } = lhs
+  {
+    let factors = flatten_times_chain(lhs);
+    let mut target: Option<&str> = None;
+    let mut ambiguous = false;
+    for factor in &factors {
+      let value = evaluate_expr_to_expr(factor)?;
+      let is_null = matches!(&value, Expr::Identifier(s) if s == "Null");
+      if !is_null {
+        match factor {
+          Expr::Identifier(name) if target.is_none() => target = Some(name),
+          _ => ambiguous = true,
+        }
+      }
+    }
+    if !ambiguous && let Some(name) = target {
+      return set_ast(&Expr::Identifier(name.to_string()), rhs);
+    }
+  }
+
+  // A LHS built from an operator like `+`, `*`, `^` (e.g. `2 x = 5`,
+  // written without a separating `;` after a prior statement so the
+  // parser reads it as `Times[prior, x] = 5`) attempts to install a
+  // DownValue on the corresponding built-in (`Plus`, `Times`, `Power`,
+  // …), which is Protected. wolframscript doesn't abort the
+  // calculation for this — it emits `Set::write` (naming the tag and
+  // the whole left-hand side) and returns the right-hand side, leaving
+  // the assignment un-done. Mirror `set_delayed_ast`'s handling of the
+  // same shape for `:=` so a stray missing semicolon doesn't take down
+  // everything after it.
+  if let Expr::BinaryOp { op, .. } = lhs {
+    use BinaryOperator as B;
+    let tag = match op {
+      B::Plus | B::Minus => Some("Plus"),
+      B::Times | B::Divide => Some("Times"),
+      B::Power => Some("Power"),
+      _ => None,
+    };
+    if let Some(t) = tag
+      && crate::evaluator::get_builtin_attributes(t).contains(&"Protected")
+    {
+      let rhs_value = evaluate_expr_to_expr(rhs)?;
+      crate::emit_message(&format!(
+        "Set::write: Tag {} in {} is Protected.",
+        t,
+        expr_to_string(lhs)
+      ));
+      return Ok(rhs_value);
     }
   }
 

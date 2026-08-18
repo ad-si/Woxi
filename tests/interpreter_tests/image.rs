@@ -931,6 +931,68 @@ mod image_processing {
     );
   }
 
+  // A gamma-correction triple {c, b, γ} isn't implemented; the call must
+  // stay unevaluated rather than crash trying to read the list as a
+  // single number. Regression for ImageAdjust aborting the whole
+  // interpretation on this shape instead of failing softly.
+  #[test]
+  fn image_adjust_gamma_triple_stays_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("Head[ImageAdjust[Image[{{0.1, 0.5, 0.9}}], {0, 0, 10}]]")
+        .unwrap(),
+      "ImageAdjust"
+    );
+  }
+
+  // ImageResize/ImageData/ImageAdjust transparently accept a `Graphics`
+  // expression wherever an image is expected, rasterizing it first —
+  // matching wolframscript. Regression for these functions emitting
+  // `imginv` and refusing any Graphics input outright.
+  #[test]
+  fn image_resize_accepts_graphics() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageDimensions[ImageResize[Graphics[Disk[]], {5, 5}]]")
+        .unwrap(),
+      "{5, 5}"
+    );
+  }
+
+  #[test]
+  fn image_data_accepts_graphics() {
+    clear_state();
+    let result = interpret_with_stdout("ImageData[Graphics[Disk[]]]").unwrap();
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(result.result.starts_with("{{"), "got {}", result.result);
+  }
+
+  #[test]
+  fn image_adjust_accepts_graphics() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageQ[ImageAdjust[Graphics[Disk[]]]]").unwrap(),
+      "True"
+    );
+  }
+
+  // Genuinely invalid input (neither an image nor graphics) is still
+  // rejected with `imginv`, matching the pre-existing behavior.
+  #[test]
+  fn image_resize_still_rejects_non_image_non_graphics() {
+    clear_state();
+    let result =
+      interpret_with_stdout(r#"ImageResize["hello", {10, 10}]"#).unwrap();
+    assert!(
+      result.warnings[0].contains(
+        r#"ImageResize::imginv: Expecting an image or graphics instead of "hello"."#
+      ),
+      "unexpected warnings: {:?}",
+      result.warnings
+    );
+    assert_eq!(result.result, "ImageResize[hello, {10, 10}]");
+  }
+
   #[test]
   fn image_reflect_horizontal() {
     clear_state();
