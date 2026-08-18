@@ -14404,6 +14404,49 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 4}, \"\\[Ellipsis]\"]"], "Out
     }
   }
 
+  /// End-to-end regression for a soil-freezing-style Demonstration (the
+  /// public "Permafrost" one models the same physics): a 1-D heat equation
+  /// solved by `NDSolve` with two space-dependent boundary conditions and a
+  /// time-dependent seasonal one, then swept into a frost/thaw boundary
+  /// with `ContourPlot`. `NDSolve` used to only recognise its own
+  /// three-positional-argument ODE/DAE form; the four-argument
+  /// `NDSolve[eqns, u, {t, t0, t1}, {x, x0, x1}]` PDE shape (two
+  /// independent variables) fell straight through to an unevaluated
+  /// `NDSolve[…]`, which `ContourPlot` then had nothing numeric to sample.
+  #[test]
+  fn soil_temperature_notebook_solves_its_heat_equation() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[ContourPlot[Evaluate[u[t, x] /. NDSolve[{D[u[t, x], t] == diff D[u[t, x], {x, 2}], u[0, x] == baseTemp - grad x, u[t, 0] == baseTemp + swing Sin[2 Pi t/12], u[t, -40] == baseTemp + grad 40}, u, {t, 0, 48}, {x, -40, 0}][[1]]], {t, 24, 48}, {x, -30, 0}, Contours -> {0}, PlotRange -> All, ImageSize -> 200], {{baseTemp, -0.6}, -2, 2, .5}, {{grad, 0.025}, 0.02, 0.03, .001}, {{swing, 30}, 20, 40, 5}, {{diff, 0.3}, 0.1, 1.5, .1}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`baseTemp$$ = -0.6}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the heat equation must solve and contour: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the frost/thaw contour must draw"
+    );
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["baseTemp", "grad", "swing", "diff"]);
+  }
+
   /// End-to-end regression for "Nets for Regular Spherical Models": its
   /// body is a `Pane` around either a 3D model or a 2D net template, and
   /// the export path used to write the whole thing out as source rather

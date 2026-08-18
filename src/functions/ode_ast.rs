@@ -281,11 +281,20 @@ pub fn ndsolve_ast_with_head(
 
 fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Split trailing option rules (`Method -> …`, `MaxSteps -> …`, …) from
-  // the three positional arguments.
+  // the positional arguments: three for an ODE/DAE system in one
+  // independent variable, four for a scalar PDE
+  // `NDSolve[eqns, u, {t, t0, t1}, {x, x0, x1}]` in two.
   let n_pos = args
     .iter()
     .take_while(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
     .count();
+  if n_pos == 4 {
+    return match ndsolve_pde(&args[..4]) {
+      Ok(Some(result)) => Ok(result),
+      Ok(None) => Ok(unevaluated("NDSolve", args)),
+      Err(e) => Err(e),
+    };
+  }
   if n_pos != 3 {
     return Ok(unevaluated("NDSolve", args));
   }
@@ -315,6 +324,421 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(None) => Ok(unevaluated("NDSolve", args)),
     Err(e) => Err(e),
   }
+}
+
+// ─── PDE NDSolve (method of lines) ─────────────────────────────────────
+
+/// A domain spec `{name, min, max}` for one PDE independent variable.
+struct PdeDomain {
+  name: String,
+  min: f64,
+  max: f64,
+}
+
+fn parse_pde_domain(expr: &Expr) -> Option<PdeDomain> {
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  if items.len() != 3 {
+    return None;
+  }
+  let Expr::Identifier(name) = &items[0] else {
+    return None;
+  };
+  let min = nval_to_f64(&items[1])?;
+  let max = nval_to_f64(&items[2])?;
+  if !(max > min) {
+    return None;
+  }
+  Some(PdeDomain {
+    name: name.clone(),
+    min,
+    max,
+  })
+}
+
+/// Match `Derivative[dt, dx][u_name][t_arg, x_arg]` — the parsed form of a
+/// mixed partial `D[u[t, x], {t, dt}, {x, dx}]` — or the bare
+/// `u_name[t_arg, x_arg]` (order `(0, 0)`). Returns `(dt, dx, t_arg, x_arg)`.
+fn match_pde_term(
+  expr: &Expr,
+  u_name: &str,
+) -> Option<(usize, usize, Expr, Expr)> {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == u_name
+    && args.len() == 2
+  {
+    return Some((0, 0, args[0].clone(), args[1].clone()));
+  }
+  if let Expr::CurriedCall { func, args } = expr
+    && args.len() == 2
+    && let Expr::CurriedCall {
+      func: deriv_head,
+      args: fname_args,
+    } = func.as_ref()
+    && fname_args.len() == 1
+    && matches!(&fname_args[0], Expr::Identifier(n) if n == u_name)
+    && let Expr::FunctionCall {
+      name: deriv_name,
+      args: orders,
+    } = deriv_head.as_ref()
+    && deriv_name == "Derivative"
+    && orders.len() == 2
+    && let (Expr::Integer(dt), Expr::Integer(dx)) = (&orders[0], &orders[1])
+  {
+    return Some((
+      *dt as usize,
+      *dx as usize,
+      args[0].clone(),
+      args[1].clone(),
+    ));
+  }
+  None
+}
+
+fn as_equal_pair(eq: &Expr) -> Option<(&Expr, &Expr)> {
+  let Expr::Comparison {
+    operands,
+    operators,
+  } = eq
+  else {
+    return None;
+  };
+  if operands.len() == 2
+    && operators.len() == 1
+    && operators[0] == ComparisonOp::Equal
+  {
+    Some((&operands[0], &operands[1]))
+  } else {
+    None
+  }
+}
+
+/// Recognise `Derivative[1, 0][u][t, x] == rhs` (or the reverse) — the
+/// evolution equation of a parabolic PDE. Returns the RHS.
+fn try_pde_evolution_rhs(
+  eq: &Expr,
+  u_name: &str,
+  t_name: &str,
+  x_name: &str,
+) -> Option<Expr> {
+  let (lhs, rhs) = as_equal_pair(eq)?;
+  let is_dudt = |e: &Expr| {
+    matches!(
+      match_pde_term(e, u_name),
+      Some((1, 0, t_arg, x_arg))
+        if matches!(&t_arg, Expr::Identifier(n) if n == t_name)
+          && matches!(&x_arg, Expr::Identifier(n) if n == x_name)
+    )
+  };
+  if is_dudt(lhs) {
+    return Some(rhs.clone());
+  }
+  if is_dudt(rhs) {
+    return Some(lhs.clone());
+  }
+  None
+}
+
+/// Recognise `u[t0, x] == rhs(x)` (or reversed) — the initial condition at
+/// `t == t0`. Returns the RHS.
+fn try_pde_initial_condition(
+  eq: &Expr,
+  u_name: &str,
+  x_name: &str,
+  t0: f64,
+) -> Option<Expr> {
+  let (lhs, rhs) = as_equal_pair(eq)?;
+  let is_ic = |e: &Expr| {
+    let Expr::FunctionCall { name, args } = e else {
+      return false;
+    };
+    name == u_name
+      && args.len() == 2
+      && matches!(&args[1], Expr::Identifier(n) if n == x_name)
+      && nval_to_f64(&args[0])
+        .is_some_and(|v| (v - t0).abs() <= 1e-9 * t0.abs().max(1.0))
+  };
+  if is_ic(lhs) {
+    return Some(rhs.clone());
+  }
+  if is_ic(rhs) {
+    return Some(lhs.clone());
+  }
+  None
+}
+
+/// Recognise `u[t, x0] == rhs(t)` (or reversed) — a Dirichlet boundary
+/// condition at `x == x0`. Returns the RHS.
+fn try_pde_boundary_condition(
+  eq: &Expr,
+  u_name: &str,
+  t_name: &str,
+  x0: f64,
+) -> Option<Expr> {
+  let (lhs, rhs) = as_equal_pair(eq)?;
+  let is_bc = |e: &Expr| {
+    let Expr::FunctionCall { name, args } = e else {
+      return false;
+    };
+    name == u_name
+      && args.len() == 2
+      && matches!(&args[0], Expr::Identifier(n) if n == t_name)
+      && nval_to_f64(&args[1])
+        .is_some_and(|v| (v - x0).abs() <= 1e-9 * x0.abs().max(1.0))
+  };
+  if is_bc(lhs) {
+    return Some(rhs.clone());
+  }
+  if is_bc(rhs) {
+    return Some(lhs.clone());
+  }
+  None
+}
+
+/// Rewrite `u[t, x]`, `Derivative[0, 1][u][t, x]` and
+/// `Derivative[0, 2][u][t, x]` in a PDE's evolution right-hand side into the
+/// placeholder identifiers that `NumFn` compiles the finite-difference
+/// stencil's numeric values into (see `ndsolve_pde`).
+fn rewrite_pde_rhs(
+  expr: &Expr,
+  u_name: &str,
+  t_name: &str,
+  x_name: &str,
+) -> Expr {
+  if let Some((dt, dx, t_arg, x_arg)) = match_pde_term(expr, u_name)
+    && matches!(&t_arg, Expr::Identifier(n) if n == t_name)
+    && matches!(&x_arg, Expr::Identifier(n) if n == x_name)
+  {
+    let placeholder = match (dt, dx) {
+      (0, 0) => Some("NDSolve$U"),
+      (0, 1) => Some("NDSolve$UX"),
+      (0, 2) => Some("NDSolve$UXX"),
+      _ => None,
+    };
+    if let Some(name) = placeholder {
+      return Expr::Identifier(name.to_string());
+    }
+  }
+  map_children(expr, &|child| {
+    rewrite_pde_rhs(child, u_name, t_name, x_name)
+  })
+}
+
+/// `NDSolve[eqns, u, {t, t0, t1}, {x, x0, x1}]` — a scalar parabolic PDE in
+/// one space dimension (a diffusion/heat-equation shape), solved by the
+/// method of lines: `x` is discretized onto a uniform grid, the spatial
+/// derivatives `D[u[t, x], x]` and `D[u[t, x], {x, 2}]` become central
+/// finite-difference stencils, and the resulting ODE system in `t` is
+/// integrated with classical RK4 subject to a diffusive stability bound on
+/// the time step. `eqns` must contain exactly one evolution equation, one
+/// initial condition at `t == t0`, and Dirichlet conditions at both space
+/// boundaries.
+///
+/// Returns `Ok(None)` when the equations aren't in that shape, so the
+/// caller falls back to leaving the call unevaluated.
+fn ndsolve_pde(args: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
+  let u_name = match &args[1] {
+    Expr::Identifier(name) => name.clone(),
+    Expr::List(items) if items.len() == 1 => match &items[0] {
+      Expr::Identifier(name) => name.clone(),
+      _ => return Ok(None),
+    },
+    _ => return Ok(None),
+  };
+  let Some(t_dom) = parse_pde_domain(&args[2]) else {
+    return Ok(None);
+  };
+  let Some(x_dom) = parse_pde_domain(&args[3]) else {
+    return Ok(None);
+  };
+
+  let eq_items: Vec<Expr> = match &args[0] {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  if eq_items.len() != 4 {
+    return Ok(None);
+  }
+
+  let mut evolution_rhs: Option<Expr> = None;
+  let mut ic_rhs: Option<Expr> = None;
+  let mut bc_lo_rhs: Option<Expr> = None;
+  let mut bc_hi_rhs: Option<Expr> = None;
+  for eq in &eq_items {
+    if evolution_rhs.is_none()
+      && let Some(rhs) =
+        try_pde_evolution_rhs(eq, &u_name, &t_dom.name, &x_dom.name)
+    {
+      evolution_rhs = Some(rhs);
+      continue;
+    }
+    if ic_rhs.is_none()
+      && let Some(rhs) =
+        try_pde_initial_condition(eq, &u_name, &x_dom.name, t_dom.min)
+    {
+      ic_rhs = Some(rhs);
+      continue;
+    }
+    if bc_lo_rhs.is_none()
+      && let Some(rhs) =
+        try_pde_boundary_condition(eq, &u_name, &t_dom.name, x_dom.min)
+    {
+      bc_lo_rhs = Some(rhs);
+      continue;
+    }
+    if bc_hi_rhs.is_none()
+      && let Some(rhs) =
+        try_pde_boundary_condition(eq, &u_name, &t_dom.name, x_dom.max)
+    {
+      bc_hi_rhs = Some(rhs);
+      continue;
+    }
+    return Ok(None);
+  }
+  let (Some(evolution_rhs), Some(ic_rhs), Some(bc_lo_rhs), Some(bc_hi_rhs)) =
+    (evolution_rhs, ic_rhs, bc_lo_rhs, bc_hi_rhs)
+  else {
+    return Ok(None);
+  };
+
+  let rhs_placeholder =
+    rewrite_pde_rhs(&evolution_rhs, &u_name, &t_dom.name, &x_dom.name);
+  let rhs_vars = [
+    "NDSolve$U".to_string(),
+    "NDSolve$UX".to_string(),
+    "NDSolve$UXX".to_string(),
+    t_dom.name.clone(),
+    x_dom.name.clone(),
+  ];
+  let rhs_fn = NumFn::new(rhs_placeholder, &rhs_vars);
+  let ic_fn = NumFn::new(ic_rhs, std::slice::from_ref(&x_dom.name));
+  let bc_lo_fn = NumFn::new(bc_lo_rhs, std::slice::from_ref(&t_dom.name));
+  let bc_hi_fn = NumFn::new(bc_hi_rhs, std::slice::from_ref(&t_dom.name));
+
+  const N_X: usize = 41;
+  let dx = (x_dom.max - x_dom.min) / (N_X - 1) as f64;
+  let xs: Vec<f64> = (0..N_X).map(|i| x_dom.min + i as f64 * dx).collect();
+
+  let mut u: Vec<f64> = Vec::with_capacity(N_X);
+  for &x in &xs {
+    u.push(ic_fn.eval(&[x])?);
+  }
+  u[0] = bc_lo_fn.eval(&[t_dom.min])?;
+  u[N_X - 1] = bc_hi_fn.eval(&[t_dom.min])?;
+
+  // Effective diffusivity, read off the RHS's dependence on `NDSolve$UXX`,
+  // to size a stable explicit time step (a von Neumann/CFL-type bound).
+  // Falls back to a small floor when the PDE has (almost) no such
+  // dependence, since a step must still be chosen.
+  let probe_lo = [u[N_X / 2], 0.0, 0.0, t_dom.min, xs[N_X / 2]];
+  let mut probe_hi = probe_lo;
+  probe_hi[2] = 1.0;
+  let c_eff = (rhs_fn.eval(&probe_hi)? - rhs_fn.eval(&probe_lo)?).max(1e-9);
+  let dt_stable = 0.4 * dx * dx / c_eff;
+  // The diffusive bound alone can leave the boundary conditions' own time
+  // variation (a seasonal `Sin[2 Pi t/period]` forcing, say) badly
+  // undersampled even though the scheme stays numerically stable, so the
+  // step count is also floored well above what a smooth time-dependent
+  // boundary needs to be resolved.
+  const MIN_STEPS: usize = 200;
+  let n_steps = (((t_dom.max - t_dom.min) / dt_stable).ceil() as usize)
+    .max(MIN_STEPS)
+    .min(20_000);
+  let dt = (t_dom.max - t_dom.min) / n_steps as f64;
+
+  let derivative =
+    |t: f64, interior: &[f64]| -> Result<Vec<f64>, InterpreterError> {
+      let mut full = vec![0.0; N_X];
+      full[0] = bc_lo_fn.eval(&[t])?;
+      full[N_X - 1] = bc_hi_fn.eval(&[t])?;
+      full[1..N_X - 1].copy_from_slice(interior);
+      let mut out = Vec::with_capacity(N_X - 2);
+      for i in 1..N_X - 1 {
+        let ux = (full[i + 1] - full[i - 1]) / (2.0 * dx);
+        let uxx = (full[i + 1] - 2.0 * full[i] + full[i - 1]) / (dx * dx);
+        out.push(rhs_fn.eval(&[full[i], ux, uxx, t, xs[i]])?);
+      }
+      Ok(out)
+    };
+
+  // The fine step count above is sized for integration accuracy and
+  // stability, not for how many rows an `InterpolatingFunction` needs to
+  // represent a smooth solution — and every stored row is a separate
+  // heap-allocated list that later gets cloned whole on every lookup (a
+  // `ContourPlot` alone samples on the order of 10,000 points), so only
+  // every `stride`-th step's row is kept, with the true endpoint always
+  // included.
+  const OUTPUT_ROWS: usize = 60;
+  let stride = (n_steps / OUTPUT_ROWS).max(1);
+  let mut grid: Vec<Vec<f64>> = Vec::with_capacity(n_steps / stride + 2);
+  let mut ts: Vec<f64> = Vec::with_capacity(n_steps / stride + 2);
+  grid.push(u.clone());
+  ts.push(t_dom.min);
+  let mut interior: Vec<f64> = u[1..N_X - 1].to_vec();
+  let mut t = t_dom.min;
+  for step in 0..n_steps {
+    let k1 = derivative(t, &interior)?;
+    let y2: Vec<f64> = interior
+      .iter()
+      .zip(&k1)
+      .map(|(y, k)| y + 0.5 * dt * k)
+      .collect();
+    let k2 = derivative(t + 0.5 * dt, &y2)?;
+    let y3: Vec<f64> = interior
+      .iter()
+      .zip(&k2)
+      .map(|(y, k)| y + 0.5 * dt * k)
+      .collect();
+    let k3 = derivative(t + 0.5 * dt, &y3)?;
+    let y4: Vec<f64> =
+      interior.iter().zip(&k3).map(|(y, k)| y + dt * k).collect();
+    let k4 = derivative(t + dt, &y4)?;
+    for i in 0..interior.len() {
+      interior[i] += dt / 6.0 * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
+    }
+    t += dt;
+    let is_last = step + 1 == n_steps;
+    if (step + 1) % stride == 0 || is_last {
+      let mut row = vec![0.0; N_X];
+      row[0] = bc_lo_fn.eval(&[t])?;
+      row[N_X - 1] = bc_hi_fn.eval(&[t])?;
+      row[1..N_X - 1].copy_from_slice(&interior);
+      grid.push(row);
+      ts.push(t);
+    }
+  }
+
+  let domain = Expr::List(
+    vec![
+      Expr::List(vec![Expr::Real(t_dom.min), Expr::Real(t_dom.max)].into()),
+      Expr::List(vec![Expr::Real(x_dom.min), Expr::Real(x_dom.max)].into()),
+    ]
+    .into(),
+  );
+  let grid_expr = Expr::List(
+    grid
+      .iter()
+      .map(|row| Expr::List(row.iter().map(|v| Expr::Real(*v)).collect()))
+      .collect(),
+  );
+  let orders = Expr::List(vec![Expr::Integer(1), Expr::Integer(1)].into());
+  let coords = Expr::List(
+    vec![
+      Expr::List(ts.iter().map(|v| Expr::Real(*v)).collect()),
+      Expr::List(xs.iter().map(|v| Expr::Real(*v)).collect()),
+    ]
+    .into(),
+  );
+  let interp = call(
+    "InterpolatingFunction",
+    vec![domain, grid_expr, orders, coords],
+  );
+  let rule = Expr::Rule {
+    pattern: Box::new(Expr::Identifier(u_name)),
+    replacement: Box::new(interp),
+  };
+  Ok(Some(Expr::List(vec![Expr::List(vec![rule].into())].into())))
 }
 
 /// Dependent functions of an `NDSolve` system need not be bare symbols:
@@ -3781,27 +4205,31 @@ fn evaluate_interpolating_function_2d_explicit(
   let nr = xs.len();
   let nc = ys.len();
 
-  let mut vals: Vec<Vec<f64>> = Vec::with_capacity(nr);
-  let mut exprs: Vec<Vec<Expr>> = Vec::with_capacity(nr);
-  for row in grid_rows {
-    let Expr::List(cells) = row else {
+  // A single grid cell, decoded lazily: a query only ever needs an
+  // `(order + 1) x (order + 1)` window of cells, not the full `nr x nc`
+  // grid — materializing the whole thing up front made every call
+  // `O(nr * nc)` regardless of interpolation order, which is ruinous for
+  // the grids `NDSolve`'s PDE branch produces (hundreds of time steps by
+  // tens of space steps, resampled at every `ContourPlot` point).
+  let cell = |i: usize, j: usize| -> Result<&Expr, InterpreterError> {
+    let Expr::List(cells) = &grid_rows[i] else {
       return Err(InterpreterError::EvaluationError(
         "InterpolatingFunction: invalid 2-D grid".into(),
       ));
     };
-    let mut rv = Vec::with_capacity(cells.len());
-    let mut re = Vec::with_capacity(cells.len());
-    for c in cells {
-      rv.push(match c {
-        Expr::Integer(n) => *n as f64,
-        Expr::Real(f) => *f,
-        _ => interp_value_to_f64(c).unwrap_or(f64::NAN),
-      });
-      re.push(c.clone());
-    }
-    vals.push(rv);
-    exprs.push(re);
-  }
+    cells.get(j).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "InterpolatingFunction: invalid 2-D grid".into(),
+      )
+    })
+  };
+  let cell_f64 = |i: usize, j: usize| -> Result<f64, InterpreterError> {
+    Ok(match cell(i, j)? {
+      Expr::Integer(n) => *n as f64,
+      Expr::Real(f) => *f,
+      other => interp_value_to_f64(other).unwrap_or(f64::NAN),
+    })
+  };
 
   let unevaluated = || Expr::CurriedCall {
     func: Box::new(call(
@@ -3883,11 +4311,10 @@ fn evaluate_interpolating_function_2d_explicit(
     xs.iter().position(|&xv| same_coordinate(xv, x)),
     ys.iter().position(|&yv| same_coordinate(yv, y)),
   ) {
-    let entry = &exprs[i][j];
     if int_coords {
-      return Ok(entry.clone());
+      return Ok(cell(i, j)?.clone());
     }
-    return Ok(Expr::Real(vals[i][j]));
+    return Ok(Expr::Real(cell_f64(i, j)?));
   }
 
   let (x_lo, x_hi) = (xs[0].min(xs[nr - 1]), xs[0].max(xs[nr - 1]));
@@ -3906,12 +4333,53 @@ fn evaluate_interpolating_function_2d_explicit(
     ));
   }
 
-  let col_interp: Vec<f64> = vals
-    .iter()
-    .map(|row| interp_1d_xy_f64(&ys, row, y, order_c))
-    .collect();
-  let result = interp_1d_xy_f64(&xs, &col_interp, x, order_r);
+  // Only the local `(order + 1)`-point stencil on each axis feeds the
+  // result, so the cells outside that window never need decoding.
+  let eff_order_r = order_r.min(nr - 1).max(1);
+  let eff_order_c = order_c.min(nc - 1).max(1);
+  let (r_start, r_end) =
+    lagrange_window(nr, bracket_index_f64(&xs, x), eff_order_r);
+  let (c_start, c_end) =
+    lagrange_window(nc, bracket_index_f64(&ys, y), eff_order_c);
+  let ys_window = &ys[c_start..c_end];
+  let mut col_interp: Vec<f64> = Vec::with_capacity(r_end - r_start);
+  for i in r_start..r_end {
+    let mut row_vals: Vec<f64> = Vec::with_capacity(c_end - c_start);
+    for j in c_start..c_end {
+      row_vals.push(cell_f64(i, j)?);
+    }
+    col_interp.push(interp_1d_xy_f64(ys_window, &row_vals, y, eff_order_c));
+  }
+  let result =
+    interp_1d_xy_f64(&xs[r_start..r_end], &col_interp, x, eff_order_r);
   Ok(Expr::Real(result))
+}
+
+/// Binary search for the interval bracketing `x_val` in an ascending or
+/// descending coordinate array: returns `lo` such that `[lo, lo + 1]`
+/// brackets it (clamped to the array's ends for an out-of-range query).
+fn bracket_index_f64(xs: &[f64], x_val: f64) -> usize {
+  let n = xs.len();
+  if n < 2 {
+    return 0;
+  }
+  let ascending = xs[n - 1] >= xs[0];
+  let mut lo = 0usize;
+  let mut hi = n - 1;
+  while lo < hi - 1 {
+    let mid = usize::midpoint(lo, hi);
+    let before = if ascending {
+      x_val < xs[mid]
+    } else {
+      x_val > xs[mid]
+    };
+    if before {
+      hi = mid;
+    } else {
+      lo = mid;
+    }
+  }
+  lo
 }
 
 /// 1-D local Lagrange interpolation of `(xs[i], ys[i])` samples at

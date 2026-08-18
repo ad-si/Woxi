@@ -212,7 +212,7 @@ Total,Sums the elements of a list down to a level spec — AllowedHeads -> All d
 ColorFunction,Option specifying the color function for visualization,✅,none,2.0,152
 ContourPlot,Creates a contour plot of a function,✅,pure,1.0,155
 RandomInteger,Generate random integers — RandomInteger[n] draws from 0 through n so a negative n draws downwards,✅,contextual,6.0,156
-NDSolve,Solves ordinary differential equations numerically (including coupled systems compound unknowns and EventLocator events),✅,contextual,2.0,157
+NDSolve,Solves ordinary differential equations numerically (including coupled systems compound unknowns and EventLocator events) and scalar 1-D parabolic PDEs via the method of lines,✅,contextual,2.0,157
 Integers,Domain symbol representing the set of integers,✅,pure,4.0,158
 Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6.0,159
 Limit,Computes the limit of an expression,✅,pure,1.0,160
