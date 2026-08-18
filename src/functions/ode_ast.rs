@@ -628,27 +628,38 @@ fn ndsolve_system(
   args: &[Expr],
   event: Option<&EventSpec>,
 ) -> Result<Option<Expr>, InterpreterError> {
-  // Domain {x, xmin, xmax}.
+  // Domain {x, xmin, xmax}, or the shorthand {x, xmax} that integrates
+  // from the initial conditions' x-value out to xmax — the x_min side is
+  // resolved below, once x0 is known from the equations.
   let Expr::List(domain_items) = &args[2] else {
     return Ok(None);
   };
-  if domain_items.len() != 3 {
-    return Ok(None);
-  }
   let Expr::Identifier(x_name) = &domain_items[0] else {
     return Ok(None);
   };
-  let Some(x_min) = nval_to_f64(&domain_items[1]) else {
-    return Ok(None);
+  let (x_min_given, x_max): (Option<f64>, f64) = match domain_items.len() {
+    3 => {
+      let Some(min) = nval_to_f64(&domain_items[1]) else {
+        return Ok(None);
+      };
+      let Some(max) = nval_to_f64(&domain_items[2]) else {
+        return Ok(None);
+      };
+      // NaN bounds must bail out too, so compare via partial_cmp rather
+      // than a negated float comparison.
+      if max.partial_cmp(&min) != Some(std::cmp::Ordering::Greater) {
+        return Ok(None);
+      }
+      (Some(min), max)
+    }
+    2 => {
+      let Some(target) = nval_to_f64(&domain_items[1]) else {
+        return Ok(None);
+      };
+      (None, target)
+    }
+    _ => return Ok(None),
   };
-  let Some(x_max) = nval_to_f64(&domain_items[2]) else {
-    return Ok(None);
-  };
-  // NaN bounds must bail out too, so compare via partial_cmp rather
-  // than a negated float comparison.
-  if x_max.partial_cmp(&x_min) != Some(std::cmp::Ordering::Greater) {
-    return Ok(None);
-  }
 
   // Dependent functions: `{θ, ϕ, ψ}`, a single symbol, or `f[x]` forms.
   let dep_items: Vec<&Expr> = match &args[1] {
@@ -753,6 +764,21 @@ fn ndsolve_system(
     return Ok(None);
   }
   let Some(x0) = x0 else { return Ok(None) };
+  let (x_min, x_max) = match x_min_given {
+    Some(min) => (min, x_max),
+    // {x, xmax} shorthand: integrate from x0 to xmax, in whichever
+    // direction that is — x0 always lands on one edge of the range. An
+    // absolute epsilon here would wrongly reject ranges that are tiny by
+    // scale (e.g. femtosecond time constants) rather than degenerate, so
+    // only bit-identical endpoints count as degenerate.
+    None => {
+      let target = x_max;
+      if target == x0 {
+        return Ok(None);
+      }
+      (x0.min(target), x0.max(target))
+    }
+  };
   if x0 < x_min - 1e-12 || x0 > x_max + 1e-12 {
     return Ok(None);
   }
@@ -1299,9 +1325,19 @@ fn solve_highest_derivatives(
     }
     c[i] = v;
   }
+  // Each column is recovered from r(delta·e_j) − r(0) = M·(delta·e_j), a
+  // finite difference that is *exact* since the residuals are affine in
+  // the highest-derivative vector. A unit-sized `delta` is lost entirely to
+  // rounding when the other terms in the residual dwarf it — e.g. a
+  // coefficient of 1e16 (from squaring a large angular frequency) makes
+  // `c[i] + 1.0` round straight back down to `c[i]` in `f64`, which reads
+  // as an exactly-zero, falsely singular column. Scaling `delta` up to the
+  // residuals' own magnitude keeps the perturbation's contribution above
+  // the rounding floor at that scale, so it survives the subtraction.
+  let delta = c.iter().fold(1.0_f64, |acc, v| acc.max(v.abs()));
   let mut m = vec![vec![0.0; n]; n];
   for j in 0..n {
-    vars[1 + state.len() + j] = 1.0;
+    vars[1 + state.len() + j] = delta;
     for (i, r) in residuals.iter().enumerate() {
       let Ok(v) = r.eval(&vars) else {
         return None;
@@ -1309,7 +1345,7 @@ fn solve_highest_derivatives(
       if !v.is_finite() {
         return None;
       }
-      m[i][j] = v - c[i];
+      m[i][j] = (v - c[i]) / delta;
     }
     vars[1 + state.len() + j] = 0.0;
   }

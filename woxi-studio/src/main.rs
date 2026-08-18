@@ -18614,4 +18614,103 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 3, $CellContext`spread$$ = 0,
       "the weighted hub sits elsewhere than the centroid"
     );
   }
+
+  /// A `Module`-local pair of `NDSolve` calls compared against each other
+  /// and plotted through a `Which`-branched view picker — the shape of a
+  /// physical-model-vs-reference-model Demonstration (independently
+  /// written, not copied from any specific one). One system's restoring
+  /// coefficient is squared from a large stiffness constant, and the time
+  /// domain is given as `{t, span}` (no explicit start), the shorthand
+  /// that integrates from the initial conditions out to `span`.
+  ///
+  /// Regression coverage for two bugs this run found in `NDSolve`:
+  /// the two-argument domain form came back entirely unevaluated (only
+  /// `{t, tmin, tmax}` was accepted), and even with an explicit domain a
+  /// large coefficient (here `stiffness^2 = 10^18`) made the per-step
+  /// Jacobian probe — which perturbed the highest-derivative slot by a
+  /// fixed `1.0` and subtracted the unperturbed residual — round away to
+  /// exactly zero in `f64`, reading as a falsely singular system.
+  #[test]
+  fn stiff_vs_soft_spring_picker_solves_with_large_coefficient() {
+    let code = "Manipulate[\
+      Module[{stiff, soft}, \
+        stiff = NDSolve[{p'[t] == q[t], q'[t] == -stiffness^2 p[t], \
+          p[0] == amp, q[0] == 0}, {p, q}, {t, span}]; \
+        soft = NDSolve[{p'[t] == q[t], q'[t] == -p[t], \
+          p[0] == amp, q[0] == 0}, {p, q}, {t, span}]; \
+        Which[\
+          view == \"position\", Plot[{Evaluate[p[t] /. stiff], \
+            Evaluate[p[t] /. soft]}, {t, 0, span}, PlotRange -> All], \
+          view == \"velocity\", Plot[{Evaluate[q[t] /. stiff], \
+            Evaluate[q[t] /. soft]}, {t, 0, span}, PlotRange -> All]\
+        ]\
+      ], \
+      {{view, \"position\", \"quantity\"}, {\"position\", \"velocity\"}}, \
+      {{stiffness, 10^9, \"stiffness\"}, 10^8, 10^10}, \
+      {{amp, 1, \"amplitude\"}, 0.5, 2}, \
+      {{span, 10^-9, \"duration\"}, 10^-10, 10^-8}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the stiff/soft spring picker Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the default position view must render"
+    );
+    assert_eq!(state.controls.len(), 4, "picker plus three sliders");
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("both curves must render")
+    };
+    let position_view = render(&state);
+
+    // Switching the picker to the velocity view must re-evaluate cleanly
+    // (both NDSolve calls still solved, in particular the large-stiffness
+    // one) and change the picture.
+    match &mut state.controls[0] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 1;
+      }
+      other => panic!("expected view as a Discrete control, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+    let velocity_view = render(&state);
+    assert_ne!(
+      position_view, velocity_view,
+      "switching the picker must change the rendered curves"
+    );
+
+    // Pulling the stiffness slider further changes the stiff spring's
+    // curve, so the picture changes again.
+    match &mut state.controls[1] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 5e9,
+      other => {
+        panic!("expected stiffness as a Continuous control, got {other:?}")
+      }
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let restiffened_view = render(&state);
+    assert_ne!(
+      velocity_view, restiffened_view,
+      "raising the stiffness must change the stiff spring's curve"
+    );
+  }
 }
