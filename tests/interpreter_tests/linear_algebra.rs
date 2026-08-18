@@ -3785,6 +3785,30 @@ mod linear_model_fit {
     assert!((val - 0.814043583535109).abs() < 1e-10);
   }
 
+  // `fit[{prop1, prop2, ...}]` looks up several properties at once and
+  // returns them as a list, the same as querying each one individually.
+  #[test]
+  fn multiple_properties_at_once() {
+    let result = interpret(
+      "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; \
+       lm[{\"RSquared\", \"AdjustedRSquared\"}]",
+    )
+    .unwrap();
+    let parts: Vec<f64> = result
+      .trim_start_matches('{')
+      .trim_end_matches('}')
+      .split(',')
+      .map(|s| s.trim().parse().unwrap())
+      .collect();
+    assert_eq!(parts.len(), 2);
+    assert!((parts[0] - 0.814043583535109).abs() < 1e-10);
+    let adjusted =
+      interpret("lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; lm[\"AdjustedRSquared\"]")
+        .unwrap();
+    let adjusted: f64 = adjusted.parse().unwrap();
+    assert!((parts[1] - adjusted).abs() < 1e-10);
+  }
+
   #[test]
   fn with_basis_list() {
     // LinearModelFit with explicit basis {1, x, x^2}

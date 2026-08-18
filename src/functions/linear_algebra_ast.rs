@@ -7483,6 +7483,31 @@ fn solve_linear_system(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
   Some(x)
 }
 
+/// Look up a single named property on a `FittedModel` association.
+fn lookup_fitted_model_property(
+  assoc: &[(Expr, Expr)],
+  prop: &str,
+) -> Result<Expr, InterpreterError> {
+  // `"BestFit"` is wolframscript's name for the fitted expression itself
+  // (mathematically: the polynomial of the basis terms with their best
+  // coefficients). Internally we store that under `"FittedExpression"`.
+  let lookup_key = if prop == "BestFit" {
+    "FittedExpression"
+  } else {
+    prop
+  };
+  for (key, val) in assoc {
+    if let Expr::String(k) = key
+      && k == lookup_key
+    {
+      return Ok(val.clone());
+    }
+  }
+  Err(InterpreterError::EvaluationError(format!(
+    "FittedModel: unknown property \"{prop}\""
+  )))
+}
+
 /// Evaluate a FittedModel at a point or query a property.
 /// Called when FittedModel[assoc][arg] is encountered.
 pub fn evaluate_fitted_model(
@@ -7503,25 +7528,23 @@ pub fn evaluate_fitted_model(
 
   // Check if the argument is a string (property query)
   if let Expr::String(prop) = &call_args[0] {
-    // `"BestFit"` is wolframscript's name for the fitted expression itself
-    // (mathematically: the polynomial of the basis terms with their best
-    // coefficients). Internally we store that under `"FittedExpression"`.
-    let lookup_key = if prop == "BestFit" {
-      "FittedExpression"
-    } else {
-      prop.as_str()
-    };
-    // Look up the property in the association
-    for (key, val) in assoc {
-      if let Expr::String(k) = key
-        && k == lookup_key
-      {
-        return Ok(val.clone());
-      }
+    return lookup_fitted_model_property(assoc, prop);
+  }
+
+  // `fit[{prop1, prop2, ...}]` looks up each property and returns the list
+  // of results, mirroring how a single string is handled above.
+  if let Expr::List(props) = &call_args[0]
+    && !props.is_empty()
+    && props.iter().all(|p| matches!(p, Expr::String(_)))
+  {
+    let mut results = Vec::with_capacity(props.len());
+    for p in props {
+      let Expr::String(prop) = p else {
+        unreachable!()
+      };
+      results.push(lookup_fitted_model_property(assoc, prop)?);
     }
-    return Err(InterpreterError::EvaluationError(format!(
-      "FittedModel: unknown property \"{prop}\""
-    )));
+    return Ok(Expr::List(results.into()));
   }
 
   // Otherwise, evaluate the model at the given point
