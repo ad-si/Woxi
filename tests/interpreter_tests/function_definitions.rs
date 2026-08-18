@@ -1252,10 +1252,37 @@ mod set_curried_and_upvalues_unset {
   #[test]
   fn set_on_curried_call_returns_rhs() {
     clear_state();
-    // Same shape as `f[a][b] := rhs` but with `=`. Doesn't actually
-    // install a SubValue (Woxi doesn't model SubValues yet) — just
-    // returns the RHS instead of erroring.
+    // Same shape as `f[a][b] := rhs` but with `=`. Returns the RHS, and
+    // (like `:=`) installs a genuine SubValue that fires on later calls —
+    // see `set_on_curried_call_installs_subvalue` below.
     assert_eq!(interpret("f[a][b] = 3").unwrap(), "3");
+  }
+
+  #[test]
+  fn set_on_curried_call_installs_subvalue() {
+    clear_state();
+    // Regression: `f[a][b] = rhs` used to be a pure no-op beyond returning
+    // the RHS — the rule was never stored, so a later `f[a][b]` stayed
+    // unevaluated. A Wolfram Demonstrations Project fractal-tiling
+    // notebook defines its family of point-transform functions this way
+    // (`someFunc[1][{x_,y_}] = …`), which left the fractal's coordinates
+    // entirely symbolic instead of numeric.
+    assert_eq!(interpret("f[1][x_] = x + 1; f[1][10]").unwrap(), "11");
+    clear_state();
+    assert_eq!(
+      interpret("f[1][{x_, y_}] = {2 x + y, x - 3 y}; f[1][{10, 3}]").unwrap(),
+      "{23, 1}"
+    );
+    clear_state();
+    // A literal (non-pattern) curried key also installs and fires.
+    assert_eq!(interpret("f[1][2] = 99; f[1][2]").unwrap(), "99");
+    clear_state();
+    // Two distinct keys on the same curried head coexist independently.
+    assert_eq!(
+      interpret("f[1][x_] = x + 1; f[2][x_] = x ^ 2; {f[1][10], f[2][10]}")
+        .unwrap(),
+      "{11, 100}"
+    );
   }
 
   #[test]

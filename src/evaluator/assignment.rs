@@ -1967,22 +1967,48 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(rhs_value);
   }
 
-  // SubValue form: `f[a][b] = rhs` (also deeper nestings). Mathematica
-  // stores these under SubValues[f]; Woxi's `set_delayed_ast` already
-  // accepts `:=` here and returns Null without actually installing a
-  // subvalue rule. Mirror that for `=` so `f[a][b] = 3` doesn't error
-  // out — matching wolframscript's surface behaviour.
-  if let Expr::CurriedCall { func, .. } = lhs {
-    let mut inner = func.as_ref();
-    loop {
-      match inner {
-        Expr::CurriedCall { func: f2, .. } => inner = f2.as_ref(),
-        Expr::FunctionCall { .. } => {
-          let rhs_value = evaluate_expr_to_expr(rhs)?;
-          return Ok(rhs_value);
+  // SubValue form: `f[a][b] = rhs` (also deeper nestings like `f[a][b][c]`).
+  // Mathematica stores these under SubValues[f] and they fire when exactly
+  // `f[a][b]` is evaluated. `set_delayed_ast` already installs a genuine
+  // subvalue rule for `:=`; mirror that here for `=`, evaluating the
+  // right-hand side immediately (as any other `Set` does) rather than
+  // storing it as a held body — this is what lets curried DownValue-style
+  // definitions like `f[1][{x_,y_}] = {x-y,x+y}/2.` (the Demonstrations
+  // idiom for a family of point-transform functions) actually fire on
+  // later calls instead of leaving them unevaluated.
+  if let Expr::CurriedCall { .. } = lhs {
+    let evaluated_lhs = evaluate_curried_lhs_non_pattern_parts(lhs)?;
+    let outer_head = if let Expr::CurriedCall { func, .. } = &evaluated_lhs {
+      let mut inner = func.as_ref();
+      loop {
+        match inner {
+          Expr::CurriedCall { func: f2, .. } => inner = f2.as_ref(),
+          Expr::FunctionCall { name, .. } => break Some(name.clone()),
+          _ => break None,
         }
-        _ => break,
       }
+    } else {
+      None
+    };
+    if let Some(head) = outer_head {
+      let rhs_value = evaluate_expr_to_expr(rhs)?;
+      SUB_VALUES.with(|m| {
+        let mut m = m.borrow_mut();
+        let rules = m.entry(head).or_default();
+        // Redefining the same pattern replaces the old rule in place,
+        // matching `DownValues` and how a Demonstration's Manipulate body
+        // re-evaluates (and thus re-defines) its SubValues on every control
+        // change.
+        let lhs_str = crate::syntax::expr_to_string(&evaluated_lhs);
+        match rules
+          .iter()
+          .position(|(l, _)| crate::syntax::expr_to_string(l) == lhs_str)
+        {
+          Some(idx) => rules[idx] = (evaluated_lhs, rhs_value.clone()),
+          None => rules.push((evaluated_lhs, rhs_value.clone())),
+        }
+      });
+      return Ok(rhs_value);
     }
   }
 
