@@ -203,9 +203,8 @@ pub fn combinatorica_from_unordered_pairs_ast(
   if args.len() != 1 {
     return Ok(original());
   }
-  let pairs = match &args[0] {
-    Expr::List(items) => items,
-    _ => return Ok(original()),
+  let Expr::List(pairs) = &args[0] else {
+    return Ok(original());
   };
 
   let mut max_vertex: i128 = 0;

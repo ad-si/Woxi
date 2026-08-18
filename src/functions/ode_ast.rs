@@ -347,7 +347,7 @@ fn parse_pde_domain(expr: &Expr) -> Option<PdeDomain> {
   };
   let min = nval_to_f64(&items[1])?;
   let max = nval_to_f64(&items[2])?;
-  if !(max > min) {
+  if !matches!(max.partial_cmp(&min), Some(std::cmp::Ordering::Greater)) {
     return None;
   }
   Some(PdeDomain {
@@ -643,8 +643,7 @@ fn ndsolve_pde(args: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
   // boundary needs to be resolved.
   const MIN_STEPS: usize = 200;
   let n_steps = (((t_dom.max - t_dom.min) / dt_stable).ceil() as usize)
-    .max(MIN_STEPS)
-    .min(20_000);
+    .clamp(MIN_STEPS, 20_000);
   let dt = (t_dom.max - t_dom.min) / n_steps as f64;
 
   let derivative =
