@@ -8532,6 +8532,22 @@ pub(crate) fn resolve_indirect_plot_body(
   (mentioned(&evaluated) > before).then_some(evaluated)
 }
 
+/// Flatten a single function or a (possibly nested) list of functions into
+/// individual curve bodies. Wolfram flattens nested lists into individual
+/// curves, so `Plot[{{f}, {g}}, …]` draws two curves. Nesting arises
+/// naturally from idioms like `expr /. C[1] -> Range[…]`, where threading a
+/// replacement over several expressions yields a list of lists.
+pub(crate) fn flatten_plot_bodies<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+  match e {
+    Expr::List(items) => {
+      for it in items {
+        flatten_plot_bodies(it, out);
+      }
+    }
+    _ => out.push(e),
+  }
+}
+
 /// Implementation of Plot[f, {x, xmin, xmax}]
 pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
@@ -8734,16 +8750,6 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Plot[{{f}, {g}}, …]` draws two curves. Nesting arises naturally from
   // idioms like `expr /. C[1] -> Range[…]`, where threading a replacement over
   // several expressions yields a list of lists.
-  fn flatten_plot_bodies<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
-    match e {
-      Expr::List(items) => {
-        for it in items {
-          flatten_plot_bodies(it, out);
-        }
-      }
-      _ => out.push(e),
-    }
-  }
   let mut raw_bodies: Vec<&Expr> = Vec::new();
   flatten_plot_bodies(body, &mut raw_bodies);
 

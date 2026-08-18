@@ -19487,8 +19487,13 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
       });
       continue;
     }
+    // Parsed, not evaluated: a box like `OverscriptBox[x, "_"]` is a frozen
+    // typesetting form, and `x` here names the base glyph to draw, not a
+    // reference to whatever a same-named Manipulate control is currently
+    // bound to. Evaluating it would substitute that control's live value
+    // (e.g. `x -> 1`) into every choice label that happens to mention `x`.
     let rendered = crate::notebook::box_source_to_expression(&seg.text)
-      .and_then(|code| crate::interpret_to_expr(&code).ok())
+      .and_then(|code| crate::parse_to_expr(&code).ok())
       .map(|expr| manipulate_label_runs(&expr, italic));
     match rendered {
       // An unrecognised box head keeps its source text rather than

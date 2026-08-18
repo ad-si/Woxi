@@ -1731,38 +1731,51 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Generate data points by evaluating expr at each discrete value
-  let mut points: Vec<(f64, f64)> = Vec::new();
-  let mut n = n_min;
+  // A single function or a (possibly nested) list of functions: Wolfram
+  // flattens `DiscretePlot[{f, g}, …]` into two separately-colored series,
+  // just like `Plot`.
+  let mut bodies: Vec<&Expr> = Vec::new();
+  crate::functions::plot::flatten_plot_bodies(expr, &mut bodies);
+
+  // Generate data points by evaluating each body at each discrete value.
   let max_points = 10000;
-  while n <= n_max + step * 0.5e-10 && points.len() < max_points {
-    let n_expr = if n == n.floor() && n.abs() < 1e15 {
-      Expr::Integer(n as i128)
-    } else {
-      Expr::Real(n)
-    };
-    let substituted = substitute_var(expr, &var_name, &n_expr);
-    if let Ok(result) = evaluate_expr_to_expr(&substituted)
-      && let Some(y) = try_eval_to_f64(&result)
-      && y.is_finite()
-    {
-      points.push((n, y));
+  let mut all_series: Vec<Vec<(f64, f64)>> = Vec::with_capacity(bodies.len());
+  for body in &bodies {
+    let mut points: Vec<(f64, f64)> = Vec::new();
+    let mut n = n_min;
+    while n <= n_max + step * 0.5e-10 && points.len() < max_points {
+      let n_expr = if n == n.floor() && n.abs() < 1e15 {
+        Expr::Integer(n as i128)
+      } else {
+        Expr::Real(n)
+      };
+      let substituted = substitute_var(body, &var_name, &n_expr);
+      if let Ok(result) = evaluate_expr_to_expr(&substituted)
+        && let Some(y) = try_eval_to_f64(&result)
+        && y.is_finite()
+      {
+        points.push((n, y));
+      }
+      n += step;
     }
-    n += step;
+    all_series.push(points);
   }
 
-  let all_series = vec![points];
   let parsed = parse_plot_options(args);
   let (x_range, y_range) = compute_ranges(&all_series);
   let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
 
-  let svg = generate_scatter_svg_with_options(
-    &all_series,
-    x_range,
-    y_range,
-    &parsed.opts,
-  )?;
+  let svg = if parsed.joined {
+    generate_svg_with_filling(&all_series, x_range, y_range, &parsed.opts)?
+  } else {
+    generate_scatter_svg_with_options(
+      &all_series,
+      x_range,
+      y_range,
+      &parsed.opts,
+    )?
+  };
   Ok(crate::graphics_result(svg))
 }
 

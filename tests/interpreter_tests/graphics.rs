@@ -15335,6 +15335,60 @@ mod discrete_plot {
     let result = interpret("DiscretePlot[2.5 Sqrt[k], {k, 100}]").unwrap();
     assert_eq!(result, "-Graphics-");
   }
+
+  // Regression: `DiscretePlot[{f, g}, {n, min, max}]` used to substitute `n`
+  // into the whole `{f, g}` list and try to convert that *list* result to a
+  // single f64, which always fails — so every point was silently dropped and
+  // the plot came out empty. Each function must now get its own series, one
+  // circle per sampled point per series, matching `Plot`'s handling of a
+  // list of functions.
+  #[test]
+  fn multiple_functions() {
+    let svg = export_svg(
+      "DiscretePlot[{n^2, 2*n}, {n, 1, 5}, PlotStyle -> {Red, Blue}]",
+    );
+    assert_eq!(
+      svg.matches("fill=\"#FF0000\"").count(),
+      5,
+      "series 1 should draw one circle per sampled point: {svg}"
+    );
+    assert_eq!(
+      svg.matches("fill=\"#0000FF\"").count(),
+      5,
+      "series 2 should draw one circle per sampled point: {svg}"
+    );
+  }
+
+  // Regression: `Joined -> True` was accepted as an option but never read,
+  // so `DiscretePlot` always rendered scatter points regardless. Each
+  // series must now render as a single connected polyline instead of one
+  // circle per point.
+  #[test]
+  fn joined_option() {
+    let svg = export_svg("DiscretePlot[n^2, {n, 1, 5}, Joined -> True]");
+    assert!(!svg.contains("<circle"), "should not scatter-plot: {svg}");
+    assert!(svg.contains("<polyline"), "should draw a curve: {svg}");
+  }
+
+  // The combination the two bugs above were found in together: several
+  // joined series sharing one plot, as in `Plot[{f, g}, …, Joined -> True]`.
+  #[test]
+  fn joined_multiple_functions() {
+    let svg = export_svg(
+      "DiscretePlot[{n^2, 2*n}, {n, 1, 5}, Joined -> True, PlotStyle -> {Red, Blue}]",
+    );
+    assert!(!svg.contains("<circle"), "should not scatter-plot: {svg}");
+    assert_eq!(
+      svg.matches("stroke=\"#FF0000\"").count(),
+      1,
+      "series 1 should draw as one connected curve: {svg}"
+    );
+    assert_eq!(
+      svg.matches("stroke=\"#0000FF\"").count(),
+      1,
+      "series 2 should draw as one connected curve: {svg}"
+    );
+  }
 }
 
 mod log_log_plot {
