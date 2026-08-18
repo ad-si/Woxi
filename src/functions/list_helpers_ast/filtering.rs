@@ -674,7 +674,12 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
       name: pat_name,
       args: pat_args,
     } => {
-      if pat_name == "Except" || pat_name == "PatternTest" {
+      if pat_name == "PatternTest" && pat_args.len() == 2 {
+        // `Except[0]?NumericQ` and friends — any pattern constrained by a
+        // test. Delegate rather than re-deriving the rules here.
+        crate::evaluator::pattern_matching::match_pattern(expr, pattern)
+          .is_some()
+      } else if pat_name == "Except" || pat_name == "PatternTest" {
         // Already handled above or not a structural match
         let pattern_str = crate::syntax::expr_to_string(pattern);
         let expr_str = crate::syntax::expr_to_string(expr);

@@ -4992,6 +4992,15 @@ fn try_fast_function_call(
       let Ok(target) = interpret(elem_expr) else {
         return None;
       };
+      // A pattern needs real matching, not the literal comparison below.
+      // The textual check above misses the heads that constrain a match
+      // without spelling a blank (`Except[2]`, `Except[0]?NumericQ`), so
+      // ask the canonical predicate once the element has been parsed.
+      if syntax::string_to_expr(&target)
+        .is_ok_and(|e| evaluator::pattern_matching::contains_pattern(&e))
+      {
+        return None;
+      }
 
       // Parse the list
       if !list_str.starts_with('{') || !list_str.ends_with('}') {
@@ -5004,14 +5013,13 @@ fn try_fast_function_call(
       // Check if target is in the list
       for elem in list_elems {
         let elem = elem.trim();
-        // Try to evaluate the list element if needed
-        let elem_val = if elem.contains('[') {
-          match interpret(elem) {
-            Ok(v) => v,
-            Err(_) => elem.to_string(),
-          }
-        } else {
-          elem.to_string()
+        // Evaluate the list element so it is compared in the same form the
+        // target is: `interpret` renders a string literal without its
+        // quotes, so comparing the raw source text made
+        // `MemberQ[{"x"}, "x"]` False.
+        let elem_val = match interpret(elem) {
+          Ok(v) => v,
+          Err(_) => elem.to_string(),
         };
         if elem_val == target {
           return Some(Ok(bool_fast_path_result(true)));

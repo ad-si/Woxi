@@ -14827,6 +14827,24 @@ mod cases {
   fn member_q_power_head_pattern_level() {
     assert_case(r#"MemberQ[{x^2, y^3}, _Power, {1}]"#, r#"True"#);
   }
+  // A string element has to be compared in the same form as the target:
+  // the fast path compared the raw source text of the element (`"y"`)
+  // against the evaluated target (`y`), so this was False.
+  #[test]
+  fn member_q_string_element() {
+    assert_case(r#"MemberQ[{"x", "y"}, "y"]"#, r#"True"#);
+    assert_case(r#"MemberQ[{"x", "y"}, "z"]"#, r#"False"#);
+  }
+  // `Except[c]` and `p?test` constrain a match without spelling a blank,
+  // so the fast path has to recognize them as patterns rather than as
+  // literal elements to compare against.
+  #[test]
+  fn member_q_except_and_pattern_test() {
+    assert_case(r#"MemberQ[{1, 2, 3}, Except[2]]"#, r#"True"#);
+    assert_case(r#"MemberQ[{2}, Except[2]]"#, r#"False"#);
+    assert_case(r#"MemberQ[{1, 2, 3}, Except[2]?OddQ]"#, r#"True"#);
+    assert_case(r#"MemberQ[{2, 4}, Except[2]?OddQ]"#, r#"False"#);
+  }
   #[test]
   fn subset_q_1() {
     assert_case(r#"SubsetQ[{1, 2, 3}, {3, 1}]"#, r#"True"#);
