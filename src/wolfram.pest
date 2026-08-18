@@ -274,6 +274,13 @@ Operator = @{
   | "." ~ !ASCII_DIGIT ~ !"."  // Dot operator (not decimal point, not .. or ...)
   | "<" | ">"
   | "=" | "@"
+  // Bare ":" — Pattern / Optional. Must come after "::", ":>", ":=" and
+  // "/:" so those keep ownership of their spellings. `Term` already takes
+  // the pattern forms that start with a name (`x_:v`, `x:body`), so this
+  // only fires for a `:` that follows a complete term — the trailing
+  // default in `x : pat : v`, or `pat : v` where `pat` is not a bare name
+  // (`x_?NumericQ : 2`, `_Integer | _Symbol : 2`).
+  | ":" ~ !("=" | ">" | ":")
 }
 
 // PostfixFunction: function used in postfix application (x // f or x // Map[f])
@@ -917,7 +924,13 @@ BracketArgs = { "[" ~ (FunctionArgOrOmitted ~ ("," ~ FunctionArgOrOmittedLast)*)
 FunctionCall = { (Identifier | NamedCharIdentifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+ ~ DerivativePrime? }
 
 // FunctionDefinition supports multiple pattern arguments: f[a_, b_] := ...
-FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalAnonBlank | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
+// `PatternOptionalNamedBlank` (`x:_:v`) and `PatternOptionalAnonBlank`
+// (`_:v`) are deliberately absent: `store_function_definition` has no
+// reader for them, so listing them here let the parameter be swallowed
+// (`f[x:_:2] := x^2` filed as `f[] := x^2`). Leaving them out makes the
+// definition fall through to the general `Expression` path, which builds
+// the same `Optional[…]` pattern the `Hold`ed form does.
+FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
 // Body is a simple ExpressionNoImplicit (we removed CompoundExpression option to prevent
 // greedy parsing of subsequent statements as part of the function body)
 // Compound expressions in function bodies should use explicit parentheses: f[x_] := (a; b)
