@@ -2267,6 +2267,121 @@ mod optional_pattern_without_default {
     assert_eq!(interpret("f[] /. f[a:_:b] -> {a, b}").unwrap(), "{b, b}");
   }
 
+  // A default can be written on any pattern, not just a named blank:
+  // `p : v` is `Optional[p, v]` whenever `p` is not a bare symbol. The
+  // parse used to stop at the second colon (issue #551).
+  #[test]
+  fn optional_default_on_pattern_test() {
+    clear_state();
+    interpret("opt1[x : x_?NumericQ : 2] := x^2").unwrap();
+    assert_eq!(interpret("opt1[3]").unwrap(), "9");
+    assert_eq!(interpret("opt1[]").unwrap(), "4");
+    // The default is used as-is — it is never run through the test.
+    assert_eq!(interpret("opt1[a]").unwrap(), "opt1[a]");
+    clear_state();
+  }
+
+  #[test]
+  fn optional_default_on_alternatives() {
+    clear_state();
+    interpret("opt2[x : _Symbol | _Integer : 2] := x^2").unwrap();
+    assert_eq!(interpret("opt2[3]").unwrap(), "9");
+    assert_eq!(interpret("opt2[a]").unwrap(), "a^2");
+    assert_eq!(interpret("opt2[]").unwrap(), "4");
+    assert_eq!(interpret("opt2[1.5]").unwrap(), "opt2[1.5]");
+    clear_state();
+  }
+
+  // `|` (Alternatives) binds tighter than `:` (Pattern/Optional), so the
+  // default attaches to the whole alternation and the name covers it too.
+  #[test]
+  fn optional_default_on_alternatives_structure() {
+    assert_eq!(
+      interpret("Hold[x : _Symbol | _Integer : 2][[1, 0]]").unwrap(),
+      "Optional"
+    );
+    assert_eq!(
+      interpret("Hold[x : _Symbol | _Integer : 2][[1, 1, 0]]").unwrap(),
+      "Pattern"
+    );
+    assert_eq!(
+      interpret("Hold[x : _Symbol | _Integer : 2][[1, 1, 2, 0]]").unwrap(),
+      "Alternatives"
+    );
+    assert_eq!(
+      interpret("Hold[x : _Symbol | _Integer : 2][[1, 2]]").unwrap(),
+      "2"
+    );
+  }
+
+  // Without a leading name the same forms are a bare `Optional[p, v]`.
+  #[test]
+  fn optional_default_on_unnamed_pattern_test() {
+    assert_eq!(interpret("MatchQ[3, _?NumericQ : 2]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[a, _?NumericQ : 2]").unwrap(), "False");
+    clear_state();
+    interpret("opt3[x_?NumericQ : 2] := x^2").unwrap();
+    assert_eq!(interpret("opt3[3]").unwrap(), "9");
+    assert_eq!(interpret("opt3[]").unwrap(), "4");
+    assert_eq!(interpret("opt3[a]").unwrap(), "opt3[a]");
+    clear_state();
+  }
+
+  // Anonymous blanks inside one pattern used to collapse onto a single
+  // placeholder variable while the definition was normalised, so
+  // `f[_Symbol | _Integer]` was stored (and matched) as
+  // `f[_Symbol | _Symbol]`.
+  #[test]
+  fn unnamed_alternatives_keep_each_head() {
+    clear_state();
+    interpret("alt1[_Symbol | _Integer] := 7").unwrap();
+    assert_eq!(interpret("alt1[3]").unwrap(), "7");
+    assert_eq!(interpret("alt1[a]").unwrap(), "7");
+    assert_eq!(interpret("alt1[1.5]").unwrap(), "alt1[1.5]");
+    clear_state();
+  }
+
+  #[test]
+  fn optional_default_on_alternatives_unnamed() {
+    clear_state();
+    interpret("opt4[_Symbol | _Integer : 2] := 7").unwrap();
+    assert_eq!(interpret("opt4[3]").unwrap(), "7");
+    assert_eq!(interpret("opt4[]").unwrap(), "7");
+    assert_eq!(interpret("opt4[1.5]").unwrap(), "opt4[1.5]");
+    clear_state();
+  }
+
+  // `x:_:v` and `_:v` as parameters of a `f[…] := …` definition used to be
+  // dropped by the definition-storing path, filing `f[x:_:2] := x^2` as
+  // `f[] := x^2`.
+  #[test]
+  fn optional_named_blank_colon_syntax_in_definition() {
+    clear_state();
+    interpret("opt5[x : _ : 2] := x^2").unwrap();
+    assert_eq!(interpret("opt5[3]").unwrap(), "9");
+    assert_eq!(interpret("opt5[]").unwrap(), "4");
+    clear_state();
+    interpret("opt6[x : _Integer : 2] := x^2").unwrap();
+    assert_eq!(interpret("opt6[3]").unwrap(), "9");
+    assert_eq!(interpret("opt6[]").unwrap(), "4");
+    assert_eq!(interpret("opt6[a]").unwrap(), "opt6[a]");
+    clear_state();
+    interpret("opt7[_ : 2] := 5").unwrap();
+    assert_eq!(interpret("opt7[]").unwrap(), "5");
+    assert_eq!(interpret("opt7[7]").unwrap(), "5");
+    clear_state();
+  }
+
+  // A defaulted slot mixed with a required one still fills from the left.
+  #[test]
+  fn optional_default_on_pattern_after_required_arg() {
+    clear_state();
+    interpret("opt8[a_, x : _Integer : 5] := {a, x}").unwrap();
+    assert_eq!(interpret("opt8[1]").unwrap(), "{1, 5}");
+    assert_eq!(interpret("opt8[1, 2]").unwrap(), "{1, 2}");
+    clear_state();
+  }
+
   // `Optional[X]` only collapses to the `X.` shorthand when X is a
   // single untyped Blank (`_` or `x_`). BlankSequence (`__`),
   // BlankNullSequence (`___`), and typed Blanks (`_Integer`,

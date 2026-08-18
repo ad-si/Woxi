@@ -2,6 +2,17 @@
 
 # Unreleased
 
+- A default value can be written on any pattern, not just a named blank:
+    `f[x_?NumericQ : 2]`, `f[x : _Symbol | _Integer : 2]` and
+    `f[x : x_?NumericQ : 2]` now parse as `Optional[…]` patterns instead of
+    failing with a parse error at the second colon. `|` (Alternatives) binds
+    tighter than `:`, so the default attaches to the whole alternation.
+- `f[x : _ : 2] := …` and `f[_ : 2] := …` keep their parameter — the
+    definition-storing path used to drop the whole slot, filing them as
+    `f[] := …`.
+- Two anonymous blanks in one pattern no longer collapse onto each other, so
+    `f[_Symbol | _Integer] := …` is stored (and matches) as written rather than
+    as `f[_Symbol | _Symbol]`.
 - An implicit product whose left factor is a function call now yields to a
     tighter operator the same way `2 Times @@ {3, 4}` already did:
     `Sum[…] Times @@ dp` is `Sum[…] (Times @@ dp)`. It used to parse as

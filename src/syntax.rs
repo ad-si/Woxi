@@ -5748,7 +5748,11 @@ fn operator_precedence(op: &str) -> u8 {
     | "\\[NotEqual]" | "<" | "<=" | "\u{2264}" | "\u{2A7D}"
     | "\\[LessEqual]" | ">" | ">=" | "\u{2265}" | "\u{2A7E}"
     | "\\[GreaterEqual]" | "===" | "=!=" => 21, // Comparisons
-    "~~" => 24,      // StringExpression (lower than Alternatives)
+    "~~" => 24, // StringExpression (lower than Alternatives)
+    // Pattern/Optional `:` sits between StringExpression and Alternatives,
+    // as in Wolfram (135 < 150 < 160): `x : a | b : v` is
+    // `Optional[Pattern[x, Alternatives[a, b]], v]`.
+    ":" => 26,
     "|" => 27, // Alternatives (higher than StringExpression, Or, And, Rule)
     "+" | "-" => 30, // Plus/Minus
     "*" | "/" => 33, // Times/Divide
@@ -6012,6 +6016,25 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       left: Box::new(left.clone()),
       right: Box::new(right.clone()),
     },
+    ":" => {
+      // Bare `:` reaching the operator level means the left side is a
+      // complete pattern rather than a bare name — `x_?NumericQ : 2`,
+      // `_Integer | _Symbol : 2`, or the trailing default of
+      // `x : pat : 2` (whose `x : pat` half `Term` already consumed).
+      // Wolfram reads `sym : p` as `Pattern[sym, p]` and `p : v` for any
+      // other left side as `Optional[p, v]`.
+      if let Expr::Identifier(name) = left {
+        Expr::FunctionCall {
+          name: "Pattern".to_string(),
+          args: vec![Expr::Identifier(name.clone()), right.clone()].into(),
+        }
+      } else {
+        Expr::FunctionCall {
+          name: "Optional".to_string(),
+          args: vec![left.clone(), right.clone()].into(),
+        }
+      }
+    }
     "|" => {
       // `:` (Pattern) binds looser than `|` (Alternatives) in Wolfram, so
       // `x : a | b` is `Pattern[x, Alternatives[a, b]]`. Woxi's parser
