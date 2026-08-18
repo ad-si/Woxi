@@ -18704,7 +18704,6 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 3, $CellContext`spread$$ = 0,
     );
   }
 
-
   /// A `Module`-local pair of `NDSolve` calls compared against each other
   /// and plotted through a `Which`-branched view picker — the shape of a
   /// physical-model-vs-reference-model Demonstration (independently

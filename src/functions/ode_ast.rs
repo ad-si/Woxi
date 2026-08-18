@@ -764,20 +764,19 @@ fn ndsolve_system(
     return Ok(None);
   }
   let Some(x0) = x0 else { return Ok(None) };
-  let (x_min, x_max) = match x_min_given {
-    Some(min) => (min, x_max),
+  let (x_min, x_max) = if let Some(min) = x_min_given {
+    (min, x_max)
+  } else {
     // {x, xmax} shorthand: integrate from x0 to xmax, in whichever
     // direction that is — x0 always lands on one edge of the range. An
     // absolute epsilon here would wrongly reject ranges that are tiny by
     // scale (e.g. femtosecond time constants) rather than degenerate, so
     // only bit-identical endpoints count as degenerate.
-    None => {
-      let target = x_max;
-      if target == x0 {
-        return Ok(None);
-      }
-      (x0.min(target), x0.max(target))
+    let target = x_max;
+    if target == x0 {
+      return Ok(None);
     }
+    (x0.min(target), x0.max(target))
   };
   if x0 < x_min - 1e-12 || x0 > x_max + 1e-12 {
     return Ok(None);
