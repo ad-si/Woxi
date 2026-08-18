@@ -7798,6 +7798,92 @@ mod ndsolve {
       "x(1/omega) should be about {expected}, got {val}"
     );
   }
+
+  /// `NDSolve[eqns, u, {t, t0, t1}, {x, x0, x1}]` — four positional
+  /// arguments rather than three — solves a scalar parabolic PDE (a
+  /// heat/diffusion-equation shape) by the method of lines. A linear
+  /// (harmonic) initial profile with boundary conditions consistent with
+  /// it is a steady state of the heat equation (`D[x, {x, 2}] == 0`), so
+  /// the solution must stay exactly on that line for every `t`.
+  #[test]
+  fn pde_heat_equation_preserves_a_harmonic_steady_state() {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t] == D[u[t, x], {x, 2}], u[0, x] == x, \
+       u[t, 0] == 0, u[t, 1] == 1}, u, {t, 0, 1}, {x, 0, 1}]; \
+       (u[t, x] /. sol[[1]]) /. {t -> 0.7, x -> 0.4}",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - 0.4).abs() < 1e-6, "Expected 0.4, got {val}");
+  }
+
+  /// `Sin[Pi x] Exp[-Pi^2 t]` is the textbook separated solution of the
+  /// heat equation `u_t == u_xx` with `u(0, x) = Sin[Pi x]` and Dirichlet
+  /// zero at both ends — a check independent of the solver's own
+  /// discretization.
+  #[test]
+  fn pde_heat_equation_matches_sinusoidal_decay() {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t] == D[u[t, x], {x, 2}], \
+       u[0, x] == Sin[Pi x], u[t, 0] == 0, u[t, 1] == 0}, u, {t, 0, 0.1}, \
+       {x, 0, 1}]; (u[t, x] /. sol[[1]]) /. {t -> 0.05, x -> 0.5}",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = (std::f64::consts::PI / 2.0).sin()
+      * (-std::f64::consts::PI.powi(2) * 0.05).exp();
+    assert!(
+      (val - expected).abs() < 1e-2,
+      "Expected about {expected}, got {val}"
+    );
+  }
+
+  #[test]
+  fn pde_heat_equation_returns_named_interpolating_function() {
+    let result = interpret(
+      "NDSolve[{D[u[t, x], t] == D[u[t, x], {x, 2}], u[0, x] == x, \
+       u[t, 0] == 0, u[t, 1] == 1}, u, {t, 0, 1}, {x, 0, 1}]",
+    )
+    .unwrap();
+    assert!(
+      result.starts_with("{{u -> InterpolatingFunction[")
+        && result.contains("{1, 1}"),
+      "Got: {result}"
+    );
+  }
+
+  /// A PDE missing one of its two Dirichlet boundary conditions doesn't
+  /// match the one recognised shape, so the call is left unevaluated —
+  /// the same fallback NDSolve gives any equation system it can't classify
+  /// — rather than panicking or silently returning a wrong answer.
+  #[test]
+  fn pde_heat_equation_without_both_boundaries_stays_unevaluated() {
+    let result = interpret(
+      "NDSolve[{D[u[t, x], t] == D[u[t, x], {x, 2}], u[0, x] == x, \
+       u[t, 0] == 0}, u, {t, 0, 1}, {x, 0, 1}]",
+    )
+    .unwrap();
+    assert!(
+      result.starts_with("NDSolve["),
+      "Expected an unevaluated NDSolve, got: {result}"
+    );
+  }
+
+  /// The PDE branch's `InterpolatingFunction` must be usable exactly like
+  /// any other two-argument one — in particular as the function
+  /// `ContourPlot` samples over its `{t, x}` grid, the shape a
+  /// `Manipulate`-driven heat-equation plot depends on.
+  #[test]
+  fn pde_heat_equation_feeds_a_contour_plot() {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t] == D[u[t, x], {x, 2}], u[0, x] == x, \
+       u[t, 0] == 0, u[t, 1] == 1}, u, {t, 0, 1}, {x, 0, 1}]; \
+       ExportString[ContourPlot[Evaluate[u[t, x] /. sol[[1]]], {t, 0, 1}, \
+       {x, 0, 1}, PlotPoints -> 10, Contours -> {0.5}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(result.contains("<svg"), "Got: {result}");
+  }
 }
 
 mod sinh_cosh {
