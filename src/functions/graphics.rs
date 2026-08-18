@@ -20551,6 +20551,16 @@ fn parse_manipulate_control(
     _ => None,
   };
 
+  // `{u, umin, umax}` with umin > umax is a documented reversed-direction
+  // slider (e.g. an angle control counting down from a positive start to a
+  // negative end). `initial` above is already resolved against the original
+  // umin/umax order, so it is safe to sort the pair now — every downstream
+  // consumer (the slider widget, dynamic-bounds re-resolution) expects
+  // `min <= max`.
+  if min > max {
+    std::mem::swap(&mut min, &mut max);
+  }
+
   Some(ParsedControl::Visible {
     control: ManipulateControl::Continuous {
       name,
@@ -22715,5 +22725,50 @@ mod manipulate_display_pane_selector_tests {
       DisplayNode::Column(children) => assert!(children.is_empty()),
       other => panic!("expected an empty column, got {other:?}"),
     }
+  }
+}
+
+#[cfg(test)]
+mod manipulate_reversed_range_tests {
+  use super::*;
+
+  fn first_continuous(code: &str) -> (f64, f64, f64) {
+    let expr = crate::parse_to_expr(code).expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    match spec.controls.first() {
+      Some(ManipulateControl::Continuous {
+        min, max, initial, ..
+      }) => (*min, *max, *initial),
+      other => panic!("expected a continuous control, got {other:?}"),
+    }
+  }
+
+  /// `{u, umin, umax}` with `umin > umax` is a documented reversed-direction
+  /// slider (Wolfram draws it counting down from left to right). The parsed
+  /// `min`/`max` fields must still satisfy `min <= max` — every downstream
+  /// consumer (the slider widget's `RangeInclusive`, dynamic-bounds
+  /// re-resolution) assumes that order, and an unsorted pair makes the
+  /// iced slider clamp the initial value to the wrong end of the range.
+  #[test]
+  fn reversed_bounds_are_sorted_for_the_control() {
+    let (min, max, initial) = first_continuous(
+      r#"Manipulate[u, {{u, -1.57, "angle"}, 0.01, -3.14, 0.01}]"#,
+    );
+    assert!(min <= max, "min ({min}) must not exceed max ({max})");
+    assert_eq!(min, -3.14);
+    assert_eq!(max, 0.01);
+    // The initial value is still the one written in the spec, not clamped
+    // to either sorted bound.
+    assert_eq!(initial, -1.57);
+  }
+
+  /// The ordinary (already increasing) case is unaffected by the sort.
+  #[test]
+  fn forward_bounds_are_unchanged() {
+    let (min, max, initial) =
+      first_continuous(r#"Manipulate[u, {{u, 1.3, "radius"}, 0.01, 2}]"#);
+    assert_eq!(min, 0.01);
+    assert_eq!(max, 2.0);
+    assert_eq!(initial, 1.3);
   }
 }

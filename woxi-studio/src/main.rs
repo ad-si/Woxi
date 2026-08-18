@@ -7867,6 +7867,59 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`base$$ = 1000, $CellContext`pct$$ =
     }
   }
 
+  /// A stored Manipulate with a reversed-direction slider — `{u, umin,
+  /// umax}` written with `umin > umax`, the way a Demonstrations angle
+  /// control counts down from a positive start to a negative end — must
+  /// still open with its initial value intact rather than snapped to one
+  /// end of the range. `ManipulateState` is built from a `min <= max`
+  /// pair (see `parse_manipulate_control`'s sort), so the slider widget's
+  /// `RangeInclusive` never sees the reversed order that broke the initial
+  /// clamp.
+  #[test]
+  fn demonstration_reversed_range_slider_keeps_its_initial_value() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Graphics[{Circle[{0, 0}, 1], PointSize[Large], Point[{Cos[angle], Sin[angle]}]}],
+ {{angle, -1.57, \"angle\"}, 0.01, -3.14, 0.01, Appearance -> \"Labeled\"},
+ SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = -1.57}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the point-on-circle graphic must draw"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          min,
+          max,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name, "angle");
+        assert!(min <= max, "min ({min}) must not exceed max ({max})");
+        assert_eq!((*min, *max), (-3.14, 0.01));
+        assert_eq!(*current, -1.57, "initial value must not be clamped");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
   #[test]
   fn demonstration_compatibility_checkboxes_render_as_a_card() {
     // The metadata cells at the end of every Demonstration submission
@@ -16996,8 +17049,8 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`terms$$ = 24, $CellContext`\[Beta]$
   /// driven by a second slider), and combining the colored pieces in a
   /// `Graphics3D` with `ViewPoint`/`ViewAngle`/`SphericalRegion`/`Boxed`/
   /// `PlotRange` options. Driven by two continuous sliders with text
-  /// labels, one ascending and one descending (`max` to `min`), plus a
-  /// `TrackedSymbols` option.
+  /// labels, one written ascending and one written descending (`max` to
+  /// `min` — a reversed-direction slider), plus a `TrackedSymbols` option.
   #[test]
   fn demonstration_polyhedron_compound_manipulate_rotates_and_scales() {
     let nb_src = r##"Notebook[{
@@ -17048,10 +17101,14 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`grow$$ = 1.5, $CellContext`spin$$ =
         assert_eq!(*grow_now, 1.5);
         assert_eq!(spin_name.as_str(), "spin");
         assert_eq!(spin_label.as_str(), "rotate tetrahedron");
-        // The spin slider's spec range descends (max to min), matching
-        // the source demonstration's rotation control.
-        assert!((*spin_min - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
-        assert_eq!(*spin_max, 0.0);
+        // The spin slider's spec is written descending (`Pi/2` down to
+        // `0`, matching the source demonstration's rotation control), but
+        // the parsed control sorts `min <= max` — the slider widget's
+        // `RangeInclusive` cannot represent a reversed pair, and an
+        // unsorted one clamps the initial value to the wrong end. The
+        // initial value itself is unaffected by the sort.
+        assert_eq!(*spin_min, 0.0);
+        assert!((*spin_max - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
         assert!((*spin_now - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
       }
       other => panic!("unexpected controls: {other:?}"),
