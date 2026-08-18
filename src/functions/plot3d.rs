@@ -4181,7 +4181,31 @@ fn box_edge_flags(tri: &(Point3D, Point3D, Point3D)) -> [bool; 3] {
   ]
 }
 
+/// Bounds how elongated a single tessellated side face can be. Without
+/// this, a long cylinder or tube tessellates its side into quads that span
+/// its whole length in one piece, and the painter's algorithm sorts each
+/// quad by its centroid depth — averaging a face's near and far ends
+/// together lets a smaller object poking through only the far half of the
+/// face sort as if it were in front of the whole thing. Subdividing the
+/// length so each face stays roughly as long as it is wide keeps every
+/// face's centroid a good local depth estimate.
+const MAX_SIDE_FACE_ASPECT: f64 = 1.0;
+const MAX_SIDE_SUBDIVISIONS: usize = 200;
+
+/// How many rings to place along a side of the given length and radius so
+/// that no single tessellated face is more elongated than
+/// `MAX_SIDE_FACE_ASPECT` times as long as it is wide, given `sides`
+/// facets around the circumference.
+fn side_subdivision_steps(len: f64, radius: f64, sides: usize) -> usize {
+  let facet_width =
+    2.0 * std::f64::consts::PI * radius.abs().max(1e-9) / sides as f64;
+  ((len / facet_width) / MAX_SIDE_FACE_ASPECT)
+    .ceil()
+    .clamp(1.0, MAX_SIDE_SUBDIVISIONS as f64) as usize
+}
+
 /// Tessellate a cylinder along its axis.
+
 fn tessellate_cylinder(
   p1: &Point3D,
   p2: &Point3D,
@@ -4228,49 +4252,40 @@ fn tessellate_cylinder(
   let biny = az * perpx - ax * perpz;
   let binz = ax * perpy - ay * perpx;
 
+  let steps = side_subdivision_steps(len, radius, n);
+  let ring_at = |t: f64| -> Vec<Point3D> {
+    let center = Point3D {
+      x: p1.x + dx * t,
+      y: p1.y + dy * t,
+      z: p1.z + dz * t,
+    };
+    (0..n)
+      .map(|i| {
+        let a = 2.0 * pi * i as f64 / n as f64;
+        let (c, s) = (a.cos(), a.sin());
+        Point3D {
+          x: center.x + radius * (c * perpx + s * binx),
+          y: center.y + radius * (c * perpy + s * biny),
+          z: center.z + radius * (c * perpz + s * binz),
+        }
+      })
+      .collect()
+  };
+  let rings: Vec<Vec<Point3D>> = (0..=steps)
+    .map(|s| ring_at(s as f64 / steps as f64))
+    .collect();
+
   let mut tris = Vec::new();
-  for i in 0..n {
-    let a1 = 2.0 * pi * i as f64 / n as f64;
-    let a2 = 2.0 * pi * (i + 1) as f64 / n as f64;
-    let c1 = a1.cos();
-    let s1 = a1.sin();
-    let c2 = a2.cos();
-    let s2 = a2.sin();
-
-    let offset1 = (
-      radius * (c1 * perpx + s1 * binx),
-      radius * (c1 * perpy + s1 * biny),
-      radius * (c1 * perpz + s1 * binz),
-    );
-    let offset2 = (
-      radius * (c2 * perpx + s2 * binx),
-      radius * (c2 * perpy + s2 * biny),
-      radius * (c2 * perpz + s2 * binz),
-    );
-
-    let a = Point3D {
-      x: p1.x + offset1.0,
-      y: p1.y + offset1.1,
-      z: p1.z + offset1.2,
-    };
-    let b = Point3D {
-      x: p2.x + offset1.0,
-      y: p2.y + offset1.1,
-      z: p2.z + offset1.2,
-    };
-    let c = Point3D {
-      x: p2.x + offset2.0,
-      y: p2.y + offset2.1,
-      z: p2.z + offset2.2,
-    };
-    let d = Point3D {
-      x: p1.x + offset2.0,
-      y: p1.y + offset2.1,
-      z: p1.z + offset2.2,
-    };
-
-    tris.push((a, b, c));
-    tris.push((a, c, d));
+  for ring_pair in rings.windows(2) {
+    let (ring1, ring2) = (&ring_pair[0], &ring_pair[1]);
+    for i in 0..n {
+      let i2 = (i + 1) % n;
+      // Same vertex order as the un-subdivided quad (a, b, c) / (a, c, d)
+      // with a = ring1[i], b = ring2[i], c = ring2[i2], d = ring1[i2], so
+      // the winding — and therefore the face normal direction — matches.
+      tris.push((ring1[i], ring2[i], ring2[i2]));
+      tris.push((ring1[i], ring2[i2], ring1[i2]));
+    }
   }
   tris
 }
@@ -4348,6 +4363,24 @@ fn tessellate_tube(
   };
   let mut normal = unit(cross(t0, seed)).unwrap_or((1.0, 0.0, 0.0));
 
+  let ring_at = |center: Point3D,
+                 radius: f64,
+                 normal: (f64, f64, f64),
+                 binormal: (f64, f64, f64)|
+   -> Vec<Point3D> {
+    (0..TUBE_SIDES)
+      .map(|k| {
+        let a = 2.0 * std::f64::consts::PI * k as f64 / TUBE_SIDES as f64;
+        let (c, s) = (a.cos() * radius, a.sin() * radius);
+        Point3D {
+          x: center.x + c * normal.0 + s * binormal.0,
+          y: center.y + c * normal.1 + s * binormal.1,
+          z: center.z + c * normal.2 + s * binormal.2,
+        }
+      })
+      .collect()
+  };
+
   let mut rings: Vec<Vec<Point3D>> = Vec::with_capacity(keep.len());
   for (i, &idx) in keep.iter().enumerate() {
     let t = tangents[i];
@@ -4369,19 +4402,29 @@ fn tessellate_tube(
       let d = dirs[i - 1].0 * t.0 + dirs[i - 1].1 * t.1 + dirs[i - 1].2 * t.2;
       if d.abs() < 1e-6 { 1.0 } else { 1.0 / d }
     };
-    rings.push(
-      (0..TUBE_SIDES)
-        .map(|k| {
-          let a = 2.0 * std::f64::consts::PI * k as f64 / TUBE_SIDES as f64;
-          let (c, s) = (a.cos() * r * widen, a.sin() * r * widen);
-          Point3D {
-            x: points[idx].x + c * normal.0 + s * binormal.0,
-            y: points[idx].y + c * normal.1 + s * binormal.1,
-            z: points[idx].z + c * normal.2 + s * binormal.2,
-          }
-        })
-        .collect(),
-    );
+    rings.push(ring_at(points[idx], r * widen, normal, binormal));
+
+    // Subdivide the straight run to the next vertex so no single
+    // tessellated face spans an outsized fraction of the tube's length
+    // (see `side_subdivision_steps`). The normal/binormal frame doesn't
+    // need to change along a straight run, so the interpolated rings just
+    // reuse this vertex's frame; only the centre and radius move.
+    if i + 1 < keep.len() {
+      let idx_next = keep[i + 1];
+      let seg_len = norm(sub(&points[idx_next], &points[idx]));
+      let r_next = radii.get(idx_next).copied().unwrap_or(0.0);
+      let steps = side_subdivision_steps(seg_len, r.max(r_next), TUBE_SIDES);
+      for s in 1..steps {
+        let frac = s as f64 / steps as f64;
+        let center = Point3D {
+          x: points[idx].x + (points[idx_next].x - points[idx].x) * frac,
+          y: points[idx].y + (points[idx_next].y - points[idx].y) * frac,
+          z: points[idx].z + (points[idx_next].z - points[idx].z) * frac,
+        };
+        let rr = r + (r_next - r) * frac;
+        rings.push(ring_at(center, rr, normal, binormal));
+      }
+    }
   }
 
   let mut tris = Vec::new();

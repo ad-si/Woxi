@@ -24460,6 +24460,72 @@ mod tube_and_cap_form {
   }
 }
 
+mod graphics3d_painters_algorithm_face_subdivision {
+  use super::*;
+
+  /// The painter's algorithm sorts every tessellated triangle by its own
+  /// centroid depth. A straight `Tube`/`Cylinder` side used to tessellate
+  /// into one quad strip spanning its *whole* length, so a face's centroid
+  /// averaged its near and far ends together — a smaller object poking
+  /// through only the far half of such a face could then sort as if it
+  /// were in front of the whole face. Regression, found by a Demonstration
+  /// that put several `Cylinder` fan blades inside a wide `Tube` housing:
+  /// pieces of the blades showed through the housing's wall. The fix
+  /// subdivides a straight run so no face is more elongated than it is
+  /// wide, which only matters once a run is many facet-widths long.
+  #[test]
+  fn long_tube_segment_subdivides_its_length() {
+    clear_state();
+    let short = export_svg("Graphics3D[{Tube[{{0, 0, 0}, {0, 0, 1}}, 1]}]");
+    let long = export_svg("Graphics3D[{Tube[{{0, 0, 0}, {0, 0, 40}}, 1]}]");
+    let count = |svg: &str| svg.matches("<polygon").count();
+    assert!(
+      count(&long) > count(&short) * 4,
+      "a straight tube 40x longer than its radius must tessellate into \
+       many more, smaller faces along its length: short={} long={}",
+      count(&short),
+      count(&long)
+    );
+  }
+
+  /// Same fix, for `Cylinder`.
+  #[test]
+  fn long_cylinder_segment_subdivides_its_length() {
+    clear_state();
+    let short = export_svg("Graphics3D[{Cylinder[{{0, 0, 0}, {0, 0, 1}}, 1]}]");
+    let long = export_svg("Graphics3D[{Cylinder[{{0, 0, 0}, {0, 0, 40}}, 1]}]");
+    let count = |svg: &str| svg.matches("<polygon").count();
+    assert!(
+      count(&long) > count(&short) * 4,
+      "a straight cylinder 40x longer than its radius must tessellate \
+       into many more, smaller faces along its length: short={} long={}",
+      count(&short),
+      count(&long)
+    );
+  }
+
+  /// End-to-end regression for the fan-housing shape above: several
+  /// `Cylinder` blades sit well inside a wide, open-ended `Tube`, close
+  /// enough to its inner wall that the wall's un-subdivided facet used to
+  /// sort behind a blade it should have occluded. A finely subdivided
+  /// housing wall renders far more polygons for the same scene.
+  #[test]
+  fn blades_inside_a_wide_tube_get_a_finely_subdivided_housing() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics3D[{Green, CapForm[None], Tube[{{0, 0, -5}, {0, 0, 1}}, \
+       5.5], Blue, Table[Rotate[Cylinder[{{0, 1.2, 0}, {0, 5, 0}}], \
+       i*Pi/2, {0, 0, 1}], {i, 4}]}]",
+    );
+    assert!(
+      svg.matches("<polygon").count() > 1000,
+      "the tube housing must be subdivided along its length, not one \
+       quad strip per side: {} polygons",
+      svg.matches("<polygon").count()
+    );
+  }
+}
+
 mod revolution_plot3d_part_extraction {
   use super::*;
 
