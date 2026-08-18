@@ -22752,14 +22752,14 @@ mod manipulate_reversed_range_tests {
   #[test]
   fn reversed_bounds_are_sorted_for_the_control() {
     let (min, max, initial) = first_continuous(
-      r#"Manipulate[u, {{u, -1.57, "angle"}, 0.01, -3.14, 0.01}]"#,
+      r#"Manipulate[u, {{u, -1.2, "angle"}, 0.02, -2.5, 0.02}]"#,
     );
     assert!(min <= max, "min ({min}) must not exceed max ({max})");
-    assert_eq!(min, -3.14);
-    assert_eq!(max, 0.01);
+    assert_eq!(min, -2.5);
+    assert_eq!(max, 0.02);
     // The initial value is still the one written in the spec, not clamped
     // to either sorted bound.
-    assert_eq!(initial, -1.57);
+    assert_eq!(initial, -1.2);
   }
 
   /// The ordinary (already increasing) case is unaffected by the sort.

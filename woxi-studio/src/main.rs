@@ -7881,9 +7881,9 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`base$$ = 1000, $CellContext`pct$$ =
 Cell[CellGroupData[{
 Cell[BoxData["Manipulate[
  Graphics[{Circle[{0, 0}, 1], PointSize[Large], Point[{Cos[angle], Sin[angle]}]}],
- {{angle, -1.57, \"angle\"}, 0.01, -3.14, 0.01, Appearance -> \"Labeled\"},
+ {{angle, -1.2, \"angle\"}, 0.02, -2.5, 0.02, Appearance -> \"Labeled\"},
  SaveDefinitions -> True]"], "Input"],
-Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = -1.57}, \"…\"]"], "Output"]
+Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = -1.2}, \"…\"]"], "Output"]
 }, Open]]
 }]"##;
     let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
@@ -7913,8 +7913,8 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = -1.57}, \"…\"]"], "Outp
       ] => {
         assert_eq!(name, "angle");
         assert!(min <= max, "min ({min}) must not exceed max ({max})");
-        assert_eq!((*min, *max), (-3.14, 0.01));
-        assert_eq!(*current, -1.57, "initial value must not be clamped");
+        assert_eq!((*min, *max), (-2.5, 0.02));
+        assert_eq!(*current, -1.2, "initial value must not be clamped");
       }
       other => panic!("unexpected controls: {other:?}"),
     }
