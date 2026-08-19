@@ -332,7 +332,15 @@ function splitTopLevelSemicolons(s: string): string[] {
         depth++;
       } else if (ch === ")" || ch === "]" || ch === "}" || ch === "|" && s[i + 1] === ">") {
         depth--;
-      } else if (ch === ";" && depth === 0) {
+      } else if (ch === ";") {
+        // `;;` is the Span operator, not two statement separators.
+        // The tokenizer is greedy left-to-right, exactly like Wolfram's:
+        // `;;;` is a Span followed by a separator.
+        if (s[i + 1] === ";") {
+          i++;
+          continue;
+        }
+        if (depth !== 0) continue;
         // Make sure it's not /; (Condition)
         if (i > 0 && s[i - 1] === "/") continue;
         parts.push(s.substring(start, i).trim());
