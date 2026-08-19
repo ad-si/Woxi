@@ -2026,19 +2026,15 @@ call then fails both the message and the echo describe the rewrite. The same
 happens for `SortBy`, `KeyTake` and `Nearest`, so this is one issue in the
 operator-form dispatch rather than a per-function one.
 
-### Scoping constructs skip malformed local specifications silently
+### Iteration constructs substitute their variable instead of binding it
 
-wolframscript emits, and leaves the call unevaluated, for:
-
-- `lvset` — `With[{5 = 1}, …]`
-- `lvsym` — `Module[{5}, …]`
-- `lvws` — `With[{x}, …]` (`With` needs values)
-- `dup` — `With[{x = 1, x = 2}, …]`
-
-Woxi skips such items. Two visible consequences:
-`f[x_] := With[{x = 1}, x^2]; f[7]` gives 49 (WL reports `lvset` for
-`With[{7 = 1}, 7^2]`), and `With[{x = 5}, Block[{x = x + 1}, x^2]]` gives 25
-(WL reports `lvset`, because `With` substitutes through `Block`'s binder name).
+`Table`, `Sum` and `Product` rewrite the iterator symbol into the body rather
+than binding it dynamically the way Wolfram does, so a held occurrence is
+replaced instead of left standing: `Table[Hold[k], {k, 1, 2}]` gives
+`{Hold[1], Hold[2]}` where Wolfram gives `{Hold[k], Hold[k]}`, and
+`Sum[Hold[k], {k, 1, 2}]` gives `Hold[1] + Hold[2]` instead of `2 Hold[k]`.
+The substitution is capture-avoiding, so a nested `Module`/`With`/`Function`
+binder of the same name is left alone; only unbound held positions diverge.
 
 ### `$GeoLocation` and location-defaulting messages
 

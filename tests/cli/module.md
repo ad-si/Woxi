@@ -162,3 +162,50 @@ $ wo 'Foo[u_, x_Symbol] := Module[{lst = u}, 3 /; lst == 1]; {Foo[1, x], Foo[x, 
 $ wo 'f[n_] := Module[{v = n}, "small" /; v < 10]; f[5]'
 small
 ```
+
+
+## Malformed Local Variable Specifications
+
+Every local must be a symbol or an assignment to a symbol.
+A pattern variable is substituted into the local list as well,
+so a parameter cannot be re-declared as a local.
+
+```scrut {output_stream: combined}
+$ wo 'f[x_] := Module[{x}, x]; f[5]'
+
+Module::lvsym: Local variable specification {5} contains 5, which is not a symbol or an assignment to a symbol.
+Module[{5}, 5]
+```
+
+```scrut {output_stream: combined}
+$ wo 'Module[{x[1] = 3}, 4]'
+
+Module::lvset: Local variable specification {x[1] = 3} contains x[1] = 3, which is an assignment to x[1]; only assignments to symbols are allowed.
+Module[{x[1] = 3}, 4]
+```
+
+```scrut {output_stream: combined}
+$ wo 'Module[{x, x}, 3]'
+
+Module::dup: Duplicate local variable x found in local variable specification {x, x}.
+Module[{x, x}, 3]
+```
+
+`With` differs in that it needs a value for every local:
+
+```scrut {output_stream: combined}
+$ wo 'With[{x}, x]'
+
+With::lvws: Variable x in local variable specification {x} requires a value.
+With[{x}, x]
+```
+
+
+## Delayed Local Assignment
+
+`x := v` keeps the right-hand side unevaluated until the body reads `x`.
+
+```scrut
+$ wo 'Module[{x := 1 + 1}, x]'
+2
+```

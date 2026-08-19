@@ -294,6 +294,216 @@ mod with_scoping {
       );
     }
   }
+
+  /// Run `code` and expect it to stay unevaluated with exactly `message`.
+  fn assert_local_spec_message(code: &str, expected: &str, message: &str) {
+    clear_state();
+    let result = interpret_with_stdout(code).unwrap();
+    assert_eq!(result.result, expected, "{code}");
+    assert!(
+      result.warnings[0].contains(message),
+      "{code}: {:?}",
+      result.warnings
+    );
+  }
+
+  // Every entry of a `Module`/`Block` specification must be a symbol or an
+  // assignment to one. Issue #570: `f[x_] := Module[{x}, x]` substitutes the
+  // argument into the binder, so `f[5]` has to report `Module[{5}, 5]`
+  // instead of silently dropping the malformed local.
+  #[test]
+  fn a_local_must_be_a_symbol() {
+    for (code, expected, message) in [
+      (
+        "Module[{5}, 5]",
+        "Module[{5}, 5]",
+        "Module::lvsym: Local variable specification {5} contains 5, which \
+         is not a symbol or an assignment to a symbol.",
+      ),
+      (
+        "f[x_] := Module[{x}, x]; f[5]",
+        "Module[{5}, 5]",
+        "Module::lvsym: Local variable specification {5} contains 5, which \
+         is not a symbol or an assignment to a symbol.",
+      ),
+      (
+        "Module[{x, y = 2, 3 + 4}, x]",
+        "Module[{x, y = 2, 3 + 4}, x]",
+        "Module::lvsym: Local variable specification {x, y = 2, 3 + 4} \
+         contains 3 + 4, which is not a symbol or an assignment to a symbol.",
+      ),
+      (
+        "Module[{f[x]}, 3]",
+        "Module[{f[x]}, 3]",
+        "Module::lvsym: Local variable specification {f[x]} contains f[x], \
+         which is not a symbol or an assignment to a symbol.",
+      ),
+      (
+        "Module[{x_}, 3]",
+        "Module[{x_}, 3]",
+        "Module::lvsym: Local variable specification {x_} contains x_, which \
+         is not a symbol or an assignment to a symbol.",
+      ),
+      (
+        "f[x_] := Block[{x}, x]; f[5]",
+        "Block[{5}, 5]",
+        "Block::lvsym: Local variable specification {5} contains 5, which is \
+         not a symbol or an assignment to a symbol.",
+      ),
+    ] {
+      assert_local_spec_message(code, expected, message);
+    }
+  }
+
+  // Only the first offending entry is reported, left to right — a later
+  // duplicate never pre-empts an earlier non-symbol.
+  #[test]
+  fn only_the_first_bad_local_is_reported() {
+    assert_local_spec_message(
+      "Module[{3, x, x}, 3]",
+      "Module[{3, x, x}, 3]",
+      "Module::lvsym: Local variable specification {3, x, x} contains 3, \
+       which is not a symbol or an assignment to a symbol.",
+    );
+    assert_local_spec_message(
+      "Module[{x, x, 3}, 3]",
+      "Module[{x, x, 3}, 3]",
+      "Module::dup: Duplicate local variable x found in local variable \
+       specification {x, x, 3}.",
+    );
+  }
+
+  // An assignment whose left-hand side is not a symbol gets its own message.
+  #[test]
+  fn a_local_assignment_must_target_a_symbol() {
+    for (code, expected, message) in [
+      (
+        "Module[{x[1] = 3}, 4]",
+        "Module[{x[1] = 3}, 4]",
+        "Module::lvset: Local variable specification {x[1] = 3} contains \
+         x[1] = 3, which is an assignment to x[1]; only assignments to \
+         symbols are allowed.",
+      ),
+      (
+        "With[{3 = 4}, 5]",
+        "With[{3 = 4}, 5]",
+        "With::lvset: Local variable specification {3 = 4} contains 3 = 4, \
+         which is an assignment to 3; only assignments to symbols are allowed.",
+      ),
+      (
+        "f[x_] := With[{x = 1}, x^2]; f[7]",
+        "With[{7 = 1}, 7^2]",
+        "With::lvset: Local variable specification {7 = 1} contains 7 = 1, \
+         which is an assignment to 7; only assignments to symbols are allowed.",
+      ),
+      (
+        // `With` substitutes straight through `Block`'s binder name.
+        "With[{x = 5}, Block[{x = x + 1}, x^2]]",
+        "Block[{5 = 5 + 1}, 5^2]",
+        "Block::lvset: Local variable specification {5 = 5 + 1} contains \
+         5 = 5 + 1, which is an assignment to 5; only assignments to symbols \
+         are allowed.",
+      ),
+    ] {
+      assert_local_spec_message(code, expected, message);
+    }
+  }
+
+  // `With` needs a value for every local; anything that is not an assignment
+  // is reported as the variable that is missing one, number or not.
+  #[test]
+  fn every_with_local_needs_a_value() {
+    for (code, expected, message) in [
+      (
+        "With[{x}, x]",
+        "With[{x}, x]",
+        "With::lvws: Variable x in local variable specification {x} requires \
+         a value.",
+      ),
+      (
+        "With[{x = 1, 3}, 5]",
+        "With[{x = 1, 3}, 5]",
+        "With::lvws: Variable 3 in local variable specification {x = 1, 3} \
+         requires a value.",
+      ),
+      (
+        "With[{x + y}, 3]",
+        "With[{x + y}, 3]",
+        "With::lvws: Variable x + y in local variable specification {x + y} \
+         requires a value.",
+      ),
+    ] {
+      assert_local_spec_message(code, expected, message);
+    }
+  }
+
+  #[test]
+  fn a_local_may_not_be_declared_twice() {
+    for (code, expected, message) in [
+      (
+        "Module[{x, x}, 3]",
+        "Module[{x, x}, 3]",
+        "Module::dup: Duplicate local variable x found in local variable \
+         specification {x, x}.",
+      ),
+      (
+        "Block[{x, x}, 3]",
+        "Block[{x, x}, 3]",
+        "Block::dup: Duplicate local variable x found in local variable \
+         specification {x, x}.",
+      ),
+      (
+        "With[{x = 1, x = 2}, x]",
+        "With[{x = 1, x = 2}, x]",
+        "With::dup: Duplicate local variable x found in local variable \
+         specification {x = 1, x = 2}.",
+      ),
+    ] {
+      assert_local_spec_message(code, expected, message);
+    }
+  }
+
+  // `x := v` is a valid local specification; its right-hand side stays
+  // unevaluated until the body reads the variable.
+  #[test]
+  fn a_local_may_be_assigned_with_set_delayed() {
+    for code in [
+      "Module[{x := 1 + 1}, x]",
+      "Block[{x := 1 + 1}, x]",
+      "With[{x := 1 + 1}, x]",
+    ] {
+      clear_state();
+      assert_eq!(interpret(code).unwrap(), "2", "{code}");
+    }
+  }
+
+  // A shadowed local is empty of the enclosing scope: neither an iterator
+  // variable nor a substituted binding reaches into a nested binder.
+  #[test]
+  fn a_nested_binder_shadows_an_iterator_variable() {
+    clear_state();
+    assert_eq!(
+      interpret("Table[Hold[Module[{k}, k]], {k, 1, 2}]").unwrap(),
+      "{Hold[Module[{k}, k]], Hold[Module[{k}, k]]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Table[Hold[Function[k, k]], {k, 1, 2}]").unwrap(),
+      "{Hold[Function[k, k]], Hold[Function[k, k]]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Sum[Hold[Module[{k}, k]], {k, 1, 2}]").unwrap(),
+      "2*Hold[Module[{k}, k]]"
+    );
+    clear_state();
+    // The binder name is only a name — the initializer still sees the
+    // iterator's value.
+    assert_eq!(
+      interpret("Table[With[{k = k}, Hold[k]], {k, 1, 3}]").unwrap(),
+      "{Hold[1], Hold[2], Hold[3]}"
+    );
+  }
 }
 
 mod return_value {

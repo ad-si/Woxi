@@ -13763,8 +13763,13 @@ pub fn collect_identifier_names<S: std::hash::BuildHasher>(
 }
 
 /// Substitute a variable name with a value in an expression.
+///
+/// Capture-avoiding, like [`substitute_variables`] it delegates to: an inner
+/// `Function`/`With`/`Module` binding the same name shadows the substitution.
+/// That is what keeps an iterator variable out of a nested binder, e.g.
+/// `Table[Hold[Module[{k}, k]], {k, 1, 2}]` leaves both `k`s alone.
 pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
-  substitute_variable_impl(expr, var_name, value, false)
+  substitute_variables(expr, &[(var_name, value)])
 }
 
 /// Rename every occurrence of a symbol — including function-call heads,

@@ -11,6 +11,133 @@ fn non_list_local_spec(head: &str, args: &[Expr]) -> Expr {
   unevaluated(head, args)
 }
 
+/// One local of a scoping construct: the symbol it binds, its initializer
+/// (`None` for a bare `x`, which only `Module` and `Block` allow) and
+/// whether that initializer was delayed (`x := v`, which stays unevaluated).
+struct LocalVar {
+  name: String,
+  init: Option<Expr>,
+  delayed: bool,
+}
+
+/// A malformed entry in a local variable specification, in the vocabulary of
+/// Wolfram's messages.
+enum LocalSpecError {
+  /// `Module[{5}, …]` — neither a symbol nor an assignment to one.
+  NotSymbol(Expr),
+  /// `With[{x}, …]` — `With` gives every variable a value.
+  NeedsValue(Expr),
+  /// `Module[{x[1] = 3}, …]` — an assignment, but not to a symbol.
+  BadAssignment { item: Expr, target: Expr },
+  /// `Module[{x, x}, …]` — the same name twice.
+  Duplicate(String),
+}
+
+impl LocalSpecError {
+  /// Emit the message under `head` (`Module`, `Block` or `With`), quoting the
+  /// whole specification the way Wolfram does.
+  fn emit(&self, head: &str, spec: &Expr) {
+    let spec = expr_to_string(spec);
+    let body = match self {
+      Self::NotSymbol(item) => format!(
+        "lvsym: Local variable specification {spec} contains {}, which is \
+         not a symbol or an assignment to a symbol.",
+        expr_to_string(item)
+      ),
+      Self::NeedsValue(item) => format!(
+        "lvws: Variable {} in local variable specification {spec} requires \
+         a value.",
+        expr_to_string(item)
+      ),
+      Self::BadAssignment { item, target } => format!(
+        "lvset: Local variable specification {spec} contains {}, which is \
+         an assignment to {}; only assignments to symbols are allowed.",
+        expr_to_string(item),
+        expr_to_string(target)
+      ),
+      Self::Duplicate(name) => format!(
+        "dup: Duplicate local variable {name} found in local variable \
+         specification {spec}."
+      ),
+    };
+    crate::emit_message(&format!("{head}::{body}"));
+  }
+}
+
+/// Split `x = v` / `x := v` into target and value, whichever way the parser
+/// spelled the assignment.
+fn as_local_assignment(item: &Expr) -> Option<(&Expr, &Expr, bool)> {
+  match item {
+    Expr::FunctionCall { name, args }
+      if (name == "Set" || name == "SetDelayed") && args.len() == 2 =>
+    {
+      Some((&args[0], &args[1], name == "SetDelayed"))
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Some((pattern, replacement, false)),
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Some((pattern, replacement, true)),
+    _ => None,
+  }
+}
+
+/// Validate a local variable specification the way Wolfram does — left to
+/// right, reporting only the first offending entry. Every entry must be a
+/// symbol or an assignment to a symbol, no name may repeat, and when
+/// `needs_value` is set (`With`) a bare symbol is rejected too.
+fn parse_local_vars(
+  items: &[Expr],
+  needs_value: bool,
+) -> Result<Vec<LocalVar>, LocalSpecError> {
+  let mut vars: Vec<LocalVar> = Vec::new();
+  for item in items {
+    // `Expr::Raw` is unparsed fallback text ("x = 5") that substitution can
+    // leave behind; re-parse it rather than rejecting it.
+    let item = &match item {
+      Expr::Raw(s) => string_to_expr(s.trim()).unwrap_or_else(|_| item.clone()),
+      other => other.clone(),
+    };
+    let var = if let Some((target, value, delayed)) = as_local_assignment(item)
+    {
+      let Expr::Identifier(name) = target else {
+        return Err(LocalSpecError::BadAssignment {
+          item: item.clone(),
+          target: target.clone(),
+        });
+      };
+      LocalVar {
+        name: name.clone(),
+        init: Some(value.clone()),
+        delayed,
+      }
+    } else if let Expr::Identifier(name) = item {
+      if needs_value {
+        return Err(LocalSpecError::NeedsValue(item.clone()));
+      }
+      LocalVar {
+        name: name.clone(),
+        init: None,
+        delayed: false,
+      }
+    } else if needs_value {
+      // `With` reports every non-assignment as a missing value, even a
+      // number: `With[{3, x}, …]` says "Variable 3 … requires a value".
+      return Err(LocalSpecError::NeedsValue(item.clone()));
+    } else {
+      return Err(LocalSpecError::NotSymbol(item.clone()));
+    };
+    if vars.iter().any(|v| v.name == var.name) {
+      return Err(LocalSpecError::Duplicate(var.name));
+    }
+    vars.push(var);
+  }
+  Ok(vars)
+}
+
 /// AST-based Module implementation to avoid interpret() recursion
 pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -25,62 +152,13 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Parse variable declarations from the first argument (should be a List)
   let local_vars = match vars_expr {
-    Expr::List(items) => {
-      let mut vars = Vec::new();
-      for item in items {
-        match item {
-          // x = value (assignment via Rule syntax internally or via Set)
-          Expr::FunctionCall {
-            name,
-            args: set_args,
-          } if name == "Set" && set_args.len() == 2 => {
-            if let Expr::Identifier(var_name) = &set_args[0] {
-              vars.push((var_name.clone(), Some(set_args[1].clone())));
-            }
-          }
-          // x = value (parsed as Rule or identifier = expr)
-          Expr::Rule {
-            pattern,
-            replacement,
-          } => {
-            if let Expr::Identifier(var_name) = pattern.as_ref() {
-              vars.push((var_name.clone(), Some(replacement.as_ref().clone())));
-            }
-          }
-          // Just a variable name without initialization
-          Expr::Identifier(var_name) => {
-            vars.push((var_name.clone(), None));
-          }
-          // Try to extract from raw text (for cases like "x = 5")
-          Expr::Raw(s) => {
-            if let Some((name, init)) = s.split_once('=') {
-              let name = name.trim();
-              let init = init.trim();
-              if !name.is_empty() {
-                let init_expr = string_to_expr(init)?;
-                vars.push((name.to_string(), Some(init_expr)));
-              }
-            } else {
-              vars.push((s.trim().to_string(), None));
-            }
-          }
-          // BinaryOp with some assignment-like pattern (less common)
-          _ => {
-            // Try to convert to string and parse
-            let s = expr_to_string(item);
-            if let Some((name, init)) = s.split_once('=') {
-              let name = name.trim();
-              let init = init.trim();
-              if !name.is_empty() && !name.contains(' ') {
-                let init_expr = string_to_expr(init)?;
-                vars.push((name.to_string(), Some(init_expr)));
-              }
-            }
-          }
-        }
+    Expr::List(items) => match parse_local_vars(items, false) {
+      Ok(vars) => vars,
+      Err(err) => {
+        err.emit("Module", vars_expr);
+        return Ok(unevaluated("Module", args));
       }
-      vars
-    }
+    },
     _ => return Ok(non_list_local_spec("Module", args)),
   };
 
@@ -91,14 +169,18 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // and before any renaming — Module[{a = 1, b = a}, ...] takes the
   // OUTER a for b.
   let mut init_values: Vec<Option<Expr>> = Vec::new();
-  for (_, init_expr) in &local_vars {
-    init_values.push(match init_expr {
-      Some(expr) => Some(evaluate_expr_to_expr(expr)?),
-      None => None,
+  for var in &local_vars {
+    init_values.push(match (&var.init, var.delayed) {
+      // `Module[{x := f[]}, …]` keeps the right-hand side unevaluated, the
+      // way SetDelayed does; it is evaluated when the body reads `x`.
+      (Some(expr), false) => Some(evaluate_expr_to_expr(expr)?),
+      (Some(expr), true) => Some(expr.clone()),
+      (None, _) => None,
     });
   }
   let mut body_owned = body_expr.clone();
-  for ((var_name, _), init) in local_vars.iter().zip(init_values) {
+  for (var, init) in local_vars.iter().zip(init_values) {
+    let var_name = &var.name;
     let fresh = crate::functions::scoping::unique_symbol(var_name);
     body_owned = crate::syntax::rename_symbol(&body_owned, var_name, &fresh);
     if let Some(value) = init {
@@ -152,55 +234,30 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Parse variable declarations (same as Module)
   let local_vars = match vars_expr {
-    Expr::List(items) => {
-      let mut vars = Vec::new();
-      for item in items {
-        match item {
-          Expr::FunctionCall {
-            name,
-            args: set_args,
-          } if name == "Set" && set_args.len() == 2 => {
-            if let Expr::Identifier(var_name) = &set_args[0] {
-              vars.push((var_name.clone(), Some(set_args[1].clone())));
-            }
-          }
-          Expr::Rule {
-            pattern,
-            replacement,
-          } => {
-            if let Expr::Identifier(var_name) = pattern.as_ref() {
-              vars.push((var_name.clone(), Some(replacement.as_ref().clone())));
-            }
-          }
-          Expr::Identifier(var_name) => {
-            vars.push((var_name.clone(), None));
-          }
-          _ => {
-            let s = expr_to_string(item);
-            if let Some((name, init)) = s.split_once('=') {
-              let name = name.trim();
-              let init = init.trim();
-              if !name.is_empty() && !name.contains(' ') {
-                let init_expr = string_to_expr(init)?;
-                vars.push((name.to_string(), Some(init_expr)));
-              }
-            }
-          }
-        }
+    Expr::List(items) => match parse_local_vars(items, false) {
+      Ok(vars) => vars,
+      Err(err) => {
+        err.emit("Block", vars_expr);
+        return Ok(unevaluated("Block", args));
       }
-      vars
-    }
+    },
     _ => return Ok(non_list_local_spec("Block", args)),
   };
 
   // Save previous bindings and set up new ones
   let mut prev: Vec<(String, Option<StoredValue>)> = Vec::new();
 
-  for (var_name, init_expr) in &local_vars {
-    let pv = if let Some(expr) = init_expr {
+  for var in &local_vars {
+    let var_name = &var.name;
+    let pv = if let Some(expr) = &var.init {
       // Evaluate initializer with the *previous* binding still active (so
-      // `Block[{x = n+2, n}, ...]` sees the outer `n`).
-      let evaluated = evaluate_expr_to_expr(expr)?;
+      // `Block[{x = n+2, n}, ...]` sees the outer `n`). A delayed `x := v`
+      // keeps its right-hand side unevaluated.
+      let evaluated = if var.delayed {
+        expr.clone()
+      } else {
+        evaluate_expr_to_expr(expr)?
+      };
       ENV.with(|e| {
         e.borrow_mut()
           .insert(var_name.clone(), StoredValue::ExprVal(evaluated))
@@ -940,29 +997,23 @@ pub fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse variable declarations from the first argument (should be a List)
   let bindings: Vec<(String, Expr)> = match vars_expr {
     Expr::List(items) => {
-      let mut vars = Vec::new();
-      for item in items {
-        match item {
-          Expr::FunctionCall {
-            name,
-            args: set_args,
-          } if name == "Set" && set_args.len() == 2 => {
-            if let Expr::Identifier(var_name) = &set_args[0] {
-              let val = evaluate_expr_to_expr(&set_args[1])?;
-              vars.push((var_name.clone(), val));
-            }
-          }
-          Expr::Rule {
-            pattern,
-            replacement,
-          } => {
-            if let Expr::Identifier(var_name) = pattern.as_ref() {
-              let val = evaluate_expr_to_expr(replacement)?;
-              vars.push((var_name.clone(), val));
-            }
-          }
-          _ => {}
+      let locals = match parse_local_vars(items, true) {
+        Ok(vars) => vars,
+        Err(err) => {
+          err.emit("With", vars_expr);
+          return Ok(unevaluated("With", args));
         }
+      };
+      let mut vars = Vec::new();
+      for var in locals {
+        // `With[{x := v}, …]` substitutes `v` unevaluated.
+        let init = var.init.unwrap_or(Expr::Identifier("Null".to_string()));
+        let val = if var.delayed {
+          init
+        } else {
+          evaluate_expr_to_expr(&init)?
+        };
+        vars.push((var.name, val));
       }
       vars
     }
