@@ -9077,6 +9077,15 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           format!("<tspan style=\"letter-spacing:{pts:.2}px\"> </tspan>")
         }
 
+        // Framed[content, …] / Highlighted[content, …] set inline text —
+        // a `PlotLabel`/`AxesLabel` markup line has no room to draw the
+        // frame's border or highlight fill around it, so just typeset the
+        // content (matching `Tooltip`, whose hover-only chrome the same
+        // static context can't show either).
+        "Framed" | "Highlighted" if !args.is_empty() => {
+          expr_to_svg_markup(&args[0])
+        }
+
         // Row[{a, b, …}] concatenates its parts; Row[{…}, sep] joins
         // them with the separator.
         "Row" if !args.is_empty() => match &args[0] {

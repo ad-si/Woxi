@@ -909,6 +909,32 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plot3d_framed_plotlabel_typesets_content() {
+    // Regression: Plot3D[…, PlotLabel -> Style[Framed[TraditionalForm[expr]],
+    // …]] (the pattern the "Complex Exponential and Logarithm Functions"
+    // Demonstration's Manipulate uses) printed the literal `Framed[…]`
+    // wrapper text instead of typesetting the boxed content. SVG text
+    // markup has no room to draw the frame's border, so the fix typesets
+    // the content plain rather than leaking the head.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, \
+       PlotLabel -> Style[Framed[TraditionalForm[Re[Exp[z]]]], Blue]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Plot3D should produce a graphics SVG");
+    assert!(
+      !svg.contains("Framed["),
+      "Framed PlotLabel must not leak its literal head:\n{svg}"
+    );
+    assert!(
+      svg.contains("Re(") || svg.contains("Re["),
+      "Framed PlotLabel should still typeset its content:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_column_with_nested_tableform_renders_as_graphics() {
     // In visual mode (playground / woxi-studio), a Column containing a
     // TableForm must pre-render the table as a sub-SVG instead of falling

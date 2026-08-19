@@ -10017,6 +10017,35 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// Regression: `ContourPlot` used to ignore `PlotLabel` entirely (no
+    /// text drawn, no headroom reserved), unlike `Plot`/`Plot3D`/`PieChart`.
+    /// A `Framed[…]` label must also typeset its content rather than
+    /// printing the literal `Framed[…]` wrapper — SVG text markup has no
+    /// room to draw the frame's border, so it typesets the content plain.
+    #[test]
+    fn contour_plot_honors_plot_label() {
+      let svg = export_svg(
+        "ContourPlot[x + y, {x, 0, 4}, {y, 0, 4}, PlotLabel -> \"caption\"]",
+      );
+      assert!(
+        svg.contains(">caption</text>"),
+        "missing PlotLabel in:\n{svg}"
+      );
+
+      let framed_svg = export_svg(
+        "ContourPlot[x + y, {x, 0, 4}, {y, 0, 4}, \
+         PlotLabel -> Style[Framed[\"boxed\"], Blue]]",
+      );
+      assert!(
+        framed_svg.contains(">boxed<"),
+        "Framed PlotLabel content missing:\n{framed_svg}"
+      );
+      assert!(
+        !framed_svg.contains("Framed["),
+        "Framed PlotLabel must not leak its literal head:\n{framed_svg}"
+      );
+    }
+
     /// A `DensityPlot` takes the same labels and epilog — the option
     /// parsing is shared across the whole density/contour family.
     #[test]

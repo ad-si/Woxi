@@ -4253,6 +4253,15 @@ pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(f) => return Ok(Expr::Real(f.sinh())),
     _ => {}
   }
+  // Complex float: sinh(a+bi) = sinh(a)*cos(b) + i*cosh(a)*sin(b)
+  if contains_float(&args[0])
+    && let Some((re, im)) = try_extract_complex_float(&args[0])
+    && im != 0.0
+  {
+    let sinh_re = re.sinh() * im.cos();
+    let cosh_re = re.cosh() * im.sin();
+    return build_complex_float_result(sinh_re, cosh_re);
+  }
   // Sinh[Log[u]] = (u^2 - 1)/(2 u)
   if let Some(res) = hyperbolic_of_log("Sinh", &args[0]) {
     return res;
@@ -4307,6 +4316,15 @@ pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0) => return Ok(Expr::Integer(1)),
     Expr::Real(f) => return Ok(Expr::Real(f.cosh())),
     _ => {}
+  }
+  // Complex float: cosh(a+bi) = cosh(a)*cos(b) + i*sinh(a)*sin(b)
+  if contains_float(&args[0])
+    && let Some((re, im)) = try_extract_complex_float(&args[0])
+    && im != 0.0
+  {
+    let cosh_re = re.cosh() * im.cos();
+    let sinh_re = re.sinh() * im.sin();
+    return build_complex_float_result(cosh_re, sinh_re);
   }
   // Cosh[Log[u]] = (u^2 + 1)/(2 u)
   if let Some(res) = hyperbolic_of_log("Cosh", &args[0]) {
