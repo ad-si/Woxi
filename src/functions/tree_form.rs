@@ -220,6 +220,27 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let font_size_int = (font_size.round() as i128).max(8);
 
+  // `VertexLabeling -> False` displays each vertex as a plain point instead
+  // of a labeled box; any other setting (including the default) keeps the
+  // labeled-box rendering.
+  let vertex_labeling = args[1..]
+    .iter()
+    .find_map(|a| match a {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "VertexLabeling") =>
+      {
+        match replacement.as_ref() {
+          Expr::Identifier(s) if s == "False" => Some(false),
+          Expr::Identifier(s) if s == "True" => Some(true),
+          _ => None,
+        }
+      }
+      _ => None,
+    })
+    .unwrap_or(true);
+
   // Generate Graphics primitives: Lines for edges, then boxes and text
   let mut primitives: Vec<Expr> = Vec::new();
 
@@ -247,89 +268,110 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // First pass: rectangular boxes for every node (drawn on top of edges)
-  for node in &layout {
-    let is_leaf = node.children_indices.is_empty();
-    let hw = box_half_width(&node.label);
-    let hh = box_half_height;
+  if vertex_labeling {
+    // First pass: rectangular boxes for every node (drawn on top of edges)
+    for node in &layout {
+      let is_leaf = node.children_indices.is_empty();
+      let hw = box_half_width(&node.label);
+      let hh = box_half_height;
 
-    if is_leaf {
-      // Leaf nodes: white fill, black border
-      primitives.push(call(
-        "EdgeForm",
-        vec![call(
+      if is_leaf {
+        // Leaf nodes: white fill, black border
+        primitives.push(call(
+          "EdgeForm",
+          vec![call(
+            "RGBColor",
+            vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+          )],
+        ));
+        primitives.push(call(
+          "RGBColor",
+          vec![Expr::Real(1.0), Expr::Real(1.0), Expr::Real(1.0)],
+        ));
+      } else {
+        // Internal nodes: light orange fill, orange border
+        primitives.push(call(
+          "EdgeForm",
+          vec![call(
+            "RGBColor",
+            vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)],
+          )],
+        ));
+        primitives.push(call(
+          "RGBColor",
+          vec![Expr::Real(1.0), Expr::Real(0.95), Expr::Real(0.85)],
+        ));
+      }
+
+      primitives.push(Expr::FunctionCall {
+        name: "Rectangle".to_string(),
+        args: vec![
+          Expr::List(
+            vec![Expr::Real(node.x - hw), Expr::Real(node.y - hh)].into(),
+          ),
+          Expr::List(
+            vec![Expr::Real(node.x + hw), Expr::Real(node.y + hh)].into(),
+          ),
+        ]
+        .into(),
+      });
+    }
+
+    // Second pass: text labels for all nodes (on top of boxes)
+    primitives.push(call0("EdgeForm"));
+
+    for node in &layout {
+      let is_leaf = node.children_indices.is_empty();
+
+      if is_leaf {
+        // Leaf nodes: black text
+        primitives.push(call(
           "RGBColor",
           vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
-        )],
-      ));
-      primitives.push(call(
-        "RGBColor",
-        vec![Expr::Real(1.0), Expr::Real(1.0), Expr::Real(1.0)],
-      ));
-    } else {
-      // Internal nodes: light orange fill, orange border
-      primitives.push(call(
-        "EdgeForm",
-        vec![call(
+        ));
+      } else {
+        // Internal nodes: dark orange text
+        primitives.push(call(
           "RGBColor",
           vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)],
-        )],
-      ));
-      primitives.push(call(
-        "RGBColor",
-        vec![Expr::Real(1.0), Expr::Real(0.95), Expr::Real(0.85)],
-      ));
+        ));
+      }
+
+      primitives.push(Expr::FunctionCall {
+        name: "Text".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Style".to_string(),
+            args: vec![
+              Expr::String(node.label.clone()),
+              Expr::Integer(font_size_int),
+            ]
+            .into(),
+          },
+          Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
+        ]
+        .into(),
+      });
     }
-
-    primitives.push(Expr::FunctionCall {
-      name: "Rectangle".to_string(),
-      args: vec![
-        Expr::List(
-          vec![Expr::Real(node.x - hw), Expr::Real(node.y - hh)].into(),
-        ),
-        Expr::List(
-          vec![Expr::Real(node.x + hw), Expr::Real(node.y + hh)].into(),
-        ),
-      ]
-      .into(),
-    });
-  }
-
-  // Second pass: text labels for all nodes (on top of boxes)
-  primitives.push(call0("EdgeForm"));
-
-  for node in &layout {
-    let is_leaf = node.children_indices.is_empty();
-
-    if is_leaf {
-      // Leaf nodes: black text
-      primitives.push(call(
-        "RGBColor",
-        vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
-      ));
-    } else {
-      // Internal nodes: dark orange text
-      primitives.push(call(
-        "RGBColor",
-        vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)],
-      ));
+  } else {
+    // VertexLabeling -> False: display each vertex as a plain black point
+    // instead of a labeled box.
+    let dot_radius = box_half_height * 0.35;
+    primitives.push(call0("EdgeForm"));
+    primitives.push(call(
+      "RGBColor",
+      vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+    ));
+    for node in &layout {
+      primitives.push(Expr::FunctionCall {
+        name: "Disk".to_string(),
+        args: vec![
+          Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
+          Expr::Real(dot_radius),
+        ]
+        .into(),
+      });
     }
-
-    primitives.push(Expr::FunctionCall {
-      name: "Text".to_string(),
-      args: vec![
-        Expr::FunctionCall {
-          name: "Style".to_string(),
-          args: vec![
-            Expr::String(node.label.clone()),
-            Expr::Integer(font_size_int),
-          ]
-          .into(),
-        },
-        Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
-      ]
-      .into(),
-    });
   }
 
   // Build Graphics[{primitives...}, ImageSize -> width]

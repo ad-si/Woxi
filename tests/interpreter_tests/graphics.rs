@@ -12822,6 +12822,63 @@ mod tree_form_graphics {
     assert!(result.contains("Plus"), "Expected Plus node in tree");
     assert!(result.contains("Power"), "Expected Power node in tree");
   }
+
+  #[test]
+  fn tree_form_vertex_labeling_true_shows_node_labels() {
+    // VertexLabeling -> True (also the default) keeps the labeled-box
+    // rendering: every node's head/atom text appears in the SVG.
+    clear_state();
+    let result = interpret(
+      "ExportString[TreeForm[a + b*c, VertexLabeling -> True], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(result.contains("<svg"), "Expected SVG output");
+    assert!(result.contains("Plus"), "Expected Plus node label in tree");
+    assert!(
+      result.contains("Times"),
+      "Expected Times node label in tree"
+    );
+  }
+
+  #[test]
+  fn tree_form_vertex_labeling_false_hides_node_labels() {
+    // VertexLabeling -> False displays each vertex as a plain point instead
+    // of a labeled box, so none of the node text should appear.
+    clear_state();
+    let result = interpret(
+      "ExportString[TreeForm[a + b*c, VertexLabeling -> False], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(result.contains("<svg"), "Expected SVG output");
+    assert!(
+      !result.contains("Plus"),
+      "VertexLabeling -> False should not show the Plus node label"
+    );
+    assert!(
+      !result.contains("Times"),
+      "VertexLabeling -> False should not show the Times node label"
+    );
+  }
+
+  #[test]
+  fn tree_form_vertex_labeling_false_still_renders_edges() {
+    // Hiding vertex labels should not remove the tree's edges: the SVG must
+    // still contain line segments connecting the (now unlabeled) nodes.
+    clear_state();
+    let result = interpret(
+      "ExportString[TreeForm[f[g[x], h[y]], VertexLabeling -> False], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(result.contains("<svg"), "Expected SVG output");
+    assert!(
+      result.contains("<polyline") || result.contains("<line"),
+      "Expected edge lines connecting the tree nodes"
+    );
+    assert!(
+      result.contains("<ellipse") || result.contains("<circle"),
+      "Expected a plain point/dot for each vertex"
+    );
+  }
 }
 
 mod graphics_row {
