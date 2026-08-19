@@ -3265,17 +3265,17 @@ fn rgb_to_cmyk(r: f64, g: f64, b: f64) -> (f64, f64, f64, f64) {
 /// The static name a converted image records as its colour space, or `None`
 /// for one that is not named.
 fn color_space_tag(space: &str) -> Option<&'static str> {
-  match space {
-    "Grayscale" => Some("Grayscale"),
-    "RGB" => Some("RGB"),
-    "CMYK" => Some("CMYK"),
-    "HSB" | "Hue" => Some("HSB"),
-    "LAB" => Some("LAB"),
-    "LCH" => Some("LCH"),
-    "LUV" => Some("LUV"),
-    "XYZ" => Some("XYZ"),
-    _ => None,
-  }
+  Some(match space {
+    "Grayscale" => "Grayscale",
+    "RGB" => "RGB",
+    "CMYK" => "CMYK",
+    "HSB" | "Hue" => "HSB",
+    "LAB" => "LAB",
+    "LCH" => "LCH",
+    "LUV" => "LUV",
+    "XYZ" => "XYZ",
+    _ => return None,
+  })
 }
 
 /// The same image, recorded as being in `tag`'s colour space.

@@ -3311,46 +3311,46 @@ fn string_pattern_to_regex_inner(
   expr: &Expr,
   seen: &mut PatternState,
 ) -> Option<String> {
-  match expr {
+  Some(match expr {
     // A string literal nested inside a compound pattern matches literally —
     // the `*`/`@` metacharacter shorthand only applies to a bare top-level
     // string (handled in `string_pattern_to_regex_with_state`). So e.g.
     // `"/*" ~~ Shortest[___] ~~ "*/"` matches a literal `/*…*/`.
-    Expr::String(s) => Some(regex::escape(s)),
+    Expr::String(s) => regex::escape(s),
 
     // Character class patterns and blank patterns
     Expr::Identifier(name) => match name.as_str() {
-      "DigitCharacter" => Some("[0-9]".to_string()),
-      "LetterCharacter" => Some("[a-zA-Z\\p{L}]".to_string()),
-      "WhitespaceCharacter" => Some("\\s".to_string()),
-      "Whitespace" => Some("\\s+".to_string()),
+      "DigitCharacter" => "[0-9]".to_string(),
+      "LetterCharacter" => "[a-zA-Z\\p{L}]".to_string(),
+      "WhitespaceCharacter" => "\\s".to_string(),
+      "Whitespace" => "\\s+".to_string(),
       // Wolfram's `WordCharacter` matches only ASCII letters and digits
       // (verified by `StringMatchQ["ö", WordCharacter]` → False), so don't
       // include the broader `\p{L}` Unicode-letter class here.
-      "WordCharacter" => Some("[a-zA-Z0-9]".to_string()),
+      "WordCharacter" => "[a-zA-Z0-9]".to_string(),
       // PunctuationCharacter matches any Unicode punctuation character
       // (general category P) plus the ASCII symbol characters
       // `$ + < = > ^ ` | ~` (which Unicode classifies as symbols, not
       // punctuation, but Wolfram treats as punctuation). Verified against
       // wolframscript across the BMP.
-      "PunctuationCharacter" => Some("(?:\\p{P}|[$+<=>^`|~])".to_string()),
-      "HexadecimalCharacter" => Some("[0-9a-fA-F]".to_string()),
+      "PunctuationCharacter" => "(?:\\p{P}|[$+<=>^`|~])".to_string(),
+      "HexadecimalCharacter" => "[0-9a-fA-F]".to_string(),
       // NumberString matches an optional leading sign followed by digits
       // with an optional decimal point, or a leading-decimal form like `.5`
       // (no exponent — Wolfram treats `1e5` as two number strings).
-      "NumberString" => Some("[+-]?(?:[0-9]+\\.?[0-9]*|\\.[0-9]+)".to_string()),
-      "_" => Some(".".to_string()), // Blank: any single character
-      "__" => Some(".+".to_string()), // BlankSequence: one or more characters
-      "___" => Some(".*".to_string()), // BlankNullSequence: zero or more characters
+      "NumberString" => "[+-]?(?:[0-9]+\\.?[0-9]*|\\.[0-9]+)".to_string(),
+      "_" => ".".to_string(), // Blank: any single character
+      "__" => ".+".to_string(), // BlankSequence: one or more characters
+      "___" => ".*".to_string(), // BlankNullSequence: zero or more characters
       // Position anchors — StringMatchQ already anchors at both ends, so these
       // collapse to empty matches there, but inside patterns used with
       // StringCases/StringReplace they bind to regex anchors.
-      "StartOfString" => Some("\\A".to_string()),
-      "EndOfString" => Some("\\z".to_string()),
-      "StartOfLine" => Some("(?m:^)".to_string()),
-      "EndOfLine" => Some("(?m:$)".to_string()),
-      "WordBoundary" => Some("\\b".to_string()),
-      _ => None,
+      "StartOfString" => "\\A".to_string(),
+      "EndOfString" => "\\z".to_string(),
+      "StartOfLine" => "(?m:^)".to_string(),
+      "EndOfLine" => "(?m:$)".to_string(),
+      "WordBoundary" => "\\b".to_string(),
+      _ => return None,
     },
 
     // Blank/BlankSequence/BlankNullSequence as Pattern AST nodes
@@ -3366,9 +3366,9 @@ fn string_pattern_to_regex_inner(
         _ => return None,
       };
       if name.is_empty() {
-        Some(inner.to_string())
+        inner.to_string()
       } else {
-        Some(maybe_named_group(name, inner, seen))
+        maybe_named_group(name, inner, seen)
       }
     }
 
@@ -3399,9 +3399,9 @@ fn string_pattern_to_regex_inner(
         _ => return None,
       };
       if name.is_empty() {
-        Some(inner)
+        inner
       } else {
-        Some(maybe_named_group(name, &inner, seen))
+        maybe_named_group(name, &inner, seen)
       }
     }
 
@@ -3413,9 +3413,9 @@ fn string_pattern_to_regex_inner(
     {
       let inner = string_pattern_to_regex_inner(&args[1], seen)?;
       if let Expr::Identifier(var) = &args[0] {
-        Some(maybe_named_group(var, &inner, seen))
+        maybe_named_group(var, &inner, seen)
       } else {
-        Some(format!("(?:{inner})"))
+        format!("(?:{inner})")
       }
     }
 
@@ -3427,7 +3427,7 @@ fn string_pattern_to_regex_inner(
     } => {
       let l = string_pattern_to_regex_inner(left, seen)?;
       let r = string_pattern_to_regex_inner(right, seen)?;
-      Some(format!("(?:{l}|{r})"))
+      format!("(?:{l}|{r})")
     }
 
     // Alternatives[pat1, pat2, ...] = pat1 | pat2 | ...
@@ -3438,7 +3438,7 @@ fn string_pattern_to_regex_inner(
         .iter()
         .map(|a| string_pattern_to_regex_inner(a, seen))
         .collect();
-      parts.map(|ps| format!("(?:{})", ps.join("|")))
+      format!("(?:{})", parts?.join("|"))
     }
 
     // A list {pat1, pat2, ...} in a string-pattern context is treated as
@@ -3448,13 +3448,13 @@ fn string_pattern_to_regex_inner(
         .iter()
         .map(|a| string_pattern_to_regex_inner(a, seen))
         .collect();
-      parts.map(|ps| format!("(?:{})", ps.join("|")))
+      format!("(?:{})", parts?.join("|"))
     }
 
     // DatePattern[{elements…}] / DatePattern[{…}, sep] — date fields with
     // separators.
     Expr::FunctionCall { name, args } if name == "DatePattern" => {
-      date_pattern_to_regex(args, seen)
+      date_pattern_to_regex(args, seen)?
     }
 
     // StringExpression[pat1, pat2, ...] = pat1 ~~ pat2 ~~ ...
@@ -3468,7 +3468,7 @@ fn string_pattern_to_regex_inner(
         .iter()
         .map(|a| string_pattern_to_regex_inner(a, seen))
         .collect();
-      parts.map(|ps| ps.join(""))
+      parts?.join("")
     }
 
     // Repeated[pat] = pat.. (one or more)
@@ -3515,10 +3515,10 @@ fn string_pattern_to_regex_inner(
         };
         format!("(?:{base}){quantifier}")
       };
-      Some(match capture_name {
+      match capture_name {
         Some(var) => maybe_named_group(&var, &body, seen),
         None => body,
-      })
+      }
     }
 
     // RepeatedNull[pat] = pat... (zero or more)
@@ -3540,10 +3540,10 @@ fn string_pattern_to_regex_inner(
       };
       let base = string_pattern_to_regex_inner(inner_pat, seen)?;
       let body = format!("(?:{base})*");
-      Some(match capture_name {
+      match capture_name {
         Some(var) => maybe_named_group(&var, &body, seen),
         None => body,
-      })
+      }
     }
 
     // RegularExpression["pattern"] - use the regex directly
@@ -3551,9 +3551,9 @@ fn string_pattern_to_regex_inner(
       if name == "RegularExpression" && args.len() == 1 =>
     {
       if let Expr::String(re_str) = &args[0] {
-        Some(re_str.clone())
+        re_str.clone()
       } else {
-        None
+        return None;
       }
     }
 
@@ -3570,9 +3570,9 @@ fn string_pattern_to_regex_inner(
         // longer match where both captures agree. Skip the non-greedy
         // rewrite here — the equality constraint already pins down the
         // unique valid match length.
-        Some(inner)
+        inner
       } else {
-        Some(make_non_greedy(&inner))
+        make_non_greedy(&inner)
       }
     }
 
@@ -3580,7 +3580,7 @@ fn string_pattern_to_regex_inner(
     Expr::FunctionCall { name, args }
       if name == "Longest" && args.len() == 1 =>
     {
-      string_pattern_to_regex_inner(&args[0], seen)
+      string_pattern_to_regex_inner(&args[0], seen)?
     }
 
     // Except[pattern] — negate a single-character class. Only meaningful
@@ -3609,7 +3609,7 @@ fn string_pattern_to_regex_inner(
         return Some(format!("[^{inner}]"));
       }
       // Otherwise fall back to a regex negative lookahead + any char.
-      Some(format!("(?:(?!{inner}).)"))
+      format!("(?:(?!{inner}).)")
     }
 
     // Except[c, base] — match `base` but not `c`. The Rust `regex` crate
@@ -3622,11 +3622,11 @@ fn string_pattern_to_regex_inner(
     {
       let excluded = string_pattern_to_regex_inner(&args[0], seen)?;
       let base = string_pattern_to_regex_inner(&args[1], seen)?;
-      char_class_difference(&excluded, &base)
+      char_class_difference(&excluded, &base)?
     }
 
-    _ => None,
-  }
+    _ => return None,
+  })
 }
 
 /// StringCases[s, patt] - find all substrings matching pattern
