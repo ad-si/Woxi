@@ -5230,13 +5230,6 @@ pub fn dispatch_list_operations(
     "Once" if args.len() == 1 || args.len() == 2 => {
       return Some(Ok(args[0].clone()));
     }
-    // NCache[expr, value] tags `expr` with a precomputed numeric
-    // approximation `value` (the front end uses this to redisplay sliders
-    // etc. without renumericizing). It evaluates to the exact expression;
-    // the cached approximation is discarded.
-    "NCache" if args.len() == 2 => {
-      return Some(Ok(args[0].clone()));
-    }
     // Composition[] -> Identity
     "Composition" if args.is_empty() => {
       return Some(Ok(Expr::Identifier("Identity".to_string())));

@@ -842,6 +842,29 @@ function main() {
     // coordinate preservation are implementation-specific; the numeric Annulus
     // solver is unimplemented.
     /\bFindShortestCurve\[/,
+
+    // Legacy packages Woxi implements directly under their qualified names
+    // (it has no package system for `Needs` to load into), so wolframscript
+    // leaves them unevaluated unless the package happens to be loaded — the
+    // same situation as the VectorAnalysis entries above.
+    /\bCombinatorica`/,
+    /\bPolyhedronOperations`/,
+
+    // Ephemeris positions: Woxi computes them from its own bundled VSOP/ELP
+    // truncations, wolframscript from its full series, so the two agree to
+    // ~1e-4 degrees rather than exactly.
+    /\b(SunPosition|MoonPosition|MoonPhaseDate|SiderealTime)\[/,
+
+    // ShortTimeFourier: Woxi partitions with a different default offset and
+    // names the partition properties differently ("WindowSize"/"Offset" vs
+    // wolframscript's "PartitionSize"/"PartitionOffset"), so neither the
+    // frame count nor the property vocabulary lines up.
+    /\bShortTimeFourier\[/,
+
+    // GeoRegionValuePlot: same family as the Head[GeoGraphics] entry — Woxi
+    // returns bare Graphics with the colour scale drawn into the picture,
+    // wolframscript a Legended[GeoGraphics[…], Placed[BarLegend[…], …]].
+    /\bGeoRegionValuePlot\[/,
   ];
 
   // Specific expressions where Woxi is more accurate than Wolfram.
@@ -1763,6 +1786,96 @@ function main() {
     "ToBoxes[TraditionalForm[LegendreP[n, x]]]",
     "ToBoxes[TraditionalForm[LegendreP[n, m, x]]]",
     "ToBoxes[TraditionalForm[Row[{2, x, t}]]]",
+
+    // ── Aug 2026 batch ───────────────────────────────────────────────────
+    // Which solution of a system comes first, and in which order its rules
+    // are written, follows each engine's own elimination order. Same
+    // solutions, different sequence.
+    "Solve[{p*(1 - p/100 - 3/500*q) == 0, q*(1 - q/100 - 1/200*p) == 0}, {p, q}]",
+    "Solve[{0.5*p*(1 - p/100 - 0.6*q/100) == 0, 0.5*q*(1 - q/100 - 0.5*p/100) == 0}, {p, q}, Reals]",
+    "Solve[{yy^2 == 20 xx, {xx, yy} == t*{0.6, 0.8} + {5, 0}}, {t, xx, yy}]",
+    "NSolve[y == -0.8090169943749475 && (x - 0.7694208842938133)^2 + (y - (-0.25))^2 == 1.090330521158122^2, {x, y}]",
+
+    // Arbitrary-precision Root: both engines print more digits than were
+    // asked for, and past digit ~17 they are each other's padding. Woxi's
+    // continuation is the correct one (checked against the plastic constant
+    // and the quartic's root to 40 digits).
+    "N[Root[#^3 - # - 1 &, 1], 10]",
+    "N[Root[#^3 - # - 1 &, 1], 30]",
+    "N[Root[#^4 - # - 1 &, 1], 15]",
+
+    // Euler's sum-of-powers conjecture needs 27^5+84^5+110^5+133^5 == 144^5;
+    // wolframscript's Diophantine machinery finds it, Woxi's bounded search
+    // does not reach that far and stays unevaluated.
+    "FindInstance[x0^5 + x1^5 + x2^5 + x3^5 == y^5 && x0 > 0 && x1 > 0 && x2 > 0 && x3 > 0, {x0, x1, x2, x3, y}, Integers]",
+
+    // Unprotect[x] on a cold kernel is {} in both engines; inside a verify
+    // batch an earlier Protect[x] has already run, so wolframscript answers
+    // {"x"}. No stable reference value.
+    "Unprotect[x]",
+
+    // NDSolve's InterpolatingFunction grid: Woxi integrates on its nominal
+    // 1000-step grid, wolframscript on its own adaptive one, so the number
+    // of stored samples differs (13 vs 1001). Same solution, sampled
+    // differently — the NDSolve tests that *evaluate* the result conform.
+    "s = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}]; Length[(y /. s[[1]])[[2]]]",
+
+    // A *list* of Graphics prints as `-Graphics-` placeholders in Woxi
+    // (the RENDERED_PLACEHOLDERS filter only catches a bare one).
+    "ArrayPlot /@ CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, {1, 1}}, {{{1}}, 0}, {{10, 30, 10}}]",
+
+    // MidDate on sub-second instants: Woxi carries the instant as one f64
+    // count of seconds since the epoch, whose resolution near 1.7e9 is
+    // ~2.4e-7 s, so the mean of fractional seconds differs in the 8th
+    // decimal. wolframscript averages exactly.
+    "MidDate[{DateObject[{2024, 12, 30, 18, 1, 56.77401781082153}], DateObject[{2024, 4, 8, 12, 54, 47.175180435180664}], DateObject[{2024, 8, 13, 22, 45, 35.52135992050171}]}]",
+
+    // Woxi bundles its own NetworkGraph data and exposes properties
+    // wolframscript's catalogue does not have ("VertexList", "EdgeRules",
+    // "AdjacencyMatrix"). Deliberate: the catalogue is Wolfram's.
+    'ExampleData[{"NetworkGraph", "ZacharyKarateClub"}, "VertexList"][[1 ;; 3]]',
+    'ExampleData[{"NetworkGraph", "LesMiserables"}, "VertexList"][[1 ;; 2]]',
+
+    // TriangleCenter of a triangle embedded in 3D: wolframscript only
+    // handles the 2D case and stays unevaluated.
+    'TriangleCenter[Triangle[{{0, 0, 0}, {4, 0, 0}, {0, 3, 0}}], "Circumcenter"]',
+
+    // Last-ULP float differences: a polyline length summed in a different
+    // order, and two image filters wolframscript accumulates in Real32
+    // where Woxi accumulates in f64 before snapping.
+    "ShortestCurveDistance[Line[{{1, 0}, {2, 1}, {3, 0}, {4, 1}}], {1, 0}, {3, 0}]",
+    "ImageData[RecurrenceFilter[{{1, -0.5}, {1}}, Image[{{0.1, 0.5, 0.9}, {0.2, 0.4, 0.6}}]]]",
+    "ImageData[Sharpen[Image[{{0., 0., 0.}, {0., 1., 0.}, {0., 0., 0.}}], {0, 1}]]",
+
+    // The InputStream counter, same story as the ReadString entry above.
+    'StringToStream["abc"]',
+
+    // InputForm-only bracketing: as a *string* wolframscript brackets a
+    // PatternTest's list left side (`({1, 2})?f`), while the same
+    // expression printed at top level is `{1, 2}?f`, which is what Woxi
+    // returns. Ditto a Graph's options, which InputForm wraps in a List.
+    "Hold[{1, 2}?f]",
+    'Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 1]}, VertexLabels -> {1 -> "one"}]',
+
+    // Plot internals: Woxi builds its plots with its own primitive layout
+    // (see the three-renderers note), so the sampling grid, the wrapper
+    // heads (GraphicsComplex / Annotation / Legended) and where a style
+    // directive sits inside the returned expression all differ, even though
+    // the picture and the public options agree.
+    "Length[SphericalPlot3D[1, {t, 0, Pi/3}, {p, 0, Pi/3}, PlotPoints -> 2][[1, 1]]]",
+    "Min[SphericalPlot3D[1, {t, 0, Pi}, {p, 0, 2 Pi}, RegionFunction -> ({#1, #2, #3} . {0, 0, 1} > 0 &)][[1, 1]][[All, 3]]] > -1/1000",
+    'Cases[SphericalPlot3D[1, {t, 0, Pi/2}, {p, 0, Pi}, BoundaryStyle -> Black][[1, 2]], _Line, Infinity] =!= {}',
+    "Length[Cases[ListVectorPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}}][[1]], _Line | _Arrow, Infinity]] > 0",
+    "With[{prims = (ContourPlot[x == y, {x, -3, 3}, {y, -3, 3}, ContourStyle -> {Pink}] /. Tooltip[q_, ___] :> q)[[1]]}, {prims[[1]], Head[prims[[2]]]}]",
+    "p = ParametricPlot[{Sin[t], Cos[t]}, {t, 0, 3}][[1]]; {Head[p], Head[p[[1, 2]]]}",
+    "Head[First[RevolutionPlot3D[{Cos[t], 1 + Sin[t]}, {t, -Pi/2, 0}, Mesh -> None]]]",
+    "First[RevolutionPlot3D[{Cos[t], 1 + Sin[t]}, {t, -Pi/2, 0}, Mesh -> None, PlotStyle -> Opacity[0.2]]][[2, 1]]",
+
+    // Manipulate's Initialization: Woxi has no DynamicModule to scope it
+    // to, and its controls re-resolve the body on every frame, so the
+    // definitions have to stay in the global scope after the Manipulate
+    // returns. wolframscript keeps them inside the module.
+    "Manipulate[myhelper[a], {a, 0, 10}, Initialization :> (myhelper[x_] := x^2 + 1)]; myhelper[3]",
   ]);
 
   /** Names whose meaning depends on where one input unit ends and the next

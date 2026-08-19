@@ -19949,10 +19949,35 @@ fn unwrap_dynamic_choices(expr: &Expr) -> &Expr {
 /// names the Manipulate's other control variables, so a choice list built
 /// from one of them can be marked for live re-resolution; pass an empty
 /// slice for a standalone `Control[…]`, which has no siblings.
+/// Drop every `NCache[exact, approx]` wrapper, keeping the exact value.
+///
+/// `NCache` is inert in Wolfram — it is how the front end remembers a
+/// numeric approximation of an exact slider bound — but the control parser
+/// wants plain numbers, and a Demonstration saved from the front end writes
+/// its bounds as `{u, NCache[Pi/4, 0.785…], 1}`.
+fn strip_ncache(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "NCache" && args.len() == 2 =>
+    {
+      strip_ncache(&args[0])
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(strip_ncache).collect::<Vec<_>>().into(),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(strip_ncache).collect::<Vec<_>>().into())
+    }
+    other => other.clone(),
+  }
+}
+
 fn parse_manipulate_control(
   spec: &Expr,
   siblings: &[String],
 ) -> Option<ParsedControl> {
+  let spec = &strip_ncache(spec);
   let Expr::List(items) = spec else { return None };
   if items.is_empty() {
     return None;

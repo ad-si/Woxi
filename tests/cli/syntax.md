@@ -306,17 +306,36 @@ $ wo 'f[x_ : 2] := x^2; {f[3], f[]}'
 {9, 4}
 ```
 
-The default may be written on any pattern, not just a named blank — on a
-pattern test, or on a whole alternation (`|` binds tighter than `:`):
+The default may be written on any pattern, not just a named blank. Naming
+the pattern first (`x : … : 2`) makes the colon close the whole named
+pattern, so a pattern test or an alternation gets the default:
 
 ```scrut
-$ wo 'f[x_?NumericQ : 2] := x^2; {f[3], f[], f[a]}'
+$ wo 'f[x : x_?NumericQ : 2] := x^2; {f[3], f[], f[a]}'
 {9, 4, f[a]}
 ```
 
 ```scrut
 $ wo 'f[x : _Symbol | _Integer : 2] := x^2; {f[3], f[a], f[]}'
 {9, a^2, 4}
+```
+
+Without that leading name the colon binds tightly to the term written in
+front of it, which is rarely what you want: in `_Symbol | _Integer : 2` the
+default lands on `_Integer` alone, and an `Optional` buried inside an
+alternation makes no argument optional:
+
+```scrut
+$ wo 'g[_Symbol | _Integer : 2] := 7; {g[3], g[a], g[]}'
+{7, 7, g[]}
+```
+
+After a `?` the colon is read as part of the test, so `_?NumericQ : 2` is
+`PatternTest[_, Pattern[NumericQ, 2]]` and matches nothing:
+
+```scrut
+$ wo 'h[x_?NumericQ : 2] := x^2; {h[3], h[], h[a]}'
+{h[3], h[], h[a]}
 ```
 
 The default value is taken as written — it is not checked against the

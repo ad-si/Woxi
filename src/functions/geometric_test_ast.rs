@@ -177,39 +177,67 @@ fn all_perpendicular(lines: &[(Pt, Pt)]) -> bool {
   true
 }
 
-/// Intersection point of two lines, or `None` when parallel.
-fn line_intersection(l1: (Pt, Pt), l2: (Pt, Pt)) -> Option<Pt> {
-  let denom = cross(l1.1, l2.1);
-  if denom.abs() <= EPS * mag(l1.1) * mag(l2.1) {
-    return None;
-  }
-  let t = cross(sub(l2.0, l1.0), l2.1) / denom;
-  Some((l1.0.0 + t * l1.1.0, l1.0.1 + t * l1.1.1))
-}
-
-fn point_on_line(q: Pt, l: (Pt, Pt)) -> bool {
-  let v = sub(q, l.0);
-  mag(v) <= EPS || parallel_vec(l.1, v)
-}
-
+/// Concurrency is *projective*: the lines share a point of the projective
+/// plane, so a family of mutually parallel lines counts — they meet at the
+/// point at infinity in their common direction. wolframscript reads the
+/// property that way, which is why any two lines are concurrent and three
+/// parallels are too, while three lines bounding a triangle are not.
+///
+/// Writing each line as `a x + b y + c == 0`, that is exactly the condition
+/// that the coefficient matrix has rank at most 2.
 fn concurrent(lines: &[(Pt, Pt)]) -> bool {
   if lines.len() < 2 {
     return false;
   }
-  // Find any concrete intersection to use as the common-point candidate.
-  let mut pivot = None;
-  'outer: for i in 0..lines.len() {
-    for j in (i + 1)..lines.len() {
-      if let Some(p) = line_intersection(lines[i], lines[j]) {
-        pivot = Some(p);
-        break 'outer;
+  // Row per line, in homogeneous line coordinates, scaled to unit length so
+  // one tolerance fits every row.
+  let mut rows: Vec<[f64; 3]> = Vec::with_capacity(lines.len());
+  for &(p, d) in lines {
+    let m = mag(d);
+    if m <= EPS {
+      return false; // a degenerate "line" pins down no direction
+    }
+    let (a, b) = (d.1 / m, -d.0 / m);
+    rows.push([a, b, -(a * p.0 + b * p.1)]);
+  }
+  matrix_rank_at_most_2(&mut rows)
+}
+
+/// Gaussian elimination with partial pivoting: is the rank of these
+/// three-column rows at most 2?
+fn matrix_rank_at_most_2(rows: &mut [[f64; 3]]) -> bool {
+  let scale = rows
+    .iter()
+    .flat_map(|r| r.iter().map(|v| v.abs()))
+    .fold(0.0f64, f64::max)
+    .max(1.0);
+  let tol = REL * scale;
+  let mut rank = 0usize;
+  let mut row = 0usize;
+  for col in 0..3 {
+    let Some(pivot) = (row..rows.len())
+      .max_by(|&i, &j| rows[i][col].abs().total_cmp(&rows[j][col].abs()))
+    else {
+      break;
+    };
+    if rows[pivot][col].abs() <= tol {
+      continue;
+    }
+    rows.swap(row, pivot);
+    let p = rows[row][col];
+    for i in (row + 1)..rows.len() {
+      let f = rows[i][col] / p;
+      for c in col..3 {
+        rows[i][c] -= f * rows[row][c];
       }
     }
+    rank += 1;
+    row += 1;
+    if rank > 2 {
+      return false;
+    }
   }
-  match pivot {
-    Some(p) => lines.iter().all(|&l| point_on_line(p, l)),
-    None => false, // all lines mutually parallel → no common point
-  }
+  rank <= 2
 }
 
 fn all_horizontal(lines: &[(Pt, Pt)]) -> bool {
@@ -367,22 +395,35 @@ fn simple(pts: &[Pt]) -> bool {
   true
 }
 
-/// Sorted edge lengths of a polygon (used for triangle congruence/similarity).
-fn sorted_sides(pts: &[Pt]) -> Vec<f64> {
+/// Every distance between two vertices, in the order the vertices are
+/// written. Two point sets are congruent exactly when these agree, and
+/// similar when they are all in one ratio.
+///
+/// wolframscript matches the vertices up *as written* rather than looking for
+/// the best correspondence, so `Triangle[{{0,0},{3,0},{0,4}}]` is congruent to
+/// `Triangle[{{1,1},{4,1},{1,5}}]` but not to the same triangle written
+/// `Triangle[{{1,1},{1,5},{4,1}}]`.
+fn pair_distances(pts: &[Pt]) -> Vec<f64> {
   let n = pts.len();
-  let mut s: Vec<f64> =
-    (0..n).map(|i| dist(pts[i], pts[(i + 1) % n])).collect();
-  s.sort_by(|a, b| a.partial_cmp(b).unwrap());
-  s
+  let mut out = Vec::with_capacity(n * (n - 1) / 2);
+  for i in 0..n {
+    for j in (i + 1)..n {
+      out.push(dist(pts[i], pts[j]));
+    }
+  }
+  out
 }
 
 fn congruent(objs: &[Vec<Pt>]) -> Option<bool> {
-  if objs.len() < 2 || !objs.iter().all(|o| o.len() == 3) {
-    return None; // only triangles are handled exactly
+  if objs.len() < 2 || objs.iter().any(|o| o.len() < 3) {
+    return None;
   }
-  let base = sorted_sides(&objs[0]);
+  if objs.iter().any(|o| o.len() != objs[0].len()) {
+    return Some(false);
+  }
+  let base = pair_distances(&objs[0]);
   Some(objs.iter().all(|o| {
-    sorted_sides(o)
+    pair_distances(o)
       .iter()
       .zip(&base)
       .all(|(a, b)| approx_eq(*a, *b))
@@ -390,16 +431,19 @@ fn congruent(objs: &[Vec<Pt>]) -> Option<bool> {
 }
 
 fn similar(objs: &[Vec<Pt>]) -> Option<bool> {
-  if objs.len() < 2 || !objs.iter().all(|o| o.len() == 3) {
+  if objs.len() < 2 || objs.iter().any(|o| o.len() < 3) {
     return None;
   }
-  let base = sorted_sides(&objs[0]);
-  if base[0] <= EPS {
+  if objs.iter().any(|o| o.len() != objs[0].len()) {
+    return Some(false);
+  }
+  let base = pair_distances(&objs[0]);
+  if base.iter().any(|d| *d <= EPS) {
     return Some(false);
   }
   Some(objs.iter().all(|o| {
-    let s = sorted_sides(o);
-    if s[0] <= EPS {
+    let s = pair_distances(o);
+    if s.iter().any(|d| *d <= EPS) {
       return false;
     }
     let ratio = s[0] / base[0];

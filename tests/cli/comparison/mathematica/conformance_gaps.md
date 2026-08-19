@@ -40,6 +40,20 @@ The affected heads are the ones with operator spellings: `ReplaceAll` (`/.`),
 `Part` is the mildest of these — it renders correctly on its own and only
 diverges inside a hold (`ToString[Unevaluated[Part[a, 2]], InputForm]`).
 
+### `InputForm` brackets more than the printed form does
+
+wolframscript's `ToString[…, InputForm]` brackets things its top-level output
+leaves bare, so the two disagree only when the InputForm *string* is compared:
+
+```sh
+wolframscript -code 'Hold[{1, 2}?f]'                          # Hold[{1, 2}?f]
+wolframscript -code 'ToString[(Hold[{1, 2}?f]), InputForm]'   # Hold[({1, 2})?f]
+```
+
+Woxi prints `Hold[{1, 2}?f]` in both. A `Graph`'s options are the same story:
+InputForm wraps them in a `List` (and reorders them into its own canonical
+order), the printed form does not.
+
 ### Unary minus inside a pure function round-trips as a subtraction
 
 ```sh
@@ -486,6 +500,30 @@ are bit-exact. Affects e.g. `PDF[VonMisesDistribution[2, 3], 2.5]`'s last digit.
 Also missing from Woxi's numeric folding: `Gamma[rational]`, so
 `2. + Gamma[1/3]` stays symbolic where WL gives `5.357877069415496`.
 
+### Arbitrary-precision `Root` padding
+
+`N[Root[#^3 - # - 1 &, 1], 10]` prints ~40 digits in both engines, but only the
+first ~17 are the ones that were asked for; past that the two continuations
+disagree. Woxi's is the correct one (checked against the plastic constant to 40
+digits) — wolframscript pads with digits of its own. Same for
+`N[Root[#^4 - # - 1 &, 1], 15]`.
+
+### `MidDate` on sub-second instants
+
+Woxi carries an instant as one `f64` count of seconds since the epoch, whose
+resolution near 1.7e9 is ~2.4e-7 s, so averaging instants that carry fractional
+seconds differs from wolframscript's exact mean in the 8th decimal. A midpoint
+that lands on a whole second *is* reported exactly, as an integer, matching
+wolframscript.
+
+### Image filters accumulate in a different width
+
+`RecurrenceFilter` and `Sharpen` on an `Image` differ from wolframscript by one
+Real32 ULP in single taps (`0.7749999761581421` against `0.7750000357627869`):
+Woxi accumulates in `f64` and snaps the result to the stored Real32 pixel,
+wolframscript accumulates in Real32 throughout. **Not reproducible** without
+matching its accumulation order.
+
 ### `N` does not push into `Cos[real*Pi]`
 
 `N[Cos[Pi/28], 8]` leaves `Cos[0.0357*Pi]` unevaluated.
@@ -845,6 +883,13 @@ echo path.
   `Sqrt[2]` against WL's `-Sqrt[2]`; `x^2 + y^2 == 1` over the reals gives
   `{x -> -1, y -> 0}` against `{x -> 1, y -> 0}`; `x^2 > 4` gives `-100`
   against `-4`. **Not reproducible.**
+- `FindInstance` over the integers falls back to a bounded search when `Solve`
+  cannot decide: every variable is walked outwards from zero (0, 1, −1, 2, −2,
+  …) within a fixed evaluation budget. That reproduces wolframscript's answer
+  for the small instances (`x^5 + y^5 + z^5 == w^5 && x > 0` → `{1, 0, 0, 1}`)
+  but cannot reach a large one — Euler's sum-of-powers counterexample
+  `27^5 + 84^5 + 110^5 + 133^5 == 144^5` stays unevaluated where wolframscript
+  finds it.
 
 ### Solve over a system of two Abs equations gives no solutions
 
@@ -1489,27 +1534,26 @@ counter value is a session number that can never be pinned), and
 `WolframScript`` context, which Woxi has no equivalent for — so a bare
 `$ContextPath` can never match.
 
-### `FullForm[Hold[(a = #; b = 0; &)]]`
+### Legacy package names
 
-Woxi prints the trailing `Null`; wolframscript prints nothing after the last
-`;`.
-
-### `UpTo` as a part specification
-
-`f[a, b, c][[UpTo[2]]]` is `f[a, b]` in Woxi; wolframscript answers
-`Part::pkspec1` and leaves it unevaluated. Same for `[[UpTo[2], 1]]`,
-associations and rules. Woxi's behaviour was added deliberately.
-
-### `Combinatorica`` names
-
-Any `Combinatorica`…` symbol Woxi implements (e.g. `UnrankPermutation`)
-evaluates where wolframscript leaves it unevaluated, because the package is
-not loaded.
+Any `Combinatorica`…` or `PolyhedronOperations`…` symbol Woxi implements (e.g.
+`UnrankPermutation`, `Truncate`, `Stellate`) evaluates where wolframscript
+leaves it unevaluated, because the package is not loaded. Woxi has no package
+system for `Needs` to load into, so the qualified names are always live. With
+the package loaded the results agree.
 
 ### `$VersionNumber` is a string
 
 Woxi returns its version *string* (`v0.3.0-46-g…`) rather than a number, so
 `ToString[$VersionNumber]` and any `$VersionNumber >= 9` test break.
+
+### `Manipulate`'s `Initialization` is not scoped
+
+`Manipulate[…, Initialization :> (f[x_] := …)]` leaves `f` defined in the
+global scope, so a later cell sees it. wolframscript keeps it inside the
+`DynamicModule` the Manipulate wraps itself in and `f[3]` echoes back. Woxi has
+no such module, and its controls re-resolve the body on every frame, so the
+definitions have to outlive the call.
 
 ### `Get` returns raw text
 
@@ -2433,6 +2477,12 @@ internal hash order. Woxi keeps input order.
 
 ## Geometry and regions
 
+### `TriangleCenter` accepts a triangle embedded in 3D
+
+`TriangleCenter[Triangle[{{0,0,0},{4,0,0},{0,3,0}}], "Circumcenter"]` is
+`{2, 3/2, 0}` in Woxi; wolframscript handles only the planar case and leaves
+the call unevaluated. Deliberate — the 3D centre is well defined.
+
 ### `ConvexHullMesh` is unevaluated for 3D point sets
 
 ```sh
@@ -2572,6 +2622,26 @@ blurred data either. Woxi leaves any non-zero scale unevaluated.
 
 
 ## Import, export, units and system
+
+### `ExampleData` bundles its own data and properties
+
+Woxi ships the `"NetworkGraph"` datasets it assembled from the original
+sources rather than Wolfram's catalogue, and exposes the properties that data
+supports — `"VertexList"`, `"EdgeRules"`, `"AdjacencyMatrix"` — none of which
+wolframscript knows (it answers `ExampleData::notpropx`). Its own list is
+`ByteCount, Description, EdgeCount, EdgeProperty, FullGraph, Graph,
+LongDescription, Name, Source, StandardName, VertexCount, VertexProperty`.
+Deliberate: the catalogue is Wolfram's. Write tests against shape and
+presence, never against either side's catalogue.
+
+### `ShortTimeFourier` partitions differently
+
+Woxi's default partition offset is half the window; wolframscript's is 1, so
+the same signal yields 3 frames against its 8. The property names differ too:
+Woxi answers `"WindowSize"`, `"Offset"` and `"NumberOfFrames"` where
+wolframscript's `ShortTimeFourierData` has `"PartitionSize"`,
+`"PartitionOffset"`, `"SmoothingWindow"`, `"PartitionPadding"`,
+`"FourierParameters"`, `"SampleRate"` and `"DataType"`.
 
 ### `UnitSimplify` is unimplemented
 

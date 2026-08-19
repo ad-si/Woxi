@@ -5907,6 +5907,74 @@ fn is_cross_op(op_str: &str) -> bool {
   matches!(op_str, "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}")
 }
 
+/// `p : v` where `p` is not a bare name: `Optional[p, v]`, and `sym : v`:
+/// `Pattern[sym, v]`.
+fn colon_node(left: &Expr, right: &Expr) -> Expr {
+  let head = if matches!(left, Expr::Identifier(_)) {
+    "Pattern"
+  } else {
+    "Optional"
+  };
+  Expr::FunctionCall {
+    name: head.to_string(),
+    args: vec![left.clone(), right.clone()].into(),
+  }
+}
+
+/// Build the node for a bare `:` that reached the operator level — the left
+/// side is a complete pattern rather than a bare name.
+///
+/// Wolfram's `:` binds *tightly* on its left: it takes only the term written
+/// directly in front of it, even where that term is an operand of a
+/// tighter-binding operator. `_Symbol | _Integer : 2` is
+/// `Alternatives[_Symbol, Optional[_Integer, 2]]`, not an `Optional` around
+/// the whole alternation, and `_?NumericQ : 2` is
+/// `PatternTest[_, Pattern[NumericQ, 2]]` — the colon belongs to the test
+/// operand of `?`. Woxi's precedence climbing has already folded those
+/// operators, so reach back into the node and attach the default where
+/// Wolfram would have put it.
+///
+/// The chained form `x : pat : v` is the one exception Wolfram makes: there
+/// the trailing colon closes the whole `Pattern`, giving
+/// `Optional[Pattern[x, pat], v]`. `Term` consumes the `x : pat` half before
+/// this operator runs, so that case arrives here as a plain `Pattern` left
+/// side and falls through to the default branch.
+fn build_colon(left: &Expr, right: &Expr) -> Expr {
+  match left {
+    // The default attaches to the last alternative only.
+    Expr::BinaryOp {
+      op: BinaryOperator::Alternatives,
+      left: l,
+      right: r,
+    } => Expr::BinaryOp {
+      op: BinaryOperator::Alternatives,
+      left: l.clone(),
+      right: Box::new(build_colon(r, right)),
+    },
+    // `_?f : v` / `x_?f : v` — the colon binds inside the `?` test.
+    Expr::PatternTest {
+      name,
+      head,
+      blank_type,
+      test,
+    } => Expr::PatternTest {
+      name: name.clone(),
+      head: head.clone(),
+      blank_type: *blank_type,
+      test: Box::new(colon_node(test, right)),
+    },
+    Expr::FunctionCall { name, args }
+      if name == "PatternTest" && args.len() == 2 =>
+    {
+      Expr::FunctionCall {
+        name: "PatternTest".to_string(),
+        args: vec![args[0].clone(), colon_node(&args[1], right)].into(),
+      }
+    }
+    _ => colon_node(left, right),
+  }
+}
+
 /// Create a binary operation from two expressions and an operator string
 /// Build a flat (associative) binary operator, flattening chains so that
 /// `a op b op c` collapses to `head[a, b, c]`.
@@ -6037,25 +6105,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       left: Box::new(left.clone()),
       right: Box::new(right.clone()),
     },
-    ":" => {
-      // Bare `:` reaching the operator level means the left side is a
-      // complete pattern rather than a bare name — `x_?NumericQ : 2`,
-      // `_Integer | _Symbol : 2`, or the trailing default of
-      // `x : pat : 2` (whose `x : pat` half `Term` already consumed).
-      // Wolfram reads `sym : p` as `Pattern[sym, p]` and `p : v` for any
-      // other left side as `Optional[p, v]`.
-      if let Expr::Identifier(name) = left {
-        Expr::FunctionCall {
-          name: "Pattern".to_string(),
-          args: vec![Expr::Identifier(name.clone()), right.clone()].into(),
-        }
-      } else {
-        Expr::FunctionCall {
-          name: "Optional".to_string(),
-          args: vec![left.clone(), right.clone()].into(),
-        }
-      }
-    }
+    ":" => build_colon(left, right),
     "|" => {
       // `:` (Pattern) binds looser than `|` (Alternatives) in Wolfram, so
       // `x : a | b` is `Pattern[x, Alternatives[a, b]]`. Woxi's parser
@@ -8678,16 +8728,22 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if name == "PatternTest" && args.len() == 2 {
         let pat = fmt(&args[0]);
         let test = fmt(&args[1]);
-        // Bare blanks `_`/`__`/`___` and simple Identifiers like `A`
-        // print without parens, matching wolframscript. Everything else is
-        // parenthesized unless it is self-delimiting (`Except[0]`, `{1, 2}`,
-        // `"s"`), because `?` binds tighter than any infix operator: `x_`
-        // prints as `(x_)?IntegerQ` but `Except[0]` needs no brackets.
+        // Atoms and lists print without parens, matching wolframscript:
+        // `a?f`, `1?f`, `"s"?f`, `{1, 2}?f`. Everything else is wrapped —
+        // `?` binds tighter than any infix operator, and wolframscript
+        // brackets even a self-delimiting head: `(Except[0])?NumericQ`.
         let pat_atomic = pat == "_"
           || pat == "__"
           || pat == "___"
-          || matches!(&args[0], Expr::Identifier(_))
-          || is_self_delimiting_form(&pat);
+          || matches!(
+            &args[0],
+            Expr::Identifier(_)
+              | Expr::Integer(_)
+              | Expr::Real(_)
+              | Expr::String(_)
+              | Expr::Constant(_)
+              | Expr::List(_)
+          );
         if pat_atomic {
           return format!("{pat}?{test}");
         }
@@ -11037,10 +11093,20 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       }
     }
     Expr::CompoundExpr(exprs) => {
-      let parts: Vec<String> = exprs
+      let mut parts: Vec<String> = exprs
         .iter()
         .map(|e| format_expr(e, ExprForm::Input))
         .collect();
+      // A trailing semicolon parses as a trailing `Null`, and that one
+      // wolframscript writes back as nothing at all: `a; b;` echoes as
+      // `a; b; `. A `Null` anywhere else is spelled out.
+      if exprs
+        .last()
+        .is_some_and(|e| matches!(e, Expr::Identifier(n) if n == "Null"))
+        && let Some(last) = parts.last_mut()
+      {
+        last.clear();
+      }
       parts.join("; ")
     }
     Expr::Association(items) => {
@@ -11259,11 +11325,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       let head_str = head.as_deref().unwrap_or("");
       let test_str = format_expr(test, ExprForm::Input);
       let pattern_str = format!("{name}{blanks}{head_str}");
-      // Bare `_` / `__` / `___` (no name, no head) is the only shape
-      // wolframscript writes without parentheses: `_?test`. Anything
-      // that carries a name or head — `x_?test`, `_Integer?test` — is
-      // wrapped, matching wolframscript's InputForm.
-      let needs_parens = !name.is_empty() || !head_str.is_empty();
+      // An unnamed blank is the shape wolframscript writes without
+      // parentheses — `_?test`, `___?test`, `_Integer?test`. A name makes
+      // it a `Pattern`, which is wrapped: `(x_)?test`, `(x_Integer)?test`.
+      let needs_parens = !name.is_empty();
       if !matches!(test.as_ref(), Expr::Identifier(_)) {
         // Non-atomic test needs parens around the test too.
         if needs_parens {
@@ -16165,49 +16230,6 @@ pub fn unevaluated(name: &str, args: &[Expr]) -> Expr {
     name: name.to_string(),
     args: args.to_vec().into(),
   }
-}
-
-/// True when an already-formatted expression carries no operator at bracket
-/// depth 0, i.e. it reads back as one unit no matter how tightly the
-/// surrounding operator binds. `Except[0]`, `{1, 2}` and `"s"` qualify; `x_`,
-/// `-1` and `a + b` do not.
-fn is_self_delimiting_form(s: &str) -> bool {
-  let mut depth: i32 = 0;
-  let mut chars = s.chars().peekable();
-  while let Some(c) = chars.next() {
-    match c {
-      '"' => {
-        // Skip the whole string literal, escapes included.
-        loop {
-          match chars.next() {
-            Some('\\') => {
-              chars.next();
-            }
-            Some('"') | None => break,
-            Some(_) => {}
-          }
-        }
-      }
-      '<' if chars.peek() == Some(&'|') => {
-        chars.next();
-        depth += 1;
-      }
-      '|' if chars.peek() == Some(&'>') => {
-        chars.next();
-        depth -= 1;
-      }
-      '[' | '{' | '(' | '\u{27E6}' | '\u{301A}' => depth += 1,
-      ']' | '}' | ')' | '\u{27E7}' | '\u{301B}' => depth -= 1,
-      _ if depth == 0 && !(c.is_alphanumeric() || c == '$' || c == '`') => {
-        return false;
-      }
-      _ => {}
-    }
-    if depth < 0 {
-      return false;
-    }
-  }
-  depth == 0 && !s.is_empty()
 }
 
 /// Build `PatternTest[lhs, test]` from the pairs following an infix `?`:

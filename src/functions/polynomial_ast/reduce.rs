@@ -2614,6 +2614,88 @@ fn solve_linear_diophantine(
   Some(x)
 }
 
+/// Put a parametrized integer solution into the shape wolframscript prints.
+///
+/// The solution set is a coset `p + L` of a lattice `L`, and the successive
+/// elimination in `solve_linear_diophantine` lands on an arbitrary `p` and an
+/// arbitrary basis of `L` — for `3 x + 5 y == 7` it finds `x == 14 + 5 C[1]`
+/// where wolframscript writes `x == 4 + 5 C[1]`. Both name the same set, so
+/// canonicalize: the basis becomes the Hermite normal form (echelon by
+/// variable, positive pivots, entries above a pivot reduced into `[0, pivot)`)
+/// and the offset is then reduced against it, which pins each pivot
+/// coordinate into `[0, pivot)` too.
+///
+/// Takes one `Affine` per variable and returns the offset per variable plus
+/// one basis row per parameter, each row indexed by variable.
+fn canonicalize_lattice(solution: &[Affine]) -> (Vec<i128>, Vec<Vec<i128>>) {
+  let n = solution.len();
+  let nparams = solution.first().map_or(0, |a| a.coeffs.len());
+  let mut offset: Vec<i128> = solution.iter().map(|a| a.const_term).collect();
+  let mut rows: Vec<Vec<i128>> = (0..nparams)
+    .map(|k| solution.iter().map(|a| a.coeffs[k]).collect())
+    .collect();
+
+  // Hermite normal form, one pivot column at a time.
+  let mut pivots: Vec<(usize, usize)> = Vec::new();
+  let mut pivot_row = 0usize;
+  for col in 0..n {
+    if pivot_row >= rows.len() {
+      break;
+    }
+    for k in (pivot_row + 1)..rows.len() {
+      if rows[k][col] == 0 {
+        continue;
+      }
+      if rows[pivot_row][col] == 0 {
+        rows.swap(pivot_row, k);
+        continue;
+      }
+      // Replace the pair by (gcd combination, complementary combination),
+      // which spans the same sublattice but zeroes row k in this column.
+      let (g, s, t) = extended_gcd_i128(rows[pivot_row][col], rows[k][col]);
+      let (a, b) = (rows[pivot_row][col] / g, rows[k][col] / g);
+      for j in 0..n {
+        let keep = s * rows[pivot_row][j] + t * rows[k][j];
+        let zeroed = a * rows[k][j] - b * rows[pivot_row][j];
+        rows[pivot_row][j] = keep;
+        rows[k][j] = zeroed;
+      }
+    }
+    if rows[pivot_row][col] == 0 {
+      continue;
+    }
+    if rows[pivot_row][col] < 0 {
+      for j in 0..n {
+        rows[pivot_row][j] = -rows[pivot_row][j];
+      }
+    }
+    let pivot = rows[pivot_row][col];
+    for k in 0..pivot_row {
+      let q = rows[k][col].div_euclid(pivot);
+      if q != 0 {
+        for j in 0..n {
+          rows[k][j] -= q * rows[pivot_row][j];
+        }
+      }
+    }
+    pivots.push((pivot_row, col));
+    pivot_row += 1;
+  }
+  rows.truncate(pivot_row);
+
+  // Slide the offset along the lattice until every pivot coordinate is the
+  // smallest non-negative representative of its residue class.
+  for &(row, col) in &pivots {
+    let q = offset[col].div_euclid(rows[row][col]);
+    if q != 0 {
+      for j in 0..n {
+        offset[j] -= q * rows[row][j];
+      }
+    }
+  }
+  (offset, rows)
+}
+
 /// Reduce[eq, {vars}, Integers] where `eq` (after collecting `&&` conjuncts)
 /// is a single linear equation with integer coefficients in some or all of
 /// `vars`. Produces the general parametrized integer solution, e.g.
@@ -2706,63 +2788,65 @@ fn try_reduce_linear_diophantine(
     return Ok(Some(bool_expr(false)));
   };
 
-  let dio_params = present_coeffs.len() - 1;
-  let absent_count = vars.len() - present.len();
-  let total_params = dio_params + absent_count;
+  // Any basis of the solution lattice, and any point on it, describes the
+  // same solution set; canonicalize both the way wolframscript reports them
+  // (see `canonicalize_lattice`).
+  let (particular, basis) = canonicalize_lattice(&present_solution);
+  let total_params = basis.len();
+  let solution: Vec<Affine> = (0..present_coeffs.len())
+    .map(|i| Affine {
+      const_term: particular[i],
+      coeffs: basis.iter().map(|row| row[i]).collect(),
+    })
+    .collect();
 
-  // Re-slot each present variable's Affine (built over `dio_params` slots)
-  // into the combined `total_params`-slot space, then give every absent
-  // variable its own fresh trailing slot.
-  let mut eqs: Vec<Expr> = Vec::new();
-  for ((idx, _), sol) in present.iter().zip(&present_solution) {
-    let mut widened = Affine::constant(sol.const_term, total_params);
-    widened.coeffs[..dio_params].copy_from_slice(&sol.coeffs);
-    eqs.push(make_equality(
+  let integers = || Expr::Identifier("Integers".to_string());
+  let element = |what: Expr| Expr::FunctionCall {
+    name: "Element".to_string(),
+    args: vec![what, integers()].into(),
+  };
+
+  // A variable the equation never mentions is unconstrained: wolframscript
+  // leaves it as itself under its own `Element[v, Integers]` rather than
+  // introducing a parameter for it. Those conjuncts come first, in the order
+  // the variables were asked for.
+  let mut conjuncts: Vec<Expr> = coeffs
+    .iter()
+    .enumerate()
+    .filter(|(_, c)| **c == 0)
+    .map(|(idx, _)| element(Expr::Identifier(vars[idx].clone())))
+    .collect();
+
+  // Every parameter shares one membership conjunct, written with
+  // Alternatives: `Element[C[1] | C[2], Integers]`.
+  if let Some(membership) = (0..total_params)
+    .map(|slot| Expr::FunctionCall {
+      name: "C".to_string(),
+      args: vec![Expr::Integer((slot + 1) as i128)].into(),
+    })
+    .reduce(|acc, p| Expr::BinaryOp {
+      op: BinaryOperator::Alternatives,
+      left: Box::new(acc),
+      right: Box::new(p),
+    })
+  {
+    conjuncts.push(element(membership));
+  }
+
+  // Then the solved variables, again in the order they were asked for.
+  for ((idx, _), sol) in present.iter().zip(&solution) {
+    conjuncts.push(make_equality(
       &Expr::Identifier(vars[*idx].clone()),
-      &widened.to_expr(),
+      &sol.to_expr(),
     ));
   }
-  let mut next_slot = dio_params;
-  for (idx, c) in coeffs.iter().enumerate() {
-    if *c == 0 {
-      let param = Affine::constant(0, total_params).with_param(next_slot, 1);
-      eqs.push(make_equality(
-        &Expr::Identifier(vars[idx].clone()),
-        &param.to_expr(),
-      ));
-      next_slot += 1;
-    }
-  }
 
-  if total_params == 0 {
-    eqs.sort_by(compare_exprs);
-    let combined = eqs
+  Ok(Some(
+    conjuncts
       .into_iter()
       .reduce(|acc, e| and_results(&acc, &e))
-      .unwrap_or_else(|| bool_expr(true));
-    return Ok(Some(combined));
-  }
-
-  eqs.sort_by(compare_exprs);
-  let mut result = eqs
-    .into_iter()
-    .reduce(|acc, e| and_results(&acc, &e))
-    .unwrap_or_else(|| bool_expr(true));
-  for slot in (0..total_params).rev() {
-    let elem = Expr::FunctionCall {
-      name: "Element".to_string(),
-      args: vec![
-        Expr::FunctionCall {
-          name: "C".to_string(),
-          args: vec![Expr::Integer((slot + 1) as i128)].into(),
-        },
-        Expr::Identifier("Integers".to_string()),
-      ]
-      .into(),
-    };
-    result = and_results(&elem, &result);
-  }
-  Ok(Some(result))
+      .unwrap_or_else(|| bool_expr(true)),
+  ))
 }
 
 /// Solve a multi-variable system by sequential elimination.

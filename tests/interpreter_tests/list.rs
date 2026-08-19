@@ -4643,79 +4643,91 @@ mod part_upto {
   use super::*;
   use woxi::interpret_with_stdout;
 
-  // `Part[expr, UpTo[n]]` (the `[[UpTo[n]]]` sugar included) takes the
-  // first Min[n, Length[expr]] parts, matching `Take[expr, UpTo[n]]` —
-  // used to grab a bounded-length prefix without knowing exactly how long
-  // the underlying list is.
-  #[test]
-  fn list_within_bound() {
-    assert_eq!(
-      interpret("{1, 2, 3, 4, 5}[[UpTo[3]]]").unwrap(),
-      "{1, 2, 3}"
-    );
-  }
-
-  #[test]
-  fn list_clamps_past_length() {
-    assert_eq!(
-      interpret("{1, 2, 3, 4, 5}[[UpTo[10]]]").unwrap(),
-      "{1, 2, 3, 4, 5}"
-    );
-  }
-
-  #[test]
-  fn zero_takes_nothing() {
-    assert_eq!(interpret("{1, 2, 3}[[UpTo[0]]]").unwrap(), "{}");
-  }
-
-  #[test]
-  fn function_call_keeps_head() {
-    assert_eq!(interpret("f[a, b, c][[UpTo[2]]]").unwrap(), "f[a, b]");
-  }
-
-  #[test]
-  fn association_within_bound() {
-    assert_eq!(
-      interpret(r#"<|"a" -> 1, "b" -> 2, "c" -> 3|>[[UpTo[2]]]"#).unwrap(),
-      "<|a -> 1, b -> 2|>"
-    );
-  }
-
-  #[test]
-  fn rule_within_bound() {
-    assert_eq!(interpret("(a -> b)[[UpTo[1]]]").unwrap(), "{a}");
-  }
-
-  #[test]
-  fn infinity_takes_everything() {
-    assert_eq!(
-      interpret("{1, 2, 3}[[UpTo[Infinity]]]").unwrap(),
-      "{1, 2, 3}"
-    );
-  }
-
-  #[test]
-  fn maps_remaining_index_over_selection() {
-    // Part[expr, UpTo[n], rest…] maps the remaining indices over each of
-    // the selected elements, the same way a bare list-of-positions or a
-    // Span index does.
-    assert_eq!(
-      interpret("{{1, 2}, {3, 4}, {5, 6}}[[UpTo[2], 1]]").unwrap(),
-      "{1, 3}"
-    );
-  }
-
-  #[test]
-  fn negative_count_errors() {
-    let r = interpret_with_stdout("{1, 2, 3}[[UpTo[-1]]]").unwrap();
-    assert_eq!(r.result, "{1, 2, 3}[[UpTo[-1]]]");
+  // `UpTo[n]` is a *Take* specification, not a part specification.
+  // wolframscript rejects every `expr[[UpTo[n]]]` with `Part::pkspec1` and
+  // leaves the Part unevaluated, however well-formed the wrapper is.
+  fn rejected(input: &str, echoed: &str, spec: &str) {
+    let r = interpret_with_stdout(input).unwrap();
+    assert_eq!(r.result, echoed);
     assert!(
-      r.warnings.iter().any(|w| w.contains(
-        "Part::pkspec1: The expression UpTo[-1] cannot be used as a part specification."
-      )),
+      r.warnings.iter().any(|w| w.contains(&format!(
+        "Part::pkspec1: The expression {spec} cannot be used as a part specification."
+      ))),
       "warnings={:?}",
       r.warnings
     );
+  }
+
+  #[test]
+  fn list_within_bound() {
+    rejected(
+      "{1, 2, 3, 4, 5}[[UpTo[3]]]",
+      "{1, 2, 3, 4, 5}[[UpTo[3]]]",
+      "UpTo[3]",
+    );
+  }
+
+  #[test]
+  fn list_past_length() {
+    rejected(
+      "{1, 2, 3, 4, 5}[[UpTo[10]]]",
+      "{1, 2, 3, 4, 5}[[UpTo[10]]]",
+      "UpTo[10]",
+    );
+  }
+
+  #[test]
+  fn zero_count() {
+    rejected("{1, 2, 3}[[UpTo[0]]]", "{1, 2, 3}[[UpTo[0]]]", "UpTo[0]");
+  }
+
+  #[test]
+  fn function_call() {
+    rejected("f[a, b, c][[UpTo[2]]]", "f[a, b, c][[UpTo[2]]]", "UpTo[2]");
+  }
+
+  #[test]
+  fn association() {
+    rejected(
+      r#"<|"a" -> 1, "b" -> 2, "c" -> 3|>[[UpTo[2]]]"#,
+      "<|a -> 1, b -> 2, c -> 3|>[[UpTo[2]]]",
+      "UpTo[2]",
+    );
+  }
+
+  #[test]
+  fn rule() {
+    rejected("(a -> b)[[UpTo[1]]]", "(a -> b)[[UpTo[1]]]", "UpTo[1]");
+  }
+
+  #[test]
+  fn infinity() {
+    rejected(
+      "{1, 2, 3}[[UpTo[Infinity]]]",
+      "{1, 2, 3}[[UpTo[Infinity]]]",
+      "UpTo[Infinity]",
+    );
+  }
+
+  #[test]
+  fn in_a_multi_index_spec() {
+    rejected(
+      "{{1, 2}, {3, 4}, {5, 6}}[[UpTo[2], 1]]",
+      "{{1, 2}, {3, 4}, {5, 6}}[[UpTo[2],1]]",
+      "UpTo[2]",
+    );
+  }
+
+  #[test]
+  fn negative_count() {
+    rejected("{1, 2, 3}[[UpTo[-1]]]", "{1, 2, 3}[[UpTo[-1]]]", "UpTo[-1]");
+  }
+
+  // Take still accepts it — that is where the wrapper belongs.
+  #[test]
+  fn take_still_accepts_upto() {
+    assert_eq!(interpret("Take[{1, 2, 3}, UpTo[2]]").unwrap(), "{1, 2}");
+    assert_eq!(interpret("Take[{1, 2, 3}, UpTo[9]]").unwrap(), "{1, 2, 3}");
   }
 }
 

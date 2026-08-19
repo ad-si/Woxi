@@ -653,10 +653,10 @@ mod pattern_matching {
         interpret("Cases[{1, 2, 3, 4}, Alternatives[2, 3, 4]?EvenQ]").unwrap(),
         "{2, 4}"
       );
-      // A function call left side needs no brackets when printed back.
+      // A function call left side is bracketed when printed back.
       assert_eq!(
         interpret("Hold[Except[0]?NumericQ]").unwrap(),
-        "Hold[Except[0]?NumericQ]"
+        "Hold[(Except[0])?NumericQ]"
       );
     }
 
@@ -2404,15 +2404,25 @@ mod optional_pattern_without_default {
     );
   }
 
-  // Without a leading name the same forms are a bare `Optional[p, v]`.
+  // Without a leading name the colon binds *inside* the `?`: Wolfram reads
+  // `_?NumericQ : 2` as `PatternTest[_, Pattern[NumericQ, 2]]`, whose test
+  // never returns True, so nothing matches and no default is available.
   #[test]
-  fn optional_default_on_unnamed_pattern_test() {
-    assert_eq!(interpret("MatchQ[3, _?NumericQ : 2]").unwrap(), "True");
+  fn colon_after_pattern_test_binds_to_the_test() {
+    assert_eq!(
+      interpret("Hold[_?NumericQ : 2][[1, 0]]").unwrap(),
+      "PatternTest"
+    );
+    assert_eq!(
+      interpret("Hold[_?NumericQ : 2][[1, 2, 0]]").unwrap(),
+      "Pattern"
+    );
+    assert_eq!(interpret("MatchQ[3, _?NumericQ : 2]").unwrap(), "False");
     assert_eq!(interpret("MatchQ[a, _?NumericQ : 2]").unwrap(), "False");
     clear_state();
     interpret("opt3[x_?NumericQ : 2] := x^2").unwrap();
-    assert_eq!(interpret("opt3[3]").unwrap(), "9");
-    assert_eq!(interpret("opt3[]").unwrap(), "4");
+    assert_eq!(interpret("opt3[3]").unwrap(), "opt3[3]");
+    assert_eq!(interpret("opt3[]").unwrap(), "opt3[]");
     assert_eq!(interpret("opt3[a]").unwrap(), "opt3[a]");
     clear_state();
   }
@@ -2431,12 +2441,25 @@ mod optional_pattern_without_default {
     clear_state();
   }
 
+  // Without a leading name the default binds to the *last alternative*, not
+  // to the whole alternation: `_Symbol | _Integer : 2` is
+  // `Alternatives[_Symbol, Optional[_Integer, 2]]`, and an `Optional` buried
+  // inside an alternation makes no argument slot optional.
   #[test]
   fn optional_default_on_alternatives_unnamed() {
+    assert_eq!(
+      interpret("Hold[_Symbol | _Integer : 2][[1, 0]]").unwrap(),
+      "Alternatives"
+    );
+    assert_eq!(
+      interpret("Hold[_Symbol | _Integer : 2][[1, 2, 0]]").unwrap(),
+      "Optional"
+    );
     clear_state();
     interpret("opt4[_Symbol | _Integer : 2] := 7").unwrap();
     assert_eq!(interpret("opt4[3]").unwrap(), "7");
-    assert_eq!(interpret("opt4[]").unwrap(), "7");
+    assert_eq!(interpret("opt4[a]").unwrap(), "7");
+    assert_eq!(interpret("opt4[]").unwrap(), "opt4[]");
     assert_eq!(interpret("opt4[1.5]").unwrap(), "opt4[1.5]");
     clear_state();
   }

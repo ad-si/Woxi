@@ -3850,7 +3850,11 @@ fn date_spec_interval(expr: &Expr) -> Option<(f64, f64, f64)> {
 }
 
 /// Build the DateObject for an instant truncated to the given granularity.
-fn instant_to_granular_date_object(seconds: f64, gran: &str) -> Expr {
+fn instant_to_granular_date_object(
+  seconds: f64,
+  gran: &str,
+  whole_seconds_exact: bool,
+) -> Expr {
   // Round to microseconds so float noise cannot flip a calendar boundary.
   let seconds = (seconds * 1e6).round() / 1e6;
   let (y, m, d, h, mi, s) = absolute_seconds_to_date(seconds);
@@ -3896,10 +3900,20 @@ fn instant_to_granular_date_object(seconds: f64, gran: &str) -> Expr {
       ],
       "Second",
     ),
-    _ => with_time_zone(
-      vec![int(y), int(m), int(d), int(h), int(mi), Expr::Real(s)],
-      "Instant",
-    ),
+    // Averaging a *collection* of dates, wolframscript reports a midpoint
+    // that lands on a whole second as an exact integer; the midpoint of a
+    // single date keeps its real spelling even when whole.
+    _ => {
+      let secs = if whole_seconds_exact && s.fract() == 0.0 && s.abs() < 1e15 {
+        int(s as i64)
+      } else {
+        Expr::Real(s)
+      };
+      with_time_zone(
+        vec![int(y), int(m), int(d), int(h), int(mi), secs],
+        "Instant",
+      )
+    }
   }
 }
 
@@ -3954,6 +3968,7 @@ pub fn mid_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // A list argument is a collection of dates unless every element is a
   // number, in which case it is a single date list like {2024, 10, 1}.
+  let mut collection = true;
   let specs: Vec<Expr> = match &date_arg {
     Expr::List(items)
       if !items.is_empty()
@@ -3966,7 +3981,10 @@ pub fn mid_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Association(pairs) if !pairs.is_empty() => {
       pairs.iter().map(|(_, v)| v.clone()).collect()
     }
-    other => vec![other.clone()],
+    other => {
+      collection = false;
+      vec![other.clone()]
+    }
   };
 
   let mut intervals: Vec<(f64, f64, f64)> = Vec::with_capacity(specs.len());
@@ -4010,6 +4028,7 @@ pub fn mid_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(instant_to_granular_date_object(
     point,
     out_gran.as_deref().unwrap_or("Instant"),
+    collection,
   ))
 }
 

@@ -12279,8 +12279,73 @@ fn find_instance_numerical(
       }
       val1 += step;
     }
+  } else {
+    // Three or more variables: a full grid is far too big, but the
+    // instances wolframscript reports are small, so walk each variable
+    // outwards from zero — 0, 1, -1, 2, -2, … — and stop at whatever radius
+    // keeps the whole sweep inside the evaluation budget. Scanning in that
+    // order is also what makes the first hit the one wolframscript names:
+    // `x^5 + y^5 + z^5 == w^5 && x > 0` yields `{1, 0, 0, 1}`.
+    const BUDGET: usize = 200_000;
+    let k = var_names.len();
+    let mut radius = 0i64;
+    while radius < 100 {
+      let side = (2 * (radius + 1) + 1) as f64;
+      if side.powi(k as i32) > BUDGET as f64 {
+        break;
+      }
+      radius += 1;
+    }
+    let values: Vec<i64> = std::iter::once(0)
+      .chain((1..=radius).flat_map(|v| [v, -v]))
+      .collect();
+
+    let mut idx = vec![0usize; k];
+    loop {
+      let mut subst = cond.clone();
+      for (var, &i) in var_names.iter().zip(&idx) {
+        subst = substitute_var(&subst, var, &Expr::Integer(values[i] as i128));
+      }
+      if let Ok(evaled) = evaluate_expr_to_expr(&subst)
+        && matches!(evaled, Expr::Identifier(ref s) if s == "True")
+      {
+        results.push(Expr::List(
+          var_names
+            .iter()
+            .zip(&idx)
+            .map(|(var, &i)| Expr::Rule {
+              pattern: Box::new(Expr::Identifier(var.clone())),
+              replacement: Box::new(Expr::Integer(values[i] as i128)),
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        ));
+        if results.len() >= n {
+          break;
+        }
+      }
+      // Odometer over the value indices, last variable fastest.
+      let mut pos = k;
+      loop {
+        if pos == 0 {
+          break;
+        }
+        pos -= 1;
+        idx[pos] += 1;
+        if idx[pos] < values.len() {
+          break;
+        }
+        idx[pos] = 0;
+        if pos == 0 {
+          pos = usize::MAX;
+          break;
+        }
+      }
+      if pos == usize::MAX {
+        break;
+      }
+    }
   }
-  // For 3+ variables, could extend but keep simple for now
 
   results
 }

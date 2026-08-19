@@ -38,11 +38,52 @@ mod image_core {
     let result = interpret(
       "ImageDimensions[Image[CompressedData[\"\
        1:eJxTTMoPSmNiYGAo5gASQYnljkVFiZXBAkBOaF5xZnpeaopnXklqemqRRRJIGQ\
-       gzAzFDw///DQwA2FgPXg==\"], \"Byte\", ColorSpace -> \"RGB\", \
-       Interleaving -> True]]",
+       gzAzFDw///DQwA2FgPXg==\"], \"Byte\"]]",
     )
     .unwrap();
     assert_eq!(result, "{3, 2}");
+  }
+
+  // An explicit ColorSpace must agree with the channel count the data
+  // actually has (one channel per component, plus an optional alpha).
+  #[test]
+  fn image_color_space_channel_mismatch() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      "ImageDimensions[Image[{{{1, 0, 0}}}, ColorSpace -> \"Grayscale\"]]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "ImageDimensions[Image[{{{1, 0, 0}}}, ColorSpace -> Grayscale]]"
+    );
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "Image::imgcsmis: The specified color space Grayscale and the number of channels 3 are not compatible."
+      )),
+      "warnings={:?}",
+      r.warnings
+    );
+  }
+
+  // An alpha channel is allowed on top of the colour components.
+  #[test]
+  fn image_color_space_allows_alpha_channel() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Image[{{{1, 0, 0, 0.5}}}, ColorSpace -> \"RGB\"]]"
+      )
+      .unwrap(),
+      "{1, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Image[{{{1, 0}}}, ColorSpace -> \"Grayscale\"]]"
+      )
+      .unwrap(),
+      "{1, 1}"
+    );
   }
 
   #[test]
@@ -1540,13 +1581,15 @@ mod image_processing {
     );
   }
 
+  // The noise is added unclipped, so with a wide enough sigma the result
+  // certainly leaves the unit range — wolframscript does the same.
   #[test]
-  fn image_effect_gaussian_noise_values_in_range() {
+  fn image_effect_gaussian_noise_is_not_clipped() {
     clear_state();
     assert_eq!(
       interpret(
         "Max[ImageData[ImageEffect[Image[Table[0.5, {5}, {5}]], \
-         {\"GaussianNoise\", 0.5}]]] <= 1"
+         {\"GaussianNoise\", 10}]]] > 1"
       )
       .unwrap(),
       "True"
@@ -1554,7 +1597,7 @@ mod image_processing {
     assert_eq!(
       interpret(
         "Min[ImageData[ImageEffect[Image[Table[0.5, {5}, {5}]], \
-         {\"GaussianNoise\", 0.5}]]] >= 0"
+         {\"GaussianNoise\", 10}]]] < 0"
       )
       .unwrap(),
       "True"

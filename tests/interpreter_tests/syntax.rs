@@ -294,7 +294,7 @@ mod trailing_semicolon {
     );
     assert_eq!(
       interpret("FullForm[Hold[a ; ;]]").unwrap(),
-      "FullForm[Hold[a; Null; Null]]"
+      "FullForm[Hold[a; Null; ]]"
     );
     assert_eq!(
       interpret("FullForm[Hold[a ; ; ; b]]").unwrap(),
@@ -2268,7 +2268,7 @@ mod pattern_test_function {
   fn pattern_test_with_head_fullform() {
     assert_eq!(
       interpret("FullForm[Hold[_Integer?NonNegative]]").unwrap(),
-      "FullForm[Hold[(_Integer)?NonNegative]]"
+      "FullForm[Hold[_Integer?NonNegative]]"
     );
   }
 }
@@ -8793,7 +8793,7 @@ mod anonymous_function_precedence {
     // instead close out the whole `CompoundExpression` built so far.
     assert_eq!(
       interpret("FullForm[Hold[(a = #; b = 0; &)]]").unwrap(),
-      "FullForm[Hold[(a = #1; b = 0; Null) & ]]"
+      "FullForm[Hold[(a = #1; b = 0; ) & ]]"
     );
     // The trailing `;` before `&` also appends an implicit `Null` as the
     // function's own last statement (same as any other trailing `;`), so

@@ -3715,7 +3715,7 @@ pub fn evaluate_expr_to_expr_inner(
         matches!(idx, Expr::Identifier(s) if s == "All")
           || (i + 1 < indices.len()
             && (matches!(idx, Expr::List(_))
-              || matches!(idx, Expr::FunctionCall { name, .. } if name == "Span" || name == "UpTo")))
+              || matches!(idx, Expr::FunctionCall { name, .. } if name == "Span")))
       });
 
       // Fast path for a chain of integer positions into a variable's stored

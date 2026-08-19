@@ -345,6 +345,32 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   };
 
+  // An explicit `ColorSpace` has to agree with how many channels the data
+  // actually carries — one per component, plus an optional alpha channel.
+  // wolframscript rejects the pair outright rather than reinterpreting the
+  // data, so `Image[{{0, 128, 255}, {255, 128, 0}}, ColorSpace -> "RGB"]`
+  // (a one-channel 3x2 image) is an error, not a 1x2 RGB image.
+  if let Some(space) = args[opt_start..].iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) | Expr::String(n) if n == "ColorSpace") => {
+      match replacement.as_ref() {
+        Expr::String(s) | Expr::Identifier(s) => Some(s.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  }) && let Some(base) = color_space_components(&space)
+    && channels != base
+    && channels != base + 1
+  {
+    crate::emit_message(&format!(
+      "Image::imgcsmis: The specified color space {space} and the number of channels {channels} are not compatible."
+    ));
+    return Ok(unevaluated());
+  }
+
   // Integer-typed images read raw values on their own scale (a real 0.5
   // with "Byte" is the byte value 0.5, rounded half-even and clamped) and
   // store them normalized to [0, 1].
@@ -368,6 +394,17 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     data: Arc::new(data),
     image_type: requested_type.unwrap_or(ImageType::Real32),
   })
+}
+
+/// How many colour components a named colour space has, ignoring alpha.
+/// `None` for a name Woxi does not know, which then goes unchecked.
+fn color_space_components(name: &str) -> Option<u8> {
+  match name {
+    "Grayscale" => Some(1),
+    "RGB" | "HSB" | "LAB" | "LCH" | "LUV" | "XYZ" => Some(3),
+    "CMYK" => Some(4),
+    _ => None,
+  }
 }
 
 /// Extract (width, height, channels, row-major interleaved data) from a
@@ -1288,7 +1325,9 @@ pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 ///   replaced, with probability `d`, by pure black or pure white (equal
 ///   odds). An alpha channel is left untouched.
 /// - `"GaussianNoise"` (standard deviation `σ`, default 0.1): adds
-///   zero-mean Gaussian noise to every color channel, clipped to [0, 1].
+///   zero-mean Gaussian noise to every color channel. The result is *not*
+///   clipped to [0, 1] — wolframscript lets a noisy real image run out of
+///   the unit range, and clipping would bias the noise at both ends.
 ///
 /// Other effects are not implemented and return the call unevaluated.
 pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1373,7 +1412,7 @@ pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .unwrap_or(rand_distr::Normal::new(0.0f64, 0.0).unwrap());
         for pixel in out.chunks_mut(ch) {
           for channel in pixel.iter_mut().take(color_channels) {
-            *channel = (*channel + rng.sample(normal)).clamp(0.0, 1.0);
+            *channel += rng.sample(normal);
           }
         }
       });

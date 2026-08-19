@@ -7254,7 +7254,7 @@ mod reduce {
     // y == x/2, which is non-integral for odd x.
     assert_eq!(
       interpret("Reduce[2 x == 4 y, {x, y}, Integers]").unwrap(),
-      "Element[C[1], Integers] && x == -2*C[1] && y == -C[1]"
+      "Element[C[1], Integers] && x == 2*C[1] && y == C[1]"
     );
   }
 
@@ -7262,15 +7262,46 @@ mod reduce {
   fn diophantine_coprime_coefficients() {
     assert_eq!(
       interpret("Reduce[3 x + 5 y == 1, {x, y}, Integers]").unwrap(),
-      "Element[C[1], Integers] && y == -1 - 3*C[1] && x == 2 + 5*C[1]"
+      "Element[C[1], Integers] && x == 2 + 5*C[1] && y == -1 - 3*C[1]"
     );
   }
 
+  // Two parameters share one membership conjunct, and the lattice basis is
+  // reported in Hermite normal form: echelon by variable, positive pivots.
   #[test]
   fn diophantine_three_variables() {
     assert_eq!(
       interpret("Reduce[2 x + 3 y == 5 z, {x, y, z}, Integers]").unwrap(),
-      "Element[C[1], Integers] && Element[C[2], Integers] && y == -2*C[1] - 5*C[2] && z == -C[2] && x == 3*C[1] + 5*C[2]"
+      "Element[C[1] | C[2], Integers] && x == C[1] && y == C[1] + 5*C[2] && z == C[1] + 3*C[2]"
+    );
+  }
+
+  // The particular solution is reduced against the lattice, so each pivot
+  // coordinate is the smallest non-negative member of its residue class.
+  #[test]
+  fn diophantine_offset_is_reduced() {
+    assert_eq!(
+      interpret("Reduce[3 x + 5 y == 7, {x, y}, Integers]").unwrap(),
+      "Element[C[1], Integers] && x == 4 + 5*C[1] && y == -1 - 3*C[1]"
+    );
+    assert_eq!(
+      interpret("Reduce[6 x + 4 y == 10, {x, y}, Integers]").unwrap(),
+      "Element[C[1], Integers] && x == 1 + 2*C[1] && y == 1 - 3*C[1]"
+    );
+  }
+
+  // A variable the equation never mentions is left as itself, under its own
+  // membership conjunct, rather than being given a parameter.
+  #[test]
+  fn diophantine_untouched_variable_stays_itself() {
+    assert_eq!(
+      interpret("Reduce[2 x == 4, {x, y}, Integers]").unwrap(),
+      "Element[y, Integers] && x == 2"
+    );
+    assert_eq!(
+      interpret("Reduce[2 x + 3 y == 5 z, {x, y, z, w}, Integers]").unwrap(),
+      "Element[w, Integers] && Element[C[1] | C[2], Integers] \
+       && x == C[1] && y == C[1] + 5*C[2] && z == C[1] + 3*C[2]"
     );
   }
 
@@ -12346,20 +12377,41 @@ mod find_instance {
     );
   }
 
+  // Three or more variables are searched by walking each one outwards from
+  // zero, so the small instance is the one that turns up first — the same
+  // one wolframscript reports.
   #[test]
-  fn unsolved_search_stays_unevaluated() {
-    // When neither Solve nor the numerical search can decide, FindInstance
-    // must NOT claim `{}` (provably empty) — it stays unevaluated. This
-    // quintic Diophantine has a solution (27^5+84^5+110^5+133^5 == 144^5)
-    // that wolframscript finds but Woxi's search cannot; returning `{}`
-    // caused a spurious Part::partw in eulers_sum_of_powers_conjecture.wls.
+  fn many_variables_find_the_small_instance() {
     assert_eq!(
       interpret(
         "FindInstance[x^5 + y^5 + z^5 == w^5 && x > 0, {x, y, z, w}, \
          Integers]"
       )
       .unwrap(),
-      "FindInstance[x^5 + y^5 + z^5 == w^5 && x > 0, {x, y, z, w}, Integers]"
+      "{{x -> 1, y -> 0, z -> 0, w -> 1}}"
+    );
+    assert_eq!(
+      interpret("FindInstance[x^3 + y^3 == z^3 && x > 0, {x, y, z}, Integers]")
+        .unwrap(),
+      "{{x -> 1, y -> 0, z -> 1}}"
+    );
+  }
+
+  #[test]
+  fn unsolved_search_stays_unevaluated() {
+    // When neither Solve nor the bounded search can decide, FindInstance
+    // must NOT claim `{}` (provably empty) — it stays unevaluated. Euler's
+    // sum-of-powers conjecture needs 27^5+84^5+110^5+133^5 == 144^5, far
+    // outside the search radius; returning `{}` caused a spurious
+    // Part::partw in eulers_sum_of_powers_conjecture.wls.
+    assert_eq!(
+      interpret(
+        "FindInstance[x0^5 + x1^5 + x2^5 + x3^5 == y^5 && x0 > 0 && \
+         x1 > 0 && x2 > 0 && x3 > 0, {x0, x1, x2, x3, y}, Integers]"
+      )
+      .unwrap(),
+      "FindInstance[x0^5 + x1^5 + x2^5 + x3^5 == y^5 && x0 > 0 && x1 > 0 \
+       && x2 > 0 && x3 > 0, {x0, x1, x2, x3, y}, Integers]"
     );
   }
 }

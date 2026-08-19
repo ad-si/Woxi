@@ -2962,7 +2962,7 @@ mod mid_date {
         r#"MidDate[{DateObject[{2024, 10, 1}], DateObject[{2024, 10, 7}, "Week"]}]"#
       )
       .unwrap(),
-      "DateObject[{2024, 10, 9, 9, 0, 0.}, Instant, Gregorian, 0.]"
+      "DateObject[{2024, 10, 9, 9, 0, 0}, Instant, Gregorian, 0.]"
     );
     // The same midpoint from the eight days the two intervals cover.
     assert_eq!(
@@ -2973,7 +2973,7 @@ mod mid_date {
          DateObject[{2024, 10, 12}], DateObject[{2024, 10, 13}]}]"
       )
       .unwrap(),
-      "DateObject[{2024, 10, 9, 9, 0, 0.}, Instant, Gregorian, 0.]"
+      "DateObject[{2024, 10, 9, 9, 0, 0}, Instant, Gregorian, 0.]"
     );
   }
 
@@ -3042,7 +3042,7 @@ mod mid_date {
          \"date3\" -> DateObject[{2024, 10, 28}]|>]"
       )
       .unwrap(),
-      "DateObject[{2024, 8, 15, 4, 0, 0.}, Instant, Gregorian, 0.]"
+      "DateObject[{2024, 8, 15, 4, 0, 0}, Instant, Gregorian, 0.]"
     );
   }
 

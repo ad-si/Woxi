@@ -3784,21 +3784,23 @@ mod batch_unevaluated_wrappers_2 {
   fn word_counts_ngram_too_long() {
     assert_eq!(interpret("WordCounts[\"hi\", 5]").unwrap(), "<||>");
   }
+  // Only the words go — the spaces and punctuation around them stay put,
+  // so a deleted word leaves a gap behind, as in wolframscript.
   #[test]
-  fn delete_stopwords_string_keeps_punctuation() {
+  fn delete_stopwords_string_keeps_punctuation_and_spacing() {
     assert_eq!(
       interpret(
         "DeleteStopwords[\"A long time ago, in a galaxy far, far away\"]"
       )
       .unwrap(),
-      "long time ago, galaxy far, far away"
+      " long time ago,   galaxy far, far away"
     );
   }
   #[test]
   fn delete_stopwords_string_is_case_insensitive() {
     assert_eq!(
       interpret("DeleteStopwords[\"THE Quick Brown Fox\"]").unwrap(),
-      "Quick Brown Fox"
+      " Quick Brown Fox"
     );
   }
   #[test]
@@ -3816,12 +3818,23 @@ mod batch_unevaluated_wrappers_2 {
       "{cat, dog}"
     );
   }
+  // An association is not a string or a list of strings, so it is rejected.
   #[test]
-  fn delete_stopwords_association_drops_stopword_keys() {
+  fn delete_stopwords_association_is_an_error() {
+    let r = woxi::interpret_with_stdout(
+      "DeleteStopwords[WordCounts[\"the cat sat on the mat\"]]",
+    )
+    .unwrap();
     assert_eq!(
-      interpret("DeleteStopwords[WordCounts[\"the cat sat on the mat\"]]")
-        .unwrap(),
-      "<|mat -> 1, sat -> 1, cat -> 1|>"
+      r.result,
+      "DeleteStopwords[<|the -> 2, mat -> 1, on -> 1, sat -> 1, cat -> 1|>]"
+    );
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "DeleteStopwords::strse: A string or list of strings is expected at position 1 in"
+      )),
+      "warnings={:?}",
+      r.warnings
     );
   }
   #[test]

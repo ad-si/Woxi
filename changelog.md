@@ -20,10 +20,49 @@
 - A parenthesized `Span` takes a part index: `(1 ;; 3)[[1]]` is `1`, which
     used to be a parse error.
 - A default value can be written on any pattern, not just a named blank:
-    `f[x_?NumericQ : 2]`, `f[x : _Symbol | _Integer : 2]` and
-    `f[x : x_?NumericQ : 2]` now parse as `Optional[…]` patterns instead of
-    failing with a parse error at the second colon. `|` (Alternatives) binds
-    tighter than `:`, so the default attaches to the whole alternation.
+    `f[x : x_?NumericQ : 2]` and `f[x : _Symbol | _Integer : 2]` now parse as
+    `Optional[…]` patterns instead of failing with a parse error at the second
+    colon. Without a leading name the colon binds tightly to the term in front
+    of it, as in Wolfram: `_Symbol | _Integer : 2` is
+    `Alternatives[_Symbol, Optional[_Integer, 2]]`, and `_?NumericQ : 2` is
+    `PatternTest[_, Pattern[NumericQ, 2]]`.
+- `expr[[UpTo[n]]]` now reports `Part::pkspec1` and stays unevaluated. `UpTo`
+    is a `Take` specification, not a part specification; `Take`, `Drop` and
+    `Partition` still accept it.
+- `NCache[exact, approx]` is inert, keeping both halves, instead of
+    evaluating to its exact half. Manipulate reads slider bounds through the
+    wrapper.
+- `DeleteStopwords` on a string deletes only the words, leaving the spaces and
+    punctuation around them in place: `"the cat sat on the mat"` becomes
+    `" cat sat   mat"`. An association (or anything else that is not a string
+    or a list of strings) is a `DeleteStopwords::strse` error.
+- `Reduce[…, Integers]` reports a linear Diophantine solution the way Wolfram
+    does: the equations follow the order the variables were asked for, the
+    parameters share one `Element[C[1] | C[2], Integers]` conjunct, a variable
+    the equation never mentions stays itself under its own membership
+    conjunct, and the lattice basis and offset are canonicalized (Hermite
+    normal form, offset reduced against it).
+- `FindInstance[…, Integers]` searches three or more variables, walking each
+    one outwards from zero: `x^5 + y^5 + z^5 == w^5 && x > 0` gives
+    `{{x -> 1, y -> 0, z -> 0, w -> 1}}` instead of staying unevaluated.
+- `GeometricTest[…, "Concurrent"]` is projective, so parallel lines count —
+    they meet at the point at infinity in their common direction.
+    `"Congruent"` and `"Similar"` match the vertices up as written (and work
+    for any polygon, not just triangles).
+- `Image[…, ColorSpace -> cs]` checks the colour space against the channel
+    count the data actually has and reports `Image::imgcsmis` when they do not
+    agree, instead of reinterpreting the data.
+- `ImageEffect[…, {"GaussianNoise", σ}]` no longer clips the result to
+    [0, 1]; clipping biased the noise at both ends.
+- `MidDate` of a *collection* of dates reports a midpoint that lands on a
+    whole second as an exact integer.
+- `PolyhedronOperations`Truncate` walks the edges rather than the vertices, so
+    the cut polygon starts where Wolfram's does.
+- A trailing `;` prints as nothing rather than as `Null`: `Hold[a; b;]` echoes
+    `Hold[a; b; ]`.
+- A pattern test's left side is bracketed when it is neither an atom nor a
+    list — `(Except[0])?NumericQ` — and an unnamed blank is not:
+    `_Integer?NonNegative`.
 - `f[x : _ : 2] := …` and `f[_ : 2] := …` keep their parameter — the
     definition-storing path used to drop the whole slot, filing them as
     `f[] := …`.

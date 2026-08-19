@@ -8061,11 +8061,22 @@ mod high_level_functions {
         .unwrap(),
         "True"
       );
-      // Two parallel lines are never concurrent.
+      // Concurrency is projective, so parallel lines count too: they meet
+      // at the point at infinity in their common direction.
       assert_eq!(
         interpret(
           "GeometricTest[{InfiniteLine[{{0, 0}, {1, 0}}], \
            InfiniteLine[{{0, 1}, {1, 1}}]}, \"Concurrent\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+      // Three lines bounding a triangle share no point, at infinity or not.
+      assert_eq!(
+        interpret(
+          "GeometricTest[{InfiniteLine[{{0, 0}, {1, 0}}], \
+           InfiniteLine[{{0, 1}, {1, 2}}], \
+           InfiniteLine[{{5, 0}, {5, 1}}]}, \"Concurrent\"]"
         )
         .unwrap(),
         "False"
@@ -8216,12 +8227,24 @@ mod high_level_functions {
 
     // --- Object relations -------------------------------------------------
 
+    // The vertices are matched up *as written*: the two triangles below are
+    // the same shape, but the correspondence 1->1, 2->2, 3->3 is not an
+    // isometry, so wolframscript says they are not congruent.
     #[test]
     fn congruent_triangles() {
       assert_eq!(
         interpret(
           "GeometricTest[{Triangle[{{0, 0}, {3, 0}, {0, 4}}], \
            Triangle[{{1, 1}, {1, 5}, {4, 1}}]}, \"Congruent\"]"
+        )
+        .unwrap(),
+        "False"
+      );
+      // Written in the matching order they are.
+      assert_eq!(
+        interpret(
+          "GeometricTest[{Triangle[{{0, 0}, {3, 0}, {0, 4}}], \
+           Triangle[{{1, 1}, {4, 1}, {1, 5}}]}, \"Congruent\"]"
         )
         .unwrap(),
         "True"

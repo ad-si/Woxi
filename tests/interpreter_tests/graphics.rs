@@ -19788,10 +19788,7 @@ mod manipulate {
     let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
     assert_eq!(
       spec.tracking,
-      vec![(
-        "mode".to_string(),
-        "(mode = #1; step = 0; Null) & ".to_string()
-      )]
+      vec![("mode".to_string(), "(mode = #1; step = 0; ) & ".to_string())]
     );
     // The `step` control carries no `TrackingFunction` of its own.
     assert!(spec.tracking.iter().all(|(n, _)| n != "step"));

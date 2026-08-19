@@ -229,15 +229,18 @@ fn map_faces(expr: &Expr, f: &dyn Fn(&[Vec3]) -> Expr) -> Expr {
 /// Corner-cut each face's polygon to `ratio` of its edge length: every
 /// vertex is replaced by the two points that `ratio` of the way along its
 /// adjoining edges, turning an *n*-gon face into a 2*n*-gon face.
+///
+/// Walk the *edges*, not the vertices, so the cut polygon starts where
+/// wolframscript's does — at the near cut of the first edge rather than at
+/// the cut that precedes the first vertex.
 fn truncate_face(pts: &[Vec3], ratio: f64) -> Expr {
   let n = pts.len();
   let mut cut = Vec::with_capacity(2 * n);
   for i in 0..n {
-    let prev = pts[(i + n - 1) % n];
-    let cur = pts[i];
-    let next = pts[(i + 1) % n];
-    cut.push(lerp(cur, prev, ratio));
-    cut.push(lerp(cur, next, ratio));
+    let a = pts[i];
+    let b = pts[(i + 1) % n];
+    cut.push(lerp(a, b, ratio));
+    cut.push(lerp(a, b, 1.0 - ratio));
   }
   polygon_expr(&cut)
 }

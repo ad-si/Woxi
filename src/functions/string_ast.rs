@@ -11357,40 +11357,60 @@ fn is_stopword(word: &str) -> bool {
 }
 
 /// DeleteStopwords[text] - deletes stopwords ("the", "a", "of", ...) from a
-/// string, a list of words, or the keys of an association. Membership is
-/// case-insensitive and ignores surrounding punctuation, but the original
-/// token (with its punctuation) is kept in the result.
+/// string or a list of words. Membership is case-insensitive.
+///
+/// In a string only the *words* go; everything between them — spaces and
+/// punctuation alike — stays exactly where it was, so a deleted word leaves
+/// its surrounding whitespace behind: `"the cat sat on the mat"` becomes
+/// `" cat sat   mat"`, matching wolframscript.
+///
+/// Anything that is not a string or a list of strings (an association of
+/// word counts, a number, …) is a `DeleteStopwords::strse` error.
 pub fn delete_stopwords_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  fn strse(args: &[Expr]) -> Expr {
+    let call = unevaluated("DeleteStopwords", args);
+    crate::emit_message_to_stdout(&format!(
+      "DeleteStopwords::strse: A string or list of strings is expected at position 1 in {}.",
+      crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
+    ));
+    call
+  }
   match &args[0] {
     Expr::String(s) => {
-      let kept: Vec<&str> = s
-        .split_whitespace()
-        .filter(|tok| !is_stopword(tok))
-        .collect();
-      Ok(Expr::String(kept.join(" ")))
-    }
-    Expr::List(items) => {
-      let mut kept = Vec::with_capacity(items.len());
-      for item in items {
-        match item {
-          Expr::String(s) if is_stopword(s) => {}
-          Expr::String(_) => kept.push(item.clone()),
-          other => {
-            kept.push(delete_stopwords_ast(std::slice::from_ref(other))?);
+      let is_word_char = |c: char| c.is_alphanumeric() || c == '\'';
+      let mut out = String::with_capacity(s.len());
+      let mut word = String::new();
+      let flush = |word: &mut String, out: &mut String| {
+        if !word.is_empty() {
+          if !is_stopword(word) {
+            out.push_str(word);
           }
+          word.clear();
+        }
+      };
+      for ch in s.chars() {
+        if is_word_char(ch) {
+          word.push(ch);
+        } else {
+          flush(&mut word, &mut out);
+          out.push(ch);
         }
       }
-      Ok(Expr::List(kept.into()))
+      flush(&mut word, &mut out);
+      Ok(Expr::String(out))
     }
-    Expr::Association(pairs) => {
-      let kept: Vec<(Expr, Expr)> = pairs
+    Expr::List(items) => {
+      if !items.iter().all(|i| matches!(i, Expr::String(_))) {
+        return Ok(strse(args));
+      }
+      let kept: Vec<Expr> = items
         .iter()
-        .filter(|(k, _)| !matches!(k, Expr::String(s) if is_stopword(s)))
+        .filter(|item| !matches!(item, Expr::String(s) if is_stopword(s)))
         .cloned()
         .collect();
-      Ok(Expr::Association(kept))
+      Ok(Expr::List(kept.into()))
     }
-    _ => Ok(unevaluated("DeleteStopwords", args)),
+    _ => Ok(strse(args)),
   }
 }
 

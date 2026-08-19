@@ -2913,33 +2913,46 @@ mod once_wrapper {
   }
 }
 
-// NCache[expr, value] tags expr with a numeric approximation and evaluates
-// to expr, discarding the cached value.
+// NCache[expr, value] tags expr with a numeric approximation. It is inert
+// in wolframscript: it keeps both halves and never unwraps.
 mod ncache_wrapper {
   use super::*;
 
   #[test]
-  fn evaluates_to_first_argument() {
-    assert_eq!(interpret("NCache[1/3, 0.3333333333333333]").unwrap(), "1/3");
+  fn stays_unevaluated() {
+    assert_eq!(
+      interpret("NCache[1/3, 0.3333333333333333]").unwrap(),
+      "NCache[1/3, 0.3333333333333333]"
+    );
     assert_eq!(
       interpret("NCache[Pi/4, 0.7853981633974483]").unwrap(),
-      "Pi/4"
+      "NCache[Pi/4, 0.7853981633974483]"
     );
   }
 
   #[test]
-  fn preserves_exact_head() {
+  fn keeps_its_own_head() {
     assert_eq!(
       interpret("Head[NCache[1/3, 0.3333333333333333]]").unwrap(),
-      "Rational"
+      "NCache"
     );
   }
 
   #[test]
-  fn works_inside_a_list_of_slider_bounds() {
+  fn survives_inside_a_list() {
     assert_eq!(
       interpret("{0, NCache[2/45, 0.044444], 1}").unwrap(),
-      "{0, 2/45, 1}"
+      "{0, NCache[2/45, 0.044444], 1}"
+    );
+  }
+
+  // A Manipulate slider bound saved by the front end carries the wrapper;
+  // the control parser reads the exact half through it.
+  #[test]
+  fn manipulate_reads_through_the_wrapper() {
+    assert_eq!(
+      interpret("Manipulate[u, {u, NCache[1/4, 0.25], 1}] // Head").unwrap(),
+      "Manipulate"
     );
   }
 }
