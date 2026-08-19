@@ -1234,7 +1234,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Uses marching squares to draw contour lines.
 /// Rewrite an equation `lhs == rhs` into `lhs - rhs`, whose zero contour
 /// is the equation's implicit curve. Returns `None` for non-equations.
-fn equation_zero_body(e: &Expr) -> Option<Expr> {
+pub(crate) fn equation_zero_body(e: &Expr) -> Option<Expr> {
   let (lhs, rhs) = match e {
     Expr::Comparison {
       operands,

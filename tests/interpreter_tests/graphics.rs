@@ -15562,6 +15562,133 @@ mod contour_plot_3d {
       "Graphics3D"
     );
   }
+
+  mod basic {
+    use super::*;
+
+    #[test]
+    fn sphere_isosurface() {
+      insta::assert_snapshot!(export_svg(
+        "ContourPlot3D[x^2 + y^2 + z^2 == 4, {x, -3, 3}, {y, -3, 3}, \
+         {z, -3, 3}]"
+      ));
+    }
+
+    #[test]
+    fn plane_isosurface() {
+      insta::assert_snapshot!(export_svg(
+        "ContourPlot3D[x + y == 4, {x, 0, 5}, {y, 0, 5}, {z, 0, 10}]"
+      ));
+    }
+
+    #[test]
+    fn saddle_isosurface() {
+      insta::assert_snapshot!(export_svg(
+        "ContourPlot3D[x^2 - y^2 - z == 0, {x, -2, 2}, {y, -2, 2}, \
+         {z, -2, 2}]"
+      ));
+    }
+
+    #[test]
+    fn bare_expression_is_its_own_zero_contour() {
+      // No `== c`: ContourPlot3D[f, …] plots the surface f == 0, the same
+      // surface as writing the equation out explicitly.
+      let bare = export_svg(
+        "ContourPlot3D[x^2 + y^2 + z^2 - 4, {x, -3, 3}, {y, -3, 3}, \
+         {z, -3, 3}]",
+      );
+      let explicit = export_svg(
+        "ContourPlot3D[x^2 + y^2 + z^2 == 4, {x, -3, 3}, {y, -3, 3}, \
+         {z, -3, 3}]",
+      );
+      assert_eq!(bare, explicit);
+    }
+  }
+
+  mod options {
+    use super::*;
+
+    #[test]
+    fn contour_style_color_and_opacity() {
+      insta::assert_snapshot!(export_svg(
+        "ContourPlot3D[x + y == 4, {x, 0, 5}, {y, 0, 5}, {z, 0, 10}, \
+         ContourStyle -> Directive[LightBlue, Opacity[0.5]], Mesh -> None]"
+      ));
+    }
+
+    #[test]
+    fn list_of_equations_draws_each_surface() {
+      assert_eq!(
+        interpret(
+          "Head[ContourPlot3D[{x + y == 2, x + y == 4}, {x, 0, 5}, \
+           {y, 0, 5}, {z, 0, 10}]]"
+        )
+        .unwrap(),
+        "Graphics3D"
+      );
+    }
+
+    #[test]
+    fn image_size() {
+      insta::assert_snapshot!(export_svg(
+        "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \
+         {y, -1.5, 1.5}, {z, -1.5, 1.5}, ImageSize -> 200]"
+      ));
+    }
+  }
+
+  mod errors {
+    use super::*;
+
+    #[test]
+    fn too_few_args() {
+      let result =
+        interpret("ContourPlot3D[x^2 + y^2 - z^2, {x, -1, 1}, {y, -1, 1}]")
+          .unwrap();
+      assert!(
+        result.contains("ContourPlot3D"),
+        "Should return unevaluated: {result}"
+      );
+    }
+
+    #[test]
+    fn no_surface_in_range() {
+      // The field never reaches 100 inside this box (max is 3), so there is
+      // nothing to draw.
+      assert!(
+        interpret(
+          "ContourPlot3D[x^2 + y^2 + z^2 == 100, {x, -1, 1}, {y, -1, 1}, \
+           {z, -1, 1}]"
+        )
+        .is_err()
+      );
+    }
+  }
+
+  mod regression {
+    use super::*;
+
+    /// Woxi's `ContourPlot3D` used to be a placeholder that always rendered
+    /// an empty `Graphics3D` shell with no surface. This guards against
+    /// silently regressing back to that: the isosurface must actually be
+    /// drawn as filled triangles.
+    #[test]
+    fn draws_real_geometry_not_an_empty_placeholder() {
+      let svg = export_svg(
+        "ContourPlot3D[x^2 + y^2 + z^2 == 4, {x, -3, 3}, {y, -3, 3}, \
+         {z, -3, 3}]",
+      );
+      assert!(
+        svg.contains("<polygon"),
+        "expected filled polygons in the isosurface, got: {svg}"
+      );
+      assert!(
+        svg.len() > 1000,
+        "expected substantial SVG content, got {} bytes",
+        svg.len()
+      );
+    }
+  }
 }
 
 mod rule_plot {

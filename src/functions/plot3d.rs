@@ -7129,6 +7129,445 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics3d_result(svg))
 }
 
+// ── ContourPlot3D implementation ─────────────────────────────────────
+//
+// Extracts the isosurface `f == c` with marching tetrahedra: each grid
+// cube is split into 6 tetrahedra sharing the corner-to-corner diagonal
+// (a fixed split, so adjacent cubes' cut faces always agree and no cracks
+// appear), and each tetrahedron contributes 0, 1 or 2 triangles depending
+// on how many of its corners are above the level.
+
+/// Grid resolution per axis. An isosurface's triangle count grows with the
+/// *surface area* it crosses, not the full N^3 volume, so this stays much
+/// cheaper in practice than the worst-case cube count suggests.
+const CONTOUR3D_GRID: usize = 24;
+
+/// The vertices of a unit cube, sharing corner-to-corner diagonal 0–6, in
+/// the cyclic order that fans around that diagonal. Splitting a cube into
+/// the 6 tetrahedra `{0, 6, ring[w], ring[w+1]}` is the standard
+/// diagonal-preserving decomposition used by marching tetrahedra.
+const TETRA_RING: [usize; 6] = [1, 2, 3, 7, 4, 5];
+
+fn evaluate_scalar_3d(
+  body: &Expr,
+  xvar: &str,
+  yvar: &str,
+  zvar: &str,
+  xval: f64,
+  yval: f64,
+  zval: f64,
+) -> Option<f64> {
+  let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
+  let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
+  let sub3 = substitute_var(&sub2, zvar, &Expr::Real(zval));
+  let result = evaluate_expr_to_expr(&sub3).ok()?;
+  try_eval_to_f64(&result)
+}
+
+/// The point where the level `level` crosses the segment from `verts[i]`
+/// (value `vals[i]`) to `verts[j]` (value `vals[j]`), by linear
+/// interpolation.
+fn lerp_crossing(
+  verts: &[Point3D; 4],
+  vals: &[f64; 4],
+  level: f64,
+  i: usize,
+  j: usize,
+) -> Point3D {
+  let denom = vals[j] - vals[i];
+  let t = if denom.abs() < 1e-12 {
+    0.5
+  } else {
+    ((level - vals[i]) / denom).clamp(0.0, 1.0)
+  };
+  Point3D {
+    x: verts[i].x + t * (verts[j].x - verts[i].x),
+    y: verts[i].y + t * (verts[j].y - verts[i].y),
+    z: verts[i].z + t * (verts[j].z - verts[i].z),
+  }
+}
+
+/// Triangulate the part of the level surface `level` that cuts through one
+/// tetrahedron, calling `emit` with each triangle it produces. Corners at
+/// or above `level` are "inside"; the surface separates them from the
+/// corners below it.
+fn march_tetra(
+  verts: [Point3D; 4],
+  vals: [f64; 4],
+  level: f64,
+  emit: &mut impl FnMut([Point3D; 3]),
+) {
+  let inside: Vec<usize> = (0..4).filter(|&i| vals[i] >= level).collect();
+  let outside: Vec<usize> = (0..4).filter(|&i| vals[i] < level).collect();
+
+  match (inside.len(), outside.len()) {
+    (1, 3) => {
+      let a = inside[0];
+      let p0 = lerp_crossing(&verts, &vals, level, a, outside[0]);
+      let p1 = lerp_crossing(&verts, &vals, level, a, outside[1]);
+      let p2 = lerp_crossing(&verts, &vals, level, a, outside[2]);
+      emit([p0, p1, p2]);
+    }
+    (3, 1) => {
+      let a = outside[0];
+      let p0 = lerp_crossing(&verts, &vals, level, a, inside[0]);
+      let p1 = lerp_crossing(&verts, &vals, level, a, inside[1]);
+      let p2 = lerp_crossing(&verts, &vals, level, a, inside[2]);
+      emit([p0, p2, p1]);
+    }
+    (2, 2) => {
+      let (i0, i1) = (inside[0], inside[1]);
+      let (o0, o1) = (outside[0], outside[1]);
+      let p00 = lerp_crossing(&verts, &vals, level, i0, o0);
+      let p01 = lerp_crossing(&verts, &vals, level, i0, o1);
+      let p10 = lerp_crossing(&verts, &vals, level, i1, o0);
+      let p11 = lerp_crossing(&verts, &vals, level, i1, o1);
+      emit([p00, p01, p11]);
+      emit([p00, p11, p10]);
+    }
+    _ => {}
+  }
+}
+
+/// Triangulate the part of the level surface that cuts through one grid
+/// cube, via its 6-tetrahedra decomposition. `corners` and `vals` follow
+/// the standard cube corner order: `{x,y,z}` in `{0,1}` with `x` varying
+/// fastest, i.e. corner `i` has bit 0 = x, bit 1 = y, bit 2 = z.
+fn march_cube(
+  corners: &[Point3D; 8],
+  vals: &[f64; 8],
+  level: f64,
+  emit: &mut impl FnMut([Point3D; 3]),
+) {
+  for w in 0..6 {
+    let c = TETRA_RING[w];
+    let d = TETRA_RING[(w + 1) % 6];
+    march_tetra(
+      [corners[0], corners[6], corners[c], corners[d]],
+      [vals[0], vals[6], vals[c], vals[d]],
+      level,
+      emit,
+    );
+  }
+}
+
+/// ContourPlot3D[f == c, {x, xmin, xmax}, {y, ymin, ymax}, {z, zmin, zmax}]
+/// draws the implicit surface `f == c` (a bare expression, or one lacking
+/// `== c`, is its own zero contour). A list of equations draws each
+/// surface together, as `ContourStyle` colours them.
+pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 4 {
+    return Err(InterpreterError::EvaluationError(
+      "ContourPlot3D requires at least 4 arguments: ContourPlot3D[f == c, {x,xmin,xmax}, {y,ymin,ymax}, {z,zmin,zmax}]".into(),
+    ));
+  }
+
+  let (xvar, x_min, x_max) =
+    parse_iterator_generic(&args[1], "ContourPlot3D", "first")?;
+  let (yvar, y_min, y_max) =
+    parse_iterator_generic(&args[2], "ContourPlot3D", "second")?;
+  let (zvar, z_min, z_max) =
+    parse_iterator_generic(&args[3], "ContourPlot3D", "third")?;
+  if !(x_max > x_min) || !(y_max > y_min) || !(z_max > z_min) {
+    return Err(InterpreterError::EvaluationError(
+      "ContourPlot3D: iterator ranges must be increasing".into(),
+    ));
+  }
+
+  // `f == c` (or a list of such equations) plots the zero contour of
+  // `f - c`; a bare expression is its own zero contour.
+  let bodies: Vec<Expr> = match &args[0] {
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|i| {
+          crate::functions::field_plot::equation_zero_body(i).is_some()
+        }) =>
+    {
+      items
+        .iter()
+        .filter_map(crate::functions::field_plot::equation_zero_body)
+        .collect()
+    }
+    other => vec![
+      crate::functions::field_plot::equation_zero_body(other)
+        .unwrap_or_else(|| other.clone()),
+    ],
+  };
+
+  let mut svg_width = DEFAULT_SIZE;
+  let mut svg_height = DEFAULT_SIZE;
+  let mut full_width = false;
+  let mut show_axes = true;
+  let mut styles: Vec<StyleState3D> = Vec::new();
+
+  for opt in &args[4..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    {
+      match pattern.as_ref() {
+        Expr::Identifier(name) if name == "ImageSize" => {
+          if let Some((w, h, fw)) =
+            parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
+          {
+            svg_width = w;
+            svg_height = h;
+            full_width = fw;
+          }
+        }
+        Expr::Identifier(name) if name == "Boxed" => match replacement.as_ref()
+        {
+          Expr::Identifier(s) if s == "False" => show_axes = false,
+          Expr::Identifier(s) if s == "True" => show_axes = true,
+          _ => {}
+        },
+        Expr::Identifier(name) if name == "ContourStyle" => {
+          styles = parse_plot_style_3d(replacement, bodies.len());
+        }
+        _ => {}
+      }
+    }
+  }
+
+  let n = CONTOUR3D_GRID;
+  let x_step = (x_max - x_min) / n as f64;
+  let y_step = (y_max - y_min) / n as f64;
+  let z_step = (z_max - z_min) / n as f64;
+
+  let camera = Camera::default();
+  let view_dir = {
+    let (sa, ca) = camera.azimuth.sin_cos();
+    let (se, ce) = camera.elevation.sin_cos();
+    [ce * ca, ce * sa, se]
+  };
+
+  // Normalize coordinates to [-1, 1] for x,y and [-Z_SCALE, Z_SCALE] for z,
+  // matching every other 3D plot in this module.
+  let nx = |v: f64| -> f64 { (v - x_min) / (x_max - x_min) * 2.0 - 1.0 };
+  let ny = |v: f64| -> f64 { (v - y_min) / (y_max - y_min) * 2.0 - 1.0 };
+  let nz =
+    |v: f64| -> f64 { (v - z_min) / (z_max - z_min) * 2.0 * Z_SCALE - Z_SCALE };
+
+  let default_color = (0x5E_u8, 0x81_u8, 0xB5_u8);
+  let mut all_triangles: Vec<Triangle> = Vec::new();
+  let mut point_exprs: Vec<Expr> = Vec::new();
+  let mut content: Vec<Expr> = Vec::new();
+
+  for (surf_idx, body) in bodies.iter().enumerate() {
+    let mut field = vec![vec![vec![f64::NAN; n + 1]; n + 1]; n + 1];
+    for (i, xrow) in field.iter_mut().enumerate() {
+      let xval = x_min + i as f64 * x_step;
+      for (j, yrow) in xrow.iter_mut().enumerate() {
+        let yval = y_min + j as f64 * y_step;
+        for (k, cell) in yrow.iter_mut().enumerate() {
+          let zval = z_min + k as f64 * z_step;
+          if let Some(v) =
+            evaluate_scalar_3d(body, &xvar, &yvar, &zvar, xval, yval, zval)
+          {
+            *cell = v;
+          }
+        }
+      }
+    }
+
+    let style = if styles.is_empty() {
+      None
+    } else {
+      Some(&styles[surf_idx % styles.len()])
+    };
+    let (cr, cg, cb) = style.and_then(|s| s.color).unwrap_or(default_color);
+    let color_directive = call(
+      "RGBColor",
+      vec![
+        Expr::Real(cr as f64 / 255.0),
+        Expr::Real(cg as f64 / 255.0),
+        Expr::Real(cb as f64 / 255.0),
+      ],
+    );
+
+    for i in 0..n {
+      for j in 0..n {
+        for k in 0..n {
+          let cvals = [
+            field[i][j][k],
+            field[i + 1][j][k],
+            field[i + 1][j + 1][k],
+            field[i][j + 1][k],
+            field[i][j][k + 1],
+            field[i + 1][j][k + 1],
+            field[i + 1][j + 1][k + 1],
+            field[i][j + 1][k + 1],
+          ];
+          if cvals.iter().any(|v| !v.is_finite()) {
+            continue;
+          }
+          let xs = [x_min + i as f64 * x_step, x_min + (i + 1) as f64 * x_step];
+          let ys = [y_min + j as f64 * y_step, y_min + (j + 1) as f64 * y_step];
+          let zs = [z_min + k as f64 * z_step, z_min + (k + 1) as f64 * z_step];
+          let corners_world: [Point3D; 8] = [
+            Point3D {
+              x: xs[0],
+              y: ys[0],
+              z: zs[0],
+            },
+            Point3D {
+              x: xs[1],
+              y: ys[0],
+              z: zs[0],
+            },
+            Point3D {
+              x: xs[1],
+              y: ys[1],
+              z: zs[0],
+            },
+            Point3D {
+              x: xs[0],
+              y: ys[1],
+              z: zs[0],
+            },
+            Point3D {
+              x: xs[0],
+              y: ys[0],
+              z: zs[1],
+            },
+            Point3D {
+              x: xs[1],
+              y: ys[0],
+              z: zs[1],
+            },
+            Point3D {
+              x: xs[1],
+              y: ys[1],
+              z: zs[1],
+            },
+            Point3D {
+              x: xs[0],
+              y: ys[1],
+              z: zs[1],
+            },
+          ];
+
+          march_cube(&corners_world, &cvals, 0.0, &mut |tri_world| {
+            let tri_norm = tri_world.map(|p| Point3D {
+              x: nx(p.x),
+              y: ny(p.y),
+              z: nz(p.z),
+            });
+            let normal = triangle_normal(tri_norm[0], tri_norm[1], tri_norm[2]);
+            let (color, opacity) =
+              shade_facet(default_color, style, normal, view_dir);
+            let p0 = project(tri_norm[0], &camera);
+            let p1 = project(tri_norm[1], &camera);
+            let p2 = project(tri_norm[2], &camera);
+            let center = Point3D {
+              x: (tri_norm[0].x + tri_norm[1].x + tri_norm[2].x) / 3.0,
+              y: (tri_norm[0].y + tri_norm[1].y + tri_norm[2].y) / 3.0,
+              z: (tri_norm[0].z + tri_norm[1].z + tri_norm[2].z) / 3.0,
+            };
+            all_triangles.push(Triangle {
+              boundary: [true; 3],
+              edge_color: style.and_then(|s| s.edge_color),
+              projected: [p0, p1, p2],
+              depth: depth(center, &camera),
+              color,
+              opacity,
+            });
+
+            // World-coordinate copy for `Show[]` to merge via GraphicsComplex.
+            let base = point_exprs.len();
+            for p in &tri_world {
+              point_exprs.push(Expr::List(
+                vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)].into(),
+              ));
+            }
+            content.push(Expr::List(
+              vec![
+                color_directive.clone(),
+                Expr::FunctionCall {
+                  name: "Polygon".to_string(),
+                  args: vec![Expr::List(
+                    vec![
+                      Expr::Integer(base as i128 + 1),
+                      Expr::Integer(base as i128 + 2),
+                      Expr::Integer(base as i128 + 3),
+                    ]
+                    .into(),
+                  )]
+                  .into(),
+                },
+              ]
+              .into(),
+            ));
+          });
+        }
+      }
+    }
+  }
+
+  if all_triangles.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "ContourPlot3D: the surface has no points in the given range".into(),
+    ));
+  }
+
+  all_triangles.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  let svg = generate_svg(
+    &all_triangles,
+    &[],
+    &camera,
+    (x_min, x_max),
+    (y_min, y_max),
+    (z_min, z_max),
+    svg_width,
+    svg_height,
+    full_width,
+    MeshMode::None,
+    show_axes,
+  )?;
+  // A `PlotLabel` sets a title above the finished picture.
+  let svg = with_plot_label(svg, args, svg_width, svg_height);
+
+  let structure = {
+    let complex = Expr::FunctionCall {
+      name: "GraphicsComplex".to_string(),
+      args: vec![Expr::List(point_exprs.into()), Expr::List(content.into())]
+        .into(),
+    };
+    let mut structure_args = vec![complex];
+    structure_args.extend(args[4..].iter().cloned());
+    let names = |opt: &str| {
+      structure_args.iter().any(|o| {
+        matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt))
+      })
+    };
+    let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
+    if !names_axes {
+      structure_args.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier("Axes".to_string())),
+        replacement: Box::new(Expr::Identifier("True".to_string())),
+      });
+    }
+    if !names_ratios {
+      structure_args.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier("BoxRatios".to_string())),
+        replacement: Box::new(Expr::List(
+          vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
+        )),
+      });
+    }
+    call("Graphics3D", structure_args)
+  };
+
+  Ok(crate::graphics3d_result_with_structure(svg, structure))
+}
+
 // ── ListPointPlot3D implementation ───────────────────────────────────
 
 /// A projected point for scatter rendering.

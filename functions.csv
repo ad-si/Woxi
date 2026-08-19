@@ -390,7 +390,7 @@ ArcCsch,Returns the inverse hyperbolic cosecant,✅,pure,1.0,348
 ArcCoth,Returns the inverse hyperbolic cotangent,✅,pure,1.0,327
 ArcSech,Returns the inverse hyperbolic secant,✅,pure,1.0,335
 SeedRandom,Seeds the random number generator,✅,stateful,1.0,351
-ContourPlot3D,Placeholder 3D contour plot returning a Graphics3D shell,✅,pure,6.0,352
+ContourPlot3D,3D contour plot of the isosurface f == c via marching tetrahedra,✅,pure,6.0,352
 Catch,Catches a value thrown by Throw; the form is matched as a pattern and the 3-arg form applies f to the value and tag,✅,pure,1.0,353
 InputForm,Converts expression to input form,✅,pure,1.0,354
 Sow,Sows an expression for collection by Reap,✅,stateful,5.0,355
