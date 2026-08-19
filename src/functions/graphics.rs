@@ -8562,6 +8562,26 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
 }
 
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
+  // `StringForm["template", args…]` substitutes its placeholders wherever
+  // it is *typeset* — a graphic's label is exactly that (unlike
+  // `Print`/OutputForm in a script, which show the literal wrapper because
+  // there is no front end to apply the Format rule). A Demonstration's
+  // `PlotLabel -> StringForm["Distance = ``", d]` idiom depends on this.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "StringForm"
+    && let Some(Expr::String(template)) = args.first()
+  {
+    // Escape the template's literal text up front — the placeholders
+    // (`` `` `` / `` `n` ``) contain no XML-special characters, so this
+    // cannot corrupt them — and substitute each argument through the same
+    // markup renderer used for the rest of the label, so a `NumberForm`,
+    // `Power`, etc. argument typesets instead of leaking its FullForm text.
+    return crate::functions::string_ast::format_string_form_with(
+      &svg_escape(template),
+      &args[1..],
+      expr_to_svg_markup,
+    );
+  }
   // A unit-fraction power is a radical, not a superscript: `Sqrt[2]`
   // (which is `2^(1/2)`) typesets as √2 under its vinculum, and a cube
   // root carries its index in the hook.
