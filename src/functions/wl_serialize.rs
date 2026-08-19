@@ -134,7 +134,7 @@ fn build_normal(head: &Expr, args: Vec<Expr>) -> Expr {
 fn parse_integer(s: &str) -> Expr {
   if let Ok(i) = s.parse::<i128>() {
     Expr::Integer(i)
-  } else if let Ok(big) = s.parse::<num_bigint::BigInt>() {
+  } else if let Ok(big) = s.parse::<BigInt>() {
     Expr::BigInteger(big)
   } else {
     Expr::Integer(0)

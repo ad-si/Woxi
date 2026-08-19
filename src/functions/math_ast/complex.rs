@@ -1456,7 +1456,7 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // N[999999/1000003], N[1/2^40], and N[1000001/2^30] do not
     // (differential fuzzer, seed 15336548261066338105).
     match rationalize_machine_default(x) {
-      Some((n, d)) if d == num_bigint::BigInt::from(1) => Ok(bigint_to_expr(n)),
+      Some((n, d)) if d == BigInt::from(1) => Ok(bigint_to_expr(n)),
       Some((n, d)) => {
         Ok(call("Rational", vec![bigint_to_expr(n), bigint_to_expr(d)]))
       }
@@ -1466,8 +1466,7 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// The exact binary fraction of a finite double: `x = n/d` with `d > 0`.
-fn f64_exact_ratio(x: f64) -> Option<(num_bigint::BigInt, num_bigint::BigInt)> {
-  use num_bigint::BigInt;
+fn f64_exact_ratio(x: f64) -> Option<(BigInt, BigInt)> {
   if !x.is_finite() {
     return None;
   }
@@ -1505,10 +1504,7 @@ fn f64_exact_ratio(x: f64) -> Option<(num_bigint::BigInt, num_bigint::BigInt)> {
 /// third — closer than 10^-5 but NOT machine-close, like 0.333333 or
 /// 0.499999 — is ambiguous and stays Real (0.142857, one step further
 /// from any t ≤ 3 fraction, still rationalizes to 142857/1000000).
-fn rationalize_machine_default(
-  x: f64,
-) -> Option<(num_bigint::BigInt, num_bigint::BigInt)> {
-  use num_bigint::BigInt;
+fn rationalize_machine_default(x: f64) -> Option<(BigInt, BigInt)> {
   use num_traits::{Signed, Zero};
   let (num, den) = f64_exact_ratio(x)?;
 

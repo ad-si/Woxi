@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use num_bigint::BigInt;
 
 /// Pochhammer[a, n] - Rising factorial (Pochhammer symbol): a * (a+1) * ... * (a+n-1)
 pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

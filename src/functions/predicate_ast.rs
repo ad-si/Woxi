@@ -441,7 +441,7 @@ pub fn even_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(n) => n % 2 == 0,
     Expr::BigInteger(n) => {
       use num_traits::Zero;
-      (n % num_bigint::BigInt::from(2)).is_zero()
+      (n % BigInt::from(2)).is_zero()
     }
     _ => return Ok(bool_expr(false)),
   };
@@ -461,7 +461,7 @@ pub fn odd_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(n) => n % 2 != 0,
     Expr::BigInteger(n) => {
       use num_traits::Zero;
-      !(n % num_bigint::BigInt::from(2)).is_zero()
+      !(n % BigInt::from(2)).is_zero()
     }
     _ => return Ok(bool_expr(false)),
   };
@@ -760,7 +760,7 @@ fn expr_has_real_or_i(expr: &Expr) -> bool {
 fn is_known_positive(expr: &Expr) -> Option<bool> {
   match expr {
     Expr::Integer(n) => Some(*n > 0),
-    Expr::BigInteger(n) => Some(*n > num_bigint::BigInt::from(0)),
+    Expr::BigInteger(n) => Some(*n > BigInt::from(0)),
     Expr::Real(f) => Some(*f > 0.0),
     // Rational[n, d]: positive when n and d have the same sign
     Expr::FunctionCall { name, args }
@@ -825,7 +825,7 @@ fn is_known_positive(expr: &Expr) -> Option<bool> {
 fn is_known_negative(expr: &Expr) -> Option<bool> {
   match expr {
     Expr::Integer(n) => Some(*n < 0),
-    Expr::BigInteger(n) => Some(*n < num_bigint::BigInt::from(0)),
+    Expr::BigInteger(n) => Some(*n < BigInt::from(0)),
     Expr::Real(f) => Some(*f < 0.0),
     // Rational[n, d]: negative when n and d have opposite signs
     Expr::FunctionCall { name, args }
@@ -1059,7 +1059,6 @@ fn is_zero(expr: &Expr) -> bool {
 /// otherwise (both parts nonzero) the norm `re^2 + im^2` must be a rational
 /// prime.
 fn is_gaussian_prime(re: i128, im: i128) -> bool {
-  use num_bigint::BigInt;
   let is_p =
     |n: i128| crate::functions::math_ast::is_prime_bigint(&BigInt::from(n));
   if re == 0 && im == 0 {
@@ -1121,7 +1120,7 @@ pub fn prime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::BigInteger(n) => {
         use num_traits::Signed;
         let abs_n = n.abs();
-        let is_three_mod_four = (&abs_n % 4u8) == num_bigint::BigInt::from(3);
+        let is_three_mod_four = (&abs_n % 4u8) == BigInt::from(3);
         return Ok(bool_expr(
           is_three_mod_four
             && crate::functions::math_ast::is_prime_bigint(&abs_n),
@@ -1183,7 +1182,7 @@ pub fn composite_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(n) => return Ok(bool_expr(n.abs() > 1)),
     Expr::BigInteger(n) => {
       use num_traits::Signed;
-      return Ok(bool_expr(n.abs() > num_bigint::BigInt::from(1)));
+      return Ok(bool_expr(n.abs() > BigInt::from(1)));
     }
     _ => {}
   }
@@ -1708,7 +1707,7 @@ pub fn square_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(_) => Ok(bool_expr(false)),
     Expr::BigInteger(n) => {
       use num_traits::Zero;
-      let mut num = if n < &num_bigint::BigInt::from(0) {
+      let mut num = if n < &BigInt::from(0) {
         -n.clone()
       } else {
         n.clone()
@@ -1716,19 +1715,19 @@ pub fn square_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if num.is_zero() {
         return Ok(bool_expr(false));
       }
-      let two = num_bigint::BigInt::from(2);
+      let two = BigInt::from(2);
       let mut count = 0;
-      while &num % &two == num_bigint::BigInt::from(0) {
+      while &num % &two == BigInt::from(0) {
         count += 1;
         num /= &two;
         if count > 1 {
           return Ok(bool_expr(false));
         }
       }
-      let mut i = num_bigint::BigInt::from(3);
+      let mut i = BigInt::from(3);
       while &i * &i <= num {
         count = 0;
-        while &num % &i == num_bigint::BigInt::from(0) {
+        while &num % &i == BigInt::from(0) {
           count += 1;
           num /= &i;
           if count > 1 {
@@ -1784,7 +1783,6 @@ pub fn palindrome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Divisible[n, m] - Tests if n is divisible by m
 /// Returns unevaluated if arguments are not exact numbers (non-integer Reals)
 pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use num_bigint::BigInt;
   use num_traits::Zero;
 
   if args.len() != 2 {

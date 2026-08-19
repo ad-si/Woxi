@@ -3,7 +3,6 @@ use super::*;
 use crate::functions::math_ast::{
   expr_to_f64, expr_to_i128, expr_to_rational, gcd_bigint,
 };
-use num_bigint::BigInt;
 
 /// MinimalPolynomial[α, x] - Computes the minimal polynomial of an algebraic number α
 /// in the variable x.
@@ -2257,7 +2256,6 @@ pub fn algebraic_number_denominator_ast(
 /// chain over exact big-integer arithmetic (pseudo-remainders scaled by
 /// positive constants so the sign structure is preserved).
 fn sturm_real_root_count(coeffs: &[i128]) -> usize {
-  use num_bigint::BigInt;
   use num_traits::{Signed, Zero};
 
   fn trim(mut v: Vec<BigInt>) -> Vec<BigInt> {

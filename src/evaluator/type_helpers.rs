@@ -38,7 +38,7 @@ pub fn contains_i(expr: &Expr) -> bool {
 /// Apply a binary operation when at least one operand is a BigInteger or large Integer
 pub fn bigint_binary_op<F>(left: &Expr, right: &Expr, op: F) -> Option<Expr>
 where
-  F: FnOnce(num_bigint::BigInt, num_bigint::BigInt) -> num_bigint::BigInt,
+  F: FnOnce(BigInt, BigInt) -> BigInt,
 {
   if !needs_bigint(left) && !needs_bigint(right) {
     return None;

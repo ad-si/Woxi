@@ -575,7 +575,7 @@ fn expr_is_zero(e: &Expr) -> Option<bool> {
   let v = crate::evaluator::evaluate_expr_to_expr(e).ok()?;
   match &v {
     Expr::Integer(n) => Some(*n == 0),
-    Expr::BigInteger(n) => Some(*n == num_bigint::BigInt::from(0)),
+    Expr::BigInteger(n) => Some(*n == BigInt::from(0)),
     Expr::Real(r) => Some(*r == 0.0),
     _ => super::math_ast::try_eval_to_f64(&v).map(|f| f == 0.0),
   }

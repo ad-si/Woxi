@@ -72,7 +72,7 @@ fn n_eval_arbitrary_precision_form(
 ) -> Result<Expr, InterpreterError> {
   let is_exact_zero = match expr {
     Expr::Integer(n) => *n == 0,
-    Expr::BigInteger(n) => n.sign() == num_bigint::Sign::NoSign,
+    Expr::BigInteger(n) => n.sign() == Sign::NoSign,
     _ => false,
   };
   if is_exact_zero {
@@ -1197,7 +1197,7 @@ fn n_eval_arbitrary_partial(
   // An exact zero stays exact under `N[expr, p]` (Head Integer, Precision
   // Infinity), just like at the top level — `N[x == 0, 10]` is `x == 0`.
   if matches!(expr, Expr::Integer(0))
-    || matches!(expr, Expr::BigInteger(n) if n.sign() == num_bigint::Sign::NoSign)
+    || matches!(expr, Expr::BigInteger(n) if n.sign() == Sign::NoSign)
   {
     return Ok(Expr::Integer(0));
   }
@@ -5208,7 +5208,6 @@ fn compute_khinchin(
 /// exactly: enough base-b digits accumulate into a big integer M so that
 /// M/b^K determines the requested decimal digits, then long-divided.
 fn champernowne_decimal_digits(base: i128, decimal_digits: usize) -> String {
-  use num_bigint::BigInt;
   let k_needed = ((decimal_digits as f64 + 2.0) * std::f64::consts::LN_10
     / (base as f64).ln())
   .ceil() as usize

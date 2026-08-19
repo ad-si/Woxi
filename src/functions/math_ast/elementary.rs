@@ -1,8 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::syntax::ExprForm;
-use num_bigint::BigInt;
-use num_bigint::Sign;
 
 /// Check if an expression is known to be non-negative without assumptions.
 /// Used for simplifications like Sqrt[x^2] → x (only valid when x >= 0).

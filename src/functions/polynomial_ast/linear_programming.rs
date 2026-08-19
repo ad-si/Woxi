@@ -21,7 +21,6 @@
 
 #[allow(unused_imports)]
 use super::*;
-use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 
 /// An exact rational number with a `BigInt` numerator/denominator, kept in

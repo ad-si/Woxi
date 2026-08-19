@@ -2083,18 +2083,18 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           && min >= 0
           && max >= min
         {
-          let mut fact = num_bigint::BigInt::from(1);
+          let mut fact = BigInt::from(1);
           for k in 2..=min {
-            fact *= num_bigint::BigInt::from(k);
+            fact *= BigInt::from(k);
           }
-          let mut sum = num_bigint::BigInt::from(0);
+          let mut sum = BigInt::from(0);
           let mut i = min;
           while i <= max {
             sum += &fact;
             for s in 1..=step {
               let next = i + s;
               if next >= 2 {
-                fact *= num_bigint::BigInt::from(next);
+                fact *= BigInt::from(next);
               }
             }
             i += step;
@@ -2259,9 +2259,9 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Sum[k, {k, a, b, c}] = n_terms * (first + last) / 2.
         if matches!(body, Expr::Identifier(name) if name == &var_name) {
           let last = min + step * (n - 1);
-          let sum_num = num_bigint::BigInt::from(n)
-            * (num_bigint::BigInt::from(min) + num_bigint::BigInt::from(last));
-          let sum = sum_num / num_bigint::BigInt::from(2);
+          let sum_num =
+            BigInt::from(n) * (BigInt::from(min) + BigInt::from(last));
+          let sum = sum_num / BigInt::from(2);
           return Ok(crate::functions::math_ast::bigint_to_expr(sum));
         }
       }
@@ -4902,7 +4902,7 @@ fn get_integer(expr: &Expr) -> Option<i128> {
 
 fn is_one(expr: &Expr) -> bool {
   matches!(expr, Expr::Integer(1))
-    || matches!(expr, Expr::BigInteger(n) if *n == num_bigint::BigInt::from(1))
+    || matches!(expr, Expr::BigInteger(n) if *n == BigInt::from(1))
 }
 
 /// Compute ζ(2k) = |B_{2k}| * (2π)^{2k} / (2 * (2k)!) as a symbolic expression.

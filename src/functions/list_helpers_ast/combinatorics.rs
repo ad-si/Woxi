@@ -144,7 +144,6 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn combinatorica_unrank_permutation_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  use num_bigint::{BigInt, Sign};
   use num_traits::ToPrimitive;
 
   let original = || unevaluated("Combinatorica`UnrankPermutation", args);

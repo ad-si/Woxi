@@ -1,8 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
 use contains_inexact_real as contains_real;
-use num_bigint::BigInt;
-use num_bigint::Sign;
 
 /// Combine `SeriesData[var, x0, coeffs, nmin, nmax, denom]` summands that
 /// share the same `(var, x0, denom)` into a single SeriesData. The result
