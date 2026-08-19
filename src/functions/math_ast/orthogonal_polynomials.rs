@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use num_bigint::BigInt;
 
 /// Visit every additive term of a polynomial expression, flattening nested and
 /// n-ary `Plus`. Anything that is not a `Plus` is a single term.

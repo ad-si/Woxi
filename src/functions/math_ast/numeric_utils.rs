@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use num_bigint::BigInt;
 use num_traits::{Signed, Zero};
 
 /// Helper - constants are kept symbolic, no direct f64 conversion in expr_to_num.

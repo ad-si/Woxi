@@ -1119,11 +1119,11 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Try all-integer exact path (Integer and BigInteger). Computed in
       // BigInt so the squared deviations don't overflow i128.
       let mut all_int = true;
-      let mut int_vals: Vec<num_bigint::BigInt> = Vec::new();
+      let mut int_vals: Vec<BigInt> = Vec::new();
       let mut has_real = false;
       for item in items {
         match item {
-          Expr::Integer(n) => int_vals.push(num_bigint::BigInt::from(*n)),
+          Expr::Integer(n) => int_vals.push(BigInt::from(*n)),
           Expr::BigInteger(n) => int_vals.push(n.clone()),
           Expr::Real(_) => {
             all_int = false;
@@ -1139,7 +1139,6 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if all_int && !int_vals.is_empty() {
         // Exact: Variance = Sum[(xi - mean)^2] / (n-1)
         // = (n * Sum[xi^2] - (Sum[xi])^2) / (n * (n-1))
-        use num_bigint::BigInt;
         let n = BigInt::from(int_vals.len() as i128);
         let sum: BigInt = int_vals.iter().sum();
         let sum_sq: BigInt = int_vals.iter().map(|x| x * x).sum();

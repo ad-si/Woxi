@@ -1,3 +1,5 @@
+use num_bigint::{BigInt, Sign};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageType {
   Bit,
@@ -14,7 +16,7 @@ pub enum Expr {
   /// Integer literal
   Integer(i128),
   /// Big integer (exceeds i128 range)
-  BigInteger(num_bigint::BigInt),
+  BigInteger(BigInt),
   /// Real/float literal
   Real(f64),
   /// Arbitrary-precision real: (formatted_digits, precision_in_decimal_digits)
@@ -2251,7 +2253,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         Ok(n) => Expr::Integer(n),
         Err(_) => {
           // Overflows i128 — use BigInteger
-          match s.parse::<num_bigint::BigInt>() {
+          match s.parse::<BigInt>() {
             Ok(n) => Expr::BigInteger(n),
             Err(_) => Expr::Integer(0),
           }
@@ -2273,8 +2275,8 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
           Expr::Integer(n)
         } else {
           // Overflow: use BigInteger
-          let m = num_bigint::BigInt::from(mantissa);
-          let f = num_bigint::BigInt::from(10).pow(exponent as u32);
+          let m = BigInt::from(mantissa);
+          let f = BigInt::from(10).pow(exponent as u32);
           Expr::BigInteger(m * f)
         }
       } else {
@@ -2296,9 +2298,9 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
           // Overflow: keep the value exact with big integers, the way the
           // positive branch does. `1*^-300` is the rational 1/10^300 in
           // Wolfram, not a machine real.
-          let m = num_bigint::BigInt::from(mantissa);
-          let d = num_bigint::BigInt::from(10).pow(abs_exp);
-          let zero = num_bigint::BigInt::from(0);
+          let m = BigInt::from(mantissa);
+          let d = BigInt::from(10).pow(abs_exp);
+          let zero = BigInt::from(0);
           let (mut a, mut b) =
             (if m < zero { -m.clone() } else { m.clone() }, d.clone());
           while b != zero {
@@ -2307,7 +2309,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
             b = r;
           }
           let (num, den) = (m / &a, d / &a);
-          if den == num_bigint::BigInt::from(1) {
+          if den == BigInt::from(1) {
             Expr::BigInteger(num)
           } else {
             Expr::FunctionCall {
@@ -2464,7 +2466,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         } else if let Ok(v) = i128::from_str_radix(int_part, base) {
           v as f64
         } else {
-          use num_bigint::BigInt;
+          use BigInt;
           use num_traits::{Num, ToPrimitive};
           BigInt::from_str_radix(int_part, base)
             .ok()
@@ -2483,7 +2485,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         Expr::Integer(val)
       } else {
         // Overflows i128 — try BigInteger
-        use num_bigint::BigInt;
+        use BigInt;
         use num_traits::Num;
         match BigInt::from_str_radix(&lower, base) {
           Ok(n) => Expr::BigInteger(n),
@@ -6862,13 +6864,11 @@ fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
           })
         }
       }
-      Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus => {
-        Some(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::BigInteger(-n)),
-          right: right.clone(),
-        })
-      }
+      Expr::BigInteger(n) if n.sign() == Sign::Minus => Some(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::BigInteger(-n)),
+        right: right.clone(),
+      }),
       Expr::FunctionCall { name, args }
         if name == "Rational"
           && args.len() == 2
@@ -6926,7 +6926,7 @@ fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
             })
           }
         }
-        Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus => {
+        Expr::BigInteger(n) if n.sign() == Sign::Minus => {
           let mut new_args = vec![Expr::BigInteger(-n)];
           new_args.extend_from_slice(&args[1..]);
           Some(if new_args.len() == 1 {
@@ -9928,9 +9928,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             // Find a numeric factor whose negation flips the term's sign.
             let neg_idx = factor_refs.iter().position(|f| match f {
               Expr::Integer(n) if *n < 0 => true,
-              Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus => {
-                true
-              }
+              Expr::BigInteger(n) if n.sign() == Sign::Minus => true,
               Expr::Real(v) if *v < 0.0 => true,
               Expr::FunctionCall { name, args }
                 if name == "Rational"
@@ -10039,7 +10037,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 } else {
                   Some(Expr::Integer(-n))
                 }),
-                Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus => {
+                Expr::BigInteger(n) if n.sign() == Sign::Minus => {
                   Some(Some(Expr::BigInteger(-n)))
                 }
                 Expr::Real(r) if *r < 0.0 => Some(Some(Expr::Real(-r))),
@@ -10125,7 +10123,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               result.push_str(&fmt(arg));
             }
           } else if let Expr::BigInteger(n) = arg {
-            if n.sign() == num_bigint::Sign::Minus {
+            if n.sign() == Sign::Minus {
               result.push_str(" - ");
               result.push_str(&fmt(&Expr::BigInteger(-n)));
             } else {
@@ -11783,7 +11781,7 @@ fn ring_operand_needs_parens(e: &Expr) -> bool {
 fn negate_neg_numeric_coeff(e: &Expr) -> Option<Expr> {
   match e {
     Expr::Real(r) if *r < 0.0 => Some(Expr::Real(-r)),
-    Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus => {
+    Expr::BigInteger(n) if n.sign() == Sign::Minus => {
       Some(Expr::BigInteger(-n))
     }
     Expr::FunctionCall { name, args }
@@ -12749,7 +12747,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
             } else {
               Some(Expr::Integer(-n))
             }),
-            Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus => {
+            Expr::BigInteger(n) if n.sign() == Sign::Minus => {
               Some(Some(Expr::BigInteger(-n)))
             }
             Expr::Real(r) if *r < 0.0 => Some(Some(Expr::Real(-r))),
@@ -12815,7 +12813,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
             result.push_str(&expr_to_input_form(arg));
           }
         } else if let Expr::BigInteger(n) = arg {
-          if n.sign() == num_bigint::Sign::Minus {
+          if n.sign() == Sign::Minus {
             result.push_str(" - ");
             result.push_str(&expr_to_input_form(&Expr::BigInteger(-n)));
           } else {
@@ -13105,7 +13103,7 @@ pub fn string_to_expr(s: &str) -> Result<Expr, crate::InterpreterError> {
     let digits = raw.strip_prefix('-').unwrap_or(raw);
     if !digits.is_empty()
       && digits.chars().all(|c| c.is_ascii_digit())
-      && let Ok(n) = trimmed.parse::<num_bigint::BigInt>()
+      && let Ok(n) = trimmed.parse::<BigInt>()
     {
       return Ok(Expr::BigInteger(n));
     }
@@ -15320,7 +15318,7 @@ fn extract_sign_for_plus(expr: &Expr) -> (&'static str, Expr) {
         right: right.clone(),
       },
     ),
-    Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus => {
+    Expr::BigInteger(n) if n.sign() == Sign::Minus => {
       (" - ", Expr::BigInteger(-n))
     }
     Expr::BinaryOp {
@@ -15350,7 +15348,7 @@ fn extract_sign_for_plus(expr: &Expr) -> (&'static str, Expr) {
       op: BinaryOperator::Times,
       left,
       right,
-    } if matches!(left.as_ref(), Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus) => {
+    } if matches!(left.as_ref(), Expr::BigInteger(n) if n.sign() == Sign::Minus) => {
       if let Expr::BigInteger(n) = left.as_ref() {
         (
           " - ",
@@ -15367,7 +15365,7 @@ fn extract_sign_for_plus(expr: &Expr) -> (&'static str, Expr) {
     Expr::FunctionCall { name, args }
       if name == "Times"
         && !args.is_empty()
-        && matches!(&args[0], Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus) =>
+        && matches!(&args[0], Expr::BigInteger(n) if n.sign() == Sign::Minus) =>
     {
       if let Expr::BigInteger(n) = &args[0] {
         let mut new_args = vec![Expr::BigInteger(-n)];

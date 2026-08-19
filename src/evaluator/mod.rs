@@ -6,6 +6,7 @@ use crate::syntax::{
   unevaluated,
 };
 use crate::{ENV, InterpreterError, PART_DEPTH, StoredValue, interpret};
+use num_bigint::{BigInt, Sign};
 
 pub(crate) mod assignment;
 mod attributes;

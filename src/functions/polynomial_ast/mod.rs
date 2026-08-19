@@ -13,6 +13,7 @@ use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
   unevaluated,
 };
+use num_bigint::BigInt;
 
 mod apart;
 mod cancel;

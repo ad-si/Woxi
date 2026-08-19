@@ -5,6 +5,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::syntax::pair_to_expr;
+use num_bigint::Sign;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -4445,7 +4446,6 @@ fn decimal_string_to_base_string(
   base: i128,
   decimal_digits: f64,
 ) -> Option<String> {
-  use num_bigint::BigInt;
   use num_traits::{Signed, Zero};
 
   const DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
@@ -8375,7 +8375,20 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
 /// `` `` `` placeholders are replaced sequentially, `` `n` `` with the nth argument.
 /// Out-of-range indices leave the placeholder literal in the output and
 /// emit a StringForm::sfr warning, matching wolframscript.
-fn format_string_form(template: &str, values: &[Expr]) -> String {
+pub(crate) fn format_string_form(template: &str, values: &[Expr]) -> String {
+  format_string_form_with(template, values, crate::syntax::expr_to_output)
+}
+
+/// `format_string_form`, rendering each substituted value with `fmt` instead
+/// of always using `OutputForm` text. A graphic's `PlotLabel ->
+/// StringForm["…", args]` typesets its arguments the same as everything
+/// else in the label (so `NumberForm`/`Power`/etc. render properly), unlike
+/// `Print`/`ToString`'s plain OutputForm text.
+pub(crate) fn format_string_form_with(
+  template: &str,
+  values: &[Expr],
+  fmt: impl Fn(&Expr) -> String,
+) -> String {
   let mut result = String::new();
   let chars: Vec<char> = template.chars().collect();
   let len = chars.len();
@@ -8390,9 +8403,7 @@ fn format_string_form(template: &str, values: &[Expr]) -> String {
       if i + 1 < len && chars[i + 1] == '`' {
         let idx = last_index + 1;
         if idx >= 1 && (idx as usize) <= values.len() {
-          result.push_str(&crate::syntax::expr_to_output(
-            &values[(idx - 1) as usize],
-          ));
+          result.push_str(&fmt(&values[(idx - 1) as usize]));
         } else {
           // Out of range — keep the `` literal and warn.
           result.push('`');
@@ -8428,7 +8439,7 @@ fn format_string_form(template: &str, values: &[Expr]) -> String {
           .unwrap_or(0);
         if signed >= 1 && (signed as usize) <= values.len() {
           let idx = signed as usize;
-          result.push_str(&crate::syntax::expr_to_output(&values[idx - 1]));
+          result.push_str(&fmt(&values[idx - 1]));
         } else {
           // Out of range — keep the `n` placeholder literal and warn.
           result.push('`');
@@ -9335,22 +9346,19 @@ fn integer_to_base64_string(n: &Expr) -> Result<String, InterpreterError> {
   const ALPHABET: &[u8] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   let abs_big = match n {
-    Expr::BigInteger(b) => {
-      use num_bigint::Sign;
-      match b.sign() {
-        Sign::Minus => -b,
-        _ => b.clone(),
-      }
-    }
-    _ => num_bigint::BigInt::from(expr_to_int(n)?.unsigned_abs()),
+    Expr::BigInteger(b) => match b.sign() {
+      Sign::Minus => -b,
+      _ => b.clone(),
+    },
+    _ => BigInt::from(expr_to_int(n)?.unsigned_abs()),
   };
-  if abs_big == num_bigint::BigInt::from(0) {
+  if abs_big == BigInt::from(0) {
     return Ok("A".to_string());
   }
   let mut val = abs_big;
-  let base = num_bigint::BigInt::from(64);
+  let base = BigInt::from(64);
   let mut digits: Vec<u8> = Vec::new();
-  while val > num_bigint::BigInt::from(0) {
+  while val > BigInt::from(0) {
     let rem = &val % &base;
     let d = rem
       .to_string()
@@ -9481,7 +9489,6 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // directly via num-bigint's to_str_radix; fall back to i128 for
   // smaller integers.
   let mut result = if let Expr::BigInteger(n) = &args[0] {
-    use num_bigint::Sign;
     match n.sign() {
       Sign::Minus => (-n).to_str_radix(base),
       _ => n.to_str_radix(base),
@@ -12088,17 +12095,17 @@ pub fn format_digest(hex_string: &str, format: &str) -> Option<Expr> {
     // The integer, zero-padded to the fixed width of the digest size — the
     // number of decimal digits of 256^nbytes (matching wolframscript).
     "DecimalString" => {
-      let n = num_bigint::BigInt::parse_bytes(hex_string.as_bytes(), 16)
-        .unwrap_or_default();
-      let width = num_bigint::BigInt::from(256u32)
+      let n =
+        BigInt::parse_bytes(hex_string.as_bytes(), 16).unwrap_or_default();
+      let width = BigInt::from(256u32)
         .pow(bytes.len() as u32)
         .to_string()
         .len();
       Some(Expr::String(format!("{n:0>width$}")))
     }
     "Integer" => {
-      let n = num_bigint::BigInt::parse_bytes(hex_string.as_bytes(), 16)
-        .unwrap_or_default();
+      let n =
+        BigInt::parse_bytes(hex_string.as_bytes(), 16).unwrap_or_default();
       use num_traits::ToPrimitive;
       Some(match n.to_i128() {
         Some(i) => Expr::Integer(i),

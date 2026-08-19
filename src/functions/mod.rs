@@ -6,6 +6,7 @@ use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_output,
   expr_to_string, unevaluated,
 };
+use num_bigint::BigInt;
 
 // Functions are organized by categories
 pub mod assessment_ast;

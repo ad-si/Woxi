@@ -41,7 +41,7 @@ fn token_to_expr(tok: &str) -> Expr {
   // the Carl-Gauss `prime.txt` round-trip as Integer.
   if !tok.contains('.') && !tok.contains('e') && !tok.contains('E') {
     use std::str::FromStr;
-    if let Ok(big) = num_bigint::BigInt::from_str(tok) {
+    if let Ok(big) = BigInt::from_str(tok) {
       return Expr::BigInteger(big);
     }
   }

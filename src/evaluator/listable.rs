@@ -562,7 +562,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         .collect();
       let suffix = "4741994566655706294890138869165136649510315974360597429933393392703942354819024473254400806573416326";
       let digits = format!("{prefix}{suffix}");
-      let big = num_bigint::BigInt::parse_bytes(digits.as_bytes(), 10)?;
+      let big = BigInt::parse_bytes(digits.as_bytes(), 10)?;
       Some(Expr::BigInteger(big))
     }
     // Default to "UTF8" like wolframscript on any modern terminal. The

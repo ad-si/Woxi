@@ -7348,6 +7348,47 @@ mod tests {
   }
 
   #[test]
+  fn locator_default_bound_to_initialization_functions_resolves_before_layout()
+  {
+    // The "Paths inside a Polygon" Demonstration pattern: a Locator's
+    // default is a pair of points looked up from helper functions the
+    // `Initialization` option defines (`{{pt, {A[mode], B[mode]}}, Locator}`),
+    // with `Initialization` written *after* the Locator spec in the argument
+    // list — how a Demonstration picks each mode's starting endpoints.
+    // Control specs used to be parsed before `Initialization` ran (only a
+    // `ButtonBar` got it early), so the helper functions were still
+    // undefined when the Locator's default was evaluated and it fell back
+    // to a fixed, non-interactive point pair instead of a draggable one.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Graphics[{Line[pt]}, PlotRange -> {{-5, 5}, {-5, 5}}], \
+       {{mode, 1, \"layout\"}, {1 -> \"vertical\", 2 -> \"horizontal\"}}, \
+       {{pt, {Endpoint[mode, 1], Endpoint[mode, 2]}}, Locator}, \
+       Initialization :> (\
+         Endpoint[1, 1] = {0, -3}; Endpoint[1, 2] = {0, 3}; \
+         Endpoint[2, 1] = {-3, 0}; Endpoint[2, 2] = {3, 0})]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the Manipulate must build a widget");
+    match &state.controls[1] {
+      manipulate::ControlState::Locator { points, .. } => {
+        assert_eq!(
+          points,
+          &[(0.0, -3.0), (0.0, 3.0)],
+          "the locator must start at the initialization-defined endpoints, \
+           not fall back to a fixed symbolic value"
+        );
+      }
+      other => panic!("expected a locator control, got {other:?}"),
+    }
+    assert!(
+      state.graphics_handle.is_some(),
+      "initial frame should render: {:?}",
+      state.error
+    );
+  }
+
+  #[test]
   fn stale_animation_ticks_are_dropped() {
     // While a blocking animation advance runs, the timer keeps queueing
     // ticks. Ticks generated before the advance finished are backlog and
