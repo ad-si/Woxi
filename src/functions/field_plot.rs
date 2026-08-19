@@ -185,6 +185,9 @@ struct DensityContourOptions {
   /// `Epilog -> {…}`: graphics primitives drawn over the finished plot,
   /// in data coordinates.
   epilog: Vec<Expr>,
+  /// `PlotLabel -> …`: the caption drawn above the plot, already typeset
+  /// as SVG markup, alongside the font size its outer `Style` asked for.
+  plot_label: Option<(String, Option<f64>)>,
 }
 
 /// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh,
@@ -302,6 +305,7 @@ fn parse_density_contour_options(
     contour_style,
     frame_labels,
     epilog,
+    plot_label: parse_field_plot_label(args, start),
   }
 }
 
@@ -341,9 +345,17 @@ fn field_plot_axes(
   y_range: (f64, f64),
   opts: &DensityContourOptions,
 ) -> Result<crate::functions::plot::PlotArea, InterpreterError> {
-  let margins = opts.has_outer_frame_labels().then_some({
+  let needs_margins =
+    opts.has_outer_frame_labels() || opts.plot_label.is_some();
+  let margins = needs_margins.then_some({
+    let top_margin = match &opts.plot_label {
+      Some((_, size)) => {
+        ((size.unwrap_or(14.0) * 2.0).round() as u32) * RESOLUTION_SCALE
+      }
+      None => 10 * RESOLUTION_SCALE,
+    };
     crate::functions::plot::MarginOverrides {
-      top_margin: 10 * RESOLUTION_SCALE,
+      top_margin,
       x_label_area: (40 + 24) * RESOLUTION_SCALE,
       y_label_area: (65 + 20) * RESOLUTION_SCALE,
     }
@@ -367,6 +379,9 @@ fn push_field_plot_overlays(
   area: &crate::functions::plot::PlotArea,
   opts: &DensityContourOptions,
 ) {
+  if let Some(label) = &opts.plot_label {
+    inject_field_plot_label(svg, area, label);
+  }
   if !opts.epilog.is_empty() {
     let epilog_area = crate::functions::plot_epilog::PlotArea {
       x0: area.plot_x0,

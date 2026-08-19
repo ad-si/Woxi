@@ -4554,6 +4554,37 @@ mod expand_threading {
     );
   }
 
+  // Regression: Sinh/Cosh of a complex float with both real and imaginary
+  // parts nonzero used to stay unevaluated (only the pure-imaginary case
+  // reduced, via Sinh[I*x] = I*Sin[x] / Cosh[I*x] = Cos[x]), which made
+  // Plot3D[Abs[Cosh[x + I*y]], ...] over a range spanning nonzero x report
+  // "function produced no finite values in the given range".
+  #[test]
+  fn sinh_complex_float() {
+    assert_eq!(
+      interpret("Sinh[1.0 + I]").unwrap(),
+      "0.6349639147847361 + 1.2984575814159773*I"
+    );
+  }
+
+  #[test]
+  fn cosh_complex_float() {
+    assert_eq!(
+      interpret("Cosh[1.0 + I]").unwrap(),
+      "0.8337300251311491 + 0.9888977057628651*I"
+    );
+  }
+
+  #[test]
+  fn abs_cosh_complex_float_is_finite() {
+    let result = interpret("N[Abs[Cosh[5.0 + 8.0*I]]]").unwrap();
+    let v: f64 = result.parse().expect("expected a finite real number");
+    assert!(
+      v.is_finite(),
+      "Abs[Cosh[5+8I]] should be finite, got {result}"
+    );
+  }
+
   #[test]
   fn conjugate_real_constants() {
     assert_eq!(interpret("Conjugate[Pi]").unwrap(), "Pi");
