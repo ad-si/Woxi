@@ -1642,10 +1642,13 @@ pub fn apply_curried_call(
       )
     }
     // ResourceFunction["Name"][args…] / ResourceFunction["Name", "Function"][args…]
-    // — dispatch known Wolfram Function Repository resources by name. Woxi has
-    // no network access to fetch arbitrary resource definitions, so only
-    // resources reimplemented natively are recognized; anything else stays a
-    // held CurriedCall, matching a real kernel with no internet connection.
+    // — fetch the named resource from the Wolfram Function Repository (its
+    // public, unauthenticated pages) on first use and evaluate its published
+    // "Definition" cell, the same way `Get` loads a package. No bundled
+    // catalog: any resource whose definition Woxi's language subset can
+    // evaluate works, not just specific hardcoded names. No network access,
+    // an unknown name, or a definition that fails to evaluate all leave the
+    // call as a held CurriedCall, matching a real kernel offline.
     Expr::FunctionCall {
       name,
       args: func_args,
@@ -1656,13 +1659,16 @@ pub fn apply_curried_call(
       let Expr::String(resource_name) = &func_args[0] else {
         unreachable!()
       };
-      match (resource_name.as_str(), args) {
-        ("BarycentricCoordinates", [simplex, point]) => {
-          crate::evaluator::dispatch::complex_and_special::compute_barycentric_coordinates(
-            simplex, point,
-          )
-        }
-        _ => Ok(Expr::CurriedCall {
+      #[cfg(not(target_arch = "wasm32"))]
+      let resolved =
+        crate::functions::resource_function_ast::load_resource_function(
+          resource_name,
+        );
+      #[cfg(target_arch = "wasm32")]
+      let resolved: Option<String> = None;
+      match resolved {
+        Some(symbol_name) => evaluate_function_call_ast(&symbol_name, args),
+        None => Ok(Expr::CurriedCall {
           func: Box::new(func.clone()),
           args: args.to_vec(),
         }),
