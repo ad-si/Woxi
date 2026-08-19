@@ -1473,6 +1473,29 @@ mod rule_display {
     assert_eq!(interpret("f[a, b] /. Rule[a, 1]").unwrap(), "f[1, b]");
   }
 
+  // Same CompoundExpression-precedence guard as RuleDelayed (see
+  // `rule_delayed_compound_expression_rhs_keeps_parens`), checked through
+  // `Hold` since a bare `->` evaluates its RHS immediately and would
+  // collapse `(a = 1; b = 2)` to `2` before there was anything to print.
+  #[test]
+  fn rule_compound_expression_rhs_keeps_parens() {
+    assert_eq!(
+      interpret("ToString[Hold[x -> (a = 1; b = 2)], InputForm]").unwrap(),
+      "Hold[x -> (a = 1; b = 2)]"
+    );
+    assert_eq!(
+      interpret(
+        "Clear[a, b]; \
+         printed = ToString[Hold[x -> (a = 1; b = 2)], InputForm]; \
+         held = ToExpression[printed]; \
+         held[[1, 2]]; \
+         {a, b}"
+      )
+      .unwrap(),
+      "{1, 2}"
+    );
+  }
+
   #[test]
   fn replace_all_function_form_reevaluates_result() {
     // ReplaceAll[...] (function-call form) should re-evaluate the result
@@ -1824,6 +1847,38 @@ mod rule_delayed {
   fn rule_delayed_holds_rhs() {
     // RuleDelayed should not evaluate the RHS prematurely
     assert_eq!(interpret("RuleDelayed[x, 1 + 1]").unwrap(), "x :> 1 + 1");
+  }
+
+  // CompoundExpression has the lowest precedence of any operator, so a
+  // `;`-sequence on the right of `:>` needs explicit parentheses to stay one
+  // replacement: `cond :> a = 1; b = 2` is `(cond :> a = 1); b = 2` without
+  // them. Regression for a Wolfram Demonstrations idiom — an EventHandler
+  // action with more than one statement, `"event" :> (a = 1; b = 2)` — whose
+  // printed InputForm silently dropped the parens and lost every statement
+  // after the first once re-parsed.
+  #[test]
+  fn rule_delayed_compound_expression_rhs_keeps_parens() {
+    assert_eq!(
+      interpret("x :> (a = 1; b = 2)").unwrap(),
+      "x :> (a = 1; b = 2)"
+    );
+  }
+
+  #[test]
+  fn rule_delayed_compound_expression_rhs_round_trips_through_input_form() {
+    // Print the rule, re-parse the text, then run the replacement pulled
+    // back out with Part -- both statements must still fire.
+    assert_eq!(
+      interpret(
+        "Clear[a, b]; \
+         printed = ToString[Hold[x :> (a = 1; b = 2)], InputForm]; \
+         held = ToExpression[printed]; \
+         held[[1, 2]]; \
+         {a, b}"
+      )
+      .unwrap(),
+      "{1, 2}"
+    );
   }
 }
 
