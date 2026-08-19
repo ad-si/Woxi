@@ -1328,7 +1328,7 @@ pub fn dispatch_linear_algebra_functions(
         && axis.len() == 3
         && axis.iter().all(|e| !matches!(e, Expr::List(_)))
       {
-        match rotation_transform_3d_axis(&args[0], axis) {
+        match rotation_transform_3d_axis(&args[0], axis, None) {
           Some(Ok(tf)) => {
             if let Expr::FunctionCall {
               name: tf_name,
@@ -1529,7 +1529,11 @@ pub fn dispatch_linear_algebra_functions(
     }
     // RotationTransform[angle] → TransformationFunction[2D rotation matrix in homogeneous coords]
     // RotationTransform[angle, {cx, cy}] → rotation about point {cx, cy}
-    "RotationTransform" if args.len() == 1 || args.len() == 2 => {
+    // RotationTransform[angle, {x, y, z}, {px, py, pz}] → 3D rotation about
+    // the axis {x,y,z} through the point {px,py,pz}
+    "RotationTransform"
+      if args.len() == 1 || args.len() == 2 || args.len() == 3 =>
+    {
       // Two-vector form RotationTransform[{u, v}] (2D): the rotation taking the
       // direction of u to the direction of v. Build it directly from the
       // normalized dot/cross products so the angle is never materialized.
@@ -1582,9 +1586,28 @@ pub fn dispatch_linear_algebra_functions(
         && let Expr::List(axis) = &args[1]
         && axis.len() == 3
       {
-        if let Some(result) = rotation_transform_3d_axis(&args[0], axis) {
+        if let Some(result) = rotation_transform_3d_axis(&args[0], axis, None) {
           return Some(result);
         }
+        return Some(Ok(unevaluated("RotationTransform", args)));
+      }
+      // Three-dimensional axis-through-point form
+      // RotationTransform[theta, {x, y, z}, {px, py, pz}]: rotation by theta
+      // about the axis through `point`, parallel to `axis`.
+      if args.len() == 3
+        && let Expr::List(axis) = &args[1]
+        && axis.len() == 3
+        && let Expr::List(point) = &args[2]
+        && point.len() == 3
+      {
+        if let Some(result) =
+          rotation_transform_3d_axis(&args[0], axis, Some(point))
+        {
+          return Some(result);
+        }
+        return Some(Ok(unevaluated("RotationTransform", args)));
+      }
+      if args.len() == 3 {
         return Some(Ok(unevaluated("RotationTransform", args)));
       }
       let theta = &args[0];
@@ -4202,22 +4225,27 @@ fn roll_pitch_yaw_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   euler_matrix_ast(&euler_args)
 }
 
-/// RotationTransform[theta, {x, y, z}] for a numeric 3D axis.
+/// RotationTransform[theta, {x, y, z}] and RotationTransform[theta, {x, y,
+/// z}, point] for a numeric 3D axis.
 ///
 /// Builds the 4×4 homogeneous TransformationFunction whose top-left 3×3 block
 /// is the rotation by `theta` about the axis through the origin, via
 /// Rodrigues' formula
 ///   R = cos(θ) I + (1 - cos(θ)) u uᵀ + sin(θ) [u]ₓ
-/// with u the normalized axis. Each entry is run through `Together` so the
-/// radical form matches wolframscript (e.g. `1/3 - 1/Sqrt[3]` → `(1 -
-/// Sqrt[3])/3`). Returns `None` for a non-numeric axis so the caller can leave
-/// the expression unevaluated.
+/// with u the normalized axis. When `point` is given, the axis instead passes
+/// through it: the translation column is `point - R.point`, i.e. translate
+/// `point` to the origin, rotate, then translate back. Each entry is run
+/// through `Together` so the radical form matches wolframscript (e.g. `1/3 -
+/// 1/Sqrt[3]` → `(1 - Sqrt[3])/3`). Returns `None` for a non-numeric axis or
+/// point so the caller can leave the expression unevaluated.
 fn rotation_transform_3d_axis(
   theta: &Expr,
   axis: &[Expr],
+  point: Option<&[Expr]>,
 ) -> Option<Result<Expr, InterpreterError>> {
   if axis
     .iter()
+    .chain(point.into_iter().flatten())
     .any(crate::evaluator::core_eval::has_free_symbols)
   {
     return None;
@@ -4248,18 +4276,42 @@ fn rotation_transform_3d_axis(
     _ => int(0),
   };
 
+  // Raw (un-simplified) rotation-matrix entries R[i][j], reused below both
+  // to fill the matrix and — when a pivot `point` is given — to derive the
+  // translation column t = point - R.point (rotating about the axis through
+  // `point` is: translate `point` to the origin, rotate, translate back).
+  let r: Vec<Vec<Expr>> = (0..3)
+    .map(|i| {
+      (0..3)
+        .map(|j| {
+          let diag = if i == j { cos.clone() } else { int(0) };
+          let outer =
+            times(one_minus_cos.clone(), times(u[i].clone(), u[j].clone()));
+          let cr = times(sin.clone(), cross(i, j));
+          plus(vec![diag, outer, cr])
+        })
+        .collect()
+    })
+    .collect();
+
   let mut rows = Vec::with_capacity(4);
-  for i in 0..3 {
-    let mut row = Vec::with_capacity(4);
-    for j in 0..3 {
-      let diag = if i == j { cos.clone() } else { int(0) };
-      let outer =
-        times(one_minus_cos.clone(), times(u[i].clone(), u[j].clone()));
-      let cr = times(sin.clone(), cross(i, j));
-      let entry = plus(vec![diag, outer, cr]);
-      row.push(call1("Together", entry));
-    }
-    row.push(int(0));
+  for (i, r_row) in r.iter().enumerate() {
+    let mut row: Vec<Expr> =
+      r_row.iter().map(|e| call1("Together", e.clone())).collect();
+    let translation = match point {
+      Some(p) => {
+        let r_dot_p: Vec<Expr> = (0..3)
+          .map(|j| times(r_row[j].clone(), p[j].clone()))
+          .collect();
+        plus(
+          std::iter::once(p[i].clone())
+            .chain(r_dot_p.into_iter().map(&neg))
+            .collect(),
+        )
+      }
+      None => int(0),
+    };
+    row.push(call1("Together", translation));
     rows.push(Expr::List(row.into()));
   }
   rows.push(Expr::List(vec![int(0), int(0), int(0), int(1)].into()));
