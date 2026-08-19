@@ -192,9 +192,9 @@ fn rewrite_bare_name(src: &str, name: &str, symbol_name: &str) -> String {
     let before_ok = rest[..idx]
       .chars()
       .next_back()
-      .map_or(true, |c| !is_ident_char(c));
+      .is_none_or(|c| !is_ident_char(c));
     let after = &rest[idx + name.len()..];
-    let after_ok = after.chars().next().map_or(true, |c| !is_ident_char(c));
+    let after_ok = after.chars().next().is_none_or(|c| !is_ident_char(c));
     out.push_str(&rest[..idx]);
     out.push_str(if before_ok && after_ok {
       symbol_name
