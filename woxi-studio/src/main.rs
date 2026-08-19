@@ -19239,4 +19239,109 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
       "the DynamicModule local must stay put across an unrelated re-render"
     );
   }
+
+  /// The Demonstrations shape of a status field that only ever changes from
+  /// an `EventHandler` elsewhere in the body: `Control[{{var, init, ""},
+  /// FieldSize -> n, Enabled -> False}]` grouped in a `Row[…]` next to a
+  /// real control. That field spec has no bounds and no choice list — the
+  /// domain Wolfram's own default renders as an `InputField` — and one
+  /// spec `extract_manipulate_spec` could not place used to abort the
+  /// *whole* Manipulate instead of just that row, so the entire widget
+  /// (setter bar included) silently failed to build. The field also gets
+  /// written by a multi-statement `EventHandler` action, which exercises
+  /// the paired regression in `expr_to_input_form`: a `RuleDelayed` whose
+  /// replacement is a `;`-sequence must keep its parentheses when the body
+  /// is reconstructed, or only the first statement of the click handler
+  /// would survive.
+  #[test]
+  fn manipulate_row_of_status_field_and_setter_bar_builds() {
+    let code = r#"Manipulate[
+      Grid[{{EventHandler[Style[label, Bold],
+        {"MouseClicked" :> (hits = hits + 1; last = op)}]}}],
+      {{op, "ping", ""}, {"ping", "pong"}, ControlType -> SetterBar},
+      Row[{Control[{{last, "", ""}, FieldSize -> 6, Enabled -> False}],
+        " last click"}],
+      {{hits, 0}, ControlType -> None}
+    ]"#;
+    woxi::clear_state();
+    let expr = woxi::interpret_to_expr(code).expect("the spec must parse");
+    let widget = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a Row-embedded status field must not sink the whole widget");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+
+    // The setter bar survives as a real, named control...
+    let setter = widget
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Discrete { name, values, .. }
+          if name == "op" =>
+        {
+          Some(values.clone())
+        }
+        _ => None,
+      })
+      .expect("the SetterBar control must still build");
+    assert_eq!(setter, ["\"ping\"", "\"pong\""]);
+
+    // ...and the bounds-less field becomes live, mutable state with a
+    // display that shows its current value, rather than vanishing.
+    assert!(
+      widget.state.iter().any(|(n, v)| n == "last" && v == "\"\""),
+      "the status field's variable must stay bound: {:?}",
+      widget.state
+    );
+    assert!(
+      widget.state.iter().any(|(n, _)| n == "hits"),
+      "the ControlType -> None counter must also stay bound: {:?}",
+      widget.state
+    );
+    assert!(
+      widget.displays.iter().any(|d| d == "Dynamic[last]"),
+      "the field's value must be shown live: {:?}",
+      widget.displays
+    );
+
+    // The click handler's action is a `;`-sequence held by `:>` — printed
+    // without its parentheses, only `hits = hits + 1` would remain part of
+    // the rule and `last = op` would leak out as a stray top-level
+    // statement next to it.
+    assert!(
+      widget.body.contains("(hits = hits + 1; last = op)"),
+      "the multi-statement click action must keep its parens: {}",
+      widget.body
+    );
+
+    // Simulate what that EventHandler rule does when it fires: apply it to
+    // the live bindings and check both statements ran, not just the first.
+    let op_value = widget
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Discrete {
+          name,
+          values,
+          current_index,
+          ..
+        } if name == "op" => Some(values[*current_index].clone()),
+        _ => None,
+      })
+      .expect("op must have a current value");
+    let preamble: String = widget
+      .state
+      .iter()
+      .map(|(n, v)| format!("{n} = {v};\n"))
+      .chain(std::iter::once(format!("op = {op_value};\n")))
+      .collect();
+    let ran = woxi::interpret_with_stdout(&format!(
+      "{preamble}hits = hits + 1; last = op; {{hits, last}}"
+    ))
+    .expect("the click action must evaluate")
+    .result;
+    assert_eq!(ran, "{1, ping}", "both statements of the action must fire");
+  }
 }

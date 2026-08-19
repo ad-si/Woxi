@@ -17304,9 +17304,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           manipulate_post_body_bindings(args.first(), &initial_bindings)
         })
         .clone();
-      crate::with_scoped_globals(&after_body, || {
+      let Some(parsed) = crate::with_scoped_globals(&after_body, || {
         parse_manipulate_control(&spec, &sibling_names)
-      })?
+      }) else {
+        // A spec neither the leading-assignment probe nor a full body run
+        // can make sense of is skipped rather than failing the whole
+        // Manipulate — one unrecognised control row must not take every
+        // other, already-understood row down with it (see the comment
+        // above the loop on `Initialization`/`TrackedSymbols`).
+        continue;
+      };
+      parsed
     };
     match parsed {
       ParsedControl::Visible {
@@ -20643,6 +20651,27 @@ fn parse_manipulate_control(
     }
     let value = crate::syntax::expr_to_input_form(bounds[0]);
     return Some(ParsedControl::Fixed { name, value });
+  }
+
+  // No domain at all — `{u, uinit}` or `{{u, uinit, ulbl}, opts…}` with
+  // nothing but options (`FieldSize -> n`, `Enabled -> cond`, …) after the
+  // head. Wolfram's default widget for a bare variable with no min/max and
+  // no choice list is an `InputField`; the Demonstrations idiom pairs one
+  // with `Enabled -> False` to show a value driven entirely by another
+  // control's `EventHandler` (a read-only status field next to a grid of
+  // clickable cells). Woxi has no dedicated InputField widget, but the same
+  // live-value display a `TogglerBar[Dynamic[v], …]` gets above renders the
+  // current value as text and updates it every re-evaluation, which is
+  // enough to keep the variable both mutable and visible.
+  if bounds.is_empty() {
+    let value = explicit_initial
+      .as_ref()
+      .map_or_else(|| "Null".to_string(), manipulate_value_to_input_form);
+    return Some(ParsedControl::StateWithDisplay {
+      name: name.clone(),
+      value,
+      display: format!("Dynamic[{name}]"),
+    });
   }
 
   // Continuous form: {u, umin, umax} or {u, umin, umax, du}

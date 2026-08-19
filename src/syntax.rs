@@ -11152,10 +11152,14 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         }
         _ => fmt(pattern),
       };
-      // Parenthesize RHS if it's a pure function (& has low precedence)
+      // Parenthesize RHS if it's a pure function (& has low precedence) or a
+      // `;`-sequence (CompoundExpression binds looser than every operator,
+      // including `->`, so `a -> b; c` is `(a -> b); c` without parens —
+      // dropping them would silently turn `key -> (v1; v2)` into two
+      // top-level statements instead of one rule).
       let rhs_str = fmt(replacement);
       let rhs_final = match replacement.as_ref() {
-        Expr::Function { .. } => format!("({rhs_str})"),
+        Expr::Function { .. } | Expr::CompoundExpr(_) => format!("({rhs_str})"),
         _ => rhs_str,
       };
       format!("{lhs} -> {rhs_final}")
@@ -11175,7 +11179,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         _ => fmt(pattern),
       };
       // Parenthesize RHS if it's an assignment so the := operator is
-      // correctly disambiguated from the :> operator visually.
+      // correctly disambiguated from the :> operator visually, or if it's a
+      // `;`-sequence — CompoundExpression has the lowest precedence of any
+      // operator, so `cond :> a = 1; b = 2` is `(cond :> a = 1); b = 2`
+      // without parens (the Demonstrations idiom `"event" :> (a = 1; b =
+      // 2)` for a multi-statement event handler action would silently lose
+      // its later statements from the rule).
       let rhs_str = fmt(replacement);
       let rhs_final = match replacement.as_ref() {
         Expr::FunctionCall { name: n, args: a }
@@ -11186,6 +11195,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         {
           format!("({rhs_str})")
         }
+        Expr::CompoundExpr(_) => format!("({rhs_str})"),
         _ => rhs_str,
       };
       format!("{lhs} :> {rhs_final}")
@@ -11650,10 +11660,16 @@ fn input_form_rule_lhs(e: &Expr) -> String {
 }
 
 /// Parenthesize a rule's RHS when it is a pure function, since `&` binds
-/// looser than `->`/`:>` (`x -> (#1 & )`), matching wolframscript.
+/// looser than `->`/`:>` (`x -> (#1 & )`), matching wolframscript. A
+/// `;`-sequence is parenthesized too: `CompoundExpression` has the lowest
+/// precedence of any operator, so `x -> a; b` is `(x -> a); b` without
+/// parens — printing `x -> (a; b)` bare would silently split one rule into
+/// a rule plus a stray top-level statement once re-parsed.
 fn input_form_rule_rhs(e: &Expr) -> String {
   match e {
-    Expr::Function { .. } => format!("({})", expr_to_input_form(e)),
+    Expr::Function { .. } | Expr::CompoundExpr(_) => {
+      format!("({})", expr_to_input_form(e))
+    }
     _ => expr_to_input_form(e),
   }
 }
@@ -11884,7 +11900,12 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       // Parenthesize RHS if it's an assignment (Set/SetDelayed/Up*), so
       // that e.g. `Initialization :> (d[t_] := ...)` renders with the
       // parentheses required to disambiguate operator precedence. A pure
-      // function on the RHS is also parenthesised (`&` binds looser than `:>`).
+      // function on the RHS is also parenthesised (`&` binds looser than
+      // `:>`), and so is a `;`-sequence — `CompoundExpression` has the
+      // lowest precedence of any operator, so `cond :> a = 1; b = 2` is
+      // `(cond :> a = 1); b = 2` without parens (the Demonstrations idiom
+      // `"event" :> (a = 1; b = 2)` for a multi-statement action would
+      // silently lose its later statements once re-parsed).
       let rhs_str = expr_to_input_form(replacement);
       let rhs_final = match replacement.as_ref() {
         Expr::FunctionCall { name: n, args: a }
@@ -11895,7 +11916,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         {
           format!("({rhs_str})")
         }
-        Expr::Function { .. } => format!("({rhs_str})"),
+        Expr::Function { .. } | Expr::CompoundExpr(_) => format!("({rhs_str})"),
         _ => rhs_str,
       };
       format!("{} :> {}", input_form_rule_lhs(pattern), rhs_final)
@@ -11913,7 +11934,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         {
           format!("({rhs_str})")
         }
-        Expr::Function { .. } => format!("({rhs_str})"),
+        Expr::Function { .. } | Expr::CompoundExpr(_) => format!("({rhs_str})"),
         _ => rhs_str,
       };
       format!("{} :> {}", input_form_rule_lhs(&args[0]), rhs_final)
