@@ -909,6 +909,91 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_plotlabel_stringform_substitutes_placeholders() {
+    // Regression: `PlotLabel -> StringForm["…", args]` (the "Paths inside a
+    // Polygon" Demonstration's `PlotLabel -> StringForm["Path distance =
+    // ``", …]` idiom) leaked the literal `StringForm[…]` wrapper into the
+    // graphic instead of substituting its placeholders. `Print`/`ToString`
+    // are unaffected — wolframscript itself only substitutes `StringForm`
+    // when it is explicitly typeset (a front end, or `ToString`), and a
+    // graphic's label is exactly that.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Graphics[{Circle[]}, PlotLabel -> StringForm[\"d = ``\", 3.14]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Graphics should produce an SVG");
+    assert!(
+      svg.contains(">d = 3.14<"),
+      "PlotLabel must substitute the StringForm placeholder:\n{svg}"
+    );
+    assert!(
+      !svg.contains("StringForm["),
+      "PlotLabel must not leak the literal StringForm wrapper:\n{svg}"
+    );
+
+    // A substituted argument still typesets through the label's own
+    // renderer — a NumberForm argument rounds/pads, and a symbolic power
+    // still becomes a superscript tspan — instead of dropping to FullForm
+    // text.
+    clear_state();
+    let svg_numberform = interpret_with_stdout(
+      "Graphics[{Circle[]}, PlotLabel -> \
+       StringForm[\"Path distance = ``\", NumberForm[3.14159, {9, 3}]]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Graphics should produce an SVG");
+    assert!(
+      svg_numberform.contains(">Path distance = 3.142<"),
+      "NumberForm argument must render its rounded form, not FullForm text:\n{svg_numberform}"
+    );
+
+    clear_state();
+    let svg_power = interpret_with_stdout(
+      "Graphics[{Circle[]}, PlotLabel -> StringForm[\"area = ``\", x^2]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Graphics should produce an SVG");
+    assert!(
+      svg_power.contains("area = x<tspan baseline-shift=\"super\""),
+      "Power argument must typeset as a superscript:\n{svg_power}"
+    );
+
+    // The template's own literal text still gets XML-escaped.
+    clear_state();
+    let svg_escaped = interpret_with_stdout(
+      "Graphics[{Circle[]}, PlotLabel -> StringForm[\"a < b: ``\", 5]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Graphics should produce an SVG");
+    assert!(
+      svg_escaped.contains("a &lt; b: 5"),
+      "PlotLabel template text must stay XML-escaped:\n{svg_escaped}"
+    );
+
+    // `Print`/`ToString` are unrelated call sites and must keep their
+    // existing (wolframscript-verified) behavior.
+    clear_state();
+    let printed = interpret_with_stdout("Print[StringForm[\"Value: ``\", 5]]")
+      .unwrap()
+      .stdout;
+    assert_eq!(
+      printed.trim(),
+      "StringForm[Value: ``, 5]",
+      "Print must keep showing the literal StringForm wrapper"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("ToString[StringForm[\"Value: ``\", 5]]").unwrap(),
+      "Value: 5"
+    );
+  }
+
+  #[test]
   fn test_plot3d_framed_plotlabel_typesets_content() {
     // Regression: Plot3D[…, PlotLabel -> Style[Framed[TraditionalForm[expr]],
     // …]] (the pattern the "Complex Exponential and Logarithm Functions"

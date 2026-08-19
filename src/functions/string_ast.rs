@@ -8375,7 +8375,20 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
 /// `` `` `` placeholders are replaced sequentially, `` `n` `` with the nth argument.
 /// Out-of-range indices leave the placeholder literal in the output and
 /// emit a StringForm::sfr warning, matching wolframscript.
-fn format_string_form(template: &str, values: &[Expr]) -> String {
+pub(crate) fn format_string_form(template: &str, values: &[Expr]) -> String {
+  format_string_form_with(template, values, crate::syntax::expr_to_output)
+}
+
+/// `format_string_form`, rendering each substituted value with `fmt` instead
+/// of always using `OutputForm` text. A graphic's `PlotLabel ->
+/// StringForm["…", args]` typesets its arguments the same as everything
+/// else in the label (so `NumberForm`/`Power`/etc. render properly), unlike
+/// `Print`/`ToString`'s plain OutputForm text.
+pub(crate) fn format_string_form_with(
+  template: &str,
+  values: &[Expr],
+  fmt: impl Fn(&Expr) -> String,
+) -> String {
   let mut result = String::new();
   let chars: Vec<char> = template.chars().collect();
   let len = chars.len();
@@ -8390,9 +8403,7 @@ fn format_string_form(template: &str, values: &[Expr]) -> String {
       if i + 1 < len && chars[i + 1] == '`' {
         let idx = last_index + 1;
         if idx >= 1 && (idx as usize) <= values.len() {
-          result.push_str(&crate::syntax::expr_to_output(
-            &values[(idx - 1) as usize],
-          ));
+          result.push_str(&fmt(&values[(idx - 1) as usize]));
         } else {
           // Out of range — keep the `` literal and warn.
           result.push('`');
@@ -8428,7 +8439,7 @@ fn format_string_form(template: &str, values: &[Expr]) -> String {
           .unwrap_or(0);
         if signed >= 1 && (signed as usize) <= values.len() {
           let idx = signed as usize;
-          result.push_str(&crate::syntax::expr_to_output(&values[idx - 1]));
+          result.push_str(&fmt(&values[idx - 1]));
         } else {
           // Out of range — keep the `n` placeholder literal and warn.
           result.push('`');
