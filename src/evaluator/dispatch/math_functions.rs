@@ -2748,7 +2748,6 @@ pub fn dispatch_math_functions(
     }
     // BitGet[n, k] — bit k of n, using two's complement for negative n
     "BitGet" if args.len() == 2 => {
-      use num_bigint::BigInt;
       use num_traits::{One, Signed, Zero};
       let n: Option<BigInt> = match &args[0] {
         Expr::Integer(v) => Some(BigInt::from(*v)),
@@ -4470,13 +4469,11 @@ pub fn dispatch_math_functions(
         }
         let n = n as u64;
         // Compute iteratively: af(0) = 0, af(k) = k! - af(k-1)
-        let mut factorials: Vec<num_bigint::BigInt> =
-          vec![num_bigint::BigInt::from(1u64)];
+        let mut factorials: Vec<BigInt> = vec![BigInt::from(1u64)];
         for k in 1..=n {
-          factorials
-            .push(factorials.last().unwrap() * num_bigint::BigInt::from(k));
+          factorials.push(factorials.last().unwrap() * BigInt::from(k));
         }
-        let mut af = num_bigint::BigInt::from(0);
+        let mut af = BigInt::from(0);
         for k in 1..=n {
           af = &factorials[k as usize] - &af;
         }

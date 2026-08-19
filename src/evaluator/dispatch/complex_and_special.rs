@@ -3565,7 +3565,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           if let Expr::FunctionCall { name: tn, args: ta } = arg
             && tn == "Times"
             && ta.len() >= 2
-            && matches!(&ta[0], Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus)
+            && matches!(&ta[0], Expr::BigInteger(n) if n.sign() == Sign::Minus)
           {
             parts.push(Expr::String("-".to_string()));
             let mut pos_args = ta.clone();
@@ -4830,7 +4830,7 @@ fn tf_negated_term(term: &Expr) -> Option<Expr> {
     match e {
       Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
       Expr::Real(f) if *f < 0.0 => Some(Expr::Real(-f)),
-      Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus => {
+      Expr::BigInteger(n) if n.sign() == Sign::Minus => {
         Some(Expr::BigInteger(-n.clone()))
       }
       _ => None,
@@ -11653,26 +11653,26 @@ fn rat_div(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
 /// overflows (and panics) on inputs with large coordinates.
 #[derive(Clone, PartialEq, Eq)]
 struct BigRat {
-  num: num_bigint::BigInt,
-  den: num_bigint::BigInt,
+  num: BigInt,
+  den: BigInt,
 }
 
 impl BigRat {
-  fn new(num: num_bigint::BigInt, den: num_bigint::BigInt) -> Self {
+  fn new(num: BigInt, den: BigInt) -> Self {
     use num_traits::Zero;
     if den.is_zero() {
       return Self {
-        num: num_bigint::BigInt::zero(),
-        den: num_bigint::BigInt::from(1),
+        num: BigInt::zero(),
+        den: BigInt::from(1),
       };
     }
     // Euclid's algorithm; num-integer is not a dependency.
-    let mut a = if num < num_bigint::BigInt::zero() {
+    let mut a = if num < BigInt::zero() {
       -num.clone()
     } else {
       num.clone()
     };
-    let mut b = if den < num_bigint::BigInt::zero() {
+    let mut b = if den < BigInt::zero() {
       -den.clone()
     } else {
       den.clone()
@@ -11682,16 +11682,8 @@ impl BigRat {
       a = b;
       b = r;
     }
-    let g = if a.is_zero() {
-      num_bigint::BigInt::from(1)
-    } else {
-      a
-    };
-    let sign = if den < num_bigint::BigInt::zero() {
-      -1
-    } else {
-      1
-    };
+    let g = if a.is_zero() { BigInt::from(1) } else { a };
+    let sign = if den < BigInt::zero() { -1 } else { 1 };
     Self {
       num: num * sign / &g,
       den: den * sign / &g,
@@ -11700,13 +11692,13 @@ impl BigRat {
 
   fn zero() -> Self {
     Self {
-      num: num_bigint::BigInt::from(0),
-      den: num_bigint::BigInt::from(1),
+      num: BigInt::from(0),
+      den: BigInt::from(1),
     }
   }
 
   fn from_pair((n, d): (i128, i128)) -> Self {
-    Self::new(num_bigint::BigInt::from(n), num_bigint::BigInt::from(d))
+    Self::new(BigInt::from(n), BigInt::from(d))
   }
 
   fn is_zero(&self) -> bool {
@@ -11737,11 +11729,11 @@ impl BigRat {
   /// otherwise the reduced rational (built by evaluating `n/d`, which keeps
   /// big numerators and denominators exact).
   fn to_expr(&self) -> Result<Expr, InterpreterError> {
-    let int = |v: &num_bigint::BigInt| match i128::try_from(v.clone()) {
+    let int = |v: &BigInt| match i128::try_from(v.clone()) {
       Ok(i) => Expr::Integer(i),
       Err(_) => Expr::BigInteger(v.clone()),
     };
-    if self.den == num_bigint::BigInt::from(1) {
+    if self.den == BigInt::from(1) {
       return Ok(int(&self.num));
     }
     crate::evaluator::evaluate_expr_to_expr(&call(

@@ -2467,7 +2467,7 @@ fn evaluate_function_call_ast_inner(
       if args.len() == 1 {
         let invalid = match &args[0] {
           Expr::Integer(v) => *v < 0,
-          Expr::BigInteger(v) => v.sign() == num_bigint::Sign::Minus,
+          Expr::BigInteger(v) => v.sign() == Sign::Minus,
           Expr::Real(_) | Expr::BigFloat(..) => true,
           Expr::FunctionCall { name: dn, args: da }
             if dn == "DirectedInfinity" =>

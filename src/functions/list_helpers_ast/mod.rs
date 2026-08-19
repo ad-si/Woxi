@@ -10,6 +10,7 @@ use crate::helpers::{
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, unevaluated,
 };
+use num_bigint::{BigInt, Sign};
 
 mod aggregation;
 mod combinatorics;

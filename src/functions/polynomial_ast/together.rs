@@ -1761,7 +1761,7 @@ pub fn together_expr(expr: &Expr) -> Expr {
     // Accumulate in a BigInt: pathological intermediates (e.g. Simplify
     // iterating on complex-radical quotients) can carry integer factors
     // whose product overflows i128, which previously panicked here.
-    let mut int_prod = num_bigint::BigInt::from(1);
+    let mut int_prod = BigInt::from(1);
     let mut split_dens: Vec<Expr> = Vec::new();
     for f in canonical_dens.drain(..) {
       match f {
@@ -1799,7 +1799,7 @@ pub fn together_expr(expr: &Expr) -> Expr {
       }
     }
     canonical_dens = split_dens;
-    if int_prod != num_bigint::BigInt::from(1) {
+    if int_prod != BigInt::from(1) {
       let folded = match i128::try_from(&int_prod) {
         Ok(n) => Expr::Integer(n),
         Err(_) => Expr::BigInteger(int_prod),

@@ -476,7 +476,7 @@ fn read_expr(bytes: &[u8], pos: &mut usize) -> Option<Expr> {
     T_BIGINT => {
       let len = read_varint(bytes, pos)?;
       let digits = std::str::from_utf8(read_exact(bytes, pos, len)?).ok()?;
-      let big = num_bigint::BigInt::parse_bytes(digits.as_bytes(), 10)?;
+      let big = BigInt::parse_bytes(digits.as_bytes(), 10)?;
       use num_traits::ToPrimitive;
       Some(match big.to_i128() {
         Some(i) => Expr::Integer(i),

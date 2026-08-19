@@ -345,7 +345,7 @@ fn is_zero_constant(expr: &Expr) -> bool {
 fn is_nonnegative_constant(expr: &Expr) -> bool {
   match expr {
     Expr::Integer(n) => *n >= 0,
-    Expr::BigInteger(n) => *n >= num_bigint::BigInt::from(0),
+    Expr::BigInteger(n) => *n >= BigInt::from(0),
     Expr::Real(f) => *f >= 0.0,
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
@@ -365,7 +365,7 @@ fn is_nonnegative_constant(expr: &Expr) -> bool {
 fn is_nonpositive_constant(expr: &Expr) -> bool {
   match expr {
     Expr::Integer(n) => *n <= 0,
-    Expr::BigInteger(n) => *n <= num_bigint::BigInt::from(0),
+    Expr::BigInteger(n) => *n <= BigInt::from(0),
     Expr::Real(f) => *f <= 0.0,
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
@@ -591,7 +591,7 @@ fn extract_element_vars(expr: &Expr) -> Vec<String> {
 fn is_positive_constant(expr: &Expr) -> bool {
   match expr {
     Expr::Integer(n) => *n > 0,
-    Expr::BigInteger(n) => *n > num_bigint::BigInt::from(0),
+    Expr::BigInteger(n) => *n > BigInt::from(0),
     Expr::Real(f) => *f > 0.0,
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
@@ -4380,7 +4380,6 @@ fn simplify_for_leaf_count(expr: &Expr) -> Expr {
 /// `n*Log[m]` (with positive integers `n`, `m`) → `Log[m^n]` if the
 /// power evaluates to a finite integer literal.
 fn log_collapse_candidate(expr: &Expr) -> Option<Expr> {
-  use num_bigint::BigInt;
   use num_traits::ToPrimitive;
   let pair_opt = match expr {
     Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
@@ -5435,7 +5434,7 @@ fn simplify_cost_key(e: &Expr) -> (usize, usize) {
   fn negative_ints(e: &Expr) -> usize {
     match e {
       Expr::Integer(n) => usize::from(*n < 0),
-      Expr::BigInteger(n) => usize::from(n < &num_bigint::BigInt::from(0)),
+      Expr::BigInteger(n) => usize::from(n < &BigInt::from(0)),
       Expr::BinaryOp { left, right, .. } => {
         negative_ints(left) + negative_ints(right)
       }
@@ -9390,8 +9389,7 @@ fn complexity_digits(expr: &Expr) -> usize {
 /// Parse a summand of the form `c*Log[n]` with an integer coefficient `c` and a
 /// positive integer base `n >= 2`, returning `(c, n)`. Symbolic/rational bases
 /// and non-integer coefficients are not recognised (they are left un-merged).
-fn parse_log_term(term: &Expr) -> Option<(i64, num_bigint::BigInt)> {
-  use num_bigint::BigInt;
+fn parse_log_term(term: &Expr) -> Option<(i64, BigInt)> {
   let as_log = |e: &Expr| -> Option<BigInt> {
     if let Expr::FunctionCall { name, args } = e
       && name == "Log"
@@ -9459,7 +9457,6 @@ fn parse_log_term(term: &Expr) -> Option<(i64, num_bigint::BigInt)> {
 /// Returns `None` when no merge beats the original (or the base cannot exceed
 /// a sanity bound on the coefficient magnitude).
 fn try_merge_logs(expr: &Expr) -> Option<Expr> {
-  use num_bigint::BigInt;
   use num_traits::One;
 
   // Flatten the additive structure (both FunctionCall and BinaryOp forms),

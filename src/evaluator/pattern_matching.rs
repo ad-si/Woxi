@@ -3881,7 +3881,7 @@ fn match_pattern_impl(
       if let Expr::BigInteger(m) = expr {
         if m == n { Some(vec![]) } else { None }
       } else if let Expr::Integer(m) = expr {
-        if num_bigint::BigInt::from(*m) == *n {
+        if BigInt::from(*m) == *n {
           Some(vec![])
         } else {
           None

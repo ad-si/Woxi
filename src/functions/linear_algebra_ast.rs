@@ -99,7 +99,7 @@ pub fn pseudo_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     row.iter().all(|e| {
       matches!(e, Expr::Integer(0))
         || matches!(e, Expr::Real(x) if *x == 0.0)
-        || matches!(e, Expr::BigInteger(n) if *n == num_bigint::BigInt::from(0))
+        || matches!(e, Expr::BigInteger(n) if *n == BigInt::from(0))
     })
   });
   if is_zero {
@@ -1506,7 +1506,7 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Try integer matrix inverse via adjugate method
   let det = determinant(&matrix);
   let det_is_zero = matches!(&det, Expr::Integer(0))
-    || matches!(&det, Expr::BigInteger(n) if n == &num_bigint::BigInt::from(0));
+    || matches!(&det, Expr::BigInteger(n) if n == &BigInt::from(0));
   if det_is_zero {
     // Matches wolframscript: emit Inverse::sing and return unevaluated.
     crate::emit_message(&format!(
@@ -1713,7 +1713,7 @@ pub fn identity_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::BigInteger(n) => {
         use num_traits::ToPrimitive;
         use num_traits::Zero;
-        if *n >= num_bigint::BigInt::zero() {
+        if *n >= BigInt::zero() {
           n.to_usize()
         } else {
           None
@@ -2773,10 +2773,7 @@ fn char_poly_coefficients(a: &[Vec<i128>]) -> Vec<i128> {
 
 /// BigInt Faddeev–LeVerrier: ascending coefficients of the monic
 /// characteristic polynomial det(x I - A). O(n^3), exact for any size.
-fn char_poly_coefficients_big(
-  a: &[Vec<num_bigint::BigInt>],
-) -> Vec<num_bigint::BigInt> {
-  use num_bigint::BigInt;
+fn char_poly_coefficients_big(a: &[Vec<BigInt>]) -> Vec<BigInt> {
   let n = a.len();
   let mut coeffs = vec![BigInt::from(0); n + 1];
   coeffs[n] = BigInt::from(1);
@@ -2816,7 +2813,6 @@ pub fn characteristic_polynomial_int(
   rows: &[Expr],
   var: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  use num_bigint::BigInt;
   let n = rows.len();
   let mut a: Vec<Vec<BigInt>> = Vec::with_capacity(n);
   for r in rows {
@@ -5091,14 +5087,14 @@ fn row_reduce_impl(matrix: &[Vec<Expr>]) -> Vec<Vec<Expr>> {
 fn is_zero_expr(e: &Expr) -> bool {
   matches!(e, Expr::Integer(0))
     || matches!(e, Expr::Real(x) if *x == 0.0)
-    || matches!(e, Expr::BigInteger(n) if n == &num_bigint::BigInt::from(0))
+    || matches!(e, Expr::BigInteger(n) if n == &BigInt::from(0))
 }
 
 /// Check if an expression is one
 fn is_one_expr(e: &Expr) -> bool {
   matches!(e, Expr::Integer(1))
     || matches!(e, Expr::Real(x) if *x == 1.0)
-    || matches!(e, Expr::BigInteger(n) if n == &num_bigint::BigInt::from(1))
+    || matches!(e, Expr::BigInteger(n) if n == &BigInt::from(1))
 }
 
 /// MatrixRank[matrix] - rank of a matrix

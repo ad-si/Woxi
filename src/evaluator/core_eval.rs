@@ -36,8 +36,7 @@ fn exact_integer_ord(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   // included so a value too small for an f64 still compares correctly: without
   // this `10^-400 > 0` went through the f64 path, underflowed to 0.0 and
   // answered False.
-  fn as_fraction(e: &Expr) -> Option<(num_bigint::BigInt, num_bigint::BigInt)> {
-    use num_bigint::BigInt;
+  fn as_fraction(e: &Expr) -> Option<(BigInt, BigInt)> {
     match e {
       Expr::Integer(n) => Some((BigInt::from(*n), BigInt::from(1))),
       Expr::BigInteger(n) => Some((n.clone(), BigInt::from(1))),

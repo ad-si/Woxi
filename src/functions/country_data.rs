@@ -333,7 +333,7 @@ fn interpret_scalar(ty: &str, val: &Expr) -> Option<Expr> {
     let t = s.trim();
     match t.parse::<i128>() {
       Ok(n) => Some(Expr::Integer(n)),
-      Err(_) => match t.parse::<num_bigint::BigInt>() {
+      Err(_) => match t.parse::<BigInt>() {
         Ok(n) => Some(Expr::BigInteger(n)),
         Err(_) => None,
       },

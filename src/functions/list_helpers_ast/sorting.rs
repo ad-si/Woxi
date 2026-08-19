@@ -146,7 +146,6 @@ fn is_infinity_expr(e: &Expr) -> Option<i8> {
 /// denominators). Returns None unless both arguments are exact real numbers,
 /// so Reals, complex values, and symbolic terms fall through unchanged.
 fn exact_real_cmp(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
-  use num_bigint::{BigInt, Sign};
   fn as_ratio(e: &Expr) -> Option<(BigInt, BigInt)> {
     match e {
       Expr::Integer(n) => Some((BigInt::from(*n), BigInt::from(1))),
