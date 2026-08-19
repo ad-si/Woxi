@@ -2121,6 +2121,53 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_resource_function_barycentric_coordinates() {
+    clear_state();
+    // ResourceFunction["BarycentricCoordinates"] is a Wolfram Function
+    // Repository resource, not a kernel builtin — the bare name must stay
+    // symbolic (no network access to resolve it) …
+    assert_eq!(
+      interpret("BarycentricCoordinates[{{0, 0}, {1, 0}, {0, 1}}, {0, 0}]")
+        .unwrap(),
+      "BarycentricCoordinates[{{0, 0}, {1, 0}, {0, 1}}, {0, 0}]"
+    );
+    // … but the resolved resource function computes exactly, for a triangle
+    // (2-simplex) …
+    assert_eq!(
+      interpret(
+        "ResourceFunction[\"BarycentricCoordinates\"][{{0, 0}, {1, 0}, {0, 1}}, {1/5, 3/10}]"
+      )
+      .unwrap(),
+      "{1/2, 1/5, 3/10}"
+    );
+    // … and for a tetrahedron (3-simplex), assigned to a variable first, as
+    // the "Function" form is normally used.
+    assert_eq!(
+      interpret(concat!(
+        "f = ResourceFunction[\"BarycentricCoordinates\", \"Function\"]; ",
+        "f[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}, {0, 0, 0}]"
+      ))
+      .unwrap(),
+      "{1, 0, 0, 0}"
+    );
+    // The barycentric coordinates always reconstruct the query point and sum
+    // to 1, for float input too.
+    clear_state();
+    let coords = interpret(
+      "ResourceFunction[\"BarycentricCoordinates\"][{{0, 0}, {1, 0}, {0, 1}}, {0.2, 0.3}]",
+    )
+    .unwrap();
+    assert_eq!(coords, "{0.49999999999999994, 0.2, 0.30000000000000004}");
+    // An unrecognized resource name has no network access to resolve it and
+    // stays a held call.
+    clear_state();
+    assert_eq!(
+      interpret("ResourceFunction[\"SomeUnknownResource\"][1, 2]").unwrap(),
+      "ResourceFunction[SomeUnknownResource][1, 2]"
+    );
+  }
+
+  #[test]
   fn test_mixed_radix_quantity_stays_symbolic() {
     clear_state();
     // MixedRadixQuantity[digits, radixList] is an inert container: wolframscript

@@ -1641,6 +1641,33 @@ pub fn apply_curried_call(
         func_args, args,
       )
     }
+    // ResourceFunction["Name"][args…] / ResourceFunction["Name", "Function"][args…]
+    // — dispatch known Wolfram Function Repository resources by name. Woxi has
+    // no network access to fetch arbitrary resource definitions, so only
+    // resources reimplemented natively are recognized; anything else stays a
+    // held CurriedCall, matching a real kernel with no internet connection.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "ResourceFunction"
+      && (1..=2).contains(&func_args.len())
+      && matches!(&func_args[0], Expr::String(_)) =>
+    {
+      let Expr::String(resource_name) = &func_args[0] else {
+        unreachable!()
+      };
+      match (resource_name.as_str(), args) {
+        ("BarycentricCoordinates", [simplex, point]) => {
+          crate::evaluator::dispatch::complex_and_special::compute_barycentric_coordinates(
+            simplex, point,
+          )
+        }
+        _ => Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        }),
+      }
+    }
     Expr::FunctionCall {
       name,
       args: func_args,
