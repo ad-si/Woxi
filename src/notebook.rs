@@ -1599,30 +1599,30 @@ pub(crate) fn combining_accent(over: &str) -> Option<&'static str> {
 /// from box expressions to avoid the parser tripping over the leftover
 /// `\[…]` tokens.
 fn named_char_to_code_op(name: &str) -> Option<&'static str> {
-  match name {
-    "Rule" => Some("->"),
-    "RuleDelayed" => Some(":>"),
-    "DirectedEdge" => Some("\\[DirectedEdge]"),
-    "UndirectedEdge" => Some("\\[UndirectedEdge]"),
-    "Distributed" => Some("\\[Distributed]"),
-    "Conditioned" => Some("\\[Conditioned]"),
+  Some(match name {
+    "Rule" => "->",
+    "RuleDelayed" => ":>",
+    "DirectedEdge" => "\\[DirectedEdge]",
+    "UndirectedEdge" => "\\[UndirectedEdge]",
+    "Distributed" => "\\[Distributed]",
+    "Conditioned" => "\\[Conditioned]",
     // \[Equal] is the typeset name for the `==` comparison operator. The
     // default Wolfram→Unicode mapping is U+003D (`=`), which is `Set`
     // (assignment) at evaluation time — definitely not what the box
     // expression means. Force the operator form here so cells like
     //   RowBox[{"prob2", "\[Equal]", RowBox[{"3", "prob4"}]}]
     // parse as a predicate, not an assignment.
-    "Equal" => Some("=="),
+    "Equal" => "==",
     // `\[Prime]` is the typeset derivative mark (`f\[Prime]` = `f'`).
     // The Unicode prime (U+2032) is not a valid InputForm operator, so
     // map it to the ASCII apostrophe to keep the cell evaluable.
-    "Prime" => Some("'"),
-    "NotEqual" => Some("!="),
-    "LessEqual" => Some("<="),
-    "GreaterEqual" => Some(">="),
-    "And" => Some("&&"),
-    "Or" => Some("||"),
-    "Cross" => Some("\\[Cross]"),
+    "Prime" => "'",
+    "NotEqual" => "!=",
+    "LessEqual" => "<=",
+    "GreaterEqual" => ">=",
+    "And" => "&&",
+    "Or" => "||",
+    "Cross" => "\\[Cross]",
     "NoBreak"
     | "InvisibleSpace"
     | "InvisibleComma"
@@ -1637,10 +1637,10 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     | "SpanFromAbove"
     | "SpanFromBoth"
     | "RawEscape"
-    | "RawBackspace" => Some(""),
+    | "RawBackspace" => "",
     // The FrontEnd's own newline (U+F3A3) separates statements in a typeset
     // cell; the reconstructed code needs a plain line break.
-    "IndentingNewLine" => Some("\n"),
+    "IndentingNewLine" => "\n",
     // Typographic spacing characters separate tokens in typeset code
     // (e.g. `"/.", "\[VeryThinSpace]", "sol"`). Emit a plain ASCII space
     // so the reconstructed code carries no invisible Unicode.
@@ -1651,14 +1651,14 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     | "NegativeThinSpace"
     | "NegativeVeryThinSpace"
     | "NegativeMediumSpace"
-    | "NegativeThickSpace" => Some(" "),
+    | "NegativeThickSpace" => " ",
     // `\[InvisibleTimes]` represents implicit multiplication (e.g. `2 x`
     // is encoded as `2 \[InvisibleTimes] x` in box form). Map it to an
     // explicit `*` so the resulting InputForm parses as multiplication
     // rather than producing two adjacent tokens that mean nothing.
-    "InvisibleTimes" => Some("*"),
-    _ => None,
-  }
+    "InvisibleTimes" => "*",
+    _ => return None,
+  })
 }
 
 /// Extract a plain string value, handling escaped quotes.
