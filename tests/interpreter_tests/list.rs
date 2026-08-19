@@ -4318,6 +4318,26 @@ mod part_extraction {
   }
 
   #[test]
+  fn part_function_call_assignment_updates_element() {
+    // Part[x, i] = v is the same operation as x[[i]] = v — Part[...] is
+    // just the function-call spelling of the [[...]] bracket syntax.
+    // Wolfram notebooks' saved-definitions boxes commonly spell it this
+    // way, so both forms must reach the same Part-assignment code path.
+    assert_eq!(
+      interpret("x = {1, 2, 3}; Part[x, 2] = 99; x").unwrap(),
+      "{1, 99, 3}"
+    );
+  }
+
+  #[test]
+  fn part_function_call_assignment_updates_matrix_cell() {
+    assert_eq!(
+      interpret("A = {{1, 2}, {3, 4}}; Part[A, 1, 2] = 5; A").unwrap(),
+      "{{1, 5}, {3, 4}}"
+    );
+  }
+
+  #[test]
   fn part_assignment_on_undefined_symbol_returns_rhs() {
     // Matches Mathematica: Part assignment on a symbol with no immediate
     // value emits a 'Set::noval' warning and returns the RHS unchanged.
