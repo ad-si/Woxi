@@ -7268,7 +7268,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     parse_iterator_generic(&args[2], "ContourPlot3D", "second")?;
   let (zvar, z_min, z_max) =
     parse_iterator_generic(&args[3], "ContourPlot3D", "third")?;
-  if !(x_max > x_min) || !(y_max > y_min) || !(z_max > z_min) {
+  if x_max <= x_min || y_max <= y_min || z_max <= z_min {
     return Err(InterpreterError::EvaluationError(
       "ContourPlot3D: iterator ranges must be increasing".into(),
     ));
