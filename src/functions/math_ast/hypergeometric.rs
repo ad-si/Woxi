@@ -1068,7 +1068,6 @@ fn is_half(expr: &Expr) -> bool {
 }
 
 pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use num_bigint::BigInt;
   if args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
       "Hypergeometric1F1 expects exactly 3 arguments".into(),

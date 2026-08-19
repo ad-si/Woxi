@@ -28,7 +28,8 @@ enum LocalSpecError {
   /// `With[{x}, …]` — `With` gives every variable a value.
   NeedsValue(Expr),
   /// `Module[{x[1] = 3}, …]` — an assignment, but not to a symbol.
-  BadAssignment { item: Expr, target: Expr },
+  /// Boxed so this variant does not blow up the size of every `Result`.
+  BadAssignment { item: Box<Expr>, target: Box<Expr> },
   /// `Module[{x, x}, …]` — the same name twice.
   Duplicate(String),
 }
@@ -105,8 +106,8 @@ fn parse_local_vars(
     {
       let Expr::Identifier(name) = target else {
         return Err(LocalSpecError::BadAssignment {
-          item: item.clone(),
-          target: target.clone(),
+          item: Box::new(item.clone()),
+          target: Box::new(target.clone()),
         });
       };
       LocalVar {

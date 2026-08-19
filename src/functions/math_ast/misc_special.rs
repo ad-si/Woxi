@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use num_bigint::BigInt;
 
 /// QPochhammer[a, q, n] — q-Pochhammer symbol.
 /// Computes Product[(1 - a*q^k), {k, 0, n-1}] for non-negative integer n.

@@ -905,9 +905,7 @@ fn multiply_terms(a: &Expr, b: &Expr) -> Expr {
     // Promote to BigInteger on i128 overflow instead of panicking.
     (Expr::Integer(x), Expr::Integer(y)) => match x.checked_mul(*y) {
       Some(p) => Expr::Integer(p),
-      None => Expr::BigInteger(
-        num_bigint::BigInt::from(*x) * num_bigint::BigInt::from(*y),
-      ),
+      None => Expr::BigInteger(BigInt::from(*x) * BigInt::from(*y)),
     },
     (Expr::Real(x), Expr::Real(y)) => Expr::Real(x * y),
     (Expr::Integer(x), Expr::Real(y)) | (Expr::Real(y), Expr::Integer(x)) => {
