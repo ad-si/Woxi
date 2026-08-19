@@ -1073,6 +1073,9 @@ fn assignment_target_symbol(lhs: &Expr) -> Option<&str> {
   match lhs {
     Expr::Identifier(name) | Expr::Constant(name) => Some(name),
     Expr::Part { expr, .. } => assignment_target_symbol(expr),
+    Expr::FunctionCall { name, args } if name == "Part" && !args.is_empty() => {
+      assignment_target_symbol(&args[0])
+    }
     Expr::FunctionCall { name, .. } => Some(name),
     _ => None,
   }
@@ -1261,7 +1264,9 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   // Handle Part assignment: var[[indices]] = value
-  if let Expr::Part { .. } = lhs {
+  if matches!(lhs, Expr::Part { .. })
+    || matches!(lhs, Expr::FunctionCall { name, args } if name == "Part" && args.len() >= 2)
+  {
     // Flatten nested Part to get base variable and list of indices. A
     // bracket group followed by another parses as the `Part[base, …]` call
     // form (see `apply_part_group`), so `m[[1]][[2]] = v` reaches here with
