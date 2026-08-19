@@ -2840,6 +2840,54 @@ mod plot3d {
       insta::assert_snapshot!(export_svg("Graphics3D[Sphere[]]"));
     }
 
+    // Regression: a Grid/Column PlotLabel on a 3-D picture (as Demonstrations
+    // commonly build, e.g. a multi-line caption of computed values) stacks
+    // its rows as separate lines above the picture, matching the 2-D
+    // renderers (Plot/BarChart/PieChart) instead of being printed as a
+    // single line of raw `Column[{…}]` syntax.
+    #[test]
+    fn graphics3d_plot_label_grid_stacks_lines() {
+      let svg = export_svg(
+        "Graphics3D[Sphere[], PlotLabel -> Grid[{{\"A\", \"B\"}, {1, 2}}]]",
+      );
+      assert!(
+        !svg.contains("Grid["),
+        "Grid[…] must not leak into the SVG as raw syntax:\n{svg}"
+      );
+      assert!(
+        svg.contains(">A B<"),
+        "Graphics3D SVG missing first PlotLabel line:\n{svg}"
+      );
+      assert!(
+        svg.contains("<tspan") && svg.contains(">1 2</tspan>"),
+        "Graphics3D SVG missing stacked second PlotLabel line:\n{svg}"
+      );
+    }
+
+    // The "Latitude and Longitude of a Point on a Sphere" Demonstration
+    // titles its Graphics3D/ParametricPlot3D Show with exactly this shape:
+    // a Column of computed strings wrapped in Style[…, "Label"]. The Style
+    // wrapper must not defeat the Column-stacking above.
+    #[test]
+    fn graphics3d_plot_label_style_wrapped_column_stacks_lines() {
+      let svg = export_svg(
+        "Graphics3D[Sphere[], PlotLabel -> \
+           Style[Column[{\"first line\", \"second line\"}], \"Label\"]]",
+      );
+      assert!(
+        !svg.contains("Column["),
+        "Column[…] must not leak into the SVG as raw syntax:\n{svg}"
+      );
+      assert!(
+        svg.contains(">first line<"),
+        "Graphics3D SVG missing first PlotLabel line:\n{svg}"
+      );
+      assert!(
+        svg.contains("<tspan") && svg.contains(">second line</tspan>"),
+        "Graphics3D SVG missing stacked second PlotLabel line:\n{svg}"
+      );
+    }
+
     /// The red component of every shaded facet's fill, so a test can talk
     /// about how dark or bright a surface came out. Only `<polygon>` fills
     /// count — the white background `<rect>` is not part of the shading.
