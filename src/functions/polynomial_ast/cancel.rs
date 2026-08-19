@@ -595,10 +595,10 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
 /// Supports rational exponents: a^(3/2)/a^(1/2) → a
 pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
   // Rational exponent as (numerator, denominator) pair
-  type RatExp = (i128, i128);
+  type Rat = (i128, i128);
 
   // Extract base string and rational exponent from a factor
-  fn base_and_exp(f: &Expr) -> (String, RatExp) {
+  fn base_and_exp(f: &Expr) -> (String, Rat) {
     match f {
       Expr::BinaryOp {
         op: BinaryOperator::Power,
@@ -705,7 +705,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
   }
 
   // Reconstruct a factor from base expr and rational exponent
-  fn make_factor(base: &Expr, exp: RatExp) -> Option<Expr> {
+  fn make_factor(base: &Expr, exp: Rat) -> Option<Expr> {
     let (n, d) = exp;
     if n == 0 {
       None
@@ -730,17 +730,17 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
   }
 
   // Subtract two rational exponents: (a/b) - (c/d)
-  fn rat_sub(a: RatExp, b: RatExp) -> RatExp {
+  fn rat_sub(a: Rat, b: Rat) -> Rat {
     rat_reduce(a.0 * b.1 - b.0 * a.1, a.1 * b.1)
   }
 
   // Check if rational exponent is positive
-  fn rat_positive(r: RatExp) -> bool {
+  fn rat_positive(r: Rat) -> bool {
     (r.0 > 0 && r.1 > 0) || (r.0 < 0 && r.1 < 0)
   }
 
   // Minimum of two positive rational exponents
-  fn rat_min(a: RatExp, b: RatExp) -> RatExp {
+  fn rat_min(a: Rat, b: Rat) -> Rat {
     // Compare a/b with c/d: a*d vs c*b
     let lhs = a.0 * b.1;
     let rhs = b.0 * a.1;
@@ -781,7 +781,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
   }
 
   // Build maps of base → (original_expr, base_str, exponent) for numerator and denominator
-  let mut num_map: Vec<(Expr, String, RatExp)> = num_factors
+  let mut num_map: Vec<(Expr, String, Rat)> = num_factors
     .iter()
     .map(|f| {
       let (base_str, exp) = base_and_exp(f);
@@ -790,7 +790,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
     })
     .collect();
 
-  let mut den_map: Vec<(Expr, String, RatExp)> = den_factors
+  let mut den_map: Vec<(Expr, String, Rat)> = den_factors
     .iter()
     .map(|f| {
       let (base_str, exp) = base_and_exp(f);

@@ -1669,7 +1669,7 @@ pub fn together_expr(expr: &Expr) -> Expr {
 
   // Compute the common denominator (LCM of all denominators)
   // Decompose each denominator into base^exp pairs and take max exp for each base
-  let mut base_exp_map: Vec<(String, Expr, RatExp)> = Vec::new();
+  let mut base_exp_map: Vec<(String, Expr, Rat)> = Vec::new();
   let mut fractional_int_exponent = false;
   for (_, den) in &fractions {
     if matches!(den, Expr::Integer(1)) {
@@ -2154,9 +2154,9 @@ fn factor_common_monomial_from_terms(num: &Expr) -> Expr {
 }
 
 /// A rational exponent represented as (numerator, denominator) with denominator > 0.
-type RatExp = (i128, i128);
+type Rat = (i128, i128);
 
-fn rat_exp_from_expr(exp: &Expr) -> RatExp {
+fn rat_exp_from_expr(exp: &Expr) -> Rat {
   match exp {
     Expr::Integer(n) => (*n, 1),
     Expr::FunctionCall { name, args }
@@ -2172,7 +2172,7 @@ fn rat_exp_from_expr(exp: &Expr) -> RatExp {
   }
 }
 
-fn rat_exp_to_expr((n, d): RatExp) -> Expr {
+fn rat_exp_to_expr((n, d): Rat) -> Expr {
   if d == 1 {
     Expr::Integer(n)
   } else {
@@ -2181,23 +2181,23 @@ fn rat_exp_to_expr((n, d): RatExp) -> Expr {
 }
 
 /// Compare two rational exponents: returns a > b
-fn rat_gt((an, ad): RatExp, (bn, bd): RatExp) -> bool {
-  an * bd > bn * ad
+fn rat_gt(a: Rat, b: Rat) -> bool {
+  a.0 * b.1 > b.0 * a.1
 }
 
 /// Compute max of two rational exponents
-fn rat_max(a: RatExp, b: RatExp) -> RatExp {
+fn rat_max(a: Rat, b: Rat) -> Rat {
   if rat_gt(a, b) { a } else { b }
 }
 
 /// Subtract two rational exponents: a - b
-fn rat_sub((an, ad): RatExp, (bn, bd): RatExp) -> RatExp {
-  rat_reduce(an * bd - bn * ad, ad * bd)
+fn rat_sub(a: Rat, b: Rat) -> Rat {
+  rat_reduce(a.0 * b.1 - b.0 * a.1, a.1 * b.1)
 }
 
 /// Extract base and exponent from a denominator expression.
 /// Returns (base, exponent) pairs with rational exponents.
-fn extract_den_factors(den: &Expr) -> Vec<(Expr, RatExp)> {
+fn extract_den_factors(den: &Expr) -> Vec<(Expr, Rat)> {
   match den {
     Expr::Integer(1) => vec![],
     Expr::BinaryOp {
@@ -2226,10 +2226,10 @@ fn extract_den_factors(den: &Expr) -> Vec<(Expr, RatExp)> {
 /// denominator. For each base in the LCM, compute base^(lcm_exp - den_exp).
 fn compute_missing_factor(
   den: &Expr,
-  base_exp_map: &[(String, Expr, RatExp)],
+  base_exp_map: &[(String, Expr, Rat)],
 ) -> Expr {
   let den_factors = extract_den_factors(den);
-  let mut den_map: Vec<(String, RatExp)> = Vec::new();
+  let mut den_map: Vec<(String, Rat)> = Vec::new();
   for (base, exp) in &den_factors {
     let key = expr_to_string(base);
     if let Some(entry) = den_map.iter_mut().find(|(k, _)| *k == key) {
