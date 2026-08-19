@@ -8493,7 +8493,7 @@ fn expand_generated_bodies(body: &Expr, var: &str) -> Option<Expr> {
 }
 
 /// As [`eval_body_var_symbolic`], for a body in several plot variables.
-fn eval_body_vars_symbolic(body: &Expr, vars: &[&str]) -> Expr {
+pub(crate) fn eval_body_vars_symbolic(body: &Expr, vars: &[&str]) -> Expr {
   let saved: Vec<(&str, Option<crate::StoredValue>)> = vars
     .iter()
     .map(|v| (*v, crate::ENV.with(|e| e.borrow_mut().remove(*v))))
