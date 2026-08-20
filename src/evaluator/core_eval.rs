@@ -3994,6 +3994,11 @@ pub fn evaluate_expr_to_expr_inner(
           prepared.push(evaluate_expr_to_expr(a)?);
         }
       }
+      // An argument that evaluated to `Sequence[…]` splices into the
+      // argument list, exactly as it does for a named head — this is what
+      // makes `Function[{a, b}, …][Sequence @@ {1, 2}]` bind both params.
+      let prepared =
+        crate::evaluator::listable::flatten_sequences("Function", &prepared);
       apply_curried_call(&evaluated_func, &prepared)
     }
   }

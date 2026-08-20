@@ -820,6 +820,78 @@ pub fn list_depth(expr: &Expr) -> usize {
   }
 }
 
+/// `` Developer`ToPackedArray[expr] `` — pack a full rectangular array of
+/// machine numbers into a single numeric type.
+///
+/// Woxi has no packed representation, so the only observable effect is the
+/// type unification a real pack performs: an array that mixes integers and
+/// reals comes back as all reals. Anything unpackable (ragged nesting,
+/// rationals, symbols, strings) is returned unchanged, as in Wolfram.
+/// A second argument restricts the target type to `Integer` or `Real`.
+pub fn to_packed_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let expr = &args[0];
+  let target = match args.get(1) {
+    None => None,
+    Some(Expr::Identifier(t)) if t == "Integer" => Some(LeafType::Integer),
+    Some(Expr::Identifier(t)) if t == "Real" => Some(LeafType::Real),
+    Some(_) => return Ok(expr.clone()),
+  };
+  let Some(found) = packable_leaf_type(expr) else {
+    return Ok(expr.clone());
+  };
+  let target = match target {
+    // Reals cannot be demoted to an integer array.
+    Some(LeafType::Integer) if found == LeafType::Real => {
+      return Ok(expr.clone());
+    }
+    Some(t) => t,
+    None => found,
+  };
+  Ok(convert_leaves(expr, target))
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LeafType {
+  Integer,
+  Real,
+}
+
+/// The common machine type of a full rectangular numeric array, or `None`
+/// when the expression cannot be packed.
+fn packable_leaf_type(expr: &Expr) -> Option<LeafType> {
+  if !matches!(expr, Expr::List(_))
+    || !matches!(array_q_ast(expr), Ok(Expr::Identifier(ref b)) if b == "True")
+  {
+    return None;
+  }
+  fn walk(expr: &Expr, found: &mut Option<LeafType>) -> bool {
+    match expr {
+      Expr::List(items) => items.iter().all(|item| walk(item, found)),
+      Expr::Integer(_) => {
+        found.get_or_insert(LeafType::Integer);
+        true
+      }
+      Expr::Real(_) => {
+        *found = Some(LeafType::Real);
+        true
+      }
+      _ => false,
+    }
+  }
+  let mut found = None;
+  if walk(expr, &mut found) { found } else { None }
+}
+
+fn convert_leaves(expr: &Expr, target: LeafType) -> Expr {
+  match expr {
+    Expr::List(items) => {
+      Expr::List(items.iter().map(|i| convert_leaves(i, target)).collect())
+    }
+    Expr::Integer(n) if target == LeafType::Real => Expr::Real(*n as f64),
+    other => other.clone(),
+  }
+}
+
 /// Dimensions[list] - Returns the dimensions of a nested list.
 /// Dimensions[list, n] - Limits the analysis to at most n levels.
 pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

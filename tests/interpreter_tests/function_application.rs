@@ -1155,6 +1155,44 @@ mod named_function_arity_check {
   fn single_param_single_arg_works() {
     assert_eq!(interpret("Function[{x}, x^2][3]").unwrap(), "9");
   }
+
+  #[test]
+  fn sequence_argument_splices_into_parameters() {
+    assert_eq!(
+      interpret("Function[{x, y}, {x, y}][Sequence @@ {1, 2}]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn literal_sequence_argument_splices_into_parameters() {
+    assert_eq!(
+      interpret("Function[{x, y}, x + y][Sequence[1, 2]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn sequence_argument_splices_into_slots() {
+    assert_eq!(
+      interpret("Function[{#1, #2}][Sequence @@ {1, 2}]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  /// The Demonstrations `Initialization` idiom: a factory closes over
+  /// several packed arrays that are handed to it in one list.
+  #[test]
+  fn factory_applied_to_packed_arrays_from_one_list() {
+    assert_eq!(
+      interpret(
+        "parts = Developer`ToPackedArray /@ {{1, 2}, {3, 4.}}; \
+         Function[{u, v}, u + v][Sequence @@ parts]"
+      )
+      .unwrap(),
+      "{4., 6.}"
+    );
+  }
 }
 
 mod slot_zero_self_reference {

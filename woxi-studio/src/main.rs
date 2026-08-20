@@ -19733,4 +19733,172 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
       "dropping the spoke count from 11 to 5 must change the rendered wheel"
     );
   }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook: a
+  /// triangle whose three vertices are draggable `Locator` controls, with
+  /// toggles that overlay its perimeter and its area as `N[…, 6]` readouts.
+  /// Independently written, not copied from any specific Demonstration: the
+  /// area here comes from the shoelace determinant rather than Heron's
+  /// formula, and the readout row is a `Rectangle` plate instead of a
+  /// five-point `Polygon`.
+  ///
+  /// Two things are worth pinning down. First, a `Locator` control whose
+  /// value is a *single* point (`{{v1, {-4, 3}, "…"}, {-10, -10}, {10, 8},
+  /// Locator, Appearance -> None}`) must become a 2D control binding `v1` to
+  /// a bare `{x, y}` pair, not to a one-element list of points — the body
+  /// reads `v1[[1]]`/`v1[[2]]` and would break otherwise. Second, an exact
+  /// `N[…, 6]` readout must show all six figures: a lattice triangle's area
+  /// is always a multiple of `1/2`, so this label lands on an exact value
+  /// constantly, and it has to read `28.0000`, not `28.`.
+  #[test]
+  fn demonstration_triangle_locators_report_perimeter_and_area() {
+    let code = "Manipulate[\
+      With[{ax = v1[[1]], ay = v1[[2]], bx = v2[[1]], by = v2[[2]], \
+            cx = v3[[1]], cy = v3[[2]]}, \
+        With[{peri = N[Sqrt[(ax - bx)^2 + (ay - by)^2] \
+                     + Sqrt[(bx - cx)^2 + (by - cy)^2] \
+                     + Sqrt[(cx - ax)^2 + (cy - ay)^2], 6], \
+              area = N[Abs[(bx - ax) (cy - ay) - (cx - ax) (by - ay)]/2, 6]}, \
+          Graphics[{\
+            Tooltip[Locator[v1], v1], Tooltip[Locator[v2], v2], \
+            Tooltip[Locator[v3], v3], \
+            Style[Line[{v1, v2, v3, v1}], Blue, Thickness[.005]], \
+            If[showPerimeter, {\
+              Style[Rectangle[{1, 9}, {10, 10}], White], \
+              Style[Text[\"perimeter =\", {6, 9.5}, {Right, Center}], Red], \
+              Style[Text[peri, {8, 9.5}], Red]}, {}], \
+            If[showArea, {\
+              Style[Rectangle[{1, 8}, {10, 9}], White], \
+              Style[Text[\"area =\", {6, 8.5}, {Right, Center}], Blue], \
+              Style[Polygon[{v1, v2, v3}], Blue, Opacity[.5]], \
+              Style[Text[area, {8, 8.5}], Blue]}, {}]}, \
+            Axes -> True, AxesLabel -> {x, y}, PlotRange -> 10, \
+            BaseStyle -> {Medium, 14}, \
+            GridLines -> {Table[{n, RGBColor[0, 0.6, 1.]}, {n, -10, 10, 1}], \
+                          Table[{n, RGBColor[0, 0.6, 1.]}, {n, -10, 10, 1}]}, \
+            ImageSize -> {400, 400}]]], \
+      {{v1, {-4, 3}, \"x1/y1\"}, {-10, -10}, {10, 8}, Locator, \
+        Appearance -> None}, \
+      {{v2, {5, -2}, \"x2/y2\"}, {-10, -10}, {10, 8}, Locator, \
+        Appearance -> None}, \
+      {{v3, {-2, -5}, \"x3/y3\"}, {-10, -10}, {10, 8}, Locator, \
+        Appearance -> None}, \
+      {{showPerimeter, False, \"show perimeter\"}, {True, False}}, \
+      {{showArea, False, \"show area\"}, {True, False}}, \
+      ControlPlacement -> Left\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the triangle Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the triangle must render");
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the triangle must render")
+    };
+    let plain = render(&state);
+    assert!(
+      !plain.contains("perimeter =") && !plain.contains("area ="),
+      "both readouts start switched off"
+    );
+
+    // Each single-point Locator binds a bare `{x, y}` pair, so `v1[[1]]` is a
+    // coordinate rather than a point.
+    match &mut state.controls[..] {
+      [
+        manipulate::ControlState::Slider2D {
+          name: n1,
+          x: x1,
+          y: y1,
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          ..
+        },
+        manipulate::ControlState::Slider2D { name: n2, .. },
+        manipulate::ControlState::Slider2D { name: n3, .. },
+        manipulate::ControlState::Discrete {
+          name: n4,
+          values: peri_values,
+          current_index: peri_index,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: n5,
+          current_index: area_index,
+          ..
+        },
+      ] => {
+        assert_eq!(
+          [
+            n1.as_str(),
+            n2.as_str(),
+            n3.as_str(),
+            n4.as_str(),
+            n5.as_str()
+          ],
+          ["v1", "v2", "v3", "showPerimeter", "showArea"]
+        );
+        // The two corner points bound the draggable region.
+        assert_eq!((*x_min, *y_min), (-10.0, -10.0));
+        assert_eq!((*x_max, *y_max), (10.0, 8.0));
+        assert_eq!((*x1, *y1), (-4.0, 3.0));
+        assert_eq!(peri_values, &["True".to_string(), "False".to_string()]);
+        // Both toggles default to False — the second choice.
+        assert_eq!((*peri_index, *area_index), (1, 1));
+        *peri_index = 0;
+        *area_index = 0;
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let labelled = render(&state);
+    assert!(
+      labelled.contains("perimeter =") && labelled.contains("area ="),
+      "switching both toggles on must draw the two readout rows"
+    );
+    // Vertices (-4, 3), (5, -2), (-2, -5): the shoelace determinant is
+    // |9*(-8) - 2*(-5)| / 2 = 31, an exact value that must still print all
+    // six figures its precision claims.
+    assert!(
+      labelled.contains("31.0000"),
+      "an exact area must show its full precision, got: {labelled}"
+    );
+
+    // Dragging a vertex changes both the outline and the readouts.
+    if let manipulate::ControlState::Slider2D { x, y, .. } =
+      &mut state.controls[0]
+    {
+      *x = 6.0;
+      *y = 7.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let dragged = render(&state);
+    assert_ne!(
+      labelled, dragged,
+      "moving a locator must change the rendered triangle"
+    );
+    assert!(
+      !dragged.contains("31.0000"),
+      "the area readout must follow the moved vertex"
+    );
+  }
 }

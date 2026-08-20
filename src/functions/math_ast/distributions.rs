@@ -9568,6 +9568,7 @@ fn cdf_coxian(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return uneval(x);
   };
   let mut terms: Vec<Expr> = vec![int(1)];
+
   let default = if distinct {
     let coeffs = coxian_distinct_coefficients(&alphas, &rates)?;
     let mut order: Vec<usize> = (0..rates.len()).collect();

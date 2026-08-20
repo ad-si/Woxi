@@ -82,6 +82,7 @@ icon: lucide/square-function
 - [`Through`](functions/Through.md)
 - [`Throw`](functions/Throw.md)
 - [`TimesBy`](functions/TimesBy.md)
+- [`` Developer`ToPackedArray ``](functions/ToPackedArray.md)
 - [`UniformDistribution`](functions/UniformDistribution.md)
 - [`ValueQ`](functions/ValueQ.md)
 - [`WeibullDistribution`](functions/WeibullDistribution.md)
