@@ -1977,6 +1977,32 @@ mod derivative_prime_notation {
     assert_eq!(interpret("h'[x]").unwrap(), "Derivative[1][h][x]");
   }
 
+  #[test]
+  fn derivative_indexed_call_undefined() {
+    // `h[10]'[t]` differentiates the indexed function `h[10]` and applies
+    // the result to `t`: `Derivative[1][h[10]][t]`, not a bare `Derivative`
+    // wrapper around the whole call (which would drop the `[t]` argument).
+    assert_eq!(interpret("h[10]'[t]").unwrap(), "Derivative[1][h[10]][t]");
+  }
+
+  #[test]
+  fn derivative_indexed_call_as_implicit_times_factor() {
+    // Regression: `h[10]'[t]` used to fail to parse when it wasn't the
+    // first factor of an implicit-multiplication chain, because the
+    // `FunctionCall` grammar rule allowed only a single trailing prime with
+    // no further bracket calls after it — so the second `[t]` was left
+    // dangling. Real-world Wolfram Demonstrations write coefficients like
+    // `10 h[10]'[t]` on the left of an indexed derivative call routinely.
+    assert_eq!(
+      interpret("2 h[10]'[t]").unwrap(),
+      "2*Derivative[1][h[10]][t]"
+    );
+    assert_eq!(
+      interpret("x h[10]'[t]").unwrap(),
+      "x*Derivative[1][h[10]][t]"
+    );
+  }
+
   // `Derivative[n][List]` and `Derivative[n1, ..., nk][List]` — Wolfram
   // treats `List` as a varargs identity function, so its derivative is
   // a Function returning a list of zeros and ones at the differentiated
