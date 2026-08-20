@@ -2206,6 +2206,25 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_resource_function_bare_name_stays_symbolic() {
+    clear_state();
+    // ResourceFunction["Name"] fetches the named resource from the Wolfram
+    // Function Repository over the network on first use (see
+    // functions::resource_function_ast — its own hermetic unit tests cover
+    // the pure identifier-rewriting and cell-extraction logic). Actually
+    // fetching isn't something an offline unit test can assert a specific
+    // result for, so this only checks the one part of the contract that is
+    // deterministic regardless of network access: a bare resource name,
+    // never wrapped in ResourceFunction, is not a kernel builtin and must
+    // stay symbolic.
+    assert_eq!(
+      interpret("BarycentricCoordinates[{{0, 0}, {1, 0}, {0, 1}}, {0, 0}]")
+        .unwrap(),
+      "BarycentricCoordinates[{{0, 0}, {1, 0}, {0, 1}}, {0, 0}]"
+    );
+  }
+
+  #[test]
   fn test_mixed_radix_quantity_stays_symbolic() {
     clear_state();
     // MixedRadixQuantity[digits, radixList] is an inert container: wolframscript

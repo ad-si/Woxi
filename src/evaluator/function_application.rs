@@ -1641,6 +1641,39 @@ pub fn apply_curried_call(
         func_args, args,
       )
     }
+    // ResourceFunction["Name"][args…] / ResourceFunction["Name", "Function"][args…]
+    // — fetch the named resource from the Wolfram Function Repository (its
+    // public, unauthenticated pages) on first use and evaluate its published
+    // "Definition" cell, the same way `Get` loads a package. No bundled
+    // catalog: any resource whose definition Woxi's language subset can
+    // evaluate works, not just specific hardcoded names. No network access,
+    // an unknown name, or a definition that fails to evaluate all leave the
+    // call as a held CurriedCall, matching a real kernel offline.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "ResourceFunction"
+      && (1..=2).contains(&func_args.len())
+      && matches!(&func_args[0], Expr::String(_)) =>
+    {
+      let Expr::String(resource_name) = &func_args[0] else {
+        unreachable!()
+      };
+      #[cfg(not(target_arch = "wasm32"))]
+      let resolved =
+        crate::functions::resource_function_ast::load_resource_function(
+          resource_name,
+        );
+      #[cfg(target_arch = "wasm32")]
+      let resolved: Option<String> = None;
+      match resolved {
+        Some(symbol_name) => evaluate_function_call_ast(&symbol_name, args),
+        None => Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        }),
+      }
+    }
     Expr::FunctionCall {
       name,
       args: func_args,
