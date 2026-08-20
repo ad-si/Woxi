@@ -2367,6 +2367,7 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "ParallelDo"
         || name == "With"
         || name == "Block"
+        || name == "BlockRandom"
         || name == "Function"
         || name == "For"
         || name == "While"

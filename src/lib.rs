@@ -196,6 +196,19 @@ pub fn unseed_rng() {
   });
 }
 
+/// Snapshot the current RNG state (used by `BlockRandom` to localize any
+/// `SeedRandom` calls made inside its body).
+pub fn snapshot_rng_state() -> Option<ChaCha8Rng> {
+  SEEDED_RNG.with(|rng| rng.borrow().clone())
+}
+
+/// Restore a previously snapshotted RNG state (see [`snapshot_rng_state`]).
+pub fn restore_rng_state(state: Option<ChaCha8Rng>) {
+  SEEDED_RNG.with(|rng| {
+    *rng.borrow_mut() = state;
+  });
+}
+
 /// Execute a closure with a mutable reference to the current RNG.
 /// Uses the seeded RNG if set, otherwise falls back to thread_rng().
 pub fn with_rng<F, R>(f: F) -> R
