@@ -3638,6 +3638,56 @@ mod plot3d {
       assert_eq!(plain.lines().filter(|l| l.starts_with("<line")).count(), 0);
     }
 
+    /// `Opacity` tints a face without touching the outline the default
+    /// `EdgeForm` draws around it, so `{Opacity[0], Cuboid[…]}` is the
+    /// wireframe idiom. Regression: the outline inherited the face's
+    /// opacity, so a space-filling Demonstration whose "opacity" slider
+    /// hides one kind of cell lost that cell's edges along with its faces
+    /// instead of leaving it as an empty shell.
+    #[test]
+    fn graphics3d_opacity_leaves_the_default_outline_opaque() {
+      let quad = "Polygon[{{0,0,0},{1,0,0},{1,1,0},{0,1,0}}]".to_string();
+      let tri = "Polygon[{{0,0,0},{1,0,0},{1,1,0}}]".to_string();
+      for face in [quad, tri] {
+        let svg = export_svg(&format!(
+          "Graphics3D[{{Opacity[0], Blue, {face}}}, Boxed -> False]"
+        ));
+        // The face is fully transparent…
+        assert!(
+          svg
+            .lines()
+            .filter(|l| l.starts_with("<polygon"))
+            .all(|l| l.contains("opacity=\"0\"")),
+          "the face must be invisible: {svg}"
+        );
+        // …but its outline is still there, at full strength. A
+        // fan-triangulated quad strokes the outline as separate `<line>`s;
+        // a bare triangle carries it as the polygon's own stroke, so its
+        // transparency has to be a `fill-opacity` rather than a blanket
+        // `opacity`.
+        let outlined = svg.lines().any(|l| {
+          l.starts_with("<line") && l.contains("stroke=\"rgb(64,64,64)\"")
+        }) || svg.lines().any(|l| {
+          l.starts_with("<polygon")
+            && l.contains("stroke=\"rgb(64,64,64)\"")
+            && l.contains("fill-opacity=\"0\"")
+        });
+        assert!(outlined, "the outline must survive the face: {svg}");
+      }
+      // A partly transparent face keeps a crisp outline too.
+      let half = export_svg(
+        "Graphics3D[{Opacity[0.5], Blue, \
+         Polygon[{{0,0,0},{1,0,0},{1,1,0},{0,1,0}}]}, Boxed -> False]",
+      );
+      assert!(
+        half
+          .lines()
+          .filter(|l| l.starts_with("<line"))
+          .all(|l| !l.contains("opacity=")),
+        "the outline stays opaque at any face opacity: {half}"
+      );
+    }
+
     /// `Rotate[g, theta, w, p]` turns `g` about the axis `w` through the
     /// point `p` — the four-argument 3D form. Regression: only the
     /// three-argument form was recognised, so a net whose flaps fold about
