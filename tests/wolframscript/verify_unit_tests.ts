@@ -1006,6 +1006,16 @@ function main() {
     "Variance[LogLogisticDistribution[3, 2]]",
     // FindIntegerNullVector: sign convention is implementation-specific (LLL algorithm produces different signs)
     "FindIntegerNullVector[{2, 6}]",
+    // 3D rotation about a symbolic axis: wolframscript returns an unsimplified
+    // artifact of its internal Gram-Schmidt rather than a canonical form — the
+    // (1,1) entry keeps an un-cancelled x*Conjugate[x]/Abs[x]^2 (i.e. 1) while
+    // the (2,2) entry of the same rotation is a plain -1, and a fully symbolic
+    // {a, b, c} axis expands to ~8 KB of nested Conjugate[...] terms that are
+    // singular on the coordinate axes. There is no stable reference form to
+    // conform to, so Woxi leaves the symbolic-axis case unevaluated.
+    // See "RotationMatrix / RotationTransform about a symbolic axis" in
+    // tests/cli/comparison/mathematica/conformance_gaps.md.
+    "RotationTransform[Pi, {0, 0, x}, {1, 0, 0}]",
     // JohnsonDistribution: Plus ordering differences (gamma + delta*f vs delta*f + gamma)
     "PDF[JohnsonDistribution[\"SN\", gamma, delta, mu, sigma], x]",
     "PDF[JohnsonDistribution[\"SU\", gamma, delta, mu, sigma], x]",

@@ -313,19 +313,90 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   result
 }
 
-/// `BlockRandom[expr]` (also accepts the 2-arg `BlockRandom[expr, seedspec]`
-/// form, ignoring `seedspec`): evaluates `expr` with the global random
-/// generator state localized, so a `SeedRandom[…]` call inside `expr` does
-/// not affect the random sequence seen after `BlockRandom` returns.
+/// `BlockRandom[expr]` — evaluate `expr` with the global random generator
+/// state localized, so a `SeedRandom[…]` call inside `expr` does not affect
+/// the random sequence seen after `BlockRandom` returns.
+///
+/// `BlockRandom[expr, RandomSeeding -> spec]` additionally seeds the localized
+/// generator before evaluating the body: `Inherited` (the default) keeps the
+/// ambient state, `Automatic` reseeds non-reproducibly, and an integer or
+/// string is handed to `SeedRandom`, making the block reproducible.
 pub fn block_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
-    return Err(InterpreterError::EvaluationError(format!(
-      "BlockRandom expects 1 or 2 arguments; {} given",
-      args.len()
-    )));
+  if args.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "BlockRandom expects at least 1 argument; 0 given".to_string(),
+    ));
+  }
+
+  // Everything past the body must be an option rule (or a list of rules).
+  fn rule_parts(opt: &Expr) -> Option<(&Expr, &Expr)> {
+    match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => Some((pattern.as_ref(), replacement.as_ref())),
+      Expr::FunctionCall { name, args }
+        if name == "Rule" && args.len() == 2 =>
+      {
+        Some((&args[0], &args[1]))
+      }
+      _ => None,
+    }
+  }
+  let mut options: Vec<(String, &Expr)> = Vec::new();
+  for arg in &args[1..] {
+    let flat: Vec<&Expr> = match arg {
+      Expr::List(items) => items.iter().collect(),
+      other => vec![other],
+    };
+    for opt in flat {
+      if let Some((Expr::Identifier(name), value)) = rule_parts(opt) {
+        options.push((name.clone(), value));
+      } else {
+        crate::emit_message(&format!(
+          "BlockRandom::nonopt: Options expected (instead of {}) beyond \
+           position 1 in {}. An option must be a rule or a list of rules.",
+          crate::syntax::expr_to_output(opt),
+          crate::syntax::expr_to_output(&unevaluated("BlockRandom", args))
+        ));
+        return Ok(unevaluated("BlockRandom", args));
+      }
+    }
+  }
+  if let Some((name, _)) = options.iter().find(|(n, _)| n != "RandomSeeding") {
+    crate::emit_message(&format!(
+      "BlockRandom::optx: Unknown option {name} in {}.",
+      crate::syntax::expr_to_output(&unevaluated("BlockRandom", args))
+    ));
+    return Ok(unevaluated("BlockRandom", args));
   }
 
   let saved = crate::snapshot_rng_state();
+  // Seed the localized generator, if asked. Anything that is neither
+  // Inherited/Automatic nor a SeedRandom-compatible seed falls back to the
+  // default (inherited) seeding after a message, matching wolframscript.
+  if let Some((_, spec)) = options.iter().find(|(n, _)| n == "RandomSeeding") {
+    let seeded = match spec {
+      Expr::Identifier(s) if s == "Inherited" => Ok(()),
+      Expr::Identifier(s) if s == "Automatic" => {
+        crate::functions::math_ast::seed_random_ast(&[]).map(|_| ())
+      }
+      Expr::Integer(_) | Expr::String(_) => {
+        crate::functions::math_ast::seed_random_ast(std::slice::from_ref(spec))
+          .map(|_| ())
+      }
+      _ => Err(InterpreterError::EvaluationError(String::new())),
+    };
+    if seeded.is_err() {
+      crate::emit_message(&format!(
+        "BlockRandom::seeding: The value of the option RandomSeeding -> {} is \
+         not Automatic, Inherited, an integer, string or valid \
+         RandomGeneratorState expression. Using the default seeding for \
+         BlockRandom instead.",
+        crate::syntax::expr_to_output(spec)
+      ));
+    }
+  }
   let result = evaluate_expr_to_expr(&args[0]);
   crate::restore_rng_state(saved);
   result

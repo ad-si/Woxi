@@ -1156,10 +1156,43 @@ mod alternatives {
 
   #[test]
   fn alternatives_flattening() {
-    // Alternatives is Flat: nested Alternatives are flattened
+    // Alternatives is NOT Flat, so an explicitly nested Alternatives keeps
+    // its own parentheses — a bare `a | b | c` would re-parse to the flat
+    // three-argument form.
     assert_eq!(
       interpret("Alternatives[Alternatives[a, b], c]").unwrap(),
       "(a | b) | c"
+    );
+  }
+
+  // Same nesting, through the second InputForm renderer that
+  // `ToString[_, InputForm]` uses (it used to drop the leading operand's
+  // parentheses because the shared infix helper only brackets same-precedence
+  // operands *after* the first).
+  #[test]
+  fn alternatives_nesting_survives_tostring_input_form() {
+    assert_eq!(
+      interpret("ToString[Alternatives[Alternatives[a, b], c], InputForm]")
+        .unwrap(),
+      "(a | b) | c"
+    );
+    assert_eq!(
+      interpret("ToString[Alternatives[a, Alternatives[b, c]], InputForm]")
+        .unwrap(),
+      "a | (b | c)"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[Alternatives[Alternatives[a, b], Alternatives[c, d]], \
+         InputForm]"
+      )
+      .unwrap(),
+      "(a | b) | (c | d)"
+    );
+    // The operator form is flat, so it stays bare even inside a hold.
+    assert_eq!(
+      interpret("ToString[Hold[a | b | c], InputForm]").unwrap(),
+      "Hold[a | b | c]"
     );
   }
 

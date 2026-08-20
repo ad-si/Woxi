@@ -4109,8 +4109,12 @@ mod transformation_function_apply {
     );
   }
 
-  // A symbolic axis has no closed form (matching the two-argument case), so
-  // the expression is left unevaluated rather than producing wrong results.
+  // A symbolic axis has no canonical closed form (matching the two-argument
+  // case), so the expression is left unevaluated rather than producing wrong
+  // results. wolframscript does return a matrix here, but only as an
+  // unsimplified Gram-Schmidt artifact — see "RotationMatrix /
+  // RotationTransform about a symbolic axis" in
+  // tests/cli/comparison/mathematica/conformance_gaps.md.
   #[test]
   fn rotation_3d_axis_through_point_symbolic_axis_unevaluated() {
     assert_eq!(
