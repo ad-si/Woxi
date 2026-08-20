@@ -2857,21 +2857,24 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       let slot_pair = inner.next().unwrap();
       let slot_expr = pair_to_expr(slot_pair);
 
-      // Collect BracketArgs (supports chained calls like #[a][b])
-      let bracket_args: Vec<Vec<Expr>> = inner
-        .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
-        .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
-        .collect();
-
-      let mut result = Expr::CurriedCall {
-        func: Box::new(slot_expr),
-        args: bracket_args[0].clone(),
-      };
-      for args in bracket_args.iter().skip(1) {
-        result = Expr::CurriedCall {
-          func: Box::new(result),
-          args: args.clone(),
-        };
+      // Collect BracketArgs (supports chained calls like #[a][b]). A
+      // `PartIndexSuffix` splits the run: brackets before it are calls on
+      // the slot, the ones after are calls on the extracted part
+      // (`#[k][[1]][x]`).
+      let mut result = slot_expr;
+      for child in inner {
+        match child.as_rule() {
+          Rule::BracketArgs => {
+            result = Expr::CurriedCall {
+              func: Box::new(result),
+              args: child.into_inner().map(pair_to_expr).collect(),
+            };
+          }
+          Rule::PartIndexSuffix => {
+            result = apply_part_index_suffix(result, child);
+          }
+          _ => {}
+        }
       }
       result
     }
@@ -3387,16 +3390,22 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       let base_expr = pair_to_expr(inner.next().unwrap());
       // Chain multiple indices as nested Part: a[[1,2,3]] -> Part[Part[Part[a,1],2],3].
       // A trailing call suffix applies the Part result: a[[i]][x] -> (a[[i]])[x].
-      // The `[[…]]` groups come first; a derivative or call suffix applies
-      // to what they extracted, so collect them before anything else.
+      // Extraction and application alternate, so the suffixes are walked in
+      // written order — `t[[i]]["pos"][[2]]` extracts, looks up, extracts
+      // again. Consecutive `[[…]]` groups are flushed as one run, which is
+      // what makes `m[[a]][[b]]` differ from `m[[a, b]]`.
       let inner: Vec<_> = inner.collect();
-      let pending_groups: Vec<Pair<Rule>> = inner
-        .iter()
-        .filter(|p| matches!(p.as_rule(), Rule::PartIndexGroup))
-        .cloned()
-        .collect();
-      let mut result = apply_part_groups(base_expr, pending_groups);
+      let mut result = base_expr;
+      let mut pending_groups: Vec<Pair<Rule>> = Vec::new();
       for p in inner {
+        if matches!(p.as_rule(), Rule::PartIndexGroup) {
+          pending_groups.push(p);
+          continue;
+        }
+        if !pending_groups.is_empty() {
+          result =
+            apply_part_groups(result, std::mem::take(&mut pending_groups));
+        }
         if matches!(p.as_rule(), Rule::DerivativePrime) {
           // `a[[i]]'` differentiates what the part extracted, and any
           // bracket call after it applies the derivative: `a[[i]]'[t]`.
@@ -3421,6 +3430,9 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
             args,
           };
         }
+      }
+      if !pending_groups.is_empty() {
+        result = apply_part_groups(result, pending_groups);
       }
       result
     }
@@ -3995,13 +4007,6 @@ fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
     .iter()
     .any(|p| matches!(p.as_rule(), Rule::ImplicitPowerSuffix));
 
-  // Extract part indices if present
-  let part_suffixes: Vec<Pair<Rule>> = inner_pairs
-    .iter()
-    .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
-    .cloned()
-    .collect();
-
   // Build the base function call expression
   let base_func =
     if matches!(name_pair.as_rule(), Rule::SimpleAnonymousFunction) {
@@ -4157,11 +4162,29 @@ fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
     })
   };
 
+  // Apply the `[[…]]` extractions and the calls interleaved with them
+  // (`f[x][[i]][y]`) in the order they were written, starting at the first
+  // `PartIndexSuffix` so the head's own bracket args are not re-applied.
+  let apply_part_and_call_suffixes = |base: Expr| -> Expr {
+    let first = inner_pairs
+      .iter()
+      .position(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
+      .unwrap();
+    inner_pairs[first..]
+      .iter()
+      .fold(base, |acc, p| match p.as_rule() {
+        Rule::PartIndexSuffix => apply_part_index_suffix(acc, p.clone()),
+        Rule::BracketArgs => Expr::CurriedCall {
+          func: Box::new(acc),
+          args: p.clone().into_inner().map(pair_to_expr).collect(),
+        },
+        _ => acc,
+      })
+  };
+
   if has_part_index && has_implicit_suffix {
     // PartExtract with implicit multiplication: f[x][[i]]^2 y
-    let mut result = part_suffixes
-      .iter()
-      .fold(base_func, |acc, p| apply_part_index_suffix(acc, p.clone()));
+    let mut result = apply_part_and_call_suffixes(base_func);
     if has_implicit_power {
       let exponent = implicit_power_exponent(
         inner_pairs
@@ -4183,10 +4206,8 @@ fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
     let factors = parse_implicit_factors(suffix_pair);
     fold_implicit_times(result, factors)
   } else if has_part_index {
-    // Plain PartExtract: f[x][[i]]
-    part_suffixes
-      .iter()
-      .fold(base_func, |acc, p| apply_part_index_suffix(acc, p.clone()))
+    // Plain PartExtract: f[x][[i]], and any call on what it extracted.
+    apply_part_and_call_suffixes(base_func)
   } else if has_implicit_suffix {
     // Implicit multiplication after function call: f[x] g[y] or f[x]^2 y
     let mut result = base_func;
@@ -5074,22 +5095,14 @@ fn parse_compound_expression(pair: &Pair<Rule>) -> Expr {
   // by scanning the source string for top-level `;`s between children.
   let src = pair.as_str();
   let src_start = pair.as_span().start();
-  let mut children: Vec<_> = pair.clone().into_inner().collect();
-  // A trailing `&` with no statement between it and the last `;` (the
+  let children: Vec<_> = pair.clone().into_inner().collect();
+  // A `&` with no statement between it and the preceding `;` (the
   // `(a = #; t = 0; &)` idiom — see the grammar comment on
-  // `CompoundExpression`) turns the whole sequence into a pure function
-  // body. It rides along as a final `AnonymousFunctionSuffix` child; pull
-  // it out before the statement loop below so it isn't mistaken for one.
-  let anon_func_suffix = children
-    .last()
-    .is_some_and(|p| p.as_rule() == Rule::AnonymousFunctionSuffix)
-    .then(|| children.pop().unwrap());
-  // Stop the trailing-`;` scan at the suffix (if any) rather than the end
-  // of the whole match, so its `&`/`[…]` text is never mistaken for
-  // statement content.
-  let stmts_end = anon_func_suffix
-    .as_ref()
-    .map_or(src_start + src.len(), |s| s.as_span().start());
+  // `CompoundExpression`) turns the statement sequence built so far into a
+  // pure function body. It rides along as a `CompoundAnonSuffix` child,
+  // together with whatever continuation followed it (`& /@ list`); the loop
+  // below folds it in rather than treating it as a statement.
+  let stmts_end = src_start + src.len();
   let mut exprs: Vec<Expr> = Vec::new();
   // Count the number of top-level `;` separators between `lo` and `hi`
   // (absolute offsets into the original input). `;;` is treated as a
@@ -5134,6 +5147,23 @@ fn parse_compound_expression(pair: &Pair<Rule>) -> Expr {
   let mut prev_end = src_start;
   for (idx, child) in children.iter().enumerate() {
     let span = child.as_span();
+    if child.as_rule() == Rule::CompoundAnonSuffix {
+      // Every `;` between the last statement and the `&` is a statement of
+      // its own — `a; &` is `Function[CompoundExpression[a, Null]]`, the
+      // same `Null` any other trailing `;` appends.
+      let trailing = count_separators(prev_end, span.start());
+      for _ in 0..trailing {
+        exprs.push(Expr::Identifier("Null".to_string()));
+      }
+      let body = if exprs.len() == 1 {
+        exprs.pop().unwrap()
+      } else {
+        Expr::CompoundExpr(std::mem::take(&mut exprs))
+      };
+      exprs.push(parse_compound_anon_suffix(body, child.clone()));
+      prev_end = span.end();
+      continue;
+    }
     if idx > 0 {
       // Missing expressions between the previous child and this one:
       // count separators minus 1 (one separator connects two expressions).
@@ -5150,19 +5180,29 @@ fn parse_compound_expression(pair: &Pair<Rule>) -> Expr {
   for _ in 0..trailing {
     exprs.push(Expr::Identifier("Null".to_string()));
   }
-  let mut result = if exprs.len() == 1 {
+  if exprs.len() == 1 {
     exprs.into_iter().next().unwrap()
   } else {
     Expr::CompoundExpr(exprs)
+  }
+}
+
+/// Turn the statement sequence collected so far into the pure function a
+/// `CompoundAnonSuffix` closes, then apply that suffix's own continuation.
+///
+/// `body` is everything to the left of the `&`; `pair` is the
+/// `CompoundAnonSuffix` node holding the `&` (with any immediately-chained
+/// `[args]`) and the operator/replace/postfix continuation that followed it,
+/// so `a = #; & /@ list` maps the multi-statement function over `list`.
+fn parse_compound_anon_suffix(body: Expr, pair: Pair<Rule>) -> Expr {
+  let mut inner: Vec<Pair<Rule>> = pair.into_inner().collect();
+  let mut result = Expr::Function {
+    body: Box::new(body),
   };
-  // Wrap in a pure function and apply any immediately-chained call
-  // (`(a = #; t = 0; &)[2]`), mirroring how a bare `expr &` is handled in
-  // `parse_expression`.
-  if let Some(suffix) = anon_func_suffix {
-    result = Expr::Function {
-      body: Box::new(result),
-    };
-    for bracket in suffix
+  // The `&` itself, plus any `(…; &)[args]` application chained onto it.
+  if !inner.is_empty() && inner[0].as_rule() == Rule::AnonymousFunctionSuffix {
+    for bracket in inner
+      .remove(0)
       .into_inner()
       .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
     {
@@ -5172,7 +5212,7 @@ fn parse_compound_expression(pair: &Pair<Rule>) -> Expr {
       };
     }
   }
-  result
+  apply_anon_continuation(result, inner)
 }
 
 fn parse_association_extended(pair: Pair<Rule>) -> Expr {
@@ -5519,6 +5559,9 @@ fn operator_precedence(op: &str) -> u8 {
     ">>" | ">>>" => 0,      // Put/PutAppend (lowest precedence)
     "/:" => 3, // TagSet/TagSetDelayed (lower than assignment so RHS includes :=)
     "=" | ":=" | "=." => 6, // Assignment / Unset
+    // Compound assignment binds like plain assignment (Wolfram gives all of
+    // them precedence 70), so `f[x] += a + b` adds the whole sum.
+    "+=" | "-=" | "*=" | "/=" => 6,
     "^=" | "^:=" => 6, // UpSet/UpSetDelayed (same as assignment)
     // Condition binds *tighter* than Rule/RuleDelayed in Wolfram (130 vs 120),
     // so `lhs /; test :> rhs` is `RuleDelayed[Condition[lhs, test], rhs]` and
@@ -6300,6 +6343,25 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     },
     "=" => Expr::FunctionCall {
       name: "Set".to_string(),
+      args: vec![left.clone(), right.clone()].into(),
+    },
+    // `AddTo` & co. reach the operator chain only when their target is a
+    // function call — a symbol or part target is taken by the `AddTo`,
+    // `SubtractFrom`, `TimesBy` and `DivideBy` terms in the grammar.
+    "+=" => Expr::FunctionCall {
+      name: "AddTo".to_string(),
+      args: vec![left.clone(), right.clone()].into(),
+    },
+    "-=" => Expr::FunctionCall {
+      name: "SubtractFrom".to_string(),
+      args: vec![left.clone(), right.clone()].into(),
+    },
+    "*=" => Expr::FunctionCall {
+      name: "TimesBy".to_string(),
+      args: vec![left.clone(), right.clone()].into(),
+    },
+    "/=" => Expr::FunctionCall {
+      name: "DivideBy".to_string(),
       args: vec![left.clone(), right.clone()].into(),
     },
     "^=" => Expr::FunctionCall {

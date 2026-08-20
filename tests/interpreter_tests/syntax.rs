@@ -11304,3 +11304,199 @@ mod span_precedence {
     );
   }
 }
+
+/// A `&` closing a statement sequence may take the same continuation a `&`
+/// at expression level takes, and statements may go on after it — the shape
+/// `n[#] = a[#]; & /@ list` has when written without the parentheses of
+/// `(n[#] = a[#];) & /@ list`. Issue #603.
+mod trailing_amp_continuation {
+  use super::*;
+
+  #[test]
+  fn the_pure_function_can_be_mapped_over_a_list() {
+    assert_eq!(
+      interpret("FullForm[Hold[(a = #; & /@ {1, 2})]]").unwrap(),
+      "FullForm[Hold[((a = #1; ) & ) /@ {1, 2}]]"
+    );
+    // Both assignments run, in order, once per element.
+    assert_eq!(
+      interpret("r = {}; (AppendTo[r, #]; & /@ {1, 2, 3}); r").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn statements_continue_after_the_mapped_function() {
+    assert_eq!(
+      interpret("FullForm[Hold[(a = #; & /@ {1, 2}; b)]]").unwrap(),
+      "FullForm[Hold[((a = #1; ) & ) /@ {1, 2}; b]]"
+    );
+    // Everything to the left of the `&` is the function body, so `s` is
+    // rebuilt on each call and the statement after the map still runs.
+    assert_eq!(
+      interpret("With[{v = 7}, s = {}; AppendTo[s, # v]; & /@ {1, 2}; s]")
+        .unwrap(),
+      "{14}"
+    );
+  }
+
+  #[test]
+  fn a_bare_trailing_amp_still_wraps_the_whole_sequence() {
+    // Unchanged behaviour: without a continuation the `&` closes the
+    // sequence, as `TrackingFunction -> (a = #; b = 0; &)` needs.
+    assert_eq!(
+      interpret("FullForm[Hold[(a = #; b = 0; &)]]").unwrap(),
+      "FullForm[Hold[(a = #1; b = 0; ) & ]]"
+    );
+  }
+}
+
+/// A slot used as a function head may be followed by `[[…]]`, and the
+/// extracted value applied in turn: `#["pos"][[1]] &` is how associations
+/// are sorted by a keyed field. Issue #603.
+mod slot_call_part_extraction {
+  use super::*;
+
+  #[test]
+  fn a_part_may_follow_a_slot_call() {
+    assert_eq!(
+      interpret("#[\"pos\"][[1]] & [<|\"pos\" -> {3, 1}|>]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "SortBy[{<|\"pos\" -> {3, 1}|>, <|\"pos\" -> {1, 2}|>}, \
+         #[\"pos\"][[1]] &]"
+      )
+      .unwrap(),
+      "{<|pos -> {1, 2}|>, <|pos -> {3, 1}|>}"
+    );
+  }
+
+  #[test]
+  fn the_extracted_value_may_be_applied() {
+    assert_eq!(
+      interpret("#[\"f\"][[1]][3] & [<|\"f\" -> {Function[x, x^2]}|>]")
+        .unwrap(),
+      "9"
+    );
+  }
+}
+
+/// `[[…]]` and `[…]` alternate freely after a call or a part: nested
+/// associations are walked as `group["a"]["b"][[1]]["c"]`. Issue #603.
+mod alternating_part_and_call_suffixes {
+  use super::*;
+
+  #[test]
+  fn a_call_may_follow_a_part_of_a_call() {
+    assert_eq!(
+      interpret("g = <|\"e\" -> {<|\"d\" -> 9|>}|>; g[\"e\"][[1]][\"d\"]")
+        .unwrap(),
+      "9"
+    );
+    assert_eq!(
+      interpret(
+        "h = <|\"a\" -> <|\"b\" -> {<|\"c\" -> 4|>}|>|>; \
+         h[\"a\"][\"b\"][[1]][\"c\"]"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn a_part_may_follow_a_call_on_an_extracted_part() {
+    assert_eq!(
+      interpret("t = {<|\"pos\" -> {1, 2}|>}; t[[1]][\"pos\"][[2]]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn chained_part_groups_are_unchanged() {
+    assert_eq!(interpret("m = {{1, 2}, {3, 4}}; m[[1]][[2]]").unwrap(), "2");
+    assert_eq!(interpret("m = {{1, 2}, {3, 4}}; m[[1, 2]]").unwrap(), "2");
+    assert_eq!(
+      interpret("m = {{1, 2}, {3, 4}}; m[[All, 1]]").unwrap(),
+      "{1, 3}"
+    );
+  }
+}
+
+/// `+=`, `-=`, `*=` and `/=` also take a function-call target — the shape a
+/// symbol used as a lookup table or a record has. Issue #603.
+mod compound_assignment_to_a_call {
+  use super::*;
+
+  #[test]
+  fn each_operator_updates_the_stored_value() {
+    assert_eq!(interpret("f[1] = 10; f[1] += 5; f[1]").unwrap(), "15");
+    assert_eq!(interpret("g[2] = 10; g[2] -= 4; g[2]").unwrap(), "6");
+    assert_eq!(
+      interpret("h[\"k\"] = 2; h[\"k\"] *= 3; h[\"k\"]").unwrap(),
+      "6"
+    );
+    assert_eq!(interpret("k[1] = 12; k[1] /= 4; k[1]").unwrap(), "3");
+  }
+
+  #[test]
+  fn the_right_hand_side_is_taken_whole() {
+    assert_eq!(interpret("p[1] = 1; p[1] += 2 + 3; p[1]").unwrap(), "6");
+  }
+
+  #[test]
+  fn a_default_definition_supplies_the_starting_value() {
+    assert_eq!(
+      interpret("c[_] := 0; c[x] += 1; c[x] += 1; {c[x], c[y]}").unwrap(),
+      "{2, 0}"
+    );
+  }
+
+  #[test]
+  fn a_curried_call_target_works_too() {
+    assert_eq!(
+      interpret("q[1][2] = 5; q[1][2] += 1; q[1][2]").unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn a_target_without_a_value_is_left_unevaluated() {
+    // With nothing to read, wolframscript reports `AddTo::rvalue` and
+    // leaves the call alone rather than defining the target.
+    assert_eq!(interpret("ClearAll[z]; z[1] += 5").unwrap(), "z[1] += 5");
+    assert_eq!(interpret("ValueQ[z[1]]").unwrap(), "False");
+  }
+
+  #[test]
+  fn symbol_and_part_targets_are_unchanged() {
+    assert_eq!(interpret("v = 1; v += 2; v").unwrap(), "3");
+    assert_eq!(interpret("w = {1, 2}; w[[1]] += 5; w").unwrap(), "{6, 2}");
+  }
+}
+
+/// A backslash escape inside a string covers the character after it, so an
+/// escaped quote does not end the string — statement boundaries after a
+/// regular expression written as a string literal stay correct. Issue #603.
+mod escaped_quotes_and_statement_boundaries {
+  use super::*;
+
+  #[test]
+  fn an_escaped_quote_does_not_close_the_string() {
+    assert_eq!(
+      interpret("pat = \"a\\\"b\"\nafter = 42\nafter").unwrap(),
+      "42"
+    );
+    assert_eq!(
+      interpret("pat = \"[\\\\w|\\\\\\\"|\\\\d]*\"\nafter = 7\nafter").unwrap(),
+      "7"
+    );
+  }
+
+  #[test]
+  fn an_escaped_backslash_still_lets_the_next_quote_close() {
+    assert_eq!(interpret("pat = \"a\\\\\"\nafter = 5\nafter").unwrap(), "5");
+    assert_eq!(interpret("StringLength[\"a\\\\\"]").unwrap(), "2");
+  }
+}

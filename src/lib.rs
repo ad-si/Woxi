@@ -4571,6 +4571,22 @@ pub fn insert_statement_separators(input: &str) -> String {
       continue;
     }
 
+    // A backslash inside a string escapes the character after it, so `\"`
+    // does not close the string and `\\` before a quote does not stop that
+    // quote from closing it. Without this, a regular expression written as a
+    // string literal flips the in-string state and every statement boundary
+    // after it is misjudged.
+    if in_string && ch == '\\' && i + 1 < len {
+      result.push(ch);
+      result.push(chars[i + 1]);
+      prev_code_char = Some(ch);
+      last_code_char = Some(chars[i + 1]);
+      push_code_tail(&mut code_tail, ch);
+      push_code_tail(&mut code_tail, chars[i + 1]);
+      i += 2;
+      continue;
+    }
+
     // Track string state
     if ch == '"' {
       in_string = !in_string;
@@ -4794,6 +4810,22 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
     if comment_depth > 0 {
       current.push(ch);
       i += 1;
+      continue;
+    }
+
+    // A backslash inside a string escapes the character after it, so `\"`
+    // does not close the string and `\\` before a quote does not stop that
+    // quote from closing it. Without this, a regular expression written as a
+    // string literal flips the in-string state and every statement boundary
+    // after it is misjudged.
+    if in_string && ch == '\\' && i + 1 < len {
+      current.push(ch);
+      current.push(chars[i + 1]);
+      prev_code_char = Some(ch);
+      last_code_char = Some(chars[i + 1]);
+      push_code_tail(&mut code_tail, ch);
+      push_code_tail(&mut code_tail, chars[i + 1]);
+      i += 2;
       continue;
     }
 

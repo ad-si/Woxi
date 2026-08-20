@@ -14,6 +14,31 @@ fn emit_rvalue(fname: &str, target: &Expr) {
   ));
 }
 
+/// A compound-assignment call target with its arguments evaluated:
+/// `f[1 + 1] += 2` reads and writes `f[2]`. Building it once keeps the
+/// "does the target have a value?" comparison honest — the target only
+/// counts as valueless when it evaluates back to exactly this form.
+fn evaluated_call_target(expr: &Expr) -> Result<Expr, InterpreterError> {
+  Ok(match expr {
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(evaluate_expr_to_expr)
+        .collect::<Result<Vec<_>, _>>()?
+        .into(),
+    },
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(evaluated_call_target(func)?),
+      args: args
+        .iter()
+        .map(evaluate_expr_to_expr)
+        .collect::<Result<Vec<_>, _>>()?,
+    },
+    other => other.clone(),
+  })
+}
+
 thread_local! {
   /// Symbols currently being looked up — prevents infinite recursion when
   /// a stored OwnValue references the same symbol (e.g. `s = {a, s}`).
@@ -1517,7 +1542,13 @@ pub fn evaluate_expr_to_expr_inner(
             "DivideBy" => BinaryOperator::Divide,
             _ => unreachable!(),
           };
-          if !matches!(&args[0], Expr::Identifier(_) | Expr::Part { .. }) {
+          if !matches!(
+            &args[0],
+            Expr::Identifier(_)
+              | Expr::Part { .. }
+              | Expr::FunctionCall { .. }
+              | Expr::CurriedCall { .. }
+          ) {
             emit_rvalue(name, &args[0]);
             return Ok(Expr::FunctionCall {
               name: name.clone(),
@@ -1564,6 +1595,37 @@ pub fn evaluate_expr_to_expr_inner(
               left: Box::new(current_val),
               right: Box::new(rhs),
             })?;
+            crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
+            return Ok(new_val);
+          }
+          // A call target — `counts[x] += 1` on a symbol used as a lookup
+          // table, or `state["pos"] += n` on one used as a record. Like a
+          // symbol target it has to hold a value already: with no
+          // definition to read, `counts[x]` evaluates back to itself and
+          // wolframscript reports `::rvalue` rather than defining it.
+          if matches!(
+            &args[0],
+            Expr::FunctionCall { .. } | Expr::CurriedCall { .. }
+          ) {
+            let target = evaluated_call_target(&args[0])?;
+            let current_val = evaluate_expr_to_expr(&target)?;
+            if crate::syntax::expr_to_string(&current_val)
+              == crate::syntax::expr_to_string(&target)
+            {
+              emit_rvalue(name, &args[0]);
+              return Ok(Expr::FunctionCall {
+                name: name.clone(),
+                args: args.clone(),
+              });
+            }
+            let rhs = evaluate_expr_to_expr(&args[1])?;
+            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
+              op,
+              left: Box::new(current_val),
+              right: Box::new(rhs),
+            })?;
+            // Write through the target as written — `set_ast` evaluates the
+            // arguments itself, and messages about it quote the source form.
             crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
             return Ok(new_val);
           }

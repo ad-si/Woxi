@@ -61,7 +61,11 @@ PartIndexSuffix = { PartIndexGroup+ }
 // between the two differentiates the extracted function first, the way it
 // does after a parenthesis: `solutions[[i]][[2]]'[t]` differentiates the
 // InterpolatingFunction an NDSolve rule was carrying.
-PartExtract = { (Slot | Identifier | UnsignedNumericValue | String) ~ PartIndexGroup+ ~ DerivativePrime? ~ BracketArgs* }
+// Extraction and application alternate freely after the first `[[…]]`:
+// `t[[i]]["pos"][[2]]` reads a keyed field out of an extracted association
+// and then takes a part of *that*, the shape association-of-lists data is
+// usually walked in.
+PartExtract = { (Slot | Identifier | UnsignedNumericValue | String) ~ PartIndexGroup+ ~ DerivativePrime? ~ BracketArgs* ~ (PartIndexGroup+ ~ BracketArgs*)* }
 
 // Optional inline whitespace, spelled out so the atomic numeric-literal
 // lookaheads below can see a `^` that is separated from its base by spaces
@@ -286,6 +290,12 @@ Operator = @{
   | "\\[Rule]" | "\u{F522}" | "->" | "\u{2192}"     // Rule (must be before - and >), →
   | "^:="    // UpSetDelayed (must be before ^= and :=)
   | "^="     // UpSet (must be before ^ and =)
+  // Compound assignment. The `AddTo`/`SubtractFrom`/`TimesBy`/`DivideBy`
+  // terms above only take a symbol or a `[[…]]` part as their target, so a
+  // call target (`state["pos"] += n`) reaches the operator chain instead —
+  // `Term` has already taken `state["pos"]` as a `FunctionCallExtended` by
+  // then. Must precede the bare `+`/`-`/`*`/`/` spellings below.
+  | "+=" | "-=" | "*=" | "/="
   | "+" | "-" | "*" | "/" | "^"
   | "." ~ !ASCII_DIGIT ~ !"."  // Dot operator (not decimal point, not .. or ...)
   | "<" | ">"
@@ -503,7 +513,13 @@ CompoundStatement = _{ Expression }
 // multi-statement callback. Without a statement between the final `;` and
 // `&`, `&` cannot attach to a `CompoundStatement` (there isn't one), so it
 // must be consumed here instead, at the CompoundExpression level.
-CompoundExpression = { CompoundStatement ~ (";" ~ CompoundStatement?)+ ~ AnonymousFunctionSuffix? }
+// The `&` may itself take the same continuation a `&` at Expression level
+// takes — `(a = #; &) /@ list` is commonly written without the parentheses
+// as `a = #; & /@ list`, and statements may go on after it. Captured as one
+// named rule so `parse_compound_expression` can tell the continuation's
+// operands apart from the statements that follow.
+CompoundAnonSuffix = { AnonymousFunctionSuffix ~ ((ReplaceRepeatedSuffix | ReplaceAllSuffix) | (Operator | TildeInfix) ~ SpanOrExprOperand)* ~ ("//" ~ PostfixFunction)* }
+CompoundExpression = { CompoundStatement ~ (";" ~ CompoundStatement?)+ ~ (CompoundAnonSuffix ~ (";" ~ CompoundStatement?)*)? }
 
 // DerivativeNumeric: numeric literal followed by '...' (e.g. 1', (-1.4)', I via Constant)
 DerivativeNumeric = { (PrecisionReal | Real | IntegerScientific | Integer | Constant) ~ DerivativePrime }
@@ -537,17 +553,24 @@ GetPathChar = _{ ASCII_ALPHANUMERIC | LETTER | "~" | "/" | "." | "\\" | "-" | "_
 FunctionCallImplicitSuffix = { ImplicitTimesFactor+ }
 // A prime after the brackets differentiates the whole call, and may itself be
 // applied to arguments: `f[data]'[x]` is `Derivative[1][f[data]][x]`.
+// `BracketArgs*` after a `PartIndexSuffix` applies the extracted value —
+// `group["Summary"]["Events"][[1]]["Duplicates"]` walks a nested
+// association, alternating lookups and part extraction — exactly as
+// `PartExtract` already allows for a symbol or slot base.
 FunctionCallExtended = {
     (Identifier | NamedCharIdentifier) ~ DerivativePrime? ~ BracketArgs+
     ~ (DerivativePrime ~ BracketArgs*)?
     ~ (
-        PartIndexSuffix ~ (ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix)?
+        (PartIndexSuffix ~ BracketArgs*)+ ~ (ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix)?
       | ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix
     )?
 }
 
 // SlotCall: #[args] or #n[args] — Slot used as a function head (e.g., in Y combinator: #[#] &)
-SlotCall = { Slot ~ BracketArgs+ }
+// A `[[…]]` after the call extracts from its result — `#["pos"][[1]] &` is the
+// idiom for sorting associations by a keyed field — and the extracted value
+// may be applied in turn, exactly as after a `FunctionCallExtended`.
+SlotCall = { Slot ~ BracketArgs+ ~ (PartIndexSuffix ~ BracketArgs*)* }
 
 // DisplayedBoxes: `\!\(expr\)` — wolframscript renders this as the
 // "displayed box" form. When the inner content is a regular expression

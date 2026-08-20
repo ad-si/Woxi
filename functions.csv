@@ -6301,3 +6301,4 @@ Evaluated,Option for whether to evaluate a plot's function once symbolically,✅
 ParallelSelect,Parallel version of Select (evaluated sequentially),✅,pure,14.2,
 ParallelCases,Parallel version of Cases (evaluated sequentially),✅,pure,14.2,
 Developer`ToPackedArray,Packs a full rectangular array of machine numbers into one numeric type (integers become reals when the array mixes both); leaves anything unpackable unchanged,✅,pure,4.0,
+Internal`DynamicLibraryExtension,"Shared-library file extension of the host platform without the dot (""so"" ""dylib"" or ""dll"")",✅,pure,9.0,

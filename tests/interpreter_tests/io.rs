@@ -9949,6 +9949,45 @@ mod paclet {
     );
   }
 
+  // A `PacletInfo.m` predating version 12 spells the info as
+  // `Paclet[Name -> …, Extensions -> …]`, with bare symbols as keys instead
+  // of the strings `PacletObject[<|…|>]` uses. Both forms resolve the same
+  // way — the WLJS Notebook `LetWL` paclet ships the legacy one (issue #603).
+  #[test]
+  fn a_legacy_paclet_info_file_resolves_its_context() {
+    clear_state();
+    let base = std::path::PathBuf::from(temp_file("woxi_paclet_legacy"));
+    std::fs::remove_dir_all(&base).ok();
+    std::fs::create_dir_all(base.join("Kernel")).unwrap();
+    std::fs::write(
+      base.join("PacletInfo.m"),
+      "Paclet[\n\
+       \x20   Name -> \"WoxiPacletLegacy\",\n\
+       \x20   Version -> \"0.0.1\",\n\
+       \x20   Loading -> Automatic,\n\
+       \x20   Extensions -> {\n\
+       \x20       {\"Kernel\", Root -> \"Kernel\",\n\
+       \x20        Context -> {\"OtherLoader`\", \
+       {\"WoxiPacletH`\", \"Loader.m\"}}}\n\
+       \x20   }\n\
+       ]\n",
+    )
+    .unwrap();
+    std::fs::write(
+      base.join("Kernel/Loader.m"),
+      package("WoxiPacletH`", "from legacy paclet"),
+    )
+    .unwrap();
+    let dir = unixify(&base.display().to_string());
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{dir}\"]\nNeeds[\"WoxiPacletH`\"]\npacletFun[]"
+      ))
+      .unwrap(),
+      "from legacy paclet"
+    );
+  }
+
   // A context no paclet declares is reported the way wolframscript reports
   // it — `Get::noopen`, then `Needs::nocont` — and `Needs` gives `$Failed`.
   #[test]

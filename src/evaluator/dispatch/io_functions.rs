@@ -787,6 +787,20 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(unevaluated("Environment", args)));
     }
+    // Internal`DynamicLibraryExtension[] — the file extension shared
+    // libraries carry on this platform, without the dot ("so", "dylib",
+    // "dll"). Packages that ship LibraryLink binaries build their path with
+    // it (`"libuv." <> Internal`DynamicLibraryExtension[]`).
+    "Internal`DynamicLibraryExtension" if args.is_empty() => {
+      let extension = if cfg!(target_os = "macos") {
+        "dylib"
+      } else if cfg!(target_os = "windows") {
+        "dll"
+      } else {
+        "so"
+      };
+      return Some(Ok(Expr::String(extension.to_string())));
+    }
     // GetEnvironment[] — all environment variables as a List of rules.
     "GetEnvironment" if args.is_empty() => {
       let rules: Vec<Expr> = std::env::vars()
