@@ -4059,6 +4059,65 @@ mod transformation_function_apply {
       "{{1/Sqrt[2], -(1/Sqrt[2]), 0}, {1/Sqrt[2], 1/Sqrt[2], 0}, {0, 0, 1}}"
     );
   }
+
+  // Three-dimensional axis form RotationTransform[theta, axis]: rotation by
+  // theta about the axis through the origin.
+  #[test]
+  fn rotation_3d_axis_through_origin() {
+    assert_eq!(
+      interpret("RotationTransform[Pi/2, {0, 0, 1}][{1, 0, 0}]").unwrap(),
+      "{0, 1, 0}"
+    );
+  }
+
+  // Three-dimensional axis-through-point form
+  // RotationTransform[theta, axis, point]: rotation by theta about the axis
+  // through `point`, parallel to `axis`. A half turn around the z-axis
+  // through {1, 0, 0} maps {2, 0, 0} to the point directly opposite it
+  // across the pivot, {0, 0, 0}.
+  #[test]
+  fn rotation_3d_axis_through_point_half_turn() {
+    assert_eq!(
+      interpret("RotationTransform[Pi, {0, 0, 1}, {1, 0, 0}][{2, 0, 0}]")
+        .unwrap(),
+      "{0, 0, 0}"
+    );
+  }
+
+  // A quarter turn around the z-axis through {1, 1, 0}: translate the
+  // pivot to the origin, rotate {1, 0, 0} -> {0, 1, 0}, translate back.
+  #[test]
+  fn rotation_3d_axis_through_point_quarter_turn() {
+    assert_eq!(
+      interpret("RotationTransform[Pi/2, {0, 0, 1}, {1, 1, 0}][{2, 1, 0}]")
+        .unwrap(),
+      "{1, 2, 0}"
+    );
+  }
+
+  // Rotating about an axis through the origin ({0, 0, 0}) matches the
+  // two-argument form.
+  #[test]
+  fn rotation_3d_axis_through_origin_point_matches_two_arg_form() {
+    assert_eq!(
+      interpret(
+        "RotationTransform[Pi/2, {0, 0, 1}, {0, 0, 0}][{1, 0, 0}] == \
+         RotationTransform[Pi/2, {0, 0, 1}][{1, 0, 0}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // A symbolic axis has no closed form (matching the two-argument case), so
+  // the expression is left unevaluated rather than producing wrong results.
+  #[test]
+  fn rotation_3d_axis_through_point_symbolic_axis_unevaluated() {
+    assert_eq!(
+      interpret("RotationTransform[Pi, {0, 0, x}, {1, 0, 0}]").unwrap(),
+      "RotationTransform[Pi, {0, 0, x}, {1, 0, 0}]"
+    );
+  }
 }
 
 // TransformationMatrix extracts the homogeneous matrix from a
