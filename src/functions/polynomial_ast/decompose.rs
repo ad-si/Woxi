@@ -52,30 +52,20 @@ pub fn decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 type Rat = (i128, i128); // (numerator, denominator), always reduced
 
-fn rat_reduce(n: i128, d: i128) -> Rat {
-  let g = gcd_i128(n, d).max(1);
-  let (n, d) = (n / g, d / g);
-  if d < 0 { (-n, -d) } else { (n, d) }
-}
-
 fn rat_add(a: Rat, b: Rat) -> Rat {
-  let num = a.0 * b.1 + b.0 * a.1;
-  let den = a.1 * b.1;
-  rat_reduce(num, den)
+  rat_reduce(a.0 * b.1 + b.0 * a.1, a.1 * b.1)
 }
 
 fn rat_sub(a: Rat, b: Rat) -> Rat {
-  rat_add(a, (-b.0, b.1))
+  rat_reduce(a.0 * b.1 - b.0 * a.1, a.1 * b.1)
 }
 
 fn rat_mul(a: Rat, b: Rat) -> Rat {
-  let num = a.0 * b.0;
-  let den = a.1 * b.1;
-  rat_reduce(num, den)
+  rat_reduce(a.0 * b.0, a.1 * b.1)
 }
 
 fn rat_div(a: Rat, b: Rat) -> Rat {
-  rat_mul(a, (b.1, b.0))
+  rat_reduce(a.0 * b.1, a.1 * b.0)
 }
 
 fn rat_is_zero(a: Rat) -> bool {

@@ -1401,6 +1401,28 @@ trailing fixed points.
 The two-argument form is unimplemented (Woxi reports `argx`). Ragged
 block-tensor assembly, rarely used.
 
+### `RotationMatrix` / `RotationTransform` about a symbolic axis
+
+Woxi leaves a 3D rotation about a non-numeric axis unevaluated
+(`RotationTransform[Pi, {0, 0, x}, {1, 0, 0}]` echoes). Wolfram does return
+something, but only as an unsimplified artifact of its internal Gram–Schmidt:
+
+```sh
+wolframscript -code 'RotationMatrix[Pi, {0, 0, x}]'
+# {{-((x Conjugate[x])/Abs[x]^2), 0, 0}, {0, -1, 0}, {0, 0, (x Conjugate[x])/Abs[x]^2}}
+```
+
+Note the asymmetry — entry (1,1) keeps the un-cancelled `x Conjugate[x]/Abs[x]^2`
+(which is just `1`) while entry (2,2) is a plain `-1`, so the two diagonal
+entries of the *same* rotation print differently. A fully symbolic axis
+`{a, b, c}` produces roughly 8 KB of nested `Conjugate[1/Sqrt[a Conjugate[a] +
+b Conjugate[b]]]` terms, with `Sqrt[(a Conjugate[a] + b Conjugate[b])/(a
+Conjugate[a])]` denominators that are singular exactly on the coordinate axes.
+The output is not a canonical form (and is not a real rotation matrix for
+complex components), so there is nothing stable to conform to. **Not
+reproducible**; the affected unit test is listed in `EXACT_EXPR_SKIP` in
+`tests/wolframscript/verify_unit_tests.ts`.
+
 ### `NumberFieldDiscriminant`
 
 Non-maximal orders are unevaluated (`Sqrt[2]+Sqrt[3]` → WL 2304 via a full

@@ -1050,6 +1050,7 @@
     - [`BetaDistribution`](functions/BetaDistribution.md)
     - [`BinomialDistribution`](functions/BinomialDistribution.md)
     - [`Block`](functions/Block.md)
+    - [`BlockRandom`](functions/BlockRandom.md)
     - [`Catch`](functions/Catch.md)
     - [`CauchyDistribution`](functions/CauchyDistribution.md)
     - [`CensoredDistribution`](functions/CensoredDistribution.md)

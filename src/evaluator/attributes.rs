@@ -559,7 +559,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
 
     // HoldAll + Protected
     "Hold" | "HoldForm" | "HoldPattern" | "Table" | "Do" | "While" | "For"
-    | "Module" | "DynamicModule" | "Block" | "BlockRandom" | "With"
+    | "Module" | "DynamicModule" | "Block" | "With"
     | "Assuming" | "Trace"
     | "TraceScan" | "TracePrint"
     | "Defer" | "Compile" | "CompiledFunction" | "Which"
@@ -720,8 +720,12 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // each pattern in turn; First and Last hold their default so it is only
     // evaluated when there is no element to return.
     "Switch" | "First" | "Last" => vec!["HoldRest", "Protected"],
-    // HoldFirst + Protected
-    "Catch" | "Pattern" | "SetAttributes" => vec!["HoldFirst", "Protected"],
+    // HoldFirst + Protected. `BlockRandom` only holds the body it localizes
+    // the generator state around; its trailing options (`RandomSeeding -> …`)
+    // are evaluated like any other option list.
+    "Catch" | "Pattern" | "SetAttributes" | "BlockRandom" => {
+      vec!["HoldFirst", "Protected"]
+    }
     "Enclose" => vec!["HoldFirst", "Protected", "ReadProtected"],
     "Confirm" | "ConfirmBy" | "ConfirmMatch" | "ConfirmAssert"
     | "ConfirmQuiet" => vec!["HoldAll", "Protected", "ReadProtected"],

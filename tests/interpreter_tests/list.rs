@@ -7111,20 +7111,78 @@ mod block_random {
     assert_eq!(interpret("BlockRandom[1 + 1]").unwrap(), "2");
   }
 
+  // A non-rule beyond position 1 is not an option: wolframscript emits
+  // BlockRandom::nonopt and leaves the whole call unevaluated.
   #[test]
-  fn two_arg_form_ignores_method_spec() {
+  fn non_option_second_argument_stays_unevaluated() {
     woxi::clear_state();
-    let result =
-      interpret("BlockRandom[SeedRandom[7]; RandomInteger[1000], Method]");
-    assert!(result.is_ok());
+    assert_eq!(
+      interpret("BlockRandom[RandomInteger[1000], Method]").unwrap(),
+      "BlockRandom[RandomInteger[1000], Method]"
+    );
+  }
+
+  // A rule that is not RandomSeeding is an unknown option (::optx).
+  #[test]
+  fn unknown_option_stays_unevaluated() {
+    woxi::clear_state();
+    assert_eq!(
+      interpret("BlockRandom[RandomInteger[1000], Method -> \"MT\"]").unwrap(),
+      "BlockRandom[RandomInteger[1000], Method -> MT]"
+    );
+  }
+
+  // RandomSeeding -> seed makes the block reproducible without disturbing the
+  // ambient sequence; integer and string seeds both work.
+  #[test]
+  fn random_seeding_option_is_reproducible() {
+    woxi::clear_state();
+    let a = interpret("BlockRandom[RandomInteger[10^6], RandomSeeding -> 42]")
+      .unwrap();
+    let b = interpret("BlockRandom[RandomInteger[10^6], RandomSeeding -> 42]")
+      .unwrap();
+    assert_eq!(a, b);
+    let c =
+      interpret("BlockRandom[RandomInteger[10^6], RandomSeeding -> \"abc\"]")
+        .unwrap();
+    let d =
+      interpret("BlockRandom[RandomInteger[10^6], RandomSeeding -> \"abc\"]")
+        .unwrap();
+    assert_eq!(c, d);
+  }
+
+  // Inherited (the default) draws from the ambient state, so the block sees
+  // exactly the value the next bare draw would have produced.
+  #[test]
+  fn random_seeding_inherited_matches_ambient_draw() {
+    woxi::clear_state();
+    let _ = interpret("SeedRandom[7]");
+    let inherited =
+      interpret("BlockRandom[RandomInteger[10^6], RandomSeeding -> Inherited]")
+        .unwrap();
+    let bare = interpret("RandomInteger[10^6]").unwrap();
+    assert_eq!(inherited, bare);
+  }
+
+  // An unusable seed falls back to the default seeding after a ::seeding
+  // message rather than failing.
+  #[test]
+  fn invalid_random_seeding_falls_back_to_inherited() {
+    woxi::clear_state();
+    let _ = interpret("SeedRandom[7]");
+    let seeded =
+      interpret("BlockRandom[RandomInteger[10^6], RandomSeeding -> foo]")
+        .unwrap();
+    let bare = interpret("RandomInteger[10^6]").unwrap();
+    assert_eq!(seeded, bare);
   }
 
   #[test]
-  fn attributes_hold_all() {
+  fn attributes_hold_first() {
     woxi::clear_state();
     assert_eq!(
       interpret("Attributes[BlockRandom]").unwrap(),
-      "{HoldAll, Protected}"
+      "{HoldFirst, Protected}"
     );
   }
 }

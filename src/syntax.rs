@@ -7804,6 +7804,20 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
 /// only in InputForm but bind tighter than the heads using this helper)
 /// never need parentheses.
 fn input_form_infix(args: &[Expr], sep: &str, prec: u8) -> String {
+  input_form_infix_forcing(args, sep, prec, |_| false)
+}
+
+/// `input_form_infix` with an extra escape hatch: `force_parens` brackets an
+/// operand the precedence rule alone would leave bare. Needed for heads that
+/// are *not* Flat, where the leading operand's own parentheses carry meaning
+/// (`Alternatives[Alternatives[a, b], c]` must print `(a | b) | c`, since a
+/// bare `a | b | c` re-parses to the flat three-argument form).
+fn input_form_infix_forcing(
+  args: &[Expr],
+  sep: &str,
+  prec: u8,
+  force_parens: impl Fn(&Expr) -> bool,
+) -> String {
   args
     .iter()
     .enumerate()
@@ -7811,10 +7825,22 @@ fn input_form_infix(args: &[Expr], sep: &str, prec: u8) -> String {
       let s = expr_to_input_form(a);
       let looser = printed_infix_precedence(a)
         .is_some_and(|p| if i == 0 { p < prec } else { p <= prec });
-      if looser { format!("({s})") } else { s }
+      if looser || force_parens(a) {
+        format!("({s})")
+      } else {
+        s
+      }
     })
     .collect::<Vec<_>>()
     .join(sep)
+}
+
+/// An explicitly nested `Alternatives[a, b]` operand, i.e. the head form the
+/// parser never produces for `a | b` chains (those are `BinaryOp`s, which are
+/// genuinely flat and print bare).
+fn is_nested_alternatives_call(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, args }
+    if name == "Alternatives" && args.len() >= 2)
 }
 
 /// Whether the body of `body &` has to print parenthesized.
@@ -12237,11 +12263,16 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       op: BinaryOperator::Alternatives,
       left,
       right,
-    } => input_form_infix(&[(**left).clone(), (**right).clone()], " | ", 27),
+    } => input_form_infix_forcing(
+      &[(**left).clone(), (**right).clone()],
+      " | ",
+      27,
+      is_nested_alternatives_call,
+    ),
     Expr::FunctionCall { name, args }
       if name == "Alternatives" && args.len() >= 2 =>
     {
-      input_form_infix(args, " | ", 27)
+      input_form_infix_forcing(args, " | ", 27, is_nested_alternatives_call)
     }
     // Condition[lhs, rhs] in InputForm: `lhs /; rhs`, again with InputForm
     // children (`ToString[x /; y ;; 3, InputForm]` is "x /; y ;; 3").

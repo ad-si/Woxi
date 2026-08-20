@@ -2400,7 +2400,9 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "ParallelDo"
         || name == "With"
         || name == "Block"
-        || name == "BlockRandom"
+        // BlockRandom is deliberately absent: it is HoldFirst, not HoldAll,
+        // so only its body is held (by the attribute machinery) while any
+        // trailing option evaluates normally.
         || name == "Function"
         || name == "For"
         || name == "While"
