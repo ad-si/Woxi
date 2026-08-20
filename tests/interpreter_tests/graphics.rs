@@ -461,6 +461,36 @@ mod graphics {
     }
 
     #[test]
+    fn bspline_curve_spline_degree_1_is_polyline() {
+      // A degree-1 uniform B-spline is piecewise-linear interpolation
+      // through its control points, so it must pass exactly through
+      // {1, 2} and {2, 0} as well as the endpoints.
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{BSplineCurve[{{0, 0}, {1, 2}, {2, 0}, {3, 1}}, SplineDegree -> 1]}]"
+      ));
+    }
+
+    #[test]
+    fn bspline_curve_spline_degree_2() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{BSplineCurve[{{0,0},{1,3},{2,1},{3,4},{4,0},{5,2}}, SplineDegree -> 2]}]"
+      ));
+    }
+
+    #[test]
+    fn bspline_curve_spline_degree_matches_default_degree_3() {
+      // SplineDegree -> 3 is Wolfram's default for four control points,
+      // so it must render identically to leaving the option off.
+      let with_default = export_svg(
+        "Graphics[{BSplineCurve[{{0, 0}, {1, 2}, {2, 0}, {3, 1}}]}]",
+      );
+      let with_explicit_degree = export_svg(
+        "Graphics[{BSplineCurve[{{0, 0}, {1, 2}, {2, 0}, {3, 1}}, SplineDegree -> 3]}]",
+      );
+      assert_eq!(with_default, with_explicit_degree);
+    }
+
+    #[test]
     fn polar_curve() {
       insta::assert_snapshot!(export_svg(
         "Graphics[PolarCurve[1 + Cos[t], {t, 0, 2 Pi}]]"
@@ -2838,6 +2868,48 @@ mod plot3d {
     #[test]
     fn graphics3d_sphere() {
       insta::assert_snapshot!(export_svg("Graphics3D[Sphere[]]"));
+    }
+
+    // Regression: `BSplineCurve[…, SplineDegree -> k]` and `Tube[BSplineCurve[…,
+    // SplineDegree -> k], r]` used to ignore SplineDegree and always render a
+    // cubic (degree-3) spline, as spotted in the "Chain Mail" Demonstration,
+    // which builds its rings with SplineDegree -> 2.
+    #[test]
+    fn graphics3d_bspline_curve_spline_degree_matches_default_degree_3() {
+      let with_default = export_svg(
+        "Graphics3D[{BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}, {3, 1, 0}}]}]",
+      );
+      let with_explicit_degree = export_svg(
+        "Graphics3D[{BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}, {3, 1, 0}}, \
+        SplineDegree -> 3]}]",
+      );
+      assert_eq!(with_default, with_explicit_degree);
+    }
+
+    #[test]
+    fn graphics3d_bspline_curve_spline_degree_2_differs_from_default() {
+      let with_default = export_svg(
+        "Graphics3D[{BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}, {3, 1, 0}, \
+        {4, 0, 0}}]}]",
+      );
+      let with_degree_2 = export_svg(
+        "Graphics3D[{BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}, {3, 1, 0}, \
+        {4, 0, 0}}, SplineDegree -> 2]}]",
+      );
+      assert_ne!(with_default, with_degree_2);
+    }
+
+    #[test]
+    fn graphics3d_tube_bspline_curve_spline_degree_2_differs_from_default() {
+      let with_default = export_svg(
+        "Graphics3D[{Tube[BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}, \
+        {3, 1, 0}, {4, 0, 0}}], 0.1]}]",
+      );
+      let with_degree_2 = export_svg(
+        "Graphics3D[{Tube[BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}, \
+        {3, 1, 0}, {4, 0, 0}}, SplineDegree -> 2], 0.1]}]",
+      );
+      assert_ne!(with_default, with_degree_2);
     }
 
     // Regression: a Grid/Column PlotLabel on a 3-D picture (as Demonstrations
