@@ -2209,7 +2209,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     Rule::List => parse_list(pair),
     Rule::ListExtended => parse_list_extended(&pair),
     Rule::FunctionCallExtended => parse_function_call_extended(&pair),
-    Rule::FunctionCall => parse_function_call(pair),
+    Rule::FunctionCall => parse_function_call(&pair),
     Rule::Expression | Rule::ExpressionNoImplicit | Rule::ConditionExpr => {
       parse_expression(pair)
     }
@@ -4230,13 +4230,13 @@ fn resolve_head_name(name_pair: &Pair<Rule>) -> String {
   name_pair.as_str().to_string()
 }
 
-fn parse_function_call(pair: Pair<Rule>) -> Expr {
+fn parse_function_call(pair: &Pair<Rule>) -> Expr {
   // FunctionCall is a strict subset of FunctionCallExtended's inner shape
   // (no PartIndexSuffix / FunctionCallImplicitSuffix), so the extended
   // parser — which already handles a trailing prime followed by further
   // bracket calls, e.g. `h[i]'[t]` → `Derivative[1][h[i]][t]` — covers it
   // exactly. Delegate rather than duplicating that logic.
-  parse_function_call_extended(&pair)
+  parse_function_call_extended(pair)
 }
 
 /// Parse an expression with operators into an Expr
