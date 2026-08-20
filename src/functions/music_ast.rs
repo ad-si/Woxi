@@ -1814,32 +1814,32 @@ pub fn music_rest(args: &[Expr]) -> Option<Expr> {
 
 /// A rational number as a reduced `(numerator, denominator)` pair with a
 /// positive denominator.
-type Ratio = (i128, i128);
+type Rat = (i128, i128);
 
 /// Reduce a `(numerator, denominator)` pair.
-fn ratio_mul((an, ad): Ratio, (bn, bd): Ratio) -> Ratio {
-  rat_reduce(an * bn, ad * bd)
+fn rat_mul(a: Rat, b: Rat) -> Rat {
+  rat_reduce(a.0 * b.0, a.1 * b.1)
 }
 
-fn ratio_add((an, ad): Ratio, (bn, bd): Ratio) -> Ratio {
-  rat_reduce(an * bd + bn * ad, ad * bd)
+fn rat_add(a: Rat, b: Rat) -> Rat {
+  rat_reduce(a.0 * b.1 + b.0 * a.1, a.1 * b.1)
 }
 
-fn ratio_sub((an, ad): Ratio, (bn, bd): Ratio) -> Ratio {
-  rat_reduce(an * bd - bn * ad, ad * bd)
+fn rat_sub(a: Rat, b: Rat) -> Rat {
+  rat_reduce(a.0 * b.1 - b.0 * a.1, a.1 * b.1)
 }
 
-fn ratio_cmp((an, ad): Ratio, (bn, bd): Ratio) -> std::cmp::Ordering {
-  (an * bd).cmp(&(bn * ad))
+fn rat_cmp(a: Rat, b: Rat) -> std::cmp::Ordering {
+  (a.0 * b.1).cmp(&(b.0 * a.1))
 }
 
-/// Render a `Ratio` as the `Expr` the Wolfram Language prints for it.
-fn ratio_expr((n, d): Ratio) -> Expr {
-  make_rational(n, d)
+/// Render a `Rat` as the `Expr` the Wolfram Language prints for it.
+fn rat_expr(r: Rat) -> Expr {
+  make_rational(r.0, r.1)
 }
 
-/// Parse a bare rhythmic value (`Integer` or `Rational`) into a `Ratio`.
-fn duration_ratio(expr: &Expr) -> Option<Ratio> {
+/// Parse a bare rhythmic value (`Integer` or `Rational`) into a `Rat`.
+fn duration_ratio(expr: &Expr) -> Option<Rat> {
   match expr {
     Expr::Integer(n) => Some((*n, 1)),
     Expr::FunctionCall { name, args } if name == "Rational" => {
@@ -1854,8 +1854,8 @@ fn duration_ratio(expr: &Expr) -> Option<Ratio> {
   }
 }
 
-/// The rhythmic value of a `MusicDuration[…]` object as a `Ratio`.
-fn music_duration_ratio(expr: &Expr) -> Option<Ratio> {
+/// The rhythmic value of a `MusicDuration[…]` object as a `Rat`.
+fn music_duration_ratio(expr: &Expr) -> Option<Rat> {
   match expr {
     Expr::FunctionCall { name, args } if name == "MusicDuration" => {
       match args.first()? {
@@ -1895,8 +1895,8 @@ fn time_signature_parts(expr: &Expr) -> Option<(i128, i128)> {
 /// with its explicit rhythmic value if one was given (`None` for the default
 /// one-beat duration).
 enum MeasureEvent {
-  Note(Expr, Option<Ratio>),
-  Rest(Option<Ratio>),
+  Note(Expr, Option<Rat>),
+  Rest(Option<Rat>),
 }
 
 impl MeasureEvent {
@@ -1910,7 +1910,7 @@ impl MeasureEvent {
 /// Extract an explicit rhythmic value from a canonical note/rest association,
 /// distinguishing "no duration key" (`Some(None)` — a default event) from a
 /// present-but-unparsable duration (`None` — bail out).
-fn explicit_duration(pairs: &[(Expr, Expr)]) -> Option<Option<Ratio>> {
+fn explicit_duration(pairs: &[(Expr, Expr)]) -> Option<Option<Rat>> {
   match assoc_get(pairs, "Duration") {
     None => Some(None),
     Some(dur) => music_duration_ratio(dur).map(Some),
@@ -1943,24 +1943,24 @@ fn parse_measure_event(expr: &Expr) -> Option<MeasureEvent> {
 /// stored `"Duration"` key is kept only for events that were given an explicit
 /// value; every event gains `"BeatDuration"` and `"Beats"`.
 fn beat_annotated_duration(
-  explicit: Option<Ratio>,
-  beat_duration: Ratio,
-  beats: Ratio,
+  explicit: Option<Rat>,
+  beat_duration: Rat,
+  beats: Rat,
 ) -> Expr {
   let mut pairs = Vec::new();
   if let Some(value) = explicit {
-    pairs.push(("Duration", ratio_expr(value)));
+    pairs.push(("Duration", rat_expr(value)));
   }
-  pairs.push(("BeatDuration", ratio_expr(beat_duration)));
-  pairs.push(("Beats", ratio_expr(beats)));
+  pairs.push(("BeatDuration", rat_expr(beat_duration)));
+  pairs.push(("Beats", rat_expr(beats)));
   music_assoc("MusicDuration", pairs)
 }
 
 /// Rebuild a measure event as its beat-annotated canonical object.
 fn annotate_event(
   event: &MeasureEvent,
-  beat_duration: Ratio,
-  beats: Ratio,
+  beat_duration: Rat,
+  beats: Rat,
 ) -> Expr {
   match event {
     MeasureEvent::Note(pitch, explicit) => music_assoc(
@@ -2017,12 +2017,12 @@ pub fn music_measure(args: &[Expr]) -> Option<Expr> {
 
   // Simple vs. compound meter fixes the beat unit and the beats per measure.
   let compound = numer % 3 == 0 && (numer >= 6 || denom >= 8);
-  let beat_duration: Ratio = if compound {
+  let beat_duration: Rat = if compound {
     rat_reduce(3, denom)
   } else {
     rat_reduce(1, denom)
   };
-  let capacity: Ratio = if compound {
+  let capacity: Rat = if compound {
     rat_reduce(numer, 3)
   } else {
     (numer, 1)
@@ -2044,8 +2044,8 @@ pub fn music_measure(args: &[Expr]) -> Option<Expr> {
         music_assoc(
           "MusicDuration",
           vec![
-            ("Beats", ratio_expr(capacity)),
-            ("BeatDuration", ratio_expr(beat_duration)),
+            ("Beats", rat_expr(capacity)),
+            ("BeatDuration", rat_expr(beat_duration)),
           ],
         ),
       )],
@@ -2066,19 +2066,19 @@ pub fn music_measure(args: &[Expr]) -> Option<Expr> {
 
   // Nominal beats: an explicit duration measures `duration / beatDuration`
   // beats; a default event is one beat.
-  let nominal: Vec<Ratio> = events
+  let nominal: Vec<Rat> = events
     .iter()
     .map(|e| match e {
       MeasureEvent::Note(_, Some(v)) | MeasureEvent::Rest(Some(v)) => {
-        ratio_mul(*v, (beat_duration.1, beat_duration.0))
+        rat_mul(*v, (beat_duration.1, beat_duration.0))
       }
       _ => (1, 1),
     })
     .collect();
-  let total = nominal.iter().fold((0, 1), |acc, &b| ratio_add(acc, b));
+  let total = nominal.iter().fold((0, 1), |acc, &b| rat_add(acc, b));
 
   // Overfull: warn and return the non-associated form unchanged.
-  if ratio_cmp(total, capacity) == std::cmp::Ordering::Greater {
+  if rat_cmp(total, capacity) == std::cmp::Ordering::Greater {
     crate::emit_message_to_stdout(&format!(
       "MusicMeasure::measdur: The total duration of beats {} exceeds the \
        allowed number of beats per measure {}.",
@@ -2092,14 +2092,14 @@ pub fn music_measure(args: &[Expr]) -> Option<Expr> {
   }
 
   // Fill the measure to exactly `capacity` beats.
-  let deficit = ratio_sub(capacity, total);
+  let deficit = rat_sub(capacity, total);
   let last = events.len() - 1;
   let last_is_elastic = !events[last].is_explicit();
 
   let mut note_list: Vec<Expr> = Vec::with_capacity(events.len() + 1);
   for (i, event) in events.iter().enumerate() {
     let beats = if i == last && last_is_elastic {
-      ratio_add(nominal[i], deficit)
+      rat_add(nominal[i], deficit)
     } else {
       nominal[i]
     };
@@ -2107,7 +2107,7 @@ pub fn music_measure(args: &[Expr]) -> Option<Expr> {
   }
   // A rigid final event cannot stretch, so pad the remainder with a rest.
   if deficit != (0, 1) && !last_is_elastic {
-    let pad = MeasureEvent::Rest(Some(ratio_mul(deficit, beat_duration)));
+    let pad = MeasureEvent::Rest(Some(rat_mul(deficit, beat_duration)));
     note_list.push(annotate_event(&pad, beat_duration, deficit));
   }
 
@@ -2287,7 +2287,7 @@ pub fn emit_music_plot_message(arg: &Expr) {
 
 /// Render a beat count the way the Wolfram Language prints it in the
 /// `MusicMeasure::measdur` message (an integer, or `n/d` for a fraction).
-fn format_ratio((n, d): Ratio) -> String {
+fn format_ratio((n, d): Rat) -> String {
   if d == 1 {
     n.to_string()
   } else {
