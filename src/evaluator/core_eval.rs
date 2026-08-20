@@ -291,9 +291,20 @@ fn evaluate_args_with_hold(
 /// `Unevaluated[Sequence[…]]` the idiomatic way to splice a variable number of
 /// items into a list — common in Demonstrations, where a conditional adds
 /// several graphics primitives at once.
+///
+/// The one evaluation that does *not* strip it is applying a pure function
+/// whose body is literally `Unevaluated[…]`: `(Unevaluated[Sequence[#, #^2]]
+/// &)[3]` and `Function[u, Unevaluated[Sequence[1, 2]]][7]` both keep the
+/// wrapper in wolframscript (`{0, Unevaluated[Sequence[3, 3^2]], 9}`), the
+/// same way a literal `Unevaluated[…]` argument does — the substituted body
+/// *is* the argument's written form. A slot standing in for an already
+/// `Unevaluated` argument (`(# &)[Unevaluated[Sequence[1, 2]]]`) is a
+/// different body and still splices.
 fn evaluate_argument(arg: &Expr) -> Result<Expr, InterpreterError> {
   let evaluated = evaluate_expr_to_expr(arg)?;
-  if matches!(arg, Expr::FunctionCall { name, .. } if name == "Unevaluated") {
+  if matches!(arg, Expr::FunctionCall { name, .. } if name == "Unevaluated")
+    || applies_unevaluated_bodied_function(arg)
+  {
     return Ok(evaluated);
   }
   match &evaluated {
@@ -304,6 +315,28 @@ fn evaluate_argument(arg: &Expr) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(evaluated),
   }
+}
+
+/// Is `arg` the application of a pure function (`body &`, `Function[…]`)
+/// whose body is a top-level `Unevaluated[…]`? Such a call answers with the
+/// wrapper intact, so the caller must not strip it — see `evaluate_argument`.
+fn applies_unevaluated_bodied_function(arg: &Expr) -> bool {
+  let body = match arg {
+    Expr::CurriedCall { func, .. } => match &**func {
+      Expr::Function { body } => Some(&**body),
+      Expr::NamedFunction { body, .. } => Some(&**body),
+      // `Function[u, body]` / `Function[body]` written out in head form.
+      Expr::FunctionCall { name, args }
+        if name == "Function" && (1..=2).contains(&args.len()) =>
+      {
+        args.last()
+      }
+      _ => None,
+    },
+    _ => None,
+  };
+  matches!(body, Some(Expr::FunctionCall { name, args })
+    if name == "Unevaluated" && args.len() == 1)
 }
 
 /// If `expr` is `Unevaluated[inner]`, return `inner`; otherwise return `expr`

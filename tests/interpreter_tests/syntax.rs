@@ -6751,11 +6751,32 @@ mod unevaluated {
     );
   }
 
+  // A pure function whose body *is* `Unevaluated[…]` answers with the
+  // wrapper intact, exactly as a literal `Unevaluated[…]` argument would —
+  // so the Sequence does NOT splice into the enclosing list. Only a
+  // wrapper produced by some other evaluation (an `If` branch, a
+  // downvalue, `Identity`) gets stripped; see
+  // `pure_function_conditional_splice_via_if` right below.
   #[test]
-  fn pure_function_splices_into_enclosing_list() {
+  fn pure_function_body_keeps_its_unevaluated_wrapper() {
     assert_eq!(
       interpret("{0, (Unevaluated[Sequence[#, #^2]]) & [3], 9}").unwrap(),
-      "{0, 3, 9, 9}"
+      "{0, Unevaluated[Sequence[3, 3^2]], 9}"
+    );
+    assert_eq!(
+      interpret("Length[{0, (Unevaluated[Sequence[#, #^2]]) & [3], 9}]")
+        .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("{0, Function[u, Unevaluated[Sequence[1, 2]]][7], 9}").unwrap(),
+      "{0, Unevaluated[Sequence[1, 2]], 9}"
+    );
+    // A slot standing in for an argument that was already `Unevaluated`
+    // is a different body, and still splices.
+    assert_eq!(
+      interpret("{0, (# &)[Unevaluated[Sequence[1, 2]]], 9}").unwrap(),
+      "{0, 1, 2, 9}"
     );
   }
 
@@ -11185,6 +11206,48 @@ mod span_precedence {
   fn a_condition_holds_the_span() {
     assert_eq!(interpret("x /; y ;; 3").unwrap(), "x /; Span[y, 3]");
     assert_eq!(interpret("Head[x /; y ;; 3]").unwrap(), "Condition");
+  }
+
+  /// The head form is an OutputForm spelling: `InputForm` prints the Span
+  /// with its own operator inside every one of these looser operators,
+  /// just as wolframscript's `ToString[a | 1 ;; 3, InputForm]` does.
+  #[test]
+  fn input_form_prints_the_span_operator_inside_looser_operators() {
+    assert_eq!(
+      interpret("ToString[a | 1 ;; 3, InputForm]").unwrap(),
+      "a | 1 ;; 3"
+    );
+    assert_eq!(
+      interpret("ToString[x /; y ;; 3, InputForm]").unwrap(),
+      "x /; y ;; 3"
+    );
+    assert_eq!(
+      interpret("ToString[a == 1 ;; 3, InputForm]").unwrap(),
+      "a == 1 ;; 3"
+    );
+    assert_eq!(
+      interpret("ToString[a && 1 ;; 3, InputForm]").unwrap(),
+      "a && 1 ;; 3"
+    );
+    // An operand that binds looser than the operator printing it keeps
+    // its parentheses, so the text re-parses to the same tree.
+    assert_eq!(
+      interpret("ToString[a | (b /; c), InputForm]").unwrap(),
+      "a | (b /; c)"
+    );
+    // `/;` is left-associative, so only the right-nested one needs them.
+    assert_eq!(
+      interpret("ToString[(a /; b) /; c, InputForm]").unwrap(),
+      "a /; b /; c"
+    );
+    assert_eq!(
+      interpret("ToString[a /; (b /; c), InputForm]").unwrap(),
+      "a /; (b /; c)"
+    );
+    assert_eq!(
+      interpret("ToString[x /; a | b, InputForm]").unwrap(),
+      "x /; a | b"
+    );
   }
 
   /// `//` and `&` bind looser still, so they wrap the finished Span.

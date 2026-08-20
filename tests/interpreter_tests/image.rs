@@ -972,17 +972,75 @@ mod image_processing {
     );
   }
 
-  // A gamma-correction triple {c, b, γ} isn't implemented; the call must
-  // stay unevaluated rather than crash trying to read the list as a
-  // single number. Regression for ImageAdjust aborting the whole
-  // interpretation on this shape instead of failing softly.
+  // A gamma-correction triple {c, b, γ} applies γ first, then brightness,
+  // then contrast: 0.5^2 = 0.25, times 1.2 is 0.3, and 0.5 + 1.5*(0.3 -
+  // 0.5) is 0.2 (wolframscript-verified). A list of any other length is
+  // not a spec ImageAdjust knows and stays unevaluated.
   #[test]
-  fn image_adjust_gamma_triple_stays_unevaluated() {
+  fn image_adjust_gamma_triple() {
     clear_state();
     assert_eq!(
       interpret("Head[ImageAdjust[Image[{{0.1, 0.5, 0.9}}], {0, 0, 10}]]")
         .unwrap(),
-      "ImageAdjust"
+      "Image"
+    );
+    assert_eq!(
+      interpret("ImageData[ImageAdjust[Image[{{0.1, 0.5, 0.9}}], {0, 0, 10}]]")
+        .unwrap(),
+      "{{1.000000082740371*^-10, 0.0009765625, 0.3486783504486084}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageAdjust[Image[{{0.1, 0.5, 0.9}}], {0.5, 0.2, 2}]]"
+      )
+      .unwrap(),
+      "{{0., 0.20000000298023224, 1.}}"
+    );
+    let result = interpret_with_stdout(
+      "Head[ImageAdjust[Image[{{0.1, 0.5, 0.9}}], {0, 0, 10, 1}]]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "ImageAdjust");
+    assert!(
+      result.warnings.iter().any(|w| w.contains(
+        "ImageAdjust::arg2: Invalid correction parameters {0, 0, 10, 1}."
+      )),
+      "unexpected warnings: {:?}",
+      result.warnings
+    );
+  }
+
+  // An integer image keeps its quantisation: every adjusted `"Byte"` pixel
+  // is some n/255 and every `"Bit16"` one some n/65535, whichever
+  // adjustment produced it (wolframscript-verified).
+  #[test]
+  fn image_adjust_requantises_integer_images() {
+    clear_state();
+    // 0.196078^2 = 0.038447 rounds to 10/255.
+    assert_eq!(
+      interpret(
+        "ImageData[ImageAdjust[Image[{{50, 200}}, \"Byte\"], {0, 0, 2}]]"
+      )
+      .unwrap(),
+      "{{0.0392156862745098, 0.615686274509804}}"
+    );
+    assert_eq!(
+      interpret("ImageData[ImageAdjust[Image[{{50, 200}}, \"Byte\"], 0.5]]")
+        .unwrap(),
+      "{{0.043137254901960784, 0.9254901960784314}}"
+    );
+    // The rescaling 1-argument form too.
+    assert_eq!(
+      interpret("ImageData[ImageAdjust[Image[{{50, 121, 200}}, \"Byte\"]]]")
+        .unwrap(),
+      "{{0., 0.4745098039215686, 1.}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageAdjust[Image[{{100, 40000}}, \"Bit16\"], {0, 0, 2}]]"
+      )
+      .unwrap(),
+      "{{0., 0.37253376058594645}}"
     );
   }
 

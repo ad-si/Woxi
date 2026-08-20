@@ -548,39 +548,76 @@ mod protect_unprotect {
   }
 
   #[test]
-  fn set_after_null_statement_without_semicolon_assigns_target() {
+  fn set_after_null_statement_without_semicolon_leaves_target_unassigned() {
     // A `While`/`For`/etc. statement followed by another statement with no
     // separating `;` parses as implicit multiplication: `While[...] y = v`
-    // becomes `Set[Times[While[...], y], v]`. wolframscript still runs the
-    // `While` for its side effects and, since it evaluates to `Null`
-    // (contributing no coefficient), assigns `v` to `y` directly rather
-    // than rejecting the Times-headed target. This is the exact shape a
-    // missing `;` between two Module statements produces.
+    // becomes `Set[Times[While[...], y], v]`. `Set` holds its first
+    // argument but still evaluates that argument's own arguments, so
+    // wolframscript runs the `While` and then rejects the assignment
+    // itself — the `Times` tag is Protected — leaving `y` without a value.
+    // This is the exact shape a missing `;` between two Module statements
+    // produces.
     clear_state();
     assert_eq!(
-      interpret(
-        "Module[{n = 0, total}, While[n < 3, n = n + 1] total = n * 10; total]"
-      )
+      interpret(concat!(
+        "Module[{n = 0, total},",
+        "  While[n < 3, n = n + 1] total = n * 10; ValueQ[total]]"
+      ))
       .unwrap(),
-      "30"
+      "False"
+    );
+    // The `While` did run, for its side effects.
+    assert_eq!(
+      interpret(concat!(
+        "Module[{n = 0, total},",
+        "  While[n < 3, n = n + 1] total = n * 10; n]"
+      ))
+      .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn set_after_null_statement_evaluates_the_rhs_first() {
+    // `Set` is HoldFirst, so the right-hand side is evaluated before the
+    // left-hand side's factors: `q` is still 0 there, and `Set` answers
+    // with that value even though the assignment is refused.
+    clear_state();
+    assert_eq!(
+      interpret("q = 0; While[q < 3, q = q + 1] z = q").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("q = 0; While[q < 3, q = q + 1] z = q; q").unwrap(),
+      "3"
+    );
+    let result =
+      interpret_with_stdout("q = 0; While[q < 3, q = q + 1] z = q").unwrap();
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("Set::write: Tag Times in Null*z is Protected.")),
+      "unexpected warnings: {:?}",
+      result.warnings
     );
   }
 
   #[test]
   fn set_after_null_statement_runs_side_effects_of_both_factors() {
     // Same shape as above, but confirms the `While` loop's side effects
-    // (not just the final assignment) actually ran — a naive fix that
-    // only patched the error message without evaluating the held Times
-    // factors would leave `acc` empty.
+    // (not just the refused assignment) actually ran — a fix that only
+    // patched the error message without evaluating the held Times factors
+    // would leave `acc` empty.
     clear_state();
     assert_eq!(
       interpret(concat!(
         "Module[{acc = {}, i = 1, len},",
         "  While[i <= 3, acc = Append[acc, i]; i++] len = Length[acc];",
-        "  {acc, len}]"
+        "  {acc, ValueQ[len]}]"
       ))
       .unwrap(),
-      "{{1, 2, 3}, 3}"
+      "{{1, 2, 3}, False}"
     );
   }
 

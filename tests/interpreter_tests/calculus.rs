@@ -9392,41 +9392,122 @@ mod inverse_laplace_transform {
     );
   }
 
-  // ─── Partial-fraction fallback (numeric-coefficient rational functions
-  // past a quadratic denominator, e.g. a control-system transfer function
-  // with a Manipulate slider's value substituted in) ───────────────────
+  // ─── Rational transfer functions ─────────────────────────────────────
+  // A proper rational function with exact coefficients is inverted
+  // exactly, off its partial-fraction decomposition; float coefficients
+  // (a Manipulate slider's value substituted into a control-system
+  // transfer function) keep the numeric residue sum.
 
   // Three distinct real poles: the textbook partial-fraction expansion of
-  // 1/((s+1)(s+2)(s+3)) is (1/2)E^-t - E^-2t + (1/2)E^-3t.
+  // 1/((s+1)(s+2)(s+3)) is (1/2)E^-t - E^-2t + (1/2)E^-3t, which regroups
+  // into a factored polynomial in E^t — the form wolframscript prints.
   #[test]
   fn partial_fractions_three_real_poles() {
     assert_eq!(
       interpret("InverseLaplaceTransform[1/((s + 1)(s + 2)(s + 3)), s, t]")
         .unwrap(),
-      "0.5/E^(3.*t) - 1./E^(2.*t) + 0.5/E^(1.*t)"
+      "(-1 + E^t)^2/(2*E^(3*t))"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/((s + 1)(s + 2)), s, t]").unwrap(),
+      "(-1 + E^t)/E^(2*t)"
+    );
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[1/((s + 1)(s + 2)(s + 3)(s + 4)), s, t]"
+      )
+      .unwrap(),
+      "(-1 + E^t)^3/(6*E^(4*t))"
+    );
+    // A numerator of its own (a zero at s = -3/2, not just a gain).
+    assert_eq!(
+      interpret("InverseLaplaceTransform[(2 s + 3)/((s + 1)(s + 4)), s, t]")
+        .unwrap(),
+      "(5 + E^(3*t))/(3*E^(4*t))"
+    );
+  }
+
+  // Float coefficients stay on the numeric residue path.
+  #[test]
+  fn partial_fractions_machine_number_poles() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/((s + 1.5)(s + 2.5)), s, t]")
+        .unwrap(),
+      "-1./E^(2.5*t) + 1./E^(1.5*t)"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[s/(s + 1.5), s, t]").unwrap(),
+      "-1.5/E^(1.5*t) + 1.*DiracDelta[t]"
+    );
+  }
+
+  // An improper fraction keeps a polynomial part, and `L^-1[s^k]` is the
+  // k-th derivative of DiracDelta. (The `Plus` order of a `Derivative`
+  // term differs from wolframscript's — see conformance_gaps.md.)
+  #[test]
+  fn improper_fraction_gives_dirac_delta_derivatives() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[s, s, t]").unwrap(),
+      "Derivative[1][DiracDelta][t]"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[s^2, s, t]").unwrap(),
+      "Derivative[2][DiracDelta][t]"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[s/(s + 1), s, t]").unwrap(),
+      "-E^(-t) + DiracDelta[t]"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[(s + 1)/(s + 1), s, t]").unwrap(),
+      "DiracDelta[t]"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[s^2/(s + 1), s, t]").unwrap(),
+      "Derivative[1][DiracDelta][t] + E^(-t) - DiracDelta[t]"
     );
   }
 
   // A real pole at s = 0 plus a complex-conjugate pair (-1 ± 2 I) from
   // s^2 + 2 s + 5: the real pole contributes a constant, the pair an
-  // exponentially damped oscillation.
+  // exponentially damped oscillation. (wolframscript prints the same
+  // function as a sum of complex exponentials — see
+  // tests/cli/comparison/mathematica/conformance_gaps.md.)
   #[test]
   fn partial_fractions_real_and_complex_poles() {
     assert_eq!(
       interpret("InverseLaplaceTransform[1/(s^3 + 2 s^2 + 5 s), s, t]")
         .unwrap(),
-      "0.2 + (-0.2*Cos[2.*t] - 0.1*Sin[2.*t])/E^(1.*t)"
+      "-1/10*(-2*E^t + 2*Cos[2*t] + Sin[2*t])/E^t"
     );
   }
 
-  // A repeated pole needs `t^k E^(r t)` terms the simple-pole residue sum
-  // doesn't produce — it must stay unevaluated rather than silently return
-  // a wrong answer.
+  // An irreducible quadratic with irrational real roots inverts to the
+  // hyperbolic counterpart of the oscillating case.
   #[test]
-  fn partial_fractions_repeated_pole_stays_unevaluated() {
+  fn partial_fractions_irrational_real_poles() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s^2 - 2), s, t]").unwrap(),
+      "Sinh[Sqrt[2]*t]/Sqrt[2]"
+    );
+  }
+
+  // A repeated pole contributes the `t^(k-1) E^(r t)/(k-1)!` terms a
+  // simple-pole residue sum doesn't produce.
+  #[test]
+  fn partial_fractions_repeated_pole() {
     assert_eq!(
       interpret("InverseLaplaceTransform[1/(s + 1)^3, s, t]").unwrap(),
-      "InverseLaplaceTransform[(1 + s)^(-3), s, t]"
+      "t^2/(2*E^t)"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/((s + 1)^2 (s + 2)), s, t]")
+        .unwrap(),
+      "(1 + E^t*(-1 + t))/E^(2*t)"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s^2 (s + 1)), s, t]").unwrap(),
+      "-1 + E^(-t) + t"
     );
   }
 

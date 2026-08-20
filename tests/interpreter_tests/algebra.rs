@@ -5869,6 +5869,52 @@ mod full_simplify {
     );
   }
 
+  // A sum of exponentials regroups as `E^(k_min u)` times a polynomial in
+  // `E^(g u)` when that is cheaper by the same count Simplify uses
+  // elsewhere — the shape an inverse Laplace transform's residue sum has.
+  // All wolframscript-verified.
+  #[test]
+  fn collect_a_sum_of_exponentials() {
+    assert_eq!(
+      interpret("Simplify[1/2 E^(-t) - E^(-2 t) + 1/2 E^(-3 t)]").unwrap(),
+      "(-1 + E^t)^2/(2*E^(3*t))"
+    );
+    assert_eq!(
+      interpret("Simplify[E^(-t) - E^(-2 t)]").unwrap(),
+      "(-1 + E^t)/E^(2*t)"
+    );
+    // Half-integer rates: the polynomial is in `E^(t/2)`.
+    assert_eq!(
+      interpret("Simplify[E^(t/2) - E^(-t/2)]").unwrap(),
+      "(-1 + E^t)/E^(t/2)"
+    );
+    // A tie goes to the regrouped form, as with the Factor candidate.
+    assert_eq!(
+      interpret("Simplify[E^x + E^(2 x)]").unwrap(),
+      "E^x*(1 + E^x)"
+    );
+    assert_eq!(
+      interpret("Simplify[Exp[a] + Exp[2 a] + Exp[3 a]]").unwrap(),
+      "E^a*(1 + E^a + E^(2*a))"
+    );
+    // Coefficients that aren't constants come along unchanged.
+    assert_eq!(
+      interpret("Simplify[Sin[t] E^(-t) + E^(-2 t)]").unwrap(),
+      "(1 + E^t*Sin[t])/E^(2*t)"
+    );
+    assert_eq!(
+      interpret("Simplify[1/5 - Cos[2 t]/(5 E^t) - Sin[2 t]/(10 E^t)]")
+        .unwrap(),
+      "(2*E^t - 2*Cos[2*t] - Sin[2*t])/(10*E^t)"
+    );
+    // Regrouping that costs more is rejected: both of these stay sums.
+    assert_eq!(
+      interpret("Simplify[-1 + t + E^(-t)]").unwrap(),
+      "-1 + E^(-t) + t"
+    );
+    assert_eq!(interpret("Simplify[E^t + E^(-t)]").unwrap(), "E^(-t) + E^t");
+  }
+
   #[test]
   fn simplify_conditional_expression_passthrough() {
     // Simplify[ConditionalExpression[1, a > 0]] leaves the conditional

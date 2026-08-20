@@ -1571,25 +1571,34 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // 1-arg form: rescale to [0, 1] using actual min/max.
   // 2-arg scalar form: contrast curve, no rescaling.
-  // 2-arg {c, b} form: brightness then contrast.
+  // 2-arg {c, b} / {c, b, γ} form: gamma correction first, then
+  // brightness, then contrast — the order wolframscript applies them in
+  // (`ImageAdjust[Image[{{0.5}}], {0.5, 0.2, 2}]` is 0.2: 0.5^2 = 0.25,
+  // times 1.2 is 0.3, then 0.5 + 1.5*(0.3 - 0.5)).
   enum Adjust {
     Rescale,
-    Contrast(f64),
-    BrightnessContrast(f64, f64),
+    /// contrast, brightness, gamma
+    Curve(f64, f64, f64),
   }
   let mode = if args.len() == 1 {
     Adjust::Rescale
   } else if let Expr::List(items) = &args[1]
-    && items.len() == 2
+    && (items.len() == 2 || items.len() == 3)
   {
-    Adjust::BrightnessContrast(expr_to_f64(&items[0])?, expr_to_f64(&items[1])?)
+    let gamma = match items.get(2) {
+      Some(g) => expr_to_f64(g)?,
+      None => 1.0,
+    };
+    Adjust::Curve(expr_to_f64(&items[0])?, expr_to_f64(&items[1])?, gamma)
   } else if let Expr::List(_) = &args[1] {
-    // A list shape other than the {c, b} pair (e.g. a gamma-correction
-    // {c, b, γ} triple) isn't implemented — leave the call unevaluated
-    // rather than crashing on the failed numeric conversion below.
+    // A list of any other length isn't a spec ImageAdjust knows.
+    crate::emit_message(&format!(
+      "ImageAdjust::arg2: Invalid correction parameters {}.",
+      crate::syntax::expr_to_string(&args[1])
+    ));
     return Ok(unevaluated("ImageAdjust", args));
   } else {
-    Adjust::Contrast(expr_to_f64(&args[1])?)
+    Adjust::Curve(expr_to_f64(&args[1])?, 0.0, 1.0)
   };
 
   // Real32 images store f32-quantised values in an f64 buffer. Round
@@ -1602,9 +1611,13 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let v = snap(v);
     let r = match mode {
       Adjust::Rescale => unreachable!(),
-      Adjust::Contrast(c) => (0.5 + (1.0 + c) * (v - 0.5)).clamp(0.0, 1.0),
-      Adjust::BrightnessContrast(c, b) => {
-        let after_b = (v * (1.0 + b)).clamp(0.0, 1.0);
+      Adjust::Curve(c, b, gamma) => {
+        let after_g = if gamma == 1.0 {
+          v
+        } else {
+          v.max(0.0).powf(gamma)
+        };
+        let after_b = (after_g * (1.0 + b)).clamp(0.0, 1.0);
         (0.5 + (1.0 + c) * (after_b - 0.5)).clamp(0.0, 1.0)
       }
     };
@@ -1630,6 +1643,20 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   } else {
     data.iter().map(|&v| apply(v)).collect()
+  };
+
+  // An integer image stores quantised levels, and wolframscript rounds the
+  // adjusted values back onto that grid — an adjusted `"Byte"` pixel is
+  // always some n/255, an adjusted `"Bit16"` one some n/65535.
+  let levels = match image_type {
+    ImageType::Bit => Some(1.0),
+    ImageType::Byte => Some(255.0),
+    ImageType::Bit16 => Some(65535.0),
+    ImageType::Real32 | ImageType::Real64 => None,
+  };
+  let new_data: Vec<f64> = match levels {
+    Some(max) => new_data.iter().map(|v| (v * max).round() / max).collect(),
+    None => new_data,
   };
 
   Ok(Expr::Image {

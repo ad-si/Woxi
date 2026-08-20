@@ -4661,6 +4661,19 @@ fn reciprocal_inside_sum_factor(e: &Expr) -> bool {
 /// leaf count larger but combining an inner fraction still helps.
 fn simplify_expr_with_together(expr: &Expr) -> Expr {
   let simplified = simplify_expr(expr);
+  // A sum of exponentials regroups to `E^(k_min u) · P(E^(g u))` when that
+  // is cheaper: `E^(-t)/2 - E^(-2 t) + E^(-3 t)/2` → `(-1 + E^t)^2/(2
+  // E^(3 t))`. It has to run before the quotient candidates below, whose
+  // combined-over-a-common-denominator display hides the individual
+  // exponentials (and is treated as final). A tie goes to the regrouped
+  // form, the same way the Factor candidate below prefers `3*(1 + a)` over
+  // `3 + 3*a` — `Simplify[E^x + E^(2 x)]` is `E^x*(1 + E^x)` in
+  // wolframscript, both costing the same.
+  if let Some(regrouped) = factor_exponential_sum(&simplified)
+    && wl_simplify_count(&regrouped) <= wl_simplify_count(&simplified)
+  {
+    return regrouped;
+  }
   // The SimplifyCount candidate selection's rational-prefactor display
   // (-1/5*(2+4x)/x, Simplify[(-2-4x)/(5x)]) is FINAL: the leaf-count
   // candidates below would re-expand or re-combine it
@@ -5268,7 +5281,322 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
     }
   }
 
+  // Candidate 7: the exponential-sum regrouping from the top of this
+  // function, retried on what the candidates above made of the sum — one
+  // of them may have combined it over a common denominator, which hides
+  // the individual exponentials from the first attempt.
+  for source in [simplified.clone(), best.clone()] {
+    if let Some(regrouped) = factor_exponential_sum(&source)
+      && wl_simplify_count(&regrouped) <= wl_simplify_count(&best)
+    {
+      best = regrouped;
+    }
+  }
+
   best
+}
+
+/// Regroup a sum of exponentials `Σ cᵢ E^(kᵢ u)` as
+/// `E^(k_min u) · P(E^(g u))`, with `P` factored and `g` the gcd of the
+/// exponent gaps. Every `cᵢ` has to be free of `E^(… u)` itself, but is
+/// otherwise arbitrary (a polynomial in the same variable, a `Sin`, …).
+///
+/// This is the shape an inverse Laplace transform's residue sum has, and
+/// the form wolframscript's Simplify settles on whenever it is cheaper:
+/// `E^(-t)/2 - E^(-2 t) + E^(-3 t)/2` becomes `(-1 + E^t)^2/(2 E^(3 t))`,
+/// while `-1 + E^(-t) + t` stays a sum because regrouping it costs more.
+/// The caller decides with `wl_simplify_count`; this only builds the
+/// candidate.
+pub(crate) fn factor_exponential_sum(expr: &Expr) -> Option<Expr> {
+  /// The factors of a product, with a leading minus turned into a `-1`
+  /// factor and a division into a negative power — the display shapes
+  /// `collect_multiplicative_factors` leaves whole (`-E^(-2 t)` is one
+  /// `UnaryOp`, `a/(2 E^t)` one `Divide`).
+  fn signed_factors(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => {
+        out.push(Expr::Integer(-1));
+        signed_factors(operand, out);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        signed_factors(left, out);
+        signed_factors(right, out);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        signed_factors(left, out);
+        out.push(pow2((**right).clone(), Expr::Integer(-1)));
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args {
+          signed_factors(a, out);
+        }
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  /// `(numerator, denominator)` of an exact number, normalized positive-
+  /// denominator; `None` for anything inexact or non-numeric.
+  fn as_ratio(e: &Expr) -> Option<(i128, i128)> {
+    match e {
+      Expr::Integer(n) => Some((*n, 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => Some((*n, *d)),
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  }
+  /// The `(rate, base)` of an `E^(k u)` factor: `E^(-3 t)` is
+  /// `((-3, 1), t)`. `None` for any other factor, including a plain
+  /// `E^2` (a constant, which belongs to the coefficient).
+  fn exponential_rate(f: &Expr) -> Option<((i128, i128), Expr)> {
+    let (base, exponent) = match f {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => (&**left, &**right),
+      _ => return None,
+    };
+    let is_e =
+      matches!(base, Expr::Constant(b) | Expr::Identifier(b) if b == "E");
+    if !is_e {
+      // A nested power — `1/E^(2 t)` is `(E^(2 t))^-1` — multiplies the
+      // inner rate by this exponent.
+      let (inner_rate, inner_base) = exponential_rate(base)?;
+      let (n, d) = as_ratio(exponent)?;
+      return Some(((inner_rate.0 * n, inner_rate.1 * d), inner_base));
+    }
+    let mut factors = Vec::new();
+    signed_factors(exponent, &mut factors);
+    let mut rate = (1i128, 1i128);
+    let mut rest: Vec<Expr> = Vec::new();
+    for factor in factors {
+      match as_ratio(&factor) {
+        Some((n, d)) => rate = (rate.0 * n, rate.1 * d),
+        None => rest.push(factor),
+      }
+    }
+    if rest.is_empty() {
+      return None;
+    }
+    let base = super::expand::build_product(rest);
+    Some((rate, base))
+  }
+  fn contains_exponential(e: &Expr) -> bool {
+    if exponential_rate(e).is_some() {
+      return true;
+    }
+    match e {
+      Expr::FunctionCall { args, .. } | Expr::List(args) => {
+        args.iter().any(contains_exponential)
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        contains_exponential(left) || contains_exponential(right)
+      }
+      Expr::UnaryOp { operand, .. } => contains_exponential(operand),
+      _ => false,
+    }
+  }
+
+  // An earlier Simplify candidate may have wrapped the sum as
+  // `Times[c, Plus[…]]`; distribute that content back so the terms show.
+  let terms = {
+    let direct = super::coefficient::collect_additive_terms(expr);
+    if direct.len() >= 2 {
+      direct
+    } else {
+      let mut factors = Vec::new();
+      signed_factors(expr, &mut factors);
+      let (sums, rest): (Vec<Expr>, Vec<Expr>) = factors
+        .into_iter()
+        .partition(|f| super::coefficient::collect_additive_terms(f).len() > 1);
+      let content = (sums.len() == 1)
+        .then(|| {
+          crate::evaluator::evaluate_expr_to_expr(
+            &super::expand::build_product(rest),
+          )
+          .ok()
+        })
+        .flatten()
+        .filter(|c| as_ratio(c).is_some());
+      match content {
+        Some(content) => super::coefficient::collect_additive_terms(&sums[0])
+          .into_iter()
+          .map(|t| times2(content.clone(), t))
+          .filter_map(|t| crate::evaluator::evaluate_expr_to_expr(&t).ok())
+          .collect(),
+        None => direct,
+      }
+    }
+  };
+  if terms.len() < 2 || terms.len() > 24 {
+    return None;
+  }
+
+  // Rate (over a common denominator later) and coefficient of each term.
+  let mut var: Option<Expr> = None;
+  let mut parsed: Vec<((i128, i128), Expr)> = Vec::with_capacity(terms.len());
+  for term in &terms {
+    let mut rate = (0i128, 1i128);
+    let mut seen = false;
+    let mut coeff_factors: Vec<Expr> = Vec::new();
+    let mut term_factors = Vec::new();
+    signed_factors(term, &mut term_factors);
+    for factor in term_factors {
+      if let Some((k, u)) = exponential_rate(&factor) {
+        if seen {
+          return None;
+        }
+        match &var {
+          Some(v) if !crate::evaluator::pattern_matching::expr_equal(v, &u) => {
+            return None;
+          }
+          Some(_) => {}
+          None => var = Some(u),
+        }
+        rate = k;
+        seen = true;
+      } else {
+        if contains_exponential(&factor) {
+          return None;
+        }
+        coeff_factors.push(factor);
+      }
+    }
+    parsed.push((rate, super::expand::build_product(coeff_factors)));
+  }
+  let var = var?;
+
+  // Put every rate over one denominator so the gaps are integers.
+  let common_den = parsed
+    .iter()
+    .try_fold(1i128, |acc, ((_, d), _)| lcm_i128(acc, *d))?;
+  let nums: Vec<i128> = parsed
+    .iter()
+    .map(|((n, d), _)| n.checked_mul(common_den / d))
+    .collect::<Option<Vec<_>>>()?;
+  let min_num = *nums.iter().min()?;
+  let step = nums.iter().map(|n| n - min_num).fold(0i128, gcd_i128);
+  if step == 0 {
+    // One single rate — nothing to regroup.
+    return None;
+  }
+  let degrees: Vec<i128> = nums.iter().map(|n| (n - min_num) / step).collect();
+  if degrees.iter().any(|d| *d > 24) {
+    return None;
+  }
+
+  // P(x) = Σ cᵢ x^dᵢ over a symbol the expression doesn't already use.
+  let mut used = std::collections::HashSet::new();
+  collect_variables(expr, &mut used);
+  let mut x_name = "x$exp".to_string();
+  while used.contains(&x_name) {
+    x_name.push('$');
+  }
+  let x = Expr::Identifier(x_name.clone());
+  let poly_terms: Vec<Expr> = parsed
+    .iter()
+    .zip(&degrees)
+    .map(|((_, coeff), degree)| match degree {
+      0 => coeff.clone(),
+      1 => times2(coeff.clone(), x.clone()),
+      d => times2(coeff.clone(), pow2(x.clone(), Expr::Integer(*d))),
+    })
+    .collect();
+  let poly =
+    crate::evaluator::evaluate_expr_to_expr(&call("Plus", poly_terms)).ok()?;
+  // Factor when the polynomial actually factors; otherwise just collect
+  // the coefficients of each power, which is the form wolframscript keeps
+  // (`1 + E^t*(-1 + t)`, not the distributed `1 - E^t + E^t*t`).
+  let is_sum = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+      || matches!(
+        e,
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus | BinaryOperator::Minus,
+          ..
+        }
+      )
+  };
+  let factored = super::factor::factor_ast(std::slice::from_ref(&poly))
+    .ok()
+    .filter(|f| !is_sum(f))
+    .or_else(|| super::collect::collect_ast(&[poly.clone(), x.clone()]).ok())
+    .unwrap_or(poly);
+
+  // Substitute x back and multiply the pulled-out E^(k_min u) in.
+  let step_rate = make_ratio(step, common_den);
+  let x_value = pow2(
+    Expr::Constant("E".to_string()),
+    match &step_rate {
+      Expr::Integer(1) => var.clone(),
+      other => times2(other.clone(), var.clone()),
+    },
+  );
+  let substituted = crate::syntax::substitute_variable(
+    &factored,
+    &x_name,
+    &crate::evaluator::evaluate_expr_to_expr(&x_value).ok()?,
+  );
+  let min_rate = make_ratio(min_num, common_den);
+  let result = if matches!(min_rate, Expr::Integer(0)) {
+    substituted
+  } else {
+    times2(
+      pow2(
+        Expr::Constant("E".to_string()),
+        crate::evaluator::evaluate_expr_to_expr(&times2(min_rate, var)).ok()?,
+      ),
+      substituted,
+    )
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result).ok()
+}
+
+/// `n/d` as an exact number: an `Integer` when it divides, a `Rational`
+/// in lowest terms otherwise.
+fn make_ratio(n: i128, d: i128) -> Expr {
+  let g = gcd_i128(n, d).max(1);
+  let (mut n, mut d) = (n / g, d / g);
+  if d < 0 {
+    n = -n;
+    d = -d;
+  }
+  if d == 1 {
+    Expr::Integer(n)
+  } else {
+    make_rational(n, d)
+  }
+}
+
+/// Least common multiple, `None` on overflow.
+fn lcm_i128(a: i128, b: i128) -> Option<i128> {
+  let g = gcd_i128(a, b);
+  if g == 0 {
+    return Some(0);
+  }
+  (a / g).checked_mul(b)
 }
 
 /// The positive integer radicand of a term of the form
@@ -5358,7 +5686,7 @@ fn term_sqrt_radicand(term: &Expr) -> Option<i128> {
 /// digit count plus one when negative, Rational[n, d] costs both parts
 /// plus one, every other atom costs 1, and every compound node costs one
 /// plus its children.
-fn wl_simplify_count(e: &Expr) -> i64 {
+pub(crate) fn wl_simplify_count(e: &Expr) -> i64 {
   match e {
     Expr::Integer(n) => quotient_cost::sc_int(*n),
     Expr::BigInteger(n) => {

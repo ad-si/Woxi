@@ -2039,35 +2039,36 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   // algebra — it's two statements a missing `;` glued together (e.g.
   // `While[…]\nvecLEN = Length[vecBASIS];` parses as
   // `Times[While[…], vecLEN] = Length[vecBASIS]` since `=` binds looser
-  // than implicit multiplication). wolframscript evaluates every factor
-  // left to right (for side effects, e.g. running that `While`) and, when
-  // all but one factor comes back `Null`, assigns the right-hand side to
-  // the remaining factor directly — treating the `Null`s as contributing
-  // no coefficient rather than as an error. Only a bare identifier
-  // qualifies as that remaining factor; anything else (a number, a Part
-  // extract, …) falls through to the generic Protected-tag rejection
-  // below.
+  // than implicit multiplication). `Set` holds its first argument but
+  // still evaluates that argument's own arguments, so wolframscript runs
+  // every factor (the `While` included, for its side effects) and only
+  // then rejects the assignment itself with `Set::write` — naming the
+  // Protected `Times` tag and the *evaluated* left-hand side, e.g.
+  // `Tag Times in Null vecLEN is Protected.` Nothing is assigned: the
+  // target keeps whatever value it had, and `Set` returns the right-hand
+  // side.
   if let Expr::BinaryOp {
     op: BinaryOperator::Times,
     ..
   } = lhs
   {
+    // wolframscript evaluates the right-hand side first (`Set` is
+    // HoldFirst, so only the left-hand side waits), which is observable
+    // when a factor has side effects: in `q = 0; While[q < 3, q++] z = q`
+    // the `q` on the right is still 0.
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
     let factors = flatten_times_chain(lhs);
-    let mut target: Option<&str> = None;
-    let mut ambiguous = false;
+    let mut evaluated = Vec::with_capacity(factors.len());
     for factor in &factors {
-      let value = evaluate_expr_to_expr(factor)?;
-      let is_null = matches!(&value, Expr::Identifier(s) if s == "Null");
-      if !is_null {
-        match factor {
-          Expr::Identifier(name) if target.is_none() => target = Some(name),
-          _ => ambiguous = true,
-        }
-      }
+      evaluated.push(evaluate_expr_to_expr(factor)?);
     }
-    if !ambiguous && let Some(name) = target {
-      return set_ast(&Expr::Identifier(name.to_string()), rhs);
-    }
+    let shown = call("Times", evaluated);
+    let shown = evaluate_expr_to_expr(&shown).unwrap_or(shown);
+    crate::emit_message(&format!(
+      "Set::write: Tag Times in {} is Protected.",
+      expr_to_string(&shown)
+    ));
+    return Ok(rhs_value);
   }
 
   // A LHS built from an operator like `+`, `*`, `^` (e.g. `2 x = 5`,

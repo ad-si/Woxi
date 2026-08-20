@@ -799,7 +799,7 @@ LinearModelFit,Fits a linear model to data and returns a FittedModel object — 
 ExclusionsStyle,Option for styling exclusion lines in plots,✅,none,6.0,769
 ConjugateTranspose,Returns the conjugate transpose of a matrix,✅,pure,5.1,770
 NullSpace,Returns the null space of a matrix,✅,pure,1.0,771
-ImageAdjust,Auto-adjusts image contrast and brightness,✅,pure,7.0,772
+ImageAdjust,Auto-adjusts image contrast and brightness — an optional {c b} pair or {c b gamma} triple applies gamma correction then brightness then contrast,✅,pure,7.0,772
 RandomFunction,Simulates random processes like Wiener and Poisson processes,🚫,io,9.0,773
 SplineDegree,Option for the degree of spline interpolation,✅,none,7.0,774
 FilledCurve,Filled curve graphics primitive,✅,none,8.0,775

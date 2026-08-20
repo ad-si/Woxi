@@ -7794,6 +7794,29 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
   }
 }
 
+/// Render the operands of a left-associative infix head in InputForm and
+/// join them with `sep`. An operand that itself prints with a looser
+/// operator than `prec` is parenthesized so the text re-parses to the same
+/// tree — for an operand of the *same* precedence only the left one can
+/// stay bare (`(a /; b) /; c` prints `a /; b /; c`, `a /; (b /; c)` keeps
+/// its parentheses, both as in wolframscript). Forms that print
+/// self-delimiting (atoms, `f[…]`, and heads like `Span` that print infix
+/// only in InputForm but bind tighter than the heads using this helper)
+/// never need parentheses.
+fn input_form_infix(args: &[Expr], sep: &str, prec: u8) -> String {
+  args
+    .iter()
+    .enumerate()
+    .map(|(i, a)| {
+      let s = expr_to_input_form(a);
+      let looser = printed_infix_precedence(a)
+        .is_some_and(|p| if i == 0 { p < prec } else { p <= prec });
+      if looser { format!("({s})") } else { s }
+    })
+    .collect::<Vec<_>>()
+    .join(sep)
+}
+
 /// Whether the body of `body &` has to print parenthesized.
 ///
 /// `&` binds tighter than `;` and than every assignment operator, so a body
@@ -12204,6 +12227,28 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         })
         .collect();
       parts.join(" && ")
+    }
+    // Alternatives[a, b, …] in InputForm: `a | b | …` with InputForm
+    // children, so a `Span` operand prints with its own operator
+    // (`ToString[a | 1 ;; 3, InputForm]` is "a | 1 ;; 3" in wolframscript,
+    // not "a | Span[1, 3]"). Without this arm the whole expression fell
+    // through to `expr_to_output`, which renders Span in head form.
+    Expr::BinaryOp {
+      op: BinaryOperator::Alternatives,
+      left,
+      right,
+    } => input_form_infix(&[(**left).clone(), (**right).clone()], " | ", 27),
+    Expr::FunctionCall { name, args }
+      if name == "Alternatives" && args.len() >= 2 =>
+    {
+      input_form_infix(args, " | ", 27)
+    }
+    // Condition[lhs, rhs] in InputForm: `lhs /; rhs`, again with InputForm
+    // children (`ToString[x /; y ;; 3, InputForm]` is "x /; y ;; 3").
+    Expr::FunctionCall { name, args }
+      if name == "Condition" && args.len() == 2 =>
+    {
+      input_form_infix(args, " /; ", 13)
     }
     // Inequality[...] in InputForm always uses the head form Inequality[a, Less, b, Less, c],
     // even when all operators are the same (infix is only used in OutputForm).

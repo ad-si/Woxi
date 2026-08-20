@@ -1946,6 +1946,13 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
     }
   }
 
+  // A proper rational function with exact (integer/rational) coefficients
+  // is inverted exactly, term by term, off its partial-fraction
+  // decomposition — repeated poles included.
+  if let Some(result) = inverse_laplace_exact_rational(expr, s, t) {
+    return Some(result);
+  }
+
   // Last resort: a general partial-fraction inversion for a proper
   // rational function with purely numeric coefficients, e.g. a
   // Demonstrations transfer function whose denominator is a cubic or
@@ -1955,6 +1962,308 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
   }
 
   None
+}
+
+/// Exact inversion of a proper rational function `P(s)/Q(s)` whose
+/// coefficients are exact numbers.
+///
+/// `Apart` splits it into terms over a single power of an irreducible
+/// factor, and each term has a closed-form inverse:
+///
+///   c/(s - r)^k                → c t^(k-1) E^(r t)/(k-1)!
+///   (A s + B)/(s^2 + p s + q)  → E^(a t) (A Cos[w t] + ((B + A a)/w) Sin[w t])
+///                                with a = -p/2, w = Sqrt[q - p^2/4]
+///
+/// and the real-root counterpart of the quadratic (an irreducible-over-Q
+/// factor with irrational roots, e.g. `s^2 - 2`) uses `Cosh`/`Sinh` with
+/// `w = Sqrt[p^2/4 - q]`. An improper fraction keeps a polynomial part,
+/// which `Apart` hands over as its own term and which inverts to
+/// `DiracDelta` derivatives (`L^-1[s^k] = DiracDelta^(k)[t]`). Anything
+/// else — a repeated quadratic factor, a symbolic or machine-number
+/// coefficient — returns `None` so the caller can fall back to its
+/// numeric residue sum.
+fn inverse_laplace_exact_rational(
+  expr: &Expr,
+  s: &str,
+  t: &str,
+) -> Option<Expr> {
+  let s_id = Expr::Identifier(s.to_string());
+  let combined =
+    crate::functions::together_ast(std::slice::from_ref(expr)).ok()?;
+  let num_expr =
+    crate::functions::numerator_ast(std::slice::from_ref(&combined)).ok()?;
+  let den_expr = crate::functions::denominator_ast(&[combined]).ok()?;
+  // Exact coefficients only — a float anywhere routes to the numeric
+  // fallback, which is what produced the answer before this path existed.
+  polynomial_exact_coeffs(&num_expr, &s_id)?;
+  polynomial_exact_coeffs(&den_expr, &s_id)?;
+
+  let decomposed =
+    crate::functions::polynomial_ast::apart_ast(&[expr.clone(), s_id.clone()])
+      .ok()?;
+  let decomposed = crate::evaluator::evaluate_expr_to_expr(&decomposed).ok()?;
+  let terms: Vec<Expr> = match &decomposed {
+    Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
+    other => vec![other.clone()],
+  };
+
+  let mut inverted = Vec::with_capacity(terms.len());
+  for term in &terms {
+    inverted.push(inverse_laplace_exact_term(term, s, t)?);
+  }
+  let sum =
+    crate::evaluator::evaluate_expr_to_expr(&call("Plus", inverted)).ok()?;
+  // wolframscript simplifies the residue sum before returning it, which
+  // for distinct poles means collecting the exponentials:
+  // `E^(-t)/2 - E^(-2 t) + E^(-3 t)/2` comes back as
+  // `(-1 + E^t)^2/(2 E^(3 t))`. Apply the same regrouping, on the same
+  // cost test Simplify uses.
+  Some(
+    crate::functions::polynomial_ast::factor_exponential_sum(&sum)
+      .filter(|regrouped| {
+        crate::functions::polynomial_ast::wl_simplify_count(regrouped)
+          <= crate::functions::polynomial_ast::wl_simplify_count(&sum)
+      })
+      .unwrap_or(sum),
+  )
+}
+
+/// Inverse-transform one `Apart` term — see `inverse_laplace_exact_rational`
+/// for the closed forms. `None` for any shape outside them.
+fn inverse_laplace_exact_term(term: &Expr, s: &str, t: &str) -> Option<Expr> {
+  let s_id = Expr::Identifier(s.to_string());
+  let t_id = Expr::Identifier(t.to_string());
+  let factors: Vec<Expr> = match as_func_args(term) {
+    Some(("Times", args)) => args.into_iter().cloned().collect(),
+    _ => vec![term.clone()],
+  };
+
+  // Split the factors into the s-free coefficient, the numerator (every
+  // remaining positive-power factor) and the one negative power that
+  // carries the pole.
+  let mut coeff: Vec<Expr> = Vec::new();
+  let mut numerator: Vec<Expr> = Vec::new();
+  let mut pole: Option<(Expr, i128)> = None;
+  for factor in &factors {
+    if !depends_on(factor, s) {
+      coeff.push(factor.clone());
+      continue;
+    }
+    match as_func_args(factor) {
+      Some((name, args))
+        if name == "Power"
+          && args.len() == 2
+          && matches!(args[1], Expr::Integer(n) if *n < 0) =>
+      {
+        let Expr::Integer(n) = args[1] else {
+          return None;
+        };
+        if pole.is_some() {
+          return None;
+        }
+        pole = Some((args[0].clone(), -n));
+      }
+      _ => numerator.push(factor.clone()),
+    }
+  }
+  let coeff = if coeff.is_empty() {
+    Expr::Integer(1)
+  } else {
+    call("Times", coeff)
+  };
+  let num = if numerator.is_empty() {
+    Expr::Integer(1)
+  } else {
+    call("Times", numerator)
+  };
+
+  // No pole at all: the polynomial part of an improper fraction, whose
+  // inverse is the matching sum of DiracDelta derivatives.
+  let Some((den, k)) = pole else {
+    let coeffs =
+      polynomial_exact_coeffs(&call("Times", vec![coeff, num]), &s_id)?;
+    let terms: Vec<Expr> = coeffs
+      .iter()
+      .enumerate()
+      .map(|(degree, c)| {
+        call(
+          "Times",
+          vec![c.clone(), dirac_delta_derivative(degree as i128, t)],
+        )
+      })
+      .collect();
+    return Some(call("Plus", terms));
+  };
+
+  let den_coeffs = polynomial_exact_coeffs(&den, &s_id)?;
+  let num_coeffs = polynomial_exact_coeffs(&num, &s_id)?;
+  match den_coeffs.len() {
+    // Linear factor `c1 s + c0`, to the k-th power: the pole sits at
+    // r = -c0/c1 and the factor contributes c1^-k.
+    2 => {
+      if num_coeffs.len() > 1 {
+        return None;
+      }
+      let (c0, c1) = (&den_coeffs[0], &den_coeffs[1]);
+      let root = call(
+        "Times",
+        vec![
+          Expr::Integer(-1),
+          c0.clone(),
+          call("Power", vec![c1.clone(), Expr::Integer(-1)]),
+        ],
+      );
+      let mut parts = vec![
+        coeff,
+        num,
+        call("Power", vec![c1.clone(), Expr::Integer(-k)]),
+        call(
+          "Power",
+          vec![call1("Factorial", Expr::Integer(k - 1)), Expr::Integer(-1)],
+        ),
+        call(
+          "Power",
+          vec![
+            Expr::Constant("E".to_string()),
+            call("Times", vec![root, t_id.clone()]),
+          ],
+        ),
+      ];
+      if k > 1 {
+        parts.push(call("Power", vec![t_id, Expr::Integer(k - 1)]));
+      }
+      Some(call("Times", parts))
+    }
+    // Irreducible quadratic `c2 s^2 + c1 s + c0`, first power only.
+    3 => {
+      if k != 1 || num_coeffs.len() > 2 {
+        return None;
+      }
+      let c2 = &den_coeffs[2];
+      let inv_c2 = call("Power", vec![c2.clone(), Expr::Integer(-1)]);
+      let monic = |c: &Expr| call("Times", vec![c.clone(), inv_c2.clone()]);
+      let p = monic(&den_coeffs[1]);
+      let q = monic(&den_coeffs[0]);
+      // a = -p/2, and the pole pair sits at a ± Sqrt[a^2 - q].
+      let a = call(
+        "Times",
+        vec![
+          call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
+          p,
+        ],
+      );
+      let a = crate::evaluator::evaluate_expr_to_expr(&a).ok()?;
+      let disc = call(
+        "Plus",
+        vec![
+          call("Power", vec![a.clone(), Expr::Integer(2)]),
+          call("Times", vec![Expr::Integer(-1), q.clone()]),
+        ],
+      );
+      let disc = crate::evaluator::evaluate_expr_to_expr(&disc).ok()?;
+      let disc_value = expr_to_f64(&disc)?;
+      // A pair of complex poles oscillates, a pair of real (irrational)
+      // ones grows hyperbolically.
+      let (w2, cos_name, sin_name) = if disc_value < 0.0 {
+        (
+          call("Times", vec![Expr::Integer(-1), disc.clone()]),
+          "Cos",
+          "Sin",
+        )
+      } else {
+        (disc.clone(), "Cosh", "Sinh")
+      };
+      let w = call1("Sqrt", w2);
+      let w = crate::evaluator::evaluate_expr_to_expr(&w).ok()?;
+      let big_a = num_coeffs.get(1).cloned().unwrap_or(Expr::Integer(0));
+      let big_b = num_coeffs.first().cloned().unwrap_or(Expr::Integer(0));
+      // (A s + B)/((s - a)^2 + w^2)
+      //   = A E^(a t) Cos[w t] + ((B + A a)/w) E^(a t) Sin[w t]
+      let sin_coeff = call(
+        "Times",
+        vec![
+          call(
+            "Plus",
+            vec![big_b, call("Times", vec![big_a.clone(), a.clone()])],
+          ),
+          call("Power", vec![w.clone(), Expr::Integer(-1)]),
+        ],
+      );
+      let wt = call("Times", vec![w, t_id.clone()]);
+      let oscillation = call(
+        "Plus",
+        vec![
+          call("Times", vec![big_a, call1(cos_name, wt.clone())]),
+          call("Times", vec![sin_coeff, call1(sin_name, wt)]),
+        ],
+      );
+      Some(call(
+        "Times",
+        vec![
+          coeff,
+          inv_c2,
+          call(
+            "Power",
+            vec![
+              Expr::Constant("E".to_string()),
+              call("Times", vec![a, t_id]),
+            ],
+          ),
+          oscillation,
+        ],
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// `DiracDelta^(k)[t]`: the k-th derivative of `DiracDelta` at `t`, and
+/// plain `DiracDelta[t]` for k = 0. This is `L^-1[s^k]`.
+fn dirac_delta_derivative(k: i128, t: &str) -> Expr {
+  let t_id = Expr::Identifier(t.to_string());
+  if k == 0 {
+    return call1("DiracDelta", t_id);
+  }
+  Expr::CurriedCall {
+    func: Box::new(Expr::CurriedCall {
+      func: Box::new(call("Derivative", vec![Expr::Integer(k)])),
+      args: vec![Expr::Identifier("DiracDelta".to_string())],
+    }),
+    args: vec![t_id],
+  }
+}
+
+/// `CoefficientList[poly, var]` as exact numbers, lowest degree first.
+/// `None` if any coefficient isn't an exact number once evaluated — a
+/// machine real, a symbol or anything else keeps the caller on its
+/// numeric path.
+fn polynomial_exact_coeffs(poly: &Expr, var: &Expr) -> Option<Vec<Expr>> {
+  let list =
+    crate::functions::coefficient_list_ast(&[poly.clone(), var.clone()])
+      .ok()?;
+  let Expr::List(ref items) = list else {
+    return None;
+  };
+  items
+    .iter()
+    .map(|item| {
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(item).ok()?;
+      is_exact_number(&evaluated).then_some(evaluated)
+    })
+    .collect()
+}
+
+/// Is this an exact number — an integer, a rational, or a `Times`/`Plus`
+/// built only from those? (`Apart` hands back coefficients like
+/// `Rational[-1, 5]` already evaluated, so a shallow check suffices.)
+fn is_exact_number(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_) => true,
+    Expr::FunctionCall { name, args } if name == "Rational" => {
+      args.len() == 2 && args.iter().all(is_exact_number)
+    }
+    _ => false,
+  }
 }
 
 /// General numeric partial-fraction inversion for a proper rational
@@ -1994,12 +2303,17 @@ fn inverse_laplace_partial_fractions(
   let num_coeffs = polynomial_f64_coeffs(&num_expr, &s_id)?;
   let den_coeffs = polynomial_f64_coeffs(&den_expr, &s_id)?;
   let den_degree = den_coeffs.len().checked_sub(1)?;
-  if den_degree < 1 || num_coeffs.len() > den_coeffs.len() {
-    // A constant "denominator" (not actually rational in s) or an
-    // improper fraction (needing polynomial division first) — leave
-    // unevaluated rather than guess.
+  if den_degree < 1 {
+    // A constant "denominator" — not actually rational in s.
     return None;
   }
+  // An improper fraction carries a polynomial part: divide it out, invert
+  // it as DiracDelta derivatives and continue with the proper remainder.
+  let (quotient, num_coeffs) = if num_coeffs.len() >= den_coeffs.len() {
+    poly_divide_f64(&num_coeffs, &den_coeffs)
+  } else {
+    (Vec::new(), num_coeffs)
+  };
 
   let roots =
     crate::functions::polynomial_ast::solve::durand_kerner_roots(&den_coeffs);
@@ -2023,7 +2337,17 @@ fn inverse_laplace_partial_fractions(
   let e_const = || Expr::Constant("E".to_string());
   let t_id = || Expr::Identifier(t.to_string());
 
-  let mut terms: Vec<Expr> = Vec::new();
+  let mut terms: Vec<Expr> = quotient
+    .iter()
+    .enumerate()
+    .filter(|&(_, &c)| c != 0.0)
+    .map(|(degree, &c)| {
+      call(
+        "Times",
+        vec![Expr::Real(c), dirac_delta_derivative(degree as i128, t)],
+      )
+    })
+    .collect();
   let mut consumed = vec![false; roots.len()];
   for i in 0..roots.len() {
     if consumed[i] {
@@ -2085,6 +2409,26 @@ fn polynomial_f64_coeffs(poly: &Expr, var: &Expr) -> Option<Vec<f64>> {
       expr_to_f64(&evaluated)
     })
     .collect()
+}
+
+/// Divide one polynomial by another, both lowest-degree-first as from
+/// `CoefficientList`, into `(quotient, remainder)`. Used to split off the
+/// polynomial part of an improper fraction.
+fn poly_divide_f64(num: &[f64], den: &[f64]) -> (Vec<f64>, Vec<f64>) {
+  let mut rem = num.to_vec();
+  let den_degree = den.len() - 1;
+  let lead = den[den_degree];
+  let mut quotient = vec![0.0; rem.len().saturating_sub(den_degree)];
+  while rem.len() > den_degree {
+    let shift = rem.len() - 1 - den_degree;
+    let factor = rem[rem.len() - 1] / lead;
+    quotient[shift] = factor;
+    for (k, d) in den.iter().enumerate() {
+      rem[shift + k] -= factor * d;
+    }
+    rem.pop();
+  }
+  (quotient, rem)
 }
 
 /// Evaluate a real-coefficient polynomial (lowest-degree-first, as from

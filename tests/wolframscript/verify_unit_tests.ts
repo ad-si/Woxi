@@ -468,17 +468,28 @@ function buildWolframScript(
   for (const name of unprotected) {
     lines.push(
       'WX`Own["' + name + '"] = Quiet[OwnValues[' + name + "]]",
-      'WX`Down["' + name + '"] = Quiet[DownValues[' + name + "]]"
+      'WX`Down["' + name + '"] = Quiet[DownValues[' + name + "]]",
+      // Whether the name was born Protected. A built-in (`Red`) has to go
+      // back to protected; a plain `x` some case protects along the way
+      // must not, or the next `Protect[x]` case answers `{}` where a fresh
+      // kernel answers `{"x"}`.
+      'WX`Prot["' + name + '"] = Quiet[MemberQ[Attributes[' + name +
+        "], Protected]]"
     );
     restores.push(
       "Quiet[Unprotect[" + name + "];" +
         " OwnValues[" + name + '] = WX`Own["' + name + '"];' +
         " DownValues[" + name + '] = WX`Down["' + name + '"];' +
-        " Protect[" + name + "]]"
+        ' If[WX`Prot["' + name + '"], Protect[' + name + "]]]"
     );
   }
 
   for (const { expr, woxiResult, idx } of cases) {
+    // A `Protect[x]` case leaves `x` protected for the rest of the batch,
+    // and `ClearAll` refuses to touch a protected symbol — so a later
+    // `Protect[x]` would answer `{}` (nothing left to protect) where a
+    // fresh kernel answers `{"x"}`. Unprotect first, then clear.
+    lines.push('Quiet[Unprotect["Global`*"]]');
     lines.push('ClearAll["Global`*"]');
     // Woxi runs every case in a fresh process, so the session state a case
     // leaves behind must not reach the next one. `ClearAll` above only
@@ -1035,6 +1046,22 @@ function main() {
     // LaguerreL[5, 2, x]: Woxi returns expanded form, Wolfram returns
     // the factored-over-120 form. Same polynomial.
     "LaguerreL[5, 2, x]",
+    // InverseLaplaceTransform of a complex-conjugate pole pair: Woxi
+    // returns the real damped oscillation, Wolfram the equivalent sum of
+    // complex exponentials its own Simplify settles on. Same function;
+    // see conformance_gaps.md.
+    "InverseLaplaceTransform[1/(s^3 + 2 s^2 + 5 s), s, t]",
+    // Same terms, different canonical Plus order: Wolfram sorts the
+    // `Derivative[1][DiracDelta][t]` term last, Woxi first.
+    "InverseLaplaceTransform[s^2/(s + 1), s, t]",
+    // An `Unevaluated[…]` a pure function's body produced survives into
+    // the enclosing expression in both runtimes (`{0, …, 9}` keeps it),
+    // but Wolfram only strips a wrapper written *literally* in an
+    // argument list, while Woxi's argument-consuming built-ins strip
+    // whichever wrapper reaches them. The bare unit test passes; only
+    // this harness's `ToString[(…), InputForm]` wrapper — itself such a
+    // built-in — sees the difference. See conformance_gaps.md.
+    "(Unevaluated[Sequence[#, #^2]]) & [3]",
     // Hold[n_Integer?NonNegative]: PatternTest against a typed pattern;
     // Wolfram renders parens around the typed-pattern, Woxi omits them.
     // Parser/formatter detail, same structure.

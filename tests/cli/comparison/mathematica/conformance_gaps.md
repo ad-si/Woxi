@@ -632,6 +632,37 @@ Woxi factors, and leaves an un-combined sum after the derivative. Plain
 WL canonicalizes the resulting difference-of-squares denominator inconsistently
 (factored for `Cosh`, expanded for `Sinh`).
 
+### `InverseLaplaceTransform` of a complex-pole rational function
+
+A proper rational function with exact coefficients is inverted exactly, off
+its partial-fraction decomposition, and the residue sum is regrouped as
+`E^(k_min t)` times a polynomial in `E^t` — which reproduces WL for real
+poles (`1/((s+1)(s+2)(s+3))` → `(-1 + E^t)^2/(2 E^(3 t))`, repeated poles
+included). A **complex-conjugate pole pair** diverges in form only: Woxi
+returns the real damped oscillation, WL a sum of complex exponentials.
+
+```sh
+wolframscript -code 'InverseLaplaceTransform[1/(s^3 + 2 s^2 + 5 s), s, t]'
+# 1/5 + ((I/20)*((-1 + 2*I) + (1 + 2*I)*E^((4*I)*t)))/E^((1 + 2*I)*t)
+woxi eval 'InverseLaplaceTransform[1/(s^3 + 2 s^2 + 5 s), s, t]'
+# -1/10*(-2*E^t + 2*Cos[2*t] + Sin[2*t])/E^t
+```
+
+Both are the same function (`1/5 - E^-t (Cos[2t]/5 + Sin[2t]/10)`). WL's
+choice is its `Simplify` acting on complex residues, and it is not
+consistent — `(s+2)/((s+1)(s^2+4))` comes back in the real `Cos`/`Sin`
+form, `1/(s^2+2 s+5)` in the complex-exponential one. `Simplify` on the
+same input agrees with WL, so the divergence is in what each side feeds it.
+A real-pole numerator can also land on a different-but-tied form:
+`s/((s+1)(s+2)(s+3))` factors the polynomial in `E^t` where WL keeps it
+expanded (both cost the same by WL's own `SimplifyCount`).
+
+An improper fraction's `DiracDelta` derivative term also sorts differently
+inside the `Plus`: `InverseLaplaceTransform[s^2/(s+1), s, t]` is
+`Derivative[1][DiracDelta][t] + E^(-t) - DiracDelta[t]` where WL puts the
+`Derivative` term last. Same terms, canonical-order divergence for a
+curried head.
+
 ### `Fourier*Series` are unimplemented
 
 `FourierSinSeries`, `FourierCosSeries`, `FourierTrigSeries` and `FourierSeries`
@@ -1414,6 +1445,22 @@ arithmetic consumers are also open: `Unevaluated[1+1] + 1` is
 way. Woxi's model is per-consumer stripping because the real rule is not the
 published "strip unless HoldAllComplete".
 
+The same per-consumer stripping is why a wrapper a *pure function's body*
+produced is stripped one level too eagerly. WL strips only wrappers written
+literally in an argument list, so a produced one survives into any consumer:
+
+```sh
+wolframscript -code 'Head[(Unevaluated[Sequence[#, #^2]] &)[3]]'   # Unevaluated
+woxi eval 'Head[(Unevaluated[Sequence[#, #^2]] &)[3]]'             # Sequence
+```
+
+Structural positions agree — `{0, (Unevaluated[Sequence[#, #^2]] &)[3], 9}` is
+`{0, Unevaluated[Sequence[3, 3^2]], 9}` and `f[…]` keeps the wrapper in both —
+and so do the strippers whose wrapper *was* literal. Only an
+argument-consuming built-in (`ToString`, `Length`, `Head`) fed a produced
+wrapper diverges; telling the two apart needs the literal-ness of each
+argument threaded through to the built-in dispatch.
+
 ### A non-terminating NestWhile returns a wrong answer instead of not terminating
 
 ```sh
@@ -1958,6 +2005,22 @@ answer. These do not:
 
 
 ## Messages and error handling
+
+### Expressions inside message text print in InputForm
+
+WL formats a message's substituted expressions the way the front end shows
+them (`Times` as a space), Woxi formats them like `InputForm` (`*`):
+
+```sh
+wolframscript -code '2 x = 5'   # Set::write: Tag Times in 2 x is Protected.
+woxi eval '2 x = 5'             # Set::write: Tag Times in 2*x is Protected.
+```
+
+The message tag, its arguments and the returned value all agree; only the
+rendering of an embedded expression differs, and it does so for every
+message that embeds one (`Set::write`, `ImageAdjust::arg2`, …). Each
+message site formats with `expr_to_string`; matching WL means routing them
+through the OutputForm renderer instead.
 
 ### Outer does not report mismatched heads
 
