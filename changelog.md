@@ -2,6 +2,17 @@
 
 # Unreleased
 
+- A `FractionBox` in a prose cell keeps its grouping when Woxi Studio
+    flattens it onto one line. A two-dimensional fraction says how it groups
+    by being two-dimensional, so a compound numerator or denominator now
+    regains that grouping as parentheses: `FractionBox[μ/ρ, k/(C_p ρ)]` reads
+    as `(μ/ρ)/(k/(C_p ρ))` instead of `μ/ρ/k/(C_p ρ)`, and
+    `FractionBox[u v, g h]` as `(u v)/(g h)` — juxtaposition binds no tighter
+    than division in linear notation. Single symbols are left alone.
+- `SubscriptBox["", script]` in a prose cell renders as the script alone. The
+    FrontEnd draws nothing where the empty base would go, so there is no base
+    for an underscore to attach to and `_C_p` used to invent a symbol.
+
 - `;;` no longer swallows the operators that bind looser than it. `Span` has
     Wolfram precedence 305, so `=`, `:=`, `==`, `&&`, `||`, `|`, `~~` and
     `/;` are the *outer* expression: `x = 1 ;; 3` stores `Span[1, 3]` in `x`
