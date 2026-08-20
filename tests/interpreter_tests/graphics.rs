@@ -461,6 +461,36 @@ mod graphics {
     }
 
     #[test]
+    fn bspline_curve_spline_degree_1_is_polyline() {
+      // A degree-1 uniform B-spline is piecewise-linear interpolation
+      // through its control points, so it must pass exactly through
+      // {1, 2} and {2, 0} as well as the endpoints.
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{BSplineCurve[{{0, 0}, {1, 2}, {2, 0}, {3, 1}}, SplineDegree -> 1]}]"
+      ));
+    }
+
+    #[test]
+    fn bspline_curve_spline_degree_2() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{BSplineCurve[{{0,0},{1,3},{2,1},{3,4},{4,0},{5,2}}, SplineDegree -> 2]}]"
+      ));
+    }
+
+    #[test]
+    fn bspline_curve_spline_degree_matches_default_degree_3() {
+      // SplineDegree -> 3 is Wolfram's default for four control points,
+      // so it must render identically to leaving the option off.
+      let with_default = export_svg(
+        "Graphics[{BSplineCurve[{{0, 0}, {1, 2}, {2, 0}, {3, 1}}]}]",
+      );
+      let with_explicit_degree = export_svg(
+        "Graphics[{BSplineCurve[{{0, 0}, {1, 2}, {2, 0}, {3, 1}}, SplineDegree -> 3]}]",
+      );
+      assert_eq!(with_default, with_explicit_degree);
+    }
+
+    #[test]
     fn polar_curve() {
       insta::assert_snapshot!(export_svg(
         "Graphics[PolarCurve[1 + Cos[t], {t, 0, 2 Pi}]]"
@@ -2838,6 +2868,48 @@ mod plot3d {
     #[test]
     fn graphics3d_sphere() {
       insta::assert_snapshot!(export_svg("Graphics3D[Sphere[]]"));
+    }
+
+    // Regression: `BSplineCurve[…, SplineDegree -> k]` and `Tube[BSplineCurve[…,
+    // SplineDegree -> k], r]` used to ignore SplineDegree and always render a
+    // cubic (degree-3) spline, as spotted in the "Chain Mail" Demonstration,
+    // which builds its rings with SplineDegree -> 2.
+    #[test]
+    fn graphics3d_bspline_curve_spline_degree_matches_default_degree_3() {
+      let with_default = export_svg(
+        "Graphics3D[{BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}, {3, 1, 0}}]}]",
+      );
+      let with_explicit_degree = export_svg(
+        "Graphics3D[{BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}, {3, 1, 0}}, \
+        SplineDegree -> 3]}]",
+      );
+      assert_eq!(with_default, with_explicit_degree);
+    }
+
+    #[test]
+    fn graphics3d_bspline_curve_spline_degree_2_differs_from_default() {
+      let with_default = export_svg(
+        "Graphics3D[{BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}, {3, 1, 0}, \
+        {4, 0, 0}}]}]",
+      );
+      let with_degree_2 = export_svg(
+        "Graphics3D[{BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}, {3, 1, 0}, \
+        {4, 0, 0}}, SplineDegree -> 2]}]",
+      );
+      assert_ne!(with_default, with_degree_2);
+    }
+
+    #[test]
+    fn graphics3d_tube_bspline_curve_spline_degree_2_differs_from_default() {
+      let with_default = export_svg(
+        "Graphics3D[{Tube[BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}, \
+        {3, 1, 0}, {4, 0, 0}}], 0.1]}]",
+      );
+      let with_degree_2 = export_svg(
+        "Graphics3D[{Tube[BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}, \
+        {3, 1, 0}, {4, 0, 0}}, SplineDegree -> 2], 0.1]}]",
+      );
+      assert_ne!(with_default, with_degree_2);
     }
 
     // Regression: a Grid/Column PlotLabel on a 3-D picture (as Demonstrations
@@ -15695,6 +15767,133 @@ mod contour_plot_3d {
       .unwrap(),
       "Graphics3D"
     );
+  }
+
+  mod basic {
+    use super::*;
+
+    #[test]
+    fn sphere_isosurface() {
+      insta::assert_snapshot!(export_svg(
+        "ContourPlot3D[x^2 + y^2 + z^2 == 4, {x, -3, 3}, {y, -3, 3}, \
+         {z, -3, 3}]"
+      ));
+    }
+
+    #[test]
+    fn plane_isosurface() {
+      insta::assert_snapshot!(export_svg(
+        "ContourPlot3D[x + y == 4, {x, 0, 5}, {y, 0, 5}, {z, 0, 10}]"
+      ));
+    }
+
+    #[test]
+    fn saddle_isosurface() {
+      insta::assert_snapshot!(export_svg(
+        "ContourPlot3D[x^2 - y^2 - z == 0, {x, -2, 2}, {y, -2, 2}, \
+         {z, -2, 2}]"
+      ));
+    }
+
+    #[test]
+    fn bare_expression_is_its_own_zero_contour() {
+      // No `== c`: ContourPlot3D[f, …] plots the surface f == 0, the same
+      // surface as writing the equation out explicitly.
+      let bare = export_svg(
+        "ContourPlot3D[x^2 + y^2 + z^2 - 4, {x, -3, 3}, {y, -3, 3}, \
+         {z, -3, 3}]",
+      );
+      let explicit = export_svg(
+        "ContourPlot3D[x^2 + y^2 + z^2 == 4, {x, -3, 3}, {y, -3, 3}, \
+         {z, -3, 3}]",
+      );
+      assert_eq!(bare, explicit);
+    }
+  }
+
+  mod options {
+    use super::*;
+
+    #[test]
+    fn contour_style_color_and_opacity() {
+      insta::assert_snapshot!(export_svg(
+        "ContourPlot3D[x + y == 4, {x, 0, 5}, {y, 0, 5}, {z, 0, 10}, \
+         ContourStyle -> Directive[LightBlue, Opacity[0.5]], Mesh -> None]"
+      ));
+    }
+
+    #[test]
+    fn list_of_equations_draws_each_surface() {
+      assert_eq!(
+        interpret(
+          "Head[ContourPlot3D[{x + y == 2, x + y == 4}, {x, 0, 5}, \
+           {y, 0, 5}, {z, 0, 10}]]"
+        )
+        .unwrap(),
+        "Graphics3D"
+      );
+    }
+
+    #[test]
+    fn image_size() {
+      insta::assert_snapshot!(export_svg(
+        "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \
+         {y, -1.5, 1.5}, {z, -1.5, 1.5}, ImageSize -> 200]"
+      ));
+    }
+  }
+
+  mod errors {
+    use super::*;
+
+    #[test]
+    fn too_few_args() {
+      let result =
+        interpret("ContourPlot3D[x^2 + y^2 - z^2, {x, -1, 1}, {y, -1, 1}]")
+          .unwrap();
+      assert!(
+        result.contains("ContourPlot3D"),
+        "Should return unevaluated: {result}"
+      );
+    }
+
+    #[test]
+    fn no_surface_in_range() {
+      // The field never reaches 100 inside this box (max is 3), so there is
+      // nothing to draw.
+      assert!(
+        interpret(
+          "ContourPlot3D[x^2 + y^2 + z^2 == 100, {x, -1, 1}, {y, -1, 1}, \
+           {z, -1, 1}]"
+        )
+        .is_err()
+      );
+    }
+  }
+
+  mod regression {
+    use super::*;
+
+    /// Woxi's `ContourPlot3D` used to be a placeholder that always rendered
+    /// an empty `Graphics3D` shell with no surface. This guards against
+    /// silently regressing back to that: the isosurface must actually be
+    /// drawn as filled triangles.
+    #[test]
+    fn draws_real_geometry_not_an_empty_placeholder() {
+      let svg = export_svg(
+        "ContourPlot3D[x^2 + y^2 + z^2 == 4, {x, -3, 3}, {y, -3, 3}, \
+         {z, -3, 3}]",
+      );
+      assert!(
+        svg.contains("<polygon"),
+        "expected filled polygons in the isosurface, got: {svg}"
+      );
+      assert!(
+        svg.len() > 1000,
+        "expected substantial SVG content, got {} bytes",
+        svg.len()
+      );
+    }
   }
 }
 

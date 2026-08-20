@@ -7073,6 +7073,62 @@ mod seed_random {
   }
 }
 
+mod block_random {
+  use super::*;
+
+  #[test]
+  fn localizes_seed_random() {
+    // A `SeedRandom` inside `BlockRandom` must not affect the outer random
+    // sequence: the draw right after `BlockRandom` returns should match the
+    // draw that would have come next had `BlockRandom` never run.
+    woxi::clear_state();
+    let _ = interpret("SeedRandom[42]");
+    let a = interpret("RandomInteger[1000]").unwrap();
+    let b = interpret("RandomInteger[1000]").unwrap();
+
+    woxi::clear_state();
+    let _ = interpret("SeedRandom[42]");
+    let a2 = interpret("RandomInteger[1000]").unwrap();
+    assert_eq!(a, a2);
+    let _ = interpret("BlockRandom[SeedRandom[1]; RandomInteger[1000]]");
+    let b2 = interpret("RandomInteger[1000]").unwrap();
+    assert_eq!(b, b2);
+  }
+
+  #[test]
+  fn deterministic_inside() {
+    woxi::clear_state();
+    let a =
+      interpret("BlockRandom[SeedRandom[7]; RandomInteger[1000]]").unwrap();
+    let b =
+      interpret("BlockRandom[SeedRandom[7]; RandomInteger[1000]]").unwrap();
+    assert_eq!(a, b);
+  }
+
+  #[test]
+  fn returns_body_value() {
+    woxi::clear_state();
+    assert_eq!(interpret("BlockRandom[1 + 1]").unwrap(), "2");
+  }
+
+  #[test]
+  fn two_arg_form_ignores_method_spec() {
+    woxi::clear_state();
+    let result =
+      interpret("BlockRandom[SeedRandom[7]; RandomInteger[1000], Method]");
+    assert!(result.is_ok());
+  }
+
+  #[test]
+  fn attributes_hold_all() {
+    woxi::clear_state();
+    assert_eq!(
+      interpret("Attributes[BlockRandom]").unwrap(),
+      "{HoldAll, Protected}"
+    );
+  }
+}
+
 mod select {
   use super::*;
 

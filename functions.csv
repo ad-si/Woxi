@@ -390,7 +390,7 @@ ArcCsch,Returns the inverse hyperbolic cosecant,✅,pure,1.0,348
 ArcCoth,Returns the inverse hyperbolic cotangent,✅,pure,1.0,327
 ArcSech,Returns the inverse hyperbolic secant,✅,pure,1.0,335
 SeedRandom,Seeds the random number generator,✅,stateful,1.0,351
-ContourPlot3D,Placeholder 3D contour plot returning a Graphics3D shell,✅,pure,6.0,352
+ContourPlot3D,3D contour plot of the isosurface f == c via marching tetrahedra,✅,pure,6.0,352
 Catch,Catches a value thrown by Throw; the form is matched as a pattern and the 3-arg form applies f to the value and tag,✅,pure,1.0,353
 InputForm,Converts expression to input form,✅,pure,1.0,354
 Sow,Sows an expression for collection by Reap,✅,stateful,5.0,355
@@ -1146,7 +1146,7 @@ ListCorrelate,Discrete cross-correlation of two lists with optional overhang cyc
 After,,🚫,,3.0,1130
 IntegerLength,Returns the number of digits in an integer,✅,pure,6.0,1132
 StirlingS2,Returns the Stirling number of the second kind,✅,pure,1.0,1133
-BlockRandom,,🚫,,6.0,1134
+BlockRandom,Evaluates an expression with the random number generator localized so any SeedRandom inside does not affect the outer random sequence,✅,pure,6.0,1134
 Correlation,Pearson correlation of two lists; of one data matrix gives the correlation matrix of its columns; of a multivariate distribution gives its normalized covariance matrix,✅,pure,6.0,1135
 SwatchLegend,Inert legend description with color swatches consumed by Legended (produced by PeriodicTablePlot property coloring),✅,pure,9.0,1136
 TreeForm,Display an expression as a tree structure,✅,pure,1.0,1138

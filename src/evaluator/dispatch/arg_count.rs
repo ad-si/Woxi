@@ -1254,7 +1254,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "RotateLeft" => Some((1, 2)),
     "RotateRight" => Some((1, 2)),
     "RotationMatrix" => Some((1, 2)),
-    "RotationTransform" => Some((1, 2)),
+    "RotationTransform" => Some((1, 3)),
     "Round" => Some((1, 2)),
     "RowReduce" => Some((1, 2)),
     "RankDecomposition" => Some((1, 1)),

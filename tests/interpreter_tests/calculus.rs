@@ -7558,6 +7558,31 @@ mod ndsolve {
   }
 
   #[test]
+  fn ndsolve_implicit_coefficient_times_indexed_double_derivative() {
+    // Regression: a coefficient placed via implicit multiplication directly
+    // before an indexed function's double derivative (`mu pos[1]''[t]`, no
+    // `*`) used to fail to parse — this is exactly the shape of the
+    // equations of motion in a lattice/chain ODE (e.g. coupled oscillators),
+    // where each particle's acceleration is written as `mass x[k]''[t]`.
+    // With mass canceling out, `mu pos[1]''[t] == -2 mu pos[1][t]` reduces
+    // to `pos1'' = -2 pos1`, so with pos1(0) = 1, pos1'(0) = 0 the solution
+    // is `pos1(t) = Cos[Sqrt[2] t]`.
+    let result = interpret(
+      "mu = 2; \
+       sol = NDSolve[{mu pos[1]''[t] == -2 mu pos[1][t], \
+       pos[1][0] == 1, pos[1]'[0] == 0}, pos[1], {t, 0, 2}]; \
+       (pos[1] /. sol[[1]])[1.0]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = (2.0_f64.sqrt()).cos();
+    assert!(
+      (val - expected).abs() < 0.01,
+      "Expected {expected}, got {val}"
+    );
+  }
+
+  #[test]
   fn interior_initial_point_integrates_both_directions() {
     // The initial condition sits inside the domain: y' = y, y(1) = 1 on
     // {t, 0, 2} → y(t) = E^(t-1) on both sides of t = 1.

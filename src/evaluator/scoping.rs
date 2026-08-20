@@ -313,6 +313,24 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   result
 }
 
+/// `BlockRandom[expr]` (also accepts the 2-arg `BlockRandom[expr, seedspec]`
+/// form, ignoring `seedspec`): evaluates `expr` with the global random
+/// generator state localized, so a `SeedRandom[…]` call inside `expr` does
+/// not affect the random sequence seen after `BlockRandom` returns.
+pub fn block_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "BlockRandom expects 1 or 2 arguments; {} given",
+      args.len()
+    )));
+  }
+
+  let saved = crate::snapshot_rng_state();
+  let result = evaluate_expr_to_expr(&args[0]);
+  crate::restore_rng_state(saved);
+  result
+}
+
 /// Valid domain names for Element[]
 const VALID_DOMAINS: &[&str] = &[
   "Primes",
