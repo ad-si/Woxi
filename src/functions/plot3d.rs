@@ -977,7 +977,7 @@ fn generate_svg(
       for s in 0..EDGE_SUBDIVISIONS {
         let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
         let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
-        let tm = (t0 + t1) * 0.5;
+        let tm = f64::midpoint(t0, t1);
         let lerp = |t: f64| Point3D {
           x: a.x + (b.x - a.x) * t,
           y: a.y + (b.y - a.y) * t,
@@ -1274,7 +1274,7 @@ fn draw_axes_on_box(
       let (dx, dy) = (sx1 - sx0, sy1 - sy0);
       let len = (dx * dx + dy * dy).sqrt();
       if len > 1.0 {
-        let (mid_x, mid_y) = ((sx0 + sx1) * 0.5, (sy0 + sy1) * 0.5);
+        let (mid_x, mid_y) = (f64::midpoint(sx0, sx1), f64::midpoint(sy0, sy1));
         let (perpx, perpy) = (-dy / len, dx / len);
         let sign = if perpx * (cx - mid_x) + perpy * (cy - mid_y) > 0.0 {
           -1.0
@@ -1342,8 +1342,8 @@ fn draw_axes_on_box(
                 ));
 
         // Place label on the outward side (away from box center)
-        let mid_x = (sx0 + sx1) * 0.5;
-        let mid_y = (sy0 + sy1) * 0.5;
+        let mid_x = f64::midpoint(sx0, sx1);
+        let mid_y = f64::midpoint(sy0, sy1);
         let to_center_x = cx - mid_x;
         let to_center_y = cy - mid_y;
         let sign = if perpx * to_center_x + perpy * to_center_y > 0.0 {
@@ -1720,7 +1720,7 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for s in 0..EDGE_SUBDIVISIONS {
         let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
         let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
-        let tm = (t0 + t1) * 0.5;
+        let tm = f64::midpoint(t0, t1);
         let lerp = |t: f64| Point3D {
           x: a.x + (b.x - a.x) * t,
           y: a.y + (b.y - a.y) * t,
@@ -5549,7 +5549,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for s in 0..EDGE_SUBDIVISIONS {
         let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
         let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
-        let tm = (t0 + t1) * 0.5;
+        let tm = f64::midpoint(t0, t1);
         let lerp = |t: f64| Point3D {
           x: a.x + (b.x - a.x) * t,
           y: a.y + (b.y - a.y) * t,
@@ -5590,7 +5590,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           for s in 0..LINE_SUBDIVISIONS {
             let t0 = s as f64 / LINE_SUBDIVISIONS as f64;
             let t1 = (s + 1) as f64 / LINE_SUBDIVISIONS as f64;
-            let tm = (t0 + t1) * 0.5;
+            let tm = f64::midpoint(t0, t1);
             let lerp = |t: f64| Point3D {
               x: a.x + (b.x - a.x) * t,
               y: a.y + (b.y - a.y) * t,
@@ -7956,7 +7956,7 @@ fn generate_scatter_svg(
     for s in 0..EDGE_SUBDIVISIONS {
       let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
       let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
-      let tm = (t0 + t1) * 0.5;
+      let tm = f64::midpoint(t0, t1);
       let lerp = |t: f64| Point3D {
         x: a.x + (b.x - a.x) * t,
         y: a.y + (b.y - a.y) * t,
@@ -8211,9 +8211,9 @@ pub fn list_line_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (ax, ay) = project(a, &camera);
       let (bx, by) = project(b, &camera);
       let mid = Point3D {
-        x: (a.x + b.x) * 0.5,
-        y: (a.y + b.y) * 0.5,
-        z: (a.z + b.z) * 0.5,
+        x: f64::midpoint(a.x, b.x),
+        y: f64::midpoint(a.y, b.y),
+        z: f64::midpoint(a.z, b.z),
       };
       segments.push(LineSeg3D {
         x0: ax,
@@ -8363,7 +8363,7 @@ fn generate_line3d_svg(
     for s in 0..EDGE_SUBDIVISIONS {
       let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
       let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
-      let tm = (t0 + t1) * 0.5;
+      let tm = f64::midpoint(t0, t1);
       let lerp = |t: f64| Point3D {
         x: a.x + (b.x - a.x) * t,
         y: a.y + (b.y - a.y) * t,

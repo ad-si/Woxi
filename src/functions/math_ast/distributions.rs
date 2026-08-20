@@ -1127,7 +1127,7 @@ pub fn quantile_distribution_numeric(
   let mut lo_b = lo;
   // Bisection: ~50 iterations gives ≈1e-15 precision for any sane support.
   for _ in 0..80 {
-    let mid = 0.5 * (lo_b + hi);
+    let mid = f64::midpoint(lo_b, hi);
     let Some(c) = cdf_at(mid) else {
       return Ok(None);
     };
@@ -1140,7 +1140,7 @@ pub fn quantile_distribution_numeric(
       break;
     }
   }
-  Ok(Some(Expr::Real(0.5 * (lo_b + hi))))
+  Ok(Some(Expr::Real(f64::midpoint(lo_b, hi))))
 }
 
 /// PDF[ProbabilityDistribution[pdf_expr, {var, lo, hi}], t] substitutes `t`
@@ -9568,8 +9568,7 @@ fn cdf_coxian(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     return uneval(x);
   };
   let mut terms: Vec<Expr> = vec![int(1)];
-  let default;
-  if distinct {
+  let default = if distinct {
     let coeffs = coxian_distinct_coefficients(&alphas, &rates)?;
     let mut order: Vec<usize> = (0..rates.len()).collect();
     let val = |i: usize| try_eval_to_f64(&rates[i]).unwrap();
@@ -9578,7 +9577,7 @@ fn cdf_coxian(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       let c = eval(&times2(int(-1), coeffs[i].clone()))?;
       terms.push(coxian_exp_term(c, None, &rates[i], &x));
     }
-    default = int(0);
+    int(0)
   } else {
     // Survival of the equal-rate mixture: Σ_j (Σ_{k>j} w_k) λ^j x^j
     // e^(-λ x)/j! subtracted from 1.
@@ -9604,8 +9603,8 @@ fn cdf_coxian(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       };
       terms.push(coxian_exp_term(c, xpow, lam, &x));
     }
-    default = int(1);
-  }
+    int(1)
+  };
   let value = call("Plus", terms);
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
   eval(&piecewise(vec![(value, cond)], default))
@@ -17208,8 +17207,7 @@ pub fn truncated_distribution_value(
       // Below the interval nothing has accumulated; above it, everything has.
       Some(false) => {
         let below = eval("Less", vec![x.clone(), lo.clone()])
-          .ok()
-          .is_some_and(|r| matches!(&r, Expr::Identifier(b) if b == "True"));
+          .is_ok_and(|r| matches!(&r, Expr::Identifier(b) if b == "True"));
         Ok(Some(Expr::Integer(i128::from(!below))))
       }
       None => Ok(None),
