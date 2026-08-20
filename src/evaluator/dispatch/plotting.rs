@@ -453,9 +453,8 @@ pub fn dispatch_plotting(
     "ContourPlot" if args.len() >= 3 => Some(quiet_plot(|| {
       crate::functions::field_plot::contour_plot_ast(args)
     })),
-    // ContourPlot3D[f, {x, x0, x1}, {y, y0, y1}, {z, z0, z1}, opts…] —
-    // returns a placeholder Graphics3D matching wolframscript's
-    // `-Graphics3D-`. The full level-set surface is not yet computed.
+    // ContourPlot3D[f == c, {x, x0, x1}, {y, y0, y1}, {z, z0, z1}, opts…] —
+    // extracts the level-set surface with marching tetrahedra.
     "ContourPlot3D"
       if args.len() >= 4
         && matches!(
@@ -472,7 +471,7 @@ pub fn dispatch_plotting(
         ) =>
     {
       Some(quiet_plot(|| {
-        crate::functions::plot3d::graphics3d_ast(&[Expr::List(vec![].into())])
+        crate::functions::plot3d::contour_plot3d_ast(args)
       }))
     }
     "RegionPlot" if args.len() >= 3 => Some(quiet_plot(|| {
