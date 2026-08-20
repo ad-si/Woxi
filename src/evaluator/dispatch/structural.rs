@@ -91,6 +91,7 @@ pub fn dispatch_structural(
     // display path (a Grid, a Graphics, a Column) renders it as itself.
     "Module" | "DynamicModule" => return Some(module_ast(args)),
     "Block" => return Some(block_ast(args)),
+    "BlockRandom" => return Some(block_random_ast(args)),
     "Assuming" if args.len() == 2 => return Some(assuming_ast(args)),
     "With" if args.len() >= 2 => return Some(with_ast(args)),
     "Set" if args.len() == 2 => {

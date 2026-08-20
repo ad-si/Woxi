@@ -559,7 +559,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
 
     // HoldAll + Protected
     "Hold" | "HoldForm" | "HoldPattern" | "Table" | "Do" | "While" | "For"
-    | "Module" | "DynamicModule" | "Block" | "With" | "Assuming" | "Trace"
+    | "Module" | "DynamicModule" | "Block" | "BlockRandom" | "With"
+    | "Assuming" | "Trace"
     | "TraceScan" | "TracePrint"
     | "Defer" | "Compile" | "CompiledFunction" | "Which"
     | "Clear" | "ClearAll" | "Condition" | "Off" | "On"
