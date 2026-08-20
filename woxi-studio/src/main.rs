@@ -6665,6 +6665,77 @@ mod tests {
     );
   }
 
+  /// A lattice of masses coupled by `NDSolve`, with a discrete `view`
+  /// control switching between `Plot` and `ListPlot3D` of the same
+  /// solution, a `SeedRandom`+`Module` compound body, styled `Tiny`
+  /// labeled sliders, a Greek-letter coefficient, and a label-less
+  /// `{seed, default}` slider spec. This mirrors the general construct
+  /// category used by many coupled-oscillator/lattice Wolfram
+  /// Demonstrations Project notebooks (independently written, not copied
+  /// from any specific one).
+  #[test]
+  fn manipulate_lattice_ode_which_view_switch_and_greek_slider() {
+    let code = r#"Manipulate[
+      SeedRandom[seed];
+      Module[{sol = NDSolve[
+          Flatten[{
+            Table[mass pos[k]''[time] == pos[k + 1][time] - 2 pos[k][time] + pos[k - 1][time] - β Derivative[1][pos[k]][time],
+              {k, count}] /. {pos[0][time] :> 0, pos[count + 1][time] :> 0},
+            Table[{pos[k][0] == k, Derivative[1][pos[k]][0] == 0}, {k, count}]
+          }],
+          Table[pos[k], {k, count}], {time, 0, span}]},
+        Pane[Which[
+          view == "plot", Plot[Evaluate[Table[pos[k][time], {k, count}] /. sol], {time, 0, span}],
+          view == "3D plot", ListPlot3D[Evaluate[Table[pos[k][time], {k, count}, {time, 0, span, 0.5}] /. sol[[1]]]]
+        ], ImageSize -> 300]
+      ],
+      {{view, "plot"}, {"plot", "3D plot"}, ControlPlacement -> Top},
+      {{count, 4, Style["particles", Italic]}, 2, 12, 1, ImageSize -> Tiny, Appearance -> "Labeled"},
+      {{span, 10., Style["duration", Italic]}, 1, 40, ImageSize -> Tiny, Appearance -> "Labeled"},
+      {{mass, 1., Style["mass", Italic]}, 0.1, 5, ImageSize -> Tiny, Appearance -> "Labeled"},
+      {{β, 1, Style["damping", Italic]}, 0, 5, ImageSize -> Tiny, Appearance -> "Labeled"},
+      {{seed, 12345}, 1, 999999, 1, ImageSize -> Tiny},
+      ControlPlacement -> Left,
+      SynchronousUpdating -> False
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a view popup + four labeled sliders + a label-less slider should build a ManipulateState",
+    );
+
+    assert_eq!(state.controls.len(), 6, "view, count, span, mass, β, seed");
+    assert!(
+      matches!(
+        &state.controls[0],
+        manipulate::ControlState::Discrete { name, value_labels, .. }
+          if name == "view" && value_labels == &["plot", "3D plot"]
+      ),
+      "the view/plot-choices spec should build a two-choice discrete control: {:?}",
+      state.controls[0]
+    );
+    for (i, label) in ["count", "span", "mass", "β", "seed"].iter().enumerate()
+    {
+      assert!(
+        matches!(
+          &state.controls[i + 1],
+          manipulate::ControlState::Continuous { name, .. } if name == label
+        ),
+        "control {i} should be the continuous slider {label:?}: {:?}",
+        state.controls[i + 1]
+      );
+    }
+    assert!(
+      state.error.is_none(),
+      "body should evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "Plot of the NDSolve lattice solution should render a graphic"
+    );
+  }
+
   /// A discrete `SetterBar`-style term-count picker (`{{n, 2, "terms"},
   /// {2, 3, 4}}`) that `Take`s that many sliders and folds them through a
   /// recursive, pattern-matched, `Module`-based extended-GCD helper (mixing

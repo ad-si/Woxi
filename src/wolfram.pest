@@ -940,7 +940,11 @@ FunctionArg = _{ &HasRuleOperator ~ FunctionArgRule | &HasSemicolon ~ CompoundEx
 FunctionArgOrOmitted = _{ FunctionArg | OmittedArg }
 FunctionArgOrOmittedLast = _{ FunctionArg | OmittedArg | OmittedTrailingArg }
 BracketArgs = { "[" ~ (FunctionArgOrOmitted ~ ("," ~ FunctionArgOrOmittedLast)*)? ~ "]" }
-FunctionCall = { (Identifier | NamedCharIdentifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+ ~ DerivativePrime? }
+// A trailing prime may itself be applied to further bracket args, same as
+// FunctionCallExtended: `x[i]''[t]` -> `Derivative[2][x[i]][t]`. This matters
+// inside implicit multiplication (`m x[i]''[t]`), where SimpleTerm uses this
+// rule rather than FunctionCallExtended.
+FunctionCall = { (Identifier | NamedCharIdentifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+ ~ (DerivativePrime ~ BracketArgs*)? }
 
 // FunctionDefinition supports multiple pattern arguments: f[a_, b_] := ...
 // `PatternOptionalNamedBlank` (`x:_:v`) and `PatternOptionalAnonBlank`
