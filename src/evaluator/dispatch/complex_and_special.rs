@@ -4267,9 +4267,9 @@ fn trim_bigfloat_to_precision_for_output(expr: &Expr) -> Expr {
   match expr {
     Expr::BigFloat(digits, prec) => {
       // OutputForm shows exactly `prec` significant digits:
-      // truncate when the stored digits exceed it, pad with
+      // round when the stored digits exceed it, pad with
       // trailing zeros when they fall short. Examples:
-      //   BigFloat("3.142", 3) → "3.14"     (truncate)
+      //   BigFloat("3.142", 3) → "3.14"     (round)
       //   BigFloat("3.14",  5) → "3.1400"   (pad)
       let prec_target = prec.round().max(1.0) as usize;
       let (sign, rest) = if let Some(r) = digits.strip_prefix('-') {
@@ -4277,33 +4277,13 @@ fn trim_bigfloat_to_precision_for_output(expr: &Expr) -> Expr {
       } else {
         ("", digits.as_str())
       };
-      let (int_part, frac_part) = match rest.find('.') {
-        Some(dp) => (&rest[..dp], &rest[dp + 1..]),
-        None => (rest, ""),
-      };
-      let int_sig = if int_part == "0" {
-        0
-      } else {
-        int_part.trim_start_matches('0').len()
-      };
-      let frac_needed = prec_target.saturating_sub(int_sig);
-      let formatted = if frac_needed == 0 {
-        format!("{sign}{int_part}.")
-      } else if frac_part.len() >= frac_needed {
-        format!("{}{}.{}", sign, int_part, &frac_part[..frac_needed])
-      } else {
-        format!(
-          "{}{}.{}{}",
-          sign,
-          int_part,
-          frac_part,
-          "0".repeat(frac_needed - frac_part.len())
-        )
-      };
       // OutputForm uses `Raw` so the rendered text is the exact
-      // padded/truncated decimal — bypasses `format_real`'s
+      // padded/rounded decimal — bypasses `format_real`'s
       // default trimming.
-      Expr::Raw(formatted)
+      Expr::Raw(format!(
+        "{sign}{}",
+        crate::round_significant(rest, prec_target)
+      ))
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),

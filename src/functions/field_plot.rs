@@ -798,7 +798,7 @@ fn band_color(
   bounds.push(v_min);
   bounds.extend_from_slice(levels);
   bounds.push(v_max);
-  let mid = 0.5 * (bounds[band] + bounds[band + 1]);
+  let mid = f64::midpoint(bounds[band], bounds[band + 1]);
   scaled_color(scale_value(mid, v_min, v_max), color_function)
 }
 
@@ -1652,6 +1652,7 @@ fn contour_plot_equations(
           fill_opacity: None,
           marker: None,
           thickness: series_thickness,
+          point_size: None,
         });
       }
     }

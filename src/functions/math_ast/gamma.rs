@@ -1440,14 +1440,14 @@ fn inverse_beta_regularized_numeric(s: f64, a: f64, b: f64) -> f64 {
   let mut lo = 0.0_f64;
   let mut hi = 1.0_f64;
   for _ in 0..200 {
-    let mid = 0.5 * (lo + hi);
+    let mid = f64::midpoint(lo, hi);
     if beta_regularized_numeric(mid, a, b) < s {
       lo = mid;
     } else {
       hi = mid;
     }
   }
-  0.5 * (lo + hi)
+  f64::midpoint(lo, hi)
 }
 
 /// InverseBetaRegularized[s, a, b] - inverse of the regularized incomplete beta
@@ -1932,14 +1932,14 @@ fn inverse_gamma_regularized_numeric(a: f64, q: f64) -> f64 {
     guard += 1;
   }
   for _ in 0..200 {
-    let mid = 0.5 * (lo + hi);
+    let mid = f64::midpoint(lo, hi);
     if gamma_regularized_numeric(a, mid) > q {
       lo = mid;
     } else {
       hi = mid;
     }
   }
-  0.5 * (lo + hi)
+  f64::midpoint(lo, hi)
 }
 
 /// InverseGammaRegularized[a, q] - inverse of the upper regularized incomplete

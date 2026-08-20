@@ -977,7 +977,7 @@ fn generate_svg(
       for s in 0..EDGE_SUBDIVISIONS {
         let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
         let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
-        let tm = (t0 + t1) * 0.5;
+        let tm = f64::midpoint(t0, t1);
         let lerp = |t: f64| Point3D {
           x: a.x + (b.x - a.x) * t,
           y: a.y + (b.y - a.y) * t,
@@ -1274,7 +1274,7 @@ fn draw_axes_on_box(
       let (dx, dy) = (sx1 - sx0, sy1 - sy0);
       let len = (dx * dx + dy * dy).sqrt();
       if len > 1.0 {
-        let (mid_x, mid_y) = ((sx0 + sx1) * 0.5, (sy0 + sy1) * 0.5);
+        let (mid_x, mid_y) = (f64::midpoint(sx0, sx1), f64::midpoint(sy0, sy1));
         let (perpx, perpy) = (-dy / len, dx / len);
         let sign = if perpx * (cx - mid_x) + perpy * (cy - mid_y) > 0.0 {
           -1.0
@@ -1342,8 +1342,8 @@ fn draw_axes_on_box(
                 ));
 
         // Place label on the outward side (away from box center)
-        let mid_x = (sx0 + sx1) * 0.5;
-        let mid_y = (sy0 + sy1) * 0.5;
+        let mid_x = f64::midpoint(sx0, sx1);
+        let mid_y = f64::midpoint(sy0, sy1);
         let to_center_x = cx - mid_x;
         let to_center_y = cy - mid_y;
         let sign = if perpx * to_center_x + perpy * to_center_y > 0.0 {
@@ -1720,7 +1720,7 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for s in 0..EDGE_SUBDIVISIONS {
         let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
         let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
-        let tm = (t0 + t1) * 0.5;
+        let tm = f64::midpoint(t0, t1);
         let lerp = |t: f64| Point3D {
           x: a.x + (b.x - a.x) * t,
           y: a.y + (b.y - a.y) * t,
@@ -5549,7 +5549,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for s in 0..EDGE_SUBDIVISIONS {
         let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
         let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
-        let tm = (t0 + t1) * 0.5;
+        let tm = f64::midpoint(t0, t1);
         let lerp = |t: f64| Point3D {
           x: a.x + (b.x - a.x) * t,
           y: a.y + (b.y - a.y) * t,
@@ -5590,7 +5590,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           for s in 0..LINE_SUBDIVISIONS {
             let t0 = s as f64 / LINE_SUBDIVISIONS as f64;
             let t1 = (s + 1) as f64 / LINE_SUBDIVISIONS as f64;
-            let tm = (t0 + t1) * 0.5;
+            let tm = f64::midpoint(t0, t1);
             let lerp = |t: f64| Point3D {
               x: a.x + (b.x - a.x) * t,
               y: a.y + (b.y - a.y) * t,
@@ -5672,12 +5672,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         String::new()
       };
       // The outline colour: the default dark grey unless `EdgeForm[colour]`
-      // named one. A named colour is also drawn opaque, so the outline of a
-      // transparent face still shows — that is what makes
-      // `{Opacity[0], EdgeForm[Black], Cylinder[…]}` an unfilled circle.
-      let (edge_stroke, edge_opacity_attr) = match tri.edge_color {
-        Some((er, eg, eb)) => (format!("rgb({er},{eg},{eb})"), String::new()),
-        None => ("rgb(64,64,64)".to_string(), opacity_attr.clone()),
+      // named one. `Opacity` tints the face only — the outline is drawn by
+      // the default `EdgeForm`, which stays opaque — so the outline of a
+      // transparent face still shows. That is what makes
+      // `{Opacity[0], Cuboid[…]}` a wireframe box.
+      let edge_stroke = match tri.edge_color {
+        Some((er, eg, eb)) => format!("rgb({er},{eg},{eb})"),
+        None => "rgb(64,64,64)".to_string(),
+      };
+      let fill_opacity_attr = if tri.opacity < 1.0 {
+        format!(" fill-opacity=\"{}\"", tri.opacity)
+      } else {
+        String::new()
       };
       // The hairline stroke closes the anti-aliasing seam between
       // neighbouring triangles. Where the seam is an internal cut of a
@@ -5685,7 +5691,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // colour instead, so the face reads as one flat surface.
       if tri.boundary == [true; 3] {
         svg.push_str(&format!(
-          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{edge_stroke}\" stroke-width=\"1\"{opacity_attr}/>\n"
+          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{edge_stroke}\" stroke-width=\"1\"{fill_opacity_attr}/>\n"
         ));
       } else {
         svg.push_str(&format!(
@@ -5699,7 +5705,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (ax, ay) = corners[e];
           let (bx, by) = corners[(e + 1) % 3];
           svg.push_str(&format!(
-            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"1\"{edge_opacity_attr}/>\n",
+            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"1\"/>\n",
           ));
         }
       }
@@ -7950,7 +7956,7 @@ fn generate_scatter_svg(
     for s in 0..EDGE_SUBDIVISIONS {
       let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
       let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
-      let tm = (t0 + t1) * 0.5;
+      let tm = f64::midpoint(t0, t1);
       let lerp = |t: f64| Point3D {
         x: a.x + (b.x - a.x) * t,
         y: a.y + (b.y - a.y) * t,
@@ -8205,9 +8211,9 @@ pub fn list_line_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (ax, ay) = project(a, &camera);
       let (bx, by) = project(b, &camera);
       let mid = Point3D {
-        x: (a.x + b.x) * 0.5,
-        y: (a.y + b.y) * 0.5,
-        z: (a.z + b.z) * 0.5,
+        x: f64::midpoint(a.x, b.x),
+        y: f64::midpoint(a.y, b.y),
+        z: f64::midpoint(a.z, b.z),
       };
       segments.push(LineSeg3D {
         x0: ax,
@@ -8357,7 +8363,7 @@ fn generate_line3d_svg(
     for s in 0..EDGE_SUBDIVISIONS {
       let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
       let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
-      let tm = (t0 + t1) * 0.5;
+      let tm = f64::midpoint(t0, t1);
       let lerp = |t: f64| Point3D {
         x: a.x + (b.x - a.x) * t,
         y: a.y + (b.y - a.y) * t,

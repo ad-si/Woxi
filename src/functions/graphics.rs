@@ -30,7 +30,7 @@ fn point_radius(point_size: f64, svg_w: f64) -> f64 {
 
 /// A named point size. `Small`/`Medium`/… name absolute sizes, like the
 /// named dash lengths do.
-fn symbolic_point_size(expr: &Expr) -> Option<f64> {
+pub(crate) fn symbolic_point_size(expr: &Expr) -> Option<f64> {
   let Expr::Identifier(s) = expr else {
     return None;
   };
@@ -5239,51 +5239,19 @@ fn render_grid_lines(
   }
 }
 
-/// Truncate a BigFloat digit string to `prec` significant digits for graphical display.
-/// E.g. digits="0.84147098480789650665" with prec=3 → "0.841"
-fn truncate_bigfloat_digits(digits: &str, prec: usize) -> String {
+/// Render a BigFloat digit string at `prec` significant digits for graphical
+/// display, e.g. digits="0.84147098480789650665" with prec=3 → "0.841".
+/// Delegates to the canonical rounder, so a label shows exactly the figures
+/// its precision claims (`N[28, 6]` → `28.0000`).
+fn bigfloat_digits_at_precision(digits: &str, prec: usize) -> String {
   if prec == 0 {
     return digits.to_string();
   }
-  let negative = digits.starts_with('-');
-  let d = if negative { &digits[1..] } else { digits };
-
-  // Count leading zeros after decimal point (they are not significant)
-  // e.g. "0.00123" has 2 leading zeros
-  let mut sig_seen = 0;
-  let mut cut_pos = d.len();
-  let mut past_dot = false;
-  let mut leading_zeros = true;
-  for (i, ch) in d.char_indices() {
-    if ch == '.' {
-      past_dot = true;
-      continue;
-    }
-    if !ch.is_ascii_digit() {
-      cut_pos = i;
-      break;
-    }
-    if leading_zeros && past_dot && ch == '0' {
-      continue; // leading fractional zeros are not significant
-    }
-    if ch != '0' || !leading_zeros {
-      leading_zeros = false;
-      sig_seen += 1;
-      if sig_seen == prec {
-        cut_pos = i + ch.len_utf8();
-        break;
-      }
-    }
-  }
-
-  let truncated = &d[..cut_pos];
-  // Remove trailing dot if nothing follows
-  let truncated = truncated.strip_suffix('.').unwrap_or(truncated);
-  if negative {
-    format!("-{truncated}")
-  } else {
-    truncated.to_string()
-  }
+  let (sign, mantissa) = match digits.strip_prefix('-') {
+    Some(rest) => ("-", rest),
+    None => ("", digits),
+  };
+  format!("{sign}{}", crate::round_significant(mantissa, prec))
 }
 
 /// Information about how a BigFloat should be displayed graphically.
@@ -5369,7 +5337,10 @@ fn bigfloat_display_parts(digits: &str, prec: f64) -> BigFloatDisplay {
 
   // Normal range — just truncate
   BigFloatDisplay {
-    mantissa: truncate_bigfloat_digits(digits, (prec.ceil() as usize).max(1)),
+    mantissa: bigfloat_digits_at_precision(
+      digits,
+      (prec.ceil() as usize).max(1),
+    ),
     exponent: None,
   }
 }
@@ -10459,7 +10430,11 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       ],
     ));
     if sd.is_scatter {
-      series_prims.push(call1("PointSize", Expr::Real(0.012)));
+      series_prims.push(match sd.point_size {
+        Some(p) if p < 0.0 => call1("AbsolutePointSize", Expr::Real(-p)),
+        Some(f) => call1("PointSize", Expr::Real(f)),
+        None => call1("PointSize", Expr::Real(0.012)),
+      });
       let coords: Vec<Expr> = sd
         .points
         .iter()

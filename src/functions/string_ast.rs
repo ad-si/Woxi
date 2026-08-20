@@ -5686,42 +5686,22 @@ fn box_ast_to_tex(expr: &Expr) -> String {
   }
 }
 
-/// Pad a BigFloat digit string with trailing zeros so the total
-/// number of significant digits equals `prec`. Used by TeX/C/
-/// Fortran rendering where the precision-tag suffix isn't shown
-/// but the digit count should still reflect the stored precision.
-/// `digits` is e.g. `-14.` or `3.14`; `prec` is the significant-
-/// digit count. Returns `-14.0` for `("-14.", 3.0)`.
+/// Render a BigFloat digit string at exactly `prec` significant digits. Used
+/// by TeX/C/Fortran rendering where the precision-tag suffix isn't shown but
+/// the digit count should still reflect the stored precision. `digits` is
+/// e.g. `-14.` or `3.14`; `prec` is the significant-digit count. Returns
+/// `-14.0` for `("-14.", 3.0)`.
 fn pad_bigfloat_to_precision(digits: &str, prec: f64) -> String {
   let prec_target = prec.round().max(0.0) as usize;
+  if prec_target == 0 {
+    return digits.to_string();
+  }
   let (sign, rest) = if let Some(r) = digits.strip_prefix('-') {
     ("-", r)
   } else {
     ("", digits)
   };
-  // Split into integer and fractional parts around the decimal
-  // point (if any).
-  let (int_part, frac_part) = match rest.find('.') {
-    Some(dp) => (&rest[..dp], &rest[dp + 1..]),
-    None => (rest, ""),
-  };
-  // Significant digits in the integer part: skip leading zeros
-  // unless the integer is just "0".
-  let int_sig = if int_part == "0" {
-    0
-  } else {
-    int_part.trim_start_matches('0').len()
-  };
-  let current_sig = int_sig + frac_part.len();
-  if current_sig >= prec_target {
-    return digits.to_string();
-  }
-  let pad = prec_target - current_sig;
-  if rest.contains('.') {
-    format!("{}{}.{}{}", sign, int_part, frac_part, "0".repeat(pad))
-  } else {
-    format!("{}{}.{}", sign, int_part, "0".repeat(pad))
-  }
+  format!("{sign}{}", crate::round_significant(rest, prec_target))
 }
 
 /// The rows of `items` when it is a matrix for TeX purposes: every element is

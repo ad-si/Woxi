@@ -12266,6 +12266,176 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, \"…\"]"], "Output"]
     }
   }
 
+  /// End-to-end regression for the shape the space-filling-polyhedra
+  /// Demonstrations share: a cell built from a face-index/vertex-list
+  /// solid, repeated over a three-index `Table` of `Translate`s, with one
+  /// "direction" slider per lattice axis and an opacity slider per colour.
+  /// The scene here is a two-cube cell of our own rather than any
+  /// published Demonstration's polyhedron data.
+  ///
+  /// Regression: at `opacity -> 0` the hidden cells disappeared outright.
+  /// `Opacity` belongs to the face alone — the outline the default
+  /// `EdgeForm` draws stays opaque — so a cell turned transparent must
+  /// still read as an empty shell around the cells left visible.
+  #[test]
+  fn space_filling_lattice_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["cube={{{1,2,3,4},{5,6,7,8},{1,2,6,5},{2,3,7,6},{3,4,8,7},{4,1,5,8}},{{0,0,0},{1,0,0},{1,1,0},{0,1,0},{0,0,1},{1,0,1},{1,1,1},{0,1,1}}};"], "Input"],
+Cell[BoxData["faceSolid[body_]:=Map[Polygon,Map[body[[2,#]]&,body[[1]]]]"], "Input"],
+Cell[BoxData["lower=faceSolid[cube];"], "Input"],
+Cell[BoxData["upper=Translate[Rotate[lower,Pi,{0,0,1}],{1,1,1}];"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Module[{cell={{Opacity[op1],Lighter[Blue],lower},{Opacity[op2],Yellow,upper}}},Graphics3D[{Table[Translate[cell,{2i,2j,2k}],{i,-k1,k1},{j,-k2,k2},{k,-k3,k3}]},Boxed->False,Lighting->\"Neutral\",ImageSize->{400,470},PlotRange->{{-8,8},{-8,8},{-8,8}},ViewAngle->12 Degree,SphericalRegion->True]],{{k1,0,\"direction 1\"},0,2,1,ImageSize->Tiny},{{k2,0,\"direction 2\"},0,2,1,ImageSize->Tiny},{{k3,0,\"direction 3\"},0,2,1,ImageSize->Tiny},\"\",{{op1,1,\"opacity 1\"},0,1,0.1,ImageSize->Tiny,Appearance->\"Labeled\"},{{op2,1,\"opacity 2\"},0,1,0.1,ImageSize->Tiny,Appearance->\"Labeled\"},SaveDefinitions->True,ControlPlacement->Left]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 0}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.clone())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the cell must render, which needs the initialization cells"
+    );
+
+    // Three lattice sliders, the bare `""` separator between the two
+    // groups, then the two opacity sliders. The opacities are machine
+    // reals; the lattice counts are exact integers.
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: k1,
+          label: k1_label,
+          max: k1_max,
+          is_real: false,
+          ..
+        },
+        manipulate::ControlState::Continuous { name: k2, .. },
+        manipulate::ControlState::Continuous { name: k3, .. },
+        manipulate::ControlState::Heading { label: gap, .. },
+        manipulate::ControlState::Continuous {
+          name: op1,
+          current: op1_now,
+          is_real: true,
+          ..
+        },
+        manipulate::ControlState::Continuous { name: op2, .. },
+      ] => {
+        assert_eq!((k1.as_str(), k1_label.as_str()), ("k1", "direction 1"));
+        assert_eq!(*k1_max, 2.0);
+        assert_eq!((k2.as_str(), k3.as_str()), ("k2", "k3"));
+        assert!(gap.is_empty(), "the spacer carries no caption: {gap:?}");
+        assert_eq!((op1.as_str(), *op1_now), ("op1", 1.0));
+        assert_eq!(op2.as_str(), "op2");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    // The iced handle doesn't expose its bytes, so re-render the body
+    // through the widget's own bindings to inspect the SVG.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let code = match w.initialization.as_deref() {
+        Some(init) => format!("{init}; {}", w.body),
+        None => w.body.clone(),
+      };
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&code)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the lattice must render")
+    };
+
+    let set =
+      |w: &mut manipulate::ManipulateState, idx: usize, v: f64| match &mut w
+        .controls[idx]
+      {
+        manipulate::ControlState::Continuous { current, .. } => *current = v,
+        other => panic!("expected a slider at {idx}, got {other:?}"),
+      };
+
+    // Every shade of the blue cube keeps blue as its dominant channel,
+    // whatever the lighting made of it; the yellow cube's is red.
+    fn blue_faces(svg: &str) -> Vec<&str> {
+      svg
+        .lines()
+        .filter(|l| l.starts_with("<polygon"))
+        .filter(|l| {
+          let Some(fill) = l.split("fill=\"rgb(").nth(1) else {
+            return false;
+          };
+          let channels: Vec<u32> = fill
+            .split(')')
+            .next()
+            .unwrap_or("")
+            .split(',')
+            .filter_map(|c| c.trim().parse().ok())
+            .collect();
+          matches!(channels[..], [r, _, b] if b > r)
+        })
+        .collect()
+    }
+
+    let one_cell = render(&widget);
+    assert!(!blue_faces(&one_cell).is_empty(), "the blue cube is drawn");
+
+    // Each direction slider repeats the cell along its own lattice axis,
+    // so opening one up draws strictly more of them.
+    set(&mut widget, 0, 1.0);
+    widget.reevaluate();
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let row = render(&widget);
+    assert!(
+      blue_faces(&row).len() > blue_faces(&one_cell).len(),
+      "the first direction must repeat the cell"
+    );
+    set(&mut widget, 1, 1.0);
+    widget.reevaluate();
+    let sheet = render(&widget);
+    assert!(
+      blue_faces(&sheet).len() > blue_faces(&row).len(),
+      "the second direction must repeat it again"
+    );
+
+    // Turning the blue opacity down to zero empties those cells without
+    // erasing them: no blue face survives, but every outline does.
+    let outlines = |svg: &str| {
+      svg
+        .lines()
+        .filter(|l| l.starts_with("<line"))
+        .filter(|l| l.contains("stroke=\"rgb(64,64,64)\""))
+        .count()
+    };
+    set(&mut widget, 4, 0.0);
+    widget.reevaluate();
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let hollow = render(&widget);
+    let hidden = blue_faces(&hollow);
+    assert_eq!(hidden.len(), blue_faces(&sheet).len());
+    assert!(
+      hidden.iter().all(|l| l.contains("opacity=\"0\"")),
+      "no blue face may show through: {hidden:?}"
+    );
+    assert_eq!(
+      outlines(&hollow),
+      outlines(&sheet),
+      "the transparent cells keep every edge they had"
+    );
+  }
+
   /// End-to-end regression for the "Constant Price Elasticity of Demand"
   /// Demonstration: a `Grid` of two `Show[Plot[…], Graphics[…]]` panels,
   /// each drawn with the plot's own `PlotRange`, `PlotLabel` and
@@ -19561,6 +19731,292 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     assert_ne!(
       initial, fewer_spokes,
       "dropping the spoke count from 11 to 5 must change the rendered wheel"
+    );
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook: a
+  /// triangle whose three vertices are draggable `Locator` controls, with
+  /// toggles that overlay its perimeter and its area as `N[…, 6]` readouts.
+  /// Independently written, not copied from any specific Demonstration: the
+  /// area here comes from the shoelace determinant rather than Heron's
+  /// formula, and the readout row is a `Rectangle` plate instead of a
+  /// five-point `Polygon`.
+  ///
+  /// Two things are worth pinning down. First, a `Locator` control whose
+  /// value is a *single* point (`{{v1, {-4, 3}, "…"}, {-10, -10}, {10, 8},
+  /// Locator, Appearance -> None}`) must become a 2D control binding `v1` to
+  /// a bare `{x, y}` pair, not to a one-element list of points — the body
+  /// reads `v1[[1]]`/`v1[[2]]` and would break otherwise. Second, an exact
+  /// `N[…, 6]` readout must show all six figures: a lattice triangle's area
+  /// is always a multiple of `1/2`, so this label lands on an exact value
+  /// constantly, and it has to read `28.0000`, not `28.`.
+  #[test]
+  fn demonstration_triangle_locators_report_perimeter_and_area() {
+    let code = "Manipulate[\
+      With[{ax = v1[[1]], ay = v1[[2]], bx = v2[[1]], by = v2[[2]], \
+            cx = v3[[1]], cy = v3[[2]]}, \
+        With[{peri = N[Sqrt[(ax - bx)^2 + (ay - by)^2] \
+                     + Sqrt[(bx - cx)^2 + (by - cy)^2] \
+                     + Sqrt[(cx - ax)^2 + (cy - ay)^2], 6], \
+              area = N[Abs[(bx - ax) (cy - ay) - (cx - ax) (by - ay)]/2, 6]}, \
+          Graphics[{\
+            Tooltip[Locator[v1], v1], Tooltip[Locator[v2], v2], \
+            Tooltip[Locator[v3], v3], \
+            Style[Line[{v1, v2, v3, v1}], Blue, Thickness[.005]], \
+            If[showPerimeter, {\
+              Style[Rectangle[{1, 9}, {10, 10}], White], \
+              Style[Text[\"perimeter =\", {6, 9.5}, {Right, Center}], Red], \
+              Style[Text[peri, {8, 9.5}], Red]}, {}], \
+            If[showArea, {\
+              Style[Rectangle[{1, 8}, {10, 9}], White], \
+              Style[Text[\"area =\", {6, 8.5}, {Right, Center}], Blue], \
+              Style[Polygon[{v1, v2, v3}], Blue, Opacity[.5]], \
+              Style[Text[area, {8, 8.5}], Blue]}, {}]}, \
+            Axes -> True, AxesLabel -> {x, y}, PlotRange -> 10, \
+            BaseStyle -> {Medium, 14}, \
+            GridLines -> {Table[{n, RGBColor[0, 0.6, 1.]}, {n, -10, 10, 1}], \
+                          Table[{n, RGBColor[0, 0.6, 1.]}, {n, -10, 10, 1}]}, \
+            ImageSize -> {400, 400}]]], \
+      {{v1, {-4, 3}, \"x1/y1\"}, {-10, -10}, {10, 8}, Locator, \
+        Appearance -> None}, \
+      {{v2, {5, -2}, \"x2/y2\"}, {-10, -10}, {10, 8}, Locator, \
+        Appearance -> None}, \
+      {{v3, {-2, -5}, \"x3/y3\"}, {-10, -10}, {10, 8}, Locator, \
+        Appearance -> None}, \
+      {{showPerimeter, False, \"show perimeter\"}, {True, False}}, \
+      {{showArea, False, \"show area\"}, {True, False}}, \
+      ControlPlacement -> Left\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the triangle Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the triangle must render");
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the triangle must render")
+    };
+    let plain = render(&state);
+    assert!(
+      !plain.contains("perimeter =") && !plain.contains("area ="),
+      "both readouts start switched off"
+    );
+
+    // Each single-point Locator binds a bare `{x, y}` pair, so `v1[[1]]` is a
+    // coordinate rather than a point.
+    match &mut state.controls[..] {
+      [
+        manipulate::ControlState::Slider2D {
+          name: n1,
+          x: x1,
+          y: y1,
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          ..
+        },
+        manipulate::ControlState::Slider2D { name: n2, .. },
+        manipulate::ControlState::Slider2D { name: n3, .. },
+        manipulate::ControlState::Discrete {
+          name: n4,
+          values: peri_values,
+          current_index: peri_index,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: n5,
+          current_index: area_index,
+          ..
+        },
+      ] => {
+        assert_eq!(
+          [
+            n1.as_str(),
+            n2.as_str(),
+            n3.as_str(),
+            n4.as_str(),
+            n5.as_str()
+          ],
+          ["v1", "v2", "v3", "showPerimeter", "showArea"]
+        );
+        // The two corner points bound the draggable region.
+        assert_eq!((*x_min, *y_min), (-10.0, -10.0));
+        assert_eq!((*x_max, *y_max), (10.0, 8.0));
+        assert_eq!((*x1, *y1), (-4.0, 3.0));
+        assert_eq!(peri_values, &["True".to_string(), "False".to_string()]);
+        // Both toggles default to False — the second choice.
+        assert_eq!((*peri_index, *area_index), (1, 1));
+        *peri_index = 0;
+        *area_index = 0;
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let labelled = render(&state);
+    assert!(
+      labelled.contains("perimeter =") && labelled.contains("area ="),
+      "switching both toggles on must draw the two readout rows"
+    );
+    // Vertices (-4, 3), (5, -2), (-2, -5): the shoelace determinant is
+    // |9*(-8) - 2*(-5)| / 2 = 31, an exact value that must still print all
+    // six figures its precision claims.
+    assert!(
+      labelled.contains("31.0000"),
+      "an exact area must show its full precision, got: {labelled}"
+    );
+
+    // Dragging a vertex changes both the outline and the readouts.
+    if let manipulate::ControlState::Slider2D { x, y, .. } =
+      &mut state.controls[0]
+    {
+      *x = 6.0;
+      *y = 7.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let dragged = render(&state);
+    assert_ne!(
+      labelled, dragged,
+      "moving a locator must change the rendered triangle"
+    );
+    assert!(
+      !dragged.contains("31.0000"),
+      "the area readout must follow the moved vertex"
+    );
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook that
+  /// sweeps a line through a fixed point on a parabola and marks where the
+  /// two meet. Independently written, not copied from any specific
+  /// Demonstration: a downward parabola pivoting about `(2, 1)` rather than
+  /// an upward one about `(1, -2)`.
+  ///
+  /// Two things make the shape worth pinning down. `Solve` is called with
+  /// the variable list *omitted*, so the intersection abscissas have to come
+  /// out of a bare equation list and land in the `{x, f[x]}` point template
+  /// a `ReplaceAll` builds. And the marks carry
+  /// `PlotStyle -> PointSize[…]`, which used to be parsed and then dropped —
+  /// the dots came out at the default size however the notebook asked for
+  /// them.
+  #[test]
+  fn demonstration_secant_manipulate_sizes_its_intersection_marks() {
+    let code = "Manipulate[\
+      Show[\
+        Plot[{2 - x^2/4, k (x - 2) + 1}, {x, -7, 7}], \
+        ListPlot[{x, 2 - x^2/4} /. Solve[{2 - x^2/4 == k (x - 2) + 1}], \
+          PlotStyle -> PointSize[0.03]], \
+        PlotRange -> {{-7, 7}, {-8, 3}}, ImageSize -> {440, 300}], \
+      {k, -1.5, 1, 0.05, Appearance -> \"Labeled\"}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the secant Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the plot must render");
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the parabola and its secant must render")
+    };
+    // The dots the marks are drawn as, biggest first.
+    let mark_radii = |svg: &str| {
+      let mut radii: Vec<f64> = svg
+        .match_indices("<circle")
+        .filter_map(|(at, _)| {
+          let tag = &svg[at..svg[at..].find("/>")? + at];
+          let r = tag.find(" r=\"")? + 4;
+          tag[r..][..tag[r..].find('"')?].parse().ok()
+        })
+        .collect();
+      radii.sort_by(|a, b| b.partial_cmp(a).unwrap());
+      radii
+    };
+
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          min,
+          max,
+          step,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name.as_str(), "k");
+        assert_eq!((*min, *max, *step), (-1.5, 1.0, 0.05));
+        assert_eq!(*current, -1.5, "a slider with no initial starts at min");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    // `Solve` without a variable list still finds both intersections, so
+    // both marks are drawn — at the size `PlotStyle` asked for, not the
+    // default dot the same picture draws without it.
+    let secant_svg = render(&state);
+    let secant = mark_radii(&secant_svg);
+    assert_eq!(secant.len(), 2, "both intersections must be marked");
+    assert_eq!(secant[0], secant[1], "both marks are the same size");
+    let plain = code.replace(", PlotStyle -> PointSize[0.03]", "");
+    let default_state =
+      instantiate_stored_manipulate(&plain, "").expect("widget");
+    let default_dot = mark_radii(&render(&default_state))[0];
+    assert!(
+      secant[0] > 1.5 * default_dot,
+      "PointSize[0.03] must draw a bigger mark than the default {default_dot}, \
+       got {}",
+      secant[0]
+    );
+
+    // Sliding to the tangency at k = -1 collapses the two intersections
+    // onto the single point the line touches.
+    match &mut state.controls[..] {
+      [manipulate::ControlState::Continuous { current, .. }] => {
+        *current = -1.0;
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let tangent = render(&state);
+    assert_eq!(
+      mark_radii(&tangent).len(),
+      2,
+      "the double root still yields two coincident marks"
+    );
+    assert_ne!(
+      tangent, secant_svg,
+      "moving the slider must redraw the picture"
     );
   }
 

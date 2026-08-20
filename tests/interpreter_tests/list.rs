@@ -21093,3 +21093,83 @@ mod part_bracket_groups {
     );
   }
 }
+
+/// `` Developer`ToPackedArray `` — Woxi keeps no packed representation, so
+/// the visible effect is the numeric type unification that packing performs.
+mod to_packed_array {
+  use super::*;
+
+  #[test]
+  fn integer_array_keeps_integers() {
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1, 2, 3}]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn mixed_array_becomes_reals() {
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1, 2.5}]").unwrap(),
+      "{1., 2.5}"
+    );
+  }
+
+  #[test]
+  fn nested_array_is_packed_elementwise() {
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{{1, 2}, {3, 4.}}]").unwrap(),
+      "{{1., 2.}, {3., 4.}}"
+    );
+  }
+
+  #[test]
+  fn ragged_list_is_left_alone() {
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1, {2, 3}}]").unwrap(),
+      "{1, {2, 3}}"
+    );
+  }
+
+  #[test]
+  fn non_machine_numbers_are_left_alone() {
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1/2, 1}]").unwrap(),
+      "{1/2, 1}"
+    );
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1, x}]").unwrap(),
+      "{1, x}"
+    );
+  }
+
+  #[test]
+  fn scalar_is_left_alone() {
+    assert_eq!(interpret("Developer`ToPackedArray[5]").unwrap(), "5");
+  }
+
+  #[test]
+  fn explicit_real_type_promotes_integers() {
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1, 2}, Real]").unwrap(),
+      "{1., 2.}"
+    );
+  }
+
+  #[test]
+  fn explicit_integer_type_does_not_demote_reals() {
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1.5, 2}, Integer]").unwrap(),
+      "{1.5, 2}"
+    );
+  }
+
+  #[test]
+  fn packed_array_stays_a_list_for_downstream_functions() {
+    assert_eq!(
+      interpret("Length[Developer`ToPackedArray[N[{{1, 0}, {0, 1}}]]]")
+        .unwrap(),
+      "2"
+    );
+  }
+}
