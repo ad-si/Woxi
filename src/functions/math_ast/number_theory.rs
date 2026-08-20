@@ -1192,9 +1192,7 @@ fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
     let mut result = (0i128, 1i128);
     for k in (0..=n).rev() {
       // result = result * z + coeffs[k]
-      let rn = result.0 * z_num;
-      let rd = result.1 * z_den;
-      let (rn, rd) = rat_reduce(rn, rd);
+      let (rn, rd) = rat_reduce(result.0 * z_num, result.1 * z_den);
       result = rat_add((rn, rd), coeffs[k]);
     }
     return Ok(make_rational(result.0, result.1));

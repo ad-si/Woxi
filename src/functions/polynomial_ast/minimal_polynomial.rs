@@ -1169,12 +1169,6 @@ fn poly_primitive_big(coeffs: &[BigInt]) -> Vec<BigInt> {
 /// Exact rational as a normalized (numerator, positive denominator) pair.
 type Rat = (i128, i128);
 
-fn rat_reduce(n: i128, d: i128) -> Rat {
-  let g = gcd_i128(n, d).max(1);
-  let (n, d) = (n / g, d / g);
-  if d < 0 { (-n, -d) } else { (n, d) }
-}
-
 fn rat_add(a: Rat, b: Rat) -> Rat {
   rat_reduce(a.0 * b.1 + b.0 * a.1, a.1 * b.1)
 }
