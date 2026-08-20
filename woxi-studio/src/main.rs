@@ -12266,6 +12266,176 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, \"…\"]"], "Output"]
     }
   }
 
+  /// End-to-end regression for the shape the space-filling-polyhedra
+  /// Demonstrations share: a cell built from a face-index/vertex-list
+  /// solid, repeated over a three-index `Table` of `Translate`s, with one
+  /// "direction" slider per lattice axis and an opacity slider per colour.
+  /// The scene here is a two-cube cell of our own rather than any
+  /// published Demonstration's polyhedron data.
+  ///
+  /// Regression: at `opacity -> 0` the hidden cells disappeared outright.
+  /// `Opacity` belongs to the face alone — the outline the default
+  /// `EdgeForm` draws stays opaque — so a cell turned transparent must
+  /// still read as an empty shell around the cells left visible.
+  #[test]
+  fn space_filling_lattice_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["cube={{{1,2,3,4},{5,6,7,8},{1,2,6,5},{2,3,7,6},{3,4,8,7},{4,1,5,8}},{{0,0,0},{1,0,0},{1,1,0},{0,1,0},{0,0,1},{1,0,1},{1,1,1},{0,1,1}}};"], "Input"],
+Cell[BoxData["faceSolid[body_]:=Map[Polygon,Map[body[[2,#]]&,body[[1]]]]"], "Input"],
+Cell[BoxData["lower=faceSolid[cube];"], "Input"],
+Cell[BoxData["upper=Translate[Rotate[lower,Pi,{0,0,1}],{1,1,1}];"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Module[{cell={{Opacity[op1],Lighter[Blue],lower},{Opacity[op2],Yellow,upper}}},Graphics3D[{Table[Translate[cell,{2i,2j,2k}],{i,-k1,k1},{j,-k2,k2},{k,-k3,k3}]},Boxed->False,Lighting->\"Neutral\",ImageSize->{400,470},PlotRange->{{-8,8},{-8,8},{-8,8}},ViewAngle->12 Degree,SphericalRegion->True]],{{k1,0,\"direction 1\"},0,2,1,ImageSize->Tiny},{{k2,0,\"direction 2\"},0,2,1,ImageSize->Tiny},{{k3,0,\"direction 3\"},0,2,1,ImageSize->Tiny},\"\",{{op1,1,\"opacity 1\"},0,1,0.1,ImageSize->Tiny,Appearance->\"Labeled\"},{{op2,1,\"opacity 2\"},0,1,0.1,ImageSize->Tiny,Appearance->\"Labeled\"},SaveDefinitions->True,ControlPlacement->Left]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 0}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.clone())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the cell must render, which needs the initialization cells"
+    );
+
+    // Three lattice sliders, the bare `""` separator between the two
+    // groups, then the two opacity sliders. The opacities are machine
+    // reals; the lattice counts are exact integers.
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: k1,
+          label: k1_label,
+          max: k1_max,
+          is_real: false,
+          ..
+        },
+        manipulate::ControlState::Continuous { name: k2, .. },
+        manipulate::ControlState::Continuous { name: k3, .. },
+        manipulate::ControlState::Heading { label: gap, .. },
+        manipulate::ControlState::Continuous {
+          name: op1,
+          current: op1_now,
+          is_real: true,
+          ..
+        },
+        manipulate::ControlState::Continuous { name: op2, .. },
+      ] => {
+        assert_eq!((k1.as_str(), k1_label.as_str()), ("k1", "direction 1"));
+        assert_eq!(*k1_max, 2.0);
+        assert_eq!((k2.as_str(), k3.as_str()), ("k2", "k3"));
+        assert!(gap.is_empty(), "the spacer carries no caption: {gap:?}");
+        assert_eq!((op1.as_str(), *op1_now), ("op1", 1.0));
+        assert_eq!(op2.as_str(), "op2");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    // The iced handle doesn't expose its bytes, so re-render the body
+    // through the widget's own bindings to inspect the SVG.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let code = match w.initialization.as_deref() {
+        Some(init) => format!("{init}; {}", w.body),
+        None => w.body.clone(),
+      };
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&code)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the lattice must render")
+    };
+
+    let set =
+      |w: &mut manipulate::ManipulateState, idx: usize, v: f64| match &mut w
+        .controls[idx]
+      {
+        manipulate::ControlState::Continuous { current, .. } => *current = v,
+        other => panic!("expected a slider at {idx}, got {other:?}"),
+      };
+
+    // Every shade of the blue cube keeps blue as its dominant channel,
+    // whatever the lighting made of it; the yellow cube's is red.
+    fn blue_faces(svg: &str) -> Vec<&str> {
+      svg
+        .lines()
+        .filter(|l| l.starts_with("<polygon"))
+        .filter(|l| {
+          let Some(fill) = l.split("fill=\"rgb(").nth(1) else {
+            return false;
+          };
+          let channels: Vec<u32> = fill
+            .split(')')
+            .next()
+            .unwrap_or("")
+            .split(',')
+            .filter_map(|c| c.trim().parse().ok())
+            .collect();
+          matches!(channels[..], [r, _, b] if b > r)
+        })
+        .collect()
+    }
+
+    let one_cell = render(&widget);
+    assert!(!blue_faces(&one_cell).is_empty(), "the blue cube is drawn");
+
+    // Each direction slider repeats the cell along its own lattice axis,
+    // so opening one up draws strictly more of them.
+    set(&mut widget, 0, 1.0);
+    widget.reevaluate();
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let row = render(&widget);
+    assert!(
+      blue_faces(&row).len() > blue_faces(&one_cell).len(),
+      "the first direction must repeat the cell"
+    );
+    set(&mut widget, 1, 1.0);
+    widget.reevaluate();
+    let sheet = render(&widget);
+    assert!(
+      blue_faces(&sheet).len() > blue_faces(&row).len(),
+      "the second direction must repeat it again"
+    );
+
+    // Turning the blue opacity down to zero empties those cells without
+    // erasing them: no blue face survives, but every outline does.
+    let outlines = |svg: &str| {
+      svg
+        .lines()
+        .filter(|l| l.starts_with("<line"))
+        .filter(|l| l.contains("stroke=\"rgb(64,64,64)\""))
+        .count()
+    };
+    set(&mut widget, 4, 0.0);
+    widget.reevaluate();
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let hollow = render(&widget);
+    let hidden = blue_faces(&hollow);
+    assert_eq!(hidden.len(), blue_faces(&sheet).len());
+    assert!(
+      hidden.iter().all(|l| l.contains("opacity=\"0\"")),
+      "no blue face may show through: {hidden:?}"
+    );
+    assert_eq!(
+      outlines(&hollow),
+      outlines(&sheet),
+      "the transparent cells keep every edge they had"
+    );
+  }
+
   /// End-to-end regression for the "Constant Price Elasticity of Demand"
   /// Demonstration: a `Grid` of two `Show[Plot[…], Graphics[…]]` panels,
   /// each drawn with the plot's own `PlotRange`, `PlotLabel` and

@@ -5672,12 +5672,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         String::new()
       };
       // The outline colour: the default dark grey unless `EdgeForm[colour]`
-      // named one. A named colour is also drawn opaque, so the outline of a
-      // transparent face still shows — that is what makes
-      // `{Opacity[0], EdgeForm[Black], Cylinder[…]}` an unfilled circle.
-      let (edge_stroke, edge_opacity_attr) = match tri.edge_color {
-        Some((er, eg, eb)) => (format!("rgb({er},{eg},{eb})"), String::new()),
-        None => ("rgb(64,64,64)".to_string(), opacity_attr.clone()),
+      // named one. `Opacity` tints the face only — the outline is drawn by
+      // the default `EdgeForm`, which stays opaque — so the outline of a
+      // transparent face still shows. That is what makes
+      // `{Opacity[0], Cuboid[…]}` a wireframe box.
+      let edge_stroke = match tri.edge_color {
+        Some((er, eg, eb)) => format!("rgb({er},{eg},{eb})"),
+        None => "rgb(64,64,64)".to_string(),
+      };
+      let fill_opacity_attr = if tri.opacity < 1.0 {
+        format!(" fill-opacity=\"{}\"", tri.opacity)
+      } else {
+        String::new()
       };
       // The hairline stroke closes the anti-aliasing seam between
       // neighbouring triangles. Where the seam is an internal cut of a
@@ -5685,7 +5691,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // colour instead, so the face reads as one flat surface.
       if tri.boundary == [true; 3] {
         svg.push_str(&format!(
-          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{edge_stroke}\" stroke-width=\"1\"{opacity_attr}/>\n"
+          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{edge_stroke}\" stroke-width=\"1\"{fill_opacity_attr}/>\n"
         ));
       } else {
         svg.push_str(&format!(
@@ -5699,7 +5705,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (ax, ay) = corners[e];
           let (bx, by) = corners[(e + 1) % 3];
           svg.push_str(&format!(
-            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"1\"{edge_opacity_attr}/>\n",
+            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"1\"/>\n",
           ));
         }
       }
