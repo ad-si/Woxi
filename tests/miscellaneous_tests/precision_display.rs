@@ -203,9 +203,39 @@ mod tests {
   }
 
   #[test]
-  fn precision_beyond_available_digits_shows_all_digits() {
-    // When the requested precision exceeds the stored significant digits,
-    // every available digit is shown (no padding beyond the mantissa).
-    assert_eq!(truncate_precision_reals("3.14`8."), "3.14");
+  fn precision_beyond_available_digits_pads_with_trailing_zeros() {
+    // An arbitrary-precision real shows every figure its precision claims, so
+    // a mantissa with fewer stored digits is padded rather than left short.
+    // Matches the TeX rendering of the same values (`3.14`5 // TeXForm` →
+    // `3.1400`, `-14.`3 // TeXForm` → `-14.0`), which Woxi already got right
+    // through a separate code path.
+    assert_eq!(truncate_precision_reals("3.14`8."), "3.1400000");
+    assert_eq!(truncate_precision_reals("3.14`5."), "3.1400");
+    assert_eq!(truncate_precision_reals("-14.`3."), "-14.0");
+    // A value that lands exactly on an integer still shows its full precision
+    // (`N[28, 6]` → `28.0000`), which is what a Demonstration's `N[…, 6]`
+    // readout produces whenever the quantity happens to come out exact.
+    assert_eq!(truncate_precision_reals("28.`6."), "28.0000");
+    assert_eq!(truncate_precision_reals("0.5`6."), "0.500000");
+  }
+
+  /// Padding is a display concern for *arbitrary*-precision reals only: a
+  /// machine real (bare backtick) still drops its trailing zeros.
+  #[test]
+  fn machine_precision_reals_still_drop_trailing_zeros() {
+    assert_eq!(truncate_precision_reals("2.`"), "2.");
+    assert_eq!(truncate_precision_reals("0.3`"), "0.3");
+    assert_eq!(truncate_precision_reals("100.`"), "100.");
+  }
+
+  /// The graphical (SVG) label path shows the same padded figures, so a
+  /// `Text[N[area, 6], …]` readout inside a `Graphics` reads `28.0000` rather
+  /// than the bare `28.` it used to.
+  #[test]
+  fn graphics_labels_pad_arbitrary_precision_reals() {
+    assert_eq!(output_text("N[28, 6]"), "28.0000");
+    assert_eq!(output_text("N[Sqrt[784], 6]"), "28.0000");
+    // Digits beyond the precision are still rounded away.
+    assert_eq!(output_text("N[Pi, 6]"), "3.14159");
   }
 }
