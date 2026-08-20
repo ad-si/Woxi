@@ -807,20 +807,10 @@ pub fn dispatch_attributes(
         Expr::List(items) => items.iter().filter_map(symbol_name).collect(),
         _ => symbol_name(&args[0]).map(|n| vec![n]).unwrap_or_default(),
       };
-      let attr: Vec<String> = match &args[1] {
-        Expr::Identifier(a) => vec![a.clone()],
-        Expr::List(items) => items
-          .iter()
-          .filter_map(|item| {
-            if let Expr::Identifier(a) = item {
-              Some(a.clone())
-            } else {
-              None
-            }
-          })
-          .collect(),
-        _ => vec![],
+      let Some(attr) = get_attributes(&args[1]) else {
+        return Some(Ok(Expr::Identifier("Null".to_string())));
       };
+
       if !func_names.is_empty() {
         let mut locked = false;
         crate::FUNC_ATTRS.with(|m| {
