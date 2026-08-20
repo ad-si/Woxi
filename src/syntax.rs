@@ -1724,6 +1724,35 @@ fn box_escape_to_expr(box_src: &str) -> Option<Expr> {
   string_to_expr(&text).ok()
 }
 
+/// Is every `"` in this box source backslash-escaped?
+///
+/// That is the spelling `escape_string_for_input_form` produces when a box
+/// escape is itself written out as the InputForm of a *string* — there the
+/// box delimiters are escaped along with everything else. Box data as a real
+/// `.nb` file writes it always leaves those delimiters bare and uses `\"`
+/// only *inside* a box, to mark it as a string literal (`"\"a, b\""`) rather
+/// than source text (`"a + b"`). So one bare `"` settles it: the text needs
+/// no unescaping, and unescaping it anyway would strip that marking off every
+/// string in the expression.
+fn box_source_is_double_escaped(s: &str) -> bool {
+  let mut saw_quote = false;
+  let mut backslashes = 0usize;
+  for c in s.chars() {
+    match c {
+      '\\' => backslashes += 1,
+      '"' => {
+        if backslashes.is_multiple_of(2) {
+          return false;
+        }
+        saw_quote = true;
+        backslashes = 0;
+      }
+      _ => backslashes = 0,
+    }
+  }
+  saw_quote
+}
+
 /// Undo `escape_string_for_input_form`'s `\"`/`\\` escaping of a `\!\(\*
 /// boxes\)` escape's content. Named-character escapes (`\[Name]`) are left
 /// untouched — they're valid box-source syntax on their own, not part of
@@ -2724,19 +2753,24 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         }
         // `\!\(\*boxes\)` — the FrontEnd's "interpret these boxes" escape,
         // which is what `InputForm` writes for a typeset expression, in
-        // either delimiter spelling (`\*` or the `BOX_SEP` marker). The
-        // backslash spelling carries `\"`-escaped string literals — that is
-        // what makes the whole `\!\(…\)` token survive being re-tokenized as
-        // source — so undo that before handing the text to the box-source
-        // readers, which expect the bare `"` delimiters real `.nb` box data
-        // and the marker spelling both use.
+        // either delimiter spelling (`\*` or the `BOX_SEP` marker). Writing
+        // the segment out as the InputForm of a *string* escapes its quotes a
+        // second time, so undo that layer — but only when it is really there
+        // (see `box_source_is_double_escaped`): ordinarily the text is box
+        // data as a real `.nb` file writes it, where a `\"` marks a *string
+        // literal* box (`"\"a, b\""`) apart from one holding source text
+        // (`"a + b"`), and unescaping would turn every string in the
+        // expression into unparsed source.
         let trimmed = inner.trim_start();
         if let Some(box_src) = trimmed.strip_prefix("\\*").or_else(|| {
           trimmed.strip_prefix(crate::functions::string_ast::BOX_SEP)
-        }) && let Some(expr) =
-          box_escape_to_expr(&unescape_box_source(box_src))
-        {
-          return expr;
+        }) {
+          let unescaped = box_source_is_double_escaped(box_src)
+            .then(|| unescape_box_source(box_src));
+          let box_src = unescaped.as_deref().unwrap_or(box_src);
+          if let Some(expr) = box_escape_to_expr(box_src) {
+            return expr;
+          }
         }
         // Fallback: surface the raw source as HoldComplete.
         return Expr::FunctionCall {
