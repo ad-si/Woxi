@@ -30,7 +30,7 @@ fn point_radius(point_size: f64, svg_w: f64) -> f64 {
 
 /// A named point size. `Small`/`Medium`/… name absolute sizes, like the
 /// named dash lengths do.
-fn symbolic_point_size(expr: &Expr) -> Option<f64> {
+pub(crate) fn symbolic_point_size(expr: &Expr) -> Option<f64> {
   let Expr::Identifier(s) = expr else {
     return None;
   };
@@ -10430,7 +10430,11 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       ],
     ));
     if sd.is_scatter {
-      series_prims.push(call1("PointSize", Expr::Real(0.012)));
+      series_prims.push(match sd.point_size {
+        Some(p) if p < 0.0 => call1("AbsolutePointSize", Expr::Real(-p)),
+        Some(f) => call1("PointSize", Expr::Real(f)),
+        None => call1("PointSize", Expr::Real(0.012)),
+      });
       let coords: Vec<Expr> = sd
         .points
         .iter()

@@ -203,6 +203,11 @@ pub struct PlotSeriesData {
   /// …); `None` = the 1.5px default. Travels with the series so a curve keeps
   /// its weight when `Show` merges it into another graphic.
   pub thickness: Option<f64>,
+  /// Dot size of a scatter series from `PlotStyle` — a fraction of the image
+  /// width for `PointSize[…]`, stored negative for the absolute printer's
+  /// points of `AbsolutePointSize[…]`, the same sign convention the graphics
+  /// primitives use. `None` = the default dot.
+  pub point_size: Option<f64>,
 }
 
 /// Convert a Wolfram named character name (e.g. "Pi", "Alpha", "Sum") to its

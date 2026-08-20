@@ -4705,6 +4705,81 @@ mod plot3d {
       assert!(two.contains("#FF0000") && two.contains("#00FF00"));
     }
 
+    /// A `PointSize` in `PlotStyle` has to resize the dots, not just get
+    /// parsed and dropped: `PointSize[f]` is the fraction `f` of the image
+    /// width the dot's *diameter* spans, so at the 500px-wide image below
+    /// `PointSize[0.015]` is a 3.75px radius — 38 render-space units at the
+    /// 10x resolution scale. `AbsolutePointSize[p]` is p printer's points
+    /// across whatever the image size.
+    #[test]
+    fn plot_style_point_size_resizes_scatter_dots() {
+      let radius = |code: &str| -> f64 {
+        let svg = export_svg(code);
+        let at = svg.find(" r=\"").expect("a dot must be drawn");
+        let rest = &svg[at + 4..];
+        rest[..rest.find('"').unwrap()].parse().unwrap()
+      };
+      let plain =
+        radius(r#"ListPlot[{{0, 0}, {1, 1}}, ImageSize -> {500, 350}]"#);
+      assert_eq!(plain, 30.0, "the default dot is a 3px radius");
+      // A bare directive, a list and a Directive[…] all reach the dots.
+      for style in [
+        "PointSize[0.015]",
+        "{PointSize[0.015], Red}",
+        "Directive[PointSize[0.015], Red]",
+      ] {
+        assert_eq!(
+          radius(&format!(
+            "ListPlot[{{{{0, 0}}, {{1, 1}}}}, PlotStyle -> {style}, \
+             ImageSize -> {{500, 350}}]"
+          )),
+          38.0,
+          "PointSize[0.015] must widen the dots ({style})"
+        );
+      }
+      // Half the image width, so the fraction — not a fixed pixel count.
+      assert_eq!(
+        radius(
+          r#"ListPlot[{{0, 0}, {1, 1}}, PlotStyle -> PointSize[0.015],
+               ImageSize -> {250, 175}]"#
+        ),
+        19.0
+      );
+      // Absolute sizes and the named ones stay put at any image size.
+      for size in ["{500, 350}", "{250, 175}"] {
+        assert_eq!(
+          radius(&format!(
+            "ListPlot[{{{{0, 0}}, {{1, 1}}}}, \
+             PlotStyle -> AbsolutePointSize[12], ImageSize -> {size}]"
+          )),
+          60.0
+        );
+        assert_eq!(
+          radius(&format!(
+            "ListPlot[{{{{0, 0}}, {{1, 1}}}}, PlotStyle -> PointSize[Large], \
+             ImageSize -> {size}]"
+          )),
+          35.0
+        );
+      }
+      // The size travels with the series through a `Show` merge, where the
+      // scatter layer is drawn over the curve instead of as the chart.
+      let merged = |style: &str| {
+        radius(&format!(
+          "Show[Plot[x^2, {{x, -2, 2}}], \
+           ListPlot[{{{{0, 1}}, {{1, 2}}}}{style}], ImageSize -> {{500, 350}}]"
+        ))
+      };
+      let big = merged(", PlotStyle -> PointSize[0.05]");
+      let small = merged(", PlotStyle -> PointSize[0.01]");
+      assert!(
+        (big / small - 5.0).abs() < 0.01,
+        "a five-times PointSize must give five-times dots after a Show, \
+         got {big} vs {small}"
+      );
+      assert_ne!(big, merged(""), "the default must not swallow the size");
+    }
+
     #[test]
     fn plot_label_expression_is_typeset() {
       // A PlotLabel is drawn, not printed: `Subscript[p, 0]` becomes a

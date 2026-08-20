@@ -19901,4 +19901,122 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
       "the area readout must follow the moved vertex"
     );
   }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook that
+  /// sweeps a line through a fixed point on a parabola and marks where the
+  /// two meet. Independently written, not copied from any specific
+  /// Demonstration: a downward parabola pivoting about `(2, 1)` rather than
+  /// an upward one about `(1, -2)`.
+  ///
+  /// Two things make the shape worth pinning down. `Solve` is called with
+  /// the variable list *omitted*, so the intersection abscissas have to come
+  /// out of a bare equation list and land in the `{x, f[x]}` point template
+  /// a `ReplaceAll` builds. And the marks carry
+  /// `PlotStyle -> PointSize[…]`, which used to be parsed and then dropped —
+  /// the dots came out at the default size however the notebook asked for
+  /// them.
+  #[test]
+  fn demonstration_secant_manipulate_sizes_its_intersection_marks() {
+    let code = "Manipulate[\
+      Show[\
+        Plot[{2 - x^2/4, k (x - 2) + 1}, {x, -7, 7}], \
+        ListPlot[{x, 2 - x^2/4} /. Solve[{2 - x^2/4 == k (x - 2) + 1}], \
+          PlotStyle -> PointSize[0.03]], \
+        PlotRange -> {{-7, 7}, {-8, 3}}, ImageSize -> {440, 300}], \
+      {k, -1.5, 1, 0.05, Appearance -> \"Labeled\"}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the secant Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the plot must render");
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the parabola and its secant must render")
+    };
+    // The dots the marks are drawn as, biggest first.
+    let mark_radii = |svg: &str| {
+      let mut radii: Vec<f64> = svg
+        .match_indices("<circle")
+        .filter_map(|(at, _)| {
+          let tag = &svg[at..svg[at..].find("/>")? + at];
+          let r = tag.find(" r=\"")? + 4;
+          tag[r..][..tag[r..].find('"')?].parse().ok()
+        })
+        .collect();
+      radii.sort_by(|a, b| b.partial_cmp(a).unwrap());
+      radii
+    };
+
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          min,
+          max,
+          step,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name.as_str(), "k");
+        assert_eq!((*min, *max, *step), (-1.5, 1.0, 0.05));
+        assert_eq!(*current, -1.5, "a slider with no initial starts at min");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    // `Solve` without a variable list still finds both intersections, so
+    // both marks are drawn — at the size `PlotStyle` asked for, not the
+    // default dot the same picture draws without it.
+    let secant_svg = render(&state);
+    let secant = mark_radii(&secant_svg);
+    assert_eq!(secant.len(), 2, "both intersections must be marked");
+    assert_eq!(secant[0], secant[1], "both marks are the same size");
+    let plain = code.replace(", PlotStyle -> PointSize[0.03]", "");
+    let default_state =
+      instantiate_stored_manipulate(&plain, "").expect("widget");
+    let default_dot = mark_radii(&render(&default_state))[0];
+    assert!(
+      secant[0] > 1.5 * default_dot,
+      "PointSize[0.03] must draw a bigger mark than the default {default_dot}, \
+       got {}",
+      secant[0]
+    );
+
+    // Sliding to the tangency at k = -1 collapses the two intersections
+    // onto the single point the line touches.
+    match &mut state.controls[..] {
+      [manipulate::ControlState::Continuous { current, .. }] => {
+        *current = -1.0;
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let tangent = render(&state);
+    assert_eq!(
+      mark_radii(&tangent).len(),
+      2,
+      "the double root still yields two coincident marks"
+    );
+    assert_ne!(
+      tangent, secant_svg,
+      "moving the slider must redraw the picture"
+    );
+  }
 }
