@@ -2402,6 +2402,21 @@ mod plot3d {
         );
       }
     }
+
+    #[test]
+    fn holds_iterator_variables() {
+      // Regression: RegionPlot3D was missing from the HoldAll list
+      // alongside ParametricPlot3D, so a global `x`/`y`/`z` assigned
+      // elsewhere in a notebook substituted into the iterator specs
+      // before they were parsed.
+      clear_state();
+      let result = interpret(
+        "x = 0.; y = 0.; z = 0.; \
+         Head[RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]]",
+      )
+      .unwrap();
+      assert_eq!(result, "Graphics3D");
+    }
   }
 
   mod revolution_plot3d {
@@ -2542,6 +2557,18 @@ mod plot3d {
         assert!(interpret("RevolutionPlot3D[t^2, 5]").is_err());
       }
     }
+
+    #[test]
+    fn holds_iterator_variable() {
+      // Regression: RevolutionPlot3D was missing from the HoldAll list
+      // alongside ParametricPlot3D, so a global `t` assigned elsewhere in
+      // a notebook substituted into the iterator spec before it was
+      // parsed.
+      clear_state();
+      let result =
+        interpret("t = 0.; Head[RevolutionPlot3D[t^2, {t, 0, 2}]]").unwrap();
+      assert_eq!(result, "Graphics3D");
+    }
   }
 
   mod spherical_plot3d {
@@ -2673,6 +2700,21 @@ mod plot3d {
           "True"
         );
       }
+    }
+
+    #[test]
+    fn holds_iterator_variables() {
+      // Regression: SphericalPlot3D was missing from the HoldAll list
+      // alongside ParametricPlot3D, so a global `theta`/`phi` assigned
+      // elsewhere in a notebook substituted into the iterator specs
+      // before they were parsed.
+      clear_state();
+      let result = interpret(
+        "theta = 0.; phi = 0.; \
+         Head[SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]]",
+      )
+      .unwrap();
+      assert_eq!(result, "Graphics3D");
     }
   }
 
@@ -15769,6 +15811,21 @@ mod contour_plot_3d {
     );
   }
 
+  #[test]
+  fn holds_iterator_variables() {
+    // Regression: ContourPlot3D was missing from the HoldAll list
+    // alongside ParametricPlot3D, so a global `x`/`y`/`z` assigned
+    // elsewhere in a notebook substituted into the iterator specs before
+    // they were parsed.
+    clear_state();
+    let result = interpret(
+      "x = 0.; y = 0.; z = 0.; \
+       Head[ContourPlot3D[x^2 + y^2 + z^2 - 1, {x, -2, 2}, {y, -2, 2}, {z, -2, 2}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "Graphics3D");
+  }
+
   mod basic {
     use super::*;
 
@@ -16598,6 +16655,38 @@ mod parametric_plot3d {
       interpret("Head[ParametricPlot3D[{u, v, u + v}, {u, 0, 1}, {v, 0, 1}]]")
         .unwrap();
     assert_eq!(result, "Graphics3D");
+  }
+
+  #[test]
+  fn holds_iterator_variable() {
+    // Regression (Wolfram Demonstration "4D Rotations of a Klein
+    // Bottle"): ParametricPlot3D evaluated its arguments before parsing
+    // the iterator spec, so a global `u`/`v` assigned elsewhere in the
+    // notebook (a common `Initialization :> (... ; u = 0.; v = 0.;)`
+    // bookkeeping idiom) substituted into `{u, 0, 2 Pi}` and made the
+    // iterator variable a number instead of a symbol, freezing the
+    // surface at a single point instead of sampling the range.
+    clear_state();
+    interpret("u = 0.; v = 0.;").unwrap();
+    let svg = export_svg(
+      "ParametricPlot3D[{Sin[u], Cos[u], v}, {u, 0, 2 Pi}, {v, 0, 1}]",
+    );
+    assert!(svg.contains("<svg"));
+  }
+
+  #[test]
+  fn body_from_function_call() {
+    // Regression: HoldAll leaves ParametricPlot3D's first argument
+    // unevaluated, so a Demonstration idiom that names a helper function
+    // instead of writing {fx, fy, fz} literally (e.g. `projection[u, v]`
+    // returning a 3-list, as the Klein Bottle Demonstration above does)
+    // needs one evaluation — with the iterator variables cleared — to
+    // discover its {fx, fy, fz} shape before per-sample substitution.
+    clear_state();
+    interpret("helper[a_, b_] := {Sin[a], Cos[a], b};").unwrap();
+    let svg =
+      export_svg("ParametricPlot3D[helper[u, v], {u, 0, 2 Pi}, {v, 0, 1}]");
+    assert!(svg.contains("<svg"));
   }
 
   /// Every `<polygon>` fill colour in the SVG, as `(r, g, b)` triples — see

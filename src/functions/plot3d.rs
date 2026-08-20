@@ -9220,48 +9220,15 @@ fn parametric_plot3d_curve_ast(
   opts: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   // Body may be a single triple {fx, fy, fz} or a list of triples.
-  struct Curve<'a> {
-    fx: &'a Expr,
-    fy: &'a Expr,
-    fz: &'a Expr,
+  struct Curve {
+    fx: Expr,
+    fy: Expr,
+    fz: Expr,
   }
-  let curves: Vec<Curve> = match body {
-    Expr::List(items)
-      if items.len() == 3 && !matches!(&items[0], Expr::List(_)) =>
-    {
-      vec![Curve {
-        fx: &items[0],
-        fy: &items[1],
-        fz: &items[2],
-      }]
-    }
-    Expr::List(items)
-      if !items.is_empty()
-        && items
-          .iter()
-          .all(|it| matches!(it, Expr::List(sub) if sub.len() == 3)) =>
-    {
-      items
-        .iter()
-        .map(|item| {
-          if let Expr::List(sub) = item {
-            Curve {
-              fx: &sub[0],
-              fy: &sub[1],
-              fz: &sub[2],
-            }
-          } else {
-            unreachable!()
-          }
-        })
-        .collect()
-    }
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "ParametricPlot3D: first argument must be {fx, fy, fz}".into(),
-      ));
-    }
-  };
+  let curves: Vec<Curve> = resolve_parametric_triples(body, &[tvar])?
+    .into_iter()
+    .map(|(fx, fy, fz)| Curve { fx, fy, fz })
+    .collect();
 
   // Sample each curve at SAMPLE_N+1 points uniformly in [t_min, t_max].
   const SAMPLE_N: usize = 200;
@@ -9327,7 +9294,7 @@ fn parametric_plot3d_curve_ast(
     for i in 0..=SAMPLE_N {
       let t = t_min + i as f64 * dt;
       if let Some((x, y, z)) =
-        evaluate_parametric_at_t(curve.fx, curve.fy, curve.fz, tvar, t)
+        evaluate_parametric_at_t(&curve.fx, &curve.fy, &curve.fz, tvar, t)
       {
         current_segment.push(Expr::List(
           vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)].into(),
@@ -9383,6 +9350,61 @@ fn evaluate_parametric_at_t(
     Some((x, y, z))
   } else {
     None
+  }
+}
+
+/// Resolve `body` into one or more `{fx, fy, fz}` triples for
+/// `ParametricPlot3D`. `body` normally is already a literal `{fx, fy, fz}`
+/// (or a list of such triples), but a Demonstration idiom passes a helper
+/// call instead — e.g. `ParametricPlot3D[projection[u, v, ...], {u, ...},
+/// {v, ...}]` — which HoldAll leaves unevaluated and which must be
+/// evaluated once to discover its shape. `shadow_vars` (the iterator
+/// variables) are cleared for that one evaluation so a stray global left
+/// over from elsewhere in the notebook (e.g. an `Initialization :> (u =
+/// 0.; ...)`) doesn't freeze the surface at a single point instead of
+/// leaving `u`/`v` symbolic for the later per-sample substitution.
+fn resolve_parametric_triples(
+  body: &Expr,
+  shadow_vars: &[&str],
+) -> Result<Vec<(Expr, Expr, Expr)>, InterpreterError> {
+  let err = || {
+    InterpreterError::EvaluationError(
+      "ParametricPlot3D: first argument must be {fx, fy, fz}".into(),
+    )
+  };
+  match body {
+    Expr::List(items)
+      if items.len() == 3 && !matches!(&items[0], Expr::List(_)) =>
+    {
+      Ok(vec![(items[0].clone(), items[1].clone(), items[2].clone())])
+    }
+    Expr::List(items)
+      if !items.is_empty()
+        && items
+          .iter()
+          .all(|it| matches!(it, Expr::List(sub) if sub.len() == 3)) =>
+    {
+      Ok(
+        items
+          .iter()
+          .map(|item| match item {
+            Expr::List(sub) => (sub[0].clone(), sub[1].clone(), sub[2].clone()),
+            _ => unreachable!(),
+          })
+          .collect(),
+      )
+    }
+    Expr::List(_) => Err(err()),
+    other => {
+      let resolved =
+        crate::functions::plot::eval_body_vars_symbolic(other, shadow_vars);
+      match &resolved {
+        Expr::List(items) if items.len() == 3 => {
+          Ok(vec![(items[0].clone(), items[1].clone(), items[2].clone())])
+        }
+        _ => Err(err()),
+      }
+    }
   }
 }
 
@@ -9489,52 +9511,17 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Parse parametric surfaces: body must be {fx, fy, fz} or {{fx1, fy1, fz1}, ...}
-  struct ParametricSurface<'a> {
-    fx: &'a Expr,
-    fy: &'a Expr,
-    fz: &'a Expr,
+  struct ParametricSurface {
+    fx: Expr,
+    fy: Expr,
+    fz: Expr,
   }
 
-  let surfaces: Vec<ParametricSurface> = match body {
-    Expr::List(items) if !items.is_empty() => {
-      if items.len() == 3 && !matches!(&items[0], Expr::List(_)) {
-        vec![ParametricSurface {
-          fx: &items[0],
-          fy: &items[1],
-          fz: &items[2],
-        }]
-      } else if items
-        .iter()
-        .all(|item| matches!(item, Expr::List(sub) if sub.len() == 3))
-      {
-        items
-          .iter()
-          .map(|item| {
-            if let Expr::List(sub) = item {
-              ParametricSurface {
-                fx: &sub[0],
-                fy: &sub[1],
-                fz: &sub[2],
-              }
-            } else {
-              unreachable!()
-            }
-          })
-          .collect()
-      } else {
-        vec![ParametricSurface {
-          fx: &items[0],
-          fy: &items[1],
-          fz: &items[2],
-        }]
-      }
-    }
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "ParametricPlot3D: first argument must be {fx, fy, fz}".into(),
-      ));
-    }
-  };
+  let surfaces: Vec<ParametricSurface> =
+    resolve_parametric_triples(body, &[&uvar, &vvar])?
+      .into_iter()
+      .map(|(fx, fy, fz)| ParametricSurface { fx, fy, fz })
+      .collect();
 
   // `PlotStyle`, one style per surface (cycling); empty means it was not
   // given, so the height-based rainbow default is used unchanged.
@@ -9570,7 +9557,13 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for j in 0..=GRID_N {
         let vval = v_min + j as f64 * v_step;
         if let Some((x, y, z)) = evaluate_parametric_at_uv(
-          surface.fx, surface.fy, surface.fz, &uvar, &vvar, uval, vval,
+          &surface.fx,
+          &surface.fy,
+          &surface.fz,
+          &uvar,
+          &vvar,
+          uval,
+          vval,
         ) {
           points[i][j] = Some((x, y, z));
           gx_min = gx_min.min(x);
