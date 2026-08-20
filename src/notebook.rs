@@ -1391,10 +1391,10 @@ fn reads_as_one_unit(s: &str) -> bool {
           wrapped_whole = false;
         }
       }
-      _ if depth == 0 => {
-        if c.is_whitespace() || "+-*/^=<>,;|&\u{2212}".contains(c) {
-          return false;
-        }
+      _ if depth == 0
+        && (c.is_whitespace() || "+-*/^=<>,;|&\u{2212}".contains(c)) =>
+      {
+        return false;
       }
       _ => {}
     }
