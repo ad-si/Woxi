@@ -2383,15 +2383,24 @@ pub fn evaluate_expr_to_expr_inner(
         // Note: Graphics is NOT held – its args are evaluated normally
         // (so Thick → Thickness[Large], Red → RGBColor[1,0,0], etc.)
         || name == "ParametricPlot"
+        // The 3D counterparts of the held 2D plotting heads above need the
+        // same treatment: each takes a symbolic body plus `{var, min, max}`
+        // iterator specs, so a `Module` local reused as one of those
+        // iterator variables (a common idiom — see the "Firm with Two
+        // Plants" Demonstration, whose Manipulate reuses its `Q` control as
+        // ParametricPlot3D's own iterator) must stay unevaluated in the
+        // iterator position rather than being substituted away before the
+        // plot function ever sees it as a symbol.
         || name == "ParametricPlot3D"
+        || name == "ContourPlot3D"
+        || name == "RegionPlot3D"
+        || name == "VectorPlot3D"
+        || name == "SphericalPlot3D"
+        || name == "RevolutionPlot3D"
         || name == "PolarPlot"
         || name == "DensityPlot"
         || name == "ContourPlot"
-        || name == "ContourPlot3D"
         || name == "RegionPlot"
-        || name == "RegionPlot3D"
-        || name == "RevolutionPlot3D"
-        || name == "SphericalPlot3D"
         || name == "StreamPlot"
         || name == "VectorPlot"
         || name == "StreamDensityPlot"
@@ -2468,14 +2477,15 @@ pub fn evaluate_expr_to_expr_inner(
               | "Plot3D"
               | "ParametricPlot"
               | "ParametricPlot3D"
+              | "ContourPlot3D"
+              | "RegionPlot3D"
+              | "VectorPlot3D"
+              | "SphericalPlot3D"
+              | "RevolutionPlot3D"
               | "PolarPlot"
               | "DensityPlot"
               | "ContourPlot"
-              | "ContourPlot3D"
               | "RegionPlot"
-              | "RegionPlot3D"
-              | "RevolutionPlot3D"
-              | "SphericalPlot3D"
               | "StreamPlot"
               | "VectorPlot"
               | "StreamDensityPlot"

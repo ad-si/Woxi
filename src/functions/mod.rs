@@ -78,6 +78,7 @@ pub mod quantity_ast;
 pub mod query_ast;
 pub mod region;
 pub mod resolve_ast;
+pub mod resource_function_ast;
 pub mod root_ast;
 pub mod rsolve_ast;
 pub mod scoping;

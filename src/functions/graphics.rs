@@ -3380,9 +3380,9 @@ fn parse_bspline(
       )
     });
 
+    let degree = spline_degree_from_args(&args[1..], 3usize.min(pts.len() - 1));
     let control = if closed {
       // For closed splines, wrap the first (degree) points to the end
-      let degree = 3usize.min(pts.len() - 1);
       let mut cp = pts.clone();
       for i in 0..degree {
         cp.push(pts[i]);
@@ -3392,7 +3392,7 @@ fn parse_bspline(
       pts
     };
 
-    let sampled = evaluate_bspline(&control, 200);
+    let sampled = evaluate_bspline(&control, degree, 200);
     prims.push(Primitive::Line {
       segments: vec![sampled],
       style: style.clone(),
@@ -3400,17 +3400,17 @@ fn parse_bspline(
   }
 }
 
-/// Evaluate a uniform B-spline curve of degree min(3, n-1) at `num_samples` points.
+/// Evaluate a uniform B-spline curve of the given `degree` at `num_samples` points.
 fn evaluate_bspline(
   control_points: &[(f64, f64)],
+  degree: usize,
   num_samples: usize,
 ) -> Vec<(f64, f64)> {
   let n = control_points.len();
   if n < 2 {
     return control_points.to_vec();
   }
-
-  let degree = 3usize.min(n - 1);
+  let degree = degree.min(n - 1);
   let num_knots = n + degree + 1;
 
   // Clamped uniform knot vector
@@ -3471,6 +3471,30 @@ pub(crate) fn bspline_basis(i: usize, k: usize, t: f64, knots: &[f64]) -> f64 {
   };
 
   term1 + term2
+}
+
+/// The B-spline degree an option list requests via `SplineDegree -> n`,
+/// clamped to `[1, max_degree]`. Wolfram's default (no option given) is
+/// `min(3, n - 1)`, i.e. `max_degree` itself since callers already clamp
+/// it to the control-point count.
+pub(crate) fn spline_degree_from_args(
+  args: &[Expr],
+  max_degree: usize,
+) -> usize {
+  let requested = args.iter().find_map(|arg| match arg {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "SplineDegree") =>
+    {
+      try_eval_to_f64(replacement)
+    }
+    _ => None,
+  });
+  match requested {
+    Some(n) if n >= 1.0 => (n.round() as usize).clamp(1, max_degree.max(1)),
+    _ => max_degree,
+  }
 }
 
 fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {

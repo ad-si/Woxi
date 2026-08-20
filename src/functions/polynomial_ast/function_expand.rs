@@ -229,23 +229,14 @@ fn negate_if_negative(t: &Expr) -> Option<Expr> {
 }
 
 /// A positive rational as a normalised `(numerator, denominator)` pair.
-type Ratio = (i128, i128);
+type Rat = (i128, i128);
 
-fn gcd_i128(a: i128, b: i128) -> i128 {
-  if b == 0 { a.abs() } else { gcd_i128(b, a % b) }
+fn rat_mul(a: Rat, b: Rat) -> Rat {
+  rat_reduce(a.0 * b.0, a.1 * b.1)
 }
 
-fn ratio(n: i128, d: i128) -> Ratio {
-  let g = gcd_i128(n, d).max(1);
-  (n / g, d / g)
-}
-
-fn ratio_times(a: Ratio, b: Ratio) -> Ratio {
-  ratio(a.0 * b.0, a.1 * b.1)
-}
-
-fn ratio_over(a: Ratio, b: Ratio) -> Ratio {
-  ratio(a.0 * b.1, a.1 * b.0)
+fn rat_div(a: Rat, b: Rat) -> Rat {
+  rat_reduce(a.0 * b.1, a.1 * b.0)
 }
 
 /// The exact square root of a non-negative integer, if it has one.
@@ -265,7 +256,7 @@ fn integer_sqrt(n: i128) -> Option<i128> {
 }
 
 /// The exact square root of a positive rational, if it has one.
-fn ratio_sqrt(r: Ratio) -> Option<Ratio> {
+fn rat_sqrt(r: Rat) -> Option<Rat> {
   Some((integer_sqrt(r.0)?, integer_sqrt(r.1)?))
 }
 
@@ -289,7 +280,7 @@ fn squarefree_kernel(mut n: i128) -> i128 {
 }
 
 /// The positive rational value of `e`, when it is one written exactly.
-fn as_positive_ratio(e: &Expr) -> Option<Ratio> {
+fn as_positive_ratio(e: &Expr) -> Option<Rat> {
   match e {
     Expr::Integer(n) if *n > 0 => Some((*n, 1)),
     Expr::FunctionCall { name, args }
@@ -297,7 +288,7 @@ fn as_positive_ratio(e: &Expr) -> Option<Ratio> {
     {
       match (&args[0], &args[1]) {
         (Expr::Integer(p), Expr::Integer(q)) if *p > 0 && *q > 0 => {
-          Some(ratio(*p, *q))
+          Some(rat_reduce(*p, *q))
         }
         _ => None,
       }
@@ -342,12 +333,12 @@ fn as_even_power(e: &Expr) -> Option<(i128, Expr)> {
 
 /// A negated term of the form `c u^2` or `c u^4`, split into the positive
 /// rational `c` and the square root `u` (or `u^2`) of the power.
-fn as_scaled_square(e: &Expr) -> Option<(Ratio, Expr)> {
-  let mut coefficient: Ratio = (1, 1);
+fn as_scaled_square(e: &Expr) -> Option<(Rat, Expr)> {
+  let mut coefficient: Rat = (1, 1);
   let mut power: Option<(i128, Expr)> = None;
   for factor in as_times_factors(e) {
     if let Some(r) = as_positive_ratio(&factor) {
-      coefficient = ratio_times(coefficient, r);
+      coefficient = rat_mul(coefficient, r);
     } else if power.is_none() {
       power = Some(as_even_power(&factor)?);
     } else {
@@ -425,17 +416,17 @@ fn split_sqrt_of_square_difference(radicand: &Expr) -> Option<Expr> {
 
   // `prefactor` is pulled out of the radical as `Sqrt[prefactor]`; `a` and
   // `b` are the two sides of the rescaled difference of squares.
-  let (prefactor, a, b): (Ratio, Expr, Expr) = if let Some(ca) = ca
+  let (prefactor, a, b): (Rat, Expr, Expr) = if let Some(ca) = ca
     && ca != (1, 1)
-    && ratio_over(cb, ca).1 == 1
-    && integer_sqrt(ratio_over(cb, ca).0).is_some()
+    && rat_div(cb, ca).1 == 1
+    && integer_sqrt(rat_div(cb, ca).0).is_some()
   {
     // The whole constant divides out and leaves a perfect square behind:
     // `Sqrt[3 - 12 x^2]` → `Sqrt[3] Sqrt[1 - 2 x] Sqrt[1 + 2 x]`.
-    let scale = integer_sqrt(ratio_over(cb, ca).0)?;
+    let scale = integer_sqrt(rat_div(cb, ca).0)?;
     (ca, mk_int(1), mk_times(mk_int(scale), base))
   } else if let Some(ca) = ca
-    && let (Some(ra), Some(rb)) = (ratio_sqrt(ca), ratio_sqrt(cb))
+    && let (Some(ra), Some(rb)) = (rat_sqrt(ca), rat_sqrt(cb))
   {
     // Both coefficients are already squares: `Sqrt[4 - 9 x^2]` →
     // `Sqrt[2 - 3 x] Sqrt[2 + 3 x]`.
@@ -448,9 +439,9 @@ fn split_sqrt_of_square_difference(radicand: &Expr) -> Option<Expr> {
     // Scale the radicand so the negated coefficient becomes a square, and
     // divide the result by the square root of that scale.
     let scale = squarefree_kernel(cb.0 * cb.1);
-    let scaled_b = ratio_sqrt(ratio_times(cb, (scale, 1)))?;
+    let scaled_b = rat_sqrt(rat_mul(cb, (scale, 1)))?;
     let scaled_a = match ca {
-      Some(ca) => call1("Sqrt", mk_exact_ratio(ratio_times(ca, (scale, 1)))),
+      Some(ca) => call1("Sqrt", mk_exact_ratio(rat_mul(ca, (scale, 1)))),
       None if scale == 1 => call1("Sqrt", a_sq.clone()),
       None => call1("Sqrt", mk_times(mk_int(scale), a_sq.clone())),
     };
@@ -476,7 +467,7 @@ fn split_sqrt_of_square_difference(radicand: &Expr) -> Option<Expr> {
 }
 
 /// A positive rational as an `Integer` or `Rational[…]` expression.
-fn mk_exact_ratio(r: Ratio) -> Expr {
+fn mk_exact_ratio(r: Rat) -> Expr {
   if r.1 == 1 {
     mk_int(r.0)
   } else {

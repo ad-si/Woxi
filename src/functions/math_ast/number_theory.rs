@@ -945,14 +945,14 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Represent each Bernoulli number as a reduced (numerator, denominator)
   // pair in BigInt, so large numerators (e.g. BernoulliB[60]) don't overflow
   // i128.
-  fn rat_reduce(num: &BigInt, den: &BigInt) -> (BigInt, BigInt) {
+  fn reduce(num: &BigInt, den: &BigInt) -> (BigInt, BigInt) {
     rat_reduce_bigint(num, den)
   }
   fn rat_add(a: &(BigInt, BigInt), b: &(BigInt, BigInt)) -> (BigInt, BigInt) {
-    rat_reduce(&(&a.0 * &b.1 + &b.0 * &a.1), &(&a.1 * &b.1))
+    reduce(&(&a.0 * &b.1 + &b.0 * &a.1), &(&a.1 * &b.1))
   }
   fn rat_mul(a: &(BigInt, BigInt), b: &(BigInt, BigInt)) -> (BigInt, BigInt) {
-    rat_reduce(&(&a.0 * &b.0), &(&a.1 * &b.1))
+    reduce(&(&a.0 * &b.0), &(&a.1 * &b.1))
   }
 
   let mut b: Vec<(BigInt, BigInt)> = Vec::with_capacity(n + 1);
