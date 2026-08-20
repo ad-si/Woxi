@@ -8493,30 +8493,28 @@ fn simplify_quotient_select(
   // the quotient instead ((1+2n+n^2)/n^2 → (1+n)^2/n^2 via the Factor
   // pipeline), so the split only competes for irreducible numerators.
   let num_factors_nontrivially = || {
-    super::factor::factor_ast(std::slice::from_ref(num))
-      .ok()
-      .is_some_and(|f| {
-        let factors =
-          super::together::flatten_times_args(std::slice::from_ref(&f));
-        let non_constant = factors
-          .iter()
-          .filter(|f| {
-            let mut vars = std::collections::HashSet::new();
-            collect_variables(f, &mut vars);
-            !vars.is_empty()
-          })
-          .count();
-        non_constant >= 2
-          || factors.iter().any(|f| {
-            matches!(
-              f,
-              Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                ..
-              }
-            ) || matches!(f, Expr::FunctionCall { name, .. } if name == "Power")
-          })
-      })
+    super::factor::factor_ast(std::slice::from_ref(num)).is_ok_and(|f| {
+      let factors =
+        super::together::flatten_times_args(std::slice::from_ref(&f));
+      let non_constant = factors
+        .iter()
+        .filter(|f| {
+          let mut vars = std::collections::HashSet::new();
+          collect_variables(f, &mut vars);
+          !vars.is_empty()
+        })
+        .count();
+      non_constant >= 2
+        || factors.iter().any(|f| {
+          matches!(
+            f,
+            Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              ..
+            }
+          ) || matches!(f, Expr::FunctionCall { name, .. } if name == "Power")
+        })
+    })
   };
   if den_is_mono && n_terms.len() > 1 && !num_factors_nontrivially() {
     let split_cost = 1

@@ -156,14 +156,14 @@ fn inverse_elliptic_nome_q_numeric(q: f64) -> f64 {
   let mut lo = 0.0_f64;
   let mut hi = 1.0_f64;
   for _ in 0..200 {
-    let mid = 0.5 * (lo + hi);
+    let mid = f64::midpoint(lo, hi);
     if nome(mid) < q {
       lo = mid;
     } else {
       hi = mid;
     }
   }
-  0.5 * (lo + hi)
+  f64::midpoint(lo, hi)
 }
 
 /// InverseEllipticNomeQ[q] - inverse elliptic nome: the parameter m with

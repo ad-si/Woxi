@@ -267,10 +267,11 @@ fn carlson_rg(x: f64, y: f64, z: f64) -> f64 {
   if c == 0.0 {
     return 0.0;
   }
-  0.5
-    * (c * carlson_rf(a, b, c)
-      - (1.0 / 3.0) * (a - c) * (b - c) * carlson_rd(a, b, c)
-      + (a * b / c).sqrt())
+  f64::midpoint(
+    c * carlson_rf(a, b, c)
+      - (1.0 / 3.0) * (a - c) * (b - c) * carlson_rd(a, b, c),
+    (a * b / c).sqrt(),
+  )
 }
 
 // ---------------------------------------------------------------------------

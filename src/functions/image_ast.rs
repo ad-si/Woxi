@@ -8789,7 +8789,7 @@ fn ciede2000_distance(lab1: (f64, f64, f64), lab2: (f64, f64, f64)) -> f64 {
 
   let c1 = (a1 * a1 + b1 * b1).sqrt();
   let c2 = (a2 * a2 + b2 * b2).sqrt();
-  let avg_c = 0.5 * (c1 + c2);
+  let avg_c = f64::midpoint(c1, c2);
   let avg_c7 = avg_c.powi(7);
   let g = 0.5 * (1.0 - (avg_c7 / (avg_c7 + 25f64.powi(7))).sqrt());
 
@@ -8797,7 +8797,7 @@ fn ciede2000_distance(lab1: (f64, f64, f64), lab2: (f64, f64, f64)) -> f64 {
   let a2p = a2 * (1.0 + g);
   let c1p = (a1p * a1p + b1 * b1).sqrt();
   let c2p = (a2p * a2p + b2 * b2).sqrt();
-  let avg_cp = 0.5 * (c1p + c2p);
+  let avg_cp = f64::midpoint(c1p, c2p);
 
   let to_deg = 180.0 / std::f64::consts::PI;
   let h1p = {
@@ -8827,11 +8827,11 @@ fn ciede2000_distance(lab1: (f64, f64, f64), lab2: (f64, f64, f64)) -> f64 {
   let delta_hp_rad = delta_hp_deg / to_deg;
   let delta_h_big = 2.0 * cprod.sqrt() * (delta_hp_rad / 2.0).sin();
 
-  let avg_lp = 0.5 * (l1 + l2);
+  let avg_lp = f64::midpoint(l1, l2);
   let avg_hp_deg = if cprod == 0.0 {
     h1p + h2p
   } else if (h1p - h2p).abs() <= 180.0 {
-    0.5 * (h1p + h2p)
+    f64::midpoint(h1p, h2p)
   } else if h1p + h2p < 360.0 {
     0.5 * (h1p + h2p + 360.0)
   } else {
