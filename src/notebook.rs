@@ -1367,6 +1367,53 @@ fn render_text_element(s: &str) -> String {
   s.to_string()
 }
 
+/// Whether display text stands on its own inside a flattened fraction, i.e.
+/// binds as one unit without help. A single run of symbol characters does;
+/// so does a run already wrapped in its own parentheses. Anything holding a
+/// top-level operator or space is a compound and needs grouping.
+fn reads_as_one_unit(s: &str) -> bool {
+  let s = s.trim();
+  if s.is_empty() {
+    return true;
+  }
+  // A sign belongs to the atom it precedes: `-1` is as atomic as `1`.
+  let body = s.strip_prefix(['-', '+', '\u{2212}']).unwrap_or(s);
+  let mut depth = 0i32;
+  let mut wrapped_whole = s.starts_with('(');
+  for (i, c) in body.char_indices() {
+    match c {
+      '(' | '[' | '{' => depth += 1,
+      ')' | ']' | '}' => {
+        depth -= 1;
+        // A closing bracket before the end means the leading `(` did not
+        // wrap the whole string — `(a+b)/c` is not one unit.
+        if depth == 0 && i + c.len_utf8() != body.len() {
+          wrapped_whole = false;
+        }
+      }
+      _ if depth == 0 => {
+        if c.is_whitespace() || "+-*/^=<>,;|&\u{2212}".contains(c) {
+          return false;
+        }
+      }
+      _ => {}
+    }
+  }
+  wrapped_whole || depth == 0
+}
+
+/// One side of a flattened fraction. A two-dimensional fraction states its
+/// own grouping by being two-dimensional; flattened onto one line that
+/// grouping has to come back as parentheses, or `FractionBox[μ/ρ, k/(C_p ρ)]`
+/// reads back as `μ/ρ/k/(C_p ρ)` — a different quantity.
+fn group_fraction_part(s: &str) -> String {
+  if reads_as_one_unit(s) {
+    s.trim().to_string()
+  } else {
+    format!("({})", s.trim())
+  }
+}
+
 /// Render a box expression as *display* text for a prose (Text) cell —
 /// the inline-formula counterpart of `extract_typeset_box`, preferring
 /// readable notation over evaluable InputForm: `SubscriptBox["D", "U"]` →
@@ -1445,8 +1492,8 @@ fn render_boxes_text(s: &str) -> String {
   {
     return format!(
       "{}/{}",
-      render_boxes_text(&args[0]),
-      render_boxes_text(&args[1])
+      group_fraction_part(&render_boxes_text(&args[0])),
+      group_fraction_part(&render_boxes_text(&args[1]))
     );
   }
   if let Some(args) = positional_box_args("SubscriptBox", s)
@@ -1458,6 +1505,12 @@ fn render_boxes_text(s: &str) -> String {
     // underscore between the base and its brackets.
     if part_spec_inside_double_brackets(&sub).is_some() {
       return format!("{base}{sub}");
+    }
+    // An empty base carries the script alone (the FrontEnd draws nothing
+    // where the base would go), so there is nothing for an underscore to
+    // attach to: `SubscriptBox["", SubscriptBox["C", "p"]]` is `C_p`.
+    if draws_nothing(&base) {
+      return sub;
     }
     return format!("{base}_{sub}");
   }
@@ -4422,6 +4475,90 @@ Cell[TextData[{
       }
       CellEntry::Group(_) => panic!("Expected single cell"),
     }
+  }
+
+  /// The prose text a single inline-math cell renders to.
+  fn inline_math_text(boxes: &str) -> String {
+    let nb = format!(
+      "Notebook[{{\nCell[TextData[Cell[BoxData[\n FormBox[{boxes},\n  \
+       TraditionalForm]], \"InlineMath\"]], \"Text\"]\n}}]"
+    );
+    let parsed = parse_notebook(&nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => cell.content.clone(),
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    }
+  }
+
+  #[test]
+  fn test_fraction_of_fractions_keeps_its_grouping() {
+    // A stacked fraction says how it groups by being two-dimensional. Once
+    // flattened onto one line, `FractionBox[a/b, c/d]` without parentheses
+    // would read as `a/b/c/d` — a different quantity.
+    assert_eq!(
+      inline_math_text(
+        r#"FractionBox[RowBox[{"a", "/", "b"}], RowBox[{"c", "/", "d"}]]"#
+      ),
+      "(a/b)/(c/d)"
+    );
+  }
+
+  #[test]
+  fn test_fraction_of_sums_keeps_its_grouping() {
+    assert_eq!(
+      inline_math_text(
+        r#"FractionBox[RowBox[{"a", "-", "b"}], RowBox[{"c", "-", "d"}]]"#
+      ),
+      "(a-b)/(c-d)"
+    );
+  }
+
+  #[test]
+  fn test_fraction_of_products_keeps_its_grouping() {
+    // Juxtaposition binds no tighter than division in linear notation, so a
+    // product denominator needs the parentheses just as much as a sum does.
+    assert_eq!(
+      inline_math_text(
+        r#"FractionBox[RowBox[{"u", " ", "v"}], RowBox[{"g", " ", "h"}]]"#
+      ),
+      "(u v)/(g h)"
+    );
+  }
+
+  #[test]
+  fn test_fraction_of_single_symbols_stays_unparenthesized() {
+    // Atoms already bind as one unit; parenthesizing them is only noise.
+    assert_eq!(inline_math_text(r#"FractionBox["x", "H"]"#), "x/H");
+    assert_eq!(
+      inline_math_text(r#"FractionBox["1", SubscriptBox["C", "p"]]"#),
+      "1/C_p"
+    );
+  }
+
+  #[test]
+  fn test_fraction_side_already_parenthesized_is_not_wrapped_twice() {
+    assert_eq!(
+      inline_math_text(
+        r#"FractionBox["1", RowBox[{"(", RowBox[{"a", "+", "b"}], ")"}]]"#
+      ),
+      "1/(a+b)"
+    );
+  }
+
+  #[test]
+  fn test_fraction_of_negative_number_stays_unparenthesized() {
+    // A sign belongs to the atom it precedes.
+    assert_eq!(inline_math_text(r#"FractionBox["1", "-2"]"#), "1/-2");
+  }
+
+  #[test]
+  fn test_subscript_on_empty_base_drops_the_underscore() {
+    // `SubscriptBox["", …]` draws the script alone — there is no base for an
+    // underscore to attach to, so `_C_p` would invent a symbol.
+    assert_eq!(
+      inline_math_text(r#"SubscriptBox["", SubscriptBox["C", "p"]]"#),
+      "C_p"
+    );
   }
 
   #[test]
