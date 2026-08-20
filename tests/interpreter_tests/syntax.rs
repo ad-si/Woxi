@@ -9356,6 +9356,42 @@ mod cases {
     assert_case(r#"OutputForm[f'[x]]"#, r#"OutputForm[Derivative[1][f][x]]"#);
   }
   #[test]
+  fn implicit_times_indexed_double_derivative_then_call() {
+    // Regression: inside implicit multiplication (`mass y[k]''[t]`), the
+    // grammar's SimpleTerm only allowed a bare FunctionCall with a single
+    // *trailing* prime and no further bracket args after it, so the `[t]`
+    // following the prime was left unconsumed and the whole expression
+    // failed to parse. `y[k]''[t]` -> `Derivative[2][y[k]][t]`, same as it
+    // already did outside of implicit multiplication.
+    assert_case(
+      r#"Hold[mass y[k]''[t]]"#,
+      r#"Hold[mass*Derivative[2][y[k]][t]]"#,
+    );
+  }
+  #[test]
+  fn implicit_times_indexed_single_derivative_then_call() {
+    assert_case(
+      r#"Hold[mass y[k]'[t]]"#,
+      r#"Hold[mass*Derivative[1][y[k]][t]]"#,
+    );
+  }
+  #[test]
+  fn implicit_times_indexed_triple_derivative_then_call() {
+    assert_case(
+      r#"Hold[mass y[k]'''[t]]"#,
+      r#"Hold[mass*Derivative[3][y[k]][t]]"#,
+    );
+  }
+  #[test]
+  fn implicit_times_trailing_prime_then_multiple_bracket_calls() {
+    // `g[1]''[2][3]` -> `Derivative[2][g[1]][2][3]`, chained curried calls
+    // after the derivative, still under implicit multiplication.
+    assert_case(
+      r#"Hold[2 g[1]''[2][3]]"#,
+      r#"Hold[2*Derivative[2][g[1]][2][3]]"#,
+    );
+  }
+  #[test]
   fn sequence_form() {
     assert_case(r#"SequenceForm["[", "x = ", 56, "]"]"#, r#""[""x = "56"]""#);
   }
