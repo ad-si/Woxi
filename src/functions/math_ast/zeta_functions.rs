@@ -1398,7 +1398,7 @@ fn gauss_legendre_integrate_lerch<F: Fn(f64) -> f64>(
 ) -> f64 {
   let nodes = lerch_gl_nodes();
   let half = (hi - lo) * 0.5;
-  let mid = (lo + hi) * 0.5;
+  let mid = f64::midpoint(lo, hi);
   let mut sum = 0.0;
   for (t, w) in nodes {
     let x = mid + half * t;

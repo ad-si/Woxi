@@ -4964,65 +4964,72 @@ pub fn pearson_chi_square_test_ast(
   };
 
   // Determine the null distribution and number of estimated parameters
-  let (dist_cdf, estimated_params): (Box<dyn Fn(f64) -> f64>, usize) = if args
-    .len()
-    >= 2
-  {
-    match &args[1] {
-      Expr::Identifier(s) if s == "Automatic" => {
-        // Normal with estimated mean and variance
-        let n = data.len() as f64;
-        let mean = data.iter().sum::<f64>() / n;
-        let var =
-          data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
-        let sd = var.sqrt();
-        (
-          Box::new(move |x: f64| {
-            0.5 * (1.0 + erf_f64((x - mean) / (sd * std::f64::consts::SQRT_2)))
-          }),
-          2, // estimated mean and variance
-        )
-      }
-      Expr::FunctionCall { name, args: dargs } => match name.as_str() {
-        "NormalDistribution" => {
-          let (mu, sigma) = match dargs.len() {
-            0 => (0.0, 1.0),
-            2 => {
-              let mu = try_eval_to_f64(&dargs[0]).unwrap_or(0.0);
-              let sigma = try_eval_to_f64(&dargs[1]).unwrap_or(1.0);
-              (mu, sigma)
-            }
-            _ => (0.0, 1.0),
-          };
+  let (dist_cdf, estimated_params): (Box<dyn Fn(f64) -> f64>, usize) =
+    if args.len() >= 2 {
+      match &args[1] {
+        Expr::Identifier(s) if s == "Automatic" => {
+          // Normal with estimated mean and variance
+          let n = data.len() as f64;
+          let mean = data.iter().sum::<f64>() / n;
+          let var =
+            data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
+          let sd = var.sqrt();
           (
             Box::new(move |x: f64| {
-              0.5
-                * (1.0 + erf_f64((x - mu) / (sigma * std::f64::consts::SQRT_2)))
+              f64::midpoint(
+                1.0,
+                erf_f64((x - mean) / (sd * std::f64::consts::SQRT_2)),
+              )
             }),
-            0,
+            2, // estimated mean and variance
           )
         }
+        Expr::FunctionCall { name, args: dargs } => match name.as_str() {
+          "NormalDistribution" => {
+            let (mu, sigma) = match dargs.len() {
+              0 => (0.0, 1.0),
+              2 => {
+                let mu = try_eval_to_f64(&dargs[0]).unwrap_or(0.0);
+                let sigma = try_eval_to_f64(&dargs[1]).unwrap_or(1.0);
+                (mu, sigma)
+              }
+              _ => (0.0, 1.0),
+            };
+            (
+              Box::new(move |x: f64| {
+                f64::midpoint(
+                  1.0,
+                  erf_f64((x - mu) / (sigma * std::f64::consts::SQRT_2)),
+                )
+              }),
+              0,
+            )
+          }
+          _ => {
+            return Ok(unevaluated("PearsonChiSquareTest", args));
+          }
+        },
         _ => {
           return Ok(unevaluated("PearsonChiSquareTest", args));
         }
-      },
-      _ => {
-        return Ok(unevaluated("PearsonChiSquareTest", args));
       }
-    }
-  } else {
-    // Default: Normal with estimated parameters
-    let n = data.len() as f64;
-    let mean = data.iter().sum::<f64>() / n;
-    let var = data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
-    let sd = var.sqrt();
-    (
-      Box::new(move |x: f64| {
-        0.5 * (1.0 + erf_f64((x - mean) / (sd * std::f64::consts::SQRT_2)))
-      }),
-      2,
-    )
-  };
+    } else {
+      // Default: Normal with estimated parameters
+      let n = data.len() as f64;
+      let mean = data.iter().sum::<f64>() / n;
+      let var =
+        data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
+      let sd = var.sqrt();
+      (
+        Box::new(move |x: f64| {
+          f64::midpoint(
+            1.0,
+            erf_f64((x - mean) / (sd * std::f64::consts::SQRT_2)),
+          )
+        }),
+        2,
+      )
+    };
 
   // Parse property
   let property = if args.len() == 3 {

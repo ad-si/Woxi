@@ -7287,7 +7287,7 @@ mod ndsolve {
     .unwrap()
     .parse()
     .expect("should be a number");
-    let expected = 0.5 * (1.0 + (-2.0f64).exp());
+    let expected = f64::midpoint(1.0, (-2.0f64).exp());
     assert!(
       (value - expected).abs() < 1e-6,
       "expected {expected}, got {value}"

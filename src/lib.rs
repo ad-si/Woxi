@@ -4093,8 +4093,9 @@ fn precision_number_display(token: &str) -> Option<String> {
 /// with placeholder zeros in the integer part (`314.159` → 2 sig figs →
 /// `310.`), rounding carries propagate (`9.99` → 2 sig figs → `10.`), and a
 /// trailing decimal point is always kept so an approximate real still reads as
-/// `3.` rather than `3`. When `prec` exceeds the digits available, every
-/// stored digit is shown unrounded.
+/// `3.` rather than `3`. When `prec` exceeds the digits available the result is
+/// padded with trailing zeros, because an arbitrary-precision real shows every
+/// figure its precision claims (`N[28, 6]` → `28.0000`, `3.14`5` → `3.1400`).
 pub(crate) fn round_significant(mantissa: &str, prec: usize) -> String {
   let prec = prec.max(1);
   let (int_s, frac_s) = match mantissa.find('.') {
@@ -4141,6 +4142,10 @@ pub(crate) fn round_significant(mantissa: &str, prec: usize) -> String {
       }
     }
   }
+
+  // Show every figure the precision claims, padding when the stored digits
+  // run out (`28.` at 6 significant figures displays as `28.0000`).
+  kept.resize(prec, 0);
 
   let m = kept.len() as isize;
   let tail_exp = lead_exp - (m - 1);
