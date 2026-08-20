@@ -11644,7 +11644,7 @@ fn rat_div(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
   if b.0 == 0 {
     return None;
   }
-  Some(rat_mul(a, (b.1, b.0)))
+  Some(rat_reduce(a.0 * b.1, a.1 * b.0))
 }
 
 /// An exact rational over big integers, kept reduced with a positive

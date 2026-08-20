@@ -5320,7 +5320,7 @@ fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
 }
 
 fn rat_sub(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-  rat_add(a, (-b.0, b.1))
+  rat_reduce(a.0 * b.1 - b.0 * a.1, a.1 * b.1)
 }
 
 fn rat_div(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {

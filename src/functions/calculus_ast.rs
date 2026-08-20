@@ -13586,11 +13586,7 @@ fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
 }
 
 fn rat_div(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
-  if b.0 < 0 {
-    rat_reduce(-a.0 * b.1, a.1 * -b.0)
-  } else {
-    rat_reduce(a.0 * b.1, a.1 * b.0)
-  }
+  rat_reduce(a.0 * b.1, a.1 * b.0)
 }
 
 fn rat_to_expr(r: (i128, i128)) -> Expr {

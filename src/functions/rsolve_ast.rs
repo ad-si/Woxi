@@ -836,12 +836,12 @@ fn fib_lucas_at(k: i128) -> Option<(i128, i128)> {
 }
 
 /// Reduce a rational to lowest terms with a positive denominator.
-fn rat_reduce(n: i128, d: i128) -> Option<(i128, i128)> {
+/// Reject +/-Infinity.
+fn rat_reduce_inf(n: i128, d: i128) -> Option<(i128, i128)> {
   if d == 0 {
     return None;
   }
-  let (n, d) = crate::functions::math_ast::rat_reduce(n, d);
-  Some((n, d))
+  Some(rat_reduce(n, d))
 }
 
 /// Solve the golden-ratio recurrence (characteristic polynomial r^2 - r - 1,
@@ -857,7 +857,7 @@ fn solve_fibonacci_lucas(ics: &[(i128, Expr)], var_name: &str) -> Option<Expr> {
     let evaled =
       crate::evaluator::evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());
     crate::functions::math_ast::expr_to_rational(&evaled)
-      .and_then(|(n, d)| rat_reduce(n, d))
+      .and_then(|(n, d)| rat_reduce_inf(n, d))
   };
 
   match ics {
@@ -870,8 +870,8 @@ fn solve_fibonacci_lucas(ics: &[(i128, Expr)], var_name: &str) -> Option<Expr> {
       // never 0 for integer k, so the elimination is always valid.)
       let (vn, vd) = ic_value(v_expr)?;
       let (fk, lk) = fib_lucas_at(*k)?;
-      let beta_const = rat_reduce(vn, vd.checked_mul(lk)?)?;
-      let beta_c1 = rat_reduce(-fk, lk)?;
+      let beta_const = rat_reduce_inf(vn, vd.checked_mul(lk)?)?;
+      let beta_c1 = rat_reduce_inf(-fk, lk)?;
       build_fib_lucas_combination(
         (0, 1),
         (1, 1),
@@ -904,8 +904,8 @@ fn solve_fibonacci_lucas(ics: &[(i128, Expr)], var_name: &str) -> Option<Expr> {
         .checked_mul(f1)?
         .checked_sub(v1n.checked_mul(v2d)?.checked_mul(f2)?)?;
       let denom = v1d.checked_mul(v2d)?.checked_mul(det)?;
-      let alpha = rat_reduce(alpha_num, denom)?;
-      let beta = rat_reduce(beta_num, denom)?;
+      let alpha = rat_reduce_inf(alpha_num, denom)?;
+      let beta = rat_reduce_inf(beta_num, denom)?;
       build_fib_lucas_combination(alpha, (0, 1), beta, (0, 1), 1, var_name)
     }
     _ => None, // over-determined — leave unevaluated
@@ -1532,7 +1532,7 @@ fn solve_initial_conditions(
         let (lhs_n, lhs_d) = (an * fd * pn * bd, ad * fd * pn * bd);
         let rhs_n = fn_ * pd * bn * ad;
         let (new_n, new_d) = (lhs_n - rhs_n, lhs_d);
-        let (nn, nd) = crate::functions::math_ast::rat_reduce(new_n, new_d);
+        let (nn, nd) = rat_reduce(new_n, new_d);
         aug[row][j] = (nn, nd);
       }
     }
@@ -1546,18 +1546,14 @@ fn solve_initial_conditions(
       // sn/sd -= aug[i][j] * solution[j]
       let (an, ad) = aug[i][j];
       let (cn, cd) = solution[j];
-      let sub_n = an * cn;
-      let sub_d = ad * cd;
+      let (sub_n, sub_d) = (an * cn, ad * cd);
       // sn/sd - sub_n/sub_d
-      sn = sn * sub_d - sub_n * sd;
-      sd *= sub_d;
-      (sn, sd) = crate::functions::math_ast::rat_reduce(sn, sd);
+      (sn, sd) = (sn * sub_d - sub_n * sd, sd * sub_d);
+      (sn, sd) = rat_reduce(sn, sd);
     }
     // solution[i] = (sn/sd) / aug[i][i]
     let (pn, pd) = aug[i][i];
-    sn *= pd;
-    sd *= pn;
-    (sn, sd) = crate::functions::math_ast::rat_reduce(sn, sd);
+    (sn, sd) = rat_reduce(sn * pd, sd * pn);
     solution[i] = (sn, sd);
   }
 
