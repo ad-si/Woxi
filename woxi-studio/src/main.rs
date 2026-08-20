@@ -19456,4 +19456,111 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     .result;
     assert_eq!(ran, "{1, ping}", "both statements of the action must fire");
   }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook (a
+  /// wheel built from two `RevolutionPlot3D` surfaces for the rim and hub,
+  /// a `Table` of `Graphics3D[Cylinder[…]]` spokes, and an axle `Cylinder`,
+  /// all combined with `Show`). Independently written, not copied from any
+  /// specific Demonstration: the spokes here alternate a small angular
+  /// offset by `EvenQ`, crossing like a real wire wheel rather than sitting
+  /// on plain radii, and the rim/hub cross-sections use `Abs`/`Sqrt`
+  /// profiles instead of a plain ellipse.
+  ///
+  /// The `spokes = Table[Graphics3D[…], {i, spokeCount}]` variable is the
+  /// case worth pinning down: `Show` has to splice a *variable holding a
+  /// list of `Graphics3D`* in among individually-named graphics arguments
+  /// (`rim`, `hub`, `axle`), not just a literal list.
+  #[test]
+  fn demonstration_wire_wheel_manipulate_rebuilds_crossed_spokes() {
+    let code = "Manipulate[\
+      Module[{rim, hub, spokes, axle, ang}, \
+        rim = RevolutionPlot3D[{rimDia + 0.5 Abs[Sin[t]], 1.3 Cos[t]}, \
+          {t, 0, 2 Pi}, Mesh -> None]; \
+        hub = RevolutionPlot3D[{Sqrt[Abs[Cos[t]]], 0.6 Sin[t]}, \
+          {t, 0, 2 Pi}, Mesh -> None]; \
+        spokes = Table[\
+          ang = (2 Pi i)/spokeCount + If[EvenQ[i], 0.12, -0.12]; \
+          Graphics3D[Cylinder[{{0, 0, 0}, \
+            {rimDia Sin[ang], rimDia Cos[ang], 0}}, spokeDia]], \
+          {i, spokeCount}\
+        ]; \
+        axle = Graphics3D[Cylinder[{{0, 0, -axleLen}, {0, 0, axleLen}}, 0.3]]; \
+        Show[spokes, rim, hub, axle, \
+          Boxed -> False, SphericalRegion -> True, \
+          ViewPoint -> {3, -3, 6}, ViewAngle -> Pi/6, \
+          ImageSize -> {380, 320}]\
+      ], \
+      {{rimDia, 6, \"rim diameter\"}, 3, 9, ImageSize -> Tiny}, \
+      {{spokeDia, 0.15, \"spoke thickness\"}, 0.05, 0.4, ImageSize -> Tiny}, \
+      {{axleLen, 2, \"axle length\"}, 1, 4, ImageSize -> Tiny}, \
+      {{spokeCount, 11, \"spoke count\"}, 3, 21, 2, ImageSize -> Tiny}, \
+      ControlPlacement -> Left, \
+      TrackedSymbols -> {rimDia, spokeDia, axleLen, spokeCount}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the wire-wheel Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the rim, hub, spokes, and axle must render"
+    );
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the wheel must render")
+    };
+    let initial = render(&state);
+
+    match &mut state.controls[..] {
+      [
+        manipulate::ControlState::Continuous { name: rim_name, .. },
+        manipulate::ControlState::Continuous { name: dia_name, .. },
+        manipulate::ControlState::Continuous {
+          name: axle_name, ..
+        },
+        manipulate::ControlState::Continuous {
+          name: count_name,
+          min: count_min,
+          max: count_max,
+          step: count_step,
+          current: count_now,
+          ..
+        },
+      ] => {
+        assert_eq!(rim_name.as_str(), "rimDia");
+        assert_eq!(dia_name.as_str(), "spokeDia");
+        assert_eq!(axle_name.as_str(), "axleLen");
+        assert_eq!(count_name.as_str(), "spokeCount");
+        assert_eq!(*count_min, 3.0);
+        assert_eq!(*count_max, 21.0);
+        assert_eq!(*count_step, 2.0);
+        assert_eq!(*count_now, 11.0);
+        *count_now = 5.0;
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+    let fewer_spokes = render(&state);
+    assert_ne!(
+      initial, fewer_spokes,
+      "dropping the spoke count from 11 to 5 must change the rendered wheel"
+    );
+  }
 }
