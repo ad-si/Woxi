@@ -735,8 +735,9 @@ pub(crate) fn evaluate_source(content: &str) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("Null".to_string()));
   }
   // Take the value itself where the evaluation recorded one: reading its
-  // display text back loses the quoting on every string in it, and for a
-  // large table costs more than the whole read.
+  // display text back both loses whatever `OutputForm` does not spell out
+  // exactly — `{"a b"}` reads back as the product `{a b}`, `"4.17.3.0"` as
+  // the real `0.` — and, for a large table, costs more than the whole read.
   if let Some(expr) = crate::take_value_expr() {
     return Ok(expr);
   }
@@ -818,18 +819,17 @@ pub fn dispatch_io_functions(
           Ok(Expr::String(s)) => s.clone(),
           _ => "-- Message text not found --".to_string(),
         };
-        // Fill the `1`, `2`, ... template slots with the extra arguments
-        // (rendered in output form, so strings appear unquoted), matching
-        // wolframscript: Message[f::mymsg, 42] shows "Custom 42 here.".
-        let mut filled = text;
-        for (i, arg) in args[1..].iter().enumerate() {
-          let placeholder = format!("`{}`", i + 1);
-          if filled.contains(&placeholder) {
-            let shown =
-              crate::syntax::format_expr(arg, crate::syntax::ExprForm::Output);
-            filled = filled.replace(&placeholder, &shown);
-          }
-        }
+        // Fill the template slots with the extra arguments the way
+        // `StringForm` does — `` `` `` takes them in turn and `` `n` `` picks
+        // the nth — rendered in output form so strings appear unquoted:
+        // `Message[f::mymsg, 42]` shows "Custom 42 here.". A message whose
+        // slots outnumber its arguments keeps them literal, and unlike
+        // `StringForm` says nothing about it: the message being reported is
+        // the news, not the shape of its template.
+        let filled = crate::functions::string_ast::format_message_template(
+          &text,
+          &args[1..],
+        );
         // Route through emit_message so the message is captured (Check
         // reacts to user messages), respects Quiet/Off, participates in
         // General::stop suppression, and reaches the same stream as

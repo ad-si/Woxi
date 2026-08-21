@@ -938,6 +938,60 @@ mod check {
     );
   }
 
+  // Regression test for #616: a message text fills `` `` `` slots the same
+  // way `StringForm` does — taking the arguments in turn — not only the
+  // numbered `` `1` `` ones. Rubi reports its load failures through
+  // `LoadRules::inv = "Could not load file or section: ``"`, which showed
+  // the bare backticks instead of the file it could not load.
+  #[test]
+  fn user_message_fills_sequential_template_slots() {
+    clear_state();
+    interpret(
+      r#"f::seqmsg = "Could not load: ``"; Message[f::seqmsg, {"a.m"}];"#,
+    )
+    .unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.contains("f::seqmsg: Could not load: {a.m}")),
+      "sequential slot not filled: {msgs:?}"
+    );
+  }
+
+  // Successive `` `` `` slots take successive arguments.
+  #[test]
+  fn user_message_sequential_slots_advance() {
+    clear_state();
+    interpret(r#"f::twomsg = "`` then ``"; Message[f::twomsg, 1, 2];"#)
+      .unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("f::twomsg: 1 then 2")),
+      "slots did not advance: {msgs:?}"
+    );
+  }
+
+  // A slot with no argument to fill it stays literal, and says nothing
+  // further about it — the message is the news, not its template.
+  #[test]
+  fn user_message_keeps_unfilled_slots_literal() {
+    clear_state();
+    interpret(r#"f::nomsg = "Could not load: ``"; Message[f::nomsg];"#)
+      .unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.contains("f::nomsg: Could not load: ``")),
+      "unfilled slot not kept literal: {msgs:?}"
+    );
+    assert!(
+      !msgs.iter().any(|m| m.contains("StringForm::sfr")),
+      "unfilled message slot should not warn: {msgs:?}"
+    );
+  }
+
   // `$MessageList` holds the messages raised so far in the current
   // calculation, each as HoldForm[MessageName[sym, tag]]. Verified against
   // wolframscript.

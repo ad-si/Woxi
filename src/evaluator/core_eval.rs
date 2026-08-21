@@ -791,6 +791,13 @@ pub fn evaluate_expr_to_expr_inner(
     Expr::BigFloat(d, p) => Ok(Expr::BigFloat(d.clone(), *p)),
     Expr::String(s) => Ok(Expr::String(s.clone())),
     Expr::Identifier(name) => {
+      // A qualified spelling of a system variable reads through to the one
+      // Woxi actually keeps (`System`Private`$InputFileName` → `$InputFileName`).
+      if let Some(plain) =
+        crate::evaluator::listable::system_variable_alias(name)
+      {
+        return evaluate_expr_to_expr(&Expr::Identifier(plain.to_string()));
+      }
       // Look up in environment
       if let Some(stored) = ENV.with(|e| e.borrow().get(name).cloned()) {
         match stored {
