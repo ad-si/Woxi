@@ -4948,6 +4948,184 @@ mod literal_left_hand_side {
   }
 }
 
+/// A pattern head is a pattern too: `_[a, b]` matches any two-argument
+/// expression, whatever its head — a rule, a list, a sum. Issue #603.
+mod blank_head_patterns {
+  use super::*;
+
+  #[test]
+  fn a_blank_head_matches_every_two_argument_expression() {
+    assert_eq!(interpret("MatchQ[\"a\" -> 1, _[_, _]]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[{1, 2}, _[_, _]]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[a + b, _[_, _]]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[f[1, 2], _[_, _]]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[<|\"a\" -> 1|>, _[_]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn the_head_and_arguments_both_bind() {
+    assert_eq!(
+      interpret("(\"a\" -> 1) /. _[k_, v_] :> hold[k, v]").unwrap(),
+      "hold[a, 1]"
+    );
+    assert_eq!(
+      interpret("(\"a\" -> 1) /. h_[k_, v_] :> hold[h, k, v]").unwrap(),
+      "hold[Rule, a, 1]"
+    );
+    assert_eq!(
+      interpret("{1, 2} /. _[k_, v_] :> hold[k, v]").unwrap(),
+      "hold[1, 2]"
+    );
+    assert_eq!(
+      interpret("Cases[{f[1], g[2]}, _[x_] :> x]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn a_sequence_under_a_blank_head_still_binds() {
+    assert_eq!(
+      interpret("{1, 2, 3} /. _[a__] :> {a}").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+}
+
+/// An optional slot takes its default when the argument at hand does not fit
+/// it, rather than forcing the argument in and failing the whole rule.
+/// Issue #603.
+mod optional_slots_skip_what_does_not_fit {
+  use super::*;
+
+  #[test]
+  fn a_mismatching_argument_moves_on_to_the_next_slot() {
+    assert_eq!(
+      interpret(
+        "k[a_, b : (_Symbol | _Function) : auto, c_List : {}] := {a, b, c};\
+         {k[1], k[1, sym, {2}], k[1, {2}]}"
+      )
+      .unwrap(),
+      "{{1, auto, {}}, {1, sym, {2}}, {1, auto, {2}}}"
+    );
+  }
+
+  #[test]
+  fn a_head_constrained_slot_behaves_the_same_way() {
+    assert_eq!(
+      interpret(
+        "h[a_, b : _Integer : 9, c_List : {}] := {a, b, c};\
+         {h[1], h[1, {2}], h[1, 3, {4}]}"
+      )
+      .unwrap(),
+      "{{1, 9, {}}, {1, 9, {2}}, {1, 3, {4}}}"
+    );
+  }
+
+  #[test]
+  fn a_plain_default_is_unchanged() {
+    assert_eq!(
+      interpret("f[a_, b_ : 5] := {a, b}; {f[1], f[1, 2]}").unwrap(),
+      "{{1, 5}, {1, 2}}"
+    );
+  }
+}
+
+/// `name : head ? test : default` is one slot: a tested pattern that may be
+/// left out. The default used to be stranded after the `?test`. Issue #603.
+mod tested_pattern_with_a_default {
+  use super::*;
+
+  #[test]
+  fn the_test_and_the_default_both_survive() {
+    assert_eq!(
+      interpret("g[a_, b : _Symbol?AtomQ : dflt] := {a, b}; {g[1], g[1, sym]}")
+        .unwrap(),
+      "{{1, dflt}, {1, sym}}"
+    );
+  }
+
+  #[test]
+  fn a_plain_named_default_is_unchanged() {
+    assert_eq!(
+      interpret("k[x : _Integer : 5] := x; {k[], k[7]}").unwrap(),
+      "{5, 7}"
+    );
+  }
+}
+
+/// A named `OptionsPattern[]` binds the options it matched, so a function can
+/// pass them on whole (`f[opts : OptionsPattern[]] := g[opts]`). Issue #603.
+mod named_options_pattern {
+  use super::*;
+
+  #[test]
+  fn the_name_binds_the_matched_options() {
+    assert_eq!(
+      interpret("u[opts : OptionsPattern[]] := {opts}; u[\"a\" -> 1]").unwrap(),
+      "{a -> 1}"
+    );
+    assert_eq!(
+      interpret("u[opts : OptionsPattern[]] := {opts}; u[]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret(
+        "u[opts : OptionsPattern[]] := Flatten[{opts}]; \
+         u[\"a\" -> 1, \"b\" -> 2]"
+      )
+      .unwrap(),
+      "{a -> 1, b -> 2}"
+    );
+  }
+
+  #[test]
+  fn option_value_still_works_alongside_the_binding() {
+    assert_eq!(
+      interpret(
+        "Options[u] = {\"I\" -> 9}; \
+         u[opts : OptionsPattern[]] := OptionValue[\"I\"]; u[\"I\" -> 2]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+}
+
+// Replacing a symbol has to reach into every part of a held expression,
+// including the operator forms whose symbol sits outside the argument
+// list. Renaming a symbol throughout a definition list —
+// `Language`ExtendedFullDefinition[a] /. a -> b` — depends on it.
+// Regression test for <https://github.com/ad-si/Woxi/issues/603>.
+mod symbol_replacement_reaches_operator_forms {
+  use super::*;
+
+  #[test]
+  fn every_operator_form_is_traversed() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"ToString[
+             Hold[{f /@ {1}, f @@ {1}, f @@@ {{1}},
+                   x /. f -> 1, x //. f -> 1,
+                   Function[u, f[u]], q[u_] := f[u]}] /. f -> g,
+             InputForm]"#
+      )
+      .unwrap(),
+      "Hold[{g /@ {1}, g @@ {1}, g @@@ {{1}}, x /. g -> 1, x //. g -> 1, \
+       Function[u, g[u]], q[u_] := g[u]}]"
+    );
+  }
+
+  #[test]
+  fn a_compound_expression_is_traversed() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Hold[(a = 1; a + 2)] /. a -> b, InputForm]").unwrap(),
+      "Hold[b = 1; b + 2]"
+    );
+  }
+}
+
 // Regression tests for #616: a `Rule` / `RuleDelayed` inside a definition's
 // pattern binds its parts. The placeholder round-trip that stores a compound
 // argument pattern walked function calls and lists but not rule nodes, so

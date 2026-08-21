@@ -59,6 +59,27 @@ AddTo::rvalue: 5 is not a variable with a value, so its value cannot be changed.
 5 += 1
 ```
 
+The target may also be a function call — the shape a symbol used as a lookup
+table or a record has. A definition supplying the starting value is what
+makes the first `+=` legal:
+
+```scrut
+$ wo 'count[_] := 0; count["a"] += 1; count["a"] += 1; {count["a"], count["b"]}'
+{2, 0}
+```
+
+```scrut
+$ wo 'state["pos"] = 0; state["pos"] += 8; state["pos"]'
+8
+```
+
+```scrut
+$ wo 'ClearAll[f]; f[1] += 5'
+
+AddTo::rvalue: f[1] is not a variable with a value, so its value cannot be changed.
+f[1] += 5
+```
+
 A postfix `++` binds to its operand before juxtaposition, so `2 a++` is
 `2 (a++)`:
 

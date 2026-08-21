@@ -13959,25 +13959,21 @@ mod date_pattern_fields {
 }
 
 #[test]
-fn an_unusable_regular_expression_does_not_stop_the_evaluation() {
+fn look_around_is_supported_by_the_backtracking_engine() {
   clear_state();
-  // The engine has no look-around; the call is reported and left as written
-  // rather than taking the rest of the program down with it.
+  // The linear-time engine has no look-around, so a pattern using it is
+  // handed to the backtracking one instead of being refused.
   let result = interpret_with_stdout(
     r#"StringSplit["camelCase", RegularExpression["(?=[A-Z])"]]"#,
   )
   .unwrap();
+  assert_eq!(result.result, "{camel, Case}");
   assert!(
-    result.result.starts_with("StringSplit["),
-    "expected the call to stay as written, got {}",
-    result.result
-  );
-  assert!(
-    result
+    !result
       .warnings
       .iter()
       .any(|m| m.starts_with("RegularExpression::badregex")),
-    "expected a badregex message, got {:?}",
+    "a supported pattern should not be reported, got {:?}",
     result.warnings
   );
 }
@@ -14473,6 +14469,163 @@ mod to_expression_definitions {
       )
       .unwrap(),
       "5"
+    );
+  }
+}
+
+// `RegularExpression` is PCRE, where a backslash before a non-word
+// character simply means that character — `\<`, `\!` and `\%` are all just
+// themselves, and real-world patterns escape liberally. Regression tests
+// for <https://github.com/ad-si/Woxi/issues/603>.
+mod regular_expression_redundant_escapes {
+  use super::*;
+
+  #[test]
+  fn a_backslash_before_a_plain_character_is_dropped() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"StringReplace["a<b", RegularExpression["\\<"] -> "-"]"#)
+        .unwrap(),
+      "a-b"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["50%", RegularExpression["\\d+\\%"]]"#)
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringCases["a!b", RegularExpression["\\!"]]"#).unwrap(),
+      "{!}"
+    );
+  }
+
+  #[test]
+  fn a_backslash_that_means_something_is_kept() {
+    clear_state();
+    // `\.` still matches only a literal dot, not any character.
+    assert_eq!(
+      interpret(r#"StringCases["a.b", RegularExpression["a\\.b"]]"#).unwrap(),
+      "{a.b}"
+    );
+    assert_eq!(
+      interpret(r#"StringCases["axb", RegularExpression["a\\.b"]]"#).unwrap(),
+      "{}"
+    );
+    // …and `\d` still means a digit rather than the letter `d`.
+    assert_eq!(
+      interpret(r#"StringCases["a1d", RegularExpression["\\d"]]"#).unwrap(),
+      "{1}"
+    );
+  }
+
+  // The pattern that motivated this: an HTML comment, escaped throughout.
+  #[test]
+  fn a_liberally_escaped_pattern_compiles() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"StringCases["x<!--hi-->y",
+             RegularExpression["\\<\\!\\-\\-([^\\!|\\<|\\>]*)\\>"]]"#
+      )
+      .unwrap(),
+      "{<!--hi-->}"
+    );
+  }
+}
+
+// PCRE has look-around and backreferences; Rust's `regex` crate has
+// neither, so a pattern using them falls through to the backtracking
+// engine instead of failing to compile. Regression tests for
+// <https://github.com/ad-si/Woxi/issues/603>.
+mod regular_expression_look_around {
+  use super::*;
+
+  #[test]
+  fn lookahead_constrains_without_consuming() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"StringCases["foo1 bar2 foo3", RegularExpression["foo(?=\\d)"]]"#
+      )
+      .unwrap(),
+      "{foo, foo}"
+    );
+    assert_eq!(
+      interpret(r#"StringCases["ab ac ad", RegularExpression["a(?!c)."]]"#)
+        .unwrap(),
+      "{ab, ad}"
+    );
+  }
+
+  #[test]
+  fn lookbehind_constrains_what_precedes() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"StringCases["xA yA zB", RegularExpression["(?<=y)A"]]"#)
+        .unwrap(),
+      "{A}"
+    );
+    assert_eq!(
+      interpret(r#"StringCases["xA yA", RegularExpression["(?<!y)A"]]"#)
+        .unwrap(),
+      "{A}"
+    );
+  }
+
+  #[test]
+  fn a_backreference_matches_what_a_group_captured() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"StringMatchQ["abcabc", RegularExpression["(abc)\\1"]]"#)
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["abcabd", RegularExpression["(abc)\\1"]]"#)
+        .unwrap(),
+      "False"
+    );
+  }
+
+  // The pattern that motivated this: a lazy "up to the first closing tag"
+  // written as a tempered token, which is how the WLX reader escapes
+  // blocks it must not look inside.
+  #[test]
+  fn a_tempered_token_matches_up_to_the_first_terminator() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"StringReplace["a<Escape>keep</Escape>b<Escape>two</Escape>c",
+             RegularExpression["<Escape>((?:(?!<Escape>)[\\s\\S])*?)<\\/Escape>"]
+               -> "[$1]"]"#
+      )
+      .unwrap(),
+      "a[keep]b[two]c"
+    );
+  }
+
+  // Groups still number and name themselves the same way on the
+  // backtracking engine.
+  #[test]
+  fn groups_still_work_under_look_around() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"StringCases["a1 b2", RegularExpression["(\\w)(?=\\d)(\\d)"] :> "$1$2"]"#
+      )
+      .unwrap(),
+      "{a1, b2}"
+    );
+  }
+
+  // A pattern that is simply wrong is still reported as wrong, and with the
+  // ordinary engine's diagnosis rather than a complaint about look-around.
+  #[test]
+  fn a_broken_pattern_is_still_an_error() {
+    clear_state();
+    assert!(
+      interpret(r#"StringCases["a", RegularExpression["("]]"#).is_err(),
+      "an unclosed group should not compile"
     );
   }
 }

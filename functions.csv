@@ -3218,7 +3218,7 @@ StringExtract,Extracts fields (by position or span) split by whitespace or chain
 Tilde,Symbolic tilde relation operator with Unicode display,✅,pure,3.0,3265
 BrownianBridgeProcess,Brownian bridge process with Normal time slices,✅,unevaluated,9.0,3280
 ChannelSend,,🚫,,11.0,3280
-CreateUUID,,,,10.0,3280
+CreateUUID,"Generates a random RFC 4122 version-4 UUID as a string; CreateUUID[""prefix""] puts prefix in front of it",✅,contextual,10.0,3280
 DeviceWrite,,🚫,,10.0,3280
 EstimatorGains,,,,8.0,3280
 FeatureExtract,,🚫,,11.0,3280
@@ -6301,3 +6301,11 @@ Evaluated,Option for whether to evaluate a plot's function once symbolically,✅
 ParallelSelect,Parallel version of Select (evaluated sequentially),✅,pure,14.2,
 ParallelCases,Parallel version of Cases (evaluated sequentially),✅,pure,14.2,
 Developer`ToPackedArray,Packs a full rectangular array of machine numbers into one numeric type; an optional second argument converts the leaves to Integer Real or Complex and anything unpackable is returned unchanged,✅,pure,4.0,
+Internal`DynamicLibraryExtension,"Shared-library file extension of the host platform without the dot (""so"" ""dylib"" or ""dll"")",✅,pure,9.0,
+Language`ExtendedFullDefinition,All definitions a symbol carries (own down sub up default option message and attribute values) as one inert expression that can be assigned to another symbol to install them there,✅,pure,11.2,
+PacletManager`Package`loadWolframLanguageCode,Loads the Wolfram Language implementation a paclet provides for a context by reading the named file under the paclet root,✅,effectful,10.0,
+CodeParser`CodeTokenize,Source split into its tokens as LeafNode expressions each carrying the span it came from,✅,pure,12.0,
+CodeParser`CodeConcreteParse,Concrete syntax tree of source code — every character belongs to a token and the tokens carry their source spans,✅,pure,12.0,
+CodeParser`CodeParse,Abstract syntax tree of source code carrying an ErrorNode when the source does not read,✅,pure,12.0,
+Source,Key under which a CodeParser node reports the span of source it came from,✅,pure,12.0,
+SourceConvention,Option naming how CodeParser reports source positions (line and column or character index),✅,pure,12.0,

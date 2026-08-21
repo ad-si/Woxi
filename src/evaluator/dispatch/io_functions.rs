@@ -625,11 +625,69 @@ fn advance_stream_position(id: usize, new_position: usize) {
 /// honoured the way it is in wolframscript. `None` when no such file exists.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn resolve_get_target(name: &str) -> Option<std::path::PathBuf> {
+  resolve_get_target_in(name, &[])
+}
+
+/// The file `Get[name]` reads, searching `extra_path` — the directories a
+/// `Path -> {…}` option names — and then `$Path` when the name does not
+/// resolve against the working directory on its own. That is how a package
+/// laid out in one of several module directories is found by its relative
+/// name alone.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn resolve_get_target_in(
+  name: &str,
+  extra_path: &[String],
+) -> Option<std::path::PathBuf> {
   if name.ends_with('`') {
     return crate::functions::paclet::resolve_context(name);
   }
   let resolved = crate::vfs::resolve(name);
-  resolved.is_file().then_some(resolved)
+  if resolved.is_file() {
+    return Some(resolved);
+  }
+  if std::path::Path::new(name).is_absolute() {
+    return None;
+  }
+  extra_path
+    .iter()
+    .cloned()
+    .chain(crate::utils::search_path())
+    .map(|dir| crate::vfs::resolve(std::path::Path::new(&dir).join(name)))
+    .find(|candidate| candidate.is_file())
+}
+
+/// The directories a `Path -> "dir"` / `Path -> {"dir", …}` option names.
+/// Any other option is accepted and ignored, as one Woxi does not act on.
+#[cfg(not(target_arch = "wasm32"))]
+fn get_path_option(opts: &[Expr]) -> Vec<String> {
+  let mut dirs = Vec::new();
+  for opt in opts {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = opt
+    else {
+      continue;
+    };
+    if !matches!(&**pattern, Expr::Identifier(name) if name == "Path") {
+      continue;
+    }
+    match &**replacement {
+      Expr::String(dir) => dirs.push(dir.clone()),
+      Expr::List(items) => {
+        dirs.extend(items.iter().filter_map(|item| match item {
+          Expr::String(dir) => Some(dir.clone()),
+          _ => None,
+        }));
+      }
+      _ => {}
+    }
+  }
+  dirs
 }
 
 /// Read and evaluate the file at `path`, returning its last result.
@@ -642,16 +700,32 @@ pub(crate) fn evaluate_file(
   // The read file is the input file for the duration of the read, so
   // `$InputFileName` must point at it and not at the enclosing script.
   let _input_file_name = InputFileNameGuard::install(path);
-  Some(evaluate_source(&content))
+  Some(match evaluate_source(&content) {
+    // A file that cannot be read through is reported and gives `$Failed`;
+    // it does not take the program that read it down with it. That is what
+    // wolframscript does — a `Get` that hits bad syntax or an error deep in
+    // a package leaves the rest of the script running — and it matters most
+    // for a large project, where one unreadable file would otherwise hide
+    // everything after it.
+    Err(
+      error @ (InterpreterError::ParseError(_)
+      | InterpreterError::EvaluationError(_)),
+    ) => {
+      crate::emit_message(&format!(
+        "Get: {} while reading {}.",
+        error,
+        path.display()
+      ));
+      Ok(Expr::Identifier("$Failed".to_string()))
+    }
+    other => other,
+  })
 }
 
 /// Evaluate Wolfram source, returning its last result — what `Get` yields
 /// for whatever it read, be that a file or a command's output.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn evaluate_source(content: &str) -> Result<Expr, InterpreterError> {
-  // Drop any value a previous read left behind, so a fast path inside
-  // `interpret` that records nothing cannot be mistaken for this one's.
-  let _ = crate::take_program_value();
   // Use interpret to evaluate the content (handles all node types
   // including FunctionDefinition, Expression, etc.)
   let result_str = crate::interpret(content)?;
@@ -660,11 +734,11 @@ pub(crate) fn evaluate_source(content: &str) -> Result<Expr, InterpreterError> {
   if result_str == "\0" {
     return Ok(Expr::Identifier("Null".to_string()));
   }
-  // Take the last statement's value as an expression tree. Re-parsing the
-  // printed form instead would quietly corrupt whatever does not survive
-  // `OutputForm`: a file holding `{"a b"}` would come back as `{a b}` — the
-  // product `a*b` — and `"4.17.3.0"` as the real `0.`.
-  if let Some(expr) = crate::take_program_value() {
+  // Take the value itself where the evaluation recorded one: reading its
+  // display text back both loses whatever `OutputForm` does not spell out
+  // exactly — `{"a b"}` reads back as the product `{a b}`, `"4.17.3.0"` as
+  // the real `0.` — and, for a large table, costs more than the whole read.
+  if let Some(expr) = crate::take_value_expr() {
     return Ok(expr);
   }
   Ok(
@@ -795,6 +869,20 @@ pub fn dispatch_io_functions(
         }));
       }
       return Some(Ok(unevaluated("Environment", args)));
+    }
+    // Internal`DynamicLibraryExtension[] — the file extension shared
+    // libraries carry on this platform, without the dot ("so", "dylib",
+    // "dll"). Packages that ship LibraryLink binaries build their path with
+    // it (`"libuv." <> Internal`DynamicLibraryExtension[]`).
+    "Internal`DynamicLibraryExtension" if args.is_empty() => {
+      let extension = if cfg!(target_os = "macos") {
+        "dylib"
+      } else if cfg!(target_os = "windows") {
+        "dll"
+      } else {
+        "so"
+      };
+      return Some(Ok(Expr::String(extension.to_string())));
     }
     // GetEnvironment[] — all environment variables as a List of rules.
     "GetEnvironment" if args.is_empty() => {
@@ -1089,9 +1177,45 @@ pub fn dispatch_io_functions(
         "HTMLFragment",
       )));
     }
-    // Get[file] — read and evaluate a file, returning the last result
+    // `PacletManager`Package`loadWolframLanguageCode[paclet, context, root,
+    // file, opts…]` is the loader a paclet's `Kernel` file calls to bring in
+    // the code that provides `context`. wolframscript sets up autoloading
+    // for the declared symbols; Woxi has no lazy-loading machinery, so it
+    // reads `root/file` right away — the point either way is that the
+    // context exists afterwards.
     #[cfg(not(target_arch = "wasm32"))]
-    "Get" if args.len() == 1 => {
+    "PacletManager`Package`loadWolframLanguageCode" if args.len() >= 4 => {
+      let [
+        Expr::String(_paclet),
+        Expr::String(_context),
+        Expr::String(root),
+        Expr::String(file),
+        ..,
+      ] = args
+      else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let path = std::path::Path::new(root).join(file);
+      let Some(result) = evaluate_file(&crate::vfs::resolve(&path)) else {
+        crate::emit_message_to_stdout(&format!(
+          "Get::noopen: Cannot open {}.",
+          path.display()
+        ));
+        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+      };
+      return Some(result);
+    }
+    // Get[file] — read and evaluate a file, returning the last result.
+    // `Get[file, Path -> {dir, …}]` searches the named directories for a
+    // relative file name, as wolframscript does.
+    #[cfg(not(target_arch = "wasm32"))]
+    "Get"
+      if !args.is_empty()
+        && args[1..].iter().all(|a| {
+          matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        }) =>
+    {
+      let extra_path = get_path_option(&args[1..]);
       let filename = match &args[0] {
         Expr::String(s) => s.clone(),
         Expr::Identifier(s) => s.clone(),
@@ -1116,7 +1240,7 @@ pub fn dispatch_io_functions(
         };
         return Some(evaluate_source(&content));
       }
-      let resolved = resolve_get_target(&filename);
+      let resolved = resolve_get_target_in(&filename, &extra_path);
       let loaded = resolved.as_deref().and_then(evaluate_file);
       let Some(result) = loaded else {
         // wolframscript prints this message to stdout (verified with

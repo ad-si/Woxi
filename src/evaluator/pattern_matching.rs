@@ -137,92 +137,60 @@ pub(crate) fn merge_bindings(
   true
 }
 
-/// Perform nested access on an association: assoc["a", "b"] -> assoc["a"]["b"]
+/// Drill into an association with one lookup per key — what
+/// `assoc[k1, k2, …]` means, the same as `assoc[k1][k2]…`.
+///
+/// A key no association holds gives `Missing["KeyAbsent", key]`. Once the
+/// value reached is no longer an association, the keys still to come apply
+/// to it the way `f[a][b]` does, which is where the Wolfram Language leaves
+/// them: `<|"a" -> {1, 2}|>["a", 3]` is `{1, 2}[3]`.
+pub fn association_lookup_chain(pairs: &[(Expr, Expr)], keys: &[Expr]) -> Expr {
+  let mut current = Expr::Association(pairs.to_vec());
+  for (i, key) in keys.iter().enumerate() {
+    let Expr::Association(items) = &current else {
+      return keys[i..].iter().fold(current, |acc, k| Expr::CurriedCall {
+        func: Box::new(acc),
+        args: vec![k.clone()],
+      });
+    };
+    let key_str = expr_to_string(key);
+    match items.iter().find(|(k, _)| expr_to_string(k) == key_str) {
+      Some((_, value)) => current = value.clone(),
+      None => {
+        return call(
+          "Missing",
+          vec![Expr::String("KeyAbsent".to_string()), key.clone()],
+        );
+      }
+    }
+  }
+  current
+}
+
+/// Perform nested access on an association held by a symbol:
+/// `assoc["a", "b"]` -> `assoc["a"]["b"]`.
 pub fn association_nested_access(
   var_name: &str,
   keys: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if keys.is_empty() {
-    // Return the association itself
-    return ENV.with(|e| {
-      if let Some(StoredValue::Association(pairs)) = e.borrow().get(var_name) {
-        let items: Vec<(Expr, Expr)> = pairs
-          .iter()
-          .map(|(k, v)| {
-            (
-              string_to_expr(k).unwrap_or(Expr::Identifier(k.clone())),
-              v.clone(),
-            )
-          })
-          .collect();
-        Ok(Expr::Association(items))
-      } else {
-        Err(InterpreterError::EvaluationError(format!(
-          "{var_name} is not an association"
-        )))
-      }
-    });
-  }
-
-  // Get the association
   let assoc = ENV.with(|e| e.borrow().get(var_name).cloned());
-  match assoc {
-    Some(StoredValue::Association(pairs)) => {
-      // Perform nested access
-      let mut current_val: Option<Expr> = None;
-      let mut current_pairs = pairs;
-
-      for key in keys {
-        // Use expr_to_string to match storage format (preserves string quotes)
-        let key_str = expr_to_string(key);
-
-        // Look up key in current association
-        if let Some((_, val)) =
-          current_pairs.iter().find(|(k, _)| k == &key_str)
-        {
-          // A nested association continues the drill-down
-          if let Expr::Association(nested) = val {
-            current_pairs = nested
-              .iter()
-              .map(|(k, v)| (expr_to_string(k), v.clone()))
-              .collect();
-            current_val = None;
-          } else {
-            current_val = Some(val.clone());
-          }
-        } else {
-          // Key not found — match wolframscript by returning
-          // Missing["KeyAbsent", key].
-          return Ok(call(
-            "Missing",
-            vec![Expr::String("KeyAbsent".to_string()), key.clone()],
-          ));
-        }
-      }
-
-      // Return the final value
-      if let Some(val) = current_val {
-        Ok(val)
-      } else {
-        // Return remaining association
-        let items: Vec<(Expr, Expr)> = current_pairs
-          .iter()
-          .map(|(k, v)| {
-            (
-              // Keys are stored in input form (strings keep their quotes),
-              // so parse them back instead of wrapping in an Identifier.
-              string_to_expr(k).unwrap_or(Expr::Identifier(k.clone())),
-              v.clone(),
-            )
-          })
-          .collect();
-        Ok(Expr::Association(items))
-      }
-    }
-    _ => Err(InterpreterError::EvaluationError(format!(
+  let Some(StoredValue::Association(pairs)) = assoc else {
+    return Err(InterpreterError::EvaluationError(format!(
       "{var_name} is not an association"
-    ))),
-  }
+    )));
+  };
+  // Keys are stored in input form (strings keep their quotes), so parse them
+  // back instead of wrapping in an Identifier.
+  let pairs: Vec<(Expr, Expr)> = pairs
+    .iter()
+    .map(|(k, v)| {
+      (
+        string_to_expr(k).unwrap_or(Expr::Identifier(k.clone())),
+        v.clone(),
+      )
+    })
+    .collect();
+  Ok(association_lookup_chain(&pairs, keys))
 }
 
 /// Check if a pattern Expr contains any Expr::Pattern nodes (named blanks like n_).
@@ -2102,6 +2070,103 @@ fn try_symbol_replace_all(
       }
     }
 
+    // Every remaining compound node: a symbol rule reaches inside these the
+    // same way it reaches into a call's arguments. `CompoundExpr` and the
+    // operator nodes below are what a package's stored definition bodies are
+    // built from, so leaving them out silently skipped most of a rewritten
+    // definition (`f[x] := (a; g[x])` kept its `g`).
+    Expr::CompoundExpr(items) => {
+      let mut new_items = Vec::with_capacity(items.len());
+      let mut changed = false;
+      for item in items {
+        match try_symbol_replace_all(item, pattern_sym, replacement) {
+          Some(new_item) => {
+            new_items.push(new_item);
+            changed = true;
+          }
+          None => new_items.push(item.clone()),
+        }
+      }
+      changed.then(|| Expr::CompoundExpr(new_items))
+    }
+    Expr::ReplaceAll { expr: e, rules } => {
+      let new_expr = try_symbol_replace_all(e, pattern_sym, replacement);
+      let new_rules = try_symbol_replace_all(rules, pattern_sym, replacement);
+      (new_expr.is_some() || new_rules.is_some()).then(|| Expr::ReplaceAll {
+        expr: Box::new(new_expr.unwrap_or_else(|| (**e).clone())),
+        rules: Box::new(new_rules.unwrap_or_else(|| (**rules).clone())),
+      })
+    }
+    Expr::ReplaceRepeated { expr: e, rules } => {
+      let new_expr = try_symbol_replace_all(e, pattern_sym, replacement);
+      let new_rules = try_symbol_replace_all(rules, pattern_sym, replacement);
+      (new_expr.is_some() || new_rules.is_some()).then(|| {
+        Expr::ReplaceRepeated {
+          expr: Box::new(new_expr.unwrap_or_else(|| (**e).clone())),
+          rules: Box::new(new_rules.unwrap_or_else(|| (**rules).clone())),
+        }
+      })
+    }
+    Expr::Map { func, list } => {
+      let new_func = try_symbol_replace_all(func, pattern_sym, replacement);
+      let new_list = try_symbol_replace_all(list, pattern_sym, replacement);
+      (new_func.is_some() || new_list.is_some()).then(|| Expr::Map {
+        func: Box::new(new_func.unwrap_or_else(|| (**func).clone())),
+        list: Box::new(new_list.unwrap_or_else(|| (**list).clone())),
+      })
+    }
+    Expr::Apply { func, list } => {
+      let new_func = try_symbol_replace_all(func, pattern_sym, replacement);
+      let new_list = try_symbol_replace_all(list, pattern_sym, replacement);
+      (new_func.is_some() || new_list.is_some()).then(|| Expr::Apply {
+        func: Box::new(new_func.unwrap_or_else(|| (**func).clone())),
+        list: Box::new(new_list.unwrap_or_else(|| (**list).clone())),
+      })
+    }
+    Expr::MapApply { func, list } => {
+      let new_func = try_symbol_replace_all(func, pattern_sym, replacement);
+      let new_list = try_symbol_replace_all(list, pattern_sym, replacement);
+      (new_func.is_some() || new_list.is_some()).then(|| Expr::MapApply {
+        func: Box::new(new_func.unwrap_or_else(|| (**func).clone())),
+        list: Box::new(new_list.unwrap_or_else(|| (**list).clone())),
+      })
+    }
+    Expr::PrefixApply { func, arg } => {
+      let new_func = try_symbol_replace_all(func, pattern_sym, replacement);
+      let new_arg = try_symbol_replace_all(arg, pattern_sym, replacement);
+      (new_func.is_some() || new_arg.is_some()).then(|| Expr::PrefixApply {
+        func: Box::new(new_func.unwrap_or_else(|| (**func).clone())),
+        arg: Box::new(new_arg.unwrap_or_else(|| (**arg).clone())),
+      })
+    }
+    Expr::Postfix { expr: e, func } => {
+      let new_expr = try_symbol_replace_all(e, pattern_sym, replacement);
+      let new_func = try_symbol_replace_all(func, pattern_sym, replacement);
+      (new_expr.is_some() || new_func.is_some()).then(|| Expr::Postfix {
+        expr: Box::new(new_expr.unwrap_or_else(|| (**e).clone())),
+        func: Box::new(new_func.unwrap_or_else(|| (**func).clone())),
+      })
+    }
+    Expr::Function { body } => {
+      try_symbol_replace_all(body, pattern_sym, replacement).map(|new_body| {
+        Expr::Function {
+          body: Box::new(new_body),
+        }
+      })
+    }
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => {
+      try_symbol_replace_all(body, pattern_sym, replacement).map(|new_body| {
+        Expr::NamedFunction {
+          params: params.clone(),
+          body: Box::new(new_body),
+          bracketed: *bracketed,
+        }
+      })
+    }
     _ => None,
   }
 }
@@ -3474,6 +3539,45 @@ fn canonical_pattern(pattern: &Expr) -> std::borrow::Cow<'_, Expr> {
   }
 }
 
+/// The head and arguments a pattern with a pattern head (`_[a, b]`) matches
+/// against. Every expression has them, not only a `FunctionCall`: `{1, 2}`
+/// is `List[1, 2]`, `"a" -> 1` is `Rule["a", 1]` and `a + b` is
+/// `Plus[a, b]`, so `_[k_, v_]` matches all three.
+fn head_and_args(expr: &Expr) -> Option<(Expr, Vec<Expr>)> {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      Some((Expr::Identifier(name.clone()), args.to_vec()))
+    }
+    Expr::CurriedCall { func, args }
+      if !matches!(func.as_ref(), Expr::CurriedCall { .. }) =>
+    {
+      Some(((**func).clone(), args.clone()))
+    }
+    Expr::List(items) => {
+      Some((Expr::Identifier("List".to_string()), items.to_vec()))
+    }
+    Expr::Association(pairs) => Some((
+      Expr::Identifier("Association".to_string()),
+      pairs
+        .iter()
+        .map(|(key, value)| Expr::Rule {
+          pattern: Box::new(key.clone()),
+          replacement: Box::new(value.clone()),
+        })
+        .collect(),
+    )),
+    Expr::Rule { .. }
+    | Expr::RuleDelayed { .. }
+    | Expr::BinaryOp { .. }
+    | Expr::UnaryOp { .. } => {
+      let (head, args) =
+        crate::functions::list_helpers_ast::expr_to_head_args(expr)?;
+      Some((Expr::Identifier(head), args))
+    }
+    _ => None,
+  }
+}
+
 pub fn match_pattern(
   expr: &Expr,
   pattern: &Expr,
@@ -4079,20 +4183,11 @@ fn match_pattern_impl(
       // then match the argument patterns (sequences included). The subject is
       // either a `FunctionCall` (symbol head) or a single-level `CurriedCall`
       // (non-symbol head, e.g. the integer-headed `2[4, 5]`).
-      let head_subject: Option<(Expr, &[Expr])> = match expr {
-        Expr::FunctionCall { name, args } => {
-          Some((Expr::Identifier(name.clone()), args.as_slice()))
-        }
-        Expr::CurriedCall { func, args }
-          if !matches!(func.as_ref(), Expr::CurriedCall { .. }) =>
-        {
-          Some(((**func).clone(), args.as_slice()))
-        }
-        _ => None,
-      };
+      let head_subject = head_and_args(expr);
       if pat_name.contains('_')
         && let Some((expr_head, expr_args)) = head_subject
       {
+        let expr_args = expr_args.as_slice();
         // Build a proper Pattern node from the head string so any head
         // constraint (e.g. `b_Integer`) is honoured, not just the name.
         let (hp_name, hp_head, hp_blank) =

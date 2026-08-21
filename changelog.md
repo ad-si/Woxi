@@ -34,6 +34,16 @@
     `LoadRules::inv = "Could not load file or section: ``"` reported the bare
     backticks rather than the file it could not load.
 
+- A variable holding `Pi`, `E`, or `Degree` now reaches arbitrary-precision
+    evaluation the same way the literal constant does. Assignment substitutes
+    the constant in as an `Identifier`, not the `Constant` node a literal
+    `Pi` token parses to, and the arbitrary-precision conversion only
+    recognized the latter — so `c = Pi; N[c, 30]` and
+    `c = Pi; RealDigits[c, 10, 20]` silently returned `c`/`RealDigits[Pi, …]`
+    unevaluated instead of computing digits. This is the pattern a
+    `Manipulate` control commonly uses (binding one of several symbolic
+    constants to a control variable, then computing its digits), which is
+    how the bug surfaced.
 - A `FractionBox` in a prose cell keeps its grouping when Woxi Studio
     flattens it onto one line. A two-dimensional fraction says how it groups
     by being two-dimensional, so a compound numerator or denominator now

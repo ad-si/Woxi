@@ -1057,6 +1057,110 @@ mod graphics {
         "Graphics[{Red, Disk[], Blue, Circle[{2, 0}, 0.5]}]"
       ));
     }
+
+    mod vertex_colors {
+      use super::*;
+
+      /// `Line[pts, VertexColors -> {c1, c2}]` on a two-point line renders a
+      /// single edge, shaded with a linear gradient between the two
+      /// endpoint colors instead of a flat stroke.
+      #[test]
+      fn two_points_render_a_single_gradient() {
+        let svg = export_svg(
+          "Graphics[{Line[{{0, 0}, {1, 1}}, VertexColors -> {Red, Blue}]}]",
+        );
+        assert!(
+          svg.contains("<linearGradient"),
+          "expected a gradient, got: {svg}"
+        );
+        assert!(svg.contains("stop-color=\"rgb(255,0,0)\""));
+        assert!(svg.contains("stop-color=\"rgb(0,0,255)\""));
+        // No flat-colored polyline should remain once colors take over.
+        assert!(!svg.contains("<polyline"));
+      }
+
+      /// Three points/colors is two edges, each its own gradient between
+      /// consecutive vertex colors (Wolfram interpolates per edge, not
+      /// across the whole polyline at once).
+      #[test]
+      fn three_points_render_two_gradients() {
+        let svg = export_svg(
+          "Graphics[{Line[{{0, 0}, {1, 1}, {2, 0}}, \
+           VertexColors -> {Red, Green, Blue}]}]",
+        );
+        assert_eq!(svg.matches("<linearGradient").count(), 2);
+        assert_eq!(svg.matches("<line ").count(), 2);
+      }
+
+      /// Two consecutive vertices sharing a color need no gradient at all —
+      /// that edge is a plain solid-colored line.
+      #[test]
+      fn equal_neighboring_colors_skip_the_gradient() {
+        let svg = export_svg(
+          "Graphics[{Line[{{0, 0}, {1, 1}}, VertexColors -> {Red, Red}]}]",
+        );
+        assert!(!svg.contains("<linearGradient"));
+        assert!(svg.contains("stroke=\"rgb(255,0,0)\""));
+      }
+
+      /// A `VertexColors` list whose length doesn't match the point count
+      /// can't be mapped one-to-one, so it's ignored and the line falls
+      /// back to its ordinary single-color stroke rather than panicking or
+      /// silently drawing a truncated gradient.
+      #[test]
+      fn mismatched_color_count_falls_back_to_solid_stroke() {
+        let svg = export_svg(
+          "Graphics[{Red, Line[{{0, 0}, {1, 1}, {2, 0}}, \
+           VertexColors -> {Green, Blue}]}]",
+        );
+        assert!(!svg.contains("<linearGradient"));
+        assert!(svg.contains("<polyline"));
+        assert!(svg.contains("stroke=\"rgb(255,0,0)\""));
+      }
+
+      /// `VertexColors` accepts any color expression `Line` colors
+      /// otherwise do — `Hue[…]` included, not just `RGBColor`/named colors.
+      #[test]
+      fn accepts_hue_colors() {
+        let svg = export_svg(
+          "Graphics[{Line[{{0, 0}, {1, 0}}, \
+           VertexColors -> {Hue[0], Hue[0.6]}]}]",
+        );
+        assert!(svg.contains("stop-color=\"rgb(255,0,0)\""));
+        assert!(svg.contains("stop-color=\"rgb(0,102,255)\""));
+      }
+
+      /// A multi-segment `Line[{seg1, seg2, …}, VertexColors -> …]` maps
+      /// the flat color list across all segments' points in order, not
+      /// restarting per segment.
+      #[test]
+      fn multi_segment_line_maps_colors_across_segments_in_order() {
+        let svg = export_svg(
+          "Graphics[{Line[{{{0, 0}, {1, 0}}, {{2, 0}, {3, 0}}}, \
+           VertexColors -> {Red, Green, Blue, Black}]}]",
+        );
+        // One gradient per segment (2 points each = 1 edge each).
+        assert_eq!(svg.matches("<linearGradient").count(), 2);
+        assert!(svg.contains("stop-color=\"rgb(255,0,0)\""));
+        assert!(svg.contains("stop-color=\"rgb(0,255,0)\""));
+        assert!(svg.contains("stop-color=\"rgb(0,0,255)\""));
+        assert!(svg.contains("stop-color=\"rgb(0,0,0)\""));
+      }
+
+      /// Regression for the Möbius Mu Function Walk Demonstration: a
+      /// `Manipulate` body computing `Hue`-based `colors` from `Length[ln]`
+      /// and passing them to `Line[ln, VertexColors -> colors]` must
+      /// evaluate and render a gradient, not silently fall back to black.
+      #[test]
+      fn computed_hue_colors_from_a_variable_still_gradient() {
+        let svg = export_svg(
+          "Graphics[{Line[{{0, 0}, {1, 0}, {2, 1}}, \
+           VertexColors -> (Hue[#1/3] & ) /@ Range[3]]}]",
+        );
+        assert_eq!(svg.matches("<linearGradient").count(), 2);
+        assert!(!svg.contains("stroke=\"rgb(0,0,0)\""));
+      }
+    }
   }
 
   mod text_styles {

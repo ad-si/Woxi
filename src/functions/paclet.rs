@@ -197,31 +197,38 @@ fn paclet_context_file(
   None
 }
 
-/// The `"Kernel"` extensions of a parsed `PacletObject[<|…|>]` expression.
+/// The `"Kernel"` extensions of a parsed paclet-info expression.
 /// An extension is a list whose first element is the extension name, e.g.
 /// `{"Kernel", "Root" -> "Kernel", "Context" -> {"MyPaclet`"}}`.
+///
+/// Both spellings a `PacletInfo` file may use are accepted: the current
+/// `PacletObject[<|"Extensions" -> …|>]` with string keys, and the legacy
+/// `Paclet[Extensions -> …]` with symbol keys that `PacletInfo.m` files
+/// predating version 12 still carry.
 fn kernel_extensions(paclet_object: &Expr) -> Vec<Vec<Expr>> {
   let Expr::FunctionCall { name, args } = paclet_object else {
     return Vec::new();
   };
-  if name != "PacletObject" || args.is_empty() {
+  if args.is_empty() {
     return Vec::new();
   }
-  let Expr::Association(pairs) = &args[0] else {
-    return Vec::new();
+  let fields: Vec<(Expr, Expr)> = match (name.as_str(), &args[0]) {
+    ("PacletObject", Expr::Association(pairs)) => {
+      pairs.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+    }
+    ("Paclet", _) => args.iter().filter_map(rule_pair).collect(),
+    _ => return Vec::new(),
   };
-  let extensions = pairs.iter().find_map(|(key, value)| {
-    matches!(key, Expr::String(k) if k == "Extensions").then_some(value)
-  });
+  let extensions = fields
+    .iter()
+    .find_map(|(key, value)| key_is(key, "Extensions").then_some(value));
   let Some(Expr::List(items)) = extensions else {
     return Vec::new();
   };
   items
     .iter()
     .filter_map(|item| match item {
-      Expr::List(parts)
-        if matches!(parts.first(), Some(Expr::String(n)) if n == "Kernel") =>
-      {
+      Expr::List(parts) if key_is(parts.first()?, "Kernel") => {
         Some(parts.iter().map(Expr::clone).collect())
       }
       _ => None,
@@ -229,9 +236,9 @@ fn kernel_extensions(paclet_object: &Expr) -> Vec<Vec<Expr>> {
     .collect()
 }
 
-/// The value of the `"name" -> value` rule in an extension, if present.
-fn option_value(extension: &[Expr], name: &str) -> Option<Expr> {
-  extension.iter().find_map(|part| match part {
+/// The `lhs -> rhs` (or `:>`) pair an expression carries, if it is a rule.
+fn rule_pair(expr: &Expr) -> Option<(Expr, Expr)> {
+  match expr {
     Expr::Rule {
       pattern,
       replacement,
@@ -239,9 +246,22 @@ fn option_value(extension: &[Expr], name: &str) -> Option<Expr> {
     | Expr::RuleDelayed {
       pattern,
       replacement,
-    } => matches!(&**pattern, Expr::String(key) if key == name)
-      .then(|| (**replacement).clone()),
+    } => Some(((**pattern).clone(), (**replacement).clone())),
     _ => None,
+  }
+}
+
+/// Whether `key` names `name`, written either as the string `"Name"` or —
+/// in a legacy `Paclet[…]` info file — as the bare symbol `Name`.
+fn key_is(key: &Expr, name: &str) -> bool {
+  matches!(key, Expr::String(k) | Expr::Identifier(k) if k == name)
+}
+
+/// The value of the `name -> value` rule in an extension, if present.
+fn option_value(extension: &[Expr], name: &str) -> Option<Expr> {
+  extension.iter().find_map(|part| {
+    let (key, value) = rule_pair(part)?;
+    key_is(&key, name).then_some(value)
   })
 }
 

@@ -4142,3 +4142,90 @@ mod postfix_increment_parsing {
     assert_eq!(interpret("m = {1, 2}; m[[1]]++; m").unwrap(), "{2, 2}");
   }
 }
+
+// `General` is where a symbol without its own text for a tag reads it
+// from, so switching a message off there switches it off for every symbol.
+// Regression tests for <https://github.com/ad-si/Woxi/issues/603>.
+mod off_for_the_general_symbol {
+  use super::*;
+
+  #[test]
+  fn it_silences_the_tag_for_every_symbol() {
+    clear_state();
+    interpret(r#"f::mymsg = "boom"; Message[f::mymsg];"#).unwrap();
+    assert!(
+      woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.contains("f::mymsg: boom")),
+      "the message should be emitted while it is on"
+    );
+
+    clear_state();
+    interpret(r#"f::mymsg = "boom"; Off[General::mymsg]; Message[f::mymsg];"#)
+      .unwrap();
+    assert!(
+      !woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.contains("mymsg")),
+      "Off[General::mymsg] should silence f::mymsg: {:?}",
+      woxi::get_captured_messages_raw()
+    );
+  }
+
+  #[test]
+  fn a_symbols_own_tag_is_still_silenced_on_its_own() {
+    clear_state();
+    interpret(
+      r#"f::mymsg = "boom"; g::mymsg = "bang";
+         Off[f::mymsg]; Message[f::mymsg]; Message[g::mymsg];"#,
+    )
+    .unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      !msgs.iter().any(|m| m.contains("f::mymsg")),
+      "f::mymsg should be off: {msgs:?}"
+    );
+    assert!(
+      msgs.iter().any(|m| m.contains("g::mymsg: bang")),
+      "g::mymsg should be untouched: {msgs:?}"
+    );
+  }
+
+  // The "further output will be suppressed" notice is itself
+  // `General::stop`, so it can be switched off like any other message.
+  #[test]
+  fn the_repetition_notice_appears_while_it_is_on() {
+    clear_state();
+    interpret(
+      r#"f::mymsg = "boom";
+         Do[Message[f::mymsg], {5}];"#,
+    )
+    .unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("General::stop")),
+      "the notice should appear while it is on: {msgs:?}"
+    );
+  }
+
+  // Switching it off leaves only the suppression it announces.
+  #[test]
+  fn the_repetition_notice_can_be_switched_off() {
+    clear_state();
+    interpret(
+      r#"f::mymsg = "boom"; Off[General::stop];
+         Do[Message[f::mymsg], {5}];"#,
+    )
+    .unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      !msgs.iter().any(|m| m.contains("General::stop")),
+      "the notice should be off: {msgs:?}"
+    );
+    // The message itself is still generated — only the notice is gone.
+    assert!(
+      msgs.iter().any(|m| m.contains("f::mymsg: boom")),
+      "the message should still be reported: {msgs:?}"
+    );
+  }
+}

@@ -14,6 +14,31 @@ fn emit_rvalue(fname: &str, target: &Expr) {
   ));
 }
 
+/// A compound-assignment call target with its arguments evaluated:
+/// `f[1 + 1] += 2` reads and writes `f[2]`. Building it once keeps the
+/// "does the target have a value?" comparison honest — the target only
+/// counts as valueless when it evaluates back to exactly this form.
+fn evaluated_call_target(expr: &Expr) -> Result<Expr, InterpreterError> {
+  Ok(match expr {
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(evaluate_expr_to_expr)
+        .collect::<Result<Vec<_>, _>>()?
+        .into(),
+    },
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(evaluated_call_target(func)?),
+      args: args
+        .iter()
+        .map(evaluate_expr_to_expr)
+        .collect::<Result<Vec<_>, _>>()?,
+    },
+    other => other.clone(),
+  })
+}
+
 thread_local! {
   /// Symbols currently being looked up — prevents infinite recursion when
   /// a stored OwnValue references the same symbol (e.g. `s = {a, s}`).
@@ -1323,31 +1348,7 @@ pub fn evaluate_expr_to_expr_inner(
             && lhs_args.len() == 1
             && let Expr::Identifier(sym_name) = &lhs_args[0]
           {
-            let up_defs =
-              crate::UPVALUES.with(|m| m.borrow_mut().remove(sym_name));
-            if let Some(up_defs) = up_defs {
-              for (
-                outer_func,
-                params,
-                _conds,
-                _defaults,
-                _heads,
-                body,
-                _orig_lhs,
-                _orig_body,
-              ) in &up_defs
-              {
-                let body_str = crate::syntax::expr_to_string(body);
-                crate::FUNC_DEFS.with(|m| {
-                  if let Some(entry) = m.borrow_mut().get_mut(outer_func) {
-                    entry.retain(|(p, _, _, _, _, b)| {
-                      !(p == params
-                        && crate::syntax::expr_to_string(b) == body_str)
-                    });
-                  }
-                });
-              }
-            }
+            crate::evaluator::assignment::clear_upvalues_of(sym_name);
             return Ok(Expr::Identifier("Null".to_string()));
           }
           // Messages[sym] =. — Woxi has no per-symbol message storage
@@ -1520,7 +1521,13 @@ pub fn evaluate_expr_to_expr_inner(
             "DivideBy" => BinaryOperator::Divide,
             _ => unreachable!(),
           };
-          if !matches!(&args[0], Expr::Identifier(_) | Expr::Part { .. }) {
+          if !matches!(
+            &args[0],
+            Expr::Identifier(_)
+              | Expr::Part { .. }
+              | Expr::FunctionCall { .. }
+              | Expr::CurriedCall { .. }
+          ) {
             emit_rvalue(name, &args[0]);
             return Ok(Expr::FunctionCall {
               name: name.clone(),
@@ -1567,6 +1574,37 @@ pub fn evaluate_expr_to_expr_inner(
               left: Box::new(current_val),
               right: Box::new(rhs),
             })?;
+            crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
+            return Ok(new_val);
+          }
+          // A call target — `counts[x] += 1` on a symbol used as a lookup
+          // table, or `state["pos"] += n` on one used as a record. Like a
+          // symbol target it has to hold a value already: with no
+          // definition to read, `counts[x]` evaluates back to itself and
+          // wolframscript reports `::rvalue` rather than defining it.
+          if matches!(
+            &args[0],
+            Expr::FunctionCall { .. } | Expr::CurriedCall { .. }
+          ) {
+            let target = evaluated_call_target(&args[0])?;
+            let current_val = evaluate_expr_to_expr(&target)?;
+            if crate::syntax::expr_to_string(&current_val)
+              == crate::syntax::expr_to_string(&target)
+            {
+              emit_rvalue(name, &args[0]);
+              return Ok(Expr::FunctionCall {
+                name: name.clone(),
+                args: args.clone(),
+              });
+            }
+            let rhs = evaluate_expr_to_expr(&args[1])?;
+            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
+              op,
+              left: Box::new(current_val),
+              right: Box::new(rhs),
+            })?;
+            // Write through the target as written — `set_ast` evaluates the
+            // arguments itself, and messages about it quote the source form.
             crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
             return Ok(new_val);
           }
@@ -2581,11 +2619,35 @@ pub fn evaluate_expr_to_expr_inner(
         }
         // Check if name is a variable holding an association (for nested access: assoc["a", "b"])
         if let Some(StoredValue::Association(_)) = var_val {
-          // Evaluate arguments and perform nested access
+          // Evaluate arguments and perform nested access. A `Sequence[…]`
+          // among them splices first, the way it does for any other head —
+          // `f[k_, rest__] := assoc[k, rest]` reaches here with the
+          // sequence still wrapped.
           let evaluated_args: Vec<Expr> = args
             .iter()
             .map(evaluate_expr_to_expr)
             .collect::<Result<_, _>>()?;
+          let evaluated_args = crate::evaluator::listable::flatten_sequences(
+            name,
+            &evaluated_args,
+          );
+          // A definition written on the symbol takes precedence over the
+          // association it holds, the same way it does for a symbol holding
+          // anything else (`t = 1; t[x_] := x^2; t[3]` is 9). Objects built
+          // out of a symbol keep their fields as definitions and the symbol's
+          // own value as the key list; both have to stay reachable.
+          if crate::FUNC_DEFS.with(|m| m.borrow().contains_key(name)) {
+            let dispatched = evaluate_function_call_ast(name, &evaluated_args)?;
+            let untouched = Expr::FunctionCall {
+              name: name.clone(),
+              args: evaluated_args.to_vec().into(),
+            };
+            if crate::syntax::expr_to_string(&dispatched)
+              != crate::syntax::expr_to_string(&untouched)
+            {
+              return Ok(dispatched);
+            }
+          }
           return association_nested_access(name, &evaluated_args);
         }
 

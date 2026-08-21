@@ -615,7 +615,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "GeometricMean" => Some((1, 1)),
     "GeometricScene" => Some((2, 3)),
     "GeometricTest" => Some((2, usize::MAX)),
-    "Get" => Some((1, 1)),
+    // `Get[file, opts…]` takes options (`Path -> {…}`) after the file.
+    "Get" => Some((1, usize::MAX)),
     "Needs" => Some((1, 2)),
     "GompertzMakehamDistribution" => Some((2, 2)),
     "Grad" => Some((2, 3)),
@@ -1523,6 +1524,10 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ToeplitzMatrix" => Some((1, 2)),
     "SavitzkyGolayMatrix" => Some((2, 3)),
     "ToExpression" => Some((1, 3)),
+    // `CodeParse[src, opts…]` — the source, then any number of options.
+    "CodeParser`CodeTokenize"
+    | "CodeParser`CodeConcreteParse"
+    | "CodeParser`CodeParse" => Some((1, usize::MAX)),
     "MakeExpression" => Some((1, 2)),
     "ToFileName" => Some((1, 2)),
     "Together" => Some((1, 1)),
@@ -1555,6 +1560,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Unequal" => Some((0, usize::MAX)),
     "UnequalTo" => Some((1, 1)),
     "UniformDistribution" => Some((0, 1)),
+    "CreateUUID" => Some((0, 1)),
     "Unique" => Some((0, 1)),
     "UnitaryMatrixQ" => Some((1, 1)),
     "UnitBox" => Some((1, 1)),

@@ -4562,3 +4562,169 @@ mod upvalues_for_arithmetic_shorthands {
     clear_state();
   }
 }
+
+// `Language`ExtendedFullDefinition` gathers every kind of definition a
+// symbol carries into one inert expression, and assigning that expression
+// to another symbol installs the lot there. Copying a symbol's whole
+// behaviour — `Language`ExtendedFullDefinition[b] =
+// Language`ExtendedFullDefinition[a] /. a -> b` — is how object systems
+// written in the Wolfram Language derive a type from a parent type.
+// Regression tests for <https://github.com/ad-si/Woxi/issues/603>.
+mod extended_full_definition {
+  use super::*;
+
+  #[test]
+  fn it_lists_every_section() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"f[x_] := x^2;
+           f[a][b] := a - b;
+           Default[f] = 0;
+           Options[f] = {"o" -> 1};
+           f::u = "d";
+           SetAttributes[f, Listable];
+           ToString[Language`ExtendedFullDefinition[f], InputForm]"#
+      )
+      .unwrap(),
+      "Language`DefinitionList[HoldForm[f] -> \
+       {OwnValues -> {}, \
+       DownValues -> {HoldPattern[f[x_]] :> x^2}, \
+       SubValues -> {HoldPattern[f[a][b]] :> a - b}, \
+       UpValues -> {}, \
+       DefaultValues -> {HoldPattern[Default[f]] :> 0}, \
+       Options -> {\"o\" -> 1}, \
+       Messages -> {HoldPattern[f::u] :> \"d\"}, \
+       Attributes -> {Listable}}]"
+    );
+  }
+
+  #[test]
+  fn assigning_one_installs_every_definition() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"base[x_] := x + 1;
+           base /: use[base] := "inherited";
+           base::usage = "doc";
+           Options[base] = {"o" -> 7};
+           Language`ExtendedFullDefinition[kid] =
+             Language`ExtendedFullDefinition[base] /. base -> kid;
+           {kid[4], use[kid], kid::usage, Options[kid]}"#
+      )
+      .unwrap(),
+      "{5, inherited, doc, {o -> 7}}"
+    );
+  }
+}
+
+// A value list can be assigned back, not just read: `UpValues[s] = rules`
+// and `OwnValues[s] = rules` install exactly the definitions they name.
+mod assigning_value_lists {
+  use super::*;
+
+  #[test]
+  fn upvalues_can_be_assigned() {
+    clear_state();
+    assert_eq!(
+      interpret("UpValues[q] = {HoldPattern[h[q]] :> 7}; h[q]").unwrap(),
+      "7"
+    );
+    // The assignment replaces the whole list, so an emptied one leaves the
+    // symbol with no upvalues at all.
+    assert_eq!(
+      interpret(
+        "UpValues[q] = {HoldPattern[h[q]] :> 7}; UpValues[q] = {}; h[q]"
+      )
+      .unwrap(),
+      "h[q]"
+    );
+  }
+
+  #[test]
+  fn ownvalues_can_be_assigned() {
+    clear_state();
+    assert_eq!(
+      interpret("OwnValues[w] = {HoldPattern[w] :> 42}; w").unwrap(),
+      "42"
+    );
+    assert_eq!(
+      interpret("OwnValues[w] = {HoldPattern[w] :> 42}; OwnValues[w] = {}; w")
+        .unwrap(),
+      "w"
+    );
+  }
+}
+
+// `sym /: Set[…] := …` and `sym /: SetDelayed[…] := …` let a symbol take
+// over what assigning into it means — the mechanism an object system uses
+// for `obj["field"] = value`.
+mod assignment_upvalues {
+  use super::*;
+
+  #[test]
+  fn set_can_be_taken_over() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"obj /: Set[obj[k_String], v_] := (rec[k] = v);
+           obj["a"] = 5;
+           rec["a"]"#
+      )
+      .unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn set_delayed_can_be_taken_over() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"obj /: SetDelayed[obj[k_String], v_] := (rec[k] := v);
+           obj["b"] := 1 + 1;
+           rec["b"]"#
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
+  // The tagged pattern may be structural — a call on the *result* of a
+  // call, as in `UObject[sym]["field"] = value`.
+  #[test]
+  fn a_structural_pattern_can_be_taken_over() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"UObj /: Set[UObj[s_Symbol][k_String], v_] := (rec[s, k] = v);
+           UObj[thing]["f"] = 9;
+           rec[thing, "f"]"#
+      )
+      .unwrap(),
+      "9"
+    );
+    // …and it must not swallow assignments it does not describe.
+    assert_eq!(
+      interpret(
+        r#"UObj /: Set[UObj[s_Symbol][k_String], v_] := (rec[s, k] = v);
+           other[1] = 2;
+           other[1]"#
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
+  // The tag may also be an argument rather than the head, which is where
+  // `obj /: Set[f[obj], v_] := …` attaches.
+  #[test]
+  fn a_tag_in_argument_position_is_consulted() {
+    clear_state();
+    assert_eq!(
+      interpret("obj /: Set[f[obj], v_] := (rec = v); f[obj] = 3; rec")
+        .unwrap(),
+      "3"
+    );
+  }
+}
