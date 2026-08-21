@@ -8357,3 +8357,149 @@ mod censored_distribution_values {
     );
   }
 }
+
+mod reliability_distribution {
+  use super::*;
+
+  #[test]
+  fn series_system_survival_function() {
+    // Two components in series (both must work): the system survives past
+    // t exactly when both do, so S(t) is the product of their own survival
+    // functions.
+    assert_eq!(
+      interpret(concat!(
+        "SurvivalFunction[ReliabilityDistribution[",
+        "Subscript[c, 1] && Subscript[c, 2], ",
+        "{{Subscript[c, 1], ExponentialDistribution[a]}, ",
+        "{Subscript[c, 2], ExponentialDistribution[b]}}], t]"
+      ))
+      .unwrap(),
+      "Piecewise[{{E^(-(a*t)), t >= 0}}, 1]*Piecewise[{{E^(-(b*t)), t >= 0}}, 1]"
+    );
+  }
+
+  #[test]
+  fn series_system_mean_is_min_of_rates() {
+    // The lifetime of a series system of two independent exponential
+    // components is exponential with the summed rate, so its mean is
+    // 1/(a+b).
+    assert_eq!(
+      interpret(concat!(
+        "Mean[ReliabilityDistribution[",
+        "Subscript[c, 1] && Subscript[c, 2], ",
+        "{{Subscript[c, 1], ExponentialDistribution[a]}, ",
+        "{Subscript[c, 2], ExponentialDistribution[b]}}]]"
+      ))
+      .unwrap(),
+      "(a + b)^(-1)"
+    );
+  }
+
+  #[test]
+  fn parallel_system_mean_by_inclusion_exclusion() {
+    // Two components in parallel (either can keep the system up): by
+    // inclusion-exclusion, E[T] = 1/a + 1/b - 1/(a+b).
+    assert_eq!(
+      interpret(concat!(
+        "Mean[ReliabilityDistribution[",
+        "Subscript[c, 1] || Subscript[c, 2], ",
+        "{{Subscript[c, 1], ExponentialDistribution[a]}, ",
+        "{Subscript[c, 2], ExponentialDistribution[b]}}]]"
+      ))
+      .unwrap(),
+      "a^(-1) + b^(-1) - (a + b)^(-1)"
+    );
+  }
+
+  #[test]
+  fn parallel_system_mean_numeric() {
+    let result = interpret(concat!(
+      "N[Mean[ReliabilityDistribution[",
+      "Subscript[c, 1] || Subscript[c, 2], ",
+      "{{Subscript[c, 1], ExponentialDistribution[1/2]}, ",
+      "{Subscript[c, 2], ExponentialDistribution[1/3]}}]]]"
+    ))
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    // 1/0.5 + 1/(1/3) - 1/(0.5+1/3) = 2 + 3 - 1.2 = 3.8
+    assert!((val - 3.8).abs() < 1e-9);
+  }
+
+  #[test]
+  fn single_component_matches_its_own_distribution() {
+    // A one-component system is just that component's own distribution.
+    assert_eq!(
+      interpret(concat!(
+        "SurvivalFunction[ReliabilityDistribution[Subscript[c, 1], ",
+        "{{Subscript[c, 1], ExponentialDistribution[a]}}], t]"
+      ))
+      .unwrap(),
+      "Piecewise[{{E^(-(a*t)), t >= 0}}, 1]"
+    );
+    assert_eq!(
+      interpret(concat!(
+        "CDF[ReliabilityDistribution[Subscript[c, 1], ",
+        "{{Subscript[c, 1], ExponentialDistribution[a]}}], t]"
+      ))
+      .unwrap(),
+      "1 - Piecewise[{{E^(-(a*t)), t >= 0}}, 1]"
+    );
+    assert_eq!(
+      interpret(concat!(
+        "Mean[ReliabilityDistribution[Subscript[c, 1], ",
+        "{{Subscript[c, 1], ExponentialDistribution[a]}}]]"
+      ))
+      .unwrap(),
+      "a^(-1)"
+    );
+  }
+
+  #[test]
+  fn hazard_function_numeric_matches_pdf_over_survival() {
+    let result = interpret(concat!(
+      "N[HazardFunction[ReliabilityDistribution[",
+      "Subscript[c, 1] || Subscript[c, 2], ",
+      "{{Subscript[c, 1], ExponentialDistribution[1/2]}, ",
+      "{Subscript[c, 2], ExponentialDistribution[1/3]}}], 1]]"
+    ))
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    // f(1)/S(1) worked out by hand from a e^-a + b e^-b - (a+b) e^-(a+b)
+    // over e^-a + e^-b - e^-(a+b), a = 1/2, b = 1/3.
+    assert!((val - 0.2025338).abs() < 1e-6);
+  }
+
+  #[test]
+  fn two_out_of_three_majority_system_mean() {
+    // A 2-out-of-3 system of identical-rate components: the classic
+    // k-out-of-n result gives E[T] = (1/a)*(1/2 + 1/3) = 5/(6a).
+    assert_eq!(
+      interpret(concat!(
+        "Mean[ReliabilityDistribution[",
+        "(Subscript[c, 1] && Subscript[c, 2]) || ",
+        "(Subscript[c, 1] && Subscript[c, 3]) || ",
+        "(Subscript[c, 2] && Subscript[c, 3]), ",
+        "{{Subscript[c, 1], ExponentialDistribution[a]}, ",
+        "{Subscript[c, 2], ExponentialDistribution[a]}, ",
+        "{Subscript[c, 3], ExponentialDistribution[a]}}]]"
+      ))
+      .unwrap(),
+      "5/(6*a)"
+    );
+  }
+
+  #[test]
+  fn stays_symbolic_when_unapplied() {
+    // The distribution object itself is inert, like every other
+    // distribution constructor, and is not flagged as unimplemented.
+    assert_eq!(
+      interpret(concat!(
+        "ReliabilityDistribution[Subscript[c, 1], ",
+        "{{Subscript[c, 1], ExponentialDistribution[a]}}]"
+      ))
+      .unwrap(),
+      "ReliabilityDistribution[Subscript[c, 1], \
+       {{Subscript[c, 1], ExponentialDistribution[a]}}]"
+    );
+  }
+}

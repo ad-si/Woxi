@@ -732,6 +732,38 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ))
       }
     }
+    // Mean[ReliabilityDistribution[…]] = E[T] = Integrate[S(t), {t, 0,
+    // Infinity}] for a nonnegative lifetime T with survival function S.
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "ReliabilityDistribution" => {
+      if let Some(mean) = reliability_distribution_mean_exponential(dargs)? {
+        return Ok(mean);
+      }
+      let t = Expr::Identifier("$WoxiReliabilityT$".to_string());
+      match reliability_distribution_survival(dargs, &t)? {
+        Some(s) => {
+          let s = strip_nonneg_piecewise(&s, "$WoxiReliabilityT$");
+          if let Some(mean) = reliability_mean_from_survival(&s, &t)? {
+            Ok(mean)
+          } else {
+            crate::functions::calculus_ast::integrate_ast(&[
+              s,
+              Expr::List(
+                vec![
+                  t,
+                  Expr::Integer(0),
+                  Expr::Identifier("Infinity".to_string()),
+                ]
+                .into(),
+              ),
+            ])
+          }
+        }
+        None => Ok(unevaluated("Mean", args)),
+      }
+    }
     Expr::FunctionCall {
       name: dist_name,
       args: dargs,
