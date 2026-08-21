@@ -1524,6 +1524,10 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ToeplitzMatrix" => Some((1, 2)),
     "SavitzkyGolayMatrix" => Some((2, 3)),
     "ToExpression" => Some((1, 3)),
+    // `CodeParse[src, opts…]` — the source, then any number of options.
+    "CodeParser`CodeTokenize"
+    | "CodeParser`CodeConcreteParse"
+    | "CodeParser`CodeParse" => Some((1, usize::MAX)),
     "MakeExpression" => Some((1, 2)),
     "ToFileName" => Some((1, 2)),
     "Together" => Some((1, 1)),

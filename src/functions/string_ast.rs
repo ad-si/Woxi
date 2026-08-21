@@ -4,6 +4,9 @@
 
 #[allow(unused_imports)]
 use super::*;
+use crate::functions::regex_engine::{
+  Captures, Error as RegexError, WoxiRegex,
+};
 use crate::syntax::pair_to_expr;
 use num_bigint::Sign;
 use std::cell::RefCell;
@@ -12,12 +15,12 @@ use std::collections::HashMap;
 thread_local! {
   // Compiled-regex cache so tight loops calling `StringCases` /
   // `StringSplit` / `StringReplace` etc. with the same pattern don't pay
-  // regex compilation cost on every iteration. `regex::Regex` clones are
+  // regex compilation cost on every iteration. `WoxiRegex` clones are
   // cheap (the compiled state is Arc'd internally) so the cache value type
-  // is just `Regex`. Capped to bound memory; on overflow we drop the
+  // is just the compiled regex. Capped to bound memory; on overflow we drop the
   // entire cache rather than maintain an LRU — the workloads we care
   // about reuse a handful of patterns at a time.
-  static REGEX_CACHE: RefCell<HashMap<String, regex::Regex>> =
+  static REGEX_CACHE: RefCell<HashMap<String, WoxiRegex>> =
     RefCell::new(HashMap::new());
 }
 
@@ -25,13 +28,12 @@ thread_local! {
 /// exists. Identical pattern strings always produce identical compiled
 /// regexes, so caching is observationally indistinguishable from
 /// recompiling — only faster.
-fn compile_regex(pat: &str) -> Result<regex::Regex, regex::Error> {
-  use regex::Regex;
+fn compile_regex(pat: &str) -> Result<WoxiRegex, RegexError> {
   REGEX_CACHE.with(|c| {
     if let Some(re) = c.borrow().get(pat) {
       return Ok(re.clone());
     }
-    let re = Regex::new(&relax_redundant_escapes(pat))?;
+    let re = WoxiRegex::new(&relax_redundant_escapes(pat))?;
     let mut cache = c.borrow_mut();
     if cache.len() >= 256 {
       cache.clear();
@@ -831,7 +833,7 @@ fn string_split_with_replacement(
   max_parts: Option<usize>,
   ignore_case: bool,
 ) -> Result<Expr, InterpreterError> {
-  let mut compiled: Vec<(regex::Regex, Option<String>, Option<&Expr>)> =
+  let mut compiled: Vec<(WoxiRegex, Option<String>, Option<&Expr>)> =
     Vec::with_capacity(rules.len());
   for (lhs, rhs) in rules {
     let (pat, cap_name) = split_delim_regex(lhs)?;
@@ -1089,10 +1091,14 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       pieces
     } else if let Some(n) = max_parts {
       re.splitn(&s, n)
+        .into_iter()
         .map(|p| Expr::String(p.to_string()))
         .collect()
     } else {
-      re.split(&s).map(|p| Expr::String(p.to_string())).collect()
+      re.split(&s)
+        .into_iter()
+        .map(|p| Expr::String(p.to_string()))
+        .collect()
     };
     // Leading/trailing empty pieces are only dropped when no explicit
     // maximum number of pieces was requested.
@@ -1364,7 +1370,7 @@ fn has_ignore_case_option(args: &[Expr]) -> bool {
 /// replacement string: `$0` is the whole match, `$1`…`$n` (and `${n}`) the
 /// numbered groups. A `$` not followed by a digit or `{` (including `$$`) is
 /// left verbatim, matching Wolfram.
-fn expand_dollar_replacement(template: &str, caps: &regex::Captures) -> String {
+fn expand_dollar_replacement(template: &str, caps: &Captures) -> String {
   let mut out = String::new();
   let mut chars = template.chars().peekable();
   while let Some(c) = chars.next() {
@@ -1421,7 +1427,7 @@ fn expand_dollar_replacement(template: &str, caps: &regex::Captures) -> String {
 
 /// Expand `$0`/`$1`/… regex backreferences in every string literal within an
 /// expression (used for StringCases RegularExpression transforms).
-fn expand_dollar_in_expr(expr: &Expr, caps: &regex::Captures) -> Expr {
+fn expand_dollar_in_expr(expr: &Expr, caps: &Captures) -> Expr {
   match expr {
     Expr::String(s) => Expr::String(expand_dollar_replacement(s, caps)),
     Expr::List(items) => Expr::List(
@@ -1498,7 +1504,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       replacement: String,
     },
     Regex {
-      regex: regex::Regex,
+      regex: WoxiRegex,
       replacement: String,
       /// Whether `$0`/`$1`/… in the replacement expand to regex capture
       /// groups. Only RegularExpression patterns do this; a plain literal
@@ -1514,7 +1520,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     /// the captured names are substituted into it and it must evaluate to
     /// `True` for the match to apply.
     RegexDelayed {
-      regex: regex::Regex,
+      regex: WoxiRegex,
       replacement_expr: Expr,
       condition: Option<Expr>,
       /// Back-reference constraints (see `Regex::constraints`).
@@ -1673,7 +1679,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       // For Rule (->), also substitute captured names into the replacement
       // as strings before returning
-      if re.capture_names().flatten().next().is_some() {
+      if re.capture_names().iter().flatten().next().is_some() {
         return Ok(ReplaceRule::RegexDelayed {
           regex: re,
           replacement_expr: replacement_expr.clone(),
@@ -2643,7 +2649,7 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Substitute named captures into an expression, replacing pattern variable
 /// identifiers with matched string values.
-fn substitute_captures(expr: &Expr, captures: &regex::Captures) -> Expr {
+fn substitute_captures(expr: &Expr, captures: &Captures) -> Expr {
   match expr {
     Expr::Identifier(name) => {
       if let Some(m) = captures.name(name) {
@@ -2949,7 +2955,7 @@ fn maybe_named_group(
 /// them here. A missing capture (optional group didn't participate) is treated
 /// as satisfied.
 fn caps_satisfy_constraints(
-  caps: &regex::Captures,
+  caps: &Captures,
   constraints: &[(String, String)],
 ) -> bool {
   constraints.iter().all(|(orig, dup)| {
@@ -2984,7 +2990,7 @@ fn string_pattern_regex_source(
 fn compile_string_pattern(
   expr: &Expr,
   ignore_case: bool,
-) -> Option<Result<(regex::Regex, Vec<(String, String)>), InterpreterError>> {
+) -> Option<Result<(WoxiRegex, Vec<(String, String)>), InterpreterError>> {
   let (regex_str, constraints) =
     string_pattern_regex_source(expr, ignore_case)?;
   Some(
@@ -3003,7 +3009,7 @@ fn compile_string_pattern(
 /// advances one character past each match start, otherwise past the whole
 /// match. This is the constraint-aware analogue of `re.find_iter`.
 fn find_constraint_spans(
-  re: &regex::Regex,
+  re: &WoxiRegex,
   constraints: &[(String, String)],
   s: &str,
   overlapping: bool,
@@ -3094,7 +3100,7 @@ pub(crate) fn parse_overlaps_option(
 
 /// `pat` wrapped so that it only matches a slice in its entirety — the probe
 /// `all_overlap_spans` uses to discover every match length at a start position.
-fn anchored_regex(pat: &str) -> Result<regex::Regex, InterpreterError> {
+fn anchored_regex(pat: &str) -> Result<WoxiRegex, InterpreterError> {
   compile_regex(&format!("\\A(?:{pat})\\z")).map_err(|e| {
     InterpreterError::EvaluationError(format!("Invalid string pattern: {e}"))
   })
@@ -3184,7 +3190,7 @@ struct RuleMatch<'a> {
   /// Byte range of the matched substring within the subject.
   span: (usize, usize),
   /// Captures of the match, for substituting the rule's right-hand side.
-  caps: regex::Captures<'a>,
+  caps: Captures<'a>,
   /// The rule's right-hand side.
   rhs: &'a Expr,
   /// Whether `$0`/`$1`/… in the right-hand side expand (`RegularExpression`).
@@ -3246,7 +3252,7 @@ fn all_rule_matches<'a>(
 /// True if `re` (anchored with `^…$` by the caller) matches all of `s` while
 /// satisfying the back-reference `constraints`.
 fn full_match_with_constraints(
-  re: &regex::Regex,
+  re: &WoxiRegex,
   constraints: &[(String, String)],
   s: &str,
 ) -> bool {
@@ -3712,7 +3718,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Rule or list of rules: at each position, try each rule's LHS pattern;
   // on a match, emit the (capture-substituted) RHS and advance past it.
   if let Some(rules) = extract_cases_rules(&args[1]) {
-    let mut compiled: Vec<(regex::Regex, Vec<(String, String)>, Expr, bool)> =
+    let mut compiled: Vec<(WoxiRegex, Vec<(String, String)>, Expr, bool)> =
       Vec::with_capacity(rules.len());
     for (pat, constraints, rhs, expand_dollar) in &rules {
       let re = compile_regex(&with_ci(pat)).map_err(|e| {
@@ -3868,6 +3874,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       out
     } else if constraints.is_empty() {
       re.find_iter(&s)
+        .into_iter()
         .take(max_count)
         .map(|m| Expr::String(m.as_str().to_string()))
         .collect()
@@ -3916,6 +3923,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })?;
     let matches: Vec<Expr> = re
       .find_iter(&s)
+      .into_iter()
       .take(max_count)
       .map(|m| Expr::String(m.as_str().to_string()))
       .collect();

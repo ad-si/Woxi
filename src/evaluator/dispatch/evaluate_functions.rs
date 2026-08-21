@@ -504,15 +504,12 @@ fn load_needed_context(ctx: &str) -> Result<(), InterpreterError> {
   crate::restore_context_path(saved_path);
   if let Some(result) = loaded {
     result?;
-    if !crate::packages_list().iter().any(|pkg| pkg == ctx) {
-      crate::emit_message_to_stdout(&format!(
-        "Needs::nocont: Context {ctx} was not created when Needs was \
-         evaluated."
-      ));
-      crate::register_package(ctx.to_string());
-    }
   } else {
     crate::emit_message_to_stdout(&format!("Get::noopen: Cannot open {ctx}."));
+  }
+  // Either the file never opened, or it opened without creating the context
+  // it was supposed to provide. Both are the same thing to the caller.
+  if !crate::packages_list().iter().any(|pkg| pkg == ctx) {
     crate::emit_message_to_stdout(&format!(
       "Needs::nocont: Context {ctx} was not created when Needs was evaluated."
     ));

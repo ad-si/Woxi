@@ -272,6 +272,7 @@ keshvar = { version = "0.7", features = ["subdivisions", "geo", "translations"] 
 sha3 = "0.10"
 ripemd = "0.1"
 md4 = "0.10"
+fancy-regex = "0.19.0"
 
 # Kept on the same resvg minor as svg2pdf 0.13 and iced 0.14 (woxi-studio),
 # so only ONE copy of the resvg/usvg/tiny-skia stack is compiled and linked

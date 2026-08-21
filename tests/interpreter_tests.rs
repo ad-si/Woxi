@@ -2804,6 +2804,7 @@ mod interpreter_tests {
   mod batch_wrappers;
   mod calculus;
   mod cellular_automaton;
+  mod code_parser;
   mod column;
   mod contexts;
   mod control_flow;
