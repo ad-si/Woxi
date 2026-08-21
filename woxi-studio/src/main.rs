@@ -20924,4 +20924,108 @@ SaveDefinitions -> True]";
       "the steps bound must shrink with block size 3 and clamp the value down from 4"
     );
   }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// showing two externally tangent semicircles resting on a line, with a
+  /// chain of progressively smaller circles inscribed between them.
+  /// Independently written, not copied from any specific Demonstration:
+  /// this version names its variables differently, chains from a single
+  /// "smaller radius" pivot instead of two mirrored chains, and states the
+  /// chain's shrinkage as a direct `1/(k+1)` scaling rather than the
+  /// original's inversive-distance recursion.
+  ///
+  /// The construct worth pinning down is an `Initialization` block whose
+  /// helper function is defined by two *guarded* pattern clauses
+  /// (`r1_ /; r1 <= r2` vs `r1_ /; r1 > r2`) rather than a plain `If`, with
+  /// three `Appearance -> "Labeled"` continuous sliders and a `Table` that
+  /// draws a variable number of circles from the guarded helper's result —
+  /// exactly the kind of piecewise Initialization code + Labeled sliders +
+  /// Table-of-circles combination the sampled Demonstration uses.
+  #[test]
+  fn demonstration_pappus_style_chain_manipulate_renders_with_guarded_helper() {
+    let code = "Manipulate[\
+      Graphics[{\
+        Circle[{r1, 0}, r1], \
+        Circle[{2 r1 + r2, 0}, r2], \
+        Table[\
+          Circle[\
+            {chainX[k, r1, r2], chainRadius[k, r1, r2]}, \
+            chainRadius[k, r1, r2]\
+          ], \
+          {k, 1, count}\
+        ]\
+      }, PlotRange -> {{-1, 25}, {-1, 12}}], \
+      {{r1, 6, \"left radius\"}, 2, 9, 1, Appearance -> \"Labeled\"}, \
+      {{r2, 4, \"right radius\"}, 2, 9, 1, Appearance -> \"Labeled\"}, \
+      {{count, 4, \"chain length\"}, 1, 8, 1, Appearance -> \"Labeled\"}, \
+      Initialization :> (\
+        smallerRadius[r1_, r2_ /; r1 <= r2] := r1; \
+        smallerRadius[r1_, r2_ /; r1 > r2] := r2; \
+        chainRadius[k_, r1_, r2_] := smallerRadius[r1, r2]/(k + 1); \
+        chainX[k_, r1_, r2_] := 2 r1 + k*chainRadius[k, r1, r2]; \
+      )]";
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "three Labeled sliders plus a guarded-Initialization helper should \
+       build a ManipulateState",
+    );
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the chain must render");
+
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["r1", "r2", "count"]);
+
+    let bounds =
+      |s: &manipulate::ManipulateState, i: usize| match &s.controls[i] {
+        manipulate::ControlState::Continuous {
+          min, max, current, ..
+        } => (*min, *max, *current),
+        other => panic!("control {i} should be a slider: {other:?}"),
+      };
+    assert_eq!(bounds(&state, 0), (2.0, 9.0, 6.0));
+    assert_eq!(bounds(&state, 1), (2.0, 9.0, 4.0));
+    assert_eq!(bounds(&state, 2), (1.0, 8.0, 4.0));
+
+    // r1 > r2: the `r1_ /; r1 > r2` clause must fire, so the chain radii
+    // are built from r2.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 8.0;
+    }
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[1]
+    {
+      *current = 3.0;
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "re-render with r1 > r2 failed: {:?}",
+      state.error
+    );
+
+    // r1 < r2: the other guard must fire instead, still rendering cleanly.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 3.0;
+    }
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[1]
+    {
+      *current = 8.0;
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "re-render with r1 < r2 failed: {:?}",
+      state.error
+    );
+  }
 }
