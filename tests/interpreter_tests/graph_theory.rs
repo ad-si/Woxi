@@ -592,6 +592,68 @@ mod adjacency_graph_from_matrix {
   }
 }
 
+/// Regression: `GraphPlot[m]` takes a bare adjacency matrix directly
+/// (documented for GraphPlot, unlike plain `Graph[m]` which needs
+/// `AdjacencyGraph[m]`). It used to stay unevaluated because the matrix
+/// was forwarded straight to `Graph[m]`, which only understands an edge
+/// list or an already-split `{vertices}, {edges}` pair.
+mod graph_plot_from_matrix {
+  use super::*;
+
+  #[test]
+  fn renders_graphics() {
+    assert_eq!(
+      interpret("Head[GraphPlot[{{0, 1, 1}, {1, 0, 0}, {1, 0, 0}}]]").unwrap(),
+      "Graphics"
+    );
+  }
+
+  #[test]
+  fn undirected_symmetric_vertex_and_edge_count() {
+    let svg = interpret(
+      "ExportString[GraphPlot[{{0, 1, 1}, {1, 0, 0}, {1, 0, 0}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(svg.matches("<ellipse").count(), 3, "SVG: {svg}");
+    assert_eq!(svg.matches("<polyline").count(), 2, "SVG: {svg}");
+  }
+
+  #[test]
+  fn directed_asymmetric_vertex_and_edge_count() {
+    let svg = interpret(
+      "ExportString[GraphPlot[{{0, 1, 0}, {0, 0, 1}, {1, 0, 0}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(svg.matches("<ellipse").count(), 3, "SVG: {svg}");
+    assert_eq!(svg.matches("<polyline").count(), 3, "SVG: {svg}");
+  }
+
+  /// GraphPlot's own options (e.g. SelfLoopStyle, VertexLabeling,
+  /// DirectedEdges) still apply when the argument is a matrix rather than
+  /// an edge list.
+  #[test]
+  fn accepts_graphplot_options() {
+    assert_eq!(
+      interpret(
+        "Head[GraphPlot[{{0, 1, 0}, {1, 0, 1}, {0, 1, 0}}, SelfLoopStyle -> True, VertexLabeling -> True, DirectedEdges -> True]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+
+  /// AdjacencyGraph itself must keep working after the shared matrix
+  /// conversion was factored out for reuse by GraphPlot.
+  #[test]
+  fn adjacency_graph_still_works() {
+    assert_eq!(
+      interpret("EdgeList[AdjacencyGraph[{{0, 1, 0}, {0, 0, 1}, {1, 0, 0}}]]")
+        .unwrap(),
+      "{1  2, 2  3, 3  1}"
+    );
+  }
+}
+
 mod path_graph {
   use super::*;
 

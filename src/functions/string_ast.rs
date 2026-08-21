@@ -8213,12 +8213,12 @@ pub fn expr_to_boxes(expr: &Expr) -> String {
 
     // Lists
     Expr::List(items) => {
-      let mut parts = vec!["\"{{\"".to_string()];
+      let mut parts = vec!["\"{\"".to_string()];
       if !items.is_empty() {
         let inner: Vec<String> = items.iter().map(expr_to_boxes).collect();
         parts.push(format!("RowBox[{{{}}}]", inner.join(", \",\", ")));
       }
-      parts.push("\"}}\"".to_string());
+      parts.push("\"}\"".to_string());
       format!("RowBox[{{{}}}]", parts.join(", "))
     }
 

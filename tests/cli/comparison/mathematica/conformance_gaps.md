@@ -2301,9 +2301,6 @@ against the rendered picture.
 
 ### `Manipulate` control gaps
 
-- A colour control (`{{u, colour, label}, colour}`) binds at its initial colour
-  and renders identically to WL on the first frame, but is invisible and
-  non-interactive; WL renders a `ColorSlider`.
 - A `TabView` of controls is flattened — every tab's controls are shown at
   once, since Woxi's control panel is one flat list.
 - One unrecognised control spec makes the **entire** `Manipulate` give up, so a
