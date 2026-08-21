@@ -2276,6 +2276,42 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn arbitrary_precision_constant_through_variable() {
+    // Regression: a variable bound to Pi/E/Degree must reach the
+    // arbitrary-precision path the same way the literal constant does.
+    // Assignment substitutes the constant in as `Identifier`, not the
+    // `Constant` node a literal `Pi` token parses to, and `N[_, digits]`
+    // and `RealDigits` only recognized the latter — so `c = Pi; N[c, 30]`
+    // silently returned `c` unevaluated instead of computing digits.
+    assert_eq!(
+      interpret("c = Pi; N[c, 30]").unwrap(),
+      interpret("N[Pi, 30]").unwrap()
+    );
+    assert_eq!(
+      interpret("c = E; N[c, 30]").unwrap(),
+      interpret("N[E, 30]").unwrap()
+    );
+    assert_eq!(
+      interpret("c = Degree; N[c, 30]").unwrap(),
+      interpret("N[Degree, 30]").unwrap()
+    );
+    assert_eq!(
+      interpret("c = Pi; RealDigits[c, 10, 10]").unwrap(),
+      "{{3, 1, 4, 1, 5, 9, 2, 6, 5, 3}, 1}"
+    );
+    assert_eq!(
+      interpret("c = E; RealDigits[c, 10, 10]").unwrap(),
+      "{{2, 7, 1, 8, 2, 8, 1, 8, 2, 8}, 1}"
+    );
+    // GoldenRatio already worked through a variable; keep it covered
+    // alongside Pi/E/Degree so a future regression here is caught too.
+    assert_eq!(
+      interpret("c = GoldenRatio; RealDigits[c, 10, 10]").unwrap(),
+      "{{1, 6, 1, 8, 0, 3, 3, 9, 8, 8}, 1}"
+    );
+  }
+
+  #[test]
   fn notation_wrappers_stay_symbolic_without_warning() {
     // Notation/display wrapper heads stay unevaluated as their canonical form
     // in wolframscript and must NOT emit a spurious "not yet implemented"
