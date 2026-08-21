@@ -926,30 +926,7 @@ fn reorder_orderless_pattern_args(pattern: Expr) -> Expr {
   pattern
 }
 
-fn is_known_attribute(name: &str) -> bool {
-  matches!(
-    name,
-    "Constant"
-      | "Flat"
-      | "HoldAll"
-      | "HoldAllComplete"
-      | "HoldFirst"
-      | "HoldRest"
-      | "Listable"
-      | "Locked"
-      | "NHoldAll"
-      | "NHoldFirst"
-      | "NHoldRest"
-      | "NonThreadable"
-      | "NumericFunction"
-      | "OneIdentity"
-      | "Orderless"
-      | "Protected"
-      | "ReadProtected"
-      | "SequenceHold"
-  )
-}
-
+#[allow(clippy::if_not_else)]
 pub fn get_attributes(expr: &Expr) -> Option<Vec<String>> {
   // Extract attribute names from the value
   let attr_exprs = match expr {
@@ -961,7 +938,8 @@ pub fn get_attributes(expr: &Expr) -> Option<Vec<String>> {
   let mut has_error = false;
   for attr_expr in &attr_exprs {
     if let Expr::Identifier(attr_name) = attr_expr {
-      if is_known_attribute(attr_name) {
+      let mask_val = Attributes::mask(attr_name);
+      if mask_val != Attributes::None {
         valid_attrs.push(attr_name.clone());
       } else {
         // Unknown attribute — emit warning
@@ -1469,8 +1447,7 @@ fn is_downvalue_head_protected(name: &str) -> bool {
   if was_unprotected {
     return false;
   }
-  crate::evaluator::attributes::get_builtin_attributes(name)
-    .contains(&"Protected")
+  attributes::get_builtin_attributes_mask(name).contains(Attributes::Protected)
     || crate::func_attrs_contains(name, "Protected")
 }
 
@@ -2269,8 +2246,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     // break NumericQ value declarations, usage messages, etc. The memoization
     // idiom (`f[x_] := f[x] = …`) only ever applies to user functions.
     let is_builtin_head =
-      !crate::evaluator::attributes::get_builtin_attributes(func_name.as_str())
-        .is_empty();
+      !attributes::get_builtin_attributes_mask(func_name.as_str()).is_empty();
     let all_literal_sameq = !is_builtin_head
       && !conditions.is_empty()
       && conditions.iter().all(|c| {
@@ -2518,7 +2494,8 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       _ => None,
     };
     if let Some(t) = tag
-      && crate::evaluator::get_builtin_attributes(t).contains(&"Protected")
+      && crate::evaluator::get_builtin_attributes_mask(t)
+        .contains(Attributes::Protected)
     {
       let rhs_value = evaluate_expr_to_expr(rhs)?;
       crate::emit_message(&format!(
@@ -2607,7 +2584,8 @@ pub fn set_delayed_ast(
       _ => None,
     };
     if let Some(t) = tag
-      && crate::evaluator::get_builtin_attributes(t).contains(&"Protected")
+      && crate::evaluator::get_builtin_attributes_mask(t)
+        .contains(Attributes::Protected)
     {
       crate::emit_message(&format!(
         "SetDelayed::write: Tag {} in {} is Protected.",

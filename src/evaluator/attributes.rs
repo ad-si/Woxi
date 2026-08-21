@@ -3,6 +3,78 @@ use super::*;
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
+// Wolfram attributes
+pub struct Attributes(u32); // bitmask
+#[allow(non_upper_case_globals)]
+impl Attributes {
+  pub const None: u32 = 0;
+
+  pub const Constant: u32 = 1 << 0;
+  pub const Flat: u32 = 1 << 1;
+  pub const HoldAll: u32 = 1 << 2;
+  pub const HoldAllComplete: u32 = 1 << 3;
+  pub const HoldFirst: u32 = 1 << 4;
+  pub const HoldRest: u32 = 1 << 5;
+  pub const Listable: u32 = 1 << 6;
+  pub const Locked: u32 = 1 << 7;
+  pub const NHoldAll: u32 = 1 << 8;
+  pub const NHoldFirst: u32 = 1 << 9;
+  pub const NHoldRest: u32 = 1 << 10;
+  pub const NonThreadable: u32 = 1 << 11;
+  pub const NumericFunction: u32 = 1 << 12;
+  pub const OneIdentity: u32 = 1 << 13;
+  pub const Orderless: u32 = 1 << 14;
+  pub const Protected: u32 = 1 << 15;
+  pub const ReadProtected: u32 = 1 << 16;
+  pub const SequenceHold: u32 = 1 << 17;
+
+  const Masks: [&'static str; 18] = [
+    "Constant",
+    "Flat",
+    "HoldAll",
+    "HoldAllComplete",
+    "HoldFirst",
+    "HoldRest",
+    "Listable",
+    "Locked",
+    "NHoldAll",
+    "NHoldFirst",
+    "NHoldRest",
+    "NonThreadable",
+    "NumericFunction",
+    "OneIdentity",
+    "Orderless",
+    "Protected",
+    "ReadProtected",
+    "SequenceHold",
+  ];
+
+  pub fn mask(name: &str) -> u32 {
+    match Self::Masks.binary_search(&name) {
+      Ok(index) => 1 << index,
+      Err(_) => Self::None,
+    }
+  }
+  pub fn new(bits: u32) -> Self {
+    Self(bits)
+  }
+  pub fn is_empty(&self) -> bool {
+    self.0 == 0
+  }
+  pub fn contains(&self, flag: u32) -> bool {
+    (self.0 & flag) != 0
+  }
+  pub fn to_vec(&self) -> Vec<&'static str> {
+    let mut list: Vec<&'static str> = vec![];
+    for i in 0..Self::Masks.len() {
+      if self.contains(1 << i) {
+        list.push(Self::Masks[i]);
+      }
+    }
+    list
+  }
+}
+
 /// `System`` symbols that Wolfram deliberately leaves *unprotected*, so that
 /// user code can attach its own definitions to them (`CircleTimes[x_, y_] := …`)
 /// or, for the `SystemModel*` family, because they live in a paclet context
@@ -350,28 +422,33 @@ fn is_unprotected_builtin(name: &str) -> bool {
 /// Returns the built-in attributes for a given symbol name.
 /// Attributes are returned in alphabetical order, matching wolframscript output.
 pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
-  match name {
+  get_builtin_attributes_mask(name).to_vec()
+}
+
+pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
+  use Attributes as A;
+  let mask = match name {
     // Arithmetic operators
-    "Plus" | "Times" => vec![
-      "Flat",
-      "Listable",
-      "NumericFunction",
-      "OneIdentity",
-      "Orderless",
-      "Protected",
-    ],
+    "Plus" | "Times" =>
+      A::Flat |
+      A::Listable |
+      A::NumericFunction |
+      A::OneIdentity |
+      A::Orderless |
+      A::Protected
+    ,
     "GCD" | "LCM" => {
-      vec!["Flat", "Listable", "OneIdentity", "Orderless", "Protected"]
+      A::Flat | A::Listable | A::OneIdentity | A::Orderless | A::Protected
     }
-    "Composition" => vec!["Flat", "OneIdentity", "Protected"],
-    "Power" => vec!["Listable", "NumericFunction", "OneIdentity", "Protected"],
-    "Max" | "Min" => vec![
-      "Flat",
-      "NumericFunction",
-      "OneIdentity",
-      "Orderless",
-      "Protected",
-    ],
+    "Composition" => A::Flat | A::OneIdentity | A::Protected,
+    "Power" => A::Listable | A::NumericFunction | A::OneIdentity | A::Protected,
+    "Max" | "Min" =>
+      A::Flat |
+      A::NumericFunction |
+      A::OneIdentity |
+      A::Orderless |
+      A::Protected
+    ,
 
     // Trigonometric and math functions (Listable + NumericFunction + Protected)
     "Sin"
@@ -491,14 +568,14 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Hypergeometric1F1Regularized"
     | "RealSign"
     | "RealAbs" => {
-      vec!["Listable", "NumericFunction", "Protected"]
+      A::Listable | A::NumericFunction | A::Protected
     }
 
     // Listable + Protected (no NumericFunction)
-    "Discriminant" => vec!["Listable", "Protected"],
+    "Discriminant" => A::Listable | A::Protected,
 
     // Listable + Protected + ReadProtected (no NumericFunction)
-    "Divisible" => vec!["Listable", "Protected", "ReadProtected"],
+    "Divisible" => A::Listable | A::Protected | A::ReadProtected,
 
     // These have ReadProtected too
     "Exp"
@@ -523,17 +600,17 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "WeberE"
     | "WignerD"
     | "InverseWeierstrassP" => {
-      vec!["Listable", "NumericFunction", "Protected", "ReadProtected"]
+      A::Listable | A::NumericFunction | A::Protected | A::ReadProtected
     }
-    "ArithmeticGeometricMean" => vec![
-      "Listable",
-      "NumericFunction",
-      "Orderless",
-      "Protected",
-      "ReadProtected",
-    ],
+    "ArithmeticGeometricMean" =>
+      A::Listable |
+      A::NumericFunction |
+      A::Orderless |
+      A::Protected |
+      A::ReadProtected
+    ,
     "Multinomial" => {
-      vec!["Listable", "NumericFunction", "Orderless", "Protected"]
+      A::Listable | A::NumericFunction | A::Orderless | A::Protected
     }
 
     // Listable + Protected (non-numeric)
@@ -547,15 +624,15 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Resultant" | "Unitize" | "UnitStep" | "N" | "FactorSquareFree"
     | "PrimePi" | "BitGet" | "BitSet" | "BitClear" | "PowerMod"
     | "JacobiSymbol" | "IntegerExponent" => {
-      vec!["Listable", "Protected"]
+      A::Listable | A::Protected
     }
 
     // HoldAllComplete + Protected
     "HoldComplete" | "HoldCompleteForm" | "Unevaluated" => {
-      vec!["HoldAllComplete", "Protected"]
+      A::HoldAllComplete | A::Protected
     }
     // MakeBoxes: HoldAllComplete only (matches wolframscript)
-    "MakeBoxes" => vec!["HoldAllComplete"],
+    "MakeBoxes" => A::HoldAllComplete,
 
     // HoldAll + Protected
     "Hold" | "HoldForm" | "HoldPattern" | "Table" | "Do" | "While" | "For"
@@ -571,11 +648,11 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // FindRoot holds its iterator `{var, x0}` so the variable name doesn't
     // get substituted by an OwnValue before the iteration starts.
     | "FindRoot" => {
-      vec!["HoldAll", "Protected"]
+      A::HoldAll | A::Protected
     }
     // Assert is the odd one out: wolframscript reports HoldAllComplete and
     // no Protected at all.
-    "Assert" => vec!["HoldAllComplete"],
+    "Assert" => A::HoldAllComplete,
     // Manipulate: Protected + ReadProtected (matches wolframscript).
     // Wolfram does NOT expose HoldAll on Manipulate even though it
     // holds its body and variable specs in practice — the hold
@@ -583,17 +660,17 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // by the explicit name-match in core_eval.rs), not via the
     // attribute. Adding HoldAll here would diverge from `Attributes[
     // Manipulate]` in wolframscript without changing semantics.
-    "Manipulate" => vec!["Protected", "ReadProtected"],
+    "Manipulate" => A::Protected | A::ReadProtected,
     // Control: Protected (matches wolframscript). Like Manipulate it holds
     // its argument via the explicit name-match in core_eval.rs rather than a
     // HoldAll attribute.
-    "Control" => vec!["Protected"],
+    "Control" => A::Protected,
     // GeometricScene: Protected + ReadProtected (matches wolframscript). Like
     // Manipulate it holds its arguments via the explicit name-match in
     // core_eval.rs rather than a HoldAll attribute.
-    "GeometricScene" => vec!["Protected", "ReadProtected"],
+    "GeometricScene" => A::Protected | A::ReadProtected,
     // PfaffianDet: Protected + ReadProtected (matches wolframscript).
-    "PfaffianDet" => vec!["Protected", "ReadProtected"],
+    "PfaffianDet" => A::Protected | A::ReadProtected,
     // Parallel* combinators: Protected + ReadProtected. This matches a COLD
     // wolframscript kernel — these functions autoload lazily, so a fresh query
     // returns the {Protected, ReadProtected} stub. Once the Parallel subsystem
@@ -606,62 +683,63 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "ParallelTable" | "ParallelSum" | "ParallelProduct"
     | "ParallelMap" | "ParallelArray" | "ParallelCombine"
     | "ParallelSelect" | "ParallelCases"
-    | "ParallelSubmit" => vec!["Protected", "ReadProtected"],
-    "Remove" => vec!["HoldAll", "Locked", "Protected"],
-    "True" | "False" => vec!["Locked", "Protected"],
+    | "ParallelSubmit" => A::Protected | A::ReadProtected,
+    "Remove" => A::HoldAll | A::Locked | A::Protected,
+    "True" | "False" => A::Locked | A::Protected,
 
     // Function is HoldAll + Protected
-    "Function" => vec!["HoldAll", "Protected"],
+    "Function" => A::HoldAll | A::Protected,
 
-    // HoldFirst + Protected
+    // HoldFirst + Protected + ReadProtected
     "MessageName" | "Increment" | "Decrement" | "PreIncrement"
     | "PreDecrement" | "Unset" => {
-      vec!["HoldFirst", "Protected", "ReadProtected"]
+      A::HoldFirst | A::Protected | A::ReadProtected
     }
     // Dynamic holds its displayed expression (Attributes[Dynamic] =
     // {HoldFirst, Protected, ReadProtected}). Without this, `Dynamic[
     // data[[i, j]]]` collapses to the cell's value and loses the reference
     // an interactive control (e.g. a Checkbox) needs to write back to.
-    "Dynamic" => vec!["HoldFirst", "Protected", "ReadProtected"],
+    "Dynamic" => A::HoldFirst | A::Protected | A::ReadProtected,
+    // HoldFirst + Protected
     "Message" | "AddTo" | "SubtractFrom" | "TimesBy" | "DivideBy"
     | "ClearAttributes" | "AssociateTo" | "KeyDropFrom" | "Inactivate" => {
-      vec!["HoldFirst", "Protected"]
+      A::HoldFirst | A::Protected
     }
     // `Context` reports the context a *symbol* belongs to, so it must not
     // look at the symbol's value: `x = 1; Context[x]` is `Global``.
-    "Context" => vec!["HoldFirst", "Protected"],
-    "ApplyTo" => vec!["HoldFirst", "Protected"],
-    "Set" => vec!["HoldFirst", "Protected", "SequenceHold"],
+    "Context" => A::HoldFirst | A::Protected,
+    "ApplyTo" => A::HoldFirst | A::Protected,
+    "Set" => A::HoldFirst | A::Protected | A::SequenceHold,
     "SetDelayed" | "TagSetDelayed" | "UpSetDelayed" => {
-      vec!["HoldAll", "Protected", "SequenceHold"]
+      A::HoldAll | A::Protected | A::SequenceHold
     }
-    "TagSet" => vec!["HoldAll", "Protected", "SequenceHold"],
-    "UpSet" => vec!["HoldFirst", "Protected", "SequenceHold"],
+    "TagSet" => A::HoldAll | A::Protected | A::SequenceHold,
+    "UpSet" => A::HoldFirst | A::Protected | A::SequenceHold,
 
     // HoldRest + Protected
-    "If" | "PatternTest" | "Save" => vec!["HoldRest", "Protected"],
+    "If" | "PatternTest" | "Save" => A::HoldRest | A::Protected,
     // `Button[label, action]` holds its action: the action is what happens
     // when the button is pressed, so merely building or displaying the
     // button must not run it.
-    "Button" => vec!["HoldRest", "Protected", "ReadProtected"],
-    "Rule" => vec!["Protected", "SequenceHold"],
-    "RuleDelayed" => vec!["HoldRest", "Protected", "SequenceHold"],
+    "Button" => A::HoldRest | A::Protected | A::ReadProtected,
+    "Rule" => A::Protected | A::SequenceHold,
+    "RuleDelayed" => A::HoldRest | A::Protected | A::SequenceHold,
 
     // And / Or: Flat + HoldAll + OneIdentity + Protected
-    "And" | "Or" => vec!["Flat", "HoldAll", "OneIdentity", "Protected"],
+    "And" | "Or" => A::Flat | A::HoldAll | A::OneIdentity | A::Protected,
 
     // Flat + OneIdentity + Protected
     "NonCommutativeMultiply" => {
-      vec!["Flat", "OneIdentity", "Protected"]
+      A::Flat | A::OneIdentity | A::Protected
     }
 
     // Constants
     "Pi" | "E" | "EulerGamma" | "GoldenRatio" | "Catalan" | "Degree"
     | "Khinchin" | "Glaisher" => {
-      vec!["Constant", "Protected", "ReadProtected"]
+      A::Constant | A::Protected | A::ReadProtected
     }
-    "I" => vec!["Locked", "Protected", "ReadProtected"],
-    "Locked" => vec!["Locked", "Protected"],
+    "I" => A::Locked | A::Protected | A::ReadProtected,
+    "Locked" => A::Locked | A::Protected,
     "EllipticExp"
     | "EllipticLog"
     | "Infinity"
@@ -688,65 +766,65 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "NetGraph"
     | "FunctionInterpolation"
     | "CMYKColor" => {
-      vec!["Protected", "ReadProtected"]
+      A::Protected | A::ReadProtected
     }
     "Plot3D" => {
-      vec!["HoldAll", "Protected", "ReadProtected"]
+      A::HoldAll | A::Protected | A::ReadProtected
     }
 
     // NHoldRest
-    "Subscript" => vec!["NHoldRest"],
-    "Superscript" => vec!["NHoldRest", "ReadProtected"],
+    "Subscript" => A::NHoldRest,
+    "Superscript" => A::NHoldRest | A::ReadProtected,
     "EngineeringForm" | "NumberForm" | "AccountingForm" | "PercentForm" => {
-      vec!["NHoldRest", "Protected"]
+      A::NHoldRest | A::Protected
     }
 
     // NHoldAll + Protected
-    "SlotSequence" => vec!["NHoldAll", "Protected"],
+    "SlotSequence" => A::NHoldAll | A::Protected,
 
     // Listable + NHoldFirst + Protected
-    "In" | "Out" => vec!["Listable", "NHoldFirst", "Protected"],
+    "In" | "Out" => A::Listable | A::NHoldFirst | A::Protected,
 
     // Locked + Protected (matches wolframscript: these symbols cannot be
     // unprotected).
-    "List" | "Symbol" => vec!["Locked", "Protected"],
+    "List" | "Symbol" => A::Locked | A::Protected,
     // HoldAll + Protected + ReadProtected. Sum and Product hold their body
     // and iterator so the iteration variable is not substituted by an
     // OwnValue before the sum starts.
     "Sum" | "Product" | "CompoundExpression" => {
-      vec!["HoldAll", "Protected", "ReadProtected"]
+      A::HoldAll | A::Protected | A::ReadProtected
     }
     // HoldRest + Protected. Switch evaluates its first argument and then
     // each pattern in turn; First and Last hold their default so it is only
     // evaluated when there is no element to return.
-    "Switch" | "First" | "Last" => vec!["HoldRest", "Protected"],
+    "Switch" | "First" | "Last" => A::HoldRest | A::Protected,
     // HoldFirst + Protected. `BlockRandom` only holds the body it localizes
     // the generator state around; its trailing options (`RandomSeeding -> …`)
     // are evaluated like any other option list.
     "Catch" | "Pattern" | "SetAttributes" | "BlockRandom" => {
-      vec!["HoldFirst", "Protected"]
+      A::HoldFirst | A::Protected
     }
-    "Enclose" => vec!["HoldFirst", "Protected", "ReadProtected"],
+    "Enclose" => A::HoldFirst | A::Protected | A::ReadProtected,
     "Confirm" | "ConfirmBy" | "ConfirmMatch" | "ConfirmAssert"
-    | "ConfirmQuiet" => vec!["HoldAll", "Protected", "ReadProtected"],
-    "Attributes" => vec!["HoldAll", "Listable", "Protected"],
-    "ToExpression" => vec!["Listable", "Protected"],
+    | "ConfirmQuiet" => A::HoldAll | A::Protected | A::ReadProtected,
+    "Attributes" => A::HoldAll | A::Listable | A::Protected,
+    "ToExpression" => A::Listable | A::Protected,
     // Flat + OneIdentity + Protected
-    "Join" | "StringJoin" => vec!["Flat", "OneIdentity", "Protected"],
+    "Join" | "StringJoin" => A::Flat | A::OneIdentity | A::Protected,
     "Union" | "Intersection" => {
-      vec!["Flat", "OneIdentity", "Protected", "ReadProtected"]
+      A::Flat | A::OneIdentity | A::Protected | A::ReadProtected
     }
-    "Association" => vec!["HoldAllComplete", "Protected"],
-    "Part" => vec!["NHoldRest", "Protected", "ReadProtected"],
-    "Slot" => vec!["NHoldAll", "Protected"],
+    "Association" => A::HoldAllComplete | A::Protected,
+    "Part" => A::NHoldRest | A::Protected | A::ReadProtected,
+    "Slot" => A::NHoldAll | A::Protected,
     // Protected + ReadProtected
     "D" | "Limit" | "Mean" | "Median" | "Variance" | "Missing" => {
-      vec!["Protected", "ReadProtected"]
+      A::Protected | A::ReadProtected
     }
 
     // NonThreadable + Protected
     "MatrixPower" | "MatrixExp" | "MatrixFunction" => {
-      vec!["NonThreadable", "Protected"]
+      A::NonThreadable | A::Protected
     }
 
     // NHoldAll + Protected + ReadProtected
@@ -754,9 +832,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // Reduce, Solve, … (`C[1]`, `C[2]`, …), so it is a protected built-in
     // even though it is a bare single letter.
     "C" | "InverseFunction" => {
-      vec!["NHoldAll", "Protected", "ReadProtected"]
+      A::NHoldAll | A::Protected | A::ReadProtected
     }
-    "PrintTemporary" => vec!["Protected", "ReadProtected"],
+    "PrintTemporary" => A::Protected | A::ReadProtected,
 
     // Protected + ReadProtected (additional)
     "Sound"
@@ -773,7 +851,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Thick"
     | "Thin"
     | "Integrate" => {
-      vec!["Protected", "ReadProtected"]
+      A::Protected | A::ReadProtected
     }
 
     // Any other known built-in defaults to Protected, matching Wolfram, which
@@ -783,12 +861,13 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       if crate::evaluator::is_builtin_symbol(name)
         && !is_unprotected_builtin(name)
       {
-        vec!["Protected"]
+        A::Protected
       } else {
-        vec![]
+        A::None
       }
     }
-  }
+  };
+  Attributes::new(mask)
 }
 
 /// Extract a symbol name from `Expr::Identifier(name)` or
@@ -917,7 +996,8 @@ pub fn dispatch_attributes(
           // If Protected is a builtin attribute that was previously removed,
           // restore it by pruning FUNC_ATTRS_REMOVED. Otherwise add as a
           // user-set attribute.
-          let was_builtin = get_builtin_attributes(sym).contains(&"Protected");
+          let builtin = get_builtin_attributes_mask(sym);
+          let was_builtin = builtin.contains(Attributes::Protected);
           if was_builtin {
             crate::FUNC_ATTRS_REMOVED.with(|m| {
               let mut removed = m.borrow_mut();
@@ -945,15 +1025,11 @@ pub fn dispatch_attributes(
         if let Some(sym) = symbol_name(arg) {
           let sym = &sym;
           let is_locked = {
-            let builtin = get_builtin_attributes(sym);
-            if builtin.contains(&"Locked") {
+            let builtin = get_builtin_attributes_mask(sym);
+            if builtin.contains(Attributes::Locked) {
               true
             } else {
-              crate::FUNC_ATTRS.with(|m| {
-                m.borrow()
-                  .get(sym.as_str())
-                  .is_some_and(|attrs| attrs.contains(&"Locked".to_string()))
-              })
+              crate::func_attrs_contains(sym.as_str(), "Locked")
             }
           };
           if is_locked {
@@ -974,8 +1050,8 @@ pub fn dispatch_attributes(
               false
             }
           });
-          let was_builtin_protected =
-            get_builtin_attributes(sym).contains(&"Protected");
+          let builtin = get_builtin_attributes_mask(sym);
+          let was_builtin_protected = builtin.contains(Attributes::Protected);
           if was_builtin_protected {
             crate::FUNC_ATTRS_REMOVED.with(|m| {
               let mut removed = m.borrow_mut();

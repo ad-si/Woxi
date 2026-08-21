@@ -15326,7 +15326,9 @@ pub fn definition_text(sym: &str) -> Option<String> {
       crate::FUNC_OPTIONS_DELAYED.with(|m| m.borrow().contains(sym));
     let op = if is_user_stored {
       if user_delayed { ":=" } else { "=" }
-    } else if get_builtin_attributes(sym).contains(&"ReadProtected") {
+    } else if get_builtin_attributes_mask(sym)
+      .contains(Attributes::ReadProtected)
+    {
       ":="
     } else {
       "="
