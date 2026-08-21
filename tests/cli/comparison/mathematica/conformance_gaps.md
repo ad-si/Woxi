@@ -176,13 +176,21 @@ pinned down.
 ### TraditionalForm boxes are written out inline instead of as TemplateBoxes
 
 `ToBoxes[TraditionalForm[…]]` differs in representation, not in picture:
-wolframscript hands every special function and `Row` to a named front-end
-template — `TemplateBox[{"n","x"}, "LegendreP"]`, `{"x"}, "Gamma"`,
-`{"s"}, "Zeta"`, `{"2","x","t"}, "RowDefault"` — while Woxi writes the same
-layout out as `SubscriptBox`/`SubsuperscriptBox` rows, because it has no
-front end and its own box renderers have to draw it. Only the outer
+wolframscript hands every special function to a named front-end template —
+`TemplateBox[{"n","x"}, "LegendreP"]`, `{"x"}, "Gamma"`, `{"s"}, "Zeta"` —
+while Woxi writes the same layout out as
+`SubscriptBox`/`SubsuperscriptBox` rows, because it has no front end and its
+own box renderers have to draw it. Only the outer
 `TagBox[FormBox[…, TraditionalForm], …]` wrapper is common; `n!` and
 `Subscript[a, b]` do conform.
+
+`Row` is a template in both (`{"2","x","t"}, "RowDefault"`) — but only in the
+box *escape* an `InputForm` string carries, which nothing has to draw.
+The box builder that feeds Woxi's own renderers keeps flattening it:
+`ToString[Row[{"a", 1}], TraditionalForm]` is `RowBox[{a, 1}]` against WL's
+`TemplateBox[{"a", 1}, RowDefault]`, and `ToBoxes[Row[{"a", 1}]]` writes the
+call's own source out as a `RowBox`. `ToBoxes` there also takes only one
+argument where WL takes a form as the second.
 
 Relatedly, `expr_to_boxes` typesets TraditionalForm with StandardForm glyphs:
 `Sin[x]/2` is `FractionBox[RowBox[{Sin[, x, ]}], 2]` against WL's

@@ -8142,17 +8142,46 @@ fn matching_box_close(chars: &[char], open: usize) -> Option<usize> {
 
 /// Drop the grouping markers inside a box segment and unwrap the quotes
 /// around its elements, keeping `\"` and `\\` escapes as literal characters.
+///
+/// A box segment spells a list of boxes `List[…]` where displaying it shows
+/// `{…}` — the segment is box *source*, and what it displays is the box
+/// expression it parses into.
 fn strip_box_markup(chars: &[char]) -> String {
   let mut out = String::with_capacity(chars.len());
+  // One entry per `[` still open, set for the ones a `List` head opened.
+  // Only the box source's own brackets count — a box holding text keeps
+  // whatever it says.
+  let mut brackets: Vec<bool> = Vec::new();
+  let mut in_box_text = false;
   let mut i = 0;
   while i < chars.len() {
     match chars[i] {
-      BOX_OPEN | BOX_CLOSE | BOX_SEP | BOX_START | '"' => {}
+      BOX_OPEN | BOX_CLOSE | BOX_SEP | BOX_START => {}
+      '"' => in_box_text = !in_box_text,
       '\\' if matches!(chars.get(i + 1), Some('"' | '\\')) => {
         out.push(chars[i + 1]);
         i += 2;
         continue;
       }
+      'L'
+        if !in_box_text
+          && chars[i..].starts_with(&['L', 'i', 's', 't', '['])
+          && !chars[..i].last().is_some_and(|c| c.is_alphanumeric()) =>
+      {
+        brackets.push(true);
+        out.push('{');
+        i += 5;
+        continue;
+      }
+      '[' if !in_box_text => {
+        brackets.push(false);
+        out.push('[');
+      }
+      ']' if !in_box_text => out.push(if brackets.pop().unwrap_or(false) {
+        '}'
+      } else {
+        ']'
+      }),
       c => out.push(c),
     }
     i += 1;
@@ -8183,10 +8212,7 @@ pub fn expr_to_boxes(expr: &Expr) -> String {
     Expr::BigInteger(n) => format!("\"{n}\""),
     Expr::Real(f) => format!("\"{}\"", crate::syntax::format_real(*f)),
     Expr::String(s) => {
-      format!(
-        "\"\\\"{}\\\"\"",
-        s.replace('\\', "\\\\").replace('"', "\\\"")
-      )
+      format!("\"\\\"{}\\\"\"", escape_box_text(s))
     }
     Expr::Identifier(name) | Expr::Constant(name) => format!("\"{name}\""),
 
@@ -8274,6 +8300,14 @@ pub fn expr_to_boxes(expr: &Expr) -> String {
   }
 }
 
+/// Escape `s` for the box-source layer, where a box is delimited by `"` and
+/// a literal newline would break the source across lines.
+fn escape_box_text(s: &str) -> String {
+  s.replace('\\', "\\\\")
+    .replace('"', "\\\"")
+    .replace('\n', "\\n")
+}
+
 /// The boxes for `-term` when `term` is negative, so a `Plus` can join it
 /// with a `-` instead of `+ -`. `None` when the term is not negative.
 fn negated_term_boxes(arg: &Expr) -> Option<String> {
@@ -8305,6 +8339,37 @@ fn negated_term_boxes(arg: &Expr) -> Option<String> {
 
 fn box_function_call(name: &str, args: &[Expr]) -> String {
   match name {
+    // `Row` typesets through one of the FrontEnd's row templates rather than
+    // as a function call — the parts are laid out side by side, and the
+    // separator (when there is one) travels with them inside the template.
+    "Row"
+      if (1..=2).contains(&args.len()) && matches!(args[0], Expr::List(_)) =>
+    {
+      let Expr::List(items) = &args[0] else {
+        unreachable!("guarded by the match arm")
+      };
+      let parts = items.iter().map(expr_to_boxes);
+      let (template, elements): (&str, Vec<String>) = match args.get(1) {
+        // A string separator is carried twice: first as the text it draws,
+        // then as the string literal it was written as.
+        Some(sep @ Expr::String(text)) => (
+          "RowWithSeparators",
+          [format!("\"{}\"", escape_box_text(text)), expr_to_boxes(sep)]
+            .into_iter()
+            .chain(parts)
+            .collect(),
+        ),
+        // Any other separator is a box of its own, and the template's name
+        // loses its plural.
+        Some(sep) => (
+          "RowWithSeparator",
+          std::iter::once(expr_to_boxes(sep)).chain(parts).collect(),
+        ),
+        None => ("RowDefault", parts.collect()),
+      };
+      format!("TemplateBox[List[{}], \"{template}\"]", elements.join(", "))
+    }
+
     // Rational → FractionBox
     "Rational" if args.len() == 2 => {
       format!(
@@ -8704,6 +8769,14 @@ fn to_expression_syntax_error(src: &str, symbol: &str) -> Option<String> {
     src.to_string()
   };
   let preprocessed = crate::insert_statement_separators(normalized.trim());
+  // A `\!\(\*boxes\)` escape is read along with the source around it, so box
+  // source the reader rejects is a syntax error even though the grammar
+  // happily takes the escape as a token.
+  if let Some(escape) = crate::syntax::double_escaped_box_escape(&normalized) {
+    return Some(format!(
+      "{symbol}::sntx: Invalid syntax in or before \"{escape}\"."
+    ));
+  }
   // The program grammar accepts it -> syntactically valid.
   if let Ok(mut pairs) = crate::parse(&preprocessed)
     && pairs.next().is_some_and(|p| p.as_rule() == Rule::Program)

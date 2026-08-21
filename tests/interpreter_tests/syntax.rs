@@ -482,6 +482,10 @@ mod implicit_times_with_strings {
       r#"Row[{"For each such pair, ", 1}]"#,
       r#"Row[{"x", ","}]"#,
       r#"Row[{Style["sum: ", 12, RGBColor[0.25, 0.43, 0.82], Bold], 1 + 2}]"#,
+      r#"Row[{"a", "b"}, ", "]"#,
+      "Row[{1, 2}, x]",
+      "Row[{}]",
+      "f[Row[{1, 2}]]",
       "ArcTan[N[4/3]]*180/Pi",
     ] {
       let printed = interpret(&format!(
@@ -517,16 +521,48 @@ mod implicit_times_with_strings {
     assert_eq!(
       interpret(r#"ToString[Hold[TraditionalForm[Row[{"a, b"}]]], InputForm]"#)
         .unwrap(),
-      r#"Hold[\!\(\*FormBox[RowBox[{"Row[", RowBox[{"{", RowBox[{"\"a, b\""}], "}"}], "]"}], TraditionalForm]\)]"#
+      r#"Hold[\!\(\*FormBox[TemplateBox[List["\"a, b\""], "RowDefault"], TraditionalForm]\)]"#
+    );
+  }
+
+  // `Row` typesets through the FrontEnd's row templates, not as a function
+  // call: `RowDefault` for the plain form, and one of two separator variants
+  // — the plural one carries a string separator twice, as the text it draws
+  // and as the literal it was written as.
+  #[test]
+  fn row_typesets_as_a_row_template() {
+    assert_eq!(
+      interpret(r#"ToString[Hold[TraditionalForm[Row[{"a", 1}]]], InputForm]"#)
+        .unwrap(),
+      r#"Hold[\!\(\*FormBox[TemplateBox[List["\"a\"", "1"], "RowDefault"], TraditionalForm]\)]"#
+    );
+    assert_eq!(
+      interpret(
+        r#"ToString[Hold[TraditionalForm[Row[{"a", "b"}, ", "]]], InputForm]"#
+      )
+      .unwrap(),
+      r#"Hold[\!\(\*FormBox[TemplateBox[List[", ", "\", \"", "\"a\"", "\"b\""], "RowWithSeparators"], TraditionalForm]\)]"#
+    );
+    assert_eq!(
+      interpret(
+        r#"ToString[Hold[TraditionalForm[Row[{1, 2}, x]]], InputForm]"#
+      )
+      .unwrap(),
+      r#"Hold[\!\(\*FormBox[TemplateBox[List["x", "1", "2"], "RowWithSeparator"], TraditionalForm]\)]"#
+    );
+    assert_eq!(
+      interpret(r#"ToString[Hold[TraditionalForm[Row[{}]]], InputForm]"#)
+        .unwrap(),
+      r#"Hold[\!\(\*FormBox[TemplateBox[List[], "RowDefault"], TraditionalForm]\)]"#
     );
   }
 
   // Writing the escape out as the InputForm of a *string* escapes its quotes
-  // a second time (the box delimiters included). Both spellings have to read
-  // the string literal back as a string — the outer layer is undone, the box
-  // one is not.
+  // a second time — the box delimiters included, which leaves text that is no
+  // longer box syntax. The escape is read along with the source around it, so
+  // that spelling is a syntax error rather than the boxes it came from.
   #[test]
-  fn string_box_reads_back_from_either_escaping_depth() {
+  fn box_escape_reads_back_only_at_its_own_escaping_depth() {
     assert_eq!(
       interpret(
         r#"ToExpression[ToString[InputForm[TraditionalForm[Row[{"a, b", 1}]]]]]"#
@@ -536,10 +572,17 @@ mod implicit_times_with_strings {
     );
     assert_eq!(
       interpret(
+        r#"Head[ToExpression[ToString[InputForm[TraditionalForm[Row[{"a, b", 1}]]]]]]"#
+      )
+      .unwrap(),
+      "Row"
+    );
+    assert_eq!(
+      interpret(
         r#"ToExpression[StringTrim[ToString[ToString[InputForm[TraditionalForm[Row[{"a, b", 1}]]]], InputForm], "\""]]"#
       )
       .unwrap(),
-      "a, b1"
+      "$Failed"
     );
   }
 }
@@ -3024,15 +3067,19 @@ mod traditional_form {
   }
 
   // A `TraditionalForm` of a symbolic product typesets to a `RowBox` of
-  // *string* atoms ("Pi", " ", "p", …). Writing that box segment out as
-  // source — which is what the `\!\(…\)` spelling is for — `\"`-escapes
-  // those quotes so the whole token survives being re-tokenized. The
-  // box-source readers expect the bare `"` delimiters real `.nb` box data
-  // uses, so without undoing that escaping first, reading the text back
-  // degraded to an opaque `HoldComplete` dump of its own source instead of
-  // the expression the boxes typeset.
+  // *string* atoms ("Pi", " ", "p", …). Writing that box segment out as the
+  // InputForm of a *string* `\"`-escapes those quotes — the box delimiters
+  // included — and what is left is no longer box syntax: Wolfram answers
+  // `ToExpression::sntx` and reads nothing. Woxi has no parse-time messages,
+  // so the escape stays the literal source it could not interpret; the
+  // `ToExpression` spelling of the same text does report the error and
+  // answer `$Failed` (see
+  // `box_escape_reads_back_only_at_its_own_escaping_depth`).
+  //
+  // Written through a binding on purpose: an unparseable line has no
+  // reference output, so this must not be lifted into a conformance case.
   #[test]
-  fn input_form_box_escape_round_trips_escaped_string_atoms() {
+  fn input_form_box_escape_does_not_read_escaped_box_delimiters() {
     let quoted = interpret(
       "ToString[ToString[InputForm[TraditionalForm[Pi*p*q]]], InputForm]",
     )
@@ -3043,7 +3090,8 @@ mod traditional_form {
     );
     // Drop the `"` delimiters `InputForm` put around the string to get
     // back at the source text itself.
-    assert_eq!(interpret(quoted.trim_matches('"')).unwrap(), "p*Pi*q");
+    let src = quoted.trim_matches('"');
+    assert_eq!(interpret(src).unwrap(), format!("HoldComplete[{src}]"));
   }
 
   // The other spelling of the same segment: `ToString[InputForm[…]]` is
@@ -3089,6 +3137,24 @@ mod traditional_form {
     assert_eq!(
       interpret("ToString[InputForm[TraditionalForm[x + y]]]").unwrap(),
       "DisplayForm[FormBox[RowBox[{x, +, y}], TraditionalForm]]"
+    );
+  }
+
+  // A box segment is box *source*, and what it displays is the box
+  // expression that source parses into — so the `List[…]` a template's slots
+  // are written as shows up as `{…}`. A box holding *text* is not source,
+  // and keeps whatever it says.
+  #[test]
+  fn box_segment_displays_its_slot_list_as_braces() {
+    assert_eq!(
+      interpret(r#"ToString[InputForm[TraditionalForm[Row[{"a", 1}]]]]"#)
+        .unwrap(),
+      r#"DisplayForm[FormBox[TemplateBox[{"a", 1}, RowDefault], TraditionalForm]]"#
+    );
+    assert_eq!(
+      interpret(r#"ToString[InputForm[TraditionalForm[Row[{"List[1]", 2}]]]]"#)
+        .unwrap(),
+      r#"DisplayForm[FormBox[TemplateBox[{"List[1]", 2}, RowDefault], TraditionalForm]]"#
     );
   }
 }

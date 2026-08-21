@@ -1733,12 +1733,11 @@ fn box_escape_to_expr(box_src: &str) -> Option<Expr> {
 ///
 /// That is the spelling `escape_string_for_input_form` produces when a box
 /// escape is itself written out as the InputForm of a *string* — there the
-/// box delimiters are escaped along with everything else. Box data as a real
-/// `.nb` file writes it always leaves those delimiters bare and uses `\"`
-/// only *inside* a box, to mark it as a string literal (`"\"a, b\""`) rather
-/// than source text (`"a + b"`). So one bare `"` settles it: the text needs
-/// no unescaping, and unescaping it anyway would strip that marking off every
-/// string in the expression.
+/// box delimiters are escaped along with everything else, so what is left is
+/// no longer box syntax and the reader rejects it. Box data as a real `.nb`
+/// file writes it always leaves those delimiters bare and uses `\"` only
+/// *inside* a box, to mark it as a string literal (`"\"a, b\""`) rather than
+/// source text (`"a + b"`). So one bare `"` settles it.
 fn box_source_is_double_escaped(s: &str) -> bool {
   let mut saw_quote = false;
   let mut backslashes = 0usize;
@@ -1758,43 +1757,76 @@ fn box_source_is_double_escaped(s: &str) -> bool {
   saw_quote
 }
 
-/// Undo `escape_string_for_input_form`'s `\"`/`\\` escaping of a `\!\(\*
-/// boxes\)` escape's content. Named-character escapes (`\[Name]`) are left
-/// untouched — they're valid box-source syntax on their own, not part of
-/// this string-quoting layer.
-fn unescape_box_source(s: &str) -> String {
-  let mut out = String::with_capacity(s.len());
-  let mut chars = s.chars().peekable();
-  while let Some(c) = chars.next() {
-    if c != '\\' {
-      out.push(c);
+/// The `\!\(\*boxes\)` escape in `src` whose box source is not box syntax,
+/// or `None` when every escape in it reads.
+///
+/// A box escape is read when the *source* is read, so an unreadable one is a
+/// syntax error rather than a value — that is what makes writing a box
+/// escape out as the InputForm of a string a one-way trip: the spelling that
+/// comes back has its box delimiters escaped (`List[\"…\"]`) and no longer
+/// parses. The escape is returned whole, to be quoted in the message.
+pub(crate) fn double_escaped_box_escape(src: &str) -> Option<String> {
+  let chars: Vec<char> = src.chars().collect();
+  let mut i = 0;
+  while i < chars.len() {
+    let Some(open) = box_escape_opener(&chars, i) else {
+      i += 1;
       continue;
+    };
+    let close = box_escape_closer(&chars, i + open)?;
+    let box_src: String = chars[i + open..close].iter().collect();
+    if box_source_is_double_escaped(&box_src) {
+      let end = close + if chars[close] == '\\' { 2 } else { 1 };
+      return Some(chars[i..end].iter().collect());
     }
-    match chars.peek() {
-      Some('"') => {
-        out.push('"');
-        chars.next();
-      }
-      Some('\\') => {
-        out.push('\\');
-        chars.next();
-      }
-      Some('n') => {
-        out.push('\n');
-        chars.next();
-      }
-      Some('t') => {
-        out.push('\t');
-        chars.next();
-      }
-      Some('r') => {
-        out.push('\r');
-        chars.next();
-      }
-      _ => out.push('\\'),
+    i = close;
+  }
+  None
+}
+
+/// The length in chars of the `\!\(\*` opener at `i`, in either of its
+/// spellings (backslashes as read from source, private-use markers as a
+/// string carries them), or `None` when no escape starts there.
+fn box_escape_opener(chars: &[char], i: usize) -> Option<usize> {
+  use crate::functions::string_ast::{BOX_OPEN, BOX_SEP, BOX_START};
+  let mut len = 0;
+  for (backslashed, marker) in
+    [('!', BOX_START), ('(', BOX_OPEN), ('*', BOX_SEP)]
+  {
+    match chars.get(i + len) {
+      Some(&c) if c == marker => len += 1,
+      Some('\\') if chars.get(i + len + 1) == Some(&backslashed) => len += 2,
+      _ => return None,
     }
   }
-  out
+  Some(len)
+}
+
+/// The index of the `\)` that closes the escape opened before `from`.
+fn box_escape_closer(chars: &[char], from: usize) -> Option<usize> {
+  use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN};
+  let mut depth = 0usize;
+  let mut i = from;
+  while i < chars.len() {
+    let (opens, closes, width) = match (chars[i], chars.get(i + 1)) {
+      (BOX_OPEN, _) => (true, false, 1),
+      (BOX_CLOSE, _) => (false, true, 1),
+      ('\\', Some('(')) => (true, false, 2),
+      ('\\', Some(')')) => (false, true, 2),
+      _ => (false, false, 1),
+    };
+    if closes {
+      if depth == 0 {
+        return Some(i);
+      }
+      depth -= 1;
+    }
+    if opens {
+      depth += 1;
+    }
+    i += width;
+  }
+  None
 }
 
 /// Split `s` at its last top-level comma (one not nested in brackets or
@@ -2758,24 +2790,18 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         }
         // `\!\(\*boxes\)` — the FrontEnd's "interpret these boxes" escape,
         // which is what `InputForm` writes for a typeset expression, in
-        // either delimiter spelling (`\*` or the `BOX_SEP` marker). Writing
-        // the segment out as the InputForm of a *string* escapes its quotes a
-        // second time, so undo that layer — but only when it is really there
-        // (see `box_source_is_double_escaped`): ordinarily the text is box
-        // data as a real `.nb` file writes it, where a `\"` marks a *string
-        // literal* box (`"\"a, b\""`) apart from one holding source text
-        // (`"a + b"`), and unescaping would turn every string in the
-        // expression into unparsed source.
+        // either delimiter spelling (`\*` or the `BOX_SEP` marker). A `\"`
+        // inside marks a *string literal* box (`"\"a, b\""`) apart from one
+        // holding source text (`"a + b"`); an escape whose box delimiters
+        // are themselves escaped is not box syntax at all (see
+        // `box_source_is_double_escaped`) and is left unread.
         let trimmed = inner.trim_start();
         if let Some(box_src) = trimmed.strip_prefix("\\*").or_else(|| {
           trimmed.strip_prefix(crate::functions::string_ast::BOX_SEP)
-        }) {
-          let unescaped = box_source_is_double_escaped(box_src)
-            .then(|| unescape_box_source(box_src));
-          let box_src = unescaped.as_deref().unwrap_or(box_src);
-          if let Some(expr) = box_escape_to_expr(box_src) {
-            return expr;
-          }
+        }) && !box_source_is_double_escaped(box_src)
+          && let Some(expr) = box_escape_to_expr(box_src)
+        {
+          return expr;
         }
         // Fallback: surface the raw source as HoldComplete.
         return Expr::FunctionCall {

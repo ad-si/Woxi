@@ -488,6 +488,46 @@ fn prime_marks(s: &str) -> Option<usize> {
   Some(count)
 }
 
+/// The elements of a `TemplateBox`'s first argument, which holds the
+/// template's slots. It is a list, written either as `{…}` (how a `.nb` file
+/// spells it) or as `List[…]` (how `InputForm` writes a box escape).
+fn template_box_parts(first_arg: &str) -> Vec<&str> {
+  let first = first_arg.trim();
+  let inner = first
+    .strip_prefix('{')
+    .and_then(|s| s.strip_suffix('}'))
+    .or_else(|| {
+      first
+        .strip_prefix("List[")
+        .and_then(|s| s.strip_suffix(']'))
+    })
+    .unwrap_or(first);
+  split_top_level_commas(inner)
+}
+
+/// The `Row[…]` call one of the FrontEnd's row templates stands for.
+///
+/// `RowDefault` holds just the parts. The separator variants put the
+/// separator first: a string one appears twice — as the text it draws and as
+/// the literal it was written as — and only the literal reads back as the
+/// separator's own expression.
+fn row_template_source(tag: &str, parts: &[&str]) -> String {
+  let mut parts = parts.iter().map(|p| box_part_source(p.trim()));
+  let separator = match tag {
+    "RowWithSeparators" => {
+      parts.next();
+      parts.next()
+    }
+    "RowWithSeparator" => parts.next(),
+    _ => None,
+  };
+  let items = parts.collect::<Vec<_>>().join(", ");
+  match separator {
+    Some(sep) => format!("Row[{{{items}}}, {sep}]"),
+    None => format!("Row[{{{items}}}]"),
+  }
+}
+
 /// The plain text a display-only box shows, or `None` when the box is not
 /// simple display text.
 ///
@@ -585,14 +625,9 @@ fn extract_typeset_box(s: &str) -> Option<String> {
   {
     let tag = args.last().unwrap().trim();
     let tag = tag.trim_matches('"');
+    let parts = template_box_parts(&args[0]);
     if tag == "QuantityPrefix" || tag == "Quantity" {
       // First positional element is a list `{number, displayed_unit, unit_name, unit_id_string}`.
-      let first = args[0].trim();
-      let first_inner = first
-        .strip_prefix('{')
-        .and_then(|s| s.strip_suffix('}'))
-        .unwrap_or(first);
-      let parts = split_top_level_commas(first_inner);
       if parts.len() >= 4 {
         let number = extract_cell_content(parts[0].trim());
         // Element 4 is the canonical unit name string. It's written as
@@ -611,22 +646,16 @@ fn extract_typeset_box(s: &str) -> Option<String> {
         return Some(format!("Quantity[{number}, \"{unit_name}\"]"));
       }
     }
-    // `TemplateBox[{parts…}, "RowDefault"]` is the box form of
-    // `Row[{parts…}]` — the FrontEnd lays the parts out side by side.
-    // Demonstration metadata cells pair a checkbox with its caption this way
-    // (`{CheckboxBox[…], " ", StyleBox["\"Supported in cloud\""]}`), so the
-    // generic "first element only" fallback below would drop the caption and
-    // leave a bare glyph. Only rows whose non-checkbox parts are plain
-    // display text are joined: the category picker wraps its captions in
-    // collapsible `PaneSelectorBox` chrome instead, which has no useful flat
-    // rendering, so those keep falling back to the first element.
-    if tag == "RowDefault" {
-      let first = args[0].trim();
-      let first_inner = first
-        .strip_prefix('{')
-        .and_then(|s| s.strip_suffix('}'))
-        .unwrap_or(first);
-      let parts = split_top_level_commas(first_inner);
+    let is_checkbox_row =
+      parts.iter().any(|p| p.trim().starts_with("CheckboxBox["));
+    // Demonstration metadata cells pair a checkbox with its caption in a
+    // `RowDefault` row, so the generic "first element only" fallback below
+    // would drop the caption and leave a bare glyph. Only rows whose
+    // non-checkbox parts are plain display text are joined: the category
+    // picker wraps its captions in collapsible `PaneSelectorBox` chrome
+    // instead, which has no useful flat rendering, so those keep falling back
+    // to the first element.
+    if tag == "RowDefault" && is_checkbox_row {
       // Render every non-checkbox part as display text; bail out as soon as
       // one has no such rendering.
       let captions: Option<Vec<Option<String>>> = parts
@@ -660,13 +689,16 @@ fn extract_typeset_box(s: &str) -> Option<String> {
         return Some(out.trim().to_string());
       }
     }
+    // The row templates are the box form of `Row` — the FrontEnd lays the
+    // parts out side by side. Rebuilding the `Row[…]` call (rather than
+    // gluing the parts' text together) is what lets a typeset `Row` read
+    // back as the expression it was typeset from.
+    if matches!(tag, "RowDefault" | "RowWithSeparator" | "RowWithSeparators")
+      && !is_checkbox_row
+    {
+      return Some(row_template_source(tag, &parts));
+    }
     // Fallback: first positional argument is the displayed value.
-    let first = args[0].trim();
-    let first_inner = first
-      .strip_prefix('{')
-      .and_then(|s| s.strip_suffix('}'))
-      .unwrap_or(first);
-    let parts = split_top_level_commas(first_inner);
     if let Some(first_part) = parts.first() {
       return Some(extract_cell_content(first_part.trim()));
     }
@@ -1237,29 +1269,7 @@ fn extract_rowbox_content(s: &str) -> String {
       result.push_str(&format!("(D[{body}, {vars}])"));
       break;
     }
-    let piece =
-      if part.starts_with('"') && part.ends_with('"') && part.len() >= 2 {
-        let inner = &part[1..part.len() - 1];
-        // A box element whose own text is quoted (`"\"…\""`) is a *string
-        // literal* in the cell, not an operator token. Its named characters
-        // are content, so `\[GreaterEqual]` stays `≥` rather than collapsing
-        // to the ASCII operator `>=` the way a bare `"\[GreaterEqual]"`
-        // element between two operands does.
-        if inner.starts_with("\\\"") {
-          string_literal_source(inner)
-        } else {
-          unescape_code_string(inner)
-        }
-      } else if part.starts_with("RowBox[") {
-        extract_rowbox_content(&part[7..part.len().saturating_sub(1)])
-      } else if part == "\"\\n\"" || part == "\"\\[NewLine]\"" {
-        "\n".to_string()
-      } else if let Some(converted) = extract_typeset_box(part) {
-        converted
-      } else {
-        // For non-string tokens, include as-is
-        part.to_string()
-      };
+    let piece = box_part_source(part);
     // A bare `#`/`##` and a following letter-initial piece are *separate*
     // sibling boxes here (implicit multiplication, e.g. `# Sin[Pi/u]`
     // typeset without a literal space token between them), but gluing
@@ -1277,6 +1287,32 @@ fn extract_rowbox_content(s: &str) -> String {
     result.push_str(&piece);
   }
   result
+}
+
+/// The cell source one element of a box row (or of a box template's slot
+/// list) stands for.
+fn box_part_source(part: &str) -> String {
+  let part = part.trim();
+  if part.starts_with('"') && part.ends_with('"') && part.len() >= 2 {
+    let inner = &part[1..part.len() - 1];
+    // A box element whose own text is quoted (`"\"…\""`) is a *string
+    // literal* in the cell, not an operator token. Its named characters
+    // are content, so `\[GreaterEqual]` stays `≥` rather than collapsing
+    // to the ASCII operator `>=` the way a bare `"\[GreaterEqual]"`
+    // element between two operands does.
+    if inner.starts_with("\\\"") {
+      string_literal_source(inner)
+    } else {
+      unescape_code_string(inner)
+    }
+  } else if part.starts_with("RowBox[") {
+    extract_rowbox_content(&part[7..part.len().saturating_sub(1)])
+  } else if let Some(converted) = extract_typeset_box(part) {
+    converted
+  } else {
+    // For non-string tokens, include as-is
+    part.to_string()
+  }
 }
 
 /// Render the argument of a `TextData[...]` wrapper to plain text.

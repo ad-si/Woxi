@@ -34,3 +34,38 @@ Woxi and as a `RowDefault` template in wolframscript:
 $ wo 'Head[ToBoxes[TraditionalForm[Row[{2, x, t}]]]]'
 TagBox
 ```
+
+Written out as text, though, a `Row` does become that template — the
+box-syntax escape `InputForm` produces names it rather than spelling the
+layout out:
+
+```scrut
+$ wo 'ToString[InputForm[TraditionalForm[Row[{"a", 1}]]]]'
+DisplayForm[FormBox[TemplateBox[{"a", 1}, RowDefault], TraditionalForm]]
+```
+
+A separator rides along inside the template, which loses the plural of its
+name when the separator is not a string:
+
+```scrut
+$ wo 'ToString[InputForm[TraditionalForm[Row[{"a", "b"}, ", "]]]]'
+DisplayForm[FormBox[TemplateBox[{, , ", ", "a", "b"}, RowWithSeparators], TraditionalForm]]
+```
+
+```scrut
+$ wo 'ToString[InputForm[TraditionalForm[Row[{1, 2}, x]]]]'
+DisplayForm[FormBox[TemplateBox[{x, 1, 2}, RowWithSeparator], TraditionalForm]]
+```
+
+Naming the template is what lets the text read back as the `Row` it was
+typeset from, rather than as the run of parts it draws:
+
+```scrut
+$ wo 'Head[ToExpression[ToString[InputForm[TraditionalForm[Row[{"a", 1}]]]]]]'
+Row
+```
+
+```scrut
+$ wo 'ToExpression[ToString[InputForm[TraditionalForm[Row[{"a", 1}]]]]][[1]]'
+{a, 1}
+```
