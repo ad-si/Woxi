@@ -4710,11 +4710,11 @@ mod assigning_value_lists {
     clear_state();
     assert_eq!(
       interpret(
-        "sv[x_] := x + 1; sv[a][b] := a - b; \
-         SubValues[sv] = SubValues[sv]; {sv[4], sv[9][2]}"
+        "sv[x_Integer] := x + 1; sv[q][b_] := got[b]; \
+         SubValues[sv] = SubValues[sv]; {sv[4], sv[q][7]}"
       )
       .unwrap(),
-      "{5, 7}"
+      "{5, got[7]}"
     );
   }
 
@@ -4723,11 +4723,11 @@ mod assigning_value_lists {
     clear_state();
     assert_eq!(
       interpret(
-        "sw[x_] := x + 1; sw[a][b] := a - b; SubValues[sw] = {}; \
-         {SubValues[sw], sw[4], sw[9][2]}"
+        "sw[x_Integer] := x + 1; sw[q][b_] := got[b]; SubValues[sw] = {}; \
+         {SubValues[sw], sw[4], sw[q][7]}"
       )
       .unwrap(),
-      "{{}, 5, sw[9][2]}"
+      "{{}, 5, sw[q][7]}"
     );
   }
 
