@@ -1269,10 +1269,18 @@ pub fn association_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// MemberQ[list, elem] - Tests if elem is a member of list
 pub fn member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A trailing `Heads -> True|False` option may follow the levelspec. The
+  // arity check upstream allows for it, so a call that has no option is one
+  // argument over the limit and is reported here instead.
+  let all_args = args;
+  let (args, heads) = split_heads_option(args);
   if args.len() < 2 || args.len() > 3 {
-    return Err(InterpreterError::EvaluationError(
-      "MemberQ expects 2 or 3 arguments".into(),
+    crate::emit_message(&format!(
+      "MemberQ::argb: MemberQ called with {} arguments; between 1 and 3 \
+       arguments are expected.",
+      all_args.len()
     ));
+    return Ok(unevaluated("MemberQ", all_args));
   }
 
   let pattern = &args[1];
@@ -1289,6 +1297,7 @@ pub fn member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     pattern: &Expr,
     level_spec: (i64, i64),
     current_level: i64,
+    heads: bool,
   ) -> bool {
     if current_level >= level_spec.0
       && current_level <= level_spec.1
@@ -1300,24 +1309,57 @@ pub fn member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let is_atom_number = matches!(expr, Expr::FunctionCall { name, .. } if name == "Rational")
       || is_complex_number(expr);
     if current_level < level_spec.1 && !is_atom_number {
+      // Under `Heads -> True` an expression's head is one of its parts, and
+      // sits a level below the expression itself — `f` in `{f[a]}` is at
+      // position `{1, 0}`, so at level 2.
+      if heads
+        && let Some(head) = head_part(expr)
+        && search_at_levels(
+          &head,
+          pattern,
+          level_spec,
+          current_level + 1,
+          heads,
+        )
+      {
+        return true;
+      }
       match expr {
         Expr::List(items) => {
           for item in items {
-            if search_at_levels(item, pattern, level_spec, current_level + 1) {
+            if search_at_levels(
+              item,
+              pattern,
+              level_spec,
+              current_level + 1,
+              heads,
+            ) {
               return true;
             }
           }
         }
         Expr::Association(pairs) => {
           for (_, v) in pairs {
-            if search_at_levels(v, pattern, level_spec, current_level + 1) {
+            if search_at_levels(
+              v,
+              pattern,
+              level_spec,
+              current_level + 1,
+              heads,
+            ) {
               return true;
             }
           }
         }
         Expr::FunctionCall { args: fn_args, .. } => {
           for arg in fn_args {
-            if search_at_levels(arg, pattern, level_spec, current_level + 1) {
+            if search_at_levels(
+              arg,
+              pattern,
+              level_spec,
+              current_level + 1,
+              heads,
+            ) {
               return true;
             }
           }
@@ -1329,8 +1371,36 @@ pub fn member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(bool_expr(search_at_levels(
-    &args[0], pattern, level_spec, 0,
+    &args[0], pattern, level_spec, 0, heads,
   )))
+}
+
+/// Split a trailing `Heads -> True|False` option off an argument list,
+/// reporting whether heads are to be searched. Absent the option they are
+/// not — `MemberQ`'s default is `Heads -> False`.
+fn split_heads_option(args: &[Expr]) -> (&[Expr], bool) {
+  if let Some(Expr::Rule {
+    pattern,
+    replacement,
+  }) = args.last()
+    && matches!(&**pattern, Expr::Identifier(n) if n == "Heads")
+  {
+    let on = matches!(&**replacement, Expr::Identifier(v) if v == "True");
+    return (&args[..args.len() - 1], on);
+  }
+  (args, false)
+}
+
+/// The head of an expression, as the expression it is — what `Heads -> True`
+/// adds to the parts being searched. `None` for an atom, which has no head to
+/// search into.
+fn head_part(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::FunctionCall { name, .. } => Some(Expr::Identifier(name.clone())),
+    Expr::List(_) => Some(Expr::Identifier("List".to_string())),
+    Expr::Association(_) => Some(Expr::Identifier("Association".to_string())),
+    _ => None,
+  }
 }
 
 /// Parse a level spec like {2}, {1, 3}, Infinity, or a plain integer.

@@ -11050,6 +11050,64 @@ mod join_non_list {
     assert_eq!(interpret("MemberQ[2][{1, 2, 3}]").unwrap(), "True");
   }
 
+  // A `Heads -> True` option puts an expression's head among the parts being
+  // searched. The head sits one level below the expression it heads, so `f`
+  // in `{f[a]}` is at level 2 — the level of its position `{1, 0}`.
+  #[test]
+  fn member_q_heads_option_finds_a_head() {
+    assert_eq!(
+      interpret("MemberQ[{f[a]}, f, {2}, Heads -> True]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn member_q_heads_option_respects_the_level() {
+    assert_eq!(
+      interpret("MemberQ[{f[a]}, f, {3}, Heads -> True]").unwrap(),
+      "False"
+    );
+  }
+
+  // Without the option heads are not searched — that is the default.
+  #[test]
+  fn member_q_without_heads_option_ignores_heads() {
+    assert_eq!(interpret("MemberQ[{f[a]}, f, {2}]").unwrap(), "False");
+    assert_eq!(
+      interpret("MemberQ[{f[a]}, f, {2}, Heads -> False]").unwrap(),
+      "False"
+    );
+  }
+
+  // The shape Rubi's `FormatLhs` uses to spot a `FunctionOfQ` among a rule's
+  // conditions.
+  #[test]
+  fn member_q_heads_option_over_nested_conditions() {
+    assert_eq!(
+      interpret(
+        "MemberQ[Defer[And[FreeQ[u, x], FunctionOfQ[u, v, x]]], \
+         FunctionOfQ, {3}, Heads -> True]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Four arguments with no option is still one too many, and says so.
+  #[test]
+  fn member_q_reports_too_many_arguments() {
+    clear_state();
+    interpret("MemberQ[{1, 2}, 1, 2, 3]").unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "MemberQ::argb: MemberQ called with 4 arguments; between 1 and 3 \
+         arguments are expected."
+      )),
+      "expected an argb message: {msgs:?}"
+    );
+  }
+
   #[test]
   fn free_q_operator_form() {
     assert_eq!(interpret("FreeQ[_Integer][{1, 2, x}]").unwrap(), "False");

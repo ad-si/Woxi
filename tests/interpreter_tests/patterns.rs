@@ -5189,3 +5189,62 @@ mod rule_nodes_in_a_definition_pattern {
     );
   }
 }
+
+// Regression tests for the Orderless re-reading in rule dispatch. A `Times`
+// or `Plus` argument can satisfy a structural pattern more than one way, and
+// the rule's guard may accept only some of them. The matcher settles on one
+// reading, so dispatch offers it the others before abandoning the rule —
+// which is what Rubi's rule base relies on throughout.
+mod orderless_readings_under_a_guard {
+  use super::*;
+
+  #[test]
+  fn a_product_is_reread_until_the_guard_is_satisfied() {
+    clear_state();
+    assert_eq!(
+      interpret("orp[u_*x_] := g[u, x] /; x > 0; orp[q*3]").unwrap(),
+      "g[q, 3]"
+    );
+  }
+
+  // Written the other way round it is the same expression, so it reads the
+  // same way.
+  #[test]
+  fn the_written_order_does_not_matter() {
+    clear_state();
+    assert_eq!(
+      interpret("orp[u_*x_] := g[u, x] /; x > 0; orp[3*q]").unwrap(),
+      "g[q, 3]"
+    );
+  }
+
+  #[test]
+  fn a_sum_is_reread_too() {
+    clear_state();
+    assert_eq!(
+      interpret("ors[u_+x_] := s[u, x] /; x > 0; ors[q+3]").unwrap(),
+      "s[q, 3]"
+    );
+  }
+
+  // A guard no reading satisfies still turns the rule down.
+  #[test]
+  fn a_guard_no_reading_satisfies_still_fails() {
+    clear_state();
+    assert_eq!(
+      interpret("orp[u_*x_] := g[u, x] /; x > 5; orp[q*3]").unwrap(),
+      "orp[3*q]"
+    );
+  }
+
+  // An unguarded rule keeps the reading it always had: the retry only ever
+  // runs after a guard has turned one down.
+  #[test]
+  fn an_unguarded_rule_keeps_its_first_reading() {
+    clear_state();
+    assert_eq!(
+      interpret("orn[u_*x_] := g[u, x]; orn[q*3]").unwrap(),
+      "g[3, q]"
+    );
+  }
+}
