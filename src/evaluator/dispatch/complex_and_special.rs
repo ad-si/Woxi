@@ -15009,6 +15009,20 @@ fn number_list(values: &[f64], source: &Expr) -> Expr {
   )
 }
 
+/// Render a rule's right-hand side for a hand-assembled `lhs := rhs` /
+/// `lhs = rhs` / `lhs ^:= rhs` display line, parenthesizing a `;`-sequence
+/// body (`CompoundExpression` has the lowest precedence of any operator, so
+/// printing it unparenthesized after `:=` would re-parse as separate
+/// top-level statements instead of one delayed definition).
+fn format_assignment_rhs(body: &Expr) -> String {
+  let s = expr_to_string(body);
+  if crate::syntax::assignment_rhs_needs_parens(body) {
+    format!("({s})")
+  } else {
+    s
+  }
+}
+
 /// The text `Definition[sym]` displays: attributes, defaults, options and
 /// the symbol's own rules, one per paragraph. `None` when the symbol
 /// carries nothing at all (wolframscript shows a blank panel then).
@@ -15097,7 +15111,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
       lines.push(format!(
         "{} ^:= {}",
         expr_to_string(orig_lhs),
-        expr_to_string(orig_body)
+        format_assignment_rhs(orig_body)
       ));
     }
   }
@@ -15152,7 +15166,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
           "{}[{}] := {}",
           printed,
           params_str,
-          expr_to_string(&display_body)
+          format_assignment_rhs(&display_body)
         ));
         continue;
       }
@@ -15189,7 +15203,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
           "{}[{}] = {}",
           printed,
           args_strs.join(", "),
-          expr_to_string(body)
+          format_assignment_rhs(body)
         ));
       } else {
         // Reconstruct f[x_, y_Integer] := body
@@ -15210,7 +15224,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
           "{}[{}] := {}",
           printed,
           params_str.join(", "),
-          expr_to_string(body)
+          format_assignment_rhs(body)
         ));
       }
     }
@@ -15228,7 +15242,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
       lines.push(format!(
         "{} := {}",
         expr_to_string(lhs),
-        expr_to_string(rhs)
+        format_assignment_rhs(rhs)
       ));
     }
   }
@@ -15293,7 +15307,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
       "{} /: Default[{}] := {}",
       printed,
       default_args.join(", "),
-      expr_to_string(body)
+      format_assignment_rhs(body)
     ));
   }
 
@@ -15497,7 +15511,7 @@ pub fn full_definition_text(sym: &str) -> Option<String> {
             "{}[{}] = {}",
             sym,
             args_strs.join(", "),
-            expr_to_string(body)
+            format_assignment_rhs(body)
           ));
         } else {
           let params_str: Vec<String> = params
@@ -15515,7 +15529,7 @@ pub fn full_definition_text(sym: &str) -> Option<String> {
             "{}[{}] := {}",
             sym,
             params_str.join(", "),
-            expr_to_string(body)
+            format_assignment_rhs(body)
           ));
         }
       }
