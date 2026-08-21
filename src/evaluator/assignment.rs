@@ -1257,6 +1257,16 @@ fn set_downvalues_from_rules(
     crate::FUNC_DEFS.with(|m| {
       m.borrow_mut().remove(head);
     });
+    // A literal-argument definition (`f[1] = 42`, and the `f[x_] := f[x] = …`
+    // memoization idiom) is kept in `MEMO_VALUES` rather than `FUNC_DEFS`.
+    // `DownValues[f]` reports those too and dispatch reads them first, so an
+    // assignment that replaces the whole list has to replace them as well —
+    // otherwise `DownValues[f] = {}` leaves behind the very definitions it
+    // was asked to clear, and a non-empty assignment is shadowed by stale
+    // ones.
+    crate::MEMO_VALUES.with(|m| {
+      m.borrow_mut().remove(head);
+    });
   }
 
   // Replay each rule in given order with specificity sorting disabled so

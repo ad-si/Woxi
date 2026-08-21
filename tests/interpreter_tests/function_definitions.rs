@@ -4641,6 +4641,66 @@ mod assigning_value_lists {
     );
   }
 
+  // A list-destructuring parameter and a whole-rule guard together: the
+  // guard talks about the elements by name, and is stored against the
+  // `Part[_lp, i]` accessors they are lowered to, so it has to be read back
+  // for both firing and printing.
+  #[test]
+  fn list_pattern_rule_with_a_guard_fires_and_prints() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "lq[{a_Integer, b_Integer}] := a + b /; a > b; \
+         {lq[{1, 2}], lq[{5, 2}], DownValues[lq]}"
+      )
+      .unwrap(),
+      "{lq[{1, 2}], 7, {HoldPattern[lq[{a_Integer, b_Integer}]] :> \
+       a + b /; a > b}}"
+    );
+  }
+
+  // Literal-argument and memoized definitions are reported by `DownValues`
+  // and read first by dispatch, so replacing the list has to replace them
+  // too — otherwise clearing leaves behind exactly what it was asked to
+  // remove.
+  #[test]
+  fn assigning_an_empty_list_clears_literal_definitions() {
+    clear_state();
+    assert_eq!(
+      interpret("lf[1] = 42; DownValues[lf] = {}; {DownValues[lf], lf[1]}")
+        .unwrap(),
+      "{{}, lf[1]}"
+    );
+  }
+
+  #[test]
+  fn assigning_an_empty_list_clears_memoized_definitions() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "mf[n_Integer] := mf[n] = n*2; mf[3]; DownValues[mf] = {}; \
+         {DownValues[mf], mf[3]}"
+      )
+      .unwrap(),
+      "{{}, mf[3]}"
+    );
+  }
+
+  // Replacing the list with itself keeps them, though: they are part of what
+  // `DownValues` reported.
+  #[test]
+  fn round_tripping_keeps_memoized_definitions() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "rf[n_Integer] := rf[n] = n*2; rf[3]; \
+         DownValues[rf] = DownValues[rf]; rf[3]"
+      )
+      .unwrap(),
+      "6"
+    );
+  }
+
   // `SubValues[f] = …` replaces what is in the SubValues store, and nothing
   // else. Clearing `f`'s DownValues here would make installing a definition
   // list section by section throw away the DownValues installed a moment
