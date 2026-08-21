@@ -4846,7 +4846,7 @@ pub fn dispatch_list_operations(
       let target = numeric_array_payload(&args[0]).unwrap_or(&args[0]);
       return Some(list_helpers_ast::array_depth_ast(target));
     }
-    "Developer`ToPackedArray" if args.len() == 1 || args.len() == 2 => {
+    "Developer`ToPackedArray" => {
       return Some(list_helpers_ast::to_packed_array_ast(args));
     }
     "ArrayComponents" if !args.is_empty() && args.len() <= 3 => {

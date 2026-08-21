@@ -6300,4 +6300,4 @@ SetProperty,Graph with an annotation set for one of its vertices or edges,✅,pu
 Evaluated,Option for whether to evaluate a plot's function once symbolically,✅,pure,6.0,
 ParallelSelect,Parallel version of Select (evaluated sequentially),✅,pure,14.2,
 ParallelCases,Parallel version of Cases (evaluated sequentially),✅,pure,14.2,
-Developer`ToPackedArray,Packs a full rectangular array of machine numbers into one numeric type (integers become reals when the array mixes both); leaves anything unpackable unchanged,✅,pure,4.0,
+Developer`ToPackedArray,Packs a full rectangular array of machine numbers into one numeric type; an optional second argument converts the leaves to Integer Real or Complex and anything unpackable is returned unchanged,✅,pure,4.0,

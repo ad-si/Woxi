@@ -2173,11 +2173,21 @@ function main() {
       process.exit(2);
     }
 
-    // Collect failures from this batch
+    // Collect failures from this batch. A failure is a `FAIL #…` line
+    // immediately followed by its indented `Woxi:`/`Wolfram:` lines. Other
+    // indented output belongs to the test cases themselves — TracePrint, for
+    // one, prints indented lines while it evaluates — and must not be
+    // reported as part of a failure.
+    let inFailure = false;
     for (const line of outputLines) {
-      if (line.startsWith("FAIL") || line.startsWith("  ")) {
+      if (line.startsWith("FAIL")) {
         failures.push(line);
-        if (line.startsWith("FAIL")) failCount++;
+        failCount++;
+        inFailure = true;
+      } else if (inFailure && /^ {2}(Woxi|Wolfram): /.test(line)) {
+        failures.push(line);
+      } else {
+        inFailure = false;
       }
     }
 
