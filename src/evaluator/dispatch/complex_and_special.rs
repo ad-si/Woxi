@@ -1060,11 +1060,7 @@ pub fn dispatch_complex_and_special(
         {
           let has_flat =
             crate::evaluator::listable::is_builtin_flat(&expr_head)
-              || crate::FUNC_ATTRS.with(|m| {
-                m.borrow()
-                  .get(expr_head.as_str())
-                  .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
-              });
+              || crate::func_attrs_contains(&expr_head, "Flat");
           if has_flat {
             let all_bindings =
               crate::evaluator::pattern_matching::enumerate_flat_partition_matches(

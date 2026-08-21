@@ -495,12 +495,8 @@ fn evaluate_function_call_ast_inner(
   };
 
   // Thread Listable functions over list arguments
-  let is_listable = is_builtin_listable(name)
-    || crate::FUNC_ATTRS.with(|m| {
-      m.borrow()
-        .get(name)
-        .is_some_and(|attrs| attrs.contains(&"Listable".to_string()))
-    });
+  let is_listable =
+    is_builtin_listable(name) || crate::func_attrs_contains(name, "Listable");
   if is_listable && let Some(result) = thread_listable(name, args)? {
     return Ok(result);
   }
@@ -524,12 +520,8 @@ fn evaluate_function_call_ast_inner(
   }
 
   // Apply Flat attribute: flatten nested calls of the same function
-  let has_flat = is_builtin_flat(name)
-    || crate::FUNC_ATTRS.with(|m| {
-      m.borrow()
-        .get(name)
-        .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
-    });
+  let has_flat =
+    is_builtin_flat(name) || crate::func_attrs_contains(name, "Flat");
   let args_after_flat;
   let args = if has_flat {
     let mut flat_args: Vec<Expr> = Vec::new();
@@ -580,11 +572,7 @@ fn evaluate_function_call_ast_inner(
   let has_orderless = name != "Plus"
     && name != "Times"
     && (is_builtin_orderless(name)
-      || crate::FUNC_ATTRS.with(|m| {
-        m.borrow()
-          .get(name)
-          .is_some_and(|attrs| attrs.contains(&"Orderless".to_string()))
-      }));
+      || crate::func_attrs_contains(name, "Orderless"));
   let args_after_sort;
   let args = if has_orderless {
     let mut sorted_args = args.to_vec();
@@ -713,12 +701,9 @@ fn evaluate_function_call_ast_inner(
   // stores upvalues in FUNC_DEFS too (their params start with `_up`), so
   // when the head carries HoldAllComplete we drop those entries before
   // dispatch — DownValues for the same head are still tried as usual.
-  let head_has_hold_all_complete = crate::FUNC_ATTRS.with(|m| {
-    m.borrow()
-      .get(name)
-      .is_some_and(|attrs| attrs.contains(&"HoldAllComplete".to_string()))
-  }) || get_builtin_attributes(name)
-    .contains(&"HoldAllComplete");
+  let head_has_hold_all_complete =
+    crate::func_attrs_contains(name, "HoldAllComplete")
+      || get_builtin_attributes(name).contains(&"HoldAllComplete");
   let overloads = crate::FUNC_DEFS.with(|m| {
     let defs = m.borrow();
     let raw = defs.get(name).cloned();

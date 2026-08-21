@@ -4,6 +4,25 @@ mod set_attributes {
   use super::*;
 
   #[test]
+  fn unknown_attributes() {
+    clear_state();
+    let result = interpret_with_stdout("Attributes[f] = Foo").unwrap();
+    assert!(
+      result.warnings[0]
+        .contains("Attributes::attnf: Foo is not a known attribute."),
+      "unexpected warnings: {:?}",
+      result.warnings
+    );
+    let result = interpret_with_stdout("SetAttributes[f, Foo]").unwrap();
+    assert!(
+      result.warnings[0]
+        .contains("Attributes::attnf: Foo is not a known attribute."),
+      "unexpected warnings: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
   fn listable_threads_over_list() {
     clear_state();
     assert_eq!(

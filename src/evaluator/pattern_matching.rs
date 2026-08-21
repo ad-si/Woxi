@@ -692,19 +692,11 @@ pub fn is_symbol_protected(name: &str) -> bool {
   let builtin_protected = builtin.contains(&"Protected");
   // `Unprotect` records the removal in FUNC_ATTRS_REMOVED so the builtin's
   // baseline can be temporarily overridden without losing it.
-  let removed = crate::FUNC_ATTRS_REMOVED.with(|m| {
-    m.borrow()
-      .get(name)
-      .is_some_and(|attrs| attrs.iter().any(|a| a == "Protected"))
-  });
+  let removed = crate::func_attrs_removed_contains(name, "Protected");
   if builtin_protected && !removed {
     return true;
   }
-  crate::FUNC_ATTRS.with(|m| {
-    m.borrow()
-      .get(name)
-      .is_some_and(|attrs| attrs.contains(&"Protected".to_string()))
-  })
+  crate::func_attrs_contains(name, "Protected")
 }
 
 fn has_one_identity(name: &str) -> bool {
@@ -712,11 +704,7 @@ fn has_one_identity(name: &str) -> bool {
   if builtin.contains(&"OneIdentity") {
     return true;
   }
-  crate::FUNC_ATTRS.with(|m| {
-    m.borrow()
-      .get(name)
-      .is_some_and(|attrs| attrs.contains(&"OneIdentity".to_string()))
-  })
+  crate::func_attrs_contains(name, "OneIdentity")
 }
 
 /// Look up a user-defined `Default[f, position]` (or position-less
@@ -1368,11 +1356,7 @@ fn try_flat_partition_match(
 ) -> Option<Vec<(String, Expr)>> {
   let has_orderless =
     crate::evaluator::listable::is_builtin_orderless(pat_name)
-      || crate::FUNC_ATTRS.with(|m| {
-        m.borrow()
-          .get(pat_name)
-          .is_some_and(|attrs| attrs.contains(&"Orderless".to_string()))
-      });
+      || crate::func_attrs_contains(pat_name, "Orderless");
   let n = expr_args.len();
   let k = pat_args.len();
   if has_orderless {
@@ -2131,12 +2115,8 @@ fn try_flat_replace_all(
 ) -> Result<Option<Expr>, InterpreterError> {
   match expr {
     Expr::FunctionCall { name, args } => {
-      let has_flat = is_builtin_flat(name)
-        || crate::FUNC_ATTRS.with(|m| {
-          m.borrow()
-            .get(name.as_str())
-            .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
-        });
+      let has_flat =
+        is_builtin_flat(name) || crate::func_attrs_contains(name, "Flat");
       if has_flat
         && let Expr::FunctionCall {
           name: pat_name,
@@ -2146,12 +2126,7 @@ fn try_flat_replace_all(
         && pat_args.len() < args.len()
       {
         let has_orderless = is_builtin_orderless(name)
-          || crate::FUNC_ATTRS.with(|m| {
-            m.borrow()
-              .get(name.as_str())
-              .is_some_and(|attrs| attrs.contains(&"Orderless".to_string()))
-          });
-
+          || crate::func_attrs_contains(name, "Orderless");
         if has_orderless {
           // For Flat+Orderless: try all combinations of sub_len args
           let sub_len = pat_args.len();
@@ -2185,11 +2160,8 @@ fn try_flat_replace_all(
           // -> rp[x]` → `r[a, rp[r[b]], c]`. The literal form is the
           // fallback so plain literal patterns like `f[a, b, c] /.
           // f[a, b] -> d` still match.
-          let has_one_identity = crate::FUNC_ATTRS.with(|m| {
-            m.borrow()
-              .get(name.as_str())
-              .is_some_and(|attrs| attrs.contains(&"OneIdentity".to_string()))
-          });
+          let has_one_identity =
+            crate::func_attrs_contains(name, "OneIdentity");
           let sub_len = pat_args.len();
           for start in 0..=(args.len() - sub_len) {
             let try_match =
@@ -4170,11 +4142,7 @@ fn match_pattern_impl(
           // `Plus[n_Integer, s__Symbol, rest_]`.
           let is_orderless =
             crate::evaluator::listable::is_builtin_orderless(pat_name)
-              || crate::FUNC_ATTRS.with(|m| {
-                m.borrow()
-                  .get(pat_name.as_str())
-                  .is_some_and(|attrs| attrs.contains(&"Orderless".to_string()))
-              });
+              || crate::func_attrs_contains(pat_name, "Orderless");
           if is_orderless && expr_args.len() >= 2 {
             for perm in permutations(expr_args) {
               if let Some(b) = match_args_with_sequences(&perm, pat_args) {
@@ -4228,11 +4196,7 @@ fn match_pattern_impl(
             if pat_args.len() < expr_args.len() && !pat_args.is_empty() {
               let has_flat =
                 crate::evaluator::listable::is_builtin_flat(pat_name)
-                  || crate::FUNC_ATTRS.with(|m| {
-                    m.borrow()
-                      .get(pat_name)
-                      .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
-                  });
+                  || crate::func_attrs_contains(pat_name, "Flat");
               if has_flat
                 && let Some(b) =
                   try_flat_partition_match(pat_name, pat_args, expr_args)
@@ -4245,11 +4209,7 @@ fn match_pattern_impl(
           // For Orderless functions (Times, Plus), try all permutations
           let is_orderless =
             crate::evaluator::listable::is_builtin_orderless(pat_name)
-              || crate::FUNC_ATTRS.with(|m| {
-                m.borrow()
-                  .get(pat_name)
-                  .is_some_and(|attrs| attrs.contains(&"Orderless".to_string()))
-              });
+              || crate::func_attrs_contains(pat_name, "Orderless");
           if is_orderless && pat_args.len() >= 2 {
             // Try all permutations of expression args against pattern args.
             // When Optional patterns are present, prefer matches where more
