@@ -871,37 +871,50 @@ fn reorder_orderless_pattern_args(pattern: Expr) -> Expr {
   pattern
 }
 
-/// Helper for Attributes[f] = value / Attributes[f] := value
-/// Extracts attribute symbols from value, validates, and sets them on the symbol.
-fn set_attributes_from_value(
-  sym_name: &str,
-  rhs_value: &Expr,
-) -> crate::syntax::Expr {
-  // Check if symbol is locked
-  let is_locked = crate::FUNC_ATTRS.with(|m| {
-    m.borrow()
-      .get(sym_name)
-      .is_some_and(|attrs| attrs.contains(&"Locked".to_string()))
-  });
-  if is_locked {
-    crate::emit_message(&format!(
-      "Attributes::locked: Symbol {sym_name} is locked."
-    ));
-    return rhs_value.clone();
-  }
+fn is_known_attribute(name: &str) -> bool {
+  matches!(
+    name,
+    "Constant"
+      | "Flat"
+      | "HoldAll"
+      | "HoldAllComplete"
+      | "HoldFirst"
+      | "HoldRest"
+      | "Listable"
+      | "Locked"
+      | "NHoldAll"
+      | "NHoldFirst"
+      | "NHoldRest"
+      | "NonThreadable"
+      | "NumericFunction"
+      | "OneIdentity"
+      | "Orderless"
+      | "Protected"
+      | "ReadProtected"
+      | "SequenceHold"
+  )
+}
 
+pub fn get_attributes(expr: &Expr) -> Option<Vec<String>> {
   // Extract attribute names from the value
-  let attr_exprs = match rhs_value {
+  let attr_exprs = match expr {
     Expr::List(items) => items.clone(),
-    Expr::Identifier(_) => vec![rhs_value.clone()].into(),
-    _ => vec![rhs_value.clone()].into(),
+    _ => vec![expr.clone()].into(),
   };
 
   let mut valid_attrs = Vec::new();
   let mut has_error = false;
   for attr_expr in &attr_exprs {
     if let Expr::Identifier(attr_name) = attr_expr {
-      valid_attrs.push(attr_name.clone());
+      if is_known_attribute(attr_name) {
+        valid_attrs.push(attr_name.clone());
+      } else {
+        // Unknown attribute — emit warning
+        crate::emit_message(&format!(
+          "Attributes::attnf: {attr_name} is not a known attribute."
+        ));
+        has_error = true;
+      }
     } else {
       // Non-symbol attribute — emit warning
       let attr_str = expr_to_string(attr_expr);
@@ -913,8 +926,29 @@ fn set_attributes_from_value(
   }
 
   if has_error {
-    return Expr::Identifier("$Failed".to_string());
+    return None;
   }
+  Some(valid_attrs)
+}
+
+/// Helper for Attributes[f] = value / Attributes[f] := value
+/// Extracts attribute symbols from value, validates, and sets them on the symbol.
+fn set_attributes_from_value(
+  sym_name: &str,
+  rhs_value: &Expr,
+) -> crate::syntax::Expr {
+  // Check if symbol is locked
+  let is_locked = crate::func_attrs_contains(sym_name, "Locked");
+  if is_locked {
+    crate::emit_message(&format!(
+      "Attributes::locked: Symbol {sym_name} is locked."
+    ));
+    return rhs_value.clone();
+  }
+
+  let Some(valid_attrs) = get_attributes(rhs_value) else {
+    return Expr::Identifier("$Failed".to_string());
+  };
 
   // Replace all user-defined attributes for this symbol
   crate::FUNC_ATTRS.with(|m| {
@@ -1330,21 +1364,13 @@ fn is_downvalue_head_protected(name: &str) -> bool {
   if is_value_redirect_head(name) {
     return false;
   }
-  let was_unprotected = crate::FUNC_ATTRS_REMOVED.with(|m| {
-    m.borrow()
-      .get(name)
-      .is_some_and(|attrs| attrs.iter().any(|a| a == "Protected"))
-  });
+  let was_unprotected = crate::func_attrs_removed_contains(name, "Protected");
   if was_unprotected {
     return false;
   }
   crate::evaluator::attributes::get_builtin_attributes(name)
     .contains(&"Protected")
-    || crate::FUNC_ATTRS.with(|m| {
-      m.borrow()
-        .get(name)
-        .is_some_and(|attrs| attrs.iter().any(|a| a == "Protected"))
-    })
+    || crate::func_attrs_contains(name, "Protected")
 }
 
 /// Flatten a left-associative chain of `BinaryOp { op: Times, .. }` into

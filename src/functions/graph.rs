@@ -4277,6 +4277,78 @@ pub fn weighted_adjacency_graph_ast(
   })
 }
 
+/// AdjacencyGraph[matrix] / AdjacencyGraph[vertices, matrix] — graph from
+/// a 0/1 adjacency matrix. Symmetric matrices give undirected edges
+/// (upper triangle, row-major); anything else gives directed edges in
+/// row-major order.
+pub fn adjacency_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = |args: &[Expr]| unevaluated("AdjacencyGraph", args);
+  let (vertices, matrix) = match args {
+    [Expr::List(m)] => (None, m),
+    [Expr::List(v), Expr::List(m)] => (Some(v.clone()), m),
+    _ => return Ok(unevaluated(args)),
+  };
+  let Some(graph) = adjacency_matrix_to_graph(vertices.as_deref(), matrix)
+  else {
+    return Ok(unevaluated(args));
+  };
+  Ok(graph)
+}
+
+/// Shared conversion from a square adjacency matrix (list of rows) into a
+/// `Graph[{vertices}, {edges}]` expression. Returns `None` when `matrix`
+/// isn't a square list of lists, or `vertices` (when given) doesn't match
+/// its dimension. Used by `AdjacencyGraph` and by `GraphPlot[m]`, which
+/// accepts a bare adjacency matrix directly.
+pub fn adjacency_matrix_to_graph(
+  vertices: Option<&[Expr]>,
+  matrix: &[Expr],
+) -> Option<Expr> {
+  let n = matrix.len();
+  let rows: Option<Vec<&[Expr]>> = matrix
+    .iter()
+    .map(|row| match row {
+      Expr::List(cells) if cells.len() == n => Some(cells.as_slice()),
+      _ => None,
+    })
+    .collect();
+  let rows = rows?;
+  let verts: Vec<Expr> = match vertices {
+    Some(v) if v.len() == n => v.to_vec(),
+    Some(_) => return None,
+    None => (1..=n as i128).map(Expr::Integer).collect(),
+  };
+  let is_edge = |e: &Expr| {
+    crate::functions::math_ast::try_eval_to_f64(e).is_some_and(|v| v != 0.0)
+  };
+  let symmetric = (0..n)
+    .all(|i| (0..n).all(|j| is_edge(&rows[i][j]) == is_edge(&rows[j][i])));
+
+  let mut edges: Vec<Expr> = Vec::new();
+  for i in 0..n {
+    let j_start = if symmetric { i } else { 0 };
+    for j in j_start..n {
+      if symmetric && i == j {
+        continue;
+      }
+      if is_edge(&rows[i][j]) {
+        edges.push(Expr::FunctionCall {
+          name: if symmetric {
+            "UndirectedEdge".to_string()
+          } else {
+            "DirectedEdge".to_string()
+          },
+          args: vec![verts[i].clone(), verts[j].clone()].into(),
+        });
+      }
+    }
+  }
+  Some(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: vec![Expr::List(verts.into()), Expr::List(edges.into())].into(),
+  })
+}
+
 /// FindMinimumCostFlow[cmat, s, t] - minimum total cost of a maximum
 /// flow from s to t where each nonzero cost-matrix entry is an arc of
 /// capacity one (wolframscript's default). No path at all stays

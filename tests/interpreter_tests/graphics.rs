@@ -3638,6 +3638,56 @@ mod plot3d {
       assert_eq!(plain.lines().filter(|l| l.starts_with("<line")).count(), 0);
     }
 
+    /// `Opacity` tints a face without touching the outline the default
+    /// `EdgeForm` draws around it, so `{Opacity[0], Cuboid[…]}` is the
+    /// wireframe idiom. Regression: the outline inherited the face's
+    /// opacity, so a space-filling Demonstration whose "opacity" slider
+    /// hides one kind of cell lost that cell's edges along with its faces
+    /// instead of leaving it as an empty shell.
+    #[test]
+    fn graphics3d_opacity_leaves_the_default_outline_opaque() {
+      let quad = "Polygon[{{0,0,0},{1,0,0},{1,1,0},{0,1,0}}]".to_string();
+      let tri = "Polygon[{{0,0,0},{1,0,0},{1,1,0}}]".to_string();
+      for face in [quad, tri] {
+        let svg = export_svg(&format!(
+          "Graphics3D[{{Opacity[0], Blue, {face}}}, Boxed -> False]"
+        ));
+        // The face is fully transparent…
+        assert!(
+          svg
+            .lines()
+            .filter(|l| l.starts_with("<polygon"))
+            .all(|l| l.contains("opacity=\"0\"")),
+          "the face must be invisible: {svg}"
+        );
+        // …but its outline is still there, at full strength. A
+        // fan-triangulated quad strokes the outline as separate `<line>`s;
+        // a bare triangle carries it as the polygon's own stroke, so its
+        // transparency has to be a `fill-opacity` rather than a blanket
+        // `opacity`.
+        let outlined = svg.lines().any(|l| {
+          l.starts_with("<line") && l.contains("stroke=\"rgb(64,64,64)\"")
+        }) || svg.lines().any(|l| {
+          l.starts_with("<polygon")
+            && l.contains("stroke=\"rgb(64,64,64)\"")
+            && l.contains("fill-opacity=\"0\"")
+        });
+        assert!(outlined, "the outline must survive the face: {svg}");
+      }
+      // A partly transparent face keeps a crisp outline too.
+      let half = export_svg(
+        "Graphics3D[{Opacity[0.5], Blue, \
+         Polygon[{{0,0,0},{1,0,0},{1,1,0},{0,1,0}}]}, Boxed -> False]",
+      );
+      assert!(
+        half
+          .lines()
+          .filter(|l| l.starts_with("<line"))
+          .all(|l| !l.contains("opacity=")),
+        "the outline stays opaque at any face opacity: {half}"
+      );
+    }
+
     /// `Rotate[g, theta, w, p]` turns `g` about the axis `w` through the
     /// point `p` — the four-argument 3D form. Regression: only the
     /// three-argument form was recognised, so a net whose flaps fold about
@@ -4653,6 +4703,81 @@ mod plot3d {
              PlotStyle -> {Red, Green}]"#,
       );
       assert!(two.contains("#FF0000") && two.contains("#00FF00"));
+    }
+
+    /// A `PointSize` in `PlotStyle` has to resize the dots, not just get
+    /// parsed and dropped: `PointSize[f]` is the fraction `f` of the image
+    /// width the dot's *diameter* spans, so at the 500px-wide image below
+    /// `PointSize[0.015]` is a 3.75px radius — 38 render-space units at the
+    /// 10x resolution scale. `AbsolutePointSize[p]` is p printer's points
+    /// across whatever the image size.
+    #[test]
+    fn plot_style_point_size_resizes_scatter_dots() {
+      let radius = |code: &str| -> f64 {
+        let svg = export_svg(code);
+        let at = svg.find(" r=\"").expect("a dot must be drawn");
+        let rest = &svg[at + 4..];
+        rest[..rest.find('"').unwrap()].parse().unwrap()
+      };
+      let plain =
+        radius(r#"ListPlot[{{0, 0}, {1, 1}}, ImageSize -> {500, 350}]"#);
+      assert_eq!(plain, 30.0, "the default dot is a 3px radius");
+      // A bare directive, a list and a Directive[…] all reach the dots.
+      for style in [
+        "PointSize[0.015]",
+        "{PointSize[0.015], Red}",
+        "Directive[PointSize[0.015], Red]",
+      ] {
+        assert_eq!(
+          radius(&format!(
+            "ListPlot[{{{{0, 0}}, {{1, 1}}}}, PlotStyle -> {style}, \
+             ImageSize -> {{500, 350}}]"
+          )),
+          38.0,
+          "PointSize[0.015] must widen the dots ({style})"
+        );
+      }
+      // Half the image width, so the fraction — not a fixed pixel count.
+      assert_eq!(
+        radius(
+          r#"ListPlot[{{0, 0}, {1, 1}}, PlotStyle -> PointSize[0.015],
+               ImageSize -> {250, 175}]"#
+        ),
+        19.0
+      );
+      // Absolute sizes and the named ones stay put at any image size.
+      for size in ["{500, 350}", "{250, 175}"] {
+        assert_eq!(
+          radius(&format!(
+            "ListPlot[{{{{0, 0}}, {{1, 1}}}}, \
+             PlotStyle -> AbsolutePointSize[12], ImageSize -> {size}]"
+          )),
+          60.0
+        );
+        assert_eq!(
+          radius(&format!(
+            "ListPlot[{{{{0, 0}}, {{1, 1}}}}, PlotStyle -> PointSize[Large], \
+             ImageSize -> {size}]"
+          )),
+          35.0
+        );
+      }
+      // The size travels with the series through a `Show` merge, where the
+      // scatter layer is drawn over the curve instead of as the chart.
+      let merged = |style: &str| {
+        radius(&format!(
+          "Show[Plot[x^2, {{x, -2, 2}}], \
+           ListPlot[{{{{0, 1}}, {{1, 2}}}}{style}], ImageSize -> {{500, 350}}]"
+        ))
+      };
+      let big = merged(", PlotStyle -> PointSize[0.05]");
+      let small = merged(", PlotStyle -> PointSize[0.01]");
+      assert!(
+        (big / small - 5.0).abs() < 0.01,
+        "a five-times PointSize must give five-times dots after a Show, \
+         got {big} vs {small}"
+      );
+      assert_ne!(big, merged(""), "the default must not swallow the size");
     }
 
     #[test]
@@ -21641,28 +21766,58 @@ mod manipulate {
   }
 
   // `{{u, colour, label}, colour}` is a colour control — wolframscript
-  // renders a `ColorSlider`. Woxi has no colour widget yet, so the variable
-  // is bound to its initial colour; the point of the test is that the rest
-  // of the Manipulate still builds. Regression: the unrecognised spec made
-  // `extract_manipulate_spec` give up, taking every other control with it.
+  // renders a full-gradient `ColorSlider` over it (there being only one
+  // possible value to alternate with is what makes the domain "any
+  // colour" rather than "one of these two" — see the 2-swatch case in
+  // `parse_manipulate_control`'s "Colour form" branch for the alternative).
+  // Regression: this shape used to make `extract_manipulate_spec` give up
+  // on the whole control (dropping every other control with it) and, once
+  // that was fixed, to silently bind the variable without ever building a
+  // widget for it.
   #[test]
-  fn colour_control_binds_without_killing_the_widget() {
+  fn colour_control_renders_a_color_slider() {
     let expr = woxi::interpret_to_expr(
       "Manipulate[{col, Disk[]}, {{n, 3, \"division\"}, 2, 20, 1}, \
        Control@{{col, Red, \"color\"}, Red}]",
     )
     .unwrap();
     let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
-    // The visible controls survive…
+    // Both the division slider and the colour control survive…
     match &spec.controls[..] {
-      [ManipulateControl::Continuous { name, .. }] => assert_eq!(name, "n"),
-      other => panic!("expected just the division slider, got {other:?}"),
+      [
+        ManipulateControl::Continuous { name: n, .. },
+        ManipulateControl::Color {
+          name: col, initial, ..
+        },
+      ] => {
+        assert_eq!(n, "n");
+        assert_eq!(col, "col");
+        // `Red` is itself `RGBColor[1, 0, 0]` once evaluated (see
+        // `manipulate_value_to_input_form`'s evaluate-then-format
+        // convention, shared by every other control kind's initial value).
+        assert_eq!(initial, "RGBColor[1, 0, 0]");
+      }
+      other => {
+        panic!("expected a slider and a colour control, got {other:?}")
+      }
     }
-    // …and the colour is in scope for the body at its initial value.
+    // …and the colour is in scope for the body at its initial value. A
+    // visible widget's initial value travels via `manipulate_initial_bindings`
+    // (installed at evaluation time through `with_scoped_globals`), unlike a
+    // `Fixed` control's value, which is baked directly into `body_code` as a
+    // `Block[...]` wrapper — there is no such wrapper here since `col` is a
+    // real widget, not a fixed constant.
+    let bindings = manipulate_initial_bindings(&spec);
+    assert!(
+      bindings
+        .iter()
+        .any(|(name, value)| name == "col" && value == "RGBColor[1, 0, 0]"),
+      "the colour binding is missing: {bindings:?}"
+    );
     let json = manipulate_spec_to_json(&spec);
     assert!(
-      json.contains("Block[{col = Red}"),
-      "the colour binding is missing: {json}"
+      json.contains(r#""kind":"color""#),
+      "the colour control must render as a widget: {json}"
     );
   }
 

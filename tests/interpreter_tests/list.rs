@@ -21094,8 +21094,9 @@ mod part_bracket_groups {
   }
 }
 
-/// `` Developer`ToPackedArray `` — Woxi keeps no packed representation, so
-/// the visible effect is the numeric type unification that packing performs.
+/// `` Developer`ToPackedArray `` — packing only ever happens for arrays whose
+/// leaves already share one machine type, so it never changes how they print.
+/// The type argument is what has a visible effect.
 mod to_packed_array {
   use super::*;
 
@@ -21107,19 +21108,21 @@ mod to_packed_array {
     );
   }
 
+  /// Mixing integers and reals makes the array unpackable, so nothing is
+  /// converted — the integers stay integers.
   #[test]
-  fn mixed_array_becomes_reals() {
+  fn mixed_array_is_left_alone() {
     assert_eq!(
       interpret("Developer`ToPackedArray[{1, 2.5}]").unwrap(),
-      "{1., 2.5}"
+      "{1, 2.5}"
     );
   }
 
   #[test]
-  fn nested_array_is_packed_elementwise() {
+  fn nested_mixed_array_is_left_alone() {
     assert_eq!(
       interpret("Developer`ToPackedArray[{{1, 2}, {3, 4.}}]").unwrap(),
-      "{{1., 2.}, {3., 4.}}"
+      "{{1, 2}, {3, 4.}}"
     );
   }
 
@@ -21154,13 +21157,170 @@ mod to_packed_array {
       interpret("Developer`ToPackedArray[{1, 2}, Real]").unwrap(),
       "{1., 2.}"
     );
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1, 2.5}, Real]").unwrap(),
+      "{1., 2.5}"
+    );
+  }
+
+  /// The real type argument numericises every exact leaf, rationals and
+  /// symbolic constants included.
+  #[test]
+  fn explicit_real_type_numericises_exact_leaves() {
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1/2, 3/2}, Real]").unwrap(),
+      "{0.5, 1.5}"
+    );
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1, Pi}, Real]").unwrap(),
+      "{1., 3.141592653589793}"
+    );
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{2^70, 2^71}, Real]").unwrap(),
+      "{1.1805916207174113*^21, 2.3611832414348226*^21}"
+    );
+  }
+
+  /// Anything that has no machine real value keeps the array unpacked.
+  #[test]
+  fn explicit_real_type_leaves_non_reals_alone() {
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1, Infinity}, Real]").unwrap(),
+      "{1, Infinity}"
+    );
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{x, 1}, Real]").unwrap(),
+      "{x, 1}"
+    );
+    // A non-vanishing imaginary part is not a real number.
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1. + I, 2.}, Real]").unwrap(),
+      "{1. + 1.*I, 2.}"
+    );
   }
 
   #[test]
-  fn explicit_integer_type_does_not_demote_reals() {
+  fn explicit_integer_type_does_not_demote_fractional_reals() {
     assert_eq!(
       interpret("Developer`ToPackedArray[{1.5, 2}, Integer]").unwrap(),
       "{1.5, 2}"
+    );
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1, 1/2}, Integer]").unwrap(),
+      "{1, 1/2}"
+    );
+  }
+
+  /// Reals whose value is a whole number do become integers.
+  #[test]
+  fn explicit_integer_type_demotes_integral_reals() {
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1., 2.}, Integer]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{-2.0, 3}, Integer]").unwrap(),
+      "{-2, 3}"
+    );
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1. + 0. I}, Integer]").unwrap(),
+      "{1}"
+    );
+  }
+
+  /// A packed integer array holds machine integers, so bignums stay put.
+  #[test]
+  fn explicit_integer_type_rejects_non_machine_integers() {
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1, 2^64}, Integer]").unwrap(),
+      "{1, 18446744073709551616}"
+    );
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{2^70, 2^71}, Integer]").unwrap(),
+      "{1180591620717411303424, 2361183241434822606848}"
+    );
+  }
+
+  /// The complex type argument keeps both machine parts, so a vanishing
+  /// imaginary part stays visible.
+  #[test]
+  fn explicit_complex_type_widens_every_leaf() {
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1, 2}, Complex]").unwrap(),
+      "{1. + 0.*I, 2. + 0.*I}"
+    );
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1, 1/2}, Complex]").unwrap(),
+      "{1. + 0.*I, 0.5 + 0.*I}"
+    );
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1 + I, 2}, Complex]").unwrap(),
+      "{1. + 1.*I, 2. + 0.*I}"
+    );
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{{1, 2}, {3, 4}}, Complex]").unwrap(),
+      "{{1. + 0.*I, 2. + 0.*I}, {3. + 0.*I, 4. + 0.*I}}"
+    );
+  }
+
+  /// Automatic is the same as leaving the type out.
+  #[test]
+  fn automatic_type_behaves_like_no_type() {
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1, 2.5}, Automatic]").unwrap(),
+      "{1, 2.5}"
+    );
+  }
+
+  #[test]
+  fn unknown_type_stays_unevaluated() {
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1, 2}, Rational]").unwrap(),
+      "Developer`ToPackedArray[{1, 2}, Rational]"
+    );
+    assert_eq!(
+      interpret("Developer`ToPackedArray[{1, 2}, \"Integer\"]").unwrap(),
+      "Developer`ToPackedArray[{1, 2}, Integer]"
+    );
+  }
+
+  #[test]
+  fn no_arguments_emits_argt() {
+    let r = interpret_with_stdout("Developer`ToPackedArray[]").unwrap();
+    assert_eq!(r.result, "Developer`ToPackedArray[]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("Developer`ToPackedArray::argt")),
+      "expected argt message, got {:?}",
+      r.warnings
+    );
+  }
+
+  /// ToPackedArray takes no options, so a third argument is either a
+  /// non-option (nonopt) or an unknown option (optx).
+  #[test]
+  fn extra_arguments_emit_option_messages() {
+    let r = interpret_with_stdout("Developer`ToPackedArray[{1, 2}, Real, 3]")
+      .unwrap();
+    assert_eq!(r.result, "Developer`ToPackedArray[{1, 2}, Real, 3]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("Developer`ToPackedArray::nonopt")),
+      "expected nonopt message, got {:?}",
+      r.warnings
+    );
+
+    let r =
+      interpret_with_stdout("Developer`ToPackedArray[{1, 2}, a -> b]").unwrap();
+    assert_eq!(r.result, "Developer`ToPackedArray[{1, 2}, a -> b]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("Developer`ToPackedArray::optx: Unknown option a")),
+      "expected optx message, got {:?}",
+      r.warnings
     );
   }
 

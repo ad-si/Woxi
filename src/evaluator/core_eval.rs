@@ -212,11 +212,7 @@ pub fn expand_arith_shorthand(
 /// Check if a function has a specific Hold attribute (built-in or user-defined).
 fn has_hold_attribute(name: &str, attr: &str) -> bool {
   get_builtin_attributes(name).contains(&attr)
-    || crate::FUNC_ATTRS.with(|m| {
-      m.borrow()
-        .get(name)
-        .is_some_and(|attrs| attrs.contains(&attr.to_string()))
-    })
+    || crate::func_attrs_contains(name, attr)
 }
 
 /// Whether `expr`'s head suppresses evaluation of the arguments it holds.

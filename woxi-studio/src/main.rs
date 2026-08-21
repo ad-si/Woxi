@@ -319,6 +319,9 @@ enum Message {
   /// Remove a point from a `LocatorAutoCreate` locator.
   /// (cell_idx, ctrl_idx, point_idx)
   ManipulateLocatorRemoved(usize, usize, usize),
+  /// A ColorSlider/ColorSetter handle was dragged to a new hue position
+  /// (`0.0..=1.0`). (cell_idx, ctrl_idx, position)
+  ManipulateColorChanged(usize, usize, f64),
   /// A checkbox in a Manipulate display element was toggled.
   /// (cell_idx, write-back assignment, e.g. `data[[3, 5]] = 1`)
   ManipulateDisplayToggled(usize, String),
@@ -1804,6 +1807,23 @@ impl WoxiStudio {
           && point_idx < points.len()
         {
           points.remove(point_idx);
+          state.apply_tracking(ctrl_idx);
+          if state.request_reeval(ctrl_idx) {
+            return manipulate_reeval_task(cell_idx);
+          }
+        }
+        Task::none()
+      }
+
+      Message::ManipulateColorChanged(cell_idx, ctrl_idx, position) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && matches!(
+            state.controls.get(ctrl_idx),
+            Some(manipulate::ControlState::Color { .. })
+          )
+        {
+          state.color_change(ctrl_idx, position);
           state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
@@ -3689,7 +3709,8 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
     | manipulate::ControlState::Slider2D { label, .. }
     | manipulate::ControlState::IntervalSlider { label, .. }
     | manipulate::ControlState::Trigger { label, .. }
-    | manipulate::ControlState::Locator { label, .. } => label,
+    | manipulate::ControlState::Locator { label, .. }
+    | manipulate::ControlState::Color { label, .. } => label,
     // Heading/divider rows span the full row instead of sitting in the
     // label column, so they don't widen it; a button carries its label
     // inside the button itself.
@@ -4154,6 +4175,59 @@ fn render_manipulate_widget<'a>(
         ]
         .align_y(Center)
         .spacing(8);
+        controls_col = controls_col.push(control_row);
+      }
+      manipulate::ControlState::Color {
+        name: _,
+        label,
+        label_runs,
+        current,
+        position,
+      } => {
+        // A fixed rainbow bar (the standard look of Wolfram's ColorSlider/
+        // ColorSetter) with a draggable handle layered on top, painted in
+        // the color it would currently set. The bar is drawn as a plain
+        // container underneath rather than as the slider's own rail — see
+        // `color_gradient_container_style` for why the built-in rail can't
+        // show a fixed gradient on its own.
+        let bar = container(
+          space::Space::new()
+            .width(Fill)
+            .height(iced::Length::Fixed(14.0)),
+        )
+        .width(Fill)
+        .style(color_gradient_container_style);
+        let handle_color = manipulate_color(current);
+        let picker = slider(0.0..=1.0, *position, move |v| {
+          if enabled {
+            Message::ManipulateColorChanged(cell_idx, ctrl_idx, v)
+          } else {
+            Message::Noop
+          }
+        })
+        .step(0.001)
+        .width(Fill)
+        .style(color_slider_overlay_style(handle_color, enabled));
+        let swatch = container(
+          space::Space::new()
+            .width(iced::Length::Fixed(20.0))
+            .height(iced::Length::Fixed(20.0)),
+        )
+        .style(move |_theme: &Theme| container::Style {
+          background: Some(Background::Color(handle_color)),
+          border: Border {
+            radius: 4.0.into(),
+            width: 1.0,
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.3),
+          },
+          ..container::Style::default()
+        });
+        let label_widget =
+          manipulate_label_widget(label_runs, label, label_col_width, enabled);
+        let control_row =
+          row![label_widget, stack![bar, picker].width(Fill), swatch]
+            .align_y(Center)
+            .spacing(8);
         controls_col = controls_col.push(control_row);
       }
       manipulate::ControlState::Locator {
@@ -4639,6 +4713,25 @@ fn format_manipulate_number(v: f64) -> String {
   } else {
     trimmed.to_string()
   }
+}
+
+/// Convert a hue fraction (`0.0..=1.0`) to an `iced::Color` at full
+/// saturation and brightness — matching Wolfram's `Hue[h]`. Delegates to
+/// the interpreter's own `Hue[…]` conversion (`hue_to_rgb01`) rather than
+/// re-implementing HSB→RGB a second time; only the `f64`-triple → `iced::
+/// Color` wrapping happens here.
+fn hue_to_rgb(h: f64) -> Color {
+  let (r, g, b) = woxi::functions::graphics::hue_to_rgb01(h);
+  Color::from_rgb(r as f32, g as f32, b as f32)
+}
+
+/// Resolve a Manipulate color control's current InputForm value (e.g.
+/// `RGBColor[0, 0, 0]` or `Hue[0.3]`) to an `iced::Color`, for painting its
+/// drag handle. Delegates to the interpreter's own color parsing
+/// (`manipulate_color_to_rgb`) rather than a second copy.
+fn manipulate_color(code: &str) -> Color {
+  let (r, g, b) = woxi::functions::graphics::manipulate_color_to_rgb(code);
+  Color::from_rgb(r as f32, g as f32, b as f32)
 }
 
 /// Build a display-only editor for a stored Output cell the interpreter
@@ -5374,6 +5467,70 @@ fn disabled_slider_style(
       border_color: Color::TRANSPARENT,
       border_width: 0.0,
     },
+  }
+}
+
+/// Background for the fixed rainbow bar behind a ColorSlider/ColorSetter's
+/// drag handle: a full-width `Hue[0]..Hue[1]` gradient, the standard look
+/// of Wolfram's color control. Drawn as a plain container underneath the
+/// interactive slider (see `color_slider_overlay_style`) rather than as the
+/// slider's own rail, since the built-in slider widget paints its rail as
+/// two separate quads split at the handle — a gradient given to either half
+/// would restretch across just that half instead of staying fixed to the
+/// full bar as the handle moves.
+fn color_gradient_container_style(_theme: &Theme) -> container::Style {
+  use iced::gradient::Linear;
+  let mut gradient = Linear::new(iced::Radians(0.0));
+  const STOPS: usize = 7;
+  for i in 0..STOPS {
+    let t = i as f32 / (STOPS - 1) as f32;
+    gradient = gradient.add_stop(t, hue_to_rgb(t as f64));
+  }
+  container::Style {
+    background: Some(Background::Gradient(gradient.into())),
+    border: Border {
+      radius: 4.0.into(),
+      width: 0.0,
+      color: Color::TRANSPARENT,
+    },
+    ..container::Style::default()
+  }
+}
+
+/// Style for the interactive slider layered on top of the rainbow bar: a
+/// fully transparent rail (the bar underneath already shows through) and a
+/// handle painted in the color it would currently set, so dragging previews
+/// the picked hue right under the cursor.
+fn color_slider_overlay_style(
+  current: Color,
+  enabled: bool,
+) -> impl Fn(&Theme, iced::widget::slider::Status) -> iced::widget::slider::Style
+{
+  move |theme, _status| {
+    use iced::widget::slider::{Handle, HandleShape, Rail, Style};
+    let palette = theme.extended_palette();
+    let handle_color = if enabled {
+      current
+    } else {
+      palette.background.strong.color
+    };
+    Style {
+      rail: Rail {
+        backgrounds: (Color::TRANSPARENT.into(), Color::TRANSPARENT.into()),
+        width: 14.0,
+        border: Border {
+          radius: 0.0.into(),
+          width: 0.0,
+          color: Color::TRANSPARENT,
+        },
+      },
+      handle: Handle {
+        shape: HandleShape::Circle { radius: 8.0 },
+        background: handle_color.into(),
+        border_color: palette.background.base.color,
+        border_width: 2.0,
+      },
+    }
   }
 }
 
@@ -6626,6 +6783,132 @@ mod tests {
       "Graphics of translated/rotated pieces should render"
     );
   }
+
+  /// `{{bg, RGBColor[0, 0, 0], "background"}, ColorSlider}` builds a real
+  /// `Color` control rather than being dropped or misread as a hidden
+  /// binding, and on the first frame the bound variable is the spec's
+  /// exact literal initial color — not snapped to whatever the hue
+  /// gradient's own position 0 would give (mirroring `Continuous`'s
+  /// off-grid literal `initial`).
+  #[test]
+  fn color_slider_builds_and_keeps_literal_initial_on_first_frame() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[bg, {{bg, RGBColor[0, 0, 0], "background"}, ColorSlider}]"#,
+    )
+    .expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a ColorSlider control should build a ManipulateState");
+    assert_eq!(state.controls.len(), 1);
+    match &state.controls[0] {
+      manipulate::ControlState::Color {
+        name,
+        label,
+        current,
+        position,
+        ..
+      } => {
+        assert_eq!(name, "bg");
+        assert_eq!(label, "background");
+        assert_eq!(current, "RGBColor[0, 0, 0]");
+        assert_eq!(
+          *position, 0.0,
+          "the handle defaults to position 0 even though black isn't on the gradient"
+        );
+      }
+      other => panic!("expected a Color control, got {other:?}"),
+    }
+    assert!(
+      state.error.is_none(),
+      "the literal initial color must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("RGBColor[0, 0, 0]"),
+      "the bound variable must be exactly the spec's literal initial color \
+       on the first frame"
+    );
+  }
+
+  /// `ColorSetter` is Wolfram's click/tap-to-set variant of the same
+  /// hue-gradient widget as `ColorSlider` — it must build the same `Color`
+  /// control rather than a second, duplicate implementation.
+  #[test]
+  fn color_setter_builds_the_same_control_as_color_slider() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[bg, {{bg, RGBColor[1, 0, 0], "background"}, ColorSetter}]"#,
+    )
+    .expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a ColorSetter control should build a ManipulateState");
+    match &state.controls[0] {
+      manipulate::ControlState::Color { current, .. } => {
+        assert_eq!(current, "RGBColor[1, 0, 0]");
+      }
+      other => panic!("expected a Color control, got {other:?}"),
+    }
+  }
+
+  /// Dragging a ColorSlider's handle to a new hue position rewrites the
+  /// bound variable to `Hue[position]` and goes through the same
+  /// tracking/re-evaluation path every other control uses.
+  #[test]
+  fn color_slider_drag_rebinds_to_hue_and_reevaluates() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[bg, {{bg, RGBColor[0, 0, 0], "background"}, ColorSlider}]"#,
+    )
+    .expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a ColorSlider control should build a ManipulateState");
+
+    state.color_change(0, 0.25);
+    match &state.controls[0] {
+      manipulate::ControlState::Color {
+        current, position, ..
+      } => {
+        assert_eq!(current, "Hue[0.25]");
+        assert_eq!(*position, 0.25);
+      }
+      other => panic!("expected a Color control, got {other:?}"),
+    }
+    state.apply_tracking(0);
+    assert!(
+      state.request_reeval(0),
+      "the first change after a drag should arm the throttle timer"
+    );
+    state.run_scheduled_reeval();
+    assert!(
+      state.error.is_none(),
+      "Hue[0.25] must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert_eq!(state.text_output.as_deref(), Some("Hue[0.25]"));
+  }
+
+  /// `color_change` on any other control kind (e.g. a plain slider at index
+  /// 0) is a no-op rather than corrupting that control's state — mirroring
+  /// how `slider2d_change` only acts when the control at `ctrl_idx` is
+  /// actually a `Slider2D`.
+  #[test]
+  fn color_change_on_a_non_color_control_is_a_noop() {
+    let expr = woxi::interpret_to_expr("Manipulate[x, {x, 0, 1}]")
+      .expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a plain slider should build a ManipulateState");
+    state.color_change(0, 0.5);
+    match &state.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => {
+        assert_eq!(
+          *current, 0.0,
+          "an unrelated Continuous control must be untouched"
+        );
+      }
+      other => {
+        panic!("expected the original Continuous control, got {other:?}")
+      }
+    }
+  }
+
   #[test]
   fn manipulate_2d_angle_slider_combines_initialization_surfaces() {
     let code = r#"Manipulate[
@@ -8727,18 +9010,22 @@ Cell[BoxData[
     );
     assert!(state.graphics_handle.is_some(), "the net must render");
 
-    // The division slider and the net/surface setter both survive the
-    // colour control they share a `Row` with.
+    // The division slider and the net/surface setter both survive sharing
+    // a `Row` with the colour control — which is itself now a real
+    // `ColorSlider` widget (`{{col, Red, "color"}, Red}` has one possible
+    // value with an explicit initial matching it, so it renders a full hue
+    // gradient rather than being baked into the body as a fixed constant).
     let names: Vec<&str> = state
       .controls
       .iter()
       .map(|c| match c {
         manipulate::ControlState::Continuous { name, .. }
-        | manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        | manipulate::ControlState::Discrete { name, .. }
+        | manipulate::ControlState::Color { name, .. } => name.as_str(),
         other => panic!("unexpected control {other:?}"),
       })
       .collect();
-    assert_eq!(names, vec!["n", "nt"]);
+    assert_eq!(names, vec!["n", "nt", "col"]);
   }
 
   /// The shape a whole family of solid-geometry Demonstrations is built
@@ -12264,6 +12551,176 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, \"…\"]"], "Output"]
       }
       other => panic!("unexpected controls: {other:?}"),
     }
+  }
+
+  /// End-to-end regression for the shape the space-filling-polyhedra
+  /// Demonstrations share: a cell built from a face-index/vertex-list
+  /// solid, repeated over a three-index `Table` of `Translate`s, with one
+  /// "direction" slider per lattice axis and an opacity slider per colour.
+  /// The scene here is a two-cube cell of our own rather than any
+  /// published Demonstration's polyhedron data.
+  ///
+  /// Regression: at `opacity -> 0` the hidden cells disappeared outright.
+  /// `Opacity` belongs to the face alone — the outline the default
+  /// `EdgeForm` draws stays opaque — so a cell turned transparent must
+  /// still read as an empty shell around the cells left visible.
+  #[test]
+  fn space_filling_lattice_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["cube={{{1,2,3,4},{5,6,7,8},{1,2,6,5},{2,3,7,6},{3,4,8,7},{4,1,5,8}},{{0,0,0},{1,0,0},{1,1,0},{0,1,0},{0,0,1},{1,0,1},{1,1,1},{0,1,1}}};"], "Input"],
+Cell[BoxData["faceSolid[body_]:=Map[Polygon,Map[body[[2,#]]&,body[[1]]]]"], "Input"],
+Cell[BoxData["lower=faceSolid[cube];"], "Input"],
+Cell[BoxData["upper=Translate[Rotate[lower,Pi,{0,0,1}],{1,1,1}];"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Module[{cell={{Opacity[op1],Lighter[Blue],lower},{Opacity[op2],Yellow,upper}}},Graphics3D[{Table[Translate[cell,{2i,2j,2k}],{i,-k1,k1},{j,-k2,k2},{k,-k3,k3}]},Boxed->False,Lighting->\"Neutral\",ImageSize->{400,470},PlotRange->{{-8,8},{-8,8},{-8,8}},ViewAngle->12 Degree,SphericalRegion->True]],{{k1,0,\"direction 1\"},0,2,1,ImageSize->Tiny},{{k2,0,\"direction 2\"},0,2,1,ImageSize->Tiny},{{k3,0,\"direction 3\"},0,2,1,ImageSize->Tiny},\"\",{{op1,1,\"opacity 1\"},0,1,0.1,ImageSize->Tiny,Appearance->\"Labeled\"},{{op2,1,\"opacity 2\"},0,1,0.1,ImageSize->Tiny,Appearance->\"Labeled\"},SaveDefinitions->True,ControlPlacement->Left]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 0}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.clone())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the cell must render, which needs the initialization cells"
+    );
+
+    // Three lattice sliders, the bare `""` separator between the two
+    // groups, then the two opacity sliders. The opacities are machine
+    // reals; the lattice counts are exact integers.
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: k1,
+          label: k1_label,
+          max: k1_max,
+          is_real: false,
+          ..
+        },
+        manipulate::ControlState::Continuous { name: k2, .. },
+        manipulate::ControlState::Continuous { name: k3, .. },
+        manipulate::ControlState::Heading { label: gap, .. },
+        manipulate::ControlState::Continuous {
+          name: op1,
+          current: op1_now,
+          is_real: true,
+          ..
+        },
+        manipulate::ControlState::Continuous { name: op2, .. },
+      ] => {
+        assert_eq!((k1.as_str(), k1_label.as_str()), ("k1", "direction 1"));
+        assert_eq!(*k1_max, 2.0);
+        assert_eq!((k2.as_str(), k3.as_str()), ("k2", "k3"));
+        assert!(gap.is_empty(), "the spacer carries no caption: {gap:?}");
+        assert_eq!((op1.as_str(), *op1_now), ("op1", 1.0));
+        assert_eq!(op2.as_str(), "op2");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    // The iced handle doesn't expose its bytes, so re-render the body
+    // through the widget's own bindings to inspect the SVG.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let code = match w.initialization.as_deref() {
+        Some(init) => format!("{init}; {}", w.body),
+        None => w.body.clone(),
+      };
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&code)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the lattice must render")
+    };
+
+    let set =
+      |w: &mut manipulate::ManipulateState, idx: usize, v: f64| match &mut w
+        .controls[idx]
+      {
+        manipulate::ControlState::Continuous { current, .. } => *current = v,
+        other => panic!("expected a slider at {idx}, got {other:?}"),
+      };
+
+    // Every shade of the blue cube keeps blue as its dominant channel,
+    // whatever the lighting made of it; the yellow cube's is red.
+    fn blue_faces(svg: &str) -> Vec<&str> {
+      svg
+        .lines()
+        .filter(|l| l.starts_with("<polygon"))
+        .filter(|l| {
+          let Some(fill) = l.split("fill=\"rgb(").nth(1) else {
+            return false;
+          };
+          let channels: Vec<u32> = fill
+            .split(')')
+            .next()
+            .unwrap_or("")
+            .split(',')
+            .filter_map(|c| c.trim().parse().ok())
+            .collect();
+          matches!(channels[..], [r, _, b] if b > r)
+        })
+        .collect()
+    }
+
+    let one_cell = render(&widget);
+    assert!(!blue_faces(&one_cell).is_empty(), "the blue cube is drawn");
+
+    // Each direction slider repeats the cell along its own lattice axis,
+    // so opening one up draws strictly more of them.
+    set(&mut widget, 0, 1.0);
+    widget.reevaluate();
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let row = render(&widget);
+    assert!(
+      blue_faces(&row).len() > blue_faces(&one_cell).len(),
+      "the first direction must repeat the cell"
+    );
+    set(&mut widget, 1, 1.0);
+    widget.reevaluate();
+    let sheet = render(&widget);
+    assert!(
+      blue_faces(&sheet).len() > blue_faces(&row).len(),
+      "the second direction must repeat it again"
+    );
+
+    // Turning the blue opacity down to zero empties those cells without
+    // erasing them: no blue face survives, but every outline does.
+    let outlines = |svg: &str| {
+      svg
+        .lines()
+        .filter(|l| l.starts_with("<line"))
+        .filter(|l| l.contains("stroke=\"rgb(64,64,64)\""))
+        .count()
+    };
+    set(&mut widget, 4, 0.0);
+    widget.reevaluate();
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let hollow = render(&widget);
+    let hidden = blue_faces(&hollow);
+    assert_eq!(hidden.len(), blue_faces(&sheet).len());
+    assert!(
+      hidden.iter().all(|l| l.contains("opacity=\"0\"")),
+      "no blue face may show through: {hidden:?}"
+    );
+    assert_eq!(
+      outlines(&hollow),
+      outlines(&sheet),
+      "the transparent cells keep every edge they had"
+    );
   }
 
   /// End-to-end regression for the "Constant Price Elasticity of Demand"
@@ -19729,6 +20186,295 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     assert!(
       !dragged.contains("31.0000"),
       "the area readout must follow the moved vertex"
+    );
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook that
+  /// sweeps a line through a fixed point on a parabola and marks where the
+  /// two meet. Independently written, not copied from any specific
+  /// Demonstration: a downward parabola pivoting about `(2, 1)` rather than
+  /// an upward one about `(1, -2)`.
+  ///
+  /// Two things make the shape worth pinning down. `Solve` is called with
+  /// the variable list *omitted*, so the intersection abscissas have to come
+  /// out of a bare equation list and land in the `{x, f[x]}` point template
+  /// a `ReplaceAll` builds. And the marks carry
+  /// `PlotStyle -> PointSize[…]`, which used to be parsed and then dropped —
+  /// the dots came out at the default size however the notebook asked for
+  /// them.
+  #[test]
+  fn demonstration_secant_manipulate_sizes_its_intersection_marks() {
+    let code = "Manipulate[\
+      Show[\
+        Plot[{2 - x^2/4, k (x - 2) + 1}, {x, -7, 7}], \
+        ListPlot[{x, 2 - x^2/4} /. Solve[{2 - x^2/4 == k (x - 2) + 1}], \
+          PlotStyle -> PointSize[0.03]], \
+        PlotRange -> {{-7, 7}, {-8, 3}}, ImageSize -> {440, 300}], \
+      {k, -1.5, 1, 0.05, Appearance -> \"Labeled\"}\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the secant Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the plot must render");
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the parabola and its secant must render")
+    };
+    // The dots the marks are drawn as, biggest first.
+    let mark_radii = |svg: &str| {
+      let mut radii: Vec<f64> = svg
+        .match_indices("<circle")
+        .filter_map(|(at, _)| {
+          let tag = &svg[at..svg[at..].find("/>")? + at];
+          let r = tag.find(" r=\"")? + 4;
+          tag[r..][..tag[r..].find('"')?].parse().ok()
+        })
+        .collect();
+      radii.sort_by(|a, b| b.partial_cmp(a).unwrap());
+      radii
+    };
+
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          min,
+          max,
+          step,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name.as_str(), "k");
+        assert_eq!((*min, *max, *step), (-1.5, 1.0, 0.05));
+        assert_eq!(*current, -1.5, "a slider with no initial starts at min");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    // `Solve` without a variable list still finds both intersections, so
+    // both marks are drawn — at the size `PlotStyle` asked for, not the
+    // default dot the same picture draws without it.
+    let secant_svg = render(&state);
+    let secant = mark_radii(&secant_svg);
+    assert_eq!(secant.len(), 2, "both intersections must be marked");
+    assert_eq!(secant[0], secant[1], "both marks are the same size");
+    let plain = code.replace(", PlotStyle -> PointSize[0.03]", "");
+    let default_state =
+      instantiate_stored_manipulate(&plain, "").expect("widget");
+    let default_dot = mark_radii(&render(&default_state))[0];
+    assert!(
+      secant[0] > 1.5 * default_dot,
+      "PointSize[0.03] must draw a bigger mark than the default {default_dot}, \
+       got {}",
+      secant[0]
+    );
+
+    // Sliding to the tangency at k = -1 collapses the two intersections
+    // onto the single point the line touches.
+    match &mut state.controls[..] {
+      [manipulate::ControlState::Continuous { current, .. }] => {
+        *current = -1.0;
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let tangent = render(&state);
+    assert_eq!(
+      mark_radii(&tangent).len(),
+      2,
+      "the double root still yields two coincident marks"
+    );
+    assert_ne!(
+      tangent, secant_svg,
+      "moving the slider must redraw the picture"
+    );
+  }
+
+  /// A `Manipulate` whose body plots the survival function of a
+  /// `ReliabilityDistribution` (a two-component parallel system) — a small
+  /// original example of the reliability-engineering Demonstration family,
+  /// not copied from any specific Demonstration. Regression coverage for
+  /// `ReliabilityDistribution` support reaching Studio's Manipulate host:
+  /// both rate sliders should build and the plot should render.
+  #[test]
+  fn manipulate_reliability_distribution_survival_plot_renders() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Plot[SurvivalFunction[ReliabilityDistribution[\
+       c1 || c2, {{c1, ExponentialDistribution[a]}, \
+       {c2, ExponentialDistribution[b]}}], t], {t, 0, 10}], \
+       {{a, 0.5, \"rate a\"}, 0.1, 1}, {{b, 0.3, \"rate b\"}, 0.1, 1}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("two labeled rate sliders should build a ManipulateState");
+
+    assert_eq!(state.controls.len(), 2, "rate a and rate b sliders");
+    assert_eq!(
+      state.error, None,
+      "the survival-function plot should evaluate cleanly"
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the plot should render to a graphics handle"
+    );
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook whose
+  /// whole body is one `Pane[Text@TraditionalForm@Column[…]]` of styled
+  /// `Row`s — a prose panel rather than a picture. Independently written, not
+  /// copied from any specific Demonstration: this one walks the odd squares
+  /// ring by ring, where that Demonstration walked Pythagorean triples.
+  ///
+  /// The body is stored as InputForm and re-evaluated on every control
+  /// change, and `TraditionalForm[…]` serializes into a `\!\(\*boxes\)`
+  /// escape — so this pins down that the escape reads back as the very
+  /// expression it was built from. It used to come back mangled three ways:
+  /// the `Column`'s list gained a level of nesting (doubled braces in the box
+  /// form), which flattened the whole panel onto one line; a string holding a
+  /// comma was re-read as bare source, so `"Odd squares, ring by ring "` came
+  /// back as a product of its words in alphabetical order; and a lone `","`
+  /// came back as `Null`.
+  #[test]
+  fn demonstration_prose_panel_manipulate_keeps_its_column_and_strings() {
+    let code = "Manipulate[\
+      Pane[\
+        Text@TraditionalForm@Column[{\
+          sqSide = 2 ringIdx + 1; sqArea = sqSide^2; \
+            sqRing = sqArea - (2 ringIdx - 1)^2; \
+            Row[{Style[\"Odd squares, ring by ring \", 12, \
+              RGBColor[0.2, 0.4, 0.8], Bold]}], \
+          \" \", \
+          Row[{Style[\"This square has side and area: \", 12, \
+              RGBColor[0.9, 0.6, 0.2], Bold], \
+            Style[{sqSide, sqArea}, Bold], \",\"}], \
+          Row[{Style[\"and the ring it adds is: \", 12, \
+              RGBColor[0.9, 0.6, 0.2], Bold], \
+            sqArea, \" - \", (2 ringIdx - 1)^2, \" = \", sqRing, \".\"}], \
+          Row[{Style[\"Its half-diagonal leans by \", 12, \
+              RGBColor[0.2, 0.4, 0.8], Bold], \
+            \" \\!\\(\\*SubscriptBox[\\(\\[Theta]\\), \\(1\\)]\\) = \", \
+            ArcTan[N[sqSide/(sqSide + 2)]], \" rad. = \", \
+            ArcTan[N[sqSide/(sqSide + 2)]]*180/Pi, \"\\[Degree]\", \".\"}]\
+        }], \
+        {600, 240}\
+      ], \
+      {{ringIdx, 1, \"ring index\"}, 1, 5000, 1, ImageSize -> Medium, \
+        Appearance -> \"Labeled\"}, \
+      TrackedSymbols -> True\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the prose-panel Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the typeset panel must render"
+    );
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the panel must render")
+    };
+    let first_ring = render(&state);
+
+    // A string carrying a comma stays one string rather than being re-read
+    // as source (which reordered its words), and a lone comma stays a comma
+    // rather than becoming `Null`.
+    assert!(
+      first_ring.contains("Odd squares, ring by ring"),
+      "the heading string must survive the box round trip verbatim"
+    );
+    assert!(
+      !first_ring.contains("Null"),
+      "the lone \",\" item must stay a comma, not become Null"
+    );
+    // `\!\(\*SubscriptBox[…]\)` inside a string still typesets as a subscript.
+    assert!(
+      first_ring.contains("baseline-shift=\"sub\""),
+      "the inline SubscriptBox must typeset as a subscript"
+    );
+    // The `Column` lays its items out stacked. Flattened onto one line the
+    // panel came out ~20px tall and many hundreds wide.
+    let dims = |svg: &str| {
+      let num = |attr: &str| {
+        svg
+          .split_once(attr)
+          .and_then(|(_, r)| r.split_once('"'))
+          .and_then(|(v, _)| v.parse::<f64>().ok())
+          .unwrap_or_default()
+      };
+      (num("width=\""), num("height=\""))
+    };
+    let (width, height) = dims(&first_ring);
+    assert!(
+      height > 80.0 && height < width,
+      "the Column must stack its rows, got {width}x{height}"
+    );
+
+    match &mut state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          step,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name.as_str(), "ringIdx");
+        assert_eq!(label.as_str(), "ring index");
+        assert_eq!(*min, 1.0);
+        assert_eq!(*max, 5000.0);
+        assert_eq!(*step, 1.0);
+        assert_eq!(*current, 1.0);
+        *current = 4.0;
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let fourth_ring = render(&state);
+    assert_ne!(
+      first_ring, fourth_ring,
+      "moving the slider must recompute the panel"
+    );
+    // Ring 4: side 9, area 81, and the ring it adds over the 7x7 square is 32.
+    assert!(
+      fourth_ring.contains(">81<") && fourth_ring.contains(">32<"),
+      "the recomputed panel must show the ring-4 numbers"
     );
   }
 }

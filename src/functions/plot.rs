@@ -1762,6 +1762,10 @@ pub(crate) struct SeriesStyle {
   /// Line thickness in display pixels (e.g. 1.5 = default, 2.0 = Thick).
   /// None means use the default (1.5px).
   pub thickness: Option<f64>,
+  /// Scatter dot size: a fraction of the image width for `PointSize[…]`,
+  /// stored negative for the absolute printer's points of
+  /// `AbsolutePointSize[…]`. None means the default dot.
+  pub point_size: Option<f64>,
   /// Dash pattern in display pixels. None = solid line.
   pub dashing: Option<Vec<f64>>,
   /// DropShadowing[...] directive: draw the curve with a drop shadow.
@@ -3753,10 +3757,11 @@ pub(crate) fn build_plot_source(
     .enumerate()
     .map(|(i, points)| {
       let color = series_color(plot_style, i);
-      let thickness = if plot_style.is_empty() {
-        None
+      let (thickness, point_size) = if plot_style.is_empty() {
+        (None, None)
       } else {
-        plot_style[i % plot_style.len()].thickness
+        let style = &plot_style[i % plot_style.len()];
+        (style.thickness, style.point_size)
       };
       crate::syntax::PlotSeriesData {
         points: points.clone(),
@@ -3767,6 +3772,7 @@ pub(crate) fn build_plot_source(
         fill_opacity,
         marker: None,
         thickness,
+        point_size,
       }
     })
     .collect();
@@ -3809,6 +3815,9 @@ pub(crate) fn collapse_style_for_single_series(
     if style.thickness.is_some() {
       merged.thickness = style.thickness;
     }
+    if style.point_size.is_some() {
+      merged.point_size = style.point_size;
+    }
     if style.dashing.is_some() {
       merged.dashing.clone_from(&style.dashing);
     }
@@ -3849,6 +3858,26 @@ fn series_thickness(plot_style: &[SeriesStyle], idx: usize) -> u32 {
     (t * RESOLUTION_SCALE as f64).round() as u32
   } else {
     default_thickness
+  }
+}
+
+/// The radius, in render-space units, of the dots of a scatter series.
+/// `PointSize[f]` gives the dot a diameter of the fraction `f` of the image
+/// width; `AbsolutePointSize[p]` (stored negative) is p printer's points
+/// whatever the image size. Without either, the 3px default dot.
+fn series_point_radius(
+  plot_style: &[SeriesStyle],
+  idx: usize,
+  render_width: u32,
+) -> u32 {
+  let default_radius = 3 * RESOLUTION_SCALE;
+  if plot_style.is_empty() {
+    return default_radius;
+  }
+  match plot_style[idx % plot_style.len()].point_size {
+    Some(f) if f > 0.0 => (f * render_width as f64 * 0.5).round() as u32,
+    Some(p) => (-p * 0.5 * RESOLUTION_SCALE as f64).round() as u32,
+    None => default_radius,
   }
 }
 
@@ -4161,8 +4190,9 @@ pub(crate) fn generate_scatter_svg_with_options(
     }
 
     // Draw scatter points using plotters Circle markers
-    let marker_size = 3 * RESOLUTION_SCALE;
     for (series_idx, points) in all_series.iter().enumerate() {
+      let marker_size =
+        series_point_radius(&opts.plot_style, series_idx, render_width);
       let (r, g, b) = series_color(&opts.plot_style, series_idx);
       let color = RGBColor(r, g, b);
       let finite_pts: Vec<(f64, f64)> = points
@@ -4450,6 +4480,7 @@ pub(crate) fn render_merged_plot_source(
         s.color.2 as f64 / 255.0,
       )),
       thickness: s.thickness,
+      point_size: s.point_size,
       ..SeriesStyle::default()
     })
     .collect();
@@ -4574,7 +4605,11 @@ fn scatter_overlay_primitives(
     }
     return prims;
   }
-  prims.push(call1("AbsolutePointSize", Expr::Real(6.0)));
+  prims.push(match series.point_size {
+    Some(f) if f > 0.0 => call1("PointSize", Expr::Real(f)),
+    Some(p) => call1("AbsolutePointSize", Expr::Real(-p)),
+    None => call1("AbsolutePointSize", Expr::Real(6.0)),
+  });
   prims.push(Expr::FunctionCall {
     name: "Point".to_string(),
     args: vec![Expr::List(
@@ -6589,6 +6624,7 @@ pub(crate) fn histogram_plot_source(
       fill_opacity: None,
       marker: None,
       thickness: None,
+      point_size: None,
     });
   }
 
@@ -7494,6 +7530,24 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
           style.thickness = Some(t);
         }
       }
+      "PointSize" if args.len() == 1 => {
+        if let Some(s) =
+          crate::functions::graphics::symbolic_point_size(&args[0])
+        {
+          style.point_size = Some(s);
+        } else if let Some(s) = try_eval_to_f64(&args[0]) {
+          style.point_size = Some(s);
+        }
+      }
+      "AbsolutePointSize" if args.len() == 1 => {
+        if let Some(s) =
+          crate::functions::graphics::symbolic_point_size(&args[0])
+        {
+          style.point_size = Some(s);
+        } else if let Some(s) = try_eval_to_f64(&args[0]) {
+          style.point_size = Some(-s);
+        }
+      }
       "Dashing" if !args.is_empty() => {
         if let Expr::List(items) = &args[0] {
           let dashes: Vec<f64> = items
@@ -7674,6 +7728,7 @@ pub(crate) fn parse_plot_style(replacement: &Expr) -> Vec<SeriesStyle> {
     let style = parse_one_series_style(&val);
     if style.color.is_some()
       || style.thickness.is_some()
+      || style.point_size.is_some()
       || style.dashing.is_some()
       || style.shadow.is_some()
     {

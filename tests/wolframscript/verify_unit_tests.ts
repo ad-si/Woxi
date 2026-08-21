@@ -645,7 +645,14 @@ function runWolframBatch(
   );
   lastWolframStderr = res.stderr ?? "";
   if (res.error) {
-    throw new Error(res.error.message || "wolframscript batch failed");
+    const err: any = new Error(res.error.message || "wolframscript batch failed");
+    // Distinguish "took too long" from "died". A timeout means the batch was
+    // merely too slow and can be retried in smaller pieces; anything else is a
+    // crash or a cold-start flake (see runBatchResilient).
+    err.timedOut =
+      (res.error as any).code === "ETIMEDOUT" ||
+      /ETIMEDOUT/.test(res.error.message ?? "");
+    throw err;
   }
   if (res.signal || res.status !== 0) {
     throw new Error(
@@ -656,37 +663,159 @@ function runWolframBatch(
   return res.stdout ?? "";
 }
 
+type BatchCase = { expr: string; woxiResult: string; idx: number };
+
 /**
- * Return true iff a batch completed successfully (DONE sentinel present).
- * Uses a shorter timeout so bisection doesn't take forever.
+ * How long a (sub-)batch may take. Some single expressions are legitimately
+ * slow in wolframscript — `SurfaceArea[SphericalShell[]]` alone takes ~30 s —
+ * so even a one-case batch gets minutes, while a full batch gets proportionally
+ * more. Anything above the ceiling is a hang, not slowness.
  */
-function batchOk(
-  batch: { expr: string; woxiResult: string; idx: number }[]
-): boolean {
-  try {
-    const out = runWolframBatch(batch, 60_000);
-    return out.split("\n").some((l) => l.trim() === "DONE");
-  } catch {
-    return false;
+function batchTimeoutMs(caseCount: number): number {
+  // Flat override, mainly to exercise the split/hang handling below on demand:
+  //   WX_BATCH_TIMEOUT_MS=1000 WX_ONLY=… node tests/wolframscript/verify_unit_tests.ts
+  const override = Number(process.env.WX_BATCH_TIMEOUT_MS);
+  if (Number.isFinite(override) && override > 0) return override;
+  return Math.min(600_000, Math.max(240_000, 12_000 * caseCount));
+}
+
+/** True iff a batch run reached its `Print["DONE"]` sentinel. */
+function hasDoneSentinel(output: string): boolean {
+  return output
+    .trim()
+    .split("\n")
+    .some((l) => l.trim() === "DONE");
+}
+
+/** A single expression that wolframscript cannot finish on its own. */
+class HangingCaseError extends Error {
+  entry: BatchCase;
+  timeoutMs: number;
+  constructor(entry: BatchCase, timeoutMs: number) {
+    super(`wolframscript hangs on: ${entry.expr}`);
+    this.entry = entry;
+    this.timeoutMs = timeoutMs;
   }
 }
 
 /**
- * Binary-search within a failing batch to find the first expression that
- * causes wolframscript to crash, hang, or produce no output.
- * Returns the culprit entry, or null if the batch unexpectedly passes now.
+ * A timed-out batch is killed with SIGKILL, which can leave its WolframKernel
+ * child running and burning CPU — every following batch would then be slower
+ * than the one that already timed out, cascading into more false timeouts.
+ *
+ * Only kernels reparented to init (i.e. whose wolframscript is gone) are
+ * killed; a blanket `pkill -f WolframKernel` would also take out a kernel a
+ * concurrently running wolframscript still owns, which surfaces as a spurious
+ * "installation is not activated" flake on the next batch.
  */
-function findFailingExpression(
-  batch: { expr: string; woxiResult: string; idx: number }[]
-): { expr: string; woxiResult: string; idx: number } | null {
-  if (batch.length === 0) return null;
-  if (batch.length === 1) {
-    return batchOk(batch) ? null : batch[0];
+function reapOrphanedKernels(): void {
+  const found = spawnSync("pgrep", ["-P", "1", "-f", "WolframKernel"], {
+    encoding: "utf-8",
+  });
+  const pids = (found.stdout ?? "").split("\n").filter((l) => /^\d+$/.test(l.trim()));
+  if (pids.length === 0) return;
+  console.error(`Reaping ${pids.length} orphaned WolframKernel process(es).`);
+  spawnSync("kill", ["-9", ...pids], { stdio: "ignore" });
+}
+
+/** `cases #12–#37 (26)`, using the same numbers as the failure reports. */
+function rangeLabel(batch: BatchCase[]): string {
+  const first = batch[0].idx + 1;
+  const last = batch[batch.length - 1].idx + 1;
+  return batch.length === 1
+    ? `case #${first}`
+    : `cases #${first}–#${last} (${batch.length})`;
+}
+
+const FLAKE_RETRIES = 3;
+
+/**
+ * Run a batch through wolframscript, collecting its output lines.
+ *
+ * Failures are handled by kind rather than by bisecting for a "culprit":
+ * bisection with a short timeout blames whichever expression happens to be
+ * slowest, even when the batch merely exceeded its budget by being slow all
+ * over. Instead a timed-out batch is split in half and both halves rerun with
+ * their own (still generous) budget, so slow-but-finite work simply completes.
+ * Only a single case that cannot finish alone is a genuine hang, and only that
+ * aborts the run. Non-timeout failures are wolframscript cold-start flakes
+ * (transient "not activated" / SIGKILL / empty output) and are retried.
+ */
+function runBatchResilient(
+  batch: BatchCase[],
+  failures: string[],
+  label = rangeLabel(batch)
+): string[] {
+  const timeoutMs = batchTimeoutMs(batch.length);
+  for (let flakeAttempt = 0; ; flakeAttempt++) {
+    let output = "";
+    let crashErr = "";
+    let timedOut = false;
+    try {
+      output = runWolframBatch(batch, timeoutMs);
+    } catch (err: any) {
+      crashErr = err.message || String(err);
+      timedOut = err.timedOut === true;
+      output = "";
+    }
+    if (!crashErr && hasDoneSentinel(output)) {
+      return output.trim().split("\n");
+    }
+
+    const reason = crashErr
+      ? timedOut
+        ? `timed out after ${timeoutMs / 1000}s`
+        : `crashed: ${crashErr}`
+      : output.trim() === ""
+        ? "produced no output"
+        : "did not contain DONE sentinel";
+    console.error(`\n${label} ${reason}.`);
+    if (!crashErr && output.trim()) {
+      console.error(`wolframscript output:\n${output}`);
+    }
+    // stderr is captured rather than forwarded (see runWolframBatch), so echo
+    // it here — it carries the license/activation flake messages and kernel
+    // errors that explain a batch without a DONE sentinel.
+    if (
+      lastWolframStderr.trim() &&
+      !crashErr.includes(lastWolframStderr.trim())
+    ) {
+      console.error(`wolframscript stderr:\n${truncateStderr(lastWolframStderr)}`);
+    }
+
+    if (timedOut) {
+      reapOrphanedKernels();
+      if (batch.length === 1) throw new HangingCaseError(batch[0], timeoutMs);
+      break;
+    }
+    if (flakeAttempt < FLAKE_RETRIES) {
+      console.error(
+        `Retrying (attempt ${flakeAttempt + 2}/${FLAKE_RETRIES + 1})…`
+      );
+      continue;
+    }
+    // Persistent non-timeout failure. Splitting isolates it; a lone case that
+    // still refuses to run is recorded rather than aborting the whole run, so
+    // genuine mismatches in later batches still surface.
+    if (batch.length === 1) {
+      failures.push(
+        `FLAKY case #${batch[0].idx + 1} never produced DONE: ${batch[0].expr}`
+      );
+      return [];
+    }
+    break;
   }
+
   const mid = Math.floor(batch.length / 2);
   const first = batch.slice(0, mid);
-  if (!batchOk(first)) return findFailingExpression(first);
-  return findFailingExpression(batch.slice(mid));
+  const second = batch.slice(mid);
+  console.error(
+    `Splitting into ${rangeLabel(first)} and ${rangeLabel(second)} and rerunning…`
+  );
+  return [
+    ...runBatchResilient(first, failures),
+    ...runBatchResilient(second, failures),
+  ];
 }
 
 /** Shell-quote a string for use as a -code argument. */
@@ -2015,107 +2144,50 @@ function main() {
   const failures: string[] = [];
   let failCount = 0;
 
-  // wolframscript intermittently fails to start a batch (cold-start flake:
-  // transient "not activated" / SIGKILL / empty output that is unrelated to any
-  // test expression — see the retry-on-flake handling below). A single such
-  // flake must not abort a multi-hour run, so on a crashed / DONE-less batch we
-  // first bisect: a reproducible culprit is a genuine hang and aborts the run;
-  // an unreproducible one is a flake and we retry the whole batch a few times.
-  const MAX_BATCH_RETRIES = 3;
-
   for (let b = 0; b < totalBatches; b++) {
     const batchStart = b * BATCH_SIZE;
     const batch = woxiResultsFiltered.slice(batchStart, batchStart + BATCH_SIZE);
-    const batchEnd = batchStart + batch.length - 1;
 
-    let output = "";
-    let succeeded = false;
-
-    for (let attempt = 0; attempt <= MAX_BATCH_RETRIES; attempt++) {
-      let batchCrashed = false;
-      let crashErr = "";
-      try {
-        output = runWolframBatch(batch);
-      } catch (err: any) {
-        batchCrashed = true;
-        crashErr = err.message || String(err);
-        output = "";
-      }
-
-      // Check for DONE sentinel — Print["DONE"] returns Null which wolframscript
-      // may print as an extra trailing line, so search all lines rather than
-      // requiring DONE to be last.
-      const doneIdx = output
-        .trim()
-        .split("\n")
-        .findIndex((l) => l.trim() === "DONE");
-      if (!batchCrashed && doneIdx !== -1) {
-        succeeded = true;
-        break;
-      }
-
-      const reason = batchCrashed
-        ? `crashed: ${crashErr}`
-        : output.trim() === ""
-          ? "produced no output (crash or timeout)"
-          : `did not contain DONE sentinel`;
+    let outputLines: string[];
+    try {
+      outputLines = runBatchResilient(
+        batch,
+        failures,
+        `Batch ${b + 1}/${totalBatches} (${rangeLabel(batch)})`
+      );
+    } catch (err: any) {
+      if (!(err instanceof HangingCaseError)) throw err;
+      const culprit = err.entry;
+      const tc = cases[culprit.idx];
       console.error(
-        `\nBatch ${b + 1}/${totalBatches} (cases ${batchStart + 1}–${batchEnd + 1}) ${reason}.`
+        `\nwolframscript could not evaluate this expression on its own ` +
+          `within ${err.timeoutMs / 1000}s — it hangs:`
       );
-      if (!batchCrashed && output.trim()) {
-        console.error(`wolframscript output:\n${output}`);
-      }
-      // stderr is captured rather than forwarded (see runWolframBatch), so echo
-      // it here — it carries the license/activation flake messages and kernel
-      // errors that explain a batch without a DONE sentinel.
-      if (
-        lastWolframStderr.trim() &&
-        !crashErr.includes(lastWolframStderr.trim())
-      ) {
-        console.error(`wolframscript stderr:\n${truncateStderr(lastWolframStderr)}`);
-      }
-
-      // Bisect to distinguish a genuine hang from a wolframscript cold-start
-      // flake. A reproducible culprit is a real problem and aborts the run.
-      console.error(`\nBisecting to find the failing expression...`);
-      const culprit = findFailingExpression(batch);
-      if (culprit) {
-        const tc = cases[culprit.idx];
-        console.error(`\nFailing expression (case #${culprit.idx + 1}): ${culprit.expr}`);
-        console.error(`Woxi result: ${culprit.woxiResult}`);
-        if (tc) console.error(`Source: ${tc.file}:${tc.line}`);
-        process.exit(2);
-      }
-
-      // Unreproducible → flake. Retry the whole batch rather than aborting the
-      // entire run, so genuine mismatches in later batches still surface.
-      if (attempt < MAX_BATCH_RETRIES) {
-        console.error(
-          `Bisection could not reproduce the failure (flaky); ` +
-            `retrying batch (attempt ${attempt + 2}/${MAX_BATCH_RETRIES + 1})...`
-        );
-      } else {
-        console.error(
-          `Bisection could not reproduce the failure after ${MAX_BATCH_RETRIES + 1} ` +
-            `attempts; skipping this flaky batch and continuing.`
-        );
-      }
+      console.error(`\nFailing expression (case #${culprit.idx + 1}): ${culprit.expr}`);
+      console.error(`Woxi result: ${culprit.woxiResult}`);
+      if (tc) console.error(`Source: ${tc.file}:${tc.line}`);
+      console.error(
+        `\nIf wolframscript genuinely never terminates here, add the expression ` +
+          `to EXACT_EXPR_SKIP with a comment explaining why.`
+      );
+      process.exit(2);
     }
 
-    if (!succeeded) {
-      // Exhausted retries on a flaky batch — record it so the run ends non-zero
-      // but keep going to surface real mismatches elsewhere.
-      failures.push(
-        `FLAKY batch ${b + 1}/${totalBatches} (cases ${batchStart + 1}–${batchEnd + 1}) never produced DONE`
-      );
-      continue;
-    }
-
-    // Collect failures from this batch
-    for (const line of output.trim().split("\n")) {
-      if (line.startsWith("FAIL") || line.startsWith("  ")) {
+    // Collect failures from this batch. A failure is a `FAIL #…` line
+    // immediately followed by its indented `Woxi:`/`Wolfram:` lines. Other
+    // indented output belongs to the test cases themselves — TracePrint, for
+    // one, prints indented lines while it evaluates — and must not be
+    // reported as part of a failure.
+    let inFailure = false;
+    for (const line of outputLines) {
+      if (line.startsWith("FAIL")) {
         failures.push(line);
-        if (line.startsWith("FAIL")) failCount++;
+        failCount++;
+        inFailure = true;
+      } else if (inFailure && /^ {2}(Woxi|Wolfram): /.test(line)) {
+        failures.push(line);
+      } else {
+        inFailure = false;
       }
     }
 
@@ -2130,9 +2202,9 @@ function main() {
 
   const testedFiltered = woxiResultsFiltered.length;
   const passCount = testedFiltered - failCount;
-  const flakyBatches = failures.filter((l) => l.startsWith("FLAKY batch"));
+  const flakyCases = failures.filter((l) => l.startsWith("FLAKY case"));
 
-  if (failCount === 0 && flakyBatches.length === 0) {
+  if (failCount === 0 && flakyCases.length === 0) {
     console.log(`All ${testedFiltered} test cases match between Woxi and wolframscript.`);
   } else {
     if (failCount > 0) {
@@ -2149,9 +2221,9 @@ function main() {
       }
       console.error(line);
     }
-    if (flakyBatches.length > 0) {
+    if (flakyCases.length > 0) {
       console.error(
-        `\n${flakyBatches.length} batch(es) were skipped after repeated wolframscript ` +
+        `\n${flakyCases.length} case(s) were skipped after repeated wolframscript ` +
           `cold-start flakes; re-run to verify them.`
       );
     }

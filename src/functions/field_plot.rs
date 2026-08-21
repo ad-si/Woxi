@@ -154,6 +154,31 @@ fn parse_field_options(args: &[Expr], start: usize) -> (u32, u32, bool) {
   (svg_width, svg_height, full_width)
 }
 
+/// `Epilog -> …` primitives for `VectorPlot`, drawn over the finished field
+/// with `plot_epilog::render_epilog_svg` — the same mechanism `DensityPlot`/
+/// `ContourPlot` already use via `DensityContourOptions`. Evaluated eagerly
+/// so primitives that reference a Manipulate's current control values (e.g.
+/// `Disk[place1]`) resolve to numeric coordinates.
+fn parse_vector_plot_epilog(args: &[Expr], start: usize) -> Vec<Expr> {
+  for opt in &args[start..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "Epilog")
+    {
+      let val = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| (**replacement).clone());
+      return match val {
+        Expr::List(ref items) => items.to_vec(),
+        Expr::Identifier(ref s) if s == "None" => Vec::new(),
+        other => vec![other],
+      };
+    }
+  }
+  Vec::new()
+}
+
 /// Contour level specification from the Contours option.
 enum ContourSpec {
   /// Contours -> n: n equally spaced levels
@@ -1652,6 +1677,7 @@ fn contour_plot_equations(
           fill_opacity: None,
           marker: None,
           thickness: series_thickness,
+          point_size: None,
         });
       }
     }
@@ -1879,6 +1905,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
+  let epilog = parse_vector_plot_epilog(args, 3);
 
   let x_step = (x_max - x_min) / VECTOR_GRID as f64;
   let y_step = (y_max - y_min) / VECTOR_GRID as f64;
@@ -1919,6 +1946,24 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // primitives a surrounding `Graphics[{…}]` can redraw.
   let primitives =
     render_vector_arrows(&vectors, max_mag, cell_size, &area, &mut svg);
+
+  if !epilog.is_empty() {
+    let epilog_area = crate::functions::plot_epilog::PlotArea {
+      x0: area.plot_x0,
+      y0: area.plot_y0,
+      w: area.plot_w,
+      h: area.plot_h,
+      x_min: area.x_min,
+      x_max: area.x_max,
+      y_min: area.y_min,
+      y_max: area.y_max,
+      scale: f64::from(RESOLUTION_SCALE),
+    };
+    svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
+      &epilog,
+      &epilog_area,
+    ));
+  }
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result_with_structure(

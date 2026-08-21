@@ -462,6 +462,86 @@ mod implicit_times_with_strings {
       r#"Hold[StringJoin["z = ", ToString[z]]]"#
     );
   }
+
+  // `TraditionalForm[expr]` serializes into InputForm as a `\!\(\*boxes\)`
+  // escape, so the boxes have to read back as the very expression they were
+  // built from — Woxi Studio re-evaluates a Manipulate body from that text on
+  // every control change. Two ways they did not: a list's boxes doubled its
+  // braces, so `{1, 2}` came back as `{{1, 2}}`; and a string-literal box was
+  // unescaped a second time, so `"For each such pair, "` came back as bare
+  // source that re-parsed as the product `each*For*pair*such` and a lone
+  // `","` came back as `Null`. (Regressions from the "Twin Pythagorean
+  // Triples" Demonstration, whose whole body is one
+  // `Text@TraditionalForm@Column[…]` of styled `Row`s.)
+  #[test]
+  fn traditional_form_box_escape_reparses_to_the_same_expression() {
+    for src in [
+      "{1, 2}",
+      "{{1, 2}, {3, 4}}",
+      r#"Column[{Row[{"a", 1}], Row[{"b", 2}]}]"#,
+      r#"Row[{"For each such pair, ", 1}]"#,
+      r#"Row[{"x", ","}]"#,
+      r#"Row[{Style["sum: ", 12, RGBColor[0.25, 0.43, 0.82], Bold], 1 + 2}]"#,
+      "ArcTan[N[4/3]]*180/Pi",
+    ] {
+      let printed = interpret(&format!(
+        "ToString[Hold[TraditionalForm[{src}]], InputForm]"
+      ))
+      .unwrap();
+      // The escape yields the expression the boxes typeset, with the
+      // display-only `TraditionalForm` wrapper gone — so the target is the
+      // bare expression, held.
+      let same = interpret(&format!("{printed} === Hold[{src}]")).unwrap();
+      assert_eq!(
+        same, "True",
+        "box escape of `{src}` re-parses differently: `{printed}`"
+      );
+    }
+  }
+
+  // A list's box form uses single braces. The doubled-brace spelling that
+  // used to come out (`"{{"` … `"}}"`, a `format!` escape written into a
+  // plain string literal) re-read as one extra level of nesting.
+  #[test]
+  fn list_box_form_uses_single_braces() {
+    assert_eq!(
+      interpret("ToString[Hold[TraditionalForm[{1, 2}]], InputForm]").unwrap(),
+      r#"Hold[\!\(\*FormBox[RowBox[{"{", RowBox[{"1", ",", "2"}], "}"}], TraditionalForm]\)]"#
+    );
+  }
+
+  // A string-literal box keeps its `\"` quoting in the escape, which is what
+  // marks it as content rather than source text.
+  #[test]
+  fn string_box_in_escape_keeps_its_quoting() {
+    assert_eq!(
+      interpret(r#"ToString[Hold[TraditionalForm[Row[{"a, b"}]]], InputForm]"#)
+        .unwrap(),
+      r#"Hold[\!\(\*FormBox[RowBox[{"Row[", RowBox[{"{", RowBox[{"\"a, b\""}], "}"}], "]"}], TraditionalForm]\)]"#
+    );
+  }
+
+  // Writing the escape out as the InputForm of a *string* escapes its quotes
+  // a second time (the box delimiters included). Both spellings have to read
+  // the string literal back as a string — the outer layer is undone, the box
+  // one is not.
+  #[test]
+  fn string_box_reads_back_from_either_escaping_depth() {
+    assert_eq!(
+      interpret(
+        r#"ToExpression[ToString[InputForm[TraditionalForm[Row[{"a, b", 1}]]]]]"#
+      )
+      .unwrap(),
+      "a, b1"
+    );
+    assert_eq!(
+      interpret(
+        r#"ToExpression[StringTrim[ToString[ToString[InputForm[TraditionalForm[Row[{"a, b", 1}]]]], InputForm], "\""]]"#
+      )
+      .unwrap(),
+      "a, b1"
+    );
+  }
 }
 
 mod operator_shorthand_parens {

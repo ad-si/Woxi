@@ -135,6 +135,372 @@ pub(crate) fn reject_bad_distribution_params(dist: &Expr) -> bool {
   false
 }
 
+/// `ReliabilityDistribution[formula, {{var1, dist1}, {var2, dist2}, …}]` is
+/// the lifetime distribution of a coherent system whose Boolean structure
+/// function `formula` is true exactly when the system is up, built from
+/// independent components that are up (`vari` → `True`) until their own
+/// failure time `disti`.
+///
+/// The system survival function at time `t` is a sum over the Boolean
+/// assignments that make `formula` true of the product, over every
+/// component, of its own survival function (component up) or CDF
+/// (component down):
+///   S(t) = Σ_{b: formula[b]} Π_i (SurvivalFunction[disti, t] if bi else
+///          1 - SurvivalFunction[disti, t])
+/// found by brute-force enumeration of the truth table — every real
+/// Demonstration has only a handful of components. Returns `None` when the
+/// spec doesn't parse or a component's own SurvivalFunction isn't
+/// supported, so callers fall back to staying unevaluated.
+pub(crate) fn reliability_distribution_survival(
+  dargs: &[Expr],
+  t: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  if dargs.len() != 2 {
+    return Ok(None);
+  }
+  let Expr::List(pairs) = &dargs[1] else {
+    return Ok(None);
+  };
+  let mut vars: Vec<Expr> = Vec::with_capacity(pairs.len());
+  let mut sf: Vec<Expr> = Vec::with_capacity(pairs.len());
+  let mut cdf: Vec<Expr> = Vec::with_capacity(pairs.len());
+  for pair in pairs {
+    let Expr::List(pv) = pair else {
+      return Ok(None);
+    };
+    if pv.len() != 2 {
+      return Ok(None);
+    }
+    let s = survival_function_ast(&[pv[1].clone(), t.clone()])?;
+    if matches!(&s, Expr::FunctionCall { name, .. } if name == "SurvivalFunction")
+    {
+      // The component's own distribution isn't supported yet.
+      return Ok(None);
+    }
+    let c = eval(&minus2(int(1), s.clone()))?;
+    vars.push(pv[0].clone());
+    sf.push(s);
+    cdf.push(c);
+  }
+  let n = vars.len();
+  if n == 0 || n > 16 {
+    return Ok(None);
+  }
+  let formula = &dargs[0];
+  let mut terms: Vec<Expr> = Vec::new();
+  for mask in 0u32..(1u32 << n) {
+    let rules: Vec<Expr> = (0..n)
+      .map(|i| Expr::Rule {
+        pattern: Box::new(vars[i].clone()),
+        replacement: Box::new(Expr::Identifier(
+          if (mask >> i) & 1 == 1 {
+            "True"
+          } else {
+            "False"
+          }
+          .to_string(),
+        )),
+      })
+      .collect();
+    let substituted = call(
+      "ReplaceAll",
+      vec![formula.clone(), Expr::List(rules.into())],
+    );
+    let truth = eval(&substituted)?;
+    if !matches!(&truth, Expr::Identifier(s) if s == "True") {
+      continue;
+    }
+    let factors: Vec<Expr> = (0..n)
+      .map(|i| {
+        if (mask >> i) & 1 == 1 {
+          sf[i].clone()
+        } else {
+          cdf[i].clone()
+        }
+      })
+      .collect();
+    terms.push(call("Times", factors));
+  }
+  if terms.is_empty() {
+    return Ok(Some(int(0)));
+  }
+  Ok(Some(eval(&call("Plus", terms))?))
+}
+
+/// Whether `cond` is exactly `var >= 0`/`var > 0` (or the flipped `0 <=
+/// var`/`0 < var`) — true throughout `[0, Infinity)`, the domain `Mean`
+/// integrates a `ReliabilityDistribution`'s survival function over.
+fn is_nonneg_condition(cond: &Expr, var_name: &str) -> bool {
+  let Expr::Comparison {
+    operands,
+    operators,
+  } = cond
+  else {
+    return false;
+  };
+  if operands.len() != 2 || operators.len() != 1 {
+    return false;
+  }
+  let is_var = |e: &Expr| matches!(e, Expr::Identifier(n) if n == var_name);
+  let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
+  match operators[0] {
+    ComparisonOp::GreaterEqual | ComparisonOp::Greater => {
+      is_var(&operands[0]) && is_zero(&operands[1])
+    }
+    ComparisonOp::LessEqual | ComparisonOp::Less => {
+      is_zero(&operands[0]) && is_var(&operands[1])
+    }
+    _ => false,
+  }
+}
+
+/// Replace every single-piece `Piecewise[{{val, var >= 0}}, default]` (as
+/// built by [`survival_function_ast`] for the common continuous
+/// distributions) with its `val` branch. Safe only where `var` is already
+/// known to range over `[0, Infinity)` — i.e. right before integrating a
+/// `ReliabilityDistribution`'s survival function for `Mean`, which is
+/// exactly that domain and would otherwise leave `Integrate` unable to see
+/// through the condition.
+pub(crate) fn strip_nonneg_piecewise(expr: &Expr, var_name: &str) -> Expr {
+  if let Expr::FunctionCall { name, args } = expr {
+    if name == "Piecewise"
+      && args.len() == 2
+      && let Expr::List(pieces) = &args[0]
+      && pieces.len() == 1
+      && let Expr::List(pair) = &pieces[0]
+      && pair.len() == 2
+      && is_nonneg_condition(&pair[1], var_name)
+    {
+      return strip_nonneg_piecewise(&pair[0], var_name);
+    }
+    let new_args: Vec<Expr> = args
+      .iter()
+      .map(|a| strip_nonneg_piecewise(a, var_name))
+      .collect();
+    return call(name, new_args);
+  }
+  expr.clone()
+}
+
+/// `E[T] = Integrate[S(t), {t, 0, Infinity}]` for a `ReliabilityDistribution`
+/// built from `ExponentialDistribution` components, computed in closed form
+/// rather than through the general `Integrate` machinery.
+///
+/// After `Expand`, `S(t)` (with its `t >= 0` `Piecewise` wrappers already
+/// stripped — see [`strip_nonneg_piecewise`]) is a sum of terms, each of the
+/// form `coefficient * E^(-λ t)` for some rate `λ` that is a sum of a subset
+/// of the component rates. Each term integrates to `coefficient / λ`
+/// directly: `Integrate[E^(-λ t), {t, 0, Infinity}] = 1/λ`, which holds for
+/// every `λ` this notebook family produces (a positive combination of
+/// positive failure rates) without needing `Integrate`'s own — and here
+/// unavailable, since the rates are symbolic — positivity assumptions.
+/// Returns `None` for any term that doesn't fit this shape, so the caller
+/// can fall back to the general integrator.
+pub(crate) fn reliability_mean_from_survival(
+  s: &Expr,
+  var: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let expanded = eval(&call1("Expand", s.clone()))?;
+  let terms: Vec<Expr> = match &expanded {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().cloned().collect()
+    }
+    other => vec![other.clone()],
+  };
+  let mut contributions: Vec<Expr> = Vec::with_capacity(terms.len());
+  for term in &terms {
+    let factors: Vec<Expr> = match term {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        args.iter().cloned().collect()
+      }
+      other => vec![other.clone()],
+    };
+    let mut exponent: Option<Expr> = None;
+    let mut coef_factors: Vec<Expr> = Vec::new();
+    for f in &factors {
+      if let Expr::FunctionCall { name, args } = f
+        && name == "Power"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Identifier(b) if b == "E")
+      {
+        if exponent.is_some() {
+          // Expand should already have combined same-base powers; a second
+          // one means the shape isn't what this closed form expects.
+          return Ok(None);
+        }
+        exponent = Some(args[1].clone());
+      } else {
+        coef_factors.push(f.clone());
+      }
+    }
+    let Some(exponent) = exponent else {
+      // No decay factor: this term is constant in t, and would integrate
+      // to Infinity over [0, Infinity) — not a shape this closed form
+      // (or a well-formed reliability survival function) produces.
+      return Ok(None);
+    };
+    let slope = eval(&crate::functions::calculus_ast::d_ast(&[
+      exponent.clone(),
+      var.clone(),
+    ])?)?;
+    let residual = eval(&minus2(exponent, times2(slope.clone(), var.clone())))?;
+    if !matches!(&residual, Expr::Integer(0)) {
+      // Not purely linear (or has a nonzero constant term) in var.
+      return Ok(None);
+    }
+    let lambda = eval(&neg1(slope))?;
+    let coefficient = if coef_factors.is_empty() {
+      int(1)
+    } else {
+      eval(&call("Times", coef_factors))?
+    };
+    contributions.push(eval(&div2(coefficient, lambda))?);
+  }
+  Ok(Some(eval(&call("Plus", contributions))?))
+}
+
+/// `E[T] = Integrate[S(t), {t, 0, Infinity}]` for a `ReliabilityDistribution`
+/// whose components are all `ExponentialDistribution`s, computed directly
+/// from the rates rather than through [`reliability_distribution_survival`]
+/// and `Expand`, whose Power/Times canonicalization can group `E^(-r t)`
+/// factors into a shape [`reliability_mean_from_survival`] doesn't
+/// recognize.
+///
+/// For each satisfying truth assignment of the structure `formula`, the
+/// survival term `Product_i (p_i if up else 1 - p_i)` (`p_i = E^(-r_i t)`)
+/// is expanded by hand: every "down" component independently keeps its `1`
+/// or contributes a signed `-p_i`. Every subterm produced this way is
+/// `± E^(-(Σ r_i for i in some component subset) t)`; subterms are grouped
+/// by that subset (as a bitmask) and their signs summed, so terms that
+/// cancel across different assignments actually cancel. Each surviving
+/// group with `coefficient ≠ 0` integrates to `coefficient / Σ r_i`.
+/// Returns `None` when a component isn't `ExponentialDistribution`, the
+/// system is too large, or a nonzero constant (rate-0) term survives —
+/// meaning the integral diverges, which shouldn't happen for a coherent
+/// structure but is checked rather than assumed.
+pub(crate) fn reliability_distribution_mean_exponential(
+  dargs: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  if dargs.len() != 2 {
+    return Ok(None);
+  }
+  let Expr::List(pairs) = &dargs[1] else {
+    return Ok(None);
+  };
+  let mut vars: Vec<Expr> = Vec::with_capacity(pairs.len());
+  let mut rates: Vec<Expr> = Vec::with_capacity(pairs.len());
+  for pair in pairs {
+    let Expr::List(pv) = pair else {
+      return Ok(None);
+    };
+    if pv.len() != 2 {
+      return Ok(None);
+    }
+    let Expr::FunctionCall {
+      name: dname,
+      args: ddargs,
+    } = &pv[1]
+    else {
+      return Ok(None);
+    };
+    if dname != "ExponentialDistribution" || ddargs.len() != 1 {
+      return Ok(None);
+    }
+    vars.push(pv[0].clone());
+    rates.push(ddargs[0].clone());
+  }
+  let n = vars.len();
+  if n == 0 || n > 12 {
+    return Ok(None);
+  }
+  let formula = &dargs[0];
+  // net[component subset bitmask] = signed count of subterms whose
+  // contributing components are exactly that subset.
+  let mut net: std::collections::HashMap<u32, i64> =
+    std::collections::HashMap::new();
+  for b in 0u32..(1u32 << n) {
+    let rules: Vec<Expr> = (0..n)
+      .map(|i| Expr::Rule {
+        pattern: Box::new(vars[i].clone()),
+        replacement: Box::new(Expr::Identifier(
+          if (b >> i) & 1 == 1 { "True" } else { "False" }.to_string(),
+        )),
+      })
+      .collect();
+    let substituted = call(
+      "ReplaceAll",
+      vec![formula.clone(), Expr::List(rules.into())],
+    );
+    let truth = eval(&substituted)?;
+    if !matches!(&truth, Expr::Identifier(s) if s == "True") {
+      continue;
+    }
+    let false_positions: Vec<usize> =
+      (0..n).filter(|&i| (b >> i) & 1 == 0).collect();
+    let m = false_positions.len();
+    for t_mask in 0u32..(1u32 << m) {
+      let mut group_mask = b;
+      let mut sign_flips = 0u32;
+      for (k, &pos) in false_positions.iter().enumerate() {
+        if (t_mask >> k) & 1 == 1 {
+          group_mask |= 1 << pos;
+          sign_flips += 1;
+        }
+      }
+      let sign: i64 = if sign_flips.is_multiple_of(2) { 1 } else { -1 };
+      *net.entry(group_mask).or_insert(0) += sign;
+    }
+  }
+  let mut contributions: Vec<Expr> = Vec::new();
+  for (mask, coeff) in &net {
+    if *coeff == 0 {
+      continue;
+    }
+    if *mask == 0 {
+      // A nonzero constant term never decays: the integral diverges.
+      return Ok(None);
+    }
+    let rate_terms: Vec<Expr> = (0..n)
+      .filter(|&i| (mask >> i) & 1 == 1)
+      .map(|i| rates[i].clone())
+      .collect();
+    let lambda = eval(&call("Plus", rate_terms))?;
+    contributions.push(eval(&div2(int(*coeff as i128), lambda))?);
+  }
+  Ok(Some(eval(&call("Plus", contributions))?))
+}
+
+/// PDF of a `ReliabilityDistribution` at `x`: `-d/dx S(x)`, where `S` is its
+/// survival function. Differentiates against `x` directly when it is
+/// already a bare variable, otherwise against a fresh dummy so `D` has
+/// something to differentiate against, then substitutes `x` back in.
+fn reliability_distribution_pdf(
+  dargs: &[Expr],
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let is_var = matches!(x, Expr::Identifier(_));
+  let dummy = if is_var {
+    x.clone()
+  } else {
+    Expr::Identifier("$WoxiReliabilityT$".to_string())
+  };
+  let Some(s) = reliability_distribution_survival(dargs, &dummy)? else {
+    return Ok(None);
+  };
+  let deriv = crate::functions::calculus_ast::d_ast(&[s, dummy.clone()])?;
+  let pdf = eval(&neg1(deriv))?;
+  if is_var {
+    Ok(Some(pdf))
+  } else {
+    let Expr::Identifier(dummy_name) = &dummy else {
+      unreachable!()
+    };
+    Ok(Some(eval(&crate::syntax::substitute_variable(
+      &pdf, dummy_name, x,
+    ))?))
+  }
+}
+
 pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(dist) = args.first()
     && reject_bad_distribution_params(dist)
@@ -189,6 +555,13 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 1 {
     // PDF[dist] - return unevaluated for now
     return Ok(unevaluated("PDF", args));
+  }
+
+  // PDF of a ReliabilityDistribution is -d/dx of its own survival function.
+  if dist_name == "ReliabilityDistribution"
+    && let Some(value) = reliability_distribution_pdf(dargs, &args[1])?
+  {
+    return Ok(value);
   }
 
   // A truncated distribution renormalizes its base density over the kept
@@ -359,6 +732,17 @@ pub fn survival_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(unevaluated("SurvivalFunction", args));
   }
+  // ReliabilityDistribution's survival function is computed directly from
+  // its component survival functions rather than via CDF (see
+  // `reliability_distribution_survival`).
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && name == "ReliabilityDistribution"
+  {
+    return Ok(
+      reliability_distribution_survival(dargs, &args[1])?
+        .unwrap_or_else(|| unevaluated("SurvivalFunction", args)),
+    );
+  }
   let cdf = cdf_ast(args)?;
 
   // A Piecewise CDF complements piece by piece (with the pieces folded
@@ -444,7 +828,12 @@ pub fn hazard_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  if !matches!(dist_name, "ExponentialDistribution" | "ParetoDistribution") {
+  if !matches!(
+    dist_name,
+    "ExponentialDistribution"
+      | "ParetoDistribution"
+      | "ReliabilityDistribution"
+  ) {
     return Ok(unevaluated(args));
   }
 
@@ -1806,6 +2195,14 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if args.len() == 1 {
     return Ok(unevaluated("CDF", args));
+  }
+
+  // CDF[ReliabilityDistribution[…], t] = 1 - SurvivalFunction[…, t].
+  if dist_name == "ReliabilityDistribution" {
+    return Ok(match reliability_distribution_survival(dargs, &args[1])? {
+      Some(s) => eval(&minus2(int(1), s))?,
+      None => unevaluated("CDF", args),
+    });
   }
 
   if dist_name == "TruncatedDistribution"

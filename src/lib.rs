@@ -5368,6 +5368,22 @@ pub fn interpret_expr_with_stdout(
   })
 }
 
+pub fn func_attrs_contains(func_name: &str, attr_name: &str) -> bool {
+  FUNC_ATTRS.with(|m| {
+    m.borrow()
+      .get(func_name)
+      .is_some_and(|attrs| attrs.contains(&attr_name.to_string()))
+  })
+}
+
+pub fn func_attrs_removed_contains(func_name: &str, attr_name: &str) -> bool {
+  FUNC_ATTRS_REMOVED.with(|m| {
+    m.borrow()
+      .get(func_name)
+      .is_some_and(|attrs| attrs.contains(&attr_name.to_string()))
+  })
+}
+
 fn store_function_definition(
   pair: Pair<Rule>,
 ) -> Result<Option<String>, InterpreterError> {
@@ -5397,19 +5413,11 @@ fn store_function_definition(
     "N" | "MessageName" | "Format" | "Default" | "Options"
   );
   let is_n_value_assignment = allows_redirected_rule;
-  let was_unprotected = FUNC_ATTRS_REMOVED.with(|m| {
-    m.borrow()
-      .get(func_name.as_str())
-      .is_some_and(|attrs| attrs.contains(&"Protected".to_string()))
-  });
+  let was_unprotected = func_attrs_removed_contains(&func_name, "Protected");
   let is_builtin_protected = !is_n_value_assignment
     && !was_unprotected
     && evaluator::get_builtin_attributes(&func_name).contains(&"Protected");
-  let is_user_protected = FUNC_ATTRS.with(|m| {
-    m.borrow()
-      .get(func_name.as_str())
-      .is_some_and(|attrs| attrs.contains(&"Protected".to_string()))
-  });
+  let is_user_protected = func_attrs_contains(&func_name, "Protected");
   if is_builtin_protected || is_user_protected {
     let (tag, ret) = if is_builtin_protected && !is_user_protected {
       ("SetDelayed::write", Some("$Failed".to_string()))

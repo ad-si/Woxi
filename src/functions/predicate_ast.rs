@@ -695,11 +695,7 @@ fn is_numeric_function(name: &str) -> bool {
       | "BernoulliB"
       | "Zeta"
       | "N"
-  ) || crate::FUNC_ATTRS.with(|m| {
-    m.borrow()
-      .get(name)
-      .is_some_and(|attrs| attrs.contains(&"NumericFunction".to_string()))
-  })
+  ) || crate::func_attrs_contains(name, "NumericFunction")
 }
 
 /// Numerically evaluate a NumericQ expression (e.g. Sin[11]) and apply

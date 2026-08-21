@@ -30,7 +30,7 @@ fn point_radius(point_size: f64, svg_w: f64) -> f64 {
 
 /// A named point size. `Small`/`Medium`/… name absolute sizes, like the
 /// named dash lengths do.
-fn symbolic_point_size(expr: &Expr) -> Option<f64> {
+pub(crate) fn symbolic_point_size(expr: &Expr) -> Option<f64> {
   let Expr::Identifier(s) = expr else {
     return None;
   };
@@ -149,6 +149,33 @@ const BLACK: Color = Color {
   b: 0.0,
   a: 1.0,
 };
+
+/// The RGB color (each channel `0.0..=1.0`) of `Hue[h]` at full saturation
+/// and brightness — the same HSB→RGB conversion `Hue[…]` itself evaluates
+/// with. Exposed so a frontend can *paint* a hue value (e.g. Woxi Studio's
+/// ColorSlider/ColorSetter gradient bar and drag handle) without
+/// re-implementing the conversion as a second copy.
+pub fn hue_to_rgb01(h: f64) -> (f64, f64, f64) {
+  let c = Color::from_hue(h, 1.0, 1.0);
+  (c.r, c.g, c.b)
+}
+
+/// Resolve a color expression's InputForm code to an `(r, g, b)` triple in
+/// `0.0..=1.0`, falling back to black for anything that isn't a recognized
+/// color head (`RGBColor`, `Hue`, `GrayLevel`, `CMYKColor`, a named color,
+/// …). Used by a frontend to paint a Manipulate color control's current
+/// value (e.g. Woxi Studio's ColorSlider/ColorSetter handle).
+pub fn manipulate_color_to_rgb(code: &str) -> (f64, f64, f64) {
+  // `interpret_to_expr` already fully evaluates its input (see its own
+  // doc comment), so `parse_color` runs directly on the result.
+  let Ok(expr) = crate::interpret_to_expr(code) else {
+    return (0.0, 0.0, 0.0);
+  };
+  match parse_color(&expr) {
+    Some(c) => (c.r, c.g, c.b),
+    None => (0.0, 0.0, 0.0),
+  }
+}
 
 // ── Theme colors for light/dark mode ────────────────────────────────────
 
@@ -10430,7 +10457,11 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       ],
     ));
     if sd.is_scatter {
-      series_prims.push(call1("PointSize", Expr::Real(0.012)));
+      series_prims.push(match sd.point_size {
+        Some(p) if p < 0.0 => call1("AbsolutePointSize", Expr::Real(-p)),
+        Some(f) => call1("PointSize", Expr::Real(f)),
+        None => call1("PointSize", Expr::Real(0.012)),
+      });
       let coords: Vec<Expr> = sd
         .points
         .iter()
@@ -16736,6 +16767,22 @@ pub enum ManipulateControl {
   /// A `Delimiter` argument: a horizontal separator row between control
   /// groups. Binds no variable.
   Divider,
+  /// A `ControlType -> ColorSlider` (or `-> ColorSetter`) control: a
+  /// hue-gradient bar whose handle position (`0..1`) maps to `Hue[position]`
+  /// at full saturation/value. Wolfram draws `ColorSetter` identically to
+  /// `ColorSlider` (a click/tap-to-set variant of the same idea), so both
+  /// dispatch here rather than duplicating the control.
+  Color {
+    name: String,
+    /// The spec's literal initial color, as InputForm (e.g.
+    /// `RGBColor[0, 0, 0]`). Kept exactly as the bound variable's value on
+    /// the first frame even though it is usually not *on* the hue gradient
+    /// — mirrors how `Continuous::initial` keeps an off-grid literal (see
+    /// `woxi-studio/src/manipulate.rs`'s `ControlState::Color`).
+    initial: String,
+    label: String,
+    label_runs: Vec<LabelRun>,
+  },
 }
 
 impl ManipulateControl {
@@ -16748,7 +16795,8 @@ impl ManipulateControl {
       | Self::Slider2D { name, .. }
       | Self::IntervalSlider { name, .. }
       | Self::Trigger { name, .. }
-      | Self::Locator { name, .. } => name,
+      | Self::Locator { name, .. }
+      | Self::Color { name, .. } => name,
       Self::Button { .. } | Self::Heading { .. } | Self::Divider => "",
     }
   }
@@ -18688,6 +18736,14 @@ fn patch_default_label(
         *label = pretty;
       }
     }
+    ManipulateControl::Color {
+      label, label_runs, ..
+    } => {
+      if label == synth {
+        *label = pretty;
+        *label_runs = pretty_runs;
+      }
+    }
     ManipulateControl::Button { .. }
     | ManipulateControl::Heading { .. }
     | ManipulateControl::Divider => {}
@@ -20183,6 +20239,9 @@ fn parse_manipulate_control(
               // the user may add; any such range still means "adding is
               // allowed".
               Expr::List(bounds) => !bounds.is_empty(),
+              // `LocatorAutoCreate -> n`: a bare positive integer caps how
+              // many locators may be added (0/negative disables it).
+              Expr::Integer(n) => *n > 0,
               _ => false,
             }
       )
@@ -20434,6 +20493,35 @@ fn parse_manipulate_control(
     });
   }
 
+  // Color control: `ControlType -> ColorSlider` (or `-> ColorSetter`), also
+  // given as a bare marker after the head (`{{bg, RGBColor[0, 0, 0],
+  // "background"}, ColorSlider}`). Wolfram draws `ColorSetter` identically
+  // to `ColorSlider` — a click/tap-to-set variant of the same hue-gradient
+  // widget — so both dispatch through the same control here rather than
+  // duplicating it. The bound variable keeps the spec's literal initial
+  // color exactly (see `ManipulateControl::Color::initial`); there is no
+  // numeric domain to fall back on the way a range spec gives a slider one.
+  if matches!(control_type.as_deref(), Some("ColorSlider" | "ColorSetter")) {
+    let initial = explicit_initial.as_ref().map_or_else(
+      || "RGBColor[0, 0, 0]".to_string(),
+      manipulate_value_to_input_form,
+    );
+    return Some(ParsedControl::Visible {
+      control: ManipulateControl::Color {
+        name,
+        initial,
+        label,
+        label_runs,
+      },
+      enabled,
+      min_code: None,
+      max_code: None,
+      values_code: None,
+      animate: None,
+      tracking: tracking.clone(),
+    });
+  }
+
   // Discrete form: `{u, {u1, u2, …}}` or `{{u, uinit, …}, {u1, u2, …}}`,
   // possibly with trailing options (`{{u, uinit, ""}, {u1, …},
   // ControlType -> PopupMenu}`) — hence matched on the option-free `bounds`.
@@ -20627,8 +20715,11 @@ fn parse_manipulate_control(
   // alternate(s), matching the Demonstrations idiom of toggling between a
   // couple of fixed colours. With an explicit initial colour that differs
   // from `colour`, the two form a real 2-swatch choice; without one there is
-  // only a single possible value, so the variable stays fixed at it (there
-  // is nothing to pick between).
+  // only a single possible value to alternate with, and wolframscript draws
+  // a full `ColorSlider` over the whole hue gradient instead (the same
+  // widget the explicit `ColorSlider`/`ColorSetter` marker produces above) —
+  // there being nothing to swatch-toggle between is exactly what makes the
+  // domain "any colour" rather than "one of these two".
   if bounds.len() == 1
     && crate::functions::graphics::parse_color(bounds[0]).is_some()
   {
@@ -20664,8 +20755,32 @@ fn parse_manipulate_control(
         tracking: tracking.clone(),
       });
     }
-    let value = crate::syntax::expr_to_input_form(bounds[0]);
-    return Some(ParsedControl::Fixed { name, value });
+    // With no explicit initial at all — the bare `{u, colour}` form, not the
+    // labelled triple — there is only the one literal value `colour` ever
+    // named in the spec: it is baked into the body as a fixed constant, the
+    // same as any other single-valued domain, rather than promoted to a
+    // widget.
+    let Some(init) = explicit_initial.as_ref() else {
+      return Some(ParsedControl::Fixed {
+        name,
+        value: alt_code,
+      });
+    };
+    let initial = manipulate_value_to_input_form(init);
+    return Some(ParsedControl::Visible {
+      control: ManipulateControl::Color {
+        name,
+        initial,
+        label,
+        label_runs,
+      },
+      enabled,
+      min_code: None,
+      max_code: None,
+      values_code: None,
+      animate: None,
+      tracking: tracking.clone(),
+    });
   }
 
   // No domain at all — `{u, uinit}` or `{{u, uinit, ulbl}, opts…}` with
@@ -21011,6 +21126,9 @@ pub fn manipulate_initial_bindings(
       )),
       ManipulateControl::Locator { name, points, .. } => {
         Some((name.clone(), format_point_list_input(points)))
+      }
+      ManipulateControl::Color { name, initial, .. } => {
+        Some((name.clone(), initial.clone()))
       }
     })
     // Mutable `ControlType -> None` state variables travel in the binding
@@ -21652,6 +21770,20 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
       }
       ManipulateControl::Divider => {
         ctrl_parts.push(r#"{"kind":"delimiter"}"#.to_string());
+      }
+      ManipulateControl::Color {
+        name,
+        initial,
+        label,
+        label_runs,
+      } => {
+        ctrl_parts.push(format!(
+          r#"{{"kind":"color","name":"{}","label":"{}","labelRuns":{},"initial":"{}"}}"#,
+          json_escape_manipulate(name),
+          json_escape_manipulate(label),
+          label_runs_to_json(label_runs),
+          json_escape_manipulate(initial),
+        ));
       }
     }
   }
@@ -22872,6 +23004,84 @@ mod manipulate_dynamic_control_list_tests {
         assert!(popup, "ControlType -> PopupMenu must render as a dropdown");
       }
       other => panic!("expected a Discrete control, got {other:?}"),
+    }
+  }
+
+  /// `LocatorAutoCreate -> n` for a bare positive integer allows adding
+  /// locators the same as `-> True`/`-> Automatic` — a Demonstration caps
+  /// how many extra points a click may add this way (e.g. `-> 2`), and the
+  /// integer form must not be mistaken for "no auto-create" the way an
+  /// unrecognized value would be.
+  #[test]
+  fn locator_auto_create_bare_integer_enables_adding_points() {
+    let s = spec(
+      "Manipulate[pts, {{pts, {{0, 0}, {1, 1}}}, Locator, \
+       LocatorAutoCreate -> 2}]",
+    );
+    match &s.controls[0] {
+      ManipulateControl::Locator { auto_create, .. } => {
+        assert!(
+          *auto_create,
+          "LocatorAutoCreate -> 2 must enable adding locators"
+        );
+      }
+      other => panic!("expected a Locator control, got {other:?}"),
+    }
+  }
+
+  /// `{{bg, RGBColor[0, 0, 0], "background"}, ColorSlider}` — a color
+  /// control bound to `bg` — parses into a `Color` control rather than
+  /// being silently dropped or misread as a hidden/discrete spec. The
+  /// bound variable keeps the spec's *literal* initial color exactly (not
+  /// snapped to whatever the hue gradient's own position 0 would give),
+  /// mirroring how a `Continuous` control keeps an off-grid literal
+  /// initial value.
+  #[test]
+  fn color_slider_parses_and_keeps_literal_initial() {
+    let s = spec(
+      r#"Manipulate[Graphics[{bg}], \
+         {{bg, RGBColor[0, 0, 0], "background"}, ColorSlider}]"#,
+    );
+    assert_eq!(names(&s), vec!["bg"]);
+    match &s.controls[0] {
+      ManipulateControl::Color { initial, label, .. } => {
+        assert_eq!(initial, "RGBColor[0, 0, 0]");
+        assert_eq!(label, "background");
+      }
+      other => panic!("expected a Color control, got {other:?}"),
+    }
+  }
+
+  /// `ColorSetter` is Wolfram's click/tap-to-set variant of the same
+  /// hue-gradient widget as `ColorSlider` — it must parse to the same
+  /// `Color` control rather than a second, duplicate implementation.
+  #[test]
+  fn color_setter_parses_the_same_as_color_slider() {
+    let s = spec(
+      r#"Manipulate[Graphics[{bg}], \
+         {{bg, RGBColor[1, 0, 0], "background"}, ColorSetter}]"#,
+    );
+    match &s.controls[0] {
+      ManipulateControl::Color { initial, .. } => {
+        assert_eq!(initial, "RGBColor[1, 0, 0]");
+      }
+      other => panic!("expected a Color control, got {other:?}"),
+    }
+  }
+
+  /// `ControlType -> ColorSlider` (the option-rule spelling, rather than
+  /// the bare marker) must parse identically.
+  #[test]
+  fn control_type_color_slider_option_parses_the_same() {
+    let s = spec(
+      r#"Manipulate[Graphics[{bg}], \
+         {{bg, RGBColor[0, 1, 0]}, ControlType -> ColorSlider}]"#,
+    );
+    match &s.controls[0] {
+      ManipulateControl::Color { initial, .. } => {
+        assert_eq!(initial, "RGBColor[0, 1, 0]");
+      }
+      other => panic!("expected a Color control, got {other:?}"),
     }
   }
 }
