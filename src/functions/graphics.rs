@@ -92,6 +92,16 @@ impl Color {
     }
   }
 
+  /// Same as [`Self::opacity_attr`] but for an SVG gradient `<stop>`,
+  /// which takes `stop-opacity` rather than `opacity`.
+  fn stop_opacity_attr(&self) -> String {
+    if self.a < 1.0 {
+      format!(" stop-opacity=\"{}\"", self.a)
+    } else {
+      String::new()
+    }
+  }
+
   fn darker(self, amount: f64) -> Self {
     let f = 1.0 - amount;
     Self::new(self.r * f, self.g * f, self.b * f).with_alpha(self.a)
@@ -647,6 +657,10 @@ enum Primitive {
   },
   Line {
     segments: Vec<Vec<(f64, f64)>>,
+    /// `VertexColors -> {c1, c2, …}`: one color per point across all
+    /// segments, concatenated in order. `None` (the common case) strokes
+    /// the whole line with `style`'s single color.
+    vertex_colors: Option<Vec<Color>>,
     style: StyleState,
   },
   CircleArc {
@@ -2182,11 +2196,40 @@ fn parse_point(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   }
 }
 
+/// `VertexColors -> {c1, c2, …}`, the option shared by primitives that
+/// support per-vertex coloring (currently just `Line`). Returns `None` if
+/// the option is absent or its value isn't a list of parseable colors.
+fn parse_vertex_colors(opts: &[Expr]) -> Option<Vec<Color>> {
+  opts.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "VertexColors") =>
+    {
+      if let Expr::List(items) = replacement.as_ref() {
+        items.iter().map(parse_color).collect()
+      } else {
+        None
+      }
+    }
+    _ => None,
+  })
+}
+
 fn parse_line(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
+  let vertex_colors = parse_vertex_colors(&args[1..]);
   // Line[{{x1,y1},{x2,y2},...}] or Line[{seg1, seg2, ...}] for multiple segments
   if let Some(pts) = expr_to_point_list(&args[0]) {
+    // A vertex-color count that doesn't match the point count can't be
+    // mapped 1:1, so fall back to the ordinary single-color stroke.
+    let vertex_colors = vertex_colors.filter(|c| c.len() == pts.len());
     prims.push(Primitive::Line {
       segments: vec![pts],
+      vertex_colors,
       style: style.clone(),
     });
   } else if let Expr::List(items) = &args[0] {
@@ -2198,8 +2241,11 @@ fn parse_line(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       }
     }
     if !segments.is_empty() {
+      let total_points: usize = segments.iter().map(Vec::len).sum();
+      let vertex_colors = vertex_colors.filter(|c| c.len() == total_points);
       prims.push(Primitive::Line {
         segments,
+        vertex_colors,
         style: style.clone(),
       });
     }
@@ -3347,6 +3393,7 @@ fn parse_polar_curve(
   } else {
     prims.push(Primitive::Line {
       segments: vec![points],
+      vertex_colors: None,
       style: style.clone(),
     });
   }
@@ -3422,6 +3469,7 @@ fn parse_bspline(
     let sampled = evaluate_bspline(&control, degree, 200);
     prims.push(Primitive::Line {
       segments: vec![sampled],
+      vertex_colors: None,
       style: style.clone(),
     });
   }
@@ -4002,11 +4050,16 @@ fn rotate_primitive(
       points: points.iter().map(|&(x, y)| rp(x, y)).collect(),
       style: style.clone(),
     },
-    Primitive::Line { segments, style } => Primitive::Line {
+    Primitive::Line {
+      segments,
+      vertex_colors,
+      style,
+    } => Primitive::Line {
       segments: segments
         .iter()
         .map(|seg| seg.iter().map(|&(x, y)| rp(x, y)).collect())
         .collect(),
+      vertex_colors: vertex_colors.clone(),
       style: style.clone(),
     },
     Primitive::PolygonPrim {
@@ -4206,11 +4259,16 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       points: points.iter().map(|&(x, y)| tp(x, y)).collect(),
       style: style.clone(),
     },
-    Primitive::Line { segments, style } => Primitive::Line {
+    Primitive::Line {
+      segments,
+      vertex_colors,
+      style,
+    } => Primitive::Line {
       segments: segments
         .iter()
         .map(|seg| seg.iter().map(|&(x, y)| tp(x, y)).collect())
         .collect(),
+      vertex_colors: vertex_colors.clone(),
       style: style.clone(),
     },
     Primitive::PolygonPrim {
@@ -4420,11 +4478,16 @@ fn scale_primitive(
       points: points.iter().map(|&(x, y)| sp(x, y)).collect(),
       style: style.clone(),
     },
-    Primitive::Line { segments, style } => Primitive::Line {
+    Primitive::Line {
+      segments,
+      vertex_colors,
+      style,
+    } => Primitive::Line {
       segments: segments
         .iter()
         .map(|seg| seg.iter().map(|&(x, y)| sp(x, y)).collect())
         .collect(),
+      vertex_colors: vertex_colors.clone(),
       style: style.clone(),
     },
     Primitive::PolygonPrim {
@@ -5469,6 +5532,7 @@ pub(crate) fn svg_escape(s: &str) -> String {
 
 fn render_primitive(
   prim: &Primitive,
+  prim_index: usize,
   bb: &BBox,
   svg_w: f64,
   svg_h: f64,
@@ -5533,16 +5597,29 @@ fn render_primitive(
         ));
       }
     }
-    Primitive::Line { segments, style } => {
+    Primitive::Line {
+      segments,
+      vertex_colors,
+      style,
+    } => {
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
-      for seg in segments {
-        let pts: Vec<String> = seg
+      // `VertexColors` assigns one color per point, in order, across all
+      // segments concatenated — only usable when the count actually lines
+      // up with the points being drawn.
+      let total_points: usize = segments.iter().map(Vec::len).sum();
+      let vertex_colors =
+        vertex_colors.as_ref().filter(|c| c.len() == total_points);
+      let mut point_idx = 0usize;
+      for (seg_idx, seg) in segments.iter().enumerate() {
+        let screen_pts: Vec<(f64, f64)> = seg
           .iter()
-          .map(|&(x, y)| {
-            format!("{:.2},{:.2}", coord_x(x, bb, svg_w), coord_y(y, bb, svg_h))
-          })
+          .map(|&(x, y)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h)))
+          .collect();
+        let pts: Vec<String> = screen_pts
+          .iter()
+          .map(|&(x, y)| format!("{x:.2},{y:.2}"))
           .collect();
         // Draw the halo (contrasting outline) behind the line first.
         if let Some(ref halo) = style.halo {
@@ -5554,13 +5631,43 @@ fn render_primitive(
             halo.color.opacity_attr(),
           ));
         }
-        out.push_str(&format!(
-          "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"butt\"{}{}/>\n",
-          pts.join(" "),
-          color.to_svg_rgb(),
-          color.opacity_attr(),
-          dash,
-        ));
+        if let Some(colors) = vertex_colors {
+          // Draw each edge as its own 2-point line, shaded with a linear
+          // gradient between its two endpoint colors so the stroke blends
+          // smoothly along the path, the way Wolfram Language interpolates
+          // `VertexColors`.
+          for i in 0..screen_pts.len().saturating_sub(1) {
+            let c1 = colors[point_idx + i];
+            let c2 = colors[point_idx + i + 1];
+            let (x1, y1) = screen_pts[i];
+            let (x2, y2) = screen_pts[i + 1];
+            let stroke = if c1 == c2 {
+              c1.to_svg_rgb()
+            } else {
+              let gid = format!("woxi-vgrad-{prim_index}-{seg_idx}-{i}");
+              out.push_str(&format!(
+                "<linearGradient id=\"{gid}\" gradientUnits=\"userSpaceOnUse\" x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\"><stop offset=\"0\" stop-color=\"{}\"{}/><stop offset=\"1\" stop-color=\"{}\"{}/></linearGradient>\n",
+                c1.to_svg_rgb(),
+                c1.stop_opacity_attr(),
+                c2.to_svg_rgb(),
+                c2.stop_opacity_attr(),
+              ));
+              format!("url(#{gid})")
+            };
+            out.push_str(&format!(
+              "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" stroke=\"{stroke}\" stroke-width=\"{sw:.2}\" stroke-linecap=\"butt\"{dash}/>\n",
+            ));
+          }
+          point_idx += screen_pts.len();
+        } else {
+          out.push_str(&format!(
+            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"butt\"{}{}/>\n",
+            pts.join(" "),
+            color.to_svg_rgb(),
+            color.opacity_attr(),
+            dash,
+          ));
+        }
       }
     }
     Primitive::CircleArc {
@@ -6442,7 +6549,9 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::point_box_multi(points));
       }
-      Primitive::Line { segments, style } => {
+      Primitive::Line {
+        segments, style, ..
+      } => {
         elements.extend(tracker.emit_style_changes(style));
         elements.extend(gbox::line_box(segments));
       }
@@ -7118,12 +7227,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Render primitives. A primitive with a drop shadow is wrapped in a
   // <g> that applies the shadow filter, so each primitive casts its own
   // shadow (overlapping shadows stack, giving the depth effect).
-  for prim in &primitives {
+  for (prim_index, prim) in primitives.iter().enumerate() {
     let shadow = prim.style().and_then(|s| s.drop_shadow.as_ref());
     if let Some(ds) = shadow {
       svg.push_str(&format!("<g filter=\"url(#{})\">\n", ds.filter_id()));
     }
-    render_primitive(prim, &bb, svg_w, svg_h, &mut svg);
+    render_primitive(prim, prim_index, &bb, svg_w, svg_h, &mut svg);
     if shadow.is_some() {
       svg.push_str("</g>\n");
     }
