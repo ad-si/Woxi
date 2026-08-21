@@ -495,12 +495,8 @@ fn evaluate_function_call_ast_inner(
   };
 
   // Thread Listable functions over list arguments
-  let is_listable = is_builtin_listable(name)
-    || crate::FUNC_ATTRS.with(|m| {
-      m.borrow()
-        .get(name)
-        .is_some_and(|attrs| attrs.contains(&"Listable".to_string()))
-    });
+  let is_listable =
+    is_builtin_listable(name) || crate::func_attrs_contains(name, "Listable");
   if is_listable && let Some(result) = thread_listable(name, args)? {
     return Ok(result);
   }
@@ -524,12 +520,8 @@ fn evaluate_function_call_ast_inner(
   }
 
   // Apply Flat attribute: flatten nested calls of the same function
-  let has_flat = is_builtin_flat(name)
-    || crate::FUNC_ATTRS.with(|m| {
-      m.borrow()
-        .get(name)
-        .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
-    });
+  let has_flat =
+    is_builtin_flat(name) || crate::func_attrs_contains(name, "Flat");
   let args_after_flat;
   let args = if has_flat {
     let mut flat_args: Vec<Expr> = Vec::new();
@@ -580,11 +572,7 @@ fn evaluate_function_call_ast_inner(
   let has_orderless = name != "Plus"
     && name != "Times"
     && (is_builtin_orderless(name)
-      || crate::FUNC_ATTRS.with(|m| {
-        m.borrow()
-          .get(name)
-          .is_some_and(|attrs| attrs.contains(&"Orderless".to_string()))
-      }));
+      || crate::func_attrs_contains(name, "Orderless"));
   let args_after_sort;
   let args = if has_orderless {
     let mut sorted_args = args.to_vec();
@@ -713,12 +701,9 @@ fn evaluate_function_call_ast_inner(
   // stores upvalues in FUNC_DEFS too (their params start with `_up`), so
   // when the head carries HoldAllComplete we drop those entries before
   // dispatch — DownValues for the same head are still tried as usual.
-  let head_has_hold_all_complete = crate::FUNC_ATTRS.with(|m| {
-    m.borrow()
-      .get(name)
-      .is_some_and(|attrs| attrs.contains(&"HoldAllComplete".to_string()))
-  }) || get_builtin_attributes(name)
-    .contains(&"HoldAllComplete");
+  let head_has_hold_all_complete =
+    crate::func_attrs_contains(name, "HoldAllComplete")
+      || get_builtin_attributes(name).contains(&"HoldAllComplete");
   let overloads = crate::FUNC_DEFS.with(|m| {
     let defs = m.borrow();
     let raw = defs.get(name).cloned();
@@ -4265,6 +4250,19 @@ fn evaluate_function_call_ast_inner(
           replacement: Box::new(Expr::List(spec.into())),
         });
       }
+      // `GraphPlot[m]` also accepts a bare adjacency matrix directly (unlike
+      // plain `Graph[…]`, which needs `AdjacencyGraph[m]`): a list whose
+      // entries are themselves lists, rather than edges (Rules or
+      // Directed/UndirectedEdge), is unambiguously that matrix form.
+      let matrix_graph = match &args[0] {
+        Expr::List(rows)
+          if !rows.is_empty()
+            && rows.iter().all(|r| matches!(r, Expr::List(_))) =>
+        {
+          crate::functions::graph::adjacency_matrix_to_graph(None, rows)
+        }
+        _ => None,
+      };
       let graph_expr = if let Expr::FunctionCall {
         name: gn,
         args: gargs,
@@ -4272,6 +4270,11 @@ fn evaluate_function_call_ast_inner(
         && gn == "Graph"
       {
         // The plot's own options apply on top of the graph's.
+        let mut merged: Vec<Expr> = gargs.iter().cloned().collect();
+        merged.extend(forwarded[1..].iter().cloned());
+        call("Graph", merged)
+      } else if let Some(Expr::FunctionCall { args: gargs, .. }) = &matrix_graph
+      {
         let mut merged: Vec<Expr> = gargs.iter().cloned().collect();
         merged.extend(forwarded[1..].iter().cloned());
         call("Graph", merged)
@@ -9668,74 +9671,7 @@ fn evaluate_function_call_ast_inner(
 
   // AdjacencyGraph[matrix] or AdjacencyGraph[vertices, matrix] — create graph from adjacency matrix
   if name == "AdjacencyGraph" && (args.len() == 1 || args.len() == 2) {
-    let (vertices, matrix) = if args.len() == 2 {
-      if let Expr::List(verts) = &args[0] {
-        (Some(verts.clone()), &args[1])
-      } else {
-        return Ok(unevaluated(name, args));
-      }
-    } else {
-      (None, &args[0])
-    };
-
-    if let Expr::List(rows) = matrix {
-      let n = rows.len();
-      let verts: Vec<Expr> = vertices
-        .unwrap_or_else(|| (1..=n).map(|i| Expr::Integer(i as i128)).collect())
-        .to_vec();
-
-      // Check if symmetric (undirected)
-      let mut is_symmetric = true;
-      let mut matrix_vals: Vec<Vec<i128>> = Vec::new();
-      for row in rows {
-        if let Expr::List(cols) = row {
-          let vals: Vec<i128> = cols
-            .iter()
-            .map(|c| match c {
-              Expr::Integer(v) => *v,
-              _ => 0,
-            })
-            .collect();
-          matrix_vals.push(vals);
-        }
-      }
-      for i in 0..n {
-        for j in 0..n {
-          if i < matrix_vals.len()
-            && j < matrix_vals[i].len()
-            && j < matrix_vals.len()
-            && i < matrix_vals[j].len()
-            && matrix_vals[i][j] != matrix_vals[j][i]
-          {
-            is_symmetric = false;
-          }
-        }
-      }
-
-      let mut edges = Vec::new();
-      let edge_name = if is_symmetric {
-        "UndirectedEdge"
-      } else {
-        "DirectedEdge"
-      };
-      for i in 0..n {
-        let start = if is_symmetric { i + 1 } else { 0 };
-        for j in start..n {
-          if i < matrix_vals.len()
-            && j < matrix_vals[i].len()
-            && matrix_vals[i][j] != 0
-          {
-            edges
-              .push(call(edge_name, vec![verts[i].clone(), verts[j].clone()]));
-          }
-        }
-      }
-
-      return Ok(call(
-        "Graph",
-        vec![Expr::List(verts.into()), Expr::List(edges.into())],
-      ));
-    }
+    return crate::functions::graph::adjacency_graph_ast(args);
   }
 
   // MovingAverage[list, r] — simple moving average with window size r.

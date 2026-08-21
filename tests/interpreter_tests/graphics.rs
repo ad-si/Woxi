@@ -21766,28 +21766,58 @@ mod manipulate {
   }
 
   // `{{u, colour, label}, colour}` is a colour control — wolframscript
-  // renders a `ColorSlider`. Woxi has no colour widget yet, so the variable
-  // is bound to its initial colour; the point of the test is that the rest
-  // of the Manipulate still builds. Regression: the unrecognised spec made
-  // `extract_manipulate_spec` give up, taking every other control with it.
+  // renders a full-gradient `ColorSlider` over it (there being only one
+  // possible value to alternate with is what makes the domain "any
+  // colour" rather than "one of these two" — see the 2-swatch case in
+  // `parse_manipulate_control`'s "Colour form" branch for the alternative).
+  // Regression: this shape used to make `extract_manipulate_spec` give up
+  // on the whole control (dropping every other control with it) and, once
+  // that was fixed, to silently bind the variable without ever building a
+  // widget for it.
   #[test]
-  fn colour_control_binds_without_killing_the_widget() {
+  fn colour_control_renders_a_color_slider() {
     let expr = woxi::interpret_to_expr(
       "Manipulate[{col, Disk[]}, {{n, 3, \"division\"}, 2, 20, 1}, \
        Control@{{col, Red, \"color\"}, Red}]",
     )
     .unwrap();
     let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
-    // The visible controls survive…
+    // Both the division slider and the colour control survive…
     match &spec.controls[..] {
-      [ManipulateControl::Continuous { name, .. }] => assert_eq!(name, "n"),
-      other => panic!("expected just the division slider, got {other:?}"),
+      [
+        ManipulateControl::Continuous { name: n, .. },
+        ManipulateControl::Color {
+          name: col, initial, ..
+        },
+      ] => {
+        assert_eq!(n, "n");
+        assert_eq!(col, "col");
+        // `Red` is itself `RGBColor[1, 0, 0]` once evaluated (see
+        // `manipulate_value_to_input_form`'s evaluate-then-format
+        // convention, shared by every other control kind's initial value).
+        assert_eq!(initial, "RGBColor[1, 0, 0]");
+      }
+      other => {
+        panic!("expected a slider and a colour control, got {other:?}")
+      }
     }
-    // …and the colour is in scope for the body at its initial value.
+    // …and the colour is in scope for the body at its initial value. A
+    // visible widget's initial value travels via `manipulate_initial_bindings`
+    // (installed at evaluation time through `with_scoped_globals`), unlike a
+    // `Fixed` control's value, which is baked directly into `body_code` as a
+    // `Block[...]` wrapper — there is no such wrapper here since `col` is a
+    // real widget, not a fixed constant.
+    let bindings = manipulate_initial_bindings(&spec);
+    assert!(
+      bindings
+        .iter()
+        .any(|(name, value)| name == "col" && value == "RGBColor[1, 0, 0]"),
+      "the colour binding is missing: {bindings:?}"
+    );
     let json = manipulate_spec_to_json(&spec);
     assert!(
-      json.contains("Block[{col = Red}"),
-      "the colour binding is missing: {json}"
+      json.contains(r#""kind":"color""#),
+      "the colour control must render as a widget: {json}"
     );
   }
 
