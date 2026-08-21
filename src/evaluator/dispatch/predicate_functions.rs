@@ -550,8 +550,14 @@ pub fn dispatch_predicate_functions(
       // Version 4, variant 1 — the bits RFC 4122 fixes for random UUIDs.
       bytes[6] = (bytes[6] & 0x0f) | 0x40;
       bytes[8] = (bytes[8] & 0x3f) | 0x80;
-      let hex: String =
-        bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
+      // Written out by hand rather than through `format!` per byte, which
+      // would allocate sixteen throwaway strings for one 32-character result.
+      const HEX: &[u8; 16] = b"0123456789abcdef";
+      let mut hex = String::with_capacity(32);
+      for byte in bytes {
+        hex.push(char::from(HEX[(byte >> 4) as usize]));
+        hex.push(char::from(HEX[(byte & 0x0f) as usize]));
+      }
       let uuid = format!(
         "{}-{}-{}-{}-{}",
         &hex[0..8],
