@@ -20019,4 +20019,146 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
       "moving the slider must redraw the picture"
     );
   }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook whose
+  /// whole body is one `Pane[Text@TraditionalForm@Column[…]]` of styled
+  /// `Row`s — a prose panel rather than a picture. Independently written, not
+  /// copied from any specific Demonstration: this one walks the odd squares
+  /// ring by ring, where that Demonstration walked Pythagorean triples.
+  ///
+  /// The body is stored as InputForm and re-evaluated on every control
+  /// change, and `TraditionalForm[…]` serializes into a `\!\(\*boxes\)`
+  /// escape — so this pins down that the escape reads back as the very
+  /// expression it was built from. It used to come back mangled three ways:
+  /// the `Column`'s list gained a level of nesting (doubled braces in the box
+  /// form), which flattened the whole panel onto one line; a string holding a
+  /// comma was re-read as bare source, so `"Odd squares, ring by ring "` came
+  /// back as a product of its words in alphabetical order; and a lone `","`
+  /// came back as `Null`.
+  #[test]
+  fn demonstration_prose_panel_manipulate_keeps_its_column_and_strings() {
+    let code = "Manipulate[\
+      Pane[\
+        Text@TraditionalForm@Column[{\
+          sqSide = 2 ringIdx + 1; sqArea = sqSide^2; \
+            sqRing = sqArea - (2 ringIdx - 1)^2; \
+            Row[{Style[\"Odd squares, ring by ring \", 12, \
+              RGBColor[0.2, 0.4, 0.8], Bold]}], \
+          \" \", \
+          Row[{Style[\"This square has side and area: \", 12, \
+              RGBColor[0.9, 0.6, 0.2], Bold], \
+            Style[{sqSide, sqArea}, Bold], \",\"}], \
+          Row[{Style[\"and the ring it adds is: \", 12, \
+              RGBColor[0.9, 0.6, 0.2], Bold], \
+            sqArea, \" - \", (2 ringIdx - 1)^2, \" = \", sqRing, \".\"}], \
+          Row[{Style[\"Its half-diagonal leans by \", 12, \
+              RGBColor[0.2, 0.4, 0.8], Bold], \
+            \" \\!\\(\\*SubscriptBox[\\(\\[Theta]\\), \\(1\\)]\\) = \", \
+            ArcTan[N[sqSide/(sqSide + 2)]], \" rad. = \", \
+            ArcTan[N[sqSide/(sqSide + 2)]]*180/Pi, \"\\[Degree]\", \".\"}]\
+        }], \
+        {600, 240}\
+      ], \
+      {{ringIdx, 1, \"ring index\"}, 1, 5000, 1, ImageSize -> Medium, \
+        Appearance -> \"Labeled\"}, \
+      TrackedSymbols -> True\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the prose-panel Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the typeset panel must render"
+    );
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the panel must render")
+    };
+    let first_ring = render(&state);
+
+    // A string carrying a comma stays one string rather than being re-read
+    // as source (which reordered its words), and a lone comma stays a comma
+    // rather than becoming `Null`.
+    assert!(
+      first_ring.contains("Odd squares, ring by ring"),
+      "the heading string must survive the box round trip verbatim"
+    );
+    assert!(
+      !first_ring.contains("Null"),
+      "the lone \",\" item must stay a comma, not become Null"
+    );
+    // `\!\(\*SubscriptBox[…]\)` inside a string still typesets as a subscript.
+    assert!(
+      first_ring.contains("baseline-shift=\"sub\""),
+      "the inline SubscriptBox must typeset as a subscript"
+    );
+    // The `Column` lays its items out stacked. Flattened onto one line the
+    // panel came out ~20px tall and many hundreds wide.
+    let dims = |svg: &str| {
+      let num = |attr: &str| {
+        svg
+          .split_once(attr)
+          .and_then(|(_, r)| r.split_once('"'))
+          .and_then(|(v, _)| v.parse::<f64>().ok())
+          .unwrap_or_default()
+      };
+      (num("width=\""), num("height=\""))
+    };
+    let (width, height) = dims(&first_ring);
+    assert!(
+      height > 80.0 && height < width,
+      "the Column must stack its rows, got {width}x{height}"
+    );
+
+    match &mut state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          step,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name.as_str(), "ringIdx");
+        assert_eq!(label.as_str(), "ring index");
+        assert_eq!(*min, 1.0);
+        assert_eq!(*max, 5000.0);
+        assert_eq!(*step, 1.0);
+        assert_eq!(*current, 1.0);
+        *current = 4.0;
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let fourth_ring = render(&state);
+    assert_ne!(
+      first_ring, fourth_ring,
+      "moving the slider must recompute the panel"
+    );
+    // Ring 4: side 9, area 81, and the ring it adds over the 7x7 square is 32.
+    assert!(
+      fourth_ring.contains(">81<") && fourth_ring.contains(">32<"),
+      "the recomputed panel must show the ring-4 numbers"
+    );
+  }
 }
