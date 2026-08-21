@@ -134,6 +134,26 @@ pub enum ControlState {
   },
   /// A `Delimiter` argument: a horizontal separator row. Binds no variable.
   Divider,
+  /// A `ControlType -> ColorSlider`/`ColorSetter` control: a hue-gradient
+  /// bar whose handle position (`0..1`) maps to `Hue[position]` at full
+  /// saturation/value. `ColorSetter` renders and behaves identically —
+  /// Wolfram draws it as the same widget, just click/tap-to-set — so both
+  /// spec forms produce this one control rather than a duplicate.
+  Color {
+    name: String,
+    label: String,
+    label_runs: Vec<LabelRun>,
+    /// The bound variable's current value, as InputForm. Starts as the
+    /// spec's literal initial color (kept exactly even when it isn't on
+    /// the hue gradient at all, e.g. `RGBColor[0, 0, 0]`); dragging the
+    /// slider overwrites it with `Hue[<position>]`.
+    current: String,
+    /// The slider handle's on-screen position in `0.0..=1.0` (the hue
+    /// fraction it was last dragged to). Purely cosmetic — defaults to
+    /// `0.0`, since the spec's initial color is usually not on the
+    /// gradient at all, without affecting `current`.
+    position: f64,
+  },
 }
 
 impl ControlState {
@@ -145,6 +165,7 @@ impl ControlState {
       ControlState::IntervalSlider { name, .. } => name,
       ControlState::Trigger { name, .. } => name,
       ControlState::Locator { name, .. } => name,
+      ControlState::Color { name, .. } => name,
       ControlState::Button { .. }
       | ControlState::Heading { .. }
       | ControlState::Divider => "",
@@ -194,6 +215,7 @@ impl ControlState {
       ControlState::Locator { points, .. } => {
         woxi::functions::graphics::format_point_list_input(points)
       }
+      ControlState::Color { current, .. } => current.clone(),
       // Annotation and button rows bind no variable; never substituted.
       ControlState::Button { .. }
       | ControlState::Heading { .. }
@@ -260,6 +282,9 @@ impl ControlState {
         {
           *points = new_points;
         }
+      }
+      ControlState::Color { current, .. } => {
+        *current = woxi::syntax::expr_to_input_form(&expr);
       }
       ControlState::Button { .. }
       | ControlState::Heading { .. }
@@ -619,6 +644,23 @@ impl ManipulateState {
     {
       *x = accepted.0;
       *y = accepted.1;
+    }
+  }
+
+  /// Move a ColorSlider/ColorSetter handle to a new hue `position`
+  /// (`0.0..=1.0`): updates the cosmetic handle position and rewrites the
+  /// bound variable to `Hue[position]` — the InputForm Wolfram's own color
+  /// control would bind after a drag (full saturation/value). No-op for
+  /// any other control kind at `ctrl_idx`.
+  pub fn color_change(&mut self, ctrl_idx: usize, position: f64) {
+    if let Some(ControlState::Color {
+      current,
+      position: pos,
+      ..
+    }) = self.controls.get_mut(ctrl_idx)
+    {
+      *pos = position;
+      *current = format!("Hue[{}]", format_f64(position));
     }
   }
 
@@ -1145,6 +1187,18 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         }
       }
       ManipulateControl::Divider => ControlState::Divider,
+      ManipulateControl::Color {
+        name,
+        initial,
+        label,
+        label_runs,
+      } => ControlState::Color {
+        name: name.clone(),
+        label: label.clone(),
+        label_runs: label_runs.clone(),
+        current: initial.clone(),
+        position: 0.0,
+      },
     })
     .collect()
 }
