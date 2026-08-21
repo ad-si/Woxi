@@ -875,7 +875,7 @@ fn nest_while_history(
 
 /// Extract the children of any expression in Wolfram canonical form.
 /// Returns None for atomic expressions (Integer, Real, String, Symbol).
-fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
+pub(crate) fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
   // Rational and Complex are atoms: Apply on them returns them unchanged.
   if crate::functions::predicate_ast::is_atomic_number(expr) {
     return None;

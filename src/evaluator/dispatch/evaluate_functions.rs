@@ -540,6 +540,100 @@ fn evaluate_function_call_ast_inner(
     other => other,
   };
 
+  // Every graph query/analysis function below documents its first argument
+  // as "a graph or a list of edges" (VertexList, EdgeList, the centrality
+  // measures, connectivity predicates, …) — Wolfram accepts a bare edge
+  // list anywhere a `Graph[...]` object is expected. Rather than teaching
+  // each of these functions to parse a bare edge list itself, normalize it
+  // once here through the same `Graph[edges] -> Graph[vertices, edges]`
+  // canonicalization `Graph` itself already performs.
+  const GRAPH_ARG_FUNCTIONS: &[&str] = &[
+    "AcyclicGraphQ",
+    "AdjacencyMatrix",
+    "BetweennessCentrality",
+    "ChromaticPolynomial",
+    "ClosenessCentrality",
+    "ConnectedComponents",
+    "ConnectedGraphComponents",
+    "ConnectedGraphQ",
+    "DegreeCentrality",
+    "DirectedGraphQ",
+    "EdgeAdd",
+    "EdgeBetweennessCentrality",
+    "EdgeContract",
+    "EdgeCount",
+    "EdgeDelete",
+    "EdgeList",
+    "EdgeQ",
+    "EdgeRules",
+    "EdgeTags",
+    "EigenvectorCentrality",
+    "EulerianGraphQ",
+    "FindMaximumFlow",
+    "FindSpanningTree",
+    "GraphComplement",
+    "GraphDisjointUnion",
+    "GraphDistance",
+    "GraphDistanceMatrix",
+    "GraphEmbedding",
+    "GraphPower",
+    "GraphReciprocity",
+    "IncidenceMatrix",
+    "IndexGraph",
+    "KatzCentrality",
+    "KirchhoffMatrix",
+    "LocalClusteringCoefficient",
+    "MixedGraphQ",
+    "MultigraphQ",
+    "PageRankCentrality",
+    "RadialityCentrality",
+    "TreeGraphQ",
+    "TuttePolynomial",
+    "UndirectedGraphQ",
+    "VertexAdd",
+    "VertexContract",
+    "VertexCount",
+    "VertexDegree",
+    "VertexDelete",
+    "VertexInDegree",
+    "VertexIndex",
+    "VertexList",
+    "VertexOutDegree",
+    "VertexQ",
+    "WeaklyConnectedComponents",
+    "WeaklyConnectedGraphQ",
+    "WeightedAdjacencyMatrix",
+    "WeightedGraphQ",
+  ];
+  if GRAPH_ARG_FUNCTIONS.contains(&name)
+    && let Some(Expr::List(items)) = args.first()
+    && !items.is_empty()
+    && let Ok(canonical) =
+      evaluate_function_call_ast("Graph", std::slice::from_ref(&args[0]))
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &canonical
+    && gname == "Graph"
+    && gargs.len() >= 2
+  {
+    let mut new_args = args.to_vec();
+    new_args[0] = canonical;
+    let result = evaluate_function_call_ast(name, &new_args)?;
+    // A result still headed by the same function name means it fell
+    // through to its own "can't handle this" case rather than computing an
+    // answer (e.g. `VertexInDegree[g, v]` for a `v` not in `g`). Echo back
+    // the caller's original bare edge list there instead of leaking this
+    // normalization's internal `Graph[...]` into the held result — Wolfram
+    // never surfaces it either.
+    if let Expr::FunctionCall { name: rname, .. } = &result
+      && rname == name
+    {
+      return Ok(unevaluated(name, args));
+    }
+    return Ok(result);
+  }
+
   // Thread Listable functions over list arguments
   let is_listable =
     is_builtin_listable(name) || crate::func_attrs_contains(name, "Listable");
