@@ -478,6 +478,60 @@ fn is_identifier_like(s: &str) -> bool {
   }
 }
 
+/// Load a context named alongside a package in
+/// `BeginPackage["A`", {"B`", …}]`, the way wolframscript's `BeginPackage`
+/// does — it calls `Needs` on each of them, so the file providing `B`` is
+/// read before `A``'s own definitions are. Without the read the context is
+/// only *named*, and every symbol the package expects from it is missing.
+///
+/// A context already loaded, or one that ships with the Wolfram Language
+/// (Woxi keeps every built-in in one namespace), needs no file.
+#[cfg(not(target_arch = "wasm32"))]
+fn load_needed_context(ctx: &str) -> Result<(), InterpreterError> {
+  if crate::utils::is_standard_distribution_context(ctx)
+    || crate::packages_list().iter().any(|pkg| pkg == ctx)
+  {
+    crate::register_package(ctx.to_string());
+    return Ok(());
+  }
+  use crate::evaluator::dispatch::io_functions::{
+    evaluate_file, resolve_get_target,
+  };
+  // The read file opens and closes its own package; `$ContextPath` is the
+  // caller's business, so put back whatever the file left behind.
+  let saved_path = crate::save_context_path();
+  let loaded = resolve_get_target(ctx).as_deref().and_then(evaluate_file);
+  crate::restore_context_path(saved_path);
+  match loaded {
+    Some(result) => {
+      result?;
+      if !crate::packages_list().iter().any(|pkg| pkg == ctx) {
+        crate::emit_message_to_stdout(&format!(
+          "Needs::nocont: Context {ctx} was not created when Needs was \
+           evaluated."
+        ));
+        crate::register_package(ctx.to_string());
+      }
+    }
+    None => {
+      crate::emit_message_to_stdout(&format!(
+        "Get::noopen: Cannot open {ctx}."
+      ));
+      crate::emit_message_to_stdout(&format!(
+        "Needs::nocont: Context {ctx} was not created when Needs was evaluated."
+      ));
+      crate::register_package(ctx.to_string());
+    }
+  }
+  Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn load_needed_context(ctx: &str) -> Result<(), InterpreterError> {
+  crate::register_package(ctx.to_string());
+  Ok(())
+}
+
 fn evaluate_function_call_ast_inner(
   name: &str,
   args: &[Expr],
@@ -1099,14 +1153,36 @@ fn evaluate_function_call_ast_inner(
                 .iter()
                 .filter(|d| d.is_none())
                 .count();
-              let should_default = if remaining_args <= remaining_required {
-                true
-              } else if let Some(head) = &param_heads[i] {
-                arg_idx < perm_args.len()
-                  && get_expr_head(&perm_args[arg_idx]) != *head
-              } else {
-                false
+              // An optional slot takes its default when there is nothing
+              // left for it, or when the next argument does not fit — by
+              // head, or by the pattern the slot records for itself.
+              // `f[t_, p : _Symbol?TypeQ : Base, rest_List : {}]` called as
+              // `f[t, {…}]` has to skip `p` rather than force `{…}` into it.
+              let arg_fits = |arg: &Expr| {
+                if let Some(head) = &param_heads[i]
+                  && get_expr_head(arg) != *head
+                {
+                  return false;
+                }
+                match conditions[i].as_ref() {
+                  Some(Expr::FunctionCall {
+                    name: marker,
+                    args: marker_args,
+                  }) if marker == "__StructuralPattern__"
+                    && marker_args.len() == 2 =>
+                  {
+                    crate::evaluator::pattern_matching::match_pattern(
+                      arg,
+                      &marker_args[1],
+                    )
+                    .is_some()
+                  }
+                  _ => true,
+                }
               };
+              let should_default = remaining_args <= remaining_required
+                || (arg_idx < perm_args.len()
+                  && !arg_fits(&perm_args[arg_idx]));
 
               if should_default {
                 let Some(resolved) =
@@ -1787,7 +1863,7 @@ fn evaluate_function_call_ast_inner(
         for item in items {
           if let Expr::String(extra) = item {
             path.push(extra.clone());
-            crate::register_package(extra.clone());
+            load_needed_context(extra)?;
           }
         }
       }

@@ -361,9 +361,84 @@ fn join_path(base: &str, sub: &str) -> String {
   )
 }
 
-/// Flatten Sequence[...] arguments into the parent function's argument list.
-/// In Wolfram Language, Sequence[a, b] appearing as an argument to f produces f[..., a, b, ...].
-/// Functions with the SequenceHold attribute suppress this.
+/// The `$`-prefixed variables the language itself defines. They are `System``
+/// symbols: mentioning `$Context` inside a package names the one the session
+/// has, never a `Ctx`Private`$Context` of its own. Every other `$`-name is an
+/// ordinary symbol and is filed in the context it is read in.
+pub const SYSTEM_VARIABLES: &[&str] = &[
+  "$Aborted",
+  "$Assumptions",
+  "$BaseDirectory",
+  "$BoxForms",
+  "$ByteOrdering",
+  "$CharacterEncoding",
+  "$CharacterEncodings",
+  "$CommandLine",
+  "$Context",
+  "$ContextAliases",
+  "$ContextPath",
+  "$DisplayFunction",
+  "$ExportFormats",
+  "$Failed",
+  "$GeoLocation",
+  "$HistoryLength",
+  "$HomeDirectory",
+  "$ImportFormats",
+  "$InitialDirectory",
+  "$Input",
+  "$InputFileName",
+  "$InstallationDirectory",
+  "$IterationLimit",
+  "$Line",
+  "$MachineEpsilon",
+  "$MachineName",
+  "$MachinePrecision",
+  "$MaxMachineNumber",
+  "$MaxPrecision",
+  "$MessageList",
+  "$Messages",
+  "$MinMachineNumber",
+  "$MinPrecision",
+  "$Notebooks",
+  "$OperatingSystem",
+  "$Output",
+  "$OutputForms",
+  "$Packages",
+  "$ParentProcessID",
+  "$Path",
+  "$PathnameSeparator",
+  "$PerformanceGoal",
+  "$PlotInteractivity",
+  "$PlotTheme",
+  "$PrintForms",
+  "$ProcessID",
+  "$ProcessorType",
+  "$RandomState",
+  "$RecursionLimit",
+  "$RootDirectory",
+  "$ScriptCommandLine",
+  "$SessionID",
+  "$SessionTime",
+  "$StandardErrorStream",
+  "$StandardOutputStream",
+  "$SystemCharacterEncoding",
+  "$SystemID",
+  "$SystemMemory",
+  "$SystemWordLength",
+  "$TemporaryDirectory",
+  "$TimeZone",
+  "$UserBaseDirectory",
+  "$UserDocumentsDirectory",
+  "$UserName",
+  "$Version",
+  "$VersionNumber",
+];
+
+/// Whether `name` is one of the language's own `$`-variables.
+pub fn is_system_variable_name(name: &str) -> bool {
+  SYSTEM_VARIABLES.contains(&name)
+}
+
 /// Look up system $ variables
 pub fn get_system_variable(name: &str) -> Option<Expr> {
   match name {
@@ -1432,6 +1507,9 @@ pub(crate) fn has_sequence_hold(name: &str) -> bool {
     || builtin.contains(&"HoldAllComplete")
 }
 
+/// Flatten Sequence[...] arguments into the parent function's argument list.
+/// In Wolfram Language, Sequence[a, b] appearing as an argument to f produces f[..., a, b, ...].
+/// Functions with the SequenceHold attribute suppress this.
 pub fn flatten_sequences<'a>(
   name: &str,
   args: &'a [Expr],

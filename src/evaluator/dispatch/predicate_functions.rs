@@ -530,6 +530,38 @@ pub fn dispatch_predicate_functions(
       }
       return Some(Ok(unevaluated("SymbolName", args)));
     }
+    // CreateUUID[] — a random RFC 4122 version-4 UUID as a string,
+    // `CreateUUID["prefix"]` the same with `prefix` in front. Used as an
+    // object identity by any package that keeps a symbol-keyed registry.
+    "CreateUUID" if args.is_empty() || args.len() == 1 => {
+      let prefix = match args.first() {
+        None => String::new(),
+        Some(Expr::String(prefix)) => prefix.clone(),
+        Some(_) => {
+          crate::emit_message(&format!(
+            "CreateUUID::string: String expected at position 1 in {}.",
+            crate::syntax::expr_to_string(&unevaluated("CreateUUID", args))
+          ));
+          return Some(Ok(unevaluated("CreateUUID", args)));
+        }
+      };
+      let mut bytes = [0u8; 16];
+      crate::with_rng(|rng| rand::RngCore::fill_bytes(rng, &mut bytes));
+      // Version 4, variant 1 — the bits RFC 4122 fixes for random UUIDs.
+      bytes[6] = (bytes[6] & 0x0f) | 0x40;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+      let hex: String =
+        bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
+      let uuid = format!(
+        "{}-{}-{}-{}-{}",
+        &hex[0..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..32]
+      );
+      return Some(Ok(Expr::String(format!("{prefix}{uuid}"))));
+    }
     // Unique[] - generate a unique symbol $nnn
     // Unique[x] - generate a unique symbol x$nnn
     // Unique["xxx"] - generate a unique symbol xxxnnn
@@ -1160,6 +1192,48 @@ pub fn dispatch_predicate_functions(
       }
       return Some(Ok(Expr::List(vec![].into())));
     }
+    // `Language`ExtendedFullDefinition[sym]` gathers every kind of
+    // definition attached to `sym` into one inert expression, which
+    // assigning back to another symbol installs there. Copying a symbol's
+    // whole behaviour onto a new one — `Language`ExtendedFullDefinition[b] =
+    // Language`ExtendedFullDefinition[a] /. a -> b` — is how object systems
+    // written in the Wolfram Language derive a type from a parent type.
+    "Language`ExtendedFullDefinition" if args.len() == 1 => {
+      let Expr::Identifier(sym) = &args[0] else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let mut sections: Vec<Expr> = Vec::new();
+      for head in DEFINITION_SECTIONS {
+        // Most section heads hold their argument, but `Options` does not:
+        // handed a symbol that owns a value it would report the options of
+        // that value (`Options[3]`). `Unevaluated` keeps the symbol itself
+        // as the subject, which is what a definition listing is about.
+        let subject = Expr::Identifier(sym.clone());
+        let subject = if crate::evaluator::core_eval::holds_argument_at(head, 0)
+        {
+          subject
+        } else {
+          call1("Unevaluated", subject)
+        };
+        let value = match crate::evaluator::evaluate_expr_to_expr(&call1(
+          head, subject,
+        )) {
+          Ok(value) => value,
+          Err(e) => return Some(Err(e)),
+        };
+        sections.push(Expr::Rule {
+          pattern: Box::new(Expr::Identifier((*head).to_string())),
+          replacement: Box::new(value),
+        });
+      }
+      return Some(Ok(call1(
+        "Language`DefinitionList",
+        Expr::Rule {
+          pattern: Box::new(call1("HoldForm", Expr::Identifier(sym.clone()))),
+          replacement: Box::new(Expr::List(sections.into())),
+        },
+      )));
+    }
     "UpValues" if args.len() == 1 => {
       if let Expr::Identifier(sym) = &args[0] {
         let up_defs = crate::UPVALUES
@@ -1387,9 +1461,19 @@ pub fn dispatch_predicate_functions(
       return Some(crate::functions::graph::graph_options_ast(args));
     }
     "Options" if args.len() == 1 || args.len() == 2 => {
-      let func_arg = match evaluate_expr_to_expr(&args[0]) {
-        Ok(v) => v,
-        Err(e) => return Some(Err(e)),
+      // `Options[Unevaluated[f]]` asks about `f` itself even when `f` owns
+      // a value: the wrapper marks the symbol as the subject, so it is
+      // unwrapped rather than evaluated through.
+      let func_arg = match &args[0] {
+        Expr::FunctionCall { name, args: held }
+          if name == "Unevaluated" && held.len() == 1 =>
+        {
+          held[0].clone()
+        }
+        subject => match evaluate_expr_to_expr(subject) {
+          Ok(v) => v,
+          Err(e) => return Some(Err(e)),
+        },
       };
       let func_name = match &func_arg {
         Expr::Identifier(name) => name.clone(),
@@ -2110,3 +2194,18 @@ fn known_contexts() -> Vec<String> {
   contexts.dedup();
   contexts
 }
+
+/// The kinds of definition `Language`ExtendedFullDefinition` carries, in the
+/// order they are installed: values first, then the option and message
+/// tables, and attributes last so a copied `Protected` cannot lock the
+/// symbol before the rest arrives.
+pub(crate) const DEFINITION_SECTIONS: &[&str] = &[
+  "OwnValues",
+  "DownValues",
+  "SubValues",
+  "UpValues",
+  "DefaultValues",
+  "Options",
+  "Messages",
+  "Attributes",
+];

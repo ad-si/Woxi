@@ -32,6 +32,21 @@ $ wo 'assoc = <|"a" -> True, "b" -> False|>; assoc[["b"]]'
 False
 ```
 
+Calling an association is a lookup, and a lookup composes: each result is
+itself callable, and the multi-argument form walks the same chain.
+
+```scrut
+$ wo 'a = <|"x" -> <|"y" -> 3|>|>; {a["x"]["y"], a["x", "y"]}'
+{3, 3}
+```
+
+A key no association holds reports itself:
+
+```scrut
+$ wo 'a = <|"x" -> <|"y" -> 3|>|>; a["x", "nope"]'
+Missing[KeyAbsent, nope]
+```
+
 
 ## Update Values
 

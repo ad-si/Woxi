@@ -203,10 +203,19 @@ pub fn short_name(full_name: &str) -> &str {
 /// to. Symbols that ship with the language are `System`` symbols and keep
 /// their short name, and so do the `$…` system variables.
 fn is_user_symbol(name: &str) -> bool {
-  if name.is_empty() || name.starts_with('$') {
+  // A `$`-prefixed name is a symbol like any other — `$state` written inside
+  // a package belongs to that package's private context, not to `Global``.
+  // The built-in check below is what keeps `$Context`, `$Path` and the rest
+  // of the system variables out of every context they are mentioned in.
+  if name.is_empty() {
     return false;
   }
-  if !name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '`') {
+  if !name
+    .starts_with(|c: char| c.is_ascii_alphabetic() || c == '`' || c == '$')
+  {
+    return false;
+  }
+  if crate::evaluator::listable::is_system_variable_name(short_name(name)) {
     return false;
   }
   // A pattern variable arrives with its blank suffix stripped, but a stray

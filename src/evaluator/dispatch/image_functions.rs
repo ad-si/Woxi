@@ -240,7 +240,7 @@ fn import_format_name(name: &str) -> Option<&'static str> {
     "PGM" => "pgm",
     "PBM" => "pbm",
     "PNM" => "pnm",
-    "Text" => "txt",
+    "Text" | "String" | "Plaintext" => "txt",
     _ => return None,
   })
 }
@@ -1284,7 +1284,12 @@ pub fn dispatch_image_functions(
         return Some(Ok(unevaluated("Import", args)));
       };
       let is_url = path.starts_with("http://") || path.starts_with("https://");
-      let ext = import_extension(&path);
+      let file_ext = import_extension(&path);
+      // A format named outright wins over the one the file name suggests:
+      // `Import["script.js", "Text"]` reads the file as text, whatever the
+      // extension would otherwise have dispatched to.
+      let ext = import_spec_format(&args[1])
+        .map_or_else(|| file_ext.clone(), ToString::to_string);
 
       // In the browser every non-URL path is served from the
       // host-registered virtual file store.
@@ -1424,7 +1429,7 @@ pub fn dispatch_image_functions(
       // `Import[f, {"CSV", elem}]` is `Import[f, elem]`. Without this the
       // format name would travel on as an element name that no importer
       // recognizes.
-      if import_spec_format(&args[1]) == Some(ext.as_str()) {
+      if import_spec_format(&args[1]) == Some(file_ext.as_str()) {
         let reduced: Vec<Expr> = match &args[1] {
           Expr::List(items) if items.len() > 1 => {
             let mut rest: Vec<Expr> = items.iter().skip(1).cloned().collect();

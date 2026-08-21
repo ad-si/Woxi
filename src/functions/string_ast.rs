@@ -31,7 +31,7 @@ fn compile_regex(pat: &str) -> Result<regex::Regex, regex::Error> {
     if let Some(re) = c.borrow().get(pat) {
       return Ok(re.clone());
     }
-    let re = Regex::new(pat)?;
+    let re = Regex::new(&relax_redundant_escapes(pat))?;
     let mut cache = c.borrow_mut();
     if cache.len() >= 256 {
       cache.clear();
@@ -39,6 +39,42 @@ fn compile_regex(pat: &str) -> Result<regex::Regex, regex::Error> {
     cache.insert(pat.to_string(), re.clone());
     Ok(re)
   })
+}
+
+/// Drop backslashes that escape a character needing no escape.
+///
+/// The Wolfram Language's `RegularExpression` is PCRE, where a backslash
+/// before any non-word character simply means that character — `\<`, `\!`
+/// and `\-` are all just themselves, and real-world patterns escape
+/// liberally (`"\\<\\!\\-\\-([^\\!|\\<|\\>]*)\\>"` for an HTML comment).
+/// Rust's regex crate rejects those escapes instead, so strip the backslash
+/// where it carries no meaning and keep it where it does: before an
+/// alphanumeric (`\d`, `\b`, `\Q`) or a genuine metacharacter.
+fn relax_redundant_escapes(pat: &str) -> String {
+  const MEANINGFUL: &str = "\\.^$*+?()[]{}|-";
+  let mut out = String::with_capacity(pat.len());
+  let mut chars = pat.chars();
+  while let Some(ch) = chars.next() {
+    if ch != '\\' {
+      out.push(ch);
+      continue;
+    }
+    match chars.next() {
+      None => out.push(ch),
+      Some(next)
+        if next.is_ascii_alphanumeric()
+          || next == '_'
+          || MEANINGFUL.contains(next) =>
+      {
+        out.push(ch);
+        out.push(next);
+      }
+      // A backslash before anything else is redundant in PCRE; Rust's
+      // regex would reject it, so pass the character through alone.
+      Some(next) => out.push(next),
+    }
+  }
+  out
 }
 
 /// Helper to extract a string from an Expr

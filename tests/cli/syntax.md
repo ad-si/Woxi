@@ -200,6 +200,37 @@ $ wo 'x = 0; Do[x++, {i, 1, 5}]; x'
 ```
 
 
+## Extraction and application in a chain (`a["k"][[1]]["j"]`)
+
+`[[...]]` and `[...]` alternate freely, so a nested association is walked in
+one expression.
+
+```scrut
+$ wo 'g = <|"e" -> {<|"d" -> 9|>}|>; g["e"][[1]]["d"]'
+9
+```
+
+The same holds for a slot, which is what sorting associations by a keyed
+field relies on.
+
+```scrut
+$ wo 'SortBy[{<|"pos" -> {3, 1}|>, <|"pos" -> {1, 2}|>}, #["pos"][[1]] &]'
+{<|pos -> {1, 2}|>, <|pos -> {3, 1}|>}
+```
+
+
+## A statement sequence closed by `&`
+
+A `&` with no statement between it and the preceding `;` turns everything
+before it into the body of a pure function, and that function takes the
+usual continuation — `stmt; & /@ list` is `(stmt;) & /@ list`.
+
+```scrut
+$ wo 'Module[{r = {}}, AppendTo[r, #^2]; & /@ {1, 2, 3}; r]'
+{1, 4, 9}
+```
+
+
 ## Part Assignment
 
 Assigning to a Part expression modifies the list in-place.

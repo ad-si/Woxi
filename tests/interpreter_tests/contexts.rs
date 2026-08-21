@@ -358,3 +358,141 @@ mod names_and_contexts {
     );
   }
 }
+
+/// A `$`-prefixed name is a symbol like any other: written inside a package
+/// it belongs to that package's context, not to `Global``. Only the system
+/// variables the language ships keep their one global identity. Issue #603.
+mod dollar_prefixed_symbols {
+  use super::*;
+
+  #[test]
+  fn a_dollar_name_in_a_package_stays_in_its_context() {
+    clear_state();
+    interpret(
+      "BeginPackage[\"DollarP`\"]\n\
+       dollarRead\n\
+       Begin[\"`Private`\"]\n\
+       $dollarState = 5\n\
+       dollarRead[] := $dollarState\n\
+       End[]\n\
+       EndPackage[]\n",
+    )
+    .unwrap();
+    assert_eq!(interpret("DollarP`dollarRead[]").unwrap(), "5");
+    assert_eq!(interpret("DollarP`Private`$dollarState").unwrap(), "5");
+    // The name outside the package is a different symbol, with no value.
+    assert_eq!(interpret("$dollarState").unwrap(), "$dollarState");
+  }
+
+  #[test]
+  fn two_packages_keep_their_own_dollar_state() {
+    clear_state();
+    for (context, value) in [("DollarA`", "1"), ("DollarB`", "2")] {
+      interpret(&format!(
+        "BeginPackage[\"{context}\"]\n\
+         Begin[\"`Private`\"]\n\
+         $shared = {value}\n\
+         End[]\n\
+         EndPackage[]\n"
+      ))
+      .unwrap();
+    }
+    assert_eq!(interpret("DollarA`Private`$shared").unwrap(), "1");
+    assert_eq!(interpret("DollarB`Private`$shared").unwrap(), "2");
+  }
+
+  #[test]
+  fn system_variables_keep_their_one_identity() {
+    clear_state();
+    interpret(
+      "BeginPackage[\"DollarSys`\"]\n\
+       dollarCtx\n\
+       Begin[\"`Private`\"]\n\
+       dollarCtx[] := $Context\n\
+       End[]\n\
+       EndPackage[]\n",
+    )
+    .unwrap();
+    assert_eq!(interpret("DollarSys`dollarCtx[]").unwrap(), "Global`");
+    assert_eq!(interpret("Head[$Version]").unwrap(), "String");
+  }
+}
+
+/// An upvalue is attached to the symbol its tag names, whatever the context
+/// path looks like when it is used later. Issue #603.
+mod upvalues_in_a_package {
+  use super::*;
+
+  #[test]
+  fn an_upvalue_defined_in_a_package_fires_by_full_name() {
+    clear_state();
+    interpret(
+      "BeginPackage[\"UpPkg`\"]\n\
+       upTag\n\
+       Begin[\"`Private`\"]\n\
+       upTag /: Keys[upTag] := {1, 2}\n\
+       End[]\n\
+       EndPackage[]\n",
+    )
+    .unwrap();
+    assert_eq!(interpret("Keys[UpPkg`upTag]").unwrap(), "{1, 2}");
+    assert_eq!(
+      interpret("ToString[UpValues[UpPkg`upTag], InputForm]").unwrap(),
+      "{HoldPattern[Keys[upTag]] :> {1, 2}}"
+    );
+    // Still found once the package is off `$ContextPath` — the rule is
+    // attached to the symbol, not to the name it currently reads as.
+    interpret("$ContextPath = {\"System`\", \"Global`\"}").unwrap();
+    assert_eq!(interpret("Keys[UpPkg`upTag]").unwrap(), "{1, 2}");
+  }
+}
+
+/// `BeginPackage["A`", {"B`"}]` reads `B`` before `A``'s own definitions,
+/// the way wolframscript's `BeginPackage` calls `Needs` on each context it
+/// is given. Issue #603.
+mod begin_package_needs_its_extras {
+  use super::*;
+
+  /// Write a one-file paclet providing `context`, and return its directory.
+  fn write_paclet(name: &str, context: &str, body: &str) -> String {
+    let base = std::env::temp_dir().join(format!("woxi_ctx_{name}"));
+    std::fs::remove_dir_all(&base).ok();
+    std::fs::create_dir_all(base.join("Kernel")).unwrap();
+    std::fs::write(
+      base.join("PacletInfo.wl"),
+      format!(
+        "PacletObject[<|\"Name\" -> \"{name}\", \"Version\" -> \"1.0.0\", \
+         \"Extensions\" -> {{{{\"Kernel\", \"Root\" -> \"Kernel\", \
+         \"Context\" -> {{\"{context}\"}}}}}}|>]\n"
+      ),
+    )
+    .unwrap();
+    std::fs::write(
+      base.join("Kernel").join(format!("{name}.wl")),
+      format!(
+        "BeginPackage[\"{context}\"]\n{}\nBegin[\"`Private`\"]\n{body}\n\
+         End[]\nEndPackage[]\n",
+        body.split('[').next().unwrap_or("")
+      ),
+    )
+    .unwrap();
+    base.display().to_string().replace('\\', "/")
+  }
+
+  #[test]
+  fn a_named_context_is_loaded_not_merely_listed() {
+    clear_state();
+    let dir = write_paclet("BpDep", "BpDep`", "bpDepValue[] := 41");
+    assert_eq!(
+      interpret(&format!(
+        "PacletDirectoryLoad[\"{dir}\"]\n\
+         BeginPackage[\"BpUser`\", {{\"BpDep`\"}}]\n\
+         bpUse[] := bpDepValue[] + 1\n\
+         EndPackage[]\n\
+         BpUser`bpUse[]"
+      ))
+      .unwrap(),
+      "42"
+    );
+  }
+}

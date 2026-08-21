@@ -14476,3 +14476,63 @@ mod to_expression_definitions {
     );
   }
 }
+
+// `RegularExpression` is PCRE, where a backslash before a non-word
+// character simply means that character — `\<`, `\!` and `\%` are all just
+// themselves, and real-world patterns escape liberally. Regression tests
+// for <https://github.com/ad-si/Woxi/issues/603>.
+mod regular_expression_redundant_escapes {
+  use super::*;
+
+  #[test]
+  fn a_backslash_before_a_plain_character_is_dropped() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"StringReplace["a<b", RegularExpression["\\<"] -> "-"]"#)
+        .unwrap(),
+      "a-b"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["50%", RegularExpression["\\d+\\%"]]"#)
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringCases["a!b", RegularExpression["\\!"]]"#).unwrap(),
+      "{!}"
+    );
+  }
+
+  #[test]
+  fn a_backslash_that_means_something_is_kept() {
+    clear_state();
+    // `\.` still matches only a literal dot, not any character.
+    assert_eq!(
+      interpret(r#"StringCases["a.b", RegularExpression["a\\.b"]]"#).unwrap(),
+      "{a.b}"
+    );
+    assert_eq!(
+      interpret(r#"StringCases["axb", RegularExpression["a\\.b"]]"#).unwrap(),
+      "{}"
+    );
+    // …and `\d` still means a digit rather than the letter `d`.
+    assert_eq!(
+      interpret(r#"StringCases["a1d", RegularExpression["\\d"]]"#).unwrap(),
+      "{1}"
+    );
+  }
+
+  // The pattern that motivated this: an HTML comment, escaped throughout.
+  #[test]
+  fn a_liberally_escaped_pattern_compiles() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"StringCases["x<!--hi-->y",
+             RegularExpression["\\<\\!\\-\\-([^\\!|\\<|\\>]*)\\>"]]"#
+      )
+      .unwrap(),
+      "{<!--hi-->}"
+    );
+  }
+}
