@@ -3539,7 +3539,15 @@ pub fn reconstruct_list_downvalue(
     return None;
   }
   let mut display_body = body.clone();
-  let mut guards: Vec<Expr> = Vec::new();
+  // The rule's own `/;` guard, which lives past the end of `params`. It talks
+  // about the destructured elements by name, so it needs the same
+  // `Part[_lp, i]` un-substitution the body does.
+  let mut guards: Vec<Expr> = conditions
+    .iter()
+    .skip(params.len())
+    .flatten()
+    .cloned()
+    .collect();
   let mut pattern_args: Vec<Expr> = Vec::with_capacity(params.len());
   for (i, p) in params.iter().enumerate() {
     let cond = conditions.get(i).and_then(|c| c.as_ref());
@@ -3548,7 +3556,7 @@ pub fn reconstruct_list_downvalue(
       for (path, name) in &part_names {
         let name_expr = Expr::Identifier(name.clone());
         display_body = replace_subexpr(&display_body, path, &name_expr);
-        for gg in &mut g {
+        for gg in guards.iter_mut().chain(g.iter_mut()) {
           *gg = replace_subexpr(gg, path, &name_expr);
         }
       }

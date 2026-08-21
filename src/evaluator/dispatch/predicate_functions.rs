@@ -1139,17 +1139,19 @@ pub fn dispatch_predicate_functions(
                     )
                   })
                   .collect();
-                (args, body.clone())
+                // A rule's `/;` guard has no parameter slot of its own; put
+                // it back on the body so the rule prints — and replays
+                // through `DownValues[f] = …` — as it was written. The
+                // list-pattern reconstruction above does this itself, having
+                // to un-substitute the guard's element accessors first.
+                let guarded =
+                  crate::evaluator::assignment::attach_trailing_guards(
+                    params,
+                    conds,
+                    body.clone(),
+                  );
+                (args, guarded)
               });
-            // A `/;` guard with no parameter slot of its own lives past the
-            // end of `params`; put it back on the body so the rule prints —
-            // and replays through `DownValues[f] = …` — as it was written.
-            let display_body =
-              crate::evaluator::assignment::attach_trailing_guards(
-                params,
-                conds,
-                display_body,
-              );
             Expr::RuleDelayed {
               pattern: Box::new(Expr::FunctionCall {
                 name: "HoldPattern".to_string(),
