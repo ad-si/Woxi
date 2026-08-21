@@ -3339,15 +3339,25 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
   if !functions::graphics::is_style_wrapper(name) || args.len() < 2 {
     return expr;
   }
-  let inner_name = match &args[0] {
-    syntax::Expr::FunctionCall { name: inner, .. } => inner.as_str(),
+  // Look through pass-through display wrappers (`Text[…]`, `Pane[…]`, …) to
+  // find the Column/Row underneath — a Demonstration's Manipulate body
+  // commonly styles the whole display as `Style[Text[Column[{…}]], size]`,
+  // not a bare `Style[Column[{…}], size]`. Without this the Style wrapper
+  // never matched, so neither this pass nor the plain Column/Row passes
+  // below recognized the expression, and the entire body fell back to its
+  // unevaluated text echo instead of rendering at all.
+  let inner = unwrap_display_pass_through(&args[0]);
+  let inner_name = match &inner {
+    syntax::Expr::FunctionCall {
+      name: inner_name, ..
+    } => inner_name.as_str(),
     _ => return expr,
   };
   if !matches!(inner_name, "Column" | "Row") {
     return expr;
   }
   let Some(styled) =
-    functions::graphics::style_pushed_into_layout(&args[0], &args[1..])
+    functions::graphics::style_pushed_into_layout(&inner, &args[1..])
   else {
     return expr;
   };
