@@ -7,6 +7,19 @@ $ wo 'Head[GraphPlot[{1 -> 2, 2 -> 3, 3 -> 1}]]'
 Graphics
 ```
 
+A square matrix is taken directly as an adjacency matrix — symmetric
+matrices give undirected edges, anything else gives directed edges:
+
+```scrut
+$ wo 'Head[GraphPlot[{{0, 1, 0}, {1, 0, 1}, {0, 1, 0}}]]'
+Graphics
+```
+
+```scrut
+$ wo 'Head[GraphPlot[{{0, 1, 0}, {0, 0, 1}, {1, 0, 0}}]]'
+Graphics
+```
+
 `Method` names the embedding to lay the vertices out with —
 `"CircularEmbedding"` puts all of them on one circle, even when the graph
 falls apart into separate pieces:
