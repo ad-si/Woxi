@@ -3760,6 +3760,13 @@ const SETTER_BAR_MAX_COMPACT_CHOICES: usize = 10;
 /// to sit in a long SetterBar.
 const SETTER_BAR_COMPACT_LABEL_CHARS: usize = 3;
 
+/// Width, on top of the label column, reserved for a control panel placed
+/// beside the output by `ControlPlacement -> Left`/`Right`. The rows inside
+/// it are `Fill`, so without a fixed width the panel would claim half the
+/// cell and squeeze the graphic; this leaves room for a draggable slider
+/// plus its value readout.
+const SIDE_PANEL_CONTROL_WIDTH: f32 = 230.0;
+
 /// Whether a discrete control's choices render as a segmented SetterBar (a row
 /// of toggle buttons) rather than a dropdown.
 ///
@@ -4409,7 +4416,9 @@ fn render_manipulate_widget<'a>(
   // AnimationRunning -> True). It stays visible under Appearance -> None so
   // the animation can still be paused. A Trigger control renders its own
   // toggle in its row, so the widget-level one would be redundant.
-  if state.animated && !(show_controls && state.has_trigger()) {
+  let show_play_toggle =
+    state.animated && !(show_controls && state.has_trigger());
+  if show_play_toggle {
     let symbol = if state.playing { "❚❚" } else { "▶" };
     let play_btn = button(text(symbol).size(11))
       .padding([3, 10])
@@ -4452,13 +4461,48 @@ fn render_manipulate_widget<'a>(
 
   // Extra display elements (e.g. a Checkbox grid) sit above the rendered
   // body output; each interactive checkbox emits a write-back on toggle.
-  let mut widget_col = column![controls_col].spacing(6);
+  let mut body_col = Column::new().spacing(6).width(Fill);
   for tree in &state.display_trees {
-    widget_col = widget_col.push(render_display_node(cell_idx, tree));
+    body_col = body_col.push(render_display_node(cell_idx, tree));
   }
-  widget_col = widget_col.push(output_col);
+  body_col = body_col.push(output_col);
 
-  container(widget_col).padding(6).width(Fill).into()
+  // `ControlPlacement` decides which side the panel sits on. A widget that
+  // ended up with no panel rows at all (`Appearance -> None` with nothing to
+  // play) stacks instead, so a side placement cannot reserve an empty gutter
+  // next to the graphic.
+  let panel_is_empty = !show_play_toggle
+    && !visible_controls
+      .iter()
+      .enumerate()
+      .any(|(i, _)| state.control_is_visible.get(i).copied().unwrap_or(true));
+  let placement = if panel_is_empty {
+    manipulate::ControlPlacement::Top
+  } else {
+    state.control_placement
+  };
+  let side_width =
+    iced::Length::Fixed(label_col_width + SIDE_PANEL_CONTROL_WIDTH);
+  let widget: Element<Message> = match placement {
+    manipulate::ControlPlacement::Top => {
+      column![controls_col, body_col].spacing(6).into()
+    }
+    manipulate::ControlPlacement::Bottom => {
+      column![body_col, controls_col].spacing(6).into()
+    }
+    manipulate::ControlPlacement::Left => {
+      row![controls_col.width(side_width), body_col]
+        .spacing(12)
+        .into()
+    }
+    manipulate::ControlPlacement::Right => {
+      row![body_col, controls_col.width(side_width)]
+        .spacing(12)
+        .into()
+    }
+  };
+
+  container(widget).padding(6).width(Fill).into()
 }
 
 /// Recursively render a Manipulate display-element widget tree into iced.
@@ -20661,5 +20705,116 @@ SaveDefinitions -> True]";
       fourth_ring.contains(">81<") && fourth_ring.contains(">32<"),
       "the recomputed panel must show the ring-4 numbers"
     );
+  }
+
+  /// A rotationally symmetric emblem Manipulate: a filled disk with a white
+  /// disk punched out of it (leaving a ring) and an n-pointed star inside,
+  /// driven by five `ImageSize -> Tiny` sliders with the control panel asked
+  /// to sit beside the square graphic. Two things the category depends on:
+  /// the orientation slider's upper bound is `Dynamic[…]` over the point
+  /// count, so widening the star narrows the rotation range, and the body
+  /// opens by clamping that same control back inside the new range — a write
+  /// to one of the widget's own variables. This mirrors the general
+  /// construct category used by parameterized-logo Wolfram Demonstrations
+  /// Project notebooks (independently written, not copied from any specific
+  /// one).
+  #[test]
+  fn manipulate_emblem_dynamic_bound_clamps_and_places_controls_left() {
+    let code = r#"Manipulate[
+      If[rot > 360/pts, rot = 360/pts];
+      Graphics[{
+        {Disk[], White, Disk[{0, 0}, ring]},
+        Polygon[Table[
+          With[{a = (rot + 90 + j 180/pts + If[OddQ[j], skew, 0]) Degree},
+            If[EvenQ[j], 1, waist] ring {Cos[a], Sin[a]}],
+          {j, 0, 2 pts - 1}]]
+      }, ImageSize -> {400, 400}],
+      {{pts, 3, "points"}, 3, 24, 1, ImageSize -> Tiny},
+      {{waist, 0.14, "sharpness"}, 0, 1, ImageSize -> Tiny},
+      {{skew, 0, "twist"}, 0, 360, ImageSize -> Tiny},
+      {{ring, 0.94, "thickness"}, 0, 1, ImageSize -> Tiny},
+      {{rot, 0, "orientation"}, 0, Dynamic[360/pts], ImageSize -> Tiny},
+      ControlPlacement -> Left,
+      AutorunSequencing -> {1, 2, 3, 4}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("five Tiny sliders should build a ManipulateState");
+
+    assert_eq!(
+      state.control_placement,
+      manipulate::ControlPlacement::Left,
+      "ControlPlacement -> Left must survive into the widget state"
+    );
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["pts", "waist", "skew", "ring", "rot"]);
+
+    // The orientation slider's range is one full sector at the starting
+    // three points: 360/3.
+    let bounds = |s: &manipulate::ManipulateState| match &s.controls[4] {
+      manipulate::ControlState::Continuous {
+        min, max, current, ..
+      } => (*min, *max, *current),
+      other => panic!("orientation should be a slider: {other:?}"),
+    };
+    assert_eq!(bounds(&state), (0.0, 120.0, 0.0));
+
+    let ring_3 = star_points(&state);
+    // Three points, so six polygon vertices alternating long and short.
+    assert_eq!(
+      ring_3.matches(',').count(),
+      6,
+      "star should have 6 vertices: {ring_3}"
+    );
+
+    // Rotate all the way round the sector, then raise the point count: the
+    // bound follows `pts` down to 360/24 and the body's clamp pulls the
+    // orientation in with it.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[4]
+    {
+      *current = 120.0;
+    }
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 24.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert_eq!(
+      bounds(&state),
+      (0.0, 15.0, 15.0),
+      "the Dynamic bound must follow the point count and clamp the value"
+    );
+
+    let ring_24 = star_points(&state);
+    assert_eq!(
+      ring_24.matches(',').count(),
+      48,
+      "24 points should give 48 vertices: {ring_24}"
+    );
+  }
+
+  /// The `points="…"` attribute of the polygon a Manipulate's body draws at
+  /// its current control values.
+  fn star_points(state: &manipulate::ManipulateState) -> String {
+    let bindings: Vec<(String, String)> = state
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .collect();
+    let svg = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("body evaluates")
+    .graphics
+    .expect("body should render a graphic");
+    svg
+      .split_once("<polygon points=\"")
+      .and_then(|(_, r)| r.split_once('"'))
+      .map(|(pts, _)| pts.to_string())
+      .unwrap_or_else(|| panic!("no polygon in rendered SVG: {svg}"))
   }
 }

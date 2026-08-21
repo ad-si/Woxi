@@ -17002,6 +17002,37 @@ pub struct ManipulateSpec {
   /// choices, TrackingFunction -> (a = #; t = 0; &)}`). Controls with no
   /// `TrackingFunction` option do not appear here.
   pub tracking: Vec<(String, String)>,
+  /// `ControlPlacement -> Top | Bottom | Left | Right`: which side of the
+  /// output the control panel sits on. Wolfram's default is `Top`; a
+  /// Demonstration with a large square graphic and several short sliders
+  /// usually asks for `Left` so the controls run down beside the picture
+  /// instead of pushing it off screen.
+  pub control_placement: ControlPlacement,
+}
+
+/// Where a Manipulate's control panel sits relative to its output, from the
+/// widget-level `ControlPlacement` option. A `ControlPlacement` given inside
+/// an individual control spec places just that control in Wolfram; Woxi keeps
+/// one panel, so those are ignored and only the widget-level option applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ControlPlacement {
+  #[default]
+  Top,
+  Bottom,
+  Left,
+  Right,
+}
+
+impl ControlPlacement {
+  fn from_symbol(name: &str) -> Option<Self> {
+    match name {
+      "Top" => Some(Self::Top),
+      "Bottom" => Some(Self::Bottom),
+      "Left" => Some(Self::Left),
+      "Right" => Some(Self::Right),
+      _ => None,
+    }
+  }
 }
 
 /// Result of parsing a single list-shaped Manipulate argument.
@@ -17179,6 +17210,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut fixed: Vec<(String, String)> = Vec::new();
   let mut appearance_none = false;
   let mut tracked_symbols: Option<Vec<String>> = None;
+  let mut control_placement = ControlPlacement::default();
   // Compound (non-symbol) control variables such as `Subscript[signal, 1]`
   // cannot be bound by name; each is renamed to a synthesized plain symbol,
   // and every occurrence in the body (and related code fragments) is
@@ -17306,6 +17338,14 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "None")
       {
         appearance_none = true;
+      }
+      // `ControlPlacement -> Left` runs the control panel down the side of
+      // the output instead of above it.
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlPlacement")
+        && let Expr::Identifier(side) = replacement.as_ref()
+        && let Some(placement) = ControlPlacement::from_symbol(side)
+      {
+        control_placement = placement;
       }
       // `AnimationRunning -> False` builds the widget paused.
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
@@ -17745,6 +17785,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     appearance_none,
     tracked_symbols,
     tracking,
+    control_placement,
   })
 }
 
@@ -18912,6 +18953,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     appearance_none: false,
     tracked_symbols: None,
     tracking: Vec::new(),
+    control_placement: ControlPlacement::default(),
   })
 }
 
@@ -18994,6 +19036,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     appearance_none: false,
     tracked_symbols: None,
     tracking: Vec::new(),
+    control_placement: ControlPlacement::default(),
   })
 }
 
@@ -19070,6 +19113,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     appearance_none: false,
     tracked_symbols: None,
     tracking: Vec::new(),
+    control_placement: ControlPlacement::default(),
   })
 }
 
@@ -19122,6 +19166,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     appearance_none: false,
     tracked_symbols: None,
     tracking: Vec::new(),
+    control_placement: ControlPlacement::default(),
   })
 }
 
@@ -19185,6 +19230,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     appearance_none: false,
     tracked_symbols: None,
     tracking: Vec::new(),
+    control_placement: ControlPlacement::default(),
   })
 }
 
@@ -23293,5 +23339,80 @@ mod manipulate_reversed_range_tests {
     assert_eq!(min, 0.01);
     assert_eq!(max, 2.0);
     assert_eq!(initial, 1.3);
+  }
+}
+
+#[cfg(test)]
+mod manipulate_control_placement_tests {
+  use super::*;
+
+  fn placement(code: &str) -> ControlPlacement {
+    let expr = crate::parse_to_expr(code).expect("parse");
+    extract_manipulate_spec(&expr)
+      .expect("extract spec")
+      .control_placement
+  }
+
+  /// Wolfram's default is `Top`, so a Manipulate that says nothing about
+  /// placement keeps its controls above the output.
+  #[test]
+  fn placement_defaults_to_top() {
+    assert_eq!(
+      placement("Manipulate[Plot[Sin[a x], {x, 0, 6}], {{a, 1}, 1, 5}]"),
+      ControlPlacement::Top
+    );
+  }
+
+  /// Every side Wolfram accepts is recorded, not just the `Left` the
+  /// square-graphic Demonstrations ask for.
+  #[test]
+  fn every_placement_side_is_recorded() {
+    for (side, expected) in [
+      ("Top", ControlPlacement::Top),
+      ("Bottom", ControlPlacement::Bottom),
+      ("Left", ControlPlacement::Left),
+      ("Right", ControlPlacement::Right),
+    ] {
+      let code = format!(
+        "Manipulate[Plot[Sin[a x], {{x, 0, 6}}], {{{{a, 1}}, 1, 5}}, \
+         ControlPlacement -> {side}]"
+      );
+      assert_eq!(placement(&code), expected, "ControlPlacement -> {side}");
+    }
+  }
+
+  /// A `ControlPlacement` naming something Wolfram does not accept leaves
+  /// the default standing rather than failing the whole extraction.
+  #[test]
+  fn unknown_placement_keeps_the_default() {
+    assert_eq!(
+      placement(
+        "Manipulate[Plot[Sin[a x], {x, 0, 6}], {{a, 1}, 1, 5}, \
+         ControlPlacement -> Sideways]"
+      ),
+      ControlPlacement::Top
+    );
+  }
+
+  /// `ControlPlacement` written inside a single control spec is Wolfram's
+  /// per-control form. Woxi keeps one panel, so that spec is still a
+  /// perfectly good slider and the widget keeps the default placement.
+  #[test]
+  fn per_control_placement_leaves_the_widget_default() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[Plot[Sin[a x], {x, 0, 6}], \
+       {a, 1, 5, ControlPlacement -> Bottom}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(
+      spec
+        .controls
+        .iter()
+        .map(ManipulateControl::name)
+        .collect::<Vec<_>>(),
+      vec!["a"]
+    );
+    assert_eq!(spec.control_placement, ControlPlacement::Top);
   }
 }

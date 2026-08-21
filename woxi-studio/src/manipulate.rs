@@ -8,6 +8,7 @@
 //! that free control variables are substituted.
 
 use iced::widget::svg;
+pub use woxi::functions::graphics::ControlPlacement;
 use woxi::functions::graphics::{
   DisplayNode, LabelRun, ManipulateControl, ManipulateSpec,
   apply_manipulate_mutations, build_manipulate_display, extract_animator_spec,
@@ -332,6 +333,9 @@ pub struct ManipulateState {
   /// `Appearance -> None`: hide the control rows (the animation just runs);
   /// the play/pause toggle stays visible for animated widgets.
   pub appearance_none: bool,
+  /// `ControlPlacement -> …`: which side of the output the control panel
+  /// sits on. `Top` (Wolfram's default) stacks the controls above it.
+  pub control_placement: ControlPlacement,
   /// `TrackedSymbols :> {…}`: the variables whose change re-runs the body.
   /// A control bound to any other variable still moves, but the rendering
   /// waits for a tracked variable to change. `None` tracks everything.
@@ -440,6 +444,7 @@ impl ManipulateState {
       // unless the spec was built paused (`AnimationRunning -> False`).
       playing: spec.animated && spec.animation_running,
       appearance_none: spec.appearance_none,
+      control_placement: spec.control_placement,
       tracked_symbols: spec.tracked_symbols,
       animation_var: spec.animation_var,
       tracking: spec.tracking,
