@@ -20019,4 +20019,144 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
       "moving the slider must redraw the picture"
     );
   }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// illustrating the lever principle: two weights sit at adjustable
+  /// distances from a pivot, and the beam tilts one way or the other
+  /// depending on which side has the greater torque. Independently
+  /// written, not copied from any specific Demonstration: this version
+  /// draws the beam as a `Rectangle` swinging about the fulcrum and the
+  /// weights as `Disk`s sized by cube root of mass, rather than the
+  /// original's particular shapes and layout.
+  ///
+  /// The case worth pinning down is a `Sign`-driven tilt angle feeding a
+  /// nested `Rotate` (rotating the weights around the pivot by the same
+  /// angle that rotates the beam and background ticks around the origin),
+  /// combined with `Manipulate` sliders whose `Appearance -> "Labeled"`
+  /// labels are `Style[Row[{Subscript[...], " unit"}]]` expressions and
+  /// `SaveDefinitions -> True` so the widget works without the definition
+  /// cell having run first.
+  #[test]
+  fn demonstration_seesaw_manipulate_tilts_toward_heavier_torque() {
+    let def = "seesaw[wl_, wr_, dl_, dr_, opts___] := Graphics[{\
+Gray, Thickness[0.01], Line[{{0, 3}, {0, -6}}], Line[{{-3, -6}, {3, -6}}], \
+Black, PointSize[Large], Point[{0, 0}], \
+Rotate[{Black, Thickness[0.004], \
+Table[Line[{{n, 0.3}, {n, -0.3}}], {n, -8, 8, 1}], \
+Rotate[{Disk[{-dl, -1}, (0.04 wl)^(1/3)], Line[{{-dl, 0}, {-dl, -1}}], \
+Text[Style[wl, 12, White], {-dl, -1}]}, \
+Sign[wl dl - wr dr] (Pi/6), {-dl, 0}], \
+Rotate[{Disk[{dr, -1}, (0.04 wr)^(1/3)], Line[{{dr, 0}, {dr, -1}}], \
+Text[Style[wr, 12, White], {dr, -1}]}, \
+Sign[wl dl - wr dr] (Pi/6), {dr, 0}]}, \
+-Sign[wl dl - wr dr] (Pi/6), {0, 0}]}, opts, \
+PlotRange -> {{-9, 9}, {-7, 4}}]";
+    let manip = "Manipulate[\
+seesaw[wl, wr, dl, dr, ImageSize -> {500, 320}], \
+{{wl, 4, Style[Row[{Subscript[\"w\", \"l\"], \" kg\"}]]}, 1, 10, 1, \
+Appearance -> \"Labeled\"}, \
+{{wr, 2, Style[Row[{Subscript[\"w\", \"r\"], \" kg\"}]]}, 1, 10, 1, \
+Appearance -> \"Labeled\"}, \
+{{dl, 3, Style[Row[{Subscript[\"d\", \"l\"], \" m\"}]]}, 1, 8, 1, \
+Appearance -> \"Labeled\"}, \
+{{dr, 6, Style[Row[{Subscript[\"d\", \"r\"], \" m\"}]]}, 1, 8, 1, \
+Appearance -> \"Labeled\"}, \
+TrackedSymbols :> {wl, wr, dl, dr}, ControlPlacement -> Top, \
+SaveDefinitions -> True]";
+
+    assert!(
+      woxi::interpret(def).is_ok(),
+      "the seesaw definition must evaluate cleanly"
+    );
+
+    let mut state = instantiate_stored_manipulate(manip, "")
+      .expect("the seesaw Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the beam and both weights must render"
+    );
+
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: wl_name,
+          min: wl_min,
+          max: wl_max,
+          step: wl_step,
+          current: wl_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: wr_name,
+          current: wr_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: dl_name,
+          current: dl_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: dr_name,
+          current: dr_now,
+          ..
+        },
+      ] => {
+        assert_eq!(wl_name.as_str(), "wl");
+        assert_eq!(wr_name.as_str(), "wr");
+        assert_eq!(dl_name.as_str(), "dl");
+        assert_eq!(dr_name.as_str(), "dr");
+        assert_eq!(*wl_min, 1.0);
+        assert_eq!(*wl_max, 10.0);
+        assert_eq!(*wl_step, 1.0);
+        assert_eq!(*wl_now, 4.0);
+        assert_eq!(*wr_now, 2.0);
+        assert_eq!(*dl_now, 3.0);
+        assert_eq!(*dr_now, 6.0);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the seesaw must render")
+    };
+    // Balanced: wl * dl == wr * dr == 12, so torque sign is zero and the
+    // beam stays level.
+    let balanced = render(&state);
+
+    match &mut state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          current: wl_now, ..
+        },
+        ..,
+      ] => {
+        *wl_now = 9.0;
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let tilted = render(&state);
+    assert_ne!(
+      balanced, tilted,
+      "raising the left weight's mass must tip the beam and redraw the picture"
+    );
+  }
 }
