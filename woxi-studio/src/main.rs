@@ -20817,4 +20817,111 @@ SaveDefinitions -> True]";
       .map(|(pts, _)| pts.to_string())
       .unwrap_or_else(|| panic!("no polygon in rendered SVG: {svg}"))
   }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// exploring 2D substitution systems: a block-replacement rule grows an
+  /// array by repeatedly splitting each cell into an `n x n` block chosen by
+  /// a rule number's binary digits, then rendering the array with
+  /// `ArrayPlot`. Independently written, not copied from any specific
+  /// Demonstration: this version names its variables differently and states
+  /// the block-splitting rule as a direct `Partition`/`IntegerDigits` build
+  /// rather than the original's particular helper functions.
+  ///
+  /// The construct worth pinning down is a *discrete* control given as
+  /// `{{u, uinit, ulbl}, {v1, v2}}` (a `SetterBar` between exactly two block
+  /// sizes) feeding two other controls' `Dynamic` bounds: the rule-number
+  /// slider's upper bound is `2^(blockSize^2) - 1` and the steps slider's is
+  /// `If[blockSize == 2, 7, 5]` — both must track a *discrete* control's
+  /// value, not just another continuous slider, and both must re-clamp their
+  /// current value when the block size changes shrinks the range.
+  #[test]
+  fn demonstration_block_substitution_manipulate_tracks_setter_bar_bounds() {
+    let code = "Manipulate[\
+      ArrayPlot[\
+        Nest[\
+          ArrayFlatten[# /. {\
+            1 -> Partition[IntegerDigits[ruleNum, 2, blockSize^2], blockSize], \
+            0 -> Array[0 &, {blockSize, blockSize}]\
+          }] &, \
+          {{1}}, steps], \
+        Frame -> False], \
+      {{blockSize, 2, \"block size\"}, {2, 3}}, \
+      {{ruleNum, 11, \"rule number\"}, 0, 2^(blockSize^2) - 1, 1}, \
+      {{steps, 3, \"steps\"}, 0, If[blockSize == 2, 4, 2], 1}, \
+      AutorunSequencing -> {2, 3}]";
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a SetterBar plus two dynamically-bounded sliders should build a ManipulateState");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the ArrayPlot must render");
+
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["blockSize", "ruleNum", "steps"]);
+
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        values,
+        current_index,
+        ..
+      } => {
+        assert_eq!(values, &["2", "3"]);
+        assert_eq!(*current_index, 0, "block size should start at 2");
+      }
+      other => panic!("blockSize should be a discrete SetterBar: {other:?}"),
+    }
+
+    let bounds =
+      |s: &manipulate::ManipulateState, i: usize| match &s.controls[i] {
+        manipulate::ControlState::Continuous {
+          min, max, current, ..
+        } => (*min, *max, *current),
+        other => panic!("control {i} should be a slider: {other:?}"),
+      };
+    // Block size 2: rule number ranges over 2^4 - 1 = 15 values, steps over
+    // 0..4.
+    assert_eq!(bounds(&state, 1), (0.0, 15.0, 11.0));
+    assert_eq!(bounds(&state, 2), (0.0, 4.0, 3.0));
+
+    // Push both sliders to their current maxima, then switch the block size
+    // to 3: rule number's bound jumps to 2^9 - 1 = 511 (so 15 no longer
+    // clamps), while steps' bound drops to 2 (so 4 must clamp down to 2).
+    // The pre-clamp render (`reevaluate` evaluates the body against the raw,
+    // not-yet-clamped bindings before `apply_dynamic_bounds` runs) still sees
+    // `steps = 4` here rather than the old `7`, so it stays a cheap
+    // `blockSize = 3, steps = 4` grid (3^4 = 81 per side) instead of the
+    // `3^7`-per-side, ~4.8M-cell `ArrayPlot` the larger pre-switch value
+    // would force.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[1]
+    {
+      *current = 15.0;
+    }
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[2]
+    {
+      *current = 4.0;
+    }
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert_eq!(
+      bounds(&state, 1),
+      (0.0, 511.0, 15.0),
+      "the rule-number bound must follow the setter bar's block size"
+    );
+    assert_eq!(
+      bounds(&state, 2),
+      (0.0, 2.0, 2.0),
+      "the steps bound must shrink with block size 3 and clamp the value down from 4"
+    );
+  }
 }
