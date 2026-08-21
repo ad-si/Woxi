@@ -8359,6 +8359,19 @@ pub(crate) fn format_string_form(template: &str, values: &[Expr]) -> String {
   format_string_form_with(template, values, crate::syntax::expr_to_output)
 }
 
+/// Fill a message's template slots — the same `` `` `` / `` `n` ``
+/// placeholders `StringForm` uses, which is what a message text is.
+///
+/// A slot with no argument to fill it stays literal *and stays quiet*: the
+/// message being reported is the news, and `StringForm::sfr` on top of it
+/// would only describe the template.
+pub(crate) fn format_message_template(
+  template: &str,
+  values: &[Expr],
+) -> String {
+  format_slots(template, values, crate::syntax::expr_to_output, false)
+}
+
 /// `format_string_form`, rendering each substituted value with `fmt` instead
 /// of always using `OutputForm` text. A graphic's `PlotLabel ->
 /// StringForm["…", args]` typesets its arguments the same as everything
@@ -8368,6 +8381,17 @@ pub(crate) fn format_string_form_with(
   template: &str,
   values: &[Expr],
   fmt: impl Fn(&Expr) -> String,
+) -> String {
+  format_slots(template, values, fmt, true)
+}
+
+/// Substitute `` `` `` / `` `n` `` slots, warning with `StringForm::sfr` on
+/// an out-of-range one only when `warn` is set.
+fn format_slots(
+  template: &str,
+  values: &[Expr],
+  fmt: impl Fn(&Expr) -> String,
+  warn: bool,
 ) -> String {
   let mut result = String::new();
   let chars: Vec<char> = template.chars().collect();
@@ -8388,13 +8412,15 @@ pub(crate) fn format_string_form_with(
           // Out of range — keep the `` literal and warn.
           result.push('`');
           result.push('`');
-          crate::emit_message(&format!(
-            "StringForm::sfr: Item {} requested in \"{}\" out of \
-             range; {} items available.",
-            idx,
-            template,
-            values.len()
-          ));
+          if warn {
+            crate::emit_message(&format!(
+              "StringForm::sfr: Item {} requested in \"{}\" out of \
+               range; {} items available.",
+              idx,
+              template,
+              values.len()
+            ));
+          }
         }
         last_index = idx;
         i += 2;
@@ -8425,13 +8451,15 @@ pub(crate) fn format_string_form_with(
           result.push('`');
           result.extend(chars[num_start..end].iter());
           result.push('`');
-          crate::emit_message(&format!(
-            "StringForm::sfr: Item {} requested in \"{}\" out of \
-             range; {} items available.",
-            signed,
-            template,
-            values.len()
-          ));
+          if warn {
+            crate::emit_message(&format!(
+              "StringForm::sfr: Item {} requested in \"{}\" out of \
+               range; {} items available.",
+              signed,
+              template,
+              values.len()
+            ));
+          }
         }
         // Numbered placeholders also update last_index so the next `` is
         // relative to the most recent numbered reference.

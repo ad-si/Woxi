@@ -361,6 +361,21 @@ fn join_path(base: &str, sub: &str) -> String {
   )
 }
 
+/// The plain spelling of a system variable that also has a context-qualified
+/// name of its own.
+///
+/// `Get` records the file it is reading in `System`Private`$InputFileName`,
+/// and that is the name a package header reaches for to find its own
+/// directory (`$rubiDir = DirectoryName[System`Private`$InputFileName]` in
+/// Rubi, for one). Woxi keeps a single `$InputFileName`, so the qualified
+/// name reads through to it rather than coming back as an unbound symbol.
+pub fn system_variable_alias(name: &str) -> Option<&'static str> {
+  match name {
+    "System`Private`$InputFileName" => Some("$InputFileName"),
+    _ => None,
+  }
+}
+
 /// Flatten Sequence[...] arguments into the parent function's argument list.
 /// In Wolfram Language, Sequence[a, b] appearing as an argument to f produces f[..., a, b, ...].
 /// Functions with the SequenceHold attribute suppress this.

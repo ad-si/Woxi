@@ -2,6 +2,30 @@
 
 # Unreleased
 
+- A rule whose argument is itself a compound pattern keeps its `/;` guard.
+    `f[g[x_]] := body /; test` used to give the guard a phantom extra
+    parameter, so the rule demanded an argument the pattern never had and
+    stopped matching `f[g[1]]` altogether. A rule's guard now belongs to the
+    rule, which is also where `DownValues` shows it: `DownValues[f]` prints
+    (and replays through `DownValues[f] = …`) as
+    `HoldPattern[f[g[x_]]] :> body /; test` instead of dropping the guard.
+- `DownValues[f] = {}` clears `f`'s definitions. An empty list names no head,
+    and the assignment used to clear only the heads its rules mentioned — so
+    the idiomatic way to clear a symbol's DownValues did nothing.
+- `Get` returns the expression the file evaluated to, rather than re-reading
+    how that expression printed. Anything `OutputForm` does not spell back
+    exactly used to be silently corrupted: a file holding `{"a b", "c"}` came
+    back as `{a b, c}` — the product `a*b` — and a version string like
+    `"4.17.3.0"` as the real `0.`.
+- `System`Private`$InputFileName` names the file a `Get` is reading, like
+    `$InputFileName` does. It is the name a package header reads to find its
+    own directory (`$rubiDir = DirectoryName[System`Private`$InputFileName]`),
+    and coming back unbound took the rest of the header down with it.
+- A message fills `` `` `` template slots the way `StringForm` does, taking
+    its arguments in turn, instead of only the numbered `` `1` `` ones.
+    `LoadRules::inv = "Could not load file or section: ``"` reported the bare
+    backticks rather than the file it could not load.
+
 - A `FractionBox` in a prose cell keeps its grouping when Woxi Studio
     flattens it onto one line. A two-dimensional fraction says how it groups
     by being two-dimensional, so a compound numerator or denominator now

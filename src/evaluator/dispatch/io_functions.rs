@@ -649,6 +649,9 @@ pub(crate) fn evaluate_file(
 /// for whatever it read, be that a file or a command's output.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn evaluate_source(content: &str) -> Result<Expr, InterpreterError> {
+  // Drop any value a previous read left behind, so a fast path inside
+  // `interpret` that records nothing cannot be mistaken for this one's.
+  let _ = crate::take_program_value();
   // Use interpret to evaluate the content (handles all node types
   // including FunctionDefinition, Expression, etc.)
   let result_str = crate::interpret(content)?;
@@ -656,6 +659,13 @@ pub(crate) fn evaluate_source(content: &str) -> Result<Expr, InterpreterError> {
   // sentinel; as the value of `Get` it is the symbol `Null` again.
   if result_str == "\0" {
     return Ok(Expr::Identifier("Null".to_string()));
+  }
+  // Take the last statement's value as an expression tree. Re-parsing the
+  // printed form instead would quietly corrupt whatever does not survive
+  // `OutputForm`: a file holding `{"a b"}` would come back as `{a b}` — the
+  // product `a*b` — and `"4.17.3.0"` as the real `0.`.
+  if let Some(expr) = crate::take_program_value() {
+    return Ok(expr);
   }
   Ok(
     crate::syntax::string_to_expr(&result_str)
@@ -735,18 +745,17 @@ pub fn dispatch_io_functions(
           Ok(Expr::String(s)) => s.clone(),
           _ => "-- Message text not found --".to_string(),
         };
-        // Fill the `1`, `2`, ... template slots with the extra arguments
-        // (rendered in output form, so strings appear unquoted), matching
-        // wolframscript: Message[f::mymsg, 42] shows "Custom 42 here.".
-        let mut filled = text;
-        for (i, arg) in args[1..].iter().enumerate() {
-          let placeholder = format!("`{}`", i + 1);
-          if filled.contains(&placeholder) {
-            let shown =
-              crate::syntax::format_expr(arg, crate::syntax::ExprForm::Output);
-            filled = filled.replace(&placeholder, &shown);
-          }
-        }
+        // Fill the template slots with the extra arguments the way
+        // `StringForm` does — `` `` `` takes them in turn and `` `n` `` picks
+        // the nth — rendered in output form so strings appear unquoted:
+        // `Message[f::mymsg, 42]` shows "Custom 42 here.". A message whose
+        // slots outnumber its arguments keeps them literal, and unlike
+        // `StringForm` says nothing about it: the message being reported is
+        // the news, not the shape of its template.
+        let filled = crate::functions::string_ast::format_message_template(
+          &text,
+          &args[1..],
+        );
         // Route through emit_message so the message is captured (Check
         // reacts to user messages), respects Quiet/Off, participates in
         // General::stop suppression, and reaches the same stream as

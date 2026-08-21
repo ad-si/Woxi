@@ -432,6 +432,99 @@ mod get {
     assert_eq!(result, "7");
     std::fs::remove_file(path).ok();
   }
+
+  // Regression tests for #616: `Get` hands back the expression the file
+  // evaluated to, not a re-reading of how that expression printed. Anything
+  // `OutputForm` does not spell back exactly used to be silently corrupted.
+  #[test]
+  fn strings_survive_the_read() {
+    clear_state();
+    let path = write_temp("get_strings", "{\"a b\", \"c\"}");
+    let result =
+      interpret(&format!("ToString[Get[\"{path}\"], InputForm]")).unwrap();
+    assert_eq!(result, "{\"a b\", \"c\"}");
+    std::fs::remove_file(path).ok();
+  }
+
+  // A version string is not a number: re-parsing `4.17.3.0` used to make it
+  // the real `0.`, which is how Rubi's `PacletInfo.m` lost its version.
+  #[test]
+  fn dotted_version_string_survives_the_read() {
+    clear_state();
+    let path = write_temp(
+      "get_paclet",
+      "Paclet[Name -> \"R\", Version -> \"4.17.3.0\"]",
+    );
+    let result = interpret(&format!(
+      "ToString[Version /. List @@ Get[\"{path}\"], InputForm]"
+    ))
+    .unwrap();
+    assert_eq!(result, "\"4.17.3.0\"");
+    std::fs::remove_file(path).ok();
+  }
+
+  // The head of the value survives too — `List @@` needs a real `Paclet[…]`
+  // to take apart, not a symbol whose name happens to read like one.
+  #[test]
+  fn head_of_the_read_value_survives() {
+    clear_state();
+    let path = write_temp("get_head", "Paclet[Name -> \"R\"]");
+    let result = interpret(&format!("Head[Get[\"{path}\"]]")).unwrap();
+    assert_eq!(result, "Paclet");
+    std::fs::remove_file(path).ok();
+  }
+
+  // A file whose last statement is suppressed evaluates to `Null`.
+  #[test]
+  fn trailing_semicolon_reads_as_null() {
+    clear_state();
+    let path = write_temp("get_semicolon", "gsemiVar = {\"a b\"};");
+    assert_eq!(
+      interpret(&format!("ToString[Get[\"{path}\"], InputForm]")).unwrap(),
+      "Null"
+    );
+    std::fs::remove_file(path).ok();
+  }
+
+  // A nested `Get` must not leave its own value behind as the outer one's.
+  #[test]
+  fn nested_get_does_not_leak_its_value() {
+    clear_state();
+    let inner = write_temp("get_value_inner", "\"inner\"");
+    let outer =
+      write_temp("get_value_outer", &format!("Get[\"{inner}\"]; \"outer\""));
+    assert_eq!(interpret(&format!("Get[\"{outer}\"]")).unwrap(), "outer");
+    std::fs::remove_file(inner).ok();
+    std::fs::remove_file(outer).ok();
+  }
+
+  // Regression test for #616: `System`Private`$InputFileName` is the name a
+  // package header reads to find its own directory, and it names the file
+  // being read just as `$InputFileName` does.
+  #[test]
+  fn qualified_input_file_name_names_the_read_file() {
+    clear_state();
+    let path = write_temp(
+      "get_qualified_ifn",
+      "getQualifiedIfn = System`Private`$InputFileName;",
+    );
+    let result = interpret(&format!(
+      "Get[\"{path}\"]; SameQ[getQualifiedIfn, \"{path}\"]"
+    ))
+    .unwrap();
+    assert_eq!(result, "True");
+    std::fs::remove_file(path).ok();
+  }
+
+  // Outside a read it is the empty string, the same as `$InputFileName`.
+  #[test]
+  fn qualified_input_file_name_is_empty_outside_a_read() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[System`Private`$InputFileName, InputForm]").unwrap(),
+      "\"\""
+    );
+  }
 }
 
 mod directory {

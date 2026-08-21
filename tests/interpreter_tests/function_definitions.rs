@@ -455,6 +455,78 @@ mod down_values {
       "{HoldPattern[h[x_, 1]] :> x, HoldPattern[h[x_, y_]] :> x + y}"
     );
   }
+
+  // Regression test for #616: a rule whose argument is itself a compound
+  // pattern used to lose its `/;` guard to a phantom extra parameter, so
+  // `f[g[x_]] := body /; test` stopped matching `f[g[1]]` at all — the whole
+  // shape Rubi's rule base is written in.
+  #[test]
+  fn guarded_rule_with_a_structural_argument_fires() {
+    clear_state();
+    assert_eq!(
+      interpret("q[Sin[x_]] := big[x] /; x > 3; q[Sin[5]]").unwrap(),
+      "big[5]"
+    );
+  }
+
+  #[test]
+  fn guarded_rule_with_a_structural_argument_respects_its_guard() {
+    clear_state();
+    assert_eq!(
+      interpret("q[Sin[x_]] := big[x] /; x > 3; q[Sin[2]]").unwrap(),
+      "q[Sin[2]]"
+    );
+  }
+
+  // The guard belongs to the rule, so it shows up on the rule — not as an
+  // extra argument in the pattern.
+  #[test]
+  fn down_values_show_a_structural_rule_guard() {
+    clear_state();
+    assert_eq!(
+      interpret("q[Sin[x_]] := big[x] /; x > 3; DownValues[q]").unwrap(),
+      "{HoldPattern[q[Sin[x_]]] :> big[x] /; x > 3}"
+    );
+  }
+
+  // A guard on an ordinary parameter list prints on the rule too, rather
+  // than disappearing into a parameter's condition slot.
+  #[test]
+  fn down_values_show_a_rule_guard_over_several_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret("q[a_, b_Symbol] := big[a] /; FreeQ[a, b]; DownValues[q]")
+        .unwrap(),
+      "{HoldPattern[q[a_, b_Symbol]] :> big[a] /; FreeQ[a, b]}"
+    );
+  }
+
+  // Reading DownValues out and putting them back keeps the rules working —
+  // Rubi rewrites its whole rule base that way (`DownValues[Int] =
+  // FixIntRules[DownValues[Int]]`).
+  #[test]
+  fn down_values_round_trip_through_assignment() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "q[Sin[x_]] := big[x] /; x > 3; DownValues[q] = DownValues[q];          {q[Sin[5]], q[Sin[2]]}"
+      )
+      .unwrap(),
+      "{big[5], q[Sin[2]]}"
+    );
+  }
+
+  // `DownValues[f] = {}` clears f, even though an empty list names no head
+  // of its own. Rubi's `ClearDownValues` is exactly this.
+  #[test]
+  fn assigning_an_empty_list_clears_down_values() {
+    clear_state();
+    assert_eq!(
+      interpret("q[x_] := x + 1; DownValues[q] = {}; {DownValues[q], q[1]}")
+        .unwrap(),
+      "{{}, q[1]}"
+    );
+  }
 }
 
 mod default_values {

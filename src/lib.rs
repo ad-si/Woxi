@@ -425,6 +425,27 @@ fn take_last_result_expr() -> Option<syntax::Expr> {
   LAST_RESULT_EXPR.with(|c| c.borrow_mut().take())
 }
 
+// The value of the last statement of the program `interpret` just ran, at
+// whatever nesting level it ran at. `LAST_RESULT_EXPR` above is deliberately
+// outermost-only — it answers "what did this cell produce?" — whereas `Get`
+// needs the value of the very file it is reading, however deeply nested that
+// read is.
+thread_local! {
+    static PROGRAM_VALUE: RefCell<Option<syntax::Expr>> = const { RefCell::new(None) };
+}
+
+/// Record (or clear) the value of the program `interpret` has just finished.
+fn set_program_value(expr: Option<syntax::Expr>) {
+  PROGRAM_VALUE.with(|c| *c.borrow_mut() = expr);
+}
+
+/// The value of the program `interpret` most recently ran, cleared on the
+/// way out so a later read cannot pick up a stale one. `None` when the
+/// program displayed nothing — a file ending in `;`, whose `Get` is `Null`.
+pub(crate) fn take_program_value() -> Option<syntax::Expr> {
+  PROGRAM_VALUE.with(|c| c.borrow_mut().take())
+}
+
 // Session start time for SessionTime[]
 static SESSION_START: std::sync::LazyLock<web_time::Instant> =
   std::sync::LazyLock::new(web_time::Instant::now);
@@ -2284,6 +2305,18 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     }
     stmt_idx += 1;
   }
+
+  // Hand the evaluated value of the final statement to whoever asked for
+  // this program's *value* rather than its printed form — `Get`, whose
+  // result is the last expression the file evaluated to. Recorded (and
+  // cleared) here, once every statement has run, so a nested `interpret`
+  // from inside the program cannot leave its own value behind.
+  set_program_value(match &last_result {
+    Some(StmtOutcome::Display(result_expr)) if !trailing_semicolon => {
+      Some(unwrap_top_level_return(result_expr).clone())
+    }
+    _ => None,
+  });
 
   // Deferred display pipeline: render/format only the value that becomes
   // the program's output (see the StmtOutcome comment above). A trailing

@@ -290,6 +290,10 @@ fn rule_positions_and_guards(
       }
     }
   }
+  // A whole-rule `/;` guard sits in a condition slot past the last position.
+  for cond in conditions.iter().skip(heads.len()).flatten() {
+    guards.push(cond.clone());
+  }
   if let Expr::FunctionCall { name, args } = body
     && name == "Condition"
     && args.len() == 2
@@ -956,7 +960,16 @@ fn set_attributes_from_value(
 /// wrappers are stripped) and replay it as an individual `lhs := rhs` so
 /// the rules get installed in FUNC_DEFS via the regular SetDelayed path.
 /// Iteration order is preserved (no specificity sorting), matching Wolfram.
-fn set_downvalues_from_rules(rhs: &Expr) -> Result<Expr, InterpreterError> {
+/// `clear_head` is the symbol whose values are being assigned, when the
+/// assignment replaces *that symbol's* own definitions — `DownValues[f] = …`.
+/// Its rules name the head themselves, so it is only needed for the case that
+/// carries none: `DownValues[f] = {}`, which has to clear `f` all the same.
+/// `DefaultValues[f] = …` passes `None`: its rules are `Default[f, …]` and
+/// belong to `Default`, not to `f`.
+fn set_downvalues_from_rules(
+  rhs: &Expr,
+  clear_head: Option<&str>,
+) -> Result<Expr, InterpreterError> {
   let rules: Vec<Expr> = match rhs {
     Expr::List(items) => items.to_vec(),
     other => vec![other.clone()],
@@ -964,6 +977,9 @@ fn set_downvalues_from_rules(rhs: &Expr) -> Result<Expr, InterpreterError> {
   // Collect the head symbols touched by these rules and clear their existing
   // FUNC_DEFS so the new list replaces (rather than augments) old definitions.
   let mut touched_heads: Vec<String> = Vec::new();
+  if let Some(head) = clear_head {
+    touched_heads.push(head.to_string());
+  }
   for rule in &rules {
     let (pat, _) = match rule {
       Expr::Rule {
@@ -1625,10 +1641,10 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   } = lhs
     && (func_name == "DownValues" || func_name == "SubValues")
     && lhs_args.len() == 1
-    && matches!(&lhs_args[0], Expr::Identifier(_))
+    && let Expr::Identifier(sym_name) = &lhs_args[0]
   {
     let rhs_value = evaluate_expr_to_expr(rhs)?;
-    return set_downvalues_from_rules(&rhs_value);
+    return set_downvalues_from_rules(&rhs_value, Some(sym_name));
   }
 
   // Handle DefaultValues[sym] = rules — same machinery as DownValues but
@@ -1645,7 +1661,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     && matches!(&lhs_args[0], Expr::Identifier(_))
   {
     let rhs_value = evaluate_expr_to_expr(rhs)?;
-    return set_downvalues_from_rules(&rhs_value);
+    return set_downvalues_from_rules(&rhs_value, None);
   }
 
   // Handle Messages[sym] = rules — replace all message DownValues for
@@ -2368,10 +2384,10 @@ pub fn set_delayed_ast(
   } = lhs
     && (func_name == "DownValues" || func_name == "SubValues")
     && lhs_args.len() == 1
-    && matches!(&lhs_args[0], Expr::Identifier(_))
+    && let Expr::Identifier(sym_name) = &lhs_args[0]
   {
     let rhs_value = evaluate_expr_to_expr(body)?;
-    set_downvalues_from_rules(&rhs_value)?;
+    set_downvalues_from_rules(&rhs_value, Some(sym_name))?;
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
@@ -2757,37 +2773,16 @@ pub fn set_delayed_ast(
       &blank_types,
     );
 
-    // If there's a body-level condition (from /;), attach it to a condition slot
+    // A body-level `/;` guard belongs to the whole rule, not to any one
+    // argument, so it gets a condition slot of its own past the end of
+    // `params` rather than borrowing a parameter's. Dispatch reads the
+    // conditions as a set (`conditions.iter().flatten()`), so the guard is
+    // checked either way; keeping it out of the parameter slots is what lets
+    // the rule print — and replay through `DownValues[f] = …` — carrying its
+    // guard, and what keeps it from being mistaken for a parameter the call
+    // has to supply an argument for.
     if let Some(body_cond) = body_condition_sub.as_ref() {
-      let mut attached = false;
-      for c in &mut conditions {
-        if c.is_none() {
-          *c = Some(body_cond.clone());
-          attached = true;
-          break;
-        }
-      }
-      if !attached && !conditions.is_empty() {
-        // All slots have conditions - combine with first non-structural-pattern using And
-        let combine_idx = conditions.iter().position(|c| {
-          !matches!(
-            c,
-            Some(Expr::FunctionCall { name, .. }) if name == "__StructuralPattern__"
-          )
-        });
-        if let Some(idx) = combine_idx {
-          let existing = conditions[idx].take().unwrap();
-          conditions[idx] =
-            Some(call("And", vec![existing, body_cond.clone()]));
-        } else {
-          // All conditions are structural patterns — append as extra condition
-          conditions.push(Some(body_cond.clone()));
-          params.push(String::new());
-          defaults.push(None);
-          heads.push(None);
-          blank_types.push(1);
-        }
-      }
+      conditions.push(Some(body_cond.clone()));
     }
 
     // Check if all args are literal (non-pattern) — if so, insert at beginning
@@ -3496,6 +3491,36 @@ pub fn downvalue_param_pattern(
     head: heads.get(i).and_then(std::clone::Clone::clone),
     blank_type: blank_types.get(i).copied().unwrap_or(1),
   }
+}
+
+/// Re-attach the guards a stored rule keeps in condition slots that no
+/// parameter answers to.
+///
+/// A rule's `/; test` guard is a property of the rule rather than of any one
+/// argument, so it is stored in a condition slot past the end of `params`.
+/// Reading those back is what lets a rule's printed form show the guard —
+/// `HoldPattern[f[g[x_]]] :> body /; test` — and so what lets `DownValues[f]`
+/// round-trip through `DownValues[f] = …` with its guards intact.
+pub fn attach_trailing_guards(
+  params: &[String],
+  conditions: &[Option<Expr>],
+  body: Expr,
+) -> Expr {
+  let mut guards: Vec<Expr> = conditions
+    .iter()
+    .skip(params.len())
+    .flatten()
+    .cloned()
+    .collect();
+  if guards.is_empty() {
+    return body;
+  }
+  let guard = if guards.len() == 1 {
+    guards.pop().unwrap()
+  } else {
+    call("And", guards)
+  };
+  call("Condition", vec![body, guard])
 }
 
 /// Rebuild a displayable DownValue (pattern args + body) for a stored rule that
