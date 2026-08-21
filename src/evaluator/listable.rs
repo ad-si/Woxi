@@ -1500,11 +1500,11 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
 /// SequenceHold semantics (Wolfram Language: HoldAllComplete = HoldAll
 /// + SequenceHold + ... ).
 pub(crate) fn has_sequence_hold(name: &str) -> bool {
-  let builtin = crate::evaluator::attributes::get_builtin_attributes(name);
-  builtin.contains(&"SequenceHold")
+  let builtin = attributes::get_builtin_attributes_mask(name);
+  builtin.contains(Attributes::SequenceHold)
     || crate::func_attrs_contains(name, "SequenceHold")
     || crate::func_attrs_contains(name, "HoldAllComplete")
-    || builtin.contains(&"HoldAllComplete")
+    || builtin.contains(Attributes::HoldAllComplete)
 }
 
 /// Flatten Sequence[...] arguments into the parent function's argument list.
