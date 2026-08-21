@@ -2236,3 +2236,62 @@ mod invalid_subject_messages {
     );
   }
 }
+
+// Calling an association is a lookup, and a lookup composes: each result
+// is itself callable, and the multi-argument form walks the same chain.
+// Regression tests for <https://github.com/ad-si/Woxi/issues/603>.
+mod association_lookup_chains {
+  use super::*;
+
+  #[test]
+  fn a_lookup_result_is_callable_again() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"a = <|"x" -> <|"y" -> 3|>|>; a["x"]["y"]"#).unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(r#"a = <|"x" -> <|"y" -> 3|>|>; a["x", "y"]"#).unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(r#"a = <|"x" -> <|"y" -> <|"z" -> 8|>|>|>; a["x", "y"]["z"]"#)
+        .unwrap(),
+      "8"
+    );
+  }
+
+  #[test]
+  fn a_missing_key_reports_itself_along_the_chain() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"a = <|"x" -> <|"y" -> 3|>|>; a["x", "nope"]"#).unwrap(),
+      "Missing[KeyAbsent, nope]"
+    );
+  }
+
+  // Arguments are flattened before the lookup, so a `Sequence` standing in
+  // for the key works exactly as the key itself would.
+  #[test]
+  fn a_sequence_argument_splices_into_the_lookup() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"a = <|"x" -> <|"y" -> 3|>|>; a[Sequence["x", "y"]]"#)
+        .unwrap(),
+      "3"
+    );
+  }
+
+  // A symbol holding an association can also carry downvalues. A call
+  // matching one of them is that definition's call, not a key lookup —
+  // only an unmatched call falls back to looking the argument up.
+  #[test]
+  fn a_downvalue_wins_over_the_stored_association() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"s = <|"a" -> 1|>; s[n_Integer] := n + 100; {s["a"], s[5]}"#)
+        .unwrap(),
+      "{1, 105}"
+    );
+  }
+}

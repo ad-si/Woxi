@@ -3090,10 +3090,16 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       // Repeated[…] / RepeatedNull[…] before the Pattern so e.g.
       // `s:0..` parses as `Pattern[s, Repeated[0]]` (Wolfram's binding)
       // rather than `Repeated[Pattern[s, 0]]`.
-      if let Some(suffix) = inner.next() {
+      let mut named_default: Option<Expr> = None;
+      for suffix in inner.by_ref() {
         let suffix_name = match suffix.as_rule() {
           Rule::RepeatedNullSuffix => "RepeatedNull",
           Rule::RepeatedSuffix => "Repeated",
+          // `name : body : default` — the slot may be omitted.
+          Rule::PatternNamedDefault => {
+            named_default = suffix.into_inner().next().map(pair_to_expr);
+            continue;
+          }
           _ => "",
         };
         if !suffix_name.is_empty() {
@@ -3102,6 +3108,19 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
             args: vec![body].into(),
           };
         }
+      }
+      if let Some(default) = named_default {
+        return Expr::FunctionCall {
+          name: "Optional".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Pattern".to_string(),
+              args: vec![Expr::Identifier(name), body].into(),
+            },
+            default,
+          ]
+          .into(),
+        };
       }
       if let Expr::FunctionCall {
         name: bn,
@@ -14579,6 +14598,15 @@ fn substitute_variables_impl(
       // Check if the function name itself is being substituted
       for &(var_name, value) in bindings {
         if name == var_name {
+          // A head that becomes a plain symbol is a call on that symbol,
+          // not a curried application of it — `s[k]` with `s` bound to `q`
+          // is `q[k]`, which is what carries `q`'s own definitions.
+          if let Expr::Identifier(head) = value {
+            return Expr::FunctionCall {
+              name: head.clone(),
+              args: new_args.into(),
+            };
+          }
           return Expr::CurriedCall {
             func: Box::new(value.clone()),
             args: new_args,

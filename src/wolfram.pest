@@ -824,7 +824,12 @@ PatternSimple = { PatternName? ~ PatternBlanks ~ !("_" | "?" | ".") }
 // where the body is any expression the pattern should match. Distinct
 // from `name_:default` (Optional with default) and `name::tag`
 // (MessageName); the negative lookaheads keep those forms intact.
-PatternNamed = { PatternName ~ ":" ~ !("=" | ">" | ":") ~ Term ~ PatternTestSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? }
+// A `: default` may follow, making the whole thing an `Optional`:
+// `parent : _Symbol?UTypeQ : UObject` is a tested slot that may be left out.
+// Without this the default is stranded after the `?test` suffix, since the
+// chained-colon reading below only works when nothing sits between them.
+PatternNamedDefault = { ":" ~ !("=" | ">" | ":") ~ Term }
+PatternNamed = { PatternName ~ ":" ~ !("=" | ">" | ":") ~ Term ~ PatternTestSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? ~ PatternNamedDefault? }
 Pattern = { PatternCondition | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalAnonBlank | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
 
 // Replacement rule: pattern -> replacement or pattern :> replacement (RuleDelayed)

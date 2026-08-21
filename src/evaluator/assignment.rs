@@ -778,7 +778,14 @@ fn normalize_structural_pattern(pattern: &Expr) -> Expr {
     return pattern.clone();
   }
   let with_placeholders = replace_patterns_with_placeholders(pattern, &vars);
-  match evaluate_expr_to_expr(&with_placeholders) {
+  // Canonicalizing is Woxi's own bookkeeping, not something the program
+  // asked for: `f[Module[vars_, body_]] := …` would otherwise evaluate
+  // `Module[<placeholder>, <placeholder>]` and report `Module::lvlist`
+  // about a local-variable list the source never wrote.
+  crate::push_quiet();
+  let evaluated = evaluate_expr_to_expr(&with_placeholders);
+  crate::pop_quiet();
+  match evaluated {
     Ok(evaluated) => {
       // Convert BinaryOp::Divide to canonical Times[..., Power[..., -1]] form
       // so that patterns match regardless of how the expression was written
@@ -915,6 +922,171 @@ fn set_attributes_from_value(
   });
 
   rhs_value.clone()
+}
+
+/// Install a `Language`DefinitionList` — what
+/// `Language`ExtendedFullDefinition[sym]` returns — replaying each section
+/// through the assignment that owns it (`DownValues[s] = …`,
+/// `Attributes[s] = …`, and so on), so nothing about how a definition is
+/// stored is duplicated here.
+fn set_extended_full_definition(
+  fallback: &str,
+  value: &Expr,
+) -> Result<(), InterpreterError> {
+  let entries: Vec<Expr> = match value {
+    Expr::FunctionCall { name, args } if name == "Language`DefinitionList" => {
+      args.to_vec()
+    }
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  for entry in entries {
+    let (target, sections) = match &entry {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (symbol_named_by(pattern, fallback), (**replacement).clone()),
+      _ => continue,
+    };
+    let Expr::List(section_rules) = &sections else {
+      continue;
+    };
+    // Install in the order `DEFINITION_SECTIONS` lists, not the order the
+    // list happens to carry, so attributes land last.
+    for head in
+      crate::evaluator::dispatch::predicate_functions::DEFINITION_SECTIONS
+    {
+      for section in section_rules.iter() {
+        let (Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        }) = section
+        else {
+          continue;
+        };
+        if !matches!(&**pattern, Expr::Identifier(n) if n == head) {
+          continue;
+        }
+        let section_lhs = Expr::FunctionCall {
+          name: (*head).to_string(),
+          args: vec![Expr::Identifier(target.clone())].into(),
+        };
+        set_ast(&section_lhs, replacement)?;
+      }
+    }
+  }
+  Ok(())
+}
+
+/// The symbol an entry of a `Language`DefinitionList` belongs to: the one
+/// its `HoldForm[sym] -> …` key names, or `fallback` when the key is not in
+/// that shape.
+fn symbol_named_by(key: &Expr, fallback: &str) -> String {
+  match key {
+    Expr::Identifier(name) => name.clone(),
+    Expr::FunctionCall { name, args }
+      if (name == "HoldForm" || name == "HoldPattern") && args.len() == 1 =>
+    {
+      symbol_named_by(&args[0], fallback)
+    }
+    _ => fallback.to_string(),
+  }
+}
+
+/// Remove every upvalue tagged on `sym`. Each rule lives in two places:
+/// `UPVALUES[sym]` (for introspection) and `FUNC_DEFS[outer_head]` (where
+/// dispatch looks), so both have to be dropped. Used by `UpValues[sym] =.`
+/// and by `UpValues[sym] = rules`, which replaces the list rather than
+/// adding to it.
+pub(crate) fn clear_upvalues_of(sym: &str) {
+  let Some(up_defs) = crate::UPVALUES.with(|m| m.borrow_mut().remove(sym))
+  else {
+    return;
+  };
+  for (outer_func, params, _conds, _defaults, _heads, body, _lhs, _rhs) in
+    &up_defs
+  {
+    let body_str = crate::syntax::expr_to_string(body);
+    crate::FUNC_DEFS.with(|m| {
+      if let Some(entry) = m.borrow_mut().get_mut(outer_func) {
+        entry.retain(|(p, _, _, _, _, b)| {
+          !(p == params && crate::syntax::expr_to_string(b) == body_str)
+        });
+      }
+    });
+  }
+}
+
+/// Install `rules` as the upvalues of `sym`, replaying each as
+/// `sym /: lhs := rhs` so the upvalue dispatch picks it up. This is what
+/// `UpValues[sym] = rules` does, and what makes copying one symbol's
+/// definitions onto another (`UpValues[b] = UpValues[a] /. a -> b`) work.
+fn set_upvalues_from_rules(
+  sym: &str,
+  value: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let rules: Vec<Expr> = match value {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  let tag = Expr::Identifier(sym.to_string());
+  // The assignment names the whole list, so what was there before goes.
+  clear_upvalues_of(sym);
+  for rule in &rules {
+    let (pattern, body) = match rule {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => ((**pattern).clone(), (**replacement).clone()),
+      _ => continue,
+    };
+    let pattern_lhs = match &pattern {
+      Expr::FunctionCall { name, args }
+        if name == "HoldPattern" && args.len() == 1 =>
+      {
+        args[0].clone()
+      }
+      other => other.clone(),
+    };
+    tag_set_delayed_ast(&tag, &pattern_lhs, &body, false)?;
+  }
+  Ok(Expr::Identifier("Null".to_string()))
+}
+
+/// Install `rules` as the own value of `sym` — the single
+/// `HoldPattern[sym] :> value` rule `OwnValues` reports.
+fn set_ownvalues_from_rules(
+  sym: &str,
+  value: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let rules: Vec<Expr> = match value {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  // The assignment names the whole list, so an empty one leaves the symbol
+  // with no own value at all.
+  crate::ENV.with(|e| e.borrow_mut().remove(sym));
+  for rule in &rules {
+    let replacement = match rule {
+      Expr::Rule { replacement, .. }
+      | Expr::RuleDelayed { replacement, .. } => (**replacement).clone(),
+      _ => continue,
+    };
+    set_ast(&Expr::Identifier(sym.to_string()), &replacement)?;
+  }
+  Ok(Expr::Identifier("Null".to_string()))
 }
 
 /// Helper for `DownValues[f] = rules` / `DownValues[f] := rules` (and the
@@ -1193,6 +1365,84 @@ fn flatten_times_chain(expr: &Expr) -> Vec<Expr> {
   }
 }
 
+/// Every symbol an assignment's left-hand side could carry upvalues under:
+/// the head at the bottom of its call/part chain — `UObject[sym]["key"]` is
+/// reached through `UObject` — and the symbols that head's arguments name,
+/// which is where `obj /: Set[f[obj], v_] := …` attaches.
+fn assignment_upvalue_tags(lhs: &Expr) -> Vec<String> {
+  let mut tags: Vec<String> = Vec::new();
+  let mut current = lhs;
+  loop {
+    match current {
+      Expr::Identifier(name) => {
+        tags.push(name.clone());
+        break;
+      }
+      Expr::FunctionCall { name, args } => {
+        tags.push(name.clone());
+        for arg in args.iter() {
+          let named = match arg {
+            Expr::Identifier(inner) => inner.clone(),
+            Expr::FunctionCall { name: inner, .. } => inner.clone(),
+            _ => continue,
+          };
+          if !tags.contains(&named) {
+            tags.push(named);
+          }
+        }
+        break;
+      }
+      Expr::CurriedCall { func, .. } => current = func,
+      Expr::Part { expr, .. } => current = expr,
+      _ => break,
+    }
+  }
+  tags
+}
+
+/// Try the upvalues an assignment's left-hand side carries.
+/// `sym /: Set[sym[k_], v_] := …` is how a package gives `obj[key] = value`
+/// a meaning of its own — the shape every object system written in the
+/// Wolfram Language uses for field assignment. The Wolfram Language
+/// consults these before carrying the assignment out; Woxi keeps `Set` and
+/// `SetDelayed` off the function-call path, so they are tried here.
+///
+/// `head` is `"Set"` or `"SetDelayed"`; `rhs` is what it is about to store.
+fn try_assignment_upvalue(
+  head: &str,
+  lhs: &Expr,
+  rhs: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let tags = assignment_upvalue_tags(lhs);
+  if tags.is_empty() {
+    return None;
+  }
+  let actual = Expr::FunctionCall {
+    name: head.to_string(),
+    args: vec![lhs.clone(), rhs.clone()].into(),
+  };
+  for tag in tags {
+    let Some(entries) = crate::UPVALUES.with(|m| m.borrow().get(&tag).cloned())
+    else {
+      continue;
+    };
+    for (outer_func, .., original_lhs, original_body) in &entries {
+      if outer_func != head {
+        continue;
+      }
+      if let Some(bindings) =
+        crate::evaluator::pattern_matching::match_pattern(&actual, original_lhs)
+      {
+        return Some(crate::evaluator::pattern_matching::apply_bindings(
+          original_body,
+          &bindings,
+        ));
+      }
+    }
+  }
+  None
+}
+
 pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   let lhs = &normalize_symbol_lhs(lhs);
   // Unwrap Condition on LHS: f[x_] /; test = body is parsed as
@@ -1212,6 +1462,11 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   let _alias_check = AliasCheck(
     assignment_target_symbol(lhs).is_some_and(|s| s == "$ContextAliases"),
   );
+
+  // An upvalue on `Set` claims the assignment before it is carried out.
+  if let Some(result) = try_assignment_upvalue("Set", lhs, rhs) {
+    return result;
+  }
 
   // Handle Entity property mutation: Entity["type", "name"]["property"] = value
   if let Expr::CurriedCall { func, args } = lhs
@@ -1603,6 +1858,51 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   {
     let rhs_value = evaluate_expr_to_expr(rhs)?;
     return set_downvalues_from_rules(&rhs_value);
+  }
+
+  // Handle `Language`ExtendedFullDefinition[sym] = defs` — install every
+  // kind of definition the `Language`DefinitionList` carries. Each entry
+  // names the symbol it belongs to, so `defs /. a -> b` retargets the whole
+  // set at `b`; the `sym` on the left is only a fallback for an entry that
+  // does not name one.
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "Language`ExtendedFullDefinition"
+    && lhs_args.len() == 1
+    && let Expr::Identifier(fallback) = &lhs_args[0]
+  {
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
+    set_extended_full_definition(fallback, &rhs_value)?;
+    return Ok(rhs_value);
+  }
+
+  // Handle UpValues[sym] = rules — replay each as `sym /: lhs := rhs`.
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "UpValues"
+    && lhs_args.len() == 1
+    && let Expr::Identifier(sym) = &lhs_args[0]
+  {
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
+    return set_upvalues_from_rules(sym, &rhs_value);
+  }
+
+  // Handle OwnValues[sym] = rules — the value the single rule carries
+  // becomes the symbol's value.
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "OwnValues"
+    && lhs_args.len() == 1
+    && let Expr::Identifier(sym) = &lhs_args[0]
+  {
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
+    return set_ownvalues_from_rules(sym, &rhs_value);
   }
 
   // Handle DefaultValues[sym] = rules — same machinery as DownValues but
@@ -2159,6 +2459,11 @@ pub fn set_delayed_ast(
   body: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let lhs = &normalize_symbol_lhs(lhs);
+  // An upvalue on `SetDelayed` claims the definition before it is stored —
+  // the delayed counterpart of the `Set` check in `set_ast`.
+  if let Some(result) = try_assignment_upvalue("SetDelayed", lhs, body) {
+    return result;
+  }
   // Early reject: `a + b := c` / `a * b := c` / `a^b := c` etc.
   // attempt to install DownValues on the corresponding built-in
   // (`Plus`, `Times`, `Power`, …) which are Protected.
@@ -2368,10 +2673,7 @@ pub fn set_delayed_ast(
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
-  // Handle UpValues[sym] := rules: replay each rule as a TagSetDelayed on
-  // `sym` so the upvalue dispatch (UPVALUES) picks them up. The tag is
-  // the symbol named by `sym`; each rule's pattern becomes the LHS of
-  // `sym /: lhs := rhs`.
+  // Handle UpValues[sym] := rules — same as `UpValues[sym] = rules`.
   if let Expr::FunctionCall {
     name: func_name,
     args: lhs_args,
@@ -2381,34 +2683,20 @@ pub fn set_delayed_ast(
     && let Expr::Identifier(sym) = &lhs_args[0]
   {
     let rhs_value = evaluate_expr_to_expr(body)?;
-    let rules: Vec<Expr> = match &rhs_value {
-      Expr::List(items) => items.to_vec(),
-      other => vec![other.clone()],
-    };
-    let tag = Expr::Identifier(sym.clone());
-    for rule in &rules {
-      let (pat, body) = match rule {
-        Expr::Rule {
-          pattern,
-          replacement,
-        }
-        | Expr::RuleDelayed {
-          pattern,
-          replacement,
-        } => ((**pattern).clone(), (**replacement).clone()),
-        _ => continue,
-      };
-      let pattern_lhs = match &pat {
-        Expr::FunctionCall { name, args }
-          if name == "HoldPattern" && args.len() == 1 =>
-        {
-          args[0].clone()
-        }
-        _ => pat.clone(),
-      };
-      tag_set_delayed_ast(&tag, &pattern_lhs, &body, false)?;
-    }
-    return Ok(Expr::Identifier("Null".to_string()));
+    return set_upvalues_from_rules(sym, &rhs_value);
+  }
+
+  // Handle OwnValues[sym] := rules — same as `OwnValues[sym] = rules`.
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "OwnValues"
+    && lhs_args.len() == 1
+    && let Expr::Identifier(sym) = &lhs_args[0]
+  {
+    let rhs_value = evaluate_expr_to_expr(body)?;
+    return set_ownvalues_from_rules(sym, &rhs_value);
   }
 
   if let Expr::FunctionCall {
@@ -2561,17 +2849,18 @@ pub fn set_delayed_ast(
             }
             // `Pattern[name, OptionsPattern[…]]` — named OptionsPattern
             // (e.g. `opt:OptionsPattern[]`) matches zero or more Rule
-            // arguments. Use the `__opts{i}` synthetic name so the
-            // option-bindings collector recognises it; the user-visible
-            // `name` is not currently bound (rare in practice — most
-            // bodies reach options via `OptionValue[…]`, not the bound
-            // sequence symbol).
+            // arguments. The slot keeps the `__opts{i}` synthetic name so
+            // the option-bindings collector recognises it, and the
+            // user-visible name is rewritten to that slot in the body, so
+            // `f[opts : OptionsPattern[]] := {opts}` splices the options
+            // it matched — the idiom for passing them on whole.
             Expr::FunctionCall {
               name: opn,
               args: op_args,
             } if opn == "OptionsPattern" => {
-              let _ = pname; // user-visible name not bound
               let param_name = format!("__opts{i}");
+              body_substitutions
+                .push((pname, Expr::Identifier(param_name.clone())));
               params.push(param_name);
               conditions.push(None);
               defaults.push(None);
@@ -3451,19 +3740,31 @@ pub fn downvalue_param_pattern(
   i: usize,
 ) -> Expr {
   let name = params.get(i).cloned().unwrap_or_default();
-  if name.starts_with("__sp")
-    && let Some(pattern) = conditions.iter().flatten().find_map(|c| match c {
-      Expr::FunctionCall { name: marker, args }
-        if marker == "__StructuralPattern__"
-          && args.len() == 2
-          && matches!(&args[0], Expr::Identifier(p) if *p == name) =>
-      {
-        Some(args[1].clone())
-      }
-      _ => None,
-    })
-  {
+  // A slot whose constraint could not be expressed as a head keeps the whole
+  // pattern in a `__StructuralPattern__` condition — `assoc : Except[_Symbol]
+  // ? AssociationQ` among them. Write that pattern back out, or the rule
+  // reads as an unconstrained `assoc_` and claims every call.
+  if let Some(pattern) = conditions.iter().flatten().find_map(|c| match c {
+    Expr::FunctionCall { name: marker, args }
+      if marker == "__StructuralPattern__"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Identifier(p) if *p == name) =>
+    {
+      Some(args[1].clone())
+    }
+    _ => None,
+  }) {
     return pattern;
+  }
+  // An options slot is stored under a synthetic `__opts{i}` name with a
+  // BlankNullSequence blank; written out as such it reads back as nonsense
+  // (`___opts0___`). Show it as the `name : OptionsPattern[]` it came from,
+  // which is also what re-installing the rule needs to see.
+  if name.starts_with("__opts") {
+    return call(
+      "Pattern",
+      vec![Expr::Identifier(name), call("OptionsPattern", Vec::new())],
+    );
   }
   Expr::Pattern {
     name,
@@ -3815,13 +4116,29 @@ pub fn tag_set_delayed_ast(
       if is_pattern {
         let (pat_name, head, _blank_type) = extract_pattern_info(arg);
         if pat_name.is_empty() && head.is_none() {
-          // Anonymous pattern — use generated name
           let param_name = format!("_up{i}");
+          if crate::evaluator::pattern_matching::contains_pattern(arg) {
+            // A structural pattern — `UObject[s_Symbol][k_String]` in
+            // `UObject /: Set[UObject[s_Symbol][k_String], v_] := …`. Store
+            // the pattern itself so dispatch matches against it and binds
+            // its variables; without it the slot would accept anything and
+            // the rule would claim every `Set`.
+            conditions.push(Some(call(
+              "__StructuralPattern__",
+              vec![
+                Expr::Identifier(param_name.clone()),
+                normalize_structural_pattern(arg),
+              ],
+            )));
+          } else {
+            // A bare `_` — no constraint to record.
+            conditions.push(None);
+          }
           params.push(param_name);
         } else {
           params.push(pat_name);
+          conditions.push(None);
         }
-        conditions.push(None);
         heads.push(head);
       } else {
         // Literal argument — must match exactly via SameQ

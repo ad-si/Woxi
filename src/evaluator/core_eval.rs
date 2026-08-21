@@ -1345,31 +1345,7 @@ pub fn evaluate_expr_to_expr_inner(
             && lhs_args.len() == 1
             && let Expr::Identifier(sym_name) = &lhs_args[0]
           {
-            let up_defs =
-              crate::UPVALUES.with(|m| m.borrow_mut().remove(sym_name));
-            if let Some(up_defs) = up_defs {
-              for (
-                outer_func,
-                params,
-                _conds,
-                _defaults,
-                _heads,
-                body,
-                _orig_lhs,
-                _orig_body,
-              ) in &up_defs
-              {
-                let body_str = crate::syntax::expr_to_string(body);
-                crate::FUNC_DEFS.with(|m| {
-                  if let Some(entry) = m.borrow_mut().get_mut(outer_func) {
-                    entry.retain(|(p, _, _, _, _, b)| {
-                      !(p == params
-                        && crate::syntax::expr_to_string(b) == body_str)
-                    });
-                  }
-                });
-              }
-            }
+            crate::evaluator::assignment::clear_upvalues_of(sym_name);
             return Ok(Expr::Identifier("Null".to_string()));
           }
           // Messages[sym] =. — Woxi has no per-symbol message storage
@@ -2640,11 +2616,35 @@ pub fn evaluate_expr_to_expr_inner(
         }
         // Check if name is a variable holding an association (for nested access: assoc["a", "b"])
         if let Some(StoredValue::Association(_)) = var_val {
-          // Evaluate arguments and perform nested access
+          // Evaluate arguments and perform nested access. A `Sequence[…]`
+          // among them splices first, the way it does for any other head —
+          // `f[k_, rest__] := assoc[k, rest]` reaches here with the
+          // sequence still wrapped.
           let evaluated_args: Vec<Expr> = args
             .iter()
             .map(evaluate_expr_to_expr)
             .collect::<Result<_, _>>()?;
+          let evaluated_args = crate::evaluator::listable::flatten_sequences(
+            name,
+            &evaluated_args,
+          );
+          // A definition written on the symbol takes precedence over the
+          // association it holds, the same way it does for a symbol holding
+          // anything else (`t = 1; t[x_] := x^2; t[3]` is 9). Objects built
+          // out of a symbol keep their fields as definitions and the symbol's
+          // own value as the key list; both have to stay reachable.
+          if crate::FUNC_DEFS.with(|m| m.borrow().contains_key(name)) {
+            let dispatched = evaluate_function_call_ast(name, &evaluated_args)?;
+            let untouched = Expr::FunctionCall {
+              name: name.clone(),
+              args: evaluated_args.to_vec().into(),
+            };
+            if crate::syntax::expr_to_string(&dispatched)
+              != crate::syntax::expr_to_string(&untouched)
+            {
+              return Ok(dispatched);
+            }
+          }
           return association_nested_access(name, &evaluated_args);
         }
 

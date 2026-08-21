@@ -10497,3 +10497,153 @@ mod command_file_specs {
     std::fs::remove_file(path).ok();
   }
 }
+
+// `Get` gained the file-searching, error-recovery and result-shape
+// behaviour that reading a real package tree needs. Regression tests for
+// <https://github.com/ad-si/Woxi/issues/603>.
+mod get_from_files {
+  use super::*;
+
+  /// A scratch directory inside the platform temp directory, emptied
+  /// first so a rerun never sees a previous run's files.
+  fn scratch(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(name);
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+  }
+
+  fn unix(path: &std::path::Path) -> String {
+    path.display().to_string().replace('\\', "/")
+  }
+
+  // A relative file name is searched for in the directories named by the
+  // `Path` option, and failing that in `$Path`.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn relative_names_are_searched_for() {
+    clear_state();
+    let dir = scratch("woxi_get_search_path");
+    std::fs::write(dir.join("searched.wl"), "x = 41;\nx + 1\n").unwrap();
+    let dir = unix(&dir);
+
+    assert_eq!(
+      interpret(&format!(r#"Get["searched.wl", Path -> {{"{dir}"}}]"#))
+        .unwrap(),
+      "42"
+    );
+
+    clear_state();
+    assert_eq!(
+      interpret(&format!(r#"$Path = {{"{dir}"}}; Get["searched.wl"]"#))
+        .unwrap(),
+      "42"
+    );
+  }
+
+  // A file that fails to parse must not abort the surrounding script:
+  // `Get` reports the problem and returns `$Failed`, and evaluation of the
+  // enclosing code carries on.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn a_broken_file_yields_failed_instead_of_aborting() {
+    clear_state();
+    let dir = scratch("woxi_get_broken");
+    std::fs::write(dir.join("broken.wl"), "x = 1;\n]\n").unwrap();
+    let file = unix(&dir.join("broken.wl"));
+
+    assert_eq!(
+      interpret(&format!(r#"{{Get["{file}"], 1 + 1}}"#)).unwrap(),
+      "{$Failed, 2}"
+    );
+  }
+
+  // The value of `Get` is the file's last expression as an expression —
+  // not its printed form parsed back, which loses everything that does not
+  // round-trip through `InputForm`.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn the_result_keeps_its_structure() {
+    clear_state();
+    let dir = scratch("woxi_get_structure");
+    std::fs::write(dir.join("value.wl"), "a = 1;\n<|\"k\" -> {1, 2, a}|>\n")
+      .unwrap();
+    let file = unix(&dir.join("value.wl"));
+
+    assert_eq!(
+      interpret(&format!(r#"r = Get["{file}"]; {{Head[r], r["k"]}}"#)).unwrap(),
+      "{Association, {1, 2, 1}}"
+    );
+  }
+
+  // A paclet's kernel file loads its implementation through
+  // `PacletManager`Package`loadWolframLanguageCode[paclet, context, root,
+  // file, opts…]`. Woxi has no lazy loading, so it reads `root/file`
+  // outright — either way the context exists afterwards.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn paclet_code_loads_through_the_package_manager() {
+    clear_state();
+    let dir = scratch("woxi_load_wl_code");
+    std::fs::create_dir_all(dir.join("Kernel")).unwrap();
+    std::fs::write(
+      dir.join("Kernel").join("code.wl"),
+      "MyPkg`greet[] := \"hi\"\n",
+    )
+    .unwrap();
+    let root = unix(&dir);
+
+    assert_eq!(
+      interpret(&format!(
+        r#"PacletManager`Package`loadWolframLanguageCode["MyPkg", "MyPkg`",
+             "{root}", "Kernel/code.wl", "AutoUpdate" -> True];
+           MyPkg`greet[]"#
+      ))
+      .unwrap(),
+      "hi"
+    );
+  }
+}
+
+// A format named in the `Import` call decides how the file is read; the
+// file name only picks the format when the call names none.
+mod import_named_format {
+  use super::*;
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn a_named_format_beats_the_extension() {
+    clear_state();
+    let path = temp_file("woxi_import_named_format.csv");
+    std::fs::write(&path, "a,b\n1,2\n").unwrap();
+
+    // Without a format the extension decides: a CSV table.
+    assert_eq!(
+      interpret(&format!(r#"Import["{path}"]"#)).unwrap(),
+      "{{a, b}, {1, 2}}"
+    );
+    // Naming a format overrides it — `"Text"`, `"String"` and
+    // `"Plaintext"` all hand back the file verbatim.
+    for format in ["Text", "String", "Plaintext"] {
+      assert_eq!(
+        interpret(&format!(r#"Import["{path}", "{format}"]"#)).unwrap(),
+        "a,b\n1,2",
+        "Import with format {format}"
+      );
+    }
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn a_named_format_applies_to_an_extensionless_name() {
+    clear_state();
+    let path = temp_file("woxi_import_named_format_json.txt");
+    std::fs::write(&path, r#"{"k": 5}"#).unwrap();
+    assert_eq!(
+      interpret(&format!(r#"Import["{path}", "JSON"]"#)).unwrap(),
+      "{k -> 5}"
+    );
+    std::fs::remove_file(path).ok();
+  }
+}
