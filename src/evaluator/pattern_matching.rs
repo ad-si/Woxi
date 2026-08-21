@@ -3387,6 +3387,25 @@ fn canonicalize_pattern(pattern: &Expr) -> Expr {
         },
       }
     }
+    // `Rule[a, b]` / `RuleDelayed[a, b]` spelled with their head names are
+    // the same expression as `a -> b` / `a :> b`, which is the shape Woxi
+    // stores a rule in. Reading them back to it is what lets a pattern
+    // written the long way — `FixIntRule[RuleDelayed[lhs_, u_], x_]`, as
+    // Rubi writes it — bind against a rule that was written the short way.
+    Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
+      Expr::Rule {
+        pattern: Box::new(canonicalize_pattern(&args[0])),
+        replacement: Box::new(canonicalize_pattern(&args[1])),
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "RuleDelayed" && args.len() == 2 =>
+    {
+      Expr::RuleDelayed {
+        pattern: Box::new(canonicalize_pattern(&args[0])),
+        replacement: Box::new(canonicalize_pattern(&args[1])),
+      }
+    }
     // `Pattern[x, body]` keeps its shape: splicing into it would destroy the
     // name/body pair.
     Expr::FunctionCall { name, args }
@@ -3424,7 +3443,8 @@ fn needs_canonicalization(pattern: &Expr) -> bool {
       matches!(
         name.as_str(),
         "HoldPattern" | "Optional" | "PatternSequence"
-      ) || args.iter().any(needs_canonicalization)
+      ) || (matches!(name.as_str(), "Rule" | "RuleDelayed") && args.len() == 2)
+        || args.iter().any(needs_canonicalization)
     }
     Expr::List(items) => items.iter().any(needs_canonicalization),
     // Rules are checked through, so `expr /. HoldPattern[lhs] -> rhs` is

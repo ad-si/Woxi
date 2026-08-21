@@ -668,6 +668,17 @@ fn collect_pattern_vars_inner(
         collect_pattern_vars_inner(a, vars);
       }
     }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      collect_pattern_vars_inner(pattern, vars);
+      collect_pattern_vars_inner(replacement, vars);
+    }
     Expr::List(items) => {
       for item in items {
         collect_pattern_vars_inner(item, vars);
@@ -709,6 +720,26 @@ fn replace_patterns_with_placeholders(
         .iter()
         .map(|a| replace_patterns_with_placeholders(a, vars))
         .collect(),
+    },
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(replace_patterns_with_placeholders(pattern, vars)),
+      replacement: Box::new(replace_patterns_with_placeholders(
+        replacement,
+        vars,
+      )),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(replace_patterns_with_placeholders(pattern, vars)),
+      replacement: Box::new(replace_patterns_with_placeholders(
+        replacement,
+        vars,
+      )),
     },
     Expr::List(items) => Expr::List(
       items
@@ -763,6 +794,26 @@ fn replace_placeholders_with_patterns(
         .iter()
         .map(|a| replace_placeholders_with_patterns(a, vars))
         .collect(),
+    },
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(replace_placeholders_with_patterns(pattern, vars)),
+      replacement: Box::new(replace_placeholders_with_patterns(
+        replacement,
+        vars,
+      )),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(replace_placeholders_with_patterns(pattern, vars)),
+      replacement: Box::new(replace_placeholders_with_patterns(
+        replacement,
+        vars,
+      )),
     },
     Expr::List(items) => Expr::List(
       items

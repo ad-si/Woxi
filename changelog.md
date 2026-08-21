@@ -2,6 +2,14 @@
 
 # Unreleased
 
+- A `Rule` or `RuleDelayed` inside a definition's pattern binds its parts.
+    `f[a_ :> b_] := g[a, b]` matched and then substituted nothing — the body
+    came back as `g[a, b]`, with the pattern names still in it — because the
+    round trip that stores a compound argument pattern walked function calls
+    and lists but not rule nodes. A rule spelled with its head name
+    (`f[RuleDelayed[a_, b_]]`) is the same pattern as the operator form, and
+    now reads as one.
+
 - A rule whose argument is itself a compound pattern keeps its `/;` guard.
     `f[g[x_]] := body /; test` used to give the guard a phantom extra
     parameter, so the rule demanded an argument the pattern never had and
