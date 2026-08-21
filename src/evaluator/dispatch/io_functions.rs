@@ -682,7 +682,7 @@ fn get_path_option(opts: &[Expr]) -> Vec<String> {
         dirs.extend(items.iter().filter_map(|item| match item {
           Expr::String(dir) => Some(dir.clone()),
           _ => None,
-        }))
+        }));
       }
       _ => {}
     }

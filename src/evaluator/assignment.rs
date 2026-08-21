@@ -994,7 +994,7 @@ fn set_extended_full_definition(
     for head in
       crate::evaluator::dispatch::predicate_functions::DEFINITION_SECTIONS
     {
-      for section in section_rules.iter() {
+      for section in section_rules {
         let (Expr::Rule {
           pattern,
           replacement,
@@ -1406,7 +1406,7 @@ fn assignment_upvalue_tags(lhs: &Expr) -> Vec<String> {
       }
       Expr::FunctionCall { name, args } => {
         tags.push(name.clone());
-        for arg in args.iter() {
+        for arg in args {
           let named = match arg {
             Expr::Identifier(inner) => inner.clone(),
             Expr::FunctionCall { name: inner, .. } => inner.clone(),

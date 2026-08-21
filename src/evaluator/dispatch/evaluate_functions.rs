@@ -502,26 +502,18 @@ fn load_needed_context(ctx: &str) -> Result<(), InterpreterError> {
   let saved_path = crate::save_context_path();
   let loaded = resolve_get_target(ctx).as_deref().and_then(evaluate_file);
   crate::restore_context_path(saved_path);
-  match loaded {
-    Some(result) => {
-      result?;
-      if !crate::packages_list().iter().any(|pkg| pkg == ctx) {
-        crate::emit_message_to_stdout(&format!(
-          "Needs::nocont: Context {ctx} was not created when Needs was \
-           evaluated."
-        ));
-        crate::register_package(ctx.to_string());
-      }
-    }
-    None => {
-      crate::emit_message_to_stdout(&format!(
-        "Get::noopen: Cannot open {ctx}."
-      ));
-      crate::emit_message_to_stdout(&format!(
-        "Needs::nocont: Context {ctx} was not created when Needs was evaluated."
-      ));
-      crate::register_package(ctx.to_string());
-    }
+  if let Some(result) = loaded {
+    result?;
+  } else {
+    crate::emit_message_to_stdout(&format!("Get::noopen: Cannot open {ctx}."));
+  }
+  // Either the file never opened, or it opened without creating the context
+  // it was supposed to provide. Both are the same thing to the caller.
+  if !crate::packages_list().iter().any(|pkg| pkg == ctx) {
+    crate::emit_message_to_stdout(&format!(
+      "Needs::nocont: Context {ctx} was not created when Needs was evaluated."
+    ));
+    crate::register_package(ctx.to_string());
   }
   Ok(())
 }
