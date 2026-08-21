@@ -20991,8 +20991,80 @@ SaveDefinitions -> True]";
     assert_eq!(bounds(&state, 1), (2.0, 9.0, 4.0));
     assert_eq!(bounds(&state, 2), (1.0, 8.0, 4.0));
 
-    // r1 > r2: the `r1_ /; r1 > r2` clause must fire, so the chain radii
-    // are built from r2.
+    // Re-evaluate the body directly (independently of `graphics_handle`,
+    // which is an opaque iced `svg::Handle`) so the actual rendered
+    // geometry can be inspected: every `Circle[…]` renders as an SVG
+    // `<ellipse rx="…" ry="…"/>` with `rx == ry`, extracted here as
+    // (radius, cx) pairs, biggest radius first. This is what lets the
+    // assertions below tell a working `smallerRadius` guard apart from one
+    // that silently stopped matching — `parse_circle`
+    // (`src/functions/graphics.rs`) falls back to `(0.0, 0.0)`/`1.0` via
+    // `unwrap_or` for a non-numeric center/radius rather than raising an
+    // interpreter error, so a broken guard leaving `chainRadius`/`chainX`
+    // symbolic would still render (just with wrong circles) and
+    // `state.error.is_none()` alone would not catch it.
+    //
+    // The SVG coordinates are scaled to fit `PlotRange`/`ImageSize`, so
+    // absolute pixel positions aren't asserted on directly; the two
+    // structural facts below survive that scaling untouched:
+    //  - the two base circles are drawn with their literal radii (r1, r2),
+    //    so their radii's ratio always matches (regardless of the guard);
+    //  - the guard is what the biggest chain link's radius is built from,
+    //    so its ratio to the smaller base circle's radius must be exactly
+    //    the `1/(k+1)` at k=1, i.e. 1/2 — only when the guard picked that
+    //    same (smaller) radius as its pivot.
+    let render = |s: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = s
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let svg = woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&s.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the circle chain must render");
+      let mut circles: Vec<f64> = svg
+        .match_indices("<ellipse")
+        .filter_map(|(at, _)| {
+          let tag = &svg[at..svg[at..].find("/>")? + at];
+          let key = " rx=\"";
+          let start = tag.find(key)? + key.len();
+          tag[start..][..tag[start..].find('"')?].parse().ok()
+        })
+        .collect();
+      circles.sort_by(|a, b| b.partial_cmp(a).unwrap());
+      circles
+    };
+    // The SVG only prints coordinates to 2 decimal places, so ratios of
+    // rounded values carry a little slop; 0.1% is well clear of that
+    // while still catching a guard that picked the wrong radius outright.
+    let approx = |a: f64, b: f64| (a - b).abs() < 1e-3 * b.abs().max(1.0);
+
+    // Defaults: r1=6, r2=4 -> the smaller base circle is r2. `circles[1]`
+    // is always the smaller *base* circle geometrically (both base circles
+    // outsize every chain link), so it's the ground truth for what
+    // `smallerRadius` should have returned; `circles[2]` (the biggest
+    // chain link, k=1) must be exactly half of it.
+    let circles = render(&state);
+    assert_eq!(
+      circles.len(),
+      6,
+      "2 base circles + 4-link chain: {circles:?}"
+    );
+    assert!(
+      approx(circles[0] / circles[1], 6.0 / 4.0),
+      "base circles must keep the r1/r2 ratio: {circles:?}"
+    );
+    assert!(
+      approx(circles[2] / circles[1], 0.5),
+      "the guard must pivot the chain on the smaller radius (r2): {circles:?}"
+    );
+
+    // r1 > r2 (8 vs 3): the `r1_ /; r1 > r2` clause must fire, pivoting the
+    // chain on r2 — the smaller of the two.
     if let manipulate::ControlState::Continuous { current, .. } =
       &mut state.controls[0]
     {
@@ -21009,8 +21081,24 @@ SaveDefinitions -> True]";
       "re-render with r1 > r2 failed: {:?}",
       state.error
     );
+    let circles = render(&state);
+    assert_eq!(
+      circles.len(),
+      6,
+      "2 base circles + 4-link chain: {circles:?}"
+    );
+    assert!(
+      approx(circles[0] / circles[1], 8.0 / 3.0),
+      "base circles must keep the r1/r2 ratio: {circles:?}"
+    );
+    assert!(
+      approx(circles[2] / circles[1], 0.5),
+      "with r1 > r2 the chain must still pivot on the smaller radius (r2): \
+       {circles:?}"
+    );
 
-    // r1 < r2: the other guard must fire instead, still rendering cleanly.
+    // r1 < r2 (3 vs 8): the *other* guard (`r1_ /; r1 <= r2`) must fire
+    // instead, pivoting the chain on r1 — again the smaller of the two.
     if let manipulate::ControlState::Continuous { current, .. } =
       &mut state.controls[0]
     {
@@ -21026,6 +21114,21 @@ SaveDefinitions -> True]";
       state.error.is_none(),
       "re-render with r1 < r2 failed: {:?}",
       state.error
+    );
+    let circles = render(&state);
+    assert_eq!(
+      circles.len(),
+      6,
+      "2 base circles + 4-link chain: {circles:?}"
+    );
+    assert!(
+      approx(circles[0] / circles[1], 8.0 / 3.0),
+      "base circles must keep the r2/r1 ratio: {circles:?}"
+    );
+    assert!(
+      approx(circles[2] / circles[1], 0.5),
+      "with r1 < r2 the chain must pivot on the smaller radius (r1): \
+       {circles:?}"
     );
   }
 }
