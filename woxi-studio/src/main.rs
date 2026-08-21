@@ -319,6 +319,9 @@ enum Message {
   /// Remove a point from a `LocatorAutoCreate` locator.
   /// (cell_idx, ctrl_idx, point_idx)
   ManipulateLocatorRemoved(usize, usize, usize),
+  /// A ColorSlider/ColorSetter handle was dragged to a new hue position
+  /// (`0.0..=1.0`). (cell_idx, ctrl_idx, position)
+  ManipulateColorChanged(usize, usize, f64),
   /// A checkbox in a Manipulate display element was toggled.
   /// (cell_idx, write-back assignment, e.g. `data[[3, 5]] = 1`)
   ManipulateDisplayToggled(usize, String),
@@ -1804,6 +1807,23 @@ impl WoxiStudio {
           && point_idx < points.len()
         {
           points.remove(point_idx);
+          state.apply_tracking(ctrl_idx);
+          if state.request_reeval(ctrl_idx) {
+            return manipulate_reeval_task(cell_idx);
+          }
+        }
+        Task::none()
+      }
+
+      Message::ManipulateColorChanged(cell_idx, ctrl_idx, position) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && matches!(
+            state.controls.get(ctrl_idx),
+            Some(manipulate::ControlState::Color { .. })
+          )
+        {
+          state.color_change(ctrl_idx, position);
           state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
@@ -3689,7 +3709,8 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
     | manipulate::ControlState::Slider2D { label, .. }
     | manipulate::ControlState::IntervalSlider { label, .. }
     | manipulate::ControlState::Trigger { label, .. }
-    | manipulate::ControlState::Locator { label, .. } => label,
+    | manipulate::ControlState::Locator { label, .. }
+    | manipulate::ControlState::Color { label, .. } => label,
     // Heading/divider rows span the full row instead of sitting in the
     // label column, so they don't widen it; a button carries its label
     // inside the button itself.
@@ -4154,6 +4175,59 @@ fn render_manipulate_widget<'a>(
         ]
         .align_y(Center)
         .spacing(8);
+        controls_col = controls_col.push(control_row);
+      }
+      manipulate::ControlState::Color {
+        name: _,
+        label,
+        label_runs,
+        current,
+        position,
+      } => {
+        // A fixed rainbow bar (the standard look of Wolfram's ColorSlider/
+        // ColorSetter) with a draggable handle layered on top, painted in
+        // the color it would currently set. The bar is drawn as a plain
+        // container underneath rather than as the slider's own rail — see
+        // `color_gradient_container_style` for why the built-in rail can't
+        // show a fixed gradient on its own.
+        let bar = container(
+          space::Space::new()
+            .width(Fill)
+            .height(iced::Length::Fixed(14.0)),
+        )
+        .width(Fill)
+        .style(color_gradient_container_style);
+        let handle_color = manipulate_color(current);
+        let picker = slider(0.0..=1.0, *position, move |v| {
+          if enabled {
+            Message::ManipulateColorChanged(cell_idx, ctrl_idx, v)
+          } else {
+            Message::Noop
+          }
+        })
+        .step(0.001)
+        .width(Fill)
+        .style(color_slider_overlay_style(handle_color, enabled));
+        let swatch = container(
+          space::Space::new()
+            .width(iced::Length::Fixed(20.0))
+            .height(iced::Length::Fixed(20.0)),
+        )
+        .style(move |_theme: &Theme| container::Style {
+          background: Some(Background::Color(handle_color)),
+          border: Border {
+            radius: 4.0.into(),
+            width: 1.0,
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.3),
+          },
+          ..container::Style::default()
+        });
+        let label_widget =
+          manipulate_label_widget(label_runs, label, label_col_width, enabled);
+        let control_row =
+          row![label_widget, stack![bar, picker].width(Fill), swatch]
+            .align_y(Center)
+            .spacing(8);
         controls_col = controls_col.push(control_row);
       }
       manipulate::ControlState::Locator {
@@ -4639,6 +4713,25 @@ fn format_manipulate_number(v: f64) -> String {
   } else {
     trimmed.to_string()
   }
+}
+
+/// Convert a hue fraction (`0.0..=1.0`) to an `iced::Color` at full
+/// saturation and brightness — matching Wolfram's `Hue[h]`. Delegates to
+/// the interpreter's own `Hue[…]` conversion (`hue_to_rgb01`) rather than
+/// re-implementing HSB→RGB a second time; only the `f64`-triple → `iced::
+/// Color` wrapping happens here.
+fn hue_to_rgb(h: f64) -> Color {
+  let (r, g, b) = woxi::functions::graphics::hue_to_rgb01(h);
+  Color::from_rgb(r as f32, g as f32, b as f32)
+}
+
+/// Resolve a Manipulate color control's current InputForm value (e.g.
+/// `RGBColor[0, 0, 0]` or `Hue[0.3]`) to an `iced::Color`, for painting its
+/// drag handle. Delegates to the interpreter's own color parsing
+/// (`manipulate_color_to_rgb`) rather than a second copy.
+fn manipulate_color(code: &str) -> Color {
+  let (r, g, b) = woxi::functions::graphics::manipulate_color_to_rgb(code);
+  Color::from_rgb(r as f32, g as f32, b as f32)
 }
 
 /// Build a display-only editor for a stored Output cell the interpreter
@@ -5374,6 +5467,70 @@ fn disabled_slider_style(
       border_color: Color::TRANSPARENT,
       border_width: 0.0,
     },
+  }
+}
+
+/// Background for the fixed rainbow bar behind a ColorSlider/ColorSetter's
+/// drag handle: a full-width `Hue[0]..Hue[1]` gradient, the standard look
+/// of Wolfram's color control. Drawn as a plain container underneath the
+/// interactive slider (see `color_slider_overlay_style`) rather than as the
+/// slider's own rail, since the built-in slider widget paints its rail as
+/// two separate quads split at the handle — a gradient given to either half
+/// would restretch across just that half instead of staying fixed to the
+/// full bar as the handle moves.
+fn color_gradient_container_style(_theme: &Theme) -> container::Style {
+  use iced::gradient::Linear;
+  let mut gradient = Linear::new(iced::Radians(0.0));
+  const STOPS: usize = 7;
+  for i in 0..STOPS {
+    let t = i as f32 / (STOPS - 1) as f32;
+    gradient = gradient.add_stop(t, hue_to_rgb(t as f64));
+  }
+  container::Style {
+    background: Some(Background::Gradient(gradient.into())),
+    border: Border {
+      radius: 4.0.into(),
+      width: 0.0,
+      color: Color::TRANSPARENT,
+    },
+    ..container::Style::default()
+  }
+}
+
+/// Style for the interactive slider layered on top of the rainbow bar: a
+/// fully transparent rail (the bar underneath already shows through) and a
+/// handle painted in the color it would currently set, so dragging previews
+/// the picked hue right under the cursor.
+fn color_slider_overlay_style(
+  current: Color,
+  enabled: bool,
+) -> impl Fn(&Theme, iced::widget::slider::Status) -> iced::widget::slider::Style
+{
+  move |theme, _status| {
+    use iced::widget::slider::{Handle, HandleShape, Rail, Style};
+    let palette = theme.extended_palette();
+    let handle_color = if enabled {
+      current
+    } else {
+      palette.background.strong.color
+    };
+    Style {
+      rail: Rail {
+        backgrounds: (Color::TRANSPARENT.into(), Color::TRANSPARENT.into()),
+        width: 14.0,
+        border: Border {
+          radius: 0.0.into(),
+          width: 0.0,
+          color: Color::TRANSPARENT,
+        },
+      },
+      handle: Handle {
+        shape: HandleShape::Circle { radius: 8.0 },
+        background: handle_color.into(),
+        border_color: palette.background.base.color,
+        border_width: 2.0,
+      },
+    }
   }
 }
 
@@ -6626,6 +6783,132 @@ mod tests {
       "Graphics of translated/rotated pieces should render"
     );
   }
+
+  /// `{{bg, RGBColor[0, 0, 0], "background"}, ColorSlider}` builds a real
+  /// `Color` control rather than being dropped or misread as a hidden
+  /// binding, and on the first frame the bound variable is the spec's
+  /// exact literal initial color — not snapped to whatever the hue
+  /// gradient's own position 0 would give (mirroring `Continuous`'s
+  /// off-grid literal `initial`).
+  #[test]
+  fn color_slider_builds_and_keeps_literal_initial_on_first_frame() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[bg, {{bg, RGBColor[0, 0, 0], "background"}, ColorSlider}]"#,
+    )
+    .expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a ColorSlider control should build a ManipulateState");
+    assert_eq!(state.controls.len(), 1);
+    match &state.controls[0] {
+      manipulate::ControlState::Color {
+        name,
+        label,
+        current,
+        position,
+        ..
+      } => {
+        assert_eq!(name, "bg");
+        assert_eq!(label, "background");
+        assert_eq!(current, "RGBColor[0, 0, 0]");
+        assert_eq!(
+          *position, 0.0,
+          "the handle defaults to position 0 even though black isn't on the gradient"
+        );
+      }
+      other => panic!("expected a Color control, got {other:?}"),
+    }
+    assert!(
+      state.error.is_none(),
+      "the literal initial color must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("RGBColor[0, 0, 0]"),
+      "the bound variable must be exactly the spec's literal initial color \
+       on the first frame"
+    );
+  }
+
+  /// `ColorSetter` is Wolfram's click/tap-to-set variant of the same
+  /// hue-gradient widget as `ColorSlider` — it must build the same `Color`
+  /// control rather than a second, duplicate implementation.
+  #[test]
+  fn color_setter_builds_the_same_control_as_color_slider() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[bg, {{bg, RGBColor[1, 0, 0], "background"}, ColorSetter}]"#,
+    )
+    .expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a ColorSetter control should build a ManipulateState");
+    match &state.controls[0] {
+      manipulate::ControlState::Color { current, .. } => {
+        assert_eq!(current, "RGBColor[1, 0, 0]");
+      }
+      other => panic!("expected a Color control, got {other:?}"),
+    }
+  }
+
+  /// Dragging a ColorSlider's handle to a new hue position rewrites the
+  /// bound variable to `Hue[position]` and goes through the same
+  /// tracking/re-evaluation path every other control uses.
+  #[test]
+  fn color_slider_drag_rebinds_to_hue_and_reevaluates() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[bg, {{bg, RGBColor[0, 0, 0], "background"}, ColorSlider}]"#,
+    )
+    .expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a ColorSlider control should build a ManipulateState");
+
+    state.color_change(0, 0.25);
+    match &state.controls[0] {
+      manipulate::ControlState::Color {
+        current, position, ..
+      } => {
+        assert_eq!(current, "Hue[0.25]");
+        assert_eq!(*position, 0.25);
+      }
+      other => panic!("expected a Color control, got {other:?}"),
+    }
+    state.apply_tracking(0);
+    assert!(
+      state.request_reeval(0),
+      "the first change after a drag should arm the throttle timer"
+    );
+    state.run_scheduled_reeval();
+    assert!(
+      state.error.is_none(),
+      "Hue[0.25] must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert_eq!(state.text_output.as_deref(), Some("Hue[0.25]"));
+  }
+
+  /// `color_change` on any other control kind (e.g. a plain slider at index
+  /// 0) is a no-op rather than corrupting that control's state — mirroring
+  /// how `slider2d_change` only acts when the control at `ctrl_idx` is
+  /// actually a `Slider2D`.
+  #[test]
+  fn color_change_on_a_non_color_control_is_a_noop() {
+    let expr = woxi::interpret_to_expr("Manipulate[x, {x, 0, 1}]")
+      .expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a plain slider should build a ManipulateState");
+    state.color_change(0, 0.5);
+    match &state.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => {
+        assert_eq!(
+          *current, 0.0,
+          "an unrelated Continuous control must be untouched"
+        );
+      }
+      other => {
+        panic!("expected the original Continuous control, got {other:?}")
+      }
+    }
+  }
+
   #[test]
   fn manipulate_2d_angle_slider_combines_initialization_surfaces() {
     let code = r#"Manipulate[
@@ -8727,18 +9010,22 @@ Cell[BoxData[
     );
     assert!(state.graphics_handle.is_some(), "the net must render");
 
-    // The division slider and the net/surface setter both survive the
-    // colour control they share a `Row` with.
+    // The division slider and the net/surface setter both survive sharing
+    // a `Row` with the colour control — which is itself now a real
+    // `ColorSlider` widget (`{{col, Red, "color"}, Red}` has one possible
+    // value with an explicit initial matching it, so it renders a full hue
+    // gradient rather than being baked into the body as a fixed constant).
     let names: Vec<&str> = state
       .controls
       .iter()
       .map(|c| match c {
         manipulate::ControlState::Continuous { name, .. }
-        | manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        | manipulate::ControlState::Discrete { name, .. }
+        | manipulate::ControlState::Color { name, .. } => name.as_str(),
         other => panic!("unexpected control {other:?}"),
       })
       .collect();
-    assert_eq!(names, vec!["n", "nt"]);
+    assert_eq!(names, vec!["n", "nt", "col"]);
   }
 
   /// The shape a whole family of solid-geometry Demonstrations is built
