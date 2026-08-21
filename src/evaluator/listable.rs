@@ -361,6 +361,21 @@ fn join_path(base: &str, sub: &str) -> String {
   )
 }
 
+/// The plain spelling of a system variable that also has a context-qualified
+/// name of its own.
+///
+/// `Get` records the file it is reading in `System`Private`$InputFileName`,
+/// and that is the name a package header reaches for to find its own
+/// directory (`$rubiDir = DirectoryName[System`Private`$InputFileName]` in
+/// Rubi, for one). Woxi keeps a single `$InputFileName`, so the qualified
+/// name reads through to it rather than coming back as an unbound symbol.
+pub fn system_variable_alias(name: &str) -> Option<&'static str> {
+  match name {
+    "System`Private`$InputFileName" => Some("$InputFileName"),
+    _ => None,
+  }
+}
+
 /// The `$`-prefixed variables the language itself defines. They are `System``
 /// symbols: mentioning `$Context` inside a package names the one the session
 /// has, never a `Ctx`Private`$Context` of its own. Every other `$`-name is an

@@ -290,6 +290,10 @@ fn rule_positions_and_guards(
       }
     }
   }
+  // A whole-rule `/;` guard sits in a condition slot past the last position.
+  for cond in conditions.iter().skip(heads.len()).flatten() {
+    guards.push(cond.clone());
+  }
   if let Expr::FunctionCall { name, args } = body
     && name == "Condition"
     && args.len() == 2
@@ -664,6 +668,17 @@ fn collect_pattern_vars_inner(
         collect_pattern_vars_inner(a, vars);
       }
     }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      collect_pattern_vars_inner(pattern, vars);
+      collect_pattern_vars_inner(replacement, vars);
+    }
     Expr::List(items) => {
       for item in items {
         collect_pattern_vars_inner(item, vars);
@@ -705,6 +720,26 @@ fn replace_patterns_with_placeholders(
         .iter()
         .map(|a| replace_patterns_with_placeholders(a, vars))
         .collect(),
+    },
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(replace_patterns_with_placeholders(pattern, vars)),
+      replacement: Box::new(replace_patterns_with_placeholders(
+        replacement,
+        vars,
+      )),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(replace_patterns_with_placeholders(pattern, vars)),
+      replacement: Box::new(replace_patterns_with_placeholders(
+        replacement,
+        vars,
+      )),
     },
     Expr::List(items) => Expr::List(
       items
@@ -759,6 +794,26 @@ fn replace_placeholders_with_patterns(
         .iter()
         .map(|a| replace_placeholders_with_patterns(a, vars))
         .collect(),
+    },
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(replace_placeholders_with_patterns(pattern, vars)),
+      replacement: Box::new(replace_placeholders_with_patterns(
+        replacement,
+        vars,
+      )),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(replace_placeholders_with_patterns(pattern, vars)),
+      replacement: Box::new(replace_placeholders_with_patterns(
+        replacement,
+        vars,
+      )),
     },
     Expr::List(items) => Expr::List(
       items
@@ -1106,7 +1161,40 @@ fn set_ownvalues_from_rules(
 /// wrappers are stripped) and replay it as an individual `lhs := rhs` so
 /// the rules get installed in FUNC_DEFS via the regular SetDelayed path.
 /// Iteration order is preserved (no specificity sorting), matching Wolfram.
-fn set_downvalues_from_rules(rhs: &Expr) -> Result<Expr, InterpreterError> {
+/// Empty out what `DownValues[f] = …` / `SubValues[f] = …` is about to
+/// replace, and report whether `set_downvalues_from_rules` still has to clear
+/// `f`'s `FUNC_DEFS` itself.
+///
+/// The two lists live in different stores. `SubValues` are kept in
+/// `SUB_VALUES`, so that is what an assignment to them replaces — and it must
+/// leave `FUNC_DEFS` alone, or installing a definition list section by
+/// section (`Language`ExtendedFullDefinition[f] = …`) would have its
+/// SubValues wipe the DownValues installed a moment earlier.
+fn clear_replaced_values<'a>(
+  values_head: &str,
+  sym_name: &'a str,
+) -> Option<&'a str> {
+  if values_head == "SubValues" {
+    SUB_VALUES.with(|m| {
+      m.borrow_mut().remove(sym_name);
+    });
+    return None;
+  }
+  Some(sym_name)
+}
+
+/// `clear_head` is the symbol whose `FUNC_DEFS` entry this assignment
+/// replaces — `DownValues[f] = …`. Its rules name `f` themselves, so it is
+/// only needed for the case that carries none: `DownValues[f] = {}`, which
+/// has to clear `f` all the same. Everything whose rules live somewhere else
+/// passes `None`: `SubValues[f] = …` installs into `SUB_VALUES`, and
+/// `DefaultValues[f] = …` installs `Default[f, …]` rules that belong to
+/// `Default` — clearing `f`'s `FUNC_DEFS` for either would throw away the
+/// DownValues it never touched.
+fn set_downvalues_from_rules(
+  rhs: &Expr,
+  clear_head: Option<&str>,
+) -> Result<Expr, InterpreterError> {
   let rules: Vec<Expr> = match rhs {
     Expr::List(items) => items.to_vec(),
     other => vec![other.clone()],
@@ -1114,6 +1202,9 @@ fn set_downvalues_from_rules(rhs: &Expr) -> Result<Expr, InterpreterError> {
   // Collect the head symbols touched by these rules and clear their existing
   // FUNC_DEFS so the new list replaces (rather than augments) old definitions.
   let mut touched_heads: Vec<String> = Vec::new();
+  if let Some(head) = clear_head {
+    touched_heads.push(head.to_string());
+  }
   for rule in &rules {
     let (pat, _) = match rule {
       Expr::Rule {
@@ -1142,6 +1233,16 @@ fn set_downvalues_from_rules(rhs: &Expr) -> Result<Expr, InterpreterError> {
   }
   for head in &touched_heads {
     crate::FUNC_DEFS.with(|m| {
+      m.borrow_mut().remove(head);
+    });
+    // A literal-argument definition (`f[1] = 42`, and the `f[x_] := f[x] = …`
+    // memoization idiom) is kept in `MEMO_VALUES` rather than `FUNC_DEFS`.
+    // `DownValues[f]` reports those too and dispatch reads them first, so an
+    // assignment that replaces the whole list has to replace them as well —
+    // otherwise `DownValues[f] = {}` leaves behind the very definitions it
+    // was asked to clear, and a non-empty assignment is shadowed by stale
+    // ones.
+    crate::MEMO_VALUES.with(|m| {
       m.borrow_mut().remove(head);
     });
   }
@@ -1857,10 +1958,11 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   } = lhs
     && (func_name == "DownValues" || func_name == "SubValues")
     && lhs_args.len() == 1
-    && matches!(&lhs_args[0], Expr::Identifier(_))
+    && let Expr::Identifier(sym_name) = &lhs_args[0]
   {
     let rhs_value = evaluate_expr_to_expr(rhs)?;
-    return set_downvalues_from_rules(&rhs_value);
+    let clear_head = clear_replaced_values(func_name, sym_name);
+    return set_downvalues_from_rules(&rhs_value, clear_head);
   }
 
   // Handle `Language`ExtendedFullDefinition[sym] = defs` — install every
@@ -1922,7 +2024,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     && matches!(&lhs_args[0], Expr::Identifier(_))
   {
     let rhs_value = evaluate_expr_to_expr(rhs)?;
-    return set_downvalues_from_rules(&rhs_value);
+    return set_downvalues_from_rules(&rhs_value, None);
   }
 
   // Handle Messages[sym] = rules — replace all message DownValues for
@@ -2651,10 +2753,11 @@ pub fn set_delayed_ast(
   } = lhs
     && (func_name == "DownValues" || func_name == "SubValues")
     && lhs_args.len() == 1
-    && matches!(&lhs_args[0], Expr::Identifier(_))
+    && let Expr::Identifier(sym_name) = &lhs_args[0]
   {
     let rhs_value = evaluate_expr_to_expr(body)?;
-    set_downvalues_from_rules(&rhs_value)?;
+    let clear_head = clear_replaced_values(func_name, sym_name);
+    set_downvalues_from_rules(&rhs_value, clear_head)?;
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
@@ -3024,37 +3127,16 @@ pub fn set_delayed_ast(
       &blank_types,
     );
 
-    // If there's a body-level condition (from /;), attach it to a condition slot
+    // A body-level `/;` guard belongs to the whole rule, not to any one
+    // argument, so it gets a condition slot of its own past the end of
+    // `params` rather than borrowing a parameter's. Dispatch reads the
+    // conditions as a set (`conditions.iter().flatten()`), so the guard is
+    // checked either way; keeping it out of the parameter slots is what lets
+    // the rule print — and replay through `DownValues[f] = …` — carrying its
+    // guard, and what keeps it from being mistaken for a parameter the call
+    // has to supply an argument for.
     if let Some(body_cond) = body_condition_sub.as_ref() {
-      let mut attached = false;
-      for c in &mut conditions {
-        if c.is_none() {
-          *c = Some(body_cond.clone());
-          attached = true;
-          break;
-        }
-      }
-      if !attached && !conditions.is_empty() {
-        // All slots have conditions - combine with first non-structural-pattern using And
-        let combine_idx = conditions.iter().position(|c| {
-          !matches!(
-            c,
-            Some(Expr::FunctionCall { name, .. }) if name == "__StructuralPattern__"
-          )
-        });
-        if let Some(idx) = combine_idx {
-          let existing = conditions[idx].take().unwrap();
-          conditions[idx] =
-            Some(call("And", vec![existing, body_cond.clone()]));
-        } else {
-          // All conditions are structural patterns — append as extra condition
-          conditions.push(Some(body_cond.clone()));
-          params.push(String::new());
-          defaults.push(None);
-          heads.push(None);
-          blank_types.push(1);
-        }
-      }
+      conditions.push(Some(body_cond.clone()));
     }
 
     // Check if all args are literal (non-pattern) — if so, insert at beginning
@@ -3777,6 +3859,36 @@ pub fn downvalue_param_pattern(
   }
 }
 
+/// Re-attach the guards a stored rule keeps in condition slots that no
+/// parameter answers to.
+///
+/// A rule's `/; test` guard is a property of the rule rather than of any one
+/// argument, so it is stored in a condition slot past the end of `params`.
+/// Reading those back is what lets a rule's printed form show the guard —
+/// `HoldPattern[f[g[x_]]] :> body /; test` — and so what lets `DownValues[f]`
+/// round-trip through `DownValues[f] = …` with its guards intact.
+pub fn attach_trailing_guards(
+  params: &[String],
+  conditions: &[Option<Expr>],
+  body: Expr,
+) -> Expr {
+  let mut guards: Vec<Expr> = conditions
+    .iter()
+    .skip(params.len())
+    .flatten()
+    .cloned()
+    .collect();
+  if guards.is_empty() {
+    return body;
+  }
+  let guard = if guards.len() == 1 {
+    guards.pop().unwrap()
+  } else {
+    call("And", guards)
+  };
+  call("Condition", vec![body, guard])
+}
+
 /// Rebuild a displayable DownValue (pattern args + body) for a stored rule that
 /// uses one or more lowered list-pattern parameters (`_lp{i}`), turning them
 /// back into surface `{…}` patterns and un-substituting the `Part[_lp, i]`
@@ -3793,7 +3905,15 @@ pub fn reconstruct_list_downvalue(
     return None;
   }
   let mut display_body = body.clone();
-  let mut guards: Vec<Expr> = Vec::new();
+  // The rule's own `/;` guard, which lives past the end of `params`. It talks
+  // about the destructured elements by name, so it needs the same
+  // `Part[_lp, i]` un-substitution the body does.
+  let mut guards: Vec<Expr> = conditions
+    .iter()
+    .skip(params.len())
+    .flatten()
+    .cloned()
+    .collect();
   let mut pattern_args: Vec<Expr> = Vec::with_capacity(params.len());
   for (i, p) in params.iter().enumerate() {
     let cond = conditions.get(i).and_then(|c| c.as_ref());
@@ -3802,7 +3922,7 @@ pub fn reconstruct_list_downvalue(
       for (path, name) in &part_names {
         let name_expr = Expr::Identifier(name.clone());
         display_body = replace_subexpr(&display_body, path, &name_expr);
-        for gg in &mut g {
+        for gg in guards.iter_mut().chain(g.iter_mut()) {
           *gg = replace_subexpr(gg, path, &name_expr);
         }
       }

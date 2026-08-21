@@ -5125,3 +5125,67 @@ mod symbol_replacement_reaches_operator_forms {
     );
   }
 }
+
+// Regression tests for #616: a `Rule` / `RuleDelayed` inside a definition's
+// pattern binds its parts. The placeholder round-trip that stores a compound
+// argument pattern walked function calls and lists but not rule nodes, so
+// `f[a_ :> b_] := g[a, b]` matched and then substituted nothing — the body
+// came back with the pattern names in it. Rubi rewrites its whole rule base
+// through patterns of exactly this shape (`FixIntRule[RuleDelayed[lhs_, u_],
+// x_]`).
+mod rule_nodes_in_a_definition_pattern {
+  use super::*;
+
+  #[test]
+  fn delayed_rule_written_as_an_operator_binds() {
+    clear_state();
+    assert_eq!(
+      interpret("rn1[a_ :> b_] := g[a, b]; rn1[AA :> BB]").unwrap(),
+      "g[AA, BB]"
+    );
+  }
+
+  // The same pattern spelled with the head name is the same pattern.
+  #[test]
+  fn delayed_rule_written_as_a_head_binds() {
+    clear_state();
+    assert_eq!(
+      interpret("rn2[RuleDelayed[a_, b_]] := g[a, b]; rn2[AA :> BB]").unwrap(),
+      "g[AA, BB]"
+    );
+  }
+
+  #[test]
+  fn immediate_rule_binds() {
+    clear_state();
+    assert_eq!(
+      interpret("rn3[Rule[a_, b_]] := g[a, b]; rn3[AA -> BB]").unwrap(),
+      "g[AA, BB]"
+    );
+  }
+
+  // Parts nested under the rule bind too, alongside a pattern head.
+  #[test]
+  fn parts_nested_under_a_rule_bind() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "rn4[RuleDelayed[lhs_, F_[u_, test_]], x_] := g[lhs, F, u, test, x];          rn4[AA :> ff[BB, CC], zz]"
+      )
+      .unwrap(),
+      "g[AA, ff, BB, CC, zz]"
+    );
+  }
+
+  // And the stored rule prints as what was written, not as the internal
+  // placeholders it is matched through.
+  #[test]
+  fn down_values_show_the_rule_pattern() {
+    clear_state();
+    assert_eq!(
+      interpret("rn5[RuleDelayed[a_, b_]] := g[a, b]; DownValues[rn5]")
+        .unwrap(),
+      "{HoldPattern[rn5[a_ :> b_]] :> g[a, b]}"
+    );
+  }
+}
