@@ -108,6 +108,27 @@ pub fn dispatch_string_functions(
     "ToExpression" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::to_expression_ast(args));
     }
+    // `CodeParser`` reads source as source: the tokens and where they came
+    // from, rather than the expression they evaluate to.
+    "CodeParser`CodeTokenize"
+    | "CodeParser`CodeConcreteParse"
+    | "CodeParser`CodeParse"
+      if !args.is_empty() =>
+    {
+      let Expr::String(source) = &args[0] else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let convention = source_convention(&args[1..]);
+      return Some(Ok(match name {
+        "CodeParser`CodeTokenize" => {
+          crate::functions::code_parser::code_tokenize(source, convention)
+        }
+        "CodeParser`CodeConcreteParse" => {
+          crate::functions::code_parser::code_concrete_parse(source, convention)
+        }
+        _ => crate::functions::code_parser::code_parse(source, convention),
+      }));
+    }
     // MakeExpression[string] parses to a held expression, equivalent to
     // ToExpression[string, InputForm, HoldComplete]. Only the string form is
     // handled; box-expression input is left unevaluated.
@@ -516,4 +537,34 @@ pub fn dispatch_string_functions(
     _ => {}
   }
   None
+}
+
+/// The convention a `CodeParser`SourceConvention -> "…"` option among `opts`
+/// names, or the default when none does.
+fn source_convention(
+  opts: &[Expr],
+) -> crate::functions::code_parser::Convention {
+  use crate::functions::code_parser::Convention;
+  for opt in opts {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = opt
+    else {
+      continue;
+    };
+    let names_convention = matches!(
+      &**pattern,
+      Expr::Identifier(name)
+        if name == "SourceConvention" || name == "CodeParser`SourceConvention"
+    );
+    if names_convention && let Expr::String(value) = &**replacement {
+      return Convention::from_option_value(value);
+    }
+  }
+  Convention::LineColumn
 }

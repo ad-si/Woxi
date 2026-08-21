@@ -197,6 +197,7 @@ const STANDARD_DISTRIBUTION_CONTEXTS: &[&str] = &[
   "BarCharts",
   "Calendar",
   "CCompilerDriver",
+  "CodeParser",
   "Combinatorica",
   "CompiledFunctionTools",
   "ComputationalGeometry",
