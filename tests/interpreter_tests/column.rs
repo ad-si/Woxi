@@ -198,6 +198,42 @@ mod column_visual_mode {
     assert!(height > 130.0, "canvas must grow with the font size: {svg}");
   }
 
+  /// A Demonstration's `Manipulate` body commonly styles its whole display
+  /// as `Style[Text[Column[{…}]], size]` — the `Style` sits above a `Text`
+  /// wrapper, not directly above the `Column`. This used to defeat the
+  /// styled-layout pass entirely (it only looked one level down for
+  /// `Column`/`Row`), so neither it nor the plain Column pass recognized
+  /// the expression and the whole body fell back to unevaluated text
+  /// instead of rendering.
+  #[test]
+  fn styled_text_wrapped_column_renders() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Style[Text[Column[{\"a\", \"bb\"}]], 20]")
+        .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">a</text>"), "{svg}");
+    assert!(svg.contains(">bb</text>"), "{svg}");
+    assert_eq!(svg.matches("font-size=\"20\"").count(), 2, "{svg}");
+  }
+
+  /// The same lookup-through-`Text` has to work for `Row`, and survive an
+  /// extra `Pane[…]` wrapper on top — the exact nesting a Manipulate body
+  /// commonly uses (`Pane[Style[Text[Row[{…}]], size], {w, h}]`).
+  #[test]
+  fn styled_text_wrapped_row_inside_a_pane_renders() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Pane[Style[Text[Row[{\"a\", \"b\"}]], 20], {300, 100}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">a</tspan>"), "{svg}");
+    assert!(svg.contains(">b</tspan>"), "{svg}");
+  }
+
   /// `Invisible[expr]` keeps exactly the space `expr` occupies but paints
   /// nothing — Demonstrations hide a row with `If[show, Identity, Invisible]`
   /// and rely on the layout not jumping. It used to print as its own source.
