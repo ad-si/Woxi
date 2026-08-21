@@ -20447,6 +20447,35 @@ SaveDefinitions -> True]";
     );
   }
 
+  /// A `Manipulate` whose body plots the survival function of a
+  /// `ReliabilityDistribution` (a two-component parallel system) — a small
+  /// original example of the reliability-engineering Demonstration family,
+  /// not copied from any specific Demonstration. Regression coverage for
+  /// `ReliabilityDistribution` support reaching Studio's Manipulate host:
+  /// both rate sliders should build and the plot should render.
+  #[test]
+  fn manipulate_reliability_distribution_survival_plot_renders() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Plot[SurvivalFunction[ReliabilityDistribution[\
+       c1 || c2, {{c1, ExponentialDistribution[a]}, \
+       {c2, ExponentialDistribution[b]}}], t], {t, 0, 10}], \
+       {{a, 0.5, \"rate a\"}, 0.1, 1}, {{b, 0.3, \"rate b\"}, 0.1, 1}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("two labeled rate sliders should build a ManipulateState");
+
+    assert_eq!(state.controls.len(), 2, "rate a and rate b sliders");
+    assert_eq!(
+      state.error, None,
+      "the survival-function plot should evaluate cleanly"
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the plot should render to a graphics handle"
+    );
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook whose
   /// whole body is one `Pane[Text@TraditionalForm@Column[…]]` of styled
   /// `Row`s — a prose panel rather than a picture. Independently written, not

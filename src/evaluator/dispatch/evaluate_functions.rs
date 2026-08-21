@@ -2437,6 +2437,7 @@ fn evaluate_function_call_ast_inner(
     | "Larger"
     | "ZetaZero"
     | "MixtureDistribution"
+    | "ReliabilityDistribution"
     | "PermutationGroup"
     | "Threaded"
     | "WeightedData"
