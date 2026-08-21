@@ -21131,4 +21131,117 @@ SaveDefinitions -> True]";
        {circles:?}"
     );
   }
+
+  /// visualizing node-prominence measures on a network: a `GraphPlot` whose
+  /// `VertexRenderingFunction` sizes each point by a chosen centrality
+  /// measure, with a `SetterBar` picking which of several small hardcoded
+  /// networks to show and a checkbox unioning in the reversed edges to make
+  /// it bidirectional. Independently written, not copied from any specific
+  /// Demonstration: this version uses two small 4/5-vertex networks of its
+  /// own, computes degree by hand with `Count`/`Flatten` rather than the
+  /// original's particular helper functions, and picks among Woxi's built-in
+  /// `PageRankCentrality`/`ClosenessCentrality` rather than the legacy
+  /// `GraphUtilities` package the original notebook loads.
+  ///
+  /// The construct worth pinning down is a bare edge list (`{1 -> 2, ...}`,
+  /// not wrapped in `Graph[...]`) threaded through `VertexList`,
+  /// `PageRankCentrality`, `ClosenessCentrality`, and `GraphPlot` all at
+  /// once, plus a `SetterBar` (`network number`) and a boolean checkbox
+  /// (`bidirectional`) both feeding which edge list is even built, ahead of
+  /// a `PopupMenu` (`centrality measure`) selecting which rescaled measure
+  /// sizes the vertices.
+  #[test]
+  fn demonstration_node_prominence_manipulate_renders_and_switches_network() {
+    let code = "Manipulate[\
+      Module[{edges, g, vlist, deg, pr, cc}, \
+        edges = If[net == 1, \
+          {1 -> 2, 2 -> 3, 3 -> 1, 3 -> 4}, \
+          {1 -> 2, 1 -> 3, 2 -> 4, 3 -> 4, 4 -> 1}]; \
+        g = If[bidir, Union[edges, Reverse /@ edges], edges]; \
+        vlist = VertexList[g]; \
+        deg = Rescale[N[Table[Count[Flatten[List @@@ g], v], {v, vlist}]]]; \
+        pr = Rescale[PageRankCentrality[g]]; \
+        cc = Rescale[ClosenessCentrality[g]]; \
+        GraphPlot[g, \
+          DirectedEdges -> Not[bidir], \
+          VertexRenderingFunction -> ({PointSize[scale (#2 /. Thread[vlist -> Which[\
+              measure == \"Degree\", deg, \
+              measure == \"PageRank\", pr, \
+              True, cc]])], Point[#1]} &)]\
+      ], \
+      {{scale, 0.05, \"vertex scale\"}, 0, 0.2, 0.01}, \
+      {{measure, \"PageRank\", \"centrality measure\"}, {\"Degree\", \"PageRank\", \"Closeness\"}}, \
+      {{net, 1, \"network number\"}, {1, 2}, ControlType -> SetterBar}, \
+      {{bidir, False, \"bidirectional\"}, {True, False}}\
+    ]";
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a slider, a PopupMenu, a SetterBar and a checkbox should build a ManipulateState",
+    );
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the GraphPlot must render");
+
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["scale", "measure", "net", "bidir"]);
+
+    match &state.controls[1] {
+      manipulate::ControlState::Discrete {
+        values,
+        current_index,
+        popup,
+        ..
+      } => {
+        assert_eq!(values, &["\"Degree\"", "\"PageRank\"", "\"Closeness\""]);
+        assert_eq!(*current_index, 1, "measure should start at PageRank");
+        assert!(!*popup, "ControlType -> PopupMenu was never requested");
+      }
+      other => panic!("measure should be a discrete control: {other:?}"),
+    }
+
+    match &state.controls[2] {
+      manipulate::ControlState::Discrete {
+        values,
+        current_index,
+        setter_bar,
+        ..
+      } => {
+        assert_eq!(values, &["1", "2"]);
+        assert_eq!(*current_index, 0, "network number should start at 1");
+        assert!(*setter_bar, "ControlType -> SetterBar was requested");
+      }
+      other => panic!("net should be a discrete SetterBar: {other:?}"),
+    }
+
+    // Switch to the second network, make it bidirectional, and pick a
+    // different centrality measure, then re-render: none of that should
+    // error, and a bare edge list must still flow cleanly through
+    // VertexList/PageRankCentrality/ClosenessCentrality/GraphPlot for the
+    // new 5-vertex network.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[1]
+    {
+      *current_index = 0; // "Degree"
+    }
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[2]
+    {
+      *current_index = 1; // network 2
+    }
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[3]
+    {
+      *current_index = 0; // bidir -> True
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(
+      state.graphics_handle.is_some(),
+      "the GraphPlot must still render after switching network/measure/bidirectional"
+    );
+  }
 }

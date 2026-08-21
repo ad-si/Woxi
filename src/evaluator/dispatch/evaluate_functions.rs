@@ -21,6 +21,120 @@ fn delete_missing_type(type_expr: &Expr) -> Expr {
   type_expr.clone()
 }
 
+/// The flat argument list of an Orderless expression, with the head that
+/// rebuilds it. `None` for anything whose arguments cannot be reordered:
+/// a non-Orderless head, or too few (or unmanageably many) arguments.
+///
+/// `Times` and `Plus` reach here as nested `BinaryOp` chains rather than a
+/// single call, so they are flattened — which is what they mean anyway, both
+/// being `Flat`.
+fn orderless_parts(expr: &Expr) -> Option<(String, Vec<Expr>)> {
+  // Reordering is only worth trying for a handful of arguments: the readings
+  // are factorial in their number, and a rule guarded on a product of seven
+  // factors is not what this is for.
+  const MAX_ARGS: usize = 5;
+  let (head, args) = match expr {
+    Expr::BinaryOp { op, .. } => {
+      let head = match op {
+        BinaryOperator::Times => "Times",
+        BinaryOperator::Plus => "Plus",
+        _ => return None,
+      };
+      (head.to_string(), flatten_orderless_chain(expr, *op))
+    }
+    Expr::FunctionCall { name, args } => (name.clone(), args.to_vec()),
+    _ => return None,
+  };
+  if args.len() < 2 || args.len() > MAX_ARGS {
+    return None;
+  }
+  if !crate::evaluator::listable::is_builtin_orderless(&head)
+    && !crate::func_attrs_contains(&head, "Orderless")
+  {
+    return None;
+  }
+  Some((head, args))
+}
+
+/// Flatten a `BinaryOp` chain of one operator into its operands.
+fn flatten_orderless_chain(expr: &Expr, target: BinaryOperator) -> Vec<Expr> {
+  match expr {
+    Expr::BinaryOp { op, left, right } if *op == target => {
+      let mut parts = flatten_orderless_chain(left, target);
+      parts.extend(flatten_orderless_chain(right, target));
+      parts
+    }
+    other => vec![other.clone()],
+  }
+}
+
+/// How many readings of the arguments a structural condition should be
+/// offered before the rule is abandoned — `1` (the argument as it stands)
+/// unless exactly one parameter carries a structural pattern and its argument
+/// is a reorderable Orderless expression.
+///
+/// Limiting this to a single structural parameter keeps the retry linear:
+/// with two, the readings would multiply.
+fn orderless_reading_count(
+  conditions: &[Option<Expr>],
+  params: &[String],
+  effective_args: &[Expr],
+) -> usize {
+  let mut found: Option<usize> = None;
+  for cond in conditions.iter().flatten() {
+    let Expr::FunctionCall {
+      name: marker,
+      args: marker_args,
+    } = cond
+    else {
+      continue;
+    };
+    if marker != "__StructuralPattern__" || marker_args.len() != 2 {
+      continue;
+    }
+    let Expr::Identifier(param_name) = &marker_args[0] else {
+      continue;
+    };
+    let Some(idx) = params.iter().position(|p| p == param_name) else {
+      continue;
+    };
+    if found.is_some() {
+      return 1; // more than one structural parameter — keep the first reading
+    }
+    found = Some(idx);
+  }
+  let Some(idx) = found else { return 1 };
+  let Some(arg) = effective_args.get(idx) else {
+    return 1;
+  };
+  match orderless_parts(arg) {
+    Some((_, args)) => (1..=args.len()).product(),
+    None => 1,
+  }
+}
+
+/// The `n`-th reading of an Orderless argument, counting lexicographically
+/// from the argument exactly as it stands (`n == 0`). Anything that cannot be
+/// reordered, and any `n` past the last permutation, comes back unchanged.
+fn nth_orderless_reading(expr: &Expr, n: usize) -> Expr {
+  if n == 0 {
+    return expr.clone();
+  }
+  let Some((head, args)) = orderless_parts(expr) else {
+    return expr.clone();
+  };
+  let mut order: Vec<usize> = (0..args.len()).collect();
+  for _ in 0..n {
+    if !next_permutation(&mut order) {
+      return expr.clone();
+    }
+  }
+  Expr::FunctionCall {
+    name: head,
+    args: order.into_iter().map(|i| args[i].clone()).collect(),
+  }
+}
+
 /// Generate next lexicographic permutation in-place. Returns false when done.
 fn next_permutation(arr: &mut [usize]) -> bool {
   let n = arr.len();
@@ -539,6 +653,100 @@ fn evaluate_function_call_ast_inner(
     "VectorFieldPlots`ListVectorFieldPlot" => "ListVectorPlot",
     other => other,
   };
+
+  // Every graph query/analysis function below documents its first argument
+  // as "a graph or a list of edges" (VertexList, EdgeList, the centrality
+  // measures, connectivity predicates, …) — Wolfram accepts a bare edge
+  // list anywhere a `Graph[...]` object is expected. Rather than teaching
+  // each of these functions to parse a bare edge list itself, normalize it
+  // once here through the same `Graph[edges] -> Graph[vertices, edges]`
+  // canonicalization `Graph` itself already performs.
+  const GRAPH_ARG_FUNCTIONS: &[&str] = &[
+    "AcyclicGraphQ",
+    "AdjacencyMatrix",
+    "BetweennessCentrality",
+    "ChromaticPolynomial",
+    "ClosenessCentrality",
+    "ConnectedComponents",
+    "ConnectedGraphComponents",
+    "ConnectedGraphQ",
+    "DegreeCentrality",
+    "DirectedGraphQ",
+    "EdgeAdd",
+    "EdgeBetweennessCentrality",
+    "EdgeContract",
+    "EdgeCount",
+    "EdgeDelete",
+    "EdgeList",
+    "EdgeQ",
+    "EdgeRules",
+    "EdgeTags",
+    "EigenvectorCentrality",
+    "EulerianGraphQ",
+    "FindMaximumFlow",
+    "FindSpanningTree",
+    "GraphComplement",
+    "GraphDisjointUnion",
+    "GraphDistance",
+    "GraphDistanceMatrix",
+    "GraphEmbedding",
+    "GraphPower",
+    "GraphReciprocity",
+    "IncidenceMatrix",
+    "IndexGraph",
+    "KatzCentrality",
+    "KirchhoffMatrix",
+    "LocalClusteringCoefficient",
+    "MixedGraphQ",
+    "MultigraphQ",
+    "PageRankCentrality",
+    "RadialityCentrality",
+    "TreeGraphQ",
+    "TuttePolynomial",
+    "UndirectedGraphQ",
+    "VertexAdd",
+    "VertexContract",
+    "VertexCount",
+    "VertexDegree",
+    "VertexDelete",
+    "VertexInDegree",
+    "VertexIndex",
+    "VertexList",
+    "VertexOutDegree",
+    "VertexQ",
+    "WeaklyConnectedComponents",
+    "WeaklyConnectedGraphQ",
+    "WeightedAdjacencyMatrix",
+    "WeightedGraphQ",
+  ];
+  if GRAPH_ARG_FUNCTIONS.contains(&name)
+    && let Some(Expr::List(items)) = args.first()
+    && !items.is_empty()
+    && let Ok(canonical) =
+      evaluate_function_call_ast("Graph", std::slice::from_ref(&args[0]))
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &canonical
+    && gname == "Graph"
+    && gargs.len() >= 2
+  {
+    let mut new_args = args.to_vec();
+    new_args[0] = canonical;
+    let result = evaluate_function_call_ast(name, &new_args)?;
+    // A result still headed by the same function name means it fell
+    // through to its own "can't handle this" case rather than computing an
+    // answer (e.g. `VertexInDegree[g, v]` for a `v` not in `g`). Echo back
+    // the caller's original bare edge list there instead of leaking this
+    // normalization's internal `Graph[...]` into the held result — Wolfram
+    // never surfaces it either.
+    if let Expr::FunctionCall { name: rname, .. } = &result
+      && rname == name
+    {
+      return Ok(unevaluated(name, args));
+    }
+    return Ok(result);
+  }
 
   // Thread Listable functions over list arguments
   let is_listable =
@@ -1223,55 +1431,43 @@ fn evaluate_function_call_ast_inner(
         let mut conditions_met = true;
         // Collect bindings from structural pattern matches for body substitution
         let mut structural_bindings: Vec<(String, Expr)> = Vec::new();
-        for cond_expr in conditions.iter().flatten() {
-          // Check for __StructuralPattern__ marker — use match_pattern instead of eval
-          if let Expr::FunctionCall {
-            name: marker_name,
-            args: marker_args,
-          } = cond_expr
-            && marker_name == "__StructuralPattern__"
-            && marker_args.len() == 2
-            && let Expr::Identifier(param_name) = &marker_args[0]
-          {
-            let pattern = &marker_args[1];
-            // Find the effective arg for this structural param
-            if let Some(idx) = params.iter().position(|p| p == param_name) {
-              if idx < effective_args.len() {
-                // Canonicalize the expression to match the canonical pattern form
-                // (e.g., BinaryOp::Divide → Times[..., Power[..., -1]])
-                let canonical_arg =
-                  crate::evaluator::assignment::canonicalize_divide_in_expr(
-                    &effective_args[idx],
-                  );
-                // Push positional parameter bindings as context so inner
-                // Orderless matching can check compatibility.
-                let mut positional_ctx: Vec<(String, Expr)> = Vec::new();
-                for (pi, param) in params.iter().enumerate() {
-                  if pi == idx
-                    || pi >= effective_args.len()
-                    || param.starts_with("__sp")
-                    || param.starts_with("_dv")
-                  {
-                    continue;
-                  }
-                  positional_ctx
-                    .push((param.clone(), effective_args[pi].clone()));
-                }
-                crate::evaluator::pattern_matching::push_match_context(
-                  &positional_ctx,
-                );
-                let match_result =
-                  crate::evaluator::pattern_matching::match_pattern(
-                    &canonical_arg,
-                    pattern,
-                  );
-                crate::evaluator::pattern_matching::pop_match_context();
-                if let Some(bindings) = match_result {
-                  // Check consistency: structural bindings must not conflict
-                  // with positional parameter bindings (skip the structural
-                  // param itself and synthetic names)
-                  let mut check = bindings.clone();
-                  let mut consistent = true;
+        // An Orderless argument can satisfy a structural pattern in more than
+        // one way, and the rule's guard may accept only some of them:
+        // `f[u_*x_] := … /; x > 0` has to read `3 q` as `u -> q, x -> 3`. The
+        // matcher commits to a single reading, so when the guard turns that
+        // one down, offer it the other orderings before giving up on the rule.
+        // Reading 0 is the argument exactly as it stands, so a rule that fired
+        // before still fires the same way, on the same binding.
+        let readings =
+          orderless_reading_count(conditions, params, &effective_args);
+        for reading in 0..readings {
+          conditions_met = true;
+          structural_bindings.clear();
+          for cond_expr in conditions.iter().flatten() {
+            // Check for __StructuralPattern__ marker — use match_pattern instead of eval
+            if let Expr::FunctionCall {
+              name: marker_name,
+              args: marker_args,
+            } = cond_expr
+              && marker_name == "__StructuralPattern__"
+              && marker_args.len() == 2
+              && let Expr::Identifier(param_name) = &marker_args[0]
+            {
+              let pattern = &marker_args[1];
+              // Find the effective arg for this structural param
+              if let Some(idx) = params.iter().position(|p| p == param_name) {
+                if idx < effective_args.len() {
+                  // Canonicalize the expression to match the canonical pattern form
+                  // (e.g., BinaryOp::Divide → Times[..., Power[..., -1]])
+                  let reread =
+                    nth_orderless_reading(&effective_args[idx], reading);
+                  let canonical_arg =
+                    crate::evaluator::assignment::canonicalize_divide_in_expr(
+                      &reread,
+                    );
+                  // Push positional parameter bindings as context so inner
+                  // Orderless matching can check compatibility.
+                  let mut positional_ctx: Vec<(String, Expr)> = Vec::new();
                   for (pi, param) in params.iter().enumerate() {
                     if pi == idx
                       || pi >= effective_args.len()
@@ -1280,65 +1476,95 @@ fn evaluate_function_call_ast_inner(
                     {
                       continue;
                     }
-                    if !crate::evaluator::pattern_matching::merge_bindings(
-                      &mut check,
-                      vec![(param.clone(), effective_args[pi].clone())],
-                    ) {
-                      consistent = false;
+                    positional_ctx
+                      .push((param.clone(), effective_args[pi].clone()));
+                  }
+                  crate::evaluator::pattern_matching::push_match_context(
+                    &positional_ctx,
+                  );
+                  let match_result =
+                    crate::evaluator::pattern_matching::match_pattern(
+                      &canonical_arg,
+                      pattern,
+                    );
+                  crate::evaluator::pattern_matching::pop_match_context();
+                  if let Some(bindings) = match_result {
+                    // Check consistency: structural bindings must not conflict
+                    // with positional parameter bindings (skip the structural
+                    // param itself and synthetic names)
+                    let mut check = bindings.clone();
+                    let mut consistent = true;
+                    for (pi, param) in params.iter().enumerate() {
+                      if pi == idx
+                        || pi >= effective_args.len()
+                        || param.starts_with("__sp")
+                        || param.starts_with("_dv")
+                      {
+                        continue;
+                      }
+                      if !crate::evaluator::pattern_matching::merge_bindings(
+                        &mut check,
+                        vec![(param.clone(), effective_args[pi].clone())],
+                      ) {
+                        consistent = false;
+                        break;
+                      }
+                    }
+                    if !consistent {
+                      conditions_met = false;
                       break;
                     }
-                  }
-                  if !consistent {
+                    structural_bindings.extend(bindings);
+                  } else {
                     conditions_met = false;
                     break;
                   }
-                  structural_bindings.extend(bindings);
                 } else {
                   conditions_met = false;
                   break;
                 }
-              } else {
-                conditions_met = false;
-                break;
               }
+              continue;
             }
-            continue;
-          }
-          // Build combined bindings for simultaneous substitution
-          let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
-          for (param, arg) in params.iter().zip(effective_args.iter()) {
-            all_bindings.push((param.as_str(), arg));
-          }
-          for (bind_name, bind_val) in &structural_bindings {
-            all_bindings.push((bind_name.as_str(), bind_val));
-          }
-          let substituted_cond = crate::syntax::substitute_pattern_bindings(
-            cond_expr,
-            &all_bindings,
-          );
-          // Evaluate the condition - it must return True. A `?test` whose
-          // test is a pure function can be stored as a FunctionCall whose
-          // head is the function's *string form* (e.g. `#1 > 0 & [arg]`),
-          // which doesn't reduce as a call; if the direct evaluation leaves
-          // it unapplied, re-parse the string form (which yields a proper
-          // application) and evaluate that — same approach MatchQ uses.
-          let mut cond_ok = matches!(
-            evaluate_expr_to_expr(&substituted_cond),
-            Ok(Expr::Identifier(ref s)) if s == "True"
-          );
-          if !cond_ok
-            && matches!(&substituted_cond, Expr::FunctionCall { name, .. }
-              if !is_identifier_like(name))
-          {
-            cond_ok = matches!(
-              crate::interpret(&crate::syntax::expr_to_string(
-                &substituted_cond
-              )),
-              Ok(ref s) if s == "True"
+            // Build combined bindings for simultaneous substitution
+            let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
+            for (param, arg) in params.iter().zip(effective_args.iter()) {
+              all_bindings.push((param.as_str(), arg));
+            }
+            for (bind_name, bind_val) in &structural_bindings {
+              all_bindings.push((bind_name.as_str(), bind_val));
+            }
+            let substituted_cond = crate::syntax::substitute_pattern_bindings(
+              cond_expr,
+              &all_bindings,
             );
+            // Evaluate the condition - it must return True. A `?test` whose
+            // test is a pure function can be stored as a FunctionCall whose
+            // head is the function's *string form* (e.g. `#1 > 0 & [arg]`),
+            // which doesn't reduce as a call; if the direct evaluation leaves
+            // it unapplied, re-parse the string form (which yields a proper
+            // application) and evaluate that — same approach MatchQ uses.
+            let mut cond_ok = matches!(
+              evaluate_expr_to_expr(&substituted_cond),
+              Ok(Expr::Identifier(ref s)) if s == "True"
+            );
+            if !cond_ok
+              && matches!(&substituted_cond, Expr::FunctionCall { name, .. }
+              if !is_identifier_like(name))
+            {
+              cond_ok = matches!(
+                crate::interpret(&crate::syntax::expr_to_string(
+                  &substituted_cond
+                )),
+                Ok(ref s) if s == "True"
+              );
+            }
+            if !cond_ok {
+              conditions_met = false;
+              break;
+            }
           }
-          if !cond_ok {
-            conditions_met = false;
+          if conditions_met {
             break;
           }
         }

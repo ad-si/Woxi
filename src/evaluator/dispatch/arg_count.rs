@@ -925,7 +925,9 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "InverseFourierCosTransform" => Some((3, usize::MAX)),
     "MedianDeviation" => Some((1, 1)),
     "MeijerG" => Some((3, 3)),
-    "MemberQ" => Some((1, 3)),
+    // The 3rd argument is a levelspec; a trailing `Heads -> True|False`
+    // option may follow it.
+    "MemberQ" => Some((1, 4)),
     "MersennePrimeExponent" => Some((1, 1)),
     "MersennePrimeExponentQ" => Some((1, 1)),
     // 1-arg form is the operator form Merge[f][assocs].

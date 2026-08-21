@@ -343,6 +343,36 @@ mod function_head {
   }
 
   #[test]
+  fn infix_apply_over_rule_matches_bracket_form() {
+    // `f @@ list` (Expr::Apply) and `Apply[f, list]` (a plain function call)
+    // are two different code paths that must agree on every head. A `Rule`/
+    // `RuleDelayed` is its own Expr variant rather than a FunctionCall, so
+    // the infix form was missing this case entirely and returned the Rule
+    // unchanged instead of applying to its two parts.
+    assert_eq!(interpret("List @@ (1 -> 2)").unwrap(), "{1, 2}");
+    assert_eq!(interpret("Apply[List, 1 -> 2]").unwrap(), "{1, 2}");
+    assert_eq!(interpret("List @@ (1 :> 2)").unwrap(), "{1, 2}");
+    assert_eq!(
+      interpret("List @@@ {1 -> 2, 2 -> 3}").unwrap(),
+      "{{1, 2}, {2, 3}}"
+    );
+  }
+
+  #[test]
+  fn infix_apply_over_association_matches_bracket_form() {
+    // Same underlying bug as the Rule case above: Association is its own
+    // Expr variant, and Apply on it maps over the values (not the rules).
+    assert_eq!(
+      interpret("List @@ <|\"a\" -> 1, \"b\" -> 2|>").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("Apply[List, <|\"a\" -> 1, \"b\" -> 2|>]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
   fn apply_negative_levelspec() {
     // Negative level -k selects subexpressions of Depth k (here -3 means
     // Depth 3 subexpressions). For {{{{{a}}}}} (Depth 6), {2, -3} = {2, 3}.

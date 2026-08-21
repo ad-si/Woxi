@@ -7094,3 +7094,76 @@ mod graph_annotations {
     );
   }
 }
+
+// Wolfram's own documentation states that every graph query/analysis
+// function below accepts either a `Graph[...]` object or a bare list of
+// edges for its first argument ("g can be a graph or a list of edges").
+// Woxi already normalized `Graph[{a -> b, ...}]` (a single-argument Graph
+// constructor) into the canonical `Graph[vertices, edges]` form; these
+// functions just weren't reusing that normalization when the `Graph[...]`
+// wrapper was missing entirely, so a bare edge list fell through to
+// "unevaluated" instead.
+mod bare_edge_list_argument {
+  use super::*;
+
+  #[test]
+  fn vertex_and_edge_list_accept_bare_edges() {
+    assert_eq!(
+      interpret("VertexList[{1 -> 2, 2 -> 3, 3 -> 1}]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("VertexCount[{1 -> 2, 2 -> 3, 3 -> 1}]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("EdgeCount[{1 -> 2, 2 -> 3, 3 -> 1}]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn centrality_measures_accept_bare_edges() {
+    // Matches the Graph[...]-wrapped result exactly (this is a shorthand
+    // for the same graph, not a different computation).
+    let wrapped =
+      interpret("ClosenessCentrality[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]")
+        .unwrap();
+    let bare =
+      interpret("ClosenessCentrality[{1 -> 2, 2 -> 3, 3 -> 1}]").unwrap();
+    assert_eq!(bare, wrapped);
+    assert_eq!(
+      interpret("Round[ClosenessCentrality[{1 -> 2, 2 -> 3, 3 -> 1}], 10^-6]")
+        .unwrap(),
+      "{666667/1000000, 666667/1000000, 666667/1000000}"
+    );
+
+    assert_eq!(
+      interpret("Round[PageRankCentrality[{1 -> 2, 2 -> 3, 3 -> 1}], 10^-6]")
+        .unwrap(),
+      "{333333/1000000, 333333/1000000, 333333/1000000}"
+    );
+    assert_eq!(
+      interpret("DegreeCentrality[{1 -> 2, 2 -> 3, 3 -> 1}]").unwrap(),
+      "{2, 2, 2}"
+    );
+  }
+
+  #[test]
+  fn undirected_bare_edges_also_normalize() {
+    assert_eq!(
+      interpret("VertexList[{1 <-> 2, 2 <-> 3}]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn non_edge_bare_list_still_falls_through_unevaluated() {
+    // {1, 2, 3} isn't a list of edges, so it must not be silently coerced
+    // into a graph on 3 vertices with no edges.
+    assert_eq!(
+      interpret("VertexCount[{1, 2, 3}]").unwrap(),
+      "VertexCount[{1, 2, 3}]"
+    );
+  }
+}

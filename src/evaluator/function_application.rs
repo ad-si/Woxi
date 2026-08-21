@@ -381,47 +381,18 @@ pub fn apply_apply_ast(
   func: &Expr,
   list: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items.clone(),
-    // Apply replaces the head of any expression: f @@ Plus[a, b, c] → f[a, b, c]
-    Expr::FunctionCall { args, .. } => args.clone(),
-    // Some heads stay as (possibly nested) BinaryOp nodes rather than
-    // FunctionCall nodes — notably Alternatives (`a | b | c`). Flatten
-    // same-operator chains so `List @@ (a | b | c)` → {a, b, c}, matching WS.
-    Expr::BinaryOp { op, left, right } => {
-      fn flatten(op: BinaryOperator, e: &Expr, out: &mut Vec<Expr>) {
-        if let Expr::BinaryOp {
-          op: inner,
-          left,
-          right,
-        } = e
-          && *inner == op
-          && !matches!(op, BinaryOperator::Power)
-        {
-          flatten(op, left, out);
-          flatten(op, right, out);
-          return;
-        }
-        out.push(e.clone());
-      }
-      let mut parts = Vec::new();
-      flatten(*op, left, &mut parts);
-      flatten(*op, right, &mut parts);
-      parts.into()
-    }
-    // Comparison chains: `a == b == c` is Equal[a, b, c]; `a < b <= c` is
-    // Inequality[a, Less, b, LessEqual, c]. Matches wolframscript.
-    Expr::Comparison {
-      operands,
-      operators,
-    } => {
-      let (_, args) =
-        crate::syntax::comparison_head_and_args(operands, operators);
-      args.into()
-    }
-    _ => {
+  // Delegate the "what are this expression's parts" question to the same
+  // helper the bracket form `Apply[f, list]` uses (`apply_ast` below), so a
+  // head this operator doesn't special-case itself — notably `Rule`/
+  // `RuleDelayed` (`f @@ (a -> b)` -> `f[a, b]`) and `Association` — still
+  // gets the same parts both forms agree are its children.
+  let items: crate::ExprList = if let Expr::Association(pairs) = list {
+    pairs.iter().map(|(_, v)| v.clone()).collect()
+  } else {
+    match crate::functions::list_helpers_ast::expr_children(list) {
+      Some(items) => items.into(),
       // Atoms have no children; Apply on an atom returns the atom unchanged
-      return Ok(list.clone());
+      None => return Ok(list.clone()),
     }
   };
 

@@ -2,6 +2,22 @@
 
 # Unreleased
 
+- An Orderless argument is re-read when a rule's guard turns down the first
+    reading. `Times` and `Plus` arguments can satisfy a structural pattern
+    more than one way, and the guard may accept only some of them:
+    `f[u_*x_] := g[u, x] /; x > 0` has to read `3 q` as `u -> q, x -> 3`, but
+    the matcher settles on one reading and the rule was abandoned when the
+    guard rejected it. Dispatch now offers the remaining orderings before
+    giving up. The reading a rule already fired on is tried first, so nothing
+    that matched before matches differently — only rules that used not to fire
+    at all can now fire.
+- `MemberQ` accepts a trailing `Heads -> True|False` option, so the
+    four-argument `MemberQ[expr, form, levelspec, Heads -> True]` works
+    instead of reporting `MemberQ::argb`. Under `Heads -> True` an
+    expression's head is one of the parts searched, and sits one level below
+    the expression it heads — `f` in `{f[a]}` is at level 2, the level of its
+    position `{1, 0}`.
+
 - A `Rule` or `RuleDelayed` inside a definition's pattern binds its parts.
     `f[a_ :> b_] := g[a, b]` matched and then substituted nothing — the body
     came back as `g[a, b]`, with the pattern names still in it — because the

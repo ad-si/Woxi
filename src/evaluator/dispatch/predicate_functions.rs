@@ -779,7 +779,7 @@ pub fn dispatch_predicate_functions(
         return Some(Ok(unevaluated("Between", args)));
       }
     }
-    "MemberQ" if args.len() == 2 || args.len() == 3 => {
+    "MemberQ" if (2..=4).contains(&args.len()) => {
       return Some(crate::functions::predicate_ast::member_q_ast(args));
     }
     "FreeQ" if args.len() == 2 || args.len() == 3 => {
