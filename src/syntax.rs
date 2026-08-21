@@ -7992,6 +7992,17 @@ fn format_map_apply_shorthand(
   format!("{func_display} {op} {list_display}")
 }
 
+/// Parenthesize an assignment's already-formatted RHS if the RHS is a
+/// `;`-sequence: `CompoundExpression` has the lowest precedence of any
+/// operator, so printing `lhs := a; b; c` without parens re-parses as
+/// `(lhs := a); b; c`, silently dropping `b` and `c` from the delayed
+/// definition — the Demonstrations idiom `f[x_] := (a = x; b = f[a]; b)`
+/// for a multi-statement body would lose everything after the first
+/// statement. Applies equally to `=`, `:=`, `^=` and `^:=`.
+pub(crate) fn assignment_rhs_needs_parens(rhs: &Expr) -> bool {
+  matches!(rhs, Expr::CompoundExpr(_))
+}
+
 fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
   let fmt = |e: &Expr| -> String { format_expr(e, form) };
   let fmt_fn: fn(&Expr) -> String = match form {
@@ -8570,16 +8581,40 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return format!("{} :> {}", fmt(&args[0]), rhs_final);
       }
       if name == "Set" && args.len() == 2 {
-        return format!("{} = {}", fmt(&args[0]), fmt(&args[1]));
+        let rhs = fmt(&args[1]);
+        let rhs = if assignment_rhs_needs_parens(&args[1]) {
+          format!("({rhs})")
+        } else {
+          rhs
+        };
+        return format!("{} = {}", fmt(&args[0]), rhs);
       }
       if name == "SetDelayed" && args.len() == 2 {
-        return format!("{} := {}", fmt(&args[0]), fmt(&args[1]));
+        let rhs = fmt(&args[1]);
+        let rhs = if assignment_rhs_needs_parens(&args[1]) {
+          format!("({rhs})")
+        } else {
+          rhs
+        };
+        return format!("{} := {}", fmt(&args[0]), rhs);
       }
       if name == "UpSet" && args.len() == 2 {
-        return format!("{} ^= {}", fmt(&args[0]), fmt(&args[1]));
+        let rhs = fmt(&args[1]);
+        let rhs = if assignment_rhs_needs_parens(&args[1]) {
+          format!("({rhs})")
+        } else {
+          rhs
+        };
+        return format!("{} ^= {}", fmt(&args[0]), rhs);
       }
       if name == "UpSetDelayed" && args.len() == 2 {
-        return format!("{} ^:= {}", fmt(&args[0]), fmt(&args[1]));
+        let rhs = fmt(&args[1]);
+        let rhs = if assignment_rhs_needs_parens(&args[1]) {
+          format!("({rhs})")
+        } else {
+          rhs
+        };
+        return format!("{} ^:= {}", fmt(&args[0]), rhs);
       }
       if name == "AddTo" && args.len() == 2 {
         return format!("{} += {}", fmt(&args[0]), fmt(&args[1]));
@@ -12048,11 +12083,13 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       }
     }
     Expr::FunctionCall { name, args } if name == "Set" && args.len() == 2 => {
-      format!(
-        "{} = {}",
-        expr_to_input_form(&args[0]),
-        expr_to_input_form(&args[1])
-      )
+      let rhs = expr_to_input_form(&args[1]);
+      let rhs = if assignment_rhs_needs_parens(&args[1]) {
+        format!("({rhs})")
+      } else {
+        rhs
+      };
+      format!("{} = {}", expr_to_input_form(&args[0]), rhs)
     }
     // `Out[-k]` for k > 0 renders as `%` shorthand (`%`, `%%`, `%%%`, …)
     // when held; matches expr_to_string/format_expr behavior.
@@ -12070,27 +12107,33 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "SetDelayed" && args.len() == 2 =>
     {
-      format!(
-        "{} := {}",
-        expr_to_input_form(&args[0]),
-        expr_to_input_form(&args[1])
-      )
+      let rhs = expr_to_input_form(&args[1]);
+      let rhs = if assignment_rhs_needs_parens(&args[1]) {
+        format!("({rhs})")
+      } else {
+        rhs
+      };
+      format!("{} := {}", expr_to_input_form(&args[0]), rhs)
     }
     Expr::FunctionCall { name, args } if name == "UpSet" && args.len() == 2 => {
-      format!(
-        "{} ^= {}",
-        expr_to_input_form(&args[0]),
-        expr_to_input_form(&args[1])
-      )
+      let rhs = expr_to_input_form(&args[1]);
+      let rhs = if assignment_rhs_needs_parens(&args[1]) {
+        format!("({rhs})")
+      } else {
+        rhs
+      };
+      format!("{} ^= {}", expr_to_input_form(&args[0]), rhs)
     }
     Expr::FunctionCall { name, args }
       if name == "UpSetDelayed" && args.len() == 2 =>
     {
-      format!(
-        "{} ^:= {}",
-        expr_to_input_form(&args[0]),
-        expr_to_input_form(&args[1])
-      )
+      let rhs = expr_to_input_form(&args[1]);
+      let rhs = if assignment_rhs_needs_parens(&args[1]) {
+        format!("({rhs})")
+      } else {
+        rhs
+      };
+      format!("{} ^:= {}", expr_to_input_form(&args[0]), rhs)
     }
     Expr::FunctionCall { name, args } if name == "AddTo" && args.len() == 2 => {
       format!(

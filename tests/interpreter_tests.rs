@@ -1509,6 +1509,25 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_vector_plot_epilog_draws_extra_primitives() {
+    // Regression: VectorPlot silently dropped its Epilog option entirely,
+    // so markers a Wolfram Demonstration draws over the field (e.g. the
+    // source charges in an electric-field trajectory plot) went missing
+    // from the render. Mirrors DensityPlot/ContourPlot, which already
+    // draw Epilog via plot_epilog::render_epilog_svg.
+    clear_state();
+    let svg = interpret(
+      "ExportString[VectorPlot[{y, -x}, {x, -2, 2}, {y, -2, 2}, \
+       Epilog -> {Red, Disk[{0, 0}, 0.3]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("<ellipse") || svg.contains("<path"),
+      "Epilog Disk not drawn: {svg}"
+    );
+  }
+
+  #[test]
   fn test_graphics_text_renders_inline_box_notation() {
     // A notebook `Text[…]` label can carry its typeset content as inline
     // `\!\(\*…\)` box notation — the front end's linear-syntax form for a
@@ -1806,6 +1825,98 @@ mod interpreter_tests {
     // The circumflex must stay literal inside string content.
     clear_state();
     assert_eq!(interpret("\"aˆb\"").unwrap(), "aˆb");
+  }
+
+  #[test]
+  fn test_set_delayed_compound_expression_rhs_keeps_parens_in_input_form() {
+    // Regression: printing `lhs := (a; b; c)` back to InputForm must keep
+    // the parentheses around the `;`-sequence body. CompoundExpression has
+    // the lowest precedence of any operator, so dropping them would
+    // re-parse as `(lhs := a); b; c` — silently losing every statement
+    // after the first. Same for `=`, `^:=`, and `^=`.
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Hold[f[x_] := (a = x; a + 1)], InputForm]").unwrap(),
+      "Hold[f[x_] := (a = x; a + 1)]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Hold[f[x_] = (a = x; a + 1)], InputForm]").unwrap(),
+      "Hold[f[x_] = (a = x; a + 1)]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Hold[f[x_] ^:= (a = x; a + 1)], InputForm]").unwrap(),
+      "Hold[f[x_] ^:= (a = x; a + 1)]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Hold[f[x_] ^= (a = x; a + 1)], InputForm]").unwrap(),
+      "Hold[f[x_] ^= (a = x; a + 1)]"
+    );
+  }
+
+  #[test]
+  fn test_definition_of_compound_expression_body_keeps_parens() {
+    // Same regression, surfaced through Definition[] (which formats
+    // DownValues by hand rather than through expr_to_input_form): a
+    // Demonstrations-style multi-statement delayed body must print with
+    // its grouping parentheses so Definition[f]'s own text remains valid
+    // input.
+    clear_state();
+    interpret("f[x_] := (a = x; b = a + 1; b)").unwrap();
+    assert_eq!(
+      interpret("Definition[f]").unwrap(),
+      "f[x_] := (a = x; b = a + 1; b)"
+    );
+  }
+
+  #[test]
+  fn test_definition_of_compound_expression_body_round_trips() {
+    // The real-world failure mode: re-parsing a printed Definition must
+    // reproduce the exact same function, not one that only runs its first
+    // statement. This is the mechanism Woxi Studio's Manipulate rendering
+    // relies on: a Demonstration's body is parsed to an AST and printed
+    // back to source before evaluation, so any statement dropped here
+    // silently breaks the Manipulate at render time.
+    clear_state();
+    interpret("f[x_] := (a = x; b = a + 1; b)").unwrap();
+    let def_text = interpret("ToString[Definition[f], InputForm]").unwrap();
+    clear_state();
+    interpret(&def_text).unwrap();
+    assert_eq!(interpret("f[5]").unwrap(), "6");
+  }
+
+  #[test]
+  fn test_while_with_parenthesized_compound_body_survives_reprint() {
+    // The exact shape that broke a real Wolfram Demonstration in Woxi
+    // Studio: a recursive downvalue whose base case is set from inside a
+    // `While` loop, with the whole delayed body parenthesized as a
+    // `;`-sequence. Printing the parsed body back to source (as the
+    // Manipulate renderer does) and re-running it must still terminate
+    // with the right answer instead of raising
+    // "While: test must evaluate to True or False" from a statement that
+    // silently escaped the delayed definition.
+    clear_state();
+    interpret("step[n_] := step[n - 1] + 1;").unwrap();
+    interpret(
+      "run[start_] := (step[0] = start; \
+         k = 1; \
+         While[k <= 3, k++]; \
+         step[3]);",
+    )
+    .unwrap();
+    let printed = interpret("ToString[Definition[run], InputForm]").unwrap();
+    assert!(
+      printed.starts_with("run[start_] := ("),
+      "lost the grouping parens: {printed}"
+    );
+    // Re-define `run` from nothing but its own printed definition (`step`'s
+    // definition is untouched) and confirm it still runs as one delayed
+    // multi-statement body instead of leaking its later statements out as
+    // immediate top-level code.
+    interpret(&printed).unwrap();
+    assert_eq!(interpret("run[10]").unwrap(), "13");
   }
 
   #[test]
