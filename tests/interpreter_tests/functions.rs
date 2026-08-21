@@ -6653,3 +6653,38 @@ mod boolean_convert_forms {
     );
   }
 }
+
+mod create_uuid {
+  use super::*;
+
+  // `CreateUUID[]` gives a fresh canonical UUID string every call;
+  // `CreateUUID[prefix]` puts the prefix in front of one.
+  #[test]
+  fn it_returns_a_fresh_canonical_uuid() {
+    clear_state();
+    let uuid = interpret("CreateUUID[]").unwrap();
+    assert_eq!(uuid.len(), 36, "{uuid} should be 36 characters");
+    let groups: Vec<&str> = uuid.split('-').collect();
+    assert_eq!(
+      groups.iter().map(|g| g.len()).collect::<Vec<_>>(),
+      vec![8, 4, 4, 4, 12],
+      "{uuid} should be grouped 8-4-4-4-12"
+    );
+    assert!(
+      uuid.chars().all(|c| c == '-' || c.is_ascii_hexdigit()),
+      "{uuid} should be hexadecimal"
+    );
+    assert_eq!(interpret("CreateUUID[] === CreateUUID[]").unwrap(), "False");
+  }
+
+  #[test]
+  fn a_prefix_is_kept() {
+    clear_state();
+    let prefixed = interpret(r#"CreateUUID["obj-"]"#).unwrap();
+    assert!(
+      prefixed.starts_with("obj-"),
+      "{prefixed} should be prefixed"
+    );
+    assert_eq!(prefixed.len(), 4 + 36);
+  }
+}

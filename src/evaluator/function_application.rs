@@ -2239,24 +2239,19 @@ pub fn apply_curried_call(
       }
     }
     Expr::Association(pairs) => {
-      // assoc["key"] — association lookup
-      if args.len() == 1 {
-        let key_str = expr_to_string(&args[0]);
-        for (k, v) in pairs {
-          if expr_to_string(k) == key_str {
-            return Ok(v.clone());
-          }
-        }
-        // Key not found: return Missing["KeyAbsent", key]
-        Ok(call(
-          "Missing",
-          vec![Expr::String("KeyAbsent".to_string()), args[0].clone()],
-        ))
-      } else {
+      // assoc["key"] — association lookup, one lookup per key, exactly as
+      // for an association a symbol holds.
+      if args.is_empty() {
         Ok(Expr::CurriedCall {
           func: Box::new(func.clone()),
           args: args.to_vec(),
         })
+      } else {
+        Ok(
+          crate::evaluator::pattern_matching::association_lookup_chain(
+            pairs, args,
+          ),
+        )
       }
     }
     Expr::List(_) => {

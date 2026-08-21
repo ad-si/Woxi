@@ -212,6 +212,28 @@ mod machine_specific {
     };
     assert_eval(r#"$OperatingSystem"#, &format!(r#""{os}""#));
   }
+
+  // `Internal`DynamicLibraryExtension[]` names the shared-library suffix of
+  // the host, without the dot — packages shipping LibraryLink binaries build
+  // their path with it (`"libuv." <> Internal`DynamicLibraryExtension[]`).
+  #[test]
+  fn dynamic_library_extension() {
+    let extension = if cfg!(target_os = "macos") {
+      "dylib"
+    } else if cfg!(target_os = "windows") {
+      "dll"
+    } else {
+      "so"
+    };
+    assert_eval(
+      r#"Internal`DynamicLibraryExtension[]"#,
+      &format!(r#""{extension}""#),
+    );
+    assert_eval(
+      r#""libuv." <> Internal`DynamicLibraryExtension[]"#,
+      &format!(r#""libuv.{extension}""#),
+    );
+  }
 }
 
 mod cases {

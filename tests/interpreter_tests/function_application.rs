@@ -1190,7 +1190,7 @@ mod named_function_arity_check {
          Function[{u, v}, u + v][Sequence @@ parts]"
       )
       .unwrap(),
-      "{4., 6.}"
+      "{4, 6.}"
     );
   }
 }

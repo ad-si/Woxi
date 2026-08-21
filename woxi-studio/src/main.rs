@@ -3760,6 +3760,13 @@ const SETTER_BAR_MAX_COMPACT_CHOICES: usize = 10;
 /// to sit in a long SetterBar.
 const SETTER_BAR_COMPACT_LABEL_CHARS: usize = 3;
 
+/// Width, on top of the label column, reserved for a control panel placed
+/// beside the output by `ControlPlacement -> Left`/`Right`. The rows inside
+/// it are `Fill`, so without a fixed width the panel would claim half the
+/// cell and squeeze the graphic; this leaves room for a draggable slider
+/// plus its value readout.
+const SIDE_PANEL_CONTROL_WIDTH: f32 = 230.0;
+
 /// Whether a discrete control's choices render as a segmented SetterBar (a row
 /// of toggle buttons) rather than a dropdown.
 ///
@@ -4409,7 +4416,9 @@ fn render_manipulate_widget<'a>(
   // AnimationRunning -> True). It stays visible under Appearance -> None so
   // the animation can still be paused. A Trigger control renders its own
   // toggle in its row, so the widget-level one would be redundant.
-  if state.animated && !(show_controls && state.has_trigger()) {
+  let show_play_toggle =
+    state.animated && !(show_controls && state.has_trigger());
+  if show_play_toggle {
     let symbol = if state.playing { "❚❚" } else { "▶" };
     let play_btn = button(text(symbol).size(11))
       .padding([3, 10])
@@ -4452,13 +4461,48 @@ fn render_manipulate_widget<'a>(
 
   // Extra display elements (e.g. a Checkbox grid) sit above the rendered
   // body output; each interactive checkbox emits a write-back on toggle.
-  let mut widget_col = column![controls_col].spacing(6);
+  let mut body_col = Column::new().spacing(6).width(Fill);
   for tree in &state.display_trees {
-    widget_col = widget_col.push(render_display_node(cell_idx, tree));
+    body_col = body_col.push(render_display_node(cell_idx, tree));
   }
-  widget_col = widget_col.push(output_col);
+  body_col = body_col.push(output_col);
 
-  container(widget_col).padding(6).width(Fill).into()
+  // `ControlPlacement` decides which side the panel sits on. A widget that
+  // ended up with no panel rows at all (`Appearance -> None` with nothing to
+  // play) stacks instead, so a side placement cannot reserve an empty gutter
+  // next to the graphic.
+  let panel_is_empty = !show_play_toggle
+    && !visible_controls
+      .iter()
+      .enumerate()
+      .any(|(i, _)| state.control_is_visible.get(i).copied().unwrap_or(true));
+  let placement = if panel_is_empty {
+    manipulate::ControlPlacement::Top
+  } else {
+    state.control_placement
+  };
+  let side_width =
+    iced::Length::Fixed(label_col_width + SIDE_PANEL_CONTROL_WIDTH);
+  let widget: Element<Message> = match placement {
+    manipulate::ControlPlacement::Top => {
+      column![controls_col, body_col].spacing(6).into()
+    }
+    manipulate::ControlPlacement::Bottom => {
+      column![body_col, controls_col].spacing(6).into()
+    }
+    manipulate::ControlPlacement::Left => {
+      row![controls_col.width(side_width), body_col]
+        .spacing(12)
+        .into()
+    }
+    manipulate::ControlPlacement::Right => {
+      row![body_col, controls_col.width(side_width)]
+        .spacing(12)
+        .into()
+    }
+  };
+
+  container(widget).padding(6).width(Fill).into()
 }
 
 /// Recursively render a Manipulate display-element widget tree into iced.
@@ -6781,6 +6825,51 @@ mod tests {
     assert!(
       state.graphics_handle.is_some(),
       "Graphics of translated/rotated pieces should render"
+    );
+  }
+  /// A digit-inspector Manipulate picking among symbolic constants (Pi, E,
+  /// GoldenRatio) and rendering the chosen constant's leading digits via
+  /// `RealDigits`. Independently written, not copied from any specific
+  /// Wolfram Demonstration; it targets the general "constant bound to a
+  /// Manipulate control variable, then passed to RealDigits/N" pattern that
+  /// several digit- and constant-themed Demonstrations use.
+  #[test]
+  fn manipulate_constant_picker_feeds_real_digits() {
+    let code = r#"Manipulate[
+      Text[Row[First[RealDigits[constant, base, digits]]]],
+      {{constant, Pi}, {Pi, E, GoldenRatio}},
+      {{base, 10}, 2, 16, 1, ImageSize -> Tiny},
+      {{digits, 12}, 2, 30, 1, ImageSize -> Tiny}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a discrete constant picker plus two sliders should build a ManipulateState");
+
+    assert_eq!(state.controls.len(), 3, "constant, base, digits");
+    assert!(
+      matches!(
+        &state.controls[0],
+        manipulate::ControlState::Discrete { name, values, .. }
+          if name == "constant" && values == &["Pi", "E", "GoldenRatio"]
+      ),
+      "the {{Pi, E, GoldenRatio}} domain builds a discrete control: {:?}",
+      state.controls[0]
+    );
+    assert!(
+      state.error.is_none(),
+      "RealDigits[constant, base, digits] must evaluate cleanly even though \
+       `constant` substitutes a Manipulate-bound Pi/E, not a literal token: {:?}",
+      state.error
+    );
+    // A top-level `Text[Row[…]]` body renders as a graphic (like every other
+    // typeset body in this test file), not as `text_output` — the point
+    // under test is that `error` stayed `None`, i.e. `RealDigits` actually
+    // computed the digits instead of returning unevaluated.
+    assert!(
+      state.graphics_handle.is_some(),
+      "expected a rendered graphic, got text_output={:?}",
+      state.text_output
     );
   }
 
@@ -20307,6 +20396,146 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     );
   }
 
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// illustrating the lever principle: two weights sit at adjustable
+  /// distances from a pivot, and the beam tilts one way or the other
+  /// depending on which side has the greater torque. Independently
+  /// written, not copied from any specific Demonstration: this version
+  /// draws the beam as a `Rectangle` swinging about the fulcrum and the
+  /// weights as `Disk`s sized by cube root of mass, rather than the
+  /// original's particular shapes and layout.
+  ///
+  /// The case worth pinning down is a `Sign`-driven tilt angle feeding a
+  /// nested `Rotate` (rotating the weights around the pivot by the same
+  /// angle that rotates the beam and background ticks around the origin),
+  /// combined with `Manipulate` sliders whose `Appearance -> "Labeled"`
+  /// labels are `Style[Row[{Subscript[...], " unit"}]]` expressions and
+  /// `SaveDefinitions -> True` so the widget works without the definition
+  /// cell having run first.
+  #[test]
+  fn demonstration_seesaw_manipulate_tilts_toward_heavier_torque() {
+    let def = "seesaw[wl_, wr_, dl_, dr_, opts___] := Graphics[{\
+Gray, Thickness[0.01], Line[{{0, 3}, {0, -6}}], Line[{{-3, -6}, {3, -6}}], \
+Black, PointSize[Large], Point[{0, 0}], \
+Rotate[{Black, Thickness[0.004], \
+Table[Line[{{n, 0.3}, {n, -0.3}}], {n, -8, 8, 1}], \
+Rotate[{Disk[{-dl, -1}, (0.04 wl)^(1/3)], Line[{{-dl, 0}, {-dl, -1}}], \
+Text[Style[wl, 12, White], {-dl, -1}]}, \
+Sign[wl dl - wr dr] (Pi/6), {-dl, 0}], \
+Rotate[{Disk[{dr, -1}, (0.04 wr)^(1/3)], Line[{{dr, 0}, {dr, -1}}], \
+Text[Style[wr, 12, White], {dr, -1}]}, \
+Sign[wl dl - wr dr] (Pi/6), {dr, 0}]}, \
+-Sign[wl dl - wr dr] (Pi/6), {0, 0}]}, opts, \
+PlotRange -> {{-9, 9}, {-7, 4}}]";
+    let manip = "Manipulate[\
+seesaw[wl, wr, dl, dr, ImageSize -> {500, 320}], \
+{{wl, 4, Style[Row[{Subscript[\"w\", \"l\"], \" kg\"}]]}, 1, 10, 1, \
+Appearance -> \"Labeled\"}, \
+{{wr, 2, Style[Row[{Subscript[\"w\", \"r\"], \" kg\"}]]}, 1, 10, 1, \
+Appearance -> \"Labeled\"}, \
+{{dl, 3, Style[Row[{Subscript[\"d\", \"l\"], \" m\"}]]}, 1, 8, 1, \
+Appearance -> \"Labeled\"}, \
+{{dr, 6, Style[Row[{Subscript[\"d\", \"r\"], \" m\"}]]}, 1, 8, 1, \
+Appearance -> \"Labeled\"}, \
+TrackedSymbols :> {wl, wr, dl, dr}, ControlPlacement -> Top, \
+SaveDefinitions -> True]";
+
+    assert!(
+      woxi::interpret(def).is_ok(),
+      "the seesaw definition must evaluate cleanly"
+    );
+
+    let mut state = instantiate_stored_manipulate(manip, "")
+      .expect("the seesaw Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the beam and both weights must render"
+    );
+
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: wl_name,
+          min: wl_min,
+          max: wl_max,
+          step: wl_step,
+          current: wl_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: wr_name,
+          current: wr_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: dl_name,
+          current: dl_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: dr_name,
+          current: dr_now,
+          ..
+        },
+      ] => {
+        assert_eq!(wl_name.as_str(), "wl");
+        assert_eq!(wr_name.as_str(), "wr");
+        assert_eq!(dl_name.as_str(), "dl");
+        assert_eq!(dr_name.as_str(), "dr");
+        assert_eq!(*wl_min, 1.0);
+        assert_eq!(*wl_max, 10.0);
+        assert_eq!(*wl_step, 1.0);
+        assert_eq!(*wl_now, 4.0);
+        assert_eq!(*wr_now, 2.0);
+        assert_eq!(*dl_now, 3.0);
+        assert_eq!(*dr_now, 6.0);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the seesaw must render")
+    };
+    // Balanced: wl * dl == wr * dr == 12, so torque sign is zero and the
+    // beam stays level.
+    let balanced = render(&state);
+
+    match &mut state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          current: wl_now, ..
+        },
+        ..,
+      ] => {
+        *wl_now = 9.0;
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let tilted = render(&state);
+    assert_ne!(
+      balanced, tilted,
+      "raising the left weight's mass must tip the beam and redraw the picture"
+    );
+  }
+
   /// A `Manipulate` whose body plots the survival function of a
   /// `ReliabilityDistribution` (a two-component parallel system) — a small
   /// original example of the reliability-engineering Demonstration family,
@@ -20476,5 +20705,116 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
       fourth_ring.contains(">81<") && fourth_ring.contains(">32<"),
       "the recomputed panel must show the ring-4 numbers"
     );
+  }
+
+  /// A rotationally symmetric emblem Manipulate: a filled disk with a white
+  /// disk punched out of it (leaving a ring) and an n-pointed star inside,
+  /// driven by five `ImageSize -> Tiny` sliders with the control panel asked
+  /// to sit beside the square graphic. Two things the category depends on:
+  /// the orientation slider's upper bound is `Dynamic[…]` over the point
+  /// count, so widening the star narrows the rotation range, and the body
+  /// opens by clamping that same control back inside the new range — a write
+  /// to one of the widget's own variables. This mirrors the general
+  /// construct category used by parameterized-logo Wolfram Demonstrations
+  /// Project notebooks (independently written, not copied from any specific
+  /// one).
+  #[test]
+  fn manipulate_emblem_dynamic_bound_clamps_and_places_controls_left() {
+    let code = r#"Manipulate[
+      If[rot > 360/pts, rot = 360/pts];
+      Graphics[{
+        {Disk[], White, Disk[{0, 0}, ring]},
+        Polygon[Table[
+          With[{a = (rot + 90 + j 180/pts + If[OddQ[j], skew, 0]) Degree},
+            If[EvenQ[j], 1, waist] ring {Cos[a], Sin[a]}],
+          {j, 0, 2 pts - 1}]]
+      }, ImageSize -> {400, 400}],
+      {{pts, 3, "points"}, 3, 24, 1, ImageSize -> Tiny},
+      {{waist, 0.14, "sharpness"}, 0, 1, ImageSize -> Tiny},
+      {{skew, 0, "twist"}, 0, 360, ImageSize -> Tiny},
+      {{ring, 0.94, "thickness"}, 0, 1, ImageSize -> Tiny},
+      {{rot, 0, "orientation"}, 0, Dynamic[360/pts], ImageSize -> Tiny},
+      ControlPlacement -> Left,
+      AutorunSequencing -> {1, 2, 3, 4}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("five Tiny sliders should build a ManipulateState");
+
+    assert_eq!(
+      state.control_placement,
+      manipulate::ControlPlacement::Left,
+      "ControlPlacement -> Left must survive into the widget state"
+    );
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["pts", "waist", "skew", "ring", "rot"]);
+
+    // The orientation slider's range is one full sector at the starting
+    // three points: 360/3.
+    let bounds = |s: &manipulate::ManipulateState| match &s.controls[4] {
+      manipulate::ControlState::Continuous {
+        min, max, current, ..
+      } => (*min, *max, *current),
+      other => panic!("orientation should be a slider: {other:?}"),
+    };
+    assert_eq!(bounds(&state), (0.0, 120.0, 0.0));
+
+    let ring_3 = star_points(&state);
+    // Three points, so six polygon vertices alternating long and short.
+    assert_eq!(
+      ring_3.matches(',').count(),
+      6,
+      "star should have 6 vertices: {ring_3}"
+    );
+
+    // Rotate all the way round the sector, then raise the point count: the
+    // bound follows `pts` down to 360/24 and the body's clamp pulls the
+    // orientation in with it.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[4]
+    {
+      *current = 120.0;
+    }
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 24.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert_eq!(
+      bounds(&state),
+      (0.0, 15.0, 15.0),
+      "the Dynamic bound must follow the point count and clamp the value"
+    );
+
+    let ring_24 = star_points(&state);
+    assert_eq!(
+      ring_24.matches(',').count(),
+      48,
+      "24 points should give 48 vertices: {ring_24}"
+    );
+  }
+
+  /// The `points="…"` attribute of the polygon a Manipulate's body draws at
+  /// its current control values.
+  fn star_points(state: &manipulate::ManipulateState) -> String {
+    let bindings: Vec<(String, String)> = state
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .collect();
+    let svg = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("body evaluates")
+    .graphics
+    .expect("body should render a graphic");
+    svg
+      .split_once("<polygon points=\"")
+      .and_then(|(_, r)| r.split_once('"'))
+      .map(|(pts, _)| pts.to_string())
+      .unwrap_or_else(|| panic!("no polygon in rendered SVG: {svg}"))
   }
 }

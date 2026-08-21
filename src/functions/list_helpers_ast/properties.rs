@@ -823,72 +823,169 @@ pub fn list_depth(expr: &Expr) -> usize {
 /// `` Developer`ToPackedArray[expr] `` — pack a full rectangular array of
 /// machine numbers into a single numeric type.
 ///
-/// Woxi has no packed representation, so the only observable effect is the
-/// type unification a real pack performs: an array that mixes integers and
-/// reals comes back as all reals. Anything unpackable (ragged nesting,
-/// rationals, symbols, strings) is returned unchanged, as in Wolfram.
-/// A second argument restricts the target type to `Integer` or `Real`.
+/// Woxi keeps no packed representation, and packing on its own is invisible
+/// anyway: wolframscript packs only arrays whose leaves already share one
+/// machine type, which leaves every leaf exactly as it printed before. An
+/// array mixing integers and reals is therefore *not* packed and comes back
+/// unchanged, just like ragged nesting, rationals or symbols.
+///
+/// The observable behaviour comes from the optional second argument, which
+/// asks for `Integer`, `Real` or `Complex`: every leaf is converted to that
+/// type when all of them can be represented in it, and the expression is
+/// returned unchanged when one cannot.
 pub fn to_packed_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let expr = &args[0];
-  let target = match args.get(1) {
-    None => None,
-    Some(Expr::Identifier(t)) if t == "Integer" => Some(LeafType::Integer),
-    Some(Expr::Identifier(t)) if t == "Real" => Some(LeafType::Real),
-    Some(_) => return Ok(expr.clone()),
+  let unevaluated_call = || unevaluated("Developer`ToPackedArray", args);
+  if args.is_empty() {
+    crate::emit_message(
+      "Developer`ToPackedArray::argt: Developer`ToPackedArray called with 0 \
+       arguments; 1 or 2 arguments are expected.",
+    );
+    return Ok(unevaluated_call());
+  }
+
+  // The array and the type are the only positional arguments. Everything
+  // beyond them has to be an option — and ToPackedArray has none, so any
+  // option that does show up is reported as unknown.
+  let options_start = if args.len() > 1 && is_option_like(&args[1]) {
+    1
+  } else {
+    2
   };
-  let Some(found) = packable_leaf_type(expr) else {
+  if args.len() > options_start {
+    let extras = &args[options_start..];
+    if let Some(offender) = extras.iter().rev().find(|e| !is_option_like(e)) {
+      crate::emit_message(&format!(
+        "Developer`ToPackedArray::nonopt: Options expected (instead of {}) \
+         beyond position 2 in {}. An option must be a rule or a list of \
+         rules.",
+        crate::syntax::expr_to_output(offender),
+        crate::syntax::expr_to_output(&unevaluated_call())
+      ));
+      return Ok(unevaluated_call());
+    }
+    if let Some(name) = extras.iter().find_map(first_option_name) {
+      crate::emit_message(&format!(
+        "Developer`ToPackedArray::optx: Unknown option {} in {}.",
+        name,
+        crate::syntax::expr_to_output(&unevaluated_call())
+      ));
+      return Ok(unevaluated_call());
+    }
+  }
+
+  let expr = &args[0];
+  let target = if options_start == 2 && args.len() > 1 {
+    match &args[1] {
+      Expr::Identifier(t) | Expr::Constant(t) => match t.as_str() {
+        "Integer" => Some(PackedType::Integer),
+        // Automatic picks the type of the leaves, which — as above — is a
+        // no-op for every array that can be packed at all.
+        "Automatic" => return Ok(expr.clone()),
+        "Real" => Some(PackedType::Real),
+        "Complex" => Some(PackedType::Complex),
+        _ => return Ok(unevaluated_call()),
+      },
+      _ => return Ok(unevaluated_call()),
+    }
+  } else {
+    None
+  };
+  let Some(target) = target else {
     return Ok(expr.clone());
   };
-  let target = match target {
-    // Reals cannot be demoted to an integer array.
-    Some(LeafType::Integer) if found == LeafType::Real => {
-      return Ok(expr.clone());
-    }
-    Some(t) => t,
-    None => found,
-  };
-  Ok(convert_leaves(expr, target))
-}
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum LeafType {
-  Integer,
-  Real,
-}
-
-/// The common machine type of a full rectangular numeric array, or `None`
-/// when the expression cannot be packed.
-fn packable_leaf_type(expr: &Expr) -> Option<LeafType> {
+  // Only a full rectangular array of numbers can be packed.
   if !matches!(expr, Expr::List(_))
     || !matches!(array_q_ast(expr), Ok(Expr::Identifier(ref b)) if b == "True")
   {
-    return None;
+    return Ok(expr.clone());
   }
-  fn walk(expr: &Expr, found: &mut Option<LeafType>) -> bool {
-    match expr {
-      Expr::List(items) => items.iter().all(|item| walk(item, found)),
-      Expr::Integer(_) => {
-        found.get_or_insert(LeafType::Integer);
-        true
-      }
-      Expr::Real(_) => {
-        *found = Some(LeafType::Real);
-        true
-      }
-      _ => false,
-    }
-  }
-  let mut found = None;
-  if walk(expr, &mut found) { found } else { None }
+  Ok(convert_leaves(expr, target).unwrap_or_else(|| expr.clone()))
 }
 
-fn convert_leaves(expr: &Expr, target: LeafType) -> Expr {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PackedType {
+  Integer,
+  Real,
+  Complex,
+}
+
+/// Whether an argument can stand in an option position: a rule, or a list of
+/// rules.
+fn is_option_like(expr: &Expr) -> bool {
   match expr {
-    Expr::List(items) => {
-      Expr::List(items.iter().map(|i| convert_leaves(i, target)).collect())
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } => true,
+    Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+    {
+      true
     }
-    Expr::Integer(n) if target == LeafType::Real => Expr::Real(*n as f64),
-    other => other.clone(),
+    Expr::List(items) => items.iter().all(is_option_like),
+    _ => false,
+  }
+}
+
+/// The name of the first option in an option argument, used to report it as
+/// unknown.
+fn first_option_name(expr: &Expr) -> Option<String> {
+  match expr {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      Some(crate::syntax::expr_to_output(pattern))
+    }
+    Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+    {
+      Some(crate::syntax::expr_to_output(&args[0]))
+    }
+    Expr::List(items) => items.iter().find_map(first_option_name),
+    _ => None,
+  }
+}
+
+/// Convert every leaf of a rectangular array to `target`, or `None` when one
+/// of them has no representation in that type.
+fn convert_leaves(expr: &Expr, target: PackedType) -> Option<Expr> {
+  if let Expr::List(items) = expr {
+    let converted = items
+      .iter()
+      .map(|item| convert_leaves(item, target))
+      .collect::<Option<Vec<_>>>()?;
+    return Some(Expr::List(converted.into_iter().collect()));
+  }
+  convert_leaf(expr, target)
+}
+
+fn convert_leaf(leaf: &Expr, target: PackedType) -> Option<Expr> {
+  use crate::functions::try_extract_complex_f64;
+  match target {
+    PackedType::Integer => {
+      // A packed integer array holds machine integers, so the leaf has to be
+      // an exact integer in that range. Arbitrary-precision numbers never
+      // qualify, not even when their value would fit.
+      match leaf {
+        Expr::Integer(n) => i64::try_from(*n).ok().map(|_| Expr::Integer(*n)),
+        Expr::BigInteger(_) | Expr::BigFloat(_, _) => None,
+        _ => {
+          let (re, im) = try_extract_complex_f64(leaf)?;
+          (im == 0.0
+            && re.fract() == 0.0
+            && re >= i64::MIN as f64
+            && re <= i64::MAX as f64)
+            .then(|| Expr::Integer(re as i128))
+        }
+      }
+    }
+    PackedType::Real => {
+      let (re, im) = try_extract_complex_f64(leaf)?;
+      (im == 0.0 && re.is_finite()).then_some(Expr::Real(re))
+    }
+    PackedType::Complex => {
+      let (re, im) = try_extract_complex_f64(leaf)?;
+      // A packed complex array keeps machine reals for both parts, so even a
+      // vanishing imaginary part stays visible: `1. + 0.*I`.
+      (re.is_finite() && im.is_finite())
+        .then(|| crate::functions::build_complex_float_expr_keep_real(re, im))
+    }
   }
 }
 

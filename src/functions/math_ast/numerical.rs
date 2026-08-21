@@ -1442,21 +1442,30 @@ pub fn expr_to_bigfloat(
       rm,
       cc,
     )),
-    Expr::Constant(name) => match name.as_str() {
-      "Pi" | "-Pi" => {
-        let pi = cc.pi(bits, rm);
-        if name == "-Pi" { Ok(pi.neg()) } else { Ok(pi) }
+    // A variable holding `Pi`/`E`/`Degree` substitutes in as `Identifier`
+    // rather than `Constant` (unlike a literal `Pi` token), so both variants
+    // are accepted here — matching how GoldenRatio, EulerGamma, etc. below
+    // already handle their `Identifier` form.
+    Expr::Constant(name) | Expr::Identifier(name)
+      if matches!(name.as_str(), "Pi" | "-Pi" | "E" | "Degree") =>
+    {
+      match name.as_str() {
+        "Pi" | "-Pi" => {
+          let pi = cc.pi(bits, rm);
+          if name == "-Pi" { Ok(pi.neg()) } else { Ok(pi) }
+        }
+        "E" => Ok(cc.e(bits, rm)),
+        "Degree" => {
+          let pi = cc.pi(bits, rm);
+          let d180 = BigFloat::from_i32(180, bits);
+          Ok(pi.div(&d180, bits, rm))
+        }
+        _ => unreachable!(),
       }
-      "E" => Ok(cc.e(bits, rm)),
-      "Degree" => {
-        let pi = cc.pi(bits, rm);
-        let d180 = BigFloat::from_i32(180, bits);
-        Ok(pi.div(&d180, bits, rm))
-      }
-      _ => Err(InterpreterError::EvaluationError(format!(
-        "N: cannot evaluate constant {name} to arbitrary precision"
-      ))),
-    },
+    }
+    Expr::Constant(name) => Err(InterpreterError::EvaluationError(format!(
+      "N: cannot evaluate constant {name} to arbitrary precision"
+    ))),
     Expr::Identifier(name) if name == "GoldenRatio" => {
       // GoldenRatio = (1 + Sqrt[5]) / 2
       let five = BigFloat::from_i32(5, bits);
