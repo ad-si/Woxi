@@ -20847,7 +20847,7 @@ SaveDefinitions -> True]";
         Frame -> False], \
       {{blockSize, 2, \"block size\"}, {2, 3}}, \
       {{ruleNum, 11, \"rule number\"}, 0, 2^(blockSize^2) - 1, 1}, \
-      {{steps, 3, \"steps\"}, 0, If[blockSize == 2, 7, 5], 1}, \
+      {{steps, 3, \"steps\"}, 0, If[blockSize == 2, 4, 2], 1}, \
       AutorunSequencing -> {2, 3}]";
     let expr =
       woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
@@ -20883,13 +20883,19 @@ SaveDefinitions -> True]";
         other => panic!("control {i} should be a slider: {other:?}"),
       };
     // Block size 2: rule number ranges over 2^4 - 1 = 15 values, steps over
-    // 0..7.
+    // 0..4.
     assert_eq!(bounds(&state, 1), (0.0, 15.0, 11.0));
-    assert_eq!(bounds(&state, 2), (0.0, 7.0, 3.0));
+    assert_eq!(bounds(&state, 2), (0.0, 4.0, 3.0));
 
     // Push both sliders to their current maxima, then switch the block size
     // to 3: rule number's bound jumps to 2^9 - 1 = 511 (so 15 no longer
-    // clamps), while steps' bound drops to 5 (so 7 must clamp down to 5).
+    // clamps), while steps' bound drops to 2 (so 4 must clamp down to 2).
+    // The pre-clamp render (`reevaluate` evaluates the body against the raw,
+    // not-yet-clamped bindings before `apply_dynamic_bounds` runs) still sees
+    // `steps = 4` here rather than the old `7`, so it stays a cheap
+    // `blockSize = 3, steps = 4` grid (3^4 = 81 per side) instead of the
+    // `3^7`-per-side, ~4.8M-cell `ArrayPlot` the larger pre-switch value
+    // would force.
     if let manipulate::ControlState::Continuous { current, .. } =
       &mut state.controls[1]
     {
@@ -20898,7 +20904,7 @@ SaveDefinitions -> True]";
     if let manipulate::ControlState::Continuous { current, .. } =
       &mut state.controls[2]
     {
-      *current = 7.0;
+      *current = 4.0;
     }
     if let manipulate::ControlState::Discrete { current_index, .. } =
       &mut state.controls[0]
@@ -20914,8 +20920,8 @@ SaveDefinitions -> True]";
     );
     assert_eq!(
       bounds(&state, 2),
-      (0.0, 5.0, 5.0),
-      "the steps bound must shrink with block size 3 and clamp the value down from 7"
+      (0.0, 2.0, 2.0),
+      "the steps bound must shrink with block size 3 and clamp the value down from 4"
     );
   }
 }
