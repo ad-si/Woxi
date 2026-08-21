@@ -6783,6 +6783,51 @@ mod tests {
       "Graphics of translated/rotated pieces should render"
     );
   }
+  /// A digit-inspector Manipulate picking among symbolic constants (Pi, E,
+  /// GoldenRatio) and rendering the chosen constant's leading digits via
+  /// `RealDigits`. Independently written, not copied from any specific
+  /// Wolfram Demonstration; it targets the general "constant bound to a
+  /// Manipulate control variable, then passed to RealDigits/N" pattern that
+  /// several digit- and constant-themed Demonstrations use.
+  #[test]
+  fn manipulate_constant_picker_feeds_real_digits() {
+    let code = r#"Manipulate[
+      Text[Row[First[RealDigits[constant, base, digits]]]],
+      {{constant, Pi}, {Pi, E, GoldenRatio}},
+      {{base, 10}, 2, 16, 1, ImageSize -> Tiny},
+      {{digits, 12}, 2, 30, 1, ImageSize -> Tiny}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a discrete constant picker plus two sliders should build a ManipulateState");
+
+    assert_eq!(state.controls.len(), 3, "constant, base, digits");
+    assert!(
+      matches!(
+        &state.controls[0],
+        manipulate::ControlState::Discrete { name, values, .. }
+          if name == "constant" && values == &["Pi", "E", "GoldenRatio"]
+      ),
+      "the {{Pi, E, GoldenRatio}} domain builds a discrete control: {:?}",
+      state.controls[0]
+    );
+    assert!(
+      state.error.is_none(),
+      "RealDigits[constant, base, digits] must evaluate cleanly even though \
+       `constant` substitutes a Manipulate-bound Pi/E, not a literal token: {:?}",
+      state.error
+    );
+    // A top-level `Text[Row[…]]` body renders as a graphic (like every other
+    // typeset body in this test file), not as `text_output` — the point
+    // under test is that `error` stayed `None`, i.e. `RealDigits` actually
+    // computed the digits instead of returning unevaluated.
+    assert!(
+      state.graphics_handle.is_some(),
+      "expected a rendered graphic, got text_output={:?}",
+      state.text_output
+    );
+  }
 
   /// `{{bg, RGBColor[0, 0, 0], "background"}, ColorSlider}` builds a real
   /// `Color` control rather than being dropped or misread as a hidden
