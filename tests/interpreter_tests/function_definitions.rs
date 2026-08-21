@@ -4641,6 +4641,36 @@ mod assigning_value_lists {
     );
   }
 
+  // `SubValues[f] = …` replaces what is in the SubValues store, and nothing
+  // else. Clearing `f`'s DownValues here would make installing a definition
+  // list section by section throw away the DownValues installed a moment
+  // earlier.
+  #[test]
+  fn subvalues_can_be_assigned_without_touching_downvalues() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "sv[x_] := x + 1; sv[a][b] := a - b; \
+         SubValues[sv] = SubValues[sv]; {sv[4], sv[9][2]}"
+      )
+      .unwrap(),
+      "{5, 7}"
+    );
+  }
+
+  #[test]
+  fn assigning_an_empty_list_clears_subvalues() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "sw[x_] := x + 1; sw[a][b] := a - b; SubValues[sw] = {}; \
+         {SubValues[sw], sw[4], sw[9][2]}"
+      )
+      .unwrap(),
+      "{{}, 5, sw[9][2]}"
+    );
+  }
+
   #[test]
   fn ownvalues_can_be_assigned() {
     clear_state();

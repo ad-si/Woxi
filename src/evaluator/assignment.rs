@@ -1183,12 +1183,36 @@ fn set_ownvalues_from_rules(
 /// wrappers are stripped) and replay it as an individual `lhs := rhs` so
 /// the rules get installed in FUNC_DEFS via the regular SetDelayed path.
 /// Iteration order is preserved (no specificity sorting), matching Wolfram.
-/// `clear_head` is the symbol whose values are being assigned, when the
-/// assignment replaces *that symbol's* own definitions — `DownValues[f] = …`.
-/// Its rules name the head themselves, so it is only needed for the case that
-/// carries none: `DownValues[f] = {}`, which has to clear `f` all the same.
-/// `DefaultValues[f] = …` passes `None`: its rules are `Default[f, …]` and
-/// belong to `Default`, not to `f`.
+/// Empty out what `DownValues[f] = …` / `SubValues[f] = …` is about to
+/// replace, and report whether `set_downvalues_from_rules` still has to clear
+/// `f`'s `FUNC_DEFS` itself.
+///
+/// The two lists live in different stores. `SubValues` are kept in
+/// `SUB_VALUES`, so that is what an assignment to them replaces — and it must
+/// leave `FUNC_DEFS` alone, or installing a definition list section by
+/// section (`Language`ExtendedFullDefinition[f] = …`) would have its
+/// SubValues wipe the DownValues installed a moment earlier.
+fn clear_replaced_values<'a>(
+  values_head: &str,
+  sym_name: &'a str,
+) -> Option<&'a str> {
+  if values_head == "SubValues" {
+    SUB_VALUES.with(|m| {
+      m.borrow_mut().remove(sym_name);
+    });
+    return None;
+  }
+  Some(sym_name)
+}
+
+/// `clear_head` is the symbol whose `FUNC_DEFS` entry this assignment
+/// replaces — `DownValues[f] = …`. Its rules name `f` themselves, so it is
+/// only needed for the case that carries none: `DownValues[f] = {}`, which
+/// has to clear `f` all the same. Everything whose rules live somewhere else
+/// passes `None`: `SubValues[f] = …` installs into `SUB_VALUES`, and
+/// `DefaultValues[f] = …` installs `Default[f, …]` rules that belong to
+/// `Default` — clearing `f`'s `FUNC_DEFS` for either would throw away the
+/// DownValues it never touched.
 fn set_downvalues_from_rules(
   rhs: &Expr,
   clear_head: Option<&str>,
@@ -1950,7 +1974,8 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     && let Expr::Identifier(sym_name) = &lhs_args[0]
   {
     let rhs_value = evaluate_expr_to_expr(rhs)?;
-    return set_downvalues_from_rules(&rhs_value, Some(sym_name));
+    let clear_head = clear_replaced_values(func_name, sym_name);
+    return set_downvalues_from_rules(&rhs_value, clear_head);
   }
 
   // Handle `Language`ExtendedFullDefinition[sym] = defs` — install every
@@ -2743,7 +2768,8 @@ pub fn set_delayed_ast(
     && let Expr::Identifier(sym_name) = &lhs_args[0]
   {
     let rhs_value = evaluate_expr_to_expr(body)?;
-    set_downvalues_from_rules(&rhs_value, Some(sym_name))?;
+    let clear_head = clear_replaced_values(func_name, sym_name);
+    set_downvalues_from_rules(&rhs_value, clear_head)?;
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
