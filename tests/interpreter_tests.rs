@@ -1653,6 +1653,32 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_inset_labeled_graphic_embeds_picture() {
+    // `Inset[Labeled[Graphics[…], caption], pos, opos, size]` — a
+    // Demonstration's usual way to caption a small diagram composited into
+    // a larger picture (e.g. a pie chart inset with a "distribution of
+    // wealth" label). Regression: `Labeled[…]` was not one of the wrappers
+    // `Inset` peels to find its picture, so the whole `Labeled[…]` call
+    // printed as literal text (`Labeled[-Graphics-, distribution of
+    // wealth]`) instead of drawing the nested circle.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Inset[Labeled[Graphics[{Circle[]}], \
+       Style[\"caption\", {Black, \"Text\"}]], ImageScaled[{0.6, 0.5}], \
+       ImageScaled[{0, 0}], 0.5]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("ellipse"),
+      "Inset[Labeled[…]] did not draw the nested circle: {svg}"
+    );
+    assert!(
+      !svg.contains("Labeled["),
+      "Inset[Labeled[…]] fell back to printing the call as text: {svg}"
+    );
+  }
+
+  #[test]
   fn test_plot_aspect_ratio_sizes_frame_not_canvas() {
     // AspectRatio sets the height/width ratio of the plotting *area* (the data
     // frame), not the whole image. A short ratio must therefore NOT squash the
@@ -2047,6 +2073,26 @@ mod interpreter_tests {
     );
     // A literal head rule still rewrites only the matching head.
     assert_eq!(interpret("x[a] /. x -> 3").unwrap(), "3[a]");
+  }
+
+  #[test]
+  fn test_replace_all_on_unmatched_rendered_graphic_no_op() {
+    // Regression: PieChart (and the other chart functions) render straight
+    // to SVG with no symbolic primitive list, so `PieChart[…][[1]]` stays
+    // an unevaluated `Part[…]` wrapping the opaque graphic. Applying a rule
+    // that matches nothing (no `Disk[…]` anywhere) fell through to the
+    // string-based ReplaceAll fallback, which serializes the graphic to its
+    // output-only `-Graphics-` placeholder and then failed to parse it back
+    // — crashing instead of leaving the expression unchanged, exactly like
+    // wolframscript does when a rule finds nothing to rewrite.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[PieChart[{0.3, 0.7}][[1]] /. Disk[c_, r_, a_] :> Disk[c, r*2, a]]"
+      )
+      .unwrap(),
+      "Part",
+    );
   }
 
   #[test]

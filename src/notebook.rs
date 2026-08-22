@@ -1780,10 +1780,37 @@ fn string_literal_source(inner: &str) -> String {
   let value = unescape_string(inner);
   match value.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
     Some(body) if body.contains('"') => {
-      format!("\"{}\"", body.replace('"', "\\\""))
+      format!("\"{}\"", escape_unescaped_quotes(body))
     }
     _ => value,
   }
+}
+
+/// Escape every `"` in `body` that isn't already preceded by a backslash.
+///
+/// A body produced by [`unescape_string`] can already contain a *literal*
+/// `\"` pair — e.g. a doubly nested cell string whose `\\\"` raw box text
+/// decodes to a real backslash followed by a real quote, which is already
+/// valid escaped-quote source. Blindly escaping every `"` (regardless of
+/// what precedes it) would double the backslash and corrupt that source;
+/// walking the string and skipping over existing `\`-escaped pairs avoids
+/// that.
+fn escape_unescaped_quotes(body: &str) -> String {
+  let mut result = String::with_capacity(body.len());
+  let mut chars = body.chars();
+  while let Some(c) = chars.next() {
+    if c == '\\' {
+      result.push(c);
+      if let Some(next) = chars.next() {
+        result.push(next);
+      }
+    } else if c == '"' {
+      result.push_str("\\\"");
+    } else {
+      result.push(c);
+    }
+  }
+  result
 }
 
 /// Unescape Wolfram-style string escapes.
@@ -3510,6 +3537,16 @@ Cell["Chapter 2", "Chapter"]
     // \< and \> are Wolfram string delimiters in box expressions
     assert_eq!(unescape_string(r#"\<"Hello"\>"#), r#""Hello""#);
     assert_eq!(unescape_string(r#"\<Hello World!\>"#), "Hello World!");
+  }
+
+  #[test]
+  fn test_string_literal_source_preserves_already_escaped_quotes() {
+    // A tooltip string containing an embedded quoted phrase (e.g. "Pareto
+    // superior") round-trips through the front end as `\<...\\\"...\\\"...\>`:
+    // the \\\" pairs already decode to a valid `\"` escape and must not be
+    // escaped a second time into `\\"`.
+    let inner = r#"\"\<a \\\"quoted\\\" phrase\>\""#;
+    assert_eq!(string_literal_source(inner), r#""a \"quoted\" phrase""#);
   }
 
   #[test]

@@ -740,8 +740,9 @@ enum Primitive {
     style: StyleState,
   },
   /// A whole rendered picture placed inside this one by `Inset[obj, pos]`.
-  /// The anchor is in data coordinates; the size is the object's own, in
-  /// pixels, since an inset keeps its natural size whatever the plot range.
+  /// The anchor is in data coordinates; `w`/`h` are the object's own
+  /// natural size in pixels, since an inset with no explicit `size` keeps
+  /// that size whatever the plot range.
   InsetGraphic {
     svg: String,
     x: f64,
@@ -751,6 +752,11 @@ enum Primitive {
     /// `x`/`y` are `Scaled[…]` fractions of the plot range, resolved when
     /// the range is known — see [`resolve_anchor`].
     scaled: bool,
+    /// `Inset[obj, pos, opos, size]`'s explicit `size`, in the enclosing
+    /// graphic's data coordinates — `None` draws at the natural `w`/`h`
+    /// instead. Resolved to pixels at render time (`render_primitive`),
+    /// once the final plot range/canvas size are known.
+    size: Option<(f64, f64)>,
   },
   RasterPrim {
     /// rows x cols grid of RGBA colors (row 0 = bottom in Wolfram coords)
@@ -2920,20 +2926,41 @@ fn button_plate_svg(label: &str) -> String {
   )
 }
 
-/// Peel a top-level `Style[content, dirs…]`/`StyleForm[…]` wrapper so
-/// callers can pattern-match the payload underneath — e.g. `Inset[Style[img,
-/// Magnification -> .2], pos]` still embeds `img` as a picture rather than
-/// falling through to the plain-text path just because it is styled. The
-/// style directives themselves (font, magnification, …) are not applied;
-/// getting the picture on screen at all matters more than honoring them.
+/// Peel a top-level `Style[content, dirs…]`/`StyleForm[…]`/`Labeled[content,
+/// label, …]` wrapper so callers can pattern-match the payload underneath —
+/// e.g. `Inset[Style[img, Magnification -> .2], pos]` still embeds `img` as
+/// a picture rather than falling through to the plain-text path just
+/// because it is styled, and `Inset[Labeled[picture, "caption"], pos]`
+/// (a Demonstration's usual way to caption an inset diagram) embeds
+/// `picture` rather than printing the whole `Labeled[…]` call as literal
+/// text. Neither the style directives (font, magnification, …) nor the
+/// `Labeled` caption itself are drawn; getting the picture on screen at all
+/// matters more than honoring them.
 fn peel_style_wrapper(expr: &Expr) -> &Expr {
   match expr {
     Expr::FunctionCall { name, args }
-      if is_style_wrapper(name) && !args.is_empty() =>
+      if (is_style_wrapper(name) || name == "Labeled") && !args.is_empty() =>
     {
       peel_style_wrapper(&args[0])
     }
     other => other,
+  }
+}
+
+/// `Inset[obj, pos, opos, size]`'s `size` argument: `{w, h}`, a single
+/// number (both sides), or absent/`Automatic` (the object's natural size).
+/// Given in the coordinate system of the enclosing graphic, regardless of
+/// whether `pos` is a plain point or a `Scaled`/`ImageScaled` fraction.
+fn parse_inset_target_size(args: &[Expr]) -> (Option<f64>, Option<f64>) {
+  match args.get(3) {
+    Some(spec) => match expr_to_point(spec) {
+      Some(wh) => (Some(wh.0), Some(wh.1)),
+      None => match expr_to_f64(spec) {
+        Some(v) => (Some(v), Some(v)),
+        None => (None, None),
+      },
+    },
+    None => (None, None),
   }
 }
 
@@ -2999,6 +3026,7 @@ fn inset_primitives(
     && let Some(dims) = parse_svg_dimensions(svg)
     && let Some((x, y, scaled)) = anchor
   {
+    let (target_w, target_h) = parse_inset_target_size(args);
     return Some(vec![Primitive::InsetGraphic {
       svg: svg.clone(),
       x,
@@ -3006,6 +3034,7 @@ fn inset_primitives(
       w: dims.nat_w,
       h: dims.nat_h,
       scaled,
+      size: target_w.zip(target_h),
     }]);
   }
   // `Inset[Button[label, action], pos]` — the control a puzzle
@@ -3025,6 +3054,7 @@ fn inset_primitives(
       w: button_plate_size(&label).0,
       h: button_plate_size(&label).1,
       scaled: false,
+      size: None,
     }]);
   }
   // The object: `Graphics[…]` (or its box form), a rendered graphic that
@@ -3084,16 +3114,7 @@ fn inset_primitives(
   let (w, h) = (bb.x_max - bb.x_min, bb.y_max - bb.y_min);
 
   // `size` may be `{w, h}`, a single number (both sides), or Automatic.
-  let (target_w, target_h) = match args.get(3) {
-    Some(spec) => match expr_to_point(spec) {
-      Some(wh) => (Some(wh.0), Some(wh.1)),
-      None => match expr_to_f64(spec) {
-        Some(v) => (Some(v), Some(v)),
-        None => (None, None),
-      },
-    },
-    None => (None, None),
-  };
+  let (target_w, target_h) = parse_inset_target_size(args);
   let sx = match target_w {
     Some(tw) if w > 0.0 => tw / w,
     _ => 1.0,
@@ -4025,6 +4046,7 @@ fn rotate_primitive(
       w,
       h,
       scaled,
+      size,
     } => {
       // A scaled anchor names a place in the finished frame, not a point in
       // the data, so a transform of the coordinates leaves it where it is.
@@ -4036,6 +4058,7 @@ fn rotate_primitive(
         w: *w,
         h: *h,
         scaled: *scaled,
+        size: *size,
       }
     }
     Primitive::PointSingle { x, y, style } => {
@@ -4242,6 +4265,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       w,
       h,
       scaled,
+      size,
     } => Primitive::InsetGraphic {
       svg: svg.clone(),
       x: if *scaled { *x } else { x + dx },
@@ -4249,6 +4273,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       w: *w,
       h: *h,
       scaled: *scaled,
+      size: *size,
     },
     Primitive::PointSingle { x, y, style } => Primitive::PointSingle {
       x: x + dx,
@@ -4455,8 +4480,13 @@ fn scale_primitive(
       w,
       h,
       scaled,
+      size,
     } => {
       let (nx, ny) = if *scaled { (*x, *y) } else { sp(*x, *y) };
+      // An explicit `size` lives in data coordinates, so it scales with the
+      // primitive; the natural `w`/`h` fallback is screen pixels and stays
+      // fixed, same as point sizes and stroke widths above.
+      let nsize = size.map(|(sw, sh)| (sw * sx.abs(), sh * sy.abs()));
       Primitive::InsetGraphic {
         svg: svg.clone(),
         x: nx,
@@ -4464,6 +4494,7 @@ fn scale_primitive(
         w: *w,
         h: *h,
         scaled: *scaled,
+        size: nsize,
       }
     }
     Primitive::PointSingle { x, y, style } => {
@@ -5539,7 +5570,10 @@ fn render_primitive(
   out: &mut String,
 ) {
   match prim {
-    // The inset is embedded whole, at its own size, centred on its anchor.
+    // The inset is embedded whole, centred on its anchor — at its own
+    // natural size, unless `Inset[…]` gave an explicit `size` (in this
+    // picture's data coordinates), which is only convertible to pixels now
+    // that the final plot range and canvas size are known.
     Primitive::InsetGraphic {
       svg,
       x,
@@ -5547,14 +5581,21 @@ fn render_primitive(
       w,
       h,
       scaled,
+      size,
     } => {
       let (ax, ay) = resolve_anchor(*x, *y, *scaled, bb);
+      let (pw, ph) = match size {
+        Some((sw, sh)) if bb.width() > 0.0 && bb.height() > 0.0 => {
+          (sw * svg_w / bb.width(), sh * svg_h / bb.height())
+        }
+        _ => (*w, *h),
+      };
       out.push_str(&embed_svg_centered(
         svg,
         coord_x(ax, bb, svg_w),
         coord_y(ay, bb, svg_h),
-        *w,
-        *h,
+        pw,
+        ph,
       ));
     }
     Primitive::PointSingle { x, y, style } => {
