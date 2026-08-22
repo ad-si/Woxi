@@ -5708,7 +5708,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !specs.is_empty()
     && specs.iter().all(|s| {
       matches!(s, Expr::List(p)
-      if p.len() == 2 && matches!(&p[0], Expr::Identifier(_)))
+      if p.len() == 2 && is_findroot_var_expr(&p[0]))
     })
   {
     return find_root_multivariate(&args[0], specs);
@@ -5726,7 +5726,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .take_while(|s| {
         matches!(s, Expr::List(p)
-        if p.len() == 2 && matches!(&p[0], Expr::Identifier(_)))
+        if p.len() == 2 && is_findroot_var_expr(&p[0]))
       })
       .cloned()
       .collect();
@@ -6404,16 +6404,45 @@ fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
   }
 }
 
+/// True when `e` is a valid FindRoot search variable: a plain symbol, or an
+/// indexed variable such as `u[1]` or `a[2, 3]` — a symbol applied to
+/// literal numeric or string indices. Collocation methods for boundary-value
+/// problems name one unknown per grid point this way (`FindRoot[{eqns},
+/// {{u[1], 0.5}, {u[2], 0.5}, ...}]`), and real Wolfram accepts both forms.
+fn is_findroot_var_expr(e: &Expr) -> bool {
+  match e {
+    Expr::Identifier(_) => true,
+    Expr::FunctionCall { args, .. } => !args.is_empty()
+      && args
+        .iter()
+        .all(|a| matches!(a, Expr::Integer(_) | Expr::Real(_) | Expr::String(_))),
+    _ => false,
+  }
+}
+
 /// Evaluate `expr` to an f64 with every variable in `vars` bound to the
-/// corresponding value in `vals`.
+/// corresponding value in `vals`. Plain-symbol variables use the fast
+/// name-based substitution; indexed variables (e.g. `u[1]`) are replaced by
+/// exact structural match, the same machinery `/.` uses.
 fn find_root_eval_multivar(
   expr: &Expr,
-  vars: &[String],
+  vars: &[Expr],
   vals: &[f64],
 ) -> Result<f64, InterpreterError> {
   let mut e = expr.clone();
   for (v, &x) in vars.iter().zip(vals) {
-    e = crate::syntax::substitute_variable(&e, v, &Expr::Real(x));
+    e = match v {
+      Expr::Identifier(name) => {
+        crate::syntax::substitute_variable(&e, name, &Expr::Real(x))
+      }
+      other => crate::evaluator::apply_replace_all_ast(
+        &e,
+        &Expr::Rule {
+          pattern: Box::new(other.clone()),
+          replacement: Box::new(Expr::Real(x)),
+        },
+      )?,
+    };
   }
   let evaled = crate::evaluator::evaluate_expr_to_expr(&e)?;
   match &evaled {
@@ -6479,20 +6508,18 @@ fn find_root_multivariate(
   eqns_arg: &Expr,
   specs: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  // Variables and starting points.
-  let mut vars: Vec<String> = Vec::new();
+  // Variables and starting points. A spec's variable is either a plain
+  // symbol or an indexed variable like `u[1]` — see `is_findroot_var_expr`.
+  let mut vars: Vec<Expr> = Vec::new();
   let mut x: Vec<f64> = Vec::new();
   for spec in specs {
     if let Expr::List(p) = spec {
-      let v = match &p[0] {
-        Expr::Identifier(n) => n.clone(),
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "FindRoot: variable must be a symbol".into(),
-          ));
-        }
-      };
-      vars.push(v);
+      if !is_findroot_var_expr(&p[0]) {
+        return Err(InterpreterError::EvaluationError(
+          "FindRoot: variable must be a symbol".into(),
+        ));
+      }
+      vars.push(p[0].clone());
       x.push(find_root_eval_number(&p[1])?);
     }
   }
@@ -6506,7 +6533,17 @@ fn find_root_multivariate(
   // still searches fresh. FindRoot holds its arguments, so this is the
   // first chance to do so. An expression that fails to evaluate stays as
   // written and is handled numerically per iteration point instead.
-  let var_refs: Vec<&str> = vars.iter().map(String::as_str).collect();
+  //
+  // Only plain-symbol variables are localized this way — an indexed
+  // variable like `u[1]` has no global binding under a literal name to
+  // remove, so it is left out of the set.
+  let var_refs: Vec<&str> = vars
+    .iter()
+    .filter_map(|v| match v {
+      Expr::Identifier(name) => Some(name.as_str()),
+      _ => None,
+    })
+    .collect();
   let eqns: Vec<Expr> = match eqns_arg {
     Expr::List(es) => es
       .iter()
@@ -6523,15 +6560,23 @@ fn find_root_multivariate(
   // Jacobian J[i][j] = d f_i / d x_j (symbolic where possible). An entry
   // that cannot be differentiated symbolically (e.g. the equation still
   // contains an opaque function call) is left `None` and approximated by a
-  // central finite difference at each iteration point.
+  // central finite difference at each iteration point. Only plain-symbol
+  // variables are differentiated symbolically — `differentiate_expr` takes a
+  // named variable, so an indexed variable like `u[1]` always falls back to
+  // the finite-difference path.
   let mut jac: Vec<Vec<Option<Expr>>> = Vec::with_capacity(n);
   for f in &eqns {
     let mut row = Vec::with_capacity(n);
     for v in &vars {
-      let d = crate::functions::calculus_ast::differentiate_expr(f, v)
-        .map(simplify)
-        .ok()
-        .filter(|d| !contains_unevaluated_d(d));
+      let d = match v {
+        Expr::Identifier(name) => {
+          crate::functions::calculus_ast::differentiate_expr(f, name)
+            .map(simplify)
+            .ok()
+            .filter(|d| !contains_unevaluated_d(d))
+        }
+        _ => None,
+      };
       row.push(d);
     }
     jac.push(row);
@@ -6589,7 +6634,7 @@ fn find_root_multivariate(
     .iter()
     .zip(&x)
     .map(|(v, &xv)| Expr::Rule {
-      pattern: Box::new(Expr::Identifier(v.clone())),
+      pattern: Box::new(v.clone()),
       replacement: Box::new(Expr::Real(xv)),
     })
     .collect();
