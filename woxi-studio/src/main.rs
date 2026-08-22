@@ -21244,4 +21244,147 @@ SaveDefinitions -> True]";
       "the GraphPlot must still render after switching network/measure/bidirectional"
     );
   }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// exploring the geometry of three mutually tangent circles: a `Setter`
+  /// toggles between a `Graphics3D` view (three `Sphere`s) and a 2D
+  /// `Graphics` construction (the same three disks plus their tangent
+  /// points), while sliders drive the three radii and a zoom factor.
+  /// Independently written, not copied from any specific Demonstration:
+  /// this version places the third circle via a plain right-triangle
+  /// decomposition (`dist13x`/`dist13y`) rather than the original's
+  /// particular soap-bubble angle construction, and uses different helper
+  /// names throughout.
+  ///
+  /// The construct worth pinning down is the combination of (1) a
+  /// `Setter` control whose domain is given as `value -> "label"` rules
+  /// feeding an `If` that switches the rendered dimensionality, (2) an
+  /// `Initialization` block defining several pattern-matched helper
+  /// functions (`f[Pattern[x, Blank[]], …] := …`) that call each other and
+  /// use a `Rational[1, 2]` power (not `Sqrt`) — mirroring the original's
+  /// style — evaluated fresh on every re-render against the *current*
+  /// slider values (not memoized once at Initialization time), and (3) a
+  /// custom layout argument (`Column[{Row[{Place[1], …}], Grid[{…}]}]`)
+  /// with per-control `ControlPlacement -> n` — Woxi keeps one control
+  /// panel rather than reproducing Wolfram's multi-region custom layout,
+  /// so this must parse harmlessly rather than breaking extraction.
+  #[test]
+  fn demonstration_tangent_circles_setter_toggles_3d_and_construction() {
+    let code = "Manipulate[\
+      If[view3d, \
+        Graphics3D[{\
+          Sphere[{0, 0, 0}, r1], \
+          Sphere[{dist12[r1, r2], 0, 0}, r2], \
+          Sphere[{dist13x[r1, r2, r3], dist13y[r1, r2, r3], 0}, r3]\
+        }, PlotRange -> spread {{-1, 2}, {-1, 1}, {-1, 1}}, Boxed -> False], \
+        Graphics[{\
+          Circle[{0, 0}, r1], \
+          Circle[{dist12[r1, r2], 0}, r2], \
+          Circle[{dist13x[r1, r2, r3], dist13y[r1, r2, r3]}, r3], \
+          Black, PointSize[0.02], \
+          Point[{0, 0}], \
+          Point[{dist12[r1, r2], 0}], \
+          Point[{dist13x[r1, r2, r3], dist13y[r1, r2, r3]}]\
+        }, PlotRange -> spread {{-1, 2}, {-1, 1}}]\
+      ], \
+      {{view3d, True, \"\"}, {True -> \"3D view\", False -> \"construction\"}, \
+        ControlType -> Setter, ControlPlacement -> 1}, \
+      {{spread, 5, \"zoom\"}, 5, 12, 0.001, Appearance -> \"Labeled\", \
+        ImageSize -> Small, ControlPlacement -> 2}, \
+      {{r1, 3, Style[\"r1\", Italic]}, 2, 4, 0.001, Appearance -> \"Labeled\", \
+        ImageSize -> Small, ControlPlacement -> 3}, \
+      {{r2, 2, Style[\"r2\", Italic]}, 1, 3, 0.001, Appearance -> \"Labeled\", \
+        ImageSize -> Small, ControlPlacement -> 4}, \
+      {{r3, 1, Style[\"r3\", Italic]}, 0.5, 2, 0.001, Appearance -> \"Labeled\", \
+        ImageSize -> Small, ControlPlacement -> 5}, \
+      Column[{\
+        Row[{Place[1], Spacer[20], Place[2]}], \
+        Grid[{{\"radii\", Spacer[20], Place[3], Place[4], Place[5]}}]\
+      }], \
+      TrackedSymbols :> {view3d, r1, r2, r3, spread}, \
+      ControlPlacement -> Top, \
+      Initialization :> (\
+        dist12[Pattern[x, Blank[]], Pattern[y, Blank[]]] := x + y; \
+        dist13x[Pattern[x, Blank[]], Pattern[y, Blank[]], Pattern[z, Blank[]]] := \
+          ((x + y)^2 + x^2 - z^2)/(2 (x + y)); \
+        dist13y[Pattern[x, Blank[]], Pattern[y, Blank[]], Pattern[z, Blank[]]] := \
+          (x^2 - dist13x[x, y, z]^2)^Rational[1, 2];\
+      )\
+    ]";
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a Setter plus four labeled sliders (with a custom Place layout) \
+       should build a ManipulateState",
+    );
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the 3D Sphere view must render by default"
+    );
+
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["view3d", "spread", "r1", "r2", "r3"]);
+
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        values,
+        value_labels,
+        current_index,
+        ..
+      } => {
+        assert_eq!(values, &["True", "False"]);
+        assert_eq!(value_labels, &["3D view", "construction"]);
+        assert_eq!(*current_index, 0, "view3d should start True (3D view)");
+      }
+      other => panic!("view3d should be a discrete Setter: {other:?}"),
+    }
+
+    // Switch to the 2D construction view: the same helper functions must
+    // still evaluate against the (unchanged) radii and produce a Graphics
+    // (not Graphics3D) render.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "2D construction re-render failed: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the 2D construction Graphics must render"
+    );
+
+    // Now change the radii and re-render: the Initialization-defined
+    // helpers must be called fresh with the *new* r1/r2/r3, not whatever
+    // they memoized during the one-time Initialization run.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[2]
+    {
+      *current = 4.0; // r1: 3 -> 4
+    }
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[3]
+    {
+      *current = 3.0; // r2: 2 -> 3
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "re-render after changing radii failed: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the construction must still render with the new radii"
+    );
+  }
 }
