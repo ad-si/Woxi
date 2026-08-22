@@ -21387,4 +21387,111 @@ SaveDefinitions -> True]";
       "the construction must still render with the new radii"
     );
   }
+
+  /// Regression for the shape a numerical-methods Demonstration uses: a
+  /// popup picks the right-hand side of `y' == f[t, y]`, `DSolve` draws the
+  /// exact solution, and a stepped polyline is overlaid on top of it. The
+  /// nonlinear choice (`-t y^2`) is separable but not linear in `y`, so
+  /// `DSolve` used to come back unevaluated and `y[t] /. DSolve[…]` failed
+  /// with `ReplaceAll::reps` — the widget still rendered, just silently
+  /// missing the exact curve it exists to compare against.
+  #[test]
+  fn demonstration_ode_comparison_manipulate_draws_the_exact_solution() {
+    let code = "Manipulate[\
+      Show[{\
+        Plot[Evaluate[y[t] /. exact[rhs, start, t]], {t, 0, 2}, \
+          PlotRange -> All], \
+        ListLinePlot[trail[rhs, start, steps], PlotRange -> All]\
+      }, ImageSize -> {300, 300}], \
+      {{rhs, decay, \"y'\"}, {decay -> \"-y\", quad -> \"-t y^2\"}, \
+        ControlType -> PopupMenu}, \
+      {{start, 1, \"y(0)\"}, 0.5, 2, 0.5}, \
+      {{steps, 4, \"steps\"}, 2, 8, 1}, \
+      Initialization :> (\
+        decay[t_, u_] := -u; \
+        quad[t_, u_] := -t u^2; \
+        exact[f_, u0_, t_] := DSolve[{y'[t] == f[t, y[t]], y[0] == u0}, y, t]; \
+        trail[f_, u0_, n_] := Module[{h, pts}, \
+          h = 2/n; pts = {{0, u0}}; \
+          Do[pts = Append[pts, \
+            {h i, Last[Last[pts]] + h f[h (i - 1), Last[Last[pts]]]}], \
+            {i, 1, n}]; \
+          pts]; \
+      )]";
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a popup plus two sliders should build a ManipulateState");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "both curves must render");
+
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["rhs", "start", "steps"]);
+
+    // The exact solution is a smooth `Plot`, so it renders as one polyline
+    // with hundreds of vertices; every other polyline in the picture is an
+    // axis tick (2 vertices) or the 5-point stepped trail. Counting the
+    // vertices of the longest one therefore says whether the exact curve is
+    // there at all — a plain polyline *count* would only move by one and
+    // could be matched by an extra tick.
+    let longest_curve = |s: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = s
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let svg = woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&s.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the comparison plot must render");
+      svg
+        .match_indices("<polyline")
+        .filter_map(|(at, _)| {
+          let tag = &svg[at..svg[at..].find("/>")? + at];
+          let key = " points=\"";
+          let start = tag.find(key)? + key.len();
+          Some(tag[start..][..tag[start..].find('"')?].split(' ').count())
+        })
+        .max()
+        .unwrap_or(0)
+    };
+    let linear = longest_curve(&state);
+    assert!(
+      linear > 50,
+      "the linear choice's exact curve should be a smooth polyline, got \
+       {linear} vertices"
+    );
+
+    for control in &mut state.controls {
+      if let manipulate::ControlState::Discrete {
+        name,
+        current_index,
+        ..
+      } = control
+        && name == "rhs"
+      {
+        *current_index = 1;
+      }
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "the nonlinear choice must evaluate: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some());
+    let nonlinear = longest_curve(&state);
+    assert!(
+      nonlinear > 50,
+      "the separable nonlinear choice must draw its exact curve too, got \
+       {nonlinear} vertices"
+    );
+  }
 }

@@ -2,6 +2,17 @@
 
 # Unreleased
 
+- `DSolve` solves separable first-order equations posed as initial-value
+    problems. `y'[x] == g[x] h[y[x]]` is nonlinear in `y` whenever `h` is, so
+    the term classifier — which only understands equations linear in `y` —
+    turned it down and the whole equation came back unevaluated. Separating
+    the variables and integrating each side gives the implicit relation, the
+    initial condition pins the constant, and the result is solved for `y`,
+    keeping only the branch that condition selects:
+    `DSolve[{y'[t] == -t y[t]^2, y[0] == 1}, y, t]` is
+    `{{y -> Function[{t}, 2/(2 + t^2)]}}`. Without an initial condition the
+    equation still stays unevaluated.
+
 - An Orderless argument is re-read when a rule's guard turns down the first
     reading. `Times` and `Plus` arguments can satisfy a structural pattern
     more than one way, and the guard may accept only some of them:
