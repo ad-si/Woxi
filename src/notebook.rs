@@ -1472,6 +1472,26 @@ fn render_boxes_text(s: &str) -> String {
       .collect::<String>();
   }
 
+  // A `TextData[...]` run inside a box tree (e.g. one inline-math cell's
+  // argument accidentally wraps another whole cell — an artifact of
+  // copy/pasting one formula into another in the FrontEnd). Its content
+  // follows the same prose conventions as a top-level `TextData[...]`, so
+  // reuse that extractor rather than treating it as an opaque box.
+  if let Some(inner) = s
+    .strip_prefix("TextData[")
+    .and_then(|r| r.strip_suffix(']'))
+  {
+    return extract_textdata(inner);
+  }
+
+  // A `Cell[...]` nested inside a box tree — the same accidental-nesting
+  // artifact from the other side (a `FormBox` argument that is itself a
+  // whole inline-math `Cell[...]`). `render_text_element` already knows
+  // how to unwrap an inline-math/inline-formula cell's content.
+  if s.starts_with("Cell[") {
+    return render_text_element(s);
+  }
+
   // Superscripts of digits (and a leading minus) read best as Unicode
   // superscript characters: `V²`, `∇²`, `10⁻³`.
   fn superscript_unicode(s: &str) -> Option<String> {
@@ -4523,6 +4543,37 @@ Cell[TextData[Cell[BoxData[
     match &parsed.cells[0] {
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "{U \u{2192} P\nV \u{2192} Q");
+      }
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    }
+  }
+
+  #[test]
+  fn test_doubly_nested_inline_math_cell_renders_its_formula() {
+    // The FrontEnd occasionally saves an inline-math cell whose `FormBox`
+    // argument is itself a whole `Cell[TextData[Cell[BoxData[...]]]]` —
+    // an artifact of pasting one inline formula's cell into another's box
+    // slot. The nested cell must still resolve to its formula text
+    // instead of leaking the raw box source into the surrounding prose.
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ "the potential is ",
+ Cell[BoxData[
+  FormBox[Cell[TextData[Cell[BoxData[
+    FormBox[
+     RowBox[{
+      RowBox[{"V", "(", "x", ")"}], "=", "0"}], TraditionalForm]],
+    "InlineMath",ExpressionUUID->"11111111-1111-1111-1111-111111111111"]],
+    "InlineMath",ExpressionUUID->"22222222-2222-2222-2222-222222222222"],
+   TraditionalForm]], "InlineMath",ExpressionUUID->
+  "33333333-3333-3333-3333-333333333333"],
+ " elsewhere."
+}], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.content, "the potential is V(x)=0 elsewhere.");
       }
       CellEntry::Group(_) => panic!("Expected single cell"),
     }
