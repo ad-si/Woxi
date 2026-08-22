@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::sync::LazyLock;
 
 // Wolfram attributes
+#[derive(Clone, Default)]
 pub struct Attributes(u32); // bitmask
 #[allow(non_upper_case_globals)]
 impl Attributes {
@@ -55,14 +56,30 @@ impl Attributes {
       Err(_) => Self::None,
     }
   }
+  pub fn masks(names: &Vec<String>) -> u32 {
+    let mut mask = 0u32;
+    for val in names {
+      mask |= Self::mask(val.as_str());
+    }
+    mask
+  }
   pub fn new(bits: u32) -> Self {
     Self(bits)
+  }
+  pub fn to_u32(&self) -> u32 {
+    self.0
   }
   pub fn is_empty(&self) -> bool {
     self.0 == 0
   }
-  pub fn contains(&self, flag: u32) -> bool {
-    (self.0 & flag) != 0
+  pub fn contains(&self, mask: u32) -> bool {
+    (self.0 & mask) != 0
+  }
+  pub fn add(&mut self, mask: u32) {
+    self.0 |= mask;
+  }
+  pub fn remove(&mut self, mask: u32) {
+    self.0 &= !mask;
   }
   pub fn to_vec(&self) -> Vec<&'static str> {
     let mut list: Vec<&'static str> = vec![];
@@ -421,10 +438,6 @@ fn is_unprotected_builtin(name: &str) -> bool {
 
 /// Returns the built-in attributes for a given symbol name.
 /// Attributes are returned in alphabetical order, matching wolframscript output.
-pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
-  get_builtin_attributes_mask(name).to_vec()
-}
-
 pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
   use Attributes as A;
   let mask = match name {
@@ -943,7 +956,7 @@ pub fn dispatch_attributes(
           let mut attrs = m.borrow_mut();
           for func_name in &func_names {
             if let Some(existing) = attrs.get(func_name)
-              && existing.contains(&"Locked".to_string())
+              && existing.contains(Attributes::Locked)
             {
               crate::emit_message(&format!(
                 "Attributes::locked: Symbol {func_name} is locked."
@@ -951,22 +964,22 @@ pub fn dispatch_attributes(
               locked = true;
               continue;
             }
-            let entry = attrs.entry(func_name.clone()).or_insert_with(Vec::new);
-            for a in &attr {
-              if !entry.contains(a) {
-                entry.push(a.clone());
-              }
-            }
+            let mask = attr;
+            attrs
+              .entry(func_name.clone())
+              .and_modify(|a| (*a).add(mask))
+              .or_insert(Attributes::new(mask));
           }
         });
         // Re-adding a builtin attribute via SetAttributes prunes it from
         // the removed-tracking, so `Attributes[sym]` once again reports it.
         crate::FUNC_ATTRS_REMOVED.with(|m| {
           let mut removed = m.borrow_mut();
+          let mask = attr;
           for func_name in &func_names {
-            if let Some(entry) = removed.get_mut(func_name) {
-              entry.retain(|a| !attr.contains(a));
-            }
+            removed.entry(func_name.clone()).and_modify(|a| {
+              (*a).remove(mask);
+            });
           }
         });
         if locked {
@@ -997,34 +1010,35 @@ pub fn dispatch_attributes(
       if !func_names.is_empty() {
         crate::FUNC_ATTRS.with(|m| {
           let mut attrs = m.borrow_mut();
+          let mask = Attributes::masks(&to_remove);
           for func_name in &func_names {
             if let Some(existing) = attrs.get(func_name)
-              && existing.contains(&"Locked".to_string())
+              && existing.contains(Attributes::Locked)
             {
               crate::emit_message(&format!(
                 "Attributes::locked: Symbol {func_name} is locked."
               ));
               continue;
             }
-            if let Some(entry) = attrs.get_mut(func_name) {
-              entry.retain(|a| !to_remove.contains(a));
-            }
+
+            attrs.entry(func_name.clone()).and_modify(|a| {
+              (*a).remove(mask);
+            });
           }
         });
         // Remove from builtin attributes via the removed-tracking, mirroring
         // how Unprotect handles the Protected attribute.
         crate::FUNC_ATTRS_REMOVED.with(|m| {
           let mut removed = m.borrow_mut();
+          let mask = Attributes::masks(&to_remove);
           for func_name in &func_names {
-            let builtin = get_builtin_attributes(func_name);
-            for a in &to_remove {
-              if builtin.contains(&a.as_str()) {
-                let entry =
-                  removed.entry(func_name.clone()).or_insert_with(Vec::new);
-                if !entry.contains(a) {
-                  entry.push(a.clone());
-                }
-              }
+            let builtin = get_builtin_attributes_mask(func_name);
+            let mask = mask & builtin.to_u32(); // ignore attributes not on builtin.
+            if mask != 0 {
+              removed
+                .entry(func_name.clone())
+                .and_modify(|a| (*a).add(mask))
+                .or_insert(Attributes::new(mask));
             }
           }
         });
@@ -1044,17 +1058,18 @@ pub fn dispatch_attributes(
           if was_builtin {
             crate::FUNC_ATTRS_REMOVED.with(|m| {
               let mut removed = m.borrow_mut();
-              if let Some(entry) = removed.get_mut(sym) {
-                entry.retain(|a| a != "Protected");
-              }
+              removed.entry(sym.clone()).and_modify(|a| {
+                (*a).remove(Attributes::Protected);
+              });
             });
           } else {
             crate::FUNC_ATTRS.with(|m| {
               let mut attrs = m.borrow_mut();
-              let entry = attrs.entry(sym.clone()).or_insert_with(Vec::new);
-              if !entry.contains(&"Protected".to_string()) {
-                entry.push("Protected".to_string());
-              }
+              let mask = Attributes::Protected;
+              attrs
+                .entry(sym.clone())
+                .and_modify(|a| (*a).add(mask))
+                .or_insert(Attributes::new(mask));
             });
           }
           protected_syms.push(Expr::String(sym.clone()));
@@ -1072,7 +1087,7 @@ pub fn dispatch_attributes(
             if builtin.contains(Attributes::Locked) {
               true
             } else {
-              crate::func_attrs_contains(sym.as_str(), "Locked")
+              crate::func_attrs_contains(sym.as_str(), Attributes::Locked)
             }
           };
           if is_locked {
@@ -1086,9 +1101,14 @@ pub fn dispatch_attributes(
           let was_user_protected = crate::FUNC_ATTRS.with(|m| {
             let mut attrs = m.borrow_mut();
             if let Some(entry) = attrs.get_mut(sym) {
-              let before_len = entry.len();
-              entry.retain(|a| a != "Protected");
-              before_len != entry.len()
+              let before = entry.to_u32();
+              let after = before & !Attributes::Protected;
+              if before == after {
+                false
+              } else {
+                attrs.insert(sym.clone(), Attributes::new(after));
+                true
+              }
             } else {
               false
             }
@@ -1098,10 +1118,11 @@ pub fn dispatch_attributes(
           if was_builtin_protected {
             crate::FUNC_ATTRS_REMOVED.with(|m| {
               let mut removed = m.borrow_mut();
-              let entry = removed.entry(sym.clone()).or_insert_with(Vec::new);
-              if !entry.contains(&"Protected".to_string()) {
-                entry.push("Protected".to_string());
-              }
+              let mask = Attributes::Protected;
+              removed
+                .entry(sym.clone())
+                .and_modify(|a| (*a).add(mask))
+                .or_insert(Attributes::new(mask));
             });
           }
           if was_user_protected || was_builtin_protected {
@@ -1169,16 +1190,15 @@ pub fn dispatch_attributes(
           .with(|m| m.borrow_mut().remove(sym));
         // Mark every builtin attribute as removed so `Attributes[sym]`
         // returns `{}` after ClearAll, matching wolframscript.
-        let builtin = get_builtin_attributes(sym);
+        let builtin = get_builtin_attributes_mask(sym);
         if !builtin.is_empty() {
           crate::FUNC_ATTRS_REMOVED.with(|m| {
             let mut removed = m.borrow_mut();
-            let entry = removed.entry(sym.to_string()).or_insert_with(Vec::new);
-            for a in builtin {
-              if !entry.contains(&a.to_string()) {
-                entry.push(a.to_string());
-              }
-            }
+            let mask = builtin.to_u32();
+            removed
+              .entry(sym.to_string())
+              .and_modify(|a| (*a).add(mask))
+              .or_insert(Attributes::new(mask));
           });
         }
         let up_defs = crate::UPVALUES.with(|m| m.borrow_mut().remove(sym));

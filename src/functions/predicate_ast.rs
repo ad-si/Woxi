@@ -4,6 +4,7 @@
 
 #[allow(unused_imports)]
 use super::*;
+use crate::evaluator::Attributes;
 use crate::functions::math_ast::rat_reduce;
 
 /// NumberQ[expr] - Tests if the expression is a number
@@ -639,7 +640,7 @@ pub fn is_numeric_q(expr: &Expr) -> bool {
 }
 
 /// Known numeric functions (have the NumericFunction attribute in Wolfram Language)
-fn is_numeric_function(name: &str) -> bool {
+fn is_builtin_numeric(name: &str) -> bool {
   matches!(
     name,
     "Plus"
@@ -695,7 +696,12 @@ fn is_numeric_function(name: &str) -> bool {
       | "BernoulliB"
       | "Zeta"
       | "N"
-  ) || crate::func_attrs_contains(name, "NumericFunction")
+  )
+}
+
+fn is_numeric_function(name: &str) -> bool {
+  is_builtin_numeric(name)
+    || crate::func_attrs_contains(name, Attributes::NumericFunction)
 }
 
 /// Numerically evaluate a NumericQ expression (e.g. Sin[11]) and apply
