@@ -7167,3 +7167,61 @@ mod bare_edge_list_argument {
     );
   }
 }
+
+mod topological_sort {
+  use super::*;
+
+  #[test]
+  fn linear_chain() {
+    let result =
+      interpret("TopologicalSort[Graph[{1 -> 2, 2 -> 3, 3 -> 4}]]").unwrap();
+    assert_eq!(result, "{1, 2, 3, 4}");
+  }
+
+  #[test]
+  fn diamond_shape() {
+    // Every directed edge u -> v must have u appear before v.
+    let result =
+      interpret("TopologicalSort[Graph[{1 -> 2, 1 -> 3, 2 -> 4, 3 -> 4}]]")
+        .unwrap();
+    assert_eq!(result, "{1, 2, 3, 4}");
+  }
+
+  #[test]
+  fn independent_vertices_break_ties_lexicographically() {
+    // 1 and 2 both have no incoming edges; Woxi always picks the lower
+    // index first (Kahn's algorithm), giving the lexicographically
+    // smallest valid order.
+    let result = interpret("TopologicalSort[Graph[{1 -> 3, 2 -> 3}]]").unwrap();
+    assert_eq!(result, "{1, 2, 3}");
+  }
+
+  #[test]
+  fn isolated_vertex_included() {
+    let result =
+      interpret("TopologicalSort[Graph[{1, 2, 3}, {1 -> 3}]]").unwrap();
+    assert_eq!(result, "{1, 2, 3}");
+  }
+
+  #[test]
+  fn cyclic_graph_stays_unevaluated() {
+    // A cycle has no topological order, matching WL's failure behavior.
+    let result =
+      interpret("TopologicalSort[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap();
+    assert_eq!(result, "TopologicalSort[Graph[<3>, <3>]]");
+  }
+
+  #[test]
+  fn self_loop_stays_unevaluated() {
+    let result = interpret("TopologicalSort[Graph[{1 -> 1, 1 -> 2}]]").unwrap();
+    assert!(result.starts_with("TopologicalSort["));
+  }
+
+  #[test]
+  fn accepts_bare_edge_list() {
+    assert_eq!(
+      interpret("TopologicalSort[{1 -> 2, 2 -> 3}]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+}

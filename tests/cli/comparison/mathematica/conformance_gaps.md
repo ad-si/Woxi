@@ -2518,12 +2518,14 @@ order, DFS pre/post, BFS from the target, degree-based start) is contradicted.
 `WeaklyConnectedGraphComponents` is unimplemented for this reason.
 **Not reproducible.**
 
-### `TopologicalSort` is unimplemented
+### `TopologicalSort` vertex order
 
 WL's vertex ordering is not reproducible by DFS reverse-postorder or by Kahn
 with a min/max heap: `{1->3, 2->3}` → `{1,2,3}` needs Kahn-min, but
 `{1->2, 1->3, 2->4, 3->4}` → `{1,3,2,4}` needs DFS, and the two contradict.
-Also `{1->2, 3->4}` → `{3,4,1,2}`. **Not reproducible.**
+Also `{1->2, 3->4}` → `{3,4,1,2}`. Woxi always returns the lexicographically
+smallest topological order (Kahn's algorithm, ties broken by `VertexList`
+index) — a valid ordering, just not always WL's. **Not reproducible.**
 
 ### `FindHamiltonianPath` choice
 

@@ -701,6 +701,7 @@ fn evaluate_function_call_ast_inner(
     "MultigraphQ",
     "PageRankCentrality",
     "RadialityCentrality",
+    "TopologicalSort",
     "TreeGraphQ",
     "TuttePolynomial",
     "UndirectedGraphQ",
@@ -7830,6 +7831,63 @@ fn evaluate_function_call_ast_inner(
           .map(|v| Expr::List(v.into()))
           .collect(),
       ));
+    }
+    return Ok(unevaluated(name, args));
+  }
+
+  // TopologicalSort[graph] — a topological ordering of a directed acyclic
+  // graph's vertices: every directed edge u -> v has u appear before v.
+  // WL's tie-break among simultaneously-ready vertices is not reproducible
+  // (see conformance_gaps.md — Kahn-min, Kahn-max and DFS reverse-postorder
+  // each fit some probes and contradict others), so Woxi picks the
+  // lexicographically smallest order via Kahn's algorithm on VertexList
+  // order. A cyclic graph has no topological order, so the call stays
+  // unevaluated, same as any other unmatched pattern.
+  if name == "TopologicalSort" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+    {
+      let n = vertices.len();
+      let (pg_digraph, _) =
+        crate::functions::graph::build_digraph(vertices, edges);
+      let mut indeg = vec![0usize; n];
+      let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+      for edge in pg_digraph.raw_edges() {
+        if edge.weight {
+          let u = edge.source().index();
+          let v = edge.target().index();
+          adj[u].push(v);
+          indeg[v] += 1;
+        }
+      }
+      use std::cmp::Reverse;
+      use std::collections::BinaryHeap;
+      let mut ready: BinaryHeap<Reverse<usize>> = indeg
+        .iter()
+        .enumerate()
+        .filter(|&(_, &d)| d == 0)
+        .map(|(i, _)| Reverse(i))
+        .collect();
+      let mut order = Vec::with_capacity(n);
+      while let Some(Reverse(u)) = ready.pop() {
+        order.push(u);
+        for &v in &adj[u] {
+          indeg[v] -= 1;
+          if indeg[v] == 0 {
+            ready.push(Reverse(v));
+          }
+        }
+      }
+      if order.len() == n {
+        return Ok(Expr::List(
+          order.into_iter().map(|i| vertices[i].clone()).collect(),
+        ));
+      }
     }
     return Ok(unevaluated(name, args));
   }

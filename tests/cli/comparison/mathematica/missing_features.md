@@ -530,7 +530,7 @@ Woxi does **not** support.
 - Statistical visualization: `SmoothHistogram`, `DensityHistogram`,
     `DistributionChart`, `ProbabilityPlot`, `QuantilePlot`,
     `PairedHistogram`
-- Graph analysis extras: `CayleyGraph`, `TopologicalSort`,
+- Graph analysis extras: `CayleyGraph`,
     `FindVertexCover`, `FindEdgeCover`, `HITSCentrality`,
     `BreadthFirstScan`, `DepthFirstScan`, and styling options
     (`VertexStyle`, `EdgeLabels`, `GraphLayout`)
