@@ -3271,11 +3271,8 @@ pub fn dispatch_io_functions(
         if let Some(attrs) = user_attrs
           && !attrs.is_empty()
         {
-          sym_lines.push(format!(
-            "Attributes[{}] = {{{}}}",
-            sym,
-            attrs.join(", ")
-          ));
+          let vals = attrs.to_vec().join(", ");
+          sym_lines.push(format!("Attributes[{sym}] = {{{vals}}}"));
         }
 
         // 2. DownValues (function definitions). Includes literal-argument

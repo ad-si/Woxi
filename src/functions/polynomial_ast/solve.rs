@@ -2411,7 +2411,8 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Check if variable has Constant attribute (user-defined constants)
-  let is_constant = crate::func_attrs_contains(var, "Constant");
+  use crate::evaluator::Attributes as A;
+  let is_constant = crate::func_attrs_contains(var, A::Constant);
   if is_constant {
     crate::emit_message(&format!(
       "Solve::ivar: {var} is not a valid variable."

@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::evaluator::Attributes;
 use crate::syntax::substitute_variable;
 
 pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -197,25 +198,17 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       // Honour NHoldAll / NHoldFirst / NHoldRest attributes (built-in or
       // user-set). When a slot is held, leave the argument literal and
       // skip the recursive N application.
-      let attrs: Vec<String> = {
-        let builtin: Vec<String> =
-          crate::evaluator::get_builtin_attributes(name)
-            .into_iter()
-            .map(String::from)
-            .collect();
+      let attrs = {
+        let builtin = crate::evaluator::get_builtin_attributes_mask(name);
         let user = crate::FUNC_ATTRS
           .with(|m| m.borrow().get(name).cloned().unwrap_or_default());
         let mut combined = builtin;
-        for a in user {
-          if !combined.contains(&a) {
-            combined.push(a);
-          }
-        }
+        combined.add(user.to_u32());
         combined
       };
-      let hold_all = attrs.iter().any(|a| a == "NHoldAll");
-      let hold_first = attrs.iter().any(|a| a == "NHoldFirst");
-      let hold_rest = attrs.iter().any(|a| a == "NHoldRest");
+      let hold_all = attrs.contains(Attributes::NHoldAll);
+      let hold_first = attrs.contains(Attributes::NHoldFirst);
+      let hold_rest = attrs.contains(Attributes::NHoldRest);
       let new_args: Vec<Expr> = if hold_all {
         args.to_vec()
       } else {
@@ -1238,25 +1231,17 @@ fn n_eval_arbitrary_partial(
       // Honour NHoldAll / NHoldFirst / NHoldRest so e.g. `N[Out[0], 50]`
       // doesn't recurse into Out's slot and rewrite the index as a
       // BigFloat. (Out has NHoldFirst; the `0` slot must stay literal.)
-      let attrs: Vec<String> = {
-        let builtin: Vec<String> =
-          crate::evaluator::get_builtin_attributes(name)
-            .into_iter()
-            .map(String::from)
-            .collect();
+      let attrs = {
+        let builtin = crate::evaluator::get_builtin_attributes_mask(name);
         let user = crate::FUNC_ATTRS
           .with(|m| m.borrow().get(name).cloned().unwrap_or_default());
         let mut combined = builtin;
-        for a in user {
-          if !combined.contains(&a) {
-            combined.push(a);
-          }
-        }
+        combined.add(user.to_u32());
         combined
       };
-      let hold_all = attrs.iter().any(|a| a == "NHoldAll");
-      let hold_first = attrs.iter().any(|a| a == "NHoldFirst");
-      let hold_rest = attrs.iter().any(|a| a == "NHoldRest");
+      let hold_all = attrs.contains(Attributes::NHoldAll);
+      let hold_first = attrs.contains(Attributes::NHoldFirst);
+      let hold_rest = attrs.contains(Attributes::NHoldRest);
       let new_args: Result<Vec<Expr>, _> = args
         .iter()
         .enumerate()
