@@ -11224,6 +11224,26 @@ fn annotation_contains_dynamic(expr: &Expr) -> bool {
   }
 }
 
+/// Whether a `Row[…]`/`Column[…]` argument is Wolfram's custom
+/// control-layout template rather than a static annotation row: it places
+/// each already-declared control by number with `Place[n]` (e.g.
+/// `Column[{Row[{Place[1], Spacer[20], Place[2]}], …}]`), the documented
+/// alternative to per-control `ControlPlacement -> n` for arranging a
+/// Manipulate's panel by hand. Woxi renders one flat control panel rather
+/// than reproducing such a custom arrangement (see the per-control
+/// `ControlPlacement` handling above), so this template must be recognized
+/// and dropped silently — not misread as a `Row[{Style[…], …}]`-style text
+/// heading, which would add a spurious blank-labeled control row.
+fn annotation_contains_place(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == "Place" || args.iter().any(annotation_contains_place)
+    }
+    Expr::List(items) => items.iter().any(annotation_contains_place),
+    _ => false,
+  }
+}
+
 /// Peel a display-only `Invisible[expr]` wrapper, returning the content it
 /// hides. `Invisible` keeps exactly the space `expr` would take but paints
 /// nothing — Demonstrations use it to hold a layout's shape steady while an
@@ -17395,6 +17415,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         });
         continue;
       }
+      // A custom control-layout template (`Row`/`Column`/`Grid` placing
+      // declared controls by number via `Place[n]`) contributes no control
+      // or display of its own — see `annotation_contains_place`.
+      Expr::FunctionCall { .. } if annotation_contains_place(spec) => {
+        continue;
+      }
       Expr::FunctionCall { name, .. }
         if is_manipulate_annotation_head(name)
           && !annotation_contains_dynamic(spec) =>
@@ -23414,5 +23440,35 @@ mod manipulate_control_placement_tests {
       vec!["a"]
     );
     assert_eq!(spec.control_placement, ControlPlacement::Top);
+  }
+
+  /// A custom layout template (`Column[{Row[{Place[1], …}], Grid[{…}]}]`)
+  /// is Wolfram's other way of arranging a Manipulate's controls by hand —
+  /// each `Place[n]` stands for the nth declared control. Woxi keeps one
+  /// flat control panel rather than reproducing the custom arrangement
+  /// (see `per_control_placement_leaves_the_widget_default` above), so the
+  /// template itself must disappear rather than being misread as a
+  /// `Row[{Style[…], …}]`-style static text heading — which would add a
+  /// spurious blank-labeled control row after the two real sliders.
+  #[test]
+  fn place_layout_template_contributes_no_control() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[Plot[Sin[a x] + b, {x, 0, 6}], \
+       {{a, 1, \"a\"}, 0, 5, ControlPlacement -> 1}, \
+       {{b, 0, \"b\"}, -1, 1, ControlPlacement -> 2}, \
+       Column[{Row[{Place[1], Spacer[20], Place[2]}]}]]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(
+      spec
+        .controls
+        .iter()
+        .map(ManipulateControl::name)
+        .collect::<Vec<_>>(),
+      vec!["a", "b"],
+      "the layout template must not become a third, blank-labeled control: {:?}",
+      spec.controls
+    );
   }
 }
