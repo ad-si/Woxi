@@ -3210,11 +3210,24 @@ fn apply_agreed_row_part_styles(content: &Expr, style: &mut StyleState) {
 
 fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // Text[str, {x, y}] or Text[Style[str, ...], {x, y}]
+  //
+  // `Invisible[…]` paints nothing — a Demonstration wraps one item's label
+  // in it to hide it while keeping a shared `Table[Text[label[[i]], …], …]`
+  // loop uniform across items. It can nest either way
+  // (`Invisible[Style[…]]` or `Style[Invisible[…], …]`), so peel it off
+  // both before and after the `Style` peel below and, either way, skip the
+  // primitive entirely rather than falling through to the catch-all in
+  // `graphics_text_content`, which would typeset the wrapper's own
+  // textual form (`Invisible[e]`) as a literal on-screen label.
+  let (first_arg, mut hidden) = match peel_invisible(&args[0]) {
+    Some(inner) => (inner, true),
+    None => (&args[0], false),
+  };
   let mut local_style = style.clone();
   // `Framed[content, opts…]` boxes the label: a border around it and, with
   // `Background -> colour`, a panel behind it. Peel it off first so the
   // `Style` directives it usually wraps still reach the primitive.
-  let (framed_body, frame_opts) = match &args[0] {
+  let (framed_body, frame_opts) = match first_arg {
     Expr::FunctionCall { name, args: fargs }
       if name == "Framed" && !fargs.is_empty() =>
     {
@@ -3237,6 +3250,17 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     }
     other => other,
   };
+  // `Style[Invisible[…], dirs…]` — the wrapper inside the styling.
+  let content = match peel_invisible(content) {
+    Some(inner) => {
+      hidden = true;
+      inner
+    }
+    None => content,
+  };
+  if hidden {
+    return;
+  }
   // A label written as a `Row` of styled parts — the `f(x)` a
   // Demonstration writes beside a point — carries its font directives on
   // the parts rather than on the label itself. The label is drawn as one
