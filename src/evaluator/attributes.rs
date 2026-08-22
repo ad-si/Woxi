@@ -457,12 +457,6 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
     | "Cot"
     | "Sec"
     | "Csc"
-    | "ArcSin"
-    | "ArcCos"
-    | "ArcTan"
-    | "ArcCot"
-    | "ArcSec"
-    | "ArcCsc"
     | "Sinh"
     | "Cosh"
     | "Tanh"
@@ -475,10 +469,9 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
     | "ArcCoth"
     | "ArcSech"
     | "ArcCsch"
-    | "Log"
+    | "Log" | "Log10" | "Log2"
     | "Sqrt"
     | "Abs"
-    | "AbsArg"
     | "Sign"
     | "Floor"
     | "Ceiling"
@@ -486,24 +479,26 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
     | "IntegerPart"
     | "FractionalPart"
     | "Gamma"
+    | "LogGamma"
     | "Factorial"
     | "Factorial2"
     | "Subfactorial"
+    | "QFactorial"
     | "Pochhammer"
     | "Erf"
     | "Erfc"
     | "Erfi"
     | "DawsonF"
-    | "InverseErf"
+    | "InverseErf" | "InverseErfc" // Listable delayed
     | "Beta"
     | "Zeta"
+    | "HurwitzZeta"
     | "PolyGamma"
     | "Hypergeometric0F1"
     | "Hypergeometric0F1Regularized"
     | "Hypergeometric1F1"
     | "Hypergeometric2F1"
     | "HypergeometricU"
-    | "MittagLefflerE"
     | "WhittakerM"
     | "WhittakerW"
     | "BesselJ"
@@ -519,21 +514,6 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
     | "LerchPhi"
     | "ExpIntegralEi"
     | "ExpIntegralE"
-    | "EllipticTheta"
-    | "WeierstrassP"
-    | "WeierstrassPPrime"
-    | "JacobiDN"
-    | "JacobiSN"
-    | "JacobiCN"
-    | "JacobiSC"
-    | "JacobiDC"
-    | "JacobiCD"
-    | "JacobiSD"
-    | "JacobiCS"
-    | "JacobiDS"
-    | "JacobiNS"
-    | "JacobiND"
-    | "JacobiNC"
     | "ChebyshevT"
     | "ChebyshevU"
     | "GegenbauerC"
@@ -561,45 +541,82 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
     | "BitNot"
     | "BitShiftRight"
     | "BitShiftLeft"
-    | "SinhIntegral"
-    | "CoshIntegral"
     | "BetaRegularized"
     | "GammaRegularized"
     | "Hypergeometric1F1Regularized"
+    | "Mod" | "Binomial" | "PascalBinomial"
+    | "JacobiP" | "JacobiZeta" | "Quotient"
+    | "CarlsonRC" | "CarlsonRD" | "CarlsonRF" | "CarlsonRG" | "CarlsonRJ"
+    | "EllipticPi"
+    | "FactorialPower"
+    | "LogisticSigmoid"
     | "RealSign"
     | "RealAbs" => {
       A::Listable | A::NumericFunction | A::Protected
     }
 
-    // Listable + Protected (no NumericFunction)
-    "Discriminant" => A::Listable | A::Protected,
+    // NumericFunction + Protected
+    "Clip" => A::NumericFunction | A::Protected,
 
-    // Listable + Protected + ReadProtected (no NumericFunction)
-    "Divisible" => A::Listable | A::Protected | A::ReadProtected,
+    // NumericFunction + Protected + ReadProtected
+    "SinDegrees" | "CosDegrees" | "TanDegrees"
+    | "SecDegrees" | "CscDegrees" | "CotDegrees"
+    | "ArcSinDegrees" | "ArcCosDegrees" | "ArcTanDegrees"
+    | "ArcCotDegrees" | "ArcSecDegrees" | "ArcCscDegrees"
+    | "WeierstrassP" | "InverseWeierstrassP" | "WeierstrassPPrime"
+    | "Rescale" => {
+      A::NumericFunction | A::Protected | A::ReadProtected
+    }
 
-    // These have ReadProtected too
+    // Listable + Orderless + Protected
+    "CoprimeQ" => A::Listable | A::Orderless | A::Protected,
+
+    // Listable + Protected + ReadProtected
+    "Divisible"
+    | "ThueMorse"
+    | "RamanujanTau"
+    | "NextPrime" // behaves as Listable
+    // The rest of these have Listable delayed till first use in WolframScript.
+    | "FiniteAbelianGroupCount" | "FiniteGroupCount"
+    | "KroneckerSymbol"
+    | "SquaresR"
+    | "PrimePowerQ"
+    | "MangoldtLambda"
+    | "IntegerReverse"
+    | "DigitSum"
+    | "RudinShapiro" => A::Listable | A::Protected | A::ReadProtected,
+
+    // Listable + NumericFunction + Protected + ReadProtected
     "Exp"
     | "AiryAi"
     | "AiryBi"
-    | "InverseJacobiCN"
-    | "InverseJacobiSN"
-    | "InverseJacobiDN"
-    | "InverseJacobiCD"
-    | "InverseJacobiSC"
-    | "InverseJacobiCS"
-    | "InverseJacobiSD"
-    | "InverseJacobiDS"
-    | "InverseJacobiNS"
-    | "InverseJacobiNC"
-    | "InverseJacobiND"
-    | "InverseJacobiDC"
+    | "ArcSin" | "ArcCos" | "ArcTan"
+    | "ArcCot" | "ArcSec" | "ArcCsc"
+    | "JacobiAmplitude" | "JacobiEpsilon"
+    | "JacobiDN" | "JacobiSN" | "JacobiCN"
+    | "JacobiSC" | "JacobiDC" | "JacobiCD"
+    | "JacobiSD" | "JacobiCS" | "JacobiDS"
+    | "JacobiNS" | "JacobiND" | "JacobiNC"
+    | "InverseJacobiCN" | "InverseJacobiSN" | "InverseJacobiDN"
+    | "InverseJacobiCD" | "InverseJacobiSC" | "InverseJacobiCS"
+    | "InverseJacobiSD" | "InverseJacobiDS" | "InverseJacobiNS"
+    | "InverseJacobiNC" | "InverseJacobiND" | "InverseJacobiDC"
     | "StruveH"
     | "StruveL"
     | "ParabolicCylinderD"
     | "AngerJ"
     | "WeberE"
-    | "WignerD"
-    | "InverseWeierstrassP" => {
+    | "SphericalBesselJ" | "SphericalBesselY"
+    | "SphericalHankelH1" | "SphericalHankelH2"
+    | "SinIntegral" | "CosIntegral"
+    | "SinhIntegral" | "CoshIntegral"
+    | "HarmonicNumber" | "HyperHarmonicNumber"
+    | "KelvinBei" | "KelvinBer" | "ModularLambda"
+    | "KleinInvariantJ" | "MittagLefflerE"
+    | "Fibonacci" | "LucasL" | "Hyperfactorial" | "BarnesG"
+    | "EllipticNomeQ" | "InverseEllipticNomeQ" | "DedekindEta"
+    | "Surd" | "CubeRoot" | "AlternatingHarmonicNumber"
+    | "CatalanNumber" | "ZernikeR" => {
       A::Listable | A::NumericFunction | A::Protected | A::ReadProtected
     }
     "ArithmeticGeometricMean" =>
@@ -613,19 +630,23 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
       A::Listable | A::NumericFunction | A::Orderless | A::Protected
     }
 
-    // Listable + Protected (non-numeric)
+    // Listable + Protected
     "Range" | "IntegerDigits" | "RealDigits"
-    | "IntegerString" | "ToCharacterCode" | "FromCharacterCode"
+    | "IntegerString"
     | "StringLength" | "Characters" | "ToUpperCase" | "ToLowerCase"
     | "Boole" | "Positive" | "Negative" | "NonPositive" | "NonNegative"
-    | "EvenQ" | "OddQ" | "PrimeQ" | "IntegerQ" | "NumberQ" | "NumericQ"
-    | "AtomQ" | "Clip" | "Cyclotomic" | "PartitionsP" | "PartitionsQ"
-    | "Rescale"
-    | "Resultant" | "Unitize" | "UnitStep" | "N" | "FactorSquareFree"
+    | "EvenQ" | "OddQ" | "PrimeQ"
+    | "Cyclotomic" | "PartitionsP" | "PartitionsQ"
+    | "StirlingS1" | "StirlingS2" | "MixedFractionParts"
+    | "AbsArg" | "Divisors" | "PrimitiveRoot"
+    | "Numerator" | "Denominator" | "MoebiusMu"
+    | "CompositeQ" | "RomanNumeral" | "FactorInteger"
+    | "Resultant" | "Unitize" | "UnitStep" | "FactorSquareFree"
     | "PrimePi" | "BitGet" | "BitSet" | "BitClear" | "PowerMod"
-    | "JacobiSymbol" | "IntegerExponent" => {
-      A::Listable | A::Protected
-    }
+    | "JacobiSymbol" | "IntegerExponent" | "CarmichaelLambda"
+    | "IntegerLength" | "ContinuedFraction" | "MinimalPolynomial"
+    | "Discriminant" | "BernoulliB" | "Prime" | "EulerPhi"
+    | "ToExpression" => A::Listable | A::Protected,
 
     // HoldAllComplete + Protected
     "HoldComplete" | "HoldCompleteForm" | "Unevaluated" => {
@@ -669,8 +690,6 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
     // Manipulate it holds its arguments via the explicit name-match in
     // core_eval.rs rather than a HoldAll attribute.
     "GeometricScene" => A::Protected | A::ReadProtected,
-    // PfaffianDet: Protected + ReadProtected (matches wolframscript).
-    "PfaffianDet" => A::Protected | A::ReadProtected,
     // Parallel* combinators: Protected + ReadProtected. This matches a COLD
     // wolframscript kernel — these functions autoload lazily, so a fresh query
     // returns the {Protected, ReadProtected} stub. Once the Parallel subsystem
@@ -734,10 +753,17 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
     }
 
     // Constants
-    "Pi" | "E" | "EulerGamma" | "GoldenRatio" | "Catalan" | "Degree"
-    | "Khinchin" | "Glaisher" => {
+    "Pi" | "E" | "Degree" => {
       A::Constant | A::Protected | A::ReadProtected
     }
+    "EulerGamma" | "GoldenRatio" | "Catalan" | "MachinePrecision"
+    | "Khinchin" | "Glaisher" | "GoldenAngle" => {
+      A::Constant | A::Protected
+    }
+    "ChampernowneNumber" => {
+      A::Constant | A::Listable | A::NHoldFirst | A::NumericFunction | A::Protected | A::ReadProtected
+    }
+
     "I" => A::Locked | A::Protected | A::ReadProtected,
     "Locked" => A::Locked | A::Protected,
     "EllipticExp"
@@ -779,15 +805,30 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
       A::NHoldRest | A::Protected
     }
 
+    // Listable + NHoldAll + Protected
+    "DivisorSigma" => A::Listable | A::NHoldAll | A::Protected,
+
     // NHoldAll + Protected
     "SlotSequence" => A::NHoldAll | A::Protected,
+
+    // Listable + NHoldFirst + NumericFunction + Protected
+    "EllipticTheta" => A::Listable | A::NHoldFirst | A::NumericFunction | A::Protected,
 
     // Listable + NHoldFirst + Protected
     "In" | "Out" => A::Listable | A::NHoldFirst | A::Protected,
 
+    // Listable + NHoldAll + Protected + ReadProtected
+    "DirichletL" => A::Listable | A::NHoldFirst | A::Protected | A::ReadProtected,
+
+    // Listable + NHoldFirst + Protected + ReadProtected
+    "BellB" | "StieltjesGamma" => {
+      A::Listable | A::NHoldFirst | A::Protected | A::ReadProtected
+    }
+
     // Locked + Protected (matches wolframscript: these symbols cannot be
     // unprotected).
     "List" | "Symbol" => A::Locked | A::Protected,
+
     // HoldAll + Protected + ReadProtected. Sum and Product hold their body
     // and iterator so the iteration variable is not substituted by an
     // OwnValue before the sum starts.
@@ -808,7 +849,7 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
     "Confirm" | "ConfirmBy" | "ConfirmMatch" | "ConfirmAssert"
     | "ConfirmQuiet" => A::HoldAll | A::Protected | A::ReadProtected,
     "Attributes" => A::HoldAll | A::Listable | A::Protected,
-    "ToExpression" => A::Listable | A::Protected,
+
     // Flat + OneIdentity + Protected
     "Join" | "StringJoin" => A::Flat | A::OneIdentity | A::Protected,
     "Union" | "Intersection" => {
@@ -817,6 +858,7 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
     "Association" => A::HoldAllComplete | A::Protected,
     "Part" => A::NHoldRest | A::Protected | A::ReadProtected,
     "Slot" => A::NHoldAll | A::Protected,
+
     // Protected + ReadProtected
     "D" | "Limit" | "Mean" | "Median" | "Variance" | "Missing" => {
       A::Protected | A::ReadProtected
@@ -846,6 +888,7 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
     | "InterpolatingFunction"
     | "BezierFunction"
     | "BSplineFunction"
+    | "WignerD" | "PfaffianDet"
     | "Information"
     | "Reals"
     | "Thick"
