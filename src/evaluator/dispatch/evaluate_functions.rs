@@ -2216,6 +2216,9 @@ fn evaluate_function_call_ast_inner(
       }
       _ => None,
     };
+    #[cfg(target_arch = "wasm32")]
+    let _ = &previous_alias;
+    #[cfg(not(target_arch = "wasm32"))]
     let forget_alias = || {
       if let Some((alias, previous)) = &previous_alias {
         crate::set_context_alias(alias, previous.as_deref());
