@@ -763,6 +763,26 @@ mod compile {
     let result = interpret("Compile[{x, y}, x + y]").unwrap();
     assert!(result.starts_with("CompiledFunction["));
   }
+
+  // Regression: `Compile` only accepted exactly 2 arguments, so the trailing
+  // option rules real Wolfram code commonly appends (`RuntimeAttributes`,
+  // `RuntimeOptions`, ...) raised a spurious `Compile::argrx` message and
+  // left the function unevaluated.
+  #[test]
+  fn compile_accepts_trailing_option_rules() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      "cf = Compile[{{x, _Real}}, x^2, RuntimeAttributes -> {Listable}, RuntimeOptions -> \"Speed\"]; cf[3.]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "9.");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected messages: {:?}",
+      r.warnings
+    );
+    assert_eq!(interpret("Head[cf]").unwrap(), "CompiledFunction");
+  }
 }
 
 mod dispatch {

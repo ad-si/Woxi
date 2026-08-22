@@ -42,7 +42,7 @@ pub fn dispatch_structural(
         return Some(Ok(unevaluated("Function", args)));
       }
     },
-    "Compile" if args.len() == 2 => {
+    "Compile" if args.len() >= 2 => {
       let vars = match &args[0] {
         Expr::List(items) => {
           let mut var_names = Vec::new();
