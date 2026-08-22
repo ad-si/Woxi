@@ -4774,6 +4774,30 @@ mod nintegrate {
     );
   }
 
+  // Over an interval wide enough that tanh-sinh's endpoint-crowded nodes
+  // never resolve the interesting region near a removable singularity, it
+  // gives up and falls back to adaptive Simpson — which, unlike tanh-sinh,
+  // samples the literal endpoint. That endpoint evaluation (Sin[0.]^2 /
+  // 0.^2) is discarded and replaced by a nearby perturbed value, exactly
+  // like the small-interval case above, but it used to also print a
+  // spurious `Power::infy` for the discarded sample before being thrown
+  // away — a message wolframscript never shows for this integral.
+  #[test]
+  fn wide_interval_removable_singularity_prints_no_spurious_message() {
+    clear_state();
+    let result = interpret("NIntegrate[Sin[x]^2/x^2, {x, 0, 15000}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 1.5716742354706954).abs() < 1e-6,
+      "got {val}, expected ~1.5716742354706954"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("Power::infy")),
+      "spurious message for a discarded endpoint sample: {msgs:?}"
+    );
+  }
+
   // Smooth integrands keep their accuracy, including the oscillatory ones that
   // fall back to the adaptive rule because tanh-sinh does not settle on them.
   #[test]
