@@ -84,6 +84,30 @@ fn gradient_color_function(scheme: &str) -> Expr {
   }
 }
 
+/// The color function of an indexed scheme (`ColorData[1]`, `ColorData[97]`,
+/// …), echoed in the same structured form `gradient_color_function` returns
+/// for a named gradient:
+///   `ColorDataFunction[n, "Indexed", {1, Infinity}, ColorData[n, #1] &]`.
+/// Applying it (`ColorData[n][k]`) delegates to the two-argument form, the
+/// common idiom a Demonstration uses to cycle a palette (`ColorData[1][i]`).
+fn indexed_color_function(n: i128) -> Expr {
+  let blend = Expr::Function {
+    body: Box::new(call("ColorData", vec![Expr::Integer(n), Expr::Slot(1)])),
+  };
+  Expr::FunctionCall {
+    name: "ColorDataFunction".to_string(),
+    args: vec![
+      Expr::Integer(n),
+      Expr::String("Indexed".to_string()),
+      Expr::List(
+        vec![Expr::Integer(1), Expr::Identifier("Infinity".to_string())].into(),
+      ),
+      blend,
+    ]
+    .into(),
+  }
+}
+
 /// `ColorData[30, "ColorList"]` — nine muted earth tones, likewise cycling.
 const SCHEME_30: [(f64, f64, f64); 9] = [
   (59.0 / 255.0, 45.0 / 255.0, 42.0 / 255.0),
@@ -1020,6 +1044,16 @@ pub fn dispatch_image_functions(
         && crate::functions::chart::named_color_scheme(scheme).is_some()
       {
         return Some(Ok(gradient_color_function(scheme)));
+      }
+      // ColorData[n]: the indexed scheme's color function, echoed in the
+      // same structured form as the named-gradient case above. Applying it
+      // (ColorData[n][k] — the common way Demonstrations cycle a palette,
+      // e.g. `ColorData[1][i]`) delegates to the already-supported
+      // `ColorData[n, k]` two-argument form (see `apply_curried_call`).
+      if let Expr::Integer(n) = &args[0]
+        && indexed_scheme_color(*n, 1).is_some()
+      {
+        return Some(Ok(indexed_color_function(*n)));
       }
     }
     "ImageCompose" if args.len() == 2 => {

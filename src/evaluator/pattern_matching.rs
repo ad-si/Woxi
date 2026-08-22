@@ -2583,7 +2583,21 @@ pub fn apply_replace_all_ast(
   let expr_str = expr_to_string(expr);
   let result =
     apply_replace_all_direct(&expr_str, &pattern_str, &replacement_str)?;
-  string_to_expr(&result)
+  // A rendered graphic nested anywhere in `expr` (e.g. the unevaluated
+  // `Part[chart, 1]` a Part extraction leaves behind when the chart has no
+  // symbolic primitives to index, as PieChart's rasterized result doesn't)
+  // serializes to the output-only placeholder `-Graphics-`, which cannot be
+  // parsed back. Since the pattern found nothing to replace in `expr_str`
+  // either (the placeholder hides any real content from the string search
+  // just as it hides it from `string_to_expr`), the correct ReplaceAll
+  // result is `expr` unchanged rather than a hard parse error.
+  string_to_expr(&result).or_else(|err| {
+    if result == expr_str {
+      Ok(expr.clone())
+    } else {
+      Err(err)
+    }
+  })
 }
 
 /// Default maximum number of ReplaceRepeated scans, matching wolframscript's
