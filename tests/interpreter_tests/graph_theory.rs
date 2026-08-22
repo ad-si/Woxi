@@ -7224,4 +7224,21 @@ mod topological_sort {
       "{1, 2, 3}"
     );
   }
+
+  #[test]
+  fn undirected_graph_stays_unevaluated() {
+    // TopologicalSort is only defined for a DAG; an undirected edge can't
+    // be oriented, so it must not be silently dropped and treated as no
+    // constraint at all.
+    let result =
+      interpret("TopologicalSort[Graph[{1 <-> 2, 2 <-> 3}]]").unwrap();
+    assert!(result.starts_with("TopologicalSort["));
+  }
+
+  #[test]
+  fn mixed_directed_and_undirected_stays_unevaluated() {
+    let result =
+      interpret("TopologicalSort[Graph[{1 -> 2, 2 <-> 3}]]").unwrap();
+    assert!(result.starts_with("TopologicalSort["));
+  }
 }

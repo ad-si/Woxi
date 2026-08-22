@@ -7855,15 +7855,20 @@ fn evaluate_function_call_ast_inner(
       let n = vertices.len();
       let (pg_digraph, _) =
         crate::functions::graph::build_digraph(vertices, edges);
+      // TopologicalSort is only defined for a DAG. An undirected edge
+      // (weight == false) can't be oriented, so a graph carrying one has
+      // no topological order — stay unevaluated rather than silently
+      // dropping the constraint and reporting a bogus order.
+      if pg_digraph.raw_edges().iter().any(|edge| !edge.weight) {
+        return Ok(unevaluated(name, args));
+      }
       let mut indeg = vec![0usize; n];
       let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
       for edge in pg_digraph.raw_edges() {
-        if edge.weight {
-          let u = edge.source().index();
-          let v = edge.target().index();
-          adj[u].push(v);
-          indeg[v] += 1;
-        }
+        let u = edge.source().index();
+        let v = edge.target().index();
+        adj[u].push(v);
+        indeg[v] += 1;
       }
       use std::cmp::Reverse;
       use std::collections::BinaryHeap;
