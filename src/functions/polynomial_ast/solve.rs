@@ -5701,10 +5701,27 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // FindRoot holds its arguments, so a spec built programmatically and
+  // passed by name — `initguess = Flatten[Table[{u[i], 0.5}, ...]];
+  // FindRoot[sys, initguess]`, the idiom collocation methods use to name
+  // one unknown per grid point — reaches here as a bare identifier rather
+  // than a literal list. Resolve it once to reveal that list structure. A
+  // `{var, x0}` written directly at the call site is left untouched (not
+  // re-evaluated) so a variable that happens to carry an unrelated global
+  // value isn't substituted into the "variable" slot.
+  let arg1_owned;
+  let arg1: &Expr = if matches!(&args[1], Expr::List(_)) {
+    &args[1]
+  } else {
+    arg1_owned = crate::evaluator::evaluate_expr_to_expr(&args[1])
+      .unwrap_or_else(|_| args[1].clone());
+    &arg1_owned
+  };
+
   // Multivariate form: FindRoot[{eqns}, {{x, x0}, {y, y0}, ...}] — every
   // variable spec is itself a {var, start} list. Solved with multidimensional
   // Newton iteration.
-  if let Expr::List(specs) = &args[1]
+  if let Expr::List(specs) = arg1
     && !specs.is_empty()
     && specs.iter().all(|s| {
       matches!(s, Expr::List(p)
@@ -5780,7 +5797,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // First peek at the variable name and start point; if the start point
   // evaluates to a complex number we route to a complex Newton iteration
   // before the real-only path below.
-  let (var_name, x_start_expr) = match &args[1] {
+  let (var_name, x_start_expr) = match arg1 {
     Expr::List(items) if items.len() == 2 || items.len() == 3 => {
       let name = match &items[0] {
         Expr::Identifier(n) => n.clone(),
@@ -5817,7 +5834,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       im0,
     );
   }
-  let (var, x0, x1_opt) = match &args[1] {
+  let (var, x0, x1_opt) = match arg1 {
     Expr::List(items) if items.len() == 2 => {
       let var_name = match &items[0] {
         Expr::Identifier(name) => name.clone(),
@@ -6544,6 +6561,19 @@ fn find_root_multivariate(
       _ => None,
     })
     .collect();
+  // As with the spec argument, the equations are often built and named
+  // separately (`sys = Join[{bc1, ...}, Table[Eq[...], ...]] // Flatten;
+  // FindRoot[sys, ...]`) rather than written literally, so `eqns_arg` may
+  // reach here as a bare identifier rather than a literal list. Resolve it
+  // (search variables localized, same as each individual equation below)
+  // to reveal the list of equations.
+  let eqns_owned;
+  let eqns_arg: &Expr = if matches!(eqns_arg, Expr::List(_)) {
+    eqns_arg
+  } else {
+    eqns_owned = evaluate_with_vars_localized(eqns_arg, &var_refs);
+    &eqns_owned
+  };
   let eqns: Vec<Expr> = match eqns_arg {
     Expr::List(es) => es
       .iter()
