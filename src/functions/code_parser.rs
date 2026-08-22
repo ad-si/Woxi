@@ -44,8 +44,10 @@ impl Convention {
 
 /// One token of the source, with where it came from.
 struct Token {
-  /// The `Token`…` symbol naming what kind of token this is.
-  kind: &'static str,
+  /// The symbol naming what kind of token this is. Most are `Token`…`, but
+  /// the kinds the language already has a name for — `Symbol`, `Integer`,
+  /// `Real`, `Rational`, `String`, `Whitespace` — are reported under it.
+  kind: String,
   /// The exact source text, so the tokens concatenate back to the input.
   text: String,
   /// 1-based character index of the first character.
@@ -81,12 +83,12 @@ impl Token {
     }
   }
 
-  /// `LeafNode[Token`kind, "text", <|Source -> …|>]`.
+  /// `LeafNode[kind, "text", <|Source -> …|>]`.
   fn to_leaf_node(&self, convention: Convention) -> Expr {
     Expr::FunctionCall {
       name: "LeafNode".to_string(),
       args: vec![
-        Expr::Identifier(self.kind.to_string()),
+        Expr::Identifier(self.kind.clone()),
         Expr::String(self.text.clone()),
         Expr::Association(vec![(
           Expr::Identifier("Source".to_string()),
@@ -114,7 +116,9 @@ const OPERATORS: &[(&str, &str)] = &[
   ("=!=", "Token`EqualBangEqual"),
   ("//.", "Token`SlashSlashDot"),
   ("//@", "Token`SlashSlashAt"),
+  ("//=", "Token`SlashSlashEqual"),
   ("/;", "Token`SlashSemi"),
+  ("/:", "Token`SlashColon"),
   ("^:=", "Token`CaretColonEqual"),
   ("+=", "Token`PlusEqual"),
   ("-=", "Token`MinusEqual"),
@@ -130,6 +134,8 @@ const OPERATORS: &[(&str, &str)] = &[
   ("||", "Token`BarBar"),
   ("++", "Token`PlusPlus"),
   ("--", "Token`MinusMinus"),
+  ("<->", "Token`LessMinusGreater"),
+  ("|->", "Token`BarMinusGreater"),
   ("->", "Token`MinusGreater"),
   (":>", "Token`ColonGreater"),
   ("/.", "Token`SlashDot"),
@@ -139,11 +145,14 @@ const OPERATORS: &[(&str, &str)] = &[
   ("@@", "Token`AtAt"),
   ("@*", "Token`AtStar"),
   ("/*", "Token`SlashStar"),
-  ("[[", "Token`OpenSquareOpenSquare"),
-  ("]]", "Token`CloseSquareCloseSquare"),
   ("<|", "Token`LessBar"),
   ("|>", "Token`BarGreater"),
+  ("<>", "Token`LessGreater"),
+  ("**", "Token`StarStar"),
+  ("::[", "Token`ColonColonOpenSquare"),
   ("::", "Token`ColonColon"),
+  ("??", "Token`QuestionQuestion"),
+  ("!!", "Token`BangBang"),
   ("~~", "Token`TildeTilde"),
   ("...", "Token`DotDotDot"),
   ("..", "Token`DotDot"),
@@ -175,6 +184,380 @@ const OPERATORS: &[(&str, &str)] = &[
   ("?", "Token`Question"),
   (".", "Token`Dot"),
   ("'", "Token`SingleQuote"),
+];
+
+/// The named characters the Wolfram Language reads as operators, so that
+/// `\[Rule]` is a token of its own rather than a letter of a symbol. The
+/// token it reports is `Token`LongName`` followed by the name.
+const LONG_NAME_OPERATORS: &[&str] = &[
+  "Not",
+  "PlusMinus",
+  "CenterDot",
+  "Times",
+  "Divide",
+  "OpenCurlyQuote",
+  "CloseCurlyQuote",
+  "OpenCurlyDoubleQuote",
+  "CloseCurlyDoubleQuote",
+  "InvisibleTimes",
+  "LeftArrow",
+  "UpArrow",
+  "RightArrow",
+  "DownArrow",
+  "LeftRightArrow",
+  "UpDownArrow",
+  "UpperLeftArrow",
+  "UpperRightArrow",
+  "LowerRightArrow",
+  "LowerLeftArrow",
+  "LeftTeeArrow",
+  "UpTeeArrow",
+  "RightTeeArrow",
+  "DownTeeArrow",
+  "LeftVector",
+  "DownLeftVector",
+  "RightUpVector",
+  "LeftUpVector",
+  "RightVector",
+  "DownRightVector",
+  "RightDownVector",
+  "LeftDownVector",
+  "RightArrowLeftArrow",
+  "UpArrowDownArrow",
+  "LeftArrowRightArrow",
+  "ReverseEquilibrium",
+  "Equilibrium",
+  "DoubleLeftArrow",
+  "DoubleUpArrow",
+  "DoubleRightArrow",
+  "DoubleDownArrow",
+  "DoubleLeftRightArrow",
+  "DoubleUpDownArrow",
+  "LeftArrowBar",
+  "RightArrowBar",
+  "DownArrowUpArrow",
+  "ForAll",
+  "PartialD",
+  "Exists",
+  "NotExists",
+  "Del",
+  "Element",
+  "NotElement",
+  "ReverseElement",
+  "NotReverseElement",
+  "SuchThat",
+  "Product",
+  "Coproduct",
+  "Sum",
+  "Minus",
+  "MinusPlus",
+  "DivisionSlash",
+  "Backslash",
+  "SmallCircle",
+  "Sqrt",
+  "CubeRoot",
+  "Proportional",
+  "Divides",
+  "DoubleVerticalBar",
+  "NotDoubleVerticalBar",
+  "And",
+  "Or",
+  "Integral",
+  "ContourIntegral",
+  "DoubleContourIntegral",
+  "ClockwiseContourIntegral",
+  "CounterClockwiseContourIntegral",
+  "Therefore",
+  "Because",
+  "Colon",
+  "Proportion",
+  "Tilde",
+  "VerticalTilde",
+  "NotTilde",
+  "EqualTilde",
+  "TildeEqual",
+  "NotTildeEqual",
+  "TildeFullEqual",
+  "NotTildeFullEqual",
+  "TildeTilde",
+  "NotTildeTilde",
+  "CupCap",
+  "HumpDownHump",
+  "HumpEqual",
+  "DotEqual",
+  "NotEqual",
+  "Congruent",
+  "NotCongruent",
+  "LessEqual",
+  "GreaterEqual",
+  "LessFullEqual",
+  "GreaterFullEqual",
+  "NotLessFullEqual",
+  "NotGreaterFullEqual",
+  "LessLess",
+  "GreaterGreater",
+  "NotCupCap",
+  "NotLess",
+  "NotGreater",
+  "NotLessEqual",
+  "NotGreaterEqual",
+  "LessTilde",
+  "GreaterTilde",
+  "NotLessTilde",
+  "NotGreaterTilde",
+  "LessGreater",
+  "GreaterLess",
+  "NotLessGreater",
+  "NotGreaterLess",
+  "Precedes",
+  "Succeeds",
+  "PrecedesSlantEqual",
+  "SucceedsSlantEqual",
+  "PrecedesTilde",
+  "SucceedsTilde",
+  "NotPrecedes",
+  "NotSucceeds",
+  "Subset",
+  "Superset",
+  "NotSubset",
+  "NotSuperset",
+  "SubsetEqual",
+  "SupersetEqual",
+  "NotSubsetEqual",
+  "NotSupersetEqual",
+  "UnionPlus",
+  "SquareSubset",
+  "SquareSuperset",
+  "SquareSubsetEqual",
+  "SquareSupersetEqual",
+  "SquareIntersection",
+  "SquareUnion",
+  "CirclePlus",
+  "CircleMinus",
+  "CircleTimes",
+  "CircleDot",
+  "RightTee",
+  "LeftTee",
+  "DownTee",
+  "UpTee",
+  "DoubleRightTee",
+  "LeftTriangle",
+  "RightTriangle",
+  "LeftTriangleEqual",
+  "RightTriangleEqual",
+  "Xor",
+  "Nand",
+  "Nor",
+  "Wedge",
+  "Vee",
+  "Intersection",
+  "Union",
+  "Diamond",
+  "Star",
+  "LessEqualGreater",
+  "GreaterEqualLess",
+  "NotPrecedesSlantEqual",
+  "NotSucceedsSlantEqual",
+  "NotSquareSubsetEqual",
+  "NotSquareSupersetEqual",
+  "NotPrecedesTilde",
+  "NotSucceedsTilde",
+  "NotLeftTriangle",
+  "NotRightTriangle",
+  "NotLeftTriangleEqual",
+  "NotRightTriangleEqual",
+  "LeftCeiling",
+  "RightCeiling",
+  "LeftFloor",
+  "RightFloor",
+  "Cap",
+  "Cup",
+  "LeftAngleBracket",
+  "RightAngleBracket",
+  "Perpendicular",
+  "LongLeftArrow",
+  "LongRightArrow",
+  "LongLeftRightArrow",
+  "DoubleLongLeftArrow",
+  "DoubleLongRightArrow",
+  "DoubleLongLeftRightArrow",
+  "UpArrowBar",
+  "DownArrowBar",
+  "LeftRightVector",
+  "RightUpDownVector",
+  "DownLeftRightVector",
+  "LeftUpDownVector",
+  "LeftVectorBar",
+  "RightVectorBar",
+  "RightUpVectorBar",
+  "RightDownVectorBar",
+  "DownLeftVectorBar",
+  "DownRightVectorBar",
+  "LeftUpVectorBar",
+  "LeftDownVectorBar",
+  "LeftTeeVector",
+  "RightTeeVector",
+  "RightUpTeeVector",
+  "RightDownTeeVector",
+  "DownLeftTeeVector",
+  "DownRightTeeVector",
+  "LeftUpTeeVector",
+  "LeftDownTeeVector",
+  "UpEquilibrium",
+  "ReverseUpEquilibrium",
+  "RoundImplies",
+  "LeftTriangleBar",
+  "RightTriangleBar",
+  "Equivalent",
+  "LessSlantEqual",
+  "GreaterSlantEqual",
+  "NestedLessLess",
+  "NestedGreaterGreater",
+  "PrecedesEqual",
+  "SucceedsEqual",
+  "DoubleLeftTee",
+  "LeftDoubleBracket",
+  "RightDoubleBracket",
+  "LeftAssociation",
+  "RightAssociation",
+  "TwoWayRule",
+  "Piecewise",
+  "ImplicitPlus",
+  "AutoLeftMatch",
+  "AutoRightMatch",
+  "InvisiblePrefixScriptBase",
+  "InvisiblePostfixScriptBase",
+  "Transpose",
+  "Conjugate",
+  "ConjugateTranspose",
+  "HermitianConjugate",
+  "VerticalBar",
+  "NotVerticalBar",
+  "Distributed",
+  "Conditioned",
+  "UndirectedEdge",
+  "DirectedEdge",
+  "ContinuedFractionK",
+  "TensorProduct",
+  "TensorWedge",
+  "ProbabilityPr",
+  "ExpectationE",
+  "PermutationProduct",
+  "NotEqualTilde",
+  "NotHumpEqual",
+  "NotHumpDownHump",
+  "NotLeftTriangleBar",
+  "NotRightTriangleBar",
+  "NotLessLess",
+  "NotNestedLessLess",
+  "NotLessSlantEqual",
+  "NotGreaterGreater",
+  "NotNestedGreaterGreater",
+  "NotGreaterSlantEqual",
+  "NotPrecedesEqual",
+  "NotSucceedsEqual",
+  "NotSquareSubset",
+  "NotSquareSuperset",
+  "Equal",
+  "VerticalSeparator",
+  "VectorGreater",
+  "VectorGreaterEqual",
+  "VectorLess",
+  "VectorLessEqual",
+  "Limit",
+  "MaxLimit",
+  "MinLimit",
+  "Cross",
+  "Function",
+  "Xnor",
+  "DiscreteShift",
+  "DifferenceDelta",
+  "DiscreteRatio",
+  "RuleDelayed",
+  "Square",
+  "Rule",
+  "Implies",
+  "ShortRightArrow",
+  "ShortLeftArrow",
+  "ShortUpArrow",
+  "ShortDownArrow",
+  "Application",
+  "LeftBracketingBar",
+  "RightBracketingBar",
+  "LeftDoubleBracketingBar",
+  "RightDoubleBracketingBar",
+  "CapitalDifferentialD",
+  "DifferentialD",
+  "InvisibleComma",
+  "InvisibleApplication",
+  "LongEqual",
+];
+
+/// The named characters that are spelled-out whitespace.
+const LONG_NAME_WHITESPACE: &[&str] = &[
+  "RawTab",
+  "RawSpace",
+  "NonBreakingSpace",
+  "ThickSpace",
+  "ThinSpace",
+  "VeryThinSpace",
+  "MediumSpace",
+  "NoBreak",
+  "SpaceIndicator",
+  "InvisibleSpace",
+  "NegativeVeryThinSpace",
+  "NegativeThinSpace",
+  "NegativeMediumSpace",
+  "NegativeThickSpace",
+  "COMPATIBILITYNoBreak",
+  "AutoSpace",
+  "Continuation",
+  "RoundSpaceIndicator",
+  "PageBreakAbove",
+  "PageBreakBelow",
+  "DiscretionaryPageBreakAbove",
+  "DiscretionaryPageBreakBelow",
+  "AlignmentMarker",
+];
+
+/// The named characters that spell a token the plain syntax also has,
+/// paired with the token they stand for.
+const LONG_NAME_TOKENS: &[(&str, &str)] = &[
+  ("NewLine", "Token`Newline"),
+  ("RawReturn", "Token`Newline"),
+  ("RawExclamation", "Token`Bang"),
+  ("RawNumberSign", "Token`Hash"),
+  ("RawPercent", "Token`Percent"),
+  ("RawAmpersand", "Token`Amp"),
+  ("RawQuote", "Token`SingleQuote"),
+  ("RawLeftParenthesis", "Token`OpenParen"),
+  ("RawRightParenthesis", "Token`CloseParen"),
+  ("RawStar", "Token`Star"),
+  ("RawPlus", "Token`Plus"),
+  ("RawComma", "Token`Comma"),
+  ("RawDash", "Token`Minus"),
+  ("RawDot", "Token`Dot"),
+  ("RawSlash", "Token`Slash"),
+  ("RawColon", "Token`Colon"),
+  ("RawSemicolon", "Token`Semi"),
+  ("RawLess", "Token`Less"),
+  ("RawEqual", "Token`Equal"),
+  ("RawGreater", "Token`Greater"),
+  ("RawQuestion", "Token`Question"),
+  ("RawAt", "Token`At"),
+  ("RawLeftBracket", "Token`OpenSquare"),
+  ("RawRightBracket", "Token`CloseSquare"),
+  ("RawWedge", "Token`Caret"),
+  ("RawUnderscore", "Token`Under"),
+  ("RawLeftBrace", "Token`OpenCurly"),
+  ("RawVerticalBar", "Token`Bar"),
+  ("RawRightBrace", "Token`CloseCurly"),
+  ("RawTilde", "Token`Tilde"),
+  ("LineSeparator", "Token`Newline"),
+  ("ParagraphSeparator", "Token`Newline"),
+  ("IndentingNewLine", "Token`Newline"),
+  ("DiscretionaryLineSeparator", "Token`Newline"),
+  ("DiscretionaryParagraphSeparator", "Token`Newline"),
 ];
 
 /// Split `source` into tokens covering every character of it.
@@ -220,27 +603,44 @@ fn tokenize(source: &str) -> Vec<Token> {
   tokens
 }
 
+/// The backslash forms that open a piece of typeset input written linearly,
+/// each of which is a token of its own.
+const LINEAR_SYNTAX: &[(char, &str)] = &[
+  ('!', "Token`LinearSyntax`Bang"),
+  (')', "Token`LinearSyntax`CloseParen"),
+  ('*', "Token`LinearSyntax`Star"),
+  ('%', "Token`LinearSyntax`Percent"),
+  ('+', "Token`LinearSyntax`Plus"),
+  ('/', "Token`LinearSyntax`Slash"),
+  ('@', "Token`LinearSyntax`At"),
+  ('^', "Token`LinearSyntax`Caret"),
+  ('_', "Token`LinearSyntax`Under"),
+  ('&', "Token`LinearSyntax`Amp"),
+  ('`', "Token`LinearSyntax`BackTick"),
+  (' ', "Token`LinearSyntax`Space"),
+];
+
 /// Consume one token starting at `*i`, returning what kind it was.
-fn scan_one(chars: &[char], i: &mut usize) -> &'static str {
+fn scan_one(chars: &[char], i: &mut usize) -> String {
   let ch = chars[*i];
 
   // A newline is its own token — the one a templating reader looks for.
   if ch == '\n' {
     *i += 1;
-    return "Token`Newline";
+    return "Token`Newline".to_string();
   }
   if ch == '\r' {
     *i += 1;
     if chars.get(*i) == Some(&'\n') {
       *i += 1;
     }
-    return "Token`Newline";
+    return "Token`Newline".to_string();
   }
+  // Every space is a token of its own: two spaces are two tokens, not one
+  // run, because that is how the Wolfram Language reports them.
   if ch == ' ' || ch == '\t' {
-    while matches!(chars.get(*i), Some(' ' | '\t')) {
-      *i += 1;
-    }
-    return "Token`Whitespace";
+    *i += 1;
+    return "Whitespace".to_string();
   }
 
   // `(* … *)`, which nests.
@@ -259,9 +659,9 @@ fn scan_one(chars: &[char], i: &mut usize) -> &'static str {
       }
     }
     return if depth == 0 {
-      "Token`Comment"
+      "Token`Comment".to_string()
     } else {
-      "Token`Error`UnterminatedComment"
+      "Token`Error`UnterminatedComment".to_string()
     };
   }
 
@@ -272,116 +672,232 @@ fn scan_one(chars: &[char], i: &mut usize) -> &'static str {
         '\\' => *i += 2,
         '"' => {
           *i += 1;
-          return "Token`String";
+          return "String".to_string();
         }
         _ => *i += 1,
       }
     }
     *i = chars.len();
-    return "Token`Error`UnterminatedString";
+    return "Token`Error`UnterminatedString".to_string();
   }
 
-  if ch.is_ascii_digit() {
-    return scan_number(chars, i);
+  // A number starts at a digit, or at the dot of `.5`.
+  if ch.is_ascii_digit()
+    || (ch == '.' && matches!(chars.get(*i + 1), Some(c) if c.is_ascii_digit()))
+  {
+    return scan_number(chars, i).to_string();
   }
 
-  // A symbol may carry a context (`` Foo`bar ``) and may start with `$`.
-  if ch.is_alphabetic() || ch == '$' || ch == '`' {
-    while matches!(chars.get(*i), Some(c) if c.is_alphanumeric() || *c == '$' || *c == '`')
-    {
-      *i += 1;
+  // A named character that is not letterlike is a token in its own right,
+  // written either as `\[Rule]` or as the character it stands for.
+  if let Some((name, past)) = read_long_name(chars, *i) {
+    if let Some(kind) = long_name_token(&name) {
+      *i = past;
+      return kind;
     }
-    return "Token`Symbol";
+  } else if !ch.is_ascii()
+    && let Some(kind) = long_name_of(ch).and_then(long_name_token)
+  {
+    *i += 1;
+    return kind;
+  }
+
+  // A symbol may carry a context (`` Foo`bar ``), may start with `$`, and
+  // may spell any of its letters as a named character.
+  if symbol_piece(chars, *i, true).is_some() {
+    while let Some(width) = symbol_piece(chars, *i, false) {
+      *i += width;
+    }
+    return "Symbol".to_string();
   }
 
   if ch == '_' {
     let mut unders = 0usize;
-    while chars.get(*i) == Some(&'_') {
+    while chars.get(*i) == Some(&'_') && unders < 3 {
       unders += 1;
       *i += 1;
     }
     // `_.` is the optional-default pattern, one token in its own right.
     if unders == 1 && chars.get(*i) == Some(&'.') {
       *i += 1;
-      return "Token`UnderDot";
+      return "Token`UnderDot".to_string();
     }
     return match unders {
-      1 => "Token`Under",
-      2 => "Token`UnderUnder",
-      _ => "Token`UnderUnderUnder",
+      1 => "Token`Under".to_string(),
+      2 => "Token`UnderUnder".to_string(),
+      _ => "Token`UnderUnderUnder".to_string(),
     };
   }
 
+  // `#`, `##` — the slot marks. The number that may follow is a token of
+  // its own, so `#1` is a slot mark and then a `1`.
   if ch == '#' {
     *i += 1;
-    let sequence = chars.get(*i) == Some(&'#');
-    if sequence {
+    if chars.get(*i) == Some(&'#') {
       *i += 1;
+      return "Token`HashHash".to_string();
     }
-    while matches!(chars.get(*i), Some(c) if c.is_alphanumeric()) {
-      *i += 1;
-    }
-    return if sequence {
-      "Token`HashHash"
-    } else {
-      "Token`Hash"
-    };
+    return "Token`Hash".to_string();
   }
 
+  // `%`, `%%`, `%%%` — the out marks. One is `Token`Percent`, any longer
+  // run is `Token`PercentPercent`, and a following number is its own token.
   if ch == '%' {
+    let start = *i;
     while chars.get(*i) == Some(&'%') {
       *i += 1;
     }
-    while matches!(chars.get(*i), Some(c) if c.is_ascii_digit()) {
-      *i += 1;
-    }
-    return "Token`Percent";
+    return if *i - start == 1 {
+      "Token`Percent".to_string()
+    } else {
+      "Token`PercentPercent".to_string()
+    };
   }
 
-  // `\[Alpha]` and friends are one character of source spelled out.
-  if ch == '\\' && chars.get(*i + 1) == Some(&'[') {
-    *i += 2;
-    while *i < chars.len() && chars[*i] != ']' {
-      *i += 1;
+  // `\!`, `\*`, … open linear syntax; `\.41` and `\041` spell a character
+  // by its code, and are read as whatever that character is.
+  if ch == '\\' {
+    if let Some((_, kind)) = LINEAR_SYNTAX
+      .iter()
+      .find(|(c, _)| chars.get(*i + 1) == Some(c))
+    {
+      *i += 2;
+      return kind.to_string();
     }
-    if *i < chars.len() {
-      *i += 1;
+    if let Some((spelled, past)) = read_character_escape(chars, *i) {
+      let mut escape = [0u8; 4];
+      let text = &*spelled.encode_utf8(&mut escape);
+      if let Some((_, name)) = OPERATORS.iter().find(|(op, _)| *op == text) {
+        *i = past;
+        return name.to_string();
+      }
     }
-    return "Token`Symbol";
   }
 
   for (text, name) in OPERATORS {
     let candidate: Vec<char> = text.chars().collect();
     if chars[*i..].starts_with(&candidate) {
       *i += candidate.len();
-      return name;
+      return name.to_string();
     }
   }
 
   *i += 1;
-  "Token`Error`UnhandledCharacter"
+  "Token`Error`UnhandledCharacter".to_string()
+}
+
+/// How many characters of a symbol sit at `i`, or `None` when what is there
+/// cannot be part of one. `first` excludes the digits a symbol may not start
+/// with.
+fn symbol_piece(chars: &[char], i: usize, first: bool) -> Option<usize> {
+  let ch = *chars.get(i)?;
+  if ch.is_ascii_alphabetic() || ch == '$' || ch == '`' {
+    return Some(1);
+  }
+  if !first && ch.is_ascii_digit() {
+    return Some(1);
+  }
+  if let Some((name, past)) = read_long_name(chars, i) {
+    return long_name_token(&name).is_none().then_some(past - i);
+  }
+  if let Some((spelled, past)) = read_character_escape(chars, i) {
+    return spelled.is_alphanumeric().then_some(past - i);
+  }
+  if !ch.is_ascii() {
+    // A character written as itself: letterlike if no name classifies it
+    // as anything else.
+    return long_name_of(ch)
+      .and_then(long_name_token)
+      .is_none()
+      .then_some(1);
+  }
+  None
+}
+
+/// The `\[Name]` written at `i`, with the index just past its `]`.
+fn read_long_name(chars: &[char], i: usize) -> Option<(String, usize)> {
+  if chars.get(i) != Some(&'\\') || chars.get(i + 1) != Some(&'[') {
+    return None;
+  }
+  let mut end = i + 2;
+  while matches!(chars.get(end), Some(c) if c.is_ascii_alphanumeric()) {
+    end += 1;
+  }
+  if chars.get(end) != Some(&']') || end == i + 2 {
+    return None;
+  }
+  Some((chars[i + 2..end].iter().collect(), end + 1))
+}
+
+/// The character a `\.41` (hexadecimal) or `\041` (octal) escape spells,
+/// with the index just past it.
+fn read_character_escape(chars: &[char], i: usize) -> Option<(char, usize)> {
+  if chars.get(i) != Some(&'\\') {
+    return None;
+  }
+  let (radix, digits, start) = if chars.get(i + 1) == Some(&'.') {
+    (16u32, 2usize, i + 2)
+  } else {
+    (8u32, 3usize, i + 1)
+  };
+  let spelled: String = chars.get(start..start + digits)?.iter().collect();
+  if !spelled.chars().all(|c| c.is_digit(radix)) {
+    return None;
+  }
+  let code = u32::from_str_radix(&spelled, radix).ok()?;
+  Some((char::from_u32(code)?, start + digits))
+}
+
+/// The token a named character stands for, or `None` when it is letterlike
+/// and so belongs to whatever symbol it was written in.
+fn long_name_token(name: &str) -> Option<String> {
+  if let Some((_, kind)) = LONG_NAME_TOKENS.iter().find(|(n, _)| *n == name) {
+    return Some(kind.to_string());
+  }
+  if LONG_NAME_WHITESPACE.contains(&name) {
+    return Some("Whitespace".to_string());
+  }
+  LONG_NAME_OPERATORS
+    .contains(&name)
+    .then(|| format!("Token`LongName`{name}"))
+}
+
+/// The name of the character `ch`, when it is one the classification above
+/// knows — the Wolfram Language reads `\[Rule]` and `→` the same way.
+fn long_name_of(ch: char) -> Option<&'static str> {
+  let mut buffer = [0u8; 4];
+  let text = &*ch.encode_utf8(&mut buffer);
+  LONG_NAME_TOKENS
+    .iter()
+    .map(|(name, _)| *name)
+    .chain(LONG_NAME_WHITESPACE.iter().copied())
+    .chain(LONG_NAME_OPERATORS.iter().copied())
+    .find(|name| crate::syntax::named_char_to_unicode(name) == Some(text))
 }
 
 /// Consume a number: digits, an optional fraction, an optional exponent, and
 /// the Wolfram Language's `base^^digits` and `` `precision `` forms.
+///
+/// The kind reported is the kind of the value: `1*^-6` is the exact
+/// `1/1000000`, so the Wolfram Language calls it a `Rational`.
 fn scan_number(chars: &[char], i: &mut usize) -> &'static str {
   let mut is_real = false;
   while matches!(chars.get(*i), Some(c) if c.is_ascii_digit()) {
     *i += 1;
   }
-  // `16^^ff` — a based number, whose digits may include letters.
+  // `16^^ff` — a based number, whose digits may include letters, and which
+  // is a real exactly when those digits carry a point.
   if chars.get(*i) == Some(&'^') && chars.get(*i + 1) == Some(&'^') {
     *i += 2;
     while matches!(chars.get(*i), Some(c) if c.is_alphanumeric() || *c == '.') {
+      is_real |= chars[*i] == '.';
       *i += 1;
     }
-    return "Token`Integer";
+    return if is_real { "Real" } else { "Integer" };
   }
-  // A dot is part of the number only when a digit follows it; `1..` is a
-  // repeated pattern, not a malformed real.
-  if chars.get(*i) == Some(&'.')
-    && matches!(chars.get(*i + 1), Some(c) if c.is_ascii_digit())
-  {
+  // A trailing dot makes a real of its own — `1.` — unless another dot
+  // follows it, because `1..` is a repeated pattern.
+  if chars.get(*i) == Some(&'.') && chars.get(*i + 1) != Some(&'.') {
     is_real = true;
     *i += 1;
     while matches!(chars.get(*i), Some(c) if c.is_ascii_digit()) {
@@ -399,22 +915,23 @@ fn scan_number(chars: &[char], i: &mut usize) -> &'static str {
       *i += 1;
     }
   }
-  // `1*^6` — the scientific-notation operator.
+  // `1*^6` — the scientific-notation operator. An exact mantissa keeps the
+  // number exact: a positive exponent scales it to an integer, a negative
+  // one to a rational.
   if chars.get(*i) == Some(&'*') && chars.get(*i + 1) == Some(&'^') {
-    is_real = true;
     *i += 2;
+    let negative = chars.get(*i) == Some(&'-');
     if matches!(chars.get(*i), Some('+' | '-')) {
       *i += 1;
     }
     while matches!(chars.get(*i), Some(c) if c.is_ascii_digit()) {
       *i += 1;
     }
+    if !is_real {
+      return if negative { "Rational" } else { "Integer" };
+    }
   }
-  if is_real {
-    "Token`Real"
-  } else {
-    "Token`Integer"
-  }
+  if is_real { "Real" } else { "Integer" }
 }
 
 /// `CodeParser`CodeTokenize[source]` — the tokens, as leaf nodes.

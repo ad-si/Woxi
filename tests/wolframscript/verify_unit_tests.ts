@@ -998,6 +998,15 @@ function main() {
     /\bCombinatorica`/,
     /\bPolyhedronOperations`/,
 
+    // CodeParser: Woxi provides the context natively, wolframscript only
+    // after `Needs["CodeParser`"]` — which is a context construct, so a case
+    // carrying one is skipped anyway (see CONTEXT_SENSITIVE below). Without
+    // it wolframscript leaves `CodeParser`CodeTokenize[…]` unevaluated and
+    // every `Cases[…, LeafNode[…]]` answers `{}`, so the comparison says
+    // nothing. The token kinds themselves are checked against wolframscript
+    // in tests/interpreter_tests/code_parser.rs.
+    /\bCodeParser`/,
+
     // Ephemeris positions: Woxi computes them from its own bundled VSOP/ELP
     // truncations, wolframscript from its full series, so the two agree to
     // ~1e-4 degrees rather than exactly.

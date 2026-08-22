@@ -41,6 +41,9 @@ mod code_tokenize {
     }
   }
 
+  // The kinds the language already has a name for keep it — a symbol is a
+  // `Symbol`, not a `Token`Symbol` — and only the punctuation that has no
+  // name of its own is reported under `Token`.
   #[test]
   fn each_kind_of_token_is_named() {
     clear_state();
@@ -50,8 +53,8 @@ mod code_tokenize {
            LeafNode[k_, _, _] :> k], InputForm]"
       )
       .unwrap(),
-      "{Token`Symbol, Token`OpenSquare, Token`Integer, Token`CloseSquare, \
-       Token`Whitespace, Token`Comment}"
+      "{Symbol, Token`OpenSquare, Integer, Token`CloseSquare, \
+       Whitespace, Token`Comment}"
     );
   }
 
@@ -65,8 +68,159 @@ mod code_tokenize {
            LeafNode[k_, _, _] :> k], InputForm]"
       )
       .unwrap(),
-      "{Token`Symbol, Token`EqualEqualEqual, Token`Symbol}"
+      "{Symbol, Token`EqualEqualEqual, Symbol}"
     );
+  }
+
+  // The operators whose two halves also mean something on their own: `<>`
+  // is not `<` then `>`, `??` is not two `?`, and `%%` is the second-to-last
+  // result rather than two `%`.
+  #[test]
+  fn two_character_operators_are_one_token_each() {
+    clear_state();
+    for (source, expected) in [
+      ("a<>b", "{Symbol, Token`LessGreater, Symbol}"),
+      ("??x", "{Token`QuestionQuestion, Symbol}"),
+      ("!!x", "{Token`BangBang, Symbol}"),
+      ("%%", "{Token`PercentPercent}"),
+      (
+        "x/:y=z",
+        "{Symbol, Token`SlashColon, Symbol, Token`Equal, Symbol}",
+      ),
+      ("a**b", "{Symbol, Token`StarStar, Symbol}"),
+      ("a<->b", "{Symbol, Token`LessMinusGreater, Symbol}"),
+      ("a|->b", "{Symbol, Token`BarMinusGreater, Symbol}"),
+      ("x//=f", "{Symbol, Token`SlashSlashEqual, Symbol}"),
+      ("a::[", "{Symbol, Token`ColonColonOpenSquare}"),
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "ToString[Cases[CodeParser`CodeTokenize[{}], \
+             LeafNode[k_, _, _] :> k], InputForm]",
+          wl_string(source)
+        ))
+        .unwrap(),
+        expected,
+        "{source:?} should be read as {expected}"
+      );
+    }
+  }
+
+  // `[[` is a pair of brackets rather than a token of its own, so `a[[1]]`
+  // reads the same as the `Part[a, 1]` it stands for.
+  #[test]
+  fn a_double_bracket_is_two_brackets() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[Cases[CodeParser`CodeTokenize[\"a[[1]]\"], \
+           LeafNode[k_, _, _] :> k], InputForm]"
+      )
+      .unwrap(),
+      "{Symbol, Token`OpenSquare, Token`OpenSquare, Integer, \
+       Token`CloseSquare, Token`CloseSquare}"
+    );
+  }
+
+  // A slot or an out mark stops before the number that selects which one it
+  // is: `#1` is a `#` and a `1`, the way `x1` is not.
+  #[test]
+  fn a_slot_number_is_a_token_of_its_own() {
+    clear_state();
+    for (source, expected) in [
+      ("#1", "{Token`Hash, Integer}"),
+      ("##2", "{Token`HashHash, Integer}"),
+      ("#abc", "{Token`Hash, Symbol}"),
+      ("%3", "{Token`Percent, Integer}"),
+      ("%%1", "{Token`PercentPercent, Integer}"),
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "ToString[Cases[CodeParser`CodeTokenize[{}], \
+             LeafNode[k_, _, _] :> k], InputForm]",
+          wl_string(source)
+        ))
+        .unwrap(),
+        expected,
+        "{source:?} should be read as {expected}"
+      );
+    }
+  }
+
+  // Whitespace is one token per character, so a run of spaces is a run of
+  // tokens — a concrete tree keeps every one of them.
+  #[test]
+  fn each_space_is_its_own_token() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[Cases[CodeParser`CodeTokenize[\"a   b\"], \
+           LeafNode[k_, _, _] :> k], InputForm]"
+      )
+      .unwrap(),
+      "{Symbol, Whitespace, Whitespace, Whitespace, Symbol}"
+    );
+  }
+
+  // The kind a number is reported under is the kind of its value: `1*^-6`
+  // is the exact `1/1000000`, so it is a `Rational` and not a `Real`.
+  #[test]
+  fn a_number_is_named_after_its_value() {
+    clear_state();
+    for (source, expected) in [
+      ("1", "{Integer}"),
+      ("2.5", "{Real}"),
+      (".5", "{Real}"),
+      ("1.", "{Real}"),
+      ("1..", "{Integer, Token`DotDot}"),
+      ("16^^ff", "{Integer}"),
+      ("16^^f.f", "{Real}"),
+      ("1`20", "{Real}"),
+      ("1*^6", "{Integer}"),
+      ("1*^-6", "{Rational}"),
+      ("1.5*^-6", "{Real}"),
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "ToString[Cases[CodeParser`CodeTokenize[{}], \
+             LeafNode[k_, _, _] :> k], InputForm]",
+          wl_string(source)
+        ))
+        .unwrap(),
+        expected,
+        "{source:?} should be read as {expected}"
+      );
+    }
+  }
+
+  // A named character is a letter of a symbol when it names a letter, and a
+  // token of its own when it names an operator — written either as
+  // `\[Rule]` or as the character that spells.
+  #[test]
+  fn a_named_character_is_read_as_what_it_names() {
+    clear_state();
+    for (source, expected) in [
+      ("\\[Alpha]", "{Symbol}"),
+      ("x\\[Alpha]y", "{Symbol}"),
+      ("\\[Pi]", "{Symbol}"),
+      ("a\\[Rule]b", "{Symbol, Token`LongName`Rule, Symbol}"),
+      ("\\[Element]", "{Token`LongName`Element}"),
+      ("\\[Transpose]", "{Token`LongName`Transpose}"),
+      ("\\[Continuation]", "{Whitespace}"),
+      ("\\[NewLine]", "{Token`Newline}"),
+      ("\\[RawStar]", "{Token`Star}"),
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "ToString[Cases[CodeParser`CodeTokenize[{}], \
+             LeafNode[k_, _, _] :> k], InputForm]",
+          wl_string(source)
+        ))
+        .unwrap(),
+        expected,
+        "{source:?} should be read as {expected}"
+      );
+    }
   }
 }
 
