@@ -245,32 +245,34 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(non_list_local_spec("Block", args)),
   };
 
-  // Save previous bindings and set up new ones
-  let mut prev: Vec<(String, Option<StoredValue>)> = Vec::new();
+  // Take every value each local stands for and set up the new ones.
+  //
+  // Block localizes the whole symbol, not just its own value: inside
+  // `Block[{f}, …]` an `f[x_] := …` defined outside is gone, `Attributes[f]`
+  // is `{}`, and `f::msg` is unset — which is what lets a package temporarily
+  // neutralize a function (`Block[{Simp}, SetAttributes[Simp, HoldAll]; …]`
+  // in Rubi) instead of running it.
+  let mut prev: Vec<crate::evaluator::symbol_values::SymbolValues> = Vec::new();
 
   for var in &local_vars {
     let var_name = &var.name;
-    let pv = if let Some(expr) = &var.init {
-      // Evaluate initializer with the *previous* binding still active (so
-      // `Block[{x = n+2, n}, ...]` sees the outer `n`). A delayed `x := v`
-      // keeps its right-hand side unevaluated.
-      let evaluated = if var.delayed {
-        expr.clone()
-      } else {
-        evaluate_expr_to_expr(expr)?
-      };
+    // Evaluate the initializer with the *previous* binding still active (so
+    // `Block[{x = n+2, n}, ...]` sees the outer `n`). A delayed `x := v`
+    // keeps its right-hand side unevaluated.
+    let init = match &var.init {
+      Some(expr) if var.delayed => Some(expr.clone()),
+      Some(expr) => Some(evaluate_expr_to_expr(expr)?),
+      None => None,
+    };
+    prev.push(crate::evaluator::symbol_values::take_symbol_values(
+      var_name,
+    ));
+    if let Some(evaluated) = init {
       ENV.with(|e| {
         e.borrow_mut()
           .insert(var_name.clone(), StoredValue::ExprVal(evaluated))
-      })
-    } else {
-      // No initializer: Block preserves the current global value during the
-      // body but restores it on exit. We snapshot the existing binding
-      // (without removing it) so any assignments inside the block can be
-      // reverted afterwards.
-      ENV.with(|e| e.borrow().get(var_name).cloned())
-    };
-    prev.push((var_name.clone(), pv));
+      });
+    }
   }
 
   // Evaluate body. Block, like Module, wraps any escaping Return[val]
@@ -298,19 +300,39 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => result,
   };
 
-  // Restore previous bindings (even if body returned an error)
-  for (var_name, old) in prev {
-    ENV.with(|e| {
-      let mut env = e.borrow_mut();
-      if let Some(v) = old {
-        env.insert(var_name, v);
-      } else {
-        env.remove(&var_name);
-      }
-    });
+  // Restore previous definitions (even if body returned an error), innermost
+  // local first so nested Blocks on the same symbol unwind in order.
+  for saved in prev.into_iter().rev() {
+    crate::evaluator::symbol_values::restore_symbol_values(saved);
   }
 
-  result
+  // The value a Block returns is evaluated once more, now that the localized
+  // symbols mean what they did outside: `n = 10; Block[{n}, n]` is 10, even
+  // though the body — where `n` has no value — evaluated to the bare symbol.
+  // Only a result that still names a local can change, and a `Return[…]`
+  // wrapper must survive as the literal value it stands for.
+  match &result {
+    Ok(value)
+      if !matches!(value, Expr::FunctionCall { name, .. } if name == "Return")
+        && local_vars.iter().any(|v| mentions_symbol(value, &v.name)) =>
+    {
+      evaluate_expr_to_expr(value)
+    }
+    _ => result,
+  }
+}
+
+/// Whether `expr` mentions the symbol `name` anywhere — as a value, as a head,
+/// or inside a pattern. Asked through `FreeQ`, so it counts exactly what the
+/// language counts.
+fn mentions_symbol(expr: &Expr, name: &str) -> bool {
+  matches!(
+    crate::functions::predicate_ast::free_q_ast(&[
+      expr.clone(),
+      Expr::Identifier(name.to_string()),
+    ]),
+    Ok(Expr::Identifier(ref s)) if s == "False"
+  )
 }
 
 /// `BlockRandom[expr]` — evaluate `expr` with the global random generator

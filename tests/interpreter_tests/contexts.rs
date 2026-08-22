@@ -401,6 +401,25 @@ mod dollar_prefixed_symbols {
     assert_eq!(interpret("DollarB`Private`$shared").unwrap(), "2");
   }
 
+  // A package reads a flag the script set before loading it by naming its
+  // context: `$LoadShowSteps = False` outside, `Global`$LoadShowSteps` inside.
+  #[test]
+  fn a_package_reads_a_global_flag_by_its_full_name() {
+    clear_state();
+    interpret("$dollarFlag = False\n").unwrap();
+    interpret(
+      "BeginPackage[\"DollarG`\"]\n\
+       dollarFlagSeen\n\
+       Begin[\"`Private`\"]\n\
+       $seen = If[Not[ValueQ[Global`$dollarFlag]], True, TrueQ[Global`$dollarFlag]]\n\
+       dollarFlagSeen[] := $seen\n\
+       End[]\n\
+       EndPackage[]\n",
+    )
+    .unwrap();
+    assert_eq!(interpret("DollarG`dollarFlagSeen[]").unwrap(), "False");
+  }
+
   #[test]
   fn system_variables_keep_their_one_identity() {
     clear_state();
@@ -493,6 +512,56 @@ mod begin_package_needs_its_extras {
       ))
       .unwrap(),
       "42"
+    );
+  }
+}
+
+/// A pattern that matches on a head — `F_[u_, test_]` — keeps its head, blank
+/// and all, inside the call's name, so the symbol in it needs resolving by
+/// hand. Rubi's rule rewriters are written this way throughout.
+mod head_patterns_in_a_package {
+  use super::*;
+
+  #[test]
+  fn a_head_pattern_binds_inside_a_private_context() {
+    clear_state();
+    interpret(
+      "BeginPackage[\"HeadPat`\"]\n\
+       headPatSeen\n\
+       Begin[\"`Private`\"]\n\
+       headPatSeen[RuleDelayed[lhs_, F_[u_, test_]]] := {F, u, test}\n\
+       End[]\n\
+       EndPackage[]\n",
+    )
+    .unwrap();
+    assert_eq!(
+      interpret("HeadPat`headPatSeen[HoldPattern[q[a_]] :> (2 /; a > 0)]")
+        .unwrap(),
+      "{Condition, 2, a > 0}"
+    );
+  }
+
+  #[test]
+  fn a_head_pattern_guard_still_selects_the_right_rule() {
+    clear_state();
+    interpret(
+      "BeginPackage[\"HeadPat2`\"]\n\
+       headPatPick\n\
+       Begin[\"`Private`\"]\n\
+       headPatPick[RuleDelayed[lhs_, F_[u_, test_]]] := \"cond\" /; F === Condition\n\
+       headPatPick[RuleDelayed[lhs_, u_]] := \"plain\"\n\
+       End[]\n\
+       EndPackage[]\n",
+    )
+    .unwrap();
+    assert_eq!(
+      interpret("HeadPat2`headPatPick[HoldPattern[q[a_]] :> (2 /; a > 0)]")
+        .unwrap(),
+      "cond"
+    );
+    assert_eq!(
+      interpret("HeadPat2`headPatPick[HoldPattern[q[a_]] :> 2]").unwrap(),
+      "plain"
     );
   }
 }

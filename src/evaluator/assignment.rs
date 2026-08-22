@@ -192,21 +192,26 @@ fn body_has_condition(body: &Expr) -> bool {
 /// is NOT a literal-argument marker, so it is excluded — otherwise an
 /// all-blank list rule like `f[{a_, b_}]` would be treated as a literal
 /// definition and wrongly jump ahead of more specific overloads.
-fn condition_is_literal_arg(c: &Expr) -> bool {
-  if let Expr::Comparison {
+fn condition_is_literal_arg(params: &[String], c: &Expr) -> bool {
+  let Expr::Comparison {
     operators,
     operands,
   } = c
-  {
-    let is_length_check = matches!(
-      operands.first(),
-      Some(Expr::FunctionCall { name, .. }) if name == "Length"
-    );
-    !is_length_check
-      && operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
-  } else {
-    false
-  }
+  else {
+    return false;
+  };
+  // A literal-argument condition compares one of the rule's own parameter
+  // slots against the value it has to be (`_dv0 === 3`, from `f[3] := …`).
+  // A `/;` guard that happens to be a `===` — `f[F_[u_]] := … /; F ===
+  // Condition`, how Rubi writes most of its rule rewriters — talks about a
+  // pattern variable, not a slot, and must not be mistaken for one: a
+  // literal-argument rule is hoisted to the front of the DownValues, which
+  // would silently reorder rules whose order the package depends on.
+  let names_a_slot = matches!(
+    operands.first(),
+    Some(Expr::Identifier(name)) if params.iter().any(|p| p == name)
+  );
+  names_a_slot && operators.iter().any(|op| matches!(op, ComparisonOp::SameQ))
 }
 
 /// Compute a specificity score for a pattern rule based on its conditions,
@@ -220,13 +225,17 @@ fn condition_is_literal_arg(c: &Expr) -> bool {
 /// before an unguarded but otherwise-more-specific rule like
 /// `f[n_Integer, r_Integer] := …`.
 fn pattern_specificity_score(
+  params: &[String],
   blank_types: &[u8],
   heads: &[Option<String>],
   conditions: &[Option<Expr>],
   body: &Expr,
 ) -> u32 {
   // Literal-argument definitions (e.g. `f[0]`) are most specific.
-  let is_literal = conditions.iter().flatten().any(condition_is_literal_arg);
+  let is_literal = conditions
+    .iter()
+    .flatten()
+    .any(|c| condition_is_literal_arg(params, c));
   if is_literal {
     return 0;
   }
@@ -345,8 +354,8 @@ pub fn rule_dominates(
   if needs_score_fallback(a_params, a_conds)
     || needs_score_fallback(b_params, b_conds)
   {
-    return pattern_specificity_score(a_bt, a_heads, a_conds, a_body)
-      < pattern_specificity_score(b_bt, b_heads, b_conds, b_body);
+    return pattern_specificity_score(a_params, a_bt, a_heads, a_conds, a_body)
+      < pattern_specificity_score(b_params, b_bt, b_heads, b_conds, b_body);
   }
   let (a_pos, a_guards) = rule_positions_and_guards(
     a_params, a_heads, a_bt, a_conds, a_defaults, a_body,
@@ -486,6 +495,24 @@ fn count_pattern_specificity(pat: &Expr) -> u32 {
     Expr::UnaryOp { operand, .. } => 1 + count_pattern_specificity(operand),
     Expr::List(items) => {
       1 + items.iter().map(count_pattern_specificity).sum::<u32>()
+    }
+    // A rule inside a pattern (`f[lhs_ :> G_[list_, u_]]`, how a package that
+    // rewrites its own DownValues spells the rules it takes apart) is as
+    // structured as anything else: score what is on either side of it, or a
+    // deeply nested rule pattern would rank no tighter than a bare `lhs_ :> u_`.
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      1 + count_pattern_specificity(pattern)
+        + count_pattern_specificity(replacement)
+    }
+    Expr::Comparison { operands, .. } => {
+      1 + operands.iter().map(count_pattern_specificity).sum::<u32>()
     }
     // A bare blank (`_`, `__`, `___`, or a pattern placeholder) constrains
     // nothing; a concrete literal or symbol is maximally specific at that slot.
@@ -1206,18 +1233,11 @@ fn set_downvalues_from_rules(
     touched_heads.push(head.to_string());
   }
   for rule in &rules {
-    let (pat, _) = match rule {
-      Expr::Rule {
-        pattern,
-        replacement,
-      }
-      | Expr::RuleDelayed {
-        pattern,
-        replacement,
-      } => ((**pattern).clone(), (**replacement).clone()),
-      _ => continue,
+    let Some((pat, _, _)) = crate::functions::expr_form::rule_parts(rule)
+    else {
+      continue;
     };
-    let unwrapped = match &pat {
+    let unwrapped = match pat {
       Expr::FunctionCall { name, args }
         if name == "HoldPattern" && args.len() == 1 =>
       {
@@ -1252,18 +1272,12 @@ fn set_downvalues_from_rules(
   let prev = SUPPRESS_SPECIFICITY_SORT.with(|c| c.replace(true));
   let result = (|| -> Result<(), InterpreterError> {
     for rule in &rules {
-      let (pat, body, is_delayed) = match rule {
-        Expr::Rule {
-          pattern,
-          replacement,
-        } => ((**pattern).clone(), (**replacement).clone(), false),
-        Expr::RuleDelayed {
-          pattern,
-          replacement,
-        } => ((**pattern).clone(), (**replacement).clone(), true),
-        _ => continue,
+      let Some((pat, body, is_delayed)) =
+        crate::functions::expr_form::rule_parts(rule)
+      else {
+        continue;
       };
-      let lhs = match &pat {
+      let lhs = match pat {
         Expr::FunctionCall { name, args }
           if name == "HoldPattern" && args.len() == 1 =>
         {
@@ -1276,9 +1290,9 @@ fn set_downvalues_from_rules(
       // This matters when the LHS contains plain identifiers that should
       // remain literal (e.g. `Default[g] -> 3` in `DefaultValues[g] = …`).
       if is_delayed {
-        set_delayed_ast(&lhs, &body)?;
+        set_delayed_ast(&lhs, body)?;
       } else {
-        set_ast(&lhs, &body)?;
+        set_ast(&lhs, body)?;
       }
     }
     Ok(())
@@ -2231,8 +2245,10 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
 
     // Check if all args are literal (non-pattern) — if so, insert at beginning
     // for priority over general patterns (matching Mathematica specificity ordering)
-    let has_literal_conditions =
-      conditions.iter().flatten().any(condition_is_literal_arg);
+    let has_literal_conditions = conditions
+      .iter()
+      .flatten()
+      .any(|c| condition_is_literal_arg(&params, c));
 
     // Pure literal-argument definition `f[lit, …] = value` (every argument is
     // a literal matched by SameQ, no pattern blanks) — the memoization idiom
@@ -2305,9 +2321,11 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         });
         let pos = entry
           .iter()
-          .position(|(_, c, _, _, _, _)| {
+          .position(|(pp, c, _, _, _, _)| {
             // Find the first non-literal (pattern) definition
-            !c.iter().flatten().any(condition_is_literal_arg)
+            !c.iter()
+              .flatten()
+              .any(|cc| condition_is_literal_arg(pp, cc))
           })
           .unwrap_or(entry.len());
         entry.insert(
@@ -3182,8 +3200,10 @@ pub fn set_delayed_ast(
 
     // Check if all args are literal (non-pattern) — if so, insert at beginning
     // for priority over general patterns (matching Mathematica specificity ordering)
-    let has_literal_conditions =
-      conditions.iter().flatten().any(condition_is_literal_arg);
+    let has_literal_conditions = conditions
+      .iter()
+      .flatten()
+      .any(|c| condition_is_literal_arg(&params, c));
 
     crate::FUNC_DEFS.with(|m| {
       let mut defs = m.borrow_mut();
@@ -3197,8 +3217,10 @@ pub fn set_delayed_ast(
         // existing literal definitions (preserving definition order).
         entry
           .iter()
-          .position(|(_, c, _, _, _, _)| {
-            !c.iter().flatten().any(condition_is_literal_arg)
+          .position(|(pp, c, _, _, _, _)| {
+            !c.iter()
+              .flatten()
+              .any(|cc| condition_is_literal_arg(pp, cc))
           })
           .unwrap_or(entry.len())
       } else {
@@ -4813,16 +4835,27 @@ pub fn remove_messages_of(sym: &str) {
     let Some(defs) = map.get_mut("MessageName") else {
       return;
     };
-    defs.retain(|(params, conds, ..)| {
-      !conds.iter().any(|c| {
-        matches!(c, Some(Expr::Comparison { operands, operators })
-          if operators.len() == 1
-            && matches!(operators[0], ComparisonOp::SameQ)
-            && operands.len() == 2
-            && matches!(&operands[0], Expr::Identifier(name)
-              if params.first() == Some(name))
-            && matches!(&operands[1], Expr::Identifier(s) if s == sym))
-      })
-    });
+    defs.retain(|(params, conds, ..)| !is_message_of(sym, params, conds));
   });
+}
+
+/// Whether a `MessageName` down-value is a message declared on `sym`.
+///
+/// The stored rule matches any symbol (`MessageName[s_, "tag"]`) and pins the
+/// symbol down in a `SameQ` condition, so the owner is read off that
+/// condition rather than off the parameter slot.
+pub fn is_message_of(
+  sym: &str,
+  params: &[String],
+  conds: &[Option<Expr>],
+) -> bool {
+  conds.iter().any(|c| {
+    matches!(c, Some(Expr::Comparison { operands, operators })
+      if operators.len() == 1
+        && matches!(operators[0], ComparisonOp::SameQ)
+        && operands.len() == 2
+        && matches!(&operands[0], Expr::Identifier(name)
+          if params.first() == Some(name))
+        && matches!(&operands[1], Expr::Identifier(s) if s == sym))
+  })
 }
