@@ -1762,22 +1762,8 @@ pub fn replace_part_ast(
 ) -> Result<Expr, InterpreterError> {
   // Normalize the rule spec into an ordered list of (lhs, rhs, delayed)
   let as_rule = |r: &Expr| -> Option<(Expr, Expr, bool)> {
-    match r {
-      Expr::Rule {
-        pattern,
-        replacement,
-      } => Some(((**pattern).clone(), (**replacement).clone(), false)),
-      Expr::RuleDelayed {
-        pattern,
-        replacement,
-      } => Some(((**pattern).clone(), (**replacement).clone(), true)),
-      Expr::FunctionCall { name, args }
-        if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
-      {
-        Some((args[0].clone(), args[1].clone(), name == "RuleDelayed"))
-      }
-      _ => None,
-    }
+    crate::functions::expr_form::rule_parts(r)
+      .map(|(lhs, rhs, delayed)| (lhs.clone(), rhs.clone(), delayed))
   };
   let rules: Vec<(Expr, Expr, bool)> = match rule {
     Expr::List(items) if items.iter().all(|r| as_rule(r).is_some()) => {
@@ -1962,16 +1948,12 @@ pub fn replace_part_ast(
       }
       path.pop();
     }
-    Ok(match (new_head, head) {
-      (Some(h), _) => Expr::FunctionCall {
-        name: h,
-        args: out.into(),
-      },
-      (None, Some(h)) => Expr::FunctionCall {
-        name: h,
-        args: out.into(),
-      },
-      (None, None) => Expr::List(out.into()),
+    // Put the parts back the way `parts_and_head` took them apart, so a rule
+    // stays an `Expr::Rule` rather than coming back as a `Rule[…]` call that
+    // every later reader would have to recognise separately.
+    Ok(match new_head.or(head) {
+      Some(h) => crate::functions::expr_form::compose_expr(&h, &out),
+      None => Expr::List(out.into()),
     })
   }
 

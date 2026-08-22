@@ -5248,3 +5248,134 @@ mod orderless_readings_under_a_guard {
     );
   }
 }
+
+/// `a - b` and `a / b` are notation for `Plus[a, Times[-1, b]]` and
+/// `Times[a, Power[b, -1]]`. Evaluation rewrites them, so only a held
+/// expression still carries the operator — and that is exactly what a rule
+/// base read out of `DownValues` is matched against.
+mod held_subtraction_matches_as_a_sum {
+  use super::*;
+
+  #[test]
+  fn a_held_difference_matches_a_plus_pattern() {
+    clear_state();
+    assert_eq!(
+      interpret("MatchQ[Hold[q - x^2], Hold[u_ + v_]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[Hold[q - x^2], Hold[Plus[u_, v_]]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("ToString[ReplaceAll[Hold[q - x^2], Hold[u_ + v_] :> {u, v}], InputForm]")
+        .unwrap(),
+      "{q, -x^2}"
+    );
+  }
+
+  // The shape every Rubi rule for `1/(a + b x^2)` is written in.
+  #[test]
+  fn a_held_difference_matches_an_optional_coefficient() {
+    clear_state();
+    assert_eq!(
+      interpret("MatchQ[Hold[q - x^2], Hold[u_ + v_.*x_^2]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[Hold[1/(b^2 - 4*a*c - x^2)], Hold[1/(u_ + v_.*x_^2)]]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn a_held_quotient_matches_a_times_pattern() {
+    clear_state();
+    assert_eq!(interpret("MatchQ[Hold[q/r], Hold[u_*v_]]").unwrap(), "True");
+    assert_eq!(
+      interpret(
+        "ToString[ReplaceAll[Hold[q/r], Hold[u_*v_] :> {u, v}], InputForm]"
+      )
+      .unwrap(),
+      "{q, r^(-1)}"
+    );
+  }
+}
+
+/// A `Flat` head can be split between two pattern slots in more than one
+/// place, and the splits bind the variables differently. The reading has to
+/// agree with what the rest of the rule already fixed.
+mod flat_split_agrees_with_the_other_arguments {
+  use super::*;
+
+  // `f[a_ + b_.*x_^2, x_Symbol]` names the integration variable twice: the
+  // split that reads `p^2` as `b x^2` (with `x -> p`) contradicts the second
+  // argument, so the other split is the one that fires. Rubi's whole rule base
+  // is written in this shape.
+  #[test]
+  fn a_later_argument_picks_the_split() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "fsp[1/(a_ + b_.*x_^2), x_Symbol] := {a, b, x};\n\
+         ToString[fsp[1/(p^2 - 4*q*r - x^2), x], InputForm]"
+      )
+      .unwrap(),
+      "{p^2 - 4*q*r, -1, x}"
+    );
+  }
+
+  // With nothing else to go on, the first split still wins — unchanged.
+  #[test]
+  fn without_another_argument_the_first_split_wins() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "fsq[1/(a_ + b_.*x_^2)] := {a, b, x};\n\
+         ToString[fsq[1/(p^2 - 4*q*r - x^2)], InputForm]"
+      )
+      .unwrap(),
+      "{-4*q*r - x^2, 1, p}"
+    );
+  }
+}
+
+/// `FreeQ` looks at every part its FullForm shows, whatever operator wrote it.
+/// A package that inspects its own rule base — `FreeQ[Hold[rule], ShowStep]`,
+/// as Rubi does for all 7000 of its rules — depends on it reaching inside a
+/// `:>` node.
+mod free_q_sees_operator_forms {
+  use super::*;
+
+  #[test]
+  fn free_q_descends_into_rules() {
+    clear_state();
+    assert_eq!(
+      interpret("FreeQ[HoldPattern[f[ArcSin[x]]] :> 1, ArcSin]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("FreeQ[f[ArcSin[x]] -> 1, ArcSin]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("FreeQ[{a :> ArcSin[x]}, ArcSin]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("FreeQ[a -> b, b]").unwrap(), "False");
+  }
+
+  #[test]
+  fn free_q_descends_into_comparisons_and_functions() {
+    clear_state();
+    assert_eq!(
+      interpret("FreeQ[Hold[q == ArcSin[x]], ArcSin]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("FreeQ[Hold[Function[ArcSin[#]]], ArcSin]").unwrap(),
+      "False"
+    );
+  }
+}

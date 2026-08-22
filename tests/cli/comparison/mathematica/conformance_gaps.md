@@ -1440,6 +1440,31 @@ conductor/Round-2 computation), as are non-monic minimal polynomials of degree
 
 ## Expression structure and evaluation
 
+### Rubi loads and integrates, but not everything it computes agrees
+
+The [Rubi](../../rubi.md) rule base is the densest available exercise of the
+pattern matcher and the definition store: 7000 rules, all read back out of
+`DownValues` and rewritten before use. It loads unmodified and integrates, and
+on a 30-integral sample 19 answers are identical to `wolframscript`'s. What is
+left, all of it ordinary Woxi behaviour rather than anything about the package:
+
+- **Loading takes about a minute** against roughly twenty seconds under
+  `wolframscript`, and Rubi's step-display machinery (`$LoadShowSteps = True`,
+  the default) rewrites all 7000 rules on load — which Woxi has not finished
+  after half an hour and ten gigabytes. `Steps`, `Step` and `Stats` are
+  therefore out of reach.
+- **`Int[Sin[x]^3*Cos[x]^2, x]` and `Int[Sin[x]*Cos[x]^3, x]`** run for minutes
+  and exhaust memory. `wolframscript` answers both instantly.
+- **`Int[ArcSin[x], x]`** comes back as `Defer[Int][ArcSin[x], x]`: the rule
+  that should fire never does, and the `CannotIntegrate` fallback wins. So does
+  everything reached through `Int[x/Sqrt[1 - x^2], x]`, which Woxi answers with
+  a `Hypergeometric2F1` where the elementary rule applies.
+- **`Int[1/(1 + x^3), x]`** is missing its `ArcTan` term.
+- **Equivalent but differently shaped answers** are common and not bugs as
+  such: `Int[Sec[x]^2, x]` is `Sec[x]*Sin[x]` rather than `Tan[x]`,
+  `Int[E^x*x, x]` is `-Gamma[2, -x]` rather than `E^x*(x - 1)`, and sums come
+  out in Woxi's own `Plus` order.
+
 ### `Derivative[n][f][x]` is stored flat, so structural functions see three parts
 
 ```sh

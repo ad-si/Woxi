@@ -182,6 +182,12 @@ fn key_for(context: &str, name: &str) -> String {
   }
 }
 
+/// The storage key for an already-qualified name: `Global`x` is stored as
+/// plain `x`, everything else under its full name.
+fn key_for_full_name(full: &str) -> String {
+  key_for(&context_of(full), short_name(full))
+}
+
 /// The context a resolved symbol belongs to — the part up to and including
 /// its last backtick, or `Global`` for an unqualified user symbol.
 pub fn context_of(full_name: &str) -> String {
@@ -301,6 +307,13 @@ fn create_symbol(full_name: &str) {
 /// context on `$ContextPath` that already has the symbol wins, otherwise it
 /// is created in `$Context`.
 pub fn resolve(name: &str) -> String {
+  // `Global`x` is the plain `x` even with no package open — that is the key
+  // Woxi stores an unqualified symbol under, and `x === Global`x` is True.
+  if let Some(bare) = name.strip_prefix("Global`")
+    && !bare.contains('`')
+  {
+    return bare.to_string();
+  }
   if !contexts_active() || !is_user_symbol(name) {
     return name.to_string();
   }
@@ -312,7 +325,10 @@ pub fn resolve(name: &str) -> String {
     return full;
   }
   if name.contains('`') {
-    let full = expand_alias(name);
+    // `Global`x` names the same symbol as a bare `x`, which is the key Woxi
+    // stores an unqualified symbol under — so a package reading
+    // `Global`$Flag` finds the value the script set before it was loaded.
+    let full = key_for_full_name(&expand_alias(name));
     create_symbol(&full);
     return full;
   }
@@ -336,7 +352,7 @@ pub fn resolve_existing(name: &str) -> String {
     return name.to_string();
   }
   if name.contains('`') {
-    return expand_alias(name);
+    return key_for_full_name(&expand_alias(name));
   }
   crate::current_context_path()
     .into_iter()
@@ -451,9 +467,8 @@ pub fn full_name(context: &str, name: &str) -> String {
 /// exactly as they do in the Wolfram Language, where the names in a stored
 /// definition were resolved when the definition was read.
 pub fn rewrite(expr: &Expr) -> Expr {
-  if !contexts_active() {
-    return expr.clone();
-  }
+  // Runs even with no package open: `Global`x` has to collapse to the plain
+  // `x` it names either way, and `resolve` is where that happens.
   map_symbols(expr, &resolve)
 }
 
@@ -461,6 +476,35 @@ pub fn rewrite(expr: &Expr) -> Expr {
 /// short name that reads back as it, and its full name otherwise.
 pub fn to_display(expr: &Expr) -> Expr {
   map_symbols(expr, &display_name)
+}
+
+/// The head of a call, resolved — including when that head is itself a
+/// pattern.
+///
+/// `F_[u_, test_]` keeps its whole head, blank and all, in the call's name
+/// string, and the plain symbol mapping refuses anything with a `_` in it. So
+/// a package that writes `f[F_[u_, t_]] := g[F]` used to bind the head under
+/// the bare name `F` while `g[F]` asked for `Pkg`Private`F`, and the head
+/// variable came back unsubstituted. Map the symbol inside the pattern and
+/// keep the blank (and any head constraint) around it.
+fn resolve_call_head(name: &str, f: &dyn Fn(&str) -> String) -> String {
+  let Some(blank_at) = name.find('_') else {
+    return f(name);
+  };
+  let (var, rest) = name.split_at(blank_at);
+  // A leading `_` is an anonymous head (`_[a, b]`) or one of the internal
+  // `__…__` placeholder names: no symbol of its own to map.
+  if var.is_empty() {
+    return name.to_string();
+  }
+  let blanks_len = rest.len() - rest.trim_start_matches('_').len();
+  let (blanks, constraint) = rest.split_at(blanks_len);
+  let constraint = if constraint.is_empty() {
+    String::new()
+  } else {
+    f(constraint)
+  };
+  format!("{}{blanks}{constraint}", f(var))
 }
 
 /// Apply `f` to every symbol name in `expr` — heads, bare symbols, pattern
@@ -473,7 +517,7 @@ fn map_symbols(expr: &Expr, f: &dyn Fn(&str) -> String) -> Expr {
     Expr::Identifier(name) => Expr::Identifier(resolve(name)),
     Expr::Constant(name) => Expr::Constant(name.clone()),
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: resolve(name),
+      name: resolve_call_head(name, f),
       args: args.iter().map(sub).collect(),
     },
     Expr::List(items) => Expr::List(items.iter().map(sub).collect()),

@@ -4497,6 +4497,32 @@ mod length_function {
     assert_eq!(interpret("Length[a^b]").unwrap(), "2");
   }
 
+  // A rule has the two parts its FullForm shows. A package that reads its own
+  // rules apart (`rule[[1, 1, 2, 1]]`, as Rubi does) depends on it.
+  #[test]
+  fn length_of_rules_and_other_operator_forms() {
+    assert_eq!(interpret("Length[a -> b]").unwrap(), "2");
+    assert_eq!(interpret("Length[a :> b]").unwrap(), "2");
+    assert_eq!(
+      interpret("Length[HoldPattern[q[x_]] :> (x^2 /; x > 0)]").unwrap(),
+      "2"
+    );
+    assert_eq!(interpret("Length[a && b]").unwrap(), "2");
+    assert_eq!(interpret("Length[!a]").unwrap(), "1");
+    assert_eq!(interpret("Length[a ;; b]").unwrap(), "2");
+    assert_eq!(interpret("Length[Infinity]").unwrap(), "1");
+    assert_eq!(interpret("Length[ComplexInfinity]").unwrap(), "0");
+  }
+
+  // A number stays an atom however it is spelled: `2 + 3 I` is `Complex[2, 3]`
+  // and `1/2` is `Rational[1, 2]`, and neither has parts to count.
+  #[test]
+  fn length_of_exact_numbers_is_zero() {
+    assert_eq!(interpret("Length[2 + 3 I]").unwrap(), "0");
+    assert_eq!(interpret("Length[Complex[2, 3]]").unwrap(), "0");
+    assert_eq!(interpret("Length[1/2]").unwrap(), "0");
+  }
+
   // Length of a SparseArray is its first dimension, like a dense array —
   // not the number of parts in its canonical four-argument form.
   #[test]

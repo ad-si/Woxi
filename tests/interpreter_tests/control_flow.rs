@@ -173,6 +173,106 @@ mod block_scoping {
     clear_state();
     assert_eq!(interpret("Block[{x = 3, y = 4}, x + y]").unwrap(), "7");
   }
+
+  // Block localizes every value a symbol has, not just its own: inside the
+  // block the symbol is as bare as a name never mentioned. This is what lets
+  // a package neutralize one of its own functions for the length of a
+  // rewrite — `Block[{Simp}, SetAttributes[Simp, HoldAll]; …]`, the shape
+  // Rubi's FixIntRules is built on.
+  #[test]
+  fn block_localizes_down_values() {
+    clear_state();
+    assert_eq!(
+      interpret("f[u_] := u^2; Block[{f}, Print[f[3]]]; f[3]").unwrap(),
+      "9"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("f[u_] := u^2; Block[{f}, DownValues[f]]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn block_localizes_a_definition_made_inside_it() {
+    clear_state();
+    assert_eq!(
+      interpret("f[u_] := u^2; Block[{f}, f[u_] := u + 100; f[3]]").unwrap(),
+      "103"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("f[u_] := u^2; Block[{f}, f[u_] := u + 100]; f[3]").unwrap(),
+      "9"
+    );
+  }
+
+  #[test]
+  fn block_localizes_attributes() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[g, Listable]; Block[{g}, Attributes[g]]")
+        .unwrap(),
+      "{}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Block[{g}, SetAttributes[g, HoldAll]]; Attributes[g]")
+        .unwrap(),
+      "{}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[g, Listable]; Block[{g}, 1]; Attributes[g]")
+        .unwrap(),
+      "{Listable}"
+    );
+  }
+
+  #[test]
+  fn block_localizes_messages_options_and_other_values() {
+    clear_state();
+    assert_eq!(
+      interpret("k::usage = \"kdoc\"; Block[{k}, ToString[k::usage]]").unwrap(),
+      "MessageName[k, usage]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("k::usage = \"kdoc\"; Block[{k}, 1]; k::usage").unwrap(),
+      "kdoc"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Options[o] = {A -> 1}; Block[{o}, Options[o]]").unwrap(),
+      "{}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("s[a][b] := \"sub\"; Block[{s}, ToString[s[a][b]]]").unwrap(),
+      "s[a][b]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("m[1] = 10; Block[{m}, ToString[m[1]]]").unwrap(),
+      "m[1]"
+    );
+    clear_state();
+    assert_eq!(interpret("m[1] = 10; Block[{m}, 1]; m[1]").unwrap(), "10");
+  }
+
+  // The value a Block returns is evaluated once more with the localized
+  // symbols back in place, so a body that ends in a bare local reports the
+  // outer value.
+  #[test]
+  fn block_result_is_reevaluated_after_restore() {
+    clear_state();
+    assert_eq!(interpret("n = 10; Block[{n}, n]").unwrap(), "10");
+    clear_state();
+    assert_eq!(
+      interpret("n = 10; Block[{x = n + 2, n}, {x, n}]").unwrap(),
+      "{12, 10}"
+    );
+  }
 }
 
 mod with_scoping {
