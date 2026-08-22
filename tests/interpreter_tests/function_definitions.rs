@@ -4806,15 +4806,81 @@ mod assignment_upvalues {
     );
   }
 
-  // The tag may also be an argument rather than the head, which is where
-  // `obj /: Set[f[obj], v_] := …` attaches.
+  // The tag may also be an argument rather than the head.
   #[test]
   fn a_tag_in_argument_position_is_consulted() {
     clear_state();
+    assert_eq!(interpret("obj /: f[obj] = 3; f[obj]").unwrap(), "3");
+  }
+
+  // …but only one level down. A tag inside an argument of an argument —
+  // `obj` in `Set[f[obj], v_]` — is too deep for the rule to be found
+  // again, so nothing is defined and the assignment reports where.
+  #[test]
+  fn a_tag_too_deep_defines_nothing() {
+    clear_state();
     assert_eq!(
-      interpret("obj /: Set[f[obj], v_] := (rec = v); f[obj] = 3; rec")
+      interpret("obj /: Set[f[obj], v_] := (rec = v)").unwrap(),
+      "$Failed"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Quiet[obj /: Set[f[obj], v_] := (rec = v)]; UpValues[obj]")
         .unwrap(),
-      "3"
+      "{}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Quiet[obj /: Set[f[obj], v_] := (rec = v)]; f[obj] = 3; rec")
+        .unwrap(),
+      "rec"
+    );
+    // The immediate form reports the same way but hands back its value.
+    clear_state();
+    assert_eq!(interpret("obj /: f[g[obj]] = 3").unwrap(), "3");
+    clear_state();
+    assert_eq!(
+      interpret("obj /: f[g[obj]] = 3; UpValues[obj]").unwrap(),
+      "{}"
+    );
+  }
+
+  // What still counts as close enough: the head of the left-hand side, an
+  // argument, an argument's own head however many calls deep the head chain
+  // runs, and the head a blank restricts to.
+  #[test]
+  fn a_tag_at_the_surface_is_close_enough() {
+    for source in [
+      "obj /: f[obj[x_]] = 3",
+      "obj /: f[a, obj, b] = 3",
+      "obj /: f[x_obj] = 3",
+      "obj /: f[_obj] = 3",
+      "obj /: (obj + 1) = 3",
+      "obj /: {obj, x_} = 3",
+      "obj /: Set[obj[k_], v_] := 1",
+    ] {
+      clear_state();
+      assert_ne!(
+        interpret(&format!("{source}; UpValues[obj]")).unwrap(),
+        "{}",
+        "{source} should define an upvalue"
+      );
+    }
+  }
+
+  // A rule tagged on a list or a comparison fires the way one tagged on
+  // `Plus` does — the head is `List` or `Equal` like any other.
+  #[test]
+  fn a_rule_can_hang_on_a_list_or_a_comparison() {
+    clear_state();
+    assert_eq!(
+      interpret("obj /: {obj, x_} = 3; {{obj, 7}, {obj}}").unwrap(),
+      "{3, {obj}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("obj /: (obj == 1) = 5; {obj == 1, obj == 2}").unwrap(),
+      "{5, obj == 2}"
     );
   }
 }

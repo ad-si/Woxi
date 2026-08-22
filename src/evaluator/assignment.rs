@@ -4074,6 +4074,52 @@ pub fn extract_pattern_info(expr: &Expr) -> (String, Option<String>, u8) {
   }
 }
 
+/// Whether an argument of a tagged assignment's left-hand side names `tag`
+/// somewhere the assignment can find it again: as itself, as its own head
+/// however many calls deep the head chain runs (`UObj[s_Symbol][k_String]`
+/// is tagged `UObj`), or as the head a blank restricts to (`f[x_obj]`).
+/// A tag buried in an argument's *arguments* does not count.
+fn argument_carries_tag(tag: &str, arg: &Expr) -> bool {
+  if pattern_head_tag(arg).as_deref() == Some(tag) {
+    return true;
+  }
+  match arg {
+    Expr::Identifier(name) | Expr::FunctionCall { name, .. } => name == tag,
+    Expr::CurriedCall { func, .. } => argument_carries_tag(tag, func),
+    _ => false,
+  }
+}
+
+/// Whether `lhs` mentions `tag` shallowly enough for `tag /: lhs := rhs` to
+/// store a rule that dispatch will look for — see [`argument_carries_tag`].
+fn tag_is_reachable(tag: &str, lhs: &Expr) -> bool {
+  // `tag /: lhs /; test := rhs` is tagged by the same rule as `lhs` alone.
+  if let Expr::FunctionCall { name, args } = lhs
+    && name == "Condition"
+    && args.len() == 2
+  {
+    return tag_is_reachable(tag, &args[0]);
+  }
+  match &normalize_lhs_for_upset(lhs) {
+    Expr::FunctionCall { name, args } => {
+      name == tag || args.iter().any(|arg| argument_carries_tag(tag, arg))
+    }
+    // A list, a comparison and the operators the parser keeps in a shape of
+    // their own are all calls of their head; their parts are its arguments.
+    Expr::List(items) => {
+      items.iter().any(|item| argument_carries_tag(tag, item))
+    }
+    Expr::Comparison { operands, .. } => operands
+      .iter()
+      .any(|operand| argument_carries_tag(tag, operand)),
+    Expr::BinaryOp { left, right, .. } => {
+      argument_carries_tag(tag, left) || argument_carries_tag(tag, right)
+    }
+    Expr::UnaryOp { operand, .. } => argument_carries_tag(tag, operand),
+    other => argument_carries_tag(tag, other),
+  }
+}
+
 /// Handle TagSetDelayed[tag, lhs, rhs] — stores an upvalue definition.
 /// When evaluate_rhs is true, acts as TagSet (evaluates the RHS first).
 pub fn tag_set_delayed_ast(
@@ -4096,6 +4142,28 @@ pub fn tag_set_delayed_ast(
   } else {
     body.clone()
   };
+
+  // The tag has to sit where a rule stored under it can be found again: at
+  // the head of the left-hand side, or in one of its arguments. Anything
+  // deeper — `obj /: Set[f[obj], v_] := …`, where `obj` is an argument of
+  // an argument — has nowhere to hang the rule, and nothing is defined.
+  if !tag_is_reachable(&tag_name, lhs) {
+    crate::emit_message(&format!(
+      "{}::tagpos: Tag {tag_name} in {} is too deep for an assigned rule \
+       to be found.",
+      if evaluate_rhs {
+        "TagSet"
+      } else {
+        "TagSetDelayed"
+      },
+      crate::syntax::expr_to_string(lhs)
+    ));
+    return Ok(if evaluate_rhs {
+      body
+    } else {
+      Expr::Identifier("$Failed".to_string())
+    });
+  }
 
   // Extract Condition from body: Condition[actual_body, test] → (actual_body, Some(test))
   let (body, body_condition) = if let Expr::FunctionCall { name, args } = &body
@@ -4178,6 +4246,14 @@ pub fn tag_set_delayed_ast(
       };
       (name, args)
     }
+    // A list is a call of `List`, so `obj /: {obj, x_} = 3` hangs its rule
+    // on `List` the way `obj /: f[obj, x_] = 3` hangs one on `f`. A
+    // comparison is a call of `Equal` and its relatives the same way.
+    Expr::List(items) => ("List".to_string(), items.to_vec()),
+    Expr::Comparison {
+      operands,
+      operators,
+    } => crate::syntax::comparison_head_and_args(operands, operators),
     Expr::UnaryOp { op, operand } => {
       let (name, args) = match op {
         UnaryOperator::Minus => (

@@ -2307,8 +2307,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       ProgramStmt::TagSetDelayed(node) => {
         let _read =
           evaluator::contexts::ReadContext::install(&line_read_context);
-        store_tag_set_delayed(node.clone(), false)?;
-        last_result = Some(StmtOutcome::Text("\0".to_string()));
+        match store_tag_set_delayed(node.clone(), false)? {
+          Some(s) => last_result = Some(StmtOutcome::Text(s)),
+          None => last_result = Some(StmtOutcome::Text("\0".to_string())),
+        }
         any_nonempty = true;
       }
       ProgramStmt::TagSet(node) => {
@@ -5822,6 +5824,11 @@ fn store_tag_set_delayed(
     evaluate_rhs,
   )?;
   if evaluate_rhs {
+    Ok(Some(syntax::expr_to_string(&result)))
+  } else if matches!(&result, syntax::Expr::Identifier(s) if s == "$Failed") {
+    // A definition that could not be stored — a tag too deep to be found
+    // again — answers `$Failed`, and that answer is shown. A stored one
+    // answers `Null`, which is not.
     Ok(Some(syntax::expr_to_string(&result)))
   } else {
     Ok(None)

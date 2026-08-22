@@ -1111,6 +1111,12 @@ pub fn evaluate_expr_to_expr_inner(
         }
         return Ok(Expr::List(re_eval.into()));
       }
+      // A tagged rule can hang on `List` as readily as on `Plus`:
+      // `obj /: {obj, x_} = 3` makes `{obj, 7}` evaluate to 3. Only a rule
+      // that could actually apply diverts the list from being itself.
+      if arith_rules_may_apply("List", &evaluated) {
+        return evaluate_function_call_ast("List", &evaluated);
+      }
       Ok(Expr::List(evaluated.into()))
     }
     Expr::FunctionCall { name, args } => {
@@ -2999,6 +3005,16 @@ pub fn evaluate_expr_to_expr_inner(
         }
         let and_expr = call("And", terms);
         return evaluate_expr_to_expr(&and_expr);
+      }
+
+      // A tagged rule can hang on `Equal` and its relatives as readily as on
+      // `Plus`: `obj /: (obj == 1) = 5` makes `obj == 1` evaluate to 5.
+      {
+        let (head, args) =
+          crate::syntax::comparison_head_and_args(&values, operators);
+        if arith_rules_may_apply(&head, &args) {
+          return evaluate_function_call_ast(&head, &args);
+        }
       }
 
       // Comparisons with complex infinities: the four order relations are
