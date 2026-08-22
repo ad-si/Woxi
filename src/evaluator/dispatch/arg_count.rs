@@ -216,7 +216,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ColorNegate" => Some((1, 1)),
     "ColorQ" => Some((1, 1)),
     "Commonest" => Some((1, 2)),
-    "Compile" => Some((2, 2)),
+    "Compile" => Some((2, usize::MAX)),
     "Complex" => Some((2, 2)),
     "ComplexExpand" => Some((1, 2)),
     "ComplexListPlot" => Some((1, usize::MAX)),

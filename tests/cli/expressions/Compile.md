@@ -29,3 +29,11 @@ A rank-`n` `_Real` argument is converted element by element:
 $ wo 'Compile[{{g, _Real, 2}}, g][{{1, 1/2}, {3, 4}}]'
 {{1., 0.5}, {3., 4.}}
 ```
+
+Trailing option rules such as `RuntimeAttributes` and `RuntimeOptions` are
+accepted and don't change the result:
+
+```scrut
+$ wo 'Compile[{{x, _Real}}, x^2, RuntimeAttributes -> {Listable}, RuntimeOptions -> "Speed"][3.]'
+9.
+```
