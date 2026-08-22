@@ -2282,16 +2282,62 @@ mod association_lookup_chains {
     );
   }
 
-  // A symbol holding an association can also carry downvalues. A call
-  // matching one of them is that definition's call, not a key lookup —
-  // only an unmatched call falls back to looking the argument up.
+  // A symbol holding an association has no downvalues to define: the
+  // bracket is a key assignment, so `s[k] := v` writes an entry. A pattern
+  // written as the key is stored as the key itself and matches nothing,
+  // which is why `s[5]` is a miss rather than the definition's 105.
   #[test]
-  fn a_downvalue_wins_over_the_stored_association() {
+  fn a_definition_on_an_association_writes_a_key() {
     clear_state();
     assert_eq!(
       interpret(r#"s = <|"a" -> 1|>; s[n_Integer] := n + 100; {s["a"], s[5]}"#)
         .unwrap(),
-      "{1, 105}"
+      "{1, Missing[KeyAbsent, 5]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"s = <|"a" -> 1|>; s[n_Integer] := n + 100; ToString[s, InputForm]"#
+      )
+      .unwrap(),
+      "<|\"a\" -> 1, n_Integer :> n + 100|>"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(r#"s = <|"a" -> 1|>; s[n_Integer] := n + 100; DownValues[s]"#)
+        .unwrap(),
+      "{}"
+    );
+  }
+
+  // An entry written with `:=` keeps its right-hand side and evaluates it
+  // at every lookup, so a counter in one counts every read.
+  #[test]
+  fn a_delayed_entry_is_evaluated_at_each_lookup() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"s = <|"a" -> 1|>; c = 0; s["k"] := (c++; 9);
+           {s["k"], s["k"], c}"#
+      )
+      .unwrap(),
+      "{9, 9, 2}"
+    );
+  }
+
+  // Every way of reading a delayed entry gives the value, not the rule it
+  // is stored as — only `Normal` shows the rule.
+  #[test]
+  fn every_reading_of_a_delayed_entry_agrees() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"a = <|"x" :> 1 + 1|>;
+           {a["x"], Lookup[a, "x"], a[[Key["x"]]], a[["x"]], a[[1]],
+            Values[a], Normal[a]}"#
+      )
+      .unwrap(),
+      "{2, 2, 2, 2, 2, {2}, {x :> 1 + 1}}"
     );
   }
 }

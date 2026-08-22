@@ -2569,6 +2569,47 @@ pub fn set_delayed_ast(
   if let Some(result) = try_assignment_upvalue("SetDelayed", lhs, body) {
     return result;
   }
+
+  // Single-bracket part assignment on an existing Association:
+  //   a[k] := v   when `a` is bound to an Association
+  // The delayed counterpart of the `Set` branch in `set_ast`. A symbol
+  // holding an association gains a key rather than a DownValue, even when
+  // the key is written as a pattern — `s[n_Integer] := n + 100` stores the
+  // entry `n_Integer :> n + 100`, which no `s[5]` lookup ever matches.
+  if let Expr::FunctionCall {
+    name: head_name,
+    args: head_args,
+  } = lhs
+    && head_args.len() == 1
+  {
+    seed_system_variable(head_name);
+    let is_assoc = crate::ENV.with(|e| {
+      let env = e.borrow();
+      matches!(env.get(head_name), Some(StoredValue::Association(_)))
+    });
+    if is_assoc {
+      let key_expr = evaluate_expr_to_expr(&head_args[0])?;
+      let key = expr_to_string(&key_expr);
+      // The value carries the `key :> value` marker so every lookup
+      // evaluates it afresh, the way a delayed entry is meant to.
+      let entry = Expr::RuleDelayed {
+        pattern: Box::new(key_expr),
+        replacement: Box::new(body.clone()),
+      };
+      crate::ENV.with(|e| {
+        let mut env = e.borrow_mut();
+        if let Some(StoredValue::Association(pairs)) = env.get_mut(head_name) {
+          if let Some(pair) = pairs.iter_mut().find(|(k, _)| k == &key) {
+            pair.1 = entry;
+          } else {
+            pairs.push((key, entry));
+          }
+        }
+      });
+      return Ok(Expr::Identifier("Null".to_string()));
+    }
+  }
+
   // Early reject: `a + b := c` / `a * b := c` / `a^b := c` etc.
   // attempt to install DownValues on the corresponding built-in
   // (`Plus`, `Times`, `Power`, …) which are Protected.

@@ -1911,7 +1911,9 @@ pub fn apply_curried_call(
           Expr::Association(pairs) => {
             for (k, v) in pairs {
               if expr_to_string(k) == key_str {
-                return Ok(v.clone());
+                return Ok(
+                  crate::functions::association_ast::assoc_entry_value(k, v),
+                );
               }
             }
             // Key not found: return Missing["KeyAbsent", k]

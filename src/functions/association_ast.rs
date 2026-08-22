@@ -5,6 +5,26 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// The value an association entry hands back when it is looked up.
+///
+/// An entry written `key :> value` — which `Expr::Association` marks by
+/// wrapping the value in a `RuleDelayed` whose pattern is the key, see
+/// [`crate::syntax::assoc_marker_matches`] — holds its right-hand side and
+/// evaluates it afresh at every lookup, the way a delayed definition does.
+/// A plain `key -> value` entry hands its value back as it stands.
+pub fn assoc_entry_value(key: &Expr, value: &Expr) -> Expr {
+  match value {
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if crate::syntax::assoc_marker_matches(key, pattern) => {
+      crate::evaluator::evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.as_ref().clone())
+    }
+    _ => value.clone(),
+  }
+}
+
 /// Whether an expression is a valid association entry: a single rule, a
 /// list of rules, or an association. Used by AssociationMap to decide when
 /// applying a function yields a result that can't form an association.
@@ -236,8 +256,8 @@ pub fn values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Association(items) => {
       let mut values = Vec::with_capacity(items.len());
-      for (_, v) in items {
-        values.push(apply_optional_head(head, v.clone())?);
+      for (k, v) in items {
+        values.push(apply_optional_head(head, assoc_entry_value(k, v))?);
       }
       Ok(Expr::List(values.into()))
     }
@@ -388,7 +408,7 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let k_str = crate::syntax::expr_to_string(k);
         let k_cmp = k_str.as_str();
         if k_cmp == key_cmp {
-          return Ok(v.clone());
+          return Ok(assoc_entry_value(k, v));
         }
       }
       // Default value if provided

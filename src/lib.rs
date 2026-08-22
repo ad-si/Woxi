@@ -5398,15 +5398,34 @@ fn store_function_definition(
   pair: Pair<Rule>,
 ) -> Result<Option<String>, InterpreterError> {
   // FunctionDefinition  :=  Identifier "[" (Pattern ("," Pattern)*)? "]" ":=" Expression
-  let raw_lhs = {
-    // pest pairs are not Clone, so capture the source slice up to ":=".
+  // pest pairs are not Clone, so capture the source slices around ":=".
+  let (raw_lhs, raw_rhs) = {
     let span = pair.as_span().as_str();
-    span
-      .split_once(":=")
-      .map_or_else(|| span.trim().to_string(), |(l, _)| l.trim().to_string())
+    span.split_once(":=").map_or_else(
+      || (span.trim().to_string(), String::new()),
+      |(l, r)| (l.trim().to_string(), r.trim().to_string()),
+    )
   };
   let mut inner = pair.into_inner();
   let func_name = inner.next().unwrap().as_str().to_owned(); // Identifier
+
+  // A symbol holding an association gains a key rather than a DownValue:
+  // `s = <|"a" -> 1|>; s[n_Integer] := n + 100` writes the entry
+  // `n_Integer :> n + 100`, which no lookup ever matches. `set_delayed_ast`
+  // knows that rule, so hand the definition to it rather than storing one.
+  let holds_association = ENV.with(|e| {
+    matches!(
+      e.borrow().get(&func_name),
+      Some(StoredValue::Association(_))
+    )
+  });
+  if holds_association
+    && let Ok(lhs_expr) = syntax::string_to_expr(&raw_lhs)
+    && let Ok(rhs_expr) = syntax::string_to_expr(&raw_rhs)
+  {
+    evaluator::assignment::set_delayed_ast(&lhs_expr, &rhs_expr)?;
+    return Ok(None);
+  }
 
   // Reject assignments to built-in Protected heads (e.g. `Sin`,
   // `Plus`, …). wolframscript emits `SetDelayed::write: Tag <h>

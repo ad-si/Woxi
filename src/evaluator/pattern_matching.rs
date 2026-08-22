@@ -155,7 +155,10 @@ pub fn association_lookup_chain(pairs: &[(Expr, Expr)], keys: &[Expr]) -> Expr {
     };
     let key_str = expr_to_string(key);
     match items.iter().find(|(k, _)| expr_to_string(k) == key_str) {
-      Some((_, value)) => current = value.clone(),
+      Some((k, value)) => {
+        current =
+          crate::functions::association_ast::assoc_entry_value(k, value);
+      }
       None => {
         return call(
           "Missing",

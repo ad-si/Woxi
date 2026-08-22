@@ -563,11 +563,13 @@ fn extract_part_ast_rest(
     };
     // Key-based lookup shared by the string, Key[...], and list-index forms.
     // String indices match only string keys; Key[k] matches any key exactly.
-    let lookup = |key: &Expr| -> Option<&Expr> {
+    let lookup = |key: &Expr| -> Option<Expr> {
       items
         .iter()
         .find(|(k, _)| crate::evaluator::pattern_matching::expr_equal(k, key))
-        .map(|(_, v)| v)
+        .map(|(k, v)| {
+          crate::functions::association_ast::assoc_entry_value(k, v)
+        })
     };
     match index {
       // Integer index: access by position (return value, not rule)
@@ -575,8 +577,10 @@ fn extract_part_ast_rest(
         if *i == 0 {
           return Ok(Expr::Identifier("Association".to_string()));
         }
-        if let Some((_, v)) = entry_at(*i) {
-          return Ok(v.clone());
+        if let Some((k, v)) = entry_at(*i) {
+          return Ok(crate::functions::association_ast::assoc_entry_value(
+            k, v,
+          ));
         }
         crate::emit_message_to_stdout(&format!(
           "Part::partw: Part {} of {} does not exist.",
