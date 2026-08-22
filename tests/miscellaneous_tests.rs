@@ -3,6 +3,7 @@
 #![allow(clippy::module_inception)]
 
 mod miscellaneous_tests {
+  mod attributes;
   mod docs_links;
   mod high_level_functions;
   mod list;
