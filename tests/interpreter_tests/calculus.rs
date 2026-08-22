@@ -7010,7 +7010,8 @@ mod dsolve {
   // of an x-factor and a nonlinear y-factor (e.g. x*y[x]^2) used to be
   // misclassified — the x*y^2 term was treated as a y-free forcing term and
   // "integrated", yielding the bogus circular C[1] + Integrate[x*y[x]^2, x].
-  // It must instead stay unevaluated, like the bare y[x]^2 case.
+  // Without an initial condition to pin the constant it must stay
+  // unevaluated, like the bare y[x]^2 case.
   #[test]
   fn separable_nonlinear_product_stays_unevaluated() {
     assert_eq!(
@@ -7020,6 +7021,58 @@ mod dsolve {
     assert_eq!(
       interpret("DSolve[y'[x] == x^2 y[x]^2, y[x], x]").unwrap(),
       "DSolve[Derivative[1][y][x] == x^2*y[x]^2, y[x], x]"
+    );
+  }
+
+  // An initial condition pins the constant of a separable equation, so the
+  // implicit relation ∫dy/h(y) == ∫g(x)dx + C can be solved outright — the
+  // nonlinear right-hand sides above are the ones the linear term classifier
+  // rejects.
+  #[test]
+  fn separable_nonlinear_initial_value_problem() {
+    assert_eq!(
+      interpret("DSolve[{y'[x] == x y[x]^2, y[0] == 2}, y[x], x]").unwrap(),
+      "{{y[x] -> -2/(-1 + x^2)}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y'[x] == y[x]^2, y[0] == 1}, y[x], x]").unwrap(),
+      "{{y[x] -> (1 - x)^(-1)}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y'[x] == y[x]^3, y[0] == 1}, y[x], x]").unwrap(),
+      "{{y[x] -> 1/Sqrt[1 - 2*x]}}"
+    );
+    // The x-factor may be any closed-form function of x, not just a monomial.
+    assert_eq!(
+      interpret("DSolve[{y'[x] == Cos[x] y[x]^2, y[0] == 1}, y[x], x]")
+        .unwrap(),
+      "{{y[x] -> (1 - Sin[x])^(-1)}}"
+    );
+    // A quotient separates too: y' == x/y.
+    assert_eq!(
+      interpret("DSolve[{y'[x] == x/y[x], y[0] == 1}, y[x], x]").unwrap(),
+      "{{y[x] -> Sqrt[1 + x^2]}}"
+    );
+    // `DSolve[…, y, x]` asks for the Function form.
+    assert_eq!(
+      interpret("DSolve[{y'[t] == -t y[t]^2, y[0] == 1}, y, t]").unwrap(),
+      "{{y -> Function[{t}, 2/(2 + t^2)]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y'[t] == (t - t^3) y[t]^2, y[0] == 1}, y, t]")
+        .unwrap(),
+      "{{y -> Function[{t}, 4/(4 - 2*t^2 + t^4)]}}"
+    );
+  }
+
+  // Squaring away the square root when solving for y loses the branch, so the
+  // root that does not meet the initial condition has to be dropped: with
+  // y[0] == -1 the answer is the negative branch, not the positive one.
+  #[test]
+  fn separable_solution_picks_the_branch_the_condition_selects() {
+    assert_eq!(
+      interpret("DSolve[{y'[x] == x/y[x], y[0] == -1}, y[x], x]").unwrap(),
+      "{{y[x] -> -Sqrt[1 + x^2]}}"
     );
   }
 
