@@ -4411,6 +4411,78 @@ fn try_integrate_exp_trig_product(
   None
 }
 
+/// Try to integrate a product of exactly two trig factors (`Sin`/`Cos`,
+/// each to the first power) whose arguments are different functions of
+/// `var`, via the product-to-sum identities:
+///   Sin[A] Sin[B] = (Cos[A-B] - Cos[A+B]) / 2
+///   Cos[A] Cos[B] = (Cos[A-B] + Cos[A+B]) / 2
+///   Sin[A] Cos[B] = (Sin[A+B] + Sin[A-B]) / 2
+/// e.g. `Sin[m x] Sin[n x]` for `m ≠ n` — the orthogonality integrals a
+/// Fourier series relies on. `try_integrate_sin_cos_product` already
+/// covers the same-argument case (`Sin[f]^m * Cos[f]^n`), so this only
+/// needs to fire when the two arguments genuinely differ.
+fn try_integrate_trig_product_to_sum(
+  factors: &[&Expr],
+  var: &str,
+) -> Option<Expr> {
+  let [f0, f1] = factors else {
+    return None;
+  };
+  let trig_parts = |f: &Expr| -> Option<(&'static str, Expr)> {
+    if let Expr::FunctionCall { name, args } = f
+      && args.len() == 1
+    {
+      return match name.as_str() {
+        "Sin" => Some(("Sin", args[0].clone())),
+        "Cos" => Some(("Cos", args[0].clone())),
+        _ => None,
+      };
+    }
+    None
+  };
+  let (name0, arg0) = trig_parts(f0)?;
+  let (name1, arg1) = trig_parts(f1)?;
+  if expr_str_eq(&arg0, &arg1) {
+    // Same argument: `try_integrate_sin_cos_product` already handles this.
+    return None;
+  }
+
+  // Combine like terms (`Pi*t - 2*Pi*t` → `-Pi*t`) so the resulting
+  // Cos/Sin argument is a single linear term the recursive `integrate`
+  // call below can recognise — `simplify` alone leaves the bare
+  // subtraction/addition uncollected.
+  let sum_arg =
+    crate::evaluator::evaluate_expr_to_expr(&plus2(arg0.clone(), arg1.clone()))
+      .unwrap_or_else(|_| simplify(plus2(arg0.clone(), arg1.clone())));
+  let diff_arg = crate::evaluator::evaluate_expr_to_expr(&minus2(
+    arg0.clone(),
+    arg1.clone(),
+  ))
+  .unwrap_or_else(|_| simplify(minus2(arg0.clone(), arg1.clone())));
+  let half_of = |e: Expr| div2(e, Expr::Integer(2));
+  let rewritten = match (name0, name1) {
+    ("Sin", "Sin") => minus2(
+      half_of(call1("Cos", diff_arg)),
+      half_of(call1("Cos", sum_arg)),
+    ),
+    ("Cos", "Cos") => plus2(
+      half_of(call1("Cos", diff_arg)),
+      half_of(call1("Cos", sum_arg)),
+    ),
+    ("Sin", "Cos") => plus2(
+      half_of(call1("Sin", sum_arg)),
+      half_of(call1("Sin", diff_arg)),
+    ),
+    ("Cos", "Sin") => minus2(
+      half_of(call1("Sin", sum_arg)),
+      half_of(call1("Sin", diff_arg)),
+    ),
+    _ => return None,
+  };
+
+  integrate(&rewritten, var)
+}
+
 /// Try to integrate a product of Sin[f]^m * Cos[f]^n where f is linear in var.
 /// Handles:
 ///   - Sin[f] * Cos[f]^n → -Cos[f]^(n+1) / ((n+1)*a)
@@ -7648,6 +7720,12 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             {
               return Some(result);
             }
+            // Trig product-to-sum: Sin[m x] Sin[n x], m != n, etc.
+            if let Some(result) =
+              try_integrate_trig_product_to_sum(&[left, right], var)
+            {
+              return Some(result);
+            }
             // Trig quotients like Sin[x]*Tan[x] (= Sin^2/Cos)
             if let Some(result) =
               try_integrate_trig_quotient(&[left, right], &[], var)
@@ -8712,6 +8790,24 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
                 }
               };
               return Some(times2(const_expr, trig_result));
+            }
+            // Trig product-to-sum: Sin[m x] Sin[n x], m != n, etc.
+            if var_factors.len() == 2
+              && let Some(pts_result) =
+                try_integrate_trig_product_to_sum(&var_refs, var)
+            {
+              if const_factors.is_empty() {
+                return Some(pts_result);
+              }
+              let const_expr = if const_factors.len() == 1 {
+                const_factors[0].clone()
+              } else {
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: const_factors.into_iter().cloned().collect(),
+                }
+              };
+              return Some(times2(const_expr, pts_result));
             }
             // Try u-substitution for pairs of variable-dependent factors
             if var_factors.len() == 2
