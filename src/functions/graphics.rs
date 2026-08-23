@@ -2460,11 +2460,13 @@ fn parse_polygon(
     crate::functions::polygon_holes::split_holes(&args[0], &expr_to_point_list)
   {
     // Polygon[outer -> holes] — a polygon with the hole boundaries cut
-    // out of it.
+    // out of it. `VertexColors` still assigns one color per point of the
+    // *outer* boundary; hole boundaries have no colors of their own.
+    let vc = vertex_colors.clone().filter(|c| c.len() == outer.len());
     prims.push(Primitive::PolygonPrim {
       points: outer,
       holes,
-      vertex_colors: None,
+      vertex_colors: vc,
       style: style.clone(),
     });
   } else if let Expr::List(items) = &args[0] {
@@ -4886,19 +4888,56 @@ fn thickness_px(t: f64, bb: &BBox, svg_w: f64) -> f64 {
   }
 }
 
-/// Approximate a smooth `VertexColors` gradient fill for an n-gon. SVG has
-/// no native gradient that blends more than two colors along an axis, so
-/// fan-triangulate from the first vertex and subdivide each triangle into a
-/// fine barycentric grid of small flat-shaded triangles — many tiny flat
-/// facets read as a smooth blend, the same trick Gouraud shading uses.
+/// Approximate a smooth `VertexColors` gradient fill for an n-gon, possibly
+/// with holes cut out. SVG has no native gradient that blends more than two
+/// colors along an axis, so ear-clip-triangulate the polygon — respecting
+/// concavity and any holes, via [`polygon_holes::triangulate_with_holes`] —
+/// and subdivide each resulting triangle into a fine barycentric grid of
+/// small flat-shaded triangles; many tiny flat facets read as a smooth
+/// blend, the same trick Gouraud shading uses. A naive fan from the first
+/// vertex would instead spill color outside the true boundary for any
+/// polygon that isn't star-shaped from that vertex (most concave ones).
+///
+/// `colors` gives one color per point in `points` (the outer boundary);
+/// hole-boundary points have no color of their own, so each one inherits
+/// whichever outer-boundary point is nearest to it.
 fn emit_polygon_vertex_gradient(
   out: &mut String,
   points: &[(f64, f64)],
+  holes: &[Vec<(f64, f64)>],
   colors: &[Color],
+  opacity: f64,
   bb: &BBox,
   svg_w: f64,
   svg_h: f64,
 ) {
+  let mut all_pts = points.to_vec();
+  let mut all_colors = colors.to_vec();
+  let outer_indices: Vec<usize> = (0..points.len()).collect();
+  let mut hole_indices = Vec::with_capacity(holes.len());
+  for hole in holes {
+    let start = all_pts.len();
+    for &hp in hole {
+      let nearest = points
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| {
+          let da = (a.0 - hp.0).powi(2) + (a.1 - hp.1).powi(2);
+          let db = (b.0 - hp.0).powi(2) + (b.1 - hp.1).powi(2);
+          da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map_or(0, |(i, _)| i);
+      all_pts.push(hp);
+      all_colors.push(colors[nearest]);
+    }
+    hole_indices.push((start..all_pts.len()).collect::<Vec<_>>());
+  }
+  let tri = crate::functions::polygon_holes::triangulate_with_holes(
+    &all_pts,
+    &outer_indices,
+    &hole_indices,
+  );
+
   const SUBDIV: usize = 8;
   let screen =
     |(x, y): (f64, f64)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h));
@@ -4923,8 +4962,11 @@ fn emit_polygon_vertex_gradient(
                       p2: (f64, f64),
                       c2: Color| {
     // Average the three corner colors (two lerps: midpoint of the first
-    // pair, then 1/3 of the way to the third — equivalent to (c0+c1+c2)/3).
+    // pair, then 1/3 of the way to the third — equivalent to (c0+c1+c2)/3),
+    // then fold in the shape's own `Opacity[…]`, exactly as the flat-fill
+    // path folds it into `effective_face_color`.
     let avg = c0.lerp(c1, 0.5).lerp(c2, 1.0 / 3.0);
+    let avg = avg.with_alpha(avg.a * opacity);
     let (sx0, sy0) = screen(p0);
     let (sx1, sy1) = screen(p1);
     let (sx2, sy2) = screen(p2);
@@ -4939,9 +4981,9 @@ fn emit_polygon_vertex_gradient(
       fill_opacity,
     ));
   };
-  for i in 1..points.len() - 1 {
-    let tri_p = [points[0], points[i], points[i + 1]];
-    let tri_c = [colors[0], colors[i], colors[i + 1]];
+  for [i, j, k] in tri.triangles {
+    let tri_p = [all_pts[i], all_pts[j], all_pts[k]];
+    let tri_c = [all_colors[i], all_colors[j], all_colors[k]];
     let n = SUBDIV as f64;
     for row in 0..SUBDIV {
       for col in 0..(SUBDIV - row) {
@@ -6052,12 +6094,39 @@ fn render_primitive(
       } else {
         String::new()
       };
-      if let Some(vc) = vertex_colors.as_ref().filter(|_| holes.is_empty()) {
-        emit_polygon_vertex_gradient(out, points, vc, bb, svg_w, svg_h);
+      let subpath = |ring: &[(f64, f64)]| {
+        let mut d = String::new();
+        for (i, &(x, y)) in ring.iter().enumerate() {
+          d.push_str(&format!(
+            "{}{:.2},{:.2}",
+            if i == 0 { "M" } else { "L" },
+            coord_x(x, bb, svg_w),
+            coord_y(y, bb, svg_h)
+          ));
+          d.push(' ');
+        }
+        d.push_str("Z ");
+        d
+      };
+      if let Some(vc) = vertex_colors.as_ref() {
+        emit_polygon_vertex_gradient(
+          out,
+          points,
+          holes,
+          vc,
+          style.opacity,
+          bb,
+          svg_w,
+          svg_h,
+        );
         if !stroke_attr.is_empty() {
+          let mut d = subpath(points);
+          for hole in holes {
+            d.push_str(&subpath(hole));
+          }
           out.push_str(&format!(
-            "<polygon points=\"{}\" fill=\"none\"{}/>\n",
-            pts.join(" "),
+            "<path d=\"{}\" fill=\"none\"{}/>\n",
+            d.trim_end(),
             stroke_attr,
           ));
         }
@@ -6072,20 +6141,6 @@ fn render_primitive(
       } else {
         // A polygon with holes becomes one path per boundary, filled with
         // the even-odd rule so the hole subpaths are cut out.
-        let subpath = |ring: &[(f64, f64)]| {
-          let mut d = String::new();
-          for (i, &(x, y)) in ring.iter().enumerate() {
-            d.push_str(&format!(
-              "{}{:.2},{:.2}",
-              if i == 0 { "M" } else { "L" },
-              coord_x(x, bb, svg_w),
-              coord_y(y, bb, svg_h)
-            ));
-            d.push(' ');
-          }
-          d.push_str("Z ");
-          d
-        };
         let mut d = subpath(points);
         for hole in holes {
           d.push_str(&subpath(hole));

@@ -1218,6 +1218,126 @@ mod graphics {
           assert!(!svg.contains("fill=\"rgb(0,0,0)\""));
           assert!(svg.matches("<polygon").count() > 2);
         }
+
+        /// Parse every `<polygon points="x1,y1 x2,y2 …">` in an SVG string
+        /// into its screen-space vertex list.
+        fn parse_svg_polygons(svg: &str) -> Vec<Vec<(f64, f64)>> {
+          svg
+            .split("<polygon points=\"")
+            .skip(1)
+            .map(|rest| {
+              let pts_str = &rest[..rest.find('"').unwrap()];
+              pts_str
+                .split_whitespace()
+                .map(|pair| {
+                  let (x, y) = pair.split_once(',').unwrap();
+                  (x.parse().unwrap(), y.parse().unwrap())
+                })
+                .collect()
+            })
+            .collect()
+        }
+
+        /// Ray-casting point-in-polygon test.
+        fn point_in_polygon(p: (f64, f64), poly: &[(f64, f64)]) -> bool {
+          let mut inside = false;
+          let n = poly.len();
+          for i in 0..n {
+            let (xi, yi) = poly[i];
+            let (xj, yj) = poly[(i + n - 1) % n];
+            if (yi > p.1) != (yj > p.1)
+              && p.0 < (xj - xi) * (p.1 - yi) / (yj - yi) + xi
+            {
+              inside = !inside;
+            }
+          }
+          inside
+        }
+
+        /// A naive fan-triangulation from the first vertex is only valid
+        /// for polygons star-shaped from that vertex — a concave "C"/notch
+        /// shape isn't, so it would spill gradient-fill triangles into the
+        /// notch. The gradient fill must instead ear-clip-triangulate (as
+        /// the plain, non-`VertexColors` fill already implicitly does via
+        /// the browser's fill rule), staying within the true boundary.
+        #[test]
+        fn concave_polygon_gradient_does_not_spill_into_the_notch() {
+          let svg = export_svg(
+            "Graphics[{Polygon[{{0, 0}, {3, 0}, {3, 1}, {1, 1}, {1, 2}, \
+             {3, 2}, {3, 3}, {0, 3}}, VertexColors -> \
+             {Red, Green, Blue, Black, White, Yellow, Purple, Orange}]}]",
+          );
+          let polys = parse_svg_polygons(&svg);
+          assert!(polys.len() > 3);
+
+          // Overall screen-space bounding box across every emitted facet —
+          // the picture's plot area, corresponding to the data's
+          // `{0,3}x{0,3}` bounding box (SVG's y axis increases downward,
+          // data's increases upward, so they're flipped relative to each
+          // other).
+          let (mut x_min, mut x_max, mut y_min, mut y_max) = (
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+          );
+          for poly in &polys {
+            for &(x, y) in poly {
+              x_min = x_min.min(x);
+              x_max = x_max.max(x);
+              y_min = y_min.min(y);
+              y_max = y_max.max(y);
+            }
+          }
+          let to_screen = |(dx, dy): (f64, f64)| {
+            (
+              x_min + dx / 3.0 * (x_max - x_min),
+              y_max - dy / 3.0 * (y_max - y_min),
+            )
+          };
+          // (2, 1.9) sits just inside the "C" shape's notch — outside the
+          // true polygon boundary, but inside the fan triangle a naive
+          // fan-from-vertex-0 would draw across `(0,0)`, `(1,2)`, `(3,2)`.
+          let notch = to_screen((2.0, 1.9));
+          let covered = polys.iter().any(|p| point_in_polygon(notch, p));
+          assert!(
+            !covered,
+            "a gradient facet covers the notch point {notch:?} — \
+             fan-triangulation spilled outside the true, concave boundary"
+          );
+        }
+
+        /// `Opacity[…]` applies to a `VertexColors`-filled polygon exactly
+        /// as it does to a flat-filled one — folded multiplicatively into
+        /// the fill alpha, not silently dropped because the gradient path
+        /// only ever looked at each vertex color's own alpha channel.
+        #[test]
+        fn opacity_directive_applies_to_gradient_fill() {
+          let svg = export_svg(
+            "Graphics[{Opacity[0.3], Polygon[{{-1, -1}, {1, -1}, {1, 1}, \
+             {-1, 1}}, VertexColors -> {Red, Green, Blue, Black}]}]",
+          );
+          assert!(
+            svg.contains("fill-opacity=\"0.3\""),
+            "expected every gradient facet at 30% opacity, got: {svg}"
+          );
+          assert!(!svg.contains("fill-opacity=\"1\""));
+        }
+
+        /// `Polygon[outer -> holes, VertexColors -> …]` — colors keyed to
+        /// the outer boundary — must still cut the hole out and blend the
+        /// outer colors, not silently fall back to a flat fill just
+        /// because the polygon has holes.
+        #[test]
+        fn hole_cutout_polygon_still_blends_and_cuts_the_hole() {
+          let svg = export_svg(
+            "Graphics[{Polygon[{{0, 0}, {4, 0}, {4, 4}, {0, 4}} -> \
+             {{{1, 1}, {3, 1}, {3, 3}, {1, 3}}}, \
+             VertexColors -> {Red, Green, Blue, Black}]}]",
+          );
+          assert!(!svg.contains("fill=\"rgb(0,0,0)\""));
+          assert!(svg.matches("<polygon").count() > 4);
+        }
       }
     }
   }
