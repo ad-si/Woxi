@@ -8341,6 +8341,51 @@ mod find_root {
     );
   }
 
+  // Regression: collocation methods for boundary-value problems name one
+  // unknown per grid point as an indexed variable (`u[1]`, `u[2]`, ...)
+  // rather than a plain symbol — real Wolfram accepts any FindRoot variable
+  // that isn't a bare symbol, not just plain identifiers. The multivariate
+  // spec detection previously required every variable to be
+  // `Expr::Identifier`, so this form errored with "second argument must be
+  // {var, x0} or {var, x0, x1}" (the Laplace-equation-on-a-square
+  // Demonstration hits this).
+  #[test]
+  fn multivariate_indexed_variables() {
+    assert_eq!(
+      interpret(
+        "FindRoot[{u[1] + u[2] == 3, u[1] - u[2] == 1}, \
+         {{u[1], 0}, {u[2], 0}}]"
+      )
+      .unwrap(),
+      "{u[1] -> 2., u[2] -> 1.}"
+    );
+  }
+
+  // Regression: FindRoot is HoldAll, so equations and a spec list built
+  // separately and passed by name (`sys = {...}; initguess = {{x, x0},
+  // ...}; FindRoot[sys, initguess]` — the idiom collocation methods use to
+  // build a long spec list programmatically) reached find_root_ast as bare
+  // unevaluated identifiers rather than literal lists, so neither the
+  // equations nor the variable specs were ever recognised.
+  #[test]
+  fn equations_and_spec_passed_by_name() {
+    assert_eq!(
+      interpret(
+        "eqns = {x^2 - 2 == 0}; spec = {{x, 1}}; \
+         FindRoot[eqns, spec]"
+      )
+      .unwrap(),
+      "{x -> 1.4142135623730951}"
+    );
+    // A literal spec written directly at the call site must still work
+    // (and must not have its variable name resolved against some unrelated
+    // stray global value).
+    assert_eq!(
+      interpret("FindRoot[x^2 - 2 == 0, {x, 1}]").unwrap(),
+      "{x -> 1.4142135623730951}"
+    );
+  }
+
   #[test]
   fn trivial() {
     assert_eq!(interpret("FindRoot[x, {x, 5}]").unwrap(), "{x -> 0.}");
