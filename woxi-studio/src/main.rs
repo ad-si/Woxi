@@ -21403,7 +21403,7 @@ SaveDefinitions -> True]";
      Grid[Map[Boole, \
        BooleanTable[BooleanFunction[idx, 3] @@ Take[syms, 3], \
          Take[syms, {2, 3}], Take[syms, 1]]], Frame -> All], \
-     {{idx, 2, \"function index\"}, 0, 255, 1}, \
+     {{idx, 22, \"function index\"}, 0, 255, 1}, \
      {{form, \"DNF\", \"form\"}, {\"DNF\", \"CNF\"}}, \
      Row[{\"function: \", \
        Dynamic[BooleanConvert[BooleanFunction[idx, 3, Take[names, 3]], \
@@ -21420,29 +21420,25 @@ SaveDefinitions -> True]";
       state.error
     );
 
-    // The grid is the Manipulate's main render — every cell a rendered 0/1,
-    // not an unevaluated call.
-    let table = state.text_output.clone().unwrap_or_default();
+    // The grid is the Manipulate's main render — typeset as a graphic
+    // (like the Playground renders any result), not left as an unevaluated
+    // echo (which would show as plain text instead).
     assert!(
-      !table.contains("BooleanFunction") && !table.contains("BooleanTable"),
-      "the table must be evaluated, not echoed: {table}"
+      state.graphics_handle.is_some(),
+      "the table should render as a graphic; text output was {:?}",
+      state.text_output
     );
-    // Index 2 of three variables is true for exactly one of the eight
-    // assignments, so the table holds a single 1.
+
+    // The caption writes the function out in the variables it was given, in
+    // its default DNF form.
+    let dnf_caption = display_text(&state.display_trees);
     assert_eq!(
-      table.matches('1').count(),
-      1,
-      "exactly one assignment satisfies function 2: {table}"
+      dnf_caption,
+      "function: (a &&  !b &&  !c) || ( !a && b &&  !c) || ( !a &&  !b && c)"
     );
 
-    // The caption writes the function out in the variables it was given.
-    let caption = display_text(&state.display_trees);
-    assert!(
-      caption.contains("function: ") && caption.contains(" !a &&  !b && c"),
-      "the caption must write out the function: {caption}"
-    );
-
-    // Switching the form re-renders the caption through the other converter.
+    // Switching the form re-renders the caption through the other converter,
+    // to a differently structured (but equivalent) expression.
     if let manipulate::ControlState::Discrete { current_index, .. } =
       &mut state.controls[1]
     {
@@ -21454,10 +21450,10 @@ SaveDefinitions -> True]";
       "re-render after switching form failed: {:?}",
       state.error
     );
-    let caption = display_text(&state.display_trees);
-    assert!(
-      caption.contains("||"),
-      "the CNF form is a conjunction of clauses: {caption}"
+    let cnf_caption = display_text(&state.display_trees);
+    assert_eq!(
+      cnf_caption,
+      "function: ( !a ||  !b) && (a || b || c) && ( !a ||  !c) && ( !b ||  !c)"
     );
   }
 }
