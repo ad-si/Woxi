@@ -21400,15 +21400,14 @@ SaveDefinitions -> True]";
   /// applied to symbolic variables never wrote itself out, so the table
   /// stayed a grid of unevaluated calls.
   const TRUTH_TABLE_DIAGRAM: &str = "Manipulate[\
-     Column[{\
-       Grid[Map[Boole, \
-         BooleanTable[BooleanFunction[idx, 3] @@ Take[syms, 3], \
-           Take[syms, {2, 3}], Take[syms, 1]]], Frame -> All], \
-       Row[{\"function: \", \
-         Dynamic[BooleanConvert[BooleanFunction[idx, 3, Take[names, 3]], \
-           form]]}]}], \
+     Grid[Map[Boole, \
+       BooleanTable[BooleanFunction[idx, 3] @@ Take[syms, 3], \
+         Take[syms, {2, 3}], Take[syms, 1]]], Frame -> All], \
      {{idx, 2, \"function index\"}, 0, 255, 1}, \
      {{form, \"DNF\", \"form\"}, {\"DNF\", \"CNF\"}}, \
+     Row[{\"function: \", \
+       Dynamic[BooleanConvert[BooleanFunction[idx, 3, Take[names, 3]], \
+         form]]}], \
      Initialization :> (syms = {p, q, r}; names = {a, b, c};)]";
 
   #[test]
@@ -21421,24 +21420,26 @@ SaveDefinitions -> True]";
       state.error
     );
 
-    // Every cell of the table is a rendered 0/1, not an unevaluated call.
-    let shown = display_text(&state.display_trees);
+    // The grid is the Manipulate's main render — every cell a rendered 0/1,
+    // not an unevaluated call.
+    let table = state.text_output.clone().unwrap_or_default();
     assert!(
-      !shown.contains("BooleanFunction") && !shown.contains("BooleanTable"),
-      "the table must be evaluated, not echoed: {shown}"
+      !table.contains("BooleanFunction") && !table.contains("BooleanTable"),
+      "the table must be evaluated, not echoed: {table}"
     );
     // Index 2 of three variables is true for exactly one of the eight
     // assignments, so the table holds a single 1.
     assert_eq!(
-      shown.matches('1').count(),
+      table.matches('1').count(),
       1,
-      "exactly one assignment satisfies function 2: {shown}"
+      "exactly one assignment satisfies function 2: {table}"
     );
 
     // The caption writes the function out in the variables it was given.
+    let caption = display_text(&state.display_trees);
     assert!(
-      shown.contains("function: ") && shown.contains(" !a &&  !b && c"),
-      "the caption must write out the function: {shown}"
+      caption.contains("function: ") && caption.contains(" !a &&  !b && c"),
+      "the caption must write out the function: {caption}"
     );
 
     // Switching the form re-renders the caption through the other converter.
@@ -21453,10 +21454,10 @@ SaveDefinitions -> True]";
       "re-render after switching form failed: {:?}",
       state.error
     );
-    let shown = display_text(&state.display_trees);
+    let caption = display_text(&state.display_trees);
     assert!(
-      shown.contains("||"),
-      "the CNF form is a conjunction of clauses: {shown}"
+      caption.contains("||"),
+      "the CNF form is a conjunction of clauses: {caption}"
     );
   }
 }
