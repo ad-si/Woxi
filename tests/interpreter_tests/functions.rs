@@ -5193,14 +5193,10 @@ mod boolean_function {
     );
   }
 
-  // Symbolic args, a wrong argument count, or the bare object stay unevaluated
-  // (no spurious "not implemented" warning for the bare form).
+  // A wrong argument count or the bare object stay unevaluated (no spurious
+  // "not implemented" warning for the bare form).
   #[test]
   fn unevaluated_forms() {
-    assert_eq!(
-      interpret("BooleanFunction[7, 2][a, b]").unwrap(),
-      "BooleanFunction[7, 2][a, b]"
-    );
     assert_eq!(
       interpret("BooleanFunction[7, 2][True]").unwrap(),
       "BooleanFunction[7, 2][True]"
@@ -5208,6 +5204,90 @@ mod boolean_function {
     assert_eq!(
       interpret("BooleanFunction[7, 2]").unwrap(),
       "BooleanFunction[7, 2]"
+    );
+  }
+
+  // Applying the function to symbolic arguments writes it out explicitly, in
+  // the minimal sum-of-products form: index 7 of two variables is Nand,
+  // index 6 is Xor, index 1 is Nor.
+  #[test]
+  fn symbolic_application_writes_the_expression() {
+    assert_eq!(
+      interpret("BooleanFunction[7, 2][a, b]").unwrap(),
+      " !a ||  !b"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[6, 2][a, b]").unwrap(),
+      "(a &&  !b) || ( !a && b)"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[1, 2][a, b]").unwrap(),
+      " !a &&  !b"
+    );
+  }
+
+  // BooleanFunction[k, n, vars] is that same expression, in the given
+  // variables. A constant function collapses to True/False.
+  #[test]
+  fn three_argument_form() {
+    assert_eq!(
+      interpret("BooleanFunction[7, 2, {a, b}]").unwrap(),
+      " !a ||  !b"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[2, 3, {a, b, c}]").unwrap(),
+      " !a &&  !b && c"
+    );
+    assert_eq!(interpret("BooleanFunction[0, 2, {a, b}]").unwrap(), "False");
+    assert_eq!(interpret("BooleanFunction[15, 2, {a, b}]").unwrap(), "True");
+    assert_eq!(interpret("BooleanFunction[-1, 2, {a, b}]").unwrap(), "True");
+  }
+
+  // The variable list is evaluated, and a count that disagrees with `n`
+  // leaves the call alone.
+  #[test]
+  fn three_argument_form_evaluates_its_variables() {
+    assert_eq!(
+      interpret("vars = {a, b}; BooleanFunction[7, 2, Take[vars, 2]]").unwrap(),
+      " !a ||  !b"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[7, 2, {a, b, c}]").unwrap(),
+      "BooleanFunction[7, 2, {a, b, c}]"
+    );
+  }
+}
+
+// BooleanTable holds neither its body nor its variable groups, so both may
+// be written as expressions that only name the variables once evaluated —
+// the shape a Demonstration builds its truth tables in.
+mod boolean_table_evaluates_its_arguments {
+  use super::*;
+
+  // A variable group given as an expression is the list it evaluates to.
+  #[test]
+  fn computed_variable_groups() {
+    assert_eq!(
+      interpret("vars = {x, y}; BooleanTable[Xor[x, y], Take[vars, {2, 2}], Take[vars, 1]]")
+        .unwrap(),
+      "{{False, True}, {True, False}}"
+    );
+    assert_eq!(
+      interpret("g = {y}; BooleanTable[Xor[x, y], g, {x}]").unwrap(),
+      "{{False, True}, {True, False}}"
+    );
+  }
+
+  // A body built by Apply has to be applied before the variables are bound,
+  // or the substitution would never reach them.
+  #[test]
+  fn applied_body() {
+    assert_eq!(
+      interpret(
+        "vars = {x, y}; BooleanTable[BooleanFunction[6, 2] @@ Take[vars, 2], {x, y}]"
+      )
+      .unwrap(),
+      "{False, True, True, False}"
     );
   }
 }

@@ -256,6 +256,17 @@ pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let first_str = crate::syntax::expr_to_string(first);
 
   for arg in args.iter().skip(1) {
+    // `expr_to_string` reports every `Image[…]` as the same `-Image-`
+    // display placeholder, so the string fast path below would treat any
+    // two images as SameQ regardless of their pixel data. Compare the
+    // actual raster content instead whenever either side is an image.
+    if matches!(first, Expr::Image { .. }) || matches!(arg, Expr::Image { .. })
+    {
+      if !crate::evaluator::pattern_matching::expr_equal(first, arg) {
+        return Ok(bool_expr(false));
+      }
+      continue;
+    }
     let val_str = crate::syntax::expr_to_string(arg);
     if val_str != first_str && !same_q_real_bigfloat(first, arg) {
       return Ok(bool_expr(false));
@@ -359,13 +370,25 @@ pub fn unsame_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // UnsameQ is not HoldAll: arguments arrive already evaluated, so just take
   // their string forms (re-evaluating deep arguments is needlessly expensive).
+  //
+  // `expr_to_string` reports every `Image[…]` as the same `-Image-` display
+  // placeholder, so that string fast path would treat any two images as
+  // identical regardless of their pixel data — compare those pairs
+  // structurally instead.
   let strs: Vec<String> =
     args.iter().map(crate::syntax::expr_to_string).collect();
 
   // UnsameQ is True only if ALL pairs are different
   for i in 0..strs.len() {
     for j in (i + 1)..strs.len() {
-      if strs[i] == strs[j] {
+      let same = if matches!(args[i], Expr::Image { .. })
+        || matches!(args[j], Expr::Image { .. })
+      {
+        crate::evaluator::pattern_matching::expr_equal(&args[i], &args[j])
+      } else {
+        strs[i] == strs[j]
+      };
+      if same {
         return Ok(bool_expr(false));
       }
     }
@@ -648,6 +671,19 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut all_identical = true;
 
   for arg in args.iter().skip(1) {
+    // `expr_to_string` reports every `Image[…]` as the same `-Image-`
+    // display placeholder, so the string fast path below would treat any
+    // two images as Equal regardless of their pixel data. Compare the
+    // actual raster content instead whenever either side is an image.
+    if matches!(&args[0], Expr::Image { .. })
+      || matches!(arg, Expr::Image { .. })
+    {
+      if !crate::evaluator::pattern_matching::expr_equal(&args[0], arg) {
+        all_identical = false;
+        break;
+      }
+      continue;
+    }
     let val_str = crate::syntax::expr_to_string(arg);
     if val_str != first_str {
       all_identical = false;
@@ -817,17 +853,29 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Two operands also count as "equal" when they share head and arity with
   // every leaf determinably equal, e.g. RGBColor[0., 0., 1.] != RGBColor[0,
   // 0, 1] is False.
+  // `expr_to_string` reports every `Image[…]` as the same `-Image-` display
+  // placeholder, so the string-identity checks above would treat any two
+  // images as a duplicate pair regardless of their pixel data — compare
+  // those pairs structurally instead.
+  let pair_identical = |i: usize, j: usize| {
+    if matches!(args[i], Expr::Image { .. })
+      || matches!(args[j], Expr::Image { .. })
+    {
+      crate::evaluator::pattern_matching::expr_equal(&args[i], &args[j])
+    } else {
+      strs[i] == strs[j] || all_components_equal(&args[i], &args[j])
+    }
+  };
   if has_free {
     for i in 0..strs.len() - 1 {
-      if strs[i] == strs[i + 1] || all_components_equal(&args[i], &args[i + 1])
-      {
+      if pair_identical(i, i + 1) {
         return Ok(bool_expr(false));
       }
     }
   } else {
     for i in 0..strs.len() {
       for j in i + 1..strs.len() {
-        if strs[i] == strs[j] || all_components_equal(&args[i], &args[j]) {
+        if pair_identical(i, j) {
           return Ok(bool_expr(false));
         }
       }
@@ -1100,6 +1148,10 @@ fn boolean_table_levels(
 /// Read one variable-group argument: a list of symbols, or a bare symbol
 /// standing for a one-element group.
 fn boolean_table_group(spec: &Expr) -> Result<Vec<String>, InterpreterError> {
+  // BooleanTable holds nothing, so a group given as an expression
+  // (`Take[vars, 2]`, a symbol bound to a list, …) is the list it evaluates
+  // to. A symbol with no value evaluates to itself and stays a bare group.
+  let spec = &evaluate_expr_to_expr(spec)?;
   match spec {
     Expr::List(items) => items
       .iter()
@@ -1131,6 +1183,11 @@ pub fn boolean_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
     return Ok(unevaluated("BooleanTable", args));
   };
+
+  // BooleanTable holds nothing, so the body is whatever it evaluates to
+  // before any variable is bound — `f @@ vars` has to become the applied
+  // expression here, or substituting the variables would never reach it.
+  let body = &evaluate_expr_to_expr(body)?;
 
   let groups: Vec<Vec<String>> = if args.len() == 1 {
     // BooleanTable[bf] varies every variable of bf, in BooleanVariables order.
@@ -2421,6 +2478,65 @@ pub fn tautology_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(bool_expr(!has_false))
 }
 
+/// The explicit expression of `BooleanFunction[k, n]` in the given
+/// variables, in the minimal sum-of-products form Wolfram writes it in —
+/// the value of `BooleanFunction[k, n, vars]` and of the applied form
+/// `BooleanFunction[k, n][v1, …, vn]` once any argument is symbolic.
+///
+/// Bit `v` of `k` is the value for the assignment reading the variables as
+/// a binary number with the first variable most significant and True as 1,
+/// so `BooleanFunction[7, 2]` is Nand. `k` is taken two's-complement, which
+/// is what makes `BooleanFunction[-1, n]` the constant True.
+pub fn boolean_function_expr(k: i128, vars: &[Expr]) -> Expr {
+  let n = vars.len();
+  if n == 0 {
+    return bool_expr(k & 1 == 1);
+  }
+
+  // `implicants_to_expr` reads variable `i` off bit `1 << i`, while the
+  // index into `k` puts the first variable in the highest bit, so the two
+  // bit orders are mirror images of each other.
+  let minterms: Vec<u64> = (0..(1u64 << n))
+    .filter(|bits| {
+      let index: u32 = (0..n)
+        .map(|i| ((bits >> i) as u32 & 1) << (n - 1 - i))
+        .sum();
+      (k >> index) & 1 == 1
+    })
+    .collect();
+
+  if minterms.is_empty() {
+    return bool_expr(false);
+  }
+  if minterms.len() == (1usize << n) {
+    return bool_expr(true);
+  }
+
+  let primes = quine_mccluskey(&minterms, n);
+  let cover = greedy_cover(&primes, &minterms);
+  implicants_to_expr(&cover, vars)
+}
+
+/// BooleanFunction[k, n, {v1, …, vn}] — the k-th Boolean function of n
+/// variables, written out in the given variables.
+pub fn boolean_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let [k, n, vars] = args else {
+    return Ok(unevaluated("BooleanFunction", args));
+  };
+  let (Expr::Integer(k), Expr::Integer(n)) =
+    (&evaluate_expr_to_expr(k)?, &evaluate_expr_to_expr(n)?)
+  else {
+    return Ok(unevaluated("BooleanFunction", args));
+  };
+  let Expr::List(vars) = &evaluate_expr_to_expr(vars)? else {
+    return Ok(unevaluated("BooleanFunction", args));
+  };
+  if *n < 0 || vars.len() != *n as usize {
+    return Ok(unevaluated("BooleanFunction", args));
+  }
+  Ok(boolean_function_expr(*k, vars))
+}
+
 /// BooleanMinimize[expr] - Find the minimal sum-of-products form.
 pub fn boolean_minimize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -2485,7 +2601,9 @@ pub fn boolean_minimize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let cover = greedy_cover(&prime_implicants, &minterms);
 
   // Convert to Boolean expression
-  Ok(implicants_to_expr(&cover, &var_list))
+  let var_exprs: Vec<Expr> =
+    var_list.into_iter().map(Expr::Identifier).collect();
+  Ok(implicants_to_expr(&cover, &var_exprs))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -2605,9 +2723,12 @@ fn greedy_cover(primes: &[Implicant], minterms: &[u64]) -> Vec<Implicant> {
   cover
 }
 
+/// The variables are given as expressions rather than names because
+/// `BooleanFunction[k, n, vars]` accepts any expression per position (a
+/// Demonstration typically passes styled labels), not just symbols.
 fn implicants_to_expr(
   implicants: &[Implicant],
-  vars: &[String],
+  vars: &[Expr],
 ) -> crate::syntax::Expr {
   if implicants.is_empty() {
     return bool_expr(false);
@@ -2637,10 +2758,10 @@ fn implicants_to_expr(
   let mut terms: Vec<Expr> = Vec::new();
   for imp in implicants {
     let mut literals: Vec<Expr> = Vec::new();
-    for (i, var_name) in vars.iter().enumerate() {
+    for (i, var) in vars.iter().enumerate() {
       let bit = 1u64 << i;
       if imp.mask & bit != 0 {
-        let var = Expr::Identifier(var_name.clone());
+        let var = var.clone();
         if imp.value & bit != 0 {
           literals.push(var);
         } else {
