@@ -330,6 +330,60 @@ fn rule_positions_and_guards(
   (positions, guards)
 }
 
+/// The outer shape of a structural pattern: its head and how many arguments
+/// it has. `Times[…]` with three factors and `Power[…]` are different shapes.
+fn structural_shape(pattern: &Expr) -> Option<(String, usize)> {
+  match crate::functions::expr_form::decompose_expr(pattern) {
+    crate::functions::expr_form::ExprForm::Composite { head, children } => {
+      Some((head, children.len()))
+    }
+    crate::functions::expr_form::ExprForm::Atom(_) => None,
+  }
+}
+
+/// The structural patterns a rule's conditions carry, in slot order.
+fn structural_patterns(conds: &[Option<Expr>]) -> Vec<&Expr> {
+  conds
+    .iter()
+    .flatten()
+    .filter_map(|c| match c {
+      Expr::FunctionCall { name, args }
+        if name == "__StructuralPattern__" && args.len() == 2 =>
+      {
+        Some(&args[1])
+      }
+      _ => None,
+    })
+    .collect()
+}
+
+/// Whether two rules' structural patterns are of a shape where one can
+/// contain the other at all. Same count of structural slots, and each pair
+/// agreeing on head and arity — a pattern that matches a two-factor product
+/// says nothing about one that matches a power.
+fn structural_shapes_comparable(
+  a_conds: &[Option<Expr>],
+  b_conds: &[Option<Expr>],
+) -> bool {
+  let (a_pats, b_pats) =
+    (structural_patterns(a_conds), structural_patterns(b_conds));
+  // A rule with no structural pattern at all is the general one every
+  // structural pattern is contained in, so the two stay comparable.
+  if a_pats.is_empty() || b_pats.is_empty() {
+    return true;
+  }
+  if a_pats.len() != b_pats.len() {
+    return false;
+  }
+  a_pats.iter().zip(b_pats.iter()).all(|(a, b)| {
+    match (structural_shape(a), structural_shape(b)) {
+      (Some(a_shape), Some(b_shape)) => a_shape == b_shape,
+      // An atom-shaped pattern on either side keeps the old comparison.
+      _ => true,
+    }
+  })
+}
+
 /// Partial order on rules: returns true when rule `a`'s match set is a strict
 /// subset of rule `b`'s, i.e. `a` is strictly more specific and must be tried
 /// before `b`. Returns false when the two rules are incomparable (neither match
@@ -372,6 +426,16 @@ pub fn rule_dominates(
   if needs_score_fallback(a_params, a_conds)
     || needs_score_fallback(b_params, b_conds)
   {
+    // Two structural patterns of different outer shape match different sets
+    // of expressions, neither contained in the other, so neither redefines
+    // where the other sits: `f[(d_.*x_)^m_.*(a_. + b_.*g[x_])^n_.]` and
+    // `f[(a_. + b_.*g[x_])^n_.]` are incomparable — the first matches
+    // products the second never sees. Ranking them by how much structure
+    // they carry pushed every general rule to the back of the DownValues,
+    // behind the fallbacks that are meant to catch what it turns down.
+    if !structural_shapes_comparable(a_conds, b_conds) {
+      return false;
+    }
     return pattern_specificity_score(a_params, a_bt, a_heads, a_conds, a_body)
       < pattern_specificity_score(b_params, b_bt, b_heads, b_conds, b_body);
   }

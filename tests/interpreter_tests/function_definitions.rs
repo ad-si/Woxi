@@ -5011,3 +5011,52 @@ mod a_guard_inside_a_scoping_construct_keeps_the_definition {
     );
   }
 }
+
+/// Two structural patterns of different outer shape match different sets of
+/// expressions, neither inside the other, so neither decides where the other
+/// sits in the DownValues. Ranking them by how much structure they carry
+/// pushed a general rule behind the fallbacks meant to catch what it declines.
+mod structural_patterns_of_different_shape_keep_their_order {
+  use super::*;
+
+  #[test]
+  fn a_product_pattern_does_not_outrank_a_power_pattern() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "sp1[(a_. + b_.*ArcSin[c_.*x_])^n_., x_Symbol] := \"plain\";\n\
+         sp1[(d_.*x_)^m_.*(a_. + b_.*ArcSin[c_.*x_])^n_., x_Symbol] := \"factor\";\n\
+         ToString[Map[Last, DownValues[sp1]], InputForm]"
+      )
+      .unwrap(),
+      r#"{"plain", "factor"}"#
+    );
+  }
+
+  // Same shape: the more specific one is still tried first, whichever order
+  // the two were entered in.
+  #[test]
+  fn same_shape_patterns_still_sort_by_specificity() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "sp2[F_[u_, t_]] := \"shallow\";\n\
+         sp2[F_[G_[l_, u_], t_]] := \"deep\";\n\
+         sp2[cc[dd[1, 2], 3]]"
+      )
+      .unwrap(),
+      "deep"
+    );
+  }
+
+  // A rule with no structural pattern at all is the general one every
+  // structural pattern sits inside, so it keeps being outranked.
+  #[test]
+  fn a_bare_blank_is_still_outranked() {
+    clear_state();
+    assert_eq!(
+      interpret("sp3[y_] := gen[y]; sp3[g[x_]] := ng[x]; sp3[g[5]]").unwrap(),
+      "ng[5]"
+    );
+  }
+}
