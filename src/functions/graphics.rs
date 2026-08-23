@@ -121,6 +121,16 @@ impl Color {
     Self::new(level, level, level)
   }
 
+  /// Linear interpolation between two colors, `t` in `[0, 1]`.
+  fn lerp(self, other: Self, t: f64) -> Self {
+    Self {
+      r: self.r + (other.r - self.r) * t,
+      g: self.g + (other.g - self.g) * t,
+      b: self.b + (other.b - self.b) * t,
+      a: self.a + (other.a - self.a) * t,
+    }
+  }
+
   /// Convert to an Expr (RGBColor or GrayLevel) for embedding in Graphics expressions.
   pub(crate) fn to_expr(self) -> Expr {
     if (self.r - self.g).abs() < 1e-14 && (self.g - self.b).abs() < 1e-14 {
@@ -703,6 +713,9 @@ enum Primitive {
     /// Boundaries cut out of the polygon (`Polygon[outer -> holes]`).
     /// Empty for an ordinary polygon.
     holes: Vec<Vec<(f64, f64)>>,
+    /// `VertexColors -> {c1, c2, …}`, one color per point, in order.
+    /// `None` unless the count matched `points.len()` exactly.
+    vertex_colors: Option<Vec<Color>>,
     style: StyleState,
   },
   ArrowPrim {
@@ -2429,13 +2442,18 @@ fn parse_polygon(
   style: &StyleState,
   prims: &mut Vec<Primitive>,
 ) {
+  let vertex_colors = parse_vertex_colors(&args[1..]);
   // Polygon[{p1, p2, …}] — one polygon — or Polygon[{poly1, poly2, …}],
   // a list of them, which is what mapping a face-index table over a vertex
   // list produces.
   if let Some(pts) = expr_to_point_list(&args[0]) {
+    // `VertexColors` assigns one color per point, in order — only usable
+    // when the count actually lines up with the points being drawn.
+    let vc = vertex_colors.clone().filter(|c| c.len() == pts.len());
     prims.push(Primitive::PolygonPrim {
       points: pts,
       holes: Vec::new(),
+      vertex_colors: vc,
       style: style.clone(),
     });
   } else if let Some((outer, holes)) =
@@ -2446,14 +2464,29 @@ fn parse_polygon(
     prims.push(Primitive::PolygonPrim {
       points: outer,
       holes,
+      vertex_colors: None,
       style: style.clone(),
     });
   } else if let Expr::List(items) = &args[0] {
+    // `VertexColors` for a list of polygons assigns one color per point,
+    // in order, across all sub-polygons concatenated — mirroring how it
+    // works for `Line`'s multi-segment form.
+    let total_points: usize = items
+      .iter()
+      .filter_map(|item| expr_to_point_list(item).map(|p| p.len()))
+      .sum();
+    let vertex_colors = vertex_colors.filter(|c| c.len() == total_points);
+    let mut point_idx = 0usize;
     for item in items {
       if let Some(pts) = expr_to_point_list(item) {
+        let vc = vertex_colors
+          .as_ref()
+          .map(|c| c[point_idx..point_idx + pts.len()].to_vec());
+        point_idx += pts.len();
         prims.push(Primitive::PolygonPrim {
           points: pts,
           holes: Vec::new(),
+          vertex_colors: vc,
           style: style.clone(),
         });
       } else if let Some((outer, holes)) =
@@ -2462,6 +2495,7 @@ fn parse_polygon(
         prims.push(Primitive::PolygonPrim {
           points: outer,
           holes,
+          vertex_colors: None,
           style: style.clone(),
         });
       }
@@ -2506,6 +2540,7 @@ fn parse_parallelogram(
   prims.push(Primitive::PolygonPrim {
     points,
     holes: Vec::new(),
+    vertex_colors: None,
     style: style.clone(),
   });
 }
@@ -2634,6 +2669,7 @@ fn parse_regular_polygon(
   prims.push(Primitive::PolygonPrim {
     points: pts,
     holes: Vec::new(),
+    vertex_colors: None,
     style: style.clone(),
   });
 }
@@ -3409,6 +3445,7 @@ fn parse_polar_curve(
     prims.push(Primitive::PolygonPrim {
       points,
       holes: Vec::new(),
+      vertex_colors: None,
       style: style.clone(),
     });
   } else {
@@ -4088,6 +4125,7 @@ fn rotate_primitive(
     Primitive::PolygonPrim {
       points,
       holes,
+      vertex_colors,
       style,
     } => Primitive::PolygonPrim {
       points: points.iter().map(|&(x, y)| rp(x, y)).collect(),
@@ -4095,6 +4133,7 @@ fn rotate_primitive(
         .iter()
         .map(|h| h.iter().map(|&(x, y)| rp(x, y)).collect())
         .collect(),
+      vertex_colors: vertex_colors.clone(),
       style: style.clone(),
     },
     Primitive::ArrowPrim {
@@ -4131,6 +4170,7 @@ fn rotate_primitive(
       .map(|&(x, y)| rp(x, y))
       .collect(),
       holes: Vec::new(),
+      vertex_colors: None,
       style: style.clone(),
     },
     Primitive::Disk {
@@ -4299,6 +4339,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
     Primitive::PolygonPrim {
       points,
       holes,
+      vertex_colors,
       style,
     } => Primitive::PolygonPrim {
       points: points.iter().map(|&(x, y)| tp(x, y)).collect(),
@@ -4306,6 +4347,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
         .iter()
         .map(|h| h.iter().map(|&(x, y)| tp(x, y)).collect())
         .collect(),
+      vertex_colors: vertex_colors.clone(),
       style: style.clone(),
     },
     Primitive::ArrowPrim {
@@ -4524,6 +4566,7 @@ fn scale_primitive(
     Primitive::PolygonPrim {
       points,
       holes,
+      vertex_colors,
       style,
     } => Primitive::PolygonPrim {
       points: points.iter().map(|&(x, y)| sp(x, y)).collect(),
@@ -4531,6 +4574,7 @@ fn scale_primitive(
         .iter()
         .map(|h| h.iter().map(|&(x, y)| sp(x, y)).collect())
         .collect(),
+      vertex_colors: vertex_colors.clone(),
       style: style.clone(),
     },
     Primitive::ArrowPrim {
@@ -4839,6 +4883,82 @@ fn thickness_px(t: f64, bb: &BBox, svg_w: f64) -> f64 {
     // range's taller side made a portrait picture's lines twice too heavy.
     let _ = bb;
     t * svg_w
+  }
+}
+
+/// Approximate a smooth `VertexColors` gradient fill for an n-gon. SVG has
+/// no native gradient that blends more than two colors along an axis, so
+/// fan-triangulate from the first vertex and subdivide each triangle into a
+/// fine barycentric grid of small flat-shaded triangles — many tiny flat
+/// facets read as a smooth blend, the same trick Gouraud shading uses.
+fn emit_polygon_vertex_gradient(
+  out: &mut String,
+  points: &[(f64, f64)],
+  colors: &[Color],
+  bb: &BBox,
+  svg_w: f64,
+  svg_h: f64,
+) {
+  const SUBDIV: usize = 8;
+  let screen =
+    |(x, y): (f64, f64)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h));
+  let at = |tri_p: &[(f64, f64); 3], tri_c: &[Color; 3], u: f64, v: f64| {
+    let w = 1.0 - u - v;
+    let p = (
+      w * tri_p[0].0 + u * tri_p[1].0 + v * tri_p[2].0,
+      w * tri_p[0].1 + u * tri_p[1].1 + v * tri_p[2].1,
+    );
+    let c = Color {
+      r: w * tri_c[0].r + u * tri_c[1].r + v * tri_c[2].r,
+      g: w * tri_c[0].g + u * tri_c[1].g + v * tri_c[2].g,
+      b: w * tri_c[0].b + u * tri_c[1].b + v * tri_c[2].b,
+      a: w * tri_c[0].a + u * tri_c[1].a + v * tri_c[2].a,
+    };
+    (p, c)
+  };
+  let mut emit_tri = |p0: (f64, f64),
+                      c0: Color,
+                      p1: (f64, f64),
+                      c1: Color,
+                      p2: (f64, f64),
+                      c2: Color| {
+    // Average the three corner colors (two lerps: midpoint of the first
+    // pair, then 1/3 of the way to the third — equivalent to (c0+c1+c2)/3).
+    let avg = c0.lerp(c1, 0.5).lerp(c2, 1.0 / 3.0);
+    let (sx0, sy0) = screen(p0);
+    let (sx1, sy1) = screen(p1);
+    let (sx2, sy2) = screen(p2);
+    let fill_opacity = if avg.a < 1.0 {
+      format!(" fill-opacity=\"{}\"", avg.a)
+    } else {
+      String::new()
+    };
+    out.push_str(&format!(
+      "<polygon points=\"{sx0:.2},{sy0:.2} {sx1:.2},{sy1:.2} {sx2:.2},{sy2:.2}\" fill=\"{}\"{}/>\n",
+      avg.to_svg_rgb(),
+      fill_opacity,
+    ));
+  };
+  for i in 1..points.len() - 1 {
+    let tri_p = [points[0], points[i], points[i + 1]];
+    let tri_c = [colors[0], colors[i], colors[i + 1]];
+    let n = SUBDIV as f64;
+    for row in 0..SUBDIV {
+      for col in 0..(SUBDIV - row) {
+        let u0 = col as f64 / n;
+        let v0 = row as f64 / n;
+        let u1 = (col + 1) as f64 / n;
+        let v1 = (row + 1) as f64 / n;
+        let (p00, c00) = at(&tri_p, &tri_c, u0, v0);
+        let (p10, c10) = at(&tri_p, &tri_c, u1, v0);
+        let (p01, c01) = at(&tri_p, &tri_c, u0, v1);
+        emit_tri(p00, c00, p10, c10, p01, c01);
+        if col + row < SUBDIV - 1 {
+          let (p11, c11) = at(&tri_p, &tri_c, u1, v1);
+          emit_tri(p10, c10, p11, c11, p01, c01);
+        }
+      }
+    }
   }
 }
 
@@ -5898,6 +6018,7 @@ fn render_primitive(
     Primitive::PolygonPrim {
       points,
       holes,
+      vertex_colors,
       style,
     } => {
       let color = style.effective_face_color();
@@ -5931,7 +6052,16 @@ fn render_primitive(
       } else {
         String::new()
       };
-      if holes.is_empty() {
+      if let Some(vc) = vertex_colors.as_ref().filter(|_| holes.is_empty()) {
+        emit_polygon_vertex_gradient(out, points, vc, bb, svg_w, svg_h);
+        if !stroke_attr.is_empty() {
+          out.push_str(&format!(
+            "<polygon points=\"{}\" fill=\"none\"{}/>\n",
+            pts.join(" "),
+            stroke_attr,
+          ));
+        }
+      } else if holes.is_empty() {
         out.push_str(&format!(
           "<polygon points=\"{}\" fill=\"{}\"{}{}/>\n",
           pts.join(" "),
@@ -6634,6 +6764,7 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
         points,
         holes,
         style,
+        ..
       } => {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(if holes.is_empty() {

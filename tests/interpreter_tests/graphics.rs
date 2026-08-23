@@ -1160,6 +1160,65 @@ mod graphics {
         assert_eq!(svg.matches("<linearGradient").count(), 2);
         assert!(!svg.contains("stroke=\"rgb(0,0,0)\""));
       }
+
+      mod polygon {
+        use super::*;
+
+        /// Regression for "Einstein's Most Excellent Proof" Demonstration:
+        /// `Polygon[pts, VertexColors -> {c1, c2, c3, c4}]` on a quadrilateral
+        /// must blend the four corner colors, not fall through to an
+        /// unstyled flat black fill (`VertexColors` used to be parsed only
+        /// for `Line`, silently dropped for `Polygon`).
+        #[test]
+        fn quadrilateral_blends_four_corner_colors() {
+          let svg = export_svg(
+            "Graphics[{Polygon[{{-1, -1}, {1, -1}, {1, 1}, {-1, 1}}, \
+             VertexColors -> {Red, Green, Blue, Black}]}]",
+          );
+          assert!(!svg.contains("fill=\"rgb(0,0,0)\""));
+          // Approximated as many small flat-shaded triangles, not one flat
+          // polygon fill.
+          assert!(svg.matches("<polygon").count() > 4);
+        }
+
+        /// A `VertexColors` list whose length doesn't match the point count
+        /// can't be mapped one-to-one, so `Polygon` falls back to its
+        /// ordinary flat fill instead of panicking or misaligning colors.
+        #[test]
+        fn mismatched_color_count_falls_back_to_flat_fill() {
+          let svg = export_svg(
+            "Graphics[{Red, Polygon[{{-1, -1}, {1, -1}, {1, 1}, {-1, 1}}, \
+             VertexColors -> {Green, Blue}]}]",
+          );
+          assert_eq!(svg.matches("<polygon").count(), 1);
+          assert!(svg.contains("fill=\"rgb(255,0,0)\""));
+        }
+
+        /// A triangle (the minimal polygon) needs no subdivision fan beyond
+        /// itself and still blends its three corners.
+        #[test]
+        fn triangle_blends_three_corner_colors() {
+          let svg = export_svg(
+            "Graphics[{Polygon[{{0, 0}, {1, 0}, {0, 1}}, \
+             VertexColors -> {Red, Green, Blue}]}]",
+          );
+          assert!(svg.matches("<polygon").count() > 1);
+        }
+
+        /// `Polygon[{poly1, poly2}, VertexColors -> …]` maps the flat color
+        /// list across all sub-polygons' points in order, mirroring how
+        /// `Line`'s multi-segment form concatenates its point list.
+        #[test]
+        fn multi_polygon_list_maps_colors_across_polygons_in_order() {
+          let svg = export_svg(
+            "Graphics[{Polygon[{{{0, 0}, {1, 0}, {1, 1}}, \
+             {{2, 0}, {3, 0}, {3, 1}}}, \
+             VertexColors -> {Red, Green, Blue, Black, White, Yellow}]}]",
+          );
+          assert!(!svg.contains("fill=\"rgb(0,0,0)\""));
+          assert!(svg.matches("<polygon").count() > 2);
+        }
+      }
     }
   }
 
