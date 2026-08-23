@@ -7711,6 +7711,82 @@ mod ndsolve {
   }
 
   #[test]
+  fn ndsolve_second_argument_requests_a_derivative_alongside_its_function() {
+    // Regression: `NDSolve[…, {y, y'}, …]` used to bail out unevaluated —
+    // `Derivative[1][y]` in the second argument wasn't recognized as a
+    // request for y's derivative and was instead treated as an opaque
+    // "compound head" to rename away. It should return both `y` and
+    // `Derivative[1][y]` as separate InterpolatingFunction rules, sparing
+    // the caller from differentiating the interpolant themselves.
+    // y'' + y == 0, y(0) = 1, y'(0) = 0 → y = Cos[t], y' = -Sin[t].
+    let result = interpret(
+      "sol = NDSolve[{y''[t] + y[t] == 0, y[0] == 1, y'[0] == 0}, {y, y'}, \
+       {t, 0, 4}]; y'[N[Pi/2]] /. sol[[1,2]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = -(std::f64::consts::FRAC_PI_2.sin());
+    assert!(
+      (val - expected).abs() < 0.01,
+      "Expected {expected}, got {val}"
+    );
+  }
+
+  #[test]
+  fn ndsolve_requested_derivative_keeps_its_own_rule_and_function_intact() {
+    // The `y -> …` rule must still come back too, and unaffected by the
+    // extra `Derivative[1][y] -> …` rule alongside it.
+    let result = interpret(
+      "sol = NDSolve[{y''[t] + y[t] == 0, y[0] == 1, y'[0] == 0}, {y, y'}, \
+       {t, 0, 4}]; y[N[Pi]] /. sol[[1,1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - (-1.0)).abs() < 0.01, "Expected -1.0, got {val}");
+  }
+
+  #[test]
+  fn ndsolve_flattens_a_nested_initial_condition_list() {
+    // Regression: an equations argument that groups one function's initial
+    // conditions into their own sublist — `{ode, {ic1, ic2}}`, a common
+    // Demonstrations idiom — used to be counted as a second, bogus equation
+    // (a List isn't itself an equation) rather than flattened, so the
+    // equation/function count mismatched and NDSolve bailed out unevaluated.
+    // Same system as `second_order_harmonic`: y'' + y = 0, y(0)=1, y'(0)=0,
+    // so y(Pi) ≈ -1.
+    let result = interpret(
+      "sol = NDSolve[{y''[x] + y[x] == 0, {y[0] == 1, y'[0] == 0}}, y, \
+       {x, 0, 4}]; y[N[Pi]] /. sol[[1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - (-1.0)).abs() < 0.01, "Expected -1.0, got {val}");
+  }
+
+  #[test]
+  fn interpolating_function_input_form_has_no_placeholder() {
+    // Regression: InterpolatingFunction's `<>` data placeholder — meant
+    // only to keep display output short — was also applied under
+    // InputForm, where it isn't valid syntax at all. Manipulate relies on
+    // InputForm to round-trip a variable's value back through the parser
+    // between frames (`ManipulateState::reevaluate`), so a body that binds
+    // a Demonstration's NDSolve solution to a variable would throw a parse
+    // error on the very next frame. InputForm must print the literal data.
+    let result = interpret(
+      "ToString[NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}], InputForm]",
+    )
+    .unwrap();
+    assert!(
+      result.contains("InterpolatingFunction") && !result.contains("<>"),
+      "Got: {result}"
+    );
+    // OutputForm (the default) is unaffected — it should still abbreviate.
+    let output =
+      interpret("NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}]").unwrap();
+    assert!(output.contains("<>"), "Got: {output}");
+  }
+
+  #[test]
   fn ndsolve_implicit_coefficient_times_indexed_double_derivative() {
     // Regression: a coefficient placed via implicit multiplication directly
     // before an indexed function's double derivative (`mu pos[1]''[t]`, no

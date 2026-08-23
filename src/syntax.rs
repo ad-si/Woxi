@@ -8392,9 +8392,14 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           .join(",");
         return format!("NumericArray[<{dim_str}>, {dtype}]");
       }
-      // InputForm: falls through to default formatting (ByteArray["base64"])
-      // Special case: InterpolatingFunction[domain, data] — hide data with <>
-      if name == "InterpolatingFunction" && (args.len() == 2 || args.len() == 3)
+      // Special case: InterpolatingFunction[domain, data] — hide data with
+      // <> for display only; InputForm falls through to the full literal
+      // data so re-parsing it (e.g. Manipulate's per-frame state
+      // round-trip) recovers the same object instead of hitting `<>`,
+      // which isn't valid input syntax.
+      if name == "InterpolatingFunction"
+        && (args.len() == 2 || args.len() == 3)
+        && is_output
       {
         return format!("InterpolatingFunction[{}, <>]", fmt(&args[0]));
       }
