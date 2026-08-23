@@ -2,6 +2,17 @@
 
 # Unreleased
 
+- `DSolve` solves separable first-order equations posed as initial-value
+    problems. `y'[x] == g[x] h[y[x]]` is nonlinear in `y` whenever `h` is, so
+    the term classifier — which only understands equations linear in `y` —
+    turned it down and the whole equation came back unevaluated. Separating
+    the variables and integrating each side gives the implicit relation, the
+    initial condition pins the constant, and the result is solved for `y`,
+    keeping only the branch that condition selects:
+    `DSolve[{y'[t] == -t y[t]^2, y[0] == 1}, y, t]` is
+    `{{y -> Function[{t}, 2/(2 + t^2)]}}`. Without an initial condition the
+    equation still stays unevaluated.
+
 - `Block` localizes everything a symbol stands for, not only its own value.
     Its down-, sub-, up-, n- and format values, its options, its messages and
     its attributes all disappear for the duration of the body and come back

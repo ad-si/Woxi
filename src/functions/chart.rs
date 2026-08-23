@@ -288,6 +288,14 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   if let Some(inner) = text_wrapper_content(expr) {
     return parse_styled_label(inner);
   }
+  // `Invisible[…]` paints nothing — a Demonstration wraps a `Text[…]`
+  // label in it to hide one item (e.g. a hidden edge's name) while keeping
+  // the surrounding code uniform across all items. Falling through to the
+  // catch-all below would instead typeset the wrapper itself as literal
+  // text ("Invisible[e]"), so peel and drop it here.
+  if crate::functions::graphics::peel_invisible(expr).is_some() {
+    return None;
+  }
   // A `Grid`/`Column` title stacks: each row becomes its own line. This is
   // how a Demonstration writes a two-line plot title (the function above,
   // the transformed one below).
