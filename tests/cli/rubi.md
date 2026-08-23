@@ -99,22 +99,28 @@ live side by side.
 ## What does not work yet
 
 Rubi loads unmodified and integrates, but it is not fully supported. On a
-30-integral sample, 19 answers are identical to the ones `wolframscript` gets
-from the same package. What is left:
+30-integral sample, 20 answers are character-for-character what
+`wolframscript` gets from the same package, and 6 of the remaining 10 are the
+same function written another way. What is left:
 
 - **Loading is slow.** About a minute against roughly twenty seconds under
   `wolframscript`, and there is no `.mx` cache to make the second run faster.
 - **Step display is out of reach.** `Steps[Int[…]]`, `Step` and `Stats` need
   the rule rewriting that `$LoadShowSteps = False` turns off. With it on, the
   load does not finish in a reasonable time.
-- **A few integrals are slow, wrong or exhaust memory.**
-  `Int[Sin[x]^3*Cos[x]^2, x]` runs out of memory, `Int[ArcSin[x], x]` comes
-  back unevaluated, and `Int[1/(1 + x^3), x]` is missing a term. Each is an
-  ordinary Woxi bug in the pattern matcher or the simplifier rather than
-  something specific to Rubi.
-- **Answers can be shaped differently.** `Int[E^x*x, x]` is `-Gamma[2, -x]`
-  where `wolframscript` reports `E^x*(x - 1)`: the same function, simplified
-  along a different path.
+- **Two integrals exhaust memory.** `Int[Sin[x]^3*Cos[x]^2, x]` and
+  `Int[Sin[x]*Cos[x]^3, x]` run for minutes and are killed;
+  `wolframscript` answers both instantly.
+- **`Int[ArcSin[x], x]` comes back unevaluated.** The rule that should fire
+  sits behind the `Unintegrable` fallback meant to catch what it declines —
+  Woxi ranks two rules by how much structure each pattern carries, where the
+  language asks whether one's match set is inside the other's.
+- **Answers can be shaped differently.** `Int[Sec[x]^2, x]` is `Sec[x]*Sin[x]`
+  rather than `Tan[x]`, `Int[E^x*x, x]` is `-Gamma[2, -x]` rather than
+  `E^x*(x - 1)`, and sums come out in Woxi's own `Plus` order. Same functions,
+  reached along a different path.
+- **`Int[x/(a + b*x^2), x]` is off by a constant**: `Log[1 + b x^2/a]/(2 b)`
+  where Rubi gives `Log[a + b x^2]/(2 b)`.
 
 The current divergences are catalogued in
 [Conformance gaps](comparison/mathematica/conformance_gaps.md).

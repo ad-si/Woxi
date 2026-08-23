@@ -1445,8 +1445,10 @@ conductor/Round-2 computation), as are non-monic minimal polynomials of degree
 The [Rubi](../../rubi.md) rule base is the densest available exercise of the
 pattern matcher and the definition store: 7000 rules, all read back out of
 `DownValues` and rewritten before use. It loads unmodified and integrates, and
-on a 30-integral sample 19 answers are identical to `wolframscript`'s. What is
-left, all of it ordinary Woxi behaviour rather than anything about the package:
+on a 30-integral sample 20 answers are character-for-character
+`wolframscript`'s, with 6 of the remaining 10 the same function written another
+way. What is left, all of it ordinary Woxi behaviour rather than anything about
+the package:
 
 - **Loading takes about a minute** against roughly twenty seconds under
   `wolframscript`, and Rubi's step-display machinery (`$LoadShowSteps = True`,
@@ -1455,15 +1457,26 @@ left, all of it ordinary Woxi behaviour rather than anything about the package:
   therefore out of reach.
 - **`Int[Sin[x]^3*Cos[x]^2, x]` and `Int[Sin[x]*Cos[x]^3, x]`** run for minutes
   and exhaust memory. `wolframscript` answers both instantly.
-- **`Int[ArcSin[x], x]`** comes back as `Defer[Int][ArcSin[x], x]`: the rule
-  that should fire never does, and the `CannotIntegrate` fallback wins. So does
-  everything reached through `Int[x/Sqrt[1 - x^2], x]`, which Woxi answers with
-  a `Hypergeometric2F1` where the elementary rule applies.
-- **`Int[1/(1 + x^3), x]`** is missing its `ArcTan` term.
+- **`Int[ArcSin[x], x]`** comes back as `Defer[Int][ArcSin[x], x]`. The rule is
+  loaded — it sits at index 6964 of `DownValues[Int]` where wolframscript has
+  it at 5130, behind the `Unintegrable` fallback that is meant to catch what it
+  declines. Woxi orders two rules by how much structure each pattern carries;
+  the language asks whether one's match set is contained in the other's. The
+  two disagree for patterns that are simply incomparable
+  (`f[(d_.*x_)^m_.*(a_. + b_.*g[x_])^n_.]` matches products that
+  `f[(a_. + b_.*g[x_])^n_.]` never sees), and every later rule of that kind
+  walks the general one further toward the back. Approximating containment
+  with a cheap shape key was tried and reverted — it moved the errors rather
+  than removing them, trading `Int[ArcTan[x], x]` for `Int[1/(1 + x^3), x]`.
+  The fix is the containment test itself, made cheap enough to run at each of
+  7000 insertions.
+- **`Int[x/(a + b*x^2), x]`** is `Log[1 + b x^2/a]/(2 b)` where Rubi gives
+  `Log[a + b x^2]/(2 b)` — off by a constant, from a different rule firing.
 - **Equivalent but differently shaped answers** are common and not bugs as
   such: `Int[Sec[x]^2, x]` is `Sec[x]*Sin[x]` rather than `Tan[x]`,
-  `Int[E^x*x, x]` is `-Gamma[2, -x]` rather than `E^x*(x - 1)`, and sums come
-  out in Woxi's own `Plus` order.
+  `Int[E^x*x, x]` is `-Gamma[2, -x]` rather than `E^x*(x - 1)`,
+  `Int[x/(1 + x^4), x]` and `Int[1/(a + b*Cos[x]), x]` pick other valid
+  antiderivatives, and sums come out in Woxi's own `Plus` order.
 
 ### `Derivative[n][f][x]` is stored flat, so structural functions see three parts
 
