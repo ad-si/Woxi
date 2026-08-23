@@ -18437,9 +18437,19 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       _ => item,
     };
     match item {
-      // A Grid's first level is its list of layout rows; their elements
-      // are the actual items.
-      Expr::List(row) if name == "Grid" => out.extend(row.iter().cloned()),
+      // A Grid's first level is its list of layout rows; their elements are
+      // the actual items, each flattened the same way any other layout
+      // item is below — a row cell can itself be a `PaneSelector`/`Row`/
+      // `Column` grouping further controls (the Demonstrations idiom of a
+      // custom Grid-based control panel), not just a bare `Control`/`Button`.
+      Expr::List(row) if name == "Grid" => {
+        for cell in row {
+          match control_group_items(cell) {
+            Some(nested) => out.extend(nested),
+            None => out.push(cell.clone()),
+          }
+        }
+      }
       // Nested layout containers flatten recursively.
       other => match control_group_items(other) {
         Some(nested) => out.extend(nested),
@@ -18448,6 +18458,27 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     }
   }
   Some(out)
+}
+
+/// A `PaneSelector[{…}, sel]` selector is commonly written `Dynamic[var]`
+/// (the form the front end itself writes when a Demonstration's author
+/// inserts the control from the authoring toolbar) rather than the bare
+/// `var` the hand-written examples use. `Dynamic` is `HoldFirst`, so
+/// evaluating `Dynamic[var]` never reduces to `var`'s value — comparing it
+/// against a pane's pattern would never match, leaving every pane hidden
+/// (or, for a caption-style `PaneSelector`, no pane's content rendered at
+/// all). The wrapper is only a FrontEnd update hint here, exactly as for
+/// `Dynamic[Control[…]]` in `unwrap_control_wrapper` below, so it is
+/// stripped before the selector is evaluated or compared.
+fn unwrap_pane_selector(selector: &Expr) -> &Expr {
+  match selector {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && args.len() == 1 =>
+    {
+      &args[0]
+    }
+    _ => selector,
+  }
 }
 
 /// `Dynamic[Control[…]]` (the Demonstrations idiom `Dynamic@Control@{…}`)
@@ -18535,6 +18566,16 @@ fn expand_conditional_control_items(
 /// honoured — a pane nested inside another pane keeps its parent's
 /// condition rather than gaining its own.
 fn collect_pane_visibility(spec: &Expr, out: &mut Vec<(String, String)>) {
+  // A `PaneSelector` may sit inside a `Grid`'s row list (the Demonstrations
+  // idiom of a custom Grid-based control panel) — descend into a bare list
+  // of items the same way a layout container's args are walked below, or a
+  // `PaneSelector` nested that way is never found.
+  if let Expr::List(items) = spec {
+    for item in items {
+      collect_pane_visibility(item, out);
+    }
+    return;
+  }
   let Expr::FunctionCall { name, args } = spec else {
     return;
   };
@@ -18549,7 +18590,8 @@ fn collect_pane_visibility(spec: &Expr, out: &mut Vec<(String, String)>) {
   else {
     return;
   };
-  let selector = crate::syntax::expr_to_input_form(selector);
+  let selector =
+    crate::syntax::expr_to_input_form(unwrap_pane_selector(selector));
   for pane in panes {
     let (Expr::Rule {
       pattern,
@@ -22451,8 +22493,9 @@ fn pane_selector_content<'a>(
   let Expr::List(panes) = args.first()? else {
     return None;
   };
-  let selector = eval_display_in_scope(&args[1], bindings).map_or_else(
-    || crate::syntax::expr_to_input_form(&args[1]),
+  let sel_arg = unwrap_pane_selector(&args[1]);
+  let selector = eval_display_in_scope(sel_arg, bindings).map_or_else(
+    || crate::syntax::expr_to_input_form(sel_arg),
     |e| crate::syntax::expr_to_input_form(&e),
   );
   panes.iter().find_map(|pane| {
@@ -23412,6 +23455,21 @@ mod manipulate_display_pane_selector_tests {
     match node {
       DisplayNode::Column(children) => assert!(children.is_empty()),
       other => panic!("expected an empty column, got {other:?}"),
+    }
+  }
+
+  /// The selector is commonly written `Dynamic[mode]` (what the front end
+  /// itself writes for a control inserted from the authoring toolbar), not
+  /// bare `mode`. Since `Dynamic` is `HoldFirst`, evaluating it never
+  /// reduces to `mode`'s value — the matching pane must still be found by
+  /// unwrapping the `Dynamic` first, or every pane would render as empty.
+  #[test]
+  fn dynamic_wrapped_selector_still_matches_its_pane() {
+    let code = r#"PaneSelector[{1 -> Row[{Style["a"], Style["b"]}], 2 -> Style["c"]}, Dynamic[mode]]"#;
+    let node = build_manipulate_display(code, &[("mode".into(), "1".into())]);
+    match node {
+      DisplayNode::Row(children) => assert_eq!(children.len(), 2),
+      other => panic!("expected a row node, got {other:?}"),
     }
   }
 }

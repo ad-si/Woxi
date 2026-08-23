@@ -20118,6 +20118,37 @@ mod manipulate {
     assert_eq!(shown("3"), vec![true, false, false]);
   }
 
+  /// A `PaneSelector` nested inside a `Grid` row (the Demonstrations idiom
+  /// of a hand-laid-out control panel with a per-mode slider swapped in via
+  /// `PaneSelector`, rather than the selector sitting directly among
+  /// Manipulate's top-level spec arguments) must still flatten into real
+  /// controls with their pane-visibility conditions — not fall through to
+  /// an inert display element.
+  #[test]
+  fn pane_selector_nested_in_grid_flattens_into_controls() {
+    let expr = interpret_to_expr(
+      "Manipulate[a + b, Control[{{q, 1}, {1, 2}, Setter}], \
+       Grid[{{Control[{{a, 5}, 0, 10}], \
+       PaneSelector[{1 -> Control[{{b, 5}, 0, 10}], \
+       2 -> Control[{{c, 5}, 20, 30}]}, Dynamic[q]], SpanFromLeft}}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(woxi::functions::ManipulateControl::name)
+      .collect();
+    assert_eq!(names, vec!["q", "a", "b", "c"]);
+    assert_eq!(
+      spec.control_visible,
+      vec![
+        ("b".to_string(), "(q) == (1)".to_string()),
+        ("c".to_string(), "(q) == (2)".to_string()),
+      ]
+    );
+  }
+
   #[test]
   fn spec_json_includes_visible_when() {
     let expr = interpret_to_expr(
