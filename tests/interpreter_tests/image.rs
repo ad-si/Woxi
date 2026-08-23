@@ -5345,12 +5345,52 @@ mod image_partition {
   }
 
   #[test]
+  fn scaled_sizes_are_fractions_of_each_axis() {
+    // Scaled[s] resolves to round(s * dim) on each axis independently, then
+    // behaves like the equivalent plain integer size.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, Scaled[2/5]], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{2, 2}, {2, 2}}, {{2, 2}, {2, 2}}}"
+    );
+    // Mixed with a plain per-axis size in a two-element spec.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{IMG}Map[ImageDimensions, ImagePartition[img, {{Scaled[3/5], 3}}], {{2}}]"
+      ))
+      .unwrap(),
+      "{{{3, 3}}}"
+    );
+    // {Scaled[s]} centers a clipped grid, same as the equivalent plain {n}.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img6 = Image[Table[c/10., {r, 6}, {c, 6}]]; \
+         Map[ImageDimensions, ImagePartition[img6, {Scaled[1/3]}], {2}]"
+      )
+      .unwrap(),
+      "{{{2, 2}, {2, 2}, {2, 2}}, {{2, 2}, {2, 2}, {2, 2}}, {{2, 2}, {2, 2}, {2, 2}}}"
+    );
+  }
+
+  #[test]
   fn invalid_arguments_emit_messages() {
     clear_state();
     let r = interpret_with_stdout("ImagePartition[Image[{{0.5}}], 0]").unwrap();
     assert_eq!(r.result, "ImagePartition[-Image-, 0]");
     assert!(r.warnings[0].contains(
       "ImagePartition::arg2: 0 is not a valid size specification for image partitions."
+    ));
+
+    clear_state();
+    let r = interpret_with_stdout("ImagePartition[Image[{{0.5}}], Scaled[-1]]")
+      .unwrap();
+    assert!(r.warnings[0].contains(
+      "ImagePartition::arg2: Scaled[-1] is not a valid size specification for image partitions."
     ));
 
     clear_state();
