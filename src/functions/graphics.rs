@@ -16842,6 +16842,9 @@ pub enum ManipulateControl {
     /// integer unchanged. A control whose whole spec is exact integers
     /// (`{{n, 5, "n"}, 1, 10, 1}`) keeps binding exact integers throughout.
     is_real: bool,
+    /// `ControlType -> VerticalSlider`: draw the slider running bottom-to-top
+    /// instead of Wolfram's default left-to-right rail.
+    orientation: ControlOrientation,
   },
   Discrete {
     name: String,
@@ -17118,6 +17121,15 @@ impl ControlPlacement {
       _ => None,
     }
   }
+}
+
+/// A continuous control's rail direction, from `ControlType -> Slider` (the
+/// default) vs `ControlType -> VerticalSlider`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ControlOrientation {
+  #[default]
+  Horizontal,
+  Vertical,
 }
 
 /// Result of parsing a single list-shaped Manipulate argument.
@@ -19027,6 +19039,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       ..Default::default()
     }],
     is_real: false,
+    orientation: ControlOrientation::Horizontal,
   };
   Some(ManipulateSpec {
     body_code,
@@ -19110,6 +19123,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
       ..Default::default()
     }],
     is_real,
+    orientation: ControlOrientation::Horizontal,
   };
   Some(ManipulateSpec {
     body_code: var,
@@ -21115,6 +21129,11 @@ fn parse_manipulate_control(
     Some("Animator") => Some(true),
     _ => None,
   };
+  let orientation = if control_type.as_deref() == Some("VerticalSlider") {
+    ControlOrientation::Vertical
+  } else {
+    ControlOrientation::Horizontal
+  };
 
   // `{u, umin, umax}` with umin > umax is a documented reversed-direction
   // slider (e.g. an angle control counting down from a positive start to a
@@ -21136,6 +21155,7 @@ fn parse_manipulate_control(
       label,
       label_runs,
       is_real,
+      orientation,
     },
     enabled,
     min_code,
@@ -21255,9 +21275,9 @@ fn is_text_layout_head(name: &str) -> bool {
 }
 
 /// Rendered SVG for a discrete-choice label that is a graphic (e.g.
-/// `"+" -> myIcon[2]` in a Demonstrations crosshair picker). A held
-/// `Graphics[…]` call or a call producing one is evaluated; anything
-/// text-like yields `None`.
+/// `"+" -> myIcon[2]` in a Demonstrations crosshair picker) or a
+/// `TraditionalForm[…]`-typeset expression. A held `Graphics[…]` call or a
+/// call producing one is evaluated; anything else text-like yields `None`.
 fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
   match label {
     Expr::Graphics { svg, .. } => Some(svg.clone()),
@@ -21278,6 +21298,14 @@ fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
     // (e.g. `Show[ColorData[name, "Image"], ImageSize -> 100]`) recurses
     // into the raster arm above.
     //
+    // `TraditionalForm[expr]` typesets conventional math notation (stacked
+    // fractions, radicals, …) through the same box pipeline `ExportString`
+    // and cell output use, rather than falling back to flattened text.
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      form_box_svg(&args[0])
+    }
     // Text layout heads never become icons: `Column[{"…", "…"}]` has no
     // graphical meaning, and evaluating it only yields the typeset echo of
     // its own source — which would put the label's InputForm on the button.
@@ -23535,5 +23563,151 @@ mod manipulate_control_placement_tests {
       "the layout template must not become a third, blank-labeled control: {:?}",
       spec.controls
     );
+  }
+}
+
+#[cfg(test)]
+mod manipulate_control_orientation_tests {
+  use super::*;
+
+  fn orientation(code: &str) -> ControlOrientation {
+    let expr = crate::parse_to_expr(code).expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    match spec.controls.first() {
+      Some(ManipulateControl::Continuous { orientation, .. }) => *orientation,
+      other => panic!("expected a continuous control, got {other:?}"),
+    }
+  }
+
+  /// Wolfram's default is a left-to-right rail, so a slider that says
+  /// nothing about its `ControlType` keeps the horizontal orientation.
+  #[test]
+  fn plain_slider_defaults_to_horizontal() {
+    assert_eq!(
+      orientation("Manipulate[a, {a, 0, 1}]"),
+      ControlOrientation::Horizontal
+    );
+  }
+
+  /// `ControlType -> VerticalSlider` given as an option rule is recorded on
+  /// the control, not just accepted as a parseable-but-ignored keyword.
+  #[test]
+  fn vertical_slider_option_rule_is_recorded() {
+    assert_eq!(
+      orientation("Manipulate[a, {a, 0, 1, ControlType -> VerticalSlider}]"),
+      ControlOrientation::Vertical
+    );
+  }
+
+  /// The bare-marker spelling (`{u, min, max, VerticalSlider}`, no
+  /// `ControlType ->`) is Wolfram's shorthand for the same option.
+  #[test]
+  fn vertical_slider_bare_marker_is_recorded() {
+    assert_eq!(
+      orientation("Manipulate[a, {a, 0, 1, VerticalSlider}]"),
+      ControlOrientation::Vertical
+    );
+  }
+
+  /// A fully labelled, stepped spec (`{{u, uinit, ulbl}, min, max, du,
+  /// ControlType -> VerticalSlider}` — the shape a "morph" control in a
+  /// side control panel typically takes) still carries the orientation
+  /// through to the built control, not just the terse 2-item form above.
+  #[test]
+  fn labelled_stepped_vertical_slider_is_recorded() {
+    assert_eq!(
+      orientation(
+        "Manipulate[a, {{a, 0.5, \"morph\"}, 0, 1, 0.01, \
+         ControlType -> VerticalSlider}]"
+      ),
+      ControlOrientation::Vertical
+    );
+  }
+}
+
+#[cfg(test)]
+mod manipulate_traditional_form_choice_svg_tests {
+  use super::*;
+
+  fn discrete_control(code: &str) -> ManipulateControl {
+    let expr = crate::parse_to_expr(code).expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    spec.controls.into_iter().next().expect("one control")
+  }
+
+  /// A PopupMenu rule label wrapped in `TraditionalForm[…]` (the "choose a
+  /// formula, see it typeset" idiom several Demonstrations use — original
+  /// expressions here, not copied from any specific one) must render as a
+  /// typeset icon rather than falling back to flattened InputForm-ish text,
+  /// exactly like a `Graphics[…]` rule label already does.
+  #[test]
+  fn traditional_form_labels_render_as_distinct_svg_icons() {
+    let control = discrete_control(
+      "Manipulate[shape, \
+       {{shape, quad, \"shape\"}, \
+        {quad -> TraditionalForm[t^2], \
+         recip -> TraditionalForm[1/t], \
+         root -> TraditionalForm[Sqrt[4 - t^2]]}, \
+        ControlType -> PopupMenu}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        values,
+        value_labels,
+        value_label_svgs,
+        popup,
+        ..
+      } => {
+        assert!(*popup, "ControlType -> PopupMenu must render a dropdown");
+        assert_eq!(values, &["quad", "recip", "root"]);
+        // The icon takes over the label column; the fallback text (shown by
+        // a non-graphical frontend) is the bound value's own name, not the
+        // TraditionalForm math that leaked through pre-fix.
+        assert_eq!(value_labels, &["quad", "recip", "root"]);
+        let svgs: Vec<&str> = value_label_svgs
+          .iter()
+          .map(|s| {
+            s.as_deref().unwrap_or_else(|| {
+              panic!(
+                "TraditionalForm label must render an icon: {value_label_svgs:?}"
+              )
+            })
+          })
+          .collect();
+        for svg in &svgs {
+          assert!(svg.starts_with("<svg"), "not a rendered SVG: {svg}");
+          assert!(
+            svg.len() > 100,
+            "typeset math should be more than a trivial placeholder: {svg}"
+          );
+        }
+        assert_ne!(svgs[0], svgs[1], "t^2 and 1/t must typeset differently");
+        assert_ne!(
+          svgs[1], svgs[2],
+          "1/t and Sqrt[4 - t^2] must typeset differently"
+        );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A plain (non-`TraditionalForm`) rule label still flattens to text, not
+  /// an icon — the new branch must not swallow every discrete choice.
+  #[test]
+  fn plain_text_labels_still_have_no_icon() {
+    let control = discrete_control(
+      "Manipulate[shape, {{shape, a, \"shape\"}, {a -> \"alpha\", b -> \"beta\"}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        value_label_svgs, ..
+      } => {
+        assert!(
+          value_label_svgs.iter().all(Option::is_none),
+          "plain string labels must not grow icons: {value_label_svgs:?}"
+        );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
   }
 }
