@@ -124,17 +124,20 @@ impl StyledLabel {
   }
 }
 
-/// Multiply the absolute lengths in SVG markup — `font-size="N"` and the
-/// `letter-spacing:Npx` a `Spacer` becomes — by `scale`, leaving relative
-/// ones (`70%`, `1.2em`) as they are.
+/// Multiply the absolute lengths in SVG markup — `font-size="N"`, the
+/// `letter-spacing:Npx` a lone `Spacer` becomes, and the `dx="N"` a
+/// `Spacer` next to other Row content becomes — by `scale`, leaving
+/// relative ones (`70%`, `1.2em`) as they are.
 fn scale_markup_lengths(markup: &str, scale: f64) -> String {
   if scale == 1.0 {
     return markup.to_string();
   }
   let mut out = markup.to_string();
-  for (attr, terminator, unit) in
-    [("font-size=\"", '"', ""), ("letter-spacing:", 'p', "px")]
-  {
+  for (attr, terminator, unit) in [
+    ("font-size=\"", '"', ""),
+    ("letter-spacing:", 'p', "px"),
+    ("dx=\"", '"', ""),
+  ] {
     out = scale_lengths_after(&out, attr, terminator, unit, scale);
   }
   out

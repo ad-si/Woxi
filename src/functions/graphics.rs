@@ -9264,6 +9264,10 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // appears — among a `Row`'s items as readily as as its separator.
         // The width is absolute, not relative to the font: `Spacer[25]`
         // is the same gap next to 8-point text as next to 30-point text.
+        // With no following element to carry a `dx` (see the `Row` case
+        // below), the best this lone-item fallback can do is the
+        // letter-spacing trick — real renderers keep it for a non-final
+        // character, just not a trailing one.
         "Spacer" => {
           let pts = args.first().and_then(expr_to_f64).unwrap_or(1.0);
           format!("<tspan style=\"letter-spacing:{pts:.2}px\"> </tspan>")
@@ -9279,30 +9283,59 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         }
 
         // Row[{a, b, …}] concatenates its parts; Row[{…}, sep] joins
-        // them with the separator.
+        // them with the separator. A `Spacer[n]` gap — as a bare item or
+        // as the separator — is carried as a `dx` on the *next* rendered
+        // part rather than printed as its own trailing tspan: SVG
+        // renderers (including the one Woxi Studio rasterizes with)
+        // don't apply `letter-spacing` after the last character of a
+        // tspan, so a gap placed there is silently dropped. `dx` on the
+        // following content has no such last-character special case.
         "Row" if !args.is_empty() => match &args[0] {
           Expr::List(parts) => {
-            let sep = args
-              .get(1)
-              .map(|s| match s {
-                // `Spacer[n]` separates with a gap n ems wide, rather
-                // than printing itself.
-                Expr::FunctionCall { name, args: sargs }
-                  if name == "Spacer" =>
-                {
-                  let pts = sargs.first().and_then(expr_to_f64).unwrap_or(1.0);
-                  format!(
-                    "<tspan style=\"letter-spacing:{pts:.2}px\"> </tspan>"
-                  )
+            let sep_gap = match args.get(1) {
+              Some(Expr::FunctionCall { name, args: sargs })
+                if name == "Spacer" =>
+              {
+                Some(sargs.first().and_then(expr_to_f64).unwrap_or(1.0))
+              }
+              _ => None,
+            };
+            let sep_markup =
+              if sep_gap.is_none() { args.get(1).map(expr_to_svg_markup) }
+              else { None };
+
+            let mut out = String::new();
+            let mut pending_gap = 0.0_f64;
+            let mut first = true;
+            for part in parts {
+              // A `Spacer[n]` item is a gap, not something to print —
+              // fold its width into whatever comes next.
+              if let Expr::FunctionCall { name, args: sargs } = part
+                && name == "Spacer"
+              {
+                pending_gap +=
+                  sargs.first().and_then(expr_to_f64).unwrap_or(1.0);
+                continue;
+              }
+              if !first {
+                if let Some(pts) = sep_gap {
+                  pending_gap += pts;
+                } else if let Some(m) = &sep_markup {
+                  out.push_str(m);
                 }
-                other => expr_to_svg_markup(other),
-              })
-              .unwrap_or_default();
-            parts
-              .iter()
-              .map(expr_to_svg_markup)
-              .collect::<Vec<_>>()
-              .join(&sep)
+              }
+              let markup = expr_to_svg_markup(part);
+              if pending_gap > 0.0 {
+                out.push_str(&format!(
+                  "<tspan dx=\"{pending_gap:.2}\">{markup}</tspan>"
+                ));
+                pending_gap = 0.0;
+              } else {
+                out.push_str(&markup);
+              }
+              first = false;
+            }
+            out
           }
           other => expr_to_svg_markup(other),
         },
