@@ -841,6 +841,74 @@ mod integrate_with_sum {
     );
   }
 
+  /// `Sin[a x] Sin[b x]` with `a != b` is the same-argument product's
+  /// same-argument neighbour: the double-angle identity above only applies
+  /// when both factors share one argument, so a genuinely different pair
+  /// of frequencies needs the product-to-sum identity
+  /// `Sin[A] Sin[B] = (Cos[A-B] - Cos[A+B]) / 2` instead. This is the
+  /// orthogonality integral a Fourier series relies on.
+  #[test]
+  fn integrate_sin_sin_product_different_frequencies() {
+    assert_eq!(
+      interpret("Integrate[Sin[x] * Sin[2*x], x]").unwrap(),
+      "Sin[x]/2 - Sin[3*x]/6"
+    );
+  }
+
+  #[test]
+  fn integrate_cos_cos_product_different_frequencies() {
+    // Cos[A] Cos[B] = (Cos[A-B] + Cos[A+B]) / 2
+    assert_eq!(
+      interpret("Integrate[Cos[x] * Cos[3*x], x]").unwrap(),
+      "Sin[2*x]/4 + Sin[4*x]/8"
+    );
+  }
+
+  #[test]
+  fn integrate_sin_cos_product_different_frequencies() {
+    // Sin[A] Cos[B] = (Sin[A+B] + Sin[A-B]) / 2
+    assert_eq!(
+      interpret("Integrate[Sin[2*x] * Cos[3*x], x]").unwrap(),
+      "Cos[x]/2 - Cos[5*x]/10"
+    );
+  }
+
+  /// The orthogonality relations a Fourier series is built on: sines and
+  /// cosines of different integer multiples of `Pi` over a symmetric
+  /// period integrate to exactly zero, while a matching pair of
+  /// frequencies integrates to a nonzero constant. Regression test for a
+  /// bug where `Integrate[Sin[m Pi x] Sin[n Pi x], {x, -1, 1}]` (m != n)
+  /// was left unevaluated instead of reducing to `0`, because the
+  /// same-argument product handler bails out on differing arguments and
+  /// nothing else picked up the product-to-sum identity.
+  #[test]
+  fn orthogonality_of_sines_and_cosines_over_symmetric_period() {
+    assert_eq!(
+      interpret("Integrate[Sin[1*Pi*x] * Sin[2*Pi*x], {x, -1, 1}]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[1*Pi*x] * Cos[2*Pi*x], {x, -1, 1}]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Integrate[Sin[2*Pi*x] * Sin[3*Pi*x], {x, -1, 1}]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Integrate[Sin[2*Pi*x] * Cos[3*Pi*x], {x, -1, 1}]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Integrate[Sin[2*Pi*x] * Sin[2*Pi*x], {x, -1, 1}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[3*Pi*x] * Cos[3*Pi*x], {x, -1, 1}]").unwrap(),
+      "1"
+    );
+  }
+
   #[test]
   fn integrate_sin_cos_cubed() {
     // ∫ Sin[x]*Cos[x]^3 dx = -1/4*Cos[x]^4
@@ -4774,6 +4842,38 @@ mod nintegrate {
     );
   }
 
+  // Over an interval wide enough that tanh-sinh's endpoint-crowded nodes
+  // never resolve the interesting region near a removable singularity, it
+  // gives up and falls back to adaptive Simpson — which, unlike tanh-sinh,
+  // samples the literal endpoint. That endpoint evaluation (Sin[0.]^2 /
+  // 0.^2) is discarded and replaced by a nearby perturbed value, exactly
+  // like the small-interval case above, but it used to also print a
+  // spurious `Power::infy` for the discarded sample before being thrown
+  // away — a message wolframscript never shows for this integral.
+  #[test]
+  fn wide_interval_removable_singularity_prints_no_spurious_message() {
+    clear_state();
+    let result = interpret("NIntegrate[Sin[x]^2/x^2, {x, 0, 15000}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    // ∫₀^∞ Sin[x]^2/x^2 dx = Pi/2; truncating at 15000 drops a tail bounded
+    // by 1/15000 (Sin^2 <= 1), on the order of 1e-4. The adaptive-Simpson
+    // fallback used for this wide, highly oscillatory interval is not itself
+    // fully accurate — that inaccuracy is a separate, pre-existing limitation
+    // — so this checks against the true value with a tolerance loose enough
+    // to not pin the fallback's current error as correct, while still
+    // catching a grossly wrong (e.g. zero or divergent) result.
+    let true_value = std::f64::consts::FRAC_PI_2 - 1.0 / 30000.0;
+    assert!(
+      (val - true_value).abs() < 2e-3,
+      "got {val}, expected ~{true_value}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("Power::infy")),
+      "spurious message for a discarded endpoint sample: {msgs:?}"
+    );
+  }
+
   // Smooth integrands keep their accuracy, including the oscillatory ones that
   // fall back to the adaptive rule because tanh-sinh does not settle on them.
   #[test]
@@ -7010,7 +7110,8 @@ mod dsolve {
   // of an x-factor and a nonlinear y-factor (e.g. x*y[x]^2) used to be
   // misclassified — the x*y^2 term was treated as a y-free forcing term and
   // "integrated", yielding the bogus circular C[1] + Integrate[x*y[x]^2, x].
-  // It must instead stay unevaluated, like the bare y[x]^2 case.
+  // Without an initial condition to pin the constant it must stay
+  // unevaluated, like the bare y[x]^2 case.
   #[test]
   fn separable_nonlinear_product_stays_unevaluated() {
     assert_eq!(
@@ -7020,6 +7121,58 @@ mod dsolve {
     assert_eq!(
       interpret("DSolve[y'[x] == x^2 y[x]^2, y[x], x]").unwrap(),
       "DSolve[Derivative[1][y][x] == x^2*y[x]^2, y[x], x]"
+    );
+  }
+
+  // An initial condition pins the constant of a separable equation, so the
+  // implicit relation ∫dy/h(y) == ∫g(x)dx + C can be solved outright — the
+  // nonlinear right-hand sides above are the ones the linear term classifier
+  // rejects.
+  #[test]
+  fn separable_nonlinear_initial_value_problem() {
+    assert_eq!(
+      interpret("DSolve[{y'[x] == x y[x]^2, y[0] == 2}, y[x], x]").unwrap(),
+      "{{y[x] -> -2/(-1 + x^2)}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y'[x] == y[x]^2, y[0] == 1}, y[x], x]").unwrap(),
+      "{{y[x] -> (1 - x)^(-1)}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y'[x] == y[x]^3, y[0] == 1}, y[x], x]").unwrap(),
+      "{{y[x] -> 1/Sqrt[1 - 2*x]}}"
+    );
+    // The x-factor may be any closed-form function of x, not just a monomial.
+    assert_eq!(
+      interpret("DSolve[{y'[x] == Cos[x] y[x]^2, y[0] == 1}, y[x], x]")
+        .unwrap(),
+      "{{y[x] -> (1 - Sin[x])^(-1)}}"
+    );
+    // A quotient separates too: y' == x/y.
+    assert_eq!(
+      interpret("DSolve[{y'[x] == x/y[x], y[0] == 1}, y[x], x]").unwrap(),
+      "{{y[x] -> Sqrt[1 + x^2]}}"
+    );
+    // `DSolve[…, y, x]` asks for the Function form.
+    assert_eq!(
+      interpret("DSolve[{y'[t] == -t y[t]^2, y[0] == 1}, y, t]").unwrap(),
+      "{{y -> Function[{t}, 2/(2 + t^2)]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y'[t] == (t - t^3) y[t]^2, y[0] == 1}, y, t]")
+        .unwrap(),
+      "{{y -> Function[{t}, 4/(4 - 2*t^2 + t^4)]}}"
+    );
+  }
+
+  // Squaring away the square root when solving for y loses the branch, so the
+  // root that does not meet the initial condition has to be dropped: with
+  // y[0] == -1 the answer is the negative branch, not the positive one.
+  #[test]
+  fn separable_solution_picks_the_branch_the_condition_selects() {
+    assert_eq!(
+      interpret("DSolve[{y'[x] == x/y[x], y[0] == -1}, y[x], x]").unwrap(),
+      "{{y[x] -> -Sqrt[1 + x^2]}}"
     );
   }
 
@@ -7555,6 +7708,82 @@ mod ndsolve {
       (val - expected).abs() < 0.01,
       "Expected {expected}, got {val}"
     );
+  }
+
+  #[test]
+  fn ndsolve_second_argument_requests_a_derivative_alongside_its_function() {
+    // Regression: `NDSolve[…, {y, y'}, …]` used to bail out unevaluated —
+    // `Derivative[1][y]` in the second argument wasn't recognized as a
+    // request for y's derivative and was instead treated as an opaque
+    // "compound head" to rename away. It should return both `y` and
+    // `Derivative[1][y]` as separate InterpolatingFunction rules, sparing
+    // the caller from differentiating the interpolant themselves.
+    // y'' + y == 0, y(0) = 1, y'(0) = 0 → y = Cos[t], y' = -Sin[t].
+    let result = interpret(
+      "sol = NDSolve[{y''[t] + y[t] == 0, y[0] == 1, y'[0] == 0}, {y, y'}, \
+       {t, 0, 4}]; y'[N[Pi/2]] /. sol[[1,2]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = -(std::f64::consts::FRAC_PI_2.sin());
+    assert!(
+      (val - expected).abs() < 0.01,
+      "Expected {expected}, got {val}"
+    );
+  }
+
+  #[test]
+  fn ndsolve_requested_derivative_keeps_its_own_rule_and_function_intact() {
+    // The `y -> …` rule must still come back too, and unaffected by the
+    // extra `Derivative[1][y] -> …` rule alongside it.
+    let result = interpret(
+      "sol = NDSolve[{y''[t] + y[t] == 0, y[0] == 1, y'[0] == 0}, {y, y'}, \
+       {t, 0, 4}]; y[N[Pi]] /. sol[[1,1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - (-1.0)).abs() < 0.01, "Expected -1.0, got {val}");
+  }
+
+  #[test]
+  fn ndsolve_flattens_a_nested_initial_condition_list() {
+    // Regression: an equations argument that groups one function's initial
+    // conditions into their own sublist — `{ode, {ic1, ic2}}`, a common
+    // Demonstrations idiom — used to be counted as a second, bogus equation
+    // (a List isn't itself an equation) rather than flattened, so the
+    // equation/function count mismatched and NDSolve bailed out unevaluated.
+    // Same system as `second_order_harmonic`: y'' + y = 0, y(0)=1, y'(0)=0,
+    // so y(Pi) ≈ -1.
+    let result = interpret(
+      "sol = NDSolve[{y''[x] + y[x] == 0, {y[0] == 1, y'[0] == 0}}, y, \
+       {x, 0, 4}]; y[N[Pi]] /. sol[[1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - (-1.0)).abs() < 0.01, "Expected -1.0, got {val}");
+  }
+
+  #[test]
+  fn interpolating_function_input_form_has_no_placeholder() {
+    // Regression: InterpolatingFunction's `<>` data placeholder — meant
+    // only to keep display output short — was also applied under
+    // InputForm, where it isn't valid syntax at all. Manipulate relies on
+    // InputForm to round-trip a variable's value back through the parser
+    // between frames (`ManipulateState::reevaluate`), so a body that binds
+    // a Demonstration's NDSolve solution to a variable would throw a parse
+    // error on the very next frame. InputForm must print the literal data.
+    let result = interpret(
+      "ToString[NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}], InputForm]",
+    )
+    .unwrap();
+    assert!(
+      result.contains("InterpolatingFunction") && !result.contains("<>"),
+      "Got: {result}"
+    );
+    // OutputForm (the default) is unaffected — it should still abbreviate.
+    let output =
+      interpret("NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}]").unwrap();
+    assert!(output.contains("<>"), "Got: {output}");
   }
 
   #[test]

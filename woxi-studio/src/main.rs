@@ -3897,29 +3897,51 @@ fn render_manipulate_widget<'a>(
         max,
         step,
         current,
+        orientation,
         ..
       } => {
         let label_widget =
           manipulate_label_widget(label_runs, label, label_col_width, enabled);
-        let mut s = slider(*min..=*max, *current, move |v| {
-          if enabled {
-            Message::ManipulateContinuousChanged(cell_idx, ctrl_idx, v)
-          } else {
-            Message::Noop
-          }
-        })
-        .step(*step)
-        .width(Fill);
-        if !enabled {
-          s = s.style(disabled_slider_style);
-        }
         let value_widget = text(format_manipulate_number(*current))
           .size(11)
           .font(Font::MONOSPACE)
           .width(iced::Length::Fixed(64.0));
-        let control_row = row![label_widget, s, value_widget]
-          .align_y(Center)
-          .spacing(8);
+        let control_row =
+          if *orientation == manipulate::ControlOrientation::Vertical {
+            let mut s =
+              iced::widget::vertical_slider(*min..=*max, *current, move |v| {
+                if enabled {
+                  Message::ManipulateContinuousChanged(cell_idx, ctrl_idx, v)
+                } else {
+                  Message::Noop
+                }
+              })
+              .step(*step)
+              // Default `Fill` height collapses to 0 in this row's `Shrink` cross axis.
+              .height(120.0);
+            if !enabled {
+              s = s.style(disabled_slider_style);
+            }
+            row![label_widget, s, value_widget]
+              .align_y(Center)
+              .spacing(8)
+          } else {
+            let mut s = slider(*min..=*max, *current, move |v| {
+              if enabled {
+                Message::ManipulateContinuousChanged(cell_idx, ctrl_idx, v)
+              } else {
+                Message::Noop
+              }
+            })
+            .step(*step)
+            .width(Fill);
+            if !enabled {
+              s = s.style(disabled_slider_style);
+            }
+            row![label_widget, s, value_widget]
+              .align_y(Center)
+              .spacing(8)
+          };
         controls_col = controls_col.push(control_row);
       }
       manipulate::ControlState::Discrete {
@@ -9914,6 +9936,53 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn popup_menu_traditional_form_labels_render_as_typeset_svg() {
+    // Regression: a PopupMenu choice label wrapped in `TraditionalForm[…]`
+    // (the "pick a formula" idiom several Demonstrations use, independently
+    // written here rather than copied from any specific one) used to fall
+    // back to flattened InputForm-ish text (`is_text_layout_head` bailed the
+    // SVG path for TraditionalForm) instead of a typeset fraction/radical
+    // icon the way a `Graphics[…]` rule label already got one.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[shape, \
+       {{shape, quad, \"choose a shape\"}, \
+        {quad -> TraditionalForm[t^2], \
+         recip -> TraditionalForm[1/t], \
+         root -> TraditionalForm[Sqrt[4 - t^2]]}, \
+        ControlType -> PopupMenu}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the TraditionalForm-labelled PopupMenu must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        values,
+        value_labels,
+        value_label_svgs,
+        popup,
+        ..
+      } => {
+        assert!(*popup, "ControlType -> PopupMenu must render a dropdown");
+        assert_eq!(values, &["quad", "recip", "root"]);
+        // The icon replaces the label column; the fallback text shown by a
+        // non-graphical frontend is the bound value's own name, not the
+        // TraditionalForm math (which is what leaked through pre-fix).
+        assert_eq!(value_labels, &["quad", "recip", "root"]);
+        assert!(
+          value_label_svgs.iter().all(Option::is_some),
+          "every TraditionalForm choice must carry a rendered icon: {value_label_svgs:?}"
+        );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  #[test]
   fn parametric_curves_manipulate_lays_out_its_plots() {
     // End-to-end regression for "Parametric Curves in 2D": four plots are
     // `Inset` into one picture, and the `t` slider is bounded by symbols
@@ -12093,6 +12162,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       step: 0.1,
       current: 0.0,
       is_real: false,
+      orientation: manipulate::ControlOrientation::Horizontal,
     };
     let empty = manipulate::ControlState::Continuous {
       name: "theta".to_string(),
@@ -12103,6 +12173,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       step: 0.1,
       current: 0.0,
       is_real: false,
+      orientation: manipulate::ControlOrientation::Horizontal,
     };
     assert_eq!(manipulate_label_char_count(&m1), 2);
     assert_eq!(manipulate_label_char_count(&empty), 0);
@@ -21385,6 +21456,113 @@ SaveDefinitions -> True]";
     assert!(
       state.graphics_handle.is_some(),
       "the construction must still render with the new radii"
+    );
+  }
+
+  /// Regression for the shape a numerical-methods Demonstration uses: a
+  /// popup picks the right-hand side of `y' == f[t, y]`, `DSolve` draws the
+  /// exact solution, and a stepped polyline is overlaid on top of it. The
+  /// nonlinear choice (`-t y^2`) is separable but not linear in `y`, so
+  /// `DSolve` used to come back unevaluated and `y[t] /. DSolve[…]` failed
+  /// with `ReplaceAll::reps` — the widget still rendered, just silently
+  /// missing the exact curve it exists to compare against.
+  #[test]
+  fn demonstration_ode_comparison_manipulate_draws_the_exact_solution() {
+    let code = "Manipulate[\
+      Show[{\
+        Plot[Evaluate[y[t] /. exact[rhs, start, t]], {t, 0, 2}, \
+          PlotRange -> All], \
+        ListLinePlot[trail[rhs, start, steps], PlotRange -> All]\
+      }, ImageSize -> {300, 300}], \
+      {{rhs, decay, \"y'\"}, {decay -> \"-y\", quad -> \"-t y^2\"}, \
+        ControlType -> PopupMenu}, \
+      {{start, 1, \"y(0)\"}, 0.5, 2, 0.5}, \
+      {{steps, 4, \"steps\"}, 2, 8, 1}, \
+      Initialization :> (\
+        decay[t_, u_] := -u; \
+        quad[t_, u_] := -t u^2; \
+        exact[f_, u0_, t_] := DSolve[{y'[t] == f[t, y[t]], y[0] == u0}, y, t]; \
+        trail[f_, u0_, n_] := Module[{h, pts}, \
+          h = 2/n; pts = {{0, u0}}; \
+          Do[pts = Append[pts, \
+            {h i, Last[Last[pts]] + h f[h (i - 1), Last[Last[pts]]]}], \
+            {i, 1, n}]; \
+          pts]; \
+      )]";
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a popup plus two sliders should build a ManipulateState");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "both curves must render");
+
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["rhs", "start", "steps"]);
+
+    // The exact solution is a smooth `Plot`, so it renders as one polyline
+    // with hundreds of vertices; every other polyline in the picture is an
+    // axis tick (2 vertices) or the 5-point stepped trail. Counting the
+    // vertices of the longest one therefore says whether the exact curve is
+    // there at all — a plain polyline *count* would only move by one and
+    // could be matched by an extra tick.
+    let longest_curve = |s: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = s
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let svg = woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&s.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the comparison plot must render");
+      svg
+        .match_indices("<polyline")
+        .filter_map(|(at, _)| {
+          let tag = &svg[at..svg[at..].find("/>")? + at];
+          let key = " points=\"";
+          let start = tag.find(key)? + key.len();
+          Some(tag[start..][..tag[start..].find('"')?].split(' ').count())
+        })
+        .max()
+        .unwrap_or(0)
+    };
+    let linear = longest_curve(&state);
+    assert!(
+      linear > 50,
+      "the linear choice's exact curve should be a smooth polyline, got \
+       {linear} vertices"
+    );
+
+    for control in &mut state.controls {
+      if let manipulate::ControlState::Discrete {
+        name,
+        current_index,
+        ..
+      } = control
+        && name == "rhs"
+      {
+        *current_index = 1;
+      }
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "the nonlinear choice must evaluate: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some());
+    let nonlinear = longest_curve(&state);
+    assert!(
+      nonlinear > 50,
+      "the separable nonlinear choice must draw its exact curve too, got \
+       {nonlinear} vertices"
     );
   }
 }

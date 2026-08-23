@@ -1707,6 +1707,41 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_invisible_text_label_paints_nothing() {
+    // `Text[Invisible[Style["e", …]], pos]` — a Demonstration hides one
+    // item's label (e.g. an edge whose name shouldn't show) by wrapping it
+    // in `Invisible[…]` rather than special-casing it out of a shared
+    // `Table[Text[label[[i]], …], {i, …}]` loop. Regression: `Invisible[…]`
+    // was not recognized by the label parser shared across 2D and 3D
+    // `Text[…]`/chart labels, so it fell through to the catch-all branch
+    // and typeset the wrapper's own textual form, `Invisible[e]`, as a
+    // literal on-screen label instead of painting nothing.
+    clear_state();
+    let svg2d = interpret(
+      "ExportString[Graphics[{Text[\"A\", {0, 0}], Text[Invisible[Style[\"e\", 16]], {1, 1}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg2d.contains(">A<"), "visible label lost: {svg2d}");
+    assert!(
+      !svg2d.contains("Invisible"),
+      "Invisible[…] label leaked as literal text: {svg2d}"
+    );
+    assert!(!svg2d.contains(">e<"), "hidden label was painted: {svg2d}");
+
+    clear_state();
+    let svg3d = interpret(
+      "ExportString[Graphics3D[{Text[\"A\", {0, 0, 0}], Text[Invisible[Style[\"e\", 16]], {1, 1, 1}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg3d.contains(">A<"), "visible label lost: {svg3d}");
+    assert!(
+      !svg3d.contains("Invisible"),
+      "Invisible[…] label leaked as literal text: {svg3d}"
+    );
+    assert!(!svg3d.contains(">e<"), "hidden label was painted: {svg3d}");
+  }
+
+  #[test]
   fn test_inset_labeled_graphic_embeds_picture() {
     // `Inset[Labeled[Graphics[…], caption], pos, opos, size]` — a
     // Demonstration's usual way to caption a small diagram composited into

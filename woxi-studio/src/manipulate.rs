@@ -8,7 +8,7 @@
 //! that free control variables are substituted.
 
 use iced::widget::svg;
-pub use woxi::functions::graphics::ControlPlacement;
+pub use woxi::functions::graphics::{ControlOrientation, ControlPlacement};
 use woxi::functions::graphics::{
   DisplayNode, LabelRun, ManipulateControl, ManipulateSpec,
   apply_manipulate_mutations, build_manipulate_display, extract_animator_spec,
@@ -37,6 +37,9 @@ pub enum ControlState {
     /// rather than the exact integer, matching Wolfram — which matters for
     /// a caption that formats it with `NumberForm[…, {n, f}]`.
     is_real: bool,
+    /// `ControlType -> VerticalSlider`: rendered with `vertical_slider`
+    /// instead of the default horizontal `slider`.
+    orientation: ControlOrientation,
   },
   Discrete {
     name: String,
@@ -1048,6 +1051,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         step,
         initial,
         is_real,
+        orientation,
       } => {
         let step = step.unwrap_or_else(|| {
           let span = (*max - *min).abs();
@@ -1062,6 +1066,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           step,
           current: *initial,
           is_real: *is_real,
+          orientation: *orientation,
         }
       }
       ManipulateControl::Discrete {
