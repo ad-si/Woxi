@@ -169,6 +169,16 @@ fn read_dims(data: &[u8], pos: &mut usize, rank: i32) -> Option<Vec<usize>> {
   Some(dims)
 }
 
+/// Total element count of an array's dimensions, as `dims.iter().product()`
+/// would compute — but checked, since a malformed or truncated
+/// `CompressedData` payload can carry a garbage dimension large enough to
+/// overflow `usize` on multiplication. Returns `None` for that case instead
+/// of panicking, so the caller falls back to treating the payload as plain
+/// text (see `decompress_to_expr`).
+fn dims_product(dims: &[usize]) -> Option<usize> {
+  dims.iter().try_fold(1usize, |acc, &d| acc.checked_mul(d))
+}
+
 /// `n` token — raw integer array. The element width is taken from the trailing
 /// payload (signed little-endian ints of 1/2/4/8 bytes), which makes the reader
 /// independent of the exact element-type code.
@@ -176,7 +186,7 @@ fn read_integer_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   let _typ = read_i32(data, pos)?;
   let rank = read_i32(data, pos)?;
   let dims = read_dims(data, pos, rank)?;
-  let count: usize = dims.iter().product();
+  let count: usize = dims_product(&dims)?;
   let values = if count == 0 {
     Vec::new()
   } else {
@@ -211,7 +221,7 @@ fn read_integer_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
 fn read_byte_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   let rank = read_i32(data, pos)?;
   let dims = read_dims(data, pos, rank)?;
-  let count: usize = dims.iter().product();
+  let count: usize = dims_product(&dims)?;
   let end = pos.checked_add(count)?;
   if end > data.len() {
     return None;
@@ -228,7 +238,7 @@ fn read_byte_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
 fn read_real_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   let rank = read_i32(data, pos)?;
   let dims = read_dims(data, pos, rank)?;
-  let count: usize = dims.iter().product();
+  let count: usize = dims_product(&dims)?;
   let mut vals = Vec::with_capacity(count);
   for _ in 0..count {
     vals.push(Expr::Real(read_f64(data, pos)?));
@@ -291,5 +301,37 @@ mod tests {
       render(data),
       "RawArray[\"UnsignedInteger8\", {{200, 10}, {0, 255}}]"
     );
+  }
+
+  // Regression: a corrupted or truncated `CompressedData` payload can carry
+  // dimensions whose product overflows `usize` on multiplication. Each
+  // array token (`n`, `b`, `e`) used to compute that product with a plain
+  // `dims.iter().product()`, which panicked with overflow checks on —
+  // crashing Woxi Studio when a real Wolfram Demonstrations notebook's
+  // saved widget state embedded one. `deserialize` must return `None`
+  // instead, so the caller falls back to treating the payload as plain
+  // text (see `decompress_to_expr`).
+  #[test]
+  fn integer_array_with_overflowing_dims_does_not_panic() {
+    // n token: type 0, rank 3, dims {i32::MAX, i32::MAX, i32::MAX} — the
+    // product vastly exceeds usize::MAX on multiplication.
+    let data = b"!boRn\x00\x00\x00\x00\x03\x00\x00\x00\xff\xff\xff\x7f\xff\xff\xff\x7f\xff\xff\xff\x7f";
+    assert!(deserialize(data).is_none());
+  }
+
+  #[test]
+  fn byte_array_with_overflowing_dims_does_not_panic() {
+    // b token: rank 3, dims {i32::MAX, i32::MAX, i32::MAX}.
+    let data =
+      b"!boRb\x03\x00\x00\x00\xff\xff\xff\x7f\xff\xff\xff\x7f\xff\xff\xff\x7f";
+    assert!(deserialize(data).is_none());
+  }
+
+  #[test]
+  fn real_array_with_overflowing_dims_does_not_panic() {
+    // e token: rank 3, dims {i32::MAX, i32::MAX, i32::MAX}.
+    let data =
+      b"!boRe\x03\x00\x00\x00\xff\xff\xff\x7f\xff\xff\xff\x7f\xff\xff\xff\x7f";
+    assert!(deserialize(data).is_none());
   }
 }
