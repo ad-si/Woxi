@@ -780,6 +780,17 @@ fn compound_head_renamings(vars: &Expr, domain: &Expr) -> Vec<(Expr, String)> {
       {
         continue;
       }
+      // `Derivative[k][f]` (bare) or `Derivative[k][f][x]` (applied) — a
+      // request for `f`'s derivative, not a compound head itself unless
+      // `f` is one (e.g. `Derivative[1][Subscript[c, 1]]`).
+      Expr::FunctionCall { name, args }
+        if name == "Derivative" && (args.len() == 2 || args.len() == 3) =>
+      {
+        match &args[1] {
+          Expr::Identifier(_) => continue,
+          inner => inner.clone(),
+        }
+      }
       // `Subscript[c, 1]` — bare compound head.
       Expr::FunctionCall { .. } => entry.clone(),
       // `y` — bare symbol.
@@ -960,6 +971,78 @@ fn dep_name(item: &Expr) -> Option<String> {
   }
 }
 
+/// Recognize a `Derivative[k][f]` (bare) or `Derivative[k][f][x]` (applied)
+/// second-argument entry as a request for `f`'s `k`-th derivative,
+/// returned alongside `f` itself — e.g.
+/// `NDSolve[eqns, {y, y'}, {t, t0, t1}]` returns both `y ->
+/// InterpolatingFunction[…]` and `Derivative[1][y] ->
+/// InterpolatingFunction[…]`, sparing the caller from differentiating the
+/// interpolant. Returns `(function name, order, function_form)`;
+/// `function_form` is `false` when the entry was applied to `x_name`.
+/// The parser builds `Derivative[k][f]` as nested `CurriedCall`s
+/// (`Derivative[k]` called on `f`), so that raw shape is matched first;
+/// the flattened `FunctionCall("Derivative", [k, f])` form some
+/// normalization passes produce is matched too, defensively.
+fn derivative_dep_item(
+  item: &Expr,
+  x_name: &str,
+) -> Option<(String, usize, bool)> {
+  if let Expr::CurriedCall { func, args } = item
+    && args.len() == 1
+  {
+    if let Expr::Identifier(fname) = &args[0]
+      && let Expr::FunctionCall {
+        name: deriv_name,
+        args: deriv_args,
+      } = func.as_ref()
+      && deriv_name == "Derivative"
+      && deriv_args.len() == 1
+      && let Expr::Integer(k) = &deriv_args[0]
+    {
+      return Some((fname.clone(), *k as usize, true));
+    }
+    if matches!(&args[0], Expr::Identifier(a) if a == x_name)
+      && let Some((fname, k, _)) = derivative_dep_item(func.as_ref(), x_name)
+    {
+      return Some((fname, k, false));
+    }
+  }
+  if let Expr::FunctionCall { name, args } = item
+    && name == "Derivative"
+  {
+    if args.len() == 2
+      && let Expr::Integer(k) = &args[0]
+      && let Expr::Identifier(fname) = &args[1]
+    {
+      return Some((fname.clone(), *k as usize, true));
+    }
+    if args.len() == 3
+      && let Expr::Integer(k) = &args[0]
+      && let Expr::Identifier(fname) = &args[1]
+      && matches!(&args[2], Expr::Identifier(a) if a == x_name)
+    {
+      return Some((fname.clone(), *k as usize, false));
+    }
+  }
+  None
+}
+
+/// Flatten every nesting level of `List` in an `NDSolve`/`DSolve`
+/// equations argument into individual equations. A single function's
+/// initial conditions are often grouped into their own sublist —
+/// `{ode, {ic1, ic2}}` — and that grouping can nest arbitrarily deep, so
+/// each level is flattened, not just the outermost.
+fn flatten_eq_list(expr: &Expr, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::List(items) => {
+      for item in items {
+        flatten_eq_list(item, out);
+      }
+    }
+    other => out.push(other.clone()),
+  }
+}
+
 /// The function a solution rule is for: `f -> …` or `f[x] -> …`.
 fn rule_target_name(rule: &Expr) -> Option<&str> {
   let Expr::Rule { pattern, .. } = rule else {
@@ -1092,7 +1175,15 @@ fn ndsolve_system(
     other => vec![other],
   };
   let mut funcs: Vec<SysFunc> = Vec::with_capacity(dep_items.len());
+  // A `Derivative[k][f]` entry doesn't introduce a new dependent function;
+  // it asks for `f`'s k-th derivative alongside `f`'s own solution, so
+  // it's collected separately and resolved once `f`'s order is known.
+  let mut deriv_requests: Vec<(String, usize, bool)> = Vec::new();
   for item in dep_items {
+    if let Some(req) = derivative_dep_item(item, x_name) {
+      deriv_requests.push(req);
+      continue;
+    }
     match item {
       Expr::Identifier(name) => funcs.push(SysFunc {
         name: name.clone(),
@@ -1118,11 +1209,12 @@ fn ndsolve_system(
     return Ok(None);
   }
 
-  // Split equations into ODEs and initial conditions.
-  let eq_items: Vec<Expr> = match &args[0] {
-    Expr::List(items) => items.to_vec(),
-    other => vec![other.clone()],
-  };
+  // Split equations into ODEs and initial conditions. The equations
+  // argument nests arbitrarily — a common idiom groups a function's
+  // initial conditions into their own sublist, e.g. `{ode, {ic1, ic2}}` —
+  // so every level of `List` is flattened rather than just the outermost.
+  let mut eq_items: Vec<Expr> = Vec::new();
+  flatten_eq_list(&args[0], &mut eq_items);
   let mut odes: Vec<Expr> = Vec::new();
   let mut x0: Option<f64> = None;
   // (function name, derivative order, value) — by name, not index: an
@@ -1216,6 +1308,17 @@ fn ndsolve_system(
   }
   if funcs.iter().any(|f| f.order == 0) {
     return Ok(None);
+  }
+  // Every requested derivative must be of a function actually being
+  // solved for, and of an order already carried in its state vector
+  // (0..order-1); the highest derivative itself isn't stored there.
+  for (name, order, _) in &deriv_requests {
+    let Some(f) = funcs.iter().find(|f| &f.name == name) else {
+      return Ok(None);
+    };
+    if *order >= f.order {
+      return Ok(None);
+    }
   }
 
   // Validate and store the initial conditions.
@@ -1367,6 +1470,57 @@ fn ndsolve_system(
         pattern: Box::new(Expr::FunctionCall {
           name: f.name.clone(),
           args: vec![Expr::Identifier(x_name.clone())].into(),
+        }),
+        replacement: Box::new(Expr::CurriedCall {
+          func: Box::new(interp),
+          args: vec![Expr::Identifier(x_name.clone())],
+        }),
+      }
+    });
+  }
+
+  // Extra rules for `Derivative[k][f]` entries requested alongside `f`:
+  // the same points, just read from the state slot the derivative already
+  // occupies (`f`'s state runs f, f', …, f^(order-1) from `state_offset`).
+  for (name, order, function_form) in &deriv_requests {
+    let fi = funcs.iter().position(|f| &f.name == name).unwrap();
+    let domain = Expr::List(
+      vec![Expr::List(vec![Expr::Real(x_lo), Expr::Real(x_hi)].into())].into(),
+    );
+    let data = Expr::List(
+      points
+        .iter()
+        .map(|(x, s)| {
+          Expr::List(
+            vec![Expr::Real(*x), Expr::Real(s[state_offset[fi] + order])]
+              .into(),
+          )
+        })
+        .collect(),
+    );
+    let interp = call(
+      "InterpolatingFunction",
+      vec![domain, data, Expr::Integer(NDSOLVE_INTERPOLATION_ORDER)],
+    );
+    // Mirrors the parser's own shape for `Derivative[k][f]` (nested
+    // `CurriedCall`s) so `/.` matches the same expression the user wrote.
+    let deriv_pattern = Expr::CurriedCall {
+      func: Box::new(Expr::FunctionCall {
+        name: "Derivative".to_string(),
+        args: vec![Expr::Integer(*order as i128)].into(),
+      }),
+      args: vec![Expr::Identifier(name.clone())],
+    };
+    rules.push(if *function_form {
+      Expr::Rule {
+        pattern: Box::new(deriv_pattern),
+        replacement: Box::new(interp),
+      }
+    } else {
+      Expr::Rule {
+        pattern: Box::new(Expr::CurriedCall {
+          func: Box::new(deriv_pattern),
+          args: vec![Expr::Identifier(x_name.clone())],
         }),
         replacement: Box::new(Expr::CurriedCall {
           func: Box::new(interp),
