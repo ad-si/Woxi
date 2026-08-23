@@ -24,14 +24,6 @@
     plain one catch what it turns down. Rubi stacks three rules on one
     left-hand side that way.
 
-- Two structural patterns of different outer shape no longer decide each
-    other's place in the DownValues. `f[(d_.*x_)^m_.*(a_. + b_.*g[x_])^n_.]`
-    and `f[(a_. + b_.*g[x_])^n_.]` match different sets of expressions,
-    neither inside the other — the first matches products the second never
-    sees — but ranking them by how much structure they carry put the first
-    ahead, and did so for every rule that came later, walking a general rule
-    steadily toward the back of the list.
-
 - `Coefficient` reads a quotient assembled as a `/` node. `Together` (and
     anything else that builds one structurally) hands back `Divide[a, b]`
     rather than the canonical `Times[a, Power[b, -1]]`, and the polynomial
