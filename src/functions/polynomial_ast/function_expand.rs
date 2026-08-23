@@ -558,6 +558,55 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       }
     }
 
+    // Gamma[n, z] with a positive integer n is elementary:
+    // `(n-1)! E^-z Sum[z^k/k!, {k, 0, n-1}]`. Wolfram writes that with the
+    // sum over its common denominator — `Gamma[3, z]` is
+    // `(2 z + 2 z^2 + z^3)/(E^z z)` — so build the same shape rather than
+    // the mathematically equal factored one. Rubi's exponential rules lean
+    // on this: `Int[x E^x, x]` comes back as `Simplify[FunctionExpand[
+    // Gamma[2, -x]]]`, which is `E^x (x - 1)` only once the Gamma is gone.
+    "Gamma" if args.len() == 2 => {
+      let Expr::Integer(n) = &args[0] else {
+        return None;
+      };
+      // Zero and the negative integers bring in ExpIntegralEi and a
+      // logarithm branch cut; a non-integer order brings in Erf. Neither is
+      // covered here.
+      if *n < 1 || *n > 256 {
+        return None;
+      }
+      let z = &args[1];
+      // Coefficient of z^k is (n-1)!/(k-1)!, which stays exact well past
+      // what a machine integer holds.
+      let mut coeff = BigInt::from(1u8);
+      for i in 1..*n {
+        coeff *= BigInt::from(i);
+      }
+      let mut terms: Vec<Expr> = Vec::with_capacity(*n as usize);
+      for k in 1..=*n {
+        if k > 1 {
+          coeff /= BigInt::from(k - 1);
+        }
+        let power = if k == 1 {
+          z.clone()
+        } else {
+          mk_power(z.clone(), mk_int(k))
+        };
+        terms.push(if coeff == BigInt::from(1u8) {
+          power
+        } else {
+          mk_times(
+            crate::functions::math_ast::bigint_to_expr(coeff.clone()),
+            power,
+          )
+        });
+      }
+      Some(mk_div(
+        call("Plus", terms),
+        mk_times(mk_power(mk_id("E"), z.clone()), z.clone()),
+      ))
+    }
+
     // Pochhammer[a, n] → Gamma[a + n] / Gamma[a]
     "Pochhammer" if args.len() == 2 => {
       let a = &args[0];

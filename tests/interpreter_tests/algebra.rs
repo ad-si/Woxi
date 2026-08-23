@@ -12729,6 +12729,42 @@ mod function_expand {
     );
   }
 
+  // The incomplete Gamma of a positive integer order is elementary. Wolfram
+  // writes the sum over its common denominator, and Rubi's exponential rules
+  // depend on the expansion happening at all: `Int[x E^x, x]` is
+  // `Simplify[FunctionExpand[Gamma[2, -x]]]`.
+  #[test]
+  fn incomplete_gamma_of_integer_order() {
+    assert_eq!(interpret("FunctionExpand[Gamma[1, z]]").unwrap(), "E^(-z)");
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[2, z]]").unwrap(),
+      "(z + z^2)/(E^z*z)"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[3, z]]").unwrap(),
+      "(2*z + 2*z^2 + z^3)/(E^z*z)"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[5, z]]").unwrap(),
+      "(24*z + 24*z^2 + 12*z^3 + 4*z^4 + z^5)/(E^z*z)"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[2, -x]]").unwrap(),
+      "-((E^x*(-x + x^2))/x)"
+    );
+    assert_eq!(interpret("FunctionExpand[Gamma[2, 3]]").unwrap(), "4/E^3");
+    // Orders the elementary form does not cover stay put: zero and the
+    // negative integers need ExpIntegralEi, a half-integer needs Erf.
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[0, z]]").unwrap(),
+      "Gamma[0, z]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[n, z]]").unwrap(),
+      "Gamma[n, z]"
+    );
+  }
+
   #[test]
   fn beta() {
     assert_eq!(

@@ -10270,11 +10270,10 @@ mod cases {
   }
   #[test]
   fn legendre_q_2_symbolic_at_half() {
-    // Verify Q_2 closed form by substituting x=1/2. wolframscript prints
-    // this as -3/4 + (-1/2*Log[3/2] - Log[2]/2)/8 — mathematically equal.
+    // Verify Q_2 closed form by substituting x=1/2.
     assert_case(
       r#"LegendreQ[2, x] /. x -> 1/2"#,
-      r#"-3/4 - (Log[2]/2 + Log[3/2]/2)/8"#,
+      r#"-3/4 + (-1/2*Log[3/2] - Log[2]/2)/8"#,
     );
   }
   #[test]

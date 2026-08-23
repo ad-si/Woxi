@@ -10983,3 +10983,100 @@ mod integer_to_a_negative_power_stays_exact {
     assert_eq!(interpret("1/2 > 1").unwrap(), "False");
   }
 }
+
+/// A numeric factor whose numerator is exactly `-1` carries its sign into the
+/// sum it multiplies. Any other negative coefficient stays where it is.
+mod unit_negative_coefficient_moves_into_the_sum {
+  use super::*;
+
+  #[test]
+  fn a_unit_negative_rational_negates_the_sum() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[FullForm[-((1 - 2*x)/3)]]").unwrap(),
+      "Times[Rational[1, 3], Plus[-1, Times[2, x]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[-(1/5)*(1 - 2*x)]]").unwrap(),
+      "Times[Rational[1, 5], Plus[-1, Times[2, x]]]"
+    );
+    // -1 itself leaves nothing behind but the negated sum.
+    assert_eq!(
+      interpret("ToString[FullForm[-(1 - 2*x)]]").unwrap(),
+      "Plus[-1, Times[2, x]]"
+    );
+  }
+
+  #[test]
+  fn any_other_negative_coefficient_stays_put() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[FullForm[-3*(1 - 2*x)]]").unwrap(),
+      "Times[-3, Plus[1, Times[-2, x]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[-(3/5)*(1 - 2*x)]]").unwrap(),
+      "Times[Rational[-3, 5], Plus[1, Times[-2, x]]]"
+    );
+    // A sum inside a Power is not a factor of the product, so the
+    // coefficient of a normal distribution's PDF keeps its sign.
+    assert_eq!(
+      interpret("ToString[FullForm[-(1/2)*(a + b)^2*c]]").unwrap(),
+      "Times[Rational[-1, 2], Power[Plus[a, b], 2], c]"
+    );
+  }
+
+  // The shape reached `Coefficient` and came back 0, which is how a
+  // rule-based integration lost whole terms.
+  #[test]
+  fn the_normalized_shape_keeps_its_coefficients() {
+    clear_state();
+    assert_eq!(interpret("Coefficient[-((1 - 2*x)/3), x]").unwrap(), "2/3");
+    assert_eq!(interpret("-((1 - 2*x)/3)").unwrap(), "(-1 + 2*x)/3");
+  }
+}
+
+/// Canonical ordering compares two numbers by value, whatever type each is
+/// written as — a `Plus` of `Log`s ascends in the argument, not its spelling.
+mod plus_orders_numeric_arguments_by_value {
+  use super::*;
+
+  #[test]
+  fn logs_of_rationals_and_integers_interleave() {
+    clear_state();
+    assert_eq!(
+      interpret("Log[2] + Log[3/2] + Log[5/4]").unwrap(),
+      "Log[5/4] + Log[3/2] + Log[2]"
+    );
+    assert_eq!(interpret("f[2] + f[3/2]").unwrap(), "f[3/2] + f[2]");
+    assert_eq!(interpret("Order[f[2], f[3/2]]").unwrap(), "-1");
+  }
+}
+
+/// `Together` and friends assemble a quotient as a `/` node rather than the
+/// canonical `Times[a, Power[b, -1]]`, and a reader that only understands the
+/// canonical spelling reported the whole polynomial as zero.
+mod coefficient_reads_a_quotient_node {
+  use super::*;
+
+  #[test]
+  fn coefficient_of_a_together_result_is_not_zero() {
+    clear_state();
+    assert_eq!(
+      interpret("w = -((1 - 2*x)/Sqrt[3]); Coefficient[Together[w], x, 1]")
+        .unwrap(),
+      "2/Sqrt[3]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Coefficient[Together[-((1 - 2*x)/3)], x, 0]").unwrap(),
+      "-1/3"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Coefficient[Identity[Together[-((1 - 2*x)/3)]], x, 1]")
+        .unwrap(),
+      "2/3"
+    );
+  }
+}

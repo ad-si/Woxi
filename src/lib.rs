@@ -5759,10 +5759,7 @@ fn store_function_definition(
             .map(std::option::Option::is_some)
             .ne(defaults.iter().map(std::option::Option::is_some))
           || conds.iter().any(std::option::Option::is_some)
-          || matches!(
-            body,
-            syntax::Expr::FunctionCall { name, .. } if name == "Condition"
-          )
+          || evaluator::assignment::body_is_conditional(body)
       });
     }
     // Add the new definition with parsed AST, conditions, defaults, and head constraints.

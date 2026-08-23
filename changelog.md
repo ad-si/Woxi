@@ -2,6 +2,40 @@
 
 # Unreleased
 
+- A numeric factor whose numerator is `-1` carries its sign into the sum it
+    multiplies, as it does in Wolfram: `-(1/5)*(1 - 2 x)` is
+    `Times[Rational[1, 5], Plus[-1, 2 x]]`, not `Times[Rational[-1, 5],
+    Plus[1, -2 x]]`. Woxi only did this in a quotient, so the other shape
+    survived elsewhere — printing as `(-1 - -2*x)/5` and reading back through
+    `Coefficient` as `0`, which is how a rule-based integration lost whole
+    terms. Any other negative coefficient still stays where it is
+    (`-3*(1 - 2 x)`, `-(3/5)*(1 - 2 x)`), and so does one whose sum sits
+    inside a `Power` — a normal distribution's PDF keeps its `Rational[-1, 2]`.
+
+- Canonical ordering compares two numbers by value, whatever type each is
+    written as. `Log[2] + Log[3/2] + Log[5/4]` printed in the order the
+    *spellings* sort in, because an Integer argument ranked ahead of a
+    Rational one before either was looked at.
+
+- A definition whose body carries a `/;` guard inside a `With`, `Module` or
+    `Block` is a conditional definition. `f[x_] := With[{k = …}, body /; test]`
+    followed by a plain `f[x_] := …` used to lose the first rule to the
+    second; Wolfram keeps both, tries the guarded one first, and lets the
+    plain one catch what it turns down. Rubi stacks three rules on one
+    left-hand side that way.
+
+- `Coefficient` reads a quotient assembled as a `/` node. `Together` (and
+    anything else that builds one structurally) hands back `Divide[a, b]`
+    rather than the canonical `Times[a, Power[b, -1]]`, and the polynomial
+    analysis only understood the canonical spelling — so
+    `Coefficient[Together[-((1 - 2 x)/Sqrt[3])], x, 1]` was `0`, and a
+    rule-based integration silently lost whole terms.
+
+- `FunctionExpand[Gamma[n, z]]` expands the incomplete Gamma of a positive
+    integer order into its elementary form, over the common denominator
+    Wolfram writes it with: `Gamma[3, z]` is `(2 z + 2 z^2 + z^3)/(E^z z)`.
+    Orders that need `ExpIntegralEi` or `Erf` are still left alone.
+
 - `DSolve` solves separable first-order equations posed as initial-value
     problems. `y'[x] == g[x] h[y[x]]` is nonlinear in `y` whenever `h` is, so
     the term classifier — which only understands equations linear in `y` —

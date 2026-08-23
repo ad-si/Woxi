@@ -4093,6 +4093,29 @@ fn cross_shape_shared_denom_order(
   None
 }
 
+/// The value of a plain number — Integer, BigInteger, Real or Rational — for
+/// canonical ordering. Anything else (a numeric radical, say) is excluded:
+/// those have their own base-then-exponent rule.
+fn plain_number_value(e: &Expr) -> Option<f64> {
+  use num_traits::ToPrimitive;
+  match e {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(v) => Some(*v),
+    Expr::BigInteger(n) => n.to_f64(),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => {
+          Some(*n as f64 / *d as f64)
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
 fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   use std::cmp::Ordering;
 
@@ -4229,6 +4252,18 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       }
       return av.len().cmp(&bv.len());
     }
+  }
+
+  // Two plain numbers compare by value, whatever type they are written as:
+  // `Order[2, 3/2]` is -1 because 3/2 < 2, where the type tags below would
+  // put the Integer before the Rational. This is what makes
+  // `Log[5/4] + Log[3/2] + Log[2]` ascend in the argument rather than in its
+  // spelling.
+  if let (Some(x), Some(y)) = (plain_number_value(a), plain_number_value(b))
+    && let Some(ord) = x.partial_cmp(&y)
+    && ord != Ordering::Equal
+  {
+    return ord;
   }
 
   let ta = type_tag(a);
@@ -6830,6 +6865,10 @@ pub fn nested_exact_const_machine_times(args: &[Expr]) -> Option<Expr> {
 }
 
 pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  Ok(flip_unit_negative_rational_product(times_ast_inner(args)?))
+}
+
+fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(1));
   }
@@ -9356,20 +9395,19 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
 
     // Canonicalize: a/b → Times[a, Power[b, -1]]
     let den_inv = power_two(b, &Expr::Integer(-1))?;
-    let result = times_ast(&[a.clone(), den_inv])?;
-    // Quotient evaluation absorbs a Rational[-1, d] coefficient into a
-    // single additive factor — (-54 - Pi)/(-42) becomes (54 + Pi)/42
-    // INTERNALLY, so an enclosing quotient rewrite sees the normalized
-    // form (-3/((-54 - Pi)/(-42)) -> -126/(54 + Pi), matching
-    // wolframscript). Quotient-context only: general Times pipelines
-    // legitimately keep unflipped forms (e.g. -(2 - x)/3 inside
-    // distribution PDFs).
-    Ok(flip_unit_negative_rational_product(result))
+    times_ast(&[a.clone(), den_inv])
   }
 }
 
-/// Rewrite Times[Rational[-1, d], sum] into Times[Rational[1, d], -sum]
+/// Rewrite `Times[Rational[-1, d], sum]` into `Times[Rational[1, d], -sum]`
 /// (each term negated); anything else passes through unchanged.
+///
+/// A numeric factor whose numerator is exactly `-1` carries its sign into the
+/// sum in Wolfram — `-(1/5)*(1 - 2 x)` is `Times[Rational[1, 5], Plus[-1,
+/// 2 x]]` — while any other negative coefficient stays where it is
+/// (`-3*(1 - 2 x)` and `-(3/5)*(1 - 2 x)` keep theirs). A product with more
+/// than the two factors is left alone, which is what keeps the `Rational[-1,
+/// 2]` in a normal distribution's PDF where the sum sits inside a `Power`.
 fn flip_unit_negative_rational_product(expr: Expr) -> Expr {
   let is_additive = |e: &Expr| {
     matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
@@ -9406,7 +9444,8 @@ fn flip_unit_negative_rational_product(expr: Expr) -> Expr {
   if !is_additive(&args[1]) {
     return expr;
   }
-  let Ok(negated) = times_ast(&[Expr::Integer(-1), args[1].clone()]) else {
+  let Ok(negated) = times_ast_inner(&[Expr::Integer(-1), args[1].clone()])
+  else {
     return expr;
   };
   if !is_additive(&negated) {

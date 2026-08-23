@@ -30,6 +30,25 @@ fn expr_contains_identifier(expr: &Expr, name: &str) -> bool {
   }
 }
 
+/// Whether `e` holds a `/` operator node anywhere. `canonicalize_divide_in_expr`
+/// is a no-op without one, so this keeps the rewrite (and the re-entry it
+/// triggers) off the common path.
+fn contains_divide_node(e: &Expr) -> bool {
+  match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      ..
+    } => true,
+    Expr::BinaryOp { left, right, .. } => {
+      contains_divide_node(left) || contains_divide_node(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_divide_node(operand),
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_divide_node),
+    Expr::List(items) => items.iter().any(contains_divide_node),
+    _ => false,
+  }
+}
+
 pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -54,6 +73,18 @@ pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::syntax::expr_to_message_form(&args[1])
     ));
     return Ok(unevaluated("Coefficient", args));
+  }
+
+  // `Together` (and anything else that assembles a quotient structurally)
+  // hands back a `Divide` node, which is `Times[a, Power[b, -1]]` spelled
+  // another way. The analysis below only understands the canonical spelling,
+  // and reads a polynomial written the other way as zero — which is how a
+  // rule-based integration silently lost whole terms.
+  if contains_divide_node(&args[0]) {
+    let mut rewritten = args.to_vec();
+    rewritten[0] =
+      crate::evaluator::assignment::canonicalize_divide_in_expr(&args[0]);
+    return coefficient_ast(&rewritten);
   }
 
   // SeriesData input: reduce via `Normal` first so the ordinary polynomial

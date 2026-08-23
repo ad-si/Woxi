@@ -4938,3 +4938,76 @@ mod assignment_upvalues {
     );
   }
 }
+
+/// A definition whose body carries a `/;` guard is not the same definition as
+/// an unconditional one with the same left-hand side — even when the guard
+/// sits inside the `With` that binds what it talks about. Rubi stacks three
+/// rules on one left-hand side that way.
+mod a_guard_inside_a_scoping_construct_keeps_the_definition {
+  use super::*;
+
+  #[test]
+  fn a_later_plain_rule_does_not_replace_a_guarded_one() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "cg[m_] := With[{k = 2}, \"A\" /; k != 1];\n\
+         cg[m_] := \"B\";\n\
+         {cg[3], Length[DownValues[cg]]}"
+      )
+      .unwrap(),
+      "{A, 2}"
+    );
+  }
+
+  #[test]
+  fn the_plain_rule_still_catches_what_the_guard_turns_down() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ch[m_] := With[{k = 1}, \"A\" /; k != 1];\n\
+         ch[m_] := \"B\";\n\
+         {ch[3], Length[DownValues[ch]]}"
+      )
+      .unwrap(),
+      "{B, 2}"
+    );
+  }
+
+  #[test]
+  fn module_and_block_bodies_count_too() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ci[m_] := Module[{k = 2}, \"A\" /; k != 1];\n\
+         ci[m_] := \"B\";\n\
+         ci[3]"
+      )
+      .unwrap(),
+      "A"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "cj[m_] := Block[{k = 2}, \"A\" /; k != 1];\n\
+         cj[m_] := \"B\";\n\
+         cj[3]"
+      )
+      .unwrap(),
+      "A"
+    );
+  }
+
+  // An unguarded rule is still replaced by a later one with the same pattern.
+  #[test]
+  fn a_plain_rule_is_still_replaced() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ck[m_] := \"A\"; ck[m_] := \"B\"; {ck[3], Length[DownValues[ck]]}"
+      )
+      .unwrap(),
+      "{B, 1}"
+    );
+  }
+}

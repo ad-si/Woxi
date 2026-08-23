@@ -186,6 +186,24 @@ fn body_has_condition(body: &Expr) -> bool {
   )
 }
 
+/// Whether a definition's body carries a `/;` guard, looking through the
+/// scoping construct that binds the names the guard talks about.
+///
+/// `f[x_] := With[{k = …}, body /; test]` is a *conditional* definition, so a
+/// later unconditional `f[x_] := …` adds a second DownValue instead of
+/// replacing it — the guarded rule is tried first and the plain one catches
+/// what it turns down. Rubi writes most of its rule base in exactly that
+/// shape, three rules deep on the same left-hand side.
+pub(crate) fn body_is_conditional(body: &Expr) -> bool {
+  if body_has_condition(body) {
+    return true;
+  }
+  matches!(body, Expr::FunctionCall { name, args }
+    if matches!(name.as_str(), "With" | "Module" | "Block")
+      && args.len() == 2
+      && body_is_conditional(&args[1]))
+}
+
 /// Whether a stored per-parameter condition marks a genuine literal-argument
 /// definition (e.g. `f[0]`, stored as `param === value`). The synthetic
 /// `Length[_lp] === N` guard emitted for list patterns also uses `SameQ` but

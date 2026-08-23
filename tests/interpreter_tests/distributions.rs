@@ -3992,7 +3992,7 @@ mod min_stable_distribution {
     );
     assert_eq!(
       interpret("PDF[MinStableDistribution[2, 3, 0], x]").unwrap(),
-      "E^(-E^((-2 + x)/3) - (2 - x)/3)/3"
+      "E^(-E^((-2 + x)/3) + (-2 + x)/3)/3"
     );
     assert_eq!(
       interpret("PDF[MinStableDistribution[0, 1, 1], x]").unwrap(),

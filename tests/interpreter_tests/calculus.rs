@@ -9707,7 +9707,7 @@ mod inverse_laplace_transform {
     assert_eq!(
       interpret("InverseLaplaceTransform[1/(s^3 + 2 s^2 + 5 s), s, t]")
         .unwrap(),
-      "-1/10*(-2*E^t + 2*Cos[2*t] + Sin[2*t])/E^t"
+      "(2*E^t - 2*Cos[2*t] - Sin[2*t])/(10*E^t)"
     );
   }
 
