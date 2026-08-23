@@ -1653,6 +1653,60 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_distinct_images_are_not_same_q_or_equal() {
+    // `expr_to_string` reports every `Image[…]` as the same `-Image-`
+    // display placeholder. `SameQ`/`Equal` and the structural-equality
+    // helper they share must compare actual pixel data instead of that
+    // placeholder, or any two distinct images collapse into "the same
+    // value" — e.g. a Demonstration that builds a `Graph` whose vertices
+    // are image tiles (`GraphPlot[Thread[imgA -> imgB], …]`) would then
+    // see every tile dedup into a single vertex.
+    clear_state();
+    assert_eq!(
+      interpret("Image[{{1, 2}, {3, 4}}] === Image[{{5, 6}, {7, 8}}]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("SameQ[Image[{{1, 2}, {3, 4}}], Image[{{5, 6}, {7, 8}}]]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Image[{{1, 2}, {3, 4}}] == Image[{{5, 6}, {7, 8}}]").unwrap(),
+      "False"
+    );
+    // Two images with identical pixel data are still SameQ/Equal.
+    assert_eq!(
+      interpret("Image[{{1, 2}, {3, 4}}] === Image[{{1, 2}, {3, 4}}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Image[{{1, 2}, {3, 4}}] == Image[{{1, 2}, {3, 4}}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn test_graph_plot_dedups_image_vertices_by_content() {
+    // `GraphPlot[Thread[imgA -> imgB], …]` — the pattern a Demonstration
+    // uses to plot a nearest-neighbor graph over image tiles — must build
+    // one graph vertex per distinct image, not collapse every image into
+    // one vertex because they all stringify to `-Image-`.
+    clear_state();
+    let svg = interpret(
+      "imgs = Table[Image[ConstantArray[N[i / 5], {2, 2, 3}]], {i, 1, 5}]; \
+       edges = Flatten[Table[Thread[imgs[[i]] -> {imgs[[Mod[i, 5] + 1]]}], {i, 5}]]; \
+       ExportString[GraphPlot[edges, VertexRenderingFunction -> (Inset[#2, #, Center, .5] &)], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(
+      svg.matches("<image").count(),
+      5,
+      "expected one <image> per distinct vertex, got: {svg}"
+    );
+  }
+
+  #[test]
   fn test_inset_labeled_graphic_embeds_picture() {
     // `Inset[Labeled[Graphics[…], caption], pos, opos, size]` — a
     // Demonstration's usual way to caption a small diagram composited into

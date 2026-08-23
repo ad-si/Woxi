@@ -3328,13 +3328,33 @@ pub fn evaluate_expr_to_expr_inner(
             // Special case: a machine-precision Real and a BigFloat with
             // a precision tag inside the machine-precision band collapse
             // to the same f64 — Wolfram treats them as SameQ.
-            expr_to_string(left) == expr_to_string(right)
-              || crate::functions::boolean_ast::same_q_real_bigfloat(
-                left, right,
-              )
+            //
+            // `expr_to_string` reports every `Image[…]` as the same
+            // `-Image-` display placeholder, so the string fast path
+            // would treat any two images as SameQ regardless of their
+            // pixel data — compare the actual raster content instead.
+            if matches!(left, Expr::Image { .. })
+              || matches!(right, Expr::Image { .. })
+            {
+              crate::evaluator::pattern_matching::expr_equal(left, right)
+            } else {
+              expr_to_string(left) == expr_to_string(right)
+                || crate::functions::boolean_ast::same_q_real_bigfloat(
+                  left, right,
+                )
+            }
           }
           ComparisonOp::Equal => {
-            if let Some(ord) = exact_integer_ord(left, right) {
+            // `expr_to_string` reports every `Image[…]` as the same
+            // `-Image-` display placeholder, so the string-identity
+            // fallback further below would treat any two images as
+            // Equal regardless of their pixel data — compare the
+            // actual raster content instead.
+            if matches!(left, Expr::Image { .. })
+              || matches!(right, Expr::Image { .. })
+            {
+              crate::evaluator::pattern_matching::expr_equal(left, right)
+            } else if let Some(ord) = exact_integer_ord(left, right) {
               matches!(ord, std::cmp::Ordering::Equal)
             } else {
               // Two BigFloats with > ~16 digits of precision can carry
@@ -3433,10 +3453,22 @@ pub fn evaluate_expr_to_expr_inner(
           }
           ComparisonOp::UnsameQ => {
             // UnsameQ tests structural non-identity, not numeric inequality.
-            expr_to_string(left) != expr_to_string(right)
+            // See the SameQ arm above: images all share the `-Image-`
+            // display placeholder, so compare pixel data instead.
+            if matches!(left, Expr::Image { .. })
+              || matches!(right, Expr::Image { .. })
+            {
+              !crate::evaluator::pattern_matching::expr_equal(left, right)
+            } else {
+              expr_to_string(left) != expr_to_string(right)
+            }
           }
           ComparisonOp::NotEqual => {
-            if let Some(ord) = exact_integer_ord(left, right) {
+            if matches!(left, Expr::Image { .. })
+              || matches!(right, Expr::Image { .. })
+            {
+              !crate::evaluator::pattern_matching::expr_equal(left, right)
+            } else if let Some(ord) = exact_integer_ord(left, right) {
               !matches!(ord, std::cmp::Ordering::Equal)
             } else if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))

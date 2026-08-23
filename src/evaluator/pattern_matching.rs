@@ -2709,6 +2709,35 @@ pub fn expr_equal(a: &Expr, b: &Expr) -> bool {
         && a1.len() == a2.len()
         && a1.iter().zip(a2.iter()).all(|(x, y)| expr_equal(x, y))
     }
+    // Images have no useful textual form (`expr_to_string` reports the
+    // `-Image-` display placeholder for every one of them), so the
+    // catch-all below would treat any two images as equal regardless of
+    // their pixel data. Compare the actual raster content instead.
+    (
+      Expr::Image {
+        width: w1,
+        height: h1,
+        channels: c1,
+        data: d1,
+        image_type: t1,
+        color_space: s1,
+      },
+      Expr::Image {
+        width: w2,
+        height: h2,
+        channels: c2,
+        data: d2,
+        image_type: t2,
+        color_space: s2,
+      },
+    ) => {
+      w1 == w2
+        && h1 == h2
+        && c1 == c2
+        && t1 == t2
+        && s1 == s2
+        && (std::sync::Arc::ptr_eq(d1, d2) || d1 == d2)
+    }
     _ => expr_to_string(a) == expr_to_string(b),
   }
 }

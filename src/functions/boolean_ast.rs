@@ -256,6 +256,17 @@ pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let first_str = crate::syntax::expr_to_string(first);
 
   for arg in args.iter().skip(1) {
+    // `expr_to_string` reports every `Image[…]` as the same `-Image-`
+    // display placeholder, so the string fast path below would treat any
+    // two images as SameQ regardless of their pixel data. Compare the
+    // actual raster content instead whenever either side is an image.
+    if matches!(first, Expr::Image { .. }) || matches!(arg, Expr::Image { .. })
+    {
+      if !crate::evaluator::pattern_matching::expr_equal(first, arg) {
+        return Ok(bool_expr(false));
+      }
+      continue;
+    }
     let val_str = crate::syntax::expr_to_string(arg);
     if val_str != first_str && !same_q_real_bigfloat(first, arg) {
       return Ok(bool_expr(false));
@@ -359,13 +370,25 @@ pub fn unsame_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // UnsameQ is not HoldAll: arguments arrive already evaluated, so just take
   // their string forms (re-evaluating deep arguments is needlessly expensive).
+  //
+  // `expr_to_string` reports every `Image[…]` as the same `-Image-` display
+  // placeholder, so that string fast path would treat any two images as
+  // identical regardless of their pixel data — compare those pairs
+  // structurally instead.
   let strs: Vec<String> =
     args.iter().map(crate::syntax::expr_to_string).collect();
 
   // UnsameQ is True only if ALL pairs are different
   for i in 0..strs.len() {
     for j in (i + 1)..strs.len() {
-      if strs[i] == strs[j] {
+      let same = if matches!(args[i], Expr::Image { .. })
+        || matches!(args[j], Expr::Image { .. })
+      {
+        crate::evaluator::pattern_matching::expr_equal(&args[i], &args[j])
+      } else {
+        strs[i] == strs[j]
+      };
+      if same {
         return Ok(bool_expr(false));
       }
     }
@@ -648,6 +671,19 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut all_identical = true;
 
   for arg in args.iter().skip(1) {
+    // `expr_to_string` reports every `Image[…]` as the same `-Image-`
+    // display placeholder, so the string fast path below would treat any
+    // two images as Equal regardless of their pixel data. Compare the
+    // actual raster content instead whenever either side is an image.
+    if matches!(&args[0], Expr::Image { .. })
+      || matches!(arg, Expr::Image { .. })
+    {
+      if !crate::evaluator::pattern_matching::expr_equal(&args[0], arg) {
+        all_identical = false;
+        break;
+      }
+      continue;
+    }
     let val_str = crate::syntax::expr_to_string(arg);
     if val_str != first_str {
       all_identical = false;
@@ -817,17 +853,29 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Two operands also count as "equal" when they share head and arity with
   // every leaf determinably equal, e.g. RGBColor[0., 0., 1.] != RGBColor[0,
   // 0, 1] is False.
+  // `expr_to_string` reports every `Image[…]` as the same `-Image-` display
+  // placeholder, so the string-identity checks above would treat any two
+  // images as a duplicate pair regardless of their pixel data — compare
+  // those pairs structurally instead.
+  let pair_identical = |i: usize, j: usize| {
+    if matches!(args[i], Expr::Image { .. })
+      || matches!(args[j], Expr::Image { .. })
+    {
+      crate::evaluator::pattern_matching::expr_equal(&args[i], &args[j])
+    } else {
+      strs[i] == strs[j] || all_components_equal(&args[i], &args[j])
+    }
+  };
   if has_free {
     for i in 0..strs.len() - 1 {
-      if strs[i] == strs[i + 1] || all_components_equal(&args[i], &args[i + 1])
-      {
+      if pair_identical(i, i + 1) {
         return Ok(bool_expr(false));
       }
     }
   } else {
     for i in 0..strs.len() {
       for j in i + 1..strs.len() {
-        if strs[i] == strs[j] || all_components_equal(&args[i], &args[j]) {
+        if pair_identical(i, j) {
           return Ok(bool_expr(false));
         }
       }
