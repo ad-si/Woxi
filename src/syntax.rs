@@ -2722,18 +2722,14 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       Expr::Identifier("Null".to_string())
     }
     Rule::Identifier => {
-      // Strip the default `Global`` context prefix so `Global`x` collapses
-      // to plain `x`, matching wolframscript: `x === Global`x` is True.
       // A leading backtick ` `x` ` is shorthand for the current context,
-      // which is Global by default — also collapse to `x`.
-      // Other contexts (e.g. `Foo`Bar`x`) keep their full name and remain
-      // distinct symbols.
+      // which is Global by default — collapse it to `x`. An explicit
+      // `Global`x` is *not* collapsed here: inside a package it still names
+      // the Global symbol, not the package's own `x`, so which symbol it is
+      // has to be decided at read time by the context resolver (which maps
+      // it back to the plain `x` that Woxi stores a Global symbol under).
       let s = pair.as_str();
-      let name = s
-        .strip_prefix("Global`")
-        .or_else(|| s.strip_prefix('`'))
-        .unwrap_or(s)
-        .to_string();
+      let name = s.strip_prefix('`').unwrap_or(s).to_string();
       // Expand any embedded `\[Name]` segments to their Unicode chars so
       // `Z\[Infinity]` becomes the single identifier `Z∞`, matching
       // wolframscript's identifier-character semantics.
@@ -10369,7 +10365,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return format!("Derivative[{n_str}][{f_str}]");
       }
       let parts: Vec<String> = args.iter().map(&fmt).collect();
-      format!("{}[{}]", name, parts.join(", "))
+      format!("{}[{}]", call_head_display(name), parts.join(", "))
     }
     // BinaryOp::Times in OutputForm: flatten and check for denominator factors,
     // then fall through to InputForm for the rest
@@ -12743,10 +12739,10 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       ) =>
     {
       if args.is_empty() {
-        format!("{name}[]")
+        format!("{}[]", call_head_display(name))
       } else {
         let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
-        format!("{}[{}]", name, parts.join(", "))
+        format!("{}[{}]", call_head_display(name), parts.join(", "))
       }
     }
     // Chained comparison with 2+ operators:
@@ -13192,6 +13188,18 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     }
     // For all other cases (infix operators, simple literals), delegate to expr_to_output
     _ => expr_to_output(expr),
+  }
+}
+
+/// How a call's head is written when the head is itself a pattern.
+///
+/// A named head pattern is parenthesized — `(F_)[u_, t_]` — so the `_` cannot
+/// be read as part of the following bracket group. An anonymous `_[u_]` needs
+/// no parens, and an ordinary symbol head is written as it stands.
+fn call_head_display(name: &str) -> std::borrow::Cow<'_, str> {
+  match name.split_once('_') {
+    Some((var, _)) if !var.is_empty() => format!("({name})").into(),
+    _ => name.into(),
   }
 }
 

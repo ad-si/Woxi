@@ -1621,6 +1621,7 @@
   - [`WriteString`](file_system/WriteString.md)
   - [`XMLTemplate`](file_system/XMLTemplate.md)
 - [Contexts & Packages](contexts.md)
+  - [Rubi](rubi.md)
 - [Scripting](scripting.md)
 - [Jupyter](jupyter.md)
 - [Python](python.md)

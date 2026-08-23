@@ -516,6 +516,40 @@ mod down_values {
     );
   }
 
+  // A rule assembled head-first is the same rule: `ReplacePart` on a rule
+  // hands back `RuleDelayed[lhs, rhs]`, and assigning a list of those has to
+  // install them. Rubi's `FixIntRule` rebuilds every one of its rules this
+  // way before assigning the list back to `DownValues[Int]`.
+  #[test]
+  fn down_values_accept_rules_rebuilt_by_replace_part() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "q[x_] := x + 1; DownValues[q] = \
+         Map[ReplacePart[#, {2} -> 99] &, DownValues[q]]; {q[1], DownValues[q]}"
+      )
+      .unwrap(),
+      "{99, {HoldPattern[q[x_]] :> 99}}"
+    );
+  }
+
+  // A `/;` guard is not a literal argument. Reading it as one used to hoist
+  // the rule to the front of the DownValues, ahead of rules whose patterns
+  // are strictly more specific — which silently changes which rule fires.
+  #[test]
+  fn a_same_q_guard_does_not_reorder_the_rules() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "q[F_[G_[l_, u_], t_]] := \"deep\" /; F === Condition;\n\
+         q[F_[u_, t_]] := \"shallow\" /; F === Condition;\n\
+         ToString[First /@ DownValues[q], InputForm]"
+      )
+      .unwrap(),
+      "{HoldPattern[q[(F_)[(G_)[l_, u_], t_]]], HoldPattern[q[(F_)[u_, t_]]]}"
+    );
+  }
+
   // `DownValues[f] = {}` clears f, even though an empty list names no head
   // of its own. Rubi's `ClearDownValues` is exactly this.
   #[test]

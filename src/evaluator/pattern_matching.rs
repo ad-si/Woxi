@@ -1330,6 +1330,13 @@ fn try_flat_partition_match(
       || crate::func_attrs_contains(pat_name, Attributes::Orderless);
   let n = expr_args.len();
   let k = pat_args.len();
+  // Several groupings can match, and they bind the pattern variables
+  // differently: `Plus[p^2, -4 q r, -x^2]` against `a_ + b_.*x_^2` reads `x`
+  // as `p` or as `x` depending on where the split falls. Prefer a grouping
+  // whose bindings agree with what the caller has already bound — the second
+  // argument of `f[a_ + b_.*x_^2, x_Symbol]` says which one `x` is — and keep
+  // the first grouping that matched for when none of them does.
+  let mut fallback: Option<Vec<(String, Expr)>> = None;
   if has_orderless {
     let partitions = set_partitions(n, k);
     for partition in partitions {
@@ -1344,7 +1351,10 @@ fn try_flat_partition_match(
         if let Some(b) =
           try_align_groups(pat_name, pat_args, expr_args, &ordered)
         {
-          return Some(b);
+          if bindings_compatible_with_context(&b) {
+            return Some(b);
+          }
+          fallback.get_or_insert(b);
         }
       }
     }
@@ -1360,11 +1370,14 @@ fn try_flat_partition_match(
       let ordered: Vec<&Vec<usize>> = groups.iter().collect();
       if let Some(b) = try_align_groups(pat_name, pat_args, expr_args, &ordered)
       {
-        return Some(b);
+        if bindings_compatible_with_context(&b) {
+          return Some(b);
+        }
+        fallback.get_or_insert(b);
       }
     }
   }
-  None
+  fallback
 }
 
 fn permutations_of_range(n: usize) -> Vec<Vec<usize>> {
@@ -3777,10 +3790,38 @@ fn try_skip_optional_subsets(
   None
 }
 
+/// The `Plus` / `Times` form of a subtraction or division node, or `None`
+/// when the expression is already in canonical form.
+fn canonical_arithmetic_form(expr: &Expr) -> Option<Expr> {
+  if !matches!(
+    expr,
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus | BinaryOperator::Divide,
+      ..
+    }
+  ) {
+    return None;
+  }
+  let (head, args) =
+    crate::functions::list_helpers_ast::expr_to_head_args(expr)?;
+  Some(crate::functions::expr_form::compose_expr(&head, &args))
+}
+
 fn match_pattern_impl(
   expr: &Expr,
   pattern: &Expr,
 ) -> Option<Vec<(String, Expr)>> {
+  // `a - b` is `Plus[a, Times[-1, b]]` and `a / b` is `Times[a, Power[b, -1]]`
+  // — the operators are notation, not heads of their own. Evaluation rewrites
+  // them, but a held expression keeps the operator node, so without this
+  // `MatchQ[Hold[q - x^2], Hold[u_ + v_]]` would be False (and a rule base
+  // read out of `DownValues` would stop matching subtractions).
+  if let Some(canonical) = canonical_arithmetic_form(expr) {
+    return match_pattern_impl(&canonical, pattern);
+  }
+  if let Some(canonical) = canonical_arithmetic_form(pattern) {
+    return match_pattern_impl(expr, &canonical);
+  }
   // HoldPattern[p] is transparent to pattern matching: it only prevents
   // evaluation of the wrapped expression when parsed, and the matcher
   // should treat it as if it were just `p`.

@@ -414,6 +414,32 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
   }
 }
 
+/// The two sides of a rule, in whichever spelling it arrives in.
+///
+/// `a -> b` parses to `Expr::Rule`, but a rule assembled head-first —
+/// `Rule @@ {a, b}`, or the `RuleDelayed[lhs, rhs]` a `ReplacePart` on a rule
+/// rebuilds — is a plain call by the same name. Both are the same expression,
+/// so anything that reads rules has to accept either. The flag says whether
+/// the rule is delayed (`:>`).
+pub fn rule_parts(expr: &Expr) -> Option<(&Expr, &Expr, bool)> {
+  match expr {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Some((pattern, replacement, false)),
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Some((pattern, replacement, true)),
+    Expr::FunctionCall { name, args }
+      if args.len() == 2 && (name == "Rule" || name == "RuleDelayed") =>
+    {
+      Some((&args[0], &args[1], name == "RuleDelayed"))
+    }
+    _ => None,
+  }
+}
+
 /// Rebuild an expression from the `head` / `children` pair that
 /// `decompose_expr` produces, restoring the dedicated `Expr` variant whenever
 /// one exists.

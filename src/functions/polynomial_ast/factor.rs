@@ -776,22 +776,48 @@ pub fn evaluate_poly(coeffs: &[i128], x: i128) -> i128 {
 
 /// Get all positive divisors of n.
 fn integer_divisors(n: i128) -> Vec<i128> {
+  // Trial division stops here rather than at `sqrt(n)`: a `Simplify` inside a
+  // rule-based integration reaches this with 25-digit coefficients, and
+  // walking every integer below their square root never finishes. Whatever
+  // is left after the small primes counts as one further prime factor — the
+  // list is then complete unless that leftover is itself composite, and a
+  // rational root built from its inner factors is missed, which only leaves
+  // the polynomial unfactored.
+  const TRIAL_LIMIT: i128 = 1 << 20;
   if n == 0 {
     return vec![1];
   }
-  let n = n.abs();
-  let mut divs = Vec::new();
-  let mut i = 1i128;
-  while i * i <= n {
-    if n % i == 0 {
-      divs.push(i);
-      if i != n / i {
-        divs.push(n / i);
+  let mut rest = n.abs();
+  let mut factors: Vec<(i128, u32)> = Vec::new();
+  let mut p = 2i128;
+  while p <= TRIAL_LIMIT && p.saturating_mul(p) <= rest {
+    if rest % p == 0 {
+      let mut multiplicity = 0;
+      while rest % p == 0 {
+        rest /= p;
+        multiplicity += 1;
       }
+      factors.push((p, multiplicity));
     }
-    i += 1;
+    p += if p == 2 { 1 } else { 2 };
+  }
+  if rest > 1 {
+    factors.push((rest, 1));
+  }
+  let mut divs = vec![1i128];
+  for (prime, multiplicity) in factors {
+    let base = divs.clone();
+    let mut power = 1i128;
+    for _ in 0..multiplicity {
+      let Some(next) = power.checked_mul(prime) else {
+        break;
+      };
+      power = next;
+      divs.extend(base.iter().filter_map(|d| d.checked_mul(power)));
+    }
   }
   divs.sort_unstable();
+  divs.dedup();
   divs
 }
 

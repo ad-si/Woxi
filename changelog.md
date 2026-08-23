@@ -2,6 +2,69 @@
 
 # Unreleased
 
+- `Block` localizes everything a symbol stands for, not only its own value.
+    Its down-, sub-, up-, n- and format values, its options, its messages and
+    its attributes all disappear for the duration of the body and come back
+    when it exits, so `Block[{Hold}, Hold[1 + 1]]` is `Hold[2]` and
+    `Block[{f}, DownValues[f]]` is `{}`. The value the block returns is then
+    evaluated once more with the symbols restored, which is why
+    `n = 10; Block[{n}, n]` is `10` even though the body evaluated to a bare
+    `n`. `ClearAll` is the same removal without the putting-back and now goes
+    through it, which also gives it the messages it used to leave behind.
+
+- A pattern that matches on a head binds inside a package.
+    `f[F_[u_, t_]] := g[F]` kept the head pattern in the call's name, where
+    the context resolver refused to look, so `F` bound under its bare name
+    while the body asked for `Pkg`Private`F` and came back unsubstituted.
+    A named head pattern also prints parenthesized — `(F_)[u_, t_]` — the way
+    it has to be written to read back as itself.
+
+- `Global`x` names the `Global`` symbol from inside a package. It used to be
+    collapsed to a bare `x` while reading, which inside a package meant that
+    package's own `x`: a script's `$Flag = False` was invisible to the
+    `Global`$Flag` the package it loaded read it back with.
+
+- A `/;` guard is no longer mistaken for a literal-argument definition. Any
+    `===` in a stored condition counted as one, and literal-argument rules are
+    hoisted to the front of the `DownValues` — so `f[F_[u_, t_]] := … /; F ===
+    Condition` jumped ahead of rules whose patterns are strictly more specific
+    and fired in their place.
+
+- `Length` of a rule is 2. `a -> b` and `a :> b` (and the other operator forms
+    that are calls in FullForm) reported 0, because only some node kinds were
+    counted; they all go through the canonical decomposition now. Complex
+    numbers stay atoms of length 0 however they are spelled.
+
+- `FreeQ` looks inside rules, comparisons and pure functions.
+    `FreeQ[HoldPattern[f[ArcSin[x]]] :> 1, ArcSin]` answered `True`: the walk
+    stopped at any node the operator syntax builds, so a rule read out of
+    `DownValues` looked free of everything written in it.
+
+- A held `a - b` matches as the `Plus` it is. Subtraction and division are
+    notation for `Plus[a, Times[-1, b]]` and `Times[a, Power[b, -1]]`, and
+    evaluation rewrites them — but a held expression keeps the operator node,
+    and the matcher did not recognize it. `MatchQ[Hold[q - x^2], Hold[u_ + v_]]`
+    was `False`.
+
+- A `Flat` head is split the way the rest of the rule wants. `Plus[p^2, -4 q r,
+    -x^2]` satisfies `a_ + b_.*x_^2` two ways, and `f[a_ + b_.*x_^2, x_Symbol]`
+    says which: the split that reads `p^2` as `b x^2` contradicts the second
+    argument. Dispatch now prefers a split whose bindings agree with what is
+    already bound, and keeps the old first-split reading when none does.
+
+- `ReplacePart` puts an expression back together the way it took it apart, so
+    a rule stays a rule instead of coming back as a `Rule[…]` call that later
+    readers do not recognize. `DownValues[f] = …` accepts either spelling.
+
+- `Factor` no longer hangs on large coefficients. The rational-root search
+    enumerated an integer's divisors by trial division up to its square root,
+    which for the 25-digit coefficients a symbolic integration produces never
+    finishes.
+
+- Rubi, the rule-based integrator, loads unmodified and integrates — see the
+    new [Rubi](tests/cli/rubi.md) page for how to use it and what is still
+    missing.
+
 - An Orderless argument is re-read when a rule's guard turns down the first
     reading. `Times` and `Plus` arguments can satisfy a structural pattern
     more than one way, and the guard may accept only some of them:

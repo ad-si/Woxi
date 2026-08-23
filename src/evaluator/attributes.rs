@@ -1161,69 +1161,11 @@ pub fn dispatch_attributes(
       return Some(Ok(Expr::Identifier("Null".to_string())));
     }
     "ClearAll" => {
+      // `ClearAll` is `Block`'s localization without the putting-back: take
+      // every value the symbol has — own, down, sub, up, n, format, options,
+      // messages, attributes — and drop the snapshot on the floor.
       let clear_one = |sym: &str| {
-        ENV.with(|e| e.borrow_mut().remove(sym));
-        crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
-        crate::MEMO_VALUES.with(|m| m.borrow_mut().remove(sym));
-        crate::FUNC_ATTRS.with(|m| m.borrow_mut().remove(sym));
-        crate::FUNC_OPTIONS.with(|m| m.borrow_mut().remove(sym));
-        crate::FUNC_OPTIONS_DELAYED.with(|m| {
-          m.borrow_mut().remove(sym);
-        });
-        // Drop any `Default[sym, …] := v` rules — they live keyed under
-        // `Default` but reference this symbol as their first slot, and
-        // ClearAll[sym] removes the symbol's DefaultValues alongside its
-        // DownValues / Options / etc.
-        crate::FUNC_DEFS.with(|m| {
-          if let Some(entries) = m.borrow_mut().get_mut("Default") {
-            entries.retain(|(params, _, _, _, _, _)| {
-              params.first().is_none_or(|p| p != sym)
-            });
-          }
-        });
-        crate::FUNC_OPTS_INLINE.with(|m| m.borrow_mut().remove(sym));
-        crate::evaluator::assignment::FORMAT_VALUES
-          .with(|m| m.borrow_mut().remove(sym));
-        crate::evaluator::assignment::SUB_VALUES
-          .with(|m| m.borrow_mut().remove(sym));
-        crate::evaluator::assignment::N_VALUES
-          .with(|m| m.borrow_mut().remove(sym));
-        // Mark every builtin attribute as removed so `Attributes[sym]`
-        // returns `{}` after ClearAll, matching wolframscript.
-        let builtin = get_builtin_attributes_mask(sym);
-        if !builtin.is_empty() {
-          crate::FUNC_ATTRS_REMOVED.with(|m| {
-            let mut removed = m.borrow_mut();
-            let mask = builtin.to_u32();
-            removed
-              .entry(sym.to_string())
-              .and_modify(|a| (*a).add(mask))
-              .or_insert(Attributes::new(mask));
-          });
-        }
-        let up_defs = crate::UPVALUES.with(|m| m.borrow_mut().remove(sym));
-        if let Some(up_defs) = up_defs {
-          for (
-            outer_func,
-            params,
-            _conds,
-            _defaults,
-            _heads,
-            body,
-            _orig_lhs,
-            _orig_body,
-          ) in &up_defs
-          {
-            let body_str = expr_to_string(body);
-            crate::FUNC_DEFS.with(|m| {
-              if let Some(entry) = m.borrow_mut().get_mut(outer_func) {
-                entry.retain(|(p, _, _, _, _, b)| {
-                  !(p == params && expr_to_string(b) == body_str)
-                });
-              }
-            });
-          }
-        }
+        drop(crate::evaluator::symbol_values::take_symbol_values(sym));
       };
       for arg in args {
         match arg {

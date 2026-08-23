@@ -1642,7 +1642,30 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::UnaryOp { operand, .. } => {
         contains_form(operand, form, form_str, use_pattern)
       }
-      _ => false,
+      // Everything else — rules, comparisons, associations, patterns, pure
+      // functions — through the canonical decomposition, so `FreeQ` sees the
+      // parts its FullForm shows. Without this a rule read out of
+      // `DownValues` looks free of everything written inside it, which is how
+      // a package inspects its own rule base.
+      other => match crate::functions::expr_form::decompose_expr(other) {
+        crate::functions::expr_form::ExprForm::Composite { head, children } => {
+          if is_form_symbol(form, &head) {
+            return true;
+          }
+          if use_pattern {
+            let head_expr = Expr::Identifier(head);
+            if crate::functions::list_helpers_ast::matches_pattern_ast(
+              &head_expr, form,
+            ) {
+              return true;
+            }
+          }
+          children
+            .iter()
+            .any(|e| contains_form(e, form, form_str, use_pattern))
+        }
+        crate::functions::expr_form::ExprForm::Atom(_) => false,
+      },
     }
   }
 
@@ -2150,15 +2173,15 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(Expr::Integer(*d));
   }
+  // Rational[n, d] and Complex[re, im] are atoms: Length is 0 however the
+  // number is spelled (`2 + 3 I` as well as `Complex[2, 3]`).
+  if is_complex_number(&stripped) {
+    return Ok(Expr::Integer(0));
+  }
   let len = match &stripped {
     Expr::List(items) => items.len() as i128,
     Expr::Association(items) => items.len() as i128,
-    // Rational[n, d] and Complex[re, im] are atoms with length 0
-    Expr::FunctionCall { name, .. }
-      if name == "Rational" || name == "Complex" =>
-    {
-      0
-    }
+    Expr::FunctionCall { name, .. } if name == "Rational" => 0,
     // ByteArray["base64"] — length is number of bytes
     Expr::FunctionCall { name, args }
       if name == "ByteArray" && args.len() == 1 =>
@@ -2197,20 +2220,17 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::syntax::comparison_head_and_args(operands, operators);
       args.len() as i128
     }
-    // Patterns count their FullForm parts: `x_` is Pattern[x, Blank[]] (2),
-    // `_Integer` is Blank[Integer] (1), `x_.` is Optional[Pattern[…]] (1).
-    Expr::Pattern { .. }
-    | Expr::PatternTest { .. }
-    | Expr::PatternOptional { .. } => {
-      match crate::functions::expr_form::decompose_expr(&stripped) {
-        crate::functions::expr_form::ExprForm::Composite {
-          children, ..
-        } => children.len() as i128,
-        crate::functions::expr_form::ExprForm::Atom(_) => 0,
+    // Everything else counts its FullForm parts, as the canonical
+    // decomposition spells them: `x_` is Pattern[x, Blank[]] (2), `_Integer`
+    // is Blank[Integer] (1), `a :> b` is RuleDelayed[a, b] (2). Genuine
+    // atoms — Integer, Real, String, Identifier, … — come back as Atom and
+    // have length 0.
+    _ => match crate::functions::expr_form::decompose_expr(&stripped) {
+      crate::functions::expr_form::ExprForm::Composite { children, .. } => {
+        children.len() as i128
       }
-    }
-    // Atoms: Integer, Real, String, Identifier, BigFloat, BigInteger, etc.
-    _ => 0,
+      crate::functions::expr_form::ExprForm::Atom(_) => 0,
+    },
   };
   Ok(Expr::Integer(len))
 }
