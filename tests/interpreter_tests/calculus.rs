@@ -841,6 +841,74 @@ mod integrate_with_sum {
     );
   }
 
+  /// `Sin[a x] Sin[b x]` with `a != b` is the same-argument product's
+  /// same-argument neighbour: the double-angle identity above only applies
+  /// when both factors share one argument, so a genuinely different pair
+  /// of frequencies needs the product-to-sum identity
+  /// `Sin[A] Sin[B] = (Cos[A-B] - Cos[A+B]) / 2` instead. This is the
+  /// orthogonality integral a Fourier series relies on.
+  #[test]
+  fn integrate_sin_sin_product_different_frequencies() {
+    assert_eq!(
+      interpret("Integrate[Sin[x] * Sin[2*x], x]").unwrap(),
+      "Sin[x]/2 - Sin[3*x]/6"
+    );
+  }
+
+  #[test]
+  fn integrate_cos_cos_product_different_frequencies() {
+    // Cos[A] Cos[B] = (Cos[A-B] + Cos[A+B]) / 2
+    assert_eq!(
+      interpret("Integrate[Cos[x] * Cos[3*x], x]").unwrap(),
+      "Sin[2*x]/4 + Sin[4*x]/8"
+    );
+  }
+
+  #[test]
+  fn integrate_sin_cos_product_different_frequencies() {
+    // Sin[A] Cos[B] = (Sin[A+B] + Sin[A-B]) / 2
+    assert_eq!(
+      interpret("Integrate[Sin[2*x] * Cos[3*x], x]").unwrap(),
+      "Cos[x]/2 - Cos[5*x]/10"
+    );
+  }
+
+  /// The orthogonality relations a Fourier series is built on: sines and
+  /// cosines of different integer multiples of `Pi` over a symmetric
+  /// period integrate to exactly zero, while a matching pair of
+  /// frequencies integrates to a nonzero constant. Regression test for a
+  /// bug where `Integrate[Sin[m Pi x] Sin[n Pi x], {x, -1, 1}]` (m != n)
+  /// was left unevaluated instead of reducing to `0`, because the
+  /// same-argument product handler bails out on differing arguments and
+  /// nothing else picked up the product-to-sum identity.
+  #[test]
+  fn orthogonality_of_sines_and_cosines_over_symmetric_period() {
+    assert_eq!(
+      interpret("Integrate[Sin[1*Pi*x] * Sin[2*Pi*x], {x, -1, 1}]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[1*Pi*x] * Cos[2*Pi*x], {x, -1, 1}]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Integrate[Sin[2*Pi*x] * Sin[3*Pi*x], {x, -1, 1}]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Integrate[Sin[2*Pi*x] * Cos[3*Pi*x], {x, -1, 1}]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Integrate[Sin[2*Pi*x] * Sin[2*Pi*x], {x, -1, 1}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[3*Pi*x] * Cos[3*Pi*x], {x, -1, 1}]").unwrap(),
+      "1"
+    );
+  }
+
   #[test]
   fn integrate_sin_cos_cubed() {
     // ∫ Sin[x]*Cos[x]^3 dx = -1/4*Cos[x]^4

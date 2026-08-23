@@ -1123,11 +1123,17 @@ fn integral_limits(s: &str) -> Option<Option<(String, String)>> {
 }
 
 /// The variable of a `RowBox[{"\[DifferentialD]", x}]` — the typeset `ⅆx`
-/// that closes an integral body and names its integration variable.
+/// that closes an integral body and names its integration variable. The
+/// FrontEnd sometimes inserts an explicit space box between the glyph and
+/// the variable (`RowBox[{"\[DifferentialD]", " ", x}]`), which is dropped
+/// before checking the shape.
 fn differential_variable(s: &str) -> Option<String> {
   let inner = s.trim().strip_prefix("RowBox[")?.strip_suffix(']')?;
   let inner = inner.trim().strip_prefix('{')?.strip_suffix('}')?;
-  let args = split_top_level_commas(inner);
+  let mut args = split_top_level_commas(inner);
+  if args.len() == 3 && args[1].trim().trim_matches('"').trim().is_empty() {
+    args.remove(1);
+  }
   if args.len() != 2 {
     return None;
   }
@@ -4273,6 +4279,27 @@ Cell[BoxData[
       panic!("expected a single cell");
     };
     assert_eq!(cell.content, "Integrate[((x)^(2)+1), {x, 0, 2}]");
+  }
+
+  /// Some notebooks typeset the `ⅆx` that closes an integral body with an
+  /// explicit space box between the glyph and the variable
+  /// (`RowBox[{"\[DifferentialD]", " ", "x"}]`) rather than gluing them
+  /// directly (`RowBox[{"\[DifferentialD]", "x"}]`, covered above). The
+  /// integration variable must still be recovered either way.
+  #[test]
+  fn definite_integral_with_spaced_differential_becomes_integrate() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  SubsuperscriptBox["\[Integral]", RowBox[{"-", "1"}], "1"],
+  RowBox[{"g", " ",
+   RowBox[{"\[DifferentialD]", " ", "t"}]}]}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    let CellEntry::Single(cell) = &parsed.cells[0] else {
+      panic!("expected a single cell");
+    };
+    assert_eq!(cell.content, "Integrate[g , {t, -1, 1}]");
   }
 
   /// Without an integral sign the differential is content of its own:
