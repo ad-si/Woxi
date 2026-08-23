@@ -187,7 +187,28 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ode_normalized = normalize_equation(&ode_expr)?;
 
   // Collect terms: classify each additive term by derivative order
-  let terms = collect_ode_terms(&ode_normalized, &y_name, &x_name)?;
+  let terms = match collect_ode_terms(&ode_normalized, &y_name, &x_name) {
+    Ok(terms) => terms,
+    // The term classifier only understands equations that are linear in y.
+    // An equation it rejects may still be separable (`y' == g(x) h(y)`), so
+    // try quadrature before giving up.
+    Err(err) => match solve_separable_first_order(
+      &ode_expr,
+      &y_name,
+      &x_name,
+      &initial_conditions,
+    ) {
+      Some(solution) => {
+        return Ok(build_dsolve_result(
+          solution,
+          y_name,
+          x_name,
+          function_form,
+        ));
+      }
+      None => return Err(err),
+    },
+  };
 
   // Determine max order
   let max_order = terms.iter().map(|t| t.order).max().unwrap_or(0);
@@ -238,7 +259,18 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let solution =
     crate::evaluator::evaluate_expr_to_expr(&solution).unwrap_or(solution);
 
-  // Build result: {{y[x] -> solution}} or {{y -> Function[{x}, solution]}}
+  Ok(build_dsolve_result(solution, y_name, x_name, function_form))
+}
+
+/// Wrap a solved right-hand side as `{{y[x] -> sol}}`, or
+/// `{{y -> Function[{x}, sol]}}` when the caller asked for `y` rather than
+/// `y[x]`.
+fn build_dsolve_result(
+  solution: Expr,
+  y_name: String,
+  x_name: String,
+  function_form: bool,
+) -> Expr {
   let rule = if function_form {
     Expr::Rule {
       pattern: Box::new(Expr::Identifier(y_name)),
@@ -258,7 +290,7 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  Ok(Expr::List(vec![Expr::List(vec![rule].into())].into()))
+  Expr::List(vec![Expr::List(vec![rule].into())].into())
 }
 
 // ─── NDSolve ───────────────────────────────────────────────────────────
@@ -3384,6 +3416,240 @@ fn solve_first_order_linear(
   let homogeneous =
     crate::functions::calculus_ast::simplify(times2(inv_mu, make_c(1)));
   Ok(plus2(particular, homogeneous))
+}
+
+// ─── Separable First-Order ODEs ────────────────────────────────────────
+
+/// Solve a separable first-order ODE `y'[x] == g(x) h(y[x])` by quadrature.
+///
+/// Only the initial-value problem is answered: the general solution needs an
+/// arbitrary constant, and where wolframscript places it inside the solved
+/// form is not something Woxi reproduces yet, so `DSolve` keeps returning the
+/// equation unevaluated when no initial condition pins the constant.
+fn solve_separable_first_order(
+  ode: &Expr,
+  y_name: &str,
+  x_name: &str,
+  initial_conditions: &[Expr],
+) -> Option<Expr> {
+  let rhs = separable_derivative_rhs(ode, y_name, x_name)?;
+  let (x0, y0) = separable_initial_value(initial_conditions, y_name)?;
+
+  let u_name = fresh_symbol_name(ode, "u")?;
+  let rhs_u =
+    replace_y_call(&rhs, y_name, x_name, &Expr::Identifier(u_name.clone()));
+  if !is_free_of_y(&rhs_u, y_name) {
+    return None;
+  }
+  let (g, h) = split_separable_factors(&rhs_u, &u_name, x_name)?;
+
+  // Separating gives ∫ du/h(u) == ∫ g(x) dx + C.
+  let y_integral = closed_form_integral(&div2(Expr::Integer(1), h), &u_name)?;
+  let x_integral = closed_form_integral(&g, x_name)?;
+
+  let constant = simplify(minus2(
+    crate::syntax::substitute_variable(&y_integral, &u_name, &y0),
+    crate::syntax::substitute_variable(&x_integral, x_name, &x0),
+  ));
+  let relation = Expr::Comparison {
+    operands: vec![y_integral, plus2(x_integral, constant)],
+    operators: vec![ComparisonOp::Equal],
+  };
+
+  let solved =
+    crate::functions::solve_ast(&[relation, Expr::Identifier(u_name.clone())])
+      .ok()?;
+
+  // Separating loses branch information, so more than one root can come back
+  // (`y^2` on the right gives a ± pair). Keep the one the initial condition
+  // actually selects.
+  let Expr::List(solution_sets) = &solved else {
+    return None;
+  };
+  for set in solution_sets {
+    let Expr::List(rules) = set else { continue };
+    let Some(Expr::Rule {
+      pattern,
+      replacement,
+    }) = rules.get(0)
+    else {
+      continue;
+    };
+    if !matches!(pattern.as_ref(), Expr::Identifier(n) if n == &u_name) {
+      continue;
+    }
+    let candidate = simplify(replacement.as_ref().clone());
+    let at_x0 = crate::evaluator::evaluate_expr_to_expr(
+      &crate::syntax::substitute_variable(&candidate, x_name, &x0),
+    )
+    .ok()?;
+    if values_agree(&at_x0, &y0) {
+      return Some(candidate);
+    }
+  }
+  None
+}
+
+/// Read `y'[x] == rhs` (in either orientation) and return the right-hand side.
+fn separable_derivative_rhs(
+  ode: &Expr,
+  y_name: &str,
+  x_name: &str,
+) -> Option<Expr> {
+  let (lhs, rhs) = as_equal_pair(ode)?;
+  for (derivative, other) in [(lhs, rhs), (rhs, lhs)] {
+    if let Some((1, point)) =
+      extract_derivative_order_and_point(derivative, y_name)
+      && matches!(&point, Expr::Identifier(n) if n == x_name)
+      && !contains_derivative(other)
+    {
+      return Some(other.clone());
+    }
+  }
+  None
+}
+
+/// Find an initial condition `y[x0] == y0`, returning the pair `(x0, y0)`.
+fn separable_initial_value(
+  initial_conditions: &[Expr],
+  y_name: &str,
+) -> Option<(Expr, Expr)> {
+  for condition in initial_conditions {
+    let Some((lhs, rhs)) = as_equal_pair(condition) else {
+      continue;
+    };
+    if let Expr::FunctionCall { name, args } = lhs
+      && name == y_name
+      && args.len() == 1
+    {
+      return Some((args[0].clone(), rhs.clone()));
+    }
+  }
+  None
+}
+
+/// Pick a symbol name that does not occur in `expr`, so the dependent
+/// variable can be stood in for by a plain symbol while integrating.
+fn fresh_symbol_name(expr: &Expr, base: &str) -> Option<String> {
+  (0..64).find_map(|n| {
+    let candidate = if n == 0 {
+      base.to_string()
+    } else {
+      format!("{base}{n}")
+    };
+    crate::functions::calculus_ast::is_constant_wrt(expr, &candidate)
+      .then_some(candidate)
+  })
+}
+
+/// Replace every `y[x]` in `expr` with `value`.
+fn replace_y_call(
+  expr: &Expr,
+  y_name: &str,
+  x_name: &str,
+  value: &Expr,
+) -> Expr {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == y_name
+    && args.len() == 1
+    && matches!(&args[0], Expr::Identifier(n) if n == x_name)
+  {
+    return value.clone();
+  }
+  map_children(expr, &|child| replace_y_call(child, y_name, x_name, value))
+}
+
+/// Split a product into its `x`-only and `u`-only halves. `None` when some
+/// factor mixes the two, which means the equation is not separable this way.
+fn split_separable_factors(
+  rhs: &Expr,
+  u_name: &str,
+  x_name: &str,
+) -> Option<(Expr, Expr)> {
+  let mut factors = Vec::new();
+  collect_multiplicative_factors(rhs, &mut factors);
+
+  let mut x_part = Vec::new();
+  let mut u_part = Vec::new();
+  for factor in factors {
+    if crate::functions::calculus_ast::is_constant_wrt(&factor, u_name) {
+      x_part.push(factor);
+    } else if crate::functions::calculus_ast::is_constant_wrt(&factor, x_name) {
+      u_part.push(factor);
+    } else {
+      return None;
+    }
+  }
+  Some((product_of(x_part), product_of(u_part)))
+}
+
+fn collect_multiplicative_factors(expr: &Expr, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      collect_multiplicative_factors(left, out);
+      collect_multiplicative_factors(right, out);
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      collect_multiplicative_factors(left, out);
+      out.push(pow2(right.as_ref().clone(), Expr::Integer(-1)));
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      out.push(Expr::Integer(-1));
+      collect_multiplicative_factors(operand, out);
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for arg in args {
+        collect_multiplicative_factors(arg, out);
+      }
+    }
+    _ => out.push(expr.clone()),
+  }
+}
+
+fn product_of(factors: Vec<Expr>) -> Expr {
+  factors
+    .into_iter()
+    .reduce(times2)
+    .unwrap_or(Expr::Integer(1))
+}
+
+/// Integrate, accepting only a result that actually closed — a residual
+/// `Integrate[…]` head means the antiderivative is not available and the
+/// separable route cannot finish.
+fn closed_form_integral(integrand: &Expr, var: &str) -> Option<Expr> {
+  let result = crate::functions::calculus_ast::integrate_ast(&[
+    simplify(integrand.clone()),
+    Expr::Identifier(var.to_string()),
+  ])
+  .ok()?;
+  (!mentions_head(&result, "Integrate")).then_some(result)
+}
+
+fn mentions_head(expr: &Expr, head: &str) -> bool {
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == head) {
+    return true;
+  }
+  expr_children(expr).iter().any(|c| mentions_head(c, head))
+}
+
+/// Compare two solution values, numerically where both sides evaluate to a
+/// number and structurally otherwise.
+fn values_agree(a: &Expr, b: &Expr) -> bool {
+  match (expr_to_f64(a), expr_to_f64(b)) {
+    (Ok(x), Ok(y)) => (x - y).abs() <= 1e-9 * y.abs().max(1.0),
+    _ => exprs_match(a, b),
+  }
 }
 
 /// Create E^(expr*x) for symbolic expressions
