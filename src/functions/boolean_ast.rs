@@ -2450,8 +2450,9 @@ pub fn boolean_function_expr(k: i128, vars: &[Expr]) -> Expr {
   // bit orders are mirror images of each other.
   let minterms: Vec<u64> = (0..(1u64 << n))
     .filter(|bits| {
-      let index: u32 =
-        (0..n).map(|i| ((bits >> i) as u32 & 1) << (n - 1 - i)).sum();
+      let index: u32 = (0..n)
+        .map(|i| ((bits >> i) as u32 & 1) << (n - 1 - i))
+        .sum();
       (k >> index) & 1 == 1
     })
     .collect();
@@ -2485,7 +2486,7 @@ pub fn boolean_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if *n < 0 || vars.len() != *n as usize {
     return Ok(unevaluated("BooleanFunction", args));
   }
-  Ok(boolean_function_expr(*k as i128, &vars))
+  Ok(boolean_function_expr(*k, vars))
 }
 
 /// BooleanMinimize[expr] - Find the minimal sum-of-products form.

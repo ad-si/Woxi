@@ -5212,19 +5212,28 @@ mod boolean_function {
   // index 6 is Xor, index 1 is Nor.
   #[test]
   fn symbolic_application_writes_the_expression() {
-    assert_eq!(interpret("BooleanFunction[7, 2][a, b]").unwrap(), " !a ||  !b");
+    assert_eq!(
+      interpret("BooleanFunction[7, 2][a, b]").unwrap(),
+      " !a ||  !b"
+    );
     assert_eq!(
       interpret("BooleanFunction[6, 2][a, b]").unwrap(),
       "(a &&  !b) || ( !a && b)"
     );
-    assert_eq!(interpret("BooleanFunction[1, 2][a, b]").unwrap(), " !a &&  !b");
+    assert_eq!(
+      interpret("BooleanFunction[1, 2][a, b]").unwrap(),
+      " !a &&  !b"
+    );
   }
 
   // BooleanFunction[k, n, vars] is that same expression, in the given
   // variables. A constant function collapses to True/False.
   #[test]
   fn three_argument_form() {
-    assert_eq!(interpret("BooleanFunction[7, 2, {a, b}]").unwrap(), " !a ||  !b");
+    assert_eq!(
+      interpret("BooleanFunction[7, 2, {a, b}]").unwrap(),
+      " !a ||  !b"
+    );
     assert_eq!(
       interpret("BooleanFunction[2, 3, {a, b, c}]").unwrap(),
       " !a &&  !b && c"

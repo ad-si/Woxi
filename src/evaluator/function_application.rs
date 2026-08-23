@@ -1443,7 +1443,7 @@ pub fn apply_curried_call(
       // function in those arguments, the same value BooleanFunction's
       // three-argument form gives.
       Ok(crate::functions::boolean_ast::boolean_function_expr(
-        *n as i128, args,
+        *n, args,
       ))
     }
     // BooleanCountingFunction[spec, n][b1, …] — True when the number of True
