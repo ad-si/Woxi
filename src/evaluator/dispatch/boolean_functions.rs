@@ -126,6 +126,9 @@ pub fn dispatch_boolean_functions(
     "BooleanTable" => {
       return Some(crate::functions::boolean_ast::boolean_table_ast(args));
     }
+    "BooleanFunction" if args.len() == 3 => {
+      return Some(crate::functions::boolean_ast::boolean_function_ast(args));
+    }
     "BooleanMinimize" if args.len() == 1 => {
       return Some(crate::functions::boolean_ast::boolean_minimize_ast(args));
     }

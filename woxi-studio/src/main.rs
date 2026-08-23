@@ -21387,4 +21387,76 @@ SaveDefinitions -> True]";
       "the construction must still render with the new radii"
     );
   }
+
+  /// A truth-table Demonstration shape: a `Manipulate` whose body maps
+  /// `Boole` over a `BooleanTable` whose body is built with `@@` and whose
+  /// variable groups are `Take`n from a variable list, laid out as a `Grid`
+  /// with the repeated header labels collapsed into `SpanFromLeft`, plus a
+  /// caption writing the same function out through `BooleanConvert`. This is
+  /// the construct category the Wolfram Demonstrations Project uses for
+  /// Marquand/Karnaugh-style diagrams (independently written, not copied
+  /// from any specific notebook). None of it rendered: `BooleanTable`
+  /// rejected the computed variable groups outright, and `BooleanFunction`
+  /// applied to symbolic variables never wrote itself out, so the table
+  /// stayed a grid of unevaluated calls.
+  const TRUTH_TABLE_DIAGRAM: &str = "Manipulate[\
+     Column[{\
+       Grid[Map[Boole, \
+         BooleanTable[BooleanFunction[idx, 3] @@ Take[syms, 3], \
+           Take[syms, {2, 3}], Take[syms, 1]]], Frame -> All], \
+       Row[{\"function: \", \
+         Dynamic[BooleanConvert[BooleanFunction[idx, 3, Take[names, 3]], \
+           form]]}]}], \
+     {{idx, 2, \"function index\"}, 0, 255, 1}, \
+     {{form, \"DNF\", \"form\"}, {\"DNF\", \"CNF\"}}, \
+     Initialization :> (syms = {p, q, r}; names = {a, b, c};)]";
+
+  #[test]
+  fn truth_table_diagram_manipulate_fills_its_grid() {
+    let mut state = instantiate_stored_manipulate(TRUTH_TABLE_DIAGRAM, "")
+      .expect("the truth-table Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+
+    // Every cell of the table is a rendered 0/1, not an unevaluated call.
+    let shown = display_text(&state.display_trees);
+    assert!(
+      !shown.contains("BooleanFunction") && !shown.contains("BooleanTable"),
+      "the table must be evaluated, not echoed: {shown}"
+    );
+    // Index 2 of three variables is true for exactly one of the eight
+    // assignments, so the table holds a single 1.
+    assert_eq!(
+      shown.matches('1').count(),
+      1,
+      "exactly one assignment satisfies function 2: {shown}"
+    );
+
+    // The caption writes the function out in the variables it was given.
+    assert!(
+      shown.contains("function: ") && shown.contains(" !a &&  !b && c"),
+      "the caption must write out the function: {shown}"
+    );
+
+    // Switching the form re-renders the caption through the other converter.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[1]
+    {
+      *current_index = 1; // "DNF" -> "CNF"
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "re-render after switching form failed: {:?}",
+      state.error
+    );
+    let shown = display_text(&state.display_trees);
+    assert!(
+      shown.contains("||"),
+      "the CNF form is a conjunction of clauses: {shown}"
+    );
+  }
 }

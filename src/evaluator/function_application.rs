@@ -1439,10 +1439,12 @@ pub fn apply_curried_call(
       if ok {
         return Ok(bool_expr((n >> v) & 1 == 1));
       }
-      Ok(Expr::CurriedCall {
-        func: Box::new(func.clone()),
-        args: args.to_vec(),
-      })
+      // A symbolic argument makes this the explicit expression of the
+      // function in those arguments, the same value BooleanFunction's
+      // three-argument form gives.
+      Ok(crate::functions::boolean_ast::boolean_function_expr(
+        *n as i128, args,
+      ))
     }
     // BooleanCountingFunction[spec, n][b1, …] — True when the number of True
     // arguments is one of the counts the spec names. Only literal arguments
