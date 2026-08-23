@@ -8066,16 +8066,36 @@ fn comparison_operand_needs_parens(e: &Expr) -> bool {
     || printed_infix_precedence(e).is_some_and(|p| p < 30)
 }
 
-/// Whether a term of a `Plus`/`Subtract` chain must be parenthesized in
-/// InputForm so the printed form re-parses to the same tree. `+`/`-` bind
-/// tighter than every looser operator (`Rule`, `ReplaceAll`, `Or`, `And`,
-/// `CompoundExpression`, …), so a term printing with one of those needs
-/// parens: `(x /. sol) - 0.05`, not `x /. sol - 0.05`, which re-parses as
-/// `x /. (sol - 0.05)` — a genuine Wolfram Demonstrations regression this
-/// once caused, since `ReplaceAll` (precedence 7) binds far looser than
-/// `Plus`/`Minus` (precedence 30).
+/// Whether the *leading* term of a `Plus`/`Subtract` chain must be
+/// parenthesized in InputForm so the printed form re-parses to the same
+/// tree. `+`/`-` bind tighter than every looser operator (`Rule`,
+/// `ReplaceAll`, `Or`, `And`, `CompoundExpression`, …), so a term printing
+/// with one of those needs parens: `(x /. sol) - 0.05`, not
+/// `x /. sol - 0.05`, which re-parses as `x /. (sol - 0.05)` — a genuine
+/// Wolfram Demonstrations regression this once caused, since `ReplaceAll`
+/// (precedence 7) binds far looser than `Plus`/`Minus` (precedence 30).
+///
+/// A term at precedence exactly 30 (a nested `Plus`/`Minus`/`StringJoin`)
+/// does *not* need parens here: text re-parses `+`/`-` left-associatively,
+/// so a left-nested chain round-trips whether or not the leading term was
+/// itself a `Plus` — unlike a *non*-leading term at the same precedence,
+/// see `plus_nonleading_term_needs_parens`.
 fn plus_term_needs_parens(e: &Expr) -> bool {
   printed_infix_precedence(e).is_some_and(|p| p < 30)
+}
+
+/// Whether a *non-leading* term of a `Plus`/`Subtract` chain — one printed
+/// after a `+` or `-` — must be parenthesized in InputForm. Unlike the
+/// leading term (`plus_term_needs_parens`), a term at precedence exactly 30
+/// (a nested `Plus`/`Minus`/`StringJoin`) also needs parens here:
+/// left-associative re-parsing only reconstructs a *left*-nested tree, so a
+/// bare non-leading `Plus`/`Minus` term — which can only have survived
+/// un-flattened under `Hold` — silently regroups. Following a `-` this is
+/// not just a shape change but a value change: printing `Plus[a,
+/// -(b + c)]` as `a - b + c` drops the sign that should apply to `c`
+/// (`a - b + c` re-parses as `Plus[a, -b, c]`, not `Plus[a, -b, -c]`).
+fn plus_nonleading_term_needs_parens(e: &Expr) -> bool {
+  printed_infix_precedence(e).is_some_and(|p| p <= 30)
 }
 
 /// Render an application shorthand (`f /@ list`, `f @@ list`, `f @@@ list`)
@@ -11958,13 +11978,19 @@ fn neg_times_coeff(e: &Expr) -> Option<Option<Expr>> {
 
 /// Render a term that follows a ` - ` in a `Plus`, parenthesising a prefix
 /// `MinusPlus` so the leading `-` doesn't fuse with the `∓`, the way Wolfram
-/// prints it: `a - MinusPlus[b]` → `a - (∓b)`.
+/// prints it: `a - MinusPlus[b]` → `a - (∓b)`. Also parenthesises any term
+/// that itself prints with an operator at or below `Plus`/`Minus`'s own
+/// precedence — reached from the negative-`Times`-coefficient folding above,
+/// e.g. `Plus[0.05, Times[-1, ReplaceAll[x, sol]]]` (ordinary evaluated
+/// `0.05 - (x /. sol)` with `sol` unbound) must print `0.05 - (x /. sol)`,
+/// not `0.05 - x /. sol`, which re-parses as `(0.05 - x) /. sol`.
 fn input_form_subtracted_term(term: &Expr) -> String {
   let s = expr_to_input_form(term);
   if matches!(
     term,
     Expr::FunctionCall { name, args } if name == "MinusPlus" && args.len() == 1
-  ) {
+  ) || plus_nonleading_term_needs_parens(term)
+  {
     format!("({s})")
   } else {
     s
@@ -12872,7 +12898,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         {
           result.push_str(" - ");
           let operand_str = expr_to_input_form(operand);
-          if plus_term_needs_parens(operand) {
+          if plus_nonleading_term_needs_parens(operand) {
             result.push_str(&format!("({operand_str})"));
           } else {
             result.push_str(&operand_str);
@@ -13009,7 +13035,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         } else {
           result.push_str(" + ");
           let arg_str = expr_to_input_form(arg);
-          if plus_term_needs_parens(arg) {
+          if plus_nonleading_term_needs_parens(arg) {
             result.push_str(&format!("({arg_str})"));
           } else {
             result.push_str(&arg_str);

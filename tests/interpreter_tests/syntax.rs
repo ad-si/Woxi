@@ -7286,6 +7286,45 @@ mod plus_rendering {
     // triggering ReplaceAll::reps on `sol - 0.05`.
     assert_eq!(interpret("(x /. {x -> 5}) - 0.05").unwrap(), "4.95");
   }
+
+  // ReplaceRepeated (`//.`) binds exactly as loose as ReplaceAll and shares
+  // the same fix path, but had no direct test coverage.
+  #[test]
+  fn replace_repeated_keeps_parens_as_leading_plus_term() {
+    assert_eq!(
+      interpret("Hold[(x //. {x -> 5}) - 0.05]").unwrap(),
+      "Hold[(x //. {x -> 5}) - 0.05]"
+    );
+  }
+
+  // A non-leading `Plus`/`Minus`-shaped term (precedence exactly 30, the
+  // same as `Plus`/`Minus` themselves) must also be parenthesized — unlike
+  // a leading term, which round-trips bare because text re-parses `+`/`-`
+  // left-associatively. Printing the negated group bare would silently flip
+  // the sign of every term after the first: `a - b + c` re-parses as
+  // `Plus[a, -b, c]`, not the original `Plus[a, -b, -c]`.
+  #[test]
+  fn negated_plus_group_keeps_parens() {
+    assert_eq!(
+      interpret("ToString[Hold[Plus[a, -(b + c)]], InputForm]").unwrap(),
+      "Hold[a - (b + c)]"
+    );
+  }
+
+  // The same non-leading-term parenthesization must apply on the
+  // negative-`Times`-coefficient path (`input_form_subtracted_term`), which
+  // is reachable from ordinary (non-`Hold`) evaluation: `Times[-1, ...]`
+  // folds into a subtraction here, not just via a literal `Plus[..., -(...)]`
+  // call. Regression: `0.05 - (x /. sol)` with `sol` unbound evaluates to
+  // `Plus[0.05, Times[-1, ReplaceAll[x, sol]]]`, which must print with the
+  // `ReplaceAll` parenthesized or it re-parses as `(0.05 - x) /. sol`.
+  #[test]
+  fn subtracted_replace_all_keeps_parens_via_times_coefficient_path() {
+    assert_eq!(
+      interpret("ToString[0.05 - (x /. sol), InputForm]").unwrap(),
+      "0.05 - (x /. sol)"
+    );
+  }
 }
 
 mod tilde_infix {
