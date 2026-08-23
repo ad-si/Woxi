@@ -19346,6 +19346,7 @@ mod manipulate {
         label,
         label_runs,
         is_real,
+        orientation,
       } => {
         assert_eq!(name, "x");
         assert_eq!(*min, 0.0);
@@ -19353,6 +19354,10 @@ mod manipulate {
         assert!(step.is_none());
         assert_eq!(*initial, 0.0); // umin when no uinit
         assert_eq!(label, "x");
+        assert_eq!(
+          *orientation,
+          woxi::functions::graphics::ControlOrientation::Horizontal
+        );
         // Unlabelled control → a single upright run of the variable name.
         assert_eq!(label_runs.len(), 1);
         assert_eq!(label_runs[0].text, "x");

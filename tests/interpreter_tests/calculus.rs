@@ -4774,6 +4774,38 @@ mod nintegrate {
     );
   }
 
+  // Over an interval wide enough that tanh-sinh's endpoint-crowded nodes
+  // never resolve the interesting region near a removable singularity, it
+  // gives up and falls back to adaptive Simpson — which, unlike tanh-sinh,
+  // samples the literal endpoint. That endpoint evaluation (Sin[0.]^2 /
+  // 0.^2) is discarded and replaced by a nearby perturbed value, exactly
+  // like the small-interval case above, but it used to also print a
+  // spurious `Power::infy` for the discarded sample before being thrown
+  // away — a message wolframscript never shows for this integral.
+  #[test]
+  fn wide_interval_removable_singularity_prints_no_spurious_message() {
+    clear_state();
+    let result = interpret("NIntegrate[Sin[x]^2/x^2, {x, 0, 15000}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    // ∫₀^∞ Sin[x]^2/x^2 dx = Pi/2; truncating at 15000 drops a tail bounded
+    // by 1/15000 (Sin^2 <= 1), on the order of 1e-4. The adaptive-Simpson
+    // fallback used for this wide, highly oscillatory interval is not itself
+    // fully accurate — that inaccuracy is a separate, pre-existing limitation
+    // — so this checks against the true value with a tolerance loose enough
+    // to not pin the fallback's current error as correct, while still
+    // catching a grossly wrong (e.g. zero or divergent) result.
+    let true_value = std::f64::consts::FRAC_PI_2 - 1.0 / 30000.0;
+    assert!(
+      (val - true_value).abs() < 2e-3,
+      "got {val}, expected ~{true_value}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().all(|m| !m.contains("Power::infy")),
+      "spurious message for a discarded endpoint sample: {msgs:?}"
+    );
+  }
+
   // Smooth integrands keep their accuracy, including the oscillatory ones that
   // fall back to the adaptive rule because tanh-sinh does not settle on them.
   #[test]
@@ -7010,7 +7042,8 @@ mod dsolve {
   // of an x-factor and a nonlinear y-factor (e.g. x*y[x]^2) used to be
   // misclassified — the x*y^2 term was treated as a y-free forcing term and
   // "integrated", yielding the bogus circular C[1] + Integrate[x*y[x]^2, x].
-  // It must instead stay unevaluated, like the bare y[x]^2 case.
+  // Without an initial condition to pin the constant it must stay
+  // unevaluated, like the bare y[x]^2 case.
   #[test]
   fn separable_nonlinear_product_stays_unevaluated() {
     assert_eq!(
@@ -7020,6 +7053,58 @@ mod dsolve {
     assert_eq!(
       interpret("DSolve[y'[x] == x^2 y[x]^2, y[x], x]").unwrap(),
       "DSolve[Derivative[1][y][x] == x^2*y[x]^2, y[x], x]"
+    );
+  }
+
+  // An initial condition pins the constant of a separable equation, so the
+  // implicit relation ∫dy/h(y) == ∫g(x)dx + C can be solved outright — the
+  // nonlinear right-hand sides above are the ones the linear term classifier
+  // rejects.
+  #[test]
+  fn separable_nonlinear_initial_value_problem() {
+    assert_eq!(
+      interpret("DSolve[{y'[x] == x y[x]^2, y[0] == 2}, y[x], x]").unwrap(),
+      "{{y[x] -> -2/(-1 + x^2)}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y'[x] == y[x]^2, y[0] == 1}, y[x], x]").unwrap(),
+      "{{y[x] -> (1 - x)^(-1)}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y'[x] == y[x]^3, y[0] == 1}, y[x], x]").unwrap(),
+      "{{y[x] -> 1/Sqrt[1 - 2*x]}}"
+    );
+    // The x-factor may be any closed-form function of x, not just a monomial.
+    assert_eq!(
+      interpret("DSolve[{y'[x] == Cos[x] y[x]^2, y[0] == 1}, y[x], x]")
+        .unwrap(),
+      "{{y[x] -> (1 - Sin[x])^(-1)}}"
+    );
+    // A quotient separates too: y' == x/y.
+    assert_eq!(
+      interpret("DSolve[{y'[x] == x/y[x], y[0] == 1}, y[x], x]").unwrap(),
+      "{{y[x] -> Sqrt[1 + x^2]}}"
+    );
+    // `DSolve[…, y, x]` asks for the Function form.
+    assert_eq!(
+      interpret("DSolve[{y'[t] == -t y[t]^2, y[0] == 1}, y, t]").unwrap(),
+      "{{y -> Function[{t}, 2/(2 + t^2)]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y'[t] == (t - t^3) y[t]^2, y[0] == 1}, y, t]")
+        .unwrap(),
+      "{{y -> Function[{t}, 4/(4 - 2*t^2 + t^4)]}}"
+    );
+  }
+
+  // Squaring away the square root when solving for y loses the branch, so the
+  // root that does not meet the initial condition has to be dropped: with
+  // y[0] == -1 the answer is the negative branch, not the positive one.
+  #[test]
+  fn separable_solution_picks_the_branch_the_condition_selects() {
+    assert_eq!(
+      interpret("DSolve[{y'[x] == x/y[x], y[0] == -1}, y[x], x]").unwrap(),
+      "{{y[x] -> -Sqrt[1 + x^2]}}"
     );
   }
 
