@@ -12,6 +12,12 @@ on:
 
 jobs:
   claude-review:
+    # Fork PRs get a restricted token: repository secrets are not exposed and
+    # `id-token: write` is ignored, so the action cannot authenticate and the
+    # check always fails. Skip it there instead of showing contributors a red X
+    # they cannot fix.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+
     # Optional: Filter by PR author
     # if: |
     #   github.event.pull_request.user.login == 'external-contributor' ||
