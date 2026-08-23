@@ -6785,41 +6785,72 @@ fn partition_positive_int(e: &Expr) -> Option<usize> {
   }
 }
 
-/// Parse one element of a two-element size spec: `n` or `{n}`.
-fn partition_size_elem(e: &Expr) -> Option<PartitionAxisMode> {
+/// A block size / offset component along one axis of length `dim` pixels:
+/// a plain number (floored, >= 1) or `Scaled[s]`, a fraction of `dim`
+/// (rounded, >= 1).
+fn partition_size_value(e: &Expr, dim: usize) -> Option<usize> {
+  if let Expr::FunctionCall { name, args } = e
+    && name == "Scaled"
+    && args.len() == 1
+  {
+    let s = crate::functions::math_ast::try_eval_to_f64(&args[0])?;
+    if !s.is_finite() {
+      return None;
+    }
+    let px = (s * dim as f64).round();
+    return if px >= 1.0 && px <= u32::MAX as f64 {
+      Some(px as usize)
+    } else {
+      None
+    };
+  }
+  partition_positive_int(e)
+}
+
+/// Parse one element of a two-element size spec: `n`, `{n}`, `Scaled[s]` or
+/// `{Scaled[s]}`, against an axis of length `dim` pixels.
+fn partition_size_elem(e: &Expr, dim: usize) -> Option<PartitionAxisMode> {
   match e {
     Expr::List(items) if items.len() == 1 => {
-      partition_positive_int(&items[0]).map(PartitionAxisMode::Clipped)
+      partition_size_value(&items[0], dim).map(PartitionAxisMode::Clipped)
     }
     Expr::List(_) => None,
-    _ => partition_positive_int(e).map(PartitionAxisMode::Full),
+    _ => partition_size_value(e, dim).map(PartitionAxisMode::Full),
   }
 }
 
 /// Parse the full size spec (2nd argument) into per-axis (x, y) modes.
+/// `width`/`height` are the image's pixel dimensions, needed to resolve a
+/// `Scaled[s]` fraction into a pixel count on each axis.
 fn partition_size_spec(
   spec: &Expr,
+  width: usize,
+  height: usize,
 ) -> Option<(PartitionAxisMode, PartitionAxisMode)> {
   match spec {
     Expr::List(items) if items.len() == 1 => {
       // {s} (and {{s}}) apply the clipped mode to both axes.
-      let n = match &items[0] {
-        Expr::List(inner) if inner.len() == 1 => {
-          partition_positive_int(&inner[0])?
-        }
+      let inner = match &items[0] {
+        Expr::List(inner) if inner.len() == 1 => &inner[0],
         Expr::List(_) => return None,
-        e => partition_positive_int(e)?,
+        e => e,
       };
-      Some((PartitionAxisMode::Clipped(n), PartitionAxisMode::Clipped(n)))
+      let nx = partition_size_value(inner, width)?;
+      let ny = partition_size_value(inner, height)?;
+      Some((
+        PartitionAxisMode::Clipped(nx),
+        PartitionAxisMode::Clipped(ny),
+      ))
     }
     Expr::List(items) if items.len() == 2 => Some((
-      partition_size_elem(&items[0])?,
-      partition_size_elem(&items[1])?,
+      partition_size_elem(&items[0], width)?,
+      partition_size_elem(&items[1], height)?,
     )),
     Expr::List(_) => None,
     e => {
-      let n = partition_positive_int(e)?;
-      Some((PartitionAxisMode::Full(n), PartitionAxisMode::Full(n)))
+      let nx = partition_size_value(e, width)?;
+      let ny = partition_size_value(e, height)?;
+      Some((PartitionAxisMode::Full(nx), PartitionAxisMode::Full(ny)))
     }
   }
 }
@@ -6870,9 +6901,11 @@ fn partition_axis_blocks(
 }
 
 /// ImagePartition[img, s], [img, {w, h}], [img, sizes, offsets].
-/// Size components are `n` (complete blocks only) or `{n}` (centered grid
-/// keeping clipped partial blocks); sizes and offsets are floored, offsets
-/// clamped to >= 1. Decoded from wolframscript probes.
+/// Size components are `n` (complete blocks only), `{n}` (centered grid
+/// keeping clipped partial blocks), or either wrapped in `Scaled[s]` to give
+/// a size that is a fraction `s` of that axis's pixel dimension; sizes and
+/// offsets are floored, offsets clamped to >= 1. Decoded from wolframscript
+/// probes.
 pub fn image_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("ImagePartition", args);
   let Expr::Image {
@@ -6891,7 +6924,9 @@ pub fn image_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   };
 
-  let Some((mode_x, mode_y)) = partition_size_spec(&args[1]) else {
+  let Some((mode_x, mode_y)) =
+    partition_size_spec(&args[1], width as usize, height as usize)
+  else {
     crate::emit_message(&format!(
       "ImagePartition::arg2: {} is not a valid size specification for image partitions.",
       crate::syntax::expr_to_string(&args[1])
