@@ -8066,6 +8066,18 @@ fn comparison_operand_needs_parens(e: &Expr) -> bool {
     || printed_infix_precedence(e).is_some_and(|p| p < 30)
 }
 
+/// Whether a term of a `Plus`/`Subtract` chain must be parenthesized in
+/// InputForm so the printed form re-parses to the same tree. `+`/`-` bind
+/// tighter than every looser operator (`Rule`, `ReplaceAll`, `Or`, `And`,
+/// `CompoundExpression`, …), so a term printing with one of those needs
+/// parens: `(x /. sol) - 0.05`, not `x /. sol - 0.05`, which re-parses as
+/// `x /. (sol - 0.05)` — a genuine Wolfram Demonstrations regression this
+/// once caused, since `ReplaceAll` (precedence 7) binds far looser than
+/// `Plus`/`Minus` (precedence 30).
+fn plus_term_needs_parens(e: &Expr) -> bool {
+  printed_infix_precedence(e).is_some_and(|p| p < 30)
+}
+
 /// Render an application shorthand (`f /@ list`, `f @@ list`, `f @@@ list`)
 /// in InputForm, parenthesizing either operand when it would otherwise bind
 /// differently on re-parse. `prec` is the shorthand's own parse precedence
@@ -10918,13 +10930,18 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             | Expr::PatternOptional { .. }
             | Expr::PatternTest { .. }
         ))
-        // Rule/RuleDelayed have very low precedence (`->`/`:>`); wrap in
-        // parens when they appear inside any binary operator so the printed
-        // form re-parses to the same structure (e.g. `(a -> b)^2`, not
-        // `a -> b^2`).
+        // Rule/RuleDelayed/ReplaceAll/ReplaceRepeated have very low
+        // precedence (`->`/`:>`/`/.`/`//.`); wrap in parens when they appear
+        // inside any binary operator so the printed form re-parses to the
+        // same structure (e.g. `(a -> b)^2`, not `a -> b^2`, and
+        // `(x /. sol) - 0.05`, not `x /. sol - 0.05`, which re-parses as
+        // `x /. (sol - 0.05)` since `/.` binds looser than `-`).
         || matches!(
           left.as_ref(),
-          Expr::Rule { .. } | Expr::RuleDelayed { .. }
+          Expr::Rule { .. }
+            | Expr::RuleDelayed { .. }
+            | Expr::ReplaceAll { .. }
+            | Expr::ReplaceRepeated { .. }
         )
         || (prints_as_not(left.as_ref())
           && !matches!(op, BinaryOperator::And | BinaryOperator::Or))
@@ -11030,12 +11047,15 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               ..
             } if matches!(rl.as_ref(), Expr::Integer(_))
           ))
-        // Rule/RuleDelayed have very low precedence; wrap in parens when
-        // they appear inside any binary operator so the printed form
-        // re-parses to the same structure.
+        // Rule/RuleDelayed/ReplaceAll/ReplaceRepeated have very low
+        // precedence; wrap in parens when they appear inside any binary
+        // operator so the printed form re-parses to the same structure.
         || matches!(
           right.as_ref(),
-          Expr::Rule { .. } | Expr::RuleDelayed { .. }
+          Expr::Rule { .. }
+            | Expr::RuleDelayed { .. }
+            | Expr::ReplaceAll { .. }
+            | Expr::ReplaceRepeated { .. }
         )
         || (prints_as_not(right.as_ref())
           && !matches!(op, BinaryOperator::And | BinaryOperator::Or))
@@ -12837,7 +12857,12 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     }
     // Plus in InputForm: render as infix but use expr_to_input_form for args
     Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
-      let mut result = expr_to_input_form(&args[0]);
+      let first_str = expr_to_input_form(&args[0]);
+      let mut result = if plus_term_needs_parens(&args[0]) {
+        format!("({first_str})")
+      } else {
+        first_str
+      };
       for arg in args.iter().skip(1) {
         // Check for negation patterns
         if let Expr::UnaryOp {
@@ -12846,7 +12871,12 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         } = arg
         {
           result.push_str(" - ");
-          result.push_str(&expr_to_input_form(operand));
+          let operand_str = expr_to_input_form(operand);
+          if plus_term_needs_parens(operand) {
+            result.push_str(&format!("({operand_str})"));
+          } else {
+            result.push_str(&operand_str);
+          }
         } else if let Expr::BinaryOp {
           op: BinaryOperator::Times,
           left,
@@ -12978,7 +13008,12 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
           }
         } else {
           result.push_str(" + ");
-          result.push_str(&expr_to_input_form(arg));
+          let arg_str = expr_to_input_form(arg);
+          if plus_term_needs_parens(arg) {
+            result.push_str(&format!("({arg_str})"));
+          } else {
+            result.push_str(&arg_str);
+          }
         }
       }
       result

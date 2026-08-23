@@ -7239,6 +7239,53 @@ mod plus_rendering {
   fn multiple_negative_terms() {
     assert_eq!(interpret("a - 3*b - 5*c").unwrap(), "a - 3*b - 5*c");
   }
+
+  // Regression: `/.` (ReplaceAll) binds looser than `+`/`-` (Wolfram
+  // precedence 110 vs. 310), so a `ReplaceAll` term printed as an operand
+  // of `Plus`/`Minus` must keep its parentheses, or the printed form
+  // re-parses to a different expression — `x /. sol - 0.05` regroups as
+  // `x /. (sol - 0.05)`, not `(x /. sol) - 0.05`. This once broke Woxi
+  // Studio's Manipulate handling for a Wolfram Demonstrations notebook:
+  // the body is re-serialized through `expr_to_input_form` to re-evaluate
+  // it per slider change, and the missing parens silently dropped a Plot
+  // curve from the render.
+  #[test]
+  fn replace_all_keeps_parens_as_leading_plus_term() {
+    assert_eq!(
+      interpret("Hold[(x /. {x -> 5}) - 0.05]").unwrap(),
+      "Hold[(x /. {x -> 5}) - 0.05]"
+    );
+  }
+
+  #[test]
+  fn replace_all_keeps_parens_as_trailing_plus_term() {
+    assert_eq!(
+      interpret("Hold[1 + (x /. {x -> 5})]").unwrap(),
+      "Hold[1 + (x /. {x -> 5})]"
+    );
+    assert_eq!(
+      interpret("Hold[(x /. {x -> 5}) + 1]").unwrap(),
+      "Hold[(x /. {x -> 5}) + 1]"
+    );
+  }
+
+  #[test]
+  fn replace_all_keeps_parens_in_input_form() {
+    // The InputForm formatter (`ToString[_, InputForm]`, used to rebuild a
+    // Manipulate body's source) must preserve the same parens as the
+    // direct-eval formatter.
+    assert_eq!(
+      interpret("ToString[Hold[(x /. {x -> 5}) - 0.05], InputForm]").unwrap(),
+      "Hold[(x /. {x -> 5}) - 0.05]"
+    );
+  }
+
+  #[test]
+  fn replace_all_then_subtract_evaluates_correctly() {
+    // With the parens honored, this evaluates numerically instead of
+    // triggering ReplaceAll::reps on `sol - 0.05`.
+    assert_eq!(interpret("(x /. {x -> 5}) - 0.05").unwrap(), "4.95");
+  }
 }
 
 mod tilde_infix {
