@@ -4380,17 +4380,51 @@ mod plot3d {
         "a 16-point run must stay legible beside a {outer}-unit label, \
          got {styled}: {label}"
       );
-      // `Spacer[25]` is 25 points of gap, so it scales with the picture
-      // rather than with whatever font size it lands next to.
+      // `Spacer[25]` is 25 points of gap, carried as a `dx` on the run
+      // that follows it (not `letter-spacing` on a trailing tspan of its
+      // own — real SVG renderers, including the one Woxi Studio uses,
+      // drop letter-spacing after a tspan's last character, which made
+      // the gap invisible). It scales with the picture rather than with
+      // whatever font size it lands next to.
       let spacing: f64 = label
-        .split_once("letter-spacing:")
-        .and_then(|(_, r)| r.split_once("px"))
+        .split_once("dx=\"")
+        .and_then(|(_, r)| r.split_once('"'))
         .and_then(|(v, _)| v.parse().ok())
         .expect("the spacer gap");
       assert!(
         (spacing - styled * 25.0 / 16.0).abs() < 1.0,
         "a Spacer[25] beside 16-point text is 25/16 of its size, \
          got {spacing} against {styled}: {label}"
+      );
+    }
+
+    /// Regression: a `Spacer[n]` between differently-styled `Row` parts
+    /// (a plain string and a `Subscript`, say) used to become its own
+    /// trailing `<tspan style="letter-spacing:…">` — which real SVG
+    /// renderers, including the one Woxi Studio rasterizes plots with,
+    /// silently drop because it is the last character of that tspan. The
+    /// gap must survive as a `dx` on the *next* run instead, so the text
+    /// on either side of the spacer doesn't visually run together (found
+    /// via a downloaded Wolfram Demonstrations Project notebook whose
+    /// `PlotLabel` glued "...C" straight onto "Ea1=145..." with no gap).
+    #[test]
+    fn plot_label_spacer_next_to_subscript_leaves_a_visible_gap() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, PlotLabel -> Style[Row[Flatten[{\"A\", \
+         Spacer[40], Subscript[\"Ea\", 1], \" = \", 145}]], 18]]",
+      );
+      let label = svg
+        .split("<text ")
+        .find(|t| t.contains("Ea"))
+        .expect("the plot label");
+      assert!(
+        !label.contains("letter-spacing"),
+        "the gap must not be a trailing letter-spacing tspan, which \
+         renderers drop: {label}"
+      );
+      assert!(
+        label.contains("dx=\""),
+        "the gap must be a dx on the run after the spacer: {label}"
       );
     }
 
