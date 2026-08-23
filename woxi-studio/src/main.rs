@@ -21459,6 +21459,67 @@ SaveDefinitions -> True]";
     );
   }
 
+  #[test]
+  fn damped_pendulum_manipulate_labels_initial_angular_velocity() {
+    // End-to-end regression for the "Active Shock Absorbers" Demonstration's
+    // control-panel shape: a slider for an initial derivative labels itself
+    // `Text@Subsuperscript[Style["y", Italic], "0", "\[Prime]"]` (y₀′).
+    // `Subsuperscript` used to fall through to `manipulate_label_runs`'s
+    // catch-all, which just echoes the expression's OutputForm dump
+    // (`"Subsuperscript[θ, 0, ′]"`) — only `Subscript` and `Superscript` had
+    // dedicated cases.
+    let code = "Manipulate[\
+      With[{sol = Quiet@NDSolve[\
+        {θ''[t] + damping θ'[t] + Sin[θ[t]] == 0, \
+         θ[0] == θ0, θ'[0] == ω0}, θ, {t, 0, 20}]}, \
+        Plot[Evaluate[θ[t] /. sol], {t, 0, 20}, PlotRange -> All]], \
+      {{θ0, 0.5, Text@Subscript[Style[\"θ\", Italic], \"0\"]}, \
+        0, 3, 0.01, ImageSize -> Tiny, Appearance -> \"Labeled\"}, \
+      {{ω0, 0, Text@Subsuperscript[Style[\"θ\", Italic], \"0\", \"′\"]}, \
+        -2, 2, 0.01, ImageSize -> Tiny, Appearance -> \"Labeled\"}, \
+      {{damping, 0.2, Style[\"damping\", Italic]}, 0, 2, 0.01, \
+        ImageSize -> Tiny, Appearance -> \"Labeled\"}, \
+      SaveDefinitions -> True]";
+
+    let widget = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the pendulum-angle plot must render"
+    );
+    match &widget.controls[..] {
+      [_theta0, omega0, _damping] => match omega0 {
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          label_runs,
+          ..
+        } => {
+          assert_eq!(name, "ω0");
+          assert_eq!(
+            label, "θ₀′",
+            "Subsuperscript must typeset as base + subscript + superscript, \
+             not echo its OutputForm"
+          );
+          assert_eq!(
+            label_runs
+              .iter()
+              .map(|r| r.text.as_str())
+              .collect::<String>(),
+            "θ₀′"
+          );
+        }
+        other => panic!("expected a continuous control, got {other:?}"),
+      },
+      other => panic!("expected three controls, got {other:?}"),
+    }
+  }
+
   /// A truth-table Demonstration shape: a `Manipulate` whose body maps
   /// `Boole` over a `BooleanTable` whose body is built with `@@` and whose
   /// variable groups are `Take`n from a variable list, laid out as a `Grid`
